@@ -1,8 +1,7 @@
 #!/bin/bash
 
 ################################################################################
-# Script: service_control.sh
-#
+# Script: nftban_service_control.sh
 # Description:
 #   A utility script to enable or disable the Fail2ban and NFTables services.
 #
