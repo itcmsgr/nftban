@@ -2,16 +2,11 @@
 
 ################################################################################
 # Script: nftban_service_control.sh
-#
-# Version: 1.0.0
-# Author: ITCMS Team ( Antonios Voulvoulis )
+# Version: 1.1.0
+# Author: ITCMS Team (Antonios Voulvoulis)
 # Description:
-#   A utility script to enable or disable the Fail2Ban and nftables services
-#   on Red Hat 8+ systems, including CentOS and Fedora.
-#
-# Usage:
-#   sudo ./nftban_service_control.sh [enable|disable]
-#
+#   Interactive menu to enable/disable Fail2Ban and nftables services,
+#   and placeholder for future configuration check.
 # Change Log:
 #   1.0.0 - 2025-09-02
 #     - Initial version.
@@ -19,73 +14,62 @@
 #
 ################################################################################
 
-# Define service names
+
 SERVICE_F2B="fail2ban"
 SERVICE_NFT="nftables"
 
-# --- Pre-flight Checks ---
 # Check for root privileges
 if [[ $EUID -ne 0 ]]; then
     echo "This script must be run as root."
     exit 1
 fi
 
-# Check for a valid argument
-if [[ -z "$1" ]]; then
-    echo "Usage: sudo $0 [enable|disable]"
-    exit 1
-fi
+# Function to enable services
+enable_services() {
+    echo "➡️ Enabling and starting $SERVICE_F2B..."
+    systemctl enable --now "$SERVICE_F2B"
+    echo "➡️ Enabling and starting $SERVICE_NFT..."
+    systemctl enable --now "$SERVICE_NFT"
+    echo "✅ Services enabled."
+}
 
-ACTION=$1
+# Function to disable services
+disable_services() {
+    echo "➡️ Stopping and disabling $SERVICE_F2B..."
+    systemctl disable --now "$SERVICE_F2B"
+    echo "➡️ Stopping and disabling $SERVICE_NFT..."
+    systemctl disable --now "$SERVICE_NFT"
+    echo "✅ Services disabled."
+}
 
-# --- Perform action based on argument ---
-case "$ACTION" in
-    enable)
-        echo "➡️ Enabling and starting $SERVICE_F2B service..."
-        systemctl enable --now "$SERVICE_F2B"
-        if [[ $? -eq 0 ]]; then
-            echo "✅ $SERVICE_F2B service is now active."
-        else
-            echo "❌ Failed to enable or start $SERVICE_F2B."
-        fi
+# Placeholder for configuration check
+check_configuration() {
+    echo "🔍 Configuration check feature is under development."
+}
 
-        echo ""
+# Placeholder for recreate configuration
+recreate_configuration() {
+    echo "🔧 Recreate configuration feature is under development."
+}
 
-        echo "➡️ Enabling and starting $SERVICE_NFT service..."
-        systemctl enable --now "$SERVICE_NFT"
-        if [[ $? -eq 0 ]]; then
-            echo "✅ $SERVICE_NFT service is now active."
-        else
-            echo "❌ Failed to enable or start $SERVICE_NFT."
-        fi
-        ;;
+# Display menu
+while true; do
+    echo "
+===== nftban Service Control Menu ====="
+    echo "1) Enable Services"
+    echo "2) Disable Services"
+    echo "3) Check Configuration (Coming Soon)"
+    echo "4) Recreate Configuration (Coming Soon)"
+    echo "5) Exit"
+    read -p "Select an option [1-5]: " choice
 
-    disable)
-        echo "➡️ Stopping and disabling $SERVICE_F2B service..."
-        systemctl disable --now "$SERVICE_F2B"
-        if [[ $? -eq 0 ]]; then
-            echo "✅ $SERVICE_F2B service is now inactive."
-        else
-            echo "❌ Failed to disable or stop $SERVICE_F2B."
-        fi
+    case $choice in
+        1) enable_services ;;
+        2) disable_services ;;
+        3) check_configuration ;;
+        4) recreate_configuration ;;
+        5) echo "Exiting..."; exit 0 ;;
+        *) echo "Invalid option. Please select 1-5." ;;
+    esac
 
-        echo ""
-
-        echo "➡️ Stopping and disabling $SERVICE_NFT service..."
-        systemctl disable --now "$SERVICE_NFT"
-        if [[ $? -eq 0 ]]; then
-            echo "✅ $SERVICE_NFT service is now inactive."
-        else
-            echo "❌ Failed to disable or stop $SERVICE_NFT."
-        fi
-        ;;
-
-    *)
-        echo "Invalid argument: $ACTION"
-        echo "Usage: sudo $0 [enable|disable]"
-        exit 1
-        ;;
-esac
-
-echo ""
-echo "Operation completed."
+done
