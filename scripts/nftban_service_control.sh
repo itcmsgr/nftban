@@ -11,6 +11,7 @@
 #   1.0.0 - 2025-09-02
 #     - Initial version.
 #     - Added logic to enable or disable both services.
+#     - Added logic to check or recreate configuration files
 #
 ################################################################################
 
