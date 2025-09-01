@@ -2,11 +2,15 @@
 
 ################################################################################
 # Script: nftban_service_control.sh
+#
+# Version: 1.0.0
+# Author: ITCMS Team ( Antonios Voulvoulis )
 # Description:
-#   A utility script to enable or disable the Fail2ban and NFTables services.
+#   A utility script to enable or disable the Fail2Ban and nftables services
+#   on Red Hat 8+ systems, including CentOS and Fedora.
 #
 # Usage:
-#   sudo ./service_control.sh [enable|disable]
+#   sudo ./nftban_service_control.sh [enable|disable]
 #
 # Change Log:
 #   1.0.0 - 2025-09-02
