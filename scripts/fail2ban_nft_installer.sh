@@ -4,7 +4,7 @@
 # Script: fail2ban_nft_installer.sh
 #
 # Version: 1.0.0
-# Author: ITCMs Team ( Antonios Voulvoulis )
+# Author: ITCMS Team ( Antonios Voulvoulis )
 # Description:
 #   This script automates the installation and configuration of Fail2Ban
 #   and NFTables on Red Hat 8+ systems. It checks for and installs these
