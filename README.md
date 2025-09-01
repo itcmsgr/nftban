@@ -8,7 +8,7 @@ It leverages the power of **nftables** and **Fail2Ban** to provide a modern, eff
 - Uses `nftables` for high-performance packet filtering
 - Integrates `Fail2Ban` for dynamic banning of malicious IPs
 - Full configuration files included for easy setup
-- Modular folder structure under `/etc/itcmsgr`
+- Modular folder structure under `/etc/nftban`
 - Designed for Red Hat 8+, CentOS Stream, and Fedora
 - Lightweight and extensible
 
