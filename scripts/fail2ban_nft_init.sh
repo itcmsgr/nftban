@@ -101,25 +101,19 @@ if ! rpm -q "$NFTABLES_PKG" &> /dev/null; then
         echo "    ✅ $IPTABLES_PKG is not installed. Proceeding with $NFTABLES_PKG installation."
     fi
 
-    dnf install -y "$NFTABLES_PKG"
+   dnf install -y "$NFTABLES_PKG"
     case $? in
-        0) 
-            echo "    ✅ $NFTABLES_PKG installed successfully."
-            echo "    ✅ Enabling and starting $NFTABLES_PKG service..."
-            systemctl enable --now nftables
-            if [[ $? -eq 0 ]]; then
-                echo "    ✅ NFTables service is now active."
-            else
-                echo "    ⚠️ Failed to enable or start nftables service."
-            fi
+        0)  
+            echo "     ✅ $NFTABLES_PKG installed successfully."
             ;;
-        *) 
-            echo "    ❌ Failed to install $NFTABLES_PKG."
+        *)  
+            echo "     ❌ Failed to install $NFTABLES_PKG."
             exit 1 
             ;;
     esac
 else
-    echo "    ✅ $NFTABLES_PKG is already installed."
+    echo "     ✅ $NFTABLES_PKG is already installed."
+    
     
     # Check if IPTables is still present and suggest removal
     if rpm -q "$IPTABLES_PKG" &> /dev/null; then
