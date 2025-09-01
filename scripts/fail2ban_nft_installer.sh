@@ -24,6 +24,8 @@
 #
 ################################################################################
 
+# Define the base directory for the nftban project
+BASE_DIR="/etc/nftban"
 # Define log directory and file name
 LOG_DIR="/etc/itcms/logs"
 LOG_FILE="$LOG_DIR/install_$(date +%Y-%m-%d-%H%M%S).log"
@@ -39,8 +41,16 @@ if [[ $EUID -ne 0 ]]; then
     exit 1
 fi
 
-# Create the log directory if it doesn't exist
-mkdir -p "$LOG_DIR"
+# Check if the base directory already exists if not create
+if [ ! -d "$BASE_DIR" ]; then
+    echo "Directory structure for $BASE_DIR does not exist. Creating now..."
+    # The -p flag creates parent directories if they don't exist,
+    # and prevents an error if the directory already exists.
+    mkdir -p "$BASE_DIR"/{config,scripts,logs,backups,templates}
+    echo "✅ Directory structure created successfully."
+else
+    echo "✅ Directory structure already exists at $BASE_DIR. No action needed."
+fi
 
 # Redirect all script output to the log file
 exec &> "$LOG_FILE"
