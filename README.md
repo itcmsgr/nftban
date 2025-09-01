@@ -17,7 +17,7 @@ UNDER Development
 
 ## 📁 Folder Structure
 ```
-/etc/itcmsgr/
+/etc/nftban/
 ├── config/           # Configuration files (Fail2Ban jails, nftables rules)
 ├── scripts/          # Main scripts and helpers
 ├── logs/             # Custom logs or log parsing
