@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ################################################################################
-# Script: fail2ban_nft_installer.sh
+# Script: fail2ban_nft_init.sh
 #
 # Version: 1.0.0
 # Author: ITCMS Team ( Antonios Voulvoulis )
