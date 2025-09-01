@@ -29,7 +29,7 @@
 # Define the base directory for the nftban project
 BASE_DIR="/etc/nftban"
 # Define log directory and file name
-LOG_DIR="/etc/itcms/logs"
+LOG_DIR="/etc/nftban/logs"
 LOG_FILE="$LOG_DIR/install_$(date +%Y-%m-%d-%H%M%S).log"
 # Define repository information and local paths
 GITHUB_REPO="https://github.com/itcmsgr/nftban"
