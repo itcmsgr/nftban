@@ -9,7 +9,7 @@ It is designed specifically for Red Hat-based distributions—including RHEL 8+,
 - Integrates `Fail2Ban` for dynamic banning of malicious IPs
 - Full configuration files included for easy setup
 - Modular folder structure under `/etc/nftban`
-- Designed for Red Hat 8+, CentOS Stream, and Fedora
+- Designed for Red Hat 8+, CentOS Stream, Fedora 28+, and Debian 12+ including the corresponding Ubuntu releases.
 - Lightweight and extensible
 
 ## 📦 Installation
