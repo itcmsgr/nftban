@@ -19,3 +19,50 @@ chmod +x /etc/nftban/bin/nftban_service_control.sh
 Now you can just type:
 
 nftban
+
+
+Dynamic ip lookup and check for domain example :
+
+1. Create a script to check the IP.
+
+You would need a script that takes an IP address as an argument and returns an exit code of 0 if it should be ignored and a 1 if it should not. For example, a script to check if an IP's reverse DNS resolves to a cloudflare.com domain might look something like this:
+
+Bash
+
+#!/bin/bash
+# check_cloudflare.sh
+IP=$1
+
+# Perform a reverse DNS lookup
+HOST=$(nslookup "$IP" | grep 'name =' | awk '{print $NF}' | sed 's/.$//')
+
+# Check if the hostname ends with .cloudflare.com
+if [[ "$HOST" == *".cloudflare.com" ]]; then
+  exit 0  # Ignore the IP
+else
+  exit 1  # Don't ignore the IP
+fi
+2. Make the script executable.
+
+Bash
+
+chmod +x /path/to/your/script/check_cloudflare.sh
+3. Update your jail.local configuration.
+
+In your /etc/fail2ban/jail.local file, add the ignorecommand line to the [DEFAULT] section (to apply it to all jails) or a specific jail (e.g., [dovecot-pop3imap]) if you only want it to apply there.
+
+Ini, TOML
+
+[DEFAULT]
+# ... other default settings ...
+ignorecommand = /path/to/your/script/check_cloudflare.sh <ip>
+4. Reload Fail2ban.
+
+After making this change, reload Fail2ban to apply the new configuration.
+
+Bash
+
+fail2ban-client reload
+Now, every time an IP connects, Fail2ban will run your script. If the script returns an exit code of 0, the IP will be ignored and no banning action will be taken. If the script returns 1, the IP will be subject to the usual ban rules.
+
+This method allows you to "dynamically ignore" IP addresses based on a condition you define, without having to manually add each IP to a file.
