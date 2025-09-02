@@ -19,9 +19,8 @@ chmod +x /etc/nftban/bin/nftban_service_control.sh
 Now you can just type:
 
 nftban
-
-
-Dynamic ip lookup and check for domain example :
+==================
+Dynamic ip lookup and check for domain BEFORE BAN IF IS IN WHITELIST example :
 
 1. Create a script to check the IP.
 
@@ -66,3 +65,48 @@ fail2ban-client reload
 Now, every time an IP connects, Fail2ban will run your script. If the script returns an exit code of 0, the IP will be ignored and no banning action will be taken. If the script returns 1, the IP will be subject to the usual ban rules.
 
 This method allows you to "dynamically ignore" IP addresses based on a condition you define, without having to manually add each IP to a file.
+============================================
+
+Custom Log Action TO ADD ORIGIN 
+You need to edit the actionban command in your /etc/fail2ban/action.d/itcms-custom-log.conf file. The original command only logs the IP and ban time. To add the origin, you'll need to run an nslookup command and capture its output to include in the log entry.
+
+Open the configuration file:
+
+Bash
+
+nano /etc/fail2ban/action.d/itcms-custom-log.conf
+Modify the actionban command:
+The key is to use command substitution within the echo command. You'll run nslookup <ip> and append the result to your log message. A good way to handle this is to use a pipe (|) to pass the output of nslookup to the sed command to clean it up before adding it to your log.
+
+Here's an updated actionban line you can use:
+
+Ini, TOML
+
+[Definition]
+actionstart =
+actionstop =
+actioncheck =
+actionban = /bin/bash -c 'HOSTINFO=$(nslookup <ip> | grep "name" | awk "{print \$NF}" | sed "s/.$//"); echo "$(date "+%%Y-%%m-%%d %%H:%%M:%%S") - Jail: <name> - Banned IP: <ip> - Origin: ${HOSTINFO} - Banned for: <bantime> seconds - Expires at: $(date -d "@$(( $(date +%%s) + <bantime> ))" "+%%Y-%%m-%%d %%H:%%M:%%S")" >> /var/log/itcms-fail2ban.log'
+actionunban =
+Breakdown of the Changes
+HOSTINFO=$(nslookup <ip> | grep "name" | awk "{print \$NF}" | sed "s/.$//"): This is the new part. It's a command substitution that stores the output of the nslookup command in the HOSTINFO variable.
+
+nslookup <ip>: Performs a reverse DNS lookup on the banned IP.
+
+grep "name": Filters the output to find the line containing the hostname.
+
+awk "{print \$NF}": Extracts the last field of that line, which is the hostname itself.
+
+sed "s/.$//": Removes the trailing dot (.) that nslookup often adds to hostnames.
+
+- Origin: ${HOSTINFO}: This part adds the new HOSTINFO variable to your log message.
+
+Final Steps
+After you've saved the changes to /etc/fail2ban/action.d/itcms-custom-log.conf, you must restart the Fail2ban service for the new configuration to take effect.
+
+Bash
+
+systemctl restart fail2ban
+Now, when an IP address is banned, your custom log file (/var/log/itcms-fail2ban.log) will include the reverse DNS lookup information for that IP. For example, if the IP 104.18.23.4 is banned, your log entry might look like this:
+
+2025-09-02 12:30:00 - Jail: dovecot-imap - Banned IP: 104.18.23.4 - Origin: 104.18.23.4.static.cloudflare.com - Banned for: 600 seconds - Expires at: 2025-09-02 12:40:00
