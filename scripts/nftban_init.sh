@@ -112,7 +112,7 @@ tar -czf "$BACKUP_FILE" -C "$(dirname "$BASE_DIR")" "$(basename "$BASE_DIR")" --
 echo "Syncing repository..."
 rm -rf "$TMP_DIR"
 git clone "$GITHUB_REPO" "$TMP_DIR" || { echo "Failed to clone repo."; exit 1; }
-cp -rf "$TMP_DIR"/config/* "$BASE_DIR/config/"
+#cp -rf "$TMP_DIR"/config/* "$BASE_DIR/config/"
 cp -rf "$TMP_DIR"/scripts/* "$BASE_DIR/scripts/"
 cp -rf "$TMP_DIR"/templates/* "$BASE_DIR/templates/"
 cp -f "$TMP_DIR"/README.md "$BASE_DIR/"
