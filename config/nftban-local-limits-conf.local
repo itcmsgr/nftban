@@ -1,0 +1,2 @@
+# Include the active local limits profile
+include "/nftban/config/nftban-local-limits-conf.local"
