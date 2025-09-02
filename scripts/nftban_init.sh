@@ -23,6 +23,8 @@ TMP_DIR="/tmp/nftban-repo"
 FAIL2BAN_PKG="fail2ban"
 NFTABLES_PKG="nftables"
 IPTABLES_PKG="iptables"
+FIREWALLD_PKG="firewalld"
+UFW_PKG="ufw"
 
 # --- Root Check ---
 if [[ $EUID -ne 0 ]]; then
@@ -76,6 +78,31 @@ if ! $PKG_CHECK "$FAIL2BAN_PKG" &>/dev/null; then
     [[ $? -eq 0 ]] && echo "$FAIL2BAN_PKG installed successfully." || { echo "Failed to install $FAIL2BAN_PKG."; exit 1; }
 else
     echo "$FAIL2BAN_PKG already installed."
+fi
+
+# --- Remove Other Firewalls (FirewallD, UFW) ---
+echo "Checking for other firewall packages..."
+
+# Remove FirewallD
+if $PKG_CHECK "$FIREWALLD_PKG" &>/dev/null; then
+    echo "$FIREWALLD_PKG found. Stopping and disabling service..."
+    systemctl stop firewalld 2>/dev/null || true
+    systemctl disable firewalld 2>/dev/null || true
+    echo "Removing $FIREWALLD_PKG..."
+    $PKG_REMOVE "$FIREWALLD_PKG"
+else
+    echo "$FIREWALLD_PKG not installed."
+fi
+
+# Remove UFW
+if $PKG_CHECK "$UFW_PKG" &>/dev/null; then
+    echo "$UFW_PKG found. Stopping and disabling service..."
+    systemctl stop ufw 2>/dev/null || true
+    systemctl disable ufw 2>/dev/null || true
+    echo "Removing $UFW_PKG..."
+    $PKG_REMOVE "$UFW_PKG"
+else
+    echo "$UFW_PKG not installed."
 fi
 
 # --- NFTables & Remove IPTables ---
