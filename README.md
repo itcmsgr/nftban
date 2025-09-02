@@ -1,15 +1,16 @@
 
 # nftban
 
-nftban is an open-source firewall management tool built around nftables and Fail2Ban, offering a modern, efficient, and modular approach to system security.
-It is designed specifically for Red Hat-based distributions—including RHEL 8+, CentOS Stream, and Fedora—with a cleaner and more maintainable architecture.
+nftban is an open-source firewall management tool built around nftables and Fail2Ban, providing a modern, efficient, and modular approach to system security. 
+It supports major Linux distributions, including Red Hat-based systems (RHEL 8+, CentOS Stream, Fedora) as well as Debian and Ubuntu. 
+Designed for clarity and maintainability, nftban simplifies firewall management, intrusion prevention, and monitoring with a unified, script-driven architecture.
 
 ## 🔧 Features
 - Uses `nftables` for high-performance packet filtering
 - Integrates `Fail2Ban` for dynamic banning of malicious IPs
 - Full configuration files included for easy setup
 - Modular folder structure under `/etc/nftban`
-- Designed for Red Hat 8+, CentOS Stream, Fedora 28+, and Debian 12+ including the corresponding Ubuntu releases.
+- It supports major Linux distributions
 - Lightweight and extensible
 
 ## 📦 Installation
@@ -39,3 +40,4 @@ This project is licensed under the **MIT License**.
 
 You are free to use, modify, and distribute this software with proper attribution.
 
+Created by Antonios Voulvoulis. Contributions welcome under the terms of the MIT license.
