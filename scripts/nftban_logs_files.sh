@@ -1,4 +1,11 @@
-#Checking for common log files :
+################################################################################
+# Script: nftban_logs_files.sh
+# Version: 1.0.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Description:
+#   Check logs location 
+################################################################################
+
 #!/bin/bash
 echo 'Checking for common log files:'
 echo 'SSH (sshd):'
