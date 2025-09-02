@@ -1,5 +1,5 @@
 
-# nftban — Modular firewall management for Linux using nftables and Fail2Ban
+# nftban Modular firewall management for Linux using nftables and Fail2Ban
 
 nftban is an open-source firewall management tool built around nftables and Fail2Ban, providing a modern, efficient, and modular approach to system security. 
 It supports major Linux distributions, including Red Hat-based systems (RHEL 8+, CentOS Stream, Fedora) as well as Debian and Ubuntu. 
