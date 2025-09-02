@@ -52,11 +52,12 @@ else
     exit 1
 fi
 
-# --- Directory Setup ---
+# --- Directory Tree Initialization ---
 if [ ! -d "$BASE_DIR" ]; then
     echo "Creating directory structure under $BASE_DIR..."
     mkdir -p "$BASE_DIR"/{config,scripts,logs,backups,templates}
-    echo "Directory structure created."
+    mkdir -p "/var/log/nftban"
+    echo "Directory Tree created."
 else
     echo "Directory structure already exists."
 fi
