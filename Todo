@@ -1,0 +1,21 @@
+Since nftban_service_control.sh and similar are executables you want the sysadmin to run easily, suggest:
+Rename/move your scripts/ directory to bin/.
+Keep project configs/templates in config/ and templates/.
+Leave logs/ and backups/ as-is.
+Your structure would look like:
+/etc/nftban/
+├── bin/           # Executable scripts (go in PATH via symlink or directly)
+├── config/        # Fail2Ban, nftables config files
+├── templates/     # Default configs/templates
+├── logs/          # Log files
+├── backups/       # Backup archives
+
+How to make them available
+After renaming:
+mv /etc/nftban/scripts /etc/nftban/bin
+ln -s /etc/nftban/bin/nftban_service_control.sh /usr/local/bin/nftban
+chmod +x /etc/nftban/bin/nftban_service_control.sh
+
+Now you can just type:
+
+nftban
