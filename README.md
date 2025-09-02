@@ -19,6 +19,7 @@ Created by Antonios Voulvoulis. Contributions are welcome under the terms of the
 - Modular folder structure under `/etc/nftban`
 - It supports major Linux distributions
 - Lightweight and extensible
+- IPv4 & IPv6 bans are managed separately via configuration lists
 
 ## 📦 Installation
 UNDER Development 
