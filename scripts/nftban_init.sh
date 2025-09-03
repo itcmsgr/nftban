@@ -14,8 +14,6 @@
 # ** NOTE: THIS SCRIPT MUST BE RUN AS ROOT!
 ################################################################################
 
-#!/bin/bash
-
 # --- Script Configuration ---
 BASE_DIR="/etc/nftban"
 GITHUB_REPO="https://github.com/itcmsgr/nftban"
