@@ -13,7 +13,7 @@
 #  - Layered firewall: blacklist -> whitelist -> allowed ports → established connections
 #  - IPv4/IPv6 separation per interface
 #  - Dynamic SSH Port Detection: It reads the SSH port directly from /etc/ssh/sshd_config and defaults to 22 if it cannot be found.
-#  - Protocol-Aware Port Rules: The script now correctly parses the port configuration files for TCP, UDP, or both, based on the port/protocol format (80/T, 53/U, 22/B).
+#  - Protocol-Aware Port Rules: The script parses the port configuration files for TCP, UDP, or both, based on the port/protocol format (80/T, 53/U, 22/B).
 ################################################################################
 
 #!/bin/bash
