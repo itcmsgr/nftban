@@ -1,48 +1,55 @@
-nftban – Modular Linux Firewall Management with nftables & Fail2Ban
+# 🔒 nftban – Modular Linux Firewall Management with nftables & Fail2Ban
 
-🔒 nftban is an open-source, modular firewall management tool for Linux, built on nftables and Fail2Ban.
-It provides IPv4 & IPv6 support, TCP/UDP port filtering, stateful packet inspection (SPI), and dynamic whitelisting/blacklisting, all through a script-driven, maintainable architecture.
-Compatible with major Linux distributions, nftban simplifies firewall configuration, intrusion prevention, and monitoring.
+**nftban** is an open-source, modular firewall management tool for Linux, built on **nftables** and **Fail2Ban**.
 
-Author / Company:
-Developed and maintained by ITCMS — IT Consulting Managed Services (https://itcms.gr
-)
+It provides:
+- IPv4 & IPv6 support
+- TCP/UDP port filtering
+- Stateful Packet Inspection (SPI)
+- Dynamic whitelisting/blacklisting  
+All through a script-driven, maintainable architecture.
 
-Credits:
-Created by Antonios Voulvoulis. Contributions are welcome under the MIT License.
+Compatible with major Linux distributions, **nftban** simplifies firewall configuration, intrusion prevention, and monitoring.
 
-🔧 Features
+---
 
-High-performance packet filtering using nftables
+## 👤 Author / Company
 
-Integrates Fail2Ban for dynamic banning of malicious IPs
+Developed and maintained by **ITCMS — IT Consulting Managed Services**  
+🌐 https://itcms.gr
 
-Supports IPv4 & IPv6 with separate ban management
+Created by **Antonios Voulvoulis**  
+Contributions are welcome under the **MIT License**.
 
-TCP/UDP port filtering, including custom ranges
+---
 
-Stateful Packet Inspection (SPI) with connection tracking (ct)
+## 🔧 Features
 
-Interface-specific rules for granular control
+- High-performance packet filtering using **nftables**
+- Integrates **Fail2Ban** for dynamic banning of malicious IPs
+- Supports **IPv4 & IPv6** with separate ban management
+- **TCP/UDP** port filtering, including custom ranges
+- **Stateful Packet Inspection (SPI)** with connection tracking (`ct`)
+- Interface-specific rules for granular control
+- Blacklists & whitelists (system, user-defined, dynamic)
+- Full configuration files included for easy setup
+- Modular folder structure under `/etc/nftban` for clarity and maintainability
+- Lightweight, extensible, and script-driven
+- Compatible with major Linux distributions:
+  - RHEL 8+
+  - CentOS Stream
+  - Fedora
+  - Debian
+  - Ubuntu
+- Safe defaults with automatic local IP whitelisting
+- Logging and auditing of applied rules
+---
 
-Blacklists & whitelists (system, user-defined, dynamic)
-
-Full configuration files included for easy setup
-
-Modular folder structure under /etc/nftban for clarity and maintainability
-
-Lightweight, extensible, and script-driven
-
-Compatible with major Linux distributions (RHEL 8+, CentOS Stream, Fedora, Debian, Ubuntu)
-
-Safe defaults with automatic local IP whitelisting
-
-Logging and auditing of applied rules
-
-🚀 Quick Start
+## 🚀 Quick Start
 
 Download, inspect, and run the nftban installer:
 
+```bash
 # Download the installer
 curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install_nftban.sh -o install_nftban.sh
 
@@ -51,7 +58,7 @@ less install_nftban.sh
 
 # Run the installer (requires root)
 sudo bash install_nftban.sh
-⚠️ Note: This script must be run as root.
+
 
 
 🗑️ Uninstall
