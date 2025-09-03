@@ -1,4 +1,14 @@
-#!/bin/bash
+##!/bin/bash
+
+################################################################################
+# Script: nftban_unistall.sh
+#
+# Version: 1.2.0
+# Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
+# Description:
+# This script automates the unistall of nftban script
+# ** NOTE: THIS SCRIPT MUST BE RUN AS ROOT!
+################################################################################
 
 # --- Root Check ---
 if [[ $EUID -ne 0 ]]; then
