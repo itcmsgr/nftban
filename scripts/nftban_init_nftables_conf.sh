@@ -18,6 +18,11 @@
 BASE_DIR="/etc/nftban/config"
 BASE_DIR_INIT="/etc/nftban/templates"
 
+# --- Logging ---
+LOG_DIR="$BASE_DIR/logs"
+LOG_FILE="$LOG_DIR/install_nftables_process_$(date +%Y-%m-%d-%H%M%S).log"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 # Config files
 IPV4_IN_PORTS_FILE="$BASE_DIR/nftban-configuration-ipv4-ports-input-allow.conf.local"
 IPV4_OUT_PORTS_FILE="$BASE_DIR/nftban-configuration-ipv4-ports-output-allow.conf.local"
@@ -154,7 +159,7 @@ done
 # --- Apply ruleset ---
 echo "Applying nftables ruleset..."
 if ! sudo nft -f "$OUTPUT_FILE"; then
-    echo "❌ Failed to load nftables ruleset. Check $OUTPUT_FILE for errors."
+    echo "Failed to load nftables ruleset. Check $OUTPUT_FILE for errors."
     exit 1
 fi
 
@@ -166,5 +171,9 @@ sudo nft list ruleset | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}|([0-9a-fA-F]{0,4}:
         echo "  > Added $ip to $SYSTEM_WHITELIST_FILE"
     fi
 done
+# --- Save final configuration snapshot ---
+FINAL_CONFIG_SNAPSHOT="$LOG_DIR/nftables_final_config_$(date +%Y-%m-%d-%H%M%S).conf"
+cp "$OUTPUT_FILE" "$FINAL_CONFIG_SNAPSHOT"
+echo "Final configuration saved to: $FINAL_CONFIG_SNAPSHOT"
 
-echo "✅ nftables ruleset loaded and whitelists updated successfully."
+echo "nftables ruleset loaded and whitelists updated successfully."
