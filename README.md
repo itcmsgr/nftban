@@ -75,18 +75,11 @@ Pending implementation
 └── README.md         # Documentation
 
 ⚙️ Configuration Overview
-
 config/nftables.conf: Main nftables ruleset
-
 config/jail.local: Fail2Ban jail configuration
-
 scripts/firewall.sh: Main control script
 
 🤝 Contributing
-
-We welcome contributions! Please fork the repo and submit a pull request. For major changes, open an issue first to discuss your proposed modifications.
-
-📄 License
-
-This project is licensed under the MIT License.
-You are free to use, modify, and distribute this software with proper attribution.
+We welcome contributions!
+Please fork the repo and submit a pull request.
+For major changes, open an issue first to discuss your proposed modifications.
