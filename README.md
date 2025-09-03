@@ -57,7 +57,7 @@ curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install_nftban.
 less install_nftban.sh
 
 # Run the installer (requires root)
-sudo bash install_nftban.sh
+bash install_nftban.sh
 
 
 
