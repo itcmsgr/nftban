@@ -57,11 +57,20 @@ fi
 # --- Directory Tree Initialization ---
 if [ ! -d "$BASE_DIR" ]; then
     echo "Creating directory structure under $BASE_DIR..."
-    mkdir -p "$BASE_DIR"/{config,scripts,logs,backups,templates}
-    mkdir -p "/var/log/nftban"
+    mkdir -p "$BASE_DIR"/{config,scripts,logs,backups,templates,bin}
     echo "Directory Tree created."
 else
     echo "Directory structure already exists."
+fi
+
+
+# --- Setup log directory and symlink ---
+if [[ ! -d /var/log/nftban ]]; then
+    mkdir -p /var/log/nftban
+fi
+if [[ ! -L "$BASE_DIR/logs" ]]; then
+    rm -rf "$BASE_DIR/logs"
+    ln -s /var/log/nftban "$BASE_DIR/logs"
 fi
 
 # --- Redirect Logs ---
