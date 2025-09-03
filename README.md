@@ -23,13 +23,14 @@ Created by Antonios Voulvoulis. Contributions are welcome under the terms of the
 
 ## 📦 Installation
 Run the installation script directly from GitHub using `curl` — no need to save it manually:
-sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install_nftban.sh)"
+
+bash -c "$(curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install_nftban.sh)"
 
 ⚠️ Note: This script must be run as root!
 
 🧪 Optional: Dry-run
 If you'd like to preview the script before executing it:
-rl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install_nftban.sh | less
+curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install_nftban.sh | less
 This way, you can inspect it before executing.
 
 ## 📦 Unistall
