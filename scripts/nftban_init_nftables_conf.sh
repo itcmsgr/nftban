@@ -107,12 +107,12 @@ IPV6_BLACKLIST_IPS=$(grep -oE "([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}" "$IPV6_
 # --- Global loopback rules ---
 echo "--- Adding global loopback rules ---"
 {
-    echo "add table ip filter_global"
-    echo "add chain ip filter_global input { type filter hook input priority 0; policy accept; }"
-    echo "add rule ip filter_global input iif \"lo\" accept"
-    echo "add table ip6 filter_global"
-    echo "add chain ip6 filter_global input { type filter hook input priority 0; policy accept; }"
-    echo "add rule ip6 filter_global input iif \"lo\" accept"
+    echo "add table ip nftban_global"
+    echo "add chain ip nftban_global input { type filter hook input priority 0; policy accept; }"
+    echo "add rule ip nftban_global input iif \"lo\" accept"
+    echo "add table ip6 nftban_global"
+    echo "add chain ip6 nftban_global input { type filter hook input priority 0; policy accept; }"
+    echo "add rule ip6 nftban_global input iif \"lo\" accept"
 } >> "$OUTPUT_FILE"
 
 # --- Discover interfaces ---
@@ -125,59 +125,45 @@ for IFACE in $INTERFACES; do
     # IPv4 rules
     {
         echo "table ip nftban_tbl_${IFACE} {"
-        echo "    set whitelist_v4 { type ipv4_addr; elements = { $IPV4_WHITELIST_IPS } }"
-        echo "    set blacklist_v4 { type ipv4_addr; elements = { $IPV4_BLACKLIST_IPS } }"
-        echo "    chain drop_blacklist_${IFACE}_ipv4 { ip saddr @blacklist_v4 drop }"
-        echo "    chain input_${IFACE} {"
+        echo "    set nftban_whitelist_v4 { type ipv4_addr; elements = { $IPV4_WHITELIST_IPS } }"
+        echo "    set nftban_blacklist_v4 { type ipv4_addr; elements = { $IPV4_BLACKLIST_IPS } }"
+        echo "    chain nftban_drop_blacklist_${IFACE}_v4 { ip saddr @nftban_blacklist_v4 drop }"
+        echo "    chain nftban_input_${IFACE}_v4 {"
         echo "        type filter hook input priority 0; policy drop;"
-        echo "        iifname \"$IFACE\" jump drop_blacklist_${IFACE}_ipv4"
-        echo "        iifname \"$IFACE\" ip saddr @whitelist_v4 accept"
+        echo "        iifname \"$IFACE\" jump nftban_drop_blacklist_${IFACE}_v4"
+        echo "        iifname \"$IFACE\" ip saddr @nftban_whitelist_v4 accept"
         echo "        iifname \"$IFACE\" ct state established,related accept"
-        # Always allow SSH on the detected port
         echo "        iifname \"$IFACE\" tcp dport $SSH_PORT accept"
-        # Add rules for ports from the input file
         [[ -f "$IPV4_IN_PORTS_FILE" ]] && while read -r line; do
             if [[ -n "$line" && ! "$line" =~ ^# ]]; then
                 port=$(echo "$line" | cut -d'/' -f1)
                 proto=$(echo "$line" | cut -d'/' -f2 | tr '[:lower:]' '[:upper:]')
                 case "$proto" in
-                    T)
-                        echo "        iifname \"$IFACE\" tcp dport $port accept"
-                        ;;
-                    U)
-                        echo "        iifname \"$IFACE\" udp dport $port accept"
-                        ;;
+                    T) echo "        iifname \"$IFACE\" tcp dport $port accept" ;;
+                    U) echo "        iifname \"$IFACE\" udp dport $port accept" ;;
                     B)
                         echo "        iifname \"$IFACE\" tcp dport $port accept"
                         echo "        iifname \"$IFACE\" udp dport $port accept"
                         ;;
-                    *)
-                        echo "Warning: Invalid protocol '$proto' specified for port '$port' in $IPV4_IN_PORTS_FILE" >&2
-                        ;;
+                    *) echo "Warning: Invalid protocol '$proto' for port '$port'" >&2 ;;
                 esac
             fi
         done < "$IPV4_IN_PORTS_FILE"
         echo "    }"
-        echo "    chain output_${IFACE} {"
+        echo "    chain nftban_output_${IFACE}_v4 {"
         echo "        type filter hook output priority 0; policy accept;"
         [[ -f "$IPV4_OUT_PORTS_FILE" ]] && while read -r line; do
             if [[ -n "$line" && ! "$line" =~ ^# ]]; then
                 port=$(echo "$line" | cut -d'/' -f1)
                 proto=$(echo "$line" | cut -d'/' -f2 | tr '[:lower:]' '[:upper:]')
                 case "$proto" in
-                    T)
-                        echo "        oifname \"$IFACE\" tcp dport $port accept"
-                        ;;
-                    U)
-                        echo "        oifname \"$IFACE\" udp dport $port accept"
-                        ;;
+                    T) echo "        oifname \"$IFACE\" tcp dport $port accept" ;;
+                    U) echo "        oifname \"$IFACE\" udp dport $port accept" ;;
                     B)
                         echo "        oifname \"$IFACE\" tcp dport $port accept"
                         echo "        oifname \"$IFACE\" udp dport $port accept"
                         ;;
-                    *)
-                        echo "Warning: Invalid protocol '$proto' specified for port '$port' in $IPV4_OUT_PORTS_FILE" >&2
-                        ;;
+                    *) echo "Warning: Invalid protocol '$proto' for port '$port'" >&2 ;;
                 esac
             fi
         done < "$IPV4_OUT_PORTS_FILE"
@@ -188,59 +174,45 @@ for IFACE in $INTERFACES; do
     # IPv6 rules
     {
         echo "table ip6 nftban_tbl_${IFACE} {"
-        echo "    set whitelist_v6 { type ipv6_addr; elements = { $IPV6_WHITELIST_IPS } }"
-        echo "    set blacklist_v6 { type ipv6_addr; elements = { $IPV6_BLACKLIST_IPS } }"
-        echo "    chain drop_blacklist_${IFACE}_ipv6 { ip6 saddr @blacklist_v6 drop }"
-        echo "    chain input_${IFACE} {"
+        echo "    set nftban_whitelist_v6 { type ipv6_addr; elements = { $IPV6_WHITELIST_IPS } }"
+        echo "    set nftban_blacklist_v6 { type ipv6_addr; elements = { $IPV6_BLACKLIST_IPS } }"
+        echo "    chain nftban_drop_blacklist_${IFACE}_v6 { ip6 saddr @nftban_blacklist_v6 drop }"
+        echo "    chain nftban_input_${IFACE}_v6 {"
         echo "        type filter hook input priority 0; policy drop;"
-        echo "        iifname \"$IFACE\" jump drop_blacklist_${IFACE}_ipv6"
-        echo "        iifname \"$IFACE\" ip6 saddr @whitelist_v6 accept"
+        echo "        iifname \"$IFACE\" jump nftban_drop_blacklist_${IFACE}_v6"
+        echo "        iifname \"$IFACE\" ip6 saddr @nftban_whitelist_v6 accept"
         echo "        iifname \"$IFACE\" ct state established,related accept"
-        # Always allow SSH on the detected port
         echo "        iifname \"$IFACE\" tcp dport $SSH_PORT accept"
-        # Add rules for ports from the input file
         [[ -f "$IPV6_IN_PORTS_FILE" ]] && while read -r line; do
             if [[ -n "$line" && ! "$line" =~ ^# ]]; then
                 port=$(echo "$line" | cut -d'/' -f1)
                 proto=$(echo "$line" | cut -d'/' -f2 | tr '[:lower:]' '[:upper:]')
                 case "$proto" in
-                    T)
-                        echo "        iifname \"$IFACE\" tcp dport $port accept"
-                        ;;
-                    U)
-                        echo "        iifname \"$IFACE\" udp dport $port accept"
-                        ;;
+                    T) echo "        iifname \"$IFACE\" tcp dport $port accept" ;;
+                    U) echo "        iifname \"$IFACE\" udp dport $port accept" ;;
                     B)
                         echo "        iifname \"$IFACE\" tcp dport $port accept"
                         echo "        iifname \"$IFACE\" udp dport $port accept"
                         ;;
-                    *)
-                        echo "Warning: Invalid protocol '$proto' specified for port '$port' in $IPV6_IN_PORTS_FILE" >&2
-                        ;;
+                    *) echo "Warning: Invalid protocol '$proto' for port '$port'" >&2 ;;
                 esac
             fi
         done < "$IPV6_IN_PORTS_FILE"
         echo "    }"
-        echo "    chain output_${IFACE} {"
+        echo "    chain nftban_output_${IFACE}_v6 {"
         echo "        type filter hook output priority 0; policy accept;"
         [[ -f "$IPV6_OUT_PORTS_FILE" ]] && while read -r line; do
             if [[ -n "$line" && ! "$line" =~ ^# ]]; then
                 port=$(echo "$line" | cut -d'/' -f1)
                 proto=$(echo "$line" | cut -d'/' -f2 | tr '[:lower:]' '[:upper:]')
                 case "$proto" in
-                    T)
-                        echo "        oifname \"$IFACE\" tcp dport $port accept"
-                        ;;
-                    U)
-                        echo "        oifname \"$IFACE\" udp dport $port accept"
-                        ;;
+                    T) echo "        oifname \"$IFACE\" tcp dport $port accept" ;;
+                    U) echo "        oifname \"$IFACE\" udp dport $port accept" ;;
                     B)
                         echo "        oifname \"$IFACE\" tcp dport $port accept"
                         echo "        oifname \"$IFACE\" udp dport $port accept"
                         ;;
-                    *)
-                        echo "Warning: Invalid protocol '$proto' specified for port '$port' in $IPV6_OUT_PORTS_FILE" >&2
-                        ;;
+                    *) echo "Warning: Invalid protocol '$proto' for port '$port'" >&2 ;;
                 esac
             fi
         done < "$IPV6_OUT_PORTS_FILE"
@@ -272,3 +244,4 @@ cp "$OUTPUT_FILE" "$FINAL_CONFIG_SNAPSHOT"
 echo "--- Final configuration saved to: $FINAL_CONFIG_SNAPSHOT ---"
 
 echo "nftables ruleset generation and application completed successfully."
+
