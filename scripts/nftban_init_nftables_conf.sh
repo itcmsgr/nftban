@@ -118,15 +118,55 @@ for IFACE in $INTERFACES; do
         echo "        iifname \"$IFACE\" jump drop_blacklist_${IFACE}_ipv4"
         echo "        iifname \"$IFACE\" ip saddr @whitelist_v4 accept"
         echo "        iifname \"$IFACE\" ct state established,related accept"
-        [[ -f "$IPV4_IN_PORTS_FILE" ]] && while read -r port; do
-            [[ -n "$port" && ! "$port" =~ ^# ]] && echo "        iifname \"$IFACE\" tcp dport $port accept" && echo "        iifname \"$IFACE\" udp dport $port accept"
+        # --- MODIFIED SECTION ---
+        [[ -f "$IPV4_IN_PORTS_FILE" ]] && while read -r line; do
+            if [[ -n "$line" && ! "$line" =~ ^# ]]; then
+                port=$(echo "$line" | cut -d'/' -f1)
+                proto=$(echo "$line" | cut -d'/' -f2 | tr '[:lower:]' '[:upper:]')
+                case "$proto" in
+                    T)
+                        echo "        iifname \"$IFACE\" tcp dport $port accept"
+                        ;;
+                    U)
+                        echo "        iifname \"$IFACE\" udp dport $port accept"
+                        ;;
+                    B)
+                        echo "        iifname \"$IFACE\" tcp dport $port accept"
+                        echo "        iifname \"$IFACE\" udp dport $port accept"
+                        ;;
+                    *)
+                        echo "Warning: Invalid protocol specified for port $port in $IPV4_IN_PORTS_FILE" >&2
+                        ;;
+                esac
+            fi
         done < "$IPV4_IN_PORTS_FILE"
+        # --- END OF MODIFIED SECTION ---
         echo "    }"
         echo "    chain output_${IFACE} {"
         echo "        type filter hook output priority 0; policy accept;"
-        [[ -f "$IPV4_OUT_PORTS_FILE" ]] && while read -r port; do
-            [[ -n "$port" && ! "$port" =~ ^# ]] && echo "        oifname \"$IFACE\" tcp dport $port accept" && echo "        oifname \"$IFACE\" udp dport $port accept"
+        # --- MODIFIED SECTION ---
+        [[ -f "$IPV4_OUT_PORTS_FILE" ]] && while read -r line; do
+            if [[ -n "$line" && ! "$line" =~ ^# ]]; then
+                port=$(echo "$line" | cut -d'/' -f1)
+                proto=$(echo "$line" | cut -d'/' -f2 | tr '[:lower:]' '[:upper:]')
+                case "$proto" in
+                    T)
+                        echo "        oifname \"$IFACE\" tcp dport $port accept"
+                        ;;
+                    U)
+                        echo "        oifname \"$IFACE\" udp dport $port accept"
+                        ;;
+                    B)
+                        echo "        oifname \"$IFACE\" tcp dport $port accept"
+                        echo "        oifname \"$IFACE\" udp dport $port accept"
+                        ;;
+                    *)
+                        echo "Warning: Invalid protocol specified for port $port in $IPV4_OUT_PORTS_FILE" >&2
+                        ;;
+                esac
+            fi
         done < "$IPV4_OUT_PORTS_FILE"
+        # --- END OF MODIFIED SECTION ---
         echo "    }"
         echo "}"
     } >> "$OUTPUT_FILE"
@@ -142,15 +182,55 @@ for IFACE in $INTERFACES; do
         echo "        iifname \"$IFACE\" jump drop_blacklist_${IFACE}_ipv6"
         echo "        iifname \"$IFACE\" ip6 saddr @whitelist_v6 accept"
         echo "        iifname \"$IFACE\" ct state established,related accept"
-        [[ -f "$IPV6_IN_PORTS_FILE" ]] && while read -r port; do
-            [[ -n "$port" && ! "$port" =~ ^# ]] && echo "        iifname \"$IFACE\" tcp dport $port accept" && echo "        iifname \"$IFACE\" udp dport $port accept"
+        # --- MODIFIED SECTION ---
+        [[ -f "$IPV6_IN_PORTS_FILE" ]] && while read -r line; do
+            if [[ -n "$line" && ! "$line" =~ ^# ]]; then
+                port=$(echo "$line" | cut -d'/' -f1)
+                proto=$(echo "$line" | cut -d'/' -f2 | tr '[:lower:]' '[:upper:]')
+                case "$proto" in
+                    T)
+                        echo "        iifname \"$IFACE\" tcp dport $port accept"
+                        ;;
+                    U)
+                        echo "        iifname \"$IFACE\" udp dport $port accept"
+                        ;;
+                    B)
+                        echo "        iifname \"$IFACE\" tcp dport $port accept"
+                        echo "        iifname \"$IFACE\" udp dport $port accept"
+                        ;;
+                    *)
+                        echo "Warning: Invalid protocol specified for port $port in $IPV6_IN_PORTS_FILE" >&2
+                        ;;
+                esac
+            fi
         done < "$IPV6_IN_PORTS_FILE"
+        # --- END OF MODIFIED SECTION ---
         echo "    }"
         echo "    chain output_${IFACE} {"
         echo "        type filter hook output priority 0; policy accept;"
-        [[ -f "$IPV6_OUT_PORTS_FILE" ]] && while read -r port; do
-            [[ -n "$port" && ! "$port" =~ ^# ]] && echo "        oifname \"$IFACE\" tcp dport $port accept" && echo "        oifname \"$IFACE\" udp dport $port accept"
+        # --- MODIFIED SECTION ---
+        [[ -f "$IPV6_OUT_PORTS_FILE" ]] && while read -r line; do
+            if [[ -n "$line" && ! "$line" =~ ^# ]]; then
+                port=$(echo "$line" | cut -d'/' -f1)
+                proto=$(echo "$line" | cut -d'/' -f2 | tr '[:lower:]' '[:upper:]')
+                case "$proto" in
+                    T)
+                        echo "        oifname \"$IFACE\" tcp dport $port accept"
+                        ;;
+                    U)
+                        echo "        oifname \"$IFACE\" udp dport $port accept"
+                        ;;
+                    B)
+                        echo "        oifname \"$IFACE\" tcp dport $port accept"
+                        echo "        oifname \"$IFACE\" udp dport $port accept"
+                        ;;
+                    *)
+                        echo "Warning: Invalid protocol specified for port $port in $IPV6_OUT_PORTS_FILE" >&2
+                        ;;
+                esac
+            fi
         done < "$IPV6_OUT_PORTS_FILE"
+        # --- END OF MODIFIED SECTION ---
         echo "    }"
         echo "}"
     } >> "$OUTPUT_FILE"
@@ -171,6 +251,7 @@ sudo nft list ruleset | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}|([0-9a-fA-F]{0,4}:
         echo "  > Added $ip to $SYSTEM_WHITELIST_FILE"
     fi
 done
+
 # --- Save final configuration snapshot ---
 FINAL_CONFIG_SNAPSHOT="$LOG_DIR/nftables_final_config_$(date +%Y-%m-%d-%H%M%S).conf"
 cp "$OUTPUT_FILE" "$FINAL_CONFIG_SNAPSHOT"
