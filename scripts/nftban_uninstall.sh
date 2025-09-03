@@ -1,7 +1,7 @@
 ##!/bin/bash
 
 ################################################################################
-# Script: nftban_unistall.sh
+# Script: nftban_uninstall.sh
 #
 # Version: 1.2.0
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
