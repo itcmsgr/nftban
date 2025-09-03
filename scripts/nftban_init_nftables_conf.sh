@@ -40,7 +40,7 @@ IPV4_BLACKLIST_FILE="$BASE_DIR/nftban-configuration-ipv4-blacklist_ips.conf.loca
 IPV6_BLACKLIST_FILE="$BASE_DIR/nftban-configuration-ipv6-blacklist_ips.conf.local"
 SYSTEM_WHITELIST_FILE="$BASE_DIR/nftban-configuration-system_whitelist_ips.conf.local"
 USER_WHITELIST_FILE="$BASE_DIR/nftban-configuration-user-whitelist_ips.conf.local"
-OUTPUT_FILE="$BASE_DIR/nftban-nft_rules.conf.local"
+OUTPUT_FILE="$BASE_DIR/nftban-configuration-nft_rules.conf.local"
 
 # --- Initialize missing config files from templates ---
 CONFIG_FILES=(
