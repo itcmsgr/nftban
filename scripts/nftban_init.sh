@@ -149,6 +149,7 @@ git clone --depth 1 "$GITHUB_REPO" "$TMP_DIR" || { echo "Failed to clone repo.";
 cp -rf "$TMP_DIR"/config/* "$BASE_DIR/config/"
 cp -rf "$TMP_DIR"/scripts/* "$BASE_DIR/scripts/"
 cp -rf "$TMP_DIR"/templates/* "$BASE_DIR/templates/"
+cp -rf "$TMP_DIR"/bin/* "$BASE_DIR/bin/"
 cp -f "$TMP_DIR"/README.md "$BASE_DIR/"
 
 # Clean up
