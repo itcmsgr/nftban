@@ -19,8 +19,6 @@
 # All chains: nftban_drop_blacklist_<IFACE>_v4/v6, nftban_input_<IFACE>_v4/v6, nftban_output_<IFACE>_v4/v6.
 ################################################################################
 
-#!/bin/bash
-
 # --- Configuration ---
 BASE_DIR="/etc/nftban/config"
 BASE_DIR_INIT="/etc/nftban/templates"
