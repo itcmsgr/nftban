@@ -2,7 +2,7 @@
 ################################################################################
 # Script: nftban_init_nftables_conf.sh
 #
-# Version: 1.3.0
+# Version: 1.4.0
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # Automates nftables configuration on Linux (RHEL 8+/Fedora/CentOS/Debian/Ubuntu)
@@ -12,6 +12,7 @@
 #  - Templates to initialize missing files
 #  - Layered firewall: blacklist -> whitelist -> allowed ports → established connections
 #  - IPv4/IPv6 separation per interface
+#  - TCP/UDP separation per port
 ################################################################################
 
 # --- Configuration ---
