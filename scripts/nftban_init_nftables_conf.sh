@@ -38,6 +38,8 @@ IPV4_BLACKLIST_FILE="$BASE_DIR/nftban-configuration-ipv4-blacklist_ips.conf.loca
 IPV6_BLACKLIST_FILE="$BASE_DIR/nftban-configuration-ipv6-blacklist_ips.conf.local"
 SYSTEM_WHITELIST_FILE="$BASE_DIR/nftban-configuration-system_whitelist_ips.conf.local"
 USER_WHITELIST_FILE="$BASE_DIR/nftban-configuration-user-whitelist_ips.conf.local"
+USER_CT_FILE_IPv4="$BASE_DIR/nftban-nfttables-ct-ipv4.conf.local"
+USER_CT_FILE_IPv6="$BASE_DIR/nftban-nfttables-ct-ipv6.conf.local"
 OUTPUT_FILE="$BASE_DIR/nft_rules.conf.local"
 
 # --- Initialize missing config files from templates ---
@@ -45,6 +47,7 @@ CONFIG_FILES=(
     "$IPV4_IN_PORTS_FILE" "$IPV4_OUT_PORTS_FILE"
     "$IPV6_IN_PORTS_FILE" "$IPV6_OUT_PORTS_FILE"
     "$IPV4_BLACKLIST_FILE" "$IPV6_BLACKLIST_FILE"
+    "$USER_CT_FILE_IPv4" "$USER_CT_FILE_IPv6"
     "$USER_WHITELIST_FILE"
 )
 
@@ -116,7 +119,14 @@ table $ipver nftban_tbl_${iface} {
 EOF
 
     generate_port_rules "$iface" "$in_ports" "iifname"
-
+# CT TRACKING PART
+# Conditionally include the correct CT limits file optional
+   if [[ "$ipver" == "ip" ]]; then
+    echo "    include \"$BASE_DIR/nftban-nfttables-ct-ipv4.conf.local\"" >> "$OUTPUT_FILE"
+   elif [[ "$ipver" == "ip6" ]]; then
+     echo "    include \"$BASE_DIR/nftban-nfttables-ct-ipv6.conf.local\"" >> "$OUTPUT_FILE"
+   fi
+    
     echo "    }" >> "$OUTPUT_FILE"
 
     echo "    chain nftban_output_${iface}_${ipver} { type filter hook output priority 0; policy accept;" >> "$OUTPUT_FILE"
