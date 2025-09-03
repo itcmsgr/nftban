@@ -1,6 +1,6 @@
 #!/bin/bash
 ################################################################################
-# Script: nftban_init_conf.sh
+# Script: nftban_init_nftables_conf.sh
 #
 # Version: 1.3.0
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
