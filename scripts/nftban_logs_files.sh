@@ -3,7 +3,7 @@
 # Version: 1.0.0
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Description:
-#   Check logs location 
+#   Check logs location  FOR TODO FUTURE CODE
 ################################################################################
 
 #!/bin/bash
