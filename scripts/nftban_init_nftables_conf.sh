@@ -119,13 +119,13 @@ table $ipver nftban_tbl_${iface} {
 EOF
 
     generate_port_rules "$iface" "$in_ports" "iifname"
-# CT TRACKING PART
-# Conditionally include the correct CT limits file optional
-   if [[ "$ipver" == "ip" ]]; then
-    echo "    include \"$BASE_DIR/nftban-nfttables-ct-ipv4.conf.local\"" >> "$OUTPUT_FILE"
-   elif [[ "$ipver" == "ip6" ]]; then
-     echo "    include \"$BASE_DIR/nftban-nfttables-ct-ipv6.conf.local\"" >> "$OUTPUT_FILE"
-   fi
+
+# CT TRACKING PART NEED SEPARATE FILES PER SERVICE VIEW TEMPLATES FOR EXAMPLES INIT WITHOUT ANY LIMIT CT
+ # Conditionally include the correct CT limits file
+        echo "        include \"$BASE_DIR/nftban-nfttables-ct-ipv4.conf.local\"" >> "$OUTPUT_FILE"
+    elif [[ "$ipver" == "ip6" ]]; then
+        echo "        include \"$BASE_DIR/nftban-nfttables-ct-ipv6.conf.local\"" >> "$OUTPUT_FILE"
+    fi
     
     echo "    }" >> "$OUTPUT_FILE"
 
