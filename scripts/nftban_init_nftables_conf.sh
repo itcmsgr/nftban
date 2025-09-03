@@ -12,8 +12,11 @@
 #  - Templates to initialize missing files
 #  - Layered firewall: blacklist -> whitelist -> allowed ports → established connections
 #  - IPv4/IPv6 separation per interface
-#  - TCP/UDP separation per port
+#  - Dynamic SSH Port Detection: It reads the SSH port directly from /etc/ssh/sshd_config and defaults to 22 if it cannot be found.
+#  - Protocol-Aware Port Rules: The script now correctly parses the port configuration files for TCP, UDP, or both, based on the port/protocol format (80/T, 53/U, 22/B).
 ################################################################################
+
+#!/bin/bash
 
 # --- Configuration ---
 BASE_DIR="/etc/nftban/config"
@@ -22,6 +25,7 @@ BASE_DIR_INIT="/etc/nftban/templates"
 # --- Logging ---
 LOG_DIR="$BASE_DIR/logs"
 LOG_FILE="$LOG_DIR/install_nftables_process_$(date +%Y-%m-%d-%H%M%S).log"
+mkdir -p "$LOG_DIR"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 # Config files
@@ -46,6 +50,7 @@ CONFIG_FILES=(
     "$USER_WHITELIST_FILE"
 )
 
+echo "--- Initializing missing configuration files from templates ---"
 for file in "${CONFIG_FILES[@]}"; do
     fname=$(basename "$file")
     template="$BASE_DIR_INIT/$fname"
@@ -68,11 +73,19 @@ ip_exists_in_file() {
 }
 
 # --- Start ruleset ---
-echo "Flushing existing nftables ruleset..."
+echo "--- Flushing existing nftables ruleset and starting generation ---"
 echo "flush ruleset" > "$OUTPUT_FILE"
 
+# --- Dynamically get SSH port ---
+SSH_PORT=$(grep -E '^Port' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -n 1)
+if [[ -z "$SSH_PORT" ]]; then
+    SSH_PORT="22"
+    echo "Warning: SSH port not found in /etc/ssh/sshd_config, defaulting to 22."
+fi
+echo "Detected SSH Port: $SSH_PORT"
+
 # --- Whitelist local system IPs ---
-echo "Checking and adding local IPs to $SYSTEM_WHITELIST_FILE..."
+echo "--- Checking and adding local IPs to system whitelist ---"
 LOCAL_IPS=$(hostname -I | tr ' ' '\n' | grep -v '^$')
 if [[ -n "$LOCAL_IPS" ]]; then
     [[ ! -f "$SYSTEM_WHITELIST_FILE" ]] && echo "# Local machine IPs - do not remove" > "$SYSTEM_WHITELIST_FILE"
@@ -85,13 +98,14 @@ if [[ -n "$LOCAL_IPS" ]]; then
 fi
 
 # --- Collect whitelist & blacklist IPs ---
-ALL_WHITELIST_IPS=$(cat "$SYSTEM_WHITELIST_FILE" "$USER_WHITELIST_FILE" 2>/dev/null | sort -u)
+ALL_WHITELIST_IPS=$(cat "$SYSTEM_WHITELIST_FILE" "$USER_WHITELIST_FILE" 2>/dev/null | sort -u | grep -v '^$')
 IPV4_WHITELIST_IPS=$(echo "$ALL_WHITELIST_IPS" | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}" | tr '\n' ',' | sed 's/,$//')
 IPV6_WHITELIST_IPS=$(echo "$ALL_WHITELIST_IPS" | grep -oE "([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}" | tr '\n' ',' | sed 's/,$//')
 IPV4_BLACKLIST_IPS=$(grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}" "$IPV4_BLACKLIST_FILE" 2>/dev/null | tr '\n' ',' | sed 's/,$//')
 IPV6_BLACKLIST_IPS=$(grep -oE "([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}" "$IPV6_BLACKLIST_FILE" 2>/dev/null | tr '\n' ',' | sed 's/,$//')
 
 # --- Global loopback rules ---
+echo "--- Adding global loopback rules ---"
 {
     echo "add table ip filter_global"
     echo "add chain ip filter_global input { type filter hook input priority 0; policy accept; }"
@@ -119,7 +133,9 @@ for IFACE in $INTERFACES; do
         echo "        iifname \"$IFACE\" jump drop_blacklist_${IFACE}_ipv4"
         echo "        iifname \"$IFACE\" ip saddr @whitelist_v4 accept"
         echo "        iifname \"$IFACE\" ct state established,related accept"
-        # --- MODIFIED SECTION ---
+        # Always allow SSH on the detected port
+        echo "        iifname \"$IFACE\" tcp dport $SSH_PORT accept"
+        # Add rules for ports from the input file
         [[ -f "$IPV4_IN_PORTS_FILE" ]] && while read -r line; do
             if [[ -n "$line" && ! "$line" =~ ^# ]]; then
                 port=$(echo "$line" | cut -d'/' -f1)
@@ -136,16 +152,14 @@ for IFACE in $INTERFACES; do
                         echo "        iifname \"$IFACE\" udp dport $port accept"
                         ;;
                     *)
-                        echo "Warning: Invalid protocol specified for port $port in $IPV4_IN_PORTS_FILE" >&2
+                        echo "Warning: Invalid protocol '$proto' specified for port '$port' in $IPV4_IN_PORTS_FILE" >&2
                         ;;
                 esac
             fi
         done < "$IPV4_IN_PORTS_FILE"
-        # --- END OF MODIFIED SECTION ---
         echo "    }"
         echo "    chain output_${IFACE} {"
         echo "        type filter hook output priority 0; policy accept;"
-        # --- MODIFIED SECTION ---
         [[ -f "$IPV4_OUT_PORTS_FILE" ]] && while read -r line; do
             if [[ -n "$line" && ! "$line" =~ ^# ]]; then
                 port=$(echo "$line" | cut -d'/' -f1)
@@ -162,12 +176,11 @@ for IFACE in $INTERFACES; do
                         echo "        oifname \"$IFACE\" udp dport $port accept"
                         ;;
                     *)
-                        echo "Warning: Invalid protocol specified for port $port in $IPV4_OUT_PORTS_FILE" >&2
+                        echo "Warning: Invalid protocol '$proto' specified for port '$port' in $IPV4_OUT_PORTS_FILE" >&2
                         ;;
                 esac
             fi
         done < "$IPV4_OUT_PORTS_FILE"
-        # --- END OF MODIFIED SECTION ---
         echo "    }"
         echo "}"
     } >> "$OUTPUT_FILE"
@@ -183,7 +196,9 @@ for IFACE in $INTERFACES; do
         echo "        iifname \"$IFACE\" jump drop_blacklist_${IFACE}_ipv6"
         echo "        iifname \"$IFACE\" ip6 saddr @whitelist_v6 accept"
         echo "        iifname \"$IFACE\" ct state established,related accept"
-        # --- MODIFIED SECTION ---
+        # Always allow SSH on the detected port
+        echo "        iifname \"$IFACE\" tcp dport $SSH_PORT accept"
+        # Add rules for ports from the input file
         [[ -f "$IPV6_IN_PORTS_FILE" ]] && while read -r line; do
             if [[ -n "$line" && ! "$line" =~ ^# ]]; then
                 port=$(echo "$line" | cut -d'/' -f1)
@@ -200,16 +215,14 @@ for IFACE in $INTERFACES; do
                         echo "        iifname \"$IFACE\" udp dport $port accept"
                         ;;
                     *)
-                        echo "Warning: Invalid protocol specified for port $port in $IPV6_IN_PORTS_FILE" >&2
+                        echo "Warning: Invalid protocol '$proto' specified for port '$port' in $IPV6_IN_PORTS_FILE" >&2
                         ;;
                 esac
             fi
         done < "$IPV6_IN_PORTS_FILE"
-        # --- END OF MODIFIED SECTION ---
         echo "    }"
         echo "    chain output_${IFACE} {"
         echo "        type filter hook output priority 0; policy accept;"
-        # --- MODIFIED SECTION ---
         [[ -f "$IPV6_OUT_PORTS_FILE" ]] && while read -r line; do
             if [[ -n "$line" && ! "$line" =~ ^# ]]; then
                 port=$(echo "$line" | cut -d'/' -f1)
@@ -226,26 +239,26 @@ for IFACE in $INTERFACES; do
                         echo "        oifname \"$IFACE\" udp dport $port accept"
                         ;;
                     *)
-                        echo "Warning: Invalid protocol specified for port $port in $IPV6_OUT_PORTS_FILE" >&2
+                        echo "Warning: Invalid protocol '$proto' specified for port '$port' in $IPV6_OUT_PORTS_FILE" >&2
                         ;;
                 esac
             fi
         done < "$IPV6_OUT_PORTS_FILE"
-        # --- END OF MODIFIED SECTION ---
         echo "    }"
         echo "}"
     } >> "$OUTPUT_FILE"
 done
 
 # --- Apply ruleset ---
-echo "Applying nftables ruleset..."
+echo "--- Applying nftables ruleset ---"
 if ! sudo nft -f "$OUTPUT_FILE"; then
-    echo "Failed to load nftables ruleset. Check $OUTPUT_FILE for errors."
+    echo "Error: Failed to load nftables ruleset. Check $OUTPUT_FILE for errors."
     exit 1
 fi
+echo "nftables ruleset loaded successfully."
 
 # --- Update system whitelist from active ruleset ---
-echo "Updating system whitelist from active ruleset..."
+echo "--- Updating system whitelist from active ruleset ---"
 sudo nft list ruleset | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}|([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}" | sort -u | while read ip; do
     if ! ip_exists_in_file "$ip" "$SYSTEM_WHITELIST_FILE"; then
         echo "$ip" >> "$SYSTEM_WHITELIST_FILE"
@@ -256,6 +269,6 @@ done
 # --- Save final configuration snapshot ---
 FINAL_CONFIG_SNAPSHOT="$LOG_DIR/nftables_final_config_$(date +%Y-%m-%d-%H%M%S).conf"
 cp "$OUTPUT_FILE" "$FINAL_CONFIG_SNAPSHOT"
-echo "Final configuration saved to: $FINAL_CONFIG_SNAPSHOT"
+echo "--- Final configuration saved to: $FINAL_CONFIG_SNAPSHOT ---"
 
-echo "nftables ruleset loaded and whitelists updated successfully."
+echo "nftables ruleset generation and application completed successfully."
