@@ -3,7 +3,7 @@
 ################################################################################
 # Script: nftban_init.sh
 #
-# Version: 1.1.0
+# Version: 1.2.0
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # This script automates the installation and configuration of Fail2Ban
@@ -14,12 +14,14 @@
 #
 ################################################################################
 
+#!/bin/bash
+
+# --- Script Configuration ---
 BASE_DIR="/etc/nftban"
-LOG_DIR="$BASE_DIR/logs"
-LOG_FILE="$LOG_DIR/install_$(date +%Y-%m-%d-%H%M%S).log"
 GITHUB_REPO="https://github.com/itcmsgr/nftban"
 TMP_DIR="/tmp/nftban-repo"
 
+# --- Package and Service Definitions ---
 FAIL2BAN_PKG="fail2ban"
 NFTABLES_PKG="nftables"
 IPTABLES_PKG="iptables"
@@ -28,7 +30,7 @@ UFW_PKG="ufw"
 
 # --- Root Check ---
 if [[ $EUID -ne 0 ]]; then
-    echo "This script must be run as root."
+    echo "This script must be run as root." >&2
     exit 1
 fi
 
@@ -50,71 +52,61 @@ elif command -v apt &>/dev/null; then
     PKG_INSTALL="apt install -y"
     apt update -y
 else
-    echo "Supported package manager not found (dnf/yum/apt)."
+    echo "Supported package manager not found (dnf/yum/apt)." >&2
     exit 1
 fi
 
+# --- Setup Logging ---
+LOG_DIR="/var/log/nftban"
+LOG_FILE="$LOG_DIR/install_$(date +%Y-%m-%d-%H%M%S).log"
+mkdir -p "$LOG_DIR"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
+echo "--- Starting nftban installation using $PKG_MGR ---"
+
 # --- Directory Tree Initialization ---
-if [ ! -d "$BASE_DIR" ]; then
-    echo "Creating directory structure under $BASE_DIR..."
-    mkdir -p "$BASE_DIR"/{config,scripts,logs,backups,templates,bin}
-    echo "Directory Tree created."
-else
-    echo "Directory structure already exists."
-fi
+echo "Creating directory structure under $BASE_DIR..."
+mkdir -p "$BASE_DIR"/{config,scripts,logs,backups,templates,bin} || { echo "Failed to create directory structure."; exit 1; }
 
-
-# --- Setup log directory and symlink ---
-if [[ ! -d /var/log/nftban ]]; then
-    mkdir -p /var/log/nftban
-fi
+# Create a symlink for logs, ensuring it's pointing to the correct location
 if [[ ! -L "$BASE_DIR/logs" ]]; then
-    rm -rf "$BASE_DIR/logs"
-    ln -s /var/log/nftban "$BASE_DIR/logs"
+    ln -sf "$LOG_DIR" "$BASE_DIR/logs"
+    echo "Symlink created from $BASE_DIR/logs to $LOG_DIR."
 fi
 
-# --- Redirect Logs ---
-exec &> "$LOG_FILE"
+# --- Package Installation and Removal ---
 
-echo "Starting installation using $PKG_MGR"
-echo "--------------------------------------------------------"
-
-# --- Fail2Ban ---
+# Check and install Fail2Ban
 echo "Checking for Fail2Ban..."
 if ! $PKG_CHECK "$FAIL2BAN_PKG" &>/dev/null; then
     echo "$FAIL2BAN_PKG not installed. Installing..."
-    $PKG_INSTALL "$FAIL2BAN_PKG"
-    [[ $? -eq 0 ]] && echo "$FAIL2BAN_PKG installed successfully." || { echo "Failed to install $FAIL2BAN_PKG."; exit 1; }
+    $PKG_INSTALL "$FAIL2BAN_PKG" || { echo "Failed to install $FAIL2BAN_PKG."; exit 1; }
 else
     echo "$FAIL2BAN_PKG already installed."
 fi
 
-# --- Remove Other Firewalls (FirewallD, UFW) ---
+# Remove other firewalls
 echo "Checking for other firewall packages..."
 
 # Remove FirewallD
 if $PKG_CHECK "$FIREWALLD_PKG" &>/dev/null; then
     echo "$FIREWALLD_PKG found. Stopping and disabling service..."
-    systemctl stop firewalld 2>/dev/null || true
-    systemctl disable firewalld 2>/dev/null || true
+    systemctl stop firewalld &>/dev/null
+    systemctl disable firewalld &>/dev/null
     echo "Removing $FIREWALLD_PKG..."
     $PKG_REMOVE "$FIREWALLD_PKG"
-else
-    echo "$FIREWALLD_PKG not installed."
 fi
 
 # Remove UFW
 if $PKG_CHECK "$UFW_PKG" &>/dev/null; then
     echo "$UFW_PKG found. Stopping and disabling service..."
-    systemctl stop ufw 2>/dev/null || true
-    systemctl disable ufw 2>/dev/null || true
+    systemctl stop ufw &>/dev/null
+    systemctl disable ufw &>/dev/null
     echo "Removing $UFW_PKG..."
     $PKG_REMOVE "$UFW_PKG"
-else
-    echo "$UFW_PKG not installed."
 fi
 
-# --- NFTables & Remove IPTables ---
+# Install NFTables and remove IPTables
 echo "Checking for NFTables..."
 if ! $PKG_CHECK "$NFTABLES_PKG" &>/dev/null; then
     echo "$NFTABLES_PKG not installed. Installing..."
@@ -122,8 +114,7 @@ if ! $PKG_CHECK "$NFTABLES_PKG" &>/dev/null; then
         echo "$IPTABLES_PKG found. Removing..."
         $PKG_REMOVE "$IPTABLES_PKG"
     fi
-    $PKG_INSTALL "$NFTABLES_PKG"
-    [[ $? -eq 0 ]] && echo "$NFTABLES_PKG installed successfully." || { echo "Failed to install $NFTABLES_PKG."; exit 1; }
+    $PKG_INSTALL "$NFTABLES_PKG" || { echo "Failed to install $NFTABLES_PKG."; exit 1; }
 else
     echo "$NFTABLES_PKG already installed."
     if $PKG_CHECK "$IPTABLES_PKG" &>/dev/null; then
@@ -131,30 +122,37 @@ else
     fi
 fi
 
-# --- Git ---
+# Check and install Git
 echo "Checking for Git..."
 if ! command -v git &>/dev/null; then
     echo "Git is not installed. Installing..."
     $PKG_INSTALL git || { echo "Failed to install Git."; exit 1; }
 fi
 
-# --- Backup ---
+# --- Backup Existing Configuration ---
 echo "Creating backup..."
 TIMESTAMP=$(date +%Y%m%d%H%M%S)
 BACKUP_FILE="$BASE_DIR/backups/nftban_${TIMESTAMP}_bckp.tar.gz"
 tar -czf "$BACKUP_FILE" -C "$(dirname "$BASE_DIR")" "$(basename "$BASE_DIR")" --exclude='*/backups/*'
-[[ $? -eq 0 ]] && echo "Backup created: $BACKUP_FILE" || echo "Backup failed. Continuing..."
+if [[ $? -eq 0 ]]; then
+    echo "Backup created: $BACKUP_FILE"
+else
+    echo "Backup failed. Continuing..."
+fi
 
-# --- Sync Repo ---
+# --- Sync Repository Files ---
 echo "Syncing repository..."
 rm -rf "$TMP_DIR"
-git clone "$GITHUB_REPO" "$TMP_DIR" || { echo "Failed to clone repo."; exit 1; }
-#cp -rf "$TMP_DIR"/config/* "$BASE_DIR/config/"
+git clone --depth 1 "$GITHUB_REPO" "$TMP_DIR" || { echo "Failed to clone repo."; exit 1; }
+
+# Copying files from the temporary directory to the correct location
+cp -rf "$TMP_DIR"/config/* "$BASE_DIR/config/"
 cp -rf "$TMP_DIR"/scripts/* "$BASE_DIR/scripts/"
 cp -rf "$TMP_DIR"/templates/* "$BASE_DIR/templates/"
 cp -f "$TMP_DIR"/README.md "$BASE_DIR/"
+
+# Clean up
 rm -rf "$TMP_DIR"
 
-echo "Repository synced."
-echo "--------------------------------------------------------"
-echo "Installation complete. Logs: $LOG_FILE"
+echo "Repository synced successfully."
+echo "--- Installation complete. Logs are available in $LOG_FILE ---"
