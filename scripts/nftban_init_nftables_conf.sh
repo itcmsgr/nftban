@@ -2,7 +2,7 @@
 ################################################################################
 # Script: nftban_init_nftables_conf.sh
 #
-# Version: 1.4.0
+# Version: 1.4.1
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # Automates nftables configuration on Linux (RHEL 8+/Fedora/CentOS/Debian/Ubuntu)
@@ -14,6 +14,9 @@
 #  - IPv4/IPv6 separation per interface
 #  - Dynamic SSH Port Detection: It reads the SSH port directly from /etc/ssh/sshd_config and defaults to 22 if it cannot be found.
 #  - Protocol-Aware Port Rules: The script parses the port configuration files for TCP, UDP, or both, based on the port/protocol format (80/T, 53/U, 22/B).
+# All tables: nftban_global, nftban_tbl_<IFACE>.
+# All sets: nftban_whitelist_v4/v6, nftban_blacklist_v4/v6.
+# All chains: nftban_drop_blacklist_<IFACE>_v4/v6, nftban_input_<IFACE>_v4/v6, nftban_output_<IFACE>_v4/v6.
 ################################################################################
 
 #!/bin/bash
