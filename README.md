@@ -31,7 +31,7 @@ UNDER Development
 ├── scripts/          # Main scripts and helpers
 ├── logs/             # Custom logs or log parsing
 ├── backups/          # Backup of rules or configs
-├── templates/        # Rule templates or jail templates
+├── templates/        # Initial nfttables rule templates and fail2ban jail templates
 └── README.md         # Documentation
 ```
 
