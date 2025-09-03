@@ -22,13 +22,14 @@ Created by Antonios Voulvoulis. Contributions are welcome under the terms of the
 - IPv4 & IPv6 bans are managed separately via configuration lists
 
 ## 📦 Installation
-Fetch installation script from GitHub via curl and run it directly on your server, without manually saving it first. You can do this safely in one line.
+Run the installation script directly from GitHub using `curl` — no need to save it manually:
 sudo bash -c "$(curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install_nftban.sh)"
-Optional: Dry-run first
-If you want to preview the script without running it, you can just fetch it:
-curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install_nftban.sh | less
+⚠️ Note: This script must be run as root!
+
+🧪 Optional: Dry-run
+If you'd like to preview the script before executing it:
+rl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install_nftban.sh | less
 This way, you can inspect it before executing.
-NOTE: THIS SCRIPT MUST BE RUN AS ROOT!  
 
 ## 📦 Unistall
 Pending implementation
