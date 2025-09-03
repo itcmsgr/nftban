@@ -11,7 +11,7 @@
 # It ensures both packages are installed and removes iptables to avoid conflicts.
 # After setup, it initializes the environment by copying all relevant files
 # from the GitHub repository into the appropriate system directories.
-#
+# ** NOTE: THIS SCRIPT MUST BE RUN AS ROOT!
 ################################################################################
 
 #!/bin/bash
