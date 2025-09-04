@@ -1,1 +1,9 @@
+################################################################################
+# File : nftban_created_files.list
+#
+# Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
+# Description:
+# This file keeps record all files created outside of nftables and delete them 
+# Used by nftban_unistall.sh
+################################################################################
 
