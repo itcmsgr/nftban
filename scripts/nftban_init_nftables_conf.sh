@@ -2,7 +2,7 @@
 ################################################################################
 # Script: nftban_init_nftables_conf.sh
 #
-# Version: 1.5
+# Version: 1.6
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # Automates nftables configuration on Linux (RHEL 8+/Fedora/CentOS/Debian/Ubuntu)
@@ -17,6 +17,8 @@
 # All tables: nftban_global, nftban_tbl_<IFACE>.
 # All sets: nftban_whitelist_v4/v6, nftban_blacklist_v4/v6.
 # All chains: nftban_drop_blacklist_<IFACE>_v4/v6, nftban_input_<IFACE>_v4/v6, nftban_output_<IFACE>_v4/v6.
+# Auto remove a whitelist from blacklist lists
+# Create a file with unique IPs to used from fail2ban
 ################################################################################
 
 # --- Configuration ---
@@ -41,6 +43,7 @@ USER_WHITELIST_FILE="$BASE_DIR/nftban-configuration-user-whitelist_ips.conf.loca
 USER_CT_FILE_IPv4="$BASE_DIR/nftban-nfttables-ct-ipv4.conf.local"
 USER_CT_FILE_IPv6="$BASE_DIR/nftban-nfttables-ct-ipv6.conf.local"
 OUTPUT_FILE="$BASE_DIR/nft_rules.conf.local"
+FAILE2BAN_WHITELIST="$BASE_DIR/nftban-faile2ban-ip-whitelist.conf.local"
 
 # --- Initialize missing config files from templates ---
 CONFIG_FILES=(
@@ -120,15 +123,13 @@ EOF
 
     generate_port_rules "$iface" "$in_ports" "iifname"
 
-# CT TRACKING PART NEED SEPARATE FILES PER SERVICE VIEW TEMPLATES FOR EXAMPLES INIT WITHOUT ANY LIMIT CT
- # Conditionally include the correct CT limits file
+    if [[ "$ipver" == "ip" ]]; then
         echo "        include \"$BASE_DIR/nftban-nfttables-ct-ipv4.conf.local\"" >> "$OUTPUT_FILE"
     elif [[ "$ipver" == "ip6" ]]; then
         echo "        include \"$BASE_DIR/nftban-nfttables-ct-ipv6.conf.local\"" >> "$OUTPUT_FILE"
     fi
-    
-    echo "    }" >> "$OUTPUT_FILE"
 
+    echo "    }" >> "$OUTPUT_FILE"
     echo "    chain nftban_output_${iface}_${ipver} { type filter hook output priority 0; policy accept;" >> "$OUTPUT_FILE"
     generate_port_rules "$iface" "$out_ports" "oifname"
     echo "    }" >> "$OUTPUT_FILE"
@@ -153,6 +154,22 @@ done
 
 # --- Collect whitelist & blacklist IPs ---
 ALL_WHITELIST_IPS=$(cat "$SYSTEM_WHITELIST_FILE" "$USER_WHITELIST_FILE" 2>/dev/null | sort -u | grep -v '^$')
+
+# --- Ensure whitelist IPs are NOT in blacklist ---
+if [[ -f "$IPV4_BLACKLIST_FILE" ]]; then
+    grep -vFf <(echo "$ALL_WHITELIST_IPS" | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}") "$IPV4_BLACKLIST_FILE" > "${IPV4_BLACKLIST_FILE}.tmp"
+    mv "${IPV4_BLACKLIST_FILE}.tmp" "$IPV4_BLACKLIST_FILE"
+fi
+
+if [[ -f "$IPV6_BLACKLIST_FILE" ]]; then
+    grep -vFf <(echo "$ALL_WHITELIST_IPS" | grep -oE "([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}") "$IPV6_BLACKLIST_FILE" > "${IPV6_BLACKLIST_FILE}.tmp"
+    mv "${IPV6_BLACKLIST_FILE}.tmp" "$IPV6_BLACKLIST_FILE"
+fi
+
+# --- Save Fail2Ban-compatible whitelist ---
+echo "$ALL_WHITELIST_IPS" | sort -u > "$FAILE2BAN_WHITELIST"
+echo "Fail2Ban whitelist saved to: $FAILE2BAN_WHITELIST"
+
 IPV4_WHITELIST=$(echo "$ALL_WHITELIST_IPS" | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}" | tr '\n' ',' | sed 's/,$//')
 IPV6_WHITELIST=$(echo "$ALL_WHITELIST_IPS" | grep -oE "([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}" | tr '\n' ',' | sed 's/,$//')
 IPV4_BLACKLIST=$(grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}" "$IPV4_BLACKLIST_FILE" 2>/dev/null | tr '\n' ',' | sed 's/,$//')
@@ -190,3 +207,4 @@ FINAL_CONFIG_SNAPSHOT="$LOG_DIR/nftables_final_config_$(date +%Y-%m-%d-%H%M%S).c
 cp "$OUTPUT_FILE" "$FINAL_CONFIG_SNAPSHOT"
 echo "Final configuration saved to: $FINAL_CONFIG_SNAPSHOT"
 echo "nftables ruleset generation and application completed."
+
