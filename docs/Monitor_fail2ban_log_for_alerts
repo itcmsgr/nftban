@@ -1,0 +1,208 @@
+can i use fail2ban to monitor logins succesfull and send only alerts ?
+Absolutely! Yes, you can use fail2ban to monitor successful logins and send alerts without banning anyone. This is a great security monitoring technique.
+
+Here's how to set it up:
+
+1. Create a Custom "Alert-Only" Action
+Create /etc/fail2ban/action.d/alert-only.conf:
+
+ini
+[Definition]
+
+# Action for when monitoring starts
+actionstart = 
+    if [ "%(<notify_start>s)" = "true" ]; then
+        printf "Fail2Ban alert monitoring %(<name>)s started at %(timestamp)s\n" | 
+        mail -s "Fail2Ban Alert: %(<name>)s monitoring started" "%(<destemail>)s"
+    fi
+
+# Action for when monitoring stops
+actionstop = 
+    if [ "%(<notify_stop>s)" = "true" ]; then
+        printf "Fail2Ban alert monitoring %(<name>)s stopped at %(timestamp)s\n" | 
+        mail -s "Fail2Ban Alert: %(<name>)s monitoring stopped" "%(<destemail>)s"
+    fi
+
+# Main action - sends alert but DOES NOT BAN
+actionban = 
+    IP=<ip>
+    SUBJECT="ALERT: Successful login detected on %(<name>)s"
+    BODY="SUCCESSFUL LOGIN ALERT:\n\n"
+    BODY="$BODY IP: $IP\n"
+    BODY="$BODY Host: %(<host>)s\n"
+    BODY="$BODY User: %(<user>)s\n"
+    BODY="$BODY Service: %(<name>)s\n"
+    BODY="$BODY Time: %(timestamp)s\n"
+    BODY="$BODY Log: %(<logpath>)s\n"
+    
+    # Add whois info if enabled
+    if [ "%(<include_whois>s)" = "true" ] && [ -x "$(command -v whois)" ]; then
+        WHOIS=$(whois $IP 2>/dev/null | head -20)
+        BODY="$BODY\nWhois Info:\n$WHOIS\n"
+    fi
+    
+    printf "$BODY" | mail -s "$SUBJECT" "%(<destemail>)s"
+    
+    echo "Alert sent for successful login from IP: $IP"
+
+# No unban action needed since we don't ban
+actionunban =
+
+# Required but empty
+actioncheck =
+
+[Init]
+
+# Default parameters
+destemail = root@localhost
+notify_start = true
+notify_stop = true
+include_whois = true
+2. Create Filter for Successful Logins
+For SSH successful logins, create /etc/fail2ban/filter.d/sshd-successful.conf:
+
+ini
+[Definition]
+failregex = ^%(__prefix_line)sAccepted publickey for <F-USER>(\S+)</F-USER> from <H> port \d+ ssh2\s*$
+            ^%(__prefix_line)sAccepted password for <F-USER>(\S+)</F-USER> from <H> port \d+ ssh2\s*$
+            ^%(__prefix_line)sAccepted .* for <F-USER>(\S+)</F-USER> from <H> port \d+
+
+ignoreregex =
+datepattern = {^LN-BEG}ExYear(?P<_sep>[-/.])?(?P<mon>\d{1,2})(?P=_sep)(?P<day>\d{1,2})(?:|(?P=_sep)(?P<year>\d{2,4}))?(?P<hhmm>[\sT](?P<hour>[0-2]{1,1}[0-9]{1,1})(?:|:(?P<min>[0-5]{1,1}[0-9]{1,1})(?:|:(?P<sec>[0-5]{1,1}[0-9]{1,1})(?:|\.(?P<msec>[0-9]{1,6})))?)?)?\s*(?P<tz>Z|[+-]\d{2}:?(?:\d{2})?)?\s*(?P<additional>.*)?
+For system-wide successful logins, create /etc/fail2ban/filter.d/system-login-success.conf:
+
+ini
+[Definition]
+failregex = ^%(__prefix_line)ssession opened for user <F-USER>(\S+)</F-USER> by \(uid=\d+\)\s*$
+            ^%(__prefix_line)sLOGIN ON .* BY <F-USER>(\S+)</F-USER> FROM <H>\s*$
+            ^%(__prefix_line)sUser <F-USER>(\S+)</F-USER> logged in from <H>\s*$
+
+ignoreregex =
+datepattern = {^LN-BEG}ExYear(?P<_sep>[-/.])?(?P<mon>\d{1,2})(?P=_sep)(?P<day>\d{1,2})(?:|(?P=_sep)(?P<year>\d{2,4}))?(?P<hhmm>[\sT](?P<hour>[0-2]{1,1}[0-9]{1,1})(?:|:(?P<min>[0-5]{1,1}[0-9]{1,1})(?:|:(?P<sec>[0-5]{1,1}[0-9]{1,1})(?:|\.(?P<msec>[0-9]{1,6})))?)?)?\s*(?P<tz>Z|[+-]\d{2}:?(?:\d{2})?)?\s*(?P<additional>.*)?
+3. Create Alert-Only Jails
+Create /etc/fail2ban/jail.d/login-alerts.conf:
+
+ini
+[DEFAULT]
+# Global settings for alert jails
+destemail = security-alerts@yourdomain.com
+bantime = -1  # Never ban - alerts only
+maxretry = 1  # Alert on every successful login
+findtime = 31536000  # 1 year - effectively alert every time
+
+# SSH Successful Login Alerts
+[ssh-successful-logins]
+enabled = true
+port = ssh
+logpath = /var/log/auth.log
+filter = sshd-successful
+action = alert-only[destemail="ssh-alerts@yourdomain.com"]
+
+# System-Wide Login Alerts  
+[system-successful-logins]
+enabled = true
+logpath = /var/log/auth.log
+filter = system-login-success
+action = alert-only[destemail="login-alerts@yourdomain.com"]
+
+# sudo Alerts
+[sudo-usage]
+enabled = true
+logpath = /var/log/auth.log
+filter = sudo
+failregex = ^%(__prefix_line)s\s*<F-USER>(\S+)</F-USER> : TTY=\S+ ; PWD=.* ; USER=root ; COMMAND=.*$
+action = alert-only[destemail="sudo-alerts@yourdomain.com"]
+
+# Root Login Alerts (if you permit root logins)
+[root-logins]
+enabled = true
+logpath = /var/log/auth.log
+filter = sshd
+failregex = ^%(__prefix_line)sAccepted .* for root from <H>
+action = alert-only[destemail="root-login-alerts@yourdomain.com"]
+4. Alternative: Use Existing Filters with Custom Actions
+You can also use existing filters but override the action:
+
+ini
+# Use standard SSH filter but only alert
+[ssh-login-alerts]
+enabled = true
+port = ssh
+logpath = /var/log/auth.log
+filter = sshd
+# Critical: These settings prevent actual banning
+maxretry = 999999
+findtime = 31536000
+bantime = -1
+action = alert-only[destemail="ssh-logins@yourdomain.com"]
+5. Advanced: Rate-Limited Alerts
+If you want alerts but not for EVERY login (to avoid spam):
+
+ini
+[ssh-successful-daily]
+enabled = true
+port = ssh
+logpath = /var/log/auth.log
+filter = sshd-successful
+# Alert only once per IP per day
+maxretry = 1
+findtime = 86400
+bantime = -1
+action = alert-only[destemail="ssh-daily@yourdomain.com"]
+6. Test Your Configuration
+bash
+# Test filter patterns
+sudo fail2ban-regex /var/log/auth.log /etc/fail2ban/filter.d/sshd-successful.conf
+
+# Check configuration
+sudo fail2ban-client -t
+
+# Reload fail2ban
+sudo systemctl reload fail2ban
+
+# Test with a manual trigger (generate a successful login)
+ssh localhost  # from another terminal
+
+# Check jail status
+sudo fail2ban-client status ssh-successful-logins
+7. Verify It's Working
+Check that alerts are being sent but no bans are occurring:
+
+bash
+# Check that no IPs are actually being banned
+sudo fail2ban-client status
+
+# Monitor fail2ban log for alerts
+sudo tail -f /var/log/fail2ban.log | grep -i alert
+
+# Check mail logs for sent alerts
+sudo tail -f /var/log/mail.log
+Key Configuration Points:
+bantime = -1: Never ban (crucial for alert-only)
+
+maxretry = 1: Alert on every occurrence
+
+findtime = large value: Effectively alert every time
+
+Custom action: Uses alert-only instead of banning actions
+
+No ban actions: The action doesn't call iptables/nftables
+
+What You'll Get:
+✅ Email alerts for every successful SSH login
+
+✅ Alerts for system logins
+
+✅ sudo usage notifications
+
+✅ Root login alerts (if enabled)
+
+✅ No actual blocking - pure monitoring
+
+✅ Whois information in alerts
+
+✅ User context in notifications
+
+This gives you excellent security visibility without affecting legitimate users! 🔍📧
+
+This response is AI-generated, for reference only.
