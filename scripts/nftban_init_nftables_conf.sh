@@ -21,6 +21,29 @@
 # Create a file with unique IPs to used from fail2ban
 ################################################################################
 
+#!/bin/bash
+################################################################################
+# Script: nftban_init_nftables_conf.sh
+#
+# Version: 1.6.1
+# Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
+# Description:
+# Automates nftables configuration on Linux (RHEL 8+/Fedora/CentOS/Debian/Ubuntu)
+# Features:
+#  - Centralized configuration files under /etc/nftban/config
+#  - Local IP protection: prevents self-lockout
+#  - Templates to initialize missing files
+#  - Layered firewall: blacklist -> whitelist -> allowed ports → established connections
+#  - IPv4/IPv6 separation per interface
+#  - Dynamic SSH Port Detection: It reads the SSH port directly from /etc/ssh/sshd_config and defaults to 22 if it cannot be found.
+#  - Protocol-Aware Port Rules: The script parses the port configuration files for TCP, UDP, or both, based on the port/protocol format (80/T, 53/U, 22/B).
+# All tables: nftban_global, nftban_tbl_<IFACE>.
+# All sets: nftban_whitelist_v4/v6, nftban_blacklist_v4/v6.
+# All chains: nftban_drop_blacklist_<IFACE>_v4/v6, nftban_input_<IFACE>_v4/v6, nftban_output_<IFACE>_v4/v6.
+# Auto remove a whitelist from blacklist lists
+# Create a file with unique IPs to used from fail2ban
+################################################################################
+
 # --- Configuration ---
 BASE_DIR="/etc/nftban/config"
 BASE_DIR_INIT="/etc/nftban/templates"
@@ -106,12 +129,39 @@ generate_interface_chains() {
     local out_ports=$6
     local ssh_port=$7
 
+    # Determine the correct datatype
+    local datatype
+    if [[ "$ipver" == "ip" ]]; then
+        datatype="ipv4_addr"
+    elif [[ "$ipver" == "ip6" ]]; then
+        datatype="ipv6_addr"
+    fi
+
+    # Handle empty sets
+    local whitelist_elements=""
+    if [[ -n "$whitelist" ]]; then
+        whitelist_elements="elements = { $whitelist }"
+    fi
+    
+    local blacklist_elements=""
+    if [[ -n "$blacklist" ]]; then
+        blacklist_elements="elements = { $blacklist }"
+    fi
+
     cat >> "$OUTPUT_FILE" <<EOF
 table $ipver nftban_tbl_${iface} {
-    set nftban_whitelist_${ipver} { type ${ipver}_addr; elements = { $whitelist } }
-    set nftban_blacklist_${ipver} { type ${ipver}_addr; elements = { $blacklist } }
+    set nftban_whitelist_${ipver} {
+        type $datatype;
+        $whitelist_elements
+    }
+    set nftban_blacklist_${ipver} {
+        type $datatype;
+        $blacklist_elements
+    }
 
-    chain nftban_drop_blacklist_${iface}_${ipver} { ${ipver} saddr @nftban_blacklist_${ipver} drop }
+    chain nftban_drop_blacklist_${iface}_${ipver} {
+        $ipver saddr @nftban_blacklist_${ipver} drop
+    }
 
     chain nftban_input_${iface}_${ipver} {
         type filter hook input priority 0; policy drop;
@@ -130,8 +180,14 @@ EOF
     fi
 
     echo "    }" >> "$OUTPUT_FILE"
-    echo "    chain nftban_output_${iface}_${ipver} { type filter hook output priority 0; policy accept;" >> "$OUTPUT_FILE"
+    
+    cat >> "$OUTPUT_FILE" <<EOF
+    chain nftban_output_${iface}_${ipver} {
+        type filter hook output priority 0; policy accept;
+EOF
+
     generate_port_rules "$iface" "$out_ports" "oifname"
+    
     echo "    }" >> "$OUTPUT_FILE"
     echo "}" >> "$OUTPUT_FILE"
 }
@@ -177,12 +233,19 @@ IPV6_BLACKLIST=$(grep -oE "([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}" "$IPV6_BLAC
 
 # --- Global loopback rules ---
 cat >> "$OUTPUT_FILE" <<EOF
-add table ip nftban_global
-add chain ip nftban_global input { type filter hook input priority 0; policy accept; }
-add rule ip nftban_global input iif "lo" accept
-add table ip6 nftban_global
-add chain ip6 nftban_global input { type filter hook input priority 0; policy accept; }
-add rule ip6 nftban_global input iif "lo" accept
+table ip nftban_global {
+    chain input {
+        type filter hook input priority 0; policy accept;
+        iif "lo" accept
+    }
+}
+
+table ip6 nftban_global {
+    chain input {
+        type filter hook input priority 0; policy accept;
+        iif "lo" accept
+    }
+}
 EOF
 
 # --- Generate chains per interface ---
@@ -194,6 +257,7 @@ for IFACE in $INTERFACES; do
 done
 
 # --- Apply ruleset ---
+echo "--- Applying nftables ruleset ---"
 nft -f "$OUTPUT_FILE" || { echo "Failed to load nftables ruleset"; exit 1; }
 echo "nftables ruleset loaded successfully."
 
@@ -207,4 +271,3 @@ FINAL_CONFIG_SNAPSHOT="$LOG_DIR/nftables_final_config_$(date +%Y-%m-%d-%H%M%S).c
 cp "$OUTPUT_FILE" "$FINAL_CONFIG_SNAPSHOT"
 echo "Final configuration saved to: $FINAL_CONFIG_SNAPSHOT"
 echo "nftables ruleset generation and application completed."
-
