@@ -4,6 +4,17 @@ Fail2ban loads configuration files in this order (later files override earlier o
 /etc/fail2ban/jail.d/*.conf (.conf files in this directory)
 /etc/fail2ban/jail.local (if exists)
 /etc/fail2ban/jail.d/*.local (.local files in this directory)
+
+Current Hierarchy example sample : 
+/etc/fail2ban/jail.d/
+├── 00-defaults.conf                      # Global settings
+├── 100-nftban-system-sshd.conf           # SSH jail
+├── 200-nftban-web-nginx.conf             # Nginx jails
+├── 300-nftban-appl-wordpress.conf        # WordPress protection
+├── 400-nftban-future-use-range.conf      # Future  protection
+└── 500-nftban-custom.conf                # Custom jails by user
+
+
 You don't need jail.local - you can use the jail.d/ directory instead.
 
 Why we use jail.d/ instead of jail.local
