@@ -3,7 +3,7 @@
 ################################################################################
 # Script: nftban.sh
 # A comprehensive nftables and fail2ban management tool with IP allowlist functionality
-# Version: 1.0.5
+# Version: 2.0.5
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # This script automates the management for both nftables and fail2ban from one interface
@@ -13,13 +13,20 @@
 
 # --- Script Configuration ---
 
-# Configuration paths 
+#!/bin/bash
+
+# NFTBan Script
+# A comprehensive nftables and Fail2Ban management tool
+
+# Configuration paths
 BASE_DIR="/etc/nftban/config"
 CONF_FILE="/etc/nftables.conf"
 ALLOW_FILE="$BASE_DIR/nftban-configuration-user-whitelist_ips.conf.local"
 BACKUP_DIR="/etc/nftables/backups"
 LOG_FILE="/var/log/nftban.log"
 TEMP_BAN_TABLE="nftban_temp_ban"
+FAIL2BAN_DIR="/etc/fail2ban"
+FAIL2BAN_JAIL_DIR="$FAIL2BAN_DIR/jail.d"
 
 # Colors for output
 RED='\033[0;31m'
@@ -43,26 +50,36 @@ log() {
 # Function to display help
 show_help() {
     cat << EOF
-NFTBan Script - nftables management tool
+NFTBan Script - nftables and Fail2Ban management tool
 
 Usage: nftban [OPTION]
 
 Options:
-  -e, --enable           Enable and start nftables service after config check
-  -d, --disable          Disable and stop nftables service
-  -s, --start            Start nftables service after config check
-  -r, --restart          Restart nftables service after config check
-  -x, --stop             Stop nftables service
+  -e, --enable           Enable and start nftables and Fail2Ban services after config check
+  -d, --disable          Disable and stop nftables and Fail2Ban services
+  -s, --start            Start nftables and Fail2Ban services after config check
+  -r, --restart          Restart nftables and Fail2Ban services after config check
+  -x, --stop             Stop nftables and Fail2Ban services
   -l, --list             List current nftables rules
-  -c, --check            Check nftables configuration syntax
+  -c, --check            Check nftables and Fail2Ban configuration syntax
   -a, --add-ip [IP]      Add your current IP to the allow file
   -i, --info             Show information about current IP and allow file status
   -tb, --temp-ban [IP]   Temporarily ban an IP for 1 hour
-  -rb, --remove-ban [IP] Remove IP from temporary ban
+  -rb, --remove-ban [IP] Remove IP from temporary ban and Fail2Ban
   -lt, --list-temp       List temporarily banned IPs
   --enable-logging       Enable logging to file
   --disable-logging      Disable logging to file
   -h, --help             Display this help message
+
+Fail2Ban Specific Options:
+  -fj, --fail2ban-jails          View available Fail2Ban jails
+  -fr, --fail2ban-rules [JAIL]   View Fail2Ban jail rules
+  -fb, --fail2ban-banned [JAIL]  View banned IPs in Fail2Ban
+  -fc, --fail2ban-check          Check Fail2Ban configuration
+
+Advanced Options:
+  -vb, --view-banned             View all banned IPs (nftables and Fail2Ban)
+  -ri, --remove-ip [IP]          Remove IP from all ban lists (nftables and Fail2Ban)
 
 Features:
   - Always checks configuration before enabling, starting, or restarting
@@ -72,14 +89,19 @@ Features:
   - Temporary ban functionality with automatic expiration
   - Integrated with nftban-configuration-user-whitelist_ips.conf.local
   - Protects your current login IP from being banned
+  - Full Fail2Ban integration
 
 Examples:
-  nftban --enable        # Enable and start nftables, add IP if needed
+  nftban --enable        # Enable and start nftables and Fail2Ban, add IP if needed
   nftban --list          # Show current nftables rules
-  nftban --check         # Verify configuration syntax
+  nftban --check         # Verify configuration syntax for both services
   nftban --add-ip        # Add your current IP to the allow file
   nftban --temp-ban 192.168.1.100  # Temporarily ban an IP
   nftban --remove-ban 192.168.1.100  # Remove temporary ban
+  nftban --fail2ban-jails          # View available Fail2Ban jails
+  nftban --fail2ban-banned sshd    # View banned IPs in sshd jail
+  nftban --view-banned             # View all banned IPs
+  nftban --remove-ip 192.168.1.100 # Remove IP from all ban lists
 EOF
 }
 
@@ -184,15 +206,56 @@ remove_ip_from_blacklist() {
 }
 
 # Function to check nftables configuration
-check_config() {
+check_nftables_config() {
     if ! nft -c -f "$CONF_FILE" 2>&1 | tee -a "$LOG_FILE"; then
-        log "Configuration check failed for $CONF_FILE"
-        echo -e "${RED}Configuration check failed!${NC}"
+        log "nftables configuration check failed for $CONF_FILE"
+        echo -e "${RED}nftables configuration check failed!${NC}"
         return 1
     fi
-    log "Configuration check passed for $CONF_FILE"
-    echo -e "${GREEN}Configuration check passed${NC}"
+    log "nftables configuration check passed for $CONF_FILE"
+    echo -e "${GREEN}nftables configuration check passed${NC}"
     return 0
+}
+
+# Function to check Fail2Ban configuration
+check_fail2ban_config() {
+    if command -v fail2ban-client >/dev/null 2>&1; then
+        if fail2ban-client --test 2>&1 | tee -a "$LOG_FILE"; then
+            log "Fail2Ban configuration check passed"
+            echo -e "${GREEN}Fail2Ban configuration check passed${NC}"
+            return 0
+        else
+            log "Fail2Ban configuration check failed"
+            echo -e "${RED}Fail2Ban configuration check failed!${NC}"
+            return 1
+        fi
+    else
+        log "Fail2Ban is not installed"
+        echo -e "${YELLOW}Fail2Ban is not installed${NC}"
+        return 1
+    fi
+}
+
+# Function to check both configurations
+check_config() {
+    local nft_ok=true
+    local f2b_ok=true
+    
+    echo -e "${BLUE}Checking nftables configuration...${NC}"
+    if ! check_nftables_config; then
+        nft_ok=false
+    fi
+    
+    echo -e "${BLUE}Checking Fail2Ban configuration...${NC}"
+    if ! check_fail2ban_config; then
+        f2b_ok=false
+    fi
+    
+    if [ "$nft_ok" = true ] && [ "$f2b_ok" = true ]; then
+        return 0
+    else
+        return 1
+    fi
 }
 
 # Function to backup current configuration
@@ -213,19 +276,19 @@ list_rules() {
 }
 
 # Function to enable nftables service
-enable_service() {
+enable_nftables_service() {
     systemctl enable nftables 2>/dev/null
     log "Enabled nftables service"
 }
 
 # Function to disable nftables service
-disable_service() {
+disable_nftables_service() {
     systemctl disable nftables 2>/dev/null
     log "Disabled nftables service"
 }
 
 # Function to start nftables service
-start_service() {
+start_nftables_service() {
     if systemctl start nftables 2>/dev/null; then
         log "Started nftables service"
         echo -e "${GREEN}nftables service started${NC}"
@@ -238,7 +301,7 @@ start_service() {
 }
 
 # Function to stop nftables service
-stop_service() {
+stop_nftables_service() {
     if systemctl stop nftables 2>/dev/null; then
         log "Stopped nftables service"
         echo -e "${YELLOW}nftables service stopped${NC}"
@@ -250,15 +313,53 @@ stop_service() {
     fi
 }
 
-# Function to restart nftables service
-restart_service() {
-    if systemctl restart nftables 2>/dev/null; then
-        log "Restarted nftables service"
-        echo -e "${GREEN}nftables service restarted${NC}"
+# Function to enable Fail2Ban service
+enable_fail2ban_service() {
+    systemctl enable fail2ban 2>/dev/null
+    log "Enabled Fail2Ban service"
+}
+
+# Function to disable Fail2Ban service
+disable_fail2ban_service() {
+    systemctl disable fail2ban 2>/dev/null
+    log "Disabled Fail2Ban service"
+}
+
+# Function to start Fail2Ban service
+start_fail2ban_service() {
+    if systemctl start fail2ban 2>/dev/null; then
+        log "Started Fail2Ban service"
+        echo -e "${GREEN}Fail2Ban service started${NC}"
         return 0
     else
-        log "Failed to restart nftables service"
-        echo -e "${RED}Failed to restart nftables service${NC}"
+        log "Failed to start Fail2Ban service"
+        echo -e "${RED}Failed to start Fail2Ban service${NC}"
+        return 1
+    fi
+}
+
+# Function to stop Fail2Ban service
+stop_fail2ban_service() {
+    if systemctl stop fail2ban 2>/dev/null; then
+        log "Stopped Fail2Ban service"
+        echo -e "${YELLOW}Fail2Ban service stopped${NC}"
+        return 0
+    else
+        log "Failed to stop Fail2Ban service"
+        echo -e "${RED}Failed to stop Fail2Ban service${NC}"
+        return 1
+    fi
+}
+
+# Function to restart Fail2Ban service
+restart_fail2ban_service() {
+    if systemctl restart fail2ban 2>/dev/null; then
+        log "Restarted Fail2Ban service"
+        echo -e "${GREEN}Fail2Ban service restarted${NC}"
+        return 0
+    else
+        log "Failed to restart Fail2Ban service"
+        echo -e "${RED}Failed to restart Fail2Ban service${NC}"
         return 1
     fi
 }
@@ -381,6 +482,129 @@ list_temp_bans() {
     nft list set inet "$TEMP_BAN_TABLE" temp_ban_v6 2>/dev/null | grep -Eo '([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}' || echo "None"
 }
 
+# Function to view available Fail2Ban jails
+view_fail2ban_jails() {
+    if command -v fail2ban-client >/dev/null 2>&1; then
+        echo -e "${BLUE}Available Fail2Ban jails:${NC}"
+        fail2ban-client status | grep "Jail list" | sed 's/^.*Jail list://' | tr ',' '\n' | sed 's/^ *//;s/ *$//'
+        
+        # Also check for nftables-specific jails
+        if [ -d "$FAIL2BAN_JAIL_DIR" ]; then
+            echo -e "${BLUE}NFTables-specific jails:${NC}"
+            find "$FAIL2BAN_JAIL_DIR" -name "nftables-*.conf" -exec basename {} .conf \; | sed 's/^nftables-//'
+        fi
+    else
+        echo -e "${RED}Fail2Ban is not installed${NC}"
+    fi
+}
+
+# Function to view Fail2Ban jail rules
+view_fail2ban_rules() {
+    local jail="$1"
+    
+    if [ -z "$jail" ]; then
+        echo -e "${RED}Please specify a jail name${NC}"
+        return 1
+    fi
+    
+    if command -v fail2ban-client >/dev/null 2>&1; then
+        # Check if this is an nftables jail
+        if [ -f "$FAIL2BAN_JAIL_DIR/nftables-$jail.conf" ]; then
+            echo -e "${BLUE}Rules for nftables jail '$jail':${NC}"
+            cat "$FAIL2BAN_JAIL_DIR/nftables-$jail.conf"
+        else
+            echo -e "${BLUE}Rules for jail '$jail':${NC}"
+            fail2ban-client get "$jail" action | grep -E "(actionstart|actionstop|actioncheck|actionban|actionunban)"
+        fi
+    else
+        echo -e "${RED}Fail2Ban is not installed${NC}"
+    fi
+}
+
+# Function to view banned IPs in Fail2Ban
+view_fail2ban_banned() {
+    local jail="$1"
+    
+    if command -v fail2ban-client >/dev/null 2>&1; then
+        if [ -z "$jail" ]; then
+            # Show banned IPs for all jails
+            echo -e "${BLUE}Banned IPs in all Fail2Ban jails:${NC}"
+            for j in $(fail2ban-client status | grep "Jail list" | sed 's/^.*Jail list://' | tr ',' ' '); do
+                banned_ips=$(fail2ban-client status "$j" | grep "Banned IP list" | sed 's/^.*Banned IP list://')
+                if [ -n "$banned_ips" ]; then
+                    echo -e "${YELLOW}$j:${NC} $banned_ips"
+                fi
+            done
+        else
+            # Show banned IPs for specific jail
+            echo -e "${BLUE}Banned IPs in jail '$jail':${NC}"
+            fail2ban-client status "$jail" | grep "Banned IP list" | sed 's/^.*Banned IP list://'
+        fi
+    else
+        echo -e "${RED}Fail2Ban is not installed${NC}"
+    fi
+}
+
+# Function to view all banned IPs (nftables and Fail2Ban)
+view_all_banned() {
+    echo -e "${BLUE}=== NFTables Banned IPs ===${NC}"
+    # Get banned IPs from nftables
+    nft list ruleset | grep -E "elements = {.*}" | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}|([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}' | sort -u
+    
+    echo -e "${BLUE}=== Fail2Ban Banned IPs ===${NC}"
+    # Get banned IPs from Fail2Ban
+    if command -v fail2ban-client >/dev/null 2>&1; then
+        for j in $(fail2ban-client status | grep "Jail list" | sed 's/^.*Jail list://' | tr ',' ' '); do
+            banned_ips=$(fail2ban-client status "$j" | grep "Banned IP list" | sed 's/^.*Banned IP list://')
+            if [ -n "$banned_ips" ]; then
+                echo "$banned_ips" | tr ' ' '\n'
+            fi
+        done | sort -u
+    else
+        echo "Fail2Ban is not installed"
+    fi
+}
+
+# Function to remove IP from all ban lists
+remove_ip_from_all() {
+    local ip="$1"
+    local removed=false
+    
+    if [ -z "$ip" ]; then
+        echo -e "${RED}Please specify an IP address to remove${NC}"
+        return 1
+    fi
+    
+    echo -e "${BLUE}Removing IP $ip from all ban lists...${NC}"
+    
+    # Remove from nftables temporary ban
+    if remove_temp_ban "$ip"; then
+        removed=true
+    fi
+    
+    # Remove from nftables blacklist files
+    if remove_ip_from_blacklist "$ip"; then
+        removed=true
+    fi
+    
+    # Remove from Fail2Ban
+    if command -v fail2ban-client >/dev/null 2>&1; then
+        for j in $(fail2ban-client status | grep "Jail list" | sed 's/^.*Jail list://' | tr ',' ' '); do
+            if fail2ban-client set "$j" unbanip "$ip" >/dev/null 2>&1; then
+                log "Removed IP $ip from Fail2Ban jail $j"
+                echo -e "${GREEN}Removed IP $ip from Fail2Ban jail $j${NC}"
+                removed=true
+            fi
+        done
+    fi
+    
+    if [ "$removed" = true ]; then
+        echo -e "${GREEN}IP $ip removed from all ban lists${NC}"
+    else
+        echo -e "${YELLOW}IP $ip was not found in any ban lists${NC}"
+    fi
+}
+
 # Function to update nftables configuration
 update_nftables_config() {
     log "Updating nftables configuration based on current settings"
@@ -391,9 +615,38 @@ update_nftables_config() {
     # Check configuration
     if check_config; then
         # Restart service to apply changes
-        restart_service
+        restart_nftables_service
+        restart_fail2ban_service
     else
         echo -e "${RED}Configuration check failed, not applying changes${NC}"
+        return 1
+    fi
+}
+
+# Function to check if Fail2Ban jails are enabled
+check_fail2ban_jails() {
+    local all_ok=true
+    
+    if [ -d "$FAIL2BAN_JAIL_DIR" ]; then
+        for jail_file in "$FAIL2BAN_JAIL_DIR"/nftables-*.conf; do
+            if [ -f "$jail_file" ]; then
+                jail_name=$(basename "$jail_file" .conf | sed 's/^nftables-//')
+                if grep -q "enabled.*=.*true" "$jail_file"; then
+                    echo -e "${GREEN}Jail $jail_name is enabled${NC}"
+                else
+                    echo -e "${YELLOW}Jail $jail_name is disabled${NC}"
+                    all_ok=false
+                fi
+            fi
+        done
+    else
+        echo -e "${YELLOW}No Fail2Ban jail directory found at $FAIL2BAN_JAIL_DIR${NC}"
+        all_ok=false
+    fi
+    
+    if [ "$all_ok" = true ]; then
+        return 0
+    else
         return 1
     fi
 }
@@ -419,16 +672,20 @@ main() {
     while [[ $# -gt 0 ]]; do
         case "${1}" in
             -e|--enable)
-                echo -e "${BLUE}Enabling nftables service...${NC}"
+                echo -e "${BLUE}Enabling nftables and Fail2Ban services...${NC}"
                 if check_config; then
                     backup_config
                     if manage_ip; then
-                        enable_service
-                        start_service
+                        enable_nftables_service
+                        enable_fail2ban_service
+                        start_nftables_service
+                        start_fail2ban_service
                     else
                         echo -e "${YELLOW}Proceeding without IP added to allow file${NC}"
-                        enable_service
-                        start_service
+                        enable_nftables_service
+                        enable_fail2ban_service
+                        start_nftables_service
+                        start_fail2ban_service
                     fi
                 else
                     echo -e "${RED}Aborting enable operation due to configuration errors${NC}"
@@ -437,19 +694,23 @@ main() {
                 shift
                 ;;
             -d|--disable)
-                echo -e "${BLUE}Disabling nftables service...${NC}"
-                stop_service
-                disable_service
+                echo -e "${BLUE}Disabling nftables and Fail2Ban services...${NC}"
+                stop_nftables_service
+                stop_fail2ban_service
+                disable_nftables_service
+                disable_fail2ban_service
                 shift
                 ;;
             -s|--start)
-                echo -e "${BLUE}Starting nftables service...${NC}"
+                echo -e "${BLUE}Starting nftables and Fail2Ban services...${NC}"
                 if check_config; then
                     if manage_ip; then
-                        start_service
+                        start_nftables_service
+                        start_fail2ban_service
                     else
                         echo -e "${YELLOW}Proceeding without IP added to allow file${NC}"
-                        start_service
+                        start_nftables_service
+                        start_fail2ban_service
                     fi
                 else
                     echo -e "${RED}Aborting start operation due to configuration errors${NC}"
@@ -458,13 +719,15 @@ main() {
                 shift
                 ;;
             -r|--restart)
-                echo -e "${BLUE}Restarting nftables service...${NC}"
+                echo -e "${BLUE}Restarting nftables and Fail2Ban services...${NC}"
                 if check_config; then
                     if manage_ip; then
-                        restart_service
+                        restart_nftables_service
+                        restart_fail2ban_service
                     else
                         echo -e "${YELLOW}Proceeding without IP added to allow file${NC}"
-                        restart_service
+                        restart_nftables_service
+                        restart_fail2ban_service
                     fi
                 else
                     echo -e "${RED}Aborting restart operation due to configuration errors${NC}"
@@ -473,8 +736,9 @@ main() {
                 shift
                 ;;
             -x|--stop)
-                echo -e "${BLUE}Stopping nftables service...${NC}"
-                stop_service
+                echo -e "${BLUE}Stopping nftables and Fail2Ban services...${NC}"
+                stop_nftables_service
+                stop_fail2ban_service
                 shift
                 ;;
             -l|--list)
@@ -537,12 +801,44 @@ main() {
                     exit 1
                 fi
                 ip="$2"
-                remove_temp_ban "$ip"
+                remove_ip_from_all "$ip"
                 shift
                 shift
                 ;;
             -lt|--list-temp)
                 list_temp_bans
+                shift
+                ;;
+            -fj|--fail2ban-jails)
+                view_fail2ban_jails
+                shift
+                ;;
+            -fr|--fail2ban-rules)
+                view_fail2ban_rules "$2"
+                shift
+                shift
+                ;;
+            -fb|--fail2ban-banned)
+                view_fail2ban_banned "$2"
+                shift
+                shift
+                ;;
+            -fc|--fail2ban-check)
+                check_fail2ban_config
+                shift
+                ;;
+            -vb|--view-banned)
+                view_all_banned
+                shift
+                ;;
+            -ri|--remove-ip)
+                if [ -z "$2" ] || [ "${2:0:1}" = "-" ]; then
+                    echo -e "${RED}Please specify an IP address to remove${NC}"
+                    exit 1
+                fi
+                ip="$2"
+                remove_ip_from_all "$ip"
+                shift
                 shift
                 ;;
             --enable-logging)
