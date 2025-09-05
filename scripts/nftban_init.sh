@@ -172,6 +172,8 @@ fi
 # find all .sh files and add +x only if they don't already have it
 echo "Check and ensure that all .sh files under $BASE_DIR/scripts are executable "
 find "$BASE_DIR/scripts" -type f -name "*.sh" ! -perm -111 -exec chmod +x {} \;
+echo "Check and ensure that nftban $BASE_DIR/bin/nftban is executable "
+chmod +x "$BASE_DIR//bin/nftban"
 
 # --- Post-Installation Notes ---
 echo ""
