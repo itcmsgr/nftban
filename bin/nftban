@@ -468,9 +468,9 @@ manage_ip() {
 ensure_temp_ban_table() {
     if ! nft list table inet "$TEMP_BAN_TABLE" >/dev/null 2>&1; then
         nft add table inet "$TEMP_BAN_TABLE"
-        nft add set inet "$TEMP_BAN_TABLE" temp_ban_v4 { type ipv4_addr; timeout 1h; }
-        nft add set inet "$TEMP_BAN_TABLE" temp_ban_v6 { type ipv6_addr; timeout 1h; }
-        nft add chain inet "$TEMP_BAN_TABLE" input { type filter hook input priority -150; policy accept; }
+        nft add set inet "$TEMP_BAN_TABLE" temp_ban_v4 '{ type ipv4_addr; timeout 1h; }'
+        nft add set inet "$TEMP_BAN_TABLE" temp_ban_v6 '{ type ipv6_addr; timeout 1h; }'
+        nft add chain inet "$TEMP_BAN_TABLE" input '{ type filter hook input priority -150; policy accept; }'
         nft add rule inet "$TEMP_BAN_TABLE" input ip saddr @temp_ban_v4 drop
         nft add rule inet "$TEMP_BAN_TABLE" input ip6 saddr @temp_ban_v6 drop
         log "Created temporary ban table"
