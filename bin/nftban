@@ -3,20 +3,13 @@
 ################################################################################
 # Script: nftban.sh
 # A comprehensive nftables and fail2ban management tool with IP allowlist functionality
-# Version: 2.0.5
+# Version: 3
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # This script automates the management for both nftables and fail2ban from one interface
 # ** NOTE: THIS SCRIPT MUST BE RUN AS ROOT!
 ################################################################################
 
-
-# --- Script Configuration ---
-
-#!/bin/bash
-
-# NFTBan Script
-# A comprehensive nftables and Fail2Ban management tool
 
 # Configuration paths
 BASE_DIR="/etc/nftban/config"
@@ -27,6 +20,8 @@ LOG_FILE="/var/log/nftban.log"
 TEMP_BAN_TABLE="nftban_temp_ban"
 FAIL2BAN_DIR="/etc/fail2ban"
 FAIL2BAN_JAIL_DIR="$FAIL2BAN_DIR/jail.d"
+IPV4_BLACKLIST_FILE="$BASE_DIR/nftban-configuration-ipv4-blacklist_ips.conf.local"
+IPV6_BLACKLIST_FILE="$BASE_DIR/nftban-configuration-ipv6-blacklist_ips.conf.local"
 
 # Colors for output
 RED='\033[0;31m'
@@ -64,7 +59,8 @@ Options:
   -c, --check            Check nftables and Fail2Ban configuration syntax
   -a, --add-ip [IP]      Add your current IP to the allow file
   -i, --info             Show information about current IP and allow file status
-  -tb, --temp-ban [IP]   Temporarily ban an IP for 1 hour
+  -tb, --temp-ban [IP] [COMMENT]  Temporarily ban an IP for 1 hour with comment
+  -pb, --perm-ban [IP] [COMMENT]  Permanently ban an IP with comment
   -rb, --remove-ban [IP] Remove IP from temporary ban and Fail2Ban
   -lt, --list-temp       List temporarily banned IPs
   --enable-logging       Enable logging to file
@@ -86,7 +82,7 @@ Features:
   - Automatically adds your IP to the allow file if missing when using enable/start/restart
   - Maintains a backup of previous configurations before changes
   - Comprehensive logging of all operations
-  - Temporary ban functionality with automatic expiration
+  - Temporary and permanent ban functionality with comments
   - Integrated with nftban-configuration-user-whitelist_ips.conf.local
   - Protects your current login IP from being banned
   - Full Fail2Ban integration
@@ -96,7 +92,8 @@ Examples:
   nftban --list          # Show current nftables rules
   nftban --check         # Verify configuration syntax for both services
   nftban --add-ip        # Add your current IP to the allow file
-  nftban --temp-ban 192.168.1.100  # Temporarily ban an IP
+  nftban --temp-ban 192.168.1.100 "SSH brute force attack"  # Temporarily ban an IP with comment
+  nftban --perm-ban 192.168.1.101 "Known malicious IP"  # Permanently ban an IP with comment
   nftban --remove-ban 192.168.1.100  # Remove temporary ban
   nftban --fail2ban-jails          # View available Fail2Ban jails
   nftban --fail2ban-banned sshd    # View banned IPs in sshd jail
@@ -181,6 +178,21 @@ add_ip_to_allow() {
     echo "$added"
 }
 
+# Function to remove IP from whitelist
+remove_ip_from_whitelist() {
+    local ip="$1"
+    local removed=false
+    
+    # Remove from whitelist file if exists
+    if [ -f "$ALLOW_FILE" ] && grep -q "^$ip" "$ALLOW_FILE"; then
+        sed -i "/^$ip/d" "$ALLOW_FILE"
+        log "Removed IP $ip from whitelist file $ALLOW_FILE"
+        removed=true
+    fi
+    
+    echo "$removed"
+}
+
 # Function to remove IP from blacklist files
 remove_ip_from_blacklist() {
     local ip="$1"
@@ -189,10 +201,10 @@ remove_ip_from_blacklist() {
     # Check if it's IPv4 or IPv6
     if [[ "$ip" =~ .*:.* ]]; then
         # IPv6
-        blacklist_file="$BASE_DIR/nftban-configuration-ipv6-blacklist_ips.conf.local"
+        blacklist_file="$IPV6_BLACKLIST_FILE"
     else
         # IPv4
-        blacklist_file="$BASE_DIR/nftban-configuration-ipv4-blacklist_ips.conf.local"
+        blacklist_file="$IPV4_BLACKLIST_FILE"
     fi
     
     # Remove from blacklist file if exists
@@ -203,6 +215,61 @@ remove_ip_from_blacklist() {
     fi
     
     echo "$removed"
+}
+
+# Function to add IP to blacklist with comment
+add_ip_to_blacklist() {
+    local ip="$1"
+    local comment="$2"
+    local added=false
+    
+    # Default comment if none provided
+    if [ -z "$comment" ]; then
+        comment="Banned by nftban on $(date '+%Y-%m-%d %H:%M:%S')"
+    fi
+    
+    # Check if it's IPv4 or IPv6
+    if [[ "$ip" =~ .*:.* ]]; then
+        # IPv6
+        blacklist_file="$IPV6_BLACKLIST_FILE"
+    else
+        # IPv4
+        blacklist_file="$IPV4_BLACKLIST_FILE"
+    fi
+    
+    # Create directory if it doesn't exist
+    mkdir -p "$(dirname "$blacklist_file")"
+    
+    # Create file if it doesn't exist
+    if [ ! -f "$blacklist_file" ]; then
+        touch "$blacklist_file"
+        chmod 644 "$blacklist_file"
+        if [[ "$ip" =~ .*:.* ]]; then
+            echo "# IPv6 blacklist IPs - managed by nftban" > "$blacklist_file"
+        else
+            echo "# IPv4 blacklist IPs - managed by nftban" > "$blacklist_file"
+        fi
+    fi
+    
+    # Check if IP already exists in blacklist
+    if grep -q "^$ip" "$blacklist_file"; then
+        # Update the comment if IP already exists
+        sed -i "s/^$ip.*$/$ip # $comment/" "$blacklist_file"
+        log "Updated IP $ip in blacklist file with new comment: $comment"
+        added=true
+    else
+        # Add IP with comment
+        echo "$ip # $comment" >> "$blacklist_file"
+        log "Added IP $ip to blacklist file with comment: $comment"
+        added=true
+    fi
+    
+    # Remove from whitelist if exists
+    if remove_ip_from_whitelist "$ip"; then
+        log "Removed IP $ip from whitelist as it's now blacklisted"
+    fi
+    
+    echo "$added"
 }
 
 # Function to check nftables configuration
@@ -422,9 +489,10 @@ is_current_login_ip() {
     fi
 }
 
-# Function to temporarily ban an IP
+# Function to temporarily ban an IP with comment
 temp_ban_ip() {
     local ip="$1"
+    local comment="$2"
     
     # Prevent banning your own login IP
     if is_current_login_ip "$ip"; then
@@ -435,17 +503,57 @@ temp_ban_ip() {
     
     ensure_temp_ban_table
     
+    # Default comment if none provided
+    if [ -z "$comment" ]; then
+        comment="Temporarily banned by nftban on $(date '+%Y-%m-%d %H:%M:%S')"
+    fi
+    
     # Check if it's IPv4 or IPv6
     if [[ "$ip" =~ .*:.* ]]; then
         # IPv6
         nft add element inet "$TEMP_BAN_TABLE" temp_ban_v6 { "$ip" }
-        log "Temporarily banned IPv6 address: $ip (1 hour)"
+        log "Temporarily banned IPv6 address: $ip with comment: $comment"
         echo -e "${RED}Temporarily banned IPv6 address: $ip (1 hour)${NC}"
+        echo -e "${YELLOW}Comment: $comment${NC}"
     else
         # IPv4
         nft add element inet "$TEMP_BAN_TABLE" temp_ban_v4 { "$ip" }
-        log "Temporarily banned IPv4 address: $ip (1 hour)"
+        log "Temporarily banned IPv4 address: $ip with comment: $comment"
         echo -e "${RED}Temporarily banned IPv4 address: $ip (1 hour)${NC}"
+        echo -e "${YELLOW}Comment: $comment${NC}"
+    fi
+}
+
+# Function to permanently ban an IP with comment
+perm_ban_ip() {
+    local ip="$1"
+    local comment="$2"
+    
+    # Prevent banning your own login IP
+    if is_current_login_ip "$ip"; then
+        echo -e "${RED}ERROR: Cannot ban your own login IP ($ip)${NC}"
+        log "Attempted to ban own login IP: $ip"
+        return 1
+    fi
+    
+    # Default comment if none provided
+    if [ -z "$comment" ]; then
+        comment="Permanently banned by nftban on $(date '+%Y-%m-%d %H:%M:%S')"
+    fi
+    
+    # Add to blacklist file with comment
+    if add_ip_to_blacklist "$ip" "$comment"; then
+        log "Permanently banned IP: $ip with comment: $comment"
+        echo -e "${RED}Permanently banned IP: $ip${NC}"
+        echo -e "${YELLOW}Comment: $comment${NC}"
+        
+        # Also add to temporary ban for immediate effect
+        temp_ban_ip "$ip" "$comment (also permanently banned)"
+        
+        return 0
+    else
+        echo -e "${YELLOW}IP $ip is already banned${NC}"
+        return 1
     fi
 }
 
@@ -615,8 +723,8 @@ update_nftables_config() {
     # Check configuration
     if check_config; then
         # Restart service to apply changes
-        restart_nftables_service
-        restart_fail2ban_service
+        systemctl restart nftables
+        systemctl restart fail2ban
     else
         echo -e "${RED}Configuration check failed, not applying changes${NC}"
         return 1
@@ -722,12 +830,12 @@ main() {
                 echo -e "${BLUE}Restarting nftables and Fail2Ban services...${NC}"
                 if check_config; then
                     if manage_ip; then
-                        restart_nftables_service
-                        restart_fail2ban_service
+                        systemctl restart nftables
+                        systemctl restart fail2ban
                     else
                         echo -e "${YELLOW}Proceeding without IP added to allow file${NC}"
-                        restart_nftables_service
-                        restart_fail2ban_service
+                        systemctl restart nftables
+                        systemctl restart fail2ban
                     fi
                 else
                     echo -e "${RED}Aborting restart operation due to configuration errors${NC}"
@@ -791,7 +899,31 @@ main() {
                     exit 1
                 fi
                 ip="$2"
-                temp_ban_ip "$ip"
+                # Check if there's a comment
+                if [ -n "$3" ] && [ "${3:0:1}" != "-" ]; then
+                    comment="$3"
+                    shift
+                else
+                    comment=""
+                fi
+                temp_ban_ip "$ip" "$comment"
+                shift
+                shift
+                ;;
+            -pb|--perm-ban)
+                if [ -z "$2" ] || [ "${2:0:1}" = "-" ]; then
+                    echo -e "${RED}Please specify an IP address to permanently ban${NC}"
+                    exit 1
+                fi
+                ip="$2"
+                # Check if there's a comment
+                if [ -n "$3" ] && [ "${3:0:1}" != "-" ]; then
+                    comment="$3"
+                    shift
+                else
+                    comment=""
+                fi
+                perm_ban_ip "$ip" "$comment"
                 shift
                 shift
                 ;;
