@@ -3,7 +3,7 @@
 ################################################################################
 # Script: nftban_init.sh
 #
-# Version: 1.2.1
+# Version: 1.2.2
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # This script automates the installation of Fail2Ban, whois, and dnsutils
@@ -145,6 +145,31 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
 else
     echo "Skipping GitHub sync"
 fi
+
+ # Check if exist link to make nftban available without need the full path
+TARGET="$BASE_DIR/bin/nftban"
+LINK="/usr/local/bin/nftban"
+
+# Check if the nftban file exists under 
+if [ ! -f "$TARGET" ]; then
+    echo "Error: Target file $TARGET does not exist."
+    exit 1
+fi
+
+# Check if the symlink already exists
+if [ -L "$LINK" ]; then
+    echo "Symlink already exists: $LINK → $(readlink -f "$LINK")"
+else
+    echo "Creating symlink..."
+    sudo ln -s "$TARGET" "$LINK"
+    echo "Symlink created: $LINK → $TARGET"
+fi
+
+# Ensure the nftban file is executable
+if [ ! -x "$TARGET" ]; then
+    chmod +x "$TARGET"
+fi
+
 
 # --- Post-Installation Notes ---
 echo ""
