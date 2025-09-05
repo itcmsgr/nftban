@@ -3,7 +3,7 @@
 ################################################################################
 # Script: nftban_uninstall.sh
 #
-# Version: 1.2.0
+# Version: 1.3.0
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # This script automates the unistall of nftban script
@@ -23,6 +23,9 @@ LOG_DIR="/var/log/nftban"
 PKG_MGR=""
 PKG_REMOVE=""
 PKG_INSTALL=""
+LINK_NFTBAN="/usr/local/bin/nftban"
+FAIL2BAN_TEMPLATES_DIR="/etc/fail2ban/jail.d"
+
 
 # --- Detect Package Manager ---
 if command -v dnf &>/dev/null; then
@@ -63,6 +66,31 @@ if [[ -d "$LOG_DIR" ]]; then
     echo "Removing $LOG_DIR..."
     rm -rf "$LOG_DIR"
 fi
+
+# --- Remove link nftban  ---
+if [ -L "$LINK_NFTBAN" ]; then
+    rm "$LINK_NFTBAN"
+    echo "Symlink $LINK_NFTBAN removed."
+else
+    echo "Symlink $LINK does not exist. Nothing to remove."
+fi
+
+# --- Remove fail2ban templates   ---
+echo "The following files would be deleted:"
+find "$FAIL2BAN_TEMPLATES_DIR" -type f -name "nftban-*" -print
+
+echo
+read -r -p "Proceed with deletion? [y/N]: " ans
+case "${ans,,}" in
+    y|yes)
+        find "$FAIL2BAN_TEMPLATES_DIR" -type f -name "nftban-*" -exec echo "Deleting: {}" \; -exec rm -f {} \;
+        echo "Deletion complete."
+        ;;
+    *)
+        echo "No files were deleted."
+        ;;
+esac
+
 
 # --- Remove packages if requested ---
 if [[ "$FULL_REMOVE" =~ ^[Yy]$ ]]; then
