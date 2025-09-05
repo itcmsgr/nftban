@@ -165,11 +165,10 @@ else
     echo "Symlink created: $LINK → $TARGET"
 fi
 
-# Ensure the nftban file is executable
-if [ ! -x "$TARGET" ]; then
-    chmod +x "$TARGET"
-fi
-
+# Ensure the all files under $BASE_DIR/scripts files are executable
+# find all .sh files and add +x only if they don't already have it
+echo "Check and ensure that all .sh files under $BASE_DIR/scripts are executable "
+find "$BASE_DIR/scripts" -type f -name "*.sh" ! -perm -111 -exec chmod +x {} \;
 
 # --- Post-Installation Notes ---
 echo ""
@@ -179,16 +178,21 @@ echo "  - $FAIL2BAN_PKG"
 echo "  - $WHOIS_PKG" 
 echo "  - $DNSUTILS_PKG"
 echo ""
-echo "=== MANUAL STEPS REQUIRED ==="
-echo "1. Configure fail2ban:"
-echo "   Edit /etc/fail2ban/jail.local or /etc/fail2ban/jail.d/*.conf"
+echo "✓ nftban linked to usr/local/bin/nftban"
 echo ""
-echo "2. Start services manually when ready:"
-echo "   systemctl enable fail2ban"
-echo "   systemctl start fail2ban"
+echo "✓ $BASE_DIR/scripts are executable"
+echo ""
+echo "=== MANUAL STEPS REQUIRED ==="
+echo "1. Initialize nftables enviroment :"
+echo "   execute /etc/fail2ban/scripts/nftban_init_nftables_conf.sh"
+echo ""
+echo "2. Initialize fail2ban enviroment :"
+echo "   execute /etc/fail2ban/scripts/nftban_init_fail2ban_conf.sh"
 echo ""
 echo "3. Review and customize nftban configuration:"
 echo "   Check /etc/nftban/config/ directory"
+echo ""
+echo "4. Start to use with command nftban"
 echo ""
 echo "Logs are available in: $LOG_FILE"
 echo "================================="
