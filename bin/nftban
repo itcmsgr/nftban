@@ -3,7 +3,7 @@
 ################################################################################
 # Script: nftban.sh
 # A comprehensive nftables and fail2ban management tool with IP allowlist functionality
-# Version: 3
+# Version: 3.0.0
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # This script automates the management for both nftables and fail2ban from one interface
