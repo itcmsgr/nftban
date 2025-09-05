@@ -12,6 +12,9 @@
 # ** NOTE: ONLY INSTALLS PACKAGES - NO SERVICE MANAGEMENT
 ################################################################################
 
+#NEED TO ADD EPEL FOR FAIL2BAN
+#dnf install epel-release
+
 # --- Script Configuration ---
 BASE_DIR="/etc/nftban"
 GITHUB_REPO="https://github.com/itcmsgr/nftban"
