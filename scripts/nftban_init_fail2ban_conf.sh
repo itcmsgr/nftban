@@ -2,7 +2,7 @@
 ################################################################################
 # Script: nftban_init_fail2ban_conf.sh
 #
-# Version: 1.1
+# Version: 1.2
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # Automates fail2ban configuration on Linux (RHEL 8+/Fedora/CentOS/Debian/Ubuntu)
@@ -11,6 +11,8 @@
 #!/bin/bash
 
 BASE_DIR="/etc/nftban"
+JAIL_TEMPLATE_DIR="$BASE_DIR/templates/fail2ban/jail.d"
+FAIL2BAN_TEMPLATE_DIR="/etc/fail2ban/jail.d"
 
 # Function to get current timestamp
 timestamp=$(date +"%Y%m%d_%H%M%S")
@@ -60,15 +62,15 @@ if [ -f /etc/fail2ban/jail.local ]; then
 fi
 
 # Check if whitelist config exists
-if [ ! -f /etc/nftban/config/nftban-configuration-user-whitelist_ips.conf.local ]; then
+if [ ! -f $BASE_DIR/config/nftban-configuration-user-whitelist_ips.conf.local ]; then
     echo "Whitelist config not found."
     echo "You need to run 'nftables init' first.: /etc/nftban/scripts/nftban_init_nftables_conf.sh"
     exit 1
 fi
 
 # Check if fail2ban config exists
-fail2ban_conf="/etc/nftban/config/nftban-configuration-fail2ban.conf"
-template_conf="/etc/fail2ban/templates/fail2ban/nftban-configuration-fail2ban.conf"
+fail2ban_conf="$BASE_DIR/config/nftban-configuration-fail2ban.conf"
+template_conf="$BASE_DIR/templates/fail2ban/nftban-configuration-fail2ban.conf"
 
 if [ ! -f "$fail2ban_conf" ]; then
     echo "Fail2Ban config not found."
@@ -99,22 +101,16 @@ if [ ! -f "$local_conf" ]; then
 fi
 
 # Overwrite all nftban-*.conf files
-template_dir="/etc/fail2ban/templates/fail2ban"
-target_dir="/etc/fail2ban"
-
-for file in "$template_dir"/nftban-*.conf; do
-    cp "$file" "$target_dir"/
+for file in "$JAIL_TEMPLATE_DIR"/nftban-*.conf; do
+    cp "$file" "$FAIL2BAN_TEMPLATE_DIR"/
     echo "Copied $(basename "$file")"
 done
 
 # Rename unknown jail.d templates
-jail_template_dir="/etc/fail2ban/templates/fail2ban/jail.d"
-jail_dir="/etc/fail2ban/jail.d"
-
-for file in "$jail_dir"/fail2ban-*.conf; do
+for file in "$JAIL_TEMPLATE_DIR"/nftban-*.conf; do
     base=$(basename "$file")
-    if [ ! -f "$jail_template_dir/$base" ]; then
-        mv "$file" "$jail_dir/unknown-$base"
+    if [ ! -f "$FAIL2BAN_TEMPLATE_DIR/$base" ]; then
+        mv "$file" "$FAIL2BAN_TEMPLATE_DIR/unknown-$base"
         echo "Renamed $base to unknown-$base"
     fi
 done
