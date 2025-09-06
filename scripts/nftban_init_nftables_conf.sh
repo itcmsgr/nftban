@@ -105,21 +105,40 @@ generate_port_rules() {
     local direction=$3
     [[ -f "$file" ]] || return
     while read -r line; do
+        line=$(echo "$line" | sed 's/^ *//;s/ *$//')
         [[ -z "$line" || "$line" =~ ^# ]] && continue
-        port=$(echo "$line" | cut -d'/' -f1)
-        proto=$(echo "$line" | cut -d'/' -f2 | tr '[:lower:]' '[:upper:]')
-        case "$proto" in
-            T) echo "        $direction \"$iface\" tcp dport $port accept" ;;
-            U) echo "        $direction \"$iface\" udp dport $port accept" ;;
-            B)
-                echo "        $direction \"$iface\" tcp dport $port accept"
-                echo "        $direction \"$iface\" udp dport $port accept"
-                ;;
-            *) echo "Warning: Invalid protocol '$proto' for port '$port' in $file" >&2 ;;
-        esac
+        if [[ "$line" =~ ^([0-9]+(-[0-9]+)?)([TUB])$ ]]; then
+            port_range=${BASH_REMATCH[1]}
+            proto=${BASH_REMATCH[3]}
+            if [[ "$port_range" == *-* ]]; then
+                start=$(echo "$port_range" | cut -d'-' -f1)
+                end=$(echo "$port_range" | cut -d'-' -f2)
+                for ((port=start; port<=end; port++)); do
+                    case "$proto" in
+                        T) echo "        $direction "$iface" tcp dport $port accept" ;;
+                        U) echo "        $direction "$iface" udp dport $port accept" ;;
+                        B)
+                            echo "        $direction "$iface" tcp dport $port accept"
+                            echo "        $direction "$iface" udp dport $port accept"
+                            ;;
+                    esac
+                done
+            else
+                port=$port_range
+                case "$proto" in
+                    T) echo "        $direction "$iface" tcp dport $port accept" ;;
+                    U) echo "        $direction "$iface" udp dport $port accept" ;;
+                    B)
+                        echo "        $direction "$iface" tcp dport $port accept"
+                        echo "        $direction "$iface" udp dport $port accept"
+                        ;;
+                esac
+            fi
+        else
+            echo "Warning: Invalid line format '$line' in $file" >&2
+        fi
     done < "$file"
-}
-
+    
 generate_interface_chains() {
     local iface=$1
     local ipver=$2
