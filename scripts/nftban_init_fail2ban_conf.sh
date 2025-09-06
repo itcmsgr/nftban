@@ -13,25 +13,27 @@ JAIL_TEMPLATE_DIR="$BASE_DIR/templates/fail2ban/jail.d"
 FAIL2BAN_TEMPLATE_DIR="/etc/fail2ban/jail.d"
 timestamp=$(date +"%Y%m%d_%H%M%S")
 
-# Check if fail2ban is running
+# --- Check if fail2ban is running ---
 if systemctl is-active --quiet fail2ban; then
     echo "Fail2Ban is running."
-    echo "Options: [stop] [continue] [reset conf] [exit]"
+    echo "Options: [continue] [reset conf] [exit]"
     read -rp "Choose an option: " option
     case "$option" in
-        stop)
-            echo "Stopping Fail2Ban..."
-            sudo systemctl stop fail2ban
-            ;;
         continue)
-            echo "Continuing..."
+            echo "You chose to continue. Proceeding to stop and disable Fail2Ban service."
+            sudo systemctl stop fail2ban
+            echo "Fail2Ban service stopped."
+            sudo systemctl disable fail2ban
+            echo "Fail2Ban service disabled."
             ;;
         "reset conf")
-            echo "Resetting configuration..."
+            echo "You chose to reset configuration."
+            echo "All custom configurations will be removed."
+            echo "The system will be re-initialized using the init scripts."
             # Add actual reset logic here
             ;;
         exit)
-            echo "Exiting script."
+            echo "Exiting script as requested."
             exit 0
             ;;
         *)
@@ -46,6 +48,7 @@ else
         exit 1
     fi
 fi
+
 
 # Check if jail.local exists
 if [ -f /etc/fail2ban/jail.local ]; then
@@ -66,6 +69,15 @@ if [ ! -f "$BASE_DIR/config/nftban-configuration-user-whitelist_ips.conf.local" 
     echo "You need to run 'nftables init' first: /etc/nftban/scripts/nftban_init_nftables_conf.sh"
     exit 1
 fi
+
+
+LINE_COUNT=$(wc -l < "$WHITELIST_FILE")
+if [ "$LINE_COUNT" -le 1 ]; then
+    echo "Whitelist config is empty or incomplete."
+    echo "You need to run 'nftables init' first: /etc/nftban/scripts/nftban_init_nftables_conf.sh"
+    exit 1
+fi
+
 
 # Check if fail2ban config exists
 fail2ban_conf="$BASE_DIR/config/nftban-configuration-fail2ban.conf"
