@@ -2,7 +2,7 @@
 ################################################################################
 # Script: nftban_init_nftables_conf.sh
 #
-# Version: 1.6
+# Version: 1.6.2
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # Automates nftables configuration on Linux (RHEL 8+/Fedora/CentOS/Debian/Ubuntu)
