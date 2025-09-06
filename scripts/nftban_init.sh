@@ -3,7 +3,7 @@
 ################################################################################
 # Script: nftban_init.sh
 #
-# Version: 1.2.2
+# Version: 1.2.3
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # This script automates the installation of Fail2Ban, whois, and dnsutils
@@ -11,9 +11,6 @@
 # ** NOTE: THIS SCRIPT MUST BE RUN AS ROOT!
 # ** NOTE: ONLY INSTALLS PACKAGES - NO SERVICE MANAGEMENT
 ################################################################################
-
-#NEED TO ADD EPEL FOR FAIL2BAN
-#dnf install epel-release
 
 # --- Script Configuration ---
 BASE_DIR="/etc/nftban"
@@ -53,6 +50,24 @@ else
     exit 1
 fi
 
+
+# --- EPEL Repository Check (RHEL/CentOS/Fedora only) ---
+if [[ "$PKG_MGR" == "dnf" || "$PKG_MGR" == "yum" ]]; then
+    if ! rpm -q epel-release &>/dev/null; then
+        read -p "EPEL repository is not installed. Do you want to install it? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            echo "Installing EPEL repository..."
+            $PKG_INSTALL epel-release || { echo "Failed to install EPEL repository."; exit 1; }
+        else
+            echo "EPEL repository is required. Exiting..."
+            exit 1
+        fi
+    else
+        echo "✓ EPEL repository already installed"
+    fi
+fi
+
 # --- Setup Logging ---
 LOG_DIR="/var/log/nftban"
 LOG_FILE="$LOG_DIR/install_$(date +%Y-%m-%d-%H%M%S).log"
@@ -66,6 +81,15 @@ echo "--- NOTE: Only installing packages - no service management ---"
 if [[ "$PKG_MGR" == "apt" ]]; then
     echo "Updating package cache..."
     apt update -y
+fi
+
+
+# --- Confirm Package Installation ---
+read -p "Do you want to proceed with installing $FAIL2BAN_PKG, $WHOIS_PKG, and $DNSUTILS_PKG? (y/N): " -n 1 -r
+echo
+if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+    echo "Package installation cancelled by user. Exiting..."
+    exit 1
 fi
 
 # --- Package Installation ---
