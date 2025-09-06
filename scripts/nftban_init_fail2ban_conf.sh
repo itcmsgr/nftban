@@ -2,19 +2,15 @@
 ################################################################################
 # Script: nftban_init_fail2ban_conf.sh
 #
-# Version: 1.2
+# Version: 2.0
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # Automates fail2ban configuration on Linux (RHEL 8+/Fedora/CentOS/Debian/Ubuntu)
 ################################################################################
 
-#!/bin/bash
-
 BASE_DIR="/etc/nftban"
 JAIL_TEMPLATE_DIR="$BASE_DIR/templates/fail2ban/jail.d"
 FAIL2BAN_TEMPLATE_DIR="/etc/fail2ban/jail.d"
-
-# Function to get current timestamp
 timestamp=$(date +"%Y%m%d_%H%M%S")
 
 # Check if fail2ban is running
@@ -32,7 +28,7 @@ if systemctl is-active --quiet fail2ban; then
             ;;
         "reset conf")
             echo "Resetting configuration..."
-            # Add reset logic here if needed
+            # Add actual reset logic here
             ;;
         exit)
             echo "Exiting script."
@@ -44,16 +40,19 @@ if systemctl is-active --quiet fail2ban; then
             ;;
     esac
 else
-    echo "Fail2Ban is not running."
-    exit 1
+    echo "Fail2Ban is not running. This might be expected for configuration changes."
+    read -rp "Do you want to continue? [yes/no]: " continue_anyway
+    if [[ ! "$continue_anyway" =~ ^[Yy][Ee]?[Ss]?$ ]]; then
+        exit 1
+    fi
 fi
 
 # Check if jail.local exists
 if [ -f /etc/fail2ban/jail.local ]; then
     echo "File /etc/fail2ban/jail.local exists."
     read -rp "Do you want to rename it to jail.local_$timestamp? [yes/no]: " rename_jail
-    if [ "$rename_jail" == "yes" ]; then
-        mv /etc/fail2ban/jail.local /etc/fail2ban/jail.local_"$timestamp"
+    if [[ "$rename_jail" =~ ^[Yy][Ee]?[Ss]?$ ]]; then
+        sudo mv /etc/fail2ban/jail.local /etc/fail2ban/jail.local_"$timestamp"
         echo "Renamed jail.local."
     else
         echo "Exiting."
@@ -62,9 +61,9 @@ if [ -f /etc/fail2ban/jail.local ]; then
 fi
 
 # Check if whitelist config exists
-if [ ! -f $BASE_DIR/config/nftban-configuration-user-whitelist_ips.conf.local ]; then
+if [ ! -f "$BASE_DIR/config/nftban-configuration-user-whitelist_ips.conf.local" ]; then
     echo "Whitelist config not found."
-    echo "You need to run 'nftables init' first.: /etc/nftban/scripts/nftban_init_nftables_conf.sh"
+    echo "You need to run 'nftables init' first: /etc/nftban/scripts/nftban_init_nftables_conf.sh"
     exit 1
 fi
 
@@ -84,7 +83,7 @@ if [ ! -f "$fail2ban_conf" ]; then
 else
     echo "Fail2Ban config exists and will be overwritten."
     read -rp "Do you want to continue? [yes/no]: " overwrite
-    if [ "$overwrite" == "yes" ]; then
+    if [[ "$overwrite" =~ ^[Yy][Ee]?[Ss]?$ ]]; then
         cp "$template_conf" "$fail2ban_conf"
         echo "Overwritten."
     else
@@ -100,18 +99,22 @@ if [ ! -f "$local_conf" ]; then
     echo "Copied to .local version."
 fi
 
-# Overwrite all nftban-*.conf files
+# Copy all nftban-*.conf files
 for file in "$JAIL_TEMPLATE_DIR"/nftban-*.conf; do
-    cp "$file" "$FAIL2BAN_TEMPLATE_DIR"/
-    echo "Copied $(basename "$file")"
+    if [ -f "$file" ]; then
+        sudo cp "$file" "$FAIL2BAN_TEMPLATE_DIR"/
+        echo "Copied $(basename "$file")"
+    fi
 done
 
-# Rename unknown jail.d templates
-for file in "$JAIL_TEMPLATE_DIR"/nftban-*.conf; do
-    base=$(basename "$file")
-    if [ ! -f "$FAIL2BAN_TEMPLATE_DIR/$base" ]; then
-        mv "$file" "$FAIL2BAN_TEMPLATE_DIR/unknown-$base"
-        echo "Renamed $base to unknown-$base"
+# Check for any unknown files in template directory and handle them
+for file in "$JAIL_TEMPLATE_DIR"/*.conf; do
+    if [ -f "$file" ]; then
+        base=$(basename "$file")
+        if [[ "$base" != nftban-* ]]; then
+            echo "Found unknown config file: $base"
+            # Handle unknown files appropriately
+        fi
     fi
 done
 
