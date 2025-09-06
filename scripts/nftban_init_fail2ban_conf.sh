@@ -10,6 +10,8 @@
 
 #!/bin/bash
 
+BASE_DIR="/etc/nftban"
+
 # Function to get current timestamp
 timestamp=$(date +"%Y%m%d_%H%M%S")
 
