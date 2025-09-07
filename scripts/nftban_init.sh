@@ -3,7 +3,7 @@
 ################################################################################
 # Script: nftban_init.sh
 #
-# Version: 1.3.0
+# Version: 1.3.1
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # This script automates the installation of Fail2Ban, whois, and dnsutils
@@ -189,6 +189,16 @@ log_message() {
     echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
 }
 
+# Function to check if an IP is IPv4
+is_ipv4() {
+    [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?$ ]]
+}
+
+# Function to check if an IP is IPv6
+is_ipv6() {
+    [[ "$1" =~ : ]] && [[ "$1" != *.* ]]
+}
+
 detect_panel() {
     log_message "Checking for running control panel..."
     
@@ -243,12 +253,14 @@ process_config() {
     TCP6_IN="$BASE_DIR/nftban-configuration-ipv6-ports-input-allow.conf"
     TCP6_OUT="$BASE_DIR/nftban-configuration-ipv6-ports-output-allow.conf"
     IPV4_WHITELIST="$BASE_DIR/nftban-configuration-ipv4-whitelist-ip.conf"
+    IPV6_WHITELIST="$BASE_DIR/nftban-configuration-ipv6-whitelist-ip.conf"
     
     > "$TCP4_IN"
     > "$TCP4_OUT"
     > "$TCP6_IN"
     > "$TCP6_OUT"
     > "$IPV4_WHITELIST"
+    > "$IPV6_WHITELIST"
     
     if [ ! -f "$config_file" ]; then
         log_message "ERROR: Configuration file $config_file not found!"
@@ -299,12 +311,24 @@ process_config() {
                 ips=$(echo "$line" | cut -d'"' -f2)
                 if [ -n "$ips" ]; then
                     echo "# $panel_name panel IP addresses" >> "$IPV4_WHITELIST"
+                    echo "# $panel_name panel IP addresses" >> "$IPV6_WHITELIST"
                     echo "$ips" | tr ',' '\n' | while read ip; do
-                        [ -n "$ip" ] && echo "$ip" >> "$IPV4_WHITELIST"
+                        ip=$(echo "$ip" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+                        if [ -n "$ip" ]; then
+                            if is_ipv4 "$ip"; then
+                                echo "$ip" >> "$IPV4_WHITELIST"
+                            elif is_ipv6 "$ip"; then
+                                echo "$ip" >> "$IPV6_WHITELIST"
+                            else
+                                log_message "WARNING: Invalid IP format: $ip"
+                            fi
+                        fi
                     done
                     echo "#### End of $panel_name IP addresses" >> "$IPV4_WHITELIST"
+                    echo "#### End of $panel_name IP addresses" >> "$IPV6_WHITELIST"
                 else
                     echo "# No IP addresses found for $panel_name panel requirements" >> "$IPV4_WHITELIST"
+                    echo "# No IP addresses found for $panel_name panel requirements" >> "$IPV6_WHITELIST"
                 fi
                 ;;
         esac
@@ -312,6 +336,10 @@ process_config() {
     
     if [ ! -s "$IPV4_WHITELIST" ]; then
         echo "# No IP addresses found for $panel_name panel requirements" > "$IPV4_WHITELIST"
+    fi
+    
+    if [ ! -s "$IPV6_WHITELIST" ]; then
+        echo "# No IP addresses found for $panel_name panel requirements" > "$IPV6_WHITELIST"
     fi
     
     log_message "Configuration processed using $panel_name configuration"
@@ -341,6 +369,7 @@ log_message "  - $BASE_DIR/nftban-configuration-ipv4-ports-output-allow.conf"
 log_message "  - $BASE_DIR/nftban-configuration-ipv6-ports-input-allow.conf"
 log_message "  - $BASE_DIR/nftban-configuration-ipv6-ports-output-allow.conf"
 log_message "  - $BASE_DIR/nftban-configuration-ipv4-whitelist-ip.conf"
+log_message "  - $BASE_DIR/nftban-configuration-ipv6-whitelist-ip.conf"
 
 log_message "Process completed successfully"
 exit 0
@@ -408,6 +437,13 @@ if [[ $REPLY =~ ^[Yy]$ ]] && [[ -f "$BASE_DIR/cp_detection.pid" ]]; then
     else
         echo "✓ Control panel detection completed"
         echo "  Check results: cat $CP_LOG_FILE"
+        echo "  Files created:"
+        echo "    - $BASE_DIR/nftban-configuration-ipv4-ports-input-allow.conf"
+        echo "    - $BASE_DIR/nftban-configuration-ipv4-ports-output-allow.conf"
+        echo "    - $BASE_DIR/nftban-configuration-ipv6-ports-input-allow.conf"
+        echo "    - $BASE_DIR/nftban-configuration-ipv6-ports-output-allow.conf"
+        echo "    - $BASE_DIR/nftban-configuration-ipv4-whitelist-ip.conf"
+        echo "    - $BASE_DIR/nftban-configuration-ipv6-whitelist-ip.conf"
     fi
     echo ""
 fi
