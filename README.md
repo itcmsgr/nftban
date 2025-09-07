@@ -1,4 +1,8 @@
 
+<p align="center">
+  <img src="https://itcms.gr/wp-content/uploads/2022/08/ITCMSA_smalv1.png" alt="ITCMS Logo" width="200"/>
+</p>
+
 # 🛡️ nftban – Modular Linux Firewall Management with nftables & Fail2Ban
 
 ![License](https://img.shields.io/github/license/itcmsgr/nftban)
@@ -7,8 +11,6 @@
 ![Compatibility](https://img.shields.io/badge/compatibility-Debian%2FUbuntu%20%7C%20RHEL%2FCentOS%2FFedora-orange)
 
 ---
-
-![Logo](https://itcms.gr/logo.png)
 
 ## 🔍 Overview
 
@@ -30,7 +32,7 @@
   - `backups/`: rule backups
   - `templates/`: baseline configurations
 - 🛡️ **Safe defaults** with automatic whitelisting of local IPs
-- 📜 **Logging** of applied rules and auditing actions
+- 📄 **Logging** of applied rules and auditing actions
 - 🖥️ **Compatibility**: RHEL 8+, CentOS Stream, Fedora, Debian, Ubuntu
 
 ---
