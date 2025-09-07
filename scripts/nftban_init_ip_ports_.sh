@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ################################################################################
-# Script: nftban_init_control_panel_ports_
+# Script: nftban_init_ip_ports_.sh
 #
 # Version: 1.0
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
