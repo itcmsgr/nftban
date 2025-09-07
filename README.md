@@ -1,85 +1,122 @@
-# 🔒 nftban – Modular Linux Firewall Management with nftables & Fail2Ban
 
-**nftban** is an open-source, modular firewall management tool for Linux, built on **nftables** and **Fail2Ban**.
+# 🛡️ nftban – Modular Linux Firewall Management with nftables & Fail2Ban
 
-It provides:
-- IPv4 & IPv6 support
-- TCP/UDP port filtering
-- Stateful Packet Inspection (SPI)
-- Dynamic whitelisting/blacklisting  
-All through a script-driven, maintainable architecture.
-
-Compatible with major Linux distributions, **nftban** simplifies firewall configuration, intrusion prevention, and monitoring.
+![License](https://img.shields.io/github/license/itcmsgr/nftban)
+![Platform](https://img.shields.io/badge/platform-Linux-blue)
+![Status](https://img.shields.io/badge/status-active-brightgreen)
+![Compatibility](https://img.shields.io/badge/compatibility-Debian%2FUbuntu%20%7C%20RHEL%2FCentOS%2FFedora-orange)
 
 ---
 
-## 👤 Author / Company
+![Logo](https://itcms.gr/logo.png)
 
-Developed and maintained by **ITCMS — IT Consulting Managed Services**  
-🌐 https://itcms.gr
+## 🔍 Overview
 
-Created by **Antonios Voulvoulis**  
-Contributions are welcome under the **MIT License**.
+**nftban** is an open-source, script-driven tool that simplifies and secures firewall management on Linux. It combines the power of **nftables** and **Fail2Ban** to deliver high-performance packet filtering alongside dynamic IP blocking.
 
 ---
 
-## 🔧 Features
+## ✨ Features
 
-- High-performance packet filtering using **nftables**
-- Integrates **Fail2Ban** for dynamic banning of malicious IPs
-- Supports **IPv4 & IPv6** with separate ban management
-- **TCP/UDP** port filtering, including custom ranges
-- **Stateful Packet Inspection (SPI)** with connection tracking (`ct`)
-- Interface-specific rules for granular control
-- Blacklists & whitelists (system, user-defined, dynamic)
-- Full configuration files included for easy setup
-- Modular folder structure under `/etc/nftban` for clarity and maintainability
-- Lightweight, extensible, and script-driven
-- Compatible with major Linux distributions:
-  - RHEL 8+
-  - CentOS Stream
-  - Fedora
-  - Debian
-  - Ubuntu
-- Safe defaults with automatic local IP whitelisting
-- Logging and auditing of applied rules
+- 🌐 **Dual-stack support**: IPv4 & IPv6
+- 🎯 **Customizable filtering**: TCP/UDP port rules, including custom ranges
+- 🔍 **Stateful Packet Inspection (SPI)** through `conntrack`
+- 🚫 **Dynamic IP blocking & whitelisting** using Fail2Ban integration
+- 🧩 **Granular control**: interface-specific rules and modular configuration
+- 📁 **Modular structure** under `/etc/nftban`, including:
+  - `config/`: nftables and Fail2Ban rule files
+  - `scripts/`: installation and management helpers
+  - `logs/`: audit trails and parsing
+  - `backups/`: rule backups
+  - `templates/`: baseline configurations
+- 🛡️ **Safe defaults** with automatic whitelisting of local IPs
+- 📜 **Logging** of applied rules and auditing actions
+- 🖥️ **Compatibility**: RHEL 8+, CentOS Stream, Fedora, Debian, Ubuntu
+
 ---
 
 ## 🚀 Quick Start
-
-Download, inspect, and run the nftban installer:
 
 ```bash
 # Download the installer
 curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install_nftban.sh -o install_nftban.sh
 
-# Optional: Preview before execution
+# Preview installer before execution
 less install_nftban.sh
 
 # Run the installer (requires root)
-bash install_nftban.sh
+sudo bash install_nftban.sh
+```
 
+---
 
+## 🧪 Compatibility Matrix
 
-🗑️ Uninstall
+| Distribution      | Status     |
+|-------------------|------------|
+| Debian / Ubuntu   | ✅ Supported |
+| RHEL / CentOS     | ✅ Supported |
+| Fedora            | ✅ Supported |
+| AlmaLinux / Rocky | ✅ Compatible |
+| Arch Linux        | ⚠️ Not tested |
 
-Pending implementation
+---
 
-📁 Folder Structure
+## 🛠️ Manual Setup Steps
+
+```bash
+# Initialize nftables configuration
+/etc/nftban/scripts/nftban_init_nftables_conf.sh
+
+# Initialize fail2ban configuration
+/etc/nftban/scripts/nftban_init_fail2ban_conf.sh
+
+# Start using nftban
+nftban
+```
+
+---
+
+## 📂 Directory Structure
+
+```
 /etc/nftban/
-├── config/           # Configuration files (Fail2Ban jails, nftables rules)
-├── scripts/          # Main scripts and helpers
-├── logs/             # Custom logs or log parsing
-├── backups/          # Backup of rules or configs
-├── templates/        # Initial nftables & Fail2Ban templates
-└── README.md         # Documentation
+├── config/
+├── scripts/
+├── logs/
+├── backups/
+├── templates/
+│   └── control-panels/
+├── bin/
+```
 
-⚙️ Configuration Overview
-config/nftables.conf: Main nftables ruleset
-config/jail.local: Fail2Ban jail configuration
-scripts/firewall.sh: Main control script
+---
 
-🤝 Contributing
-We welcome contributions!
-Please fork the repo and submit a pull request.
-For major changes, open an issue first to discuss your proposed modifications.
+## 📌 To-Do / Suggestions
+
+- [ ] Add systemd service management for `fail2ban`
+- [ ] Add nftables rule templates per service (SSH, Mail, etc.)
+- [ ] Add logging and monitoring integration
+- [ ] Add support for Arch Linux (`pacman`)
+- [ ] Add interactive CLI tool for managing rules
+
+---
+
+## 🤝 Contributing
+
+Pull requests are welcome! Feel free to open issues for bugs, ideas, or improvements.
+
+---
+
+## 🧾 Credits
+
+Developed by [Antonios Voulvoulis](https://github.com/itcmsgr) and the **ITCMS Team**  
+🔗 [https://itcms.gr](https://itcms.gr)
+
+---
+
+## 📄 License
+
+This project is licensed under the **MIT License**. You may optionally use **GNU GPLv3** if preferred.
+
+MIT License © [ITCMS](https://itcms.gr)
