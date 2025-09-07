@@ -3,7 +3,7 @@
 ################################################################################
 # Script: nftban_init.sh
 #
-# Version: 1.2.3
+# Version: 1.3.0
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # This script automates the installation of Fail2Ban, whois, and dnsutils
@@ -50,7 +50,6 @@ else
     exit 1
 fi
 
-
 # --- EPEL Repository Check (RHEL/CentOS/Fedora only) ---
 if [[ "$PKG_MGR" == "dnf" || "$PKG_MGR" == "yum" ]]; then
     if ! rpm -q epel-release &>/dev/null; then
@@ -82,7 +81,6 @@ if [[ "$PKG_MGR" == "apt" ]]; then
     echo "Updating package cache..."
     apt update -y
 fi
-
 
 # --- Confirm Package Installation ---
 read -p "Do you want to proceed with installing $FAIL2BAN_PKG, $WHOIS_PKG, and $DNSUTILS_PKG? (y/N): " -n 1 -r
@@ -124,7 +122,7 @@ fi
 
 # --- Directory Structure Setup ---
 echo "Creating directory structure under $BASE_DIR..."
-mkdir -p "$BASE_DIR"/{config,scripts,logs,backups,templates,bin} || { echo "Failed to create directory structure."; exit 1; }
+mkdir -p "$BASE_DIR"/{config,scripts,logs,backups,templates,bin,templates/control-panels} || { echo "Failed to create directory structure."; exit 1; }
 
 # Create symlink for logs
 if [[ ! -L "$BASE_DIR/logs" ]]; then
@@ -173,31 +171,220 @@ else
     echo "Skipping GitHub sync"
 fi
 
- # Check if exist link to make nftban available without need the full path
+# --- Control Panel Detection and Default Ports Setup ---
+read -p "Do you want to detect control panel and setup default ports? (y/N): " -n 1 -r
+echo
+if [[ $REPLY =~ ^[Yy]$ ]]; then
+    echo "Starting control panel detection and default ports setup..."
+    
+    # Create control panel detection script
+    CP_SCRIPT="$BASE_DIR/scripts/cp_detection.sh"
+    cat > "$CP_SCRIPT" << 'EOF'
+#!/bin/bash
+
+BASE_DIR="/etc/nftban"
+LOG_FILE="$BASE_DIR/cp_detection_$(date +%Y-%m-%d-%H%M%S).log"
+
+log_message() {
+    echo "$(date '+%Y-%m-%d %H:%M:%S') - $1" | tee -a "$LOG_FILE"
+}
+
+detect_panel() {
+    log_message "Checking for running control panel..."
+    
+    if [ -d "/usr/local/directadmin/" ]; then
+        log_message "DirectAdmin detected."
+        PANEL="directadmin"
+        CONFIG_FILE="$BASE_DIR/templates/control-panels/directadmin.conf"
+    elif [ -d "/var/cpanel/" ]; then
+        log_message "cPanel detected."
+        PANEL="cpanel"
+        CONFIG_FILE="$BASE_DIR/templates/control-panels/cpanel.conf"
+    elif [ -d "/usr/local/psa/" ]; then
+        log_message "Plesk detected."
+        PANEL="plesk"
+        CONFIG_FILE="$BASE_DIR/templates/control-panels/plesk.conf"
+    else
+        log_message "No common control panel (DirectAdmin, cPanel, Plesk) detected."
+        PANEL="generic"
+        CONFIG_FILE="$BASE_DIR/templates/control-panels/generic.conf"
+    fi
+}
+
+get_config_file() {
+    local panel_config="$1"
+    local panel_name="$2"
+    
+    if [ -f "$panel_config" ]; then
+        log_message "Using $panel_name configuration file: $panel_config"
+        echo "$panel_config"
+        return 0
+    else
+        log_message "WARNING: $panel_name configuration file not found: $panel_config"
+        log_message "Falling back to generic configuration: $BASE_DIR/templates/control-panels/generic.conf"
+        
+        if [ -f "$BASE_DIR/templates/control-panels/generic.conf" ]; then
+            echo "$BASE_DIR/templates/control-panels/generic.conf"
+            return 1
+        else
+            log_message "ERROR: Generic configuration file also not found!"
+            echo ""
+            return 2
+        fi
+    fi
+}
+
+process_config() {
+    local config_file="$1"
+    local panel_name="$2"
+    
+    TCP4_IN="$BASE_DIR/nftban-configuration-ipv4-ports-input-allow.conf"
+    TCP4_OUT="$BASE_DIR/nftban-configuration-ipv4-ports-output-allow.conf"
+    TCP6_IN="$BASE_DIR/nftban-configuration-ipv6-ports-input-allow.conf"
+    TCP6_OUT="$BASE_DIR/nftban-configuration-ipv6-ports-output-allow.conf"
+    IPV4_WHITELIST="$BASE_DIR/nftban-configuration-ipv4-whitelist-ip.conf"
+    
+    > "$TCP4_IN"
+    > "$TCP4_OUT"
+    > "$TCP6_IN"
+    > "$TCP6_OUT"
+    > "$IPV4_WHITELIST"
+    
+    if [ ! -f "$config_file" ]; then
+        log_message "ERROR: Configuration file $config_file not found!"
+        return 1
+    fi
+    
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line=$(echo "$line" | sed 's/#.*$//' | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')
+        
+        if [ -z "$line" ]; then
+            continue
+        fi
+        
+        case "$line" in
+            TCP_IN*)
+                ports=$(echo "$line" | cut -d'"' -f2)
+                echo "# $panel_name panel ports input" >> "$TCP4_IN"
+                echo "$ports" | tr ',' '\n' | while read port; do
+                    [ -n "$port" ] && echo "${port}T" >> "$TCP4_IN"
+                done
+                echo "#### End of $panel_name ports" >> "$TCP4_IN"
+                ;;
+            TCP_OUT*)
+                ports=$(echo "$line" | cut -d'"' -f2)
+                echo "# $panel_name panel ports output" >> "$TCP4_OUT"
+                echo "$ports" | tr ',' '\n' | while read port; do
+                    [ -n "$port" ] && echo "${port}T" >> "$TCP4_OUT"
+                done
+                echo "#### End of $panel_name ports" >> "$TCP4_OUT"
+                ;;
+            TCP6_IN*)
+                ports=$(echo "$line" | cut -d'"' -f2)
+                echo "# $panel_name panel IPv6 ports input" >> "$TCP6_IN"
+                echo "$ports" | tr ',' '\n' | while read port; do
+                    [ -n "$port" ] && echo "${port}T" >> "$TCP6_IN"
+                done
+                echo "#### End of $panel_name ports" >> "$TCP6_IN"
+                ;;
+            TCP6_OUT*)
+                ports=$(echo "$line" | cut -d'"' -f2)
+                echo "# $panel_name panel IPv6 ports output" >> "$TCP6_OUT"
+                echo "$ports" | tr ',' '\n' | while read port; do
+                    [ -n "$port" ] && echo "${port}T" >> "$TCP6_OUT"
+                done
+                echo "#### End of $panel_name ports" >> "$TCP6_OUT"
+                ;;
+            IP_ADDRESS*)
+                ips=$(echo "$line" | cut -d'"' -f2)
+                if [ -n "$ips" ]; then
+                    echo "# $panel_name panel IP addresses" >> "$IPV4_WHITELIST"
+                    echo "$ips" | tr ',' '\n' | while read ip; do
+                        [ -n "$ip" ] && echo "$ip" >> "$IPV4_WHITELIST"
+                    done
+                    echo "#### End of $panel_name IP addresses" >> "$IPV4_WHITELIST"
+                else
+                    echo "# No IP addresses found for $panel_name panel requirements" >> "$IPV4_WHITELIST"
+                fi
+                ;;
+        esac
+    done < "$config_file"
+    
+    if [ ! -s "$IPV4_WHITELIST" ]; then
+        echo "# No IP addresses found for $panel_name panel requirements" > "$IPV4_WHITELIST"
+    fi
+    
+    log_message "Configuration processed using $panel_name configuration"
+}
+
+detect_panel
+
+ACTUAL_CONFIG_FILE=$(get_config_file "$CONFIG_FILE" "$PANEL")
+config_result=$?
+
+if [ $config_result -eq 2 ]; then
+    log_message "ERROR: No configuration files available. Exiting."
+    exit 1
+fi
+
+if [ $config_result -eq 0 ]; then
+    ACTUAL_PANEL="$PANEL"
+else
+    ACTUAL_PANEL="generic"
+fi
+
+process_config "$ACTUAL_CONFIG_FILE" "$ACTUAL_PANEL"
+
+log_message "Processing complete. Files created:"
+log_message "  - $BASE_DIR/nftban-configuration-ipv4-ports-input-allow.conf"
+log_message "  - $BASE_DIR/nftban-configuration-ipv4-ports-output-allow.conf"
+log_message "  - $BASE_DIR/nftban-configuration-ipv6-ports-input-allow.conf"
+log_message "  - $BASE_DIR/nftban-configuration-ipv6-ports-output-allow.conf"
+log_message "  - $BASE_DIR/nftban-configuration-ipv4-whitelist-ip.conf"
+
+log_message "Process completed successfully"
+exit 0
+EOF
+
+    chmod +x "$CP_SCRIPT"
+    CP_LOG_FILE="$BASE_DIR/cp_detection_$(date +%Y-%m-%d-%H%M%S).log"
+    
+    echo "Running control panel detection in background..."
+    echo "Check log file for details: $CP_LOG_FILE"
+    
+    nohup bash "$CP_SCRIPT" > "$CP_LOG_FILE" 2>&1 &
+    CP_PID=$!
+    
+    echo "Control panel detection process started with PID: $CP_PID"
+    echo "You can check progress with: tail -f $CP_LOG_FILE"
+    
+    echo "$CP_PID" > "$BASE_DIR/cp_detection.pid"
+    echo "✓ Control panel detection started in background"
+else
+    echo "Skipping control panel detection"
+fi
+
+# --- Create Symlink ---
 TARGET="$BASE_DIR/bin/nftban"
 LINK="/usr/local/bin/nftban"
 
-# Check if the nftban file exists under 
 if [ ! -f "$TARGET" ]; then
     echo "Error: Target file $TARGET does not exist."
     exit 1
 fi
 
-# Check if the symlink already exists
 if [ -L "$LINK" ]; then
     echo "Symlink already exists: $LINK → $(readlink -f "$LINK")"
 else
     echo "Creating symlink..."
-    sudo ln -s "$TARGET" "$LINK"
+    ln -s "$TARGET" "$LINK"
     echo "Symlink created: $LINK → $TARGET"
 fi
 
-# Ensure the all files under $BASE_DIR/scripts files are executable
-# find all .sh files and add +x only if they don't already have it
-echo "Check and ensure that all .sh files under $BASE_DIR/scripts are executable "
+# --- Set Executable Permissions ---
+echo "Setting executable permissions..."
 find "$BASE_DIR/scripts" -type f -name "*.sh" ! -perm -111 -exec chmod +x {} \;
-echo "Check and ensure that nftban $BASE_DIR/bin/nftban is executable "
-chmod +x "$BASE_DIR//bin/nftban"
+chmod +x "$BASE_DIR/bin/nftban"
 
 # --- Post-Installation Notes ---
 echo ""
@@ -207,21 +394,35 @@ echo "  - $FAIL2BAN_PKG"
 echo "  - $WHOIS_PKG" 
 echo "  - $DNSUTILS_PKG"
 echo ""
-echo "✓ nftban linked to usr/local/bin/nftban"
+echo "✓ nftban linked to /usr/local/bin/nftban"
 echo ""
-echo "✓ $BASE_DIR/scripts are executable"
-echo ""
+echo "✓ Scripts are executable"
+
+if [[ $REPLY =~ ^[Yy]$ ]] && [[ -f "$BASE_DIR/cp_detection.pid" ]]; then
+    CP_PID=$(cat "$BASE_DIR/cp_detection.pid" 2>/dev/null)
+    CP_LOG_FILE=$(ls -t "$BASE_DIR/cp_detection_"*.log 2>/dev/null | head -1)
+    
+    if ps -p "$CP_PID" > /dev/null 2>&1; then
+        echo "✓ Control panel detection is running in background (PID: $CP_PID)"
+        echo "  Check progress: tail -f $CP_LOG_FILE"
+    else
+        echo "✓ Control panel detection completed"
+        echo "  Check results: cat $CP_LOG_FILE"
+    fi
+    echo ""
+fi
+
 echo "=== MANUAL STEPS REQUIRED ==="
-echo "1. Initialize nftables enviroment :"
-echo "   execute /etc/fail2ban/scripts/nftban_init_nftables_conf.sh"
+echo "1. Initialize nftables environment:"
+echo "   execute $BASE_DIR/scripts/nftban_init_nftables_conf.sh"
 echo ""
-echo "2. Initialize fail2ban enviroment :"
-echo "   execute /etc/fail2ban/scripts/nftban_init_fail2ban_conf.sh"
+echo "2. Initialize fail2ban environment:"
+echo "   execute $BASE_DIR/scripts/nftban_init_fail2ban_conf.sh"
 echo ""
 echo "3. Review and customize nftban configuration:"
-echo "   Check /etc/nftban/config/ directory"
+echo "   Check $BASE_DIR/config/ directory"
 echo ""
-echo "4. Start to use with command nftban"
+echo "4. Start to use with command: nftban"
 echo ""
-echo "Logs are available in: $LOG_FILE"
+echo "Installation logs are available in: $LOG_FILE"
 echo "================================="
