@@ -2,7 +2,7 @@
 ################################################################################
 # Script: nftban_init_nftables_conf.sh
 #
-# Version: 1.7.0
+# Version: 1.7.1
 # Author: ITCMS Team (Antonios Voulvoulis) + Debian/Ubuntu Support
 # Description:
 # Enhanced nftables configuration with comprehensive IP whitelisting
@@ -41,6 +41,8 @@ USER_CT_FILE_IPv4="$BASE_DIR/nftban-nfttables-ct-ipv4.conf.local"
 USER_CT_FILE_IPv6="$BASE_DIR/nftban-nfttables-ct-ipv6.conf.local"
 OUTPUT_FILE="$BASE_DIR/nft_rules.conf.local"
 FAIL2BAN_WHITELIST="$BASE_DIR/nftban-fail2ban-ip-whitelist.conf.local"
+CLOUDFLARE_IPV4_URL="https://www.cloudflare.com/ips-v4"
+CLOUDFLARE_IPV6_URL="https://www.cloudflare.com/ips-v6"
 
 # --- Helper functions ---
 ip_exists_in_file() {
@@ -92,14 +94,14 @@ get_current_user_ip() {
     fi
     
     # Fallback: try to get IP from who command
-    local who_output=$(who -u | awk '{print $NF}' | tr -d '()' | head -1)
-    if [[ -n "$who_output" ]]; then
+    local who_output=$(who -u 2>/dev/null | awk '{print $NF}' | tr -d '()' | head -1)
+    if [[ -n "$who_output" && "$who_output" != "0.0.0.0" ]]; then
         echo "$who_output"
         return 0
     fi
     
     # Final fallback: try to get from last command
-    local last_ip=$(last -i | grep "still logged in" | awk '{print $3}' | head -1)
+    local last_ip=$(last -i 2>/dev/null | grep "still logged in" | awk '{print $3}' | head -1)
     if [[ -n "$last_ip" && "$last_ip" != "0.0.0.0" ]]; then
         echo "$last_ip"
         return 0
@@ -150,22 +152,22 @@ generate_port_rules() {
                 end=$(echo "$port_range" | cut -d'-' -f2)
                 for ((port=start; port<=end; port++)); do
                     case "$proto" in
-                        T) echo "        $direction "$iface" tcp dport $port accept" ;;
-                        U) echo "        $direction "$iface" udp dport $port accept" ;;
+                        T) echo "        $direction \"$iface\" tcp dport $port accept" ;;
+                        U) echo "        $direction \"$iface\" udp dport $port accept" ;;
                         B)
-                            echo "        $direction "$iface" tcp dport $port accept"
-                            echo "        $direction "$iface" udp dport $port accept"
+                            echo "        $direction \"$iface\" tcp dport $port accept"
+                            echo "        $direction \"$iface\" udp dport $port accept"
                             ;;
                     esac
                 done
             else
                 port=$port_range
                 case "$proto" in
-                    T) echo "        $direction "$iface" tcp dport $port accept" ;;
-                    U) echo "        $direction "$iface" udp dport $port accept" ;;
+                    T) echo "        $direction \"$iface\" tcp dport $port accept" ;;
+                    U) echo "        $direction \"$iface\" udp dport $port accept" ;;
                     B)
-                        echo "        $direction "$iface" tcp dport $port accept"
-                        echo "        $direction "$iface" udp dport $port accept"
+                        echo "        $direction \"$iface\" tcp dport $port accept"
+                        echo "        $direction \"$iface\" udp dport $port accept"
                         ;;
                 esac
             fi
@@ -247,10 +249,36 @@ EOF
     echo "}" >> "$OUTPUT_FILE"
 }
 
+fetch_cloudflare_ips() {
+    local url=$1
+    local comment=$2
+    local tmpfile
+    tmpfile=$(mktemp)
+    
+    if command -v wget &>/dev/null; then
+        wget -q -O "$tmpfile" "$url" || return 1
+    elif command -v curl &>/dev/null; then
+        curl -s -o "$tmpfile" "$url" || return 1
+    else
+        echo "Error: Neither wget nor curl available" >&2
+        return 1
+    fi
+    
+    while read -r ip; do
+        [[ -n "$ip" ]] || continue
+        # Check if IP already exists with any comment
+        if ! grep -q "^$ip" "$SYSTEM_WHITELIST_FILE"; then
+            echo "$ip $comment" >> "$SYSTEM_WHITELIST_FILE"
+        fi
+    done < "$tmpfile"
+    
+    rm -f "$tmpfile"
+}
+
 # --- Main execution ---
 
 # Create necessary directories
-mkdir -p "$BASE_DIR" "$BACKUP_DIR" "$LOG_DIR"
+mkdir -p "$BASE_DIR" "$BACKUP_DIR" "$LOG_DIR" "$BASE_DIR_INIT"
 
 # --- Initialize missing config files from templates ---
 echo "--- Initializing configuration files ---"
@@ -279,8 +307,8 @@ echo "Detected SSH Port: $SSH_PORT"
 echo "--- Detecting and whitelisting server IP addresses ---"
 
 # Get all server interface IPs
-SERVER_IPV4=$(ip -4 addr show | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]+' | tr '\n' ' ')
-SERVER_IPV6=$(ip -6 addr show | grep -oE '([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}/[0-9]+' | tr '\n' ' ')
+SERVER_IPV4=$(ip -4 addr show 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]+' | tr '\n' ' ')
+SERVER_IPV6=$(ip -6 addr show 2>/dev/null | grep -oE '([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}/[0-9]+' | tr '\n' ' ')
 
 # Get server public IPs
 SERVER_PUBLIC_IPV4=$(get_public_ip "ipv4")
@@ -317,6 +345,10 @@ echo "Server IPv6 addresses whitelisted: $SERVER_IPV6"
 [[ -n "$SERVER_PUBLIC_IPV4" ]] && echo "Server public IPv4: $SERVER_PUBLIC_IPV4"
 [[ -n "$SERVER_PUBLIC_IPV6" ]] && echo "Server public IPv6: $SERVER_PUBLIC_IPV6"
 [[ -n "$CURRENT_USER_IP" ]] && echo "Current user IP: $CURRENT_USER_IP"
+
+# Fetch CloudFlare IPs
+fetch_cloudflare_ips "$CLOUDFLARE_IPV4_URL" "#ipv4 from cloudflare"
+fetch_cloudflare_ips "$CLOUDFLARE_IPV6_URL" "#ipv6 from cloudflare"
 
 # --- Collect whitelist & blacklist IPs ---
 ALL_WHITELIST_IPS=$(cat "$SYSTEM_WHITELIST_FILE" "$USER_WHITELIST_FILE" 2>/dev/null | grep -v '^#' | sort -u | grep -v '^$')
@@ -359,17 +391,32 @@ table ip6 nftban_global {
 EOF
 
 # --- Generate chains per interface ---
-INTERFACES=$(ip -o link show | awk -F': ' '{print $2}' | grep -v 'lo')
+INTERFACES=$(ip -o link show 2>/dev/null | awk -F': ' '{print $2}' | grep -v 'lo' | grep -v '^$')
+if [[ -z "$INTERFACES" ]]; then
+    echo "Warning: No network interfaces found (except lo). Using default interfaces."
+    INTERFACES="eth0 ens192 ens33 enp0s3"
+fi
+
 for IFACE in $INTERFACES; do
     echo "Processing interface: $IFACE"
-    generate_interface_chains "$IFACE" "ip" "$IPV4_WHITELIST" "$IPV4_BLACKLIST" "$IPV4_IN_PORTS_FILE" "$IPV4_OUT_PORTS_FILE" "$SSH_PORT"
-    generate_interface_chains "$IFACE" "ip6" "$IPV6_WHITELIST" "$IPV6_BLACKLIST" "$IPV6_IN_PORTS_FILE" "$IPV6_OUT_PORTS_FILE" "$SSH_PORT"
+    # Check if interface exists
+    if ip link show "$IFACE" >/dev/null 2>&1; then
+        generate_interface_chains "$IFACE" "ip" "$IPV4_WHITELIST" "$IPV4_BLACKLIST" "$IPV4_IN_PORTS_FILE" "$IPV4_OUT_PORTS_FILE" "$SSH_PORT"
+        generate_interface_chains "$IFACE" "ip6" "$IPV6_WHITELIST" "$IPV6_BLACKLIST" "$IPV6_IN_PORTS_FILE" "$IPV6_OUT_PORTS_FILE" "$SSH_PORT"
+    else
+        echo "Warning: Interface $IFACE does not exist, skipping"
+    fi
 done
 
 # --- Apply ruleset ---
 echo "--- Applying nftables ruleset ---"
-nft -f "$OUTPUT_FILE" || { echo "Failed to load nftables ruleset"; exit 1; }
-echo "nftables ruleset loaded successfully."
+if nft -f "$OUTPUT_FILE"; then
+    echo "nftables ruleset loaded successfully."
+else
+    echo "Failed to load nftables ruleset"
+    echo "Please check the configuration file: $OUTPUT_FILE"
+    exit 1
+fi
 
 # --- Final summary ---
 echo "=== Configuration Summary ==="
