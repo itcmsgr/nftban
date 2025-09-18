@@ -1,39 +1,39 @@
-
 <p align="center">
   <img src="https://itcms.gr/wp-content/uploads/2022/08/ITCMSA_smalv1.png" alt="ITCMS Logo" width="200"/>
 </p>
 
 # 🛡️ nftban – Modular Linux Firewall Management with nftables & Fail2Ban
 
-![License](https://img.shields.io/github/license/itcmsgr/nftban)
 ![Platform](https://img.shields.io/badge/platform-Linux-blue)
 ![Status](https://img.shields.io/badge/status-active-brightgreen)
 ![Compatibility](https://img.shields.io/badge/compatibility-Debian%2FUbuntu%20%7C%20RHEL%2FCentOS%2FFedora-orange)
+![License](https://img.shields.io/badge/license-ITCMS%20Non--Resale%20License-blue)
 
 ---
 
 ## 🔍 Overview
 
-**nftban** is an open-source, script-driven tool that simplifies and secures firewall management on Linux. It combines the power of **nftables** and **Fail2Ban** to deliver high-performance packet filtering alongside dynamic IP blocking.
+**nftban** is a script-driven tool that simplifies and secures firewall management on Linux.  
+It combines the power of **nftables** and **Fail2Ban** to deliver high-performance packet filtering alongside dynamic IP blocking.
 
 ---
 
 ## ✨ Features
 
-- 🌐 **Dual-stack support**: IPv4 & IPv6
-- 🎯 **Customizable filtering**: TCP/UDP port rules, including custom ranges
-- 🔍 **Stateful Packet Inspection (SPI)** through `conntrack`
-- 🚫 **Dynamic IP blocking & whitelisting** using Fail2Ban integration
-- 🧩 **Granular control**: interface-specific rules and modular configuration
-- 📁 **Modular structure** under `/etc/nftban`, including:
-  - `config/`: nftables and Fail2Ban rule files
-  - `scripts/`: installation and management helpers
-  - `logs/`: audit trails and parsing
-  - `backups/`: rule backups
-  - `templates/`: baseline configurations
-- 🛡️ **Safe defaults** with automatic whitelisting of local IPs
-- 📄 **Logging** of applied rules and auditing actions
-- 🖥️ **Compatibility**: RHEL 8+, CentOS Stream, Fedora, Debian, Ubuntu
+- 🌐 **Dual-stack support**: IPv4 & IPv6  
+- 🎯 **Customizable filtering**: TCP/UDP port rules, including custom ranges  
+- 🔍 **Stateful Packet Inspection (SPI)** through `conntrack`  
+- 🚫 **Dynamic IP blocking & whitelisting** using Fail2Ban integration  
+- 🧩 **Granular control**: interface-specific rules and modular configuration  
+- 📁 **Modular structure** under `/etc/nftban`, including:  
+  - `config/`: nftables and Fail2Ban rule files  
+  - `scripts/`: installation and management helpers  
+  - `logs/`: audit trails and parsing  
+  - `backups/`: rule backups  
+  - `templates/`: baseline configurations  
+- 🛡️ **Safe defaults** with automatic whitelisting of local IPs  
+- 📄 **Logging** of applied rules and auditing actions  
+- 🖥️ **Compatibility**: RHEL 8+, CentOS Stream, Fedora, Debian, Ubuntu  
 
 ---
 
@@ -54,8 +54,8 @@ sudo bash install_nftban.sh
 
 ## 🧪 Compatibility Matrix
 
-| Distribution      | Status     |
-|-------------------|------------|
+| Distribution      | Status       |
+|-------------------|--------------|
 | Debian / Ubuntu   | ✅ Supported |
 | RHEL / CentOS     | ✅ Supported |
 | Fedora            | ✅ Supported |
@@ -96,11 +96,10 @@ nftban
 
 ## 📌 To-Do / Suggestions
 
-- [ ] Add systemd service management for `fail2ban`
-- [ ] Add nftables rule templates per service (SSH, Mail, etc.)
-- [ ] Add logging and monitoring integration
-- [ ] Add support for Arch Linux (`pacman`)
-- [ ] Add interactive CLI tool for managing rules
+- [ ] Add nftables rule templates per service (SSH, Mail, etc.)  
+- [ ] Add logging and monitoring integration  
+- [ ] Add support for Arch Linux (`pacman`)  
+- [ ] Add interactive CLI tool for managing rules  
 
 ---
 
@@ -119,6 +118,11 @@ Developed by [Antonios Voulvoulis](https://github.com/itcmsgr) and the **ITCMS T
 
 ## 📄 License
 
-This project is licensed under the **MIT License**. You may optionally use **GNU GPLv3** if preferred.
+This project is licensed under the **ITCMS Non-Resale License**.  
 
-MIT License © [ITCMS](https://itcms.gr)
+- ✅ Free for personal, educational, research, and company use.  
+- ✅ You may build services or your own modules on top of it.  
+- ❌ You may **not** copy, clone, or resell this software itself as a standalone product.  
+- 📩 For redistribution or commercial licensing, please contact [ITCMS](https://itcms.gr).  
+
+© 2025 [ITCMS](https://itcms.gr). All rights reserved.
