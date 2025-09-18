@@ -2,7 +2,7 @@
   <img src="https://itcms.gr/wp-content/uploads/2022/08/ITCMSA_smalv1.png" alt="ITCMS Logo" width="200"/>
 </p>
 
-# 🛡️ nftban – Modular Linux Firewall Management with nftables & Fail2Ban
+# 🛡️ nftban – Modular Linux Firewall Management <br/> based on nftables & Fail2Ban
 
 ![Platform](https://img.shields.io/badge/platform-Linux-blue)
 ![Status](https://img.shields.io/badge/status-active-brightgreen)
