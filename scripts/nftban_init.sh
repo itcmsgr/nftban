@@ -4,7 +4,7 @@
 # Script: nftban_init.sh
 #
 # Version: 1.4.1
-# Author: ITCMS Team (Antonios Voulvoulis) + Enhanced Control Panel Detection
+# Author: ITCMS Team (Antonios Voulvoulis)
 # Description:
 # This script automates the installation of Fail2Ban, whois, and dnsutils
 # on Linux systems (RHEL 8+/Fedora/CentOS/Debian/Ubuntu).
@@ -64,7 +64,7 @@ if [[ "$PKG_MGR" == "dnf" || "$PKG_MGR" == "yum" ]]; then
             exit 1
         fi
     else
-        echo "✓ EPEL repository already installed"
+        echo "EPEL repository already installed"
     fi
 fi
 
@@ -98,27 +98,27 @@ echo "Installing required packages..."
 echo "Installing $FAIL2BAN_PKG..."
 if ! $PKG_CHECK "$FAIL2BAN_PKG" &>/dev/null; then
     $PKG_INSTALL "$FAIL2BAN_PKG" || { echo "Failed to install $FAIL2BAN_PKG."; exit 1; }
-    echo "✓ $FAIL2BAN_PKG installed successfully"
+    echo "$FAIL2BAN_PKG installed successfully"
 else
-    echo "✓ $FAIL2BAN_PKG already installed"
+    echo "$FAIL2BAN_PKG already installed"
 fi
 
 # Install whois
 echo "Installing $WHOIS_PKG..."
 if ! $PKG_CHECK "$WHOIS_PKG" &>/dev/null; then
     $PKG_INSTALL "$WHOIS_PKG" || { echo "Failed to install $WHOIS_PKG."; exit 1; }
-    echo "✓ $WHOIS_PKG installed successfully"
+    echo "$WHOIS_PKG installed successfully"
 else
-    echo "✓ $WHOIS_PKG already installed"
+    echo "$WHOIS_PKG already installed"
 fi
 
 # Install dnsutils/bind-utils
 echo "Installing $DNSUTILS_PKG..."
 if ! $PKG_CHECK "$DNSUTILS_PKG" &>/dev/null; then
     $PKG_INSTALL "$DNSUTILS_PKG" || { echo "Failed to install $DNSUTILS_PKG."; exit 1; }
-    echo "✓ $DNSUTILS_PKG installed successfully"
+    echo "$DNSUTILS_PKG installed successfully"
 else
-    echo "✓ $DNSUTILS_PKG already installed"
+    echo "$DNSUTILS_PKG already installed"
 fi
 
 # --- Directory Structure Setup ---
@@ -128,7 +128,7 @@ mkdir -p "$BASE_DIR"/{config,scripts,logs,backups,templates,bin,templates/contro
 # Create symlink for logs
 if [[ ! -L "$BASE_DIR/logs" ]]; then
     ln -sf "$LOG_DIR" "$BASE_DIR/logs"
-    echo "✓ Symlink created from $BASE_DIR/logs to $LOG_DIR"
+    echo "Symlink created from $BASE_DIR/logs to $LOG_DIR"
 fi
 
 # --- GitHub Repository Sync (Optional) ---
@@ -150,9 +150,9 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
     BACKUP_FILE="$BASE_DIR/backups/nftban_${TIMESTAMP}_bckp.tar.gz"
     tar -czf "$BACKUP_FILE" -C "$(dirname "$BASE_DIR")" "$(basename "$BASE_DIR")" --exclude='*/backups/*' 2>/dev/null
     if [[ $? -eq 0 ]]; then
-        echo "✓ Backup created: $BACKUP_FILE"
+        echo "Backup created: $BACKUP_FILE"
     else
-        echo "⚠ Backup failed. Continuing..."
+        echo "Backup failed. Continuing..."
     fi
 
     # Clone and sync repository
@@ -167,10 +167,10 @@ if [[ $REPLY =~ ^[Yy]$ ]]; then
 
         # Clean up
         rm -rf "$TMP_DIR"
-        echo "✓ Repository synced successfully"
+        echo "Repository synced successfully"
         GITHUB_SYNC_DONE=true
     else
-        echo "⚠ Failed to clone repository. Continuing without GitHub sync..."
+        echo "Failed to clone repository. Continuing without GitHub sync..."
     fi
 else
     echo "Skipping GitHub sync"
@@ -235,11 +235,11 @@ case "${1:-help}" in
         nft list ruleset 2>/dev/null || echo "No rules found or insufficient permissions"
         ;;
     flush)
-        echo "⚠ WARNING: This will remove all nftables rules!"
+        echo "WARNING: This will remove all nftables rules!"
         read -p "Are you sure? (y/N): " -n 1 -r
         echo
         if [[ $REPLY =~ ^[Yy]$ ]]; then
-            nft flush ruleset && echo "✓ nftables rules flushed" || echo "✗ Failed to flush rules"
+            nft flush ruleset && echo "nftables rules flushed" || echo "Failed to flush rules"
         else
             echo "Operation cancelled"
         fi
@@ -248,15 +248,15 @@ case "${1:-help}" in
         if [[ -f "$BASE_DIR/scripts/nftban_init_nftables_conf.sh" ]]; then
             exec "$BASE_DIR/scripts/nftban_init_nftables_conf.sh"
         else
-            echo "✗ nftables initialization script not found"
+            echo "nftables initialization script not found"
             echo "Run the installation script with GitHub sync enabled"
         fi
         ;;
     reload)
         if [[ -f "$BASE_DIR/config/nft_rules.conf.local" ]]; then
-            nft -f "$BASE_DIR/config/nft_rules.conf.local" && echo "✓ nftables rules reloaded" || echo "✗ Failed to reload rules"
+            nft -f "$BASE_DIR/config/nft_rules.conf.local" && echo "nftables rules reloaded" || echo "Failed to reload rules"
         else
-            echo "✗ nftables configuration file not found"
+            echo "nftables configuration file not found"
             echo "Run: nftban init"
         fi
         ;;
@@ -269,7 +269,7 @@ esac
 NFTBAN_EOF
 
     chmod +x "$BASE_DIR/bin/nftban"
-    echo "✓ Basic nftban binary created"
+    echo "Basic nftban binary created"
 fi
 
 # --- Enhanced Control Panel Detection and Default Ports Setup ---
@@ -316,7 +316,8 @@ get_ssh_port() {
 # Function to create generic configuration template
 create_generic_template() {
     local template_file="$BASE_DIR/templates/control-panels/generic.conf"
-    local ssh_port=$(get_ssh_port)
+    local ssh_port
+    ssh_port=$(get_ssh_port)
     
     log_message "Creating generic configuration template with SSH port: $ssh_port"
     
@@ -363,7 +364,8 @@ TEMPLATE_EOF
 
 # Function to prompt user for generic configuration
 prompt_for_generic_config() {
-    local ssh_port=$(get_ssh_port)
+    local ssh_port
+    ssh_port=$(get_ssh_port)
     
     echo ""
     echo "======================================================"
@@ -499,11 +501,11 @@ process_config() {
     local config_dir="$BASE_DIR/config"
     mkdir -p "$config_dir"
     
-    TCP4_IN="$config_dir/nftban-configuration-ipv4-ports-input-allow.conf.local"
-    TCP4_OUT="$config_dir/nftban-configuration-ipv4-ports-output-allow.conf.local"
-    TCP6_IN="$config_dir/nftban-configuration-ipv6-ports-input-allow.conf.local"
-    TCP6_OUT="$config_dir/nftban-configuration-ipv6-ports-output-allow.conf.local"
-    USER_WHITELIST="$config_dir/nftban-configuration-user-whitelist_ips.conf.local"
+    local TCP4_IN="$config_dir/nftban-configuration-ipv4-ports-input-allow.conf.local"
+    local TCP4_OUT="$config_dir/nftban-configuration-ipv4-ports-output-allow.conf.local"
+    local TCP6_IN="$config_dir/nftban-configuration-ipv6-ports-input-allow.conf.local"
+    local TCP6_OUT="$config_dir/nftban-configuration-ipv6-ports-output-allow.conf.local"
+    local USER_WHITELIST="$config_dir/nftban-configuration-user-whitelist_ips.conf.local"
     
     # Initialize files with headers
     cat > "$TCP4_IN" << 'CONFIG_EOF'
@@ -649,9 +651,11 @@ CONFIG_EOF
     echo "=== Configuration Files Created ==="
     for file in "$TCP4_IN" "$TCP4_OUT" "$TCP6_IN" "$TCP6_OUT" "$USER_WHITELIST"; do
         if [ -f "$file" ]; then
-            line_count=$(grep -v '^#' "$file" | grep -v '^$' | wc -l)
-            echo "✓ $(basename "$file") ($line_count entries)"
-            log_message "Created: $file ($line_count entries)"
+            local line_count
+            line_count=$(wc -l < "$file")
+            non_comment_count=$(grep -v '^#' "$file" | grep -v '^$' | wc -l)
+            echo "$(basename "$file") ($non_comment_count entries)"
+            log_message "Created: $file ($non_comment_count entries)"
         fi
     done
     echo "=================================="
@@ -683,9 +687,9 @@ case $panel_detection_result in
             if process_config "$ACTUAL_CONFIG_FILE" "$PANEL"; then
                 echo ""
                 echo "=== Control Panel Detection Complete ==="
-                echo "✓ Detected: $PANEL"
-                echo "✓ Configuration applied successfully"
-                echo "✓ Files are ready for nftables initialization"
+                echo "Detected: $PANEL"
+                echo "Configuration applied successfully"
+                echo "Files are ready for nftables initialization"
                 echo ""
                 echo "Next steps:"
                 echo "1. Review the generated configuration files in: $BASE_DIR/config/"
@@ -707,8 +711,8 @@ case $panel_detection_result in
         # User declined generic config - empty files created
         echo ""
         echo "=== Manual Configuration Required ==="
-        echo "✓ Empty configuration files created"
-        echo "✗ No automatic port configuration applied"
+        echo "Empty configuration files created"
+        echo "No automatic port configuration applied"
         echo ""
         echo "Manual steps required:"
         echo "1. Edit configuration files in: $BASE_DIR/config/"
@@ -738,34 +742,47 @@ EOF
     echo "  - Create appropriate port configuration files"
     echo ""
     
-    # Run the script directly (not in background) for interactive prompts
+    # Run the script directly for interactive prompts
     if bash "$CP_SCRIPT"; then
         echo ""
-        echo "✓ Control panel detection completed successfully"
+        echo "Control panel detection completed successfully"
         
-        # Check what was created
-        CONFIG_FILES_CREATED=$(find "$BASE_DIR/config" -name "nftban-configuration-*.conf.local" 2>/dev/null | wc -l)
-        if [[ $CONFIG_FILES_CREATED -gt 0 ]]; then
-            echo "✓ $CONFIG_FILES_CREATED configuration files created"
+        # Count configuration files created
+        CONFIG_FILE_COUNT=0
+        for config_file in "$BASE_DIR/config/nftban-configuration-"*.conf.local; do
+            if [[ -f "$config_file" ]]; then
+                CONFIG_FILE_COUNT=$((CONFIG_FILE_COUNT + 1))
+            fi
+        done
+        
+        if [[ $CONFIG_FILE_COUNT -gt 0 ]]; then
+            echo "$CONFIG_FILE_COUNT configuration files created"
             echo ""
             echo "Generated configuration files:"
-            find "$BASE_DIR/config" -name "nftban-configuration-*.conf.local" 2>/dev/null | while read file; do
-                entries=$(grep -v '^#' "$file" | grep -v '^$' | wc -l 2>/dev/null || echo "0")
-                echo "  - $(basename "$file") ($entries entries)"
+            for config_file in "$BASE_DIR/config/nftban-configuration-"*.conf.local; do
+                if [[ -f "$config_file" ]]; then
+                    # Count non-comment, non-empty lines
+                    total_lines=$(wc -l < "$config_file" 2>/dev/null || echo "0")
+                    comment_lines=$(grep -c '^#' "$config_file" 2>/dev/null || echo "0")
+                    empty_lines=$(grep -c '^$' "$file" 2>/dev/null || echo "0")
+
+                    entry_count=$((total_lines - comment_lines - empty_lines))
+                    echo "  - $(basename "$config_file") ($entry_count entries)"
+                fi
             done
         else
-            echo "⚠ No configuration files were created"
+            echo "No configuration files were created"
         fi
     else
-        echo "⚠ Control panel detection encountered an issue"
+        echo "Control panel detection encountered an issue"
         echo "Check the log file for details: $BASE_DIR/logs/cp_detection_*.log"
     fi
     
 else
     echo "Skipping control panel detection"
     echo ""
-    echo "⚠ Manual configuration will be required"
-    echo "You'll need to create these files manually:"
+    echo "Manual configuration will be required"
+    echo "You will need to create these files manually:"
     echo "  - $BASE_DIR/config/nftban-configuration-ipv4-ports-input-allow.conf.local"
     echo "  - $BASE_DIR/config/nftban-configuration-ipv4-ports-output-allow.conf.local"
     echo "  - $BASE_DIR/config/nftban-configuration-ipv6-ports-input-allow.conf.local"
@@ -780,11 +797,11 @@ LINK="/usr/local/bin/nftban"
 if [ ! -f "$TARGET" ]; then
     echo "Warning: Target file $TARGET does not exist, but continuing..."
 elif [ -L "$LINK" ]; then
-    echo "Symlink already exists: $LINK → $(readlink -f "$LINK")"
+    echo "Symlink already exists: $LINK -> $(readlink -f "$LINK")"
 else
     echo "Creating symlink..."
     ln -s "$TARGET" "$LINK"
-    echo "Symlink created: $LINK → $TARGET"
+    echo "Symlink created: $LINK -> $TARGET"
 fi
 
 # --- Set Executable Permissions ---
@@ -797,61 +814,72 @@ fi
 # --- Enhanced Post-Installation Notes ---
 echo ""
 echo "=== INSTALLATION COMPLETE ==="
-echo "✓ Packages installed:"
+echo "Packages installed:"
 echo "  - $FAIL2BAN_PKG"
 echo "  - $WHOIS_PKG" 
 echo "  - $DNSUTILS_PKG"
 echo ""
-echo "✓ nftban linked to /usr/local/bin/nftban"
+echo "nftban linked to /usr/local/bin/nftban"
 echo ""
-echo "✓ Scripts are executable"
+echo "Scripts are executable"
 
 # Enhanced status reporting for control panel detection
 if [[ $CP_DETECTION_RUN == true ]]; then
-    # Check if configuration files were created
-    CONFIG_FILES_CREATED=$(find "$BASE_DIR/config" -name "nftban-configuration-*.conf.local" 2>/dev/null | wc -l)
+    # Count configuration files created again
+    CONFIG_FILE_COUNT=0
+    for config_file in "$BASE_DIR/config/nftban-configuration-"*.conf.local; do
+        if [[ -f "$config_file" ]]; then
+            CONFIG_FILE_COUNT=$((CONFIG_FILE_COUNT + 1))
+        fi
+    done
     
-    if [[ $CONFIG_FILES_CREATED -gt 0 ]]; then
+    if [[ $CONFIG_FILE_COUNT -gt 0 ]]; then
         echo ""
         echo "=== CONTROL PANEL CONFIGURATION ==="
         
         # Determine what type of configuration was applied
-        if [[ -f "$BASE_DIR/logs/cp_detection_"*.log ]]; then
+        if ls "$BASE_DIR/logs/cp_detection_"*.log >/dev/null 2>&1; then
             LATEST_LOG=$(ls -t "$BASE_DIR/logs/cp_detection_"*.log 2>/dev/null | head -1)
             if grep -q "DirectAdmin detected" "$LATEST_LOG" 2>/dev/null; then
-                echo "✓ DirectAdmin control panel detected and configured"
+                echo "DirectAdmin control panel detected and configured"
             elif grep -q "cPanel detected" "$LATEST_LOG" 2>/dev/null; then
-                echo "✓ cPanel control panel detected and configured"
+                echo "cPanel control panel detected and configured"
             elif grep -q "Plesk detected" "$LATEST_LOG" 2>/dev/null; then
-                echo "✓ Plesk control panel detected and configured"
+                echo "Plesk control panel detected and configured"
             elif grep -q "User selected to create generic configuration" "$LATEST_LOG" 2>/dev/null; then
-                SSH_PORT_USED=$(grep -o "SSH port: [0-9]*" "$LATEST_LOG" | cut -d' ' -f3)
-                echo "✓ Generic web server configuration applied"
+                SSH_PORT_USED=$(grep -o "SSH port: [0-9]*" "$LATEST_LOG" 2>/dev/null | cut -d' ' -f3)
+                echo "Generic web server configuration applied"
                 echo "  - SSH port: ${SSH_PORT_USED:-22}"
                 echo "  - HTTP/HTTPS ports: 80, 443"
                 echo "  - DNS/NTP outbound: 53, 123"
             elif grep -q "User declined generic configuration" "$LATEST_LOG" 2>/dev/null; then
-                echo "⚠ Empty configuration files created"
+                echo "Empty configuration files created"
                 echo "  Manual configuration required"
             fi
         fi
         
         echo ""
-        echo "✓ Configuration files created ($CONFIG_FILES_CREATED files):"
-        find "$BASE_DIR/config" -name "nftban-configuration-*.conf.local" 2>/dev/null | while read file; do
-            entries=$(grep -v '^#' "$file" | grep -v '^$' | wc -l 2>/dev/null || echo "0")
-            filename=$(basename "$file")
-            case "$filename" in
-                *"input"*) echo "  - $filename ($entries inbound rules)" ;;
-                *"output"*) echo "  - $filename ($entries outbound rules)" ;;
-                *"whitelist"*) echo "  - $filename ($entries whitelisted IPs)" ;;
-                *) echo "  - $filename ($entries entries)" ;;
-            esac
+        echo "Configuration files created ($CONFIG_FILE_COUNT files):"
+        for config_file in "$BASE_DIR/config/nftban-configuration-"*.conf.local; do
+            if [[ -f "$config_file" ]]; then
+                # Count entries using simple arithmetic
+                total_lines=$(wc -l < "$config_file" 2>/dev/null || echo "0")
+                comment_lines=$(grep -c '^#' "$config_file" 2>/dev/null || echo "0")
+                empty_lines=$(grep -c '^$' "$file" 2>/dev/null || echo "0")
+                entry_count=$((total_lines - comment_lines - empty_lines))
+                filename=$(basename "$config_file")
+                case "$filename" in
+                    *"input"*) echo "  - $filename ($entry_count inbound rules)" ;;
+                    *"output"*) echo "  - $filename ($entry_count outbound rules)" ;;
+                    *"whitelist"*) echo "  - $filename ($entry_count whitelisted IPs)" ;;
+                    *) echo "  - $filename ($entry_count entries)" ;;
+                esac
+            fi
         done
         echo "==================================="
     else
         echo ""
-        echo "⚠ Control panel detection completed but no configuration files were created"
+        echo "Control panel detection completed but no configuration files were created"
         echo "Manual configuration will be required"
     fi
 fi
@@ -862,7 +890,7 @@ echo "1. Initialize nftables environment:"
 if [[ -f "$BASE_DIR/scripts/nftban_init_nftables_conf.sh" ]]; then
     echo "   sudo $BASE_DIR/scripts/nftban_init_nftables_conf.sh"
 else
-    echo "   ⚠ nftables initialization script not found"
+    echo "   nftables initialization script not found"
     echo "   Enable GitHub sync to get the full script suite"
 fi
 echo ""
@@ -871,20 +899,29 @@ echo "2. Initialize fail2ban environment:"
 if [[ -f "$BASE_DIR/scripts/nftban_init_fail2ban_conf.sh" ]]; then
     echo "   sudo $BASE_DIR/scripts/nftban_init_fail2ban_conf.sh"
 else
-    echo "   ⚠ fail2ban initialization script not found"
+    echo "   fail2ban initialization script not found"
     echo "   Enable GitHub sync to get the full script suite"
 fi
 echo ""
 
 # Conditional step 3 based on whether config files were created
-CONFIG_FILES_CREATED=$(find "$BASE_DIR/config" -name "nftban-configuration-*.conf.local" 2>/dev/null | wc -l)
-if [[ $CONFIG_FILES_CREATED -gt 0 ]]; then
-    # Check if manual configuration is needed
+CONFIG_FILE_COUNT=0
+for config_file in "$BASE_DIR/config/nftban-configuration-"*.conf.local; do
+    if [[ -f "$config_file" ]]; then
+        CONFIG_FILE_COUNT=$((CONFIG_FILE_COUNT + 1))
+    fi
+done
+
+if [[ $CONFIG_FILE_COUNT -gt 0 ]]; then
+    # Count total entries across all files
     TOTAL_ENTRIES=0
     for file in "$BASE_DIR/config/nftban-configuration-"*".conf.local"; do
         if [[ -f "$file" ]]; then
-            entries=$(grep -v '^#' "$file" | grep -v '^$' | wc -l 2>/dev/null || echo "0")
-            TOTAL_ENTRIES=$((TOTAL_ENTRIES + entries))
+            total_lines=$(wc -l < "$file" 2>/dev/null || echo "0")
+           comment_lines=$(grep -c '^#' "$file" 2>/dev/null || echo "0")
+	   empty_lines=$(grep -c '^$' "$file" 2>/dev/null || echo "0")
+           file_entries=$((total_lines - comment_lines - empty_lines))
+            TOTAL_ENTRIES=$((TOTAL_ENTRIES + file_entries))
         fi
     done
     
@@ -915,7 +952,7 @@ echo ""
 # Show relevant log files
 echo "=== LOG FILES ==="
 echo "Installation log: $LOG_FILE"
-if [[ -f "$BASE_DIR/logs/cp_detection_"*.log ]]; then
+if ls "$BASE_DIR/logs/cp_detection_"*.log >/dev/null 2>&1; then
     LATEST_CP_LOG=$(ls -t "$BASE_DIR/logs/cp_detection_"*.log 2>/dev/null | head -1)
     echo "Control panel detection log: $LATEST_CP_LOG"
 fi
@@ -924,9 +961,10 @@ echo "================================="
 # Final status
 echo ""
 if [[ $GITHUB_SYNC_DONE == true ]]; then
-    echo "🎉 Installation completed successfully with GitHub sync!"
+    echo "Installation completed successfully with GitHub sync!"
 else
-    echo "⚠ Installation completed with basic functionality only."
+    echo "Installation completed with basic functionality only."
     echo "For full features, consider re-running with GitHub sync enabled."
 fi
 echo ""
+  
