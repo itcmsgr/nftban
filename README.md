@@ -41,7 +41,7 @@ It combines the power of **nftables** and **Fail2Ban** to deliver high-performan
 
 ```bash
 # Download the installer
-curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install_nftban.sh -o install_nftban.sh
+curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/scripts/nftban_init.sh -o install_nftban.sh
 
 # Preview installer before execution
 less install_nftban.sh
@@ -89,6 +89,7 @@ nftban
 ├── backups/
 ├── templates/
 │   └── control-panels/
+│   └── fail2ban/
 ├── bin/
 ```
 
