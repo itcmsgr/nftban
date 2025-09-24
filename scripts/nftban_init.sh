@@ -1075,9 +1075,9 @@ show_completion_summary() {
       for config_file in "$TARGET_DIR/config/nftban-configuration-"*.conf.local; do
         if [[ -f "$config_file" ]]; then
           # Count entries using simple arithmetic
-          total_lines=$(wc -l < "$config_file" 2>/dev/null || echo "0")
-          comment_lines=$(grep -c '^#' "$config_file" 2>/dev/null || echo "0")
-          empty_lines=$(grep -c '^[[:space:]]*$' "$config_file" 2>/dev/null || echo "0")
+          total_lines=$(wc -l < "$config_file" 2>/dev/null)
+          comment_lines=$(grep -c '^#' "$config_file" 2>/dev/null || true)
+          empty_lines=$(grep -c '^[[:space:]]*$' "$config_file" 2>/dev/null || true)
           entry_count=$((total_lines - comment_lines - empty_lines))
           filename=$(basename "$config_file")
           case "$filename" in
@@ -1129,9 +1129,9 @@ show_completion_summary() {
     TOTAL_ENTRIES=0
     for file in "$TARGET_DIR/config/nftban-configuration-"*".conf.local"; do
       if [[ -f "$file" ]]; then
-        total_lines=$(wc -l < "$file" 2>/dev/null || echo "0")
-        comment_lines=$(grep -c '^#' "$file" 2>/dev/null || echo "0")
-        empty_lines=$(grep -c '^[[:space:]]*$' "$file" 2>/dev/null || echo "0")
+        total_lines=$(wc -l < "$file" 2>/dev/null )
+        comment_lines=$(grep -c '^#' "$file" 2>/dev/null || true)
+        empty_lines=$(grep -c '^[[:space:]]*$' "$file" 2>/dev/null || true)
         file_entries=$((total_lines - comment_lines - empty_lines))
         TOTAL_ENTRIES=$((TOTAL_ENTRIES + file_entries))
       fi
