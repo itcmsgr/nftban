@@ -437,11 +437,18 @@ create_empty_configs() {
   mkdir -p "$config_dir"
   
   local files=(
+    "nftban-configuration-ipv4-ports-input-allow.conf"
+    "nftban-configuration-ipv4-ports-output-allow.conf"
+    "nftban-configuration-ipv6-ports-input-allow.conf"
+    "nftban-configuration-ipv6-ports-output-allow.conf"
+    "nftban-configuration-user-whitelist_ips.conf"
+    "nftban-configuration-user-blacklist_ips.conf"
     "nftban-configuration-ipv4-ports-input-allow.conf.local"
     "nftban-configuration-ipv4-ports-output-allow.conf.local"
     "nftban-configuration-ipv6-ports-input-allow.conf.local"
     "nftban-configuration-ipv6-ports-output-allow.conf.local"
     "nftban-configuration-user-whitelist_ips.conf.local"
+    "nftban-configuration-user-blacklist_ips.conf.local"
   )
   
   for file in "${files[@]}"; do
