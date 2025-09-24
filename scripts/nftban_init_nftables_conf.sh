@@ -2,7 +2,7 @@
 ################################################################################
 # Script: nftban_init_nftables_conf.sh
 #
-# Version: 1.7.1
+# Version: 1.8.0
 # Author: ITCMS Team (Antonios Voulvoulis) 
 # Description:
 # Enhanced nftables configuration with comprehensive IP whitelisting
@@ -38,6 +38,7 @@ IPV4_BLACKLIST_FILE="$BASE_DIR/nftban-configuration-ipv4-blacklist_ips.conf.loca
 IPV6_BLACKLIST_FILE="$BASE_DIR/nftban-configuration-ipv6-blacklist_ips.conf.local"
 SYSTEM_WHITELIST_FILE="$BASE_DIR/nftban-configuration-system_whitelist_ips.conf.local"
 USER_WHITELIST_FILE="$BASE_DIR/nftban-configuration-user-whitelist_ips.conf.local"
+USER_BLACKLIST_FILE="$BASE_DIR/nftban-configuration-user-blacklist_ips.conf.local"
 USER_CT_FILE_IPv4="$BASE_DIR/nftban-nfttables-ct-ipv4.conf.local"
 USER_CT_FILE_IPv6="$BASE_DIR/nftban-nfttables-ct-ipv6.conf.local"
 OUTPUT_FILE="$BASE_DIR/nft_rules.conf.local"
@@ -360,11 +361,26 @@ CONFIG_FILES=(
     "$IPV4_BLACKLIST_FILE" "$IPV6_BLACKLIST_FILE"
     "$USER_CT_FILE_IPv4" "$USER_CT_FILE_IPv6"
     "$USER_WHITELIST_FILE"
+    "$USER_BLACKLIST_FILE"
 )
 
 for file in "${CONFIG_FILES[@]}"; do
     initialize_config_from_template "$file"
 done
+
+# Seed USER_BLACKLIST_FILE with helpful comments if it's empty
+if [[ ! -s "$USER_BLACKLIST_FILE" ]]; then
+    cat > "$USER_BLACKLIST_FILE" <<'EOF'
+# Global user blacklist for nftban
+# Path: /etc/nftban/config/nftban-configuration-user-blacklist_ips.conf.local
+# One entry per line; comments allowed with '#'
+# Supports IPv4 / IPv6 and CIDR, e.g.:
+# 203.0.113.45
+# 198.51.100.0/24
+# 2001:db8::dead:beef
+# 2001:db8:abcd::/48
+EOF
+fi
 
 # --- Start ruleset generation ---
 echo "--- Flushing existing nftables ruleset and starting generation ---"
@@ -446,8 +462,31 @@ echo "Fail2Ban whitelist saved to: $FAIL2BAN_WHITELIST"
 
 IPV4_WHITELIST=$(echo "$ALL_WHITELIST_IPS" | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}" | tr '\n' ',' | sed 's/,$//')
 IPV6_WHITELIST=$(echo "$ALL_WHITELIST_IPS" | grep -oE "([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}" | tr '\n' ',' | sed 's/,$//')
-IPV4_BLACKLIST=$(grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}" "$IPV4_BLACKLIST_FILE" 2>/dev/null | tr '\n' ',' | sed 's/,$//')
-IPV6_BLACKLIST=$(grep -oE "([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}" "$IPV6_BLACKLIST_FILE" 2>/dev/null | tr '\n' ',' | sed 's/,$//')
+# Build combined blacklist from system + user, normalize and filter by whitelist (exact matches only)
+# Normalize user-provided blacklist
+USER_BLACKLIST_ALL=$(sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$USER_BLACKLIST_FILE" 2>/dev/null | sed '/^$/d' | sort -u)
+# Split user list by IP version (allow single IP or CIDR)
+USER_V4=$(echo "$USER_BLACKLIST_ALL" | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?' | sort -u)
+USER_V6=$(echo "$USER_BLACKLIST_ALL" | grep -Eio '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}(/[0-9]{1,3})?' | sort -u)
+
+# Normalize existing blacklist files
+SYS_V4=$(sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$IPV4_BLACKLIST_FILE" 2>/dev/null | sed '/^$/d' | sort -u)
+SYS_V6=$(sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$IPV6_BLACKLIST_FILE" 2>/dev/null | sed '/^$/d' | sort -u)
+
+# Whitelist exact tokens (IPs or CIDRs)
+WL_EXACT=$(echo "$ALL_WHITELIST_IPS" | sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | sed '/^$/d' | sort -u)
+
+# Build unions
+UNION_V4=$(printf '%s\n%s\n' "$SYS_V4" "$USER_V4" | sort -u)
+UNION_V6=$(printf '%s\n%s\n' "$SYS_V6" "$USER_V6" | sort -u)
+
+# Filter out any entries that exactly match a whitelisted entry
+FILTERED_V4=$(comm -23 <(printf '%s\n' "$UNION_V4" | sort -u) <(printf '%s\n' "$WL_EXACT" | sort -u))
+FILTERED_V6=$(comm -23 <(printf '%s\n' "$UNION_V6" | sort -u) <(printf '%s\n' "$WL_EXACT" | sort -u))
+
+# Export for nftables
+IPV4_BLACKLIST=$(echo "$FILTERED_V4" | tr '\n' ',' | sed 's/,$//')
+IPV6_BLACKLIST=$(echo "$FILTERED_V6" | tr '\n' ',' | sed 's/,$//')
 
 # --- Global loopback rules ---
 cat >> "$OUTPUT_FILE" <<EOF
