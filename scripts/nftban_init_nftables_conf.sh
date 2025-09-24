@@ -12,6 +12,7 @@
 #  - All server interface IPs whitelisting
 #  - Safe template initialization
 #  - Protection against accidental lockout
+#  - Whitelist or not cloudflare IPs
 ################################################################################
 
 # --- Configuration ---
