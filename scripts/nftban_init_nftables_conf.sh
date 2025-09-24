@@ -46,6 +46,44 @@ FAIL2BAN_WHITELIST="$BASE_DIR/nftban-fail2ban-ip-whitelist.conf.local"
 CLOUDFLARE_IPV4_URL="https://www.cloudflare.com/ips-v4"
 CLOUDFLARE_IPV6_URL="https://www.cloudflare.com/ips-v6"
 
+# ---- BEGIN: generator helpers (added by fix) ----
+# Safely append to an array only if the value is non-empty
+append_if_set() {
+  # $1: array name (without @), $2: value
+  local __arr_name="$1"
+  local __val="$2"
+  if [ -n "$__val" ]; then
+    eval "$__arr_name+=(\"$__val\")"
+  fi
+}
+
+# Dedupe while preserving order; expects items as args; prints items space-separated
+dedup() {
+  awk -v RS=' ' '!a[$0]++' <<<"${*}"
+}
+
+# Print nft 'elements = { ... }' from a bash array name; handles empty arrays.
+# Usage: print_elements_from_array ipv4_blacklist
+print_elements_from_array() {
+  local __arr_name="$1"
+  # shellcheck disable=SC1083,SC2086
+  eval 'local __arr=("${'"$__arr_name"'[@]}")'
+  if [ "${#__arr[@]}" -gt 0 ]; then
+    # dedupe
+    local joined
+    joined=$(IFS=' '; dedup "${__arr[@]}")
+    # re-split on spaces without globbing, then join with commas
+    set -f
+    # shellcheck disable=SC2086
+    set -- $joined
+    printf '        elements = { %s }\n' "$(IFS=,; echo "$*")"
+    set +f
+  else
+    printf '        elements = { }\n'
+  fi
+}
+# ---- END: generator helpers (added by fix) ----
+
 # --- Helper functions ---
 ip_exists_in_file() {
     local ip=$1
@@ -195,27 +233,22 @@ generate_interface_chains() {
     elif [[ "$ipver" == "ip6" ]]; then
         datatype="ipv6_addr"
     fi
-
-    # Handle empty sets
-    local whitelist_elements=""
-    if [[ -n "$whitelist" ]]; then
-        whitelist_elements="elements = { $whitelist }"
+    # Use array-based sets; choose array names from ip version
+    local wl_arr bl_arr
+    if [[ "$ipver" == "ip" ]]; then
+        wl_arr="ipv4_whitelist"; bl_arr="ipv4_blacklist"
+    else
+        wl_arr="ipv6_whitelist"; bl_arr="ipv6_blacklist"
     fi
-    
-    local blacklist_elements=""
-    if [[ -n "$blacklist" ]]; then
-        blacklist_elements="elements = { $blacklist }"
-    fi
-
-    cat >> "$OUTPUT_FILE" <<EOF
+cat >> "$OUTPUT_FILE" <<EOF
 table $ipver nftban_tbl_${iface} {
     set nftban_whitelist_${ipver} {
         type $datatype;
-        $whitelist_elements
+$(print_elements_from_array "$wl_arr")
     }
     set nftban_blacklist_${ipver} {
         type $datatype;
-        $blacklist_elements
+$(print_elements_from_array "$bl_arr")
     }
 
     chain nftban_drop_blacklist_${iface}_${ipver} {
@@ -487,6 +520,31 @@ FILTERED_V6=$(comm -23 <(printf '%s\n' "$UNION_V6" | sort -u) <(printf '%s\n' "$
 # Export for nftables
 IPV4_BLACKLIST=$(echo "$FILTERED_V4" | tr '\n' ',' | sed 's/,$//')
 IPV6_BLACKLIST=$(echo "$FILTERED_V6" | tr '\n' ',' | sed 's/,$//')
+# ---- BEGIN: array construction (added by fix) ----
+# Build IPv4/IPv6 whitelist/blacklist arrays from computed lists (may be comma-separated)
+ipv4_whitelist=()
+ipv4_blacklist=()
+ipv6_whitelist=()
+ipv6_blacklist=()
+
+# Helper: add a comma-separated list into a target array
+add_csv_to_array() {
+  # $1 array name, $2 csv string
+  local __arr="$1"
+  local __csv="$2"
+  IFS=',' read -r -a __items <<< "$__csv"
+  for __it in "${__items[@]}"; do
+    append_if_set "$__arr" "$__it"
+  done
+}
+
+add_csv_to_array ipv4_whitelist "$IPV4_WHITELIST"
+add_csv_to_array ipv6_whitelist "$IPV6_WHITELIST"
+add_csv_to_array ipv4_blacklist "$IPV4_BLACKLIST"
+add_csv_to_array ipv6_blacklist "$IPV6_BLACKLIST"
+
+# ---- END: array construction (added by fix) ----
+
 
 # --- Global loopback rules ---
 cat >> "$OUTPUT_FILE" <<EOF
@@ -548,3 +606,4 @@ FINAL_CONFIG_SNAPSHOT="$LOG_DIR/nftables_final_config_$(date +%Y-%m-%d-%H%M%S).c
 cp "$OUTPUT_FILE" "$FINAL_CONFIG_SNAPSHOT"
 echo "Final configuration saved to: $FINAL_CONFIG_SNAPSHOT"
 echo "=== nftables configuration completed successfully ==="
+
