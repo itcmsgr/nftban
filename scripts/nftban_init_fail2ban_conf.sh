@@ -753,13 +753,40 @@ login_monitor_status() {
   systemctl status "$(basename "$LM_TIMER_UNIT")" --no-pager || true
 }
 login_monitor_uninstall() {
+  # Try the normal disable first (ok if it fails)
   login_monitor_disable all || true
-  rm -f "$LM_LIVE_UNIT" "$LM_SCAN_UNIT" "$LM_TIMER_UNIT"
-  rm -f "$LM_LIVE_BIN" "$LM_SCAN_BIN"
+
+  echo "[*] Stopping/Disabling units…"
+  systemctl stop nftban_lfd.service nftban-login-scan.service nftban-login-scan.timer 2>/dev/null || true
+  systemctl disable nftban_lfd.service nftban-login-scan.timer 2>/dev/null || true
+  systemctl reset-failed nftban_lfd.service nftban-login-scan.service nftban-login-scan.timer 2>/dev/null || true
+
+  echo "[*] Killing any leftover processes…"
+  pkill -f -- '/usr/local/sbin/nftban-login-monitor' 2>/dev/null || true
+  pkill -f -- 'journalctl -f .*nftban' 2>/dev/null || true
+
+  echo "[*] Removing unit files…"
+  rm -f -- "${LM_LIVE_UNIT:-/etc/systemd/system/nftban_lfd.service}" \
+            "${LM_SCAN_UNIT:-/etc/systemd/system/nftban-login-scan.service}" \
+            "${LM_TIMER_UNIT:-/etc/systemd/system/nftban-login-scan.timer}"
+
+  # Clean any systemd override drop-ins if you created one earlier
+  rm -f -- /etc/systemd/system/nftban_lfd.service.d/override.conf 2>/dev/null || true
+  rmdir  --ignore-fail-on-non-empty /etc/systemd/system/nftban_lfd.service.d 2>/dev/null || true
+
+  echo "[*] Removing installed binaries…"
+  rm -f -- "${LM_LIVE_BIN:-/usr/local/sbin/nftban-login-monitor}" \
+            "${LM_SCAN_BIN:-/usr/local/sbin/nftban-login-scan}"
+
+  echo "[*] Reloading systemd…"
   systemctl daemon-reload
+
+  echo "[*] Sanity check…"
+  systemctl list-units --all | grep -i 'nftban' || echo "No nftban units loaded"
+  command -v nftban-login-monitor >/dev/null || echo "No nftban-login-monitor in PATH"
+
   echo "Login monitor removed. Logs/state preserved."
 }
-
 
 ensure_local_config() {
   # If user's local config doesn't exist yet, copy the freshly refreshed base and stop.
