@@ -4,7 +4,7 @@
 # =============================================================================
 # Script: nftban_init_fail2ban_conf.sh
 #
-# Version: 3.1  (Enhanced with Login Monitoring)
+# Version: 3.2  (Enhanced with Login Monitoring)
 # Author:  ITCMS Team (Antonios Voulvoulis)
 #
 # Description:
@@ -56,6 +56,7 @@
 # Notes:
 #   • Live login monitor unit: nftban_lfd.service
 #   • Scan service & timer remain: nftban-login-scan.service / nftban-login-scan.timer
+# Bug : This bug with u just rem for ref :  proc=subprocess.Popen(["journalctl","-f","-n","0","-o","cat","-t","sshd","-t","sudo","-u","ssh","-u","sshd","-u","sudo"],
 # =============================================================================
 
 set -Eeuo pipefail
@@ -517,7 +518,7 @@ def main():
     rx_sudo=re.compile(r"sudo:?\s+(\S+)\s*:.*COMMAND=(.*)$")
     rx_root=re.compile(r"session opened for user root")
     try:
-        proc=subprocess.Popen(["journalctl","-f","-n","0","-o","cat","-t","sshd","-t","sudo","-u","ssh","-u","sshd","-u","sudo"],
+        proc=subprocess.Popen(["journalctl","-f","-n","0","-o","cat","-t","sshd","-t","sudo"],
                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
     except FileNotFoundError:
         return 1
