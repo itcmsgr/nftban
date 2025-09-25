@@ -2,7 +2,7 @@
 ################################################################################
 # Script: nftban_init_nftables_conf.sh
 #
-# Version: 1.8.0
+# Version: 1.8.1
 # Author: ITCMS Team (Antonios Voulvoulis) 
 # Description:
 # Enhanced nftables configuration with comprehensive IP whitelisting
@@ -13,6 +13,10 @@
 #  - Safe template initialization
 #  - Protection against accidental lockout
 #  - Whitelist or not cloudflare IPs
+# Patched changes:
+#   - Avoid emitting 'elements = { }' for empty sets (some nft versions reject it)
+#   - Add 'flags interval;' to sets to support CIDR/prefix elements
+#   - Correctly append generated port rules to the output rules file instead of stdout
 ################################################################################
 
 # --- Configuration ---
@@ -46,7 +50,7 @@ FAIL2BAN_WHITELIST="$BASE_DIR/nftban-fail2ban-ip-whitelist.conf.local"
 CLOUDFLARE_IPV4_URL="https://www.cloudflare.com/ips-v4"
 CLOUDFLARE_IPV6_URL="https://www.cloudflare.com/ips-v6"
 
-# ---- BEGIN: generator helpers (added by fix) ----
+# ---- BEGIN: generator helpers (patched) ----
 # Safely append to an array only if the value is non-empty
 append_if_set() {
   # $1: array name (without @), $2: value
@@ -62,7 +66,8 @@ dedup() {
   awk -v RS=' ' '!a[$0]++' <<<"${*}"
 }
 
-# Print nft 'elements = { ... }' from a bash array name; handles empty arrays.
+# Print nft 'elements = { ... }' from a bash array name.
+# When the array is empty, DO NOT print an empty elements initializer (older nft rejects it).
 # Usage: print_elements_from_array ipv4_blacklist
 print_elements_from_array() {
   local __arr_name="$1"
@@ -78,11 +83,9 @@ print_elements_from_array() {
     set -- $joined
     printf '        elements = { %s }\n' "$(IFS=,; echo "$*")"
     set +f
-  else
-    printf '        elements = { }\n'
   fi
 }
-# ---- END: generator helpers (added by fix) ----
+# ---- END: generator helpers (patched) ----
 
 # --- Helper functions ---
 ip_exists_in_file() {
@@ -244,10 +247,12 @@ cat >> "$OUTPUT_FILE" <<EOF
 table $ipver nftban_tbl_${iface} {
     set nftban_whitelist_${ipver} {
         type $datatype;
+        flags interval;
 $(print_elements_from_array "$wl_arr")
     }
     set nftban_blacklist_${ipver} {
         type $datatype;
+        flags interval;
 $(print_elements_from_array "$bl_arr")
     }
 
@@ -263,7 +268,8 @@ $(print_elements_from_array "$bl_arr")
         tcp dport $ssh_port accept
 EOF
 
-    generate_port_rules "$iface" "$in_ports" "iifname"
+    # Append generated port rules directly to the output file (patched)
+    generate_port_rules "$iface" "$in_ports" "iifname" >> "$OUTPUT_FILE"
 
     if [[ "$ipver" == "ip" ]]; then
         echo "        include \"$BASE_DIR/nftban-nfttables-ct-ipv4.conf.local\"" >> "$OUTPUT_FILE"
@@ -278,7 +284,8 @@ EOF
         type filter hook output priority 0; policy accept;
 EOF
 
-    generate_port_rules "$iface" "$out_ports" "oifname"
+    # Append generated port rules directly to the output file (patched)
+    generate_port_rules "$iface" "$out_ports" "oifname" >> "$OUTPUT_FILE"
     
     echo "    }" >> "$OUTPUT_FILE"
     echo "}" >> "$OUTPUT_FILE"
@@ -493,41 +500,35 @@ fi
 echo "$ALL_WHITELIST_IPS" | sort -u > "$FAIL2BAN_WHITELIST"
 echo "Fail2Ban whitelist saved to: $FAIL2BAN_WHITELIST"
 
-IPV4_WHITELIST=$(echo "$ALL_WHITELIST_IPS" | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}" | tr '\n' ',' | sed 's/,$//')
-IPV6_WHITELIST=$(echo "$ALL_WHITELIST_IPS" | grep -oE "([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}" | tr '\n' ',' | sed 's/,$//')
+IPV4_WHITELIST=$(echo "$ALL_WHITELIST_IPS" | grep -oE "([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?" | tr '\n' ',' | sed 's/,$//')
+IPV6_WHITELIST=$(echo "$ALL_WHITELIST_IPS" | grep -oE "([0-9a-fA-F]{0,4}:){2,7}[0-9a-fA-F]{0,4}(/[0-9]{1,3})?" | tr '\n' ',' | sed 's/,$//')
+
 # Build combined blacklist from system + user, normalize and filter by whitelist (exact matches only)
-# Normalize user-provided blacklist
 USER_BLACKLIST_ALL=$(sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$USER_BLACKLIST_FILE" 2>/dev/null | sed '/^$/d' | sort -u)
-# Split user list by IP version (allow single IP or CIDR)
 USER_V4=$(echo "$USER_BLACKLIST_ALL" | grep -Eo '([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?' | sort -u)
 USER_V6=$(echo "$USER_BLACKLIST_ALL" | grep -Eio '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}(/[0-9]{1,3})?' | sort -u)
 
-# Normalize existing blacklist files
 SYS_V4=$(sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$IPV4_BLACKLIST_FILE" 2>/dev/null | sed '/^$/d' | sort -u)
 SYS_V6=$(sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' "$IPV6_BLACKLIST_FILE" 2>/dev/null | sed '/^$/d' | sort -u)
 
-# Whitelist exact tokens (IPs or CIDRs)
 WL_EXACT=$(echo "$ALL_WHITELIST_IPS" | sed -e 's/#.*$//' -e 's/^[[:space:]]*//' -e 's/[[:space:]]*$//' | sed '/^$/d' | sort -u)
 
-# Build unions
 UNION_V4=$(printf '%s\n%s\n' "$SYS_V4" "$USER_V4" | sort -u)
 UNION_V6=$(printf '%s\n%s\n' "$SYS_V6" "$USER_V6" | sort -u)
 
-# Filter out any entries that exactly match a whitelisted entry
 FILTERED_V4=$(comm -23 <(printf '%s\n' "$UNION_V4" | sort -u) <(printf '%s\n' "$WL_EXACT" | sort -u))
 FILTERED_V6=$(comm -23 <(printf '%s\n' "$UNION_V6" | sort -u) <(printf '%s\n' "$WL_EXACT" | sort -u))
 
 # Export for nftables
 IPV4_BLACKLIST=$(echo "$FILTERED_V4" | tr '\n' ',' | sed 's/,$//')
 IPV6_BLACKLIST=$(echo "$FILTERED_V6" | tr '\n' ',' | sed 's/,$//')
-# ---- BEGIN: array construction (added by fix) ----
-# Build IPv4/IPv6 whitelist/blacklist arrays from computed lists (may be comma-separated)
+
+# ---- BEGIN: array construction (patched) ----
 ipv4_whitelist=()
 ipv4_blacklist=()
 ipv6_whitelist=()
 ipv6_blacklist=()
 
-# Helper: add a comma-separated list into a target array
 add_csv_to_array() {
   # $1 array name, $2 csv string
   local __arr="$1"
@@ -542,9 +543,7 @@ add_csv_to_array ipv4_whitelist "$IPV4_WHITELIST"
 add_csv_to_array ipv6_whitelist "$IPV6_WHITELIST"
 add_csv_to_array ipv4_blacklist "$IPV4_BLACKLIST"
 add_csv_to_array ipv6_blacklist "$IPV6_BLACKLIST"
-
-# ---- END: array construction (added by fix) ----
-
+# ---- END: array construction (patched) ----
 
 # --- Global loopback rules ---
 cat >> "$OUTPUT_FILE" <<EOF
