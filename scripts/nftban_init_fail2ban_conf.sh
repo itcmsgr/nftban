@@ -57,6 +57,7 @@
 #   • Live login monitor unit: nftban_lfd.service
 #   • Scan service & timer remain: nftban-login-scan.service / nftban-login-scan.timer
 # Bug : This bug with u just rem for ref :  proc=subprocess.Popen(["journalctl","-f","-n","0","-o","cat","-t","sshd","-t","sudo","-u","ssh","-u","sshd","-u","sudo"],
+# Why: -u ... filters by systemd unit and ANDs with your identifiers. There’s no sudo unit on most distros, so the AND wipes out sudo lines. Dropping the -u terms lets sudo entries through.
 # =============================================================================
 
 set -Eeuo pipefail
