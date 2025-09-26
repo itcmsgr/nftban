@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 
-
 # =============================================================================
 # Script: nftban_init_fail2ban_conf.sh
 #
-# Version: 3.2  (Enhanced with Login Monitoring)
+# Version: 3.3  (Enhanced with Login Monitoring)
 # Author:  ITCMS Team (Antonios Voulvoulis)
 #
 # Description:
@@ -464,48 +463,93 @@ nft_unban_ip() {
 # -----------------------------
 # Login monitor (live + timer) — install/enable/disable/status/uninstall
 # -----------------------------
+
 write_login_monitor_live() {
   install -d -m 0755 /usr/local/sbin /var/log/nftban
   cat >"$LM_LIVE_BIN" <<'PY'
 #!/usr/bin/env python3
 import os, re, sys, time, subprocess, datetime, collections
+
 BASE_CONF="/etc/nftban/config/nftban.conf"
 LOCAL_CONF="/etc/nftban/config/nftban.conf.local"
-LOG_DIR="/var/log/nftban"; LOG_FILE=os.path.join(LOG_DIR,"login-monitor.log")
+LOG_DIR="/var/log/nftban"
+LOG_FILE=os.path.join(LOG_DIR,"login-monitor.log")
+DEBUG_LOG=os.path.join(LOG_DIR,"login-monitor-debug.log")
+
 os.makedirs(LOG_DIR, exist_ok=True)
+
 def log(m):
     ts=datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()
-    line=f"[{ts}] {m}"; print(line, flush=True)
-    try: open(LOG_FILE,"a").write(line+"\n")
-    except Exception: pass
+    line=f"[{ts}] {m}"
+    print(line, flush=True)
+    try: 
+        with open(LOG_FILE,"a") as f:
+            f.write(line+"\n")
+    except Exception: 
+        pass
+
+def debug_log(m):
+    ts=datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()
+    line=f"[{ts}] DEBUG: {m}"
+    try: 
+        with open(DEBUG_LOG,"a") as f:
+            f.write(line+"\n")
+    except Exception: 
+        pass
+
 def parse_conf(p):
     d={}
     try:
-        for raw in open(p):
-            s=raw.strip()
-            if not s or s.startswith("#"): continue
-            m=re.match(r"([A-Z0-9_]+)\s*=\s*(.*)$", s)
-            if not m: continue
-            k,v=m.group(1),m.group(2); v=v.split("#",1)[0].strip()
-            if len(v)>=2 and v[0]==v[-1] and v[0] in ("'",'"'): v=v[1:-1]
-            d[k]=v
-    except FileNotFoundError: pass
+        with open(p) as f:
+            for raw in f:
+                s=raw.strip()
+                if not s or s.startswith("#"): 
+                    continue
+                m=re.match(r"([A-Z0-9_]+)\s*=\s*(.*)$", s)
+                if not m: 
+                    continue
+                k,v=m.group(1),m.group(2)
+                v=v.split("#",1)[0].strip()
+                if len(v)>=2 and v[0]==v[-1] and v[0] in ("'",'"'): 
+                    v=v[1:-1]
+                d[k]=v
+    except FileNotFoundError: 
+        pass
     return d
-truthy=lambda s,default=False: (str(s).strip().lower() in ("1","true","yes","on")) if s is not None else default
+
+def truthy(s,default=False): 
+    return (str(s).strip().lower() in ("1","true","yes","on")) if s is not None else default
+
 def send_mail(subj, body, sender, dest):
+    debug_log(f"Attempting to send email: {subj}")
     for p in ("/usr/sbin/sendmail","/usr/lib/sendmail","/usr/bin/sendmail"):
         if os.path.exists(p) and os.access(p, os.X_OK):
             try:
                 proc=subprocess.Popen([p,"-t","-oi"], stdin=subprocess.PIPE, text=True)
                 msg=f"From: {sender}\nTo: {dest}\nSubject: {subj}\n\n{body}\n"
-                proc.communicate(msg, timeout=10); return proc.returncode==0
-            except Exception as e: return False
+                proc.communicate(msg, timeout=10)
+                success = proc.returncode==0
+                debug_log(f"Email send result: {success} (returncode: {proc.returncode})")
+                return success
+            except Exception as e: 
+                debug_log(f"Email send failed: {e}")
+                return False
+    debug_log("No sendmail binary found")
     return False
+
 def main():
-    cfg={}; cfg.update(parse_conf(BASE_CONF)); cfg.update(parse_conf(LOCAL_CONF))
+    log("Starting login monitor...")
+    
+    cfg={}
+    cfg.update(parse_conf(BASE_CONF))
+    cfg.update(parse_conf(LOCAL_CONF))
+    
+    debug_log(f"Loaded config keys: {list(cfg.keys())}")
+    
     recipient=cfg.get("NFTBAN_F2B_RECIPIENT","root@localhost")
     sender=cfg.get("NFTBAN_F2B_SENDER", f"nftban@{os.uname().nodename}")
     prefix="[nftban-login]"
+    
     root_alert=truthy(cfg.get("NFTBAN_F2B_ROOT_LOGIN_ALERT","true"),True)
     sudo_alert=truthy(cfg.get("NFTBAN_F2B_SUDO_ALERT","true"),True)
     ssh_alert=truthy(cfg.get("NFTBAN_F2B_SSH_LOGIN_ALERT","false"),False)
@@ -513,52 +557,152 @@ def main():
     window=int(cfg.get("NFTBAN_F2B_DEF_FIND_TIME","600") or "600")
     aggressive=truthy(cfg.get("NFTBAN_F2B_AGGRESSIVE_MODE","false"),False)
     ban_sec=int(cfg.get("NFTBAN_F2B_DEF_BAN_TIME","3600") or "3600")
-    fails=collections.defaultdict(list); last_alert={}
-    rx_acc=re.compile(r"Accepted (?:password|publickey|keyboard-interactive/pam) for (\S+) from ([0-9A-Fa-f\.:]+)")
-    rx_fail=re.compile(r"Failed password for (?:invalid user )?(\S+) from ([0-9A-Fa-f\.:]+)")
-    rx_sudo=re.compile(r"sudo:?\s+(\S+)\s*:.*COMMAND=(.*)$")
-    rx_root=re.compile(r"session opened for user root")
+    
+    debug_log(f"Config - recipient: {recipient}, root_alert: {root_alert}, sudo_alert: {sudo_alert}, ssh_alert: {ssh_alert}")
+    
+    fails=collections.defaultdict(list)
+    last_alert={}
+    
+    # Enhanced regex patterns
+    rx_acc=re.compile(r"Accepted (?:password|publickey|keyboard-interactive/pam|gssapi-with-mic) for (\S+) from ([0-9A-Fa-f\.:]+)", re.IGNORECASE)
+    rx_fail=re.compile(r"Failed (?:password|publickey|keyboard-interactive/pam|gssapi-with-mic) for (?:invalid user )?(\S+) from ([0-9A-Fa-f\.:]+)", re.IGNORECASE)
+    rx_sudo=re.compile(r"sudo:?\s+(\S+)\s*:.*(?:COMMAND=|command:)\s*(.*)$", re.IGNORECASE)
+    rx_root_session=re.compile(r"session opened for user root", re.IGNORECASE)
+    rx_su_root=re.compile(r"su:.*session opened for user root", re.IGNORECASE)
+    rx_su_user=re.compile(r"su:.*session opened for user (\S+)", re.IGNORECASE)
+    
     try:
-        proc=subprocess.Popen(["journalctl","-f","-n","0","-o","cat","-t","sshd","-t","sudo"],
-                               stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-    except FileNotFoundError:
+        # Fixed journalctl command - removed conflicting -u flags
+        # Monitor multiple services and identifiers without unit conflicts
+        cmd = [
+            "journalctl", "-f", "-n", "0", "-o", "cat",
+            "-t", "sshd", "-t", "sudo", "-t", "su", "-t", "systemd-logind",
+            "--identifier=sshd", "--identifier=sudo", "--identifier=su"
+        ]
+        
+        debug_log(f"Starting journalctl with command: {' '.join(cmd)}")
+        proc=subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
+        
+    except FileNotFoundError as e:
+        log(f"Error starting journalctl: {e}")
         return 1
-    def prune(ip,t): fails[ip][:]=[x for x in fails[ip] if t-x<=window]
+    
+    def prune(ip,t): 
+        fails[ip][:] = [x for x in fails[ip] if t-x<=window]
+    
+    log("Monitor started, waiting for log entries...")
+    
     while True:
-        line=proc.stdout.readline()
+        line = proc.stdout.readline()
         if not line:
             time.sleep(0.2)
-            if proc.poll() is not None: break
+            if proc.poll() is not None: 
+                log("journalctl process ended, restarting...")
+                return 1
             continue
-        l=line.strip(); 
-        if not l: continue
-        t=time.time()
-        m=rx_fail.search(l)
+            
+        l = line.strip()
+        if not l: 
+            continue
+            
+        debug_log(f"Processing line: {l}")
+        t = time.time()
+        
+        # Check for failed logins
+        m = rx_fail.search(l)
         if m:
-            user,ip=m.group(1),m.group(2); prune(ip,t); fails[ip].append(t)
-            if len(fails[ip])>=thresh and (ip not in last_alert or t-last_alert[ip]>window):
-                subj=f"{prefix} Failed login threshold from {ip} ({len(fails[ip])}/{thresh})"
-                body=f"IP: {ip}\nAttempts (last {window}s): {len(fails[ip])}\nLast user: {user}\n"
-                send_mail(subj, body, sender, recipient); last_alert[ip]=t
+            user, ip = m.group(1), m.group(2)
+            prune(ip, t)
+            fails[ip].append(t)
+            log(f"Failed login detected: user={user}, ip={ip}, total_fails={len(fails[ip])}")
+            
+            if len(fails[ip]) >= thresh and (ip not in last_alert or t-last_alert[ip] > window):
+                subj = f"{prefix} Failed login threshold from {ip} ({len(fails[ip])}/{thresh})"
+                body = f"IP: {ip}\nAttempts (last {window}s): {len(fails[ip])}\nLast user: {user}\nTime: {datetime.datetime.now()}\n"
+                
+                if send_mail(subj, body, sender, recipient):
+                    log(f"Alert sent for failed logins from {ip}")
+                else:
+                    log(f"Failed to send alert for {ip}")
+                    
+                last_alert[ip] = t
+                
                 if aggressive:
-                    try: subprocess.run(["/usr/local/sbin/nftban_init_fail2ban_conf.sh","ban","ssh",ip,str(ban_sec)],check=False,timeout=8)
-                    except Exception: pass
+                    try: 
+                        subprocess.run(["/usr/local/sbin/nftban_init_fail2ban_conf.sh","ban","ssh",ip,str(ban_sec)],
+                                     check=False, timeout=8)
+                        log(f"Auto-banned {ip} (aggressive mode)")
+                    except Exception as e: 
+                        log(f"Auto-ban failed for {ip}: {e}")
             continue
-        m=rx_acc.search(l)
+        
+        # Check for successful logins
+        m = rx_acc.search(l)
         if m:
-            user,ip=m.group(1),m.group(2)
+            user, ip = m.group(1), m.group(2)
+            log(f"Successful login detected: user={user}, ip={ip}")
+            
             if (user=="root" and root_alert) or ssh_alert:
-                send_mail(f"{prefix} SSH login: {user} from {ip}", f"Line: {l}\n", sender, recipient)
+                subj = f"{prefix} SSH login: {user} from {ip}"
+                body = f"User: {user}\nIP: {ip}\nTime: {datetime.datetime.now()}\nLog: {l}\n"
+                
+                if send_mail(subj, body, sender, recipient):
+                    log(f"Alert sent for SSH login: {user}@{ip}")
+                else:
+                    log(f"Failed to send SSH login alert for {user}@{ip}")
             continue
-        if root_alert and rx_root.search(l):
-            send_mail(f"{prefix} root session opened", f"Line: {l}\n", sender, recipient); continue
+        
+        # Check for root sessions
+        if root_alert and (rx_root_session.search(l) or rx_su_root.search(l)):
+            subj = f"{prefix} root session opened"
+            body = f"Time: {datetime.datetime.now()}\nLog: {l}\n"
+            
+            if send_mail(subj, body, sender, recipient):
+                log("Alert sent for root session")
+            else:
+                log("Failed to send root session alert")
+            continue
+        
+        # Check for sudo usage
         if sudo_alert:
-            m=rx_sudo.search(l)
+            m = rx_sudo.search(l)
             if m:
-                who,cmd=m.group(1),m.group(2)
-                send_mail(f"{prefix} sudo used by {who}", f"Command: {cmd}\nLine: {l}\n", sender, recipient)
+                who, cmd = m.group(1), m.group(2)
+                log(f"Sudo usage detected: user={who}, command={cmd}")
+                
+                subj = f"{prefix} sudo used by {who}"
+                body = f"User: {who}\nCommand: {cmd}\nTime: {datetime.datetime.now()}\nLog: {l}\n"
+                
+                if send_mail(subj, body, sender, recipient):
+                    log(f"Alert sent for sudo usage by {who}")
+                else:
+                    log(f"Failed to send sudo alert for {who}")
                 continue
-if __name__=="__main__": sys.exit(main())
+        
+        # Check for su usage
+        if root_alert:
+            m = rx_su_user.search(l)
+            if m:
+                user = m.group(1)
+                if user == "root":
+                    log(f"su to root detected")
+                    subj = f"{prefix} su to root"
+                    body = f"Time: {datetime.datetime.now()}\nLog: {l}\n"
+                    
+                    if send_mail(subj, body, sender, recipient):
+                        log("Alert sent for su to root")
+                    else:
+                        log("Failed to send su to root alert")
+
+if __name__=="__main__": 
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        log("Login monitor stopped by user")
+        sys.exit(0)
+    except Exception as e:
+        log(f"Login monitor crashed: {e}")
+        sys.exit(1)
 PY
   chmod 0755 "$LM_LIVE_BIN"
   cat >"$LM_LIVE_UNIT" <<'UNIT'
