@@ -3,7 +3,7 @@
 # =============================================================================
 # Script: nftban_init_fail2ban_conf.sh
 #
-# Version: 3.3  (Enhanced with Login Monitoring)
+# Version: 3.4  (Adds config validation, status, backup/restore, docs; fixes timer)
 # Author:  ITCMS Team (Antonios Voulvoulis)
 #
 # Description:
@@ -18,45 +18,30 @@
 #
 # What it does:
 #   • Creates the user config if missing and prints clear next steps.
-#   • Updates configs with any missing settings while PRESERVING existing values
-#     (especially email-related fields). A backup is created before changes.
+#   • Updates configs with any missing settings while PRESERVING existing values.
 #   • Can recreate all jails/filters/actions from templates while keeping your
 #     custom values in the *.local file.
 #
-# Key Changes:
-#   • More informative messages on create/update.
-#   • Clear guidance to edit nftban.conf.local for customizations.
-#   • --recreate behavior exposed via `setup` and template staging.
+# New in 3.4 (your request):
+#   • (1) Critical bug fix in TIMER script: removed conflicting journalctl -u filters.
+#   • (2) Configuration validation (email / numeric sanity checks).
+#   • (8) Better status reporting: `status` command.
+#   • (9) Configuration backup/restore: `backup-config`, `list-backups`, `restore-config`.
+#   • (11) CLI improvements (backup part wired into main).
+#   • (12) Documentation generation: `gen-docs`.
 #
 # Usage Examples:
-#   # Refresh base config, stage templates, diff vs .local (non-invasive to services)
 #   sudo ./nftban_init_fail2ban_conf.sh setup
-#
-#   # Install login monitor files (does NOT auto-enable)
-#   sudo ./nftban_init_fail2ban_conf.sh login-monitor install
-#
-#   # Enable login monitor:
-#   #   live service only (short name: nftban_lfd.service)
-#   sudo ./nftban_init_fail2ban_conf.sh login-monitor enable service
-#   #   timer-based digest only
-#   sudo ./nftban_init_fail2ban_conf.sh login-monitor enable timer
-#   #   both live + timer
-#   sudo ./nftban_init_fail2ban_conf.sh login-monitor enable hybrid
-#
-#   # Check / control status
-#   sudo ./nftban_init_fail2ban_conf.sh login-monitor status
-#   sudo ./nftban_init_fail2ban_conf.sh login-monitor disable [service|timer|hybrid|all]
-#
-#   # Manual nftables helpers (never auto-run)
-#   sudo ./nftban_init_fail2ban_conf.sh nft-init <jail>
-#   sudo ./nftban_init_fail2ban_conf.sh ban <jail> <ip> [seconds|Ns|Nm|Nh|Nd]
-#   sudo ./nftban_init_fail2ban_conf.sh unban <jail> <ip>
+#   sudo ./nftban_init_fail2ban_conf.sh status
+#   sudo ./nftban_init_fail2ban_conf.sh backup-config
+#   sudo ./nftban_init_fail2ban_conf.sh list-backups
+#   sudo ./nftban_init_fail2ban_conf.sh restore-config /etc/nftban/backups/nftban-config-YYYYmmdd-HHMMSS.tar.gz
+#   sudo ./nftban_init_fail2ban_conf.sh gen-docs
 #
 # Notes:
 #   • Live login monitor unit: nftban_lfd.service
-#   • Scan service & timer remain: nftban-login-scan.service / nftban-login-scan.timer
-# Bug : This bug with u just rem for ref :  proc=subprocess.Popen(["journalctl","-f","-n","0","-o","cat","-t","sshd","-t","sudo","-u","ssh","-u","sshd","-u","sudo"],
-# Why: -u ... filters by systemd unit and ANDs with your identifiers. There’s no sudo unit on most distros, so the AND wipes out sudo lines. Dropping the -u terms lets sudo entries through.
+#   • Scan service & timer: nftban-login-scan.service / nftban-login-scan.timer
+#   • Timer bug context: using -u (unit) AND (-t/--identifier) filtered out sudo lines.
 # =============================================================================
 
 set -Eeuo pipefail
@@ -80,6 +65,9 @@ F2B_JAIL_LOCAL="/etc/fail2ban/jail.local"
 
 MAIL_ACTION_NAME="NFTBAN_F2B_SENDMAIL.conf"
 
+# Backup directory
+BACKUP_DIR="$BASE_DIR/backups"
+
 # Login monitor files
 LM_LIVE_BIN="/usr/local/sbin/nftban-login-monitor"
 LM_SCAN_BIN="/usr/local/sbin/nftban-login-scan"
@@ -98,7 +86,7 @@ mkdirp() { mkdir -p "$1"; }
 trap 's=$?; echo "[$(ts)] Aborted (exit $s)" >>"$LOGFILE"; exit $s' ERR INT
 
 init_dirs() {
-  mkdirp "$BASE_DIR/config" "/var/log/nftban" "$F2B_JAIL_DIR" "$F2B_FILTER_DIR" "$F2B_ACTION_DIR"
+  mkdirp "$BASE_DIR/config" "/var/log/nftban" "$F2B_JAIL_DIR" "$F2B_FILTER_DIR" "$F2B_ACTION_DIR" "$BACKUP_DIR"
   : > "$LOGFILE"
   touch "$LOGFILE_IP"
   # Ensure list files exist
@@ -196,7 +184,6 @@ refresh_base_config() {
     install -m 0644 -o root -g root "$tmp" "$CONFIG_FILE"
     log "Wrote reference base config: $CONFIG_FILE"
   else
-    # Only replace if different
     local cnew cold
     cnew="$(sha256sum "$tmp" | awk '{print $1}')"
     cold="$(sha256sum "$CONFIG_FILE" | awk '{print $1}')"
@@ -259,7 +246,6 @@ show_config_diff() {
 }
 
 load_config_env() {
-  # Source base first, then user overrides. Both may use $BASE_DIR and $(...) expansions.
   set -a
   # shellcheck disable=SC1090
   source "$CONFIG_FILE"
@@ -269,6 +255,48 @@ load_config_env() {
   fi
   set +a
   log "Configuration loaded (base + .local overrides)."
+}
+
+# -----------------------------
+# (2) Configuration Validation
+# -----------------------------
+validate_config() {
+  local errors=()
+
+  # Email
+  if [[ -n "${NFTBAN_F2B_RECIPIENT:-}" ]] && ! [[ "$NFTBAN_F2B_RECIPIENT" =~ ^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$ ]]; then
+    errors+=("Invalid email format: NFTBAN_F2B_RECIPIENT='$NFTBAN_F2B_RECIPIENT'")
+  fi
+  if [[ -n "${NFTBAN_F2B_SENDER:-}" ]] && ! [[ "$NFTBAN_F2B_SENDER" =~ ^[^[:space:]]+@[^[:space:]]+\.[^[:space:]]+$ ]]; then
+    errors+=("Sender should look like an email address: NFTBAN_F2B_SENDER='$NFTBAN_F2B_SENDER'")
+  fi
+
+  # Numeric sanity
+  local numeric_vars=(
+    NFTBAN_F2B_DEF_BAN_TIME NFTBAN_F2B_DEF_FIND_TIME NFTBAN_F2B_DEF_MAX_RETRY
+    NFTBAN_F2B_SSH_BAN_TIME NFTBAN_F2B_SSH_MAX_RETRY NFTBAN_F2B_SSH_FIND_TIME
+    NFTBAN_F2B_APACHE_BAN_TIME NFTBAN_F2B_APACHE_MAX_RETRY
+    NFTBAN_F2B_NGINX_BAN_TIME  NFTBAN_F2B_NGINX_MAX_RETRY
+    NFTBAN_F2B_POSTFIX_BAN_TIME NFTBAN_F2B_POSTFIX_MAX_RETRY
+    NFTBAN_F2B_WORDPRESS_BAN_TIME NFTBAN_F2B_WORDPRESS_MAX_RETRY NFTBAN_F2B_WORDPRESS_FIND_TIME
+    NFTBAN_F2B_XMLRPC_BAN_TIME NFTBAN_F2B_XMLRPC_MAX_RETRY NFTBAN_F2B_XMLRPC_FIND_TIME
+    NFTBAN_F2B_DIRECTADMIN_BAN_TIME NFTBAN_F2B_DIRECTADMIN_MAX_RETRY NFTBAN_F2B_DIRECTADMIN_FIND_TIME
+    NFTBAN_F2B_FAILED_LOGIN_THRESHOLD
+  )
+  for var in "${numeric_vars[@]}"; do
+    local val="${!var:-}"
+    if [[ -n "$val" ]] && ! [[ "$val" =~ ^[0-9]+$ ]]; then
+      errors+=("$var must be numeric, got: '$val'")
+    fi
+  done
+
+  if ((${#errors[@]} > 0)); then
+    log "Configuration validation errors:"
+    printf '  - %s\n' "${errors[@]}" | tee -a "$LOGFILE"
+    return 1
+  fi
+  log "Configuration validated OK."
+  return 0
 }
 
 # -----------------------------
@@ -397,7 +425,6 @@ check_mail() {
   else echo "No sendmail-compatible MTA detected. Install postfix/exim/msmtp/nullmailer for email alerts."; fi
 }
 test_mail() {
-  # Load config (sender/recipient); allow overriding recipient via arg.
   load_config_env || true
   local rcpt="${1:-${NFTBAN_F2B_RECIPIENT:-root@localhost}}"
   local sender="${NFTBAN_F2B_SENDER:-nftban@$(hostname -f)}"
@@ -461,7 +488,7 @@ nft_unban_ip() {
 }
 
 # -----------------------------
-# Login monitor (live + timer) — install/enable/disable/status/uninstall
+# Login monitor (live + timer)
 # -----------------------------
 
 write_login_monitor_live() {
@@ -482,19 +509,19 @@ def log(m):
     ts=datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()
     line=f"[{ts}] {m}"
     print(line, flush=True)
-    try: 
+    try:
         with open(LOG_FILE,"a") as f:
             f.write(line+"\n")
-    except Exception: 
+    except Exception:
         pass
 
 def debug_log(m):
     ts=datetime.datetime.now(datetime.timezone.utc).astimezone().isoformat()
     line=f"[{ts}] DEBUG: {m}"
-    try: 
+    try:
         with open(DEBUG_LOG,"a") as f:
             f.write(line+"\n")
-    except Exception: 
+    except Exception:
         pass
 
 def parse_conf(p):
@@ -503,21 +530,21 @@ def parse_conf(p):
         with open(p) as f:
             for raw in f:
                 s=raw.strip()
-                if not s or s.startswith("#"): 
+                if not s or s.startswith("#"):
                     continue
                 m=re.match(r"([A-Z0-9_]+)\s*=\s*(.*)$", s)
-                if not m: 
+                if not m:
                     continue
                 k,v=m.group(1),m.group(2)
                 v=v.split("#",1)[0].strip()
-                if len(v)>=2 and v[0]==v[-1] and v[0] in ("'",'"'): 
+                if len(v)>=2 and v[0]==v[-1] and v[0] in ("'",'"'):
                     v=v[1:-1]
                 d[k]=v
-    except FileNotFoundError: 
+    except FileNotFoundError:
         pass
     return d
 
-def truthy(s,default=False): 
+def truthy(s,default=False):
     return (str(s).strip().lower() in ("1","true","yes","on")) if s is not None else default
 
 def send_mail(subj, body, sender, dest):
@@ -531,7 +558,7 @@ def send_mail(subj, body, sender, dest):
                 success = proc.returncode==0
                 debug_log(f"Email send result: {success} (returncode: {proc.returncode})")
                 return success
-            except Exception as e: 
+            except Exception as e:
                 debug_log(f"Email send failed: {e}")
                 return False
     debug_log("No sendmail binary found")
@@ -539,17 +566,17 @@ def send_mail(subj, body, sender, dest):
 
 def main():
     log("Starting login monitor...")
-    
+
     cfg={}
     cfg.update(parse_conf(BASE_CONF))
     cfg.update(parse_conf(LOCAL_CONF))
-    
+
     debug_log(f"Loaded config keys: {list(cfg.keys())}")
-    
+
     recipient=cfg.get("NFTBAN_F2B_RECIPIENT","root@localhost")
     sender=cfg.get("NFTBAN_F2B_SENDER", f"nftban@{os.uname().nodename}")
     prefix="[nftban-login]"
-    
+
     root_alert=truthy(cfg.get("NFTBAN_F2B_ROOT_LOGIN_ALERT","true"),True)
     sudo_alert=truthy(cfg.get("NFTBAN_F2B_SUDO_ALERT","true"),True)
     ssh_alert=truthy(cfg.get("NFTBAN_F2B_SSH_LOGIN_ALERT","false"),False)
@@ -557,144 +584,127 @@ def main():
     window=int(cfg.get("NFTBAN_F2B_DEF_FIND_TIME","600") or "600")
     aggressive=truthy(cfg.get("NFTBAN_F2B_AGGRESSIVE_MODE","false"),False)
     ban_sec=int(cfg.get("NFTBAN_F2B_DEF_BAN_TIME","3600") or "3600")
-    
+
     debug_log(f"Config - recipient: {recipient}, root_alert: {root_alert}, sudo_alert: {sudo_alert}, ssh_alert: {ssh_alert}")
-    
+
     fails=collections.defaultdict(list)
     last_alert={}
-    
-    # Enhanced regex patterns
+
     rx_acc=re.compile(r"Accepted (?:password|publickey|keyboard-interactive/pam|gssapi-with-mic) for (\S+) from ([0-9A-Fa-f\.:]+)", re.IGNORECASE)
     rx_fail=re.compile(r"Failed (?:password|publickey|keyboard-interactive/pam|gssapi-with-mic) for (?:invalid user )?(\S+) from ([0-9A-Fa-f\.:]+)", re.IGNORECASE)
     rx_sudo=re.compile(r"sudo:?\s+(\S+)\s*:.*(?:COMMAND=|command:)\s*(.*)$", re.IGNORECASE)
     rx_root_session=re.compile(r"session opened for user root", re.IGNORECASE)
     rx_su_root=re.compile(r"su:.*session opened for user root", re.IGNORECASE)
     rx_su_user=re.compile(r"su:.*session opened for user (\S+)", re.IGNORECASE)
-    
+
     try:
         # Fixed journalctl command - removed conflicting -u flags
-        # Monitor multiple services and identifiers without unit conflicts
         cmd = [
             "journalctl", "-f", "-n", "0", "-o", "cat",
             "-t", "sshd", "-t", "sudo", "-t", "su", "-t", "systemd-logind",
             "--identifier=sshd", "--identifier=sudo", "--identifier=su"
         ]
-        
         debug_log(f"Starting journalctl with command: {' '.join(cmd)}")
         proc=subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, bufsize=1)
-        
     except FileNotFoundError as e:
         log(f"Error starting journalctl: {e}")
         return 1
-    
-    def prune(ip,t): 
+
+    def prune(ip,t):
         fails[ip][:] = [x for x in fails[ip] if t-x<=window]
-    
+
     log("Monitor started, waiting for log entries...")
-    
+
     while True:
         line = proc.stdout.readline()
         if not line:
             time.sleep(0.2)
-            if proc.poll() is not None: 
+            if proc.poll() is not None:
                 log("journalctl process ended, restarting...")
                 return 1
             continue
-            
+
         l = line.strip()
-        if not l: 
+        if not l:
             continue
-            
+
         debug_log(f"Processing line: {l}")
         t = time.time()
-        
-        # Check for failed logins
+
         m = rx_fail.search(l)
         if m:
             user, ip = m.group(1), m.group(2)
             prune(ip, t)
             fails[ip].append(t)
             log(f"Failed login detected: user={user}, ip={ip}, total_fails={len(fails[ip])}")
-            
+
             if len(fails[ip]) >= thresh and (ip not in last_alert or t-last_alert[ip] > window):
                 subj = f"{prefix} Failed login threshold from {ip} ({len(fails[ip])}/{thresh})"
                 body = f"IP: {ip}\nAttempts (last {window}s): {len(fails[ip])}\nLast user: {user}\nTime: {datetime.datetime.now()}\n"
-                
+
                 if send_mail(subj, body, sender, recipient):
                     log(f"Alert sent for failed logins from {ip}")
                 else:
                     log(f"Failed to send alert for {ip}")
-                    
+
                 last_alert[ip] = t
-                
+
                 if aggressive:
-                    try: 
+                    try:
                         subprocess.run(["/usr/local/sbin/nftban_init_fail2ban_conf.sh","ban","ssh",ip,str(ban_sec)],
                                      check=False, timeout=8)
                         log(f"Auto-banned {ip} (aggressive mode)")
-                    except Exception as e: 
+                    except Exception as e:
                         log(f"Auto-ban failed for {ip}: {e}")
             continue
-        
-        # Check for successful logins
+
         m = rx_acc.search(l)
         if m:
             user, ip = m.group(1), m.group(2)
             log(f"Successful login detected: user={user}, ip={ip}")
-            
+
             if (user=="root" and root_alert) or ssh_alert:
                 subj = f"{prefix} SSH login: {user} from {ip}"
                 body = f"User: {user}\nIP: {ip}\nTime: {datetime.datetime.now()}\nLog: {l}\n"
-                
+
                 if send_mail(subj, body, sender, recipient):
                     log(f"Alert sent for SSH login: {user}@{ip}")
                 else:
                     log(f"Failed to send SSH login alert for {user}@{ip}")
             continue
-        
-        # Check for root sessions
+
         if root_alert and (rx_root_session.search(l) or rx_su_root.search(l)):
             subj = f"{prefix} root session opened"
             body = f"Time: {datetime.datetime.now()}\nLog: {l}\n"
-            
             if send_mail(subj, body, sender, recipient):
                 log("Alert sent for root session")
             else:
                 log("Failed to send root session alert")
             continue
-        
-        # Check for sudo usage
+
         if sudo_alert:
             m = rx_sudo.search(l)
             if m:
                 who, cmd = m.group(1), m.group(2)
                 log(f"Sudo usage detected: user={who}, command={cmd}")
-                
                 subj = f"{prefix} sudo used by {who}"
                 body = f"User: {who}\nCommand: {cmd}\nTime: {datetime.datetime.now()}\nLog: {l}\n"
-                
                 if send_mail(subj, body, sender, recipient):
                     log(f"Alert sent for sudo usage by {who}")
                 else:
                     log(f"Failed to send sudo alert for {who}")
                 continue
-        
-        # Check for su usage
-        if root_alert:
-            m = rx_su_user.search(l)
-            if m:
-                user = m.group(1)
-                if user == "root":
-                    log(f"su to root detected")
-                    subj = f"{prefix} su to root"
-                    body = f"Time: {datetime.datetime.now()}\nLog: {l}\n"
-                    
-                    if send_mail(subj, body, sender, recipient):
-                        log("Alert sent for su to root")
-                    else:
-                        log("Failed to send su to root alert")
 
-if __name__=="__main__": 
+        m = rx_su_user.search(l)
+        if m and m.group(1) == "root" and root_alert:
+            subj = f"{prefix} su to root"
+            body = f"Time: {datetime.datetime.now()}\nLog: {l}\n"
+            if send_mail(subj, body, sender, recipient):
+                log("Alert sent for su to root")
+            else:
+                log("Failed to send su to root alert")
+
+if __name__=="__main__":
     try:
         sys.exit(main())
     except KeyboardInterrupt:
@@ -791,7 +801,13 @@ def run():
     since_ts=st.get("last_ts", int(time.time())-window)
     since_arg=f"@{int(since_ts)}"
     try:
-        out=subprocess.check_output(["journalctl","-o","cat","--since",since_arg,"-t","sshd","-t","sudo","-u","ssh","-u","sshd","-u","sudo"], text=True, stderr=subprocess.DEVNULL)
+        # (1) Critical Bug Fix in Timer Script:
+        # Remove conflicting -u unit filters; rely on tags/identifiers only.
+        out=subprocess.check_output(
+            ["journalctl","-o","cat","--since",since_arg,
+             "-t","sshd","-t","sudo","-t","su"],
+            text=True, stderr=subprocess.DEVNULL
+        )
     except Exception:
         return 1
     st["last_ts"]=int(time.time()); save_state(state_file, st)
@@ -817,7 +833,7 @@ def run():
     total_fails=sum(failed_by_ip.values()); total_sudo=sum(sudo_by_user.values())
     should_send= total_fails>0 or total_sudo>0 or (ssh_alert and len(ssh_logins)>0)
     if not should_send: return 0
-    def topn(c,n=10): 
+    def topn(c,n=10):
         return "\n".join([f"  {k}: {v}" for k,v in c.most_common(n)]) or "  (none)"
     body=[]
     body.append(f"Window: last {window} seconds"); body.append("")
@@ -897,43 +913,32 @@ login_monitor_status() {
   systemctl status "$(basename "$LM_TIMER_UNIT")" --no-pager || true
 }
 login_monitor_uninstall() {
-  # Try the normal disable first (ok if it fails)
   login_monitor_disable all || true
-
   echo "[*] Stopping/Disabling units…"
   systemctl stop nftban_lfd.service nftban-login-scan.service nftban-login-scan.timer 2>/dev/null || true
   systemctl disable nftban_lfd.service nftban-login-scan.timer 2>/dev/null || true
   systemctl reset-failed nftban_lfd.service nftban-login-scan.service nftban-login-scan.timer 2>/dev/null || true
-
   echo "[*] Killing any leftover processes…"
   pkill -f -- '/usr/local/sbin/nftban-login-monitor' 2>/dev/null || true
   pkill -f -- 'journalctl -f .*nftban' 2>/dev/null || true
-
   echo "[*] Removing unit files…"
   rm -f -- "${LM_LIVE_UNIT:-/etc/systemd/system/nftban_lfd.service}" \
             "${LM_SCAN_UNIT:-/etc/systemd/system/nftban-login-scan.service}" \
             "${LM_TIMER_UNIT:-/etc/systemd/system/nftban-login-scan.timer}"
-
-  # Clean any systemd override drop-ins if you created one earlier
   rm -f -- /etc/systemd/system/nftban_lfd.service.d/override.conf 2>/dev/null || true
   rmdir  --ignore-fail-on-non-empty /etc/systemd/system/nftban_lfd.service.d 2>/dev/null || true
-
   echo "[*] Removing installed binaries…"
   rm -f -- "${LM_LIVE_BIN:-/usr/local/sbin/nftban-login-monitor}" \
             "${LM_SCAN_BIN:-/usr/local/sbin/nftban-login-scan}"
-
   echo "[*] Reloading systemd…"
   systemctl daemon-reload
-
   echo "[*] Sanity check…"
   systemctl list-units --all | grep -i 'nftban' || echo "No nftban units loaded"
   command -v nftban-login-monitor >/dev/null || echo "No nftban-login-monitor in PATH"
-
   echo "Login monitor removed. Logs/state preserved."
 }
 
 ensure_local_config() {
-  # If user's local config doesn't exist yet, copy the freshly refreshed base and stop.
   if [[ ! -f "$CONFIG_FILE_USER" ]]; then
     install -D -m 0644 -o root -g root "$CONFIG_FILE" "$CONFIG_FILE_USER"
     log "Created user config from reference: $CONFIG_FILE_USER"
@@ -947,18 +952,124 @@ ensure_local_config() {
 }
 
 # -----------------------------
+# (8) Better Status Reporting
+# -----------------------------
+show_system_status() {
+  echo "=== NFTBAN System Status ==="
+  echo "Base config: $CONFIG_FILE"
+  echo "User config: $CONFIG_FILE_USER"
+  echo
+  echo "Enabled jails:"
+  while read -r jail; do
+    [[ -n "$jail" ]] || continue
+    echo "  - $jail"
+  done < <(enabled_jails)
+  echo
+  echo "Service status:"
+  if systemctl is-active --quiet fail2ban 2>/dev/null; then
+    echo "  - fail2ban: active"
+  else
+    echo "  - fail2ban: inactive"
+  fi
+  if systemctl is-active --quiet nftban_lfd 2>/dev/null; then
+    echo "  - login monitor (live): active"
+  else
+    echo "  - login monitor (live): inactive"
+  fi
+  if systemctl is-active --quiet nftban-login-scan.timer 2>/dev/null; then
+    echo "  - login monitor (timer): active"
+  else
+    echo "  - login monitor (timer): inactive"
+  fi
+  echo
+  echo "Recent bans (last 10):"
+  tail -n 10 "$LOGFILE_IP" 2>/dev/null | sed 's/^/  /' || echo "  (no ban log found)"
+}
+
+# -----------------------------
+# (9) Configuration Backup / Restore
+# -----------------------------
+backup_config() {
+  install -d -m 0755 "$BACKUP_DIR"
+  local ts; ts="$(date +%Y%m%d-%H%M%S)"
+  local archive="$BACKUP_DIR/nftban-config-$ts.tar.gz"
+  tar -czf "$archive" -C "$(dirname "$CONFIG_FILE_USER")" "$(basename "$CONFIG_FILE_USER")" \
+      "$(basename "$WHITELIST_FILE")" "$(basename "$BLACKLIST_FILE")" 2>/dev/null || true
+  log "Configuration backed up to: $archive"
+  echo "$archive"
+}
+list_backups() {
+  [[ -d "$BACKUP_DIR" ]] || { echo "No backups found."; return 1; }
+  ls -1 "$BACKUP_DIR"/nftban-config-*.tar.gz 2>/dev/null || echo "No backups found."
+}
+restore_config() {
+  local src="${1:-}"
+  [[ -n "$src" ]] || die "restore-config requires </path/to/archive.tar.gz>"
+  [[ -f "$src" ]] || die "Archive not found: $src"
+  local tmp; tmp="$(mktemp -d)"
+  tar -xzf "$src" -C "$tmp"
+  install -D -m 0644 -o root -g root "$tmp/$(basename "$CONFIG_FILE_USER")" "$CONFIG_FILE_USER" 2>/dev/null || true
+  [[ -f "$tmp/$(basename "$WHITELIST_FILE")" ]] && install -D -m 0644 -o root -g root "$tmp/$(basename "$WHITELIST_FILE")" "$WHITELIST_FILE"
+  [[ -f "$tmp/$(basename "$BLACKLIST_FILE")" ]] && install -D -m 0644 -o root -g root "$tmp/$(basename "$BLACKLIST_FILE")" "$BLACKLIST_FILE"
+  rm -rf "$tmp"
+  log "Configuration restored from: $src"
+}
+
+# -----------------------------
+# (12) Documentation Generation
+# -----------------------------
+generate_config_docs() {
+  install -d -m 0755 "$BASE_DIR"
+  cat > "$BASE_DIR/CONFIG_REFERENCE.md" <<'DOC'
+# NFTBAN Configuration Reference
+
+> This file documents the keys available in `/etc/nftban/config/nftban.conf` and
+> your override file `/etc/nftban/config/nftban.conf.local`. Edit only the `.local`.
+
+## Email
+- `NFTBAN_F2B_RECIPIENT` — recipient for alerts.
+- `NFTBAN_F2B_SENDER` — From address for alerts.
+- `NFTBAN_F2B_ALERT_ENABLED` — `"true"`/`"false"` to toggle email alerts.
+
+## Defaults
+- `NFTBAN_F2B_DEF_BAN_TIME` — default ban seconds.
+- `NFTBAN_F2B_DEF_FIND_TIME` — fail window seconds.
+- `NFTBAN_F2B_DEF_MAX_RETRY` — max retries in window.
+- `NFTBAN_F2B_BACKEND` — usually `"systemd"`.
+
+## Security & Monitor
+- `NFTBAN_F2B_AGGRESSIVE_MODE` — auto-ban on login monitor threshold.
+- `NFTBAN_F2B_GEOIP_ENABLE`, `NFTBAN_F2B_WHOIS_ENABLE` — reserved for future use.
+- `NFTBAN_F2B_LOGIN_MONITOR` — enable login monitor.
+- `NFTBAN_F2B_ROOT_LOGIN_ALERT`, `NFTBAN_F2B_SUDO_ALERT`, `NFTBAN_F2B_SSH_LOGIN_ALERT`.
+- `NFTBAN_F2B_FAILED_LOGIN_THRESHOLD` — attempts before alert.
+
+## Jails (set `..._JAIL="true"` to enable)
+SSH / Apache / Nginx / Postfix / WordPress / XMLRPC / DirectAdmin,
+with corresponding `..._BAN_TIME`, `..._MAX_RETRY`, `..._FIND_TIME`.
+
+## Lists
+- Whitelist file path (ignored IPs): `/etc/nftban/config/nftban-configuration-user-whitelist_ips.conf.local`
+- Blacklist file path: `/etc/nftban/config/nftban-configuration-user-blacklist_ips.conf.local`
+
+> See `nftban_init_fail2ban_conf.sh diff-config` to compare base vs local.
+DOC
+  echo "Configuration reference written to $BASE_DIR/CONFIG_REFERENCE.md"
+}
+
+# -----------------------------
 # High-level flows
 # -----------------------------
 setup_all() {
   ensure_root
   init_dirs
-  refresh_base_config           # <-- always ensure reference base is current
-  ensure_local_config           # <-- create .local from base on first run, then stop
-  backup_jail_local             # move /etc/fail2ban/jail.local out of the way (if any)
-  show_config_diff || true      # inform user about missing/different/extra in .local
+  refresh_base_config
+  ensure_local_config
+  show_config_diff || true
   load_config_env               # base + .local
-  verify_and_stage_templates    # copy templates if missing or template is newer/different
-  generate_mail_action          # write portable sendmail action (no-op if no MTA)
+  validate_config               # (2) validation gate
+  verify_and_stage_templates
+  generate_mail_action
   log "Setup complete (non-invasive). Enable services yourself if desired."
 }
 
@@ -975,40 +1086,41 @@ IMPORTANT:
     (Backs up the old file if content changed.)
   • Your real configuration belongs in:
       $CONFIG_FILE_USER
-    If it doesn't exist, the script creates it from the reference and STOPS, so you can edit it,
-    then rerun 'setup'. Otherwise, .local is NEVER modified. The script reports any keys missing vs the reference.
+    If it doesn't exist, the script creates it from the reference and STOPS.
 
 Quick start:
   sudo nftban_init_fail2ban_conf.sh setup
 
-Config tools:
-  nftban_init_fail2ban_conf.sh setup               # refresh base config, validate, stage templates, generate mail action
-  nftban_init_fail2ban_conf.sh check-mail          # detect MTA and advise
-  nftban_init_fail2ban_conf.sh test-mail [rcpt]    # send a test email via detected sendmail
-  nftban_init_fail2ban_conf.sh diff-config         # show missing/different/extra keys (base vs .local)
+Config & validation:
+  nftban_init_fail2ban_conf.sh diff-config
+  nftban_init_fail2ban_conf.sh validate-config
+  nftban_init_fail2ban_conf.sh gen-docs
 
-Login monitor (pick a mode):
-  nftban_init_fail2ban_conf.sh login-monitor install
-  nftban_init_fail2ban_conf.sh login-monitor enable service   # live alerts
-  nftban_init_fail2ban_conf.sh login-monitor enable timer     # periodic digest (10m default)
-  nftban_init_fail2ban_conf.sh login-monitor enable hybrid    # both
+Status:
+  nftban_init_fail2ban_conf.sh status
   nftban_init_fail2ban_conf.sh login-monitor status
+
+Backup / Restore:
+  nftban_init_fail2ban_conf.sh backup-config
+  nftban_init_fail2ban_conf.sh list-backups
+  nftban_init_fail2ban_conf.sh restore-config </path/to/archive.tar.gz>
+
+Mail:
+  nftban_init_fail2ban_conf.sh check-mail
+  nftban_init_fail2ban_conf.sh test-mail [recipient]
+  nftban_init_fail2ban_conf.sh generate-mail-action
+
+Login monitor:
+  nftban_init_fail2ban_conf.sh login-monitor install
+  nftban_init_fail2ban_conf.sh login-monitor enable <service|timer|hybrid>
   nftban_init_fail2ban_conf.sh login-monitor disable [service|timer|hybrid|all]
+  nftban_init_fail2ban_conf.sh login-monitor status
   nftban_init_fail2ban_conf.sh login-monitor uninstall
 
 nftables (manual only; NOT run by 'setup'):
   nftban_init_fail2ban_conf.sh nft-init <jail>
   nftban_init_fail2ban_conf.sh ban <jail> <ip> [seconds|Ns|Nm|Nh|Nd]
   nftban_init_fail2ban_conf.sh unban <jail> <ip>
-
-Notes:
-  • Template naming per enabled jail var (e.g. NFTBAN_F2B_SSH_JAIL.conf) in:
-      $TEMPLATE_DIR/jail.d, $TEMPLATE_DIR/filter.d, $TEMPLATE_DIR/action.d
-  • Mail action written to: $F2B_ACTION_DIR/$MAIL_ACTION_NAME
-  • For email alerts, install a sendmail-compatible MTA (postfix/exim/msmtp/nullmailer).
-  • This script never starts Fail2ban or creates nftables tables during 'setup'.
-  • Login monitor works independently of Fail2ban/nftables; it only auto-bans if you set NFTBAN_F2B_AGGRESSIVE_MODE="true".
-
 USAGE
 }
 
@@ -1018,12 +1130,26 @@ main() {
     --help|-h|help|"") usage ;;
     setup) setup_all ;;
     diff-config) show_config_diff ;;
+    validate-config) load_config_env; validate_config && echo "Configuration is valid" ;;
+    gen-docs) generate_config_docs ;;
+    status) show_system_status ;;
+
+    # Backup / Restore (11: CLI improvements - backup part)
+    backup-config) backup_config ;;
+    list-backups) list_backups ;;
+    restore-config) restore_config "${1:-}" ;;
+
+    # Mail helpers
     check-mail) check_mail ;;
     test-mail|mail-test) test_mail "$@" ;;
     generate-mail-action) load_config_env; generate_mail_action ;;
+
+    # nftables helpers
     nft-init) [[ $# -eq 1 ]] || die "nft-init requires <jail>"; ensure_nft_for_jail "$1" ;;
     ban) [[ $# -ge 2 ]] || die "ban requires <jail> <ip> [timeout]"; load_config_env; nft_ban_ip "$1" "$2" "${3:-${NFTBAN_F2B_DEF_BAN_TIME:-3600}}" ;;
     unban) [[ $# -eq 2 ]] || die "unban requires <jail> <ip>"; nft_unban_ip "$1" "$2" ;;
+
+    # Login monitor subcommands
     login-monitor)
       local sub="${1:-}"; shift || true
       case "${sub:-}" in
