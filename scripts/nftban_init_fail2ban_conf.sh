@@ -42,6 +42,29 @@
 #   • Live login monitor unit: nftban_lfd.service
 #   • Scan service & timer: nftban-login-scan.service / nftban-login-scan.timer
 #   • Timer bug context: using -u (unit) AND (-t/--identifier) filtered out sudo lines.
+#
+#Example Fail2Ban Action for SSHD:
+#File: /etc/fail2ban/action.d/nftban-sshd.conf
+#ini[Definition]
+
+#actionstart = nft add table inet nftban_f2b_sshd
+#              nft add set inet nftban_f2b_sshd banned_v4 '{ type ipv4_addr; flags timeout; }'
+#              nft add set inet nftban_f2b_sshd banned_v6 '{ type ipv6_addr; flags timeout; }'
+#              nft add chain inet nftban_f2b_sshd input '{ type filter hook input priority -100; policy accept; }'
+#              nft add rule inet nftban_f2b_sshd input ip saddr @banned_v4 drop
+#              nft add rule inet nftban_f2b_sshd input ip6 saddr @banned_v6 drop
+#
+#actionstop = nft delete table inet nftban_f2b_sshd
+#
+#actioncheck = nft list table inet nftban_f2b_sshd
+#
+#actionban = nft add element inet nftban_f2b_sshd banned_v4 { <ip> timeout <bantime> }
+#
+#actionunban = nft delete element inet nftban_f2b_sshd banned_v4 { <ip> }
+
+#[Init]
+#bantime = 3600
+
 # =============================================================================
 
 set -Eeuo pipefail
