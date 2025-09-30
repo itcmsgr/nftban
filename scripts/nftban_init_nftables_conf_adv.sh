@@ -1,6 +1,9 @@
+# THIS WILL BE FOR FUTURE AS USE INTERFACE SELECTION AND BE MORE ADVANCED USERS
+# NOTE : KEEP THIS AS REFERENCE AT THIS TIME FOR FUTURE USE
+
 #!/bin/bash
 ################################################################################
-# Script: nftban_init_nftables_conf.sh
+# Script: nftban_init_nftables_conf_adv.sh
 #
 # Version: 1.8.1
 # Author: ITCMS Team (Antonios Voulvoulis) 
