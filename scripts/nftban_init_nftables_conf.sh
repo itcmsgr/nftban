@@ -10,7 +10,7 @@
 # - Separate sets for user/system blacklists and temp bans
 # - Compatible with unified nftban management script
 # - Whitelist always takes priority
-#Architect nftables table: inet nftban_global
+# Architect nftables table: inet nftban_global
 #├── Sets:
 #│   ├── whitelist_v4 / whitelist_v6
 #│   ├── user_blacklist_v4 / user_blacklist_v6  (from USER_BLACKLIST_FILE)
