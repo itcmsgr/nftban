@@ -83,6 +83,8 @@ OUTPUT_FILE="${BASE_DIR}/nft_rules.conf.local"
 FAIL2BAN_WHITELIST="$BASE_DIR/nftban-fail2ban-ip-whitelist.conf.local"
 CLOUDFLARE_IPV4_URL="https://www.cloudflare.com/ips-v4"
 CLOUDFLARE_IPV6_URL="https://www.cloudflare.com/ips-v6"
+FAIL2BAN_TEMP_IPS_=""$BASE_DIR/nftban-configuration-f2b-ips_temp-blacklists_conf.local"
+
 # --- Validation mode switch ---
 if [[ "$1" == "--validate-only" ]]; then
   echo "--- Validating all rule sources ---"
