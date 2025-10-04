@@ -449,7 +449,7 @@ create_empty_configs() {
     "nftban-configuration-ipv6-ports-output-allow.conf.local"
     "nftban-configuration-user-whitelist_ips.conf.local"
     "nftban-configuration-user-blacklist_ips.conf.local"
-    "nftban-configuration-f2b-ips-temp-blacklists_ip_conf.local"
+    "nftban-configuration-f2b-ips_temp-blacklists_conf.local"
   )
   
   for file in "${files[@]}"; do
