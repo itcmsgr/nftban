@@ -58,9 +58,9 @@
 #
 #actioncheck = nft list table inet nftban_f2b_sshd
 #
-#actionban = nft add element inet nftban_f2b_sshd banned_v4 { <ip> timeout <bantime> }
+#actionban = nft add element inet temp_ban temp_ban_v4 { <ip> timeout <bantime> }
 #
-#actionunban = nft delete element inet nftban_f2b_sshd banned_v4 { <ip> }
+#actionunban = nft delete element inet temp_ban temp_ban_v4 { <ip> }
 
 #[Init]
 #bantime = 3600
@@ -106,7 +106,7 @@ log() { echo "[$(ts)] $*" | tee -a "$LOGFILE"; }
 die() { echo "[$(ts)] ERROR: $*" | tee -a "$LOGFILE" >&2; exit 1; }
 ensure_root() { [[ $EUID -eq 0 ]] || die "Run as root."; }
 mkdirp() { mkdir -p "$1"; }
-trap 's=$?; echo "[$(ts)] Aborted (exit $s)" >>"$LOGFILE"; exit $s' ERR INT
+on_abort(){ rc=$?; echo "[$(ts)] Aborted (exit $rc)" >>"$LOGFILE"; exit "$rc"; }; trap 'on_abort' ERR INT
 
 init_dirs() {
   mkdirp "$BASE_DIR/config" "/var/log/nftban" "$F2B_JAIL_DIR" "$F2B_FILTER_DIR" "$F2B_ACTION_DIR" "$BACKUP_DIR"
@@ -439,7 +439,7 @@ EOF
     log "Wrote $action_file (NO-OP: no MTA)."
     echo "⚠️  No sendmail-compatible MTA found. For email alerts: apt/dnf/apk install postfix (or exim/msmtp/nullmailer)."
   fi
-  echo "To use in a jail: action = $MAIL_ACTION_NAME[name=%(name)s, dest=$dest, sender=$sender]"
+  echo "To use in a jail: action = ${MAIL_ACTION_NAME}[name=%(name)s, dest=$dest, sender=$sender]"
 }
 
 check_mail() {
@@ -456,8 +456,10 @@ test_mail() {
     echo "No sendmail-compatible MTA detected. Install postfix/exim/msmtp/nullmailer for email alerts."
     return 2
   fi
-  local subj="[nftban-test] sendmail check on $(hostname -f)"
-  local body="This is a test message from nftban_init_fail2ban_conf.sh at $(date -R).
+  local subj
+  subj="[nftban-test] sendmail check on $(hostname -f)"
+  local body
+  body="This is a test message from nftban_init_fail2ban_conf.sh at $(date -R).
 Sender: $sender
 Recipient: $rcpt
 If you see this, your MTA path ($sm) accepted the message."
@@ -476,39 +478,101 @@ If you see this, your MTA path ($sm) accepted the message."
 # -----------------------------
 fmt_timeout() { local t="$1"; if [[ "$t" =~ ^[0-9]+$ ]]; then echo "${t}s"; elif [[ "$t" =~ ^[0-9]+[smhd]$ ]]; then echo "$t"; else echo "${t}s"; fi; }
 ensure_nft_for_jail() {
+  # Global mode: ignore jail name, ensure a single inet table 'temp_ban'
   command -v nft >/dev/null 2>&1 || die "Missing command: nft"
-  local jail="$1" table="nftban_${jail}"
-  if nft list table inet "$table" >/dev/null 2>&1; then log "nft table exists: inet $table"; return 0; fi
-  nft add table inet "$table"
-  nft add set   inet "$table" banned4   '{ type ipv4_addr; flags timeout; }'
-  nft add set   inet "$table" banned6   '{ type ipv6_addr; flags timeout; }'
-  nft add set   inet "$table" blacklist4 '{ type ipv4_addr; }'
-  nft add set   inet "$table" blacklist6 '{ type ipv6_addr; }'
-  nft add chain inet "$table" input "{ type filter hook input priority 0; policy accept; }"
-  nft add rule  inet "$table" input ip   saddr @blacklist4 drop
-  nft add rule  inet "$table" input ip6  saddr @blacklist6 drop
-  nft add rule  inet "$table" input ip   saddr @banned4   drop
-  nft add rule  inet "$table" input ip6  saddr @banned6   drop
-  log "Created inet $table with banned/blacklist sets and input hook."
+
+  # Create table if missing
+  nft list table inet temp_ban >/dev/null 2>&1 || nft add table inet temp_ban
+
+  # Ensure sets exist (with timeout support)
+  nft list set inet temp_ban temp_ban_v4 >/dev/null 2>&1 || nft add set inet temp_ban temp_ban_v4 '{ type ipv4_addr; flags timeout; }'
+  nft list set inet temp_ban temp_ban_v6 >/dev/null 2>&1 || nft add set inet temp_ban temp_ban_v6 '{ type ipv6_addr; flags timeout; }'
+
+  # Ensure a single input chain with drop rules referencing the global sets
+  if ! nft list chain inet temp_ban input_global >/dev/null 2>&1; then
+    nft add chain inet temp_ban input_global "{ type filter hook input priority 0; policy accept; }"
+  fi
+
+  # Make sure the drop rules exist
+  nft list ruleset | grep -q 'ip saddr @temp_ban_v4 drop' || nft add rule inet temp_ban input_global ip saddr @temp_ban_v4 drop || true
+  nft list ruleset | grep -q 'ip6 saddr @temp_ban_v6 drop' || nft add rule inet temp_ban input_global ip6 saddr @temp_ban_v6 drop || true
+
+  log "Global nftables mode ready: inet temp_ban with sets temp_ban_v4/temp_ban_v6 and input hook."
 }
+
+# --- Global helper functions for idempotent add/remove -----------------------
+nft_global_ip_in_set() {
+  local ip="$1"
+  if [[ "$ip" == *:* ]]; then
+    nft get element inet temp_ban temp_ban_v6 "{ $ip }" >/dev/null 2>&1
+  else
+    nft get element inet temp_ban temp_ban_v4 "{ $ip }" >/dev/null 2>&1
+  fi
+}
+
+nft_global_add_ip() {
+  local ip="$1"
+  local to="${2:-}"
+
+  ensure_nft_for_jail "_ignored_"
+
+  if nft_global_ip_in_set "$ip"; then
+    log "nft: already present: $ip"
+    return 0
+  fi
+
+  if [[ "$ip" == *:* ]]; then
+    if [[ -n "$to" ]]; then
+      nft add element inet temp_ban temp_ban_v6 "{ $ip timeout $to }"
+    else
+      nft add element inet temp_ban temp_ban_v6 "{ $ip }"
+    fi
+  else
+    if [[ -n "$to" ]]; then
+      nft add element inet temp_ban temp_ban_v4 "{ $ip timeout $to }"
+    else
+      nft add element inet temp_ban temp_ban_v4 "{ $ip }"
+    fi
+  fi
+}
+
+nft_global_del_ip() {
+  local ip="$1"
+
+  if ! nft_global_ip_in_set "$ip"; then
+    log "nft: not present (skip delete): $ip"
+    return 0
+  fi
+
+  if [[ "$ip" == *:* ]]; then
+    nft delete element inet temp_ban temp_ban_v6 "{ $ip }" || true
+  else
+    nft delete element inet temp_ban temp_ban_v4 "{ $ip }" || true
+  fi
+}
+# -----------------------------------------------------------------------------
+
 nft_ban_ip() {
   command -v nft >/dev/null 2>&1 || die "Missing command: nft"
-  local jail="$1" ip="$2" to="${3:-${NFTBAN_F2B_DEF_BAN_TIME:-3600}}" table="nftban_${jail}"
+  local jail ip to table
+  jail="$1"
+  ip="$2"
+  to="${3:-${NFTBAN_F2B_DEF_BAN_TIME:-3600}}"
+  table="nftban_${jail}"
   ensure_nft_for_jail "$jail"
   if [[ -f "$WHITELIST_FILE" ]] && grep -E -v '^\s*(#|$)' "$WHITELIST_FILE" | awk '{$1=$1};1' | grep -Fxq "$ip"; then log "SKIP ban (whitelisted): $ip (jail=$jail)"; return 0; fi
   to="$(fmt_timeout "$to")"
-  if [[ "$ip" == *:* ]]; then nft add element inet "$table" banned6 "{ $ip timeout $to }" || true
-  else nft add element inet "$table" banned4 "{ $ip timeout $to }" || true; fi
+  if [[ "$ip" == *:* ]]; then nft_global_add_ip "$ip" "$to" || true
+  else nft_global_add_ip "$ip" "$to" || true; fi
   echo "[$(ts)] jail=${jail} action=ban ip=${ip} timeout=${to}" >>"$LOGFILE_IP"
   log "Banned $ip in $table for $to"
 }
 nft_unban_ip() {
-  command -v nft >/dev/null 2>&1 || die "Missing command: nft"
-  local jail="$1" ip="$2" table="nftban_${jail}"
-  if [[ "$ip" == *:* ]]; then nft delete element inet "$table" banned6 "{ $ip }" 2>/dev/null || true
-  else nft delete element inet "$table" banned4 "{ $ip }" 2>/dev/null || true; fi
-  log "Unbanned $ip from $table"
+  local ip="$1"
+  # Idempotent unban using the global helper
+  nft_global_del_ip "$ip"
 }
+
 
 # -----------------------------
 # Login monitor (live + timer)
