@@ -17,7 +17,7 @@ CONF_FILE="/etc/nftables.conf"
 ALLOW_FILE="$BASE_DIR/nftban-configuration-user-whitelist_ips.conf.local"
 BACKUP_DIR="/etc/nftables/backups"
 LOG_FILE="/var/log/nftban.log"
-TEMP_BAN_TABLE="nftban_temp_ban"
+TEMP_BAN_TABLE="nftban_global"
 # Names of the sets used for temporary bans (IPv4 & IPv6)
 TEMP_BAN_SET_V4="temp_ban_v4"
 TEMP_BAN_SET_V6="temp_ban_v6"
@@ -449,46 +449,36 @@ manage_ip() {
     fi
 }
 
-# Function to create/ensure temporary ban table/sets/chains if they don't exist.
-# Aligns with expectations from nftban_init_nftables_conf.
+
+
+# Function to verify the global table exists (created by init_nftables script)
 ensure_temp_ban_table() {
-    # Create table if missing
+    # Verify table exists (should be created by nftban_init_nftables_conf.sh)
     if ! nft list table inet "$TEMP_BAN_TABLE" >/dev/null 2>&1; then
-        nft add table inet "$TEMP_BAN_TABLE"
-        log "Created nft table inet $TEMP_BAN_TABLE"
+        log "ERROR: Table inet $TEMP_BAN_TABLE not found!"
+        echo -e "${RED}ERROR: Global table 'inet $TEMP_BAN_TABLE' not found.${NC}"
+        echo -e "${YELLOW}Please run nftban_init_nftables_conf.sh first to create the table structure.${NC}"
+        return 1
     fi
 
-    # Create IPv4 set if missing (with timeout 1 hour)
+    # Verify IPv4 set exists
     if ! nft list set inet "$TEMP_BAN_TABLE" "$TEMP_BAN_SET_V4" >/dev/null 2>&1; then
-        nft add set inet "$TEMP_BAN_TABLE" "$TEMP_BAN_SET_V4" '{ type ipv4_addr; timeout 1h; }'
-        log "Created set $TEMP_BAN_SET_V4 in table $TEMP_BAN_TABLE"
+        log "ERROR: Set $TEMP_BAN_SET_V4 not found in table $TEMP_BAN_TABLE"
+        echo -e "${RED}ERROR: Set '$TEMP_BAN_SET_V4' not found. Run init script first.${NC}"
+        return 1
     fi
 
-    # Create IPv6 set if missing (with timeout 1 hour)
+    # Verify IPv6 set exists
     if ! nft list set inet "$TEMP_BAN_TABLE" "$TEMP_BAN_SET_V6" >/dev/null 2>&1; then
-        nft add set inet "$TEMP_BAN_TABLE" "$TEMP_BAN_SET_V6" '{ type ipv6_addr; timeout 1h; }'
-        log "Created set $TEMP_BAN_SET_V6 in table $TEMP_BAN_TABLE"
+        log "ERROR: Set $TEMP_BAN_SET_V6 not found in table $TEMP_BAN_TABLE"
+        echo -e "${RED}ERROR: Set '$TEMP_BAN_SET_V6' not found. Run init script first.${NC}"
+        return 1
     fi
 
-    # Create chain if missing and add rules if missing.
-    if ! nft list chain inet "$TEMP_BAN_TABLE" input >/dev/null 2>&1; then
-        nft add chain inet "$TEMP_BAN_TABLE" input '{ type filter hook input priority -150; policy accept; }'
-        log "Created chain input in table $TEMP_BAN_TABLE"
-    fi
-
-    # Ensure rules exist that drop packets from members of the sets.
-    # Add rule for IPv4 set if not already present (search by exact rule text)
-    if ! nft list chain inet "$TEMP_BAN_TABLE" input | grep -F "ip saddr @${TEMP_BAN_SET_V4} drop" >/dev/null 2>&1; then
-        nft add rule inet "$TEMP_BAN_TABLE" input ip saddr @${TEMP_BAN_SET_V4} drop
-        log "Added rule to drop IPv4 addresses from set ${TEMP_BAN_SET_V4}"
-    fi
-
-    # Add rule for IPv6 set if not already present
-    if ! nft list chain inet "$TEMP_BAN_TABLE" input | grep -F "ip6 saddr @${TEMP_BAN_SET_V6} drop" >/dev/null 2>&1; then
-        nft add rule inet "$TEMP_BAN_TABLE" input ip6 saddr @${TEMP_BAN_SET_V6} drop
-        log "Added rule to drop IPv6 addresses from set ${TEMP_BAN_SET_V6}"
-    fi
+    log "Verified: Global table structure exists (inet $TEMP_BAN_TABLE)"
+    return 0
 }
+
 
 # Function to check if IP is the current login IP
 is_current_login_ip() {
@@ -515,7 +505,8 @@ temp_ban_ip() {
         return 1
     fi
     
-    ensure_temp_ban_table
+    # Verify table structure exists
+    ensure_temp_ban_table || return 1
     
     # Default comment if none provided
     if [ -z "$comment" ]; then
@@ -525,7 +516,7 @@ temp_ban_ip() {
     # Add to the appropriate set only (v4 or v6)
     if [[ "$ip" =~ .*:.* ]]; then
         # IPv6
-        if nft add element inet "$TEMP_BAN_TABLE" "$TEMP_BAN_SET_V6" "{ $ip }" 2>/dev/null; then
+        if nft add element inet "$TEMP_BAN_TABLE" "$TEMP_BAN_SET_V6" "{ $ip timeout 1h }" 2>/dev/null; then
             log "Temporarily banned IPv6 address: $ip with comment: $comment"
             echo -e "${RED}Temporarily banned IPv6 address: $ip (1 hour)${NC}"
             echo -e "${YELLOW}Comment: $comment${NC}"
@@ -536,7 +527,7 @@ temp_ban_ip() {
         fi
     else
         # IPv4
-        if nft add element inet "$TEMP_BAN_TABLE" "$TEMP_BAN_SET_V4" "{ $ip }" 2>/dev/null; then
+        if nft add element inet "$TEMP_BAN_TABLE" "$TEMP_BAN_SET_V4" "{ $ip timeout 1h }" 2>/dev/null; then
             log "Temporarily banned IPv4 address: $ip with comment: $comment"
             echo -e "${RED}Temporarily banned IPv4 address: $ip (1 hour)${NC}"
             echo -e "${YELLOW}Comment: $comment${NC}"
