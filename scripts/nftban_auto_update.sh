@@ -1,7 +1,6 @@
 #!/usr/bin/env bash
-# nftban auto-update wrapper (Option A)
-# Place this file at: <REPO_ROOT>/scripts/nftban_auto_update.sh
-# It simply invokes your existing init script with safe defaults for unattended updates.
+# nftban auto-update wrapper 
+# Simply invokes existing init script nftban_init.sh with safe defaults for unattended updates.
 
 set -euo pipefail
 
