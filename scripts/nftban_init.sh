@@ -1,4 +1,45 @@
 #!/usr/bin/env bash
+
+# --- Version Check and Auto-Update ---
+VERSION="3.0.0"
+VERSION_FILE="/etc/nftban/.version"
+AUTO_UPDATE_SCRIPT="/etc/nftban/scripts/nftban_auto_update.sh"
+
+check_version() {
+    if [ -f "$VERSION_FILE" ]; then
+        CURRENT_VERSION=$(cat "$VERSION_FILE")
+        if [ "$CURRENT_VERSION" != "$VERSION" ]; then
+            echo "New version detected: $VERSION (was $CURRENT_VERSION)"
+            echo "$VERSION" > "$VERSION_FILE"
+        fi
+    else
+        echo "$VERSION" > "$VERSION_FILE"
+        echo "Version file created: $VERSION"
+    fi
+}
+
+setup_auto_update() {
+    mkdir -p "$(dirname "$AUTO_UPDATE_SCRIPT")"
+    cat > "$AUTO_UPDATE_SCRIPT" <<EOF
+#!/bin/bash
+REPO_URL="https://github.com/itcmsgr/nftban"
+BRANCH="main"
+TARGET_DIR="/etc/nftban"
+
+cd "\$TARGET_DIR" || exit 1
+if [ -d .git ]; then
+    git fetch --quiet
+    git reset --hard "origin/\$BRANCH" --quiet
+    git pull --quiet
+fi
+EOF
+    chmod +x "$AUTO_UPDATE_SCRIPT"
+
+    # Add crontab entry if not already present
+    (crontab -l 2>/dev/null | grep -v "$AUTO_UPDATE_SCRIPT"; echo "0 */12 * * * $AUTO_UPDATE_SCRIPT >/dev/null 2>&1") | crontab -
+}
+
+#!/usr/bin/env bash
 set -euo pipefail
 
 ################################################################################
@@ -91,9 +132,36 @@ detect_pm() {
   if command -v apt-get >/dev/null 2>&1; then
     PKG_TOOL="apt"
     PKG_INSTALL="apt-get update -y && apt-get install -y"
+# Helper to install packages without using eval (addresses SC2294).
+pkg_install() {
+  # Usage: pkg_install pkg1 [pkg2 ...]
+  # Detect package manager from PKG_INSTALL string and run native command preserving args safely.
+  case "$PKG_INSTALL" in
+    apt-get*)
+      apt-get update -y >/dev/null && apt-get install -y "$@"
+      ;;
+    dnf*)
+      dnf install -y "$@"
+      ;;
+    yum*)
+      yum install -y "$@"
+      ;;
+    zypper*)
+      zypper --non-interactive install -y "$@"
+      ;;
+    apk*)
+      apk add --no-cache "$@"
+      ;;
+    *)
+      # Fallback: last resort, still avoid word-splitting for args
+      # shellcheck disable=SC2294
+      eval "$PKG_INSTALL" "$@"
+      ;;
+  esac
+}
     PKG_REMOVE="apt-get remove -y"
     PKG_PURGE="apt-get purge -y"
-    PKG_QUERY="dpkg -s"
+    # PKG_QUERY="dpkg -s"  # Unused; commented out to satisfy SC2034
     PKG_CHECK="dpkg -l"
     DNSUTILS_PKG="$DNSUTILS_DEB"
   elif command -v dnf >/dev/null 2>&1; then
@@ -101,7 +169,7 @@ detect_pm() {
     PKG_INSTALL="dnf install -y"
     PKG_REMOVE="dnf remove -y"
     PKG_PURGE="$PKG_REMOVE"
-    PKG_QUERY="rpm -q"
+    # PKG_QUERY="rpm -q"  # Unused; commented out to satisfy SC2034
     PKG_CHECK="rpm -q"
     DNSUTILS_PKG="$DNSUTILS_RHEL"
   elif command -v yum >/dev/null 2>&1; then
@@ -109,7 +177,7 @@ detect_pm() {
     PKG_INSTALL="yum install -y"
     PKG_REMOVE="yum remove -y"
     PKG_PURGE="$PKG_REMOVE"
-    PKG_QUERY="rpm -q"
+    # PKG_QUERY="rpm -q"  # Unused; commented out to satisfy SC2034
     PKG_CHECK="rpm -q"
     DNSUTILS_PKG="$DNSUTILS_RHEL"
   elif command -v zypper >/dev/null 2>&1; then
@@ -117,7 +185,7 @@ detect_pm() {
     PKG_INSTALL="zypper --non-interactive install -y"
     PKG_REMOVE="zypper --non-interactive remove -y"
     PKG_PURGE="$PKG_REMOVE"
-    PKG_QUERY="rpm -q"
+    # PKG_QUERY="rpm -q"  # Unused; commented out to satisfy SC2034
     PKG_CHECK="rpm -q"
     DNSUTILS_PKG="$DNSUTILS_RHEL"
   elif command -v apk >/dev/null 2>&1; then
@@ -125,7 +193,7 @@ detect_pm() {
     PKG_INSTALL="apk add --no-cache"
     PKG_REMOVE="apk del"
     PKG_PURGE="$PKG_REMOVE"
-    PKG_QUERY="apk info -e"
+    # PKG_QUERY="apk info -e"  # Unused; commented out to satisfy SC2034
     PKG_CHECK="apk info -e"
     DNSUTILS_PKG="bind-tools"
   else
@@ -154,7 +222,7 @@ ensure_tools() {
   done
   if ((${#missing[@]} > 0)); then
     log INFO "Installing missing tools: ${missing[*]}"
-    eval $PKG_INSTALL "${missing[*]}" >/dev/null
+    pkg_install "${missing[@]}" >/dev/null
   fi
 }
 
@@ -208,7 +276,7 @@ install_epel_if_needed() {
   
   if [[ "$ASSUME_Y" == "true" ]] || ask_yes_no "EPEL repository is not installed. Do you want to install it?" "Y"; then
     log INFO "Installing EPEL repository..."
-    if eval "$PKG_INSTALL epel-release" >/dev/null 2>&1; then
+    if pkg_install epel-release >/dev/null 2>&1; then
       log INFO "EPEL repository installed successfully"
       return 0
     else
@@ -258,7 +326,7 @@ install_packages() {
   # Install nftables
   log INFO "Installing nftables..."
   if ! pkg_present nft; then
-    eval "$PKG_INSTALL nftables" >/dev/null 2>&1 || die "Failed to install nftables"
+    pkg_install nftables >/dev/null 2>&1 || die "Failed to install nftables"
     log INFO "nftables installed successfully"
   else
     log INFO "nftables already installed"
@@ -267,7 +335,7 @@ install_packages() {
   # Install Fail2Ban
   log INFO "Installing $FAIL2BAN_PKG..."
   if ! $PKG_CHECK "$FAIL2BAN_PKG" >/dev/null 2>&1; then
-    eval "$PKG_INSTALL $FAIL2BAN_PKG" >/dev/null 2>&1 || die "Failed to install $FAIL2BAN_PKG"
+    pkg_install $FAIL2BAN_PKG >/dev/null 2>&1 || die "Failed to install $FAIL2BAN_PKG"
     log INFO "$FAIL2BAN_PKG installed successfully"
   else
     log INFO "$FAIL2BAN_PKG already installed"
@@ -276,7 +344,7 @@ install_packages() {
   # Install whois
   log INFO "Installing $WHOIS_PKG..."
   if ! $PKG_CHECK "$WHOIS_PKG" >/dev/null 2>&1; then
-    eval "$PKG_INSTALL $WHOIS_PKG" >/dev/null 2>&1 || die "Failed to install $WHOIS_PKG"
+    pkg_install $WHOIS_PKG >/dev/null 2>&1 || die "Failed to install $WHOIS_PKG"
     log INFO "$WHOIS_PKG installed successfully"
   else
     log INFO "$WHOIS_PKG already installed"
@@ -285,7 +353,7 @@ install_packages() {
   # Install dnsutils/bind-utils
   log INFO "Installing $DNSUTILS_PKG..."
   if ! $PKG_CHECK "$DNSUTILS_PKG" >/dev/null 2>&1; then
-    eval "$PKG_INSTALL $DNSUTILS_PKG" >/dev/null 2>&1 || die "Failed to install $DNSUTILS_PKG"
+    pkg_install $DNSUTILS_PKG >/dev/null 2>&1 || die "Failed to install $DNSUTILS_PKG"
     log INFO "$DNSUTILS_PKG installed successfully"
   else
     log INFO "$DNSUTILS_PKG already installed"
@@ -714,7 +782,7 @@ backup_existing() {
     ts="$(date +%Y%m%d_%H%M%S)"
     bkp="/var/backups/nftban_${ts}.tgz"
     log INFO "Backing up existing $TARGET_DIR to $bkp"
-    tar -czf "$bkp" -C / "$(echo "$TARGET_DIR" | sed 's#^/##')" 2>/dev/null || true
+    tar -czf "$bkp" -C / "${TARGET_DIR#/}" 2>/dev/null || true
   fi
 }
 
@@ -1052,7 +1120,7 @@ show_completion_summary() {
       
       # Determine what type of configuration was applied
       if ls "$LOG_DIR/cp_detection_"*.log >/dev/null 2>&1; then
-        LATEST_LOG=$(ls -t "$LOG_DIR/cp_detection_"*.log 2>/dev/null | head -1)
+        LATEST_LOG=$(find $LOG_DIR -maxdepth 1 -type f -name 'cp_detection_*.log' -print0 2>/dev/null | xargs -0 -r ls -1t 2>/dev/null | head -n1)
         if grep -q "DirectAdmin detected" "$LATEST_LOG" 2>/dev/null; then
           echo "DirectAdmin control panel detected and configured"
         elif grep -q "cPanel detected" "$LATEST_LOG" 2>/dev/null; then
@@ -1166,7 +1234,7 @@ show_completion_summary() {
   echo "=== LOG FILES ==="
   echo "Installation log: $LOGFILE"
   if ls "$LOG_DIR/cp_detection_"*.log >/dev/null 2>&1; then
-    LATEST_CP_LOG=$(ls -t "$LOG_DIR/cp_detection_"*.log 2>/dev/null | head -1)
+    LATEST_CP_LOG=$(find $LOG_DIR -maxdepth 1 -type f -name 'cp_detection_*.log' -print0 2>/dev/null | xargs -0 -r ls -1t 2>/dev/null | head -n1)
     echo "Control panel detection log: $LATEST_CP_LOG"
   fi
   echo "================================="
@@ -1244,6 +1312,8 @@ parse_args() {
 
 # --- Main Function ---
 main() {
+    check_version
+    setup_auto_update
   need_root
   parse_args "$@"
 
