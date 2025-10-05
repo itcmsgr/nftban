@@ -1,47 +1,9 @@
 #!/usr/bin/env bash
-set -euo pipefail
-
-################################################################################
-# nftban Unified Installation & Maintenance Script
-#
-# Version: 3.0.0
-# Description: Comprehensive nftban installer with enhanced functionality
-# Features:
-# - GitHub repository sync with fallback ZIP download
-# - Installs nftables, fail2ban, whois, and DNS utilities
-# - Enhanced control panel detection (DirectAdmin, cPanel, Plesk, generic)
-# - Complete directory structure and configuration templates
-# - Comprehensive uninstall functionality with purge options
-# - No automatic service start/enable (manual control)
-# - Package manager support: apt, dnf, yum, zypper, apk
-#
-# ** NOTE: THIS SCRIPT MUST BE RUN AS ROOT!
-#
-# Usage:
-#   sudo ./nftban_init.sh [options]
-#
-# Options:
-#   --github            Force Git flow without prompting
-#   --zip               Force ZIP flow without prompting
-#   --target DIR        Install directory (default: /etc/nftban)
-#   --branch NAME       Git branch (default: main)
-#   --uninstall         Run uninstall flow
-#   --purge             With --uninstall: remove logs/state dirs too
-#   -y                  Assume "yes" to prompts
-#   --skip-cp-detect    Skip control panel detection
-#   --help              Show help
-#
-# Examples:
-#   sudo ./nftban_init.sh --github
-#   sudo ./nftban_init.sh --zip --target /opt/nftban
-#   sudo ./nftban_init.sh --uninstall --purge -y
-################################################################################
-
 
 # --- Version Check and Auto-Update ---
 VERSION="3.0.0"
 VERSION_FILE="/etc/nftban/.version"
-AUTO_UPDATE_SCRIPT="/etc/nftban/scripts/nftban_init.sh"
+AUTO_UPDATE_SCRIPT="/etc/nftban/scripts/nftban_auto_update.sh"
 
 check_version() {
     if [ -f "$VERSION_FILE" ]; then
