@@ -38,25 +38,6 @@ LOG_FILE="${LOG_DIR}/validation_$(date +%F).log"
 # Ensure required directories exist
 mkdir -p "$BACKUP_DIR" "$LOG_DIR"
 
-# Migrate legacy backup directories to $BACKUP_DIR
-migrate_legacy_backups() {
-  for LEGACY in "/var/lib/nftban" "/var/backups"; do
-    if [ -d "$LEGACY" ]; then
-      # Move files without overwriting existing backups
-      find "$LEGACY" -maxdepth 1 -type f -print0 2>/dev/null | while IFS= read -r -d '' f; do
-        bn="$(basename "$f")"
-        dest="$BACKUP_DIR/$bn"
-        if [ -e "$dest" ]; then
-          ts="$(date +%F_%H%M%S)"
-          dest="$BACKUP_DIR/${bn}.${ts}.migrated"
-        fi
-        mv "$f" "$dest" 2>/dev/null || cp -a "$f" "$dest"
-      done
-    fi
-  done
-}
-
-migrate_legacy_backups
 
 log_msg() {
   echo "[$(date +'%F %T')] $*" | tee -a "$LOG_FILE"
@@ -85,6 +66,95 @@ CLOUDFLARE_IPV4_URL="https://www.cloudflare.com/ips-v4"
 CLOUDFLARE_IPV6_URL="https://www.cloudflare.com/ips-v6"
 FAIL2BAN_TEMP_IPS_="$BASE_DIR/nftban-configuration-f2b-ips_temp-blacklists_conf.local"
 
+
+# --- Seed temporary bans from CSV (FAIL2BAN style) ----------------------------
+# Reads a CSV with rows: IP,HOURS,COMMENT...
+# Example:
+#   203.0.113.9,1,SSH test ban
+#   2001:db8::1234,2,API hammering
+#
+# Uses table 'inet nftban_global' and sets: temp_ban_v4 / temp_ban_v6.
+# Skips any IP already present in whitelist_v4/6 or user_blacklist_v4/6 or system_blacklist_v4/6.
+# If the IP already exists in the temp set, its timeout is refreshed to the new value.
+seed_temp_bans_from_csv() {
+  local csv_file="${FAIL2BAN_TEMP_IPS:-${FAIL2BAN_TEMP_IPS_}}"
+  local table="inet nftban_global"
+  local set_v4="temp_ban_v4"
+  local set_v6="temp_ban_v6"
+
+  [[ -n "$csv_file" && -f "$csv_file" ]] || { echo "ℹ️ No temp-bans CSV found: $csv_file (skip)"; return; }
+
+  echo "--- Seeding temporary bans from: $csv_file ---"
+
+  # Helper: check if an element exists in a set
+  _nft_has_element() {
+    # $1 = set name ; $2 = ip
+    nft get element "$table" "$1" "{ $2 }" >/dev/null 2>&1
+  }
+
+  # Helper: add/refresh element with timeout
+  _nft_add_timeout() {
+    # $1 = set name ; $2 = ip ; $3 = hours ; $4 = comment
+    local s="$1" ip="$2" hours="$3" cmt="$4"
+
+    if _nft_has_element "$s" "$ip"; then
+      # Refresh timeout by deleting and re-adding
+      nft delete element "$table" "$s" "{ $ip }" >/dev/null 2>&1
+    fi
+    # Add with timeout. Some nft versions ignore element comments; we log them either way.
+    if nft add element "$table" "$s" "{ $ip timeout ${hours}h }" >/dev/null 2>&1; then
+      echo "  ✓ $ip -> $s (${hours}h) ${cmt:+# $cmt}"
+    else
+      echo "  ✗ Failed to add $ip to $s with timeout ${hours}h" >&2
+    fi
+  }
+
+  # Read CSV
+  while IFS= read -r raw || [[ -n "$raw" ]]; do
+    # Strip CR, trim spaces
+    line="${raw//$'\r'/}"
+    # Skip comments and empty lines
+    [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+    [[ "$line" =~ ^[[:space:]]*# ]] && continue
+
+    # Split first two CSV fields; remainder is comment (can contain commas)
+    IFS=',' read -r ip hours rest <<< "$line"
+    # Trim spaces
+    ip="${ip//[[:space:]]/}"
+    hours="${hours//[[:space:]]/}"
+    comment="${rest# }"  # keep as-is for logs
+
+    # Basic validation
+    [[ -z "$ip" || -z "$hours" ]] && { echo "  ! Skip malformed row: $raw"; continue; }
+    [[ "$hours" =~ ^[0-9]+$ ]] || { echo "  ! Invalid HOURS for $ip: $hours"; continue; }
+
+    # Detect family
+    local family setname
+    if [[ "$ip" == *:* ]]; then
+      family="v6"; setname="$set_v6"
+      # Very loose IPv6 sanity check
+      [[ "$ip" =~ ^[0-9A-Fa-f:./]+$ ]] || { echo "  ! Bad IPv6: $ip"; continue; }
+    else
+      family="v4"; setname="$set_v4"
+      [[ "$ip" =~ ^[0-9./]+$ ]] || { echo "  ! Bad IPv4/CIDR: $ip"; continue; }
+    fi
+
+    # Skip if present in whitelist or any blacklist
+    if _nft_has_element "whitelist_${family}" "$ip"; then
+      echo "  → Skip $ip (already in whitelist_${family})"; continue
+    fi
+    if _nft_has_element "user_blacklist_${family}" "$ip"; then
+      echo "  → Skip $ip (already in user_blacklist_${family})"; continue
+    fi
+    if _nft_has_element "system_blacklist_${family}" "$ip"; then
+      echo "  → Skip $ip (already in system_blacklist_${family})"; continue
+    fi
+
+    _nft_add_timeout "$setname" "$ip" "$hours" "$comment"
+  done < "$csv_file"
+
+  echo "--- Temp-ban seeding complete ---"
+}
 # --- Validation mode switch ---
 if [[ "$1" == "--validate-only" ]]; then
   echo "--- Validating all rule sources ---"
@@ -621,8 +691,10 @@ if [[ -f "$IPV6_BLACKLIST_FILE" ]]; then
     mv "${IPV6_BLACKLIST_FILE}.tmp" "$IPV6_BLACKLIST_FILE"
 fi
 
-# Save Fail2Ban whitelist
+# Save the Fail2Ban whitelist. All IPs listed in this file are exclusively managed by nftables and should be ignored by the Fail2Ban mechanism.
 echo "$ALL_WHITELIST_IPS" | sort -u > "$FAIL2BAN_WHITELIST"
+echo "$IPV4_BLACKLIST_FILE" | sort -u >> "$FAIL2BAN_WHITELIST"
+echo "$IPV6_BLACKLIST_FILE" | sort -u >> "$FAIL2BAN_WHITELIST"
 echo "Fail2Ban whitelist saved to: $FAIL2BAN_WHITELIST"
 
 # Build arrays
@@ -840,58 +912,11 @@ generate_port_rules "$IPV6_OUT_PORTS_FILE" "output" >> "$OUTPUT_FILE"
 cat <<'EOF'
     }
 }
-
-# ============================================================================
-# Fail2Ban Integration Tables
-# Each jail gets its own table for isolation and easier management
-# ============================================================================
-# 
-# NOTE: These tables are created and managed by Fail2Ban actions.
-# They follow the naming convention: inet nftban_f2b_<JAIL_NAME>
-#
-# Example structure for each jail:
-#
-# table inet nftban_f2b_sshd {
-#     set banned_v4 { type ipv4_addr; flags timeout; }
-#     set banned_v6 { type ipv6_addr; flags timeout; }
-#     
-#     chain input {
-#         type filter hook input priority -100;
-#         policy accept;
-#         ip saddr @banned_v4 drop
-#         ip6 saddr @banned_v6 drop
-#     }
-# }
-#
-# The Fail2Ban action adds IPs with:
-#   nft add element inet nftban_f2b_sshd banned_v4 { <IP> timeout <TIME> }
-#
-# This keeps Fail2Ban bans separate from manual bans for clearer management.
-#Example Fail2Ban Action for SSHD:
-#File: /etc/fail2ban/action.d/nftban-sshd.conf
-#ini[Definition]
-
-#actionstart = nft add table inet nftban_f2b_sshd
-#              nft add set inet nftban_f2b_sshd banned_v4 '{ type ipv4_addr; flags timeout; }'
-#              nft add set inet nftban_f2b_sshd banned_v6 '{ type ipv6_addr; flags timeout; }'
-#              nft add chain inet nftban_f2b_sshd input '{ type filter hook input priority -100; policy accept; }'
-#              nft add rule inet nftban_f2b_sshd input ip saddr @banned_v4 drop
-#              nft add rule inet nftban_f2b_sshd input ip6 saddr @banned_v6 drop
-#
-#actionstop = nft delete table inet nftban_f2b_sshd
-#
-#actioncheck = nft list table inet nftban_f2b_sshd
-#
-#actionban = nft add element inet nftban_f2b_sshd banned_v4 { <ip> timeout <bantime> }
-#
-#actionunban = nft delete element inet nftban_f2b_sshd banned_v4 { <ip> }
-
-#[Init]
-#bantime = 3600
-
-# ============================================================================
 EOF
-} >> "$OUTPUT_FILE"
+
+} > "$OUTPUT_FILE"
+
+
 
 # Configuration will be validated and applied by install_final_config function
 
@@ -950,6 +975,9 @@ install_final_config() {
     echo "ERROR: Output file not found: $OUTPUT_FILE"
     return 1
   fi
+  # After rules are active, seed temporary bans from CSV (if provided)
+  seed_temp_bans_from_csv
+
 }
 
 # --- Finalize: validate and install the generated config ---
