@@ -3,7 +3,7 @@
 # =============================================================================
 # Script: nftban_init_fail2ban_conf.sh
 #
-# Version: 3.4  (Adds config validation, status, backup/restore, docs; fixes timer)
+# Version: 3.5  (Adds config validation, status, backup/restore, docs; fixes timer)
 # Author:  ITCMS Team (Antonios Voulvoulis)
 #
 # Description:
@@ -478,41 +478,40 @@ If you see this, your MTA path ($sm) accepted the message."
 # -----------------------------
 fmt_timeout() { local t="$1"; if [[ "$t" =~ ^[0-9]+$ ]]; then echo "${t}s"; elif [[ "$t" =~ ^[0-9]+[smhd]$ ]]; then echo "$t"; else echo "${t}s"; fi; }
 ensure_nft_for_jail() {
-  # Global mode: ignore jail name, ensure a single inet table 'temp_ban'
+  # Global mode: use the unified nftban_global table
   command -v nft >/dev/null 2>&1 || die "Missing command: nft"
 
-  # Create table if missing
-  nft list table inet temp_ban >/dev/null 2>&1 || nft add table inet temp_ban
+  local global_table="nftban_global"
 
-  # Ensure sets exist (with timeout support)
-  nft list set inet temp_ban temp_ban_v4 >/dev/null 2>&1 || nft add set inet temp_ban temp_ban_v4 '{ type ipv4_addr; flags timeout; }'
-  nft list set inet temp_ban temp_ban_v6 >/dev/null 2>&1 || nft add set inet temp_ban temp_ban_v6 '{ type ipv6_addr; flags timeout; }'
-
-  # Ensure a single input chain with drop rules referencing the global sets
-  if ! nft list chain inet temp_ban input_global >/dev/null 2>&1; then
-    nft add chain inet temp_ban input_global "{ type filter hook input priority 0; policy accept; }"
+  # Verify table exists (should be created by nftban_init_nftables_conf.sh)
+  if ! nft list table inet "$global_table" >/dev/null 2>&1; then
+    die "Table inet $global_table not found. Run nftban_init_nftables_conf.sh first."
   fi
 
-  # Make sure the drop rules exist
-  nft list ruleset | grep -q 'ip saddr @temp_ban_v4 drop' || nft add rule inet temp_ban input_global ip saddr @temp_ban_v4 drop || true
-  nft list ruleset | grep -q 'ip6 saddr @temp_ban_v6 drop' || nft add rule inet temp_ban input_global ip6 saddr @temp_ban_v6 drop || true
+  # Verify sets exist
+  nft list set inet "$global_table" temp_ban_v4 >/dev/null 2>&1 || \
+    die "Set temp_ban_v4 not found in table $global_table. Run init script first."
+  
+  nft list set inet "$global_table" temp_ban_v6 >/dev/null 2>&1 || \
+    die "Set temp_ban_v6 not found in table $global_table. Run init script first."
 
-  log "Global nftables mode ready: inet temp_ban with sets temp_ban_v4/temp_ban_v6 and input hook."
+  log "Global nftables mode ready: inet $global_table with sets temp_ban_v4/temp_ban_v6"
 }
 
 # --- Global helper functions for idempotent add/remove -----------------------
 nft_global_ip_in_set() {
   local ip="$1"
+  local table="nftban_global"
   if [[ "$ip" == *:* ]]; then
-    nft get element inet temp_ban temp_ban_v6 "{ $ip }" >/dev/null 2>&1
+    nft get element inet "$table" temp_ban_v6 "{ $ip }" >/dev/null 2>&1
   else
-    nft get element inet temp_ban temp_ban_v4 "{ $ip }" >/dev/null 2>&1
+    nft get element inet "$table" temp_ban_v4 "{ $ip }" >/dev/null 2>&1
   fi
 }
-
 nft_global_add_ip() {
   local ip="$1"
   local to="${2:-}"
+  local table="nftban_global"
 
   ensure_nft_for_jail "_ignored_"
 
@@ -523,21 +522,21 @@ nft_global_add_ip() {
 
   if [[ "$ip" == *:* ]]; then
     if [[ -n "$to" ]]; then
-      nft add element inet temp_ban temp_ban_v6 "{ $ip timeout $to }"
+      nft add element inet "$table" temp_ban_v6 "{ $ip timeout $to }"
     else
-      nft add element inet temp_ban temp_ban_v6 "{ $ip }"
+      nft add element inet "$table" temp_ban_v6 "{ $ip }"
     fi
   else
     if [[ -n "$to" ]]; then
-      nft add element inet temp_ban temp_ban_v4 "{ $ip timeout $to }"
+      nft add element inet "$table" temp_ban_v4 "{ $ip timeout $to }"
     else
-      nft add element inet temp_ban temp_ban_v4 "{ $ip }"
+      nft add element inet "$table" temp_ban_v4 "{ $ip }"
     fi
   fi
 }
-
 nft_global_del_ip() {
   local ip="$1"
+  local table="nftban_global"
 
   if ! nft_global_ip_in_set "$ip"; then
     log "nft: not present (skip delete): $ip"
@@ -545,9 +544,9 @@ nft_global_del_ip() {
   fi
 
   if [[ "$ip" == *:* ]]; then
-    nft delete element inet temp_ban temp_ban_v6 "{ $ip }" || true
+    nft delete element inet "$table" temp_ban_v6 "{ $ip }" || true
   else
-    nft delete element inet temp_ban temp_ban_v4 "{ $ip }" || true
+    nft delete element inet "$table" temp_ban_v4 "{ $ip }" || true
   fi
 }
 # -----------------------------------------------------------------------------
