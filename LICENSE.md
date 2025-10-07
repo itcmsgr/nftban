@@ -21,6 +21,7 @@ LICENSE
 =======
 
 📜 nftban Public Attribution License (NPAL) v1.0  
+
 Copyright (c) 2025 ITCMS — IT Consulting Managed Services  
 Owner: Antonios Voulvoulis
 
