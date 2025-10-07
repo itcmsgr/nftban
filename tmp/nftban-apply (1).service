@@ -1,0 +1,15 @@
+[Unit]
+Description=Apply nftban blacklists to nftables (safe reload)
+Documentation=man:systemd.path(5)
+Wants=nftban-apply.path
+After=network.target
+
+[Service]
+Type=oneshot
+Environment=APPLY_ON_CHANGE=true
+ExecStart=/usr/bin/env bash -c '/usr/local/sbin/nftban reload'
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,14 @@
+[Unit]
+Description=Watch nftban blacklist/whitelist files and auto-apply
+
+[Path]
+PathChanged=/etc/nftban/config/nftban-configuration-ipv4-blacklist_ips.conf.local
+PathChanged=/etc/nftban/config/nftban-configuration-ipv6-blacklist_ips.conf.local
+PathChanged=/etc/nftban/config/nftban-configuration-user-whitelist_ips.conf.local
+# Also trigger on in-place edits that update mtime without content changes
+PathModified=/etc/nftban/config/nftban-configuration-ipv4-blacklist_ips.conf.local
+PathModified=/etc/nftban/config/nftban-configuration-ipv6-blacklist_ips.conf.local
+PathModified=/etc/nftban/config/nftban-configuration-user-whitelist_ips.conf.local
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=Reconcile nftban runtime with persistent lists
+After=network.target nftables.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/nftban reconcile
+User=root
+Group=root
+
+[Install]
+WantedBy=multi-user.target
