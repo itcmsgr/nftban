@@ -22,7 +22,7 @@
 #   • Can recreate all jails/filters/actions from templates while keeping your
 #     custom values in the *.local file.
 #
-# New in 3.4 (your request):
+# New in 3.4 :
 #   • (1) Critical bug fix in TIMER script: removed conflicting journalctl -u filters.
 #   • (2) Configuration validation (email / numeric sanity checks).
 #   • (8) Better status reporting: `status` command.
@@ -43,28 +43,18 @@
 #   • Scan service & timer: nftban-login-scan.service / nftban-login-scan.timer
 #   • Timer bug context: using -u (unit) AND (-t/--identifier) filtered out sudo lines.
 #
-#Example Fail2Ban Action for SSHD:
-#File: /etc/fail2ban/action.d/nftban-sshd.conf
+#Example Fail2Ban Action for SSHD (global model):
+#File: /etc/fail2ban/action.d/nftban-global.conf
 #ini[Definition]
-
-#actionstart = nft add table inet nftban_f2b_sshd
-#              nft add set inet nftban_f2b_sshd banned_v4 '{ type ipv4_addr; flags timeout; }'
-#              nft add set inet nftban_f2b_sshd banned_v6 '{ type ipv6_addr; flags timeout; }'
-#              nft add chain inet nftban_f2b_sshd input '{ type filter hook input priority -100; policy accept; }'
-#              nft add rule inet nftban_f2b_sshd input ip saddr @banned_v4 drop
-#              nft add rule inet nftban_f2b_sshd input ip6 saddr @banned_v6 drop
-#
-#actionstop = nft delete table inet nftban_f2b_sshd
-#
-#actioncheck = nft list table inet nftban_f2b_sshd
-#
-#actionban = nft add element inet temp_ban temp_ban_v4 { <ip> timeout <bantime> }
-#
-#actionunban = nft delete element inet temp_ban temp_ban_v4 { <ip> }
-
-#[Init]
+#actionstart =
+#actionstop   =
+#actioncheck  = nft list table inet nftban_global
+#actionban    = nft add element inet nftban_global temp_ban_v4 '{ <ip> timeout <bantime> }' || true
+#               nft add element inet nftban_global temp_ban_v6 '{ <ip> timeout <bantime> }' || true
+#actionunban  = nft delete element inet nftban_global temp_ban_v4 '{ <ip> }' || true
+#               nft delete element inet nftban_global temp_ban_v6 '{ <ip> }' || true
+#\[Init\]
 #bantime = 3600
-
 # =============================================================================
 
 set -Eeuo pipefail
@@ -80,6 +70,9 @@ CONFIG_FILE_USER="$BASE_DIR/config/nftban.conf.local"
 TEMPLATE_DIR="$BASE_DIR/templates/fail2ban"
 WHITELIST_FILE="$BASE_DIR/config/nftban-configuration-user-whitelist_ips.conf.local"
 BLACKLIST_FILE="$BASE_DIR/config/nftban-configuration-user-blacklist_ips.conf.local"
+F2B_WHITELIST_FILE="$BASE_DIR/config/nftban-fail2ban-ip-whitelist.conf.local"
+SYSTEM_WHITELIST_FILE="$BASE_DIR/config/nftban-configuration-system_whitelist_ips.conf.local"
+
 
 F2B_JAIL_DIR="/etc/fail2ban/jail.d"
 F2B_FILTER_DIR="/etc/fail2ban/filter.d"
@@ -194,7 +187,7 @@ NFTBAN_F2B_DIRECTADMIN_MAX_RETRY="3"
 NFTBAN_F2B_DIRECTADMIN_FIND_TIME="600"
 
 # Whitelist file
-NFTBAN_F2B_IGNOREIP="$BASE_DIR/config/nftban-configuration-user-whitelist_ips.conf.local"
+NFTBAN_F2B_IGNOREIP="$BASE_DIR/config/nftban-fail2ban-ip-whitelist.conf.local"
 EOF
 }
 
@@ -474,6 +467,65 @@ If you see this, your MTA path ($sm) accepted the message."
 }
 
 # -----------------------------
+
+# --- Fail2Ban global nft action & defaults ----------------------------------
+
+generate_nftban_global_action() {
+  local action_file="$F2B_ACTION_DIR/nftban-global.conf"
+  install -d -m 0755 "$F2B_ACTION_DIR"
+  local tsf; tsf="$(date +%Y%m%d-%H%M%S)"
+  [ -f "$action_file" ] && cp -a "$action_file" "${action_file}.${tsf}.bak"
+  cat >"$action_file" <<'EOF'
+# nftban-global.conf — Enforce bans via global nftables sets
+# Compatible with table: inet nftban_global, sets: temp_ban_v4 / temp_ban_v6
+
+[Definition]
+actionstart =
+actionstop   =
+actioncheck  = /usr/sbin/nft list table inet nftban_global
+# Try both address families; the wrong one will no-op
+actionban    = /usr/sbin/nft add element inet nftban_global temp_ban_v4 { <ip> timeout <bantime> } || true
+               /usr/sbin/nft add element inet nftban_global temp_ban_v6 { <ip> timeout <bantime> } || true
+actionunban  = /usr/sbin/nft delete element inet nftban_global temp_ban_v4 { <ip> } || true
+               /usr/sbin/nft delete element inet nftban_global temp_ban_v6 { <ip> } || true
+
+[Init]
+# no special init
+EOF
+  chmod 0644 "$action_file"
+  log "Wrote $action_file (global nft action)."
+}
+
+write_nftban_defaults() {
+  # Install a minimal DEFAULTS drop-in so jails inherit the global action and ignore list
+  local defaults_file="$F2B_JAIL_DIR/00-nftban.conf"
+  install -d -m 0755 "$F2B_JAIL_DIR"
+  local tsf; tsf="$(date +%Y%m%d-%H%M%S)"
+  [ -f "$defaults_file" ] && cp -a "$defaults_file" "${defaults_file}.${tsf}.bak"
+  cat >"$defaults_file" <<EOF
+[DEFAULT]
+# Use the global action that targets inet nftban_global temp_ban_v4/v6
+banaction = nftban-global
+# Read ignore list from a file we maintain during setup
+ignoreip  = file:${F2B_WHITELIST_FILE}
+EOF
+  chmod 0644 "$defaults_file"
+  log "Wrote $defaults_file (DEFAULT banaction & ignoreip)."
+}
+
+build_fail2ban_whitelist() {
+  # Compose an ignore list from system and user whitelists
+  install -d -m 0755 "$(dirname "$F2B_WHITELIST_FILE")"
+  : > "$F2B_WHITELIST_FILE"
+  for f in "$SYSTEM_WHITELIST_FILE" "$WHITELIST_FILE"; do
+    [ -f "$f" ] || continue
+    # first column only, strip comments/empties
+    grep -v '^\s*#' "$f" | awk '{print $1}' | sed '/^\s*$/d' >> "$F2B_WHITELIST_FILE"
+  done
+  sort -u -o "$F2B_WHITELIST_FILE" "$F2B_WHITELIST_FILE"
+  log "Fail2Ban ignore list built: $F2B_WHITELIST_FILE"
+}
+
 # nftables manual helpers (NOT run in setup)
 # -----------------------------
 fmt_timeout() { local t="$1"; if [[ "$t" =~ ^[0-9]+$ ]]; then echo "${t}s"; elif [[ "$t" =~ ^[0-9]+[smhd]$ ]]; then echo "$t"; else echo "${t}s"; fi; }
@@ -1052,6 +1104,7 @@ show_system_status() {
   done < <(enabled_jails)
   echo
   echo "Service status:"
+  echo "Using ignoreip file: ${F2B_WHITELIST_FILE}"
   if systemctl is-active --quiet fail2ban 2>/dev/null; then
     echo "  - fail2ban: active"
   else
@@ -1154,6 +1207,9 @@ setup_all() {
   show_config_diff || true
   load_config_env               # base + .local
   validate_config               # (2) validation gate
+  build_fail2ban_whitelist
+  generate_nftban_global_action
+  write_nftban_defaults
   verify_and_stage_templates
   generate_mail_action
   log "Setup complete (non-invasive). Enable services yourself if desired."
