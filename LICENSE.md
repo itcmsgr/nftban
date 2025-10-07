@@ -35,7 +35,7 @@ Permission is hereby granted, free of charge, to any person obtaining a copy of 
 
 2. 🙌 Give visible credit  
    - In source and documentation: include a credit such as  
-     “Powered by nftban — © ITCMS (Antonios Voulvoulis)” and a link to the project.  
+     “Powered by nftban — © ITCMS” and a link to the project.  
    - In products with a user interface: place the same credit in an About/Help screen, footer, or equivalent.
 
 3. 🛠️ Support not included  
