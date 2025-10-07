@@ -25,7 +25,7 @@ set -euo pipefail
 #
 # Quick start examples:
 #   sudo ./nftban_init.sh --github -y
-#   sudo ./nftban_init.sh --zip -y --target /opt/nftban
+#   sudo ./nftban_init.sh --zip -y --target /etc/nftban
 #   sudo ./nftban_init.sh --github -y --enable-auto-update
 #   sudo ./nftban_init.sh --remove-auto-update
 #   sudo ./nftban_init.sh --uninstall --purge -y
@@ -1308,7 +1308,7 @@ Uninstall (safe):
 
 Examples:
   # Install to a custom path
-  sudo $0 --zip -y --target /opt/nftban
+  sudo $0 --zip -y --target /etc/nftban
 
   # Enable daily auto-update at 03:30
   sudo $0 --enable-auto-update --daily-time "03:30"
