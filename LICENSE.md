@@ -1,3 +1,9 @@
+![License](https://img.shields.io/badge/license-nftban%20NPAL%20v1.0-blue)
+[📜 View Full License](./LICENSE)
+SPDX-Identifier: LicenseRef-nftban-NPAL-1.0
+
+---
+
 <p align="center">
   <img src="https://itcms.gr/wp-content/uploads/2022/08/ITCMSA_smalv1.png" alt="ITCMS Logo" width="200"/>
 </p>
