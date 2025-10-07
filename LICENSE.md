@@ -1,9 +1,7 @@
 ![License](https://img.shields.io/badge/license-nftban%20NPAL%20v1.0-blue)
 [📜 View Full License](./LICENSE)
 SPDX-Identifier: LicenseRef-nftban-NPAL-1.0
-### 📜 License
-[![icense](https://github.com/itcmsgr/nftban/blob/mainPublic Attribution License (NPAL) v1.0**.  
-SPDX-Identifier: `LicenseRef-nftban-NPAL-1.0`
+
 ---
 
 <p align="center">
