@@ -22,7 +22,7 @@ BASE_DIR="/etc/nftban/config"
 CONF_FILE="/etc/nftables.conf"
 ALLOW_FILE="$BASE_DIR/nftban-configuration-user-whitelist_ips.conf.local"
 BACKUP_DIR="/etc/nftables/backups"
-LOG_FILE="/var/log/nftban.log"
+LOG_FILE="/var/log/nftban/nftban.log"
 
 TEMP_BAN_TABLE="nftban_global"
 # Names of the sets used for temporary bans (IPv4 & IPv6)
@@ -224,7 +224,7 @@ FILES USED
   /etc/nftban/config/nftban-configuration-user-whitelist_ips.conf.local
   /etc/nftban/config/nftban-configuration-ipv4-blacklist_ips.conf.local
   /etc/nftban/config/nftban-configuration-ipv6-blacklist_ips.conf.local
-  /var/log/nftban.log                                  (script log)
+  /var/log/nftban/nftban.log                                  (script log)
 
 EXIT CODES (high-level)
 -----------------------
