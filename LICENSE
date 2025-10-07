@@ -1,21 +1,47 @@
-MIT License
+LICENSE
+=======
 
-Copyright (c) 2025 itcmsgr
+📜 nftban Public Attribution License (NPAL) v1.0  
+Copyright (c) 2025 ITCMS — IT Consulting Managed Services  
+Owner: Antonios Voulvoulis
 
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
+Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated documentation files (the “Software”), to use, copy, modify, and deploy the Software for any purpose (including personal and business/internal use), and to redistribute the Software free of charge, subject to the conditions below.
 
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
+---
 
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+🔒 Conditions (Attribution & Notice)
+
+1. 📝 Preserve notices  
+   All copies (source or binary) must retain this license and the copyright notice above.
+
+2. 🙌 Give visible credit  
+   - In source and documentation: include a credit such as  
+     “Powered by nftban — © ITCMS (Antonios Voulvoulis)” and a link to the project.  
+   - In products with a user interface: place the same credit in an About/Help screen, footer, or equivalent.
+
+3. 🛠️ Support not included  
+   This license includes no support or SLA. Paid support/consulting is available from ITCMS separately.
+
+---
+
+💰 Resale / Paid Distribution
+
+You may **not** sell, license, or otherwise distribute the Software for a fee (standalone or bundled) under this license.  
+To sell or charge for the Software itself, you must obtain a **Commercial Resale License** from ITCMS.  
+📧 Contact: contact@itcms.gr
+
+---
+
+📦 Third-Party Code
+
+Any third-party components included remain under their respective licenses.
+
+---
+
+⚠️ Warranty & Liability
+
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
+
+---
+
+🆔 SPDX-Identifier: LicenseRef-nftban-NPAL-1.0
