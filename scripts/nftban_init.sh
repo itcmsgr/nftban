@@ -320,7 +320,7 @@ create_dir_structure() {
   log INFO "Creating directory structure under $TARGET_DIR"
   mkdir -p "$TARGET_DIR"/{config,scripts,logs,backups,templates,bin,rules,conf.d,systemd} || die "Failed to create directory structure"
   mkdir -p "$TARGET_DIR/templates/control-panels"
-  mkdir -p "$LOG_DIR" /var/lib/nftban /var/backups
+  mkdir -p "$LOG_DIR" /var/log/nftban /var/backups
   # symlink logs
   if [[ ! -L "$TARGET_DIR/logs" ]]; then
     rm -rf "$TARGET_DIR/logs" 2>/dev/null || true
@@ -328,7 +328,7 @@ create_dir_structure() {
     log INFO "Symlink created from $TARGET_DIR/logs to $LOG_DIR"
   fi
   chmod 0755 "$TARGET_DIR" "$TARGET_DIR"/{config,scripts,backups,templates,bin,rules,conf.d,systemd}
-  chmod 0755 "$LOG_DIR" /var/lib/nftban /var/backups
+  chmod 0755 "$LOG_DIR" /var/log/nftban /var/backups
   chmod 0640 "$LOGFILE" 2>/dev/null || true
   log INFO "Directory structure created"
 }
@@ -694,6 +694,62 @@ do_zip_flow() {
 
 # --- nftban Binary Creation ---
 create_basic_nftban_binary() {
+  # Overwrite /etc/nftban/bin/nftban from WORK_DIR, set exec bit, and refresh the symlink.
+  # Minimal logic; no placeholder creation. Includes RHEL/SELinux context restore.
+
+  local BIN="$TARGET_DIR/bin/nftban"
+  local LINK="/usr/local/bin/nftban"
+  local SRC=""
+
+  # Prefer sources under the temporary working directory when available.
+  # These cover both the Git and ZIP flows used earlier in the script.
+  if [[ -n "${WORK_DIR:-}" ]]; then
+    if [[ -f "$WORK_DIR/repo/bin/nftban" ]]; then
+      SRC="$WORK_DIR/repo/bin/nftban"
+    elif [[ -f "$WORK_DIR/bin/nftban" ]]; then
+      SRC="$WORK_DIR/bin/nftban"
+    fi
+  fi
+
+  # As a last resort (e.g., local flow), if nothing in WORK_DIR, keep any existing target.
+  # No placeholder is created by design.
+  mkdir -p "$(dirname "$BIN")"
+
+  if [[ -n "$SRC" ]]; then
+    # Install with correct mode in one step; fall back to cp+chmod if install is unavailable.
+    if command -v install >/dev/null 2>&1; then
+      install -m 0755 "$SRC" "$BIN"
+    else
+      cp -f "$SRC" "$BIN"
+      chmod 0755 "$BIN"
+    fi
+  elif [[ -f "$BIN" ]]; then
+    # Ensure executable bit if we didn’t refresh the file.
+    chmod 0755 "$BIN"
+  else
+    # Nothing to do if no source and no existing binary.
+    log INFO "No nftban binary found in WORK_DIR and no existing $BIN; skipping."
+    return 0
+  fi
+
+  # Ensure executable (explicit and RHEL-friendly).
+  chmod +x "$BIN"
+
+  # Force the public link to point to the updated binary.
+  mkdir -p "$(dirname "$LINK")"
+  ln -sf "$BIN" "$LINK"
+
+  # RHEL/SELinux: restore contexts on both paths (no-op elsewhere).
+  if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
+    if command -v restorecon >/dev/null 2>&1; then
+      restorecon -F "$BIN" "$LINK" >/dev/null 2>&1 || true
+    fi
+  fi
+
+  log INFO "Updated binary: $BIN"
+  log INFO "Symlink ensured: $LINK -> $BIN"
+}
+create_basic_nftban_binary_for_review_delete() {
   if [[ ! -f "$TARGET_DIR/bin/nftban" ]]; then
     log INFO "Creating basic nftban binary..."
     mkdir -p "$TARGET_DIR/bin"
@@ -1069,8 +1125,8 @@ do_uninstall() {
 
   # Purge optional data/logs if requested
   if [[ "$DO_PURGE" == "true" ]]; then
-    rm -rf "$LOG_DIR" /var/lib/nftban
-    log INFO "Purged $LOG_DIR and /var/lib/nftban"
+    rm -rf "$LOG_DIR" /var/log/nftban
+    log INFO "Purged $LOG_DIR and /var/log/nftban"
   else
     log INFO "Keeping logs/state (use --purge to remove)"
   fi
