@@ -1,180 +1,53 @@
 #!/usr/bin/env bash
-
-print_json_status() {
-  local enabled="false" lines=0
-  local tmpfile; tmpfile="$(mktemp)"
-  crontab -l 2>/dev/null | tee "$tmpfile" >/dev/null || true
-  lines=$(grep -c -F "$AUTO_UPDATE_SCRIPT" "$tmpfile" 2>/dev/null || echo 0)
-  rm -f "$tmpfile"
-  if [[ "$lines" -gt 0 ]]; then enabled="true"; fi
-  printf '{"auto_update_enabled":%s,"auto_update_lines":%s,"target_dir":"%s"}\n' "$enabled" "$lines" "$TARGET_DIR"
-}
-
-show_status() {
-  log INFO "nftban path: $TARGET_DIR"
-  if command -v nft >/dev/null 2>&1; then
-    log INFO "nftables: $(nft --version 2>/dev/null | head -1)"
-  else
-    log WARN "nft not found"
-  fi
-  if command -v fail2ban-client >/dev/null 2>&1; then
-    log INFO "fail2ban: $(fail2ban-client --version 2>/dev/null | head -1 | tr -s ' ')"
-  else
-    log WARN "fail2ban not found"
-  fi
-  if [[ -f "/etc/systemd/system/nftban.service" ]]; then
-    log INFO "systemd unit present: /etc/systemd/system/nftban.service"
-  else
-    log INFO "systemd unit not found (optional)"
-  fi
-  auto_update_status
-}
-
-auto_update_status() {
-  local tmpfile; tmpfile="$(mktemp)"
-  crontab -l 2>/dev/null | tee "$tmpfile" >/dev/null || true
-  mapfile -t cron_lines < <(grep -F "$AUTO_UPDATE_SCRIPT" "$tmpfile" || true)
-  rm -f "$tmpfile"
-
-  local count="${#cron_lines[@]}"
-  if [[ "$count" -gt 0 ]]; then
-    log INFO "Auto-update via crontab: ENABLED ($count entr$([[ $count -eq 1 ]] && echo 'y' || echo 'ies'))."
-    printf '%s\n' "${cron_lines[@]}" | sed 's/^/  • /'
-  else
-    log INFO "Auto-update via crontab: DISABLED (no matching crontab lines)."
-  fi
-
-  if [[ -f "$AUTO_UPDATE_SCRIPT" ]]; then
-    local sz mtime sha
-    sz=$(stat -c '%s' "$AUTO_UPDATE_SCRIPT" 2>/dev/null || stat -f '%z' "$AUTO_UPDATE_SCRIPT" 2>/dev/null || echo "?")
-    mtime=$(date -r "$AUTO_UPDATE_SCRIPT" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "?")
-    if command -v sha256sum >/dev/null 2>&1; then
-      sha=$(sha256sum "$AUTO_UPDATE_SCRIPT" | awk '{print $1}')
-    elif command -v shasum >/dev/null 2>&1; then
-      sha=$(shasum -a 256 "$AUTO_UPDATE_SCRIPT" | awk '{print $1}')
-    else
-      sha="(sha256 tool not found)"
-    fi
-    log INFO "Auto-update script: $AUTO_UPDATE_SCRIPT"
-    log INFO "  size: ${sz} bytes, modified: ${mtime}, sha256: ${sha}"
-  else
-    log WARN "Auto-update script not found at: $AUTO_UPDATE_SCRIPT"
-  fi
-}
-
-cron_sanity_check() {
-  if command -v systemctl >/dev/null 2>&1; then
-    if ! (systemctl is-enabled cron >/dev/null 2>&1 || systemctl is-enabled crond >/dev/null 2>&1); then
-      log WARN "cron service appears disabled. Auto-update may not run."
-    fi
-    if ! (systemctl is-active cron >/dev/null 2>&1 || systemctl is-active crond >/dev/null 2>&1); then
-      log WARN "cron service is not active. Consider: systemctl start cron (or crond)."
-    fi
-  fi
-}
-
-ensure_single_cron_entry() {
-  local entry="$1"
-  local tmpfile; tmpfile="$(mktemp)"
-  crontab -l 2>/dev/null | grep -vF "$AUTO_UPDATE_SCRIPT" > "$tmpfile" || true
-  printf '%s\n' "$entry" >> "$tmpfile"
-  if [[ "${DRY_RUN:-false}" != "true" ]]; then
-    crontab "$tmpfile" 2>/dev/null || true
-  else
-    log INFO "DRY-RUN: would install crontab entry: $entry"
-  fi
-  rm -f "$tmpfile"
-}
-
-install_required_packages() {
-  detect_pm
-  log INFO "Ensuring nftables, fail2ban, whois, and DNS utils are installed"
-  case "$PKG_TOOL" in
-    apt-get) run_cmd "$PKG_INSTALL nftables fail2ban whois $DNSUTILS_PKG" ;;
-    dnf|yum|zypper) run_cmd "$PKG_INSTALL nftables fail2ban whois $DNSUTILS_PKG" ;;
-    apk) run_cmd "$PKG_INSTALL nftables fail2ban whois $DNSUTILS_PKG" ;;
-  esac
-}
-
-create_placeholder_binary() {
-  install -d /usr/local/bin
-  cat > /usr/local/bin/nftban <<'EOF'
-#!/usr/bin/env bash
-set -euo pipefail
-case "${1:-}" in
-  init)   echo "nftban init (placeholder)";;
-  reload) echo "nftban reload (placeholder)";;
-  status) echo "nftban status (placeholder)";;
-  *)      echo "Usage: nftban {init|reload|status}"; exit 1;;
-esac
-EOF
-  chmod +x /usr/local/bin/nftban
-}
-
-create_scaffolding() {
-  install -d "$TARGET_DIR/config" "$TARGET_DIR/scripts" "$TARGET_DIR/systemd"
-  # Local override samples
-  touch "$TARGET_DIR/config/nftban-configuration-main.conf.local"
-  touch "$TARGET_DIR/config/nftban-configuration-allowlist.conf.local"
-  touch "$TARGET_DIR/config/nftban-configuration-blocklist.conf.local"
-}
-
-confirm() {
-  local prompt="${1:-Proceed?}"
-  if [[ "$ASSUME_Y" == "true" ]]; then return 0; fi
-  read -r -p "$prompt [y/N]: " ans
-  [[ "$ans" =~ ^[Yy]([Ee][Ss])?$ ]]
-}
-
-run_cmd() {
-  # Accept a single command string; avoid 'eval' (SC2294).
-  # Usage: run_cmd "apt-get update && apt-get install -y pkg1 pkg2"
-  local cmd="$*"
-  if [[ "${DRY_RUN:-false}" == "true" ]]; then
-    log INFO "DRY-RUN: $cmd"
-    return 0
-  fi
-  bash -c "$cmd"
-}
-cat > nftban_init_v3.0.3.sh <<'OUTER_EOF'
-#!/usr/bin/env bash
 set -euo pipefail
 
 ################################################################################
 # nftban Unified Installation & Maintenance Script
+#
 # Version: 3.0.3
+# Description: Comprehensive nftban installer with enhanced functionality
+# Features:
+# - GitHub repository sync with fallback ZIP download
+# - Installs nftables, fail2ban, whois, and DNS utilities
+# - Enhanced control panel detection (DirectAdmin, cPanel, Plesk, generic)
+# - Complete directory structure and configuration templates
+# - Comprehensive uninstall functionality with purge options
+# - No automatic service start/enable (manual control)
+# - Package manager support: apt, dnf, yum, zypper, apk
+# - Auto-update functionality with cron scheduling
+# - Enhanced status reporting with JSON output
+# - Dry-run mode and quiet operation support
 #
-# Description:
-#   End-to-end installer and maintenance helper for nftban on Linux servers.
-#   - Supports GitHub sync (clone/pull) or ZIP download, with a local/basic mode.
-#   - Installs required packages: nftables, fail2ban, whois, DNS utilities.
-#   - Detects common hosting control panels (DirectAdmin, cPanel, Plesk) or sets
-#     up a generic web-server template, or generates empty config scaffolding.
-#   - Creates a placeholder `nftban` helper binary for basic operations.
-#   - Provides uninstall/purge routines (without auto-starting services).
-#   - Auto-update is opt-in with --enable-auto-update; you can remove it later
-#     with --remove-auto-update.
+# ** NOTE: THIS SCRIPT MUST BE RUN AS ROOT!
 #
-# IMPORTANT:
-#   * Run this script as root (or with sudo).
-#   * The script DOES NOT enable/start services; you retain manual control.
-#   * Local configuration files under /etc/nftban/config/*.conf.local are yours
-#     to edit and will be used by nftban init/reload routines.
+# Usage:
+#   sudo ./nftban_init.sh [options]
 #
 # Quick start examples:
-#   sudo ./nftban_init_v3.0.3.sh --github -y
-#   sudo ./nftban_init_v3.0.3.sh --zip -y --target /opt/nftban
-#   sudo ./nftban_init_v3.0.3.sh --github -y --enable-auto-update
-#   sudo ./nftban_init_v3.0.3.sh --remove-auto-update
-#   sudo ./nftban_init_v3.0.3.sh --uninstall --purge -y
+#   sudo ./nftban_init.sh --github -y
+#   sudo ./nftban_init.sh --zip -y --target /opt/nftban
+#   sudo ./nftban_init.sh --github -y --enable-auto-update
+#   sudo ./nftban_init.sh --remove-auto-update
+#   sudo ./nftban_init.sh --uninstall --purge -y
+#   sudo ./nftban_init.sh --status --json
 ################################################################################
 
 # --- Versioning & Auto-update -------------------------------------------------
 VERSION="3.0.3"
 VERSION_FILE="/etc/nftban/.version"
 AUTO_UPDATE_SCRIPT="/etc/nftban/scripts/nftban_auto_update.sh"
-AUTO_UPDATE_ENABLED="false"   # set true only when --enable-auto-update is passed
+AUTO_UPDATE_ENABLED="false"
 DO_REMOVE_AUTO_UPDATE="false"
+DO_AUTO_UPDATE_STATUS="false"
+DO_STATUS="false"
+JSON_MODE="false"
+DRY_RUN="false"
+QUIET="false"
+
+# --- UI Preferences (for friendlier output) ---
+BEGINNER_MODE="false"
+NO_COLOR="false"
+UNICODE_ICONS="true"
 
 # --- Defaults / Paths ---------------------------------------------------------
 REPO_URL="https://github.com/itcmsgr/nftban"
@@ -185,20 +58,20 @@ LOG_DIR="/var/log/nftban"
 LOGFILE="$LOG_DIR/nftban_init_$(date +%Y-%m-%d-%H%M%S).log"
 WORK_DIR=""
 ASSUME_Y="false"
-FORCE_FLOW=""         # git|zip|""
+FORCE_FLOW=""
 DO_UNINSTALL="false"
 DO_PURGE="false"
 SKIP_CP_DETECT="false"
+DAILY_TIME=""
 
 # Package names
 FAIL2BAN_PKG="fail2ban"
 WHOIS_PKG="whois"
-DNSUTILS_DEB="dnsutils"
-DNSUTILS_RHEL="bind-utils"
+DNSUTILS_PKG=""
 
 umask 022
 
-# --- Logging helpers ----------------------------------------------------------
+# --- Enhanced Logging & Utility Functions -------------------------------------
 log() {
   local lvl="${1:-INFO}"; shift || true
   local msg="$*"
@@ -219,28 +92,71 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# --- Friendly UI helpers (colors & icons) ---
+setup_colors() {
+  if [[ "$NO_COLOR" == "true" || ! -t 2 ]]; then
+    RED=""; GREEN=""; YELLOW=""; BLUE=""; BOLD=""; RESET="";
+  else
+    RED="[31m"; GREEN="[32m"; YELLOW="[33m"; BLUE="[34m"; BOLD="[1m"; RESET="[0m";
+  fi
+  if [[ "$UNICODE_ICONS" == "true" ]]; then
+    ICON_INFO="ℹ️"; ICON_OK="✅"; ICON_WARN="⚠️"; ICON_ERR="❌"; ICON_STEP="👉"; ICON_TIP="💡";
+  else
+    ICON_INFO="[i]"; ICON_OK="[ok]"; ICON_WARN="[!]"; ICON_ERR="[x]"; ICON_STEP="->"; ICON_TIP="(*)";
+  fi
+}
+ui() {
+  local kind="${1:-info}"; shift || true; local msg="$*"
+  case "$kind" in
+    title)   echo -e "${BOLD}${BLUE}${msg}${RESET}";;
+    info)    echo -e "${BLUE}${ICON_INFO} ${msg}${RESET}";;
+    success) echo -e "${GREEN}${ICON_OK} ${msg}${RESET}";;
+    warn)    echo -e "${YELLOW}${ICON_WARN} ${msg}${RESET}";;
+    error)   echo -e "${RED}${ICON_ERR} ${msg}${RESET}";;
+    step)    echo -e "${BOLD}${ICON_STEP} ${msg}${RESET}";;
+    tip)     echo -e "${ICON_TIP} ${msg}";;
+    *)       echo "$msg";;
+  esac
+}
+
 need_root() {
   if [[ ${EUID:-$(id -u)} -ne 0 ]]; then
-    echo "This script must be run as root (use: sudo $0 ...)" >&2
+    ui error "Administrator rights are required to run this installer."
+    echo "Try: sudo $0 [options]" >&2
     exit 1
   fi
 }
 
-# --- Package manager detection & helpers -------------------------------------
+run_cmd() {
+  # Accept a single command string; avoid 'eval' (SC2294).
+  # Usage: run_cmd "apt-get update && apt-get install -y pkg1 pkg2"
+  local cmd="$*"
+  if [[ "${DRY_RUN:-false}" == "true" ]]; then
+    log INFO "DRY-RUN: $cmd"
+    return 0
+  fi
+  bash -c "$cmd"
+}
+
+confirm() {
+  local prompt="${1:-Proceed?}"
+  if [[ "$ASSUME_Y" == "true" ]]; then return 0; fi
+  read -r -p "$prompt [y/N]: " ans
+  [[ "$ans" =~ ^[Yy]([Ee][Ss])?$ ]]
+}
+
+# --- Package Manager Detection & Helpers -------------------------------------
 PKG_TOOL=""
-PKG_REMOVE=""
-PKG_PURGE=""
-PKG_CHECK=""
-DNSUTILS_PKG=""
+PKG_INSTALL=""
 
 pkg_install() {
   case "${PKG_TOOL:-}" in
-    apt)    apt-get update -y >/dev/null && apt-get install -y "$@";;
-    dnf)    dnf install -y "$@";;
-    yum)    yum install -y "$@";;
-    zypper) zypper --non-interactive install -y "$@";;
-    apk)    apk add --no-cache "$@";;
-    *)      die "Unsupported package tool (${PKG_TOOL:-unset})";;
+    apt-get) apt-get update -y >/dev/null && apt-get install -y "$@";;
+    dnf)     dnf install -y "$@";;
+    yum)     yum install -y "$@";;
+    zypper)  zypper --non-interactive install -y "$@";;
+    apk)     apk add --no-cache "$@";;
+    *)       die "Unsupported package tool (${PKG_TOOL:-unset})";;
   esac
 }
 
@@ -349,7 +265,7 @@ install_epel_if_needed() {
 install_packages() {
   detect_pm
   log INFO "Starting package installation using $PKG_TOOL"
-  if [[ "$PKG_TOOL" == "apt" ]]; then
+  if [[ "$PKG_TOOL" == "apt-get" ]]; then
     log INFO "Updating package cache..."
     apt-get update -y >/dev/null 2>&1 || true
   fi
@@ -426,7 +342,6 @@ get_ssh_port() {
 }
 
 is_ipv4() { [[ "$1" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/([0-9]|[12][0-9]|3[0-2]))?$ ]]; }
-# Heuristic IPv6 (not exhaustive)
 is_ipv6() { [[ "$1" == *:* && "$1" != *.* ]]; }
 
 create_generic_template() {
@@ -464,22 +379,23 @@ TEMPLATE_EOF
 
 prompt_for_generic_config() {
   local ssh_port; ssh_port=$(get_ssh_port)
-  echo ""; echo "======================================================"
-  echo "No control panel detected on this system."
-  echo "======================================================"; echo ""
-  echo "Would you like to create a generic configuration with basic web server ports?"; echo ""
-  echo "This will include:"
-  echo "  - SSH port: $ssh_port (detected from /etc/ssh/sshd_config)"
-  echo "  - HTTP port: 80"
-  echo "  - HTTPS port: 443"
-  echo "  - DNS port: 53 (outbound)"
-  echo "  - NTP port: 123 (outbound)"; echo ""
-  echo "You can customize these ports later by editing the configuration files."; echo ""
+  ui title "No control panel detected on this server."
+  echo ""
+  ui info  "I can create a simple, safe default configuration for a typical web server."
+  ui info  "This includes:"
+  echo "  - SSH: ${ssh_port} (detected)"
+  echo "  - HTTP: 80"
+  echo "  - HTTPS: 443"
+  echo "  - Outbound DNS: 53"
+  echo "  - Outbound NTP: 123"
+  echo ""
+  ui tip   "You can edit these later under: $TARGET_DIR/config/"
+  echo ""
   if [[ "$ASSUME_Y" == "true" ]]; then
     log INFO "Auto-accepting generic configuration due to -y flag"; return 0
   fi
   while true; do
-    read -p "Create generic configuration? (y/n): " -n 1 -r; echo
+    read -p "Create the simple default configuration now? (y/n): " -n 1 -r; echo
     case $REPLY in
       [Yy]) log INFO "User selected to create generic configuration"; return 0;;
       [Nn]) log INFO "User declined to create generic configuration"; return 1;;
@@ -626,27 +542,100 @@ CONFIG_HEADER
                 echo "$ip" >> "$USER_WHITELIST"; log INFO "Added IP to whitelist: $ip"
               else
                 log INFO "WARNING: Invalid IP format: $ip"
-     run_control_panel_detection() {
-  if [[ "$SKIP_CP_DETECT" == "true" ]]; then log INFO "Skipping control panel detection"; return 0; fi
-  # Very light touch detection (placeholder)
-  if [[ -d /usr/local/directadmin ]]; then
-    log INFO "Detected DirectAdmin"
-  elif [[ -d /usr/local/cpanel ]]; then
-    log INFO "Detected cPanel"
-  elif [[ -d /usr/local/psa ]]; then
-    log INFO "Detected Plesk"
-  else
-    log INFO "No known panel detected (using generic layout)"
+              fi
+            fi
+          done
+          echo "" >> "$USER_WHITELIST"
+        fi
+        ;;
+    esac
+  done < "$config_file"
+  
+  log INFO "Configuration processed using $panel_name configuration"
+  return 0
+}
+
+run_control_panel_detection() {
+  if [[ "$SKIP_CP_DETECT" == "true" ]]; then
+    log INFO "Skipping control panel detection (--skip-cp-detect flag)"
+    return 0
   fi
-}log INFO "Empty configuration fibackup_existing() {
-  if [[ -d "$TARGET_DIR" && -n "$(ls -A "$TARGET_DIR" 2>/dev/null || true)" ]]; then
-    local ts bkp; ts="$(date +%Y%m%d_%H%M%S)"; bkp="/var/backups/nftban_${ts}.tgz"
-    log INFO "Backing up existing $TARGET_DIR to $bkp"
-    tar -czf "$bkp" -C / "${TARGET_DIR#/}" 2>/dev/null || true
+  
+  if [[ "$ASSUME_Y" == "false" ]] && ! ask_yes_no "Do you want to detect control panel and setup default ports?" "Y"; then
+    log INFO "Skipping control panel detection"
+    echo ""
+    echo "Manual configuration will be required"
+    echo "You will need to create these files manually:"
+    echo "  - $TARGET_DIR/config/nftban-configuration-ipv4-ports-input-allow.conf.local"
+    echo "  - $TARGET_DIR/config/nftban-configuration-ipv4-ports-output-allow.conf.local"
+    echo "  - $TARGET_DIR/config/nftban-configuration-ipv6-ports-input-allow.conf.local"
+    echo "  - $TARGET_DIR/config/nftban-configuration-ipv6-ports-output-allow.conf.local"
+    echo "  - $TARGET_DIR/config/nftban-configuration-user-whitelist_ips.conf.local"
+    return 0
   fi
-}--------
+  
+  log INFO "Starting control panel detection and default ports setup..."
+  
+  # Initialize variables
+  PANEL=""
+  CONFIG_FILE=""
+  
+  # Detect panel
+  detect_control_panel
+  local panel_detection_result=$?
+  
+  case $panel_detection_result in
+    0)
+      # Panel detected or generic config accepted
+      log INFO "Panel configuration: $PANEL"
+      log INFO "Config file: $CONFIG_FILE"
+      
+      if [[ -f "$CONFIG_FILE" ]]; then
+        if process_control_panel_config "$CONFIG_FILE" "$PANEL"; then
+          echo ""
+          echo "=== Control Panel Detection Complete ==="
+          echo "Detected: $PANEL"
+          echo "Configuration applied successfully"
+          echo "Files are ready for nftables initialization"
+          echo "========================================="
+          
+          log INFO "Control panel detection and configuration completed successfully"
+          return 0
+        else
+          log INFO "ERROR: Failed to process configuration"
+          return 1
+        fi
+      else
+        log INFO "ERROR: Configuration file $CONFIG_FILE not found"
+        return 1
+      fi
+      ;;
+    2)
+      # User declined generic config - empty files created
+      echo ""
+      echo "=== Manual Configuration Required ==="
+      echo "Empty configuration files created"
+      echo "No automatic port configuration applied"
+      echo ""
+      echo "Manual steps required:"
+      echo "1. Edit configuration files in: $TARGET_DIR/config/"
+      echo "2. Add required ports and IP addresses"
+      echo "3. Run initialization scripts"
+      echo "====================================="
+      
+      log INFO "Empty configuration files created. Manual configuration required."
+      return 0
+      ;;
+    *)
+      log INFO "ERROR: Panel detection failed with code: $panel_detection_result"
+      return 1
+      ;;
+  esac
+}
+
+# --- Download Methods ---
 backup_existing() {
-  if [[ -d "$TARGET_DIR" ]]; then
+  if [[ -d "$TARGET_DIR" && -n "$(ls -A "$TARGET_DIR" 2>/dev/null || true)" ]]; then
     local ts bkp; ts="$(date +%Y%m%d_%H%M%S)"; bkp="/var/backups/nftban_${ts}.tgz"
     log INFO "Backing up existing $TARGET_DIR to $bkp"
     tar -czf "$bkp" -C / "${TARGET_DIR#/}" 2>/dev/null || true
@@ -682,7 +671,226 @@ do_github_flow() {
 
 do_zip_flow() {
   log INFO "Selected: ZIP flow"; ensure_tools curl unzip; net_check; stage_prepare
-  pushd "$WORK_Dsetup_auto_update() {
+  pushd "$WORK_DIR" >/dev/null
+  local zip="$WORK_DIR/nftban.zip"
+  log INFO "Downloading archive: $ZIP_URL"
+  curl -fsSL "$ZIP_URL" -o "$zip" || die "Failed to download ZIP."
+  if [[ ! -s "$zip" ]]; then
+    die "Download failed (empty file)."
+  fi
+  log INFO "Testing archive"
+  unzip -t "$zip" >/dev/null 2>&1 || die "Corrupt ZIP archive."
+  log INFO "Extracting archive"
+  unzip -q "$zip" -d "$WORK_DIR"
+  local extracted
+  extracted="$(find "$WORK_DIR" -maxdepth 1 -type d -name 'nftban-*' -print -quit)"
+  [[ -n "$extracted" ]] || die "Could not find extracted folder within ZIP."
+  backup_existing
+  rm -rf "$TARGET_DIR"
+  mkdir -p "$(dirname "$TARGET_DIR")"
+  mv "$extracted" "$TARGET_DIR"
+  popd >/dev/null
+}
+
+# --- nftban Binary Creation ---
+create_basic_nftban_binary() {
+  if [[ ! -f "$TARGET_DIR/bin/nftban" ]]; then
+    log INFO "Creating basic nftban binary..."
+    mkdir -p "$TARGET_DIR/bin"
+    cat > "$TARGET_DIR/bin/nftban" << 'NFTBAN_EOF'
+#!/bin/bash
+
+################################################################################
+# nftban - Basic nftables firewall management tool
+# This is a placeholder binary created by the installation script
+################################################################################
+
+BASE_DIR="/etc/nftban"
+VERSION="3.0.3-placeholder"
+
+show_help() {
+    cat << 'EOF'
+nftban - nftables firewall management tool
+
+Usage: nftban [COMMAND] [OPTIONS]
+
+Commands:
+    help, --help, -h     Show this help message
+    version, --version   Show version information
+    status              Show nftables status
+    list                List current nftables rules
+    flush               Flush all nftables rules (WARNING: Use with caution!)
+    init                Initialize nftables configuration
+    reload              Reload nftables configuration
+    config              Show configuration directory
+
+Configuration files location: /etc/nftban/config/
+Log files location: /var/log/nftban/
+Templates location: /etc/nftban/templates/
+
+Note: This is a basic placeholder binary. 
+For full functionality, sync with the GitHub repository.
+EOF
+}
+
+show_version() {
+    echo "nftban version $VERSION"
+    echo "Configuration directory: $BASE_DIR"
+}
+
+case "${1:-help}" in
+    help|--help|-h)
+        show_help
+        ;;
+    version|--version)
+        show_version
+        ;;
+    status)
+        echo "nftables status:"
+        nft list tables 2>/dev/null || echo "No nftables rules found or nftables not available"
+        ;;
+    list)
+        echo "Current nftables rules:"
+        nft list ruleset 2>/dev/null || echo "No rules found or insufficient permissions"
+        ;;
+    flush)
+        echo "WARNING: This will remove all nftables rules!"
+        read -p "Are you sure? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            nft flush ruleset && echo "nftables rules flushed" || echo "Failed to flush rules"
+        else
+            echo "Operation cancelled"
+        fi
+        ;;
+    init)
+        if [[ -f "$BASE_DIR/scripts/nftban_init_nftables_conf.sh" ]]; then
+            exec "$BASE_DIR/scripts/nftban_init_nftables_conf.sh"
+        else
+            echo "nftables initialization script not found"
+            echo "Run the installation script with GitHub sync enabled"
+        fi
+        ;;
+    reload)
+        if [[ -f "$BASE_DIR/config/nft_rules.conf.local" ]]; then
+            nft -f "$BASE_DIR/config/nft_rules.conf.local" && echo "nftables rules reloaded" || echo "Failed to reload rules"
+        else
+            echo "nftables configuration file not found"
+            echo "Run: nftban init"
+        fi
+        ;;
+    config)
+        echo "Configuration directory: $BASE_DIR/config/"
+        echo "Available configuration files:"
+        if ls "$BASE_DIR/config/"*.conf.local >/dev/null 2>&1; then
+            for file in "$BASE_DIR/config/"*.conf.local; do
+                echo "  - $(basename "$file")"
+            done
+        else
+            echo "  No configuration files found"
+        fi
+        ;;
+    *)
+        echo "Unknown command: $1"
+        echo "Run 'nftban help' for usage information"
+        exit 1
+        ;;
+esac
+NFTBAN_EOF
+
+    chmod +x "$TARGET_DIR/bin/nftban"
+    log INFO "Basic nftban binary created"
+  fi
+}
+
+# --- Auto-update functionality ------------------------------------------------
+print_json_status() {
+  local enabled="false" lines=0
+  local tmpfile; tmpfile="$(mktemp)"
+  crontab -l 2>/dev/null | tee "$tmpfile" >/dev/null || true
+  lines=$(grep -c -F "$AUTO_UPDATE_SCRIPT" "$tmpfile" 2>/dev/null || echo 0)
+  rm -f "$tmpfile"
+  if [[ "$lines" -gt 0 ]]; then enabled="true"; fi
+  printf '{"auto_update_enabled":%s,"auto_update_lines":%s,"target_dir":"%s"}\n' "$enabled" "$lines" "$TARGET_DIR"
+}
+
+show_status() {
+  log INFO "nftban path: $TARGET_DIR"
+  if command -v nft >/dev/null 2>&1; then
+    log INFO "nftables: $(nft --version 2>/dev/null | head -1)"
+  else
+    log WARN "nft not found"
+  fi
+  if command -v fail2ban-client >/dev/null 2>&1; then
+    log INFO "fail2ban: $(fail2ban-client --version 2>/dev/null | head -1 | tr -s ' ')"
+  else
+    log WARN "fail2ban not found"
+  fi
+  if [[ -f "/etc/systemd/system/nftban.service" ]]; then
+    log INFO "systemd unit present: /etc/systemd/system/nftban.service"
+  else
+    log INFO "systemd unit not found (optional)"
+  fi
+  auto_update_status
+}
+
+auto_update_status() {
+  local tmpfile; tmpfile="$(mktemp)"
+  crontab -l 2>/dev/null | tee "$tmpfile" >/dev/null || true
+  mapfile -t cron_lines < <(grep -F "$AUTO_UPDATE_SCRIPT" "$tmpfile" || true)
+  rm -f "$tmpfile"
+
+  local count="${#cron_lines[@]}"
+  if [[ "$count" -gt 0 ]]; then
+    log INFO "Auto-update via crontab: ENABLED ($count entr$([[ $count -eq 1 ]] && echo 'y' || echo 'ies'))."
+    printf '%s\n' "${cron_lines[@]}" | sed 's/^/  • /'
+  else
+    log INFO "Auto-update via crontab: DISABLED (no matching crontab lines)."
+  fi
+
+  if [[ -f "$AUTO_UPDATE_SCRIPT" ]]; then
+    local sz mtime sha
+    sz=$(stat -c '%s' "$AUTO_UPDATE_SCRIPT" 2>/dev/null || stat -f '%z' "$AUTO_UPDATE_SCRIPT" 2>/dev/null || echo "?")
+    mtime=$(date -r "$AUTO_UPDATE_SCRIPT" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "?")
+    if command -v sha256sum >/dev/null 2>&1; then
+      sha=$(sha256sum "$AUTO_UPDATE_SCRIPT" | awk '{print $1}')
+    elif command -v shasum >/dev/null 2>&1; then
+      sha=$(shasum -a 256 "$AUTO_UPDATE_SCRIPT" | awk '{print $1}')
+    else
+      sha="(sha256 tool not found)"
+    fi
+    log INFO "Auto-update script: $AUTO_UPDATE_SCRIPT"
+    log INFO "  size: ${sz} bytes, modified: ${mtime}, sha256: ${sha}"
+  else
+    log WARN "Auto-update script not found at: $AUTO_UPDATE_SCRIPT"
+  fi
+}
+
+cron_sanity_check() {
+  if command -v systemctl >/dev/null 2>&1; then
+    if ! (systemctl is-enabled cron >/dev/null 2>&1 || systemctl is-enabled crond >/dev/null 2>&1); then
+      log WARN "cron service appears disabled. Auto-update may not run."
+    fi
+    if ! (systemctl is-active cron >/dev/null 2>&1 || systemctl is-active crond >/dev/null 2>&1); then
+      log WARN "cron service is not active. Consider: systemctl start cron (or crond)."
+    fi
+  fi
+}
+
+ensure_single_cron_entry() {
+  local entry="$1"
+  local tmpfile; tmpfile="$(mktemp)"
+  crontab -l 2>/dev/null | grep -vF "$AUTO_UPDATE_SCRIPT" > "$tmpfile" || true
+  printf '%s\n' "$entry" >> "$tmpfile"
+  if [[ "${DRY_RUN:-false}" != "true" ]]; then
+    crontab "$tmpfile" 2>/dev/null || true
+  else
+    log INFO "DRY-RUN: would install crontab entry: $entry"
+  fi
+  rm -f "$tmpfile"
+}
+
+setup_auto_update() {
   mkdir -p "$(dirname "$AUTO_UPDATE_SCRIPT")"
   cat > "$AUTO_UPDATE_SCRIPT" <<'EOF'
 #!/bin/bash
@@ -718,7 +926,9 @@ EOF
   ensure_single_cron_entry "$CRON_LINE"
   cron_sanity_check
   log INFO "Auto-update cron installed. Use --auto-update-status to check."
-}MAremove_auto_update() {
+}
+
+remove_auto_update() {
   # Remove cron entries referencing the auto-update script and delete the script
   local tmpfile; tmpfile=$(mktemp)
   crontab -l 2>/dev/null | grep -v "$AUTO_UPDATE_SCRIPT" > "$tmpfile" || true
@@ -729,229 +939,379 @@ EOF
     log INFO "Removed auto-update script: $AUTO_UPDATE_SCRIPT"
   fi
   log INFO "Auto-update cron entries removed (if any existed)."
-}cho "Configuration directory: $BASE_DIR"; }
-case "${1:-help}" in
-  help|--help|-h) show_help ;;
-  version|--version) show_version ;;
-  status) echo "nftables status:"; nft list tables 2>/dev/null || echo "No nftables rules found or nftables not available" ;;
-  list)   echo "Current nftables rules:"; nft list ruleset 2>/dev/null || echo "No rules found or insufficient permissions" ;;
-  flush)  echo "WARNING: This will remove all nftables rules!"; read -p "Are you sure? (y/N): " -n 1 -r; echo; [[ $REPLY =~ ^[Yy]$ ]] && (nft flush ruleset && echo "nftables rules flushed" || echo "Failed to flush rules") || echo "Operation cancelled" ;;
-  init)   if [[ -f "$BASE_DIR/scripts/nftban_init_nftables_conf.sh" ]]; then exec "$BASE_DIR/scripts/nftban_init_nftables_conf.sh"; else echo "nftables initialization script not found"; echo "Run the installation script with GitHub sync enabled"; fi ;;
-  reload) if [[ -f "$BASE_DIR/config/nft_rules.conf.local" ]]; then nft -f "$BASE_DIR/config/nft_rules.conf.local" && echo "nftables rules reloaded" || echo "Failed to reload rules"; else echo "nftables configuration file not found"; echo "Run: nftban init"; fi ;;
-  config) echo "Configuration directory: $BASE_DIR/config/"; echo "Available configuration files:"; if ls "$BASE_DIR/config/"*.conf.local >/dev/null 2>&1; then for file in "$BASE_DIR/config/"*.conf.local; do echo "  - $(basename "$file")"; done; else echo "  No configuration files found"; fi ;;
-  *) echo "Unknown command: $1"; echo "Run 'nftban help' for usage information"; exit 1 ;;
-esac
-NFTBAN_EOF
-    chmod +x "$TARGET_DIR/bin/nftban"; log INFO "Basic nftban binary created"
+}
+
+# --- Version management -------------------------------------------------------
+check_version() {
+  # Handle pure status/info commands early
+  if [[ "$DO_AUTO_UPDATE_STATUS" == "true" ]]; then
+    cron_sanity_check
+    auto_update_status
+    exit 0
+  fi
+  if [[ "$DO_STATUS" == "true" ]]; then
+    if [[ "$JSON_MODE" == "true" ]]; then
+      print_json_status
+    else
+      show_status
+    fi
+    exit 0
+  fi
+
+  mkdir -p "$(dirname "$VERSION_FILE")"
+  if [ -f "$VERSION_FILE" ]; then
+    CURRENT_VERSION=$(cat "$VERSION_FILE")
+    if [ "$CURRENT_VERSION" != "$VERSION" ]; then
+      echo "New version detected: $VERSION (was $CURRENT_VERSION)"
+      echo "$VERSION" > "$VERSION_FILE"
+    fi
+  else
+    echo "$VERSION" > "$VERSION_FILE"
   fi
 }
 
-# --- Post-fetch processing ----------------------------------------------------
+# --- Post-fetch Processing ---
 post_fetch() {
   create_dir_structure
   install_packages
   create_basic_nftban_binary
+  
+  # Run control panel detection
   run_control_panel_detection
+  
+  # Optional installer if repo provides one (no service enable/start here)
+  if [[ -x "$TARGET_DIR/install.sh" ]]; then
+    log INFO "Running repo installer: $TARGET_DIR/install.sh"
+    (cd "$TARGET_DIR" && bash ./install.sh) | tee -a "$LOGFILE"
+  fi
 
   # Optional systemd unit: install but DO NOT enable or start
   if [[ -f "$TARGET_DIR/systemd/nftban.service" ]]; then
     log INFO "Installing systemd unit nftban.service (not enabling/starting)"
     install -m 0644 "$TARGET_DIR/systemd/nftban.service" /etc/systemd/system/nftban.service
     command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload || true
-    log INFO "You may enable later with: systemctl enable --now nftban.sedo_uninstall() {
-  log INFO "Uninstall requested"
-  if ! confirm "Proceed with uninstall of $TARGET_DIR?"; then
-    log INFO "Uninstall canceled."; exit 0
+    log INFO "You may enable later with: systemctl enable --now nftban.service"
   fi
-
-  uninstall_service_unit
-
-  if [[ -d "$TARGET_DIR" ]]; then
-    log INFO "Removing directory: $TARGET_DIR"
-    run_cmd "rm -rf \"$TARGET_DIR\""
-  fi
-
-  if [[ "$DO_PURGE" == "true" ]]; then
-    log WARN "Purging logs/state (irreversible)"
-    run_cmd "rm -rf /var/log/nftban /var/backups/nftban_*"
-  fi
-
-  echo "Uninstall complete."
-}://github.com/itcmsgr/nftban"
-BRANCH="main"
-TARGET_DIR="/etc/nftban"
-cd "$TARGET_DIR"
-if [ -d .git ]; then
-  git fetch --quiet
-  git reset --hard "origin/$BRANCH" --quiet
-  git pull --quiet --rebase
-else
-  git init -q
-  git remote add origin "$REPO_URL" 2>/dev/null || true
-  git fetch -q origin "$BRANCH"
-  git checkout -q -B "$BRANCH" "origin/$BRANCH"
-fi
-EOF
-  chmod +x "$AUTO_UPDATE_SCRIPT"
-  ( crontab -l 2>/dev/null | grep -v "$AUTO_UPDATE_SCRIPT"; \
-    echo "0 */12 * * * $AUTO_UPDATE_SCRIPT >/dev/null 2>&1" ) | crontab -
-  log INFO "Auto-update cron installed (every 12 hours): $AUTO_UPDATE_SCRIPT"
+  
+  # Create symlink
+  create_symlink
+  
+  # Set executable permissions
+  set_permissions
+  
+  show_completion_summary
 }
 
-remove_auto_update() {
-  # Remove cron entries referencing the auto-update script and delete the script
-  local tmpfile; tmpfile=$(mktemp)
-  crontab -l 2>/dev/null | grep -v "$AUTO_UPDATE_SCRIPT" > "$tmpfile" || true
-  crontab "$tmpfile" 2>/dev/null || true
-  rm -f "$tmpfile"
-  if [[ -f "$AUTO_UPDATE_SCRIPT" ]]; then
-    rm -f "$AUTO_UPDATE_SCRIPT"
-    log INFO "Removed auto-update script: $AUTO_UPDATE_SCRIPT"
+create_symlink() {
+  local TARGET="$TARGET_DIR/bin/nftban"
+  local LINK="/usr/local/bin/nftban"
+
+  if [ ! -f "$TARGET" ]; then
+    log INFO "Warning: Target file $TARGET does not exist, but continuing..."
+  elif [ -L "$LINK" ]; then
+    log INFO "Symlink already exists: $LINK -> $(readlink -f "$LINK")"
+  else
+    log INFO "Creating symlink..."
+    ln -s "$TARGET" "$LINK"
+    log INFO "Symlink created: $LINK -> $TARGET"
   fi
-  log INFO "Auto-update cron entries removed (if any existed)."
 }
 
-# --- Uninstall ---------------------------------------------------------------
+set_permissions() {
+  log INFO "Setting executable permissions..."
+  find "$TARGET_DIR/scripts" -type f -name "*.sh" ! -perm -111 -exec chmod +x {} \; 2>/dev/null || true
+  if [[ -f "$TARGET_DIR/bin/nftban" ]]; then
+    chmod +x "$TARGET_DIR/bin/nftban"
+  fi
+}
+
+# --- Enhanced Uninstall (no package removal prompts) --------------------------
 uninstall_service_unit() {
+  # Stop/disable nftban service if present, remove unit file
+  if command -v systemctl >/dev/null 2>&1; then
+    systemctl stop nftban.service >/dev/null 2>&1 || true
+    systemctl disable nftban.service >/dev/null 2>&1 || true
+  fi
   if [[ -f /etc/systemd/system/nftban.service ]]; then
-    log INFO "Removing systemd unit nftban.service (not disabling if not enabled)"
     rm -f /etc/systemd/system/nftban.service
     command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload || true
+    log INFO "Removed /etc/systemd/system/nftban.service"
   fi
-}
-
-remove_packages_prompted() {
-  detect_pm
-  if ask_yes_no "Also remove fail2ban package?" "N"; then
-    log INFO "Removing fail2ban package"; eval "$PKG_REMOVE fail2ban" >/dev/null 2>&1 || true; eval "$PKG_PURGE fail2ban" >/dev/null 2>&1 || true
-  else log INFO "Keeping fail2ban package"; fi
-  if ask_yes_no "Also remove nftables package? (WARNING: firewall tooling)" "N"; then
-    log INFO "Removing nftables package"; eval "$PKG_REMOVE nftables" >/dev/null 2>&1 || true; eval "$PKG_PURGE nftables" >/dev/null 2>&1 || true
-  else log INFO "Keeping nftables package"; fi
-  if ask_yes_no "Also remove whois package?" "N"; then
-    log INFO "Removing whois package"; eval "$PKG_REMOVE $WHOIS_PKG" >/dev/null 2>&1 || true; eval "$PKG_PURGE $WHOIS_PKG" >/dev/null 2>&1 || true
-  else log INFO "Keeping whois package"; fi
-  if ask_yes_no "Also remove DNS utilities package ($DNSUTILS_PKG)?" "N"; then
-    log INFO "Removing $DNSUTILS_PKG package"; eval "$PKG_REMOVE $DNSUTILS_PKG" >/dev/null 2>&1 || true; eval "$PKG_PURGE $DNSUTILS_PKG" >/dev/null 2>&1 || true
-  else log INFO "Keeping $DNSUTILS_PKG package"; fi
+  # OpenRC cleanup (best-effort)
+  if command -v rc-update >/dev/null 2>&1; then
+    rc-update del nftban default >/dev/null 2>&1 || true
+  fi
 }
 
 do_uninstall() {
   log INFO "Uninstall requested"
-  if ! ask_yes_no "Proceed to uninstall nftban from $TARGET_DIR?" "Y"; then log INFO "Uninstall aborted by user"; exit 0; fi
-  uninstall_service_unit
-  if [[ -L "/usr/local/bin/nftban" ]]; then rm -f "/usr/local/bin/nftban"; log INFO "Removed symlink /usr/local/bin/nftban"; fi
-  if [[ -d "$TARGET_DIR" ]]; then rm -rf "$TARGET_DIR"; log INFO "Removed $TARGET_DIR"; fi
-  if [[ "$DO_PURGE" == "true" ]]; then rm -rf "$LOG_DIR" /var/lib/nftban; log INFO "Purged $LOG_DIR and /var/lib/nftban"; else log INFO "Keeping logs/state (use --purge to remove)"; fi
-  remove_packages_prompted
-  log INFO "Uninstall complete"; exit 0
-}
-
-# --- Completion summary -------------------------------------------------------
-show_completion_summary() {
-  echo ""
-  echo "################################################################################"
-  echo "# nftban installation summary"
-  echo "################################################################################"
-  echo "1. Files installed under: $TARGET_DIR"
-  echo "2. Placeholder binary at: /usr/local/bin/nftban"
-  echo "3. Systemd unit (optional): /etc/systemd/system/nftban.service (not enabled)"
-  if [[ -x "/usr/local/bin/nftban" ]]; then
-    echo "   You can run: nftban init | nftban reload | nftban status"
-  else
-    echo "   nftban initialization script not found"
-    echo "   Enable GitHub sync to get the full script suite"
+  if ! ask_yes_no "Proceed to uninstall nftban from $TARGET_DIR?" "Y"; then
+    log INFO "Uninstall aborted by user"
+    exit 0
   fi
 
-  local CONFIG_FILE_COUNT=0
+  uninstall_service_unit
+
+  # Remove symlink
+  if [[ -L "/usr/local/bin/nftban" ]]; then
+    rm -f "/usr/local/bin/nftban"
+    log INFO "Removed symlink /usr/local/bin/nftban"
+  fi
+
+  # Remove main directory
+  if [[ -d "$TARGET_DIR" ]]; then
+    rm -rf "$TARGET_DIR"
+    log INFO "Removed $TARGET_DIR"
+  fi
+
+  # Remove auto-update
+  remove_auto_update
+
+  # Purge optional data/logs if requested
+  if [[ "$DO_PURGE" == "true" ]]; then
+    rm -rf "$LOG_DIR" /var/lib/nftban
+    log INFO "Purged $LOG_DIR and /var/lib/nftban"
+  else
+    log INFO "Keeping logs/state (use --purge to remove)"
+  fi
+
+  log INFO "Uninstall complete"
+  exit 0
+}
+
+# --- Completion Summary ---
+show_completion_summary() {
+  echo ""
+  echo "=== INSTALLATION COMPLETE ==="
+  ui success \"Installation finished successfully!\"
+  echo "Packages installed:"
+  echo "  - nftables"
+  echo "  - $FAIL2BAN_PKG"
+  echo "  - $WHOIS_PKG" 
+  echo "  - $DNSUTILS_PKG"
+  echo ""
+  echo "nftban linked to /usr/local/bin/nftban"
+  echo ""
+  echo "Scripts are executable"
+
+  # Enhanced status reporting for control panel detection
+  if [[ "$SKIP_CP_DETECT" == "false" ]]; then
+    # Count configuration files created
+    CONFIG_FILE_COUNT=0
+    for config_file in "$TARGET_DIR/config/nftban-configuration-"*.conf.local; do
+      if [[ -f "$config_file" ]]; then
+        CONFIG_FILE_COUNT=$((CONFIG_FILE_COUNT + 1))
+      fi
+    done
+    
+    if [[ $CONFIG_FILE_COUNT -gt 0 ]]; then
+      echo ""
+      echo "=== CONTROL PANEL CONFIGURATION ==="
+      
+      # Use find instead of ls to handle non-alphanumeric filenames
+      local latest_log
+      latest_log=$(find "$LOG_DIR" -maxdepth 1 -name "cp_detection_*.log" -type f -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+      
+      if [[ -n "$latest_log" && -f "$latest_log" ]]; then
+        if grep -q "DirectAdmin detected" "$latest_log" 2>/dev/null; then
+          echo "DirectAdmin control panel detected and configured"
+        elif grep -q "cPanel detected" "$latest_log" 2>/dev/null; then
+          echo "cPanel control panel detected and configured"
+        elif grep -q "Plesk detected" "$latest_log" 2>/dev/null; then
+          echo "Plesk control panel detected and configured"
+        elif grep -q "User selected to create generic configuration" "$latest_log" 2>/dev/null; then
+          SSH_PORT_USED=$(grep -o "SSH port: [0-9]*" "$latest_log" 2>/dev/null | cut -d' ' -f3)
+          echo "Generic web server configuration applied"
+          echo "  - SSH port: ${SSH_PORT_USED:-22}"
+          echo "  - HTTP/HTTPS ports: 80, 443"
+          echo "  - DNS/NTP outbound: 53, 123"
+        elif grep -q "User declined generic configuration" "$latest_log" 2>/dev/null; then
+          echo "Empty configuration files created"
+          echo "  Manual configuration required"
+        fi
+      fi
+      
+      echo ""
+      echo "Configuration files created ($CONFIG_FILE_COUNT files):"
+      for config_file in "$TARGET_DIR/config/nftban-configuration-"*.conf.local; do
+        if [[ -f "$config_file" ]]; then
+          # Count entries using simple arithmetic
+          total_lines=$(wc -l < "$config_file" 2>/dev/null)
+          comment_lines=$(grep -c '^#' "$config_file" 2>/dev/null || true)
+          empty_lines=$(grep -c '^[[:space:]]*$' "$config_file" 2>/dev/null || true)
+          entry_count=$((total_lines - comment_lines - empty_lines))
+          filename=$(basename "$config_file")
+          case "$filename" in
+            *"input"*) echo "  - $filename ($entry_count inbound rules)" ;;
+            *"output"*) echo "  - $filename ($entry_count outbound rules)" ;;
+            *"whitelist"*) echo "  - $filename ($entry_count whitelisted IPs)" ;;
+            *) echo "  - $filename ($entry_count entries)" ;;
+          esac
+        fi
+      done
+      echo "==================================="
+    else
+      echo ""
+      echo "Control panel detection completed but no configuration files were created"
+      echo "Manual configuration will be required"
+    fi
+  fi
+
+  echo ""
+  echo "=== NEXT STEPS ==="
+  echo "1. Initialize nftables environment:"
+  if [[ -f "$TARGET_DIR/scripts/nftban_init_nftables_conf.sh" ]]; then
+    echo "   sudo $TARGET_DIR/scripts/nftban_init_nftables_conf.sh"
+  else
+    echo "   nftables initialization script not found"
+    echo "   Enable GitHub sync to get the full script suite"
+  fi
+  echo ""
+
+  echo "2. Initialize fail2ban environment:"
+  if [[ -f "$TARGET_DIR/scripts/nftban_init_fail2ban_conf.sh" ]]; then
+    echo "   sudo $TARGET_DIR/scripts/nftban_init_fail2ban_conf.sh"
+  else
+    echo "   fail2ban initialization script not found"
+    echo "   Enable GitHub sync to get the full script suite"
+  fi
+  echo ""
+
+  # Conditional step 3 based on whether config files were created
+  CONFIG_FILE_COUNT=0
   for config_file in "$TARGET_DIR/config/nftban-configuration-"*.conf.local; do
-    [[ -f "$config_file" ]] && CONFIG_FILE_COUNT=$((CONFIG_FILE_COUNT + 1))
+    if [[ -f "$config_file" ]]; then
+      CONFIG_FILE_COUNT=$((CONFIG_FILE_COUNT + 1))
+    fi
   done
+
   if [[ $CONFIG_FILE_COUNT -gt 0 ]]; then
-    local TOTAL_ENTRIES=0
-    for file in "$TARGET_DIR/config/nftban-configuration-"*.conf.local; do
+    # Count total entries across all files
+    TOTAL_ENTRIES=0
+    for file in "$TARGET_DIR/config/nftban-configuration-"*".conf.local"; do
       if [[ -f "$file" ]]; then
-        local total_lines comment_lines empty_lines file_entries
-        total_lines=$(wc -l < "$file" 2>/dev/null)
+        total_lines=$(wc -l < "$file" 2>/dev/null )
         comment_lines=$(grep -c '^#' "$file" 2>/dev/null || true)
-        empty_lines=$(grep -c '^\s*$' "$file" 2>/dev/null || true)
+        empty_lines=$(grep -c '^[[:space:]]*$' "$file" 2>/dev/null || true)
         file_entries=$((total_lines - comment_lines - empty_lines))
         TOTAL_ENTRIES=$((TOTAL_ENTRIES + file_entries))
       fi
     done
-    echo "4. Local config files: ${CONFIG_FILE_COUNT} (approx ${TOTAL_ENTRIES} active lines)"
+    
+    if [[ $TOTAL_ENTRIES -gt 0 ]]; then
+      echo "3. (Optional) Review and customize configuration:"
+      echo "   Configuration files in: $TARGET_DIR/config/"
+      echo "   Current configuration has $TOTAL_ENTRIES total rules/entries"
+    else
+      echo "3. REQUIRED: Configure ports and IP addresses:"
+      echo "   Edit files in: $TARGET_DIR/config/"
+      echo "   Add your required ports and whitelisted IPs"
+    fi
   else
-    echo "4. Local config files: none yet (you can create *.conf.local files under $TARGET_DIR/config)"
+    echo "3. REQUIRED: Create configuration files:"
+    echo "   Create and configure files in: $TARGET_DIR/config/"
+    if [[ "$FORCE_FLOW" == "git" ]] || [[ "$FORCE_FLOW" == "zip" ]]; then
+      echo "   Templates available in: $TARGET_DIR/templates/"
+    else
+      echo "   Consider using --github or --zip for templates"
+    fi
   fi
 
-  echo ""; echo "5. Next steps:"
-  echo "   - Edit local configs under: $TARGET_DIR/config/*.conf.local"
-  echo "   - Optionally enable auto-update cron:"
-  echo "       $0 --enable-auto-update            # every 12h"
-  echo "       $0 --enable-auto-update --daily-time \"03:30\"  # daily at HH:MM"
-  echo "   - Check auto-update status:"
-  echo "       $0 --auto-update-status"
-  echo ""; echo "6. Optional:"
-  echo "   - Uninstall:  $0 --uninstall [--purge] -y"
-  echo "   - Status:     $0 --status [--json]"
+  echo ""
+  echo "4. Auto-update options:"
+  if [[ "$AUTO_UPDATE_ENABLED" == "true" ]]; then
+    echo "   Auto-update: ENABLED"
+    if [[ -n "$DAILY_TIME" ]]; then
+      echo "   Schedule: Daily at $DAILY_TIME"
+    else
+      echo "   Schedule: Every 12 hours"
+    fi
+  else
+    echo "   Auto-update: DISABLED"
+    echo "   Enable with: $0 --enable-auto-update"
+    echo "   Or schedule daily: $0 --enable-auto-update --daily-time \"03:30\""
+  fi
+  echo ""
+
+  echo "5. Start using nftban:"
+  echo "   nftban --help"
+  echo ""
+
+  # Show relevant log files
+  echo "=== LOG FILES ==="
+  echo "Installation log: $LOGFILE"
+  
+  # Use find instead of ls for the control panel detection logs
+  local latest_cp_log
+  latest_cp_log=$(find "$LOG_DIR" -maxdepth 1 -name "cp_detection_*.log" -type f -printf '%T@ %p\n' 2>/dev/null | sort -n | tail -1 | cut -d' ' -f2-)
+  
+  if [[ -n "$latest_cp_log" ]]; then
+    echo "Control panel detection log: $latest_cp_log"
+  fi
+  echo "================================="
+
+  # Final status
+  echo ""
+  if [[ "$FORCE_FLOW" == "git" ]] || [[ "$FORCE_FLOW" == "zip" ]]; then
+    echo "Installation completed successfully with repository sync!"
+  else
+    echo "Installation completed with basic functionality only."
+    echo "For full features, consider using --github or --zip flags."
+  fi
   echo ""
 }
 
-# --- Usage -------------------------------------------------------------------
+# --- Enhanced Usage -----------------------------------------------------------
 usage() {
-  cat <<EOF
-################################################################################
-# nftban Unified Installation & Maintenance Script
+  cat <<'EOF'
+###############################################
+# nftban Installer (Friendly Help)
 # Version: $VERSION
-################################################################################
+###############################################
 
-Usage: sudo $0 [options]
+Quick start (recommended):
+  sudo $0 --github -y                    # Install/refresh from GitHub
+  sudo $0 --github -y --enable-auto-update   # + keep it up to date via cron
 
-Install/update options:
-  --github                Use Git clone/pull (installs git if needed)
-  --zip                   Download and extract main.zip
-  --target DIR            Install directory (default: /etc/nftban)
-  --branch NAME           Git branch (default: main)
-  --skip-cp-detect        Skip control panel detection
-  --dry-run               Print actions without changing the system
-  --quiet                 Suppress INFO logs (WARN/ERROR still shown)
-  --enable-auto-update    Install cron-based auto-update after setup (opt-in)
-  --remove-auto-update    Remove cron-based auto-update (if previously enabled)
-  --auto-update-status    Show auto-update cron status
-  --status                Show overall status summary
-  --json                  With --status: emit JSON
-  --daily-time HH:MM      With --enable-auto-update: schedule daily at HH:MM
+If GitHub is blocked for you:
+  sudo $0 --zip -y                        # Download & install from ZIP
 
-Uninstall options:
-  --uninstall             Remove nftban (service/unit, directory)
-  --purge                 With --uninstall: also remove logs and state directories
-                          (Packages removal will be prompted separately)
+Beginner mode (more guidance & colorful output):
+  sudo $0 --github -y --beginner
 
-General:
-  -y                      Assume "yes" to prompts
-  -h, --help              Show this help
+What this installer will do (safely):
+  • Create/update nftban files under: $TARGET_DIR
+  • Ensure required packages are present (nftables, fail2ban, whois, dns utils)
+  • (Optional) Detect a control panel and suggest sensible default ports
+  • It does NOT enable or start services automatically
+
+Common options:
+  --github                 Use Git to sync the repository
+  --zip                    Use ZIP download instead of Git
+  --target DIR             Install directory (default: /etc/nftban)
+  --branch NAME            Git branch (default: main)
+  --skip-cp-detect         Skip control panel detection
+  --enable-auto-update     Set up a cron job to keep nftban updated
+  --remove-auto-update     Remove the auto-update cron job
+  --auto-update-status     Show auto-update status
+  --status [--json]        Show an overall status
+  --daily-time HH:MM       With --enable-auto-update: run daily at HH:MM
+  --beginner               Friendlier, step-by-step messages
+  --no-color               Disable colored output
+  --no-unicode             Use plain ASCII icons
+  -y                       Assume "yes" to prompts
+  -h, --help               Show this help
+
+Uninstall (safe):
+  sudo $0 --uninstall -y
+  sudo $0 --uninstall --purge -y   # also remove logs/state
 
 Examples:
-  # 1) Install/refresh from GitHub main branch
-  sudo $0 --github -y
-
-  # 2) ZIP download to custom target
+  # Install to a custom path
   sudo $0 --zip -y --target /opt/nftban
 
-  # 3) Enable auto-update cron after install
-  sudo $0 --github -y --enable-auto-update
-
-  # 4) Enable daily auto-update at 03:30
+  # Enable daily auto-update at 03:30
   sudo $0 --enable-auto-update --daily-time "03:30"
-
-  # 5) Check auto-update status
-  sudo $0 --auto-update-status
-
-  # 6) Remove auto-update cron and helper script
-  sudo $0 --remove-auto-update
-
-  # 7) Uninstall with purge
-  sudo $0 --uninstall --purge -y
 
 EOF
 }
@@ -982,44 +1342,26 @@ parse_args() {
   done
 }
 
-# --- Versioning ---------------------------------------------------------------
-check_version() {
-  # Handle pure status/info commands early
-  if [[ "$DO_AUTO_UPDATE_STATUS" == "true" ]]; then
-    cron_sanity_check
-    auto_update_status
-    exit 0
-  fi
-  if [[ "$DO_STATUS" == "true" ]]; then
-    if [[ "$JSON_MODE" == "true" ]]; then
-      print_json_status
-    else
-      show_status
-    fi
-    exit 0
-  fi
-
-  mkdir -p "$(dirname "$VERSION_FILE")"
-  if [ -f "$VERSION_FILE" ]; then
-    CURRENT_VERSION=$(cat "$VERSION_FILE")
-    if [ "$CURRENT_VERSION" != "$VERSION" ]; then
-      echo "New version detected: $VERSION (was $CURRENT_VERSION)"
-      echo "$VERSION" > "$VERSION_FILE"
-    fi
-  else
-    echo "$VERSION" > "$VERSION_FILE"
-  fi
-}
-
-# --- Main ---------------------------------------------------------------------
+# --- Main Function ---
 main() {
   need_root
   parse_args "$@"
   check_version
+  setup_colors
+  if [[ \"$BEGINNER_MODE\" == \"true\" ]]; then
+    ui title \"nftban Unified Installer\"
+    ui info  \"Version: $VERSION\"
+    ui step  \"We will prepare your system and set up nftban in a few easy steps.\"
+    ui tip   \"Nothing starts automatically; you remain in control.\"
+    echo \"\"
+  fi
+
+  log INFO "nftban Unified Installation Script starting"
+  log INFO "Version: $VERSION"
+  log INFO "Target directory: $TARGET_DIR"
 
   if [[ "$DO_UNINSTALL" == "true" ]]; then
     do_uninstall
-    exit 0
   fi
 
   if [[ "$DO_REMOVE_AUTO_UPDATE" == "true" ]]; then
@@ -1027,40 +1369,64 @@ main() {
     exit 0
   fi
 
-  if [[ -z "$FORCE_FLOW" ]]; then
-    log INFO "No explicit flow provided; defaulting to GitHub flow"
-    FORCE_FLOW="git"
-  fi
+  # Create initial directories and log file
+  mkdir -p "$LOG_DIR" /var/backups "$(dirname "$TARGET_DIR")"
+  touch "$LOGFILE" || true
+  chmod 0640 "$LOGFILE" || true
 
-  backup_existing
-  install_required_packages
+  if [[ -z "$FORCE_FLOW" ]]; then
+    # Interactive selection
+    echo "nftban Installation Options:"
+    echo ""
+    echo "1. GitHub (Recommended) - Clone/pull latest repository"
+    echo "   - Always gets the latest version"
+    echo "   - Includes all scripts and templates"
+    echo "   - Requires git (will be installed if missing)"
+    echo ""
+    echo "2. ZIP Download - Download and extract archive"
+    echo "   - Faster download"
+    echo "   - No git dependency"
+    echo "   - Fixed version (main branch)"
+    echo ""
+    echo "3. Basic Install - Local installation only"
+    echo "   - No repository sync"
+    echo "   - Basic functionality only"
+    echo "   - Manual configuration required"
+    echo ""
+    
+    if ask_yes_no "Use GitHub repository sync (recommended)?" "Y"; then
+      FORCE_FLOW="git"
+    else
+      if ask_yes_no "Download ZIP archive instead?" "Y"; then
+        FORCE_FLOW="zip"
+      else
+        FORCE_FLOW="local"
+      fi
+    fi
+  fi
 
   case "$FORCE_FLOW" in
     git) do_github_flow ;;
     zip) do_zip_flow ;;
-    *)   die "Unknown flow: $FORCE_FLOW" ;;
+    local)
+      log INFO "Proceeding with basic local installation"
+      create_dir_structure
+      install_packages
+      create_basic_nftban_binary
+      run_control_panel_detection
+      create_symlink
+      set_permissions
+      show_completion_summary
+      ;;
+    *) die "Unknown flow: $FORCE_FLOW" ;;
   esac
-
-  create_scaffolding
-  run_control_panel_detection
-
-  # Optional systemd unit: install but DO NOT enable or start
-  if [[ -f "$TARGET_DIR/systemd/nftban.service" ]]; then
-    log INFO "Installing systemd unit nftban.service (not enabling/starting)"
-    install -m 0644 "$TARGET_DIR/systemd/nftban.service" /etc/systemd/system/nftban.service
-    command -v systemctl >/dev/null 2>&1 && systemctl daemon-reload || true
-    log INFO "You may enable later with: systemctl enable --now nftban.service"
-  fi
-
-  create_symlink
-  set_permissions
 
   if [[ "$AUTO_UPDATE_ENABLED" == "true" ]]; then
     setup_auto_update
   fi
 
-  show_completion_summary
+  log INFO "Installation completed successfully"
 }
 
+# --- Script Execution ---
 main "$@"
-OUTER_EOF
