@@ -1,3 +1,5 @@
+nftban – Modular Linux Firewall Management based on nftables & Fail2Ban
+
 ITCMS Custom License – No Resale v1.1
 SPDX-License-Identifier: LicenseRef-CustomMIT-NoResale-1.1
 
