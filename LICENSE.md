@@ -7,7 +7,7 @@ Copyright (c) 2025
 Antonios Voulvoulis – ITCMS (IT Consulting Managed Services)
 https://itcms.gr
 
-1) Permissions
+1\) Permissions
 You may use, copy, modify, and deploy the Software for personal and commercial purposes, including embedding it in private or internal systems.
 
 2\) Conditions  
@@ -18,13 +18,13 @@ You may use, copy, modify, and deploy the Software for personal and commercial p
 
 
 
-4) Limitations
+4\) Limitations
 No obligation to provide support, updates, or publish modifications. Trademarks and branding are not licensed.
 
-5) Disclaimer of Warranty
+5\) Disclaimer of Warranty
 THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 
-6) Limitation of Liability
+6\) Limitation of Liability
 IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 7) Permission to Resell (How to Request)
