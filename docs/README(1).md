@@ -1,4 +1,4 @@
-# nftban_init_rewrite.sh – Package Bootstrapper
+# nftban_init.sh – Package Bootstrapper
 
 **Cross-distro bootstrapper and installer for the nftban stack (packages, files, auto-update)**
 
