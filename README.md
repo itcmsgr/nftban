@@ -7,7 +7,9 @@
 ![Platform](https://img.shields.io/badge/platform-Linux-blue)
 ![Status](https://img.shields.io/badge/status-active-brightgreen)
 ![Compatibility](https://img.shields.io/badge/compatibility-Debian%2FUbuntu%20%7C%20RHEL%2FCentOS%2FFedora-orange)
-![License](https://img.shields.io/badge/license-ITCMS%20Non--Resale%20License-blue)
+[![License: CustomMIT–NoResale v1.1](https://img.shields.io/badge/License-CustomMIT--NoResale%20v1.1-lightgrey)](./LICENSE.md)
+[![SPDX](https://img.shields.io/badge/SPDX-LicenseRef--CustomMIT--NoResale--1.1-lightgrey)](./LICENSE.md)
+
 
 ---
 
