@@ -68,6 +68,8 @@ DAILY_TIME=""
 FAIL2BAN_PKG="fail2ban"
 WHOIS_PKG="whois"
 DNSUTILS_PKG=""
+IPCALC_PKG="ipcalc"
+SIPCALC_PKG="sipcalc"
 
 umask 022
 
@@ -262,6 +264,7 @@ install_epel_if_needed() {
 }
 
 # --- Package installation -----------------------------------------------------
+# --- Package installation -----------------------------------------------------
 install_packages() {
   detect_pm
   log INFO "Starting package installation using $PKG_TOOL"
@@ -271,7 +274,7 @@ install_packages() {
   fi
   if is_rhel_like; then install_epel_if_needed; fi
 
-  local packages_to_install="$FAIL2BAN_PKG, $WHOIS_PKG, $DNSUTILS_PKG, nftables"
+  local packages_to_install="$FAIL2BAN_PKG, $WHOIS_PKG, $DNSUTILS_PKG, nftables, $IPCALC_PKG, $SIPCALC_PKG"
   if [[ "$ASSUME_Y" == "false" ]] && ! ask_yes_no "Do you want to proceed with installing $packages_to_install?" "Y"; then
     log INFO "Package installation cancelled by user. Exiting..."; exit 1
   fi
@@ -310,6 +313,29 @@ install_packages() {
     log INFO "$DNSUTILS_PKG installed successfully"
   else
     log INFO "$DNSUTILS_PKG already installed"
+  fi
+
+  # ipcalc
+  log INFO "Installing $IPCALC_PKG..."
+  if ! pkg_present "$IPCALC_PKG"; then
+    pkg_install "$IPCALC_PKG" >/dev/null 2>&1 || die "Failed to install $IPCALC_PKG"
+    log INFO "$IPCALC_PKG installed successfully"
+  else
+    log INFO "$IPCALC_PKG already installed"
+  fi
+
+  # sipcalc (may require EPEL on RHEL systems)
+  log INFO "Installing $SIPCALC_PKG..."
+  if ! pkg_present "$SIPCALC_PKG"; then
+    if pkg_install "$SIPCALC_PKG" >/dev/null 2>&1; then
+      log INFO "$SIPCALC_PKG installed successfully"
+    else
+      # sipcalc might not be available on all systems
+      log WARN "$SIPCALC_PKG installation failed (may not be available in repositories)"
+      log WARN "Continuing without $SIPCALC_PKG - some functionality may be limited"
+    fi
+  else
+    log INFO "$SIPCALC_PKG already installed"
   fi
 
   log INFO "All packages installed (services not enabled/started)."
