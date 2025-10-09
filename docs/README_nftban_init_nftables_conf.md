@@ -399,9 +399,9 @@ See [LICENSE.md](./LICENSE.md) for full text.
 
 This is part of the **nftban** toolkit. Other scripts in the repository:
 - `nftban` - Main management CLI
-- `nftban-fail2ban-sync.sh` - Fail2ban synchronization
+- `fail2ban-init.sh` - Fail2ban instal
+- `nftban_init.sh` - nftban instal
 - Additional firewall management utilities
-
 Each script has its own focused documentation.
 
 ---
