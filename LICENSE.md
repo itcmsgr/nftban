@@ -1,47 +1,27 @@
-# 📜 Custom License (MIT-like) – No Resale, Attribution Required
+ITCMS Custom License – No Resale v1.1
+SPDX-License-Identifier: LicenseRef-CustomMIT-NoResale-1.1
 
-![License](https://img.shields.io/badge/licensePDX-LicenseRef--CustomMIT--NoResale--1.0-light1.png
-</p>
+Copyright (c) 2025
+Antonios Voulvoulis – ITCMS (IT Consulting Managed Services)
+https://itcms.gr
 
----
+1) Permissions
+You may use, copy, modify, and deploy the Software for personal and commercial purposes, including embedding it in private or internal systems.
 
-**Copyright (c) 2025 Antonios Voulvoulis – ITCMS (IT Consulting Managed Services)**  
-🔗 https://itcms.gr
+2) Conditions
+2.1 Attribution — Credit “© Antonios Voulvoulis – ITCMS (https://itcms.gr)” in the README, About screen, or documentation, including a link to the repository or https://itcms.gr.
+2.2 No Resale — You may not sell, resell, sublicense, or distribute the Software for a fee, whether standalone or as part of a bundle, without prior written permission from ITCMS. You may use the Software to provide services (e.g., hosting, consulting).
+2.3 No Misrepresentation — Do not remove copyright notices or claim the Software as your own.
+2.4 Third-Party Code — Third-party components remain under their respective licenses.
 
----
+3) Limitations
+No obligation to provide support, updates, or publish modifications. Trademarks and branding are not licensed.
 
-✅ **Free to Use**  
-You are free to use, copy, modify, and deploy this software for **personal or commercial purposes**.
+4) Disclaimer of Warranty
+THE SOFTWARE IS PROVIDED “AS IS”, WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 
-📌 **Conditions**  
-1. 🖊 **Attribution**  
-   You must credit the original author (Antonios Voulvoulis) and include a link to the original repository or to [https://itcms.gr](https://itibution or derivative work.
+5) Limitation of Liability
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
-2. 💰 **No Resale**  
-   You may **NOT** sell, license, or distribute the Software for a fee (standalone or bundled) without prior written permission from ITCMS.
-
-3. 🚫 **No Misrepresentation**  
-   You may **NOT** claim the original Software as your own or remove existing copyright notices.
-
-4. 📦 **Third-Party Code**  
-   Any third-party components included remain under their respective licenses.
-
-⚠️ **Disclaimer**  
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE, AND NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS BE LIABLE FOR ANY CLAIM, DAMAGES, OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT, OR OTHERWISE, ARISING FROM, OUT OF, OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
-
----
-
-📌 **SPDX-License-Identifier:** `LicenseRef-CustomMIT-NoResale-1.0`
-
----
-
-## 📘 License Summary (README Snippet)
-
-✅ **Free to Use** – Personal and commercial use allowed  
-🖊️ **Attribution Required** – Credit must be given to ITCMS and the author  
-💰 **No Resale** – You may not sell or license the software without permission  
-🚫 **No Misrepresentation** – Do not claim the software as your own  
-📦 **Third-Party Code** – Remains under their respective licenses  
-⚠️ **No Warranty** – Provided as-is, use at your own risk  
-
-🔗 Learn more at itcms.gr
+6) Permission to Resell (How to Request)
+Contact: legal@itcms.gr
