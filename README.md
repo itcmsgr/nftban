@@ -117,13 +117,12 @@ Developed by [Antonios Voulvoulis](https://github.com/itcmsgr) and the **ITCMS T
 
 ---
 
-## 📄 License
+## 📜 License Summary
+✅ Free to Use — personal & commercial
+🖊️ Attribution Required — credit ITCMS and the author
+💰 No Resale — selling/sublicensing requires written permission
+🚫 No Misrepresentation — don’t claim as your own
+📦 Third-Party Code — under their licenses
+⚠️ No Warranty — provided “as is”
 
-This project is licensed under the **ITCMS Non-Resale License**.  
-
-- ✅ Free for personal, educational, research, and company use.  
-- ✅ You may build services or your own modules on top of it.  
-- ❌ You may **not** copy, clone, or resell this software itself as a standalone product.  
-- 📩 For redistribution or commercial licensing, please contact [ITCMS](https://itcms.gr).  
-
-© 2025 [ITCMS](https://itcms.gr). All rights reserved.
+Full text: see [LICENSE.md](./LICENSE.md)
