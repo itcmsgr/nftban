@@ -10,11 +10,12 @@ https://itcms.gr
 1) Permissions
 You may use, copy, modify, and deploy the Software for personal and commercial purposes, including embedding it in private or internal systems.
 
-2) Conditions
-2.1 Attribution — Credit “© Antonios Voulvoulis – ITCMS (https://itcms.gr)” in the README, About screen, or documentation, including a link to the repository or https://itcms.gr.
-2.2 No Resale — You may not sell, resell, sublicense, or distribute the Software for a fee, whether standalone or as part of a bundle, without prior written permission from ITCMS. You may use the Software to provide services (e.g., hosting, consulting).
-2.3 No Misrepresentation — Do not remove copyright notices or claim the Software as your own.
-2.4 Third-Party Code — Third-party components remain under their respective licenses.
+2\) Conditions  
+2\.1 Attribution — Credit “© Antonios Voulvoulis – ITCMS (https://itcms.gr)” in the README, About screen, or documentation, including a link to the repository or https://itcms.gr.  
+2\.2 No Resale — You may not sell, resell, sublicense, or distribute the Software for a fee, whether standalone or as part of a bundle, without prior written permission from ITCMS. You may use the Software to provide services (e.g., hosting, consulting).  
+2\.3 No Misrepresentation — Do not remove copyright notices or claim the Software as your own.  
+2\.4 Third-Party Code — Third-party components remain under their respective licenses.
+
 
 
 4) Limitations
