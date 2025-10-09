@@ -118,11 +118,11 @@ Developed by [Antonios Voulvoulis](https://github.com/itcmsgr) and the **ITCMS T
 ---
 
 ## 📜 License Summary
-✅ Free to Use — personal & commercial
-🖊️ Attribution Required — credit ITCMS and the author
-💰 No Resale — selling/sublicensing requires written permission
-🚫 No Misrepresentation — don’t claim as your own
-📦 Third-Party Code — under their licenses
-⚠️ No Warranty — provided “as is”
+- ✅ **Free to Use** — personal & commercial
+- 🖊️ **Attribution Required** — credit ITCMS and the author
+- 💰 **No Resale** — selling/sublicensing requires written permission
+- 🚫 **No Misrepresentation** — don’t claim as your own
+- 📦 **Third-Party Code** — under their licenses
+- ⚠️ **No Warranty** — provided “as is”
 
 Full text: see [LICENSE.md](./LICENSE.md)
