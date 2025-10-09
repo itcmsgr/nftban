@@ -720,61 +720,73 @@ do_zip_flow() {
 
 # --- nftban Binary Creation ---
 create_basic_nftban_binary() {
-  # Overwrite /etc/nftban/bin/nftban from WORK_DIR, set exec bit, and refresh the symlink.
-  # Minimal logic; no placeholder creation. Includes RHEL/SELinux context restore.
+  # expected existing vars:
+  #   TARGET_DIR (e.g., /etc/nftban)
+  #   WORK_DIR   (temp/checkout dir; may or may not exist)
+  # helper: log <LEVEL> <msg>  (assumed present in your script)
 
-  local BIN="$TARGET_DIR/bin/nftban"
+  local BIN="${TARGET_DIR}/bin/nftban"
   local LINK="/usr/local/bin/nftban"
+  local REAL_BIN="/etc/nftban/bin/nftban"
   local SRC=""
 
-  # Prefer sources under the temporary working directory when available.
-  # These cover both the Git and ZIP flows used earlier in the script.
-  if [[ -n "${WORK_DIR:-}" ]]; then
-    if [[ -f "$WORK_DIR/repo/bin/nftban" ]]; then
-      SRC="$WORK_DIR/repo/bin/nftban"
-    elif [[ -f "$WORK_DIR/bin/nftban" ]]; then
-      SRC="$WORK_DIR/bin/nftban"
+  # find a repo-provided nftban in WORK_DIR, if any
+  if [[ -n "${WORK_DIR:-}" && -d "$WORK_DIR" ]]; then
+    if [[ -x "${WORK_DIR}/bin/nftban" ]]; then
+      SRC="${WORK_DIR}/bin/nftban"
+    elif [[ -f "${WORK_DIR}/bin/nftban" ]]; then
+      SRC="${WORK_DIR}/bin/nftban"
     fi
   fi
 
-  # As a last resort (e.g., local flow), if nothing in WORK_DIR, keep any existing target.
-  # No placeholder is created by design.
   mkdir -p "$(dirname "$BIN")"
 
   if [[ -n "$SRC" ]]; then
-    # Install with correct mode in one step; fall back to cp+chmod if install is unavailable.
+    # install the repo-built CLI
     if command -v install >/dev/null 2>&1; then
       install -m 0755 "$SRC" "$BIN"
     else
-      cp -f "$SRC" "$BIN"
-      chmod 0755 "$BIN"
+      cp -f "$SRC" "$BIN" && chmod 0755 "$BIN"
     fi
-  elif [[ -f "$BIN" ]]; then
-    # Ensure executable bit if we didn’t refresh the file.
-    chmod 0755 "$BIN"
+    log INFO "Installed repo CLI to: $BIN"
   else
-    # Nothing to do if no source and no existing binary.
-    log INFO "No nftban binary found in WORK_DIR and no existing $BIN; skipping."
-    return 0
+    # no repo CLI; use the real system CLI if it already exists
+    if [[ -x "$REAL_BIN" || -f "$REAL_BIN" ]]; then
+      BIN="$REAL_BIN"
+      log INFO "Using existing system CLI: $BIN"
+    else
+      # last resort: write a tiny stub that *only* points to the real path
+      cat > "${TARGET_DIR}/bin/nftban" <<'NFTBAN_EOF'
+#!/usr/bin/env bash
+echo "nftban is not installed here. Expected real CLI at: /etc/nftban/bin/nftban" >&2
+echo "If it exists, relink with: sudo ln -sf /etc/nftban/bin/nftban /usr/local/bin/nftban" >&2
+exit 1
+NFTBAN_EOF
+      chmod 0755 "${TARGET_DIR}/bin/nftban"
+      BIN="${TARGET_DIR}/bin/nftban"
+      log WARN "Created minimal stub at ${BIN}; real CLI not found."
+    fi
   fi
 
-  # Ensure executable (explicit and RHEL-friendly).
-  chmod +x "$BIN"
+  # ensure executable (safe even if BIN points to REAL_BIN)
+  if [[ -f "$BIN" ]]; then
+    chmod +x "$BIN" || true
+  fi
 
-  # Force the public link to point to the updated binary.
+  # ensure global symlink
   mkdir -p "$(dirname "$LINK")"
   ln -sf "$BIN" "$LINK"
 
-  # RHEL/SELinux: restore contexts on both paths (no-op elsewhere).
+  # SELinux contexts if applicable
   if command -v selinuxenabled >/dev/null 2>&1 && selinuxenabled; then
     if command -v restorecon >/dev/null 2>&1; then
       restorecon -F "$BIN" "$LINK" >/dev/null 2>&1 || true
     fi
   fi
 
-  log INFO "Updated binary: $BIN"
-  log INFO "Symlink ensured: $LINK -> $BIN"
+  log INFO "Symlink ensured: ${LINK} -> ${BIN}"
 }
+
 create_basic_nftban_binary_for_review_delete() {
   if [[ ! -f "$TARGET_DIR/bin/nftban" ]]; then
     log INFO "Creating basic nftban binary..."
