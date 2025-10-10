@@ -832,12 +832,15 @@ Special thanks to:
 
 ---
 
-## ⭐ Star History
+## ⭐ Show Your Support
 
-If you find nftban useful, please consider giving it a star!
+If nftban helps you, please **star this repository** ⭐
 
-[![Star History Chart](https://api.star-history.com/svg?repos=itcmsgr/nftban&type=Date)](https://star-history.com/#itcmsgr/nftban&Date)
+Stars help other users discover this project and motivate continued development!
 
+[![GitHub stars](https://img.shields.io/github/stars/itcmsgr/nftban?style=social)](https://github.com/itcmsgr/nftban/stargazers)
+[![GitHub forks](https://img.shields.io/github/forks/itcmsgr/nftban?style=social)](https://github.com/itcmsgr/nftban/network/members)
+[![GitHub watchers](https://img.shields.io/github/watchers/itcmsgr/nftban?style=social)](https://github.com/itcmsgr/nftban/watchers)
 ---
 
 <p align="center">
