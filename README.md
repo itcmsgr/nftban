@@ -1,3 +1,12 @@
+[![Version](https://img.shields.io/badge/version-0.5.0--beta-orange)](https://github.com/itcmsgr/nftban)
+[![Status](https://img.shields.io/badge/status-beta-yellow)](https://github.com/itcmsgr/nftban)
+[![License](https://img.shields.io/badge/License-CustomMIT--NoResale-lightgrey)](./LICENSE.md)
+[![Platform](https://img.shields.io/badge/platform-Linux-blue)](https://github.com/itcmsgr/nftban)
+[![Shell](https://img.shields.io/badge/shell-bash-green)](https://www.gnu.org/software/bash/)
+
+> **⚠️ BETA SOFTWARE**: This is a beta release currently undergoing testing. While functional and tested on multiple distributions, please use with caution in production environments. [Report issues](https://github.com/itcmsgr/nftban/issues) | [Join discussions](https://github.com/itcmsgr/nftban/discussions)
+
+
 # nftban
 
 **Modular Linux Firewall Management System based on nftables & Fail2Ban**
