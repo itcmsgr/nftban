@@ -1,4 +1,5 @@
 #!/bin/bash
+
 ###############################################################################
 # Script: nftban.sh
 # A comprehensive nftables and fail2ban management tool with IP allowlist
@@ -197,6 +198,116 @@ show_version() {
 }
 
 # ------------------------------ IP Validation ------------------------------ #
+# ============================================================================
+# Enhanced IP/CIDR validation & normalization using sipcalc/ipcalc
+# ============================================================================
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+# Quick pre-filters (do not rely on these for final validation)
+_is_ipv4_quick() { [[ "$1" == *.* && "$1" != *:* ]]; }    # presence of dots, no colons
+_is_ipv6_quick() { [[ "$1" == *:* ]]; }                   # presence of colon(s)
+
+# Add default mask if omitted: v4 -> /32, v6 -> /128
+normalize_cidr() {
+  local x="$1"
+  if [[ "$x" == */* ]]; then printf '%s\n' "$x"; return; fi
+  if _is_ipv4_quick "$x"; then printf '%s/32\n' "$x"; else printf '%s/128\n' "$x"; fi
+}
+
+# Tool-backed validation (0 = valid, 1 = invalid)
+validate_cidr() {
+  local input; input="$(normalize_cidr "$1")"
+
+  # Prefer sipcalc for both families
+  if have sipcalc; then
+    sipcalc "$input" >/dev/null 2>&1 || return 1
+  else
+    # Minimal fallback: accept IPv4 only with ipcalc; reject IPv6 without sipcalc
+    if _is_ipv4_quick "$input" && have ipcalc; then
+      ipcalc -c "${input%/*}" >/dev/null 2>&1 || return 1
+    else
+      return 1
+    fi
+  fi
+
+  # Extra IPv4 lint with ipcalc if present
+  if _is_ipv4_quick "$input" && have ipcalc; then
+    ipcalc -c "${input%/*}" >/dev/null 2>&1 || return 1
+  fi
+  return 0
+}
+
+# Canonicalize to compressed address with correct prefix
+canonical_cidr() {
+  local input; input="$(normalize_cidr "$1")"
+  if ! have sipcalc; then printf '%s\n' "$input"; return; fi
+
+  if _is_ipv4_quick "$input"; then
+    sipcalc "$input" 2>/dev/null | awk '
+      /Compressed address/ {addr=$3}
+      /Network mask \(bits\)/ {bits=$5}
+      END { if(addr && bits) print addr"/"bits; else exit 1 }'
+  else
+    sipcalc "$input" 2>/dev/null | awk '
+      /Compressed address/ {addr=$3}
+      /Prefix length/ {bits=$3}
+      END { if(addr && bits) print addr"/"bits; else exit 1 }'
+  fi
+}
+
+# Human-friendly explanation (optional hook for --check / --info)
+explain_cidr() {
+  local input; input="$(normalize_cidr "$1")"
+  if ! validate_cidr "$input"; then
+    echo "INVALID: $1"; return 1
+  fi
+  echo "OK: $(canonical_cidr "$input")"
+  if _is_ipv4_quick "$input"; then
+    if have ipcalc; then ipcalc "$input"; else sipcalc "$input"; fi
+  else
+    sipcalc "$input"
+  fi
+}
+
+# Batch validator for lists/files -> prints canonical entries; errors to stderr
+validate_list_with_tools() {
+  local line num=0 bad=0
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    ((num++))
+    line="${line%%#*}"; line="${line//[$'\t\r ']/}"
+    [[ -z "$line" ]] && continue
+    if validate_cidr "$line"; then
+      canonical_cidr "$line"
+    else
+      echo "Line $num invalid: $line" >&2
+      ((bad++))
+    fi
+  done
+  return $(( bad > 0 ))
+}
+
+# --- Overrides: replace regex-based validators with tool-backed checks --------
+# Return 0 if IPv4 or IPv4/CIDR is valid
+is_ipv4_or_cidr() {
+  local x="$1"
+  if [[ -z "$x" ]]; then return 1; fi
+  # Reject obvious IPv6
+  [[ "$x" == *:* ]] && return 1
+  validate_cidr "$x"
+}
+
+# Return 0 if IPv6 or IPv6/CIDR is valid
+is_ipv6_or_cidr() {
+  local x="$1"
+  if [[ -z "$x" ]]; then return 1; fi
+  # Require IPv6-like input
+  [[ "$x" != *:* ]] && return 1
+  validate_cidr "$x"
+}
+# ============================================================================
+
+
 is_ipv4_or_cidr() {
     local ip="$1"
     
