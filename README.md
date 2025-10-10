@@ -764,14 +764,9 @@ We're open to partnership and commercial licensing discussions!
 
 ### Upcoming Features
 
-- 🔄 Web-based dashboard
+
 - 🌍 GeoIP blocking rules
 - 📊 Advanced statistics and graphs
-- 🔔 Webhook integrations
-- 📱 Mobile app notifications
-- 🤖 AI-powered threat detection
-- 🔐 Two-factor authentication support
-- 📦 Docker containerization
 
 ### Community Requests
 
