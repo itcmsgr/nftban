@@ -3,7 +3,7 @@
 # =============================================================================
 # Script: nftban_init_fail2ban_conf.sh
 #
-# Version: 3.6 (Enhanced with security, validation, dry-run, better mail testing)
+# Version: 0.5.0-final  (Enhanced with security, validation, dry-run, better mail testing)
 # Author:  ITCMS Team (Antonios Voulvoulis) + Enhancements
 #
 # Description:
