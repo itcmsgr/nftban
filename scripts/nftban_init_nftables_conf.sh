@@ -1,24 +1,20 @@
 #!/bin/bash
 ###################################################################################################
-# Script: nftban_init_nftables_conf.sh (Enhanced with Test Mode, Unit Tests, and Stronger Validation)
+# Script: nftban_init_nftables_conf.sh (Enhanced with Control Panel Detection)
 #
-# Version: 2.2.0 (Corrected Architecture)
+# Version: 2.3.0 (Added Control Panel Port Management)
 # Author: ITCMS Team (Antonios Voulvoulis)
 #
 # Description:
 #   Single-table nftables configuration with simplified architecture
+#   - Automatic control panel detection (DirectAdmin, cPanel, Plesk, generic)
+#   - Automatic port configuration based on detected panel
+#   - Merges system (.conf) and user (.conf.local) configurations
 #   - One global table: inet nftban_global
 #   - Separate sets for user/system blacklists and temp bans
-#   - Fail2ban uses temp_ban_v4 and temp_ban_v6 sets (NO separate tables!)
+#   - Fail2ban uses temp_ban_v4 and temp_ban_v6 sets
 #   - Compatible with unified nftban management script
 #   - Whitelist always takes priority
-#
-# This version includes:
-#   1) Testing Mode: --test (simulate with 'nft -c' only; no apply)
-#   2) Unit Tests: --run-tests covering append_if_set, generate_port_rules, and IP validation
-#   3) Stronger Validation Logic: use ipcalc/sipcalc when available, fallback to 'nft -c', then strict regex
-#   4) Fixed indentation and character encoding issues
-#   5) CORRECTED: Fail2ban integration (uses temp_ban sets, not separate tables)
 #
 ###################################################################################################
 
@@ -40,19 +36,20 @@ have_cmd() { command -v "$1" &>/dev/null; }
 BASE_DIR="/etc/nftban/config"
 BASE_DIR_INIT="/etc/nftban/templates"
 BACKUP_DIR="/etc/nftban/backups"
+CONTROL_PANEL_TEMPLATES="$BASE_DIR/templates/control-panels"
 
 # --- Logging ---
 LOG_DIR="/etc/nftban/logs"
 LOG_FILE="${LOG_DIR}/validation_$(date +%F).log"
 
 # Ensure required directories exist
-mkdir -p "$BACKUP_DIR" "$LOG_DIR"
+mkdir -p "$BACKUP_DIR" "$LOG_DIR" "$CONTROL_PANEL_TEMPLATES"
 log_msg() {
   echo "[$(date +'%F %T')] $*" | tee -a "$LOG_FILE"
 }
 mkdir -p "$LOG_DIR"
 exec > >(tee -a "$LOG_FILE") 2>&1
-echo "=== NFTBAN nftables Configuration Initialization (v2.2.0) ==="
+echo "=== NFTBAN nftables Configuration Initialization (v2.3.0) ==="
 echo "Log file: $LOG_FILE"
 
 # Config files
@@ -75,12 +72,431 @@ CLOUDFLARE_IPV6_URL="https://www.cloudflare.com/ips-v6"
 FAIL2BAN_TEMP_IPS_="$BASE_DIR/nftban-configuration-f2b-ips_temp-blacklists_conf.local"
 LOCK_FILE="/var/run/nftban_init.lock"
 
+# System config files (managed by script)
+IPV4_IN_SYSTEM="$BASE_DIR/nftban-configuration-ipv4-ports-input-allow.conf"
+IPV4_OUT_SYSTEM="$BASE_DIR/nftban-configuration-ipv4-ports-output-allow.conf"
+IPV6_IN_SYSTEM="$BASE_DIR/nftban-configuration-ipv6-ports-input-allow.conf"
+IPV6_OUT_SYSTEM="$BASE_DIR/nftban-configuration-ipv6-ports-output-allow.conf"
+SYSTEM_WHITELIST_BASE="$BASE_DIR/nftban-configuration-system_whitelist_ips.conf"
+
 # --- Lock mechanism to prevent concurrent runs ---
 exec 200>"$LOCK_FILE"
 if ! flock -n 200; then
   echo "ERROR: Another instance is already running. Exiting." >&2
   exit 1
 fi
+
+# =========================
+# Control Panel Detection and Configuration
+# =========================
+
+# Detect installed control panel
+detect_control_panel() {
+  local panel="generic"
+  
+  # Check for DirectAdmin
+  if [[ -d "/usr/local/directadmin" ]] || [[ -f "/usr/local/directadmin/directadmin" ]]; then
+    panel="directadmin"
+    log_msg "[INFO] Detected control panel: DirectAdmin"
+  # Check for cPanel
+  elif [[ -d "/usr/local/cpanel" ]] || [[ -f "/usr/local/cpanel/cpanel" ]]; then
+    panel="cpanel"
+    log_msg "[INFO] Detected control panel: cPanel"
+  # Check for Plesk
+  elif [[ -d "/usr/local/psa" ]] || command -v plesk &>/dev/null; then
+    panel="plesk"
+    log_msg "[INFO] Detected control panel: Plesk"
+  else
+    log_msg "[INFO] No specific control panel detected, using generic configuration"
+  fi
+  
+  echo "$panel"
+}
+
+# Parse control panel configuration file
+parse_control_panel_config() {
+  local panel="$1"
+  local config_file="$CONTROL_PANEL_TEMPLATES/${panel}.conf"
+  
+  if [[ ! -f "$config_file" ]]; then
+    log_msg "[WARN] Control panel config not found: $config_file"
+    config_file="$CONTROL_PANEL_TEMPLATES/generic.conf"
+    if [[ ! -f "$config_file" ]]; then
+      log_msg "[WARN] Generic config not found either, skipping control panel port merge"
+      return 1
+    fi
+  fi
+  
+  log_msg "[INFO] Loading control panel config: $config_file"
+  
+  # Read and parse the config file
+  while IFS= read -r line || [[ -n "$line" ]]; do
+    # Skip comments and empty lines
+    [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+    
+    # Parse KEY = "VALUE" format (handles with or without quotes)
+    if [[ "$line" =~ ^([A-Z0-9_]+)[[:space:]]*=[[:space:]]*\"?([^\"]+)\"?[[:space:]]*$ ]]; then
+      local key="${BASH_REMATCH[1]}"
+      local value="${BASH_REMATCH[2]}"
+      # Remove trailing quote if present
+      value="${value%\"}"
+      
+      # Export as environment variable for later use
+      eval "PANEL_${key}=\"${value}\""
+      log_msg "[DEBUG] Panel config: $key = $value"
+    fi
+  done < "$config_file"
+  
+  return 0
+}
+
+# Convert comma-separated ports to nftban format
+convert_ports_to_nftban_format() {
+  local ports="$1"
+  local protocol="$2"  # T, U, or B
+  local output_file="$3"
+  
+  [[ -z "$ports" ]] && return 0
+  
+  # Split by comma and process each port
+  IFS=',' read -ra PORT_ARRAY <<< "$ports"
+  for port in "${PORT_ARRAY[@]}"; do
+    # Trim whitespace
+    port="${port//[[:space:]]/}"
+    [[ -z "$port" ]] && continue
+    
+    # Validate port
+    if _is_port_token "$port"; then
+      echo "${port}${protocol}" >> "$output_file"
+    else
+      log_msg "[WARN] Invalid port from control panel config: $port"
+    fi
+  done
+}
+
+# Merge control panel ports into system configuration
+merge_control_panel_ports() {
+  local panel="$1"
+  
+  log_msg "--- Merging control panel ($panel) port configuration ---"
+  
+  # Parse control panel config
+  if ! parse_control_panel_config "$panel"; then
+    log_msg "[WARN] Failed to parse control panel config, skipping merge"
+    return 0
+  fi
+  
+  # Create system .conf files (these are managed by the script)
+  for sysfile in "$IPV4_IN_SYSTEM" "$IPV4_OUT_SYSTEM" "$IPV6_IN_SYSTEM" "$IPV6_OUT_SYSTEM"; do
+    cat > "$sysfile" <<EOF
+# Auto-generated system port configuration for $panel
+# Generated on: $(date)
+# DO NOT EDIT - This file is managed by nftban_init_nftables_conf.sh
+# Use .conf.local files for custom port rules
+#
+# Format: PORTRANGE?PROTOCOL
+# T = TCP only, U = UDP only, B = Both TCP and UDP
+# Examples: 22T, 53U, 80-443B
+EOF
+  done
+  
+  # Convert and write TCP ports
+  if [[ -n "${PANEL_TCP_IN:-}" ]]; then
+    log_msg "[INFO] Adding TCP_IN ports: ${PANEL_TCP_IN}"
+    convert_ports_to_nftban_format "$PANEL_TCP_IN" "T" "$IPV4_IN_SYSTEM"
+  fi
+  
+  if [[ -n "${PANEL_TCP_OUT:-}" ]]; then
+    log_msg "[INFO] Adding TCP_OUT ports: ${PANEL_TCP_OUT}"
+    convert_ports_to_nftban_format "$PANEL_TCP_OUT" "T" "$IPV4_OUT_SYSTEM"
+  fi
+  
+  if [[ -n "${PANEL_TCP6_IN:-}" ]]; then
+    log_msg "[INFO] Adding TCP6_IN ports: ${PANEL_TCP6_IN}"
+    convert_ports_to_nftban_format "$PANEL_TCP6_IN" "T" "$IPV6_IN_SYSTEM"
+  fi
+  
+  if [[ -n "${PANEL_TCP6_OUT:-}" ]]; then
+    log_msg "[INFO] Adding TCP6_OUT ports: ${PANEL_TCP6_OUT}"
+    convert_ports_to_nftban_format "$PANEL_TCP6_OUT" "T" "$IPV6_OUT_SYSTEM"
+  fi
+  
+  # Convert and write UDP ports
+  if [[ -n "${PANEL_UDP_IN:-}" ]]; then
+    log_msg "[INFO] Adding UDP_IN ports: ${PANEL_UDP_IN}"
+    convert_ports_to_nftban_format "$PANEL_UDP_IN" "U" "$IPV4_IN_SYSTEM"
+  fi
+  
+  if [[ -n "${PANEL_UDP_OUT:-}" ]]; then
+    log_msg "[INFO] Adding UDP_OUT ports: ${PANEL_UDP_OUT}"
+    convert_ports_to_nftban_format "$PANEL_UDP_OUT" "U" "$IPV4_OUT_SYSTEM"
+  fi
+  
+  if [[ -n "${PANEL_UDP6_IN:-}" ]]; then
+    log_msg "[INFO] Adding UDP6_IN ports: ${PANEL_UDP6_IN}"
+    convert_ports_to_nftban_format "$PANEL_UDP6_IN" "U" "$IPV6_IN_SYSTEM"
+  fi
+  
+  if [[ -n "${PANEL_UDP6_OUT:-}" ]]; then
+    log_msg "[INFO] Adding UDP6_OUT ports: ${PANEL_UDP6_OUT}"
+    convert_ports_to_nftban_format "$PANEL_UDP6_OUT" "U" "$IPV6_OUT_SYSTEM"
+  fi
+  
+  # Handle IP addresses for whitelist
+  if [[ -n "${PANEL_IP_ADDRESS:-}" ]]; then
+    log_msg "[INFO] Adding control panel IPs to whitelist: ${PANEL_IP_ADDRESS}"
+    
+    # Create header if file doesn't exist
+    if [[ ! -f "$SYSTEM_WHITELIST_BASE" ]]; then
+      cat > "$SYSTEM_WHITELIST_BASE" <<EOF
+# Auto-generated system whitelist
+# Generated on: $(date)
+# DO NOT EDIT - This file is managed by nftban_init_nftables_conf.sh
+EOF
+    fi
+    
+    # Add control panel IPs
+    IFS=',' read -ra IP_ARRAY <<< "$PANEL_IP_ADDRESS"
+    for ip in "${IP_ARRAY[@]}"; do
+      ip="${ip//[[:space:]]/}"
+      [[ -z "$ip" ]] && continue
+      
+      # Validate IP before adding
+      local is_valid=0
+      if [[ "$ip" == *:* ]]; then
+        { _is_ipv6 "$ip" || _is_ipv6_cidr "$ip"; } && is_valid=1
+      else
+        { _is_ipv4 "$ip" || _is_ipv4_cidr "$ip"; } && is_valid=1
+      fi
+      
+      if (( is_valid )); then
+        # Check if IP is already in the file
+        if ! grep -qF "$ip" "$SYSTEM_WHITELIST_BASE" 2>/dev/null; then
+          echo "$ip # Control panel ($panel)" >> "$SYSTEM_WHITELIST_BASE"
+        fi
+      else
+        log_msg "[WARN] Invalid IP from control panel config: $ip"
+      fi
+    done
+  fi
+  
+  log_msg "[OK] Control panel port configuration merged"
+}
+
+# Read ports from both system and user files (combined)
+read_ports_combined() {
+  local system_file="$1"
+  local user_file="$2"
+  local temp_combined
+  temp_combined=$(mktemp)
+  
+  # Combine system and user files
+  if [[ -f "$system_file" ]]; then
+    grep -v '^#' "$system_file" 2>/dev/null | grep -v '^[[:space:]]*$' >> "$temp_combined" || true
+  fi
+  
+  if [[ -f "$user_file" ]]; then
+    grep -v '^#' "$user_file" 2>/dev/null | grep -v '^[[:space:]]*$' >> "$temp_combined" || true
+  fi
+  
+  # Remove duplicates, sort, and output
+  sort -u "$temp_combined"
+  rm -f "$temp_combined"
+}
+
+# Generate port rules from combined system and user files
+generate_port_rules_combined() {
+  local system_file="$1"
+  local user_file="$2"
+  local _direction="$3"  # not used functionally here, kept for future
+  
+  # Create temporary combined file
+  local temp_combined
+  temp_combined=$(mktemp)
+  read_ports_combined "$system_file" "$user_file" > "$temp_combined"
+  
+  # Process combined file
+  while read -r line || [[ -n "$line" ]]; do
+    line=$(echo "$line" | sed 's/^ *//;s/ *$//')
+    [[ -z "$line" || "$line" =~ ^# ]] && continue
+    
+    if [[ "$line" =~ ^([0-9]+(-[0-9]+)?)(([TUB]))$ ]]; then
+      local port_range="${BASH_REMATCH[1]}"
+      local proto="${BASH_REMATCH[3]}"
+      
+      if [[ "$port_range" == *"-"* ]]; then
+        local start end
+        start=$(echo "$port_range" | cut -d'-' -f1)
+        end=$(echo "$port_range" | cut -d'-' -f2)
+        if ! _is_port_token "$port_range"; then
+          log_msg "[WARN] Invalid port range '$port_range'"
+          continue
+        fi
+        for ((port=start; port<=end; port++)); do
+          case "$proto" in
+            T) echo "    tcp dport $port accept" ;;
+            U) echo "    udp dport $port accept" ;;
+            B) echo "    tcp dport $port accept"; echo "    udp dport $port accept" ;;
+          esac
+        done
+      else
+        local port="$port_range"
+        if ! _is_port_token "$port"; then
+          log_msg "[WARN] Invalid port '$port'"
+          continue
+        fi
+        case "$proto" in
+          T) echo "    tcp dport $port accept" ;;
+          U) echo "    udp dport $port accept" ;;
+          B) echo "    tcp dport $port accept"; echo "    udp dport $port accept" ;;
+        esac
+      fi
+    else
+      log_msg "[WARN] Invalid line format '$line'"
+    fi
+  done < "$temp_combined"
+  
+  rm -f "$temp_combined"
+}
+
+# Create example control panel configuration templates
+create_example_panel_configs() {
+  log_msg "[INFO] Creating example control panel configuration templates..."
+  
+  # DirectAdmin template
+  cat > "$CONTROL_PANEL_TEMPLATES/directadmin.conf" <<'EOF'
+# DirectAdmin Control Panel Port Configuration
+# Format: VARIABLE = "comma,separated,ports"
+
+# TCP Input Ports (IPv4)
+TCP_IN = "20,21,22,25,53,80,110,143,443,465,587,993,995,2222,35000-35999"
+
+# TCP Output Ports (IPv4)
+TCP_OUT = "20,21,22,25,53,80,110,113,443,587,993,995,2222"
+
+# TCP Input Ports (IPv6)
+TCP6_IN = "20,21,22,25,53,80,110,143,443,465,587,993,995,2222,35000-35999"
+
+# TCP Output Ports (IPv6)
+TCP6_OUT = "20,21,22,25,53,80,110,113,443,587,993,995,2222"
+
+# UDP Input Ports (IPv4)
+UDP_IN = "53"
+
+# UDP Output Ports (IPv4)
+UDP_OUT = "53"
+
+# UDP Input Ports (IPv6)
+UDP6_IN = "53"
+
+# UDP Output Ports (IPv6)
+UDP6_OUT = "53"
+
+# Control Panel IP Addresses (comma-separated, optional)
+# IP_ADDRESS = "192.168.1.100,2001:db8::1"
+EOF
+
+  # cPanel template
+  cat > "$CONTROL_PANEL_TEMPLATES/cpanel.conf" <<'EOF'
+# cPanel/WHM Control Panel Port Configuration
+# Format: VARIABLE = "comma,separated,ports"
+
+# TCP Input Ports (IPv4)
+TCP_IN = "20,21,22,25,26,53,80,110,143,443,465,587,993,995,2077,2078,2082,2083,2086,2087,2089,2095,2096,3306"
+
+# TCP Output Ports (IPv4)
+TCP_OUT = "20,21,22,25,37,43,53,80,110,113,443,587,873,993,995,2089"
+
+# TCP Input Ports (IPv6)
+TCP6_IN = "20,21,22,25,26,53,80,110,143,443,465,587,993,995,2077,2078,2082,2083,2086,2087,2089,2095,2096,3306"
+
+# TCP Output Ports (IPv6)
+TCP6_OUT = "20,21,22,25,37,43,53,80,110,113,443,587,873,993,995,2089"
+
+# UDP Input Ports (IPv4)
+UDP_IN = "53,123"
+
+# UDP Output Ports (IPv4)
+UDP_OUT = "53,123"
+
+# UDP Input Ports (IPv6)
+UDP6_IN = "53,123"
+
+# UDP Output Ports (IPv6)
+UDP6_OUT = "53,123"
+
+# Control Panel IP Addresses (comma-separated, optional)
+# IP_ADDRESS = ""
+EOF
+
+  # Plesk template
+  cat > "$CONTROL_PANEL_TEMPLATES/plesk.conf" <<'EOF'
+# Plesk Control Panel Port Configuration
+# Format: VARIABLE = "comma,separated,ports"
+
+# TCP Input Ports (IPv4)
+TCP_IN = "20,21,22,25,53,80,110,143,443,465,587,993,995,3306,5432,8443,8880"
+
+# TCP Output Ports (IPv4)
+TCP_OUT = "20,21,22,25,53,80,110,113,443,587,993,995"
+
+# TCP Input Ports (IPv6)
+TCP6_IN = "20,21,22,25,53,80,110,143,443,465,587,993,995,3306,5432,8443,8880"
+
+# TCP Output Ports (IPv6)
+TCP6_OUT = "20,21,22,25,53,80,110,113,443,587,993,995"
+
+# UDP Input Ports (IPv4)
+UDP_IN = "53,123"
+
+# UDP Output Ports (IPv4)
+UDP_OUT = "53,123"
+
+# UDP Input Ports (IPv6)
+UDP6_IN = "53,123"
+
+# UDP Output Ports (IPv6)
+UDP6_OUT = "53,123"
+
+# Control Panel IP Addresses (comma-separated, optional)
+# IP_ADDRESS = ""
+EOF
+
+  # Generic template
+  cat > "$CONTROL_PANEL_TEMPLATES/generic.conf" <<'EOF'
+# Generic Server Port Configuration
+# Format: VARIABLE = "comma,separated,ports"
+
+# TCP Input Ports (IPv4)
+TCP_IN = "22,25,53,80,443"
+
+# TCP Output Ports (IPv4)
+TCP_OUT = "22,25,53,80,443"
+
+# TCP Input Ports (IPv6)
+TCP6_IN = "22,25,53,80,443"
+
+# TCP Output Ports (IPv6)
+TCP6_OUT = "22,25,53,80,443"
+
+# UDP Input Ports (IPv4)
+UDP_IN = "53"
+
+# UDP Output Ports (IPv4)
+UDP_OUT = "53"
+
+# UDP Input Ports (IPv6)
+UDP6_IN = "53"
+
+# UDP Output Ports (IPv6)
+UDP6_OUT = "53"
+
+# Control Panel IP Addresses (comma-separated, optional)
+# IP_ADDRESS = ""
+EOF
+
+  log_msg "[OK] Example control panel configurations created in $CONTROL_PANEL_TEMPLATES"
+}
 
 # =========================
 # Stronger Validation Layer
@@ -268,7 +684,7 @@ generate_fail2ban_action() {
 # Uses the single global table with temp_ban sets
 #
 # Author: ITCMS Team
-# Version: 2.2.0
+# Version: 2.3.0
 
 [Definition]
 
@@ -644,6 +1060,7 @@ Options:
   --test                      Generate config and run 'nft -c' ONLY (simulation), no apply/copy
   --run-tests                 Run built-in unit tests and exit
   --generate-f2b-action       Generate Fail2ban action configuration
+  --create-panel-templates    Create example control panel configuration templates
   -h, --help                  Show this help
 USAGE
 }
@@ -672,6 +1089,7 @@ DRY_RUN=false
 TEST_MODE=false
 RUN_TESTS=false
 GENERATE_F2B_ACTION=false
+CREATE_PANEL_TEMPLATES=false
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --install-final) INSTALL_FINAL=true ;;
@@ -680,6 +1098,7 @@ while [[ $# -gt 0 ]]; do
     --test) TEST_MODE=true ;;
     --run-tests) RUN_TESTS=true ;;
     --generate-f2b-action) GENERATE_F2B_ACTION=true ;;
+    --create-panel-templates) CREATE_PANEL_TEMPLATES=true ;;
     --cloudflare)
       shift
       case "${1:-}" in
@@ -695,6 +1114,23 @@ while [[ $# -gt 0 ]]; do
   esac
   shift
 done
+
+# --- Create panel templates if requested ---
+if $CREATE_PANEL_TEMPLATES; then
+  create_example_panel_configs
+  echo ""
+  echo "=== Control Panel Templates Created ==="
+  echo "Templates directory: $CONTROL_PANEL_TEMPLATES"
+  echo ""
+  echo "Available templates:"
+  echo "  - directadmin.conf"
+  echo "  - cpanel.conf"
+  echo "  - plesk.conf"
+  echo "  - generic.conf"
+  echo ""
+  echo "Edit these files to customize port configurations for your control panel."
+  exit 0
+fi
 
 # --- Generate F2B action if requested ---
 if $GENERATE_F2B_ACTION; then
@@ -779,8 +1215,21 @@ if [[ "$USE_CLOUDFLARE" == "auto" ]]; then
 fi
 
 # --- Main execution ---
-mkdir -p "$BASE_DIR" "$BACKUP_DIR" "$LOG_DIR" "$BASE_DIR_INIT"
+mkdir -p "$BASE_DIR" "$BACKUP_DIR" "$LOG_DIR" "$BASE_DIR_INIT" "$CONTROL_PANEL_TEMPLATES"
 cleanup_old_backups
+
+# --- Control Panel Detection and Configuration ---
+DETECTED_PANEL=$(detect_control_panel)
+log_msg "Detected control panel: $DETECTED_PANEL"
+
+# Create example templates if they don't exist
+if [[ ! -f "$CONTROL_PANEL_TEMPLATES/${DETECTED_PANEL}.conf" && ! -f "$CONTROL_PANEL_TEMPLATES/generic.conf" ]]; then
+  log_msg "[INFO] No control panel templates found, creating defaults..."
+  create_example_panel_configs
+fi
+
+# Merge control panel ports into system configuration
+merge_control_panel_ports "$DETECTED_PANEL"
 
 # Initialize config files
 echo "--- Initializing configuration files ---"
@@ -795,11 +1244,14 @@ for file in "${CONFIG_FILES[@]}"; do
   initialize_config_from_template "$file"
 done
 
-# Seed port configuration files with format documentation
+# Seed port configuration files with format documentation (only if empty)
 for port_file in "$IPV4_IN_PORTS_FILE" "$IPV4_OUT_PORTS_FILE" "$IPV6_IN_PORTS_FILE" "$IPV6_OUT_PORTS_FILE"; do
   if [[ ! -s "$port_file" ]]; then
     cat > "$port_file" <<'EOF'
-# Port configuration for nftban
+# Port configuration for nftban (USER CUSTOMIZATIONS)
+# System ports from control panel are in .conf files (auto-managed)
+# Add your custom ports here - they will be merged with system ports
+#
 # Format: PORTRANGE?PROTOCOL
 #
 # Protocol codes:
@@ -849,7 +1301,7 @@ SERVER_PUBLIC_IPV4=$(get_public_ip "ipv4")
 SERVER_PUBLIC_IPV6=$(get_public_ip "ipv6")
 CURRENT_USER_IP=$(get_current_user_ip)
 
-# Create system whitelist
+# Create/update system whitelist
 echo "# Auto-generated system whitelist - DO NOT EDIT MANUALLY" > "$SYSTEM_WHITELIST_FILE"
 echo "# Generated on: $(date)" >> "$SYSTEM_WHITELIST_FILE"
 echo "# Server interface IPv4 addresses" >> "$SYSTEM_WHITELIST_FILE"
@@ -867,6 +1319,11 @@ fi
 if [[ -n "$CURRENT_USER_IP" ]]; then
   echo "# Current user IP address" >> "$SYSTEM_WHITELIST_FILE"
   echo "$CURRENT_USER_IP" >> "$SYSTEM_WHITELIST_FILE"
+fi
+
+# Merge system whitelist base if exists
+if [[ -f "$SYSTEM_WHITELIST_BASE" ]]; then
+  cat "$SYSTEM_WHITELIST_BASE" >> "$SYSTEM_WHITELIST_FILE"
 fi
 
 echo "Server IPv4 addresses: $SERVER_IPV4"
@@ -1061,13 +1518,13 @@ cat <<'EOF'
 EOF
 echo "    tcp dport $SSH_PORT accept"
 cat <<'EOF'
-    # PRIORITY 5: User-defined port rules (IPv4)
+    # PRIORITY 5: User-defined port rules (IPv4 - combined system + user)
 EOF
-generate_port_rules "$IPV4_IN_PORTS_FILE" "input" >> "$OUTPUT_FILE"
+generate_port_rules_combined "$IPV4_IN_SYSTEM" "$IPV4_IN_PORTS_FILE" "input" >> "$OUTPUT_FILE"
 cat <<'EOF'
-    # PRIORITY 6: User-defined port rules (IPv6)
+    # PRIORITY 6: User-defined port rules (IPv6 - combined system + user)
 EOF
-generate_port_rules "$IPV6_IN_PORTS_FILE" "input" >> "$OUTPUT_FILE"
+generate_port_rules_combined "$IPV6_IN_SYSTEM" "$IPV6_IN_PORTS_FILE" "input" >> "$OUTPUT_FILE"
 cat <<'EOF'
     # PRIORITY 7: Connection tracking rules (IPv4)
 EOF
@@ -1084,13 +1541,13 @@ cat <<'EOF'
     type filter hook output priority 0;
     policy accept;
 
-    # User-defined output port rules (IPv4)
+    # User-defined output port rules (IPv4 - combined system + user)
 EOF
-generate_port_rules "$IPV4_OUT_PORTS_FILE" "output" >> "$OUTPUT_FILE"
+generate_port_rules_combined "$IPV4_OUT_SYSTEM" "$IPV4_OUT_PORTS_FILE" "output" >> "$OUTPUT_FILE"
 cat <<'EOF'
-    # User-defined output port rules (IPv6)
+    # User-defined output port rules (IPv6 - combined system + user)
 EOF
-generate_port_rules "$IPV6_OUT_PORTS_FILE" "output" >> "$OUTPUT_FILE"
+generate_port_rules_combined "$IPV6_OUT_SYSTEM" "$IPV6_OUT_PORTS_FILE" "output" >> "$OUTPUT_FILE"
 cat <<'EOF'
   }
 }
@@ -1100,6 +1557,7 @@ EOF
 # --- Summary ---
 echo ""
 echo "=== Configuration Summary ==="
+echo "Control Panel: $DETECTED_PANEL"
 echo "Architecture: Single global table (inet nftban_global)"
 echo "SSH Port: $SSH_PORT"
 echo "Whitelisted IPs: ${#ipv4_whitelist[@]} IPv4, ${#ipv6_whitelist[@]} IPv6"
@@ -1110,7 +1568,14 @@ echo "System Blacklist: ${#ipv4_system_blacklist[@]} IPv4, ${#ipv6_system_blackl
 [[ -n "$CURRENT_USER_IP" ]] && echo "Current user IP: $CURRENT_USER_IP"
 echo ""
 
-echo "=== Fail2Ban Integration (CORRECTED) ==="
+echo "=== Control Panel Port Configuration ==="
+echo "System ports (.conf files) are auto-managed from:"
+echo "  $CONTROL_PANEL_TEMPLATES/${DETECTED_PANEL}.conf"
+echo "User custom ports (.conf.local files) merged with system ports"
+echo "Edit templates with: nano $CONTROL_PANEL_TEMPLATES/${DETECTED_PANEL}.conf"
+echo ""
+
+echo "=== Fail2Ban Integration ==="
 echo "Table: inet nftban_global (single table for everything)"
 echo "Fail2ban sets:"
 echo "  - temp_ban_v4 (IPv4 temporary bans with timeout)"
@@ -1126,7 +1591,7 @@ FINAL_SNAPSHOT="$LOG_DIR/nftables_final_$(date +%Y%m%d-%H%M%S).conf"
 cp "$OUTPUT_FILE" "$FINAL_SNAPSHOT"
 echo "Configuration snapshot: $FINAL_SNAPSHOT"
 
-# --- Install / Apply helpers (unchanged except for test mode path) ---
+# --- Install / Apply helpers ---
 install_final_config() {
   echo "--- Installing final nftables configuration ---"
   FINAL_CONFIG="/etc/nftables.conf"
@@ -1185,7 +1650,7 @@ else
   exit 1
 fi
 
-# --- NEW: TEST MODE ---
+# --- TEST MODE ---
 if $TEST_MODE; then
   echo ""
   echo "=== TEST MODE ==="
