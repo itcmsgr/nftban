@@ -4,7 +4,7 @@ set -euo pipefail
 ################################################################################
 # nftban Unified Installation & Maintenance Script
 #
-# Version: 3.0.3
+# Version: 0.5.0-final 
 # Description: Comprehensive nftban installer with enhanced functionality
 # Features:
 # - GitHub repository sync with fallback ZIP download
@@ -263,7 +263,6 @@ install_epel_if_needed() {
   fi
 }
 
-# --- Package installation -----------------------------------------------------
 # --- Package installation -----------------------------------------------------
 install_packages() {
   detect_pm
