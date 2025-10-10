@@ -369,6 +369,313 @@ get_fail2ban_status() {
 }
 
 # ------------------------------ Set Operations ----------------------------- #
+
+# -----------------------------------------------------------------------------
+# Reverse sync: nft → files (make files match nft)
+#   - Backs up files, then updates content based on live sets
+#   - Honors DRY_RUN to only print planned changes
+# -----------------------------------------------------------------------------
+_sync_set_to_files_from_nft() {
+  # $1 = label ; $2=set_v4 ; $3=set_v6 ; $4.. = files to update (two: v4 file, v6 file)
+  local label="$1"; local set_v4="$2"; local set_v6="$3"; shift 3
+  local out_v4="$1"; local out_v6="$2"
+
+  _diff_family_files_vs_set "$label" "$set_v4" "$set_v6" "$out_v4" "$out_v6"
+  _print_diff_summary "$label"
+
+  if [ "$DRY_RUN" == "true" ]; then
+    echo "  [dry-run] Skipping file writes for $label"
+    return 0
+  fi
+
+  # Build canonical from nft
+  local t4; t4=$(mktemp); TMP_FILES+=("$t4")
+  local t6; t6=$(mktemp); TMP_FILES+=("$t6")
+  get_set_elements "$TEMP_BAN_TABLE" "$set_v4" > "$t4" 2>/dev/null || true
+  get_set_elements "$TEMP_BAN_TABLE" "$set_v6" > "$t6" 2>/dev/null || true
+  sort -u "$t4" -o "$t4"; sort -u "$t6" -o "$t6"
+
+  # Backup and write
+  mkdir -p "$BASE_DIR" || true
+  [ -n "$out_v4" ] && [ "$out_v4" != "-" ] && { cp -a "$out_v4" "$out_v4.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true; }
+  [ -n "$out_v6" ] && [ "$out_v6" != "-" ] && { cp -a "$out_v6" "$out_v6.bak.$(date +%Y%m%d%H%M%S)" 2>/dev/null || true; }
+
+  if [ -n "$out_v4" ] && [ "$out_v4" != "-" ]; then
+    {
+      echo "# $out_v4 - synced from nft ($label v4) on $(date -Iseconds)"
+      cat "$t4"
+    } > "$out_v4"
+  fi
+  if [ -n "$out_v6" ] && [ "$out_v6" != "-" ]; then
+    {
+      echo "# $out_v6 - synced from nft ($label v6) on $(date -Iseconds)"
+      cat "$t6"
+    } > "$out_v6"
+  fi
+  echo "  Wrote $label to files."
+}
+
+sync_nft_to_files() {
+  ui title "Syncing nft sets → files"
+  ensure_temp_ban_table || return 1
+  ensure_whitelist_sets || true
+  ensure_blacklist_sets || true
+
+  # Whitelist: replicate set into both user/system files (keeps them aligned)
+  _sync_set_to_files_from_nft "Whitelist" "$WHITELIST_SET_V4" "$WHITELIST_SET_V6" \
+    "$USER_WHITELIST_FILE" "$SYSTEM_WHITELIST_FILE"
+
+  # User Blacklist
+  _sync_set_to_files_from_nft "User Blacklist" "$USER_BLACKLIST_SET_V4" "$USER_BLACKLIST_SET_V6" \
+    "$USER_BLACKLIST_FILE" "$IPV6_BLACKLIST_FILE"
+
+  # System Blacklist
+  _sync_set_to_files_from_nft "System Blacklist" "$SYSTEM_BLACKLIST_SET_V4" "$SYSTEM_BLACKLIST_SET_V6" \
+    "$SYSTEM_BLACKLIST_FILE" "$IPV6_SYSTEM_BLACKLIST_FILE"
+
+  ui success "Sync complete"
+}
+
+# Diff-only views
+diff_lists() {
+  ui title "Diff: files ↔ nft (what would change)"
+  ensure_temp_ban_table || return 1
+
+  _diff_family_files_vs_set "Whitelist" "$WHITELIST_SET_V4" "$WHITELIST_SET_V6" \
+    "$USER_WHITELIST_FILE" "$SYSTEM_WHITELIST_FILE"; _print_diff_summary "Whitelist"
+
+  _diff_family_files_vs_set "User Blacklist" "$USER_BLACKLIST_SET_V4" "$USER_BLACKLIST_SET_V6" \
+    "$USER_BLACKLIST_FILE" "$IPV6_BLACKLIST_FILE"; _print_diff_summary "User Blacklist"
+
+  _diff_family_files_vs_set "System Blacklist" "$SYSTEM_BLACKLIST_SET_V4" "$SYSTEM_BLACKLIST_SET_V6" \
+    "$SYSTEM_BLACKLIST_FILE" "$IPV6_SYSTEM_BLACKLIST_FILE"; _print_diff_summary "System Blacklist"
+}
+
+diff_files_add() {
+  ui title "Diff: entries present in nft but missing in files (ADD list)"
+  ensure_temp_ban_table || return 1
+
+  _diff_family_files_vs_set "Whitelist" "$WHITELIST_SET_V4" "$WHITELIST_SET_V6" \
+    "$USER_WHITELIST_FILE" "$SYSTEM_WHITELIST_FILE"
+  echo "  Whitelist to ADD (v4):"; cat "$ADD_V4" | sed 's/^/    /' || true
+  echo "  Whitelist to ADD (v6):"; cat "$ADD_V6" | sed 's/^/    /' || true
+
+  _diff_family_files_vs_set "User Blacklist" "$USER_BLACKLIST_SET_V4" "$USER_BLACKLIST_SET_V6" \
+    "$USER_BLACKLIST_FILE" "$IPV6_BLACKLIST_FILE"
+  echo "  User Blacklist to ADD (v4):"; cat "$ADD_V4" | sed 's/^/    /' || true
+  echo "  User Blacklist to ADD (v6):"; cat "$ADD_V6" | sed 's/^/    /' || true
+
+  _diff_family_files_vs_set "System Blacklist" "$SYSTEM_BLACKLIST_SET_V4" "$SYSTEM_BLACKLIST_SET_V6" \
+    "$SYSTEM_BLACKLIST_FILE" "$IPV6_SYSTEM_BLACKLIST_FILE"
+  echo "  System Blacklist to ADD (v4):"; cat "$ADD_V4" | sed 's/^/    /' || true
+  echo "  System Blacklist to ADD (v6):"; cat "$ADD_V6" | sed 's/^/    /' || true
+}
+
+
+
+# -----------------------------------------------------------------------------
+# Diff helpers: compare files ↔ nft sets
+#   - _diff_family_files_vs_set prints four files: add_v4, del_v4, add_v6, del_v6
+# -----------------------------------------------------------------------------
+_diff_family_files_vs_set() {
+  # $1 = label ; $2 = set_v4 ; $3 = set_v6 ; $4.. = files (may not exist)
+  local label="$1"; local set_v4="$2"; local set_v6="$3"; shift 3
+
+  local file_f4; file_f4=$(mktemp); TMP_FILES+=("$file_f4")
+  local file_f6; file_f6=$(mktemp); TMP_FILES+=("$file_f6")
+
+  # Build canonical file lists
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    grep -vE '^\s*#' "$f" | awk '{print $1}' | grep -v ":" | validate_list_with_tools >> "$file_f4" 2>/dev/null || true
+    grep -vE '^\s*#' "$f" | awk '{print $1}' | grep ":"  | validate_list_with_tools >> "$file_f6" 2>/dev/null || true
+  done
+  sort -u "$file_f4" -o "$file_f4"; sort -u "$file_f6" -o "$file_f6"
+
+  # Active nft lists
+  local act_f4; act_f4=$(mktemp); TMP_FILES+=("$act_f4")
+  local act_f6; act_f6=$(mktemp); TMP_FILES+=("$act_f6")
+  get_set_elements "$TEMP_BAN_TABLE" "$set_v4" > "$act_f4" 2>/dev/null || true
+  get_set_elements "$TEMP_BAN_TABLE" "$set_v6" > "$act_f6" 2>/dev/null || true
+  sort -u "$act_f4" -o "$act_f4"; sort -u "$act_f6" -o "$act_f6"
+
+  # Compute deltas: what to ADD to files (nft minus files) and what to REMOVE from files (files minus nft)
+  ADD_V4=$(mktemp); TMP_FILES+=("$ADD_V4")
+  ADD_V6=$(mktemp); TMP_FILES+=("$ADD_V6")
+  DEL_V4=$(mktemp); TMP_FILES+=("$DEL_V4")
+  DEL_V6=$(mktemp); TMP_FILES+=("$DEL_V6")
+
+  comm -23 "$act_f4" "$file_f4" > "$ADD_V4"
+  comm -13 "$act_f4" "$file_f4" > "$DEL_V4"
+  comm -23 "$act_f6" "$file_f6" > "$ADD_V6"
+  comm -13 "$act_f6" "$file_f6" > "$DEL_V6"
+
+  # Export vars for the caller
+  export ADD_V4 ADD_V6 DEL_V4 DEL_V6
+}
+
+# Pretty-printer for diffs
+_print_diff_summary() {
+  local label="$1"
+  local a4=$(wc -l < "$ADD_V4"); local d4=$(wc -l < "$DEL_V4")
+  local a6=$(wc -l < "$ADD_V6"); local d6=$(wc -l < "$DEL_V6")
+  echo "  $label: +$a4 v4 / +$a6 v6 to ADD into files; -$d4 v4 / -$d6 v6 to REMOVE from files"
+}
+
+
+# -----------------------------------------------------------------------------
+# Export nft sets → files (canonical, sorted). Existing files are backed up.
+# -----------------------------------------------------------------------------
+_backup_file_if_exists() {
+  local f="$1"
+  [ -f "$f" ] || return 0
+  cp -a "$f" "$f.bak.$(date +%Y%m%d%H%M%S)" || true
+}
+
+_export_set_to_file() {
+  # $1=set_v4  $2=set_v6  $3=output_v4  $4=output_v6  $5=label
+  local set_v4="$1"; local set_v6="$2"; local out_v4="$3"; local out_v6="$4"; local label="$5"
+  local t4; t4=$(mktemp); TMP_FILES+=("$t4")
+  local t6; t6=$(mktemp); TMP_FILES+=("$t6")
+
+  get_set_elements "$TEMP_BAN_TABLE" "$set_v4" > "$t4" 2>/dev/null || true
+  get_set_elements "$TEMP_BAN_TABLE" "$set_v6" > "$t6" 2>/dev/null || true
+  sort -u "$t4" -o "$t4"; sort -u "$t6" -o "$t6"
+
+  _backup_file_if_exists "$out_v4"
+  _backup_file_if_exists "$out_v6"
+
+  {
+    echo "# $out_v4 - exported from nft ($label v4) on $(date -Iseconds)"
+    cat "$t4"
+  } > "$out_v4"
+
+  {
+    echo "# $out_v6 - exported from nft ($label v6) on $(date -Iseconds)"
+    cat "$t6"
+  } > "$out_v6"
+
+  echo "  Exported $label: $(wc -l < "$t4") v4, $(wc -l < "$t6") v6"
+}
+
+export_whitelist_from_nft() {
+  ensure_whitelist_sets || return 1
+  mkdir -p "$BASE_DIR" || true
+  _export_set_to_file "$WHITELIST_SET_V4" "$WHITELIST_SET_V6"     "$USER_WHITELIST_FILE" "$SYSTEM_WHITELIST_FILE" "Whitelist"
+}
+
+export_blacklist_from_nft() {
+  ensure_blacklist_sets || return 1
+  mkdir -p "$BASE_DIR" || true
+  _export_set_to_file "$USER_BLACKLIST_SET_V4" "$USER_BLACKLIST_SET_V6"     "$USER_BLACKLIST_FILE" "$IPV6_BLACKLIST_FILE" "User Blacklist"
+  _export_set_to_file "$SYSTEM_BLACKLIST_SET_V4" "$SYSTEM_BLACKLIST_SET_V6"     "$SYSTEM_BLACKLIST_FILE" "$IPV6_SYSTEM_BLACKLIST_FILE" "System Blacklist"
+}
+
+export_all_lists_from_nft() {
+  ui title "Exporting nft sets → files"
+  ensure_temp_ban_table || return 1
+  export_whitelist_from_nft
+  export_blacklist_from_nft
+  ui success "Export complete"
+}
+
+
+
+# -----------------------------------------------------------------------------
+# Bulk sync from files -> nft sets
+#   - Reads user + system files, canonicalizes via sipcalc/ipcalc helpers
+#   - Compares with active nft set contents
+#   - Adds missing elements; removes extraneous ones
+# -----------------------------------------------------------------------------
+_sync_family_from_files_to_set() {
+  # $1 = human name, $2 = set_v4, $3 = set_v6, $4.. = files to read (may not exist)
+  local label="$1"; local set_v4="$2"; local set_v6="$3"; shift 3
+  local tmp_f4; tmp_f4=$(mktemp); TMP_FILES+=("$tmp_f4")
+  local tmp_f6; tmp_f6=$(mktemp); TMP_FILES+=("$tmp_f6")
+
+  # Collect and canonicalize file IPs
+  for f in "$@"; do
+    [ -f "$f" ] || continue
+    # Split by family, then canonicalize with the tool-backed validator
+    grep -vE '^\s*#' "$f" | awk '{print $1}' | grep -v ":" | validate_list_with_tools >> "$tmp_f4" 2>/dev/null || true
+    grep -vE '^\s*#' "$f" | awk '{print $1}' | grep ":"  | validate_list_with_tools >> "$tmp_f6" 2>/dev/null || true
+  done
+  sort -u "$tmp_f4" -o "$tmp_f4"
+  sort -u "$tmp_f6" -o "$tmp_f6"
+
+  # Pull active from nft sets
+  local act_f4; act_f4=$(mktemp); TMP_FILES+=("$act_f4")
+  local act_f6; act_f6=$(mktemp); TMP_FILES+=("$act_f6")
+  get_set_elements "$TEMP_BAN_TABLE" "$set_v4" > "$act_f4" 2>/dev/null || true
+  get_set_elements "$TEMP_BAN_TABLE" "$set_v6" > "$act_f6" 2>/dev/null || true
+
+  # Compute diffs
+  local add_f4; add_f4=$(mktemp); TMP_FILES+=("$add_f4")
+  local add_f6; add_f6=$(mktemp); TMP_FILES+=("$add_f6")
+  local del_f4; del_f4=$(mktemp); TMP_FILES+=("$del_f4")
+  local del_f6; del_f6=$(mktemp); TMP_FILES+=("$del_f6")
+
+  comm -23 "$tmp_f4" "$act_f4" > "$add_f4"      # in files, not in nft
+  comm -13 "$tmp_f4" "$act_f4" > "$del_f4"      # in nft, not in files
+  comm -23 "$tmp_f6" "$act_f6" > "$add_f6"
+  comm -13 "$tmp_f6" "$act_f6" > "$del_f6"
+# Apply adds
+  if [ "$DRY_RUN" == "true" ]; then
+    echo "  [dry-run] Will add to $set_v4: $(wc -l < $add_f4) IPv4";
+    echo "  [dry-run] Will add to $set_v6: $(wc -l < $add_f6) IPv6";
+  else
+  local ip
+  while IFS= read -r ip; do
+    [ -n "$ip" ] || continue
+    nft add element inet "$TEMP_BAN_TABLE" "$set_v4" "{ $ip }" >/dev/null 2>&1 || true
+  done < "$add_f4"
+  while IFS= read -r ip; do
+    [ -n "$ip" ] || continue
+    nft add element inet "$TEMP_BAN_TABLE" "$set_v6" "{ $ip }" >/dev/null 2>&1 || true
+  done < "$add_f6"  fi
+# Apply deletes
+  if [ "$DRY_RUN" == "true" ]; then
+    echo "  [dry-run] Will delete from $set_v4: $(wc -l < $del_f4) IPv4";
+    echo "  [dry-run] Will delete from $set_v6: $(wc -l < $del_f6) IPv6";
+  else
+  while IFS= read -r ip; do
+    [ -n "$ip" ] || continue
+    nft delete element inet "$TEMP_BAN_TABLE" "$set_v4" "{ $ip }" >/dev/null 2>&1 || true
+  done < "$del_f4"
+  while IFS= read -r ip; do
+    [ -n "$ip" ] || continue
+    nft delete element inet "$TEMP_BAN_TABLE" "$set_v6" "{ $ip }" >/dev/null 2>&1 || true
+  done < "$del_f6"  fi
+
+  # Report
+  local add4=$(wc -l < "$add_f4"); local del4=$(wc -l < "$del_f4")
+  local add6=$(wc -l < "$add_f6"); local del6=$(wc -l < "$del_f6")
+  echo "  $label: +$add4 v4 / +$add6 v6 added; -$del4 v4 / -$del6 v6 removed"
+}
+
+sync_whitelist_to_nft() {
+  ensure_whitelist_sets || return 1
+  _sync_family_from_files_to_set "Whitelist" "$WHITELIST_SET_V4" "$WHITELIST_SET_V6" \
+    "$USER_WHITELIST_FILE" "$SYSTEM_WHITELIST_FILE"
+}
+
+sync_blacklist_to_nft() {
+  ensure_blacklist_sets || return 1
+  _sync_family_from_files_to_set "User Blacklist" "$USER_BLACKLIST_SET_V4" "$USER_BLACKLIST_SET_V6" \
+    "$USER_BLACKLIST_FILE" "$IPV6_BLACKLIST_FILE"
+  _sync_family_from_files_to_set "System Blacklist" "$SYSTEM_BLACKLIST_SET_V4" "$SYSTEM_BLACKLIST_SET_V6" \
+    "$SYSTEM_BLACKLIST_FILE" "$IPV6_SYSTEM_BLACKLIST_FILE"
+}
+
+sync_all_lists_to_nft() {
+  ui title "Syncing files → nft sets"
+  ensure_temp_ban_table || return 1
+  sync_whitelist_to_nft
+  sync_blacklist_to_nft
+  ui success "Sync complete"
+}
+
+
 get_set_elements() {
     local table="$1"
     local set_name="$2"
@@ -1186,7 +1493,14 @@ add_ip_to_blacklist() {
     sed -i "/^${ip}\([[:space:]]\|$\)/d" "$temp_file"
     
     echo "$ip # $comment" >> "$temp_file"
-    
+    # Also add to nft set (user blacklist)
+    if ensure_blacklist_sets; then
+      if [[ "$ip" == *:* ]]; then
+        nft add element inet "$TEMP_BAN_TABLE" "$USER_BLACKLIST_SET_V6" "{ $ip }" >/dev/null 2>&1 || true
+      else
+        nft add element inet "$TEMP_BAN_TABLE" "$USER_BLACKLIST_SET_V4" "{ $ip }" >/dev/null 2>&1 || true
+      fi
+    fi
     if mv "$temp_file" "$blacklist_file"; then
         log "INFO" "Added IP $ip to blacklist with comment: $comment"
         remove_ip_from_whitelist "$ip" 2>/dev/null
@@ -1221,7 +1535,20 @@ remove_ip_from_blacklist() {
     removed=true
   fi
   
-  [ "$removed" = true ] && return 0 || return 1
+  if [ "$removed" = true ]; then
+  if ensure_blacklist_sets; then
+    if [[ "$ip" == *:* ]]; then
+      nft delete element inet "$TEMP_BAN_TABLE" "$USER_BLACKLIST_SET_V6" "{ $ip }" >/dev/null 2>&1 || true
+      nft delete element inet "$TEMP_BAN_TABLE" "$SYSTEM_BLACKLIST_SET_V6" "{ $ip }" >/dev/null 2>&1 || true
+    else
+      nft delete element inet "$TEMP_BAN_TABLE" "$USER_BLACKLIST_SET_V4" "{ $ip }" >/dev/null 2>&1 || true
+      nft delete element inet "$TEMP_BAN_TABLE" "$SYSTEM_BLACKLIST_SET_V4" "{ $ip }" >/dev/null 2>&1 || true
+    fi
+  fi
+  return 0
+else
+  return 1
+fi
 }
 
 ##
@@ -1478,6 +1805,47 @@ ensure_temp_ban_table() {
   log "INFO" "Verified: Global table structure exists (inet $TEMP_BAN_TABLE)"
   return 0
 }
+
+
+ensure_blacklist_sets() {
+  if ! nft list table inet "$TEMP_BAN_TABLE" >/dev/null 2>&1; then
+    log "ERROR" "Table inet $TEMP_BAN_TABLE not found!"
+    ui error "Global table 'inet $TEMP_BAN_TABLE' not found"
+    ui tip "Run the nftables init script to create the structure"
+    return 1
+  fi
+  local missing=0
+  for s in "$USER_BLACKLIST_SET_V4" "$USER_BLACKLIST_SET_V6" "$SYSTEM_BLACKLIST_SET_V4" "$SYSTEM_BLACKLIST_SET_V6"; do
+    if ! nft list set inet "$TEMP_BAN_TABLE" "$s" >/dev/null 2>&1; then
+      log "ERROR" "Set $s not found in table $TEMP_BAN_TABLE"
+      missing=1
+    fi
+  done
+  if [ "$missing" -ne 0 ]; then
+    ui error "One or more blacklist sets are missing in '$TEMP_BAN_TABLE'"
+    ui tip "Run the nftables init script to create missing sets"
+    return 1
+  fi
+  return 0
+}
+
+
+ensure_whitelist_sets() {
+  if ! nft list table inet "$TEMP_BAN_TABLE" >/dev/null 2>&1; then
+    ui error "Global table 'inet $TEMP_BAN_TABLE' not found"; return 1
+  fi
+  local missing=0
+  for s in "$WHITELIST_SET_V4" "$WHITELIST_SET_V6"; do
+    if ! nft list set inet "$TEMP_BAN_TABLE" "$s" >/dev/null 2>&1; then
+      log "ERROR" "Set $s not found in table $TEMP_BAN_TABLE"
+      missing=1
+    fi
+  done
+  [ "$missing" -eq 0 ] || { ui error "Missing whitelist sets in '$TEMP_BAN_TABLE'"; return 1; }
+  return 0
+}
+
+
 
 check_nftables_config() {
   if ! nft -c -f "$CONF_FILE" 2>&1 | tee -a "$LOG_FILE"; then
@@ -2134,6 +2502,16 @@ NOTES
 
 For more information, visit: https://github.com/itcmsgr/nftban
 EOF
+  echo "  --sync-lists           Sync whitelist/blacklist files to nft sets"
+  echo "  --sync-lists           Sync whitelist/blacklist files to nft sets"
+  echo "  --sync-lists --dry-run  Show planned changes without applying"
+  echo "  --export-lists         Export current nft sets back into files (backs up existing files)"
+  echo "  --sync-lists                 Sync whitelist/blacklist files to nft sets"
+  echo "  --sync-lists --dry-run        Show planned changes without applying"
+  echo "  --export-lists               Export current nft sets back into files (backs up existing files)"
+  echo "  --sync-source nft            Make files match nft (reverse sync; honors --dry-run)"
+  echo "  --diff-lists                 Show adds/removes between files and nft"
+  echo "  --diff-files-add             Show only items missing in files (to be added from nft)"
 }
 
 # ------------------------------ Main Logic -------------------------------- #
@@ -2148,6 +2526,21 @@ main() {
   
   # Handle special flags first
   case "$arg1" in
+    --diff-files-add)
+      diff_files_add; return $? ;;
+
+    --diff-lists)
+      diff_lists; return $? ;;
+
+    --sync-source)
+      if [ "$arg2" = "nft" ]; then sync_nft_to_files; return $?; fi ;;
+
+    --export-lists)
+      export_all_lists_from_nft; return $? ;;
+
+    --sync-lists)
+      sync_all_lists_to_nft; return $? ;;
+
     --dry-run)
       DRY_RUN="true"
       shift
