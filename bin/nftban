@@ -26,6 +26,26 @@
 ###############################################################################
 
 # ------------------------------ Configuration ------------------------------ #
+
+# --- GEO (country) configuration ---------------------------------------------
+# GEO advanced options
+GEO_FORCE_REFRESH="${GEO_FORCE_REFRESH:-false}"       # true => ignore TTL and re-download
+# Custom provider URL templates (use {cc} placeholder, lowercase)
+GEO_CUSTOM_V4_URL="${GEO_CUSTOM_V4_URL:-}"
+GEO_CUSTOM_V6_URL="${GEO_CUSTOM_V6_URL:-}"
+# MaxMind integration: provide an extractor script that prints CIDRs for CC + family
+#   Expected usage: $GEO_MAXMIND_EXTRACTOR <CC> <v4|v6>  > /path/to/output
+GEO_MAXMIND_EXTRACTOR="${GEO_MAXMIND_EXTRACTOR:-}"
+
+GEO_PROVIDER="${GEO_PROVIDER:-ipdeny}"            # only 'ipdeny' supported out-of-the-box
+GEO_USE_AGGREGATED="${GEO_USE_AGGREGATED:-true}"  # use aggregated lists for fewer entries
+GEO_TTL_HOURS="${GEO_TTL_HOURS:-24}"              # cache lifetime
+GEO_CACHE_DIR="${GEO_CACHE_DIR:-$BASE_DIR/geo-cache}"
+
+# ISO code lists (one code per line, e.g. RU, UA). Comments with #
+COUNTRY_WHITELIST_FILE="${COUNTRY_WHITELIST_FILE:-$BASE_DIR/nftban-country-whitelist.conf}"
+COUNTRY_BLACKLIST_FILE="${COUNTRY_BLACKLIST_FILE:-$BASE_DIR/nftban-country-blacklist.conf}"
+
 VERSION="0.5.0-final"
 VERSION_FILE="/etc/nftban/.version"
 BASE_DIR="/etc/nftban/config"
@@ -369,6 +389,204 @@ get_fail2ban_status() {
 }
 
 # ------------------------------ Set Operations ----------------------------- #
+
+# -----------------------------------------------------------------------------
+# GEO country → CIDR fetch & sync (IPv4/IPv6), with caching
+# Sources:
+#   - IPv4: https://www.ipdeny.com/ipblocks/ (e.g., ru.zone)
+#   - IPv6: https://www.ipdeny.com/ipv6/ipaddresses/aggregated/ (e.g., ru-aggregated.zone)
+# -----------------------------------------------------------------------------
+
+_geo_now_epoch() { date +%s; }
+_geo_file_age_hours() {  # $1 = file
+  [ -f "$1" ] || { echo 1e9; return; }
+  local now=$(_geo_now_epoch); local mod=$(stat -c %Y "$1" 2>/dev/null || date -r "$1" +%s)
+  echo $(( (now - mod) / 3600 ))
+}
+
+_geo_norm_iso() { echo "$1" | tr '[:lower:]' '[:upper:]' | sed -E 's/[^A-Z]//g' | cut -c1-2; }
+
+_geo_ipdeny_url_v4() {  # $1=ISO
+  local cc="$(echo "$1" | tr A-Z a-z)"
+  echo "https://www.ipdeny.com/ipblocks/data/countries/${cc}.zone"
+}
+_geo_ipdeny_url_v6() {  # $1=ISO
+  local cc="$(echo "$1" | tr A-Z a-z)"
+  if [ "${GEO_USE_AGGREGATED}" = "true" ]; then
+    echo "https://www.ipdeny.com/ipv6/ipaddresses/aggregated/${cc}-aggregated.zone"
+  else
+    # Non-aggregated directory exists too, but aggregated is recommended
+    echo "https://www.ipdeny.com/ipv6/ipaddresses/aggregated/${cc}-aggregated.zone"
+  fi
+}
+
+
+_geo_fetch_country() {  # $1=ISO, $2=family (v4|v6), print path to cached file
+  local cc="$(_geo_norm_iso "$1")"
+  local fam="$2"
+  mkdir -p "$GEO_CACHE_DIR/$fam"
+  local target="$GEO_CACHE_DIR/$fam/${cc}.zone"
+  local age=$(_geo_file_age_hours "$target")
+
+  if [ "$GEO_FORCE_REFRESH" = "true" ] || [ "$age" -ge "$GEO_TTL_HOURS" ]; then
+    local url=""
+
+    case "$GEO_PROVIDER" in
+      ipdeny)
+        if [ "$fam" = "v4" ]; then url="$(_geo_ipdeny_url_v4 "$cc")"; else url="$(_geo_ipdeny_url_v6 "$cc")"; fi
+        ;;
+      custom)
+        # Expect templates in GEO_CUSTOM_V4_URL / GEO_CUSTOM_V6_URL with {cc} placeholder (lowercase)
+        local lc=$(echo "$cc" | tr A-Z a-z)
+        if [ "$fam" = "v4" ]; then url="${GEO_CUSTOM_V4_URL//\{cc\}/$lc}"; else url="${GEO_CUSTOM_V6_URL//\{cc\}/$lc}"; fi
+        ;;
+      maxmind)
+        # We cannot derive per-country CIDR lists directly from MaxMind without processing a database.
+        # Expect a user-supplied extractor script path in GEO_MAXMIND_EXTRACTOR that outputs CIDRs.
+        if [ -n "$GEO_MAXMIND_EXTRACTOR" ] && [ -x "$GEO_MAXMIND_EXTRACTOR" ]; then
+          ui info "Using MaxMind extractor for $cc ($fam)"
+          local tmp="$target.tmp"
+          if "$GEO_MAXMIND_EXTRACTOR" "$cc" "$fam" > "$tmp" 2>/dev/null; then
+            grep -E '^[0-9a-fA-F:.]+/[0-9]+' "$tmp" | sed 's/\r$//' | sort -u > "$target"
+            rm -f "$tmp"
+            echo "$target"
+            return 0
+          else
+            ui error "MaxMind extractor failed for $cc $fam"
+            rm -f "$tmp"
+            return 1
+          fi
+        else
+          ui error "GEO_MAXMIND_EXTRACTOR not set or not executable"
+          return 1
+        fi
+        ;;
+      *)
+        ui error "Unsupported GEO provider: $GEO_PROVIDER"
+        return 1
+        ;;
+    esac
+
+    if [ -n "$url" ]; then
+      ui info "Fetching $fam CIDRs for $cc from $url"
+      if ! curl -fsSL "$url" -o "$target.tmp"; then
+        ui error "Failed to download $url"
+        rm -f "$target.tmp"
+        return 1
+      fi
+      # sanitize: keep only CIDR-looking lines
+      grep -E '^[0-9a-fA-F:.]+/[0-9]+' "$target.tmp" | sed 's/\r$//' | sort -u > "$target"
+      rm -f "$target.tmp"
+    fi
+  fi
+  echo "$target"
+}
+
+
+_geo_read_iso_file() {  # $1=file -> prints ISO codes (two letters) one per line
+  [ -f "$1" ] || return 0
+  sed -E 's/#.*$//' "$1" | tr -d ' \t\r' | awk 'length($0)>0' | \
+    awk '{print toupper(substr($0,1,2))}' | sed -E 's/[^A-Z]//g'
+}
+
+# Add/remove a whole country's cidrs to a set pair (v4/v6)
+_geo_apply_country_to_sets() {  # $1=ISO $2=set_v4 $3=set_v6 $4=action(add|del)
+  local cc="$(_geo_norm_iso "$1")"; local set4="$2"; local set6="$3"; local action="$4"
+  local f4 f6 ip
+  f4="$(_geo_fetch_country "$cc" v4)" || return 1
+  f6="$(_geo_fetch_country "$cc" v6)" || true
+  if [ "$action" = "add" ]; then
+    while IFS= read -r ip; do [ -n "$ip" ] || continue; nft add element inet "$TEMP_BAN_TABLE" "$set4" "{ $ip }" >/dev/null 2>&1 || true; done < "$f4"
+    if [ -f "$f6" ]; then while IFS= read -r ip; do [ -n "$ip" ] || continue; nft add element inet "$TEMP_BAN_TABLE" "$set6" "{ $ip }" >/dev/null 2>&1 || true; done < "$f6"; fi
+  else
+    while IFS= read -r ip; do [ -n "$ip" ] || continue; nft delete element inet "$TEMP_BAN_TABLE" "$set4" "{ $ip }" >/dev/null 2>&1 || true; done < "$f4"
+    if [ -f "$f6" ]; then while IFS= read -r ip; do [ -n "$ip" ] || continue; nft delete element inet "$TEMP_BAN_TABLE" "$set6" "{ $ip }" >/dev/null 2>&1 || true; done < "$f6"; fi
+  fi
+}
+
+# Public entry: sync countries from files into sets
+geo_sync_countries() {
+  ui title "GEO sync: applying country lists to nft sets"
+  ensure_temp_ban_table || return 1
+  ensure_whitelist_sets || true
+  ensure_blacklist_sets || true
+
+  # Whitelist countries -> whitelist sets
+  if [ -f "$COUNTRY_WHITELIST_FILE" ]; then
+    ui step "Applying whitelist countries from $COUNTRY_WHITELIST_FILE"
+    while read -r cc; do
+      [ -n "$cc" ] || continue
+      ui info "Whitelist country $cc"
+      _geo_apply_country_to_sets "$cc" "$WHITELIST_SET_V4" "$WHITELIST_SET_V6" add
+    done < <(_geo_read_iso_file "$COUNTRY_WHITELIST_FILE")
+  fi
+
+  # Blacklist countries -> system blacklist sets (kept separate from user list)
+  if [ -f "$COUNTRY_BLACKLIST_FILE" ]; then
+    ui step "Applying blacklist countries from $COUNTRY_BLACKLIST_FILE"
+    while read -r cc; do
+      [ -n "$cc" ] || continue
+      ui info "Blacklist country $cc"
+      _geo_apply_country_to_sets "$cc" "$SYSTEM_BLACKLIST_SET_V4" "$SYSTEM_BLACKLIST_SET_V6" add
+    done < <(_geo_read_iso_file "$COUNTRY_BLACKLIST_FILE")
+  fi
+  ui success "GEO sync complete"
+}
+
+geo_revoke_country() {  # $1=ISO ; remove that country's CIDRs from whitelist and system blacklist sets
+  local cc="$(_geo_norm_iso "$1")"
+  ui title "GEO revoke: removing $cc from nft sets"
+  ensure_temp_ban_table || return 1
+  ensure_whitelist_sets || true
+  ensure_blacklist_sets || true
+
+  local f4 f6
+  f4="$(_geo_fetch_country "$cc" v4)" || return 1
+  f6="$(_geo_fetch_country "$cc" v6)" || true
+
+  if [ -f "$f4" ]; then
+    while IFS= read -r ip; do [ -n "$ip" ] || continue
+      nft delete element inet "$TEMP_BAN_TABLE" "$WHITELIST_SET_V4" "{ $ip }" >/dev/null 2>&1 || true
+      nft delete element inet "$TEMP_BAN_TABLE" "$SYSTEM_BLACKLIST_SET_V4" "{ $ip }" >/dev/null 2>&1 || true
+    done < "$f4"
+  fi
+  if [ -f "$f6" ]; then
+    while IFS= read -r ip; do [ -n "$ip" ] || continue
+      nft delete element inet "$TEMP_BAN_TABLE" "$WHITELIST_SET_V6" "{ $ip }" >/dev/null 2>&1 || true
+      nft delete element inet "$TEMP_BAN_TABLE" "$SYSTEM_BLACKLIST_SET_V6" "{ $ip }" >/dev/null 2>&1 || true
+    done < "$f6"
+  fi
+  ui success "GEO revoke complete for $cc"
+}
+
+geo_diff() {  # preview counts per country as per files, without applying
+  ui title "GEO diff (per-country counts; cache respected)"
+  local cc file fam f4 f6 c4 c6
+  ensure_temp_ban_table || return 1
+
+  # Helper to print counts
+  _print_cc_counts() {  # $1=label $2=cc
+    local lbl="$1"; local cc="$2"
+    local f4="$(_geo_fetch_country "$cc" v4 2>/dev/null)" || f4=""
+    local f6="$(_geo_fetch_country "$cc" v6 2>/dev/null)" || f6=""
+    local c4=0 c6=0
+    [ -f "$f4" ] && c4=$(wc -l < "$f4")
+    [ -f "$f6" ] && c6=$(wc -l < "$f6")
+    printf "  %-10s %s: %5d v4  %5d v6
+" "$lbl" "$cc" "$c4" "$c6"
+  }
+
+  if [ -f "$COUNTRY_WHITELIST_FILE" ]; then
+    while read -r cc; do [ -n "$cc" ] || continue; _print_cc_counts "WHITELIST" "$cc"; done < <(_geo_read_iso_file "$COUNTRY_WHITELIST_FILE")
+  fi
+  if [ -f "$COUNTRY_BLACKLIST_FILE" ]; then
+    while read -r cc; do [ -n "$cc" ] || continue; _print_cc_counts "BLACKLIST" "$cc"; done < <(_geo_read_iso_file "$COUNTRY_BLACKLIST_FILE")
+  fi
+  ui success "GEO diff complete"
+}
+
+
+
 
 # -----------------------------------------------------------------------------
 # Reverse sync: nft → files (make files match nft)
@@ -2512,6 +2730,14 @@ EOF
   echo "  --sync-source nft            Make files match nft (reverse sync; honors --dry-run)"
   echo "  --diff-lists                 Show adds/removes between files and nft"
   echo "  --diff-files-add             Show only items missing in files (to be added from nft)"
+  echo "  --geo-sync              Apply country lists (files) to nft sets"
+  echo "  --geo-provider ipdeny   Use ipdeny (default) for country CIDRs"
+  echo "  --geo-ttl <hours>       Cache TTL for country CIDRs (default 24h)"
+  echo "  --geo-revoke <CC>       Remove a country\'s CIDRs from whitelist/system-blacklist sets"
+  echo "  --geo-diff               Show per-country CIDR counts (uses cache/TTL)"
+  echo "  --geo-force-refresh      Ignore cache TTL when downloading"
+  echo "  --geo-provider custom    Use custom URL templates (set GEO_CUSTOM_V4_URL/..)"
+  echo "  --geo-provider maxmind   Use MaxMind via custom extractor (set GEO_MAXMIND_EXTRACTOR)"
 }
 
 # ------------------------------ Main Logic -------------------------------- #
@@ -2526,6 +2752,24 @@ main() {
   
   # Handle special flags first
   case "$arg1" in
+    --geo-force-refresh)
+      GEO_FORCE_REFRESH="true"; return 0 ;;
+
+    --geo-diff)
+      geo_diff; return $? ;;
+
+    --geo-revoke)
+      shift; [ -n "${1:-}" ] || { ui error "Usage: --geo-revoke <CC>"; return 2; } ; geo_revoke_country "$1"; return $? ;;
+
+    --geo-ttl)
+      shift; GEO_TTL_HOURS="${1:-24}"; return 0 ;;
+
+    --geo-provider)
+      shift; GEO_PROVIDER="${1:-ipdeny}"; return 0 ;;
+
+    --geo-sync)
+      geo_sync_countries; return $? ;;
+
     --diff-files-add)
       diff_files_add; return $? ;;
 
