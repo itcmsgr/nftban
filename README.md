@@ -8,7 +8,7 @@
 [![Platform](https://img.shields.io/badge/platform-Linux-blue)](https://github.com/itcmsgr/nftban)
 [![Shell](https://img.shields.io/badge/shell-bash-green)](https://www.gnu.org/software/bash/)
 
-> **⚠️ BETA SOFTWARE**: This is a beta release currently undergoing testing. While functional and tested on multiple distributions, please use with caution in production environments. [Report issues](https://github.com/itcmsgr/nftban/issues) | [Join discussions](https://github.com/itcmsgr/nftban/discussions)
+> **⚠️ BETA SOFTWARE**: This project is currently under active beta testing. While functional and tested on multiple distributions, please use with caution in production environments. We appreciate your feedback and bug reports as we work toward a stable release. [Report issues](https://github.com/itcmsgr/nftban/issues) | [Join discussions](https://github.com/itcmsgr/nftban/discussions)
 
 ```bash
 # Install in 30 seconds
@@ -84,7 +84,7 @@ nftban is a **complete firewall management ecosystem** that makes advanced netwo
 
 ### Prerequisites
 
-- Linux server (Debian/Ubuntu/RHEL/CentOS/Rocky/AlmaLinux/Fedora/openSUSE/Alpine)
+- Linux server (Debian/Ubuntu/RHEL/CentOS/Rocky/AlmaLinux/Fedora)
 - Root access (sudo)
 - Internet connection
 
@@ -140,29 +140,29 @@ sudo nftban --sync
 ## 📁 System Architecture
 
 ```
-┌─────────────────────────────────────────────────────────┐
+┌─────────────────────────────────────────────────────┐
 │                      nftban System                      │
 │                                                         │
-│  ┌────────────────────────────────────────────────┐   │
+│  ┌───────────────────────────────────────────────────┐   │
 │  │  nftban_init.sh                                │   │
 │  │  System Preparation & Package Installation     │   │
-│  └────────────────┬───────────────────────────────┘   │
+│  └────────────────┬────────────────────────────────┘   │
 │                   ↓                                     │
-│  ┌────────────────────────────────────────────────┐   │
+│  ┌───────────────────────────────────────────────────┐   │
 │  │  nftban_init_nftables_conf.sh                  │   │
 │  │  Firewall Configuration & Rule Generation      │   │
-│  └────────────────┬───────────────────────────────┘   │
+│  └────────────────┬────────────────────────────────┘   │
 │                   ↓                                     │
-│  ┌────────────────────────────────────────────────┐   │
+│  ┌───────────────────────────────────────────────────┐   │
 │  │  nftban_init_fail2ban_conf.sh                  │   │
 │  │  Intrusion Prevention & Login Monitoring       │   │
-│  └────────────────┬───────────────────────────────┘   │
+│  └────────────────┬────────────────────────────────┘   │
 │                   ↓                                     │
-│  ┌────────────────────────────────────────────────┐   │
+│  ┌───────────────────────────────────────────────────┐   │
 │  │  nftban CLI                                     │   │
 │  │  Daily Management & Operations                 │   │
-│  └────────────────────────────────────────────────┘   │
-└─────────────────────────────────────────────────────────┘
+│  └───────────────────────────────────────────────────┘   │
+└─────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -181,7 +181,7 @@ sudo nftban --sync
 
 ### Additional Resources
 
-- **[Installation Guide](docs/INSTALLATION.md)** - Step-by-step installation for all scenarios
+- **[Installation Guide](docs/README_nftban.md)** - Step-by-step installation for all scenarios
 - **[Configuration Guide](docs/CONFIGURATION.md)** - Complete configuration reference
 - **[Control Panel Integration](docs/CONTROL_PANELS.md)** - Panel-specific guides
 - **[Troubleshooting](docs/TROUBLESHOOTING.md)** - Common issues and solutions
@@ -403,7 +403,7 @@ nftban uses a **two-file configuration pattern**:
 
 ```
 Base Configuration (.conf)          User Configuration (.conf.local)
-─────────────────────────────       ────────────────────────────────
+───────────────────────────       ────────────────────────────────
 • Auto-managed by scripts           • Your customizations
 • Updated on upgrades               • Never overwritten
 • Reference defaults                • Override base settings
@@ -486,8 +486,6 @@ nftban automatically detects and configures for:
 | Rocky Linux | 8+ | dnf | ✅ Fully Supported |
 | RHEL | 8+ | dnf/yum | ✅ Fully Supported |
 | Fedora | 35+ | dnf | ✅ Fully Supported |
-| openSUSE | Leap 15+ | zypper | ✅ Fully Supported |
-| Alpine | 3.15+ | apk | ✅ Fully Supported |
 
 ### Minimum Requirements
 
@@ -649,10 +647,10 @@ https://itcms.gr
 
 **Ask**: *"Am I charging for the software itself, or for my service using the software?"*
 
-- ✅ **OK**: $500 setup fee for configuring nftban on client server
-- ✅ **OK**: $100/month managed security service including nftban
-- ❌ **NOT OK**: Selling "nftban Pro Edition" for $299
-- ❌ **NOT OK**: Charging $50 to download the software
+- ✅ **OK**: €€€€ setup fee for configuring nftban on client server
+- ✅ **OK**: €€€€/month managed security service including nftban
+- ❌ **NOT OK**: Selling "nftban Pro Edition" for $$$
+- ❌ **NOT OK**: Charging $$$ to download the software
 
 ### Need Permission?
 
@@ -694,7 +692,7 @@ We're open to partnership and commercial licensing discussions!
 ### Getting Started
 
 - [Quick Start Guide](docs/QUICKSTART.md) - Get running in 5 minutes
-- [Installation Guide](docs/INSTALLATION.md) - Detailed setup instructions
+- [Installation Guide](docs/README_nftban.md) - Detailed setup instructions
 - [First Steps Tutorial](docs/tutorials/first-steps.md) - Your first 10 minutes with nftban
 
 ### Advanced Topics
@@ -728,7 +726,7 @@ We're open to partnership and commercial licensing discussions!
 - 🚀 **Modern**: nftables (not iptables)
 - 🎛️ **Integrated**: Firewall + IPS unified
 - 🎨 **User-Friendly**: Simple CLI
-- 🏢 **Panel-Aware**: Auto-detection
+- 🎢 **Panel-Aware**: Auto-detection
 - 📚 **Documented**: Comprehensive guides
 
 ### vs. Commercial Solutions
@@ -754,7 +752,7 @@ We're open to partnership and commercial licensing discussions!
 
 ## 🎯 Roadmap
 
-### Current Version (3.6.0)
+### Current Version (0.5.0-beta)
 
 - ✅ Multi-layer security
 - ✅ Control panel auto-detection
@@ -781,16 +779,34 @@ Vote for features on [GitHub Discussions](https://github.com/itcmsgr/nftban/disc
 
 ---
 
-## 🏆 Testimonials
+## ⭐ Show Your Support
 
-> *"nftban saved me hours of configuration. Set it up in 5 minutes on my DirectAdmin server and it just works!"*  
-> — **System Administrator, Hosting Company**
+If nftban makes your server management easier and more secure, please consider giving us a star! It helps others discover the project and motivates continued development.
 
-> *"Best firewall management tool I've used. The automatic control panel detection is brilliant."*  
-> — **DevOps Engineer**
+**Why star nftban?**
+- 🔍 **Visibility**: Help other sysadmins discover this tool
+- 💪 **Motivation**: Show appreciation for the work
+- 📈 **Growth**: Contribute to the project's momentum
+- 🎯 **Feedback**: Signal that the project matters to you
 
-> *"Finally, a modern firewall tool that doesn't require a PhD to operate. The CLI is intuitive and the documentation is excellent."*  
-> — **Security Consultant**
+[![GitHub stars](https://img.shields.io/github/stars/itcmsgr/nftban?style=for-the-badge&logo=github)](https://github.com/itcmsgr/nftban/stargazers)
+
+**Quick actions:**
+- ⭐ [Star this repository](https://github.com/itcmsgr/nftban)
+- 🍴 [Fork for your own modifications](https://github.com/itcmsgr/nftban/fork)
+- 👁️ [Watch for updates](https://github.com/itcmsgr/nftban/subscription)
+- 📢 [Share with your network](https://twitter.com/intent/tweet?text=Check%20out%20nftban%20-%20a%20modern%20Linux%20firewall%20management%20system&url=https://github.com/itcmsgr/nftban)
+
+### Spread the Word
+
+Help the community by sharing nftban:
+- Recommend it in forums and communities
+- Write a blog post about your experience
+- Create tutorials or videos
+- Mention it in social media
+- Share in your organization
+
+Every star, fork, and share helps nftban reach more people who need simple, powerful security tools!
 
 ---
 
@@ -800,12 +816,12 @@ Vote for features on [GitHub Discussions](https://github.com/itcmsgr/nftban/disc
 
 - 📚 [Complete Documentation](docs/README_COMPLETE.md)
 - 🚀 [Quick Start](docs/QUICKSTART.md)
-- 📖 [Installation Guide](docs/INSTALLATION.md)
+- 📖 [Installation Guide](docs/README_nftban.md)
 - 🔧 [Configuration Guide](docs/CONFIGURATION.md)
 
 ### Components
 
-- 🏗️ [System Preparation](docs/README_nftban_init.md)
+- 🗝️ [System Preparation](docs/README_nftban_init.md)
 - 🛡️ [Firewall Setup](docs/README_nftban_init_nftables_conf.md)
 - 🔐 [Intrusion Prevention](docs/README_nftban_fail2ban.md)
 - 💻 [CLI Reference](docs/README_nftban_cli.md)
@@ -819,7 +835,7 @@ Vote for features on [GitHub Discussions](https://github.com/itcmsgr/nftban/disc
 
 ---
 
-## 💝 Acknowledgments
+## 👏 Acknowledgments
 
 Built with love using:
 - [nftables](https://netfilter.org/projects/nftables/) - Modern Linux firewall
@@ -829,19 +845,9 @@ Built with love using:
 Special thanks to:
 - All contributors and testers
 - The nftables and Fail2Ban communities
-- Users who provided feedback
+- Users who provided feedback and bug reports
+- Everyone who stars and shares the project
 
----
-
-## ⭐ Show Your Support
-
-If nftban helps you, please **star this repository** ⭐
-
-Stars help other users discover this project and motivate continued development!
-
-[![GitHub stars](https://img.shields.io/github/stars/itcmsgr/nftban?style=social)](https://github.com/itcmsgr/nftban/stargazers)
-[![GitHub forks](https://img.shields.io/github/forks/itcmsgr/nftban?style=social)](https://github.com/itcmsgr/nftban/network/members)
-[![GitHub watchers](https://img.shields.io/github/watchers/itcmsgr/nftban?style=social)](https://github.com/itcmsgr/nftban/watchers)
 ---
 
 <p align="center">
