@@ -50,4 +50,4 @@ This is the first public beta release of nftban - a comprehensive Linux firewall
 - Production-ready release
 - Complete documentation
 - Extended control panel support
-- Mobile app notifications
+
