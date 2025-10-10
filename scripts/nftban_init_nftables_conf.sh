@@ -2,7 +2,7 @@
 ###################################################################################################
 # Script: nftban_init_nftables_conf.sh (Enhanced with Control Panel Detection)
 #
-# Version: 2.3.0 (Added Control Panel Port Management)
+# Version: 0.5.0-final  (Added Control Panel Port Management)
 # Author: ITCMS Team (Antonios Voulvoulis)
 #
 # Description:
