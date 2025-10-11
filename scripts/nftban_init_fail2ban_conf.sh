@@ -3,7 +3,7 @@
 # =============================================================================
 # Script: nftban_init_fail2ban_conf.sh
 # Comprehensive fail2ban integration with nftables (nftban system)
-# Version: 0.5.0-final  (Enhanced with security, validation, dry-run, better mail testing)
+# Version: 0.5.0 (Enhanced with security, validation, dry-run, better mail testing)
 # Author:  ITCMS Team (Antonios Voulvoulis) + Enhancements
 #
 # Description:
