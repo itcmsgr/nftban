@@ -2,7 +2,7 @@
 ###################################################################################################
 # Script: nftban_init_nftables_conf.sh (Enhanced with Control Panel Detection)
 #
-# Version: 0.5.0-final  (Added Control Panel Port Management)
+# Version: 0.5.0  (Enhanced Control Panel Detection & Improved Validation)
 # Author: ITCMS Team (Antonios Voulvoulis)
 #
 # Description:
@@ -15,20 +15,80 @@
 #   - Fail2ban uses temp_ban_v4 and temp_ban_v6 sets
 #   - Compatible with unified nftban management script
 #   - Whitelist always takes priority
+#   - Enhanced dependency checking and validation
+#   - Improved error handling and user feedback
+#
+# Dependencies:
+#   Required: nft, ip, awk, grep, sed, flock, mktemp
+#   Optional: ipcalc, sipcalc, curl/wget (for better validation and Cloudflare IPs)
 #
 ###################################################################################################
 
 set -euo pipefail
 
+# Check if running as root
+if [[ $EUID -ne 0 ]]; then
+  echo "ERROR: This script must be run as root or with sudo" >&2
+  exit 1
+fi
+
 # --- Dependency Checks ---
 echo "Checking required dependencies..."
-for cmd in nft ip awk grep sed; do
+
+# Critical dependencies (must have)
+REQUIRED_DEPS=("nft" "ip" "awk" "grep" "sed" "flock" "mktemp")
+MISSING_REQUIRED=()
+
+for cmd in "${REQUIRED_DEPS[@]}"; do
   if ! command -v "$cmd" &>/dev/null; then
-    echo "ERROR: Required command '$cmd' not found. Please install it first." >&2
-    exit 1
+    MISSING_REQUIRED+=("$cmd")
+    echo "ERROR: Required command '$cmd' not found." >&2
   fi
 done
-echo "[OK] All dependencies found"
+
+if [[ ${#MISSING_REQUIRED[@]} -gt 0 ]]; then
+  echo "ERROR: Missing required dependencies: ${MISSING_REQUIRED[*]}" >&2
+  echo "Install with: apt install nftables iproute2 coreutils util-linux" >&2
+  exit 1
+fi
+
+echo "[OK] All required dependencies found"
+
+# Display nftables version
+NFT_VERSION=$(nft --version 2>/dev/null | head -n1)
+if [[ -n "$NFT_VERSION" ]]; then
+  echo "[INFO] $NFT_VERSION"
+else
+  echo "[WARN] Could not determine nftables version"
+fi
+
+# Check nftables kernel support
+if ! nft list tables &>/dev/null && ! lsmod | grep -q nf_tables 2>/dev/null; then
+  echo "[WARN] nftables kernel module (nf_tables) may not be loaded"
+  echo "[WARN] Attempting to load module..."
+  if ! modprobe nf_tables 2>/dev/null; then
+    echo "[ERROR] Failed to load nf_tables kernel module" >&2
+    echo "[ERROR] Your kernel may not support nftables" >&2
+    exit 1
+  fi
+  echo "[OK] nf_tables module loaded successfully"
+fi
+
+# Optional dependencies (recommended for better validation)
+OPTIONAL_DEPS=("ipcalc" "sipcalc" "curl" "wget")
+MISSING_OPTIONAL=()
+
+for cmd in "${OPTIONAL_DEPS[@]}"; do
+  if ! command -v "$cmd" &>/dev/null; then
+    MISSING_OPTIONAL+=("$cmd")
+  fi
+done
+
+if [[ ${#MISSING_OPTIONAL[@]} -gt 0 ]]; then
+  echo "[INFO] Optional dependencies not found: ${MISSING_OPTIONAL[*]}"
+  echo "[INFO] These improve IP validation and enable Cloudflare IP fetching"
+  echo "[INFO] Install with: apt install ipcalc sipcalc curl"
+fi
 
 have_cmd() { command -v "$1" &>/dev/null; }
 
@@ -49,7 +109,7 @@ log_msg() {
 }
 mkdir -p "$LOG_DIR"
 exec > >(tee -a "$LOG_FILE") 2>&1
-echo "=== NFTBAN nftables Configuration Initialization (v2.3.0) ==="
+echo "=== NFTBAN nftables Configuration Initialization (v0.5.0) ==="
 echo "Log file: $LOG_FILE"
 
 # Config files
@@ -520,12 +580,16 @@ nft_validate_element() {
     echo " set __s__ { type $family; flags interval; elements = { $value } }"
     echo "}"
   } >"$tmpfile"
+  
+  local result=0
   if nft -c -f "$tmpfile" &>/dev/null; then
-    rm -f "$tmpfile"
-    return 0
+    result=0
+  else
+    result=1
   fi
+  
   rm -f "$tmpfile"
-  return 1
+  return $result
 }
 
 # IPv4 strict regex + bounds
@@ -684,7 +748,7 @@ generate_fail2ban_action() {
 # Uses the single global table with temp_ban sets
 #
 # Author: ITCMS Team
-# Version: 2.3.0
+# Version: 0.5.0
 
 [Definition]
 
@@ -982,21 +1046,47 @@ fetch_cloudflare_ips() {
   local comment=$2
   local tmpfile
   tmpfile=$(mktemp)
-  if command -v wget &>/dev/null; then
-    wget -q -O "$tmpfile" "$url" || { rm -f "$tmpfile"; return 1; }
-  elif command -v curl &>/dev/null; then
-    curl -s -o "$tmpfile" "$url" || { rm -f "$tmpfile"; return 1; }
+  
+  echo "[INFO] Fetching Cloudflare IPs from: $url"
+  
+  if command -v curl &>/dev/null; then
+    if ! curl -s -f -m 10 -o "$tmpfile" "$url"; then
+      echo "[ERROR] Failed to fetch Cloudflare IPs via curl" >&2
+      rm -f "$tmpfile"
+      return 1
+    fi
+  elif command -v wget &>/dev/null; then
+    if ! wget -q -T 10 -O "$tmpfile" "$url"; then
+      echo "[ERROR] Failed to fetch Cloudflare IPs via wget" >&2
+      rm -f "$tmpfile"
+      return 1
+    fi
   else
-    echo "Error: Neither wget nor curl available" >&2
-    rm -f "$tmpfile"; return 1
+    echo "[ERROR] Neither wget nor curl available" >&2
+    rm -f "$tmpfile"
+    return 1
   fi
+  
+  # Verify we got some data
+  if [[ ! -s "$tmpfile" ]]; then
+    echo "[ERROR] Downloaded Cloudflare IP list is empty" >&2
+    rm -f "$tmpfile"
+    return 1
+  fi
+  
+  local count=0
   while read -r ip; do
     [[ -n "$ip" ]] || continue
-    if ! grep -q "^$ip" "$SYSTEM_WHITELIST_FILE"; then
+    # Skip if already present
+    if ! grep -q "^$ip" "$SYSTEM_WHITELIST_FILE" 2>/dev/null; then
       echo "$ip $comment" >> "$SYSTEM_WHITELIST_FILE"
+      ((count++))
     fi
   done < "$tmpfile"
+  
   rm -f "$tmpfile"
+  echo "[OK] Added $count Cloudflare IP ranges"
+  return 0
 }
 
 generate_port_rules() {
@@ -1047,21 +1137,55 @@ USE_CLOUDFLARE="${NFTBAN_USE_CLOUDFLARE:-auto}"
 ASSUME_Y="${ASSUME_Y:-false}"
 usage() {
   cat <<'USAGE'
-Usage: $0 [options]
-Options:
+nftban_init_nftables_conf.sh - Version 0.5.0
+Advanced nftables firewall configuration with control panel detection
+
+USAGE: $0 [options]
+
+OPTIONS:
   --cloudflare [yes|no|auto]  Include Cloudflare IP ranges in whitelist (default: auto)
   --yes-cloudflare            Shortcut for --cloudflare yes
   --no-cloudflare             Shortcut for --cloudflare no
-  -y                          Assume "yes" for prompts (non-interactive friendly)
+  -y                          Assume "yes" for prompts (non-interactive mode)
   --install-final             Run install_final_config after generation
-  --silent-auto               Run in silent mode with auto-confirmation and no prompts
+  --silent-auto               Run in silent mode with auto-confirmation
   --validate-only             Only validate configuration files without applying
   --dry-run                   Show what would be changed without applying (preview)
-  --test                      Generate config and run 'nft -c' ONLY (simulation), no apply/copy
+  --test                      Generate config and run 'nft -c' only (no apply)
   --run-tests                 Run built-in unit tests and exit
   --generate-f2b-action       Generate Fail2ban action configuration
   --create-panel-templates    Create example control panel configuration templates
   -h, --help                  Show this help
+
+DEPENDENCIES:
+  Required: nft, ip, awk, grep, sed, flock, mktemp
+  Optional: ipcalc, sipcalc (improved IP validation)
+            curl or wget (Cloudflare IP fetching)
+
+FEATURES:
+  - Automatic control panel detection (DirectAdmin, cPanel, Plesk)
+  - Merged system and user port configurations
+  - Single global nftables table architecture
+  - Fail2ban integration with timeout-based sets
+  - Enhanced IP/CIDR validation with multiple methods
+  - Comprehensive error checking and rollback support
+
+EXAMPLES:
+  # Generate and test configuration:
+  $0 --test
+
+  # Validate existing config files:
+  $0 --validate-only
+
+  # Generate and apply immediately:
+  $0 --install-final
+
+  # Non-interactive mode with Cloudflare IPs:
+  $0 -y --yes-cloudflare --install-final
+
+  # Create control panel templates:
+  $0 --create-panel-templates
+
 USAGE
 }
 ask_yes_no() {
@@ -1214,8 +1338,31 @@ if [[ "$USE_CLOUDFLARE" == "auto" ]]; then
   fi
 fi
 
+# Check for curl/wget if Cloudflare is enabled
+if [[ "$USE_CLOUDFLARE" == "yes" ]]; then
+  if ! have_cmd curl && ! have_cmd wget; then
+    echo "[ERROR] Cloudflare IP fetching requires curl or wget" >&2
+    echo "Install with: apt install curl" >&2
+    exit 1
+  fi
+fi
+
+# Check for systemctl (optional, but recommended for persistence)
+if ! have_cmd systemctl; then
+  echo "[WARN] systemctl not found. Rule persistence may not work automatically."
+  echo "[WARN] You may need to manually reload rules on boot."
+fi
+
 # --- Main execution ---
 mkdir -p "$BASE_DIR" "$BACKUP_DIR" "$LOG_DIR" "$BASE_DIR_INIT" "$CONTROL_PANEL_TEMPLATES"
+
+# Check disk space (warn if less than 10MB free in /etc)
+DISK_FREE=$(df -k /etc | awk 'NR==2 {print $4}')
+if [[ -n "$DISK_FREE" ]] && (( DISK_FREE < 10240 )); then
+  echo "[WARN] Low disk space on /etc partition ($(( DISK_FREE / 1024 ))MB free)"
+  echo "[WARN] Consider freeing up space before proceeding"
+fi
+
 cleanup_old_backups
 
 # --- Control Panel Detection and Configuration ---
@@ -1332,20 +1479,31 @@ echo "Server IPv6 addresses: $SERVER_IPV6"
 [[ -n "$SERVER_PUBLIC_IPV6" ]] && echo "Server public IPv6: $SERVER_PUBLIC_IPV6"
 [[ -n "$CURRENT_USER_IP" ]] && echo "Current user IP: $CURRENT_USER_IP"
 
-# Fetch Cloudflare IPs if requested (unchanged behavior)
+# Fetch Cloudflare IPs if requested
 if [[ "$USE_CLOUDFLARE" == "yes" ]]; then
-  echo "Fetching Cloudflare IP ranges..."
+  echo "--- Fetching Cloudflare IP ranges ---"
   if ! grep -q "# BEGIN CLOUDFLARE" "$SYSTEM_WHITELIST_FILE" 2>/dev/null; then
     echo "" >> "$SYSTEM_WHITELIST_FILE"
     echo "# BEGIN CLOUDFLARE" >> "$SYSTEM_WHITELIST_FILE"
-    fetch_cloudflare_ips "$CLOUDFLARE_IPV4_URL" "#ipv4 from cloudflare"
-    fetch_cloudflare_ips "$CLOUDFLARE_IPV6_URL" "#ipv6 from cloudflare"
+    
+    if fetch_cloudflare_ips "$CLOUDFLARE_IPV4_URL" "#ipv4 from cloudflare"; then
+      echo "[OK] Cloudflare IPv4 ranges fetched"
+    else
+      echo "[WARN] Failed to fetch Cloudflare IPv4 ranges"
+    fi
+    
+    if fetch_cloudflare_ips "$CLOUDFLARE_IPV6_URL" "#ipv6 from cloudflare"; then
+      echo "[OK] Cloudflare IPv6 ranges fetched"
+    else
+      echo "[WARN] Failed to fetch Cloudflare IPv6 ranges"
+    fi
+    
     echo "# END CLOUDFLARE" >> "$SYSTEM_WHITELIST_FILE"
   else
-    echo "Cloudflare IPs already present, skipping..."
+    echo "[INFO] Cloudflare IPs already present, skipping..."
   fi
 else
-  echo "Skipping Cloudflare IP ranges"
+  echo "[INFO] Skipping Cloudflare IP ranges"
 fi
 
 # Collect all whitelist IPs
