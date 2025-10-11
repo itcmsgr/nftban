@@ -10,16 +10,9 @@
 #   Comprehensive automation for Fail2Ban using the nftables backend.
 #   Enhanced with security features, better validation, dry-run mode,
 #   improved mail testing, backup rotation, and comprehensive status reporting.
-#
-# Usage Examples:
-#   sudo ./nftban_init_fail2ban_conf.sh setup
-#   sudo ./nftban_init_fail2ban_conf.sh status
-#   sudo ./nftban_init_fail2ban_conf.sh self-test
-#   sudo ./nftban_init_fail2ban_conf.sh test-mail admin@example.com
-#   sudo ./nftban_init_fail2ban_conf.sh --dry-run setup
 # =============================================================================
 
-set -Eeuo pipefail
+set -euo pipefail
 
 # =============================================================================
 # CONFIGURATION
