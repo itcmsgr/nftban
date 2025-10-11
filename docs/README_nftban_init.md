@@ -1,1050 +1,1793 @@
-# nftban_init.sh
+# nftban_init.sh - System Preparation & Installation
 
-**Unified installation and maintenance script for nftban firewall management system**
+**Bootstrap script for nftban firewall management system**
 
-[![Version](https://img.shields.io/badge/version-3.1.0-blue)](https://github.com/itcmsgr/nftban)
-[![License](https://img.shields.io/badge/License-CustomMIT--NoResale-lightgrey)](./LICENSE.md)
+[![Version](https://img.shields.io/badge/version-0.5.0--final-blue)](https://github.com/itcmsgr/nftban)
+[![License](https://img.shields.io/badge/License-CustomMIT--NoResale-lightgrey)](../LICENSE.md)
 [![Platform](https://img.shields.io/badge/platform-Linux-blue)](https://github.com/itcmsgr/nftban)
 [![Shell](https://img.shields.io/badge/shell-bash-green)](https://www.gnu.org/software/bash/)
 
-A comprehensive installer that prepares your system for nftban, automatically detects control panels, creates configuration templates, and installs all required dependencies with zero manual intervention.
-
----
-
-## 🎯 What's New in v3.1.0
-
-### 🔧 Architectural Improvements
-
-**Clear Separation of Responsibilities:**
-
-```
-┌─────────────────────────────────────────────────────────┐
-│ nftban_init.sh (THIS SCRIPT)                           │
-│ • Installs packages                                     │
-│ • Creates directory structure                           │
-│ • Detects control panel                                 │
-│ • Creates configuration TEMPLATES                       │
-│ • Creates EMPTY .conf.local files                       │
-└─────────────────────────────────────────────────────────┘
-                          ↓
-┌─────────────────────────────────────────────────────────┐
-│ nftban_init_nftables_conf.sh                            │
-│ • Reads templates                                       │
-│ • Writes system .conf files                             │
-│ • Merges with .conf.local customizations                │
-│ • Generates nftables rules                              │
-└─────────────────────────────────────────────────────────┘
-```
-
-### 🚀 Key Changes from v3.0.3
-
-| Change | Why |
-|--------|-----|
-| **No longer writes to .conf.local** | Prevents conflicts with nftban_init_nftables_conf.sh |
-| **Creates ALL templates** | Templates ready for any detected panel |
-| **Empty .conf.local with instructions** | Clear guidance for user customizations |
-| **Better completion summary** | Shows what's done vs what's next |
-
----
-
-## 🚀 What This Script Does
-
-### Phase 1: System Preparation
-
-✅ **Package Installation**
-- nftables (firewall engine)
-- fail2ban (intrusion prevention)
-- whois (IP lookup utilities)
-- dnsutils/bind-utils (DNS tools)
-- ipcalc (IPv4 validation)
-- sipcalc (IPv6 validation)
-
-✅ **Directory Structure**
-```
-/etc/nftban/
-├── config/                    # Configuration files
-│   ├── *.conf                 # System (auto-managed)
-│   └── *.conf.local           # User (your customizations)
-├── templates/
-│   └── control-panels/        # Panel templates
-│       ├── directadmin.conf
-│       ├── cpanel.conf
-│       ├── plesk.conf
-│       └── generic.conf
-├── scripts/                   # Management scripts
-├── bin/                       # nftban CLI
-├── logs/                      # Log files
-└── backups/                   # Configuration backups
-```
-
-### Phase 2: Control Panel Detection
-
-✅ **Automatic Detection**
-- DirectAdmin → `/usr/local/directadmin/`
-- cPanel/WHM → `/var/cpanel/`
-- Plesk → `/usr/local/psa/`
-- Generic → Fallback for any other setup
-
-✅ **Template Creation**
-- Creates templates for ALL control panels
-- Detects which one is installed
-- Templates include required ports for each panel
-
-### Phase 3: Configuration Setup
-
-✅ **Empty .conf.local Files**
-- Created with helpful headers
-- Include format examples
-- Clear instructions for customization
-- **Never overwritten** on re-runs
-
-✅ **Ready for Next Step**
-- All templates in place
-- Directory structure complete
-- User customization files ready
-- Next: Run `nftban_init_nftables_conf.sh`
-
----
-
-## 📋 Installation Methods
-
-### Method 1: GitHub (Recommended)
-
-**Advantages:**
-- Always latest version
-- Full script suite
-- Easy updates
-- Git history tracking
+> **Part of the nftban toolkit** - This document covers the system preparation script. See [Main README](../README.md) for the complete project overview.
 
 ```bash
-# Quick install
+# Quick install from GitHub
 sudo ./nftban_init.sh --github -y
 
-# With auto-update (keeps system current)
+# Quick install from ZIP
+sudo ./nftban_init.sh --zip -y
+
+# With auto-update enabled
+sudo ./nftban_init.sh --github -y --enable-auto-update --daily-time "03:30"
+```
+
+---
+
+## 📋 Table of Contents
+
+- [What is nftban_init.sh?](#-what-is-nftban_initsh)
+- [Key Features](#-key-features)
+- [Quick Start](#-quick-start)
+- [Installation Methods](#-installation-methods)
+- [Command-Line Options](#-command-line-options)
+- [What It Does](#-what-it-does)
+- [Control Panel Detection](#-control-panel-detection)
+- [Package Management](#-package-management)
+- [Directory Structure](#-directory-structure)
+- [IP Validation](#-ip-validation)
+- [Auto-Update System](#-auto-update-system)
+- [Usage Examples](#-usage-examples)
+- [Configuration Files Created](#-configuration-files-created)
+- [System Requirements](#-system-requirements)
+- [Troubleshooting](#-troubleshooting)
+- [Integration](#-integration)
+- [License](#-license)
+- [Support](#-support)
+
+---
+
+## 🎯 What is nftban_init.sh?
+
+`nftban_init.sh` is the **first component** of the nftban security suite. It's a comprehensive installation and maintenance script that prepares your Linux server for nftban deployment.
+
+### Purpose
+
+This script handles the **foundation** of your security setup:
+
+- ✅ Installs required packages (nftables, fail2ban, utilities)
+- ✅ Creates complete directory structure
+- ✅ Detects control panels automatically (DirectAdmin, cPanel, Plesk)
+- ✅ Generates configuration templates
+- ✅ Sets up IP validation tools (ipcalc, sipcalc)
+- ✅ Configures optional auto-updates
+- ✅ Creates the nftban CLI tool
+- ✅ Never starts services automatically (you stay in control)
+
+### When to Use
+
+- **First-time setup** on a new server
+- **Reinstallation** after system changes
+- **Updates** to get latest features
+- **Configuration refresh** to regenerate templates
+
+### What It Doesn't Do
+
+- ❌ Does NOT configure firewall rules (use `nftban_init_nftables_conf.sh`)
+- ❌ Does NOT setup Fail2Ban (use `nftban_init_fail2ban_conf.sh`)
+- ❌ Does NOT enable/start services automatically
+- ❌ Does NOT modify existing firewall rules
+
+---
+
+## ✨ Key Features
+
+### 🚀 Three Installation Methods
+
+| Method | Speed | Use Case | Requirements |
+|--------|-------|----------|--------------|
+| **GitHub** | Fast | Production, Development | Git installed |
+| **ZIP** | Medium | Git-blocked networks | curl, unzip |
+| **Local** | Instant | Air-gapped systems | None |
+
+### 🎛️ Smart Control Panel Detection
+
+```
+Automatic Detection & Configuration
+├── DirectAdmin (/usr/local/directadmin/)
+│   └── Ports: 2222, 21, 35000-35999, Email, DNS
+├── cPanel/WHM (/var/cpanel/)
+│   └── Ports: 2082-2087, 2095-2096, MySQL, Email, DNS
+├── Plesk (/usr/local/psa/)
+│   └── Ports: 8443, 8880, MySQL, PostgreSQL, Email
+└── Generic (No panel)
+    └── Ports: SSH (auto-detect), 80, 443, DNS, NTP
+```
+
+### 🔧 Universal Package Management
+
+Supports all major Linux distributions:
+- **Debian/Ubuntu**: `apt-get`
+- **RHEL/CentOS/Rocky/Alma**: `dnf`/`yum` (with EPEL)
+- **Fedora**: `dnf`
+- **openSUSE**: `zypper`
+- **Alpine**: `apk`
+
+### 🛡️ Enhanced IP Validation
+
+- **ipcalc**: Primary IPv4 validation tool
+- **sipcalc**: Enhanced IPv6 validation
+- **Regex fallback**: Works even without tools
+- **CIDR support**: Validates network ranges (192.168.1.0/24)
+- **Statistics**: Shows validation results during setup
+
+### 🔄 Auto-Update System
+
+```bash
+# Enable auto-updates (every 12 hours)
+sudo ./nftban_init.sh --enable-auto-update
+
+# Schedule daily at specific time
+sudo ./nftban_init.sh --enable-auto-update --daily-time "03:30"
+
+# Check status
+sudo ./nftban_init.sh --auto-update-status
+
+# Remove auto-updates
+sudo ./nftban_init.sh --remove-auto-update
+```
+
+### 📊 Status Reporting
+
+```bash
+# Human-readable status
+sudo ./nftban_init.sh --status
+
+# JSON output for automation
+sudo ./nftban_init.sh --status --json
+```
+
+### 🔒 Safety Features
+
+- ✅ Automatic backups before changes
+- ✅ Dry-run mode for testing
+- ✅ Version tracking
+- ✅ Validation before applying
+- ✅ Cannot break existing setup
+- ✅ Rollback capability
+
+---
+
+## 🚀 Quick Start
+
+### One-Line Install (Recommended)
+
+```bash
+# From GitHub (always latest)
+curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/nftban_init.sh | sudo bash -s -- --github -y
+
+# From ZIP (if GitHub blocked)
+curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/nftban_init.sh | sudo bash -s -- --zip -y
+```
+
+### Standard Install (Three Steps)
+
+```bash
+# Step 1: Download script
+wget https://raw.githubusercontent.com/itcmsgr/nftban/main/nftban_init.sh
+chmod +x nftban_init.sh
+
+# Step 2: Run installation
+sudo ./nftban_init.sh --github -y
+
+# Step 3: Verify installation
+sudo nftban --version
+ls -la /etc/nftban/
+```
+
+### With Auto-Update
+
+```bash
+# Enable auto-update during install
 sudo ./nftban_init.sh --github -y --enable-auto-update
 
-# Auto-update daily at 3:30 AM
-sudo ./nftban_init.sh --github -y --enable-auto-update --daily-time "03:30"
+# Or enable after installation
+sudo ./nftban_init.sh --enable-auto-update --daily-time "03:30"
+```
+
+---
+
+## 🔧 Installation Methods
+
+### Method 1: GitHub Clone (Recommended)
+
+**Advantages:**
+- Always gets latest version
+- Easy updates (git pull)
+- Full repository history
+- Best for development
+
+**Installation:**
+```bash
+sudo ./nftban_init.sh --github -y
+```
+
+**What happens:**
+1. Checks for git, installs if needed
+2. Clones repository to `/etc/nftban/`
+3. Sets up for future updates
+4. Runs post-installation tasks
+
+**Update later:**
+```bash
+cd /etc/nftban
+sudo git pull
 ```
 
 ### Method 2: ZIP Download
 
 **Advantages:**
+- Works without git
 - Faster download
-- No git dependency
-- Works behind firewalls
+- Good for restricted networks
+- One-time setup
 
+**Installation:**
 ```bash
-# Basic ZIP install
 sudo ./nftban_init.sh --zip -y
-
-# ZIP with custom path
-sudo ./nftban_init.sh --zip -y --target /opt/nftban
 ```
 
-### Method 3: Local/Offline
+**What happens:**
+1. Downloads ZIP archive
+2. Extracts to `/etc/nftban/`
+3. Removes archive
+4. Runs post-installation tasks
+
+**Update later:**
+```bash
+sudo ./nftban_init.sh --zip -y  # Re-download and extract
+```
+
+### Method 3: Local Installation
 
 **Advantages:**
-- No internet required
-- Basic functionality
-- Manual configuration
+- No network needed
+- Air-gapped systems
+- Manual control
+- Quick setup
 
+**Installation:**
 ```bash
-# Local install (no repository sync)
 sudo ./nftban_init.sh -y
+# Or interactive mode
+sudo ./nftban_init.sh
+```
 
-# You'll need to manually configure everything
+**What happens:**
+1. Creates directory structure
+2. Installs packages
+3. Creates basic configuration
+4. No repository sync
+
+---
+
+## 📝 Command-Line Options
+
+### Installation Options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--github` | Install from GitHub repository | `--github` |
+| `--zip` | Install from ZIP archive | `--zip` |
+| `--target DIR` | Custom installation directory | `--target /opt/nftban` |
+| `--branch NAME` | Git branch to use | `--branch develop` |
+| `-y` | Assume yes to all prompts | `-y` |
+
+### Control Panel Options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--skip-cp-detect` | Skip control panel detection | `--skip-cp-detect` |
+
+### Auto-Update Options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--enable-auto-update` | Enable cron-based updates | `--enable-auto-update` |
+| `--remove-auto-update` | Disable auto-updates | `--remove-auto-update` |
+| `--auto-update-status` | Show auto-update status | `--auto-update-status` |
+| `--daily-time HH:MM` | Schedule daily update time | `--daily-time "03:30"` |
+
+### Status & Maintenance Options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--status` | Show system status | `--status` |
+| `--json` | Output in JSON format | `--status --json` |
+| `--version` | Show version information | `--version` |
+
+### Uninstall Options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--uninstall` | Remove nftban | `--uninstall -y` |
+| `--purge` | Remove logs and state | `--uninstall --purge -y` |
+
+### Advanced Options
+
+| Option | Description | Example |
+|--------|-------------|---------|
+| `--dry-run` | Preview without changes | `--dry-run --github` |
+| `--quiet` | Suppress non-error output | `--quiet --github -y` |
+| `--beginner` | Friendlier output | `--beginner --github` |
+| `--no-color` | Disable colored output | `--no-color` |
+| `--no-unicode` | Use ASCII instead of Unicode | `--no-unicode` |
+
+---
+
+## 🔍 What It Does
+
+### Phase 1: Pre-Installation Checks
+
+```
+1. Root privilege check
+   └── Ensures script runs with sudo/root
+
+2. Package manager detection
+   └── Identifies: apt-get, dnf, yum, zypper, or apk
+
+3. Network connectivity check
+   └── Verifies access to GitHub/download sources
+
+4. Version check
+   └── Compares installed vs available versions
+```
+
+### Phase 2: System Preparation
+
+```
+1. Backup existing installation (if present)
+   ├── Creates timestamped backup: /var/backups/nftban_YYYYMMDD_HHMMSS.tgz
+   └── Preserves all configuration and data
+
+2. Create directory structure
+   ├── /etc/nftban/
+   │   ├── config/          # Configuration files
+   │   ├── scripts/         # Management scripts
+   │   ├── templates/       # Control panel templates
+   │   ├── bin/            # CLI tool
+   │   ├── rules/          # Custom rules
+   │   ├── conf.d/         # Additional configs
+   │   └── systemd/        # Service files
+   └── /var/log/nftban/    # Log files
+```
+
+### Phase 3: Package Installation
+
+```
+1. Update package cache (apt-get only)
+2. Install EPEL repository (RHEL-like systems)
+3. Install required packages:
+   ├── nftables           # Firewall engine
+   ├── fail2ban          # Intrusion prevention
+   ├── whois             # IP lookup
+   ├── dnsutils/bind-utils  # DNS tools
+   ├── ipcalc            # IP validation
+   └── sipcalc           # IPv6 validation
+4. Verify installations
+```
+
+### Phase 4: Control Panel Detection
+
+```
+1. Check for control panels
+   ├── DirectAdmin: /usr/local/directadmin/
+   ├── cPanel: /var/cpanel/
+   ├── Plesk: /usr/local/psa/
+   └── Generic: (none found)
+
+2. Load appropriate template
+   ├── Contains pre-configured ports
+   └── Optimized for panel requirements
+
+3. Process configuration
+   ├── Generate port files
+   │   ├── IPv4 input/output ports
+   │   └── IPv6 input/output ports
+   └── Create IP whitelist
+       └── Validates all IPs during processing
+```
+
+### Phase 5: IP Validation Setup
+
+```
+1. Verify ipcalc installation
+   └── Primary tool for IPv4 validation
+
+2. Verify sipcalc installation
+   └── Enhanced IPv6 support
+
+3. Configure validation mode
+   ├── Tools available: Use ipcalc/sipcalc
+   └── Tools unavailable: Regex fallback
+
+4. Test validation
+   └── Sample IP checks to ensure functionality
+```
+
+### Phase 6: Tool Creation
+
+```
+1. Create nftban CLI binary
+   ├── Source: Repository or stub
+   ├── Location: /etc/nftban/bin/nftban
+   └── Symlink: /usr/local/bin/nftban
+
+2. Set permissions
+   ├── Make scripts executable
+   └── Set proper ownership
+
+3. SELinux context (if enabled)
+   └── Restore security contexts
+```
+
+### Phase 7: Auto-Update (Optional)
+
+```
+1. Create update script
+   └── /etc/nftban/scripts/nftban_auto_update.sh
+
+2. Add cron entry
+   ├── Default: Every 12 hours
+   └── Custom: Daily at specified time
+
+3. Verify cron service
+   └── Check if cron/crond is active
+```
+
+### Phase 8: Post-Installation
+
+```
+1. Create version file
+   └── /etc/nftban/.version
+
+2. Generate completion summary
+   ├── Packages installed
+   ├── Configuration files created
+   ├── Control panel detected
+   └── Next steps
+
+3. Create log file
+   └── /var/log/nftban/nftban_init_YYYYMMDD_HHMMSS_PID.log
 ```
 
 ---
 
-## 🎛️ Command-Line Options
+## 🎛️ Control Panel Detection
 
-### Installation Options
+### How Detection Works
 
 ```bash
---github                 Clone/sync from GitHub repository
---zip                    Download and extract ZIP archive
---target DIR             Installation directory (default: /etc/nftban)
---branch NAME            Git branch to use (default: main)
--y                       Non-interactive mode (assume yes to all prompts)
+# DirectAdmin detection
+if [ -d "/usr/local/directadmin/" ]; then
+    PANEL="directadmin"
+fi
+
+# cPanel detection
+if [ -d "/var/cpanel/" ]; then
+    PANEL="cpanel"
+fi
+
+# Plesk detection
+if [ -d "/usr/local/psa/" ]; then
+    PANEL="plesk"
+fi
 ```
 
-### Control Panel Options
+### DirectAdmin Configuration
 
-```bash
---skip-cp-detect         Skip automatic control panel detection
+**Auto-detected ports:**
+```
+TCP_IN="2222,80,443,21,25,587,465,993,995,110,143"
+TCP_OUT="53,80,443,21,25,587"
+TCP6_IN="2222,80,443,25,587,465,993,995,110,143"
+TCP6_OUT="53,80,443,25,587"
+IP_ADDRESS=""  # Your IPs here
 ```
 
-### Auto-Update Options
+**What gets configured:**
+- SSH: 2222 (DirectAdmin default)
+- Web: 80, 443
+- FTP: 21, 35000-35999 (passive range)
+- Email: 25, 587, 465, 993, 995, 110, 143
+- DNS: 53
 
-```bash
---enable-auto-update     Set up cron job for automatic updates
---remove-auto-update     Remove auto-update cron job
---auto-update-status     Show current auto-update configuration
---daily-time HH:MM       Schedule daily update at specific time
+### cPanel/WHM Configuration
+
+**Auto-detected ports:**
+```
+TCP_IN="22,80,443,2082,2083,2086,2087,2095,2096,21,25,587,465,993,995,110,143"
+TCP_OUT="53,80,443,2089,25,587"
+TCP6_IN="22,80,443,2082,2083,2086,2087,2095,2096,25,587,465,993,995,110,143"
+TCP6_OUT="53,80,443,25,587"
+IP_ADDRESS=""
 ```
 
-### Status & Information
+**What gets configured:**
+- SSH: 22
+- cPanel: 2082 (HTTP), 2083 (HTTPS)
+- WHM: 2086 (HTTP), 2087 (HTTPS)
+- Webmail: 2095 (HTTP), 2096 (HTTPS)
+- Email, FTP, DNS: Standard ports
 
-```bash
---status                 Show installation status
---status --json          Show status in JSON format
---version                Show script version
--h, --help               Display help message
+### Plesk Configuration
+
+**Auto-detected ports:**
+```
+TCP_IN="22,80,443,8443,8880,21,25,587,465,993,995,110,143,3306,5432"
+TCP_OUT="53,80,443,25,587"
+TCP6_IN="22,80,443,8443,8880,25,587,465,993,995,110,143"
+TCP6_OUT="53,80,443,25,587"
+IP_ADDRESS=""
 ```
 
-### Uninstall Options
+**What gets configured:**
+- SSH: 22
+- Plesk Panel: 8443 (HTTPS)
+- Plesk Webmail: 8880
+- Databases: 3306 (MySQL), 5432 (PostgreSQL)
+- Email, FTP, DNS: Standard ports
 
+### Generic Configuration
+
+**Auto-detected ports:**
 ```bash
---uninstall              Remove nftban installation
---uninstall --purge      Remove nftban + all logs and data
+# SSH port auto-detected from /etc/ssh/sshd_config
+SSH_PORT=$(grep -E '^\s*Port\s+' /etc/ssh/sshd_config | awk '{print $2}' | head -n 1)
+# Falls back to 22 if not found
+
+TCP_IN="<SSH_PORT>,80,443"
+TCP_OUT="53,80,443,123"
+TCP6_IN="<SSH_PORT>,80,443"
+TCP6_OUT="53,80,443,123"
+IP_ADDRESS=""
 ```
 
-### Advanced Options
+**What gets configured:**
+- SSH: Auto-detected or 22
+- Web: 80, 443
+- DNS: 53
+- NTP: 123
+
+### Skipping Detection
 
 ```bash
---beginner               More verbose, beginner-friendly output
---no-color               Disable colored output
---no-unicode             Use ASCII instead of Unicode icons
---quiet                  Suppress informational messages
---dry-run                Simulate actions without applying changes
+# Skip control panel detection
+sudo ./nftban_init.sh --github -y --skip-cp-detect
+
+# Creates empty configuration files
+# Manual configuration required
+```
+
+---
+
+## 📦 Package Management
+
+### Supported Package Managers
+
+| Distribution | Package Manager | Command |
+|--------------|----------------|---------|
+| Debian/Ubuntu | apt-get | `apt-get install -y` |
+| RHEL/CentOS | dnf/yum | `dnf install -y` |
+| Rocky/AlmaLinux | dnf | `dnf install -y` |
+| Fedora | dnf | `dnf install -y` |
+| openSUSE | zypper | `zypper install -y` |
+| Alpine | apk | `apk add --no-cache` |
+
+### Package Installation Process
+
+```
+1. Detect package manager
+   └── Checks: apt-get, dnf, yum, zypper, apk
+
+2. Update package cache (apt-get only)
+   └── apt-get update -y
+
+3. Install EPEL (RHEL-like systems)
+   ├── Check if EPEL already installed
+   ├── Try: dnf/yum install epel-release
+   └── Fallback: Direct RPM download
+
+4. Install packages sequentially
+   ├── nftables
+   ├── fail2ban
+   ├── whois
+   ├── dnsutils/bind-utils
+   ├── ipcalc
+   └── sipcalc (optional)
+
+5. Verify installations
+   └── Check each command: nft, fail2ban-client, whois
+```
+
+### Package Naming Differences
+
+| Package | Debian/Ubuntu | RHEL/CentOS | Alpine |
+|---------|---------------|-------------|--------|
+| DNS Utils | dnsutils | bind-utils | bind-tools |
+| IP Calc | ipcalc | ipcalc | ipcalc |
+| SIP Calc | sipcalc | sipcalc | sipcalc |
+
+### EPEL Repository
+
+**Why needed:**
+- Required for fail2ban on RHEL-like systems
+- Required for sipcalc on RHEL-like systems
+
+**Installation methods:**
+```bash
+# Method 1: Package manager
+dnf install -y epel-release
+
+# Method 2: Direct RPM (fallback)
+# Detected OS version: 8 or 9
+dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
+```
+
+### Package Verification
+
+```bash
+# After installation, script verifies:
+command -v nft >/dev/null 2>&1           # nftables
+command -v fail2ban-client >/dev/null    # fail2ban
+command -v whois >/dev/null              # whois
+command -v dig >/dev/null                # dnsutils
+command -v ipcalc >/dev/null             # ipcalc (preferred)
+command -v sipcalc >/dev/null            # sipcalc (optional)
+```
+
+---
+
+## 📁 Directory Structure
+
+### Complete Layout
+
+```
+/etc/nftban/
+├── config/                          # Configuration files
+│   ├── nftban-configuration-ipv4-ports-input-allow.conf       # Base IPv4 input
+│   ├── nftban-configuration-ipv4-ports-input-allow.conf.local # User IPv4 input
+│   ├── nftban-configuration-ipv4-ports-output-allow.conf      # Base IPv4 output
+│   ├── nftban-configuration-ipv4-ports-output-allow.conf.local # User IPv4 output
+│   ├── nftban-configuration-ipv6-ports-input-allow.conf       # Base IPv6 input
+│   ├── nftban-configuration-ipv6-ports-input-allow.conf.local # User IPv6 input
+│   ├── nftban-configuration-ipv6-ports-output-allow.conf      # Base IPv6 output
+│   ├── nftban-configuration-ipv6-ports-output-allow.conf.local # User IPv6 output
+│   ├── nftban-configuration-user-whitelist_ips.conf           # Base whitelist
+│   ├── nftban-configuration-user-whitelist_ips.conf.local     # User whitelist
+│   ├── nftban-configuration-user-blacklist_ips.conf           # Base blacklist
+│   ├── nftban-configuration-user-blacklist_ips.conf.local     # User blacklist
+│   ├── nftban-configuration-f2b-ips_temp-blacklists_conf.local # Fail2Ban temp bans
+│   ├── nft_rules.conf                   # Generated nftables rules (base)
+│   ├── nft_rules.conf.local             # Generated nftables rules (user)
+│   ├── nftban.conf                      # Fail2Ban base config
+│   └── nftban.conf.local                # Fail2Ban user config
+│
+├── scripts/                         # Management scripts
+│   ├── nftban_init.sh              # This script
+│   ├── nftban_init_nftables_conf.sh # Firewall configuration
+│   ├── nftban_init_fail2ban_conf.sh # Fail2Ban setup
+│   ├── nftban_auto_update.sh       # Auto-update script (if enabled)
+│   └── [other utility scripts]
+│
+├── templates/                       # Configuration templates
+│   └── control-panels/
+│       ├── directadmin.conf        # DirectAdmin template
+│       ├── cpanel.conf             # cPanel template
+│       ├── plesk.conf              # Plesk template
+│       └── generic.conf            # Generic server template
+│
+├── bin/                            # Binaries
+│   └── nftban                      # CLI tool
+│
+├── rules/                          # Custom rules (future use)
+│
+├── conf.d/                         # Additional configurations
+│
+├── systemd/                        # Systemd service files
+│   └── nftban.service             # Service definition (if repo provides)
+│
+├── logs -> /var/log/nftban/       # Symlink to logs
+│
+├── backups/                        # Backup storage
+│
+└── .version                        # Version tracking file
+
+/var/log/nftban/                    # Log files
+├── nftban_init_YYYYMMDD_HHMMSS_PID.log  # Init logs
+├── nftban_nftables_YYYYMMDD_HHMMSS.log  # Firewall logs
+├── nftban_fail2ban_YYYYMMDD_HHMMSS.log  # Fail2Ban logs
+└── cp_detection_YYYYMMDD_HHMMSS.log     # Control panel detection logs
+
+/var/backups/                       # System backups
+└── nftban_YYYYMMDD_HHMMSS.tgz     # Timestamped backups
+
+/usr/local/bin/                     # Global binaries
+└── nftban -> /etc/nftban/bin/nftban    # Symlink to CLI tool
+```
+
+### File Permissions
+
+```bash
+# Directories
+chmod 0755 /etc/nftban/
+chmod 0755 /etc/nftban/{config,scripts,templates,bin,rules,conf.d,systemd}
+chmod 0755 /var/log/nftban/
+
+# Log files
+chmod 0640 /var/log/nftban/*.log
+
+# Scripts
+chmod 0755 /etc/nftban/scripts/*.sh
+chmod 0755 /etc/nftban/bin/nftban
+```
+
+### Symlinks
+
+```bash
+# Logs symlink
+/etc/nftban/logs -> /var/log/nftban/
+
+# CLI symlink
+/usr/local/bin/nftban -> /etc/nftban/bin/nftban
+```
+
+---
+
+## ✅ IP Validation
+
+### Validation Tools
+
+#### ipcalc (Primary for IPv4)
+
+**Features:**
+- Validates IPv4 addresses
+- Supports CIDR notation
+- Calculates network information
+- Validates subnet masks
+
+**Usage:**
+```bash
+# Validate single IP
+ipcalc -c 192.168.1.1
+
+# Validate CIDR
+ipcalc -c 192.168.1.0/24
+
+# Get detailed info
+ipcalc 192.168.1.100/24
+```
+
+#### sipcalc (Enhanced for IPv6)
+
+**Features:**
+- Validates IPv6 addresses
+- Validates IPv4 addresses
+- Extensive network calculations
+- Multiple output formats
+
+**Usage:**
+```bash
+# Validate IPv6
+sipcalc 2001:db8::1
+
+# Validate IPv6 CIDR
+sipcalc 2001:db8::/32
+
+# Validate IPv4
+sipcalc 192.168.1.1
+```
+
+### Validation Modes
+
+```bash
+# Auto mode (default)
+# Uses ipcalc if available, sipcalc as fallback, regex as last resort
+IP_VALIDATION_MODE="auto"
+
+# Force specific tool
+IP_VALIDATION_MODE="ipcalc"   # Use ipcalc only
+IP_VALIDATION_MODE="sipcalc"  # Use sipcalc only
+IP_VALIDATION_MODE="regex"    # Use regex only
+```
+
+### Validation Process
+
+```
+1. Clean input
+   ├── Remove leading/trailing whitespace
+   └── Check if empty
+
+2. Detect IP version
+   ├── Contains ':' → IPv6
+   └── No ':' → IPv4
+
+3. Choose validation method
+   ├── Auto mode:
+   │   ├── ipcalc available? → Use ipcalc
+   │   ├── sipcalc available? → Use sipcalc
+   │   └── None available → Use regex
+   └── Forced mode: Use specified tool
+
+4. Validate
+   ├── Run validation tool
+   └── Check return code
+
+5. Additional checks (regex mode)
+   ├── Check format (IPv4: xxx.xxx.xxx.xxx)
+   ├── Validate octets (0-255)
+   ├── Validate CIDR prefix (0-32 for IPv4, 0-128 for IPv6)
+   └── Return result
+```
+
+### Validation Statistics
+
+During control panel configuration, script tracks:
+```bash
+IP Validation Summary:
+- Total IPs processed: 15
+- Valid IPs: 14
+- Invalid IPs: 1
+- Validation method: ipcalc
+```
+
+### CIDR Validation
+
+```bash
+# IPv4 CIDR examples
+192.168.1.0/24      # ✅ Valid
+10.0.0.0/8          # ✅ Valid
+192.168.1.1/33      # ❌ Invalid (prefix > 32)
+
+# IPv6 CIDR examples
+2001:db8::/32       # ✅ Valid
+fe80::/10           # ✅ Valid
+2001:db8::/129      # ❌ Invalid (prefix > 128)
+```
+
+### Regex Fallback
+
+When tools unavailable, uses regex patterns:
+
+**IPv4 Regex:**
+```regex
+^([0-9]{1,3}\.){3}[0-9]{1,3}(/([0-9]|[12][0-9]|3[0-2]))?$
+```
+
+**IPv6 Regex:**
+```regex
+^(([0-9a-fA-F]{0,4}:){1,7}[0-9a-fA-F]{0,4}|::)(/([0-9]|[1-9][0-9]|1[0-1][0-9]|12[0-8]))?$
+```
+
+---
+
+## 🔄 Auto-Update System
+
+### How It Works
+
+```
+1. Creates update script
+   └── /etc/nftban/scripts/nftban_auto_update.sh
+
+2. Adds cron entry
+   └── Updates via git pull
+
+3. Runs on schedule
+   ├── Default: Every 12 hours (0 */12 * * *)
+   └── Custom: Daily at specified time (e.g., 30 3 * * *)
+
+4. Logs updates
+   └── Silent unless errors occur
+```
+
+### Enable Auto-Update
+
+```bash
+# Enable with default schedule (every 12 hours)
+sudo ./nftban_init.sh --enable-auto-update
+
+# Enable with daily schedule at 3:30 AM
+sudo ./nftban_init.sh --enable-auto-update --daily-time "03:30"
+
+# During installation
+sudo ./nftban_init.sh --github -y --enable-auto-update --daily-time "03:30"
+```
+
+### Check Auto-Update Status
+
+```bash
+# Detailed status
+sudo ./nftban_init.sh --auto-update-status
+
+# Output:
+# Auto-update via crontab: ENABLED (1 entry).
+#   • 30 3 * * * /etc/nftban/scripts/nftban_auto_update.sh >/dev/null 2>&1
+# Auto-update script: /etc/nftban/scripts/nftban_auto_update.sh
+#   size: 456 bytes, modified: 2025-01-15 03:30:00, sha256: abc123...
+```
+
+### Disable Auto-Update
+
+```bash
+# Remove auto-update
+sudo ./nftban_init.sh --remove-auto-update
+
+# Removes:
+# - Cron entry
+# - Auto-update script
+```
+
+### Auto-Update Script
+
+```bash
+#!/bin/bash
+set -euo pipefail
+PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+REPO_URL="https://github.com/itcmsgr/nftban"
+BRANCH="main"
+TARGET_DIR="/etc/nftban"
+
+cd "$TARGET_DIR"
+if [ -d .git ]; then
+  git fetch --quiet
+  git reset --hard "origin/$BRANCH" --quiet
+  git pull --quiet --rebase
+else
+  git init -q
+  git remote add origin "$REPO_URL" 2>/dev/null || true
+  git fetch -q origin "$BRANCH"
+  git checkout -q -B "$BRANCH" "origin/$BRANCH"
+fi
+```
+
+### Manual Update
+
+```bash
+# Update manually
+cd /etc/nftban
+sudo git pull
+
+# Or re-run init script
+sudo ./nftban_init.sh --github -y
+```
+
+### Cron Sanity Check
+
+Script checks if cron service is running:
+```bash
+# Checks:
+systemctl is-enabled cron || systemctl is-enabled crond
+systemctl is-active cron || systemctl is-active crond
+
+# Warns if not running
 ```
 
 ---
 
 ## 💡 Usage Examples
 
-### First-Time Installation
+### Example 1: Fresh Server Setup
 
 ```bash
-# Recommended: GitHub with auto-update
-curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/nftban_init.sh | sudo bash -s -- --github -y --enable-auto-update
+# Quick GitHub install with auto-update
+sudo curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/nftban_init.sh | bash -s -- --github -y --enable-auto-update
 
-# Or download first
-wget https://raw.githubusercontent.com/itcmsgr/nftban/main/nftban_init.sh
-chmod +x nftban_init.sh
-sudo ./nftban_init.sh --github -y
+# What happened:
+# ✅ Downloaded and ran nftban_init.sh
+# ✅ Cloned GitHub repository to /etc/nftban/
+# ✅ Installed all required packages
+# ✅ Detected DirectAdmin panel
+# ✅ Created configuration files
+# ✅ Set up auto-update every 12 hours
+# ✅ Created nftban CLI tool
+
+# Next steps:
+sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
+sudo /etc/nftban/scripts/nftban_init_fail2ban_conf.sh setup
 ```
 
-### Installation with DirectAdmin
+### Example 2: Custom Installation Path
 
 ```bash
-# Install (DirectAdmin will be auto-detected)
-sudo ./nftban_init.sh --github -y
-
-# Output will show:
-# ✅ DirectAdmin detected
-# ✅ DirectAdmin template created
-# ✅ Ready for nftban_init_nftables_conf.sh
-```
-
-### Installation with cPanel/WHM
-
-```bash
-# Install (cPanel will be auto-detected)
-sudo ./nftban_init.sh --github -y
-
-# Output will show:
-# ✅ cPanel/WHM detected
-# ✅ cPanel template created
-# ✅ Ready for nftban_init_nftables_conf.sh
-```
-
-### Custom Installation Path
-
-```bash
-# Install to /opt/nftban instead of /etc/nftban
+# Install to custom directory
 sudo ./nftban_init.sh --github -y --target /opt/nftban
+
+# Directory structure:
+# /opt/nftban/
+#   ├── config/
+#   ├── scripts/
+#   └── ...
+
+# Note: Log path remains /var/log/nftban/
 ```
 
-### Offline/Air-Gapped Installation
+### Example 3: Skip Control Panel Detection
 
 ```bash
-# Download on internet-connected machine
+# Install without automatic configuration
+sudo ./nftban_init.sh --github -y --skip-cp-detect
+
+# Creates empty configuration files
+# Manual configuration required
+
+# Edit files:
+sudo nano /etc/nftban/config/nftban-configuration-ipv4-ports-input-allow.conf.local
+
+# Add ports:
+22T     # SSH
+80T     # HTTP
+443T    # HTTPS
+3306T   # MySQL
+```
+
+### Example 4: Development/Testing Setup
+
+```bash
+# Install specific branch
+sudo ./nftban_init.sh --github -y --branch develop
+
+# Enable auto-updates for develop branch
+sudo ./nftban_init.sh --enable-auto-update
+
+# Update script will track develop branch
+```
+
+### Example 5: Air-Gapped Installation
+
+```bash
+# On internet-connected system:
+# 1. Download nftban_init.sh
+wget https://raw.githubusercontent.com/itcmsgr/nftban/main/nftban_init.sh
+
+# 2. Download ZIP
 wget https://github.com/itcmsgr/nftban/archive/refs/heads/main.zip
 
-# Transfer to offline machine, then:
-sudo ./nftban_init.sh --zip -y
+# Transfer both files to air-gapped system
+
+# On air-gapped system:
+# 1. Extract ZIP manually
+sudo mkdir -p /etc/nftban
+sudo unzip main.zip -d /tmp/
+sudo cp -r /tmp/nftban-main/* /etc/nftban/
+
+# 2. Run local installation
+sudo ./nftban_init.sh -y
+
+# Note: Package installation may fail without repository access
+# Pre-install packages: nftables, fail2ban, whois, dnsutils, ipcalc, sipcalc
 ```
 
-### Update Existing Installation
+### Example 6: Update Existing Installation
 
 ```bash
-# Re-run to update (safe - preserves your .conf.local files)
-sudo ./nftban_init.sh --github -y
+# Method 1: Re-run init script
+sudo /etc/nftban/nftban_init.sh --github -y
 
-# Your customizations in .conf.local files are preserved
+# Method 2: Manual git pull
+cd /etc/nftban
+sudo git pull
+
+# Method 3: ZIP re-download
+sudo /etc/nftban/nftban_init.sh --zip -y
+
+# After update, reload services:
+sudo systemctl restart nftables
+sudo systemctl restart fail2ban
 ```
 
-### Check Installation Status
+### Example 7: Check Installation Status
 
 ```bash
 # Human-readable status
-sudo ./nftban_init.sh --status
+sudo /etc/nftban/nftban_init.sh --status
 
-# JSON output (for scripting)
-sudo ./nftban_init.sh --status --json
+# Output:
+# [INFO] nftban path: /etc/nftban
+# [INFO] nftables: v1.0.2 (Lester Gooch)
+# [INFO] fail2ban: Fail2Ban v0.11.2
+# [INFO] IP Validation Tools:
+# [INFO]   - ipcalc: ipcalc 0.41
+# [INFO]   - sipcalc: sipcalc 1.1.6
+# [INFO] systemd unit present: /etc/systemd/system/nftban.service
+# [INFO] Auto-update via crontab: ENABLED (1 entry).
+
+# JSON status
+sudo /etc/nftban/nftban_init.sh --status --json
+
+# Output:
+# {"auto_update_enabled":true,"auto_update_lines":1,"target_dir":"/etc/nftban"}
 ```
 
-### Auto-Update Management
+### Example 8: Beginner-Friendly Mode
 
 ```bash
-# Enable auto-update (every 12 hours)
-sudo ./nftban_init.sh --enable-auto-update
+# Interactive with helpful messages
+sudo ./nftban_init.sh --github --beginner
 
-# Schedule daily at 3:30 AM
-sudo ./nftban_init.sh --enable-auto-update --daily-time "03:30"
-
-# Check auto-update status
-sudo ./nftban_init.sh --auto-update-status
-
-# Disable auto-update
-sudo ./nftban_init.sh --remove-auto-update
+# Output includes:
+# ℹ️  nftban Unified Installer
+# 👉 We will prepare your system and set up nftban
+# 💡 Nothing starts automatically; you remain in control
+# ✅ Installation finished successfully!
 ```
 
-### Uninstallation
+### Example 9: Dry-Run (Preview Mode)
 
 ```bash
-# Remove nftban (keep logs)
-sudo ./nftban_init.sh --uninstall -y
+# See what would happen without making changes
+sudo ./nftban_init.sh --github --dry-run
 
-# Complete removal (including logs)
-sudo ./nftban_init.sh --uninstall --purge -y
+# Shows:
+# - Packages that would be installed
+# - Directories that would be created
+# - Configuration files that would be generated
+# - Commands that would be executed
+
+# Nothing actually changes
+```
+
+### Example 10: Quiet Installation (Automation)
+
+```bash
+# Suppress non-error output
+sudo ./nftban_init.sh --github -y --quiet
+
+# Only shows:
+# - Errors
+# - Warnings
+# - Critical information
+
+# Perfect for:
+# - Automation scripts
+# - CI/CD pipelines
+# - Unattended installations
 ```
 
 ---
 
-## 🎯 Complete Workflow Guide
+## 📝 Configuration Files Created
 
-### Step 1: Run nftban_init.sh (This Script)
+### Port Configuration Files
 
+#### IPv4 Input Ports (.local)
+**File:** `nftban-configuration-ipv4-ports-input-allow.conf.local`
+
+**Format:**
 ```bash
-sudo ./nftban_init.sh --github -y
+# Port format: <port><type>
+# Types: T (TCP), U (UDP), B (Both)
+
+22T      # SSH TCP
+80T      # HTTP TCP
+443T     # HTTPS TCP
+53U      # DNS UDP
+3306T    # MySQL TCP
 ```
 
-**What happens:**
-1. ✅ Installs all required packages
-2. ✅ Creates directory structure
-3. ✅ Detects control panel (e.g., DirectAdmin)
-4. ✅ Creates templates for all panels
-5. ✅ Creates empty .conf.local files
-6. ✅ System is PREPARED but NOT YET CONFIGURED
+#### IPv4 Output Ports (.local)
+**File:** `nftban-configuration-ipv4-ports-output-allow.conf.local`
 
-**Result:**
-```
-Templates created:
-  /etc/nftban/templates/control-panels/directadmin.conf
-  /etc/nftban/templates/control-panels/cpanel.conf
-  /etc/nftban/templates/control-panels/plesk.conf
-  /etc/nftban/templates/control-panels/generic.conf
-
-Empty user files created:
-  /etc/nftban/config/*.conf.local (awaiting your customizations)
-```
-
-### Step 2: (Optional) Add Custom Ports
-
+**Example:**
 ```bash
-# Add custom application port
-echo "8080T" >> /etc/nftban/config/nftban-configuration-ipv4-ports-input-allow.conf.local
-
-# Add custom IP to whitelist
-echo "192.168.1.100" >> /etc/nftban/config/nftban-configuration-user-whitelist_ips.conf.local
+53U      # DNS queries
+80T      # HTTP outbound
+443T     # HTTPS outbound
+123U     # NTP
 ```
 
-### Step 3: Run nftban_init_nftables_conf.sh
+#### IPv6 Input/Output Ports (.local)
+**Files:** 
+- `nftban-configuration-ipv6-ports-input-allow.conf.local`
+- `nftban-configuration-ipv6-ports-output-allow.conf.local`
 
+**Same format as IPv4**
+
+### IP Management Files
+
+#### User Whitelist (.local)
+**File:** `nftban-configuration-user-whitelist_ips.conf.local`
+
+**Format:**
 ```bash
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
+# One IP or CIDR per line
+# IPv4 examples
+203.0.113.100
+192.168.1.0/24
+10.0.0.0/8
+
+# IPv6 examples
+2001:db8::1
+2001:db8::/32
 ```
 
-**What happens:**
-1. ✅ Detects control panel again
-2. ✅ Reads template from `templates/control-panels/`
-3. ✅ Writes system ports to `.conf` files
-4. ✅ Reads your customizations from `.conf.local` files
-5. ✅ Merges both sources
-6. ✅ Generates nftables rules
-7. ✅ Applies firewall configuration
+#### User Blacklist (.local)
+**File:** `nftban-configuration-user-blacklist_ips.conf.local`
 
-**Result:**
-```
-System configured with:
-  - DirectAdmin ports (from template)
-  - Your custom ports (from .conf.local)
-  - Firewall active and protecting your server
-```
+**Format:** Same as whitelist
 
-### Step 4: Configure fail2ban
+#### Fail2Ban Temp Bans (.local)
+**File:** `nftban-configuration-f2b-ips_temp-blacklists_conf.local`
 
+**Auto-managed by Fail2Ban:**
 ```bash
-sudo /etc/nftban/scripts/nftban_init_fail2ban_conf.sh
+# This file is managed by Fail2Ban
+# Do not edit manually
+192.0.2.50    # Banned: 2025-01-15 10:30:00
+198.51.100.25 # Banned: 2025-01-15 10:35:00
 ```
-
----
-
-## 📁 File Structure Explained
 
 ### Configuration File Hierarchy
 
 ```
-System Files (Auto-Managed)          User Files (Your Customizations)
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━        ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-.conf (from control panel template) → .conf.local (preserved forever)
-                                              ↓
-                                    Merged by nftban_init_nftables_conf.sh
-```
+Base Files (.conf)              User Files (.conf.local)
+─────────────────────           ─────────────────────────
+• Auto-generated                • Your customizations
+• Overwritten on updates        • Never overwritten
+• Reference defaults            • Takes precedence
+• Can be regenerated            • Survives updates
 
-### Templates Directory
-
-```
-/etc/nftban/templates/control-panels/
-├── directadmin.conf    # DirectAdmin: Ports 2222, 35000-35999, email, etc.
-├── cpanel.conf         # cPanel/WHM: Ports 2082-2096, 3306, etc.
-├── plesk.conf          # Plesk: Ports 8443, 8880, databases, etc.
-└── generic.conf        # Generic: SSH, HTTP, HTTPS, DNS only
-```
-
-### Configuration Directory
-
-```
-/etc/nftban/config/
-├── nftban-configuration-ipv4-ports-input-allow.conf         # System (auto)
-├── nftban-configuration-ipv4-ports-input-allow.conf.local   # User
-├── nftban-configuration-ipv4-ports-output-allow.conf        # System (auto)
-├── nftban-configuration-ipv4-ports-output-allow.conf.local  # User
-├── nftban-configuration-ipv6-ports-input-allow.conf         # System (auto)
-├── nftban-configuration-ipv6-ports-input-allow.conf.local   # User
-├── nftban-configuration-ipv6-ports-output-allow.conf        # System (auto)
-├── nftban-configuration-ipv6-ports-output-allow.conf.local  # User
-├── nftban-configuration-user-whitelist_ips.conf.local       # User IPs
-└── nftban-configuration-user-blacklist_ips.conf.local       # User IPs
-```
-
-### Other Important Directories
-
-```
-/etc/nftban/
-├── bin/nftban          # Command-line interface
-├── scripts/            # Management scripts
-│   ├── nftban_init_nftables_conf.sh
-│   ├── nftban_init_fail2ban_conf.sh
-│   └── nftban_auto_update.sh
-├── logs/               # Symlink to /var/log/nftban
-└── backups/            # Configuration backups
+Both files are read and merged by nftban_init_nftables_conf.sh
 ```
 
 ---
 
-## 🎛️ Control Panel Support
+## 💻 System Requirements
 
-### Pre-configured Panels
+### Operating Systems
 
-#### DirectAdmin
+| Distribution | Version | Status | Notes |
+|--------------|---------|--------|-------|
+| Debian | 10+ (Buster, Bullseye, Bookworm) | ✅ Fully Tested | Recommended |
+| Ubuntu | 20.04+ (Focal, Jammy, Noble) | ✅ Fully Tested | Recommended |
+| CentOS | 8+ (Stream) | ✅ Tested | Requires EPEL |
+| AlmaLinux | 8, 9 | ✅ Tested | Requires EPEL |
+| Rocky Linux | 8, 9 | ✅ Tested | Requires EPEL |
+| RHEL | 8, 9 | ✅ Should Work | Requires EPEL & subscription |
+| Fedora | 35+ | ✅ Tested | Modern packages |
+| openSUSE | Leap 15+ | ⚠️ Experimental | Community tested |
+| Alpine | 3.15+ | ⚠️ Experimental | Minimal testing |
 
-**Auto-detected at:** `/usr/local/directadmin/`
+### Minimum Hardware
 
-**Default Ports:**
-- Web Interface: 2222
-- FTP: 20-21, 35000-35999 (passive)
-- Email: 25, 110, 143, 465, 587, 993, 995
-- DNS: 53
+- **CPU**: 1 core @ 1 GHz
+- **RAM**: 512 MB
+- **Disk**: 1 GB free space
+- **Network**: Internet connection (for installation)
 
-**Template:** `directadmin.conf`
+### Recommended Hardware
 
-#### cPanel/WHM
+- **CPU**: 2+ cores @ 2 GHz
+- **RAM**: 2 GB
+- **Disk**: 5 GB free space (SSD preferred)
+- **Network**: Stable internet connection
 
-**Auto-detected at:** `/var/cpanel/`
+### Software Dependencies
 
-**Default Ports:**
-- cPanel: 2082 (HTTP), 2083 (HTTPS)
-- WHM: 2086 (HTTP), 2087 (HTTPS)
-- Webmail: 2095 (HTTP), 2096 (HTTPS)
-- Services: 2077, 2078, 2089
-- MySQL: 3306
-- Email: Standard ports
+#### Required (auto-installed)
+- nftables (0.9.3+)
+- fail2ban (0.10+)
+- whois
+- dnsutils/bind-utils
+- bash (4.0+)
+- systemd
 
-**Template:** `cpanel.conf`
+#### Recommended (auto-installed)
+- ipcalc
+- sipcalc
+- git (for GitHub method)
+- curl (for downloads)
+- unzip (for ZIP method)
 
-#### Plesk
+#### Optional
+- postfix/sendmail (for email alerts)
+- logwatch (for log monitoring)
+- geoip databases (for GeoIP features)
 
-**Auto-detected at:** `/usr/local/psa/`
+### Network Requirements
 
-**Default Ports:**
-- Plesk Panel: 8443 (HTTPS), 8880 (HTTP)
-- MySQL: 3306
-- PostgreSQL: 5432
-- Email: Standard ports
-- FTP: 20-21
+- **Outbound HTTPS (443)**: GitHub access
+- **Outbound HTTP (80)**: Package repositories
+- **DNS (53)**: Name resolution
 
-**Template:** `plesk.conf`
+### Filesystem Requirements
 
-#### Generic (No Panel)
-
-**Used when:** No panel detected
-
-**Default Ports:**
-- SSH: 22 (auto-detected)
-- HTTP: 80
-- HTTPS: 443
-- SMTP: 25
-- DNS: 53
-
-**Template:** `generic.conf`
-
-### Customizing Templates
-
-```bash
-# Edit template before first configuration
-sudo nano /etc/nftban/templates/control-panels/directadmin.conf
-
-# Change ports in template
-TCP_IN = "20,21,22,25,53,80,443,2222,8080,35000-35999"
-
-# Then run nftban_init_nftables_conf.sh to apply
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
-```
+- **Minimum**: 100 MB for nftban
+- **Recommended**: 1 GB (includes logs, backups)
+- **Log rotation**: Configured for 30-day retention
 
 ---
 
-## 🔧 Configuration Examples
-
-### Example 1: Adding Custom Web Server Port
-
-```bash
-# Add port 8080 for custom application
-echo "8080T" >> /etc/nftban/config/nftban-configuration-ipv4-ports-input-allow.conf.local
-
-# Apply changes
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
-```
-
-### Example 2: Whitelisting Office IP
-
-```bash
-# Add your office IP to whitelist
-echo "203.0.113.100" >> /etc/nftban/config/nftban-configuration-user-whitelist_ips.conf.local
-echo "# Office IP" >> /etc/nftban/config/nftban-configuration-user-whitelist_ips.conf.local
-
-# Apply changes
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
-```
-
-### Example 3: Opening Port Range for Application
-
-```bash
-# Open ports 3000-3010 for development
-cat >> /etc/nftban/config/nftban-configuration-ipv4-ports-input-allow.conf.local <<EOF
-# Development servers
-3000T
-3001T
-3002T
-3003T
-3004T
-3005T
-EOF
-
-# Apply changes
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
-```
-
-### Example 4: Mixed Protocols
-
-```bash
-# Custom application using both TCP and UDP
-echo "9000B" >> /etc/nftban/config/nftban-configuration-ipv4-ports-input-allow.conf.local
-
-# Apply changes
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
-```
-
----
-
-## 🛠️ Troubleshooting
+## 🔧 Troubleshooting
 
 ### Installation Issues
 
-#### Package Manager Not Detected
+#### Problem: "Supported package manager not found"
 
+**Cause:** Script doesn't recognize your package manager
+
+**Solution:**
 ```bash
-# Manually install dependencies first
+# Check what's available
+which apt-get dnf yum zypper apk
+
+# Manually install supported package manager
+# OR report your distribution on GitHub Issues
+```
+
+#### Problem: "Failed to install nftables"
+
+**Cause:** Package not available in repositories
+
+**Solution:**
+```bash
 # Debian/Ubuntu
-sudo apt-get install -y nftables fail2ban whois dnsutils ipcalc
+sudo apt-get update
+sudo apt-cache search nftables
 
-# RHEL/CentOS/Rocky/AlmaLinux
+# RHEL/CentOS - enable EPEL first
 sudo dnf install -y epel-release
-sudo dnf install -y nftables fail2ban whois bind-utils ipcalc sipcalc
+sudo dnf search nftables
 
-# Then run installer
-sudo ./nftban_init.sh --github -y
+# Check if nftables is already installed
+which nft
+nft --version
 ```
 
-#### GitHub Connection Failed
+#### Problem: "Failed to install fail2ban"
 
+**Cause:** EPEL not available on RHEL-like systems
+
+**Solution:**
 ```bash
-# Test GitHub connectivity
-curl -I https://github.com
-
-# If blocked, use ZIP method instead
-sudo ./nftban_init.sh --zip -y
-```
-
-#### EPEL Repository Issues (RHEL-based)
-
-```bash
-# Manually install EPEL
+# Install EPEL manually
 sudo dnf install -y epel-release
 
-# Or download directly
+# Or from direct URL (RHEL 9 example)
 sudo dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-9.noarch.rpm
 
-# Then re-run installer
-sudo ./nftban_init.sh --github -y
+# Verify EPEL
+dnf repolist | grep epel
+
+# Retry fail2ban installation
+sudo dnf install -y fail2ban
 ```
 
-#### Permission Denied
+#### Problem: "Network connectivity check failed"
 
+**Cause:** Cannot reach GitHub
+
+**Solution:**
 ```bash
-# Must run as root
+# Test connectivity
+curl -I https://github.com
+
+# If blocked, use ZIP method
+sudo ./nftban_init.sh --zip -y
+
+# Or use local installation
+sudo ./nftban_init.sh -y
+```
+
+#### Problem: "Permission denied"
+
+**Cause:** Not running as root
+
+**Solution:**
+```bash
+# Run with sudo
 sudo ./nftban_init.sh --github -y
 
-# Check you are root
-id
-# Should show: uid=0(root)
+# Or become root
+sudo -i
+./nftban_init.sh --github -y
 ```
 
 ### Control Panel Detection Issues
 
-#### Wrong Panel Detected
+#### Problem: "No control panel detected but I have one"
 
+**Cause:** Panel installed in non-standard location
+
+**Solution:**
 ```bash
-# Skip auto-detection and configure manually
+# Check panel paths
+ls -la /usr/local/directadmin/
+ls -la /var/cpanel/
+ls -la /usr/local/psa/
+
+# Skip detection and configure manually
 sudo ./nftban_init.sh --github -y --skip-cp-detect
 
-# Then edit the appropriate template
-sudo nano /etc/nftban/templates/control-panels/generic.conf
+# Add ports manually
+sudo nano /etc/nftban/config/nftban-configuration-ipv4-ports-input-allow.conf.local
 ```
 
-#### Panel Not Detected
+#### Problem: "Wrong ports configured"
 
+**Cause:** Control panel uses non-standard ports
+
+**Solution:**
 ```bash
-# Check panel installation
-ls -la /usr/local/directadmin/  # DirectAdmin
-ls -la /var/cpanel/             # cPanel
-ls -la /usr/local/psa/          # Plesk
+# Edit configuration after installation
+sudo nano /etc/nftban/config/nftban-configuration-ipv4-ports-input-allow.conf.local
 
-# If panel exists but not detected, file an issue
-# Manual workaround: edit generic.conf
-sudo nano /etc/nftban/templates/control-panels/generic.conf
-```
+# Add your custom ports
+2082T    # Custom cPanel port
+8080T    # Custom web port
 
-### Configuration Issues
-
-#### .conf.local Files Not Found
-
-```bash
-# Re-run installer to recreate them
-sudo ./nftban_init.sh --github -y
-
-# Files should be in:
-ls -la /etc/nftban/config/*.conf.local
-```
-
-#### Changes Not Applied
-
-```bash
-# After editing .conf.local, always run:
+# Regenerate firewall rules
 sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
-
-# Verify changes
-sudo nft list ruleset | grep -i dport
 ```
 
-#### Template Changes Not Working
+### Package Installation Issues
 
+#### Problem: "ipcalc not found after installation"
+
+**Cause:** Package installed but not in PATH
+
+**Solution:**
 ```bash
-# 1. Edit template
-sudo nano /etc/nftban/templates/control-panels/directadmin.conf
+# Find ipcalc
+which ipcalc
+find /usr -name ipcalc
 
-# 2. MUST re-run nftables init to apply
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
+# Add to PATH if needed
+export PATH=$PATH:/usr/local/bin
 
-# Templates are read every time by nftban_init_nftables_conf.sh
+# Or use sipcalc instead
+which sipcalc
+
+# Script will use regex fallback if neither found
+```
+
+#### Problem: "sipcalc installation failed"
+
+**Cause:** Not available in distribution repositories
+
+**Solution:**
+```bash
+# This is non-critical - script continues
+# IPv6 validation will be limited
+# IPv4 validation uses ipcalc or regex
+
+# To install manually from source:
+wget https://github.com/sii/sipcalc/archive/refs/heads/master.zip
+unzip master.zip
+cd sipcalc-master
+./autogen.sh
+./configure
+make
+sudo make install
 ```
 
 ### Auto-Update Issues
 
-#### Cron Not Running
+#### Problem: "Auto-update not working"
 
+**Cause:** Cron service not running
+
+**Solution:**
 ```bash
-# Check cron service
-sudo systemctl status cron     # Debian/Ubuntu
-sudo systemctl status crond    # RHEL/CentOS
+# Check cron status
+systemctl status cron || systemctl status crond
 
-# Start if not running
-sudo systemctl start cron
-sudo systemctl enable cron
+# Start cron
+sudo systemctl start cron || sudo systemctl start crond
+
+# Enable cron at boot
+sudo systemctl enable cron || sudo systemctl enable crond
 
 # Verify cron entry
 crontab -l | grep nftban
-```
 
-#### Updates Not Happening
-
-```bash
-# Check auto-update status
-sudo ./nftban_init.sh --auto-update-status
-
-# Manually test update script
+# Test auto-update manually
 sudo /etc/nftban/scripts/nftban_auto_update.sh
-
-# Check logs
-sudo tail -f /var/log/nftban/nftban_init_*.log
 ```
 
-### Common Errors
+#### Problem: "Auto-update script missing"
 
-#### "Another instance is already running"
+**Cause:** Script not created during installation
 
-This is from nftban_init_nftables_conf.sh, not this script.
-
+**Solution:**
 ```bash
-# Remove lock file
-sudo rm -f /var/run/nftban_init.lock
+# Re-enable auto-update
+sudo /etc/nftban/nftban_init.sh --enable-auto-update
 
-# Then retry
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
+# Verify script created
+ls -la /etc/nftban/scripts/nftban_auto_update.sh
+
+# Check cron entry
+crontab -l | grep nftban_auto_update
 ```
 
-#### "nftban command not found"
+### Git Issues
 
+#### Problem: "fatal: not a git repository"
+
+**Cause:** ZIP method used, not git clone
+
+**Solution:**
 ```bash
-# Check symlink
-ls -la /usr/local/bin/nftban
-
-# Recreate if missing
-sudo ln -sf /etc/nftban/bin/nftban /usr/local/bin/nftban
-
-# Verify PATH
-echo $PATH | grep -q /usr/local/bin || export PATH=$PATH:/usr/local/bin
-```
-
-#### Port Already in Use
-
-```bash
-# Check what's using the port
-sudo netstat -tulpn | grep :2222
-
-# Or with ss
-sudo ss -tulpn | grep :2222
-
-# Adjust configuration as needed
-```
-
----
-
-## 📊 Auto-Update System
-
-### How Auto-Update Works
-
-```
-Cron Job Schedule
-       ↓
-Runs: /etc/nftban/scripts/nftban_auto_update.sh
-       ↓
-Git Pull Latest Changes
-       ↓
-Updates Scripts, Templates, CLI
-       ↓
-Your .conf.local Files Untouched
-```
-
-### Auto-Update Schedules
-
-#### Every 12 Hours (Default)
-
-```bash
-sudo ./nftban_init.sh --enable-auto-update
-
-# Cron entry created:
-# 0 */12 * * * /etc/nftban/scripts/nftban_auto_update.sh
-```
-
-#### Daily at Specific Time
-
-```bash
-# Update daily at 3:30 AM
-sudo ./nftban_init.sh --enable-auto-update --daily-time "03:30"
-
-# Cron entry created:
-# 30 3 * * * /etc/nftban/scripts/nftban_auto_update.sh
-```
-
-### Managing Auto-Update
-
-```bash
-# Check status
-sudo ./nftban_init.sh --auto-update-status
-
-# Example output:
-# Auto-update via crontab: ENABLED (1 entry)
-#   • 0 */12 * * * /etc/nftban/scripts/nftban_auto_update.sh
-
-# Disable auto-update
-sudo ./nftban_init.sh --remove-auto-update
-
-# Re-enable with different schedule
-sudo ./nftban_init.sh --enable-auto-update --daily-time "02:00"
-```
-
-### Manual Update
-
-```bash
-# Update manually anytime
+# Convert to git repository
 cd /etc/nftban
-sudo git pull
-```
+sudo rm -rf .git
+sudo git init
+sudo git remote add origin https://github.com/itcmsgr/nftban.git
+sudo git fetch
+sudo git checkout -b main origin/main
 
----
-
-## 🔍 Verification & Testing
-
-### Verify Installation
-
-```bash
-# Check installation status
-sudo ./nftban_init.sh --status
-
-# Expected output:
-# nftban path: /etc/nftban
-# nftables: v1.0.x
-# fail2ban: v1.0.x
-
-# Check directory structure
-tree -L 2 /etc/nftban
-
-# Check templates
-ls -la /etc/nftban/templates/control-panels/
-
-# Check configuration files
-ls -la /etc/nftban/config/*.conf.local
-```
-
-### Verify Control Panel Detection
-
-```bash
-# View installation log
-sudo tail -50 /var/log/nftban/nftban_init_*.log | grep -i "detected"
-
-# Should show something like:
-# [INFO] DirectAdmin detected
-# [INFO] DirectAdmin template ready
-```
-
-### Verify Packages
-
-```bash
-# Check installed packages
-nft --version
-fail2ban-client --version
-whois --version
-
-# Check package installation
-dpkg -l | grep -E 'nftables|fail2ban|whois'  # Debian/Ubuntu
-rpm -qa | grep -E 'nftables|fail2ban|whois'  # RHEL/CentOS
-```
-
-### Test nftban CLI
-
-```bash
-# Test basic command
-nftban --help
-
-# Should show help message
-# If not, check symlink:
-ls -la /usr/local/bin/nftban
-```
-
----
-
-## ⚙️ Technical Details
-
-**Script Version:** 3.1.0  
-**Shell:** Bash 4.0+  
-**Dependencies:** `bash`, `curl` or `wget`, `git` (optional)  
-**Privileges:** Must run as root (sudo)
-
-### Compatibility Matrix
-
-| Distribution | Version | Package Manager | Status |
-|--------------|---------|-----------------|--------|
-| Debian | 10+ | apt-get | ✅ Fully Supported |
-| Ubuntu | 20.04+ | apt-get | ✅ Fully Supported |
-| CentOS | 8+ | dnf/yum | ✅ Fully Supported |
-| AlmaLinux | 8+ | dnf | ✅ Fully Supported |
-| Rocky Linux | 8+ | dnf | ✅ Fully Supported |
-| RHEL | 8+ | dnf/yum | ✅ Fully Supported |
-| Fedora | 35+ | dnf | ✅ Fully Supported |
-| openSUSE | Leap 15+ | zypper | ✅ Fully Supported |
-| Alpine Linux | 3.15+ | apk | ✅ Fully Supported |
-
-### Package Dependencies
-
-**Core Requirements:**
-- nftables (firewall engine)
-- fail2ban (intrusion prevention)
-- whois (IP information)
-- ipcalc (IPv4 validation)
-
-**Optional but Recommended:**
-- sipcalc (IPv6 validation)
-- dnsutils or bind-utils (DNS tools)
-- git (for GitHub installation method)
-
-### Performance Characteristics
-
-- **Installation time**: 30-120 seconds (depends on internet speed)
-- **Disk usage**: ~50 MB (with full repository)
-- **Memory usage**: < 10 MB during installation
-- **CPU usage**: Minimal
-
-### Security Considerations
-
-- ✅ All installations logged to `/var/log/nftban/`
-- ✅ Automatic backups before any changes
-- ✅ Lock file prevents concurrent runs
-- ✅ No services auto-started (manual control)
-- ✅ Root privileges required (prevents unauthorized changes)
-- ✅ SELinux compatible (auto-sets contexts)
-
----
-
-## 🔄 Upgrade Path
-
-### From v3.0.x to v3.1.0
-
-```bash
-# Simply re-run the installer
+# Or reinstall with GitHub method
 sudo ./nftban_init.sh --github -y
+```
 
-# Your customizations are safe:
-# ✅ .conf.local files preserved
-# ✅ Backups created automatically
-# ✅ Can rollback if needed
+### Log File Issues
+
+#### Problem: "Log file not created"
+
+**Cause:** Permission issues
+
+**Solution:**
+```bash
+# Check log directory
+ls -la /var/log/nftban/
+
+# Create if missing
+sudo mkdir -p /var/log/nftban
+sudo chmod 755 /var/log/nftban
+
+# Check disk space
+df -h /var/log/
+
+# View recent log
+sudo ls -lt /var/log/nftban/ | head -5
+sudo tail -50 /var/log/nftban/nftban_init_*.log
+```
+
+### Uninstall Issues
+
+#### Problem: "Files remain after uninstall"
+
+**Cause:** Uninstall without --purge
+
+**Solution:**
+```bash
+# Complete uninstall with purge
+sudo ./nftban_init.sh --uninstall --purge -y
+
+# Manual cleanup if needed
+sudo rm -rf /etc/nftban
+sudo rm -rf /var/log/nftban
+sudo rm -f /usr/local/bin/nftban
+sudo rm -f /etc/systemd/system/nftban.service
+
+# Remove from crontab
+crontab -l | grep -v nftban | crontab -
+```
+
+### Getting Help
+
+If you're still having issues:
+
+1. **Check logs:**
+   ```bash
+   sudo tail -100 /var/log/nftban/nftban_init_*.log
+   ```
+
+2. **Run status check:**
+   ```bash
+   sudo ./nftban_init.sh --status
+   ```
+
+3. **Try dry-run:**
+   ```bash
+   sudo ./nftban_init.sh --github --dry-run
+   ```
+
+4. **Report issue:**
+   - [GitHub Issues](https://github.com/itcmsgr/nftban/issues)
+   - Include: OS, version, error messages, log excerpts
+   - Tag: `nftban_init`, `installation`
+
+---
+
+## 🔗 Integration
+
+### Integration with Other nftban Components
+
+```
+Installation Flow:
+┌──────────────────────────────────────┐
+│  1. nftban_init.sh (THIS SCRIPT)    │ ← You are here
+│     • Install packages               │
+│     • Create directories             │
+│     • Detect control panel           │
+│     • Generate templates             │
+└────────────┬─────────────────────────┘
+             ↓
+┌──────────────────────────────────────┐
+│  2. nftban_init_nftables_conf.sh     │
+│     • Read configuration files       │
+│     • Generate nftables rules        │
+│     • Apply firewall                 │
+└────────────┬─────────────────────────┘
+             ↓
+┌──────────────────────────────────────┐
+│  3. nftban_init_fail2ban_conf.sh     │
+│     • Configure Fail2Ban             │
+│     • Setup jails                    │
+│     • Enable monitoring              │
+└────────────┬─────────────────────────┘
+             ↓
+┌──────────────────────────────────────┐
+│  4. nftban CLI                       │
+│     • Daily operations               │
+│     • Ban/unban IPs                  │
+│     • Monitor status                 │
+└──────────────────────────────────────┘
+```
+
+### Shared Resources
+
+All components share:
+- **Configuration**: `/etc/nftban/config/`
+- **Logs**: `/var/log/nftban/`
+- **Scripts**: `/etc/nftban/scripts/`
+- **Version**: `0.5.0-final`
+
+### Configuration File Dependencies
+
+```
+nftban_init.sh creates:
+├── Port configuration files
+│   └── Used by nftban_init_nftables_conf.sh
+├── IP whitelist/blacklist
+│   └── Used by nftban_init_nftables_conf.sh
+├── Directory structure
+│   └── Used by all components
+└── Control panel templates
+    └── Basis for all configurations
+
+nftban_init_nftables_conf.sh reads:
+└── Configuration files created by nftban_init.sh
+
+nftban_init_fail2ban_conf.sh reads:
+└── nftban.conf.local (can be created by nftban_init.sh)
+
+nftban CLI reads:
+└── All configuration files
 ```
 
 ### Version Compatibility
 
-| nftban_init.sh | nftban_init_nftables_conf.sh | Compatible? |
-|----------------|------------------------------|-------------|
-| v3.1.0 | v2.3.0 | ✅ Yes (Recommended) |
-| v3.1.0 | v2.2.0 | ⚠️ Partial (may have conflicts) |
-| v3.0.3 | v2.3.0 | ❌ No (conflicts with .conf.local) |
+| nftban_init.sh | nftban_init_nftables_conf.sh | nftban_init_fail2ban_conf.sh | nftban CLI |
+|----------------|------------------------------|------------------------------|------------|
+| 0.5.0-final    | 0.5.0-final                  | 0.5.0-final                  | 0.5.0-final |
 
-**Recommendation:** Always use matching versions.
+**Always use matching versions across all components.**
+
+### External Integration
+
+#### Ansible
+
+```yaml
+---
+- name: Install nftban
+  hosts: servers
+  become: yes
+  tasks:
+    - name: Download nftban_init.sh
+      get_url:
+        url: https://raw.githubusercontent.com/itcmsgr/nftban/main/nftban_init.sh
+        dest: /tmp/nftban_init.sh
+        mode: '0755'
+
+    - name: Run nftban installation
+      command: /tmp/nftban_init.sh --github -y --enable-auto-update
+      args:
+        creates: /etc/nftban/.version
+```
+
+#### Terraform
+
+```hcl
+resource "null_resource" "nftban_install" {
+  provisioner "remote-exec" {
+    inline = [
+      "curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/nftban_init.sh | sudo bash -s -- --github -y",
+      "sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final",
+      "sudo /etc/nftban/scripts/nftban_init_fail2ban_conf.sh setup"
+    ]
+  }
+}
+```
+
+#### Docker (Not Recommended)
+
+nftban requires host kernel access for nftables. Not suitable for containers.
+
+Consider: Install on Docker host, protect containers via host firewall.
 
 ---
 
 ## 📜 License
 
-**Custom MIT-NoResale License v1.1**
+**ITCMS Custom License – No Resale v1.2**  
+SPDX-License-Identifier: LicenseRef-CustomMIT-NoResale-1.2
 
+Copyright © 2025 **Antonios Voulvoulis – ITCMS**  
+https://itcms.gr
+
+### Quick Summary
+
+✅ **You CAN:**
+- Use for personal or commercial projects
+- Modify and customize
+- Deploy on unlimited systems
+- Charge for services using nftban
+- Include in managed service offerings
+
+❌ **You CANNOT:**
+- Sell the software itself
+- Sublicense or resell
+- Distribute as a paid product
+- Remove copyright notices
+
+### Service Provider Examples
+
+**Hosting Provider Setup Fee:**
 ```
-MIT License with Non-Commercial Restriction
-
-Copyright (c) 2024 Antonios Voulvoulis - ITCMS Team
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to use
-the Software for personal or commercial purposes, subject to the following:
-
-✅ Use (personal and commercial)
-✅ Copy
-✅ Modify
-✅ Merge
-✅ Publish
-✅ Distribute
-
-With the following conditions:
-
-1. Attribution: The above copyright notice and this permission notice shall be
-   included in all copies or substantial portions of the Software.
-
-2. Non-Resale: The Software, or any modified version, may NOT be sold,
-   sublicensed, or offered as a paid product without explicit written
-   permission from the copyright holder.
-
-3. No Warranty: THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND.
-```
-
-**SPDX:** `LicenseRef-CustomMIT-NoResale-1.1`
-
-See [LICENSE.md](./LICENSE.md) for full legal text.
-
----
-
-## 🤝 Contributing
-
-We welcome contributions!
-
-### Reporting Issues
-
-**Before reporting:**
-1. Check [existing issues](https://github.com/itcmsgr/nftban/issues)
-2. Review troubleshooting section
-3. Collect relevant information
-
-**Required information:**
-- Operating system and version
-- Control panel (if applicable)
-- Script version (`./nftban_init.sh --version`)
-- Installation method (GitHub/ZIP/local)
-- Complete error message
-- Installation log (`/var/log/nftban/nftban_init_*.log`)
-
-### Pull Requests
-
-1. Fork the repository
-2. Create feature branch (`git checkout -b feature/amazing-feature`)
-3. Test on at least 2 different distributions
-4. Test with and without control panels
-5. Update documentation
-6. Commit with clear messages
-7. Submit pull request
-
-### Adding New Control Panel Support
-
-To add support for a new panel:
-
-1. **Create detection logic:**
-```bash
-# In detect_control_panel() function
-elif [ -d "/path/to/newpanel/" ]; then
-  log INFO "NewPanel detected"
-  echo "newpanel"
-  return 0
+✅ "Server Setup & Security: €€€€"
+   Includes: nftban installation + configuration + monitoring
+   
+✅ "Managed Firewall Service: €€€€/month"
+   Includes: nftban management + updates + support
 ```
 
-2. **Create template file:**
-```bash
-# Create: /etc/nftban/templates/control-panels/newpanel.conf
-TCP_IN = "22,80,443,12345"
-TCP_OUT = "22,80,443"
-# ... etc
+**Security Consulting:**
+```
+✅ "Security Audit & Hardening: €€€€"
+   Includes: nftban deployment as part of security stack
+   
+✅ "24/7 Security Operations: €€€€/month"
+   Includes: nftban + monitoring + incident response
 ```
 
-3. **Test thoroughly:**
-- Fresh installation
-- Update existing installation
-- Template application
-- Port validation
+**NOT Allowed:**
+```
+❌ "nftban Pro License: $$$"
+   Cannot sell the software itself
+   
+❌ "nftban Enterprise Edition: $$$"
+   Cannot create paid variants
+```
 
-4. **Submit PR with:**
-- Detection code
-- Template file
-- Documentation updates
-- Test results
+### The Simple Test
+
+**Ask yourself:** *"Am I charging for the software itself, or for my service using the software?"*
+
+- **Service using nftban** = ✅ Allowed
+- **Selling nftban itself** = ❌ Not allowed
+
+### Need Commercial Licensing?
+
+📧 **Email:** contact@itcms.gr  
+🌐 **Website:** https://itcms.gr
+
+We're open to:
+- Partnership discussions
+- Custom licensing arrangements
+- Enterprise agreements
+- OEM licensing
+
+[📚 Full License Text](../LICENSE.md)
 
 ---
 
@@ -1052,136 +1795,115 @@ TCP_OUT = "22,80,443"
 
 ### Community Support
 
-- **Issues:** [GitHub Issues](https://github.com/itcmsgr/nftban/issues)
-- **Discussions:** [GitHub Discussions](https://github.com/itcmsgr/nftban/discussions)
-- **Wiki:** [GitHub Wiki](https://github.com/itcmsgr/nftban/wiki)
+- **GitHub Issues**: [Report bugs](https://github.com/itcmsgr/nftban/issues)
+- **GitHub Discussions**: [Ask questions](https://github.com/itcmsgr/nftban/discussions)
+- **Documentation**: [Complete guides](../docs/)
+- **Wiki**: [Community knowledge](https://github.com/itcmsgr/nftban/wiki)
 
 ### Professional Support
 
-- **Author:** Antonios Voulvoulis (ITCMS Team)
-- **Email:** support@itcms.gr
-- **Website:** [https://itcms.gr](https://itcms.gr)
+**ITCMS – IT Consulting Managed Services**
 
-### Useful Resources
+- **Author**: Antonios Voulvoulis
+- **Email**: support@itcms.gr
+- **Website**: [https://itcms.gr](https://itcms.gr)
+- **Services**:
+  - Installation assistance
+  - Custom configuration
+  - Security auditing
+  - Managed security services
+  - Training and consulting
 
-- [nftables Wiki](https://wiki.nftables.org/)
-- [Fail2ban Documentation](https://fail2ban.readthedocs.io/)
-- [DirectAdmin Forums](https://forum.directadmin.com/)
-- [cPanel Documentation](https://docs.cpanel.net/)
-- [Plesk Documentation](https://docs.plesk.com/)
+### Documentation
 
----
+- **[Main README](../README.md)** - Project overview
+- **[Complete Guide](README_COMPLETE.md)** - Comprehensive documentation
+- **[Firewall Configuration](README_nftban_init_nftables_conf.md)** - Next step after init
+- **[Intrusion Prevention](README_nftban_fail2ban.md)** - Fail2Ban setup
+- **[CLI Reference](README_nftban_cli.md)** - Daily operations
+- **[Troubleshooting](TROUBLESHOOTING.md)** - Common issues
 
-## 🔗 Related Scripts
+### Useful External Resources
 
-This is part of the **nftban** toolkit:
-
-| Script | Purpose | Documentation |
-|--------|---------|---------------|
-| **nftban_init.sh** | **This script** - System preparation and template creation | This file |
-| nftban_init_nftables_conf.sh | Firewall configuration and rule generation | [README_nftban_init_nftables_conf.md](README_nftban_init_nftables_conf.md) |
-| nftban_init_fail2ban_conf.sh | Fail2ban integration setup | [README_fail2ban.md](README_fail2ban.md) |
-| nftban | Main CLI for ban/unban operations | [README_nftban_cli.md](README_nftban_cli.md) |
-
----
-
-## 📚 Additional Documentation
-
-- [Architecture Overview](docs/ARCHITECTURE.md)
-- [Two-Step Installation Process](docs/INSTALLATION.md)
-- [Control Panel Integration](docs/CONTROL_PANELS.md)
-- [Configuration File Format](docs/CONFIGURATION.md)
-- [Troubleshooting Guide](docs/TROUBLESHOOTING.md)
-- [Migration from v3.0.x](docs/MIGRATION.md)
+- [nftables Wiki](https://wiki.nftables.org/) - Official nftables documentation
+- [Fail2ban Manual](https://fail2ban.readthedocs.io/) - Fail2Ban documentation
+- [systemd Documentation](https://www.freedesktop.org/software/systemd/man/) - System management
 
 ---
 
-## 🎓 Tutorials
+## ⭐ Show Your Support
 
-### Quick Start Guides
+If nftban_init.sh helps you deploy secure firewalls quickly and easily, please consider giving us a star!
 
-1. [Installing nftban on Fresh Server](tutorials/01-fresh-install.md)
-2. [DirectAdmin + nftban Setup](tutorials/02-directadmin.md)
-3. [cPanel/WHM + nftban Setup](tutorials/03-cpanel.md)
-4. [Adding Custom Ports](tutorials/04-custom-ports.md)
-5. [Setting Up Auto-Update](tutorials/05-auto-update.md)
+[![GitHub stars](https://img.shields.io/github/stars/itcmsgr/nftban?style=for-the-badge&logo=github)](https://github.com/itcmsgr/nftban/stargazers)
 
-### Video Guides (Coming Soon)
+**Why star this project?**
+- 🔍 **Visibility**: Help other sysadmins discover nftban
+- 💪 **Motivation**: Show appreciation for the development work
+- 📈 **Growth**: Support the project's momentum
+- 🎯 **Feedback**: Signal that automation matters to you
 
-- Complete installation walkthrough
-- Control panel detection explained
-- Customizing configurations
-- Troubleshooting common issues
+**Quick actions:**
+- ⭐ [Star this repository](https://github.com/itcmsgr/nftban)
+- 🍴 [Fork for your own modifications](https://github.com/itcmsgr/nftban/fork)
+- 👁️ [Watch for updates](https://github.com/itcmsgr/nftban/subscription)
+- 📢 [Share with your network](https://twitter.com/intent/tweet?text=Check%20out%20nftban%20-%20automated%20Linux%20firewall%20deployment&url=https://github.com/itcmsgr/nftban)
 
----
+### Spread the Word
 
-## ⭐ Star History
+Help the community by sharing nftban:
+- Recommend it in sysadmin forums
+- Write a blog post about your deployment
+- Create video tutorials
+- Share in social media
+- Recommend to clients and colleagues
 
-If you find this useful, please ⭐ star the repository!
-
-[![Star History Chart](https://api.star-history.com/svg?repos=itcmsgr/nftban&type=Date)](https://star-history.com/#itcmsgr/nftban&Date)
-
----
-
-## 📊 Statistics
-
-![GitHub stars](https://img.shields.io/github/stars/itcmsgr/nftban?style=social)
-![GitHub forks](https://img.shields.io/github/forks/itcmsgr/nftban?style=social)
-![GitHub issues](https://img.shields.io/github/issues/itcmsgr/nftban)
-![GitHub pull requests](https://img.shields.io/github/issues-pr/itcmsgr/nftban)
-![GitHub last commit](https://img.shields.io/github/last-commit/itcmsgr/nftban)
-![GitHub downloads](https://img.shields.io/github/downloads/itcmsgr/nftban/total)
+Every star, fork, and share helps nftban reach more people who need simple, reliable security automation!
 
 ---
 
-## 🎯 Frequently Asked Questions
+## 🎉 Related Documentation
 
-### Does this script configure my firewall?
+### Core Components
 
-**No.** This script only **prepares** your system:
-- Installs packages
-- Creates directory structure
-- Detects control panel
-- Creates templates
+- 📚 **[Main README](../README.md)** - Project overview and quick start
+- 🛡️ **[Firewall Configuration](README_nftban_init_nftables_conf.md)** - Configure nftables (next step)
+- 🔒 **[Intrusion Prevention](README_nftban_fail2ban.md)** - Setup Fail2Ban (step 3)
+- 💻 **[CLI Reference](README_nftban_cli.md)** - Daily operations tool
+- 📖 **[Complete Guide](README_COMPLETE.md)** - All-in-one documentation
 
-You must run `nftban_init_nftables_conf.sh` to actually configure the firewall.
+### Additional Guides
 
-### Will my custom ports be overwritten?
+- 🚀 **[Quick Start](QUICKSTART.md)** - 5-minute deployment
+- ⚙️ **[Configuration Guide](CONFIGURATION.md)** - Detailed configuration
+- 🎛️ **[Control Panels](CONTROL_PANELS.md)** - Panel-specific guides
+- 🔧 **[Troubleshooting](TROUBLESHOOTING.md)** - Solutions to common issues
+- 🏗️ **[Architecture](ARCHITECTURE.md)** - System design overview
+- 🔐 **[Security Best Practices](SECURITY.md)** - Hardening guide
 
-**No.** Your `.conf.local` files are **never overwritten**. They are for your customizations and are preserved forever.
+### Quick Links
 
-### Can I run this script multiple times?
-
-**Yes.** It's safe to re-run. Your customizations are preserved, and backups are created automatically.
-
-### Does this work without a control panel?
-
-**Yes.** If no panel is detected, a generic template is used with basic ports (SSH, HTTP, HTTPS).
-
-### Do I need internet access?
-
-- **GitHub method:** Yes (downloads from GitHub)
-- **ZIP method:** Yes (downloads ZIP file)
-- **Local method:** No (but limited functionality)
-
-### Will services start automatically?
-
-**No.** This script does NOT start or enable any services. You control when services start.
-
-### Can I use this in production?
-
-**Yes.** This script is production-ready and battle-tested. However, always test in a staging environment first.
+- 🏠 **[Project Home](https://github.com/itcmsgr/nftban)**
+- 🐛 **[Report Issue](https://github.com/itcmsgr/nftban/issues)**
+- 💬 **[Discussions](https://github.com/itcmsgr/nftban/discussions)**
+- 📧 **[Email Support](mailto:support@itcms.gr)**
+- 🌐 **[ITCMS Website](https://itcms.gr)**
 
 ---
 
 <p align="center">
   <b>Made with ❤️ by <a href="https://itcms.gr">ITCMS Team</a></b><br>
-  <sub>System preparation and template management for nftban</sub>
+  <sub>Empowering system administrators with simple, powerful security tools</sub>
 </p>
 
 <p align="center">
   <a href="https://github.com/itcmsgr/nftban">🏠 Home</a> •
-  <a href="https://github.com/itcmsgr/nftban/issues">🐛 Report Bug</a> •
-  <a href="https://github.com/itcmsgr/nftban/discussions">💬 Discuss</a> •
-  <a href="https://itcms.gr">🌐 Website</a>
+  <a href="README_COMPLETE.md">📚 Complete Docs</a> •
+  <a href="README_nftban_init_nftables_conf.md">🛡️ Next: Firewall Config</a> •
+  <a href="https://github.com/itcmsgr/nftban/issues">🐛 Report Issue</a> •
+  <a href="https://itcms.gr">🌐 ITCMS Website</a>
+</p>
+
+<p align="center">
+  <sub>Copyright © 2025 Antonios Voulvoulis – ITCMS. All rights reserved.</sub>
 </p>
