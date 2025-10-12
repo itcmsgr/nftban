@@ -1,16 +1,15 @@
-#!/usr/bin/env bash
-set -euo pipefail
-
+#!/bin/bash
 ###############################################################################
 # Script: nftban.sh
-# Version: 0.5.1 - Complete rewrite with Delegation Architecture
+# Version: 0.6.0 - Complete with Delegation Architecture
 # Author: ITCMS Team (Antonios Voulvoulis)
 #
 # Description:
 #   Complete nftables & Fail2Ban management tool
 #   Ban operations delegated to manager for single source of truth
 ###############################################################################
-VERSION="0.5.1"
+set -euo pipefail
+VERSION="0.6.0"
 VERSION_FILE="/etc/nftban/.version"
 BASE_DIR="/etc/nftban/config"
 SCRIPTS_DIR="/etc/nftban/scripts"
@@ -1586,11 +1585,8 @@ main() {
 
   setup_colors
   check_version
-  local arg1="${1:-}"
-  local arg2="${2:-}"
-  local arg3="${3:-}"
-  local arg4="${4:-}"
-  case "$arg1" in--geo-force-refresh)
+    case "$arg1" in
+  --geo-force-refresh)
   GEO_FORCE_REFRESH="true"
   return 0 ;;
 --geo-diff)
