@@ -1,4 +1,6 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
+
 ###############################################################################
 # Script: nftban.sh
 # Version: 0.5.1 - Complete rewrite with Delegation Architecture
@@ -8,8 +10,7 @@
 #   Complete nftables & Fail2Ban management tool
 #   Ban operations delegated to manager for single source of truth
 ###############################################################################
-set -euo pipefail
-VERSION="0.6.0"
+VERSION="0.5.1"
 VERSION_FILE="/etc/nftban/.version"
 BASE_DIR="/etc/nftban/config"
 SCRIPTS_DIR="/etc/nftban/scripts"
