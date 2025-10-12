@@ -3,19 +3,20 @@
 # =============================================================================
 # Script: nftban_init_fail2ban_conf.sh
 # Comprehensive fail2ban integration with nftables (nftban system)
-# Version: 0.5.0 (Enhanced with security, validation, dry-run, better mail testing)
+# Version: 0.6.0 (Enhanced with consolidated search, updated paths)
 # Author:  ITCMS Team (Antonios Voulvoulis) + Enhancements
 #
 # Description:
 #   Comprehensive automation for Fail2Ban using the nftables backend.
-#   Enhanced with security features, better validation, dry-run mode,
-#   improved mail testing, backup rotation, and comprehensive status reporting.
+#   Enhanced with consolidated IP search, updated configuration paths,
+#   security features, validation, dry-run mode, improved mail testing,
+#   backup rotation, and comprehensive status reporting.
 # =============================================================================
 
 set -euo pipefail
 
 # =============================================================================
-# CONFIGURATION
+# CONFIGURATION - Updated Paths
 # =============================================================================
 BASE_DIR="/etc/nftban"
 CONFIG_DIR="${BASE_DIR}/config"
@@ -23,8 +24,20 @@ TEMPLATE_DIR="${BASE_DIR}/templates/fail2ban"
 BACKUP_DIR="${BASE_DIR}/backups"
 DATA_DIR="${BASE_DIR}/data"
 FAIL2BAN_DIR="/etc/fail2ban"
-WHITELIST_FILE="${CONFIG_DIR}/nftban-fail2ban-ip-whitelist.conf.local"
-PERSISTENT_BLACKLIST="${CONFIG_DIR}/nftban-configuration-f2b-ips_temp-blacklists_conf.local"
+
+# Updated IP configuration files
+IPV4_BLACKLIST_FILE="$CONFIG_DIR/nftban-configuration-ipv4-blacklist_ips.conf.local"
+IPV6_BLACKLIST_FILE="$CONFIG_DIR/nftban-configuration-ipv6-blacklist_ips.conf.local"
+SYSTEM_WHITELIST_FILE="$CONFIG_DIR/nftban-configuration-system_whitelist_ips.conf.local"
+USER_WHITELIST_FILE="$CONFIG_DIR/nftban-configuration-user-whitelist_ips.conf.local"
+USER_BLACKLIST_FILE="$CONFIG_DIR/nftban-configuration-user-blacklist_ips.conf.local"
+FAIL2BAN_WHITELIST="$CONFIG_DIR/nftban-fail2ban-ip-whitelist.conf.local"
+FAIL2BAN_TEMP_IPS="$CONFIG_DIR/nftban-configuration-f2b-ips_temp-blacklists_conf.local"
+
+# Consolidated search file for performance
+FAIL2BAN_SEARCH_IPS="$CONFIG_DIR/nftban-f2b-ips_for-search.local"
+
+# Other configurations
 NFTBAN_CONFIG="${CONFIG_DIR}/nftban.conf"
 NFTBAN_CONFIG_LOCAL="${CONFIG_DIR}/nftban.conf.local"
 NFT_TABLE="nftban_global"
@@ -277,6 +290,168 @@ detect_ip_version() {
 }
 
 # =============================================================================
+# CONSOLIDATED IP SEARCH FILE MANAGEMENT
+# =============================================================================
+
+# Build consolidated search file from all IP configuration files
+build_consolidated_search_file() {
+    log_info "Building consolidated IP search file..."
+    
+    local temp_file="${FAIL2BAN_SEARCH_IPS}.tmp"
+    local timestamp
+    timestamp=$(date +'%Y-%m-%d %H:%M:%S')
+    
+    # Create header
+    cat > "$temp_file" <<HEADER
+# =============================================================================
+# nftban Consolidated IP Search File
+# Auto-generated on: $timestamp
+# DO NOT EDIT MANUALLY - This file is automatically updated
+# =============================================================================
+# This file combines all IP addresses from:
+#   - IPv4 Blacklist
+#   - IPv6 Blacklist  
+#   - System Whitelist
+#   - User Whitelist
+#   - User Blacklist
+#   - Fail2ban Whitelist
+#   - Fail2ban Temporary IPs
+# Format: IP_ADDRESS|SOURCE_FILE|TYPE (WHITELIST/BLACKLIST)
+# =============================================================================
+
+HEADER
+    
+    local total_ips=0
+    
+    # Process each configuration file
+    local files=(
+        "$IPV4_BLACKLIST_FILE:IPV4_BLACKLIST:BLACKLIST"
+        "$IPV6_BLACKLIST_FILE:IPV6_BLACKLIST:BLACKLIST"
+        "$SYSTEM_WHITELIST_FILE:SYSTEM_WHITELIST:WHITELIST"
+        "$USER_WHITELIST_FILE:USER_WHITELIST:WHITELIST"
+        "$USER_BLACKLIST_FILE:USER_BLACKLIST:BLACKLIST"
+        "$FAIL2BAN_WHITELIST:FAIL2BAN_WHITELIST:WHITELIST"
+        "$FAIL2BAN_TEMP_IPS:FAIL2BAN_TEMP:BLACKLIST"
+    )
+    
+    for file_info in "${files[@]}"; do
+        IFS=':' read -r file source type <<< "$file_info"
+        
+        if [[ ! -f "$file" ]]; then
+            log_info "  File not found, skipping: $(basename "$file")"
+            continue
+        fi
+        
+        local count=0
+        while IFS= read -r line; do
+            # Skip comments and empty lines
+            [[ "$line" =~ ^#.*$ ]] && continue
+            [[ -z "$line" ]] && continue
+            
+            # Clean and validate IP
+            local ip
+            ip=$(echo "$line" | sed 's/#.*$//' | sed 's/^\s*//;s/\s*$//')
+            [[ -z "$ip" ]] && continue
+            
+            # Add to consolidated file
+            echo "${ip}|${source}|${type}" >> "$temp_file"
+            ((count++))
+            ((total_ips++))
+        done < "$file"
+        
+        if [[ $count -gt 0 ]]; then
+            log_info "  Added $count IPs from $source"
+        fi
+    done
+    
+    # Add summary footer
+    cat >> "$temp_file" <<FOOTER
+
+# =============================================================================
+# Summary: Total $total_ips IP addresses indexed
+# Last updated: $timestamp
+# =============================================================================
+FOOTER
+    
+    # Atomic move
+    mv "$temp_file" "$FAIL2BAN_SEARCH_IPS"
+    chmod 0644 "$FAIL2BAN_SEARCH_IPS"
+    
+    log_success "Consolidated search file created: $total_ips total IPs"
+    return 0
+}
+
+# Check if consolidated file needs rebuild
+check_consolidated_file_freshness() {
+    local rebuild_needed=false
+    
+    # Check if consolidated file exists
+    if [[ ! -f "$FAIL2BAN_SEARCH_IPS" ]]; then
+        log_info "Consolidated search file missing, rebuild needed"
+        return 0  # needs rebuild
+    fi
+    
+    # Get modification time of consolidated file
+    local consolidated_mtime
+    consolidated_mtime=$(stat -c %Y "$FAIL2BAN_SEARCH_IPS" 2>/dev/null || echo 0)
+    
+    # Check if any source file is newer
+    local source_files=(
+        "$IPV4_BLACKLIST_FILE"
+        "$IPV6_BLACKLIST_FILE"
+        "$SYSTEM_WHITELIST_FILE"
+        "$USER_WHITELIST_FILE"
+        "$USER_BLACKLIST_FILE"
+        "$FAIL2BAN_WHITELIST"
+        "$FAIL2BAN_TEMP_IPS"
+    )
+    
+    for file in "${source_files[@]}"; do
+        if [[ -f "$file" ]]; then
+            local file_mtime
+            file_mtime=$(stat -c %Y "$file" 2>/dev/null || echo 0)
+            if [[ $file_mtime -gt $consolidated_mtime ]]; then
+                log_info "Source file newer than consolidated: $(basename "$file")"
+                return 0  # needs rebuild
+            fi
+        fi
+    done
+    
+    return 1  # no rebuild needed
+}
+
+# Auto-rebuild consolidated file if needed
+ensure_consolidated_file() {
+    if check_consolidated_file_freshness; then
+        log_info "Rebuilding consolidated search file..."
+        build_consolidated_search_file
+    fi
+}
+
+# Search IP in consolidated file (fast)
+search_ip_in_consolidated() {
+    local ip="$1"
+    
+    ensure_consolidated_file
+    
+    if [[ ! -f "$FAIL2BAN_SEARCH_IPS" ]]; then
+        log_warning "Consolidated search file not available"
+        return 1
+    fi
+    
+    # Search for IP in consolidated file
+    local results
+    results=$(grep -E "^${ip}\|" "$FAIL2BAN_SEARCH_IPS" 2>/dev/null || true)
+    
+    if [[ -n "$results" ]]; then
+        echo "$results"
+        return 0
+    fi
+    
+    return 1
+}
+
+# =============================================================================
 # GEOIP AND WHOIS LOOKUP
 # =============================================================================
 geoip_lookup() {
@@ -489,8 +664,8 @@ Action Required:
 
 Commands to investigate:
   tail -50 /var/log/nftban/nftban-fail2ban.log
-  nftban-fail2ban-manager.sh --stats
-  nftban-fail2ban-manager.sh --test-config
+  $(basename "$0") --stats
+  $(basename "$0") --test-config
 
 ---
 This is an automated CRITICAL alert from nftban
@@ -645,61 +820,134 @@ ip_in_range() {
 }
 
 # =============================================================================
-# WHITELIST MANAGEMENT
+# WHITELIST MANAGEMENT - Updated to use new files
 # =============================================================================
+
 create_consolidated_whitelist() {
-    log_info "Creating consolidated whitelist from all *conf.local files..."
+    log_info "Creating consolidated whitelist from configuration files..."
     
-    if [ ! -d "$CONFIG_DIR" ]; then
+    if [[ ! -d "$CONFIG_DIR" ]]; then
         log_error "Config directory not found: $CONFIG_DIR"
         return 1
     fi
     
-    local temp_file="${WHITELIST_FILE}.tmp"
+    local temp_file="${FAIL2BAN_WHITELIST}.tmp"
+    local timestamp
+    timestamp=$(date +'%Y-%m-%d %H:%M:%S')
     
-    # Find all *conf.local files and extract IPs
-    find "$CONFIG_DIR" -name "*conf.local" -type f -exec cat {} \; 2>/dev/null | \
-        grep -v '^#' | \
-        grep -v '^[[:space:]]*$' | \
-        grep -E '^[0-9a-fA-F.:]+(/[0-9]+)?$' | \
-        sort -u > "$temp_file"
+    cat > "$temp_file" <<HEADER
+# =============================================================================
+# nftban Consolidated Fail2ban Whitelist
+# Auto-generated on: $timestamp
+# =============================================================================
+# This file combines whitelisted IPs from:
+#   - System Whitelist: $SYSTEM_WHITELIST_FILE
+#   - User Whitelist: $USER_WHITELIST_FILE
+# =============================================================================
+
+HEADER
     
-    if [ -s "$temp_file" ]; then
-        mv "$temp_file" "$WHITELIST_FILE"
-        log_success "Consolidated whitelist created: $WHITELIST_FILE"
-        log_info "Total unique IPs/ranges: $(wc -l < "$WHITELIST_FILE")"
-    else
-        log_warning "No valid IPs found in *conf.local files"
-        rm -f "$temp_file"
-    fi
+    local total_ips=0
+    
+    # Combine system and user whitelists
+    for whitelist_file in "$SYSTEM_WHITELIST_FILE" "$USER_WHITELIST_FILE"; do
+        if [[ -f "$whitelist_file" ]]; then
+            echo "# From: $(basename "$whitelist_file")" >> "$temp_file"
+            
+            local count=0
+            while IFS= read -r line; do
+                # Skip comments and empty lines
+                [[ "$line" =~ ^#.*$ ]] && continue
+                [[ -z "$line" ]] && continue
+                
+                # Clean IP
+                local ip
+                ip=$(echo "$line" | sed 's/#.*$//' | sed 's/^\s*//;s/\s*$//')
+                [[ -z "$ip" ]] && continue
+                
+                echo "$ip" >> "$temp_file"
+                ((count++))
+                ((total_ips++))
+            done < "$whitelist_file"
+            
+            log_info "  Added $count IPs from $(basename "$whitelist_file")"
+            echo "" >> "$temp_file"
+        fi
+    done
+    
+    # Add summary
+    echo "# Total whitelisted IPs: $total_ips" >> "$temp_file"
+    
+    # Sort and deduplicate
+    {
+        grep '^#' "$temp_file"
+        grep -v '^#' "$temp_file" | grep -v '^[[:space:]]*$' | sort -u
+    } > "${temp_file}.sorted"
+    
+    mv "${temp_file}.sorted" "$FAIL2BAN_WHITELIST"
+    rm -f "$temp_file"
+    
+    log_success "Consolidated whitelist created: $total_ips unique IPs"
+    
+    # Trigger consolidated search file rebuild
+    build_consolidated_search_file
+    
+    return 0
 }
 
 check_ip_in_whitelist_files() {
     local ip="$1"
     
-    # Check in all *conf.local files
-    while IFS= read -r file; do
+    # Fast path: check consolidated search file first
+    if [[ -f "$FAIL2BAN_SEARCH_IPS" ]]; then
+        local result
+        result=$(search_ip_in_consolidated "$ip" 2>/dev/null || true)
+        
+        if [[ -n "$result" ]]; then
+            # Check if it's a whitelist entry
+            if echo "$result" | grep -q "|WHITELIST$"; then
+                local source
+                source=$(echo "$result" | cut -d'|' -f2)
+                log_info "IP $ip found in whitelist (source: $source)"
+                return 0
+            fi
+        fi
+    fi
+    
+    # Fallback: direct file search
+    local whitelist_files=(
+        "$SYSTEM_WHITELIST_FILE"
+        "$USER_WHITELIST_FILE"
+        "$FAIL2BAN_WHITELIST"
+    )
+    
+    for file in "${whitelist_files[@]}"; do
+        if [[ ! -f "$file" ]]; then
+            continue
+        fi
+        
         while IFS= read -r line; do
-            # Skip comments and empty lines
             [[ "$line" =~ ^#.*$ ]] && continue
             [[ -z "$line" ]] && continue
             
-            # Remove whitespace
-            line=$(echo "$line" | tr -d '[:space:]')
+            local range
+            range=$(echo "$line" | sed 's/#.*$//' | sed 's/^\s*//;s/\s*$//')
+            [[ -z "$range" ]] && continue
             
-            if ip_in_range "$ip" "$line"; then
-                log_info "IP $ip found in whitelist file: $file (matches: $line)"
+            if ip_in_range "$ip" "$range"; then
+                log_info "IP $ip found in whitelist: $file (matches: $range)"
                 return 0
             fi
         done < "$file"
-    done < <(find "$CONFIG_DIR" -name "*conf.local" -type f 2>/dev/null)
+    done
     
     return 1
 }
 
 # =============================================================================
-# PERSISTENT BLACKLIST MANAGEMENT
+# PERSISTENT BLACKLIST MANAGEMENT - Updated path
 # =============================================================================
+
 check_persistent_offender() {
     local ip="$1"
     local threshold
@@ -729,8 +977,8 @@ add_to_persistent_blacklist() {
     local reason="${2:-Persistent offender}"
     
     # Create file if doesn't exist
-    if [ ! -f "$PERSISTENT_BLACKLIST" ]; then
-        cat > "$PERSISTENT_BLACKLIST" << 'EOF'
+    if [ ! -f "$FAIL2BAN_TEMP_IPS" ]; then
+        cat > "$FAIL2BAN_TEMP_IPS" << 'EOF'
 # =============================================================================
 # nftban Persistent Blacklist (Repeat Offenders)
 # =============================================================================
@@ -743,7 +991,7 @@ EOF
     fi
     
     # Check if IP already in persistent blacklist
-    if grep -qE "^${ip}[[:space:]]" "$PERSISTENT_BLACKLIST" 2>/dev/null; then
+    if grep -qE "^${ip}[[:space:]]" "$FAIL2BAN_TEMP_IPS" 2>/dev/null; then
         log_info "IP $ip already in persistent blacklist"
         return 0
     fi
@@ -751,7 +999,7 @@ EOF
     # Add IP with timestamp and reason
     local timestamp
     timestamp=$(date +'%Y-%m-%d %H:%M:%S')
-    echo "${ip}  # Added: ${timestamp} - ${reason}" >> "$PERSISTENT_BLACKLIST"
+    echo "${ip}  # Added: ${timestamp} - ${reason}" >> "$FAIL2BAN_TEMP_IPS"
     
     log_success "Added IP $ip to persistent blacklist"
     
@@ -766,25 +1014,28 @@ EOF
     # Log the action
     log_ban_attempt "$ip" "PERSISTENT" "PERMANENT_BAN" "Added to persistent blacklist: ${reason}" "N/A" "N/A"
     
+    # Trigger consolidated search file rebuild
+    build_consolidated_search_file
+    
     return 0
 }
 
 remove_from_persistent_blacklist() {
     local ip="$1"
     
-    if [ ! -f "$PERSISTENT_BLACKLIST" ]; then
+    if [ ! -f "$FAIL2BAN_TEMP_IPS" ]; then
         log_error "Persistent blacklist file not found"
         return 1
     fi
     
     # Check if IP exists
-    if ! grep -qE "^${ip}[[:space:]]" "$PERSISTENT_BLACKLIST" 2>/dev/null; then
+    if ! grep -qE "^${ip}[[:space:]]" "$FAIL2BAN_TEMP_IPS" 2>/dev/null; then
         log_error "IP $ip not found in persistent blacklist"
         return 1
     fi
     
     # Remove IP from file
-    sed -i "/^${ip}[[:space:]]/d" "$PERSISTENT_BLACKLIST"
+    sed -i "/^${ip}[[:space:]]/d" "$FAIL2BAN_TEMP_IPS"
     
     log_success "Removed IP $ip from persistent blacklist"
     
@@ -796,11 +1047,14 @@ remove_from_persistent_blacklist() {
             log_warning "Failed to remove $ip from nftables user_blacklist"
     fi
     
+    # Trigger consolidated search file rebuild
+    build_consolidated_search_file
+    
     return 0
 }
 
 list_persistent_blacklist() {
-    if [ ! -f "$PERSISTENT_BLACKLIST" ]; then
+    if [ ! -f "$FAIL2BAN_TEMP_IPS" ]; then
         echo "Persistent blacklist is empty"
         return 0
     fi
@@ -819,7 +1073,7 @@ list_persistent_blacklist() {
         
         ((count++))
         printf "%3d. %s\n" "$count" "$line"
-    done < "$PERSISTENT_BLACKLIST"
+    done < "$FAIL2BAN_TEMP_IPS"
     
     if [ "$count" -eq 0 ]; then
         echo "No IPs in persistent blacklist"
@@ -828,24 +1082,37 @@ list_persistent_blacklist() {
         echo "Total: $count permanently banned IPs"
     fi
     echo ""
-    echo "File: $PERSISTENT_BLACKLIST"
+    echo "File: $FAIL2BAN_TEMP_IPS"
     echo "==============================================="
 }
 
 check_ip_in_persistent_blacklist() {
     local ip="$1"
     
-    if [ ! -f "$PERSISTENT_BLACKLIST" ]; then
+    # Fast path: consolidated search
+    if [[ -f "$FAIL2BAN_SEARCH_IPS" ]]; then
+        local result
+        result=$(search_ip_in_consolidated "$ip" 2>/dev/null || true)
+        
+        if [[ -n "$result" ]]; then
+            if echo "$result" | grep -q "FAIL2BAN_TEMP|BLACKLIST$"; then
+                return 0
+            fi
+        fi
+    fi
+    
+    # Fallback: direct file check
+    if [[ ! -f "$FAIL2BAN_TEMP_IPS" ]]; then
         return 1
     fi
     
-    grep -qE "^${ip}[[:space:]]" "$PERSISTENT_BLACKLIST" 2>/dev/null
+    grep -qE "^${ip}[[:space:]]" "$FAIL2BAN_TEMP_IPS" 2>/dev/null
 }
 
 sync_persistent_blacklist_to_nftables() {
     log_info "Syncing persistent blacklist to nftables..."
     
-    if [ ! -f "$PERSISTENT_BLACKLIST" ]; then
+    if [ ! -f "$FAIL2BAN_TEMP_IPS" ]; then
         log_warning "Persistent blacklist file not found"
         return 0
     fi
@@ -869,7 +1136,7 @@ sync_persistent_blacklist_to_nftables() {
                 fi
             fi
         fi
-    done < "$PERSISTENT_BLACKLIST"
+    done < "$FAIL2BAN_TEMP_IPS"
     
     log_success "Synced $synced IPs to nftables user_blacklist"
 }
@@ -1025,7 +1292,7 @@ process_jail_template() {
     ban_time=$(get_jail_config "$jail_name" "BAN_TIME" "3600")
     max_retry=$(get_jail_config "$jail_name" "MAX_RETRY" "5")
     find_time=$(get_jail_config "$jail_name" "FIND_TIME" "600")
-    ignoreip_file=$(get_config_value "NFTBAN_F2B_IGNOREIP" "$WHITELIST_FILE")
+    ignoreip_file="$FAIL2BAN_WHITELIST"
     
     log_info "Processing template with values: BAN_TIME=$ban_time, MAX_RETRY=$max_retry, FIND_TIME=$find_time"
     
@@ -1122,14 +1389,91 @@ remove_jail() {
 }
 
 # =============================================================================
-# INSTALLATION / UNINSTALLATION
+# CRON JOB FOR AUTO-REBUILD
 # =============================================================================
+
+install_consolidated_file_cron() {
+    log_info "Installing cron job for consolidated file updates..."
+    
+    local cron_script="$BASE_DIR/scripts/rebuild_consolidated_ips.sh"
+    
+    # Create rebuild script
+    cat > "$cron_script" <<'CRON_SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+
+BASE_DIR="/etc/nftban"
+CONFIG_DIR="${BASE_DIR}/config"
+FAIL2BAN_SEARCH_IPS="$CONFIG_DIR/nftban-f2b-ips_for-search.local"
+
+# Source the main script functions
+if [ -f "$BASE_DIR/scripts/nftban_init_fail2ban_conf.sh" ]; then
+    source "$BASE_DIR/scripts/nftban_init_fail2ban_conf.sh"
+    build_consolidated_search_file
+else
+    echo "Error: Main script not found" >&2
+    exit 1
+fi
+CRON_SCRIPT
+    
+    chmod +x "$cron_script"
+    
+    # Add to cron (every 5 minutes)
+    local cron_entry="*/5 * * * * $cron_script >/dev/null 2>&1"
+    
+    # Check if entry already exists
+    if crontab -l 2>/dev/null | grep -qF "$cron_script"; then
+        log_info "Cron job already installed"
+        return 0
+    fi
+    
+    # Add to crontab
+    (crontab -l 2>/dev/null || true; echo "$cron_entry") | crontab -
+    
+    log_success "Cron job installed: updates every 5 minutes"
+}
+
+remove_consolidated_file_cron() {
+    local cron_script="$BASE_DIR/scripts/rebuild_consolidated_ips.sh"
+    
+    # Remove from crontab
+    crontab -l 2>/dev/null | grep -vF "$cron_script" | crontab - || true
+    
+    # Remove script
+    rm -f "$cron_script"
+    
+    log_info "Removed consolidated file cron job"
+}
+
+# =============================================================================
+# INSTALLATION / UNINSTALLATION - Fixed and Enhanced
+# =============================================================================
+
 install_nftban_fail2ban() {
     log_info "Installing nftban fail2ban templates and configurations..."
     
     local os
     os=$(detect_os)
     log_info "Detected OS: $os"
+    
+    # Verify template directory exists
+    local template_os_dir="${TEMPLATE_DIR}/${os}"
+    if [[ ! -d "$template_os_dir" ]]; then
+        log_error "Template directory not found: $template_os_dir"
+        log_error "Expected structure:"
+        log_error "  ${template_os_dir}/action.d/"
+        log_error "  ${template_os_dir}/filter.d/"
+        log_error "  ${template_os_dir}/jail.d/"
+        return 1
+    fi
+    
+    # Verify all required subdirectories exist
+    for subdir in action.d filter.d jail.d; do
+        if [[ ! -d "${template_os_dir}/${subdir}" ]]; then
+            log_error "Required directory missing: ${template_os_dir}/${subdir}"
+            return 1
+        fi
+    done
     
     # Create backup
     local backup_timestamp
@@ -1140,45 +1484,69 @@ install_nftban_fail2ban() {
     log_info "Creating backup at: $backup_path"
     
     # Backup existing fail2ban configs
-    if [ -d "${FAIL2BAN_DIR}/jail.d" ]; then
-        find "${FAIL2BAN_DIR}/jail.d" -name "nftban-*.conf" -type f -exec cp {} "$backup_path/" \; 2>/dev/null || true
-    fi
-    if [ -d "${FAIL2BAN_DIR}/filter.d" ]; then
-        find "${FAIL2BAN_DIR}/filter.d" -name "nftban-*.conf" -type f -exec cp {} "$backup_path/" \; 2>/dev/null || true
-    fi
-    if [ -d "${FAIL2BAN_DIR}/action.d" ]; then
-        find "${FAIL2BAN_DIR}/action.d" -name "nftban*.conf" -type f -exec cp {} "$backup_path/" \; 2>/dev/null || true
-    fi
+    local backed_up=0
+    for dir in jail.d filter.d action.d; do
+        if [[ -d "${FAIL2BAN_DIR}/${dir}" ]]; then
+            find "${FAIL2BAN_DIR}/${dir}" -name "nftban*.conf" -type f 2>/dev/null | while IFS= read -r file; do
+                cp "$file" "$backup_path/" 2>/dev/null && ((backed_up++)) || true
+            done
+        fi
+    done
     
-    # Check if templates directory exists
-    local template_os_dir="${TEMPLATE_DIR}/${os}"
-    if [ ! -d "$template_os_dir" ]; then
-        log_error "Template directory not found: $template_os_dir"
-        log_error "Please ensure templates are available for your OS at:"
-        log_error "  ${template_os_dir}/jail.d/"
-        log_error "  ${template_os_dir}/filter.d/"
-        log_error "  ${template_os_dir}/action.d/"
-        return 1
-    fi
+    log_info "Backed up $backed_up existing configuration files"
     
     # Install action.d templates
-    if [ -d "${template_os_dir}/action.d" ]; then
+    if [[ -d "${template_os_dir}/action.d" ]]; then
         log_info "Installing action.d templates..."
-        cp -v "${template_os_dir}/action.d/"*.conf "${FAIL2BAN_DIR}/action.d/" 2>/dev/null || true
+        local action_count=0
+        
+        find "${template_os_dir}/action.d" -name "*.conf" -type f | while IFS= read -r template; do
+            local filename
+            filename=$(basename "$template")
+            
+            if cp "$template" "${FAIL2BAN_DIR}/action.d/${filename}"; then
+                chmod 0644 "${FAIL2BAN_DIR}/action.d/${filename}"
+                log_success "  Installed: action.d/${filename}"
+                ((action_count++))
+            else
+                log_error "  Failed: action.d/${filename}"
+            fi
+        done
+        
+        log_info "Installed action.d templates"
+    else
+        log_warning "No action.d directory found in templates"
     fi
     
-    # Install filter.d templates (these usually don't need processing)
-    if [ -d "${template_os_dir}/filter.d" ]; then
+    # Install filter.d templates
+    if [[ -d "${template_os_dir}/filter.d" ]]; then
         log_info "Installing filter.d templates..."
-        cp -v "${template_os_dir}/filter.d/"*.conf "${FAIL2BAN_DIR}/filter.d/" 2>/dev/null || true
+        local filter_count=0
+        
+        find "${template_os_dir}/filter.d" -name "*.conf" -type f | while IFS= read -r template; do
+            local filename
+            filename=$(basename "$template")
+            
+            if cp "$template" "${FAIL2BAN_DIR}/filter.d/${filename}"; then
+                chmod 0644 "${FAIL2BAN_DIR}/filter.d/${filename}"
+                log_success "  Installed: filter.d/${filename}"
+                ((filter_count++))
+            else
+                log_error "  Failed: filter.d/${filename}"
+            fi
+        done
+        
+        log_info "Installed filter.d templates"
+    else
+        log_warning "No filter.d directory found in templates"
     fi
     
     # Process and install jail.d templates
-    if [ -d "${template_os_dir}/jail.d" ]; then
+    if [[ -d "${template_os_dir}/jail.d" ]]; then
         log_info "Installing jail.d templates..."
         local jail_count=0
         
-        while IFS= read -r template_file; do
+        find "${template_os_dir}/jail.d" -name "nftban-*.conf" -type f | while IFS= read -r template_file; do
             local jail_filename
             jail_filename=$(basename "$template_file")
             local jail_name
@@ -1188,18 +1556,24 @@ install_nftban_fail2ban() {
             ensure_jail_config_exists "$jail_name"
             
             # Process template with current config values
-            process_jail_template "$template_file" "$jail_name" "${FAIL2BAN_DIR}/jail.d/${jail_filename}"
-            
-            log_success "Installed: $jail_filename"
-            ((jail_count++))
-        done < <(find "${template_os_dir}/jail.d" -name "nftban-*.conf" -type f)
+            if process_jail_template "$template_file" "$jail_name" "${FAIL2BAN_DIR}/jail.d/${jail_filename}"; then
+                chmod 0644 "${FAIL2BAN_DIR}/jail.d/${jail_filename}"
+                log_success "  Installed: jail.d/${jail_filename}"
+                ((jail_count++))
+            else
+                log_error "  Failed: jail.d/${jail_filename}"
+            fi
+        done
         
-        log_info "Installed $jail_count jail templates"
+        log_info "Installed jail templates"
+    else
+        log_error "No jail.d directory found in templates"
+        return 1
     fi
     
     # Create main nftban action if doesn't exist
     local main_action="${FAIL2BAN_DIR}/action.d/nftban.conf"
-    if [ ! -f "$main_action" ]; then
+    if [[ ! -f "$main_action" ]]; then
         log_info "Creating main nftban action..."
         cat > "$main_action" << 'EOF'
 # nftban main action for fail2ban
@@ -1207,20 +1581,28 @@ install_nftban_fail2ban() {
 actionstart = 
 actionstop = 
 actioncheck = 
-actionban = /etc/nftban/nftban-fail2ban-manager.sh --ban <ip> <name> <bantime>
+actionban = /etc/nftban/scripts/nftban_init_fail2ban_conf.sh --ban <ip> <name> <bantime>
 actionunban = 
 
 [Init]
 EOF
+        chmod 0644 "$main_action"
         log_success "Created: $main_action"
     fi
     
-    # Create whitelist if doesn't exist
-    if [ ! -f "$WHITELIST_FILE" ]; then
-        log_info "Creating whitelist file..."
-        cat > "$WHITELIST_FILE" << 'EOF'
+    # Create/update whitelist files with proper structure
+    local whitelist_files=(
+        "$SYSTEM_WHITELIST_FILE"
+        "$USER_WHITELIST_FILE"
+        "$FAIL2BAN_WHITELIST"
+    )
+    
+    for whitelist in "${whitelist_files[@]}"; do
+        if [[ ! -f "$whitelist" ]]; then
+            log_info "Creating whitelist: $(basename "$whitelist")"
+            cat > "$whitelist" << 'EOF'
 # =============================================================================
-# nftban Fail2ban IP Whitelist
+# nftban Whitelist Configuration
 # =============================================================================
 # Add IPs or CIDR ranges that should NEVER be banned
 # Format: One IP/range per line
@@ -1233,25 +1615,67 @@ EOF
 127.0.0.1
 ::1
 EOF
-        log_success "Created: $WHITELIST_FILE"
-    fi
+            chmod 0644 "$whitelist"
+        fi
+    done
     
-    # Set proper permissions
-    chmod 644 "${FAIL2BAN_DIR}/jail.d/nftban-"*.conf 2>/dev/null || true
-    chmod 644 "${FAIL2BAN_DIR}/filter.d/nftban-"*.conf 2>/dev/null || true
-    chmod 644 "${FAIL2BAN_DIR}/action.d/nftban"*.conf 2>/dev/null || true
+    # Create blacklist files if they don't exist
+    local blacklist_files=(
+        "$IPV4_BLACKLIST_FILE"
+        "$IPV6_BLACKLIST_FILE"
+        "$USER_BLACKLIST_FILE"
+        "$FAIL2BAN_TEMP_IPS"
+    )
+    
+    for blacklist in "${blacklist_files[@]}"; do
+        if [[ ! -f "$blacklist" ]]; then
+            log_info "Creating blacklist: $(basename "$blacklist")"
+            cat > "$blacklist" << 'EOF'
+# =============================================================================
+# nftban Blacklist Configuration
+# =============================================================================
+# Add IPs or CIDR ranges to block
+# Format: One IP/range per line
+# =============================================================================
+
+EOF
+            chmod 0644 "$blacklist"
+        fi
+    done
+    
+    # Build initial consolidated search file
+    build_consolidated_search_file
+    
+    # Install cron job for auto-rebuild
+    install_consolidated_file_cron
+    
+    # Set proper permissions on all configs
+    chmod 0644 "${FAIL2BAN_DIR}/jail.d/nftban-"*.conf 2>/dev/null || true
+    chmod 0644 "${FAIL2BAN_DIR}/filter.d/nftban"*.conf 2>/dev/null || true
+    chmod 0644 "${FAIL2BAN_DIR}/action.d/nftban"*.conf 2>/dev/null || true
     
     log_success "Installation complete!"
     echo ""
-    echo "Templates and configurations installed successfully."
+    echo "=== Installation Summary ==="
+    echo "Templates installed from: $template_os_dir"
+    echo "Backup created at: $backup_path"
+    echo ""
+    echo "Configuration files:"
+    for file in "${whitelist_files[@]}" "${blacklist_files[@]}"; do
+        if [[ -f "$file" ]]; then
+            echo "  ✓ $(basename "$file")"
+        fi
+    done
     echo ""
     echo "Next steps:"
     echo "  1. Review configuration: $NFTBAN_CONFIG_LOCAL"
-    echo "  2. Enable jails: $(basename "$0") --update-jails"
-    echo "  3. Test configuration: $(basename "$0") --test-config"
-    echo "  4. Reload fail2ban: systemctl reload fail2ban"
+    echo "  2. Update whitelists/blacklists in: $CONFIG_DIR"
+    echo "  3. Enable jails: $(basename "$0") --update-jails"
+    echo "  4. Test configuration: $(basename "$0") --test-config"
+    echo "  5. Reload fail2ban: systemctl reload fail2ban"
     echo ""
-    echo "Backup created at: $backup_path"
+    echo "Consolidated IP search: ENABLED (auto-updates every 5 minutes)"
+    echo "============================="
 }
 
 uninstall_nftban_fail2ban() {
@@ -1263,7 +1687,7 @@ uninstall_nftban_fail2ban() {
     echo ""
     read -rp "Are you sure you want to uninstall? (yes/NO): " confirm
     
-    if [ "$confirm" != "yes" ]; then
+    if [[ "$confirm" != "yes" ]]; then
         log_info "Uninstall cancelled"
         return 0
     fi
@@ -1276,43 +1700,56 @@ uninstall_nftban_fail2ban() {
     
     log_info "Creating backup at: $backup_path"
     
+    local removed_count=0
+    
     # Backup and remove jail.d files
-    if [ -d "${FAIL2BAN_DIR}/jail.d" ]; then
-        find "${FAIL2BAN_DIR}/jail.d" -name "nftban-*.conf" -type f | while IFS= read -r file; do
-            cp "$file" "$backup_path/"
+    if [[ -d "${FAIL2BAN_DIR}/jail.d" ]]; then
+        find "${FAIL2BAN_DIR}/jail.d" -name "nftban-*.conf" -type f 2>/dev/null | while IFS= read -r file; do
+            cp "$file" "$backup_path/" 2>/dev/null || true
             rm -f "$file"
-            log_info "Removed: $file"
+            log_info "  Removed: $(basename "$file")"
+            ((removed_count++))
         done
     fi
     
     # Backup and remove filter.d files
-    if [ -d "${FAIL2BAN_DIR}/filter.d" ]; then
-        find "${FAIL2BAN_DIR}/filter.d" -name "nftban-*.conf" -type f | while IFS= read -r file; do
-            cp "$file" "$backup_path/"
+    if [[ -d "${FAIL2BAN_DIR}/filter.d" ]]; then
+        find "${FAIL2BAN_DIR}/filter.d" -name "nftban*.conf" -type f 2>/dev/null | while IFS= read -r file; do
+            cp "$file" "$backup_path/" 2>/dev/null || true
             rm -f "$file"
-            log_info "Removed: $file"
+            log_info "  Removed: $(basename "$file")"
+            ((removed_count++))
         done
     fi
     
     # Backup and remove action.d files
-    if [ -d "${FAIL2BAN_DIR}/action.d" ]; then
-        find "${FAIL2BAN_DIR}/action.d" -name "nftban*.conf" -type f | while IFS= read -r file; do
-            cp "$file" "$backup_path/"
+    if [[ -d "${FAIL2BAN_DIR}/action.d" ]]; then
+        find "${FAIL2BAN_DIR}/action.d" -name "nftban*.conf" -type f 2>/dev/null | while IFS= read -r file; do
+            cp "$file" "$backup_path/" 2>/dev/null || true
             rm -f "$file"
-            log_info "Removed: $file"
+            log_info "  Removed: $(basename "$file")"
+            ((removed_count++))
         done
     fi
     
+    # Remove consolidated file cron job
+    remove_consolidated_file_cron
+    
     log_success "Uninstallation complete!"
     echo ""
-    echo "All nftban templates and configurations removed from fail2ban."
+    echo "=== Uninstallation Summary ==="
+    echo "Removed configuration files from fail2ban"
     echo "Backup created at: $backup_path"
     echo ""
     echo "Note: Configuration files in ${CONFIG_DIR} were NOT removed."
-    echo "To completely remove nftban configs:"
-    echo "  rm -rf ${CONFIG_DIR}"
+    echo "To remove configuration files:"
+    echo "  rm -f ${CONFIG_DIR}/nftban-*.conf.local"
+    echo ""
+    echo "To remove consolidated search file:"
+    echo "  rm -f ${FAIL2BAN_SEARCH_IPS}"
     echo ""
     echo "Reload fail2ban to apply changes: systemctl reload fail2ban"
+    echo "=============================="
 }
 
 update_templates() {
@@ -1322,11 +1759,20 @@ update_templates() {
     os=$(detect_os)
     local template_os_dir="${TEMPLATE_DIR}/${os}"
     
-    if [ ! -d "$template_os_dir" ]; then
+    # Verify template directory
+    if [[ ! -d "$template_os_dir" ]]; then
         log_error "Template directory not found: $template_os_dir"
         log_error "Run --install first to set up the directory structure"
         return 1
     fi
+    
+    # Verify required subdirectories
+    for subdir in action.d filter.d jail.d; do
+        if [[ ! -d "${template_os_dir}/${subdir}" ]]; then
+            log_error "Required template directory missing: ${template_os_dir}/${subdir}"
+            return 1
+        fi
+    done
     
     # Create backup
     local backup_timestamp
@@ -1337,9 +1783,11 @@ update_templates() {
     log_info "Creating backup at: $backup_path"
     
     # Backup current fail2ban configs
-    find "${FAIL2BAN_DIR}/jail.d" -name "nftban-*.conf" -type f -exec cp {} "$backup_path/" \; 2>/dev/null || true
-    find "${FAIL2BAN_DIR}/filter.d" -name "nftban-*.conf" -type f -exec cp {} "$backup_path/" \; 2>/dev/null || true
-    find "${FAIL2BAN_DIR}/action.d" -name "nftban*.conf" -type f -exec cp {} "$backup_path/" \; 2>/dev/null || true
+    for dir in jail.d filter.d action.d; do
+        find "${FAIL2BAN_DIR}/${dir}" -name "nftban*.conf" -type f 2>/dev/null | while IFS= read -r file; do
+            cp "$file" "$backup_path/" 2>/dev/null || true
+        done
+    done
     
     echo ""
     echo "Template Update Options:"
@@ -1353,40 +1801,64 @@ update_templates() {
         1)
             log_info "Updating from local templates..."
             
+            local updated_count=0
+            
             # Update action.d
-            if [ -d "${template_os_dir}/action.d" ]; then
+            if [[ -d "${template_os_dir}/action.d" ]]; then
                 log_info "Updating action.d templates..."
-                cp -v "${template_os_dir}/action.d/"*.conf "${FAIL2BAN_DIR}/action.d/" 2>/dev/null || true
+                find "${template_os_dir}/action.d" -name "*.conf" -type f | while IFS= read -r template; do
+                    local filename
+                    filename=$(basename "$template")
+                    if cp "$template" "${FAIL2BAN_DIR}/action.d/${filename}"; then
+                        chmod 0644 "${FAIL2BAN_DIR}/action.d/${filename}"
+                        log_success "  Updated: action.d/${filename}"
+                        ((updated_count++))
+                    fi
+                done
             fi
             
             # Update filter.d
-            if [ -d "${template_os_dir}/filter.d" ]; then
+            if [[ -d "${template_os_dir}/filter.d" ]]; then
                 log_info "Updating filter.d templates..."
-                cp -v "${template_os_dir}/filter.d/"*.conf "${FAIL2BAN_DIR}/filter.d/" 2>/dev/null || true
+                find "${template_os_dir}/filter.d" -name "*.conf" -type f | while IFS= read -r template; do
+                    local filename
+                    filename=$(basename "$template")
+                    if cp "$template" "${FAIL2BAN_DIR}/filter.d/${filename}"; then
+                        chmod 0644 "${FAIL2BAN_DIR}/filter.d/${filename}"
+                        log_success "  Updated: filter.d/${filename}"
+                        ((updated_count++))
+                    fi
+                done
             fi
             
-            # Update jail.d (process templates)
-            if [ -d "${template_os_dir}/jail.d" ]; then
+            # Update jail.d (process templates for enabled jails only)
+            if [[ -d "${template_os_dir}/jail.d" ]]; then
                 log_info "Updating jail.d templates..."
                 
-                while IFS= read -r template_file; do
+                find "${template_os_dir}/jail.d" -name "nftban-*.conf" -type f | while IFS= read -r template_file; do
                     local jail_filename
                     jail_filename=$(basename "$template_file")
                     local jail_name
                     jail_name=$(echo "$jail_filename" | sed 's/nftban-\(.*\)\.conf/\1/' | tr '[:lower:]' '[:upper:]')
                     
-                    # Only update if jail is enabled
+                    # Check if jail is enabled
                     local jail_status
                     jail_status=$(get_jail_status "$jail_name")
                     
-                    if [ "$jail_status" == "true" ]; then
-                        process_jail_template "$template_file" "$jail_name" "${FAIL2BAN_DIR}/jail.d/${jail_filename}"
-                        log_success "Updated: $jail_filename"
+                    if [[ "$jail_status" == "true" ]]; then
+                        if process_jail_template "$template_file" "$jail_name" "${FAIL2BAN_DIR}/jail.d/${jail_filename}"; then
+                            chmod 0644 "${FAIL2BAN_DIR}/jail.d/${jail_filename}"
+                            log_success "  Updated: jail.d/${jail_filename}"
+                            ((updated_count++))
+                        fi
                     else
-                        log_info "Skipped (disabled): $jail_filename"
+                        log_info "  Skipped (disabled): jail.d/${jail_filename}"
                     fi
-                done < <(find "${template_os_dir}/jail.d" -name "nftban-*.conf" -type f)
+                done
             fi
+            
+            # Rebuild consolidated search file
+            build_consolidated_search_file
             
             log_success "Templates updated from local source"
             ;;
@@ -1399,11 +1871,11 @@ update_templates() {
             local git_branch
             git_branch=$(get_config_value "NFTBAN_GIT_BRANCH" "main")
             
-            if [ -z "$git_repo" ]; then
+            if [[ -z "$git_repo" ]]; then
                 echo ""
                 read -rp "Enter Git repository URL: " git_repo
                 
-                if [ -z "$git_repo" ]; then
+                if [[ -z "$git_repo" ]]; then
                     log_error "Git repository URL required"
                     return 1
                 fi
@@ -1417,66 +1889,86 @@ update_templates() {
                 return 1
             fi
             
-            # Clone or pull templates
+            # Clone to temporary directory
             local temp_dir
             temp_dir=$(mktemp -d)
             log_info "Cloning repository to temporary directory..."
             
             if git clone --depth 1 --branch "$git_branch" "$git_repo" "$temp_dir" 2>/dev/null; then
-                # Look for templates directory in the repo
-                local repo_template_dir
+                # Find templates directory in repo
+                local repo_template_dir=""
                 
-                if [ -d "${temp_dir}/templates/fail2ban/${os}" ]; then
-                    repo_template_dir="${temp_dir}/templates/fail2ban/${os}"
-                elif [ -d "${temp_dir}/fail2ban/${os}" ]; then
-                    repo_template_dir="${temp_dir}/fail2ban/${os}"
-                elif [ -d "${temp_dir}/${os}" ]; then
-                    repo_template_dir="${temp_dir}/${os}"
-                else
+                for possible_path in \
+                    "${temp_dir}/templates/fail2ban/${os}" \
+                    "${temp_dir}/fail2ban/${os}" \
+                    "${temp_dir}/${os}"; do
+                    
+                    if [[ -d "$possible_path" ]]; then
+                        repo_template_dir="$possible_path"
+                        break
+                    fi
+                done
+                
+                if [[ -z "$repo_template_dir" ]]; then
                     log_error "Could not find templates for ${os} in repository"
-                    log_error "Expected structure: templates/fail2ban/${os}/ or fail2ban/${os}/ or ${os}/"
+                    log_error "Expected structure: templates/fail2ban/${os}/"
                     rm -rf "$temp_dir"
                     return 1
                 fi
                 
+                log_info "Found templates at: $repo_template_dir"
                 log_info "Updating templates from repository..."
                 
-                # Copy new templates to local template directory first
-                mkdir -p "${template_os_dir}/action.d" "${template_os_dir}/filter.d" "${template_os_dir}/jail.d"
+                local updated_count=0
                 
-                if [ -d "${repo_template_dir}/action.d" ]; then
-                    cp -rv "${repo_template_dir}/action.d/"*.conf "${template_os_dir}/action.d/" 2>/dev/null || true
-                    cp -v "${template_os_dir}/action.d/"*.conf "${FAIL2BAN_DIR}/action.d/" 2>/dev/null || true
-                fi
-                
-                if [ -d "${repo_template_dir}/filter.d" ]; then
-                    cp -rv "${repo_template_dir}/filter.d/"*.conf "${template_os_dir}/filter.d/" 2>/dev/null || true
-                    cp -v "${template_os_dir}/filter.d/"*.conf "${FAIL2BAN_DIR}/filter.d/" 2>/dev/null || true
-                fi
-                
-                if [ -d "${repo_template_dir}/jail.d" ]; then
-                    cp -rv "${repo_template_dir}/jail.d/"*.conf "${template_os_dir}/jail.d/" 2>/dev/null || true
-                    
-                    # Process and install enabled jails
-                    while IFS= read -r template_file; do
-                        local jail_filename
-                        jail_filename=$(basename "$template_file")
-                        local jail_name
-                        jail_name=$(echo "$jail_filename" | sed 's/nftban-\(.*\)\.conf/\1/' | tr '[:lower:]' '[:upper:]')
+                # Copy templates to local template directory first
+                for subdir in action.d filter.d jail.d; do
+                    if [[ -d "${repo_template_dir}/${subdir}" ]]; then
+                        mkdir -p "${template_os_dir}/${subdir}"
                         
-                        local jail_status
-                        jail_status=$(get_jail_status "$jail_name")
-                        
-                        if [ "$jail_status" == "true" ]; then
-                            process_jail_template "$template_file" "$jail_name" "${FAIL2BAN_DIR}/jail.d/${jail_filename}"
-                            log_success "Updated: $jail_filename"
-                        else
-                            log_info "Skipped (disabled): $jail_filename"
-                        fi
-                    done < <(find "${template_os_dir}/jail.d" -name "nftban-*.conf" -type f)
-                fi
+                        find "${repo_template_dir}/${subdir}" -name "*.conf" -type f | while IFS= read -r template; do
+                            local filename
+                            filename=$(basename "$template")
+                            
+                            # Copy to local templates
+                            cp "$template" "${template_os_dir}/${subdir}/${filename}"
+                            log_info "  Downloaded: ${subdir}/${filename}"
+                            
+                            # Install to fail2ban
+                            if [[ "$subdir" == "jail.d" ]]; then
+                                # Process jail templates
+                                local jail_name
+                                jail_name=$(echo "$filename" | sed 's/nftban-\(.*\)\.conf/\1/' | tr '[:lower:]' '[:upper:]')
+                                
+                                local jail_status
+                                jail_status=$(get_jail_status "$jail_name")
+                                
+                                if [[ "$jail_status" == "true" ]]; then
+                                    if process_jail_template "${template_os_dir}/${subdir}/${filename}" \
+                                       "$jail_name" "${FAIL2BAN_DIR}/${subdir}/${filename}"; then
+                                        chmod 0644 "${FAIL2BAN_DIR}/${subdir}/${filename}"
+                                        log_success "  Updated: ${subdir}/${filename}"
+                                        ((updated_count++))
+                                    fi
+                                fi
+                            else
+                                # Direct copy for action/filter
+                                if cp "${template_os_dir}/${subdir}/${filename}" \
+                                   "${FAIL2BAN_DIR}/${subdir}/${filename}"; then
+                                    chmod 0644 "${FAIL2BAN_DIR}/${subdir}/${filename}"
+                                    log_success "  Updated: ${subdir}/${filename}"
+                                    ((updated_count++))
+                                fi
+                            fi
+                        done
+                    fi
+                done
                 
                 rm -rf "$temp_dir"
+                
+                # Rebuild consolidated search file
+                build_consolidated_search_file
+                
                 log_success "Templates updated from Git repository"
             else
                 log_error "Failed to clone repository: $git_repo"
@@ -1521,7 +2013,13 @@ test_configuration() {
     
     # Check configuration files
     echo "Configuration Files:"
-    for file in "$NFTBAN_CONFIG" "$NFTBAN_CONFIG_LOCAL" "$PERSISTENT_BLACKLIST"; do
+    local config_files=(
+        "$NFTBAN_CONFIG"
+        "$NFTBAN_CONFIG_LOCAL"
+        "$FAIL2BAN_TEMP_IPS"
+        "$FAIL2BAN_SEARCH_IPS"
+    )
+    for file in "${config_files[@]}"; do
         if [ -f "$file" ]; then
             echo -e "  ${GREEN}✓${NC} $file"
         else
@@ -1561,6 +2059,25 @@ test_configuration() {
     fi
     echo ""
     
+    # Check consolidated search file
+    echo "Consolidated Search File:"
+    if [ -f "$FAIL2BAN_SEARCH_IPS" ]; then
+        local total_ips
+        total_ips=$(grep -cE "^[0-9]" "$FAIL2BAN_SEARCH_IPS" 2>/dev/null || echo "0")
+        echo -e "  ${GREEN}✓${NC} File exists: $FAIL2BAN_SEARCH_IPS"
+        echo "  Total indexed IPs: $total_ips"
+        
+        # Check freshness
+        if check_consolidated_file_freshness; then
+            echo -e "  ${YELLOW}!${NC} File needs rebuild (source files are newer)"
+        else
+            echo -e "  ${GREEN}✓${NC} File is up to date"
+        fi
+    else
+        echo -e "  ${RED}✗${NC} Consolidated search file not found"
+    fi
+    echo ""
+    
     # Check configuration values
     echo "Configuration Values:"
     echo "  Alert Enabled: $(get_config_value "NFTBAN_F2B_ALERT_ENABLED" "not set")"
@@ -1570,49 +2087,6 @@ test_configuration() {
     echo "  Default Ban Time: $(get_config_value "NFTBAN_F2B_DEF_BAN_TIME" "not set")s"
     echo "  Rate Limit: $(get_config_value "BAN_RATE_LIMIT_PER_MINUTE" "not set") per minute"
     echo "  Persistent Ban Threshold: $(get_config_value "PERSISTENT_BAN_THRESHOLD" "3") bans"
-    echo ""
-    
-    # Check persistent blacklist
-    if [ -f "$PERSISTENT_BLACKLIST" ]; then
-        local perm_ban_count
-        perm_ban_count=$(grep -cE "^[0-9a-fA-F.:]+[[:space:]]" "$PERSISTENT_BLACKLIST" 2>/dev/null || echo "0")
-        echo "Persistent Blacklist:"
-        echo "  Permanently banned IPs: $perm_ban_count"
-        echo ""
-    fi
-    
-    # Check current ban rate
-    if [ -f "$RATE_LIMIT_TRACKER" ]; then
-        local current_time
-        current_time=$(date +%s)
-        local one_minute_ago=$((current_time - 60))
-        local current_rate
-        current_rate=$(awk -v cutoff="$one_minute_ago" '$1 >= cutoff' "$RATE_LIMIT_TRACKER" 2>/dev/null | wc -l)
-        local rate_limit
-        rate_limit=$(get_config_value "BAN_RATE_LIMIT_PER_MINUTE" "0")
-        
-        if [ "$rate_limit" != "0" ] && [ -n "$rate_limit" ]; then
-            echo "Current Ban Rate:"
-            if [ "$current_rate" -gt "$rate_limit" ]; then
-                echo -e "  ${RED}✗${NC} ${current_rate} bans/min (EXCEEDS LIMIT: ${rate_limit})"
-            elif [ "$current_rate" -gt $((rate_limit / 2)) ]; then
-                echo -e "  ${YELLOW}!${NC} ${current_rate} bans/min (limit: ${rate_limit})"
-            else
-                echo -e "  ${GREEN}✓${NC} ${current_rate} bans/min (limit: ${rate_limit})"
-            fi
-            echo ""
-        fi
-    fi
-    
-    # Check dependencies
-    echo "Optional Dependencies:"
-    for cmd in geoiplookup whois curl mail sendmail python3 git; do
-        if command -v "$cmd" &> /dev/null; then
-            echo -e "  ${GREEN}✓${NC} $cmd"
-        else
-            echo -e "  ${YELLOW}!${NC} $cmd (optional, not installed)"
-        fi
-    done
     echo ""
     
     log_success "Configuration test complete"
@@ -1744,7 +2218,7 @@ show_statistics() {
                 echo -e "  ${MAGENTA}■${NC} PERMANENT_BAN: $count"
                 ;;
             *)
-                echo "  ■  $action: $count"
+                echo "  ■   $action: $count"
                 ;;
         esac
     done
@@ -1774,6 +2248,20 @@ show_statistics() {
         done
     fi
     echo ""
+    
+    # Consolidated search file stats
+    if [ -f "$FAIL2BAN_SEARCH_IPS" ]; then
+        echo -e "${CYAN}Consolidated Search File:${NC}"
+        local total_indexed
+        total_indexed=$(grep -cE "^[0-9]" "$FAIL2BAN_SEARCH_IPS" 2>/dev/null || echo "0")
+        echo "  Total indexed IPs: $total_indexed"
+        echo "  File: $FAIL2BAN_SEARCH_IPS"
+        
+        local last_update
+        last_update=$(stat -c '%y' "$FAIL2BAN_SEARCH_IPS" 2>/dev/null | cut -d'.' -f1)
+        echo "  Last updated: $last_update"
+        echo ""
+    fi
     
     # Recent activity (last 10)
     echo -e "${CYAN}Recent Activity (last 10):${NC}"
@@ -1815,13 +2303,13 @@ show_statistics() {
     echo ""
     
     # Persistent blacklist info
-    if [ -f "$PERSISTENT_BLACKLIST" ]; then
+    if [ -f "$FAIL2BAN_TEMP_IPS" ]; then
         local perm_count
-        perm_count=$(grep -cE "^[0-9a-fA-F.:]+[[:space:]]" "$PERSISTENT_BLACKLIST" 2>/dev/null || echo "0")
+        perm_count=$(grep -cE "^[0-9a-fA-F.:]+[[:space:]]" "$FAIL2BAN_TEMP_IPS" 2>/dev/null || echo "0")
         if [ "$perm_count" -gt 0 ]; then
             echo -e "${CYAN}Persistent Blacklist:${NC}"
             echo "  Total permanently banned: $perm_count IPs"
-            echo "  File: $PERSISTENT_BLACKLIST"
+            echo "  File: $FAIL2BAN_TEMP_IPS"
             echo "  View with: --list-permanent"
             echo ""
         fi
@@ -2023,6 +2511,10 @@ BAN OPERATIONS:
     --check-ip IP               Check if IP is whitelisted or banned
     --create-whitelist          Create consolidated whitelist
 
+CONSOLIDATED SEARCH:
+    --rebuild-search            Rebuild consolidated IP search file
+    --search-ip IP              Search IP in consolidated file
+
 PERSISTENT BLACKLIST:
     --list-permanent            List permanently banned IPs
     --add-permanent IP REASON   Add IP to persistent blacklist
@@ -2071,6 +2563,12 @@ EXAMPLES:
     
     # Ban an IP address
     $(basename "$0") --ban 192.0.2.1 sshd 3600
+    
+    # Rebuild consolidated search file
+    $(basename "$0") --rebuild-search
+    
+    # Show statistics
+    $(basename "$0") --stats
 
 EOF
 }
@@ -2129,6 +2627,38 @@ main() {
             create_consolidated_whitelist
             ;;
         
+        --rebuild-search)
+            build_consolidated_search_file
+            ;;
+        
+        --search-ip)
+            if [ $# -lt 2 ]; then
+                log_error "Missing IP address"
+                exit 1
+            fi
+            
+            local ip="$2"
+            log_info "Searching for IP: $ip"
+            
+            local result
+            result=$(search_ip_in_consolidated "$ip" 2>/dev/null || true)
+            
+            if [ -n "$result" ]; then
+                echo ""
+                echo "IP Found in Consolidated Search:"
+                echo "$result" | while IFS='|' read -r found_ip source type; do
+                    echo "  IP: $found_ip"
+                    echo "  Source: $source"
+                    echo "  Type: $type"
+                done
+                echo ""
+            else
+                echo ""
+                echo "IP not found in consolidated search file"
+                echo ""
+            fi
+            ;;
+        
         --list-permanent|--list-blacklist)
             list_persistent_blacklist
             ;;
@@ -2165,6 +2695,20 @@ main() {
             echo "IP: $2"
             get_ip_info "$2"
             echo ""
+            
+            # Check in consolidated search
+            echo "Consolidated Search:"
+            local search_result
+            search_result=$(search_ip_in_consolidated "$2" 2>/dev/null || true)
+            if [ -n "$search_result" ]; then
+                echo "$search_result" | while IFS='|' read -r found_ip source type; do
+                    echo "  Found in: $source ($type)"
+                done
+            else
+                echo "  Not found in consolidated search"
+            fi
+            echo ""
+            
             if check_ip_in_whitelist_files "$2"; then
                 echo -e "${YELLOW}Status: WHITELISTED${NC}"
             elif check_ip_in_persistent_blacklist "$2"; then
