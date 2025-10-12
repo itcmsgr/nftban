@@ -617,20 +617,67 @@ install_packages() {
 
 # --- Directory structure ------------------------------------------------------
 create_dir_structure() {
-  log "INFO" "Creating directory structure under $TARGET_DIR"
-  mkdir -p "$TARGET_DIR"/{config,scripts,logs,backups,templates,bin,rules,conf.d,systemd} || die "Failed to create directory structure"
-  mkdir -p "$TARGET_DIR/templates/control-panels"
-  mkdir -p "$LOG_DIR" /var/log/nftban /var/backups
-  # symlink logs
+  log "INFO" "Creating complete directory structure under $TARGET_DIR"
+  
+  # Main directories
+  mkdir -p "$TARGET_DIR"/{config,scripts,backups,templates,bin,data,docs} || \
+    die "Failed to create main directories"
+  
+  # Control panel templates
+  mkdir -p "$TARGET_DIR/templates/control-panels" || \
+    die "Failed to create control-panels directory"
+  
+  # Fail2ban template structure for both OS types
+  for os_type in DEBIAN REDHAT; do
+    mkdir -p "$TARGET_DIR/templates/fail2ban/$os_type"/{action.d,filter.d,jail.d} || \
+      die "Failed to create fail2ban/$os_type directories"
+  done
+  
+  # Log directories
+  mkdir -p "$LOG_DIR" /var/log/nftban /var/backups || \
+    die "Failed to create log directories"
+  
+  # Create symlink for logs
   if [[ ! -L "$TARGET_DIR/logs" ]]; then
     rm -rf "$TARGET_DIR/logs" 2>/dev/null || true
     ln -sf "$LOG_DIR" "$TARGET_DIR/logs"
-    log "INFO" "Symlink created from $TARGET_DIR/logs to $LOG_DIR"
+    log "INFO" "Symlink created: $TARGET_DIR/logs -> $LOG_DIR"
   fi
-  chmod 0755 "$TARGET_DIR" "$TARGET_DIR"/{config,scripts,backups,templates,bin,rules,conf.d,systemd}
+  
+  # Set proper permissions
+  chmod 0755 "$TARGET_DIR" \
+    "$TARGET_DIR"/{config,scripts,backups,templates,bin,data,docs} \
+    "$TARGET_DIR/templates/control-panels"
+  
+  for os_type in DEBIAN REDHAT; do
+    chmod 0755 "$TARGET_DIR/templates/fail2ban/$os_type"/{action.d,filter.d,jail.d}
+  done
+  
   chmod 0755 "$LOG_DIR" /var/log/nftban /var/backups
   chmod 0640 "$LOGFILE" 2>/dev/null || true
-  log "INFO" "Directory structure created"
+  
+  log "INFO" "Complete directory structure created successfully"
+  
+  # Create directory verification log
+  log "INFO" "Directory structure verification:"
+  for dir in config scripts backups templates bin data docs logs; do
+    if [[ -e "$TARGET_DIR/$dir" ]]; then
+      log "INFO" "  ✓ $dir"
+    else
+      log "ERROR" "  ✗ $dir (missing)"
+    fi
+  done
+  
+  for os_type in DEBIAN REDHAT; do
+    for subdir in action.d filter.d jail.d; do
+      local path="$TARGET_DIR/templates/fail2ban/$os_type/$subdir"
+      if [[ -d "$path" ]]; then
+        log "INFO" "  ✓ templates/fail2ban/$os_type/$subdir"
+      else
+        log "ERROR" "  ✗ templates/fail2ban/$os_type/$subdir (missing)"
+      fi
+    done
+  done
 }
 
 # --- Control panel detection / templates -------------------------------------
@@ -723,6 +770,10 @@ create_empty_configs() {
     "nftban-configuration-user-whitelist_ips.conf.local"
     "nftban-configuration-user-blacklist_ips.conf.local"
     "nftban-configuration-f2b-ips_temp-blacklists_conf.local"
+    "nftban-configuration-ipv4-blacklist_ips.conf.local"
+    "nftban-configuration-ipv6-blacklist_ips.conf.local"
+    "nftban-configuration-system_whitelist_ips.conf.local"
+    "nftban-fail2ban-ip-whitelist.conf.local"
   )
   local timestamp
   timestamp=$(date)
@@ -736,7 +787,7 @@ create_empty_configs() {
 #   portT (TCP), portU (UDP), portB (Both)
 #   Example: 80T, 53U, 22B
 #
-# Format for whitelist files:
+# Format for whitelist/blacklist files:
 #   One IP address per line (IPv4 or IPv6)
 #   Example: 192.168.1.1, 10.0.0.0/8, 2001:db8::1
 EMPTY_EOF
@@ -1418,33 +1469,65 @@ uninstall_service_unit() {
 
 do_uninstall() {
   log "INFO" "Uninstall requested"
+  
   if ! ask_yes_no "Proceed to uninstall nftban from $TARGET_DIR?" "Y"; then
     log "INFO" "Uninstall aborted by user"
     exit 0
   fi
 
+  # Stop and disable services
   uninstall_service_unit
 
+  # Remove symlink
   if [[ -L "/usr/local/bin/nftban" ]]; then
     rm -f "/usr/local/bin/nftban"
     log "INFO" "Removed symlink /usr/local/bin/nftban"
   fi
 
+  # Remove main directory
   if [[ -d "$TARGET_DIR" ]]; then
+    # Backup before removal if --purge not specified
+    if [[ "$DO_PURGE" != "true" ]]; then
+      local backup_path="/var/backups/nftban_uninstall_$(date +%Y%m%d_%H%M%S).tgz"
+      log "INFO" "Creating backup before uninstall: $backup_path"
+      tar -czf "$backup_path" -C / "${TARGET_DIR#/}" 2>/dev/null || \
+        log "WARN" "Failed to create backup"
+    fi
+    
     rm -rf "$TARGET_DIR"
     log "INFO" "Removed $TARGET_DIR"
   fi
 
+  # Remove auto-update
   remove_auto_update
 
+  # Handle logs/data based on purge flag
   if [[ "$DO_PURGE" == "true" ]]; then
-    rm -rf "$LOG_DIR" /var/log/nftban
-    log "INFO" "Purged $LOG_DIR and /var/log/nftban"
+    rm -rf "$LOG_DIR" /var/log/nftban /var/backups/nftban_*.tgz
+    log "INFO" "Purged all logs, data, and backups"
+    
+    # Remove fail2ban configurations
+    if [[ -d "/etc/fail2ban" ]]; then
+      find /etc/fail2ban -name "nftban*.conf" -type f -delete 2>/dev/null || true
+      log "INFO" "Removed nftban fail2ban configurations"
+    fi
   else
-    log "INFO" "Keeping logs/state (use --purge to remove)"
+    log "INFO" "Keeping logs/backups in $LOG_DIR and /var/backups (use --purge to remove)"
   fi
 
   log "INFO" "Uninstall complete"
+  
+  # Show what was preserved
+  if [[ "$DO_PURGE" != "true" ]]; then
+    echo ""
+    echo "Preserved directories:"
+    [[ -d "$LOG_DIR" ]] && echo "  - $LOG_DIR"
+    [[ -d "/var/log/nftban" ]] && echo "  - /var/log/nftban"
+    ls /var/backups/nftban_*.tgz 2>/dev/null | while read -r backup; do
+      echo "  - $backup"
+    done
+  fi
+  
   exit 0
 }
 
@@ -1541,7 +1624,7 @@ show_completion_summary() {
 
   echo "2. Initialize fail2ban environment:"
   if [[ -f "$TARGET_DIR/scripts/nftban_init_fail2ban_conf.sh" ]]; then
-    echo "   sudo $TARGET_DIR/scripts/nftban_init_fail2ban_conf.sh"
+    echo "   sudo $TARGET_DIR/scripts/nftban_init_fail2ban_conf.sh --install"
   else
     echo "   fail2ban initialization script not found"
     echo "   Enable GitHub sync to get the full script suite"
