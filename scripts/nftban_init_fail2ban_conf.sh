@@ -77,7 +77,8 @@ log_ban_attempt() {
     local geoip_info="${5:-N/A}"
     local whois_info="${6:-N/A}"
     
-    local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date +'%Y-%m-%d %H:%M:%S')
     local log_entry="${timestamp}|${ip}|${jail_name}|${action}|${reason}|${geoip_info}|${whois_info}"
     
     echo "$log_entry" >> "$BAN_LOG"
@@ -93,7 +94,8 @@ log_to_stats_db() {
     local reason="$4"
     local geoip="${5:-N/A}"
     local whois="${6:-N/A}"
-    local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date +'%Y-%m-%d %H:%M:%S')
     
     # Simple CSV-based stats database
     echo "${timestamp},${ip},${jail_name},${action},${reason},${geoip},${whois}" >> "$STATS_DB"
@@ -108,7 +110,8 @@ get_config_value() {
     
     # Check .local first (highest priority)
     if [ -f "$NFTBAN_CONFIG_LOCAL" ]; then
-        local value=$(grep "^${var_name}=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+        local value
+        value=$(grep "^${var_name}=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
         if [ -n "$value" ]; then
             echo "$value"
             return 0
@@ -117,7 +120,8 @@ get_config_value() {
     
     # Check base .conf file
     if [ -f "$NFTBAN_CONFIG" ]; then
-        local value=$(grep "^${var_name}=" "$NFTBAN_CONFIG" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
+        local value
+        value=$(grep "^${var_name}=" "$NFTBAN_CONFIG" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'")
         if [ -n "$value" ]; then
             echo "$value"
             return 0
@@ -170,15 +174,19 @@ ensure_jail_config_exists() {
     local jail_name="$1"
     
     # Check if jail config exists, if not create with defaults
-    local jail_enabled=$(get_jail_config "$jail_name" "JAIL" "")
+    local jail_enabled
+    jail_enabled=$(get_jail_config "$jail_name" "JAIL" "")
     
     if [ -z "$jail_enabled" ]; then
         log_info "Creating default config for jail: $jail_name"
         
         # Get global defaults
-        local def_ban_time=$(get_config_value "NFTBAN_F2B_DEF_BAN_TIME" "3600")
-        local def_find_time=$(get_config_value "NFTBAN_F2B_DEF_FIND_TIME" "600")
-        local def_max_retry=$(get_config_value "NFTBAN_F2B_DEF_MAX_RETRY" "5")
+        local def_ban_time
+        local def_find_time
+        local def_max_retry
+        def_ban_time=$(get_config_value "NFTBAN_F2B_DEF_BAN_TIME" "3600")
+        def_find_time=$(get_config_value "NFTBAN_F2B_DEF_FIND_TIME" "600")
+        def_max_retry=$(get_config_value "NFTBAN_F2B_DEF_MAX_RETRY" "5")
         
         # Add comment section
         echo "" >> "$NFTBAN_CONFIG_LOCAL"
@@ -207,6 +215,7 @@ remove_jail_config() {
 # =============================================================================
 detect_os() {
     if [ -f /etc/os-release ]; then
+        # shellcheck source=/dev/null
         . /etc/os-release
         case "$ID" in
             debian|ubuntu|linuxmint)
@@ -233,7 +242,8 @@ is_ipv4() {
     local ip="$1"
     if [[ $ip =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}$ ]]; then
         local IFS='.'
-        local -a octets=($ip)
+        local -a octets
+        IFS='.' read -ra octets <<< "$ip"
         for octet in "${octets[@]}"; do
             if ((octet > 255)); then
                 return 1
@@ -271,7 +281,8 @@ detect_ip_version() {
 # =============================================================================
 geoip_lookup() {
     local ip="$1"
-    local geoip_enabled=$(get_config_value "NFTBAN_F2B_GEOIP_ENABLE" "false")
+    local geoip_enabled
+    geoip_enabled=$(get_config_value "NFTBAN_F2B_GEOIP_ENABLE" "false")
     
     if [ "$geoip_enabled" != "true" ]; then
         echo "GeoIP_Disabled"
@@ -307,7 +318,8 @@ geoip_lookup() {
 
 whois_lookup() {
     local ip="$1"
-    local whois_enabled=$(get_config_value "NFTBAN_F2B_WHOIS_ENABLE" "false")
+    local whois_enabled
+    whois_enabled=$(get_config_value "NFTBAN_F2B_WHOIS_ENABLE" "false")
     
     if [ "$whois_enabled" != "true" ]; then
         echo "WHOIS_Disabled"
@@ -320,7 +332,8 @@ whois_lookup() {
     fi
     
     # Get organization/netname from whois
-    local result=$(whois "$ip" 2>/dev/null | grep -iE "^(OrgName|netname|owner):" | head -1 | cut -d: -f2- | tr -d ' ' | tr ',' '_' | cut -c1-50)
+    local result
+    result=$(whois "$ip" 2>/dev/null | grep -iE "^(OrgName|netname|owner):" | head -1 | cut -d: -f2- | tr -d ' ' | tr ',' '_' | cut -c1-50)
     
     if [ -n "$result" ]; then
         echo "$result"
@@ -331,8 +344,10 @@ whois_lookup() {
 
 get_ip_info() {
     local ip="$1"
-    local geoip_info=$(geoip_lookup "$ip")
-    local whois_info=$(whois_lookup "$ip")
+    local geoip_info
+    local whois_info
+    geoip_info=$(geoip_lookup "$ip")
+    whois_info=$(whois_lookup "$ip")
     
     echo "GeoIP: $geoip_info | WHOIS: $whois_info"
 }
@@ -348,14 +363,17 @@ send_email_notification() {
     local geoip_info="${5:-N/A}"
     local whois_info="${6:-N/A}"
     
-    local alert_enabled=$(get_config_value "NFTBAN_F2B_ALERT_ENABLED" "false")
+    local alert_enabled
+    alert_enabled=$(get_config_value "NFTBAN_F2B_ALERT_ENABLED" "false")
     
     if [ "$alert_enabled" != "true" ]; then
         return 0
     fi
     
-    local recipient=$(get_config_value "NFTBAN_F2B_RECIPIENT" "")
-    local sender=$(get_config_value "NFTBAN_F2B_SENDER" "nftban@$(hostname -f)")
+    local recipient
+    local sender
+    recipient=$(get_config_value "NFTBAN_F2B_RECIPIENT" "")
+    sender=$(get_config_value "NFTBAN_F2B_SENDER" "nftban@$(hostname -f)")
     
     if [ -z "$recipient" ]; then
         log_warning "Email recipient not configured, skipping notification"
@@ -369,9 +387,11 @@ send_email_notification() {
     fi
     
     local subject="[nftban] IP $action - $ip ($jail_name jail)"
-    local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date +'%Y-%m-%d %H:%M:%S')
     
-    local body="nftban Fail2ban Alert
+    local body
+    body="nftban Fail2ban Alert
     
 Timestamp: $timestamp
 Jail: $jail_name
@@ -411,8 +431,10 @@ send_rate_limit_alert() {
     local rate_limit="$3"
     
     # Check if email is configured (required even if alerts are disabled)
-    local recipient=$(get_config_value "NFTBAN_F2B_RECIPIENT" "")
-    local sender=$(get_config_value "NFTBAN_F2B_SENDER" "nftban@$(hostname -f)")
+    local recipient
+    local sender
+    recipient=$(get_config_value "NFTBAN_F2B_RECIPIENT" "")
+    sender=$(get_config_value "NFTBAN_F2B_SENDER" "nftban@$(hostname -f)")
     
     if [ -z "$recipient" ]; then
         log_error "RATE LIMIT EXCEEDED but email recipient not configured!"
@@ -426,7 +448,8 @@ send_rate_limit_alert() {
         return 1
     fi
     
-    local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date +'%Y-%m-%d %H:%M:%S')
     local subject="[nftban] CRITICAL: Ban Rate Limit Exceeded on $(hostname -f)"
     
     # Get recent ban details
@@ -435,7 +458,8 @@ send_rate_limit_alert() {
         recent_bans=$(tail -20 "$BAN_LOG" | awk -F'|' '{printf "  %s | %s | %s | %s\n", $1, $2, $3, $4}')
     fi
     
-    local body="nftban CRITICAL ALERT - Rate Limit Exceeded
+    local body
+    body="nftban CRITICAL ALERT - Rate Limit Exceeded
     
 ⚠️  WARNING: Abnormal ban activity detected!
 
@@ -495,8 +519,10 @@ Alert sent regardless of NFTBAN_F2B_ALERT_ENABLED setting
 test_email() {
     log_info "Testing email configuration..."
     
-    local recipient=$(get_config_value "NFTBAN_F2B_RECIPIENT" "")
-    local sender=$(get_config_value "NFTBAN_F2B_SENDER" "nftban@$(hostname -f)")
+    local recipient
+    local sender
+    recipient=$(get_config_value "NFTBAN_F2B_RECIPIENT" "")
+    sender=$(get_config_value "NFTBAN_F2B_SENDER" "nftban@$(hostname -f)")
     
     if [ -z "$recipient" ]; then
         log_error "NFTBAN_F2B_RECIPIENT not configured in nftban.conf.local"
@@ -511,7 +537,7 @@ test_email() {
     echo "  Rate Limit: $(get_config_value "BAN_RATE_LIMIT_PER_MINUTE" "not set") per minute"
     echo ""
     
-    read -p "Send test email to $recipient? (y/N): " -n 1 -r
+    read -rp "Send test email to $recipient? (y/N): " -n 1 REPLY
     echo
     
     if [[ $REPLY =~ ^[Yy]$ ]]; then
@@ -526,7 +552,8 @@ test_email() {
 # RATE LIMITING
 # =============================================================================
 check_ban_rate_limit() {
-    local rate_limit=$(get_config_value "BAN_RATE_LIMIT_PER_MINUTE" "0")
+    local rate_limit
+    rate_limit=$(get_config_value "BAN_RATE_LIMIT_PER_MINUTE" "0")
     
     # If rate limit is 0 or not set, skip check
     if [ "$rate_limit" == "0" ] || [ -z "$rate_limit" ]; then
@@ -537,7 +564,8 @@ check_ban_rate_limit() {
     touch "$RATE_LIMIT_TRACKER"
     
     # Current timestamp
-    local current_time=$(date +%s)
+    local current_time
+    current_time=$(date +%s)
     local one_minute_ago=$((current_time - 60))
     
     # Add current attempt to tracker
@@ -549,7 +577,8 @@ check_ban_rate_limit() {
     mv "$temp_file" "$RATE_LIMIT_TRACKER"
     
     # Count attempts in last minute
-    local recent_count=$(wc -l < "$RATE_LIMIT_TRACKER")
+    local recent_count
+    recent_count=$(wc -l < "$RATE_LIMIT_TRACKER")
     
     # Check if rate limit exceeded
     if [ "$recent_count" -gt "$rate_limit" ]; then
@@ -592,7 +621,8 @@ ip_in_range() {
             echo "$ip" | grepcidr "$range" &> /dev/null && return 0
         else
             # Fallback: check using nft (create temporary set and test)
-            local ver=$(detect_ip_version "$ip")
+            local ver
+            ver=$(detect_ip_version "$ip")
             local test_set="test_range_${ver}_$$"
             nft add set inet "$NFT_TABLE" "$test_set" "{ type ipv${ver}_addr; flags interval; }" 2>/dev/null || return 1
             nft add element inet "$NFT_TABLE" "$test_set" "{ $range }" 2>/dev/null || {
@@ -672,7 +702,8 @@ check_ip_in_whitelist_files() {
 # =============================================================================
 check_persistent_offender() {
     local ip="$1"
-    local threshold=$(get_config_value "PERSISTENT_BAN_THRESHOLD" "3")
+    local threshold
+    threshold=$(get_config_value "PERSISTENT_BAN_THRESHOLD" "3")
     
     # If threshold is 0, disable persistent banning
     if [ "$threshold" == "0" ]; then
@@ -681,7 +712,8 @@ check_persistent_offender() {
     
     # Count how many times this IP has been banned
     if [ -f "$BAN_LOG" ]; then
-        local ban_count=$(grep -c "|${ip}|.*|BANNED|" "$BAN_LOG" 2>/dev/null || echo "0")
+        local ban_count
+        ban_count=$(grep -c "|${ip}|.*|BANNED|" "$BAN_LOG" 2>/dev/null || echo "0")
         
         if [ "$ban_count" -ge "$threshold" ]; then
             log_warning "IP $ip is a persistent offender ($ban_count bans, threshold: $threshold)"
@@ -717,13 +749,15 @@ EOF
     fi
     
     # Add IP with timestamp and reason
-    local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date +'%Y-%m-%d %H:%M:%S')
     echo "${ip}  # Added: ${timestamp} - ${reason}" >> "$PERSISTENT_BLACKLIST"
     
     log_success "Added IP $ip to persistent blacklist"
     
     # Add to nftables user_blacklist (permanent)
-    local ver=$(detect_ip_version "$ip")
+    local ver
+    ver=$(detect_ip_version "$ip")
     if [ "$ver" != "invalid" ]; then
         nft add element inet "$NFT_TABLE" "user_blacklist_v${ver}" "{ $ip }" 2>/dev/null || \
             log_warning "Failed to add $ip to nftables user_blacklist"
@@ -755,7 +789,8 @@ remove_from_persistent_blacklist() {
     log_success "Removed IP $ip from persistent blacklist"
     
     # Remove from nftables user_blacklist
-    local ver=$(detect_ip_version "$ip")
+    local ver
+    ver=$(detect_ip_version "$ip")
     if [ "$ver" != "invalid" ]; then
         nft delete element inet "$NFT_TABLE" "user_blacklist_v${ver}" "{ $ip }" 2>/dev/null || \
             log_warning "Failed to remove $ip from nftables user_blacklist"
@@ -822,10 +857,12 @@ sync_persistent_blacklist_to_nftables() {
         [[ -z "$line" ]] && continue
         
         # Extract IP (first field)
-        local ip=$(echo "$line" | awk '{print $1}')
+        local ip
+        ip=$(echo "$line" | awk '{print $1}')
         
         if [ -n "$ip" ]; then
-            local ver=$(detect_ip_version "$ip")
+            local ver
+            ver=$(detect_ip_version "$ip")
             if [ "$ver" != "invalid" ]; then
                 if nft add element inet "$NFT_TABLE" "user_blacklist_v${ver}" "{ $ip }" 2>/dev/null; then
                     ((synced++))
@@ -846,7 +883,8 @@ check_nftables_table_exists() {
 
 check_ip_in_nftables() {
     local ip="$1"
-    local ver=$(detect_ip_version "$ip")
+    local ver
+    ver=$(detect_ip_version "$ip")
     
     if [ "$ver" == "invalid" ]; then
         log_error "Invalid IP address: $ip"
@@ -881,7 +919,8 @@ ban_ip_nftables() {
     local jail_name="${2:-unknown}"
     local ban_time="${3:-$DEFAULT_BAN_TIME}"
     
-    local ver=$(detect_ip_version "$ip")
+    local ver
+    ver=$(detect_ip_version "$ip")
     
     if [ "$ver" == "invalid" ]; then
         log_error "Invalid IP address: $ip"
@@ -920,8 +959,10 @@ process_ban() {
     check_ban_rate_limit
     
     # Get IP information (even if not banning)
-    local geoip_info=$(geoip_lookup "$ip")
-    local whois_info=$(whois_lookup "$ip")
+    local geoip_info
+    local whois_info
+    geoip_info=$(geoip_lookup "$ip")
+    whois_info=$(whois_lookup "$ip")
     
     # Step 1: Check in whitelist files
     if check_ip_in_whitelist_files "$ip"; then
@@ -952,7 +993,8 @@ process_ban() {
         
         # Step 5: Check if persistent offender and add to permanent blacklist
         if check_persistent_offender "$ip"; then
-            local ban_count=$(grep -c "|${ip}|.*|BANNED|" "$BAN_LOG" 2>/dev/null || echo "0")
+            local ban_count
+            ban_count=$(grep -c "|${ip}|.*|BANNED|" "$BAN_LOG" 2>/dev/null || echo "0")
             add_to_persistent_blacklist "$ip" "Repeat offender (${ban_count} bans) - ${jail_name} jail"
             
             # Send notification about permanent ban
@@ -976,10 +1018,14 @@ process_jail_template() {
     local output_file="$3"
     
     # Get configuration values
-    local ban_time=$(get_jail_config "$jail_name" "BAN_TIME" "3600")
-    local max_retry=$(get_jail_config "$jail_name" "MAX_RETRY" "5")
-    local find_time=$(get_jail_config "$jail_name" "FIND_TIME" "600")
-    local ignoreip_file=$(get_config_value "NFTBAN_F2B_IGNOREIP" "$WHITELIST_FILE")
+    local ban_time
+    local max_retry
+    local find_time
+    local ignoreip_file
+    ban_time=$(get_jail_config "$jail_name" "BAN_TIME" "3600")
+    max_retry=$(get_jail_config "$jail_name" "MAX_RETRY" "5")
+    find_time=$(get_jail_config "$jail_name" "FIND_TIME" "600")
+    ignoreip_file=$(get_config_value "NFTBAN_F2B_IGNOREIP" "$WHITELIST_FILE")
     
     log_info "Processing template with values: BAN_TIME=$ban_time, MAX_RETRY=$max_retry, FIND_TIME=$find_time"
     
@@ -1018,7 +1064,8 @@ get_jail_status() {
 deploy_jail() {
     local jail_name="$1"
     local os="$2"
-    local jail_lower=$(echo "$jail_name" | tr '[:upper:]' '[:lower:]')
+    local jail_lower
+    jail_lower=$(echo "$jail_name" | tr '[:upper:]' '[:lower:]')
     
     log_info "Deploying jail: $jail_name"
     
@@ -1058,7 +1105,8 @@ deploy_jail() {
 
 remove_jail() {
     local jail_name="$1"
-    local jail_lower=$(echo "$jail_name" | tr '[:upper:]' '[:lower:]')
+    local jail_lower
+    jail_lower=$(echo "$jail_name" | tr '[:upper:]' '[:lower:]')
     
     log_info "Removing jail: $jail_name"
     
@@ -1071,6 +1119,382 @@ remove_jail() {
     set_jail_config "$jail_name" "JAIL" "false"
     
     log_success "Removed jail: $jail_name"
+}
+
+# =============================================================================
+# INSTALLATION / UNINSTALLATION
+# =============================================================================
+install_nftban_fail2ban() {
+    log_info "Installing nftban fail2ban templates and configurations..."
+    
+    local os
+    os=$(detect_os)
+    log_info "Detected OS: $os"
+    
+    # Create backup
+    local backup_timestamp
+    backup_timestamp=$(date +'%Y%m%d_%H%M%S')
+    local backup_path="${BACKUP_DIR}/pre_install_${backup_timestamp}"
+    mkdir -p "$backup_path"
+    
+    log_info "Creating backup at: $backup_path"
+    
+    # Backup existing fail2ban configs
+    if [ -d "${FAIL2BAN_DIR}/jail.d" ]; then
+        find "${FAIL2BAN_DIR}/jail.d" -name "nftban-*.conf" -type f -exec cp {} "$backup_path/" \; 2>/dev/null || true
+    fi
+    if [ -d "${FAIL2BAN_DIR}/filter.d" ]; then
+        find "${FAIL2BAN_DIR}/filter.d" -name "nftban-*.conf" -type f -exec cp {} "$backup_path/" \; 2>/dev/null || true
+    fi
+    if [ -d "${FAIL2BAN_DIR}/action.d" ]; then
+        find "${FAIL2BAN_DIR}/action.d" -name "nftban*.conf" -type f -exec cp {} "$backup_path/" \; 2>/dev/null || true
+    fi
+    
+    # Check if templates directory exists
+    local template_os_dir="${TEMPLATE_DIR}/${os}"
+    if [ ! -d "$template_os_dir" ]; then
+        log_error "Template directory not found: $template_os_dir"
+        log_error "Please ensure templates are available for your OS at:"
+        log_error "  ${template_os_dir}/jail.d/"
+        log_error "  ${template_os_dir}/filter.d/"
+        log_error "  ${template_os_dir}/action.d/"
+        return 1
+    fi
+    
+    # Install action.d templates
+    if [ -d "${template_os_dir}/action.d" ]; then
+        log_info "Installing action.d templates..."
+        cp -v "${template_os_dir}/action.d/"*.conf "${FAIL2BAN_DIR}/action.d/" 2>/dev/null || true
+    fi
+    
+    # Install filter.d templates (these usually don't need processing)
+    if [ -d "${template_os_dir}/filter.d" ]; then
+        log_info "Installing filter.d templates..."
+        cp -v "${template_os_dir}/filter.d/"*.conf "${FAIL2BAN_DIR}/filter.d/" 2>/dev/null || true
+    fi
+    
+    # Process and install jail.d templates
+    if [ -d "${template_os_dir}/jail.d" ]; then
+        log_info "Installing jail.d templates..."
+        local jail_count=0
+        
+        while IFS= read -r template_file; do
+            local jail_filename
+            jail_filename=$(basename "$template_file")
+            local jail_name
+            jail_name=$(echo "$jail_filename" | sed 's/nftban-\(.*\)\.conf/\1/' | tr '[:lower:]' '[:upper:]')
+            
+            # Ensure jail config exists
+            ensure_jail_config_exists "$jail_name"
+            
+            # Process template with current config values
+            process_jail_template "$template_file" "$jail_name" "${FAIL2BAN_DIR}/jail.d/${jail_filename}"
+            
+            log_success "Installed: $jail_filename"
+            ((jail_count++))
+        done < <(find "${template_os_dir}/jail.d" -name "nftban-*.conf" -type f)
+        
+        log_info "Installed $jail_count jail templates"
+    fi
+    
+    # Create main nftban action if doesn't exist
+    local main_action="${FAIL2BAN_DIR}/action.d/nftban.conf"
+    if [ ! -f "$main_action" ]; then
+        log_info "Creating main nftban action..."
+        cat > "$main_action" << 'EOF'
+# nftban main action for fail2ban
+[Definition]
+actionstart = 
+actionstop = 
+actioncheck = 
+actionban = /etc/nftban/nftban-fail2ban-manager.sh --ban <ip> <name> <bantime>
+actionunban = 
+
+[Init]
+EOF
+        log_success "Created: $main_action"
+    fi
+    
+    # Create whitelist if doesn't exist
+    if [ ! -f "$WHITELIST_FILE" ]; then
+        log_info "Creating whitelist file..."
+        cat > "$WHITELIST_FILE" << 'EOF'
+# =============================================================================
+# nftban Fail2ban IP Whitelist
+# =============================================================================
+# Add IPs or CIDR ranges that should NEVER be banned
+# Format: One IP/range per line
+# Example:
+#   192.168.1.1
+#   10.0.0.0/8
+#   2001:db8::/32
+# =============================================================================
+
+127.0.0.1
+::1
+EOF
+        log_success "Created: $WHITELIST_FILE"
+    fi
+    
+    # Set proper permissions
+    chmod 644 "${FAIL2BAN_DIR}/jail.d/nftban-"*.conf 2>/dev/null || true
+    chmod 644 "${FAIL2BAN_DIR}/filter.d/nftban-"*.conf 2>/dev/null || true
+    chmod 644 "${FAIL2BAN_DIR}/action.d/nftban"*.conf 2>/dev/null || true
+    
+    log_success "Installation complete!"
+    echo ""
+    echo "Templates and configurations installed successfully."
+    echo ""
+    echo "Next steps:"
+    echo "  1. Review configuration: $NFTBAN_CONFIG_LOCAL"
+    echo "  2. Enable jails: $(basename "$0") --update-jails"
+    echo "  3. Test configuration: $(basename "$0") --test-config"
+    echo "  4. Reload fail2ban: systemctl reload fail2ban"
+    echo ""
+    echo "Backup created at: $backup_path"
+}
+
+uninstall_nftban_fail2ban() {
+    log_warning "Uninstalling nftban fail2ban templates and configurations..."
+    
+    echo ""
+    echo "This will remove all nftban-related templates and configurations from fail2ban."
+    echo "A backup will be created before removal."
+    echo ""
+    read -rp "Are you sure you want to uninstall? (yes/NO): " confirm
+    
+    if [ "$confirm" != "yes" ]; then
+        log_info "Uninstall cancelled"
+        return 0
+    fi
+    
+    # Create backup
+    local backup_timestamp
+    backup_timestamp=$(date +'%Y%m%d_%H%M%S')
+    local backup_path="${BACKUP_DIR}/pre_uninstall_${backup_timestamp}"
+    mkdir -p "$backup_path"
+    
+    log_info "Creating backup at: $backup_path"
+    
+    # Backup and remove jail.d files
+    if [ -d "${FAIL2BAN_DIR}/jail.d" ]; then
+        find "${FAIL2BAN_DIR}/jail.d" -name "nftban-*.conf" -type f | while IFS= read -r file; do
+            cp "$file" "$backup_path/"
+            rm -f "$file"
+            log_info "Removed: $file"
+        done
+    fi
+    
+    # Backup and remove filter.d files
+    if [ -d "${FAIL2BAN_DIR}/filter.d" ]; then
+        find "${FAIL2BAN_DIR}/filter.d" -name "nftban-*.conf" -type f | while IFS= read -r file; do
+            cp "$file" "$backup_path/"
+            rm -f "$file"
+            log_info "Removed: $file"
+        done
+    fi
+    
+    # Backup and remove action.d files
+    if [ -d "${FAIL2BAN_DIR}/action.d" ]; then
+        find "${FAIL2BAN_DIR}/action.d" -name "nftban*.conf" -type f | while IFS= read -r file; do
+            cp "$file" "$backup_path/"
+            rm -f "$file"
+            log_info "Removed: $file"
+        done
+    fi
+    
+    log_success "Uninstallation complete!"
+    echo ""
+    echo "All nftban templates and configurations removed from fail2ban."
+    echo "Backup created at: $backup_path"
+    echo ""
+    echo "Note: Configuration files in ${CONFIG_DIR} were NOT removed."
+    echo "To completely remove nftban configs:"
+    echo "  rm -rf ${CONFIG_DIR}"
+    echo ""
+    echo "Reload fail2ban to apply changes: systemctl reload fail2ban"
+}
+
+update_templates() {
+    log_info "Updating nftban fail2ban templates..."
+    
+    local os
+    os=$(detect_os)
+    local template_os_dir="${TEMPLATE_DIR}/${os}"
+    
+    if [ ! -d "$template_os_dir" ]; then
+        log_error "Template directory not found: $template_os_dir"
+        log_error "Run --install first to set up the directory structure"
+        return 1
+    fi
+    
+    # Create backup
+    local backup_timestamp
+    backup_timestamp=$(date +'%Y%m%d_%H%M%S')
+    local backup_path="${BACKUP_DIR}/pre_update_${backup_timestamp}"
+    mkdir -p "$backup_path"
+    
+    log_info "Creating backup at: $backup_path"
+    
+    # Backup current fail2ban configs
+    find "${FAIL2BAN_DIR}/jail.d" -name "nftban-*.conf" -type f -exec cp {} "$backup_path/" \; 2>/dev/null || true
+    find "${FAIL2BAN_DIR}/filter.d" -name "nftban-*.conf" -type f -exec cp {} "$backup_path/" \; 2>/dev/null || true
+    find "${FAIL2BAN_DIR}/action.d" -name "nftban*.conf" -type f -exec cp {} "$backup_path/" \; 2>/dev/null || true
+    
+    echo ""
+    echo "Template Update Options:"
+    echo "  1. Update from local templates (${template_os_dir})"
+    echo "  2. Update from Git repository"
+    echo "  3. Cancel"
+    echo ""
+    read -rp "Select option [1-3]: " update_option
+    
+    case "$update_option" in
+        1)
+            log_info "Updating from local templates..."
+            
+            # Update action.d
+            if [ -d "${template_os_dir}/action.d" ]; then
+                log_info "Updating action.d templates..."
+                cp -v "${template_os_dir}/action.d/"*.conf "${FAIL2BAN_DIR}/action.d/" 2>/dev/null || true
+            fi
+            
+            # Update filter.d
+            if [ -d "${template_os_dir}/filter.d" ]; then
+                log_info "Updating filter.d templates..."
+                cp -v "${template_os_dir}/filter.d/"*.conf "${FAIL2BAN_DIR}/filter.d/" 2>/dev/null || true
+            fi
+            
+            # Update jail.d (process templates)
+            if [ -d "${template_os_dir}/jail.d" ]; then
+                log_info "Updating jail.d templates..."
+                
+                while IFS= read -r template_file; do
+                    local jail_filename
+                    jail_filename=$(basename "$template_file")
+                    local jail_name
+                    jail_name=$(echo "$jail_filename" | sed 's/nftban-\(.*\)\.conf/\1/' | tr '[:lower:]' '[:upper:]')
+                    
+                    # Only update if jail is enabled
+                    local jail_status
+                    jail_status=$(get_jail_status "$jail_name")
+                    
+                    if [ "$jail_status" == "true" ]; then
+                        process_jail_template "$template_file" "$jail_name" "${FAIL2BAN_DIR}/jail.d/${jail_filename}"
+                        log_success "Updated: $jail_filename"
+                    else
+                        log_info "Skipped (disabled): $jail_filename"
+                    fi
+                done < <(find "${template_os_dir}/jail.d" -name "nftban-*.conf" -type f)
+            fi
+            
+            log_success "Templates updated from local source"
+            ;;
+            
+        2)
+            log_info "Updating from Git repository..."
+            
+            local git_repo
+            git_repo=$(get_config_value "NFTBAN_GIT_REPO" "")
+            local git_branch
+            git_branch=$(get_config_value "NFTBAN_GIT_BRANCH" "main")
+            
+            if [ -z "$git_repo" ]; then
+                echo ""
+                read -rp "Enter Git repository URL: " git_repo
+                
+                if [ -z "$git_repo" ]; then
+                    log_error "Git repository URL required"
+                    return 1
+                fi
+                
+                # Save for future use
+                set_config_value "NFTBAN_GIT_REPO" "$git_repo"
+            fi
+            
+            if ! command -v git &> /dev/null; then
+                log_error "Git is not installed. Please install git first."
+                return 1
+            fi
+            
+            # Clone or pull templates
+            local temp_dir
+            temp_dir=$(mktemp -d)
+            log_info "Cloning repository to temporary directory..."
+            
+            if git clone --depth 1 --branch "$git_branch" "$git_repo" "$temp_dir" 2>/dev/null; then
+                # Look for templates directory in the repo
+                local repo_template_dir
+                
+                if [ -d "${temp_dir}/templates/fail2ban/${os}" ]; then
+                    repo_template_dir="${temp_dir}/templates/fail2ban/${os}"
+                elif [ -d "${temp_dir}/fail2ban/${os}" ]; then
+                    repo_template_dir="${temp_dir}/fail2ban/${os}"
+                elif [ -d "${temp_dir}/${os}" ]; then
+                    repo_template_dir="${temp_dir}/${os}"
+                else
+                    log_error "Could not find templates for ${os} in repository"
+                    log_error "Expected structure: templates/fail2ban/${os}/ or fail2ban/${os}/ or ${os}/"
+                    rm -rf "$temp_dir"
+                    return 1
+                fi
+                
+                log_info "Updating templates from repository..."
+                
+                # Copy new templates to local template directory first
+                mkdir -p "${template_os_dir}/action.d" "${template_os_dir}/filter.d" "${template_os_dir}/jail.d"
+                
+                if [ -d "${repo_template_dir}/action.d" ]; then
+                    cp -rv "${repo_template_dir}/action.d/"*.conf "${template_os_dir}/action.d/" 2>/dev/null || true
+                    cp -v "${template_os_dir}/action.d/"*.conf "${FAIL2BAN_DIR}/action.d/" 2>/dev/null || true
+                fi
+                
+                if [ -d "${repo_template_dir}/filter.d" ]; then
+                    cp -rv "${repo_template_dir}/filter.d/"*.conf "${template_os_dir}/filter.d/" 2>/dev/null || true
+                    cp -v "${template_os_dir}/filter.d/"*.conf "${FAIL2BAN_DIR}/filter.d/" 2>/dev/null || true
+                fi
+                
+                if [ -d "${repo_template_dir}/jail.d" ]; then
+                    cp -rv "${repo_template_dir}/jail.d/"*.conf "${template_os_dir}/jail.d/" 2>/dev/null || true
+                    
+                    # Process and install enabled jails
+                    while IFS= read -r template_file; do
+                        local jail_filename
+                        jail_filename=$(basename "$template_file")
+                        local jail_name
+                        jail_name=$(echo "$jail_filename" | sed 's/nftban-\(.*\)\.conf/\1/' | tr '[:lower:]' '[:upper:]')
+                        
+                        local jail_status
+                        jail_status=$(get_jail_status "$jail_name")
+                        
+                        if [ "$jail_status" == "true" ]; then
+                            process_jail_template "$template_file" "$jail_name" "${FAIL2BAN_DIR}/jail.d/${jail_filename}"
+                            log_success "Updated: $jail_filename"
+                        else
+                            log_info "Skipped (disabled): $jail_filename"
+                        fi
+                    done < <(find "${template_os_dir}/jail.d" -name "nftban-*.conf" -type f)
+                fi
+                
+                rm -rf "$temp_dir"
+                log_success "Templates updated from Git repository"
+            else
+                log_error "Failed to clone repository: $git_repo"
+                rm -rf "$temp_dir"
+                return 1
+            fi
+            ;;
+            
+        3|*)
+            log_info "Update cancelled"
+            return 0
+            ;;
+    esac
+    
+    echo ""
+    echo "Backup created at: $backup_path"
+    echo ""
+    echo "Reload fail2ban to apply changes: systemctl reload fail2ban"
 }
 
 # =============================================================================
@@ -1150,7 +1574,8 @@ test_configuration() {
     
     # Check persistent blacklist
     if [ -f "$PERSISTENT_BLACKLIST" ]; then
-        local perm_ban_count=$(grep -cE "^[0-9a-fA-F.:]+[[:space:]]" "$PERSISTENT_BLACKLIST" 2>/dev/null || echo "0")
+        local perm_ban_count
+        perm_ban_count=$(grep -cE "^[0-9a-fA-F.:]+[[:space:]]" "$PERSISTENT_BLACKLIST" 2>/dev/null || echo "0")
         echo "Persistent Blacklist:"
         echo "  Permanently banned IPs: $perm_ban_count"
         echo ""
@@ -1158,10 +1583,13 @@ test_configuration() {
     
     # Check current ban rate
     if [ -f "$RATE_LIMIT_TRACKER" ]; then
-        local current_time=$(date +%s)
+        local current_time
+        current_time=$(date +%s)
         local one_minute_ago=$((current_time - 60))
-        local current_rate=$(awk -v cutoff="$one_minute_ago" '$1 >= cutoff' "$RATE_LIMIT_TRACKER" 2>/dev/null | wc -l)
-        local rate_limit=$(get_config_value "BAN_RATE_LIMIT_PER_MINUTE" "0")
+        local current_rate
+        current_rate=$(awk -v cutoff="$one_minute_ago" '$1 >= cutoff' "$RATE_LIMIT_TRACKER" 2>/dev/null | wc -l)
+        local rate_limit
+        rate_limit=$(get_config_value "BAN_RATE_LIMIT_PER_MINUTE" "0")
         
         if [ "$rate_limit" != "0" ] && [ -n "$rate_limit" ]; then
             echo "Current Ban Rate:"
@@ -1178,7 +1606,7 @@ test_configuration() {
     
     # Check dependencies
     echo "Optional Dependencies:"
-    for cmd in geoiplookup whois curl mail sendmail python3; do
+    for cmd in geoiplookup whois curl mail sendmail python3 git; do
         if command -v "$cmd" &> /dev/null; then
             echo -e "  ${GREEN}✓${NC} $cmd"
         else
@@ -1206,7 +1634,8 @@ test_jail() {
     echo ""
     
     # Check if jail is configured
-    local jail_enabled=$(get_jail_status "$jail_name")
+    local jail_enabled
+    jail_enabled=$(get_jail_status "$jail_name")
     echo "Jail Status: $jail_enabled"
     
     if [ "$jail_enabled" != "true" ]; then
@@ -1221,7 +1650,8 @@ test_jail() {
     echo ""
     
     # Check if jail files exist in fail2ban
-    local jail_lower=$(echo "$jail_name" | tr '[:upper:]' '[:lower:]')
+    local jail_lower
+    jail_lower=$(echo "$jail_name" | tr '[:upper:]' '[:lower:]')
     echo "Deployed Files:"
     
     local jail_file="${FAIL2BAN_DIR}/jail.d/nftban-${jail_lower}.conf"
@@ -1265,16 +1695,20 @@ show_statistics() {
     fi
     
     # Total attempts
-    local total_attempts=$(wc -l < "$BAN_LOG")
+    local total_attempts
+    total_attempts=$(wc -l < "$BAN_LOG")
     echo -e "${CYAN}Total Ban Attempts:${NC} $total_attempts"
     echo ""
     
     # Current ban rate
-    local rate_limit=$(get_config_value "BAN_RATE_LIMIT_PER_MINUTE" "0")
+    local rate_limit
+    rate_limit=$(get_config_value "BAN_RATE_LIMIT_PER_MINUTE" "0")
     if [ "$rate_limit" != "0" ] && [ -n "$rate_limit" ] && [ -f "$RATE_LIMIT_TRACKER" ]; then
-        local current_time=$(date +%s)
+        local current_time
+        current_time=$(date +%s)
         local one_minute_ago=$((current_time - 60))
-        local current_rate=$(awk -v cutoff="$one_minute_ago" '$1 >= cutoff' "$RATE_LIMIT_TRACKER" 2>/dev/null | wc -l)
+        local current_rate
+        current_rate=$(awk -v cutoff="$one_minute_ago" '$1 >= cutoff' "$RATE_LIMIT_TRACKER" 2>/dev/null | wc -l)
         
         echo -e "${CYAN}Current Ban Rate:${NC}"
         if [ "$current_rate" -gt "$rate_limit" ]; then
@@ -1289,7 +1723,7 @@ show_statistics() {
     
     # Actions breakdown
     echo -e "${CYAN}Actions Breakdown:${NC}"
-    awk -F'|' '{print $4}' "$BAN_LOG" | sort | uniq -c | sort -rn | while read count action; do
+    awk -F'|' '{print $4}' "$BAN_LOG" | sort | uniq -c | sort -rn | while read -r count action; do
         case "$action" in
             BANNED)
                 echo -e "  ${GREEN}■${NC} BANNED: $count"
@@ -1310,7 +1744,7 @@ show_statistics() {
                 echo -e "  ${MAGENTA}■${NC} PERMANENT_BAN: $count"
                 ;;
             *)
-                echo "  ■ $action: $count"
+                echo "  ■  $action: $count"
                 ;;
         esac
     done
@@ -1318,14 +1752,14 @@ show_statistics() {
     
     # Top 10 banned IPs
     echo -e "${CYAN}Top 10 Most Targeted IPs:${NC}"
-    awk -F'|' '{print $2}' "$BAN_LOG" | sort | uniq -c | sort -rn | head -10 | while read count ip; do
+    awk -F'|' '{print $2}' "$BAN_LOG" | sort | uniq -c | sort -rn | head -10 | while read -r count ip; do
         printf "  %-18s %s\n" "$ip" "$count attempts"
     done
     echo ""
     
     # Jails statistics
     echo -e "${CYAN}Jails Activity:${NC}"
-    awk -F'|' '{print $3}' "$BAN_LOG" | sort | uniq -c | sort -rn | while read count jail; do
+    awk -F'|' '{print $3}' "$BAN_LOG" | sort | uniq -c | sort -rn | while read -r count jail; do
         printf "  %-20s %s\n" "$jail" "$count attempts"
     done
     echo ""
@@ -1335,7 +1769,7 @@ show_statistics() {
         echo -e "${YELLOW}GeoIP data not available (enable with NFTBAN_F2B_GEOIP_ENABLE=true)${NC}"
     else
         echo -e "${CYAN}Top 10 Countries:${NC}"
-        awk -F'|' '{print $6}' "$BAN_LOG" | awk -F'_' '{print $1}' | grep -v "^$" | sort | uniq -c | sort -rn | head -10 | while read count country; do
+        awk -F'|' '{print $6}' "$BAN_LOG" | awk -F'_' '{print $1}' | grep -v "^$" | sort | uniq -c | sort -rn | head -10 | while read -r count country; do
             printf "  %-20s %s\n" "$country" "$count"
         done
     fi
@@ -1343,7 +1777,7 @@ show_statistics() {
     
     # Recent activity (last 10)
     echo -e "${CYAN}Recent Activity (last 10):${NC}"
-    tail -10 "$BAN_LOG" | while IFS='|' read timestamp ip jail action reason geoip whois; do
+    tail -10 "$BAN_LOG" | while IFS='|' read -r timestamp ip jail action reason geoip whois; do
         local action_color=""
         case "$action" in
             BANNED) action_color="${GREEN}" ;;
@@ -1363,10 +1797,11 @@ show_statistics() {
     # Current bans in nftables
     echo -e "${CYAN}Current Active Bans (nftables):${NC}"
     if check_nftables_table_exists; then
-        local total_v4=$(nft list set inet "$NFT_TABLE" temp_ban_v4 2>/dev/null | grep -E "elements.*{" -A 999 | grep -v "elements" | grep -v "^}" | wc -l)
-        local total_v6=$(nft list set inet "$NFT_TABLE" temp_ban_v6 2>/dev/null | grep -E "elements.*{" -A 999 | grep -v "elements" | grep -v "^}" | wc -l)
-        local perm_v4=$(nft list set inet "$NFT_TABLE" user_blacklist_v4 2>/dev/null | grep -E "elements.*{" -A 999 | grep -v "elements" | grep -v "^}" | wc -l)
-        local perm_v6=$(nft list set inet "$NFT_TABLE" user_blacklist_v6 2>/dev/null | grep -E "elements.*{" -A 999 | grep -v "elements" | grep -v "^}" | wc -l)
+        local total_v4 total_v6 perm_v4 perm_v6
+        total_v4=$(nft list set inet "$NFT_TABLE" temp_ban_v4 2>/dev/null | grep -c "elements" || echo "0")
+        total_v6=$(nft list set inet "$NFT_TABLE" temp_ban_v6 2>/dev/null | grep -c "elements" || echo "0")
+        perm_v4=$(nft list set inet "$NFT_TABLE" user_blacklist_v4 2>/dev/null | grep -c "elements" || echo "0")
+        perm_v6=$(nft list set inet "$NFT_TABLE" user_blacklist_v6 2>/dev/null | grep -c "elements" || echo "0")
         
         echo "  Temporary Bans:"
         echo "    IPv4: $total_v4 banned IPs"
@@ -1381,7 +1816,8 @@ show_statistics() {
     
     # Persistent blacklist info
     if [ -f "$PERSISTENT_BLACKLIST" ]; then
-        local perm_count=$(grep -cE "^[0-9a-fA-F.:]+[[:space:]]" "$PERSISTENT_BLACKLIST" 2>/dev/null || echo "0")
+        local perm_count
+        perm_count=$(grep -cE "^[0-9a-fA-F.:]+[[:space:]]" "$PERSISTENT_BLACKLIST" 2>/dev/null || echo "0")
         if [ "$perm_count" -gt 0 ]; then
             echo -e "${CYAN}Persistent Blacklist:${NC}"
             echo "  Total permanently banned: $perm_count IPs"
@@ -1393,8 +1829,9 @@ show_statistics() {
     
     # Top repeat offenders
     echo -e "${CYAN}Top 10 Repeat Offenders:${NC}"
-    awk -F'|' '$4 == "BANNED" {print $2}' "$BAN_LOG" | sort | uniq -c | sort -rn | head -10 | while read count ip; do
-        local threshold=$(get_config_value "PERSISTENT_BAN_THRESHOLD" "3")
+    local threshold
+    threshold=$(get_config_value "PERSISTENT_BAN_THRESHOLD" "3")
+    awk -F'|' '$4 == "BANNED" {print $2}' "$BAN_LOG" | sort | uniq -c | sort -rn | head -10 | while read -r count ip; do
         if [ "$count" -ge "$threshold" ]; then
             printf "  ${RED}%-18s %s (>= threshold: %s)${NC}\n" "$ip" "$count bans" "$threshold"
         else
@@ -1410,7 +1847,8 @@ show_statistics() {
 # INTERACTIVE MENU
 # =============================================================================
 show_jail_menu() {
-    local os=$(detect_os)
+    local os
+    os=$(detect_os)
     log_info "Detected OS: $os"
     
     echo ""
@@ -1434,10 +1872,11 @@ show_jail_menu() {
     
     local i=1
     for jail in "${jails[@]}"; do
-        local status=$(get_jail_status "$jail")
-        local ban_time=$(get_jail_config "$jail" "BAN_TIME" "N/A")
-        local max_retry=$(get_jail_config "$jail" "MAX_RETRY" "N/A")
-        local find_time=$(get_jail_config "$jail" "FIND_TIME" "N/A")
+        local status ban_time max_retry find_time
+        status=$(get_jail_status "$jail")
+        ban_time=$(get_jail_config "$jail" "BAN_TIME" "N/A")
+        max_retry=$(get_jail_config "$jail" "MAX_RETRY" "N/A")
+        find_time=$(get_jail_config "$jail" "FIND_TIME" "N/A")
         
         local status_color=""
         if [ "$status" == "true" ]; then
@@ -1462,7 +1901,7 @@ show_jail_menu() {
     echo "  q            - Quit"
     echo ""
     
-    read -p "Select option: " choice
+    read -rp "Select option: " choice
     
     case "$choice" in
         q|Q)
@@ -1492,7 +1931,8 @@ show_jail_menu() {
         [0-9]*)
             if [ "$choice" -ge 1 ] && [ "$choice" -le ${#jails[@]} ]; then
                 local jail="${jails[$((choice-1))]}"
-                local status=$(get_jail_status "$jail")
+                local status
+                status=$(get_jail_status "$jail")
                 
                 if [ "$status" == "true" ]; then
                     remove_jail "$jail"
@@ -1509,7 +1949,7 @@ show_jail_menu() {
             ;;
     esac
     
-    read -p "Press Enter to continue..."
+    read -rp "Press Enter to continue..." _dummy
     show_jail_menu
 }
 
@@ -1526,7 +1966,7 @@ configure_jail_interactive() {
     echo "  q) Back"
     echo ""
     
-    read -p "Select jail: " choice
+    read -rp "Select jail: " choice
     
     if [[ "$choice" =~ ^[qQ]$ ]]; then
         return 0
@@ -1543,9 +1983,9 @@ configure_jail_interactive() {
         echo "  Find Time: $(get_jail_config "$jail" "FIND_TIME" "600")s"
         echo ""
         
-        read -p "Enter new Ban Time (seconds) [press Enter to skip]: " ban_time
-        read -p "Enter new Max Retry [press Enter to skip]: " max_retry
-        read -p "Enter new Find Time (seconds) [press Enter to skip]: " find_time
+        read -rp "Enter new Ban Time (seconds) [press Enter to skip]: " ban_time
+        read -rp "Enter new Max Retry [press Enter to skip]: " max_retry
+        read -rp "Enter new Find Time (seconds) [press Enter to skip]: " find_time
         
         [ -n "$ban_time" ] && set_jail_config "$jail" "BAN_TIME" "$ban_time"
         [ -n "$max_retry" ] && set_jail_config "$jail" "MAX_RETRY" "$max_retry"
@@ -1554,8 +1994,12 @@ configure_jail_interactive() {
         log_success "Configuration updated for $jail"
         
         # If jail is enabled, redeploy it
-        if [ "$(get_jail_status "$jail")" == "true" ]; then
-            deploy_jail "$jail" "$(detect_os)"
+        local jail_status
+        jail_status=$(get_jail_status "$jail")
+        if [ "$jail_status" == "true" ]; then
+            local os
+            os=$(detect_os)
+            deploy_jail "$jail" "$os"
             systemctl reload fail2ban
             log_success "Jail redeployed with new settings"
         fi
@@ -1568,6 +2012,11 @@ configure_jail_interactive() {
 show_usage() {
     cat << EOF
 Usage: $(basename "$0") [OPTIONS]
+
+INSTALLATION & TEMPLATES:
+    --install               Install nftban fail2ban templates and configs
+    --uninstall             Uninstall nftban fail2ban templates and configs  
+    --update-templates      Update templates from local or Git repository
 
 BAN OPERATIONS:
     --ban IP JAIL [TIME]        Ban an IP address
@@ -1604,8 +2053,24 @@ CONFIGURATION (in nftban.conf.local):
     NFTBAN_F2B_ALERT_ENABLED="true"
     NFTBAN_F2B_GEOIP_ENABLE="true"
     NFTBAN_F2B_WHOIS_ENABLE="true"
+    NFTBAN_F2B_RECIPIENT="admin@example.com"
     BAN_RATE_LIMIT_PER_MINUTE="10"
     PERSISTENT_BAN_THRESHOLD="3"
+    NFTBAN_GIT_REPO="https://github.com/user/nftban-templates.git"
+    NFTBAN_GIT_BRANCH="main"
+
+EXAMPLES:
+    # Install templates and configurations
+    $(basename "$0") --install
+    
+    # Update templates from Git repository
+    $(basename "$0") --update-templates
+    
+    # Enable a specific jail
+    $(basename "$0") --enable-jail SSHD
+    
+    # Ban an IP address
+    $(basename "$0") --ban 192.0.2.1 sshd 3600
 
 EOF
 }
@@ -1629,6 +2094,18 @@ main() {
     fi
     
     case "$1" in
+        --install)
+            install_nftban_fail2ban
+            ;;
+        
+        --uninstall)
+            uninstall_nftban_fail2ban
+            ;;
+        
+        --update-templates)
+            update_templates
+            ;;
+        
         --ban)
             if [ $# -lt 3 ]; then
                 log_error "Missing arguments for --ban"
@@ -1700,12 +2177,13 @@ main() {
             
             # Show ban history
             if [ -f "$BAN_LOG" ]; then
-                local ban_count=$(grep -c "|$2|" "$BAN_LOG" 2>/dev/null || echo "0")
+                local ban_count
+                ban_count=$(grep -c "|$2|" "$BAN_LOG" 2>/dev/null || echo "0")
                 echo ""
                 echo "Ban History: $ban_count attempts"
                 if [ "$ban_count" -gt 0 ]; then
                     echo "Recent attempts:"
-                    grep "|$2|" "$BAN_LOG" | tail -5 | while IFS='|' read timestamp ip jail action rest; do
+                    grep "|$2|" "$BAN_LOG" | tail -5 | while IFS='|' read -r timestamp ip jail action rest; do
                         echo "  $timestamp | $jail | $action"
                     done
                 fi
@@ -1721,7 +2199,9 @@ main() {
                 log_error "Missing jail name"
                 exit 1
             fi
-            deploy_jail "$2" "$(detect_os)"
+            local os
+            os=$(detect_os)
+            deploy_jail "$2" "$os"
             systemctl reload fail2ban
             ;;
         
@@ -1735,17 +2215,19 @@ main() {
             ;;
         
         --list-jails)
-            local os=$(detect_os)
+            local os
+            os=$(detect_os)
             log_info "Available jails for $os:"
             echo ""
             printf "%-20s %-10s %-15s %-10s %-10s\n" "Jail Name" "Status" "Ban Time" "Max Retry" "Find Time"
             echo "------------------------------------------------------------------------"
             
             while IFS= read -r jail; do
-                local status=$(get_jail_status "$jail")
-                local ban_time=$(get_jail_config "$jail" "BAN_TIME" "N/A")
-                local max_retry=$(get_jail_config "$jail" "MAX_RETRY" "N/A")
-                local find_time=$(get_jail_config "$jail" "FIND_TIME" "N/A")
+                local status ban_time max_retry find_time
+                status=$(get_jail_status "$jail")
+                ban_time=$(get_jail_config "$jail" "BAN_TIME" "N/A")
+                max_retry=$(get_jail_config "$jail" "MAX_RETRY" "N/A")
+                find_time=$(get_jail_config "$jail" "FIND_TIME" "N/A")
                 printf "%-20s %-10s %-15s %-10s %-10s\n" "$jail" "$status" "${ban_time}s" "$max_retry" "${find_time}s"
             done < <(get_available_jails "$os")
             ;;
@@ -1786,14 +2268,16 @@ main() {
         
         --show-rate)
             log_info "Current ban rate:"
-            local current_time=$(date +%s)
-            local one_minute_ago=$((current_time - 60))
-            local five_minutes_ago=$((current_time - 300))
+            local current_time one_minute_ago five_minutes_ago
+            current_time=$(date +%s)
+            one_minute_ago=$((current_time - 60))
+            five_minutes_ago=$((current_time - 300))
             
             if [ -f "$RATE_LIMIT_TRACKER" ]; then
-                local rate_1min=$(awk -v cutoff="$one_minute_ago" '$1 >= cutoff' "$RATE_LIMIT_TRACKER" 2>/dev/null | wc -l)
-                local rate_5min=$(awk -v cutoff="$five_minutes_ago" '$1 >= cutoff' "$RATE_LIMIT_TRACKER" 2>/dev/null | wc -l)
-                local rate_limit=$(get_config_value "BAN_RATE_LIMIT_PER_MINUTE" "not set")
+                local rate_1min rate_5min rate_limit
+                rate_1min=$(awk -v cutoff="$one_minute_ago" '$1 >= cutoff' "$RATE_LIMIT_TRACKER" 2>/dev/null | wc -l)
+                rate_5min=$(awk -v cutoff="$five_minutes_ago" '$1 >= cutoff' "$RATE_LIMIT_TRACKER" 2>/dev/null | wc -l)
+                rate_limit=$(get_config_value "BAN_RATE_LIMIT_PER_MINUTE" "not set")
                 
                 echo ""
                 echo "Ban Rate Statistics:"
