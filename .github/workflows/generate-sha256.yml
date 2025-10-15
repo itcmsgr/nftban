@@ -1,0 +1,27 @@
+name: Generate SHA256 Hashes
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  generate-sha256:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v3
+
+    - name: Generate SHA256 hashes
+      run: |
+        find . -type f ! -path "./.git/*" ! -name "SHA256SUMS.txt" -exec sha256sum {} \; > SHA256SUMS.txt
+
+    - name: Commit SHA256SUMS.txt
+      run: |
+        git config user.name "github-actions"
+        git config user.email "github-actions@github.com"
+        git add SHA256SUMS.txt
+        git commit -m "Auto-generate SHA256SUMS.txt"
+        git push
