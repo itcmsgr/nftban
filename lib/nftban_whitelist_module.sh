@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Whitelist Module
-# Version: 1.0.0
-# Whitelist management with priority handling
+# NFTBan Whitelist Module - Enhanced with Auto-Protection
+# Version: 1.1.0
+# Whitelist management with comprehensive protection
 # =============================================================================
 
 # Prevent double-loading
@@ -18,11 +18,11 @@ readonly NFTBAN_WHITELIST_USER="${NFTBAN_CONFIG_DIR}/whitelist-user.conf"
 readonly NFTBAN_WHITELIST_CF="${NFTBAN_CONFIG_DIR}/whitelist-cloudflare.conf"
 
 # =============================================================================
-# INITIALIZATION
+# INITIALIZATION WITH AUTO-PROTECTION
 # =============================================================================
 
 nftban_whitelist_init() {
-    nftban_log_info "Initializing whitelist system..."
+    nftban_log_info "Initializing whitelist system with auto-protection..."
     
     mkdir -p "$NFTBAN_CONFIG_DIR"
     
@@ -57,6 +57,10 @@ EOF
 #   2001:db8::/32     # IPv6 range
 # =============================================================================
 
+# Common private network ranges (uncomment if needed):
+# 10.0.0.0/8        # Private Class A
+# 172.16.0.0/12     # Private Class B
+# 192.168.0.0/16    # Private Class C
 EOF
         chmod 644 "$NFTBAN_WHITELIST_USER"
         nftban_log_debug "Created user whitelist"
@@ -76,7 +80,93 @@ EOF
         nftban_log_debug "Created Cloudflare whitelist"
     fi
     
-    nftban_log_success "Whitelist system initialized"
+    # CRITICAL: Auto-protect server IPs
+    nftban_whitelist_add_server_ips
+    
+    # CRITICAL: Auto-protect current user IP
+    nftban_whitelist_protect_current_user
+    
+    nftban_log_success "Whitelist system initialized with protection"
+}
+
+# =============================================================================
+# AUTO-PROTECTION: SERVER IPS
+# =============================================================================
+
+nftban_whitelist_add_server_ips() {
+    nftban_log_info "Auto-protecting server interface IPs..."
+    
+    local protected_count=0
+    
+    # Get ALL server interface IPs (IPv4 and IPv6)
+    while IFS= read -r ip; do
+        [[ -z "$ip" ]] && continue
+        
+        # Skip if already whitelisted
+        if grep -qE "^${ip}([[:space:]]|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
+            nftban_log_debug "Server IP already protected: $ip"
+            continue
+        fi
+        
+        # Add to system whitelist
+        echo "${ip}  # Server IP (auto-detected on $(date +'%Y-%m-%d'))" >> "$NFTBAN_WHITELIST_SYSTEM"
+        nftban_log_success "Protected server IP: $ip"
+        ((protected_count++))
+    done < <(ip -o addr show 2>/dev/null | awk '/inet/ {gsub(/\/.*/, "", $4); print $4}' | grep -v '^127\.' | sort -u)
+    
+    # Also get public IPs if possible
+    local public_ipv4 public_ipv6
+    
+    public_ipv4=$(nftban_get_public_ip "ipv4")
+    if [[ -n "$public_ipv4" ]] && ! grep -qE "^${public_ipv4}([[:space:]]|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
+        echo "${public_ipv4}  # Server public IPv4 (auto-detected on $(date +'%Y-%m-%d'))" >> "$NFTBAN_WHITELIST_SYSTEM"
+        nftban_log_success "Protected public IPv4: $public_ipv4"
+        ((protected_count++))
+    fi
+    
+    public_ipv6=$(nftban_get_public_ip "ipv6")
+    if [[ -n "$public_ipv6" ]] && ! grep -qE "^${public_ipv6}([[:space:]]|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
+        echo "${public_ipv6}  # Server public IPv6 (auto-detected on $(date +'%Y-%m-%d'))" >> "$NFTBAN_WHITELIST_SYSTEM"
+        nftban_log_success "Protected public IPv6: $public_ipv6"
+        ((protected_count++))
+    fi
+    
+    if [[ $protected_count -gt 0 ]]; then
+        nftban_log_success "Auto-protected $protected_count server IPs"
+        # Sync to nftables after adding
+        nftban_whitelist_sync_to_nftables
+    else
+        nftban_log_info "All server IPs already protected"
+    fi
+}
+
+# =============================================================================
+# AUTO-PROTECTION: CURRENT USER IP
+# =============================================================================
+
+nftban_whitelist_protect_current_user() {
+    local current_user_ip
+    current_user_ip=$(nftban_get_current_user_ip)
+    
+    if [[ -z "$current_user_ip" ]]; then
+        nftban_log_debug "No remote user detected (local console?)"
+        return 0
+    fi
+    
+    # Check if already protected
+    if grep -qE "^${current_user_ip}([[:space:]]|$)" "$NFTBAN_WHITELIST_USER" 2>/dev/null || \
+       grep -qE "^${current_user_ip}([[:space:]]|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
+        nftban_log_debug "Current user IP already protected: $current_user_ip"
+        return 0
+    fi
+    
+    # Add to user whitelist (not system - allows manual removal)
+    echo "${current_user_ip}  # Current admin user (auto-protected on $(date +'%Y-%m-%d %H:%M:%S'))" >> "$NFTBAN_WHITELIST_USER"
+    nftban_log_success "Protected current user IP: $current_user_ip"
+    nftban_log_warning "⚠️  IMPORTANT: Your IP ($current_user_ip) has been whitelisted to prevent lockout"
+    
+    # Sync to nftables
+    nftban_whitelist_sync_to_nftables
 }
 
 # =============================================================================
@@ -104,7 +194,7 @@ nftban_whitelist_add_ip() {
     echo "${ip}  # ${comment}" >> "$NFTBAN_WHITELIST_USER"
     
     # Add to nftables set
-    if nftban_nftables_check_table; then
+    if nftban_check_nftables_table; then
         if nft add element "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "whitelist_v${ver}" "{ $ip }" 2>/dev/null; then
             nftban_log_success "Added $ip to whitelist (nftables + file)"
         else
@@ -134,17 +224,44 @@ nftban_whitelist_remove_ip() {
     local ver
     ver=$(nftban_detect_ip_version "$ip")
     
+    # SAFETY CHECK: Don't allow removal of critical IPs
+    if [[ "$ip" == "127.0.0.1" ]] || [[ "$ip" == "::1" ]]; then
+        nftban_log_error "BLOCKED: Cannot remove localhost from whitelist!"
+        return 1
+    fi
+    
+    # Check if it's a server IP
+    if ip -o addr show 2>/dev/null | grep -qF "$ip"; then
+        nftban_log_error "BLOCKED: Cannot remove server's own IP from whitelist!"
+        return 1
+    fi
+    
+    # Check if it's current user IP
+    local current_ip
+    current_ip=$(nftban_get_current_user_ip)
+    if [[ -n "$current_ip" && "$current_ip" == "$ip" ]]; then
+        nftban_log_error "BLOCKED: Cannot remove current user's IP from whitelist!"
+        nftban_log_error "This would cause immediate lockout!"
+        return 1
+    fi
+    
     local removed=false
     
-    # Remove from user whitelist file
+    # Remove from user whitelist file only (not system)
     if [[ -f "$NFTBAN_WHITELIST_USER" ]] && grep -qE "^${ip}([[:space:]]|$)" "$NFTBAN_WHITELIST_USER"; then
         sed -i "/^${ip}[[:space:]]/d" "$NFTBAN_WHITELIST_USER"
         nftban_log_success "Removed $ip from user whitelist file"
         removed=true
     fi
     
+    # Check if in system whitelist (warn but don't remove)
+    if grep -qE "^${ip}([[:space:]]|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
+        nftban_log_warning "IP $ip is in system whitelist (protected)"
+        nftban_log_warning "Manual removal from $NFTBAN_WHITELIST_SYSTEM required if needed"
+    fi
+    
     # Remove from nftables set
-    if nftban_nftables_check_table; then
+    if nftban_check_nftables_table; then
         if nft delete element "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "whitelist_v${ver}" "{ $ip }" 2>/dev/null; then
             nftban_log_success "Removed $ip from nftables whitelist"
             removed=true
@@ -160,18 +277,34 @@ nftban_whitelist_remove_ip() {
         nftban_log "WHITELIST" "Removed: ${ip}"
         return 0
     else
-        nftban_log_warning "IP $ip not found in whitelist"
+        nftban_log_warning "IP $ip not found in user whitelist"
         return 1
     fi
 }
 
-# Check if IP is whitelisted
+# =============================================================================
+# ENHANCED WHITELIST CHECK (Files + nftables + Server IPs + Current User)
+# =============================================================================
+
 nftban_whitelist_check_ip() {
     local ip="$1"
     
     # Validate IP
     nftban_validate_ip "$ip" || return 2
     
+    local ver
+    ver=$(nftban_detect_ip_version "$ip")
+    
+    # METHOD 1: Check nftables sets FIRST (fastest, most accurate)
+    if nftban_check_nftables_table; then
+        if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "whitelist_v${ver}" 2>/dev/null | \
+           grep -qE "(${ip}[[:space:],}]|${ip}\$)"; then
+            nftban_log_debug "IP $ip found in nftables whitelist_v${ver} set"
+            return 0
+        fi
+    fi
+    
+    # METHOD 2: Check configuration files (for non-synced entries or CIDR ranges)
     local whitelist_files=(
         "$NFTBAN_WHITELIST_SYSTEM"
         "$NFTBAN_WHITELIST_USER"
@@ -192,38 +325,50 @@ nftban_whitelist_check_ip() {
             
             # Exact match
             if [[ "$entry" == "$ip" ]]; then
+                nftban_log_debug "IP $ip found in $(basename "$file") (exact match)"
                 return 0
             fi
             
-            # Simple CIDR prefix match (for basic cases)
+            # CIDR range match - use proper calculation
             if [[ "$entry" =~ / ]]; then
-                local network="${entry%/*}"
-                local prefix="${entry#*/}"
-                
-                # Basic IPv4 CIDR matching
-                if [[ "$prefix" == "24" ]]; then
-                    [[ "${ip%.*}" == "${network%.*}" ]] && return 0
-                elif [[ "$prefix" == "16" ]]; then
-                    [[ "${ip%.*.*}" == "${network%.*.*}" ]] && return 0
-                elif [[ "$prefix" == "8" ]]; then
-                    [[ "${ip%%.*}" == "${network%%.*}" ]] && return 0
+                if nftban_ip_in_cidr "$ip" "$entry"; then
+                    nftban_log_debug "IP $ip matches CIDR $entry in $(basename "$file")"
+                    return 0
                 fi
             fi
         done < "$file"
     done
     
+    # METHOD 3: Check if it's a server IP (dynamic check)
+    if ip -o addr show 2>/dev/null | grep -qF "$ip"; then
+        nftban_log_debug "IP $ip is a server interface IP"
+        return 0
+    fi
+    
+    # METHOD 4: Check if it's the current user's IP
+    local current_user_ip
+    current_user_ip=$(nftban_get_current_user_ip)
+    if [[ -n "$current_user_ip" && "$current_user_ip" == "$ip" ]]; then
+        nftban_log_debug "IP $ip is current user's connection IP"
+        return 0
+    fi
+    
     return 1
 }
+
+# =============================================================================
+# LIST & DISPLAY
+# =============================================================================
 
 # List whitelisted IPs
 nftban_whitelist_list() {
     echo ""
-    echo "═══════════════════════════════════════════════════════════"
+    echo "═══════════════════════════════════════════════════════"
     echo "  Whitelisted IPs"
-    echo "═══════════════════════════════════════════════════════════"
+    echo "═══════════════════════════════════════════════════════"
     echo ""
     
-    echo -e "${NFTBAN_CYAN}System Whitelist:${NFTBAN_NC}"
+    echo -e "${NFTBAN_CYAN}System Whitelist (Auto-Protected):${NFTBAN_NC}"
     if [[ -f "$NFTBAN_WHITELIST_SYSTEM" ]]; then
         grep -E "^[0-9a-fA-F.:]+([[:space:]]|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null | nl -w3 -s'. ' || echo "  (empty)"
     else
@@ -255,7 +400,7 @@ nftban_whitelist_list() {
     echo ""
     
     # Show nftables sets if available
-    if nftban_nftables_check_table; then
+    if nftban_check_nftables_table; then
         echo -e "${NFTBAN_CYAN}nftables Sets:${NFTBAN_NC}"
         for ver in 4 6; do
             if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "whitelist_v${ver}" &>/dev/null; then
@@ -267,13 +412,32 @@ nftban_whitelist_list() {
         done
         echo ""
     fi
+    
+    # Show current protections
+    echo -e "${NFTBAN_CYAN}Current Protections:${NFTBAN_NC}"
+    local current_ip
+    current_ip=$(nftban_get_current_user_ip)
+    if [[ -n "$current_ip" ]]; then
+        echo "  Current User IP: $current_ip"
+    else
+        echo "  Current User IP: N/A (local console)"
+    fi
+    
+    local server_ip_count
+    server_ip_count=$(ip -o addr show 2>/dev/null | awk '/inet/ {gsub(/\/.*/, "", $4); print $4}' | grep -v '^127\.' | wc -l)
+    echo "  Server IPs: $server_ip_count protected"
+    echo ""
 }
+
+# =============================================================================
+# SYNC & MAINTENANCE
+# =============================================================================
 
 # Sync whitelist files to nftables
 nftban_whitelist_sync_to_nftables() {
     nftban_log_info "Syncing whitelist to nftables..."
     
-    if ! nftban_nftables_check_table; then
+    if ! nftban_check_nftables_table; then
         nftban_log_error "nftables table not initialized"
         return 1
     fi
@@ -328,67 +492,99 @@ nftban_whitelist_sync_to_nftables() {
 nftban_whitelist_verify() {
     local issues=0
     
+    echo ""
+    echo "═══════════════════════════════════════════════════════"
+    echo "  Whitelist Safety Verification"
+    echo "═══════════════════════════════════════════════════════"
+    echo ""
+    
     # Check if files exist
-    if [[ ! -f "$NFTBAN_WHITELIST_SYSTEM" ]]; then
-        nftban_log_error "System whitelist missing"
+    echo -n "Checking system whitelist... "
+    if [[ -f "$NFTBAN_WHITELIST_SYSTEM" ]]; then
+        echo -e "${NFTBAN_GREEN}✓ EXISTS${NFTBAN_NC}"
+    else
+        echo -e "${NFTBAN_RED}✗ MISSING${NFTBAN_NC}"
         ((issues++))
     fi
     
-    if [[ ! -f "$NFTBAN_WHITELIST_USER" ]]; then
-        nftban_log_warning "User whitelist missing"
+    echo -n "Checking user whitelist... "
+    if [[ -f "$NFTBAN_WHITELIST_USER" ]]; then
+        echo -e "${NFTBAN_GREEN}✓ EXISTS${NFTBAN_NC}"
+    else
+        echo -e "${NFTBAN_RED}✗ MISSING${NFTBAN_NC}"
         ((issues++))
     fi
     
     # Check if localhost is whitelisted
-    if ! nftban_whitelist_check_ip "127.0.0.1"; then
-        nftban_log_error "Localhost (127.0.0.1) not whitelisted!"
+    echo -n "Checking localhost protection... "
+    if nftban_whitelist_check_ip "127.0.0.1" && nftban_whitelist_check_ip "::1"; then
+        echo -e "${NFTBAN_GREEN}✓ PROTECTED${NFTBAN_NC}"
+    else
+        echo -e "${NFTBAN_RED}✗ NOT PROTECTED${NFTBAN_NC}"
         ((issues++))
     fi
     
-    if ! nftban_whitelist_check_ip "::1"; then
-        nftban_log_error "Localhost (::1) not whitelisted!"
+    # Check server IPs
+    echo -n "Checking server IP protection... "
+    local unprotected=0
+    while IFS= read -r ip; do
+        [[ -z "$ip" || "$ip" =~ ^127\. ]] && continue
+        if ! nftban_whitelist_check_ip "$ip"; then
+            ((unprotected++))
+        fi
+    done < <(ip -o addr show 2>/dev/null | awk '/inet/ {gsub(/\/.*/, "", $4); print $4}')
+    
+    if [[ $unprotected -eq 0 ]]; then
+        echo -e "${NFTBAN_GREEN}✓ ALL PROTECTED${NFTBAN_NC}"
+    else
+        echo -e "${NFTBAN_YELLOW}⚠ $unprotected IPs NOT PROTECTED${NFTBAN_NC}"
         ((issues++))
+    fi
+    
+    # Check current user IP
+    echo -n "Checking current user IP... "
+    local current_ip
+    current_ip=$(nftban_get_current_user_ip)
+    
+    if [[ -n "$current_ip" ]]; then
+        if nftban_whitelist_check_ip "$current_ip"; then
+            echo -e "${NFTBAN_GREEN}✓ PROTECTED ($current_ip)${NFTBAN_NC}"
+        else
+            echo -e "${NFTBAN_RED}✗ NOT PROTECTED ($current_ip)${NFTBAN_NC}"
+            echo -e "  ${NFTBAN_RED}⚠️  WARNING: Risk of self-lockout!${NFTBAN_NC}"
+            ((issues++))
+        fi
+    else
+        echo -e "${NFTBAN_YELLOW}N/A (local console)${NFTBAN_NC}"
     fi
     
     # Check nftables sync
-    if nftban_nftables_check_table; then
-        local file_count_v4 file_count_v6 nft_count_v4 nft_count_v6
+    echo -n "Checking nftables sync... "
+    if nftban_check_nftables_table; then
+        local file_v4 nft_v4
+        file_v4=$(grep -hcE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" \
+                  "$NFTBAN_WHITELIST_SYSTEM" "$NFTBAN_WHITELIST_USER" 2>/dev/null || echo "0")
+        nft_v4=$(nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" whitelist_v4 2>/dev/null | \
+                 grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+' | wc -l)
         
-        file_count_v4=$(grep -hE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" \
-                        "$NFTBAN_WHITELIST_SYSTEM" "$NFTBAN_WHITELIST_USER" 2>/dev/null | wc -l)
-        
-        nft_count_v4=$(nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" whitelist_v4 2>/dev/null | \
-                       grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+' | wc -l)
-        
-        if [[ $file_count_v4 -ne $nft_count_v4 ]]; then
-            nftban_log_warning "IPv4 whitelist out of sync (files: $file_count_v4, nftables: $nft_count_v4)"
-            ((issues++))
+        if [[ $file_v4 -eq $nft_v4 ]]; then
+            echo -e "${NFTBAN_GREEN}✓ SYNCED${NFTBAN_NC}"
+        else
+            echo -e "${NFTBAN_YELLOW}⚠ OUT OF SYNC (files: $file_v4, nft: $nft_v4)${NFTBAN_NC}"
         fi
+    else
+        echo -e "${NFTBAN_RED}✗ TABLE MISSING${NFTBAN_NC}"
+        ((issues++))
     fi
     
-    return $issues
-}
-
-# Add server's own IPs to whitelist
-nftban_whitelist_add_server_ips() {
-    nftban_log_info "Adding server IPs to whitelist..."
-    
-    # Get server IPs
-    local server_ips
-    server_ips=$(ip -o addr show | awk '/inet/ {print $4}' | grep -v '^127\.' | cut -d'/' -f1)
-    
-    for ip in $server_ips; do
-        if ! nftban_whitelist_check_ip "$ip"; then
-            # Add to system whitelist
-            if ! grep -q "^${ip}[[:space:]]" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
-                echo "${ip}  # Server IP (auto-detected)" >> "$NFTBAN_WHITELIST_SYSTEM"
-                nftban_log_info "Added server IP: $ip"
-            fi
-        fi
-    done
-    
-    # Sync to nftables
-    nftban_whitelist_sync_to_nftables
+    echo ""
+    if [[ $issues -eq 0 ]]; then
+        echo -e "${NFTBAN_GREEN}✓ ALL CHECKS PASSED${NFTBAN_NC}"
+        return 0
+    else
+        echo -e "${NFTBAN_RED}$issues issue(s) found - run: nftban whitelist init${NFTBAN_NC}"
+        return 1
+    fi
 }
 
 # Get whitelist statistics
@@ -406,13 +602,14 @@ nftban_whitelist_get_stats() {
 # EXPORT FUNCTIONS
 # =============================================================================
 export -f nftban_whitelist_init
+export -f nftban_whitelist_add_server_ips
+export -f nftban_whitelist_protect_current_user
 export -f nftban_whitelist_add_ip
 export -f nftban_whitelist_remove_ip
 export -f nftban_whitelist_check_ip
 export -f nftban_whitelist_list
 export -f nftban_whitelist_sync_to_nftables
 export -f nftban_whitelist_verify
-export -f nftban_whitelist_add_server_ips
 export -f nftban_whitelist_get_stats
 
-nftban_log_debug "NFTBan Whitelist Module loaded"
+nftban_log_debug "NFTBan Whitelist Module loaded (v1.1.0 - Enhanced Protection)"

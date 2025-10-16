@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Blacklist Module
-# Version: 1.0.0
-# Ban operations, temporary bans, and persistent offender management
+# NFTBan Blacklist Module - Enhanced with Comprehensive Protection
+# Version: 1.1.0
+# Ban operations with complete safety checks
 # =============================================================================
 
 # Prevent double-loading
@@ -104,22 +104,22 @@ nftban_blacklist_record_ban_attempt() {
 }
 
 # =============================================================================
-# TEMPORARY BAN OPERATIONS
+# TEMPORARY BAN OPERATIONS (Enhanced with All Safety Checks)
 # =============================================================================
 
-# Ban IP temporarily
+# Ban IP temporarily - COMPREHENSIVE PROTECTION
 nftban_blacklist_ban_ip() {
     local ip="$1"
     local jail="${2:-manual}"
     local ban_time="${3:-$NFTBAN_DEFAULT_BAN_TIME}"
     
-    # Validate IP
+    # 1. Validate IP
     nftban_validate_ip "$ip" || return 1
     
     local ver
     ver=$(nftban_detect_ip_version "$ip")
     
-    # Check rate limit
+    # 2. Check rate limit
     nftban_blacklist_check_rate_limit || {
         nftban_log_ban "$ip" "$jail" "DENIED" "Rate limit exceeded"
         return 1
@@ -127,18 +127,84 @@ nftban_blacklist_ban_ip() {
     
     nftban_blacklist_record_ban_attempt
     
-    # CRITICAL: Check whitelist first
+    # 3. CRITICAL: Check if this is the current user's IP
+    local current_user_ip
+    current_user_ip=$(nftban_get_current_user_ip)
+    
+    if [[ -n "$current_user_ip" && "$current_user_ip" == "$ip" ]]; then
+        nftban_log_error "⚠️  BLOCKED: Cannot ban current user's IP: $ip"
+        nftban_log_error "This would cause immediate lockout!"
+        nftban_log_ban "$ip" "$jail" "DENIED" "Current user IP - lockout prevention"
+        
+        # Auto-whitelist current user IP for safety
+        if ! nftban_whitelist_check_ip "$ip"; then
+            nftban_log_warning "Auto-whitelisting current user IP for safety..."
+            echo "${ip}  # Current user (auto-protected on $(date +'%Y-%m-%d %H:%M:%S'))" >> \
+                "${NFTBAN_CONFIG_DIR}/whitelist-user.conf"
+            if declare -f nftban_whitelist_sync_to_nftables &>/dev/null; then
+                nftban_whitelist_sync_to_nftables
+            fi
+        fi
+        
+        return 1
+    fi
+    
+    # 4. CRITICAL: Check if this is a server IP
+    if ip -o addr show 2>/dev/null | grep -qF "$ip"; then
+        nftban_log_error "⚠️  BLOCKED: Cannot ban server's own IP: $ip"
+        nftban_log_error "This would break server functionality!"
+        nftban_log_ban "$ip" "$jail" "DENIED" "Server IP - self-protection"
+        
+        # Auto-whitelist if not already
+        if ! grep -qE "^${ip}([[:space:]]|$)" "${NFTBAN_CONFIG_DIR}/whitelist-system.conf" 2>/dev/null; then
+            echo "${ip}  # Server IP (auto-protected on $(date +'%Y-%m-%d'))" >> \
+                "${NFTBAN_CONFIG_DIR}/whitelist-system.conf"
+            if declare -f nftban_whitelist_sync_to_nftables &>/dev/null; then
+                nftban_whitelist_sync_to_nftables
+            fi
+        fi
+        
+        return 1
+    fi
+    
+    # 5. CRITICAL: Check whitelist (highest priority)
     if nftban_whitelist_check_ip "$ip"; then
         nftban_log_warning "IP $ip is whitelisted - BAN DENIED"
         nftban_log_ban "$ip" "$jail" "DENIED" "Whitelisted"
         return 1
     fi
     
-    # Check if already banned in nftables
-    if nftban_nftables_check_table; then
-        if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "temp_ban_v${ver}" 2>/dev/null | grep -q "$ip"; then
-            nftban_log_warning "IP $ip already banned (skipping)"
+    # 6. Check if already banned in any nftables set
+    if nftban_check_nftables_table; then
+        # Check temp_ban
+        if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "temp_ban_v${ver}" 2>/dev/null | \
+           grep -qE "(${ip}[[:space:],}]|${ip}\$)"; then
+            nftban_log_warning "IP $ip already banned in temp_ban (skipping)"
             nftban_log_ban "$ip" "$jail" "ALREADY_BANNED" "Exists in temp_ban set"
+            return 0
+        fi
+        
+        # Check user_blacklist
+        if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "user_blacklist_v${ver}" 2>/dev/null | \
+           grep -qE "(${ip}[[:space:],}]|${ip}\$)"; then
+            nftban_log_warning "IP $ip already in permanent user blacklist (skipping)"
+            nftban_log_ban "$ip" "$jail" "ALREADY_BANNED" "Exists in user_blacklist"
+            return 0
+        fi
+        
+        # Check system_blacklist
+        if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "system_blacklist_v${ver}" 2>/dev/null | \
+           grep -qE "(${ip}[[:space:],}]|${ip}\$)"; then
+            nftban_log_warning "IP $ip already in system blacklist (skipping)"
+            nftban_log_ban "$ip" "$jail" "ALREADY_BANNED" "Exists in system_blacklist"
+            return 0
+        fi
+        
+        # Check feeds
+        if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "feeds_v${ver}" 2>/dev/null | \
+           grep -qE "(${ip}[[:space:],}]|${ip}\$)"; then
+            nftban_log_warning "IP $ip already in threat feeds (skipping)"
+            nftban_log_ban "$ip" "$jail" "ALREADY_BANNED" "Exists in feeds"
             return 0
         fi
     else
@@ -146,7 +212,7 @@ nftban_blacklist_ban_ip() {
         return 1
     fi
     
-    # Execute ban
+    # 7. Execute ban (all safety checks passed)
     if nft add element "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "temp_ban_v${ver}" \
         "{ $ip timeout ${ban_time}s comment \"${jail}\" }" 2>/dev/null; then
         
@@ -168,10 +234,14 @@ nftban_blacklist_ban_ip() {
     fi
 }
 
-# Unban IP
+# =============================================================================
+# COMPREHENSIVE UNBAN (Removes from ALL locations)
+# =============================================================================
+
 nftban_blacklist_unban_ip() {
     local ip="$1"
     local jail="${2:-manual}"
+    local force="${3:-false}"  # Force unban even from permanent lists
     
     # Validate IP
     nftban_validate_ip "$ip" || return 1
@@ -179,18 +249,122 @@ nftban_blacklist_unban_ip() {
     local ver
     ver=$(nftban_detect_ip_version "$ip")
     
-    if ! nftban_nftables_check_table; then
+    if ! nftban_check_nftables_table; then
         nftban_log_error "nftables table not initialized"
         return 1
     fi
     
-    # Remove from temp_ban set
-    if nft delete element "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "temp_ban_v${ver}" "{ $ip }" 2>/dev/null; then
-        nftban_log_success "Unbanned $ip"
-        nftban_log_ban "$ip" "$jail" "UNBANNED" "Manual unban"
-        return 0
+    local removed_from=()
+    local failed_to_remove=()
+    local warnings=()
+    
+    # 1. Remove from temp_ban set (always allowed)
+    if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "temp_ban_v${ver}" 2>/dev/null | \
+       grep -qE "(${ip}[[:space:],}]|${ip}\$)"; then
+        if nft delete element "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "temp_ban_v${ver}" "{ $ip }" 2>/dev/null; then
+            removed_from+=("temp_ban_v${ver}")
+        else
+            failed_to_remove+=("temp_ban_v${ver}")
+        fi
+    fi
+    
+    # 2. Check and potentially remove from permanent blacklists
+    if [[ "$force" == "true" ]]; then
+        # Force mode: remove from permanent lists
+        
+        # Remove from user_blacklist nftables set
+        if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "user_blacklist_v${ver}" 2>/dev/null | \
+           grep -qE "(${ip}[[:space:],}]|${ip}\$)"; then
+            if nft delete element "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "user_blacklist_v${ver}" "{ $ip }" 2>/dev/null; then
+                removed_from+=("user_blacklist_v${ver}")
+            else
+                failed_to_remove+=("user_blacklist_v${ver}")
+            fi
+        fi
+        
+        # Remove from system_blacklist nftables set
+        if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "system_blacklist_v${ver}" 2>/dev/null | \
+           grep -qE "(${ip}[[:space:],}]|${ip}\$)"; then
+            if nft delete element "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "system_blacklist_v${ver}" "{ $ip }" 2>/dev/null; then
+                removed_from+=("system_blacklist_v${ver}")
+            else
+                failed_to_remove+=("system_blacklist_v${ver}")
+            fi
+        fi
+        
+        # Remove from blacklist files
+        local blacklist_files=(
+            "$NFTBAN_BLACKLIST_PERSISTENT"
+            "$NFTBAN_BLACKLIST_USER"
+        )
+        
+        for file in "${blacklist_files[@]}"; do
+            if [[ -f "$file" ]] && grep -qE "^${ip}([[:space:]]|$)" "$file"; then
+                if sed -i "/^${ip}[[:space:]]/d" "$file"; then
+                    removed_from+=("$(basename "$file")")
+                else
+                    failed_to_remove+=("$(basename "$file")")
+                fi
+            fi
+        done
     else
-        nftban_log_warning "IP $ip not found in temporary ban list"
+        # Normal mode: just inform about permanent locations
+        
+        if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "user_blacklist_v${ver}" 2>/dev/null | \
+           grep -qE "(${ip}[[:space:],}]|${ip}\$)"; then
+            warnings+=("IP is in permanent user blacklist")
+        fi
+        
+        if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "system_blacklist_v${ver}" 2>/dev/null | \
+           grep -qE "(${ip}[[:space:],}]|${ip}\$)"; then
+            warnings+=("IP is in permanent system blacklist")
+        fi
+        
+        if [[ -f "$NFTBAN_BLACKLIST_PERSISTENT" ]] && \
+           grep -qE "^${ip}([[:space:]]|$)" "$NFTBAN_BLACKLIST_PERSISTENT"; then
+            warnings+=("IP is in persistent blacklist (repeat offender)")
+        fi
+        
+        if [[ -f "$NFTBAN_BLACKLIST_USER" ]] && \
+           grep -qE "^${ip}([[:space:]]|$)" "$NFTBAN_BLACKLIST_USER"; then
+            warnings+=("IP is in user blacklist file")
+        fi
+    fi
+    
+    # 3. Check feeds (cannot remove - feeds are read-only)
+    if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "feeds_v${ver}" 2>/dev/null | \
+       grep -qE "(${ip}[[:space:],}]|${ip}\$)"; then
+        warnings+=("IP is in threat intelligence feeds (read-only)")
+    fi
+    
+    # 4. Display warnings if any
+    if [[ ${#warnings[@]} -gt 0 ]]; then
+        for warning in "${warnings[@]}"; do
+            nftban_log_warning "$warning"
+        done
+        
+        if [[ "$force" != "true" ]]; then
+            nftban_log_info "To remove from permanent lists, use: nftban unban --force $ip"
+            nftban_log_info "To allow despite feeds, add to whitelist: nftban whitelist add $ip"
+        fi
+    fi
+    
+    # 5. Report results
+    if [[ ${#removed_from[@]} -gt 0 ]]; then
+        nftban_log_success "Unbanned $ip from: ${removed_from[*]}"
+        nftban_log_ban "$ip" "$jail" "UNBANNED" "Removed from: ${removed_from[*]}"
+        
+        # Rebuild search index
+        if declare -f nftban_search_build_index &>/dev/null; then
+            nftban_search_build_index
+        fi
+        
+        return 0
+    elif [[ ${#failed_to_remove[@]} -gt 0 ]]; then
+        nftban_log_error "Failed to unban $ip from: ${failed_to_remove[*]}"
+        return 1
+    else
+        nftban_log_warning "IP $ip not found in any temporary ban list"
         return 1
     fi
 }
@@ -218,7 +392,7 @@ nftban_blacklist_check_persistent_offender() {
     return 1
 }
 
-# Add IP to persistent blacklist
+# Add IP to persistent blacklist (with comprehensive safety checks)
 nftban_blacklist_add_permanent() {
     local ip="$1"
     local reason="${2:-Manual permanent ban}"
@@ -229,29 +403,82 @@ nftban_blacklist_add_permanent() {
     local ver
     ver=$(nftban_detect_ip_version "$ip")
     
-    # Check if already in persistent blacklist
-    if grep -qE "^${ip}([[:space:]]|$)" "$NFTBAN_BLACKLIST_PERSISTENT" 2>/dev/null; then
-        nftban_log_warning "IP $ip already in persistent blacklist"
-        return 0
+    # CRITICAL SAFETY CHECKS (same as ban function)
+    
+    # 1. Check if IP is whitelisted
+    if nftban_whitelist_check_ip "$ip"; then
+        nftban_log_error "⚠️  BLOCKED: Cannot blacklist whitelisted IP: $ip"
+        nftban_log_error "Remove from whitelist first if you really want to ban this IP"
+        return 1
     fi
     
-    # Add to file
-    local timestamp
-    timestamp=$(date +'%Y-%m-%d %H:%M:%S')
-    echo "${ip}  # ${timestamp} - ${reason}" >> "$NFTBAN_BLACKLIST_PERSISTENT"
+    # 2. Check if this is server IP
+    if ip -o addr show 2>/dev/null | grep -qF "$ip"; then
+        nftban_log_error "⚠️  BLOCKED: Cannot blacklist server's own IP: $ip"
+        return 1
+    fi
     
-    # Add to nftables user_blacklist set (permanent)
-    if nftban_nftables_check_table; then
-        if nft add element "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "user_blacklist_v${ver}" "{ $ip }" 2>/dev/null; then
-            nftban_log_success "Added $ip to permanent blacklist (nftables + file)"
+    # 3. Check if this is current user IP
+    local current_ip
+    current_ip=$(nftban_get_current_user_ip)
+    if [[ -n "$current_ip" && "$current_ip" == "$ip" ]]; then
+        nftban_log_error "⚠️  BLOCKED: Cannot blacklist current user's IP: $ip"
+        nftban_log_error "This would cause immediate lockout!"
+        return 1
+    fi
+    
+    # 4. Check for duplicates
+    local existing_locations
+    existing_locations=$(nftban_find_ip_locations "$ip")
+    
+    if [[ -n "$existing_locations" ]]; then
+        nftban_log_info "IP $ip already exists in:"
+        echo "$existing_locations" | while read -r location; do
+            nftban_log_info "  - $location"
+        done
+        
+        # If already in permanent blacklist, skip
+        if echo "$existing_locations" | grep -q "user_blacklist\|blacklist-persistent"; then
+            nftban_log_info "IP already in permanent blacklist, skipping"
+            return 0
+        fi
+    fi
+    
+    # 5. Add to persistent blacklist file
+    if ! grep -qE "^${ip}([[:space:]]|$)" "$NFTBAN_BLACKLIST_PERSISTENT" 2>/dev/null; then
+        local timestamp
+        timestamp=$(date +'%Y-%m-%d %H:%M:%S')
+        echo "${ip}  # ${timestamp} - ${reason}" >> "$NFTBAN_BLACKLIST_PERSISTENT"
+        nftban_log_success "Added $ip to permanent blacklist file"
+    else
+        nftban_log_info "IP already in persistent blacklist file"
+    fi
+    
+    # 6. Add to nftables user_blacklist set
+    if nftban_check_nftables_table; then
+        if ! nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "user_blacklist_v${ver}" 2>/dev/null | \
+           grep -qE "(${ip}[[:space:],}]|${ip}\$)"; then
+            
+            if nft add element "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "user_blacklist_v${ver}" "{ $ip }" 2>/dev/null; then
+                nftban_log_success "Added $ip to permanent blacklist (nftables)"
+            else
+                nftban_log_warning "Failed to add to nftables (already in file)"
+            fi
         else
-            nftban_log_warning "Added to file but failed to add to nftables"
+            nftban_log_info "IP already in nftables user_blacklist set"
         fi
     else
-        nftban_log_success "Added $ip to permanent blacklist file"
+        nftban_log_success "Added $ip to permanent blacklist file only"
     fi
     
     nftban_log_ban "$ip" "PERSISTENT" "PERMANENT" "$reason"
+    
+    # 7. Remove from temp_ban if exists (upgrade to permanent)
+    if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "temp_ban_v${ver}" 2>/dev/null | \
+       grep -qE "(${ip}[[:space:],}]|${ip}\$)"; then
+        nft delete element "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "temp_ban_v${ver}" "{ $ip }" 2>/dev/null
+        nftban_log_info "Upgraded from temporary to permanent ban"
+    fi
     
     # Rebuild search index
     if declare -f nftban_search_build_index &>/dev/null; then
@@ -283,7 +510,7 @@ nftban_blacklist_remove_permanent() {
     done
     
     # Remove from nftables
-    if nftban_nftables_check_table; then
+    if nftban_check_nftables_table; then
         if nft delete element "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "user_blacklist_v${ver}" "{ $ip }" 2>/dev/null; then
             nftban_log_success "Removed $ip from nftables user_blacklist"
             removed=true
@@ -304,12 +531,16 @@ nftban_blacklist_remove_permanent() {
     fi
 }
 
+# =============================================================================
+# LIST & DISPLAY
+# =============================================================================
+
 # List permanent blacklist
 nftban_blacklist_list_permanent() {
     echo ""
-    echo "═══════════════════════════════════════════════════════════"
+    echo "═══════════════════════════════════════════════════════"
     echo "  Permanent Blacklist"
-    echo "═══════════════════════════════════════════════════════════"
+    echo "═══════════════════════════════════════════════════════"
     echo ""
     
     echo -e "${NFTBAN_CYAN}Persistent Offenders (Auto-added):${NFTBAN_NC}"
@@ -329,32 +560,31 @@ nftban_blacklist_list_permanent() {
     echo ""
     
     # Show nftables sets if available
-    if nftban_nftables_check_table; then
+    if nftban_check_nftables_table; then
         echo -e "${NFTBAN_CYAN}nftables Sets:${NFTBAN_NC}"
         for ver in 4 6; do
-            if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "user_blacklist_v${ver}" &>/dev/null; then
-                local count
-                count=$(nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "user_blacklist_v${ver}" 2>/dev/null | \
-                        grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F.:]\+' | wc -l)
-                printf "  %-25s %3d IPs\n" "user_blacklist_v${ver}:" "$count"
-            fi
-            
-            if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "temp_ban_v${ver}" &>/dev/null; then
-                local count
-                count=$(nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "temp_ban_v${ver}" 2>/dev/null | \
-                        grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F.:]\+' | wc -l)
-                printf "  %-25s %3d IPs\n" "temp_ban_v${ver}:" "$count"
-            fi
+            for set_type in user_blacklist system_blacklist temp_ban feeds; do
+                if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "${set_type}_v${ver}" &>/dev/null; then
+                    local count
+                    count=$(nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "${set_type}_v${ver}" 2>/dev/null | \
+                            grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F.:]\+' | wc -l)
+                    printf "  %-25s %3d IPs\n" "${set_type}_v${ver}:" "$count"
+                fi
+            done
         done
         echo ""
     fi
 }
 
+# =============================================================================
+# SYNC & MAINTENANCE
+# =============================================================================
+
 # Sync blacklist to nftables
 nftban_blacklist_sync_to_nftables() {
     nftban_log_info "Syncing blacklist to nftables..."
     
-    if ! nftban_nftables_check_table; then
+    if ! nftban_check_nftables_table; then
         nftban_log_error "nftables table not initialized"
         return 1
     fi
@@ -405,7 +635,7 @@ nftban_blacklist_sync_to_nftables() {
 }
 
 # =============================================================================
-# STATISTICS AND REPORTING
+# STATISTICS
 # =============================================================================
 
 # Show recent ban statistics
@@ -470,4 +700,4 @@ export -f nftban_blacklist_show_recent_stats
 export -f nftban_blacklist_get_top_ips
 export -f nftban_blacklist_get_ip_ban_count
 
-nftban_log_debug "NFTBan Blacklist Module loaded"
+nftban_log_debug "NFTBan Blacklist Module loaded (v1.1.0 - Comprehensive Protection)"
