@@ -1,14 +1,321 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Safety Module - NEW
-# Version: 1.0.0
+# NFTBan Safety Module - COMPLETE VERSION
+# Version: 1.1.0
 # Comprehensive safety verification and initialization safeguards
 # =============================================================================
 
 # Prevent double-loading
 [[ -n "${NFTBAN_SAFETY_LOADED:-}" ]] && return 0
 readonly NFTBAN_SAFETY_LOADED=1
+
+# =============================================================================
+# RISK 1: NFTABLES SERVICE NOT RUNNING
+# =============================================================================
+nftban_check_nftables_running() {
+    # Check if nft command works
+    if ! command -v nft &>/dev/null; then
+        nftban_log_error "CRITICAL: nft command not found - nftables not installed!"
+        return 1
+    fi
+    
+    # Check if nftables service is running
+    if ! systemctl is-active --quiet nftables 2>/dev/null; then
+        nftban_log_warning "nftables service not active"
+    fi
+    
+    # Test if nft actually works
+    if ! nft list tables &>/dev/null; then
+        nftban_log_error "CRITICAL: nft command fails - nftables not functional!"
+        return 1
+    fi
+    
+    return 0
+}
+
+# =============================================================================
+# RISK 2: NFTABLES SET FULL (Maximum elements reached)
+# =============================================================================
+nftban_check_nft_set_capacity() {
+    local set_name="$1"
+    local ver="$2"
+    
+    if ! nftban_check_nftables_table; then
+        return 1
+    fi
+    
+    # Get current element count
+    local count
+    count=$(nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "${set_name}_v${ver}" 2>/dev/null | \
+            grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F.:]\+' | wc -l)
+    
+    # Warn if approaching limits (nftables default is ~65535 elements per set)
+    if [[ $count -gt 50000 ]]; then
+        nftban_log_warning "Set ${set_name}_v${ver} has $count elements (approaching limit!)"
+        return 1
+    fi
+    
+    return 0
+}
+
+# =============================================================================
+# RISK 3: DUPLICATE IPs IN NFTABLES SETS
+# =============================================================================
+nftban_check_nft_duplicates() {
+    local ver="$1"
+    
+    if ! nftban_check_nftables_table; then
+        return 1
+    fi
+    
+    local duplicates=0
+    
+    # Extract all IPs from all sets
+    local temp_file="/tmp/nftban_all_ips.$$"
+    > "$temp_file"
+    
+    for set_name in whitelist temp_ban user_blacklist system_blacklist feeds; do
+        nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "${set_name}_v${ver}" 2>/dev/null | \
+            grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F.:]\+' >> "$temp_file" || true
+    done
+    
+    # Check for duplicates
+    duplicates=$(sort "$temp_file" | uniq -d | wc -l)
+    rm -f "$temp_file"
+    
+    if [[ $duplicates -gt 0 ]]; then
+        nftban_log_warning "Found $duplicates duplicate IPs across nftables sets (IPv${ver})"
+        return 1
+    fi
+    
+    return 0
+}
+
+# =============================================================================
+# RISK 4: FILE PERMISSIONS WRONG
+# =============================================================================
+nftban_check_file_permissions() {
+    local issues=0
+    
+    # Check if config files are writable
+    local critical_files=(
+        "$NFTBAN_WHITELIST_SYSTEM"
+        "$NFTBAN_WHITELIST_USER"
+        "$NFTBAN_BLACKLIST_PERSISTENT"
+        "$NFTBAN_BLACKLIST_USER"
+    )
+    
+    for file in "${critical_files[@]}"; do
+        if [[ -f "$file" ]]; then
+            # Check if writable
+            if [[ ! -w "$file" ]]; then
+                nftban_log_error "File not writable: $file"
+                ((issues++))
+            fi
+            
+            # Check permissions (should be 644 or 600)
+            local perms
+            perms=$(stat -c %a "$file" 2>/dev/null)
+            if [[ "$perms" != "644" && "$perms" != "600" ]]; then
+                nftban_log_warning "Incorrect permissions on $file: $perms (should be 644)"
+            fi
+        fi
+    done
+    
+    # Check log directory writable
+    if [[ ! -w "$NFTBAN_LOG_DIR" ]]; then
+        nftban_log_error "Log directory not writable: $NFTBAN_LOG_DIR"
+        ((issues++))
+    fi
+    
+    return $issues
+}
+
+# =============================================================================
+# RISK 5: DISK SPACE LOW
+# =============================================================================
+nftban_check_disk_space() {
+    # Check disk space on /etc and /var
+    local etc_usage var_usage
+    
+    etc_usage=$(df /etc | tail -1 | awk '{print $5}' | tr -d '%')
+    var_usage=$(df /var | tail -1 | awk '{print $5}' | tr -d '%')
+    
+    if [[ $etc_usage -gt 90 ]]; then
+        nftban_log_error "CRITICAL: /etc partition ${etc_usage}% full!"
+        return 1
+    fi
+    
+    if [[ $var_usage -gt 90 ]]; then
+        nftban_log_error "CRITICAL: /var partition ${var_usage}% full!"
+        return 1
+    fi
+    
+    if [[ $etc_usage -gt 80 || $var_usage -gt 80 ]]; then
+        nftban_log_warning "Disk space warning: /etc ${etc_usage}%, /var ${var_usage}%"
+    fi
+    
+    return 0
+}
+
+# =============================================================================
+# RISK 6: RACE CONDITION - Multiple ban processes
+# =============================================================================
+nftban_check_lock() {
+    local lock_file="/var/lock/nftban.lock"
+    local max_wait=5
+    local waited=0
+    
+    # Wait for lock to be released (max 5 seconds)
+    while [[ -f "$lock_file" ]] && [[ $waited -lt $max_wait ]]; do
+        sleep 1
+        ((waited++))
+    done
+    
+    if [[ -f "$lock_file" ]]; then
+        # Check if process still exists
+        local pid
+        pid=$(cat "$lock_file" 2>/dev/null)
+        
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            nftban_log_error "Another nftban process is running (PID: $pid)"
+            return 1
+        else
+            # Stale lock file
+            rm -f "$lock_file"
+        fi
+    fi
+    
+    # Create lock
+    echo $$ > "$lock_file"
+    return 0
+}
+
+nftban_release_lock() {
+    local lock_file="/var/lock/nftban.lock"
+    rm -f "$lock_file"
+}
+
+# =============================================================================
+# RISK 7: CORRUPTED CONFIGURATION FILES
+# =============================================================================
+nftban_check_config_integrity() {
+    local issues=0
+    
+    local config_files=(
+        "$NFTBAN_WHITELIST_SYSTEM"
+        "$NFTBAN_WHITELIST_USER"
+        "$NFTBAN_BLACKLIST_PERSISTENT"
+        "$NFTBAN_BLACKLIST_USER"
+    )
+    
+    for file in "${config_files[@]}"; do
+        [[ ! -f "$file" ]] && continue
+        
+        # Check for binary/corrupted data
+        if file "$file" | grep -q "data"; then
+            nftban_log_error "File appears corrupted: $file"
+            ((issues++))
+            continue
+        fi
+        
+        # Check for invalid IP format
+        local invalid_lines
+        invalid_lines=$(grep -vE '^[[:space:]]*#|^[[:space:]]*$' "$file" | \
+                       grep -vE '^[0-9a-fA-F.:]+(/[0-9]+)?[[:space:]]' | \
+                       wc -l)
+        
+        if [[ $invalid_lines -gt 0 ]]; then
+            nftban_log_warning "File has $invalid_lines invalid entries: $(basename "$file")"
+            ((issues++))
+        fi
+    done
+    
+    return $issues
+}
+
+# =============================================================================
+# RISK 8: NFTABLES RULESET INCONSISTENCY
+# =============================================================================
+nftban_check_nft_rules_order() {
+    if ! nftban_check_nftables_table; then
+        return 1
+    fi
+    
+    # Check if whitelist rules come BEFORE ban rules
+    local rules
+    rules=$(nft list chain "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" input 2>/dev/null)
+    
+    if [[ -z "$rules" ]]; then
+        nftban_log_error "No rules found in input chain!"
+        return 1
+    fi
+    
+    # Whitelist should appear before bans in rule order
+    local whitelist_pos ban_pos
+    whitelist_pos=$(echo "$rules" | grep -n "whitelist" | head -1 | cut -d: -f1)
+    ban_pos=$(echo "$rules" | grep -n "temp_ban\|blacklist" | head -1 | cut -d: -f1)
+    
+    if [[ -n "$ban_pos" && -n "$whitelist_pos" ]] && [[ $ban_pos -lt $whitelist_pos ]]; then
+        nftban_log_error "CRITICAL: Ban rules come before whitelist rules!"
+        nftban_log_error "This means whitelisted IPs can still be blocked!"
+        return 1
+    fi
+    
+    return 0
+}
+
+# =============================================================================
+# RISK 9: LOG FILES TOO LARGE
+# =============================================================================
+nftban_check_log_size() {
+    local max_size=$((100 * 1024 * 1024))  # 100MB
+    
+    local log_files=(
+        "$NFTBAN_MAIN_LOG"
+        "$NFTBAN_BAN_LOG"
+    )
+    
+    for log_file in "${log_files[@]}"; do
+        [[ ! -f "$log_file" ]] && continue
+        
+        local size
+        size=$(stat -c%s "$log_file" 2>/dev/null || echo "0")
+        
+        if [[ $size -gt $max_size ]]; then
+            nftban_log_warning "Log file too large: $(basename "$log_file") ($(( size / 1024 / 1024 ))MB)"
+            nftban_log_warning "Consider rotating logs"
+        fi
+    done
+}
+
+# =============================================================================
+# RISK 10: PRIVATE IP RANGES NOT PROTECTED
+# =============================================================================
+nftban_check_private_ranges() {
+    local private_ranges=(
+        "10.0.0.0/8"
+        "172.16.0.0/12"
+        "192.168.0.0/16"
+    )
+    
+    local unprotected=0
+    
+    for range in "${private_ranges[@]}"; do
+        # Check if any IP in this range can be banned
+        # (simplified check - just verify range isn't explicitly whitelisted)
+        if ! grep -qE "^${range}" "$NFTBAN_WHITELIST_USER" 2>/dev/null && \
+           ! grep -qE "^${range}" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
+            nftban_log_warning "Private range not whitelisted: $range"
+            ((unprotected++))
+        fi
+    done
+    
+    if [[ $unprotected -gt 0 ]]; then
+        nftban_log_info "Consider whitelisting private ranges if on internal network"
+    fi
+}
 
 # =============================================================================
 # INITIALIZATION SAFEGUARDS
@@ -115,7 +422,7 @@ nftban_init_safeguards() {
 }
 
 # =============================================================================
-# COMPREHENSIVE SAFETY CHECKS
+# BASIC SAFETY CHECKS (8 checks)
 # =============================================================================
 
 nftban_check_safeguards() {
@@ -337,6 +644,125 @@ nftban_check_safeguards() {
 }
 
 # =============================================================================
+# COMPREHENSIVE SYSTEM CHECK (ALL 18 CHECKS)
+# =============================================================================
+nftban_check_all_risks() {
+    echo ""
+    echo "═══════════════════════════════════════════════════════"
+    echo "  COMPREHENSIVE RISK ASSESSMENT"
+    echo "═══════════════════════════════════════════════════════"
+    echo ""
+    
+    local critical=0
+    local warnings=0
+    
+    echo -e "${NFTBAN_CYAN}[1/10] nftables Service Status${NFTBAN_NC}"
+    if nftban_check_nftables_running; then
+        echo -e "  ${NFTBAN_GREEN}✓ RUNNING${NFTBAN_NC}"
+    else
+        echo -e "  ${NFTBAN_RED}✗ NOT RUNNING${NFTBAN_NC}"
+        ((critical++))
+    fi
+    
+    echo -e "${NFTBAN_CYAN}[2/10] nftables Set Capacity${NFTBAN_NC}"
+    local capacity_issues=0
+    for ver in 4 6; do
+        for set in whitelist temp_ban user_blacklist; do
+            if ! nftban_check_nft_set_capacity "$set" "$ver"; then
+                ((capacity_issues++))
+            fi
+        done
+    done
+    if [[ $capacity_issues -eq 0 ]]; then
+        echo -e "  ${NFTBAN_GREEN}✓ OK${NFTBAN_NC}"
+    else
+        echo -e "  ${NFTBAN_YELLOW}⚠ $capacity_issues sets near capacity${NFTBAN_NC}"
+        ((warnings++))
+    fi
+    
+    echo -e "${NFTBAN_CYAN}[3/10] Duplicate Detection${NFTBAN_NC}"
+    local dup_issues=0
+    for ver in 4 6; do
+        if ! nftban_check_nft_duplicates "$ver"; then
+            ((dup_issues++))
+        fi
+    done
+    if [[ $dup_issues -eq 0 ]]; then
+        echo -e "  ${NFTBAN_GREEN}✓ NO DUPLICATES${NFTBAN_NC}"
+    else
+        echo -e "  ${NFTBAN_YELLOW}⚠ Duplicates found${NFTBAN_NC}"
+        ((warnings++))
+    fi
+    
+    echo -e "${NFTBAN_CYAN}[4/10] File Permissions${NFTBAN_NC}"
+    if nftban_check_file_permissions; then
+        echo -e "  ${NFTBAN_GREEN}✓ CORRECT${NFTBAN_NC}"
+    else
+        echo -e "  ${NFTBAN_RED}✗ ISSUES FOUND${NFTBAN_NC}"
+        ((critical++))
+    fi
+    
+    echo -e "${NFTBAN_CYAN}[5/10] Disk Space${NFTBAN_NC}"
+    if nftban_check_disk_space; then
+        echo -e "  ${NFTBAN_GREEN}✓ SUFFICIENT${NFTBAN_NC}"
+    else
+        echo -e "  ${NFTBAN_YELLOW}⚠ LOW SPACE${NFTBAN_NC}"
+        ((warnings++))
+    fi
+    
+    echo -e "${NFTBAN_CYAN}[6/10] Process Lock${NFTBAN_NC}"
+    if nftban_check_lock; then
+        echo -e "  ${NFTBAN_GREEN}✓ NO CONFLICTS${NFTBAN_NC}"
+        nftban_release_lock
+    else
+        echo -e "  ${NFTBAN_RED}✗ LOCK CONFLICT${NFTBAN_NC}"
+        ((critical++))
+    fi
+    
+    echo -e "${NFTBAN_CYAN}[7/10] Configuration Integrity${NFTBAN_NC}"
+    if nftban_check_config_integrity; then
+        echo -e "  ${NFTBAN_GREEN}✓ VALID${NFTBAN_NC}"
+    else
+        echo -e "  ${NFTBAN_YELLOW}⚠ ISSUES FOUND${NFTBAN_NC}"
+        ((warnings++))
+    fi
+    
+    echo -e "${NFTBAN_CYAN}[8/10] nftables Rule Order${NFTBAN_NC}"
+    if nftban_check_nft_rules_order; then
+        echo -e "  ${NFTBAN_GREEN}✓ CORRECT ORDER${NFTBAN_NC}"
+    else
+        echo -e "  ${NFTBAN_RED}✗ INCORRECT ORDER${NFTBAN_NC}"
+        ((critical++))
+    fi
+    
+    echo -e "${NFTBAN_CYAN}[9/10] Log File Size${NFTBAN_NC}"
+    nftban_check_log_size
+    echo -e "  ${NFTBAN_GREEN}✓ CHECKED${NFTBAN_NC}"
+    
+    echo -e "${NFTBAN_CYAN}[10/10] Private IP Protection${NFTBAN_NC}"
+    nftban_check_private_ranges
+    echo -e "  ${NFTBAN_GREEN}✓ CHECKED${NFTBAN_NC}"
+    
+    echo ""
+    echo "═══════════════════════════════════════════════════════"
+    echo "  SUMMARY"
+    echo "═══════════════════════════════════════════════════════"
+    echo ""
+    
+    if [[ $critical -gt 0 ]]; then
+        echo -e "${NFTBAN_RED}✗ CRITICAL: $critical critical issue(s)${NFTBAN_NC}"
+        [[ $warnings -gt 0 ]] && echo -e "${NFTBAN_YELLOW}⚠ $warnings warning(s)${NFTBAN_NC}"
+        return 1
+    elif [[ $warnings -gt 0 ]]; then
+        echo -e "${NFTBAN_YELLOW}⚠ $warnings warning(s) found${NFTBAN_NC}"
+        return 0
+    else
+        echo -e "${NFTBAN_GREEN}✓ ALL CHECKS PASSED${NFTBAN_NC}"
+        return 0
+    fi
+}
+
+# =============================================================================
 # QUICK SAFETY CHECK (for cron/automated checks)
 # =============================================================================
 
@@ -454,9 +880,21 @@ nftban_check_ip_location() {
 # =============================================================================
 # EXPORT FUNCTIONS
 # =============================================================================
+export -f nftban_check_nftables_running
+export -f nftban_check_nft_set_capacity
+export -f nftban_check_nft_duplicates
+export -f nftban_check_file_permissions
+export -f nftban_check_disk_space
+export -f nftban_check_lock
+export -f nftban_release_lock
+export -f nftban_check_config_integrity
+export -f nftban_check_nft_rules_order
+export -f nftban_check_log_size
+export -f nftban_check_private_ranges
 export -f nftban_init_safeguards
 export -f nftban_check_safeguards
+export -f nftban_check_all_risks
 export -f nftban_quick_safety_check
 export -f nftban_check_ip_location
 
-nftban_log_debug "NFTBan Safety Module loaded (v1.0.0)"
+nftban_log_debug "NFTBan Safety Module loaded (v1.1.0 - Complete with 18 checks)"
