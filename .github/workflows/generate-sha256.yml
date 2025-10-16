@@ -6,22 +6,46 @@ on:
       - main
   workflow_dispatch:
 
+# Add permissions block at the top level
+permissions:
+  contents: write # This grants write permission to the GITHUB_TOKEN
+
 jobs:
   generate-sha256:
     runs-on: ubuntu-latest
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v3
+      # Use actions/checkout@v4 for modern versions
+      uses: actions/checkout@v4 
 
     - name: Generate SHA256 hashes
       run: |
+        # Use v4 of checkout, which defaults to fetch-depth: 1. This might be fine.
+        # If you need to include files that were *not* fetched, you might need:
+        # uses: actions/checkout@v4
+        # with:
+        #   fetch-depth: 0 
+
+        # The find command is correct to exclude .git files and the checksum file itself
         find . -type f ! -path "./.git/*" ! -name "SHA256SUMS.txt" -exec sha256sum {} \; > SHA256SUMS.txt
 
     - name: Commit SHA256SUMS.txt
       run: |
-        git config user.name "github-actions"
-        git config user.email "github-actions@github.com"
-        git add SHA256SUMS.txt
-        git commit -m "Auto-generate SHA256SUMS.txt"
-        git push
+        # Check if the file has actually changed before committing
+        if ! git diff --exit-code SHA256SUMS.txt; then
+          echo "SHA256SUMS.txt has changes, proceeding with commit and push."
+          
+          # Set the commit author/committer
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          
+          git add SHA256SUMS.txt
+          git commit -m "Auto-generate SHA256SUMS.txt"
+          
+          # Use the GITHUB_TOKEN for authentication in the push URL.
+          # The contents: write permission above makes this work.
+          git push
+        else
+          echo "SHA256SUMS.txt is up to date, skipping commit and push."
+        fi
