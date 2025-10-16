@@ -1,13 +1,9 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Core Module - Complete Foundation
-# Version: 2.1.0
+# NFTBan Core Module - Enhanced with Security Safeguards
+# Version: 2.2.0
 # Author: ITCMS Team (Antonios Voulvoulis)
-#
-# Description:
-#   Foundation module with email notifications, WHOIS, GeoIP integration
-#   This is the ONLY core module - loads all other modules in correct order
 # =============================================================================
 
 set -euo pipefail
@@ -177,7 +173,7 @@ nftban_load_config() {
 }
 
 # =============================================================================
-# IP VALIDATION (Enhanced with multiple methods)
+# IP VALIDATION (Enhanced)
 # =============================================================================
 nftban_is_ipv4() {
     local ip="$1"
@@ -229,6 +225,139 @@ nftban_validate_ip() {
     fi
     
     return 0
+}
+
+# =============================================================================
+# CIDR CALCULATIONS (NEW - Enhanced)
+# =============================================================================
+
+# Convert IPv4 to integer
+nftban_ip_to_int() {
+    local ip="$1"
+    local IFS='.'
+    local -a octets=($ip)
+    
+    echo $(( (octets[0] << 24) + (octets[1] << 16) + (octets[2] << 8) + octets[3] ))
+}
+
+# Check if IP is within CIDR range (proper calculation)
+nftban_ip_in_cidr() {
+    local ip="$1"
+    local cidr="$2"
+    
+    # Only support IPv4 for now
+    if ! nftban_is_ipv4 "$ip"; then
+        return 1
+    fi
+    
+    local network="${cidr%/*}"
+    local prefix="${cidr#*/}"
+    
+    # Validate prefix
+    if [[ ! "$prefix" =~ ^[0-9]+$ ]] || ((prefix < 0 || prefix > 32)); then
+        return 1
+    fi
+    
+    # Convert IPs to integers for comparison
+    local ip_int network_int mask
+    
+    ip_int=$(nftban_ip_to_int "$ip")
+    network_int=$(nftban_ip_to_int "$network")
+    
+    # Calculate netmask (proper calculation for any prefix)
+    if [[ $prefix -eq 0 ]]; then
+        mask=0
+    else
+        mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF ))
+    fi
+    
+    # Check if IP is in range
+    if [[ $(( ip_int & mask )) -eq $(( network_int & mask )) ]]; then
+        return 0
+    fi
+    
+    return 1
+}
+
+# =============================================================================
+# IP LOCATION FINDER (NEW - Comprehensive Search)
+# =============================================================================
+
+nftban_find_ip_locations() {
+    local ip="$1"
+    local locations=()
+    
+    nftban_validate_ip "$ip" || return 1
+    
+    local ver
+    ver=$(nftban_detect_ip_version "$ip")
+    
+    # Check nftables sets
+    if nftban_check_nftables_table; then
+        local sets=(
+            "whitelist_v${ver}"
+            "temp_ban_v${ver}"
+            "user_blacklist_v${ver}"
+            "system_blacklist_v${ver}"
+            "feeds_v${ver}"
+        )
+        
+        for set_name in "${sets[@]}"; do
+            if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "$set_name" 2>/dev/null | \
+               grep -qE "(${ip}[[:space:],}]|${ip}$)"; then
+                locations+=("nftables:${set_name}")
+            fi
+        done
+    fi
+    
+    # Check whitelist files
+    local whitelist_files=(
+        "${NFTBAN_CONFIG_DIR}/whitelist-system.conf:whitelist-system"
+        "${NFTBAN_CONFIG_DIR}/whitelist-user.conf:whitelist-user"
+        "${NFTBAN_CONFIG_DIR}/whitelist-cloudflare.conf:whitelist-cloudflare"
+    )
+    
+    for entry in "${whitelist_files[@]}"; do
+        local file="${entry%%:*}"
+        local name="${entry##*:}"
+        if [[ -f "$file" ]] && grep -qE "^${ip}([[:space:]]|$)" "$file"; then
+            locations+=("file:${name}")
+        fi
+    done
+    
+    # Check blacklist files
+    local blacklist_files=(
+        "${NFTBAN_CONFIG_DIR}/blacklist-persistent.conf:blacklist-persistent"
+        "${NFTBAN_CONFIG_DIR}/blacklist-user.conf:blacklist-user"
+    )
+    
+    for entry in "${blacklist_files[@]}"; do
+        local file="${entry%%:*}"
+        local name="${entry##*:}"
+        if [[ -f "$file" ]] && grep -qE "^${ip}([[:space:]]|$)" "$file"; then
+            locations+=("file:${name}")
+        fi
+    done
+    
+    # Check if it's a server IP
+    if ip -o addr show 2>/dev/null | grep -qF "$ip"; then
+        locations+=("server:interface")
+    fi
+    
+    # Check if it's current user IP
+    local current_ip
+    current_ip=$(nftban_get_current_user_ip)
+    if [[ -n "$current_ip" && "$current_ip" == "$ip" ]]; then
+        locations+=("server:current-user")
+    fi
+    
+    # Return locations
+    if [[ ${#locations[@]} -gt 0 ]]; then
+        printf '%s\n' "${locations[@]}"
+        return 0
+    fi
+    
+    return 1
 }
 
 # =============================================================================
@@ -417,7 +546,7 @@ nftban_send_rate_limit_alert() {
     
     local body="nftban CRITICAL ALERT - Rate Limit Exceeded
 
-⚠️  WARNING: Abnormal ban activity detected!
+⚠️ WARNING: Abnormal ban activity detected!
 
 Timestamp: $timestamp
 Server: $(hostname -f)
@@ -520,10 +649,16 @@ nftban_get_public_ip() {
 }
 
 nftban_get_current_user_ip() {
-    # Try SSH_CLIENT first
+    # Try SSH_CLIENT first (most reliable for SSH connections)
     local ssh_client="${SSH_CLIENT%% *}"
     if [[ -n "$ssh_client" ]]; then
         echo "$ssh_client"
+        return 0
+    fi
+    
+    # Try SSH_CONNECTION
+    if [[ -n "${SSH_CONNECTION}" ]]; then
+        echo "${SSH_CONNECTION%% *}"
         return 0
     fi
     
@@ -553,31 +688,31 @@ nftban_load_modules() {
     nftban_log_debug "Loading NFTBan modules in dependency order..."
     
     # CRITICAL: Load modules in strict dependency order per architecture
-    # DO NOT REORDER - modules depend on previous modules being loaded
     
     local modules=(
         # INFRASTRUCTURE LAYER (no dependencies)
-        "nftban_nftables_module.sh"          # nftables management
-        "nftban_port_module.sh"              # port configuration (uses nftables)
-        "nftban_template_module.sh"          # template processing
+        "nftban_nftables_module.sh"
+        "nftban_port_module.sh"
+        "nftban_template_module.sh"
         
         # CORE OPERATIONS LAYER (depend on infrastructure)
-        "nftban_whitelist_module.sh"         # whitelist management
-        "nftban_blacklist_module.sh"         # blacklist & ban ops
-        "nftban_search_module.sh"            # consolidated search (uses whitelist, blacklist)
-        "nftban_ipprotect_module.sh"         # IP protection (uses whitelist, blacklist)
-        "nftban_fail2ban_module.sh"          # fail2ban integration (uses blacklist, ratelimit)
+        "nftban_whitelist_module.sh"
+        "nftban_blacklist_module.sh"
+        "nftban_search_module.sh"
+        "nftban_safety_module.sh" 
+        "nftban_ipprotect_module.sh"
+        "nftban_fail2ban_module.sh"
         
         # ADVANCED FEATURES LAYER (depend on core operations)
-        "nftban_cloudflare_module.sh"        # Cloudflare (uses whitelist, search)
-        "nftban_geo_module.sh"               # GEO blocking (uses nftables, blacklist)
-        "nftban_geoip_module.sh"             # GeoIP lookup (independent service)
-        "nftban_stats_module.sh"             # Statistics (uses logs, search)
-        "nftban_ratelimit_module.sh"         # Rate limiting (uses email from core)
-        "nftban_autorebuild_module.sh"       # Auto-rebuild (uses search)
-        "nftban_login_monitor_module.sh"     # Login monitoring (uses email from core)
-        "nftban_maintenance_module.sh"       # Maintenance (uses all modules)
-		"nftban_feeds_module.sh"             # Feeds Management module
+        "nftban_cloudflare_module.sh"
+        "nftban_geo_module.sh"
+        "nftban_geoip_module.sh"
+        "nftban_stats_module.sh"
+        "nftban_ratelimit_module.sh"
+        "nftban_autorebuild_module.sh"
+        "nftban_login_monitor_module.sh"
+        "nftban_maintenance_module.sh"
+        "nftban_feeds_module.sh"
     )
     
     local loaded=0
@@ -586,16 +721,13 @@ nftban_load_modules() {
     
     for module in "${modules[@]}"; do
         local module_path="${NFTBAN_LIB_DIR}/${module}"
-        local module_name=$(basename "$module" .sh)
         
-        # Check if module file exists
         if [[ ! -f "$module_path" ]]; then
             nftban_log_warning "Module not found: $module"
             ((skipped++))
             continue
         fi
         
-        # Attempt to load module
         if source "$module_path" 2>/dev/null; then
             nftban_log_debug "✓ Loaded: $module"
             ((loaded++))
@@ -605,9 +737,7 @@ nftban_load_modules() {
         fi
     done
     
-    # Summary
-    local total=$((loaded + failed + skipped))
-    nftban_log_debug "Module loading complete: $loaded loaded, $failed failed, $skipped skipped (total: $total)"
+    nftban_log_debug "Module loading complete: $loaded loaded, $failed failed, $skipped skipped"
     
     # Validate critical modules
     local critical_missing=0
@@ -638,16 +768,10 @@ nftban_load_modules() {
 # INITIALIZATION
 # =============================================================================
 nftban_core_init() {
-    # Initialize directories
     nftban_init_directories
-    
-    # Load configuration
     nftban_load_config
-    
-    # Load other modules
     nftban_load_modules
-    
-    nftban_log_debug "Core module initialized (v2.1.0)"
+    nftban_log_debug "Core module initialized (v2.2.0 - Enhanced Security)"
 }
 
 # =============================================================================
@@ -658,7 +782,6 @@ nftban_core_init
 # =============================================================================
 # EXPORT FUNCTIONS
 # =============================================================================
-# Export commonly used functions
 export -f nftban_log
 export -f nftban_log_error
 export -f nftban_log_success
@@ -672,6 +795,9 @@ export -f nftban_is_ipv4
 export -f nftban_is_ipv6
 export -f nftban_detect_ip_version
 export -f nftban_validate_ip
+export -f nftban_ip_to_int
+export -f nftban_ip_in_cidr
+export -f nftban_find_ip_locations
 export -f nftban_check_root
 export -f nftban_check_nftables_table
 export -f nftban_geoip_lookup
@@ -684,4 +810,4 @@ export -f nftban_get_public_ip
 export -f nftban_get_current_user_ip
 export -f nftban_load_modules
 
-nftban_log_debug "NFTBan Core Module loaded successfully (Enhanced v2.1.0)"
+nftban_log_debug "NFTBan Core Module loaded successfully (Enhanced v2.2.0)"
