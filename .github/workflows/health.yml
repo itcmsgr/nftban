@@ -2,21 +2,34 @@ name: Project Health
 
 on:
   push:
-  pull_request:
-  workflow_dispatch:
+    branches: ["**"]           # run on all branches
+  pull_request:                # and on PRs
+  workflow_dispatch:           # manual trigger
   schedule:
-    - cron: "17 3 * * 1"  # weekly check (Mon 03:17 UTC)
+    - cron: "17 3 * * 1"       # weekly (Mon 03:17 UTC)
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   health:
     runs-on: ubuntu-latest
+    # If you don't want the auto-commit step below, you can change this to: contents: read
     permissions:
-      contents: write  # only used by optional auto-commit step below
-    steps:
-      - uses: actions/checkout@v4
+      contents: write
 
-      # Node is needed for jscpd / markdownlint
-      - uses: actions/setup-node@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0       # full clone not strictly needed, but safe
+
+      - name: Ensure health script is executable
+        run: chmod +x .ci/health_check.sh
+
+      - name: Set up Node.js (for jscpd / markdownlint-cli2)
+        uses: actions/setup-node@v4
         with:
           node-version: '20'
 
@@ -28,15 +41,18 @@ jobs:
 
       - name: Run health check
         run: .ci/health_check.sh
+
       - name: Upload STATUS.md as artifact
         uses: actions/upload-artifact@v4
         with:
           name: project-status
           path: STATUS.md
+          if-no-files-found: error
+          retention-days: 7
 
-      # --- Optional: auto-commit STATUS.md changes back to the branch ---
-      - name: Commit STATUS.md (only on push, not PRs)
-        if: github.event_name == 'push'
+      # Optional: commit STATUS.md changes back to main (keeps README link always fresh)
+      - name: Auto-commit STATUS.md (main branch only)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           if ! git diff --quiet -- STATUS.md; then
             git config user.name "github-actions[bot]"
