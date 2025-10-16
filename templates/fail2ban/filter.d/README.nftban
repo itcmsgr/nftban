@@ -1,2 +1,0 @@
-This directory contains nftban-provided custom Fail2ban filters.
-Built-in Fail2ban filters (e.g., sshd, apache-auth, nginx-http-auth, postfix) are used unless a custom filter is provided.
