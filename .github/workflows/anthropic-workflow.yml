@@ -1,11 +1,9 @@
 name: Anthropic API Workflow
-
 on:
   push:
     branches: [ main ]
   pull_request:
     branches: [ main ]
-
 jobs:
   run-anthropic:
     runs-on: ubuntu-latest
@@ -23,8 +21,25 @@ jobs:
         run: |
           pip install anthropic
       
-      - name: Run Python script
+      - name: Run Python code
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
-          python my_script.py
+          python << EOF
+          import os
+          import anthropic
+          
+          client = anthropic.Anthropic(
+              api_key=os.environ.get("ANTHROPIC_API_KEY")
+          )
+          
+          message = client.messages.create(
+              model="claude-sonnet-4-5-20250929",
+              max_tokens=1024,
+              messages=[
+                  {"role": "user", "content": "Hello, Claude!"}
+              ]
+          )
+          
+          print(message.content[0].text)
+          EOF
