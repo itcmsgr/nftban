@@ -1,13 +1,19 @@
-# Security Best Practices
+# 🛡️ nftban Security Architecture
 
-**Complete Security Hardening Guide for nftban**
+**How nftban Protects Your Server - Complete Guide with Diagrams**
 
-This guide covers security best practices, hardening techniques, and optimization strategies to maximize your server's security posture using nftban.
+This comprehensive guide explains how nftban's multi-layer security system works, with detailed diagrams and hardening techniques to maximize your server's security.
 
 ---
 
-## Table of Contents
+## 📋 Table of Contents
 
+- [Architecture Overview](#architecture-overview)
+- [Packet Flow Diagram](#packet-flow-diagram)
+- [DDoS Protection](#ddos-protection)
+- [Port Scan Detection](#port-scan-detection)
+- [Fail2Ban Integration](#fail2ban-integration)
+- [Security Layers](#security-layers)
 - [Initial Security Setup](#initial-security-setup)
 - [SSH Hardening](#ssh-hardening)
 - [Firewall Hardening](#firewall-hardening)
@@ -20,6 +26,824 @@ This guide covers security best practices, hardening techniques, and optimizatio
 - [Common Security Mistakes](#common-security-mistakes)
 - [Emergency Procedures](#emergency-procedures)
 - [Compliance and Auditing](#compliance-and-auditing)
+
+---
+
+## Architecture Overview
+
+### System Components
+
+nftban consists of multiple integrated security layers working together:
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                         nftban System                        │
+├─────────────────────────────────────────────────────────────┤
+│                                                              │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │              Kernel Space (nftables)                  │  │
+│  │  ┌────────────────────────────────────────────────┐  │  │
+│  │  │  Packet Filter (inet nftban_global)            │  │  │
+│  │  │  • Whitelist Sets (highest priority)           │  │  │
+│  │  │  • Blacklist Sets (temp & permanent bans)      │  │  │
+│  │  │  • DDoS Protection (SYN flood, rate limits)    │  │  │
+│  │  │  • Port Scan Detection (nftables logging)      │  │  │
+│  │  │  • Connection Limits (per-port)                │  │  │
+│  │  └────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                           ↓                                 │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │              User Space Modules                       │  │
+│  │  ┌────────────────────────────────────────────────┐  │  │
+│  │  │  Core Module (nftban_core.sh)                  │  │  │
+│  │  │  • Configuration loading                       │  │  │
+│  │  │  • Module management                           │  │  │
+│  │  │  • Utility functions                           │  │  │
+│  │  └────────────────────────────────────────────────┘  │  │
+│  │                                                        │  │
+│  │  ┌────────────────────────────────────────────────┐  │  │
+│  │  │  Security Modules                              │  │  │
+│  │  │  • Whitelist Module (whitelist management)     │  │  │
+│  │  │  • Blacklist Module (ban management)           │  │  │
+│  │  │  • DDoS Module (attack mitigation)             │  │  │
+│  │  │  • Port Scan Module (scanner detection)        │  │  │
+│  │  │  • Safety Module (lockout prevention)          │  │  │
+│  │  └────────────────────────────────────────────────┘  │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                           ↓                                 │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │            Fail2Ban Integration                       │  │
+│  │  ┌────────────────────────────────────────────────┐  │  │
+│  │  │  Fail2Ban Jails                                │  │  │
+│  │  │  • SSH Jail (brute-force protection)           │  │  │
+│  │  │  • SSH DDoS Jail (connection flood)            │  │  │
+│  │  │  • Recidive Jail (repeat offenders)            │  │  │
+│  │  │  • Service-specific Jails (HTTP, Mail, etc.)   │  │  │
+│  │  └────────────────────────────────────────────────┘  │  │
+│  │          ↓ (calls nftban on detection)                │  │
+│  │  nftban --temp-ban <IP> "Fail2Ban: jail_name"         │  │
+│  └──────────────────────────────────────────────────────┘  │
+│                                                              │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### Data Flow Between Components
+
+```
+Log Files               Configuration Files
+(/var/log/)            (/etc/nftban/config/)
+    │                          │
+    │                          ↓
+    │                  ┌───────────────┐
+    │                  │ Config Parser │
+    │                  └───────┬───────┘
+    │                          │
+    ↓                          ↓
+┌──────────┐           ┌──────────────┐
+│ Fail2Ban │ ←────────→│ nftban Core  │
+└────┬─────┘           └──────┬───────┘
+     │                        │
+     │ Ban action             │ Manage sets
+     ↓                        ↓
+┌─────────────────────────────────────┐
+│      nftables Kernel Module         │
+│  ┌───────────────────────────────┐  │
+│  │  Sets (whitelist/blacklist)   │  │
+│  │  Rules (accept/drop/reject)    │  │
+│  │  Counters (statistics)         │  │
+│  └───────────────────────────────┘  │
+└─────────────────┬───────────────────┘
+                  │
+                  ↓ (packet filtering)
+            Network Traffic
+```
+
+---
+
+## Packet Flow Diagram
+
+### How Packets Are Processed
+
+Every network packet arriving at your server goes through this evaluation chain:
+
+```
+                    Incoming Network Packet
+                            │
+                            ↓
+        ┌───────────────────────────────────────┐
+        │    nftables INPUT Chain               │
+        │    (inet nftban_global table)         │
+        └───────────────────────────────────────┘
+                            │
+                            ↓
+        ┌───────────────────────────────────────┐
+        │  [1] Connection State Check           │
+        │  ct state established,related ?       │
+        └───────────────────────────────────────┘
+                    │              │
+                    │ YES          │ NO
+                    ↓              ↓
+                [ACCEPT]    ┌──────────────────┐
+                            │  [2] Loopback?   │
+                            │  iif lo ?        │
+                            └──────────────────┘
+                                │          │
+                                │ YES      │ NO
+                                ↓          ↓
+                            [ACCEPT]  ┌────────────────────┐
+                                      │  [3] Whitelist?    │
+                                      │  @whitelist_v4/v6  │
+                                      └────────────────────┘
+                                          │          │
+                                          │ YES      │ NO
+                                          ↓          ↓
+                                      [ACCEPT]  ┌────────────────┐
+                                                │ [4] DDoS Check │
+                                                │ • SYN flood?   │
+                                                │ • Conn limit?  │
+                                                │ • Port flood?  │
+                                                │ • ICMP limit?  │
+                                                └────────────────┘
+                                                    │          │
+                                                    │ PASS     │ FAIL
+                                                    ↓          ↓
+                                            ┌─────────────┐  [DROP/
+                                            │ [5] Temp    │  REJECT]
+                                            │ Ban Check?  │
+                                            │ @temp_ban_* │
+                                            └─────────────┘
+                                                │      │
+                                                │ NO   │ YES
+                                                ↓      ↓
+                                        ┌──────────┐ [DROP]
+                                        │ [6] Perm │
+                                        │ Ban?     │
+                                        │ @perm_*  │
+                                        └──────────┘
+                                            │    │
+                                            │ NO │ YES
+                                            ↓    ↓
+                                    ┌────────────┐ [DROP]
+                                    │ [7] Port   │
+                                    │ Allowed?   │
+                                    └────────────┘
+                                        │    │
+                                        │YES │ NO
+                                        ↓    ↓
+                                    [ACCEPT] [DROP]
+                                             │
+                                             ↓
+                                    (logged if enabled)
+```
+
+### Rule Evaluation Priority
+
+Rules are evaluated **in order** - first match wins:
+
+1. **Established/Related (HIGHEST)** - Accept existing connections
+2. **Loopback** - Accept localhost traffic
+3. **Whitelist** - Accept trusted IPs (cannot be banned)
+4. **DDoS Protection** - Rate limiting and connection limits
+5. **Temporary Bans** - IPs banned by Fail2Ban or manual action
+6. **Permanent Bans** - Persistent blacklist
+7. **Port Rules** - Allowed services (SSH, HTTP, etc.)
+8. **Default Policy (LOWEST)** - DROP all other traffic
+
+**Key Point:** Whitelist has the highest priority, so whitelisted IPs bypass all other checks including bans.
+
+---
+
+## DDoS Protection
+
+nftban v0.8.5 includes comprehensive DDoS protection with four major components.
+
+### DDoS Protection Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              DDoS Protection Module                      │
+│         (/etc/nftban/config/ddos_protection.conf)        │
+└─────────────────────────────────────────────────────────┘
+                            │
+        ┌───────────────────┼───────────────────┐
+        │                   │                   │
+        ↓                   ↓                   ↓
+┌──────────────┐  ┌──────────────────┐  ┌──────────────┐
+│  SYN Flood   │  │ Connection Limit │  │  Port Flood  │
+│  Protection  │  │   Per Port       │  │  Protection  │
+└──────────────┘  └──────────────────┘  └──────────────┘
+        │                   │                   │
+        └───────────────────┼───────────────────┘
+                            │
+                            ↓
+                ┌───────────────────────┐
+                │   ICMP Rate Limiting  │
+                │   (Ping Protection)   │
+                └───────────────────────┘
+```
+
+### 1. SYN Flood Protection
+
+Protects against TCP SYN flood attacks by rate limiting new connection attempts.
+
+**How it works:**
+```
+New TCP Connection (SYN packet)
+        │
+        ↓
+┌───────────────────────────┐
+│ Rate Limit Check          │
+│ limit rate 100/second     │
+│ burst 150                 │
+└───────────────────────────┘
+        │           │
+        │ OK        │ EXCEEDED
+        ↓           ↓
+    [ACCEPT]    [REJECT]
+                    │
+                    └─→ Send TCP RST
+```
+
+**Configuration:**
+```bash
+# config/ddos_protection.conf
+SYNFLOOD_ENABLE="0"              # Disabled by default (can be intensive)
+SYNFLOOD_RATE="100/second"       # Allow 100 SYN/second
+SYNFLOOD_BURST="150"             # Allow burst of 150
+SYNFLOOD_PORTS="22,80,443"       # Protected ports
+```
+
+**Commands:**
+```bash
+sudo nftban ddos synflood enable   # Enable SYN flood protection
+sudo nftban ddos synflood disable  # Disable protection
+sudo nftban ddos synflood status   # Check status
+```
+
+### 2. Connection Limit Protection
+
+Limits concurrent connections per IP address per port to prevent resource exhaustion.
+
+**How it works:**
+```
+New Connection to Port
+        │
+        ↓
+┌────────────────────────────┐
+│ Count Active Connections   │
+│ ct count over <limit>      │
+└────────────────────────────┘
+        │              │
+        │ UNDER LIMIT  │ OVER LIMIT
+        ↓              ↓
+    [ACCEPT]       [REJECT]
+                       │
+                       └─→ Send TCP RST
+```
+
+**Configuration:**
+```bash
+# config/ddos_protection.conf
+CONNLIMIT_ENABLE="1"             # Enabled by default
+CONNLIMIT_SSH="5"                # Max 5 concurrent SSH connections
+CONNLIMIT_HTTP="20"              # Max 20 concurrent HTTP connections
+CONNLIMIT_HTTPS="20"             # Max 20 concurrent HTTPS connections
+CONNLIMIT_CUSTOM="25;10,3306;5" # Port;Limit pairs
+```
+
+**Commands:**
+```bash
+sudo nftban ddos connlimit enable          # Enable all connection limits
+sudo nftban ddos connlimit add-port 3306 5 # Add MySQL limit (5 connections)
+sudo nftban ddos connlimit remove-port 3306 # Remove limit
+sudo nftban ddos connlimit status          # Show current limits
+```
+
+### 3. Port Flood Protection
+
+Prevents rapid-fire connection attempts by rate limiting new connections over time.
+
+**How it works:**
+```
+New Connection Attempt
+        │
+        ↓
+┌─────────────────────────────────┐
+│ Check Connection Rate           │
+│ limit rate over 5/300s          │  (Example: SSH)
+│ (5 connections per 5 minutes)   │
+└─────────────────────────────────┘
+        │                  │
+        │ OK              │ EXCEEDED
+        ↓                 ↓
+    [ACCEPT]          [REJECT]
+                          │
+                          └─→ Send TCP RST
+```
+
+**Configuration:**
+```bash
+# config/ddos_protection.conf
+PORTFLOOD_ENABLE="1"              # Enabled by default
+PORTFLOOD_SSH="5/300"             # SSH: 5 connections per 300 seconds
+PORTFLOOD_HTTP="20/5"             # HTTP: 20 connections per 5 seconds
+PORTFLOOD_HTTPS="20/5"            # HTTPS: 20 connections per 5 seconds
+PORTFLOOD_CUSTOM="25;10/60,3306;5/300" # Port;Rate/Time pairs
+```
+
+**Commands:**
+```bash
+sudo nftban ddos portflood enable              # Enable port flood protection
+sudo nftban ddos portflood add-port 3306 5/300 # Add MySQL rate limit
+sudo nftban ddos portflood remove-port 3306    # Remove limit
+sudo nftban ddos portflood status              # Show current rates
+```
+
+### 4. ICMP Rate Limiting
+
+Controls ping requests to prevent ICMP flood attacks and comply with PCI DSS.
+
+**How it works:**
+```
+ICMP Echo Request (ping)
+        │
+        ↓
+┌───────────────────────────┐
+│ ICMP Rate Limit           │
+│ Inbound: 1/second         │
+│ Outbound: 5/second        │
+└───────────────────────────┘
+        │           │
+        │ OK        │ EXCEEDED
+        ↓           ↓
+    [ACCEPT]    [DROP]
+```
+
+**Configuration:**
+```bash
+# config/ddos_protection.conf
+ICMP_RATELIMIT_ENABLE="1"        # Enabled by default
+ICMP_IN_RATE="1/second"          # Inbound ping rate
+ICMP_IN_BURST="5"                # Inbound burst
+ICMP_OUT_RATE="5/second"         # Outbound ping rate
+ICMP_OUT_BURST="10"              # Outbound burst
+ICMP_PCI_COMPLIANT="0"           # PCI compliance mode (blocks all ICMP)
+```
+
+**Commands:**
+```bash
+sudo nftban ddos icmp enable       # Enable ICMP rate limiting
+sudo nftban ddos icmp disable      # Disable (allow all pings)
+sudo nftban ddos icmp status       # Check status
+sudo nftban ddos icmp pci-mode     # Enable PCI compliance (block all ICMP)
+```
+
+### DDoS Protection Summary Commands
+
+```bash
+# Enable all DDoS protections at once
+sudo nftban ddos enable
+
+# Check complete DDoS protection status
+sudo nftban ddos status
+
+# Disable all DDoS protections
+sudo nftban ddos disable
+```
+
+---
+
+## Port Scan Detection
+
+nftban v0.8.5 includes intelligent port scan detection to identify and automatically ban port scanners.
+
+### Port Scan Detection Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│              Port Scan Detection System                  │
+└─────────────────────────────────────────────────────────┘
+                            │
+        ┌───────────────────┼───────────────────┐
+        │                   │                   │
+        ↓                   ↓                   ↓
+┌──────────────┐  ┌──────────────────┐  ┌──────────────┐
+│   nftables   │  │   Log Parser     │  │   Tracker    │
+│   Logging    │  │   (kernel log)   │  │  (in-memory) │
+└──────┬───────┘  └────────┬─────────┘  └──────┬───────┘
+       │                   │                    │
+       │ Dropped packets   │ Parse IPs/ports    │ Track patterns
+       └───────────────────┴────────────────────┘
+                            │
+                            ↓
+                ┌───────────────────────┐
+                │   Detection Logic     │
+                │   • Count ports/IP    │
+                │   • Check diversity   │
+                │   • Time window       │
+                │   • Whitelist check   │
+                └───────────┬───────────┘
+                            │
+                ┌───────────┴────────────┐
+                │ Threshold Exceeded?    │
+                │ YES                    │ NO
+                ↓                        ↓
+        ┌───────────────┐          [Continue
+        │  Auto-Ban IP  │           Monitoring]
+        │  (temporary)  │
+        └───────────────┘
+```
+
+### Detection Algorithm
+
+```
+Packet arrives at closed/filtered port
+        │
+        ↓
+┌────────────────────────────┐
+│ nftables logs drop event   │
+│ "PORTSCAN: SRC=<IP> DPT=X" │
+└────────────────────────────┘
+        │
+        ↓
+┌──────────────────────────────────────┐
+│ Port Scan Module Parses Log          │
+│ Extracts: IP address, Port number    │
+└──────────────────────────────────────┘
+        │
+        ↓
+┌──────────────────────────────────────┐
+│ Check if IP is whitelisted           │
+└──────────────────────────────────────┘
+        │ NO                   │ YES
+        ↓                      ↓
+┌──────────────────┐      [IGNORE]
+│ Track IP Data:   │
+│ • Port list      │
+│ • First seen     │
+│ • Port count     │
+└──────────────────┘
+        │
+        ↓
+┌──────────────────────────────────────┐
+│ Calculate Port Diversity             │
+│ Range = max_port - min_port          │
+│ Diversity = Range / Port_count       │
+└──────────────────────────────────────┘
+        │
+        ↓
+┌──────────────────────────────────────┐
+│ Check Detection Thresholds           │
+│ • Ports accessed >= 10?              │
+│ • Within 300 seconds?                │
+│ • High diversity? (if enabled)       │
+└──────────────────────────────────────┘
+        │ YES                  │ NO
+        ↓                      ↓
+┌──────────────────┐      [Continue
+│  SCANNER         │       Tracking]
+│  DETECTED        │
+└──────────────────┘
+        │
+        ↓
+┌──────────────────────────────────────┐
+│ Auto-Ban Actions (if enabled)        │
+│ • Log detection event                │
+│ • Call: nftban --temp-ban <IP>       │
+│ • Send email alert (if configured)   │
+│ • Record in detection log            │
+└──────────────────────────────────────┘
+```
+
+### Port Diversity Detection
+
+The system can differentiate between legitimate services and actual scanners:
+
+```
+Example 1: FTP Passive Mode (NOT a scanner)
+┌────────────────────────────────────┐
+│ Ports: 21, 35000-35999 (15 ports) │
+│ Range: 35999 - 21 = 35978         │
+│ Diversity: 35978 / 15 = 2398.5    │
+│ Result: LOW diversity              │
+│ Action: Likely legitimate FTP      │
+└────────────────────────────────────┘
+
+Example 2: Port Scanner (IS a scanner)
+┌────────────────────────────────────┐
+│ Ports: 21,22,25,80,443,3306,5432  │
+│        8080,8443,9000 (10 ports)  │
+│ Range: 9000 - 21 = 8979           │
+│ Diversity: 8979 / 10 = 897.9      │
+│ Result: HIGH diversity             │
+│ Action: Likely scanner - BAN       │
+└────────────────────────────────────┘
+```
+
+### Configuration
+
+```bash
+# config/portscan.conf
+PORTSCAN_ENABLED="1"                  # Enable detection
+PORTSCAN_CHECK_INTERVAL="300"        # Check every 5 minutes
+PORTSCAN_TIME_WINDOW="300"           # Detection window: 5 minutes
+PORTSCAN_THRESHOLD="10"              # Trigger at 10 ports
+PORTSCAN_DIVERSITY="1"               # Enable diversity checking
+PORTSCAN_MIN_DIVERSITY="100"         # Minimum diversity ratio
+PORTSCAN_AUTO_BAN="1"                # Auto-ban detected scanners
+PORTSCAN_BAN_TYPE="temporary"        # Use temp bans
+PORTSCAN_BAN_TIME="3600"             # Ban for 1 hour
+PORTSCAN_MONITOR_PORTS="closed"      # Monitor: closed, filtered, or all
+PORTSCAN_LOG_ALL_ATTEMPTS="0"        # Log only detections (not all drops)
+```
+
+### Commands
+
+```bash
+# Enable port scan detection
+sudo nftban portscan enable
+
+# Check detection status
+sudo nftban portscan status
+
+# View detection statistics
+sudo nftban portscan stats
+
+# Check specific IP
+sudo nftban portscan check-ip 203.0.113.45
+
+# Manually check for scanners now
+sudo nftban portscan check
+
+# Whitelist security tool (won't be detected/banned)
+sudo nftban portscan whitelist add 198.51.100.10
+
+# View port scan whitelist
+sudo nftban portscan whitelist list
+
+# Clean up old tracking data
+sudo nftban portscan cleanup
+
+# Disable detection
+sudo nftban portscan disable
+```
+
+### Port Scan Logs
+
+Detection events are logged to:
+- `/var/log/nftban/portscan.log` - Detection events
+- `/var/log/nftban/portscan_detections.log` - Confirmed scanner detections
+
+**Example log entry:**
+```
+2025-01-17 10:32:45 [DETECTION] IP: 203.0.113.45 | Ports: 10 | Diversity: 945.6 | Action: AUTO-BAN (3600s)
+```
+
+---
+
+## Fail2Ban Integration
+
+nftban integrates seamlessly with Fail2Ban for comprehensive intrusion prevention.
+
+### Integration Architecture
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                 Fail2Ban Integration                     │
+└─────────────────────────────────────────────────────────┘
+                            │
+        ┌───────────────────┼──────────────────┐
+        │                   │                  │
+        ↓                   ↓                  ↓
+┌──────────────┐  ┌──────────────────┐  ┌─────────────┐
+│ Service Logs │  │  Fail2Ban Jails  │  │   Filters   │
+│ (auth.log,   │→ │  • SSH           │←─│  (regex)    │
+│  access.log) │  │  • SSH DDoS      │  │  patterns   │
+└──────────────┘  │  • Recidive      │  └─────────────┘
+                  │  • HTTP Auth     │
+                  │  • WordPress     │
+                  │  • Postfix       │
+                  └────────┬─────────┘
+                           │
+                           ↓ (attack detected)
+                  ┌─────────────────┐
+                  │  Fail2Ban       │
+                  │  Triggers       │
+                  │  nftban Action  │
+                  └────────┬────────┘
+                           │
+                           ↓
+          Command: nftban --temp-ban <IP> "Fail2Ban: jail_name"
+                           │
+                           ↓
+                  ┌─────────────────┐
+                  │  nftban adds IP │
+                  │  to temp_ban    │
+                  │  set with       │
+                  │  timeout        │
+                  └────────┬────────┘
+                           │
+                           ↓
+                  ┌─────────────────┐
+                  │  nftables drops │
+                  │  all traffic    │
+                  │  from banned IP │
+                  └─────────────────┘
+```
+
+### How It Works: Step by Step
+
+```
+1. Attack occurs
+   └─→ Failed SSH login attempt
+       │
+       ↓
+2. Log entry created
+   └─→ /var/log/auth.log: "Failed password for root from 203.0.113.45"
+       │
+       ↓
+3. Fail2Ban monitors log
+   └─→ SSH jail filter matches pattern
+       │
+       ↓
+4. Count failures
+   └─→ 3 failures within 600 seconds (findtime)
+       │
+       ↓
+5. Threshold exceeded
+   └─→ maxretry = 3 → TRIGGER
+       │
+       ↓
+6. Execute nftban action
+   └─→ nftban --temp-ban 203.0.113.45 "Fail2Ban: sshd" 3600
+       │
+       ↓
+7. IP added to nftables
+   └─→ nft add element inet nftban_global temp_ban_v4 { 203.0.113.45 timeout 3600s }
+       │
+       ↓
+8. Traffic blocked
+   └─→ All packets from 203.0.113.45 are dropped at kernel level
+       │
+       ↓
+9. Auto-expire after bantime
+   └─→ After 3600 seconds, nftables automatically removes IP
+```
+
+### Fail2Ban Jails Integrated with nftban
+
+**1. SSH Jail**
+- Protects against SSH brute-force attacks
+- Default: 3 failures in 10 minutes = 1 hour ban
+
+**2. SSH DDoS Jail**
+- Protects against SSH connection floods
+- Default: 10 connections in 60 seconds = 10 minute ban
+
+**3. Recidive Jail**
+- Bans repeat offenders (IPs banned multiple times)
+- Default: 3 bans in 24 hours = 7 day ban
+
+**4. Service-Specific Jails**
+- HTTP Authentication failures
+- WordPress login attacks
+- Postfix/Dovecot (mail server) attacks
+- Apache/Nginx attacks
+
+### Key Benefits of Integration
+
+1. **Automated Response** - No manual intervention needed
+2. **Intelligent Detection** - Fail2Ban uses advanced regex patterns
+3. **Temporary Bans** - Auto-expire when bantime completed
+4. **Email Alerts** - Get notified when attacks occur
+5. **Whitelisted IPs** - Never ban trusted addresses
+6. **Coordinated Action** - nftban safety checks + Fail2Ban detection
+
+---
+
+## Security Layers
+
+nftban implements defense-in-depth with multiple security layers.
+
+### Multi-Layer Security Model
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                    Layer 7: Monitoring                   │
+│  • Email alerts on attacks                              │
+│  • Daily security reports                               │
+│  • Log analysis and statistics                          │
+└─────────────────────────────────────────────────────────┘
+                            ↑
+┌─────────────────────────────────────────────────────────┐
+│           Layer 6: Application Security                  │
+│  • Service hardening (SSH, HTTP, Mail)                  │
+│  • Authentication policies                              │
+│  • Access controls                                      │
+└─────────────────────────────────────────────────────────┘
+                            ↑
+┌─────────────────────────────────────────────────────────┐
+│          Layer 5: Intrusion Prevention                   │
+│  • Fail2Ban automatic banning                           │
+│  • Port scan detection and auto-ban                     │
+│  • Behavioral analysis                                  │
+└─────────────────────────────────────────────────────────┘
+                            ↑
+┌─────────────────────────────────────────────────────────┐
+│               Layer 4: DDoS Protection                   │
+│  • SYN flood protection                                 │
+│  • Connection limits per port                           │
+│  • Port flood rate limiting                             │
+│  • ICMP rate limiting                                   │
+└─────────────────────────────────────────────────────────┘
+                            ↑
+┌─────────────────────────────────────────────────────────┐
+│           Layer 3: Access Control Lists                  │
+│  • Whitelist (trusted IPs - highest priority)           │
+│  • Blacklist (banned IPs - temp & permanent)            │
+│  • Per-service IP restrictions                          │
+└─────────────────────────────────────────────────────────┘
+                            ↑
+┌─────────────────────────────────────────────────────────┐
+│              Layer 2: Packet Filtering                   │
+│  • Stateful connection tracking                         │
+│  • Port-based rules (allow/deny)                        │
+│  • Protocol filtering                                   │
+└─────────────────────────────────────────────────────────┘
+                            ↑
+┌─────────────────────────────────────────────────────────┐
+│         Layer 1: Network-Level Firewall                  │
+│  • nftables kernel packet filter                        │
+│  • Default deny policy                                  │
+│  • Drop invalid packets                                 │
+└─────────────────────────────────────────────────────────┘
+                            ↑
+                   Incoming Network Traffic
+```
+
+### How Layers Work Together
+
+**Example: SSH Attack Scenario**
+
+```
+Attacker attempts SSH brute-force attack
+        │
+        ↓
+┌─────────────────────────────────────────┐
+│ Layer 1: nftables Firewall              │
+│ ✓ Port 22 is open (SSH allowed)         │
+│ → Packet forwarded to SSH service       │
+└─────────────────────────────────────────┘
+        │
+        ↓
+┌─────────────────────────────────────────┐
+│ Layer 2: Packet Filtering               │
+│ ✓ TCP port 22, valid packet             │
+│ → Connection tracked                     │
+└─────────────────────────────────────────┘
+        │
+        ↓
+┌─────────────────────────────────────────┐
+│ Layer 3: Access Control                 │
+│ ? Check whitelist → NOT whitelisted     │
+│ ? Check blacklist → NOT banned (yet)    │
+│ → Allow to continue                      │
+└─────────────────────────────────────────┘
+        │
+        ↓
+┌─────────────────────────────────────────┐
+│ Layer 4: DDoS Protection                │
+│ ✓ Connection limit not exceeded         │
+│ ✓ Rate limit not exceeded               │
+│ → Allow connection                       │
+└─────────────────────────────────────────┘
+        │
+        ↓
+┌─────────────────────────────────────────┐
+│ Layer 5: Intrusion Prevention           │
+│ • Fail2Ban monitors auth.log            │
+│ • Detects 3 failed login attempts       │
+│ • Threshold exceeded!                   │
+│ → TRIGGER: nftban --temp-ban <IP>       │
+└─────────────────────────────────────────┘
+        │
+        ↓
+┌─────────────────────────────────────────┐
+│ Layer 3: Access Control (UPDATED)       │
+│ ✓ IP added to temp_ban set              │
+│ → All future packets DROPPED             │
+└─────────────────────────────────────────┘
+        │
+        ↓
+┌─────────────────────────────────────────┐
+│ Layer 7: Monitoring                     │
+│ • Email alert sent to admin             │
+│ • Event logged                          │
+│ • Statistics updated                    │
+└─────────────────────────────────────────┘
+```
+
+**Result:** Attacker is now completely blocked at Layer 1 (nftables), preventing all further packets from reaching higher layers or consuming resources.
 
 ---
 
