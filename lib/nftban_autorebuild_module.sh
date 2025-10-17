@@ -170,9 +170,9 @@ NFTBAN_BASE_DIR="${NFTBAN_BASE_DIR:-/etc/nftban}"
 LIB_DIR="${NFTBAN_BASE_DIR}/lib"
 
 # Source core module
-if [[ -f "${LIB_DIR}/nftban-core.sh" ]]; then
-    source "${LIB_DIR}/nftban-core.sh"
-    
+if [[ -f "${LIB_DIR}/nftban_core.sh" ]]; then
+    source "${LIB_DIR}/nftban_core.sh"
+
     # Run auto-rebuild
     if declare -f nftban_autorebuild_run &>/dev/null; then
         nftban_autorebuild_run
@@ -181,7 +181,7 @@ if [[ -f "${LIB_DIR}/nftban-core.sh" ]]; then
         exit 1
     fi
 else
-    echo "ERROR: Core module not found at ${LIB_DIR}/nftban-core.sh" >&2
+    echo "ERROR: Core module not found at ${LIB_DIR}/nftban_core.sh" >&2
     exit 1
 fi
 CRONSCRIPT

@@ -34,7 +34,6 @@ readonly NFTBAN_SYNC_LOG="${NFTBAN_LOG_DIR}/sync.log"
 readonly NFTBAN_EMAIL_LOG="${NFTBAN_LOG_DIR}/email-notifications.log"
 
 # Data files
-readonly NFTBAN_RATE_LIMIT_FILE="${NFTBAN_DATA_DIR}/rate-limit-tracker.tmp"
 readonly NFTBAN_RATE_LIMIT_TRACKER="${NFTBAN_DATA_DIR}/rate-limit-tracker.tmp"
 
 # nftables
