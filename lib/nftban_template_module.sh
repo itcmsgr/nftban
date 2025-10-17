@@ -3,6 +3,9 @@
 # =============================================================================
 # NFTBan Template Processing Module
 # Version: 1.0.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # Template variable substitution and jail configuration management
 # =============================================================================
 

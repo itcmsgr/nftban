@@ -3,6 +3,9 @@
 # =============================================================================
 # NFTBan GeoIP Lookup Integration Module
 # Version: 1.0.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # Advanced GeoIP lookup with multiple providers and caching
 # =============================================================================
 

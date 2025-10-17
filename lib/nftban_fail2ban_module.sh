@@ -3,6 +3,9 @@
 # =============================================================================
 # NFTBan Fail2ban Module
 # Version: 1.0.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # Fail2ban integration and jail management
 # =============================================================================
 

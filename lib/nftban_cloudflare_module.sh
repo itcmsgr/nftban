@@ -3,6 +3,9 @@
 # =============================================================================
 # NFTBan Cloudflare Module
 # Version: 1.0.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # Cloudflare IP ranges management and whitelist integration
 # =============================================================================
 

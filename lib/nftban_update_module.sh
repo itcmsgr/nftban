@@ -4,6 +4,8 @@
 # NFTBan Update Module - Safe Update/Upgrade System
 # Version: 1.0.0
 # Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 #
 # Features:
 # - Version detection and comparison

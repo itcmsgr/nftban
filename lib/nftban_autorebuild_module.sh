@@ -3,6 +3,9 @@
 # =============================================================================
 # NFTBan Auto-Rebuild & File Watcher Module
 # Version: 1.0.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # Automatic rebuild of consolidated search file when source files change
 # =============================================================================
 

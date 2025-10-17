@@ -3,6 +3,9 @@
 # =============================================================================
 # NFTBan Whitelist Module - Enhanced with Auto-Protection
 # Version: 1.1.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # Whitelist management with comprehensive protection
 # =============================================================================
 

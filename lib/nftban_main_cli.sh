@@ -2,13 +2,15 @@
 
 # =============================================================================
 # NFTBan - Unified CLI Interface (WITH VALIDATION)
-# Version: 7.0.1
+# Version: 0.8.0
 # Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # =============================================================================
 
 set -euo pipefail
 
-VERSION="7.0.1"
+VERSION="0.8.0"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="${SCRIPT_DIR}/../lib"
 

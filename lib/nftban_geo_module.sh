@@ -3,6 +3,9 @@
 # =============================================================================
 # NFTBan GEO Blocking Module
 # Version: 1.0.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # Country-level IP blocking using GeoIP databases
 # =============================================================================
 
