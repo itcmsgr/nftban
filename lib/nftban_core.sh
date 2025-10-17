@@ -710,6 +710,7 @@ nftban_load_modules() {
         "nftban_ratelimit_module.sh"
         "nftban_autorebuild_module.sh"
         "nftban_login_monitor_module.sh"
+        "nftban_update_module.sh"
         "nftban_maintenance_module.sh"
         "nftban_feeds_module.sh"
     )
