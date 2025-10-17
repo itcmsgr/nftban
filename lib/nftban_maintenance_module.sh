@@ -2,8 +2,9 @@
 
 # =============================================================================
 # NFTBan Maintenance Module
-# Version: 1.0.0
+# Version: 2.0.0
 # System maintenance, cleanup, and health checks
+# With comprehensive maintenance panel UI
 # =============================================================================
 
 # Prevent double-loading

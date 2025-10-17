@@ -364,6 +364,242 @@ cmd_maintenance() {
 }
 
 # =============================================================================
+# WHITELIST COMMANDS (NEW)
+# =============================================================================
+
+cmd_whitelist() {
+    local action="${1:-list}"
+    shift || true
+
+    case "$action" in
+        add)
+            nftban_check_root || exit 1
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban whitelist add <IP> [reason]"; exit 1; }
+            nftban_whitelist_add_ip "$1" "${2:-Manual addition}"
+            ;;
+        remove|delete|del)
+            nftban_check_root || exit 1
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban whitelist remove <IP>"; exit 1; }
+            nftban_whitelist_remove_ip "$1"
+            ;;
+        list|show)
+            nftban_whitelist_list
+            ;;
+        check)
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban whitelist check <IP>"; exit 1; }
+            if nftban_whitelist_check_ip "$1"; then
+                nftban_log_success "IP $1 is whitelisted"
+            else
+                nftban_log_info "IP $1 is NOT whitelisted"
+            fi
+            ;;
+        sync)
+            nftban_check_root || exit 1
+            nftban_whitelist_sync_to_nftables
+            ;;
+        protect-me)
+            nftban_check_root || exit 1
+            nftban_whitelist_protect_current_user
+            ;;
+        stats)
+            nftban_whitelist_get_stats
+            ;;
+        verify)
+            nftban_whitelist_verify
+            ;;
+        *)
+            nftban_log_error "Unknown whitelist action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  add <IP> [reason]   Add IP to whitelist"
+            echo "  remove <IP>         Remove IP from whitelist"
+            echo "  list                Show all whitelisted IPs"
+            echo "  check <IP>          Check if IP is whitelisted"
+            echo "  sync                Sync whitelist to nftables"
+            echo "  protect-me          Add your current IP to whitelist"
+            echo "  stats               Show whitelist statistics"
+            echo "  verify              Verify whitelist integrity"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
+# BLACKLIST COMMANDS (NEW)
+# =============================================================================
+
+cmd_blacklist() {
+    local action="${1:-list}"
+    shift || true
+
+    case "$action" in
+        ban)
+            nftban_check_root || exit 1
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban blacklist ban <IP> [timeout] [reason]"; exit 1; }
+            nftban_blacklist_ban_ip "$1" "${2:-3600}" "${3:-Manual ban}"
+            ;;
+        unban)
+            nftban_check_root || exit 1
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban blacklist unban <IP>"; exit 1; }
+            nftban_blacklist_unban_ip "$1"
+            ;;
+        permanent|perm)
+            nftban_check_root || exit 1
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban blacklist permanent <IP> [reason]"; exit 1; }
+            nftban_blacklist_add_permanent "$1" "${2:-Permanent ban}"
+            ;;
+        remove-permanent|rmperm)
+            nftban_check_root || exit 1
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban blacklist remove-permanent <IP>"; exit 1; }
+            nftban_blacklist_remove_permanent "$1"
+            ;;
+        list)
+            nftban_blacklist_list_permanent
+            ;;
+        stats)
+            nftban_blacklist_show_recent_stats
+            ;;
+        top)
+            nftban_blacklist_get_top_ips "${1:-10}"
+            ;;
+        sync)
+            nftban_check_root || exit 1
+            nftban_blacklist_sync_to_nftables
+            ;;
+        *)
+            nftban_log_error "Unknown blacklist action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  ban <IP> [timeout] [reason]  Temporarily ban IP"
+            echo "  unban <IP>                    Unban IP"
+            echo "  permanent <IP> [reason]       Permanently ban IP"
+            echo "  remove-permanent <IP>         Remove permanent ban"
+            echo "  list                          Show permanent bans"
+            echo "  stats                         Show ban statistics"
+            echo "  top [N]                       Show top N banned IPs"
+            echo "  sync                          Sync blacklist to nftables"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
+# STATS COMMANDS (NEW)
+# =============================================================================
+
+cmd_stats() {
+    local action="${1:-dashboard}"
+    shift || true
+
+    case "$action" in
+        dashboard|show)
+            nftban_stats_dashboard
+            ;;
+        whitelist)
+            nftban_stats_whitelist_summary
+            ;;
+        blacklist)
+            nftban_stats_blacklist_summary
+            ;;
+        bans)
+            nftban_stats_ban_activity
+            ;;
+        geo)
+            nftban_stats_geo_summary
+            ;;
+        cloudflare|cf)
+            nftban_stats_cloudflare_summary
+            ;;
+        nftables|nft)
+            nftban_stats_nftables_summary
+            ;;
+        history)
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban stats history <IP>"; exit 1; }
+            nftban_stats_ip_history "$1"
+            ;;
+        top)
+            nftban_stats_top_banned "${1:-10}"
+            ;;
+        recent)
+            nftban_stats_recent "${1:-20}"
+            ;;
+        export)
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban stats export <output_file.csv>"; exit 1; }
+            nftban_stats_export_csv "$1"
+            ;;
+        report)
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban stats report <output_file>"; exit 1; }
+            nftban_stats_generate_report "$1"
+            ;;
+        *)
+            nftban_log_error "Unknown stats action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  dashboard           Show main dashboard"
+            echo "  whitelist           Whitelist summary"
+            echo "  blacklist           Blacklist summary"
+            echo "  bans                Ban activity"
+            echo "  geo                 GEO summary"
+            echo "  cloudflare          Cloudflare summary"
+            echo "  nftables            nftables summary"
+            echo "  history <IP>        IP history"
+            echo "  top [N]             Top N banned IPs"
+            echo "  recent [N]          Recent N events"
+            echo "  export <file.csv>   Export to CSV"
+            echo "  report <file>       Generate report"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
+# PORT COMMANDS (NEW)
+# =============================================================================
+
+cmd_port() {
+    local action="${1:-list}"
+    shift || true
+
+    case "$action" in
+        add)
+            nftban_check_root || exit 1
+            [[ $# -lt 2 ]] && { nftban_log_error "Usage: nftban port add <port> <protocol> [comment]"; exit 1; }
+            nftban_port_add "$1" "$2" "${3:-Manual addition}"
+            ;;
+        remove|delete|del)
+            nftban_check_root || exit 1
+            [[ $# -lt 2 ]] && { nftban_log_error "Usage: nftban port remove <port> <protocol>"; exit 1; }
+            nftban_port_remove "$1" "$2"
+            ;;
+        list|show)
+            nftban_port_list
+            ;;
+        apply)
+            nftban_check_root || exit 1
+            nftban_port_apply_to_nftables
+            ;;
+        validate)
+            nftban_port_validate_all
+            ;;
+        *)
+            nftban_log_error "Unknown port action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  add <port> <proto> [comment]  Add port (proto: tcp/udp)"
+            echo "  remove <port> <proto>          Remove port"
+            echo "  list                           Show all allowed ports"
+            echo "  apply                          Apply port config to nftables"
+            echo "  validate                       Validate port configuration"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
 # EXISTING COMMANDS (UNCHANGED - KEEPING ORIGINAL)
 # =============================================================================
 
@@ -458,6 +694,34 @@ SYSTEM MANAGEMENT:
     verify                  Verify system health
     version                 Show version information
 
+IP MANAGEMENT:
+    whitelist add <IP>      Add IP to whitelist
+    whitelist remove <IP>   Remove IP from whitelist
+    whitelist list          Show all whitelisted IPs
+    whitelist protect-me    Whitelist your current IP
+
+    blacklist ban <IP>      Temporarily ban IP
+    blacklist unban <IP>    Unban IP
+    blacklist permanent <IP> Permanently ban IP
+    blacklist list          Show permanent bans
+
+    ban <IP> [timeout]      Quick ban (alias for blacklist ban)
+    unban <IP>              Quick unban (alias for blacklist unban)
+
+STATISTICS & MONITORING:
+    stats                   Show main dashboard
+    stats whitelist         Whitelist statistics
+    stats blacklist         Blacklist statistics
+    stats top [N]           Top N banned IPs
+    stats recent [N]        Recent N events
+    stats export <file>     Export to CSV
+
+PORT MANAGEMENT:
+    port add <port> <proto> Add allowed port (tcp/udp)
+    port remove <port> <proto> Remove port
+    port list               Show all allowed ports
+    port apply              Apply port config to nftables
+
 UPDATE & MAINTENANCE:
     update check            Check for available updates
     update perform          Perform system update
@@ -536,10 +800,21 @@ main() {
         update) cmd_update "$@" ;;
         maintenance|maint) cmd_maintenance "$@" ;;
 
+        # IP Management
+        whitelist|wl) cmd_whitelist "$@" ;;
+        blacklist|bl) cmd_blacklist "$@" ;;
+        ban) cmd_blacklist ban "$@" ;;
+        unban) cmd_blacklist unban "$@" ;;
+
+        # Statistics & Monitoring
+        stats) cmd_stats "$@" ;;
+
+        # Port Management
+        port|ports) cmd_port "$@" ;;
+
 		# Feeds Management
-        feeds)
-            cmd_feeds "$@"
-            ;;
+        feeds) cmd_feeds "$@" ;;
+
         version|--version|-v)
             echo "nftban version $VERSION"
             ;;
