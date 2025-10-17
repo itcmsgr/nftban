@@ -906,6 +906,94 @@ cmd_verify() {
 }
 
 # =============================================================================
+# TESTING & DIAGNOSTICS COMMANDS (NEW)
+# =============================================================================
+
+cmd_test() {
+    local action="${1:-quick}"
+    shift || true
+
+    case "$action" in
+        quick)
+            nftban_smoketest_run "quick"
+            ;;
+        full)
+            nftban_smoketest_run "full"
+            ;;
+        category)
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban test category <category_name>"; exit 1; }
+            nftban_smoketest_run "category" "$1"
+            ;;
+        help)
+            nftban_smoketest_show_help
+            ;;
+        *)
+            nftban_log_error "Unknown test action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  quick                   Quick smoke test (essential checks)"
+            echo "  full                    Comprehensive smoke test (all categories)"
+            echo "  category <name>         Test specific category"
+            echo "  help                    Show detailed help"
+            echo ""
+            echo "Categories:"
+            echo "  installation, nftables, modules, deps, cli,"
+            echo "  safety, config, logging, network"
+            echo ""
+            echo "Examples:"
+            echo "  nftban test quick"
+            echo "  nftban test full"
+            echo "  nftban test category nftables"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+cmd_diagnostics() {
+    local action="${1:-collect}"
+    shift || true
+
+    case "$action" in
+        collect|generate)
+            local output_file="${1:-/tmp/nftban_diagnostics_$(date +%Y%m%d_%H%M%S).txt}"
+            nftban_diagnostics_collect "$output_file"
+            ;;
+        help)
+            cat <<'EOF'
+
+nftban diagnostics - Collect system diagnostics for support
+
+USAGE:
+    nftban diagnostics [collect] [output_file]
+
+DESCRIPTION:
+    Collects comprehensive system information including:
+    - Version information
+    - nftables ruleset and sets
+    - Configuration files
+    - Recent logs
+    - Fail2Ban status
+    - System services status
+    - Disk usage
+
+EXAMPLES:
+    nftban diagnostics                              # Default output
+    nftban diagnostics collect /tmp/my_diag.txt     # Custom output file
+
+The generated file can be shared for support purposes.
+
+EOF
+            ;;
+        *)
+            nftban_log_error "Unknown diagnostics action: $action"
+            echo "Available actions: collect, help"
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
 # HELP SYSTEM
 # =============================================================================
 
@@ -975,6 +1063,12 @@ UPDATE & MAINTENANCE:
     maintenance panel       Show maintenance panel
     maintenance backup      Create system backup
     maintenance health      Run health check
+
+TESTING & DIAGNOSTICS:
+    test quick              Quick smoke test (essential checks)
+    test full               Comprehensive smoke test (all categories)
+    test category <name>    Test specific category
+    diagnostics             Collect full diagnostics report
 
 VALIDATION:
     validate run            Run full validation report
@@ -1066,6 +1160,10 @@ main() {
 
 		# Feeds Management
         feeds) cmd_feeds "$@" ;;
+
+        # Testing & Diagnostics
+        test|smoke-test|smoketest) cmd_test "$@" ;;
+        diagnostics|diag|debug) cmd_diagnostics "$@" ;;
 
         version|--version|-v)
             echo "nftban version $VERSION"
