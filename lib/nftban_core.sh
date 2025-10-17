@@ -708,6 +708,8 @@ nftban_load_modules() {
         "nftban_geoip_module.sh"
         "nftban_stats_module.sh"
         "nftban_ratelimit_module.sh"
+        "nftban_ddos_module.sh"
+        "nftban_portscan_module.sh"
         "nftban_autorebuild_module.sh"
         "nftban_login_monitor_module.sh"
         "nftban_update_module.sh"
