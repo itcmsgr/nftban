@@ -3,6 +3,9 @@
 # =============================================================================
 # NFTBan Maintenance Module
 # Version: 2.0.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # System maintenance, cleanup, and health checks
 # With comprehensive maintenance panel UI
 # =============================================================================

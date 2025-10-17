@@ -3,6 +3,9 @@
 # =============================================================================
 # NFTBan Blacklist Module - Enhanced with Comprehensive Protection
 # Version: 1.1.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # Ban operations with complete safety checks
 # =============================================================================
 

@@ -3,6 +3,9 @@
 # =============================================================================
 # NFTBan Port Management Module
 # Version: 1.0.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # Advanced port configuration with validation and rule generation
 # =============================================================================
 

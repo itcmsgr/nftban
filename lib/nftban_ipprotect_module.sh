@@ -3,6 +3,9 @@
 # =============================================================================
 # NFTBan IP Protection Module
 # Version: 1.0.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # Automatic protection of server IPs, public IPs, and current user sessions
 # =============================================================================
 

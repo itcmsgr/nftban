@@ -3,7 +3,9 @@
 # =============================================================================
 # NFTBan Feeds Module (Enhanced with Global Exclusion & Deduplication)
 # Version: 2.4.1
-# Author: ITCMS Team + AI Assistant
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 #
 # Purpose:
 #   Pulls external threat intelligence IP/CIDR feeds. Strictly enforces:

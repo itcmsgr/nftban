@@ -3,6 +3,9 @@
 # =============================================================================
 # NFTBan nftables Module
 # Version: 1.1.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # Comprehensive nftables table, set, and rule management with Feeds support
 # =============================================================================
 

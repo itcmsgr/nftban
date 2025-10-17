@@ -3,6 +3,9 @@
 # =============================================================================
 # NFTBan Statistics Module
 # Version: 1.0.0
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # Statistics, reporting, and monitoring
 # =============================================================================
 
