@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan - Unified CLI Interface (WITH VALIDATION)
-# Version: 0.8.0
+# Version: 0.8.5
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
@@ -10,7 +10,7 @@
 
 set -euo pipefail
 
-VERSION="0.8.0"
+VERSION="0.8.5"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 LIB_DIR="${SCRIPT_DIR}/../lib"
 
@@ -602,6 +602,234 @@ cmd_port() {
 }
 
 # =============================================================================
+# DDOS PROTECTION COMMANDS (NEW)
+# =============================================================================
+
+cmd_ddos() {
+    local action="${1:-status}"
+    shift || true
+
+    case "$action" in
+        status)
+            nftban_ddos_status
+            ;;
+        enable)
+            nftban_check_root || exit 1
+            nftban_ddos_enable_all
+            ;;
+        disable)
+            nftban_check_root || exit 1
+            nftban_ddos_disable_all
+            ;;
+        synflood)
+            local subaction="${1:-status}"
+            shift || true
+            case "$subaction" in
+                enable)
+                    nftban_check_root || exit 1
+                    nftban_ddos_synflood_enable
+                    ;;
+                disable)
+                    nftban_check_root || exit 1
+                    nftban_ddos_synflood_disable
+                    ;;
+                status)
+                    nftban_ddos_synflood_status
+                    ;;
+                *)
+                    nftban_log_error "Unknown synflood action: $subaction"
+                    echo "Available: enable, disable, status"
+                    exit 1
+                    ;;
+            esac
+            ;;
+        connlimit)
+            local subaction="${1:-status}"
+            shift || true
+            case "$subaction" in
+                enable)
+                    nftban_check_root || exit 1
+                    nftban_ddos_connlimit_enable
+                    ;;
+                disable)
+                    nftban_check_root || exit 1
+                    nftban_ddos_connlimit_disable
+                    ;;
+                status)
+                    nftban_ddos_connlimit_status
+                    ;;
+                add)
+                    nftban_check_root || exit 1
+                    [[ $# -lt 2 ]] && { nftban_log_error "Usage: nftban ddos connlimit add <port> <limit>"; exit 1; }
+                    nftban_ddos_connlimit_add_port "$1" "$2"
+                    ;;
+                *)
+                    nftban_log_error "Unknown connlimit action: $subaction"
+                    echo "Available: enable, disable, status, add"
+                    exit 1
+                    ;;
+            esac
+            ;;
+        portflood)
+            local subaction="${1:-status}"
+            shift || true
+            case "$subaction" in
+                enable)
+                    nftban_check_root || exit 1
+                    nftban_ddos_portflood_enable
+                    ;;
+                disable)
+                    nftban_check_root || exit 1
+                    nftban_ddos_portflood_disable
+                    ;;
+                status)
+                    nftban_ddos_portflood_status
+                    ;;
+                add)
+                    nftban_check_root || exit 1
+                    [[ $# -lt 2 ]] && { nftban_log_error "Usage: nftban ddos portflood add <port> <rate/time>"; exit 1; }
+                    nftban_ddos_portflood_add_port "$1" "$2"
+                    ;;
+                *)
+                    nftban_log_error "Unknown portflood action: $subaction"
+                    echo "Available: enable, disable, status, add"
+                    exit 1
+                    ;;
+            esac
+            ;;
+        icmp)
+            local subaction="${1:-status}"
+            shift || true
+            case "$subaction" in
+                enable)
+                    nftban_check_root || exit 1
+                    nftban_ddos_icmp_enable
+                    ;;
+                disable)
+                    nftban_check_root || exit 1
+                    nftban_ddos_icmp_disable
+                    ;;
+                status)
+                    nftban_ddos_icmp_status
+                    ;;
+                *)
+                    nftban_log_error "Unknown icmp action: $subaction"
+                    echo "Available: enable, disable, status"
+                    exit 1
+                    ;;
+            esac
+            ;;
+        *)
+            nftban_log_error "Unknown ddos action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  status                    Show DDoS protection status"
+            echo "  enable                    Enable all DDoS protections"
+            echo "  disable                   Disable all DDoS protections"
+            echo "  synflood <action>         SYN flood protection (enable/disable/status)"
+            echo "  connlimit <action>        Connection limit (enable/disable/status/add)"
+            echo "  portflood <action>        Port flood protection (enable/disable/status/add)"
+            echo "  icmp <action>             ICMP protection (enable/disable/status)"
+            echo ""
+            echo "Examples:"
+            echo "  nftban ddos status"
+            echo "  nftban ddos enable"
+            echo "  nftban ddos synflood enable"
+            echo "  nftban ddos connlimit add 22 5"
+            echo "  nftban ddos portflood add 80 20/5"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
+# PORT SCAN DETECTION COMMANDS (NEW)
+# =============================================================================
+
+cmd_portscan() {
+    local action="${1:-status}"
+    shift || true
+
+    case "$action" in
+        status)
+            nftban_portscan_status
+            ;;
+        enable)
+            nftban_check_root || exit 1
+            nftban_portscan_enable
+            ;;
+        disable)
+            nftban_check_root || exit 1
+            nftban_portscan_disable
+            ;;
+        check)
+            nftban_check_root || exit 1
+            nftban_portscan_check
+            ;;
+        check-ip)
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban portscan check-ip <IP>"; exit 1; }
+            nftban_portscan_check_ip_manual "$1"
+            ;;
+        stats)
+            nftban_portscan_stats
+            ;;
+        cleanup)
+            nftban_check_root || exit 1
+            nftban_portscan_cleanup
+            ;;
+        whitelist)
+            local subaction="${1:-list}"
+            shift || true
+            case "$subaction" in
+                add)
+                    nftban_check_root || exit 1
+                    [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban portscan whitelist add <IP> [comment]"; exit 1; }
+                    nftban_portscan_whitelist_add "$1" "${2:-Manual addition}"
+                    ;;
+                remove)
+                    nftban_check_root || exit 1
+                    [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban portscan whitelist remove <IP>"; exit 1; }
+                    nftban_portscan_whitelist_remove "$1"
+                    ;;
+                list)
+                    nftban_portscan_whitelist_list
+                    ;;
+                *)
+                    nftban_log_error "Unknown whitelist action: $subaction"
+                    echo "Available: add, remove, list"
+                    exit 1
+                    ;;
+            esac
+            ;;
+        *)
+            nftban_log_error "Unknown portscan action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  status                       Show port scan detection status"
+            echo "  enable                       Enable port scan detection"
+            echo "  disable                      Disable port scan detection"
+            echo "  check                        Check for port scanners now"
+            echo "  check-ip <IP>                Check specific IP for scanning"
+            echo "  stats                        Show detection statistics"
+            echo "  cleanup                      Clean up old tracking data"
+            echo "  whitelist add <IP> [comment] Add IP to portscan whitelist"
+            echo "  whitelist remove <IP>        Remove IP from whitelist"
+            echo "  whitelist list               List whitelisted IPs"
+            echo ""
+            echo "Examples:"
+            echo "  nftban portscan status"
+            echo "  nftban portscan enable"
+            echo "  nftban portscan check"
+            echo "  nftban portscan check-ip 192.168.1.100"
+            echo "  nftban portscan whitelist add 192.168.1.1 'Office scanner'"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
 # EXISTING COMMANDS (UNCHANGED - KEEPING ORIGINAL)
 # =============================================================================
 
@@ -684,7 +912,7 @@ cmd_verify() {
 show_usage() {
     cat << 'EOF'
 ╔═══════════════════════════════════════════════════════╗
-║           nftban v7.0.1 - Modular System              ║
+║           nftban v0.8.5 - Modular System              ║
 ╚═══════════════════════════════════════════════════════╝
 
 USAGE:
@@ -723,6 +951,22 @@ PORT MANAGEMENT:
     port remove <port> <proto> Remove port
     port list               Show all allowed ports
     port apply              Apply port config to nftables
+
+DDOS PROTECTION:
+    ddos status             Show DDoS protection status
+    ddos enable             Enable all DDoS protections
+    ddos disable            Disable all DDoS protections
+    ddos synflood <action>  SYN flood protection
+    ddos connlimit <action> Connection limits
+    ddos portflood <action> Port flood protection
+    ddos icmp <action>      ICMP protection
+
+PORT SCAN DETECTION:
+    portscan status         Show port scan detection status
+    portscan enable         Enable port scan detection
+    portscan disable        Disable port scan detection
+    portscan check          Check for port scanners now
+    portscan stats          Show detection statistics
 
 UPDATE & MAINTENANCE:
     update check            Check for available updates
@@ -813,6 +1057,12 @@ main() {
 
         # Port Management
         port|ports) cmd_port "$@" ;;
+
+        # DDoS Protection
+        ddos) cmd_ddos "$@" ;;
+
+        # Port Scan Detection
+        portscan) cmd_portscan "$@" ;;
 
 		# Feeds Management
         feeds) cmd_feeds "$@" ;;
