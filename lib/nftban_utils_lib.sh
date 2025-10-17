@@ -3,8 +3,9 @@
 # NFTBAN Utilities Library - Common Functions
 # =============================================================================
 
-# Mark this library as loaded
-NFTBAN_UTILS_LOADED="true"
+# Prevent double-loading
+[[ -n "${NFTBAN_UTILS_LOADED:-}" ]] && return 0
+readonly NFTBAN_UTILS_LOADED=1
 
 # =============================================================================
 # COLOR CODES
@@ -36,79 +37,11 @@ else
 fi
 
 # =============================================================================
-# LOGGING FUNCTIONS
+# LOGGING FUNCTIONS - REMOVED
 # =============================================================================
-
-# Get timestamp
-get_timestamp() {
-    date "+%Y-%m-%d %H:%M:%S"
-}
-
-# Log to file
-log_to_file() {
-    local level="$1"
-    local message="$2"
-    local log_file="${NFTBAN_LOG_FILE:-/var/log/nftban/nftban.log}"
-    
-    # Create log directory if it doesn't exist
-    local log_dir=$(dirname "$log_file")
-    if [[ ! -d "$log_dir" ]]; then
-        mkdir -p "$log_dir" 2>/dev/null
-    fi
-    
-    # Write to log file
-    if [[ -w "$log_dir" ]]; then
-        echo "[$(get_timestamp)] [$level] $message" >> "$log_file"
-    fi
-}
-
-# Log debug message
-log_debug() {
-    local message="$1"
-    
-    # Only show debug if debug mode enabled
-    if [[ "${NFTBAN_DEBUG_MODE}" == "true" ]] || [[ "${NFTBAN_LOG_LEVEL}" == "DEBUG" ]]; then
-        echo -e "${COLOR_DIM}[DEBUG]${COLOR_RESET} $message" >&2
-        log_to_file "DEBUG" "$message"
-    fi
-}
-
-# Log info message
-log_info() {
-    local message="$1"
-    echo -e "${COLOR_BLUE}[INFO]${COLOR_RESET} $message"
-    log_to_file "INFO" "$message"
-}
-
-# Log success message
-log_success() {
-    local message="$1"
-    echo -e "${COLOR_GREEN}[✓]${COLOR_RESET} $message"
-    log_to_file "SUCCESS" "$message"
-}
-
-# Log warning message
-log_warning() {
-    local message="$1"
-    echo -e "${COLOR_YELLOW}[WARNING]${COLOR_RESET} $message" >&2
-    log_to_file "WARNING" "$message"
-}
-
-# Log error message
-log_error() {
-    local message="$1"
-    echo -e "${COLOR_RED}[ERROR]${COLOR_RESET} $message" >&2
-    log_to_file "ERROR" "$message"
-}
-
-# Log fatal error and exit
-log_fatal() {
-    local message="$1"
-    local exit_code="${2:-1}"
-    echo -e "${COLOR_RED}${COLOR_BOLD}[FATAL]${COLOR_RESET} $message" >&2
-    log_to_file "FATAL" "$message"
-    exit "$exit_code"
-}
+# NOTE: All logging functions have been consolidated into nftban_core.sh
+# Use nftban_log_*() functions instead of log_*() functions
+# This ensures consistent logging across all modules
 
 # =============================================================================
 # SYSTEM CHECKS
@@ -237,69 +170,11 @@ safe_write_file() {
 }
 
 # =============================================================================
-# CONFIGURATION HELPERS
+# CONFIGURATION HELPERS - REMOVED
 # =============================================================================
-
-# Load configuration files with override support
-load_config_with_override() {
-    local base_config="$1"
-    local local_config="$2"
-    
-    # Source base config
-    if [[ -f "$base_config" ]]; then
-        source "$base_config"
-        log_debug "Loaded base config: $base_config"
-    else
-        log_warning "Base config not found: $base_config"
-        return 1
-    fi
-    
-    # Source local override if exists
-    if [[ -f "$local_config" ]]; then
-        source "$local_config"
-        log_debug "Loaded local config: $local_config"
-    else
-        log_debug "No local config found: $local_config"
-    fi
-    
-    return 0
-}
-
-# Get config value with default
-get_config_value() {
-    local var_name="$1"
-    local default_value="$2"
-    
-    local value="${!var_name}"
-    
-    if [[ -n "$value" ]]; then
-        echo "$value"
-    else
-        echo "$default_value"
-    fi
-}
-
-# Set config value in local config
-set_config_value() {
-    local var_name="$1"
-    local value="$2"
-    local config_file="$3"
-    
-    if [[ ! -f "$config_file" ]]; then
-        touch "$config_file"
-    fi
-    
-    # Check if variable exists
-    if grep -q "^${var_name}=" "$config_file" 2>/dev/null; then
-        # Update existing
-        sed -i "s|^${var_name}=.*|${var_name}=\"${value}\"|" "$config_file"
-    else
-        # Add new
-        echo "${var_name}=\"${value}\"" >> "$config_file"
-    fi
-    
-    log_success "Updated config: ${var_name}=${value}"
-}
+# NOTE: All configuration functions have been consolidated into nftban_core.sh
+# Use nftban_get_config(), nftban_set_config(), nftban_load_config() instead
+# This ensures consistent config management across all modules
 
 # =============================================================================
 # STRING UTILITIES

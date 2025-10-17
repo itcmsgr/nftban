@@ -213,9 +213,9 @@ fi
 NFTBAN_BASE_DIR="${NFTBAN_BASE_DIR:-/etc/nftban}"
 LIB_DIR="${NFTBAN_BASE_DIR}/lib"
 
-if [[ -f "${LIB_DIR}/nftban-core.sh" ]]; then
-    source "${LIB_DIR}/nftban-core.sh"
-    
+if [[ -f "${LIB_DIR}/nftban_core.sh" ]]; then
+    source "${LIB_DIR}/nftban_core.sh"
+
     # Run maintenance
     nftban_maintenance_run
 else

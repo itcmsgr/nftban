@@ -3,19 +3,9 @@
 # NFTBAN Feeds Library - Threat Intelligence Feed Management
 # =============================================================================
 
-# =============================================================================
-# LOAD DEPENDENCIES
-# =============================================================================
-# Source utilities if not already loaded
-if [[ -z "${NFTBAN_UTILS_LOADED}" ]]; then
-    source "${LIB_DIR}/nftban_utils.sh" 2>/dev/null || {
-        echo "ERROR: Cannot load nftban_utils.sh"
-        exit 1
-    }
-fi
-
-# Mark this library as loaded
-NFTBAN_FEEDS_LOADED="true"
+# Prevent double-loading
+[[ -n "${NFTBAN_FEEDS_LIB_LOADED:-}" ]] && return 0
+readonly NFTBAN_FEEDS_LIB_LOADED=1
 
 # =============================================================================
 # FEED CONFIGURATION LOADER
