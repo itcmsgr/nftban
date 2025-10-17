@@ -275,6 +275,95 @@ cmd_feeds() {
     esac
 }
 # =============================================================================
+# UPDATE COMMANDS (NEW)
+# =============================================================================
+
+cmd_update() {
+    local action="${1:-check}"
+    shift || true
+
+    case "$action" in
+        check)
+            nftban_check_root || exit 1
+            nftban_update_check "true"
+            ;;
+        perform|upgrade|install)
+            nftban_check_root || exit 1
+            nftban_update_perform "false"
+            ;;
+        auto)
+            nftban_check_root || exit 1
+            nftban_update_perform "true"  # Skip confirmation
+            ;;
+        rollback)
+            nftban_check_root || exit 1
+            nftban_log_warning "Rolling back to previous version..."
+            nftban_update_rollback "$1"
+            ;;
+        version)
+            echo "Current version: $(nftban_update_get_local_version)"
+            if remote_ver=$(nftban_update_get_remote_version 2>/dev/null); then
+                echo "Available version: $remote_ver"
+            fi
+            ;;
+        *)
+            nftban_log_error "Unknown update action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  check             Check for available updates"
+            echo "  perform           Perform update (with confirmation)"
+            echo "  auto              Perform update (no confirmation)"
+            echo "  rollback [DIR]    Rollback to previous version"
+            echo "  version           Show current and available versions"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
+# MAINTENANCE COMMANDS (NEW)
+# =============================================================================
+
+cmd_maintenance() {
+    local action="${1:-panel}"
+    shift || true
+
+    case "$action" in
+        panel)
+            nftban_maintenance_show_panel
+            ;;
+        backup)
+            nftban_check_root || exit 1
+            nftban_update_create_backup
+            ;;
+        list-backups)
+            nftban_log_info "Available backups:"
+            find "${NFTBAN_UPDATE_BACKUP_DIR}" -maxdepth 1 -type d -name "pre_update_*" 2>/dev/null | sort -r | head -10
+            ;;
+        clean)
+            nftban_check_root || exit 1
+            nftban_maintenance_run
+            ;;
+        health)
+            nftban_maintenance_health_check
+            ;;
+        *)
+            nftban_log_error "Unknown maintenance action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  panel            Show maintenance panel"
+            echo "  backup           Create manual backup"
+            echo "  list-backups     List available backups"
+            echo "  clean            Run maintenance cleanup"
+            echo "  health           Run health check"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
 # EXISTING COMMANDS (UNCHANGED - KEEPING ORIGINAL)
 # =============================================================================
 
@@ -369,6 +458,14 @@ SYSTEM MANAGEMENT:
     verify                  Verify system health
     version                 Show version information
 
+UPDATE & MAINTENANCE:
+    update check            Check for available updates
+    update perform          Perform system update
+    update rollback         Rollback to previous version
+    maintenance panel       Show maintenance panel
+    maintenance backup      Create system backup
+    maintenance health      Run health check
+
 VALIDATION:
     validate run            Run full validation report
     validate panel          Interactive validation TUI
@@ -434,6 +531,11 @@ main() {
         status) cmd_status "$@" ;;
         verify) cmd_verify "$@" ;;
         validate|validator) cmd_validate "$@" ;;
+
+        # Update & Maintenance
+        update) cmd_update "$@" ;;
+        maintenance|maint) cmd_maintenance "$@" ;;
+
 		# Feeds Management
         feeds)
             cmd_feeds "$@"

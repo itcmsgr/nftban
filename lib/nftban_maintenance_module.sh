@@ -17,6 +17,161 @@ readonly NFTBAN_MAINTENANCE_LOG="${NFTBAN_LOG_DIR}/maintenance.log"
 readonly NFTBAN_MAINTENANCE_SCRIPT="${NFTBAN_BASE_DIR}/scripts/nftban-maintenance-cron.sh"
 
 # =============================================================================
+# COMPREHENSIVE MAINTENANCE PANEL UI
+# =============================================================================
+
+nftban_maintenance_show_panel() {
+    clear
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════════════════╗"
+    echo "║                    NFTBan Maintenance Panel                            ║"
+    echo "╚════════════════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    # Version Information
+    echo -e "${NFTBAN_CYAN}═══ Version Information ═══${NFTBAN_NC}"
+    echo ""
+
+    local local_version="unknown"
+    if declare -f nftban_update_get_local_version &>/dev/null; then
+        local_version=$(nftban_update_get_local_version 2>/dev/null || echo "unknown")
+    elif [[ -f "$NFTBAN_VERSION_FILE" ]]; then
+        local_version=$(cat "$NFTBAN_VERSION_FILE" | tr -d '[:space:]')
+    fi
+
+    local remote_version="unknown"
+    local remote_status="✗ Unable to check"
+    local update_available=false
+
+    if declare -f nftban_update_get_remote_version &>/dev/null; then
+        if remote_version=$(nftban_update_get_remote_version 2>/dev/null); then
+            if declare -f nftban_update_compare_versions &>/dev/null; then
+                nftban_update_compare_versions "$local_version" "$remote_version" 2>/dev/null || true
+                local version_compare=$?
+
+                case $version_compare in
+                    0) remote_status="✓ Up to date" ;;
+                    1) remote_status="⚠ Local version newer" ;;
+                    2) remote_status="⚠ UPDATE AVAILABLE"; update_available=true ;;
+                esac
+            fi
+        fi
+    fi
+
+    echo "  Current Version:    $local_version"
+    echo "  Remote Version:     $remote_version"
+    echo "  Status:             $remote_status"
+    echo ""
+
+    # File Integrity Status
+    echo -e "${NFTBAN_CYAN}═══ File Integrity Status ═══${NFTBAN_NC}"
+    echo ""
+
+    local total_files=0
+    local valid_files=0
+    local missing_files=0
+
+    if [[ -d "${NFTBAN_BASE_DIR}/lib" ]]; then
+        total_files=$(find "${NFTBAN_BASE_DIR}/lib" -type f -name "*.sh" 2>/dev/null | wc -l)
+
+        local expected_modules=(
+            "nftban_core.sh" "nftban_update_module.sh" "nftban_maintenance_module.sh"
+            "nftban_nftables_module.sh" "nftban_whitelist_module.sh" "nftban_blacklist_module.sh"
+            "nftban_safety_module.sh" "nftban_main_cli.sh"
+        )
+
+        for module in "${expected_modules[@]}"; do
+            [[ -f "${NFTBAN_BASE_DIR}/lib/${module}" ]] && ((valid_files++)) || ((missing_files++))
+        done
+    fi
+
+    echo "  Total Files:        $total_files"
+    echo "  Core Modules:       $valid_files / ${#expected_modules[@]}"
+    [[ $missing_files -gt 0 ]] && echo -e "  Missing Files:      ${NFTBAN_RED}$missing_files ✗${NFTBAN_NC}" || echo -e "  Missing Files:      ${NFTBAN_GREEN}0 ✓${NFTBAN_NC}"
+    echo "  Full validation:    Run 'nftban validate status'"
+    echo ""
+
+    # System Health
+    echo -e "${NFTBAN_CYAN}═══ System Health ═══${NFTBAN_NC}"
+    echo ""
+
+    local nft_status="✗ Inactive"
+    nftban_check_nftables_table 2>/dev/null && nft_status="✓ Active"
+    echo "  nftables:           $nft_status"
+
+    local f2b_status="✗ Not running"
+    (systemctl is-active fail2ban &>/dev/null || service fail2ban status &>/dev/null) && f2b_status="✓ Running"
+    echo "  Fail2Ban:           $f2b_status"
+
+    local disk_usage
+    disk_usage=$(df -h "${NFTBAN_BASE_DIR}" 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%')
+    local disk_status="✓ OK"
+    [[ $disk_usage -gt 90 ]] && disk_status="⚠ Low space (${disk_usage}%)"
+    echo "  Disk Space:         $disk_status"
+
+    local log_size="0"
+    [[ -d "$NFTBAN_LOG_DIR" ]] && log_size=$(du -sh "$NFTBAN_LOG_DIR" 2>/dev/null | awk '{print $1}')
+    echo "  Log Directory Size: $log_size"
+    echo ""
+
+    # Backup Information
+    echo -e "${NFTBAN_CYAN}═══ Backup Information ═══${NFTBAN_NC}"
+    echo ""
+
+    local last_backup="None"
+    local backup_count=0
+
+    if [[ -d "$NFTBAN_UPDATE_BACKUP_DIR" ]]; then
+        backup_count=$(find "$NFTBAN_UPDATE_BACKUP_DIR" -maxdepth 1 -type d -name "pre_update_*" 2>/dev/null | wc -l)
+        if [[ $backup_count -gt 0 ]]; then
+            last_backup=$(find "$NFTBAN_UPDATE_BACKUP_DIR" -maxdepth 1 -type d -name "pre_update_*" 2>/dev/null | sort -r | head -1)
+            last_backup=$(basename "$last_backup" | sed 's/pre_update_//' | sed 's/_/ /')
+        fi
+    fi
+
+    echo "  Total Backups:      $backup_count"
+    echo "  Last Backup:        $last_backup"
+    echo ""
+
+    # Current Statistics
+    echo -e "${NFTBAN_CYAN}═══ Current Statistics ═══${NFTBAN_NC}"
+    echo ""
+
+    local temp_bans=0 perm_bans=0 whitelisted=0
+    if command -v nft &>/dev/null && nftban_check_nftables_table 2>/dev/null; then
+        temp_bans=$(nft list set inet nftban_global temp_ban_v4 2>/dev/null | grep -c "elements" || echo "0")
+        perm_bans=$(nft list set inet nftban_global perm_ban_v4 2>/dev/null | grep -c "elements" || echo "0")
+        whitelisted=$(nft list set inet nftban_global whitelist_v4 2>/dev/null | grep -c "elements" || echo "0")
+    fi
+
+    echo "  Temporary Bans:     $temp_bans"
+    echo "  Permanent Bans:     $perm_bans"
+    echo "  Whitelisted IPs:    $whitelisted"
+    echo ""
+
+    # Quick Actions
+    echo -e "${NFTBAN_CYAN}═══ Quick Actions ═══${NFTBAN_NC}"
+    echo ""
+
+    if [[ "$update_available" == "true" ]]; then
+        echo -e "  ${NFTBAN_YELLOW}⚠ Update available: $local_version → $remote_version${NFTBAN_NC}"
+        echo "    Run: sudo nftban update perform"
+        echo ""
+    fi
+
+    echo "  Commands:"
+    echo "    nftban update check         - Check for updates"
+    echo "    nftban validate status      - Full integrity check"
+    echo "    nftban maintenance health   - Detailed health check"
+    echo "    nftban maintenance backup   - Create backup"
+    echo "    nftban status               - System status"
+    echo ""
+
+    echo "╚════════════════════════════════════════════════════════════════════════╝"
+    echo ""
+}
+
+# =============================================================================
 # MAINTENANCE OPERATIONS
 # =============================================================================
 
@@ -404,6 +559,7 @@ nftban_service_control() {
 # =============================================================================
 # EXPORT FUNCTIONS
 # =============================================================================
+export -f nftban_maintenance_show_panel
 export -f nftban_maintenance_run
 export -f nftban_maintenance_clean_rate_limit
 export -f nftban_maintenance_cleanup_logs
@@ -416,4 +572,4 @@ export -f nftban_maintenance_create_backup
 export -f nftban_maintenance_list_backups
 export -f nftban_service_control
 
-nftban_log_debug "NFTBan Maintenance Module loaded"
+nftban_log_debug "NFTBan Maintenance Module loaded (v2.0.0 with panel UI)"
