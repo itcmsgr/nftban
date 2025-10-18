@@ -62,12 +62,12 @@ installer_create_directories() {
     for dir in "${directories[@]}"; do
         if [[ -d "$dir" ]]; then
             installer_log_debug "Directory exists: $dir"
-            ((skipped++))
+            ((skipped++)) || true
         else
             if mkdir -p "$dir" 2>/dev/null; then
                 chmod 755 "$dir" 2>/dev/null || true
                 installer_log_debug "Created: $dir"
-                ((created++))
+                ((created++)) || true
             else
                 installer_log_error "Failed to create: $dir"
                 return 1
