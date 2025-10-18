@@ -64,8 +64,8 @@ installer_create_directories() {
             installer_log_debug "Directory exists: $dir"
             ((skipped++))
         else
-            if mkdir -p "$dir" 2>&1 | tee -a "$INSTALL_LOG"; then
-                chmod 755 "$dir"
+            if mkdir -p "$dir" 2>/dev/null; then
+                chmod 755 "$dir" 2>/dev/null || true
                 installer_log_debug "Created: $dir"
                 ((created++))
             else
