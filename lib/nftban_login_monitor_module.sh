@@ -1,4 +1,4 @@
-<parameter name="content">#!/usr/bin/env bash
+#!/usr/bin/env bash
 
 # =============================================================================
 # NFTBan Login Monitor Module
@@ -29,7 +29,7 @@ readonly NFTBAN_LOGIN_TIMER_FILE="/etc/systemd/system/nftban-login-monitor.timer
 # Install systemd service
 nftban_login_monitor_install() {
     nftban_log_info "Installing login monitor service..."
-    
+
     # Create service file
     cat > "$NFTBAN_LOGIN_SERVICE_FILE" << EOF
 [Unit]
@@ -46,7 +46,7 @@ User=root
 [Install]
 WantedBy=multi-user.target
 EOF
-    
+
     # Create timer file (runs every minute)
     cat > "$NFTBAN_LOGIN_TIMER_FILE" << EOF
 [Unit]
@@ -61,11 +61,11 @@ AccuracySec=1s
 [Install]
 WantedBy=timers.target
 EOF
-    
+
     systemctl daemon-reload
-    
+
     nftban_log_success "Login monitor service installed"
-    
+
     echo ""
     echo "Service files created:"
     echo "  - $NFTBAN_LOGIN_SERVICE_FILE"
@@ -81,14 +81,14 @@ EOF
 # Uninstall service
 nftban_login_monitor_uninstall() {
     nftban_log_info "Uninstalling login monitor service..."
-    
+
     systemctl stop nftban-login-monitor.timer 2>/dev/null || true
     systemctl disable nftban-login-monitor.timer 2>/dev/null || true
-    
+
     rm -f "$NFTBAN_LOGIN_SERVICE_FILE" "$NFTBAN_LOGIN_TIMER_FILE"
-    
+
     systemctl daemon-reload
-    
+
     nftban_log_success "Login monitor service uninstalled"
 }
 
@@ -129,7 +129,7 @@ nftban_login_monitor_status() {
     echo "  Login Monitor Status"
     echo "═══════════════════════════════════════════════════════════"
     echo ""
-    
+
     # Configuration
     echo -e "${NFTBAN_CYAN}Configuration:${NFTBAN_NC}"
     local monitor_enabled root_alert sudo_alert ssh_alert recipient
@@ -138,25 +138,25 @@ nftban_login_monitor_status() {
     sudo_alert=$(nftban_get_config "NFTBAN_F2B_SUDO_ALERT" "false")
     ssh_alert=$(nftban_get_config "NFTBAN_F2B_SSH_LOGIN_ALERT" "false")
     recipient=$(nftban_get_config "NFTBAN_F2B_RECIPIENT" "<not set>")
-    
+
     echo "  Monitoring: $monitor_enabled"
     echo "  Root login alerts: $root_alert"
     echo "  Sudo alerts: $sudo_alert"
     echo "  SSH alerts: $ssh_alert"
     echo "  Email recipient: $recipient"
     echo ""
-    
+
     # Service status
     echo -e "${NFTBAN_CYAN}Service Status:${NFTBAN_NC}"
     if [[ -f "$NFTBAN_LOGIN_SERVICE_FILE" ]]; then
         echo -e "  ${NFTBAN_GREEN}✓${NFTBAN_NC} Service installed"
-        
+
         if systemctl is-active nftban-login-monitor.timer &>/dev/null; then
             echo -e "  ${NFTBAN_GREEN}● RUNNING${NFTBAN_NC}"
         else
             echo -e "  ${NFTBAN_RED}○ STOPPED${NFTBAN_NC}"
         fi
-        
+
         if systemctl is-enabled nftban-login-monitor.timer &>/dev/null; then
             echo -e "  Boot: ${NFTBAN_GREEN}ENABLED${NFTBAN_NC}"
         else
@@ -167,13 +167,13 @@ nftban_login_monitor_status() {
         echo "  Run: nftban login install"
     fi
     echo ""
-    
+
     # Recent alerts
     if [[ -f "$NFTBAN_LOGIN_ALERT_LOG" ]]; then
         echo -e "${NFTBAN_CYAN}Recent Alerts (last 10):${NFTBAN_NC}"
         tail -10 "$NFTBAN_LOGIN_ALERT_LOG" 2>/dev/null | sed 's/^/  /' || echo "  No alerts yet"
     fi
-    
+
     echo ""
 }
 
@@ -182,29 +182,29 @@ nftban_login_monitor_test_config() {
     echo ""
     echo "Testing login monitor configuration..."
     echo ""
-    
+
     local monitor_enabled recipient
     monitor_enabled=$(nftban_get_config "NFTBAN_F2B_LOGIN_MONITOR" "false")
     recipient=$(nftban_get_config "NFTBAN_F2B_RECIPIENT" "")
-    
+
     if [[ "$monitor_enabled" != "true" ]]; then
         nftban_log_error "Login monitoring is disabled"
         echo "  Set: NFTBAN_F2B_LOGIN_MONITOR=\"true\""
         return 1
     fi
-    
+
     if [[ -z "$recipient" ]]; then
         nftban_log_error "Email recipient not configured"
         echo "  Set: NFTBAN_F2B_RECIPIENT=\"your@email.com\""
         return 1
     fi
-    
+
     nftban_log_success "Configuration valid"
-    
+
     echo ""
     echo "Send test email? (y/N): "
     read -r response
-    
+
     if [[ "$response" =~ ^[Yy]$ ]]; then
         echo "Sending test email to $recipient..."
         # TODO: Implement email sending via maintenance module
@@ -217,7 +217,7 @@ nftban_login_monitor_run() {
     # This would be called by systemd timer
     # Actual monitoring logic would be implemented here
     # For now, just log that it ran
-    
+
     local timestamp
     timestamp=$(date +'%Y-%m-%d %H:%M:%S')
     echo "[${timestamp}] Monitor cycle completed" >> "$NFTBAN_LOGIN_MONITOR_LOG"
