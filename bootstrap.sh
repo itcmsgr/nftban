@@ -32,9 +32,13 @@ fi
 
 # Download and extract
 TEMP_DIR=$(mktemp -d)
+echo "Downloading to: $TEMP_DIR"
 cd "$TEMP_DIR"
 curl -fsSL https://github.com/itcmsgr/nftban/archive/refs/heads/main.tar.gz | tar xz
 cd nftban-main
+echo "Current directory: $(pwd)"
+echo "Files in lib/installer/:"
+ls -la lib/installer/ 2>/dev/null || echo "ERROR: lib/installer/ not found!"
 
 # Unattended install flag
 [[ "$1" == "--unattended" ]] && UNATTENDED=1 || UNATTENDED=0
