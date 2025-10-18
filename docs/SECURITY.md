@@ -26,6 +26,7 @@ This comprehensive guide explains how nftban's multi-layer security system works
 - [Common Security Mistakes](#common-security-mistakes)
 - [Emergency Procedures](#emergency-procedures)
 - [Compliance and Auditing](#compliance-and-auditing)
+- [Download Integrity Verification](#download-integrity-verification)
 
 ---
 
@@ -2020,6 +2021,200 @@ sudo nano /etc/logrotate.d/nftban
     create 0640 root root
 }
 ```
+
+---
+
+## Download Integrity Verification
+
+### SHA256 Checksums
+
+nftban publishes SHA256 checksums for every commit to the main branch, allowing you to verify the integrity of downloaded files and detect potential tampering.
+
+**Why this matters:**
+
+We publish `SHA256SUMS.txt` for every commit to main. Verifying downloads against these hashes helps ensure integrity and detect tampering. While this doesn't encrypt content or replace code signing, it's a simple, effective defense-in-depth step that protects against:
+
+- **Man-in-the-middle attacks** during download
+- **Compromised mirrors** or CDNs
+- **Accidental file corruption** during transfer
+- **Unauthorized modifications** to project files
+
+### How It Works
+
+```
+GitHub Push → Workflow Triggers → Generate SHA256SUMS.txt → Commit to Repo
+                                          │
+                                          ↓
+                              Calculate hash for every file
+                              Format: <hash>  <filepath>
+                              Sort by filepath
+                              Commit automatically
+```
+
+### Manual Verification
+
+**Verify a single file:**
+
+```bash
+# Download SHA256SUMS.txt from GitHub
+curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/SHA256SUMS.txt -o SHA256SUMS.txt
+
+# Calculate hash of your local file
+sha256sum lib/nftban_core.sh
+
+# Compare with expected hash
+grep "lib/nftban_core.sh" SHA256SUMS.txt
+
+# Expected output:
+# <hash>  lib/nftban_core.sh
+#
+# If the hashes match → File is authentic ✓
+# If they differ → File may be corrupted or tampered with ✗
+```
+
+**Verify all files in a directory:**
+
+```bash
+# Download SHA256SUMS.txt
+curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/SHA256SUMS.txt -o SHA256SUMS.txt
+
+# Verify all .sh files in lib/
+cd /etc/nftban
+sha256sum -c SHA256SUMS.txt 2>&1 | grep "lib/.*\.sh"
+
+# Output:
+# lib/nftban_core.sh: OK
+# lib/nftban_safety_module.sh: OK
+# lib/nftban_whitelist_module.sh: OK
+# ...
+```
+
+### Automated Verification (Built-in)
+
+nftban includes built-in validation tools to automatically verify file integrity:
+
+```bash
+# Validate all installed files
+sudo nftban validate integrity
+
+# Validate specific directory
+sudo nftban validate directory /etc/nftban/lib
+
+# View validation report
+cat /var/log/nftban/validation_report.log
+
+# Example output:
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# VALIDATION SUMMARY
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+#   Total files:    78
+#   ✓ Valid:        76
+#   ✗ Failed:       0
+#   ? Unknown:      2 (new/not tracked)
+#   ⊘ Missing:      0
+#   ⊝ Skipped:      0
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+```
+
+### Verification During Installation
+
+The installer automatically validates downloaded files:
+
+```bash
+# Install with automatic validation
+sudo bash lib/installer/installer_main.sh install
+
+# Installation process includes:
+# 1. Download files from GitHub
+# 2. Download SHA256SUMS.txt
+# 3. Validate each file against checksum
+# 4. Proceed only if all files pass validation
+# 5. Report any mismatches
+
+# Example validation output during install:
+# [INFO] Downloading nftban files...
+# [INFO] Validating file integrity...
+# [OK]   lib/nftban_core.sh
+# [OK]   lib/nftban_safety_module.sh
+# [OK]   lib/nftban_whitelist_module.sh
+# ...
+# [INFO] All files validated successfully
+```
+
+### SHA256SUMS.txt Format
+
+The checksum file follows standard SHA256 format:
+
+```
+<sha256_hash>  <filepath>
+
+Example:
+27bc601747697ac484ed80b2bae80ab2996e3a27dd0850222525252200e8ad20  lib/nftban_core.sh
+117c5cc2fe48c0b61b5cff2873e953d2a6fd699581c86b7caeaf686c0df31d9c  lib/nftban_safety_module.sh
+5814df1535b0402e296ab0d2cb7a010d12c4abca8bc4a1ebffae37d2ee10a98e  lib/nftban_whitelist_module.sh
+```
+
+**Key features:**
+- Two spaces between hash and filepath (standard format)
+- Sorted alphabetically by filepath
+- Includes all tracked files except SHA256SUMS.txt itself
+- Automatically updated on every push to main
+- Deletions/additions automatically reflected
+
+### Security Best Practices
+
+1. **Always verify after download:**
+   ```bash
+   git clone https://github.com/itcmsgr/nftban.git
+   cd nftban
+   sha256sum -c SHA256SUMS.txt
+   ```
+
+2. **Verify before upgrades:**
+   ```bash
+   sudo nftban validate integrity
+   # Check output before proceeding
+   sudo nftban upgrade
+   ```
+
+3. **Monitor validation reports:**
+   ```bash
+   # Set up weekly validation
+   echo "0 2 * * 0 /usr/local/bin/nftban validate integrity" | sudo crontab -
+   ```
+
+4. **Investigate failures immediately:**
+   ```bash
+   # If validation fails:
+   sudo nftban validate panel  # View detailed report
+
+   # Check for unauthorized changes:
+   sudo find /etc/nftban -type f -mtime -7  # Files modified in last week
+
+   # Restore from backup if needed:
+   sudo tar -xzf /var/backups/nftban/latest.tar.gz -C /
+   ```
+
+### Limitations
+
+**What SHA256 verification provides:**
+- ✓ Detects file corruption during transfer
+- ✓ Detects unauthorized modifications
+- ✓ Verifies files match official release
+- ✓ Defense-in-depth layer
+
+**What it does NOT provide:**
+- ✗ Code signing (GPG signatures)
+- ✗ Encryption of file contents
+- ✗ Protection if GitHub account is compromised
+- ✗ Guarantee of code security (only integrity)
+
+**Recommended additional security:**
+- Always download from official repository
+- Verify GitHub repository URL: `https://github.com/itcmsgr/nftban`
+- Review commit history for suspicious changes
+- Use release tags for production deployments
+- Enable GitHub security advisories notifications
 
 ---
 
