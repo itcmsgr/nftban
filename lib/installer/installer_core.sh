@@ -60,11 +60,11 @@ installer_log() {
     local message="$*"
     local timestamp
     timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
+
     # Write to log file
     mkdir -p "$(dirname "$INSTALL_LOG")" 2>/dev/null || true
     echo "[${timestamp}] [${level}] ${message}" >> "$INSTALL_LOG" 2>/dev/null || true
-    
+
     # Console output
     if [[ "$INSTALLER_QUIET" == "false" ]]; then
         case "$level" in
@@ -72,10 +72,12 @@ installer_log() {
             WARN)    echo -e "${C_YELLOW}[WARN]${C_RESET} ${message}" >&2 ;;
             SUCCESS) echo -e "${C_GREEN}[✓]${C_RESET} ${message}" ;;
             INFO)    echo -e "${C_BLUE}[INFO]${C_RESET} ${message}" ;;
-            DEBUG)   [[ "$INSTALLER_VERBOSE" == "true" ]] && echo -e "${C_CYAN}[DEBUG]${C_RESET} ${message}" ;;
+            DEBUG)   [[ "$INSTALLER_VERBOSE" == "true" ]] && echo -e "${C_CYAN}[DEBUG]${C_RESET} ${message}" || true ;;
             *)       echo "[${level}] ${message}" ;;
         esac
     fi
+
+    return 0
 }
 
 installer_log_error() { installer_log "ERROR" "$@"; }
