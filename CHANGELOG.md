@@ -157,6 +157,12 @@ All modules use correct set names without version suffix:
   - Automatically generates checksums on every push
   - Commits SHA256SUMS.txt to repository
   - Ensures always up-to-date integrity verification
+- `.github/workflows/health.yml` - Enhanced project health workflow
+  - Added TruffleHog secret scanning (detects leaked credentials)
+  - Hardened permissions (read-only by default, write only where needed)
+  - Added `persist-credentials: false` to checkout step
+  - Improved authentication flow for auto-commits
+  - Weekly scheduled scans + on every push/PR
 
 ---
 

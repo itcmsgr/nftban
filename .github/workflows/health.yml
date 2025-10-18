@@ -12,18 +12,22 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read               # default: read-only (security best practice)
+
 jobs:
   health:
     runs-on: ubuntu-latest
-    # If you don't want the auto-commit step below, you can change this to: contents: read
     permissions:
-      contents: write
+      contents: write          # elevated only for auto-commit step
+      security-events: write   # for secret scanning results
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
         with:
           fetch-depth: 0       # full clone not strictly needed, but safe
+          persist-credentials: false  # security: don't persist GitHub token
 
       - name: Ensure health script is executable
         run: chmod +x .ci/health_check.sh
@@ -42,6 +46,13 @@ jobs:
       - name: Run health check
         run: .ci/health_check.sh
 
+      - name: Secret scan with TruffleHog
+        uses: trufflesecurity/trufflehog@v3.88.1
+        with:
+          base: ${{ github.event_name == 'pull_request' && github.event.pull_request.base.sha || '' }}
+          head: ${{ github.sha }}
+          extra_args: --only-verified
+
       - name: Upload STATUS.md as artifact
         uses: actions/upload-artifact@v4
         with:
@@ -55,9 +66,11 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           if ! git diff --quiet -- STATUS.md; then
+            # Re-authenticate for push (persist-credentials: false above)
             git config user.name "github-actions[bot]"
             git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git add STATUS.md
             git commit -m "chore: update STATUS.md [skip ci]"
-            git push
+            # Use GITHUB_TOKEN for push
+            git push https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git HEAD:main
           fi
