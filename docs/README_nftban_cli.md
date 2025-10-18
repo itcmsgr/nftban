@@ -3,11 +3,24 @@
 **Command-line interface for nftables & Fail2Ban management with comprehensive IP control**
 
 [![Version](https://img.shields.io/badge/version-3.6.0-blue)](https://github.com/itcmsgr/nftban)
+[![Architecture](https://img.shields.io/badge/v0.9.0-dual--table-orange)](https://github.com/itcmsgr/nftban)
 [![License](https://img.shields.io/badge/License-CustomMIT--NoResale-lightgrey)](./LICENSE.md)
 [![Platform](https://img.shields.io/badge/platform-Linux-blue)](https://github.com/itcmsgr/nftban)
 [![Shell](https://img.shields.io/badge/shell-bash-green)](https://www.gnu.org/software/bash/)
 
 The ultimate command-line tool for managing your nftban firewall setup. Ban/unban IPs, manage whitelists, check service status, validate configurations, and sync rules - all from one powerful CLI.
+
+> **📌 v0.9.0 ARCHITECTURE UPDATE**
+>
+> This document contains examples using the OLD v0.8.5 architecture for reference.
+>
+> **Key Changes in v0.9.0:**
+> - Tables: `ip nftban_v4` + `ip6 nftban_v6` (NOT `inet nftban_global`)
+> - Sets: `whitelist`, `temp_ban` (NO `_v4/_v6` suffix)
+> - nftban CLI commands work identically in both versions
+> - Manual `nft` commands need syntax updates
+>
+> See [MIGRATION_v0.9.0.md](MIGRATION_v0.9.0.md) for command translation guide.
 
 ---
 

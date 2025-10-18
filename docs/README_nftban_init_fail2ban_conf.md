@@ -2,12 +2,29 @@
 
 **Comprehensive Fail2Ban automation with nftables backend and advanced login monitoring**
 
-[![Version](https://img.shields.io/badge/version-3.6-blue)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-0.9.0--beta-orange)](https://github.com/itcmsgr/nftban)
+[![Architecture](https://img.shields.io/badge/v0.9.0-dual--table-orange)](https://github.com/itcmsgr/nftban)
 [![License](https://img.shields.io/badge/License-CustomMIT--NoResale-lightgrey)](./LICENSE.md)
 [![Platform](https://img.shields.io/badge/platform-Linux-blue)](https://github.com/itcmsgr/nftban)
 [![Shell](https://img.shields.io/badge/shell-bash-green)](https://www.gnu.org/software/bash/)
 
 A sophisticated automation tool that configures Fail2Ban with nftables backend, featuring enhanced security monitoring, intelligent mail alerts, login tracking, and comprehensive ban management.
+
+---
+
+> **📌 v0.9.0 ARCHITECTURE UPDATE**
+>
+> This document contains nftables commands and examples using the OLD v0.8.5 single-table architecture (`inet nftban_global`).
+>
+> **Key Changes in v0.9.0:**
+> - Tables: `ip nftban_v4` + `ip6 nftban_v6` (NOT `inet nftban_global`)
+> - Sets: `temp_ban`, `whitelist` (NO `_v4/_v6` suffix)
+> - Commands: `nft list set ip nftban_v4 temp_ban` (updated syntax)
+> - Fail2Ban integration script updated for v0.9.0 tables
+>
+> The **Fail2Ban integration has been updated** to work with the new dual-table architecture automatically.
+>
+> See [MIGRATION_v0.9.0.md](MIGRATION_v0.9.0.md) for command translation guide.
 
 ---
 

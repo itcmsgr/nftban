@@ -2,13 +2,30 @@
 
 **Advanced nftables Firewall Configuration with Automatic Control Panel Detection**
 
-[![Version](https://img.shields.io/badge/version-0.5.0-blue.svg)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-0.9.0--beta-orange)](https://github.com/itcmsgr/nftban)
+[![Architecture](https://img.shields.io/badge/v0.9.0-dual--table-orange)](https://github.com/itcmsgr/nftban)
 [![License](https://img.shields.io/badge/License-CustomMIT--NoResale-lightgrey)](../LICENSE.md)
 [![Shell](https://img.shields.io/badge/shell-bash-green.svg)](https://www.gnu.org/software/bash/)
 [![nftables](https://img.shields.io/badge/requires-nftables-red.svg)](https://netfilter.org/projects/nftables/)
 [![Status](https://img.shields.io/badge/status-production--ready-brightgreen)](https://github.com/itcmsgr/nftban)
 
 > **Part of the [nftban](https://github.com/itcmsgr/nftban) ecosystem** - Modern Linux firewall management system
+
+---
+
+> **📌 v0.9.0 ARCHITECTURE UPDATE**
+>
+> This document contains architecture diagrams and examples using the OLD v0.8.5 single-table architecture (`inet nftban_global`).
+>
+> **Key Changes in v0.9.0:**
+> - Tables: `ip nftban_v4` + `ip6 nftban_v6` (NOT `inet nftban_global`)
+> - Sets: `whitelist`, `temp_ban`, `user_blacklist` (NO `_v4/_v6` suffix)
+> - Commands: `nft list set ip nftban_v4 whitelist` (updated table family syntax)
+> - Architecture diagrams show old unified table structure
+>
+> The **configuration script itself has been updated** for v0.9.0 and generates the new dual-table architecture automatically.
+>
+> See [MIGRATION_v0.9.0.md](MIGRATION_v0.9.0.md) for command translation guide.
 
 ```bash
 # Quick start: Generate and apply firewall configuration

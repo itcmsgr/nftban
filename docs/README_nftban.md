@@ -2,12 +2,26 @@
 
 **Modular Linux Firewall Management System based on nftables & Fail2Ban**
 
-[![Version](https://img.shields.io/badge/version-3.6.0-blue)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-0.9.0--beta-orange)](https://github.com/itcmsgr/nftban)
+[![Architecture](https://img.shields.io/badge/architecture-dual--table-blue)](https://github.com/itcmsgr/nftban)
 [![License](https://img.shields.io/badge/License-CustomMIT--NoResale-lightgrey)](./LICENSE.md)
 [![Platform](https://img.shields.io/badge/platform-Linux-blue)](https://github.com/itcmsgr/nftban)
 [![Shell](https://img.shields.io/badge/shell-bash-green)](https://www.gnu.org/software/bash/)
 
 A comprehensive, production-ready firewall management system that combines nftables (modern Linux firewall) with Fail2Ban (intrusion prevention) to provide enterprise-grade security with simple, user-friendly management tools.
+
+> **📌 v0.9.0 ARCHITECTURE UPDATE**
+>
+> This document contains examples using the OLD v0.8.5 architecture for reference.
+> Many code examples show `inet nftban_global` table structure.
+>
+> **For v0.9.0:**
+> - Tables: `ip nftban_v4` + `ip6 nftban_v6` (NOT `inet nftban_global`)
+> - Sets: `whitelist`, `temp_ban` (NO `_v4/_v6` suffix)
+> - Rules simplified (no `ip saddr`/`ip6 saddr` selectors)
+>
+> See [MIGRATION_v0.9.0.md](MIGRATION_v0.9.0.md) for migration guide.
+> See [ARCHITECTURE.md](ARCHITECTURE.md) for updated technical details.
 
 ---
 
