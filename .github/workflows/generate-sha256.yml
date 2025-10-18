@@ -2,50 +2,66 @@ name: Generate SHA256 Hashes
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
 
-# Add permissions block at the top level
 permissions:
-  contents: write # This grants write permission to the GITHUB_TOKEN
+  contents: write  # allow the GITHUB_TOKEN to push commits
 
 jobs:
   generate-sha256:
     runs-on: ubuntu-latest
-
     steps:
-    - name: Checkout repository
-      # Use actions/checkout@v4 for modern versions
-      uses: actions/checkout@v4 
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0           # safer for push/pull
+          persist-credentials: true
 
-    - name: Generate SHA256 hashes
-      run: |
-        # Use v4 of checkout, which defaults to fetch-depth: 1. This might be fine.
-        # If you need to include files that were *not* fetched, you might need:
-        # uses: actions/checkout@v4
-        # with:
-        #   fetch-depth: 0 
+      - name: Set up Git identity
+        run: |
+          git config --global user.name  "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
+          # make sure the workspace is considered safe by git (rarely needed, but harmless)
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-        # The find command is correct to exclude .git files and the checksum file itself
-        find . -type f ! -path "./.git/*" ! -name "SHA256SUMS.txt" -exec sha256sum {} \; > SHA256SUMS.txt
+      - name: Generate SHA256SUMS.txt
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Create a temp file for new sums
+          tmpfile="$(mktemp)"
+          # Use *tracked files only*, exclude the sums file itself
+          # -z gives NUL-separated names, safe for spaces/unicode
+          git ls-files -z ':!:SHA256SUMS.txt' \
+            | xargs -0 sha256sum \
+            | sort -k2 > "$tmpfile"
 
-    - name: Commit SHA256SUMS.txt
-      run: |
-        # Check if the file has actually changed before committing
-        if ! git diff --exit-code SHA256SUMS.txt; then
-          echo "SHA256SUMS.txt has changes, proceeding with commit and push."
-          
-          # Set the commit author/committer
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          
-          git add SHA256SUMS.txt
-          git commit -m "Auto-generate SHA256SUMS.txt"
-          
-          # Use the GITHUB_TOKEN for authentication in the push URL.
-          # The contents: write permission above makes this work.
-          git push
-        else
-          echo "SHA256SUMS.txt is up to date, skipping commit and push."
-        fi
+          # If SHA256SUMS.txt doesn't exist yet, move it in
+          if [[ ! -f SHA256SUMS.txt ]]; then
+            mv "$tmpfile" SHA256SUMS.txt
+            echo "Created new SHA256SUMS.txt"
+          else
+            # Only replace if content actually changed
+            if ! cmp -s "$tmpfile" SHA256SUMS.txt; then
+              mv "$tmpfile" SHA256SUMS.txt
+              echo "Updated SHA256SUMS.txt"
+            else
+              rm -f "$tmpfile"
+              echo "No changes in SHA256SUMS.txt"
+            fi
+          fi
+
+      - name: Commit and push if changed
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --quiet -- SHA256SUMS.txt; then
+            git add SHA256SUMS.txt
+            git commit -m "chore: auto-update SHA256SUMS.txt"
+            # Rebase in case main advanced since checkout
+            git pull --rebase origin main
+            git push origin HEAD:main
+          else
+            echo "SHA256SUMS.txt is up to date; skipping commit."
+          fi
