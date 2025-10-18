@@ -418,7 +418,8 @@ nftban_whitelist_list() {
     echo -e "${NFTBAN_CYAN}Cloudflare Whitelist:${NFTBAN_NC}"
     if [[ -f "$NFTBAN_WHITELIST_CF" ]]; then
         local cf_count
-        cf_count=$(grep -cE "^[0-9a-fA-F.:]+([[:space:]]|$)" "$NFTBAN_WHITELIST_CF" 2>/dev/null || echo "0")
+        cf_count=$(grep -cE "^[0-9a-fA-F.:]+([[:space:]]|$)" "$NFTBAN_WHITELIST_CF" 2>/dev/null || true)
+        cf_count=${cf_count:-0}
         if [[ $cf_count -gt 0 ]]; then
             echo "  $cf_count Cloudflare IP ranges"
             echo "  (Use 'nftban cloudflare status' for details)"
@@ -629,11 +630,15 @@ nftban_whitelist_verify() {
 # Get whitelist statistics
 nftban_whitelist_get_stats() {
     local system_count user_count cf_count
-    
-    system_count=$(grep -cE "^[0-9a-fA-F.:]+([[:space:]]|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null || echo "0")
-    user_count=$(grep -cE "^[0-9a-fA-F.:]+([[:space:]]|$)" "$NFTBAN_WHITELIST_USER" 2>/dev/null || echo "0")
-    cf_count=$(grep -cE "^[0-9a-fA-F.:]+([[:space:]]|$)" "$NFTBAN_WHITELIST_CF" 2>/dev/null || echo "0")
-    
+
+    system_count=$(grep -cE "^[0-9a-fA-F.:]+([[:space:]]|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null || true)
+    user_count=$(grep -cE "^[0-9a-fA-F.:]+([[:space:]]|$)" "$NFTBAN_WHITELIST_USER" 2>/dev/null || true)
+    cf_count=$(grep -cE "^[0-9a-fA-F.:]+([[:space:]]|$)" "$NFTBAN_WHITELIST_CF" 2>/dev/null || true)
+
+    system_count=${system_count:-0}
+    user_count=${user_count:-0}
+    cf_count=${cf_count:-0}
+
     echo "System: $system_count | User: $user_count | Cloudflare: $cf_count | Total: $((system_count + user_count + cf_count))"
 }
 
