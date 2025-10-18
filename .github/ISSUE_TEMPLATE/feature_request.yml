@@ -1,28 +1,24 @@
----
-name: Feature request
-about: Suggest an idea for this project
-title: ''
-labels: ''
-assignees: itcmsgr
-
----
-
-name: "💡 Feature request"
+name: "💡 Feature Request"
 description: "Suggest an enhancement for nftban on Linux servers"
-title: "[FEATURE] short summary here"
+title: "[FEATURE] "
 labels: ["enhancement", "needs-triage"]
-assignees: []
+assignees: ["itcmsgr"]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for proposing an improvement. Clear use-cases help us evaluate and design the change.
+        ## About this template
+        Suggest an enhancement that improves reliability, UX, security, or maintainability.
+        Include the problem, impact, proposed solution, and alternatives. If CLI/config changes,
+        add example flags or keys.
+
+        Thank you for helping improve nftban!
 
   - type: input
     id: summary
     attributes:
-      label: "What would you like to add or change?"
-      placeholder: "One sentence summary"
+      label: "Feature Summary"
+      placeholder: "One sentence summary of what you'd like to add or change"
     validations:
       required: true
 
@@ -31,19 +27,20 @@ body:
     attributes:
       label: "Why is this needed?"
       description: "Problem statement or operational pain the feature solves"
-      placeholder: "Describe the use-case and impact"
+      placeholder: "Describe the use-case and impact. What problem does this solve?"
     validations:
       required: true
 
   - type: textarea
     id: proposal
     attributes:
-      label: "Proposed solution"
+      label: "Proposed Solution"
       description: "High-level approach, CLI flags, config keys, example behavior"
       placeholder: |
         Example:
         - New command: nftban feeds refresh --fast
         - Config: /etc/nftban/nftban.env -> FEEDS_REFRESH_INTERVAL=15m
+        - Behavior: Refreshes threat feeds every 15 minutes instead of hourly
     validations:
       required: false
 
@@ -65,7 +62,7 @@ body:
   - type: textarea
     id: alternatives
     attributes:
-      label: "Alternatives considered"
+      label: "Alternatives Considered"
       placeholder: "Other approaches and why they are less suitable"
     validations:
       required: false
@@ -73,7 +70,7 @@ body:
   - type: textarea
     id: additional
     attributes:
-      label: "Additional context"
-      placeholder: "Links, prior art, related issues"
+      label: "Additional Context"
+      placeholder: "Links, prior art, related issues, screenshots, diagrams"
     validations:
       required: false
