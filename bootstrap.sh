@@ -30,16 +30,23 @@ if [[ ${#MISSING[@]} -gt 0 ]]; then
     esac
 fi
 
-# Download and run installer
-cd /tmp
+# Download and extract
+TEMP_DIR=$(mktemp -d)
+cd "$TEMP_DIR"
 curl -fsSL https://github.com/itcmsgr/nftban/archive/refs/heads/main.tar.gz | tar xz
 cd nftban-main
 
 # Unattended install flag
 [[ "$1" == "--unattended" ]] && UNATTENDED=1 || UNATTENDED=0
 
+echo "Starting installer..."
+
 if [[ $UNATTENDED -eq 1 ]]; then
     bash lib/installer/installer_main.sh install --unattended
 else
     bash lib/installer/installer_main.sh install
 fi
+
+# Cleanup
+cd /
+rm -rf "$TEMP_DIR"
