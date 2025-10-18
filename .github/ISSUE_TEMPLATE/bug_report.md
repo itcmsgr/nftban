@@ -1,167 +1,130 @@
-name: "🐛 Bug report (Linux servers)"
-description: "Report an issue with nftban on Debian/Ubuntu/RHEL/Rocky/Alma/Fedora"
+name: 🐞 Debug / Bug Report
+description: Report unexpected behavior or errors in nftban
 title: "[BUG] <short summary here>"
-labels: ["bug", "needs-triage"]
+labels: [bug, needs-triage]
 assignees: []
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks for helping improve nftban. Please provide enough detail to reproduce the problem.
-        Before posting, remove any sensitive data (real IPs, keys, domains).
+        Thanks for filing a bug! Please complete the required fields so we can reproduce it quickly.
 
   - type: input
-    id: concise_summary
+    id: summary
     attributes:
-      label: "Describe the bug"
-      description: "One sentence summary of what is wrong."
-      placeholder: "Example: GeoIP update succeeds but sets are empty afterward"
+      label: Describe the bug
+      description: A concise description of the problem.
+      placeholder: Example: GeoIP module fails to reload after update
     validations:
       required: true
+
   - type: textarea
     id: steps
     attributes:
-      label: "To reproduce"
-      description: "Exact steps and commands that lead to the issue."
-      value: |
-        1. …
-        2. …
-        3. …
-        4. Observed error: …
+      label: To Reproduce
+      description: Exact steps that lead to the bug.
       placeholder: |
-        1. Run: sudo nftban geoip update
-        2. Check: sudo nft list sets ip nftban_v4
-        3. Compare: journalctl -u nftban --no-pager -n 50
-        4. Error appears: …
+        1. Run `sudo nftban geoip update`
+        2. Observe error in console
+        3. Check /var/log/nftban.log
+      value: |
+        1. Go to '...'
+        2. Click on '...'
+        3. Scroll down to '...'
+        4. See error
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: "Expected behavior"
-      placeholder: "What should have happened instead?"
+      label: Expected behavior
+      placeholder: Example: GeoIP sets reload successfully without syntax errors.
     validations:
       required: true
-
-  - type: textarea
-    id: actual
-    attributes:
-      label: "Actual behavior"
-      placeholder: "What actually happened?"
-    validations:
-      required: true
-
-  - type: dropdown
-    id: distro
-    attributes:
-      label: "OS / Distro"
-      description: "Select the closest match."
-      options:
-        - "Debian 12 (Bookworm)"
-        - "Debian 11 (Bullseye)"
-        - "Ubuntu 24.04 LTS"
-        - "Ubuntu 22.04 LTS"
-        - "RHEL / Rocky / Alma 9"
-        - "RHEL / Rocky / Alma 8"
-        - "Fedora 35+"
-        - "Other (specify below)"
-    validations:
-      required: true
-
-  - type: input
-    id: distro_other
-    attributes:
-      label: "If Other, specify"
-      placeholder: "e.g., Proxmox 8 (Debian base), Amazon Linux 2023"
-
-  - type: input
-    id: kernel
-    attributes:
-      label: "Kernel version"
-      placeholder: "e.g., 6.8.0-35-generic"
-
-  - type: input
-    id: nftban_version
-    attributes:
-      label: "nftban version / commit"
-      placeholder: "e.g., v0.9.0-beta, commit abc1234"
-    validations:
-      required: true
-
-  - type: input
-    id: nftables_version
-    attributes:
-      label: "nftables version"
-      placeholder: "Output of: nft --version"
-
-  - type: dropdown
-    id: install_method
-    attributes:
-      label: "Install method"
-      options:
-        - "Two-step script (download then run)"
-        - "One-liner curl | bash"
-        - "Manual (cloned repo)"
-        - "Other"
-    validations:
-      required: true
-
-  - type: checkboxes
-    id: modules
-    attributes:
-      label: "Affected areas (check all that apply)"
-      options:
-        - label: "Core / CLI"
-        - label: "Installer / Uninstall"
-        - label: "Fail2Ban integration"
-        - label: "DDoS module"
-        - label: "Port scan module"
-        - label: "GeoIP / Geo blocking"
-        - label: "Threat feeds"
-        - label: "Whitelist / Blacklist"
-        - label: "Cloudflare integration"
-        - label: "Stats / Smoketest"
-
-  - type: textarea
-    id: commands
-    attributes:
-      label: "Commands and outputs"
-      description: "Paste relevant commands and their outputs. Mask sensitive data."
-      placeholder: |
-        Command:
-        sudo nftban status
-
-        Output:
-        <paste here>
-
-        Command:
-        sudo nft list tables
-
-        Output:
-        <paste here>
 
   - type: textarea
     id: logs
     attributes:
-      label: "Logs"
-      description: "Paste relevant log lines (journalctl or /var/log/*). Use code fences."
+      label: Screenshots or logs
+      description: Paste relevant logs or attach screenshots.
       placeholder: |
         ```text
-        journalctl -u nftban --no-pager -n 200
-        (paste output here)
+        <log output>
         ```
-
-  - type: textarea
-    id: additional
-    attributes:
-      label: "Additional context"
-      placeholder: "Workarounds tried, related issues, environment peculiarities"
+    validations:
+      required: false
 
   - type: markdown
     attributes:
-      value: |
-        ## About this template
-        Use this form to report bugs reproducible on Linux servers (Debian/Ubuntu/RHEL/Rocky/Alma/Fedora).
-        Please include exact commands, outputs, and versions. Mask any sensitive data.
-        Not for feature requests—use "Feature request" instead.
+      value: "### 🖥️ Environment (required)"
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS / Distro
+      options:
+        - Debian 12
+        - Debian 11
+        - Ubuntu 24.04
+        - Ubuntu 22.04
+        - RHEL/Rocky/Alma 9
+        - RHEL/Rocky/Alma 8
+        - Fedora 35+
+        - Other (specify below)
+    validations:
+      required: true
+
+  - type: input
+    id: os_other
+    attributes:
+      label: If "Other", specify
+    validations:
+      required: false
+
+  - type: input
+    id: nftban_version
+    attributes:
+      label: nftban version / commit
+      placeholder: e.g., v0.9.0-beta, commit 1a2b3c4
+    validations:
+      required: true
+
+  - type: input
+    id: kernel
+    attributes:
+      label: Kernel version
+      placeholder: e.g., 6.8.0-35-generic
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: families
+    attributes:
+      label: Affected address families
+      options:
+        - label: IPv4
+        - label: IPv6
+        - label: Both / Unsure
+    validations:
+      required: false
+
+  - type: textarea
+    id: smartphone
+    attributes:
+      label: Smartphone (optional)
+      description: Only if the issue relates to mobile/admin panels.
+      placeholder: |
+        Device: iPhone 12
+        OS: iOS 17.1
+        Browser: Safari
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Additional context
+      placeholder: Anything else we should know?
+    validations:
+      required: false
