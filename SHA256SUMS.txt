@@ -1,6 +1,6 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-18 19:09:30 UTC
-# Commit: 58f5680 (58f5680801b749bc04d6752bc5aaa2ebcc9b0320)
+# Generated: 2025-10-18 19:13:35 UTC
+# Commit: df03f68 (df03f68c75ba1948519c6725dd4157b51966e7b3)
 # Branch: main
 # Total files: 101
 #
@@ -56,7 +56,7 @@ c874117eb18a40cd64763fb1722fe117e8635608a387dba51d5a82988ca84930  docs/TODO_REPO
 9dd7643054ff1df0b082fdaca2358c20e33cf4c257d187b3d2134cafea4f9ab0  lib/installer/installer_download.sh
 6cb2699552e3289af7784e58a7e14cd9f144312a4bb3381262ddd232ca73e46e  lib/installer/installer_main.sh
 811260e3388ff1fea9566cfed08afeb18dbecd0f39c96d314e77381f573cb3b9  lib/installer/installer_package.sh
-5ace3578163941c09508c87bfdc58816b530c08cfa0e7e0deae4dd99bab27430  lib/installer/installer_structure.sh
+51a25b9e82177d650aa0b8b5e8c7b66d4a31528320098e3f94e5fad219f00eb9  lib/installer/installer_structure.sh
 e4b53e8d2d65c88c45f8fc4f297f97201ca5958176202b6da806a8bad548708d  lib/installer/installer_verification.sh
 7e680645f6abdf755f86afe5d0428d5e0f15179aa63364c25de70afc82bdeb34  lib/installer/nftban_installer_modular.sh
 fcf6802a8cef03755032ba02225c7255b033195bb471ebb77c89e246f157a71d  lib/installer/nftban_uninstall_script.sh
