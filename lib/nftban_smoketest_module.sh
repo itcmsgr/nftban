@@ -179,7 +179,7 @@ smoketest_nftables_structure() {
         NFTBAN_USING_SPLIT_TABLES=1
     else
         # Check for old v0.8.5 inet table
-        if nft list table inet nftban_global &>/dev/null; then
+        if nft list table ip nftban_v4 &>/dev/null || nft list table ip6 nftban_v6 &>/dev/null || nft list table inet nftban_global &>/dev/null; then  # v0.9.0 or v0.8.5
             smoketest_warn "Using old inet table (v0.8.5) - upgrade to v0.9.0 recommended"
             NFTBAN_USING_SPLIT_TABLES=0
         else
@@ -219,7 +219,7 @@ smoketest_nftables_structure() {
 
         # Old table should NOT exist
         smoketest_start "Old inet table removed"
-        if nft list table inet nftban_global &>/dev/null; then
+        if nft list table ip nftban_v4 &>/dev/null || nft list table ip6 nftban_v6 &>/dev/null || nft list table inet nftban_global &>/dev/null; then  # v0.9.0 or v0.8.5
             smoketest_fail "Old inet table still exists - migration incomplete"
         else
             smoketest_pass
@@ -227,13 +227,16 @@ smoketest_nftables_structure() {
 
     else
         # Testing old inet table structure (v0.8.5)
+        # Legacy v0.8.5 set names (for backward compatibility testing)
         local required_sets_old=("whitelist_v4" "whitelist_v6" "temp_ban_v4" "temp_ban_v6"
                                  "user_blacklist_v4" "user_blacklist_v6" "system_blacklist_v4"
                                  "system_blacklist_v6" "feeds_v4" "feeds_v6")
 
         for set_name in "${required_sets_old[@]}"; do
             smoketest_start "inet set: $set_name"
-            if nft list set inet nftban_global "$set_name" &>/dev/null; then
+            if nft list set inet nftban_global "$set_name" &>/dev/null || \
+               nft list set ip nftban_v4 "${set_name/_v4/}" &>/dev/null || \
+               nft list set ip6 nftban_v6 "${set_name/_v6/}" &>/dev/null; then  # Check both old and new
                 smoketest_pass
             else
                 smoketest_warn "Set $set_name not found"
@@ -658,7 +661,7 @@ nftban_diagnostics_collect() {
             done
         else
             echo "Split tables not found - checking old inet table..."
-            nft list table inet nftban_global 2>/dev/null || echo "No tables found"
+            nft list table ip nftban_v4 2>/dev/null || nft list table ip6 nftban_v6 2>/dev/null || nft list table inet nftban_global 2>/dev/null || echo "No tables found"
         fi
         echo ""
 

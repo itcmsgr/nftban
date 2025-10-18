@@ -407,7 +407,11 @@ nftban_portscan_setup_nftables_logging() {
 
     # Add logging rule for dropped packets (port scans hit closed ports)
     # This should be added to the input chain with low priority
-    nft insert rule inet nftban_global input \
+    # v0.9.0: Add to both IPv4 and IPv6 tables
+    nft insert rule "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" input \
+    nft insert rule # OLD input \
+    nft insert rule "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" input \
+    # (IPv6 version) 
         ct state new \
         limit rate 10/minute burst 5 packets \
         log prefix "\"nftban: portscan: \"" \
@@ -433,11 +437,11 @@ nftban_portscan_disable() {
 # Remove nftables logging rules
 nftban_portscan_remove_nftables_logging() {
     # Remove all portscan logging rules
-    while nft -a list chain inet nftban_global input 2>/dev/null | grep -q "nftban: portscan:"; do
+    while nft -a list chain ${NFTBAN_NFT_FAMILY_V4:-ip} ${NFTBAN_NFT_TABLE_V4:-nftban_v4} input 2>/dev/null | grep -q "nftban: portscan:"; do
         local handle
-        handle=$(nft -a list chain inet nftban_global input 2>/dev/null | grep "nftban: portscan:" | head -n1 | grep -oP 'handle \K[0-9]+')
+        handle=$(nft -a list chain ${NFTBAN_NFT_FAMILY_V4:-ip} ${NFTBAN_NFT_TABLE_V4:-nftban_v4} input 2>/dev/null | grep "nftban: portscan:" | head -n1 | grep -oP 'handle \K[0-9]+')
         if [[ -n "$handle" ]]; then
-            nft delete rule inet nftban_global input handle "$handle" 2>/dev/null || break
+            nft delete rule ${NFTBAN_NFT_FAMILY_V4:-ip} ${NFTBAN_NFT_TABLE_V4:-nftban_v4} input handle "$handle" 2>/dev/null || break
         else
             break
         fi

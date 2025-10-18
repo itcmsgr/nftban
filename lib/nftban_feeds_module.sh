@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan Feeds Module (Enhanced with Global Exclusion & Deduplication)
-# Version: 2.4.1
+# Version: 3.0.0 - v0.9.0 SPLIT TABLE ARCHITECTURE
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
@@ -14,6 +14,7 @@
 #   2. **Global Deduplication:** If an IP/CIDR exists in one feed, it is
 #      IGNORED when encountered in any subsequent feed.
 #   3. **Validation Ready:** Compatible with SHA256 validation system
+#   4. **v0.9.0 UPDATE:** Uses split ip/ip6 tables for better performance
 # =============================================================================
 
 set -euo pipefail
@@ -52,11 +53,12 @@ readonly TEE_BIN="/usr/bin/tee"
 readonly MKDIR_BIN="/usr/bin/mkdir"
 readonly CAT_BIN="/usr/bin/cat"
 
-# nftables configuration
-readonly NFTBAN_FEEDS_TABLE="${NFTBAN_NFT_TABLE:-nftban_global}"
-readonly NFTBAN_FEEDS_FAMILY="${NFTBAN_NFT_FAMILY:-inet}"
-readonly NFTBAN_FEEDS_SET_V4="feeds_v4"
-readonly NFTBAN_FEEDS_SET_V6="feeds_v6"
+# nftables configuration - v0.9.0 SPLIT TABLE ARCHITECTURE
+readonly NFTBAN_FEEDS_TABLE_V4="${NFTBAN_NFT_TABLE_V4:-nftban_v4}"
+readonly NFTBAN_FEEDS_TABLE_V6="${NFTBAN_NFT_TABLE_V6:-nftban_v6}"
+readonly NFTBAN_FEEDS_FAMILY_V4="${NFTBAN_NFT_FAMILY_V4:-ip}"
+readonly NFTBAN_FEEDS_FAMILY_V6="${NFTBAN_NFT_FAMILY_V6:-ip6}"
+readonly NFTBAN_FEEDS_SET="feeds"  # Same name in both tables
 
 # Memory safety limits (in MB)
 NFTBAN_FEEDS_MEMORY_LIMIT="${NFTBAN_FEEDS_MEMORY_LIMIT:-512}"
@@ -415,30 +417,35 @@ _nftban_feeds_download_feed() {
 }
 
 # =============================================================================
-# NFTABLES SYNC
+# NFTABLES SYNC - v0.9.0 SPLIT TABLE ARCHITECTURE
 # =============================================================================
 _nftban_feeds_update_nftables() {
     local final_file="$1"
-    
-    _nftban_feeds_log INFO "Syncing final feeds list to nftables sets: ${NFTBAN_FEEDS_SET_V4} and ${NFTBAN_FEEDS_SET_V6}"
 
-    "$NFT_BIN" flush set "${NFTBAN_FEEDS_FAMILY}" "${NFTBAN_FEEDS_TABLE}" "${NFTBAN_FEEDS_SET_V4}" 2>/dev/null || true
-    "$NFT_BIN" flush set "${NFTBAN_FEEDS_FAMILY}" "${NFTBAN_FEEDS_TABLE}" "${NFTBAN_FEEDS_SET_V6}" 2>/dev/null || true
-    
+    _nftban_feeds_log INFO "Syncing final feeds list to nftables split tables (v0.9.0)"
+    _nftban_feeds_log INFO "IPv4: ${NFTBAN_FEEDS_FAMILY_V4} ${NFTBAN_FEEDS_TABLE_V4} ${NFTBAN_FEEDS_SET}"
+    _nftban_feeds_log INFO "IPv6: ${NFTBAN_FEEDS_FAMILY_V6} ${NFTBAN_FEEDS_TABLE_V6} ${NFTBAN_FEEDS_SET}"
+
+    # Flush both sets
+    "$NFT_BIN" flush set "${NFTBAN_FEEDS_FAMILY_V4}" "${NFTBAN_FEEDS_TABLE_V4}" "${NFTBAN_FEEDS_SET}" 2>/dev/null || true
+    "$NFT_BIN" flush set "${NFTBAN_FEEDS_FAMILY_V6}" "${NFTBAN_FEEDS_TABLE_V6}" "${NFTBAN_FEEDS_SET}" 2>/dev/null || true
+
     local ipv4_count=0
     local ipv6_count=0
 
     while IFS= read -r line; do
         if _nftban_feeds_is_ipv4 "$line" || _nftban_feeds_is_cidr4 "$line"; then
-            "$NFT_BIN" add element "${NFTBAN_FEEDS_FAMILY}" "${NFTBAN_FEEDS_TABLE}" "${NFTBAN_FEEDS_SET_V4}" "{ $line }" 2>/dev/null || true
+            # Add to IPv4 table
+            "$NFT_BIN" add element "${NFTBAN_FEEDS_FAMILY_V4}" "${NFTBAN_FEEDS_TABLE_V4}" "${NFTBAN_FEEDS_SET}" "{ $line }" 2>/dev/null || true
             ipv4_count=$((ipv4_count + 1))
         elif _nftban_feeds_is_ipv6 "$line" || _nftban_feeds_is_cidr6 "$line"; then
-            "$NFT_BIN" add element "${NFTBAN_FEEDS_FAMILY}" "${NFTBAN_FEEDS_TABLE}" "${NFTBAN_FEEDS_SET_V6}" "{ $line }" 2>/dev/null || true
+            # Add to IPv6 table
+            "$NFT_BIN" add element "${NFTBAN_FEEDS_FAMILY_V6}" "${NFTBAN_FEEDS_TABLE_V6}" "${NFTBAN_FEEDS_SET}" "{ $line }" 2>/dev/null || true
             ipv6_count=$((ipv6_count + 1))
         fi
     done < "$final_file"
 
-    _nftban_feeds_log SUCCESS "NFTables sync complete. IPv4: $ipv4_count | IPv6: $ipv6_count"
+    _nftban_feeds_log SUCCESS "NFTables sync complete (v0.9.0 split tables). IPv4: $ipv4_count | IPv6: $ipv6_count"
     return 0
 }
 
@@ -653,5 +660,5 @@ export -f _nftban_feeds_list_providers
 # MODULE LOADED
 # =============================================================================
 if command -v nftban_log_debug >/dev/null 2>&1; then
-    nftban_log_debug "NFTBan Feeds Module v2.4.1 loaded"
+    nftban_log_debug "NFTBan Feeds Module v3.0.0 loaded (v0.9.0 split tables)"
 fi

@@ -2,11 +2,12 @@
 
 # =============================================================================
 # NFTBan Safety Module - COMPLETE VERSION
-# Version: 1.1.0
+# Version: 2.0.0 - v0.9.0 SPLIT TABLE ARCHITECTURE
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
 # Comprehensive safety verification and initialization safeguards
+# v0.9.0 UPDATE: Uses split ip/ip6 tables for better performance
 # =============================================================================
 
 # Prevent double-loading
@@ -48,14 +49,23 @@ nftban_check_nft_set_capacity() {
         return 1
     fi
     
-    # Get current element count
+    # Get current element count (v0.9.0: split tables, no _v suffix)
+    local table_family table_name
+    if [[ "$ver" == "4" ]]; then
+        table_family="${NFTBAN_NFT_FAMILY_V4:-ip}"
+        table_name="${NFTBAN_NFT_TABLE_V4:-nftban_v4}"
+    else
+        table_family="${NFTBAN_NFT_FAMILY_V6:-ip6}"
+        table_name="${NFTBAN_NFT_TABLE_V6:-nftban_v6}"
+    fi
+
     local count
-    count=$(nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "${set_name}_v${ver}" 2>/dev/null | \
+    count=$(nft list set "$table_family" "$table_name" "$set_name" 2>/dev/null | \
             grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F.:]\+' | wc -l)
-    
+
     # Warn if approaching limits (nftables default is ~65535 elements per set)
     if [[ $count -gt 50000 ]]; then
-        nftban_log_warning "Set ${set_name}_v${ver} has $count elements (approaching limit!)"
+        nftban_log_warning "Set $set_name has $count elements (approaching limit!)"
         return 1
     fi
     
@@ -73,13 +83,23 @@ nftban_check_nft_duplicates() {
     fi
     
     local duplicates=0
-    
-    # Extract all IPs from all sets
+
+    # Get table info for this IP version (v0.9.0: split tables)
+    local table_family table_name
+    if [[ "$ver" == "4" ]]; then
+        table_family="${NFTBAN_NFT_FAMILY_V4:-ip}"
+        table_name="${NFTBAN_NFT_TABLE_V4:-nftban_v4}"
+    else
+        table_family="${NFTBAN_NFT_FAMILY_V6:-ip6}"
+        table_name="${NFTBAN_NFT_TABLE_V6:-nftban_v6}"
+    fi
+
+    # Extract all IPs from all sets (no _v suffix in v0.9.0)
     local temp_file="/tmp/nftban_all_ips.$$"
     > "$temp_file"
-    
+
     for set_name in whitelist temp_ban user_blacklist system_blacklist feeds; do
-        nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "${set_name}_v${ver}" 2>/dev/null | \
+        nft list set "$table_family" "$table_name" "$set_name" 2>/dev/null | \
             grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F.:]\+' >> "$temp_file" || true
     done
     
@@ -246,9 +266,12 @@ nftban_check_nft_rules_order() {
         return 1
     fi
     
-    # Check if whitelist rules come BEFORE ban rules
-    local rules
-    rules=$(nft list chain "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" input 2>/dev/null)
+    # Check if whitelist rules come BEFORE ban rules (check both tables in v0.9.0)
+    local rules_v4 rules_v6
+    rules_v4=$(nft list chain "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" input 2>/dev/null)
+    rules_v6=$(nft list chain "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" input 2>/dev/null)
+
+    local rules="$rules_v4"  # Check IPv4 table for rule order
     
     if [[ -z "$rules" ]]; then
         nftban_log_error "No rules found in input chain!"
@@ -509,27 +532,35 @@ nftban_check_safeguards() {
     fi
     echo ""
     
-    # Check 5: Required Sets
+    # Check 5: Required Sets (v0.9.0: split tables, no _v4/_v6 suffix)
     echo -e "${NFTBAN_CYAN}[5/8] Required nftables Sets${NFTBAN_NC}"
     if nftban_check_nftables_table; then
         local required_sets=(
-            "whitelist_v4" "whitelist_v6"
-            "temp_ban_v4" "temp_ban_v6"
-            "user_blacklist_v4" "user_blacklist_v6"
-            "system_blacklist_v4" "system_blacklist_v6"
-            "feeds_v4" "feeds_v6"
+            "whitelist" "temp_ban" "user_blacklist" "system_blacklist" "feeds"
         )
-        
+
         local missing_sets=0
-        for set_name in "${required_sets[@]}"; do
-            if ! nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "$set_name" &>/dev/null; then
-                echo -e "  ${NFTBAN_RED}✗ MISSING: $set_name${NFTBAN_NC}"
-                ((missing_sets++))
+        for ver in 4 6; do
+            local table_family table_name
+            if [[ "$ver" == "4" ]]; then
+                table_family="${NFTBAN_NFT_FAMILY_V4:-ip}"
+                table_name="${NFTBAN_NFT_TABLE_V4:-nftban_v4}"
+            else
+                table_family="${NFTBAN_NFT_FAMILY_V6:-ip6}"
+                table_name="${NFTBAN_NFT_TABLE_V6:-nftban_v6}"
             fi
+
+            for set_name in "${required_sets[@]}"; do
+                if ! nft list set "$table_family" "$table_name" "$set_name" &>/dev/null; then
+                    echo -e "  ${NFTBAN_RED}✗ MISSING: ${set_name} (IPv${ver})${NFTBAN_NC}"
+                    ((missing_sets++))
+                fi
+            done
         done
-        
+
+        local total_sets=$((${#required_sets[@]} * 2))
         if [[ $missing_sets -eq 0 ]]; then
-            echo -e "  ${NFTBAN_GREEN}✓ ALL ${#required_sets[@]} SETS EXIST${NFTBAN_NC}"
+            echo -e "  ${NFTBAN_GREEN}✓ ALL $total_sets SETS EXIST${NFTBAN_NC}"
         else
             echo -e "  ${NFTBAN_RED}✗ $missing_sets SETS MISSING${NFTBAN_NC}"
             ((issues++))
@@ -539,14 +570,14 @@ nftban_check_safeguards() {
     fi
     echo ""
     
-    # Check 6: Whitelist Sync
+    # Check 6: Whitelist Sync (v0.9.0: split tables)
     echo -e "${NFTBAN_CYAN}[6/8] Whitelist Synchronization${NFTBAN_NC}"
     if nftban_check_nftables_table; then
         local file_v4 nft_v4
         file_v4=$(grep -hE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" \
                   "${NFTBAN_CONFIG_DIR}/whitelist-system.conf" \
                   "${NFTBAN_CONFIG_DIR}/whitelist-user.conf" 2>/dev/null | wc -l)
-        nft_v4=$(nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" whitelist_v4 2>/dev/null | \
+        nft_v4=$(nft list set "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" whitelist 2>/dev/null | \
                  grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+' | wc -l)
         
         if [[ $file_v4 -le $nft_v4 ]]; then
@@ -900,4 +931,4 @@ export -f nftban_check_all_risks
 export -f nftban_quick_safety_check
 export -f nftban_check_ip_location
 
-nftban_log_debug "NFTBan Safety Module loaded (v1.1.0 - Complete with 18 checks)"
+nftban_log_debug "NFTBan Safety Module loaded (v2.0.0 - Split Tables + 18 checks)"

@@ -205,7 +205,8 @@ nftban_stats_nftables_summary() {
     echo ""
     echo "  Sets:"
     
-    local sets=("whitelist_v4" "whitelist_v6" "temp_ban_v4" "temp_ban_v6" "user_blacklist_v4" "user_blacklist_v6")
+    # v0.9.0: No _v4/_v6 suffix - loop through both tables
+    local sets=("whitelist" "temp_ban" "user_blacklist" "system_blacklist" "feeds")
     
     for set in "${sets[@]}"; do
         if nft list set inet "$NFTBAN_NFT_TABLE" "$set" &>/dev/null; then

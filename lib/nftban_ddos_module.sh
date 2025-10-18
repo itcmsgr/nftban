@@ -22,7 +22,7 @@ readonly NFTBAN_DDOS_LOG="${NFTBAN_LOG_DIR}/ddos-protection.log"
 readonly NFTBAN_DDOS_STATS_FILE="${NFTBAN_DATA_DIR}/ddos-stats.tmp"
 
 # nftables table and chain names
-readonly NFTBAN_NFT_TABLE="inet nftban_global"
+# v0.9.0: Use core module constants (NFTBAN_NFT_TABLE_V4/V6, NFTBAN_NFT_FAMILY_V4/V6)
 readonly NFTBAN_NFT_SYNFLOOD_CHAIN="synflood_protection"
 readonly NFTBAN_NFT_CONNLIMIT_CHAIN="connlimit_protection"
 readonly NFTBAN_NFT_PORTFLOOD_CHAIN="portflood_protection"
