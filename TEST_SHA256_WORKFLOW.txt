@@ -1,0 +1,12 @@
+This is a test file to verify that the SHA256SUMS.txt workflow is working correctly.
+
+When this file is pushed to the repository, the GitHub Actions workflow should:
+1. Detect the new file
+2. Calculate its SHA256 hash
+3. Add it to SHA256SUMS.txt
+4. Commit the updated SHA256SUMS.txt automatically
+
+This file will be deleted after verification.
+
+Timestamp: 2025-01-18
+Purpose: Testing automated SHA256 checksum generation
