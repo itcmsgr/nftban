@@ -9,66 +9,102 @@
 set -euo pipefail
 
 # =============================================================================
-# CHECK AND INSTALL BOOTSTRAP DEPENDENCIES (tar, gzip, unzip)
+# CHECK AND INSTALL BOOTSTRAP DEPENDENCIES
 # =============================================================================
 check_and_install_dependencies() {
     local missing_deps=()
+    local is_unattended=false
 
-    # Check required tools
-    for cmd in tar gzip unzip; do
+    # Check if running in unattended mode
+    [[ "${1:-}" == "--unattended" ]] && is_unattended=true
+
+    # Check all required bootstrap tools
+    local required_tools=(
+        "tar"           # Extract archives
+        "gzip"          # Decompress archives
+        "unzip"         # Unzip files
+        "curl"          # Download files
+        "git"           # Version control (optional but recommended)
+        "ipcalc"        # IP validation (required for nftban)
+    )
+
+    for cmd in "${required_tools[@]}"; do
         if ! command -v "$cmd" &>/dev/null; then
             missing_deps+=("$cmd")
         fi
     done
 
     if [[ ${#missing_deps[@]} -eq 0 ]]; then
+        echo "[✓] All bootstrap dependencies found" >&2
         return 0
     fi
 
+    echo "" >&2
     echo "WARNING: Missing required dependencies: ${missing_deps[*]}" >&2
     echo "" >&2
 
     # Detect OS
-    if [[ -f /etc/os-release ]]; then
-        . /etc/os-release
+    if [[ ! -f /etc/os-release ]]; then
+        echo "ERROR: Cannot detect OS (/etc/os-release not found)" >&2
+        echo "Please install manually: ${missing_deps[*]}" >&2
+        return 1
+    fi
 
+    . /etc/os-release
+
+    # Ask for permission (unless unattended)
+    if [[ "$is_unattended" == "false" ]]; then
         echo "Do you want to install missing dependencies automatically? [Y/n]" >&2
         read -r response
         response=${response:-Y}
 
         if [[ ! "$response" =~ ^[Yy]$ ]]; then
-            echo "Installation cancelled. Please install: ${missing_deps[*]}" >&2
+            echo "Installation cancelled. Please install manually: ${missing_deps[*]}" >&2
             return 1
         fi
-
-        echo "Installing dependencies..." >&2
-
-        case "$ID" in
-            ubuntu|debian)
-                apt-get update -qq || true
-                apt-get install -y "${missing_deps[@]}" || return 1
-                ;;
-            centos|rhel|rocky|almalinux|fedora)
-                if command -v dnf &>/dev/null; then
-                    dnf install -y "${missing_deps[@]}" || return 1
-                else
-                    yum install -y "${missing_deps[@]}" || return 1
-                fi
-                ;;
-            *)
-                echo "ERROR: Unsupported OS: $ID" >&2
-                echo "Please install manually: ${missing_deps[*]}" >&2
-                return 1
-                ;;
-        esac
-
-        echo "Dependencies installed successfully" >&2
-        return 0
-    else
-        echo "ERROR: Cannot detect OS" >&2
-        echo "Please install manually: ${missing_deps[*]}" >&2
-        return 1
     fi
+
+    echo "Installing dependencies..." >&2
+
+    case "$ID" in
+        ubuntu|debian)
+            apt-get update -qq || true
+            apt-get install -y "${missing_deps[@]}" || {
+                echo "ERROR: Failed to install dependencies" >&2
+                return 1
+            }
+            ;;
+        centos|rhel|rocky|almalinux|fedora)
+            # Map package names for RHEL-based systems
+            local rhel_deps=()
+            for dep in "${missing_deps[@]}"; do
+                case "$dep" in
+                    ipcalc) rhel_deps+=("ipcalc") ;;
+                    *) rhel_deps+=("$dep") ;;
+                esac
+            done
+
+            if command -v dnf &>/dev/null; then
+                dnf install -y "${rhel_deps[@]}" || {
+                    echo "ERROR: Failed to install dependencies" >&2
+                    return 1
+                }
+            else
+                yum install -y "${rhel_deps[@]}" || {
+                    echo "ERROR: Failed to install dependencies" >&2
+                    return 1
+                }
+            fi
+            ;;
+        *)
+            echo "ERROR: Unsupported OS: $ID" >&2
+            echo "Please install manually: ${missing_deps[*]}" >&2
+            return 1
+            ;;
+    esac
+
+    echo "[✓] Dependencies installed successfully" >&2
+    return 0
 }
 
 # =============================================================================
@@ -78,8 +114,12 @@ readonly INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Always install to /etc/nftban, not where script is running from
 readonly INSTALL_DIR="/etc/nftban"
 
-# Run bootstrap check
-check_and_install_dependencies || exit 1
+# Run bootstrap check (pass --unattended if present in args)
+if [[ " $* " =~ " --unattended " ]] || [[ " $* " =~ " -y " ]] || [[ " $* " =~ " --yes " ]]; then
+    check_and_install_dependencies --unattended || exit 1
+else
+    check_and_install_dependencies || exit 1
+fi
 
 # =============================================================================
 # MODULE LOADING (STRICT ORDER PER ARCHITECTURE)
