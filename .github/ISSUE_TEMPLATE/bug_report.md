@@ -3,99 +3,181 @@ name: Bug report
 about: Create a report to help us improve
 title: ''
 labels: ''
-assignees: ''
+assignees: itcmsgr
 
 ---
 
-name: 🐞 Debug / Bug Report
-description: Report unexpected behavior or errors in nftban
-title: "[BUG] <short summary>"
-labels: [bug, needs-triage]
+name: "🐛 Bug report (Linux servers)"
+description: "Report an issue with nftban on Debian/Ubuntu/RHEL/Rocky/Alma/Fedora"
+title: "[BUG] short summary here"
+labels: ["bug", "needs-triage"]
 assignees: []
 body:
   - type: markdown
     attributes:
       value: |
-        Thank you for reporting a bug 🐛
-        Please fill out all sections to help us reproduce and fix the issue quickly.
+        Thanks for helping improve nftban. Please provide enough detail to reproduce the problem.
+        Before posting, remove any sensitive data (real IPs, keys, domains).
 
   - type: input
-    id: summary
+    id: concise_summary
     attributes:
-      label: Describe the bug
-      description: A clear and concise description of what the bug is.
-      placeholder: Example: "GeoIP module fails to reload after update"
+      label: "Describe the bug"
+      description: "One sentence summary of what is wrong."
+      placeholder: "Example: GeoIP update succeeds but sets are empty afterward"
     validations:
       required: true
 
   - type: textarea
     id: steps
     attributes:
-      label: To Reproduce
-      description: Steps to reproduce the behavior.
-      placeholder: |
-        1. Run `sudo nftban geoip update`
-        2. Observe error message in console
-        3. Check system logs at /var/log/nftban.log
+      label: "To reproduce"
+      description: "Exact steps and commands that lead to the issue."
       value: |
-        1. Go to '...'
-        2. Click on '...'
-        3. Scroll down to '...'
-        4. See error
+        1. …
+        2. …
+        3. …
+        4. Observed error: …
+      placeholder: |
+        1. Run: sudo nftban geoip update
+        2. Check: sudo nft list sets ip nftban_v4
+        3. Compare: journalctl -u nftban --no-pager -n 50
+        4. Error appears: …
     validations:
       required: true
 
   - type: textarea
     id: expected
     attributes:
-      label: Expected behavior
-      description: A clear and concise description of what you expected to happen.
-      placeholder: Example: "GeoIP sets should reload successfully without syntax errors."
+      label: "Expected behavior"
+      placeholder: "What should have happened instead?"
     validations:
       required: true
 
   - type: textarea
-    id: screenshots
+    id: actual
     attributes:
-      label: Screenshots or Logs
-      description: If applicable, add screenshots, terminal outputs, or log snippets.
-      placeholder: |
-        Attach screenshots or paste log excerpts between triple backticks:
-        ```
-        <log output>
-        ```
+      label: "Actual behavior"
+      placeholder: "What actually happened?"
+    validations:
+      required: true
 
-  - type: markdown
+  - type: dropdown
+    id: distro
     attributes:
-      value: "### 🖥️ System Information"
-
-  - type: input
-    id: desktop-os
-    attributes:
-      label: OS and Version
-      placeholder: "e.g. Debian 12, Ubuntu 24.04, CentOS 9 Stream"
+      label: "OS / Distro"
+      description: "Select the closest match."
+      options:
+        - "Debian 12 (Bookworm)"
+        - "Debian 11 (Bullseye)"
+        - "Ubuntu 24.04 LTS"
+        - "Ubuntu 22.04 LTS"
+        - "RHEL / Rocky / Alma 9"
+        - "RHEL / Rocky / Alma 8"
+        - "Fedora 35+"
+        - "Other (specify below)"
     validations:
       required: true
 
   - type: input
-    id: nftban-version
+    id: distro_other
     attributes:
-      label: nftban Version
-      placeholder: "e.g. v0.9.0-beta, commit 1a2b3c4"
+      label: "If Other, specify"
+      placeholder: "e.g., Proxmox 8 (Debian base), Amazon Linux 2023"
+    validations:
+      required: false
+
+  - type: input
+    id: kernel
+    attributes:
+      label: "Kernel version"
+      placeholder: "e.g., 6.8.0-35-generic"
+    validations:
+      required: false
+
+  - type: input
+    id: nftban_version
+    attributes:
+      label: "nftban version / commit"
+      placeholder: "e.g., v0.9.0-beta, commit abc1234"
+    validations:
+      required: true
+
+  - type: input
+    id: nftables_version
+    attributes:
+      label: "nftables version"
+      placeholder: "Output of: nft --version"
+    validations:
+      required: false
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: "Install method"
+      options:
+        - "Two-step script (download then run)"
+        - "One-liner curl | bash"
+        - "Manual (cloned repo)"
+        - "Other"
+    validations:
+      required: true
+
+  - type: checkboxes
+    id: modules
+    attributes:
+      label: "Affected areas (check all that apply)"
+      options:
+        - label: "Core / CLI"
+        - label: "Installer / Uninstall"
+        - label: "Fail2Ban integration"
+        - label: "DDoS module"
+        - label: "Port scan module"
+        - label: "GeoIP / Geo blocking"
+        - label: "Threat feeds"
+        - label: "Whitelist / Blacklist"
+        - label: "Cloudflare integration"
+        - label: "Stats / Smoketest"
+    validations:
+      required: false
 
   - type: textarea
-    id: smartphone
+    id: commands
     attributes:
-      label: Smartphone (optional)
-      description: Only if the issue relates to mobile panels or dashboards.
+      label: "Commands and outputs"
+      description: "Paste relevant commands and their outputs. Mask sensitive data."
       placeholder: |
-        Device: [e.g. iPhone 12]
-        OS: [e.g. iOS 17.1]
-        Browser: [e.g. Safari]
-        Version: [e.g. 22]
+        Command:
+        sudo nftban status
+
+        Output:
+        <paste here>
+
+        Command:
+        sudo nft list tables
+
+        Output:
+        <paste here>
+    validations:
+      required: false
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: "Logs"
+      description: "Paste relevant log lines (journalctl or /var/log/*). Use code fences."
+      placeholder: |
+        ```text
+        journalctl -u nftban --no-pager -n 200
+        (paste output here)
+        ```
+    validations:
+      required: false
 
   - type: textarea
     id: additional
     attributes:
-      label: Additional context
-      description: Add any other context or observations about the issue here.
+      label: "Additional context"
+      placeholder: "Workarounds tried, related issues, environment peculiarities"
+    validations:
+      required: false
