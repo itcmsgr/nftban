@@ -94,9 +94,9 @@ github_validate_file() {
         return 3
     fi
     
-    # Look for the file in SHA256SUMS.txt
+    # Look for the file in SHA256SUMS.txt (skip comment lines starting with #)
     local expected_sha
-    expected_sha=$(grep -E "[[:space:]]${filename}$" "$SHA256_CACHE" 2>/dev/null | awk '{print $1}')
+    expected_sha=$(grep -v '^#' "$SHA256_CACHE" 2>/dev/null | grep -E "[[:space:]]${filename}$" | awk '{print $1}')
     
     if [[ -z "$expected_sha" ]]; then
         echo "UNKNOWN: $filename (not in SHA256SUMS.txt - possibly new file)"

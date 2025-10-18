@@ -147,16 +147,32 @@ All modules use correct set names without version suffix:
 - `CHANGELOG.md` - This comprehensive v0.9.0 entry
 
 **Security Infrastructure:**
-- `SHA256SUMS.txt` - Automated checksum file generation
+- `SHA256SUMS.txt` - Automated checksum file generation with metadata header
   - Published for every commit to main branch
   - Contains SHA256 hashes for all tracked files
+  - **NEW:** Header with timestamp, commit hash, branch, and file count
   - Enables download integrity verification
   - Protects against file corruption and tampering
   - Format: standard SHA256 (two spaces, sorted by filepath)
-- `.github/workflows/generate-sha256.yml` - GitHub Actions workflow
+  - Compatible with `sha256sum -c` (comment lines ignored)
+  - Header format example:
+    ```
+    # nftban SHA256 Checksums
+    # Generated: 2025-01-18 12:29:45 UTC
+    # Commit: 5d8e046 (5d8e046abc123...)
+    # Branch: main
+    # Total files: 100
+    ```
+- `.github/workflows/generate-sha256.yml` - Enhanced GitHub Actions workflow
   - Automatically generates checksums on every push
+  - Adds metadata header with generation details
+  - Only commits when file checksums change (not just timestamp)
   - Commits SHA256SUMS.txt to repository
   - Ensures always up-to-date integrity verification
+- `lib/nftban-validator-github.sh` - Updated validator
+  - Now skips comment lines starting with `#`
+  - Compatible with new header format
+  - Maintains standard SHA256 verification functionality
 - `.github/workflows/health.yml` - Enhanced project health workflow
   - Added TruffleHog secret scanning (detects leaked credentials)
   - Hardened permissions (read-only by default, write only where needed)
