@@ -1,15 +1,6 @@
----
-name: Bug report
-about: Create a report to help us improve
-title: ''
-labels: ''
-assignees: itcmsgr
-
----
-
 name: "🐛 Bug report (Linux servers)"
 description: "Report an issue with nftban on Debian/Ubuntu/RHEL/Rocky/Alma/Fedora"
-title: "[BUG] short summary here"
+title: "[BUG] <short summary here>"
 labels: ["bug", "needs-triage"]
 assignees: []
 body:
@@ -27,7 +18,6 @@ body:
       placeholder: "Example: GeoIP update succeeds but sets are empty afterward"
     validations:
       required: true
-
   - type: textarea
     id: steps
     attributes:
@@ -84,16 +74,12 @@ body:
     attributes:
       label: "If Other, specify"
       placeholder: "e.g., Proxmox 8 (Debian base), Amazon Linux 2023"
-    validations:
-      required: false
 
   - type: input
     id: kernel
     attributes:
       label: "Kernel version"
       placeholder: "e.g., 6.8.0-35-generic"
-    validations:
-      required: false
 
   - type: input
     id: nftban_version
@@ -108,8 +94,6 @@ body:
     attributes:
       label: "nftables version"
       placeholder: "Output of: nft --version"
-    validations:
-      required: false
 
   - type: dropdown
     id: install_method
@@ -138,8 +122,6 @@ body:
         - label: "Whitelist / Blacklist"
         - label: "Cloudflare integration"
         - label: "Stats / Smoketest"
-    validations:
-      required: false
 
   - type: textarea
     id: commands
@@ -158,8 +140,6 @@ body:
 
         Output:
         <paste here>
-    validations:
-      required: false
 
   - type: textarea
     id: logs
@@ -171,13 +151,17 @@ body:
         journalctl -u nftban --no-pager -n 200
         (paste output here)
         ```
-    validations:
-      required: false
 
   - type: textarea
     id: additional
     attributes:
       label: "Additional context"
       placeholder: "Workarounds tried, related issues, environment peculiarities"
-    validations:
-      required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ## About this template
+        Use this form to report bugs reproducible on Linux servers (Debian/Ubuntu/RHEL/Rocky/Alma/Fedora).
+        Please include exact commands, outputs, and versions. Mask any sensitive data.
+        Not for feature requests—use "Feature request" instead.
