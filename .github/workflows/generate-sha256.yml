@@ -7,11 +7,6 @@ on:
 
 permissions:
   contents: write
-  pull-requests: write
-
-concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   generate-sha256:
@@ -21,48 +16,53 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          persist-credentials: true
+          token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set up Git identity
         run: |
-          git config --global user.name  "github-actions[bot]"
+          git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
       - name: Generate SHA256SUMS.txt
-        id: gen
+        id: generate
         shell: bash
         run: |
           set -euo pipefail
-          tmpfile="$(mktemp)"
-          git ls-files -z ':!:SHA256SUMS.txt' \
-            | xargs -0 sha256sum \
-            | sort -k2 > "$tmpfile"
 
-          if [[ ! -f SHA256SUMS.txt ]] || ! cmp -s "$tmpfile" SHA256SUMS.txt; then
-            mv "$tmpfile" SHA256SUMS.txt
-            echo "updated=true" >> "$GITHUB_OUTPUT"
+          echo "Generating SHA256SUMS.txt for all tracked files..."
+
+          # Generate checksums for all tracked files except SHA256SUMS.txt itself
+          # Format: <hash>  <filepath> (two spaces, sorted by filepath)
+          while IFS= read -r file; do
+            sha256sum "$file"
+          done < <(git ls-files ':!:SHA256SUMS.txt') | sort -k2 > SHA256SUMS.txt.tmp
+
+          # Check if file changed
+          if [[ -f SHA256SUMS.txt ]] && cmp -s SHA256SUMS.txt.tmp SHA256SUMS.txt; then
+            echo "No changes to SHA256SUMS.txt"
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            rm -f SHA256SUMS.txt.tmp
           else
-            rm -f "$tmpfile"
-            echo "updated=false" >> "$GITHUB_OUTPUT"
+            mv SHA256SUMS.txt.tmp SHA256SUMS.txt
+            echo "SHA256SUMS.txt updated"
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+
+            # Show stats
+            file_count=$(wc -l < SHA256SUMS.txt)
+            echo "Total files tracked: $file_count"
           fi
 
-      - name: Create Pull Request
-        if: steps.gen.outputs.updated == 'true'
-        uses: peter-evans/create-pull-request@v6
-        with:
-          branch: chore/update-sha256sums
-          base: main
-          title: "chore: update SHA256SUMS.txt"
-          body: |
-            Automated update of `SHA256SUMS.txt`.
+      - name: Commit and push changes
+        if: steps.generate.outputs.changed == 'true'
+        run: |
+          git add SHA256SUMS.txt
+          git commit -m "chore: update SHA256SUMS.txt (automated)
 
-            - Tracked files via `git ls-files`
-            - Excludes the sums file itself
-            - Sorted for stability
-            - Deletions/renames reflected automatically
-          commit-message: "chore: update SHA256SUMS.txt (automated)"
-          add-paths: |
-            SHA256SUMS.txt
-          reset-branch: false   # <-- avoids the failing 'git reset --hard origin/branch'
-          delete-branch: true
+          - Reflects current state of all tracked files
+          - Deletions/additions automatically included
+          - Sorted by filepath for stability
+          - Generated via GitHub Actions workflow
+
+          🤖 Automated checksum update"
+
+          git push origin main

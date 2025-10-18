@@ -139,7 +139,24 @@ All modules use correct set names without version suffix:
   - Performance benefits explanation
   - Updated rule evaluation order
   - Updated set management examples
+- `docs/SECURITY.md` - Added SHA256 checksum verification section
+  - Download integrity verification guide
+  - Manual and automated verification methods
+  - Built-in validation tools documentation
+  - Security best practices for verifying downloads
 - `CHANGELOG.md` - This comprehensive v0.9.0 entry
+
+**Security Infrastructure:**
+- `SHA256SUMS.txt` - Automated checksum file generation
+  - Published for every commit to main branch
+  - Contains SHA256 hashes for all tracked files
+  - Enables download integrity verification
+  - Protects against file corruption and tampering
+  - Format: standard SHA256 (two spaces, sorted by filepath)
+- `.github/workflows/generate-sha256.yml` - GitHub Actions workflow
+  - Automatically generates checksums on every push
+  - Commits SHA256SUMS.txt to repository
+  - Ensures always up-to-date integrity verification
 
 ---
 
