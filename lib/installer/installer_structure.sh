@@ -118,7 +118,7 @@ installer_setup_cli() {
     
     # Check if CLI source exists
     if [[ ! -f "$cli_source" ]]; then
-        installer_log_warning "CLI source not found, creating minimal wrapper"
+        installer_log_warn "CLI source not found, creating minimal wrapper"
         installer_create_minimal_cli
     fi
     
@@ -138,7 +138,7 @@ installer_setup_cli() {
     if "$cli_target" version &>/dev/null; then
         installer_log_success "CLI verification passed"
     else
-        installer_log_warning "CLI may not be fully functional yet"
+        installer_log_warn "CLI may not be fully functional yet"
     fi
     
     return 0
