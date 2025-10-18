@@ -75,7 +75,8 @@ check_and_install_dependencies() {
 # SET DIRECTORIES BEFORE LOADING MODULES
 # =============================================================================
 readonly INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly INSTALL_DIR="${INSTALLER_DIR%/lib/installer}"
+# Always install to /etc/nftban, not where script is running from
+readonly INSTALL_DIR="/etc/nftban"
 
 # Run bootstrap check
 check_and_install_dependencies || exit 1
