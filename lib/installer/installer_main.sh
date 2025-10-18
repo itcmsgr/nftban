@@ -9,6 +9,46 @@
 set -euo pipefail
 
 # =============================================================================
+# CHECK BOOTSTRAP DEPENDENCIES (curl, tar, gzip)
+# =============================================================================
+check_bootstrap_dependencies() {
+    local missing_deps=()
+
+    # Check required tools
+    for cmd in curl tar gzip; do
+        if ! command -v "$cmd" &>/dev/null; then
+            missing_deps+=("$cmd")
+        fi
+    done
+
+    if [[ ${#missing_deps[@]} -gt 0 ]]; then
+        echo "ERROR: Missing required dependencies: ${missing_deps[*]}" >&2
+        echo "" >&2
+        echo "Please install them first:" >&2
+
+        # Detect OS and show install command
+        if [[ -f /etc/os-release ]]; then
+            . /etc/os-release
+            case "$ID" in
+                ubuntu|debian)
+                    echo "  sudo apt-get install -y ${missing_deps[*]}" >&2
+                    ;;
+                centos|rhel|rocky|almalinux|fedora)
+                    echo "  sudo dnf install -y ${missing_deps[*]}" >&2
+                    ;;
+            esac
+        fi
+
+        return 1
+    fi
+
+    return 0
+}
+
+# Run bootstrap check
+check_bootstrap_dependencies || exit 1
+
+# =============================================================================
 # MODULE LOADING (STRICT ORDER PER ARCHITECTURE)
 # =============================================================================
 readonly INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
