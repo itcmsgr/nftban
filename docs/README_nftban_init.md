@@ -2,12 +2,15 @@
 
 **Bootstrap script for nftban firewall management system**
 
-[![Version](https://img.shields.io/badge/version-0.5.0--final-blue)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-0.9.0--beta-orange)](https://github.com/itcmsgr/nftban)
+[![Architecture](https://img.shields.io/badge/v0.9.0-dual--table-orange)](https://github.com/itcmsgr/nftban)
 [![License](https://img.shields.io/badge/License-CustomMIT--NoResale-lightgrey)](../LICENSE.md)
 [![Platform](https://img.shields.io/badge/platform-Linux-blue)](https://github.com/itcmsgr/nftban)
 [![Shell](https://img.shields.io/badge/shell-bash-green)](https://www.gnu.org/software/bash/)
 
 > **Part of the nftban toolkit** - This document covers the system preparation script. See [Main README](../README.md) for the complete project overview.
+>
+> **📌 v0.9.0 Note**: This init script prepares the system for nftban v0.9.0's dual-table architecture. The subsequent configuration scripts will create `ip nftban_v4` and `ip6 nftban_v6` tables. See [MIGRATION_v0.9.0.md](MIGRATION_v0.9.0.md) for architecture details.
 
 ```bash
 # Quick install from GitHub
