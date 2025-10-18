@@ -232,17 +232,22 @@ We welcome contributions! Ways to help:
 - [systemd](https://systemd.io/) - Service management
 
 **Special thanks to:**
-- [Claude AI](https://claude.ai) by Anthropic - Development assistance
-- [Claude Code](https://claude.com/claude-code) - Automated code generation and review
+- [Claude AI](https://claude.ai) by Anthropic - Development assistance and code review
+- [Claude Code](https://claude.com/claude-code) - Automated code generation and systematic refactoring
+- [ChatGPT](https://chat.openai.com) by OpenAI - Architecture planning and design consultation
 - All contributors and testers
 - The nftables and Fail2Ban communities
 - Everyone who stars and shares the project
 
-**With support from AI:**
-- Code review and optimization
-- Documentation generation
-- Test case development
-- Architecture design assistance
+**AI-Assisted Development:**
+This project benefits from AI collaboration:
+- **Architecture Design**: ChatGPT assisted with v0.9.0 split table architecture planning and roadmap development
+- **Code Implementation**: Claude Code performed systematic refactoring, code generation, and validation
+- **Code Review**: Claude AI provided comprehensive module review and optimization suggestions
+- **Documentation**: Both AI partners contributed to technical writing and documentation structure
+- **Testing**: Automated validation, syntax checking, and comprehensive testing strategies
+
+We believe in transparency about AI collaboration and credit all our development partners fairly.
 
 ---
 
