@@ -1,6 +1,6 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-18 18:50:18 UTC
-# Commit: 0c5b5cb (0c5b5cbba47d6a8fb64afee48857104d8e311f0a)
+# Generated: 2025-10-18 18:51:59 UTC
+# Commit: 12d1f3d (12d1f3d5e999997b6f4a5f157bc154f8991cea88)
 # Branch: main
 # Total files: 101
 #
@@ -52,7 +52,7 @@ c874117eb18a40cd64763fb1722fe117e8635608a387dba51d5a82988ca84930  docs/TODO_REPO
 7bd4bd1e9c04619f34cf444975eba8b6a93e04385ffd7525474ea3e2fdab7164  lib/installer/deprecated/nftban_installer.sh
 20c4f1d26d3cec08d35779b53b75be4cb75b8beba5970de256c81216edd0f961  lib/installer/installer_backup.sh
 16f9b461bdd9b89d709f596af21042510f2845784f8d24dde1e2c4ec7d0025fa  lib/installer/installer_config_full.sh
-ea439bf4ebaf91ebb7a9e406438bfea1d451f4b57ba70c51e83583bfdc82ef44  lib/installer/installer_core.sh
+b9b57b3a8f5cb9f4d2f0debe29f54d135e3b13da5b6e9cf6dccbaeee4c3010f0  lib/installer/installer_core.sh
 9dd7643054ff1df0b082fdaca2358c20e33cf4c257d187b3d2134cafea4f9ab0  lib/installer/installer_download.sh
 90f94814e6773833c794f521423e008eebfa005bfd5b042277cf5af8f9a241a8  lib/installer/installer_main.sh
 811260e3388ff1fea9566cfed08afeb18dbecd0f39c96d314e77381f573cb3b9  lib/installer/installer_package.sh
