@@ -365,4 +365,18 @@ installer_cmd_uninstall() {
         rm -rf "$BACKUP_DIR"
         rm -rf /etc/fail2ban/jail.d/nftban-*.conf
         rm -rf /etc/fail2ban/filter.d/nftban-*.conf
-        rm -rf /
+        rm -rf /etc/fail2ban/action.d/nftban-*.conf
+    fi
+
+    installer_log_success "nftban uninstalled successfully"
+}
+
+# =============================================================================
+# SELF UPDATE
+# =============================================================================
+
+installer_cmd_self_update() {
+    installer_log_info "Self-update not yet implemented"
+    installer_log_info "Please download latest version from GitHub"
+    return 0
+}
