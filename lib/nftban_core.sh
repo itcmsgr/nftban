@@ -744,19 +744,19 @@ nftban_load_modules() {
     
     for module in "${modules[@]}"; do
         local module_path="${NFTBAN_LIB_DIR}/${module}"
-        
+
         if [[ ! -f "$module_path" ]]; then
             nftban_log_warning "Module not found: $module"
-            ((skipped++))
+            ((skipped++)) || true
             continue
         fi
-        
+
         if source "$module_path" 2>/dev/null; then
             nftban_log_debug "✓ Loaded: $module"
-            ((loaded++))
+            ((loaded++)) || true
         else
             nftban_log_warning "✗ Failed to load: $module"
-            ((failed++))
+            ((failed++)) || true
         fi
     done
     
@@ -767,17 +767,17 @@ nftban_load_modules() {
     
     if [[ -z "${NFTBAN_NFTABLES_LOADED:-}" ]]; then
         nftban_log_error "CRITICAL: nftables module not loaded"
-        ((critical_missing++))
+        ((critical_missing++)) || true
     fi
-    
+
     if [[ -z "${NFTBAN_WHITELIST_LOADED:-}" ]]; then
         nftban_log_error "CRITICAL: whitelist module not loaded"
-        ((critical_missing++))
+        ((critical_missing++)) || true
     fi
-    
+
     if [[ -z "${NFTBAN_BLACKLIST_LOADED:-}" ]]; then
         nftban_log_error "CRITICAL: blacklist module not loaded"
-        ((critical_missing++))
+        ((critical_missing++)) || true
     fi
     
     if [[ $critical_missing -gt 0 ]]; then
