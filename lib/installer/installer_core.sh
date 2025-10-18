@@ -12,7 +12,7 @@ readonly INSTALLER_CORE_LOADED=1
 # CONFIGURATION
 # =============================================================================
 readonly INSTALLER_VERSION="7.0.0"
-readonly INSTALL_DIR="${INSTALL_DIR:-/etc/nftban}"
+# INSTALL_DIR set by installer_main.sh
 readonly LOG_DIR="${LOG_DIR:-/var/log/nftban}"
 readonly BACKUP_DIR="${BACKUP_DIR:-/var/backups/nftban}"
 
