@@ -9,44 +9,70 @@
 set -euo pipefail
 
 # =============================================================================
-# CHECK BOOTSTRAP DEPENDENCIES (curl, tar, gzip)
+# CHECK AND INSTALL BOOTSTRAP DEPENDENCIES (tar, gzip, unzip)
 # =============================================================================
-check_bootstrap_dependencies() {
+check_and_install_dependencies() {
     local missing_deps=()
 
     # Check required tools
-    for cmd in curl tar gzip; do
+    for cmd in tar gzip unzip; do
         if ! command -v "$cmd" &>/dev/null; then
             missing_deps+=("$cmd")
         fi
     done
 
-    if [[ ${#missing_deps[@]} -gt 0 ]]; then
-        echo "ERROR: Missing required dependencies: ${missing_deps[*]}" >&2
-        echo "" >&2
-        echo "Please install them first:" >&2
-
-        # Detect OS and show install command
-        if [[ -f /etc/os-release ]]; then
-            . /etc/os-release
-            case "$ID" in
-                ubuntu|debian)
-                    echo "  sudo apt-get install -y ${missing_deps[*]}" >&2
-                    ;;
-                centos|rhel|rocky|almalinux|fedora)
-                    echo "  sudo dnf install -y ${missing_deps[*]}" >&2
-                    ;;
-            esac
-        fi
-
-        return 1
+    if [[ ${#missing_deps[@]} -eq 0 ]]; then
+        return 0
     fi
 
-    return 0
+    echo "WARNING: Missing required dependencies: ${missing_deps[*]}" >&2
+    echo "" >&2
+
+    # Detect OS
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+
+        echo "Do you want to install missing dependencies automatically? [Y/n]" >&2
+        read -r response
+        response=${response:-Y}
+
+        if [[ ! "$response" =~ ^[Yy]$ ]]; then
+            echo "Installation cancelled. Please install: ${missing_deps[*]}" >&2
+            return 1
+        fi
+
+        echo "Installing dependencies..." >&2
+
+        case "$ID" in
+            ubuntu|debian)
+                apt-get update -qq || true
+                apt-get install -y "${missing_deps[@]}" || return 1
+                ;;
+            centos|rhel|rocky|almalinux|fedora)
+                if command -v dnf &>/dev/null; then
+                    dnf install -y "${missing_deps[@]}" || return 1
+                else
+                    yum install -y "${missing_deps[@]}" || return 1
+                fi
+                ;;
+            *)
+                echo "ERROR: Unsupported OS: $ID" >&2
+                echo "Please install manually: ${missing_deps[*]}" >&2
+                return 1
+                ;;
+        esac
+
+        echo "Dependencies installed successfully" >&2
+        return 0
+    else
+        echo "ERROR: Cannot detect OS" >&2
+        echo "Please install manually: ${missing_deps[*]}" >&2
+        return 1
+    fi
 }
 
 # Run bootstrap check
-check_bootstrap_dependencies || exit 1
+check_and_install_dependencies || exit 1
 
 # =============================================================================
 # MODULE LOADING (STRICT ORDER PER ARCHITECTURE)
