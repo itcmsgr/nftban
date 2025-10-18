@@ -5,8 +5,14 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# Needed to create commits on a branch and open a PR
 permissions:
-  contents: write  # allow the GITHUB_TOKEN to push commits
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   generate-sha256:
@@ -32,25 +38,39 @@ jobs:
           git ls-files -z ':!:SHA256SUMS.txt' \
             | xargs -0 sha256sum \
             | sort -k2 > "$tmpfile"
-          if [[ ! -f SHA256SUMS.txt ]]; then
-            mv "$tmpfile" SHA256SUMS.txt
-          else
-            if ! cmp -s "$tmpfile" SHA256SUMS.txt; then
-              mv "$tmpfile" SHA256SUMS.txt
-            else
-              rm -f "$tmpfile"
-            fi
-          fi
 
-      - name: Commit and push if changed
+          if [[ ! -f SHA256SUMS.txt ]] || ! cmp -s "$tmpfile" SHA256SUMS.txt; then
+            mv "$tmpfile" SHA256SUMS.txt
+            echo "updated=true" >> "$GITHUB_OUTPUT"
+          else
+            rm -f "$tmpfile"
+            echo "updated=false" >> "$GITHUB_OUTPUT"
+          fi
+        id: gen
+
+      - name: Commit changes to a PR branch
+        if: steps.gen.outputs.updated == 'true'
         shell: bash
         run: |
           set -euo pipefail
-          if ! git diff --quiet -- SHA256SUMS.txt; then
-            git add SHA256SUMS.txt
-            git commit -m "chore: auto-update SHA256SUMS.txt"
-            git pull --rebase origin main
-            git push origin HEAD:main
-          else
-            echo "SHA256SUMS.txt is up to date; skipping commit."
-          fi
+          git checkout -B chore/update-sha256sums
+          git add SHA256SUMS.txt
+          git commit -m "chore: update SHA256SUMS.txt (automated)"
+      
+      - name: Create Pull Request
+        if: steps.gen.outputs.updated == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          branch: chore/update-sha256sums
+          base: main
+          title: "chore: update SHA256SUMS.txt"
+          commit-message: "chore: update SHA256SUMS.txt (automated)"
+          body: |
+            This PR updates `SHA256SUMS.txt` automatically.
+
+            - Generated from tracked files (`git ls-files`)
+            - Excludes the sums file itself
+            - Sorted for stability
+            - Deletions/renames are reflected automatically
+          labels: automation, security
+          delete-branch: true
