@@ -1,6 +1,6 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-18 19:24:58 UTC
-# Commit: bf4dfc9 (bf4dfc9bb371655e7054fbe40b886bd09e6589bb)
+# Generated: 2025-10-18 19:40:32 UTC
+# Commit: c740592 (c740592e8524b3aa4d829f6dad58520aa0b40ed5)
 # Branch: main
 # Total files: 101
 #
@@ -67,7 +67,7 @@ e8365e8593c972a7f46c12f40d039fd4f07f2d565e12e794744bba51504abeb3  lib/nftban-val
 533fae065aa1915ee64550d92e54f5702853f9cd7ff41e8a6f1d854eef6aa7a1  lib/nftban_autorebuild_module.sh
 ec8db86ca855b4c361b4c52968e8d51b2d597e3472ad21677074a0721bb24114  lib/nftban_blacklist_module.sh
 e5163ee1b686b8b6379e2d9dc255fde9a561a05ba118c96524a6ba2d5aa3c88d  lib/nftban_cloudflare_module.sh
-27bc601747697ac484ed80b2bae80ab2996e3a27dd0850222525252200e8ad20  lib/nftban_core.sh
+49f5b1f17baacf26c72978b0ebdd552d3111caec0db3bfdb9ea45fa7f6116b0a  lib/nftban_core.sh
 7f3d94ce6870daa9b31a41e6b6318c232d8e074d5e92342e3491c5ce158dc12c  lib/nftban_ddos_module.sh
 6900cec69ee41b3d3ce15439897f5c9b80ece8874bfc54b8dbbbc28d67e9947e  lib/nftban_fail2ban_module.sh
 cfb3909855ebc57be575be4e0b5af7c65e89fefa6ec1a02138e5e6eacf03c322  lib/nftban_feeds_lib.sh
