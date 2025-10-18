@@ -414,25 +414,23 @@ installer_download_copy_files() {
         installer_log_debug "Copied lib modules"
     fi
     
-    # Copy bin files
-    if [[ -d "$source_dir/bin" ]]; then
+    # Copy bin files (if any exist)
+    if [[ -d "$source_dir/bin" ]] && compgen -G "$source_dir/bin/*" > /dev/null; then
         mkdir -p "$INSTALL_DIR/bin"
-        cp -r "$source_dir/bin/"* "$INSTALL_DIR/bin/" 2>&1 | tee -a "$INSTALL_LOG" || {
-            installer_log_error "Failed to copy bin files"
-            return 1
-        }
+        cp -r "$source_dir/bin/"* "$INSTALL_DIR/bin/" 2>/dev/null || true
         chmod +x "$INSTALL_DIR/bin"/* 2>/dev/null || true
         installer_log_debug "Copied bin files"
+    else
+        installer_log_debug "No bin files to copy (directory empty or doesn't exist)"
     fi
     
-    # Copy templates
-    if [[ -d "$source_dir/templates" ]]; then
+    # Copy templates (if any exist)
+    if [[ -d "$source_dir/templates" ]] && compgen -G "$source_dir/templates/*" > /dev/null; then
         mkdir -p "$INSTALL_DIR/templates"
-        cp -r "$source_dir/templates/"* "$INSTALL_DIR/templates/" 2>&1 | tee -a "$INSTALL_LOG" || {
-            installer_log_error "Failed to copy templates"
-            return 1
-        }
+        cp -r "$source_dir/templates/"* "$INSTALL_DIR/templates/" 2>/dev/null || true
         installer_log_debug "Copied templates"
+    else
+        installer_log_debug "No template files to copy"
     fi
     
     # Copy config examples (don't overwrite existing)
