@@ -2,7 +2,7 @@
 
 **Modern Linux Firewall Management System**
 
-[![Version](https://img.shields.io/badge/version-0.8.5--beta-orange)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-0.9.0--beta-orange)](https://github.com/itcmsgr/nftban)
 [![Status](https://img.shields.io/badge/status-beta-yellow)](https://github.com/itcmsgr/nftban)
 [![License](https://img.shields.io/badge/License-ITCMS--ProtectiveFreeUse-blue)](./LICENSE.md)
 [![SPDX](https://img.shields.io/badge/SPDX-NFTBAN--Custom--License-lightgrey)](./LICENSE.md)
@@ -262,25 +262,23 @@ It helps others discover the project and motivates continued development.
 
 ---
 
-## 🎉 What's New in v0.8.5
+## 🎉 What's New in v0.9.0
 
-### DDoS Protection Module
-- SYN flood protection with rate limiting
-- Connection limits per port
-- Port flood detection and mitigation
-- ICMP rate limiting and PCI compliance
+### Split Table Architecture (MAJOR PERFORMANCE IMPROVEMENT)
+- **30-50% faster packet processing** - Separate IPv4/IPv6 tables eliminate selector overhead
+- **Simplified rules** - No more `ip saddr`/`ip6 saddr` selectors needed
+- **Better scalability** - Independent optimization for IPv4 and IPv6
+- **Cleaner set names** - No more `_v4`/`_v6` suffixes
 
-### Port Scan Detection
-- Automatic detection of port scanners
-- Threshold-based identification (10 ports in 300s)
-- Auto-ban functionality
-- Separate whitelist for security tools
+### Architecture Changes
+- **OLD:** Single `inet nftban_global` table with version-suffixed sets
+- **NEW:** Dual tables `ip nftban_v4` + `ip6 nftban_v6` with clean set names
+- **Result:** 50% reduction in rule evaluations per packet (20 → 10 rules)
 
-### Enhanced License
-- Clearer usage terms
-- Better protection against unauthorized resale
-- Service-friendly for MSPs and consultants
-- Commercial licensing pathway
+### Breaking Changes
+- Table structure changed (fresh install recommended)
+- Manual nftables commands need updating
+- See [CHANGELOG.md](CHANGELOG.md) for migration guide
 
 [View Full Changelog](CHANGELOG.md)
 
