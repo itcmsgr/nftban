@@ -92,7 +92,7 @@ nftban_log_info() {
 nftban_log_debug() {
     local debug_enabled
     debug_enabled=$(nftban_get_config "DEBUG_ENABLED" "false")
-    [[ "$debug_enabled" == "true" ]] && nftban_log "DEBUG" "$*"
+    [[ "$debug_enabled" == "true" ]] && nftban_log "DEBUG" "$*" || true
 }
 
 # Special log for ban events
@@ -176,8 +176,8 @@ nftban_set_config() {
 }
 
 nftban_load_config() {
-    [[ -f "$NFTBAN_MAIN_CONFIG" ]] && source "$NFTBAN_MAIN_CONFIG"
-    [[ -f "$NFTBAN_LOCAL_CONFIG" ]] && source "$NFTBAN_LOCAL_CONFIG"
+    [[ -f "$NFTBAN_MAIN_CONFIG" ]] && source "$NFTBAN_MAIN_CONFIG" || true
+    [[ -f "$NFTBAN_LOCAL_CONFIG" ]] && source "$NFTBAN_LOCAL_CONFIG" || true
 }
 
 # =============================================================================
