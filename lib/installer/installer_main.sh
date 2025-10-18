@@ -71,14 +71,18 @@ check_and_install_dependencies() {
     fi
 }
 
+# =============================================================================
+# SET DIRECTORIES BEFORE LOADING MODULES
+# =============================================================================
+readonly INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly INSTALL_DIR="${INSTALLER_DIR%/lib/installer}"
+
 # Run bootstrap check
 check_and_install_dependencies || exit 1
 
 # =============================================================================
 # MODULE LOADING (STRICT ORDER PER ARCHITECTURE)
 # =============================================================================
-readonly INSTALLER_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly INSTALL_DIR="${INSTALLER_DIR%/lib/installer}"
 
 # Load all installer modules in correct order
 # Order matters: core must be first, others follow dependencies
