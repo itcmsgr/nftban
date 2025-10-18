@@ -439,7 +439,7 @@ cmd_blacklist() {
         ban)
             nftban_check_root || exit 1
             [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban blacklist ban <IP> [timeout] [reason]"; exit 1; }
-            nftban_blacklist_ban_ip "$1" "${2:-3600}" "${3:-Manual ban}"
+            nftban_blacklist_ban_ip "$1" "${3:-Manual ban}" "${2:-3600}"
             ;;
         unban)
             nftban_check_root || exit 1
