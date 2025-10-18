@@ -1,6 +1,6 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-18 19:01:25 UTC
-# Commit: 40bca5d (40bca5da0f216d7e8dd38002a55f1735f85245cc)
+# Generated: 2025-10-18 19:02:10 UTC
+# Commit: e3b6dba (e3b6dba57e27c9db1d257bed64c8555f254f5542)
 # Branch: main
 # Total files: 101
 #
@@ -28,7 +28,7 @@ fb5cc548ccc836d15ea1093b55a1c62fc6718c633adedc16a5fa44a6b73ff72d  README.md
 85f5504b393c8da05e7185f6a6f12d1832279208a041b77a808aa381eb99a21f  STATUS.md
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  backups/.gitkeep
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  bin/.gitkeep
-6780d3d682ff3b4f796e459c13c32dceaf20d08b0e6cd168ff10ea165de79f48  bootstrap.sh
+40a5890902d221212cca066edc49281307235714dfe742db477373332fdcd4bc  bootstrap.sh
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  config/.gitkeep
 66962046df9e2100663f5395906247b7e6ecb32805442eb7d84d39d1a778a975  config/ddos_protection.conf
 e403c5671f04f37e6967769f1f3fbb2e1fea11e47ad844b488cea469f7d71042  config/nftban.conf
