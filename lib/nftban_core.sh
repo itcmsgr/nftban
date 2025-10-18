@@ -2,8 +2,10 @@
 
 # =============================================================================
 # NFTBan Core Module - Enhanced with Security Safeguards
-# Version: 2.2.0
+# Version: 3.0.0 - v0.9.0 SPLIT TABLE ARCHITECTURE
 # Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # =============================================================================
 
 set -euo pipefail
@@ -36,7 +38,14 @@ readonly NFTBAN_EMAIL_LOG="${NFTBAN_LOG_DIR}/email-notifications.log"
 # Data files
 readonly NFTBAN_RATE_LIMIT_TRACKER="${NFTBAN_DATA_DIR}/rate-limit-tracker.tmp"
 
-# nftables
+# nftables - v0.9.0 SPLIT TABLE ARCHITECTURE
+# New split table constants (v0.9.0+)
+readonly NFTBAN_NFT_TABLE_V4="${NFTBAN_NFT_TABLE_V4:-nftban_v4}"
+readonly NFTBAN_NFT_TABLE_V6="${NFTBAN_NFT_TABLE_V6:-nftban_v6}"
+readonly NFTBAN_NFT_FAMILY_V4="${NFTBAN_NFT_FAMILY_V4:-ip}"
+readonly NFTBAN_NFT_FAMILY_V6="${NFTBAN_NFT_FAMILY_V6:-ip6}"
+
+# Legacy constants (for backward compatibility checks only - DO NOT USE)
 readonly NFTBAN_NFT_TABLE="${NFTBAN_NFT_TABLE:-nftban_global}"
 readonly NFTBAN_NFT_FAMILY="${NFTBAN_NFT_FAMILY:-inet}"
 
@@ -291,20 +300,29 @@ nftban_find_ip_locations() {
     local ver
     ver=$(nftban_detect_ip_version "$ip")
     
-    # Check nftables sets
+    # Check nftables sets (v0.9.0: split tables, no _v suffix)
     if nftban_check_nftables_table; then
+        local table_family table_name
+        if [[ "$ver" == "4" ]]; then
+            table_family="$NFTBAN_NFT_FAMILY_V4"
+            table_name="$NFTBAN_NFT_TABLE_V4"
+        else
+            table_family="$NFTBAN_NFT_FAMILY_V6"
+            table_name="$NFTBAN_NFT_TABLE_V6"
+        fi
+
         local sets=(
-            "whitelist_v${ver}"
-            "temp_ban_v${ver}"
-            "user_blacklist_v${ver}"
-            "system_blacklist_v${ver}"
-            "feeds_v${ver}"
+            "whitelist"
+            "temp_ban"
+            "user_blacklist"
+            "system_blacklist"
+            "feeds"
         )
-        
+
         for set_name in "${sets[@]}"; do
-            if nft list set "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" "$set_name" 2>/dev/null | \
+            if nft list set "$table_family" "$table_name" "$set_name" 2>/dev/null | \
                grep -qE "(${ip}[[:space:],}]|${ip}$)"; then
-                locations+=("nftables:${set_name}")
+                locations+=("nftables:${set_name}_v${ver}")
             fi
         done
     fi
@@ -587,7 +605,9 @@ nftban_check_root() {
 }
 
 nftban_check_nftables_table() {
-    nft list table "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" &>/dev/null
+    # v0.9.0: Check if either IPv4 or IPv6 table exists
+    nft list table "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" &>/dev/null ||
+    nft list table "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" &>/dev/null
 }
 
 nftban_atomic_write() {
@@ -774,7 +794,7 @@ nftban_core_init() {
     nftban_init_directories
     nftban_load_config
     nftban_load_modules
-    nftban_log_debug "Core module initialized (v2.2.0 - Enhanced Security)"
+    nftban_log_debug "Core module initialized (v3.0.0 - Split Table Architecture)"
 }
 
 # =============================================================================
@@ -813,4 +833,4 @@ export -f nftban_get_public_ip
 export -f nftban_get_current_user_ip
 export -f nftban_load_modules
 
-nftban_log_debug "NFTBan Core Module loaded successfully (Enhanced v2.2.0)"
+nftban_log_debug "NFTBan Core Module loaded successfully (v3.0.0 - Split Tables)"

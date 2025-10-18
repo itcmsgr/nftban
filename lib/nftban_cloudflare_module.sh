@@ -2,11 +2,12 @@
 
 # =============================================================================
 # NFTBan Cloudflare Module
-# Version: 1.0.0
+# Version: 2.0.0 - v0.9.0 SPLIT TABLE ARCHITECTURE
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
 # Cloudflare IP ranges management and whitelist integration
+# v0.9.0 UPDATE: Uses split ip/ip6 tables for better performance
 # =============================================================================
 
 # Prevent double-loading
@@ -178,29 +179,29 @@ nftban_cloudflare_apply_to_nftables() {
     local added_v4=0
     local added_v6=0
     
-    # Add IPv4 ranges
+    # Add IPv4 ranges (v0.9.0: split tables)
     if [[ -f "$NFTBAN_CF_IPV4_CACHE" ]]; then
         while IFS= read -r cidr; do
             [[ -z "$cidr" ]] && continue
-            
-            if nft add element inet "$NFTBAN_NFT_TABLE" "whitelist_v4" "{ $cidr }" 2>/dev/null; then
+
+            if nft add element "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" "whitelist" "{ $cidr }" 2>/dev/null; then
                 ((added_v4++))
             fi
         done < "$NFTBAN_CF_IPV4_CACHE"
-        
+
         nftban_log_success "  Added $added_v4 IPv4 ranges to nftables"
     fi
-    
-    # Add IPv6 ranges
+
+    # Add IPv6 ranges (v0.9.0: split tables)
     if [[ -f "$NFTBAN_CF_IPV6_CACHE" ]]; then
         while IFS= read -r cidr; do
             [[ -z "$cidr" ]] && continue
-            
-            if nft add element inet "$NFTBAN_NFT_TABLE" "whitelist_v6" "{ $cidr }" 2>/dev/null; then
+
+            if nft add element "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" "whitelist" "{ $cidr }" 2>/dev/null; then
                 ((added_v6++))
             fi
         done < "$NFTBAN_CF_IPV6_CACHE"
-        
+
         nftban_log_success "  Added $added_v6 IPv6 ranges to nftables"
     fi
     
@@ -224,23 +225,23 @@ nftban_cloudflare_remove_from_nftables() {
     local removed_v4=0
     local removed_v6=0
     
-    # Remove IPv4 ranges
+    # Remove IPv4 ranges (v0.9.0: split tables)
     if [[ -f "$NFTBAN_CF_IPV4_CACHE" ]]; then
         while IFS= read -r cidr; do
             [[ -z "$cidr" ]] && continue
-            
-            if nft delete element inet "$NFTBAN_NFT_TABLE" "whitelist_v4" "{ $cidr }" 2>/dev/null; then
+
+            if nft delete element "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" "whitelist" "{ $cidr }" 2>/dev/null; then
                 ((removed_v4++))
             fi
         done < "$NFTBAN_CF_IPV4_CACHE"
     fi
-    
-    # Remove IPv6 ranges
+
+    # Remove IPv6 ranges (v0.9.0: split tables)
     if [[ -f "$NFTBAN_CF_IPV6_CACHE" ]]; then
         while IFS= read -r cidr; do
             [[ -z "$cidr" ]] && continue
-            
-            if nft delete element inet "$NFTBAN_NFT_TABLE" "whitelist_v6" "{ $cidr }" 2>/dev/null; then
+
+            if nft delete element "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" "whitelist" "{ $cidr }" 2>/dev/null; then
                 ((removed_v6++))
             fi
         done < "$NFTBAN_CF_IPV6_CACHE"

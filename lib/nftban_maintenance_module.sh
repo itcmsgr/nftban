@@ -143,9 +143,17 @@ nftban_maintenance_show_panel() {
 
     local temp_bans=0 perm_bans=0 whitelisted=0
     if command -v nft &>/dev/null && nftban_check_nftables_table 2>/dev/null; then
-        temp_bans=$(nft list set inet nftban_global temp_ban_v4 2>/dev/null | grep -c "elements" || echo "0")
-        perm_bans=$(nft list set inet nftban_global perm_ban_v4 2>/dev/null | grep -c "elements" || echo "0")
-        whitelisted=$(nft list set inet nftban_global whitelist_v4 2>/dev/null | grep -c "elements" || echo "0")
+        # v0.9.0: Count from both IPv4 and IPv6 tables
+        local temp_v4 temp_v6 perm_v4 perm_v6 white_v4 white_v6
+        temp_v4=$(nft list set "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" temp_ban 2>/dev/null | grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9.]\+' | wc -l || echo "0")
+        temp_v6=$(nft list set "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" temp_ban 2>/dev/null | grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F:]\+' | wc -l || echo "0")
+        perm_v4=$(nft list set "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" user_blacklist 2>/dev/null | grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9.]\+' | wc -l || echo "0")
+        perm_v6=$(nft list set "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" user_blacklist 2>/dev/null | grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F:]\+' | wc -l || echo "0")
+        white_v4=$(nft list set "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" whitelist 2>/dev/null | grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9.]\+' | wc -l || echo "0")
+        white_v6=$(nft list set "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" whitelist 2>/dev/null | grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F:]\+' | wc -l || echo "0")
+        temp_bans=$((temp_v4 + temp_v6))
+        perm_bans=$((perm_v4 + perm_v6))
+        whitelisted=$((white_v4 + white_v6))
     fi
 
     echo "  Temporary Bans:     $temp_bans"
@@ -476,9 +484,10 @@ nftban_maintenance_create_backup() {
         cp -r "${NFTBAN_DATA_DIR}/geoip" "${temp_dir}/"
     fi
     
-    # Export nftables rules
+    # Export nftables rules (v0.9.0: backup both tables)
     if nftban_nftables_check_table; then
-        nft list table "$NFTBAN_NFT_FAMILY" "$NFTBAN_NFT_TABLE" > "${temp_dir}/nftables-backup.nft"
+        nft list table "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" > "${temp_dir}/nftables-backup-v4.nft" 2>/dev/null || true
+        nft list table "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" > "${temp_dir}/nftables-backup-v6.nft" 2>/dev/null || true
     fi
     
     # Create tarball

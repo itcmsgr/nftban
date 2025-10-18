@@ -2,11 +2,12 @@
 
 # =============================================================================
 # NFTBan GEO Blocking Module
-# Version: 1.0.0
+# Version: 2.0.0 - v0.9.0 SPLIT TABLE ARCHITECTURE
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
 # Country-level IP blocking using GeoIP databases
+# v0.9.0 UPDATE: Uses split ip/ip6 tables for better performance
 # =============================================================================
 
 # Prevent double-loading
@@ -256,16 +257,16 @@ nftban_geo_block_country() {
         if [[ -f "$ipv4_file" ]] && [[ -s "$ipv4_file" ]]; then
             nftban_log_info "  Adding IPv4 ranges to nftables..."
             
-            # Create set if doesn't exist
-            nft add set inet "$NFTBAN_NFT_TABLE" "geo_block_v4_${country_code}" \
-                "{ type ipv4_addr; flags interval; comment \"GEO block ${country_code} IPv4\"; }" 2>/dev/null || true
-            
+            # Create set if doesn't exist (v0.9.0: split tables, no _v4 suffix)
+            nft add set "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" "geo_block_${country_code}" \
+                "{ type ipv4_addr; flags interval; comment \"GEO block ${country_code}\"; }" 2>/dev/null || true
+
             # Flush existing
-            nft flush set inet "$NFTBAN_NFT_TABLE" "geo_block_v4_${country_code}" 2>/dev/null
-            
+            nft flush set "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" "geo_block_${country_code}" 2>/dev/null
+
             # Add in batches
             local batch_file="${NFTBAN_GEO_SETS_DIR}/${country_code}-ipv4.nft"
-            echo "add element inet $NFTBAN_NFT_TABLE geo_block_v4_${country_code} {" > "$batch_file"
+            echo "add element ${NFTBAN_NFT_FAMILY_V4:-ip} ${NFTBAN_NFT_TABLE_V4:-nftban_v4} geo_block_${country_code} {" > "$batch_file"
             
             local count=0
             while IFS= read -r cidr; do
@@ -290,16 +291,16 @@ nftban_geo_block_country() {
         if [[ -f "$ipv6_file" ]] && [[ -s "$ipv6_file" ]]; then
             nftban_log_info "  Adding IPv6 ranges to nftables..."
             
-            # Create set if doesn't exist
-            nft add set inet "$NFTBAN_NFT_TABLE" "geo_block_v6_${country_code}" \
-                "{ type ipv6_addr; flags interval; comment \"GEO block ${country_code} IPv6\"; }" 2>/dev/null || true
-            
+            # Create set if doesn't exist (v0.9.0: split tables, no _v6 suffix)
+            nft add set "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" "geo_block_${country_code}" \
+                "{ type ipv6_addr; flags interval; comment \"GEO block ${country_code}\"; }" 2>/dev/null || true
+
             # Flush existing
-            nft flush set inet "$NFTBAN_NFT_TABLE" "geo_block_v6_${country_code}" 2>/dev/null
-            
+            nft flush set "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" "geo_block_${country_code}" 2>/dev/null
+
             # Add in batches
             local batch_file="${NFTBAN_GEO_SETS_DIR}/${country_code}-ipv6.nft"
-            echo "add element inet $NFTBAN_NFT_TABLE geo_block_v6_${country_code} {" > "$batch_file"
+            echo "add element ${NFTBAN_NFT_FAMILY_V6:-ip6} ${NFTBAN_NFT_TABLE_V6:-nftban_v6} geo_block_${country_code} {" > "$batch_file"
             
             local count=0
             while IFS= read -r cidr; do
@@ -347,18 +348,18 @@ nftban_geo_unblock_country() {
     
     local removed=false
     
-    # Remove IPv4 set
+    # Remove IPv4 set (v0.9.0: split tables, no _v4 suffix)
     if [[ "$ip_version" == "4" ]] || [[ "$ip_version" == "both" ]]; then
-        if nft delete set inet "$NFTBAN_NFT_TABLE" "geo_block_v4_${country_code}" 2>/dev/null; then
+        if nft delete set "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" "geo_block_${country_code}" 2>/dev/null; then
             nftban_log_success "  Removed IPv4 GEO set"
             nftban_geo_log "UNBLOCK" "$country_code" "4" "Set removed"
             removed=true
         fi
     fi
-    
-    # Remove IPv6 set
+
+    # Remove IPv6 set (v0.9.0: split tables, no _v6 suffix)
     if [[ "$ip_version" == "6" ]] || [[ "$ip_version" == "both" ]]; then
-        if nft delete set inet "$NFTBAN_NFT_TABLE" "geo_block_v6_${country_code}" 2>/dev/null; then
+        if nft delete set "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" "geo_block_${country_code}" 2>/dev/null; then
             nftban_log_success "  Removed IPv6 GEO set"
             nftban_geo_log "UNBLOCK" "$country_code" "6" "Set removed"
             removed=true
@@ -401,12 +402,12 @@ nftban_geo_list_blocked() {
         ((count++))
         local country=$(echo "$line" | awk '{print $1}')
         
-        # Check if active in nftables
+        # Check if active in nftables (v0.9.0: split tables, no _v4/_v6 suffix)
         local v4_active=false
         local v6_active=false
-        
-        nft list set inet "$NFTBAN_NFT_TABLE" "geo_block_v4_${country}" &>/dev/null && v4_active=true
-        nft list set inet "$NFTBAN_NFT_TABLE" "geo_block_v6_${country}" &>/dev/null && v6_active=true
+
+        nft list set "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" "geo_block_${country}" &>/dev/null && v4_active=true
+        nft list set "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" "geo_block_${country}" &>/dev/null && v6_active=true
         
         printf "%3d. %-4s" "$count" "$country"
         
@@ -426,8 +427,13 @@ nftban_geo_list_blocked() {
     echo ""
     echo "Active nftables GEO sets:"
     if nftban_check_nftables_table; then
-        nft list sets inet "$NFTBAN_NFT_TABLE" 2>/dev/null | grep "geo_block" | while read -r line; do
-            echo "  $line"
+        echo "  IPv4 table (${NFTBAN_NFT_FAMILY_V4:-ip} ${NFTBAN_NFT_TABLE_V4:-nftban_v4}):"
+        nft list sets "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" 2>/dev/null | grep "geo_block" | while read -r line; do
+            echo "    $line"
+        done
+        echo "  IPv6 table (${NFTBAN_NFT_FAMILY_V6:-ip6} ${NFTBAN_NFT_TABLE_V6:-nftban_v6}):"
+        nft list sets "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" 2>/dev/null | grep "geo_block" | while read -r line; do
+            echo "    $line"
         done
     fi
 }
@@ -501,12 +507,21 @@ nftban_geo_check_ip() {
         return 1
     fi
     
-    # Check all GEO sets
-    local geo_sets=$(nft list sets inet "$NFTBAN_NFT_TABLE" 2>/dev/null | grep "geo_block_v${ver}_" | awk '{print $2}')
-    
+    # Check all GEO sets (v0.9.0: split tables, no _v4/_v6 suffix)
+    local table_family table_name
+    if [[ "$ver" == "4" ]]; then
+        table_family="${NFTBAN_NFT_FAMILY_V4:-ip}"
+        table_name="${NFTBAN_NFT_TABLE_V4:-nftban_v4}"
+    else
+        table_family="${NFTBAN_NFT_FAMILY_V6:-ip6}"
+        table_name="${NFTBAN_NFT_TABLE_V6:-nftban_v6}"
+    fi
+
+    local geo_sets=$(nft list sets "$table_family" "$table_name" 2>/dev/null | grep "geo_block_" | awk '{print $2}')
+
     for set in $geo_sets; do
-        if nft list set inet "$NFTBAN_NFT_TABLE" "$set" 2>/dev/null | grep -q "$ip"; then
-            local country=$(echo "$set" | sed 's/geo_block_v[46]_//')
+        if nft list set "$table_family" "$table_name" "$set" 2>/dev/null | grep -q "$ip"; then
+            local country=$(echo "$set" | sed 's/geo_block_//')
             echo "IP $ip belongs to GEO blocked country: $country"
             return 0
         fi
