@@ -31,24 +31,54 @@ jobs:
 
           echo "Generating SHA256SUMS.txt for all tracked files..."
 
+          # Gather metadata
+          TIMESTAMP=$(date -u '+%Y-%m-%d %H:%M:%S UTC')
+          COMMIT_HASH=$(git rev-parse HEAD)
+          COMMIT_SHORT=$(git rev-parse --short HEAD)
+          BRANCH=$(git rev-parse --abbrev-ref HEAD)
+
           # Generate checksums for all tracked files except SHA256SUMS.txt itself
           # Format: <hash>  <filepath> (two spaces, sorted by filepath)
-          while IFS= read -r file; do
-            sha256sum "$file"
-          done < <(git ls-files ':!:SHA256SUMS.txt') | sort -k2 > SHA256SUMS.txt.tmp
+          {
+            echo "# nftban SHA256 Checksums"
+            echo "# Generated: $TIMESTAMP"
+            echo "# Commit: $COMMIT_SHORT ($COMMIT_HASH)"
+            echo "# Branch: $BRANCH"
+            echo "#"
+            echo "# This file contains SHA256 checksums for all tracked files in the repository."
+            echo "# Use 'sha256sum -c SHA256SUMS.txt' to verify file integrity (ignores comment lines)."
+            echo "# Format: <hash>  <filepath> (standard SHA256 format, two spaces)"
+            echo "#"
 
-          # Check if file changed
-          if [[ -f SHA256SUMS.txt ]] && cmp -s SHA256SUMS.txt.tmp SHA256SUMS.txt; then
-            echo "No changes to SHA256SUMS.txt"
+            while IFS= read -r file; do
+              sha256sum "$file"
+            done < <(git ls-files ':!:SHA256SUMS.txt') | sort -k2
+          } > SHA256SUMS.txt.tmp
+
+          # Count files (excluding header lines)
+          file_count=$(grep -v '^#' SHA256SUMS.txt.tmp | wc -l)
+
+          # Add file count to header (insert before the blank line)
+          sed -i "4a# Total files: $file_count" SHA256SUMS.txt.tmp
+
+          # Check if file changed (compare content only, ignoring timestamp changes)
+          content_changed=true
+          if [[ -f SHA256SUMS.txt ]]; then
+            # Compare only the checksum lines (not the header with timestamps)
+            if diff -q <(grep -v '^#' SHA256SUMS.txt.tmp) <(grep -v '^#' SHA256SUMS.txt) >/dev/null 2>&1; then
+              echo "No changes to file checksums (only metadata updated)"
+              content_changed=false
+            fi
+          fi
+
+          if [[ "$content_changed" == "false" ]]; then
+            echo "No file changes detected, skipping commit"
             echo "changed=false" >> "$GITHUB_OUTPUT"
             rm -f SHA256SUMS.txt.tmp
           else
             mv SHA256SUMS.txt.tmp SHA256SUMS.txt
             echo "SHA256SUMS.txt updated"
             echo "changed=true" >> "$GITHUB_OUTPUT"
-
-            # Show stats
-            file_count=$(wc -l < SHA256SUMS.txt)
             echo "Total files tracked: $file_count"
           fi
 

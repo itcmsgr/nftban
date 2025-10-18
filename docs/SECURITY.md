@@ -2143,23 +2143,34 @@ sudo bash lib/installer/installer_main.sh install
 
 ### SHA256SUMS.txt Format
 
-The checksum file follows standard SHA256 format:
+The checksum file follows standard SHA256 format with metadata header:
 
 ```
-<sha256_hash>  <filepath>
+# nftban SHA256 Checksums
+# Generated: 2025-01-18 12:29:45 UTC
+# Commit: 5d8e046 (5d8e046abc123...)
+# Branch: main
+# Total files: 100
+#
+# This file contains SHA256 checksums for all tracked files in the repository.
+# Use 'sha256sum -c SHA256SUMS.txt' to verify file integrity (ignores comment lines).
+# Format: <hash>  <filepath> (standard SHA256 format, two spaces)
+#
 
-Example:
 27bc601747697ac484ed80b2bae80ab2996e3a27dd0850222525252200e8ad20  lib/nftban_core.sh
 117c5cc2fe48c0b61b5cff2873e953d2a6fd699581c86b7caeaf686c0df31d9c  lib/nftban_safety_module.sh
 5814df1535b0402e296ab0d2cb7a010d12c4abca8bc4a1ebffae37d2ee10a98e  lib/nftban_whitelist_module.sh
+...
 ```
 
 **Key features:**
-- Two spaces between hash and filepath (standard format)
-- Sorted alphabetically by filepath
-- Includes all tracked files except SHA256SUMS.txt itself
-- Automatically updated on every push to main
-- Deletions/additions automatically reflected
+- **Header metadata** - Shows generation timestamp, commit hash, branch, and file count
+- **Standard SHA256 format** - Two spaces between hash and filepath (compatible with `sha256sum -c`)
+- **Comment lines** - Header lines start with `#` and are ignored by verification tools
+- **Sorted alphabetically** - Files sorted by filepath for stability
+- **Comprehensive coverage** - Includes all tracked files except SHA256SUMS.txt itself
+- **Automatic updates** - Regenerated on every push to main
+- **Change detection** - Only commits when file checksums change (not just timestamp)
 
 ### Security Best Practices
 
