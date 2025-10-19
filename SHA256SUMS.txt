@@ -1,8 +1,8 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-19 13:32:25 UTC
-# Commit: 2807074 (28070743972475f3745c12011f37bffddda0839c)
+# Generated: 2025-10-19 13:35:35 UTC
+# Commit: 640e148 (640e14832cc2b1cec51df8c0775eecbbd6b226d5)
 # Branch: main
-# Total files: 104
+# Total files: 100
 #
 # This file contains SHA256 checksums for all tracked files in the repository.
 # Use 'sha256sum -c SHA256SUMS.txt' to verify file integrity (ignores comment lines).
@@ -20,14 +20,10 @@ db11b6821157aa72ce63a913f98136845a64d382dae876b3d78eeb387486d897  .github/ISSUE_
 50e2b8bdb04f3372f35bbc75c256982742c948b7c757604f281b18224ae6e19c  .github/workflows/anthropic-workflow.yml
 c62cf13c493890d2d06140141feca5795f68af68960a852457aee7db4afe4110  .github/workflows/generate-sha256.yml
 04a404c03bda0d0ee8ade9917c3af71fee7e772106305dcb39af849cc1e03c6b  .github/workflows/health.yml
-7b53d951b7c999fd6664230ff8a22bfaca02f956e59d390b6ab0bf714f62ab4b  .gitignore
+d91027310f39497b22f076c813d2be70531f52006d1ce3cc23bed358b3f57d76  .gitignore
 0dd2699139f70a122fd0aa23b5bb38a86db7ee822bf5cdc6798d0159ee1efd24  .version
 1fb7a460e4f673ce5a0448859534f38b9fbd22710f664e122d6c596e58ee3e21  CHANGELOG.md
 008dc8cdbf537ff28063664a5b31e5afcfef15cad3f17716ba5b371a1d51ada1  LICENSE.md
-9d496221185687b57a7cfe81d5de3777f2fcfeeb39f4b076b96f1046e4f254b9  LOCAL_REPO_FILES/CLAUDEAI_BCKP/BACKUP_AND_RECOVERY_GUIDE.md
-64425dad8485a4a8057170c117bee31a68554146eff8337e397a1129b7d86b3e  LOCAL_REPO_FILES/CLAUDEAI_BCKP/PROJECT_CONTEXT.md
-0d8a3418c3bdad7f53ca32ab3c2aa7364758579fd0ef28b4656690bb689edf5b  LOCAL_REPO_FILES/CLAUDEAI_BCKP/README.md
-92b806f2920d780ff674cb84bcb6aeab44eb57a9d65bbdabb10edbf8d8254a13  LOCAL_REPO_FILES/CLAUDEAI_BCKP/WORK_SESSION_LOG.md
 fb5cc548ccc836d15ea1093b55a1c62fc6718c633adedc16a5fa44a6b73ff72d  README.md
 85f5504b393c8da05e7185f6a6f12d1832279208a041b77a808aa381eb99a21f  STATUS.md
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  backups/.gitkeep
