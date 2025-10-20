@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Whitelist Module - Enhanced with Auto-Protection
-# Version: 2.0.0 - v0.9.0 SPLIT TABLE ARCHITECTURE
+# NFTBan Whitelist Module
+# Version: 0.9.0
+# Location: lib/nftban_whitelist_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
-# Whitelist management with comprehensive protection
-# v0.9.0 UPDATE: Uses split ip/ip6 tables for better performance
+# Whitelist management with auto-protection and split table architecture
 # =============================================================================
 
 # Prevent double-loading
@@ -146,24 +146,40 @@ EOF
 
 nftban_whitelist_add_server_ips() {
     nftban_log_info "Auto-protecting server interface IPs..."
-    
+
     local protected_count=0
-    
-    # Get ALL server interface IPs (IPv4 and IPv6)
+
+    # CRITICAL: ALWAYS protect localhost IPs first (BUG3 FIX)
+    if ! grep -q '^127\.0\.0\.1' "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
+        _nftban_whitelist_safe_append "$NFTBAN_WHITELIST_SYSTEM" "127.0.0.1  # Localhost IPv4"
+        nftban_log_success "Protected localhost IPv4"
+        ((protected_count++))
+    fi
+
+    if ! grep -q '^::1' "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
+        _nftban_whitelist_safe_append "$NFTBAN_WHITELIST_SYSTEM" "::1  # Localhost IPv6"
+        nftban_log_success "Protected localhost IPv6"
+        ((protected_count++))
+    fi
+
+    # Get ALL server interface IPs (IPv4 and IPv6) - INCLUDING localhost
     while IFS= read -r ip; do
         [[ -z "$ip" ]] && continue
-        
+
+        # Skip link-local IPv6 (fe80::) - they're not routable (BUG3.4 FIX)
+        [[ "$ip" =~ ^fe80: ]] && continue
+
         # Skip if already whitelisted
         if grep -qE "^${ip}([[:space:]]|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
             nftban_log_debug "Server IP already protected: $ip"
             continue
         fi
-        
+
         # Add to system whitelist (SECURITY: atomic write with flock)
         _nftban_whitelist_safe_append "$NFTBAN_WHITELIST_SYSTEM" "${ip}  # Server IP (auto-detected on $(date +'%Y-%m-%d'))"
         nftban_log_success "Protected server IP: $ip"
         ((protected_count++))
-    done < <(ip -o addr show 2>/dev/null | awk '/inet/ {gsub(/\/.*/, "", $4); print $4}' | grep -v '^127\.' | sort -u)
+    done < <(ip -o addr show 2>/dev/null | awk '/inet/ {gsub(/\/.*/, "", $4); print $4}' | sort -u)
     
     # Also get public IPs if possible
     local public_ipv4 public_ipv6

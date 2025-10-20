@@ -2,8 +2,8 @@
 # =============================================================================
 # NFTBan Validator - Panel Module
 # Version: 7.0.0
+# Location: lib/nftban-validator-panel.sh
 # Provides: Interactive TUI for module validation (whiptail/fzf/plain)
-# Location: /etc/nftban/lib/nftban-validator-panel.sh
 # Requires: jq, sha256sum; optional: whiptail or fzf
 # =============================================================================
 

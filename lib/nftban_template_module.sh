@@ -2,7 +2,8 @@
 
 # =============================================================================
 # NFTBan Template Processing Module
-# Version: 1.0.0
+# Version: 0.9.0
+# Location: lib/nftban_template_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr

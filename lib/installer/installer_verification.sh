@@ -1,5 +1,10 @@
 #!/usr/bin/env bash
 
+# Version: 0.9.0
+# Location: lib/installer/installer_verification.sh
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # =============================================================================
 # NFTBan Installer - Verification Module
 # Provides: Installation verification, repair, status reporting

@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Auto-Rebuild & File Watcher Module
-# Version: 1.0.0
+# NFTBan Auto-Rebuild Module
+# Version: 0.9.0
+# Location: lib/nftban_autorebuild_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
@@ -19,6 +20,7 @@ readonly NFTBAN_AUTOREBUILD_LOADED=1
 readonly NFTBAN_AUTOREBUILD_STATE_DIR="${NFTBAN_CACHE_DIR}/autorebuild"
 readonly NFTBAN_AUTOREBUILD_LOG="${NFTBAN_LOG_DIR}/autorebuild.log"
 readonly NFTBAN_AUTOREBUILD_CRON_SCRIPT="${NFTBAN_BASE_DIR}/scripts/autorebuild-cron.sh"
+readonly NFTBAN_AUTOREBUILD_LOCK_FILE="${NFTBAN_AUTOREBUILD_STATE_DIR}/.rebuild.lock"
 
 # Files to watch for changes
 readonly NFTBAN_WATCHED_FILES=(
@@ -110,47 +112,79 @@ nftban_autorebuild_check_changes() {
 # =============================================================================
 
 # Run rebuild if needed
+# SECURITY: Uses flock to prevent race conditions from concurrent executions
 nftban_autorebuild_run() {
     local force="${1:-false}"
-    
-    nftban_autorebuild_log "Auto-rebuild check started"
-    
+
+    # SECURITY: Acquire exclusive lock to prevent race conditions
+    # Multiple cron jobs or manual triggers could run simultaneously
+    # Use flock with non-blocking mode (-n) and timeout (-w 300 = 5 minutes max)
+    local lock_fd
+
+    # Open lock file for exclusive access
+    exec {lock_fd}>"$NFTBAN_AUTOREBUILD_LOCK_FILE" 2>/dev/null || {
+        nftban_autorebuild_log "ERROR: Cannot create lock file"
+        return 1
+    }
+
+    # Try to acquire lock (non-blocking with timeout)
+    if ! flock -n -w 300 "$lock_fd" 2>/dev/null; then
+        nftban_autorebuild_log "Another rebuild is already running (lock held), skipping"
+        exec {lock_fd}>&-  # Close lock fd
+        return 0
+    fi
+
+    # CRITICAL SECTION BEGINS (lock acquired)
+    nftban_autorebuild_log "Auto-rebuild check started (PID: $$, lock acquired)"
+
     # Check if auto-rebuild is enabled
     local enabled
     enabled=$(nftban_get_config "NFTBAN_AUTOREBUILD_ENABLED" "true")
-    
+
     if [[ "$enabled" != "true" && "$force" != "true" ]]; then
         nftban_autorebuild_log "Auto-rebuild disabled, skipping"
+        flock -u "$lock_fd"  # Release lock
+        exec {lock_fd}>&-    # Close lock fd
         return 0
     fi
-    
+
     # Check for changes (unless forced)
     if [[ "$force" != "true" ]]; then
         if ! nftban_autorebuild_check_changes; then
             nftban_autorebuild_log "No changes detected, skipping rebuild"
+            flock -u "$lock_fd"  # Release lock
+            exec {lock_fd}>&-    # Close lock fd
             return 0
         fi
     fi
-    
+
     nftban_autorebuild_log "Changes detected, rebuilding consolidated search file..."
-    
+
     # Rebuild consolidated search file
+    local rebuild_result=0
     if declare -f nftban_search_build_index &>/dev/null; then
         if nftban_search_build_index; then
             nftban_autorebuild_log "Rebuild completed successfully"
-            
-            # Save new state
+
+            # Save new state (atomic operation)
             nftban_autorebuild_save_state
-            
-            return 0
+
+            rebuild_result=0
         else
             nftban_autorebuild_log "ERROR: Rebuild failed"
-            return 1
+            rebuild_result=1
         fi
     else
         nftban_autorebuild_log "ERROR: Search module not loaded"
-        return 1
+        rebuild_result=1
     fi
+
+    # CRITICAL SECTION ENDS
+    # Release lock explicitly before exit
+    flock -u "$lock_fd"
+    exec {lock_fd}>&-
+
+    return $rebuild_result
 }
 
 # =============================================================================

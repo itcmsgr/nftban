@@ -2,7 +2,8 @@
 
 # =============================================================================
 # NFTBan GeoIP Lookup Integration Module
-# Version: 1.0.0
+# Version: 0.9.0
+# Location: lib/nftban_geoip_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
@@ -86,7 +87,7 @@ nftban_geoip_load_cache() {
 
 # Clear cache
 nftban_geoip_clear_cache() {
-    rm -rf "$NFTBAN_GEOIP_CACHE_DIR"/*
+    rm -rf "${NFTBAN_GEOIP_CACHE_DIR:?}"/*
     mkdir -p "$NFTBAN_GEOIP_CACHE_DIR"
     nftban_log_info "GeoIP cache cleared"
 }

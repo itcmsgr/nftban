@@ -3,6 +3,7 @@
 # =============================================================================
 # NFTBan Installer - Directory Structure Module
 # Version: 7.0.0
+# Location: lib/installer/installer_structure.sh
 # Provides: Directory creation, permissions, symlink management
 # =============================================================================
 
@@ -158,6 +159,7 @@ installer_create_minimal_cli() {
 # =============================================================================
 # NFTBan CLI Entry Point
 # Version: 1.0.0
+# Location: lib/installer/installer_structure.sh
 # Smart wrapper with fallback mechanisms and helpful error messages
 # =============================================================================
 
@@ -246,6 +248,52 @@ EOF
 
     chmod +x "$cli_file"
     installer_log_debug "Created smart CLI wrapper with fallbacks"
+}
+
+# =============================================================================
+# BASH COMPLETION SETUP
+# =============================================================================
+
+installer_setup_bash_completion() {
+    installer_log_info "Setting up bash completion..."
+
+    if [[ "$INSTALLER_DRY_RUN" == "true" ]]; then
+        installer_log_info "[DRY-RUN] Would install bash completion"
+        return 0
+    fi
+
+    # Determine completion directory based on distro
+    local completion_dir=""
+    if [[ -d "/usr/share/bash-completion/completions" ]]; then
+        completion_dir="/usr/share/bash-completion/completions"
+    elif [[ -d "/etc/bash_completion.d" ]]; then
+        completion_dir="/etc/bash_completion.d"
+    else
+        installer_log_warn "Bash completion directory not found, skipping"
+        return 0
+    fi
+
+    # Source completion script location
+    local completion_source="${SCRIPT_DIR}/completions/nftban-completion.bash"
+    local completion_target="${completion_dir}/nftban"
+
+    # Check if source exists
+    if [[ ! -f "$completion_source" ]]; then
+        installer_log_warn "Bash completion script not found at: $completion_source"
+        return 0
+    fi
+
+    # Copy completion script
+    if cp "$completion_source" "$completion_target" 2>&1 | tee -a "$INSTALL_LOG"; then
+        chmod 644 "$completion_target"
+        installer_log_success "Bash completion installed: $completion_target"
+        installer_log_info "Tab completion will be available in new shells"
+    else
+        installer_log_warn "Failed to install bash completion"
+        return 0  # Non-critical, don't fail installation
+    fi
+
+    return 0
 }
 
 # =============================================================================
@@ -374,6 +422,7 @@ export -f installer_create_directories
 export -f installer_create_symlinks
 export -f installer_setup_cli
 export -f installer_create_minimal_cli
+export -f installer_setup_bash_completion
 export -f installer_set_permissions
 export -f installer_cleanup_old
 export -f installer_verify_structure

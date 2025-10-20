@@ -2,8 +2,8 @@
 # =============================================================================
 # NFTBan Validator - GitHub SHA256 Integration
 # Version: 7.0.1
+# Location: lib/nftban-validator-github.sh
 # Provides: Download and validate against GitHub SHA256SUMS.txt
-# Location: /etc/nftban/lib/nftban-validator-github.sh
 # Requires: curl or wget, sha256sum
 # =============================================================================
 

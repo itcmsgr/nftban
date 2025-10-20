@@ -1,13 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# nftban Smoke Test & Diagnostics Module
-# Version: 1.0.0
+# NFTBan Smoke Test & Diagnostics Module
+# Version: 0.9.0
+# Location: lib/nftban_smoketest_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
-#
-# Built-in smoke testing and diagnostics for nftban
-# Accessible via: nftban test, nftban diagnostics
+# Built-in smoke testing and diagnostics system
 # =============================================================================
 
 # Prevent double-loading

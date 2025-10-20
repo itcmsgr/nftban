@@ -1,16 +1,13 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan nftables Module - v0.9.0 SPLIT TABLE ARCHITECTURE
-# Version: 2.0.0
+# NFTBan nftables Module
+# Version: 0.9.0
+# Location: lib/nftban_nftables_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
-#
-# MAJOR CHANGE: Dual-table architecture for 30-50% performance improvement
-# - Separate tables: ip nftban_v4 and ip6 nftban_v6
-# - Simpler rules (no ip/ip6 selectors needed)
-# - Better cache efficiency and faster packet processing
+# Dual-table architecture for improved performance and split IPv4/IPv6 handling
 # =============================================================================
 
 # Prevent double-loading

@@ -2,12 +2,12 @@
 
 # =============================================================================
 # NFTBan Cloudflare Module
-# Version: 2.0.0 - v0.9.0 SPLIT TABLE ARCHITECTURE
+# Version: 0.9.0
+# Location: lib/nftban_cloudflare_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
 # Cloudflare IP ranges management and whitelist integration
-# v0.9.0 UPDATE: Uses split ip/ip6 tables for better performance
 # =============================================================================
 
 # Prevent double-loading
@@ -321,14 +321,14 @@ nftban_cloudflare_disable() {
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
 # Template Directory: /etc/nftban/templates/conf
-# User Customization Path: /etc/nftban/conf
+# User Customization Path: /etc/nftban/config
 #
 # Description:
 # This template is used to store a list of IPv4 addresses provided by Cloudflare.
 # These IPs are typically whitelisted to ensure uninterrupted access from Cloudflare's edge network.
 #
 # Behavior:
-# - Users may override this template by creating a custom version under /etc/nftban/conf.
+# - Users may override this template by creating a custom version under /etc/nftban/config.
 # - If no custom file is found, the default template will be applied.
 #
 # Notes:
@@ -356,14 +356,14 @@ EOF
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
 # Template Directory: /etc/nftban/templates/conf
-# User Customization Path: /etc/nftban/conf
+# User Customization Path: /etc/nftban/config
 #
 # Description:
 # This template is used to store a list of IPv6 addresses provided by Cloudflare.
 # These IPs are typically whitelisted to ensure uninterrupted access from Cloudflare's edge network.
 #
 # Behavior:
-# - Users may override this template by creating a custom version under /etc/nftban/conf.
+# - Users may override this template by creating a custom version under /etc/nftban/config.
 # - If no custom file is found, the default template will be applied.
 #
 # Notes:
@@ -441,15 +441,26 @@ nftban_cloudflare_status() {
         echo -e "${NFTBAN_RED}IPv6 Ranges: Not downloaded${NFTBAN_NC}"
     fi
     echo ""
-    
-    # Whitelist file status
-    if [[ -f "$NFTBAN_CF_WHITELIST" ]]; then
-        local wl_count=$(grep -cvE '^#|^$' "$NFTBAN_CF_WHITELIST" 2>/dev/null || echo 0)
-        echo "Whitelist file:"
-        echo "  Ranges: $wl_count"
-        echo "  File: $NFTBAN_CF_WHITELIST"
+
+    # Whitelist file status (IPv4)
+    if [[ -f "$CLOUDFLARE_IPV4_WHITELIST_FILE" ]]; then
+        local wl_count_v4=$(grep -cvE '^#|^$' "$CLOUDFLARE_IPV4_WHITELIST_FILE" 2>/dev/null || echo 0)
+        echo "Whitelist IPv4 file:"
+        echo "  Ranges: $wl_count_v4"
+        echo "  File: $CLOUDFLARE_IPV4_WHITELIST_FILE"
     else
-        echo "Whitelist file: Not created"
+        echo "Whitelist IPv4 file: Not created"
+    fi
+    echo ""
+
+    # Whitelist file status (IPv6)
+    if [[ -f "$CLOUDFLARE_IPV6_WHITELIST_FILE" ]]; then
+        local wl_count_v6=$(grep -cvE '^#|^$' "$CLOUDFLARE_IPV6_WHITELIST_FILE" 2>/dev/null || echo 0)
+        echo "Whitelist IPv6 file:"
+        echo "  Ranges: $wl_count_v6"
+        echo "  File: $CLOUDFLARE_IPV6_WHITELIST_FILE"
+    else
+        echo "Whitelist IPv6 file: Not created"
     fi
     echo ""
     
@@ -533,14 +544,14 @@ nftban_cloudflare_init() {
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
 # Template Directory: /etc/nftban/templates/conf
-# User Customization Path: /etc/nftban/conf
+# User Customization Path: /etc/nftban/config
 #
 # Description:
 # This template is used to store a list of IPv4 addresses provided by Cloudflare.
 # These IPs are typically whitelisted to ensure uninterrupted access from Cloudflare's edge network.
 #
 # Behavior:
-# - Users may override this template by creating a custom version under /etc/nftban/conf.
+# - Users may override this template by creating a custom version under /etc/nftban/config.
 # - If no custom file is found, the default template will be applied.
 #
 # Notes:
@@ -570,14 +581,14 @@ EOF
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
 # Template Directory: /etc/nftban/templates/conf
-# User Customization Path: /etc/nftban/conf
+# User Customization Path: /etc/nftban/config
 #
 # Description:
 # This template is used to store a list of IPv6 addresses provided by Cloudflare.
 # These IPs are typically whitelisted to ensure uninterrupted access from Cloudflare's edge network.
 #
 # Behavior:
-# - Users may override this template by creating a custom version under /etc/nftban/conf.
+# - Users may override this template by creating a custom version under /etc/nftban/config.
 # - If no custom file is found, the default template will be applied.
 #
 # Notes:

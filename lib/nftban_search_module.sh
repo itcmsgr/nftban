@@ -1,18 +1,14 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Search Module - Universal IP Search System (Security Hardened)
-# Version: 2.1.0 (Security Hardening for v0.9.0+)
-# Description: ONE universal search function for all IP lookups
-# =============================================================================
-# Author: Antonios Voulvoulis (ITCMS Team)
+# NFTBan Search Module
+# Version: 0.9.0
+# Location: lib/nftban_search_module.sh
+# Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
+# Universal IP search system with security hardening and TOCTOU protection
 # =============================================================================
-# IMPORTANT: This module provides universal search across:
-#   - Configuration files (whitelist, blacklist, feeds)
-#   - nftables sets (@whitelist, @temp_ban, @perm_ban, @feeds)
-#   - Used by Fail2Ban actions to check whitelist before banning
 #
 # SECURITY FEATURES (v2.1.0):
 #   - TOCTOU protection via atomic flock operations
@@ -693,6 +689,34 @@ nftban_interactive_manage_ip() {
 }
 
 export -f nftban_interactive_manage_ip
+
+# =============================================================================
+# STUPID-USER-FRIENDLY SEARCH FUNCTION (Simple Alias)
+# =============================================================================
+
+# For stupid users who just want to search an IP without knowing where it is
+nftban_search_ip_everywhere() {
+    local ip="$1"
+
+    if [[ -z "$ip" ]]; then
+        echo ""
+        echo "ERROR: No IP address provided"
+        echo ""
+        echo "Usage: nftban search ip <IP_ADDRESS>"
+        echo ""
+        echo "Examples:"
+        echo "  nftban search ip 192.168.1.100"
+        echo "  nftban search ip 103.21.244.0"
+        echo "  nftban search ip 2001:db8::1"
+        echo ""
+        return 1
+    fi
+
+    # Just call the comprehensive search function
+    nftban_search_ip "$ip"
+}
+
+export -f nftban_search_ip_everywhere
 
 # =============================================================================
 # MODULE INFO

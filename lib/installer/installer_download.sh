@@ -3,6 +3,7 @@
 # =============================================================================
 # NFTBan Installer - Download Module (WITH VALIDATION)
 # Version: 7.0.1
+# Location: lib/installer/installer_download.sh
 # Provides: GitHub clone, ZIP download, network checks, SHA256 validation
 # =============================================================================
 

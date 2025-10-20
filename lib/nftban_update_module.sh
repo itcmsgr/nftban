@@ -1,27 +1,13 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Update Module - Safe Update/Upgrade System (Security Hardened)
-# Version: 1.1.0 (Security Hardening)
+# NFTBan Update Module
+# Version: 0.9.0
+# Location: lib/nftban_update_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
-#
-# Features:
-# - Version detection and comparison
-# - Staging directory workflow
-# - SHA256 validation (command injection protected)
-# - Atomic apply with rollback
-# - Email notifications
-# - Dry-run validation
-#
-# SECURITY FEATURES (v1.1.0):
-# - Path traversal prevention (strict path validation)
-# - Command injection prevention in SHA256 validation
-# - HTTPS-only downloads with cert validation
-# - Safe temporary directory creation (mktemp)
-# - Input sanitization for all external data
-# - No use of curl -k or wget --no-check-certificate
+# Safe update system with security hardening and atomic operations
 # =============================================================================
 
 set -euo pipefail
@@ -405,13 +391,32 @@ nftban_update_get_remote_version() {
 
 # Compare two semantic versions (format: X.Y.Z-suffix)
 # Returns: 0 if v1 == v2, 1 if v1 > v2, 2 if v1 < v2
+# SECURITY: Validates version format to prevent injection/crashes
 nftban_update_compare_versions() {
     local v1="$1"
     local v2="$2"
 
+    # SECURITY: Validate input is not empty
+    if [[ -z "$v1" || -z "$v2" ]]; then
+        nftban_log_error "Version comparison failed: empty version string"
+        return 255
+    fi
+
     # Remove leading 'v' if present
     v1="${v1#v}"
     v2="${v2#v}"
+
+    # SECURITY: Validate version format (X.Y.Z or X.Y.Z-suffix)
+    # Allow: digits, dots, hyphens, alphanumeric suffixes
+    if [[ ! "$v1" =~ ^[0-9]+(\.[0-9]+)*(-[a-zA-Z0-9]+)?$ ]]; then
+        nftban_log_error "Version comparison failed: invalid v1 format: $v1"
+        return 255
+    fi
+
+    if [[ ! "$v2" =~ ^[0-9]+(\.[0-9]+)*(-[a-zA-Z0-9]+)?$ ]]; then
+        nftban_log_error "Version comparison failed: invalid v2 format: $v2"
+        return 255
+    fi
 
     # Extract version numbers (ignore -beta, -alpha suffixes for now)
     local v1_clean="${v1%%-*}"
@@ -421,9 +426,27 @@ nftban_update_compare_versions() {
     IFS='.' read -ra V1_PARTS <<< "$v1_clean"
     IFS='.' read -ra V2_PARTS <<< "$v2_clean"
 
+    # SECURITY: Validate array bounds (must have at least major version)
+    if [[ ${#V1_PARTS[@]} -eq 0 || ${#V2_PARTS[@]} -eq 0 ]]; then
+        nftban_log_error "Version comparison failed: malformed version string"
+        return 255
+    fi
+
     # Compare major
     local v1_major="${V1_PARTS[0]:-0}"
     local v2_major="${V2_PARTS[0]:-0}"
+
+    # SECURITY: Validate numeric values (prevent non-numeric injection)
+    if [[ ! "$v1_major" =~ ^[0-9]+$ || ! "$v2_major" =~ ^[0-9]+$ ]]; then
+        nftban_log_error "Version comparison failed: non-numeric major version"
+        return 255
+    fi
+
+    # SECURITY: Bounds check (prevent integer overflow)
+    if [[ $v1_major -gt 999999 || $v2_major -gt 999999 ]]; then
+        nftban_log_error "Version comparison failed: version number too large"
+        return 255
+    fi
 
     if [[ $v1_major -gt $v2_major ]]; then
         return 1  # v1 > v2
@@ -435,6 +458,17 @@ nftban_update_compare_versions() {
     local v1_minor="${V1_PARTS[1]:-0}"
     local v2_minor="${V2_PARTS[1]:-0}"
 
+    # SECURITY: Validate numeric values
+    if [[ ! "$v1_minor" =~ ^[0-9]+$ || ! "$v2_minor" =~ ^[0-9]+$ ]]; then
+        nftban_log_error "Version comparison failed: non-numeric minor version"
+        return 255
+    fi
+
+    if [[ $v1_minor -gt 999999 || $v2_minor -gt 999999 ]]; then
+        nftban_log_error "Version comparison failed: version number too large"
+        return 255
+    fi
+
     if [[ $v1_minor -gt $v2_minor ]]; then
         return 1
     elif [[ $v1_minor -lt $v2_minor ]]; then
@@ -444,6 +478,17 @@ nftban_update_compare_versions() {
     # Compare patch
     local v1_patch="${V1_PARTS[2]:-0}"
     local v2_patch="${V2_PARTS[2]:-0}"
+
+    # SECURITY: Validate numeric values
+    if [[ ! "$v1_patch" =~ ^[0-9]+$ || ! "$v2_patch" =~ ^[0-9]+$ ]]; then
+        nftban_log_error "Version comparison failed: non-numeric patch version"
+        return 255
+    fi
+
+    if [[ $v1_patch -gt 999999 || $v2_patch -gt 999999 ]]; then
+        nftban_log_error "Version comparison failed: version number too large"
+        return 255
+    fi
 
     if [[ $v1_patch -gt $v2_patch ]]; then
         return 1
@@ -868,7 +913,7 @@ nftban_update_rollback() {
 
     # Restore lib directory
     if [[ -d "${backup_dir}/lib" ]]; then
-        rm -rf "${NFTBAN_BASE_DIR}/lib"
+        rm -rf "${NFTBAN_BASE_DIR:?}/lib"
         cp -a "${backup_dir}/lib" "${NFTBAN_BASE_DIR}/"
         nftban_log_info "Restored lib directory"
     fi
@@ -913,7 +958,7 @@ nftban_update_apply() {
         if command -v rsync &>/dev/null; then
             rsync -a --delete "${staging_dir}/lib/" "${NFTBAN_BASE_DIR}/lib/"
         else
-            rm -rf "${NFTBAN_BASE_DIR}/lib"
+            rm -rf "${NFTBAN_BASE_DIR:?}/lib"
             cp -a "${staging_dir}/lib" "${NFTBAN_BASE_DIR}/"
         fi
         nftban_log_success "Updated lib directory"
