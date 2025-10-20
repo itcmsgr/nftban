@@ -20,11 +20,58 @@ readonly NFTBAN_BLACKLIST_LOADED=1
 readonly NFTBAN_BLACKLIST_PERSISTENT="${NFTBAN_CONFIG_DIR}/blacklist-persistent.conf"
 readonly NFTBAN_BLACKLIST_USER="${NFTBAN_CONFIG_DIR}/blacklist-user.conf"
 readonly NFTBAN_RATE_LIMIT_FILE="${NFTBAN_DATA_DIR}/rate-limit-tracker.tmp"
+readonly NFTBAN_BLACKLIST_LOCK_DIR="${NFTBAN_LOCK_DIR:-/var/lock/nftban}"
+readonly NFTBAN_BLACKLIST_LOCK_TIMEOUT=5
 
 # Ban settings (can be overridden in config)
 NFTBAN_DEFAULT_BAN_TIME="${NFTBAN_DEFAULT_BAN_TIME:-3600}"
 NFTBAN_PERSISTENT_THRESHOLD="${NFTBAN_PERSISTENT_THRESHOLD:-3}"
 NFTBAN_RATE_LIMIT_PER_MIN="${NFTBAN_RATE_LIMIT_PER_MIN:-60}"
+
+# Ensure lock directory exists
+[[ -d "$NFTBAN_BLACKLIST_LOCK_DIR" ]] || mkdir -p "$NFTBAN_BLACKLIST_LOCK_DIR" 2>/dev/null || true
+
+# =============================================================================
+# SECURITY: ATOMIC FILE WRITE HELPERS
+# =============================================================================
+
+# SECURITY: Atomic file append with exclusive lock (prevents race conditions)
+_nftban_blacklist_safe_append() {
+    local file="$1"
+    local content="$2"
+    local lockfile="${NFTBAN_BLACKLIST_LOCK_DIR}/$(basename "$file").lock"
+
+    (
+        # Acquire exclusive lock for write
+        if ! flock -x -w "$NFTBAN_BLACKLIST_LOCK_TIMEOUT" 200; then
+            nftban_log_error "Could not acquire write lock on $file"
+            return 1
+        fi
+
+        # Append content under lock
+        echo "$content" >> "$file"
+
+    ) 200>"$lockfile"
+}
+
+# SECURITY: Atomic file modification with exclusive lock (sed operations)
+_nftban_blacklist_safe_modify() {
+    local file="$1"
+    local sed_expression="$2"
+    local lockfile="${NFTBAN_BLACKLIST_LOCK_DIR}/$(basename "$file").lock"
+
+    (
+        # Acquire exclusive lock for write
+        if ! flock -x -w "$NFTBAN_BLACKLIST_LOCK_TIMEOUT" 200; then
+            nftban_log_error "Could not acquire write lock on $file"
+            return 1
+        fi
+
+        # Modify file under lock
+        sed -i "$sed_expression" "$file"
+
+    ) 200>"$lockfile"
+}
 
 # =============================================================================
 # v0.9.0 SPLIT TABLE HELPERS
@@ -112,9 +159,13 @@ nftban_blacklist_check_rate_limit() {
 nftban_blacklist_record_ban_attempt() {
     local current_time
     current_time=$(date +%s)
-    
-    echo "$current_time" >> "$NFTBAN_RATE_LIMIT_FILE"
-    
+
+    # SECURITY: Use atomic append with exclusive lock
+    _nftban_blacklist_safe_append "$NFTBAN_RATE_LIMIT_FILE" "$current_time" || {
+        nftban_log_warning "Failed to record ban attempt (lock timeout)"
+        return 1
+    }
+
     # Clean old entries (older than 2 minutes)
     local two_minutes_ago=$((current_time - 120))
     awk -v cutoff="$two_minutes_ago" '$1 >= cutoff' "$NFTBAN_RATE_LIMIT_FILE" > "${NFTBAN_RATE_LIMIT_FILE}.tmp" 2>/dev/null || true
@@ -157,8 +208,10 @@ nftban_blacklist_ban_ip() {
         # Auto-whitelist current user IP for safety
         if ! nftban_whitelist_check_ip "$ip"; then
             nftban_log_warning "Auto-whitelisting current user IP for safety..."
-            echo "${ip}  # Current user (auto-protected on $(date +'%Y-%m-%d %H:%M:%S'))" >> \
-                "${NFTBAN_CONFIG_DIR}/whitelist-user.conf"
+            # SECURITY: Use atomic append with exclusive lock
+            _nftban_blacklist_safe_append "${NFTBAN_CONFIG_DIR}/whitelist-user.conf" \
+                "${ip}  # Current user (auto-protected on $(date +'%Y-%m-%d %H:%M:%S'))" || \
+                nftban_log_error "Failed to auto-whitelist current user IP"
             if declare -f nftban_whitelist_sync_to_nftables &>/dev/null; then
                 nftban_whitelist_sync_to_nftables
             fi
@@ -175,8 +228,10 @@ nftban_blacklist_ban_ip() {
         
         # Auto-whitelist if not already
         if ! grep -qE "^${ip}([[:space:]]|$)" "${NFTBAN_CONFIG_DIR}/whitelist-system.conf" 2>/dev/null; then
-            echo "${ip}  # Server IP (auto-protected on $(date +'%Y-%m-%d'))" >> \
-                "${NFTBAN_CONFIG_DIR}/whitelist-system.conf"
+            # SECURITY: Use atomic append with exclusive lock
+            _nftban_blacklist_safe_append "${NFTBAN_CONFIG_DIR}/whitelist-system.conf" \
+                "${ip}  # Server IP (auto-protected on $(date +'%Y-%m-%d'))" || \
+                nftban_log_error "Failed to auto-whitelist server IP"
             if declare -f nftban_whitelist_sync_to_nftables &>/dev/null; then
                 nftban_whitelist_sync_to_nftables
             fi
@@ -187,8 +242,8 @@ nftban_blacklist_ban_ip() {
     
     # 5. CRITICAL: Check whitelist (highest priority)
     if nftban_whitelist_check_ip "$ip"; then
-        nftban_log_warning "IP $ip is whitelisted - BAN DENIED"
-        nftban_log_ban "$ip" "$jail" "DENIED" "Whitelisted"
+        # Use dedicated whitelist protection logging
+        nftban_log_whitelist_protection "$ip" "BAN" "$jail" "Attempted temp ban blocked by whitelist"
         return 1
     fi
     
@@ -439,7 +494,8 @@ nftban_blacklist_add_permanent() {
     
     # 1. Check if IP is whitelisted
     if nftban_whitelist_check_ip "$ip"; then
-        nftban_log_error "⚠️  BLOCKED: Cannot blacklist whitelisted IP: $ip"
+        # Use dedicated whitelist protection logging
+        nftban_log_whitelist_protection "$ip" "BLACKLIST" "PERMANENT" "Attempted permanent blacklist blocked by whitelist"
         nftban_log_error "Remove from whitelist first if you really want to ban this IP"
         return 1
     fi
@@ -480,8 +536,14 @@ nftban_blacklist_add_permanent() {
     if ! grep -qE "^${ip}([[:space:]]|$)" "$NFTBAN_BLACKLIST_PERSISTENT" 2>/dev/null; then
         local timestamp
         timestamp=$(date +'%Y-%m-%d %H:%M:%S')
-        echo "${ip}  # ${timestamp} - ${reason}" >> "$NFTBAN_BLACKLIST_PERSISTENT"
-        nftban_log_success "Added $ip to permanent blacklist file"
+        # SECURITY: Use atomic append with exclusive lock
+        if _nftban_blacklist_safe_append "$NFTBAN_BLACKLIST_PERSISTENT" \
+            "${ip}  # ${timestamp} - ${reason}"; then
+            nftban_log_success "Added $ip to permanent blacklist file"
+        else
+            nftban_log_error "Failed to add $ip to permanent blacklist file (lock timeout)"
+            return 1
+        fi
     else
         nftban_log_info "IP already in persistent blacklist file"
     fi

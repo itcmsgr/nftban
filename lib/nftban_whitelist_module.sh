@@ -20,6 +20,53 @@ readonly NFTBAN_WHITELIST_LOADED=1
 readonly NFTBAN_WHITELIST_SYSTEM="${NFTBAN_CONFIG_DIR}/whitelist-system.conf"
 readonly NFTBAN_WHITELIST_USER="${NFTBAN_CONFIG_DIR}/whitelist-user.conf"
 readonly NFTBAN_WHITELIST_CF="${NFTBAN_CONFIG_DIR}/whitelist-cloudflare.conf"
+readonly NFTBAN_WHITELIST_LOCK_DIR="${NFTBAN_LOCK_DIR:-/var/lock/nftban}"
+readonly NFTBAN_WHITELIST_LOCK_TIMEOUT=5
+
+# Ensure lock directory exists
+[[ -d "$NFTBAN_WHITELIST_LOCK_DIR" ]] || mkdir -p "$NFTBAN_WHITELIST_LOCK_DIR" 2>/dev/null || true
+
+# =============================================================================
+# SECURITY: ATOMIC FILE WRITE HELPERS
+# =============================================================================
+
+# SECURITY: Atomic file append with exclusive lock (prevents race conditions)
+_nftban_whitelist_safe_append() {
+    local file="$1"
+    local content="$2"
+    local lockfile="${NFTBAN_WHITELIST_LOCK_DIR}/$(basename "$file").lock"
+
+    (
+        # Acquire exclusive lock for write
+        if ! flock -x -w "$NFTBAN_WHITELIST_LOCK_TIMEOUT" 200; then
+            nftban_log_error "Could not acquire write lock on $file"
+            return 1
+        fi
+
+        # Append content under lock
+        echo "$content" >> "$file"
+
+    ) 200>"$lockfile"
+}
+
+# SECURITY: Atomic file modification with exclusive lock (sed operations)
+_nftban_whitelist_safe_modify() {
+    local file="$1"
+    local sed_expression="$2"
+    local lockfile="${NFTBAN_WHITELIST_LOCK_DIR}/$(basename "$file").lock"
+
+    (
+        # Acquire exclusive lock for write
+        if ! flock -x -w "$NFTBAN_WHITELIST_LOCK_TIMEOUT" 200; then
+            nftban_log_error "Could not acquire write lock on $file"
+            return 1
+        fi
+
+        # Modify file under lock
+        sed -i "$sed_expression" "$file"
+
+    ) 200>"$lockfile"
+}
 
 # =============================================================================
 # INITIALIZATION WITH AUTO-PROTECTION
@@ -112,8 +159,8 @@ nftban_whitelist_add_server_ips() {
             continue
         fi
         
-        # Add to system whitelist
-        echo "${ip}  # Server IP (auto-detected on $(date +'%Y-%m-%d'))" >> "$NFTBAN_WHITELIST_SYSTEM"
+        # Add to system whitelist (SECURITY: atomic write with flock)
+        _nftban_whitelist_safe_append "$NFTBAN_WHITELIST_SYSTEM" "${ip}  # Server IP (auto-detected on $(date +'%Y-%m-%d'))"
         nftban_log_success "Protected server IP: $ip"
         ((protected_count++))
     done < <(ip -o addr show 2>/dev/null | awk '/inet/ {gsub(/\/.*/, "", $4); print $4}' | grep -v '^127\.' | sort -u)
@@ -123,14 +170,14 @@ nftban_whitelist_add_server_ips() {
     
     public_ipv4=$(nftban_get_public_ip "ipv4")
     if [[ -n "$public_ipv4" ]] && ! grep -qE "^${public_ipv4}([[:space:]]|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
-        echo "${public_ipv4}  # Server public IPv4 (auto-detected on $(date +'%Y-%m-%d'))" >> "$NFTBAN_WHITELIST_SYSTEM"
+        _nftban_whitelist_safe_append "$NFTBAN_WHITELIST_SYSTEM" "${public_ipv4}  # Server public IPv4 (auto-detected on $(date +'%Y-%m-%d'))"
         nftban_log_success "Protected public IPv4: $public_ipv4"
         ((protected_count++))
     fi
-    
+
     public_ipv6=$(nftban_get_public_ip "ipv6")
     if [[ -n "$public_ipv6" ]] && ! grep -qE "^${public_ipv6}([[:space:]]|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
-        echo "${public_ipv6}  # Server public IPv6 (auto-detected on $(date +'%Y-%m-%d'))" >> "$NFTBAN_WHITELIST_SYSTEM"
+        _nftban_whitelist_safe_append "$NFTBAN_WHITELIST_SYSTEM" "${public_ipv6}  # Server public IPv6 (auto-detected on $(date +'%Y-%m-%d'))"
         nftban_log_success "Protected public IPv6: $public_ipv6"
         ((protected_count++))
     fi
@@ -164,8 +211,8 @@ nftban_whitelist_protect_current_user() {
         return 0
     fi
     
-    # Add to user whitelist (not system - allows manual removal)
-    echo "${current_user_ip}  # Current admin user (auto-protected on $(date +'%Y-%m-%d %H:%M:%S'))" >> "$NFTBAN_WHITELIST_USER"
+    # Add to user whitelist (not system - allows manual removal) (SECURITY: atomic write)
+    _nftban_whitelist_safe_append "$NFTBAN_WHITELIST_USER" "${current_user_ip}  # Current admin user (auto-protected on $(date +'%Y-%m-%d %H:%M:%S'))"
     nftban_log_success "Protected current user IP: $current_user_ip"
     nftban_log_warning "⚠️  IMPORTANT: Your IP ($current_user_ip) has been whitelisted to prevent lockout"
     
@@ -194,9 +241,9 @@ nftban_whitelist_add_ip() {
         return 0
     fi
     
-    # Add to user whitelist file
-    echo "${ip}  # ${comment}" >> "$NFTBAN_WHITELIST_USER"
-    
+    # Add to user whitelist file (SECURITY: atomic write)
+    _nftban_whitelist_safe_append "$NFTBAN_WHITELIST_USER" "${ip}  # ${comment}"
+
     # Add to nftables set (v0.9.0: split tables, no _v4/_v6 suffix)
     if nftban_check_nftables_table; then
         local table_family table_name
@@ -260,9 +307,9 @@ nftban_whitelist_remove_ip() {
     
     local removed=false
     
-    # Remove from user whitelist file only (not system)
+    # Remove from user whitelist file only (not system) (SECURITY: atomic modify)
     if [[ -f "$NFTBAN_WHITELIST_USER" ]] && grep -qE "^${ip}([[:space:]]|$)" "$NFTBAN_WHITELIST_USER"; then
-        sed -i "/^${ip}[[:space:]]/d" "$NFTBAN_WHITELIST_USER"
+        _nftban_whitelist_safe_modify "$NFTBAN_WHITELIST_USER" "/^${ip}[[:space:]]/d"
         nftban_log_success "Removed $ip from user whitelist file"
         removed=true
     fi

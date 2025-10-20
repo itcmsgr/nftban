@@ -29,13 +29,19 @@ installer_create_directories() {
         "$INSTALL_DIR/bin"
         "$INSTALL_DIR/config"
         "$INSTALL_DIR/config/ports"
+        "$INSTALL_DIR/config/feeds"
         "$INSTALL_DIR/data"
         "$INSTALL_DIR/data/geoip"
+        "$INSTALL_DIR/data/geoip/cache"
+        "$INSTALL_DIR/data/geoip/sets"
         "$INSTALL_DIR/data/backups"
+        "$INSTALL_DIR/data/feeds"
         "$INSTALL_DIR/cache"
         "$INSTALL_DIR/cache/geoip"
         "$INSTALL_DIR/cache/autorebuild"
+        "$INSTALL_DIR/cache/feeds"
         "$INSTALL_DIR/templates"
+        "$INSTALL_DIR/templates/conf"
         "$INSTALL_DIR/templates/fail2ban"
         "$INSTALL_DIR/templates/fail2ban/DEBIAN"
         "$INSTALL_DIR/templates/fail2ban/DEBIAN/jail.d"
@@ -48,10 +54,10 @@ installer_create_directories() {
         "$INSTALL_DIR/templates/control-panels"
         "$INSTALL_DIR/docs"
         "$INSTALL_DIR/scripts"
-        
+
         # Log directory
         "$LOG_DIR"
-        
+
         # Backup directory
         "$BACKUP_DIR"
     )
@@ -146,38 +152,100 @@ installer_setup_cli() {
 
 installer_create_minimal_cli() {
     local cli_file="$INSTALL_DIR/bin/nftban"
-    
+
     cat > "$cli_file" << 'EOF'
 #!/usr/bin/env bash
+# =============================================================================
 # NFTBan CLI Entry Point
+# Version: 1.0.0
+# Smart wrapper with fallback mechanisms and helpful error messages
+# =============================================================================
 
 set -euo pipefail
 
 readonly LIB_DIR="/etc/nftban/lib"
 readonly MAIN_CLI="${LIB_DIR}/nftban_main_cli.sh"
 
-# Check for main CLI
+# =============================================================================
+# ATTEMPT 1: Use main CLI (preferred)
+# =============================================================================
 if [[ -f "$MAIN_CLI" ]]; then
     exec bash "$MAIN_CLI" "$@"
 fi
 
-# Fallback: Check for core module
+# =============================================================================
+# ATTEMPT 2: Fallback to core module with helpful error
+# =============================================================================
 if [[ -f "${LIB_DIR}/nftban_core.sh" ]]; then
     source "${LIB_DIR}/nftban_core.sh"
-    echo "ERROR: Main CLI not found at: $MAIN_CLI" >&2
-    echo "Run installer to restore: sudo nftban_installer.sh update" >&2
+
+    cat << 'ERROR_MSG' >&2
+
+╔═══════════════════════════════════════════════════════════════╗
+║                        ⚠️  ERROR                              ║
+╚═══════════════════════════════════════════════════════════════╝
+
+Main CLI not found at: /etc/nftban/lib/nftban_main_cli.sh
+
+This usually means:
+  • NFTBan installation is incomplete
+  • Files were manually deleted
+  • Update failed partway through
+
+RECOVERY OPTIONS:
+
+  Option 1 - Repair Installation:
+    cd /home/gituser/github/nftban
+    sudo bash lib/installer/installer_main.sh install
+
+  Option 2 - Check file integrity:
+    ls -la /etc/nftban/lib/
+
+  Option 3 - Reinstall from scratch:
+    cd /home/gituser/github/nftban
+    sudo bash lib/installer/installer_main.sh uninstall
+    sudo bash lib/installer/installer_main.sh install
+
+═══════════════════════════════════════════════════════════════
+
+ERROR_MSG
     exit 1
 fi
 
-# Critical failure
-echo "ERROR: nftban not properly installed" >&2
-echo "Core module not found at: ${LIB_DIR}/nftban_core.sh" >&2
-echo "Reinstall with: sudo nftban_installer.sh install" >&2
+# =============================================================================
+# ATTEMPT 3: Critical failure (no core module)
+# =============================================================================
+cat << 'CRITICAL_MSG' >&2
+
+╔═══════════════════════════════════════════════════════════════╗
+║                    ❌ CRITICAL ERROR                          ║
+╚═══════════════════════════════════════════════════════════════╝
+
+NFTBan is not properly installed.
+
+Core module not found at: /etc/nftban/lib/nftban_core.sh
+
+RECOVERY:
+
+  1. Verify installation directory exists:
+     ls -la /etc/nftban/
+
+  2. If missing, reinstall:
+     cd /home/gituser/github/nftban
+     sudo bash lib/installer/installer_main.sh install
+
+  3. If directory exists but files missing, check permissions:
+     sudo chmod -R 755 /etc/nftban
+     sudo chmod 644 /etc/nftban/lib/*.sh
+
+═══════════════════════════════════════════════════════════════
+
+CRITICAL_MSG
 exit 1
 EOF
-    
+
     chmod +x "$cli_file"
-    installer_log_debug "Created minimal CLI wrapper"
+    installer_log_debug "Created smart CLI wrapper with fallbacks"
 }
 
 # =============================================================================

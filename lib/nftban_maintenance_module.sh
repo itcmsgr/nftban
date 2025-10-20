@@ -535,6 +535,377 @@ nftban_maintenance_list_backups() {
 }
 
 # =============================================================================
+# CONFIGURATION VALIDATION (from OLD_FOR_REFERENCE)
+# =============================================================================
+
+nftban_maintenance_validate_config() {
+    nftban_log_info "Validating NFTBan configuration..."
+
+    local errors=0
+
+    # Check user config exists (create from default if missing)
+    if [[ ! -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]]; then
+        if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
+            nftban_log_warning "User config missing, creating from default"
+            cp "${NFTBAN_CONFIG_DIR}/nftban.conf" "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
+        else
+            nftban_log_error "No configuration files found"
+            ((errors++))
+        fi
+    fi
+
+    # Validate config syntax by sourcing it
+    if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]]; then
+        if source "${NFTBAN_CONFIG_DIR}/nftban.conf.local" 2>/dev/null; then
+            nftban_log_success "Configuration syntax valid"
+        else
+            nftban_log_error "Invalid syntax in configuration"
+            ((errors++))
+        fi
+    fi
+
+    # Check essential files exist
+    local essential_files=(
+        "${NFTBAN_CONFIG_DIR}/user-whitelist_ips.conf"
+        "${NFTBAN_CONFIG_DIR}/user-blacklist_ips.conf"
+        "${NFTBAN_BASE_DIR}/bin/nftban"
+        "${NFTBAN_BASE_DIR}/lib/nftban_core.sh"
+        "${NFTBAN_BASE_DIR}/lib/nftban_main_cli.sh"
+    )
+
+    for file in "${essential_files[@]}"; do
+        if [[ ! -f "$file" ]]; then
+            nftban_log_error "Missing essential file: $file"
+            ((errors++))
+        fi
+    done
+
+    # Validate nftables configuration
+    if [[ -f "${NFTBAN_CONFIG_DIR}/nft_rules.conf" ]]; then
+        if nft -c -f "${NFTBAN_CONFIG_DIR}/nft_rules.conf" 2>/dev/null; then
+            nftban_log_success "NFTables configuration valid"
+        else
+            nftban_log_error "Invalid NFTables configuration"
+            ((errors++))
+        fi
+    fi
+
+    # Validate Fail2ban configuration
+    if command -v fail2ban-client &>/dev/null; then
+        if fail2ban-client --test 2>/dev/null; then
+            nftban_log_success "Fail2ban configuration valid"
+        else
+            nftban_log_warning "Fail2ban configuration may have issues"
+        fi
+    fi
+
+    if [[ $errors -eq 0 ]]; then
+        nftban_log_success "Configuration validation passed"
+        return 0
+    else
+        nftban_log_error "Configuration validation failed: $errors error(s)"
+        return 1
+    fi
+}
+
+# =============================================================================
+# CONFIGURATION REPAIR (from OLD_FOR_REFERENCE)
+# =============================================================================
+
+nftban_maintenance_repair_config() {
+    nftban_log_info "Repairing NFTBan configuration..."
+
+    # Recreate missing directories
+    local required_dirs=(
+        "${NFTBAN_CONFIG_DIR}"
+        "${NFTBAN_BASE_DIR}/lib"
+        "${NFTBAN_BASE_DIR}/templates"
+        "${NFTBAN_BASE_DIR}/templates/conf"
+        "${NFTBAN_DATA_DIR}/backups"
+        "${NFTBAN_DATA_DIR}/geoip"
+        "${NFTBAN_CACHE_DIR}"
+        "${NFTBAN_LOG_DIR}"
+    )
+
+    for dir in "${required_dirs[@]}"; do
+        if [[ ! -d "$dir" ]]; then
+            mkdir -p "$dir"
+            nftban_log_success "Recreated directory: $dir"
+        fi
+    done
+
+    # Recreate whitelist if missing
+    if [[ ! -f "${NFTBAN_CONFIG_DIR}/user-whitelist_ips.conf" ]]; then
+        cat > "${NFTBAN_CONFIG_DIR}/user-whitelist_ips.conf" << 'EOF'
+# NFTBan User Whitelist
+# IPs in this file are never banned
+# Format: IP_ADDRESS  # Optional comment
+127.0.0.1  # Localhost IPv4
+::1        # Localhost IPv6
+EOF
+        nftban_log_success "Recreated whitelist file"
+    fi
+
+    # Recreate blacklist if missing
+    if [[ ! -f "${NFTBAN_CONFIG_DIR}/user-blacklist_ips.conf" ]]; then
+        cat > "${NFTBAN_CONFIG_DIR}/user-blacklist_ips.conf" << 'EOF'
+# NFTBan User Blacklist
+# IPs in this file are permanently banned
+# Format: IP_ADDRESS  # Optional reason
+EOF
+        nftban_log_success "Recreated blacklist file"
+    fi
+
+    # Fix permissions systematically
+    nftban_log_info "Fixing permissions..."
+
+    # Directories: 755 (rwxr-xr-x)
+    find "${NFTBAN_BASE_DIR}" -type d -exec chmod 755 {} \; 2>/dev/null || true
+
+    # Config files: 644 (rw-r--r--)
+    find "${NFTBAN_CONFIG_DIR}" -name "*.conf*" -exec chmod 644 {} \; 2>/dev/null || true
+
+    # Library files: 644 (sourced, not executed)
+    find "${NFTBAN_BASE_DIR}/lib" -name "*.sh" -exec chmod 644 {} \; 2>/dev/null || true
+
+    # Binary files: 755 (executed)
+    if [[ -d "${NFTBAN_BASE_DIR}/bin" ]]; then
+        find "${NFTBAN_BASE_DIR}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+    fi
+
+    # Script files: 755 (executed)
+    if [[ -d "${NFTBAN_BASE_DIR}/scripts" ]]; then
+        find "${NFTBAN_BASE_DIR}/scripts" -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
+    fi
+
+    # Log files: 644
+    if [[ -d "$NFTBAN_LOG_DIR" ]]; then
+        find "$NFTBAN_LOG_DIR" -type f -exec chmod 644 {} \; 2>/dev/null || true
+    fi
+
+    nftban_log_success "Configuration repair completed"
+}
+
+# =============================================================================
+# COMPREHENSIVE HEALTH CHECK (Enhanced from OLD_FOR_REFERENCE)
+# =============================================================================
+
+nftban_maintenance_health_check_detailed() {
+    nftban_log_info "Performing comprehensive health check..."
+
+    local issues=0
+
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════"
+    echo "  NFTBan Comprehensive Health Check"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo ""
+
+    # Check services
+    echo -e "${NFTBAN_CYAN}Services:${NFTBAN_NC}"
+    for service in nftables fail2ban; do
+        if systemctl is-active --quiet "$service" 2>/dev/null; then
+            echo "  ✅ $service: Active"
+        else
+            echo "  ❌ $service: Inactive"
+            ((issues++))
+        fi
+    done
+    echo ""
+
+    # Check nftables ruleset
+    echo -e "${NFTBAN_CYAN}NFTables:${NFTBAN_NC}"
+    if nft list ruleset >/dev/null 2>&1; then
+        echo "  ✅ Ruleset readable"
+
+        # Count tables (v0.9.0: both ip and ip6)
+        local v4_tables=$(nft list tables ip 2>/dev/null | grep -c nftban || echo 0)
+        local v6_tables=$(nft list tables ip6 2>/dev/null | grep -c nftban || echo 0)
+        echo "  ℹ️  IPv4 tables: $v4_tables"
+        echo "  ℹ️  IPv6 tables: $v6_tables"
+    else
+        echo "  ❌ Cannot read ruleset"
+        ((issues++))
+    fi
+    echo ""
+
+    # Check Fail2ban jails
+    if command -v fail2ban-client &>/dev/null; then
+        echo -e "${NFTBAN_CYAN}Fail2ban:${NFTBAN_NC}"
+        if systemctl is-active --quiet fail2ban 2>/dev/null; then
+            local jail_count=$(fail2ban-client status 2>/dev/null | grep "Number of jail" | awk '{print $4}' || echo "0")
+            local nftban_jails=$(fail2ban-client status 2>/dev/null | grep -o "nftban-[^,]*" | wc -l || echo "0")
+            echo "  ℹ️  Total jails: $jail_count"
+            echo "  ℹ️  NFTBan jails: $nftban_jails"
+
+            # Show currently banned IPs across all jails
+            local total_banned=0
+            while IFS= read -r jail; do
+                local banned=$(fail2ban-client status "$jail" 2>/dev/null | grep "Currently banned" | awk '{print $4}' || echo "0")
+                ((total_banned += banned))
+            done < <(fail2ban-client status 2>/dev/null | grep "Jail list" | cut -d: -f2 | tr ',' '\n' | sed 's/^[[:space:]]*//')
+            echo "  ℹ️  Currently banned: $total_banned IPs"
+        else
+            echo "  ⚠️  Fail2ban not running"
+        fi
+        echo ""
+    fi
+
+    # Check disk space
+    echo -e "${NFTBAN_CYAN}Disk Space:${NFTBAN_NC}"
+    local disk_usage=$(df "${NFTBAN_BASE_DIR}" 2>/dev/null | tail -1 | awk '{print $5}' | sed 's/%//')
+    if [[ $disk_usage -gt 90 ]]; then
+        echo "  ⚠️  High usage: ${disk_usage}%"
+        ((issues++))
+    else
+        echo "  ✅ Usage: ${disk_usage}%"
+    fi
+
+    local disk_avail=$(df -h "${NFTBAN_BASE_DIR}" 2>/dev/null | tail -1 | awk '{print $4}')
+    echo "  ℹ️  Available: $disk_avail"
+    echo ""
+
+    # Check log file sizes
+    echo -e "${NFTBAN_CYAN}Log Files:${NFTBAN_NC}"
+    if [[ -d "${NFTBAN_LOG_DIR}" ]]; then
+        local total_size=$(du -sh "${NFTBAN_LOG_DIR}" 2>/dev/null | awk '{print $1}' || echo "0")
+        echo "  ℹ️  Total size: $total_size"
+
+        # Check for large logs (>100MB)
+        local large_count=0
+        while IFS= read -r large_log; do
+            local size=$(du -h "$large_log" 2>/dev/null | awk '{print $1}')
+            echo "  ⚠️  Large log: $(basename "$large_log") ($size)"
+            ((large_count++))
+            ((issues++))
+        done < <(find "${NFTBAN_LOG_DIR}" -type f -size +100M 2>/dev/null)
+
+        [[ $large_count -eq 0 ]] && echo "  ✅ No large log files"
+    fi
+    echo ""
+
+    # Check critical files
+    echo -e "${NFTBAN_CYAN}Critical Files:${NFTBAN_NC}"
+    local missing_files=0
+    local critical_files=(
+        "${NFTBAN_BASE_DIR}/lib/nftban_core.sh"
+        "${NFTBAN_BASE_DIR}/lib/nftban_main_cli.sh"
+        "${NFTBAN_BASE_DIR}/bin/nftban"
+        "${NFTBAN_CONFIG_DIR}/user-whitelist_ips.conf"
+        "${NFTBAN_CONFIG_DIR}/user-blacklist_ips.conf"
+    )
+
+    for file in "${critical_files[@]}"; do
+        if [[ -f "$file" ]]; then
+            echo "  ✅ $(basename "$file")"
+        else
+            echo "  ❌ Missing: $(basename "$file")"
+            ((missing_files++))
+            ((issues++))
+        fi
+    done
+    echo ""
+
+    # Check localhost whitelisted
+    echo -e "${NFTBAN_CYAN}Security Checks:${NFTBAN_NC}"
+    if nftban_whitelist_check_ip "127.0.0.1" 2>/dev/null; then
+        echo "  ✅ Localhost whitelisted (127.0.0.1)"
+    else
+        echo "  ⚠️  Localhost NOT whitelisted!"
+        ((issues++))
+    fi
+
+    if nftban_whitelist_check_ip "::1" 2>/dev/null; then
+        echo "  ✅ Localhost whitelisted (::1)"
+    else
+        echo "  ⚠️  Localhost IPv6 NOT whitelisted!"
+    fi
+    echo ""
+
+    # Summary
+    echo "═══════════════════════════════════════════════════════════════"
+    if [[ $issues -eq 0 ]]; then
+        echo -e "  ${NFTBAN_GREEN}✅ Health check PASSED${NFTBAN_NC}"
+    else
+        echo -e "  ${NFTBAN_YELLOW}⚠️  Health check found $issues issue(s)${NFTBAN_NC}"
+        echo ""
+        echo "  Run repair: nftban maintenance repair"
+    fi
+    echo "═══════════════════════════════════════════════════════════════"
+    echo ""
+
+    return $issues
+}
+
+# =============================================================================
+# STATISTICS AND ANALYSIS (from OLD_FOR_REFERENCE)
+# =============================================================================
+
+nftban_maintenance_show_stats() {
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════"
+    echo "  NFTBan System Statistics"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo ""
+
+    # Configuration stats
+    echo -e "${NFTBAN_CYAN}Configuration:${NFTBAN_NC}"
+    if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]]; then
+        local enabled_count=$(grep -c "=\"TRUE\"" "${NFTBAN_CONFIG_DIR}/nftban.conf.local" 2>/dev/null || echo "0")
+        echo "  Enabled features: $enabled_count"
+    fi
+
+    # Whitelist/Blacklist stats
+    local whitelist_count=$(grep -v "^#" "${NFTBAN_CONFIG_DIR}/user-whitelist_ips.conf" 2>/dev/null | grep -c "." || echo "0")
+    local blacklist_count=$(grep -v "^#" "${NFTBAN_CONFIG_DIR}/user-blacklist_ips.conf" 2>/dev/null | grep -c "." || echo "0")
+    echo "  Whitelisted IPs: $whitelist_count"
+    echo "  Blacklisted IPs: $blacklist_count"
+    echo ""
+
+    # Ban statistics from logs
+    echo -e "${NFTBAN_CYAN}Ban Statistics:${NFTBAN_NC}"
+    if [[ -f "$NFTBAN_BAN_LOG" ]]; then
+        local total_bans=$(grep -c "BAN" "$NFTBAN_BAN_LOG" 2>/dev/null || echo "0")
+        local today_bans=$(grep "$(date '+%Y-%m-%d')" "$NFTBAN_BAN_LOG" 2>/dev/null | grep -c "BAN" || echo "0")
+        echo "  Total bans recorded: $total_bans"
+        echo "  Bans today: $today_bans"
+
+        # Top 5 banned IPs
+        if [[ $total_bans -gt 0 ]]; then
+            echo ""
+            echo "  Top 5 banned IPs:"
+            awk '/BAN/ {match($0, /[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+|[0-9a-fA-F:]+/, ip); if(ip[0]) print ip[0]}' "$NFTBAN_BAN_LOG" 2>/dev/null | \
+                sort | uniq -c | sort -rn | head -5 | while read -r count ip; do
+                echo "    $ip: $count times"
+            done
+        fi
+    else
+        echo "  No ban log found"
+    fi
+    echo ""
+
+    # Service status
+    echo -e "${NFTBAN_CYAN}Service Status:${NFTBAN_NC}"
+    for service in nftables fail2ban; do
+        if systemctl is-active --quiet "$service" 2>/dev/null; then
+            echo -e "  $service: ${NFTBAN_GREEN}Active${NFTBAN_NC}"
+        else
+            echo -e "  $service: ${NFTBAN_RED}Inactive${NFTBAN_NC}"
+        fi
+    done
+    echo ""
+
+    # nftables tables count
+    local nftban_tables_v4=$(nft list tables ip 2>/dev/null | grep -c "nftban" || echo "0")
+    local nftban_tables_v6=$(nft list tables ip6 2>/dev/null | grep -c "nftban" || echo "0")
+    echo "  NFTBan tables (IPv4): $nftban_tables_v4"
+    echo "  NFTBan tables (IPv6): $nftban_tables_v6"
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════"
+    echo ""
+}
+
+# =============================================================================
 # SERVICE MANAGEMENT
 # =============================================================================
 
@@ -542,7 +913,7 @@ nftban_maintenance_list_backups() {
 nftban_service_control() {
     local action="$1"
     local service="${2:-all}"
-    
+
     case "$service" in
         nftables|nft)
             case "$action" in
@@ -585,4 +956,10 @@ export -f nftban_maintenance_create_backup
 export -f nftban_maintenance_list_backups
 export -f nftban_service_control
 
-nftban_log_debug "NFTBan Maintenance Module loaded (v2.0.0 with panel UI)"
+# NEW: Enhanced functions from OLD_FOR_REFERENCE
+export -f nftban_maintenance_validate_config
+export -f nftban_maintenance_repair_config
+export -f nftban_maintenance_health_check_detailed
+export -f nftban_maintenance_show_stats
+
+nftban_log_debug "NFTBan Maintenance Module loaded (v2.0.0 with panel UI + enhanced validation/repair)"

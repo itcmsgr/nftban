@@ -6,7 +6,10 @@
 # PATCHED: Correct module sourcing per architecture
 # =============================================================================
 
-set -euo pipefail
+# Strict & safe defaults (per NFTBan Remediation Guide 2025-10-20)
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 027
 
 # =============================================================================
 # CHECK AND INSTALL BOOTSTRAP DEPENDENCIES

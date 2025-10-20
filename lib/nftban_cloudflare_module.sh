@@ -19,12 +19,13 @@ readonly NFTBAN_CLOUDFLARE_LOADED=1
 # =============================================================================
 readonly NFTBAN_CF_IPV4_CACHE="${NFTBAN_CACHE_DIR}/cloudflare-ipv4.txt"
 readonly NFTBAN_CF_IPV6_CACHE="${NFTBAN_CACHE_DIR}/cloudflare-ipv6.txt"
-readonly NFTBAN_CF_WHITELIST="${NFTBAN_CONFIG_DIR}/whitelist-cloudflare.conf"
 readonly NFTBAN_CF_LOG="${NFTBAN_LOG_DIR}/cloudflare.log"
 
-# Cloudflare IP list URLs
-readonly NFTBAN_CF_IPV4_URL="https://www.cloudflare.com/ips-v4"
-readonly NFTBAN_CF_IPV6_URL="https://www.cloudflare.com/ips-v6"
+# Read configuration from nftban.conf
+CLOUDFLARE_IPV4_URL="${CLOUDFLARE_IPV4_URL:-https://www.cloudflare.com/ips-v4}"
+CLOUDFLARE_IPV6_URL="${CLOUDFLARE_IPV6_URL:-https://www.cloudflare.com/ips-v6}"
+CLOUDFLARE_IPV4_WHITELIST_FILE="${CLOUDFLARE_IPV4_WHITELIST_FILE:-/etc/nftban/config/cloudflare-whitelist_ipsv4.conf}"
+CLOUDFLARE_IPV6_WHITELIST_FILE="${CLOUDFLARE_IPV6_WHITELIST_FILE:-/etc/nftban/config/cloudflare-whitelist_ipsv6.conf}"
 
 # =============================================================================
 # CLOUDFLARE LOGGING
@@ -47,7 +48,7 @@ nftban_cloudflare_download_ips() {
     
     # Download IPv4 ranges
     nftban_log_info "  Downloading IPv4 ranges..."
-    if curl -sf "$NFTBAN_CF_IPV4_URL" -o "${NFTBAN_CF_IPV4_CACHE}.tmp" 2>/dev/null; then
+    if curl -sf "$CLOUDFLARE_IPV4_URL" -o "${NFTBAN_CF_IPV4_CACHE}.tmp" 2>/dev/null; then
         mv "${NFTBAN_CF_IPV4_CACHE}.tmp" "$NFTBAN_CF_IPV4_CACHE"
         local ipv4_count=$(wc -l < "$NFTBAN_CF_IPV4_CACHE")
         nftban_log_success "  Downloaded $ipv4_count IPv4 ranges"
@@ -61,7 +62,7 @@ nftban_cloudflare_download_ips() {
     
     # Download IPv6 ranges
     nftban_log_info "  Downloading IPv6 ranges..."
-    if curl -sf "$NFTBAN_CF_IPV6_URL" -o "${NFTBAN_CF_IPV6_CACHE}.tmp" 2>/dev/null; then
+    if curl -sf "$CLOUDFLARE_IPV6_URL" -o "${NFTBAN_CF_IPV6_CACHE}.tmp" 2>/dev/null; then
         mv "${NFTBAN_CF_IPV6_CACHE}.tmp" "$NFTBAN_CF_IPV6_CACHE"
         local ipv6_count=$(wc -l < "$NFTBAN_CF_IPV6_CACHE")
         nftban_log_success "  Downloaded $ipv6_count IPv6 ranges"
@@ -87,74 +88,92 @@ nftban_cloudflare_download_ips() {
 }
 
 # =============================================================================
-# UPDATE CLOUDFLARE WHITELIST FILE
+# UPDATE CLOUDFLARE WHITELIST FILES (IPv4 and IPv6 separately)
 # =============================================================================
 nftban_cloudflare_update_whitelist() {
-    local cf_enabled=$(nftban_get_config "CLOUDFLARE_ENABLED" "false")
-    
-    if [[ "$cf_enabled" != "true" ]]; then
-        nftban_log_debug "Cloudflare integration disabled, skipping whitelist update"
+    local ipv4_enabled=$(nftban_get_config "CLOUDFLARE_IPV4_WHITELIST" "FALSE")
+    local ipv6_enabled=$(nftban_get_config "CLOUDFLARE_IPV6_WHITELIST" "FALSE")
+
+    if [[ "$ipv4_enabled" != "TRUE" && "$ipv6_enabled" != "TRUE" ]]; then
+        nftban_log_debug "Cloudflare whitelisting disabled, skipping whitelist update"
         return 0
     fi
-    
-    nftban_log_info "Updating Cloudflare whitelist file..."
-    
-    local temp_file="${NFTBAN_CF_WHITELIST}.tmp"
+
+    nftban_log_info "Updating Cloudflare whitelist files..."
+
     local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
-    
-    # Create whitelist header
-    cat > "$temp_file" <<HEADER
+
+    # Update IPv4 whitelist if enabled
+    if [[ "$ipv4_enabled" == "TRUE" && -f "$NFTBAN_CF_IPV4_CACHE" ]]; then
+        local temp_file="${CLOUDFLARE_IPV4_WHITELIST_FILE}.tmp"
+
+        cat > "$temp_file" <<HEADER
 # =============================================================================
-# Cloudflare IP Ranges - Auto-generated
+# Cloudflare IPv4 Ranges - Auto-generated
 # Generated: $timestamp
-# Source: $NFTBAN_CF_IPV4_URL
-#         $NFTBAN_CF_IPV6_URL
-# =============================================================================
-# These IPs are automatically whitelisted when CLOUDFLARE_ENABLED=true
+# Source: $CLOUDFLARE_IPV4_URL
 # =============================================================================
 
 HEADER
-    
-    local total_ranges=0
-    
-    # Add IPv4 ranges
-    if [[ -f "$NFTBAN_CF_IPV4_CACHE" ]]; then
-        echo "# IPv4 Ranges" >> "$temp_file"
+
         cat "$NFTBAN_CF_IPV4_CACHE" >> "$temp_file"
+
         local ipv4_count=$(wc -l < "$NFTBAN_CF_IPV4_CACHE")
-        total_ranges=$((total_ranges + ipv4_count))
-        echo "" >> "$temp_file"
-    fi
-    
-    # Add IPv6 ranges
-    if [[ -f "$NFTBAN_CF_IPV6_CACHE" ]]; then
-        echo "# IPv6 Ranges" >> "$temp_file"
-        cat "$NFTBAN_CF_IPV6_CACHE" >> "$temp_file"
-        local ipv6_count=$(wc -l < "$NFTBAN_CF_IPV6_CACHE")
-        total_ranges=$((total_ranges + ipv6_count))
-    fi
-    
-    # Add footer
-    cat >> "$temp_file" <<FOOTER
+
+        cat >> "$temp_file" <<FOOTER
 
 # =============================================================================
-# Total ranges: $total_ranges
 # Last updated: $timestamp
+# Status: ENABLED - $ipv4_count IPv4 ranges
 # =============================================================================
 FOOTER
-    
-    # Atomic move
-    mv "$temp_file" "$NFTBAN_CF_WHITELIST"
-    chmod 644 "$NFTBAN_CF_WHITELIST"
-    
-    nftban_log_success "Cloudflare whitelist updated: $total_ranges ranges"
-    nftban_cf_log "Whitelist file updated: $total_ranges ranges"
-    
+
+        mv "$temp_file" "$CLOUDFLARE_IPV4_WHITELIST_FILE"
+        chmod 644 "$CLOUDFLARE_IPV4_WHITELIST_FILE"
+
+        nftban_log_success "  IPv4 whitelist updated: $ipv4_count ranges"
+        nftban_cf_log "IPv4 whitelist file updated: $ipv4_count ranges"
+    fi
+
+    # Update IPv6 whitelist if enabled
+    if [[ "$ipv6_enabled" == "TRUE" && -f "$NFTBAN_CF_IPV6_CACHE" ]]; then
+        local temp_file="${CLOUDFLARE_IPV6_WHITELIST_FILE}.tmp"
+
+        cat > "$temp_file" <<HEADER
+# =============================================================================
+# Cloudflare IPv6 Ranges - Auto-generated
+# Generated: $timestamp
+# Source: $CLOUDFLARE_IPV6_URL
+# =============================================================================
+
+HEADER
+
+        cat "$NFTBAN_CF_IPV6_CACHE" >> "$temp_file"
+
+        local ipv6_count=$(wc -l < "$NFTBAN_CF_IPV6_CACHE")
+
+        cat >> "$temp_file" <<FOOTER
+
+# =============================================================================
+# Last updated: $timestamp
+# Status: ENABLED - $ipv6_count IPv6 ranges
+# =============================================================================
+FOOTER
+
+        mv "$temp_file" "$CLOUDFLARE_IPV6_WHITELIST_FILE"
+        chmod 644 "$CLOUDFLARE_IPV6_WHITELIST_FILE"
+
+        nftban_log_success "  IPv6 whitelist updated: $ipv6_count ranges"
+        nftban_cf_log "IPv6 whitelist file updated: $ipv6_count ranges"
+    fi
+
+    nftban_log_success "Cloudflare whitelist files updated"
+
     # Trigger search index rebuild
     if declare -f nftban_search_build_index &>/dev/null; then
         nftban_search_build_index
     fi
-    
+
     return 0
 }
 
@@ -257,25 +276,26 @@ nftban_cloudflare_remove_from_nftables() {
 # ENABLE CLOUDFLARE INTEGRATION
 # =============================================================================
 nftban_cloudflare_enable() {
-    nftban_log_info "Enabling Cloudflare integration..."
-    
-    # Update configuration
-    nftban_set_config "CLOUDFLARE_ENABLED" "true"
-    
+    nftban_log_info "Enabling Cloudflare whitelisting..."
+
+    # Update configuration - enable both IPv4 and IPv6
+    nftban_set_config "CLOUDFLARE_IPV4_WHITELIST" "TRUE"
+    nftban_set_config "CLOUDFLARE_IPV6_WHITELIST" "TRUE"
+
     # Download IP ranges
     if ! nftban_cloudflare_download_ips; then
         nftban_log_error "Failed to download Cloudflare IPs"
         return 1
     fi
-    
+
     # Apply to nftables if table exists
     if nftban_check_nftables_table; then
         nftban_cloudflare_apply_to_nftables
     fi
-    
-    nftban_log_success "Cloudflare integration enabled"
-    nftban_cf_log "Cloudflare integration enabled"
-    
+
+    nftban_log_success "Cloudflare whitelisting enabled (IPv4 and IPv6)"
+    nftban_cf_log "Cloudflare whitelisting enabled"
+
     return 0
 }
 
@@ -283,27 +303,97 @@ nftban_cloudflare_enable() {
 # DISABLE CLOUDFLARE INTEGRATION
 # =============================================================================
 nftban_cloudflare_disable() {
-    nftban_log_info "Disabling Cloudflare integration..."
-    
-    # Update configuration
-    nftban_set_config "CLOUDFLARE_ENABLED" "false"
-    
-    # Clear whitelist file
-    > "$NFTBAN_CF_WHITELIST"
-    
+    nftban_log_info "Disabling Cloudflare whitelisting..."
+
+    # Update configuration - disable both IPv4 and IPv6
+    nftban_set_config "CLOUDFLARE_IPV4_WHITELIST" "FALSE"
+    nftban_set_config "CLOUDFLARE_IPV6_WHITELIST" "FALSE"
+
+    local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
+
+    # Clear IPv4 whitelist file but keep template header
+    cat > "$CLOUDFLARE_IPV4_WHITELIST_FILE" <<'EOF'
+# =============================================================================
+# NFTBan Template File
+# Version: init 1.0
+# Template Name: cloudflare-whitelist_ipsv4.conf
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
+# Template Directory: /etc/nftban/templates/conf
+# User Customization Path: /etc/nftban/conf
+#
+# Description:
+# This template is used to store a list of IPv4 addresses provided by Cloudflare.
+# These IPs are typically whitelisted to ensure uninterrupted access from Cloudflare's edge network.
+#
+# Behavior:
+# - Users may override this template by creating a custom version under /etc/nftban/conf.
+# - If no custom file is found, the default template will be applied.
+#
+# Notes:
+# - Keep the IP list updated according to Cloudflare's official documentation.
+# - Ensure proper formatting to avoid parsing errors.
+# =============================================================================
+
+# (No IPs - Cloudflare IPv4 whitelist is DISABLED)
+# To enable: nftban cloudflare enable
+
+EOF
+    echo "# =============================================================================" >> "$CLOUDFLARE_IPV4_WHITELIST_FILE"
+    echo "# Last updated: $timestamp" >> "$CLOUDFLARE_IPV4_WHITELIST_FILE"
+    echo "# Status: DISABLED" >> "$CLOUDFLARE_IPV4_WHITELIST_FILE"
+    echo "# =============================================================================" >> "$CLOUDFLARE_IPV4_WHITELIST_FILE"
+    chmod 644 "$CLOUDFLARE_IPV4_WHITELIST_FILE"
+
+    # Clear IPv6 whitelist file but keep template header
+    cat > "$CLOUDFLARE_IPV6_WHITELIST_FILE" <<'EOF'
+# =============================================================================
+# NFTBan Template File
+# Version: init 1.0
+# Template Name: cloudflare-whitelist_ipsv6.conf
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
+# Template Directory: /etc/nftban/templates/conf
+# User Customization Path: /etc/nftban/conf
+#
+# Description:
+# This template is used to store a list of IPv6 addresses provided by Cloudflare.
+# These IPs are typically whitelisted to ensure uninterrupted access from Cloudflare's edge network.
+#
+# Behavior:
+# - Users may override this template by creating a custom version under /etc/nftban/conf.
+# - If no custom file is found, the default template will be applied.
+#
+# Notes:
+# - Keep the IP list updated according to Cloudflare's official documentation.
+# - Ensure proper formatting to avoid parsing errors.
+# =============================================================================
+
+# (No IPs - Cloudflare IPv6 whitelist is DISABLED)
+# To enable: nftban cloudflare enable
+
+EOF
+    echo "# =============================================================================" >> "$CLOUDFLARE_IPV6_WHITELIST_FILE"
+    echo "# Last updated: $timestamp" >> "$CLOUDFLARE_IPV6_WHITELIST_FILE"
+    echo "# Status: DISABLED" >> "$CLOUDFLARE_IPV6_WHITELIST_FILE"
+    echo "# =============================================================================" >> "$CLOUDFLARE_IPV6_WHITELIST_FILE"
+    chmod 644 "$CLOUDFLARE_IPV6_WHITELIST_FILE"
+
     # Remove from nftables if table exists
     if nftban_check_nftables_table; then
         nftban_cloudflare_remove_from_nftables
     fi
-    
+
     # Rebuild search index
     if declare -f nftban_search_build_index &>/dev/null; then
         nftban_search_build_index
     fi
-    
-    nftban_log_success "Cloudflare integration disabled"
-    nftban_cf_log "Cloudflare integration disabled"
-    
+
+    nftban_log_success "Cloudflare whitelisting disabled (IPv4 and IPv6)"
+    nftban_cf_log "Cloudflare whitelisting disabled"
+
     return 0
 }
 
@@ -428,17 +518,84 @@ nftban_cloudflare_auto_update() {
 nftban_cloudflare_init() {
     # Create cache directory
     mkdir -p "$(dirname "$NFTBAN_CF_IPV4_CACHE")"
-    
-    # Create whitelist file if doesn't exist
-    if [[ ! -f "$NFTBAN_CF_WHITELIST" ]]; then
-        cat > "$NFTBAN_CF_WHITELIST" <<EOF
-# Cloudflare IP Ranges
-# This file is automatically generated
-# Do not edit manually
+    mkdir -p "$(dirname "$CLOUDFLARE_IPV4_WHITELIST_FILE")"
+
+    local timestamp=$(date +'%Y-%m-%d %H:%M:%S')
+
+    # Create IPv4 whitelist template file if doesn't exist
+    if [[ ! -f "$CLOUDFLARE_IPV4_WHITELIST_FILE" ]]; then
+        cat > "$CLOUDFLARE_IPV4_WHITELIST_FILE" <<'EOF'
+# =============================================================================
+# NFTBan Template File
+# Version: init 1.0
+# Template Name: cloudflare-whitelist_ipsv4.conf
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
+# Template Directory: /etc/nftban/templates/conf
+# User Customization Path: /etc/nftban/conf
+#
+# Description:
+# This template is used to store a list of IPv4 addresses provided by Cloudflare.
+# These IPs are typically whitelisted to ensure uninterrupted access from Cloudflare's edge network.
+#
+# Behavior:
+# - Users may override this template by creating a custom version under /etc/nftban/conf.
+# - If no custom file is found, the default template will be applied.
+#
+# Notes:
+# - Keep the IP list updated according to Cloudflare's official documentation.
+# - Ensure proper formatting to avoid parsing errors.
+# =============================================================================
+
+# (No IPs - Cloudflare IPv4 whitelist is DISABLED)
+# To enable: nftban cloudflare enable
+
 EOF
-        chmod 644 "$NFTBAN_CF_WHITELIST"
+        echo "# =============================================================================" >> "$CLOUDFLARE_IPV4_WHITELIST_FILE"
+        echo "# Created: $timestamp" >> "$CLOUDFLARE_IPV4_WHITELIST_FILE"
+        echo "# Status: DISABLED" >> "$CLOUDFLARE_IPV4_WHITELIST_FILE"
+        echo "# =============================================================================" >> "$CLOUDFLARE_IPV4_WHITELIST_FILE"
+        chmod 644 "$CLOUDFLARE_IPV4_WHITELIST_FILE"
     fi
-    
+
+    # Create IPv6 whitelist template file if doesn't exist
+    if [[ ! -f "$CLOUDFLARE_IPV6_WHITELIST_FILE" ]]; then
+        cat > "$CLOUDFLARE_IPV6_WHITELIST_FILE" <<'EOF'
+# =============================================================================
+# NFTBan Template File
+# Version: init 1.0
+# Template Name: cloudflare-whitelist_ipsv6.conf
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
+# Template Directory: /etc/nftban/templates/conf
+# User Customization Path: /etc/nftban/conf
+#
+# Description:
+# This template is used to store a list of IPv6 addresses provided by Cloudflare.
+# These IPs are typically whitelisted to ensure uninterrupted access from Cloudflare's edge network.
+#
+# Behavior:
+# - Users may override this template by creating a custom version under /etc/nftban/conf.
+# - If no custom file is found, the default template will be applied.
+#
+# Notes:
+# - Keep the IP list updated according to Cloudflare's official documentation.
+# - Ensure proper formatting to avoid parsing errors.
+# =============================================================================
+
+# (No IPs - Cloudflare IPv6 whitelist is DISABLED)
+# To enable: nftban cloudflare enable
+
+EOF
+        echo "# =============================================================================" >> "$CLOUDFLARE_IPV6_WHITELIST_FILE"
+        echo "# Created: $timestamp" >> "$CLOUDFLARE_IPV6_WHITELIST_FILE"
+        echo "# Status: DISABLED" >> "$CLOUDFLARE_IPV6_WHITELIST_FILE"
+        echo "# =============================================================================" >> "$CLOUDFLARE_IPV6_WHITELIST_FILE"
+        chmod 644 "$CLOUDFLARE_IPV6_WHITELIST_FILE"
+    fi
+
     nftban_log_debug "Cloudflare module initialized"
 }
 
