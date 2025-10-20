@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan Installation & Management Script
-# Version: 7.0.0
+# Version: 0.9.0
 # Author: ITCMS Team (Antonios Voulvoulis)
 #
 # Description:
@@ -1152,7 +1152,7 @@ show_usage() {
     cat << 'EOF'
 =================================================================
   NFTBan Installation & Management Script
-  Version: 7.0.0
+  Version: 0.9.0
 =================================================================
 
 USAGE:

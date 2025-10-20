@@ -256,7 +256,7 @@ installer_show_help() {
     cat << 'EOF'
 =================================================================
   NFTBan Installer - Modular Installation System
-  Version: 7.0.0
+  Version: 0.9.0
 =================================================================
 
 USAGE:

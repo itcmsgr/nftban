@@ -784,6 +784,17 @@ cmd_maintenance() {
             nftban_log_info "Available backups:"
             find "${NFTBAN_UPDATE_BACKUP_DIR}" -maxdepth 1 -type d -name "pre_update_*" 2>/dev/null | sort -r | head -10
             ;;
+        restore)
+            nftban_check_root || exit 1
+            [[ $# -lt 1 ]] && {
+                nftban_log_error "Usage: nftban maintenance restore <backup_dir>"
+                echo ""
+                echo "Available backups:"
+                find "${NFTBAN_UPDATE_BACKUP_DIR}" -maxdepth 1 -type d -name "pre_update_*" 2>/dev/null | sort -r | head -10
+                exit 1
+            }
+            nftban_update_rollback "$1"
+            ;;
         clean)
             nftban_check_root || exit 1
             nftban_maintenance_run
@@ -835,6 +846,7 @@ cmd_maintenance() {
             echo "  stats            Show system statistics"
             echo "  backup           Create manual backup"
             echo "  list-backups     List available backups"
+            echo "  restore <dir>    Restore from backup"
             echo "  clean            Run maintenance cleanup"
             echo ""
             echo "Service Management:"
@@ -1659,6 +1671,21 @@ cmd_init() {
     nftban_log_success "nftban initialized successfully"
 }
 
+cmd_uninstall() {
+    nftban_check_root || exit 1
+
+    local uninstaller="${NFTBAN_BASE_DIR}/lib/installer/nftban_uninstall_script.sh"
+
+    if [[ ! -f "$uninstaller" ]]; then
+        nftban_log_error "Uninstaller script not found: $uninstaller"
+        nftban_log_info "Expected location: /etc/nftban/lib/installer/nftban_uninstall_script.sh"
+        return 1
+    fi
+
+    # Call uninstaller with arguments
+    bash "$uninstaller" "$@"
+}
+
 cmd_status() {
     echo ""
     echo "╔═══════════════════════════════════════════════════════╗"
@@ -1819,6 +1846,7 @@ USAGE:
 
 SYSTEM MANAGEMENT:
     init                    Initialize nftban system
+    uninstall               Uninstall nftban system
     status                  Show system status
     verify                  Verify system health
     version                 Show version information
@@ -1893,6 +1921,8 @@ UPDATE & MAINTENANCE:
     maintenance health      Comprehensive health check
     maintenance stats       Show system statistics
     maintenance backup      Create system backup
+    maintenance list-backups List available backups
+    maintenance restore <dir> Restore from backup
 
 TESTING & DIAGNOSTICS:
     test quick              Quick smoke test (essential checks)
@@ -1984,6 +2014,7 @@ main() {
     
     case "$command" in
         init) cmd_init "$@" ;;
+        uninstall|remove) cmd_uninstall "$@" ;;
         status) cmd_status "$@" ;;
         verify) cmd_verify "$@" ;;
         validate|validator) cmd_validate "$@" ;;
