@@ -281,13 +281,13 @@ nftban_set_config() {
     local key="$1"
     local value="$2"
     local file="${3:-$NFTBAN_LOCAL_CONFIG}"
-    
+
     # Create file if doesn't exist
     if [[ ! -f "$file" ]]; then
         mkdir -p "$(dirname "$file")"
         touch "$file"
     fi
-    
+
     # Check if key exists
     if grep -q "^${key}=" "$file" 2>/dev/null; then
         # Update existing
@@ -296,8 +296,24 @@ nftban_set_config() {
         # Add new
         echo "${key}=\"${value}\"" >> "$file"
     fi
-    
-    nftban_log_debug "Config set: ${key}=${value}"
+
+    # SECURITY: Redact sensitive config values from logs
+    # List of sensitive config keys that should not be logged
+    local sensitive_keys=(
+        "PASSWORD" "TOKEN" "SECRET" "KEY" "API_KEY"
+        "SMTP_PASSWORD" "DB_PASSWORD" "AUTH_TOKEN"
+        "PRIVATE_KEY" "ACCESS_KEY" "CREDENTIALS"
+    )
+
+    local log_value="$value"
+    for sensitive in "${sensitive_keys[@]}"; do
+        if [[ "$key" =~ $sensitive ]]; then
+            log_value="[REDACTED]"
+            break
+        fi
+    done
+
+    nftban_log_debug "Config set: ${key}=${log_value}"
 }
 
 nftban_load_config() {

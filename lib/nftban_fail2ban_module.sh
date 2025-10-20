@@ -43,17 +43,41 @@ nftban_fail2ban_setup() {
     
     cat > "$action_file" << 'EOF'
 # nftban action for fail2ban
+# SECURITY: Idempotent actions - safe to call multiple times
 [Definition]
 
 actionstart =
 actionstop =
+
+# IDEMPOTENCY: Check if IP is already banned before ban action
+# Returns success even if already banned (prevents fail2ban errors)
 actioncheck =
-actionban = nftban blacklist ban <ip> <name> <bantime>
-actionunban = nftban blacklist unban <ip> <name>
+
+# BAN action with idempotency
+# 1. Check if IP already in nftables blacklist set
+# 2. If not present, add to blacklist
+# 3. If already present, skip (idempotent)
+actionban = if ! nft list set inet nftban_global perm_ban_v4 2>/dev/null | grep -q '<ip>'; then
+              nftban blacklist ban '<ip>' '<name>' '<bantime>' 2>&1 | logger -t nftban-f2b
+            fi
+
+# UNBAN action with idempotency
+# 1. Check if IP exists in blacklist
+# 2. If present, remove from blacklist
+# 3. If not present, skip (idempotent)
+actionunban = if nft list set inet nftban_global perm_ban_v4 2>/dev/null | grep -q '<ip>'; then
+                nftban blacklist unban '<ip>' '<name>' 2>&1 | logger -t nftban-f2b
+              fi
 
 [Init]
 name = default
 bantime = 3600
+
+# NOTES:
+# - Actions log to syslog via logger for audit trail
+# - Conditional execution prevents duplicate entries
+# - Safe to call multiple times (idempotent)
+# - Works with both nftban CLI and direct fail2ban calls
 EOF
 
     chmod 644 "$action_file"
