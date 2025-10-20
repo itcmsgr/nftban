@@ -1,21 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
 # NFTBan Monitoring Module
-# =============================================================================
-# Description: System resource monitoring with multi-level alerts
+# Version: 0.9.0
+# Location: lib/nftban_monitoring_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
-# Version: 0.8.0
-# Date: 2025-10-20
-#
-# Features:
-#   - Disk space monitoring (80%, 90%, 95% thresholds)
-#   - Memory monitoring with duration checks
-#   - CPU monitoring with duration checks
-#   - Inode monitoring
-#   - Email alerts via nftban_send_email
-#   - State tracking for sustained violations
+# System resource monitoring with multi-level alerts and sustained violation tracking
 # =============================================================================
 
 # Strict & safe defaults (per NFTBan Remediation Guide 2025-10-20)
@@ -596,6 +587,12 @@ nftban_monitor_status() {
     echo "  Memory: $((${NFTBAN_MONITOR_MEM_DURATION_WARN:-${NFTBAN_MONITOR_MEM_DURATION_WARN_DEFAULT}}/60))m / $((${NFTBAN_MONITOR_MEM_DURATION_CRIT:-${NFTBAN_MONITOR_MEM_DURATION_CRIT_DEFAULT}}/60))m / $((${NFTBAN_MONITOR_MEM_DURATION_EMERG:-${NFTBAN_MONITOR_MEM_DURATION_EMERG_DEFAULT}}/60))m"
     echo "  CPU:    $((${NFTBAN_MONITOR_CPU_DURATION_WARN:-${NFTBAN_MONITOR_CPU_DURATION_WARN_DEFAULT}}/60))m / $((${NFTBAN_MONITOR_CPU_DURATION_CRIT:-${NFTBAN_MONITOR_CPU_DURATION_CRIT_DEFAULT}}/60))m / $((${NFTBAN_MONITOR_CPU_DURATION_EMERG:-${NFTBAN_MONITOR_CPU_DURATION_EMERG_DEFAULT}}/60))m"
 }
+
+# =============================================================================
+# EXPORT FUNCTIONS
+# =============================================================================
+export -f nftban_monitor_run
+export -f nftban_monitor_status
 
 # =============================================================================
 # MODULE INFO
