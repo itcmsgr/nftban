@@ -95,17 +95,22 @@ nftban_check_nft_duplicates() {
     fi
 
     # Extract all IPs from all sets (no _v suffix in v0.9.0)
-    local temp_file="/tmp/nftban_all_ips.$$"
-    > "$temp_file"
+    local temp_file
+    temp_file=$(mktemp) || {
+        nftban_log_error "Failed to create temporary file for duplicate checking"
+        return 1
+    }
+    trap 'rm -f "$temp_file"' RETURN
 
     for set_name in whitelist temp_ban user_blacklist system_blacklist feeds; do
         nft list set "$table_family" "$table_name" "$set_name" 2>/dev/null | \
             grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F.:]\+' >> "$temp_file" || true
     done
-    
+
     # Check for duplicates
     duplicates=$(sort "$temp_file" | uniq -d | wc -l)
     rm -f "$temp_file"
+    trap - RETURN
     
     if [[ $duplicates -gt 0 ]]; then
         nftban_log_warning "Found $duplicates duplicate IPs across nftables sets (IPv${ver})"

@@ -209,39 +209,46 @@ nftban_nftables_apply_rules_v4() {
         iif lo counter accept \
         comment "Accept loopback" 2>/dev/null || true
 
-    # RULE 3: WHITELIST CHECK (HIGHEST PRIORITY)
+    # RULE 3: WHITELIST CHECK (HIGHEST PRIORITY - MUST BE FIRST ACCEPT!)
+    # SECURITY: Whitelisted IPs MUST NEVER be blocked
     # NOTE: No 'ip saddr' needed - table is already IPv4-specific!
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
         saddr @whitelist counter accept \
         comment "Accept whitelisted" 2>/dev/null || true
 
-    # RULE 4: THREAT FEEDS BLOCKING
-    nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
-        saddr @feeds counter drop \
-        comment "Block threat feeds" 2>/dev/null || true
-
-    # RULE 5: TEMPORARY BANS
-    nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
-        saddr @temp_ban counter drop \
-        comment "Block temporary banned" 2>/dev/null || true
-
-    # RULE 6: USER BLACKLIST
-    nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
-        saddr @user_blacklist counter drop \
-        comment "Block user blacklist" 2>/dev/null || true
-
-    # RULE 7: SYSTEM BLACKLIST
-    nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
-        saddr @system_blacklist counter drop \
-        comment "Block system blacklist" 2>/dev/null || true
-
-    # RULE 8: Accept ICMP (for network diagnostics)
+    # RULE 4: Accept ICMP (for network diagnostics)
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
         icmp type { echo-request, echo-reply } counter accept \
         comment "Accept ICMP" 2>/dev/null || true
 
-    # RULE 9: Apply configured port rules
+    # RULE 5: Apply configured port rules (service acceptance before drops)
     nftban_nftables_apply_port_rules_v4 "input"
+
+    # =============================================================================
+    # DROP ZONE: Order here determines priority for logging/counters only
+    # All drops are equal from security perspective, but order matters for visibility
+    # =============================================================================
+
+    # RULE 6: TEMPORARY BANS (highest priority drop - active threats)
+    nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
+        saddr @temp_ban counter drop \
+        comment "Block temporary banned" 2>/dev/null || true
+
+    # RULE 7: USER BLACKLIST (manual permanent bans)
+    nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
+        saddr @user_blacklist counter drop \
+        comment "Block user blacklist" 2>/dev/null || true
+
+    # RULE 8: SYSTEM BLACKLIST (automatic permanent bans)
+    nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
+        saddr @system_blacklist counter drop \
+        comment "Block system blacklist" 2>/dev/null || true
+
+    # RULE 9: THREAT FEEDS BLOCKING (LOWEST PRIORITY - last resort)
+    # SECURITY: Feeds come LAST so temp/perm bans take precedence
+    nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
+        saddr @feeds counter drop \
+        comment "Block threat feeds" 2>/dev/null || true
 
     # =============================================================================
     # IPv4 OUTPUT CHAIN RULES
@@ -290,39 +297,46 @@ nftban_nftables_apply_rules_v6() {
         iif lo counter accept \
         comment "Accept loopback" 2>/dev/null || true
 
-    # RULE 3: WHITELIST CHECK
+    # RULE 3: WHITELIST CHECK (HIGHEST PRIORITY - MUST BE FIRST ACCEPT!)
+    # SECURITY: Whitelisted IPs MUST NEVER be blocked
     # NOTE: No 'ip6 saddr' needed - table is already IPv6-specific!
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
         saddr @whitelist counter accept \
         comment "Accept whitelisted" 2>/dev/null || true
 
-    # RULE 4: THREAT FEEDS BLOCKING
-    nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
-        saddr @feeds counter drop \
-        comment "Block threat feeds" 2>/dev/null || true
-
-    # RULE 5: TEMPORARY BANS
-    nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
-        saddr @temp_ban counter drop \
-        comment "Block temporary banned" 2>/dev/null || true
-
-    # RULE 6: USER BLACKLIST
-    nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
-        saddr @user_blacklist counter drop \
-        comment "Block user blacklist" 2>/dev/null || true
-
-    # RULE 7: SYSTEM BLACKLIST
-    nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
-        saddr @system_blacklist counter drop \
-        comment "Block system blacklist" 2>/dev/null || true
-
-    # RULE 8: Accept ICMPv6 (essential for IPv6)
+    # RULE 4: Accept ICMPv6 (essential for IPv6 - must be before drops!)
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
         icmpv6 type { echo-request, echo-reply, nd-neighbor-solicit, nd-neighbor-advert, nd-router-solicit, nd-router-advert } counter accept \
         comment "Accept ICMPv6" 2>/dev/null || true
 
-    # RULE 9: Apply configured port rules
+    # RULE 5: Apply configured port rules (service acceptance before drops)
     nftban_nftables_apply_port_rules_v6 "input"
+
+    # =============================================================================
+    # DROP ZONE: Order here determines priority for logging/counters only
+    # All drops are equal from security perspective, but order matters for visibility
+    # =============================================================================
+
+    # RULE 6: TEMPORARY BANS (highest priority drop - active threats)
+    nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
+        saddr @temp_ban counter drop \
+        comment "Block temporary banned" 2>/dev/null || true
+
+    # RULE 7: USER BLACKLIST (manual permanent bans)
+    nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
+        saddr @user_blacklist counter drop \
+        comment "Block user blacklist" 2>/dev/null || true
+
+    # RULE 8: SYSTEM BLACKLIST (automatic permanent bans)
+    nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
+        saddr @system_blacklist counter drop \
+        comment "Block system blacklist" 2>/dev/null || true
+
+    # RULE 9: THREAT FEEDS BLOCKING (LOWEST PRIORITY - last resort)
+    # SECURITY: Feeds come LAST so temp/perm bans take precedence
+    nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
+        saddr @feeds counter drop \
+        comment "Block threat feeds" 2>/dev/null || true
 
     # =============================================================================
     # IPv6 OUTPUT CHAIN RULES

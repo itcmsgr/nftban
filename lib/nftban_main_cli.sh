@@ -8,7 +8,10 @@
 # Website: https://itcms.gr
 # =============================================================================
 
-set -euo pipefail
+# Strict & safe defaults (per NFTBan Remediation Guide 2025-10-20)
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 027
 
 VERSION="0.8.5"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -276,6 +279,245 @@ cmd_feeds() {
             ;;
     esac
 }
+
+# =============================================================================
+# MONITORING COMMANDS (NEW)
+# =============================================================================
+
+cmd_monitor() {
+    local action="${1:-status}"
+    shift || true
+
+    case "$action" in
+        run)
+            nftban_check_root || exit 1
+            nftban_monitor_run
+            ;;
+        status)
+            nftban_monitor_status
+            ;;
+        enable)
+            nftban_check_root || exit 1
+            nftban_log_info "Enabling system monitoring..."
+
+            # Check if systemd is available
+            if command -v systemctl >/dev/null 2>&1; then
+                # Install systemd timer
+                local service_src="${LIB_DIR}/../templates/systemd/nftban-monitor.service"
+                local timer_src="${LIB_DIR}/../templates/systemd/nftban-monitor.timer"
+                local service_dst="/etc/systemd/system/nftban-monitor.service"
+                local timer_dst="/etc/systemd/system/nftban-monitor.timer"
+
+                if [[ ! -f "$service_src" ]] || [[ ! -f "$timer_src" ]]; then
+                    nftban_log_error "Systemd templates not found"
+                    nftban_log_info "Expected locations:"
+                    nftban_log_info "  $service_src"
+                    nftban_log_info "  $timer_src"
+                    exit 1
+                fi
+
+                # Copy unit files
+                cp "$service_src" "$service_dst" || { nftban_log_error "Failed to copy service unit"; exit 1; }
+                cp "$timer_src" "$timer_dst" || { nftban_log_error "Failed to copy timer unit"; exit 1; }
+
+                # Reload systemd
+                systemctl daemon-reload || { nftban_log_error "Failed to reload systemd"; exit 1; }
+
+                # Enable and start timer
+                systemctl enable nftban-monitor.timer || { nftban_log_error "Failed to enable timer"; exit 1; }
+                systemctl start nftban-monitor.timer || { nftban_log_error "Failed to start timer"; exit 1; }
+
+                nftban_log_success "System monitoring enabled (systemd timer)"
+                echo ""
+                echo "Monitoring will run every 5 minutes automatically."
+                echo ""
+                echo "Management commands:"
+                echo "  systemctl status nftban-monitor.timer   # Check timer status"
+                echo "  systemctl stop nftban-monitor.timer     # Stop monitoring"
+                echo "  systemctl disable nftban-monitor.timer  # Disable monitoring"
+                echo "  journalctl -u nftban-monitor.service    # View logs"
+                echo ""
+            else
+                # Fallback to cron
+                nftban_log_warning "systemd not available, using cron instead"
+
+                local cron_entry="*/5 * * * * /usr/local/bin/nftban monitor run >/dev/null 2>&1"
+
+                # Check if already in crontab
+                if crontab -l 2>/dev/null | grep -q "nftban monitor run"; then
+                    nftban_log_info "Monitoring already enabled in crontab"
+                else
+                    # Add to crontab
+                    (crontab -l 2>/dev/null; echo "$cron_entry") | crontab - || {
+                        nftban_log_error "Failed to add cron entry"
+                        exit 1
+                    }
+                    nftban_log_success "System monitoring enabled (cron)"
+                fi
+
+                echo ""
+                echo "Monitoring will run every 5 minutes via cron."
+                echo ""
+                echo "To disable: crontab -e (and remove the nftban monitor line)"
+                echo ""
+            fi
+            ;;
+        disable)
+            nftban_check_root || exit 1
+            nftban_log_info "Disabling system monitoring..."
+
+            # Try systemd first
+            if command -v systemctl >/dev/null 2>&1; then
+                if systemctl is-enabled nftban-monitor.timer >/dev/null 2>&1; then
+                    systemctl stop nftban-monitor.timer 2>/dev/null || true
+                    systemctl disable nftban-monitor.timer 2>/dev/null || true
+                    nftban_log_success "System monitoring disabled (systemd timer)"
+                else
+                    nftban_log_info "Systemd timer not enabled"
+                fi
+            fi
+
+            # Check and remove from cron
+            if crontab -l 2>/dev/null | grep -q "nftban monitor run"; then
+                crontab -l 2>/dev/null | grep -v "nftban monitor run" | crontab -
+                nftban_log_success "Monitoring removed from crontab"
+            else
+                nftban_log_info "Monitoring not found in crontab"
+            fi
+            ;;
+        test)
+            nftban_check_root || exit 1
+            nftban_log_info "Testing alert delivery..."
+
+            local hostname=$(hostname -f 2>/dev/null || hostname)
+            local subject="[nftban] TEST: Monitoring alert test"
+            local body="This is a test alert from nftban monitoring system.
+
+Server: ${hostname}
+Time: $(date -Iseconds)
+Status: Monitoring system is operational
+
+If you received this email, alert delivery is working correctly."
+
+            if declare -f nftban_send_email >/dev/null 2>&1; then
+                if nftban_send_email "$subject" "$body"; then
+                    nftban_log_success "Test alert sent successfully"
+                else
+                    nftban_log_error "Failed to send test alert"
+                    nftban_log_info "Check email configuration in nftban.conf"
+                    exit 1
+                fi
+            else
+                nftban_log_error "Email function not available"
+                nftban_log_info "Ensure nftban_core.sh is loaded properly"
+                exit 1
+            fi
+            ;;
+        help)
+            cat <<'EOF'
+
+nftban monitor - System Resource Monitoring
+
+USAGE:
+    nftban monitor <action>
+
+ACTIONS:
+    run                Run monitoring checks now
+    status             Show current resource status
+    enable             Enable automated monitoring
+    disable            Disable automated monitoring
+    test               Test alert delivery
+
+DESCRIPTION:
+    The monitoring system tracks disk space, memory, CPU usage, and inodes.
+    Multi-level alerts are sent at 80% (WARNING), 90% (CRITICAL), and
+    95% (EMERGENCY) thresholds.
+
+    CPU and memory alerts require sustained threshold violations to prevent
+    false alarms (configurable durations).
+
+MONITORING THRESHOLDS:
+    Disk Space: 80% / 90% / 95% (instant alert)
+    Memory:     80% / 90% / 95% (5min / 5min / 3min sustained)
+    CPU:        80% / 90% / 95% (10min / 5min / 3min sustained)
+    Inodes:     80% / 90% / 95% (instant alert)
+
+CONFIGURATION:
+    Configuration file: /etc/nftban/config/monitoring.conf
+    User overrides:     /etc/nftban/config/monitoring.conf.local
+
+    All thresholds and durations are configurable.
+
+AUTOMATED MONITORING:
+    When enabled, monitoring runs every 5 minutes via:
+    - systemd timer (preferred, if available)
+    - cron job (fallback)
+
+LOGS:
+    Monitoring log:  /var/log/nftban/monitoring.log
+    Systemd journal: journalctl -u nftban-monitor.service
+
+EXAMPLES:
+    # Run checks manually
+    sudo nftban monitor run
+
+    # View current status
+    nftban monitor status
+
+    # Enable automated monitoring
+    sudo nftban monitor enable
+
+    # Test alert delivery
+    sudo nftban monitor test
+
+    # Disable automated monitoring
+    sudo nftban monitor disable
+
+    # View monitoring logs
+    tail -f /var/log/nftban/monitoring.log
+    journalctl -u nftban-monitor.service -f
+
+CUSTOMIZATION:
+    Create /etc/nftban/config/monitoring.conf.local to override defaults:
+
+    # Example: More sensitive thresholds
+    NFTBAN_MONITOR_DISK_WARN=70
+    NFTBAN_MONITOR_DISK_CRIT=85
+    NFTBAN_MONITOR_DISK_EMERG=90
+
+    # Example: Longer CPU duration (less sensitive)
+    NFTBAN_MONITOR_CPU_DURATION_WARN=1800  # 30 minutes
+
+    # Example: Change alert cooldown
+    NFTBAN_MONITOR_ALERT_COOLDOWN=7200  # 2 hours
+
+For more information, see: /etc/nftban/config/monitoring.conf
+
+EOF
+            ;;
+        *)
+            nftban_log_error "Unknown monitor action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  run                 Run monitoring checks now"
+            echo "  status              Show current resource status"
+            echo "  enable              Enable automated monitoring (every 5min)"
+            echo "  disable             Disable automated monitoring"
+            echo "  test                Test alert delivery"
+            echo "  help                Show comprehensive help"
+            echo ""
+            echo "Examples:"
+            echo "  sudo nftban monitor run"
+            echo "  nftban monitor status"
+            echo "  sudo nftban monitor enable"
+            echo "  sudo nftban monitor test"
+            echo "  sudo nftban monitor disable"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
 # =============================================================================
 # UPDATE COMMANDS (NEW)
 # =============================================================================
@@ -308,15 +550,51 @@ cmd_update() {
                 echo "Available version: $remote_ver"
             fi
             ;;
+        pin)
+            nftban_check_root || exit 1
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban update pin <commit-sha>"; exit 1; }
+            nftban_update_set_commit_pin "$1"
+            ;;
+        show-commit|show-pin)
+            echo "Pinned commit:"
+            local pinned
+            pinned=$(nftban_update_get_pinned_commit)
+            if [[ -n "$pinned" ]]; then
+                echo "  $pinned"
+                echo "  https://github.com/itcmsgr/nftban/commit/$pinned"
+            else
+                echo "  (not configured - updates disabled)"
+            fi
+            echo ""
+            echo "Remote commit:"
+            if remote_sha=$(nftban_update_get_remote_commit_sha 2>/dev/null); then
+                echo "  $remote_sha"
+                echo "  https://github.com/itcmsgr/nftban/commit/$remote_sha"
+            else
+                echo "  (failed to fetch)"
+            fi
+            ;;
         *)
             nftban_log_error "Unknown update action: $action"
             echo ""
             echo "Available actions:"
-            echo "  check             Check for available updates"
-            echo "  perform           Perform update (with confirmation)"
-            echo "  auto              Perform update (no confirmation)"
-            echo "  rollback [DIR]    Rollback to previous version"
-            echo "  version           Show current and available versions"
+            echo "  check                   Check for available updates"
+            echo "  perform                 Perform update (with confirmation)"
+            echo "  auto                    Perform update (no confirmation)"
+            echo "  rollback [DIR]          Rollback to previous version"
+            echo "  version                 Show current and available versions"
+            echo "  pin <commit-sha>        Pin updates to specific commit (security)"
+            echo "  show-commit             Show pinned and remote commit SHAs"
+            echo ""
+            echo "Security (Commit Pinning):"
+            echo "  Updates are verified against a pinned git commit SHA"
+            echo "  This prevents man-in-the-middle attacks and compromises"
+            echo ""
+            echo "Examples:"
+            echo "  nftban update show-commit           # Show current commits"
+            echo "  sudo nftban update pin <sha>        # Pin to trusted commit"
+            echo "  nftban update check                 # Check for updates"
+            echo "  sudo nftban update perform          # Perform update"
             echo ""
             exit 1
             ;;
@@ -335,6 +613,22 @@ cmd_maintenance() {
         panel)
             nftban_maintenance_show_panel
             ;;
+        validate)
+            nftban_maintenance_validate_config
+            ;;
+        repair)
+            nftban_check_root || exit 1
+            nftban_maintenance_repair_config
+            ;;
+        health)
+            nftban_maintenance_health_check_detailed
+            ;;
+        health-basic)
+            nftban_maintenance_health_check
+            ;;
+        stats)
+            nftban_maintenance_show_stats
+            ;;
         backup)
             nftban_check_root || exit 1
             nftban_update_create_backup
@@ -347,18 +641,26 @@ cmd_maintenance() {
             nftban_check_root || exit 1
             nftban_maintenance_run
             ;;
-        health)
-            nftban_maintenance_health_check
-            ;;
         *)
             nftban_log_error "Unknown maintenance action: $action"
             echo ""
             echo "Available actions:"
             echo "  panel            Show maintenance panel"
+            echo "  validate         Validate configuration files"
+            echo "  repair           Repair broken configuration"
+            echo "  health           Comprehensive health check"
+            echo "  health-basic     Basic health check"
+            echo "  stats            Show system statistics"
             echo "  backup           Create manual backup"
             echo "  list-backups     List available backups"
             echo "  clean            Run maintenance cleanup"
-            echo "  health           Run health check"
+            echo ""
+            echo "Examples:"
+            echo "  nftban maintenance panel"
+            echo "  nftban maintenance validate"
+            echo "  nftban maintenance repair"
+            echo "  nftban maintenance health"
+            echo "  nftban maintenance stats"
             echo ""
             exit 1
             ;;
@@ -481,6 +783,132 @@ cmd_blacklist() {
             echo "  stats                         Show ban statistics"
             echo "  top [N]                       Show top N banned IPs"
             echo "  sync                          Sync blacklist to nftables"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
+# SYNC COMMANDS (NEW)
+# =============================================================================
+
+cmd_sync() {
+    local action="${1:-verify}"
+    shift || true
+
+    case "$action" in
+        verify|check|status)
+            nftban_sync_verify
+            ;;
+        repair|fix)
+            nftban_check_root || exit 1
+            nftban_sync_repair
+            ;;
+        auto)
+            nftban_check_root || exit 1
+            local sync_type="${1:-all}"
+            nftban_sync_auto "$sync_type"
+            ;;
+        health)
+            if nftban_sync_health; then
+                nftban_log_success "Synchronization health: OK"
+            else
+                nftban_log_warning "Synchronization health: Issues detected"
+            fi
+            ;;
+        help)
+            cat <<'EOF'
+
+nftban sync - File/nftables Synchronization Management
+
+USAGE:
+    nftban sync <action>
+
+ACTIONS:
+    verify              Verify synchronization status (default)
+    repair              Repair desynchronization automatically
+    auto [type]         Auto-sync specific type (whitelist/blacklist/all)
+    health              Check synchronization health
+
+DESCRIPTION:
+    The sync system ensures that IP lists in configuration files remain
+    synchronized with nftables sets. Drift can occur if files are manually
+    edited or if nftables sets are modified directly.
+
+    The sync module detects drift by comparing IP counts between files and
+    nftables, then provides automatic repair mechanisms.
+
+SYNCHRONIZATION CHECKS:
+    • Whitelist files vs nftables whitelist set
+    • Blacklist files vs nftables user_blacklist set
+    • Verifies all required nftables sets exist
+
+AUTOMATIC SYNC:
+    After IP operations (add/remove), the system automatically syncs changes
+    to nftables. The 'auto' command allows manual triggering of this process.
+
+REPAIR PROCESS:
+    1. Detects drift (IP count mismatches)
+    2. Syncs file contents to nftables sets
+    3. Rebuilds search index
+    4. Logs all operations
+
+HEALTH SCORING:
+    The health check returns a score from 0-100:
+    - 100: Perfect synchronization
+    - 70-99: Minor issues (e.g., one table missing)
+    - 40-69: Moderate issues (e.g., drift detected)
+    - 0-39: Severe issues (e.g., multiple tables missing + drift)
+
+EXAMPLES:
+    # Check synchronization status
+    nftban sync verify
+
+    # Repair any detected drift
+    sudo nftban sync repair
+
+    # Auto-sync whitelist only
+    sudo nftban sync auto whitelist
+
+    # Auto-sync blacklist only
+    sudo nftban sync auto blacklist
+
+    # Auto-sync everything
+    sudo nftban sync auto all
+
+    # Check health score
+    nftban sync health
+
+LOGS:
+    Sync operations are logged to: /var/log/nftban/sync.log
+
+WHEN TO USE:
+    - After manually editing whitelist/blacklist files
+    - After direct nftables modifications
+    - During troubleshooting
+    - As part of maintenance procedures
+    - After system restores
+
+For more information, see: /etc/nftban/lib/nftban_sync_module.sh
+
+EOF
+            ;;
+        *)
+            nftban_log_error "Unknown sync action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  verify              Verify synchronization status"
+            echo "  repair              Repair desynchronization"
+            echo "  auto [type]         Auto-sync (whitelist/blacklist/all)"
+            echo "  health              Check synchronization health"
+            echo "  help                Show comprehensive help"
+            echo ""
+            echo "Examples:"
+            echo "  nftban sync verify"
+            echo "  sudo nftban sync repair"
+            echo "  sudo nftban sync auto all"
+            echo "  nftban sync health"
             echo ""
             exit 1
             ;;
@@ -830,6 +1258,88 @@ cmd_portscan() {
 }
 
 # =============================================================================
+# GEO-BLOCKING COMMANDS (NEW)
+# =============================================================================
+
+cmd_geo() {
+    local action="${1:-status}"
+    shift || true
+
+    case "$action" in
+        status)
+            nftban_geo_status
+            ;;
+        enable)
+            nftban_check_root || exit 1
+            nftban_geo_enable
+            ;;
+        disable)
+            nftban_check_root || exit 1
+            nftban_geo_disable
+            ;;
+        help)
+            nftban_geo_help
+            ;;
+        block)
+            nftban_check_root || exit 1
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban geo block <COUNTRY> [reason]"; exit 1; }
+            nftban_geo_block_country "$1" "both"
+            ;;
+        unblock)
+            nftban_check_root || exit 1
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban geo unblock <COUNTRY>"; exit 1; }
+            nftban_geo_unblock_country "$1" "both"
+            ;;
+        list)
+            nftban_geo_list_blocked
+            ;;
+        check)
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban geo check <IP>"; exit 1; }
+            nftban_geo_check_ip "$1"
+            ;;
+        reload|sync)
+            nftban_check_root || exit 1
+            nftban_geo_sync_blacklist
+            ;;
+        update)
+            nftban_check_root || exit 1
+            nftban_geo_update_database "${1:-ALL}"
+            ;;
+        init)
+            nftban_check_root || exit 1
+            nftban_geo_init
+            ;;
+        *)
+            nftban_log_error "Unknown geo action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  status                Show GEO-blocking status"
+            echo "  enable                Enable GEO-blocking"
+            echo "  disable               Disable GEO-blocking"
+            echo "  help                  Show comprehensive help"
+            echo "  block <COUNTRY>       Block a country (e.g., CN, RU)"
+            echo "  unblock <COUNTRY>     Unblock a country"
+            echo "  list                  List all blocked countries"
+            echo "  check <IP>            Check if IP is GEO-blocked"
+            echo "  reload                Reload blacklist to nftables"
+            echo "  update [COUNTRY]      Update GeoIP database"
+            echo "  init                  Initialize GEO-blocking system"
+            echo ""
+            echo "Examples:"
+            echo "  nftban geo status"
+            echo "  nftban geo help"
+            echo "  nftban geo block CN"
+            echo "  nftban geo unblock RU"
+            echo "  nftban geo list"
+            echo "  nftban geo check 1.2.3.4"
+            echo "  nftban geo update ALL"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
 # EXISTING COMMANDS (UNCHANGED - KEEPING ORIGINAL)
 # =============================================================================
 
@@ -1026,6 +1536,12 @@ IP MANAGEMENT:
     ban <IP> [timeout]      Quick ban (alias for blacklist ban)
     unban <IP>              Quick unban (alias for blacklist unban)
 
+SYNCHRONIZATION:
+    sync verify             Verify file/nftables synchronization
+    sync repair             Repair desynchronization automatically
+    sync auto [type]        Auto-sync (whitelist/blacklist/all)
+    sync health             Check synchronization health
+
 STATISTICS & MONITORING:
     stats                   Show main dashboard
     stats whitelist         Whitelist statistics
@@ -1056,13 +1572,26 @@ PORT SCAN DETECTION:
     portscan check          Check for port scanners now
     portscan stats          Show detection statistics
 
+GEO-BLOCKING:
+    geo status              Show GEO-blocking status
+    geo enable              Enable GEO-blocking
+    geo disable             Disable GEO-blocking
+    geo help                Show comprehensive GEO-blocking help
+    geo block <COUNTRY>     Block a country (e.g., CN, RU)
+    geo unblock <COUNTRY>   Unblock a country
+    geo list                List all blocked countries
+    geo check <IP>          Check if IP is GEO-blocked
+
 UPDATE & MAINTENANCE:
     update check            Check for available updates
     update perform          Perform system update
     update rollback         Rollback to previous version
     maintenance panel       Show maintenance panel
+    maintenance validate    Validate configuration files
+    maintenance repair      Repair broken configuration
+    maintenance health      Comprehensive health check
+    maintenance stats       Show system statistics
     maintenance backup      Create system backup
-    maintenance health      Run health check
 
 TESTING & DIAGNOSTICS:
     test quick              Quick smoke test (essential checks)
@@ -1089,12 +1618,34 @@ FEEDS MANAGEMENT:
     feeds timer-remove      Remove systemd timer
     feeds memory            Show memory usage
 
+SYSTEM MONITORING:
+    monitor run             Run monitoring checks now
+    monitor status          Show current resource status
+    monitor enable          Enable automated monitoring (5min interval)
+    monitor disable         Disable automated monitoring
+    monitor test            Test alert delivery
+    monitor help            Show monitoring help
+
+EXAMPLES (MONITORING):
+    nftban monitor status
+    sudo nftban monitor run
+    sudo nftban monitor enable
+    sudo nftban monitor test
+
 EXAMPLES (FEEDS):
     sudo nftban feeds init
     nftban feeds list
     sudo nftban feeds enable spamhaus
     sudo nftban feeds update
     sudo nftban feeds timer-install
+
+EXAMPLES (GEO-BLOCKING):
+    nftban geo status
+    nftban geo help
+    sudo nftban geo block CN
+    sudo nftban geo unblock RU
+    nftban geo list
+    nftban geo check 1.2.3.4
 
 EXAMPLES:
     # Initialize system
@@ -1146,6 +1697,9 @@ main() {
         ban) cmd_blacklist ban "$@" ;;
         unban) cmd_blacklist unban "$@" ;;
 
+        # Synchronization
+        sync) cmd_sync "$@" ;;
+
         # Statistics & Monitoring
         stats) cmd_stats "$@" ;;
 
@@ -1158,8 +1712,14 @@ main() {
         # Port Scan Detection
         portscan) cmd_portscan "$@" ;;
 
+        # GEO-Blocking
+        geo) cmd_geo "$@" ;;
+
 		# Feeds Management
         feeds) cmd_feeds "$@" ;;
+
+        # System Monitoring
+        monitor|monitoring) cmd_monitor "$@" ;;
 
         # Testing & Diagnostics
         test|smoke-test|smoketest) cmd_test "$@" ;;

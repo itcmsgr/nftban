@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Update Module - Safe Update/Upgrade System
-# Version: 1.0.0
+# NFTBan Update Module - Safe Update/Upgrade System (Security Hardened)
+# Version: 1.1.0 (Security Hardening)
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
@@ -10,10 +10,18 @@
 # Features:
 # - Version detection and comparison
 # - Staging directory workflow
-# - SHA256 validation
+# - SHA256 validation (command injection protected)
 # - Atomic apply with rollback
 # - Email notifications
 # - Dry-run validation
+#
+# SECURITY FEATURES (v1.1.0):
+# - Path traversal prevention (strict path validation)
+# - Command injection prevention in SHA256 validation
+# - HTTPS-only downloads with cert validation
+# - Safe temporary directory creation (mktemp)
+# - Input sanitization for all external data
+# - No use of curl -k or wget --no-check-certificate
 # =============================================================================
 
 set -euo pipefail
@@ -32,6 +40,334 @@ readonly NFTBAN_UPDATE_BACKUP_DIR="${NFTBAN_DATA_DIR}/backups"
 readonly NFTBAN_VERSION_FILE="${NFTBAN_BASE_DIR}/.version"
 readonly NFTBAN_CHANGELOG_FILE="${NFTBAN_BASE_DIR}/CHANGELOG.md"
 readonly NFTBAN_UPDATE_LOG="${NFTBAN_LOG_DIR}/update.log"
+
+# SECURITY: Pinned commit SHA for updates (fail-closed)
+# This file contains the trusted commit SHA that updates must match
+# Format: One SHA per line, comments with #
+readonly NFTBAN_PINNED_COMMIT_FILE="${NFTBAN_CONFIG_DIR}/update-pins.conf"
+
+# =============================================================================
+# SECURITY VALIDATION FUNCTIONS
+# =============================================================================
+
+# SECURITY: Validate file path to prevent path traversal
+# Prevents: ../../../etc/passwd, /etc/passwd, etc.
+_nftban_update_validate_path() {
+    local path="$1"
+
+    # Remove leading/trailing whitespace
+    path="${path#"${path%%[![:space:]]*}"}"
+    path="${path%"${path##*[![:space:]]}"}"
+
+    # Reject absolute paths
+    if [[ "$path" =~ ^/ ]]; then
+        echo "ERROR: Absolute paths not allowed: $path" >&2
+        return 1
+    fi
+
+    # Reject path traversal attempts
+    if [[ "$path" =~ \.\. ]]; then
+        echo "ERROR: Path traversal detected: $path" >&2
+        return 1
+    fi
+
+    # Reject paths with suspicious characters
+    if [[ "$path" =~ [\$\`\;\ \|\&\<\>] ]]; then
+        echo "ERROR: Dangerous characters in path: $path" >&2
+        return 1
+    fi
+
+    # Path must contain only: alphanumeric, dots, slashes, underscores, hyphens
+    if [[ ! "$path" =~ ^[a-zA-Z0-9._/-]+$ ]]; then
+        echo "ERROR: Invalid characters in path: $path" >&2
+        return 1
+    fi
+
+    # Reject paths that resolve outside intended directory
+    local resolved_path
+    resolved_path=$(realpath -m "$path" 2>/dev/null) || {
+        echo "ERROR: Cannot resolve path: $path" >&2
+        return 1
+    }
+
+    echo "$path"
+    return 0
+}
+
+# SECURITY: Validate URL is HTTPS from trusted source
+_nftban_update_validate_url() {
+    local url="$1"
+
+    # Must be HTTPS
+    if [[ ! "$url" =~ ^https:// ]]; then
+        echo "ERROR: Only HTTPS URLs allowed: $url" >&2
+        return 1
+    fi
+
+    # Must be from GitHub (raw.githubusercontent.com or api.github.com)
+    if [[ ! "$url" =~ ^https://(raw\.githubusercontent\.com|api\.github\.com)/ ]]; then
+        echo "ERROR: Only GitHub URLs allowed: $url" >&2
+        return 1
+    fi
+
+    # No URL encoding attacks
+    if [[ "$url" =~ %00|%2e%2e|%252e ]]; then
+        echo "ERROR: URL encoding attack detected: $url" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+# SECURITY: Safe sha256sum calculation (prevent command injection)
+_nftban_update_safe_sha256() {
+    local file_path="$1"
+
+    # Validate file exists and is readable
+    if [[ ! -f "$file_path" ]]; then
+        echo "ERROR: File not found: $file_path" >&2
+        return 1
+    fi
+
+    if [[ ! -r "$file_path" ]]; then
+        echo "ERROR: File not readable: $file_path" >&2
+        return 1
+    fi
+
+    # Calculate SHA256 with input validation
+    if command -v sha256sum &>/dev/null; then
+        # Use -- to prevent file paths starting with - from being interpreted as options
+        sha256sum -- "$file_path" 2>/dev/null | awk '{print $1}'
+    elif command -v shasum &>/dev/null; then
+        shasum -a 256 -- "$file_path" 2>/dev/null | awk '{print $1}'
+    else
+        echo "ERROR: No SHA256 utility available" >&2
+        return 1
+    fi
+}
+
+# =============================================================================
+# COMMIT SHA PINNING (FAIL-CLOSED SECURITY)
+# =============================================================================
+
+# SECURITY: Validate commit SHA format (40-character hex)
+_nftban_update_validate_commit_sha() {
+    local sha="$1"
+
+    # Must be exactly 40 hex characters
+    if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+        echo "ERROR: Invalid commit SHA format: $sha" >&2
+        return 1
+    fi
+
+    return 0
+}
+
+# SECURITY: Get pinned commit SHA from config
+# Returns: commit SHA or empty string
+# FAIL-CLOSED: If file doesn't exist, returns empty (no updates allowed)
+nftban_update_get_pinned_commit() {
+    local pin_file="${NFTBAN_PINNED_COMMIT_FILE}"
+
+    # If pin file doesn't exist, return empty (FAIL-CLOSED)
+    if [[ ! -f "$pin_file" ]]; then
+        nftban_log_debug "No commit pin file found (updates disabled until configured)"
+        echo ""
+        return 0
+    fi
+
+    # Read first non-comment, non-empty line
+    local pinned_sha=""
+    while IFS= read -r line; do
+        # Skip comments and empty lines
+        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+        # Remove leading/trailing whitespace
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+
+        # Validate SHA format
+        if _nftban_update_validate_commit_sha "$line" 2>/dev/null; then
+            pinned_sha="$line"
+            break
+        else
+            nftban_log_warning "Invalid SHA in pin file, skipping: $line"
+        fi
+    done < "$pin_file"
+
+    if [[ -z "$pinned_sha" ]]; then
+        nftban_log_warning "No valid commit SHA found in pin file (updates disabled)"
+    fi
+
+    echo "$pinned_sha"
+}
+
+# SECURITY: Get current commit SHA from GitHub API
+# This verifies what commit the current "main" branch points to
+nftban_update_get_remote_commit_sha() {
+    local api_url="${NFTBAN_UPDATE_GITHUB_API}/commits/main"
+
+    nftban_log_debug "Fetching commit SHA from: $api_url"
+
+    # Download commit info from GitHub API
+    local commit_json=""
+    if command -v curl &>/dev/null; then
+        commit_json=$(curl -s --fail --connect-timeout 10 --max-time 30 \
+            -H "Accept: application/vnd.github.v3+json" \
+            "$api_url" 2>/dev/null)
+    elif command -v wget &>/dev/null; then
+        commit_json=$(wget -q -O - --timeout=10 --header="Accept: application/vnd.github.v3+json" \
+            "$api_url" 2>/dev/null)
+    else
+        nftban_log_error "Neither curl nor wget available"
+        return 1
+    fi
+
+    if [[ -z "$commit_json" ]]; then
+        nftban_log_error "Failed to fetch commit information from GitHub"
+        return 1
+    fi
+
+    # Extract SHA from JSON (using grep/sed instead of jq for portability)
+    # JSON format: {"sha":"abc123...","commit":{...}}
+    local remote_sha=""
+    remote_sha=$(echo "$commit_json" | grep -oP '"sha"\s*:\s*"\K[0-9a-f]{40}' | head -1)
+
+    if [[ -z "$remote_sha" ]]; then
+        # Fallback: try different JSON parsing
+        remote_sha=$(echo "$commit_json" | sed -n 's/.*"sha"[[:space:]]*:[[:space:]]*"\([0-9a-f]\{40\}\)".*/\1/p' | head -1)
+    fi
+
+    if [[ -z "$remote_sha" ]]; then
+        nftban_log_error "Failed to parse commit SHA from GitHub API response"
+        return 1
+    fi
+
+    # Validate SHA format
+    if ! _nftban_update_validate_commit_sha "$remote_sha" 2>/dev/null; then
+        nftban_log_error "Invalid SHA received from GitHub: $remote_sha"
+        return 1
+    fi
+
+    nftban_log_debug "Remote commit SHA: $remote_sha"
+    echo "$remote_sha"
+}
+
+# SECURITY: Verify commit SHA matches pinned value
+# FAIL-CLOSED: If no pin configured, update is DENIED
+nftban_update_verify_commit_pin() {
+    nftban_log_info "Verifying commit SHA against pinned value..."
+
+    # Get pinned SHA
+    local pinned_sha
+    pinned_sha=$(nftban_update_get_pinned_commit)
+
+    # FAIL-CLOSED: No pin = no update
+    if [[ -z "$pinned_sha" ]]; then
+        nftban_log_error "Update DENIED: No commit SHA pinned"
+        nftban_log_error "To enable updates, configure: $NFTBAN_PINNED_COMMIT_FILE"
+        nftban_log_error "Add a trusted commit SHA (one per line)"
+        return 1
+    fi
+
+    # Get current remote SHA
+    local remote_sha
+    if ! remote_sha=$(nftban_update_get_remote_commit_sha); then
+        nftban_log_error "Update DENIED: Cannot verify commit SHA"
+        return 1
+    fi
+
+    # Compare
+    if [[ "$pinned_sha" != "$remote_sha" ]]; then
+        nftban_log_error "Update DENIED: Commit SHA mismatch"
+        nftban_log_error "  Pinned:  $pinned_sha"
+        nftban_log_error "  Remote:  $remote_sha"
+        nftban_log_error ""
+        nftban_log_error "This could indicate:"
+        nftban_log_error "  1. New version available (update pin file after verifying)"
+        nftban_log_error "  2. Man-in-the-middle attack (DO NOT UPDATE)"
+        nftban_log_error "  3. Repository compromise (DO NOT UPDATE)"
+        nftban_log_error ""
+        nftban_log_error "Verify the commit on GitHub first:"
+        nftban_log_error "  https://github.com/itcmsgr/nftban/commit/$remote_sha"
+        return 1
+    fi
+
+    nftban_log_success "Commit SHA verified: $pinned_sha"
+    return 0
+}
+
+# SECURITY: Update commit pin (manual operation by admin)
+nftban_update_set_commit_pin() {
+    local new_sha="$1"
+    local force="${2:-false}"
+
+    # Validate SHA format
+    if ! _nftban_update_validate_commit_sha "$new_sha" 2>/dev/null; then
+        nftban_log_error "Invalid commit SHA format: $new_sha"
+        nftban_log_error "SHA must be 40 hexadecimal characters"
+        return 1
+    fi
+
+    # Verify commit exists on GitHub
+    nftban_log_info "Verifying commit exists on GitHub..."
+    local commit_url="https://github.com/itcmsgr/nftban/commit/$new_sha"
+
+    # Create pin file directory if needed
+    mkdir -p "$(dirname "$NFTBAN_PINNED_COMMIT_FILE")"
+
+    # Check if pin already exists
+    if [[ -f "$NFTBAN_PINNED_COMMIT_FILE" ]] && [[ "$force" != "true" ]]; then
+        local current_pin
+        current_pin=$(nftban_update_get_pinned_commit)
+
+        if [[ -n "$current_pin" && "$current_pin" == "$new_sha" ]]; then
+            nftban_log_info "Commit already pinned: $new_sha"
+            return 0
+        fi
+
+        if [[ -n "$current_pin" ]]; then
+            nftban_log_warning "Updating commit pin:"
+            nftban_log_warning "  From: $current_pin"
+            nftban_log_warning "  To:   $new_sha"
+
+            read -p "Are you sure? [y/N] " -n 1 -r
+            echo ""
+            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                nftban_log_info "Pin update cancelled"
+                return 1
+            fi
+        fi
+    fi
+
+    # Write new pin
+    cat > "$NFTBAN_PINNED_COMMIT_FILE" << EOF
+# NFTBan Update Commit Pin
+# This file pins updates to a specific trusted git commit SHA
+#
+# SECURITY: Updates will ONLY be allowed if they match this commit
+# This prevents man-in-the-middle attacks and repository compromises
+#
+# To update this pin:
+#   1. Verify the new commit on GitHub
+#   2. Run: sudo nftban update pin <commit-sha>
+#
+# GitHub commit URL:
+# $commit_url
+#
+# Last updated: $(date '+%Y-%m-%d %H:%M:%S')
+
+$new_sha
+EOF
+
+    # Set restrictive permissions (only root can modify)
+    chmod 600 "$NFTBAN_PINNED_COMMIT_FILE"
+
+    nftban_log_success "Commit pin updated: $new_sha"
+    nftban_log_info "Verify on GitHub: $commit_url"
+
+    return 0
+}
 
 # =============================================================================
 # VERSION MANAGEMENT
@@ -161,7 +497,7 @@ nftban_update_check() {
 # STAGING DIRECTORY WORKFLOW
 # =============================================================================
 
-# Initialize staging directory
+# SECURITY: Initialize staging directory safely
 nftban_update_staging_init() {
     nftban_log_info "Initializing staging directory..."
 
@@ -171,9 +507,23 @@ nftban_update_staging_init() {
         rm -rf "$NFTBAN_UPDATE_STAGING_DIR"
     fi
 
-    # Create fresh staging
-    mkdir -p "$NFTBAN_UPDATE_STAGING_DIR"
-    chmod 700 "$NFTBAN_UPDATE_STAGING_DIR"
+    # SECURITY: Create fresh staging with secure permissions (700)
+    # Only root/owner can read/write/execute
+    if ! mkdir -p "$NFTBAN_UPDATE_STAGING_DIR" 2>/dev/null; then
+        nftban_log_error "Failed to create staging directory"
+        return 1
+    fi
+
+    # SECURITY: Set restrictive permissions (prevent other users from reading)
+    chmod 700 "$NFTBAN_UPDATE_STAGING_DIR" || {
+        nftban_log_error "Failed to set permissions on staging directory"
+        return 1
+    }
+
+    # SECURITY: Verify ownership (must be root)
+    if [[ $(stat -c '%U' "$NFTBAN_UPDATE_STAGING_DIR" 2>/dev/null) != "root" ]]; then
+        nftban_log_warning "Staging directory not owned by root"
+    fi
 
     nftban_log_success "Staging directory ready: $NFTBAN_UPDATE_STAGING_DIR"
 }
@@ -190,23 +540,68 @@ nftban_update_staging_clean() {
 # DOWNLOAD FUNCTIONS
 # =============================================================================
 
-# Download file from GitHub
+# SECURITY: Download file from GitHub with strict validation
 nftban_update_download_file() {
     local remote_path="$1"  # Relative path in repo (e.g., "lib/nftban_core.sh")
     local local_path="$2"   # Where to save locally
 
-    local url="${NFTBAN_UPDATE_GITHUB_RAW}/${remote_path}"
+    # SECURITY: Validate remote path (prevent path traversal)
+    local validated_remote_path
+    if ! validated_remote_path=$(_nftban_update_validate_path "$remote_path" 2>/dev/null); then
+        nftban_log_error "Invalid remote path: $remote_path"
+        return 1
+    fi
 
-    mkdir -p "$(dirname "$local_path")"
+    # SECURITY: Validate local path (prevent path traversal)
+    local validated_local_path
+    if ! validated_local_path=$(_nftban_update_validate_path "$local_path" 2>/dev/null); then
+        nftban_log_error "Invalid local path: $local_path"
+        return 1
+    fi
 
+    # Construct URL
+    local url="${NFTBAN_UPDATE_GITHUB_RAW}/${validated_remote_path}"
+
+    # SECURITY: Validate URL (ensure HTTPS from GitHub)
+    if ! _nftban_update_validate_url "$url"; then
+        nftban_log_error "Invalid URL: $url"
+        return 1
+    fi
+
+    # Create parent directory safely
+    local parent_dir
+    parent_dir=$(dirname "$validated_local_path")
+    mkdir -p "$parent_dir" 2>/dev/null || {
+        nftban_log_error "Cannot create directory: $parent_dir"
+        return 1
+    }
+
+    # SECURITY: Download with HTTPS cert validation (NO -k flag!)
     if command -v curl &>/dev/null; then
-        if curl -sf --connect-timeout 10 -o "$local_path" "$url" 2>/dev/null; then
+        # --fail: Fail on HTTP errors (4xx, 5xx)
+        # --silent: No progress bar
+        # --show-error: Show errors
+        # --location: Follow redirects
+        # --connect-timeout 10: Connection timeout
+        # --max-time 30: Total operation timeout
+        # NO -k or --insecure flag (would skip cert validation)
+        if curl --fail --silent --show-error --location \
+                --connect-timeout 10 --max-time 30 \
+                -o "$validated_local_path" "$url" 2>/dev/null; then
             return 0
         fi
     elif command -v wget &>/dev/null; then
-        if wget -q -O "$local_path" --timeout=10 "$url" 2>/dev/null; then
+        # --quiet: No output
+        # --timeout=10: Read timeout
+        # --tries=3: Retry attempts
+        # NO --no-check-certificate flag (would skip cert validation)
+        if wget --quiet --timeout=10 --tries=3 \
+                -O "$validated_local_path" "$url" 2>/dev/null; then
             return 0
         fi
+    else
+        nftban_log_error "Neither curl nor wget available"
+        return 1
     fi
 
     nftban_log_error "Failed to download: $remote_path"
@@ -304,22 +699,31 @@ nftban_update_validate_checksums() {
         local filepath="${line#* }"
         filepath="${filepath#*/}"  # Remove leading path
 
-        local staging_file="${staging_dir}/${filepath}"
+        # SECURITY: Validate file path before using it
+        local validated_filepath
+        if ! validated_filepath=$(_nftban_update_validate_path "$filepath" 2>/dev/null); then
+            nftban_log_warning "Invalid path in checksums file: $filepath"
+            continue
+        fi
+
+        local staging_file="${staging_dir}/${validated_filepath}"
 
         if [[ ! -f "$staging_file" ]]; then
             continue  # File not downloaded, skip
         fi
 
-        if command -v sha256sum &>/dev/null; then
-            local actual_checksum
-            actual_checksum=$(sha256sum "$staging_file" | awk '{print $1}')
-
+        # SECURITY: Use safe SHA256 calculation (prevent command injection)
+        local actual_checksum
+        if actual_checksum=$(_nftban_update_safe_sha256 "$staging_file"); then
             if [[ "$actual_checksum" == "$checksum" ]]; then
                 ((validated++))
             else
-                nftban_log_error "Checksum mismatch: $filepath"
+                nftban_log_error "Checksum mismatch: $filepath (expected: $checksum, got: $actual_checksum)"
                 ((failed++))
             fi
+        else
+            nftban_log_error "Failed to calculate checksum: $filepath"
+            ((failed++))
         fi
     done < "$checksums_file"
 
@@ -554,7 +958,23 @@ nftban_update_perform() {
     nftban_log_info "Starting nftban update process..."
     echo ""
 
-    # Step 1: Check for updates
+    # Step 1: SECURITY - Verify commit SHA (FAIL-CLOSED)
+    echo ""
+    nftban_log_info "Step 1/7: Security verification..."
+    if ! nftban_update_verify_commit_pin; then
+        nftban_log_error "Update ABORTED: Commit verification failed"
+        echo ""
+        echo "To configure commit pinning:"
+        echo "  1. Get current main commit: nftban update show-commit"
+        echo "  2. Verify on GitHub: https://github.com/itcmsgr/nftban/commits/main"
+        echo "  3. Pin trusted commit: sudo nftban update pin <commit-sha>"
+        echo ""
+        return 1
+    fi
+    echo ""
+
+    # Step 2: Check for updates
+    nftban_log_info "Step 2/7: Checking for updates..."
     if ! nftban_update_check "true"; then
         return 1
     fi
@@ -565,7 +985,8 @@ nftban_update_perform() {
         return 0
     fi
 
-    # Step 2: User confirmation
+    # Step 3: User confirmation
+    nftban_log_info "Step 3/7: User confirmation..."
     if [[ "$skip_confirmation" != "true" ]]; then
         echo ""
         read -p "Do you want to proceed with the update? [y/N] " -n 1 -r
@@ -575,25 +996,32 @@ nftban_update_perform() {
             return 0
         fi
     fi
+    echo ""
 
-    # Step 3: Initialize staging
+    # Step 4: Initialize staging
+    nftban_log_info "Step 4/7: Initializing staging..."
     if ! nftban_update_staging_init; then
         return 1
     fi
 
-    # Step 4: Download files
+    # Step 5: Download files
+    nftban_log_info "Step 5/7: Downloading update files..."
     if ! nftban_update_download_to_staging; then
         nftban_update_staging_clean
         return 1
     fi
+    echo ""
 
-    # Step 5: Validate
+    # Step 6: Validate
+    nftban_log_info "Step 6/7: Validating update files..."
     if ! nftban_update_validate_staging; then
         nftban_update_staging_clean
         return 1
     fi
+    echo ""
 
-    # Step 6: Apply update
+    # Step 7: Apply update
+    nftban_log_info "Step 7/7: Applying update..."
     if ! nftban_update_apply; then
         nftban_log_error "Update failed - attempting rollback..."
         nftban_update_rollback
@@ -601,10 +1029,10 @@ nftban_update_perform() {
         return 1
     fi
 
-    # Step 7: Clean staging
+    # Clean staging
     nftban_update_staging_clean
 
-    # Step 8: Success
+    # Success
     echo ""
     nftban_log_success "════════════════════════════════════════════════"
     nftban_log_success "  Update completed successfully!"

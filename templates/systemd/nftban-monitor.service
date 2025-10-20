@@ -1,0 +1,26 @@
+[Unit]
+Description=NFTBan System Monitoring
+Documentation=https://github.com/itcmsgr/nftban
+After=network.target nftables.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/nftban monitor run
+User=root
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-monitor
+
+# Security hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/etc/nftban /var/log/nftban
+
+# Resource limits
+TimeoutStartSec=60
+Nice=10
+
+[Install]
+WantedBy=multi-user.target

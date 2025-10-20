@@ -133,9 +133,13 @@ create_final_backup() {
     fi
     
     log_info "Creating final backup..."
-    
-    local backup_dir="/tmp/nftban-backup-$(date +%Y%m%d-%H%M%S)"
-    mkdir -p "$backup_dir"
+
+    local backup_dir
+    backup_dir=$(mktemp -d) || {
+        log_error "Failed to create secure backup directory"
+        return 1
+    }
+    trap 'rm -rf "$backup_dir"' EXIT
     
     # Backup configuration
     if [[ -d "$BASE_DIR/config" ]]; then
@@ -153,9 +157,13 @@ create_final_backup() {
     fi
     
     # Create tarball
-    local tarball="/tmp/nftban-final-backup-$(date +%Y%m%d-%H%M%S).tar.gz"
+    local tarball
+    tarball=$(mktemp --suffix=.tar.gz) || {
+        log_error "Failed to create secure tarball"
+        return 1
+    }
     tar -czf "$tarball" -C "$(dirname "$backup_dir")" "$(basename "$backup_dir")" 2>/dev/null
-    
+
     rm -rf "$backup_dir"
     
     log_success "Final backup created: $tarball"

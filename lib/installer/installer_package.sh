@@ -380,16 +380,10 @@ installer_verify_dependencies() {
 }
 
 # =============================================================================
-# EXPORT FUNCTIONS
+# MODULE LOADED
 # =============================================================================
-export -f installer_detect_package_manager
-export -f installer_update_package_cache
-export -f installer_package_exists
-export -f installer_install_package
-export -f installer_get_os_info
-export -f installer_is_rhel_like
-export -f installer_install_epel
-export -f installer_install_dependencies
-export -f installer_verify_dependencies
+# NOTE: Functions are available via sourcing in installer_main.sh
+# No export needed - all operations happen in same shell process
+# (Per NFTBan Avoid Export Functions Guide 2025-10-20)
 
 installer_log_debug "Package management module loaded"

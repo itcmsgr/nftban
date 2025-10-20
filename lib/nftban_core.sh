@@ -34,6 +34,7 @@ readonly NFTBAN_MAIN_LOG="${NFTBAN_LOG_DIR}/nftban.log"
 readonly NFTBAN_BAN_LOG="${NFTBAN_LOG_DIR}/ban-history.log"
 readonly NFTBAN_SYNC_LOG="${NFTBAN_LOG_DIR}/sync.log"
 readonly NFTBAN_EMAIL_LOG="${NFTBAN_LOG_DIR}/email-notifications.log"
+readonly NFTBAN_WHITELIST_PROTECT_LOG="${NFTBAN_LOG_DIR}/whitelist-protection.log"
 
 # Data files
 readonly NFTBAN_RATE_LIMIT_TRACKER="${NFTBAN_DATA_DIR}/rate-limit-tracker.tmp"
@@ -61,50 +62,174 @@ readonly NFTBAN_CYAN='\033[0;36m'
 readonly NFTBAN_NC='\033[0m'
 
 # =============================================================================
-# LOGGING FUNCTIONS
+# LOGGING FUNCTIONS - UNIFIED CONTRACT
 # =============================================================================
+# Format: [YYYY-MM-DD HH:MM:SS] [PID] [MODULE] [LEVEL] message
+# - timestamp: ISO 8601 format for easy parsing
+# - PID: Process ID for concurrency debugging
+# - MODULE: Auto-detected module name (e.g., "whitelist", "blacklist", "core")
+# - LEVEL: ERROR, WARNING, INFO, SUCCESS, DEBUG
+# - message: Human-readable log message
+#
+# Security considerations:
+# - All logs timestamped for audit trail
+# - PID tracking for process correlation
+# - Module tracking for source identification
+# - Atomic writes to prevent log corruption
+# =============================================================================
+
+# Internal: Get calling module name from call stack
+_nftban_get_caller_module() {
+    # Walk call stack to find first module (skip core.sh and log functions)
+    local frame=1
+    while [[ $frame -lt 10 ]]; do
+        local caller_info
+        caller_info=$(caller $frame 2>/dev/null) || break
+
+        # Extract filename from caller info (format: "line function file")
+        local caller_file
+        caller_file=$(echo "$caller_info" | awk '{print $NF}')
+
+        # Extract module name from filename
+        if [[ "$caller_file" =~ nftban_([a-z_]+)_module\.sh$ ]]; then
+            echo "${BASH_REMATCH[1]}"
+            return 0
+        elif [[ "$caller_file" =~ nftban_main_cli\.sh$ ]]; then
+            echo "cli"
+            return 0
+        fi
+
+        ((frame++))
+    done
+
+    # Fallback: core module
+    echo "core"
+}
+
+# Base logging function with unified format
+# Usage: nftban_log "LEVEL" "message"
 nftban_log() {
     local level="$1"
     shift
     local message="$*"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
-    mkdir -p "$(dirname "$NFTBAN_MAIN_LOG")"
-    echo "[${timestamp}] [${level}] ${message}" | tee -a "$NFTBAN_MAIN_LOG"
+
+    # Contract fields
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local pid=$$
+    local module
+    module=$(_nftban_get_caller_module)
+
+    # Unified log format
+    local log_entry="[${timestamp}] [${pid}] [${module}] [${level}] ${message}"
+
+    # Ensure log directory exists
+    mkdir -p "$(dirname "$NFTBAN_MAIN_LOG")" 2>/dev/null
+
+    # Write to log file (atomic append)
+    echo "$log_entry" >> "$NFTBAN_MAIN_LOG"
+
+    # Return log entry for terminal output (caller decides color)
+    echo "$log_entry"
 }
 
+# Convenience functions with color-coded terminal output
 nftban_log_error() {
-    echo -e "${NFTBAN_RED}[ERROR]${NFTBAN_NC} $*" | tee -a "$NFTBAN_MAIN_LOG" >&2
+    local message="$*"
+    local log_entry
+    log_entry=$(nftban_log "ERROR" "$message")
+
+    # Terminal output with color (stderr for errors)
+    echo -e "${NFTBAN_RED}[ERROR]${NFTBAN_NC} $message" >&2
 }
 
 nftban_log_success() {
-    echo -e "${NFTBAN_GREEN}[SUCCESS]${NFTBAN_NC} $*" | tee -a "$NFTBAN_MAIN_LOG"
+    local message="$*"
+    nftban_log "SUCCESS" "$message" >/dev/null
+
+    # Terminal output with color
+    echo -e "${NFTBAN_GREEN}[SUCCESS]${NFTBAN_NC} $message"
 }
 
 nftban_log_warning() {
-    echo -e "${NFTBAN_YELLOW}[WARNING]${NFTBAN_NC} $*" | tee -a "$NFTBAN_MAIN_LOG"
+    local message="$*"
+    nftban_log "WARNING" "$message" >/dev/null
+
+    # Terminal output with color
+    echo -e "${NFTBAN_YELLOW}[WARNING]${NFTBAN_NC} $message"
 }
 
 nftban_log_info() {
-    echo -e "${NFTBAN_BLUE}[INFO]${NFTBAN_NC} $*" | tee -a "$NFTBAN_MAIN_LOG"
+    local message="$*"
+    nftban_log "INFO" "$message" >/dev/null
+
+    # Terminal output with color
+    echo -e "${NFTBAN_BLUE}[INFO]${NFTBAN_NC} $message"
 }
 
 nftban_log_debug() {
     local debug_enabled
     debug_enabled=$(nftban_get_config "DEBUG_ENABLED" "false")
-    [[ "$debug_enabled" == "true" ]] && nftban_log "DEBUG" "$*" || true
+
+    if [[ "$debug_enabled" == "true" ]]; then
+        local message="$*"
+        nftban_log "DEBUG" "$message" >/dev/null
+
+        # Terminal output (dim/gray for debug)
+        echo -e "${NFTBAN_CYAN}[DEBUG]${NFTBAN_NC} $message"
+    fi
+
+    return 0
 }
 
-# Special log for ban events
+# Special log for ban events (structured ban-specific log + unified log)
+# Maintains backward compatibility with existing pipe-delimited format
 nftban_log_ban() {
     local ip="$1"
     local jail="$2"
     local action="$3"
     local reason="$4"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
-    
-    mkdir -p "$(dirname "$NFTBAN_BAN_LOG")"
-    echo "${timestamp}|${ip}|${jail}|${action}|${reason}" >> "$NFTBAN_BAN_LOG"
+
+    # Unified logging contract
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local pid=$$
+    local module
+    module=$(_nftban_get_caller_module)
+
+    # Write to specialized ban log (backward compatible pipe format)
+    mkdir -p "$(dirname "$NFTBAN_BAN_LOG")" 2>/dev/null
+    echo "${timestamp}|${pid}|${module}|${ip}|${jail}|${action}|${reason}" >> "$NFTBAN_BAN_LOG"
+
+    # Also write to main log with unified format
+    local log_entry="[${timestamp}] [${pid}] [${module}] [BAN] IP=${ip} jail=${jail} action=${action} reason=${reason}"
+    echo "$log_entry" >> "$NFTBAN_MAIN_LOG"
+}
+
+# Special log for whitelist protection events
+# Logs all attempts to ban/blacklist whitelisted IPs
+nftban_log_whitelist_protection() {
+    local ip="$1"
+    local operation="$2"  # BAN, BLACKLIST, REMOVE, etc.
+    local source="$3"     # fail2ban jail name, CLI, module name
+    local details="${4:-}" # Additional context
+
+    # Unified logging contract
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local pid=$$
+    local module
+    module=$(_nftban_get_caller_module)
+
+    # Write to specialized whitelist protection log (backward compatible pipe format)
+    mkdir -p "$(dirname "$NFTBAN_WHITELIST_PROTECT_LOG")" 2>/dev/null
+    echo "${timestamp}|${pid}|${module}|${ip}|${operation}|${source}|BLOCKED|${details}" >> "$NFTBAN_WHITELIST_PROTECT_LOG"
+
+    # Log structured event to ban log for audit trail
+    nftban_log_ban "$ip" "$source" "WHITELIST_PROTECTED" "$operation blocked: $details"
+
+    # Log warning to main log (uses unified format internally)
+    nftban_log_warning "WHITELIST PROTECTION: Blocked $operation of whitelisted IP $ip (source: $source)"
 }
 
 # =============================================================================
@@ -236,54 +361,197 @@ nftban_validate_ip() {
 }
 
 # =============================================================================
-# CIDR CALCULATIONS (NEW - Enhanced)
+# CIDR CALCULATIONS AND VALIDATION (Enhanced - Security Hardened)
 # =============================================================================
+
+# Dangerous CIDR ranges that should be blocked (configured per security policy)
+readonly NFTBAN_DANGEROUS_CIDRS=(
+    "0.0.0.0/0"          # Entire IPv4 internet (too broad)
+    "::/0"               # Entire IPv6 internet (too broad)
+    "0.0.0.0/8"          # Current network (RFC 1122)
+    "10.0.0.0/8"         # Private (RFC 1918) - generally shouldn't ban entire range
+    "172.16.0.0/12"      # Private (RFC 1918) - generally shouldn't ban entire range
+    "192.168.0.0/16"     # Private (RFC 1918) - generally shouldn't ban entire range
+    "127.0.0.0/8"        # Loopback (RFC 1122)
+    "169.254.0.0/16"     # Link-local (RFC 3927)
+    "224.0.0.0/4"        # Multicast (RFC 5771)
+    "240.0.0.0/4"        # Reserved (RFC 1112)
+)
 
 # Convert IPv4 to integer
 nftban_ip_to_int() {
     local ip="$1"
     local IFS='.'
     local -a octets=($ip)
-    
+
     echo $(( (octets[0] << 24) + (octets[1] << 16) + (octets[2] << 8) + octets[3] ))
+}
+
+# Validate CIDR notation (strict validation with security checks)
+# Usage: nftban_validate_cidr "192.168.1.0/24"
+# Returns: 0 if valid, 1 if invalid
+nftban_validate_cidr() {
+    local cidr="$1"
+    local allow_dangerous="${2:-false}"  # Set to "true" to allow dangerous CIDRs
+
+    # Check format (must contain /)
+    if [[ ! "$cidr" =~ / ]]; then
+        nftban_log_error "CIDR validation failed: missing prefix (format: IP/prefix)"
+        return 1
+    fi
+
+    local network="${cidr%/*}"
+    local prefix="${cidr#*/}"
+
+    # Detect IP version
+    local ip_version
+    ip_version=$(nftban_detect_ip_version "$network")
+
+    if [[ "$ip_version" == "invalid" ]]; then
+        nftban_log_error "CIDR validation failed: invalid network address: $network"
+        return 1
+    fi
+
+    # Validate prefix length based on IP version
+    if [[ "$ip_version" == "4" ]]; then
+        # IPv4: prefix must be 0-32
+        if [[ ! "$prefix" =~ ^[0-9]+$ ]] || ((prefix < 0 || prefix > 32)); then
+            nftban_log_error "CIDR validation failed: invalid IPv4 prefix: /$prefix (must be 0-32)"
+            return 1
+        fi
+
+        # SECURITY: Block dangerous prefix lengths (too broad)
+        if [[ "$allow_dangerous" != "true" ]]; then
+            if ((prefix < 8)); then
+                nftban_log_error "CIDR validation failed: prefix /$prefix too broad (minimum /8 for security)"
+                return 1
+            fi
+        fi
+
+    elif [[ "$ip_version" == "6" ]]; then
+        # IPv6: prefix must be 0-128
+        if [[ ! "$prefix" =~ ^[0-9]+$ ]] || ((prefix < 0 || prefix > 128)); then
+            nftban_log_error "CIDR validation failed: invalid IPv6 prefix: /$prefix (must be 0-128)"
+            return 1
+        fi
+
+        # SECURITY: Block dangerous prefix lengths (too broad)
+        if [[ "$allow_dangerous" != "true" ]]; then
+            if ((prefix < 32)); then
+                nftban_log_error "CIDR validation failed: IPv6 prefix /$prefix too broad (minimum /32 for security)"
+                return 1
+            fi
+        fi
+    fi
+
+    # SECURITY: Check against dangerous CIDR list
+    if [[ "$allow_dangerous" != "true" ]]; then
+        for dangerous_cidr in "${NFTBAN_DANGEROUS_CIDRS[@]}"; do
+            if [[ "$cidr" == "$dangerous_cidr" ]]; then
+                nftban_log_error "CIDR validation failed: dangerous CIDR blocked: $cidr"
+                nftban_log_error "This CIDR would affect critical infrastructure or too many hosts"
+                return 1
+            fi
+        done
+    fi
+
+    # SECURITY: Verify network address is correctly calculated (not host address)
+    # Example: 192.168.1.5/24 should be 192.168.1.0/24
+    if [[ "$ip_version" == "4" ]]; then
+        local network_int mask calculated_network
+
+        network_int=$(nftban_ip_to_int "$network")
+
+        # Calculate netmask
+        if [[ $prefix -eq 0 ]]; then
+            mask=0
+        else
+            mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF ))
+        fi
+
+        # Calculate proper network address
+        local masked_network=$(( network_int & mask ))
+
+        # Check if provided network matches calculated network
+        if [[ $network_int -ne $masked_network ]]; then
+            # Convert back to dotted notation for warning
+            local octet1=$(( (masked_network >> 24) & 0xFF ))
+            local octet2=$(( (masked_network >> 16) & 0xFF ))
+            local octet3=$(( (masked_network >> 8) & 0xFF ))
+            local octet4=$(( masked_network & 0xFF ))
+            local correct_cidr="${octet1}.${octet2}.${octet3}.${octet4}/${prefix}"
+
+            nftban_log_warning "CIDR notation uses host address: $cidr"
+            nftban_log_warning "Correct network address: $correct_cidr"
+            # NOTE: This is a warning, not an error - some tools accept this
+        fi
+    fi
+
+    return 0
+}
+
+# Calculate CIDR range size (number of IPs)
+# Usage: size=$(nftban_cidr_size "192.168.1.0/24")
+# Returns: number of IP addresses in range
+nftban_cidr_size() {
+    local cidr="$1"
+
+    local prefix="${cidr#*/}"
+    local network="${cidr%/*}"
+
+    # Detect IP version
+    local ip_version
+    ip_version=$(nftban_detect_ip_version "$network")
+
+    if [[ "$ip_version" == "4" ]]; then
+        # IPv4: 2^(32-prefix)
+        local host_bits=$((32 - prefix))
+        echo $(( 1 << host_bits ))
+    elif [[ "$ip_version" == "6" ]]; then
+        # IPv6: 2^(128-prefix) - too large for bash, return symbolic
+        echo "2^$((128 - prefix))"
+    else
+        echo "0"
+        return 1
+    fi
 }
 
 # Check if IP is within CIDR range (proper calculation)
 nftban_ip_in_cidr() {
     local ip="$1"
     local cidr="$2"
-    
+
     # Only support IPv4 for now
     if ! nftban_is_ipv4 "$ip"; then
         return 1
     fi
-    
+
     local network="${cidr%/*}"
     local prefix="${cidr#*/}"
-    
-    # Validate prefix
-    if [[ ! "$prefix" =~ ^[0-9]+$ ]] || ((prefix < 0 || prefix > 32)); then
+
+    # Validate CIDR
+    if ! nftban_validate_cidr "$cidr" "true" 2>/dev/null; then
         return 1
     fi
-    
+
     # Convert IPs to integers for comparison
     local ip_int network_int mask
-    
+
     ip_int=$(nftban_ip_to_int "$ip")
     network_int=$(nftban_ip_to_int "$network")
-    
+
     # Calculate netmask (proper calculation for any prefix)
     if [[ $prefix -eq 0 ]]; then
         mask=0
     else
         mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF ))
     fi
-    
+
     # Check if IP is in range
     if [[ $(( ip_int & mask )) -eq $(( network_int & mask )) ]]; then
         return 0
     fi
-    
+
     return 1
 }
 
@@ -610,16 +878,518 @@ nftban_check_nftables_table() {
     nft list table "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" &>/dev/null
 }
 
+# =============================================================================
+# SECURE TEMP FILE MANAGEMENT (per Remediation Guide 2025-10-20)
+# =============================================================================
+
+# Create secure temp file with automatic cleanup trap
+# Usage: tmpfile=$(nftban_mktemp) || exit 1; trap 'rm -f "$tmpfile"' RETURN
+nftban_mktemp() {
+    local tmpfile
+    tmpfile=$(mktemp 2>/dev/null) || {
+        nftban_log_error "Failed to create secure temp file"
+        return 1
+    }
+    echo "$tmpfile"
+}
+
+# Create secure temp directory with automatic cleanup trap
+# Usage: tmpdir=$(nftban_mktemp_dir) || exit 1; trap 'rm -rf "$tmpdir"' RETURN
+nftban_mktemp_dir() {
+    local tmpdir
+    tmpdir=$(mktemp -d 2>/dev/null) || {
+        nftban_log_error "Failed to create secure temp directory"
+        return 1
+    }
+    echo "$tmpdir"
+}
+
+# Secure atomic write using mktemp + flock
+# Usage: nftban_secure_atomic_write "/path/to/file" "content"
+nftban_secure_atomic_write() {
+    local target_file="$1"
+    local content="$2"
+
+    # Validate inputs
+    if [[ -z "$target_file" || -z "$content" ]]; then
+        nftban_log_error "secure_atomic_write: missing parameters"
+        return 1
+    fi
+
+    # Create secure temp file
+    local tmpfile
+    tmpfile=$(nftban_mktemp) || return 1
+    trap 'rm -f "$tmpfile"' RETURN
+
+    # Write content
+    echo "$content" > "$tmpfile" || {
+        nftban_log_error "Failed to write to temp file"
+        return 1
+    }
+
+    # Sync to disk
+    sync
+
+    # Atomic move with locking for existing files
+    if [[ -f "$target_file" ]]; then
+        # Use flock for existing files (prevents TOCTOU)
+        (
+            flock -x 200 || {
+                nftban_log_error "Failed to acquire lock for $target_file"
+                return 1
+            }
+            mv -f "$tmpfile" "$target_file"
+        ) 200>"${target_file}.lock"
+    else
+        # New file, simple move
+        mkdir -p "$(dirname "$target_file")"
+        mv -f "$tmpfile" "$target_file"
+    fi
+
+    nftban_log_debug "Secure atomic write: $target_file"
+    return 0
+}
+
+# Legacy atomic write - now uses secure pattern internally
+# Kept for backward compatibility
 nftban_atomic_write() {
     local target_file="$1"
     local content="$2"
-    local temp_file="${target_file}.tmp.$$"
-    
-    echo "$content" > "$temp_file"
-    sync
-    mv -f "$temp_file" "$target_file"
-    
-    nftban_log_debug "Atomic write: $target_file"
+
+    # Delegate to secure version
+    nftban_secure_atomic_write "$target_file" "$content"
+}
+
+# =============================================================================
+# SECURE CURL WRAPPER (Hardened Download per Remediation Guide 2025-10-20)
+# =============================================================================
+
+# Hardened curl wrapper with security best practices
+# Usage: nftban_secure_curl "url" "output_file" [timeout]
+# Returns: 0 on success, 1 on failure
+nftban_secure_curl() {
+    local url="$1"
+    local output_file="$2"
+    local timeout="${3:-30}"
+
+    # Validate inputs
+    if [[ -z "$url" || -z "$output_file" ]]; then
+        nftban_log_error "secure_curl: missing required parameters"
+        return 1
+    fi
+
+    # Enforce HTTPS only (no HTTP, no local files, no private IPs)
+    if [[ ! "$url" =~ ^https:// ]]; then
+        nftban_log_error "secure_curl: HTTPS required (got: ${url:0:20}...)"
+        return 1
+    fi
+
+    # Block private/local IPs in URL
+    if [[ "$url" =~ (localhost|127\.0\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|::1|fc00:|fd00:) ]]; then
+        nftban_log_error "secure_curl: blocked local/private IP in URL"
+        return 1
+    fi
+
+    # Check curl available
+    if ! command -v curl &>/dev/null; then
+        nftban_log_error "secure_curl: curl not available"
+        return 1
+    fi
+
+    # Hardened curl with security flags
+    # --fail: Fail silently on HTTP errors (4xx, 5xx)
+    # --fail-with-body: Show error body for debugging
+    # --silent: No progress bar
+    # --show-error: Show errors even with --silent
+    # --location: Follow redirects (max 3)
+    # --max-redirs 3: Limit redirect chains
+    # --proto =https: ONLY allow HTTPS protocol
+    # --tlsv1.2: Minimum TLS 1.2
+    # --max-time: Overall operation timeout
+    # --connect-timeout: Connection timeout
+    # --retry 2: Retry on transient errors
+    # --retry-delay 1: Wait 1s between retries
+    # --user-agent: Identify as nftban
+    if curl \
+        --fail \
+        --fail-with-body \
+        --silent \
+        --show-error \
+        --location \
+        --max-redirs 3 \
+        --proto =https \
+        --tlsv1.2 \
+        --max-time "$timeout" \
+        --connect-timeout 10 \
+        --retry 2 \
+        --retry-delay 1 \
+        --user-agent "nftban/1.0 (security-tool)" \
+        --output "$output_file" \
+        "$url" 2>&1 | grep -v "^$" | head -5 | while IFS= read -r line; do
+            nftban_log_debug "curl: $line"
+        done
+    then
+        nftban_log_debug "secure_curl: success ($url)"
+        return 0
+    else
+        local exit_code=$?
+        nftban_log_error "secure_curl: failed (exit $exit_code) for $url"
+        # Clean up failed download
+        rm -f "$output_file"
+        return 1
+    fi
+}
+
+# Simple GET request with hardened curl (returns to stdout)
+# Usage: response=$(nftban_secure_curl_get "url" [timeout])
+nftban_secure_curl_get() {
+    local url="$1"
+    local timeout="${2:-30}"
+
+    # Validate URL
+    if [[ -z "$url" || ! "$url" =~ ^https:// ]]; then
+        nftban_log_error "secure_curl_get: invalid or non-HTTPS URL"
+        return 1
+    fi
+
+    # Block private/local IPs
+    if [[ "$url" =~ (localhost|127\.0\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.|::1|fc00:|fd00:) ]]; then
+        nftban_log_error "secure_curl_get: blocked local/private IP"
+        return 1
+    fi
+
+    # Check curl available
+    if ! command -v curl &>/dev/null; then
+        nftban_log_error "secure_curl_get: curl not available"
+        return 1
+    fi
+
+    # Execute hardened curl to stdout
+    curl \
+        --fail \
+        --fail-with-body \
+        --silent \
+        --show-error \
+        --location \
+        --max-redirs 3 \
+        --proto =https \
+        --tlsv1.2 \
+        --max-time "$timeout" \
+        --connect-timeout 10 \
+        --retry 2 \
+        --retry-delay 1 \
+        --user-agent "nftban/1.0 (security-tool)" \
+        "$url" 2>/dev/null || {
+            nftban_log_error "secure_curl_get: request failed"
+            return 1
+        }
+}
+
+# =============================================================================
+# SINGLE-INSTANCE LOCK WRAPPER (per Remediation Guide 2025-10-20)
+# =============================================================================
+
+# Execute command with exclusive lock (prevents concurrent execution)
+# Usage: nftban_with_lock "lock_name" command args...
+# Returns: command exit code, or 1 if lock acquisition fails
+nftban_with_lock() {
+    local lock_name="$1"
+    shift
+
+    # Validate lock name (prevent path traversal)
+    if [[ -z "$lock_name" || "$lock_name" =~ [./] ]]; then
+        nftban_log_error "with_lock: invalid lock name (no paths allowed)"
+        return 1
+    fi
+
+    # Create lock directory
+    local lock_dir="/var/lock/nftban"
+    mkdir -p "$lock_dir" 2>/dev/null || {
+        nftban_log_error "with_lock: failed to create lock directory"
+        return 1
+    }
+
+    local lock_file="${lock_dir}/${lock_name}.lock"
+    local lock_fd=200
+
+    # Try to acquire lock (non-blocking with -n)
+    # FD 200 is used for locking (standard practice)
+    exec 200>"$lock_file" || {
+        nftban_log_error "with_lock: failed to open lock file"
+        return 1
+    }
+
+    if ! flock -n 200; then
+        # Lock held by another process
+        local holder_pid
+        holder_pid=$(cat "$lock_file" 2>/dev/null || echo "unknown")
+
+        # Check if holder process still exists
+        if [[ "$holder_pid" =~ ^[0-9]+$ ]] && kill -0 "$holder_pid" 2>/dev/null; then
+            nftban_log_error "with_lock: operation '$lock_name' already running (PID: $holder_pid)"
+        else
+            nftban_log_error "with_lock: stale lock detected, but cannot acquire (PID: $holder_pid)"
+        fi
+        exec 200>&-  # Close FD
+        return 1
+    fi
+
+    # Lock acquired - write our PID
+    echo $$ >&200
+
+    # Execute command with lock held
+    local exit_code=0
+    "$@" || exit_code=$?
+
+    # Release lock (flock is automatically released when FD closes)
+    exec 200>&-
+
+    return $exit_code
+}
+
+# Check if operation is currently locked (read-only check)
+# Usage: nftban_is_locked "lock_name"
+# Returns: 0 if locked, 1 if not locked
+nftban_is_locked() {
+    local lock_name="$1"
+
+    # Validate lock name
+    if [[ -z "$lock_name" || "$lock_name" =~ [./] ]]; then
+        return 1
+    fi
+
+    local lock_file="/var/lock/nftban/${lock_name}.lock"
+
+    # Check if lock file exists
+    [[ ! -f "$lock_file" ]] && return 1
+
+    # Try to acquire lock without blocking (test only)
+    local test_fd=201
+    exec 201>"$lock_file" 2>/dev/null || return 1
+
+    if flock -n 201 2>/dev/null; then
+        # Lock is NOT held (we acquired it)
+        exec 201>&-
+        return 1
+    else
+        # Lock IS held
+        exec 201>&-
+        return 0
+    fi
+}
+
+# Get PID of process holding lock
+# Usage: pid=$(nftban_get_lock_holder "lock_name")
+nftban_get_lock_holder() {
+    local lock_name="$1"
+    local lock_file="/var/lock/nftban/${lock_name}.lock"
+
+    if [[ -f "$lock_file" ]]; then
+        cat "$lock_file" 2>/dev/null || echo ""
+    else
+        echo ""
+    fi
+}
+
+# =============================================================================
+# INPUT SANITIZATION (per Remediation Guide 2025-10-20)
+# =============================================================================
+
+# Sanitize jail name to prevent path traversal attacks
+# Usage: safe_name=$(nftban_sanitize_jail_name "jail_name")
+# Returns: sanitized name (alphanumeric, underscore, hyphen only)
+nftban_sanitize_jail_name() {
+    local jail_name="$1"
+
+    # Validate input
+    if [[ -z "$jail_name" ]]; then
+        nftban_log_error "sanitize_jail_name: empty jail name"
+        return 1
+    fi
+
+    # Remove any path traversal attempts and special characters
+    # Allow only: alphanumeric, underscore, hyphen
+    local sanitized
+    sanitized=$(echo "$jail_name" | tr -cd '[:alnum:]_-')
+
+    # Ensure result is not empty after sanitization
+    if [[ -z "$sanitized" ]]; then
+        nftban_log_error "sanitize_jail_name: invalid jail name (no valid characters)"
+        return 1
+    fi
+
+    # Prevent names that are just dots (., .., etc.)
+    if [[ "$sanitized" =~ ^\.+$ ]]; then
+        nftban_log_error "sanitize_jail_name: invalid jail name (dots only)"
+        return 1
+    fi
+
+    # Warn if sanitization changed the name
+    if [[ "$sanitized" != "$jail_name" ]]; then
+        nftban_log_warning "sanitize_jail_name: sanitized '$jail_name' to '$sanitized'"
+    fi
+
+    echo "$sanitized"
+    return 0
+}
+
+# Sanitize generic identifier (stricter than jail name)
+# Usage: safe_id=$(nftban_sanitize_identifier "some-id")
+# Returns: sanitized identifier (lowercase alphanumeric and underscore only)
+nftban_sanitize_identifier() {
+    local identifier="$1"
+
+    # Validate input
+    if [[ -z "$identifier" ]]; then
+        nftban_log_error "sanitize_identifier: empty identifier"
+        return 1
+    fi
+
+    # Convert to lowercase and keep only alphanumeric and underscore
+    local sanitized
+    sanitized=$(echo "$identifier" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]_')
+
+    # Ensure result is not empty
+    if [[ -z "$sanitized" ]]; then
+        nftban_log_error "sanitize_identifier: invalid identifier (no valid characters)"
+        return 1
+    fi
+
+    # Must start with letter (prevent issues with numeric-only IDs)
+    if [[ ! "$sanitized" =~ ^[a-z] ]]; then
+        nftban_log_error "sanitize_identifier: must start with letter (got: $sanitized)"
+        return 1
+    fi
+
+    # Warn if sanitization changed the identifier
+    if [[ "$sanitized" != "$(echo "$identifier" | tr '[:upper:]' '[:lower:]')" ]]; then
+        nftban_log_warning "sanitize_identifier: sanitized '$identifier' to '$sanitized'"
+    fi
+
+    echo "$sanitized"
+    return 0
+}
+
+# Sanitize file path component (for constructing safe paths)
+# Usage: safe_component=$(nftban_sanitize_path_component "component")
+# Returns: sanitized component (no path separators, no dots)
+nftban_sanitize_path_component() {
+    local component="$1"
+
+    # Validate input
+    if [[ -z "$component" ]]; then
+        nftban_log_error "sanitize_path_component: empty component"
+        return 1
+    fi
+
+    # Remove path separators and dots
+    local sanitized
+    sanitized=$(echo "$component" | sed 's/[\/\\.]//g' | tr -cd '[:alnum:]_-')
+
+    # Ensure result is not empty
+    if [[ -z "$sanitized" ]]; then
+        nftban_log_error "sanitize_path_component: invalid component (no valid characters)"
+        return 1
+    fi
+
+    # Prevent reserved names
+    case "$sanitized" in
+        tmp|temp|var|etc|bin|boot|dev|home|lib|mnt|opt|proc|root|run|sbin|srv|sys|usr)
+            nftban_log_error "sanitize_path_component: reserved name blocked: $sanitized"
+            return 1
+            ;;
+    esac
+
+    echo "$sanitized"
+    return 0
+}
+
+# Validate and sanitize port number
+# Usage: safe_port=$(nftban_sanitize_port "8080")
+# Returns: validated port number (1-65535)
+nftban_sanitize_port() {
+    local port="$1"
+
+    # Validate input
+    if [[ -z "$port" ]]; then
+        nftban_log_error "sanitize_port: empty port"
+        return 1
+    fi
+
+    # Remove non-digits
+    local sanitized
+    sanitized=$(echo "$port" | tr -cd '[:digit:]')
+
+    # Ensure result is not empty
+    if [[ -z "$sanitized" ]]; then
+        nftban_log_error "sanitize_port: invalid port (not a number)"
+        return 1
+    fi
+
+    # Validate range (1-65535)
+    if [[ $sanitized -lt 1 || $sanitized -gt 65535 ]]; then
+        nftban_log_error "sanitize_port: port out of range: $sanitized (must be 1-65535)"
+        return 1
+    fi
+
+    # Warn if sanitization changed the port
+    if [[ "$sanitized" != "$port" ]]; then
+        nftban_log_warning "sanitize_port: sanitized '$port' to '$sanitized'"
+    fi
+
+    echo "$sanitized"
+    return 0
+}
+
+# Validate email address (basic RFC 5322 compliance)
+# Usage: if nftban_validate_email "user@example.com"; then ...
+# Returns: 0 if valid, 1 if invalid
+nftban_validate_email() {
+    local email="$1"
+
+    # Validate input
+    if [[ -z "$email" ]]; then
+        return 1
+    fi
+
+    # Basic RFC 5322 regex (simplified but safe)
+    if [[ "$email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
+        return 0
+    else
+        nftban_log_error "validate_email: invalid email format: $email"
+        return 1
+    fi
+}
+
+# Sanitize command arguments (remove shell metacharacters)
+# Usage: safe_arg=$(nftban_sanitize_shell_arg "some;command")
+# Returns: sanitized argument (alphanumeric, space, dash, underscore, dot, slash only)
+nftban_sanitize_shell_arg() {
+    local arg="$1"
+
+    # Validate input
+    if [[ -z "$arg" ]]; then
+        nftban_log_error "sanitize_shell_arg: empty argument"
+        return 1
+    fi
+
+    # Remove shell metacharacters: ; | & $ ` \ " ' < > ( ) { } [ ] * ? ! ~ # % ^
+    local sanitized
+    sanitized=$(echo "$arg" | tr -cd '[:alnum:][:space:]._/-')
+
+    # Ensure result is not empty
+    if [[ -z "$sanitized" ]]; then
+        nftban_log_error "sanitize_shell_arg: invalid argument (no valid characters)"
+        return 1
+    fi
+
+    # Warn if sanitization changed the argument
+    if [[ "$sanitized" != "$arg" ]]; then
+        nftban_log_warning "sanitize_shell_arg: sanitized '$arg' to '$sanitized'"
+    fi
+
+    echo "$sanitized"
+    return 0
 }
 
 nftban_backup_file() {
@@ -718,7 +1488,8 @@ nftban_load_modules() {
         "nftban_whitelist_module.sh"
         "nftban_blacklist_module.sh"
         "nftban_search_module.sh"
-        "nftban_safety_module.sh" 
+        "nftban_sync_module.sh"
+        "nftban_safety_module.sh"
         "nftban_ipprotect_module.sh"
         "nftban_fail2ban_module.sh"
         
@@ -812,6 +1583,7 @@ export -f nftban_log_warning
 export -f nftban_log_info
 export -f nftban_log_debug
 export -f nftban_log_ban
+export -f nftban_log_whitelist_protection
 export -f nftban_get_config
 export -f nftban_set_config
 export -f nftban_is_ipv4
@@ -831,6 +1603,21 @@ export -f nftban_send_ban_notification
 export -f nftban_send_rate_limit_alert
 export -f nftban_get_public_ip
 export -f nftban_get_current_user_ip
+export -f nftban_mktemp
+export -f nftban_mktemp_dir
+export -f nftban_secure_atomic_write
+export -f nftban_atomic_write
+export -f nftban_secure_curl
+export -f nftban_secure_curl_get
+export -f nftban_with_lock
+export -f nftban_is_locked
+export -f nftban_get_lock_holder
+export -f nftban_sanitize_jail_name
+export -f nftban_sanitize_identifier
+export -f nftban_sanitize_path_component
+export -f nftban_sanitize_port
+export -f nftban_validate_email
+export -f nftban_sanitize_shell_arg
 export -f nftban_load_modules
 
 nftban_log_debug "NFTBan Core Module loaded successfully (v3.0.0 - Split Tables)"
