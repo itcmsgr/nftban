@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Core Module - Enhanced with Security Safeguards
-# Version: 3.0.0 - v0.9.0 SPLIT TABLE ARCHITECTURE
+# NFTBan Core Module
+# Version: 0.9.0
+# Location: lib/nftban_core.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
+# Core functionality with split table architecture and security safeguards
 # =============================================================================
 
 set -euo pipefail
@@ -245,7 +247,7 @@ nftban_init_directories() {
         "$NFTBAN_LOG_DIR"
         "$NFTBAN_TEMPLATE_DIR"
     )
-    
+
     for dir in "${dirs[@]}"; do
         if [[ ! -d "$dir" ]]; then
             mkdir -p "$dir"
@@ -253,6 +255,200 @@ nftban_init_directories() {
             nftban_log_debug "Created directory: $dir"
         fi
     done
+}
+
+# =============================================================================
+# SECURE FILE PERMISSIONS (PRIVILEGE ESCALATION PREVENTION)
+# =============================================================================
+# SECURITY: Enforce secure permissions on NFTBAN files
+# Prevents:
+# - Unauthorized read of sensitive config files (SMTP passwords, API keys)
+# - Privilege escalation via world-writable files
+# - Symlink attacks via incorrect ownership
+#
+# Permission Policy:
+# - Config files: 640 (root:root) - only root can read/write
+# - Config .local files: 600 (root:root) - user-specific, highly restrictive
+# - Scripts (.sh): 750 (root:root) - executable by root only
+# - Executables (bin/): 755 (root:root) - public execute, root write
+# - Directories: 755 (root:root) - public read/traverse, root write
+# - Log files: 640 (root:root) - only root can read logs
+# - Data files: 600 (root:root) - sensitive data, root only
+#
+# IMPORTANT: This function must be called after file creation/modification
+# =============================================================================
+
+nftban_secure_permissions() {
+    local target="${1:-all}"  # all, config, scripts, data, logs
+
+    # SECURITY: Only root can set secure permissions
+    if [[ $EUID -ne 0 ]]; then
+        nftban_log_warning "secure_permissions: must run as root (skipping)"
+        return 0
+    fi
+
+    nftban_log_info "Enforcing secure file permissions (target: $target)..."
+
+    # SECURITY: Set restrictive umask for all file operations
+    local old_umask
+    old_umask=$(umask)
+    umask 027  # New files: 640 (rw-r-----), new dirs: 750 (rwxr-x---)
+
+    local fixed=0
+    local errors=0
+
+    # Fix config files (HIGHEST PRIORITY - contains sensitive data)
+    if [[ "$target" == "all" || "$target" == "config" ]]; then
+        nftban_log_debug "Securing config files..."
+
+        # Main config files: 640 (owner read/write, group read, no world access)
+        if [[ -d "$NFTBAN_CONFIG_DIR" ]]; then
+            while IFS= read -r -d '' file; do
+                # .local files get 600 (owner only)
+                if [[ "$file" =~ \.local$ ]]; then
+                    if chmod 600 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
+                        nftban_log_debug "Secured (600): $file"
+                        ((fixed++))
+                    else
+                        nftban_log_error "Failed to secure: $file"
+                        ((errors++))
+                    fi
+                else
+                    # Regular config files: 640
+                    if chmod 640 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
+                        ((fixed++))
+                    else
+                        nftban_log_error "Failed to secure: $file"
+                        ((errors++))
+                    fi
+                fi
+            done < <(find "$NFTBAN_CONFIG_DIR" -type f -name "*.conf*" -print0 2>/dev/null)
+        fi
+    fi
+
+    # Fix library scripts (prevent unauthorized modification)
+    if [[ "$target" == "all" || "$target" == "scripts" ]]; then
+        nftban_log_debug "Securing library scripts..."
+
+        # Library files: 644 (readable for sourcing, but owned by root)
+        # Executable scripts: 750 (owner rwx, group rx, no world access)
+        if [[ -d "$NFTBAN_LIB_DIR" ]]; then
+            while IFS= read -r -d '' file; do
+                # Check if script is meant to be executable
+                if head -1 "$file" 2>/dev/null | grep -q '^#!/'; then
+                    # Executable script: 750
+                    if chmod 750 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
+                        ((fixed++))
+                    else
+                        nftban_log_error "Failed to secure: $file"
+                        ((errors++))
+                    fi
+                else
+                    # Library module (sourced): 644
+                    if chmod 644 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
+                        ((fixed++))
+                    else
+                        nftban_log_error "Failed to secure: $file"
+                        ((errors++))
+                    fi
+                fi
+            done < <(find "$NFTBAN_LIB_DIR" -type f -name "*.sh" -print0 2>/dev/null)
+        fi
+
+        # Installer scripts: 750
+        if [[ -d "$NFTBAN_LIB_DIR/installer" ]]; then
+            while IFS= read -r -d '' file; do
+                if chmod 750 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
+                    ((fixed++))
+                else
+                    nftban_log_error "Failed to secure: $file"
+                    ((errors++))
+                fi
+            done < <(find "$NFTBAN_LIB_DIR/installer" -type f -name "*.sh" -print0 2>/dev/null)
+        fi
+    fi
+
+    # Fix data files (may contain sensitive IP lists, API responses)
+    if [[ "$target" == "all" || "$target" == "data" ]]; then
+        nftban_log_debug "Securing data files..."
+
+        # Data files: 600 (owner only)
+        if [[ -d "$NFTBAN_DATA_DIR" ]]; then
+            # Secure the data directory itself
+            chmod 750 "$NFTBAN_DATA_DIR" 2>/dev/null
+            chown root:root "$NFTBAN_DATA_DIR" 2>/dev/null
+
+            # Secure all data files
+            while IFS= read -r -d '' file; do
+                if chmod 600 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
+                    ((fixed++))
+                else
+                    nftban_log_error "Failed to secure: $file"
+                    ((errors++))
+                fi
+            done < <(find "$NFTBAN_DATA_DIR" -type f -print0 2>/dev/null)
+        fi
+
+        # Secure cache directory
+        if [[ -d "$NFTBAN_CACHE_DIR" ]]; then
+            chmod 750 "$NFTBAN_CACHE_DIR" 2>/dev/null
+            chown root:root "$NFTBAN_CACHE_DIR" 2>/dev/null
+        fi
+    fi
+
+    # Fix log files (contain audit trail, potentially sensitive)
+    if [[ "$target" == "all" || "$target" == "logs" ]]; then
+        nftban_log_debug "Securing log files..."
+
+        # Log files: 640 (owner read/write, group read)
+        if [[ -d "$NFTBAN_LOG_DIR" ]]; then
+            chmod 750 "$NFTBAN_LOG_DIR" 2>/dev/null
+            chown root:root "$NFTBAN_LOG_DIR" 2>/dev/null
+
+            while IFS= read -r -d '' file; do
+                if chmod 640 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
+                    ((fixed++))
+                else
+                    nftban_log_error "Failed to secure: $file"
+                    ((errors++))
+                fi
+            done < <(find "$NFTBAN_LOG_DIR" -type f -print0 2>/dev/null)
+        fi
+    fi
+
+    # Fix executables (public execute, but root owned)
+    if [[ "$target" == "all" || "$target" == "bin" ]]; then
+        nftban_log_debug "Securing executables..."
+
+        # Bin files: 755 (public execute, root write)
+        if [[ -d "${NFTBAN_BASE_DIR}/bin" ]]; then
+            while IFS= read -r -d '' file; do
+                if chmod 755 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
+                    ((fixed++))
+                else
+                    nftban_log_error "Failed to secure: $file"
+                    ((errors++))
+                fi
+            done < <(find "${NFTBAN_BASE_DIR}/bin" -type f -print0 2>/dev/null)
+        fi
+
+        # Global nftban symlink
+        if [[ -L "/usr/local/bin/nftban" ]]; then
+            chown -h root:root "/usr/local/bin/nftban" 2>/dev/null
+        fi
+    fi
+
+    # Restore original umask
+    umask "$old_umask"
+
+    # Summary
+    if [[ $errors -eq 0 ]]; then
+        nftban_log_success "Secured $fixed files/directories"
+    else
+        nftban_log_warning "Secured $fixed files/directories ($errors errors)"
+    fi
+
+    return 0
 }
 
 # =============================================================================
@@ -681,9 +877,9 @@ nftban_geoip_lookup() {
         result=$(geoiplookup "$ip" 2>/dev/null | head -1 | cut -d: -f2- | tr -d ' ' | tr ',' '_')
     fi
     
-    # Method 2: ip-api.com
+    # Method 2: ip-api.com (HTTPS)
     if [[ -z "$result" ]] && command -v curl &> /dev/null; then
-        result=$(curl -s "http://ip-api.com/json/${ip}?fields=status,country,city,isp" 2>/dev/null | \
+        result=$(curl -s "https://ip-api.com/json/${ip}?fields=status,country,city,isp" 2>/dev/null | \
                  python3 -c "import sys,json; d=json.load(sys.stdin); print(f\"{d.get('country','Unknown')}_{d.get('city','Unknown')}\" if d.get('status')=='success' else 'Unknown')" 2>/dev/null)
     fi
     
@@ -1602,6 +1798,7 @@ export -f nftban_log_ban
 export -f nftban_log_whitelist_protection
 export -f nftban_get_config
 export -f nftban_set_config
+export -f nftban_secure_permissions
 export -f nftban_is_ipv4
 export -f nftban_is_ipv6
 export -f nftban_detect_ip_version

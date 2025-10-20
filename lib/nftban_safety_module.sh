@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Safety Module - COMPLETE VERSION
-# Version: 2.0.0 - v0.9.0 SPLIT TABLE ARCHITECTURE
+# NFTBan Safety Module
+# Version: 0.9.0
+# Location: lib/nftban_safety_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
-# Comprehensive safety verification and initialization safeguards
-# v0.9.0 UPDATE: Uses split ip/ip6 tables for better performance
+# Comprehensive safety verification and initialization safeguards with split tables
 # =============================================================================
 
 # Prevent double-loading
@@ -164,26 +164,55 @@ nftban_check_file_permissions() {
 # RISK 5: DISK SPACE LOW
 # =============================================================================
 nftban_check_disk_space() {
-    # Check disk space on /etc and /var
-    local etc_usage var_usage
-    
+    # SECURITY: Check both disk space AND inodes (files can fail even with free space)
+    local etc_usage var_usage etc_inodes var_inodes
+    local issues=0
+
+    # Check disk space percentage
     etc_usage=$(df /etc | tail -1 | awk '{print $5}' | tr -d '%')
     var_usage=$(df /var | tail -1 | awk '{print $5}' | tr -d '%')
-    
+
+    # SECURITY FIX: Check inode usage (df -i)
+    etc_inodes=$(df -i /etc 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%')
+    var_inodes=$(df -i /var 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%')
+
+    # Check disk space critical thresholds
     if [[ $etc_usage -gt 90 ]]; then
-        nftban_log_error "CRITICAL: /etc partition ${etc_usage}% full!"
-        return 1
+        nftban_log_error "CRITICAL: /etc partition ${etc_usage}% full (disk space)!"
+        ((issues++))
     fi
-    
+
     if [[ $var_usage -gt 90 ]]; then
-        nftban_log_error "CRITICAL: /var partition ${var_usage}% full!"
-        return 1
+        nftban_log_error "CRITICAL: /var partition ${var_usage}% full (disk space)!"
+        ((issues++))
     fi
-    
+
+    # SECURITY: Check inode critical thresholds
+    if [[ -n "$etc_inodes" ]] && [[ $etc_inodes -gt 90 ]]; then
+        nftban_log_error "CRITICAL: /etc partition ${etc_inodes}% inodes used!"
+        ((issues++))
+    fi
+
+    if [[ -n "$var_inodes" ]] && [[ $var_inodes -gt 90 ]]; then
+        nftban_log_error "CRITICAL: /var partition ${var_inodes}% inodes used!"
+        ((issues++))
+    fi
+
+    # Warning thresholds (80%)
     if [[ $etc_usage -gt 80 || $var_usage -gt 80 ]]; then
         nftban_log_warning "Disk space warning: /etc ${etc_usage}%, /var ${var_usage}%"
     fi
-    
+
+    # SECURITY: Warning thresholds for inodes
+    if [[ -n "$etc_inodes" ]] && [[ $etc_inodes -gt 80 ]]; then
+        nftban_log_warning "Inode usage warning: /etc ${etc_inodes}% inodes used"
+    fi
+
+    if [[ -n "$var_inodes" ]] && [[ $var_inodes -gt 80 ]]; then
+        nftban_log_warning "Inode usage warning: /var ${var_inodes}% inodes used"
+    fi
+
+    [[ $issues -gt 0 ]] && return 1
     return 0
 }
 

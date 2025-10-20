@@ -2,12 +2,12 @@
 
 # =============================================================================
 # NFTBan Maintenance Module
-# Version: 2.0.0
+# Version: 0.9.0
+# Location: lib/nftban_maintenance_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
-# System maintenance, cleanup, and health checks
-# With comprehensive maintenance panel UI
+# System maintenance, cleanup, health checks and comprehensive management panel
 # =============================================================================
 
 # Prevent double-loading

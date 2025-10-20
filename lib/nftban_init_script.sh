@@ -1,6 +1,11 @@
 #!/bin/bash
 # =============================================================================
 # NFTBAN Installation & Setup Script
+# Version: 0.9.0
+# Location: lib/nftban_init_script.sh
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # Master script that orchestrates complete NFTBAN installation
 # =============================================================================
 

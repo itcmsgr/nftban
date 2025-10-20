@@ -2,7 +2,8 @@
 
 # =============================================================================
 # NFTBan Login Monitor Module
-# Version: 1.0.0
+# Version: 0.9.0
+# Location: lib/nftban_login_monitor_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
@@ -207,8 +208,47 @@ nftban_login_monitor_test_config() {
 
     if [[ "$response" =~ ^[Yy]$ ]]; then
         echo "Sending test email to $recipient..."
-        # TODO: Implement email sending via maintenance module
-        nftban_log_info "Test email functionality not yet implemented"
+
+        # Prepare test email content
+        local subject="[nftban] Login Monitor Test Email"
+        local body="nftban Login Monitor - Test Email
+
+This is a test email from the nftban login monitoring system.
+
+Configuration Test Results:
+✓ Email notifications enabled
+✓ Recipient configured: $recipient
+✓ Login monitoring enabled
+
+Timestamp: $(date +'%Y-%m-%d %H:%M:%S')
+Server: $(hostname -f)
+
+Current Configuration:
+- Root login alerts: $(nftban_get_config 'NFTBAN_F2B_ROOT_LOGIN_ALERT' 'false')
+- Sudo alerts: $(nftban_get_config 'NFTBAN_F2B_SUDO_ALERT' 'false')
+- SSH alerts: $(nftban_get_config 'NFTBAN_F2B_SSH_LOGIN_ALERT' 'false')
+
+If you received this email, your login monitoring is configured correctly!
+
+---
+This is a test message from nftban login monitor
+https://itcms.gr"
+
+        # Send test email using core module function
+        if nftban_send_email "$recipient" "$subject" "$body" "normal"; then
+            nftban_log_success "Test email sent successfully to $recipient"
+            echo ""
+            echo "✓ Check your inbox at: $recipient"
+            echo "  (Check spam folder if not received within a few minutes)"
+        else
+            nftban_log_error "Failed to send test email"
+            echo ""
+            echo "Troubleshooting:"
+            echo "  1. Check if 'mail' or 'sendmail' command is available"
+            echo "  2. Verify mail server configuration"
+            echo "  3. Check email logs: $NFTBAN_EMAIL_LOG"
+            return 1
+        fi
     fi
 }
 

@@ -1,4 +1,9 @@
 #!/bin/bash
+# Version: 0.9.0
+# Location: lib/installer/nftban_uninstall_script.sh
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
 # =============================================================================
 # NFTBAN Uninstallation Script
 # Complete removal of NFTBAN system
@@ -287,13 +292,13 @@ remove_executables() {
     
     # Remove bin directory
     if [[ -d "$BASE_DIR/bin" ]]; then
-        rm -rf "$BASE_DIR/bin"
+        rm -rf "${BASE_DIR:?}/bin"
         log_success "Removed: $BASE_DIR/bin"
     fi
-    
+
     # Remove lib directory
     if [[ -d "$BASE_DIR/lib" ]]; then
-        rm -rf "$BASE_DIR/lib"
+        rm -rf "${BASE_DIR:?}/lib"
         log_success "Removed: $BASE_DIR/lib"
     fi
     

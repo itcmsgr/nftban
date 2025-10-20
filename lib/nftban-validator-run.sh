@@ -2,8 +2,8 @@
 # =============================================================================
 # NFTBan Validator - Run Module
 # Version: 7.0.0
+# Location: lib/nftban-validator-run.sh
 # Provides: Manifest-driven validation (sha256, md5 optional, size, syntax, perms)
-# Location: /etc/nftban/lib/nftban-validator-run.sh
 # Requires: jq, sha256sum; optional: md5sum
 # =============================================================================
 

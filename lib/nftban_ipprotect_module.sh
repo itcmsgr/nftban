@@ -2,7 +2,8 @@
 
 # =============================================================================
 # NFTBan IP Protection Module
-# Version: 1.0.0
+# Version: 0.9.0
+# Location: lib/nftban_ipprotect_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr

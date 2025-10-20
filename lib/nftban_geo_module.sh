@@ -2,12 +2,12 @@
 
 # =============================================================================
 # NFTBan GEO Blocking Module
-# Version: 2.0.0 - v0.9.0 SPLIT TABLE ARCHITECTURE
+# Version: 0.9.0
+# Location: lib/nftban_geo_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
-# Country-level IP blocking using GeoIP databases
-# v0.9.0 UPDATE: Uses split ip/ip6 tables for better performance
+# Country-level IP blocking using GeoIP databases with split table architecture
 # =============================================================================
 
 # Prevent double-loading
@@ -47,10 +47,49 @@ nftban_geo_log() {
 # =============================================================================
 nftban_geo_init() {
     nftban_log_info "Initializing GEO blocking system..."
-    
+
     # Create directories
     mkdir -p "$NFTBAN_GEO_DATA_DIR" "$NFTBAN_GEO_CACHE_DIR" "$NFTBAN_GEO_SETS_DIR"
-    
+
+    # Create main configuration file
+    local config_file="${NFTBAN_CONFIG_DIR}/geo-blocking.conf"
+    if [[ ! -f "$config_file" ]]; then
+        cat > "$config_file" <<'EOF'
+# =============================================================================
+# NFTBan GEO-Blocking Configuration
+# =============================================================================
+
+# Enable/Disable GEO-blocking
+GEO_BLOCKING_ENABLED="FALSE"
+
+# Blocking mode: "blacklist" or "whitelist"
+# blacklist = Allow all EXCEPT countries in geo-blacklist.conf
+# whitelist = Block all EXCEPT countries in geo-whitelist.conf
+GEO_BLOCKING_MODE="blacklist"
+
+# Dry-run mode (RECOMMENDED for testing)
+# TRUE = Log what would be blocked, but don't actually block
+# FALSE = Actually block traffic (production)
+GEO_DRY_RUN="TRUE"
+
+# Enable IPv4/IPv6 blocking
+GEO_BLOCK_IPV4="TRUE"
+GEO_BLOCK_IPV6="TRUE"
+
+# Auto-block suspicious countries
+GEO_AUTO_BLOCK="FALSE"
+
+# Maximum blocked countries (memory limit)
+GEO_MAX_BLOCKED_COUNTRIES="50"
+
+# nftables batch size for loading IP ranges
+GEO_NFTABLES_BATCH_SIZE="1000"
+
+EOF
+        chmod 644 "$config_file"
+        nftban_log_success "Created GEO config: $config_file"
+    fi
+
     # Create blacklist file
     if [[ ! -f "$NFTBAN_GEO_BLACKLIST" ]]; then
         cat > "$NFTBAN_GEO_BLACKLIST" <<'EOF'
@@ -69,7 +108,7 @@ EOF
         chmod 644 "$NFTBAN_GEO_BLACKLIST"
         nftban_log_success "Created GEO blacklist: $NFTBAN_GEO_BLACKLIST"
     fi
-    
+
     # Create whitelist file
     if [[ ! -f "$NFTBAN_GEO_WHITELIST" ]]; then
         cat > "$NFTBAN_GEO_WHITELIST" <<'EOF'
@@ -89,12 +128,12 @@ EOF
         chmod 644 "$NFTBAN_GEO_WHITELIST"
         nftban_log_success "Created GEO whitelist: $NFTBAN_GEO_WHITELIST"
     fi
-    
+
     # Initialize metadata
     if [[ ! -f "$NFTBAN_GEO_METADATA" ]]; then
         echo "{}" > "$NFTBAN_GEO_METADATA"
     fi
-    
+
     nftban_log_success "GEO blocking system initialized"
     nftban_geo_log "INIT" "SYSTEM" "both" "GEO system initialized"
 }
@@ -546,7 +585,7 @@ nftban_geo_enable() {
     if [[ ! -f "$config_file" ]]; then
         nftban_log_error "Configuration file not found: $config_file"
         echo ""
-        echo "Run 'nftban setup' first to create configuration files."
+        echo "Run 'nftban geo init' first to initialize GEO-blocking."
         return 1
     fi
 
@@ -656,7 +695,7 @@ nftban_geo_disable() {
     if [[ ! -f "$config_file" ]]; then
         nftban_log_error "Configuration file not found: $config_file"
         echo ""
-        echo "Run 'nftban setup' first to create configuration files."
+        echo "Run 'nftban geo init' first to initialize GEO-blocking."
         return 1
     fi
 
@@ -751,7 +790,7 @@ nftban_geo_status() {
     if [[ ! -f "$config_file" ]]; then
         echo "❌ Configuration file not found: $config_file"
         echo ""
-        echo "Run 'nftban setup' first to create configuration files."
+        echo "Run 'nftban geo init' first to initialize GEO-blocking."
         return 1
     fi
 

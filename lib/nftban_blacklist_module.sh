@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Blacklist Module - Enhanced with Comprehensive Protection
-# Version: 2.0.0 - v0.9.0 SPLIT TABLE ARCHITECTURE
+# NFTBan Blacklist Module
+# Version: 0.9.0
+# Location: lib/nftban_blacklist_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
-# Ban operations with complete safety checks
-# v0.9.0 UPDATE: Uses split ip/ip6 tables for better performance
+# Ban operations with comprehensive safety checks and split table architecture
 # =============================================================================
 
 # Prevent double-loading

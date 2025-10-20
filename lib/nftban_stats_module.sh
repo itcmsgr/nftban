@@ -2,7 +2,8 @@
 
 # =============================================================================
 # NFTBan Statistics Module
-# Version: 1.0.0
+# Version: 0.9.0
+# Location: lib/nftban_stats_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
@@ -62,16 +63,25 @@ nftban_stats_dashboard() {
 # =============================================================================
 nftban_stats_whitelist_summary() {
     echo -e "${NFTBAN_GREEN}[WHITELIST]${NFTBAN_NC}"
-    
+
     local wl_system=0
     local wl_user=0
     local wl_cf=0
-    
-    [[ -f "$NFTBAN_WHITELIST_SYSTEM" ]] && wl_system=$(grep -cvE '^#|^$' "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null || echo 0)
-    [[ -f "$NFTBAN_WHITELIST_USER" ]] && wl_user=$(grep -cvE '^#|^$' "$NFTBAN_WHITELIST_USER" 2>/dev/null || echo 0)
-    [[ -f "$NFTBAN_WHITELIST_CF" ]] && wl_cf=$(grep -cvE '^#|^$' "$NFTBAN_WHITELIST_CF" 2>/dev/null || echo 0)
-    
-    local total=$((wl_system + wl_user + wl_cf))
+
+    if [[ -f "$NFTBAN_WHITELIST_SYSTEM" ]]; then
+        wl_system=$(grep -cvE '^#|^$' "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null)
+        wl_system=${wl_system:-0}
+    fi
+    if [[ -f "$NFTBAN_WHITELIST_USER" ]]; then
+        wl_user=$(grep -cvE '^#|^$' "$NFTBAN_WHITELIST_USER" 2>/dev/null)
+        wl_user=${wl_user:-0}
+    fi
+    if [[ -f "${NFTBAN_WHITELIST_CF:-}" ]] && [[ -n "${NFTBAN_WHITELIST_CF:-}" ]]; then
+        wl_cf=$(grep -cvE '^#|^$' "$NFTBAN_WHITELIST_CF" 2>/dev/null)
+        wl_cf=${wl_cf:-0}
+    fi
+
+    local total=$((${wl_system:-0} + ${wl_user:-0} + ${wl_cf:-0}))
     
     echo "  System: $wl_system"
     echo "  User: $wl_user"
@@ -85,14 +95,20 @@ nftban_stats_whitelist_summary() {
 # =============================================================================
 nftban_stats_blacklist_summary() {
     echo -e "${NFTBAN_RED}[BLACKLIST]${NFTBAN_NC}"
-    
+
     local bl_persistent=0
     local bl_user=0
-    
-    [[ -f "$NFTBAN_BLACKLIST_PERSISTENT" ]] && bl_persistent=$(grep -cvE '^#|^$' "$NFTBAN_BLACKLIST_PERSISTENT" 2>/dev/null || echo 0)
-    [[ -f "$NFTBAN_BLACKLIST_USER" ]] && bl_user=$(grep -cvE '^#|^$' "$NFTBAN_BLACKLIST_USER" 2>/dev/null || echo 0)
-    
-    local total=$((bl_persistent + bl_user))
+
+    if [[ -f "$NFTBAN_BLACKLIST_PERSISTENT" ]]; then
+        bl_persistent=$(grep -cvE '^#|^$' "$NFTBAN_BLACKLIST_PERSISTENT" 2>/dev/null)
+        bl_persistent=${bl_persistent:-0}
+    fi
+    if [[ -f "$NFTBAN_BLACKLIST_USER" ]]; then
+        bl_user=$(grep -cvE '^#|^$' "$NFTBAN_BLACKLIST_USER" 2>/dev/null)
+        bl_user=${bl_user:-0}
+    fi
+
+    local total=$((${bl_persistent:-0} + ${bl_user:-0}))
     
     echo "  Persistent: $bl_persistent"
     echo "  User: $bl_user"
@@ -146,7 +162,8 @@ nftban_stats_geo_summary() {
         return 0
     fi
     
-    local blocked_countries=$(grep -cvE '^#|^$' "$NFTBAN_GEO_BLACKLIST" 2>/dev/null || echo 0)
+    local blocked_countries=$(grep -cvE '^#|^$' "$NFTBAN_GEO_BLACKLIST" 2>/dev/null)
+    blocked_countries=${blocked_countries:-0}
     echo "  Blocked countries: $blocked_countries"
     
     if [[ $blocked_countries -gt 0 ]]; then

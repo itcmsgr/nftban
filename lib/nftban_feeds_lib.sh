@@ -1,6 +1,13 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 # =============================================================================
-# NFTBAN Feeds Library - Threat Intelligence Feed Management
+# NFTBan Feeds Library
+# Version: 0.9.0
+# Location: lib/nftban_feeds_lib.sh
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# Website: https://itcms.gr
+# Threat intelligence feed management library
 # =============================================================================
 
 # Prevent double-loading
