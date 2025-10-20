@@ -423,15 +423,21 @@ list_feeds() {
 enable_feed() {
     local feed_name="$1"
     local conf_local="$CONFIG_DIR/nftban.conf.local"
-    
+
+    # SECURITY: Validate feed identifier (must be alphanumeric with underscores only)
+    if [[ ! "$feed_name" =~ ^[A-Z0-9_]+$ ]]; then
+        log_error "Invalid feed identifier: $feed_name (must be uppercase alphanumeric with underscores)"
+        return 1
+    fi
+
     # Verify feed exists
     if ! get_feed_list | grep -q "^${feed_name}$"; then
         log_error "Feed not found: $feed_name"
         return 1
     fi
-    
+
     log_info "Enabling feed: $feed_name"
-    
+
     # Add to conf.local
     local override_var="NFTBAN_FEED_${feed_name}_ENABLED"
     
@@ -451,9 +457,15 @@ enable_feed() {
 disable_feed() {
     local feed_name="$1"
     local conf_local="$CONFIG_DIR/nftban.conf.local"
-    
+
+    # SECURITY: Validate feed identifier (must be alphanumeric with underscores only)
+    if [[ ! "$feed_name" =~ ^[A-Z0-9_]+$ ]]; then
+        log_error "Invalid feed identifier: $feed_name (must be uppercase alphanumeric with underscores)"
+        return 1
+    fi
+
     log_info "Disabling feed: $feed_name"
-    
+
     local override_var="NFTBAN_FEED_${feed_name}_ENABLED"
     
     if grep -q "^${override_var}=" "$conf_local" 2>/dev/null; then
