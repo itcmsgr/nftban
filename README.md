@@ -105,17 +105,22 @@ curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/nftban_init.sh 
 sudo bash nftban_init.sh --github -y
 ```
 
-### Configure
+### Protect Yourself (Optional)
 ```bash
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
-```
-
-### Protect Yourself
-```bash
+# Whitelist your IP to prevent lockouts
 sudo nftban whitelist add <your-ip>
 ```
 
-**That's it!** Your server is protected. See [📚 Complete Documentation](docs/) for more.
+**That's it!** Your server is protected.
+
+The installer automatically:
+- ✅ Configures nftables firewall
+- ✅ Detects and configures control panel ports
+- ✅ Sets up Fail2Ban integration
+- ✅ Enables DDoS protection
+- ✅ Activates port scan detection
+
+See [📚 Complete Documentation](docs/) for advanced configuration.
 
 ---
 
@@ -182,7 +187,7 @@ nftban portscan check-ip    # Check specific IP
 
 ### Setup Guides
 - **[Installation](docs/README_nftban.md)** - Step-by-step install
-- **[Firewall Setup](docs/README_nftban_init_nftables_conf.md)** - nftables configuration
+- **[Architecture](docs/ARCHITECTURE.md)** - System design and structure
 - **[Fail2Ban Setup](docs/README_nftban_fail2ban.md)** - Intrusion prevention
 - **[Control Panels](docs/CONTROL_PANELS.md)** - Panel-specific guides
 

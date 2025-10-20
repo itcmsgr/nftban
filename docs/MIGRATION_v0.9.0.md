@@ -204,11 +204,8 @@ sudo nft flush ruleset
 # Download v0.9.0 installer
 curl -fsSL https://raw.githubusercontent.com/itcmsgr/nftban/main/nftban_init.sh -o nftban_init.sh
 
-# Run installer
+# Run installer (handles all configuration automatically)
 sudo bash nftban_init.sh --github -y
-
-# Configure nftables
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
 ```
 
 ### Step 4: Restore Configuration

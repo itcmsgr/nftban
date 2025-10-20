@@ -1026,14 +1026,14 @@ cat /etc/nftban/config/nftban-configuration-user-whitelist_ips.conf.local
 **Test firewall rules before finalizing:**
 
 ```bash
-# Use dry-run mode first
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-dry-run
+# Test sync without applying changes (dry-run mode)
+sudo nftban sync test
 
-# Review the generated rules
-less /tmp/nftban_nftables.conf.tmp
+# Review configuration status
+sudo nftban validate
 
 # Apply when satisfied
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
+sudo nftban sync
 ```
 
 **Keep emergency access available:**
@@ -1946,7 +1946,7 @@ sudo systemctl restart fail2ban
 
 # 2. Emergency firewall flush
 sudo nft flush ruleset
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
+sudo nftban sync
 
 # 3. Reset Fail2Ban
 sudo systemctl stop fail2ban
@@ -1985,7 +1985,7 @@ sudo nftban --add-ip
 sudo nftban --validate-sync
 
 # Test with dry-run
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-dry-run
+sudo nftban sync test
 ```
 
 ### ❌ Mistake 3: Too Aggressive Ban Times
@@ -2057,7 +2057,7 @@ sudo nftban --add-ip
 # Only use if absolutely necessary
 sudo nft flush ruleset
 # Fix issue quickly, then reapply:
-sudo /etc/nftban/scripts/nftban_init_nftables_conf.sh --install-final
+sudo nftban sync
 ```
 
 ### Under Active Attack
