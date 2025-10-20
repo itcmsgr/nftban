@@ -788,6 +788,41 @@ cmd_maintenance() {
             nftban_check_root || exit 1
             nftban_maintenance_run
             ;;
+        enable)
+            nftban_check_root || exit 1
+            local service="${1:-all}"
+            nftban_log_info "Enabling service: $service"
+            nftban_service_control "enable" "$service"
+            nftban_log_success "Service enabled: $service"
+            ;;
+        disable)
+            nftban_check_root || exit 1
+            local service="${1:-all}"
+            nftban_log_info "Disabling service: $service"
+            nftban_service_control "disable" "$service"
+            nftban_log_success "Service disabled: $service"
+            ;;
+        start)
+            nftban_check_root || exit 1
+            local service="${1:-all}"
+            nftban_log_info "Starting service: $service"
+            nftban_service_control "start" "$service"
+            nftban_log_success "Service started: $service"
+            ;;
+        stop)
+            nftban_check_root || exit 1
+            local service="${1:-all}"
+            nftban_log_info "Stopping service: $service"
+            nftban_service_control "stop" "$service"
+            nftban_log_success "Service stopped: $service"
+            ;;
+        restart)
+            nftban_check_root || exit 1
+            local service="${1:-all}"
+            nftban_log_info "Restarting service: $service"
+            nftban_service_control "restart" "$service"
+            nftban_log_success "Service restarted: $service"
+            ;;
         *)
             nftban_log_error "Unknown maintenance action: $action"
             echo ""
@@ -802,12 +837,24 @@ cmd_maintenance() {
             echo "  list-backups     List available backups"
             echo "  clean            Run maintenance cleanup"
             echo ""
+            echo "Service Management:"
+            echo "  enable [service] Enable service (all/nftables/fail2ban)"
+            echo "  disable [service] Disable service (all/nftables/fail2ban)"
+            echo "  start [service]  Start service (all/nftables/fail2ban)"
+            echo "  stop [service]   Stop service (all/nftables/fail2ban)"
+            echo "  restart [service] Restart service (all/nftables/fail2ban)"
+            echo ""
             echo "Examples:"
             echo "  nftban maintenance panel"
             echo "  nftban maintenance validate"
             echo "  nftban maintenance repair"
             echo "  nftban maintenance health"
             echo "  nftban maintenance stats"
+            echo ""
+            echo "  sudo nftban maintenance disable all       # Disable both nftables and fail2ban"
+            echo "  sudo nftban maintenance enable all        # Enable both services"
+            echo "  sudo nftban maintenance restart nftables  # Restart nftables only"
+            echo "  sudo nftban maintenance stop fail2ban     # Stop fail2ban only"
             echo ""
             exit 1
             ;;
@@ -953,6 +1000,53 @@ cmd_sync() {
         verify|check|status)
             nftban_sync_verify
             ;;
+        test|dry-run)
+            nftban_log_info "Running sync test (dry-run mode)..."
+            echo ""
+            echo "═══════════════════════════════════════════════════════"
+            echo "  Sync Dry-Run Test"
+            echo "═══════════════════════════════════════════════════════"
+            echo ""
+
+            # Check for drift without fixing
+            local whitelist_drift=false
+            local blacklist_drift=false
+
+            if declare -f nftban_sync_check_whitelist_drift >/dev/null 2>&1; then
+                echo "Checking whitelist synchronization..."
+                if ! nftban_sync_check_whitelist_drift; then
+                    whitelist_drift=true
+                    nftban_log_warning "  Whitelist drift detected (would be fixed)"
+                else
+                    nftban_log_success "  Whitelist synchronized"
+                fi
+            fi
+            echo ""
+
+            if declare -f nftban_sync_check_blacklist_drift >/dev/null 2>&1; then
+                echo "Checking blacklist synchronization..."
+                if ! nftban_sync_check_blacklist_drift; then
+                    blacklist_drift=true
+                    nftban_log_warning "  Blacklist drift detected (would be fixed)"
+                else
+                    nftban_log_success "  Blacklist synchronized"
+                fi
+            fi
+            echo ""
+
+            if [[ "$whitelist_drift" == "true" ]] || [[ "$blacklist_drift" == "true" ]]; then
+                echo "═══════════════════════════════════════════════════════"
+                nftban_log_warning "Dry-run complete: Issues detected"
+                echo ""
+                echo "To fix these issues, run:"
+                echo "  sudo nftban sync repair"
+                echo ""
+            else
+                echo "═══════════════════════════════════════════════════════"
+                nftban_log_success "Dry-run complete: No issues detected"
+                echo ""
+            fi
+            ;;
         repair|fix)
             nftban_check_root || exit 1
             nftban_sync_repair
@@ -979,6 +1073,7 @@ USAGE:
 
 ACTIONS:
     verify              Verify synchronization status (default)
+    test|dry-run        Test sync without making changes (dry-run mode)
     repair              Repair desynchronization automatically
     auto [type]         Auto-sync specific type (whitelist/blacklist/all)
     health              Check synchronization health
@@ -1017,6 +1112,10 @@ EXAMPLES:
     # Check synchronization status
     nftban sync verify
 
+    # Test sync without making changes (dry-run)
+    nftban sync test
+    nftban sync dry-run
+
     # Repair any detected drift
     sudo nftban sync repair
 
@@ -1051,6 +1150,7 @@ EOF
             echo ""
             echo "Available actions:"
             echo "  verify              Verify synchronization status"
+            echo "  test|dry-run        Test sync without making changes"
             echo "  repair              Repair desynchronization"
             echo "  auto [type]         Auto-sync (whitelist/blacklist/all)"
             echo "  health              Check synchronization health"
@@ -1058,6 +1158,7 @@ EOF
             echo ""
             echo "Examples:"
             echo "  nftban sync verify"
+            echo "  nftban sync test"
             echo "  sudo nftban sync repair"
             echo "  sudo nftban sync auto all"
             echo "  nftban sync health"
