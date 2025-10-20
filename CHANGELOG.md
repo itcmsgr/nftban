@@ -286,6 +286,54 @@ All modules use correct set names without version suffix:
    - **Impact:** Users can now manage login monitoring via `nftban login` commands
    - **Deployment:** Tested successfully on CentOS 9, Ubuntu 24.04, and CentOS 10
 
+6. **BUG19 - Missing Management Service Control Commands**
+   - **Issue:** No CLI commands to enable/disable/start/stop nftables and fail2ban services
+   - **User Request:** "nftban management disable should disable both nft and fail2ban, enable enable nft and fail2ban"
+   - **Location:** `/home/gituser/github/nftban/lib/nftban_main_cli.sh:cmd_maintenance()`
+   - **Fix:**
+     - Added service management actions to `cmd_maintenance()` function
+     - New commands: `enable`, `disable`, `start`, `stop`, `restart`
+     - Service parameter: `all` (default), `nftables`, or `fail2ban`
+     - Uses existing `nftban_service_control()` function from maintenance module
+   - **Impact:**
+     - `nftban maintenance disable all` - Disables both nftables and fail2ban
+     - `nftban maintenance enable all` - Enables both services
+     - `nftban maintenance restart nftables` - Restarts nftables only
+     - `nftban maintenance stop fail2ban` - Stops fail2ban only
+   - **Examples Added to Help:**
+     ```bash
+     sudo nftban maintenance disable all       # Disable both nftables and fail2ban
+     sudo nftban maintenance enable all        # Enable both services
+     sudo nftban maintenance restart nftables  # Restart nftables only
+     sudo nftban maintenance stop fail2ban     # Stop fail2ban only
+     ```
+
+7. **BUG20 - Missing Test/Dry-Run Options for Configs**
+   - **Issue:** No dry-run mode to test sync operations without making changes
+   - **User Request:** "where are test --dry run options for configs"
+   - **Location:** `/home/gituser/github/nftban/lib/nftban_main_cli.sh:cmd_sync()`
+   - **Fix:**
+     - Added `test` and `dry-run` actions to `cmd_sync()` function
+     - Checks whitelist and blacklist drift without fixing
+     - Reports what would be fixed if repair was run
+     - No modifications made to nftables or files
+   - **Impact:**
+     - `nftban sync test` - Test sync without making changes
+     - `nftban sync dry-run` - Alternative command (same behavior)
+     - Shows drift status for whitelist and blacklist
+     - Recommends `nftban sync repair` if issues found
+   - **Examples Added to Help:**
+     ```bash
+     # Test sync without making changes (dry-run)
+     nftban sync test
+     nftban sync dry-run
+     ```
+   - **Technical Implementation:**
+     - Uses `nftban_sync_check_whitelist_drift()` for read-only checking
+     - Uses `nftban_sync_check_blacklist_drift()` for read-only checking
+     - No calls to sync/repair functions
+     - Safe to run without root privileges
+
 #### Previously Fixed Bugs (Session 1)
 - BUG1-BUG3: Feeds module integration issues
 - BUG7-BUG13: Various module export and function issues
@@ -294,7 +342,9 @@ All modules use correct set names without version suffix:
 - ✅ All fixes validated with bash syntax checking
 - ✅ Deployed to 3 lab servers (CentOS 9, Ubuntu 24.04, CentOS 10)
 - ✅ BUG18 fix tested and verified on all platforms
-- ⏳ BUG14-17 fixes awaiting deployment
+- ✅ BUG14-17 fixes completed and committed to Git
+- ✅ BUG19-20 fixes completed and committed to Git
+- ⏳ BUG14-17, BUG19-20 awaiting deployment to test servers
 - ⏳ Full integration testing pending
 
 ---
