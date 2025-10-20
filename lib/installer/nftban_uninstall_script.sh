@@ -74,6 +74,7 @@ ${COLOR_RED}╔═════════════════════�
 
 ${COLOR_YELLOW}This will remove:${COLOR_RESET}
   • NFTBAN executables and libraries
+  • Cron jobs (monitoring, maintenance, feeds, updates)
   • Fail2ban integration
   • NFTables feed sets
   • Log rotation configuration
@@ -181,10 +182,65 @@ create_final_backup() {
 
 stop_services() {
     log_info "Stopping services..."
-    
+
     # Note: We don't stop fail2ban entirely as it may be used independently
     log_info "Fail2ban service will continue running (managed separately)"
     log_success "Services handled"
+}
+
+# =============================================================================
+# REMOVE CRON JOBS
+# =============================================================================
+
+remove_cron_jobs() {
+    log_info "Removing cron jobs..."
+
+    local removed=0
+    local cron_patterns=(
+        "nftban monitor run"
+        "nftban maintenance"
+        "nftban feeds update"
+        "nftban update check"
+    )
+
+    # Check if crontab exists
+    if ! crontab -l &>/dev/null; then
+        log_info "No crontab found for root user"
+        return 0
+    fi
+
+    # Get current crontab
+    local temp_cron
+    temp_cron=$(mktemp) || {
+        log_error "Failed to create temporary file for crontab"
+        return 1
+    }
+    trap 'rm -f "$temp_cron"' RETURN
+
+    crontab -l > "$temp_cron" 2>/dev/null
+
+    # Remove nftban-related cron jobs
+    for pattern in "${cron_patterns[@]}"; do
+        if grep -q "$pattern" "$temp_cron" 2>/dev/null; then
+            grep -v "$pattern" "$temp_cron" > "${temp_cron}.new" || true
+            mv "${temp_cron}.new" "$temp_cron"
+            ((removed++))
+            log_info "Removed cron job: $pattern"
+        fi
+    done
+
+    # Update crontab if changes were made
+    if [[ $removed -gt 0 ]]; then
+        crontab "$temp_cron" || {
+            log_error "Failed to update crontab"
+            return 1
+        }
+        log_success "Removed $removed cron job(s)"
+    else
+        log_info "No nftban cron jobs found"
+    fi
+
+    return 0
 }
 
 # =============================================================================
@@ -401,6 +457,7 @@ ${COLOR_GREEN}╔═════════════════════
 
 ${COLOR_BLUE}What was removed:${COLOR_RESET}
   ✓ NFTBAN executables and libraries
+  ✓ Cron jobs (monitoring, maintenance, feeds, updates)
   ✓ Fail2ban integration (configs)
   ✓ NFTables feed sets
   ✓ Log rotation configuration
@@ -471,6 +528,7 @@ main() {
     
     # Uninstallation steps
     stop_services
+    remove_cron_jobs
     remove_fail2ban_integration
     remove_nftables_integration
     remove_log_rotation

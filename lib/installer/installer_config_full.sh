@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan Installer - Configuration Module
-# Version: 7.0.0
+# Version: 0.9.0
 # Location: lib/installer/installer_config_full.sh
 # Provides: Control panel detection, config templates, system initialization
 # =============================================================================

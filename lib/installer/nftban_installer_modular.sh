@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan Modular Installer Bootstrap
-# Version: 7.0.0
+# Version: 0.9.0
 # Location: lib/installer/nftban_installer_modular.sh
 # 
 # This is the bootstrap installer that:
