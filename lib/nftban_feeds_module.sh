@@ -1,20 +1,13 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Threat Feeds Module v4.0.0
-# Complete rewrite for single-config design
+# NFTBan Threat Feeds Module
+# Version: 0.9.0
+# Location: lib/nftban_feeds_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
-# =============================================================================
-# NEW DESIGN (v4.0.0):
-#   - Single config file: /etc/nftban/config/nftban.conf
-#   - Feed IPs stored in: /etc/nftban/config/feeds/<feed>-blacklist.conf
-#   - Enable/disable via sed in-place config modification
-#   - Per-feed intervals: HOURLY, DAILY, WEEKLY (validated)
-#   - Single hourly timer with smart interval logic
-#   - Split table architecture (ip nftban_v4 / ip6 nftban_v6)
-#   - All feeds DISABLED by default (safe init)
+# Threat intelligence feeds management with atomic swap and smart intervals
 # =============================================================================
 
 set -euo pipefail
@@ -649,6 +642,11 @@ nftban_feeds_memory() {
     local total_mb=$((total_size / 1024 / 1024))
     echo "  Feed Files: ${total_mb} MB"
     echo "  Memory Limit: ${NFTBAN_FEEDS_MEMORY_LIMIT:-512} MB"
+}
+
+# Alias for CLI compatibility
+nftban_feeds_memory_status() {
+    nftban_feeds_memory "$@"
 }
 
 # =============================================================================

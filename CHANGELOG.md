@@ -247,6 +247,58 @@ All modules use correct set names without version suffix:
 
 ---
 
+### 🐛 Bug Fixes (Session 2025-01-18)
+
+#### Critical Fixes
+1. **BUG14 - Portscan Module Unbound Variable**
+   - **Issue:** `PORTSCAN_ENABLED` variable causing unbound variable errors in strict mode
+   - **Location:** `/home/gituser/github/nftban/lib/nftban_portscan_module.sh:nftban_portscan_is_enabled()`
+   - **Fix:** Added proper default handling with `${NFTBAN_PORTSCAN_ENABLED:-}` before config lookup
+   - **Impact:** Module now works correctly with bash strict mode (`set -euo pipefail`)
+
+2. **BUG15 - Missing Monitor Module Function Exports**
+   - **Issue:** `nftban_monitor_status` and `nftban_monitor_run` not exported from module
+   - **Location:** `/home/gituser/github/nftban/lib/nftban_monitoring_module.sh`
+   - **Fix:** Added export section for both functions
+   - **Impact:** Monitor commands now accessible from CLI
+
+3. **BUG16 - Feeds Memory Function Name Mismatch**
+   - **Issue:** CLI calls `nftban_feeds_memory_status` but module only exports `nftban_feeds_memory`
+   - **Location:** `/home/gituser/github/nftban/lib/nftban_feeds_module.sh`
+   - **Fix:** Added alias function for backward compatibility
+   - **Impact:** `nftban feeds memory` command now works correctly
+
+4. **BUG17 - Monitor Test Missing Email Recipient**
+   - **Issue:** `nftban monitor test` command failed with `$3: unbound variable` error
+   - **Location:** `/home/gituser/github/nftban/lib/nftban_main_cli.sh:cmd_monitor()`
+   - **Root Cause:** `nftban_send_email` expects 3 parameters (recipient, subject, body) but only 2 were passed
+   - **Fix:** Added recipient lookup from config: `recipient=$(nftban_get_config "NFTBAN_EMAIL_RECIPIENT" "root@localhost")`
+   - **Impact:** Email test functionality now works correctly
+
+5. **BUG18 - Login Monitoring Command Missing from CLI**
+   - **Issue:** Login monitoring module fully implemented but no CLI routing
+   - **Location:** `/home/gituser/github/nftban/lib/nftban_main_cli.sh`
+   - **Fix:**
+     - Added routing: `login) cmd_login "$@" ;;`
+     - Created complete `cmd_login()` function (lines 527-664)
+     - Full command suite: status, install, uninstall, enable, disable, start, stop, restart, test, run
+     - Comprehensive help documentation
+   - **Impact:** Users can now manage login monitoring via `nftban login` commands
+   - **Deployment:** Tested successfully on CentOS 9, Ubuntu 24.04, and CentOS 10
+
+#### Previously Fixed Bugs (Session 1)
+- BUG1-BUG3: Feeds module integration issues
+- BUG7-BUG13: Various module export and function issues
+
+#### Testing Status
+- ✅ All fixes validated with bash syntax checking
+- ✅ Deployed to 3 lab servers (CentOS 9, Ubuntu 24.04, CentOS 10)
+- ✅ BUG18 fix tested and verified on all platforms
+- ⏳ BUG14-17 fixes awaiting deployment
+- ⏳ Full integration testing pending
+
+---
+
 ## [0.8.5-beta] - 2025-01-17
 
 ### 🎉 Major Features Added

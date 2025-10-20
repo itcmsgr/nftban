@@ -2,7 +2,8 @@
 
 # =============================================================================
 # NFTBan Port Scan Detection Module
-# Version: 1.0.0
+# Version: 0.9.0
+# Location: lib/nftban_portscan_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
@@ -91,8 +92,10 @@ nftban_portscan_log() {
 
 # Check if port scan detection is globally enabled
 nftban_portscan_is_enabled() {
-    local enabled
-    enabled=$(nftban_portscan_load_config "PORTSCAN_ENABLED" "1")
+    local enabled="${NFTBAN_PORTSCAN_ENABLED:-}"
+    if [[ -z "$enabled" ]]; then
+        enabled=$(nftban_portscan_load_config "PORTSCAN_ENABLED" "1")
+    fi
     [[ "$enabled" == "1" ]]
 }
 

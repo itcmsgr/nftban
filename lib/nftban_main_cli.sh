@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan - Unified CLI Interface (WITH VALIDATION)
-# Version: 0.8.5
+# NFTBan - Unified CLI Interface
+# Version: 0.9.0
+# Location: lib/nftban_main_cli.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
+# Main command-line interface with comprehensive validation
 # =============================================================================
 
 # Strict & safe defaults (per NFTBan Remediation Guide 2025-10-20)
@@ -230,12 +232,12 @@ cmd_feeds() {
         enable)
             nftban_check_root || exit 1
             [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban feeds enable <provider_id>"; exit 1; }
-            nftban_feeds_enable_provider "$1"
+            nftban_feeds_enable "$1"
             ;;
         disable)
             nftban_check_root || exit 1
             [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban feeds disable <provider_id>"; exit 1; }
-            nftban_feeds_disable_provider "$1"
+            nftban_feeds_disable "$1"
             ;;
         update)
             nftban_check_root || exit 1
@@ -390,6 +392,8 @@ cmd_monitor() {
             nftban_log_info "Testing alert delivery..."
 
             local hostname=$(hostname -f 2>/dev/null || hostname)
+            local recipient
+            recipient=$(nftban_get_config "NFTBAN_EMAIL_RECIPIENT" "root@localhost")
             local subject="[nftban] TEST: Monitoring alert test"
             local body="This is a test alert from nftban monitoring system.
 
@@ -400,8 +404,8 @@ Status: Monitoring system is operational
 If you received this email, alert delivery is working correctly."
 
             if declare -f nftban_send_email >/dev/null 2>&1; then
-                if nftban_send_email "$subject" "$body"; then
-                    nftban_log_success "Test alert sent successfully"
+                if nftban_send_email "$recipient" "$subject" "$body"; then
+                    nftban_log_success "Test alert sent successfully to: $recipient"
                 else
                     nftban_log_error "Failed to send test alert"
                     nftban_log_info "Check email configuration in nftban.conf"
@@ -512,6 +516,149 @@ EOF
             echo "  sudo nftban monitor enable"
             echo "  sudo nftban monitor test"
             echo "  sudo nftban monitor disable"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
+# LOGIN MONITORING COMMANDS (NEW)
+# =============================================================================
+
+cmd_login() {
+    local action="${1:-status}"
+    shift || true
+
+    case "$action" in
+        status)
+            nftban_login_monitor_status
+            ;;
+        install)
+            nftban_check_root || exit 1
+            nftban_login_monitor_install
+            ;;
+        uninstall)
+            nftban_check_root || exit 1
+            nftban_login_monitor_uninstall
+            ;;
+        enable)
+            nftban_check_root || exit 1
+            nftban_login_monitor_enable
+            ;;
+        disable)
+            nftban_check_root || exit 1
+            nftban_login_monitor_disable
+            ;;
+        start)
+            nftban_check_root || exit 1
+            nftban_login_monitor_start
+            ;;
+        stop)
+            nftban_check_root || exit 1
+            nftban_login_monitor_stop
+            ;;
+        restart)
+            nftban_check_root || exit 1
+            nftban_login_monitor_restart
+            ;;
+        test)
+            nftban_check_root || exit 1
+            nftban_login_monitor_test_config
+            ;;
+        run)
+            nftban_check_root || exit 1
+            nftban_login_monitor_run
+            ;;
+        help)
+            cat <<'EOF'
+
+nftban login - Login Event Monitoring & Alerting
+
+USAGE:
+    nftban login <action>
+
+ACTIONS:
+    status              Show login monitor status
+    install             Install systemd service
+    uninstall           Uninstall systemd service
+    enable              Enable login monitoring (start on boot)
+    disable             Disable login monitoring
+    start               Start login monitoring
+    stop                Stop login monitoring
+    restart             Restart login monitoring
+    test                Test email configuration
+    run                 Run monitoring cycle manually
+
+DESCRIPTION:
+    The login monitoring system tracks:
+    - Root login events (direct and via su/sudo)
+    - SSH login attempts
+    - Sudo command execution
+
+    Email alerts are sent when configured events are detected.
+
+CONFIGURATION:
+    Configuration file: /etc/nftban/config/nftban.conf
+    User overrides:     /etc/nftban/config/nftban.conf.local
+
+    Key settings:
+    - NFTBAN_F2B_LOGIN_MONITOR="true"        # Enable login monitoring
+    - NFTBAN_F2B_ROOT_LOGIN_ALERT="true"     # Alert on root login
+    - NFTBAN_F2B_SUDO_ALERT="true"           # Alert on sudo usage
+    - NFTBAN_F2B_SSH_LOGIN_ALERT="true"      # Alert on SSH logins
+    - NFTBAN_F2B_RECIPIENT="admin@example.com"  # Alert recipient
+
+EXAMPLES:
+    # Install and configure
+    sudo nftban login install
+    sudo nftban login test          # Test email delivery
+    sudo nftban login enable        # Enable on boot
+    sudo nftban login start         # Start monitoring
+
+    # View status
+    nftban login status
+
+    # Disable monitoring
+    sudo nftban login stop
+    sudo nftban login disable
+
+LOGS:
+    Monitor log:  /var/log/nftban/login-monitor.log
+    Alert log:    /var/log/nftban/login-alerts.log
+
+NOTE:
+    To enable/disable specific alert types, edit your config file:
+      /etc/nftban/config/nftban.conf.local
+
+    Example:
+      NFTBAN_F2B_ROOT_LOGIN_ALERT="true"   # Enable root login alerts
+      NFTBAN_F2B_SUDO_ALERT="false"        # Disable sudo alerts
+
+EOF
+            ;;
+        *)
+            nftban_log_error "Unknown login action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  status              Show login monitor status"
+            echo "  install             Install systemd service"
+            echo "  uninstall           Uninstall systemd service"
+            echo "  enable              Enable login monitoring (start on boot)"
+            echo "  disable             Disable login monitoring"
+            echo "  start               Start login monitoring"
+            echo "  stop                Stop login monitoring"
+            echo "  restart             Restart login monitoring"
+            echo "  test                Test email configuration"
+            echo "  run                 Run monitoring cycle manually"
+            echo "  help                Show comprehensive help"
+            echo ""
+            echo "Examples:"
+            echo "  nftban login status"
+            echo "  sudo nftban login install"
+            echo "  sudo nftban login enable"
+            echo "  sudo nftban login start"
+            echo "  sudo nftban login test"
             echo ""
             exit 1
             ;;
@@ -705,6 +852,10 @@ cmd_whitelist() {
             nftban_check_root || exit 1
             nftban_whitelist_protect_current_user
             ;;
+        protect-server|add-system)
+            nftban_check_root || exit 1
+            nftban_whitelist_add_server_ips
+            ;;
         stats)
             nftban_whitelist_get_stats
             ;;
@@ -721,6 +872,7 @@ cmd_whitelist() {
             echo "  check <IP>          Check if IP is whitelisted"
             echo "  sync                Sync whitelist to nftables"
             echo "  protect-me          Add your current IP to whitelist"
+            echo "  protect-server      Auto-protect all server IPs"
             echo "  stats               Show whitelist statistics"
             echo "  verify              Verify whitelist integrity"
             echo ""
@@ -1258,6 +1410,54 @@ cmd_portscan() {
 }
 
 # =============================================================================
+# CLOUDFLARE WHITELIST COMMANDS (NEW)
+# =============================================================================
+
+cmd_cloudflare() {
+    local action="${1:-status}"
+    shift || true
+
+    case "$action" in
+        status)
+            nftban_cloudflare_status
+            ;;
+        enable)
+            nftban_check_root || exit 1
+            nftban_cloudflare_enable
+            ;;
+        disable)
+            nftban_check_root || exit 1
+            nftban_cloudflare_disable
+            ;;
+        update)
+            nftban_check_root || exit 1
+            nftban_cloudflare_update_whitelist
+            ;;
+        init)
+            nftban_check_root || exit 1
+            nftban_cloudflare_init
+            ;;
+        *)
+            nftban_log_error "Unknown cloudflare action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  status              Show Cloudflare whitelist status"
+            echo "  enable              Enable Cloudflare IP whitelisting"
+            echo "  disable             Disable Cloudflare IP whitelisting"
+            echo "  update              Update Cloudflare IP list"
+            echo "  init                Initialize Cloudflare whitelist"
+            echo ""
+            echo "Examples:"
+            echo "  nftban cloudflare status"
+            echo "  nftban cloudflare enable"
+            echo "  nftban cloudflare update"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
 # GEO-BLOCKING COMMANDS (NEW)
 # =============================================================================
 
@@ -1715,15 +1915,38 @@ main() {
         # GEO-Blocking
         geo) cmd_geo "$@" ;;
 
+        # Cloudflare Whitelist
+        cloudflare|cf) cmd_cloudflare "$@" ;;
+
 		# Feeds Management
         feeds) cmd_feeds "$@" ;;
 
         # System Monitoring
         monitor|monitoring) cmd_monitor "$@" ;;
 
+        # Login Monitoring
+        login) cmd_login "$@" ;;
+
         # Testing & Diagnostics
         test|smoke-test|smoketest) cmd_test "$@" ;;
         diagnostics|diag|debug) cmd_diagnostics "$@" ;;
+
+        # IP Search (Stupid-User-Friendly!)
+        search)
+            local search_type="${1:-}"
+            shift || true
+            if [[ "$search_type" == "ip" ]]; then
+                [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban search ip <IP_ADDRESS>"; exit 1; }
+                nftban_search_ip_everywhere "$1"
+            else
+                nftban_log_error "Usage: nftban search ip <IP_ADDRESS>"
+                echo ""
+                echo "Examples:"
+                echo "  nftban search ip 192.168.1.100"
+                echo "  nftban search ip 2001:db8::1"
+                exit 1
+            fi
+            ;;
 
         version|--version|-v)
             echo "nftban version $VERSION"
