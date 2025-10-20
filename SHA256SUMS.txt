@@ -1,6 +1,6 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-20 20:54:57 UTC
-# Commit: 1eb3027 (1eb3027d889a97f1577cde7328f27c837a0199ea)
+# Generated: 2025-10-20 20:56:58 UTC
+# Commit: ce252b8 (ce252b8eb2cbbd4a20c853bd46fe8416e117e9ec)
 # Branch: main
 # Total files: 152
 #
@@ -26,7 +26,6 @@ fb5cc548ccc836d15ea1093b55a1c62fc6718c633adedc16a5fa44a6b73ff72d  README.md
 85f5504b393c8da05e7185f6a6f12d1832279208a041b77a808aa381eb99a21f  STATUS.md
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  backups/.gitkeep
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  bin/.gitkeep
-40a5890902d221212cca066edc49281307235714dfe742db477373332fdcd4bc  bootstrap.sh
 f3cb9377c4a25e7eab27ae6e35e1374a3a524605f21c02694858b9983a2eb33f  completions/README.md
 28651f91c687bd96ff5cdc1827ddfc145704eaf0864c230b2f0a979277af4dda  completions/nftban-completion.bash
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  config/.gitkeep
@@ -127,6 +126,7 @@ be28037fb03c701d26aeffc8463a4ceda736b968189d2cd0308ad620ab8aaaaa  lib/nftban_upd
 14b1e5626e78619c4879bed61bd07041772c14e419eb6ced856a182e5156bb9f  lib/nftban_utils_lib.sh
 97df955e45d38afe8064ac0a63594eecaaea5ac72e3eca332238eb73172aef13  lib/nftban_whitelist_module.sh
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  logs/.gitkeep
+40a5890902d221212cca066edc49281307235714dfe742db477373332fdcd4bc  nftban_init.sh
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  scripts/.gitkeep
 55d4cc8ac141fb4c6baa5c48e1d75b30a80210d1bef44e54cb635d53d0b0d51b  scripts/nftban_uninstall.sh
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  templates/.gitkeep
