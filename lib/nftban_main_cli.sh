@@ -16,8 +16,10 @@ IFS=$'\n\t'
 umask 027
 
 VERSION="0.8.5"
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-LIB_DIR="${SCRIPT_DIR}/../lib"
+# Resolve symlinks to get actual script location
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
+SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
+LIB_DIR="${SCRIPT_DIR}"
 
 if [[ ! -f "${LIB_DIR}/nftban_core.sh" ]]; then
     echo "ERROR: Core module not found at ${LIB_DIR}/nftban_core.sh" >&2
