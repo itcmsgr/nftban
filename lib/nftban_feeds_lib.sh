@@ -221,9 +221,10 @@ download_feed() {
     fi
     
     log_info "Downloading feed: $feed_name from $feed_url"
-    
-    # Download with timeout
-    if curl -sSL --max-time "$NFTBAN_FEEDS_DOWNLOAD_TIMEOUT" \
+
+    # BUG53 FIX: Use safe_curl for secure downloads
+    # safe_curl already includes: --proto '=https', --tlsv1.2, --fail-with-body, timeouts
+    if safe_curl --max-time "$NFTBAN_FEEDS_DOWNLOAD_TIMEOUT" \
          -A "$FEEDS_USER_AGENT" \
          -o "$temp_file" \
          "$feed_url"; then
