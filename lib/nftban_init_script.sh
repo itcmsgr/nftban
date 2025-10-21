@@ -219,13 +219,7 @@ EOF
         log_success "Created: nftban.conf.local"
     fi
     
-    # Check if feeds config exists
-    if [[ ! -f "$BASE_DIR/config/feeds/feeds.conf" ]]; then
-        log_error "Feeds configuration not found: $BASE_DIR/config/feeds/feeds.conf"
-        return 1
-    fi
-    
-    # Create feeds local override
+    # Create feeds local override (feeds.conf is optional, managed by feeds module)
     if [[ ! -f "$BASE_DIR/config/feeds/feeds.conf.local" ]]; then
         cat > "$BASE_DIR/config/feeds/feeds.conf.local" <<'EOF'
 # =============================================================================
