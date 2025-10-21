@@ -7,6 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.9.1-beta] - 2025-10-21
+
+### 🐛 Critical Bug Fixes
+
+This is a maintenance release addressing critical bugs discovered during testing of v0.9.0.
+
+#### Fixed Issues
+
+1. **BUG21 - Uninstall Command Path Error**
+   - **Issue:** `nftban uninstall` failed with "command not found"
+   - **Root Cause:** Incorrect path to uninstall script (`/usr/local/bin/uninstall` instead of `/etc/nftban/scripts/uninstall.sh`)
+   - **Location:** `/home/gituser/github/nftban/lib/nftban_main_cli.sh:cmd_uninstall()`
+   - **Fix:** Corrected uninstall script path
+   - **Impact:** Uninstall command now works correctly
+
+2. **BUG22 - Cron Removal During Uninstall**
+   - **Issue:** Uninstall script failed to remove cron job
+   - **Root Cause:** Wrong cron file path (`/etc/cron.d/nftban-feeds` instead of `/etc/cron.d/nftban`)
+   - **Location:** `/home/gituser/github/nftban/scripts/uninstall.sh`
+   - **Fix:** Corrected cron file path in uninstall script
+   - **Impact:** Clean uninstallation now removes all cron jobs
+
+3. **BUG23 - Backup Restore Functionality**
+   - **Issue:** `nftban maintenance restore` command not working
+   - **Root Cause:** Missing implementation in CLI routing
+   - **Location:** `/home/gituser/github/nftban/lib/nftban_main_cli.sh:cmd_maintenance()`
+   - **Fix:** Added restore action routing to maintenance command
+   - **Impact:** Users can now restore from backups via CLI
+
+4. **BUG24 - Version Inconsistency Across Modules**
+   - **Issue:** Some modules still showing v0.8.0 instead of v0.9.0
+   - **Root Cause:** Manual version updates missed some module headers
+   - **Location:** Multiple module files
+   - **Fix:** Standardized all module versions to match project version (v0.9.1)
+   - **Impact:** Consistent version reporting across entire system
+
+#### Testing Status
+- ✅ All fixes validated with bash syntax checking
+- ✅ Tested on 3 lab servers:
+  - CentOS 9 (lab.example.test)
+  - Ubuntu 24.04 (lab1.example.test)
+  - CentOS 10 (198.51.100.15)
+- ✅ `whitelist protect-server` command verified working on all platforms
+- ✅ No errors or crashes detected
+
+#### Files Modified
+- `lib/nftban_main_cli.sh` - Fixed uninstall path and restore routing
+- `scripts/uninstall.sh` - Fixed cron removal path
+- `.version` - Updated to v0.9.1
+- Multiple module headers - Version consistency updates
+
+---
+
 ## [0.9.0-beta] - 2025-01-18
 
 ### 🚀 MAJOR PERFORMANCE IMPROVEMENT
