@@ -1,6 +1,6 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-21 16:07:18 UTC
-# Commit: 1759c86 (1759c865906c84d86eb80b6dcb3e11cf850a14d2)
+# Generated: 2025-10-21 16:12:39 UTC
+# Commit: 8ad1406 (8ad1406a1c3fbbefdc114d2267ad0c8052a5a153)
 # Branch: main
 # Total files: 159
 #
@@ -19,7 +19,7 @@ eb55ccfc4057cb14082b11f4be01350322b0e42c927b15a8e8abce7eb5cbf99f  .github/ISSUE_
 282adabe9917b15fb4f4448b802a7a8ec3007dfc7e12ce8b92a9c5a66f01cd42  .github/workflows/generate-sha256.yml
 50f50611b293f9b4a4817178af82dc5f905396c732c20d9f8ae92e3bcab3c4a0  .github/workflows/health.yml
 bfb33a21d8269e28ec1b1cf57264e6c8dffa0346c8857769a6e89367c6c26cb4  .gitignore
-ab1454fb8fb52a82a65d8c0586655370c8b58c0c9d4bb7de319fbff5848c567c  .version
+11ef3020fd8f26c94d86e77b8f7affb9cfc742fa665e86ce006d2b5dc6294cd6  .version
 f84c09ff4451340644301dab9cd9b69e0adf103f169a09532b71b08b99237d03  CHANGELOG.md
 008dc8cdbf537ff28063664a5b31e5afcfef15cad3f17716ba5b371a1d51ada1  LICENSE.md
 e4066c9710ba18da5f634cb3d6967b6e3aa0a7d23a08f60c092ad1922158adf3  README.md
