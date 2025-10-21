@@ -1,3 +1,15 @@
 CLAUDE.md
 LOCAL_REPO_FILES
 .archives
+
+# Private/sensitive documentation - kept locally only
+docs/BUG*.md
+docs/*TEST*.md
+docs/*VERIFICATION*.md
+docs/SECURITY_AUDIT*.md
+docs/TODO*.md
+docs/DEBUG*.md
+docs/bugs/
+docs/testing/test-results/
+docs/security/
+docs/planning/
