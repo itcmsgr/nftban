@@ -217,14 +217,14 @@ nftban_fail2ban_monitor_panel() {
     echo
 
     # Server info
-    echo -e "${NFTBAN_BOLD}Server Information:${NFTBAN_NC}"
+    echo -e "${NFTBAN_YELLOW}Server Information:${NFTBAN_NC}"
     echo -e "  Hostname: ${NFTBAN_CYAN}${hostname}${NFTBAN_NC}"
     echo -e "  OS:       ${NFTBAN_CYAN}${os_name}${NFTBAN_NC}"
     echo -e "  Time:     ${NFTBAN_CYAN}$(date '+%Y-%m-%d %H:%M:%S')${NFTBAN_NC}"
     echo
 
     # fail2ban status
-    echo -e "${NFTBAN_BOLD}fail2ban Status:${NFTBAN_NC}"
+    echo -e "${NFTBAN_YELLOW}fail2ban Status:${NFTBAN_NC}"
     if systemctl is-active fail2ban >/dev/null 2>&1; then
         echo -e "  ${NFTBAN_GREEN}●${NFTBAN_NC} Active"
     elif systemctl is-enabled fail2ban >/dev/null 2>&1; then
@@ -238,7 +238,7 @@ nftban_fail2ban_monitor_panel() {
     echo
 
     # Service monitoring
-    echo -e "${NFTBAN_BOLD}Service Monitoring:${NFTBAN_NC}"
+    echo -e "${NFTBAN_YELLOW}Service Monitoring:${NFTBAN_NC}"
     echo
 
     local total_bans=0
@@ -308,14 +308,14 @@ nftban_fail2ban_monitor_panel() {
     echo
 
     # Summary
-    echo -e "${NFTBAN_BOLD}Summary:${NFTBAN_NC}"
+    echo -e "${NFTBAN_YELLOW}Summary:${NFTBAN_NC}"
     echo -e "  Services Monitored: ${NFTBAN_CYAN}$monitored_count${NFTBAN_NC} / ${#ALL_SERVICES[@]}"
     echo -e "  Total Banned IPs:   ${NFTBAN_CYAN}$total_bans${NFTBAN_NC}"
     echo
 
     # Legend
     printf '+%*s+\n' 78 '' | tr ' ' '-'
-    echo -e "${NFTBAN_BOLD}Legend:${NFTBAN_NC}"
+    echo -e "${NFTBAN_YELLOW}Legend:${NFTBAN_NC}"
     echo -e "  ${NFTBAN_GREEN}●${NFTBAN_NC} Monitoring  - Service jail enabled, no attacks detected"
     echo -e "  ${NFTBAN_RED}●${NFTBAN_NC} CATCHING    - Service jail enabled, actively blocking attacks"
     echo -e "      Not monitored - No jail configured for this service"
