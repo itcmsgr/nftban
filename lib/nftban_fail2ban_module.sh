@@ -97,30 +97,42 @@ EOF
 # Enable jail
 nftban_fail2ban_enable_jail() {
     local jail_name="$1"
-    
+
+    # BUG49 FIX: Validate jail name to prevent path traversal
+    if ! validate_jail_name "$jail_name" >/dev/null 2>&1; then
+        nftban_log_error "Invalid jail name: '$jail_name' (must be alphanumeric with _ or -, max 64 chars)"
+        return 1
+    fi
+
     nftban_log_info "Enabling jail: $jail_name"
-    
+
     # Check if jail exists
     if ! fail2ban-client status | grep -q "$jail_name"; then
         nftban_log_error "Jail not found: $jail_name"
         return 1
     fi
-    
+
     # Jail is managed in config files, just reload
     systemctl reload fail2ban
-    
+
     nftban_log_success "Jail enabled (fail2ban reloaded)"
 }
 
 # Disable jail
 nftban_fail2ban_disable_jail() {
     local jail_name="$1"
-    
+
+    # BUG49 FIX: Validate jail name to prevent path traversal
+    if ! validate_jail_name "$jail_name" >/dev/null 2>&1; then
+        nftban_log_error "Invalid jail name: '$jail_name' (must be alphanumeric with _ or -, max 64 chars)"
+        return 1
+    fi
+
     nftban_log_info "Disabling jail: $jail_name"
-    
+
     # Find and disable in config
     local jail_file="${NFTBAN_F2B_JAIL_DIR}/${jail_name}.conf"
-    
+
     if [[ -f "$jail_file" ]]; then
         sed -i 's/^enabled = true/enabled = false/' "$jail_file"
         systemctl reload fail2ban
