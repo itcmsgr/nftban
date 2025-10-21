@@ -1,8 +1,8 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-21 04:56:47 UTC
-# Commit: 695f8eb (695f8eb204416897f00be17c15183b0708ea7047)
+# Generated: 2025-10-21 05:03:05 UTC
+# Commit: a303590 (a303590310f56a0d096f4dca81447bd291f62b96)
 # Branch: main
-# Total files: 161
+# Total files: 162
 #
 # This file contains SHA256 checksums for all tracked files in the repository.
 # Use 'sha256sum -c SHA256SUMS.txt' to verify file integrity (ignores comment lines).
@@ -41,6 +41,7 @@ ccf9dd7fa01499086956e34de44db13ff980759752ed0e4dd7ddd4203c96aac0  data/cache/.gi
 4f12ba81d0e9cefc68b74310c12acc5c0b2f545613e6ecf11395eeb99b8213af  docs/ARCHITECTURE.md
 ac53efa3f584f4f86288e44e775499ff3cb0f7ca135fcb05faa553faeb61595f  docs/BUG30_update_pin_ssh_failure.md
 887c6178e270b9e6eb645bee9c4615a3b5933cdb15e31aa293476f3f1d2cda14  docs/BUG32_bash_completion_not_installed.md
+800f2837bdafadfa216f9224911ec0affbf4f6d311f21c8dd6c446707c96a6af  docs/BUG33_smoketest_installer_category_missing.md
 10ddd12c7b151bb476e73c25e04bf89cd5b0852a948914127e7476e97b02bd86  docs/DOCUMENTATION_ORGANIZATION_SUMMARY.md
 48697cbb6920384c2695ae3cffec020e9826cbf6cba45ff82ce3ca61338557c9  docs/FEEDS_IMPLEMENTATION_PROGRESS.md
 e7d07c6788eac750f6d5c4ac6010c3cb7bb0a3b4cc8b40256ddf6f2c456684a2  docs/FEEDS_SYSTEM_COMPLETE.md
@@ -127,7 +128,7 @@ b57b32078766b95c40f49869065a4d86b1aa6d020b6cb6c4d6734e24d9824475  lib/nftban_por
 58dde1b9354e3336f6a6f78a0abc6a366b833c585458e22672d5ff5ac9b32d34  lib/nftban_search_module.sh
 4a6cc6383f1e169f5abd5e45eae2e8d23ba65779bad5093d4920b44f5d358ec1  lib/nftban_search_module.sh.OLD
 1e21455eb10237816c31805258f7082f78835f05c681fc47380c22231c25fac7  lib/nftban_security_audit_module.sh
-c1e4474a2e109c3a0d14a0cb66a7696a03284799a8381b85786fd560b90cb5b2  lib/nftban_smoketest_module.sh
+e674c1519fed4072fc8e3a80879bd3446a9fba42fec141ff9f71631a28c84ea1  lib/nftban_smoketest_module.sh
 6a23446094b10ed80b31f7c264a5b49027b608e76b603b45384651c83ac9e1eb  lib/nftban_stats_module.sh
 201f4315773ae2a3b171f26148e5a2a2fe033a7806e526e729609cf91935d7e6  lib/nftban_sync_module.sh
 9d66c0d7b95d3fa0559852023d7d1cfbee38eda223eb2afb8d79ce70d7f1ced0  lib/nftban_template_module.sh
