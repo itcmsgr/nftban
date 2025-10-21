@@ -97,7 +97,7 @@ nftban_ddos_log() {
 nftban_ddos_is_enabled() {
     local enabled
     enabled=$(nftban_ddos_load_config "DDOS_PROTECTION_ENABLED" "1")
-    [[ "$enabled" == "1" ]]
+    [[ "${enabled:-1}" == "1" ]]
 }
 
 # Convert rate format (e.g., "100/second") to nftables format
