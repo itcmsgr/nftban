@@ -609,6 +609,122 @@ nftban_maintenance_validate_config() {
 }
 
 # =============================================================================
+# PERMISSION VALIDATION
+# =============================================================================
+
+nftban_maintenance_validate_permissions() {
+    local issues=0
+    local warnings=0
+
+    echo ""
+    echo "═══════════════════════════════════════════════════════"
+    echo "  File Permission Verification"
+    echo "═══════════════════════════════════════════════════════"
+    echo ""
+
+    # Check directory permissions (should be 755 - rwxr-xr-x)
+    echo "Checking directory permissions..."
+    while IFS= read -r dir; do
+        local perms
+        perms=$(stat -c "%a" "$dir" 2>/dev/null || echo "000")
+        if [[ "$perms" != "755" ]]; then
+            echo "  ⚠ $(basename "$dir"): $perms (should be 755)"
+            ((warnings++))
+        fi
+    done < <(find "${NFTBAN_BASE_DIR}" -type d 2>/dev/null | head -20)
+
+    # Check library file permissions (should be 644 - rw-r--r--)
+    echo ""
+    echo "Checking library file permissions..."
+    local bad_lib_perms=0
+    while IFS= read -r file; do
+        local perms
+        perms=$(stat -c "%a" "$file" 2>/dev/null || echo "000")
+        if [[ "$perms" != "644" ]]; then
+            echo "  ⚠ $(basename "$file"): $perms (should be 644)"
+            ((bad_lib_perms++))
+            ((warnings++))
+        fi
+    done < <(find "${NFTBAN_BASE_DIR}/lib" -name "*.sh" -type f 2>/dev/null | head -10)
+
+    if [[ $bad_lib_perms -eq 0 ]]; then
+        echo "  ✓ All library files have correct permissions (644)"
+    fi
+
+    # Check executable scripts (should be 755 - rwxr-xr-x)
+    if [[ -d "${NFTBAN_BASE_DIR}/scripts" ]]; then
+        echo ""
+        echo "Checking script file permissions..."
+        local bad_script_perms=0
+        while IFS= read -r file; do
+            local perms
+            perms=$(stat -c "%a" "$file" 2>/dev/null || echo "000")
+            if [[ "$perms" != "755" ]]; then
+                echo "  ⚠ $(basename "$file"): $perms (should be 755)"
+                ((bad_script_perms++))
+                ((warnings++))
+            fi
+        done < <(find "${NFTBAN_BASE_DIR}/scripts" -name "*.sh" -type f 2>/dev/null)
+
+        if [[ $bad_script_perms -eq 0 ]]; then
+            echo "  ✓ All script files have correct permissions (755)"
+        fi
+    fi
+
+    # Check binary permissions (should be 755)
+    if [[ -d "${NFTBAN_BASE_DIR}/bin" ]]; then
+        echo ""
+        echo "Checking binary file permissions..."
+        local bad_bin_perms=0
+        while IFS= read -r file; do
+            local perms
+            perms=$(stat -c "%a" "$file" 2>/dev/null || echo "000")
+            if [[ "$perms" != "755" ]]; then
+                echo "  ⚠ $(basename "$file"): $perms (should be 755)"
+                ((bad_bin_perms++))
+                ((warnings++))
+            fi
+        done < <(find "${NFTBAN_BASE_DIR}/bin" -type f 2>/dev/null)
+
+        if [[ $bad_bin_perms -eq 0 ]]; then
+            echo "  ✓ All binary files have correct permissions (755)"
+        fi
+    fi
+
+    # Check config file permissions (should be 644)
+    echo ""
+    echo "Checking config file permissions..."
+    local bad_conf_perms=0
+    while IFS= read -r file; do
+        local perms
+        perms=$(stat -c "%a" "$file" 2>/dev/null || echo "000")
+        if [[ "$perms" != "644" ]]; then
+            echo "  ⚠ $(basename "$file"): $perms (should be 644)"
+            ((bad_conf_perms++))
+            ((warnings++))
+        fi
+    done < <(find "${NFTBAN_CONFIG_DIR}" -name "*.conf*" -type f 2>/dev/null | head -10)
+
+    if [[ $bad_conf_perms -eq 0 ]]; then
+        echo "  ✓ All config files have correct permissions (644)"
+    fi
+
+    echo ""
+    echo "═══════════════════════════════════════════════════════"
+    if [[ $warnings -eq 0 ]]; then
+        echo -e "  ${NFTBAN_GREEN}✓ All permissions correct${NFTBAN_NC}"
+    else
+        echo -e "  ${NFTBAN_YELLOW}⚠ Found $warnings permission issue(s)${NFTBAN_NC}"
+        echo ""
+        echo "  Fix with: sudo nftban maintenance repair"
+    fi
+    echo "═══════════════════════════════════════════════════════"
+    echo ""
+
+    return $warnings
+}
+
+# =============================================================================
 # CONFIGURATION REPAIR (from OLD_FOR_REFERENCE)
 # =============================================================================
 
@@ -658,32 +774,51 @@ EOF
 
     # Fix permissions systematically
     nftban_log_info "Fixing permissions..."
+    local fixed=0
 
     # Directories: 755 (rwxr-xr-x)
-    find "${NFTBAN_BASE_DIR}" -type d -exec chmod 755 {} \; 2>/dev/null || true
+    echo "  Setting directory permissions to 755..."
+    while IFS= read -r dir; do
+        chmod 755 "$dir" 2>/dev/null && ((fixed++))
+    done < <(find "${NFTBAN_BASE_DIR}" -type d 2>/dev/null)
 
     # Config files: 644 (rw-r--r--)
-    find "${NFTBAN_CONFIG_DIR}" -name "*.conf*" -exec chmod 644 {} \; 2>/dev/null || true
+    echo "  Setting config file permissions to 644..."
+    while IFS= read -r file; do
+        chmod 644 "$file" 2>/dev/null && ((fixed++))
+    done < <(find "${NFTBAN_CONFIG_DIR}" -name "*.conf*" -type f 2>/dev/null)
 
     # Library files: 644 (sourced, not executed)
-    find "${NFTBAN_BASE_DIR}/lib" -name "*.sh" -exec chmod 644 {} \; 2>/dev/null || true
+    echo "  Setting library file permissions to 644..."
+    while IFS= read -r file; do
+        chmod 644 "$file" 2>/dev/null && ((fixed++))
+    done < <(find "${NFTBAN_BASE_DIR}/lib" -name "*.sh" -type f 2>/dev/null)
 
     # Binary files: 755 (executed)
     if [[ -d "${NFTBAN_BASE_DIR}/bin" ]]; then
-        find "${NFTBAN_BASE_DIR}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+        echo "  Setting binary file permissions to 755..."
+        while IFS= read -r file; do
+            chmod 755 "$file" 2>/dev/null && ((fixed++))
+        done < <(find "${NFTBAN_BASE_DIR}/bin" -type f 2>/dev/null)
     fi
 
     # Script files: 755 (executed)
     if [[ -d "${NFTBAN_BASE_DIR}/scripts" ]]; then
-        find "${NFTBAN_BASE_DIR}/scripts" -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
+        echo "  Setting script file permissions to 755..."
+        while IFS= read -r file; do
+            chmod 755 "$file" 2>/dev/null && ((fixed++))
+        done < <(find "${NFTBAN_BASE_DIR}/scripts" -name "*.sh" -type f 2>/dev/null)
     fi
 
     # Log files: 644
     if [[ -d "$NFTBAN_LOG_DIR" ]]; then
-        find "$NFTBAN_LOG_DIR" -type f -exec chmod 644 {} \; 2>/dev/null || true
+        echo "  Setting log file permissions to 644..."
+        while IFS= read -r file; do
+            chmod 644 "$file" 2>/dev/null && ((fixed++))
+        done < <(find "$NFTBAN_LOG_DIR" -type f 2>/dev/null)
     fi
 
-    nftban_log_success "Configuration repair completed"
+    nftban_log_success "Configuration repair completed ($fixed files/directories fixed)"
 }
 
 # =============================================================================
@@ -961,5 +1096,6 @@ export -f nftban_maintenance_validate_config
 export -f nftban_maintenance_repair_config
 export -f nftban_maintenance_health_check_detailed
 export -f nftban_maintenance_show_stats
+export -f nftban_maintenance_validate_permissions
 
 nftban_log_debug "NFTBan Maintenance Module loaded (v2.0.0 with panel UI + enhanced validation/repair)"
