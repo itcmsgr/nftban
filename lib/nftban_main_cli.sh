@@ -300,6 +300,9 @@ cmd_fail2ban() {
         status)
             nftban_fail2ban_show_status
             ;;
+        monitor|panel)
+            nftban_fail2ban_monitor_panel
+            ;;
         list)
             nftban_fail2ban_list_jails
             ;;
@@ -319,6 +322,7 @@ cmd_fail2ban() {
             echo "Available actions:"
             echo "  setup               Setup fail2ban integration"
             echo "  status              Show fail2ban status and jail details"
+            echo "  monitor             Show beautiful service monitoring panel"
             echo "  list                List active jails"
             echo "  enable <jail>       Enable jail"
             echo "  disable <jail>      Disable jail"
@@ -326,6 +330,7 @@ cmd_fail2ban() {
             echo "Examples:"
             echo "  sudo nftban fail2ban setup"
             echo "  nftban fail2ban status"
+            echo "  nftban fail2ban monitor      # Beautiful colored panel!"
             echo "  nftban fail2ban list"
             echo "  sudo nftban fail2ban enable sshd"
             echo "  sudo nftban fail2ban disable sshd"
