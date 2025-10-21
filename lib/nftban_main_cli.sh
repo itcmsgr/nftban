@@ -283,6 +283,57 @@ cmd_feeds() {
 }
 
 # =============================================================================
+# FAIL2BAN JAIL MANAGEMENT COMMANDS (NEW)
+# =============================================================================
+
+cmd_fail2ban() {
+    local action="${1:-status}"
+    shift || true
+
+    case "$action" in
+        setup)
+            nftban_check_root || exit 1
+            nftban_fail2ban_setup
+            ;;
+        status)
+            nftban_fail2ban_show_status
+            ;;
+        list)
+            nftban_fail2ban_list_jails
+            ;;
+        enable)
+            nftban_check_root || exit 1
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban fail2ban enable <jail_name>"; exit 1; }
+            nftban_fail2ban_enable_jail "$1"
+            ;;
+        disable)
+            nftban_check_root || exit 1
+            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban fail2ban disable <jail_name>"; exit 1; }
+            nftban_fail2ban_disable_jail "$1"
+            ;;
+        *)
+            nftban_log_error "Unknown fail2ban action: $action"
+            echo ""
+            echo "Available actions:"
+            echo "  setup               Setup fail2ban integration"
+            echo "  status              Show fail2ban status and jail details"
+            echo "  list                List active jails"
+            echo "  enable <jail>       Enable jail"
+            echo "  disable <jail>      Disable jail"
+            echo ""
+            echo "Examples:"
+            echo "  sudo nftban fail2ban setup"
+            echo "  nftban fail2ban status"
+            echo "  nftban fail2ban list"
+            echo "  sudo nftban fail2ban enable sshd"
+            echo "  sudo nftban fail2ban disable sshd"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# =============================================================================
 # MONITORING COMMANDS (NEW)
 # =============================================================================
 
@@ -1979,6 +2030,13 @@ FEEDS MANAGEMENT:
     feeds timer-remove      Remove systemd timer
     feeds memory            Show memory usage
 
+FAIL2BAN JAIL MANAGEMENT:
+    fail2ban setup          Setup fail2ban integration
+    fail2ban status         Show fail2ban status and jail details
+    fail2ban list           List active jails
+    fail2ban enable <jail>  Enable jail
+    fail2ban disable <jail> Disable jail
+
 SYSTEM MONITORING:
     monitor run             Run monitoring checks now
     monitor status          Show current resource status
@@ -1999,6 +2057,13 @@ EXAMPLES (FEEDS):
     sudo nftban feeds enable spamhaus
     sudo nftban feeds update
     sudo nftban feeds timer-install
+
+EXAMPLES (FAIL2BAN):
+    sudo nftban fail2ban setup
+    nftban fail2ban status
+    nftban fail2ban list
+    sudo nftban fail2ban enable sshd
+    sudo nftban fail2ban disable apache-auth
 
 EXAMPLES (GEO-BLOCKING):
     nftban geo status
@@ -2090,6 +2155,9 @@ main() {
 
 		# Feeds Management
         feeds) cmd_feeds "$@" ;;
+
+        # Fail2ban Jail Management
+        fail2ban|f2b) cmd_fail2ban "$@" ;;
 
         # System Monitoring
         monitor|monitoring) cmd_monitor "$@" ;;
