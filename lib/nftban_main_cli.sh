@@ -1709,11 +1709,18 @@ cmd_status() {
 }
 
 cmd_verify() {
+    # Check if running as root (required for nftables operations)
+    if [[ $EUID -ne 0 ]]; then
+        nftban_log_warning "Some verification checks require root permissions"
+        nftban_log_warning "Run with sudo for complete verification"
+        echo ""
+    fi
+
     nftban_log_info "Running system verification..."
     echo ""
-    
+
     local errors=0
-    
+
     if nftban_nftables_verify_structure; then
         nftban_log_success "nftables structure: OK"
     else
@@ -1726,11 +1733,14 @@ cmd_verify() {
     else
         nftban_log_warning "Whitelist system: Issues detected"
     fi
-    
-    if nftban_search_verify_index; then
-        nftban_log_success "Search index: OK"
-    else
-        nftban_log_warning "Search index: Needs rebuild"
+
+    # Optional: Check search index if function exists
+    if declare -f nftban_search_verify_index >/dev/null 2>&1; then
+        if nftban_search_verify_index; then
+            nftban_log_success "Search index: OK"
+        else
+            nftban_log_warning "Search index: Needs rebuild"
+        fi
     fi
     
     echo ""
