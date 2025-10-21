@@ -282,12 +282,70 @@ validate_port() {
 # Validate email address (basic)
 validate_email() {
     local email="$1"
-    
+
     if [[ "$email" =~ ^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$ ]]; then
         return 0
     else
         return 1
     fi
+}
+
+# BUG49 FIX: Validate jail/template names to prevent path traversal
+# Only allow alphanumeric, underscore, hyphen - no path separators
+validate_safe_name() {
+    local name="$1"
+    local max_length="${2:-64}"
+
+    # Empty check
+    if [[ -z "$name" ]]; then
+        return 1
+    fi
+
+    # Length check
+    if [[ ${#name} -gt $max_length ]]; then
+        return 1
+    fi
+
+    # Only allow: alphanumeric, underscore, hyphen
+    # This prevents: ../ ./ / \ and other path traversal
+    if [[ ! "$name" =~ ^[A-Za-z0-9_-]+$ ]]; then
+        return 1
+    fi
+
+    # Prevent reserved names
+    case "$name" in
+        .|..|/*|*/*|*\\*|~/*|*..*)
+            return 1
+            ;;
+    esac
+
+    return 0
+}
+
+# Validate and sanitize jail name
+validate_jail_name() {
+    local name="$1"
+
+    if ! validate_safe_name "$name" 64; then
+        log_error "Invalid jail name: '$name' (must be alphanumeric with _ or -, max 64 chars)"
+        return 1
+    fi
+
+    echo "$name"
+    return 0
+}
+
+# Validate and sanitize template name
+validate_template_name() {
+    local name="$1"
+
+    if ! validate_safe_name "$name" 64; then
+        log_error "Invalid template name: '$name' (must be alphanumeric with _ or -, max 64 chars)"
+        return 1
+    fi
+
+    echo "$name"
+    return 0
 }
 
 # =============================================================================
@@ -431,19 +489,34 @@ get_file_age() {
 # NETWORK UTILITIES
 # =============================================================================
 
+# BUG53 FIX: Safe curl wrapper with security hardening
+# Prevents common vulnerabilities in curl usage
+safe_curl() {
+    curl --fail-with-body \
+         --proto '=https' \
+         --tlsv1.2 \
+         --retry 2 \
+         --retry-delay 2 \
+         --connect-timeout 10 \
+         --max-time 30 \
+         --silent \
+         --show-error \
+         "$@"
+}
+
 # Check if port is open
 is_port_open() {
     local host="${1:-localhost}"
     local port="$2"
     local timeout="${3:-2}"
-    
+
     timeout "$timeout" bash -c "cat < /dev/null > /dev/tcp/$host/$port" 2>/dev/null
 }
 
 # Get public IP
 get_public_ip() {
-    curl -s https://api.ipify.org 2>/dev/null || \
-    curl -s https://ifconfig.me 2>/dev/null || \
+    safe_curl https://api.ipify.org 2>/dev/null || \
+    safe_curl https://ifconfig.me 2>/dev/null || \
     echo "unknown"
 }
 
