@@ -332,12 +332,12 @@ setup_nftables() {
 install_executables() {
     log_info "Installing executables..."
 
-    # Make CLI executable
-    if [[ -f "$BASE_DIR/bin/nftban_cli.sh" ]]; then
-        chmod +x "$BASE_DIR/bin/nftban_cli.sh"
-        log_success "Made nftban_cli.sh executable"
+    # Make CLI executable (main CLI is in lib directory)
+    if [[ -f "$BASE_DIR/lib/nftban_main_cli.sh" ]]; then
+        chmod +x "$BASE_DIR/lib/nftban_main_cli.sh"
+        log_success "Made nftban_main_cli.sh executable"
     else
-        log_error "CLI script not found: $BASE_DIR/bin/nftban_cli.sh"
+        log_error "CLI script not found: $BASE_DIR/lib/nftban_main_cli.sh"
         return 1
     fi
 
@@ -354,7 +354,7 @@ install_executables() {
         rm -f /usr/local/bin/nftban
     fi
 
-    ln -sf "$BASE_DIR/bin/nftban_cli.sh" /usr/local/bin/nftban
+    ln -sf "$BASE_DIR/lib/nftban_main_cli.sh" /usr/local/bin/nftban
     chmod +x /usr/local/bin/nftban
     log_success "Created symlink: /usr/local/bin/nftban"
 }
