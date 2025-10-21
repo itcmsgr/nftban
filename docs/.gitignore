@@ -1,0 +1,7 @@
+# Private/sensitive documentation - not published
+security/
+testing/test-results/
+bugs/
+planning/
+*DEBUG*.md
+*AUDIT*.md
