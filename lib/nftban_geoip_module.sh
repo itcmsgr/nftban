@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# BUG51 FIX: Add strict mode for production-grade security
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 027
+
+
 # =============================================================================
 # NFTBan GeoIP Lookup Integration Module
 # Version: 0.9.2
