@@ -164,7 +164,13 @@ nftban_template_process() {
 nftban_template_process_jail() {
     local jail_name="$1"
     local os="${2:-DEBIAN}"
-    
+
+    # BUG49 FIX: Validate jail name to prevent path traversal
+    if ! validate_safe_name "$jail_name" 64 >/dev/null 2>&1; then
+        nftban_log_error "Invalid jail name: '$jail_name' (must be alphanumeric with _ or -, max 64 chars)"
+        return 1
+    fi
+
     local jail_lower
     jail_lower=$(echo "$jail_name" | tr '[:upper:]' '[:lower:]')
     
@@ -278,7 +284,13 @@ nftban_template_exists() {
 nftban_template_deploy_jail() {
     local jail_name="$1"
     local os="${2:-$(nftban_template_detect_os)}"
-    
+
+    # BUG49 FIX: Validate jail name to prevent path traversal
+    if ! validate_safe_name "$jail_name" 64 >/dev/null 2>&1; then
+        nftban_log_error "Invalid jail name: '$jail_name' (must be alphanumeric with _ or -, max 64 chars)"
+        return 1
+    fi
+
     nftban_log_info "Deploying jail: $jail_name"
     
     # Ensure jail configuration exists
@@ -305,9 +317,15 @@ nftban_template_deploy_jail() {
 # Undeploy jail (remove templates and disable)
 nftban_template_undeploy_jail() {
     local jail_name="$1"
-    
+
+    # BUG49 FIX: Validate jail name to prevent path traversal
+    if ! validate_safe_name "$jail_name" 64 >/dev/null 2>&1; then
+        nftban_log_error "Invalid jail name: '$jail_name' (must be alphanumeric with _ or -, max 64 chars)"
+        return 1
+    fi
+
     nftban_log_info "Undeploying jail: $jail_name"
-    
+
     local jail_lower
     jail_lower=$(echo "$jail_name" | tr '[:upper:]' '[:lower:]')
     
@@ -327,7 +345,13 @@ nftban_template_undeploy_jail() {
 nftban_template_redeploy_jail() {
     local jail_name="$1"
     local os="${2:-$(nftban_template_detect_os)}"
-    
+
+    # BUG49 FIX: Validate jail name to prevent path traversal
+    if ! validate_safe_name "$jail_name" 64 >/dev/null 2>&1; then
+        nftban_log_error "Invalid jail name: '$jail_name' (must be alphanumeric with _ or -, max 64 chars)"
+        return 1
+    fi
+
     nftban_log_info "Redeploying jail: $jail_name"
     
     if nftban_jail_is_enabled "$jail_name"; then
@@ -415,26 +439,32 @@ nftban_template_redeploy_all() {
 # Show jail status
 nftban_template_show_jail_status() {
     local jail_name="$1"
-    
+
+    # BUG49 FIX: Validate jail name to prevent path traversal
+    if ! validate_safe_name "$jail_name" 64 >/dev/null 2>&1; then
+        nftban_log_error "Invalid jail name: '$jail_name' (must be alphanumeric with _ or -, max 64 chars)"
+        return 1
+    fi
+
     echo ""
     echo "═══════════════════════════════════════════════════════"
     echo "  Jail Status: $jail_name"
     echo "═══════════════════════════════════════════════════════"
     echo ""
-    
+
     local enabled ban_time max_retry find_time
     enabled=$(nftban_jail_get_config "$jail_name" "ENABLED" "false")
     ban_time=$(nftban_jail_get_config "$jail_name" "BAN_TIME" "not set")
     max_retry=$(nftban_jail_get_config "$jail_name" "MAX_RETRY" "not set")
     find_time=$(nftban_jail_get_config "$jail_name" "FIND_TIME" "not set")
-    
+
     echo "Configuration:"
     echo "  Enabled: $enabled"
     echo "  Ban Time: ${ban_time}s"
     echo "  Max Retry: $max_retry"
     echo "  Find Time: ${find_time}s"
     echo ""
-    
+
     # Check if fail2ban files exist
     local jail_lower
     jail_lower=$(echo "$jail_name" | tr '[:upper:]' '[:lower:]')
