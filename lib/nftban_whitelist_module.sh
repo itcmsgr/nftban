@@ -665,12 +665,14 @@ nftban_whitelist_verify() {
     echo -n "Checking nftables sync... "
     if nftban_check_nftables_table; then
         local file_v4 nft_v4
+        # Sum counts from both files (grep -c returns one count per file)
         file_v4=$(grep -hcE "^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+" \
-                  "$NFTBAN_WHITELIST_SYSTEM" "$NFTBAN_WHITELIST_USER" 2>/dev/null || echo "0")
+                  "$NFTBAN_WHITELIST_SYSTEM" "$NFTBAN_WHITELIST_USER" 2>/dev/null | \
+                  awk '{sum += $1} END {print sum+0}')
         nft_v4=$(nft list set "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" whitelist 2>/dev/null | \
                  grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+' | wc -l)
 
-        if [[ $file_v4 -eq $nft_v4 ]]; then
+        if [[ ${file_v4:-0} -eq ${nft_v4:-0} ]]; then
             echo -e "${NFTBAN_GREEN}✓ SYNCED${NFTBAN_NC}"
         else
             echo -e "${NFTBAN_YELLOW}⚠ OUT OF SYNC (files: $file_v4, nft: $nft_v4)${NFTBAN_NC}"
