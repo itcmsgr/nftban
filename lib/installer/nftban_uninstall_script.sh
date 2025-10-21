@@ -1,5 +1,5 @@
 #!/bin/bash
-# Version: 0.9.0
+# Version: 0.9.2
 # Location: lib/installer/nftban_uninstall_script.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
@@ -213,15 +213,22 @@ remove_cron_jobs() {
 
     # Count nftban cron jobs before removal
     local before_count
-    before_count=$(grep -E "/usr/local/bin/nftban|nftban " "$temp_cron" 2>/dev/null | wc -l) || before_count=0
+    before_count=$(grep -E "/usr/local/bin/nftban|nftban |/etc/nftban/scripts/|$BASE_DIR/scripts/" "$temp_cron" 2>/dev/null | wc -l) || before_count=0
 
-    # Remove ALL nftban-related cron jobs (any line containing nftban command)
-    grep -v "/usr/local/bin/nftban" "$temp_cron" | grep -v "nftban " > "${temp_cron}.new" || true
+    # Remove ALL nftban-related cron jobs:
+    # - /usr/local/bin/nftban (CLI commands)
+    # - nftban (command references)
+    # - /etc/nftban/scripts/ (direct script paths like autorebuild-cron.sh)
+    # - $BASE_DIR/scripts/ (alternative base dir paths)
+    grep -v "/usr/local/bin/nftban" "$temp_cron" | \
+        grep -v "nftban " | \
+        grep -v "/etc/nftban/scripts/" | \
+        grep -v "$BASE_DIR/scripts/" > "${temp_cron}.new" || true
     mv "${temp_cron}.new" "$temp_cron"
 
     # Count after removal
     local after_count
-    after_count=$(grep -E "/usr/local/bin/nftban|nftban " "$temp_cron" 2>/dev/null | wc -l) || after_count=0
+    after_count=$(grep -E "/usr/local/bin/nftban|nftban |/etc/nftban/scripts/|$BASE_DIR/scripts/" "$temp_cron" 2>/dev/null | wc -l) || after_count=0
     local removed=$((before_count - after_count))
 
     # Update crontab

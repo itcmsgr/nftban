@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan [MODULE_NAME] Module
-# Version: 0.9.0
+# Version: 0.9.2
 # Location: lib/nftban_[module_name]_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr

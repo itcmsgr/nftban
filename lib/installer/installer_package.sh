@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan Installer - Package Management Module
-# Version: 0.9.0
+# Version: 0.9.2
 # Location: lib/installer/installer_package.sh
 # Provides: Package manager detection, dependency installation
 # =============================================================================

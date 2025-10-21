@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan - Unified CLI Interface
-# Version: 0.9.0
+# Version: 0.9.2
 # Location: lib/nftban_main_cli.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
@@ -1965,6 +1965,8 @@ STATISTICS & MONITORING:
     stats top [N]           Top N banned IPs
     stats recent [N]        Recent N events
     stats export <file>     Export to CSV
+
+    search ip <IP>          Search for IP in all lists/logs
 
 PORT MANAGEMENT:
     port add <port> <proto> Add allowed port (tcp/udp)

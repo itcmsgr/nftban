@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan Rate Limiting Module
-# Version: 0.9.0
+# Version: 0.9.2
 # Location: lib/nftban_ratelimit_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr

@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan Installation & Management Script
-# Version: 0.9.0
+# Version: 0.9.2
 # Author: ITCMS Team (Antonios Voulvoulis)
 #
 # Description:

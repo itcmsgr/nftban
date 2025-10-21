@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan nftables Module
-# Version: 0.9.0
+# Version: 0.9.2
 # Location: lib/nftban_nftables_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
@@ -39,6 +39,29 @@ readonly NFTBAN_IPV4_INPUT_PORTS="${NFTBAN_PORT_CONFIG_DIR}/ipv4-input.conf"
 readonly NFTBAN_IPV4_OUTPUT_PORTS="${NFTBAN_PORT_CONFIG_DIR}/ipv4-output.conf"
 readonly NFTBAN_IPV6_INPUT_PORTS="${NFTBAN_PORT_CONFIG_DIR}/ipv6-input.conf"
 readonly NFTBAN_IPV6_OUTPUT_PORTS="${NFTBAN_PORT_CONFIG_DIR}/ipv6-output.conf"
+
+# =============================================================================
+# SSH PORT DETECTION (BUG56 FIX - SAFETY FEATURE)
+# =============================================================================
+
+# Detect SSH port from sshd_config
+# Returns: SSH port number (default: 22)
+nftban_nftables_detect_ssh_port() {
+    local ssh_port=22
+
+    if [[ -f "/etc/ssh/sshd_config" ]]; then
+        # Look for uncommented Port directive
+        local detected_port
+        detected_port=$(grep -E '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
+
+        if [[ -n "$detected_port" ]] && [[ "$detected_port" =~ ^[0-9]+$ ]]; then
+            ssh_port=$detected_port
+            nftban_log_debug "Detected SSH port: $ssh_port"
+        fi
+    fi
+
+    echo "$ssh_port"
+}
 
 # =============================================================================
 # TABLE MANAGEMENT - DUAL TABLE SUPPORT
@@ -174,6 +197,10 @@ nftban_nftables_create_table() {
         nftban_log_warning "Continuing with v0.9.0 table creation..."
     fi
 
+    # BUG56 FIX: Validate port configs BEFORE creating tables
+    # This ensures missing files are created with proper SSH port detection
+    nftban_nftables_init_port_configs
+
     # Create both tables
     nftban_nftables_create_table_v4
     nftban_nftables_create_table_v6
@@ -222,6 +249,19 @@ nftban_nftables_apply_rules_v4() {
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
         icmp type { echo-request, echo-reply } counter accept \
         comment "Accept ICMP" 2>/dev/null || true
+
+    # =============================================================================
+    # RULE 4.5: SSH SAFETY RULE (BUG56 FIX - PREVENTS LOCKOUTS)
+    # =============================================================================
+    # CRITICAL: This hardcoded SSH rule runs BEFORE port config files are read.
+    # Even if port config files are missing/misconfigured, SSH remains accessible.
+    # This prevents the lockout scenario discovered in BUG56.
+    local ssh_port
+    ssh_port=$(nftban_nftables_detect_ssh_port)
+    nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
+        tcp dport "$ssh_port" counter accept \
+        comment "SSH SAFETY (always allow - prevents lockout)" 2>/dev/null || true
+    nftban_log_debug "IPv4 SSH safety rule applied: port $ssh_port"
 
     # RULE 5: Apply configured port rules (service acceptance before drops)
     nftban_nftables_apply_port_rules_v4 "input"
@@ -311,6 +351,19 @@ nftban_nftables_apply_rules_v6() {
         icmpv6 type { echo-request, echo-reply, nd-neighbor-solicit, nd-neighbor-advert, nd-router-solicit, nd-router-advert } counter accept \
         comment "Accept ICMPv6" 2>/dev/null || true
 
+    # =============================================================================
+    # RULE 4.5: SSH SAFETY RULE (BUG56 FIX - PREVENTS LOCKOUTS)
+    # =============================================================================
+    # CRITICAL: This hardcoded SSH rule runs BEFORE port config files are read.
+    # Even if port config files are missing/misconfigured, SSH remains accessible.
+    # This prevents the lockout scenario discovered in BUG56.
+    local ssh_port
+    ssh_port=$(nftban_nftables_detect_ssh_port)
+    nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
+        tcp dport "$ssh_port" counter accept \
+        comment "SSH SAFETY (always allow - prevents lockout)" 2>/dev/null || true
+    nftban_log_debug "IPv6 SSH safety rule applied: port $ssh_port"
+
     # RULE 5: Apply configured port rules (service acceptance before drops)
     nftban_nftables_apply_port_rules_v6 "input"
 
@@ -363,6 +416,10 @@ nftban_nftables_apply_rules_v6() {
 # Apply rules to both tables
 nftban_nftables_apply_rules() {
     nftban_log_info "Applying nftables rules to both tables..."
+
+    # BUG56 FIX: Validate port configs before applying rules
+    # Auto-create missing files with proper SSH port detection
+    nftban_nftables_init_port_configs
 
     nftban_nftables_apply_rules_v4
     nftban_nftables_apply_rules_v6
@@ -502,34 +559,116 @@ nftban_nftables_show_status() {
 # PORT MANAGEMENT
 # =============================================================================
 
-# Initialize port configuration files
+# Initialize port configuration files (BUG56 FIX - VALIDATION)
 nftban_nftables_init_port_configs() {
     mkdir -p "$NFTBAN_PORT_CONFIG_DIR"
 
-    local port_files=(
-        "$NFTBAN_IPV4_INPUT_PORTS"
-        "$NFTBAN_IPV4_OUTPUT_PORTS"
-        "$NFTBAN_IPV6_INPUT_PORTS"
-        "$NFTBAN_IPV6_OUTPUT_PORTS"
-    )
+    # Detect SSH port dynamically
+    local ssh_port
+    ssh_port=$(nftban_nftables_detect_ssh_port)
 
-    for file in "${port_files[@]}"; do
-        if [[ ! -f "$file" ]]; then
-            cat > "$file" << 'EOF'
-# nftban Port Configuration
-# Format: PORT|PROTOCOL
-# Protocol: T=TCP, U=UDP, B=Both
-# Examples:
-#   22|T        # SSH (TCP only)
-#   53|U        # DNS (UDP only)
-#   80|B        # HTTP (both TCP and UDP)
-#   443|T       # HTTPS (TCP only)
-#   8080-8090|T # Port range (TCP)
+    local missing_files=()
+
+    # Check IPv4 INPUT
+    if [[ ! -f "$NFTBAN_IPV4_INPUT_PORTS" ]]; then
+        nftban_log_warning "Missing: ipv4-input.conf - auto-creating with SSH port $ssh_port"
+        cat > "$NFTBAN_IPV4_INPUT_PORTS" << EOF
+# IPv4 INPUT Ports (Incoming Connections)
+# Format: PORT|PROTOCOL (T=TCP, U=UDP, B=Both)
+
+# SSH (CRITICAL - auto-detected from sshd_config)
+${ssh_port}|T
+
+# Web Services
+80|T
+443|T
+
+# Add more services as needed
 EOF
-            chmod 644 "$file"
-            nftban_log_debug "Created port config: $(basename "$file")"
-        fi
-    done
+        chmod 644 "$NFTBAN_IPV4_INPUT_PORTS"
+        missing_files+=("ipv4-input.conf")
+    fi
+
+    # Check IPv4 OUTPUT
+    if [[ ! -f "$NFTBAN_IPV4_OUTPUT_PORTS" ]]; then
+        nftban_log_warning "Missing: ipv4-output.conf - auto-creating"
+        cat > "$NFTBAN_IPV4_OUTPUT_PORTS" << 'EOF'
+# IPv4 OUTPUT Ports (Outgoing Connections)
+# Format: PORT|PROTOCOL (T=TCP, U=UDP, B=Both)
+
+# DNS
+53|U
+
+# HTTP/HTTPS
+80|T
+443|T
+
+# NTP
+123|U
+
+# SMTP
+25|T
+EOF
+        chmod 644 "$NFTBAN_IPV4_OUTPUT_PORTS"
+        missing_files+=("ipv4-output.conf")
+    fi
+
+    # Check IPv6 INPUT
+    if [[ ! -f "$NFTBAN_IPV6_INPUT_PORTS" ]]; then
+        nftban_log_warning "Missing: ipv6-input.conf - auto-creating with SSH port $ssh_port"
+        cat > "$NFTBAN_IPV6_INPUT_PORTS" << EOF
+# IPv6 INPUT Ports (Incoming Connections)
+# Format: PORT|PROTOCOL (T=TCP, U=UDP, B=Both)
+
+# SSH (CRITICAL - auto-detected from sshd_config)
+${ssh_port}|T
+
+# Web Services
+80|T
+443|T
+
+# Add more services as needed
+EOF
+        chmod 644 "$NFTBAN_IPV6_INPUT_PORTS"
+        missing_files+=("ipv6-input.conf")
+    fi
+
+    # Check IPv6 OUTPUT
+    if [[ ! -f "$NFTBAN_IPV6_OUTPUT_PORTS" ]]; then
+        nftban_log_warning "Missing: ipv6-output.conf - auto-creating"
+        cat > "$NFTBAN_IPV6_OUTPUT_PORTS" << 'EOF'
+# IPv6 OUTPUT Ports (Outgoing Connections)
+# Format: PORT|PROTOCOL (T=TCP, U=UDP, B=Both)
+
+# DNS
+53|U
+
+# HTTP/HTTPS
+80|T
+443|T
+
+# NTP
+123|U
+
+# SMTP
+25|T
+EOF
+        chmod 644 "$NFTBAN_IPV6_OUTPUT_PORTS"
+        missing_files+=("ipv6-output.conf")
+    fi
+
+    # Report results
+    if [[ ${#missing_files[@]} -gt 0 ]]; then
+        nftban_log_warning "BUG56 FIX: Auto-created ${#missing_files[@]} missing port config files:"
+        for file in "${missing_files[@]}"; do
+            nftban_log_warning "  ✓ $file (with SSH port: $ssh_port)"
+        done
+        nftban_log_warning "Please review and customize: $NFTBAN_PORT_CONFIG_DIR/"
+        return 1  # Return 1 to indicate files were created (caller may want to reload)
+    else
+        nftban_log_debug "All port config files exist"
+        return 0
+    fi
 }
 
 # Apply IPv4 port rules from config files
@@ -750,6 +889,7 @@ nftban_nftables_list_ports() {
 # =============================================================================
 # EXPORT FUNCTIONS
 # =============================================================================
+export -f nftban_nftables_detect_ssh_port
 export -f nftban_nftables_check_table
 export -f nftban_nftables_check_legacy_table
 export -f nftban_nftables_create_table

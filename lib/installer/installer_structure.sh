@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan Installer - Directory Structure Module
-# Version: 0.9.0
+# Version: 0.9.2
 # Location: lib/installer/installer_structure.sh
 # Provides: Directory creation, permissions, symlink management
 # =============================================================================
@@ -54,6 +54,11 @@ installer_create_directories() {
         "$INSTALL_DIR/templates/fail2ban/REDHAT/action.d"
         "$INSTALL_DIR/templates/control-panels"
         "$INSTALL_DIR/docs"
+        "$INSTALL_DIR/docs/modules"
+        "$INSTALL_DIR/docs/development"
+        "$INSTALL_DIR/docs/security"
+        "$INSTALL_DIR/docs/testing"
+        "$INSTALL_DIR/docs/testing/guides"
         "$INSTALL_DIR/scripts"
 
         # Log directory

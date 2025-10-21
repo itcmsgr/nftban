@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan Statistics Module
-# Version: 0.9.0
+# Version: 0.9.2
 # Location: lib/nftban_stats_module.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
@@ -174,10 +174,21 @@ nftban_stats_geo_summary() {
         done
     fi
     
-    # Count active GEO sets in nftables
-    if nftban_check_nftables_table; then
-        local geo_sets=$(nft list sets inet "$NFTBAN_NFT_TABLE" 2>/dev/null | grep -c "geo_block" || echo 0)
-        echo "  Active nftables sets: $geo_sets"
+    # Count active GEO sets in nftables (v0.9.0 split tables)
+    local geo_sets_v4=0
+    local geo_sets_v6=0
+
+    if nft list table "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" &>/dev/null 2>&1; then
+        geo_sets_v4=$(nft list sets "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" 2>/dev/null | grep -c "geo_block" || echo 0)
+    fi
+
+    if nft list table "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" &>/dev/null 2>&1; then
+        geo_sets_v6=$(nft list sets "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" 2>/dev/null | grep -c "geo_block" || echo 0)
+    fi
+
+    local total_geo_sets=$((geo_sets_v4 + geo_sets_v6))
+    if [[ $total_geo_sets -gt 0 ]]; then
+        echo "  Active nftables sets: $total_geo_sets (IPv4: $geo_sets_v4, IPv6: $geo_sets_v6)"
     fi
 }
 
@@ -208,27 +219,76 @@ nftban_stats_cloudflare_summary() {
 }
 
 # =============================================================================
-# NFTABLES SUMMARY
+# NFTABLES SUMMARY (v0.9.0 SPLIT TABLES)
 # =============================================================================
 nftban_stats_nftables_summary() {
     echo -e "${NFTBAN_BLUE}[NFTABLES]${NFTBAN_NC}"
-    
-    if ! nftban_check_nftables_table; then
-        echo "  Table '$NFTBAN_NFT_TABLE' not found"
+
+    # Check if v0.9.0 split tables exist
+    local v4_exists=false
+    local v6_exists=false
+
+    if nft list table "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" &>/dev/null 2>&1; then
+        v4_exists=true
+    fi
+
+    if nft list table "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" &>/dev/null 2>&1; then
+        v6_exists=true
+    fi
+
+    if [[ "$v4_exists" == "false" ]] && [[ "$v6_exists" == "false" ]]; then
+        # Check for legacy v0.8.5 table
+        if nft list table inet nftban_global &>/dev/null 2>&1; then
+            echo "  Legacy v0.8.5 table detected: inet nftban_global"
+            echo "  Please run: nftban migrate v085-to-v090"
+        else
+            echo "  Tables not found (run: nftban nftables init)"
+        fi
         return 0
     fi
-    
-    echo "  Table: $NFTBAN_NFT_TABLE"
+
+    # Show split tables info
+    if [[ "$v4_exists" == "true" ]]; then
+        echo -e "  IPv4 Table: ${NFTBAN_GREEN}$NFTBAN_NFT_FAMILY_V4 $NFTBAN_NFT_TABLE_V4${NFTBAN_NC}"
+    else
+        echo -e "  IPv4 Table: ${NFTBAN_RED}NOT FOUND${NFTBAN_NC}"
+    fi
+
+    if [[ "$v6_exists" == "true" ]]; then
+        echo -e "  IPv6 Table: ${NFTBAN_GREEN}$NFTBAN_NFT_FAMILY_V6 $NFTBAN_NFT_TABLE_V6${NFTBAN_NC}"
+    else
+        echo -e "  IPv6 Table: ${NFTBAN_RED}NOT FOUND${NFTBAN_NC}"
+    fi
+
     echo ""
     echo "  Sets:"
-    
-    # v0.9.0: No _v4/_v6 suffix - loop through both tables
+
+    # Count elements from both tables
     local sets=("whitelist" "temp_ban" "user_blacklist" "system_blacklist" "feeds")
-    
+
     for set in "${sets[@]}"; do
-        if nft list set inet "$NFTBAN_NFT_TABLE" "$set" &>/dev/null; then
-            local count=$(nft list set inet "$NFTBAN_NFT_TABLE" "$set" 2>/dev/null | grep -oP 'elements = \{ .* \}' | grep -o ',' | wc -l)
-            printf "    %-20s %6d elements\n" "$set" "$((count + 1))"
+        local v4_count=0
+        local v6_count=0
+
+        # Count IPv4 set elements
+        if [[ "$v4_exists" == "true" ]]; then
+            if nft list set "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" "$set" &>/dev/null 2>&1; then
+                v4_count=$(nft list set "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" "$set" 2>/dev/null | \
+                           grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9.]\+' | wc -l)
+            fi
+        fi
+
+        # Count IPv6 set elements
+        if [[ "$v6_exists" == "true" ]]; then
+            if nft list set "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" "$set" &>/dev/null 2>&1; then
+                v6_count=$(nft list set "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" "$set" 2>/dev/null | \
+                           grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F:]\+' | wc -l)
+            fi
+        fi
+
+        local total=$((v4_count + v6_count))
+        if [[ $total -gt 0 ]]; then
+            printf "    %-20s %6d total (IPv4: %d, IPv6: %d)\n" "$set" "$total" "$v4_count" "$v6_count"
         fi
     done
 }

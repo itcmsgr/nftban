@@ -2,7 +2,7 @@
 
 **Modern Linux Firewall Management System**
 
-[![Version](https://img.shields.io/badge/version-0.9.0--beta-orange)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-0.9.1--beta-orange)](https://github.com/itcmsgr/nftban)
 [![Status](https://img.shields.io/badge/status-beta-yellow)](https://github.com/itcmsgr/nftban)
 [![Architecture](https://img.shields.io/badge/architecture-dual--table%20(IPv4%2FIPv6)-blue)](https://github.com/itcmsgr/nftban)
 [![License](https://img.shields.io/badge/License-ITCMS--ProtectiveFreeUse-blue)](./LICENSE.md)
@@ -120,7 +120,7 @@ The installer automatically:
 - ✅ Enables DDoS protection
 - ✅ Activates port scan detection
 
-See [📚 Complete Documentation](docs/) for advanced configuration.
+See [📚 Documentation Index](docs/index.md) for advanced configuration.
 
 ---
 
@@ -174,22 +174,18 @@ nftban portscan check-ip    # Check specific IP
 
 **All features are documented in the `docs/` folder:**
 
-### Core Guides
-- **[Complete Guide](docs/README_COMPLETE.md)** - Everything in one place
-- **[Quick Start](docs/QUICKSTART.md)** - Get running in 5 minutes
-- **[Security Guide](docs/SECURITY.md)** - How protection works (with diagrams)
+### 📚 Start Here
+- **[Documentation Index](docs/index.md)** - Complete navigation and quick links
+- **[Architecture Overview](docs/development/)** - System design and structure
+- **[Security Guide](docs/security/)** - How protection works (with diagrams)
 
-### Feature Guides
-- **[DDoS Protection](docs/DDOS_PROTECTION.md)** - Detailed DDoS configuration
-- **[Port Scan Detection](docs/PORT_SCAN_DETECTION.md)** - Scanner detection guide
-- **[CLI Reference](docs/README_nftban_cli.md)** - All commands explained
-- **[Configuration](docs/CONFIGURATION.md)** - Customize everything
+### 🔧 Module Documentation
+- **[All Modules](docs/modules/)** - Complete module documentation (23+ modules)
+  - Core, CLI, Fail2ban, Whitelist/Blacklist, Feeds, DDoS, and more
 
-### Setup Guides
-- **[Installation](docs/README_nftban.md)** - Step-by-step install
-- **[Architecture](docs/ARCHITECTURE.md)** - System design and structure
-- **[Fail2Ban Setup](docs/README_nftban_fail2ban.md)** - Intrusion prevention
-- **[Control Panels](docs/CONTROL_PANELS.md)** - Panel-specific guides
+### 🚀 Development & Implementation
+- **[Development Guides](docs/development/)** - Installation, feeds, updates, migration
+- **[Testing Guides](docs/testing/guides/)** - Verification and stability checks
 
 ---
 
@@ -253,7 +249,7 @@ We welcome contributions! Ways to help:
 ### Community Support
 - **Issues**: [GitHub Issues](https://github.com/itcmsgr/nftban/issues)
 - **Discussions**: [GitHub Discussions](https://github.com/itcmsgr/nftban/discussions)
-- **Documentation**: [Complete Guide](docs/README_COMPLETE.md)
+- **Documentation**: [Documentation Index](docs/index.md)
 
 ### Professional Support
 - **Author**: Antonios Voulvoulis (ITCMS Team)
