@@ -43,6 +43,37 @@ This is a maintenance release addressing critical bugs discovered during testing
    - **Fix:** Standardized all module versions to match project version (v0.9.1)
    - **Impact:** Consistent version reporting across entire system
 
+5. **BUG25 - Whitelist Sync Syntax Error**
+   - **Issue:** `[[: 2\n2: syntax error in expression (error token is "2")`
+   - **Root Cause:** `grep -hc` with multiple files returns one count per line ("2\n2"), causing syntax error in numeric comparison
+   - **Location:** `lib/nftban_whitelist_module.sh:668-671`
+   - **Fix:** Added `awk '{sum += $1} END {print sum+0}'` to sum the counts into a single number
+   - **Impact:** Whitelist verification no longer crashes with syntax errors
+
+6. **BUG26 - Missing Function nftban_search_verify_index**
+   - **Issue:** `command not found` error when running `nftban verify`
+   - **Root Cause:** Search module was deprecated but verify command still calls `nftban_search_verify_index()`
+   - **Location:** `lib/nftban_main_cli.sh:1730-1744`
+   - **Fix:** Made function call optional with `declare -f` existence check before calling
+   - **Impact:** Verify command no longer fails with missing function errors
+
+7. **BUG27 - No Permission Warning in Verify Command**
+   - **Issue:** Users running `nftban verify` without root not warned about incomplete checks
+   - **Root Cause:** No EUID check at start of cmd_verify()
+   - **Location:** `lib/nftban_main_cli.sh:1712-1717`
+   - **Fix:** Added EUID check with warning messages: "Some verification checks require root permissions"
+   - **Impact:** Users now informed when they need sudo for complete verification
+
+8. **BUG28 - Silent Verify Command Output (UX)**
+   - **Issue:** User feedback: "need text to inform user what now i dont see something"
+   - **Root Cause:** After running verification checks, no clear summary of pass/fail status
+   - **Location:** `lib/nftban_main_cli.sh:1746-1760`
+   - **Fix:** Added comprehensive summary section with:
+     - Clear visual separator (═══...)
+     - Success status ("All critical checks passed" + "System is healthy and ready to use")
+     - Failure status ("Verification failed with N critical error(s)" + actionable next steps)
+   - **Impact:** Users now get clear feedback about verification outcome and what to do next
+
 #### Testing Status
 - ✅ All fixes validated with bash syntax checking
 - ✅ Tested on 3 lab servers:
