@@ -244,9 +244,18 @@ nftban_fail2ban_monitor_panel() {
     local total_bans=0
     local monitored_count=0
 
-    # Get all jails
-    local jails
-    jails=$(fail2ban-client status 2>/dev/null | grep 'Jail list:' | sed 's/.*://;s/,/ /g' || echo "")
+    # Get all jails as array
+    local -a jail_list=()
+    local jails_raw
+    jails_raw=$(fail2ban-client status 2>/dev/null | grep 'Jail list:' | sed 's/.*://;s/,/ /g' | xargs || echo "")
+
+    # Convert to array with proper IFS handling
+    if [ -n "$jails_raw" ]; then
+        local OLD_IFS="$IFS"
+        IFS=' '
+        read -ra jail_list <<< "$jails_raw"
+        IFS="$OLD_IFS"
+    fi
 
     for service in "${ALL_SERVICES[@]}"; do
         local service_jails=""
@@ -254,8 +263,8 @@ nftban_fail2ban_monitor_panel() {
         local service_enabled=false
 
         # Check if service has jails
-        for jail in $jails; do
-            jail=$(echo "$jail" | xargs)
+        for jail in "${jail_list[@]}"; do
+            [ -z "$jail" ] && continue
 
             local matches=false
             case "$service" in
