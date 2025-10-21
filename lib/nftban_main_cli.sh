@@ -2041,7 +2041,15 @@ main() {
     fi
     
     shift || true
-    
+
+    # Try to auto-load modular command from lib/cli/
+    local cmd_file="${LIB_DIR}/cli/cmd_${command}.sh"
+    if [[ -f "$cmd_file" ]]; then
+        source "$cmd_file"
+        "cmd_${command}" "$@"
+        return $?
+    fi
+
     case "$command" in
         init) cmd_init "$@" ;;
         uninstall|remove) cmd_uninstall "$@" ;;
