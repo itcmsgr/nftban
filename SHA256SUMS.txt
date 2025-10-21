@@ -1,8 +1,8 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-21 16:41:05 UTC
-# Commit: cdfe393 (cdfe393d4eb876bcea171357a98f0e6b7532e98b)
+# Generated: 2025-10-21 16:44:34 UTC
+# Commit: bb33c4f (bb33c4f0f91c84ad49333add48af5d1d8cd1d75e)
 # Branch: main
-# Total files: 167
+# Total files: 168
 #
 # This file contains SHA256 checksums for all tracked files in the repository.
 # Use 'sha256sum -c SHA256SUMS.txt' to verify file integrity (ignores comment lines).
@@ -139,6 +139,7 @@ c6b3dd3aee8dd2036275a5cd38629e6bd891a509e045aa46e5fd152beb0b9bf0  scripts/collec
 55d4cc8ac141fb4c6baa5c48e1d75b30a80210d1bef44e54cb635d53d0b0d51b  scripts/nftban_uninstall.sh
 fce8d65771752e563610c60e06b679d55ef2934776e560fecbf2911777412e17  scripts/setup_lab_protection.sh
 8111cb992e024f460f19d175ac2b9700d910e7f736ca552e2d1f2ed66e70f2d1  scripts/stability_check_6h.sh
+c0ce63bc50ac6c0cc80340b555ae3377826dcebe925ff6119bee4f914c4ae758  scripts/test_ssh_attack_protection.sh
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  templates/.gitkeep
 56bb09a5778baf4938cb5f50de7d228df07ba7acb7850a8f4faf139d97c6e96b  templates/conf/TEMPLATES_README.md
 891e4f56baa0819cf6da219c0fef38f64ea1456cc744eaeab13e942d34d4b9ce  templates/conf/cloudflare-whitelist_ipsv4.conf
