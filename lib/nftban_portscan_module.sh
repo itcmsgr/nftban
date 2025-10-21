@@ -10,6 +10,11 @@
 # Detects and blocks port scanning activity
 # =============================================================================
 
+# Strict mode for production-grade security
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 027
+
 # Prevent double-loading
 [[ -n "${NFTBAN_PORTSCAN_LOADED:-}" ]] && return 0
 readonly NFTBAN_PORTSCAN_LOADED=1

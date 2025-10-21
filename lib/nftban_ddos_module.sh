@@ -10,6 +10,11 @@
 # Implements SYN flood, connection limits, port flood, and ICMP protection
 # =============================================================================
 
+# Strict mode for production-grade security
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 027
+
 # Prevent double-loading
 [[ -n "${NFTBAN_DDOS_LOADED:-}" ]] && return 0
 readonly NFTBAN_DDOS_LOADED=1

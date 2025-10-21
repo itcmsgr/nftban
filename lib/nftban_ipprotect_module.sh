@@ -10,6 +10,11 @@
 # Automatic protection of server IPs, public IPs, and current user sessions
 # =============================================================================
 
+# Strict mode for production-grade security
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 027
+
 # Prevent double-loading
 [[ -n "${NFTBAN_IPPROTECT_LOADED:-}" ]] && return 0
 readonly NFTBAN_IPPROTECT_LOADED=1

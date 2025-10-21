@@ -10,6 +10,11 @@
 # Ban operations with comprehensive safety checks and split table architecture
 # =============================================================================
 
+# Strict mode for production-grade security
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 027
+
 # Prevent double-loading
 [[ -n "${NFTBAN_BLACKLIST_LOADED:-}" ]] && return 0
 readonly NFTBAN_BLACKLIST_LOADED=1
