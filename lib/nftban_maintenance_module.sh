@@ -19,6 +19,7 @@ readonly NFTBAN_MAINTENANCE_LOADED=1
 # =============================================================================
 readonly NFTBAN_MAINTENANCE_LOG="${NFTBAN_LOG_DIR}/maintenance.log"
 readonly NFTBAN_MAINTENANCE_SCRIPT="${NFTBAN_BASE_DIR}/scripts/nftban-maintenance-cron.sh"
+readonly NFTBAN_MAINTENANCE_LOCK_FILE="${NFTBAN_CACHE_DIR}/.maintenance.lock"
 
 # =============================================================================
 # COMPREHENSIVE MAINTENANCE PANEL UI
@@ -188,21 +189,41 @@ nftban_maintenance_show_panel() {
 # =============================================================================
 
 # Run all maintenance tasks
+# SECURITY: Uses flock to prevent race conditions from concurrent executions
 nftban_maintenance_run() {
-    nftban_log_info "Running maintenance tasks..."
-    
+    # BUG50 FIX: Acquire exclusive lock to prevent race conditions
+    # Multiple cron jobs or manual triggers could run simultaneously
+    # Use flock with non-blocking mode and timeout
+    local lock_fd
+
+    # Open lock file for exclusive access
+    exec {lock_fd}>"$NFTBAN_MAINTENANCE_LOCK_FILE" 2>/dev/null || {
+        nftban_log_error "ERROR: Cannot create lock file"
+        return 1
+    }
+
+    # Try to acquire lock (non-blocking with 5-minute timeout)
+    if ! flock -n -w 300 "$lock_fd" 2>/dev/null; then
+        nftban_log_info "Another maintenance is already running (lock held), skipping"
+        exec {lock_fd}>&-  # Close lock fd
+        return 0
+    fi
+
+    # CRITICAL SECTION BEGINS (lock acquired)
+    nftban_log_info "Running maintenance tasks... (PID: $$, lock acquired)"
+
     local start_time
     start_time=$(date +%s)
-    
+
     # Clean rate limit tracker
     nftban_maintenance_clean_rate_limit
-    
+
     # Clean old logs
     nftban_maintenance_cleanup_logs 30
-    
+
     # Verify system health
     nftban_maintenance_health_check
-    
+
     # Rebuild search index if needed
     if declare -f nftban_search_needs_rebuild &>/dev/null; then
         if nftban_search_needs_rebuild; then
@@ -210,17 +231,22 @@ nftban_maintenance_run() {
             nftban_search_build_index
         fi
     fi
-    
+
     local end_time duration
     end_time=$(date +%s)
     duration=$((end_time - start_time))
-    
+
     nftban_log_success "Maintenance completed in ${duration}s"
-    
+
     # Log to maintenance log
     local timestamp
     timestamp=$(date +'%Y-%m-%d %H:%M:%S')
-    echo "[${timestamp}] Maintenance completed (${duration}s)" >> "$NFTBAN_MAINTENANCE_LOG"
+    echo "[${timestamp}] Maintenance completed (${duration}s, PID: $$)" >> "$NFTBAN_MAINTENANCE_LOG"
+
+    # CRITICAL SECTION ENDS
+    # Release lock explicitly before exit
+    flock -u "$lock_fd"
+    exec {lock_fd}>&-
 }
 
 # Clean rate limit tracker
