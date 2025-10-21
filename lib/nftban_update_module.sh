@@ -317,11 +317,17 @@ nftban_update_set_commit_pin() {
             nftban_log_warning "  From: $current_pin"
             nftban_log_warning "  To:   $new_sha"
 
-            read -p "Are you sure? [y/N] " -n 1 -r
-            echo ""
-            if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-                nftban_log_info "Pin update cancelled"
-                return 1
+            # BUG30 FIX: Only prompt if stdin is a terminal (not via SSH/pipe)
+            if [[ -t 0 ]] && [[ "$force" != "true" ]]; then
+                read -p "Are you sure? [y/N] " -n 1 -r
+                echo ""
+                if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+                    nftban_log_info "Pin update cancelled"
+                    return 1
+                fi
+            else
+                # Non-interactive mode (SSH/pipe) or force mode - auto-confirm
+                nftban_log_info "Auto-confirming pin update (non-interactive mode)"
             fi
         fi
     fi
@@ -1020,15 +1026,19 @@ nftban_update_perform() {
 
     # Step 2: Check for updates
     nftban_log_info "Step 2/7: Checking for updates..."
-    if ! nftban_update_check "true"; then
-        return 1
-    fi
+    nftban_update_check "true"
+    local check_result=$?
 
-    nftban_update_compare_versions "$(nftban_update_get_local_version)" "$(nftban_update_get_remote_version)"
-    if [[ $? -ne 2 ]]; then
-        nftban_log_info "No update needed"
+    # check_result: 0=up-to-date, 1=error, 2=update-available
+    if [[ $check_result -eq 1 ]]; then
+        nftban_log_error "Update check failed (network error)"
+        return 1
+    elif [[ $check_result -eq 0 ]]; then
+        nftban_log_info "No update needed - already on latest version"
         return 0
     fi
+
+    # If we reach here, check_result=2 (update available), continue...
 
     # Step 3: User confirmation
     nftban_log_info "Step 3/7: User confirmation..."
