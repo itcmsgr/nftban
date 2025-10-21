@@ -530,6 +530,102 @@ smoketest_connectivity() {
     fi
 }
 
+smoketest_installer_mechanisms() {
+    smoketest_category "Installer & Update Mechanisms"
+
+    # Check installer scripts exist
+    smoketest_start "Installer script exists"
+    if [[ -f "$NFTBAN_BASE_DIR/nftban_init.sh" ]]; then
+        smoketest_pass
+    else
+        smoketest_fail "nftban_init.sh not found"
+    fi
+
+    smoketest_start "Init script module exists"
+    if [[ -f "$NFTBAN_LIB_DIR/nftban_init_script.sh" ]]; then
+        smoketest_pass
+    else
+        smoketest_fail "nftban_init_script.sh not found"
+    fi
+
+    smoketest_start "Uninstaller module exists"
+    if [[ -f "$NFTBAN_LIB_DIR/installer/nftban_uninstall_script.sh" ]]; then
+        smoketest_pass
+    else
+        smoketest_fail "nftban_uninstall_script.sh not found"
+    fi
+
+    # Check update mechanism
+    smoketest_start "Update module exists"
+    if [[ -f "$NFTBAN_LIB_DIR/nftban_update_module.sh" ]]; then
+        smoketest_pass
+    else
+        smoketest_fail "nftban_update_module.sh not found"
+    fi
+
+    smoketest_start "Update functions loaded"
+    if declare -F nftban_update_check &>/dev/null; then
+        smoketest_pass
+    else
+        smoketest_fail "Update functions not available"
+    fi
+
+    # Check commit pin file (security)
+    smoketest_start "Commit PIN file exists"
+    if [[ -f "$NFTBAN_BASE_DIR/.commit_pin" ]]; then
+        local pin=$(cat "$NFTBAN_BASE_DIR/.commit_pin")
+        smoketest_pass
+        echo "      → PIN: ${pin:0:8}..."
+    else
+        smoketest_warn "No commit PIN (updates disabled for security)"
+    fi
+
+    # Check update directory structure
+    smoketest_start "Update staging directory"
+    if [[ -d "$NFTBAN_BASE_DIR/.update_tmp" ]]; then
+        smoketest_warn "Staging directory exists (update in progress or failed?)"
+    else
+        smoketest_pass
+    fi
+
+    # Check backup mechanism
+    smoketest_start "Backup directory exists"
+    local backup_dir="${NFTBAN_UPDATE_BACKUP_DIR:-/etc/nftban/data/backups}"
+    if [[ -d "$backup_dir" ]]; then
+        local backup_count=$(find "$backup_dir" -maxdepth 1 -type d -name "pre_update_*" 2>/dev/null | wc -l)
+        smoketest_pass
+        echo "      → Found $backup_count backup(s)"
+    else
+        smoketest_skip "Backup directory not created yet"
+    fi
+
+    # Test uninstall command availability
+    smoketest_start "Uninstall command available"
+    if nftban uninstall --help &>/dev/null; then
+        smoketest_pass
+    else
+        smoketest_fail "uninstall command not working"
+    fi
+
+    # Check bash completion installation
+    smoketest_start "Bash completion installed"
+    if [[ -f "/etc/bash_completion.d/nftban" ]] || [[ -f "/usr/share/bash-completion/completions/nftban" ]]; then
+        smoketest_pass
+    else
+        smoketest_warn "Bash completion not installed (tab completion unavailable)"
+    fi
+
+    # Check update log
+    smoketest_start "Update log exists"
+    if [[ -f "/var/log/nftban/update.log" ]]; then
+        local size=$(du -h "/var/log/nftban/update.log" 2>/dev/null | cut -f1)
+        smoketest_pass
+        echo "      → Size: $size"
+    else
+        smoketest_skip "No updates performed yet"
+    fi
+}
+
 # =============================================================================
 # MAIN SMOKE TEST FUNCTION
 # =============================================================================
@@ -574,6 +670,7 @@ nftban_smoketest_run() {
             smoketest_configuration
             smoketest_logging
             smoketest_connectivity
+            smoketest_installer_mechanisms
             ;;
 
         category)
@@ -588,9 +685,10 @@ nftban_smoketest_run() {
                 config) smoketest_configuration ;;
                 logging) smoketest_logging ;;
                 network) smoketest_connectivity ;;
+                installer|update) smoketest_installer_mechanisms ;;
                 *)
                     echo "Unknown category: $category"
-                    echo "Available categories: installation, nftables, modules, deps, cli, safety, config, logging, network"
+                    echo "Available categories: installation, nftables, modules, deps, cli, safety, config, logging, network, installer"
                     return 1
                     ;;
             esac
@@ -745,6 +843,7 @@ CATEGORIES:
     config                  Configuration files
     logging                 Log files and directories
     network                 Network connectivity
+    installer               Installer/uninstaller/update mechanisms
 
 EXAMPLES:
     nftban test quick                      # Quick health check
@@ -778,5 +877,6 @@ export -f smoketest_safety_mechanisms
 export -f smoketest_configuration
 export -f smoketest_logging
 export -f smoketest_connectivity
+export -f smoketest_installer_mechanisms
 
 nftban_log_debug "Smoke Test & Diagnostics Module loaded (v1.0.0)"
