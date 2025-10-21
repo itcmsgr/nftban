@@ -1,7 +1,7 @@
 #!/bin/bash
 # =============================================================================
 # NFTBAN Utilities Library - Common Functions
-# Version: 0.9.0
+# Version: 0.9.2
 # Location: lib/nftban_utils_lib.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr

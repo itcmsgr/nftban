@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan Installer - Configuration Module
-# Version: 0.9.0
+# Version: 0.9.2
 # Location: lib/installer/installer_config_full.sh
 # Provides: Control panel detection, config templates, system initialization
 # =============================================================================
@@ -449,7 +449,51 @@ EOF
 25|T
 EOF
 
-    installer_log_success "Generic configuration created (SSH port: $ssh_port)"
+    # =========================================================================
+    # CREATE IPv6 INPUT CONFIG (BUG56 FIX - was missing!)
+    # =========================================================================
+    cat > "${INSTALL_DIR}/config/ports/ipv6-input.conf" << EOF
+# IPv6 INPUT Ports (Incoming Connections)
+# Format: PORT|PROTOCOL
+
+# SSH (CRITICAL - Never remove or you'll be locked out!)
+${ssh_port}|T
+
+# Web Services
+80|T
+443|T
+
+# Add more as needed
+EOF
+
+    # =========================================================================
+    # CREATE IPv6 OUTPUT CONFIG (BUG56 FIX - was missing!)
+    # =========================================================================
+    cat > "${INSTALL_DIR}/config/ports/ipv6-output.conf" << 'EOF'
+# IPv6 OUTPUT Ports (Outgoing Connections)
+# Format: PORT|PROTOCOL
+
+# DNS
+53|U
+
+# HTTP/HTTPS
+80|T
+443|T
+
+# NTP
+123|U
+
+# SMTP
+25|T
+EOF
+
+    chmod 644 "${INSTALL_DIR}/config/ports"/*.conf
+
+    installer_log_success "Generic configuration created - ALL 4 port files (SSH port: $ssh_port)"
+    installer_log_info "  ✓ ipv4-input.conf  (incoming IPv4)"
+    installer_log_info "  ✓ ipv4-output.conf (outgoing IPv4)"
+    installer_log_info "  ✓ ipv6-input.conf  (incoming IPv6) - FIXED BUG56"
+    installer_log_info "  ✓ ipv6-output.conf (outgoing IPv6) - FIXED BUG56"
 }
 
 # =============================================================================
@@ -503,8 +547,15 @@ installer_initialize_system() {
         nftban_ipprotect_init 2>/dev/null || installer_log_warn "Failed to init IP protection"
     fi
     
-    # Initialize auto-rebuild
-    if command -v nftban_autorebuild_init >/dev/null 2>&1; then
+    # Initialize auto-rebuild (BUG FIX: Call setup, not just init)
+    # setup = creates dirs + installs cron
+    # init = only creates dirs
+    if command -v nftban_autorebuild_setup >/dev/null 2>&1; then
+        installer_log_info "Setting up auto-rebuild with cron..."
+        nftban_autorebuild_setup 2>/dev/null || installer_log_warn "Failed to setup auto-rebuild"
+    elif command -v nftban_autorebuild_init >/dev/null 2>&1; then
+        # Fallback to init if setup not available (shouldn't happen)
+        installer_log_warn "Auto-rebuild setup not available, using init only"
         nftban_autorebuild_init 2>/dev/null || installer_log_warn "Failed to init auto-rebuild"
     fi
     

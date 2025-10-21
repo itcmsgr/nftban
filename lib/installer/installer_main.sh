@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan Modular Installer - Main Entry Point
-# Version: 0.9.0
+# Version: 0.9.2
 # Location: lib/installer/installer_main.sh
 # PATCHED: Correct module sourcing per architecture
 # =============================================================================

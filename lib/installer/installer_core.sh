@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-# Version: 0.9.0
+# Version: 0.9.2
 # Location: lib/installer/installer_core.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
