@@ -195,14 +195,6 @@ stop_services() {
 remove_cron_jobs() {
     log_info "Removing cron jobs..."
 
-    local removed=0
-    local cron_patterns=(
-        "nftban monitor run"
-        "nftban maintenance"
-        "nftban feeds update"
-        "nftban update check"
-    )
-
     # Check if crontab exists
     if ! crontab -l &>/dev/null; then
         log_info "No crontab found for root user"
@@ -219,23 +211,24 @@ remove_cron_jobs() {
 
     crontab -l > "$temp_cron" 2>/dev/null
 
-    # Remove nftban-related cron jobs
-    for pattern in "${cron_patterns[@]}"; do
-        if grep -q "$pattern" "$temp_cron" 2>/dev/null; then
-            grep -v "$pattern" "$temp_cron" > "${temp_cron}.new" || true
-            mv "${temp_cron}.new" "$temp_cron"
-            ((removed++))
-            log_info "Removed cron job: $pattern"
-        fi
-    done
+    # Count nftban cron jobs before removal
+    local before_count=$(grep -c "/usr/local/bin/nftban\|nftban " "$temp_cron" 2>/dev/null || echo "0")
 
-    # Update crontab if changes were made
+    # Remove ALL nftban-related cron jobs (any line containing nftban command)
+    grep -v "/usr/local/bin/nftban" "$temp_cron" | grep -v "nftban " > "${temp_cron}.new" || true
+    mv "${temp_cron}.new" "$temp_cron"
+
+    # Count after removal
+    local after_count=$(grep -c "/usr/local/bin/nftban\|nftban " "$temp_cron" 2>/dev/null || echo "0")
+    local removed=$((before_count - after_count))
+
+    # Update crontab
     if [[ $removed -gt 0 ]]; then
-        crontab "$temp_cron" || {
+        crontab "$temp_cron" 2>/dev/null || {
             log_error "Failed to update crontab"
             return 1
         }
-        log_success "Removed $removed cron job(s)"
+        log_success "Removed $removed nftban cron job(s)"
     else
         log_info "No nftban cron jobs found"
     fi
