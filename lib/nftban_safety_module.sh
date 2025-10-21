@@ -10,6 +10,11 @@
 # Comprehensive safety verification and initialization safeguards with split tables
 # =============================================================================
 
+# Strict mode for production-grade security
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 027
+
 # Prevent double-loading
 [[ -n "${NFTBAN_SAFETY_LOADED:-}" ]] && return 0
 readonly NFTBAN_SAFETY_LOADED=1
