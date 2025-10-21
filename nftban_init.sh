@@ -45,10 +45,12 @@ ls -la lib/installer/ 2>/dev/null || echo "ERROR: lib/installer/ not found!"
 
 echo "Starting installer..."
 
-if [[ $UNATTENDED -eq 1 ]]; then
-    bash lib/installer/installer_main.sh install --unattended
+# Use nftban_init_script.sh for installation
+if [[ -f lib/nftban_init_script.sh ]]; then
+    bash lib/nftban_init_script.sh
 else
-    bash lib/installer/installer_main.sh install
+    echo "ERROR: Installation script not found"
+    exit 1
 fi
 
 # Cleanup
