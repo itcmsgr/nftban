@@ -919,6 +919,21 @@ nftban_maintenance_health_check_detailed() {
     fi
     echo ""
 
+    # Check bash completion
+    echo -e "${NFTBAN_CYAN}Bash Completion:${NFTBAN_NC}"
+    local completion_installed=false
+    if [[ -f "/etc/bash_completion.d/nftban" ]]; then
+        echo "  ✅ Installed: /etc/bash_completion.d/nftban"
+        completion_installed=true
+    elif [[ -f "/usr/share/bash-completion/completions/nftban" ]]; then
+        echo "  ✅ Installed: /usr/share/bash-completion/completions/nftban"
+        completion_installed=true
+    else
+        echo "  ⚠️  Not installed (tab completion unavailable)"
+        echo "     Run: sudo bash nftban_init.sh (to reinstall)"
+    fi
+    echo ""
+
     # Check critical files
     echo -e "${NFTBAN_CYAN}Critical Files:${NFTBAN_NC}"
     local missing_files=0
