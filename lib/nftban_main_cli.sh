@@ -1742,14 +1742,23 @@ cmd_verify() {
             nftban_log_warning "Search index: Needs rebuild"
         fi
     fi
-    
+
+    echo ""
+    echo "═══════════════════════════════════════════════════════"
+    echo "  Verification Summary"
+    echo "═══════════════════════════════════════════════════════"
     echo ""
     if [[ $errors -eq 0 ]]; then
-        nftban_log_success "Verification passed"
+        nftban_log_success "All critical checks passed"
+        echo ""
+        echo "System is healthy and ready to use."
     else
-        nftban_log_error "Verification failed with $errors error(s)"
+        nftban_log_error "Verification failed with $errors critical error(s)"
+        echo ""
+        echo "Please fix the errors above and run 'nftban verify' again."
     fi
-    
+    echo ""
+
     return $errors
 }
 
