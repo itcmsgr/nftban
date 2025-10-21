@@ -74,6 +74,13 @@ This is a maintenance release addressing critical bugs discovered during testing
      - Failure status ("Verification failed with N critical error(s)" + actionable next steps)
    - **Impact:** Users now get clear feedback about verification outcome and what to do next
 
+9. **BUG35 - CLI Path Wrong + feeds.conf Required** - Fixed symlink path and added missing feeds config
+10. **BUG36 - Bootstrap Installing to /tmp** - Changed install target from /tmp to /etc/nftban
+11. **BUG37 - Symlink Resolution Broken** - Added -f flag to readlink for full path resolution
+12. **BUG38 - Uninstall Trap EXIT Scope Error** - Initialized temp_cron variable to fix unbound error
+13. **BUG39 - Uninstall Cron Patterns Incomplete** - Added all 9 cron job patterns for complete removal
+14. **BUG40 - Uninstall Cron Count Arithmetic Error** - Fixed bash strict mode arithmetic syntax
+
 #### Testing Status
 - ✅ All fixes validated with bash syntax checking
 - ✅ Tested on 3 lab servers:
