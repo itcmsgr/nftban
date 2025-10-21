@@ -776,6 +776,9 @@ cmd_maintenance() {
         stats)
             nftban_maintenance_show_stats
             ;;
+        check-permissions|perms)
+            nftban_maintenance_validate_permissions
+            ;;
         backup)
             nftban_check_root || exit 1
             nftban_update_create_backup
@@ -844,6 +847,7 @@ cmd_maintenance() {
             echo "  health           Comprehensive health check"
             echo "  health-basic     Basic health check"
             echo "  stats            Show system statistics"
+            echo "  check-permissions Check file/directory permissions"
             echo "  backup           Create manual backup"
             echo "  list-backups     List available backups"
             echo "  restore <dir>    Restore from backup"
@@ -862,6 +866,7 @@ cmd_maintenance() {
             echo "  nftban maintenance repair"
             echo "  nftban maintenance health"
             echo "  nftban maintenance stats"
+            echo "  nftban maintenance check-permissions"
             echo ""
             echo "  sudo nftban maintenance disable all       # Disable both nftables and fail2ban"
             echo "  sudo nftban maintenance enable all        # Enable both services"
@@ -1743,6 +1748,11 @@ cmd_verify() {
         fi
     fi
 
+    # Check file permissions (optional, informational only)
+    if declare -f nftban_maintenance_validate_permissions >/dev/null 2>&1; then
+        nftban_maintenance_validate_permissions || true
+    fi
+
     echo ""
     echo "═══════════════════════════════════════════════════════"
     echo "  Verification Summary"
@@ -1939,6 +1949,7 @@ UPDATE & MAINTENANCE:
     maintenance repair      Repair broken configuration
     maintenance health      Comprehensive health check
     maintenance stats       Show system statistics
+    maintenance check-permissions Check file/directory permissions
     maintenance backup      Create system backup
     maintenance list-backups List available backups
     maintenance restore <dir> Restore from backup
