@@ -339,13 +339,26 @@ remove_feeds_data() {
 
 remove_executables() {
     log_info "Removing executables..."
-    
+
     # Remove symlink
     if [[ -L /usr/local/bin/nftban ]]; then
         rm -f /usr/local/bin/nftban
         log_success "Removed: /usr/local/bin/nftban"
     fi
-    
+
+    # Remove bash completion
+    local completion_locations=(
+        "/etc/bash_completion.d/nftban"
+        "/usr/share/bash-completion/completions/nftban"
+    )
+
+    for completion_file in "${completion_locations[@]}"; do
+        if [[ -f "$completion_file" ]]; then
+            rm -f "$completion_file"
+            log_success "Removed bash completion: $completion_file"
+        fi
+    done
+
     # Remove bin directory
     if [[ -d "$BASE_DIR/bin" ]]; then
         rm -rf "${BASE_DIR:?}/bin"
@@ -357,7 +370,7 @@ remove_executables() {
         rm -rf "${BASE_DIR:?}/lib"
         log_success "Removed: $BASE_DIR/lib"
     fi
-    
+
     # Remove scripts directory
     if [[ -d "$BASE_DIR/scripts" ]]; then
         rm -rf "$BASE_DIR/scripts"
