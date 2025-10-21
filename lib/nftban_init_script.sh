@@ -337,7 +337,7 @@ setup_nftables() {
 
 install_executables() {
     log_info "Installing executables..."
-    
+
     # Make CLI executable
     if [[ -f "$BASE_DIR/bin/nftban_cli.sh" ]]; then
         chmod +x "$BASE_DIR/bin/nftban_cli.sh"
@@ -346,7 +346,7 @@ install_executables() {
         log_error "CLI script not found: $BASE_DIR/bin/nftban_cli.sh"
         return 1
     fi
-    
+
     # Make libraries executable
     for lib in "$BASE_DIR/lib"/*.sh; do
         if [[ -f "$lib" ]]; then
@@ -354,15 +354,53 @@ install_executables() {
         fi
     done
     log_success "Made libraries executable"
-    
+
     # Create symlink in /usr/local/bin
     if [[ -L /usr/local/bin/nftban ]]; then
         rm -f /usr/local/bin/nftban
     fi
-    
+
     ln -sf "$BASE_DIR/bin/nftban_cli.sh" /usr/local/bin/nftban
     chmod +x /usr/local/bin/nftban
     log_success "Created symlink: /usr/local/bin/nftban"
+}
+
+# =============================================================================
+# BASH COMPLETION
+# =============================================================================
+
+install_bash_completion() {
+    log_info "Installing bash completion..."
+
+    # Check if completion file exists
+    local completion_source="$BASE_DIR/completions/nftban-completion.bash"
+    if [[ ! -f "$completion_source" ]]; then
+        log_warning "Bash completion file not found: $completion_source"
+        log_info "Tab completion will not be available"
+        return 0
+    fi
+
+    # Determine bash completion directory
+    local completion_dir=""
+    if [[ -d "/etc/bash_completion.d" ]]; then
+        completion_dir="/etc/bash_completion.d"
+    elif [[ -d "/usr/share/bash-completion/completions" ]]; then
+        completion_dir="/usr/share/bash-completion/completions"
+    else
+        log_warning "Bash completion directory not found"
+        log_info "Tab completion will not be available"
+        return 0
+    fi
+
+    # Install completion file
+    cp "$completion_source" "$completion_dir/nftban"
+    chmod 644 "$completion_dir/nftban"
+    log_success "Installed bash completion to: $completion_dir/nftban"
+
+    # Inform user to reload shell
+    log_info "To enable tab completion in current shell, run:"
+    log_info "  source $completion_dir/nftban"
+    log_info "Or start a new shell session"
 }
 
 # =============================================================================
@@ -497,6 +535,7 @@ main() {
     setup_nftables
     setup_fail2ban_integration
     install_executables || exit 1
+    install_bash_completion
     initialize_feeds
     post_installation_steps
     
