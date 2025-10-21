@@ -383,25 +383,48 @@ import_feed_to_nftables() {
         log_error "Parsed feed file not found: $parsed_file"
         return 1
     fi
-    
-    log_info "Importing feed to nftables: $feed_name"
-    
+
+    # BUG50 FIX: Atomic feed import using nft transaction file
+    log_info "Importing feed to nftables (atomic): $feed_name"
+
     # Create set if it doesn't exist
     create_feed_nftset
-    
+
+    # Build atomic nft transaction file
+    local nft_txn_file="/tmp/nftban-feed-${feed_name}-$$.nft"
+    local ip_list=""
     local count=0
+
+    # Build comma-separated IP list
     while IFS= read -r ip; do
         [[ -z "$ip" ]] && continue
-        
-        if nft add element "$table" "$set_name" "{ $ip }" 2>/dev/null; then
-            ((count++))
+
+        if [[ -n "$ip_list" ]]; then
+            ip_list="${ip_list}, ${ip}"
         else
-            log_debug "Failed to add IP to nftables: $ip"
+            ip_list="$ip"
         fi
+        ((count++))
     done < "$parsed_file"
-    
-    log_success "Imported $count IPs from feed: $feed_name"
-    return 0
+
+    # Write atomic transaction (single operation)
+    if [[ $count -gt 0 ]]; then
+        echo "add element $table $set_name { $ip_list }" > "$nft_txn_file"
+
+        # Execute transaction atomically
+        if nft -f "$nft_txn_file" 2>/dev/null; then
+            rm -f "$nft_txn_file"
+            log_success "Imported $count IPs atomically: $feed_name"
+            return 0
+        else
+            rm -f "$nft_txn_file"
+            log_error "Atomic import failed: $feed_name"
+            return 1
+        fi
+    else
+        log_warning "No IPs to import: $feed_name"
+        return 0
+    fi
 }
 
 # =============================================================================
@@ -442,13 +465,22 @@ update_feed() {
     return 0
 }
 
-# Update all enabled feeds
+# BUG50 FIX: Update all enabled feeds with flock protection
 update_all_feeds() {
-    log_info "Updating all enabled feeds..."
-    
+    local lock_file="/var/lock/nftban-feeds.lock"
+
+    # Acquire exclusive lock (prevents concurrent feed updates)
+    exec 200>"$lock_file"
+    if ! flock -n 200; then
+        log_warning "Another feed update is already running, skipping"
+        return 0
+    fi
+
+    log_info "Updating all enabled feeds (locked)..."
+
     local success=0
     local failed=0
-    
+
     for feed in $(get_feed_list); do
         local enabled=$(load_feed_config "$feed")
         if [[ "$enabled" == "true" ]]; then
@@ -459,8 +491,10 @@ update_all_feeds() {
             fi
         fi
     done
-    
+
     log_info "Feed update complete: $success successful, $failed failed"
+
+    # Lock automatically released when FD 200 closes (function exit)
     return 0
 }
 
