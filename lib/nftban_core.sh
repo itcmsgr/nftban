@@ -458,19 +458,24 @@ nftban_get_config() {
     local key="$1"
     local default="${2:-}"
     local value=""
-    
+
     # Check .local first (highest priority)
     if [[ -f "$NFTBAN_LOCAL_CONFIG" ]]; then
         value=$(grep "^${key}=" "$NFTBAN_LOCAL_CONFIG" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
     fi
-    
+
     # Check main config if not found
     if [[ -z "$value" && -f "$NFTBAN_MAIN_CONFIG" ]]; then
         value=$(grep "^${key}=" "$NFTBAN_MAIN_CONFIG" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
     fi
-    
-    # Return value or default
-    echo "${value:-$default}"
+
+    # Normalize boolean values (TRUE/FALSE -> true/false)
+    # This ensures case-insensitive boolean config values
+    case "${value:-$default}" in
+        TRUE|True) echo "true" ;;
+        FALSE|False) echo "false" ;;
+        *) echo "${value:-$default}" ;;
+    esac
 }
 
 nftban_set_config() {
