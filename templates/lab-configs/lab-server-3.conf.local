@@ -1,0 +1,91 @@
+# =============================================================================
+# NFTBan Lab Server 3 Configuration
+# Version: 0.9.2
+# Location: /etc/nftban/config/nftban.conf.local
+# Server: lab-server-3
+# Author: ITCMS Team (Antonios Voulvoulis)
+# Contact: contact@itcms.gr
+# =============================================================================
+
+# =============================================================================
+# MASTER CONTROL
+# =============================================================================
+NFTBAN_ENABLED="true"
+
+# =============================================================================
+# SERVER IDENTIFICATION
+# =============================================================================
+NFTBAN_SERVER_ID="lab-server-3"
+
+# =============================================================================
+# EMAIL ALERTS (Lab Server 3 - DIFFERENT EMAIL)
+# =============================================================================
+NFTBAN_F2B_RECIPIENT="lab3-admin@yourdomain.com"
+NFTBAN_F2B_SENDER="nftban-lab3@$(hostname -f)"
+NFTBAN_F2B_ALERT_ENABLED="true"
+
+# =============================================================================
+# LOGIN MONITORING (Enable for Attack Visibility)
+# =============================================================================
+NFTBAN_F2B_LOGIN_MONITOR="true"
+NFTBAN_F2B_ROOT_LOGIN_ALERT="true"
+NFTBAN_F2B_SSH_LOGIN_ALERT="true"
+NFTBAN_F2B_SUDO_ALERT="false"
+NFTBAN_F2B_FAILED_LOGIN_THRESHOLD="3"
+NFTBAN_F2B_LOGIN_CHECK_INTERVAL="60"
+NFTBAN_F2B_ALERT_COOLDOWN="300"
+
+# =============================================================================
+# SSH PROTECTION
+# =============================================================================
+NFTBAN_F2B_SSHD_JAIL="true"
+NFTBAN_F2B_SSHD_BAN_TIME="3600"
+NFTBAN_F2B_SSHD_MAX_RETRY="5"
+NFTBAN_F2B_SSHD_FIND_TIME="600"
+NFTBAN_F2B_SSHD_FILTER="sshd"
+NFTBAN_F2B_SSHD_LOGPATH="/var/log/auth.log"
+NFTBAN_F2B_SSHD_PORT="ssh"
+
+# =============================================================================
+# MAIL PROTECTION (Lab Server 3)
+# =============================================================================
+NFTBAN_F2B_POSTFIX_JAIL="true"
+NFTBAN_F2B_POSTFIX_BAN_TIME="7200"
+NFTBAN_F2B_POSTFIX_MAX_RETRY="3"
+NFTBAN_F2B_POSTFIX_FIND_TIME="600"
+NFTBAN_F2B_POSTFIX_FILTER="postfix"
+NFTBAN_F2B_POSTFIX_LOGPATH="/var/log/mail.log"
+NFTBAN_F2B_POSTFIX_PORT="smtp,submission,smtps"
+
+NFTBAN_F2B_DOVECOT_JAIL="true"
+NFTBAN_F2B_DOVECOT_BAN_TIME="7200"
+NFTBAN_F2B_DOVECOT_MAX_RETRY="3"
+NFTBAN_F2B_DOVECOT_FIND_TIME="600"
+NFTBAN_F2B_DOVECOT_FILTER="dovecot"
+NFTBAN_F2B_DOVECOT_LOGPATH="/var/log/mail.log"
+NFTBAN_F2B_DOVECOT_PORT="imap,imaps,pop3,pop3s"
+
+# =============================================================================
+# REBOOT SAFETY (Lab Testing Mode)
+# =============================================================================
+NFTBAN_REBOOT_SAFETY_ENABLED="true"
+NFTBAN_RESET_ON_BOOT="true"
+NFTBAN_REBOOT_GRACE_PERIOD="300"
+NFTBAN_REBOOT_AUTO_SYNC="true"
+NFTBAN_SSH_TEST_BEFORE_APPLY="true"
+NFTBAN_INSTALL_REBOOT_CRON="true"
+
+# =============================================================================
+# LOGGING (Enhanced for Attack Analysis)
+# =============================================================================
+NFTBAN_LOG_LEVEL="INFO"
+NFTBAN_DEBUG_MODE="false"
+
+# =============================================================================
+# ATTACK NOTIFICATIONS
+# =============================================================================
+NFTBAN_F2B_ALERT_ENABLED="true"
+
+# =============================================================================
+# END OF LAB SERVER 3 CONFIGURATION
+# =============================================================================
