@@ -145,7 +145,7 @@ create_final_backup() {
         log_error "Failed to create secure backup directory"
         return 1
     }
-    trap 'rm -rf "$backup_dir"' EXIT
+    trap 'rm -rf "$backup_dir"' RETURN
     
     # Backup configuration
     if [[ -d "$BASE_DIR/config" ]]; then
