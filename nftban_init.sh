@@ -43,11 +43,22 @@ ls -la lib/installer/ 2>/dev/null || echo "ERROR: lib/installer/ not found!"
 # Unattended install flag
 [[ "$1" == "--unattended" ]] && UNATTENDED=1 || UNATTENDED=0
 
-echo "Starting installer..."
+echo "Installing to: /etc/nftban"
 
-# Use nftban_init_script.sh for installation
-if [[ -f lib/nftban_init_script.sh ]]; then
-    bash lib/nftban_init_script.sh
+# Copy files to /etc/nftban
+if [[ ! -d /etc/nftban ]]; then
+    mkdir -p /etc/nftban
+fi
+
+# Copy all files
+cp -r bin lib config data scripts templates completions .version /etc/nftban/
+cp CHANGELOG.md README.md LICENSE.md /etc/nftban/ 2>/dev/null || true
+
+echo "Running installation script..."
+
+# Run installer from /etc/nftban
+if [[ -f /etc/nftban/lib/nftban_init_script.sh ]]; then
+    bash /etc/nftban/lib/nftban_init_script.sh
 else
     echo "ERROR: Installation script not found"
     exit 1
