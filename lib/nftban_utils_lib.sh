@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+
 # =============================================================================
 # NFTBAN Utilities Library - Common Functions
 # Version: 0.9.2
@@ -7,6 +8,11 @@
 # Contact: contact@itcms.gr
 # Website: https://itcms.gr
 # =============================================================================
+
+# BUG51 FIX: Add strict mode for production-grade security
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 027
 
 # Prevent double-loading
 [[ -n "${NFTBAN_UTILS_LOADED:-}" ]] && return 0

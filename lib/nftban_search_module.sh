@@ -1,5 +1,11 @@
 #!/usr/bin/env bash
 
+# BUG51 FIX: Add strict mode for production-grade security
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 027
+
+
 # =============================================================================
 # NFTBan Search Module
 # Version: 0.9.2
@@ -723,4 +729,3 @@ export -f nftban_search_ip_everywhere
 # =============================================================================
 
 nftban_log_debug "Universal Search Module loaded (v2.0.0 - Clean NEW logic)"
-
