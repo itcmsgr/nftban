@@ -115,16 +115,93 @@ validate_cidr() {
     return 1
 }
 
-# Check if IP is in whitelist
+# BUG47 FIX: CIDR-aware whitelist checking
+# Checks if an IP or CIDR overlaps with any entry in whitelist
 is_whitelisted() {
-    local ip="$1"
+    local input="$1"
     local whitelist_file="$NFTBAN_F2B_IGNOREIP"
-    
+
     if [[ ! -f "$whitelist_file" ]]; then
         return 1
     fi
-    
-    grep -qE "^${ip}$" "$whitelist_file" 2>/dev/null
+
+    # First, check for exact match (fast path)
+    if grep -qE "^${input}$" "$whitelist_file" 2>/dev/null; then
+        return 0
+    fi
+
+    # If input is an individual IP, check if it falls within any CIDR in whitelist
+    if [[ "$input" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+        # Read whitelist and check each CIDR
+        while IFS= read -r whitelist_entry; do
+            [[ -z "$whitelist_entry" || "$whitelist_entry" =~ ^[[:space:]]*# ]] && continue
+
+            # If whitelist entry is a CIDR, check if input IP is within it
+            if [[ "$whitelist_entry" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+                if ip_in_cidr "$input" "$whitelist_entry"; then
+                    return 0
+                fi
+            fi
+        done < "$whitelist_file"
+    fi
+
+    # If input is a CIDR, check for any overlap with whitelist
+    # For now, we only check if the network address is whitelisted
+    # Full CIDR-vs-CIDR overlap checking would require complex IP math
+    if [[ "$input" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+        local network_addr="${input%/*}"
+
+        while IFS= read -r whitelist_entry; do
+            [[ -z "$whitelist_entry" || "$whitelist_entry" =~ ^[[:space:]]*# ]] && continue
+
+            # Check if whitelist CIDR contains our network address
+            if [[ "$whitelist_entry" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+                if ip_in_cidr "$network_addr" "$whitelist_entry"; then
+                    return 0
+                fi
+            # Check if whitelist individual IP falls within our CIDR
+            elif [[ "$whitelist_entry" =~ ^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$ ]]; then
+                if ip_in_cidr "$whitelist_entry" "$input"; then
+                    return 0
+                fi
+            fi
+        done < "$whitelist_file"
+    fi
+
+    return 1
+}
+
+# Helper: Check if an IP address is within a CIDR range
+# Usage: ip_in_cidr "192.168.1.10" "192.168.1.0/24"
+ip_in_cidr() {
+    local ip="$1"
+    local cidr="$2"
+    local network="${cidr%/*}"
+    local prefix="${cidr#*/}"
+
+    # Convert IP addresses to 32-bit integers
+    local ip_int=$(ip_to_int "$ip")
+    local net_int=$(ip_to_int "$network")
+
+    # Calculate network mask
+    local mask_int=$(( 0xFFFFFFFF << (32 - prefix) ))
+
+    # Check if IP is in CIDR range
+    if [[ $(( ip_int & mask_int )) -eq $(( net_int & mask_int )) ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# Helper: Convert IPv4 address to 32-bit integer
+# Usage: ip_to_int "192.168.1.10"
+ip_to_int() {
+    local ip="$1"
+    local IFS='.'
+    local -a octets=($ip)
+
+    echo $(( (octets[0] << 24) + (octets[1] << 16) + (octets[2] << 8) + octets[3] ))
 }
 
 # =============================================================================
@@ -224,11 +301,10 @@ parse_feed() {
             if [[ "$ip" =~ / ]]; then
                 # CIDR notation
                 if validate_cidr "$ip"; then
-                    # Check whitelist if enabled
+                    # BUG47 FIX: Check full CIDR against whitelist (CIDR-aware)
                     if [[ "$NFTBAN_FEEDS_RESPECT_WHITELIST" == "true" ]]; then
-                        local base_ip="${ip%/*}"
-                        if is_whitelisted "$base_ip"; then
-                            log_debug "Skipping whitelisted IP: $ip"
+                        if is_whitelisted "$ip"; then
+                            log_debug "Skipping whitelisted CIDR: $ip"
                             continue
                         fi
                     fi
