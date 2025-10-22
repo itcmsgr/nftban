@@ -46,11 +46,15 @@ nftban_ddos_load_config() {
     local key="$1"
     local default="${2:-}"
 
-    # Check cache first
+    # Check cache first (temporarily disable nounset for array access with set -u)
+    set +u
     if [[ -n "${NFTBAN_DDOS_CONFIG_CACHE[$key]:-}" ]]; then
-        echo "${NFTBAN_DDOS_CONFIG_CACHE[$key]}"
+        local cached_value="${NFTBAN_DDOS_CONFIG_CACHE[$key]}"
+        set -u
+        echo "$cached_value"
         return 0
     fi
+    set -u
 
     local value="$default"
 
@@ -67,8 +71,10 @@ nftban_ddos_load_config() {
     # Use default if still empty
     value="${value:-$default}"
 
-    # Cache the value
+    # Cache the value (temporarily disable nounset for array access)
+    set +u
     NFTBAN_DDOS_CONFIG_CACHE[$key]="$value"
+    set -u
 
     echo "$value"
 }
