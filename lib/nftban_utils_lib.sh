@@ -527,6 +527,308 @@ get_public_ip() {
 }
 
 # =============================================================================
+# MAIL SERVICE DETECTION & RECOMMENDATIONS
+# =============================================================================
+
+# Detect mail command availability
+detect_mail_command() {
+    local mail_cmd=""
+
+    if command -v mail &>/dev/null; then
+        mail_cmd="mail"
+    elif command -v mailx &>/dev/null; then
+        mail_cmd="mailx"
+    elif command -v sendmail &>/dev/null; then
+        mail_cmd="sendmail"
+    fi
+
+    echo "$mail_cmd"
+}
+
+# Detect installed MTA (Mail Transfer Agent)
+# Returns comma-separated list of MTAs with status: "postfix:active,exim:inactive"
+# This allows detection of multiple MTAs to warn about conflicts
+detect_mta_service() {
+    local mta_list=()
+    local mta_status=""
+
+    # Check Postfix
+    if systemctl list-units --type=service 2>/dev/null | grep -q "postfix.service"; then
+        if systemctl is-active postfix &>/dev/null; then
+            mta_list+=("postfix:active")
+        else
+            mta_list+=("postfix:inactive")
+        fi
+    fi
+
+    # Check Exim
+    if systemctl list-units --type=service 2>/dev/null | grep -qE "exim.service|exim4.service"; then
+        if systemctl is-active exim &>/dev/null || systemctl is-active exim4 &>/dev/null; then
+            mta_list+=("exim:active")
+        else
+            mta_list+=("exim:inactive")
+        fi
+    fi
+
+    # Check Sendmail
+    if systemctl list-units --type=service 2>/dev/null | grep -q "sendmail.service"; then
+        if systemctl is-active sendmail &>/dev/null; then
+            mta_list+=("sendmail:active")
+        else
+            mta_list+=("sendmail:inactive")
+        fi
+    fi
+
+    # Join array with commas
+    local result=""
+    if [[ ${#mta_list[@]} -gt 0 ]]; then
+        result=$(IFS=','; echo "${mta_list[*]}")
+    fi
+
+    echo "$result"
+}
+
+# Detect OS and provide installation recommendations
+get_mail_installation_recommendation() {
+    local os_type=""
+    local pkg_manager=""
+    local recommendations=()
+
+    # Detect OS type
+    if [[ -f /etc/redhat-release ]]; then
+        os_type="redhat"
+        pkg_manager="dnf"
+        if grep -qi "centos stream 9" /etc/redhat-release 2>/dev/null; then
+            pkg_manager="dnf"
+        elif grep -qi "centos stream 10" /etc/redhat-release 2>/dev/null; then
+            pkg_manager="dnf"
+        fi
+    elif [[ -f /etc/debian_version ]]; then
+        os_type="debian"
+        pkg_manager="apt"
+    elif [[ -f /etc/arch-release ]]; then
+        os_type="arch"
+        pkg_manager="pacman"
+    else
+        os_type="unknown"
+    fi
+
+    # Generate recommendations based on OS
+    case "$os_type" in
+        redhat)
+            recommendations+=(
+                "RECOMMENDED: Postfix (lightweight, secure, widely used)"
+                "  Install: sudo $pkg_manager install postfix mailx -y"
+                "  Start:   sudo systemctl start postfix"
+                "  Enable:  sudo systemctl enable postfix"
+                ""
+                "ALTERNATIVE: Exim (feature-rich, flexible)"
+                "  Install: sudo $pkg_manager install exim -y"
+            )
+            ;;
+        debian)
+            recommendations+=(
+                "RECOMMENDED: Postfix (lightweight, secure, widely used)"
+                "  Install: sudo $pkg_manager install postfix mailutils -y"
+                "  Start:   sudo systemctl start postfix"
+                "  Enable:  sudo systemctl enable postfix"
+                ""
+                "ALTERNATIVE: Exim4 (Debian default)"
+                "  Install: sudo $pkg_manager install exim4 -y"
+            )
+            ;;
+        arch)
+            recommendations+=(
+                "RECOMMENDED: Postfix"
+                "  Install: sudo $pkg_manager -S postfix"
+            )
+            ;;
+        *)
+            recommendations+=(
+                "Please install a mail transfer agent (MTA) such as:"
+                "  - Postfix (recommended)"
+                "  - Exim"
+                "  - Sendmail"
+            )
+            ;;
+    esac
+
+    printf '%s\n' "${recommendations[@]}"
+}
+
+# Show mail service status panel
+show_mail_service_panel() {
+    local mail_cmd
+    local mta_info
+    local -a mta_list
+    local active_count=0
+    local has_mta=false
+    local primary_active_mta=""
+
+    mail_cmd=$(detect_mail_command)
+    mta_info=$(detect_mta_service)
+
+    # Parse comma-separated MTA list
+    if [[ -n "$mta_info" ]]; then
+        # BUG59 FIX: Use temporary variable to avoid IFS issues in subshells
+        # Split on commas manually to build array
+        local remaining="$mta_info,"
+        while [[ "$remaining" == *","* ]]; do
+            local entry="${remaining%%,*}"
+            [[ -n "$entry" ]] && mta_list+=("$entry")
+            remaining="${remaining#*,}"
+        done
+        has_mta=true
+
+        # Count active MTAs and find primary
+        for mta_entry in "${mta_list[@]}"; do
+            local mta_name="${mta_entry%:*}"
+            local mta_status="${mta_entry#*:}"
+            if [[ "$mta_status" == "active" ]]; then
+                # BUG58 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+                active_count=$((active_count + 1))
+                [[ -z "$primary_active_mta" ]] && primary_active_mta="$mta_name"
+            fi
+        done
+    fi
+
+    echo ""
+    echo "═══════════════════════════════════════════════════════"
+    echo "  Mail Service Status"
+    echo "═══════════════════════════════════════════════════════"
+    echo ""
+
+    # Mail command status
+    echo -e "${COLOR_CYAN}Mail Command:${COLOR_RESET}"
+    if [[ -n "$mail_cmd" ]]; then
+        echo -e "  ${COLOR_GREEN}✓${COLOR_RESET} Found: $mail_cmd"
+        command -v "$mail_cmd" 2>/dev/null | while read -r path; do
+            echo "    Path: $path"
+        done
+    else
+        echo -e "  ${COLOR_RED}✗${COLOR_RESET} NOT Found (mail/mailx/sendmail)"
+    fi
+    echo ""
+
+    # MTA service status
+    echo -e "${COLOR_CYAN}Mail Transfer Agent (MTA):${COLOR_RESET}"
+    if [[ "$has_mta" == true ]]; then
+        for mta_entry in "${mta_list[@]}"; do
+            local mta_name="${mta_entry%:*}"
+            local mta_status="${mta_entry#*:}"
+
+            echo -e "  MTA: ${COLOR_BOLD}${mta_name}${COLOR_RESET}"
+            if [[ "$mta_status" == "active" ]]; then
+                echo -e "  Status: ${COLOR_GREEN}● ACTIVE${COLOR_RESET}"
+            else
+                echo -e "  Status: ${COLOR_RED}○ INACTIVE${COLOR_RESET}"
+            fi
+        done
+    else
+        echo -e "  ${COLOR_RED}✗${COLOR_RESET} No MTA detected"
+    fi
+    echo ""
+
+    # CONFLICT WARNING - Multiple MTAs active
+    if [[ $active_count -gt 1 ]]; then
+        echo "─────────────────────────────────────────────────────────"
+        echo -e "${COLOR_RED}${COLOR_BOLD}⚠ CONFLICT DETECTED${COLOR_RESET}"
+        echo ""
+        echo -e "${COLOR_YELLOW}Multiple MTAs are running simultaneously!${COLOR_RESET}"
+        echo "This can cause mail routing conflicts and delivery issues."
+        echo ""
+        echo "RECOMMENDED ACTION:"
+        echo "  Keep only ONE MTA service active to avoid conflicts."
+        echo ""
+        echo "To disable conflicting MTAs:"
+        for mta_entry in "${mta_list[@]}"; do
+            local mta_name="${mta_entry%:*}"
+            local mta_status="${mta_entry#*:}"
+            if [[ "$mta_status" == "active" && "$mta_name" != "$primary_active_mta" ]]; then
+                echo "  sudo systemctl stop $mta_name"
+                echo "  sudo systemctl disable $mta_name"
+            fi
+        done
+        echo ""
+        echo "Recommended MTA to keep: ${COLOR_GREEN}$primary_active_mta${COLOR_RESET}"
+        echo "─────────────────────────────────────────────────────────"
+        echo ""
+    fi
+
+    # Overall status
+    echo -e "${COLOR_CYAN}Email Functionality:${COLOR_RESET}"
+    if [[ $active_count -gt 1 ]]; then
+        echo -e "  ${COLOR_RED}⚠ CONFLICT${COLOR_RESET} - Multiple MTAs active (see warning above)"
+    elif [[ -n "$mail_cmd" && $active_count -eq 1 ]]; then
+        echo -e "  ${COLOR_GREEN}✓ READY${COLOR_RESET} - Email notifications can be sent"
+    elif [[ -n "$mail_cmd" && $active_count -eq 0 && "$has_mta" == true ]]; then
+        echo -e "  ${COLOR_YELLOW}⚠ PARTIAL${COLOR_RESET} - Mail command found but MTA is inactive"
+        echo "    Action: Start the MTA service"
+        local first_mta="${mta_list[0]%:*}"
+        echo "      sudo systemctl start $first_mta"
+    elif [[ -z "$mail_cmd" && "$has_mta" == true ]]; then
+        echo -e "  ${COLOR_YELLOW}⚠ PARTIAL${COLOR_RESET} - MTA found but mail command missing"
+        echo "    Action: Install mail command (mailx or mail)"
+    else
+        echo -e "  ${COLOR_RED}✗ NOT CONFIGURED${COLOR_RESET} - Email notifications will fail"
+    fi
+    echo ""
+
+    # Show recommendations if mail is not fully configured
+    if [[ -z "$mail_cmd" || $active_count -eq 0 ]]; then
+        echo "─────────────────────────────────────────────────────────"
+        echo -e "${COLOR_YELLOW}RECOMMENDATIONS:${COLOR_RESET}"
+        echo ""
+        get_mail_installation_recommendation
+        echo ""
+        echo "After installation, test with:"
+        echo "  echo 'Test' | mail -s 'Test Subject' your@email.com"
+        echo ""
+    fi
+
+    echo "═══════════════════════════════════════════════════════"
+    echo ""
+}
+
+# Quick mail service check (returns 0 if OK, 1 if not configured, 2 if conflict)
+check_mail_service() {
+    local mail_cmd
+    local mta_info
+    local -a mta_list
+    local active_count=0
+
+    mail_cmd=$(detect_mail_command)
+    mta_info=$(detect_mta_service)
+
+    # Parse comma-separated MTA list and count active MTAs
+    if [[ -n "$mta_info" ]]; then
+        # BUG59 FIX: Use manual string splitting to avoid IFS issues
+        local remaining="$mta_info,"
+        while [[ "$remaining" == *","* ]]; do
+            local entry="${remaining%%,*}"
+            [[ -n "$entry" ]] && mta_list+=("$entry")
+            remaining="${remaining#*,}"
+        done
+
+        for mta_entry in "${mta_list[@]}"; do
+            local mta_status="${mta_entry#*:}"
+            if [[ "$mta_status" == "active" ]]; then
+                # BUG58 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+                active_count=$((active_count + 1))
+            fi
+        done
+    fi
+
+    if [[ -n "$mail_cmd" && $active_count -eq 1 ]]; then
+        return 0  # Mail service is fully configured (1 MTA active)
+    elif [[ $active_count -gt 1 ]]; then
+        return 2  # Multiple MTAs active - conflict!
+    else
+        return 1  # Mail service is NOT configured
+    fi
+}
+
+# =============================================================================
 # MARK LIBRARY AS LOADED
 # =============================================================================
-log_debug "nftban_utils.sh library loaded"
+# Note: Library loaded successfully (no logging to avoid dependency issues)
