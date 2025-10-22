@@ -2,10 +2,10 @@
 
 **Modern Linux Firewall Management System**
 
-[![Version](https://img.shields.io/badge/version-0.9.1--beta-orange)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-0.9.3--dev-orange)](https://github.com/itcmsgr/nftban)
 [![Status](https://img.shields.io/badge/status-beta-yellow)](https://github.com/itcmsgr/nftban)
 [![Architecture](https://img.shields.io/badge/architecture-dual--table%20(IPv4%2FIPv6)-blue)](https://github.com/itcmsgr/nftban)
-[![License](https://img.shields.io/badge/License-ITCMS--ProtectiveFreeUse-blue)](./LICENSE.md)
+[![License](https://img.shields.io/badge/License-NFTBAN--Custom--v3.0-blue)](./LICENSE.md)
 [![SPDX](https://img.shields.io/badge/SPDX-NFTBAN--Custom--License-lightgrey)](./LICENSE.md)
 [![Platform](https://img.shields.io/badge/platform-Linux-success)](https://github.com/itcmsgr/nftban)
 
@@ -205,27 +205,26 @@ nftban portscan check-ip    # Check specific IP
 
 ## 📜 License
 
-**ITCMS Protective Free-Use License v2.0**
+**NFTBAN Custom License v3.0**
 SPDX-License-Identifier: NFTBAN-Custom-License
 
-> **Free forever. Use anywhere. Sell services, not the software.**
+> **Free to use. Free to modify. NOT for redistribution.**
 
 ### What You CAN Do ✅
-- Use for free (personal or commercial)
-- Modify and customize
-- Deploy on unlimited servers
-- Charge for installation, setup, support services
-- Build your business around it
+- ✅ Use for any purpose (personal, commercial, production)
+- ✅ Modify privately for your needs
+- ✅ Deploy on unlimited servers
+- ✅ Integrate into your infrastructure
+- ✅ Use in business operations
 
 ### What You CANNOT Do ❌
-- Sell the software itself as a product
-- Rebrand and resell
-- Remove copyright notices
+- ❌ Redistribute, republish, or resell
+- ❌ Upload to public repositories (GitHub forks, etc.)
+- ❌ Post to package registries
+- ❌ Copy and sell as your own
+- ❌ Remove copyright notices
 
-**Simple test**: *"Am I charging for my expertise/service, or for the software?"*
-- ✅ €500 firewall setup service? **YES**
-- ✅ Monthly managed security using nftban? **YES**
-- ❌ Selling "Premium Firewall Software"? **NO**
+**Key principle**: Use it freely within your organization—but **do not redistribute publicly**.
 
 [📄 Full License](LICENSE.md) | 📧 Questions: contact@itcms.gr
 
