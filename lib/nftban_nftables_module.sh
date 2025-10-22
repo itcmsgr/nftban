@@ -517,8 +517,15 @@ nftban_nftables_show_set_stats() {
     for set_type in whitelist temp_ban user_blacklist system_blacklist feeds; do
         if nft list set "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" "$set_type" &>/dev/null; then
             local count
-            count=$(nft list set "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" "$set_type" 2>/dev/null | \
-                    grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9.]\+' | wc -l)
+            # BUG60 FIX: Disable pipefail temporarily for counting to handle empty sets gracefully
+            # When set is empty, grep returns 1 which would cause script exit with pipefail
+            local output
+            output=$(nft list set "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" "$set_type" 2>/dev/null)
+            if echo "$output" | grep -q 'elements = '; then
+                count=$(echo "$output" | grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9.]\+' | wc -l)
+            else
+                count=0
+            fi
             printf "    %-25s %3d IPs\n" "$set_type:" "$count"
         fi
     done
@@ -528,8 +535,15 @@ nftban_nftables_show_set_stats() {
     for set_type in whitelist temp_ban user_blacklist system_blacklist feeds; do
         if nft list set "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" "$set_type" &>/dev/null; then
             local count
-            count=$(nft list set "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" "$set_type" 2>/dev/null | \
-                    grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F:]\+' | wc -l)
+            # BUG60 FIX: Disable pipefail temporarily for counting to handle empty sets gracefully
+            # When set is empty, grep returns 1 which would cause script exit with pipefail
+            local output
+            output=$(nft list set "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" "$set_type" 2>/dev/null)
+            if echo "$output" | grep -q 'elements = '; then
+                count=$(echo "$output" | grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F:]\+' | wc -l)
+            else
+                count=0
+            fi
             printf "    %-25s %3d IPs\n" "$set_type:" "$count"
         fi
     done
