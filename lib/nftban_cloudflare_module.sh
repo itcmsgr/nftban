@@ -148,16 +148,8 @@ nftban_cloudflare_download_ips() {
 # APPLY CLOUDFLARE RANGES TO NFTABLES
 # =============================================================================
 nftban_cloudflare_apply_to_nftables() {
-    local cf_enabled ipv4_enabled ipv6_enabled
-
-    cf_enabled=$(nftban_get_config "CLOUDFLARE_ENABLED" "false")
-    ipv4_enabled=$(nftban_get_config "CLOUDFLARE_IPV4_ENABLED" "false")
-    ipv6_enabled=$(nftban_get_config "CLOUDFLARE_IPV6_ENABLED" "false")
-
-    if [[ "$cf_enabled" != "true" ]]; then
-        nftban_log_warning "Cloudflare integration disabled"
-        return 1
-    fi
+    # Note: Caller is responsible for checking if Cloudflare is enabled
+    # This function just applies cached IP ranges to nftables
 
     if ! nftban_check_nftables_table; then
         nftban_log_error "nftables table not found"
@@ -169,8 +161,8 @@ nftban_cloudflare_apply_to_nftables() {
     local added_v4=0
     local added_v6=0
 
-    # Add IPv4 ranges if enabled
-    if [[ "$ipv4_enabled" == "true" && -f "$NFTBAN_CF_IPV4_CACHE" ]]; then
+    # Add IPv4 ranges if cache file exists
+    if [[ -f "$NFTBAN_CF_IPV4_CACHE" ]]; then
         while IFS= read -r cidr; do
             [[ -z "$cidr" ]] && continue
 
@@ -182,8 +174,8 @@ nftban_cloudflare_apply_to_nftables() {
         nftban_log_success "  Added $added_v4 IPv4 ranges to nftables"
     fi
 
-    # Add IPv6 ranges if enabled
-    if [[ "$ipv6_enabled" == "true" && -f "$NFTBAN_CF_IPV6_CACHE" ]]; then
+    # Add IPv6 ranges if cache file exists
+    if [[ -f "$NFTBAN_CF_IPV6_CACHE" ]]; then
         while IFS= read -r cidr; do
             [[ -z "$cidr" ]] && continue
 
@@ -441,6 +433,93 @@ nftban_cloudflare_auto_update() {
 }
 
 # =============================================================================
+# INIT CLOUDFLARE INTEGRATION (alias for enable)
+# =============================================================================
+nftban_cloudflare_init() {
+    nftban_cloudflare_enable
+}
+
+# =============================================================================
+# UPDATE WHITELIST (alias for update - CLI compatibility)
+# =============================================================================
+nftban_cloudflare_update_whitelist() {
+    nftban_cloudflare_update
+}
+
+# =============================================================================
+# IPv4/IPv6 MANAGEMENT
+# =============================================================================
+nftban_cloudflare_enable_ipv4() {
+    nftban_log_info "Enabling Cloudflare IPv4..."
+    nftban_set_config "CLOUDFLARE_IPV4_ENABLED" "true"
+
+    # Download IPv4 ranges
+    if ! nftban_cloudflare_download_ips; then
+        nftban_log_error "Failed to download Cloudflare IPv4"
+        return 1
+    fi
+
+    # Apply to nftables
+    if nftban_check_nftables_table; then
+        nftban_cloudflare_apply_to_nftables
+    fi
+
+    nftban_log_success "Cloudflare IPv4 enabled"
+    nftban_cf_log "IPv4 enabled"
+}
+
+nftban_cloudflare_disable_ipv4() {
+    nftban_log_info "Disabling Cloudflare IPv4..."
+    nftban_set_config "CLOUDFLARE_IPV4_ENABLED" "false"
+
+    # Remove IPv4 ranges from nftables
+    if [[ -f "$NFTBAN_CF_IPV4_CACHE" ]] && nftban_check_nftables_table; then
+        while IFS= read -r cidr; do
+            [[ -z "$cidr" ]] && continue
+            nft delete element "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" "whitelist" "{ $cidr }" 2>/dev/null || true
+        done < "$NFTBAN_CF_IPV4_CACHE"
+    fi
+
+    nftban_log_success "Cloudflare IPv4 disabled"
+    nftban_cf_log "IPv4 disabled"
+}
+
+nftban_cloudflare_enable_ipv6() {
+    nftban_log_info "Enabling Cloudflare IPv6..."
+    nftban_set_config "CLOUDFLARE_IPV6_ENABLED" "true"
+
+    # Download IPv6 ranges
+    if ! nftban_cloudflare_download_ips; then
+        nftban_log_error "Failed to download Cloudflare IPv6"
+        return 1
+    fi
+
+    # Apply to nftables
+    if nftban_check_nftables_table; then
+        nftban_cloudflare_apply_to_nftables
+    fi
+
+    nftban_log_success "Cloudflare IPv6 enabled"
+    nftban_cf_log "IPv6 enabled"
+}
+
+nftban_cloudflare_disable_ipv6() {
+    nftban_log_info "Disabling Cloudflare IPv6..."
+    nftban_set_config "CLOUDFLARE_IPV6_ENABLED" "false"
+
+    # Remove IPv6 ranges from nftables
+    if [[ -f "$NFTBAN_CF_IPV6_CACHE" ]] && nftban_check_nftables_table; then
+        while IFS= read -r cidr; do
+            [[ -z "$cidr" ]] && continue
+            nft delete element "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" "whitelist" "{ $cidr }" 2>/dev/null || true
+        done < "$NFTBAN_CF_IPV6_CACHE"
+    fi
+
+    nftban_log_success "Cloudflare IPv6 disabled"
+    nftban_cf_log "IPv6 disabled"
+}
+
+# =============================================================================
 # EXPORT FUNCTIONS
 # =============================================================================
 export -f nftban_cloudflare_download_ips
@@ -449,8 +528,14 @@ export -f nftban_cloudflare_remove_from_nftables
 export -f nftban_cloudflare_enable
 export -f nftban_cloudflare_disable
 export -f nftban_cloudflare_update
+export -f nftban_cloudflare_update_whitelist
 export -f nftban_cloudflare_status
 export -f nftban_cloudflare_auto_update
+export -f nftban_cloudflare_init
+export -f nftban_cloudflare_enable_ipv4
+export -f nftban_cloudflare_disable_ipv4
+export -f nftban_cloudflare_enable_ipv6
+export -f nftban_cloudflare_disable_ipv6
 
 nftban_log_debug "NFTBan Cloudflare Module loaded (v0.9.3)"
 
