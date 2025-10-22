@@ -74,10 +74,27 @@ nftban_port_validate_token() {
     fi
 }
 
+# BUG54 FIX: Normalize protocol names (accept tcp/udp/both AND T/U/B)
+nftban_port_normalize_protocol() {
+    local proto="$1"
+
+    # Convert to lowercase for case-insensitive matching
+    case "${proto,,}" in
+        tcp|t) echo "T" ;;
+        udp|u) echo "U" ;;
+        both|b|all) echo "B" ;;
+        *)
+            nftban_log_error "Invalid protocol: $proto"
+            nftban_log_error "Valid options: tcp, udp, both (or T, U, B)"
+            return 1
+            ;;
+    esac
+}
+
 # Validate protocol code
 nftban_port_validate_protocol() {
     local proto="$1"
-    
+
     [[ "$proto" =~ ^[TUB]$ ]] || return 1
     return 0
 }
@@ -164,18 +181,24 @@ EOF
 # Add port to configuration
 nftban_port_add() {
     local port="$1"
-    local protocol="${2:-T}"  # Default TCP
+    local protocol_input="${2:-T}"  # Default TCP
     local direction="${3:-input}"
     local ip_version="${4:-4}"
-    
+
     # Validate inputs
     nftban_port_validate_token "$port" || {
         nftban_log_error "Invalid port format: $port"
+        nftban_log_error "Examples: 22, 80-443, 8080"
         return 1
     }
-    
-    nftban_port_validate_protocol "$protocol" || {
-        nftban_log_error "Invalid protocol: $protocol (use T, U, or B)"
+
+    # BUG54 FIX: Normalize protocol (accept both 'tcp' and 'T')
+    local protocol
+    protocol=$(nftban_port_normalize_protocol "$protocol_input") || {
+        nftban_log_error "Examples:"
+        nftban_log_error "  nftban port add 22 tcp"
+        nftban_log_error "  nftban port add 80 T"
+        nftban_log_error "  nftban port add 53 both"
         return 1
     }
     
@@ -214,9 +237,13 @@ nftban_port_add() {
 # Remove port from configuration
 nftban_port_remove() {
     local port="$1"
-    local protocol="${2:-T}"
+    local protocol_input="${2:-T}"
     local direction="${3:-input}"
     local ip_version="${4:-4}"
+
+    # BUG54 FIX: Normalize protocol
+    local protocol
+    protocol=$(nftban_port_normalize_protocol "$protocol_input") || return 1
     
     # Select config file
     local config_file
@@ -519,9 +546,10 @@ export -f nftban_port_init
 export -f nftban_port_add
 export -f nftban_port_remove
 export -f nftban_port_list
+export -f nftban_port_normalize_protocol
 export -f nftban_port_validate_line
 export -f nftban_port_validate_all
 export -f nftban_port_generate_rules
 export -f nftban_port_apply_to_nftables
 
-nftban_log_debug "NFTBan Port Management Module loaded"
+nftban_log_debug "NFTBan Port Management Module loaded (BUG54 fix applied)"
