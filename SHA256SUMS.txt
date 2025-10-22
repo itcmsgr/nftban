@@ -1,6 +1,6 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-22 21:46:50 UTC
-# Commit: dd36009 (dd36009328649516e1ac42bce8872a553a3a9978)
+# Generated: 2025-10-22 21:51:43 UTC
+# Commit: 66964d6 (66964d622066a94124ea9524f6afb46ab2e44d75)
 # Branch: main
 # Total files: 180
 #
@@ -139,7 +139,7 @@ f442a2b6710d3c36c23fd200f606e7cfdf31679366b049662fa74db764ef3205  lib/nftban_smo
 d8e3aa4c67861961167cd6774762cfdf81c65114bdac9ba5c2484312fe779a24  lib/nftban_stats_module.sh
 8b46b3ae1869591e63d5a775f231dfb1af613cfdad5bbc108a365ab8cd2b213b  lib/nftban_sync_module.sh
 be8874bb9b3d73edf5ab617ba8c1fcac8e7289f84adb9ef7dcb04cc8aac4b646  lib/nftban_template_module.sh
-f21058b35170598f1133c323a3d1c7ec774865b248004516564962bac63f32d4  lib/nftban_update_module.sh
+0f2116a59846aa464375ba26697218c71f2b209824771550ea593d11c56c5655  lib/nftban_update_module.sh
 f71f008efb55de9e82f1b0f536bb2ce198c757acc9656467639c62f258844396  lib/nftban_utils_lib.sh
 d72eb359eb18966f2a80c72aa9da08cf063fb37ecfb47f8016a46afd1b956cf6  lib/nftban_whitelist_module.sh
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  logs/.gitkeep
