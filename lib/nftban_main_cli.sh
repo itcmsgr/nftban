@@ -2,7 +2,7 @@
 
 # =============================================================================
 # NFTBan - Unified CLI Interface
-# Version: 0.9.2
+# Version: 0.9.3-dev
 # Location: lib/nftban_main_cli.sh
 # Author: ITCMS Team (Antonios Voulvoulis)
 # Contact: contact@itcms.gr
@@ -15,7 +15,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
-VERSION="0.9.2"
+VERSION="0.9.3-dev"
 # Resolve symlinks to get actual script location
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
