@@ -1,8 +1,8 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-22 11:51:12 UTC
-# Commit: d7074b0 (d7074b01af72fc14c0e8883b852257dd278f3c56)
+# Generated: 2025-10-22 12:15:09 UTC
+# Commit: 5b21169 (5b211692b4e2fd77fec888f4402822b747c029b7)
 # Branch: main
-# Total files: 177
+# Total files: 181
 #
 # This file contains SHA256 checksums for all tracked files in the repository.
 # Use 'sha256sum -c SHA256SUMS.txt' to verify file integrity (ignores comment lines).
@@ -18,7 +18,7 @@ eb55ccfc4057cb14082b11f4be01350322b0e42c927b15a8e8abce7eb5cbf99f  .github/ISSUE_
 36fae60b846781f55d546eee58542074407ebb79da5d442e787d3961aa0a4765  .github/workflows/anthropic-workflow.yml
 282adabe9917b15fb4f4448b802a7a8ec3007dfc7e12ce8b92a9c5a66f01cd42  .github/workflows/generate-sha256.yml
 50f50611b293f9b4a4817178af82dc5f905396c732c20d9f8ae92e3bcab3c4a0  .github/workflows/health.yml
-bfb33a21d8269e28ec1b1cf57264e6c8dffa0346c8857769a6e89367c6c26cb4  .gitignore
+776fa603ada25938610ad80fcc7416cb52d21129169df0ece9012af841b4894b  .gitignore
 11ef3020fd8f26c94d86e77b8f7affb9cfc742fa665e86ce006d2b5dc6294cd6  .version
 f84c09ff4451340644301dab9cd9b69e0adf103f169a09532b71b08b99237d03  CHANGELOG.md
 008dc8cdbf537ff28063664a5b31e5afcfef15cad3f17716ba5b371a1d51ada1  LICENSE.md
@@ -82,13 +82,17 @@ e9c1437ca9a47848e0cf1bf8dce34590b0fd8759ba4549d9548173692a6a66b1  docs/modules/n
 3ec91aad47ef06c84ee8e3e3361643280793c8a2ee4483bc4ac4001eadc1645e  docs/security/SECURITY.md
 4d8fce0ea7a2165045b8f25b2fcd7914d4525648cee9221c94f6ebc501053424  docs/testing/guides/6_HOUR_CHECK_GUIDE.md
 631149e40acc5a404c0c489fc88b9ee8938a5c73ea5f6c602916b4c2b09c0619  lib/TEMPLATE_module.sh
+2ee5f0a71546785ecf87578ac2fa693adf92f2c0b4426ad7b0702b229b18a0fa  lib/cli/cmd_blacklist.sh
 8024e717119bc76bb996743d28fb8d7102f030ea86503ab0186d94e0c44b31a5  lib/cli/cmd_cloudflare.sh
 e74fb2b7cc255c721efe360334f23a9fdb8b9f3bb2d6210077f1939f1b720db6  lib/cli/cmd_fail2ban.sh
 13ea3a9e9af2b5b51a885637ad7881f53b1b09485c32b93dd6b2ce6385858c25  lib/cli/cmd_feeds.sh
+40b7694d712c3b0bae79bb84085760d2adc78cb8a4a47f0db48549a0a726bc9f  lib/cli/cmd_geo.sh
 07e14a4fcfe8415f8065fd8d50943ade88273115c5e4cb5f8f52d13fb3d5dea1  lib/cli/cmd_mail.sh
 0f492c4b0dc888ea3c6c25cd2f8f96bf1aabd27bac0c7caf7390443c57c2814c  lib/cli/cmd_maintenance.sh
+a17bcf92eb80ed869ba2c78ccbf10541849111c8147af033d243e44651d8cb87  lib/cli/cmd_search.sh
 1c3591ba4eea2da2e761ee617774cb06478ca803809dc3351b90e17da7a1ccd6  lib/cli/cmd_security.sh
 6140d402c7c321848f5fa551540094f8bce7cee33f017dc951e6211b25456fda  lib/cli/cmd_update.sh
+f6823ee6794d44359bc2d0570b1dcc48466f30a732612e5d87143c3b4d1cefb4  lib/cli/cmd_whitelist.sh
 1fbaf77ac7b8b56950f7bae65c62286d94319eda954d64c1f3cc89f9599b8794  lib/installer/deprecated/README.md
 16e33fdefd5655f4a043c19dc1ebdb4ec181cbd6035881865db728d1c28b0a96  lib/installer/deprecated/nftban_installer.sh
 7e577c6efb570c50e11bbc021513992b0fcb2ce3e907747f961f8a40d0678f19  lib/installer/installer_backup.sh
@@ -119,7 +123,7 @@ c3fd7800667c138494a51ccb6d2dc14459dd25aa7ac6b9ff4925e268a71056b4  lib/nftban_geo
 33c14fb81b2a37f4c43757d83356220cf52d14e4566bfb216ba4f63cd17a4405  lib/nftban_init_script.sh
 a60e3c173edb0668843dd8816a3cb54c60ea68506277c266c9f39c5d25085366  lib/nftban_ipprotect_module.sh
 b7838ef4fbaf284b42850992ba7a77d420e8d7e5733b43b6230692dafdcc1864  lib/nftban_login_monitor_module.sh
-8c8717e594333ed52566aace97f50c3b3fd6042e44aa333e0936e81d41da1adf  lib/nftban_main_cli.sh
+241c173cc065585c57063e9df31b38030b78c0c3742cf563c0df70240c904325  lib/nftban_main_cli.sh
 7a05243de799efed3bda6b41f263cd7cd63dab6a43f52221a4c36f09816bdc3e  lib/nftban_maintenance_module.sh
 0c0dc348eca35b62588e210986e7a1c2e1fa234eeb3168842a2e195431caa431  lib/nftban_monitoring_module.sh
 1f704005cf7aada9aba10e51b3dc826c8c5db48026e08b64ff473ce03ba3eb8b  lib/nftban_nftables_module.sh
