@@ -621,7 +621,8 @@ nftban_geo_enable() {
 
     # Show current blacklist
     if [[ -f "$NFTBAN_GEO_BLACKLIST" ]]; then
-        local blacklist_count=$(grep -cE "^[A-Z]{2}" "$NFTBAN_GEO_BLACKLIST" 2>/dev/null || echo "0")
+        local blacklist_count
+        blacklist_count=$(grep -cE "^[A-Z]{2}" "$NFTBAN_GEO_BLACKLIST" 2>/dev/null) || blacklist_count="0"
         echo "Countries in blacklist: $blacklist_count"
         if [[ $blacklist_count -gt 0 ]]; then
             echo "Configured countries:"
@@ -727,7 +728,8 @@ nftban_geo_disable() {
 
     # Show what will be removed
     if [[ -f "$NFTBAN_GEO_BLACKLIST" ]]; then
-        local blacklist_count=$(grep -cE "^[A-Z]{2}" "$NFTBAN_GEO_BLACKLIST" 2>/dev/null || echo "0")
+        local blacklist_count
+        blacklist_count=$(grep -cE "^[A-Z]{2}" "$NFTBAN_GEO_BLACKLIST" 2>/dev/null) || blacklist_count="0"
         echo "Countries currently blocked: $blacklist_count"
     fi
     echo ""
@@ -835,7 +837,8 @@ nftban_geo_status() {
     # Blacklist stats
     echo "Blacklist (${NFTBAN_CONFIG_DIR}/geo-blacklist.conf):"
     if [[ -f "$NFTBAN_GEO_BLACKLIST" ]]; then
-        local blacklist_count=$(grep -cE "^[A-Z]{2}" "$NFTBAN_GEO_BLACKLIST" 2>/dev/null || echo "0")
+        local blacklist_count
+        blacklist_count=$(grep -cE "^[A-Z]{2}" "$NFTBAN_GEO_BLACKLIST" 2>/dev/null) || blacklist_count="0"
         echo "  Countries configured: $blacklist_count"
         if [[ $blacklist_count -gt 0 ]]; then
             echo "  Countries:"
@@ -853,7 +856,8 @@ nftban_geo_status() {
     # Whitelist stats
     echo "Whitelist (${NFTBAN_CONFIG_DIR}/geo-whitelist.conf):"
     if [[ -f "$NFTBAN_GEO_WHITELIST" ]]; then
-        local whitelist_count=$(grep -cE "^[A-Z]{2}" "$NFTBAN_GEO_WHITELIST" 2>/dev/null || echo "0")
+        local whitelist_count
+        whitelist_count=$(grep -cE "^[A-Z]{2}" "$NFTBAN_GEO_WHITELIST" 2>/dev/null) || whitelist_count="0"
         echo "  Countries configured: $whitelist_count"
         if [[ $whitelist_count -gt 0 ]]; then
             echo "  Countries (always allowed):"
@@ -874,11 +878,13 @@ nftban_geo_status() {
         echo "Active nftables GEO sets:"
 
         # Count IPv4 sets
-        local v4_count=$(nft list sets "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" 2>/dev/null | grep -c "geo_block_" || echo "0")
+        local v4_count
+        v4_count=$(nft list sets "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" 2>/dev/null | grep -c "geo_block_") || v4_count="0"
         echo "  IPv4 GEO sets: $v4_count"
 
         # Count IPv6 sets
-        local v6_count=$(nft list sets "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" 2>/dev/null | grep -c "geo_block_" || echo "0")
+        local v6_count
+        v6_count=$(nft list sets "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" 2>/dev/null | grep -c "geo_block_") || v6_count="0"
         echo "  IPv6 GEO sets: $v6_count"
 
         # Show example sets
