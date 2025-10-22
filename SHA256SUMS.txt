@@ -1,8 +1,8 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-22 06:50:12 UTC
-# Commit: 29639c8 (29639c8caf7fe9816598cfe413743dc9765addea)
+# Generated: 2025-10-22 11:51:12 UTC
+# Commit: d7074b0 (d7074b01af72fc14c0e8883b852257dd278f3c56)
 # Branch: main
-# Total files: 174
+# Total files: 177
 #
 # This file contains SHA256 checksums for all tracked files in the repository.
 # Use 'sha256sum -c SHA256SUMS.txt' to verify file integrity (ignores comment lines).
@@ -23,6 +23,8 @@ bfb33a21d8269e28ec1b1cf57264e6c8dffa0346c8857769a6e89367c6c26cb4  .gitignore
 f84c09ff4451340644301dab9cd9b69e0adf103f169a09532b71b08b99237d03  CHANGELOG.md
 008dc8cdbf537ff28063664a5b31e5afcfef15cad3f17716ba5b371a1d51ada1  LICENSE.md
 e4066c9710ba18da5f634cb3d6967b6e3aa0a7d23a08f60c092ad1922158adf3  README.md
+e25160614ff0a282cff27ff55beb4a5a3cb78cb62c90052ee74c7172cc4daa33  RELEASE_NOTES_v0.9.1.md
+80b6970fb5e700c81e58b5d643142b1713fe9d5bb0ae182b53ff5b0d0fda60c1  RELEASE_NOTES_v0.9.2.md
 85f5504b393c8da05e7185f6a6f12d1832279208a041b77a808aa381eb99a21f  STATUS.md
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  backups/.gitkeep
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  bin/.gitkeep
@@ -83,6 +85,7 @@ e9c1437ca9a47848e0cf1bf8dce34590b0fd8759ba4549d9548173692a6a66b1  docs/modules/n
 8024e717119bc76bb996743d28fb8d7102f030ea86503ab0186d94e0c44b31a5  lib/cli/cmd_cloudflare.sh
 e74fb2b7cc255c721efe360334f23a9fdb8b9f3bb2d6210077f1939f1b720db6  lib/cli/cmd_fail2ban.sh
 13ea3a9e9af2b5b51a885637ad7881f53b1b09485c32b93dd6b2ce6385858c25  lib/cli/cmd_feeds.sh
+07e14a4fcfe8415f8065fd8d50943ade88273115c5e4cb5f8f52d13fb3d5dea1  lib/cli/cmd_mail.sh
 0f492c4b0dc888ea3c6c25cd2f8f96bf1aabd27bac0c7caf7390443c57c2814c  lib/cli/cmd_maintenance.sh
 1c3591ba4eea2da2e761ee617774cb06478ca803809dc3351b90e17da7a1ccd6  lib/cli/cmd_security.sh
 6140d402c7c321848f5fa551540094f8bce7cee33f017dc951e6211b25456fda  lib/cli/cmd_update.sh
@@ -119,7 +122,7 @@ b7838ef4fbaf284b42850992ba7a77d420e8d7e5733b43b6230692dafdcc1864  lib/nftban_log
 8c8717e594333ed52566aace97f50c3b3fd6042e44aa333e0936e81d41da1adf  lib/nftban_main_cli.sh
 7a05243de799efed3bda6b41f263cd7cd63dab6a43f52221a4c36f09816bdc3e  lib/nftban_maintenance_module.sh
 0c0dc348eca35b62588e210986e7a1c2e1fa234eeb3168842a2e195431caa431  lib/nftban_monitoring_module.sh
-5f96845a4142d32fc439845644d8832a875034aca77be63f7b97f0783138c3a7  lib/nftban_nftables_module.sh
+1f704005cf7aada9aba10e51b3dc826c8c5db48026e08b64ff473ce03ba3eb8b  lib/nftban_nftables_module.sh
 f851f90b9d0c09e5901591a16c675fdac6c5c0bf6b105e88968a46169f2cc281  lib/nftban_port_module.sh
 03dce09731d5c159b76d59a5bd0d0cc8e5afe906af8f009240285ecd8af2dcde  lib/nftban_portscan_module.sh
 1e0b04c36f6fbf1799a71442a9cf833d8dafc5861dd1ac9a06d560ce9b54ceae  lib/nftban_ratelimit_module.sh
@@ -132,8 +135,8 @@ d8e3aa4c67861961167cd6774762cfdf81c65114bdac9ba5c2484312fe779a24  lib/nftban_sta
 f10b22dc8483d8bee71b5bf23422c44bf89daf73fcff762fb9ec276b1f9131cc  lib/nftban_sync_module.sh
 be8874bb9b3d73edf5ab617ba8c1fcac8e7289f84adb9ef7dcb04cc8aac4b646  lib/nftban_template_module.sh
 035508b377bfdfecfd84aed594e0ca24c6bac59cc29a381af42adfea94d48eae  lib/nftban_update_module.sh
-481d07c1d5b96b24b5e8088d26039bd9b40e87206de3ce8c82c78b8132458e0e  lib/nftban_utils_lib.sh
-446716a40494f74e68425619940006d5b44e27d0343670f31988d59ff2e0aebf  lib/nftban_whitelist_module.sh
+f71f008efb55de9e82f1b0f536bb2ce198c757acc9656467639c62f258844396  lib/nftban_utils_lib.sh
+fb994baf5ab27367738a12844110bff744c40f18734fd736dbd592a5ef3eeff1  lib/nftban_whitelist_module.sh
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  logs/.gitkeep
 1ae3784f126b7472820693ebf5f2ab097c5c588e82175e4b0e01a238c5c3e8f5  nftban_init.sh
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  scripts/.gitkeep
