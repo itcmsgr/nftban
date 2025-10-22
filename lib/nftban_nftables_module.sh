@@ -231,24 +231,24 @@ nftban_nftables_apply_rules_v4() {
     # RULE 1: Accept established connections (ALWAYS FIRST)
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
         ct state established,related counter accept \
-        comment "Accept established/related" 2>/dev/null || true
+        comment Accept_established_related 2>/dev/null || true
 
     # RULE 2: Accept loopback (ALWAYS ALLOW)
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
         iif lo counter accept \
-        comment "Accept loopback" 2>/dev/null || true
+        comment Accept_loopback 2>/dev/null || true
 
     # RULE 3: WHITELIST CHECK (HIGHEST PRIORITY - MUST BE FIRST ACCEPT!)
     # SECURITY: Whitelisted IPs MUST NEVER be blocked
     # BUG57 FIX: Must use 'ip saddr' explicitly (required by nftables v1.0.9)
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
         ip saddr @whitelist counter accept \
-        comment "Accept whitelisted" 2>/dev/null || true
+        comment Accept_whitelisted 2>/dev/null || true
 
     # RULE 4: Accept ICMP (for network diagnostics)
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
         icmp type { echo-request, echo-reply } counter accept \
-        comment "Accept ICMP" 2>/dev/null || true
+        comment Accept_ICMP 2>/dev/null || true
 
     # =============================================================================
     # RULE 4.5: SSH SAFETY RULE (BUG56 FIX - PREVENTS LOCKOUTS)
@@ -260,7 +260,7 @@ nftban_nftables_apply_rules_v4() {
     ssh_port=$(nftban_nftables_detect_ssh_port)
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
         tcp dport "$ssh_port" counter accept \
-        comment "SSH SAFETY (always allow - prevents lockout)" 2>/dev/null || true
+        comment SSH_SAFETY_prevents_lockout 2>/dev/null || true
     nftban_log_debug "IPv4 SSH safety rule applied: port $ssh_port"
 
     # RULE 5: Apply configured port rules (service acceptance before drops)
@@ -275,26 +275,26 @@ nftban_nftables_apply_rules_v4() {
     # BUG57 FIX: Must use 'ip saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
         ip saddr @temp_ban counter drop \
-        comment "Block temporary banned" 2>/dev/null || true
+        comment Block_temporary_banned 2>/dev/null || true
 
     # RULE 7: USER BLACKLIST (manual permanent bans)
     # BUG57 FIX: Must use 'ip saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
         ip saddr @user_blacklist counter drop \
-        comment "Block user blacklist" 2>/dev/null || true
+        comment Block_user_blacklist 2>/dev/null || true
 
     # RULE 8: SYSTEM BLACKLIST (automatic permanent bans)
     # BUG57 FIX: Must use 'ip saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
         ip saddr @system_blacklist counter drop \
-        comment "Block system blacklist" 2>/dev/null || true
+        comment Block_system_blacklist 2>/dev/null || true
 
     # RULE 9: THREAT FEEDS BLOCKING (LOWEST PRIORITY - last resort)
     # SECURITY: Feeds come LAST so temp/perm bans take precedence
     # BUG57 FIX: Must use 'ip saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
         ip saddr @feeds counter drop \
-        comment "Block threat feeds" 2>/dev/null || true
+        comment Block_threat_feeds 2>/dev/null || true
 
     # =============================================================================
     # IPv4 OUTPUT CHAIN RULES
@@ -303,12 +303,12 @@ nftban_nftables_apply_rules_v4() {
     # Accept established connections
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" output \
         ct state established,related counter accept \
-        comment "Accept established/related" 2>/dev/null || true
+        comment Accept_established_related 2>/dev/null || true
 
     # Accept loopback
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" output \
         oif lo counter accept \
-        comment "Accept loopback" 2>/dev/null || true
+        comment Accept_loopback 2>/dev/null || true
 
     # Apply port rules
     nftban_nftables_apply_port_rules_v4 "output"
@@ -336,24 +336,24 @@ nftban_nftables_apply_rules_v6() {
     # RULE 1: Accept established connections
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
         ct state established,related counter accept \
-        comment "Accept established/related" 2>/dev/null || true
+        comment Accept_established_related 2>/dev/null || true
 
     # RULE 2: Accept loopback
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
         iif lo counter accept \
-        comment "Accept loopback" 2>/dev/null || true
+        comment Accept_loopback 2>/dev/null || true
 
     # RULE 3: WHITELIST CHECK (HIGHEST PRIORITY - MUST BE FIRST ACCEPT!)
     # SECURITY: Whitelisted IPs MUST NEVER be blocked
     # BUG57 FIX: Must use 'ip6 saddr' explicitly (required by nftables v1.0.9)
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
         ip6 saddr @whitelist counter accept \
-        comment "Accept whitelisted" 2>/dev/null || true
+        comment Accept_whitelisted 2>/dev/null || true
 
     # RULE 4: Accept ICMPv6 (essential for IPv6 - must be before drops!)
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
         icmpv6 type { echo-request, echo-reply, nd-neighbor-solicit, nd-neighbor-advert, nd-router-solicit, nd-router-advert } counter accept \
-        comment "Accept ICMPv6" 2>/dev/null || true
+        comment Accept_ICMPv6 2>/dev/null || true
 
     # =============================================================================
     # RULE 4.5: SSH SAFETY RULE (BUG56 FIX - PREVENTS LOCKOUTS)
@@ -365,7 +365,7 @@ nftban_nftables_apply_rules_v6() {
     ssh_port=$(nftban_nftables_detect_ssh_port)
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
         tcp dport "$ssh_port" counter accept \
-        comment "SSH SAFETY (always allow - prevents lockout)" 2>/dev/null || true
+        comment SSH_SAFETY_prevents_lockout 2>/dev/null || true
     nftban_log_debug "IPv6 SSH safety rule applied: port $ssh_port"
 
     # RULE 5: Apply configured port rules (service acceptance before drops)
@@ -380,26 +380,26 @@ nftban_nftables_apply_rules_v6() {
     # BUG57 FIX: Must use 'ip6 saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
         ip6 saddr @temp_ban counter drop \
-        comment "Block temporary banned" 2>/dev/null || true
+        comment Block_temporary_banned 2>/dev/null || true
 
     # RULE 7: USER BLACKLIST (manual permanent bans)
     # BUG57 FIX: Must use 'ip6 saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
         ip6 saddr @user_blacklist counter drop \
-        comment "Block user blacklist" 2>/dev/null || true
+        comment Block_user_blacklist 2>/dev/null || true
 
     # RULE 8: SYSTEM BLACKLIST (automatic permanent bans)
     # BUG57 FIX: Must use 'ip6 saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
         ip6 saddr @system_blacklist counter drop \
-        comment "Block system blacklist" 2>/dev/null || true
+        comment Block_system_blacklist 2>/dev/null || true
 
     # RULE 9: THREAT FEEDS BLOCKING (LOWEST PRIORITY - last resort)
     # SECURITY: Feeds come LAST so temp/perm bans take precedence
     # BUG57 FIX: Must use 'ip6 saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
         ip6 saddr @feeds counter drop \
-        comment "Block threat feeds" 2>/dev/null || true
+        comment Block_threat_feeds 2>/dev/null || true
 
     # =============================================================================
     # IPv6 OUTPUT CHAIN RULES
@@ -408,12 +408,12 @@ nftban_nftables_apply_rules_v6() {
     # Accept established connections
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" output \
         ct state established,related counter accept \
-        comment "Accept established/related" 2>/dev/null || true
+        comment Accept_established_related 2>/dev/null || true
 
     # Accept loopback
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" output \
         oif lo counter accept \
-        comment "Accept loopback" 2>/dev/null || true
+        comment Accept_loopback 2>/dev/null || true
 
     # Apply port rules
     nftban_nftables_apply_port_rules_v6 "output"
@@ -700,20 +700,20 @@ nftban_nftables_apply_port_rules_v4() {
                 T)
                     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" "$direction" \
                         tcp dport "$port" counter accept \
-                        comment "Allow TCP port $port" 2>/dev/null || true
+                        comment Allow_TCP_port_$port 2>/dev/null || true
                     ;;
                 U)
                     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" "$direction" \
                         udp dport "$port" counter accept \
-                        comment "Allow UDP port $port" 2>/dev/null || true
+                        comment Allow_UDP_port_$port 2>/dev/null || true
                     ;;
                 B)
                     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" "$direction" \
                         tcp dport "$port" counter accept \
-                        comment "Allow TCP port $port" 2>/dev/null || true
+                        comment Allow_TCP_port_$port 2>/dev/null || true
                     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" "$direction" \
                         udp dport "$port" counter accept \
-                        comment "Allow UDP port $port" 2>/dev/null || true
+                        comment Allow_UDP_port_$port 2>/dev/null || true
                     ;;
             esac
         done < <(grep -vE '^#|^$' "$config_file" 2>/dev/null || true)
@@ -741,20 +741,20 @@ nftban_nftables_apply_port_rules_v6() {
                 T)
                     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" "$direction" \
                         tcp dport "$port" counter accept \
-                        comment "Allow TCP port $port" 2>/dev/null || true
+                        comment Allow_TCP_port_$port 2>/dev/null || true
                     ;;
                 U)
                     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" "$direction" \
                         udp dport "$port" counter accept \
-                        comment "Allow UDP port $port" 2>/dev/null || true
+                        comment Allow_UDP_port_$port 2>/dev/null || true
                     ;;
                 B)
                     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" "$direction" \
                         tcp dport "$port" counter accept \
-                        comment "Allow TCP port $port" 2>/dev/null || true
+                        comment Allow_TCP_port_$port 2>/dev/null || true
                     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" "$direction" \
                         udp dport "$port" counter accept \
-                        comment "Allow UDP port $port" 2>/dev/null || true
+                        comment Allow_UDP_port_$port 2>/dev/null || true
                     ;;
             esac
         done < <(grep -vE '^#|^$' "$config_file" 2>/dev/null || true)
