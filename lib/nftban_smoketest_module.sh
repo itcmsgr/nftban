@@ -743,7 +743,7 @@ nftban_diagnostics_collect() {
             echo "nftban version: $(cat "$NFTBAN_BASE_DIR/.version")"
         fi
         echo "Kernel: $(uname -r)"
-        echo "OS: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2)"
+        echo "OS: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2 || echo "Unknown")"
         nft --version 2>/dev/null || echo "nftables: not found"
         echo ""
 
@@ -759,7 +759,7 @@ nftban_diagnostics_collect() {
         if nft list table ip nftban_v4 &>/dev/null; then
             for set in whitelist temp_ban user_blacklist system_blacklist feeds; do
                 echo "--- Set: $set ---"
-                nft list set ip nftban_v4 "$set" 2>/dev/null | grep -A 999 "elements"
+                nft list set ip nftban_v4 "$set" 2>/dev/null | grep -A 999 "elements" || echo "(empty set)"
                 echo ""
             done
         else
