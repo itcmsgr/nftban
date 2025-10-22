@@ -2042,6 +2042,25 @@ GEO-BLOCKING:
     geo list                List all blocked countries
     geo check <IP>          Check if IP is GEO-blocked
 
+CLOUDFLARE INTEGRATION:
+    cloudflare status       Show Cloudflare whitelist status
+    cloudflare enable       Enable Cloudflare IP whitelisting
+    cloudflare disable      Disable Cloudflare IP whitelisting
+    cloudflare update       Update Cloudflare IP list
+    cloudflare init         Initialize Cloudflare whitelist
+
+LOGIN MONITORING:
+    login status            Show login monitor status
+    login install           Install systemd service
+    login uninstall         Uninstall systemd service
+    login enable            Enable login monitoring (start on boot)
+    login disable           Disable login monitoring
+    login start             Start login monitoring
+    login stop              Stop login monitoring
+    login restart           Restart login monitoring
+    login test              Test email configuration
+    login run               Run monitoring cycle manually
+
 UPDATE & MAINTENANCE:
     update check            Check for available updates
     update perform          Perform system update
@@ -2081,12 +2100,18 @@ FEEDS MANAGEMENT:
     feeds timer-remove      Remove systemd timer
     feeds memory            Show memory usage
 
-FAIL2BAN JAIL MANAGEMENT:
+FAIL2BAN INTEGRATION:
     fail2ban setup          Setup fail2ban integration
     fail2ban status         Show fail2ban status and jail details
+    fail2ban monitor        Show fail2ban monitoring panel
     fail2ban list           List active jails
-    fail2ban enable <jail>  Enable jail
-    fail2ban disable <jail> Disable jail
+    fail2ban start          Start fail2ban service
+    fail2ban stop           Stop fail2ban service
+    fail2ban restart        Restart fail2ban service
+    fail2ban service-enable Enable fail2ban at boot
+    fail2ban service-disable Disable fail2ban at boot
+    fail2ban enable <jail>  Enable specific jail
+    fail2ban disable <jail> Disable specific jail
 
 SYSTEM MONITORING:
     monitor run             Run monitoring checks now
@@ -2123,6 +2148,17 @@ EXAMPLES (GEO-BLOCKING):
     sudo nftban geo unblock RU
     nftban geo list
     nftban geo check 1.2.3.4
+
+EXAMPLES (CLOUDFLARE):
+    nftban cloudflare status
+    sudo nftban cloudflare enable
+    sudo nftban cloudflare update
+
+EXAMPLES (LOGIN MONITORING):
+    nftban login status
+    sudo nftban login install
+    sudo nftban login enable
+    sudo nftban login start
 
 EXAMPLES:
     # Initialize system
