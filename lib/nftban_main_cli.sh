@@ -634,9 +634,15 @@ cmd_update() {
         check)
             nftban_check_root || exit 1
             # Temporarily disable ERR trap - return code 2 is informational (update available)
-            set +e
+            # Save current ERR trap and disable it (set +e alone doesn't stop trap from firing)
+            local old_err_trap
+            old_err_trap=$(trap -p ERR)
+            trap - ERR
+
             nftban_update_check "true"
-            set -e
+
+            # Restore ERR trap
+            eval "$old_err_trap"
             ;;
         perform|upgrade|install)
             nftban_check_root || exit 1
