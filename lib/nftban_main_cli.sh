@@ -633,7 +633,10 @@ cmd_update() {
     case "$action" in
         check)
             nftban_check_root || exit 1
+            # Temporarily disable ERR trap - return code 2 is informational (update available)
+            set +e
             nftban_update_check "true"
+            set -e
             ;;
         perform|upgrade|install)
             nftban_check_root || exit 1
