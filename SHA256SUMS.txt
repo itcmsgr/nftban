@@ -1,6 +1,6 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-22 21:51:43 UTC
-# Commit: 66964d6 (66964d622066a94124ea9524f6afb46ab2e44d75)
+# Generated: 2025-10-22 21:57:28 UTC
+# Commit: 119a728 (119a728dd87c33181f3956db792fea237b7f35e4)
 # Branch: main
 # Total files: 180
 #
@@ -108,10 +108,10 @@ e9a9c15aff9a54b0472afe624b0ecbc989d3bb72cd4f3ebddae61cf9174bf8f2  lib/installer/
 84dc77d1bfa7093704a74a48a83b6d22f06469e2e2d7f35a6bf526da67e209de  lib/installer/installer_verification.sh
 53bc364ebd7548ac9dcb69fc98b5d8fba83ef327945ca21ae968422f38fcfa40  lib/installer/nftban_installer_modular.sh
 09db99ca89691849e2b7259bf0474b3b2b0039ea7a84b7cbe779f69fdcedbdf4  lib/installer/nftban_uninstall_script.sh
-eaa5e6a82540199919c3d62999f998bdfc92b33cc82d22d1adff61528936ec6e  lib/nftban-validator-github.sh
+3bec13dc95ed415e0ec898d9e574cf508855603ab91b0525e48016df497e6392  lib/nftban-validator-github.sh
 44a445b3a3ee017d074fabd651f93c862993a096b72accfb621dac97788e3fd3  lib/nftban-validator-manifest.json
-d40eecc4f0829c0b281ebb1df0b48d7a12d4dd5d31813e7762905ba2bc674ac1  lib/nftban-validator-panel.sh
-21e5ad5264fc008c31dd32517473b4af6ac97f9be9574d29625721fe226efdcd  lib/nftban-validator-run.sh
+c05330e361a04e67f16573fe923ee1a32a28084b31004084b7bebe09669271cf  lib/nftban-validator-panel.sh
+53d1955dbf5d07d59c51aea3a6dfbfdede1c215e541f8ff2a751b89cffa255ba  lib/nftban-validator-run.sh
 b1397fac72e43b9d2ca66805387ca3cf23249ec6db94822821890a16c72248b3  lib/nftban_autorebuild_module.sh
 64d68534532c971ef07bd0cec9a365f9cd0f19b92695783bd9619d732dc260c7  lib/nftban_blacklist_module.sh
 6476c0baac394f751fe841003af2987bb5ee0d4d988760edea390ec12464a56b  lib/nftban_cloudflare_module.sh
