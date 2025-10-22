@@ -15,7 +15,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
-VERSION="0.9.1"
+VERSION="0.9.2"
 # Resolve symlinks to get actual script location
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
@@ -1925,7 +1925,7 @@ EOF
 show_usage() {
     cat << 'EOF'
 ╔═══════════════════════════════════════════════════════╗
-║           nftban v0.9.1 - Modular System              ║
+║           nftban v0.9.2 - Modular System              ║
 ╚═══════════════════════════════════════════════════════╝
 
 USAGE:
