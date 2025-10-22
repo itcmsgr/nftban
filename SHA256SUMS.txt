@@ -1,8 +1,8 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-22 18:26:28 UTC
-# Commit: 5b6d179 (5b6d179e9cc2207d0e3c6507b44c69495f9ca20a)
+# Generated: 2025-10-22 18:59:30 UTC
+# Commit: 21c2cd9 (21c2cd90ef4377ac61bb9a4d46e87f2afcf473e1)
 # Branch: main
-# Total files: 179
+# Total files: 178
 #
 # This file contains SHA256 checksums for all tracked files in the repository.
 # Use 'sha256sum -c SHA256SUMS.txt' to verify file integrity (ignores comment lines).
@@ -18,7 +18,7 @@ eb55ccfc4057cb14082b11f4be01350322b0e42c927b15a8e8abce7eb5cbf99f  .github/ISSUE_
 36fae60b846781f55d546eee58542074407ebb79da5d442e787d3961aa0a4765  .github/workflows/anthropic-workflow.yml
 282adabe9917b15fb4f4448b802a7a8ec3007dfc7e12ce8b92a9c5a66f01cd42  .github/workflows/generate-sha256.yml
 50f50611b293f9b4a4817178af82dc5f905396c732c20d9f8ae92e3bcab3c4a0  .github/workflows/health.yml
-776fa603ada25938610ad80fcc7416cb52d21129169df0ece9012af841b4894b  .gitignore
+ce3d7245a7aca081c9ec4b9b0e88a4b6852ace23f4886b99ce92a26d574f2402  .gitignore
 11ef3020fd8f26c94d86e77b8f7affb9cfc742fa665e86ce006d2b5dc6294cd6  .version
 f84c09ff4451340644301dab9cd9b69e0adf103f169a09532b71b08b99237d03  CHANGELOG.md
 fc38c0ca3e0acd3529391c73a9659756a1d4b54cffb0cba7547444b08feb31bc  LICENSE.md
@@ -46,6 +46,7 @@ e13f2afb8ece7bde1950627098a1a0b989e4f431c6bedddb19535c9e2a4fdd17  docs/README.md
 48697cbb6920384c2695ae3cffec020e9826cbf6cba45ff82ce3ca61338557c9  docs/development/FEEDS_IMPLEMENTATION_PROGRESS.md
 e7d07c6788eac750f6d5c4ac6010c3cb7bb0a3b4cc8b40256ddf6f2c456684a2  docs/development/FEEDS_SYSTEM_COMPLETE.md
 6b246d4e3751c16eb31bba4fe627184bd0b2af546316499b4d1a7e7bc7f89455  docs/development/FEEDS_SYSTEM_DESIGN.md
+fb9c36a2dc1aa89ede4a7cdef134b3f1b3d2b0616f67451268217973dc06c698  docs/development/HEADER_ALIGNMENT_PLAN_v0.9.3.md
 527f0f756a49033fddf08d72386b9ffb223c68e7f7236891a046c8be44b6be4f  docs/development/INSTALLER_IMPLEMENTATION_PLAN.md
 f287f87cec1bb475d5dc1afe60bcb7beeec11076819d6a1bc8c42bc6a8423fa4  docs/development/INSTALLER_IMPLEMENTATION_SUMMARY.md
 5af99f1aacaaeb211da6216df52dddad3c181ea2ad5887535dc49f4281ded27d  docs/development/INSTALLER_MECHANISMS_ANALYSIS.md
@@ -93,8 +94,6 @@ a17bcf92eb80ed869ba2c78ccbf10541849111c8147af033d243e44651d8cb87  lib/cli/cmd_se
 1c3591ba4eea2da2e761ee617774cb06478ca803809dc3351b90e17da7a1ccd6  lib/cli/cmd_security.sh
 6140d402c7c321848f5fa551540094f8bce7cee33f017dc951e6211b25456fda  lib/cli/cmd_update.sh
 f6823ee6794d44359bc2d0570b1dcc48466f30a732612e5d87143c3b4d1cefb4  lib/cli/cmd_whitelist.sh
-1fbaf77ac7b8b56950f7bae65c62286d94319eda954d64c1f3cc89f9599b8794  lib/installer/deprecated/README.md
-16e33fdefd5655f4a043c19dc1ebdb4ec181cbd6035881865db728d1c28b0a96  lib/installer/deprecated/nftban_installer.sh
 7e577c6efb570c50e11bbc021513992b0fcb2ce3e907747f961f8a40d0678f19  lib/installer/installer_backup.sh
 b4cf9d2e3b09fa3001785f94f519dc0187f9cc3c9ed2f99d15463c3db06a2257  lib/installer/installer_config_full.sh
 b77f528a60a586b215408165b9c4f91decc3fc6a1406566d042e7b04c91c56b7  lib/installer/installer_core.sh
