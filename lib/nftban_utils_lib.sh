@@ -545,14 +545,15 @@ detect_mail_command() {
     echo "$mail_cmd"
 }
 
-# Detect installed MTA (Mail Transfer Agent)
-# Returns comma-separated list of MTAs with status: "postfix:active,exim:inactive"
-# This allows detection of multiple MTAs to warn about conflicts
+# Detect installed MTA (Mail Transfer Agent) and mail services
+# Returns comma-separated list of services with status: "postfix:active,dovecot:inactive"
+# This allows detection of multiple services to warn about conflicts
+# Note: Detects both MTAs (SMTP) and mail retrieval services (IMAP/POP3)
 detect_mta_service() {
     local mta_list=()
     local mta_status=""
 
-    # Check Postfix
+    # Check Postfix (MTA - SMTP)
     if systemctl list-units --type=service 2>/dev/null | grep -q "postfix.service"; then
         if systemctl is-active postfix &>/dev/null; then
             mta_list+=("postfix:active")
@@ -561,7 +562,7 @@ detect_mta_service() {
         fi
     fi
 
-    # Check Exim
+    # Check Exim (MTA - SMTP)
     if systemctl list-units --type=service 2>/dev/null | grep -qE "exim.service|exim4.service"; then
         if systemctl is-active exim &>/dev/null || systemctl is-active exim4 &>/dev/null; then
             mta_list+=("exim:active")
@@ -570,12 +571,21 @@ detect_mta_service() {
         fi
     fi
 
-    # Check Sendmail
+    # Check Sendmail (MTA - SMTP)
     if systemctl list-units --type=service 2>/dev/null | grep -q "sendmail.service"; then
         if systemctl is-active sendmail &>/dev/null; then
             mta_list+=("sendmail:active")
         else
             mta_list+=("sendmail:inactive")
+        fi
+    fi
+
+    # Check Dovecot (IMAP/POP3 server)
+    if systemctl list-units --type=service 2>/dev/null | grep -q "dovecot.service"; then
+        if systemctl is-active dovecot &>/dev/null; then
+            mta_list+=("dovecot:active")
+        else
+            mta_list+=("dovecot:inactive")
         fi
     fi
 
@@ -617,6 +627,8 @@ get_mail_installation_recommendation() {
     case "$os_type" in
         redhat)
             recommendations+=(
+                "SMTP (Outgoing Mail) - Choose ONE:"
+                ""
                 "RECOMMENDED: Postfix (lightweight, secure, widely used)"
                 "  Install: sudo $pkg_manager install postfix mailx -y"
                 "  Start:   sudo systemctl start postfix"
@@ -624,10 +636,15 @@ get_mail_installation_recommendation() {
                 ""
                 "ALTERNATIVE: Exim (feature-rich, flexible)"
                 "  Install: sudo $pkg_manager install exim -y"
+                ""
+                "IMAP/POP3 (Incoming Mail - Optional):"
+                "  Dovecot: sudo $pkg_manager install dovecot -y"
             )
             ;;
         debian)
             recommendations+=(
+                "SMTP (Outgoing Mail) - Choose ONE:"
+                ""
                 "RECOMMENDED: Postfix (lightweight, secure, widely used)"
                 "  Install: sudo $pkg_manager install postfix mailutils -y"
                 "  Start:   sudo systemctl start postfix"
@@ -635,20 +652,31 @@ get_mail_installation_recommendation() {
                 ""
                 "ALTERNATIVE: Exim4 (Debian default)"
                 "  Install: sudo $pkg_manager install exim4 -y"
+                ""
+                "IMAP/POP3 (Incoming Mail - Optional):"
+                "  Dovecot: sudo $pkg_manager install dovecot-core dovecot-imapd -y"
             )
             ;;
         arch)
             recommendations+=(
-                "RECOMMENDED: Postfix"
-                "  Install: sudo $pkg_manager -S postfix"
+                "SMTP (Outgoing Mail):"
+                "  Postfix: sudo $pkg_manager -S postfix"
+                ""
+                "IMAP/POP3 (Optional):"
+                "  Dovecot: sudo $pkg_manager -S dovecot"
             )
             ;;
         *)
             recommendations+=(
-                "Please install a mail transfer agent (MTA) such as:"
+                "Please install mail services:"
+                ""
+                "SMTP (Outgoing) - Choose ONE:"
                 "  - Postfix (recommended)"
                 "  - Exim"
                 "  - Sendmail"
+                ""
+                "IMAP/POP3 (Optional):"
+                "  - Dovecot"
             )
             ;;
     esac
@@ -680,11 +708,12 @@ show_mail_service_panel() {
         done
         has_mta=true
 
-        # Count active MTAs and find primary
+        # Count active SMTP MTAs (exclude Dovecot which is IMAP/POP3)
+        # Conflict only matters for multiple SMTP services
         for mta_entry in "${mta_list[@]}"; do
             local mta_name="${mta_entry%:*}"
             local mta_status="${mta_entry#*:}"
-            if [[ "$mta_status" == "active" ]]; then
+            if [[ "$mta_status" == "active" && "$mta_name" != "dovecot" ]]; then
                 # BUG58 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
                 active_count=$((active_count + 1))
                 [[ -z "$primary_active_mta" ]] && primary_active_mta="$mta_name"
@@ -710,14 +739,25 @@ show_mail_service_panel() {
     fi
     echo ""
 
-    # MTA service status
-    echo -e "${COLOR_CYAN}Mail Transfer Agent (MTA):${COLOR_RESET}"
+    # Mail service status
+    echo -e "${COLOR_CYAN}Mail Services:${COLOR_RESET}"
     if [[ "$has_mta" == true ]]; then
         for mta_entry in "${mta_list[@]}"; do
             local mta_name="${mta_entry%:*}"
             local mta_status="${mta_entry#*:}"
+            local service_type="SMTP"
 
-            echo -e "  MTA: ${COLOR_BOLD}${mta_name}${COLOR_RESET}"
+            # Identify service type
+            case "$mta_name" in
+                dovecot)
+                    service_type="IMAP/POP3"
+                    ;;
+                *)
+                    service_type="SMTP"
+                    ;;
+            esac
+
+            echo -e "  Service: ${COLOR_BOLD}${mta_name}${COLOR_RESET} (${service_type})"
             if [[ "$mta_status" == "active" ]]; then
                 echo -e "  Status: ${COLOR_GREEN}● ACTIVE${COLOR_RESET}"
             else
@@ -725,32 +765,33 @@ show_mail_service_panel() {
             fi
         done
     else
-        echo -e "  ${COLOR_RED}✗${COLOR_RESET} No MTA detected"
+        echo -e "  ${COLOR_RED}✗${COLOR_RESET} No mail services detected"
     fi
     echo ""
 
-    # CONFLICT WARNING - Multiple MTAs active
+    # CONFLICT WARNING - Multiple SMTP MTAs active
     if [[ $active_count -gt 1 ]]; then
         echo "─────────────────────────────────────────────────────────"
-        echo -e "${COLOR_RED}${COLOR_BOLD}⚠ CONFLICT DETECTED${COLOR_RESET}"
+        echo -e "${COLOR_RED}${COLOR_BOLD}⚠ SMTP CONFLICT DETECTED${COLOR_RESET}"
         echo ""
-        echo -e "${COLOR_YELLOW}Multiple MTAs are running simultaneously!${COLOR_RESET}"
+        echo -e "${COLOR_YELLOW}Multiple SMTP servers are running simultaneously!${COLOR_RESET}"
         echo "This can cause mail routing conflicts and delivery issues."
         echo ""
         echo "RECOMMENDED ACTION:"
-        echo "  Keep only ONE MTA service active to avoid conflicts."
+        echo "  Keep only ONE SMTP service active (Postfix, Exim, or Sendmail)."
+        echo "  Note: Dovecot (IMAP/POP3) can run alongside any SMTP server."
         echo ""
-        echo "To disable conflicting MTAs:"
+        echo "To disable conflicting SMTP services:"
         for mta_entry in "${mta_list[@]}"; do
             local mta_name="${mta_entry%:*}"
             local mta_status="${mta_entry#*:}"
-            if [[ "$mta_status" == "active" && "$mta_name" != "$primary_active_mta" ]]; then
+            if [[ "$mta_status" == "active" && "$mta_name" != "$primary_active_mta" && "$mta_name" != "dovecot" ]]; then
                 echo "  sudo systemctl stop $mta_name"
                 echo "  sudo systemctl disable $mta_name"
             fi
         done
         echo ""
-        echo "Recommended MTA to keep: ${COLOR_GREEN}$primary_active_mta${COLOR_RESET}"
+        echo "Recommended SMTP server to keep: ${COLOR_GREEN}$primary_active_mta${COLOR_RESET}"
         echo "─────────────────────────────────────────────────────────"
         echo ""
     fi
@@ -800,7 +841,7 @@ check_mail_service() {
     mail_cmd=$(detect_mail_command)
     mta_info=$(detect_mta_service)
 
-    # Parse comma-separated MTA list and count active MTAs
+    # Parse comma-separated MTA list and count active SMTP services (exclude Dovecot)
     if [[ -n "$mta_info" ]]; then
         # BUG59 FIX: Use manual string splitting to avoid IFS issues
         local remaining="$mta_info,"
@@ -811,8 +852,10 @@ check_mail_service() {
         done
 
         for mta_entry in "${mta_list[@]}"; do
+            local mta_name="${mta_entry%:*}"
             local mta_status="${mta_entry#*:}"
-            if [[ "$mta_status" == "active" ]]; then
+            # Only count SMTP services for conflict detection (exclude Dovecot)
+            if [[ "$mta_status" == "active" && "$mta_name" != "dovecot" ]]; then
                 # BUG58 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
                 active_count=$((active_count + 1))
             fi
