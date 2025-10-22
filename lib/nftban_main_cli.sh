@@ -103,32 +103,32 @@ cmd_validate() {
             echo "─────────────────────────────────────────────────────"
             
             local total=0 ok=0 fail=0 unknown=0
-            
+
             while IFS= read -r filepath; do
-                ((total++))
+                ((++total))
                 local filename
                 filename="$(basename "$filepath")"
-                
+
                 local result status
                 result=$(github_validate_file "$filepath")
                 status=$?
-                
+
                 case $status in
-                    0) 
+                    0)
                         echo "  ✓ $filename"
-                        ((ok++))
+                        ((++ok))
                         ;;
-                    1) 
+                    1)
                         echo "  ✗ $filename (CHECKSUM MISMATCH)"
-                        ((fail++))
+                        ((++fail))
                         ;;
-                    4) 
+                    4)
                         echo "  ? $filename (not tracked)"
-                        ((unknown++))
+                        ((++unknown))
                         ;;
-                    *) 
+                    *)
                         echo "  ⚠ $filename (error: $status)"
-                        ((fail++))
+                        ((++fail))
                         ;;
                 esac
             done < <(find "$LIB_DIR" -type f -name "*.sh" 2>/dev/null | sort)
@@ -1687,7 +1687,7 @@ cmd_verify() {
         nftban_log_success "nftables structure: OK"
     else
         nftban_log_error "nftables structure: FAILED"
-        ((errors++))
+        ((++errors))
     fi
     
     if nftban_whitelist_verify; then
