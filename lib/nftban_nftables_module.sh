@@ -240,9 +240,9 @@ nftban_nftables_apply_rules_v4() {
 
     # RULE 3: WHITELIST CHECK (HIGHEST PRIORITY - MUST BE FIRST ACCEPT!)
     # SECURITY: Whitelisted IPs MUST NEVER be blocked
-    # NOTE: No 'ip saddr' needed - table is already IPv4-specific!
+    # BUG57 FIX: Must use 'ip saddr' explicitly (required by nftables v1.0.9)
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
-        saddr @whitelist counter accept \
+        ip saddr @whitelist counter accept \
         comment "Accept whitelisted" 2>/dev/null || true
 
     # RULE 4: Accept ICMP (for network diagnostics)
@@ -272,24 +272,28 @@ nftban_nftables_apply_rules_v4() {
     # =============================================================================
 
     # RULE 6: TEMPORARY BANS (highest priority drop - active threats)
+    # BUG57 FIX: Must use 'ip saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
-        saddr @temp_ban counter drop \
+        ip saddr @temp_ban counter drop \
         comment "Block temporary banned" 2>/dev/null || true
 
     # RULE 7: USER BLACKLIST (manual permanent bans)
+    # BUG57 FIX: Must use 'ip saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
-        saddr @user_blacklist counter drop \
+        ip saddr @user_blacklist counter drop \
         comment "Block user blacklist" 2>/dev/null || true
 
     # RULE 8: SYSTEM BLACKLIST (automatic permanent bans)
+    # BUG57 FIX: Must use 'ip saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
-        saddr @system_blacklist counter drop \
+        ip saddr @system_blacklist counter drop \
         comment "Block system blacklist" 2>/dev/null || true
 
     # RULE 9: THREAT FEEDS BLOCKING (LOWEST PRIORITY - last resort)
     # SECURITY: Feeds come LAST so temp/perm bans take precedence
+    # BUG57 FIX: Must use 'ip saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" input \
-        saddr @feeds counter drop \
+        ip saddr @feeds counter drop \
         comment "Block threat feeds" 2>/dev/null || true
 
     # =============================================================================
@@ -341,9 +345,9 @@ nftban_nftables_apply_rules_v6() {
 
     # RULE 3: WHITELIST CHECK (HIGHEST PRIORITY - MUST BE FIRST ACCEPT!)
     # SECURITY: Whitelisted IPs MUST NEVER be blocked
-    # NOTE: No 'ip6 saddr' needed - table is already IPv6-specific!
+    # BUG57 FIX: Must use 'ip6 saddr' explicitly (required by nftables v1.0.9)
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
-        saddr @whitelist counter accept \
+        ip6 saddr @whitelist counter accept \
         comment "Accept whitelisted" 2>/dev/null || true
 
     # RULE 4: Accept ICMPv6 (essential for IPv6 - must be before drops!)
@@ -373,24 +377,28 @@ nftban_nftables_apply_rules_v6() {
     # =============================================================================
 
     # RULE 6: TEMPORARY BANS (highest priority drop - active threats)
+    # BUG57 FIX: Must use 'ip6 saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
-        saddr @temp_ban counter drop \
+        ip6 saddr @temp_ban counter drop \
         comment "Block temporary banned" 2>/dev/null || true
 
     # RULE 7: USER BLACKLIST (manual permanent bans)
+    # BUG57 FIX: Must use 'ip6 saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
-        saddr @user_blacklist counter drop \
+        ip6 saddr @user_blacklist counter drop \
         comment "Block user blacklist" 2>/dev/null || true
 
     # RULE 8: SYSTEM BLACKLIST (automatic permanent bans)
+    # BUG57 FIX: Must use 'ip6 saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
-        saddr @system_blacklist counter drop \
+        ip6 saddr @system_blacklist counter drop \
         comment "Block system blacklist" 2>/dev/null || true
 
     # RULE 9: THREAT FEEDS BLOCKING (LOWEST PRIORITY - last resort)
     # SECURITY: Feeds come LAST so temp/perm bans take precedence
+    # BUG57 FIX: Must use 'ip6 saddr' explicitly
     nft add rule "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" input \
-        saddr @feeds counter drop \
+        ip6 saddr @feeds counter drop \
         comment "Block threat feeds" 2>/dev/null || true
 
     # =============================================================================
