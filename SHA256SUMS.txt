@@ -1,8 +1,8 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-22 06:36:05 UTC
-# Commit: 4ff28e4 (4ff28e4287a36111c600c574a547ed752b97d6e1)
+# Generated: 2025-10-22 06:46:07 UTC
+# Commit: 008b34c (008b34c5250dc9f6cf83390409512a6b6723b8ed)
 # Branch: main
-# Total files: 169
+# Total files: 171
 #
 # This file contains SHA256 checksums for all tracked files in the repository.
 # Use 'sha256sum -c SHA256SUMS.txt' to verify file integrity (ignores comment lines).
@@ -80,6 +80,8 @@ e9c1437ca9a47848e0cf1bf8dce34590b0fd8759ba4549d9548173692a6a66b1  docs/modules/n
 3ec91aad47ef06c84ee8e3e3361643280793c8a2ee4483bc4ac4001eadc1645e  docs/security/SECURITY.md
 4d8fce0ea7a2165045b8f25b2fcd7914d4525648cee9221c94f6ebc501053424  docs/testing/guides/6_HOUR_CHECK_GUIDE.md
 631149e40acc5a404c0c489fc88b9ee8938a5c73ea5f6c602916b4c2b09c0619  lib/TEMPLATE_module.sh
+8024e717119bc76bb996743d28fb8d7102f030ea86503ab0186d94e0c44b31a5  lib/cli/cmd_cloudflare.sh
+e74fb2b7cc255c721efe360334f23a9fdb8b9f3bb2d6210077f1939f1b720db6  lib/cli/cmd_fail2ban.sh
 1c3591ba4eea2da2e761ee617774cb06478ca803809dc3351b90e17da7a1ccd6  lib/cli/cmd_security.sh
 1fbaf77ac7b8b56950f7bae65c62286d94319eda954d64c1f3cc89f9599b8794  lib/installer/deprecated/README.md
 16e33fdefd5655f4a043c19dc1ebdb4ec181cbd6035881865db728d1c28b0a96  lib/installer/deprecated/nftban_installer.sh
