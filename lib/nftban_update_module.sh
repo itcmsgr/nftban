@@ -577,10 +577,16 @@ nftban_update_check() {
     [[ "$show_output" == "true" ]] && echo ""
 
     # Temporarily disable ERR trap - return codes 0,1,2 are informational, not errors
-    set +e
+    # Save current ERR trap and disable it (set +e alone doesn't stop trap from firing)
+    local old_err_trap
+    old_err_trap=$(trap -p ERR)
+    trap - ERR
+
     nftban_update_compare_versions "$local_version" "$remote_version"
     local result=$?
-    set -e
+
+    # Restore ERR trap
+    eval "$old_err_trap"
 
     case $result in
         0)
@@ -1081,10 +1087,16 @@ nftban_update_perform() {
     # Step 2: Check for updates
     nftban_log_info "Step 2/7: Checking for updates..."
     # Temporarily disable ERR trap - return code 2 is informational (update available), not error
-    set +e
+    # Save current ERR trap and disable it (set +e alone doesn't stop trap from firing)
+    local old_err_trap
+    old_err_trap=$(trap -p ERR)
+    trap - ERR
+
     nftban_update_check "true"
     local check_result=$?
-    set -e
+
+    # Restore ERR trap
+    eval "$old_err_trap"
 
     # check_result: 0=up-to-date, 1=error, 2=update-available
     if [[ $check_result -eq 1 ]]; then
