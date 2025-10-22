@@ -158,13 +158,15 @@ nftban_whitelist_add_server_ips() {
     if ! grep -q '^127\.0\.0\.1' "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
         _nftban_whitelist_safe_append "$NFTBAN_WHITELIST_SYSTEM" "127.0.0.1  # Localhost IPv4"
         nftban_log_success "Protected localhost IPv4"
-        ((protected_count++))
+        # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+        protected_count=$((protected_count + 1))
     fi
 
     if ! grep -q '^::1' "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
         _nftban_whitelist_safe_append "$NFTBAN_WHITELIST_SYSTEM" "::1  # Localhost IPv6"
         nftban_log_success "Protected localhost IPv6"
-        ((protected_count++))
+        # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+        protected_count=$((protected_count + 1))
     fi
 
     # Get ALL server interface IPs (IPv4 and IPv6) - INCLUDING localhost
@@ -183,7 +185,8 @@ nftban_whitelist_add_server_ips() {
         # Add to system whitelist (SECURITY: atomic write with flock)
         _nftban_whitelist_safe_append "$NFTBAN_WHITELIST_SYSTEM" "${ip}  # Server IP (auto-detected on $(date +'%Y-%m-%d'))"
         nftban_log_success "Protected server IP: $ip"
-        ((protected_count++))
+        # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+        protected_count=$((protected_count + 1))
     done < <(ip -o addr show 2>/dev/null | awk '/inet/ {gsub(/\/.*/, "", $4); print $4}' | sort -u)
     
     # Also get public IPs if possible
@@ -193,14 +196,16 @@ nftban_whitelist_add_server_ips() {
     if [[ -n "$public_ipv4" ]] && ! grep -qE "^${public_ipv4}([[:space:]]|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
         _nftban_whitelist_safe_append "$NFTBAN_WHITELIST_SYSTEM" "${public_ipv4}  # Server public IPv4 (auto-detected on $(date +'%Y-%m-%d'))"
         nftban_log_success "Protected public IPv4: $public_ipv4"
-        ((protected_count++))
+        # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+        protected_count=$((protected_count + 1))
     fi
 
     public_ipv6=$(nftban_get_public_ip "ipv6")
     if [[ -n "$public_ipv6" ]] && ! grep -qE "^${public_ipv6}([[:space:]]|$)" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
         _nftban_whitelist_safe_append "$NFTBAN_WHITELIST_SYSTEM" "${public_ipv6}  # Server public IPv6 (auto-detected on $(date +'%Y-%m-%d'))"
         nftban_log_success "Protected public IPv6: $public_ipv6"
-        ((protected_count++))
+        # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+        protected_count=$((protected_count + 1))
     fi
     
     if [[ $protected_count -gt 0 ]]; then
@@ -581,11 +586,13 @@ nftban_whitelist_sync_to_nftables() {
 
             if [[ "$ver" == "4" ]]; then
                 if nft add element "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" whitelist "{ $ip }" 2>/dev/null; then
-                    ((synced_v4++))
+                    # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+                    synced_v4=$((synced_v4 + 1))
                 fi
             elif [[ "$ver" == "6" ]]; then
                 if nft add element "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" whitelist "{ $ip }" 2>/dev/null; then
-                    ((synced_v6++))
+                    # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+                    synced_v6=$((synced_v6 + 1))
                 fi
             fi
         done < "$file"
@@ -612,55 +619,61 @@ nftban_whitelist_verify() {
         echo -e "${NFTBAN_GREEN}✓ EXISTS${NFTBAN_NC}"
     else
         echo -e "${NFTBAN_RED}✗ MISSING${NFTBAN_NC}"
-        ((issues++))
+        # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+        issues=$((issues + 1))
     fi
-    
+
     echo -n "Checking user whitelist... "
     if [[ -f "$NFTBAN_WHITELIST_USER" ]]; then
         echo -e "${NFTBAN_GREEN}✓ EXISTS${NFTBAN_NC}"
     else
         echo -e "${NFTBAN_RED}✗ MISSING${NFTBAN_NC}"
-        ((issues++))
+        # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+        issues=$((issues + 1))
     fi
-    
+
     # Check if localhost is whitelisted
     echo -n "Checking localhost protection... "
     if nftban_whitelist_check_ip "127.0.0.1" && nftban_whitelist_check_ip "::1"; then
         echo -e "${NFTBAN_GREEN}✓ PROTECTED${NFTBAN_NC}"
     else
         echo -e "${NFTBAN_RED}✗ NOT PROTECTED${NFTBAN_NC}"
-        ((issues++))
+        # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+        issues=$((issues + 1))
     fi
-    
+
     # Check server IPs
     echo -n "Checking server IP protection... "
     local unprotected=0
     while IFS= read -r ip; do
         [[ -z "$ip" || "$ip" =~ ^127\. ]] && continue
         if ! nftban_whitelist_check_ip "$ip"; then
-            ((unprotected++))
+            # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+            unprotected=$((unprotected + 1))
         fi
     done < <(ip -o addr show 2>/dev/null | awk '/inet/ {gsub(/\/.*/, "", $4); print $4}')
-    
+
     if [[ $unprotected -eq 0 ]]; then
         echo -e "${NFTBAN_GREEN}✓ ALL PROTECTED${NFTBAN_NC}"
     else
         echo -e "${NFTBAN_YELLOW}⚠ $unprotected IPs NOT PROTECTED${NFTBAN_NC}"
-        ((issues++))
+        # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+        issues=$((issues + 1))
     fi
-    
+
     # Check current user IP
     echo -n "Checking current user IP... "
     local current_ip
     current_ip=$(nftban_get_current_user_ip)
-    
+
     if [[ -n "$current_ip" ]]; then
         if nftban_whitelist_check_ip "$current_ip"; then
             echo -e "${NFTBAN_GREEN}✓ PROTECTED ($current_ip)${NFTBAN_NC}"
         else
             echo -e "${NFTBAN_RED}✗ NOT PROTECTED ($current_ip)${NFTBAN_NC}"
             echo -e "  ${NFTBAN_RED}⚠️  WARNING: Risk of self-lockout!${NFTBAN_NC}"
-            ((issues++))
+            # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+            issues=$((issues + 1))
         fi
     else
         echo -e "${NFTBAN_YELLOW}N/A (local console)${NFTBAN_NC}"
@@ -684,7 +697,8 @@ nftban_whitelist_verify() {
         fi
     else
         echo -e "${NFTBAN_RED}✗ TABLE MISSING${NFTBAN_NC}"
-        ((issues++))
+        # BUG61 FIX: ((count++)) fails in strict mode when count=0, use arithmetic assignment
+        issues=$((issues + 1))
     fi
     
     echo ""
