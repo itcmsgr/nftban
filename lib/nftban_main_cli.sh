@@ -1994,6 +1994,8 @@ IP MANAGEMENT:
     ban <IP> [timeout]      Quick ban (alias for blacklist ban)
     unban <IP>              Quick unban (alias for blacklist unban)
 
+    search ip <IP>          Search for IP in all lists/logs
+
 SYNCHRONIZATION:
     sync verify             Verify file/nftables synchronization
     sync repair             Repair desynchronization automatically
@@ -2007,8 +2009,6 @@ STATISTICS & MONITORING:
     stats top [N]           Top N banned IPs
     stats recent [N]        Recent N events
     stats export <file>     Export to CSV
-
-    search ip <IP>          Search for IP in all lists/logs
 
 PORT MANAGEMENT:
     port add <port> <proto> Add allowed port (tcp/udp)
@@ -2213,9 +2213,11 @@ main() {
         update) cmd_update "$@" ;;
         maintenance|maint) cmd_maintenance "$@" ;;
 
-        # IP Management
-        whitelist|wl) cmd_whitelist "$@" ;;
-        blacklist|bl) cmd_blacklist "$@" ;;
+        # IP Management (whitelist, blacklist, search now auto-loaded from lib/cli/)
+        # Aliases for whitelist/blacklist
+        wl) cmd_whitelist "$@" ;;
+        bl) cmd_blacklist "$@" ;;
+        # Shortcuts for ban/unban
         ban) cmd_blacklist ban "$@" ;;
         unban) cmd_blacklist unban "$@" ;;
 
@@ -2234,8 +2236,7 @@ main() {
         # Port Scan Detection
         portscan) cmd_portscan "$@" ;;
 
-        # GEO-Blocking
-        geo) cmd_geo "$@" ;;
+        # GEO-Blocking (now auto-loaded from lib/cli/cmd_geo.sh)
 
         # Cloudflare Whitelist
         cloudflare|cf) cmd_cloudflare "$@" ;;
@@ -2256,22 +2257,7 @@ main() {
         test|smoke-test|smoketest) cmd_test "$@" ;;
         diagnostics|diag|debug) cmd_diagnostics "$@" ;;
 
-        # IP Search (Stupid-User-Friendly!)
-        search)
-            local search_type="${1:-}"
-            shift || true
-            if [[ "$search_type" == "ip" ]]; then
-                [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban search ip <IP_ADDRESS>"; exit 1; }
-                nftban_search_ip_everywhere "$1"
-            else
-                nftban_log_error "Usage: nftban search ip <IP_ADDRESS>"
-                echo ""
-                echo "Examples:"
-                echo "  nftban search ip 192.168.1.100"
-                echo "  nftban search ip 2001:db8::1"
-                exit 1
-            fi
-            ;;
+        # IP Search (now auto-loaded from lib/cli/cmd_search.sh)
 
         version|--version|-v)
             echo "nftban version $VERSION"
