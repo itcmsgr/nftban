@@ -101,12 +101,20 @@ nftban_login_monitor_uninstall() {
 
 # Enable service
 nftban_login_monitor_enable() {
+    # Set configuration flag
+    nftban_set_config "NFTBAN_F2B_LOGIN_MONITOR" "true"
+
+    # Enable systemd timer
     systemctl enable nftban-login-monitor.timer
     nftban_log_success "Login monitor enabled (will start on boot)"
 }
 
 # Disable service
 nftban_login_monitor_disable() {
+    # Set configuration flag
+    nftban_set_config "NFTBAN_F2B_LOGIN_MONITOR" "false"
+
+    # Disable systemd timer
     systemctl disable nftban-login-monitor.timer
     nftban_log_success "Login monitor disabled"
 }
