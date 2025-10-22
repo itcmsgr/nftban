@@ -51,19 +51,19 @@ smoketest_log() {
 }
 
 smoketest_start() {
-    ((SMOKETEST_TOTAL++))
+    ((++SMOKETEST_TOTAL))
     printf "${NFTBAN_CYAN}[%03d]${NFTBAN_NC} Testing: %s ... " "$SMOKETEST_TOTAL" "$1"
     smoketest_log "START: $1"
 }
 
 smoketest_pass() {
-    ((SMOKETEST_PASSED++))
+    ((++SMOKETEST_PASSED))
     printf "${NFTBAN_GREEN}✓ PASS${NFTBAN_NC}\n"
     smoketest_log "PASS"
 }
 
 smoketest_fail() {
-    ((SMOKETEST_FAILED++))
+    ((++SMOKETEST_FAILED))
     printf "${NFTBAN_RED}✗ FAIL${NFTBAN_NC}"
     [[ -n "$1" ]] && printf ": %s" "$1"
     printf "\n"
@@ -71,7 +71,7 @@ smoketest_fail() {
 }
 
 smoketest_skip() {
-    ((SMOKETEST_SKIPPED++))
+    ((++SMOKETEST_SKIPPED))
     printf "${NFTBAN_YELLOW}⊘ SKIP${NFTBAN_NC}"
     [[ -n "$1" ]] && printf ": %s" "$1"
     printf "\n"
@@ -79,7 +79,7 @@ smoketest_skip() {
 }
 
 smoketest_warn() {
-    ((SMOKETEST_WARNINGS++))
+    ((++SMOKETEST_WARNINGS))
     printf "${NFTBAN_YELLOW}⚠ WARN${NFTBAN_NC}"
     [[ -n "$1" ]] && printf ": %s" "$1"
     printf "\n"
