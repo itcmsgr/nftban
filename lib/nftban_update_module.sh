@@ -576,8 +576,11 @@ nftban_update_check() {
     [[ "$show_output" == "true" ]] && echo "Available version: $remote_version"
     [[ "$show_output" == "true" ]] && echo ""
 
+    # Temporarily disable ERR trap - return codes 0,1,2 are informational, not errors
+    set +e
     nftban_update_compare_versions "$local_version" "$remote_version"
     local result=$?
+    set -e
 
     case $result in
         0)
@@ -1077,8 +1080,11 @@ nftban_update_perform() {
 
     # Step 2: Check for updates
     nftban_log_info "Step 2/7: Checking for updates..."
+    # Temporarily disable ERR trap - return code 2 is informational (update available), not error
+    set +e
     nftban_update_check "true"
     local check_result=$?
+    set -e
 
     # check_result: 0=up-to-date, 1=error, 2=update-available
     if [[ $check_result -eq 1 ]]; then
