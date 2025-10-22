@@ -70,7 +70,7 @@ readonly NFTBAN_BASE_DIR="${NFTBAN_BASE_DIR:-/etc/nftban}"
 readonly NFTBAN_LIB_DIR="${NFTBAN_BASE_DIR}/lib"
 readonly NFTBAN_CONFIG_DIR="${NFTBAN_BASE_DIR}/config"
 readonly NFTBAN_DATA_DIR="${NFTBAN_BASE_DIR}/data"
-readonly NFTBAN_CACHE_DIR="${NFTBAN_BASE_DIR}/cache"
+readonly NFTBAN_CACHE_DIR="${NFTBAN_DATA_DIR}/cache"
 readonly NFTBAN_LOG_DIR="/var/log/nftban"
 readonly NFTBAN_TEMPLATE_DIR="${NFTBAN_BASE_DIR}/templates"
 
