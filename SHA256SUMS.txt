@@ -1,8 +1,8 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-22 21:31:06 UTC
-# Commit: f8b42d5 (f8b42d518f8e9381d42918be3bbcee012729bfa2)
+# Generated: 2025-10-22 21:46:50 UTC
+# Commit: dd36009 (dd36009328649516e1ac42bce8872a553a3a9978)
 # Branch: main
-# Total files: 182
+# Total files: 180
 #
 # This file contains SHA256 checksums for all tracked files in the repository.
 # Use 'sha256sum -c SHA256SUMS.txt' to verify file integrity (ignores comment lines).
@@ -31,7 +31,7 @@ f3cb9377c4a25e7eab27ae6e35e1374a3a524605f21c02694858b9983a2eb33f  completions/RE
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  config/.gitkeep
 66962046df9e2100663f5395906247b7e6ecb32805442eb7d84d39d1a778a975  config/ddos_protection.conf
 2e8c08d9a3da42149b5c593ed1e007c0a40c6f469251cf2d0c44fe9d23087165  config/monitoring.conf
-edea6b54fa43d8c88000a76e9137d3fdca547de22883616f1c5021ad748ed56b  config/nftban.conf
+fb7a7e475ed4080312cbb3b52cc43475c2a9bfb34bbbe27e5cf0e7570720217f  config/nftban.conf
 067185f8ad9564ca6ea3d35072500b7297cc89c830e55fea3607af8ecda0185f  config/portscan.conf
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  data/.gitkeep
 ccf9dd7fa01499086956e34de44db13ff980759752ed0e4dd7ddd4203c96aac0  data/cache/.gitkeeper
@@ -114,8 +114,8 @@ d40eecc4f0829c0b281ebb1df0b48d7a12d4dd5d31813e7762905ba2bc674ac1  lib/nftban-val
 21e5ad5264fc008c31dd32517473b4af6ac97f9be9574d29625721fe226efdcd  lib/nftban-validator-run.sh
 b1397fac72e43b9d2ca66805387ca3cf23249ec6db94822821890a16c72248b3  lib/nftban_autorebuild_module.sh
 64d68534532c971ef07bd0cec9a365f9cd0f19b92695783bd9619d732dc260c7  lib/nftban_blacklist_module.sh
-725a349cda98f02af7c26c27e93a64510e6d7bd14a50ba2dbaa519f56b3144c9  lib/nftban_cloudflare_module.sh
-3933e4e5ad3fd84ce160fc07c05877507761c5b18894cb9be027ee795362ea38  lib/nftban_core.sh
+6476c0baac394f751fe841003af2987bb5ee0d4d988760edea390ec12464a56b  lib/nftban_cloudflare_module.sh
+5b7e4dc62c6597bd684bb6beffa4ae5e02b463ce692a11f9152078b3f68ae51d  lib/nftban_core.sh
 0bdb766c852c8228156e2b51559868609ec542f1d72c28eaa4f3bdd5fcbb0da5  lib/nftban_ddos_module.sh
 b9cf7e486e0efb76c4ab42aeb1ae54a996e753fb6045fac19c296424d653680e  lib/nftban_fail2ban_module.sh
 c60ddb4abf5d44f8a1bf880b2c5b14c97a9af4547bf9d4136f3efb6721f9fa70  lib/nftban_feeds_lib.sh
@@ -156,8 +156,6 @@ fce8d65771752e563610c60e06b679d55ef2934776e560fecbf2911777412e17  scripts/setup_
 c0ce63bc50ac6c0cc80340b555ae3377826dcebe925ff6119bee4f914c4ae758  scripts/test_ssh_attack_protection.sh
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  templates/.gitkeep
 56bb09a5778baf4938cb5f50de7d228df07ba7acb7850a8f4faf139d97c6e96b  templates/conf/TEMPLATES_README.md
-891e4f56baa0819cf6da219c0fef38f64ea1456cc744eaeab13e942d34d4b9ce  templates/conf/cloudflare-whitelist_ipsv4.conf
-53df91e12da2f88e7b3bffc623835583e4044bbe5e52462cc8aa1be0eccf6f82  templates/conf/cloudflare-whitelist_ipsv6.conf
 6e1d57ad6b4183016c110938ed7a00784cec344a3b390d447d7743c3c2318672  templates/conf/ddos_protection.conf
 25e2748ae86ab5ccb64d36cd0396e1bc6219ed99240c53d195bb21be1aed4305  templates/conf/geo-blacklist.conf
 de8c8ddb34eece19a286edea84d3419af25cbcf0642949b43672108466999578  templates/conf/geo-blocking.conf
