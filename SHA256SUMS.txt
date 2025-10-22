@@ -1,6 +1,6 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-22 16:06:48 UTC
-# Commit: c32d9e9 (c32d9e96fb40cfb2fd4417b21bb4e495393890aa)
+# Generated: 2025-10-22 16:30:37 UTC
+# Commit: 8642e37 (8642e371610ccb13c861a4f078ad01c9a07788c2)
 # Branch: main
 # Total files: 179
 #
@@ -115,7 +115,7 @@ d40eecc4f0829c0b281ebb1df0b48d7a12d4dd5d31813e7762905ba2bc674ac1  lib/nftban-val
 b579598eb9353567351e4a369fba6a5b5bcabf75374a9e76ed4be7700f083d44  lib/nftban_core.sh
 fd44147a10ab3d59f438806ff44352417adfaf7e055431a3ac1727337b74a1e1  lib/nftban_ddos_module.sh
 b9cf7e486e0efb76c4ab42aeb1ae54a996e753fb6045fac19c296424d653680e  lib/nftban_fail2ban_module.sh
-87e863a8f747049516f65a61caf6f7db430f2c3a1cc83299d77e8f8384dd6faa  lib/nftban_feeds_lib.sh
+c60ddb4abf5d44f8a1bf880b2c5b14c97a9af4547bf9d4136f3efb6721f9fa70  lib/nftban_feeds_lib.sh
 798cb15ee54c2c7719f93e98b891afd5998db6b1d1a0932c82b49a9bb19ea024  lib/nftban_feeds_module.sh
 52e4c0e3e2ab0d47ad2c9217c6b71f604f6227443a8353b166789f04acc6222f  lib/nftban_geo_module.sh
 c3fd7800667c138494a51ccb6d2dc14459dd25aa7ac6b9ff4925e268a71056b4  lib/nftban_geoip_module.sh
