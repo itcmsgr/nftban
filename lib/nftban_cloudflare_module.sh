@@ -143,6 +143,17 @@ EOF
         nftban_log_success "Cleared Cloudflare whitelist file"
         nftban_cf_log "Cleared persistent whitelist"
     fi
+
+    # Also remove cache files (they'll be re-downloaded when re-enabling)
+    if [[ -f "$NFTBAN_CF_IPV4_CACHE" ]]; then
+        rm -f "$NFTBAN_CF_IPV4_CACHE"
+        nftban_log_debug "Removed IPv4 cache file"
+    fi
+
+    if [[ -f "$NFTBAN_CF_IPV6_CACHE" ]]; then
+        rm -f "$NFTBAN_CF_IPV6_CACHE"
+        nftban_log_debug "Removed IPv6 cache file"
+    fi
 }
 
 # =============================================================================
@@ -320,8 +331,14 @@ nftban_cloudflare_enable() {
         nftban_cloudflare_apply_to_nftables
     fi
 
+    echo ""
     nftban_log_success "Cloudflare integration enabled (IPv4 and IPv6)"
-    nftban_log_success "IPs added to nftables (memory) and whitelist file (persistent)"
+    nftban_log_success "✓ IPs added to nftables (memory/volatile)"
+    nftban_log_success "✓ IPs written to: $NFTBAN_CF_WHITELIST_FILE (persistent)"
+    echo ""
+    echo "Whitelist file location: $NFTBAN_CF_WHITELIST_FILE"
+    echo "This file will be loaded on reboot to restore Cloudflare IPs."
+    echo ""
     nftban_cf_log "Cloudflare integration enabled"
 
     return 0
@@ -346,8 +363,13 @@ nftban_cloudflare_disable() {
     nftban_set_config "CLOUDFLARE_IPV4_ENABLED" "false"
     nftban_set_config "CLOUDFLARE_IPV6_ENABLED" "false"
 
+    echo ""
     nftban_log_success "Cloudflare integration disabled"
-    nftban_log_success "IPs removed from nftables (memory) and whitelist file (persistent)"
+    nftban_log_success "✓ All IPs removed from nftables (memory/volatile)"
+    nftban_log_success "✓ All IPs cleared from: $NFTBAN_CF_WHITELIST_FILE (persistent)"
+    echo ""
+    echo "Whitelist file has been cleared and marked as disabled."
+    echo ""
     nftban_cf_log "Cloudflare integration disabled"
 
     return 0
@@ -530,12 +552,19 @@ nftban_cloudflare_enable_ipv4() {
         return 1
     fi
 
+    # Update whitelist file (will include both IPv4 and IPv6 if IPv6 is enabled)
+    nftban_cloudflare_write_to_whitelist
+
     # Apply to nftables
     if nftban_check_nftables_table; then
         nftban_cloudflare_apply_to_nftables
     fi
 
+    echo ""
     nftban_log_success "Cloudflare IPv4 enabled"
+    nftban_log_success "✓ IPv4 added to nftables (memory/volatile)"
+    nftban_log_success "✓ IPv4 written to: $NFTBAN_CF_WHITELIST_FILE (persistent)"
+    echo ""
     nftban_cf_log "IPv4 enabled"
 }
 
@@ -551,7 +580,14 @@ nftban_cloudflare_disable_ipv4() {
         done < "$NFTBAN_CF_IPV4_CACHE"
     fi
 
+    # Rewrite whitelist file (will only include IPv6 if enabled, or clear if both disabled)
+    nftban_cloudflare_write_to_whitelist
+
+    echo ""
     nftban_log_success "Cloudflare IPv4 disabled"
+    nftban_log_success "✓ IPv4 removed from nftables (memory/volatile)"
+    nftban_log_success "✓ IPv4 removed from: $NFTBAN_CF_WHITELIST_FILE (persistent)"
+    echo ""
     nftban_cf_log "IPv4 disabled"
 }
 
@@ -565,12 +601,19 @@ nftban_cloudflare_enable_ipv6() {
         return 1
     fi
 
+    # Update whitelist file (will include both IPv4 and IPv6 if IPv4 is enabled)
+    nftban_cloudflare_write_to_whitelist
+
     # Apply to nftables
     if nftban_check_nftables_table; then
         nftban_cloudflare_apply_to_nftables
     fi
 
+    echo ""
     nftban_log_success "Cloudflare IPv6 enabled"
+    nftban_log_success "✓ IPv6 added to nftables (memory/volatile)"
+    nftban_log_success "✓ IPv6 written to: $NFTBAN_CF_WHITELIST_FILE (persistent)"
+    echo ""
     nftban_cf_log "IPv6 enabled"
 }
 
@@ -586,7 +629,14 @@ nftban_cloudflare_disable_ipv6() {
         done < "$NFTBAN_CF_IPV6_CACHE"
     fi
 
+    # Rewrite whitelist file (will only include IPv4 if enabled, or clear if both disabled)
+    nftban_cloudflare_write_to_whitelist
+
+    echo ""
     nftban_log_success "Cloudflare IPv6 disabled"
+    nftban_log_success "✓ IPv6 removed from nftables (memory/volatile)"
+    nftban_log_success "✓ IPv6 removed from: $NFTBAN_CF_WHITELIST_FILE (persistent)"
+    echo ""
     nftban_cf_log "IPv6 disabled"
 }
 
