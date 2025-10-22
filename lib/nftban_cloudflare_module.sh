@@ -68,6 +68,7 @@ trap '_nftban_cloudflare_on_err ${LINENO} ${FUNCNAME[0]:-main}' ERR
 readonly NFTBAN_CF_IPV4_CACHE="${NFTBAN_CACHE_DIR}/cloudflare-ipv4.txt"
 readonly NFTBAN_CF_IPV6_CACHE="${NFTBAN_CACHE_DIR}/cloudflare-ipv6.txt"
 readonly NFTBAN_CF_LOG="${NFTBAN_LOG_DIR}/cloudflare.log"
+readonly NFTBAN_CF_WHITELIST_FILE="${NFTBAN_CONFIG_DIR}/whitelist-cloudflare.conf"
 
 # Read configuration from nftban.conf (with defaults)
 CLOUDFLARE_IPV4_URL="${CLOUDFLARE_IPV4_URL:-https://www.cloudflare.com/ips-v4}"
@@ -83,6 +84,65 @@ nftban_cf_log() {
 
     mkdir -p "$(dirname "$NFTBAN_CF_LOG")"
     echo "[${timestamp}] ${message}" >> "$NFTBAN_CF_LOG"
+}
+
+# =============================================================================
+# WHITELIST FILE MANAGEMENT
+# =============================================================================
+nftban_cloudflare_write_to_whitelist() {
+    nftban_log_info "Writing Cloudflare IPs to persistent whitelist..."
+
+    # Create whitelist file with header
+    cat > "$NFTBAN_CF_WHITELIST_FILE" << 'EOF'
+# =============================================================================
+# nftban Cloudflare Whitelist (Auto-managed)
+# =============================================================================
+# This file is automatically populated when Cloudflare integration is enabled.
+# Contains both IPv4 and IPv6 Cloudflare IP ranges.
+#
+# DO NOT EDIT MANUALLY - Changes will be overwritten on next update.
+# =============================================================================
+
+EOF
+
+    # Append IPv4 ranges if cache exists
+    if [[ -f "$NFTBAN_CF_IPV4_CACHE" ]]; then
+        echo "# Cloudflare IPv4 Ranges" >> "$NFTBAN_CF_WHITELIST_FILE"
+        cat "$NFTBAN_CF_IPV4_CACHE" >> "$NFTBAN_CF_WHITELIST_FILE"
+        echo "" >> "$NFTBAN_CF_WHITELIST_FILE"
+    fi
+
+    # Append IPv6 ranges if cache exists
+    if [[ -f "$NFTBAN_CF_IPV6_CACHE" ]]; then
+        echo "# Cloudflare IPv6 Ranges" >> "$NFTBAN_CF_WHITELIST_FILE"
+        cat "$NFTBAN_CF_IPV6_CACHE" >> "$NFTBAN_CF_WHITELIST_FILE"
+    fi
+
+    local total_ips
+    total_ips=$(grep -v "^#" "$NFTBAN_CF_WHITELIST_FILE" | grep -v "^$" | wc -l)
+
+    nftban_log_success "Wrote $total_ips Cloudflare IPs to whitelist file"
+    nftban_cf_log "Wrote $total_ips IPs to persistent whitelist"
+}
+
+nftban_cloudflare_clear_whitelist() {
+    if [[ -f "$NFTBAN_CF_WHITELIST_FILE" ]]; then
+        nftban_log_info "Clearing Cloudflare whitelist file..."
+
+        # Keep file but clear contents (keep header only)
+        cat > "$NFTBAN_CF_WHITELIST_FILE" << 'EOF'
+# =============================================================================
+# nftban Cloudflare Whitelist (Auto-managed)
+# =============================================================================
+# Cloudflare integration is currently DISABLED.
+# This file will be populated when integration is re-enabled.
+# =============================================================================
+
+EOF
+
+        nftban_log_success "Cleared Cloudflare whitelist file"
+        nftban_cf_log "Cleared persistent whitelist"
+    fi
 }
 
 # =============================================================================
@@ -252,12 +312,16 @@ nftban_cloudflare_enable() {
         return 1
     fi
 
-    # Apply to nftables if table exists
+    # Write to persistent whitelist file
+    nftban_cloudflare_write_to_whitelist
+
+    # Apply to nftables (memory) if table exists
     if nftban_check_nftables_table; then
         nftban_cloudflare_apply_to_nftables
     fi
 
     nftban_log_success "Cloudflare integration enabled (IPv4 and IPv6)"
+    nftban_log_success "IPs added to nftables (memory) and whitelist file (persistent)"
     nftban_cf_log "Cloudflare integration enabled"
 
     return 0
@@ -269,10 +333,13 @@ nftban_cloudflare_enable() {
 nftban_cloudflare_disable() {
     nftban_log_info "Disabling Cloudflare integration..."
 
-    # Remove from nftables if table exists
+    # Remove from nftables (memory) if table exists
     if nftban_check_nftables_table; then
         nftban_cloudflare_remove_from_nftables
     fi
+
+    # Clear persistent whitelist file
+    nftban_cloudflare_clear_whitelist
 
     # Update configuration - disable Cloudflare
     nftban_set_config "CLOUDFLARE_ENABLED" "false"
@@ -280,6 +347,7 @@ nftban_cloudflare_disable() {
     nftban_set_config "CLOUDFLARE_IPV6_ENABLED" "false"
 
     nftban_log_success "Cloudflare integration disabled"
+    nftban_log_success "IPs removed from nftables (memory) and whitelist file (persistent)"
     nftban_cf_log "Cloudflare integration disabled"
 
     return 0
@@ -305,7 +373,10 @@ nftban_cloudflare_update() {
         return 1
     fi
 
-    # Re-apply to nftables
+    # Update persistent whitelist file
+    nftban_cloudflare_write_to_whitelist
+
+    # Re-apply to nftables (memory)
     if nftban_check_nftables_table; then
         # Remove old ranges first
         nftban_cloudflare_remove_from_nftables
@@ -314,7 +385,7 @@ nftban_cloudflare_update() {
         nftban_cloudflare_apply_to_nftables
     fi
 
-    nftban_log_success "Cloudflare IP ranges updated"
+    nftban_log_success "Cloudflare IP ranges updated in nftables (memory) and whitelist file (persistent)"
     return 0
 }
 
@@ -522,6 +593,8 @@ nftban_cloudflare_disable_ipv6() {
 # =============================================================================
 # EXPORT FUNCTIONS
 # =============================================================================
+export -f nftban_cloudflare_write_to_whitelist
+export -f nftban_cloudflare_clear_whitelist
 export -f nftban_cloudflare_download_ips
 export -f nftban_cloudflare_apply_to_nftables
 export -f nftban_cloudflare_remove_from_nftables
