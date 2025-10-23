@@ -375,9 +375,9 @@ nftban_fail2ban_get_config() {
     local default="${2:-}"
 
     # Read from .conf.local first (user overrides)
-    if [[ -f "${NFTBAN_CONFIG_FILE}.local" ]]; then
+    if [[ -f "${NFTBAN_MAIN_CONFIG}.local" ]]; then
         local value
-        value=$(grep -E "^${key}=" "${NFTBAN_CONFIG_FILE}.local" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -n1)
+        value=$(grep -E "^${key}=" "${NFTBAN_MAIN_CONFIG}.local" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -n1)
         if [[ -n "$value" ]]; then
             echo "$value"
             return 0
@@ -385,9 +385,9 @@ nftban_fail2ban_get_config() {
     fi
 
     # Fallback to main .conf
-    if [[ -f "$NFTBAN_CONFIG_FILE" ]]; then
+    if [[ -f "$NFTBAN_MAIN_CONFIG" ]]; then
         local value
-        value=$(grep -E "^${key}=" "$NFTBAN_CONFIG_FILE" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -n1)
+        value=$(grep -E "^${key}=" "$NFTBAN_MAIN_CONFIG" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -n1)
         if [[ -n "$value" ]]; then
             echo "$value"
             return 0
@@ -640,7 +640,7 @@ nftban_fail2ban_config_set() {
     local var_name="NFTBAN_F2B_${jail_upper}_${setting_upper}"
 
     # Update in nftban.conf.local
-    local conf_local="${NFTBAN_CONFIG_FILE}.local"
+    local conf_local="${NFTBAN_MAIN_CONFIG}.local"
 
     # Create .local if it doesn't exist
     if [[ ! -f "$conf_local" ]]; then
