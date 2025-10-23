@@ -23,7 +23,15 @@
 # =============================================================================
 # Example: /etc/nftban/templates/fail2ban/DEBIAN/jail.d/nftban-ssh.conf
 # =============================================================================
-cat > /tmp/nftban-ssh-jail.conf << 'EOF'
+# Create secure temp file
+temp_ssh_jail=$(mktemp /tmp/nftban-ssh-jail.XXXXXX.conf) || {
+    echo "ERROR: Failed to create temp file for SSH jail config" >&2
+    exit 1
+}
+chmod 600 "$temp_ssh_jail"
+trap "rm -f '$temp_ssh_jail'" EXIT
+
+cat > "$temp_ssh_jail" << 'EOF'
 [sshd]
 enabled = true
 port = ssh
@@ -39,7 +47,15 @@ EOF
 # =============================================================================
 # Example: /etc/nftban/templates/fail2ban/DEBIAN/filter.d/nftban-ssh.conf
 # =============================================================================
-cat > /tmp/nftban-ssh-filter.conf << 'EOF'
+# Create secure temp file
+temp_ssh_filter=$(mktemp /tmp/nftban-ssh-filter.XXXXXX.conf) || {
+    echo "ERROR: Failed to create temp file for SSH filter config" >&2
+    exit 1
+}
+chmod 600 "$temp_ssh_filter"
+trap "rm -f '$temp_ssh_jail' '$temp_ssh_filter'" EXIT
+
+cat > "$temp_ssh_filter" << 'EOF'
 # Fail2Ban filter for SSH
 # Based on standard sshd filter with nftban naming
 
@@ -68,7 +84,15 @@ EOF
 # =============================================================================
 # Example: /etc/nftban/templates/fail2ban/DEBIAN/jail.d/nftban-apache.conf
 # =============================================================================
-cat > /tmp/nftban-apache-jail.conf << 'EOF'
+# Create secure temp file
+temp_apache_jail=$(mktemp /tmp/nftban-apache-jail.XXXXXX.conf) || {
+    echo "ERROR: Failed to create temp file for Apache jail config" >&2
+    exit 1
+}
+chmod 600 "$temp_apache_jail"
+trap "rm -f '$temp_ssh_jail' '$temp_ssh_filter' '$temp_apache_jail'" EXIT
+
+cat > "$temp_apache_jail" << 'EOF'
 [apache-auth]
 enabled = true
 port = http,https
@@ -106,7 +130,15 @@ EOF
 # =============================================================================
 # Example: /etc/nftban/templates/fail2ban/DEBIAN/filter.d/nftban-apache.conf
 # =============================================================================
-cat > /tmp/nftban-apache-filter.conf << 'EOF'
+# Create secure temp file
+temp_apache_filter=$(mktemp /tmp/nftban-apache-filter.XXXXXX.conf) || {
+    echo "ERROR: Failed to create temp file for Apache filter config" >&2
+    exit 1
+}
+chmod 600 "$temp_apache_filter"
+trap "rm -f '$temp_ssh_jail' '$temp_ssh_filter' '$temp_apache_jail' '$temp_apache_filter'" EXIT
+
+cat > "$temp_apache_filter" << 'EOF'
 # Combined Apache filters for nftban
 
 [nftban-apache-auth]
@@ -143,7 +175,15 @@ EOF
 # =============================================================================
 # Example: /etc/nftban/templates/fail2ban/DEBIAN/jail.d/nftban-directadmin.conf
 # =============================================================================
-cat > /tmp/nftban-directadmin-jail.conf << 'EOF'
+# Create secure temp file
+temp_da_jail=$(mktemp /tmp/nftban-directadmin-jail.XXXXXX.conf) || {
+    echo "ERROR: Failed to create temp file for DirectAdmin jail config" >&2
+    exit 1
+}
+chmod 600 "$temp_da_jail"
+trap "rm -f '$temp_ssh_jail' '$temp_ssh_filter' '$temp_apache_jail' '$temp_apache_filter' '$temp_da_jail'" EXIT
+
+cat > "$temp_da_jail" << 'EOF'
 [directadmin-login]
 enabled = true
 port = 2222
@@ -160,7 +200,15 @@ EOF
 # =============================================================================
 # Example: /etc/nftban/templates/fail2ban/DEBIAN/filter.d/nftban-directadmin.conf
 # =============================================================================
-cat > /tmp/nftban-directadmin-filter.conf << 'EOF'
+# Create secure temp file
+temp_da_filter=$(mktemp /tmp/nftban-directadmin-filter.XXXXXX.conf) || {
+    echo "ERROR: Failed to create temp file for DirectAdmin filter config" >&2
+    exit 1
+}
+chmod 600 "$temp_da_filter"
+trap "rm -f '$temp_ssh_jail' '$temp_ssh_filter' '$temp_apache_jail' '$temp_apache_filter' '$temp_da_jail' '$temp_da_filter'" EXIT
+
+cat > "$temp_da_filter" << 'EOF'
 # Fail2Ban filter for DirectAdmin
 
 [INCLUDES]
@@ -181,7 +229,15 @@ EOF
 # =============================================================================
 # REDHAT versions (usually same as Debian, different log paths)
 # =============================================================================
-cat > /tmp/nftban-ssh-jail-redhat.conf << 'EOF'
+# Create secure temp file
+temp_ssh_jail_redhat=$(mktemp /tmp/nftban-ssh-jail-redhat.XXXXXX.conf) || {
+    echo "ERROR: Failed to create temp file for SSH jail RedHat config" >&2
+    exit 1
+}
+chmod 600 "$temp_ssh_jail_redhat"
+trap "rm -f '$temp_ssh_jail' '$temp_ssh_filter' '$temp_apache_jail' '$temp_apache_filter' '$temp_da_jail' '$temp_da_filter' '$temp_ssh_jail_redhat'" EXIT
+
+cat > "$temp_ssh_jail_redhat" << 'EOF'
 [sshd]
 enabled = true
 port = ssh
