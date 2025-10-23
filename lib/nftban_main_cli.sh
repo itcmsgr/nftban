@@ -15,7 +15,7 @@ set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
-VERSION="0.9.3-dev"
+VERSION="0.9.4-dev"
 # Resolve symlinks to get actual script location
 SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]}")"
 SCRIPT_DIR="$(dirname "$SCRIPT_PATH")"
