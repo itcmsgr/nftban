@@ -757,10 +757,10 @@ nftban_update_download_to_staging() {
         local staging_file="${NFTBAN_UPDATE_STAGING_DIR}/${file}"
 
         if nftban_update_download_file "$file" "$staging_file"; then
-            ((downloaded++))
+            ((downloaded++)) || true
             echo -n "."
         else
-            ((failed++))
+            ((failed++)) || true
             nftban_log_warning "Failed to download: $file"
         fi
     done
@@ -827,14 +827,14 @@ nftban_update_validate_checksums() {
         local actual_checksum
         if actual_checksum=$(_nftban_update_safe_sha256 "$staging_file"); then
             if [[ "$actual_checksum" == "$checksum" ]]; then
-                ((validated++))
+                ((validated++)) || true
             else
                 nftban_log_error "Checksum mismatch: $filepath (expected: $checksum, got: $actual_checksum)"
-                ((failed++))
+                ((failed++)) || true
             fi
         else
             nftban_log_error "Failed to calculate checksum: $filepath"
-            ((failed++))
+            ((failed++)) || true
         fi
     done < "$checksums_file"
 
@@ -858,10 +858,10 @@ nftban_update_validate_syntax() {
 
     while IFS= read -r -d '' script_file; do
         if bash -n "$script_file" 2>/dev/null; then
-            ((validated++))
+            ((validated++)) || true
         else
             nftban_log_error "Syntax error in: ${script_file#$staging_dir/}"
-            ((failed++))
+            ((failed++)) || true
         fi
     done < <(find "$staging_dir" -type f -name "*.sh" -print0)
 

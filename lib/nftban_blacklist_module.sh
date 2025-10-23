@@ -774,11 +774,11 @@ nftban_blacklist_sync_to_nftables() {
 
             if [[ "$ver" == "4" ]]; then
                 if nft add element "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" user_blacklist "{ $ip }" 2>/dev/null; then
-                    ((synced_v4++))
+                    ((synced_v4++)) || true
                 fi
             elif [[ "$ver" == "6" ]]; then
                 if nft add element "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" user_blacklist "{ $ip }" 2>/dev/null; then
-                    ((synced_v6++))
+                    ((synced_v6++)) || true
                 fi
             fi
         done < "$file"

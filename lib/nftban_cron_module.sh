@@ -178,7 +178,7 @@ nftban_cron_validate() {
         nftban_log_success "✓ nftban command available at: $(command -v nftban)"
     else
         nftban_log_error "✗ nftban command not found in PATH"
-        ((issues++))
+        ((issues++)) || true
     fi
     echo ""
 
@@ -194,7 +194,7 @@ nftban_cron_validate() {
             echo "  ✓ $(basename "$module")"
         else
             echo "  ✗ Missing: $(basename "$module")"
-            ((issues++))
+            ((issues++)) || true
         fi
     done
     echo ""
@@ -214,14 +214,14 @@ nftban_cron_validate() {
                 local script_path=$(echo "$line" | grep -oP '/etc/nftban/scripts/[^ ]+')
                 if [[ ! -f "$script_path" ]]; then
                     echo "  ⚠ Orphaned script reference: $script_path"
-                    ((warnings++))
+                    ((warnings++)) || true
                 fi
             fi
         done <<< "$crontab_content"
 
     else
         nftban_log_error "✗ Crontab syntax invalid"
-        ((issues++))
+        ((issues++)) || true
     fi
     echo ""
 
@@ -231,7 +231,7 @@ nftban_cron_validate() {
         nftban_log_success "✓ Cron daemon is running"
     else
         nftban_log_error "✗ Cron daemon is not running"
-        ((issues++))
+        ((issues++)) || true
     fi
     echo ""
 
@@ -241,7 +241,7 @@ nftban_cron_validate() {
         echo "  ✓ nftban binary is executable"
     else
         echo "  ✗ nftban binary is not executable"
-        ((issues++))
+        ((issues++)) || true
     fi
     echo ""
 

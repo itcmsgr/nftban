@@ -532,10 +532,10 @@ nftban_monitor_run() {
     local issues=0
 
     # Run all checks
-    nftban_monitor_check_disk || ((issues++))
-    nftban_monitor_check_memory || ((issues++))
-    nftban_monitor_check_cpu || ((issues++))
-    nftban_monitor_check_inodes || ((issues++))
+    nftban_monitor_check_disk || ((issues++)) || true
+    nftban_monitor_check_memory || ((issues++)) || true
+    nftban_monitor_check_cpu || ((issues++)) || true
+    nftban_monitor_check_inodes || ((issues++)) || true
 
     if [[ $issues -eq 0 ]]; then
         _nftban_monitor_log INFO "Monitoring check complete: All systems normal"

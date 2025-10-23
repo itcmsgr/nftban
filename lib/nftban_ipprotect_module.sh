@@ -192,7 +192,7 @@ EOF
     while IFS= read -r ip; do
         [[ -z "$ip" ]] && continue
         echo "$ip  # Local interface - detected at $timestamp" >> "$temp_file"
-        ((local_count++))
+        ((local_count++)) || true
     done < <(nftban_ipprotect_get_local_ips)
 
     echo "" >> "$temp_file"
@@ -383,14 +383,14 @@ nftban_ipprotect_update() {
     local protected_count=0
     
     # Protect localhost
-    nftban_ipprotect_add "127.0.0.1" "LOCALHOST_IPV4" && ((protected_count++))
-    nftban_ipprotect_add "::1" "LOCALHOST_IPV6" && ((protected_count++))
+    nftban_ipprotect_add "127.0.0.1" "LOCALHOST_IPV4" && ((protected_count++)) || true
+    nftban_ipprotect_add "::1" "LOCALHOST_IPV6" && ((protected_count++)) || true
     
     # Protect server local IPs
     nftban_log_info "  Detecting server local IPs..."
     while IFS= read -r ip; do
         [[ -z "$ip" ]] && continue
-        nftban_ipprotect_add "$ip" "SERVER_LOCAL" && ((protected_count++))
+        nftban_ipprotect_add "$ip" "SERVER_LOCAL" && ((protected_count++)) || true
     done < <(nftban_ipprotect_get_local_ips)
     
     # Protect server public IPs
@@ -398,13 +398,13 @@ nftban_ipprotect_update() {
     local public_ipv4
     public_ipv4=$(nftban_ipprotect_get_public_ipv4)
     if [[ -n "$public_ipv4" ]]; then
-        nftban_ipprotect_add "$public_ipv4" "SERVER_PUBLIC_IPV4" && ((protected_count++))
+        nftban_ipprotect_add "$public_ipv4" "SERVER_PUBLIC_IPV4" && ((protected_count++)) || true
     fi
     
     local public_ipv6
     public_ipv6=$(nftban_ipprotect_get_public_ipv6)
     if [[ -n "$public_ipv6" ]]; then
-        nftban_ipprotect_add "$public_ipv6" "SERVER_PUBLIC_IPV6" && ((protected_count++))
+        nftban_ipprotect_add "$public_ipv6" "SERVER_PUBLIC_IPV6" && ((protected_count++)) || true
     fi
     
     # Protect current SSH user IP
@@ -412,7 +412,7 @@ nftban_ipprotect_update() {
     local current_user_ip
     current_user_ip=$(nftban_ipprotect_get_current_user_ip)
     if [[ -n "$current_user_ip" ]]; then
-        nftban_ipprotect_add "$current_user_ip" "CURRENT_USER" && ((protected_count++))
+        nftban_ipprotect_add "$current_user_ip" "CURRENT_USER" && ((protected_count++)) || true
     fi
     
     # Protect all active SSH session IPs
@@ -423,7 +423,7 @@ nftban_ipprotect_update() {
         nftban_log_info "  Detecting all SSH session IPs..."
         while IFS= read -r ip; do
             [[ -z "$ip" ]] && continue
-            nftban_ipprotect_add "$ip" "SSH_SESSION" && ((protected_count++))
+            nftban_ipprotect_add "$ip" "SSH_SESSION" && ((protected_count++)) || true
         done < <(nftban_ipprotect_get_all_ssh_ips)
     fi
     
@@ -485,7 +485,7 @@ nftban_ipprotect_list() {
     
     while IFS='|' read -r ip source timestamp; do
         [[ -z "$ip" || "$ip" =~ ^# ]] && continue
-        ((count++))
+        ((count++)) || true
         printf "%-3s %-40s %-20s %-20s\n" "$count" "$ip" "$source" "$timestamp"
     done < "$NFTBAN_PROTECTED_IPS_FILE"
     
@@ -657,7 +657,7 @@ nftban_ipprotect_cleanup_stale() {
         if [[ "$source" == "SSH_SESSION" ]]; then
             if ! echo "$current_ssh_ips" | grep -q "^${ip}$"; then
                 nftban_log_debug "Removing stale SSH protection: $ip"
-                ((removed++))
+                ((removed++)) || true
                 continue
             fi
         fi

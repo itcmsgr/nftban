@@ -522,14 +522,14 @@ nftban_stats_cleanup_logs() {
             gzip "$backup" 2>/dev/null || true
             touch "$NFTBAN_BAN_LOG"
             nftban_log_success "Rotated ban log: $backup.gz"
-            ((cleaned++))
+            ((cleaned++)) || true
         fi
     fi
     
     # Find and compress old logs
     find "$NFTBAN_LOG_DIR" -name "*.log" -mtime +7 -type f 2>/dev/null | while read -r file; do
         if [[ ! "$file" =~ \.gz$ ]]; then
-            gzip "$file" 2>/dev/null && ((cleaned++))
+            gzip "$file" 2>/dev/null && ((cleaned++)) || true
         fi
     done
     

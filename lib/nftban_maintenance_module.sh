@@ -136,7 +136,7 @@ nftban_maintenance_show_panel() {
         )
 
         for module in "${expected_modules[@]}"; do
-            [[ -f "${NFTBAN_BASE_DIR}/lib/${module}" ]] && ((valid_files++)) || ((missing_files++))
+            [[ -f "${NFTBAN_BASE_DIR}/lib/${module}" ]] && ((valid_files++)) || ((missing_files++)) || true
         done
     fi
 
@@ -340,7 +340,7 @@ nftban_maintenance_cleanup_logs() {
                 gzip "$backup" 2>/dev/null || true
                 
                 nftban_log_info "Rotated: $(basename "$log_file")"
-                ((cleaned++))
+                ((cleaned++)) || true
             fi
         fi
     done
@@ -365,7 +365,7 @@ nftban_maintenance_health_check() {
     # Check nftables table
     if ! nftban_nftables_check_table; then
         nftban_log_error "Health check: nftables table missing"
-        ((issues++))
+        ((issues++)) || true
     fi
     
     # Check required directories
@@ -380,14 +380,14 @@ nftban_maintenance_health_check() {
     for dir in "${required_dirs[@]}"; do
         if [[ ! -d "$dir" ]]; then
             nftban_log_error "Health check: Missing directory: $dir"
-            ((issues++))
+            ((issues++)) || true
         fi
     done
     
     # Check whitelist for localhost
     if ! nftban_whitelist_check_ip "127.0.0.1"; then
         nftban_log_error "Health check: Localhost not whitelisted!"
-        ((issues++))
+        ((issues++)) || true
     fi
     
     if [[ $issues -eq 0 ]]; then
@@ -591,7 +591,7 @@ nftban_maintenance_list_backups() {
         local count=0
         
         while IFS= read -r backup; do
-            ((count++))
+            ((count++)) || true
             local size
             size=$(du -h "$backup" | cut -f1)
             local date
@@ -626,7 +626,7 @@ nftban_maintenance_validate_config() {
             cp "${NFTBAN_CONFIG_DIR}/nftban.conf" "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
         else
             nftban_log_error "No configuration files found"
-            ((errors++))
+            ((errors++)) || true
         fi
     fi
 
@@ -636,7 +636,7 @@ nftban_maintenance_validate_config() {
             nftban_log_success "Configuration syntax valid"
         else
             nftban_log_error "Invalid syntax in configuration"
-            ((errors++))
+            ((errors++)) || true
         fi
     fi
 
@@ -652,7 +652,7 @@ nftban_maintenance_validate_config() {
     for file in "${essential_files[@]}"; do
         if [[ ! -f "$file" ]]; then
             nftban_log_error "Missing essential file: $file"
-            ((errors++))
+            ((errors++)) || true
         fi
     done
 
@@ -662,7 +662,7 @@ nftban_maintenance_validate_config() {
             nftban_log_success "NFTables configuration valid"
         else
             nftban_log_error "Invalid NFTables configuration"
-            ((errors++))
+            ((errors++)) || true
         fi
     fi
 
@@ -705,7 +705,7 @@ nftban_maintenance_validate_permissions() {
         perms=$(stat -c "%a" "$dir" 2>/dev/null || echo "000")
         if [[ "$perms" != "755" ]]; then
             echo "  ⚠ $(basename "$dir"): $perms (should be 755)"
-            ((warnings++))
+            ((warnings++)) || true
         fi
     done < <(find "${NFTBAN_BASE_DIR}" -type d 2>/dev/null | head -20)
 
@@ -718,8 +718,8 @@ nftban_maintenance_validate_permissions() {
         perms=$(stat -c "%a" "$file" 2>/dev/null || echo "000")
         if [[ "$perms" != "644" ]]; then
             echo "  ⚠ $(basename "$file"): $perms (should be 644)"
-            ((bad_lib_perms++))
-            ((warnings++))
+            ((bad_lib_perms++)) || true
+            ((warnings++)) || true
         fi
     done < <(find "${NFTBAN_BASE_DIR}/lib" -name "*.sh" -type f 2>/dev/null | head -10)
 
@@ -737,8 +737,8 @@ nftban_maintenance_validate_permissions() {
             perms=$(stat -c "%a" "$file" 2>/dev/null || echo "000")
             if [[ "$perms" != "755" ]]; then
                 echo "  ⚠ $(basename "$file"): $perms (should be 755)"
-                ((bad_script_perms++))
-                ((warnings++))
+                ((bad_script_perms++)) || true
+                ((warnings++)) || true
             fi
         done < <(find "${NFTBAN_BASE_DIR}/scripts" -name "*.sh" -type f 2>/dev/null)
 
@@ -757,8 +757,8 @@ nftban_maintenance_validate_permissions() {
             perms=$(stat -c "%a" "$file" 2>/dev/null || echo "000")
             if [[ "$perms" != "755" ]]; then
                 echo "  ⚠ $(basename "$file"): $perms (should be 755)"
-                ((bad_bin_perms++))
-                ((warnings++))
+                ((bad_bin_perms++)) || true
+                ((warnings++)) || true
             fi
         done < <(find "${NFTBAN_BASE_DIR}/bin" -type f 2>/dev/null)
 
@@ -776,8 +776,8 @@ nftban_maintenance_validate_permissions() {
         perms=$(stat -c "%a" "$file" 2>/dev/null || echo "000")
         if [[ "$perms" != "644" ]]; then
             echo "  ⚠ $(basename "$file"): $perms (should be 644)"
-            ((bad_conf_perms++))
-            ((warnings++))
+            ((bad_conf_perms++)) || true
+            ((warnings++)) || true
         fi
     done < <(find "${NFTBAN_CONFIG_DIR}" -name "*.conf*" -type f 2>/dev/null | head -10)
 
@@ -855,26 +855,26 @@ EOF
     # Directories: 755 (rwxr-xr-x)
     echo "  Setting directory permissions to 755..."
     while IFS= read -r dir; do
-        chmod 755 "$dir" 2>/dev/null && ((fixed++))
+        chmod 755 "$dir" 2>/dev/null && ((fixed++)) || true
     done < <(find "${NFTBAN_BASE_DIR}" -type d 2>/dev/null)
 
     # Config files: 644 (rw-r--r--)
     echo "  Setting config file permissions to 644..."
     while IFS= read -r file; do
-        chmod 644 "$file" 2>/dev/null && ((fixed++))
+        chmod 644 "$file" 2>/dev/null && ((fixed++)) || true
     done < <(find "${NFTBAN_CONFIG_DIR}" -name "*.conf*" -type f 2>/dev/null)
 
     # Library files: 644 (sourced, not executed)
     echo "  Setting library file permissions to 644..."
     while IFS= read -r file; do
-        chmod 644 "$file" 2>/dev/null && ((fixed++))
+        chmod 644 "$file" 2>/dev/null && ((fixed++)) || true
     done < <(find "${NFTBAN_BASE_DIR}/lib" -name "*.sh" -type f 2>/dev/null)
 
     # Binary files: 755 (executed)
     if [[ -d "${NFTBAN_BASE_DIR}/bin" ]]; then
         echo "  Setting binary file permissions to 755..."
         while IFS= read -r file; do
-            chmod 755 "$file" 2>/dev/null && ((fixed++))
+            chmod 755 "$file" 2>/dev/null && ((fixed++)) || true
         done < <(find "${NFTBAN_BASE_DIR}/bin" -type f 2>/dev/null)
     fi
 
@@ -882,7 +882,7 @@ EOF
     if [[ -d "${NFTBAN_BASE_DIR}/scripts" ]]; then
         echo "  Setting script file permissions to 755..."
         while IFS= read -r file; do
-            chmod 755 "$file" 2>/dev/null && ((fixed++))
+            chmod 755 "$file" 2>/dev/null && ((fixed++)) || true
         done < <(find "${NFTBAN_BASE_DIR}/scripts" -name "*.sh" -type f 2>/dev/null)
     fi
 
@@ -890,7 +890,7 @@ EOF
     if [[ -d "$NFTBAN_LOG_DIR" ]]; then
         echo "  Setting log file permissions to 644..."
         while IFS= read -r file; do
-            chmod 644 "$file" 2>/dev/null && ((fixed++))
+            chmod 644 "$file" 2>/dev/null && ((fixed++)) || true
         done < <(find "$NFTBAN_LOG_DIR" -type f 2>/dev/null)
     fi
 
@@ -919,7 +919,7 @@ nftban_maintenance_health_check_detailed() {
             echo "  ✅ $service: Active"
         else
             echo "  ❌ $service: Inactive"
-            ((issues++))
+            ((issues++)) || true
         fi
     done
     echo ""
@@ -936,7 +936,7 @@ nftban_maintenance_health_check_detailed() {
         echo "  ℹ️  IPv6 tables: $v6_tables"
     else
         echo "  ❌ Cannot read ruleset"
-        ((issues++))
+        ((issues++)) || true
     fi
     echo ""
 
@@ -967,7 +967,7 @@ nftban_maintenance_health_check_detailed() {
     local disk_usage=$(df "${NFTBAN_BASE_DIR}" 2>/dev/null | tail -1 | awk '{print $5}' | sed 's/%//')
     if [[ $disk_usage -gt 90 ]]; then
         echo "  ⚠️  High usage: ${disk_usage}%"
-        ((issues++))
+        ((issues++)) || true
     else
         echo "  ✅ Usage: ${disk_usage}%"
     fi
@@ -987,8 +987,8 @@ nftban_maintenance_health_check_detailed() {
         while IFS= read -r large_log; do
             local size=$(du -h "$large_log" 2>/dev/null | awk '{print $1}')
             echo "  ⚠️  Large log: $(basename "$large_log") ($size)"
-            ((large_count++))
-            ((issues++))
+            ((large_count++)) || true
+            ((issues++)) || true
         done < <(find "${NFTBAN_LOG_DIR}" -type f -size +100M 2>/dev/null)
 
         [[ $large_count -eq 0 ]] && echo "  ✅ No large log files"
@@ -1026,8 +1026,8 @@ nftban_maintenance_health_check_detailed() {
             echo "  ✅ $(basename "$file")"
         else
             echo "  ❌ Missing: $(basename "$file")"
-            ((missing_files++))
-            ((issues++))
+            ((missing_files++)) || true
+            ((issues++)) || true
         fi
     done
     echo ""
@@ -1038,7 +1038,7 @@ nftban_maintenance_health_check_detailed() {
         echo "  ✅ Localhost whitelisted (127.0.0.1)"
     else
         echo "  ⚠️  Localhost NOT whitelisted!"
-        ((issues++))
+        ((issues++)) || true
     fi
 
     if nftban_whitelist_check_ip "::1" 2>/dev/null; then

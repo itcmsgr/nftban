@@ -219,7 +219,7 @@ nftban_template_process_jail() {
         nftban_template_process "$jail_template" \
             "/etc/fail2ban/jail.d/nftban-${jail_lower}.conf" \
             "$jail_name"
-        ((processed++))
+        ((processed++)) || true
     fi
     
     # Copy filter.d template (usually no substitution needed)
@@ -228,7 +228,7 @@ nftban_template_process_jail() {
         cp "$filter_template" "/etc/fail2ban/filter.d/nftban-${jail_lower}.conf"
         chmod 644 "/etc/fail2ban/filter.d/nftban-${jail_lower}.conf"
         nftban_log_debug "Copied filter: nftban-${jail_lower}.conf"
-        ((processed++))
+        ((processed++)) || true
     fi
     
     # Copy action.d template (usually no substitution needed)
@@ -237,7 +237,7 @@ nftban_template_process_jail() {
         cp "$action_template" "/etc/fail2ban/action.d/nftban-${jail_lower}.conf"
         chmod 644 "/etc/fail2ban/action.d/nftban-${jail_lower}.conf"
         nftban_log_debug "Copied action: nftban-${jail_lower}.conf"
-        ((processed++))
+        ((processed++)) || true
     fi
     
     if [[ $processed -gt 0 ]]; then
@@ -408,9 +408,9 @@ nftban_template_deploy_all() {
         [[ -z "$jail_name" ]] && continue
         
         if nftban_template_deploy_jail "$jail_name" "$os"; then
-            ((deployed++))
+            ((deployed++)) || true
         else
-            ((failed++))
+            ((failed++)) || true
         fi
     done < <(nftban_template_get_available_jails "$os")
     
@@ -430,7 +430,7 @@ nftban_template_undeploy_all() {
         [[ -z "$jail_name" ]] && continue
         
         if nftban_template_undeploy_jail "$jail_name"; then
-            ((undeployed++))
+            ((undeployed++)) || true
         fi
     done < <(nftban_jail_list_configured)
     
@@ -451,7 +451,7 @@ nftban_template_redeploy_all() {
         
         if nftban_jail_is_enabled "$jail_name"; then
             if nftban_template_redeploy_jail "$jail_name" "$os"; then
-                ((redeployed++))
+                ((redeployed++)) || true
             fi
         fi
     done < <(nftban_jail_list_configured)
@@ -539,7 +539,7 @@ nftban_template_list_jails() {
     while IFS= read -r jail_name; do
         [[ -z "$jail_name" ]] && continue
         
-        ((count++))
+        ((count++)) || true
         
         local enabled ban_time max_retry
         enabled=$(nftban_jail_get_config "$jail_name" "ENABLED" "false")
@@ -588,7 +588,7 @@ nftban_template_validate() {
     for var in "${required_vars[@]}"; do
         if ! grep -q "$var" "$template_file"; then
             nftban_log_warning "Missing placeholder: $var"
-            ((missing++))
+            ((missing++)) || true
         fi
     done
     
@@ -621,12 +621,12 @@ nftban_template_validate_all() {
     if [[ -d "${template_os_dir}/jail.d" ]]; then
         while IFS= read -r template; do
             [[ -z "$template" ]] && continue
-            ((total++))
+            ((total++)) || true
             
             if nftban_template_validate "$template" &>/dev/null; then
-                ((valid++))
+                ((valid++)) || true
             else
-                ((invalid++))
+                ((invalid++)) || true
             fi
         done < <(find "${template_os_dir}/jail.d" -name "*.conf" -type f 2>/dev/null)
     fi
@@ -677,7 +677,7 @@ nftban_template_interactive_menu() {
             
             printf "%-5s %-20s " "$i" "$jail"
             echo -e "$status_text"
-            ((i++))
+            ((i++)) || true
         done
         
         echo ""

@@ -360,9 +360,9 @@ parse_feed() {
                         fi
                     fi
                     echo "$ip" >> "$output_file"
-                    ((valid_count++))
+                    ((valid_count++)) || true
                 else
-                    ((invalid_count++))
+                    ((invalid_count++)) || true
                 fi
             else
                 # Single IP
@@ -375,9 +375,9 @@ parse_feed() {
                         fi
                     fi
                     echo "$ip" >> "$output_file"
-                    ((valid_count++))
+                    ((valid_count++)) || true
                 else
-                    ((invalid_count++))
+                    ((invalid_count++)) || true
                 fi
             fi
         fi
@@ -454,7 +454,7 @@ import_feed_to_nftables() {
         else
             ip_list="$ip"
         fi
-        ((count++))
+        ((count++)) || true
     done < "$parsed_file"
 
     # Write atomic transaction (single operation)
@@ -535,9 +535,9 @@ update_all_feeds() {
         local enabled=$(load_feed_config "$feed")
         if [[ "$enabled" == "true" ]]; then
             if update_feed "$feed"; then
-                ((success++))
+                ((success++)) || true
             else
-                ((failed++))
+                ((failed++)) || true
             fi
         fi
     done
@@ -666,7 +666,7 @@ feed_stats() {
     for feed in $(get_feed_list); do
         local enabled=$(load_feed_config "$feed")
         if [[ "$enabled" == "true" ]]; then
-            ((enabled_count++))
+            ((enabled_count++)) || true
             local parsed_file="$NFTBAN_FEEDS_DATA_DIR/${feed}.parsed"
             if [[ -f "$parsed_file" ]]; then
                 local count=$(wc -l < "$parsed_file")

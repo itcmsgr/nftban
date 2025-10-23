@@ -308,7 +308,7 @@ nftban_port_list() {
             # Skip empty lines and comments
             [[ -z "$port" || "$port" =~ ^# ]] && continue
             
-            ((count++))
+            ((count++)) || true
             
             local proto_name
             case "$proto" in
@@ -446,14 +446,14 @@ nftban_port_apply_to_nftables() {
             
             case "$protocol" in
                 T)
-                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" tcp dport "$port" accept 2>/dev/null && ((rules_applied++))
+                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" tcp dport "$port" accept 2>/dev/null && ((rules_applied++)) || true
                     ;;
                 U)
-                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" udp dport "$port" accept 2>/dev/null && ((rules_applied++))
+                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" udp dport "$port" accept 2>/dev/null && ((rules_applied++)) || true
                     ;;
                 B)
-                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" tcp dport "$port" accept 2>/dev/null && ((rules_applied++))
-                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" udp dport "$port" accept 2>/dev/null && ((rules_applied++))
+                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" tcp dport "$port" accept 2>/dev/null && ((rules_applied++)) || true
+                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" udp dport "$port" accept 2>/dev/null && ((rules_applied++)) || true
                     ;;
             esac
         done < <(grep -vE '^#|^$' "$ipv4_config" 2>/dev/null || true)
@@ -467,14 +467,14 @@ nftban_port_apply_to_nftables() {
             # BUG52 FIX: Use meta nfproto instead of invalid 'ip6 version 6'
             case "$protocol" in
                 T)
-                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" meta nfproto ipv6 tcp dport "$port" accept 2>/dev/null && ((rules_applied++))
+                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" meta nfproto ipv6 tcp dport "$port" accept 2>/dev/null && ((rules_applied++)) || true
                     ;;
                 U)
-                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" meta nfproto ipv6 udp dport "$port" accept 2>/dev/null && ((rules_applied++))
+                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" meta nfproto ipv6 udp dport "$port" accept 2>/dev/null && ((rules_applied++)) || true
                     ;;
                 B)
-                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" meta nfproto ipv6 tcp dport "$port" accept 2>/dev/null && ((rules_applied++))
-                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" meta nfproto ipv6 udp dport "$port" accept 2>/dev/null && ((rules_applied++))
+                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" meta nfproto ipv6 tcp dport "$port" accept 2>/dev/null && ((rules_applied++)) || true
+                    nft add rule inet "$NFTBAN_NFT_TABLE" "$direction" meta nfproto ipv6 udp dport "$port" accept 2>/dev/null && ((rules_applied++)) || true
                     ;;
             esac
         done < <(grep -vE '^#|^$' "$ipv6_config" 2>/dev/null || true)
@@ -510,13 +510,13 @@ nftban_port_validate_all() {
             # Skip empty lines and comments
             [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
             
-            ((total++))
+            ((total++)) || true
             
             if nftban_port_validate_line "$line"; then
-                ((valid++))
+                ((valid++)) || true
                 echo -e "  ${NFTBAN_GREEN}✓${NFTBAN_NC} $line"
             else
-                ((invalid++))
+                ((invalid++)) || true
                 echo -e "  ${NFTBAN_RED}✗${NFTBAN_NC} $line (INVALID)"
             fi
         done < "$file"
