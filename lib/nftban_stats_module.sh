@@ -74,12 +74,12 @@ nftban_stats_whitelist_summary() {
     local wl_user=0
     local wl_cf=0
 
-    if [[ -f "$NFTBAN_WHITELIST_SYSTEM" ]]; then
-        wl_system=$(grep -cvE '^#|^$' "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null)
+    if [[ -f "${NFTBAN_WHITELIST_SYSTEM:-}" ]]; then
+        wl_system=$(grep -cvE '^#|^$' "${NFTBAN_WHITELIST_SYSTEM}" 2>/dev/null)
         wl_system=${wl_system:-0}
     fi
-    if [[ -f "$NFTBAN_WHITELIST_USER" ]]; then
-        wl_user=$(grep -cvE '^#|^$' "$NFTBAN_WHITELIST_USER" 2>/dev/null)
+    if [[ -f "${NFTBAN_WHITELIST_USER:-}" ]]; then
+        wl_user=$(grep -cvE '^#|^$' "${NFTBAN_WHITELIST_USER}" 2>/dev/null)
         wl_user=${wl_user:-0}
     fi
     if [[ -f "${NFTBAN_WHITELIST_CF:-}" ]] && [[ -n "${NFTBAN_WHITELIST_CF:-}" ]]; then
@@ -88,7 +88,7 @@ nftban_stats_whitelist_summary() {
     fi
 
     local total=$((${wl_system:-0} + ${wl_user:-0} + ${wl_cf:-0}))
-    
+
     echo "  System: $wl_system"
     echo "  User: $wl_user"
     echo "  Cloudflare: $wl_cf"
@@ -105,17 +105,17 @@ nftban_stats_blacklist_summary() {
     local bl_persistent=0
     local bl_user=0
 
-    if [[ -f "$NFTBAN_BLACKLIST_PERSISTENT" ]]; then
-        bl_persistent=$(grep -cvE '^#|^$' "$NFTBAN_BLACKLIST_PERSISTENT" 2>/dev/null)
+    if [[ -f "${NFTBAN_BLACKLIST_PERSISTENT:-}" ]]; then
+        bl_persistent=$(grep -cvE '^#|^$' "${NFTBAN_BLACKLIST_PERSISTENT}" 2>/dev/null)
         bl_persistent=${bl_persistent:-0}
     fi
-    if [[ -f "$NFTBAN_BLACKLIST_USER" ]]; then
-        bl_user=$(grep -cvE '^#|^$' "$NFTBAN_BLACKLIST_USER" 2>/dev/null)
+    if [[ -f "${NFTBAN_BLACKLIST_USER:-}" ]]; then
+        bl_user=$(grep -cvE '^#|^$' "${NFTBAN_BLACKLIST_USER}" 2>/dev/null)
         bl_user=${bl_user:-0}
     fi
 
     local total=$((${bl_persistent:-0} + ${bl_user:-0}))
-    
+
     echo "  Persistent: $bl_persistent"
     echo "  User: $bl_user"
     echo "  ──────────────"
@@ -127,31 +127,31 @@ nftban_stats_blacklist_summary() {
 # =============================================================================
 nftban_stats_ban_activity() {
     echo -e "${NFTBAN_YELLOW}[BAN ACTIVITY]${NFTBAN_NC}"
-    
-    if [[ ! -f "$NFTBAN_BAN_LOG" ]]; then
+
+    if [[ ! -f "${NFTBAN_BAN_LOG:-}" ]]; then
         echo "  No ban activity recorded"
         return 0
     fi
-    
-    local total=$(wc -l < "$NFTBAN_BAN_LOG")
+
+    local total=$(wc -l < "${NFTBAN_BAN_LOG}")
     echo "  Total events: $total"
-    
+
     if [[ $total -gt 0 ]]; then
         echo ""
         echo "  Breakdown by action:"
-        awk -F'|' '{print $4}' "$NFTBAN_BAN_LOG" | sort | uniq -c | sort -rn | while read -r count action; do
+        awk -F'|' '{print $4}' "${NFTBAN_BAN_LOG}" | sort | uniq -c | sort -rn | while read -r count action; do
             printf "    %-20s %6d\n" "$action" "$count"
         done
-        
+
         echo ""
         echo "  Top 5 banned IPs:"
-        awk -F'|' '$4 == "BANNED" {print $2}' "$NFTBAN_BAN_LOG" | sort | uniq -c | sort -rn | head -5 | while read -r count ip; do
+        awk -F'|' '$4 == "BANNED" {print $2}' "${NFTBAN_BAN_LOG}" | sort | uniq -c | sort -rn | head -5 | while read -r count ip; do
             printf "    %-16s %6d times\n" "$ip" "$count"
         done
-        
+
         echo ""
         echo "  Recent activity (last 5):"
-        tail -5 "$NFTBAN_BAN_LOG" | while IFS='|' read -r timestamp ip jail action reason; do
+        tail -5 "${NFTBAN_BAN_LOG}" | while IFS='|' read -r timestamp ip jail action reason; do
             echo "    $timestamp | $ip | $action"
         done
     fi
@@ -162,19 +162,19 @@ nftban_stats_ban_activity() {
 # =============================================================================
 nftban_stats_geo_summary() {
     echo -e "${NFTBAN_MAGENTA}[GEO BLOCKING]${NFTBAN_NC}"
-    
-    if [[ ! -f "$NFTBAN_GEO_BLACKLIST" ]]; then
+
+    if [[ ! -f "${NFTBAN_GEO_BLACKLIST:-}" ]]; then
         echo "  Not configured"
         return 0
     fi
-    
-    local blocked_countries=$(grep -cvE '^#|^$' "$NFTBAN_GEO_BLACKLIST" 2>/dev/null)
+
+    local blocked_countries=$(grep -cvE '^#|^$' "${NFTBAN_GEO_BLACKLIST}" 2>/dev/null)
     blocked_countries=${blocked_countries:-0}
     echo "  Blocked countries: $blocked_countries"
-    
+
     if [[ $blocked_countries -gt 0 ]]; then
         echo "  Countries:"
-        grep -vE '^#|^$' "$NFTBAN_GEO_BLACKLIST" | while read -r line; do
+        grep -vE '^#|^$' "${NFTBAN_GEO_BLACKLIST}" | while read -r line; do
             local country=$(echo "$line" | awk '{print $1}')
             echo "    - $country"
         done
@@ -203,22 +203,22 @@ nftban_stats_geo_summary() {
 # =============================================================================
 nftban_stats_cloudflare_summary() {
     echo -e "${NFTBAN_CYAN}[CLOUDFLARE]${NFTBAN_NC}"
-    
+
     local cf_enabled=$(nftban_get_config "CLOUDFLARE_ENABLED" "false")
     echo "  Status: $cf_enabled"
-    
+
     if [[ "$cf_enabled" == "true" ]]; then
         local ipv4_count=0
         local ipv6_count=0
-        
-        [[ -f "$NFTBAN_CF_IPV4_CACHE" ]] && ipv4_count=$(wc -l < "$NFTBAN_CF_IPV4_CACHE")
-        [[ -f "$NFTBAN_CF_IPV6_CACHE" ]] && ipv6_count=$(wc -l < "$NFTBAN_CF_IPV6_CACHE")
-        
+
+        [[ -f "${NFTBAN_CF_IPV4_CACHE:-}" ]] && ipv4_count=$(wc -l < "${NFTBAN_CF_IPV4_CACHE}")
+        [[ -f "${NFTBAN_CF_IPV6_CACHE:-}" ]] && ipv6_count=$(wc -l < "${NFTBAN_CF_IPV6_CACHE}")
+
         echo "  IPv4 ranges: $ipv4_count"
         echo "  IPv6 ranges: $ipv6_count"
-        
-        if [[ -f "$NFTBAN_CF_IPV4_CACHE" ]]; then
-            local age=$(( ($(date +%s) - $(stat -c %Y "$NFTBAN_CF_IPV4_CACHE")) / 3600 ))
+
+        if [[ -f "${NFTBAN_CF_IPV4_CACHE:-}" ]]; then
+            local age=$(( ($(date +%s) - $(stat -c %Y "${NFTBAN_CF_IPV4_CACHE}")) / 3600 ))
             echo "  Cache age: ${age}h"
         fi
     fi

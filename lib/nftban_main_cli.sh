@@ -216,171 +216,14 @@ cmd_validate() {
 
 
 # =============================================================================
-# FEEDS COMMANDS (NEW)
+# FEEDS COMMANDS - NOW AUTO-LOADED FROM lib/cli/cmd_feeds.sh
 # =============================================================================
-
-cmd_feeds() {
-    local action="${1:-list}"
-    shift || true
-    
-    case "$action" in
-        init)
-            nftban_check_root || exit 1
-            nftban_feeds_init
-            ;;
-        list)
-            nftban_feeds_list
-            ;;
-        enable)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban feeds enable <provider_id>"; exit 1; }
-            nftban_feeds_enable "$1"
-            ;;
-        disable)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban feeds disable <provider_id>"; exit 1; }
-            nftban_feeds_disable "$1"
-            ;;
-        update)
-            nftban_check_root || exit 1
-            nftban_feeds_update "${1:-}"
-            ;;
-        status)
-            nftban_feeds_status
-            ;;
-        set-interval)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban feeds set-interval <interval>"; exit 1; }
-            nftban_feeds_set_interval "$1"
-            ;;
-        timer-install)
-            nftban_check_root || exit 1
-            nftban_feeds_timer_install
-            ;;
-        timer-remove)
-            nftban_check_root || exit 1
-            nftban_feeds_timer_remove
-            ;;
-        memory)
-            nftban_feeds_memory_status
-            ;;
-        *)
-            nftban_log_error "Unknown feeds action: $action"
-            echo ""
-            echo "Available actions:"
-            echo "  init              Initialize feeds system"
-            echo "  list              List feed providers"
-            echo "  enable <id>       Enable provider"
-            echo "  disable <id>      Disable provider"
-            echo "  update [id]       Update feeds (all or specific)"
-            echo "  status            Show feeds status"
-            echo "  set-interval <i>  Set update interval"
-            echo "  timer-install     Install systemd timer"
-            echo "  timer-remove      Remove systemd timer"
-            echo "  memory            Show memory usage"
-            echo ""
-            exit 1
-            ;;
-    esac
-}
+# Removed duplicate definition - auto-loading handles this command
 
 # =============================================================================
-# FAIL2BAN JAIL MANAGEMENT COMMANDS (NEW)
+# FAIL2BAN COMMANDS - NOW AUTO-LOADED FROM lib/cli/cmd_fail2ban.sh
 # =============================================================================
-
-cmd_fail2ban() {
-    local action="${1:-status}"
-    shift || true
-
-    case "$action" in
-        setup)
-            nftban_check_root || exit 1
-            nftban_fail2ban_setup
-            ;;
-        status)
-            nftban_fail2ban_show_status
-            ;;
-        monitor|panel)
-            nftban_fail2ban_monitor_panel
-            ;;
-        list)
-            nftban_fail2ban_list_jails
-            ;;
-        enable)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban fail2ban enable <jail_name>"; exit 1; }
-            nftban_fail2ban_enable_jail "$1"
-            ;;
-        disable)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban fail2ban disable <jail_name>"; exit 1; }
-            nftban_fail2ban_disable_jail "$1"
-            ;;
-        start)
-            nftban_check_root || exit 1
-            nftban_log_info "Starting fail2ban service..."
-            systemctl start fail2ban
-            nftban_log_success "fail2ban service started"
-            ;;
-        stop)
-            nftban_check_root || exit 1
-            nftban_log_info "Stopping fail2ban service..."
-            systemctl stop fail2ban
-            nftban_log_success "fail2ban service stopped"
-            ;;
-        restart)
-            nftban_check_root || exit 1
-            nftban_log_info "Restarting fail2ban service..."
-            systemctl restart fail2ban
-            nftban_log_success "fail2ban service restarted"
-            ;;
-        service-enable)
-            nftban_check_root || exit 1
-            nftban_log_info "Enabling fail2ban service at boot..."
-            systemctl enable fail2ban
-            nftban_log_success "fail2ban service enabled at boot"
-            ;;
-        service-disable)
-            nftban_check_root || exit 1
-            nftban_log_info "Disabling fail2ban service at boot..."
-            systemctl disable fail2ban
-            nftban_log_success "fail2ban service disabled at boot"
-            ;;
-        *)
-            nftban_log_error "Unknown fail2ban action: $action"
-            echo ""
-            echo "Available actions:"
-            echo "  setup                  Setup fail2ban integration"
-            echo "  status                 Show fail2ban status and jail details"
-            echo "  monitor                Show beautiful service monitoring panel"
-            echo "  list                   List active jails"
-            echo ""
-            echo "Service Management:"
-            echo "  start                  Start fail2ban service"
-            echo "  stop                   Stop fail2ban service"
-            echo "  restart                Restart fail2ban service"
-            echo "  service-enable         Enable fail2ban at boot"
-            echo "  service-disable        Disable fail2ban at boot"
-            echo ""
-            echo "Jail Management:"
-            echo "  enable <jail>          Enable specific jail"
-            echo "  disable <jail>         Disable specific jail"
-            echo ""
-            echo "Examples:"
-            echo "  sudo nftban fail2ban setup"
-            echo "  nftban fail2ban status"
-            echo "  nftban fail2ban monitor      # Beautiful colored panel!"
-            echo "  sudo nftban fail2ban start   # Start service"
-            echo "  sudo nftban fail2ban restart # Restart service"
-            echo "  sudo nftban fail2ban service-enable  # Enable at boot"
-            echo "  nftban fail2ban list"
-            echo "  sudo nftban fail2ban enable sshd     # Enable sshd jail"
-            echo "  sudo nftban fail2ban disable sshd    # Disable sshd jail"
-            echo ""
-            exit 1
-            ;;
-    esac
-}
+# Removed duplicate definition - auto-loading handles this command
 
 # =============================================================================
 # MONITORING COMMANDS (NEW)
@@ -623,353 +466,24 @@ EOF
 }
 
 # =============================================================================
-# UPDATE COMMANDS (NEW)
+# UPDATE COMMANDS - NOW AUTO-LOADED FROM lib/cli/cmd_update.sh
 # =============================================================================
-
-cmd_update() {
-    local action="${1:-check}"
-    shift || true
-
-    case "$action" in
-        check)
-            nftban_check_root || exit 1
-            # Temporarily disable ERR trap - return code 2 is informational (update available)
-            # Save current ERR trap and disable it (set +e alone doesn't stop trap from firing)
-            local old_err_trap
-            old_err_trap=$(trap -p ERR)
-            trap - ERR
-
-            nftban_update_check "true"
-
-            # Restore ERR trap
-            eval "$old_err_trap"
-            ;;
-        perform|upgrade|install)
-            nftban_check_root || exit 1
-            nftban_update_perform "false"
-            ;;
-        auto)
-            nftban_check_root || exit 1
-            nftban_update_perform "true"  # Skip confirmation
-            ;;
-        rollback)
-            nftban_check_root || exit 1
-            nftban_log_warning "Rolling back to previous version..."
-            nftban_update_rollback "$1"
-            ;;
-        version)
-            echo "Current version: $(nftban_update_get_local_version)"
-            if remote_ver=$(nftban_update_get_remote_version 2>/dev/null); then
-                echo "Available version: $remote_ver"
-            fi
-            ;;
-        pin)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban update pin <commit-sha>"; exit 1; }
-            nftban_update_set_commit_pin "$1"
-            ;;
-        show-commit|show-pin)
-            echo "Pinned commit:"
-            local pinned
-            pinned=$(nftban_update_get_pinned_commit)
-            if [[ -n "$pinned" ]]; then
-                echo "  $pinned"
-                echo "  https://github.com/itcmsgr/nftban/commit/$pinned"
-            else
-                echo "  (not configured - updates disabled)"
-            fi
-            echo ""
-            echo "Remote commit:"
-            if remote_sha=$(nftban_update_get_remote_commit_sha 2>/dev/null); then
-                echo "  $remote_sha"
-                echo "  https://github.com/itcmsgr/nftban/commit/$remote_sha"
-            else
-                echo "  (failed to fetch)"
-            fi
-            ;;
-        *)
-            nftban_log_error "Unknown update action: $action"
-            echo ""
-            echo "Available actions:"
-            echo "  check                   Check for available updates"
-            echo "  perform                 Perform update (with confirmation)"
-            echo "  auto                    Perform update (no confirmation)"
-            echo "  rollback [DIR]          Rollback to previous version"
-            echo "  version                 Show current and available versions"
-            echo "  pin <commit-sha>        Pin updates to specific commit (security)"
-            echo "  show-commit             Show pinned and remote commit SHAs"
-            echo ""
-            echo "Security (Commit Pinning):"
-            echo "  Updates are verified against a pinned git commit SHA"
-            echo "  This prevents man-in-the-middle attacks and compromises"
-            echo ""
-            echo "Examples:"
-            echo "  nftban update show-commit           # Show current commits"
-            echo "  sudo nftban update pin <sha>        # Pin to trusted commit"
-            echo "  nftban update check                 # Check for updates"
-            echo "  sudo nftban update perform          # Perform update"
-            echo ""
-            exit 1
-            ;;
-    esac
-}
+# Removed duplicate definition - auto-loading handles this command
 
 # =============================================================================
-# MAINTENANCE COMMANDS (NEW)
+# MAINTENANCE COMMANDS - NOW AUTO-LOADED FROM lib/cli/cmd_maintenance.sh
 # =============================================================================
-
-cmd_maintenance() {
-    local action="${1:-panel}"
-    shift || true
-
-    case "$action" in
-        panel)
-            nftban_maintenance_show_panel
-            ;;
-        validate)
-            nftban_maintenance_validate_config
-            ;;
-        repair)
-            nftban_check_root || exit 1
-            nftban_maintenance_repair_config
-            ;;
-        health)
-            nftban_maintenance_health_check_detailed
-            ;;
-        health-basic)
-            nftban_maintenance_health_check
-            ;;
-        stats)
-            nftban_maintenance_show_stats
-            ;;
-        check-permissions|perms)
-            nftban_maintenance_validate_permissions
-            ;;
-        backup)
-            nftban_check_root || exit 1
-            nftban_update_create_backup
-            ;;
-        list-backups)
-            nftban_log_info "Available backups:"
-            find "${NFTBAN_UPDATE_BACKUP_DIR}" -maxdepth 1 -type d -name "pre_update_*" 2>/dev/null | sort -r | head -10
-            ;;
-        restore)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && {
-                nftban_log_error "Usage: nftban maintenance restore <backup_dir>"
-                echo ""
-                echo "Available backups:"
-                find "${NFTBAN_UPDATE_BACKUP_DIR}" -maxdepth 1 -type d -name "pre_update_*" 2>/dev/null | sort -r | head -10
-                exit 1
-            }
-            nftban_update_rollback "$1"
-            ;;
-        clean)
-            nftban_check_root || exit 1
-            nftban_maintenance_run
-            ;;
-        enable)
-            nftban_check_root || exit 1
-            local service="${1:-all}"
-            nftban_log_info "Enabling service: $service"
-            nftban_service_control "enable" "$service"
-            nftban_log_success "Service enabled: $service"
-            ;;
-        disable)
-            nftban_check_root || exit 1
-            local service="${1:-all}"
-            nftban_log_info "Disabling service: $service"
-            nftban_service_control "disable" "$service"
-            nftban_log_success "Service disabled: $service"
-            ;;
-        start)
-            nftban_check_root || exit 1
-            local service="${1:-all}"
-            nftban_log_info "Starting service: $service"
-            nftban_service_control "start" "$service"
-            nftban_log_success "Service started: $service"
-            ;;
-        stop)
-            nftban_check_root || exit 1
-            local service="${1:-all}"
-            nftban_log_info "Stopping service: $service"
-            nftban_service_control "stop" "$service"
-            nftban_log_success "Service stopped: $service"
-            ;;
-        restart)
-            nftban_check_root || exit 1
-            local service="${1:-all}"
-            nftban_log_info "Restarting service: $service"
-            nftban_service_control "restart" "$service"
-            nftban_log_success "Service restarted: $service"
-            ;;
-        *)
-            nftban_log_error "Unknown maintenance action: $action"
-            echo ""
-            echo "Available actions:"
-            echo "  panel            Show maintenance panel"
-            echo "  validate         Validate configuration files"
-            echo "  repair           Repair broken configuration"
-            echo "  health           Comprehensive health check"
-            echo "  health-basic     Basic health check"
-            echo "  stats            Show system statistics"
-            echo "  check-permissions Check file/directory permissions"
-            echo "  backup           Create manual backup"
-            echo "  list-backups     List available backups"
-            echo "  restore <dir>    Restore from backup"
-            echo "  clean            Run maintenance cleanup"
-            echo ""
-            echo "Service Management:"
-            echo "  enable [service] Enable service (all/nftables/fail2ban)"
-            echo "  disable [service] Disable service (all/nftables/fail2ban)"
-            echo "  start [service]  Start service (all/nftables/fail2ban)"
-            echo "  stop [service]   Stop service (all/nftables/fail2ban)"
-            echo "  restart [service] Restart service (all/nftables/fail2ban)"
-            echo ""
-            echo "Examples:"
-            echo "  nftban maintenance panel"
-            echo "  nftban maintenance validate"
-            echo "  nftban maintenance repair"
-            echo "  nftban maintenance health"
-            echo "  nftban maintenance stats"
-            echo "  nftban maintenance check-permissions"
-            echo ""
-            echo "  sudo nftban maintenance disable all       # Disable both nftables and fail2ban"
-            echo "  sudo nftban maintenance enable all        # Enable both services"
-            echo "  sudo nftban maintenance restart nftables  # Restart nftables only"
-            echo "  sudo nftban maintenance stop fail2ban     # Stop fail2ban only"
-            echo ""
-            exit 1
-            ;;
-    esac
-}
+# Removed duplicate definition - auto-loading handles this command
 
 # =============================================================================
-# WHITELIST COMMANDS (NEW)
+# WHITELIST COMMANDS - NOW AUTO-LOADED FROM lib/cli/cmd_whitelist.sh
 # =============================================================================
-
-cmd_whitelist() {
-    local action="${1:-list}"
-    shift || true
-
-    case "$action" in
-        add)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban whitelist add <IP> [reason]"; exit 1; }
-            nftban_whitelist_add_ip "$1" "${2:-Manual addition}"
-            ;;
-        remove|delete|del)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban whitelist remove <IP>"; exit 1; }
-            nftban_whitelist_remove_ip "$1"
-            ;;
-        list|show)
-            nftban_whitelist_list
-            ;;
-        check)
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban whitelist check <IP>"; exit 1; }
-            if nftban_whitelist_check_ip "$1"; then
-                nftban_log_success "IP $1 is whitelisted"
-            else
-                nftban_log_info "IP $1 is NOT whitelisted"
-            fi
-            ;;
-        sync)
-            nftban_check_root || exit 1
-            nftban_whitelist_sync_to_nftables
-            ;;
-        protect-me)
-            nftban_check_root || exit 1
-            nftban_whitelist_protect_current_user
-            ;;
-        protect-server|add-system)
-            nftban_check_root || exit 1
-            nftban_whitelist_add_server_ips
-            ;;
-        stats)
-            nftban_whitelist_get_stats
-            ;;
-        verify)
-            nftban_whitelist_verify
-            ;;
-        *)
-            nftban_log_error "Unknown whitelist action: $action"
-            echo ""
-            echo "Available actions:"
-            echo "  add <IP> [reason]   Add IP to whitelist"
-            echo "  remove <IP>         Remove IP from whitelist"
-            echo "  list                Show all whitelisted IPs"
-            echo "  check <IP>          Check if IP is whitelisted"
-            echo "  sync                Sync whitelist to nftables"
-            echo "  protect-me          Add your current IP to whitelist"
-            echo "  protect-server      Auto-protect all server IPs"
-            echo "  stats               Show whitelist statistics"
-            echo "  verify              Verify whitelist integrity"
-            echo ""
-            exit 1
-            ;;
-    esac
-}
+# Removed duplicate definition - auto-loading handles this command
 
 # =============================================================================
-# BLACKLIST COMMANDS (NEW)
+# BLACKLIST COMMANDS - NOW AUTO-LOADED FROM lib/cli/cmd_blacklist.sh
 # =============================================================================
-
-cmd_blacklist() {
-    local action="${1:-list}"
-    shift || true
-
-    case "$action" in
-        ban)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban blacklist ban <IP> [timeout] [reason]"; exit 1; }
-            nftban_blacklist_ban_ip "$1" "${3:-Manual ban}" "${2:-3600}"
-            ;;
-        unban)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban blacklist unban <IP>"; exit 1; }
-            nftban_blacklist_unban_ip "$1"
-            ;;
-        permanent|perm)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban blacklist permanent <IP> [reason]"; exit 1; }
-            nftban_blacklist_add_permanent "$1" "${2:-Permanent ban}"
-            ;;
-        remove-permanent|rmperm)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban blacklist remove-permanent <IP>"; exit 1; }
-            nftban_blacklist_remove_permanent "$1"
-            ;;
-        list)
-            nftban_blacklist_list_permanent
-            ;;
-        stats)
-            nftban_blacklist_show_recent_stats
-            ;;
-        top)
-            nftban_blacklist_get_top_ips "${1:-10}"
-            ;;
-        sync)
-            nftban_check_root || exit 1
-            nftban_blacklist_sync_to_nftables
-            ;;
-        *)
-            nftban_log_error "Unknown blacklist action: $action"
-            echo ""
-            echo "Available actions:"
-            echo "  ban <IP> [timeout] [reason]  Temporarily ban IP"
-            echo "  unban <IP>                    Unban IP"
-            echo "  permanent <IP> [reason]       Permanently ban IP"
-            echo "  remove-permanent <IP>         Remove permanent ban"
-            echo "  list                          Show permanent bans"
-            echo "  stats                         Show ban statistics"
-            echo "  top [N]                       Show top N banned IPs"
-            echo "  sync                          Sync blacklist to nftables"
-            echo ""
-            exit 1
-            ;;
-    esac
-}
+# Removed duplicate definition - auto-loading handles this command
 
 # =============================================================================
 # SYNC COMMANDS (NEW)
@@ -1618,17 +1132,43 @@ main() {
         verify) cmd_verify "$@" ;;
         validate|validator) cmd_validate "$@" ;;
 
-        # Update & Maintenance
-        update) cmd_update "$@" ;;
-        maintenance|maint) cmd_maintenance "$@" ;;
+        # Update & Maintenance (auto-loaded from lib/cli/)
+        # update, maintenance, whitelist, blacklist now auto-loaded
 
-        # IP Management (whitelist, blacklist, search now auto-loaded from lib/cli/)
-        # Aliases for whitelist/blacklist
-        wl) cmd_whitelist "$@" ;;
-        bl) cmd_blacklist "$@" ;;
+        # IP Management - Aliases only (actual commands auto-loaded from lib/cli/)
+        wl|whitelist)
+            if [[ -f "${LIB_DIR}/cli/cmd_whitelist.sh" ]]; then
+                source "${LIB_DIR}/cli/cmd_whitelist.sh"
+                cmd_whitelist "$@"
+            else
+                cmd_whitelist "$@"  # Fallback to inline if exists
+            fi
+            ;;
+        bl|blacklist)
+            if [[ -f "${LIB_DIR}/cli/cmd_blacklist.sh" ]]; then
+                source "${LIB_DIR}/cli/cmd_blacklist.sh"
+                cmd_blacklist "$@"
+            else
+                cmd_blacklist "$@"  # Fallback to inline if exists
+            fi
+            ;;
         # Shortcuts for ban/unban
-        ban) cmd_blacklist ban "$@" ;;
-        unban) cmd_blacklist unban "$@" ;;
+        ban)
+            if [[ -f "${LIB_DIR}/cli/cmd_blacklist.sh" ]]; then
+                source "${LIB_DIR}/cli/cmd_blacklist.sh"
+                cmd_blacklist ban "$@"
+            else
+                cmd_blacklist ban "$@"  # Fallback
+            fi
+            ;;
+        unban)
+            if [[ -f "${LIB_DIR}/cli/cmd_blacklist.sh" ]]; then
+                source "${LIB_DIR}/cli/cmd_blacklist.sh"
+                cmd_blacklist unban "$@"
+            else
+                cmd_blacklist unban "$@"  # Fallback
+            fi
+            ;;
 
         # Synchronization
         sync) cmd_sync "$@" ;;
@@ -1641,12 +1181,8 @@ main() {
         # Port Scan Detection (auto-loaded from lib/cli/cmd_portscan.sh)
         # GEO-Blocking (auto-loaded from lib/cli/cmd_geo.sh)
         # Cloudflare Whitelist (auto-loaded from lib/cli/cmd_cloudflare.sh)
-
-		# Feeds Management
-        feeds) cmd_feeds "$@" ;;
-
-        # Fail2ban Jail Management
-        fail2ban|f2b) cmd_fail2ban "$@" ;;
+        # Feeds Management (auto-loaded from lib/cli/cmd_feeds.sh)
+        # Fail2ban Management (auto-loaded from lib/cli/cmd_fail2ban.sh)
 
         # System Monitoring
         monitor|monitoring) cmd_monitor "$@" ;;
