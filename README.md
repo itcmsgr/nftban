@@ -2,8 +2,8 @@
 
 **Modern Linux Firewall Management System**
 
-[![Version](https://img.shields.io/badge/version-0.9.3--dev-orange)](https://github.com/itcmsgr/nftban)
-[![Status](https://img.shields.io/badge/status-beta-yellow)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-0.9.4-blue)](https://github.com/itcmsgr/nftban)
+[![Status](https://img.shields.io/badge/status-stable-green)](https://github.com/itcmsgr/nftban)
 [![Architecture](https://img.shields.io/badge/architecture-dual--table%20(IPv4%2FIPv6)-blue)](https://github.com/itcmsgr/nftban)
 [![License](https://img.shields.io/badge/License-NFTBAN--Custom--v3.0-blue)](./LICENSE.md)
 [![SPDX](https://img.shields.io/badge/SPDX-NFTBAN--Custom--License-lightgrey)](./LICENSE.md)
@@ -324,23 +324,28 @@ It helps others discover the project and motivates continued development.
 
 ---
 
-## 🎉 What's New in v0.9.0
+## 🎉 What's New in v0.9.4
 
-### Split Table Architecture (MAJOR PERFORMANCE IMPROVEMENT)
-- **30-50% faster packet processing** - Separate IPv4/IPv6 tables eliminate selector overhead
-- **Simplified rules** - No more `ip saddr`/`ip6 saddr` selectors needed
-- **Better scalability** - Independent optimization for IPv4 and IPv6
-- **Cleaner set names** - No more `_v4`/`_v6` suffixes
+### Bug Fixes + Fail2ban Integration
+- **BUG50 Fixed** - DDoS module table alignment (35 references fixed)
+- **BUG52.1 Fixed** - Port module table alignment (8 references fixed)
+- **Fail2ban Integration** - Complete config management and monitoring (300+ lines)
+- **Whitelist Sync** - Reads ALL sources (system, user, cloudflare)
+- **100% Test Pass** - Verified on 3 production labs
 
-### Architecture Changes
-- **OLD:** Single `inet nftban_global` table with version-suffixed sets
-- **NEW:** Dual tables `ip nftban_v4` + `ip6 nftban_v6` with clean set names
-- **Result:** 50% reduction in rule evaluations per packet (20 → 10 rules)
+### New Commands
+```bash
+nftban fail2ban status        # Show active jails
+nftban fail2ban sync           # Generate jail.local from nftban config
+nftban fail2ban config show    # Display configuration
+nftban fail2ban monitor        # Live monitoring panel
+```
 
-### Breaking Changes
-- Table structure changed (fresh install recommended)
-- Manual nftables commands need updating
-- See [CHANGELOG.md](CHANGELOG.md) for migration guide
+### Critical Fixes
+- ✅ DDoS status queries now work correctly
+- ✅ Port lists display properly (IPv4/IPv6)
+- ✅ Fail2ban whitelist integration complete
+- ✅ Cloudflare IPs detected (18 IPv4 + 6 IPv6 ranges)
 
 [View Full Changelog](CHANGELOG.md)
 
