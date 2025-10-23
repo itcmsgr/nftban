@@ -274,6 +274,29 @@ nftban_maintenance_run() {
     # Verify system health
     nftban_maintenance_health_check
 
+    # ========== PERMISSION VALIDATION (v0.9.5+) ==========
+    # Check file permissions
+    nftban_log_info "Checking file permissions..."
+    if nftban_maintenance_validate_permissions >/dev/null 2>&1; then
+        nftban_log_debug "File permissions: OK"
+    else
+        nftban_log_warning "File permission issues detected"
+
+        # Check if auto-repair is enabled
+        local auto_repair_perms="${NFTBAN_AUTO_REPAIR_PERMISSIONS:-false}"
+        if [[ "$auto_repair_perms" == "true" ]]; then
+            nftban_log_info "Auto-repairing permissions..."
+            if nftban_maintenance_repair_config 2>&1 | grep -q "completed"; then
+                nftban_log_success "Permissions auto-repaired"
+            else
+                nftban_log_error "Permission repair failed"
+            fi
+        else
+            nftban_log_warning "Auto-repair disabled. Run 'nftban maintenance repair' manually"
+        fi
+    fi
+    # ========== END PERMISSION VALIDATION ==========
+
     # Rebuild search index if needed
     if declare -f nftban_search_needs_rebuild &>/dev/null; then
         if nftban_search_needs_rebuild; then
