@@ -180,11 +180,11 @@ nftban_stats_geo_summary() {
     local geo_sets_v6=0
 
     if nft list table "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" &>/dev/null 2>&1; then
-        geo_sets_v4=$(nft list sets "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" 2>/dev/null | grep -c "geo_block" || echo 0)
+        geo_sets_v4=$(nft list sets "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" 2>/dev/null | grep -c "geo_block") || geo_sets_v4=0
     fi
 
     if nft list table "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" &>/dev/null 2>&1; then
-        geo_sets_v6=$(nft list sets "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" 2>/dev/null | grep -c "geo_block" || echo 0)
+        geo_sets_v6=$(nft list sets "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" 2>/dev/null | grep -c "geo_block") || geo_sets_v6=0
     fi
 
     local total_geo_sets=$((geo_sets_v4 + geo_sets_v6))
