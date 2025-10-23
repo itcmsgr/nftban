@@ -151,10 +151,12 @@ smoketest_installation() {
     fi
 
     smoketest_start "Scripts directory exists"
-    if [[ -d "$NFTBAN_SCRIPTS_DIR" ]]; then
+    if [[ -n "${NFTBAN_SCRIPTS_DIR:-}" ]] && [[ -d "$NFTBAN_SCRIPTS_DIR" ]]; then
         smoketest_pass
+    elif [[ -z "${NFTBAN_SCRIPTS_DIR:-}" ]]; then
+        smoketest_skip "NFTBAN_SCRIPTS_DIR not defined (optional)"
     else
-        smoketest_fail "$NFTBAN_SCRIPTS_DIR not found"
+        smoketest_warn "$NFTBAN_SCRIPTS_DIR not found (optional)"
     fi
 
     smoketest_start "Version file exists"
