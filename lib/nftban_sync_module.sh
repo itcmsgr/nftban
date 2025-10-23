@@ -120,9 +120,9 @@ nftban_sync_check_whitelist_drift() {
             ver=$(nftban_detect_ip_version "$ip")
 
             if [[ "$ver" == "4" ]]; then
-                ((file_ips_v4++))
+                ((file_ips_v4++)) || true
             elif [[ "$ver" == "6" ]]; then
-                ((file_ips_v6++))
+                ((file_ips_v6++)) || true
             fi
         done < "$file"
     done
@@ -173,9 +173,9 @@ nftban_sync_check_blacklist_drift() {
             ver=$(nftban_detect_ip_version "$ip")
 
             if [[ "$ver" == "4" ]]; then
-                ((file_ips_v4++))
+                ((file_ips_v4++)) || true
             elif [[ "$ver" == "6" ]]; then
-                ((file_ips_v6++))
+                ((file_ips_v6++)) || true
             fi
         done < "$file"
     done
@@ -221,7 +221,7 @@ nftban_sync_verify() {
 
     if [[ "$drift" == "true" ]]; then
         echo -e "  ${NFTBAN_RED}✗ OUT OF SYNC${NFTBAN_NC}"
-        ((issues++))
+        ((issues++)) || true
     else
         echo -e "  ${NFTBAN_GREEN}✓ SYNCHRONIZED${NFTBAN_NC}"
     fi
@@ -238,7 +238,7 @@ nftban_sync_verify() {
 
     if [[ "$drift" == "true" ]]; then
         echo -e "  ${NFTBAN_RED}✗ OUT OF SYNC${NFTBAN_NC}"
-        ((issues++))
+        ((issues++)) || true
     else
         echo -e "  ${NFTBAN_GREEN}✓ SYNCHRONIZED${NFTBAN_NC}"
     fi
@@ -259,13 +259,13 @@ nftban_sync_verify() {
         if ! nft list set "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" "$set_name" &>/dev/null; then
             echo -e "  ${NFTBAN_RED}✗ Missing IPv4 set: $set_name${NFTBAN_NC}"
             sets_ok=false
-            ((issues++))
+            ((issues++)) || true
         fi
 
         if ! nft list set "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" "$set_name" &>/dev/null; then
             echo -e "  ${NFTBAN_RED}✗ Missing IPv6 set: $set_name${NFTBAN_NC}"
             sets_ok=false
-            ((issues++))
+            ((issues++)) || true
         fi
     done
 
@@ -305,10 +305,10 @@ nftban_sync_repair() {
 
         if nftban_whitelist_sync_to_nftables; then
             _nftban_sync_log SUCCESS "Repaired whitelist synchronization"
-            ((repaired++))
+            ((repaired++)) || true
         else
             _nftban_sync_log ERROR "Failed to repair whitelist"
-            ((failed++))
+            ((failed++)) || true
         fi
     else
         _nftban_sync_log INFO "Whitelist already synchronized"
@@ -324,10 +324,10 @@ nftban_sync_repair() {
 
         if nftban_blacklist_sync_to_nftables; then
             _nftban_sync_log SUCCESS "Repaired blacklist synchronization"
-            ((repaired++))
+            ((repaired++)) || true
         else
             _nftban_sync_log ERROR "Failed to repair blacklist"
-            ((failed++))
+            ((failed++)) || true
         fi
     else
         _nftban_sync_log INFO "Blacklist already synchronized"
@@ -388,12 +388,12 @@ nftban_sync_health() {
 
     # Check if nftables tables exist
     if ! nft list table "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" &>/dev/null; then
-        health_score=$((health_score - 30))
+        health_score=$((health_score - 30)) || true
         issues+=("IPv4 table missing")
     fi
 
     if ! nft list table "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" &>/dev/null; then
-        health_score=$((health_score - 30))
+        health_score=$((health_score - 30)) || true
         issues+=("IPv6 table missing")
     fi
 
@@ -403,7 +403,7 @@ nftban_sync_health() {
     IFS='|' read -r name file_v4 nft_v4 file_v6 nft_v6 drift <<< "$wl_result"
 
     if [[ "$drift" == "true" ]]; then
-        health_score=$((health_score - 20))
+        health_score=$((health_score - 20)) || true
         issues+=("Whitelist out of sync")
     fi
 
@@ -412,7 +412,7 @@ nftban_sync_health() {
     IFS='|' read -r name file_v4 nft_v4 file_v6 nft_v6 drift <<< "$bl_result"
 
     if [[ "$drift" == "true" ]]; then
-        health_score=$((health_score - 20))
+        health_score=$((health_score - 20)) || true
         issues+=("Blacklist out of sync")
     fi
 

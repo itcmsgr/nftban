@@ -981,7 +981,7 @@ cmd_sync() {
 
     case "$action" in
         verify|check|status)
-            nftban_sync_verify
+            nftban_sync_verify || true  # Allow non-zero exit (indicates issues found)
             ;;
         test|dry-run)
             nftban_log_info "Running sync test (dry-run mode)..."
