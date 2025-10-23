@@ -78,37 +78,90 @@ cmd_fail2ban() {
             systemctl disable fail2ban
             nftban_log_success "fail2ban service disabled at boot"
             ;;
+        sync)
+            nftban_check_root || exit 1
+            nftban_fail2ban_sync
+            ;;
+        config)
+            local subaction="${1:-show}"
+            shift || true
+
+            case "$subaction" in
+                show)
+                    nftban_fail2ban_config_show "$@"
+                    ;;
+                set)
+                    nftban_check_root || exit 1
+                    [[ $# -lt 3 ]] && {
+                        nftban_log_error "Usage: nftban fail2ban config set <jail> <setting> <value>"
+                        echo ""
+                        echo "Examples:"
+                        echo "  nftban fail2ban config set sshd maxretry 5"
+                        echo "  nftban fail2ban config set sshd bantime 7200"
+                        echo "  nftban fail2ban config set postfix maxretry 10"
+                        exit 1
+                    }
+                    nftban_fail2ban_config_set "$1" "$2" "$3"
+                    ;;
+                *)
+                    nftban_log_error "Unknown config action: $subaction"
+                    echo "Usage: nftban fail2ban config [show|set]"
+                    exit 1
+                    ;;
+            esac
+            ;;
         *)
             nftban_log_error "Unknown fail2ban action: $action"
             echo ""
-            echo "Available actions:"
-            echo "  setup                  Setup fail2ban integration"
+            echo "═══════════════════════════════════════════════════════"
+            echo "  NFTBan Fail2ban Integration (v0.9.4)"
+            echo "═══════════════════════════════════════════════════════"
+            echo ""
+            echo "Status & Monitoring:"
             echo "  status                 Show fail2ban status and jail details"
             echo "  monitor                Show beautiful service monitoring panel"
             echo "  list                   List active jails"
             echo ""
+            echo "Configuration Management (NEW in v0.9.4):"
+            echo "  sync                   Sync nftban config → fail2ban jail.local"
+            echo "  config show            Show current jail configuration"
+            echo "  config show <jail>     Show specific jail configuration"
+            echo "  config set <jail> <setting> <value>"
+            echo "                         Update jail setting in nftban.conf.local"
+            echo ""
+            echo "  NOTE: Whitelisting uses: nftban whitelist add/remove"
+            echo "        Then run: nftban fail2ban sync"
+            echo ""
             echo "Service Management:"
+            echo "  setup                  Setup fail2ban integration"
             echo "  start                  Start fail2ban service"
             echo "  stop                   Stop fail2ban service"
             echo "  restart                Restart fail2ban service"
             echo "  service-enable         Enable fail2ban at boot"
             echo "  service-disable        Disable fail2ban at boot"
             echo ""
-            echo "Jail Management:"
+            echo "Jail Management (Legacy):"
             echo "  enable <jail>          Enable specific jail"
             echo "  disable <jail>         Disable specific jail"
             echo ""
             echo "Examples:"
-            echo "  sudo nftban fail2ban setup"
-            echo "  nftban fail2ban status"
-            echo "  nftban fail2ban monitor      # Beautiful colored panel!"
-            echo "  sudo nftban fail2ban start   # Start service"
-            echo "  sudo nftban fail2ban restart # Restart service"
-            echo "  sudo nftban fail2ban service-enable  # Enable at boot"
-            echo "  nftban fail2ban list"
-            echo "  sudo nftban fail2ban enable sshd     # Enable sshd jail"
-            echo "  sudo nftban fail2ban disable sshd    # Disable sshd jail"
+            echo "  # Show configuration"
+            echo "  nftban fail2ban config show"
+            echo "  nftban fail2ban config show sshd"
             echo ""
+            echo "  # Change SSH jail settings"
+            echo "  sudo nftban fail2ban config set sshd maxretry 5"
+            echo "  sudo nftban fail2ban config set sshd bantime 3600"
+            echo ""
+            echo "  # Whitelist your IP and sync"
+            echo "  sudo nftban whitelist add 203.0.113.100 \"My IP\""
+            echo "  sudo nftban fail2ban sync"
+            echo ""
+            echo "  # Monitor service"
+            echo "  nftban fail2ban monitor"
+            echo "  nftban fail2ban status"
+            echo ""
+            echo "═══════════════════════════════════════════════════════"
             exit 1
             ;;
     esac

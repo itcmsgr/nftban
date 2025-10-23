@@ -18,7 +18,7 @@ _nftban_completion() {
     # Main commands
     local main_commands="
         whitelist blacklist ban unban
-        geo feeds cloudflare
+        geo feeds cloudflare fail2ban
         stats monitor login
         port rate ddos portscan
         search verify
@@ -40,6 +40,9 @@ _nftban_completion() {
 
     # Cloudflare subcommands
     local cloudflare_cmds="status enable disable update init"
+
+    # Fail2ban subcommands
+    local fail2ban_cmds="setup status monitor list enable disable start stop restart service-enable service-disable sync config"
 
     # Stats subcommands
     local stats_cmds="show dashboard whitelist blacklist bans geo feeds activity"
@@ -110,6 +113,13 @@ _nftban_completion() {
         cloudflare|cf)
             if [[ ${COMP_CWORD} -eq 2 ]]; then
                 COMPREPLY=( $(compgen -W "${cloudflare_cmds}" -- "${cur}") )
+            fi
+            ;;
+        fail2ban|f2b)
+            if [[ ${COMP_CWORD} -eq 2 ]]; then
+                COMPREPLY=( $(compgen -W "${fail2ban_cmds}" -- "${cur}") )
+            elif [[ ${COMP_CWORD} -eq 3 && "${prev}" == "config" ]]; then
+                COMPREPLY=( $(compgen -W "show set" -- "${cur}") )
             fi
             ;;
         stats)
