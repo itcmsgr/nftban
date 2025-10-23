@@ -793,6 +793,11 @@ nftban_ip_in_cidr() {
     local network="${cidr%/*}"
     local prefix="${cidr#*/}"
 
+    # Check if network is IPv4 (prevent IPv6 arithmetic errors)
+    if ! nftban_is_ipv4 "$network"; then
+        return 1
+    fi
+
     # Validate CIDR
     if ! nftban_validate_cidr "$cidr" "true" 2>/dev/null; then
         return 1
@@ -1767,6 +1772,7 @@ nftban_load_modules() {
         "nftban_portscan_module.sh"
         "nftban_autorebuild_module.sh"
         "nftban_login_monitor_module.sh"
+        "nftban_monitoring_module.sh"
         "nftban_update_module.sh"
         "nftban_maintenance_module.sh"
         "nftban_cron_module.sh"
