@@ -74,20 +74,18 @@ nftban_stats_whitelist_summary() {
     local wl_user=0
     local wl_cf=0
 
-    if [[ -f "${NFTBAN_WHITELIST_SYSTEM:-}" ]]; then
-        wl_system=$(grep -cvE '^#|^$' "${NFTBAN_WHITELIST_SYSTEM}" 2>/dev/null)
-        wl_system=${wl_system:-0}
+    # BUG51 FIX: Handle undefined variables in strict mode
+    if [[ -n "${NFTBAN_WHITELIST_SYSTEM:-}" ]] && [[ -f "${NFTBAN_WHITELIST_SYSTEM}" ]]; then
+        wl_system=$(grep -cvE '^#|^$' "${NFTBAN_WHITELIST_SYSTEM}" 2>/dev/null || echo 0)
     fi
-    if [[ -f "${NFTBAN_WHITELIST_USER:-}" ]]; then
-        wl_user=$(grep -cvE '^#|^$' "${NFTBAN_WHITELIST_USER}" 2>/dev/null)
-        wl_user=${wl_user:-0}
+    if [[ -n "${NFTBAN_WHITELIST_USER:-}" ]] && [[ -f "${NFTBAN_WHITELIST_USER}" ]]; then
+        wl_user=$(grep -cvE '^#|^$' "${NFTBAN_WHITELIST_USER}" 2>/dev/null || echo 0)
     fi
-    if [[ -f "${NFTBAN_WHITELIST_CF:-}" ]] && [[ -n "${NFTBAN_WHITELIST_CF:-}" ]]; then
-        wl_cf=$(grep -cvE '^#|^$' "$NFTBAN_WHITELIST_CF" 2>/dev/null)
-        wl_cf=${wl_cf:-0}
+    if [[ -n "${NFTBAN_WHITELIST_CF:-}" ]] && [[ -f "${NFTBAN_WHITELIST_CF}" ]]; then
+        wl_cf=$(grep -cvE '^#|^$' "$NFTBAN_WHITELIST_CF" 2>/dev/null || echo 0)
     fi
 
-    local total=$((${wl_system:-0} + ${wl_user:-0} + ${wl_cf:-0}))
+    local total=$((wl_system + wl_user + wl_cf))
 
     echo "  System: $wl_system"
     echo "  User: $wl_user"
@@ -105,16 +103,15 @@ nftban_stats_blacklist_summary() {
     local bl_persistent=0
     local bl_user=0
 
-    if [[ -f "${NFTBAN_BLACKLIST_PERSISTENT:-}" ]]; then
-        bl_persistent=$(grep -cvE '^#|^$' "${NFTBAN_BLACKLIST_PERSISTENT}" 2>/dev/null)
-        bl_persistent=${bl_persistent:-0}
+    # BUG51 FIX: Handle undefined variables in strict mode
+    if [[ -n "${NFTBAN_BLACKLIST_PERSISTENT:-}" ]] && [[ -f "${NFTBAN_BLACKLIST_PERSISTENT}" ]]; then
+        bl_persistent=$(grep -cvE '^#|^$' "${NFTBAN_BLACKLIST_PERSISTENT}" 2>/dev/null || echo 0)
     fi
-    if [[ -f "${NFTBAN_BLACKLIST_USER:-}" ]]; then
-        bl_user=$(grep -cvE '^#|^$' "${NFTBAN_BLACKLIST_USER}" 2>/dev/null)
-        bl_user=${bl_user:-0}
+    if [[ -n "${NFTBAN_BLACKLIST_USER:-}" ]] && [[ -f "${NFTBAN_BLACKLIST_USER}" ]]; then
+        bl_user=$(grep -cvE '^#|^$' "${NFTBAN_BLACKLIST_USER}" 2>/dev/null || echo 0)
     fi
 
-    local total=$((${bl_persistent:-0} + ${bl_user:-0}))
+    local total=$((bl_persistent + bl_user))
 
     echo "  Persistent: $bl_persistent"
     echo "  User: $bl_user"
