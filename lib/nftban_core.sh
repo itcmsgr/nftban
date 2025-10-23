@@ -1769,6 +1769,7 @@ nftban_load_modules() {
         "nftban_login_monitor_module.sh"
         "nftban_update_module.sh"
         "nftban_maintenance_module.sh"
+        "nftban_cron_module.sh"
         "nftban_security_audit_module.sh"
         "nftban_feeds_module.sh"
         "nftban_smoketest_module.sh"

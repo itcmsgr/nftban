@@ -297,7 +297,17 @@ installer_cmd_install() {
     installer_detect_control_panel
     installer_initialize_system
     installer_setup_auto_update
-    
+
+    # Install cron jobs
+    if [[ -f "${INSTALL_DIR}/lib/nftban_core.sh" ]]; then
+        installer_log_info "Installing comprehensive cron schedule..."
+        # shellcheck disable=SC1091
+        source "${INSTALL_DIR}/lib/nftban_core.sh" 2>/dev/null || true
+        if command -v nftban_cron_install_comprehensive >/dev/null 2>&1; then
+            nftban_cron_install_comprehensive 2>/dev/null || installer_log_warn "Failed to install cron jobs"
+        fi
+    fi
+
     # Save state
     installer_save_version
     installer_save_state
@@ -362,7 +372,17 @@ installer_cmd_uninstall() {
     if [[ "$INSTALLER_PURGE" == "false" && "$INSTALLER_NO_BACKUP" == "false" ]]; then
         installer_create_backup
     fi
-    
+
+    # Remove cron jobs
+    installer_log_info "Removing NFTBan cron jobs..."
+    if [[ -f "${INSTALL_DIR}/lib/nftban_core.sh" ]]; then
+        # shellcheck disable=SC1091
+        source "${INSTALL_DIR}/lib/nftban_core.sh" 2>/dev/null || true
+        if command -v nftban_cron_disable >/dev/null 2>&1; then
+            nftban_cron_disable 2>/dev/null || installer_log_warn "Failed to remove cron jobs"
+        fi
+    fi
+
     # Remove symlink
     rm -f "/usr/local/bin/nftban"
     
