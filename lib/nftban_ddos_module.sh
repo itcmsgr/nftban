@@ -41,6 +41,13 @@ declare -A NFTBAN_DDOS_CONFIG_CACHE
 # UTILITY FUNCTIONS
 # =============================================================================
 
+# Helper: Get array of table specs for iteration
+# Returns: Array of "family:table" pairs for both IPv4 and IPv6
+# Usage: for table_info in $(nftban_ddos_get_tables); do ... done
+nftban_ddos_get_tables() {
+    echo "ip:$NFTBAN_NFT_TABLE_V4 ip6:$NFTBAN_NFT_TABLE_V6"
+}
+
 # Load DDoS configuration
 nftban_ddos_load_config() {
     local key="$1"
@@ -146,40 +153,47 @@ nftban_ddos_synflood_enable() {
 
     nftban_ddos_log "INFO" "Enabling SYN flood protection (rate: $rate, burst: $burst)"
 
-    # Create chain if it doesn't exist
-    if ! nft list chain $NFTBAN_NFT_TABLE $NFTBAN_NFT_SYNFLOOD_CHAIN &>/dev/null; then
-        nft add chain $NFTBAN_NFT_TABLE $NFTBAN_NFT_SYNFLOOD_CHAIN \
-            '{ type filter hook input priority -10; policy accept; }' 2>/dev/null || \
-        nft add chain $NFTBAN_NFT_TABLE $NFTBAN_NFT_SYNFLOOD_CHAIN 2>/dev/null || true
-    fi
-
-    # Flush existing rules
-    nft flush chain $NFTBAN_NFT_TABLE $NFTBAN_NFT_SYNFLOOD_CHAIN 2>/dev/null || true
-
-    # Add rate limiting rule
-    nft add rule $NFTBAN_NFT_TABLE $NFTBAN_NFT_SYNFLOOD_CHAIN \
-        tcp flags syn \
-        tcp dport != 0 \
-        ct state new \
-        limit rate $rate burst $burst packets \
-        counter accept
-
-    # Log and drop excess (if logging enabled)
+    # Log if enabled
     local log_enabled
     log_enabled=$(nftban_ddos_load_config "SYNFLOOD_LOG" "1")
 
-    if [[ "$log_enabled" == "1" ]]; then
-        nft add rule $NFTBAN_NFT_TABLE $NFTBAN_NFT_SYNFLOOD_CHAIN \
-            tcp flags syn \
-            limit rate 30/minute burst 5 packets \
-            log prefix '"nftban: SYNFLOOD: "' \
-            counter
-    fi
+    # Apply to both IPv4 and IPv6 tables
+    for table_info in $(nftban_ddos_get_tables); do
+        local family="${table_info%%:*}"
+        local table="${table_info##*:}"
 
-    # Drop excess SYN packets
-    nft add rule $NFTBAN_NFT_TABLE $NFTBAN_NFT_SYNFLOOD_CHAIN \
-        tcp flags syn \
-        counter drop
+        # Create chain if it doesn't exist
+        if ! nft list chain $family $table $NFTBAN_NFT_SYNFLOOD_CHAIN &>/dev/null; then
+            nft add chain $family $table $NFTBAN_NFT_SYNFLOOD_CHAIN \
+                '{ type filter hook input priority -10; policy accept; }' 2>/dev/null || \
+            nft add chain $family $table $NFTBAN_NFT_SYNFLOOD_CHAIN 2>/dev/null || true
+        fi
+
+        # Flush existing rules
+        nft flush chain $family $table $NFTBAN_NFT_SYNFLOOD_CHAIN 2>/dev/null || true
+
+        # Add rate limiting rule
+        nft add rule $family $table $NFTBAN_NFT_SYNFLOOD_CHAIN \
+            tcp flags syn \
+            tcp dport != 0 \
+            ct state new \
+            limit rate $rate burst $burst packets \
+            counter accept
+
+        # Log and drop excess (if logging enabled)
+        if [[ "$log_enabled" == "1" ]]; then
+            nft add rule $family $table $NFTBAN_NFT_SYNFLOOD_CHAIN \
+                tcp flags syn \
+                limit rate 30/minute burst 5 packets \
+                log prefix '"nftban: SYNFLOOD: "' \
+                counter
+        fi
+
+        # Drop excess SYN packets
+        nft add rule $family $table $NFTBAN_NFT_SYNFLOOD_CHAIN \
+            tcp flags syn \
+            counter drop
+    done
 
     nftban_ddos_log "INFO" "SYN flood protection enabled successfully"
     echo "✓ SYN flood protection enabled (rate: $rate, burst: $burst)"
@@ -191,14 +205,18 @@ nftban_ddos_synflood_enable() {
 nftban_ddos_synflood_disable() {
     nftban_ddos_log "INFO" "Disabling SYN flood protection"
 
-    # Flush chain
-    if nft list chain $NFTBAN_NFT_TABLE $NFTBAN_NFT_SYNFLOOD_CHAIN &>/dev/null; then
-        nft flush chain $NFTBAN_NFT_TABLE $NFTBAN_NFT_SYNFLOOD_CHAIN 2>/dev/null || true
-        nftban_ddos_log "INFO" "SYN flood protection disabled"
-        echo "✓ SYN flood protection disabled"
-    else
-        echo "SYN flood protection chain does not exist"
-    fi
+    # Flush chain on both tables
+    for table_info in $(nftban_ddos_get_tables); do
+        local family="${table_info%%:*}"
+        local table="${table_info##*:}"
+
+        if nft list chain $family $table $NFTBAN_NFT_SYNFLOOD_CHAIN &>/dev/null; then
+            nft flush chain $family $table $NFTBAN_NFT_SYNFLOOD_CHAIN 2>/dev/null || true
+        fi
+    done
+
+    nftban_ddos_log "INFO" "SYN flood protection disabled"
+    echo "✓ SYN flood protection disabled"
 
     return 0
 }
@@ -226,10 +244,18 @@ nftban_ddos_synflood_status() {
     fi
 
     echo ""
-    echo "Active Rules:"
+    echo "Active Rules (IPv4):"
+    if nft list chain ip $NFTBAN_NFT_TABLE_V4 $NFTBAN_NFT_SYNFLOOD_CHAIN &>/dev/null; then
+        nft list chain ip $NFTBAN_NFT_TABLE_V4 $NFTBAN_NFT_SYNFLOOD_CHAIN | \
+            grep -E 'tcp flags syn|counter|limit' | sed 's/^/  /'
+    else
+        echo "  (chain not created)"
+    fi
 
-    if nft list chain $NFTBAN_NFT_TABLE $NFTBAN_NFT_SYNFLOOD_CHAIN &>/dev/null; then
-        nft list chain $NFTBAN_NFT_TABLE $NFTBAN_NFT_SYNFLOOD_CHAIN | \
+    echo ""
+    echo "Active Rules (IPv6):"
+    if nft list chain ip6 $NFTBAN_NFT_TABLE_V6 $NFTBAN_NFT_SYNFLOOD_CHAIN &>/dev/null; then
+        nft list chain ip6 $NFTBAN_NFT_TABLE_V6 $NFTBAN_NFT_SYNFLOOD_CHAIN | \
             grep -E 'tcp flags syn|counter|limit' | sed 's/^/  /'
     else
         echo "  (chain not created)"
@@ -268,12 +294,6 @@ nftban_ddos_connlimit_add_port() {
 
     nftban_ddos_log "INFO" "Adding connection limit for port $port: $limit connections"
 
-    # Create chain if it doesn't exist
-    if ! nft list chain $NFTBAN_NFT_TABLE input &>/dev/null; then
-        nftban_ddos_log "ERROR" "nftban_global input chain does not exist"
-        return 1
-    fi
-
     # Add rule before the accept rule
     local reject_action="reject with tcp reset"
     [[ "$action" == "drop" ]] && reject_action="drop"
@@ -282,24 +302,37 @@ nftban_ddos_connlimit_add_port() {
     local log_enabled
     log_enabled=$(nftban_ddos_load_config "CONNLIMIT_LOG" "1")
 
-    if [[ "$log_enabled" == "1" ]]; then
-        nft insert rule $NFTBAN_NFT_TABLE input \
+    # Apply to both IPv4 and IPv6 tables
+    for table_info in $(nftban_ddos_get_tables); do
+        local family="${table_info%%:*}"
+        local table="${table_info##*:}"
+
+        # Check if input chain exists
+        if ! nft list chain $family $table input &>/dev/null; then
+            nftban_ddos_log "ERROR" "$family $table input chain does not exist"
+            continue
+        fi
+
+        # Log if enabled
+        if [[ "$log_enabled" == "1" ]]; then
+            nft insert rule $family $table input \
+                tcp dport $port \
+                tcp flags syn \
+                ct state new \
+                ct count over $limit \
+                limit rate 10/minute burst 5 packets \
+                log prefix "\"nftban: CONNLIMIT port $port: \"" \
+                counter 2>/dev/null || true
+        fi
+
+        # Add connection limit rule
+        nft insert rule $family $table input \
             tcp dport $port \
             tcp flags syn \
             ct state new \
             ct count over $limit \
-            limit rate 10/minute burst 5 packets \
-            log prefix "\"nftban: CONNLIMIT port $port: \"" \
-            counter 2>/dev/null || true
-    fi
-
-    # Add connection limit rule
-    nft insert rule $NFTBAN_NFT_TABLE input \
-        tcp dport $port \
-        tcp flags syn \
-        ct state new \
-        ct count over $limit \
-        counter $reject_action
+            counter $reject_action
+    done
 
     nftban_ddos_log "INFO" "Connection limit added for port $port: max $limit connections"
     echo "✓ Connection limit added for port $port: max $limit connections per IP"
@@ -377,17 +410,22 @@ nftban_ddos_connlimit_enable() {
 nftban_ddos_connlimit_disable() {
     nftban_ddos_log "INFO" "Disabling connection limit protection"
 
-    # Remove all connlimit rules
+    # Remove all connlimit rules from both tables
     local count=0
-    while nft -a list chain $NFTBAN_NFT_TABLE input 2>/dev/null | grep -q "ct count"; do
-        local handle
-        handle=$(nft -a list chain $NFTBAN_NFT_TABLE input 2>/dev/null | grep "ct count" | head -n1 | grep -oP 'handle \K[0-9]+')
-        if [[ -n "$handle" ]]; then
-            nft delete rule $NFTBAN_NFT_TABLE input handle "$handle" 2>/dev/null || true
-            ((count++)) || true
-        else
-            break
-        fi
+    for table_info in $(nftban_ddos_get_tables); do
+        local family="${table_info%%:*}"
+        local table="${table_info##*:}"
+
+        while nft -a list chain $family $table input 2>/dev/null | grep -q "ct count"; do
+            local handle
+            handle=$(nft -a list chain $family $table input 2>/dev/null | grep "ct count" | head -n1 | grep -oP 'handle \K[0-9]+')
+            if [[ -n "$handle" ]]; then
+                nft delete rule $family $table input handle "$handle" 2>/dev/null || true
+                ((count++)) || true
+            else
+                break
+            fi
+        done
     done
 
     nftban_ddos_log "INFO" "Connection limit protection disabled: $count rule(s) removed"
@@ -432,10 +470,18 @@ nftban_ddos_connlimit_status() {
     fi
 
     echo ""
-    echo "Active Rules:"
+    echo "Active Rules (IPv4):"
+    if nft list chain ip $NFTBAN_NFT_TABLE_V4 input 2>/dev/null | grep -q "ct count"; then
+        nft list chain ip $NFTBAN_NFT_TABLE_V4 input 2>/dev/null | \
+            grep "ct count" | sed 's/^/  /'
+    else
+        echo "  (no active connection limit rules)"
+    fi
 
-    if nft list chain $NFTBAN_NFT_TABLE input 2>/dev/null | grep -q "ct count"; then
-        nft list chain $NFTBAN_NFT_TABLE input 2>/dev/null | \
+    echo ""
+    echo "Active Rules (IPv6):"
+    if nft list chain ip6 $NFTBAN_NFT_TABLE_V6 input 2>/dev/null | grep -q "ct count"; then
+        nft list chain ip6 $NFTBAN_NFT_TABLE_V6 input 2>/dev/null | \
             grep "ct count" | sed 's/^/  /'
     else
         echo "  (no active connection limit rules)"
@@ -484,22 +530,29 @@ nftban_ddos_portflood_add_port() {
     local log_enabled
     log_enabled=$(nftban_ddos_load_config "PORTFLOOD_LOG" "1")
 
-    if [[ "$log_enabled" == "1" ]]; then
-        nft insert rule $NFTBAN_NFT_TABLE input \
+    # Apply to both IPv4 and IPv6 tables
+    for table_info in $(nftban_ddos_get_tables); do
+        local family="${table_info%%:*}"
+        local table="${table_info##*:}"
+
+        # Log if enabled
+        if [[ "$log_enabled" == "1" ]]; then
+            nft insert rule $family $table input \
+                tcp dport $port \
+                ct state new \
+                limit rate over $nft_rate \
+                limit rate 10/minute burst 5 packets \
+                log prefix "\"nftban: PORTFLOOD port $port: \"" \
+                counter 2>/dev/null || true
+        fi
+
+        # Add rate limiting rule
+        nft insert rule $family $table input \
             tcp dport $port \
             ct state new \
             limit rate over $nft_rate \
-            limit rate 10/minute burst 5 packets \
-            log prefix "\"nftban: PORTFLOOD port $port: \"" \
-            counter 2>/dev/null || true
-    fi
-
-    # Add rate limiting rule
-    nft insert rule $NFTBAN_NFT_TABLE input \
-        tcp dport $port \
-        ct state new \
-        limit rate over $nft_rate \
-        counter drop
+            counter drop
+    done
 
     nftban_ddos_log "INFO" "Port flood protection added for port $port: max $connections/$seconds"
     echo "✓ Port flood protection added for port $port: max $connections connections per $seconds seconds"
@@ -566,17 +619,22 @@ nftban_ddos_portflood_enable() {
 nftban_ddos_portflood_disable() {
     nftban_ddos_log "INFO" "Disabling port flood protection"
 
-    # Remove all port flood rules (limit rate over)
+    # Remove all port flood rules (limit rate over) from both tables
     local count=0
-    while nft -a list chain $NFTBAN_NFT_TABLE input 2>/dev/null | grep -q "limit rate over"; do
-        local handle
-        handle=$(nft -a list chain $NFTBAN_NFT_TABLE input 2>/dev/null | grep "limit rate over" | head -n1 | grep -oP 'handle \K[0-9]+')
-        if [[ -n "$handle" ]]; then
-            nft delete rule $NFTBAN_NFT_TABLE input handle "$handle" 2>/dev/null || true
-            ((count++)) || true
-        else
-            break
-        fi
+    for table_info in $(nftban_ddos_get_tables); do
+        local family="${table_info%%:*}"
+        local table="${table_info##*:}"
+
+        while nft -a list chain $family $table input 2>/dev/null | grep -q "limit rate over"; do
+            local handle
+            handle=$(nft -a list chain $family $table input 2>/dev/null | grep "limit rate over" | head -n1 | grep -oP 'handle \K[0-9]+')
+            if [[ -n "$handle" ]]; then
+                nft delete rule $family $table input handle "$handle" 2>/dev/null || true
+                ((count++)) || true
+            else
+                break
+            fi
+        done
     done
 
     nftban_ddos_log "INFO" "Port flood protection disabled: $count rule(s) removed"
@@ -616,10 +674,18 @@ nftban_ddos_portflood_status() {
     fi
 
     echo ""
-    echo "Active Rules:"
+    echo "Active Rules (IPv4):"
+    if nft list chain ip $NFTBAN_NFT_TABLE_V4 input 2>/dev/null | grep -q "limit rate over"; then
+        nft list chain ip $NFTBAN_NFT_TABLE_V4 input 2>/dev/null | \
+            grep "limit rate over" | sed 's/^/  /'
+    else
+        echo "  (no active port flood rules)"
+    fi
 
-    if nft list chain $NFTBAN_NFT_TABLE input 2>/dev/null | grep -q "limit rate over"; then
-        nft list chain $NFTBAN_NFT_TABLE input 2>/dev/null | \
+    echo ""
+    echo "Active Rules (IPv6):"
+    if nft list chain ip6 $NFTBAN_NFT_TABLE_V6 input 2>/dev/null | grep -q "limit rate over"; then
+        nft list chain ip6 $NFTBAN_NFT_TABLE_V6 input 2>/dev/null | \
             grep "limit rate over" | sed 's/^/  /'
     else
         echo "  (no active port flood rules)"
@@ -655,46 +721,78 @@ nftban_ddos_icmp_enable() {
     in_rate=$(nftban_ddos_load_config "ICMP_IN_RATE" "1/second")
     in_rate=$(nftban_ddos_convert_rate "$in_rate")
 
-    # Rate limit incoming ICMP echo requests (ping)
-    if [[ "$in_rate" != "0" ]]; then
-        nft insert rule $NFTBAN_NFT_TABLE input \
-            ip protocol icmp \
-            icmp type echo-request \
-            limit rate $in_rate \
-            counter accept
-
-        # Drop excess
-        nft insert rule $NFTBAN_NFT_TABLE input \
-            ip protocol icmp \
-            icmp type echo-request \
-            counter drop
-
-        echo "✓ ICMP echo request rate limiting enabled: $in_rate"
-    fi
-
     # Drop ICMP timestamp requests if enabled
     local timestamp_drop
     timestamp_drop=$(nftban_ddos_load_config "ICMP_TIMESTAMP_DROP" "0")
-
-    if [[ "$timestamp_drop" == "1" ]]; then
-        nft insert rule $NFTBAN_NFT_TABLE input \
-            ip protocol icmp \
-            icmp type timestamp-request \
-            counter drop
-
-        echo "✓ ICMP timestamp requests blocked (PCI compliance)"
-    fi
 
     # Drop ICMP address mask requests if enabled
     local addressmask_drop
     addressmask_drop=$(nftban_ddos_load_config "ICMP_ADDRESSMASK_DROP" "1")
 
-    if [[ "$addressmask_drop" == "1" ]]; then
-        nft insert rule $NFTBAN_NFT_TABLE input \
-            ip protocol icmp \
-            icmp type address-mask-request \
-            counter drop
+    # Apply to both IPv4 and IPv6 tables
+    for table_info in $(nftban_ddos_get_tables); do
+        local family="${table_info%%:*}"
+        local table="${table_info##*:}"
 
+        if [[ "$family" == "ip" ]]; then
+            # IPv4 ICMP rules
+            # Rate limit incoming ICMP echo requests (ping)
+            if [[ "$in_rate" != "0" ]]; then
+                nft insert rule $family $table input \
+                    ip protocol icmp \
+                    icmp type echo-request \
+                    limit rate $in_rate \
+                    counter accept
+
+                # Drop excess
+                nft insert rule $family $table input \
+                    ip protocol icmp \
+                    icmp type echo-request \
+                    counter drop
+            fi
+
+            # Drop ICMP timestamp requests
+            if [[ "$timestamp_drop" == "1" ]]; then
+                nft insert rule $family $table input \
+                    ip protocol icmp \
+                    icmp type timestamp-request \
+                    counter drop
+            fi
+
+            # Drop ICMP address mask requests
+            if [[ "$addressmask_drop" == "1" ]]; then
+                nft insert rule $family $table input \
+                    ip protocol icmp \
+                    icmp type address-mask-request \
+                    counter drop
+            fi
+        else
+            # IPv6 ICMPv6 rules
+            # Rate limit incoming ICMPv6 echo requests (ping)
+            if [[ "$in_rate" != "0" ]]; then
+                nft insert rule $family $table input \
+                    ip6 nexthdr icmpv6 \
+                    icmpv6 type echo-request \
+                    limit rate $in_rate \
+                    counter accept
+
+                # Drop excess
+                nft insert rule $family $table input \
+                    ip6 nexthdr icmpv6 \
+                    icmpv6 type echo-request \
+                    counter drop
+            fi
+        fi
+    done
+
+    # Output messages
+    if [[ "$in_rate" != "0" ]]; then
+        echo "✓ ICMP echo request rate limiting enabled: $in_rate"
+    fi
+    if [[ "$timestamp_drop" == "1" ]]; then
+        echo "✓ ICMP timestamp requests blocked (PCI compliance)"
+    fi
+    if [[ "$addressmask_drop" == "1" ]]; then
         echo "✓ ICMP address mask requests blocked"
     fi
 
@@ -707,17 +805,23 @@ nftban_ddos_icmp_enable() {
 nftban_ddos_icmp_disable() {
     nftban_ddos_log "INFO" "Disabling ICMP protection"
 
-    # Remove all ICMP rules
+    # Remove all ICMP rules from both tables
     local count=0
-    while nft -a list chain $NFTBAN_NFT_TABLE input 2>/dev/null | grep -q "icmp type"; do
-        local handle
-        handle=$(nft -a list chain $NFTBAN_NFT_TABLE input 2>/dev/null | grep "icmp type" | head -n1 | grep -oP 'handle \K[0-9]+')
-        if [[ -n "$handle" ]]; then
-            nft delete rule $NFTBAN_NFT_TABLE input handle "$handle" 2>/dev/null || true
-            ((count++)) || true
-        else
-            break
-        fi
+    for table_info in $(nftban_ddos_get_tables); do
+        local family="${table_info%%:*}"
+        local table="${table_info##*:}"
+
+        # Remove ICMP/ICMPv6 rules (search for both icmp and icmpv6)
+        while nft -a list chain $family $table input 2>/dev/null | grep -qE "icmp type|icmpv6 type"; do
+            local handle
+            handle=$(nft -a list chain $family $table input 2>/dev/null | grep -E "icmp type|icmpv6 type" | head -n1 | grep -oP 'handle \K[0-9]+')
+            if [[ -n "$handle" ]]; then
+                nft delete rule $family $table input handle "$handle" 2>/dev/null || true
+                ((count++)) || true
+            else
+                break
+            fi
+        done
     done
 
     nftban_ddos_log "INFO" "ICMP protection disabled: $count rule(s) removed"
@@ -747,13 +851,21 @@ nftban_ddos_icmp_status() {
     fi
 
     echo ""
-    echo "Active Rules:"
-
-    if nft list chain $NFTBAN_NFT_TABLE input 2>/dev/null | grep -q "icmp type"; then
-        nft list chain $NFTBAN_NFT_TABLE input 2>/dev/null | \
+    echo "Active Rules (IPv4):"
+    if nft list chain ip $NFTBAN_NFT_TABLE_V4 input 2>/dev/null | grep -q "icmp type"; then
+        nft list chain ip $NFTBAN_NFT_TABLE_V4 input 2>/dev/null | \
             grep "icmp type" | sed 's/^/  /'
     else
         echo "  (no active ICMP protection rules)"
+    fi
+
+    echo ""
+    echo "Active Rules (IPv6):"
+    if nft list chain ip6 $NFTBAN_NFT_TABLE_V6 input 2>/dev/null | grep -q "icmpv6 type"; then
+        nft list chain ip6 $NFTBAN_NFT_TABLE_V6 input 2>/dev/null | \
+            grep "icmpv6 type" | sed 's/^/  /'
+    else
+        echo "  (no active ICMPv6 protection rules)"
     fi
 
     echo ""
@@ -843,6 +955,7 @@ nftban_ddos_init() {
 # =============================================================================
 # EXPORT FUNCTIONS
 # =============================================================================
+export -f nftban_ddos_get_tables
 export -f nftban_ddos_load_config
 export -f nftban_ddos_log
 export -f nftban_ddos_is_enabled

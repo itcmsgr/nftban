@@ -10,6 +10,8 @@ docs/SECURITY_AUDIT*.md
 docs/TODO*.md
 docs/DEBUG*.md
 docs/bugs/
+docs/BUG/
+docs/DEVELOPMENT/
 docs/testing/test-results/
 docs/security/
 docs/planning/
