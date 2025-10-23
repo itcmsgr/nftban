@@ -163,7 +163,7 @@ nftban_portscan_record_access() {
 
         # Increment count
         local count=${NFTBAN_PORTSCAN_IP_COUNT[$ip]}
-        ((count++))
+        ((count++)) || true
         NFTBAN_PORTSCAN_IP_COUNT[$ip]=$count
 
         nftban_portscan_log "DEBUG" "IP $ip accessed port $port (total: $count distinct ports)"

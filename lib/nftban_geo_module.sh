@@ -317,8 +317,8 @@ nftban_geo_block_country() {
             while IFS= read -r cidr; do
                 [[ -z "$cidr" || "$cidr" =~ ^# ]] && continue
                 echo "  $cidr," >> "$batch_file"
-                ((count++))
-                ((total_added++))
+                ((count++)) || true
+                ((total_added++)) || true
             done < "$ipv4_file"
             
             echo "}" >> "$batch_file"
@@ -351,8 +351,8 @@ nftban_geo_block_country() {
             while IFS= read -r cidr; do
                 [[ -z "$cidr" || "$cidr" =~ ^# ]] && continue
                 echo "  $cidr," >> "$batch_file"
-                ((count++))
-                ((total_added++))
+                ((count++)) || true
+                ((total_added++)) || true
             done < "$ipv6_file"
             
             echo "}" >> "$batch_file"
@@ -444,7 +444,7 @@ nftban_geo_list_blocked() {
     while IFS= read -r line; do
         [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
         
-        ((count++))
+        ((count++)) || true
         local country=$(echo "$line" | awk '{print $1}')
         
         # Check if active in nftables (v0.9.0: split tables, no _v4/_v6 suffix)
@@ -503,9 +503,9 @@ nftban_geo_sync_blacklist() {
         local country=$(echo "$line" | awk '{print $1}' | tr '[:lower:]' '[:upper:]')
         
         if nftban_geo_block_country "$country" "both"; then
-            ((synced++))
+            ((synced++)) || true
         else
-            ((failed++))
+            ((failed++)) || true
         fi
     done < "$NFTBAN_GEO_BLACKLIST"
     
@@ -528,7 +528,7 @@ nftban_geo_update_database() {
             [[ "$line" =~ ^#.*$ || -z "$line" ]] && continue
             
             local country=$(echo "$line" | awk '{print $1}' | tr '[:lower:]' '[:upper:]')
-            nftban_geo_download_country "$country" "both" && ((updated++))
+            nftban_geo_download_country "$country" "both" && ((updated++)) || true
         done < "$NFTBAN_GEO_BLACKLIST"
         
         nftban_log_success "Updated $updated countries"

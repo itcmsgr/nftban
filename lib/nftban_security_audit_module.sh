@@ -86,23 +86,23 @@ nftban_security_check_strict_mode() {
     echo "─────────────────────────────────────────────────────────"
 
     for module in "${critical_modules[@]}"; do
-        ((total++))
+        ((total++)) || true
         local filepath="${NFTBAN_BASE_DIR}/lib/${module}"
 
         if [[ ! -f "$filepath" ]]; then
             echo "  ⚠️  ${module}: FILE NOT FOUND"
             issues+=("CRITICAL: ${module} - FILE NOT FOUND")
-            ((non_compliant++))
+            ((non_compliant++)) || true
             continue
         fi
 
         if grep -q "set -[Ee]*uo pipefail" "$filepath" 2>/dev/null; then
             echo "  ✅ ${module}"
-            ((compliant++))
+            ((compliant++)) || true
         else
             echo "  ❌ ${module} - MISSING STRICT MODE"
             issues+=("CRITICAL: ${module} - missing set -euo pipefail")
-            ((non_compliant++))
+            ((non_compliant++)) || true
         fi
     done
 
@@ -128,14 +128,14 @@ nftban_security_check_strict_mode() {
             continue
         fi
 
-        ((total++))
+        ((total++)) || true
 
         if grep -q "set -[Ee]*uo pipefail" "$filepath" 2>/dev/null; then
             echo "  ✅ ${filename}"
-            ((compliant++))
+            ((compliant++)) || true
         else
             echo "  ⚠️  ${filename} - missing strict mode"
-            ((non_compliant++))
+            ((non_compliant++)) || true
         fi
     done < <(find "${NFTBAN_BASE_DIR}/lib" -type f -name "*.sh" 2>/dev/null | sort)
 
@@ -228,11 +228,11 @@ nftban_security_check_flock() {
             continue
         fi
 
-        ((modules_checked++))
+        ((modules_checked++)) || true
 
         if grep -q "flock" "$filepath" 2>/dev/null; then
             echo "  ✅ ${module} - uses flock"
-            ((modules_with_flock++))
+            ((modules_with_flock++)) || true
             has_flock=true
         else
             echo "  ❌ ${module} - NO flock (race condition risk)"
@@ -285,18 +285,18 @@ nftban_security_check_localhost() {
             echo "  ✅ 127.0.0.1 (IPv4 localhost) - whitelisted"
         else
             echo "  ❌ 127.0.0.1 (IPv4 localhost) - NOT whitelisted!"
-            ((issues++))
+            ((issues++)) || true
         fi
 
         if nftban_whitelist_check_ip "::1" 2>/dev/null; then
             echo "  ✅ ::1 (IPv6 localhost) - whitelisted"
         else
             echo "  ⚠️  ::1 (IPv6 localhost) - NOT whitelisted"
-            ((issues++))
+            ((issues++)) || true
         fi
     else
         echo "  ⚠️  Whitelist module not loaded - cannot verify"
-        ((issues++))
+        ((issues++)) || true
     fi
 
     echo ""
@@ -339,22 +339,22 @@ nftban_security_audit_full() {
 
     # 1. Strict mode compliance
     if ! nftban_security_check_strict_mode; then
-        ((total_issues++))
+        ((total_issues++)) || true
     fi
 
     # 2. File permissions
     if ! nftban_security_check_permissions; then
-        ((total_issues++))
+        ((total_issues++)) || true
     fi
 
     # 3. File locking
     if ! nftban_security_check_flock; then
-        ((total_issues++))
+        ((total_issues++)) || true
     fi
 
     # 4. Localhost protection
     if ! nftban_security_check_localhost; then
-        ((total_issues++))
+        ((total_issues++)) || true
     fi
 
     # Final summary
@@ -419,7 +419,7 @@ nftban_security_check_quick() {
     echo "1. Checking critical modules for strict mode..."
     if ! grep -q "set -[Ee]*uo pipefail" "${NFTBAN_BASE_DIR}/lib/nftban_nftables_module.sh" 2>/dev/null; then
         echo "   ❌ nftban_nftables_module.sh missing strict mode"
-        ((issues++))
+        ((issues++)) || true
     else
         echo "   ✅ nftban_nftables_module.sh has strict mode"
     fi
@@ -432,11 +432,11 @@ nftban_security_check_quick() {
             echo "   ✅ Localhost whitelisted"
         else
             echo "   ❌ Localhost NOT whitelisted"
-            ((issues++))
+            ((issues++)) || true
         fi
     else
         echo "   ⚠️  Cannot verify (module not loaded)"
-        ((issues++))
+        ((issues++)) || true
     fi
 
     # 3. Check file permissions on core module
@@ -448,7 +448,7 @@ nftban_security_check_quick() {
         echo "   ✅ Core module permissions: $core_perms (correct)"
     else
         echo "   ⚠️  Core module permissions: $core_perms (expected 644)"
-        ((issues++))
+        ((issues++)) || true
     fi
 
     echo ""

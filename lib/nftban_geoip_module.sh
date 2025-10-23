@@ -438,16 +438,16 @@ nftban_geoip_bulk_lookup() {
     while IFS= read -r ip; do
         [[ -z "$ip" || "$ip" =~ ^# ]] && continue
         
-        ((total++))
+        ((total++)) || true
         
         echo ""
         echo "Lookup $total: $ip"
         echo "-----------------------------------"
         
         if nftban_geoip_get_formatted "$ip"; then
-            ((success++))
+            ((success++)) || true
         else
-            ((failed++))
+            ((failed++)) || true
         fi
         
         # Small delay to avoid rate limiting

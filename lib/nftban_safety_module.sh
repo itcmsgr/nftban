@@ -144,7 +144,7 @@ nftban_check_file_permissions() {
             # Check if writable
             if [[ ! -w "$file" ]]; then
                 nftban_log_error "File not writable: $file"
-                ((issues++))
+                ((issues++)) || true
             fi
             
             # Check permissions (should be 644 or 600)
@@ -159,7 +159,7 @@ nftban_check_file_permissions() {
     # Check log directory writable
     if [[ ! -w "$NFTBAN_LOG_DIR" ]]; then
         nftban_log_error "Log directory not writable: $NFTBAN_LOG_DIR"
-        ((issues++))
+        ((issues++)) || true
     fi
     
     return $issues
@@ -184,23 +184,23 @@ nftban_check_disk_space() {
     # Check disk space critical thresholds
     if [[ $etc_usage -gt 90 ]]; then
         nftban_log_error "CRITICAL: /etc partition ${etc_usage}% full (disk space)!"
-        ((issues++))
+        ((issues++)) || true
     fi
 
     if [[ $var_usage -gt 90 ]]; then
         nftban_log_error "CRITICAL: /var partition ${var_usage}% full (disk space)!"
-        ((issues++))
+        ((issues++)) || true
     fi
 
     # SECURITY: Check inode critical thresholds
     if [[ -n "$etc_inodes" ]] && [[ $etc_inodes -gt 90 ]]; then
         nftban_log_error "CRITICAL: /etc partition ${etc_inodes}% inodes used!"
-        ((issues++))
+        ((issues++)) || true
     fi
 
     if [[ -n "$var_inodes" ]] && [[ $var_inodes -gt 90 ]]; then
         nftban_log_error "CRITICAL: /var partition ${var_inodes}% inodes used!"
-        ((issues++))
+        ((issues++)) || true
     fi
 
     # Warning thresholds (80%)
@@ -232,7 +232,7 @@ nftban_check_lock() {
     # Wait for lock to be released (max 5 seconds)
     while [[ -f "$lock_file" ]] && [[ $waited -lt $max_wait ]]; do
         sleep 1
-        ((waited++))
+        ((waited++)) || true
     done
     
     if [[ -f "$lock_file" ]]; then
@@ -278,7 +278,7 @@ nftban_check_config_integrity() {
         # Check for binary/corrupted data
         if file "$file" | grep -q "data"; then
             nftban_log_error "File appears corrupted: $file"
-            ((issues++))
+            ((issues++)) || true
             continue
         fi
         
@@ -290,7 +290,7 @@ nftban_check_config_integrity() {
         
         if [[ $invalid_lines -gt 0 ]]; then
             nftban_log_warning "File has $invalid_lines invalid entries: $(basename "$file")"
-            ((issues++))
+            ((issues++)) || true
         fi
     done
     
@@ -373,7 +373,7 @@ nftban_check_private_ranges() {
         if ! grep -qE "^${range}" "$NFTBAN_WHITELIST_USER" 2>/dev/null && \
            ! grep -qE "^${range}" "$NFTBAN_WHITELIST_SYSTEM" 2>/dev/null; then
             nftban_log_warning "Private range not whitelisted: $range"
-            ((unprotected++))
+            ((unprotected++)) || true
         fi
     done
     
@@ -399,7 +399,7 @@ nftban_init_safeguards() {
         if ! grep -qE "^${ip}([[:space:]]|$)" "${NFTBAN_CONFIG_DIR}/whitelist-system.conf" 2>/dev/null; then
             echo "${ip}  # Localhost (critical protection)" >> "${NFTBAN_CONFIG_DIR}/whitelist-system.conf"
             nftban_log_success "Protected localhost: $ip"
-            ((protected++))
+            ((protected++)) || true
         fi
     done
     
@@ -414,7 +414,7 @@ nftban_init_safeguards() {
         if ! grep -qE "^${ip}([[:space:]]|$)" "${NFTBAN_CONFIG_DIR}/whitelist-system.conf" 2>/dev/null; then
             echo "${ip}  # Server IP (auto-detected)" >> "${NFTBAN_CONFIG_DIR}/whitelist-system.conf"
             nftban_log_success "Protected server IP: $ip"
-            ((protected++))
+            ((protected++)) || true
         fi
     done <<< "$server_ips"
     
@@ -427,7 +427,7 @@ nftban_init_safeguards() {
         if ! grep -qE "^${public_ipv4}([[:space:]]|$)" "${NFTBAN_CONFIG_DIR}/whitelist-system.conf" 2>/dev/null; then
             echo "${public_ipv4}  # Server public IPv4 (auto-detected)" >> "${NFTBAN_CONFIG_DIR}/whitelist-system.conf"
             nftban_log_success "Protected public IPv4: $public_ipv4"
-            ((protected++))
+            ((protected++)) || true
         fi
     fi
     
@@ -436,7 +436,7 @@ nftban_init_safeguards() {
         if ! grep -qE "^${public_ipv6}([[:space:]]|$)" "${NFTBAN_CONFIG_DIR}/whitelist-system.conf" 2>/dev/null; then
             echo "${public_ipv6}  # Server public IPv6 (auto-detected)" >> "${NFTBAN_CONFIG_DIR}/whitelist-system.conf"
             nftban_log_success "Protected public IPv6: $public_ipv6"
-            ((protected++))
+            ((protected++)) || true
         fi
     fi
     
@@ -451,7 +451,7 @@ nftban_init_safeguards() {
                 "${NFTBAN_CONFIG_DIR}/whitelist-user.conf"
             nftban_log_success "Protected current user IP: $current_user_ip"
             nftban_log_warning "⚠️  IMPORTANT: Your IP ($current_user_ip) has been whitelisted to prevent lockout"
-            ((protected++))
+            ((protected++)) || true
         fi
     else
         nftban_log_warning "Could not detect current user's IP - please add manually if remote"
@@ -469,12 +469,12 @@ nftban_init_safeguards() {
     
     if ! nftban_whitelist_check_ip "127.0.0.1"; then
         nftban_log_error "CRITICAL: Localhost not properly whitelisted!"
-        ((verification_failed++))
+        ((verification_failed++)) || true
     fi
     
     if [[ -n "$current_user_ip" ]] && ! nftban_whitelist_check_ip "$current_user_ip"; then
         nftban_log_error "CRITICAL: Current user IP not properly whitelisted!"
-        ((verification_failed++))
+        ((verification_failed++)) || true
     fi
     
     if [[ $verification_failed -gt 0 ]]; then
@@ -507,7 +507,7 @@ nftban_check_safeguards() {
         echo -e "${NFTBAN_GREEN}✓ PROTECTED${NFTBAN_NC}"
     else
         echo -e "${NFTBAN_RED}✗ NOT PROTECTED${NFTBAN_NC}"
-        ((issues++))
+        ((issues++)) || true
     fi
     
     echo -n "  Checking ::1... "
@@ -515,7 +515,7 @@ nftban_check_safeguards() {
         echo -e "${NFTBAN_GREEN}✓ PROTECTED${NFTBAN_NC}"
     else
         echo -e "${NFTBAN_RED}✗ NOT PROTECTED${NFTBAN_NC}"
-        ((issues++))
+        ((issues++)) || true
     fi
     echo ""
     
@@ -526,10 +526,10 @@ nftban_check_safeguards() {
     
     while IFS= read -r ip; do
         [[ -z "$ip" || "$ip" =~ ^127\. ]] && continue
-        ((total_ips++))
+        ((total_ips++)) || true
         if ! nftban_whitelist_check_ip "$ip"; then
             echo -e "  ${NFTBAN_RED}✗ NOT PROTECTED: $ip${NFTBAN_NC}"
-            ((unprotected_ips++))
+            ((unprotected_ips++)) || true
         fi
     done < <(ip -o addr show 2>/dev/null | awk '/inet/ {gsub(/\/.*/, "", $4); print $4}')
     
@@ -537,7 +537,7 @@ nftban_check_safeguards() {
         echo -e "  ${NFTBAN_GREEN}✓ ALL $total_ips SERVER IPS PROTECTED${NFTBAN_NC}"
     else
         echo -e "  ${NFTBAN_YELLOW}⚠ $unprotected_ips OF $total_ips IPS NOT PROTECTED${NFTBAN_NC}"
-        ((warnings++))
+        ((warnings++)) || true
     fi
     echo ""
     
@@ -553,7 +553,7 @@ nftban_check_safeguards() {
         else
             echo -e "${NFTBAN_RED}✗ NOT PROTECTED${NFTBAN_NC}"
             echo -e "  ${NFTBAN_RED}⚠️  CRITICAL: Risk of self-lockout!${NFTBAN_NC}"
-            ((issues++))
+            ((issues++)) || true
         fi
     else
         echo -e "  ${NFTBAN_YELLOW}N/A (Local console or undetectable)${NFTBAN_NC}"
@@ -567,7 +567,7 @@ nftban_check_safeguards() {
         echo -e "${NFTBAN_GREEN}✓ TABLE EXISTS${NFTBAN_NC}"
     else
         echo -e "${NFTBAN_RED}✗ TABLE MISSING${NFTBAN_NC}"
-        ((issues++))
+        ((issues++)) || true
     fi
     echo ""
     
@@ -592,7 +592,7 @@ nftban_check_safeguards() {
             for set_name in "${required_sets[@]}"; do
                 if ! nft list set "$table_family" "$table_name" "$set_name" &>/dev/null; then
                     echo -e "  ${NFTBAN_RED}✗ MISSING: ${set_name} (IPv${ver})${NFTBAN_NC}"
-                    ((missing_sets++))
+                    ((missing_sets++)) || true
                 fi
             done
         done
@@ -602,7 +602,7 @@ nftban_check_safeguards() {
             echo -e "  ${NFTBAN_GREEN}✓ ALL $total_sets SETS EXIST${NFTBAN_NC}"
         else
             echo -e "  ${NFTBAN_RED}✗ $missing_sets SETS MISSING${NFTBAN_NC}"
-            ((issues++))
+            ((issues++)) || true
         fi
     else
         echo -e "  ${NFTBAN_YELLOW}⚠ SKIPPED (table missing)${NFTBAN_NC}"
@@ -624,7 +624,7 @@ nftban_check_safeguards() {
         else
             echo -e "  ${NFTBAN_YELLOW}⚠ OUT OF SYNC (files: $file_v4, nft: $nft_v4)${NFTBAN_NC}"
             echo "  Run: nftban whitelist sync"
-            ((warnings++))
+            ((warnings++)) || true
         fi
     else
         echo -e "  ${NFTBAN_YELLOW}⚠ SKIPPED (table missing)${NFTBAN_NC}"
@@ -648,12 +648,12 @@ nftban_check_safeguards() {
             echo -e "  ${NFTBAN_GREEN}✓${NFTBAN_NC} $name"
         else
             echo -e "  ${NFTBAN_RED}✗${NFTBAN_NC} $name"
-            ((missing_files++))
+            ((missing_files++)) || true
         fi
     done
     
     if [[ $missing_files -gt 0 ]]; then
-        ((issues++))
+        ((issues++)) || true
     fi
     echo ""
     
@@ -674,7 +674,7 @@ nftban_check_safeguards() {
             if grep -qE "^${ip}([[:space:]]|$)" "${NFTBAN_CONFIG_DIR}/blacklist-user.conf" 2>/dev/null || \
                grep -qE "^${ip}([[:space:]]|$)" "${NFTBAN_CONFIG_DIR}/blacklist-persistent.conf" 2>/dev/null; then
                 echo -e "  ${NFTBAN_YELLOW}⚠ CONFLICT: $ip (both whitelisted and blacklisted)${NFTBAN_NC}"
-                ((conflicts++))
+                ((conflicts++)) || true
             fi
         done < "${NFTBAN_CONFIG_DIR}/whitelist-user.conf"
     fi
@@ -683,7 +683,7 @@ nftban_check_safeguards() {
         echo -e "  ${NFTBAN_GREEN}✓ NO CONFLICTS DETECTED${NFTBAN_NC}"
     else
         echo -e "  ${NFTBAN_YELLOW}⚠ $conflicts CONFLICTS FOUND${NFTBAN_NC}"
-        ((warnings++))
+        ((warnings++)) || true
     fi
     echo ""
     
@@ -734,7 +734,7 @@ nftban_check_all_risks() {
         echo -e "  ${NFTBAN_GREEN}✓ RUNNING${NFTBAN_NC}"
     else
         echo -e "  ${NFTBAN_RED}✗ NOT RUNNING${NFTBAN_NC}"
-        ((critical++))
+        ((critical++)) || true
     fi
     
     echo -e "${NFTBAN_CYAN}[2/10] nftables Set Capacity${NFTBAN_NC}"
@@ -742,7 +742,7 @@ nftban_check_all_risks() {
     for ver in 4 6; do
         for set in whitelist temp_ban user_blacklist; do
             if ! nftban_check_nft_set_capacity "$set" "$ver"; then
-                ((capacity_issues++))
+                ((capacity_issues++)) || true
             fi
         done
     done
@@ -750,21 +750,21 @@ nftban_check_all_risks() {
         echo -e "  ${NFTBAN_GREEN}✓ OK${NFTBAN_NC}"
     else
         echo -e "  ${NFTBAN_YELLOW}⚠ $capacity_issues sets near capacity${NFTBAN_NC}"
-        ((warnings++))
+        ((warnings++)) || true
     fi
     
     echo -e "${NFTBAN_CYAN}[3/10] Duplicate Detection${NFTBAN_NC}"
     local dup_issues=0
     for ver in 4 6; do
         if ! nftban_check_nft_duplicates "$ver"; then
-            ((dup_issues++))
+            ((dup_issues++)) || true
         fi
     done
     if [[ $dup_issues -eq 0 ]]; then
         echo -e "  ${NFTBAN_GREEN}✓ NO DUPLICATES${NFTBAN_NC}"
     else
         echo -e "  ${NFTBAN_YELLOW}⚠ Duplicates found${NFTBAN_NC}"
-        ((warnings++))
+        ((warnings++)) || true
     fi
     
     echo -e "${NFTBAN_CYAN}[4/10] File Permissions${NFTBAN_NC}"
@@ -772,7 +772,7 @@ nftban_check_all_risks() {
         echo -e "  ${NFTBAN_GREEN}✓ CORRECT${NFTBAN_NC}"
     else
         echo -e "  ${NFTBAN_RED}✗ ISSUES FOUND${NFTBAN_NC}"
-        ((critical++))
+        ((critical++)) || true
     fi
     
     echo -e "${NFTBAN_CYAN}[5/10] Disk Space${NFTBAN_NC}"
@@ -780,7 +780,7 @@ nftban_check_all_risks() {
         echo -e "  ${NFTBAN_GREEN}✓ SUFFICIENT${NFTBAN_NC}"
     else
         echo -e "  ${NFTBAN_YELLOW}⚠ LOW SPACE${NFTBAN_NC}"
-        ((warnings++))
+        ((warnings++)) || true
     fi
     
     echo -e "${NFTBAN_CYAN}[6/10] Process Lock${NFTBAN_NC}"
@@ -789,7 +789,7 @@ nftban_check_all_risks() {
         nftban_release_lock
     else
         echo -e "  ${NFTBAN_RED}✗ LOCK CONFLICT${NFTBAN_NC}"
-        ((critical++))
+        ((critical++)) || true
     fi
     
     echo -e "${NFTBAN_CYAN}[7/10] Configuration Integrity${NFTBAN_NC}"
@@ -797,7 +797,7 @@ nftban_check_all_risks() {
         echo -e "  ${NFTBAN_GREEN}✓ VALID${NFTBAN_NC}"
     else
         echo -e "  ${NFTBAN_YELLOW}⚠ ISSUES FOUND${NFTBAN_NC}"
-        ((warnings++))
+        ((warnings++)) || true
     fi
     
     echo -e "${NFTBAN_CYAN}[8/10] nftables Rule Order${NFTBAN_NC}"
@@ -805,7 +805,7 @@ nftban_check_all_risks() {
         echo -e "  ${NFTBAN_GREEN}✓ CORRECT ORDER${NFTBAN_NC}"
     else
         echo -e "  ${NFTBAN_RED}✗ INCORRECT ORDER${NFTBAN_NC}"
-        ((critical++))
+        ((critical++)) || true
     fi
     
     echo -e "${NFTBAN_CYAN}[9/10] Log File Size${NFTBAN_NC}"
@@ -847,7 +847,7 @@ nftban_quick_safety_check() {
     # Check localhost
     if ! nftban_whitelist_check_ip "127.0.0.1" || ! nftban_whitelist_check_ip "::1"; then
         echo "CRITICAL: Localhost not protected"
-        ((critical_failed++))
+        ((critical_failed++)) || true
     fi
     
     # Check server IPs
@@ -863,13 +863,13 @@ nftban_quick_safety_check() {
     current_ip=$(nftban_get_current_user_ip)
     if [[ -n "$current_ip" ]] && ! nftban_whitelist_check_ip "$current_ip"; then
         echo "CRITICAL: Current user IP not protected: $current_ip"
-        ((critical_failed++))
+        ((critical_failed++)) || true
     fi
     
     # Check nftables table
     if ! nftban_check_nftables_table; then
         echo "CRITICAL: nftables table missing"
-        ((critical_failed++))
+        ((critical_failed++)) || true
     fi
     
     return $critical_failed

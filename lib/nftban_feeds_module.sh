@@ -423,9 +423,9 @@ nftban_feeds_update() {
 
         if [[ "$enabled" == "TRUE" ]]; then
             if nftban_feeds_update_single "$feed_id"; then
-                ((updated++))
+                ((updated++)) || true
             else
-                ((failed++))
+                ((failed++)) || true
             fi
         fi
     done
@@ -649,7 +649,7 @@ nftban_feeds_status() {
     local enabled_count=0
     for feed_id in "${NFTBAN_FEED_IDS[@]}"; do
         local enabled=$(_nftban_feeds_get_config "$feed_id" "ENABLED")
-        [[ "$enabled" == "TRUE" ]] && ((enabled_count++))
+        [[ "$enabled" == "TRUE" ]] && ((enabled_count++)) || true
     done
 
     echo "Enabled Feeds: $enabled_count / ${#NFTBAN_FEED_IDS[@]}"

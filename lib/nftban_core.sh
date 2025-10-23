@@ -148,7 +148,7 @@ _nftban_get_caller_module() {
             return 0
         fi
 
-        ((frame++))
+        ((frame++)) || true
     done
 
     # Fallback: core module
@@ -355,18 +355,18 @@ nftban_secure_permissions() {
                 if [[ "$file" =~ \.local$ ]]; then
                     if chmod 600 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
                         nftban_log_debug "Secured (600): $file"
-                        ((fixed++))
+                        ((fixed++)) || true
                     else
                         nftban_log_error "Failed to secure: $file"
-                        ((errors++))
+                        ((errors++)) || true
                     fi
                 else
                     # Regular config files: 640
                     if chmod 640 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
-                        ((fixed++))
+                        ((fixed++)) || true
                     else
                         nftban_log_error "Failed to secure: $file"
-                        ((errors++))
+                        ((errors++)) || true
                     fi
                 fi
             done < <(find "$NFTBAN_CONFIG_DIR" -type f -name "*.conf*" -print0 2>/dev/null)
@@ -385,18 +385,18 @@ nftban_secure_permissions() {
                 if head -1 "$file" 2>/dev/null | grep -q '^#!/'; then
                     # Executable script: 750
                     if chmod 750 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
-                        ((fixed++))
+                        ((fixed++)) || true
                     else
                         nftban_log_error "Failed to secure: $file"
-                        ((errors++))
+                        ((errors++)) || true
                     fi
                 else
                     # Library module (sourced): 644
                     if chmod 644 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
-                        ((fixed++))
+                        ((fixed++)) || true
                     else
                         nftban_log_error "Failed to secure: $file"
-                        ((errors++))
+                        ((errors++)) || true
                     fi
                 fi
             done < <(find "$NFTBAN_LIB_DIR" -type f -name "*.sh" -print0 2>/dev/null)
@@ -406,10 +406,10 @@ nftban_secure_permissions() {
         if [[ -d "$NFTBAN_LIB_DIR/installer" ]]; then
             while IFS= read -r -d '' file; do
                 if chmod 750 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
-                    ((fixed++))
+                    ((fixed++)) || true
                 else
                     nftban_log_error "Failed to secure: $file"
-                    ((errors++))
+                    ((errors++)) || true
                 fi
             done < <(find "$NFTBAN_LIB_DIR/installer" -type f -name "*.sh" -print0 2>/dev/null)
         fi
@@ -428,10 +428,10 @@ nftban_secure_permissions() {
             # Secure all data files
             while IFS= read -r -d '' file; do
                 if chmod 600 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
-                    ((fixed++))
+                    ((fixed++)) || true
                 else
                     nftban_log_error "Failed to secure: $file"
-                    ((errors++))
+                    ((errors++)) || true
                 fi
             done < <(find "$NFTBAN_DATA_DIR" -type f -print0 2>/dev/null)
         fi
@@ -454,10 +454,10 @@ nftban_secure_permissions() {
 
             while IFS= read -r -d '' file; do
                 if chmod 640 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
-                    ((fixed++))
+                    ((fixed++)) || true
                 else
                     nftban_log_error "Failed to secure: $file"
-                    ((errors++))
+                    ((errors++)) || true
                 fi
             done < <(find "$NFTBAN_LOG_DIR" -type f -print0 2>/dev/null)
         fi
@@ -471,10 +471,10 @@ nftban_secure_permissions() {
         if [[ -d "${NFTBAN_BASE_DIR}/bin" ]]; then
             while IFS= read -r -d '' file; do
                 if chmod 755 "$file" 2>/dev/null && chown root:root "$file" 2>/dev/null; then
-                    ((fixed++))
+                    ((fixed++)) || true
                 else
                     nftban_log_error "Failed to secure: $file"
-                    ((errors++))
+                    ((errors++)) || true
                 fi
             done < <(find "${NFTBAN_BASE_DIR}/bin" -type f -print0 2>/dev/null)
         fi

@@ -342,15 +342,15 @@ nftban_ddos_connlimit_enable() {
 
     local count=0
 
-    [[ "$ssh_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 22 "$ssh_limit" "$action" && ((count++)); }
-    [[ "$http_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 80 "$http_limit" "$action" && ((count++)); }
-    [[ "$https_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 443 "$https_limit" "$action" && ((count++)); }
-    [[ "$ftp_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 21 "$ftp_limit" "$action" && ((count++)); }
-    [[ "$smtp_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 25 "$smtp_limit" "$action" && ((count++)); }
-    [[ "$pop3_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 110 "$pop3_limit" "$action" && ((count++)); }
-    [[ "$imap_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 143 "$imap_limit" "$action" && ((count++)); }
-    [[ "$mysql_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 3306 "$mysql_limit" "$action" && ((count++)); }
-    [[ "$pgsql_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 5432 "$pgsql_limit" "$action" && ((count++)); }
+    [[ "$ssh_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 22 "$ssh_limit" "$action" && ((count++)) || true; }
+    [[ "$http_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 80 "$http_limit" "$action" && ((count++)) || true; }
+    [[ "$https_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 443 "$https_limit" "$action" && ((count++)) || true; }
+    [[ "$ftp_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 21 "$ftp_limit" "$action" && ((count++)) || true; }
+    [[ "$smtp_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 25 "$smtp_limit" "$action" && ((count++)) || true; }
+    [[ "$pop3_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 110 "$pop3_limit" "$action" && ((count++)) || true; }
+    [[ "$imap_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 143 "$imap_limit" "$action" && ((count++)) || true; }
+    [[ "$mysql_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 3306 "$mysql_limit" "$action" && ((count++)) || true; }
+    [[ "$pgsql_limit" != "0" ]] && { nftban_ddos_connlimit_add_port 5432 "$pgsql_limit" "$action" && ((count++)) || true; }
 
     # Custom ports
     local custom
@@ -362,7 +362,7 @@ nftban_ddos_connlimit_enable() {
             if [[ "$pair" =~ ^([0-9]+)\;([0-9]+)$ ]]; then
                 local port="${BASH_REMATCH[1]}"
                 local limit="${BASH_REMATCH[2]}"
-                nftban_ddos_connlimit_add_port "$port" "$limit" "$action" && ((count++))
+                nftban_ddos_connlimit_add_port "$port" "$limit" "$action" && ((count++)) || true
             fi
         done
     fi
@@ -384,7 +384,7 @@ nftban_ddos_connlimit_disable() {
         handle=$(nft -a list chain $NFTBAN_NFT_TABLE input 2>/dev/null | grep "ct count" | head -n1 | grep -oP 'handle \K[0-9]+')
         if [[ -n "$handle" ]]; then
             nft delete rule $NFTBAN_NFT_TABLE input handle "$handle" 2>/dev/null || true
-            ((count++))
+            ((count++)) || true
         else
             break
         fi
@@ -535,11 +535,11 @@ nftban_ddos_portflood_enable() {
     ftp_rate=$(nftban_ddos_load_config "PORTFLOOD_FTP" "10/60")
     smtp_rate=$(nftban_ddos_load_config "PORTFLOOD_SMTP" "5/300")
 
-    [[ "$ssh_rate" != "0" ]] && { nftban_ddos_portflood_add_port 22 "$ssh_rate" && ((count++)); }
-    [[ "$http_rate" != "0" ]] && { nftban_ddos_portflood_add_port 80 "$http_rate" && ((count++)); }
-    [[ "$https_rate" != "0" ]] && { nftban_ddos_portflood_add_port 443 "$https_rate" && ((count++)); }
-    [[ "$ftp_rate" != "0" ]] && { nftban_ddos_portflood_add_port 21 "$ftp_rate" && ((count++)); }
-    [[ "$smtp_rate" != "0" ]] && { nftban_ddos_portflood_add_port 25 "$smtp_rate" && ((count++)); }
+    [[ "$ssh_rate" != "0" ]] && { nftban_ddos_portflood_add_port 22 "$ssh_rate" && ((count++)) || true; }
+    [[ "$http_rate" != "0" ]] && { nftban_ddos_portflood_add_port 80 "$http_rate" && ((count++)) || true; }
+    [[ "$https_rate" != "0" ]] && { nftban_ddos_portflood_add_port 443 "$https_rate" && ((count++)) || true; }
+    [[ "$ftp_rate" != "0" ]] && { nftban_ddos_portflood_add_port 21 "$ftp_rate" && ((count++)) || true; }
+    [[ "$smtp_rate" != "0" ]] && { nftban_ddos_portflood_add_port 25 "$smtp_rate" && ((count++)) || true; }
 
     # Custom ports
     local custom
@@ -551,7 +551,7 @@ nftban_ddos_portflood_enable() {
             if [[ "$pair" =~ ^([0-9]+)\;([0-9]+/[0-9]+)$ ]]; then
                 local port="${BASH_REMATCH[1]}"
                 local rate="${BASH_REMATCH[2]}"
-                nftban_ddos_portflood_add_port "$port" "$rate" && ((count++))
+                nftban_ddos_portflood_add_port "$port" "$rate" && ((count++)) || true
             fi
         done
     fi
@@ -573,7 +573,7 @@ nftban_ddos_portflood_disable() {
         handle=$(nft -a list chain $NFTBAN_NFT_TABLE input 2>/dev/null | grep "limit rate over" | head -n1 | grep -oP 'handle \K[0-9]+')
         if [[ -n "$handle" ]]; then
             nft delete rule $NFTBAN_NFT_TABLE input handle "$handle" 2>/dev/null || true
-            ((count++))
+            ((count++)) || true
         else
             break
         fi
@@ -714,7 +714,7 @@ nftban_ddos_icmp_disable() {
         handle=$(nft -a list chain $NFTBAN_NFT_TABLE input 2>/dev/null | grep "icmp type" | head -n1 | grep -oP 'handle \K[0-9]+')
         if [[ -n "$handle" ]]; then
             nft delete rule $NFTBAN_NFT_TABLE input handle "$handle" 2>/dev/null || true
-            ((count++))
+            ((count++)) || true
         else
             break
         fi

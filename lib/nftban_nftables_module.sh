@@ -527,14 +527,14 @@ nftban_nftables_verify_structure() {
     # Check IPv4 table
     if ! nftban_nftables_check_table "v4"; then
         nftban_log_error "IPv4 table does not exist"
-        ((missing++))
+        ((missing++)) || true
     else
         local required_sets=("whitelist" "temp_ban" "user_blacklist" "system_blacklist" "feeds")
 
         for set_name in "${required_sets[@]}"; do
             if ! nft list set "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" "$set_name" &>/dev/null; then
                 nftban_log_error "Missing IPv4 set: $set_name"
-                ((missing++))
+                ((missing++)) || true
             fi
         done
     fi
@@ -542,14 +542,14 @@ nftban_nftables_verify_structure() {
     # Check IPv6 table
     if ! nftban_nftables_check_table "v6"; then
         nftban_log_error "IPv6 table does not exist"
-        ((missing++))
+        ((missing++)) || true
     else
         local required_sets=("whitelist" "temp_ban" "user_blacklist" "system_blacklist" "feeds")
 
         for set_name in "${required_sets[@]}"; do
             if ! nft list set "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" "$set_name" &>/dev/null; then
                 nftban_log_error "Missing IPv6 set: $set_name"
-                ((missing++))
+                ((missing++)) || true
             fi
         done
     fi
