@@ -195,18 +195,31 @@ is_whitelisted() {
         done < "$whitelist_file"
     fi
 
-    # If input is a CIDR, check for any overlap with whitelist
-    # For now, we only check if the network address is whitelisted
-    # Full CIDR-vs-CIDR overlap checking would require complex IP math
+    # If input is a CIDR, check for ANY overlap with whitelist (comprehensive)
+    # BUG47 FIX: Full CIDR-vs-CIDR overlap detection to prevent partial overlaps
     if [[ "$input" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]]; then
         local network_addr="${input%/*}"
+        local input_prefix="${input#*/}"
 
         while IFS= read -r whitelist_entry; do
             [[ -z "$whitelist_entry" || "$whitelist_entry" =~ ^[[:space:]]*# ]] && continue
 
-            # Check if whitelist CIDR contains our network address
+            # Check CIDR-vs-CIDR overlap (both directions)
             if [[ "$whitelist_entry" =~ ^([0-9]{1,3}\.){3}[0-9]{1,3}/[0-9]{1,2}$ ]]; then
+                # Check if feed network address is in whitelist CIDR
                 if ip_in_cidr "$network_addr" "$whitelist_entry"; then
+                    return 0
+                fi
+                # Check if whitelist CIDR overlaps with feed CIDR (reverse check)
+                local wl_network="${whitelist_entry%/*}"
+                if ip_in_cidr "$wl_network" "$input"; then
+                    return 0
+                fi
+                # Check if broadcast addresses overlap (comprehensive overlap detection)
+                local feed_broadcast=$(cidr_broadcast "$input")
+                local wl_broadcast=$(cidr_broadcast "$whitelist_entry")
+                if ip_in_cidr "$feed_broadcast" "$whitelist_entry" || \
+                   ip_in_cidr "$wl_broadcast" "$input"; then
                     return 0
                 fi
             # Check if whitelist individual IP falls within our CIDR
@@ -252,6 +265,21 @@ ip_to_int() {
     local -a octets=($ip)
 
     echo $(( (octets[0] << 24) + (octets[1] << 16) + (octets[2] << 8) + octets[3] ))
+}
+
+# Helper: Calculate broadcast address for a CIDR
+# Usage: cidr_broadcast "192.168.1.0/24"
+cidr_broadcast() {
+    local cidr="$1"
+    local network="${cidr%/*}"
+    local prefix="${cidr#*/}"
+
+    local net_int=$(ip_to_int "$network")
+    local mask_int=$(( 0xFFFFFFFF << (32 - prefix) ))
+    local broadcast_int=$(( net_int | ~mask_int & 0xFFFFFFFF ))
+
+    # Convert back to dotted notation
+    echo "$(( (broadcast_int >> 24) & 0xFF )).$(( (broadcast_int >> 16) & 0xFF )).$(( (broadcast_int >> 8) & 0xFF )).$(( broadcast_int & 0xFF ))"
 }
 
 # =============================================================================
@@ -352,12 +380,11 @@ parse_feed() {
             if [[ "$ip" =~ / ]]; then
                 # CIDR notation
                 if validate_cidr "$ip"; then
-                    # BUG47 FIX: Check full CIDR against whitelist (CIDR-aware)
-                    if [[ "$NFTBAN_FEEDS_RESPECT_WHITELIST" == "true" ]]; then
-                        if is_whitelisted "$ip"; then
-                            log_debug "Skipping whitelisted CIDR: $ip"
-                            continue
-                        fi
+                    # BUG47 FIX: ALWAYS check whitelist (mandatory security, not optional)
+                    # Feeds must NEVER contain whitelisted IPs/CIDRs
+                    if is_whitelisted "$ip"; then
+                        log_debug "Skipping whitelisted CIDR: $ip (security: whitelist has priority)"
+                        continue
                     fi
                     echo "$ip" >> "$output_file"
                     ((valid_count++)) || true
@@ -367,12 +394,11 @@ parse_feed() {
             else
                 # Single IP
                 if validate_ip "$ip"; then
-                    # Check whitelist if enabled
-                    if [[ "$NFTBAN_FEEDS_RESPECT_WHITELIST" == "true" ]]; then
-                        if is_whitelisted "$ip"; then
-                            log_debug "Skipping whitelisted IP: $ip"
-                            continue
-                        fi
+                    # BUG47 FIX: ALWAYS check whitelist (mandatory security, not optional)
+                    # Feeds must NEVER contain whitelisted IPs
+                    if is_whitelisted "$ip"; then
+                        log_debug "Skipping whitelisted IP: $ip (security: whitelist has priority)"
+                        continue
                     fi
                     echo "$ip" >> "$output_file"
                     ((valid_count++)) || true
@@ -422,15 +448,52 @@ create_feed_nftset() {
     fi
 }
 
+# BUG47 FIX: Verify feed has no whitelist overlaps (post-import sanity check)
+# Ensures @feeds ∩ @whitelist = ∅ (empty set intersection)
+verify_feed_whitelist_separation() {
+    local parsed_file="$1"
+    local whitelist_file="$NFTBAN_F2B_IGNOREIP"
+
+    if [[ ! -f "$whitelist_file" || ! -f "$parsed_file" ]]; then
+        return 0  # No whitelist or no feed = no overlap possible
+    fi
+
+    log_debug "Verifying feed has no whitelist overlaps..."
+
+    local overlaps=0
+    while IFS= read -r feed_ip; do
+        [[ -z "$feed_ip" ]] && continue
+
+        if is_whitelisted "$feed_ip"; then
+            log_error "SECURITY VIOLATION: Feed contains whitelisted IP/CIDR: $feed_ip"
+            ((overlaps++)) || true
+        fi
+    done < "$parsed_file"
+
+    if [[ $overlaps -gt 0 ]]; then
+        log_error "Found $overlaps whitelist overlaps in feed (SECURITY FAILURE)"
+        return 1
+    fi
+
+    log_debug "Feed verification passed: no whitelist overlaps detected"
+    return 0
+}
+
 # Import feed into nftables
 import_feed_to_nftables() {
     local feed_name="$1"
     local parsed_file="$NFTBAN_FEEDS_DATA_DIR/${feed_name}.parsed"
     local set_name="$NFTBAN_FEEDS_NFT_SET"
     local table="$NFTBAN_FEEDS_NFT_TABLE"
-    
+
     if [[ ! -f "$parsed_file" ]]; then
         log_error "Parsed feed file not found: $parsed_file"
+        return 1
+    fi
+
+    # BUG47 FIX: Verify no whitelist overlaps before import (defense in depth)
+    if ! verify_feed_whitelist_separation "$parsed_file"; then
+        log_error "Feed verification failed: contains whitelisted IPs (refusing import)"
         return 1
     fi
 
@@ -464,7 +527,7 @@ import_feed_to_nftables() {
         # Execute transaction atomically
         if nft -f "$nft_txn_file" 2>/dev/null; then
             rm -f "$nft_txn_file"
-            log_success "Imported $count IPs atomically: $feed_name"
+            log_success "Imported $count IPs atomically: $feed_name (verified secure)"
             return 0
         else
             rm -f "$nft_txn_file"
