@@ -1222,503 +1222,19 @@ cmd_stats() {
 }
 
 # =============================================================================
-# PORT COMMANDS (NEW)
+# INLINE COMMAND FUNCTIONS REMOVED - NOW AUTO-LOADED FROM lib/cli/
 # =============================================================================
-
-cmd_port() {
-    local action="${1:-list}"
-    shift || true
-
-    case "$action" in
-        add)
-            nftban_check_root || exit 1
-            [[ $# -lt 2 ]] && { nftban_log_error "Usage: nftban port add <port> <protocol> [comment]"; exit 1; }
-            nftban_port_add "$1" "$2" "${3:-Manual addition}"
-            ;;
-        remove|delete|del)
-            nftban_check_root || exit 1
-            [[ $# -lt 2 ]] && { nftban_log_error "Usage: nftban port remove <port> <protocol>"; exit 1; }
-            nftban_port_remove "$1" "$2"
-            ;;
-        list|show)
-            nftban_port_list
-            ;;
-        apply)
-            nftban_check_root || exit 1
-            nftban_port_apply_to_nftables
-            ;;
-        validate)
-            nftban_port_validate_all
-            ;;
-        *)
-            nftban_log_error "Unknown port action: $action"
-            echo ""
-            echo "Available actions:"
-            echo "  add <port> <proto> [comment]  Add port (proto: tcp/udp)"
-            echo "  remove <port> <proto>          Remove port"
-            echo "  list                           Show all allowed ports"
-            echo "  apply                          Apply port config to nftables"
-            echo "  validate                       Validate port configuration"
-            echo ""
-            exit 1
-            ;;
-    esac
-}
-
-# =============================================================================
-# DDOS PROTECTION COMMANDS (NEW)
-# =============================================================================
-
-cmd_ddos() {
-    local action="${1:-status}"
-    shift || true
-
-    case "$action" in
-        status)
-            nftban_ddos_status
-            ;;
-        enable)
-            nftban_check_root || exit 1
-            nftban_ddos_enable_all
-            ;;
-        disable)
-            nftban_check_root || exit 1
-            nftban_ddos_disable_all
-            ;;
-        synflood)
-            local subaction="${1:-status}"
-            shift || true
-            case "$subaction" in
-                enable)
-                    nftban_check_root || exit 1
-                    nftban_ddos_synflood_enable
-                    ;;
-                disable)
-                    nftban_check_root || exit 1
-                    nftban_ddos_synflood_disable
-                    ;;
-                status)
-                    nftban_ddos_synflood_status
-                    ;;
-                *)
-                    nftban_log_error "Unknown synflood action: $subaction"
-                    echo "Available: enable, disable, status"
-                    exit 1
-                    ;;
-            esac
-            ;;
-        connlimit)
-            local subaction="${1:-status}"
-            shift || true
-            case "$subaction" in
-                enable)
-                    nftban_check_root || exit 1
-                    nftban_ddos_connlimit_enable
-                    ;;
-                disable)
-                    nftban_check_root || exit 1
-                    nftban_ddos_connlimit_disable
-                    ;;
-                status)
-                    nftban_ddos_connlimit_status
-                    ;;
-                add)
-                    nftban_check_root || exit 1
-                    [[ $# -lt 2 ]] && { nftban_log_error "Usage: nftban ddos connlimit add <port> <limit>"; exit 1; }
-                    nftban_ddos_connlimit_add_port "$1" "$2"
-                    ;;
-                *)
-                    nftban_log_error "Unknown connlimit action: $subaction"
-                    echo "Available: enable, disable, status, add"
-                    exit 1
-                    ;;
-            esac
-            ;;
-        portflood)
-            local subaction="${1:-status}"
-            shift || true
-            case "$subaction" in
-                enable)
-                    nftban_check_root || exit 1
-                    nftban_ddos_portflood_enable
-                    ;;
-                disable)
-                    nftban_check_root || exit 1
-                    nftban_ddos_portflood_disable
-                    ;;
-                status)
-                    nftban_ddos_portflood_status
-                    ;;
-                add)
-                    nftban_check_root || exit 1
-                    [[ $# -lt 2 ]] && { nftban_log_error "Usage: nftban ddos portflood add <port> <rate/time>"; exit 1; }
-                    nftban_ddos_portflood_add_port "$1" "$2"
-                    ;;
-                *)
-                    nftban_log_error "Unknown portflood action: $subaction"
-                    echo "Available: enable, disable, status, add"
-                    exit 1
-                    ;;
-            esac
-            ;;
-        icmp)
-            local subaction="${1:-status}"
-            shift || true
-            case "$subaction" in
-                enable)
-                    nftban_check_root || exit 1
-                    nftban_ddos_icmp_enable
-                    ;;
-                disable)
-                    nftban_check_root || exit 1
-                    nftban_ddos_icmp_disable
-                    ;;
-                status)
-                    nftban_ddos_icmp_status
-                    ;;
-                *)
-                    nftban_log_error "Unknown icmp action: $subaction"
-                    echo "Available: enable, disable, status"
-                    exit 1
-                    ;;
-            esac
-            ;;
-        *)
-            nftban_log_error "Unknown ddos action: $action"
-            echo ""
-            echo "Available actions:"
-            echo "  status                    Show DDoS protection status"
-            echo "  enable                    Enable all DDoS protections"
-            echo "  disable                   Disable all DDoS protections"
-            echo "  synflood <action>         SYN flood protection (enable/disable/status)"
-            echo "  connlimit <action>        Connection limit (enable/disable/status/add)"
-            echo "  portflood <action>        Port flood protection (enable/disable/status/add)"
-            echo "  icmp <action>             ICMP protection (enable/disable/status)"
-            echo ""
-            echo "Examples:"
-            echo "  nftban ddos status"
-            echo "  nftban ddos enable"
-            echo "  nftban ddos synflood enable"
-            echo "  nftban ddos connlimit add 22 5"
-            echo "  nftban ddos portflood add 80 20/5"
-            echo ""
-            exit 1
-            ;;
-    esac
-}
-
-# =============================================================================
-# PORT SCAN DETECTION COMMANDS (NEW)
-# =============================================================================
-
-cmd_portscan() {
-    local action="${1:-status}"
-    shift || true
-
-    case "$action" in
-        status)
-            nftban_portscan_status
-            ;;
-        enable)
-            nftban_check_root || exit 1
-            nftban_portscan_enable
-            ;;
-        disable)
-            nftban_check_root || exit 1
-            nftban_portscan_disable
-            ;;
-        check)
-            nftban_check_root || exit 1
-            nftban_portscan_check
-            ;;
-        check-ip)
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban portscan check-ip <IP>"; exit 1; }
-            nftban_portscan_check_ip_manual "$1"
-            ;;
-        stats)
-            nftban_portscan_stats
-            ;;
-        cleanup)
-            nftban_check_root || exit 1
-            nftban_portscan_cleanup
-            ;;
-        whitelist)
-            local subaction="${1:-list}"
-            shift || true
-            case "$subaction" in
-                add)
-                    nftban_check_root || exit 1
-                    [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban portscan whitelist add <IP> [comment]"; exit 1; }
-                    nftban_portscan_whitelist_add "$1" "${2:-Manual addition}"
-                    ;;
-                remove)
-                    nftban_check_root || exit 1
-                    [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban portscan whitelist remove <IP>"; exit 1; }
-                    nftban_portscan_whitelist_remove "$1"
-                    ;;
-                list)
-                    nftban_portscan_whitelist_list
-                    ;;
-                *)
-                    nftban_log_error "Unknown whitelist action: $subaction"
-                    echo "Available: add, remove, list"
-                    exit 1
-                    ;;
-            esac
-            ;;
-        *)
-            nftban_log_error "Unknown portscan action: $action"
-            echo ""
-            echo "Available actions:"
-            echo "  status                       Show port scan detection status"
-            echo "  enable                       Enable port scan detection"
-            echo "  disable                      Disable port scan detection"
-            echo "  check                        Check for port scanners now"
-            echo "  check-ip <IP>                Check specific IP for scanning"
-            echo "  stats                        Show detection statistics"
-            echo "  cleanup                      Clean up old tracking data"
-            echo "  whitelist add <IP> [comment] Add IP to portscan whitelist"
-            echo "  whitelist remove <IP>        Remove IP from whitelist"
-            echo "  whitelist list               List whitelisted IPs"
-            echo ""
-            echo "Examples:"
-            echo "  nftban portscan status"
-            echo "  nftban portscan enable"
-            echo "  nftban portscan check"
-            echo "  nftban portscan check-ip 192.168.1.100"
-            echo "  nftban portscan whitelist add 192.168.1.1 'Office scanner'"
-            echo ""
-            exit 1
-            ;;
-    esac
-}
-
-# =============================================================================
-# CLOUDFLARE WHITELIST COMMANDS (NEW)
-# =============================================================================
-
-cmd_cloudflare() {
-    local action="${1:-status}"
-    shift || true
-
-    case "$action" in
-        status)
-            nftban_cloudflare_status
-            ;;
-        enable)
-            nftban_check_root || exit 1
-            nftban_cloudflare_enable
-            ;;
-        disable)
-            nftban_check_root || exit 1
-            nftban_cloudflare_disable
-            ;;
-        enable-ipv4)
-            nftban_check_root || exit 1
-            nftban_cloudflare_enable_ipv4
-            ;;
-        disable-ipv4)
-            nftban_check_root || exit 1
-            nftban_cloudflare_disable_ipv4
-            ;;
-        enable-ipv6)
-            nftban_check_root || exit 1
-            nftban_cloudflare_enable_ipv6
-            ;;
-        disable-ipv6)
-            nftban_check_root || exit 1
-            nftban_cloudflare_disable_ipv6
-            ;;
-        update)
-            nftban_check_root || exit 1
-            nftban_cloudflare_update_whitelist
-            ;;
-        init)
-            nftban_check_root || exit 1
-            nftban_cloudflare_init
-            ;;
-        help|--help|-h)
-            cat <<'EOF'
-
-═══════════════════════════════════════════════════════════
-  Cloudflare IP Whitelisting Integration
-═══════════════════════════════════════════════════════════
-
-DESCRIPTION:
-  Automatically whitelist Cloudflare IP ranges to allow proper CDN
-  traffic. IPs are added to both nftables (memory/volatile) and
-  persistent whitelist file for reboot survival.
-
-USAGE:
-  nftban cloudflare <action>
-
-ACTIONS:
-  status              Show current Cloudflare status and IP counts
-  enable              Enable both IPv4 and IPv6 whitelisting
-  disable             Disable and remove all Cloudflare IPs
-  enable-ipv4         Enable IPv4 only
-  disable-ipv4        Disable IPv4 only (keeps IPv6)
-  enable-ipv6         Enable IPv6 only
-  disable-ipv6        Disable IPv6 only (keeps IPv4)
-  update              Update IP ranges from Cloudflare
-  init                Initialize Cloudflare integration (alias for enable)
-  help                Show this help message
-
-HOW IT WORKS:
-  1. Downloads latest IP ranges from Cloudflare
-  2. Writes to: /etc/nftban/config/whitelist-cloudflare.conf (PERSISTENT)
-  3. Adds to nftables whitelist set (MEMORY - immediate, not delayed!)
-  4. On reboot: Whitelist file is loaded to restore IPs
-
-IP RANGES:
-  - IPv4: ~14 ranges from https://www.cloudflare.com/ips-v4
-  - IPv6: ~6 ranges from https://www.cloudflare.com/ips-v6
-  - Updated automatically when enabled
-
-FILES:
-  Config:      /etc/nftban/nftban.conf (CLOUDFLARE_ENABLED=true/false)
-  Whitelist:   /etc/nftban/config/whitelist-cloudflare.conf (persistent)
-  IPv4 Cache:  /etc/nftban/cache/cloudflare-ipv4.txt (volatile)
-  IPv6 Cache:  /etc/nftban/cache/cloudflare-ipv6.txt (volatile)
-  Logs:        /var/log/nftban/cloudflare.log
-
-EXAMPLES:
-  # Enable Cloudflare (both IPv4 and IPv6)
-  sudo nftban cloudflare enable
-
-  # Check status
-  nftban cloudflare status
-
-  # Enable only IPv4
-  sudo nftban cloudflare enable-ipv4
-
-  # Disable only IPv6
-  sudo nftban cloudflare disable-ipv6
-
-  # Update IP ranges
-  sudo nftban cloudflare update
-
-  # Disable everything
-  sudo nftban cloudflare disable
-
-NOTES:
-  - IPs appear in nftables IMMEDIATELY (no delay)
-  - Cache files removed on disable, re-downloaded on enable
-  - Whitelist file persists across reboots
-  - IPv4/IPv6 can be managed independently
-
-For more info: https://developers.cloudflare.com/fundamentals/get-started/cloudflare-ip-addresses/
-
-EOF
-            ;;
-        *)
-            nftban_log_error "Unknown cloudflare action: $action"
-            echo ""
-            echo "Available actions:"
-            echo "  status              Show Cloudflare whitelist status"
-            echo "  enable              Enable Cloudflare IP whitelisting (IPv4 + IPv6)"
-            echo "  disable             Disable Cloudflare IP whitelisting"
-            echo "  enable-ipv4         Enable IPv4 only"
-            echo "  disable-ipv4        Disable IPv4 only"
-            echo "  enable-ipv6         Enable IPv6 only"
-            echo "  disable-ipv6        Disable IPv6 only"
-            echo "  update              Update Cloudflare IP ranges"
-            echo "  init                Initialize Cloudflare whitelist"
-            echo "  help                Show detailed help"
-            echo ""
-            echo "Examples:"
-            echo "  nftban cloudflare help"
-            echo "  nftban cloudflare status"
-            echo "  sudo nftban cloudflare enable"
-            echo "  sudo nftban cloudflare enable-ipv4"
-            echo "  sudo nftban cloudflare update"
-            echo ""
-            exit 1
-            ;;
-    esac
-}
-
-# =============================================================================
-# GEO-BLOCKING COMMANDS (NEW)
-# =============================================================================
-
-cmd_geo() {
-    local action="${1:-status}"
-    shift || true
-
-    case "$action" in
-        status)
-            nftban_geo_status
-            ;;
-        enable)
-            nftban_check_root || exit 1
-            nftban_geo_enable
-            ;;
-        disable)
-            nftban_check_root || exit 1
-            nftban_geo_disable
-            ;;
-        help)
-            nftban_geo_help
-            ;;
-        block)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban geo block <COUNTRY> [reason]"; exit 1; }
-            nftban_geo_block_country "$1" "both"
-            ;;
-        unblock)
-            nftban_check_root || exit 1
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban geo unblock <COUNTRY>"; exit 1; }
-            nftban_geo_unblock_country "$1" "both"
-            ;;
-        list)
-            nftban_geo_list_blocked
-            ;;
-        check)
-            [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban geo check <IP>"; exit 1; }
-            nftban_geo_check_ip "$1"
-            ;;
-        reload|sync)
-            nftban_check_root || exit 1
-            nftban_geo_sync_blacklist
-            ;;
-        update)
-            nftban_check_root || exit 1
-            nftban_geo_update_database "${1:-ALL}"
-            ;;
-        init)
-            nftban_check_root || exit 1
-            nftban_geo_init
-            ;;
-        *)
-            nftban_log_error "Unknown geo action: $action"
-            echo ""
-            echo "Available actions:"
-            echo "  status                Show GEO-blocking status"
-            echo "  enable                Enable GEO-blocking"
-            echo "  disable               Disable GEO-blocking"
-            echo "  help                  Show comprehensive help"
-            echo "  block <COUNTRY>       Block a country (e.g., CN, RU)"
-            echo "  unblock <COUNTRY>     Unblock a country"
-            echo "  list                  List all blocked countries"
-            echo "  check <IP>            Check if IP is GEO-blocked"
-            echo "  reload                Reload blacklist to nftables"
-            echo "  update [COUNTRY]      Update GeoIP database"
-            echo "  init                  Initialize GEO-blocking system"
-            echo ""
-            echo "Examples:"
-            echo "  nftban geo status"
-            echo "  nftban geo help"
-            echo "  nftban geo block CN"
-            echo "  nftban geo unblock RU"
-            echo "  nftban geo list"
-            echo "  nftban geo check 1.2.3.4"
-            echo "  nftban geo update ALL"
-            echo ""
-            exit 1
-            ;;
-    esac
-}
+# The following commands are now modularized and auto-loaded:
+#   - cmd_port        -> lib/cli/cmd_port.sh
+#   - cmd_ddos        -> lib/cli/cmd_ddos.sh
+#   - cmd_portscan    -> lib/cli/cmd_portscan.sh
+#   - cmd_cloudflare  -> lib/cli/cmd_cloudflare.sh
+#   - cmd_geo         -> lib/cli/cmd_geo.sh
+#   - cmd_login       -> lib/cli/cmd_login.sh (already modular)
+#   - cmd_test        -> lib/cli/cmd_test.sh (already modular)
+#   - cmd_search      -> lib/cli/cmd_search.sh (already modular)
+#
+# Auto-loading mechanism at main() handles these automatically (lines 2077-2083)
 
 # =============================================================================
 # EXISTING COMMANDS (UNCHANGED - KEEPING ORIGINAL)
@@ -1847,8 +1363,12 @@ cmd_verify() {
 show_usage() {
     cat << 'EOF'
 ╔═══════════════════════════════════════════════════════╗
-║           nftban v0.9.2 - Modular System              ║
+║           nftban v0.9.2 - Modular CLI System          ║
 ╚═══════════════════════════════════════════════════════╝
+
+ARCHITECTURE:
+    Modular CLI with auto-loading from lib/cli/
+    16 specialized command modules for maintainability
 
 USAGE:
     nftban <command> [options]
@@ -2055,6 +1575,15 @@ EXAMPLES:
     # Validate specific file
     sudo nftban validate file /etc/nftban/lib/nftban_core.sh
 
+MODULAR CLI ARCHITECTURE:
+    Commands are auto-loaded from lib/cli/ for better maintainability:
+    • 16 specialized command modules (cmd_*.sh)
+    • Auto-loading via main CLI router (lines 1593-1599)
+    • Easier testing, debugging, and code organization
+
+    Modular commands: port, ddos, portscan, geo, cloudflare, login,
+                     search, test, whitelist, blacklist, and more
+
 For full command list, run: nftban help
 
 EOF
@@ -2107,19 +1636,11 @@ main() {
         # Statistics & Monitoring
         stats) cmd_stats "$@" ;;
 
-        # Port Management
-        port|ports) cmd_port "$@" ;;
-
-        # DDoS Protection
-        ddos) cmd_ddos "$@" ;;
-
-        # Port Scan Detection
-        portscan) cmd_portscan "$@" ;;
-
-        # GEO-Blocking (now auto-loaded from lib/cli/cmd_geo.sh)
-
-        # Cloudflare Whitelist
-        cloudflare|cf) cmd_cloudflare "$@" ;;
+        # Port Management (auto-loaded from lib/cli/cmd_port.sh)
+        # DDoS Protection (auto-loaded from lib/cli/cmd_ddos.sh)
+        # Port Scan Detection (auto-loaded from lib/cli/cmd_portscan.sh)
+        # GEO-Blocking (auto-loaded from lib/cli/cmd_geo.sh)
+        # Cloudflare Whitelist (auto-loaded from lib/cli/cmd_cloudflare.sh)
 
 		# Feeds Management
         feeds) cmd_feeds "$@" ;;
