@@ -275,7 +275,7 @@ nftban_stats_nftables_summary() {
         if [[ "$v4_exists" == "true" ]]; then
             if nft list set "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" "$set" &>/dev/null 2>&1; then
                 v4_count=$(nft list set "$NFTBAN_NFT_FAMILY_V4" "$NFTBAN_NFT_TABLE_V4" "$set" 2>/dev/null | \
-                           grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9.]\+' | wc -l)
+                           grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9.]\+' | wc -l) || v4_count=0
             fi
         fi
 
@@ -283,7 +283,7 @@ nftban_stats_nftables_summary() {
         if [[ "$v6_exists" == "true" ]]; then
             if nft list set "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" "$set" &>/dev/null 2>&1; then
                 v6_count=$(nft list set "$NFTBAN_NFT_FAMILY_V6" "$NFTBAN_NFT_TABLE_V6" "$set" 2>/dev/null | \
-                           grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F:]\+' | wc -l)
+                           grep -oP 'elements = \{\K[^}]*' | grep -o '[0-9a-fA-F:]\+' | wc -l) || v6_count=0
             fi
         fi
 
