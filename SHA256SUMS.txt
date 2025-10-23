@@ -1,6 +1,6 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-23 06:55:12 UTC
-# Commit: 81815d7 (81815d7ba5edd6bb178879caa7b3bfcb8b779621)
+# Generated: 2025-10-23 07:02:30 UTC
+# Commit: 2b16861 (2b16861ccaae5fc453007845a2962c42c5ce5e3b)
 # Branch: main
 # Total files: 199
 #
@@ -124,8 +124,8 @@ b77f528a60a586b215408165b9c4f91decc3fc6a1406566d042e7b04c91c56b7  lib/installer/
 7194ea4138a18469dc10a1413c7a79f86db020f739b21d73c10a6963e1506c41  lib/installer/installer_package.sh
 a263d4c5cca83991e92f52cd913be17b2b526ec4a05b809f5a22cc3ca2d9f53f  lib/installer/installer_structure.sh
 98c0d01adf813cde6745eb24875b85fff1a1c4fc1014f277cc5054788e69aea2  lib/installer/installer_verification.sh
-53bc364ebd7548ac9dcb69fc98b5d8fba83ef327945ca21ae968422f38fcfa40  lib/installer/nftban_installer_modular.sh
-09db99ca89691849e2b7259bf0474b3b2b0039ea7a84b7cbe779f69fdcedbdf4  lib/installer/nftban_uninstall_script.sh
+329f9d3c9cc9305619a081d0cf9ebf47b6bbafe7f30b1ff0fcab86a4eafa9b3d  lib/installer/nftban_installer_modular.sh
+55047a5a13c507d938411c8bc882a813476056e56aef36621b5b01d8ada4e39a  lib/installer/nftban_uninstall_script.sh
 3bec13dc95ed415e0ec898d9e574cf508855603ab91b0525e48016df497e6392  lib/nftban-validator-github.sh
 44a445b3a3ee017d074fabd651f93c862993a096b72accfb621dac97788e3fd3  lib/nftban-validator-manifest.json
 c05330e361a04e67f16573fe923ee1a32a28084b31004084b7bebe09669271cf  lib/nftban-validator-panel.sh
@@ -141,7 +141,7 @@ c60ddb4abf5d44f8a1bf880b2c5b14c97a9af4547bf9d4136f3efb6721f9fa70  lib/nftban_fee
 1f6632ecc4be4daeec97fb972cf7dfacb8df357e5f5b22960caffb215c01c860  lib/nftban_feeds_module.sh
 ccaef3649e35d144e7217456fdcf424715b7544a5eea8864afac67d19166a081  lib/nftban_geo_module.sh
 c3fd7800667c138494a51ccb6d2dc14459dd25aa7ac6b9ff4925e268a71056b4  lib/nftban_geoip_module.sh
-33c14fb81b2a37f4c43757d83356220cf52d14e4566bfb216ba4f63cd17a4405  lib/nftban_init_script.sh
+1dff262583f4132e68c99b970d09be385151eb96da71884b0edadca58eb52661  lib/nftban_init_script.sh
 a60e3c173edb0668843dd8816a3cb54c60ea68506277c266c9f39c5d25085366  lib/nftban_ipprotect_module.sh
 3be72405d9de51f1ac4cc4841fa8e9557cf829ee92f21d146536082f26f045d1  lib/nftban_login_monitor_module.sh
 6940e45afa8c822c87c7230d63b5f9e6338091f081e38d5fecffbd63796128cc  lib/nftban_main_cli.sh
