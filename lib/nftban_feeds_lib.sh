@@ -594,6 +594,7 @@ list_feeds() {
 }
 
 # Enable feed
+# BUG50 FIX: Uses lock to prevent concurrent config modifications
 enable_feed() {
     local feed_name="$1"
     local conf_local="$CONFIG_DIR/nftban.conf.local"
@@ -612,22 +613,32 @@ enable_feed() {
 
     log_info "Enabling feed: $feed_name"
 
-    # Add to conf.local
+    # Add to conf.local with lock protection
     local override_var="NFTBAN_FEED_${feed_name}_ENABLED"
-    
+
     if grep -q "^${override_var}=" "$conf_local" 2>/dev/null; then
-        # Update existing entry
-        sed -i "s/^${override_var}=.*/${override_var}=\"true\"/" "$conf_local"
+        # BUG50 FIX: Update existing entry with lock
+        if nftban_safe_modify "$conf_local" "s/^${override_var}=.*/${override_var}=\"true\"/"; then
+            log_success "Feed enabled: $feed_name"
+            return 0
+        else
+            log_error "Failed to enable feed: $feed_name (lock timeout)"
+            return 1
+        fi
     else
-        # Add new entry
-        echo "${override_var}=\"true\"" >> "$conf_local"
+        # BUG50 FIX: Add new entry with lock
+        if nftban_safe_append "$conf_local" "${override_var}=\"true\""; then
+            log_success "Feed enabled: $feed_name"
+            return 0
+        else
+            log_error "Failed to enable feed: $feed_name (lock timeout)"
+            return 1
+        fi
     fi
-    
-    log_success "Feed enabled: $feed_name"
-    return 0
 }
 
 # Disable feed
+# BUG50 FIX: Uses lock to prevent concurrent config modifications
 disable_feed() {
     local feed_name="$1"
     local conf_local="$CONFIG_DIR/nftban.conf.local"
@@ -641,15 +652,26 @@ disable_feed() {
     log_info "Disabling feed: $feed_name"
 
     local override_var="NFTBAN_FEED_${feed_name}_ENABLED"
-    
+
     if grep -q "^${override_var}=" "$conf_local" 2>/dev/null; then
-        sed -i "s/^${override_var}=.*/${override_var}=\"false\"/" "$conf_local"
+        # BUG50 FIX: Update existing entry with lock
+        if nftban_safe_modify "$conf_local" "s/^${override_var}=.*/${override_var}=\"false\"/"; then
+            log_success "Feed disabled: $feed_name"
+            return 0
+        else
+            log_error "Failed to disable feed: $feed_name (lock timeout)"
+            return 1
+        fi
     else
-        echo "${override_var}=\"false\"" >> "$conf_local"
+        # BUG50 FIX: Add new entry with lock
+        if nftban_safe_append "$conf_local" "${override_var}=\"false\""; then
+            log_success "Feed disabled: $feed_name"
+            return 0
+        else
+            log_error "Failed to disable feed: $feed_name (lock timeout)"
+            return 1
+        fi
     fi
-    
-    log_success "Feed disabled: $feed_name"
-    return 0
 }
 
 # Get feed statistics

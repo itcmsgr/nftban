@@ -736,38 +736,46 @@ nftban_blacklist_list_permanent() {
 # =============================================================================
 
 # Sync blacklist to nftables
+# BUG50 FIX: Uses lock to prevent concurrent nftables modifications
 nftban_blacklist_sync_to_nftables() {
     nftban_log_info "Syncing blacklist to nftables..."
-    
+
     if ! nftban_check_nftables_table; then
         nftban_log_error "nftables table not initialized"
         return 1
     fi
-    
+
+    # BUG50 FIX: Acquire lock for nftables blacklist sync
+    local lock_fd
+    if ! nftban_acquire_lock "blacklist-sync" "$NFTBAN_BLACKLIST_LOCK_TIMEOUT" "lock_fd"; then
+        nftban_log_warning "Another blacklist sync in progress, skipping"
+        return 0
+    fi
+
     # Flush existing blacklist sets
     nft flush set "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" user_blacklist 2>/dev/null || true
     nft flush set "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" user_blacklist 2>/dev/null || true
-    
+
     local synced_v4=0
     local synced_v6=0
-    
+
     # Process blacklist files
     local blacklist_files=(
         "$NFTBAN_BLACKLIST_PERSISTENT"
         "$NFTBAN_BLACKLIST_USER"
     )
-    
+
     for file in "${blacklist_files[@]}"; do
         [[ ! -f "$file" ]] && continue
-        
+
         while IFS= read -r line; do
             [[ "$line" =~ ^[[:space:]]*# ]] && continue
             [[ -z "$line" ]] && continue
-            
+
             local ip
             ip=$(echo "$line" | awk '{print $1}')
             [[ -z "$ip" ]] && continue
-            
+
             # Detect IP version and add to appropriate table (v0.9.0: split tables)
             local ver
             ver=$(nftban_detect_ip_version "$ip")
@@ -783,9 +791,12 @@ nftban_blacklist_sync_to_nftables() {
             fi
         done < "$file"
     done
-    
+
+    # BUG50 FIX: Release lock
+    nftban_release_lock "$lock_fd"
+
     nftban_log_success "Synced to nftables: $synced_v4 IPv4, $synced_v6 IPv6"
-    
+
     return 0
 }
 
