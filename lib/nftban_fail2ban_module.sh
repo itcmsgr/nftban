@@ -377,7 +377,7 @@ nftban_fail2ban_get_config() {
     # Read from .conf.local first (user overrides)
     if [[ -f "${NFTBAN_MAIN_CONFIG}.local" ]]; then
         local value
-        value=$(grep -E "^${key}=" "${NFTBAN_MAIN_CONFIG}.local" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -n1)
+        value=$(grep -E "^${key}=" "${NFTBAN_MAIN_CONFIG}.local" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -n1 || true)
         if [[ -n "$value" ]]; then
             echo "$value"
             return 0
@@ -387,7 +387,7 @@ nftban_fail2ban_get_config() {
     # Fallback to main .conf
     if [[ -f "$NFTBAN_MAIN_CONFIG" ]]; then
         local value
-        value=$(grep -E "^${key}=" "$NFTBAN_MAIN_CONFIG" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -n1)
+        value=$(grep -E "^${key}=" "$NFTBAN_MAIN_CONFIG" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | head -n1 || true)
         if [[ -n "$value" ]]; then
             echo "$value"
             return 0
