@@ -76,13 +76,13 @@ nftban_stats_whitelist_summary() {
 
     # BUG51 FIX: Handle undefined variables in strict mode
     if [[ -n "${NFTBAN_WHITELIST_SYSTEM:-}" ]] && [[ -f "${NFTBAN_WHITELIST_SYSTEM}" ]]; then
-        wl_system=$(grep -cvE '^#|^$' "${NFTBAN_WHITELIST_SYSTEM}" 2>/dev/null || echo 0)
+        wl_system=$(grep -cvE '^#|^$' "${NFTBAN_WHITELIST_SYSTEM}" 2>/dev/null) || wl_system=0
     fi
     if [[ -n "${NFTBAN_WHITELIST_USER:-}" ]] && [[ -f "${NFTBAN_WHITELIST_USER}" ]]; then
-        wl_user=$(grep -cvE '^#|^$' "${NFTBAN_WHITELIST_USER}" 2>/dev/null || echo 0)
+        wl_user=$(grep -cvE '^#|^$' "${NFTBAN_WHITELIST_USER}" 2>/dev/null) || wl_user=0
     fi
     if [[ -n "${NFTBAN_WHITELIST_CF:-}" ]] && [[ -f "${NFTBAN_WHITELIST_CF}" ]]; then
-        wl_cf=$(grep -cvE '^#|^$' "$NFTBAN_WHITELIST_CF" 2>/dev/null || echo 0)
+        wl_cf=$(grep -cvE '^#|^$' "$NFTBAN_WHITELIST_CF" 2>/dev/null) || wl_cf=0
     fi
 
     local total=$((wl_system + wl_user + wl_cf))
@@ -105,10 +105,10 @@ nftban_stats_blacklist_summary() {
 
     # BUG51 FIX: Handle undefined variables in strict mode
     if [[ -n "${NFTBAN_BLACKLIST_PERSISTENT:-}" ]] && [[ -f "${NFTBAN_BLACKLIST_PERSISTENT}" ]]; then
-        bl_persistent=$(grep -cvE '^#|^$' "${NFTBAN_BLACKLIST_PERSISTENT}" 2>/dev/null || echo 0)
+        bl_persistent=$(grep -cvE '^#|^$' "${NFTBAN_BLACKLIST_PERSISTENT}" 2>/dev/null) || bl_persistent=0
     fi
     if [[ -n "${NFTBAN_BLACKLIST_USER:-}" ]] && [[ -f "${NFTBAN_BLACKLIST_USER}" ]]; then
-        bl_user=$(grep -cvE '^#|^$' "${NFTBAN_BLACKLIST_USER}" 2>/dev/null || echo 0)
+        bl_user=$(grep -cvE '^#|^$' "${NFTBAN_BLACKLIST_USER}" 2>/dev/null) || bl_user=0
     fi
 
     local total=$((bl_persistent + bl_user))
@@ -136,15 +136,13 @@ nftban_stats_ban_activity() {
     if [[ $total -gt 0 ]]; then
         echo ""
         echo "  Breakdown by action:"
-        awk -F'|' '{print $4}' "${NFTBAN_BAN_LOG}" | sort | uniq -c | sort -rn | while read -r count action; do
-            printf "    %-20s %6d\n" "$action" "$count"
-        done
+        awk -F'|' '{print $4}' "${NFTBAN_BAN_LOG}" | sort | uniq -c | sort -rn | \
+            awk '{printf "    %-20s %6d\n", $2, $1}'
 
         echo ""
         echo "  Top 5 banned IPs:"
-        awk -F'|' '$4 == "BANNED" {print $2}' "${NFTBAN_BAN_LOG}" | sort | uniq -c | sort -rn | head -5 | while read -r count ip; do
-            printf "    %-16s %6d times\n" "$ip" "$count"
-        done
+        awk -F'|' '$4 == "BANNED" {print $2}' "${NFTBAN_BAN_LOG}" | sort | uniq -c | sort -rn | head -5 | \
+            awk '{printf "    %-16s %6d times\n", $2, $1}'
 
         echo ""
         echo "  Recent activity (last 5):"
@@ -338,9 +336,8 @@ nftban_stats_ip_history() {
     
     # Summary
     echo "Summary:"
-    echo "$results" | awk -F'|' '{print $4}' | sort | uniq -c | sort -rn | while read -r count action; do
-        printf "  %-15s %4d\n" "$action" "$count"
-    done
+    echo "$results" | awk -F'|' '{print $4}' | sort | uniq -c | sort -rn | \
+        awk '{printf "  %-15s %4d\n", $2, $1}'
 }
 
 # =============================================================================
@@ -358,9 +355,7 @@ nftban_stats_top_banned() {
     
     awk -F'|' '$4 == "BANNED" {print $2}' "$NFTBAN_BAN_LOG" | \
         sort | uniq -c | sort -rn | head -"$limit" | \
-        while read -r count ip; do
-            printf "%3d. %-16s %6d bans\n" "$((++i))" "$ip" "$count"
-        done
+        awk '{printf "%3d. %-16s %6d bans\n", NR, $2, $1}'
 }
 
 # =============================================================================
