@@ -1,8 +1,8 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-23 06:32:07 UTC
-# Commit: 2488999 (2488999049e35ddb8f96c2b69f3c268134998541)
+# Generated: 2025-10-23 06:55:12 UTC
+# Commit: 81815d7 (81815d7ba5edd6bb178879caa7b3bfcb8b779621)
 # Branch: main
-# Total files: 197
+# Total files: 199
 #
 # This file contains SHA256 checksums for all tracked files in the repository.
 # Use 'sha256sum -c SHA256SUMS.txt' to verify file integrity (ignores comment lines).
@@ -101,6 +101,7 @@ b2e6982a39dff232f9da0b622d5ae8cb0292530c0369c0caf4441004c87e285e  docs/templates
 6bfaaf23702a3f6fd3233cb0b9e079c6360bf5e9c46f01640e9cc637713017a1  lib/TEMPLATE_module.sh
 2ee5f0a71546785ecf87578ac2fa693adf92f2c0b4426ad7b0702b229b18a0fa  lib/cli/cmd_blacklist.sh
 2fdee45037eea025cb8bedb5eb403c9cc802ecf1cd9de23d6a42299f52a070ca  lib/cli/cmd_cloudflare.sh
+6c7619224fa5be34bdf8d163938fb6b407e847fc1abf7daab8b3888ede1da463  lib/cli/cmd_cron.sh
 b1fa7c3f62d341c64c5cf6f5bf660cf47abff0c2c2813c069b1c6ae15bc3c18a  lib/cli/cmd_ddos.sh
 e74fb2b7cc255c721efe360334f23a9fdb8b9f3bb2d6210077f1939f1b720db6  lib/cli/cmd_fail2ban.sh
 13ea3a9e9af2b5b51a885637ad7881f53b1b09485c32b93dd6b2ce6385858c25  lib/cli/cmd_feeds.sh
@@ -122,7 +123,7 @@ b77f528a60a586b215408165b9c4f91decc3fc6a1406566d042e7b04c91c56b7  lib/installer/
 2de8b0d39b0ffaea21d072ad7ebeef0d089198bad3150eb91cf9065fa8e462b3  lib/installer/installer_main.sh
 7194ea4138a18469dc10a1413c7a79f86db020f739b21d73c10a6963e1506c41  lib/installer/installer_package.sh
 a263d4c5cca83991e92f52cd913be17b2b526ec4a05b809f5a22cc3ca2d9f53f  lib/installer/installer_structure.sh
-84dc77d1bfa7093704a74a48a83b6d22f06469e2e2d7f35a6bf526da67e209de  lib/installer/installer_verification.sh
+98c0d01adf813cde6745eb24875b85fff1a1c4fc1014f277cc5054788e69aea2  lib/installer/installer_verification.sh
 53bc364ebd7548ac9dcb69fc98b5d8fba83ef327945ca21ae968422f38fcfa40  lib/installer/nftban_installer_modular.sh
 09db99ca89691849e2b7259bf0474b3b2b0039ea7a84b7cbe779f69fdcedbdf4  lib/installer/nftban_uninstall_script.sh
 3bec13dc95ed415e0ec898d9e574cf508855603ab91b0525e48016df497e6392  lib/nftban-validator-github.sh
@@ -132,7 +133,8 @@ c05330e361a04e67f16573fe923ee1a32a28084b31004084b7bebe09669271cf  lib/nftban-val
 b1397fac72e43b9d2ca66805387ca3cf23249ec6db94822821890a16c72248b3  lib/nftban_autorebuild_module.sh
 64d68534532c971ef07bd0cec9a365f9cd0f19b92695783bd9619d732dc260c7  lib/nftban_blacklist_module.sh
 6aab74fe953a8ed098996b0bd82a75624939dca8b32f34b9026fdb1734dad298  lib/nftban_cloudflare_module.sh
-5b7e4dc62c6597bd684bb6beffa4ae5e02b463ce692a11f9152078b3f68ae51d  lib/nftban_core.sh
+b8432e9d5a0cbbf1d1d61b22a5c5d9c956196b0fe9e9cac17fa24ed018e3787c  lib/nftban_core.sh
+e25702612df3ee9ce70b39633f5d86348c3d34e55dd58b9141e75054f6c30f56  lib/nftban_cron_module.sh
 0bdb766c852c8228156e2b51559868609ec542f1d72c28eaa4f3bdd5fcbb0da5  lib/nftban_ddos_module.sh
 b9cf7e486e0efb76c4ab42aeb1ae54a996e753fb6045fac19c296424d653680e  lib/nftban_fail2ban_module.sh
 c60ddb4abf5d44f8a1bf880b2c5b14c97a9af4547bf9d4136f3efb6721f9fa70  lib/nftban_feeds_lib.sh
