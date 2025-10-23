@@ -79,6 +79,10 @@ readonly NFTBAN_WATCHED_FILES=(
     "${NFTBAN_CONFIG_DIR}/whitelist-cloudflare.conf"
     "${NFTBAN_CONFIG_DIR}/blacklist-persistent.conf"
     "${NFTBAN_CONFIG_DIR}/blacklist-user.conf"
+    "${NFTBAN_CONFIG_DIR}/ports/ipv4-input.conf"
+    "${NFTBAN_CONFIG_DIR}/ports/ipv4-output.conf"
+    "${NFTBAN_CONFIG_DIR}/ports/ipv6-input.conf"
+    "${NFTBAN_CONFIG_DIR}/ports/ipv6-output.conf"
 )
 
 # =============================================================================
