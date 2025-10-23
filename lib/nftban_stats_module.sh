@@ -136,17 +136,17 @@ nftban_stats_ban_activity() {
     if [[ $total -gt 0 ]]; then
         echo ""
         echo "  Breakdown by action:"
-        awk -F'|' '{print $4}' "${NFTBAN_BAN_LOG}" | sort | uniq -c | sort -rn | \
+        awk -F'|' '{print $6}' "${NFTBAN_BAN_LOG}" | sort | uniq -c | sort -rn | \
             awk '{printf "    %-20s %6d\n", $2, $1}'
 
         echo ""
         echo "  Top 5 banned IPs:"
-        awk -F'|' '$4 == "BANNED" {print $2}' "${NFTBAN_BAN_LOG}" | sort | uniq -c | sort -rn | head -5 | \
+        awk -F'|' '$6 == "BANNED" {print $4}' "${NFTBAN_BAN_LOG}" | sort | uniq -c | sort -rn | head -5 | \
             awk '{printf "    %-16s %6d times\n", $2, $1}'
 
         echo ""
         echo "  Recent activity (last 5):"
-        tail -5 "${NFTBAN_BAN_LOG}" | while IFS='|' read -r timestamp ip jail action reason; do
+        tail -5 "${NFTBAN_BAN_LOG}" | while IFS='|' read -r timestamp id jail ip reason action timeout; do
             echo "    $timestamp | $ip | $action"
         done
     fi
@@ -163,8 +163,8 @@ nftban_stats_geo_summary() {
         return 0
     fi
 
-    local blocked_countries=$(grep -cvE '^#|^$' "${NFTBAN_GEO_BLACKLIST}" 2>/dev/null)
-    blocked_countries=${blocked_countries:-0}
+    local blocked_countries=0
+    blocked_countries=$(grep -cvE '^#|^$' "${NFTBAN_GEO_BLACKLIST}" 2>/dev/null) || blocked_countries=0
     echo "  Blocked countries: $blocked_countries"
 
     if [[ $blocked_countries -gt 0 ]]; then
@@ -319,7 +319,7 @@ nftban_stats_ip_history() {
     echo ""
     
     # Show all events
-    echo "$results" | while IFS='|' read -r timestamp ip_addr jail action reason; do
+    echo "$results" | while IFS='|' read -r timestamp id jail ip reason action timeout; do
         local action_color=""
         case "$action" in
             BANNED) action_color="${NFTBAN_RED}" ;;
@@ -327,16 +327,16 @@ nftban_stats_ip_history() {
             UNBANNED) action_color="${NFTBAN_CYAN}" ;;
             *) action_color="${NFTBAN_NC}" ;;
         esac
-        
+
         echo -e "${action_color}[$action]${NFTBAN_NC} $timestamp"
         echo "  Jail: $jail"
         echo "  Reason: $reason"
         echo ""
     done
-    
+
     # Summary
     echo "Summary:"
-    echo "$results" | awk -F'|' '{print $4}' | sort | uniq -c | sort -rn | \
+    echo "$results" | awk -F'|' '{print $6}' | sort | uniq -c | sort -rn | \
         awk '{printf "  %-15s %4d\n", $2, $1}'
 }
 
@@ -353,7 +353,7 @@ nftban_stats_top_banned() {
         return 0
     fi
     
-    awk -F'|' '$4 == "BANNED" {print $2}' "$NFTBAN_BAN_LOG" | \
+    awk -F'|' '$6 == "BANNED" {print $4}' "$NFTBAN_BAN_LOG" | \
         sort | uniq -c | sort -rn | head -"$limit" | \
         awk '{printf "%3d. %-16s %6d bans\n", NR, $2, $1}'
 }
@@ -371,7 +371,7 @@ nftban_stats_recent() {
         return 0
     fi
     
-    tail -"$limit" "$NFTBAN_BAN_LOG" | while IFS='|' read -r timestamp ip jail action reason; do
+    tail -"$limit" "$NFTBAN_BAN_LOG" | while IFS='|' read -r timestamp id jail ip reason action timeout; do
         local action_color=""
         case "$action" in
             BANNED) action_color="${NFTBAN_RED}" ;;
@@ -380,7 +380,7 @@ nftban_stats_recent() {
             PERMANENT_BAN) action_color="${NFTBAN_MAGENTA}" ;;
             *) action_color="${NFTBAN_NC}" ;;
         esac
-        
+
         printf "%s | %-16s | ${action_color}%-15s${NFTBAN_NC} | %s\n" \
             "$timestamp" "$ip" "$action" "$jail"
     done
