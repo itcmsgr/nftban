@@ -599,14 +599,22 @@ nftban_whitelist_list() {
 # =============================================================================
 
 # Sync whitelist files to nftables
+# BUG50 FIX: Uses lock to prevent concurrent nftables modifications
 nftban_whitelist_sync_to_nftables() {
     nftban_log_info "Syncing whitelist to nftables..."
-    
+
     if ! nftban_check_nftables_table; then
         nftban_log_error "nftables table not initialized"
         return 1
     fi
-    
+
+    # BUG50 FIX: Acquire lock for nftables whitelist sync
+    local lock_fd
+    if ! nftban_acquire_lock "whitelist-sync" "$NFTBAN_WHITELIST_LOCK_TIMEOUT" "lock_fd"; then
+        nftban_log_warning "Another whitelist sync in progress, skipping"
+        return 0
+    fi
+
     # Flush existing whitelist sets (v0.9.0: split tables, no _v4/_v6 suffix)
     nft flush set "${NFTBAN_NFT_FAMILY_V4:-ip}" "${NFTBAN_NFT_TABLE_V4:-nftban_v4}" whitelist 2>/dev/null || true
     nft flush set "${NFTBAN_NFT_FAMILY_V6:-ip6}" "${NFTBAN_NFT_TABLE_V6:-nftban_v6}" whitelist 2>/dev/null || true
@@ -649,9 +657,12 @@ nftban_whitelist_sync_to_nftables() {
             fi
         done < "$file"
     done
-    
+
+    # BUG50 FIX: Release lock
+    nftban_release_lock "$lock_fd"
+
     nftban_log_success "Synced to nftables: $synced_v4 IPv4, $synced_v6 IPv6"
-    
+
     return 0
 }
 
