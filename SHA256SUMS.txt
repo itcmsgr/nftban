@@ -1,6 +1,6 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-23 07:08:26 UTC
-# Commit: 0813d9b (0813d9b6277dd98122d92025b0337accc3358a07)
+# Generated: 2025-10-23 07:26:03 UTC
+# Commit: d80d7bb (d80d7bb11aa767f4be28c6a25b1a53f9d75a609e)
 # Branch: main
 # Total files: 199
 #
@@ -162,7 +162,7 @@ f457e9b5aa79cf2ac8d4a4b39bb6206dc0559fc667c4d9af928d93554faa5191  lib/nftban_upd
 e058164159b29125dc1d9e9de503d8595960ef4b8cfd48004ed2da07540fa8d7  lib/nftban_utils_lib.sh
 d72eb359eb18966f2a80c72aa9da08cf063fb37ecfb47f8016a46afd1b956cf6  lib/nftban_whitelist_module.sh
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  logs/.gitkeep
-1ae3784f126b7472820693ebf5f2ab097c5c588e82175e4b0e01a238c5c3e8f5  nftban_init.sh
+cfd81d86dde86374ad17749a0749fb0d5a13d679c5082c28a0f0675ba0050947  nftban_init.sh
 01ba4719c80b6fe911b091a7c05124b64eeece964e09c058ef8f9805daca546b  scripts/.gitkeep
 c6b3dd3aee8dd2036275a5cd38629e6bd891a509e045aa46e5fd152beb0b9bf0  scripts/collect_logs_for_analysis.sh
 2e04535ac7cd8760da26c0f829a35fa7fecc1ac8ed58632e995f6ae6d1df42e0  scripts/comprehensive_function_test.sh
