@@ -652,9 +652,11 @@ nftban_update_staging_clean() {
 # =============================================================================
 
 # SECURITY: Download file from GitHub with strict validation
+# BUG48 FIX: Now accepts commit SHA for immutable downloads
 nftban_update_download_file() {
     local remote_path="$1"  # Relative path in repo (e.g., "lib/nftban_core.sh")
     local local_path="$2"   # Where to save locally
+    local commit_sha="${3:-}"  # SECURITY: Commit SHA for immutable download (TOCTOU fix)
 
     # SECURITY: Validate remote path (prevent path traversal)
     local validated_remote_path
@@ -670,8 +672,26 @@ nftban_update_download_file() {
         return 1
     fi
 
+    # BUG48 FIX: Validate commit SHA if provided (TOCTOU mitigation)
+    if [[ -n "$commit_sha" ]]; then
+        if ! _nftban_update_validate_commit_sha "$commit_sha" 2>/dev/null; then
+            nftban_log_error "Invalid commit SHA for download: $commit_sha"
+            return 1
+        fi
+    fi
+
     # Construct URL
-    local url="${NFTBAN_UPDATE_GITHUB_RAW}/${validated_remote_path}"
+    # BUG48 FIX: Use commit SHA instead of floating "main" if provided
+    local url
+    if [[ -n "$commit_sha" ]]; then
+        # SECURITY: Immutable download using verified commit SHA (prevents TOCTOU - CWE-367)
+        url="https://raw.githubusercontent.com/itcmsgr/nftban/${commit_sha}/${validated_remote_path}"
+        nftban_log_debug "Downloading from immutable commit: ${commit_sha:0:7}"
+    else
+        # Fallback to floating main (backward compatibility, not recommended)
+        url="${NFTBAN_UPDATE_GITHUB_RAW}/${validated_remote_path}"
+        nftban_log_warning "Downloading from floating 'main' (TOCTOU vulnerable!)"
+    fi
 
     # SECURITY: Validate URL (ensure HTTPS from GitHub)
     if ! _nftban_update_validate_url "$url"; then
@@ -720,8 +740,18 @@ nftban_update_download_file() {
 }
 
 # Download all core files to staging
+# BUG48 FIX: Now accepts commit SHA for immutable downloads
 nftban_update_download_to_staging() {
+    local commit_sha="${1:-}"  # SECURITY: Commit SHA for immutable downloads (TOCTOU fix)
+
     nftban_log_info "Downloading update files to staging..."
+
+    # BUG48 FIX: Log download source
+    if [[ -n "$commit_sha" ]]; then
+        nftban_log_info "Using immutable commit: ${commit_sha:0:7}...${commit_sha: -7}"
+    else
+        nftban_log_warning "Using floating 'main' branch (TOCTOU vulnerable!)"
+    fi
 
     local files_to_download=(
         ".version"
@@ -756,7 +786,8 @@ nftban_update_download_to_staging() {
     for file in "${files_to_download[@]}"; do
         local staging_file="${NFTBAN_UPDATE_STAGING_DIR}/${file}"
 
-        if nftban_update_download_file "$file" "$staging_file"; then
+        # BUG48 FIX: Pass commit SHA to download function
+        if nftban_update_download_file "$file" "$staging_file" "$commit_sha"; then
             ((downloaded++)) || true
             echo -n "."
         else
@@ -781,15 +812,18 @@ nftban_update_download_to_staging() {
 # =============================================================================
 
 # Validate SHA256 checksums (if available)
+# BUG48 FIX: Now accepts commit SHA for immutable downloads
 nftban_update_validate_checksums() {
     local staging_dir="$1"
+    local commit_sha="${2:-}"  # SECURITY: Commit SHA for immutable downloads (TOCTOU fix)
 
     nftban_log_info "Validating file integrity..."
 
     # Try to download SHA256SUMS from GitHub
     local checksums_file="${staging_dir}/SHA256SUMS.txt"
 
-    if ! nftban_update_download_file "SHA256SUMS.txt" "$checksums_file" 2>/dev/null; then
+    # BUG48 FIX: Pass commit SHA to download function
+    if ! nftban_update_download_file "SHA256SUMS.txt" "$checksums_file" "$commit_sha" 2>/dev/null; then
         nftban_log_warning "SHA256SUMS.txt not available (skipping checksum validation)"
         return 0  # Not critical, continue
     fi
@@ -875,8 +909,10 @@ nftban_update_validate_syntax() {
 }
 
 # Run all validations
+# BUG48 FIX: Now accepts commit SHA for immutable downloads
 nftban_update_validate_staging() {
     local staging_dir="${1:-$NFTBAN_UPDATE_STAGING_DIR}"
+    local commit_sha="${2:-}"  # SECURITY: Commit SHA for immutable downloads (TOCTOU fix)
 
     nftban_log_info "Running validation checks..."
     echo ""
@@ -884,7 +920,8 @@ nftban_update_validate_staging() {
     local validation_passed=true
 
     # Check 1: SHA256 checksums
-    if ! nftban_update_validate_checksums "$staging_dir"; then
+    # BUG48 FIX: Pass commit SHA to checksums validation
+    if ! nftban_update_validate_checksums "$staging_dir" "$commit_sha"; then
         validation_passed=false
     fi
 
@@ -1082,6 +1119,15 @@ nftban_update_perform() {
         echo ""
         return 1
     fi
+
+    # BUG48 FIX: Get verified commit SHA for immutable downloads (TOCTOU mitigation)
+    local verified_commit_sha
+    verified_commit_sha=$(nftban_update_get_pinned_commit)
+    if [[ -z "$verified_commit_sha" ]]; then
+        nftban_log_error "Update ABORTED: Cannot retrieve verified commit SHA"
+        return 1
+    fi
+    nftban_log_success "Using verified commit SHA: ${verified_commit_sha:0:7}...${verified_commit_sha: -7}"
     echo ""
 
     # Step 2: Check for updates
@@ -1130,7 +1176,8 @@ nftban_update_perform() {
 
     # Step 5: Download files
     nftban_log_info "Step 5/7: Downloading update files..."
-    if ! nftban_update_download_to_staging; then
+    # BUG48 FIX: Pass verified commit SHA for immutable downloads (TOCTOU mitigation)
+    if ! nftban_update_download_to_staging "$verified_commit_sha"; then
         nftban_update_staging_clean
         return 1
     fi
@@ -1138,7 +1185,8 @@ nftban_update_perform() {
 
     # Step 6: Validate
     nftban_log_info "Step 6/7: Validating update files..."
-    if ! nftban_update_validate_staging; then
+    # BUG48 FIX: Pass verified commit SHA for checksum downloads (TOCTOU mitigation)
+    if ! nftban_update_validate_staging "$NFTBAN_UPDATE_STAGING_DIR" "$verified_commit_sha"; then
         nftban_update_staging_clean
         return 1
     fi
