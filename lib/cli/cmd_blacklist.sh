@@ -33,7 +33,7 @@ cmd_blacklist() {
         unban)
             nftban_check_root || exit 1
             [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban blacklist unban <IP>"; exit 1; }
-            nftban_blacklist_unban_ip "$1"
+            nftban_blacklist_unban_ip "$1" || true
             ;;
         permanent|perm)
             nftban_check_root || exit 1
@@ -43,7 +43,7 @@ cmd_blacklist() {
         remove-permanent|rmperm)
             nftban_check_root || exit 1
             [[ $# -lt 1 ]] && { nftban_log_error "Usage: nftban blacklist remove-permanent <IP>"; exit 1; }
-            nftban_blacklist_remove_permanent "$1"
+            nftban_blacklist_remove_permanent "$1" || true
             ;;
         list)
             nftban_blacklist_list_permanent
