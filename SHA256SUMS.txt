@@ -1,6 +1,6 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-23 06:22:09 UTC
-# Commit: 7f3e480 (7f3e480da990cfd99c42917c4e991d449d3de704)
+# Generated: 2025-10-23 06:32:07 UTC
+# Commit: 2488999 (2488999049e35ddb8f96c2b69f3c268134998541)
 # Branch: main
 # Total files: 197
 #
@@ -116,12 +116,12 @@ a17bcf92eb80ed869ba2c78ccbf10541849111c8147af033d243e44651d8cb87  lib/cli/cmd_se
 6140d402c7c321848f5fa551540094f8bce7cee33f017dc951e6211b25456fda  lib/cli/cmd_update.sh
 f6823ee6794d44359bc2d0570b1dcc48466f30a732612e5d87143c3b4d1cefb4  lib/cli/cmd_whitelist.sh
 7e577c6efb570c50e11bbc021513992b0fcb2ce3e907747f961f8a40d0678f19  lib/installer/installer_backup.sh
-b4cf9d2e3b09fa3001785f94f519dc0187f9cc3c9ed2f99d15463c3db06a2257  lib/installer/installer_config_full.sh
+3aabe096cee151ad6aa777604e39b3836c273b6202d7bdd5702fba36f76d8f37  lib/installer/installer_config_full.sh
 b77f528a60a586b215408165b9c4f91decc3fc6a1406566d042e7b04c91c56b7  lib/installer/installer_core.sh
-ed9eb0abd0a6f3b51dfaf38d9eee6773fd07e4ecc6f4af989c301fe9f787ee36  lib/installer/installer_download.sh
+04a583e2ab2c69fe07c5194c676d8f629e3f79e8897daa1982340b783b23fb16  lib/installer/installer_download.sh
 2de8b0d39b0ffaea21d072ad7ebeef0d089198bad3150eb91cf9065fa8e462b3  lib/installer/installer_main.sh
 7194ea4138a18469dc10a1413c7a79f86db020f739b21d73c10a6963e1506c41  lib/installer/installer_package.sh
-e9a9c15aff9a54b0472afe624b0ecbc989d3bb72cd4f3ebddae61cf9174bf8f2  lib/installer/installer_structure.sh
+a263d4c5cca83991e92f52cd913be17b2b526ec4a05b809f5a22cc3ca2d9f53f  lib/installer/installer_structure.sh
 84dc77d1bfa7093704a74a48a83b6d22f06469e2e2d7f35a6bf526da67e209de  lib/installer/installer_verification.sh
 53bc364ebd7548ac9dcb69fc98b5d8fba83ef327945ca21ae968422f38fcfa40  lib/installer/nftban_installer_modular.sh
 09db99ca89691849e2b7259bf0474b3b2b0039ea7a84b7cbe779f69fdcedbdf4  lib/installer/nftban_uninstall_script.sh
