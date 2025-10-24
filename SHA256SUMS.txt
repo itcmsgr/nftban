@@ -1,8 +1,8 @@
 # nftban SHA256 Checksums
-# Generated: 2025-10-23 17:06:36 UTC
-# Commit: 0ec3c20 (0ec3c20ffbdac490210c68b757c77cc5a253ce4d)
+# Generated: 2025-10-24 10:19:03 UTC
+# Commit: 26d5963 (26d5963d36b18f7619539606eb6ac446f4e3490b)
 # Branch: main
-# Total files: 199
+# Total files: 200
 #
 # This file contains SHA256 checksums for all tracked files in the repository.
 # Use 'sha256sum -c SHA256SUMS.txt' to verify file integrity (ignores comment lines).
@@ -131,6 +131,7 @@ a263d4c5cca83991e92f52cd913be17b2b526ec4a05b809f5a22cc3ca2d9f53f  lib/installer/
 c05330e361a04e67f16573fe923ee1a32a28084b31004084b7bebe09669271cf  lib/nftban-validator-panel.sh
 53d1955dbf5d07d59c51aea3a6dfbfdede1c215e541f8ff2a751b89cffa255ba  lib/nftban-validator-run.sh
 cc8ef148c5415016e2dfd21aa8755dc676d67a5c5a61ed3962596236bdd82015  lib/nftban_autorebuild_module.sh
+887648898483c1b3c0e3d5271b96db85ecce02ae9689f66915adce940caa1c8b  lib/nftban_autorebuild_module.sh.backup
 4efafd3358c3ee851a468ab9ac92fa4b0f6fa83cd4333728d128fc1879eefdeb  lib/nftban_blacklist_module.sh
 6aab74fe953a8ed098996b0bd82a75624939dca8b32f34b9026fdb1734dad298  lib/nftban_cloudflare_module.sh
 6fff6ead6781c4ddd0a0e2e50cab6a71bc9e6b931c57bb3cbb0b154a80c2360c  lib/nftban_core.sh
