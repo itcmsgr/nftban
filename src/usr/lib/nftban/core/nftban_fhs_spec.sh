@@ -46,10 +46,10 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/bin"]="755|root|root|Application binaries (GO, etc.)"
 
     # ─────────────────────────────────────────────────────────────────────
-    # Configuration (root:root, 750/640) - Configs are code-sensitive!
+    # Configuration (root:nftban, 750/640) - Daemon needs read access
     # ─────────────────────────────────────────────────────────────────────
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban"]="750|root|root|Configuration files (code-sensitive, root only)"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d"]="750|root|root|Module configurations (code-sensitive, root only)"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban"]="750|root|nftban|Configuration files (daemon readable via group)"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d"]="750|root|nftban|Module configurations (daemon readable via group)"
 
     # ─────────────────────────────────────────────────────────────────────
     # Variable Data (nftban:nftban) - Application state and runtime data
