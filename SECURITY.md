@@ -263,7 +263,7 @@ DDoS protection can be enabled and configured via:
 - SYN flood thresholds
 - ICMP rate limiting
 
-See [CLI Reference](docs/reference/cli-quick-reference.md) for command syntax.
+See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for command syntax.
 
 ---
 
@@ -317,7 +317,7 @@ Threat feeds are configured via:
 - Abuse.ch (Feodo, SSL blacklists)
 - Custom feeds (user-defined URLs)
 
-See [CLI Reference](docs/reference/cli-quick-reference.md) for feed management commands.
+See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for feed management commands.
 
 ### Feed Performance
 
@@ -380,7 +380,7 @@ Geo-blocking requires MaxMind GeoLite2 database (free tier available).
 - **Allow-list mode** (only allow specified countries)
 - **Deny-list mode** (block specified countries)
 
-See [CLI Reference](docs/reference/cli-quick-reference.md) and [Configuration Guide](docs/guides/configuration.md) for setup details.
+See [CLI Quick Reference](docs/reference/cli-quick-reference.md) and [Installation Guide](docs/guides/installation.md) for setup details.
 
 ---
 
@@ -593,7 +593,7 @@ User runs: sudo nftban apply
 - Can be disabled (NOT RECOMMENDED except for automation)
 - Automatic rollback prevents permanent lockouts
 
-See [CLI Reference](docs/reference/cli-quick-reference.md) for command syntax.
+See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for command syntax.
 
 ---
 
@@ -811,7 +811,7 @@ NFTBan v0.10.0 includes comprehensive automated health monitoring that can detec
 - Can trigger email alerts on failures
 - Self-healing prevents manual intervention
 
-See [CLI Reference](docs/reference/cli-quick-reference.md) for health check commands.
+See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for health check commands.
 
 ### Statistics and Reporting
 
@@ -832,7 +832,7 @@ NFTBan tracks comprehensive statistics about:
 - Automatic retention policy (configurable)
 - Can be emailed automatically on schedule
 
-See [CLI Reference](docs/reference/cli-quick-reference.md) for statistics and reporting commands.
+See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for statistics and reporting commands.
 
 ### Email Alerts Configuration
 
@@ -908,7 +908,7 @@ Health checks run automatically via systemd timer (hourly by default):
 - Auto-repairs minor issues
 - Escalates critical issues to administrator
 
-See [CLI Reference](docs/reference/cli-quick-reference.md) for health check commands.
+See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for health check commands.
 
 ---
 
@@ -1072,7 +1072,7 @@ NFTBan generates logs in `/var/log/nftban/` that need rotation to prevent disk s
 - **RPO (Recovery Point Objective)** - Acceptable data loss window
 - **Priority order** - What to restore first
 
-See [CLI Reference](docs/reference/cli-quick-reference.md) for backup and restore commands.
+See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for backup and restore commands.
 
 ---
 
@@ -1215,7 +1215,7 @@ sudo apt-get install unattended-upgrades  # Ubuntu/Debian
 - Reapply firewall rules if rules missing
 - Contact support if issue persists
 
-See [CLI Reference](docs/reference/cli-quick-reference.md) for emergency commands.
+See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for emergency commands.
 
 ---
 
@@ -1507,9 +1507,9 @@ Use this checklist to verify your security posture:
 
 **Documentation:**
 - [Installation Guide](docs/guides/installation.md)
-- [User Guide](docs/guides/user-guide.md)
-- [CLI Reference](docs/guides/cli-reference.md)
-- [Configuration Reference](docs/guides/configuration.md)
+- [Quick Start Guide](docs/guides/quick-start.md)
+- [CLI Quick Reference](docs/reference/cli-quick-reference.md)
+- [FHS Auto-Heal Guide](docs/guides/fhs-auto-heal-guide.md)
 
 ---
 
