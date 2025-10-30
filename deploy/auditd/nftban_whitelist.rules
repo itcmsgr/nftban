@@ -1,2 +1,0 @@
-# Monitor whitelist dir for write/attrib changes
--w /etc/nftban/whitelist.d -p wa -k nftban_whitelist
