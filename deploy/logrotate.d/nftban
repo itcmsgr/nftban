@@ -1,0 +1,29 @@
+# NFTBan Log Rotation Configuration
+# Rotates all NFTBan logs weekly with compression
+/var/log/nftban/*.log {
+    # Rotation schedule
+    weekly
+    rotate 12
+
+    # Size limit (rotate if log exceeds 10MB even before weekly)
+    size 10M
+
+    # Compression
+    compress
+    delaycompress
+
+    # Error handling
+    missingok
+    notifempty
+
+    # File permissions for rotated logs
+    create 0640 root adm
+
+    # Run postrotate script once for all logs
+    sharedscripts
+
+    postrotate
+        # Reload rsyslog if it's running
+        systemctl reload rsyslog 2>/dev/null || true
+    endscript
+}

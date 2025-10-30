@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# NFTBan Emergency Recovery - Apply Rules (Commit-Confirm)
+# Copyright (c) 2024–2026 NFTBAN Project / Antonios Voulvoulis
+# SPDX-License-Identifier: MPL-2.0
+#
+# This script applies nftables rules with automatic rollback protection.
+# Rules must be confirmed within the grace period or they will auto-rollback.
+
+set -Eeuo pipefail
+
+# Paths
+CANDIDATE="/etc/nftban/compiled.nft"
+BACKUP="/var/lib/nftban/backup.rules"
+ROLLBACK_FLAG="/run/nftban.rollback.deadline"
+CONFIG="/etc/default/nftban"
+
+# Load configuration
+if [[ -f "$CONFIG" ]]; then
+    source "$CONFIG"
+fi
+
+# Default values
+GRACE="${NFTBAN_REBOOT_GRACE_PERIOD:-300}"
+SSH_TEST="${NFTBAN_SSH_TEST_BEFORE_APPLY:-true}"
+SSH_PORT="${NFTBAN_SSH_TEST_PORT:-22}"
+
+# Banner
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║  NFTBan Emergency Recovery - Apply Rules (Commit-Confirm) ║"
+echo "╚════════════════════════════════════════════════════════════╝"
+echo ""
+
+# 0) Check if candidate ruleset exists
+if [[ ! -s "$CANDIDATE" ]]; then
+    echo "ERROR: No candidate ruleset found at $CANDIDATE"
+    echo "Generate rules first with: nftban compile"
+    exit 1
+fi
+
+echo "[1/6] Validating candidate ruleset..."
+# 1) Dry-run validate candidate
+if ! nft -c -f "$CANDIDATE" 2>/dev/null; then
+    echo "ERROR: Candidate ruleset validation failed!"
+    echo "Check syntax with: nft -c -f $CANDIDATE"
+    exit 1
+fi
+echo "  ✓ Candidate ruleset is valid"
+echo ""
+
+echo "[2/6] Backing up current ruleset..."
+# 2) Save current ruleset as last-known-good (atomic)
+umask 077
+mkdir -p "$(dirname "$BACKUP")"
+
+if ! nft list ruleset > "${BACKUP}.tmp" 2>/dev/null; then
+    echo "WARNING: Could not backup current ruleset (nftables may not be running)"
+    echo "Creating empty backup..."
+    touch "${BACKUP}.tmp"
+fi
+
+mv "${BACKUP}.tmp" "$BACKUP"
+echo "  ✓ Current ruleset backed up to $BACKUP"
+echo ""
+
+echo "[3/6] Applying candidate ruleset..."
+# 3) Apply candidate atomically
+if ! nft -f "$CANDIDATE"; then
+    echo "ERROR: Failed to apply candidate ruleset!"
+    echo "Attempting rollback to backup..."
+    if [[ -s "$BACKUP" ]]; then
+        nft -f "$BACKUP" || true
+    fi
+    exit 2
+fi
+echo "  ✓ Candidate ruleset applied successfully"
+echo ""
+
+echo "[4/6] Arming rollback timer (grace period: ${GRACE}s)..."
+# 4) Create rollback flag with deadline
+date -d "+${GRACE} seconds" +%s > "$ROLLBACK_FLAG" 2>/dev/null || \
+    date -v "+${GRACE}S" +%s > "$ROLLBACK_FLAG" 2>/dev/null || \
+    echo $(($(date +%s) + GRACE)) > "$ROLLBACK_FLAG"
+
+# 5) Start rollback timer (oneshot service will check periodically)
+if command -v systemctl &>/dev/null; then
+    systemctl start nftban-rollback.timer 2>/dev/null || true
+fi
+echo "  ✓ Rollback timer armed"
+echo ""
+
+echo "[5/6] Testing SSH connectivity..."
+# 6) Optional local SSH probe before we leave (best-effort)
+if [[ "$SSH_TEST" == "true" ]]; then
+    if timeout 3 bash -c "cat < /dev/null > /dev/tcp/127.0.0.1/${SSH_PORT}" 2>/dev/null; then
+        echo "  ✓ SSH connectivity test passed (port ${SSH_PORT})"
+    else
+        echo "  ✗ SSH connectivity test FAILED!"
+        echo ""
+        echo "WARNING: SSH probe failed. Rolling back immediately..."
+        /usr/sbin/nftban-rollback --force
+        exit 3
+    fi
+else
+    echo "  ⊘ SSH test disabled (NFTBAN_SSH_TEST_BEFORE_APPLY=false)"
+fi
+echo ""
+
+echo "[6/6] Summary"
+echo "════════════════════════════════════════════════════════════"
+echo ""
+echo "✓ Candidate rules applied successfully"
+echo "✓ Rollback protection active for ${GRACE} seconds"
+echo ""
+echo "IMPORTANT: You must confirm within ${GRACE} seconds!"
+echo ""
+echo "  To KEEP these rules:"
+echo "    sudo nftban-confirm"
+echo ""
+echo "  To ROLLBACK immediately:"
+echo "    sudo nftban-rollback --force"
+echo ""
+echo "  If you do NOTHING, rules will auto-rollback in ${GRACE} seconds"
+echo ""
+echo "Deadline: $(date -d "+${GRACE} seconds" 2>/dev/null || date -v "+${GRACE}S" 2>/dev/null || echo "in ${GRACE} seconds")"
+echo "════════════════════════════════════════════════════════════"
+
+exit 0

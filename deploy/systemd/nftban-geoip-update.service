@@ -1,0 +1,20 @@
+[Unit]
+Description=NFTBan GeoIP Database Update
+
+[Service]
+Type=oneshot
+User=nftban
+Group=nftban
+ExecStart=/usr/lib/nftban/cli/cmd_geoip_update.sh
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=full
+ProtectHome=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+ReadWritePaths=/var/lib/nftban /var/log/nftban /etc/nftban
+
+[Install]
+WantedBy=multi-user.target

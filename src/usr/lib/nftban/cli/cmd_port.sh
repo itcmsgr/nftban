@@ -1,0 +1,727 @@
+#!/usr/bin/env bash
+
+# =============================================================================
+# NFTBan CLI - Port Command
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Handle port-related CLI commands
+#
+# meta:name=cmd_port
+# meta:type=cli
+# meta:header=Port CLI Command
+# meta:version=1.0.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# **Description & Purpose**
+# meta:description=CLI interface for port status reporting
+# meta:input=Port filters, output format, mail options
+# meta:output=Port status reports (terminal, HTML, mail)
+#
+# **Inventory & Requirements**
+# meta:depends=bash,nftban_report_port.sh
+#
+# meta:created_date=2025-10-26
+# =============================================================================
+
+# Strict mode
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 027
+
+# Load dependencies
+SCRIPT_DIR="$(dirname "$(readlink -f "${BASH_SOURCE[0]}")")"
+LIB_DIR="$(dirname "$SCRIPT_DIR")"
+
+# Load port report core module if not already loaded
+if [[ ! $(type -t nftban_port_report_status) == "function" ]]; then
+    if [[ -f "${LIB_DIR}/core/nftban_report_port.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${LIB_DIR}/core/nftban_report_port.sh"
+    else
+        echo "ERROR: nftban_report_port.sh not found at ${LIB_DIR}/core" >&2
+        exit 1
+    fi
+fi
+
+# Load mail module for mail-report functionality
+if [[ ! $(type -t nftban_mail_send) == "function" ]]; then
+    if [[ -f "${LIB_DIR}/core/nftban_mail.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${LIB_DIR}/core/nftban_mail.sh"
+    fi
+fi
+
+# =============================================================================
+# PORT COMMAND HANDLER
+# =============================================================================
+
+nftban_cmd_port() {
+    # Handle port subcommands
+    # Args: $@ = port subcommand and arguments
+
+    local subcmd="${1:-status}"
+    shift || true
+
+    # Check root for port scanning
+    if [[ $EUID -ne 0 ]]; then
+        echo "ERROR: Port scanning requires root privileges" >&2
+        echo "Please run: sudo nftban port $subcmd" >&2
+        exit 1
+    fi
+
+    case "$subcmd" in
+        status|list)
+            # Show port status (terminal output)
+            # Optional: port filter as argument
+            # NOTE: 'list' is deprecated, use 'status' instead
+            export NFTBAN_PORT_FILTER_PORTS="${1:-}"
+            export NFTBAN_PORT_DETAILED=0
+            export NFTBAN_PORT_OUTPUT_FORMAT="table"
+            nftban_port_report_status
+            return $?
+            ;;
+
+        detailed)
+            # Show detailed port status with BIND and PROCESS columns
+            export NFTBAN_PORT_FILTER_PORTS="${1:-}"
+            export NFTBAN_PORT_DETAILED=1
+            export NFTBAN_PORT_OUTPUT_FORMAT="table"
+            nftban_port_report_status
+            return $?
+            ;;
+
+        html-report)
+            # Generate HTML report
+            echo "Generating HTML port report..."
+            local report_file
+            report_file=$(nftban_port_generate_html_report)
+            if [[ $? -eq 0 && -f "$report_file" ]]; then
+                echo "✓ HTML report generated successfully:"
+                echo "  $report_file"
+                echo
+                echo "View with: firefox '$report_file' (or your preferred browser)"
+                return 0
+            else
+                echo "ERROR: Failed to generate HTML report" >&2
+                return 1
+            fi
+            ;;
+
+        mail-report)
+            # Mail port report
+            # Args: [path] [recipient]
+            local report_path="${1:-}"
+            local recipient="${2:-${NFTBAN_MAIL_REPORT_RECIPIENT:-}}"
+
+            if [[ -z "$recipient" ]]; then
+                echo "ERROR: No recipient specified" >&2
+                echo "Set NFTBAN_MAIL_REPORT_RECIPIENT in config or provide recipient as argument" >&2
+                echo "Usage: nftban port mail-report [path] [recipient]" >&2
+                return 1
+            fi
+
+            # Check if mail module is available
+            if [[ ! $(type -t nftban_mail_send) == "function" ]]; then
+                echo "ERROR: Mail module not available" >&2
+                echo "Please ensure nftban_mail.sh is installed" >&2
+                return 1
+            fi
+
+            # If path provided, mail that file
+            if [[ -n "$report_path" ]]; then
+                if [[ ! -f "$report_path" ]]; then
+                    echo "ERROR: Report file not found: $report_path" >&2
+                    return 1
+                fi
+                echo "Sending port report to $recipient..."
+                nftban_mail_send "$report_path" "$recipient"
+                return $?
+            else
+                # Generate report and mail it
+                echo "Generating HTML report and sending to $recipient..."
+                local report_file
+                report_file=$(nftban_port_generate_html_report)
+                if [[ $? -eq 0 && -f "$report_file" ]]; then
+                    echo "✓ Report generated: $report_file"
+                    echo "Sending via email..."
+                    nftban_mail_send "$report_file" "$recipient"
+                    return $?
+                else
+                    echo "ERROR: Failed to generate HTML report" >&2
+                    return 1
+                fi
+            fi
+            ;;
+
+        allow-panel)
+            # Allow control panel ports in firewall
+            # Args: <panel_name>
+            local panel="${1:-}"
+
+            if [[ -z "$panel" ]]; then
+                echo "ERROR: Panel name required" >&2
+                echo "Usage: nftban port allow-panel <panel_name>" >&2
+                echo "Available panels: directadmin" >&2
+                return 1
+            fi
+
+            case "$panel" in
+                directadmin|da)
+                    nftban_port_allow_directadmin
+                    return $?
+                    ;;
+                *)
+                    echo "ERROR: Unknown panel: $panel" >&2
+                    echo "Available panels: directadmin" >&2
+                    return 1
+                    ;;
+            esac
+            ;;
+
+        help|--help|-h)
+            # Show help
+            # Load output module for standard banner
+            source "${LIB_DIR}/core/nftban_output.sh"
+            nftban_banner
+            echo ""
+            echo "Usage:"
+            echo "  nftban port status [ports]       # Show port status (all or filtered)"
+            echo "  nftban port detailed [ports]     # Show detailed status with BIND and PROCESS"
+            echo "  nftban port html-report          # Generate HTML report (coming soon)"
+            echo "  nftban port mail-report [path] [recipient]  # Mail report"
+            echo "  nftban port allow-panel <panel>  # Allow control panel ports in firewall"
+            echo "  nftban port help                 # Show this help"
+            echo ""
+            echo "Examples:"
+            echo "  nftban port status               # Show all listening ports"
+            echo "  nftban port status 22,80,443     # Show only SSH, HTTP, HTTPS"
+            echo "  nftban port detailed             # Show detailed info with bind addresses"
+            echo "  nftban port mail-report /var/lib/nftban/reports/port_report.html admin@example.com"
+            echo "  nftban port allow-panel directadmin  # Allow DirectAdmin panel ports"
+            echo ""
+            echo "Output Columns:"
+            echo "  SERVICE  - Service name (from /etc/services or process name)"
+            echo "  PORT     - Port number"
+            echo "  PROTO    - Protocol (tcp/udp)"
+            echo "  RUNNING  - Is service listening?"
+            echo "  IPv4 IN  - IPv4 inbound firewall status"
+            echo "  IPv4 OUT - IPv4 outbound firewall status"
+            echo "  IPv6 IN  - IPv6 inbound firewall status"
+            echo "  IPv6 OUT - IPv6 outbound firewall status"
+            echo "  NOTES    - Additional info (bind scope, generic rules, etc.)"
+            echo ""
+            echo "Detailed Mode Adds:"
+            echo "  BIND     - Bind address (0.0.0.0, ::, 127.0.0.1, etc.)"
+            echo "  PROCESS  - Process name and PID"
+            echo ""
+            echo "Firewall Status:"
+            echo "  ✔ Allowed  - Port explicitly allowed in nftables"
+            echo "  ✖ Blocked  - Port explicitly blocked (drop/reject)"
+            echo "  ? No-rule  - No explicit rule (default policy applies)"
+            echo ""
+            echo "Notes:"
+            echo "  - Requires root privileges (sudo)"
+            echo "  - Uses ss/lsof to detect listening services"
+            echo "  - Parses nftables rules to determine firewall status"
+            echo "  - 'generic' rules lack meta nfproto (affect both IPv4/IPv6)"
+            echo "  - PUBLIC = binds to 0.0.0.0 or ::"
+            echo "  - LOCAL-ONLY = binds to 127.0.0.1 or ::1"
+            echo ""
+            return 0
+            ;;
+
+        *)
+            echo "ERROR: Unknown port command: $subcmd" >&2
+            echo "Run 'nftban port help' for available commands" >&2
+            return 1
+            ;;
+    esac
+}
+
+# =============================================================================
+# DIRECTADMIN PANEL SUPPORT
+# =============================================================================
+
+nftban_port_allow_directadmin() {
+    # Allow DirectAdmin control panel ports in firewall
+    # Opens all required ports for DirectAdmin installation
+
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "DirectAdmin Control Panel - Firewall Configuration"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Load DirectAdmin configuration
+    local config_file="/etc/nftban/conf.d/directadmin.conf"
+    if [[ -f "$config_file" ]]; then
+        # shellcheck source=/dev/null
+        source "$config_file"
+        echo "✓ Loaded configuration from: $config_file"
+    else
+        echo "⚠ Config file not found: $config_file"
+        echo "  Using default port configuration..."
+    fi
+    echo ""
+
+    # IMPORTANT WARNING: CloudFlare requirement
+    echo "╔═══════════════════════════════════════════════════════════════════╗"
+    echo "║ ⚠️  IMPORTANT: CloudFlare Whitelist Required                      ║"
+    echo "╚═══════════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "DirectAdmin licensing servers are behind CloudFlare CDN."
+    echo "You MUST whitelist CloudFlare IP ranges for licensing to work!"
+    echo ""
+    echo "CloudFlare IPs will be automatically whitelisted if you enable it."
+    echo ""
+
+    # Ensure strict mode is still active after sourcing config
+    set -Eeuo pipefail
+
+    # Handle CloudFlare whitelist based on configuration
+    local cf_mode="${NFTBAN_DIRECTADMIN_AUTO_CLOUDFLARE:-ASK}"
+    local cf_update="${NFTBAN_DIRECTADMIN_UPDATE_CLOUDFLARE:-YES}"
+    local enable_cloudflare="no"
+
+    case "$cf_mode" in
+        YES|yes|Y|y)
+            enable_cloudflare="yes"
+            echo "→ CloudFlare whitelist: AUTO-ENABLE (configured)"
+            ;;
+        NO|no|N|n)
+            enable_cloudflare="no"
+            echo "→ CloudFlare whitelist: DISABLED (configured)"
+            echo "  ⚠️  WARNING: You must manually whitelist CloudFlare IPs!"
+            echo "     Run: nftban cloudflare enable"
+            ;;
+        ASK|ask|A|a|*)
+            echo "Do you want to enable CloudFlare IP whitelist? (REQUIRED for licensing)"
+            echo -n "Enable CloudFlare whitelist? [Y/n]: "
+            read -r response
+            case "$response" in
+                n|N|no|NO)
+                    enable_cloudflare="no"
+                    echo "  ⚠️  WARNING: CloudFlare whitelist NOT enabled!"
+                    echo "     DirectAdmin licensing may fail!"
+                    echo "     Enable later with: nftban cloudflare enable"
+                    ;;
+                *)
+                    enable_cloudflare="yes"
+                    echo "  ✓ CloudFlare whitelist will be enabled"
+                    ;;
+            esac
+            ;;
+    esac
+    echo ""
+
+    # Check if DirectAdmin is installed
+    local da_path="${NFTBAN_DIRECTADMIN_PATH:-/usr/local/directadmin}"
+    if [[ -d "$da_path" ]]; then
+        echo "✓ DirectAdmin detected at: $da_path"
+        if [[ -f "$da_path/directadmin" ]]; then
+            local da_version
+            da_version=$("$da_path/directadmin" v 2>/dev/null | head -1 || echo "Unknown")
+            echo "  Version: $da_version"
+        fi
+    else
+        echo "⚠ DirectAdmin not found at: $da_path"
+        echo "  Continuing with port configuration anyway..."
+    fi
+    echo ""
+
+    # Parse port configurations from config or use defaults (from DirectAdmin CSF policy)
+    # Note: DirectAdmin uses same ports for IPv4 and IPv6
+    local tcp_in="${NFTBAN_DIRECTADMIN_TCP_IN:-20,21,22,25,53,853,80,110,143,443,465,587,993,995,2222,35000:35999}"
+    local tcp_out="${NFTBAN_DIRECTADMIN_TCP_OUT:-20,21,22,25,53,853,80,110,113,143,443,465,587,993,995,2222}"
+    local udp_in="${NFTBAN_DIRECTADMIN_UDP_IN:-20,21,53,853,80,443}"
+    local udp_out="${NFTBAN_DIRECTADMIN_UDP_OUT:-20,21,53,853,113,123,443}"
+
+    # Add custom ports if defined
+    [[ -n "${NFTBAN_DIRECTADMIN_CUSTOM_TCP_IN:-}" ]] && tcp_in="${tcp_in},${NFTBAN_DIRECTADMIN_CUSTOM_TCP_IN}"
+    [[ -n "${NFTBAN_DIRECTADMIN_CUSTOM_TCP_OUT:-}" ]] && tcp_out="${tcp_out},${NFTBAN_DIRECTADMIN_CUSTOM_TCP_OUT}"
+    [[ -n "${NFTBAN_DIRECTADMIN_CUSTOM_UDP_IN:-}" ]] && udp_in="${udp_in},${NFTBAN_DIRECTADMIN_CUSTOM_UDP_IN}"
+    [[ -n "${NFTBAN_DIRECTADMIN_CUSTOM_UDP_OUT:-}" ]] && udp_out="${udp_out},${NFTBAN_DIRECTADMIN_CUSTOM_UDP_OUT}"
+
+    echo "Port Configuration (applies to both IPv4 and IPv6):"
+    echo "  TCP IN:  $tcp_in"
+    echo "  TCP OUT: $tcp_out"
+    echo "  UDP IN:  $udp_in"
+    echo "  UDP OUT: $udp_out"
+    echo ""
+
+    # Convert to arrays
+    IFS=',' read -ra tcp_in_ports <<< "$tcp_in"
+    IFS=',' read -ra tcp_out_ports <<< "$tcp_out"
+    IFS=',' read -ra udp_in_ports <<< "$udp_in"
+    IFS=',' read -ra udp_out_ports <<< "$udp_out"
+
+    echo "Opening DirectAdmin ports in nftables..."
+    echo ""
+
+    # Check if nftables is running
+    if ! nft list tables >/dev/null 2>&1; then
+        echo "ERROR: nftables is not running or not accessible" >&2
+        echo "Please ensure nftables is installed and running" >&2
+        return 1
+    fi
+
+    # Detect NFTBan table and chains
+    # Try multiple table name variations
+    local nftban_table_inet=""
+    local nftban_table_ip=""
+    local nftban_table_ip6=""
+    local input_chain="input"
+    local output_chain="output"
+
+    # Check which tables exist (try different naming conventions)
+    local has_inet=false
+    local has_ip=false
+    local has_ip6=false
+
+    # Try inet family with different names
+    for table_name in nftban nftban_runtime nftban_filter filter; do
+        if nft list table inet "$table_name" >/dev/null 2>&1; then
+            nftban_table_inet="$table_name"
+            has_inet=true
+            echo "✓ Found inet table: $table_name"
+            break
+        fi
+    done
+
+    # Try ip family
+    for table_name in nftban nftban_filter filter; do
+        if nft list table ip "$table_name" >/dev/null 2>&1; then
+            nftban_table_ip="$table_name"
+            has_ip=true
+            echo "✓ Found ip table: $table_name"
+            break
+        fi
+    done
+
+    # Try ip6 family
+    for table_name in nftban nftban_filter filter; do
+        if nft list table ip6 "$table_name" >/dev/null 2>&1; then
+            nftban_table_ip6="$table_name"
+            has_ip6=true
+            echo "✓ Found ip6 table: $table_name"
+            break
+        fi
+    done
+
+    echo ""
+
+    if [[ "$has_inet" == "false" && "$has_ip" == "false" && "$has_ip6" == "false" ]]; then
+        echo "ERROR: No compatible nftables table found" >&2
+        echo ""
+        echo "Available tables:" >&2
+        nft list tables 2>&1 | head -10 >&2
+        echo "" >&2
+        echo "This command requires a firewall table with input/output chains." >&2
+        echo "Tried looking for: nftban, nftban_runtime, nftban_filter, filter" >&2
+        echo "" >&2
+        echo "Please ensure NFTBan firewall is initialized or create manually:" >&2
+        echo "  nft add table inet nftban" >&2
+        echo "  nft add chain inet nftban input { type filter hook input priority 0\\; }" >&2
+        echo "  nft add chain inet nftban output { type filter hook output priority 0\\; }" >&2
+        return 1
+    fi
+
+    # Detect chain names (could be input/output or input_filter/output_filter, etc.)
+    local -A chain_map=()
+
+    # For inet table
+    if [[ "$has_inet" == "true" ]]; then
+        for chain_try in input input_filter filter_input; do
+            if nft list chain inet "$nftban_table_inet" "$chain_try" >/dev/null 2>&1; then
+                chain_map["inet_input"]="$chain_try"
+                break
+            fi
+        done
+        for chain_try in output output_filter filter_output; do
+            if nft list chain inet "$nftban_table_inet" "$chain_try" >/dev/null 2>&1; then
+                chain_map["inet_output"]="$chain_try"
+                break
+            fi
+        done
+
+        # If no chains found, create them
+        if [[ -z "${chain_map[inet_input]:-}" ]]; then
+            echo "Creating input chain in inet $nftban_table_inet..."
+            if nft add chain inet "$nftban_table_inet" input "{ type filter hook input priority 0; }" 2>/dev/null; then
+                chain_map["inet_input"]="input"
+                echo "✓ Created chain: input"
+            else
+                echo "⚠ Failed to create input chain" >&2
+            fi
+        fi
+
+        if [[ -z "${chain_map[inet_output]:-}" ]]; then
+            echo "Creating output chain in inet $nftban_table_inet..."
+            if nft add chain inet "$nftban_table_inet" output "{ type filter hook output priority 0; }" 2>/dev/null; then
+                chain_map["inet_output"]="output"
+                echo "✓ Created chain: output"
+            else
+                echo "⚠ Failed to create output chain" >&2
+            fi
+        fi
+    fi
+
+    echo ""
+
+    # Function to add rule if it doesn't exist
+    add_port_rule() {
+        local family="$1"
+        local table="$2"
+        local chain="$3"
+        local proto="$4"
+        local port="$5"
+        local direction="$6"  # "dport" or "sport"
+
+        # Check if rule already exists
+        if nft list chain "$family" "$table" "$chain" 2>/dev/null | grep -q "$proto $direction $port accept"; then
+            return 0  # Rule already exists
+        fi
+
+        # Add the rule
+        nft add rule "$family" "$table" "$chain" "$proto" "$direction" "$port" counter accept 2>/dev/null || return 1
+        return 0
+    }
+
+    local rules_added=0
+    local rules_skipped=0
+    local rules_failed=0
+
+    # Add TCP INPUT rules
+    echo "Adding TCP INPUT rules..."
+    for port in "${tcp_in_ports[@]}"; do
+        [[ -z "$port" ]] && continue  # Skip empty ports
+        local added_any=false
+
+        if [[ "$has_inet" == "true" && -n "${chain_map[inet_input]:-}" ]]; then
+            if add_port_rule "inet" "$nftban_table_inet" "${chain_map[inet_input]}" "tcp" "$port" "dport"; then
+                echo "  ✓ TCP $port (inet/${chain_map[inet_input]})"
+                rules_added=$((rules_added + 1))
+                added_any=true
+            else
+                rules_failed=$((rules_failed + 1))
+            fi
+        else
+            if [[ "$has_ip" == "true" ]]; then
+                if add_port_rule "ip" "$nftban_table_ip" "$input_chain" "tcp" "$port" "dport"; then
+                    echo "  ✓ TCP $port (IPv4/$input_chain)"
+                    rules_added=$((rules_added + 1))
+                    added_any=true
+                else
+                    rules_failed=$((rules_failed + 1))
+                fi
+            fi
+            if [[ "$has_ip6" == "true" ]]; then
+                if add_port_rule "ip6" "$nftban_table_ip6" "$input_chain" "tcp" "$port" "dport"; then
+                    echo "  ✓ TCP $port (IPv6/$input_chain)"
+                    rules_added=$((rules_added + 1))
+                    added_any=true
+                else
+                    rules_failed=$((rules_failed + 1))
+                fi
+            fi
+        fi
+
+        [[ "$added_any" == "false" ]] && rules_skipped=$((rules_skipped + 1))
+    done
+
+    # Add TCP OUTPUT rules
+    echo ""
+    echo "Adding TCP OUTPUT rules..."
+    for port in "${tcp_out_ports[@]}"; do
+        [[ -z "$port" ]] && continue  # Skip empty ports
+        local added_any=false
+
+        if [[ "$has_inet" == "true" && -n "${chain_map[inet_output]:-}" ]]; then
+            if add_port_rule "inet" "$nftban_table_inet" "${chain_map[inet_output]}" "tcp" "$port" "dport"; then
+                echo "  ✓ TCP $port (inet/${chain_map[inet_output]})"
+                rules_added=$((rules_added + 1))
+                added_any=true
+            else
+                rules_failed=$((rules_failed + 1))
+            fi
+        else
+            if [[ "$has_ip" == "true" ]]; then
+                if add_port_rule "ip" "$nftban_table_ip" "$output_chain" "tcp" "$port" "dport"; then
+                    echo "  ✓ TCP $port (IPv4/$output_chain)"
+                    rules_added=$((rules_added + 1))
+                    added_any=true
+                else
+                    rules_failed=$((rules_failed + 1))
+                fi
+            fi
+            if [[ "$has_ip6" == "true" ]]; then
+                if add_port_rule "ip6" "$nftban_table_ip6" "$output_chain" "tcp" "$port" "dport"; then
+                    echo "  ✓ TCP $port (IPv6/$output_chain)"
+                    rules_added=$((rules_added + 1))
+                    added_any=true
+                else
+                    rules_failed=$((rules_failed + 1))
+                fi
+            fi
+        fi
+
+        [[ "$added_any" == "false" ]] && rules_skipped=$((rules_skipped + 1))
+    done
+
+    # Add UDP rules (DNS)
+    echo ""
+    echo "Adding UDP rules (DNS)..."
+    for port in "${udp_in_ports[@]}"; do
+        [[ -z "$port" ]] && continue  # Skip empty ports
+        if [[ "$has_inet" == "true" && -n "${chain_map[inet_input]:-}" ]]; then
+            if add_port_rule "inet" "$nftban_table_inet" "${chain_map[inet_input]}" "udp" "$port" "dport"; then
+                echo "  ✓ UDP $port (inet/${chain_map[inet_input]})"
+                rules_added=$((rules_added + 1))
+            else
+                rules_failed=$((rules_failed + 1))
+            fi
+        else
+            if [[ "$has_ip" == "true" ]]; then
+                if add_port_rule "ip" "$nftban_table_ip" "$input_chain" "udp" "$port" "dport"; then
+                    echo "  ✓ UDP $port (IPv4/$input_chain)"
+                    rules_added=$((rules_added + 1))
+                else
+                    rules_failed=$((rules_failed + 1))
+                fi
+            fi
+            if [[ "$has_ip6" == "true" ]]; then
+                if add_port_rule "ip6" "$nftban_table_ip6" "$input_chain" "udp" "$port" "dport"; then
+                    echo "  ✓ UDP $port (IPv6/$input_chain)"
+                    rules_added=$((rules_added + 1))
+                else
+                    rules_failed=$((rules_failed + 1))
+                fi
+            fi
+        fi
+    done
+
+    for port in "${udp_out_ports[@]}"; do
+        [[ -z "$port" ]] && continue  # Skip empty ports
+        if [[ "$has_inet" == "true" && -n "${chain_map[inet_output]:-}" ]]; then
+            if add_port_rule "inet" "$nftban_table_inet" "${chain_map[inet_output]}" "udp" "$port" "dport"; then
+                echo "  ✓ UDP $port (inet/${chain_map[inet_output]})"
+                rules_added=$((rules_added + 1))
+            else
+                rules_failed=$((rules_failed + 1))
+            fi
+        else
+            if [[ "$has_ip" == "true" ]]; then
+                if add_port_rule "ip" "$nftban_table_ip" "$output_chain" "udp" "$port" "dport"; then
+                    echo "  ✓ UDP $port (IPv4/$output_chain)"
+                    rules_added=$((rules_added + 1))
+                else
+                    rules_failed=$((rules_failed + 1))
+                fi
+            fi
+            if [[ "$has_ip6" == "true" ]]; then
+                if add_port_rule "ip6" "$nftban_table_ip6" "$output_chain" "udp" "$port" "dport"; then
+                    echo "  ✓ UDP $port (IPv6/$output_chain)"
+                    rules_added=$((rules_added + 1))
+                else
+                    rules_failed=$((rules_failed + 1))
+                fi
+            fi
+        fi
+    done
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Summary:"
+    echo "  Rules added:   $rules_added"
+    echo "  Rules skipped: $rules_skipped (already exist)"
+    echo "  Rules failed:  $rules_failed"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    if [[ $rules_failed -gt 0 ]]; then
+        echo "⚠ Some rules failed to add. Check nftables configuration."
+        return 1
+    fi
+
+    echo "✅ DirectAdmin ports configured successfully"
+    echo ""
+    echo "Key ports opened (IPv4 and IPv6):"
+    echo "  • 2222 (TCP)       - DirectAdmin Web Panel"
+    echo "  • 22 (TCP)         - SSH"
+    echo "  • 80/443           - HTTP/HTTPS (TCP + UDP for QUIC/HTTP3)"
+    echo "  • 25/587/465       - SMTP/Submission"
+    echo "  • 20/21            - FTP (TCP + UDP)"
+    echo "  • 35000:35999 (TCP) - Passive FTP range"
+    echo "  • 53               - DNS (TCP + UDP)"
+    echo "  • 853              - DNS over TLS"
+    echo "  • 993/995          - IMAPS/POP3S"
+    echo "  • 110/143          - POP3/IMAP"
+    echo "  • 123 (UDP OUT)    - NTP"
+    echo ""
+
+    # Handle CloudFlare whitelist
+    if [[ "$enable_cloudflare" == "yes" ]]; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Enabling CloudFlare IP Whitelist"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+
+        # Check if cloudflare module exists
+        if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_cloudflare.sh" ]]; then
+            # Update CloudFlare IPs if configured
+            if [[ "$cf_update" == "YES" || "$cf_update" == "yes" ]]; then
+                echo "Updating CloudFlare IP ranges..."
+                if nftban cloudflare update 2>/dev/null; then
+                    echo "✓ CloudFlare IPs updated"
+                else
+                    echo "⚠️  Failed to update CloudFlare IPs (continuing anyway)"
+                fi
+                echo ""
+            fi
+
+            # Enable CloudFlare whitelist
+            echo "Enabling CloudFlare whitelist..."
+            if nftban cloudflare enable 2>/dev/null; then
+                echo "✓ CloudFlare whitelist enabled"
+                echo ""
+                echo "CloudFlare IP ranges are now whitelisted for DirectAdmin licensing."
+            else
+                echo "⚠️  Failed to enable CloudFlare whitelist"
+                echo "   Please enable manually: nftban cloudflare enable"
+            fi
+        else
+            echo "⚠️  CloudFlare module not found!"
+            echo "   CloudFlare whitelist could not be automatically enabled."
+            echo ""
+            echo "To enable manually:"
+            echo "  1. Download CloudFlare IPs:"
+            echo "     curl https://www.cloudflare.com/ips-v4/ > /var/lib/nftban/whitelist/cloudflare_v4.conf"
+            echo "     curl https://www.cloudflare.com/ips-v6/ > /var/lib/nftban/whitelist/cloudflare_v6.conf"
+            echo "  2. Reload firewall:"
+            echo "     nftban firewall reload"
+        fi
+        echo ""
+    else
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "⚠️  CloudFlare Whitelist NOT Enabled"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "DirectAdmin licensing REQUIRES CloudFlare IP whitelist!"
+        echo ""
+        echo "To enable CloudFlare whitelist:"
+        echo "  nftban cloudflare enable"
+        echo ""
+        echo "Or run this command again and select 'Yes' when prompted."
+        echo ""
+    fi
+
+    echo "To verify port status, run:"
+    echo "  nftban port status"
+    echo ""
+
+    return 0
+}
+
+# Export function for auto-loading
+export -f nftban_cmd_port
+export -f nftban_port_allow_directadmin

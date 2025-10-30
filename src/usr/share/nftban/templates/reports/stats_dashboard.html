@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFTBan Statistics Report</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        :root {
+            --bg-primary: #0b0d12;
+            --bg-secondary: #111826;
+            --bg-tertiary: #1a202e;
+            --text-primary: #e9eef5;
+            --text-secondary: #9fb3c8;
+            --text-muted: #6b7c93;
+            --accent: #6aa9ff;
+            --accent-hover: #5a99ef;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --border: #223046;
+        }
+
+        [data-theme="light"] {
+            --bg-primary: #ffffff;
+            --bg-secondary: #f9fafb;
+            --bg-tertiary: #f3f4f6;
+            --text-primary: #111827;
+            --text-secondary: #4b5563;
+            --text-muted: #9ca3af;
+            --border: #e5e7eb;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            padding: 24px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        header {
+            margin-bottom: 32px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 {
+            font-size: 32px;
+            font-weight: 700;
+            margin-bottom: 8px;
+        }
+
+        .meta {
+            color: var(--text-secondary);
+            font-size: 14px;
+        }
+
+        .theme-toggle {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 16px;
+            cursor: pointer;
+            color: var(--text-primary);
+            font-size: 14px;
+        }
+
+        .theme-toggle:hover {
+            background: var(--bg-tertiary);
+        }
+
+        .grid {
+            display: grid;
+            gap: 20px;
+            margin-bottom: 32px;
+        }
+
+        .grid-2 { grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+        .grid-3 { grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
+        .grid-4 { grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+
+        .card {
+            background: var(--bg-secondary);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 24px;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        }
+
+        .card h2 {
+            font-size: 18px;
+            font-weight: 600;
+            margin-bottom: 16px;
+            color: var(--text-primary);
+        }
+
+        .kpi-card {
+            text-align: center;
+        }
+
+        .kpi-value {
+            font-size: 36px;
+            font-weight: 700;
+            color: var(--accent);
+            margin-bottom: 4px;
+        }
+
+        .kpi-label {
+            font-size: 14px;
+            color: var(--text-secondary);
+        }
+
+        .kpi-change {
+            font-size: 12px;
+            margin-top: 4px;
+        }
+
+        .kpi-change.positive { color: var(--success); }
+        .kpi-change.negative { color: var(--danger); }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        th, td {
+            padding: 12px;
+            text-align: left;
+            border-bottom: 1px solid var(--border);
+        }
+
+        th {
+            font-weight: 600;
+            color: var(--text-secondary);
+            font-size: 13px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 300px;
+        }
+
+        .alert {
+            padding: 16px;
+            border-radius: 8px;
+            margin-bottom: 16px;
+        }
+
+        .alert-warning {
+            background: rgba(245, 158, 11, 0.1);
+            border: 1px solid var(--warning);
+            color: var(--warning);
+        }
+
+        .alert-danger {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--danger);
+            color: var(--danger);
+        }
+
+        .alert-success {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid var(--success);
+            color: var(--success);
+        }
+
+        footer {
+            margin-top: 48px;
+            padding-top: 24px;
+            border-top: 1px solid var(--border);
+            text-align: center;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        @media print {
+            .theme-toggle { display: none; }
+            .card { break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <button class="theme-toggle" onclick="toggleTheme()">🌓 Toggle Theme</button>
+
+    <div class="container">
+        <header>
+            <div>
+                <h1>🛡️ NFTBan Statistics Report</h1>
+                <p class="meta">
+                    <strong>Server:</strong> <span id="hostname">-</span> |
+                    <strong>Period:</strong> <span id="period">-</span> |
+                    <strong>Generated:</strong> <span id="generated">-</span>
+                </p>
+            </div>
+        </header>
+
+        <!-- KPI Cards -->
+        <section>
+            <h2 style="margin-bottom: 16px;">📊 Key Metrics</h2>
+            <div class="grid grid-4" id="kpi-grid"></div>
+        </section>
+
+        <!-- Alerts Section -->
+        <section id="alerts-section"></section>
+
+        <!-- Activity Timeline Chart -->
+        <section>
+            <div class="card">
+                <h2>📈 Ban Activity Timeline</h2>
+                <div class="chart-container">
+                    <canvas id="timeline-chart"></canvas>
+                </div>
+            </div>
+        </section>
+
+        <!-- Geographic & Jail Charts -->
+        <div class="grid grid-2">
+            <section class="card">
+                <h2>🌍 Top Countries</h2>
+                <div class="chart-container">
+                    <canvas id="countries-chart"></canvas>
+                </div>
+            </section>
+
+            <section class="card">
+                <h2>🚨 Top Fail2Ban Jails</h2>
+                <div class="chart-container">
+                    <canvas id="jails-chart"></canvas>
+                </div>
+            </section>
+        </div>
+
+        <!-- Top Banned IPs Table -->
+        <section>
+            <div class="card">
+                <h2>🔝 Top Banned IPs</h2>
+                <table id="top-ips-table">
+                    <thead>
+                        <tr>
+                            <th>#</th>
+                            <th>IP Address</th>
+                            <th>Country</th>
+                            <th>Ban Count</th>
+                            <th>First Seen</th>
+                            <th>Last Seen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="top-ips-body"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Recommendations -->
+        <section id="recommendations-section"></section>
+    </div>
+
+    <footer>
+        <p>🤖 Generated by <strong>NFTBan v0.10.0</strong> |
+        <a href="https://nftban.com" style="color: var(--accent);">nftban.com</a></p>
+        <p style="margin-top: 8px;">Report ID: <span id="report-id">-</span></p>
+    </footer>
+
+    <script>
+        // Data will be injected here by bash script
+        window.__NFTBAN_DATA__ = {
+            // Placeholder - will be replaced
+        };
+
+        // Theme toggle
+        function toggleTheme() {
+            const current = document.documentElement.getAttribute('data-theme');
+            const newTheme = current === 'light' ? 'dark' : 'light';
+            document.documentElement.setAttribute('data-theme', newTheme);
+            localStorage.setItem('nftban-theme', newTheme);
+
+            // Update charts for new theme
+            renderCharts();
+        }
+
+        // Load saved theme
+        const savedTheme = localStorage.getItem('nftban-theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+
+        // Render dashboard
+        function renderDashboard() {
+            const data = window.__NFTBAN_DATA__;
+
+            if (!data || !data.summary) {
+                console.error('No data available');
+                return;
+            }
+
+            // Set metadata
+            document.getElementById('hostname').textContent = data.report?.hostname || '-';
+            document.getElementById('period').textContent =
+                `${data.report?.period?.since || '-'} to ${data.report?.period?.until || '-'}`;
+            document.getElementById('generated').textContent = data.report?.generated_at || '-';
+            document.getElementById('report-id').textContent =
+                data.report?.generated_at?.replace(/[^0-9]/g, '') || '-';
+
+            // Render KPIs
+            renderKPIs(data.summary);
+
+            // Render alerts
+            renderAlerts(data.alerts || []);
+
+            // Render charts
+            renderCharts();
+
+            // Render top IPs table
+            renderTopIPs(data.top_ips || []);
+
+            // Render recommendations
+            renderRecommendations(data.recommendations || []);
+        }
+
+        function renderKPIs(summary) {
+            const kpis = [
+                { label: 'Total Bans', value: summary.total_bans || 0 },
+                { label: 'Unique IPs', value: summary.unique_ips || 0 },
+                { label: 'Active Bans', value: summary.active_bans || 0 },
+                { label: 'Whitelist', value: summary.whitelist_total || 0 }
+            ];
+
+            const grid = document.getElementById('kpi-grid');
+            grid.innerHTML = kpis.map(kpi => `
+                <div class="card kpi-card">
+                    <div class="kpi-value">${kpi.value.toLocaleString()}</div>
+                    <div class="kpi-label">${kpi.label}</div>
+                </div>
+            `).join('');
+        }
+
+        function renderAlerts(alerts) {
+            const section = document.getElementById('alerts-section');
+
+            if (!alerts || alerts.length === 0) {
+                section.innerHTML = `
+                    <div class="alert alert-success">
+                        ✅ <strong>All Clear!</strong> No threshold alerts triggered.
+                    </div>
+                `;
+                return;
+            }
+
+            section.innerHTML = alerts.map(alert => {
+                const severity = alert.severity || 'warning';
+                return `
+                    <div class="alert alert-${severity}">
+                        ${severity === 'warning' ? '⚠️' : '🚨'} <strong>${alert.message}</strong>
+                        ${alert.timestamp ? `<br><small>Time: ${alert.timestamp}</small>` : ''}
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function renderCharts() {
+            const data = window.__NFTBAN_DATA__;
+            const isDark = document.documentElement.getAttribute('data-theme') !== 'light';
+
+            const chartColors = {
+                text: isDark ? '#e9eef5' : '#111827',
+                grid: isDark ? '#223046' : '#e5e7eb',
+                primary: '#6aa9ff',
+                success: '#10b981',
+                warning: '#f59e0b',
+                danger: '#ef4444'
+            };
+
+            // Timeline Chart
+            if (data.timeline && data.timeline.length > 0) {
+                const ctx = document.getElementById('timeline-chart');
+                if (window.timelineChart) window.timelineChart.destroy();
+
+                window.timelineChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.timeline.map(t => t.timestamp),
+                        datasets: [{
+                            label: 'Bans',
+                            data: data.timeline.map(t => t.count),
+                            borderColor: chartColors.primary,
+                            backgroundColor: chartColors.primary + '20',
+                            fill: true,
+                            tension: 0.4
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            x: {
+                                ticks: { color: chartColors.text },
+                                grid: { color: chartColors.grid }
+                            },
+                            y: {
+                                ticks: { color: chartColors.text },
+                                grid: { color: chartColors.grid },
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Countries Pie Chart
+            if (data.top_countries && data.top_countries.length > 0) {
+                const ctx = document.getElementById('countries-chart');
+                if (window.countriesChart) window.countriesChart.destroy();
+
+                window.countriesChart = new Chart(ctx, {
+                    type: 'doughnut',
+                    data: {
+                        labels: data.top_countries.map(c => c.country),
+                        datasets: [{
+                            data: data.top_countries.map(c => c.count),
+                            backgroundColor: [
+                                '#6aa9ff', '#10b981', '#f59e0b', '#ef4444',
+                                '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'
+                            ]
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                labels: { color: chartColors.text },
+                                position: 'bottom'
+                            }
+                        }
+                    }
+                });
+            }
+
+            // Jails Bar Chart
+            if (data.top_jails && data.top_jails.length > 0) {
+                const ctx = document.getElementById('jails-chart');
+                if (window.jailsChart) window.jailsChart.destroy();
+
+                window.jailsChart = new Chart(ctx, {
+                    type: 'bar',
+                    data: {
+                        labels: data.top_jails.map(j => j.name),
+                        datasets: [{
+                            label: 'Bans',
+                            data: data.top_jails.map(j => j.count),
+                            backgroundColor: chartColors.primary
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            x: {
+                                ticks: { color: chartColors.text },
+                                grid: { display: false }
+                            },
+                            y: {
+                                ticks: { color: chartColors.text },
+                                grid: { color: chartColors.grid },
+                                beginAtZero: true
+                            }
+                        }
+                    }
+                });
+            }
+        }
+
+        function renderTopIPs(topIPs) {
+            const tbody = document.getElementById('top-ips-body');
+
+            if (!topIPs || topIPs.length === 0) {
+                tbody.innerHTML = '<tr><td colspan="6" style="text-align:center;">No data available</td></tr>';
+                return;
+            }
+
+            tbody.innerHTML = topIPs.slice(0, 10).map((ip, index) => `
+                <tr>
+                    <td>${index + 1}</td>
+                    <td><code>${ip.ip}</code></td>
+                    <td>${ip.country || '--'}</td>
+                    <td><strong>${ip.count}</strong></td>
+                    <td>${ip.first_seen || '-'}</td>
+                    <td>${ip.last_seen || '-'}</td>
+                </tr>
+            `).join('');
+        }
+
+        function renderRecommendations(recommendations) {
+            const section = document.getElementById('recommendations-section');
+
+            if (!recommendations || recommendations.length === 0) {
+                return;
+            }
+
+            section.innerHTML = `
+                <div class="card">
+                    <h2>💡 Recommendations</h2>
+                    <ul style="list-style: none; padding: 0;">
+                        ${recommendations.map(rec => `
+                            <li style="padding: 12px; border-left: 3px solid ${
+                                rec.priority === 'high' ? 'var(--danger)' :
+                                rec.priority === 'medium' ? 'var(--warning)' : 'var(--success)'
+                            }; margin-bottom: 8px; background: var(--bg-tertiary);">
+                                <strong>${rec.action}:</strong> ${rec.target}<br>
+                                <small style="color: var(--text-muted);">${rec.reason}</small>
+                            </li>
+                        `).join('')}
+                    </ul>
+                </div>
+            `;
+        }
+
+        // Initialize dashboard
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', renderDashboard);
+        } else {
+            renderDashboard();
+        }
+    </script>
+</body>
+</html>

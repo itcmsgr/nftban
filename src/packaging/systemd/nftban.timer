@@ -1,0 +1,11 @@
+[Unit]
+Description=Run nftban periodically
+
+[Timer]
+OnCalendar=hourly
+RandomizedDelaySec=5m
+Persistent=true
+Unit=nftban.service
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,15 @@
+[Unit]
+Description=NFTBan Rollback Timer (Periodic Deadline Check)
+Documentation=man:nftban(8) https://nftban.com/docs/recovery
+
+[Timer]
+# Check 30 seconds after boot
+OnBootSec=30s
+# Check every 15 seconds thereafter
+OnUnitActiveSec=15s
+Unit=nftban-rollback.service
+AccuracySec=1s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

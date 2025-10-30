@@ -1,0 +1,26 @@
+[Unit]
+Description=NFTBan Periodic Health Check
+Documentation=man:nftban(8)
+After=network.target
+
+[Service]
+Type=oneshot
+User=nftban
+Group=nftban
+
+# Run health fix (fixes what nftban user can, reports what needs root)
+ExecStart=/usr/sbin/nftban health fix all
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-health
+
+# Security
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+
+[Install]
+WantedBy=multi-user.target

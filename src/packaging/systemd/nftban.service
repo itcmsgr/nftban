@@ -1,0 +1,16 @@
+[Unit]
+Description=NFTBAN periodic maintenance (one-shot)
+Documentation=man:nftban(8)
+
+[Service]
+Type=oneshot
+User=nftban
+Group=nftban
+EnvironmentFile=-/etc/nftban/nftban.env
+ExecStart=/usr/sbin/nftban run
+Nice=5
+IOSchedulingClass=best-effort
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

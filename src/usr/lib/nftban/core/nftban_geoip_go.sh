@@ -1,0 +1,278 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan v0.10.0 - GO GeoIP Wrapper Module
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Wrapper for nftban-geoip GO binary
+# Location: /usr/lib/nftban/core/nftban_geoip_go.sh
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+# nftban — Simplifying Linux Firewall Management
+# Fast microsecond GeoIP lookups using GO binary + MaxMind GeoLite2
+# =============================================================================
+
+# Enhanced strict mode
+set -Eeuo pipefail
+IFS=$'\n\t'
+umask 027
+
+# Prevent double-loading
+[[ -n "${NFTBAN_GEOIP_GO_LOADED:-}" ]] && return 0
+readonly NFTBAN_GEOIP_GO_LOADED=1
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+readonly NFTBAN_GEOIP_BIN="${NFTBAN_GEOIP_BIN:-/usr/lib/nftban/bin/nftban-geoip}"
+readonly NFTBAN_GEOIP_TIMEOUT="${NFTBAN_GEOIP_TIMEOUT:-1}"  # seconds
+
+# =============================================================================
+# CORE FUNCTIONS
+# =============================================================================
+
+nftban_geoip_check_available() {
+    # Check if GO GeoIP binary is available
+    # Returns: 0 if available, 1 if not
+
+    if [[ ! -x "$NFTBAN_GEOIP_BIN" ]]; then
+        return 1
+    fi
+
+    # Check if database exists
+    if ! timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_GEOIP_BIN" status &>/dev/null; then
+        return 1
+    fi
+
+    return 0
+}
+
+nftban_geoip_lookup_fast() {
+    # Fast IP geolocation lookup using GO binary
+    # Args: $1 = IP address
+    # Returns: JSON with geo data
+    # Speed: 50-200 microseconds
+
+    local ip="$1"
+
+    if [[ -z "$ip" ]]; then
+        echo '{"error":"IP address required"}'
+        return 1
+    fi
+
+    # Validate IP format (basic)
+    if [[ ! "$ip" =~ ^[0-9a-fA-F:.]+$ ]]; then
+        echo '{"error":"Invalid IP format"}'
+        return 1
+    fi
+
+    # Call GO binary with timeout
+    local result
+    result=$(timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_GEOIP_BIN" lookup "$ip" 2>/dev/null)
+
+    if [[ $? -eq 0 && -n "$result" ]]; then
+        echo "$result"
+        return 0
+    else
+        echo '{"error":"Lookup failed or timed out"}'
+        return 1
+    fi
+}
+
+nftban_geoip_get_country() {
+    # Get country name from IP
+    # Args: $1 = IP address
+    # Returns: Country name or "Unknown"
+
+    local ip="$1"
+    local json
+
+    json=$(nftban_geoip_lookup_fast "$ip" 2>/dev/null)
+
+    if command -v jq &>/dev/null; then
+        echo "$json" | jq -r '.country // "Unknown"' 2>/dev/null || echo "Unknown"
+    else
+        # Fallback without jq
+        echo "$json" | grep -o '"country":"[^"]*"' | cut -d'"' -f4 | head -1 || echo "Unknown"
+    fi
+}
+
+nftban_geoip_get_country_code() {
+    # Get country code from IP
+    # Args: $1 = IP address
+    # Returns: Country code (e.g., "US", "CN") or "??"
+
+    local ip="$1"
+    local json
+
+    json=$(nftban_geoip_lookup_fast "$ip" 2>/dev/null)
+
+    if command -v jq &>/dev/null; then
+        echo "$json" | jq -r '.country_code // "??"' 2>/dev/null || echo "??"
+    else
+        # Fallback without jq
+        echo "$json" | grep -o '"country_code":"[^"]*"' | cut -d'"' -f4 | head -1 || echo "??"
+    fi
+}
+
+nftban_geoip_get_city() {
+    # Get city name from IP
+    # Args: $1 = IP address
+    # Returns: City name or "Unknown"
+
+    local ip="$1"
+    local json
+
+    json=$(nftban_geoip_lookup_fast "$ip" 2>/dev/null)
+
+    if command -v jq &>/dev/null; then
+        echo "$json" | jq -r '.city // "Unknown"' 2>/dev/null || echo "Unknown"
+    else
+        # Fallback without jq
+        echo "$json" | grep -o '"city":"[^"]*"' | cut -d'"' -f4 | head -1 || echo "Unknown"
+    fi
+}
+
+nftban_geoip_get_compact() {
+    # Get compact geo info: Country/City
+    # Args: $1 = IP address
+    # Returns: "Country/City" with spaces replaced by underscores
+
+    local ip="$1"
+    local json
+
+    json=$(nftban_geoip_lookup_fast "$ip" 2>/dev/null)
+
+    local country city
+
+    if command -v jq &>/dev/null; then
+        country=$(echo "$json" | jq -r '.country // "Unknown"' 2>/dev/null || echo "Unknown")
+        city=$(echo "$json" | jq -r '.city // "Unknown"' 2>/dev/null || echo "Unknown")
+    else
+        # Fallback without jq
+        country=$(echo "$json" | grep -o '"country":"[^"]*"' | cut -d'"' -f4 | head -1 || echo "Unknown")
+        city=$(echo "$json" | grep -o '"city":"[^"]*"' | cut -d'"' -f4 | head -1 || echo "Unknown")
+    fi
+
+    echo "${country}/${city}" | tr ' ' '_'
+}
+
+nftban_geoip_get_compact_full() {
+    # Get full compact geo info: CountryCode/City/Timezone
+    # Args: $1 = IP address
+    # Returns: "CC/City/Timezone" with spaces replaced by underscores
+
+    local ip="$1"
+    local json
+
+    json=$(nftban_geoip_lookup_fast "$ip" 2>/dev/null)
+
+    local country_code city timezone
+
+    if command -v jq &>/dev/null; then
+        country_code=$(echo "$json" | jq -r '.country_code // "??"' 2>/dev/null || echo "??")
+        city=$(echo "$json" | jq -r '.city // "Unknown"' 2>/dev/null || echo "Unknown")
+        timezone=$(echo "$json" | jq -r '.timezone // ""' 2>/dev/null || echo "")
+    else
+        # Fallback without jq
+        country_code=$(echo "$json" | grep -o '"country_code":"[^"]*"' | cut -d'"' -f4 | head -1 || echo "??")
+        city=$(echo "$json" | grep -o '"city":"[^"]*"' | cut -d'"' -f4 | head -1 || echo "Unknown")
+        timezone=$(echo "$json" | grep -o '"timezone":"[^"]*"' | cut -d'"' -f4 | head -1 || echo "")
+    fi
+
+    if [[ -n "$timezone" ]]; then
+        echo "${country_code}/${city}/${timezone}" | tr ' ' '_'
+    else
+        echo "${country_code}/${city}" | tr ' ' '_'
+    fi
+}
+
+nftban_geoip_bulk_lookup() {
+    # Bulk lookup from file or stdin
+    # Args: $1 = input file (optional, uses stdin if not provided)
+    # Returns: JSONL output (one JSON per line)
+
+    local input_file="${1:-}"
+
+    if [[ -n "$input_file" && -f "$input_file" ]]; then
+        timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_GEOIP_BIN" bulk < "$input_file" 2>/dev/null
+    else
+        timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_GEOIP_BIN" bulk 2>/dev/null
+    fi
+}
+
+nftban_geoip_status() {
+    # Get GeoIP system status
+    # Returns: JSON with status info
+
+    timeout "$NFTBAN_GEOIP_TIMEOUT" "$NFTBAN_GEOIP_BIN" status 2>/dev/null || echo '{"status":"error","message":"GeoIP binary not available"}'
+}
+
+# =============================================================================
+# UTILITY FUNCTIONS
+# =============================================================================
+
+nftban_geoip_format_for_log() {
+    # Format geo data for log entry: [CC/City]
+    # Args: $1 = IP address
+    # Returns: "[CC/City]" or "[??/Unknown]" if lookup fails
+
+    local ip="$1"
+    local compact
+
+    compact=$(nftban_geoip_get_compact_full "$ip" 2>/dev/null)
+
+    if [[ -n "$compact" && "$compact" != "Unknown/Unknown" ]]; then
+        echo "[$compact]"
+    else
+        echo "[??/Unknown]"
+    fi
+}
+
+nftban_geoip_is_local_ip() {
+    # Check if IP is local/private
+    # Args: $1 = IP address
+    # Returns: 0 if local, 1 if public
+
+    local ip="$1"
+
+    # Check for private IPv4 ranges
+    if [[ "$ip" =~ ^10\. ]] || \
+       [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] || \
+       [[ "$ip" =~ ^192\.168\. ]] || \
+       [[ "$ip" =~ ^127\. ]] || \
+       [[ "$ip" =~ ^169\.254\. ]]; then
+        return 0
+    fi
+
+    # Check for private IPv6 ranges
+    if [[ "$ip" =~ ^fe80: ]] || \
+       [[ "$ip" =~ ^fc00: ]] || \
+       [[ "$ip" =~ ^fd00: ]] || \
+       [[ "$ip" == "::1" ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+# Export functions for use by other modules
+export -f nftban_geoip_check_available
+export -f nftban_geoip_lookup_fast
+export -f nftban_geoip_get_country
+export -f nftban_geoip_get_country_code
+export -f nftban_geoip_get_city
+export -f nftban_geoip_get_compact
+export -f nftban_geoip_get_compact_full
+export -f nftban_geoip_bulk_lookup
+export -f nftban_geoip_status
+export -f nftban_geoip_format_for_log
+export -f nftban_geoip_is_local_ip
+
+# Log module load
+if declare -f nftban_log_debug >/dev/null 2>&1; then
+    nftban_log_debug "GO GeoIP wrapper module loaded (fast microsecond lookups)"
+fi

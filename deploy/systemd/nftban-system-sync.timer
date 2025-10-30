@@ -1,0 +1,20 @@
+[Unit]
+Description=NFTBan System IP Sync Timer (Daily with jitter)
+
+[Timer]
+# Run daily at 03:00 (avoids midnight congestion)
+OnCalendar=*-*-* 03:00:00
+
+# Add jitter (randomize start by up to 30 minutes)
+RandomizedDelaySec=1800
+
+# Catch up after system downtime
+Persistent=true
+
+# Accuracy (no need for precision)
+AccuracySec=1h
+
+Unit=nftban-system-sync.service
+
+[Install]
+WantedBy=timers.target

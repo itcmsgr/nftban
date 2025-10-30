@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: "📚 Documentation"
+    url: "https://github.com/itcmsgr/nftban/tree/main/docs"
+    about: "Guides, quick start, migration docs, and module documentation"
+  - name: "💬 Discussions"
+    url: "https://github.com/itcmsgr/nftban/discussions"
+    about: "Questions, feedback, proposals, and community discussions"
+  - name: "🔐 Security Contact"
+    url: "mailto:contact@itcms.gr"
+    about: "Report security issues privately. Prefer GitHub Security Advisories when possible."
