@@ -86,24 +86,23 @@ sudo usermod -aG nftban-cli username
 # User must re-login for group to take effect
 ```
 
-See **[Quick Start Guide](docs/guides/quick-start.md)** for complete setup instructions.
+See **[Quick Start Guide](docs/QUICK-START.md)** for complete setup instructions.
 
 ---
 
 ## 📚 Documentation
 
 **Getting Started:**
-- ➤ **[Quick Start Guide](docs/guides/quick-start.md)** - Get started in 5 minutes ⭐
-- ➤ **[Installation Guide](docs/guides/installation.md)** - Complete installation instructions
+- ➤ **[Quick Start Guide](docs/QUICK-START.md)** - Get started in 5 minutes ⭐
+- ➤ **[Installation Guide](docs/guides/install.md)** - Complete installation instructions
 - ➤ **[Security Architecture](SECURITY.md)** - Multi-layer security model and hardening guide 🛡️
-- ➤ [FHS Auto-Heal Guide](docs/guides/fhs-auto-heal-guide.md) - Automatic system health management
+- ➤ [Polkit Integration](docs/guides/polkit-integration.md) - Group-based service management (no sudo) ✨
 - ➤ [CLI Quick Reference](docs/reference/cli-quick-reference.md) - Command cheat sheet
 
 **Configuration & Features:**
 - [DDOS Protection Guide](docs/guides/ddos-protection.md) - Configure DDoS protection
 - [Threat Feeds Setup](docs/guides/threat-feeds.md) - Block 1M+ known malicious IPs
 - [Fail2ban Integration](docs/guides/fail2ban-integration.md) - Auto-ban brute force attacks
-- [Polkit Integration](docs/guides/polkit-integration.md) - Group-based service management (no sudo)
 - [Health Diagnostics](docs/guides/health-diagnostics.md) - Troubleshooting system issues
 
 **Architecture & Design:**
@@ -111,8 +110,9 @@ See **[Quick Start Guide](docs/guides/quick-start.md)** for complete setup instr
 - [FHS Consolidation](docs/architecture/fhs-consolidation.md) - Filesystem layout explained
 
 **For Developers:**
+- [Go Binaries Guide](docs/development/GO-BINARIES.md) - Building high-performance Go binaries ⚡
+- [Lab Deployment Checklist](docs/development/LAB-DEPLOYMENT-CHECKLIST.md) - Testing on lab servers
 - [Packaging Guide](docs/development/packaging.md) - Building RPM/DEB packages
-- [Lab Testing Guide](docs/development/LAB-TESTING.md) - Testing on lab servers
 - [Coding Standards](docs/development/coding-standards.md) - For contributors
 
 **All documentation:** See [docs/](docs/) directory
