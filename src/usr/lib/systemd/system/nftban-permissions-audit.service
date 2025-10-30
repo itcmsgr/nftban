@@ -1,0 +1,25 @@
+[Unit]
+Description=NFTBan Weekly Permission Audit
+Documentation=man:nftban(8) https://nftban.com
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nftban permissions check
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-permissions-audit
+
+# Security hardening
+User=root
+Group=root
+NoNewPrivileges=true
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/nftban /var/log/nftban
+CapabilityBoundingSet=
+AmbientCapabilities=
+
+[Install]
+WantedBy=multi-user.target
