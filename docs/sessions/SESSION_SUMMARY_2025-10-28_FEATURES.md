@@ -341,7 +341,7 @@ The search command is ready for testing on lab servers:
 
 ```bash
 # Deploy to lab servers
-for server in lab.mywebhost.gr lab1.mywebhost.gr lab2.mywebhost.gr; do
+for server in server1.example.com server2.example.com server3.example.com; do
     echo "=== Deploying to $server ==="
     rsync -av src/ root@$server:/
     ssh root@$server "nftban search --help"

@@ -14,7 +14,7 @@
 - ✅ **CI/CD Planning:** Complete automation strategy in CI_CD_AUTOMATION_PLAN.md
 - ✅ **Helper Scripts:** 5 scripts created and tested (checksums, manifest, SBOM, verify)
 - ✅ **GPG Signing Reference:** Complete strategy documented for v0.10.1+
-- ✅ **Lab Sync:** All docs and scripts synced to lab.mywebhost.gr
+- ✅ **Lab Sync:** All docs and scripts synced to server1.example.com
 
 ---
 

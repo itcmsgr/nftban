@@ -190,15 +190,15 @@ Documentation (2):
 
 ### 5. ✅ Lab Server Deployment
 
-**Synced to lab.mywebhost.gr:**
+**Synced to server1.example.com:**
 - ✅ All source files with SPDX headers
 - ✅ All documentation (*.md files) → `/root/nftban-docs/`
 - ✅ All helper scripts → `/root/nftban-scripts/`
 
 **Lab servers status:**
-- ✅ lab.mywebhost.gr - Updated
-- ⏳ lab1.mywebhost.gr - Partial sync
-- ⏳ lab2.mywebhost.gr - Partial sync
+- ✅ server1.example.com - Updated
+- ⏳ server2.example.com - Partial sync
+- ⏳ server3.example.com - Partial sync
 
 ---
 

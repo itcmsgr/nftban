@@ -109,9 +109,9 @@ nftban firewall help      # Show detailed help
 ### Priority 1: Complete Firewall Initialization
 ```bash
 # Run on each server manually:
-ssh root@lab.mywebhost.gr "nftban firewall init"
-ssh root@lab1.mywebhost.gr "nftban firewall init"
-ssh root@lab2.mywebhost.gr "nftban firewall init"
+ssh root@server1.example.com "nftban firewall init"
+ssh root@server2.example.com "nftban firewall init"
+ssh root@server3.example.com "nftban firewall init"
 
 # Or use deployment script:
 bash /tmp/DEPLOY_FIREWALL_INIT.sh
@@ -248,9 +248,9 @@ nftban health nftables  # Dedicated nftables health check
 **Total:** ~2,844 lines of documentation
 
 ### Servers Affected
-- lab.mywebhost.gr
-- lab1.mywebhost.gr
-- lab2.mywebhost.gr
+- server1.example.com
+- server2.example.com
+- server3.example.com
 
 **Status:** Files deployed, init pending manual execution
 
@@ -291,13 +291,13 @@ bash DEPLOY_FIREWALL_INIT.sh
 ```bash
 # 1. Deploy files (already done)
 # 2. Initialize on each server:
-for server in lab.mywebhost.gr lab1.mywebhost.gr lab2.mywebhost.gr; do
+for server in server1.example.com server2.example.com server3.example.com; do
     echo "Initializing $server..."
     ssh root@$server "nftban firewall init"
 done
 
 # 3. Verify:
-for server in lab.mywebhost.gr lab1.mywebhost.gr lab2.mywebhost.gr; do
+for server in server1.example.com server2.example.com server3.example.com; do
     echo "Checking $server..."
     ssh root@$server "nftban firewall check"
 done
@@ -306,19 +306,19 @@ done
 ### Option 3: One-by-one
 ```bash
 # Server 1
-ssh root@lab.mywebhost.gr
+ssh root@server1.example.com
 nftban firewall init
 nftban firewall check
 exit
 
 # Server 2
-ssh root@lab1.mywebhost.gr
+ssh root@server2.example.com
 nftban firewall init
 nftban firewall check
 exit
 
 # Server 3
-ssh root@lab2.mywebhost.gr
+ssh root@server3.example.com
 nftban firewall init
 nftban firewall check
 exit

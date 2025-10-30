@@ -18,7 +18,7 @@ PORT_CMD="$SRC_DIR/usr/lib/nftban/cli/cmd_port.sh"
 DA_CONF="$SRC_DIR/etc/nftban/conf.d/directadmin.conf"
 
 # Target servers
-SERVERS="lab.mywebhost.gr lab1.mywebhost.gr lab2.mywebhost.gr"
+SERVERS="server1.example.com server2.example.com server3.example.com"
 
 # Check source files exist
 if [[ ! -f "$PORT_CMD" ]]; then

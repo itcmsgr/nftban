@@ -7,9 +7,9 @@
 ## ✅ WHAT'S DEPLOYED
 
 Successfully deployed to **ALL 3 lab servers:**
-- ✅ lab.mywebhost.gr
-- ✅ lab1.mywebhost.gr
-- ✅ lab2.mywebhost.gr
+- ✅ server1.example.com
+- ✅ server2.example.com
+- ✅ server3.example.com
 
 **Components:**
 - ✅ Runtime nftables table (temp bans with timeouts)
@@ -35,7 +35,7 @@ Successfully deployed to **ALL 3 lab servers:**
 ```bash
 # Attempt 6 failed SSH logins to trigger ban (maxretry=5)
 for i in {1..6}; do
-  ssh wronguser@lab.mywebhost.gr
+  ssh wronguser@server1.example.com
   sleep 2
 done
 ```
@@ -48,13 +48,13 @@ done
 **Verify:**
 ```bash
 # Check if you're banned
-ssh root@lab.mywebhost.gr "nft list set inet nftban_runtime temp_ban_v4"
+ssh root@server1.example.com "nft list set inet nftban_runtime temp_ban_v4"
 
 # Check log
-ssh root@lab.mywebhost.gr "tail -5 /var/log/nftban/fail2ban-bans.log"
+ssh root@server1.example.com "tail -5 /var/log/nftban/fail2ban-bans.log"
 
 # Check Fail2ban status
-ssh root@lab.mywebhost.gr "fail2ban-client status nftban-sshd"
+ssh root@server1.example.com "fail2ban-client status nftban-sshd"
 ```
 
 ---
@@ -64,10 +64,10 @@ ssh root@lab.mywebhost.gr "fail2ban-client status nftban-sshd"
 **After 1 hour, check:**
 ```bash
 # Your IP should be gone from temp_ban set
-ssh root@lab.mywebhost.gr "nft list set inet nftban_runtime temp_ban_v4"
+ssh root@server1.example.com "nft list set inet nftban_runtime temp_ban_v4"
 
 # You should be able to SSH again
-ssh root@lab.mywebhost.gr "echo 'Auto-unban worked!'"
+ssh root@server1.example.com "echo 'Auto-unban worked!'"
 ```
 
 ---
@@ -76,7 +76,7 @@ ssh root@lab.mywebhost.gr "echo 'Auto-unban worked!'"
 
 **Simulate 3 bans of same IP:**
 ```bash
-ssh root@lab.mywebhost.gr "
+ssh root@server1.example.com "
   # Ban test IP 3 times
   /usr/sbin/nftban-complete ban 9.9.9.9 --temp --timeout 60 --source test --jail sshd
   sleep 2
@@ -104,7 +104,7 @@ ssh root@lab.mywebhost.gr "
 
 **View statistics:**
 ```bash
-ssh root@lab.mywebhost.gr "
+ssh root@server1.example.com "
   # Overall stats
   /usr/sbin/nftban-complete stats overall
 
@@ -119,13 +119,13 @@ ssh root@lab.mywebhost.gr "
 **View logs:**
 ```bash
 # All logs for specific IP
-ssh root@lab.mywebhost.gr "/usr/sbin/nftban-complete logs ip YOUR_IP"
+ssh root@server1.example.com "/usr/sbin/nftban-complete logs ip YOUR_IP"
 
 # Recent bans
-ssh root@lab.mywebhost.gr "/usr/sbin/nftban-complete logs tail fail2ban-bans.log 50"
+ssh root@server1.example.com "/usr/sbin/nftban-complete logs tail fail2ban-bans.log 50"
 
 # JSON action log
-ssh root@lab.mywebhost.gr "/usr/sbin/nftban-complete logs tail nftban-actions.log 20"
+ssh root@server1.example.com "/usr/sbin/nftban-complete logs tail nftban-actions.log 20"
 ```
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -134,27 +134,27 @@ ssh root@lab.mywebhost.gr "/usr/sbin/nftban-complete logs tail nftban-actions.lo
 
 ### **Check Current Temp Bans:**
 ```bash
-ssh root@lab.mywebhost.gr "nft list set inet nftban_runtime temp_ban_v4"
+ssh root@server1.example.com "nft list set inet nftban_runtime temp_ban_v4"
 ```
 
 ### **Check Recent Bans (last 10):**
 ```bash
-ssh root@lab.mywebhost.gr "tail -10 /var/log/nftban/fail2ban-bans.log"
+ssh root@server1.example.com "tail -10 /var/log/nftban/fail2ban-bans.log"
 ```
 
 ### **Check Fail2ban Status:**
 ```bash
-ssh root@lab.mywebhost.gr "fail2ban-client status nftban-sshd"
+ssh root@server1.example.com "fail2ban-client status nftban-sshd"
 ```
 
 ### **Check Persistent Offenders:**
 ```bash
-ssh root@lab.mywebhost.gr "cat /etc/nftban/blacklist.d/30-persistent-offenders.conf"
+ssh root@server1.example.com "cat /etc/nftban/blacklist.d/30-persistent-offenders.conf"
 ```
 
 ### **Statistics Dashboard:**
 ```bash
-ssh root@lab.mywebhost.gr "
+ssh root@server1.example.com "
   echo '=== NFTBan Statistics ==='
   /usr/sbin/nftban-complete stats overall
   echo ''
@@ -206,34 +206,34 @@ Tomorrow, verify:
 ### **If Fail2ban doesn't ban:**
 ```bash
 # Check Fail2ban logs
-ssh root@lab.mywebhost.gr "tail -50 /var/log/fail2ban.log | grep nftban"
+ssh root@server1.example.com "tail -50 /var/log/fail2ban.log | grep nftban"
 
 # Check jail status
-ssh root@lab.mywebhost.gr "fail2ban-client status nftban-sshd"
+ssh root@server1.example.com "fail2ban-client status nftban-sshd"
 
 # Restart Fail2ban
-ssh root@lab.mywebhost.gr "systemctl restart fail2ban"
+ssh root@server1.example.com "systemctl restart fail2ban"
 ```
 
 ### **If bans don't appear in nftables:**
 ```bash
 # Check runtime table exists
-ssh root@lab.mywebhost.gr "nft list table inet nftban_runtime"
+ssh root@server1.example.com "nft list table inet nftban_runtime"
 
 # Check CLI logs
-ssh root@lab.mywebhost.gr "tail -20 /var/log/nftban/nftban-actions.log"
+ssh root@server1.example.com "tail -20 /var/log/nftban/nftban-actions.log"
 
 # Test manual ban
-ssh root@lab.mywebhost.gr "/usr/sbin/nftban-complete ban 1.2.3.4 --temp --timeout 60 --source test --jail manual"
+ssh root@server1.example.com "/usr/sbin/nftban-complete ban 1.2.3.4 --temp --timeout 60 --source test --jail manual"
 ```
 
 ### **If logs are empty:**
 ```bash
 # Check directory permissions
-ssh root@lab.mywebhost.gr "ls -la /var/log/nftban/"
+ssh root@server1.example.com "ls -la /var/log/nftban/"
 
 # Check log files
-ssh root@lab.mywebhost.gr "ls -lh /var/log/nftban/*.log"
+ssh root@server1.example.com "ls -lh /var/log/nftban/*.log"
 ```
 
 ═══════════════════════════════════════════════════════════════════════════════
@@ -290,22 +290,22 @@ Fail2ban integration is working if:
 
 **Test SSH ban:**
 ```bash
-for i in {1..6}; do ssh wronguser@lab.mywebhost.gr; sleep 2; done
+for i in {1..6}; do ssh wronguser@server1.example.com; sleep 2; done
 ```
 
 **Check if banned:**
 ```bash
-ssh root@lab.mywebhost.gr "nft list set inet nftban_runtime temp_ban_v4"
+ssh root@server1.example.com "nft list set inet nftban_runtime temp_ban_v4"
 ```
 
 **View logs:**
 ```bash
-ssh root@lab.mywebhost.gr "/usr/sbin/nftban-complete logs tail fail2ban-bans.log"
+ssh root@server1.example.com "/usr/sbin/nftban-complete logs tail fail2ban-bans.log"
 ```
 
 **View stats:**
 ```bash
-ssh root@lab.mywebhost.gr "/usr/sbin/nftban-complete stats top-ips"
+ssh root@server1.example.com "/usr/sbin/nftban-complete stats top-ips"
 ```
 
 ═══════════════════════════════════════════════════════════════════════════════

@@ -302,15 +302,15 @@ curl -s -6 ifconfig.me  # Get IPv6
 
 | Server | Deployed | Verified |
 |--------|----------|----------|
-| lab.mywebhost.gr | ✅ Yes | ⏳ Testing |
-| lab1.mywebhost.gr | ✅ Yes | ⏳ Testing |
-| lab2.mywebhost.gr | ⏳ Pending | ⏳ Pending |
+| server1.example.com | ✅ Yes | ⏳ Testing |
+| server2.example.com | ✅ Yes | ⏳ Testing |
+| server3.example.com | ⏳ Pending | ⏳ Pending |
 
 ### Deployment Command
 
 ```bash
 # Deploy to all servers
-for server in lab.mywebhost.gr lab1.mywebhost.gr lab2.mywebhost.gr; do
+for server in server1.example.com server2.example.com server3.example.com; do
     scp src/usr/lib/nftban/cli/cmd_firewall.sh root@$server:/usr/lib/nftban/cli/
     ssh root@$server "chmod +x /usr/lib/nftban/cli/cmd_firewall.sh"
 done

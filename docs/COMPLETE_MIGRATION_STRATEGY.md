@@ -8,7 +8,7 @@
 
 ### ✅ **COMPLETED & DEPLOYED TO LAB**
 
-**Lab Servers:** lab.mywebhost.gr, lab1.mywebhost.gr, lab2.mywebhost.gr
+**Lab Servers:** server1.example.com, server2.example.com, server3.example.com
 
 **Core Modules (Deployed):**
 1. ✅ `nftban_nftables.sh` - Atomic reload (6.1K)

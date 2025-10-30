@@ -112,9 +112,9 @@ All 6 bugs from v0.9 were fixed on 2025-10-27:
    ```
 
 **Servers:**
-- lab.mywebhost.gr - ⏳ Connectivity timeout
-- lab1.mywebhost.gr - ⏳ Connectivity timeout
-- lab2.mywebhost.gr - ⏳ Connectivity timeout
+- server1.example.com - ⏳ Connectivity timeout
+- server2.example.com - ⏳ Connectivity timeout
+- server3.example.com - ⏳ Connectivity timeout
 
 **Priority:** HIGH (required for DirectAdmin users)
 **ETA:** 20 minutes after connectivity restored
@@ -290,9 +290,9 @@ sudo nftban-rollback --force
 ### Deployment
 | Server | Files Prepared | Deployed | Verified |
 |--------|----------------|----------|----------|
-| lab.mywebhost.gr | ✅ Ready | ⏳ Pending | ⏳ Pending |
-| lab1.mywebhost.gr | ✅ Ready | ⏳ Pending | ⏳ Pending |
-| lab2.mywebhost.gr | ✅ Ready | ⏳ Pending | ⏳ Pending |
+| server1.example.com | ✅ Ready | ⏳ Pending | ⏳ Pending |
+| server2.example.com | ✅ Ready | ⏳ Pending | ⏳ Pending |
+| server3.example.com | ✅ Ready | ⏳ Pending | ⏳ Pending |
 
 **Overall Deployment:** ⏳ 0% (blocked by connectivity)
 
@@ -392,13 +392,13 @@ sudo nftban-rollback --force
 
 ```bash
 # Check connectivity first
-timeout 10 ssh root@lab.mywebhost.gr "echo OK"
+timeout 10 ssh root@server1.example.com "echo OK"
 
 # If successful, deploy
 /home/gituser/nftban-v0.10.0-dev/docs/deployment/deploy_directadmin_updates.sh
 
 # Or manually:
-for server in lab.mywebhost.gr lab1.mywebhost.gr lab2.mywebhost.gr; do
+for server in server1.example.com server2.example.com server3.example.com; do
     scp src/usr/lib/nftban/cli/cmd_port.sh root@$server:/usr/lib/nftban/cli/
     scp src/etc/nftban/conf.d/directadmin.conf root@$server:/etc/nftban/conf.d/
     ssh root@$server "chmod +x /usr/lib/nftban/cli/cmd_port.sh"

@@ -282,7 +282,7 @@ After configuration, DirectAdmin should be able to contact licensing servers:
 
 ```bash
 # Deploy to all servers
-for server in lab.mywebhost.gr lab1.mywebhost.gr lab2.mywebhost.gr; do
+for server in server1.example.com server2.example.com server3.example.com; do
     scp /home/gituser/nftban-v0.10.0-dev/src/usr/lib/nftban/cli/cmd_port.sh \
         root@$server:/usr/lib/nftban/cli/
     scp /home/gituser/nftban-v0.10.0-dev/src/etc/nftban/conf.d/directadmin.conf \
@@ -293,9 +293,9 @@ done
 
 ### Deployment Status
 
-- **lab.mywebhost.gr** - ✅ Deployed
-- **lab1.mywebhost.gr** - ✅ Deployed
-- **lab2.mywebhost.gr** - ⏳ Deploying (connection issues)
+- **server1.example.com** - ✅ Deployed
+- **server2.example.com** - ✅ Deployed
+- **server3.example.com** - ⏳ Deploying (connection issues)
 
 ---
 

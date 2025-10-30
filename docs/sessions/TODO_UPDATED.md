@@ -64,9 +64,9 @@
 ---
 
 ### 4. ✅ Lab Deployment
-- ✅ All updated files synced to lab.mywebhost.gr
-- ✅ All updated files synced to lab1.mywebhost.gr
-- ✅ All updated files synced to lab2.mywebhost.gr
+- ✅ All updated files synced to server1.example.com
+- ✅ All updated files synced to server2.example.com
+- ✅ All updated files synced to server3.example.com
 - ✅ Search command verified working on all servers
 
 **Status:** DEPLOYED ✅

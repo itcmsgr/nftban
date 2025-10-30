@@ -327,7 +327,7 @@ sudo nftban dump --mail
 1. Create dump:    /var/lib/nftban/exports/dump-$(date +%Y%m%d-%H%M%S)/
 2. Compress:       tar -czf dump.tar.gz dump-*/
 3. Email:          Send to NFTBAN_MAIL_TO with attachment
-4. Subject:        [NFTBan] Memory Dump - lab.mywebhost.gr - 2025-10-27
+4. Subject:        [NFTBan] Memory Dump - server1.example.com - 2025-10-27
 5. Body:           Summary stats (IPs blocked, drift detected, etc.)
 6. Attachment:     dump.tar.gz (compressed)
 ```
@@ -351,16 +351,16 @@ sudo nftban report weekly --mail
 ### Example Email:
 
 ```
-From: nftban@lab.mywebhost.gr
+From: nftban@server1.example.com
 To: admin@example.com
-Subject: [NFTBan] Daily Report - lab.mywebhost.gr - 2025-10-27
+Subject: [NFTBan] Daily Report - server1.example.com - 2025-10-27
 Date: 2025-10-27 23:59:00
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 NFTBan Daily Report
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Server: lab.mywebhost.gr
+Server: server1.example.com
 Date: 2025-10-27
 Period: Last 24 hours
 

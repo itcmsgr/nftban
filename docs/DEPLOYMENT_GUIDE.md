@@ -28,9 +28,9 @@
 ## 🎯 DEPLOYMENT TARGETS
 
 **Lab Servers:**
-- lab.mywebhost.gr
-- lab1.mywebhost.gr
-- lab2.mywebhost.gr
+- server1.example.com
+- server2.example.com
+- server3.example.com
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -59,7 +59,7 @@ cd /home/gituser/nftban-v0.10.0-dev
 ### **Step 1: Sync Files**
 
 ```bash
-SERVER="lab.mywebhost.gr"
+SERVER="server1.example.com"
 
 # Core modules
 rsync -avz src/usr/lib/nftban/core/ root@$SERVER:/usr/lib/nftban/core/
@@ -160,7 +160,7 @@ rsync -avz templates/50-user-blacklist.conf root@$SERVER:/etc/nftban/blacklist.d
 ### **Test 1: System IP Detection**
 
 ```bash
-ssh root@lab.mywebhost.gr "
+ssh root@server1.example.com "
     source /usr/lib/nftban/core/nftban_system_ip.sh
 
     echo '=== Interface IPs ==='
@@ -181,7 +181,7 @@ ssh root@lab.mywebhost.gr "
 ### **Test 2: System IP Sync**
 
 ```bash
-ssh root@lab.mywebhost.gr "
+ssh root@server1.example.com "
     source /usr/lib/nftban/core/nftban_system_ip.sh
     nftban_whitelist_system_sync
 "
@@ -207,7 +207,7 @@ NFTBan System IP Auto-Detection
 ### **Test 3: Atomic Reload**
 
 ```bash
-ssh root@lab.mywebhost.gr "
+ssh root@server1.example.com "
     source /usr/lib/nftban/core/nftban_nftables.sh
     source /usr/lib/nftban/core/nftban_file_ops.sh
 
@@ -226,7 +226,7 @@ ssh root@lab.mywebhost.gr "
 ### **Test 4: Systemd Timers**
 
 ```bash
-ssh root@lab.mywebhost.gr "
+ssh root@server1.example.com "
     # Enable timers
     systemctl enable --now nftban-system-sync.timer
     systemctl enable --now nftban-geoip-update.timer
@@ -274,7 +274,7 @@ ssh root@lab.mywebhost.gr "
 If deployment fails:
 
 ```bash
-SERVER="lab.mywebhost.gr"
+SERVER="server1.example.com"
 
 ssh root@$SERVER "
     # Stop all nftban services
@@ -295,9 +295,9 @@ ssh root@$SERVER "
 ## 📊 DEPLOYMENT STATUS
 
 **Lab Servers:**
-- [ ] lab.mywebhost.gr - Not deployed
-- [ ] lab1.mywebhost.gr - Not deployed
-- [ ] lab2.mywebhost.gr - Not deployed
+- [ ] server1.example.com - Not deployed
+- [ ] server2.example.com - Not deployed
+- [ ] server3.example.com - Not deployed
 
 **Update this after deployment!**
 

@@ -262,9 +262,9 @@ $ bash -n /home/gituser/nftban-v0.10.0-dev/src/usr/lib/nftban/cli/cmd_firewall.s
 
 | Server | File Deployed | Status |
 |--------|---------------|--------|
-| lab.mywebhost.gr | cmd_firewall.sh | ⏳ In progress |
-| lab1.mywebhost.gr | cmd_firewall.sh | ⏳ In progress |
-| lab2.mywebhost.gr | cmd_firewall.sh | ⏳ Pending (connectivity) |
+| server1.example.com | cmd_firewall.sh | ⏳ In progress |
+| server2.example.com | cmd_firewall.sh | ⏳ In progress |
+| server3.example.com | cmd_firewall.sh | ⏳ Pending (connectivity) |
 
 **Note:** Deployment experiencing connectivity timeouts (infrastructure issue, not code issue)
 

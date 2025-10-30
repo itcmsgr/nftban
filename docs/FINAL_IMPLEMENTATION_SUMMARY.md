@@ -20,9 +20,9 @@
 9. ✅ Deployment script - DEPLOY_TO_LAB.sh
 
 ### **Lab Deployment:**
-- ✅ lab.mywebhost.gr - DEPLOYED
-- ✅ lab1.mywebhost.gr - DEPLOYED
-- ✅ lab2.mywebhost.gr - DEPLOYED
+- ✅ server1.example.com - DEPLOYED
+- ✅ server2.example.com - DEPLOYED
+- ✅ server3.example.com - DEPLOYED
 
 **Total Deployed:** 31.6K of production-ready code
 

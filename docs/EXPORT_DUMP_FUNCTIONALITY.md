@@ -110,7 +110,7 @@ $ sudo nftban dump
 NFTBan Memory Dump
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 Generated: 2025-10-27 12:00:00
-System: lab.mywebhost.gr
+System: server1.example.com
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 📊 SUMMARY:

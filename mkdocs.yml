@@ -71,32 +71,30 @@ nav:
   - Home: index.md
 
   - Guides:
-      - Quick Start (5 min): guides/quickstart.md
-      - Installation: guides/install.md
-      - Ban System: guides/ban-system.md
-      - Security Profiles: guides/security-profiles.md
-      - Health Diagnostics: guides/health-diagnostics.md
-      - Threat Feeds: guides/feeds.md
-      - Fail2ban Integration: guides/fail2ban.md
-      - Troubleshooting: guides/troubleshoot.md
+      - FHS Auto-Heal Guide: guides/fhs-auto-heal-guide.md
+      - Auto-Heal Implementation: guides/auto-heal-implementation.md
+      - DDOS Protection: guides/ddos-protection.md
+      - Threat Feeds: guides/threat-feeds.md
+      - Fail2ban Integration: guides/fail2ban-integration.md
+      - SSH Protection: guides/ssh-protection.md
+      - Recovery Guide: guides/recovery-guide.md
+      - Stats Deployment: guides/stats-deployment.md
 
-  - Concepts:
-      - Architecture: concepts/architecture.md
-      - nftables Model: concepts/nftables-model.md
-      - Defense Layers: concepts/defense-layers.md
-      - Recovery System: concepts/recovery-system.md
+  - Architecture:
+      - FHS Auto-Heal: architecture/fhs-auto-heal.md
+      - FHS Consolidation: architecture/fhs-consolidation.md
+      - Permission Architecture: architecture/permission-architecture.md
+      - Stats & Metrics: architecture/stats-metrics.md
 
   - Reference:
-      - CLI Commands: reference/cli.md
-      - Core Modules: reference/modules.md
-      - nftables: reference/nftables.md
-      - Configuration: reference/configuration.md
+      - FHS Auto-Heal Index: reference/fhs-auto-heal-index.md
+      - CLI Quick Reference: reference/cli-quick-reference.md
+      - IP/Port Management: reference/ip-port-management.md
+      - Service Status: reference/service-status.md
 
-  - Recipes:
-      - Common Tasks: recipes/common-tasks.md
-      - Web Server Setup: recipes/web-server.md
-      - SSH Hardening: recipes/ssh-hardening.md
-      - Mail Server: recipes/mail-server.md
+  - Development:
+      - Coding Standards: development/coding-standards.md
+      - SPDX Headers: development/spdx-headers.md
 
 # Markdown Extensions
 markdown_extensions:

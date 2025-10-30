@@ -85,9 +85,9 @@
 **Status:** Pending due to connectivity issues
 
 **Issue:** All 3 lab servers experiencing SSH connection timeouts
-- lab.mywebhost.gr - Connection timeout
-- lab1.mywebhost.gr - Connection timeout
-- lab2.mywebhost.gr - Connection timeout
+- server1.example.com - Connection timeout
+- server2.example.com - Connection timeout
+- server3.example.com - Connection timeout
 
 **Files Ready to Deploy:**
 - `/home/gituser/nftban-v0.10.0-dev/src/usr/lib/nftban/cli/cmd_port.sh` (updated)
@@ -189,9 +189,9 @@ fi
 ### Deployment Progress
 | Server | Files Prepared | Deployed | Verified |
 |--------|----------------|----------|----------|
-| lab.mywebhost.gr | ✅ Ready | ⏳ Pending | ⏳ Pending |
-| lab1.mywebhost.gr | ✅ Ready | ⏳ Pending | ⏳ Pending |
-| lab2.mywebhost.gr | ✅ Ready | ⏳ Pending | ⏳ Pending |
+| server1.example.com | ✅ Ready | ⏳ Pending | ⏳ Pending |
+| server2.example.com | ✅ Ready | ⏳ Pending | ⏳ Pending |
+| server3.example.com | ✅ Ready | ⏳ Pending | ⏳ Pending |
 
 **Overall Deployment:** ⏳ 0% (connectivity issues)
 
@@ -345,7 +345,7 @@ fi
 **Action:** Wait for server connectivity to restore, then deploy
 
 **Steps:**
-1. Test connectivity: `timeout 10 ssh root@lab.mywebhost.gr "echo OK"`
+1. Test connectivity: `timeout 10 ssh root@server1.example.com "echo OK"`
 2. If successful, run: `/home/gituser/nftban-v0.10.0-dev/docs/deployment/deploy_directadmin_updates.sh`
 3. Follow verification guide: `docs/deployment/DEPLOYMENT_VERIFICATION_GUIDE.md`
 

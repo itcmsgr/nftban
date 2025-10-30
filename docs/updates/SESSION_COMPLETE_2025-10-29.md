@@ -48,9 +48,9 @@ This session completed the NFTBan v0.10.0 firewall management implementation, fi
 **User:** "sync all servers document update correct all docs under 0.10 and all need"
 
 **Completed:**
-- ✅ All files synchronized to lab.mywebhost.gr
-- ✅ All files synchronized to lab1.mywebhost.gr
-- ✅ All files synchronized to lab2.mywebhost.gr
+- ✅ All files synchronized to server1.example.com
+- ✅ All files synchronized to server2.example.com
+- ✅ All files synchronized to server3.example.com
 - ✅ CHANGELOG.md updated with firewall features
 - ✅ README_v0.10.0.md created (16,000+ lines)
 - ✅ Deployment verification guide created (650 lines)
@@ -130,9 +130,9 @@ This session completed the NFTBan v0.10.0 firewall management implementation, fi
 ### Deployment
 
 **Servers:**
-- ✅ lab.mywebhost.gr - Deployed & verified
-- ✅ lab1.mywebhost.gr - Deployed & verified
-- ⚠️ lab2.mywebhost.gr - Deployed (verification pending due to connection timeout)
+- ✅ server1.example.com - Deployed & verified
+- ✅ server2.example.com - Deployed & verified
+- ⚠️ server3.example.com - Deployed (verification pending due to connection timeout)
 
 **Files Deployed:**
 - All executables with correct permissions (755)
@@ -514,9 +514,9 @@ This session successfully completed all user requests:
 3. lab2 verification (when connectivity restored)
 
 **Servers:**
-- lab.mywebhost.gr (verified)
-- lab1.mywebhost.gr (verified)
-- lab2.mywebhost.gr (pending)
+- server1.example.com (verified)
+- server2.example.com (verified)
+- server3.example.com (pending)
 
 **Commands to Remember:**
 ```bash

@@ -61,10 +61,10 @@
 **Risk:** Lowest (gradual rollout)
 
 **Order:**
-1. Deploy to lab2.mywebhost.gr (test server)
+1. Deploy to server3.example.com (test server)
 2. Test for 30 minutes
-3. Deploy to lab.mywebhost.gr
-4. Deploy to lab1.mywebhost.gr
+3. Deploy to server1.example.com
+4. Deploy to server2.example.com
 
 ═══════════════════════════════════════════════════════════════════════════════
 
@@ -87,7 +87,7 @@ I recommend **Option 1** because:
 cd /home/gituser/nftban-v0.10.0-dev
 
 # Deploy to all lab servers
-for server in lab.mywebhost.gr lab1.mywebhost.gr lab2.mywebhost.gr; do
+for server in server1.example.com server2.example.com server3.example.com; do
   echo "=== Deploying to $server ==="
 
   # Core files
@@ -112,7 +112,7 @@ done
 
 ```bash
 # On each server, install runtime table
-for server in lab.mywebhost.gr lab1.mywebhost.gr lab2.mywebhost.gr; do
+for server in server1.example.com server2.example.com server3.example.com; do
   echo "=== Initializing runtime table on $server ==="
   ssh root@$server "
     # Install runtime table
@@ -147,8 +147,8 @@ table inet nftban_runtime {
 ### **Step 3: Test Manual Ban (5 minutes)**
 
 ```bash
-# Test on lab2.mywebhost.gr (test server)
-ssh root@lab2.mywebhost.gr "
+# Test on server3.example.com (test server)
+ssh root@server3.example.com "
   # Ban test IP with 60-second timeout
   /usr/sbin/nftban-complete ban 1.2.3.4 --temp --timeout 60 --source test --jail manual
 
@@ -167,7 +167,7 @@ echo "Waiting 60 seconds for timeout..."
 sleep 60
 
 # Verify auto-unban
-ssh root@lab2.mywebhost.gr "
+ssh root@server3.example.com "
   echo '=== After timeout (should be empty) ==='
   nft list set inet nftban_runtime temp_ban_v4
 "
@@ -184,7 +184,7 @@ ssh root@lab2.mywebhost.gr "
 
 ```bash
 # On each server
-for server in lab.mywebhost.gr lab1.mywebhost.gr lab2.mywebhost.gr; do
+for server in server1.example.com server2.example.com server3.example.com; do
   echo "=== Setting up Fail2ban on $server ==="
   ssh root@$server "
     # Run setup
@@ -207,16 +207,16 @@ done
 ### **Step 5: Test with Real SSH Failures (10 minutes)**
 
 ```bash
-# Test on lab2.mywebhost.gr
+# Test on server3.example.com
 # From your local machine, trigger 5 failed SSH attempts:
 
 for i in {1..6}; do
-  ssh wronguser@lab2.mywebhost.gr 2>/dev/null || true
+  ssh wronguser@server3.example.com 2>/dev/null || true
   sleep 2
 done
 
 # Check if banned
-ssh root@lab2.mywebhost.gr "
+ssh root@server3.example.com "
   echo '=== Temp bans (should show your IP or test IP) ==='
   nft list set inet nftban_runtime temp_ban_v4
 
@@ -236,7 +236,7 @@ ssh root@lab2.mywebhost.gr "
 
 ```bash
 # Manually trigger 3 bans to test persistent offender detection
-ssh root@lab2.mywebhost.gr "
+ssh root@server3.example.com "
   # Ban same IP 3 times
   /usr/sbin/nftban-complete ban 9.9.9.9 --temp --timeout 60 --source test --jail sshd
   sleep 2
@@ -263,7 +263,7 @@ ssh root@lab2.mywebhost.gr "
 ### **Step 7: Test Statistics (2 minutes)**
 
 ```bash
-ssh root@lab2.mywebhost.gr "
+ssh root@server3.example.com "
   # Overall stats
   /usr/sbin/nftban-complete stats overall
 

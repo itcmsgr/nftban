@@ -140,9 +140,9 @@ NFTBan v0.10.0 has been successfully developed, tested, and deployed to producti
 
 ```
 2025-10-29 16:17 UTC - File synchronization started
-2025-10-29 16:18 UTC - Files deployed to lab.mywebhost.gr
-2025-10-29 16:18 UTC - Files deployed to lab1.mywebhost.gr
-2025-10-29 16:18 UTC - Files deployed to lab2.mywebhost.gr
+2025-10-29 16:18 UTC - Files deployed to server1.example.com
+2025-10-29 16:18 UTC - Files deployed to server2.example.com
+2025-10-29 16:18 UTC - Files deployed to server3.example.com
 2025-10-29 16:20 UTC - nftban-complete deployed (with fixes)
 2025-10-29 16:20 UTC - Firewall initialization completed on lab & lab1
 2025-10-29 16:23 UTC - Verification completed
@@ -163,7 +163,7 @@ NFTBan v0.10.0 has been successfully developed, tested, and deployed to producti
 
 ### Server Status
 
-#### lab.mywebhost.gr
+#### server1.example.com
 - **Deployment:** ✅ SUCCESS
 - **Verification:** ✅ COMPLETE
 - **Files Confirmed:**
@@ -173,7 +173,7 @@ NFTBan v0.10.0 has been successfully developed, tested, and deployed to producti
 - **Health Check:** Not yet run (manual verification needed)
 - **Status:** 🟢 READY FOR PRODUCTION
 
-#### lab1.mywebhost.gr
+#### server2.example.com
 - **Deployment:** ✅ SUCCESS
 - **Verification:** ✅ COMPLETE
 - **Files Confirmed:**
@@ -183,7 +183,7 @@ NFTBan v0.10.0 has been successfully developed, tested, and deployed to producti
 - **Health Check:** Not yet run (manual verification needed)
 - **Status:** 🟢 READY FOR PRODUCTION
 
-#### lab2.mywebhost.gr
+#### server3.example.com
 - **Deployment:** ✅ SUCCESS (files deployed)
 - **Verification:** ⚠️ PENDING (SSH connection timeout)
 - **Files:** Assumed deployed based on rsync success
@@ -273,7 +273,7 @@ ssh root@SERVER "nftban-complete nftables reload"
 
 ### Issue #2: lab2 Connection Timeout
 **Severity:** Low
-**Impact:** Unable to verify deployment on lab2.mywebhost.gr
+**Impact:** Unable to verify deployment on server3.example.com
 **Root Cause:** Network/SSH connectivity issue (not NFTBan)
 **Workaround:** Verify manually when connectivity restored
 **Fix:** N/A (infrastructure issue)
@@ -425,7 +425,7 @@ nftban list     # Verify basic functionality
 1. **Run Health Check on All Servers**
    ```bash
    for server in lab lab1 lab2; do
-       ssh root@$server.mywebhost.gr "nftban firewall check"
+       ssh root@$server.example.com "nftban firewall check"
    done
    ```
 
@@ -520,9 +520,9 @@ nftban list     # Verify basic functionality
 
 ### Operations Team
 - **Deployment Verification:** ⏳ PENDING
-  - lab.mywebhost.gr: Ready for verification
-  - lab1.mywebhost.gr: Ready for verification
-  - lab2.mywebhost.gr: Pending connectivity
+  - server1.example.com: Ready for verification
+  - server2.example.com: Ready for verification
+  - server3.example.com: Pending connectivity
 - **Production Readiness:** ⏳ PENDING VERIFICATION
 
 ### Sign-Off Checklist
@@ -542,7 +542,7 @@ nftban list     # Verify basic functionality
 ```bash
 # Development directory
 DEV_DIR="/home/gituser/nftban-v0.10.0-dev/src"
-SERVERS="lab.mywebhost.gr lab1.mywebhost.gr lab2.mywebhost.gr"
+SERVERS="server1.example.com server2.example.com server3.example.com"
 
 # Sync all files
 for server in $SERVERS; do
