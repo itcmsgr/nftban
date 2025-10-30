@@ -335,13 +335,13 @@ nftban feeds update        # Update threat lists
 ### Getting Started
 - 📖 [Installation Guide](docs/guides/install.md) - Detailed installation (⚠️ read before installing!)
 - 🚀 [Quick Start Guide](docs/guides/quickstart.md) - 5-minute setup
-- 🔧 [Configuration Guide](docs/reference/configuration.md) - All config options
+- 🔧 [FHS Auto-Heal Index](docs/reference/fhs-auto-heal-index.md) - System health reference
 
 ### Common Tasks
 - 🚫 [Ban System Guide](docs/guides/ban-system.md) - Block/unblock IPs
 - 🛡️ [Security Profiles](docs/guides/security-profiles.md) - Choose your protection level
 - 🏥 [Health Diagnostics](docs/guides/health-diagnostics.md) - System health checks
-- 🐛 [Troubleshooting](docs/guides/troubleshoot.md) - Solve common issues
+- 🐛 [Troubleshooting](docs/guides/health-diagnostics.md) - Solve common issues
 
 ### Understanding NFTBan
 - 🏗️ [Architecture](docs/concepts/architecture.md) - How NFTBan works
@@ -350,8 +350,8 @@ nftban feeds update        # Update threat lists
 - 📜 [Changelog](CHANGELOG.md) - Version history
 
 ### Reference
-- ⚙️ [CLI Reference](docs/reference/cli.md) - All commands
-- 🧩 [Module Reference](docs/reference/modules.md) - Core modules
+- ⚙️ [CLI Quick Reference](docs/reference/cli-quick-reference.md) - All commands
+- 🧩 [Service Status Reference](docs/reference/service-status.md) - Service management
 - 📋 [Complete Documentation](docs/index.md) - Full doc portal
 
 ---
@@ -460,7 +460,7 @@ sudo nftban-rollback --force
 - 📚 **[Documentation Portal](docs/index.md)** - Complete documentation
 - 🚀 **[Quick Start Guide](docs/guides/quickstart.md)** - Get started
 - 🏗️ **[Architecture Guide](docs/concepts/architecture.md)** - How it works
-- 🐛 **[Troubleshooting](docs/guides/troubleshoot.md)** - Common issues
+- 🐛 **[Troubleshooting](docs/guides/health-diagnostics.md)** - Common issues
 
 ### Community & Support
 - 🏠 **[GitHub Repository](https://github.com/itcmsgr/nftban)** - Source code
@@ -594,7 +594,7 @@ We believe in transparency about AI collaboration and credit all our development
   <a href="docs/index.md">📚 Documentation</a> •
   <a href="docs/guides/quickstart.md">🚀 Quick Start</a> •
   <a href="docs/concepts/architecture.md">🏗️ Architecture</a> •
-  <a href="docs/reference/cli.md">📖 CLI Reference</a> •
+  <a href="docs/reference/cli-quick-reference.md">📖 CLI Quick Reference</a> •
   <a href="https://github.com/itcmsgr/nftban/issues">🐛 Report Issue</a> •
   <a href="https://nftban.com">🌐 Website</a>
 </p>
