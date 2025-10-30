@@ -46,24 +46,52 @@ install -D -m 0644 "$ROOT/deploy/auditd/nftban_whitelist.rules"     /etc/audit/r
 echo "    ✓ Installed audit/rules.d/nftban_whitelist.rules"
 
 echo "[6/8] Creating system directories..."
-# Ensure base dirs exist with correct permissions
-install -d -m 0755 /etc/nftban
-install -d -m 0755 /etc/nftban/whitelist.d
-install -d -m 0755 /etc/nftban/blacklist.d
-install -d -m 0755 /etc/nftban/feeds.d
-install -d -m 0755 /etc/nftban/geoip.d
-install -d -m 0755 /etc/nftban/ports.d
 
 # Apply sysusers first to create nftban user
 systemd-sysusers /etc/sysusers.d/nftban.conf 2>/dev/null || true
 
-# Now create directories owned by nftban user
-install -d -m 0750 -o nftban -g nftban /var/lib/nftban
-install -d -m 0750 -o nftban -g nftban /var/lib/nftban/compiled
-install -d -m 0750 -o nftban -g nftban /var/log/nftban
-install -d -m 0750 -o nftban -g nftban /run/nftban
-install -d -m 0750 -o root -g root /var/backups/nftban
-echo "    ✓ Created directories with correct permissions"
+# Source FHS specification (single source of truth)
+if [[ -f "$ROOT/src/usr/lib/nftban/core/nftban_fhs_spec.sh" ]]; then
+    source "$ROOT/src/usr/lib/nftban/core/nftban_fhs_spec.sh"
+    nftban_fhs_load_spec
+
+    # Create all FHS directories
+    for dir in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
+        IFS='|' read -r perms owner group _ <<< "${NFTBAN_FHS_DIRECTORIES[$dir]}"
+        install -d -m "$perms" -o "$owner" -g "$group" "$dir" 2>/dev/null || true
+    done
+
+    # Create additional config subdirectories
+    install -d -m 0750 -o root -g nftban /etc/nftban/whitelist.d 2>/dev/null || true
+    install -d -m 0750 -o root -g nftban /etc/nftban/blacklist.d 2>/dev/null || true
+    install -d -m 0750 -o root -g nftban /etc/nftban/feeds.d 2>/dev/null || true
+    install -d -m 0750 -o root -g nftban /etc/nftban/geoip.d 2>/dev/null || true
+    install -d -m 0750 -o root -g nftban /etc/nftban/ports.d 2>/dev/null || true
+
+    # Create legacy compiled directory (deprecated, but keep for compatibility)
+    install -d -m 0750 -o nftban -g nftban /var/lib/nftban/compiled 2>/dev/null || true
+
+    # Create backups directory (not in FHS spec, system-specific)
+    install -d -m 0750 -o root -g root /var/backups/nftban 2>/dev/null || true
+
+    echo "    ✓ Created directories using FHS specification"
+else
+    # Fallback to hardcoded values if FHS spec not found
+    echo "    ⚠️  FHS spec not found, using hardcoded values"
+    install -d -m 0750 -o root -g nftban /etc/nftban 2>/dev/null || true
+    install -d -m 0750 -o root -g nftban /etc/nftban/conf.d 2>/dev/null || true
+    install -d -m 0750 -o root -g nftban /etc/nftban/whitelist.d 2>/dev/null || true
+    install -d -m 0750 -o root -g nftban /etc/nftban/blacklist.d 2>/dev/null || true
+    install -d -m 0750 -o root -g nftban /etc/nftban/feeds.d 2>/dev/null || true
+    install -d -m 0750 -o root -g nftban /etc/nftban/geoip.d 2>/dev/null || true
+    install -d -m 0750 -o root -g nftban /etc/nftban/ports.d 2>/dev/null || true
+    install -d -m 0755 -o nftban -g nftban /var/lib/nftban 2>/dev/null || true
+    install -d -m 0750 -o nftban -g nftban /var/lib/nftban/compiled 2>/dev/null || true
+    install -d -m 0750 -o nftban -g nftban /var/log/nftban 2>/dev/null || true
+    install -d -m 0755 -o nftban -g nftban /run/nftban 2>/dev/null || true
+    install -d -m 0750 -o root -g root /var/backups/nftban 2>/dev/null || true
+    echo "    ✓ Created directories with correct permissions"
+fi
 
 echo "[7/8] Applying tmpfiles configuration..."
 systemd-tmpfiles --create /etc/tmpfiles.d/nftban.conf

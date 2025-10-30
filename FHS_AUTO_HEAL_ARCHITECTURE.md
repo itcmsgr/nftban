@@ -1,7 +1,15 @@
 # NFTBan FHS Auto-Heal Architecture
-**Date:** 2025-10-30
-**Status:** ✅ COMPLETE
+**Version:** 1.0
+**Last Updated:** 2025-10-30
+**Status:** Production Ready
 **Purpose:** Clear architectural design for FHS compliance and auto-heal
+
+**Related Documentation:**
+- [Documentation Index](FHS_AUTO_HEAL_INDEX.md) - Quick reference to all docs
+- [Permission Architecture](PERMISSION_ARCHITECTURE.md) - Who owns what
+- [Complete Summary](FHS_AUTO_HEAL_COMPLETE_SUMMARY.md) - Full implementation guide
+- [FHS Consolidation](FHS_CONSOLIDATION_COMPLETE.md) - Single source of truth
+- [Auto-Heal Implementation](AUTO_HEAL_COMPLETE.md) - Implementation details
 
 ---
 

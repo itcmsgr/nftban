@@ -1,6 +1,15 @@
 # NFTBan Permission Architecture
-**Date:** 2025-10-30
+**Version:** 1.0
+**Last Updated:** 2025-10-30
+**Status:** Production Ready
 **Purpose:** Clear explanation of who owns what and who is responsible
+
+**Related Documentation:**
+- [Documentation Index](FHS_AUTO_HEAL_INDEX.md) - Quick reference to all docs
+- [Complete Summary](FHS_AUTO_HEAL_COMPLETE_SUMMARY.md) - Full implementation guide
+- [Architecture](FHS_AUTO_HEAL_ARCHITECTURE.md) - Design decisions and principles
+- [FHS Consolidation](FHS_CONSOLIDATION_COMPLETE.md) - Single source of truth
+- [Auto-Heal Implementation](AUTO_HEAL_COMPLETE.md) - Implementation details
 
 ---
 

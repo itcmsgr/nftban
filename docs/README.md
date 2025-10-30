@@ -313,7 +313,7 @@ When reporting documentation issues:
 
 ### External Resources
 - **NFTBan Website:** https://nftban.com
-- **nftables Documentation:** https://wiki.nftables.org/
+- **nftables Documentation:** https://nftables.org/
 - **fail2ban Documentation:** https://www.fail2ban.org/
 - **CloudFlare IPs:** https://www.cloudflare.com/ips-v4/ and /ips-v6/
 - **DirectAdmin:** https://www.directadmin.com/
