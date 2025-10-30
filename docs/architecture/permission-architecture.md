@@ -1,29 +1,50 @@
 # NFTBan Permission Architecture
-**Version:** 1.0
+**Version:** 1.1
 **Last Updated:** 2025-10-30
 **Status:** Production Ready
 **Purpose:** Clear explanation of who owns what and who is responsible
 
 **Related Documentation:**
-- [Documentation Index](FHS_AUTO_HEAL_INDEX.md) - Quick reference to all docs
-- [Complete Summary](FHS_AUTO_HEAL_COMPLETE_SUMMARY.md) - Full implementation guide
-- [Architecture](FHS_AUTO_HEAL_ARCHITECTURE.md) - Design decisions and principles
-- [FHS Consolidation](FHS_CONSOLIDATION_COMPLETE.md) - Single source of truth
-- [Auto-Heal Implementation](AUTO_HEAL_COMPLETE.md) - Implementation details
+- [Polkit Integration Guide](../guides/polkit-integration.md) - Group-based service management
+- [Installation Guide](../guides/install.md) - Setup instructions
+- [Security Architecture](../../SECURITY.md) - Multi-layer security model
 
 ---
 
 ## 🎯 CORE PRINCIPLE: SEPARATION OF CONCERNS
 
-### Two Users, Two Responsibilities
+### Three-Layer Permission Model
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                                                                        │
+│  1. FILE PERMISSIONS (Unix DAC)                                       │
+│     - ROOT owns code/config                                           │
+│     - NFTBAN user owns runtime data                                   │
+│     - nftban-cli group can READ config                                │
+│                                                                        │
+│  2. SERVICE MANAGEMENT (Polkit)                                       │
+│     - nftban-cli group members can manage services                    │
+│     - No sudo required                                                │
+│     - Scoped to nftables.service and fail2ban.service only            │
+│                                                                        │
+│  3. CLI EXECUTION (Anyone)                                            │
+│     - /usr/sbin/nftban is 755 (world-executable)                      │
+│     - Anyone can run: nftban --version, nftban help                   │
+│     - Service commands use Polkit (layer 2)                           │
+│                                                                        │
+└──────────────────────────────────────────────────────────────────────┘
+```
+
+### Actors and Their Roles
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
 │                                                               │
-│  ROOT                        │  NFTBAN USER                  │
-│  Manages system              │  Manages runtime              │
-│  Owns code/config            │  Owns data/logs               │
-│  Rarely needed               │  Daily operations             │
+│  ROOT                │  NFTBAN USER     │  nftban-cli GROUP  │
+│  System admin        │  Service daemon  │  Operators         │
+│  Owns code/config    │  Owns data/logs  │  Manage services   │
+│  Rarely needed       │  Daily ops       │  No sudo needed    │
 │                                                               │
 └─────────────────────────────────────────────────────────────┘
 ```
@@ -209,15 +230,187 @@ nftban-service modifies → /etc/nftban/config.conf  ❌
 
 ---
 
+## 👥 NFTBAN-CLI GROUP - Operators
+
+### What is nftban-cli Group?
+
+The `nftban-cli` group grants **limited operator privileges** for managing NFTBan services.
+
+**Purpose:**
+- Allow trusted users to manage firewall services WITHOUT sudo
+- Scoped permissions (can ONLY manage specific services)
+- No file write access to code or config
+- Principle of least privilege
+
+### What nftban-cli Group Members Can Do
+
+**✅ Service Management (via Polkit):**
+```bash
+# Manage nftables service (no sudo required)
+systemctl start nftables
+systemctl stop nftables
+systemctl restart nftables
+systemctl enable nftables
+systemctl disable nftables
+
+# Manage fail2ban service (no sudo required)
+systemctl start fail2ban
+systemctl stop fail2ban
+systemctl restart fail2ban
+systemctl enable fail2ban
+systemctl disable fail2ban
+
+# Via NFTBan CLI
+nftban start nftables
+nftban stop fail2ban
+nftban restart nftables
+```
+
+**✅ Read Configuration:**
+```bash
+# Can read config files (group has read permission)
+cat /etc/nftban/nftban.conf           ✅
+cat /etc/nftban/conf.d/ddos.conf      ✅
+ls /etc/nftban                        ✅
+```
+
+**✅ Run NFTBan CLI:**
+```bash
+# Anyone can run these (nftban binary is 755)
+nftban --version
+nftban help
+nftban stats dashboard  (read-only)
+nftban health check     (read-only)
+```
+
+### What nftban-cli Group Members CANNOT Do
+
+**❌ Cannot Modify System Files:**
+```bash
+# Cannot write to code directories
+echo "test" > /usr/lib/nftban/core/module.sh  ❌
+chmod 777 /usr/lib/nftban                     ❌
+```
+
+**❌ Cannot Modify Configuration:**
+```bash
+# Can read but cannot write
+echo "test" >> /etc/nftban/nftban.conf  ❌
+vi /etc/nftban/nftban.conf              ❌
+```
+
+**❌ Cannot Manage Other Services:**
+```bash
+# Polkit rule limits to nftables + fail2ban ONLY
+systemctl restart sshd     ❌ Access denied
+systemctl stop httpd       ❌ Access denied
+systemctl restart nginx    ❌ Access denied
+```
+
+**❌ Cannot Escalate Privileges:**
+```bash
+# No sudo access granted
+sudo su -                  ❌
+sudo bash                  ❌
+```
+
+### How It Works (Polkit Authorization)
+
+```
+User runs: nftban start nftables
+     ↓
+NFTBan CLI calls: systemctl start nftables.service
+     ↓
+systemd asks Polkit: "Can user start nftables.service?"
+     ↓
+Polkit checks: /usr/share/polkit-1/rules.d/60-nftban-cli.rules
+     ↓
+Rule checks:
+  - Is user in nftban-cli group? YES ✅
+  - Is unit in allowlist (nftables.service)? YES ✅
+     ↓
+Polkit responds: YES, authorize
+     ↓
+Service starts successfully
+```
+
+### Adding Users to nftban-cli Group
+
+```bash
+# Add user to group (as root)
+sudo usermod -aG nftban-cli username
+
+# Verify membership
+id username | grep nftban-cli
+
+# User must re-login for group to take effect
+# Or use: newgrp nftban-cli
+```
+
+### Security Model
+
+**Why This Is Safe:**
+
+1. **Scoped Permissions:**
+   - Only 2 services (nftables, fail2ban)
+   - Cannot manage other critical services (sshd, etc.)
+
+2. **No File Write Access:**
+   - root still owns code (`/usr/lib/nftban`)
+   - root still owns config (`/etc/nftban`)
+   - Group membership only grants READ access to config
+
+3. **No Privilege Escalation:**
+   - No sudoers entries
+   - No setuid binaries
+   - Standard Polkit D-Bus authorization
+
+4. **Audit Trail:**
+   - All service management logged by systemd
+   - Polkit logs authorization decisions
+
+5. **Easy to Revoke:**
+   ```bash
+   # Remove user from group
+   sudo gpasswd -d username nftban-cli
+   ```
+
+### Use Cases
+
+**Scenario 1: Junior System Administrator**
+- Needs to restart firewall services
+- Should not have full root access
+- Add to nftban-cli group → limited, safe access
+
+**Scenario 2: Monitoring/Automation**
+- Monitoring system needs to check service status
+- Automation scripts need to restart services
+- Service account in nftban-cli group → no hardcoded passwords
+
+**Scenario 3: Team Environment**
+- Multiple administrators
+- Some need firewall management only
+- Group-based authorization → clear separation of duties
+
+### Related Documentation
+
+- **[Polkit Integration Guide](../guides/polkit-integration.md)** - Complete setup guide
+- **[Installation Guide](../guides/install.md)** - How to install Polkit rule
+- **[Security Architecture](../../SECURITY.md)** - Overall security model
+
+---
+
 ## 🔐 SPECIAL CASE: root:nftban
+
+**NOTE:** This is different from `root:nftban-cli` (used for config read access).
 
 ### What Uses root:nftban
 
 ```
-/etc/nftban/                     750 root:nftban
-  └── conf.d/                    750 root:nftban
+/etc/nftban/                     750 root:nftban-cli  ← CONFIG (CLI can read)
+  └── conf.d/                    750 root:nftban-cli
 
-/var/lib/nftban/geoip/           750 root:nftban
+/var/lib/nftban/geoip/           750 root:nftban      ← DATA (service user reads)
 ```
 
 ### Why This Ownership?

@@ -298,7 +298,24 @@ sudo systemctl daemon-reload
 sudo install -m 0644 etc/logrotate.d/nftban /etc/logrotate.d/nftban
 ```
 
-### Step 7: Install Shell Completions
+### Step 7: Install Polkit Rules
+
+```bash
+# Install Polkit authorization for nftban-cli group
+sudo install -d -m 0755 /usr/share/polkit-1/rules.d
+sudo install -m 0644 packaging/polkit-1/rules.d/60-nftban-cli.rules \
+    /usr/share/polkit-1/rules.d/60-nftban-cli.rules
+
+# Reload Polkit (usually automatic)
+sudo systemctl restart polkit 2>/dev/null || true
+```
+
+**What this enables:**
+- Members of `nftban-cli` group can manage nftables and fail2ban services
+- No sudo required for service management
+- See [Polkit Integration Guide](polkit-integration.md) for details
+
+### Step 8: Install Shell Completions
 
 ```bash
 # Bash completion
@@ -320,7 +337,7 @@ if [ -d /usr/share/fish/vendor_completions.d ]; then
 fi
 ```
 
-### Step 8: SELinux Relabeling (if present)
+### Step 9: SELinux Relabeling (if present)
 
 ```bash
 # Only needed if SELinux is enabled
