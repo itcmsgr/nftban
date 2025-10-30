@@ -11,7 +11,7 @@ User=nftban
 Group=nftban
 
 # Save current firewall state to snapshot
-ExecStart=/usr/sbin/nftban snapshot save
+ExecStart=/usr/sbin/nftban stats snapshot
 
 # Nice priority (low impact)
 Nice=10
