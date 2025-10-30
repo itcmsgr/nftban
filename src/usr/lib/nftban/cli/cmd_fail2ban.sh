@@ -256,21 +256,28 @@ _nftban_fail2ban_cmd_jails() {
 }
 
 _nftban_fail2ban_cmd_available() {
-    # Show all available jails on this system
+    # Show NFTBan-compatible jails (configured with nftables action)
 
-    echo "All Available Fail2ban Jails:"
+    echo "NFTBan-Compatible Fail2ban Jails:"
     echo "════════════════════════════════════════════════════════════"
+    echo ""
+    echo "NOTE: This list shows ONLY jails configured to use NFTBan's"
+    echo "      nftables action. System jails (sshd, apache-auth, etc.)"
+    echo "      use iptables/firewalld by default and won't work with"
+    echo "      NFTBan unless reconfigured with action = nftban[...]"
     echo ""
 
     local all_jails
     mapfile -t all_jails < <(nftban_fail2ban_list_all_available_jails)
 
     if [[ ${#all_jails[@]} -eq 0 ]]; then
-        echo "  No jail configurations found"
+        echo "  No NFTBan-compatible jail configurations found"
         echo ""
-        echo "  Install fail2ban and configure jails in:"
-        echo "    /etc/fail2ban/jail.d/"
-        echo "    /etc/fail2ban/jail.local"
+        echo "  NFTBan-compatible jails must be placed in:"
+        echo "    /etc/fail2ban/jail.d/nftban-*.conf"
+        echo ""
+        echo "  Example: /etc/fail2ban/jail.d/nftban-sshd.conf"
+        echo ""
         return 0
     fi
 

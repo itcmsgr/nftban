@@ -169,27 +169,21 @@ nftban_fail2ban_detect_os() {
     echo "${os_type}:${os_version}"
 }
 
-# Discover available jail configurations from filesystem
+# Discover available NFTBan-compatible jail configurations
+# ONLY returns jails configured to use NFTBan's nftables action
 nftban_fail2ban_discover_available_jails() {
-    local jail_files=()
     local jail_names=()
 
-    # Search in common jail directories
-    for jail_dir in /etc/fail2ban/jail.d /etc/fail2ban/filter.d /usr/share/fail2ban/filter.d; do
-        if [[ -d "$jail_dir" ]]; then
-            while IFS= read -r -d '' file; do
-                local basename=$(basename "$file" .conf)
-                basename=$(basename "$basename" .local)
-                # Remove common suffixes and prefixes
-                basename="${basename#jail-}"
-
-                # Only add if not already in list
-                if [[ ! " ${jail_names[*]} " =~ " ${basename} " ]]; then
-                    jail_names+=("$basename")
-                fi
-            done < <(find "$jail_dir" -type f \( -name "*.conf" -o -name "*.local" \) -print0 2>/dev/null)
-        fi
-    done
+    # ONLY check NFTBan-specific jails: /etc/fail2ban/jail.d/nftban-*.conf
+    # These are the ONLY jails configured with action = nftban[...]
+    # System jails (sshd, apache-auth, etc.) use iptables/firewalld and won't work
+    if [[ -d /etc/fail2ban/jail.d ]]; then
+        while IFS= read -r -d '' file; do
+            # Extract jail name from filename: nftban-sshd.conf -> nftban-sshd
+            local basename=$(basename "$file" .conf)
+            jail_names+=("$basename")
+        done < <(find /etc/fail2ban/jail.d -name "nftban-*.conf" -print0 2>/dev/null)
+    fi
 
     # Sort and print unique jail names
     printf '%s\n' "${jail_names[@]}" | sort -u
