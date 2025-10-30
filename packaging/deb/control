@@ -46,3 +46,9 @@ Description: Modern nftables firewall management with commit-confirm recovery
  - FHS-compliant with auto-healing health system
  - Integration with Fail2Ban for automatic banning
  - Stats & metrics with HTML/JSON/CSV reporting
+ - Group-based service management via Polkit (no sudo required)
+ .
+ NOTE: On Ubuntu/Debian, fail2ban is available in default repositories.
+ On Rocky/AlmaLinux, enable EPEL and CRB first:
+   dnf install -y epel-release && crb enable
+   dnf install -y fail2ban-server
