@@ -3,6 +3,10 @@
 
 # Development archives (internal development history)
 .archive/
+docs/archive/
+docs/sessions/
+docs/deployment/
+docs/updates/
 
 # Build artifacts
 *.o
