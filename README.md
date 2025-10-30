@@ -91,6 +91,7 @@ See **[Quick Start Guide](docs/guides/quick-start.md)** for complete setup instr
 **Getting Started:**
 - ➤ **[Quick Start Guide](docs/guides/quick-start.md)** - Get started in 5 minutes ⭐
 - ➤ **[Installation Guide](docs/guides/installation.md)** - Complete installation instructions
+- ➤ **[Security Architecture](SECURITY.md)** - Multi-layer security model and hardening guide 🛡️
 - ➤ [FHS Auto-Heal Guide](docs/guides/fhs-auto-heal-guide.md) - Automatic system health management
 - ➤ [CLI Quick Reference](docs/reference/cli-quick-reference.md) - Command cheat sheet
 
