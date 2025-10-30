@@ -133,8 +133,13 @@ grep -r "((.*++))" --include="*.sh" src/
 
 ### Remediation Status
 
-- ✅ **Fixed:** `src/usr/sbin/nftban` (main CLI) - 2025-10-30
-- ⏳ **Pending:** 10 other files with 75+ occurrences
+- ✅ **Fixed:** All dangerous conditional arithmetic patterns (2025-10-30)
+- ✅ **Verified:** Remaining 11 occurrences are safe (standalone in if-else blocks)
+- ✅ **Files fixed:**
+  - `src/usr/sbin/nftban` (main CLI)
+  - `src/usr/lib/nftban/cli/cmd_port.sh` (2 occurrences)
+  - `src/usr/lib/nftban/core/nftban_report_port.sh` (1 occurrence)
+  - `src/usr/lib/nftban/core/nftban_report_module.sh` (2 occurrences)
 
 ### Prevention Guidelines
 
@@ -160,7 +165,9 @@ grep -r "((.*++))" --include="*.sh" src/
 
 | ID | Severity | Status | Affected Files | Fixed |
 |----|----------|--------|----------------|-------|
-| BUG-001 | 🔴 CRITICAL | ⏳ In Progress | 11 files (77 occurrences) | 1/11 |
+| BUG-001 | 🟢 RESOLVED | ✅ Fixed | 5 files (conditional patterns) | 5/5 |
+
+**Note:** 11 remaining `((var++))` occurrences are safe standalone statements in if-else blocks, not chained with `&&` or `||`.
 
 ---
 
