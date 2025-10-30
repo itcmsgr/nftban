@@ -229,14 +229,18 @@ nftban_health_cmd_fix() {
         services)
             nftban_health_fix_services
             ;;
+        config|system)
+            nftban_health_fix_system_config
+            ;;
         all)
             nftban_health_fix_directories
             nftban_health_fix_permissions
+            nftban_health_fix_system_config
             nftban_health_fix_services
             ;;
         *)
             echo "ERROR: Invalid fix target: $what" >&2
-            echo "Valid targets: permissions, directories, services, all" >&2
+            echo "Valid targets: permissions, directories, services, config, all" >&2
             return 1
             ;;
     esac
