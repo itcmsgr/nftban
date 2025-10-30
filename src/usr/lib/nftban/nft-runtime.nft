@@ -1,0 +1,33 @@
+#!/usr/sbin/nft -f
+# NFTBan Runtime Table - Temporary Bans
+# This table is NEVER replaced during atomic reloads
+# It maintains temporary bans with nftables timeouts
+
+table inet nftban_runtime {
+  # IPv4 temporary ban set (with timeout support)
+  set temp_ban_v4 {
+    type ipv4_addr
+    flags timeout
+    comment "Temporary IPv4 bans from Fail2ban"
+  }
+
+  # IPv6 temporary ban set (with timeout support)
+  set temp_ban_v6 {
+    type ipv6_addr
+    flags timeout
+    comment "Temporary IPv6 bans from Fail2ban"
+  }
+
+  # Early-drop chain for temporary bans
+  # Priority -310 (higher than main table at -300)
+  # This ensures temp bans evaluate BEFORE static rules
+  chain input_tempban {
+    type filter hook input priority -310; policy accept;
+
+    # Drop temporarily banned IPs
+    ip saddr  @temp_ban_v4 drop
+    ip6 saddr @temp_ban_v6 drop
+
+    # Accept everything else (pass to main table)
+  }
+}

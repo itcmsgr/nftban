@@ -1,0 +1,54 @@
+#compdef nftban
+# Zsh completion for nftban
+# Install to: /usr/share/zsh/site-functions/_nftban
+
+_nftban() {
+    local -a commands
+    commands=(
+        'status:Show system status'
+        'version:Show version information'
+        'help:Show help message'
+        'init:Initialize NFTBan'
+        'feeds:Manage threat feeds'
+        'fail2ban:Manage Fail2ban integration'
+        'geoip:Manage GeoIP blocking'
+        'whitelist:Manage IP whitelist'
+        'stats:Show statistics'
+        'reports:Generate reports'
+        'maintain:Run maintenance tasks'
+    )
+
+    _arguments -C \
+        '1:command:->command' \
+        '*::arg:->args'
+
+    case $state in
+        command)
+            _describe 'nftban command' commands
+            ;;
+        args)
+            case $words[1] in
+                feeds)
+                    _arguments '1:feeds command:((update\:"Update feeds" list\:"List feeds" enable\:"Enable feed" disable\:"Disable feed" status\:"Show feed status"))'
+                    ;;
+                fail2ban)
+                    _arguments '1:fail2ban command:((status\:"Show status" enable\:"Enable jail" disable\:"Disable jail" jails\:"List jails"))'
+                    ;;
+                geoip)
+                    _arguments '1:geoip command:((update\:"Update database" status\:"Show status" block\:"Block country" allow\:"Allow country" list\:"List rules"))'
+                    ;;
+                whitelist)
+                    _arguments '1:whitelist command:((add\:"Add IP" remove\:"Remove IP" list\:"List IPs" show\:"Show whitelist"))'
+                    ;;
+                stats)
+                    _arguments '1:stats command:((show\:"Show statistics" update\:"Update stats" export\:"Export stats"))'
+                    ;;
+                reports)
+                    _arguments '1:reports command:((daily\:"Generate daily report" weekly\:"Generate weekly report" monthly\:"Generate monthly report" generate\:"Generate custom report"))'
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+_nftban "$@"

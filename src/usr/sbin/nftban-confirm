@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# NFTBan Emergency Recovery - Confirm Rules
+# Copyright (c) 2024–2026 NFTBAN Project / Antonios Voulvoulis
+# SPDX-License-Identifier: MPL-2.0
+#
+# Confirms the currently applied rules and disarms the rollback timer.
+# Call this after verifying SSH/connectivity works with new rules.
+
+set -Eeuo pipefail
+
+ROLLBACK_FLAG="/run/nftban.rollback.deadline"
+
+echo "╔═══════════════════════════════════════════════════╗"
+echo "║  NFTBan Emergency Recovery - Confirm Rules       ║"
+echo "╚═══════════════════════════════════════════════════╝"
+echo ""
+
+# Check if we have a pending rollback
+if [[ -f "$ROLLBACK_FLAG" ]]; then
+    DEADLINE=$(cat "$ROLLBACK_FLAG")
+    NOW=$(date +%s)
+    REMAINING=$((DEADLINE - NOW))
+
+    if (( REMAINING > 0 )); then
+        echo "Confirming rules and disarming rollback timer..."
+        echo "  Time remaining: ${REMAINING} seconds"
+        echo ""
+
+        # Remove rollback flag
+        rm -f "$ROLLBACK_FLAG"
+
+        # Stop rollback timer
+        if command -v systemctl &>/dev/null; then
+            systemctl stop nftban-rollback.timer 2>/dev/null || true
+        fi
+
+        echo "✓ Rules confirmed successfully!"
+        echo "✓ Rollback timer disarmed"
+        echo "✓ Current rules are now permanent"
+        echo ""
+        echo "Your firewall rules are active and will persist across reboots."
+    else
+        echo "ERROR: Rollback deadline has passed!"
+        echo "Rules may have already been rolled back."
+        echo ""
+        echo "Check current rules with: nft list ruleset"
+        exit 1
+    fi
+else
+    echo "Nothing to confirm."
+    echo ""
+    echo "No pending rollback timer found."
+    echo "Either:"
+    echo "  - Rules were already confirmed"
+    echo "  - Rules were already rolled back"
+    echo "  - No rules were applied with nftban-apply"
+    echo ""
+    echo "Current status: Rules are stable (no auto-rollback pending)"
+fi
+
+exit 0

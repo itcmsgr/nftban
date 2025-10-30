@@ -1,0 +1,27 @@
+# bash completion for nftban
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+# Install to: /etc/bash_completion.d/nftban
+
+_nftban_complete() {
+    local cur prev words cword
+    _init_completion -n : || return
+
+    # Build array of words after 'nftban' (what the CLI expects)
+    local args=()
+    for ((i=1; i<COMP_CWORD; i++)); do
+        args+=("${COMP_WORDS[i]}")
+    done
+
+    # Call the CLI's built-in completion endpoint
+    local suggestions
+    if suggestions="$(nftban __complete "${args[@]}" 2>/dev/null)"; then
+        COMPREPLY=( $(compgen -W "$suggestions" -- "$cur") )
+    else
+        COMPREPLY=()
+    fi
+}
+
+complete -F _nftban_complete nftban
+
+# nftban — Simplifying Linux Firewall Management

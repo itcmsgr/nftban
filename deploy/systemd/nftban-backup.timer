@@ -1,0 +1,12 @@
+[Unit]
+Description=Run NFTBan Daily Backup
+
+[Timer]
+OnCalendar=daily
+Persistent=true
+AccuracySec=1h
+RandomizedDelaySec=30m
+Unit=nftban-backup.service
+
+[Install]
+WantedBy=timers.target

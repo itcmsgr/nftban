@@ -1,0 +1,200 @@
+# NFTBan Documentation - MkDocs Configuration
+# https://www.mkdocs.org/user-guide/configuration/
+
+# Site Information
+site_name: NFTBan v0.10.0 Documentation
+site_url: https://nftban.github.io/nftban/
+site_author: Antonios Voulvoulis - ITCMS
+site_description: Modern, high-performance firewall management for Linux servers with commit-confirm recovery, Go binaries (10-60x faster), and 8 security layers.
+
+# Repository
+repo_url: https://github.com/nftban/nftban
+repo_name: nftban/nftban
+edit_uri: edit/main/docs/
+
+# Copyright
+copyright: Copyright &copy; 2025 Antonios Voulvoulis - ITCMS. Licensed under MPL-2.0.
+
+# Theme
+theme:
+  name: material
+  language: en
+
+  # Colors
+  palette:
+    # Light mode
+    - scheme: default
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+
+    # Dark mode
+    - scheme: slate
+      primary: indigo
+      accent: blue
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+
+  # Fonts
+  font:
+    text: Roboto
+    code: Roboto Mono
+
+  # Icon
+  icon:
+    repo: fontawesome/brands/github
+    logo: material/shield-check
+
+  # Features
+  features:
+    - navigation.instant       # Instant loading (SPA-like)
+    - navigation.tracking      # URL updates on scroll
+    - navigation.tabs          # Top-level tabs
+    - navigation.tabs.sticky   # Sticky tabs
+    - navigation.sections      # Section navigation
+    - navigation.expand        # Expand sections by default
+    - navigation.indexes       # Section index pages
+    - navigation.top           # Back to top button
+    - search.suggest           # Search suggestions
+    - search.highlight         # Highlight search terms
+    - search.share             # Share search link
+    - toc.follow               # TOC follows scroll
+    - toc.integrate            # Integrate TOC into sidebar
+    - content.code.copy        # Copy code button
+    - content.code.annotate    # Code annotations
+
+# Navigation
+nav:
+  - Home: index.md
+
+  - Guides:
+      - Quick Start (5 min): guides/quickstart.md
+      - Installation: guides/install.md
+      - Ban System: guides/ban-system.md
+      - Security Profiles: guides/security-profiles.md
+      - Health Diagnostics: guides/health-diagnostics.md
+      - Threat Feeds: guides/feeds.md
+      - Fail2ban Integration: guides/fail2ban.md
+      - Troubleshooting: guides/troubleshoot.md
+
+  - Concepts:
+      - Architecture: concepts/architecture.md
+      - nftables Model: concepts/nftables-model.md
+      - Defense Layers: concepts/defense-layers.md
+      - Recovery System: concepts/recovery-system.md
+
+  - Reference:
+      - CLI Commands: reference/cli.md
+      - Core Modules: reference/modules.md
+      - nftables: reference/nftables.md
+      - Configuration: reference/configuration.md
+
+  - Recipes:
+      - Common Tasks: recipes/common-tasks.md
+      - Web Server Setup: recipes/web-server.md
+      - SSH Hardening: recipes/ssh-hardening.md
+      - Mail Server: recipes/mail-server.md
+
+# Markdown Extensions
+markdown_extensions:
+  # Python Markdown
+  - abbr                        # Abbreviations
+  - admonition                  # Call-outs (note, warning, tip, etc.)
+  - attr_list                   # Add HTML attributes to elements
+  - def_list                    # Definition lists
+  - footnotes                   # Footnotes
+  - md_in_html                  # Markdown in HTML
+  - toc:                        # Table of contents
+      permalink: true           # Add permalink to headers
+      permalink_title: Link to this section
+      toc_depth: 3
+
+  # Python Markdown Extensions
+  - pymdownx.arithmatex:        # Math formulas
+      generic: true
+  - pymdownx.betterem:          # Better emphasis
+      smart_enable: all
+  - pymdownx.caret              # Superscript (^)
+  - pymdownx.mark               # Highlight (==text==)
+  - pymdownx.tilde              # Subscript (~)
+  - pymdownx.critic             # Track changes
+  - pymdownx.details            # Collapsible details
+  - pymdownx.emoji:             # Emojis
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+  - pymdownx.highlight:         # Code highlighting
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite       # Inline code highlighting
+  - pymdownx.keys               # Keyboard keys
+  - pymdownx.magiclink:         # Auto-link URLs
+      repo_url_shorthand: true
+      user: nftban
+      repo: nftban
+  - pymdownx.smartsymbols       # Smart symbols (copyright, etc.)
+  - pymdownx.superfences:       # Code blocks
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:            # Tabbed content
+      alternate_style: true
+  - pymdownx.tasklist:          # Task lists
+      custom_checkbox: true
+
+# Plugins
+plugins:
+  - search:                     # Search functionality
+      separator: '[\s\-,:!=\[\]()"/]+|(?!\b)(?=[A-Z][a-z])|\.(?!\d)|&[lg]t;'
+      lang:
+        - en
+
+  - minify:                     # Minify HTML
+      minify_html: true
+      minify_js: true
+      minify_css: true
+      htmlmin_opts:
+        remove_comments: true
+
+  - git-revision-date-localized:  # Last updated date
+      enable_creation_date: true
+      type: timeago
+
+# Extra CSS/JS
+extra_css:
+  - stylesheets/extra.css
+
+extra_javascript:
+  - javascripts/extra.js
+
+# Extra
+extra:
+  # Social links
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/nftban/nftban
+      name: NFTBan on GitHub
+    - icon: fontawesome/brands/twitter
+      link: https://twitter.com/nftban
+      name: NFTBan on Twitter
+    - icon: fontawesome/solid/globe
+      link: https://nftban.com
+      name: NFTBan Website
+
+  # Version
+  version:
+    provider: mike
+    default: stable
+
+  # Analytics (optional, uncomment to enable)
+  # analytics:
+  #   provider: google
+  #   property: G-XXXXXXXXXX
+
+# Watch (for local development)
+watch:
+  - docs/

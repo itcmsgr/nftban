@@ -1,0 +1,14 @@
+[Unit]
+Description=NFTBan Firewall Snapshot Timer (every 5 minutes)
+Documentation=man:nftban(8)
+
+[Timer]
+# Run every 5 minutes
+OnBootSec=5min
+OnUnitActiveSec=5min
+
+# Run even if system is on battery
+Persistent=true
+
+[Install]
+WantedBy=timers.target

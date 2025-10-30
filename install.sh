@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan v0.10.0 - System Installer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Install NFTBan to system (FHS-compliant)
+# Usage: sudo ./install.sh
+
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR/src"
+
+echo "Installing NFTBan v0.10.0..."
+
+# =============================================================================
+# 1. CREATE SYSTEM USER
+# =============================================================================
+if ! id -u nftban >/dev/null 2>&1; then
+    useradd -r -s /usr/sbin/nologin -d /nonexistent nftban
+    echo "✓ Created system user: nftban"
+else
+    echo "✓ System user exists: nftban"
+fi
+
+# Create CLI group
+if ! getent group nftban-cli >/dev/null; then
+    groupadd nftban-cli
+    echo "✓ Created group: nftban-cli"
+else
+    echo "✓ Group exists: nftban-cli"
+fi
+
+# =============================================================================
+# 2. CREATE DIRECTORIES
+# =============================================================================
+echo "Creating directories..."
+
+# /usr directories
+install -d -o root -g root -m 0755 /usr/lib/nftban
+install -d -o root -g root -m 0755 /usr/share/nftban
+
+# /etc directories
+install -d -o root -g root -m 0750 /etc/nftban
+install -d -o root -g root -m 0750 /etc/nftban/{conf.d,feeds.d,rules.d}
+install -d -o root -g root -m 0700 /etc/nftban/secrets.d
+
+# /var directories
+install -d -o nftban -g nftban -m 0750 /var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics}
+install -d -o nftban -g nftban -m 0750 /var/cache/nftban/{geoip,tmp}
+install -d -o nftban -g adm -m 0750 /var/log/nftban
+
+# /run directory (created by tmpfiles.d at boot)
+install -d -o nftban -g nftban -m 0755 /run/nftban || true
+
+echo "✓ Directories created"
+
+# =============================================================================
+# 3. INSTALL FILES
+# =============================================================================
+echo "Installing files..."
+
+# CLI
+install -m 0755 -o root -g root usr/sbin/nftban /usr/sbin/nftban
+
+# Libraries and modules
+cp -a usr/lib/nftban/* /usr/lib/nftban/
+
+# Shared data
+cp -a usr/share/nftban/* /usr/share/nftban/
+
+echo "✓ Code installed"
+
+# =============================================================================
+# 4. INSTALL CONFIGURATION
+# =============================================================================
+echo "Installing configuration..."
+
+# Main config (don't overwrite if exists)
+if [ ! -f /etc/nftban/nftban.conf ]; then
+    install -m 0640 -o root -g root etc/nftban/nftban.conf /etc/nftban/nftban.conf
+    echo "✓ Installed nftban.conf"
+else
+    install -m 0640 -o root -g root etc/nftban/nftban.conf /etc/nftban/nftban.conf.new
+    echo "⚠  Existing config preserved - new version at nftban.conf.new"
+fi
+
+# Module configs (always overwrite)
+cp -a etc/nftban/conf.d/* /etc/nftban/conf.d/
+
+# User template (always overwrite)
+install -m 0644 -o root -g root etc/nftban/nftban.conf.local.example /etc/nftban/nftban.conf.local.example
+
+# Fix permissions for nftban-cli group access
+chgrp -R nftban-cli /etc/nftban
+chmod 0750 /etc/nftban
+chmod 0640 /etc/nftban/nftban.conf
+chmod 0750 /etc/nftban/conf.d
+chmod 0640 /etc/nftban/conf.d/*.conf
+chmod 0750 /etc/nftban/{feeds.d,rules.d}
+chmod 0700 /etc/nftban/secrets.d
+
+echo "✓ Configuration installed (permissions set for nftban-cli group)"
+
+# =============================================================================
+# 5. SYSTEMD INTEGRATION
+# =============================================================================
+if command -v systemctl >/dev/null 2>&1; then
+    echo "Installing systemd units..."
+
+    # Install units
+    cp usr/lib/systemd/system/*.service /usr/lib/systemd/system/
+    cp usr/lib/systemd/system/*.timer /usr/lib/systemd/system/
+
+    # Install sysusers.d (creates user on boot)
+    install -d -m 0755 /usr/lib/sysusers.d
+    install -m 0644 packaging/sysusers.d/nftban.conf /usr/lib/sysusers.d/nftban.conf
+
+    # Install tmpfiles.d (creates /run/nftban on boot)
+    install -d -m 0755 /usr/lib/tmpfiles.d
+    install -m 0644 packaging/tmpfiles.d/nftban.conf /usr/lib/tmpfiles.d/nftban.conf
+
+    # Reload systemd
+    systemctl daemon-reload
+
+    echo "✓ Systemd integration installed"
+    echo "  Enable with: systemctl enable nftban.timer"
+else
+    echo "⚠  Systemd not found - install cron jobs manually"
+
+    # Install cron fallback
+    if [ -d /etc/cron.d ]; then
+        install -m 0644 etc/cron.d/nftban /etc/cron.d/nftban
+        echo "✓ Cron fallback installed"
+    fi
+fi
+
+# =============================================================================
+# 6. LOGROTATE
+# =============================================================================
+if [ -d /etc/logrotate.d ]; then
+    install -m 0644 etc/logrotate.d/nftban /etc/logrotate.d/nftban
+    echo "✓ Logrotate configured"
+fi
+
+# =============================================================================
+# 7. SHELL COMPLETIONS
+# =============================================================================
+if [ -d /usr/share/bash-completion/completions ]; then
+    install -m 0644 usr/share/nftban/completions/nftban.bash /usr/share/bash-completion/completions/nftban
+    echo "✓ Bash completion installed"
+fi
+
+if [ -d /usr/share/zsh/site-functions ]; then
+    install -m 0644 usr/share/nftban/completions/_nftban /usr/share/zsh/site-functions/_nftban
+    echo "✓ Zsh completion installed"
+fi
+
+if [ -d /usr/share/fish/vendor_completions.d ]; then
+    install -m 0644 usr/share/nftban/completions/nftban.fish /usr/share/fish/vendor_completions.d/nftban.fish
+    echo "✓ Fish completion installed"
+fi
+
+# =============================================================================
+# 8. SELINUX RELABELING (if present)
+# =============================================================================
+if command -v restorecon >/dev/null 2>&1; then
+    echo "Relabeling SELinux contexts..."
+    restorecon -Rv /etc/nftban /usr/sbin/nftban /usr/lib/nftban /var/lib/nftban /var/log/nftban 2>/dev/null || true
+    echo "✓ SELinux contexts restored"
+fi
+
+# =============================================================================
+# INSTALLATION COMPLETE
+# =============================================================================
+echo ""
+echo "╔════════════════════════════════════════════════════════════╗"
+echo "║  NFTBan v0.10.0 Installation Complete!                    ║"
+echo "╚════════════════════════════════════════════════════════════╝"
+echo ""
+echo "Next steps:"
+echo "  1. Review config: /etc/nftban/nftban.conf"
+echo "  2. Customize (optional): /etc/nftban/nftban.conf.local"
+echo "  3. Enable service: systemctl enable --now nftban.timer"
+echo "  4. Check status: nftban status"
+echo ""
+echo "Documentation: /usr/share/nftban/docs/"
+echo "Examples: /usr/share/nftban/examples/"
+echo ""
