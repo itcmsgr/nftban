@@ -23,14 +23,15 @@ NFTBan includes a comprehensive health diagnostic system that verifies your inst
 
 ### What is Health Diagnostics?
 
-The health system performs comprehensive checks across 6 major categories:
+The health system performs comprehensive checks across 7 major categories:
 
 1. **Binary Dependencies** - Required commands (nft, systemctl, etc.)
 2. **FHS Path Structure** - Directory existence and permissions
 3. **File Permissions** - Ownership and access rights
-4. **Service Status** - nftables, Fail2Ban, systemd units
-5. **Module Availability** - All 17 core modules present
-6. **GeoIP Database** - MaxMind database status
+4. **System Configuration** - UID/GID tracking (system.conf)
+5. **Service Status** - nftables, Fail2Ban, systemd units
+6. **Module Availability** - All 17 core modules present
+7. **GeoIP Database** - MaxMind database status
 
 ### Why Use Health Checks?
 
@@ -490,8 +491,9 @@ sudo nftban geoip update
 1. Missing directories (creates with correct permissions)
 2. Incorrect ownership (chown to nftban:nftban)
 3. Missing nftban user/group (creates)
-4. Stopped services (restarts)
-5. Missing GeoIP database (downloads)
+4. **Missing/outdated system.conf** (creates/updates UID/GID tracking)
+5. Stopped services (restarts)
+6. Missing GeoIP database (downloads)
 
 ❌ **Cannot Auto-Fix:**
 1. Missing binaries (requires package manager)
@@ -502,19 +504,24 @@ sudo nftban geoip update
 
 ### How to Use Auto-Fix
 
-**Basic auto-fix:**
+**Fix everything:**
 ```bash
-sudo nftban health check --fix
+sudo nftban health fix all
 ```
 
-**Verbose auto-fix (see what's being fixed):**
+**Fix specific component:**
 ```bash
-sudo nftban health check --fix --verbose
+sudo nftban health fix permissions
+sudo nftban health fix directories
+sudo nftban health fix config
+sudo nftban health fix services
 ```
 
-**Dry-run (see what would be fixed):**
+**Check first, then fix:**
 ```bash
-sudo nftban health check --fix --dry-run
+nftban health check          # See what's wrong
+sudo nftban health fix all   # Fix everything
+nftban health check          # Verify fixed
 ```
 
 ---
@@ -577,7 +584,7 @@ sudo nftban health check
 
 **Solution (auto-fix):**
 ```bash
-sudo nftban health check --fix
+sudo nftban health fix all
 ```
 
 **Solution (manual):**
@@ -642,7 +649,7 @@ sudo nftban health check --category modules
 
 **Solution (auto-fix):**
 ```bash
-sudo nftban health check --fix
+sudo nftban health fix all
 ```
 
 **Solution (manual):**
@@ -768,7 +775,7 @@ sudo tail -100 /var/log/nftban/operations.log
 sudo nftban health check
 
 # With auto-fix
-sudo nftban health check --fix
+sudo nftban health fix all
 
 # Verbose output
 sudo nftban health check --verbose
