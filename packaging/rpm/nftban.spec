@@ -178,10 +178,14 @@ fi
 
 # Configuration
 %config(noreplace) /etc/nftban/nftban.conf
+/etc/nftban/baseline.nft
 /etc/nftban/conf.d/*.conf
 %dir /etc/nftban/feeds.d
+/etc/nftban/feeds.d/.gitkeep
 %dir /etc/nftban/rules.d
+/etc/nftban/rules.d/.gitkeep
 %dir %attr(0700,root,root) /etc/nftban/secrets.d
+/etc/nftban/secrets.d/.gitkeep
 
 # Systemd units
 %{_unitdir}/*.service
