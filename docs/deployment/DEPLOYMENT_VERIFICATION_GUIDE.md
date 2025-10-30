@@ -12,9 +12,9 @@ This guide provides step-by-step verification procedures for NFTBan v0.10.0 depl
 ## Deployment Status
 
 ### Servers
-- **lab.example.test** - ✅ DEPLOYED & VERIFIED
-- **lab1.example.test** - ✅ DEPLOYED & VERIFIED
-- **lab2.example.test** - ⚠️ DEPLOYED (connection timeout during verification)
+- **server1.example.com** - ✅ DEPLOYED & VERIFIED
+- **server2.example.com** - ✅ DEPLOYED & VERIFIED
+- **server3.example.com** - ⚠️ DEPLOYED (connection timeout during verification)
 
 ### Files Deployed
 All files successfully synchronized to production servers on 2025-10-29 16:17-16:20 UTC:
@@ -329,10 +329,10 @@ Performance optimization scheduled (bulk port operations)
 
 ## Server-Specific Verification
 
-### lab.example.test
+### server1.example.com
 
 ```bash
-ssh root@lab.example.test
+ssh root@server1.example.com
 
 # Run verification suite
 nftban version
@@ -347,10 +347,10 @@ ls -lh /usr/sbin/nftban-complete /usr/lib/nftban/cli/cmd_firewall.sh
 
 **Status:** ✅ VERIFIED
 
-### lab1.example.test
+### server2.example.com
 
 ```bash
-ssh root@lab1.example.test
+ssh root@server2.example.com
 
 # Run verification suite
 nftban version
@@ -365,10 +365,10 @@ ls -lh /usr/sbin/nftban-complete /usr/lib/nftban/cli/cmd_firewall.sh
 
 **Status:** ✅ VERIFIED
 
-### lab2.example.test
+### server3.example.com
 
 ```bash
-ssh root@lab2.example.test
+ssh root@server3.example.com
 
 # If connection issues, try:
 # - Check network connectivity
@@ -435,9 +435,9 @@ Use this checklist to verify deployment is complete:
 - [x] Timestamps confirm latest version
 
 ### Verification
-- [ ] lab.example.test - All checks passed
-- [ ] lab1.example.test - All checks passed
-- [ ] lab2.example.test - All checks passed (pending connection)
+- [ ] server1.example.com - All checks passed
+- [ ] server2.example.com - All checks passed
+- [ ] server3.example.com - All checks passed (pending connection)
 
 ### Functionality
 - [ ] `nftban version` shows v0.10.0

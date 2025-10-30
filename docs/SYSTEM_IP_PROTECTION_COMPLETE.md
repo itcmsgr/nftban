@@ -395,7 +395,7 @@ nftban-v0.10.0-dev/
 
 2. **Deploy to lab servers:**
    ```bash
-   for server in lab.example.test lab1.example.test lab2.example.test
+   for server in server1.example.com server2.example.com server3.example.com
    do
      echo "=== $server ==="
      rsync -avz src/ root@$server:/tmp/nftban-test/

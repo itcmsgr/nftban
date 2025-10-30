@@ -81,19 +81,19 @@ table inet nftban_main        ← ❌ MISSING! (permanent rules)
 
 ### Step 1: Check current state
 ```bash
-ssh root@lab.example.test "nft list tables"
+ssh root@server1.example.com "nft list tables"
 ```
 **Result:** Only `nftban_runtime` and `f2b-table` exist
 
 ### Step 2: Try to execute the function
 ```bash
-ssh root@lab.example.test "nftban-complete nftables reload"
+ssh root@server1.example.com "nftban-complete nftables reload"
 ```
 **Result:** Function executes successfully!
 
 ### Step 3: Check if table was created
 ```bash
-ssh root@lab.example.test "nft list tables"
+ssh root@server1.example.com "nft list tables"
 ```
 **Result:** NOW we should see `nftban_main` table!
 
@@ -230,9 +230,9 @@ nftban firewall init
 ### Option 1: Manual (Works Now!)
 ```bash
 # Execute the hidden command on each server
-ssh root@lab.example.test "nftban-complete nftables reload"
-ssh root@lab1.example.test "nftban-complete nftables reload"
-ssh root@lab2.example.test "nftban-complete nftables reload"
+ssh root@server1.example.com "nftban-complete nftables reload"
+ssh root@server2.example.com "nftban-complete nftables reload"
+ssh root@server3.example.com "nftban-complete nftables reload"
 ```
 
 ### Option 2: Add User-Friendly Command (RECOMMENDED)
@@ -282,13 +282,13 @@ nftban-complete nftables reload || true
 
 ```bash
 # Test on one server first
-ssh root@lab.example.test "nftban-complete nftables reload"
+ssh root@server1.example.com "nftban-complete nftables reload"
 
 # Verify it was created
-ssh root@lab.example.test "nft list table inet nftban_main | head -30"
+ssh root@server1.example.com "nft list table inet nftban_main | head -30"
 
 # If successful, deploy to all servers
-for server in lab.example.test lab1.example.test lab2.example.test; do
+for server in server1.example.com server2.example.com server3.example.com; do
     echo "=== Initializing $server ==="
     ssh root@$server "nftban-complete nftables reload"
     echo "✓ Main table created on $server"

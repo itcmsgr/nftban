@@ -142,7 +142,7 @@ successfully implemented and are ready for testing.
 cd /home/gituser/nftban-v0.10.0-dev
 
 # Deploy to lab servers
-for server in lab.example.test lab1.example.test lab2.example.test
+for server in server1.example.com server2.example.com server3.example.com
 do
   echo "=== Deploying to $server ==="
 
@@ -162,7 +162,7 @@ done
 
 ```bash
 # On each lab server:
-for server in lab.example.test lab1.example.test lab2.example.test
+for server in server1.example.com server2.example.com server3.example.com
 do
   echo "=== Verifying $server ==="
   ssh root@$server "
@@ -187,7 +187,7 @@ done
 
 ```bash
 # On lab server:
-ssh root@lab.example.test
+ssh root@server1.example.com
 
 # Test atomic reload manually
 source /usr/lib/nftban/core/nftban_nftables.sh
@@ -203,7 +203,7 @@ nftban_atomic_reload
 
 ```bash
 # On lab server:
-ssh root@lab.example.test
+ssh root@server1.example.com
 
 # Source security module
 source /usr/lib/nftban/core/nftban_security.sh
@@ -262,9 +262,9 @@ journalctl -u nftban.service -n 10
 
 ## 📋 TESTING CHECKLIST
 
-- [ ] Deploy to lab.example.test
-- [ ] Deploy to lab1.example.test
-- [ ] Deploy to lab2.example.test
+- [ ] Deploy to server1.example.com
+- [ ] Deploy to server2.example.com
+- [ ] Deploy to server3.example.com
 - [ ] Verify systemd units installed
 - [ ] Verify nftban user created
 - [ ] Verify directories created with correct permissions
@@ -397,7 +397,7 @@ nftban_whitelist_add "$ip" "$@"  # Passes --force if provided
 cd /home/gituser/nftban-v0.10.0-dev
 
 # Single command to deploy and test
-for server in lab.example.test lab1.example.test lab2.example.test
+for server in server1.example.com server2.example.com server3.example.com
 do
   echo "=== $server ==="
   rsync -avz deploy/ root@$server:/tmp/nftban-deploy/ && \

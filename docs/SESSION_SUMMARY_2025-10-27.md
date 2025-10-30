@@ -31,9 +31,9 @@
 9. `SESSION_SUMMARY_2025-10-27.md` - This file
 
 ### **3. Deployed to ALL Lab Servers** ✅
-- ✅ lab.example.test
-- ✅ lab1.example.test
-- ✅ lab2.example.test
+- ✅ server1.example.com
+- ✅ server2.example.com
+- ✅ server3.example.com
 
 **Deployment completed:** 21:43 - 21:46 (3 minutes)
 
@@ -41,12 +41,12 @@
 
 **Real-world results (21:46):**
 
-**lab.example.test:**
+**server1.example.com:**
 - **4 attackers banned** (1-hour bans from SSHD jail)
 - **10 repeat offenders banned** (7-day bans from recidive jail)
 - **14 total IPs currently blocked!**
 
-**lab1.example.test:**
+**server2.example.com:**
 - **5 attackers banned**
 - All working correctly
 
@@ -179,7 +179,7 @@ nftban stats top-jails      # Most triggered jails
 
 ### **Current Statistics (21:46)**
 
-**lab.example.test:**
+**server1.example.com:**
 - Total bans today: 21
 - Currently banned: 14 IPs
 - SSHD jail: 4 active bans (1h timeout)
@@ -263,7 +263,7 @@ WHERE ip='1.2.3.4' AND ts >= (unixepoch('now') - 86400);
    - nftban-sshd (maxretry=5, bantime=1h, findtime=10m)
    - recidive (automatic, 7-day bans for repeat offenders)
 
-✅ Currently banned: 14 IPs on lab.example.test
+✅ Currently banned: 14 IPs on server1.example.com
    - 4 from SSHD (1h bans)
    - 10 from recidive (7d bans)
 
@@ -330,8 +330,8 @@ systemctl restart fail2ban
 - Total new code: ~23KB
 
 ### **Real-World Impact:**
-- 14 attackers blocked on lab.example.test
-- 5 attackers blocked on lab1.example.test
+- 14 attackers blocked on server1.example.com
+- 5 attackers blocked on server2.example.com
 - 19 total attackers stopped
 - 21 ban events logged
 - 0 false positives
@@ -357,13 +357,13 @@ systemctl restart fail2ban
 ### **Commands to Run Tomorrow:**
 ```bash
 # Morning check
-ssh root@lab.example.test "nftban stats today"
-ssh root@lab.example.test "nftban stats top-ips"
-ssh root@lab.example.test "tail -50 /var/log/nftban/fail2ban-bans.log"
+ssh root@server1.example.com "nftban stats today"
+ssh root@server1.example.com "nftban stats top-ips"
+ssh root@server1.example.com "tail -50 /var/log/nftban/fail2ban-bans.log"
 
 # Check persistent offenders
-ssh root@lab.example.test "cat /etc/nftban/blacklist.d/30-persistent-offenders.conf"
-ssh root@lab.example.test "cat /var/log/nftban/persistent-offenders.log"
+ssh root@server1.example.com "cat /etc/nftban/blacklist.d/30-persistent-offenders.conf"
+ssh root@server1.example.com "cat /var/log/nftban/persistent-offenders.log"
 ```
 
 ═══════════════════════════════════════════════════════════════════════════════

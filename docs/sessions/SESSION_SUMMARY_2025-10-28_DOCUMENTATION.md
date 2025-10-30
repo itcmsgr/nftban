@@ -447,7 +447,7 @@ Files available in `/tmp/nftban-legal-pack-v2/` but not applied:
 **After each feature:**
 1. Unit test the feature
 2. Integration test with other features
-3. Test on lab servers (lab.example.test, lab1, lab2)
+3. Test on lab servers (server1.example.com, lab1, lab2)
 4. Document any new bugs in TODO.md
 
 ### Documentation Strategy

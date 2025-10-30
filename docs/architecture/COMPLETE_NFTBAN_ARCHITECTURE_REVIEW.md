@@ -18,7 +18,7 @@
 
 ## CURRENT STATE AUDIT
 
-### Server: lab.example.test
+### Server: server1.example.com
 ```
 TABLES:
   - inet nftban_runtime  (NFTBan - ban management)
@@ -34,7 +34,7 @@ CHAINS:
     - f2b-chain (priority: filter-1) - Fail2ban bans
 ```
 
-### Server: lab1.example.test
+### Server: server2.example.com
 ```
 TABLES:
   - inet filter          (System default filter)
@@ -50,7 +50,7 @@ CHAINS:
     NO input/output chains for port management!
 ```
 
-### Server: lab2.example.test
+### Server: server3.example.com
 ```
 TABLES:
   - inet nftban_runtime  (NFTBan - ban management only)

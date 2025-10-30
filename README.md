@@ -47,6 +47,24 @@ sudo ./install.sh
 
 ---
 
+## 📚 Documentation
+
+**Start here:**
+- ➤ [FHS Auto-Heal Guide](docs/guides/fhs-auto-heal-guide.md) - Automatic system health management
+- ➤ [DDOS Protection Guide](docs/guides/ddos-protection.md) - Configure DDoS protection
+- ➤ [Threat Feeds Setup](docs/guides/threat-feeds.md) - Block 1M+ known malicious IPs
+- ➤ [Fail2ban Integration](docs/guides/fail2ban-integration.md) - Auto-ban brute force attacks
+- ➤ [CLI Quick Reference](docs/reference/cli-quick-reference.md) - Command cheat sheet
+
+**Architecture & Design:**
+- [Permission Architecture](docs/architecture/permission-architecture.md) - Understanding the security model
+- [FHS Consolidation](docs/architecture/fhs-consolidation.md) - Filesystem layout explained
+- [Coding Standards](docs/development/coding-standards.md) - For contributors
+
+**All documentation:** See [docs/](docs/) directory
+
+---
+
 ## 📊 Component Status Matrix
 
 | Component | Status | Stability | Production Ready |

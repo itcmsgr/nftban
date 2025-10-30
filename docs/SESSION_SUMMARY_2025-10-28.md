@@ -66,9 +66,9 @@ System Commands:
 These are 1 ban away from persistent offender blacklist (threshold: 3 in 24h)
 
 ### Lab Server Activity
-- **lab.example.test:** 21 bans (14 active: 4 SSHD + 10 recidive)
-- **lab1.example.test:** 22 bans (very active, latest at 22:00)
-- **lab2.example.test:** 7 bans (quieter)
+- **server1.example.com:** 21 bans (14 active: 4 SSHD + 10 recidive)
+- **server2.example.com:** 22 bans (very active, latest at 22:00)
+- **server3.example.com:** 7 bans (quieter)
 
 ### Issues Found
 - ⚠️ **Duplicate logging on lab1:** Each ban logged twice (non-critical)
@@ -272,31 +272,31 @@ tail /var/log/nftban/persistent-offenders.log
 
 ### Check System Health
 ```bash
-ssh root@lab.example.test "nftban help"
-ssh root@lab.example.test "nftban check"
+ssh root@server1.example.com "nftban help"
+ssh root@server1.example.com "nftban check"
 ```
 
 ### View Stats
 ```bash
-ssh root@lab.example.test "nftban stats overall"
-ssh root@lab.example.test "nftban stats top-ips"
+ssh root@server1.example.com "nftban stats overall"
+ssh root@server1.example.com "nftban stats top-ips"
 ```
 
 ### Check Currently Banned
 ```bash
-ssh root@lab.example.test "nft list set inet nftban_runtime temp_ban_v4"
+ssh root@server1.example.com "nft list set inet nftban_runtime temp_ban_v4"
 ```
 
 ### View Logs
 ```bash
-ssh root@lab.example.test "tail -50 /var/log/nftban/fail2ban-bans.log"
-ssh root@lab.example.test "fail2ban-client status nftban-sshd"
+ssh root@server1.example.com "tail -50 /var/log/nftban/fail2ban-bans.log"
+ssh root@server1.example.com "fail2ban-client status nftban-sshd"
 ```
 
 ### Test Commands
 ```bash
-ssh root@lab.example.test "nftban port status | head -20"
-ssh root@lab.example.test "nftban whitelist-system show"
+ssh root@server1.example.com "nftban port status | head -20"
+ssh root@server1.example.com "nftban whitelist-system show"
 ```
 
 ═══════════════════════════════════════════════════════════════════════════════
