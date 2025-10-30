@@ -41,7 +41,7 @@ Requires:       iproute
 Requires:       ipset
 Requires:       git
 Requires:       polkit
-Recommends:     fail2ban >= 0.11
+Recommends:     fail2ban-server >= 0.11
 Recommends:     logrotate
 
 # Conflicts
@@ -52,6 +52,13 @@ Conflicts:      iptables
 %description
 NFTBan is a modern, high-performance firewall management system for Linux
 servers using nftables. Features include:
+
+NOTE: For fail2ban installation on Rocky/AlmaLinux:
+1. Enable EPEL: dnf install -y epel-release
+2. Enable CRB: crb enable
+3. Install: dnf install -y fail2ban-server
+
+fail2ban-server is recommended (not fail2ban) to avoid firewalld conflict.
 
 - Commit-confirm recovery (prevents lockout)
 - Go binaries for 10-60x faster feed processing
@@ -146,10 +153,21 @@ echo "║  NFTBan v0.10.0 Installation Complete!                    ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "Next steps:"
-echo "  1. Review config: /etc/nftban/nftban.conf"
-echo "  2. Customize (optional): /etc/nftban/nftban.conf.local"
-echo "  3. Enable service: systemctl enable --now nftban.timer"
+echo "  1. Install fail2ban (recommended):"
+echo "     Rocky/Alma: dnf install -y epel-release && crb enable"
+echo "                 dnf install -y fail2ban-server"
+echo "     Fedora:     dnf install -y fail2ban"
+echo ""
+echo "  2. Enable services:"
+echo "     systemctl enable --now nftables"
+echo "     systemctl enable --now fail2ban"
+echo ""
+echo "  3. Enable NFTBan timers:"
+echo "     systemctl enable --now nftban-health.timer"
+echo ""
 echo "  4. Check health: nftban health check"
+echo ""
+echo "Documentation: /usr/share/nftban/docs/"
 echo ""
 
 %preun
