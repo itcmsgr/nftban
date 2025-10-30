@@ -1,0 +1,248 @@
+# =============================================================================
+# NFTBan v0.10.0 - GitHub Actions Release Workflow
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Automated package building and release on version tags
+# Triggers: Push to v* tags (e.g., v0.10.0, v0.10.1)
+#
+# What this does:
+#   1. Builds Go binaries (nftban-feeds, nftban-geoip) for x86_64 and aarch64
+#   2. Creates RPM packages for Rocky 9, AlmaLinux 9, Fedora
+#   3. Creates DEB packages for Ubuntu 22.04/24.04, Debian 12
+#   4. Generates SHA256SUMS for all artifacts
+#   5. Creates MANIFEST.txt (file inventory)
+#   6. Uploads everything to GitHub Release
+#
+# Future enhancements (v0.10.1+):
+#   - GPG signing (infrastructure ready, commented out below)
+#   - SBOM generation (SPDX/CycloneDX)
+#   - Package repository publishing (COPR/PPA)
+# =============================================================================
+
+name: Release Packages
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write  # Required to create/edit GitHub Releases
+
+jobs:
+  build-and-release:
+    runs-on: ubuntu-latest
+
+    steps:
+      # =======================================================================
+      # 1. CHECKOUT
+      # =======================================================================
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for proper version detection
+
+      # =======================================================================
+      # 2. SETUP BUILD ENVIRONMENT
+      # =======================================================================
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            rpm \
+            dpkg-dev \
+            fakeroot \
+            build-essential \
+            debhelper \
+            devscripts
+
+      # =======================================================================
+      # 3. BUILD GO BINARIES
+      # =======================================================================
+      - name: Build Go binaries (x86_64 and aarch64)
+        run: |
+          chmod +x scripts/build-go-binaries.sh
+          ./scripts/build-go-binaries.sh
+
+          echo "=== Verify binaries were built ==="
+          ls -lh dist/x86_64/
+          ls -lh dist/aarch64/
+
+      # =======================================================================
+      # 4. BUILD PACKAGES (TODO: Add RPM/DEB build scripts)
+      # =======================================================================
+      # This section will be completed when RPM/DEB packaging is ready
+      - name: Build packages (placeholder)
+        run: |
+          mkdir -p dist/packages
+          echo "TODO: RPM and DEB package building"
+          echo "Will use:"
+          echo "  - scripts/build-rpm.sh"
+          echo "  - scripts/build-deb.sh"
+
+          # For now, create dummy packages to test workflow
+          touch dist/packages/nftban-0.10.0-1.el9.x86_64.rpm
+          touch dist/packages/nftban-0.10.0-1.el9.aarch64.rpm
+          touch dist/packages/nftban_0.10.0-1_amd64.deb
+          touch dist/packages/nftban_0.10.0-1_arm64.deb
+
+      # =======================================================================
+      # 5. GENERATE CHECKSUMS (v0.10.0: SHA256 only, no GPG yet)
+      # =======================================================================
+      - name: Generate SHA256SUMS
+        run: |
+          cd dist/packages
+          rm -f SHA256SUMS
+
+          # Generate checksums for all packages
+          if ls *.rpm *.deb 1> /dev/null 2>&1; then
+            sha256sum *.rpm *.deb > SHA256SUMS
+            echo "=== SHA256SUMS ==="
+            cat SHA256SUMS
+          else
+            echo "WARNING: No packages found to checksum"
+          fi
+
+      # =======================================================================
+      # 6. GENERATE MANIFEST
+      # =======================================================================
+      - name: Generate MANIFEST.txt
+        run: |
+          cd dist/packages
+          cat > MANIFEST.txt <<'EOF'
+          NFTBan v0.10.0 - Release Artifacts
+          ===================================
+
+          EOF
+
+          for file in *; do
+            if [ -f "$file" ]; then
+              size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null || echo "0")
+              printf "%-50s %12d bytes\n" "$file" "$size" >> MANIFEST.txt
+            fi
+          done
+
+          echo "=== MANIFEST.txt ==="
+          cat MANIFEST.txt
+
+      # =======================================================================
+      # 7. CREATE VERIFY.txt
+      # =======================================================================
+      - name: Create VERIFY.txt
+        run: |
+          cd dist/packages
+          cat > VERIFY.txt <<'EOF'
+          NFTBan v0.10.0 - Package Verification Guide
+          ============================================
+
+          1. Verify package integrity:
+
+             sha256sum -c SHA256SUMS
+
+          2. Expected output:
+
+             nftban-0.10.0-1.el9.x86_64.rpm: OK
+             nftban-0.10.0-1.el9.aarch64.rpm: OK
+             nftban_0.10.0-1_amd64.deb: OK
+             nftban_0.10.0-1_arm64.deb: OK
+
+          3. Install package:
+
+             # Rocky/AlmaLinux/Fedora
+             sudo dnf install nftban-0.10.0-1.el9.x86_64.rpm
+
+             # Ubuntu/Debian
+             sudo apt install ./nftban_0.10.0-1_amd64.deb
+
+          NOTE: For v0.10.0 we provide SHA256 checksums only.
+                GPG package signing will be added in v0.10.1+
+
+          For installation help: https://github.com/nftban/nftban/blob/main/docs/guides/install.md
+          EOF
+
+      # =======================================================================
+      # 8. EXTRACT RELEASE NOTES FROM CHANGELOG
+      # =======================================================================
+      - name: Extract release notes
+        run: |
+          # Extract version section from CHANGELOG.md
+          VERSION="${GITHUB_REF#refs/tags/}"
+
+          if [ -f "CHANGELOG.md" ]; then
+            # Try to extract section for this version
+            awk "/^## \[${VERSION}\]/,/^## \[/" CHANGELOG.md | \
+              sed '/^## \[/d' | head -n -1 > dist/packages/RELEASE_NOTES.md || \
+              echo "Release ${VERSION}" > dist/packages/RELEASE_NOTES.md
+          else
+            echo "Release ${VERSION}" > dist/packages/RELEASE_NOTES.md
+          fi
+
+          echo "=== RELEASE_NOTES.md ==="
+          cat dist/packages/RELEASE_NOTES.md
+
+      # =======================================================================
+      # 9. UPLOAD TO GITHUB RELEASE
+      # =======================================================================
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/packages/*.rpm
+            dist/packages/*.deb
+            dist/packages/SHA256SUMS
+            dist/packages/MANIFEST.txt
+            dist/packages/VERIFY.txt
+          body_path: dist/packages/RELEASE_NOTES.md
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # =======================================================================
+      # 10. OPTIONAL: GPG SIGNING (v0.10.1+)
+      # =======================================================================
+      # Uncomment these steps when ready to enable package signing
+      # Prerequisites:
+      #   1. Generate GPG key: gpg --quick-generate-key "nftban <releases@nftban.com>" rsa3072 sign 0
+      #   2. Export private key: gpg --export-secret-keys --armor KEYID | base64 -w0
+      #   3. Add GitHub secrets: GPG_PRIVATE_KEY_B64, GPG_PASSPHRASE
+      #
+      # - name: Import GPG private key
+      #   if: false  # Set to 'true' when ready
+      #   run: |
+      #     echo "$GPG_PRIVATE_KEY_B64" | base64 -d > /tmp/private.key.asc
+      #     gpg --batch --yes --import /tmp/private.key.asc
+      #     KEYID=$(gpg --list-secret-keys --keyid-format=long | awk '/sec/{print $2}' | sed 's|.*/||' | head -n1)
+      #     echo "KEYID=$KEYID" >> $GITHUB_ENV
+      #   env:
+      #     GPG_PRIVATE_KEY_B64: ${{ secrets.GPG_PRIVATE_KEY_B64 }}
+      #
+      # - name: Sign RPM packages
+      #   if: false
+      #   working-directory: dist/packages
+      #   env:
+      #     GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      #   run: |
+      #     for rpm in *.rpm; do
+      #       echo "$GPG_PASSPHRASE" | rpmsign --addsign \
+      #         --define "_gpg_digest_algo sha256" \
+      #         --passphrase-fd 0 "$rpm"
+      #       rpm --checksig "$rpm"
+      #     done
+      #
+      # - name: Sign DEB packages
+      #   if: false
+      #   working-directory: dist/packages
+      #   env:
+      #     GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      #   run: |
+      #     for deb in *.deb; do
+      #       echo "$GPG_PASSPHRASE" | dpkg-sig --batch \
+      #         --passphrase-fd 0 --sign builder "$deb"
+      #       dpkg-sig --verify "$deb"
+      #     done
