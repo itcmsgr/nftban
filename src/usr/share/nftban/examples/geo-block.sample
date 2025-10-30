@@ -1,0 +1,20 @@
+# =============================================================================
+# NFTBan GeoIP Blocking Sample
+# =============================================================================
+# Copy to: /etc/nftban/geoip.conf
+# Format: ISO country codes (comma-separated)
+
+# Block these countries (example - known sources of attacks)
+# WARNING: Verify you don't block legitimate traffic!
+
+# High-risk countries (example only - adjust for your use case)
+NFTBAN_GEOIP_BLOCKED_COUNTRIES="CN,RU,KP,IR"
+
+# Allow these countries (whitelist - takes precedence)
+NFTBAN_GEOIP_ALLOWED_COUNTRIES="US,GB,DE,FR,NL"
+
+# GeoIP database path
+NFTBAN_GEOIP_DATABASE="/var/cache/nftban/geoip/GeoLite2-Country.mmdb"
+
+# Update interval
+NFTBAN_GEOIP_UPDATE_INTERVAL="weekly"

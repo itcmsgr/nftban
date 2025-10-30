@@ -1,0 +1,27 @@
+[Unit]
+Description=NFTBan Apply Rules (Commit-Confirm with Auto-Rollback)
+Documentation=man:nftban(8) https://nftban.com/docs/recovery
+Wants=network-online.target
+After=network-online.target nftables.service
+ConditionPathExists=/etc/nftban/compiled.nft
+# Allow disabling via kernel cmdline: add nftban=disabled to GRUB entry
+ConditionKernelCommandLine=!nftban=disabled
+
+[Service]
+Type=oneshot
+EnvironmentFile=-/etc/default/nftban
+ExecStart=/usr/sbin/nftban-apply
+# If apply fails, try to restore backup so SSH isn't bricked
+ExecStopPost=/usr/sbin/nftban-rollback --force
+RemainAfterExit=yes
+StandardOutput=journal
+StandardError=journal
+
+# Security hardening
+ProtectSystem=strict
+ReadWritePaths=/var/lib/nftban /var/log/nftban /run/nftban
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

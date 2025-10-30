@@ -1,0 +1,12 @@
+[Unit]
+Description=Run NFTBan GeoIP update weekly
+
+[Timer]
+OnCalendar=weekly
+Persistent=true
+AccuracySec=1h
+RandomizedDelaySec=15m
+Unit=nftban-geoip-update.service
+
+[Install]
+WantedBy=timers.target

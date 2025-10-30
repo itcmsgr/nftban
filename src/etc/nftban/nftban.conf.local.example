@@ -1,0 +1,50 @@
+# =============================================================================
+# NFTBan User Customizations (Example)
+# =============================================================================
+# Version: 0.10.0
+#
+# ⚠️  This file is NEVER touched by package upgrades
+# ⚠️  Your customizations here are safe during updates
+#
+# Instructions:
+#   1. Copy this file:
+#      sudo cp /etc/nftban/nftban.conf.local.example \
+#             /etc/nftban/nftban.conf.local
+#
+#   2. Edit your copy:
+#      sudo nano /etc/nftban/nftban.conf.local
+#
+#   3. Uncomment and modify settings below
+#
+# =============================================================================
+
+# =============================================================================
+# Common Customizations
+# =============================================================================
+
+# Enable debug mode for troubleshooting
+#NFTBAN_DEBUG_MODE="true"
+
+# Banner settings (set in conf.d/banner.conf, can override here)
+#NFTBAN_BANNER_MODE="simple"           # simple, full, minimal, none, auto
+#NFTBAN_MODULE_LOAD_LEVEL="info"       # none, error, info, debug, verbose
+#NFTBAN_COLOR="true"                   # true, false, auto
+
+# =============================================================================
+# Advanced Settings (Usually Not Needed)
+# =============================================================================
+
+# Override FHS paths (not recommended unless you know what you're doing)
+#NFTBAN_STATE_DIR="/custom/var/lib/nftban"
+#NFTBAN_LOG_DIR="/custom/var/log/nftban"
+
+# =============================================================================
+# Custom Variables
+# =============================================================================
+# Add your own custom variables below for use in scripts
+
+#MY_CUSTOM_SETTING="value"
+
+# =============================================================================
+# End of Example Configuration
+# =============================================================================

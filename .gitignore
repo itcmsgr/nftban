@@ -1,0 +1,103 @@
+# NFTBan v0.10.0 - Git Ignore File
+# =============================================================================
+
+# Development archives (internal development history)
+.archive/
+
+# Build artifacts
+*.o
+*.so
+*.a
+*.dylib
+*.exe
+*.dll
+
+# Go build artifacts
+go-feeds/nftban-feeds
+go-feeds/nftban-geoip
+*.test
+*.out
+
+# Temporary files
+*.tmp
+*.swp
+*.swo
+*~
+.#*
+\#*#
+
+# Logs
+*.log
+logs/
+
+# Editor and IDE files
+.vscode/
+.idea/
+*.sublime-*
+*.code-workspace
+.DS_Store
+
+# Python cache (if any Python tools added)
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# Test results
+test-results/
+coverage/
+.coverage
+
+# Package build artifacts
+*.rpm
+*.deb
+*.tar.gz
+*.zip
+dist/
+build/
+
+# Private configurations (user should never commit these)
+**/secrets.d/*
+*.key
+*.pem
+*.crt
+!*.example
+
+# Runtime data
+/var/lib/nftban/
+/var/log/nftban/
+/var/cache/nftban/
+/run/nftban/
+
+# Backup files
+*.bak
+*.backup
+*.orig
+
+# OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Terraform (if used for deployment)
+.terraform/
+*.tfstate
+*.tfstate.backup
+
+# Ansible (if used for deployment)
+*.retry
+
+# Docker (if used)
+.dockerignore
+docker-compose.override.yml
+
+# Local testing
+/tmp/
+/temp/
+local-test/
+
+# Personal notes
+NOTES.txt
+NOTES.md
+TODO-personal.md

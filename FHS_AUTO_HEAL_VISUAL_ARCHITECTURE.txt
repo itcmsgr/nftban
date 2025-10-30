@@ -1,0 +1,226 @@
+# NFTBan Auto-Heal Visual Architecture
+# ASCII Diagram for Documentation
+# Date: 2025-10-30
+# Version: 1.0
+
+═══════════════════════════════════════════════════════════════════════════
+                    NFTBan Permission Architecture
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          FILESYSTEM LAYOUT                              │
+└─────────────────────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────┐  ┌─────────────────────────────┐
+│      ROOT-OWNED             │  │    NFTBAN-OWNED             │
+│    (System Files)           │  │   (Runtime Data)            │
+│                             │  │                             │
+│  /usr/lib/nftban/          │  │  /var/lib/nftban/          │
+│  ├─ core/    (755)         │  │  ├─ reports/   (750)       │
+│  ├─ cli/     (755)         │  │  ├─ metrics/   (750)       │
+│  └─ bin/     (755)         │  │  ├─ snapshots/ (750)       │
+│  root:root                  │  │  └─ exports/   (750)       │
+│                             │  │  nftban:nftban             │
+│  /usr/share/nftban/        │  │                             │
+│  └─ templates/ (755)       │  │  /var/log/nftban/          │
+│  root:root                  │  │  └─ reports/   (750)       │
+│                             │  │  nftban:nftban             │
+│  /usr/sbin/                │  │                             │
+│  └─ nftban     (755)       │  │  /var/cache/nftban/ (755)  │
+│  root:root                  │  │  nftban:nftban             │
+│                             │  │                             │
+└─────────────────────────────┘  └─────────────────────────────┘
+           │                                  │
+           │                                  │
+           └──────────┬───────────────────────┘
+                      │
+        ┌─────────────▼──────────────┐
+        │    SHARED ACCESS           │
+        │  (root:nftban group)       │
+        │                            │
+        │  /etc/nftban/       (750)  │
+        │  └─ conf.d/         (750)  │
+        │  root:nftban               │
+        │  (root writes, nftban reads)│
+        └────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════
+                         DAILY AUTO-HEAL FLOW
+═══════════════════════════════════════════════════════════════════════════
+
+    ┌──────────────┐
+    │  03:00 AM    │  Daily systemd timer trigger
+    └──────┬───────┘
+           │
+           ▼
+    ┌────────────────────────────────────────┐
+    │  nftban-health.timer                   │
+    │  - Runs: daily at 03:00 AM             │
+    │  - Random delay: 0-30 minutes          │
+    │  - Persistent: catches up after reboot │
+    └──────┬─────────────────────────────────┘
+           │
+           ▼
+    ┌────────────────────────────────────────┐
+    │  nftban-health.service                 │
+    │  - User: nftban (NOT root!)            │
+    │  - Command: nftban health fix all      │
+    └──────┬─────────────────────────────────┘
+           │
+           ▼
+    ┌────────────────────────────────────────┐
+    │  Smart Auto-Fix Logic                  │
+    │                                        │
+    │  FOR EACH directory:                   │
+    │    ┌─ Am I owner? ─────────┐          │
+    │    │                        │          │
+    │  YES                       NO          │
+    │    │                        │          │
+    │    ▼                        ▼          │
+    │  ✅ FIX IT              ⚠️ REPORT     │
+    │  - Create dirs          - "Need root" │
+    │  - Fix perms            - Show reason │
+    │  - Clean up             - Log journal │
+    │                                        │
+    └──────┬─────────────────────────────────┘
+           │
+           ▼
+    ┌────────────────────────────────────────┐
+    │  Results Logged to systemd journal     │
+    │                                        │
+    │  ✅ Fixed:                             │
+    │    - /var/lib/nftban/exports created   │
+    │    - /var/cache/nftban perms fixed     │
+    │                                        │
+    │  ⚠️  Need Root:                        │
+    │    - /usr/lib/nftban/bin missing       │
+    │    - /etc/nftban wrong perms           │
+    └──────┬─────────────────────────────────┘
+           │
+           ▼
+    ┌────────────────────────────────────────┐
+    │  Admin Reviews (when needed)           │
+    │                                        │
+    │  $ journalctl -u nftban-health.service │
+    │  [sees warnings]                       │
+    │                                        │
+    │  $ sudo nftban health fix all          │
+    │  ✅ All system files fixed!            │
+    └────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════
+                      PERMISSION DECISION TREE
+═══════════════════════════════════════════════════════════════════════════
+
+                    Directory Needs Fix
+                           │
+                           ▼
+                ┌──────────────────────┐
+                │ Who owns this path?  │
+                └──────┬───────────────┘
+                       │
+         ┌─────────────┴─────────────┐
+         │                           │
+    Owner: nftban              Owner: root
+         │                           │
+         ▼                           ▼
+┌──────────────────┐        ┌──────────────────┐
+│ Running as:      │        │ Running as:      │
+│ nftban user?     │        │ root?            │
+└─────┬────────────┘        └─────┬────────────┘
+      │                           │
+    YES                         YES   NO
+      │                           │    │
+      ▼                           ▼    ▼
+  ✅ FIX                      ✅ FIX  ⚠️ REPORT
+  - mkdir                     - mkdir  "Need root"
+  - chmod                     - chown  + reason
+                              - chmod  + solution
+
+═══════════════════════════════════════════════════════════════════════════
+                    SECURITY BOUNDARY ENFORCEMENT
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│                          ATTACKER SCENARIOS                             │
+└─────────────────────────────────────────────────────────────────────────┘
+
+Scenario 1: Compromise nftban user
+    ↓
+Attacker tries: echo "malicious" > /usr/lib/nftban/core/module.sh
+    ↓
+Result: ❌ BLOCKED (owner: root, not writable by nftban)
+    ↓
+Security: ✅ System code protected
+
+
+Scenario 2: Compromise nftban user, modify owned files
+    ↓
+Attacker tries: echo "malicious" > /var/lib/nftban/data.txt
+    ↓
+Result: ✅ SUCCEEDS (nftban owns it)
+    ↓
+Impact: Limited to runtime data only (not system code)
+    ↓
+Security: ✅ Blast radius contained
+
+
+Scenario 3: Try to escalate privileges
+    ↓
+Attacker tries: chmod u+s /usr/sbin/nftban
+    ↓
+Result: ❌ BLOCKED (owner: root, nftban can't change perms)
+    ↓
+Security: ✅ No privilege escalation possible
+
+═══════════════════════════════════════════════════════════════════════════
+                        VERIFICATION CHECKLIST
+═══════════════════════════════════════════════════════════════════════════
+
+┌─────────────────────────────────────────────────────────────────────────┐
+│  Quick Health Check Commands                                           │
+└─────────────────────────────────────────────────────────────────────────┘
+
+  ✓ FHS Compliance
+    $ nftban fhs
+    Expected: Total directories: 21 | OK: 21 | Errors: 0 | Missing: 0
+
+  ✓ Timer Status
+    $ systemctl status nftban-health.timer
+    Expected: Active: active (waiting)
+
+  ✓ Recent Runs
+    $ journalctl -u nftban-health.service -n 50
+    Expected: No errors, all dirs OK
+
+  ✓ Manual Fix (if needed)
+    $ sudo nftban health fix all
+    Expected: All issues corrected
+
+═══════════════════════════════════════════════════════════════════════════
+                           KEY METRICS
+═══════════════════════════════════════════════════════════════════════════
+
+┌───────────────────────────┬──────────────┬──────────────┐
+│ Metric                    │ Before       │ After        │
+├───────────────────────────┼──────────────┼──────────────┤
+│ FHS Compliance            │ ~70%         │ 100%         │
+│ Manual fixes per deploy   │ 3-5 times    │ 0            │
+│ Admin intervention        │ Always       │ Rare         │
+│ Security risk             │ Medium       │ Low          │
+│ Maintenance overhead      │ High         │ Near zero    │
+└───────────────────────────┴──────────────┴──────────────┘
+
+═══════════════════════════════════════════════════════════════════════════
+                        DEPLOYMENT STATUS
+═══════════════════════════════════════════════════════════════════════════
+
+┌────────────────────┬──────────┬────────┬─────────────┐
+│ Server             │ FHS Spec │ Timer  │ Compliance  │
+├────────────────────┼──────────┼────────┼─────────────┤
+│ lab.example.test   │    ✅    │   ✅   │  21/21 OK   │
+│ lab1.example.test  │    ✅    │   ✅   │  21/21 OK   │
+│ lab2.example.test  │    ✅    │   ✅   │  21/21 OK   │
+└────────────────────┴──────────┴────────┴─────────────┘
+
+═══════════════════════════════════════════════════════════════════════════

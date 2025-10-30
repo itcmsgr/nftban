@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="author" content="Antonios Voulvoulis, contact@nftban.com">
+    <meta name="generator" content="NFTBan v0.10.0">
+    <meta name="homepage" content="https://nftban.com">
+    <title>NFTBan FHS Compliance Report - {HOSTNAME}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 3px solid #0066cc;
+            padding-bottom: 20px;
+        }
+        .logo {
+            max-width: 200px;
+            height: auto;
+            margin-bottom: 15px;
+        }
+        h1 {
+            color: #333333;
+            margin: 10px 0;
+            font-size: 28px;
+        }
+        h2 {
+            color: #0066cc;
+            font-size: 22px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        .tagline {
+            color: #666666;
+            font-size: 16px;
+            font-style: italic;
+            margin-top: 10px;
+            margin-bottom: 15px;
+        }
+        .server-info {
+            color: #666666;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .server-info p {
+            margin: 5px 0;
+        }
+        .summary-stats {
+            display: flex;
+            justify-content: space-around;
+            margin: 25px 0;
+            flex-wrap: wrap;
+        }
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            min-width: 150px;
+            margin: 10px;
+        }
+        .stat-box.success {
+            background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%);
+        }
+        .stat-box.error {
+            background: linear-gradient(135deg, #eb3349 0%, #f45c43 100%);
+        }
+        .stat-number {
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        th {
+            background-color: #0066cc;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        tr:hover {
+            background-color: #f8f9fa;
+        }
+        tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+        tr.error-row {
+            background-color: #fff5f5;
+        }
+        tr.error-row:hover {
+            background-color: #ffe5e5;
+        }
+        .status-ok {
+            color: #28a745;
+            font-weight: 600;
+        }
+        .status-error {
+            color: #dc3545;
+            font-weight: 600;
+        }
+        .status-missing {
+            color: #ffc107;
+            font-weight: 600;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-ok {
+            background-color: #28a745;
+            color: #fff;
+        }
+        .badge-error {
+            background-color: #dc3545;
+            color: #fff;
+        }
+        .badge-missing {
+            background-color: #ffc107;
+            color: #000;
+        }
+        .path-text {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 13px;
+            color: #333;
+            font-weight: 500;
+        }
+        .perm-text {
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 12px;
+            color: #555;
+        }
+        .alert {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .alert-success {
+            background-color: #d4edda;
+            border-left: 4px solid #28a745;
+            color: #155724;
+        }
+        .alert-warning {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            color: #856404;
+        }
+        .alert-danger {
+            background-color: #f8d7da;
+            border-left: 4px solid #dc3545;
+            color: #721c24;
+        }
+        .alert-info {
+            background-color: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            color: #0c5460;
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+            text-align: center;
+            color: #666666;
+            font-size: 12px;
+        }
+        .footer p {
+            margin: 8px 0;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            {LOGO_HTML}
+            <h1>📂 NFTBan FHS Compliance Report</h1>
+            <div class="tagline">nftban — Simplifying Linux Firewall Management</div>
+            <div class="server-info">
+                {COMPANY_NAME}
+                <p>Server: <strong>{HOSTNAME}</strong> • IP: <strong>{SERVER_IP}</strong></p>
+                <p>Generated: <strong>{DATE}</strong> at <strong>{TIME}</strong></p>
+                {VERSION_HTML}
+            </div>
+        </div>
+
+        <div class="summary-stats">
+            <div class="stat-box">
+                <div class="stat-number">{TOTAL_DIRECTORIES}</div>
+                <div class="stat-label">Total Directories</div>
+            </div>
+            <div class="stat-box success">
+                <div class="stat-number">{OK_DIRECTORIES}</div>
+                <div class="stat-label">Compliant</div>
+            </div>
+            <div class="stat-box error">
+                <div class="stat-number">{ERROR_DIRECTORIES}</div>
+                <div class="stat-label">Issues Found</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">{MISSING_DIRECTORIES}</div>
+                <div class="stat-label">Missing</div>
+            </div>
+        </div>
+
+        {COMPLIANCE_ALERT}
+
+        <h2>📊 Directory Compliance Status</h2>
+
+        <div class="alert alert-info">
+            <strong>FHS Standards:</strong> This report checks NFTBan directories against the Filesystem Hierarchy Standard (FHS). All directories should have correct permissions, ownership, and group settings for security compliance.
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Directory Path</th>
+                    <th>Expected</th>
+                    <th>Actual</th>
+                    <th>Status</th>
+                    <th>Issues</th>
+                </tr>
+            </thead>
+            <tbody>
+                {FHS_TABLE_ROWS}
+            </tbody>
+        </table>
+
+        {RECOMMENDATIONS_SECTION}
+
+        <h2>📖 FHS Directory Reference</h2>
+        <div style="margin: 20px 0; padding: 15px; background-color: #f8f9fa; border-radius: 5px;">
+            <p style="margin: 5px 0;"><code>/usr/lib/nftban</code> - Core libraries and modules</p>
+            <p style="margin: 5px 0;"><code>/etc/nftban</code> - Configuration files</p>
+            <p style="margin: 5px 0;"><code>/var/lib/nftban</code> - Variable state data (databases, feeds)</p>
+            <p style="margin: 5px 0;"><code>/var/log/nftban</code> - Log files</p>
+            <p style="margin: 5px 0;"><code>/var/cache/nftban</code> - Cached data (can be regenerated)</p>
+            <p style="margin: 5px 0;"><code>/run/nftban</code> - Runtime data (PID files, sockets)</p>
+            <p style="margin: 5px 0;"><code>/usr/share/nftban</code> - Architecture-independent data</p>
+        </div>
+
+        <div class="footer">
+            <p>
+                <strong>Generated by NFTBan v{NFTBAN_VERSION}</strong><br>
+                {DATE} at {TIME}
+            </p>
+            <p>
+                {COMPANY_NAME}
+            </p>
+            <p style="font-style: italic;">
+                This is an automated report from your NFTBan security system.
+            </p>
+            <p style="color: #999999; font-size: 11px;">
+                Server: {HOSTNAME} • IP: {SERVER_IP}
+            </p>
+        </div>
+    </div>
+</body>
+</html>

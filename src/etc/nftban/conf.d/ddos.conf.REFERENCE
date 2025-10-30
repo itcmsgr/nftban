@@ -1,0 +1,259 @@
+# ═══════════════════════════════════════════════════════════════
+# NFTBan DDOS Protection Configuration - SAFE DEFAULTS
+# ═══════════════════════════════════════════════════════════════
+#
+# ALL LIMITS ARE DISABLED BY DEFAULT (commented with #)
+# Remove # from a line to enable that specific limit
+#
+# After changing values, reload: nftban ddos reload
+#
+# ═══════════════════════════════════════════════════════════════
+
+# ───────────────────────────────────────────────────────────────
+# ⚠️  CRITICAL: ALWAYS WHITELIST THESE FIRST!
+# ───────────────────────────────────────────────────────────────
+#
+# Uncomment and configure BEFORE enabling any limits!
+# Add: localhost, office IPs, CDN IPs, monitoring IPs
+#
+#DDOS_WHITELIST="127.0.0.1,::1,10.0.0.0/8,192.168.0.0/16"
+#DDOS_OFFICE_IPS=""           # Your office/VPN network
+#DDOS_CDN_IPS=""               # Cloudflare, etc.
+
+# ───────────────────────────────────────────────────────────────
+# HTTP/HTTPS LIMITS
+# ───────────────────────────────────────────────────────────────
+#
+# RECOMMENDED BY SERVER TYPE:
+#   Multi-site hosting (50+ sites):     300
+#   Shared hosting (20-50 sites):       200
+#   Single business site:               150
+#   Personal site:                      100
+#   API/proxy (known patterns):         80
+#
+# CURRENT: DISABLED (no limit)
+# Remove # below to enable:
+#
+#DDOS_HTTP_CONN_PER_IP=150             # Max connections per IP
+#DDOS_HTTP_RATE_LIMIT=120              # Requests per second
+#DDOS_HTTP_RATE_BURST=240              # Burst allowance (2× rate)
+
+# ───────────────────────────────────────────────────────────────
+# SSH LIMITS
+# ───────────────────────────────────────────────────────────────
+#
+# RECOMMENDED BY TEAM SIZE:
+#   Large DevOps team (10+ admins):    20
+#   Small team (5-10 admins):          15
+#   Tiny team (2-5 admins):            10
+#   Single admin:                      8
+#
+# CONSIDERATIONS:
+#   - Each tmux/screen session = 1 connection
+#   - SCP/SFTP = additional connections
+#   - Git operations = additional connections
+#   - Ansible/automation = multiple connections
+#
+# CURRENT: DISABLED (no limit)
+# Remove # below to enable:
+#
+#DDOS_SSH_CONN_PER_IP=10               # Max SSH connections per IP
+
+# ───────────────────────────────────────────────────────────────
+# SMTP LIMITS (Outgoing Mail)
+# ───────────────────────────────────────────────────────────────
+#
+# RECOMMENDED BY USAGE:
+#   Large office (50+ employees):      60
+#   Medium office (20-50 employees):   40
+#   Small office (5-20 employees):     25
+#   Personal/relay:                    15
+#
+# CONSIDERATIONS:
+#   - Each email account = 1-2 connections
+#   - Mailing lists require higher limits
+#   - Webmail (Roundcube, etc.) = multiple connections
+#   - Office 365/G Suite relay = burst connections
+#
+# CURRENT: DISABLED (no limit)
+# Remove # below to enable:
+#
+#DDOS_SMTP_CONN_PER_IP=25              # Max SMTP connections per IP
+
+# ───────────────────────────────────────────────────────────────
+# IMAP LIMITS (Incoming Mail Check)
+# ───────────────────────────────────────────────────────────────
+#
+# RECOMMENDED BY USAGE:
+#   Many accounts per user:            120
+#   Office with multiple accounts:     80
+#   Standard office:                   60
+#   Personal use:                      30
+#
+# CONSIDERATIONS:
+#   - Each email account = 1-2 IMAP connections
+#   - Multiple devices (phone, laptop, desktop) = 3× connections
+#   - IMAP IDLE = persistent connections
+#   - Outlook/Thunderbird = aggressive connection patterns
+#
+# CURRENT: DISABLED (no limit)
+# Remove # below to enable:
+#
+#DDOS_IMAP_CONN_PER_IP=60              # Max IMAP connections per IP
+
+# ───────────────────────────────────────────────────────────────
+# POP3 LIMITS (Legacy Mail Protocol)
+# ───────────────────────────────────────────────────────────────
+#
+# RECOMMENDED:
+#   Office environment:                50
+#   Standard use:                      30
+#   Personal:                          15
+#
+# NOTE: POP3 typically uses fewer connections than IMAP
+#
+# CURRENT: DISABLED (no limit)
+# Remove # below to enable:
+#
+#DDOS_POP3_CONN_PER_IP=30              # Max POP3 connections per IP
+
+# ───────────────────────────────────────────────────────────────
+# DATABASE LIMITS (MySQL, PostgreSQL)
+# ───────────────────────────────────────────────────────────────
+#
+# RECOMMENDED:
+#   Application server pool:           100
+#   Shared hosting:                    50
+#   Single application:                30
+#
+# ⚠️  WARNING: Database limits are TRICKY!
+#    - Only limit REMOTE connections
+#    - NEVER limit localhost (127.0.0.1)
+#    - Consider connection pooling (pgBouncer, ProxySQL)
+#
+# CURRENT: DISABLED (no limit)
+# Remove # below to enable:
+#
+#DDOS_MYSQL_CONN_PER_IP=50             # Remote MySQL only
+#DDOS_PGSQL_CONN_PER_IP=50             # Remote PostgreSQL only
+
+# ───────────────────────────────────────────────────────────────
+# FTP/FTPS LIMITS
+# ───────────────────────────────────────────────────────────────
+#
+# RECOMMENDED:
+#   Shared hosting:                    40
+#   Business server:                   20
+#   Personal:                          10
+#
+# CURRENT: DISABLED (no limit)
+# Remove # below to enable:
+#
+#DDOS_FTP_CONN_PER_IP=20               # Max FTP connections per IP
+
+# ───────────────────────────────────────────────────────────────
+# DNS LIMITS (If running DNS server)
+# ───────────────────────────────────────────────────────────────
+#
+# RECOMMENDED:
+#   Public DNS server:                 80
+#   Internal DNS:                      50
+#
+# CURRENT: DISABLED (no limit)
+# Remove # below to enable:
+#
+#DDOS_DNS_QUERY_PER_IP=50              # DNS queries per second per IP
+
+# ═══════════════════════════════════════════════════════════════
+# AUTO-TUNE SUGGESTIONS
+# ═══════════════════════════════════════════════════════════════
+#
+# Run: nftban ddos autotune
+#
+# This will analyze your server and suggest optimal limits based on:
+#   - Server RAM and CPU
+#   - Number of hosted sites
+#   - Detected hosting panel (cPanel, DirectAdmin, Plesk)
+#   - Historical traffic patterns (if logs available)
+#   - Running services
+#
+# Example output:
+#   DDOS_HTTP_CONN_PER_IP=250     # Detected: 42 sites, multi-site hosting
+#   DDOS_SSH_CONN_PER_IP=12       # Detected: 8 CPU cores, team server
+#   DDOS_SMTP_CONN_PER_IP=35      # Detected: postfix, 15 domains
+#
+# ═══════════════════════════════════════════════════════════════
+
+# ═══════════════════════════════════════════════════════════════
+# IMPORTANT NOTES
+# ═══════════════════════════════════════════════════════════════
+#
+# 1. START HIGH, REDUCE GRADUALLY
+#    - Begin with conservative (high) limits
+#    - Monitor for 24-48 hours
+#    - Reduce limits incrementally
+#    - Watch logs: tail -f /var/log/nftban/ddos-blocks.log
+#
+# 2. ALWAYS WHITELIST
+#    - Localhost: 127.0.0.1, ::1
+#    - Private networks: 10.0.0.0/8, 192.168.0.0/16
+#    - Your office IP
+#    - CDN IPs (Cloudflare, etc.)
+#    - Monitoring service IPs (UptimeRobot, Pingdom, etc.)
+#
+# 3. MONITOR BLOCKS
+#    - Check: nftban ddos stats
+#    - If block rate > 1%, investigate
+#    - Review blocked IPs: nftban ddos blocks --recent
+#    - Whitelist legitimate IPs immediately
+#
+# 4. RELOAD AFTER CHANGES
+#    - After editing this file: nftban ddos reload
+#    - Check status: nftban ddos status
+#    - Verify limits: nftban ddos show
+#
+# 5. TESTING
+#    - Test on non-production first!
+#    - Use: nftban ddos test (dry-run, no actual blocking)
+#    - Simulate load to verify limits
+#
+# 6. PANEL SERVERS (cPanel, DirectAdmin, Plesk)
+#    - Use CONSERVATIVE limits
+#    - Account for users managing multiple sites
+#    - Whitelist panel IPs
+#    - Consider higher HTTP limits (200-300)
+#
+# 7. BACKUP CONFIG
+#    - Before changes: cp /etc/nftban/conf.d/ddos.conf /etc/nftban/conf.d/ddos.conf.backup
+#    - Rollback if issues: mv /etc/nftban/conf.d/ddos.conf.backup /etc/nftban/conf.d/ddos.conf
+#
+# ═══════════════════════════════════════════════════════════════
+# QUICK START EXAMPLE (Remove # to enable)
+# ═══════════════════════════════════════════════════════════════
+#
+# For a typical small business server with:
+#   - 5-10 websites
+#   - 5 admin team
+#   - Office email (10 employees)
+#
+# 1. Whitelist (REQUIRED!)
+#DDOS_WHITELIST="127.0.0.1,::1,10.0.0.0/8,192.168.0.0/16,YOUR_OFFICE_IP"
+#
+# 2. Enable limits
+#DDOS_HTTP_CONN_PER_IP=150
+#DDOS_HTTP_RATE_LIMIT=120
+#DDOS_HTTP_RATE_BURST=240
+#DDOS_SSH_CONN_PER_IP=15
+#DDOS_SMTP_CONN_PER_IP=25
+#DDOS_IMAP_CONN_PER_IP=60
+#
+# 3. Reload
+#    nftban ddos reload
+#
+# 4. Monitor
+#    nftban ddos stats
+#    tail -f /var/log/nftban/ddos-blocks.log
+#
+# ═══════════════════════════════════════════════════════════════
+# END OF CONFIGURATION
+# ═══════════════════════════════════════════════════════════════

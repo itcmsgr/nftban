@@ -1,0 +1,17 @@
+# =============================================================================
+# NFTBan Cron Jobs (Fallback if no systemd)
+# =============================================================================
+# Managed by: NFTBan package
+# NOTE: Prefer systemd timers over cron where available
+
+SHELL=/bin/bash
+PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
+
+# Feed updates (every 6 hours)
+0 */6 * * * root /usr/lib/nftban/cron/run.sh /usr/sbin/nftban feeds update >/dev/null 2>&1
+
+# Maintenance (daily at 03:00)
+0 3 * * * root /usr/lib/nftban/cron/run.sh /usr/sbin/nftban maintain >/dev/null 2>&1
+
+# Stats update (hourly)
+0 * * * * root /usr/lib/nftban/cron/run.sh /usr/sbin/nftban stats update >/dev/null 2>&1

@@ -1,0 +1,43 @@
+[Unit]
+Description=NFTBan Atomic Reload
+Documentation=man:nft(8)
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+# Adjust if your entrypoint differs:
+ExecStart=/usr/lib/nftban/cli/cmd_reload.sh --atomic
+# Environment you might use in scripts:
+Environment=SSH_PORT=22
+Environment=NFTBIN=/usr/sbin/nft
+
+# Security hardening (root is required for nft, but lock it down)
+User=root
+Group=root
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=full
+ProtectHome=yes
+ProtectControlGroups=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+LockPersonality=yes
+RestrictNamespaces=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+RestrictSUIDSGID=yes
+IPAddressDeny=any
+RestrictAddressFamilies=AF_INET AF_INET6
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW
+AmbientCapabilities=CAP_NET_ADMIN
+# Write access only where needed
+ReadWritePaths=/etc/nftban /var/lib/nftban /var/log/nftban /var/backups/nftban /run/nftban
+
+# Timeouts and retries
+TimeoutStartSec=2min
+RemainAfterExit=no
+
+[Install]
+WantedBy=multi-user.target

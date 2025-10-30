@@ -1,0 +1,151 @@
+#!/usr/sbin/nft -f
+# NFTBan Baseline - Minimal Safe Ruleset
+# SPDX-License-Identifier: MPL-2.0
+# Copyright (c) 2024–2026 NFTBAN Project / Antonios Voulvoulis
+#
+# This is a minimal "always safe" firewall ruleset that allows SSH access
+# from management IPs. Use this as an emergency fallback when your main
+# rules are broken or causing lockouts.
+#
+# Usage:
+#   sudo nft -f /etc/nftban/baseline.nft
+#
+# IMPORTANT: Edit the mgmt_ipv4 and mgmt_ipv6 sets below with YOUR
+#            management IP addresses before deploying to production!
+
+flush ruleset
+
+table inet filter {
+    # Management IP addresses (EDIT THESE!)
+    # These IPs will ALWAYS have SSH access, even in emergency
+    set mgmt_ipv4 {
+        type ipv4_addr
+        flags interval
+        comment "Management IPv4 addresses with SSH access"
+        elements = {
+            10.0.0.0/8,         # Private network (RFC 1918)
+            192.168.0.0/16,     # Private network (RFC 1918)
+            172.16.0.0/12       # Private network (RFC 1918)
+            # Add your office/home/VPN IPs here:
+            # 198.51.100.10,    # Example: Your static IP
+            # 203.0.113.0/24    # Example: Your office network
+        }
+    }
+
+    set mgmt_ipv6 {
+        type ipv6_addr
+        flags interval
+        comment "Management IPv6 addresses with SSH access"
+        elements = {
+            ::1,                # Localhost
+            fc00::/7,           # Unique local addresses (RFC 4193)
+            fe80::/10           # Link-local addresses (RFC 4291)
+            # Add your IPv6 ranges here:
+            # 2001:db8::/48     # Example: Your IPv6 prefix
+        }
+    }
+
+    chain input {
+        type filter hook input priority 0
+        policy drop
+        comment "Input chain - minimal safe defaults"
+
+        # Allow established and related connections
+        ct state established,related accept \
+            comment "Allow established connections"
+
+        # Allow loopback traffic
+        iif lo accept \
+            comment "Allow loopback interface"
+
+        # Allow SSH from management IPs (IPv4)
+        tcp dport 22 ip saddr @mgmt_ipv4 accept \
+            comment "Allow SSH from management IPv4"
+
+        # Allow SSH from management IPs (IPv6)
+        tcp dport 22 ip6 saddr @mgmt_ipv6 accept \
+            comment "Allow SSH from management IPv6"
+
+        # Allow ICMP (ping) for diagnostics
+        icmp type { echo-request, echo-reply } accept \
+            comment "Allow ICMPv4 ping"
+
+        # Allow ICMPv6 (required for IPv6 to work)
+        icmpv6 type {
+            echo-request,
+            echo-reply,
+            nd-neighbor-solicit,
+            nd-neighbor-advert,
+            nd-router-advert,
+            nd-router-solicit
+        } accept comment "Allow ICMPv6 essential types"
+
+        # Log and drop everything else
+        log prefix "baseline-drop: " level info drop
+    }
+
+    chain forward {
+        type filter hook forward priority 0
+        policy drop
+        comment "Forward chain - drop all by default"
+
+        # If you need forwarding (e.g., for NAT/routing), configure here
+    }
+
+    chain output {
+        type filter hook output priority 0
+        policy accept
+        comment "Output chain - allow all outgoing by default"
+
+        # Allow all outgoing traffic
+        # If you need stricter outbound rules, configure here
+    }
+}
+
+# =============================================================================
+# CUSTOMIZATION INSTRUCTIONS
+# =============================================================================
+#
+# Before using this baseline in production, customize it for your environment:
+#
+# 1. Update management IP addresses:
+#    - Replace the RFC 1918 ranges with your actual management IPs
+#    - Add your office network, home IP, VPN server IPs
+#    - Include monitoring server IPs
+#
+# 2. Adjust SSH port if non-standard:
+#    - Change "tcp dport 22" to your SSH port
+#    - Example: "tcp dport 2222" if you use port 2222
+#
+# 3. Add essential services:
+#    - If you need HTTP/HTTPS during emergency:
+#      tcp dport { 80, 443 } accept comment "Allow web traffic"
+#    - If you need DNS:
+#      udp dport 53 accept comment "Allow DNS"
+#
+# 4. Test the baseline:
+#    - Apply it on a test server: nft -f /etc/nftban/baseline.nft
+#    - Verify you can SSH from your management IPs
+#    - Verify you CANNOT SSH from other IPs (expected)
+#    - Once confirmed safe, deploy to production
+#
+# 5. Keep it updated:
+#    - When management IPs change, update this file
+#    - Test after every change
+#    - Store backup copy in /root/baseline.nft.backup
+#
+# =============================================================================
+# EMERGENCY USAGE
+# =============================================================================
+#
+# If you're locked out and have console/IPMI access:
+#
+# 1. Log in via console
+# 2. Load this baseline: sudo nft -f /etc/nftban/baseline.nft
+# 3. SSH should work from management IPs
+# 4. Fix the broken rules
+# 5. Re-apply with safety: sudo nftban-apply
+#
+# =============================================================================
+
+# End of baseline ruleset

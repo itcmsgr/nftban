@@ -1,0 +1,132 @@
+#!/usr/bin/env bash
+# NFTBan Emergency Recovery - Rollback Rules
+# Copyright (c) 2024–2026 NFTBAN Project / Antonios Voulvoulis
+# SPDX-License-Identifier: MPL-2.0
+#
+# Rolls back to the last-known-good ruleset.
+# Can be called automatically by timer or manually for emergency recovery.
+
+set -Eeuo pipefail
+
+BACKUP="/var/lib/nftban/backup.rules"
+ROLLBACK_FLAG="/run/nftban.rollback.deadline"
+FORCE_MODE=false
+
+# Check for force flag
+if [[ "${1:-}" == "--force" ]]; then
+    FORCE_MODE=true
+fi
+
+# Banner (only in interactive mode)
+if [[ "$FORCE_MODE" == "false" ]]; then
+    echo "╔═══════════════════════════════════════════════════╗"
+    echo "║  NFTBan Emergency Recovery - Rollback Rules      ║"
+    echo "╚═══════════════════════════════════════════════════╝"
+    echo ""
+fi
+
+# Check if we have a rollback deadline
+if [[ -f "$ROLLBACK_FLAG" ]]; then
+    DEADLINE=$(cat "$ROLLBACK_FLAG")
+    NOW=$(date +%s)
+
+    # Check if we've reached the deadline (or force mode)
+    if (( NOW >= DEADLINE )) || [[ "$FORCE_MODE" == "true" ]]; then
+
+        if [[ "$FORCE_MODE" == "true" ]]; then
+            echo "FORCED ROLLBACK requested..."
+        else
+            echo "Rollback deadline reached (not confirmed in time)..."
+        fi
+        echo ""
+
+        # Check if we have a backup
+        if [[ ! -s "$BACKUP" ]]; then
+            echo "ERROR: No backup ruleset found at $BACKUP"
+            echo "Cannot rollback without backup!"
+            echo ""
+            echo "Emergency options:"
+            echo "  1. Flush all rules: nft flush ruleset"
+            echo "  2. Load baseline: nft -f /etc/nftban/baseline.nft"
+            echo "  3. Console/IPMI access to fix manually"
+            exit 1
+        fi
+
+        echo "Rolling back to last-known-good ruleset..."
+
+        # Apply backup ruleset
+        if nft -f "$BACKUP"; then
+            echo "  ✓ Backup ruleset applied successfully"
+        else
+            echo "  ✗ ERROR: Failed to apply backup ruleset!"
+            echo ""
+            echo "Emergency: Flushing all rules for safety..."
+            nft flush ruleset || true
+            exit 2
+        fi
+
+        # Remove rollback flag
+        rm -f "$ROLLBACK_FLAG"
+
+        # Stop rollback timer
+        if command -v systemctl &>/dev/null; then
+            systemctl stop nftban-rollback.timer 2>/dev/null || true
+        fi
+
+        echo "  ✓ Rollback flag cleared"
+        echo ""
+        echo "════════════════════════════════════════════════════"
+        echo "✓ ROLLBACK COMPLETE"
+        echo "════════════════════════════════════════════════════"
+        echo ""
+        echo "Your firewall has been restored to the previous state."
+        echo "SSH access should be restored now."
+        echo ""
+        echo "Next steps:"
+        echo "  1. Verify connectivity: ssh user@server"
+        echo "  2. Review candidate rules: cat /etc/nftban/compiled.nft"
+        echo "  3. Fix issues and re-apply: nftban-apply"
+
+        exit 0
+    else
+        # Deadline not yet reached
+        REMAINING=$((DEADLINE - NOW))
+        echo "Rollback not yet due."
+        echo "  Time remaining: ${REMAINING} seconds"
+        echo "  Deadline: $(date -d "@${DEADLINE}" 2>/dev/null || date -r "${DEADLINE}" 2>/dev/null || echo "unknown")"
+        echo ""
+        echo "To rollback immediately, use: sudo nftban-rollback --force"
+        exit 0
+    fi
+else
+    # No rollback flag
+    if [[ "$FORCE_MODE" == "true" ]]; then
+        echo "FORCED ROLLBACK requested (no timer active)..."
+        echo ""
+
+        # Check if we have a backup
+        if [[ ! -s "$BACKUP" ]]; then
+            echo "ERROR: No backup ruleset found at $BACKUP"
+            echo "Cannot rollback without backup!"
+            exit 1
+        fi
+
+        echo "Rolling back to last-known-good ruleset..."
+
+        # Apply backup ruleset
+        if nft -f "$BACKUP"; then
+            echo "  ✓ Backup ruleset applied successfully"
+            echo ""
+            echo "Rollback complete. Previous rules restored."
+        else
+            echo "  ✗ ERROR: Failed to apply backup ruleset!"
+            exit 2
+        fi
+
+        exit 0
+    else
+        # Normal check, no rollback pending
+        # Silent exit for timer-based checks
+        exit 0
+    fi
+fi

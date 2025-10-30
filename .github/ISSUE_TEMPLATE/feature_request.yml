@@ -1,0 +1,77 @@
+---
+name: "💡 Feature Request"
+description: "Suggest an enhancement for nftban on Linux servers"
+title: "[FEATURE] "
+labels: ["enhancement", "needs-triage"]
+assignees: ["itcmsgr"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        ## About this template
+        Suggest an enhancement that improves reliability, UX, security, or maintainability.
+        Include the problem, impact, proposed solution, and alternatives. If CLI/config changes,
+        add example flags or keys.
+
+        Thank you for helping improve nftban!
+
+  - type: input
+    id: summary
+    attributes:
+      label: "Feature Summary"
+      placeholder: "One sentence summary of what you'd like to add or change"
+    validations:
+      required: true
+
+  - type: textarea
+    id: motivation
+    attributes:
+      label: "Why is this needed?"
+      description: "Problem statement or operational pain the feature solves"
+      placeholder: "Describe the use-case and impact. What problem does this solve?"
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: "Proposed Solution"
+      description: "High-level approach, CLI flags, config keys, example behavior"
+      placeholder: |
+        Example:
+        - New command: nftban feeds refresh --fast
+        - Config: /etc/nftban/nftban.env -> FEEDS_REFRESH_INTERVAL=15m
+        - Behavior: Refreshes threat feeds every 15 minutes instead of hourly
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: scope
+    attributes:
+      label: "Which areas are affected?"
+      options:
+        - label: "Core / CLI"
+        - label: "Installer / Packaging"
+        - label: "Fail2Ban integration"
+        - label: "DDoS / Port scan"
+        - label: "GeoIP / Feeds"
+        - label: "Docs"
+        - label: "Testing / CI"
+    validations:
+      required: false
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: "Alternatives Considered"
+      placeholder: "Other approaches and why they are less suitable"
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional
+    attributes:
+      label: "Additional Context"
+      placeholder: "Links, prior art, related issues, screenshots, diagrams"
+    validations:
+      required: false

@@ -1,0 +1,603 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan v0.10.0 - CLI Interface
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Main CLI entry point for NFTBan
+#
+# meta:name=nftban_cli
+# meta:type=cli
+# meta:header=NFTBan CLI
+# meta:version=0.10.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# **Description & Purpose**
+# meta:description=Main command-line interface for NFTBan firewall management
+# meta:input=Command line arguments
+# meta:output=Banner and command help
+#
+# **Inventory & Requirements**
+# meta:depends=bash,nftban_output.sh
+#
+# meta:created_date=2025-10-26
+
+set -Eeuo pipefail
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+
+export NFTBAN_VERSION="0.10.0"
+export NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+export NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+
+# =============================================================================
+# LOAD CONFIGURATION
+# =============================================================================
+
+# Load main config if exists
+if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+fi
+
+# Load module configs (conf.d/*.conf) in alphabetical order
+if [[ -d "${NFTBAN_CONFIG_DIR}/conf.d" ]]; then
+    for conf_file in "${NFTBAN_CONFIG_DIR}"/conf.d/*.conf; do
+        if [[ -f "$conf_file" ]]; then
+            # shellcheck source=/dev/null
+            source "$conf_file"
+        fi
+    done
+fi
+
+# Load user overrides (highest priority) if exists
+if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
+fi
+
+# =============================================================================
+# BASH COMPLETION ENDPOINT
+# =============================================================================
+
+nftban_complete() {
+    # Provides completion suggestions for bash
+    # Args: current words being completed
+
+    local words=("$@")
+    local cword="${#words[@]}"
+    local cur=""
+
+    # Safely get last element if array is not empty
+    if (( cword > 0 )); then
+        cur="${words[$((cword - 1))]}"
+    fi
+
+    # Level 0: Main commands
+    if (( cword == 0 )) || [[ -z "${words[0]:-}" ]]; then
+        echo "search"
+        echo "ban"
+        echo "unban"
+        echo "list"
+        echo "stats"
+        echo "report"
+        echo "port"
+        echo "module"
+        echo "services"
+        echo "fhs"
+        echo "geoip"
+        echo "health"
+        echo "login"
+        echo "whitelist-system"
+        echo "mail"
+        echo "cloudflare"
+        echo "ddos"
+        echo "portscan"
+        echo "profile"
+        echo "fail2ban"
+        echo "feeds"
+        echo "firewall"
+        echo "hello"
+        echo "version"
+        echo "check"
+        echo "help"
+        return 0
+    fi
+
+    # Level 1: Subcommands for each main command
+    local cmd="${words[0]}"
+    if (( cword == 1 )); then
+        case "$cmd" in
+            port)
+                echo "scan"
+                echo "list"
+                echo "summary"
+                echo "html-report"
+                echo "mail-report"
+                echo "help"
+                ;;
+            module)
+                echo "list"
+                echo "summary"
+                echo "html-report"
+                echo "mail-report"
+                echo "help"
+                ;;
+            fhs)
+                echo "check"
+                echo "list"
+                echo "summary"
+                echo "html-report"
+                echo "mail-report"
+                echo "help"
+                ;;
+            nftables)
+                echo "start"
+                echo "stop"
+                echo "restart"
+                echo "reload"
+                echo "enable"
+                echo "disable"
+                echo "status"
+                echo "check"
+                echo "list"
+                echo "help"
+                ;;
+            geoip)
+                echo "lookup"
+                echo "bulk"
+                echo "status"
+                echo "test"
+                echo "update"
+                echo "help"
+                ;;
+            stats)
+                echo "dashboard"
+                echo "top"
+                echo "ip"
+                echo "recent"
+                echo "monitor"
+                echo "export"
+                echo "snapshot"
+                echo "cleanup"
+                echo "clear-cache"
+                echo "check-alerts"
+                echo "help"
+                ;;
+            report)
+                echo "generate"
+                echo "email"
+                echo "schedule"
+                echo "run"
+                echo "list"
+                echo "help"
+                ;;
+            health)
+                echo "check"
+                echo "report"
+                echo "fix"
+                echo "services"
+                echo "modules"
+                echo "binaries"
+                echo "permissions"
+                echo "geoip"
+                echo "help"
+                ;;
+            login)
+                echo "status"
+                echo "install"
+                echo "enable"
+                echo "disable"
+                echo "logs"
+                echo "test"
+                echo "run"
+                echo "help"
+                ;;
+            mail)
+                echo "test"
+                echo "send"
+                echo "configure"
+                echo "help"
+                ;;
+            cloudflare)
+                echo "enable"
+                echo "disable"
+                echo "update"
+                echo "status"
+                echo "download"
+                echo "help"
+                ;;
+            ddos)
+                echo "enable"
+                echo "disable"
+                echo "status"
+                echo "test"
+                echo "help"
+                ;;
+            portscan)
+                echo "enable"
+                echo "disable"
+                echo "status"
+                echo "check"
+                echo "history"
+                echo "test"
+                echo "help"
+                ;;
+            profile)
+                echo "select"
+                echo "apply"
+                echo "show"
+                echo "list"
+                echo "help"
+                ;;
+            fail2ban)
+                echo "status"
+                echo "jails"
+                echo "available"
+                echo "recommended"
+                echo "jail"
+                echo "enable"
+                echo "disable"
+                echo "reload"
+                echo "banned"
+                echo "ban"
+                echo "unban"
+                echo "cloudflare"
+                echo "start"
+                echo "stop"
+                echo "restart"
+                echo "help"
+                ;;
+            feeds)
+                echo "select"
+                echo "list"
+                echo "enable"
+                echo "disable"
+                echo "enable-cat"
+                echo "enable-category"
+                echo "update"
+                echo "status"
+                echo "help"
+                ;;
+            firewall)
+                echo "init"
+                echo "reload"
+                echo "status"
+                echo "check"
+                echo "reset"
+                echo "help"
+                ;;
+            *)
+                # No subcommands
+                ;;
+        esac
+        return 0
+    fi
+
+    # Level 2: Options for specific subcommands
+    if (( cword == 2 )); then
+        local subcmd="${words[1]}"
+        case "${cmd}_${subcmd}" in
+            geoip_lookup)
+                echo "json"
+                echo "compact"
+                echo "country"
+                ;;
+            health_fix)
+                echo "all"
+                echo "permissions"
+                echo "directories"
+                echo "services"
+                ;;
+            health_report)
+                echo "terminal"
+                echo "html"
+                echo "json"
+                ;;
+            *)
+                # No further completions
+                ;;
+        esac
+        return 0
+    fi
+}
+
+# =============================================================================
+# MAIN CLI
+# =============================================================================
+
+main() {
+    local cmd="${1:-hello}"
+
+    # Special completion endpoint for bash completion
+    # IMPORTANT: Check this BEFORE loading modules (for performance)
+    if [[ "$cmd" == "__complete" ]]; then
+        shift
+        nftban_complete "$@"
+        return 0
+    fi
+
+    # Load core modules (only if not doing completion)
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+    else
+        echo "ERROR: Core module not found: ${NFTBAN_LIB_DIR}/core/nftban_output.sh" >&2
+        exit 1
+    fi
+
+    # Auto-load modular commands from cli/ directory
+    # This keeps the main CLI small and manageable
+    local cmd_file="${NFTBAN_LIB_DIR}/cli/cmd_${cmd}.sh"
+
+    # Special case: whitelist-system uses underscore in filename
+    if [[ "$cmd" == "whitelist-system" ]]; then
+        cmd_file="${NFTBAN_LIB_DIR}/cli/cmd_whitelist_system.sh"
+    fi
+
+    if [[ -f "$cmd_file" ]]; then
+        # shellcheck source=/dev/null
+        source "$cmd_file"
+
+        # Some modules define nftban_cmd_X, others just use case statements
+        if declare -f "nftban_cmd_${cmd}" >/dev/null 2>&1; then
+            shift
+            "nftban_cmd_${cmd}" "$@"
+            return $?
+        else
+            # Module handles args directly (like cmd_whitelist_system.sh)
+            return 0
+        fi
+    fi
+
+    case "$cmd" in
+        ban|unban|list)
+            # Route to nftban-complete for Fail2ban integration
+            if [[ -x "/usr/sbin/nftban-complete" ]]; then
+                exec /usr/sbin/nftban-complete "$@"
+            else
+                echo "ERROR: nftban-complete not found" >&2
+                echo "Install Fail2ban integration to use ban management commands" >&2
+                exit 1
+            fi
+            ;;
+
+        hello|"")
+            # Show banner (already dynamic - shows hostname, kernel, nftables stats)
+            nftban_render_banner
+
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📖 WHAT IS NFTBan?"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "NFTBan is a powerful Linux firewall management tool that simplifies"
+            echo "nftables configuration and provides intelligent protection against:"
+            echo ""
+            echo "  🛡️  DDoS attacks & traffic flooding"
+            echo "  🔍 Port scanning & reconnaissance"
+            echo "  🌐 Threat intelligence feeds (Cloudflare, custom lists)"
+            echo "  ⚡ fail2ban integration with nftables backend"
+            echo "  📊 Real-time statistics & monitoring"
+            echo "  📧 Email alerts & login notifications"
+            echo ""
+
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "🚀 QUICK START GUIDE"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "First Time Setup:"
+            echo "  1. Check environment:         nftban check"
+            echo "  2. View infrastructure:       nftban module"
+            echo "  3. Check FHS compliance:      nftban fhs"
+            echo ""
+            echo "Security Protection:"
+            echo "  4. Apply security profile:    nftban profile list"
+            echo "  5. Enable DDoS protection:    nftban ddos enable"
+            echo "  6. Enable port scan detect:   nftban portscan enable"
+            echo ""
+            echo "Monitoring & Management:"
+            echo "  7. View firewall status:      nftban firewall status"
+            echo "  8. View statistics:           nftban stats dashboard"
+            echo "  9. Check banned IPs:          nftban list"
+            echo ""
+
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📊 CURRENT STATUS"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+
+            # DYNAMIC: Count installed modules
+            module_count=$(find "${NFTBAN_LIB_DIR}/cli" -name "cmd_*.sh" 2>/dev/null | wc -l)
+            core_count=$(find "${NFTBAN_LIB_DIR}/core" -name "nftban_*.sh" 2>/dev/null | wc -l)
+            total_modules=$((module_count + core_count))
+
+            echo "  ✅ v${NFTBAN_VERSION} Infrastructure: DEPLOYED"
+            if [[ $total_modules -gt 0 ]]; then
+                echo "  ✅ Modules: ${total_modules} installed (${module_count} CLI + ${core_count} core)"
+            else
+                echo "  ⚠️  Modules: Unable to detect"
+            fi
+
+            # DYNAMIC: Check system user
+            if id nftban &>/dev/null; then
+                echo "  ✅ System User: nftban (uid=$(id -u nftban))"
+            else
+                echo "  ⚠️  System User: Not found"
+            fi
+
+            # DYNAMIC: Quick FHS compliance check
+            fhs_issues=0
+            [[ ! -d /var/lib/nftban/exports ]] && fhs_issues=$((fhs_issues + 1))
+            [[ ! -d /var/lib/nftban/geoip ]] && fhs_issues=$((fhs_issues + 1))
+            [[ ! -d /var/log/nftban/reports ]] && fhs_issues=$((fhs_issues + 1))
+
+            etc_perms=$(stat -c '%a' /etc/nftban 2>/dev/null || echo "000")
+            [[ "$etc_perms" != "750" ]] && fhs_issues=$((fhs_issues + 1))
+
+            var_perms=$(stat -c '%a' /var/lib/nftban 2>/dev/null || echo "000")
+            [[ "$var_perms" != "755" && "$var_perms" != "750" ]] && fhs_issues=$((fhs_issues + 1))
+
+            if [[ $fhs_issues -eq 0 ]]; then
+                echo "  ✅ FHS Compliance: All quick checks passed"
+            else
+                echo "  ⚠️  FHS Compliance: ${fhs_issues}+ issues detected"
+            fi
+
+            echo ""
+            echo "  Run 'nftban module' for full module inventory"
+            echo "  Run 'nftban fhs' for detailed compliance report"
+            echo ""
+
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📚 GET HELP"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+            echo "  nftban help                  - Show all commands"
+            echo "  nftban <command> help        - Command-specific help"
+            echo ""
+            echo "  Website:  https://nftban.com"
+            echo "  Support:  contact@nftban.com"
+            echo ""
+            ;;
+
+        version)
+            echo "NFTBan v${NFTBAN_VERSION}"
+            ;;
+
+        check)
+            nftban_render_banner simple
+            echo ""
+            echo "NFTBan Environment Check:"
+            echo ""
+
+            # Check system user
+            if id nftban &>/dev/null; then
+                echo "✓ System user 'nftban' exists (uid=$(id -u nftban))"
+            else
+                echo "✗ System user 'nftban' NOT found"
+            fi
+
+            # Check group
+            if getent group nftban-cli &>/dev/null; then
+                echo "✓ Group 'nftban-cli' exists"
+            else
+                echo "✗ Group 'nftban-cli' NOT found"
+            fi
+
+            # Check directories
+            echo ""
+            echo "FHS Directories:"
+            for dir in /usr/lib/nftban /etc/nftban /var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban; do
+                if [[ -d "$dir" ]]; then
+                    echo "  ✓ $dir"
+                else
+                    echo "  ✗ $dir (missing)"
+                fi
+            done
+
+            # Check core module
+            echo ""
+            echo "Core Modules:"
+            if [[ -f "/usr/lib/nftban/core/nftban_output.sh" ]]; then
+                echo "  ✓ nftban_output.sh"
+            else
+                echo "  ✗ nftban_output.sh (missing)"
+            fi
+            ;;
+
+        help|--help|-h)
+            nftban_render_banner simple
+            echo ""
+            echo "NFTBan v${NFTBAN_VERSION} - Available Commands"
+            echo ""
+            echo "NFTBan simplifies Linux firewall management with nftables, providing"
+            echo "DDoS protection, port scan detection, threat feeds, and fail2ban integration."
+            echo ""
+            echo "Usage: nftban <command> [options]"
+            echo ""
+            echo "Core Commands:"
+            echo "  hello      - Show welcome message with banner (default)"
+            echo "  version    - Show version number"
+            echo "  check      - Quick environment check"
+            echo "  help       - Show this help message"
+            echo ""
+            echo "Firewall & Ban Management:"
+            echo "  firewall         - Firewall table management (see 'nftban firewall help')"
+            echo "  ban              - Ban IP addresses"
+            echo "  unban            - Unban IP addresses"
+            echo "  list             - List banned IPs"
+            echo "  search           - Search for IP across all sets"
+            echo ""
+            echo "Statistics & Reporting:"
+            echo "  stats            - Statistics dashboard and metrics"
+            echo "  report           - Report generation and scheduling"
+            echo ""
+            echo "Security Protection:"
+            echo "  ddos       - DDoS protection (see 'nftban ddos help')"
+            echo "  portscan   - Port scan detection (see 'nftban portscan help')"
+            echo "  profile    - Security profiles (see 'nftban profile help')"
+            echo ""
+            echo "Integration & Feeds:"
+            echo "  cloudflare - Cloudflare integration (see 'nftban cloudflare help')"
+            echo "  fail2ban   - Fail2ban integration (see 'nftban fail2ban help')"
+            echo "  feeds      - Threat intelligence feeds (see 'nftban feeds help')"
+            echo ""
+            echo "Reporting Commands:"
+            echo "  port       - Port and firewall status (see 'nftban port help')"
+            echo "  module     - Module inventory (see 'nftban module help')"
+            echo "  services   - System services status (see 'nftban services help')"
+            echo "  fhs        - FHS compliance check (see 'nftban fhs help')"
+            echo ""
+            echo "System Commands:"
+            echo "  nftables         - NFTables service management (see 'nftban nftables help')"
+            echo "  geoip            - IP geolocation lookups (see 'nftban geoip help')"
+            echo "  health           - System health diagnostics (see 'nftban health help')"
+            echo "  login            - Login monitoring and alerts (see 'nftban login help')"
+            echo "  whitelist-system - Auto-whitelist system IPs (see 'nftban whitelist-system help')"
+            echo ""
+            echo "Communication:"
+            echo "  mail       - Mail system commands (see 'nftban mail help')"
+            echo ""
+            ;;
+
+        *)
+            # Show banner
+            nftban_render_banner simple
+            echo ""
+
+            # Error message
+            echo -e "${NFTBAN_COLOR_RED}${NFTBAN_COLOR_BOLD}ERROR: Unknown command '${cmd}'${NFTBAN_COLOR_RESET}"
+            echo ""
+
+            # Suggest similar commands (typo detection)
+            case "$cmd" in
+                hfs|HSF|hsf)
+                    echo "Did you mean: ${NFTBAN_COLOR_GREEN}nftban fhs${NFTBAN_COLOR_RESET}?"
+                    echo ""
+                    ;;
+                helth|heath|healt)
+                    echo "Did you mean: ${NFTBAN_COLOR_GREEN}nftban health${NFTBAN_COLOR_RESET}?"
+                    echo ""
+                    ;;
+                geo|geoip-lookup|geo-lookup)
+                    echo "Did you mean: ${NFTBAN_COLOR_GREEN}nftban geoip${NFTBAN_COLOR_RESET}?"
+                    echo ""
+                    ;;
+                login-alert|loginalert)
+                    echo "Did you mean: ${NFTBAN_COLOR_GREEN}nftban login${NFTBAN_COLOR_RESET}?"
+                    echo ""
+                    ;;
+            esac
+
+            echo "Run '${NFTBAN_COLOR_CYAN}nftban help${NFTBAN_COLOR_RESET}' for available commands"
+            echo ""
+            exit 1
+            ;;
+    esac
+}
+
+# Execute
+main "$@"
