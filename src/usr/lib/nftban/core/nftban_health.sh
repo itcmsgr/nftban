@@ -749,6 +749,7 @@ nftban_health_fix_permissions() {
         echo "  💡 Run with root privileges to fix:"
         echo "     sudo nftban health fix permissions"
     fi
+    return 0
 }
 
 nftban_health_fix_directories() {
@@ -835,6 +836,7 @@ nftban_health_fix_directories() {
         echo "  💡 Run with root privileges to fix:"
         echo "     sudo nftban health fix directories"
     fi
+    return 0
 }
 
 nftban_health_fix_services() {
@@ -856,6 +858,7 @@ nftban_health_fix_services() {
             fi
         fi
     done
+    return 0
 }
 
 # =============================================================================

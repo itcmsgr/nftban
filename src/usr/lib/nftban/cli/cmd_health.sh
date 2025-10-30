@@ -245,6 +245,7 @@ nftban_health_cmd_fix() {
     echo "✓ Fix complete!"
     echo ""
     echo "Run 'nftban health check' to verify"
+    return 0
 }
 
 nftban_health_cmd_services() {
