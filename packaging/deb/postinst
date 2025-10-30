@@ -47,12 +47,21 @@ EOF
 
         chmod 0644 /var/lib/nftban/config/system.conf
 
-        # Fix ownership
+        # Fix /etc/nftban ownership and permissions (daemon readable)
+        chown root:nftban /etc/nftban
+        chown root:nftban /etc/nftban/conf.d
+        chgrp -R nftban /etc/nftban
+        find /etc/nftban -type d -exec chmod 0750 {} \;
+        find /etc/nftban -type f -exec chmod 0640 {} \;
+        # Secrets directory is root-only
+        chmod 0700 /etc/nftban/secrets.d
+
+        # Fix /var ownership
         chown -R nftban:nftban /var/lib/nftban
         chown -R nftban:nftban /var/cache/nftban
         chown -R nftban:nftban /var/log/nftban
 
-        # Set proper permissions
+        # Set proper permissions on /var directories
         chmod 0755 /var/lib/nftban
         chmod 0750 /var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics,config}
         chmod 0750 /var/log/nftban
