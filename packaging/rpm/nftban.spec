@@ -218,4 +218,6 @@ fi
 - Add FHS-compliant structure with auto-healing
 - Add stats & metrics system
 - Add dynamic UID/GID tracking
+- Add Polkit integration for group-based service management
+- Add permission hardening system with audit logging
 - Improve security with 8 protection layers

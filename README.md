@@ -80,6 +80,10 @@ sudo nftban apply
 
 # Enable automatic updates
 sudo systemctl enable --now nftban.timer
+
+# Optional: Add users to nftban-cli group for service management
+sudo usermod -aG nftban-cli username
+# User must re-login for group to take effect
 ```
 
 See **[Quick Start Guide](docs/guides/quick-start.md)** for complete setup instructions.
@@ -99,6 +103,7 @@ See **[Quick Start Guide](docs/guides/quick-start.md)** for complete setup instr
 - [DDOS Protection Guide](docs/guides/ddos-protection.md) - Configure DDoS protection
 - [Threat Feeds Setup](docs/guides/threat-feeds.md) - Block 1M+ known malicious IPs
 - [Fail2ban Integration](docs/guides/fail2ban-integration.md) - Auto-ban brute force attacks
+- [Polkit Integration](docs/guides/polkit-integration.md) - Group-based service management (no sudo)
 - [Health Diagnostics](docs/guides/health-diagnostics.md) - Troubleshooting system issues
 
 **Architecture & Design:**
