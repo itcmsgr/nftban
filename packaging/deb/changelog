@@ -1,0 +1,11 @@
+nftban (0.10.0-1) stable; urgency=medium
+
+  * Complete rewrite for v0.10.0
+  * Add commit-confirm recovery system
+  * Add Go binaries for 10-60x faster processing
+  * Add FHS-compliant structure with auto-healing
+  * Add stats & metrics system
+  * Add dynamic UID/GID tracking
+  * Improve security with 8 protection layers
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Wed, 30 Oct 2025 15:30:00 +0200

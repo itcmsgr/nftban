@@ -16,49 +16,97 @@
 
 ## 🚀 Quick Start
 
-**Install NFTBan in 60 seconds:**
+### Package Installation (Recommended)
+
+**Rocky Linux / AlmaLinux / Fedora:**
 
 ```bash
-# Download installer (review before running!)
-curl -sSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install.sh -o nftban-install.sh
-
-# Review the installer
-less nftban-install.sh
+# Download latest release
+wget https://github.com/nftban/nftban/releases/latest/download/nftban-0.10.0-1.el9.x86_64.rpm
 
 # Install
-sudo bash nftban-install.sh
+sudo dnf install -y nftban-0.10.0-1.el9.x86_64.rpm
+
+# Verify
+nftban --version
 ```
 
-**Or one-line install (if you trust the source):**
+**Ubuntu / Debian:**
+
+```bash
+# Download latest release
+wget https://github.com/nftban/nftban/releases/latest/download/nftban_0.10.0-1_amd64.deb
+
+# Install
+sudo dpkg -i nftban_0.10.0-1_amd64.deb
+sudo apt-get install -f  # Install dependencies if needed
+
+# Verify
+nftban --version
+```
+
+### From Source
+
+**Install from Git repository:**
+
+```bash
+# Clone repository
+git clone https://github.com/itcmsgr/nftban.git
+cd nftban
+
+# Run installer
+sudo ./install.sh
+
+# Verify
+nftban --version
+```
+
+**One-line installer (review script first!):**
 
 ```bash
 curl -sSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install.sh | sudo bash
 ```
 
-**Or clone from Git:**
+**⚠️ IMPORTANT:** After installation, **test your firewall rules** before disconnecting! The system includes commit-confirm safety, but always verify SSH access works.
+
+**Next steps:**
 
 ```bash
-git clone https://github.com/itcmsgr/nftban.git
-cd nftban
-sudo ./install.sh
+# Check system health
+sudo nftban health check
+
+# Apply initial rules (with commit-confirm protection)
+sudo nftban apply
+
+# Enable automatic updates
+sudo systemctl enable --now nftban.timer
 ```
 
-**⚠️ IMPORTANT:** After installation, **test your firewall rules** before disconnecting! The system includes commit-confirm safety, but always verify SSH access works.
+See **[Quick Start Guide](docs/guides/quick-start.md)** for complete setup instructions.
 
 ---
 
 ## 📚 Documentation
 
-**Start here:**
+**Getting Started:**
+- ➤ **[Quick Start Guide](docs/guides/quick-start.md)** - Get started in 5 minutes ⭐
+- ➤ **[Installation Guide](docs/guides/installation.md)** - Complete installation instructions
 - ➤ [FHS Auto-Heal Guide](docs/guides/fhs-auto-heal-guide.md) - Automatic system health management
-- ➤ [DDOS Protection Guide](docs/guides/ddos-protection.md) - Configure DDoS protection
-- ➤ [Threat Feeds Setup](docs/guides/threat-feeds.md) - Block 1M+ known malicious IPs
-- ➤ [Fail2ban Integration](docs/guides/fail2ban-integration.md) - Auto-ban brute force attacks
 - ➤ [CLI Quick Reference](docs/reference/cli-quick-reference.md) - Command cheat sheet
+
+**Configuration & Features:**
+- [DDOS Protection Guide](docs/guides/ddos-protection.md) - Configure DDoS protection
+- [Threat Feeds Setup](docs/guides/threat-feeds.md) - Block 1M+ known malicious IPs
+- [Fail2ban Integration](docs/guides/fail2ban-integration.md) - Auto-ban brute force attacks
+- [Health Diagnostics](docs/guides/health-diagnostics.md) - Troubleshooting system issues
 
 **Architecture & Design:**
 - [Permission Architecture](docs/architecture/permission-architecture.md) - Understanding the security model
 - [FHS Consolidation](docs/architecture/fhs-consolidation.md) - Filesystem layout explained
+
+**For Developers:**
+- [Packaging Guide](docs/development/packaging.md) - Building RPM/DEB packages
+- [Lab Testing Guide](docs/development/LAB-TESTING.md) - Testing on lab servers
 - [Coding Standards](docs/development/coding-standards.md) - For contributors
 
 **All documentation:** See [docs/](docs/) directory
