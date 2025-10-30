@@ -37,21 +37,22 @@ polkit.addRule(function(action, subject) {
   const reloadDaemon = "org.freedesktop.systemd1.reload-daemon";
 
   // Whitelist of units that nftban-cli group can manage
-  const allowedUnits = new Set([
+  // Note: Using array instead of Set for compatibility with older SpiderMonkey
+  var allowedUnits = [
     "nftables.service",
     "fail2ban.service"
-  ]);
+  ];
 
   // Extract unit name from action (if present)
-  const unit = action.lookup("unit");
+  var unit = action.lookup("unit");
 
   // Authorize: start, stop, restart, kill, isolate, etc.
-  if (action.id === manageUnits && unit && allowedUnits.has(unit)) {
+  if (action.id === manageUnits && unit && allowedUnits.indexOf(unit) !== -1) {
     return polkit.Result.YES;
   }
 
   // Authorize: enable, disable, preset, etc. (unit file changes)
-  if (action.id === manageUnitFiles && unit && allowedUnits.has(unit)) {
+  if (action.id === manageUnitFiles && unit && allowedUnits.indexOf(unit) !== -1) {
     return polkit.Result.YES;
   }
 
@@ -76,7 +77,7 @@ polkit.addRule(function(action, subject) {
 // - No sudoers, no setuid binaries
 // - Standard Polkit authorization flow via D-Bus
 //
-// To extend to more units, add to allowedUnits set above.
+// To extend to more units, add to allowedUnits array above.
 //
 // To verify rule is loaded:
 //   pkaction --action-id org.freedesktop.systemd1.manage-units --verbose
