@@ -8,6 +8,16 @@ docs/sessions/
 docs/deployment/
 docs/updates/
 
+# Lab deployment scripts (internal use only)
+deploy/
+cleanup-lab.sh
+DEPLOY*.sh
+deploy*.sh
+fix_nftban_permissions.sh
+nftban_init.sh
+*_to_labs.sh
+*_to_lab.sh
+
 # Build artifacts
 *.o
 *.so
