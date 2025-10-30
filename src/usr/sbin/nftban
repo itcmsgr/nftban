@@ -35,6 +35,8 @@ export NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 # =============================================================================
 # LOAD CONFIGURATION
 # =============================================================================
+# NOTE: Safe config parser available but temporarily using legacy mode
+# TODO: Convert config files to pure KEY=VALUE format and enable safe parser
 
 # Load main config if exists
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
@@ -89,6 +91,7 @@ nftban_complete() {
         echo "fhs"
         echo "geoip"
         echo "health"
+        echo "permissions"
         echo "login"
         echo "whitelist-system"
         echo "mail"
@@ -180,6 +183,12 @@ nftban_complete() {
                 echo "fix"
                 echo "services"
                 echo "modules"
+                ;;
+            permissions)
+                echo "check"
+                echo "enforce"
+                echo "fix"
+                echo "help"
                 echo "binaries"
                 echo "permissions"
                 echo "geoip"

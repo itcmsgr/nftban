@@ -46,20 +46,20 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/bin"]="755|root|root|Application binaries (GO, etc.)"
 
     # ─────────────────────────────────────────────────────────────────────
-    # Configuration (root:nftban, 750) - Group readable for nftban user
+    # Configuration (root:root, 750/640) - Configs are code-sensitive!
     # ─────────────────────────────────────────────────────────────────────
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban"]="750|root|nftban|Configuration files (group readable)"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d"]="750|root|nftban|Module configurations (group readable)"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban"]="750|root|root|Configuration files (code-sensitive, root only)"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d"]="750|root|root|Module configurations (code-sensitive, root only)"
 
     # ─────────────────────────────────────────────────────────────────────
     # Variable Data (nftban:nftban) - Application state and runtime data
     # ─────────────────────────────────────────────────────────────────────
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban"]="755|nftban|nftban|Application state data"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban"]="750|nftban|nftban|Application state data"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports"]="750|nftban|nftban|Generated reports (application state)"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/metrics"]="750|nftban|nftban|Statistics metrics database"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/snapshots"]="750|nftban|nftban|Hourly stats snapshots"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/exports"]="750|nftban|nftban|User data exports (JSON, CSV)"
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/geoip"]="750|root|nftban|GeoIP database (group readable)"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/geoip"]="750|nftban|nftban|GeoIP database (group readable)"
 
     # ─────────────────────────────────────────────────────────────────────
     # Logs (nftban:nftban, 750) - Daemon writes, group reads

@@ -497,11 +497,30 @@ Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis
 📜 Source code modifications must remain MPL-2.0
 🔓 Open source, community-driven
 
-[Read Full License](LICENSE) | [License Summary](README-License-Summary.md)
+**Important Documents:**
+- 📄 [Full License Text](LICENSE) - Mozilla Public License 2.0
+- 🏷️ [Trademark Policy](TRADEMARK.md) - Brand usage guidelines
+- 🤝 [Contributing Guide](CONTRIBUTING.md) - How to contribute
+- 🔒 [Security Policy](SECURITY.md) - Security reporting
 
 ### Trademark Notice
-"NFTBan" and the NFTBan logo are trademarks of NFTBAN Project / Antonios Voulvoulis.
-See [TRADEMARK.md](TRADEMARK.md) for usage guidelines.
+
+**"NFTBAN"** and the NFTBAN logo are trademarks of Antonios Voulvoulis (NFTBAN Project).
+
+- ✅ **Code:** Licensed under MPL-2.0 (open source, free to use and modify)
+- 🏷️ **Name & Brand:** Protected trademark (see usage guidelines below)
+
+**You may:**
+- Use, modify, and distribute the code under MPL-2.0
+- Reference NFTBAN in documentation and tutorials
+- Build commercial products using the code
+
+**You may not (without permission):**
+- Use the NFTBAN name to brand your own fork or distribution
+- Present your version as "official" or "certified" NFTBAN
+- Register domain names or services using the NFTBAN name
+
+📖 **[Read Full Trademark Policy](TRADEMARK.md)** for detailed guidelines.
 
 ---
 

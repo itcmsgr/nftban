@@ -641,6 +641,31 @@ nftban_health_check_all() {
     nftban_health_check_config || check_result=$?
     [[ $check_result -gt $overall_status ]] && overall_status=$check_result
 
+    # Permissions check (using nftban_permissions module if available)
+    if [[ -f "/usr/lib/nftban/core/nftban_permissions.sh" ]]; then
+        if source /usr/lib/nftban/core/nftban_permissions.sh 2>/dev/null; then
+            if declare -f nftban_permissions_check >/dev/null 2>&1; then
+                check_result=0
+                local perms_output
+                perms_output=$(nftban_permissions_check 2>&1) || check_result=$?
+
+                # Treat check result as health status
+                [[ $check_result -gt $overall_status ]] && overall_status=$check_result
+
+                NFTBAN_HEALTH_RESULTS["permissions"]=$check_result
+                if [[ $check_result -eq 0 ]]; then
+                    NFTBAN_HEALTH_ISSUES["permissions"]="All permissions are correct"
+                elif [[ $check_result -eq 1 ]]; then
+                    NFTBAN_HEALTH_ISSUES["permissions"]="$perms_output"
+                    NFTBAN_HEALTH_WARNINGS+=("Permissions: $perms_output")
+                else
+                    NFTBAN_HEALTH_ISSUES["permissions"]="$perms_output"
+                    NFTBAN_HEALTH_ERRORS+=("Permissions: $perms_output")
+                fi
+            fi
+        fi
+    fi
+
     return $overall_status
 }
 
@@ -650,13 +675,25 @@ nftban_health_check_all() {
 
 nftban_health_fix_permissions() {
     # Fix ALL permissions and ownership to match FHS specification
-    # Uses canonical FHS spec from nftban_fhs_spec.sh (SINGLE SOURCE OF TRUTH)
+    # Uses the new permissions enforcement module if available, otherwise legacy fix
     # Smart about privileges: fixes what it can, reports what needs root
 
     local running_as_root=0
     [[ $EUID -eq 0 ]] && running_as_root=1
 
     echo "Fixing permissions and ownership..."
+
+    # Try to use new permissions enforcement module (more comprehensive)
+    if [[ -f "/usr/lib/nftban/core/nftban_permissions.sh" ]]; then
+        if source /usr/lib/nftban/core/nftban_permissions.sh 2>/dev/null; then
+            echo "  Using enhanced permission enforcement module"
+            nftban_permissions_enforce_all
+            return $?
+        fi
+    fi
+
+    # Fall back to legacy implementation
+    echo "  Using legacy permission fix"
 
     # Load canonical FHS specification
     if ! declare -f nftban_fhs_load_spec >/dev/null 2>&1; then
