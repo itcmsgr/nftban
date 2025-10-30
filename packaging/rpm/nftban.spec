@@ -185,12 +185,17 @@ fi
 %files
 # Binaries
 /usr/sbin/nftban
+/usr/sbin/nftban-complete
+/usr/sbin/nftban-apply
+/usr/sbin/nftban-confirm
+/usr/sbin/nftban-rollback
 /usr/lib/nftban/bin/nftban-feeds
 /usr/lib/nftban/bin/nftban-geoip
 
 # Libraries and modules
 /usr/lib/nftban/core/*.sh
 /usr/lib/nftban/cli/*.sh
+/usr/lib/nftban/nft-runtime.nft
 
 # Shared data
 /usr/share/nftban/
