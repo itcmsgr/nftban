@@ -29,7 +29,8 @@ Depends: ${misc:Depends},
          util-linux,
          iproute2,
          ipset,
-         git
+         git,
+         policykit-1
 Recommends: fail2ban (>= 0.11),
             logrotate
 Conflicts: firewalld,

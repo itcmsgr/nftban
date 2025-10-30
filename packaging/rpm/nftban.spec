@@ -40,6 +40,7 @@ Requires:       util-linux
 Requires:       iproute
 Requires:       ipset
 Requires:       git
+Requires:       polkit
 Recommends:     fail2ban >= 0.11
 Recommends:     logrotate
 

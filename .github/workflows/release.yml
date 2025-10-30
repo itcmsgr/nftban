@@ -74,25 +74,29 @@ jobs:
           ls -lh dist/aarch64/
 
       # =======================================================================
-      # 4. BUILD PACKAGES (TODO: Add RPM/DEB build scripts)
+      # 4. BUILD RPM PACKAGES
       # =======================================================================
-      # This section will be completed when RPM/DEB packaging is ready
-      - name: Build packages (placeholder)
+      - name: Build RPM packages
         run: |
-          mkdir -p dist/packages
-          echo "TODO: RPM and DEB package building"
-          echo "Will use:"
-          echo "  - scripts/build-rpm.sh"
-          echo "  - scripts/build-deb.sh"
+          chmod +x scripts/build-rpm.sh
+          ./scripts/build-rpm.sh
 
-          # For now, create dummy packages to test workflow
-          touch dist/packages/nftban-0.10.0-1.el9.x86_64.rpm
-          touch dist/packages/nftban-0.10.0-1.el9.aarch64.rpm
-          touch dist/packages/nftban_0.10.0-1_amd64.deb
-          touch dist/packages/nftban_0.10.0-1_arm64.deb
+          echo "=== RPM packages built ==="
+          ls -lh dist/packages/*.rpm
 
       # =======================================================================
-      # 5. GENERATE CHECKSUMS (v0.10.0: SHA256 only, no GPG yet)
+      # 5. BUILD DEB PACKAGES
+      # =======================================================================
+      - name: Build DEB packages
+        run: |
+          chmod +x scripts/build-deb.sh
+          ./scripts/build-deb.sh
+
+          echo "=== DEB packages built ==="
+          ls -lh dist/packages/*.deb
+
+      # =======================================================================
+      # 6. GENERATE CHECKSUMS (v0.10.0: SHA256 only, no GPG yet)
       # =======================================================================
       - name: Generate SHA256SUMS
         run: |
@@ -109,7 +113,7 @@ jobs:
           fi
 
       # =======================================================================
-      # 6. GENERATE MANIFEST
+      # 7. GENERATE MANIFEST
       # =======================================================================
       - name: Generate MANIFEST.txt
         run: |
@@ -131,7 +135,7 @@ jobs:
           cat MANIFEST.txt
 
       # =======================================================================
-      # 7. CREATE VERIFY.txt
+      # 8. CREATE VERIFY.txt
       # =======================================================================
       - name: Create VERIFY.txt
         run: |
@@ -166,7 +170,7 @@ jobs:
           EOF
 
       # =======================================================================
-      # 8. EXTRACT RELEASE NOTES FROM CHANGELOG
+      # 9. EXTRACT RELEASE NOTES FROM CHANGELOG
       # =======================================================================
       - name: Extract release notes
         run: |
@@ -186,7 +190,7 @@ jobs:
           cat dist/packages/RELEASE_NOTES.md
 
       # =======================================================================
-      # 9. UPLOAD TO GITHUB RELEASE
+      # 10. UPLOAD TO GITHUB RELEASE
       # =======================================================================
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -204,7 +208,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # =======================================================================
-      # 10. OPTIONAL: GPG SIGNING (v0.10.1+)
+      # 11. OPTIONAL: GPG SIGNING (v0.10.1+)
       # =======================================================================
       # Uncomment these steps when ready to enable package signing
       # Prerequisites:
