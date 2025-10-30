@@ -1,0 +1,29 @@
+#!/bin/bash
+# =============================================================================
+# NFTBan v0.10.0 - DEB Post-Remove Script
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Post-removal cleanup for DEB packages
+# =============================================================================
+
+set -e
+
+case "$1" in
+    purge)
+        # Remove nftables table if empty (only on purge, not upgrade)
+        if command -v nft >/dev/null 2>&1; then
+            nft list table inet nftban >/dev/null 2>&1 && \
+                nft delete table inet nftban || true
+        fi
+
+        # Remove directories (only on purge)
+        rm -rf /var/lib/nftban
+        rm -rf /var/cache/nftban
+        rm -rf /var/log/nftban
+        rm -rf /etc/nftban
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0

@@ -1,0 +1,56 @@
+#!/usr/bin/make -f
+# =============================================================================
+# NFTBan v0.10.0 - Debian Rules File
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Build rules for DEB package creation
+# =============================================================================
+
+%:
+	dh $@ --with systemd
+
+override_dh_auto_install:
+	# Install from src/ directory structure
+	install -d debian/nftban
+	cp -a src/* debian/nftban/
+
+	# Create FHS directories
+	install -d -m 0755 debian/nftban/var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics,config}
+	install -d -m 0755 debian/nftban/var/cache/nftban/{geoip,tmp}
+	install -d -m 0750 debian/nftban/var/log/nftban
+
+	# Install systemd units
+	install -d -m 0755 debian/nftban/lib/systemd/system
+	install -m 0644 src/usr/lib/systemd/system/*.service debian/nftban/lib/systemd/system/
+	install -m 0644 src/usr/lib/systemd/system/*.timer debian/nftban/lib/systemd/system/
+
+	# Install sysusers.d
+	install -d -m 0755 debian/nftban/usr/lib/sysusers.d
+	install -m 0644 packaging/sysusers.d/nftban.conf debian/nftban/usr/lib/sysusers.d/
+
+	# Install tmpfiles.d
+	install -d -m 0755 debian/nftban/usr/lib/tmpfiles.d
+	install -m 0644 packaging/tmpfiles.d/nftban.conf debian/nftban/usr/lib/tmpfiles.d/
+
+	# Install logrotate
+	install -d -m 0755 debian/nftban/etc/logrotate.d
+	install -m 0644 src/etc/logrotate.d/nftban debian/nftban/etc/logrotate.d/
+
+	# Install bash completion
+	install -d -m 0755 debian/nftban/usr/share/bash-completion/completions
+	install -m 0644 src/usr/share/nftban/completions/nftban.bash \
+		debian/nftban/usr/share/bash-completion/completions/nftban
+
+override_dh_systemd_enable:
+	dh_systemd_enable --name=nftban nftban.timer
+	dh_systemd_enable --name=nftban-health nftban-health.timer
+
+override_dh_systemd_start:
+	dh_systemd_start --no-start
+
+override_dh_fixperms:
+	dh_fixperms
+	# Fix permissions for nftban directories
+	chmod 0750 debian/nftban/var/lib/nftban/*
+	chmod 0750 debian/nftban/var/log/nftban
+	chmod 0700 debian/nftban/etc/nftban/secrets.d

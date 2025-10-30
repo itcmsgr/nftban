@@ -1,0 +1,47 @@
+Source: nftban
+Section: admin
+Priority: optional
+Maintainer: Antonios Voulvoulis <contact@nftban.com>
+Build-Depends: debhelper-compat (= 13),
+               dh-systemd,
+               bash (>= 5.0)
+Standards-Version: 4.6.0
+Homepage: https://nftban.com
+Vcs-Git: https://github.com/nftban/nftban.git
+Vcs-Browser: https://github.com/nftban/nftban
+
+Package: nftban
+Architecture: amd64 arm64
+Depends: ${misc:Depends},
+         nftables (>= 1.0.0),
+         systemd (>= 250),
+         bash (>= 5.0),
+         jq (>= 1.6),
+         curl | wget,
+         adduser,
+         coreutils,
+         gzip,
+         tar,
+         grep,
+         sed,
+         gawk,
+         findutils,
+         util-linux,
+         iproute2,
+         ipset,
+         git
+Recommends: fail2ban (>= 0.11),
+            logrotate
+Conflicts: firewalld,
+           iptables,
+           iptables-persistent
+Description: Modern nftables firewall management with commit-confirm recovery
+ NFTBan is a modern, high-performance firewall management system for Linux
+ servers using nftables. Features include:
+ .
+ - Commit-confirm recovery (prevents lockout)
+ - Go binaries for 10-60x faster feed processing
+ - 8 security layers (DDoS, port scan, geo-blocking, threat feeds)
+ - FHS-compliant with auto-healing health system
+ - Integration with Fail2Ban for automatic banning
+ - Stats & metrics with HTML/JSON/CSV reporting

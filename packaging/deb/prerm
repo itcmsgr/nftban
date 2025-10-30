@@ -1,0 +1,21 @@
+#!/bin/bash
+# =============================================================================
+# NFTBan v0.10.0 - DEB Pre-Remove Script
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Pre-removal cleanup for DEB packages
+# =============================================================================
+
+set -e
+
+case "$1" in
+    remove|deconfigure)
+        # Stop services
+        deb-systemd-invoke stop nftban.timer || true
+        deb-systemd-invoke stop nftban-health.timer || true
+        ;;
+esac
+
+#DEBHELPER#
+
+exit 0
