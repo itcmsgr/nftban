@@ -130,11 +130,11 @@ nftban_portscan_log() {
     local timestamp
     timestamp=$(date +'%Y-%m-%d %H:%M:%S')
 
-    # Create log directory if it doesn't exist
-    mkdir -p "$(dirname "$NFTBAN_PORTSCAN_LOG_FILE")"
+    # Create log directory if it doesn't exist (only if we have permissions)
+    mkdir -p "$(dirname "$NFTBAN_PORTSCAN_LOG_FILE")" 2>/dev/null || true
 
     # Write to portscan log
-    echo "[${timestamp}] [${level}] ${message}" >> "$NFTBAN_PORTSCAN_LOG_FILE"
+    echo "[${timestamp}] [${level}] ${message}" >> "$NFTBAN_PORTSCAN_LOG_FILE" 2>/dev/null || true
 }
 
 # Check if port scan detection is globally enabled
@@ -164,8 +164,9 @@ nftban_portscan_is_whitelisted() {
 
 # Initialize port scan tracking
 nftban_portscan_init_tracking() {
-    mkdir -p "$NFTBAN_PORTSCAN_DATA_DIR"
-    mkdir -p "$NFTBAN_PORTSCAN_CACHE_DIR"
+    # Create directories if they don't exist (only if we have permissions)
+    mkdir -p "$NFTBAN_PORTSCAN_DATA_DIR" 2>/dev/null || true
+    mkdir -p "$NFTBAN_PORTSCAN_CACHE_DIR" 2>/dev/null || true
 
     # Clear old tracking data (older than time window)
     local retention
@@ -573,19 +574,28 @@ nftban_portscan_check() {
 # =============================================================================
 
 nftban_portscan_init() {
-    # Create FHS directories
-    mkdir -p "$NFTBAN_PORTSCAN_DATA_DIR"
-    mkdir -p "$NFTBAN_PORTSCAN_CACHE_DIR"
-    mkdir -p "$(dirname "$NFTBAN_PORTSCAN_LOG_FILE")"
+    # Create module-specific directories (parent directories handled by FHS spec)
+    # Only create if running as root or nftban user, otherwise let health check handle it
+    if [[ $EUID -eq 0 ]] || [[ $(id -un) == "nftban" ]]; then
+        mkdir -p "$NFTBAN_PORTSCAN_DATA_DIR" 2>/dev/null || true
+        mkdir -p "$NFTBAN_PORTSCAN_CACHE_DIR" 2>/dev/null || true
+        mkdir -p "$(dirname "$NFTBAN_PORTSCAN_LOG_FILE")" 2>/dev/null || true
+
+        # Set correct ownership if running as root
+        if [[ $EUID -eq 0 ]] && id -u nftban >/dev/null 2>&1; then
+            chown nftban:nftban "$NFTBAN_PORTSCAN_DATA_DIR" 2>/dev/null || true
+            chown nftban:nftban "$NFTBAN_PORTSCAN_CACHE_DIR" 2>/dev/null || true
+        fi
+    fi
 
     # Touch files and set proper permissions
-    touch "$NFTBAN_PORTSCAN_LOG_FILE"
+    touch "$NFTBAN_PORTSCAN_LOG_FILE" 2>/dev/null || true
     touch "$NFTBAN_PORTSCAN_WHITELIST_FILE" 2>/dev/null || true
 
     # Fix permissions if file was created as root
     if [[ -f "$NFTBAN_PORTSCAN_WHITELIST_FILE" ]]; then
         chmod 644 "$NFTBAN_PORTSCAN_WHITELIST_FILE" 2>/dev/null || true
-        if id -u nftban >/dev/null 2>&1; then
+        if [[ $EUID -eq 0 ]] && id -u nftban >/dev/null 2>&1; then
             chown nftban:nftban "$NFTBAN_PORTSCAN_WHITELIST_FILE" 2>/dev/null || true
         fi
     fi

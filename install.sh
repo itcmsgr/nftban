@@ -36,24 +36,53 @@ fi
 # =============================================================================
 echo "Creating directories..."
 
-# /usr directories
-install -d -o root -g root -m 0755 /usr/lib/nftban
-install -d -o root -g root -m 0755 /usr/share/nftban
+# Source FHS specification if available
+FHS_SPEC="$SCRIPT_DIR/src/usr/lib/nftban/core/nftban_fhs_spec.sh"
+if [[ -f "$FHS_SPEC" ]]; then
+    source "$FHS_SPEC"
+    nftban_fhs_load_spec
 
-# /etc directories
-install -d -o root -g root -m 0750 /etc/nftban
-install -d -o root -g root -m 0750 /etc/nftban/{conf.d,feeds.d,rules.d}
-install -d -o root -g root -m 0700 /etc/nftban/secrets.d
+    # Create all FHS directories
+    for dir in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
+        IFS='|' read -r perms owner group _ <<< "${NFTBAN_FHS_DIRECTORIES[$dir]}"
+        install -d -m "$perms" -o "$owner" -g "$group" "$dir" 2>/dev/null || true
+    done
 
-# /var directories
-install -d -o nftban -g nftban -m 0750 /var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics}
-install -d -o nftban -g nftban -m 0750 /var/cache/nftban/{geoip,tmp}
-install -d -o nftban -g adm -m 0750 /var/log/nftban
+    # Create additional subdirectories not in FHS spec
+    install -d -o root -g root -m 0750 /etc/nftban/feeds.d 2>/dev/null || true
+    install -d -o root -g root -m 0750 /etc/nftban/rules.d 2>/dev/null || true
+    install -d -o root -g root -m 0700 /etc/nftban/secrets.d 2>/dev/null || true
+    install -d -o nftban -g nftban -m 0750 /var/lib/nftban/state 2>/dev/null || true
+    install -d -o nftban -g nftban -m 0750 /var/lib/nftban/feeds 2>/dev/null || true
+    install -d -o nftban -g nftban -m 0750 /var/lib/nftban/keyring 2>/dev/null || true
+    install -d -o nftban -g nftban -m 0750 /var/lib/nftban/backup 2>/dev/null || true
+    install -d -o nftban -g nftban -m 0750 /var/cache/nftban/geoip 2>/dev/null || true
+    install -d -o nftban -g nftban -m 0750 /var/cache/nftban/tmp 2>/dev/null || true
 
-# /run directory (created by tmpfiles.d at boot)
-install -d -o nftban -g nftban -m 0755 /run/nftban || true
+    echo "✓ Directories created using FHS specification"
+else
+    # Fallback to hardcoded values if FHS spec not found
+    echo "⚠  FHS spec not found, using hardcoded values"
 
-echo "✓ Directories created"
+    # /usr directories
+    install -d -o root -g root -m 0755 /usr/lib/nftban
+    install -d -o root -g root -m 0755 /usr/share/nftban
+
+    # /etc directories
+    install -d -o root -g root -m 0750 /etc/nftban
+    install -d -o root -g root -m 0750 /etc/nftban/{conf.d,feeds.d,rules.d}
+    install -d -o root -g root -m 0700 /etc/nftban/secrets.d
+
+    # /var directories
+    install -d -o nftban -g nftban -m 0750 /var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics}
+    install -d -o nftban -g nftban -m 0750 /var/cache/nftban/{geoip,tmp}
+    install -d -o nftban -g adm -m 0750 /var/log/nftban
+
+    # /run directory (created by tmpfiles.d at boot)
+    install -d -o nftban -g nftban -m 0755 /run/nftban || true
+
+    echo "✓ Directories created"
+fi
 
 # =============================================================================
 # 3. INSTALL FILES
