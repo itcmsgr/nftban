@@ -5,6 +5,7 @@ After=network.target
 
 [Service]
 Type=oneshot
+# Run as nftban user (principle of least privilege)
 User=nftban
 Group=nftban
 

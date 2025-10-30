@@ -161,11 +161,78 @@ grep -r "((.*++))" --include="*.sh" src/
 
 ---
 
+## 🟡 MEDIUM: Debug Output in Systemd Journal
+
+### Bug ID: BUG-006
+**Status:** ✅ **RESOLVED** (2025-10-30)
+**Severity:** MEDIUM - Cosmetic issue causing service failures
+**Impact:** nftban-health.service exits with code 1
+
+### Description
+
+The `nftban_fhs_spec.sh` file contained a debug line `declare -p NFTBAN_FHS_DIRECTORIES` on line 143 that was printing the entire associative array to stdout. This caused unwanted output in systemd journal logs and potentially interfered with strict mode error handling.
+
+### Root Cause
+
+Line 143 in `/usr/lib/nftban/core/nftban_fhs_spec.sh`:
+```bash
+declare -p NFTBAN_FHS_DIRECTORIES 2>/dev/null || true
+```
+
+This was likely added during development to debug array exports, but was never removed for production.
+
+### Impact
+
+- ❌ Cluttered systemd journal logs with 2000+ character debug output
+- ❌ Made debugging actual issues difficult
+- ❌ On some systems with strict permissions (lab2), caused the health service to exit with code 1
+
+### Affected Files
+
+- `src/usr/lib/nftban/core/nftban_fhs_spec.sh` - Line 143
+
+### Fix Applied
+
+Removed the debug line and added explanatory comment:
+
+```bash
+# Export the associative array (bash 4.3+)
+# NOTE: declare -p removed - was causing debug output in systemd journals (BUG-006)
+# The array is already exported via declare -g -A on line 33
+```
+
+### Detection
+
+Check systemd journal for the debug output:
+```bash
+journalctl -u nftban-health.service | grep "declare -A NFTBAN_FHS_DIRECTORIES"
+```
+
+### Verification
+
+After fix, journal output should show clean logs:
+```bash
+Oct 30 12:05:15 server nftban-health[67920]: Creating missing directories...
+Oct 30 12:05:15 server nftban-health[67920]:   ✓ All directories already exist
+Oct 30 12:05:15 server nftban-health[67920]: Fixing permissions and ownership...
+Oct 30 12:05:15 server nftban-health[67920]:   ✓ All permissions already correct
+Oct 30 12:05:15 server nftban-health[67920]: ✓ Fix complete!
+```
+
+### Remediation Status
+
+- ✅ **Fixed:** Debug line removed from nftban_fhs_spec.sh (2025-10-30)
+- ✅ **Tested:** All 3 lab servers (lab, lab1, lab2) verified working
+- ✅ **Deployed:** Production fix applied to all lab environments
+
+---
+
 ## 📋 Bug Registry Summary
 
 | ID | Severity | Status | Affected Files | Fixed |
 |----|----------|--------|----------------|-------|
 | BUG-001 | 🟢 RESOLVED | ✅ Fixed | 5 files (conditional patterns) | 5/5 |
+| BUG-006 | 🟢 RESOLVED | ✅ Fixed | 1 file (debug output) | 1/1 |
 
 **Note:** 11 remaining `((var++))` occurrences are safe standalone statements in if-else blocks, not chained with `&&` or `||`.
 

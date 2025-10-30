@@ -140,4 +140,5 @@ export -f nftban_fhs_get_all_paths
 export -f nftban_fhs_parse_spec
 
 # Export the associative array (bash 4.3+)
-declare -p NFTBAN_FHS_DIRECTORIES 2>/dev/null || true
+# NOTE: declare -p removed - was causing debug output in systemd journals (BUG-006)
+# The array is already exported via declare -g -A on line 33
