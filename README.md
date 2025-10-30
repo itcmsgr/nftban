@@ -565,18 +565,22 @@ This project benefits from AI collaboration. We maintain full transparency about
 
 **Our Commitment to Transparency:**
 1. **Fair Attribution**: All AI contributions are credited clearly and honestly
-2. **Human Ownership**: Antonios Voulvoulis (ITCMS) retains full ownership and decision-making authority
+2. **Human Ownership**: NFTBan Project retains full ownership and decision-making authority
 3. **AI as Tools**: AI partners are assistive tools, not co-owners or independent contributors
 4. **Honest Disclosure**: We disclose AI involvement in architecture, code, and documentation
 5. **No Hidden AI Work**: All AI-generated or AI-assisted content is marked appropriately
 
 **What This Means:**
 - AI helped design and implement features, but under human direction and review
-- Final decisions, architecture choices, and quality standards are set by ITCMS
+- Final decisions, architecture choices, and quality standards are set by NFTBan Project
 - AI-generated code is reviewed, tested, and validated before inclusion
 - This README and all documentation accurately represent both human and AI contributions
 
 We believe in transparency about AI collaboration and credit all our development partners fairly.
+
+**AI Review Documents:**
+- [Architecture Review for AI](docs/ARCHITECTURE_REVIEW_FOR_AI.md) - Complete architecture submitted to ChatGPT-4 for review
+- [AI Review Response & Fixes](docs/AI_REVIEW_RESPONSE_AND_FIXES.md) - ChatGPT-4's comprehensive review and required fixes
 
 ---
 
