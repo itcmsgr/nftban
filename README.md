@@ -543,6 +543,41 @@ Special thanks to:
 - The nftables development team
 - The open source community
 
+### 🤖 AI-Assisted Development
+
+This project benefits from AI collaboration. We maintain full transparency about how AI partners contribute:
+
+| AI Partner | Primary Contributions | Role |
+|------------|----------------------|------|
+| **ChatGPT** (OpenAI) | Architecture planning, roadmap development, design consultation | Strategic Planning |
+| **Claude Code** (Anthropic) | Systematic refactoring, code generation, automated validation | Implementation |
+| **Claude AI** (Anthropic) | Code review, optimization suggestions, comprehensive analysis | Quality Assurance |
+
+**Specific Contributions:**
+- **Architecture Design**: ChatGPT assisted with v0.10.0 complete rewrite planning and FHS architecture design
+- **Code Implementation**: Claude Code performed systematic code generation, refactoring, and validation
+- **Code Review**: Claude AI provided comprehensive module review and optimization suggestions
+- **Documentation**: Both AI partners contributed to technical writing and documentation structure
+- **Testing**: Automated validation, syntax checking, and comprehensive testing strategies
+- **Packaging**: Claude Code developed complete RPM/DEB packaging infrastructure
+
+### 🤝 AI Collaboration Policy
+
+**Our Commitment to Transparency:**
+1. **Fair Attribution**: All AI contributions are credited clearly and honestly
+2. **Human Ownership**: Antonios Voulvoulis (ITCMS) retains full ownership and decision-making authority
+3. **AI as Tools**: AI partners are assistive tools, not co-owners or independent contributors
+4. **Honest Disclosure**: We disclose AI involvement in architecture, code, and documentation
+5. **No Hidden AI Work**: All AI-generated or AI-assisted content is marked appropriately
+
+**What This Means:**
+- AI helped design and implement features, but under human direction and review
+- Final decisions, architecture choices, and quality standards are set by ITCMS
+- AI-generated code is reviewed, tested, and validated before inclusion
+- This README and all documentation accurately represent both human and AI contributions
+
+We believe in transparency about AI collaboration and credit all our development partners fairly.
+
 ---
 
 <p align="center">
