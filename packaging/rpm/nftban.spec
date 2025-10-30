@@ -213,6 +213,15 @@ fi
 %dir %attr(0700,root,root) /etc/nftban/secrets.d
 /etc/nftban/secrets.d/.gitkeep
 
+# Fail2ban Integration
+/etc/fail2ban/action.d/nftban.conf
+/etc/fail2ban/filter.d/apache-scan.conf
+/etc/fail2ban/filter.d/apache-wp-login.conf
+/etc/fail2ban/filter.d/apache-xmlrpc.conf
+/etc/fail2ban/filter.d/dovecot-custom.conf
+/etc/fail2ban/filter.d/modsecurity.conf
+/etc/fail2ban/jail.d/nftban-sshd.conf
+
 # Systemd units
 %{_unitdir}/*.service
 %{_unitdir}/*.timer
