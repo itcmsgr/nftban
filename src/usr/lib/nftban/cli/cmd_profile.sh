@@ -105,6 +105,26 @@ _nftban_profile_apply() {
     echo "⏳ Applying profile: $profile_name"
     echo ""
 
+    # Auto-initialize firewall if not already initialized
+    if ! nft list tables 2>/dev/null | grep -q "nftban"; then
+        echo "⚠️  Firewall not initialized. Initializing now..."
+        echo ""
+        if command -v nftban >/dev/null 2>&1; then
+            if nftban firewall init; then
+                echo "  ✅ Firewall initialized successfully"
+            else
+                echo "  ❌ ERROR: Failed to initialize firewall"
+                echo "     Please run manually: nftban firewall init"
+                return 1
+            fi
+        else
+            echo "  ❌ ERROR: nftban command not found"
+            echo "     Please initialize firewall manually: nftban firewall init"
+            return 1
+        fi
+        echo ""
+    fi
+
     # Create backup of current config.local
     if [[ -f "$NFTBAN_CONFIG_LOCAL" ]]; then
         cp "$NFTBAN_CONFIG_LOCAL" "${NFTBAN_CONFIG_LOCAL}.backup.$(date +%Y%m%d-%H%M%S)"
