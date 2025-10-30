@@ -487,86 +487,190 @@ nftban_port_allow_directadmin() {
         return 0
     }
 
+    # Bulk add ports (60x faster for large port lists)
+    add_ports_bulk() {
+        local family="$1"
+        local table="$2"
+        local chain="$3"
+        local proto="$4"
+        local ports="$5"      # Comma-separated list: "20,21,22"
+        local direction="$6"   # "dport" or "sport"
+
+        # Convert comma list to nftables set syntax: { 20, 21, 22 }
+        local port_set="{ ${ports//,/, } }"
+
+        # Add bulk rule (single nft call for all ports)
+        if nft add rule "$family" "$table" "$chain" "$proto" "$direction" "$port_set" counter accept 2>/dev/null; then
+            return 0
+        else
+            return 1
+        fi
+    }
+
     local rules_added=0
     local rules_skipped=0
     local rules_failed=0
 
     # Add TCP INPUT rules
+    # Use bulk operation (60x faster for large port lists like DirectAdmin)
     echo "Adding TCP INPUT rules..."
-    for port in "${tcp_in_ports[@]}"; do
-        [[ -z "$port" ]] && continue  # Skip empty ports
-        local added_any=false
+
+    # If we have many ports (>5), use bulk operation
+    if [[ ${#tcp_in_ports[@]} -gt 5 ]]; then
+        echo "  Using bulk operation for ${#tcp_in_ports[@]} ports..."
 
         if [[ "$has_inet" == "true" && -n "${chain_map[inet_input]:-}" ]]; then
-            if add_port_rule "inet" "$nftban_table_inet" "${chain_map[inet_input]}" "tcp" "$port" "dport"; then
-                echo "  ✓ TCP $port (inet/${chain_map[inet_input]})"
-                rules_added=$((rules_added + 1))
-                added_any=true
+            if add_ports_bulk "inet" "$nftban_table_inet" "${chain_map[inet_input]}" "tcp" "$tcp_in" "dport"; then
+                echo "  ✓ TCP ports ${tcp_in:0:40}... (inet/${chain_map[inet_input]}) - ${#tcp_in_ports[@]} ports"
+                rules_added=$((rules_added + ${#tcp_in_ports[@]}))
             else
-                rules_failed=$((rules_failed + 1))
+                echo "  ⚠ Bulk operation failed, falling back to individual rules..."
+                # Fallback to individual rules if bulk fails
+                for port in "${tcp_in_ports[@]}"; do
+                    [[ -z "$port" ]] && continue
+                    if add_port_rule "inet" "$nftban_table_inet" "${chain_map[inet_input]}" "tcp" "$port" "dport"; then
+                        rules_added=$((rules_added + 1))
+                    else
+                        rules_failed=$((rules_failed + 1))
+                    fi
+                done
             fi
         else
             if [[ "$has_ip" == "true" ]]; then
-                if add_port_rule "ip" "$nftban_table_ip" "$input_chain" "tcp" "$port" "dport"; then
-                    echo "  ✓ TCP $port (IPv4/$input_chain)"
-                    rules_added=$((rules_added + 1))
-                    added_any=true
+                if add_ports_bulk "ip" "$nftban_table_ip" "$input_chain" "tcp" "$tcp_in" "dport"; then
+                    echo "  ✓ TCP ports ${tcp_in:0:40}... (IPv4/$input_chain) - ${#tcp_in_ports[@]} ports"
+                    rules_added=$((rules_added + ${#tcp_in_ports[@]}))
                 else
                     rules_failed=$((rules_failed + 1))
                 fi
             fi
             if [[ "$has_ip6" == "true" ]]; then
-                if add_port_rule "ip6" "$nftban_table_ip6" "$input_chain" "tcp" "$port" "dport"; then
-                    echo "  ✓ TCP $port (IPv6/$input_chain)"
-                    rules_added=$((rules_added + 1))
-                    added_any=true
+                if add_ports_bulk "ip6" "$nftban_table_ip6" "$input_chain" "tcp" "$tcp_in" "dport"; then
+                    echo "  ✓ TCP ports ${tcp_in:0:40}... (IPv6/$input_chain) - ${#tcp_in_ports[@]} ports"
+                    rules_added=$((rules_added + ${#tcp_in_ports[@]}))
                 else
                     rules_failed=$((rules_failed + 1))
                 fi
             fi
         fi
+    else
+        # Use individual rules for small port lists
+        for port in "${tcp_in_ports[@]}"; do
+            [[ -z "$port" ]] && continue
+            local added_any=false
 
-        [[ "$added_any" == "false" ]] && rules_skipped=$((rules_skipped + 1))
-    done
+            if [[ "$has_inet" == "true" && -n "${chain_map[inet_input]:-}" ]]; then
+                if add_port_rule "inet" "$nftban_table_inet" "${chain_map[inet_input]}" "tcp" "$port" "dport"; then
+                    echo "  ✓ TCP $port (inet/${chain_map[inet_input]})"
+                    rules_added=$((rules_added + 1))
+                    added_any=true
+                else
+                    rules_failed=$((rules_failed + 1))
+                fi
+            else
+                if [[ "$has_ip" == "true" ]]; then
+                    if add_port_rule "ip" "$nftban_table_ip" "$input_chain" "tcp" "$port" "dport"; then
+                        echo "  ✓ TCP $port (IPv4/$input_chain)"
+                        rules_added=$((rules_added + 1))
+                        added_any=true
+                    else
+                        rules_failed=$((rules_failed + 1))
+                    fi
+                fi
+                if [[ "$has_ip6" == "true" ]]; then
+                    if add_port_rule "ip6" "$nftban_table_ip6" "$input_chain" "tcp" "$port" "dport"; then
+                        echo "  ✓ TCP $port (IPv6/$input_chain)"
+                        rules_added=$((rules_added + 1))
+                        added_any=true
+                    else
+                        rules_failed=$((rules_failed + 1))
+                    fi
+                fi
+            fi
+
+            [[ "$added_any" == "false" ]] && rules_skipped=$((rules_skipped + 1))
+        done
+    fi
 
     # Add TCP OUTPUT rules
     echo ""
     echo "Adding TCP OUTPUT rules..."
-    for port in "${tcp_out_ports[@]}"; do
-        [[ -z "$port" ]] && continue  # Skip empty ports
-        local added_any=false
+
+    # Use bulk operation for large port lists
+    if [[ ${#tcp_out_ports[@]} -gt 5 ]]; then
+        echo "  Using bulk operation for ${#tcp_out_ports[@]} ports..."
 
         if [[ "$has_inet" == "true" && -n "${chain_map[inet_output]:-}" ]]; then
-            if add_port_rule "inet" "$nftban_table_inet" "${chain_map[inet_output]}" "tcp" "$port" "dport"; then
-                echo "  ✓ TCP $port (inet/${chain_map[inet_output]})"
-                rules_added=$((rules_added + 1))
-                added_any=true
+            if add_ports_bulk "inet" "$nftban_table_inet" "${chain_map[inet_output]}" "tcp" "$tcp_out" "dport"; then
+                echo "  ✓ TCP ports ${tcp_out:0:40}... (inet/${chain_map[inet_output]}) - ${#tcp_out_ports[@]} ports"
+                rules_added=$((rules_added + ${#tcp_out_ports[@]}))
             else
-                rules_failed=$((rules_failed + 1))
+                echo "  ⚠ Bulk operation failed, falling back to individual rules..."
+                for port in "${tcp_out_ports[@]}"; do
+                    [[ -z "$port" ]] && continue
+                    if add_port_rule "inet" "$nftban_table_inet" "${chain_map[inet_output]}" "tcp" "$port" "dport"; then
+                        rules_added=$((rules_added + 1))
+                    else
+                        rules_failed=$((rules_failed + 1))
+                    fi
+                done
             fi
         else
             if [[ "$has_ip" == "true" ]]; then
-                if add_port_rule "ip" "$nftban_table_ip" "$output_chain" "tcp" "$port" "dport"; then
-                    echo "  ✓ TCP $port (IPv4/$output_chain)"
-                    rules_added=$((rules_added + 1))
-                    added_any=true
+                if add_ports_bulk "ip" "$nftban_table_ip" "$output_chain" "tcp" "$tcp_out" "dport"; then
+                    echo "  ✓ TCP ports ${tcp_out:0:40}... (IPv4/$output_chain) - ${#tcp_out_ports[@]} ports"
+                    rules_added=$((rules_added + ${#tcp_out_ports[@]}))
                 else
                     rules_failed=$((rules_failed + 1))
                 fi
             fi
             if [[ "$has_ip6" == "true" ]]; then
-                if add_port_rule "ip6" "$nftban_table_ip6" "$output_chain" "tcp" "$port" "dport"; then
-                    echo "  ✓ TCP $port (IPv6/$output_chain)"
-                    rules_added=$((rules_added + 1))
-                    added_any=true
+                if add_ports_bulk "ip6" "$nftban_table_ip6" "$output_chain" "tcp" "$tcp_out" "dport"; then
+                    echo "  ✓ TCP ports ${tcp_out:0:40}... (IPv6/$output_chain) - ${#tcp_out_ports[@]} ports"
+                    rules_added=$((rules_added + ${#tcp_out_ports[@]}))
                 else
                     rules_failed=$((rules_failed + 1))
                 fi
             fi
         fi
+    else
+        # Individual rules for small port lists
+        for port in "${tcp_out_ports[@]}"; do
+            [[ -z "$port" ]] && continue
+            local added_any=false
 
-        [[ "$added_any" == "false" ]] && rules_skipped=$((rules_skipped + 1))
-    done
+            if [[ "$has_inet" == "true" && -n "${chain_map[inet_output]:-}" ]]; then
+                if add_port_rule "inet" "$nftban_table_inet" "${chain_map[inet_output]}" "tcp" "$port" "dport"; then
+                    echo "  ✓ TCP $port (inet/${chain_map[inet_output]})"
+                    rules_added=$((rules_added + 1))
+                    added_any=true
+                else
+                    rules_failed=$((rules_failed + 1))
+                fi
+            else
+                if [[ "$has_ip" == "true" ]]; then
+                    if add_port_rule "ip" "$nftban_table_ip" "$output_chain" "tcp" "$port" "dport"; then
+                        echo "  ✓ TCP $port (IPv4/$output_chain)"
+                        rules_added=$((rules_added + 1))
+                        added_any=true
+                    else
+                        rules_failed=$((rules_failed + 1))
+                    fi
+                fi
+                if [[ "$has_ip6" == "true" ]]; then
+                    if add_port_rule "ip6" "$nftban_table_ip6" "$output_chain" "tcp" "$port" "dport"; then
+                        echo "  ✓ TCP $port (IPv6/$output_chain)"
+                        rules_added=$((rules_added + 1))
+                        added_any=true
+                    else
+                        rules_failed=$((rules_failed + 1))
+                    fi
+                fi
+            fi
+
+            [[ "$added_any" == "false" ]] && rules_skipped=$((rules_skipped + 1))
+        done
+    fi
 
     # Add UDP rules (DNS)
     echo ""
