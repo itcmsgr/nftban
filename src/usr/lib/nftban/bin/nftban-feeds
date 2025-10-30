@@ -1,0 +1,4 @@
+#!/usr/bin/env bash
+# Placeholder for nftban-feeds Go binary
+echo "nftban-feeds placeholder - Go binary not built"
+exit 0

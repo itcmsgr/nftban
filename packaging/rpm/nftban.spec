@@ -6,6 +6,9 @@
 # Supported: Rocky Linux 9+, AlmaLinux 9+, Fedora 38+
 # =============================================================================
 
+# Disable debuginfo package generation (shell scripts don't need debug symbols)
+%global debug_package %{nil}
+
 Name:           nftban
 Version:        0.10.0
 Release:        1%{?dist}
@@ -95,6 +98,11 @@ install -d -m 0755 %{buildroot}%{_datadir}/bash-completion/completions
 install -m 0644 src/usr/share/nftban/completions/nftban.bash \
     %{buildroot}%{_datadir}/bash-completion/completions/nftban
 
+# Install Polkit rules
+install -d -m 0755 %{buildroot}%{_datadir}/polkit-1/rules.d
+install -m 0644 packaging/polkit-1/rules.d/60-nftban-cli.rules \
+    %{buildroot}%{_datadir}/polkit-1/rules.d/60-nftban-cli.rules
+
 %pre
 # Create nftban user and nftban-cli group (via sysusers.d)
 %sysusers_create_compat packaging/sysusers.d/nftban.conf
@@ -128,7 +136,7 @@ EOF
 chmod 0644 /var/lib/nftban/config/system.conf
 
 # Reload systemd
-%systemd_post nftban.timer nftban-health.timer
+%systemd_post nftban.timer nftban-health.timer nftban-permissions-audit.timer
 
 # Print installation message
 echo ""
@@ -144,10 +152,10 @@ echo "  4. Check health: nftban health check"
 echo ""
 
 %preun
-%systemd_preun nftban.timer nftban-health.timer
+%systemd_preun nftban.timer nftban-health.timer nftban-permissions-audit.timer
 
 %postun
-%systemd_postun_with_restart nftban.timer nftban-health.timer
+%systemd_postun_with_restart nftban.timer nftban-health.timer nftban-permissions-audit.timer
 
 # Only remove nftables config if package is being completely removed (not upgraded)
 if [ $1 -eq 0 ]; then
@@ -188,6 +196,9 @@ fi
 
 # Bash completion
 /usr/share/bash-completion/completions/nftban
+
+# Polkit rules
+/usr/share/polkit-1/rules.d/60-nftban-cli.rules
 
 # Runtime directories (created by tmpfiles.d)
 %dir %attr(0755,nftban,nftban) /var/lib/nftban

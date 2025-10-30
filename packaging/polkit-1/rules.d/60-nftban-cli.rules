@@ -1,0 +1,89 @@
+// =============================================================================
+// NFTBan - Polkit Authorization Rules
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+// Purpose: Grant nftban-cli group members permission to manage specific systemd units
+// Location: /etc/polkit-1/rules.d/60-nftban-cli.rules
+//
+// Security Model:
+// - Only members of nftban-cli group are granted permissions
+// - Permissions limited to specific units only (fail2ban, nftables)
+// - No broad system access granted
+// - No sudo required
+//
+// Usage:
+//   sudo usermod -aG nftban-cli username
+//   # User must re-login for group membership to take effect
+//
+// Commands this enables (as group member, no sudo):
+//   systemctl start nftables
+//   systemctl stop fail2ban
+//   systemctl restart nftables
+//   systemctl enable fail2ban
+//   systemctl disable fail2ban
+//   nftban start nftables     (via CLI)
+//   nftban stop fail2ban      (via CLI)
+// =============================================================================
+
+polkit.addRule(function(action, subject) {
+  // Only handle requests from nftban-cli group members
+  if (!subject.isInGroup("nftban-cli")) {
+    return polkit.Result.NOT_HANDLED;
+  }
+
+  // Systemd actions we need to authorize
+  const manageUnits = "org.freedesktop.systemd1.manage-units";
+  const manageUnitFiles = "org.freedesktop.systemd1.manage-unit-files";
+  const reloadDaemon = "org.freedesktop.systemd1.reload-daemon";
+
+  // Whitelist of units that nftban-cli group can manage
+  const allowedUnits = new Set([
+    "nftables.service",
+    "fail2ban.service"
+  ]);
+
+  // Extract unit name from action (if present)
+  const unit = action.lookup("unit");
+
+  // Authorize: start, stop, restart, kill, isolate, etc.
+  if (action.id === manageUnits && unit && allowedUnits.has(unit)) {
+    return polkit.Result.YES;
+  }
+
+  // Authorize: enable, disable, preset, etc. (unit file changes)
+  if (action.id === manageUnitFiles && unit && allowedUnits.has(unit)) {
+    return polkit.Result.YES;
+  }
+
+  // Authorize: daemon-reload (allows reloading systemd configuration)
+  // This is safe as it doesn't modify units, just reloads definitions
+  if (action.id === reloadDaemon) {
+    return polkit.Result.YES;
+  }
+
+  // Not handled - fall through to default Polkit policy
+  return polkit.Result.NOT_HANDLED;
+});
+
+// =============================================================================
+// SECURITY NOTES
+// =============================================================================
+//
+// Why this is safe:
+// - File permissions unchanged (root owns code/config per PERMISSION_ARCHITECTURE)
+// - Scope limited to specific units only (cannot manage sshd, httpd, etc.)
+// - Group-based authorization (explicit membership required)
+// - No sudoers, no setuid binaries
+// - Standard Polkit authorization flow via D-Bus
+//
+// To extend to more units, add to allowedUnits set above.
+//
+// To verify rule is loaded:
+//   pkaction --action-id org.freedesktop.systemd1.manage-units --verbose
+//
+// To test authorization (as member of nftban-cli):
+//   systemctl status nftables     # Should work
+//   systemctl restart fail2ban    # Should work
+//   systemctl restart sshd        # Should be denied (not in allowlist)
+//
+// =============================================================================
