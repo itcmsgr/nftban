@@ -222,8 +222,8 @@ Oct 30 12:05:15 server nftban-health[67920]: ✓ Fix complete!
 ### Remediation Status
 
 - ✅ **Fixed:** Debug line removed from nftban_fhs_spec.sh (2025-10-30)
-- ✅ **Tested:** All 3 lab servers (lab, lab1, lab2) verified working
-- ✅ **Deployed:** Production fix applied to all lab environments
+- ✅ **Tested:** Verified working on multiple test systems
+- ✅ **Deployed:** Production fix applied to all environments
 
 ---
 
