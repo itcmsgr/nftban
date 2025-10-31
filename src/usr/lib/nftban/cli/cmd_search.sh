@@ -49,44 +49,29 @@ _search_nftables() {
     local ip="$1"
     local found_in=()
 
-    # Determine IP version for temp_ban set names
-    local temp_ban_suffix
+    # Determine IP version
+    local ip_suffix
     if [[ "$ip" == *:* ]]; then
-        temp_ban_suffix="v6"
+        ip_suffix="v6"
     else
-        temp_ban_suffix="v4"
+        ip_suffix="v4"
     fi
 
-    # Search in inet nftban_runtime table (uses version-specific set names)
-    local runtime_sets=("whitelist" "temp_ban_${temp_ban_suffix}" "user_blacklist" "system_blacklist" "feeds")
-    for set in "${runtime_sets[@]}"; do
-        if nft get element inet nftban_runtime "$set" { "$ip" } &>/dev/null; then
-            # Normalize temp_ban_v4/v6 to just temp_ban for display
+    # Search in inet nftban_runtime table (temp bans only)
+    if nft get element inet nftban_runtime "temp_ban_${ip_suffix}" { "$ip" } &>/dev/null; then
+        found_in+=("nftban_runtime:temp_ban")
+    fi
+
+    # Search in inet nftban_main table (whitelist, blacklist)
+    local main_sets=("whitelist_${ip_suffix}" "blacklist_${ip_suffix}")
+    for set in "${main_sets[@]}"; do
+        if nft get element inet nftban_main "$set" { "$ip" } &>/dev/null; then
+            # Normalize set names for display (remove _v4/_v6 suffix)
             local display_set="${set//_v4/}"
             display_set="${display_set//_v6/}"
-            found_in+=("nftban_runtime:${display_set}")
+            found_in+=("nftban_main:${display_set}")
         fi
     done
-
-    # Search in ip nftban_v4 table (IPv4 only)
-    if [[ "$ip" != *:* ]]; then
-        local v4_sets=("whitelist" "user_blacklist" "system_blacklist" "feeds")
-        for set in "${v4_sets[@]}"; do
-            if nft get element ip nftban_v4 "$set" { "$ip" } &>/dev/null; then
-                found_in+=("nftban_v4:${set}")
-            fi
-        done
-    fi
-
-    # Search in ip6 nftban_v6 table (IPv6 only)
-    if [[ "$ip" == *:* ]]; then
-        local v6_sets=("whitelist" "user_blacklist" "system_blacklist" "feeds")
-        for set in "${v6_sets[@]}"; do
-            if nft get element ip6 nftban_v6 "$set" { "$ip" } &>/dev/null; then
-                found_in+=("nftban_v6:${set}")
-            fi
-        done
-    fi
 
     if [[ ${#found_in[@]} -gt 0 ]]; then
         echo "FOUND"
@@ -201,10 +186,12 @@ _display_results() {
                     ;;
                 temp_ban)
                     echo "  ✓ TEMP BAN in $table"
-                    # Get timeout info
-                    local details=$(_get_ban_details "$ip" "inet nftban_runtime" "temp_ban_${table##*_}")
                     echo "    → Auto-expires (timeout active)"
-                    [[ -n "$details" ]] && echo "    → Details: $details"
+                    echo "    → Details: No details available"
+                    ;;
+                blacklist)
+                    echo "  ✓ BLACKLISTED in $table"
+                    echo "    → Type: Permanent ban"
                     ;;
                 user_blacklist)
                     echo "  ✓ USER BLACKLIST in $table"
@@ -284,16 +271,16 @@ _show_action_menu() {
                 # Unban from all sets
                 nft delete element inet nftban_runtime temp_ban_v4 { "$ip" } 2>/dev/null || true
                 nft delete element inet nftban_runtime temp_ban_v6 { "$ip" } 2>/dev/null || true
-                nft delete element ip nftban_v4 user_blacklist { "$ip" } 2>/dev/null || true
-                nft delete element ip6 nftban_v6 user_blacklist { "$ip" } 2>/dev/null || true
+                nft delete element inet nftban_main blacklist_v4 { "$ip" } 2>/dev/null || true
+                nft delete element inet nftban_main blacklist_v6 { "$ip" } 2>/dev/null || true
                 echo "✓ IP unbanned from all sets"
                 ;;
             2)
                 echo ""
                 echo "Adding $ip to whitelist..."
                 # Add to whitelist
-                nft add element ip nftban_v4 whitelist { "$ip" } 2>/dev/null || true
-                nft add element ip6 nftban_v6 whitelist { "$ip" } 2>/dev/null || true
+                nft add element inet nftban_main whitelist_v4 { "$ip" } 2>/dev/null || true
+                nft add element inet nftban_main whitelist_v6 { "$ip" } 2>/dev/null || true
                 echo "✓ IP whitelisted (highest priority, cannot be banned)"
                 ;;
             3)
@@ -335,15 +322,15 @@ _show_action_menu() {
             3)
                 echo ""
                 echo "Banning $ip permanently..."
-                nft add element ip nftban_v4 user_blacklist { "$ip" } 2>/dev/null || \
-                nft add element ip6 nftban_v6 user_blacklist { "$ip" } 2>/dev/null || true
-                echo "✓ IP banned permanently (user_blacklist)"
+                nft add element inet nftban_main blacklist_v4 { "$ip" } 2>/dev/null || \
+                nft add element inet nftban_main blacklist_v6 { "$ip" } 2>/dev/null || true
+                echo "✓ IP banned permanently (blacklist)"
                 ;;
             4)
                 echo ""
                 echo "Adding $ip to whitelist..."
-                nft add element ip nftban_v4 whitelist { "$ip" } 2>/dev/null || \
-                nft add element ip6 nftban_v6 whitelist { "$ip" } 2>/dev/null || true
+                nft add element inet nftban_main whitelist_v4 { "$ip" } 2>/dev/null || \
+                nft add element inet nftban_main whitelist_v6 { "$ip" } 2>/dev/null || true
                 echo "✓ IP whitelisted (highest priority, cannot be banned)"
                 ;;
             5)
