@@ -75,11 +75,62 @@ fail2ban-server is recommended (not fail2ban) to avoid firewalld conflict.
 # No compilation needed
 
 %install
-# Install from src/ directory structure
-cp -a src/* %{buildroot}/
+# Install binaries
+install -d -m 0755 %{buildroot}/usr/sbin
+install -m 0755 src/usr/sbin/nftban %{buildroot}/usr/sbin/
+install -m 0755 src/usr/sbin/nftban-complete %{buildroot}/usr/sbin/
+install -m 0755 src/usr/sbin/nftban-apply %{buildroot}/usr/sbin/
+install -m 0755 src/usr/sbin/nftban-confirm %{buildroot}/usr/sbin/
+install -m 0755 src/usr/sbin/nftban-rollback %{buildroot}/usr/sbin/
+
+# Install Go binaries
+install -d -m 0755 %{buildroot}/usr/lib/nftban/bin
+install -m 0755 src/usr/lib/nftban/bin/nftban-feeds %{buildroot}/usr/lib/nftban/bin/
+install -m 0755 src/usr/lib/nftban/bin/nftban-geoip %{buildroot}/usr/lib/nftban/bin/
+
+# Install core and CLI modules
+install -d -m 0755 %{buildroot}/usr/lib/nftban/core
+install -m 0644 src/usr/lib/nftban/core/*.sh %{buildroot}/usr/lib/nftban/core/
+
+install -d -m 0755 %{buildroot}/usr/lib/nftban/cli
+install -m 0644 src/usr/lib/nftban/cli/cmd_*.sh %{buildroot}/usr/lib/nftban/cli/
+
+# Install cron runner
+install -d -m 0755 %{buildroot}/usr/lib/nftban/cron
+install -m 0755 src/usr/lib/nftban/cron/run.sh %{buildroot}/usr/lib/nftban/cron/
+
+# Install nft runtime
+install -m 0644 src/usr/lib/nftban/nft-runtime.nft %{buildroot}/usr/lib/nftban/
+
+# Install shared data
+install -d -m 0755 %{buildroot}/usr/share/nftban
+cp -a src/usr/share/nftban/* %{buildroot}/usr/share/nftban/
+
+# Install configuration files
+install -d -m 0750 %{buildroot}/etc/nftban
+install -d -m 0750 %{buildroot}/etc/nftban/conf.d
+install -d -m 0750 %{buildroot}/etc/nftban/feeds.d
+install -d -m 0750 %{buildroot}/etc/nftban/rules.d
+install -d -m 0700 %{buildroot}/etc/nftban/secrets.d
+
+install -m 0640 src/etc/nftban/nftban.conf %{buildroot}/etc/nftban/
+install -m 0640 src/etc/nftban/baseline.nft %{buildroot}/etc/nftban/
+install -m 0640 src/etc/nftban/conf.d/*.conf %{buildroot}/etc/nftban/conf.d/
+install -m 0640 src/etc/nftban/feeds.d/.gitkeep %{buildroot}/etc/nftban/feeds.d/
+install -m 0640 src/etc/nftban/rules.d/.gitkeep %{buildroot}/etc/nftban/rules.d/
+install -m 0644 src/etc/nftban/secrets.d/.gitkeep %{buildroot}/etc/nftban/secrets.d/
+
+# Install fail2ban integration files
+install -d -m 0755 %{buildroot}/etc/fail2ban/action.d
+install -d -m 0755 %{buildroot}/etc/fail2ban/filter.d
+install -d -m 0755 %{buildroot}/etc/fail2ban/jail.d
+
+install -m 0644 src/etc/fail2ban/action.d/nftban.conf %{buildroot}/etc/fail2ban/action.d/
+install -m 0644 src/etc/fail2ban/filter.d/nftban-*.conf %{buildroot}/etc/fail2ban/filter.d/
+install -m 0644 src/etc/fail2ban/jail.d/nftban-*.conf %{buildroot}/etc/fail2ban/jail.d/
 
 # Create FHS directories
-install -d -m 0755 %{buildroot}/var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics,config}
+install -d -m 0755 %{buildroot}/var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics,config,geoip}
 install -d -m 0755 %{buildroot}/var/cache/nftban/{geoip,tmp}
 install -d -m 0750 %{buildroot}/var/log/nftban
 install -d -m 0755 %{buildroot}/run/nftban
