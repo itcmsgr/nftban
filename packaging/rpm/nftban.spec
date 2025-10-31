@@ -215,12 +215,28 @@ fi
 
 # Fail2ban Integration
 /etc/fail2ban/action.d/nftban.conf
-/etc/fail2ban/filter.d/apache-scan.conf
-/etc/fail2ban/filter.d/apache-wp-login.conf
-/etc/fail2ban/filter.d/apache-xmlrpc.conf
-/etc/fail2ban/filter.d/dovecot-custom.conf
-/etc/fail2ban/filter.d/modsecurity.conf
+
+# Fail2ban Filters (all with nftban- prefix)
+/etc/fail2ban/filter.d/nftban-apache-scan.conf
+/etc/fail2ban/filter.d/nftban-apache-wp-login.conf
+/etc/fail2ban/filter.d/nftban-apache-xmlrpc.conf
+/etc/fail2ban/filter.d/nftban-dovecot-custom.conf
+/etc/fail2ban/filter.d/nftban-modsecurity.conf
+/etc/fail2ban/filter.d/nftban-persistent-offenders.conf
+
+# Fail2ban Jails (all with nftban- prefix)
 /etc/fail2ban/jail.d/nftban-sshd.conf
+/etc/fail2ban/jail.d/nftban-exim.conf
+/etc/fail2ban/jail.d/nftban-exim-spam.conf
+/etc/fail2ban/jail.d/nftban-directadmin.conf
+/etc/fail2ban/jail.d/nftban-pure-ftpd.conf
+/etc/fail2ban/jail.d/nftban-roundcube.conf
+/etc/fail2ban/jail.d/nftban-dovecot.conf
+/etc/fail2ban/jail.d/nftban-modsecurity.conf
+/etc/fail2ban/jail.d/nftban-apache-xmlrpc.conf
+/etc/fail2ban/jail.d/nftban-apache-wp-login.conf
+/etc/fail2ban/jail.d/nftban-apache-scan.conf
+/etc/fail2ban/jail.d/nftban-persistent-offenders.conf
 
 # Systemd units
 %{_unitdir}/*.service
