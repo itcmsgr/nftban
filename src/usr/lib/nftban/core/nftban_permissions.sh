@@ -11,8 +11,8 @@
 # to prevent unauthorized access and tampering.
 #
 # **Security Model:**
-# - /etc/nftban/* → root:nftban-cli, 0750/0640 (readable by CLI users)
-# - /usr/sbin/nftban* → root:nftban-cli, 0750 (group-restricted CLI access)
+# - /etc/nftban/* → root:nftban, 0750/0640 (readable by daemon via group)
+# - /usr/sbin/nftban* → root:root, 0755 (public CLI access)
 # - /usr/lib/nftban/* → root:root, 0755/0644 (immutable system code)
 # - /var/lib/nftban/* → nftban:nftban, 0750 (mutable state data)
 # - /var/log/nftban/* → nftban:nftban, 0750 (log files)
@@ -139,24 +139,24 @@ perms_mkd() {
 
 perms_enforce_etc() {
     # Enforce permissions on /etc/nftban
-    # Security: root:nftban-cli, directories 0750, files 0640
+    # Security: root:nftban, directories 0750, files 0640
 
     perms_say "Enforcing permissions on: $PERMS_ETC"
 
-    # Check if nftban-cli group exists
-    if ! getent group nftban-cli >/dev/null 2>&1; then
-        perms_warn "Group nftban-cli does not exist - creating it"
-        groupadd nftban-cli 2>/dev/null || perms_err "Failed to create nftban-cli group"
+    # Check if nftban group exists
+    if ! getent group nftban >/dev/null 2>&1; then
+        perms_warn "Group nftban does not exist - creating it"
+        groupadd nftban 2>/dev/null || perms_err "Failed to create nftban group"
     fi
 
     # Create base directory if missing
-    perms_mkd "$PERMS_ETC" 0750 root nftban-cli
-    perms_mkd "$PERMS_ETC/conf.d" 0750 root nftban-cli
+    perms_mkd "$PERMS_ETC" 0750 root nftban
+    perms_mkd "$PERMS_ETC/conf.d" 0750 root nftban
 
-    # Secure all files in /etc/nftban (readable by nftban-cli group)
+    # Secure all files in /etc/nftban (readable by nftban group)
     if [[ -d "$PERMS_ETC" ]]; then
         perms_say "Securing config directory: $PERMS_ETC"
-        perms_run chown -R root:nftban-cli "$PERMS_ETC"
+        perms_run chown -R root:nftban "$PERMS_ETC"
         perms_run find "$PERMS_ETC" -type d -exec chmod 0750 {} \;
         perms_run find "$PERMS_ETC" -type f -exec chmod 0640 {} \;
 
@@ -183,25 +183,25 @@ perms_enforce_lib() {
 
 perms_enforce_sbin() {
     # Enforce permissions on /usr/sbin/nftban*
-    # Security: root:nftban-cli, 0750 (group-restricted executable)
+    # Security: root:nftban, 0750 (group-restricted executable)
 
     perms_say "Enforcing permissions on: $PERMS_SBIN/nftban*"
 
-    # Check if nftban-cli group exists
-    if ! getent group nftban-cli >/dev/null 2>&1; then
-        perms_warn "Group nftban-cli does not exist - creating it"
-        groupadd nftban-cli 2>/dev/null || perms_err "Failed to create nftban-cli group"
+    # Check if nftban group exists
+    if ! getent group nftban >/dev/null 2>&1; then
+        perms_warn "Group nftban does not exist - creating it"
+        groupadd nftban 2>/dev/null || perms_err "Failed to create nftban group"
     fi
 
     if [[ -f "$PERMS_SBIN/nftban" ]]; then
-        perms_run chown root:nftban-cli "$PERMS_SBIN/nftban"
+        perms_run chown root:nftban "$PERMS_SBIN/nftban"
         perms_run chmod 0750 "$PERMS_SBIN/nftban"
     fi
 
     # Other nftban-* binaries (also restricted)
     for bin in "$PERMS_SBIN"/nftban-*; do
         if [[ -f "$bin" ]]; then
-            perms_run chown root:nftban-cli "$bin"
+            perms_run chown root:nftban "$bin"
             perms_run chmod 0750 "$bin"
         fi
     done
