@@ -49,18 +49,44 @@ _search_nftables() {
     local ip="$1"
     local found_in=()
 
-    # Search in all 3 tables and 5 sets each
-    local tables=("inet nftban_runtime" "ip nftban_v4" "ip6 nftban_v6")
-    local sets=("whitelist" "temp_ban" "user_blacklist" "system_blacklist" "feeds")
+    # Determine IP version for temp_ban set names
+    local temp_ban_suffix
+    if [[ "$ip" == *:* ]]; then
+        temp_ban_suffix="v6"
+    else
+        temp_ban_suffix="v4"
+    fi
 
-    for table in "${tables[@]}"; do
-        for set in "${sets[@]}"; do
-            # Try to check if IP exists in set
-            if nft get element "$table" "$set" { "$ip" } &>/dev/null; then
-                found_in+=("${table##* }:${set}")
+    # Search in inet nftban_runtime table (uses version-specific set names)
+    local runtime_sets=("whitelist" "temp_ban_${temp_ban_suffix}" "user_blacklist" "system_blacklist" "feeds")
+    for set in "${runtime_sets[@]}"; do
+        if nft get element inet nftban_runtime "$set" { "$ip" } &>/dev/null; then
+            # Normalize temp_ban_v4/v6 to just temp_ban for display
+            local display_set="${set//_v4/}"
+            display_set="${display_set//_v6/}"
+            found_in+=("nftban_runtime:${display_set}")
+        fi
+    done
+
+    # Search in ip nftban_v4 table (IPv4 only)
+    if [[ "$ip" != *:* ]]; then
+        local v4_sets=("whitelist" "user_blacklist" "system_blacklist" "feeds")
+        for set in "${v4_sets[@]}"; do
+            if nft get element ip nftban_v4 "$set" { "$ip" } &>/dev/null; then
+                found_in+=("nftban_v4:${set}")
             fi
         done
-    done
+    fi
+
+    # Search in ip6 nftban_v6 table (IPv6 only)
+    if [[ "$ip" == *:* ]]; then
+        local v6_sets=("whitelist" "user_blacklist" "system_blacklist" "feeds")
+        for set in "${v6_sets[@]}"; do
+            if nft get element ip6 nftban_v6 "$set" { "$ip" } &>/dev/null; then
+                found_in+=("nftban_v6:${set}")
+            fi
+        done
+    fi
 
     if [[ ${#found_in[@]} -gt 0 ]]; then
         echo "FOUND"

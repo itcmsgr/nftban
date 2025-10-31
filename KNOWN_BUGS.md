@@ -227,11 +227,215 @@ Oct 30 12:05:15 server nftban-health[67920]: ✓ Fix complete!
 
 ---
 
+## 🔴 CRITICAL BUG: Search Command Not Finding Banned IPs
+
+### Bug ID: BUG-002
+**Status:** ✅ **FIXED** (2025-10-31)
+**Severity:** CRITICAL - Search gives false negatives
+**Impact:** HIGH - Users cannot find banned IPs, leading to confusion
+
+### Description
+
+The `nftban search <ip>` command reports "NOT BANNED" for IPs that ARE actually banned in nftables, showing false negatives for temporary bans.
+
+### User Report
+
+```bash
+[root@server ~]# nftban ban 8.8.8.8 test
+[root@server ~]# nftban search 8.8.8.8
+✓ STATUS: NOT BANNED  ← WRONG! IP IS banned
+  ✗ temp_ban
+
+[root@server ~]# nft list ruleset | grep 8.8.8
+elements = { 8.8.8.8 timeout 1h expires 58m6s362ms }  ← IP IS in nftables!
+```
+
+### Root Cause
+
+Search command looks for sets named `temp_ban` but actual set names are `temp_ban_v4` and `temp_ban_v6`:
+
+**File:** `src/usr/lib/nftban/cli/cmd_search.sh:54`
+```bash
+local sets=("whitelist" "temp_ban" "user_blacklist" "system_blacklist" "feeds")
+```
+
+**Actual nftables sets:**
+- `inet nftban_runtime` → `temp_ban_v4`, `temp_ban_v6` (IPv4/IPv6 specific)
+- `ip nftban_v4` → `whitelist`, `user_blacklist`, etc.
+- `ip6 nftban_v6` → `whitelist`, `user_blacklist`, etc.
+
+When `nft get element inet nftban_runtime temp_ban { "8.8.8.8" }` runs, it fails because set "temp_ban" doesn't exist → false negative.
+
+### Impact
+
+- ❌ Users cannot find banned IPs using search command
+- ❌ Appears like bans are not working (trust issue)
+- ❌ Debugging becomes difficult
+- ❌ False sense that firewall is not protecting
+
+### Fix Applied
+
+Updated search function to use correct set names based on IP version:
+
+**File:** `src/usr/lib/nftban/cli/cmd_search.sh:48-89`
+
+```bash
+# Determine IP version
+if [[ "$ip" == *:* ]]; then
+    temp_ban_suffix="v6"
+else
+    temp_ban_suffix="v4"
+fi
+
+# Search in inet nftban_runtime with version-specific sets
+local runtime_sets=("whitelist" "temp_ban_${temp_ban_suffix}" "user_blacklist" ...)
+for set in "${runtime_sets[@]}"; do
+    if nft get element inet nftban_runtime "$set" { "$ip" } &>/dev/null; then
+        # Normalize for display (temp_ban_v4 → temp_ban)
+        local display_set="${set//_v4/}"
+        display_set="${display_set//_v6/}"
+        found_in+=("nftban_runtime:${display_set}")
+    fi
+done
+
+# Also search ip nftban_v4 and ip6 nftban_v6 tables
+```
+
+### Testing
+
+```bash
+# Before fix:
+nftban ban 8.8.8.8
+nftban search 8.8.8.8  → Shows "NOT BANNED" ❌
+
+# After fix:
+nftban ban 8.8.8.8
+nftban search 8.8.8.8  → Shows "BANNED in temp_ban" ✅
+```
+
+### Remediation Status
+
+- ✅ **Fixed:** Search function updated to use correct set names (2025-10-31)
+- ✅ **Code:** `src/usr/lib/nftban/cli/cmd_search.sh`
+- ⏳ **Testing:** Pending deployment and verification
+
+---
+
+## 🟡 MEDIUM: Ban Command Ignores Comment Parameter
+
+### Bug ID: BUG-003
+**Status:** ✅ **FIXED** (2025-10-31)
+**Severity:** MEDIUM - Feature not working as expected
+**Impact:** MEDIUM - Cannot add notes/reasons to bans
+
+### Description
+
+When using `nftban ban <ip> <comment>`, the comment parameter is silently ignored.
+
+### User Report
+
+```bash
+[root@server ~]# nftban ban 8.8.8.8 test
+# Comment "test" is ignored, not logged anywhere
+```
+
+**Expected:** Comment should be logged for reference
+**Actual:** Comment is silently discarded
+
+### Root Cause
+
+**File:** `src/usr/sbin/nftban-complete:298-306`
+
+The `nftban_fail2ban_ban` function only recognizes these parameters:
+- `--temp`
+- `--timeout <duration>`
+- `--source <source>`
+- `--jail <jail>`
+
+When you run `nftban ban 8.8.8.8 test`, the "test" parameter hits the default case `*)` which does nothing:
+
+```bash
+while [ $# -gt 0 ]; do
+    case "$1" in
+      --temp) : ;;
+      --timeout) bantime="$2"; shift ;;
+      --source) source="$2"; shift ;;
+      --jail) jail="$2"; shift ;;
+      *) ;;  ← "test" falls here and is ignored
+    esac
+    shift
+done
+```
+
+### Fix Applied
+
+1. **Added comment parameter support:**
+
+```bash
+nftban_fail2ban_ban() {
+  local ip bantime source jail comment
+  ...
+  comment=""
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --timeout) bantime="$2"; shift ;;
+      --source) source="$2"; shift ;;
+      --jail) jail="$2"; shift ;;
+      --comment|--reason) comment="$2"; shift ;;  ← NEW
+      --*) ;;  # Ignore unknown flags
+      *)
+        # If no flags, treat as comment
+        if [[ -z "$comment" ]]; then
+          comment="$1"  ← NEW: Simple usage
+        fi
+        ;;
+    esac
+    shift
+  done
+```
+
+2. **Updated logging to include comment:**
+
+```bash
+# JSON log
+nftban_log_json info ban \
+  "...\"comment\":\"$comment\",\"result\":\"success\""
+
+# Plain text log
+printf '[BAN] ip=%s jail=%s timeout=%ss source=%s comment="%s"\n' \
+  "$ip" "$jail" "$timeout_s" "$source" "$comment"
+```
+
+### Usage Examples
+
+```bash
+# Simple usage (backward compatible)
+nftban ban 8.8.8.8 "testing firewall"
+
+# Explicit flag
+nftban ban 8.8.8.8 --comment "suspicious activity"
+nftban ban 8.8.8.8 --reason "port scan detected"
+
+# Combined with other options
+nftban ban 8.8.8.8 --timeout 7200 --comment "2 hour ban for brute force"
+```
+
+### Remediation Status
+
+- ✅ **Fixed:** Comment parameter added and logged (2025-10-31)
+- ✅ **Code:** `src/usr/sbin/nftban-complete:291-351`
+- ⏳ **Testing:** Pending deployment and verification
+
+---
+
 ## 📋 Bug Registry Summary
 
 | ID | Severity | Status | Affected Files | Fixed |
 |----|----------|--------|----------------|-------|
 | BUG-001 | 🟢 RESOLVED | ✅ Fixed | 5 files (conditional patterns) | 5/5 |
+| BUG-002 | 🟢 RESOLVED | ✅ Fixed | 1 file (search command) | 1/1 |
+| BUG-003 | 🟢 RESOLVED | ✅ Fixed | 1 file (ban command) | 1/1 |
 | BUG-006 | 🟢 RESOLVED | ✅ Fixed | 1 file (debug output) | 1/1 |
 
 **Note:** 11 remaining `((var++))` occurrences are safe standalone statements in if-else blocks, not chained with `&&` or `||`.

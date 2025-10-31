@@ -289,11 +289,12 @@ to_seconds() {
 }
 
 nftban_fail2ban_ban() {
-  local ip bantime source jail
+  local ip bantime source jail comment
   ip="$1"; shift
   bantime=""
   source="unknown"
   jail="unknown"
+  comment=""
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -301,7 +302,14 @@ nftban_fail2ban_ban() {
       --timeout) bantime="$2"; shift ;;
       --source) source="$2"; shift ;;
       --jail) jail="$2"; shift ;;
-      *) ;;
+      --comment|--reason) comment="$2"; shift ;;
+      --*) ;;  # Ignore unknown flags
+      *)
+        # If no flags used, treat as comment/reason
+        if [[ -z "$comment" ]]; then
+          comment="$1"
+        fi
+        ;;
     esac
     shift
   done
@@ -320,20 +328,27 @@ nftban_fail2ban_ban() {
     fam="ipv4"
   fi
 
-  nftban_fail2ban_track_offender "$ip" "$jail" "$source" "$timeout_s"
+  nftban_fail2ban_track_offender "$ip" "$jail" "$source" "$timeout_s" "$comment"
 
   nftban_log_json info ban \
-    "\"ip\":\"$ip\",\"family\":\"$fam\",\"type\":\"temp\",\"timeout\":\"${timeout_s}s\",\"source\":\"$source\",\"jail\":\"$jail\",\"result\":\"success\""
+    "\"ip\":\"$ip\",\"family\":\"$fam\",\"type\":\"temp\",\"timeout\":\"${timeout_s}s\",\"source\":\"$source\",\"jail\":\"$jail\",\"comment\":\"$comment\",\"result\":\"success\""
 }
 
 nftban_fail2ban_track_offender() {
-  local ip="$1" jail="$2" source="$3" timeout_s="$4"
+  local ip="$1" jail="$2" source="$3" timeout_s="$4" comment="${5:-}"
   local epoch
   epoch="$(date +%s)"
 
-  printf '%s [BAN] ip=%s jail=%s timeout=%ss source=%s\n' \
-    "$(date +'%Y-%m-%d %H:%M:%S')" "$ip" "$jail" "$timeout_s" "$source" \
-    >> "$LOG_DIR/fail2ban-bans.log"
+  # Log with comment if provided
+  if [[ -n "$comment" ]]; then
+    printf '%s [BAN] ip=%s jail=%s timeout=%ss source=%s comment="%s"\n' \
+      "$(date +'%Y-%m-%d %H:%M:%S')" "$ip" "$jail" "$timeout_s" "$source" "$comment" \
+      >> "$LOG_DIR/fail2ban-bans.log"
+  else
+    printf '%s [BAN] ip=%s jail=%s timeout=%ss source=%s\n' \
+      "$(date +'%Y-%m-%d %H:%M:%S')" "$ip" "$jail" "$timeout_s" "$source" \
+      >> "$LOG_DIR/fail2ban-bans.log"
+  fi
 
   if [ "$have_sqlite" -eq 1 ]; then
     sqlite3 "$DB_PATH" "INSERT INTO bans(ip,jail,source,ts) VALUES('$ip','$jail','$source',$epoch);" || true
