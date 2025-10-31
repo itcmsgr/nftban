@@ -14,7 +14,7 @@ The `nftban port status` command reports "? No-rule" for ports that ARE actually
 ### User Report
 
 ```bash
-[root@lab4 ~]# nftban port status
+[root@server ~]# nftban port status
 ════════════════════════════════════════════════════════════════════════════════════
  Port Status Report — 2025-10-30T20:32:39+00:00
 ════════════════════════════════════════════════════════════════════════════════════
@@ -83,7 +83,7 @@ fi
 
 **Actual nftables rules:**
 ```bash
-[root@lab4 ~]# nft list table inet nftban_main
+[root@server ~]# nft list table inet nftban_main
 ...
 set tcp_ports {
     type inet_service
@@ -334,7 +334,7 @@ nftban firewall check
 
 ### Phase 1: Investigation (DONE ✅)
 
-- [x] Reproduce issue on lab4
+- [x] Reproduce issue on test system
 - [x] Identify root cause (regex doesn't match set references)
 - [x] Document bug thoroughly
 - [x] Assess impact (LOW severity)
@@ -355,7 +355,7 @@ nftban firewall check
 
 ### Phase 4: Testing
 
-- [ ] Test on lab4 with current firewall config
+- [ ] Test on production system with current firewall config
 - [ ] Verify SSH port 22 shows "Allowed"
 - [ ] Test with ports NOT in sets (should show "No-rule")
 - [ ] Test with ports in blacklist (should show "Blocked")
