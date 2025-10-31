@@ -35,9 +35,9 @@ readonly NFTBAN_FEEDS_LOG="${NFTBAN_FEEDS_LOG:-/var/log/nftban/feeds.log}"
 readonly NFTBAN_FEEDS_BINARY="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-feeds"
 
 # nftables configuration
-readonly NFTBAN_NFT_TABLE_V4="nftban_v4"
-readonly NFTBAN_NFT_TABLE_V6="nftban_v6"
-readonly NFTBAN_NFT_SET_FEEDS="feeds"
+readonly NFTBAN_NFT_TABLE="nftban_main"
+readonly NFTBAN_NFT_SET_FEEDS_V4="feed_v4"
+readonly NFTBAN_NFT_SET_FEEDS_V6="feed_v6"
 
 # =============================================================================
 # LOGGING
@@ -232,7 +232,7 @@ nftban_feeds_update_single() {
     local ip_count=$(echo "$parse_result" | wc -l)
 
     # Validate minimum entries
-    local min_entries=$(grep "^FEEDS_MIN_ENTRIES=" "$NFTBAN_FEEDS_CONFIG" | cut -d'=' -f2 | tr -d '"')
+    local min_entries=$(grep "^FEEDS_MIN_ENTRIES=" "$NFTBAN_FEEDS_CONFIG" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '" ' | grep -oE '[0-9]+')
     min_entries=${min_entries:-10}
 
     if [[ $ip_count -lt $min_entries ]]; then
@@ -285,19 +285,19 @@ nftban_feeds_sync_to_nftables() {
     nftban_feeds_log INFO "Syncing feeds to nftables..."
 
     # Ensure nftables sets exist
-    nft list set ip "$NFTBAN_NFT_TABLE_V4" "$NFTBAN_NFT_SET_FEEDS" >/dev/null 2>&1 || {
+    nft list set inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V4" >/dev/null 2>&1 || {
         nftban_feeds_log INFO "Creating IPv4 feeds set..."
-        nft add set ip "$NFTBAN_NFT_TABLE_V4" "$NFTBAN_NFT_SET_FEEDS" { type ipv4_addr \; flags interval \; auto-merge \; }
+        nft add set inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V4" { type ipv4_addr \; flags interval \; auto-merge \; }
     }
 
-    nft list set ip6 "$NFTBAN_NFT_TABLE_V6" "$NFTBAN_NFT_SET_FEEDS" >/dev/null 2>&1 || {
+    nft list set inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V6" >/dev/null 2>&1 || {
         nftban_feeds_log INFO "Creating IPv6 feeds set..."
-        nft add set ip6 "$NFTBAN_NFT_TABLE_V6" "$NFTBAN_NFT_SET_FEEDS" { type ipv6_addr \; flags interval \; auto-merge \; }
+        nft add set inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V6" { type ipv6_addr \; flags interval \; auto-merge \; }
     }
 
     # Flush existing sets
-    nft flush set ip "$NFTBAN_NFT_TABLE_V4" "$NFTBAN_NFT_SET_FEEDS" 2>/dev/null || true
-    nft flush set ip6 "$NFTBAN_NFT_TABLE_V6" "$NFTBAN_NFT_SET_FEEDS" 2>/dev/null || true
+    nft flush set inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V4" 2>/dev/null || true
+    nft flush set inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V6" 2>/dev/null || true
 
     # Collect all IPs from enabled feeds
     local ipv4_list="${NFTBAN_FEEDS_CACHE_DIR}/feeds_ipv4.tmp"
@@ -334,14 +334,14 @@ nftban_feeds_sync_to_nftables() {
 
     if [[ -s "$ipv4_list" ]]; then
         sort -u "$ipv4_list" | while IFS= read -r ip; do
-            nft add element ip "$NFTBAN_NFT_TABLE_V4" "$NFTBAN_NFT_SET_FEEDS" { "$ip" } 2>/dev/null || true
+            nft add element inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V4" { "$ip" } 2>/dev/null || true
             ipv4_count=$((ipv4_count + 1))
         done
     fi
 
     if [[ -s "$ipv6_list" ]]; then
         sort -u "$ipv6_list" | while IFS= read -r ip; do
-            nft add element ip6 "$NFTBAN_NFT_TABLE_V6" "$NFTBAN_NFT_SET_FEEDS" { "$ip" } 2>/dev/null || true
+            nft add element inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V6" { "$ip" } 2>/dev/null || true
             ipv6_count=$((ipv6_count + 1))
         done
     fi
