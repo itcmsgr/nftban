@@ -195,6 +195,7 @@ fi
 # Libraries and modules
 /usr/lib/nftban/core/*.sh
 /usr/lib/nftban/cli/*.sh
+/usr/lib/nftban/cron/run.sh
 /usr/lib/nftban/nft-runtime.nft
 
 # Shared data
