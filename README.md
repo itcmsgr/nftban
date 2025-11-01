@@ -22,12 +22,15 @@
 
 ```bash
 # Download latest release
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-0.10.0-1.el9.x86_64.rpm
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.el9.x86_64.rpm
+
+# Check what version you downloaded (before installing)
+rpm -qp --info nftban.el9.x86_64.rpm | grep Version
 
 # Install
-sudo dnf install -y nftban-0.10.0-1.el9.x86_64.rpm
+sudo dnf install -y nftban.el9.x86_64.rpm
 
-# Verify
+# Verify installed version
 nftban --version
 ```
 
@@ -35,13 +38,16 @@ nftban --version
 
 ```bash
 # Download latest release
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban_0.10.0-1_amd64.deb
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.amd64.deb
+
+# Check what version you downloaded (before installing)
+dpkg --info nftban.ubuntu.amd64.deb | grep Version
 
 # Install
-sudo dpkg -i nftban_0.10.0-1_amd64.deb
+sudo dpkg -i nftban.ubuntu.amd64.deb
 sudo apt-get install -f  # Install dependencies if needed
 
-# Verify
+# Verify installed version
 nftban --version
 ```
 
@@ -455,6 +461,79 @@ sudo nftban-confirm
 # Or force rollback immediately:
 sudo nftban-rollback --force
 ```
+
+---
+
+## 🔍 Verifying Package Versions
+
+### Before Installing - Check Downloaded Package
+
+**RPM Package (RHEL/Rocky/AlmaLinux/Fedora):**
+```bash
+# Show all package information
+rpm -qp --info nftban.el9.x86_64.rpm
+
+# Show just the version
+rpm -qp --info nftban.el9.x86_64.rpm | grep Version
+
+# Show version and release
+rpm -qp nftban.el9.x86_64.rpm
+```
+
+**DEB Package (Debian/Ubuntu):**
+```bash
+# Show all package information
+dpkg --info nftban.ubuntu.amd64.deb
+
+# Show just the version
+dpkg --info nftban.ubuntu.amd64.deb | grep Version
+
+# Show package name and version
+dpkg-deb --field nftban.ubuntu.amd64.deb Package Version
+```
+
+### After Installing - Check Installed Version
+
+**All Systems:**
+```bash
+# NFTBan version
+nftban version
+nftban --version
+
+# Full system information
+nftban health check | head -20
+```
+
+**RPM Systems:**
+```bash
+# Query installed package
+rpm -qi nftban
+
+# Show just version
+rpm -q nftban
+```
+
+**DEB Systems:**
+```bash
+# Query installed package
+dpkg -l nftban
+
+# Show details
+apt show nftban
+```
+
+### Verify Latest Release on GitHub
+
+Check what's currently released:
+```bash
+# View latest release info
+curl -s https://api.github.com/repos/itcmsgr/nftban/releases/latest | grep '"tag_name"'
+
+# Expected output example:
+# "tag_name": "v0.10.0",
+```
+
+Or visit: https://github.com/itcmsgr/nftban/releases/latest
 
 ---
 
