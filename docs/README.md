@@ -336,3 +336,64 @@ When reporting documentation issues:
 **For questions:** Review index first, then check specific topic documents
 
 ═══════════════════════════════════════════════════════════════════
+
+---
+
+## 📁 **NEW: AI-Assisted Development Documentation (Added 2025-11-01)**
+
+### **chatgpt-reviews/** - Expert AI Reviews
+Complete ChatGPT architectural reviews and solutions:
+- **go-binaries-issue-description.md** - Original Go binary distribution challenge
+- **go-binaries-initial-review.txt** - ChatGPT's analysis and industry-standard recommendations
+- **go-binaries-final-solution.txt** - Complete tailored CI/CD solution for NFTBan
+
+### **sessions/** - Recent Development Sessions
+- **2025-11-01-legal-and-go-binaries.md** - Legal documentation + Go binary CI/CD implementation
+- **2025-10-31-menu-fixes.md** - Menu validation fixes and bug resolution
+- **2025-11-01-SESSION-SUMMARY.md** - Detailed work summary with statistics
+
+### **architecture/** - Architecture Updates
+- **permission-architecture.md** - Permission hardening and security model
+
+---
+
+## 🤖 **AI Collaboration Transparency**
+
+NFTBan development uses **ChatGPT** for architectural reviews and **Claude Code** for implementation.
+
+**All AI contributions are:**
+- ✅ Fully documented in `chatgpt-reviews/` and `sessions/`
+- ✅ Marked in Git commits with "🤖 Generated with Claude Code"
+- ✅ Reviewed and adapted by human architect
+- ✅ Tested on 5 lab servers before production
+
+**Example: Go Binary Distribution**
+1. Problem documented: `chatgpt-reviews/go-binaries-issue-description.md`
+2. ChatGPT solution: `chatgpt-reviews/go-binaries-final-solution.txt`
+3. Implementation: `CI-CD-GO-BINARIES.md`
+4. Session summary: `sessions/2025-11-01-legal-and-go-binaries.md`
+
+---
+
+## 📊 **Documentation Status (Updated 2025-11-01)**
+
+### ✅ **Recently Completed**
+- [x] Go binary CI/CD architecture (ChatGPT reviewed)
+- [x] Legal compliance documentation (NOTICE, TRADEMARK, CONTRIBUTING)
+- [x] Smart wrapper system for Go binaries
+- [x] GitHub Actions workflow for multi-arch builds
+- [x] Session summaries and ChatGPT reviews archived
+
+### 📝 **Updated Documentation Index**
+All documentation from `/tmp` has been moved to permanent locations in `docs/`:
+- ChatGPT reviews: `chatgpt-reviews/`
+- Session summaries: `sessions/`
+- Architecture docs: `architecture/`
+
+**No more temporary files!** Everything is now under version control.
+
+---
+
+**Documentation Last Updated:** 2025-11-01 22:00 UTC
+**AI Collaboration:** ChatGPT + Claude Code
+**Status:** ✅ All temporary files archived to repository
