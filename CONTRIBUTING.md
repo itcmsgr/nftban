@@ -34,6 +34,10 @@ Each source file must contain:
 # SPDX-License-Identifier: MPL-2.0
 ```
 
+## Languages and Implementation
+nftban is a language‑agnostic project. The Core may include Bash shell scripts, Python, Go, or other languages.
+All contributions follow the same standards regardless of implementation language. Style guides and quality requirements apply equally across all languages.
+
 ## Security
 If you discover a security issue, **do not** open a public issue. Email **security@nftban.com** with details and reproduction steps.
 We will acknowledge receipt within a reasonable time and coordinate a fix and disclosure window.
