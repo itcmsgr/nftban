@@ -2,3 +2,10 @@
 sessions/
 bugs/TRACKING.md
 TODO.md
+
+# Internal lab testing docs (contain server names and internal procedures)
+development/LAB-*.md
+development/CLEAN-LAB-*.md
+development/*-LAB-*.md
+development/24H-MONITORING-PLAN.md
+development/*MONITORING*.md

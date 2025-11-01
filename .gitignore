@@ -8,6 +8,14 @@ docs/sessions/
 docs/deployment/
 docs/updates/
 
+# Internal strategy and migration documents
+docs/COMPLETE_MIGRATION_STRATEGY.md
+docs/DEPLOYMENT_READINESS_CHECKLIST.md
+docs/PORT_DDOS_MIGRATION_ANALYSIS.md
+docs/*_MIGRATION_*.md
+docs/*_STRATEGY*.md
+docs/ARCHITECTURE_VALIDATION_OLD_VS_NEW.md
+
 # Lab deployment scripts (internal use only)
 deploy/
 cleanup-lab.sh
@@ -111,7 +119,11 @@ docker-compose.override.yml
 /temp/
 local-test/
 
-# Personal notes
+# Personal notes and internal planning
 NOTES.txt
 NOTES.md
 TODO-personal.md
+TODO*.md
+*TESTING*.md
+*PLAN*.md
+ROADMAP-internal.md
