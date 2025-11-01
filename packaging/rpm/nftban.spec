@@ -160,6 +160,10 @@ install -d -m 0755 %{buildroot}%{_datadir}/bash-completion/completions
 install -m 0644 src/usr/share/nftban/completions/nftban.bash \
     %{buildroot}%{_datadir}/bash-completion/completions/nftban
 
+# Install man page
+install -d -m 0755 %{buildroot}%{_mandir}/man1
+install -m 0644 docs/nftban.1 %{buildroot}%{_mandir}/man1/nftban.1
+
 # Install Polkit rules
 install -d -m 0755 %{buildroot}%{_datadir}/polkit-1/rules.d
 install -m 0644 packaging/polkit-1/rules.d/60-nftban-cli.rules \
@@ -260,6 +264,9 @@ fi
 %doc /usr/share/nftban/docs/TRADEMARK.md
 %doc /usr/share/nftban/docs/CONTRIBUTING.md
 %doc /usr/share/nftban/docs/README-License-Summary.md
+
+# Man page
+%{_mandir}/man1/nftban.1*
 
 # Configuration
 %dir %attr(0750,root,nftban) /etc/nftban

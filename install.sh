@@ -149,6 +149,11 @@ install -m 0644 ../README-License-Summary.md /usr/share/nftban/docs/README-Licen
 echo "✓ Code installed"
 echo "✓ Legal documentation installed to /usr/share/nftban/docs/"
 
+# Man page (FHS: /usr/share/man/man1/)
+install -d -m 0755 /usr/share/man/man1
+install -m 0644 ../docs/nftban.1 /usr/share/man/man1/nftban.1
+echo "✓ Man page installed to /usr/share/man/man1/nftban.1"
+
 # =============================================================================
 # 4. INSTALL CONFIGURATION
 # =============================================================================
