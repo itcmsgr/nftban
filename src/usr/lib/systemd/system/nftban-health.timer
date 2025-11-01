@@ -1,6 +1,6 @@
 [Unit]
-Description=NFTBan Periodic Health Check Timer
-Documentation=man:nftban(8)
+Description=NFTBan Daily Health Check Timer (with Auto-Heal)
+Documentation=man:nftban(8) https://nftban.com
 Requires=nftban-health.service
 
 [Timer]

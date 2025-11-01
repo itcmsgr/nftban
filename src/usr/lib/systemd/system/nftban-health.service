@@ -1,27 +1,28 @@
 [Unit]
-Description=NFTBan Periodic Health Check
-Documentation=man:nftban(8)
+Description=NFTBan Daily Health Check with Auto-Heal
+Documentation=man:nftban(8) https://nftban.com
 After=network.target
 
 [Service]
 Type=oneshot
-# Run as nftban user (principle of least privilege)
-User=nftban
-Group=nftban
+# Run as root (required for chown/chmod in auto-heal)
+User=root
+Group=root
 
-# Run health fix (fixes what nftban user can, reports what needs root)
-ExecStart=/usr/sbin/nftban health fix all
+# Run health check with auto-heal and quiet mode
+ExecStart=/usr/sbin/nftban health check --auto-heal --quiet
 
 # Logging
 StandardOutput=journal
 StandardError=journal
-SyslogIdentifier=nftban-health
+SyslogIdentifier=nftban-health-autoheal
 
-# Security
+# Security hardening
 PrivateTmp=yes
 NoNewPrivileges=yes
-ProtectSystem=full
+ProtectSystem=strict
 ProtectHome=yes
+ReadWritePaths=/var/lib/nftban /var/log/nftban /etc/nftban
 
 [Install]
 WantedBy=multi-user.target

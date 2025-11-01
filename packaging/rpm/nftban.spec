@@ -95,6 +95,9 @@ install -m 0644 src/usr/lib/nftban/core/*.sh %{buildroot}/usr/lib/nftban/core/
 install -d -m 0755 %{buildroot}/usr/lib/nftban/cli
 install -m 0644 src/usr/lib/nftban/cli/cmd_*.sh %{buildroot}/usr/lib/nftban/cli/
 
+# Install help system
+install -m 0644 src/usr/lib/nftban/nftban_help.sh %{buildroot}/usr/lib/nftban/
+
 # Install cron runner
 install -d -m 0755 %{buildroot}/usr/lib/nftban/cron
 install -m 0755 src/usr/lib/nftban/cron/run.sh %{buildroot}/usr/lib/nftban/cron/
@@ -213,7 +216,7 @@ echo "  2. Enable services:"
 echo "     systemctl enable --now nftables"
 echo "     systemctl enable --now fail2ban"
 echo ""
-echo "  3. Enable NFTBan timers:"
+echo "  3. Enable NFTBan health timer (includes auto-heal):"
 echo "     systemctl enable --now nftban-health.timer"
 echo ""
 echo "  4. Check health: nftban health check"
@@ -222,10 +225,10 @@ echo "Documentation: /usr/share/nftban/docs/"
 echo ""
 
 %preun
-%systemd_preun nftban.timer nftban-health.timer nftban-permissions-audit.timer
+%systemd_preun nftban.timer nftban-health.timer
 
 %postun
-%systemd_postun_with_restart nftban.timer nftban-health.timer nftban-permissions-audit.timer
+%systemd_postun_with_restart nftban.timer nftban-health.timer
 
 # Only remove nftables config if package is being completely removed (not upgraded)
 if [ $1 -eq 0 ]; then
@@ -248,6 +251,7 @@ fi
 /usr/lib/nftban/cli/*.sh
 /usr/lib/nftban/cron/run.sh
 /usr/lib/nftban/nft-runtime.nft
+/usr/lib/nftban/nftban_help.sh
 
 # Shared data
 /usr/share/nftban/

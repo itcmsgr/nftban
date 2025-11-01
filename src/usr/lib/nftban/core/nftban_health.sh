@@ -530,8 +530,10 @@ nftban_health_check_config() {
 
 nftban_health_check_all() {
     # Run all health checks (ORCHESTRATES existing report modules!)
+    # Args: $1 = auto_heal (0=check only, 1=auto-fix issues)
     # Returns: 0=Healthy, 1=Warnings, 2=Errors, 3=Critical
 
+    local auto_heal="${1:-0}"
     nftban_health_init
 
     local overall_status=$HEALTH_OK
@@ -666,6 +668,73 @@ nftban_health_check_all() {
         fi
     fi
 
+    # =========================================================================
+    # AUTO-HEAL EXECUTION (if enabled and issues found)
+    # =========================================================================
+
+    if [[ $auto_heal -eq 1 ]] && [[ $overall_status -gt $HEALTH_OK ]]; then
+        echo ""
+        echo "═══════════════════════════════════════════════════════════"
+        echo "  Auto-Heal Activated"
+        echo "═══════════════════════════════════════════════════════════"
+        echo ""
+
+        # Check user has permissions (root required for chown/chmod)
+        if [[ $EUID -ne 0 ]]; then
+            echo "⚠️  Auto-heal requires root privileges" >&2
+            echo "   Run: sudo nftban health check --auto-heal" >&2
+            return 2
+        fi
+
+        # Log auto-heal start
+        if declare -f perms_log_audit >/dev/null 2>&1; then
+            perms_log_audit "Auto-heal started by ${SUDO_USER:-root}"
+        fi
+
+        # Execute fix functions
+        local fixes_applied=0
+
+        if [[ ${#NFTBAN_HEALTH_ERRORS[@]} -gt 0 ]] || [[ ${#NFTBAN_HEALTH_WARNINGS[@]} -gt 0 ]]; then
+            echo "→ Fixing directories..."
+            nftban_health_fix_directories && ((fixes_applied++))
+            echo ""
+
+            echo "→ Fixing permissions..."
+            nftban_health_fix_permissions && ((fixes_applied++))
+            echo ""
+
+            echo "→ Fixing system config..."
+            nftban_health_fix_system_config && ((fixes_applied++))
+            echo ""
+
+            echo "→ Fixing services..."
+            nftban_health_fix_services && ((fixes_applied++))
+            echo ""
+
+            echo "✅ Auto-heal complete ($fixes_applied fixes applied)"
+            echo ""
+
+            # Log auto-heal completion
+            if declare -f perms_log_audit >/dev/null 2>&1; then
+                perms_log_audit "Auto-heal completed: $fixes_applied fixes applied"
+            fi
+
+            # Re-run checks to verify fixes worked
+            echo "→ Re-checking system health..."
+            echo ""
+
+            # Clear previous results
+            overall_status=$HEALTH_OK
+            NFTBAN_HEALTH_ERRORS=()
+            NFTBAN_HEALTH_WARNINGS=()
+            declare -gA NFTBAN_HEALTH_RESULTS=()
+            declare -gA NFTBAN_HEALTH_ISSUES=()
+
+            # Re-check (without auto-heal to avoid infinite loop)
+            nftban_health_check_all 0 || overall_status=$?
+        fi
+    fi
+
     return $overall_status
 }
 
@@ -686,6 +755,11 @@ nftban_health_fix_permissions() {
     # Try to use new permissions enforcement module (more comprehensive)
     if [[ -f "/usr/lib/nftban/core/nftban_permissions.sh" ]]; then
         if source /usr/lib/nftban/core/nftban_permissions.sh 2>/dev/null; then
+            # Log audit entry before fixing
+            if declare -f perms_log_audit >/dev/null 2>&1; then
+                perms_log_audit "Health auto-fix: Starting permission enforcement"
+            fi
+
             echo "  Using enhanced permission enforcement module"
             nftban_permissions_enforce_all
             return $?
@@ -876,6 +950,11 @@ nftban_health_fix_directories() {
                         echo "  ✓ Created $dir (${perms} ${owner}:${group})"
                     fi
                     ((fixed_count++))
+
+                    # Log to audit trail
+                    if declare -f perms_log_audit >/dev/null 2>&1; then
+                        perms_log_audit "Health auto-fix: Created directory $dir ($perms $owner:$group)"
+                    fi
                 else
                     # mkdir failed
                     need_root_dirs+=("$dir: mkdir failed (check parent directory permissions)")

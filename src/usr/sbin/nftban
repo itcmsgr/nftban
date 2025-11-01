@@ -79,33 +79,41 @@ nftban_complete() {
 
     # Level 0: Main commands
     if (( cword == 0 )) || [[ -z "${words[0]:-}" ]]; then
-        echo "search"
+        # CORE
+        echo "status"
+        echo "check"
+        echo "health"
+        echo "version"
+        echo "help"
+        echo "hello"
+        # FIREWALL & SECURITY
+        echo "firewall"
         echo "ban"
         echo "unban"
-        echo "list"
+        echo "search"
+        echo "whitelist"
+        echo "whitelist-system"
+        echo "profile"
+        echo "permissions"
+        # PROTECTION MODULES
+        echo "ddos"
+        echo "portscan"
+        echo "login"
+        echo "fail2ban"
+        echo "feeds"
+        echo "cloudflare"
+        # MONITORING & REPORTING
         echo "stats"
         echo "report"
         echo "port"
         echo "module"
         echo "services"
         echo "fhs"
+        echo "nftables"
         echo "geoip"
-        echo "health"
-        echo "permissions"
-        echo "login"
-        echo "whitelist-system"
         echo "mail"
-        echo "cloudflare"
-        echo "ddos"
-        echo "portscan"
-        echo "profile"
-        echo "fail2ban"
-        echo "feeds"
-        echo "firewall"
-        echo "hello"
-        echo "version"
-        echo "check"
-        echo "help"
+        # UI
+        echo "menu"
         return 0
     fi
 
@@ -183,6 +191,20 @@ nftban_complete() {
                 echo "fix"
                 echo "services"
                 echo "modules"
+                ;;
+            whitelist)
+                echo "sync"
+                echo "show"
+                echo "whitelistme"
+                echo "help"
+                ;;
+            status)
+                echo "--json"
+                echo "--quiet"
+                echo "help"
+                ;;
+            menu)
+                echo "help"
                 ;;
             permissions)
                 echo "check"
@@ -335,6 +357,12 @@ main() {
     else
         echo "ERROR: Core module not found: ${NFTBAN_LIB_DIR}/core/nftban_output.sh" >&2
         exit 1
+    fi
+
+    # Load grouped help system (optional, graceful fallback)
+    if [[ -f "${NFTBAN_LIB_DIR}/nftban_help.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/nftban_help.sh"
     fi
 
     # Auto-load modular commands from cli/ directory
@@ -518,58 +546,18 @@ main() {
             ;;
 
         help|--help|-h)
-            nftban_render_banner simple
-            echo ""
-            echo "NFTBan v${NFTBAN_VERSION} - Available Commands"
-            echo ""
-            echo "NFTBan simplifies Linux firewall management with nftables, providing"
-            echo "DDoS protection, port scan detection, threat feeds, and fail2ban integration."
-            echo ""
-            echo "Usage: nftban <command> [options]"
-            echo ""
-            echo "Core Commands:"
-            echo "  hello      - Show welcome message with banner (default)"
-            echo "  version    - Show version number"
-            echo "  check      - Quick environment check"
-            echo "  help       - Show this help message"
-            echo ""
-            echo "Firewall & Ban Management:"
-            echo "  firewall         - Firewall table management (see 'nftban firewall help')"
-            echo "  ban              - Ban IP addresses"
-            echo "  unban            - Unban IP addresses"
-            echo "  list             - List banned IPs"
-            echo "  search           - Search for IP across all sets"
-            echo ""
-            echo "Statistics & Reporting:"
-            echo "  stats            - Statistics dashboard and metrics"
-            echo "  report           - Report generation and scheduling"
-            echo ""
-            echo "Security Protection:"
-            echo "  ddos       - DDoS protection (see 'nftban ddos help')"
-            echo "  portscan   - Port scan detection (see 'nftban portscan help')"
-            echo "  profile    - Security profiles (see 'nftban profile help')"
-            echo ""
-            echo "Integration & Feeds:"
-            echo "  cloudflare - Cloudflare integration (see 'nftban cloudflare help')"
-            echo "  fail2ban   - Fail2ban integration (see 'nftban fail2ban help')"
-            echo "  feeds      - Threat intelligence feeds (see 'nftban feeds help')"
-            echo ""
-            echo "Reporting Commands:"
-            echo "  port       - Port and firewall status (see 'nftban port help')"
-            echo "  module     - Module inventory (see 'nftban module help')"
-            echo "  services   - System services status (see 'nftban services help')"
-            echo "  fhs        - FHS compliance check (see 'nftban fhs help')"
-            echo ""
-            echo "System Commands:"
-            echo "  nftables         - NFTables service management (see 'nftban nftables help')"
-            echo "  geoip            - IP geolocation lookups (see 'nftban geoip help')"
-            echo "  health           - System health diagnostics (see 'nftban health help')"
-            echo "  login            - Login monitoring and alerts (see 'nftban login help')"
-            echo "  whitelist-system - Auto-whitelist system IPs (see 'nftban whitelist-system help')"
-            echo ""
-            echo "Communication:"
-            echo "  mail       - Mail system commands (see 'nftban mail help')"
-            echo ""
+            # Use new grouped help if available, fallback to banner
+            if declare -f nftban_print_help >/dev/null 2>&1; then
+                nftban_print_help
+            else
+                # Fallback to old help (if help module fails to load)
+                nftban_render_banner simple
+                echo ""
+                echo "NFTBan v${NFTBAN_VERSION} - Available Commands"
+                echo ""
+                echo "Run 'nftban <command> help' for command-specific help"
+                echo ""
+            fi
             ;;
 
         *)
