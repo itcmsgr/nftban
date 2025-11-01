@@ -111,7 +111,6 @@ See **[Quick Start Guide](docs/QUICK-START.md)** for complete setup instructions
 
 **For Developers:**
 - [Go Binaries Guide](docs/development/GO-BINARIES.md) - Building high-performance Go binaries ⚡
-- [Lab Deployment Checklist](docs/development/LAB-DEPLOYMENT-CHECKLIST.md) - Testing on lab servers
 - [Packaging Guide](docs/development/packaging.md) - Building RPM/DEB packages
 - [Coding Standards](docs/development/coding-standards.md) - For contributors
 
@@ -602,10 +601,6 @@ This project benefits from AI collaboration. We maintain full transparency about
 - This README and all documentation accurately represent both human and AI contributions
 
 We believe in transparency about AI collaboration and credit all our development partners fairly.
-
-**AI Review Documents:**
-- [Architecture Review for AI](docs/ARCHITECTURE_REVIEW_FOR_AI.md) - Complete architecture submitted to ChatGPT-4 for review
-- [AI Review Response & Fixes](docs/AI_REVIEW_RESPONSE_AND_FIXES.md) - ChatGPT-4's comprehensive review and required fixes
 
 ---
 
