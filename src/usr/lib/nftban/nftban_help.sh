@@ -87,12 +87,15 @@ EOF
   services         System services status
   fhs              Filesystem hierarchy checks
   nftables         nftables service management
+  geoip            IP geolocation lookups
+  mail             Email system and notifications
 EOF
   echo
 
   printf "%sTIPS:%s\n" "$bold" "$reset"
   cat <<'EOF'
   • Try: nftban status
+  • Try: nftban menu (interactive TUI)
   • Use TAB to auto-complete commands, subcommands, and options.
   • Add --json to supported commands for machine-readable output.
 EOF

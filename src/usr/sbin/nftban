@@ -214,7 +214,6 @@ nftban_complete() {
                 echo "binaries"
                 echo "permissions"
                 echo "geoip"
-                echo "help"
                 ;;
             login)
                 echo "status"
