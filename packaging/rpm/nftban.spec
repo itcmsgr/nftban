@@ -253,8 +253,13 @@ fi
 /usr/lib/nftban/nft-runtime.nft
 /usr/lib/nftban/nftban_help.sh
 
-# Shared data
+# Shared data and documentation
 /usr/share/nftban/
+%doc /usr/share/nftban/docs/LICENSE
+%doc /usr/share/nftban/docs/NOTICE.md
+%doc /usr/share/nftban/docs/TRADEMARK.md
+%doc /usr/share/nftban/docs/CONTRIBUTING.md
+%doc /usr/share/nftban/docs/README-License-Summary.md
 
 # Configuration
 %dir %attr(0750,root,nftban) /etc/nftban
