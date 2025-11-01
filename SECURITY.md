@@ -1315,7 +1315,7 @@ Verifying downloads against published hashes helps ensure integrity and detect t
 
 ```bash
 # Download package and checksum
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-0.10.0-1.el9.x86_64.rpm
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.el9.x86_64.rpm
 wget https://github.com/itcmsgr/nftban/releases/latest/download/SHA256SUMS
 
 # Verify checksum
@@ -1329,7 +1329,7 @@ sha256sum -c SHA256SUMS 2>&1 | grep nftban-0.10.0-1.el9.x86_64.rpm
 
 ```bash
 # Download package and checksum
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban_0.10.0-1_amd64.deb
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.amd64.deb
 wget https://github.com/itcmsgr/nftban/releases/latest/download/SHA256SUMS
 
 # Verify checksum
