@@ -53,10 +53,10 @@ We decided to skip signing for v0.10.0 because:
 
 ```bash
 # User downloads package
-wget https://github.com/nftban/nftban/releases/download/v0.10.0/nftban-0.10.0-1.el9.x86_64.rpm
+wget https://github.com/itcmsgr/nftban/releases/download/v0.10.0/nftban-0.10.0-1.el9.x86_64.rpm
 
 # User downloads checksums
-wget https://github.com/nftban/nftban/releases/download/v0.10.0/SHA256SUMS
+wget https://github.com/itcmsgr/nftban/releases/download/v0.10.0/SHA256SUMS
 
 # User verifies integrity
 sha256sum -c SHA256SUMS
@@ -221,11 +221,11 @@ Update `VERIFY.txt` to include signature verification:
 
 ## STEP 1: Import NFTBan public key (one-time)
 
-wget https://github.com/nftban/nftban/releases/download/v0.10.1/RELEASES.KEY
+wget https://github.com/itcmsgr/nftban/releases/download/v0.10.1/RELEASES.KEY
 gpg --import RELEASES.KEY
 
 # Optional: Verify fingerprint
-wget https://github.com/nftban/nftban/releases/download/v0.10.1/KEY.FPR
+wget https://github.com/itcmsgr/nftban/releases/download/v0.10.1/KEY.FPR
 gpg --fingerprint contact@nftban.com
 # Compare with KEY.FPR
 

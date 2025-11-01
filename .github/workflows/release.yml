@@ -166,7 +166,7 @@ jobs:
           NOTE: For v0.10.0 we provide SHA256 checksums only.
                 GPG package signing will be added in v0.10.1+
 
-          For installation help: https://github.com/nftban/nftban/blob/main/docs/guides/install.md
+          For installation help: https://github.com/itcmsgr/nftban/blob/main/docs/guides/install.md
           EOF
 
       # =======================================================================

@@ -71,8 +71,8 @@ Verification:
   - GPG signatures will be added in v0.10.1+
 
 Support:
-  - Issues: https://github.com/nftban/nftban/issues
-  - Documentation: https://github.com/nftban/nftban/tree/main/docs
+  - Issues: https://github.com/itcmsgr/nftban/issues
+  - Documentation: https://github.com/itcmsgr/nftban/tree/main/docs
 
 ═══════════════════════════════════════════════════════════════
 EOF

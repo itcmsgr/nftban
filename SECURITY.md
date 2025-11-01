@@ -1315,8 +1315,8 @@ Verifying downloads against published hashes helps ensure integrity and detect t
 
 ```bash
 # Download package and checksum
-wget https://github.com/nftban/nftban/releases/latest/download/nftban-0.10.0-1.el9.x86_64.rpm
-wget https://github.com/nftban/nftban/releases/latest/download/SHA256SUMS
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-0.10.0-1.el9.x86_64.rpm
+wget https://github.com/itcmsgr/nftban/releases/latest/download/SHA256SUMS
 
 # Verify checksum
 sha256sum -c SHA256SUMS 2>&1 | grep nftban-0.10.0-1.el9.x86_64.rpm
@@ -1329,8 +1329,8 @@ sha256sum -c SHA256SUMS 2>&1 | grep nftban-0.10.0-1.el9.x86_64.rpm
 
 ```bash
 # Download package and checksum
-wget https://github.com/nftban/nftban/releases/latest/download/nftban_0.10.0-1_amd64.deb
-wget https://github.com/nftban/nftban/releases/latest/download/SHA256SUMS
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban_0.10.0-1_amd64.deb
+wget https://github.com/itcmsgr/nftban/releases/latest/download/SHA256SUMS
 
 # Verify checksum
 sha256sum -c SHA256SUMS 2>&1 | grep nftban_0.10.0-1_amd64.deb
@@ -1401,7 +1401,7 @@ sudo nftban health check --category=integrity
 - ✗ Guarantee of code security (only integrity)
 
 **Recommended additional security:**
-- Always download from official repository: `https://github.com/nftban/nftban`
+- Always download from official repository: `https://github.com/itcmsgr/nftban`
 - Verify GitHub repository ownership
 - Review commit history for suspicious changes
 - Use release tags for production deployments
@@ -1480,7 +1480,7 @@ Use this checklist to verify your security posture:
 ## Additional Resources
 
 ### Official Documentation
-- [NFTBan GitHub Repository](https://github.com/nftban/nftban)
+- [NFTBan GitHub Repository](https://github.com/itcmsgr/nftban)
 - [NFTBan Installation Guide](docs/guides/installation.md)
 - [NFTBan Quick Start Guide](docs/guides/quick-start.md)
 - [nftables Wiki](https://wiki.nftables.org/)
@@ -1502,8 +1502,8 @@ Use this checklist to verify your security posture:
 ## Need Help?
 
 **Community Support:**
-- [GitHub Issues](https://github.com/nftban/nftban/issues)
-- [GitHub Discussions](https://github.com/nftban/nftban/discussions)
+- [GitHub Issues](https://github.com/itcmsgr/nftban/issues)
+- [GitHub Discussions](https://github.com/itcmsgr/nftban/discussions)
 
 **Documentation:**
 - [Installation Guide](docs/guides/installation.md)

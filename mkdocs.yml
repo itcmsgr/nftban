@@ -8,7 +8,7 @@ site_author: Antonios Voulvoulis - ITCMS
 site_description: Modern, high-performance firewall management for Linux servers with commit-confirm recovery, Go binaries (10-60x faster), and 8 security layers.
 
 # Repository
-repo_url: https://github.com/nftban/nftban
+repo_url: https://github.com/itcmsgr/nftban
 repo_name: nftban/nftban
 edit_uri: edit/main/docs/
 
@@ -174,7 +174,7 @@ extra:
   # Social links
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/nftban/nftban
+      link: https://github.com/itcmsgr/nftban
       name: NFTBan on GitHub
     - icon: fontawesome/brands/twitter
       link: https://twitter.com/nftban

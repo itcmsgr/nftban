@@ -2,7 +2,7 @@
 
 **Modern, high-performance firewall management for Linux servers**
 
-[![Version](https://img.shields.io/badge/version-0.10.0-brightgreen)](https://github.com/nftban/nftban)
+[![Version](https://img.shields.io/badge/version-0.10.0-brightgreen)](https://github.com/itcmsgr/nftban)
 [![License](https://img.shields.io/badge/License-MPL--2.0-blue)](../LICENSE)
 [![FHS Compliant](https://img.shields.io/badge/FHS-compliant-green)](https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html)
 
@@ -70,7 +70,7 @@
 curl -sSL https://nftban.com/install.sh | sudo bash
 
 # Or clone from Git
-git clone https://github.com/nftban/nftban.git
+git clone https://github.com/itcmsgr/nftban.git
 cd nftban
 sudo ./install.sh
 ```
@@ -304,9 +304,9 @@ disabled  # Firewall off
 
 ### Community
 
-- 🏠 **[GitHub](https://github.com/nftban/nftban)** - Source code
-- 🐛 **[Issues](https://github.com/nftban/nftban/issues)** - Bug reports & feature requests
-- 💬 **[Discussions](https://github.com/nftban/nftban/discussions)** - Q&A, ideas, feedback
+- 🏠 **[GitHub](https://github.com/itcmsgr/nftban)** - Source code
+- 🐛 **[Issues](https://github.com/itcmsgr/nftban/issues)** - Bug reports & feature requests
+- 💬 **[Discussions](https://github.com/itcmsgr/nftban/discussions)** - Q&A, ideas, feedback
 
 ### Professional Support
 
@@ -400,10 +400,10 @@ Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis
 </p>
 
 <p align="center">
-  <a href="https://github.com/nftban/nftban">🏠 Home</a> •
+  <a href="https://github.com/itcmsgr/nftban">🏠 Home</a> •
   <a href="guides/quickstart.md">🚀 Quick Start</a> •
   <a href="concepts/architecture.md">🏗️ Architecture</a> •
   <a href="reference/cli.md">📖 CLI Reference</a> •
-  <a href="https://github.com/nftban/nftban/issues">🐛 Report Issue</a> •
+  <a href="https://github.com/itcmsgr/nftban/issues">🐛 Report Issue</a> •
   <a href="https://nftban.com">🌐 Website</a>
 </p>

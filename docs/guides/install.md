@@ -157,7 +157,7 @@ Install from the official Git repository for the latest development version or t
 
 ```bash
 # Clone the repository
-git clone https://github.com/nftban/nftban.git
+git clone https://github.com/itcmsgr/nftban.git
 cd nftban
 
 # Switch to stable branch (recommended)
@@ -423,7 +423,7 @@ sudo pacman -S nftables systemd bash jq curl wget fail2ban
 sudo systemctl enable --now nftables
 
 # Install NFTBan (from AUR or source)
-git clone https://github.com/nftban/nftban.git
+git clone https://github.com/itcmsgr/nftban.git
 cd nftban
 sudo ./install.sh
 ```
@@ -1067,7 +1067,7 @@ After installation, continue with:
 
 - **Documentation**: [Full documentation](../index.md)
 - **Troubleshooting**: [Common issues](troubleshoot.md)
-- **GitHub Issues**: https://github.com/nftban/nftban/issues
+- **GitHub Issues**: https://github.com/itcmsgr/nftban/issues
 - **Community**: https://nftban.com/community
 
 ---
