@@ -2,6 +2,10 @@
 sessions/
 bugs/TRACKING.md
 TODO.md
+development/TODO*.md
+development/SESSION_SUMMARY*.md
+development/SLEEP_STATUS*.md
+development/URL_FIX*.md
 
 # Internal lab testing docs (contain server names and internal procedures)
 development/LAB-*.md
