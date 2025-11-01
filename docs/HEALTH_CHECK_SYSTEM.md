@@ -186,7 +186,56 @@ HTML report generated: /var/log/nftban/reports/health-20251027-143022.html
 nftban health report json
 ```
 
-### Auto-Fix Issues
+### Auto-Heal Mode (NEW in v0.10.0)
+
+```bash
+# Run health check with automatic fixing
+sudo nftban health check --auto-heal
+
+# Output:
+Running NFTBan system health check...
+Auto-heal: ENABLED
+
+... (health checks run) ...
+
+═══════════════════════════════════════════════════════════
+  Auto-Heal Activated
+═══════════════════════════════════════════════════════════
+
+→ Fixing directories...
+  ✓ Created /var/lib/nftban/exports (750 nftban:nftban)
+
+→ Fixing permissions...
+  ✓ Fixed /etc/nftban → 750 root:nftban
+
+→ Fixing system config...
+  ✓ Updated /var/lib/nftban/config/system.conf
+
+→ Fixing services...
+  ✓ All services already running
+
+✅ Auto-heal complete (3 fixes applied)
+
+→ Re-checking system health...
+
+... (verification checks run) ...
+
+Overall Status: ✅ OK
+```
+
+**Requirements:**
+- Must run as root (requires chown/chmod privileges)
+- Logs all fixes to `/var/lib/nftban/permissions_audit.log`
+- Re-checks system after fixes to verify success
+- Use `--quiet` flag for cron/timer usage
+
+**Quiet Mode for Automation:**
+```bash
+# Minimal output - only shows summary if issues found
+sudo nftban health check --auto-heal --quiet
+```
+
+### Manual Fix (Traditional Approach)
 
 ```bash
 # Fix all issues (requires root)
@@ -506,6 +555,40 @@ else
     nftban_health_fix_all
 fi
 ```
+
+### Systemd Timer for Automated Auto-Heal
+
+**NEW in v0.10.0:** Daily health check with auto-heal
+
+```bash
+# Timer configuration: nftban-health.timer
+# Runs daily at 03:00 AM with auto-heal enabled
+
+[Timer]
+OnCalendar=daily
+OnCalendar=*-*-* 03:00:00
+RandomizedDelaySec=30m
+Persistent=true
+
+# Enable the timer
+sudo systemctl enable --now nftban-health.timer
+
+# Check next run time
+systemctl list-timers nftban-health.timer
+
+# View logs from last run
+journalctl -u nftban-health.service -n 50
+
+# Manually trigger auto-heal
+sudo systemctl start nftban-health.service
+```
+
+**What the timer does:**
+- Runs `nftban health check --auto-heal --quiet` daily
+- Automatically fixes permissions, directories, services, config
+- Logs all fixes to audit trail
+- Runs as root (required for chown/chmod)
+- Minimal output (quiet mode)
 
 ### Systemd Service Integration
 

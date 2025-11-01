@@ -1,7 +1,20 @@
-# bash completion for nftban
+# =============================================================================
+# NFTBan v0.10.0 - Bash Completion
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Programmable TAB completion for nftban CLI
+#
+# meta:name=nftban_completion
+# meta:type=completion
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
+# meta:created_date=2025-11-01
+#
 # Install to: /etc/bash_completion.d/nftban
+#
+# This completion uses NFTBan's dynamic __complete endpoint for
+# auto-discovery of commands/subcommands from the CLI modules.
 
 _nftban_complete() {
     local cur prev words cword

@@ -182,13 +182,17 @@ nftban_report_generate() {
 # =============================================================================
 
 nftban_report_collect_health() {
-    # Collect health check data
-    # Usage: nftban_report_collect_health MODE
-    # Arguments: MODE - summary or detailed
+    # Collect health check data (with optional auto-heal)
+    # Usage: nftban_report_collect_health MODE [AUTO_HEAL]
+    # Arguments:
+    #   MODE      - summary or detailed
+    #   AUTO_HEAL - 0=check only, 1=auto-heal enabled (optional, default: 0)
     # Returns: Health check exit code (0=OK, 1=WARNING, 2=ERROR)
 
     local mode="${1:-detailed}"
+    local auto_heal="${2:-0}"
     local exit_code=0
+    local auto_heal_applied=0
 
     # Load health module
     if [[ -f "/usr/lib/nftban/core/nftban_health.sh" ]]; then
@@ -198,20 +202,60 @@ nftban_report_collect_health() {
         return 2
     fi
 
-    # Run health check
-    nftban_health_check_all >/dev/null 2>&1 || exit_code=$?
+    # Run health check (with auto-heal if requested)
+    if [[ $auto_heal -eq 1 ]]; then
+        # Capture output to count fixes
+        local health_output
+        health_output=$(nftban_health_check_all 1 2>&1) || exit_code=$?
 
-    # Collect summary
-    NFTBAN_REPORT_DATA["health_summary"]=$(nftban_health_render_summary 2>/dev/null || echo "Health check failed")
+        # Extract auto-heal info from output
+        if echo "$health_output" | grep -q "Auto-heal complete"; then
+            auto_heal_applied=$(echo "$health_output" | grep "Auto-heal complete" | sed 's/.*(\([0-9]*\).*/\1/')
+            NFTBAN_REPORT_DATA["health_auto_heal_fixes"]="$auto_heal_applied"
+            NFTBAN_REPORT_DATA["health_auto_heal_enabled"]="true"
+        fi
+    else
+        # Standard check without auto-heal
+        nftban_health_check_all 0 >/dev/null 2>&1 || exit_code=$?
+        NFTBAN_REPORT_DATA["health_auto_heal_enabled"]="false"
+    fi
+
+    # Collect summary with auto-heal info
+    local summary
+    summary=$(nftban_health_render_summary 2>/dev/null || echo "Health check failed")
+
+    # Append auto-heal info to summary if fixes were applied
+    if [[ $auto_heal_applied -gt 0 ]]; then
+        summary="$summary (auto-healed $auto_heal_applied issues)"
+    fi
+
+    NFTBAN_REPORT_DATA["health_summary"]="$summary"
     NFTBAN_REPORT_DATA["health_exit_code"]="$exit_code"
+
+    # Determine status icon for reports
+    case $exit_code in
+        0) NFTBAN_REPORT_DATA["health_status"]="✅ HEALTHY" ;;
+        1) NFTBAN_REPORT_DATA["health_status"]="⚠️  WARNING" ;;
+        2) NFTBAN_REPORT_DATA["health_status"]="❌ ERROR" ;;
+        *) NFTBAN_REPORT_DATA["health_status"]="❓ UNKNOWN" ;;
+    esac
 
     # Collect detailed if requested
     if [[ "$mode" == "detailed" ]]; then
-        NFTBAN_REPORT_DATA["health_detailed"]=$(nftban_health_render_detailed 2>/dev/null || echo "Detailed output unavailable")
+        NFTBAN_REPORT_DATA["health_detailed"]=$(nftban_health_render_terminal 2>/dev/null || echo "Detailed output unavailable")
     fi
 
-    # Collect JSON data
-    NFTBAN_REPORT_DATA["health_json"]=$(nftban_health_render_json 2>/dev/null || echo "{}")
+    # Collect JSON data (enhanced with auto-heal info)
+    local json_data
+    json_data=$(nftban_health_render_json 2>/dev/null || echo "{}")
+
+    # Add auto-heal info to JSON if present
+    if [[ $auto_heal -eq 1 ]]; then
+        json_data=$(echo "$json_data" | jq --arg fixes "$auto_heal_applied" \
+            '. + {auto_heal_enabled: true, auto_heal_fixes_applied: ($fixes | tonumber)}' 2>/dev/null || echo "$json_data")
+    fi
+
+    NFTBAN_REPORT_DATA["health_json"]="$json_data"
 
     return $exit_code
 }

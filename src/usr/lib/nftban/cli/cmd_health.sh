@@ -87,7 +87,29 @@ nftban_cmd_health() {
 
 nftban_health_cmd_check() {
     # Run comprehensive health check
-    # Args: none
+    # Args: [--auto-heal] [--quiet]
+
+    local auto_heal=0
+    local quiet=0
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --auto-heal)
+                auto_heal=1
+                shift
+                ;;
+            --quiet)
+                quiet=1
+                shift
+                ;;
+            *)
+                echo "ERROR: Unknown option: $1" >&2
+                echo "Usage: nftban health check [--auto-heal] [--quiet]" >&2
+                return 1
+                ;;
+        esac
+    done
 
     # Load health module if not already loaded
     if ! declare -f nftban_health_check_all >/dev/null 2>&1; then
@@ -97,15 +119,25 @@ nftban_health_cmd_check() {
         }
     fi
 
-    echo "Running NFTBan system health check..."
-    echo ""
+    if [[ $quiet -eq 0 ]]; then
+        echo "Running NFTBan system health check..."
+        [[ $auto_heal -eq 1 ]] && echo "Auto-heal: ENABLED"
+        echo ""
+    fi
 
     # Run all checks (capture result immediately to avoid strict mode issues)
     local result=0
-    nftban_health_check_all || result=$?
+    nftban_health_check_all $auto_heal || result=$?
 
-    # Render results
-    nftban_health_render_terminal
+    # Render results (unless quiet)
+    if [[ $quiet -eq 0 ]]; then
+        nftban_health_render_terminal
+    else
+        # In quiet mode, only show summary if there are issues
+        if [[ $result -gt 0 ]]; then
+            nftban_health_render_summary
+        fi
+    fi
 
     return $result
 }
@@ -500,8 +532,11 @@ USAGE:
     nftban health <command> [options]
 
 COMMANDS:
-    [detailed]              Run comprehensive health check (default)
+    check [--auto-heal] [--quiet]
+                            Run comprehensive health check (default)
                             Full terminal output with all checks
+                            --auto-heal: Automatically fix detected issues (requires root)
+                            --quiet: Minimal output (for cron/timer use)
 
     summary                 Show one-line summary
                             Output: "Health: OK" or "Health: WARNING (2 warnings)"
@@ -547,11 +582,13 @@ EXAMPLES:
     nftban health geoip
     nftban health binaries
 
-    # Auto-fix issues
-    sudo nftban health fix all
-    nftban health binaries
+    # Auto-heal during check (combines check + fix)
+    sudo nftban health check --auto-heal
 
-    # Auto-fix issues (requires root)
+    # Quiet mode for cron/timer
+    nftban health check --auto-heal --quiet
+
+    # Manual fix (traditional approach)
     sudo nftban health fix all
     sudo nftban health fix permissions
 

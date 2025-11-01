@@ -67,31 +67,54 @@ EOF
 # MAIN COMMAND HANDLER
 # =============================================================================
 
-case "${1:-}" in
-    sync)
-        # Auto-detect and whitelist all system IPs
-        nftban_whitelist_system_sync
-        ;;
+nftban_cmd_whitelist_system() {
+    # Main command handler for whitelist-system
+    # Args: subcommand and options
 
-    show)
-        # Show current system whitelist
-        nftban_show_system_whitelist
-        ;;
+    local subcommand="${1:-help}"
+    shift || true
 
-    whitelistme)
-        # Whitelist current user's IP
-        nftban_whitelistme
-        ;;
+    case "$subcommand" in
+        sync)
+            # Auto-detect and whitelist all system IPs
+            nftban_whitelist_system_sync
+            ;;
 
-    help|--help|-h|"")
-        show_usage
-        exit 0
-        ;;
+        show)
+            # Show current system whitelist
+            nftban_show_system_whitelist
+            ;;
 
-    *)
-        echo "ERROR: Unknown command: $1"
-        echo ""
-        show_usage
-        exit 1
-        ;;
-esac
+        whitelistme)
+            # Whitelist current user's IP
+            nftban_whitelistme
+            ;;
+
+        help|--help|-h|"")
+            show_usage
+            return 0
+            ;;
+
+        *)
+            echo "ERROR: Unknown command: $subcommand" >&2
+            echo "" >&2
+            show_usage
+            return 1
+            ;;
+    esac
+}
+
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+export -f nftban_cmd_whitelist_system
+
+# =============================================================================
+# DIRECT EXECUTION SUPPORT (for backward compatibility)
+# =============================================================================
+
+# If executed directly (not sourced), run the command handler
+if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+    nftban_cmd_whitelist_system "$@"
+fi
