@@ -14,3 +14,6 @@ development/*MONITORING*.md
 development/validation/
 development/menu-redesign/
 development/cli-reference/
+
+# Internal archive (AI reviews, old internal docs)
+archive/internal/
