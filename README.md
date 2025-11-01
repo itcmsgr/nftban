@@ -501,8 +501,13 @@ Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis
 📜 Source code modifications must remain MPL-2.0
 🔓 Open source, community-driven
 
+**Patent Grant:**
+Under MPL-2.0, each contributor grants a patent license for their contributions. Patent retaliation clause applies (§5.2) - if you initiate patent litigation claiming the software infringes, your license terminates.
+
 **Important Documents:**
 - 📄 [Full License Text](LICENSE) - Mozilla Public License 2.0
+- 📋 [NOTICE](NOTICE.md) - Third-party attributions and legal notices
+- 📝 [License Summary](README-License-Summary.md) - Quick reference for licensing
 - 🏷️ [Trademark Policy](TRADEMARK.md) - Brand usage guidelines
 - 🤝 [Contributing Guide](CONTRIBUTING.md) - How to contribute
 - 🔒 [Security Policy](SECURITY.md) - Security reporting
@@ -557,10 +562,14 @@ Please read:
 
 NFTBan is built on excellent open source projects:
 
-- **nftables** - The modern Linux firewall
-- **Fail2ban** - Intrusion prevention framework
+- **nftables** - The modern Linux firewall (part of Linux kernel; no affiliation with Linux Foundation)
+- **Fail2ban** - Intrusion prevention framework (separate project by Cyril Jaquier; no affiliation)
 - **FireHOL** - Threat intelligence feeds
 - **MaxMind GeoIP** - IP geolocation data
+- **Tux** - Penguin artwork by Larry Ewing (The GIMP), used with attribution
+
+**Third-Party Disclaimers:**
+NFTBan is an independent project. We are **not affiliated with, endorsed by, or sponsored by** Fail2Ban, nftables, the Linux Foundation, or Linus Torvalds. All referenced trademarks belong to their respective owners. See [NOTICE.md](NOTICE.md) for complete attributions.
 
 Special thanks to:
 - All contributors and testers
