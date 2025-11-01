@@ -1,4 +1,30 @@
 #!/usr/bin/env bash
-# Placeholder for nftban-feeds Go binary
-echo "nftban-feeds placeholder - Go binary not built"
-exit 0
+# =============================================================================
+# NFTBan Go Binary Wrapper - nftban-geoip
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Smart wrapper that auto-execs real Go binary if available
+#
+# Architecture:
+# - Source installs: This wrapper runs (slower Bash fallback)
+# - RPM/DEB packages: Real Go binary in .real/ directory (fast)
+# =============================================================================
+
+set -euo pipefail
+
+REAL="/usr/lib/nftban/bin/.real/nftban-geoip"
+
+# If real Go binary exists, use it (10-60x faster)
+if [ -x "$REAL" ]; then
+    exec "$REAL" "$@"
+fi
+
+# Fallback mode (source installations without compiled binary)
+printf "[nftban] ⚠️  nftban-geoip Go binary not present. Using slow fallback.\n" >&2
+printf "[nftban] For better performance, install from RPM/DEB package or build Go binaries.\n" >&2
+printf "[nftban] See: https://github.com/itcmsgr/nftban/blob/main/docs/development/GO-BINARIES.md\n" >&2
+
+# TODO: Implement Bash fallback for GeoIP lookups
+# For now, exit with error
+echo "[nftban] ERROR: Bash fallback not yet implemented. Please install Go binaries." >&2
+exit 1
