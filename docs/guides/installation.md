@@ -168,18 +168,18 @@ This is the recommended method as it:
 
 ```bash
 cd /tmp
-wget https://github.com/nftban/nftban/releases/latest/download/nftban-0.10.0-1.el9.x86_64.rpm
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-0.10.0-1.el9.x86_64.rpm
 ```
 
 Or for ARM64:
 ```bash
-wget https://github.com/nftban/nftban/releases/latest/download/nftban-0.10.0-1.el9.aarch64.rpm
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-0.10.0-1.el9.aarch64.rpm
 ```
 
 **Step 2: Verify checksum (optional but recommended)**
 
 ```bash
-wget https://github.com/nftban/nftban/releases/latest/download/SHA256SUMS
+wget https://github.com/itcmsgr/nftban/releases/latest/download/SHA256SUMS
 sha256sum -c SHA256SUMS 2>&1 | grep nftban-0.10.0-1.el9.x86_64.rpm
 ```
 
@@ -212,18 +212,18 @@ Expected: `NFTBan v0.10.0`
 
 ```bash
 cd /tmp
-wget https://github.com/nftban/nftban/releases/latest/download/nftban_0.10.0-1_amd64.deb
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban_0.10.0-1_amd64.deb
 ```
 
 Or for ARM64:
 ```bash
-wget https://github.com/nftban/nftban/releases/latest/download/nftban_0.10.0-1_arm64.deb
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban_0.10.0-1_arm64.deb
 ```
 
 **Step 2: Verify checksum (optional but recommended)**
 
 ```bash
-wget https://github.com/nftban/nftban/releases/latest/download/SHA256SUMS
+wget https://github.com/itcmsgr/nftban/releases/latest/download/SHA256SUMS
 sha256sum -c SHA256SUMS 2>&1 | grep nftban_0.10.0-1_amd64.deb
 ```
 
@@ -263,7 +263,7 @@ For development, testing, or unsupported distributions.
 
 ```bash
 cd ~
-git clone https://github.com/nftban/nftban.git
+git clone https://github.com/itcmsgr/nftban.git
 cd nftban
 ```
 
@@ -714,14 +714,14 @@ Quick upgrade:
 
 **RPM:**
 ```bash
-wget https://github.com/nftban/nftban/releases/latest/download/nftban-0.11.0-1.el9.x86_64.rpm
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-0.11.0-1.el9.x86_64.rpm
 sudo dnf upgrade -y nftban-0.11.0-1.el9.x86_64.rpm
 nftban --version
 ```
 
 **DEB:**
 ```bash
-wget https://github.com/nftban/nftban/releases/latest/download/nftban_0.11.0-1_amd64.deb
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban_0.11.0-1_amd64.deb
 sudo dpkg -i nftban_0.11.0-1_amd64.deb
 nftban --version
 ```
@@ -754,6 +754,6 @@ sudo apt-get remove nftban
 ## Support
 
 - **Documentation**: https://docs.nftban.com
-- **GitHub Issues**: https://github.com/nftban/nftban/issues
-- **Discussions**: https://github.com/nftban/nftban/discussions
+- **GitHub Issues**: https://github.com/itcmsgr/nftban/issues
+- **Discussions**: https://github.com/itcmsgr/nftban/discussions
 - **Email**: support@nftban.com

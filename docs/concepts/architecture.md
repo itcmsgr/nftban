@@ -2,9 +2,9 @@
 
 **Comprehensive technical architecture of the NFTBan firewall management system**
 
-[![Version](https://img.shields.io/badge/version-0.10.0-brightgreen)](https://github.com/nftban/nftban)
+[![Version](https://img.shields.io/badge/version-0.10.0-brightgreen)](https://github.com/itcmsgr/nftban)
 [![License](https://img.shields.io/badge/License-MPL--2.0-blue)](../../LICENSE)
-[![Platform](https://img.shields.io/badge/platform-Linux-blue)](https://github.com/nftban/nftban)
+[![Platform](https://img.shields.io/badge/platform-Linux-blue)](https://github.com/itcmsgr/nftban)
 [![FHS](https://img.shields.io/badge/FHS-compliant-green)](https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html)
 
 > **Technical deep-dive** - This document explains the internal architecture, design decisions, and system interactions of NFTBan v0.10.0.
@@ -1953,9 +1953,9 @@ https://nftban.com
 
 ### Community
 
-- 🏠 **[GitHub](https://github.com/nftban/nftban)** - Source code
-- 🐛 **[Issues](https://github.com/nftban/nftban/issues)** - Bug reports
-- 💬 **[Discussions](https://github.com/nftban/nftban/discussions)** - Questions
+- 🏠 **[GitHub](https://github.com/itcmsgr/nftban)** - Source code
+- 🐛 **[Issues](https://github.com/itcmsgr/nftban/issues)** - Bug reports
+- 💬 **[Discussions](https://github.com/itcmsgr/nftban/discussions)** - Questions
 
 ### Professional Support
 
@@ -1972,10 +1972,10 @@ https://nftban.com
 </p>
 
 <p align="center">
-  <a href="https://github.com/nftban/nftban">🏠 Home</a> •
+  <a href="https://github.com/itcmsgr/nftban">🏠 Home</a> •
   <a href="../../README.md">📚 Main Docs</a> •
   <a href="../guides/quickstart.md">🚀 Quick Start</a> •
-  <a href="https://github.com/nftban/nftban/issues">🐛 Report Issue</a> •
+  <a href="https://github.com/itcmsgr/nftban/issues">🐛 Report Issue</a> •
   <a href="https://nftban.com">🌐 Website</a>
 </p>
 

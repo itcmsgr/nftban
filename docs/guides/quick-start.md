@@ -42,7 +42,7 @@ NFTBan is a modern, high-performance firewall management system for Linux server
 
 ```bash
 # Download latest release
-wget https://github.com/nftban/nftban/releases/latest/download/nftban-0.10.0-1.el9.x86_64.rpm
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-0.10.0-1.el9.x86_64.rpm
 
 # Install
 sudo dnf install -y nftban-0.10.0-1.el9.x86_64.rpm
@@ -55,7 +55,7 @@ nftban --version
 
 ```bash
 # Download latest release
-wget https://github.com/nftban/nftban/releases/latest/download/nftban_0.10.0-1_amd64.deb
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban_0.10.0-1_amd64.deb
 
 # Install
 sudo dpkg -i nftban_0.10.0-1_amd64.deb
@@ -69,7 +69,7 @@ nftban --version
 
 ```bash
 # Clone repository
-git clone https://github.com/nftban/nftban.git
+git clone https://github.com/itcmsgr/nftban.git
 cd nftban
 
 # Run installer
@@ -407,8 +407,8 @@ sudo systemctl restart nftban.service
 ## Getting Help
 
 - **Documentation**: https://docs.nftban.com
-- **GitHub Issues**: https://github.com/nftban/nftban/issues
-- **Discussions**: https://github.com/nftban/nftban/discussions
+- **GitHub Issues**: https://github.com/itcmsgr/nftban/issues
+- **Discussions**: https://github.com/itcmsgr/nftban/discussions
 - **Email**: support@nftban.com
 
 ---
@@ -419,7 +419,7 @@ sudo systemctl restart nftban.service
 
 ```bash
 # Download new version
-wget https://github.com/nftban/nftban/releases/latest/download/nftban-0.11.0-1.el9.x86_64.rpm
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-0.11.0-1.el9.x86_64.rpm
 
 # Upgrade
 sudo dnf upgrade -y nftban-0.11.0-1.el9.x86_64.rpm
@@ -433,7 +433,7 @@ nftban health check
 
 ```bash
 # Download new version
-wget https://github.com/nftban/nftban/releases/latest/download/nftban_0.11.0-1_amd64.deb
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban_0.11.0-1_amd64.deb
 
 # Upgrade
 sudo dpkg -i nftban_0.11.0-1_amd64.deb

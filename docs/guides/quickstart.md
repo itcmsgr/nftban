@@ -28,7 +28,7 @@ curl -sSL https://nftban.com/install.sh | sudo bash
 ### Option B: From Git
 
 ```bash
-git clone https://github.com/nftban/nftban.git
+git clone https://github.com/itcmsgr/nftban.git
 cd nftban
 sudo ./install.sh
 ```

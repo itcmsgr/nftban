@@ -34,7 +34,7 @@ cat > VERIFY.txt <<'EOF'
 After downloading packages from GitHub Releases, verify them:
 
 ### Step 1: Download SHA256SUMS
-wget https://github.com/nftban/nftban/releases/download/v0.10.0/SHA256SUMS
+wget https://github.com/itcmsgr/nftban/releases/download/v0.10.0/SHA256SUMS
 
 ### Step 2: Verify checksums
 sha256sum -c SHA256SUMS
@@ -102,14 +102,14 @@ sudo systemctl enable --now nftban.timer
 ### Step 4: Verify everything works
 sudo nftban status
 
-Full documentation: https://github.com/nftban/nftban/tree/main/docs
+Full documentation: https://github.com/itcmsgr/nftban/tree/main/docs
 
 ───────────────────────────────────────────────────────────────
 
 ## SUPPORT & ISSUES
 
-- Issues: https://github.com/nftban/nftban/issues
-- Documentation: https://github.com/nftban/nftban/tree/main/docs
+- Issues: https://github.com/itcmsgr/nftban/issues
+- Documentation: https://github.com/itcmsgr/nftban/tree/main/docs
 - Security: See SECURITY.md in repository
 
 ═══════════════════════════════════════════════════════════════

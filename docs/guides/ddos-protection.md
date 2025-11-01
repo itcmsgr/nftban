@@ -726,6 +726,6 @@ Single application server?
 
 **END OF GUIDE**
 
-For questions or issues: https://github.com/nftban/nftban/issues
+For questions or issues: https://github.com/itcmsgr/nftban/issues
 
 **EOF**
