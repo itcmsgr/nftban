@@ -168,12 +168,12 @@ This is the recommended method as it:
 
 ```bash
 cd /tmp
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-0.10.0-1.el9.x86_64.rpm
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.el9.x86_64.rpm
 ```
 
 Or for ARM64:
 ```bash
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-0.10.0-1.el9.aarch64.rpm
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.el9.aarch64.rpm
 ```
 
 **Step 2: Verify checksum (optional but recommended)**
@@ -212,12 +212,12 @@ Expected: `NFTBan v0.10.0`
 
 ```bash
 cd /tmp
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban_0.10.0-1_amd64.deb
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.amd64.deb
 ```
 
 Or for ARM64:
 ```bash
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban_0.10.0-1_arm64.deb
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.arm64.deb
 ```
 
 **Step 2: Verify checksum (optional but recommended)**

@@ -37,7 +37,7 @@ nftban health check
 
 ```bash
 # Download latest release
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-0.10.0-1.el9.x86_64.rpm
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.el9.x86_64.rpm
 
 # Install
 sudo dnf install -y ./nftban-0.10.0-1.el9.x86_64.rpm
@@ -50,7 +50,7 @@ sudo systemctl enable --now nftban-health.timer
 
 ```bash
 # Download latest release
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban_0.10.0-1_amd64.deb
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.amd64.deb
 
 # Install
 sudo apt install ./nftban_0.10.0-1_amd64.deb

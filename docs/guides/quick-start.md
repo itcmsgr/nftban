@@ -42,7 +42,7 @@ NFTBan is a modern, high-performance firewall management system for Linux server
 
 ```bash
 # Download latest release
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-0.10.0-1.el9.x86_64.rpm
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.el9.x86_64.rpm
 
 # Install
 sudo dnf install -y nftban-0.10.0-1.el9.x86_64.rpm
@@ -55,7 +55,7 @@ nftban --version
 
 ```bash
 # Download latest release
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban_0.10.0-1_amd64.deb
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.amd64.deb
 
 # Install
 sudo dpkg -i nftban_0.10.0-1_amd64.deb
