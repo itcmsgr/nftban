@@ -138,7 +138,16 @@ cp -a usr/lib/nftban/* /usr/lib/nftban/
 # Shared data
 cp -a usr/share/nftban/* /usr/share/nftban/
 
+# Legal documentation (FHS: /usr/share/<package>/docs)
+install -d -m 0755 /usr/share/nftban/docs
+install -m 0644 LICENSE /usr/share/nftban/docs/LICENSE
+install -m 0644 NOTICE.md /usr/share/nftban/docs/NOTICE.md
+install -m 0644 TRADEMARK.md /usr/share/nftban/docs/TRADEMARK.md
+install -m 0644 CONTRIBUTING.md /usr/share/nftban/docs/CONTRIBUTING.md
+install -m 0644 README-License-Summary.md /usr/share/nftban/docs/README-License-Summary.md
+
 echo "✓ Code installed"
+echo "✓ Legal documentation installed to /usr/share/nftban/docs/"
 
 # =============================================================================
 # 4. INSTALL CONFIGURATION
