@@ -259,11 +259,14 @@ fi
 
 # Shared data and documentation
 /usr/share/nftban/
-%doc /usr/share/nftban/docs/LICENSE
 %doc /usr/share/nftban/docs/NOTICE.md
 %doc /usr/share/nftban/docs/TRADEMARK.md
 %doc /usr/share/nftban/docs/CONTRIBUTING.md
-%doc /usr/share/nftban/docs/README-License-Summary.md
+
+# License files (FHS: /usr/share/licenses/<package>/)
+%license /usr/share/licenses/nftban/MPL-2.0.txt
+%license /usr/share/licenses/nftban/NFTBAN-Pro-Commercial.md
+%license /usr/share/licenses/nftban/NFTBAN-Docs.txt
 
 # Man page
 %{_mandir}/man1/nftban.1*
@@ -331,7 +334,6 @@ fi
 
 # Documentation
 %doc README.md CHANGELOG.md
-%license LICENSE
 
 %changelog
 * Wed Oct 30 2025 Antonios Voulvoulis <contact@nftban.com> - 0.10.0-1

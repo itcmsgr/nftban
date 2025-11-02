@@ -36,6 +36,9 @@ rm -rf /usr/lib/nftban
 # Shared data
 rm -rf /usr/share/nftban
 
+# License files (FHS: /usr/share/licenses/<package>/)
+rm -rf /usr/share/licenses/nftban
+
 # Systemd units
 rm -f /usr/lib/systemd/system/nftban-*.service
 rm -f /usr/lib/systemd/system/nftban-*.timer
