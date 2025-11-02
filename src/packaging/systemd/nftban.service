@@ -10,7 +10,13 @@ EnvironmentFile=-/etc/nftban/nftban.env
 ExecStart=/usr/sbin/nftban run
 Nice=5
 IOSchedulingClass=best-effort
-NoNewPrivileges=true
+
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban
 
 [Install]
 WantedBy=multi-user.target
