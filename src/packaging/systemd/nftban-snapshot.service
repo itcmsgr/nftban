@@ -17,5 +17,12 @@ ExecStart=/usr/sbin/nftban stats snapshot
 Nice=10
 IOSchedulingClass=best-effort
 
+# Security hardening
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadWritePaths=/var/lib/nftban /var/log/nftban /run/nftban
+
 [Install]
 WantedBy=multi-user.target

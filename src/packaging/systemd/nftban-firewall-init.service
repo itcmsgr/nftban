@@ -39,5 +39,12 @@ ExecStop=/bin/sh -c 'command -v nft >/dev/null 2>&1 && nft flush ruleset || true
 # Don't restart on failure (would cause loops)
 Restart=no
 
+# Security hardening (minimal - service needs root for firewall ops)
+PrivateTmp=yes
+ProtectHome=yes
+NoNewPrivileges=no
+# Note: Cannot use ProtectSystem=strict (needs to write to /var/lib/nftban)
+ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban
+
 [Install]
 WantedBy=multi-user.target
