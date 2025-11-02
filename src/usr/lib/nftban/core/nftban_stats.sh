@@ -530,6 +530,41 @@ nftban_stats_generate_dashboard() {
     fi
     echo ""
 
+    # Feed details
+    if type -t nftban_feeds_discover_all >/dev/null 2>&1 && type -t nftban_feeds_get_property >/dev/null 2>&1; then
+        echo "[FEEDS]"
+        local all_feeds
+        all_feeds=$(nftban_feeds_discover_all 2>/dev/null || true)
+
+        if [[ -n "$all_feeds" ]]; then
+            local found_enabled=false
+            for feed in $all_feeds; do
+                local enabled
+                enabled=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
+
+                if [[ "$enabled" == "true" ]]; then
+                    found_enabled=true
+                    local feed_file="${NFTBAN_FEEDS_STORAGE_DIR:-/var/lib/nftban/feeds}/${feed}.txt"
+                    if [[ -f "$feed_file" ]]; then
+                        local count mtime
+                        count=$(wc -l < "$feed_file" 2>/dev/null || echo "0")
+                        mtime=$(date -r "$feed_file" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
+                        printf "  • %-25s %6s IPs (Updated: %s)\n" "$feed" "$count" "$mtime"
+                    else
+                        printf "  • %-25s %s\n" "$feed" "pending download"
+                    fi
+                fi
+            done
+
+            if [[ "$found_enabled" == "false" ]]; then
+                echo "  (no feeds enabled)"
+            fi
+        else
+            echo "  (no feeds configured)"
+        fi
+        echo ""
+    fi
+
     # Top jails
     echo "[TOP JAILS]"
     if command -v jq &>/dev/null; then
