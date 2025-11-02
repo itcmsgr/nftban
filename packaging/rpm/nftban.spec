@@ -26,6 +26,7 @@ BuildRequires:  systemd-rpm-macros
 Requires:       nftables >= 1.0.0
 Requires:       systemd >= 250
 Requires:       bash >= 5.0
+Requires:       bash-completion
 Requires:       jq >= 1.6
 Requires:       curl
 Requires:       shadow-utils
