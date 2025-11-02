@@ -78,7 +78,10 @@ prepare_source() {
     cp -a "$PROJECT_ROOT/packaging" "$BUILD_DIR/"
     cp -a "$PROJECT_ROOT/README.md" "$BUILD_DIR/"
     cp -a "$PROJECT_ROOT/CHANGELOG.md" "$BUILD_DIR/"
-    cp -a "$PROJECT_ROOT/LICENSE" "$BUILD_DIR/"
+
+    # Copy licenses directory (FHS-compliant)
+    mkdir -p "$BUILD_DIR/licenses"
+    cp -a "$PROJECT_ROOT/licenses/"* "$BUILD_DIR/licenses/"
 
     # Copy debian packaging directory
     mkdir -p "$BUILD_DIR/debian"

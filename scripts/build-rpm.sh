@@ -76,7 +76,7 @@ tar czf "${BUILD_DIR}/SOURCES/${TARBALL}" \
     --exclude='*.tmp' \
     src/ \
     packaging/ \
-    LICENSE \
+    licenses/ \
     README.md \
     CHANGELOG.md
 

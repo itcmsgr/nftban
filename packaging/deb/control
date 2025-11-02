@@ -7,8 +7,8 @@ Build-Depends: debhelper-compat (= 13),
                bash (>= 5.0)
 Standards-Version: 4.6.0
 Homepage: https://nftban.com
-Vcs-Git: https://github.com/nftban/nftban.git
-Vcs-Browser: https://github.com/nftban/nftban
+Vcs-Git: https://github.com/itcmsgr/nftban.git
+Vcs-Browser: https://github.com/itcmsgr/nftban
 
 Package: nftban
 Architecture: amd64 arm64

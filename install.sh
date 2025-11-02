@@ -140,14 +140,21 @@ cp -a usr/share/nftban/* /usr/share/nftban/
 
 # Legal documentation (FHS: /usr/share/<package>/docs)
 install -d -m 0755 /usr/share/nftban/docs
-install -m 0644 ../LICENSE /usr/share/nftban/docs/LICENSE
 install -m 0644 ../NOTICE.md /usr/share/nftban/docs/NOTICE.md
 install -m 0644 ../TRADEMARK.md /usr/share/nftban/docs/TRADEMARK.md
 install -m 0644 ../CONTRIBUTING.md /usr/share/nftban/docs/CONTRIBUTING.md
-install -m 0644 ../README-License-Summary.md /usr/share/nftban/docs/README-License-Summary.md
+
+# License files (FHS: /usr/share/licenses/<package>/)
+install -d -m 0755 /usr/share/licenses/nftban
+install -m 0644 ../licenses/MPL-2.0.txt /usr/share/licenses/nftban/MPL-2.0.txt
+install -m 0644 ../licenses/NFTBAN-Pro-Commercial.md /usr/share/licenses/nftban/NFTBAN-Pro-Commercial.md
+install -m 0644 ../licenses/NFTBAN-Docs.txt /usr/share/licenses/nftban/NFTBAN-Docs.txt
+# Compatibility symlink for main LICENSE
+ln -sf /usr/share/licenses/nftban/MPL-2.0.txt /usr/share/nftban/docs/LICENSE
 
 echo "✓ Code installed"
 echo "✓ Legal documentation installed to /usr/share/nftban/docs/"
+echo "✓ License files installed to /usr/share/licenses/nftban/"
 
 # Man page (FHS: /usr/share/man/man1/)
 install -d -m 0755 /usr/share/man/man1
