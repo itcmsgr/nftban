@@ -1229,7 +1229,7 @@ nftban_health_render_terminal() {
     echo ""
 
     # Display results
-    for check in binaries paths permissions services modules geoip databases config; do
+    for check in binaries paths permissions services modules geoip databases polkit bash_completion config; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local symbol status_name
