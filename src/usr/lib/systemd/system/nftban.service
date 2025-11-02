@@ -4,8 +4,9 @@ Documentation=man:nftban(8)
 
 [Service]
 Type=oneshot
-User=nftban
-Group=nftban
+# Run as root (feeds update requires root for nftables manipulation)
+User=root
+Group=root
 EnvironmentFile=-/etc/nftban/nftban.env
 ExecStart=/usr/sbin/nftban feeds update
 Nice=5
