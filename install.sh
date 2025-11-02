@@ -181,8 +181,8 @@ cp -a etc/nftban/conf.d/* /etc/nftban/conf.d/
 # User template (always overwrite)
 install -m 0644 -o root -g root etc/nftban/nftban.conf.local.example /etc/nftban/nftban.conf.local.example
 
-# Fix permissions for nftban-cli group access
-chgrp -R nftban-cli /etc/nftban
+# Fix permissions (root:nftban for daemon read access)
+chown -R root:nftban /etc/nftban
 chmod 0750 /etc/nftban
 chmod 0640 /etc/nftban/nftban.conf
 chmod 0750 /etc/nftban/conf.d

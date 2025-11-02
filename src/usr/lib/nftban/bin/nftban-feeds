@@ -20,11 +20,23 @@ if [ -x "$REAL" ]; then
 fi
 
 # Fallback mode (source installations without compiled binary)
-printf "[nftban] ⚠️  nftban-feeds Go binary not present. Using slow fallback.\n" >&2
+printf "[nftban] ⚠️  nftban-feeds Go binary not present. Using Bash fallback.\n" >&2
 printf "[nftban] For better performance, install from RPM/DEB package or build Go binaries.\n" >&2
 printf "[nftban] See: https://github.com/itcmsgr/nftban/blob/main/docs/development/GO-BINARIES.md\n" >&2
 
-# TODO: Implement Bash fallback for feed processing
-# For now, exit with error
-echo "[nftban] ERROR: Bash fallback not yet implemented. Please install Go binaries." >&2
-exit 1
+# Bash fallback: Parse feeds for IPs and CIDRs
+case "${1:-}" in
+    parse|--list)
+        # Extract IPv4 addresses and CIDRs from stdin
+        # Supports: 192.168.1.1, 10.0.0.0/8, comments (#), blank lines
+        grep -v '^\s*#' 2>/dev/null | \
+        grep -v '^\s*$' | \
+        grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}(/[0-9]{1,2})?' | \
+        sort -u
+        ;;
+    *)
+        echo "[nftban-feeds] Usage: nftban-feeds parse|--list < feed.txt" >&2
+        echo "[nftban-feeds] Extracts IPs/CIDRs from threat feed files" >&2
+        exit 1
+        ;;
+esac

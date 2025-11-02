@@ -39,6 +39,7 @@ declare -g -A NFTBAN_PORT_NFT_RULES=()     # key: port_proto_chain_family -> act
 declare -g -A NFTBAN_PORT_NFT_GENERIC=()   # key: port_proto_chain -> action
 declare -g -A NFTBAN_PORT_SEEN=()          # key: port_proto -> 1
 declare -g -A NFTBAN_PORT_SERVICE_NAME=()  # key: port_proto -> service name
+declare -g -A NFTBAN_PORT_STATUS=()        # key: port/proto/family/direction -> status (BUG-005 FIX)
 
 NFTBAN_PORT_TIMESTAMP="$(date --iso-8601=seconds)"
 NFTBAN_PORT_DETAILED="${NFTBAN_PORT_DETAILED:-0}"
@@ -221,6 +222,12 @@ nftban_port_determine_status() {
             *) echo "Unknown" ;;
         esac
     }
+
+    # Populate NFTBAN_PORT_STATUS array (BUG-005 FIX)
+    NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/in"]="$(map_action "${v4i%%_*}")"
+    NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/out"]="$(map_action "${v4o%%_*}")"
+    NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/in"]="$(map_action "${v6i%%_*}")"
+    NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/out"]="$(map_action "${v6o%%_*}")"
 
     printf "%s|%s|%s|%s|%s\n" \
         "$(map_action "${v4i%%_*}")" "$(map_action "${v4o%%_*}")" \
