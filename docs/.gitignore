@@ -21,3 +21,15 @@ development/cli-reference/
 
 # Internal archive (AI reviews, old internal docs)
 archive/internal/
+
+# ChatGPT/AI reviews (internal development artifacts)
+chatgpt-reviews/
+
+# Internal development documentation
+development/AUTO_HEAL_*.md
+development/BUG-*.md
+development/24H-*.md
+development/TODO*.md
+development/cli-reference/
+development/menu-redesign/
+development/validation/
