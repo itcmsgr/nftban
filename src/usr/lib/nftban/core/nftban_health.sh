@@ -524,6 +524,59 @@ nftban_health_check_config() {
     return $status
 }
 
+nftban_health_check_polkit() {
+    # Check Polkit authorization rules installation
+    # Returns: 0=OK, 1=Warning, 2=Error (CRITICAL security violation)
+
+    local status=$HEALTH_OK
+    local polkit_issues=()
+
+    # Check if Polkit is available on the system
+    if ! command -v pkaction >/dev/null 2>&1; then
+        polkit_issues+=("Polkit not installed - nftban-cli group requires sudo for service management")
+        status=$HEALTH_WARNING
+    else
+        # Check if NFTBAN authorization rules are installed
+        local polkit_rules="/usr/share/polkit-1/rules.d/60-nftban-cli.rules"
+        if [[ ! -f "$polkit_rules" ]]; then
+            polkit_issues+=("CRITICAL: Polkit rules missing at $polkit_rules")
+            polkit_issues+=("This violates NFTBAN security model - privilege separation not functional!")
+            polkit_issues+=("Users in nftban-cli group CANNOT manage services without sudo")
+            polkit_issues+=("FIX: Re-run install.sh or manually copy packaging/polkit-1/rules.d/60-nftban-cli.rules")
+            status=$HEALTH_ERROR
+        else
+            # Verify file permissions
+            local perms
+            perms=$(stat -c '%a' "$polkit_rules" 2>/dev/null || echo "000")
+            if [[ "$perms" != "644" ]]; then
+                polkit_issues+=("Polkit rules have wrong permissions: $perms (should be 644)")
+                status=$HEALTH_WARNING
+            fi
+        fi
+
+        # Check if polkit service is running
+        if command -v systemctl >/dev/null 2>&1; then
+            if ! systemctl is-active --quiet polkit 2>/dev/null; then
+                polkit_issues+=("Polkit service not running - authorization will not work")
+                status=$HEALTH_ERROR
+            fi
+        fi
+    fi
+
+    # Store results
+    if [[ ${#polkit_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["polkit"]="${polkit_issues[*]}"
+        if [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("Polkit issues: ${polkit_issues[*]}")
+        else
+            NFTBAN_HEALTH_WARNINGS+=("Polkit issues: ${polkit_issues[*]}")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["polkit"]=$status
+    return $status
+}
+
 # =============================================================================
 # COMPREHENSIVE HEALTH CHECK
 # =============================================================================
@@ -636,6 +689,11 @@ nftban_health_check_all() {
     # Databases check (keep for now - no dedicated module)
     check_result=0
     nftban_health_check_databases || check_result=$?
+    [[ $check_result -gt $overall_status ]] && overall_status=$check_result
+
+    # Polkit check (CRITICAL security check)
+    check_result=0
+    nftban_health_check_polkit || check_result=$?
     [[ $check_result -gt $overall_status ]] && overall_status=$check_result
 
     # Config check (keep for now - no dedicated module)
