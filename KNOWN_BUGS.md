@@ -85,12 +85,20 @@ Create a specific Polkit action for nftables commands and authorize the `nftban`
 
 ## ✅ Fixed Bugs
 
+### BUG-008: Incorrect GPL-3.0-or-later license in 2 files
+**Status**: Fixed (commit: c0e13d6)
+**Files Modified**:
+- `src/usr/lib/nftban/core/nftban_report_engine.sh`
+- `src/usr/lib/nftban/core/path_validator.sh`
+
+Changed from GPL-3.0-or-later to MPL-2.0 to match project license.
+
 ### BUG-003: Ban comment not saved to database
-**Status**: Fixed (commit: ac639a7)  
+**Status**: Fixed (commit: ac639a7)
 **Files Modified**: `src/usr/sbin/nftban-complete`
 
 ### BUG-005: Port status reporting incorrect format
-**Status**: Fixed (commit: d72e784)  
+**Status**: Fixed (commit: d72e784)
 **Files Modified**: `src/usr/lib/nftban/core/nftban_report_port.sh`
 
 ---
