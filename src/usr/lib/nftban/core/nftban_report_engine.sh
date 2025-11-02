@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2025 NFTBan Contributors
-#
-# nftban_report_engine.sh - Unified reporting engine
+# =============================================================================
+# NFTBan v0.10.0 - Unified Reporting Engine
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Unified reporting engine
 #
 # Description:
 #   Centralized report generation system that orchestrates existing report

@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: 2025 NFTBan Contributors
-#
+# =============================================================================
 # NFTBan v0.10.0 - Path Validator Module
-# Detects and validates critical command paths across different OS distributions
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Detects and validates critical command paths across different OS distributions
 #
 # This module ensures nft, fail2ban-client, and other critical commands
 # are found regardless of OS (RHEL, Debian, Ubuntu, etc.)
