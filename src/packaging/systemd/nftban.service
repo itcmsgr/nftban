@@ -7,7 +7,7 @@ Type=oneshot
 User=nftban
 Group=nftban
 EnvironmentFile=-/etc/nftban/nftban.env
-ExecStart=/usr/sbin/nftban run
+ExecStart=/usr/sbin/nftban feeds update
 Nice=5
 IOSchedulingClass=best-effort
 
