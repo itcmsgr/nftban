@@ -30,6 +30,14 @@ set -Eeuo pipefail
 
 readonly NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 
+# Load security helper for capability checks
+if [[  ! $(type -t nftban_has_net_admin) == "function" ]]; then
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_security.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/core/nftban_security.sh"
+    fi
+fi
+
 # Load feeds core module
 if [[ ! $(type -t nftban_feeds_discover_all) == "function" ]]; then
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_feeds.sh" ]]; then
@@ -339,10 +347,9 @@ nftban_cmd_feeds() {
 
     case "$action" in
         select)
-            # Check root for modifications
-            if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: 'feeds select' requires root privileges" >&2
-                exit 1
+            # Check CAP_NET_ADMIN capability for nftables modifications
+            if declare -F nftban_require_net_admin_or_exit >/dev/null 2>&1; then
+                nftban_require_net_admin_or_exit
             fi
             nftban_feeds_select
             ;;
@@ -350,9 +357,9 @@ nftban_cmd_feeds() {
             nftban_feeds_list
             ;;
         enable)
-            if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: 'feeds enable' requires root privileges" >&2
-                exit 1
+            # Check CAP_NET_ADMIN capability for nftables modifications
+            if declare -F nftban_require_net_admin_or_exit >/dev/null 2>&1; then
+                nftban_require_net_admin_or_exit
             fi
             if [[ $# -lt 1 ]]; then
                 echo "ERROR: Usage: nftban feeds enable <feed_name>" >&2
@@ -361,9 +368,9 @@ nftban_cmd_feeds() {
             nftban_feeds_enable "$1"
             ;;
         disable)
-            if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: 'feeds disable' requires root privileges" >&2
-                exit 1
+            # Check CAP_NET_ADMIN capability for nftables modifications
+            if declare -F nftban_require_net_admin_or_exit >/dev/null 2>&1; then
+                nftban_require_net_admin_or_exit
             fi
             if [[ $# -lt 1 ]]; then
                 echo "ERROR: Usage: nftban feeds disable <feed_name>" >&2
@@ -372,9 +379,9 @@ nftban_cmd_feeds() {
             nftban_feeds_disable "$1"
             ;;
         enable-cat|enable-category)
-            if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: 'feeds enable-category' requires root privileges" >&2
-                exit 1
+            # Check CAP_NET_ADMIN capability for nftables modifications
+            if declare -F nftban_require_net_admin_or_exit >/dev/null 2>&1; then
+                nftban_require_net_admin_or_exit
             fi
             if [[ $# -lt 1 ]]; then
                 echo "ERROR: Usage: nftban feeds enable-category <category>" >&2
@@ -387,9 +394,9 @@ nftban_cmd_feeds() {
             done
             ;;
         update)
-            if [[ $EUID -ne 0 ]]; then
-                echo "ERROR: 'feeds update' requires root privileges" >&2
-                exit 1
+            # Check CAP_NET_ADMIN capability for nftables modifications
+            if declare -F nftban_require_net_admin_or_exit >/dev/null 2>&1; then
+                nftban_require_net_admin_or_exit
             fi
             if [[ $# -ge 1 ]]; then
                 nftban_feeds_update_single "$1"

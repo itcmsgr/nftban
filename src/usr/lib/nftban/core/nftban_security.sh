@@ -1,116 +1,136 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - Security Hardening Module
+# NFTBan v0.10.0 - Security & Capability Helper
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Whitelist security hardening
+# Purpose: Capability checks and helpers for privileged operations
 #
 # meta:name=nftban_security
 # meta:type=core
-# meta:header=Security Hardening Module
+# meta:header=Security & Capability Helper
 # meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
 # **Description & Purpose**
-# meta:description=Whitelist security hardening with auditd monitoring and interactive confirmation
-# meta:input=Whitelist directories and configuration files
-# meta:output=Hardened permissions and audit rules
+# meta:description=Provides capability checking functions for CAP_NET_ADMIN
+# meta:input=None
+# meta:output=Return codes (0=success, 1=failure)
 #
 # **Inventory & Requirements**
-# meta:depends=auditctl,augenrules,chown,chmod
+# meta:depends=nft,bash
 #
-# meta:created_date=2025-10-28
+# meta:created_date=2025-11-02
 # =============================================================================
 
+# Enhanced strict mode
 set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
-: "${WL_DIR:=/etc/nftban/whitelist.d}"
-: "${AUDITCTL:=/sbin/auditctl}"
-: "${AUGENRULES:=/sbin/augenrules}"
+# Prevent double-loading
+[[ -n "${NFTBAN_SECURITY_LOADED:-}" ]] && return 0
+readonly NFTBAN_SECURITY_LOADED=1
 
-# One-time setup to lock down whitelist dir/files
-nftban_whitelist_harden() {
-  # Ownership root:root, directory 0755 (root-only write), files 0644
-  chown -R root:root "$WL_DIR"
-  chmod 0755 "$WL_DIR"
-  find "$WL_DIR" -maxdepth 1 -type f -name '*.conf' -exec chmod 0644 {} \;
+# =============================================================================
+# CAPABILITY CHECKING FUNCTIONS
+# =============================================================================
 
-  # Optional: remove group/other write on parent /etc/nftban
-  chmod g-w,o-w /etc/nftban
-
-  # SELinux: align context to parent
-  command -v restorecon >/dev/null 2>&1 && restorecon -R "$WL_DIR" || true
-
-  echo "[OK] Whitelist directory hardened: root-only write"
-}
-
-# auditd rules to track writes/appends & attrib changes
-nftban_whitelist_audit_enable() {
-  # Volatile (immediate) rules
-  ${AUDITCTL} -W "$WL_DIR" -p wa -k nftban_whitelist 2>/dev/null || \
-  ${AUDITCTL} -w "$WL_DIR" -p wa -k nftban_whitelist
-
-  # Persistent rules (Debian/RHEL family)
-  mkdir -p /etc/audit/rules.d
-  cat >/etc/audit/rules.d/nftban_whitelist.rules <<EOF
--w ${WL_DIR} -p wa -k nftban_whitelist
-EOF
-  # Compile + load
-  if command -v ${AUGENRULES} >/dev/null; then
-    ${AUGENRULES} --load
-  else
-    service auditd restart || systemctl restart auditd 2>/dev/null || true
-  fi
-  echo "[OK] auditd watch enabled for ${WL_DIR}"
-  echo "    View with: ausearch -k nftban_whitelist"
-}
-
-# Interactive confirmation requiring explicit YES unless --force
-confirm_or_exit() {
-  local reason="${1:-"This action modifies the whitelist."}"
-  shift || true
-
-  for arg in "$@"; do
-    if [[ "$arg" == "--force" ]]; then
-      echo "[WARN] --force provided; skipping confirmation."
-      return 0
+# Check if current process has CAP_NET_ADMIN capability
+# Returns: 0 if capability present, 1 otherwise
+nftban_has_net_admin() {
+    # Method 1: Preferred - harmless read-only query through nft
+    # This works regardless of how capability was granted (ambient, file, etc.)
+    if command -v nft >/dev/null 2>&1; then
+        if nft list tables >/dev/null 2>&1; then
+            return 0
+        fi
     fi
-  done
 
-  if [[ -t 0 && -t 1 ]]; then
-    echo "⚠️  $reason"
-    echo -n 'Type YES to continue: '
-    read -r ans
-    [[ "$ans" == "YES" ]] || { echo "Aborted."; exit 1; }
-  else
-    echo "Non-interactive session and no --force provided. Aborted." >&2
-    exit 1
-  fi
-}
+    # Method 2: Check CapEff bitmask for CAP_NET_ADMIN
+    # CAP_NET_ADMIN is bit 12 in Linux capabilities (0x0000000000001000 in hex)
+    # See: linux/capability.h
+    if [[ -r /proc/self/status ]]; then
+        local hexbits
+        hexbits="$(awk '/^CapEff:/ {print $2}' /proc/self/status 2>/dev/null || true)"
+        if [[ -n "${hexbits:-}" ]]; then
+            # Check if CAP_NET_ADMIN bit is set (bit 12 = 0x1000)
+            if (( 0x$hexbits & 0x0000000000001000 )); then
+                return 0
+            fi
+        fi
+    fi
 
-# Example command that adds to whitelist with confirmation + logging
-# NOTE: This requires nftban_file_ops.sh to be sourced for nftban_atomic_append
-nftban_whitelist_add() {
-  local ip="$1"; shift || true
-  confirm_or_exit "Add $ip to whitelist? This overrides *all* blocks." "$@"
-
-  # Validation should be done earlier by nftban-geoip validate
-
-  # Use atomic append (from nftban_file_ops.sh)
-  if declare -f nftban_atomic_append >/dev/null 2>&1; then
-    echo "$ip  # added $(date -u +'%F %T%z') by $(id -un)" | \
-      nftban_atomic_append "/etc/nftban/whitelist.d/99-manual.conf"
-  else
-    echo "ERROR: nftban_atomic_append not available. Source nftban_file_ops.sh first." >&2
     return 1
-  fi
-
-  # Audit log
-  logger -t nftban -p auth.warning "WHITELIST_ADD ip=${ip} user=$(id -un) tty=$(tty 2>/dev/null || echo 'notty')"
-
-  echo "[OK] Whitelisted ${ip}"
-  echo "    Review with: ausearch -k nftban_whitelist"
 }
+
+# Require CAP_NET_ADMIN or exit with clear error message
+# Usage: nftban_require_net_admin_or_exit
+nftban_require_net_admin_or_exit() {
+    if ! nftban_has_net_admin; then
+        cat <<'ERR' >&2
+
+╔════════════════════════════════════════════════════════════╗
+║  ERROR: CAP_NET_ADMIN capability required                 ║
+╚════════════════════════════════════════════════════════════╝
+
+NFTBan requires the Linux CAP_NET_ADMIN capability to manage
+nftables firewall rules.
+
+RECOMMENDED SOLUTION (service-scoped capability):
+  Ensure the systemd service grants CAP_NET_ADMIN:
+
+  [Service]
+  User=nftban
+  Group=nftban
+  AmbientCapabilities=CAP_NET_ADMIN
+  CapabilityBoundingSet=CAP_NET_ADMIN
+
+TEMPORARY WORKAROUND (not recommended):
+  Run the command as root:
+
+  sudo nftban [command]
+
+DOCUMENTATION:
+  See /usr/share/nftban/docs/README.capabilities for details
+  on NFTBan's capability-based security model.
+
+SECURITY NOTE:
+  NFTBan uses service-scoped capabilities instead of running
+  as root, following the principle of least privilege. This
+  grants ONLY network administration capability, not full
+  root access.
+
+ERR
+        exit 1
+    fi
+}
+
+# Check if running as root (for operations that genuinely need root)
+# Usage: nftban_require_root_or_exit "operation description"
+nftban_require_root_or_exit() {
+    local operation="${1:-this operation}"
+
+    if [[ $EUID -ne 0 ]]; then
+        cat <<ERR >&2
+
+ERROR: Root privileges required for ${operation}
+
+This operation requires root access because it modifies system-level
+resources outside of NFTBan's data directories.
+
+Run as root:
+  sudo nftban [command]
+
+ERR
+        exit 1
+    fi
+}
+
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+export -f nftban_has_net_admin
+export -f nftban_require_net_admin_or_exit
+export -f nftban_require_root_or_exit
