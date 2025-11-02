@@ -158,7 +158,38 @@ nftban_port_gather_nft_rules() {
     RULESET_RAW="$(nft list ruleset 2>/dev/null || true)"
     [[ -z "$RULESET_RAW" ]] && return
 
+    # First, gather set-based rules (tcp dport @tcp_ports, etc.)
+    local set_rules=()
     local line cur_chain=""
+    while IFS= read -r line; do
+        if [[ "$line" =~ ^[[:space:]]*chain[[:space:]]+([[:alnum:]_-]+) ]]; then
+            cur_chain="${BASH_REMATCH[1]}"; continue
+        fi
+        # Detect set-based rules: tcp dport @tcp_ports accept
+        if [[ "$line" =~ (tcp|udp)[[:space:]]+dport[[:space:]]+@([[:alnum:]_-]+)[[:space:]]+(accept|drop|reject) ]]; then
+            local proto="${BASH_REMATCH[1]}" set_name="${BASH_REMATCH[2]}" action="${BASH_REMATCH[3]}"
+            set_rules+=("${proto}|${set_name}|${cur_chain}|${action}")
+        fi
+    done < <(printf '%s\n' "$RULESET_RAW")
+
+    # Parse sets and expand them to individual ports
+    for rule in "${set_rules[@]}"; do
+        IFS='|' read -r proto set_name chain action <<< "$rule"
+        # Get set contents
+        local set_contents
+        set_contents=$(nft list set inet nftban_main "$set_name" 2>/dev/null | grep -o 'elements = {[^}]*}' | sed 's/elements = {//; s/}//' || true)
+        if [[ -n "$set_contents" ]]; then
+            # Parse ports from set (handles: 22, 80, 443, etc.)
+            local port
+            for port in $(echo "$set_contents" | tr ',' '\n' | grep -oE '[0-9]+'); do
+                NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_${chain}"]="$action"
+                NFTBAN_PORT_SEEN["${port}_${proto}"]=1
+            done
+        fi
+    done
+
+    # Then, gather direct port rules (tcp dport 22 accept)
+    cur_chain=""
     while IFS= read -r line; do
         if [[ "$line" =~ ^[[:space:]]*chain[[:space:]]+([[:alnum:]_-]+) ]]; then
             cur_chain="${BASH_REMATCH[1]}"; continue
