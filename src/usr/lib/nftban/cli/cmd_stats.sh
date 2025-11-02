@@ -4,10 +4,23 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for statistics and metrics
-# Location: /usr/lib/nftban/cli/cmd_stats.sh
+#
+# meta:name=cmd_stats
+# meta:type=cli
+# meta:header=Statistics CLI Handler
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
-# nftban — Simplifying Linux Firewall Management
+#
+# **Description & Purpose**
+# meta:description=CLI interface for statistics and metrics collection and display
+# meta:input=Statistics query parameters and display options
+# meta:output=Statistics dashboard, metrics, and analytics
+#
+# **Inventory & Requirements**
+# meta:depends=nftban_stats.sh
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
 # Enhanced strict mode

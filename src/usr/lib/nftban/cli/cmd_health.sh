@@ -4,9 +4,15 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for system health checks and diagnostics
-# Location: /usr/lib/nftban/cli/cmd_health.sh
+#
+# meta:name=cmd_health
+# meta:type=cli
+# meta:header=Health Check CLI Handler
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
 # Enhanced strict mode

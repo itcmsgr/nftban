@@ -4,27 +4,23 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Secure configuration file parser - prevents code execution
-# Location: /usr/lib/nftban/core/nftban_config_safe.sh
 #
-# **CRITICAL SECURITY MODULE**
-# This module replaces dangerous `source` calls with safe key=value parsing.
-# Prevents arbitrary code execution from configuration files.
-#
-# **What this protects against:**
-# - Command substitution: $(...)
-# - Backticks: `command`
-# - Shell operators: ;, &&, ||, |
-# - Function definitions
-# - Loops and conditionals
-#
-# **Usage:**
-#   source /usr/lib/nftban/core/nftban_config_safe.sh
-#   load_env_file "/etc/nftban/nftban.conf" "NFTBAN"
-#   load_env_dir  "/etc/nftban/conf.d"     "NFTBAN"
-#
+# meta:name=nftban_config_safe
+# meta:type=core
+# meta:header=Safe Configuration Loader
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
-# meta:source=ChatGPT Security Review 2025-10-30
+#
+# **Description & Purpose**
+# meta:description=Secure configuration file parser that prevents arbitrary code execution
+# meta:input=Configuration files with key=value pairs
+# meta:output=Safely loaded environment variables
+#
+# **Inventory & Requirements**
+# meta:depends=bash
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
 # Enhanced strict mode

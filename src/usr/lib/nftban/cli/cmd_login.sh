@@ -4,9 +4,15 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Provides CLI interface for login monitoring and alerting
-# Location: /usr/lib/nftban/cli/cmd_login.sh
+#
+# meta:name=cmd_login
+# meta:type=cli
+# meta:header=Login Alert CLI Handler
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
 # Enhanced strict mode

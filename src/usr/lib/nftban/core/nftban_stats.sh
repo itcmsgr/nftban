@@ -4,11 +4,23 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Comprehensive statistics collection, analysis, and reporting
-# Location: /usr/lib/nftban/core/nftban_stats.sh
+#
+# meta:name=nftban_stats
+# meta:type=core
+# meta:header=Statistics & Metrics Engine
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
-# nftban — Simplifying Linux Firewall Management
-# Production-grade stats engine with real-time metrics and analytics
+#
+# **Description & Purpose**
+# meta:description=Production-grade stats engine with real-time metrics and analytics
+# meta:input=System metrics, ban data, and firewall statistics
+# meta:output=Dashboards, analytics reports, and statistical summaries
+#
+# **Inventory & Requirements**
+# meta:depends=nft,sqlite3,nftban_geoip_go.sh
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
 # Enhanced strict mode

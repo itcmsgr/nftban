@@ -4,30 +4,24 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Automatic system IP detection and whitelisting
-# Location: /usr/lib/nftban/core/nftban_system_ip.sh
 #
-# PURPOSE:
-#   Automatic detection and protection of system IPs
+# meta:name=nftban_system_ip
+# meta:type=core
+# meta:header=System IP Auto-Detection
+# meta:version=0.10.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
 #
-# FEATURES:
-#   • Auto-detect localhost (127.0.0.1, ::1)
-#   • Auto-detect all interface IPs (IPv4 + IPv6)
-#   • Auto-detect public IPv4/IPv6
-#   • "whitelistme" function to protect current user
-#   • Auto-remove from blacklists (whitelist always wins)
-#   • Atomic file operations
-#   • Auto-sync to nftables
+# **Description & Purpose**
+# meta:description=Automatic detection and protection of system IPs with atomic operations
+# meta:input=Network interfaces and current connections
+# meta:output=Auto-whitelisted system IPs and synchronization to nftables
 #
-# USAGE:
-#   source /usr/lib/nftban/core/nftban_system_ip.sh
-#   nftban_whitelist_system_sync      # Auto-detect and protect all system IPs
-#   nftban_whitelistme                # Protect your current IP
-#   nftban_show_system_whitelist      # Show protected IPs
+# **Inventory & Requirements**
+# meta:depends=ip,hostname,nftban_file_ops.sh,nftban_nftables.sh
 #
-# SECURITY:
-#   • Runs with strict mode (set -Eeuo pipefail)
-#   • Uses atomic file operations (no race conditions)
-#   • Auto-removes system IPs from blacklists
+# meta:created_date=2025-10-28
+# =============================================================================
 #   • Prevents self-lockout
 # =============================================================================
 

@@ -5,20 +5,22 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Secure path validation for file writes (reports, exports, logs)
 #
+# meta:name=nftban_path_security
+# meta:type=core
+# meta:header=Path Validation & Write Security
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
-# SECURITY CONCEPT:
-# - Only allow writes to /var/lib/nftban/* by default (FHS compliant)
-# - /tmp requires explicit --unsafe-allow-tmp flag (warns about risks)
-# - Never allow writes to /etc, /boot, /usr, /bin, /sbin, /lib (forbidden)
-# - Prevent path traversal (../) and symlink attacks
-# - Audit all path validation decisions
+# **Description & Purpose**
+# meta:description=Secure path validation to prevent path traversal and unauthorized writes
+# meta:input=File paths for validation
+# meta:output=Validated safe paths or rejection with error messages
 #
-# USAGE:
-#   source /usr/lib/nftban/core/nftban_path_security.sh
-#   safe_path=$(nftban_path_get_safe_output "$user_input" "/var/lib/nftban/reports")
-#   nftban_path_create_file_safe "$safe_path"
+# **Inventory & Requirements**
+# meta:depends=bash,realpath
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
 set -Eeuo pipefail

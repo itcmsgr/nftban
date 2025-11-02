@@ -1,32 +1,26 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - Secure Mode Directive (Auto-Apply Security)
+# NFTBan v0.10.0 - Secure Mode Directive
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Generic security wrapper - source this to enable automatic security
 #
+# meta:name=nftban_secure_mode
+# meta:type=core
+# meta:header=Secure Mode Directive
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
-# USAGE IN ANY SCRIPT:
-#   #!/usr/bin/env bash
-#   source /usr/lib/nftban/core/nftban_secure_mode.sh
-#   # Now all file writes are automatically secured!
+# **Description & Purpose**
+# meta:description=Secure-by-default environment with automatic file write validation and path security
+# meta:input=Scripts sourcing this module
+# meta:output=Automatically secured file operations with audit logging
 #
-# CONCEPT:
-#   This module provides a "secure-by-default" environment where:
-#   - All file writes are validated automatically
-#   - Path traversal/symlink attacks are prevented
-#   - Dangerous paths (/, /tmp, /usr, /etc) are blocked
-#   - Audit logging is automatic
-#   - No code changes needed in consuming scripts
+# **Inventory & Requirements**
+# meta:depends=nftban_path_security.sh
 #
-# FEATURES:
-#   1. Auto-load path security module
-#   2. Override common file write commands (echo >, cat >, tee)
-#   3. Validate all file writes at runtime
-#   4. Provide safe wrappers for common operations
-#   5. Audit all file operations
+# meta:created_date=2025-10-28
 # =============================================================================
 
 set -Eeuo pipefail

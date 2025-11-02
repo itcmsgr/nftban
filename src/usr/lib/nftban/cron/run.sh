@@ -1,12 +1,29 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan Periodic Maintenance Runner
+# NFTBan v0.10.0 - Periodic Maintenance Runner
 # =============================================================================
+# SPDX-License-Identifier: MPL-2.0
 # Purpose: Run periodic maintenance tasks (feeds, GeoIP, cleanup)
-# Called by: nftban.timer (hourly)
+#
+# meta:name=cron_run
+# meta:type=cron
+# meta:header=Periodic Maintenance Runner
+# meta:version=0.10.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# **Description & Purpose**
+# meta:description=Automated periodic maintenance tasks including feed updates and GeoIP database refresh
+# meta:input=System time and configuration settings
+# meta:output=Updated threat feeds and GeoIP databases
+#
+# **Inventory & Requirements**
+# meta:depends=bash,date,systemctl
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Configuration
 readonly GEOIP_UPDATE_DAY="0"  # Sunday (0=Sunday, 1=Monday, etc.)

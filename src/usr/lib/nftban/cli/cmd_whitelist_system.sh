@@ -4,6 +4,24 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: System IP Whitelist Management
+#
+# meta:name=cmd_whitelist_system
+# meta:type=cli
+# meta:header=System Whitelist CLI Handler
+# meta:version=0.10.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# **Description & Purpose**
+# meta:description=CLI interface for system IP whitelist management and synchronization
+# meta:input=Whitelist commands and IP addresses
+# meta:output=Whitelist status and synchronization results
+#
+# **Inventory & Requirements**
+# meta:depends=nftban_system_ip.sh,nftban_nftables.sh,nftban_file_ops.sh
+#
+# meta:created_date=2025-10-28
+# =============================================================================
 
 set -Eeuo pipefail
 IFS=$'\n\t'

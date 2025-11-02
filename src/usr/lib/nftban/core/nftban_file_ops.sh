@@ -5,12 +5,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Atomic file write operations to prevent race conditions
 #
-# SECURITY: This module implements atomic file operations to prevent
-# race conditions and corruption during file writes. Uses tmpfile + mv pattern.
+# meta:name=nftban_file_ops
+# meta:type=core
+# meta:header=Atomic File Operations
+# meta:version=0.10.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
 #
-# USAGE:
-#   echo "content" | nftban_atomic_write /path/to/file
-#   echo "line" | nftban_atomic_append /path/to/file
+# **Description & Purpose**
+# meta:description=Atomic file write operations to prevent race conditions and corruption
+# meta:input=File content via stdin
+# meta:output=Safely written files with preserved permissions
+#
+# **Inventory & Requirements**
+# meta:depends=bash,mktemp,mv
+#
+# meta:created_date=2025-10-28
+# =============================================================================
 
 set -Eeuo pipefail
 IFS=$'\n\t'
