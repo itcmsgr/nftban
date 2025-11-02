@@ -531,6 +531,13 @@ nftban_stats_generate_dashboard() {
     echo ""
 
     # Feed details
+    # Load feeds module if not already loaded
+    if ! type -t nftban_feeds_discover_all >/dev/null 2>&1; then
+        if [[ -f "/usr/lib/nftban/core/nftban_feeds.sh" ]]; then
+            source "/usr/lib/nftban/core/nftban_feeds.sh" 2>/dev/null || true
+        fi
+    fi
+
     if type -t nftban_feeds_discover_all >/dev/null 2>&1 && type -t nftban_feeds_get_property >/dev/null 2>&1; then
         echo "[FEEDS]"
         local all_feeds
