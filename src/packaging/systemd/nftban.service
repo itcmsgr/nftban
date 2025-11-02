@@ -1,6 +1,7 @@
 [Unit]
 Description=NFTBAN periodic maintenance (one-shot)
 Documentation=man:nftban(8)
+After=network-online.target
 
 [Service]
 Type=oneshot
@@ -11,11 +12,24 @@ ExecStart=/usr/sbin/nftban feeds update
 Nice=5
 IOSchedulingClass=best-effort
 
+# Capability grant (service-scoped, not file-level)
+# This allows the nftban user to manage nftables without full root privileges
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
 # Security hardening
 NoNewPrivileges=yes
 PrivateTmp=yes
 ProtectSystem=strict
 ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallFilter=~@mount @module @raw-io @reboot @swap
 ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban
 
 [Install]

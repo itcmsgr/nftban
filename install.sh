@@ -252,18 +252,20 @@ if [ -d /usr/share/fish/vendor_completions.d ]; then
 fi
 
 # =============================================================================
-# 8. POLKIT INTEGRATION
+# 8. POLKIT INTEGRATION (CLI group only)
 # =============================================================================
+# Note: We do NOT use Polkit for nft commands (nft uses netlink, not D-Bus)
+# Instead, systemd grants CAP_NET_ADMIN to the service via AmbientCapabilities
 if command -v pkaction >/dev/null 2>&1; then
     echo "Installing Polkit authorization rules..."
     install -d -m 0755 /usr/share/polkit-1/rules.d
     install -m 0644 ../packaging/polkit-1/rules.d/60-nftban-cli.rules \
         /usr/share/polkit-1/rules.d/60-nftban-cli.rules
-    install -m 0644 ../packaging/polkit-1/rules.d/61-nftban-system.rules \
-        /usr/share/polkit-1/rules.d/61-nftban-system.rules
     echo "✓ Polkit rules installed"
     echo "  Members of nftban-cli group can now manage nftables/fail2ban services"
-    echo "  nftban system user can now execute nft commands"
+    echo ""
+    echo "NOTE: NFTBan uses systemd-scoped capabilities (CAP_NET_ADMIN) for"
+    echo "      nftables management, not Polkit. See /usr/share/nftban/docs/README.capabilities"
 else
     echo "⚠  Polkit not found - nftban-cli group will require sudo for service management"
 fi
