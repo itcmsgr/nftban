@@ -564,15 +564,29 @@ Port reports do not display firewall status correctly because the `NFTBAN_PORT_S
 
 ### User Report
 
+**Live Production Example (lab.mywebhost.gr):**
+
 ```bash
-[root@server ~]# nftban report port
-Port Status Report — 2025-11-02
+[root@lab ~]# nftban port status
 
-Port  Proto  IPv4 In  IPv4 Out  IPv6 In  IPv6 Out  Service
-22    tcp    ?        ?         ?        ?         sshd
-80    tcp    ?        ?         ?        ?         nginx
+════════════════════════════════════════════════════════════════════════════════════
+ Port Status Report — 2025-11-02T13:20:59+00:00
+════════════════════════════════════════════════════════════════════════════════════
+SERVICE        PORT   PROTO  RUNNING  IPv4 IN   IPv4 OUT  IPv6 IN   IPv6 OUT  NOTES
+------------------------------------------------------------------------------------
+ssh            22     tcp    yes      ? No-rule ? No-rule ? No-rule ? No-rule PUBLIC
+brcd           323    udp    yes      ? No-rule ? No-rule ? No-rule ? No-rule LOCAL-ONLY
 
-All ports show "?" instead of actual firewall status ❌
+✔ allowed   ✖ blocked   ? no-rule/unknown
+Legend: 'No-rule' = no explicit nft input/output rule for that port; default policy may apply.
+```
+
+**Problem:** All firewall status columns show "?" instead of actual nftables rule status (✔ allowed or ✖ blocked)
+
+**Impact:**
+- Cannot determine which ports are protected by nftables
+- Port security visibility completely broken
+- Users have no visibility into firewall protection status ❌
 ```
 
 ### Root Cause
