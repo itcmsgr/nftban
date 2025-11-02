@@ -4,24 +4,25 @@
 # NFTBan Module Report Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Module inventory scanning and reporting
+# Purpose: Module inventory scanning and reporting with validation
 #
 # meta:name=nftban_report_module
 # meta:type=core
 # meta:header=Module Report Core
-# meta:version=1.0.0
+# meta:version=1.1.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
 # **Description & Purpose**
-# meta:description=Scans and inventories all NFTBan modules by meta tags
-# meta:input=Module scan options, output format
-# meta:output=Module inventory reports (terminal, HTML, mail)
+# meta:description=Scans, inventories, and validates NFTBan modules by meta tags
+# meta:input=Module scan options, output format, validation flags
+# meta:output=Module inventory reports with validation results
 #
 # **Inventory & Requirements**
 # meta:depends=bash,grep,sed
 #
 # meta:created_date=2025-10-26
+# meta:contributors=Claude (Anthropic) - Testing and integration, ChatGPT (OpenAI) - Code review
 # =============================================================================
 
 # Strict mode
@@ -33,7 +34,7 @@ umask 027
 # GLOBALS
 # =============================================================================
 
-declare -g -A NFTBAN_MODULE_INVENTORY=()  # key: file_path -> "name|version|type|created|depends|owner"
+declare -g -A NFTBAN_MODULE_INVENTORY=()  # key: file_path -> "name|version|type|created|depends|owner|homepage|description"
 declare -g NFTBAN_MODULE_TIMESTAMP="$(date --iso-8601=seconds)"
 declare -g NFTBAN_MODULE_OUTPUT_FORMAT="${NFTBAN_MODULE_OUTPUT_FORMAT:-table}"
 
@@ -48,6 +49,7 @@ else
     C_RED="\e[31m"
     C_GREEN="\e[32m"
     C_YELLOW="\e[33m"
+    C_BLUE="\e[34m"
     C_BOLD="\e[1m"
 fi
 
@@ -71,6 +73,15 @@ nftban_module_extract_meta() {
     local tag="$2"
 
     grep -E "^#[[:space:]]*meta:${tag}=" "$file" 2>/dev/null | head -1 | sed -E "s/^#[[:space:]]*meta:${tag}=(.*)/\1/" | sed 's/^"//' | sed 's/"$//' || echo ""
+}
+
+nftban_module_extract_license() {
+    # Extract SPDX license from file
+    # Args: $1 = file path
+    # Output: license identifier or empty string
+
+    local file="$1"
+    grep -E "^#[[:space:]]*SPDX-License-Identifier:" "$file" 2>/dev/null | head -1 | sed -E 's/^#[[:space:]]*SPDX-License-Identifier:[[:space:]]*(.*)/\1/' | xargs || echo ""
 }
 
 # =============================================================================
@@ -134,6 +145,312 @@ nftban_module_check_enabled() {
 
     # Otherwise disabled
     echo "DISABLED"
+}
+
+# =============================================================================
+# NEW: VALIDATION FUNCTIONS (INFORMATIONAL ONLY)
+# =============================================================================
+
+nftban_module_validate_metadata() {
+    # Validate module metadata completeness (INFORMATIONAL ONLY)
+    # Returns: Report of modules with missing or incomplete metadata
+    # Does NOT fix anything - only reports issues
+
+    echo
+    echo "════════════════════════════════════════════════════════════════════════════════════"
+    printf "%s Metadata Validation Report — %s %s\n" "${C_BOLD:-}" "$NFTBAN_MODULE_TIMESTAMP" "${C_RESET:-}"
+    echo "════════════════════════════════════════════════════════════════════════════════════"
+    echo
+
+    # Scan modules if not already done
+    if [[ ${#NFTBAN_MODULE_INVENTORY[@]} -eq 0 ]]; then
+        nftban_module_scan
+    fi
+
+    local total=0
+    local complete=0
+    local incomplete=0
+
+    printf "%-40s %-8s %-8s %-8s %-10s %-10s\n" "MODULE" "NAME" "VERSION" "TYPE" "OWNER" "LICENSE"
+    echo "------------------------------------------------------------------------------------"
+
+    for file in "${!NFTBAN_MODULE_INVENTORY[@]}"; do
+        total=$((total + 1))
+        local data="${NFTBAN_MODULE_INVENTORY[$file]}"
+        IFS='|' read -r name version module_type created depends owner homepage description <<< "$data"
+
+        # Extract license
+        local license
+        license="$(nftban_module_extract_license "$file")"
+
+        # Check completeness
+        local missing_fields=()
+        [[ -z "$name" ]] && missing_fields+=("name")
+        [[ -z "$version" ]] && missing_fields+=("version")
+        [[ -z "$module_type" ]] && missing_fields+=("type")
+        [[ -z "$owner" ]] && missing_fields+=("owner")
+        [[ -z "$license" ]] && missing_fields+=("license")
+
+        # Status symbols
+        local name_status="${C_GREEN:-}${NFTBAN_MODULE_SYM_OK}${C_RESET:-}"
+        local version_status="${C_GREEN:-}${NFTBAN_MODULE_SYM_OK}${C_RESET:-}"
+        local type_status="${C_GREEN:-}${NFTBAN_MODULE_SYM_OK}${C_RESET:-}"
+        local owner_status="${C_GREEN:-}${NFTBAN_MODULE_SYM_OK}${C_RESET:-}"
+        local license_status="${C_GREEN:-}${NFTBAN_MODULE_SYM_OK}${C_RESET:-}"
+
+        [[ -z "$name" ]] && name_status="${C_RED:-}${NFTBAN_MODULE_SYM_KO}${C_RESET:-}"
+        [[ -z "$version" ]] && version_status="${C_RED:-}${NFTBAN_MODULE_SYM_KO}${C_RESET:-}"
+        [[ -z "$module_type" ]] && type_status="${C_RED:-}${NFTBAN_MODULE_SYM_KO}${C_RESET:-}"
+        [[ -z "$owner" ]] && owner_status="${C_YELLOW:-}${NFTBAN_MODULE_SYM_KO}${C_RESET:-}"
+        [[ -z "$license" ]] && license_status="${C_RED:-}${NFTBAN_MODULE_SYM_KO}${C_RESET:-}"
+
+        if [[ ${#missing_fields[@]} -eq 0 ]]; then
+            complete=$((complete + 1))
+        else
+            incomplete=$((incomplete + 1))
+            local basename
+            basename="$(basename "$file")"
+            printf "%-40s %-8s %-8s %-8s %-10s %-10s\n" \
+                "${basename:0:39}" "$name_status" "$version_status" "$type_status" "$owner_status" "$license_status"
+        fi
+    done
+
+    echo
+    echo "Summary:"
+    echo "  Total Modules:      $total"
+    echo "  Complete Metadata:  ${C_GREEN:-}$complete${C_RESET:-}"
+    echo "  Incomplete Metadata: ${C_YELLOW:-}$incomplete${C_RESET:-}"
+    echo
+    echo "Note: This is informational only. No files were modified."
+    echo
+}
+
+nftban_module_check_license() {
+    # Check license compliance (INFORMATIONAL ONLY)
+    # Reports: MPL-2.0 vs GPL vs missing licenses
+    # Does NOT fix anything
+
+    echo
+    echo "════════════════════════════════════════════════════════════════════════════════════"
+    printf "%s License Compliance Report — %s %s\n" "${C_BOLD:-}" "$NFTBAN_MODULE_TIMESTAMP" "${C_RESET:-}"
+    echo "════════════════════════════════════════════════════════════════════════════════════"
+    echo
+
+    # Scan modules if not already done
+    if [[ ${#NFTBAN_MODULE_INVENTORY[@]} -eq 0 ]]; then
+        nftban_module_scan
+    fi
+
+    local total=0
+    local mpl_count=0
+    local gpl_count=0
+    local missing_count=0
+    local other_count=0
+
+    local -a mpl_files=()
+    local -a gpl_files=()
+    local -a missing_files=()
+    local -a other_files=()
+
+    for file in "${!NFTBAN_MODULE_INVENTORY[@]}"; do
+        total=$((total + 1))
+        local license
+        license="$(nftban_module_extract_license "$file")"
+
+        if [[ "$license" == "MPL-2.0" ]]; then
+            mpl_count=$((mpl_count + 1))
+            mpl_files+=("$file")
+        elif [[ "$license" =~ GPL ]]; then
+            gpl_count=$((gpl_count + 1))
+            gpl_files+=("$file")
+        elif [[ -z "$license" ]]; then
+            missing_count=$((missing_count + 1))
+            missing_files+=("$file")
+        else
+            other_count=$((other_count + 1))
+            other_files+=("$file")
+        fi
+    done
+
+    echo "Summary:"
+    echo "  Total Modules:      $total"
+    echo "  ${C_GREEN:-}✔ MPL-2.0 (correct):${C_RESET:-}   $mpl_count ($(( mpl_count * 100 / total ))%)"
+    echo "  ${C_RED:-}✖ GPL (wrong):${C_RESET:-}       $gpl_count"
+    echo "  ${C_YELLOW:-}⚠ Missing License:${C_RESET:-}  $missing_count"
+    [[ $other_count -gt 0 ]] && echo "  ${C_YELLOW:-}⚠ Other License:${C_RESET:-}    $other_count"
+    echo
+
+    if [[ $gpl_count -gt 0 ]]; then
+        echo "${C_RED:-}CRITICAL: Scripts with GPL license (should be MPL-2.0):${C_RESET:-}"
+        for file in "${gpl_files[@]}"; do
+            local license
+            license="$(nftban_module_extract_license "$file")"
+            printf "  ✖ %-60s License: %s\n" "$(basename "$file")" "$license"
+            echo "    Path: $file"
+        done
+        echo
+    fi
+
+    if [[ $missing_count -gt 0 ]]; then
+        echo "${C_YELLOW:-}WARNING: Scripts missing SPDX license:${C_RESET:-}"
+        for file in "${missing_files[@]}"; do
+            printf "  ⚠ %s\n" "$(basename "$file")"
+            echo "    Path: $file"
+        done
+        echo
+    fi
+
+    echo "Note: This is informational only. No files were modified."
+    echo "      Standard: All scripts should have SPDX-License-Identifier: MPL-2.0"
+    echo
+}
+
+nftban_module_check_author() {
+    # Check author attribution (INFORMATIONAL ONLY)
+    # Reports: Correct author vs wrong vs missing
+    # Does NOT fix anything
+
+    echo
+    echo "════════════════════════════════════════════════════════════════════════════════════"
+    printf "%s Author Attribution Report — %s %s\n" "${C_BOLD:-}" "$NFTBAN_MODULE_TIMESTAMP" "${C_RESET:-}"
+    echo "════════════════════════════════════════════════════════════════════════════════════"
+    echo
+
+    # Scan modules if not already done
+    if [[ ${#NFTBAN_MODULE_INVENTORY[@]} -eq 0 ]]; then
+        nftban_module_scan
+    fi
+
+    local total=0
+    local correct_count=0
+    local wrong_count=0
+    local missing_count=0
+
+    local -a correct_files=()
+    local -a wrong_files=()
+    local -a missing_files=()
+
+    for file in "${!NFTBAN_MODULE_INVENTORY[@]}"; do
+        total=$((total + 1))
+        local data="${NFTBAN_MODULE_INVENTORY[$file]}"
+        IFS='|' read -r name version module_type created depends owner homepage description <<< "$data"
+
+        if [[ "$owner" == *"Antonios Voulvoulis"* ]] || [[ "$owner" == *"Voulvoulis"* ]]; then
+            correct_count=$((correct_count + 1))
+            correct_files+=("$file")
+        elif [[ -n "$owner" ]]; then
+            wrong_count=$((wrong_count + 1))
+            wrong_files+=("$file|$owner")
+        else
+            missing_count=$((missing_count + 1))
+            missing_files+=("$file")
+        fi
+    done
+
+    echo "Summary:"
+    echo "  Total Modules:        $total"
+    echo "  ${C_GREEN:-}✔ Correct Author:${C_RESET:-}      $correct_count ($(( correct_count * 100 / total ))%)"
+    echo "  ${C_RED:-}✖ Wrong Author:${C_RESET:-}        $wrong_count"
+    echo "  ${C_YELLOW:-}⚠ Missing Author:${C_RESET:-}     $missing_count"
+    echo
+
+    if [[ $wrong_count -gt 0 ]]; then
+        echo "${C_RED:-}CRITICAL: Scripts with wrong author attribution:${C_RESET:-}"
+        for item in "${wrong_files[@]}"; do
+            IFS='|' read -r file owner <<< "$item"
+            printf "  ✖ %-60s Author: %s\n" "$(basename "$file")" "$owner"
+            echo "    Path: $file"
+        done
+        echo
+    fi
+
+    if [[ $missing_count -gt 0 ]]; then
+        echo "${C_YELLOW:-}WARNING: Scripts missing author attribution:${C_RESET:-}"
+        for file in "${missing_files[@]}"; do
+            printf "  ⚠ %s\n" "$(basename "$file")"
+            echo "    Path: $file"
+        done
+        echo
+    fi
+
+    echo "Note: This is informational only. No files were modified."
+    echo "      Standard: meta:owner=\"Antonios Voulvoulis <contact@nftban.com>\""
+    echo
+}
+
+nftban_module_analyze_dependencies() {
+    # Analyze module dependencies
+    # Shows: What each module depends on and reverse dependencies
+
+    echo
+    echo "════════════════════════════════════════════════════════════════════════════════════"
+    printf "%s Module Dependency Analysis — %s %s\n" "${C_BOLD:-}" "$NFTBAN_MODULE_TIMESTAMP" "${C_RESET:-}"
+    echo "════════════════════════════════════════════════════════════════════════════════════"
+    echo
+
+    # Scan modules if not already done
+    if [[ ${#NFTBAN_MODULE_INVENTORY[@]} -eq 0 ]]; then
+        nftban_module_scan
+    fi
+
+    local total=0
+    local with_deps=0
+    local without_deps=0
+
+    # Collect dependency stats
+    declare -A dep_count=()
+    
+    for file in "${!NFTBAN_MODULE_INVENTORY[@]}"; do
+        total=$((total + 1))
+        local data="${NFTBAN_MODULE_INVENTORY[$file]}"
+        IFS='|' read -r name version module_type created depends owner homepage description <<< "$data"
+
+        if [[ -n "$depends" ]]; then
+            with_deps=$((with_deps + 1))
+            # Count individual dependencies
+            IFS=',' read -ra DEPS <<< "$depends"
+            for dep in "${DEPS[@]}"; do
+                dep=$(echo "$dep" | xargs)  # trim whitespace
+                if [[ -n "${dep_count[$dep]:-}" ]]; then
+                    dep_count[$dep]=$((dep_count[$dep] + 1))
+                else
+                    dep_count[$dep]=1
+                fi
+            done
+        else
+            without_deps=$((without_deps + 1))
+        fi
+    done
+
+    echo "Summary:"
+    echo "  Total Modules:           $total"
+    echo "  Modules with Dependencies: $with_deps"
+    echo "  Modules without Dependencies: $without_deps"
+    echo
+
+    # Show most common dependencies
+    if [[ ${#dep_count[@]} -gt 0 ]]; then
+        echo "Most Common Dependencies:"
+        for dep in "${!dep_count[@]}"; do
+            printf "  %-20s (used by %d modules)\n" "$dep" "${dep_count[$dep]}"
+        done | sort -t'(' -k2 -rn | head -10
+        echo
+    fi
+
+    # Show modules grouped by dependencies
+    echo "Modules by Dependencies:"
+    echo
+
+    for file in "${!NFTBAN_MODULE_INVENTORY[@]}"; do
+        local data="${NFTBAN_MODULE_INVENTORY[$file]}"
+        IFS='|' read -r name version module_type created depends owner homepage description <<< "$data"
+
+        if [[ -n "$depends" ]]; then
+            printf "  ${C_BOLD:-}%-30s${C_RESET:-} → %s\n" "$name" "$depends"
+        fi
+    done | sort
+
+    echo
 }
 
 # =============================================================================
@@ -261,11 +578,16 @@ nftban_module_render_detailed() {
         local status
         status="$(nftban_module_check_enabled "$file")"
 
+        # Extract license
+        local license
+        license="$(nftban_module_extract_license "$file")"
+
         echo "Module: ${C_BOLD:-}$name${C_RESET:-}"
         echo "  Version:     $version"
         echo "  Type:        $module_type"
         echo "  Status:      $status"
         echo "  Created:     $created"
+        [[ -n "$license" ]] && echo "  License:     $license"
         echo "  Path:        $file"
         [[ -n "$depends" ]] && echo "  Depends:     $depends"
         [[ -n "$owner" ]] && echo "  Owner:       $owner"
@@ -274,10 +596,6 @@ nftban_module_render_detailed() {
         echo
     done
 }
-
-# =============================================================================
-# MAIN REPORT FUNCTION
-# =============================================================================
 
 # =============================================================================
 # HTML REPORT GENERATION
@@ -395,6 +713,10 @@ nftban_module_generate_html_report() {
     echo "$report_file"
 }
 
+# =============================================================================
+# MAIN REPORT FUNCTIONS
+# =============================================================================
+
 nftban_module_report_status() {
     # Main function to generate module inventory report
     # Called by CLI handler
@@ -495,6 +817,10 @@ nftban_module_report_json() {
         local status
         status="$(nftban_module_check_enabled "$file")"
 
+        # Extract license
+        local license
+        license="$(nftban_module_extract_license "$file")"
+
         # Add comma separator
         if [[ "$first" == "true" ]]; then
             first=false
@@ -512,6 +838,7 @@ nftban_module_report_json() {
         echo "      \"path\": \"$file\","
         echo "      \"depends\": \"$depends\","
         echo "      \"owner\": \"$owner\","
+        echo "      \"license\": \"$license\","
         echo "      \"description\": \"$description\""
         echo -n "    }"
     done
@@ -530,6 +857,6 @@ nftban_module_report_json() {
 # Module loaded notification (only in debug mode)
 if [[ "${NFTBAN_DEBUG_MODE:-false}" == "true" ]]; then
     if type -t nftban_module_loaded >/dev/null 2>&1; then
-        nftban_module_loaded "nftban_report_module" "1.0.0" "Module Report Core" "core" "bash,grep,sed"
+        nftban_module_loaded "nftban_report_module" "1.1.0" "Module Report Core" "core" "bash,grep,sed"
     fi
 fi

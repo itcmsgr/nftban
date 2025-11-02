@@ -4,24 +4,25 @@
 # NFTBan CLI - Module Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Handle module inventory CLI commands
+# Purpose: Handle module inventory CLI commands with validation
 #
 # meta:name=cmd_module
 # meta:type=cli
 # meta:header=Module CLI Command
-# meta:version=1.0.0
+# meta:version=1.1.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
 # **Description & Purpose**
-# meta:description=CLI interface for module inventory reporting
-# meta:input=Output format, mail options
-# meta:output=Module inventory reports (terminal, HTML, mail)
+# meta:description=CLI interface for module inventory and validation reporting
+# meta:input=Output format, mail options, validation flags
+# meta:output=Module inventory reports with validation (terminal, HTML, mail)
 #
 # **Inventory & Requirements**
 # meta:depends=bash,nftban_report_module.sh
 #
 # meta:created_date=2025-10-26
+# meta:contributors=Claude (Anthropic) - Testing and integration, ChatGPT (OpenAI) - Code review
 # =============================================================================
 
 # Strict mode
@@ -63,26 +64,196 @@ nftban_cmd_module() {
     local subcmd="${1:-status}"
     shift || true
 
+    # Parse flags for save/email
+    local save_to_file=""
+    local email_to=""
+    
+    # Check for --save and --email flags
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --save)
+                save_to_file="${2:-}"
+                shift 2 || shift
+                ;;
+            --email)
+                email_to="${2:-}"
+                shift 2 || shift
+                ;;
+            *)
+                break
+                ;;
+        esac
+    done
+
     case "$subcmd" in
         status|list|detailed|"")
             # Show module inventory (terminal output - default detailed)
             # "list" is backwards compatible alias for "status"
             export NFTBAN_MODULE_OUTPUT_FORMAT="table"
             local result=0
-            nftban_module_report_status || result=$?
+            
+            if [[ -n "$save_to_file" ]]; then
+                nftban_module_report_status > "$save_to_file"
+                result=$?
+                if [[ $result -eq 0 ]]; then
+                    echo "✓ Module report saved to: $save_to_file"
+                fi
+            else
+                nftban_module_report_status || result=$?
+            fi
+            
+            # Email if requested
+            if [[ -n "$email_to" && $result -eq 0 ]]; then
+                local report_file="${save_to_file:-/tmp/nftban_module_report_$(date +%Y%m%d_%H%M%S).txt}"
+                if [[ -z "$save_to_file" ]]; then
+                    nftban_module_report_status > "$report_file"
+                fi
+                nftban_mail_send "$report_file" "$email_to" && echo "✓ Report emailed to: $email_to"
+            fi
+            
             return $result
             ;;
 
         summary)
             # Show one-line summary
-            nftban_module_report_summary
-            return $?
+            local output
+            output=$(nftban_module_report_summary)
+            local result=$?
+            
+            if [[ -n "$save_to_file" ]]; then
+                echo "$output" > "$save_to_file"
+                echo "✓ Summary saved to: $save_to_file"
+            else
+                echo "$output"
+            fi
+            
+            if [[ -n "$email_to" ]]; then
+                local report_file="${save_to_file:-/tmp/nftban_module_summary_$(date +%Y%m%d_%H%M%S).txt}"
+                [[ -z "$save_to_file" ]] && echo "$output" > "$report_file"
+                nftban_mail_send "$report_file" "$email_to" && echo "✓ Summary emailed to: $email_to"
+            fi
+            
+            return $result
             ;;
 
         json)
             # Show JSON output
-            nftban_module_report_json
-            return $?
+            local result=0
+            
+            if [[ -n "$save_to_file" ]]; then
+                nftban_module_report_json > "$save_to_file"
+                result=$?
+                [[ $result -eq 0 ]] && echo "✓ JSON report saved to: $save_to_file"
+            else
+                nftban_module_report_json || result=$?
+            fi
+            
+            if [[ -n "$email_to" && $result -eq 0 ]]; then
+                local report_file="${save_to_file:-/tmp/nftban_module_report_$(date +%Y%m%d_%H%M%S).json}"
+                [[ -z "$save_to_file" ]] && nftban_module_report_json > "$report_file"
+                nftban_mail_send "$report_file" "$email_to" && echo "✓ JSON emailed to: $email_to"
+            fi
+            
+            return $result
+            ;;
+
+        validate)
+            # NEW: Validate module metadata (INFORMATIONAL ONLY)
+            echo "Running module metadata validation..."
+            echo "Note: This is informational only. No files will be modified."
+            echo
+            
+            local result=0
+            
+            if [[ -n "$save_to_file" ]]; then
+                nftban_module_validate_metadata > "$save_to_file"
+                result=$?
+                [[ $result -eq 0 ]] && echo "✓ Validation report saved to: $save_to_file"
+            else
+                nftban_module_validate_metadata || result=$?
+            fi
+            
+            if [[ -n "$email_to" && $result -eq 0 ]]; then
+                local report_file="${save_to_file:-/tmp/nftban_module_validation_$(date +%Y%m%d_%H%M%S).txt}"
+                [[ -z "$save_to_file" ]] && nftban_module_validate_metadata > "$report_file"
+                nftban_mail_send "$report_file" "$email_to" && echo "✓ Validation emailed to: $email_to"
+            fi
+            
+            return $result
+            ;;
+
+        license)
+            # NEW: Check license compliance (INFORMATIONAL ONLY)
+            echo "Running license compliance check..."
+            echo "Note: This is informational only. No files will be modified."
+            echo
+            
+            local result=0
+            
+            if [[ -n "$save_to_file" ]]; then
+                nftban_module_check_license > "$save_to_file"
+                result=$?
+                [[ $result -eq 0 ]] && echo "✓ License report saved to: $save_to_file"
+            else
+                nftban_module_check_license || result=$?
+            fi
+            
+            if [[ -n "$email_to" && $result -eq 0 ]]; then
+                local report_file="${save_to_file:-/tmp/nftban_module_license_$(date +%Y%m%d_%H%M%S).txt}"
+                [[ -z "$save_to_file" ]] && nftban_module_check_license > "$report_file"
+                nftban_mail_send "$report_file" "$email_to" && echo "✓ License report emailed to: $email_to"
+            fi
+            
+            return $result
+            ;;
+
+        author)
+            # NEW: Check author attribution (INFORMATIONAL ONLY)
+            echo "Running author attribution check..."
+            echo "Note: This is informational only. No files will be modified."
+            echo
+            
+            local result=0
+            
+            if [[ -n "$save_to_file" ]]; then
+                nftban_module_check_author > "$save_to_file"
+                result=$?
+                [[ $result -eq 0 ]] && echo "✓ Author report saved to: $save_to_file"
+            else
+                nftban_module_check_author || result=$?
+            fi
+            
+            if [[ -n "$email_to" && $result -eq 0 ]]; then
+                local report_file="${save_to_file:-/tmp/nftban_module_author_$(date +%Y%m%d_%H%M%S).txt}"
+                [[ -z "$save_to_file" ]] && nftban_module_check_author > "$report_file"
+                nftban_mail_send "$report_file" "$email_to" && echo "✓ Author report emailed to: $email_to"
+            fi
+            
+            return $result
+            ;;
+
+        depends)
+            # NEW: Analyze module dependencies
+            echo "Running dependency analysis..."
+            echo
+            
+            local result=0
+            
+            if [[ -n "$save_to_file" ]]; then
+                nftban_module_analyze_dependencies > "$save_to_file"
+                result=$?
+                [[ $result -eq 0 ]] && echo "✓ Dependency analysis saved to: $save_to_file"
+            else
+                nftban_module_analyze_dependencies || result=$?
+            fi
+            
+            if [[ -n "$email_to" && $result -eq 0 ]]; then
+                local report_file="${save_to_file:-/tmp/nftban_module_depends_$(date +%Y%m%d_%H%M%S).txt}"
+                [[ -z "$save_to_file" ]] && nftban_module_analyze_dependencies > "$report_file"
+                nftban_mail_send "$report_file" "$email_to" && echo "✓ Dependency analysis emailed to: $email_to"
+            fi
+            
+            return $result
             ;;
 
         html-report)
@@ -93,6 +264,19 @@ nftban_cmd_module() {
             if [[ $? -eq 0 && -f "$report_file" ]]; then
                 echo "✓ HTML report generated successfully:"
                 echo "  $report_file"
+                
+                # If --save specified, copy to that location
+                if [[ -n "$save_to_file" ]]; then
+                    cp "$report_file" "$save_to_file"
+                    echo "✓ Also saved to: $save_to_file"
+                    report_file="$save_to_file"
+                fi
+                
+                # If --email specified, send it
+                if [[ -n "$email_to" ]]; then
+                    nftban_mail_send "$report_file" "$email_to" && echo "✓ HTML report emailed to: $email_to"
+                fi
+                
                 echo
                 echo "View with: firefox '$report_file' (or your preferred browser)"
                 return 0
@@ -113,12 +297,16 @@ nftban_cmd_module() {
                 recipient="$report_path"
                 report_path=""
             fi
+            
+            # --email flag takes precedence
+            [[ -n "$email_to" ]] && recipient="$email_to"
 
             if [[ -z "$recipient" ]]; then
                 echo "ERROR: No recipient specified" >&2
                 echo "Set NFTBAN_MAIL_REPORT_RECIPIENT in config or provide recipient as argument" >&2
                 echo "Usage: nftban module mail-report [path] [recipient]" >&2
                 echo "   or: nftban module mail-report recipient@example.com" >&2
+                echo "   or: nftban module mail-report --email recipient@example.com" >&2
                 return 1
             fi
 
@@ -145,6 +333,10 @@ nftban_cmd_module() {
                 report_file=$(nftban_module_generate_html_report)
                 if [[ $? -eq 0 && -f "$report_file" ]]; then
                     echo "✓ Report generated: $report_file"
+                    
+                    # Save if requested
+                    [[ -n "$save_to_file" ]] && cp "$report_file" "$save_to_file" && echo "✓ Saved to: $save_to_file"
+                    
                     echo "Sending via email..."
                     nftban_mail_send "$report_file" "$recipient"
                     return $?
@@ -162,19 +354,44 @@ nftban_cmd_module() {
             nftban_banner
             echo ""
             echo "Usage:"
-            echo "  nftban module [detailed]         # Show module inventory (default)"
-            echo "  nftban module summary            # Show one-line summary"
-            echo "  nftban module json               # Show JSON output"
-            echo "  nftban module html-report        # Generate HTML report"
-            echo "  nftban module mail-report [path] [recipient]  # Mail report"
-            echo "  nftban module help               # Show this help"
+            echo "  nftban module [detailed] [--save FILE] [--email ADDR]  # Show inventory"
+            echo "  nftban module summary                                   # One-line summary"
+            echo "  nftban module json [--save FILE]                       # JSON output"
+            echo "  nftban module validate [--save FILE] [--email ADDR]    # Metadata validation"
+            echo "  nftban module license [--save FILE] [--email ADDR]     # License compliance"
+            echo "  nftban module author [--save FILE] [--email ADDR]      # Author attribution"
+            echo "  nftban module depends [--save FILE] [--email ADDR]     # Dependency analysis"
+            echo "  nftban module html-report [--save FILE] [--email ADDR] # HTML report"
+            echo "  nftban module mail-report [path] [recipient]           # Mail report"
+            echo "  nftban module help                                      # Show this help"
+            echo ""
+            echo "NEW Validation Commands (v1.1.0):"
+            echo "  validate   - Check metadata completeness (name, version, type, owner, license)"
+            echo "  license    - Check license compliance (MPL-2.0 vs GPL vs missing)"
+            echo "  author     - Check author attribution (Antonios Voulvoulis)"
+            echo "  depends    - Analyze module dependencies"
+            echo ""
+            echo "NEW Flags:"
+            echo "  --save FILE     Save output to specified file"
+            echo "  --email ADDR    Email report to specified address"
             echo ""
             echo "Examples:"
-            echo "  nftban module                    # Show all modules (FHS-style table)"
-            echo "  nftban module summary            # Output: 'Modules: 23 OK, 0 errors'"
-            echo "  nftban module json | jq .        # JSON output for parsing"
-            echo "  nftban module mail-report admin@example.com"
-            echo "  nftban module mail-report /var/lib/nftban/reports/module_report.html admin@example.com"
+            echo "  nftban module                          # Show all modules (table)"
+            echo "  nftban module validate                 # Check metadata compliance"
+            echo "  nftban module license                  # Find GPL scripts (should be MPL-2.0)"
+            echo "  nftban module author                   # Find wrong/missing authors"
+            echo "  nftban module depends                  # Analyze dependencies"
+            echo ""
+            echo "  # Save reports to files:"
+            echo "  nftban module validate --save /tmp/validation.txt"
+            echo "  nftban module license --save /var/log/nftban/license_check.txt"
+            echo ""
+            echo "  # Email reports:"
+            echo "  nftban module validate --email admin@example.com"
+            echo "  nftban module html-report --email security@example.com"
+            echo ""
+            echo "  # Combined save and email:"
+            echo "  nftban module author --save /tmp/authors.txt --email dev@example.com"
             echo ""
             echo "Output Columns:"
             echo "  NAME     - Module name (from meta:name)"
@@ -184,20 +401,16 @@ nftban_cmd_module() {
             echo "  CREATED  - Creation date (from meta:created_date)"
             echo "  PATH     - File path (relative to /usr/lib/nftban)"
             echo ""
-            echo "Detailed Mode Shows:"
-            echo "  - All meta tags for each module"
-            echo "  - Dependencies (meta:depends)"
-            echo "  - Owner information (meta:owner)"
-            echo "  - Homepage (meta:homepage)"
-            echo "  - Description (meta:description)"
-            echo ""
-            echo "Status Detection:"
-            echo "  ✔ ENABLED  - Module is in core/ or cli/ directory"
-            echo "  ✖ DISABLED - Module is not actively loaded"
+            echo "Validation Reports (INFORMATIONAL ONLY):"
+            echo "  ✔ All validation commands are READ-ONLY"
+            echo "  ✔ No files are modified"
+            echo "  ✔ Reports show compliance issues for review"
+            echo "  ✔ Standard: MPL-2.0 license, Antonios Voulvoulis author"
             echo ""
             echo "Notes:"
             echo "  - Scans all .sh files in /usr/lib/nftban/"
             echo "  - Reads meta tags from file headers"
+            echo "  - Validation is informational only (no automatic fixes)"
             echo "  - No special privileges required"
             echo ""
             return 0
