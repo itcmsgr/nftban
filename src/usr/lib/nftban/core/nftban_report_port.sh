@@ -175,6 +175,11 @@ nftban_port_gather_nft_rules() {
     # Parse sets and expand them to individual ports
     for rule in "${set_rules[@]}"; do
         IFS='|' read -r proto set_name chain action <<< "$rule"
+        # Normalize chain name: input_main→input, output_main→output
+        local norm_chain="$chain"
+        [[ "$chain" =~ input ]] && norm_chain="input"
+        [[ "$chain" =~ output ]] && norm_chain="output"
+
         # Get set contents
         local set_contents
         set_contents=$(nft list set inet nftban_main "$set_name" 2>/dev/null | grep -o 'elements = {[^}]*}' | sed 's/elements = {//; s/}//' || true)
@@ -182,7 +187,7 @@ nftban_port_gather_nft_rules() {
             # Parse ports from set (handles: 22, 80, 443, etc.)
             local port
             for port in $(echo "$set_contents" | tr ',' '\n' | grep -oE '[0-9]+'); do
-                NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_${chain}"]="$action"
+                NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_${norm_chain}"]="$action"
                 NFTBAN_PORT_SEEN["${port}_${proto}"]=1
             done
         fi
