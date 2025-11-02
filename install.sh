@@ -259,8 +259,11 @@ if command -v pkaction >/dev/null 2>&1; then
     install -d -m 0755 /usr/share/polkit-1/rules.d
     install -m 0644 ../packaging/polkit-1/rules.d/60-nftban-cli.rules \
         /usr/share/polkit-1/rules.d/60-nftban-cli.rules
+    install -m 0644 ../packaging/polkit-1/rules.d/61-nftban-system.rules \
+        /usr/share/polkit-1/rules.d/61-nftban-system.rules
     echo "✓ Polkit rules installed"
     echo "  Members of nftban-cli group can now manage nftables/fail2ban services"
+    echo "  nftban system user can now execute nft commands"
 else
     echo "⚠  Polkit not found - nftban-cli group will require sudo for service management"
 fi
