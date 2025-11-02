@@ -204,11 +204,11 @@ if command -v systemctl >/dev/null 2>&1; then
 
     # Install sysusers.d (creates user on boot)
     install -d -m 0755 /usr/lib/sysusers.d
-    install -m 0644 packaging/sysusers.d/nftban.conf /usr/lib/sysusers.d/nftban.conf
+    install -m 0644 ../packaging/sysusers.d/nftban.conf /usr/lib/sysusers.d/nftban.conf
 
     # Install tmpfiles.d (creates /run/nftban on boot)
     install -d -m 0755 /usr/lib/tmpfiles.d
-    install -m 0644 packaging/tmpfiles.d/nftban.conf /usr/lib/tmpfiles.d/nftban.conf
+    install -m 0644 ../packaging/tmpfiles.d/nftban.conf /usr/lib/tmpfiles.d/nftban.conf
 
     # Reload systemd
     systemctl daemon-reload
@@ -257,7 +257,7 @@ fi
 if command -v pkaction >/dev/null 2>&1; then
     echo "Installing Polkit authorization rules..."
     install -d -m 0755 /usr/share/polkit-1/rules.d
-    install -m 0644 packaging/polkit-1/rules.d/60-nftban-cli.rules \
+    install -m 0644 ../packaging/polkit-1/rules.d/60-nftban-cli.rules \
         /usr/share/polkit-1/rules.d/60-nftban-cli.rules
     echo "✓ Polkit rules installed"
     echo "  Members of nftban-cli group can now manage nftables/fail2ban services"
