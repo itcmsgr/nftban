@@ -21,6 +21,7 @@
 # meta:depends=nft,bash
 #
 # meta:created_date=2025-11-02
+# meta:contributors=ChatGPT (OpenAI) - Architecture and implementation guidance
 # =============================================================================
 
 # Enhanced strict mode
