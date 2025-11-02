@@ -319,8 +319,8 @@ nftban_permissions_check() {
         local mode
         mode="$(stat -c '%a' "$PERMS_ETC" 2>/dev/null || stat -f '%Lp' "$PERMS_ETC")"
 
-        if [[ "$owner" != "root:root" ]]; then
-            perms_warn "$PERMS_ETC has wrong ownership: $owner (expected: root:root)"
+        if [[ "$owner" != "root:nftban" ]]; then
+            perms_warn "$PERMS_ETC has wrong ownership: $owner (expected: root:nftban)"
             ((issues++))
         fi
 
