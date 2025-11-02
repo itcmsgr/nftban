@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: Copyright (C) 2024–2026 NFTBAN Project <contact@nftban.com>
 # =============================================================================
-# NFTBan - Secure Mode Directive (Auto-Apply Security)
+# NFTBan v0.10.0 - Secure Mode Directive (Auto-Apply Security)
 # =============================================================================
+# SPDX-License-Identifier: MPL-2.0
 # Purpose: Generic security wrapper - source this to enable automatic security
-# Author: NFTBAN Project <contact@nftban.com>
-# License: GPL-3.0-or-later
+#
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
 #
 # USAGE IN ANY SCRIPT:
 #   #!/usr/bin/env bash

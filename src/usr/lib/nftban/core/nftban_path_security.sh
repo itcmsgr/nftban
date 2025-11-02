@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# SPDX-License-Identifier: GPL-3.0-or-later
-# SPDX-FileCopyrightText: Copyright (C) 2024–2026 NFTBAN Project <contact@nftban.com>
 # =============================================================================
-# NFTBan - Path Validation & Write Security Module
+# NFTBan v0.10.0 - Path Validation & Write Security Module
 # =============================================================================
+# SPDX-License-Identifier: MPL-2.0
 # Purpose: Secure path validation for file writes (reports, exports, logs)
-# Author: NFTBAN Project <contact@nftban.com>
-# License: GPL-3.0-or-later
+#
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
 #
 # SECURITY CONCEPT:
 # - Only allow writes to /var/lib/nftban/* by default (FHS compliant)
