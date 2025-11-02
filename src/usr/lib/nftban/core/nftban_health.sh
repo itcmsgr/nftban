@@ -577,6 +577,51 @@ nftban_health_check_polkit() {
     return $status
 }
 
+nftban_health_check_bash_completion() {
+    # Check bash-completion package installation
+    # Returns: 0=OK, 1=Warning, 2=Error
+
+    local status=$HEALTH_OK
+    local completion_issues=()
+
+    # Check if bash-completion is installed
+    # Method 1: Check if main bash_completion script exists
+    if [[ ! -f /usr/share/bash-completion/bash_completion ]] && \
+       [[ ! -f /etc/bash_completion ]]; then
+        completion_issues+=("bash-completion package not installed")
+        completion_issues+=("Tab completion for nftban command will not work")
+        completion_issues+=("FIX: Install bash-completion package (dnf/apt/yum install bash-completion)")
+        status=$HEALTH_WARNING
+    else
+        # Check if NFTBAN completion file is installed
+        local nftban_completion="/usr/share/bash-completion/completions/nftban"
+        if [[ ! -f "$nftban_completion" ]]; then
+            completion_issues+=("NFTBAN bash completion file missing at $nftban_completion")
+            completion_issues+=("FIX: Re-run install.sh or manually copy from src/usr/share/nftban/completions/nftban.bash")
+            status=$HEALTH_ERROR
+        else
+            # Verify file is readable
+            if [[ ! -r "$nftban_completion" ]]; then
+                completion_issues+=("NFTBAN completion file exists but is not readable")
+                status=$HEALTH_WARNING
+            fi
+        fi
+    fi
+
+    # Store results
+    if [[ ${#completion_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["bash_completion"]="${completion_issues[*]}"
+        if [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("Bash completion issues: ${completion_issues[*]}")
+        else
+            NFTBAN_HEALTH_WARNINGS+=("Bash completion issues: ${completion_issues[*]}")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["bash_completion"]=$status
+    return $status
+}
+
 # =============================================================================
 # COMPREHENSIVE HEALTH CHECK
 # =============================================================================
@@ -694,6 +739,11 @@ nftban_health_check_all() {
     # Polkit check (CRITICAL security check)
     check_result=0
     nftban_health_check_polkit || check_result=$?
+    [[ $check_result -gt $overall_status ]] && overall_status=$check_result
+
+    # Bash completion check (CLI usability check)
+    check_result=0
+    nftban_health_check_bash_completion || check_result=$?
     [[ $check_result -gt $overall_status ]] && overall_status=$check_result
 
     # Config check (keep for now - no dedicated module)
