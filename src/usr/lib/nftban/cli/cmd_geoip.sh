@@ -4,9 +4,15 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for GO GeoIP lookups
-# Location: /usr/lib/nftban/cli/cmd_geoip.sh
+#
+# meta:name=cmd_geoip
+# meta:type=cli
+# meta:header=GeoIP CLI Handler
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
 # Enhanced strict mode

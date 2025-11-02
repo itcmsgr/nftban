@@ -5,11 +5,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Whitelist security hardening
 #
-# SECURITY: This module implements strict whitelist protection:
-# - Root-only write permissions
-# - auditd monitoring
-# - Interactive confirmation for whitelist adds
-# - Audit logging
+# meta:name=nftban_security
+# meta:type=core
+# meta:header=Security Hardening Module
+# meta:version=0.10.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# **Description & Purpose**
+# meta:description=Whitelist security hardening with auditd monitoring and interactive confirmation
+# meta:input=Whitelist directories and configuration files
+# meta:output=Hardened permissions and audit rules
+#
+# **Inventory & Requirements**
+# meta:depends=auditctl,augenrules,chown,chmod
+#
+# meta:created_date=2025-10-28
+# =============================================================================
 
 set -Eeuo pipefail
 IFS=$'\n\t'

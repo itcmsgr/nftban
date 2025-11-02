@@ -5,10 +5,25 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Detects and validates critical command paths across different OS distributions
 #
-# This module ensures nft, fail2ban-client, and other critical commands
-# are found regardless of OS (RHEL, Debian, Ubuntu, etc.)
+# meta:name=path_validator
+# meta:type=tool
+# meta:header=Path Validator Module
+# meta:version=0.10.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# **Description & Purpose**
+# meta:description=Cross-platform command path detection and validation for critical system utilities
+# meta:input=Command names to locate
+# meta:output=Validated absolute paths to system commands
+#
+# **Inventory & Requirements**
+# meta:depends=bash,which
+#
+# meta:created_date=2025-10-28
+# =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # ═══════════════════════════════════════════════════════════════════════════
 # PATH DETECTION AND VALIDATION

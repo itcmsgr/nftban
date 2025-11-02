@@ -5,8 +5,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Atomic nftables reload with table swap
 #
-# SECURITY: This module implements atomic table swap to prevent
-# firewall downtime during reload. Uses backup/rollback mechanism.
+# meta:name=nftban_nftables
+# meta:type=core
+# meta:header=Atomic Nftables Reload
+# meta:version=0.10.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# **Description & Purpose**
+# meta:description=Atomic nftables reload with table swap to prevent firewall downtime
+# meta:input=Nftables ruleset files
+# meta:output=Atomic reload with backup and rollback capability
+#
+# **Inventory & Requirements**
+# meta:depends=nft,flock
+#
+# meta:created_date=2025-10-28
+# =============================================================================
 
 set -Eeuo pipefail
 IFS=$'\n\t'

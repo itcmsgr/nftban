@@ -4,11 +4,23 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Wrapper for nftban-geoip GO binary
-# Location: /usr/lib/nftban/core/nftban_geoip_go.sh
+#
+# meta:name=nftban_geoip_go
+# meta:type=core
+# meta:header=GO GeoIP Wrapper
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
-# nftban — Simplifying Linux Firewall Management
-# Fast microsecond GeoIP lookups using GO binary + MaxMind GeoLite2
+#
+# **Description & Purpose**
+# meta:description=Fast microsecond GeoIP lookups using GO binary with MaxMind GeoLite2
+# meta:input=IP addresses for geolocation lookup
+# meta:output=Country codes and geographic information
+#
+# **Inventory & Requirements**
+# meta:depends=nftban-geoip,GeoLite2-Country.mmdb
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
 # Enhanced strict mode

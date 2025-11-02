@@ -1,20 +1,26 @@
 #!/usr/bin/env bash
-
 # =============================================================================
-# NFTBan FHS Specification - Single Source of Truth
+# NFTBan v0.10.0 - FHS Specification
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Canonical FHS directory specification for NFTBan
-# Location: /usr/lib/nftban/core/nftban_fhs_spec.sh
+#
+# meta:name=nftban_fhs_spec
+# meta:type=core
+# meta:header=FHS Specification
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
-# =============================================================================
 #
-# **IMPORTANT: This is the ONLY place where FHS paths are defined!**
+# **Description & Purpose**
+# meta:description=Single source of truth for FHS directory specifications
+# meta:input=None (defines constants)
+# meta:output=FHS path constants and validation functions
 #
-# All other modules (health, report_fhs, install scripts, etc.) MUST source
-# this file to get FHS specifications. Never duplicate these definitions!
+# **Inventory & Requirements**
+# meta:depends=bash
 #
+# meta:created_date=2025-10-28
 # =============================================================================
 
 # Strict mode

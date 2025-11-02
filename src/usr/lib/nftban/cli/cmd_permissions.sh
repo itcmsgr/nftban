@@ -4,17 +4,23 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for permission management and auditing
-# Location: /usr/lib/nftban/cli/cmd_permissions.sh
 #
-# **SECURITY COMMAND**
-# This command allows administrators to:
-# - Check current permissions
-# - Enforce secure permissions
-# - Audit permission changes
-#
+# meta:name=cmd_permissions
+# meta:type=cli
+# meta:header=Permissions CLI Handler
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
-# meta:source=ChatGPT Security Review 2025-10-30
+#
+# **Description & Purpose**
+# meta:description=CLI interface for permission management and auditing
+# meta:input=Command line arguments for permission operations
+# meta:output=Permission status, audit results, and enforcement reports
+#
+# **Inventory & Requirements**
+# meta:depends=nftban_permissions.sh
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
 # Enhanced strict mode

@@ -4,10 +4,23 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for report generation and automated scheduling
-# Location: /usr/lib/nftban/cli/cmd_report.sh
+#
+# meta:name=cmd_report
+# meta:type=cli
+# meta:header=Report Generation CLI Handler
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
-# nftban — Simplifying Linux Firewall Management
+#
+# **Description & Purpose**
+# meta:description=CLI interface for report generation and automated scheduling
+# meta:input=Report type, format, and scheduling parameters
+# meta:output=Generated reports in text, JSON, or HTML format
+#
+# **Inventory & Requirements**
+# meta:depends=nftban_stats.sh,nftban_report_engine.sh
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
 # Enhanced strict mode

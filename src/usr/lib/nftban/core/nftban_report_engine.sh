@@ -5,23 +5,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Unified reporting engine
 #
-# Description:
-#   Centralized report generation system that orchestrates existing report
-#   modules (health, module, fhs, services, stats) and outputs in multiple
-#   formats (text, JSON, HTML) to multiple destinations (terminal, file, email).
+# meta:name=nftban_report_engine
+# meta:type=core
+# meta:header=Unified Reporting Engine
+# meta:version=0.10.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
 #
-# Usage:
-#   source /usr/lib/nftban/core/nftban_report_engine.sh
-#   nftban_report_generate "health" "text" "" ""
+# **Description & Purpose**
+# meta:description=Centralized report generation system with multiple formats and destinations
+# meta:input=Report type, format selection, and destination parameters
+# meta:output=Reports in text, JSON, or HTML format to terminal, file, or email
 #
-# Functions:
-#   nftban_report_init()              - Initialize report engine
-#   nftban_report_generate()          - Main report generator
-#   nftban_report_collect_*()         - Data collection functions
-#   nftban_report_render_*()          - Format renderers
-#   nftban_report_save_file()         - File output
-#   nftban_report_send_email()        - Email output
+# **Inventory & Requirements**
+# meta:depends=nftban_health.sh,nftban_stats.sh,nftban_fhs_spec.sh
 #
+# meta:created_date=2025-10-28
+# =============================================================================
 
 set -Eeuo pipefail
 

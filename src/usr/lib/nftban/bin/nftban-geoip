@@ -1,16 +1,25 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan Go Binary Wrapper - nftban-geoip
+# NFTBan v0.10.0 - Go Binary Wrapper (nftban-geoip)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Smart wrapper that auto-execs real Go binary if available
 #
-# Architecture:
+# meta:name=nftban-geoip
+# meta:type=tool
+# meta:header=NFTBan GeoIP Lookup (Go Binary Wrapper)
+# meta:version=0.10.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# **Architecture:**
 # - Source installs: This wrapper runs (slower Bash fallback)
 # - RPM/DEB packages: Real Go binary in .real/ directory (fast)
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 REAL="/usr/lib/nftban/bin/.real/nftban-geoip"
 

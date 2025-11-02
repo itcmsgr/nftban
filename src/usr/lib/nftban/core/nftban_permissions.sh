@@ -4,22 +4,23 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Enforce secure ownership and permissions on critical paths
-# Location: /usr/lib/nftban/core/nftban_permissions.sh
 #
-# **CRITICAL SECURITY MODULE**
-# This module enforces strict permissions on NFTBan directories and files
-# to prevent unauthorized access and tampering.
-#
-# **Security Model:**
-# - /etc/nftban/* → root:nftban, 0750/0640 (readable by daemon via group)
-# - /usr/sbin/nftban* → root:root, 0755 (public CLI access)
-# - /usr/lib/nftban/* → root:root, 0755/0644 (immutable system code)
-# - /var/lib/nftban/* → nftban:nftban, 0750 (mutable state data)
-# - /var/log/nftban/* → nftban:nftban, 0750 (log files)
-#
+# meta:name=nftban_permissions
+# meta:type=core
+# meta:header=Permission Hardening Module
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
-# meta:source=ChatGPT Security Review 2025-10-30
+#
+# **Description & Purpose**
+# meta:description=Enforces strict permissions on NFTBan directories and files to prevent unauthorized access
+# meta:input=System paths and current permission states
+# meta:output=Enforced secure permissions and ownership
+#
+# **Inventory & Requirements**
+# meta:depends=bash,chmod,chown
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
 # Enhanced strict mode

@@ -4,11 +4,23 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: System health checks and diagnostics
-# Location: /usr/lib/nftban/core/nftban_health.sh
+#
+# meta:name=nftban_health
+# meta:type=core
+# meta:header=Health Check System
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
-# nftban — Simplifying Linux Firewall Management
-# Comprehensive system health verification and auto-fix
+#
+# **Description & Purpose**
+# meta:description=Comprehensive system health verification and auto-fix capabilities
+# meta:input=System state and configuration files
+# meta:output=Health status reports and automated fixes
+#
+# **Inventory & Requirements**
+# meta:depends=nftban_fhs_spec.sh,nft,systemctl
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
 # Enhanced strict mode

@@ -4,11 +4,23 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Login monitoring and alerting
-# Location: /usr/lib/nftban/core/nftban_login_alert.sh
+#
+# meta:name=nftban_login_alert
+# meta:type=core
+# meta:header=Login Alert Module
+# meta:version=0.10.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
-# nftban — Simplifying Linux Firewall Management
-# Monitors and alerts on system logins with GeoIP enrichment
+#
+# **Description & Purpose**
+# meta:description=Monitors and alerts on system logins with GeoIP enrichment
+# meta:input=System login events and user sessions
+# meta:output=Login alerts and notifications
+#
+# **Inventory & Requirements**
+# meta:depends=nftban_geoip_go.sh,last,journalctl
+#
+# meta:created_date=2025-10-28
 # =============================================================================
 
 # Enhanced strict mode
