@@ -32,6 +32,11 @@ backup_ruleset() {
   # Full kernel ruleset snapshot (human-readable + restoreable)
   ${NFTBIN} list ruleset > "$out"
   ln -sf "ruleset-${ts}.nft" "${BACKUP_DIR}/backup-latest.nft"
+
+  # Retention policy: keep last 10 snapshots
+  # shellcheck disable=SC2012
+  ls -t "${BACKUP_DIR}"/ruleset-*.nft 2>/dev/null | tail -n +11 | xargs -r rm -f
+
   echo "$out"
 }
 
