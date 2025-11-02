@@ -252,7 +252,21 @@ if [ -d /usr/share/fish/vendor_completions.d ]; then
 fi
 
 # =============================================================================
-# 8. SELINUX RELABELING (if present)
+# 8. POLKIT INTEGRATION
+# =============================================================================
+if command -v pkaction >/dev/null 2>&1; then
+    echo "Installing Polkit authorization rules..."
+    install -d -m 0755 /usr/share/polkit-1/rules.d
+    install -m 0644 packaging/polkit-1/rules.d/60-nftban-cli.rules \
+        /usr/share/polkit-1/rules.d/60-nftban-cli.rules
+    echo "✓ Polkit rules installed"
+    echo "  Members of nftban-cli group can now manage nftables/fail2ban services"
+else
+    echo "⚠  Polkit not found - nftban-cli group will require sudo for service management"
+fi
+
+# =============================================================================
+# 9. SELINUX RELABELING (if present)
 # =============================================================================
 if command -v restorecon >/dev/null 2>&1; then
     echo "Relabeling SELinux contexts..."

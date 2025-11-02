@@ -51,12 +51,12 @@ if type -t nftban_render_banner >/dev/null 2>&1; then
     # nftban_output.sh loaded, use its colors
     NFTBAN_PORT_SYM_OK="✔"
     NFTBAN_PORT_SYM_KO="✖"
-    NFTBAN_PORT_SYM_QUEST="?"
+    NFTBAN_PORT_SYM_QUEST="−"
 else
     # Fallback colors
     NFTBAN_PORT_SYM_OK="✔"
     NFTBAN_PORT_SYM_KO="✖"
-    NFTBAN_PORT_SYM_QUEST="?"
+    NFTBAN_PORT_SYM_QUEST="−"
     C_RESET="\e[0m"
     C_RED="\e[31m"
     C_GREEN="\e[32m"
