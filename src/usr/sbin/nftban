@@ -45,11 +45,20 @@ if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
 fi
 
 # Load module configs (conf.d/*.conf) in alphabetical order
+# After each .conf file, load corresponding .local override if exists
 if [[ -d "${NFTBAN_CONFIG_DIR}/conf.d" ]]; then
     for conf_file in "${NFTBAN_CONFIG_DIR}"/conf.d/*.conf; do
         if [[ -f "$conf_file" ]]; then
+            # Load main config file
             # shellcheck source=/dev/null
             source "$conf_file"
+
+            # Load .local override for this specific config (if exists)
+            local_override="${conf_file}.local"
+            if [[ -f "$local_override" ]]; then
+                # shellcheck source=/dev/null
+                source "$local_override"
+            fi
         fi
     done
 fi

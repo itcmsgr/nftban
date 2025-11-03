@@ -1,0 +1,50 @@
+# =============================================================================
+# NFTBan v0.30.0 - Health Check Configuration Overrides
+# =============================================================================
+# Example: /etc/nftban/conf.d/health.conf.local
+#
+# This file overrides settings from health.conf
+# Safe to edit - will be preserved during upgrades
+# =============================================================================
+
+# Example 1: Conservative Production Thresholds
+# ----------------------------------------------
+# NFTBAN_DISK_WARN_THRESHOLD=80
+# NFTBAN_DISK_CRIT_THRESHOLD=90
+# NFTBAN_RAM_WARN_THRESHOLD=85
+# NFTBAN_RAM_CRIT_THRESHOLD=93
+# NFTBAN_CPU_WARN_THRESHOLD=75
+# NFTBAN_CPU_CRIT_THRESHOLD=90
+# NFTBAN_ALERT_THROTTLE_SECONDS=7200  # 2 hours
+
+# Example 2: Relaxed Development Thresholds
+# ------------------------------------------
+# NFTBAN_DISK_WARN_THRESHOLD=90
+# NFTBAN_DISK_CRIT_THRESHOLD=98
+# NFTBAN_RAM_WARN_THRESHOLD=93
+# NFTBAN_RAM_CRIT_THRESHOLD=98
+# NFTBAN_CPU_WARN_THRESHOLD=85
+# NFTBAN_CPU_CRIT_THRESHOLD=98
+# NFTBAN_ALERT_THROTTLE_SECONDS=1800  # 30 minutes
+
+# Example 3: Reduce Alert Frequency
+# ----------------------------------
+# NFTBAN_ALERT_THROTTLE_SECONDS=10800  # 3 hours
+# NFTBAN_ALERT_MAX_PER_DAY=8           # Max 8 alerts/day
+
+# =============================================================================
+# USAGE:
+# =============================================================================
+#
+# 1. Copy this file to /etc/nftban/conf.d/health.conf.local
+#    cp health.conf.local.example /etc/nftban/conf.d/health.conf.local
+#
+# 2. Uncomment and modify the settings you want to override
+#    vim /etc/nftban/conf.d/health.conf.local
+#
+# 3. Test your changes
+#    nftban health check
+#
+# 4. Your .local file will be preserved during upgrades
+#
+# =============================================================================
