@@ -126,6 +126,7 @@ install -d -m 0700 %{buildroot}/etc/nftban/secrets.d
 install -m 0640 src/etc/nftban/nftban.conf %{buildroot}/etc/nftban/
 install -m 0640 src/etc/nftban/baseline.nft %{buildroot}/etc/nftban/
 install -m 0640 src/etc/nftban/conf.d/*.conf %{buildroot}/etc/nftban/conf.d/
+install -m 0640 src/etc/nftban/conf.d/health.conf %{buildroot}/etc/nftban/conf.d/
 install -m 0640 src/etc/nftban/feeds.d/.gitkeep %{buildroot}/etc/nftban/feeds.d/
 install -m 0640 src/etc/nftban/rules.d/.gitkeep %{buildroot}/etc/nftban/rules.d/
 install -m 0644 src/etc/nftban/secrets.d/.gitkeep %{buildroot}/etc/nftban/secrets.d/

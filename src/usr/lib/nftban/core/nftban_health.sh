@@ -357,6 +357,216 @@ nftban_health_check_modules() {
 }
 
 # =============================================================================
+# ALERT THROTTLING HELPER
+# =============================================================================
+
+nftban_health_should_alert() {
+    # Check if we should send an alert for a specific issue
+    # Args: $1 = alert_key (unique identifier for this alert type)
+    # Returns: 0 = should alert, 1 = throttled (too soon)
+
+    local alert_key="$1"
+    local throttle_seconds="${NFTBAN_ALERT_THROTTLE_SECONDS:-3600}"
+    local state_file="${NFTBAN_ALERT_STATE_FILE:-/var/lib/nftban/state/health_alerts.state}"
+    local state_dir
+    state_dir=$(dirname "$state_file")
+
+    # Create state directory if it doesn't exist
+    if [[ ! -d "$state_dir" ]]; then
+        mkdir -p "$state_dir" 2>/dev/null || return 0
+    fi
+
+    # Create state file if it doesn't exist
+    if [[ ! -f "$state_file" ]]; then
+        touch "$state_file" 2>/dev/null || return 0
+    fi
+
+    local current_time
+    current_time=$(date +%s)
+
+    # Check last alert time for this key
+    local last_alert_time
+    last_alert_time=$(grep "^${alert_key}:" "$state_file" 2>/dev/null | cut -d: -f2)
+
+    if [[ -n "$last_alert_time" ]]; then
+        local time_since_last_alert
+        time_since_last_alert=$((current_time - last_alert_time))
+
+        if [[ $time_since_last_alert -lt $throttle_seconds ]]; then
+            # Too soon, throttle this alert
+            return 1
+        fi
+    fi
+
+    # Update state file with current time
+    # Remove old entry and add new one
+    grep -v "^${alert_key}:" "$state_file" > "${state_file}.tmp" 2>/dev/null || true
+    echo "${alert_key}:${current_time}" >> "${state_file}.tmp"
+    mv "${state_file}.tmp" "$state_file" 2>/dev/null || true
+
+    # Clean up old entries (older than 24 hours)
+    local cutoff_time
+    cutoff_time=$((current_time - 86400))
+    awk -F: -v cutoff="$cutoff_time" '$2 >= cutoff' "$state_file" > "${state_file}.tmp" 2>/dev/null || true
+    mv "${state_file}.tmp" "$state_file" 2>/dev/null || true
+
+    # Should send alert
+    return 0
+}
+
+# =============================================================================
+# SYSTEM RESOURCE CHECKS (CPU, RAM, DISK)
+# =============================================================================
+
+nftban_health_check_resources() {
+    # Check system resources (CPU, RAM, disk usage)
+    # Returns: 0=OK, 1=Warning, 2=Error
+
+    local status=$HEALTH_OK
+    local resource_issues=()
+
+    # Configurable thresholds (can be overridden in /etc/nftban/conf.d/health.conf)
+    local DISK_WARN_THRESHOLD=${NFTBAN_DISK_WARN_THRESHOLD:-85}
+    local DISK_CRIT_THRESHOLD=${NFTBAN_DISK_CRIT_THRESHOLD:-95}
+    local RAM_WARN_THRESHOLD=${NFTBAN_RAM_WARN_THRESHOLD:-90}
+    local RAM_CRIT_THRESHOLD=${NFTBAN_RAM_CRIT_THRESHOLD:-95}
+    local CPU_WARN_THRESHOLD=${NFTBAN_CPU_WARN_THRESHOLD:-80}
+    local CPU_CRIT_THRESHOLD=${NFTBAN_CPU_CRIT_THRESHOLD:-95}
+
+    # ==========================================================================
+    # DISK USAGE CHECK
+    # ==========================================================================
+
+    # Check critical filesystems
+    local critical_mounts=("/" "/var" "/var/log" "/tmp")
+
+    for mount_point in "${critical_mounts[@]}"; do
+        if [[ -d "$mount_point" ]]; then
+            # Get disk usage percentage (without % symbol)
+            local disk_usage
+            disk_usage=$(df -h "$mount_point" 2>/dev/null | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
+
+            if [[ -n "$disk_usage" && "$disk_usage" =~ ^[0-9]+$ ]]; then
+                if [[ $disk_usage -ge $DISK_CRIT_THRESHOLD ]]; then
+                    resource_issues+=("CRITICAL: $mount_point disk usage at ${disk_usage}%")
+                    status=$HEALTH_ERROR
+                elif [[ $disk_usage -ge $DISK_WARN_THRESHOLD ]]; then
+                    resource_issues+=("WARNING: $mount_point disk usage at ${disk_usage}%")
+                    [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+                fi
+            fi
+        fi
+    done
+
+    # ==========================================================================
+    # MEMORY (RAM) USAGE CHECK
+    # ==========================================================================
+
+    if command -v free >/dev/null 2>&1; then
+        # Get memory usage percentage
+        # Using available memory for more accurate calculation
+        local mem_total mem_available mem_used_percent
+
+        mem_total=$(free -m | awk '/^Mem:/ {print $2}')
+        mem_available=$(free -m | awk '/^Mem:/ {print $7}')
+
+        if [[ -n "$mem_total" && -n "$mem_available" && "$mem_total" -gt 0 ]]; then
+            mem_used_percent=$(( 100 - (mem_available * 100 / mem_total) ))
+
+            if [[ $mem_used_percent -ge $RAM_CRIT_THRESHOLD ]]; then
+                resource_issues+=("CRITICAL: RAM usage at ${mem_used_percent}%")
+                status=$HEALTH_ERROR
+            elif [[ $mem_used_percent -ge $RAM_WARN_THRESHOLD ]]; then
+                resource_issues+=("WARNING: RAM usage at ${mem_used_percent}%")
+                [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+            fi
+        fi
+    fi
+
+    # ==========================================================================
+    # CPU LOAD CHECK
+    # ==========================================================================
+
+    if [[ -f /proc/loadavg ]]; then
+        # Get 1-minute load average
+        local load_avg cpu_count load_percent
+
+        load_avg=$(awk '{print $1}' /proc/loadavg)
+        cpu_count=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo)
+
+        if [[ -n "$load_avg" && -n "$cpu_count" && "$cpu_count" -gt 0 ]]; then
+            # Calculate load as percentage of CPU capacity
+            load_percent=$(awk -v loadval="$load_avg" -v cpus="$cpu_count" 'BEGIN {printf "%.0f", (loadval/cpus)*100}')
+
+            if [[ $load_percent -ge $CPU_CRIT_THRESHOLD ]]; then
+                resource_issues+=("CRITICAL: CPU load at ${load_percent}% (${load_avg}/${cpu_count} cores)")
+                status=$HEALTH_ERROR
+            elif [[ $load_percent -ge $CPU_WARN_THRESHOLD ]]; then
+                resource_issues+=("WARNING: CPU load at ${load_percent}% (${load_avg}/${cpu_count} cores)")
+                [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+            fi
+        fi
+    fi
+
+    # ==========================================================================
+    # SWAP USAGE CHECK (Optional - high swap can indicate memory pressure)
+    # ==========================================================================
+
+    if command -v free >/dev/null 2>&1; then
+        local swap_total swap_used swap_percent
+
+        swap_total=$(free -m | awk '/^Swap:/ {print $2}')
+        swap_used=$(free -m | awk '/^Swap:/ {print $3}')
+
+        if [[ -n "$swap_total" && -n "$swap_used" && "$swap_total" -gt 0 ]]; then
+            swap_percent=$(( swap_used * 100 / swap_total ))
+
+            # Warn if swap usage is high (indicates memory pressure)
+            if [[ $swap_percent -ge 75 ]]; then
+                resource_issues+=("WARNING: High swap usage at ${swap_percent}% (memory pressure)")
+                [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+            fi
+        fi
+    fi
+
+    # ==========================================================================
+    # INODE USAGE CHECK (Can cause issues even with free disk space)
+    # ==========================================================================
+
+    for mount_point in "${critical_mounts[@]}"; do
+        if [[ -d "$mount_point" ]]; then
+            local inode_usage
+            inode_usage=$(df -i "$mount_point" 2>/dev/null | awk 'NR==2 {gsub(/%/,"",$5); print $5}')
+
+            if [[ -n "$inode_usage" && "$inode_usage" =~ ^[0-9]+$ ]]; then
+                if [[ $inode_usage -ge 95 ]]; then
+                    resource_issues+=("CRITICAL: $mount_point inode usage at ${inode_usage}%")
+                    status=$HEALTH_ERROR
+                elif [[ $inode_usage -ge 85 ]]; then
+                    resource_issues+=("WARNING: $mount_point inode usage at ${inode_usage}%")
+                    [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+                fi
+            fi
+        fi
+    done
+
+    # Store results
+    if [[ ${#resource_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["resources"]="${resource_issues[*]}"
+        if [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("Resource issues: ${resource_issues[*]}")
+        else
+            NFTBAN_HEALTH_WARNINGS+=("Resource warnings: ${resource_issues[*]}")
+        fi
+    else
+        NFTBAN_HEALTH_ISSUES["resources"]="All resources within normal limits"
+    fi
+
+    NFTBAN_HEALTH_RESULTS["resources"]=$status
+    return $status
+}
+
+# =============================================================================
 # v0.30 INVENTORY HELPERS CHECKS
 # =============================================================================
 
@@ -818,6 +1028,11 @@ nftban_health_check_all() {
     # Binaries check (keep for now - no dedicated module)
     check_result=0
     nftban_health_check_binaries || check_result=$?
+    [[ $check_result -gt $overall_status ]] && overall_status=$check_result
+
+    # System resources check (CPU, RAM, disk)
+    check_result=0
+    nftban_health_check_resources || check_result=$?
     [[ $check_result -gt $overall_status ]] && overall_status=$check_result
 
     # GeoIP check (keep for now - no dedicated module)
