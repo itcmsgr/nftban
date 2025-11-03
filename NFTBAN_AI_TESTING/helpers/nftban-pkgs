@@ -1,0 +1,66 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
+# nftban-pkgs - Package inventory collector (RPM/DEB)
+# Part of NFTBan v0.30 - Self-healing monitoring system
+
+set -euo pipefail
+
+# Detect OS
+ID=$(source /etc/os-release 2>/dev/null && echo "${ID:-unknown}")
+manager=""
+
+if command -v rpm >/dev/null 2>&1; then
+    manager="rpm"
+elif command -v dpkg-query >/dev/null 2>&1; then
+    manager="deb"
+fi
+
+# RPM-based systems (RHEL, Fedora, Rocky, AlmaLinux, CentOS, SUSE)
+if [ "$manager" = "rpm" ]; then
+    # Get inventory
+    INV=$(rpm -qa --qf $'%{NAME}\t%{EPOCHNUM}\t%{VERSION}\t%{RELEASE}\t%{ARCH}\t%{INSTALLTIME:date}\n' \
+          | awk -F'\t' 'BEGIN{printf("[")} {
+              printf("%s{\"name\":\"%s\",\"epoch\":%s,\"version\":\"%s\",\"release\":\"%s\",\"arch\":\"%s\",\"installtime\":\"%s\"}",
+                     NR==1?"":",", $1,$2,$3,$4,$5,$6)
+          } END{print("]")}')
+
+    # Get last update time
+    LAST=""
+    if command -v dnf >/dev/null 2>&1; then
+        LAST=$(dnf history -q 2>/dev/null | awk 'NR==2{print $4" "$5" "$6}' | head -n1)
+    elif command -v yum >/dev/null 2>&1; then
+        LAST=$(yum history -q 2>/dev/null | awk 'NR==2{print $4" "$5" "$6}' | head -n1)
+    fi
+
+    # Fallback to RPM DB mtime
+    if [ -z "$LAST" ]; then
+        F=$(ls -1t /var/lib/rpm/{Packages,Packages.db} 2>/dev/null | head -n1 || true)
+        if [ -n "$F" ]; then
+            LAST=$(date -Is -r "$F")
+        fi
+    fi
+
+    printf '{"os_id":"%s","manager":"rpm","last_update":"%s","installed":%s}\n' \
+        "$ID" "${LAST:-}" "$INV"
+
+# DEB-based systems (Debian, Ubuntu)
+elif [ "$manager" = "deb" ]; then
+    # Get inventory
+    INV=$(dpkg-query -W -f='${Package}\t${Version}\t${Architecture}\t${db:Status-Abbrev}\n' \
+          | awk -F'\t' 'BEGIN{printf("[")} {
+              printf("%s{\"name\":\"%s\",\"version\":\"%s\",\"arch\":\"%s\",\"status\":\"%s\"}",
+                     NR==1?"":",", $1,$2,$3,$4)
+          } END{print("]")}')
+
+    # Get last update from apt history
+    LAST=$(zgrep -h " Start-Date: " /var/log/apt/history.log* 2>/dev/null \
+          | tail -n1 \
+          | sed -E 's/.*Start-Date: *([^;]+).*/\1/' || true)
+
+    printf '{"os_id":"%s","manager":"deb","last_update":"%s","installed":%s}\n' \
+        "$ID" "${LAST:-}" "$INV"
+
+else
+    # Unknown package manager
+    echo '{"os_id":"unknown","manager":null,"installed":[]}'
+fi

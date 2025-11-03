@@ -1,0 +1,45 @@
+// =============================================================================
+// NFTBan v0.30 - Polkit Authorization Rules
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+// Purpose: Allow auditors group to run v0.30 inventory helpers
+// Location: /usr/share/polkit-1/rules.d/50-nftban-v030.rules
+// =============================================================================
+
+polkit.addRule(function (action, subject) {
+  // Only handle org.freedesktop.policykit.exec actions
+  if (action.id !== "org.freedesktop.policykit.exec") return;
+
+  var prog = action.lookup("program");
+
+  // List of v0.30 inventory helpers allowed for auditors group
+  var allowed_helpers = [
+    "/usr/libexec/nftban/nftban-procnet",
+    "/usr/libexec/nftban/nftban-pkgs",
+    "/usr/libexec/nftban/nftban-verify",
+    "/usr/libexec/nftban/nftban-firewall"
+  ];
+
+  // Allow execution if:
+  // 1. Program is in allowed list
+  // 2. User is member of auditors group
+  if (allowed_helpers.indexOf(prog) !== -1 && subject.isInGroup("auditors")) {
+    return polkit.Result.YES;
+  }
+});
+
+// =============================================================================
+// USAGE NOTES:
+// =============================================================================
+// 1. Create auditors group:
+//    groupadd -f auditors
+//
+// 2. Add users to auditors group:
+//    usermod -aG auditors username
+//
+// 3. Test authorization:
+//    pkexec /usr/libexec/nftban/nftban-procnet
+//
+// 4. These helpers collect system inventory without requiring root privileges
+//    directly, following principle of least privilege
+// =============================================================================
