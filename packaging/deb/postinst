@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan v0.10.0 - DEB Post-Install Script
+# NFTBan v0.30.0 - DEB Post-Install Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Post-installation configuration for DEB packages
@@ -18,6 +18,11 @@ case "$1" in
 
         if ! getent group nftban-cli >/dev/null; then
             addgroup --system nftban-cli
+        fi
+
+        # Create auditors group for v0.30 inventory helpers
+        if ! getent group auditors >/dev/null; then
+            addgroup --system auditors
         fi
 
         # Generate system.conf with UID/GID
@@ -67,10 +72,17 @@ EOF
         chmod 0750 /var/log/nftban
         chmod 0755 /var/cache/nftban
 
+        # Create and set permissions for v0.30 directories
+        mkdir -p /var/lib/nftban/reports/baseline
+        mkdir -p /etc/nftban/keys
+        chown nftban:nftban /var/lib/nftban/reports/baseline
+        chmod 0755 /var/lib/nftban/reports/baseline
+        chmod 0700 /etc/nftban/keys
+
         # Print installation message
         echo ""
         echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  NFTBan v0.10.0 Installation Complete!                    ║"
+        echo "║  NFTBan v0.30.0 Installation Complete!                    ║"
         echo "╚════════════════════════════════════════════════════════════╝"
         echo ""
         echo "Next steps:"
@@ -78,6 +90,8 @@ EOF
         echo "  2. Customize (optional): /etc/nftban/nftban.conf.local"
         echo "  3. Enable service: systemctl enable --now nftban.timer"
         echo "  4. Check health: nftban health check"
+        echo "  5. Try inventory: nftban-health --inventory | jq ."
+        echo "  6. Create baseline: nftban-baseline-save"
         echo ""
         ;;
 esac

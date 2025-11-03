@@ -1,3 +1,18 @@
+nftban (0.30.0-1) stable; urgency=medium
+
+  * Major upgrade to v0.30.0 with inventory monitoring
+  * Add advanced inventory system (processes, packages, firewall state)
+  * Add baseline management with drift detection
+  * Add system resource monitoring (disk, CPU, RAM, swap, inodes)
+  * Add alert throttling to prevent notification spam
+  * Add cryptographic verification and signing
+  * Add smart mail adapter (auto-detects best transport)
+  * Add per-file .local configuration override system
+  * Add Polkit-based auditors group for non-root access
+  * Require Python 3 for inventory helpers
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 03 Nov 2025 20:30:00 +0200
+
 nftban (0.10.0-1) stable; urgency=medium
 
   * Complete rewrite for v0.10.0

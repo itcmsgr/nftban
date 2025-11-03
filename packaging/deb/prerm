@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan v0.10.0 - DEB Pre-Remove Script
+# NFTBan v0.30.0 - DEB Pre-Remove Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Pre-removal cleanup for DEB packages
