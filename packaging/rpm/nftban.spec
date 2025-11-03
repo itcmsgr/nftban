@@ -426,7 +426,7 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
-* Sun Nov 03 2025 NFTBan AI Team <contact@nftban.com> - 0.30.0-1
+* Sun Nov 03 2025 Antonios Voulvoulis <contact@nftban.com> - 0.30.0-1
 - Major release: NFTBan v0.30 with self-healing inventory monitoring
 - Add advanced inventory system (processes, packages, firewall state)
 - Add baseline management with drift detection and cryptographic signing
