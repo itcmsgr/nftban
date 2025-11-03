@@ -7,6 +7,158 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.30.0] - 2025-11-03
+
+### 🎉 Major Release - Self-Healing Inventory Monitoring
+
+This is a major upgrade adding comprehensive inventory monitoring, baseline management, and system resource tracking to NFTBan.
+
+### Added
+
+#### 🔍 Advanced Inventory System (NEW!)
+- **Process inventory tracking** - nftban-procnet helper
+  - Process enumeration with PID, PPID, UID tracking
+  - Executable path detection and command line capture
+  - SHA256 hash computation for tamper detection
+  - Socket tracking (TCP/UDP) with local/remote addresses
+  - Firewall verdict integration for network connections
+  - JSON output for machine parsing
+
+- **Package inventory tracking** - nftban-pkgs helper
+  - RPM package detection (CentOS/AlmaLinux/Rocky/Fedora)
+  - DEB package detection (Ubuntu/Debian)
+  - Package version tracking
+  - Installation date and source information
+
+- **Tamper detection** - nftban-verify helper
+  - rpm -Va integration for RPM-based systems
+  - dpkg -V integration for DEB-based systems
+  - File integrity checking against package databases
+  - Modified file reporting
+
+- **Firewall state export** - nftban-firewall helper
+  - nftables JSON export for complete firewall state
+  - Rule extraction and enumeration
+  - Set enumeration with IP ranges
+  - Large ruleset handling (tested with 185.220.100.240/20 ranges)
+
+#### 📊 System Resource Monitoring (NEW!)
+- **Disk usage monitoring** - Configurable warn/critical thresholds
+- **RAM usage monitoring** - Memory utilization tracking
+- **CPU load monitoring** - System load average tracking
+- **Swap usage monitoring** - Swap utilization alerts
+- **Inode usage monitoring** - Filesystem inode tracking
+- **Configurable thresholds** via health.conf
+- **Alert integration** - Triggers on threshold breaches
+
+#### 🔔 Alert Throttling System (NEW!)
+- **State-based throttling** - Prevents alert spam
+- **Configurable intervals** - Default: 1 hour between same alerts
+- **Automatic cleanup** - Removes old throttle entries
+- **Per-issue tracking** - Independent throttling for each alert type
+- **State file persistence** - /var/lib/nftban/state/health_alerts.state
+
+#### 🔐 Baseline Management (NEW!)
+- **nftban-baseline-save** - Create system baselines
+- **Cryptographic signing** - GPG signing for baseline integrity
+- **nftban-verify-signature** - Verify baseline authenticity
+- **Drift detection** - Compare current state vs. baseline
+- **Baseline storage** - /var/lib/nftban/reports/baseline
+
+#### 📧 Smart Mail Adapter (NEW!)
+- **Auto-detection** - Detects best available mail transport
+- **v0.10 module support** - Uses existing nftban_mail.sh if present
+- **sendmail support** - Falls back to system sendmail
+- **msmtp support** - Lightweight SMTP client integration
+- **curl support** - HTTP/HTTPS email delivery
+- **Graceful fallback** - Degrades to logger if no mail available
+
+#### ⚙️ Per-File Configuration Override (NEW!)
+- **health.conf.local** - Override health settings
+- **mail.conf.local** - Override mail settings
+- **Per-module overrides** - Override any conf.d/ file
+- **Upgrade-safe** - .local files preserved during upgrades
+- **Hierarchical loading** - Global → module → .local
+
+#### 👥 Polkit Integration Enhancement
+- **auditors group** - Non-root access to inventory helpers
+- **Polkit rules** - 50-nftban-v030.rules for secure delegation
+- **Non-root execution** - Inventory collection without sudo
+- **Security boundaries** - Restricted command execution
+
+#### 🏥 Enhanced Health System
+- **nftban-health --inventory** - Complete system inventory
+- **Resource checking** - Integrated disk/RAM/CPU monitoring
+- **Alert generation** - Email notifications on issues
+- **JSON output** - Machine-readable inventory data
+- **Orchestration** - Coordinates all inventory helpers
+
+### Changed
+
+#### Configuration Management
+- **Enhanced .local override system** - Per-file configuration overrides
+- **New config file**: /etc/nftban/conf.d/health.conf
+  - Resource monitoring thresholds
+  - Alert throttling settings
+  - Health check intervals
+
+#### Directory Structure
+- **New directories**:
+  - `/var/lib/nftban/reports/baseline` - Baseline storage
+  - `/etc/nftban/keys` - GPG keys for signing (mode 0700)
+- **New helpers**: `/usr/libexec/nftban/helpers/`
+  - nftban-procnet
+  - nftban-pkgs
+  - nftban-verify
+  - nftban-firewall
+- **New health commands**: `/usr/libexec/nftban/health/`
+  - nftban-health
+  - nftban-baseline-save
+  - nftban-verify-signature
+
+#### Package Dependencies
+- **Added python3** - Required for inventory helper scripts
+- **policykit-1** - Required for Polkit integration (Debian/Ubuntu)
+- **polkit** - Required for Polkit integration (RPM-based)
+
+### Fixed
+- **Email configuration** - Documented requirement for NFTBAN_MAIL_TO
+- **Read-only filesystem handling** - Graceful degradation for /usr/share
+- **Permission enforcement** - Reduced noise from auto-heal
+- **Service integration** - Proper systemd timer configuration
+
+### Security
+- **Reduced attack surface** - Inventory helpers run as nftban user via Polkit
+- **Cryptographic verification** - Baseline signing and verification
+- **SHA256 hashing** - Executable tamper detection
+- **File integrity** - Package database verification
+
+### Testing
+- **100% success rate** - Tested across 5 distributions:
+  - CentOS Stream 9, 10
+  - Ubuntu 24.04
+  - AlmaLinux 10.0
+  - Rocky Linux 10
+- **Cross-platform validation** - RHEL and Debian families
+- **Issue resolution** - All deployment issues documented and fixed
+- **Comprehensive logs** - Complete diagnostic data collected
+
+### Documentation
+- **docs/testing/v0.30/** - Complete v0.30 testing documentation
+  - FINAL_DEPLOYMENT_REPORT.md
+  - TEST_REVIEW_SUMMARY.md
+  - LAB_ISSUES_FOUND.md
+  - Lab server logs (5 servers)
+- **Architecture docs** - capability-based security model
+- **Session summaries** - Complete implementation notes
+
+### Contributors
+- Antonios Voulvoulis - Lead Developer
+- ChatGPT (OpenAI) - Architecture guidance and initial deployment
+- Claude (Anthropic) - Implementation, testing, and integration
+
+---
+
 ## [0.10.0] - 2025-10-29
 
 ### 🎉 Major Release - Complete Architectural Refactoring
