@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# SPDX-License-Identifier: MPL-2.0
+# nftban-verify-signature - Verify signed JSON envelopes
+# Part of NFTBan v0.30 - Self-healing monitoring system
+
+set -euo pipefail
+
+usage() {
+  cat <<'EOF'
+Usage: nftban-verify-signature [--pubkey PUB.pem] [--payload-out FILE] SIGNED.json
+
+Verifies a JSON envelope produced by: nftban-health --sign KEY.pem
+
+Options:
+  --pubkey PUB.pem     Use this public key instead of embedded .pubkey_pem
+  --payload-out FILE   On success, write the verified payload JSON to FILE
+  -q, --quiet          Suppress "Verified OK"/"INVALID" messages
+  -h, --help           Show this help
+
+Exit codes: 0=verified, 1=invalid signature, 2=error.
+EOF
+}
+
+QUIET=0
+PUB=""
+OUT=""
+ARGS=()
+
+while (( "$#" )); do
+  case "$1" in
+    --pubkey) PUB="${2:-}"; shift 2;;
+    --payload-out) OUT="${2:-}"; shift 2;;
+    -q|--quiet) QUIET=1; shift;;
+    -h|--help) usage; exit 0;;
+    *) ARGS+=("$1"); shift;;
+  esac
+done
+
+[ ${#ARGS[@]} -eq 1 ] || { usage >&2; exit 2; }
+SIGNED="${ARGS[0]}"
+
+command -v jq >/dev/null 2>&1 || { echo "jq not found" >&2; exit 2; }
+command -v openssl >/dev/null 2>&1 || { echo "openssl not found" >&2; exit 2; }
+[ -r "$SIGNED" ] || { echo "cannot read: $SIGNED" >&2; exit 2; }
+
+# Extract fields
+TYPE=$(jq -r '.type // empty' "$SIGNED") || { echo "bad JSON" >&2; exit 2; }
+[ "$TYPE" = "nftban.signed+json" ] || { echo "not a nftban.signed+json envelope" >&2; exit 2; }
+
+SIG_B64=$(jq -r '.signature_b64 // empty' "$SIGNED")
+[ -n "$SIG_B64" ] || { echo "missing signature_b64" >&2; exit 1; }
+
+PAYLOAD=$(jq -c '.payload' "$SIGNED") || { echo "missing payload" >&2; exit 1; }
+
+TMPDIR=$(mktemp -d)
+trap 'rm -rf "$TMPDIR"' EXIT
+
+printf "%s" "$PAYLOAD" > "$TMPDIR/payload.json"
+base64 -d <<<"$SIG_B64" > "$TMPDIR/sig.bin"
+
+if [ -n "$PUB" ]; then
+  cp "$PUB" "$TMPDIR/pub.pem"
+else
+  jq -r '.pubkey_pem // empty' "$SIGNED" > "$TMPDIR/pub.pem"
+  [ -s "$TMPDIR/pub.pem" ] || { echo "no pubkey provided or embedded" >&2; exit 2; }
+fi
+
+if openssl dgst -sha256 -verify "$TMPDIR/pub.pem" -signature "$TMPDIR/sig.bin" "$TMPDIR/payload.json" >/dev/null 2>&1; then
+  [ "$QUIET" -eq 1 ] || echo "Verified OK"
+  if [ -n "$OUT" ]; then
+    cp "$TMPDIR/payload.json" "$OUT"
+  fi
+  exit 0
+else
+  [ "$QUIET" -eq 1 ] || echo "INVALID"
+  exit 1
+fi

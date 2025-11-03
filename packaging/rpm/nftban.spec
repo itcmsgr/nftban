@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v0.10.0 - RPM Spec File
+# NFTBan v0.30.0 - RPM Spec File
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: RPM package specification for Red Hat-based distributions
@@ -10,9 +10,9 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.10.0
+Version:        0.30.0
 Release:        1%{?dist}
-Summary:        Modern nftables firewall management with commit-confirm recovery
+Summary:        Modern nftables firewall with self-healing inventory monitoring
 
 License:        MPL-2.0
 URL:            https://nftban.com
@@ -29,6 +29,7 @@ Requires:       bash >= 5.0
 Requires:       bash-completion
 Requires:       jq >= 1.6
 Requires:       curl
+Requires:       python3
 Requires:       shadow-utils
 Requires:       coreutils
 Requires:       gzip
@@ -51,8 +52,20 @@ Conflicts:      iptables-services
 Conflicts:      iptables
 
 %description
-NFTBan is a modern, high-performance firewall management system for Linux
-servers using nftables. Features include:
+NFTBan v0.30 is a modern, high-performance firewall management system for Linux
+servers using nftables with advanced self-healing and inventory monitoring.
+
+Features include:
+- Commit-confirm recovery (prevents lockout)
+- Go binaries for 10-60x faster feed processing
+- 8 security layers (DDoS, port scan, geo-blocking, threat feeds)
+- FHS-compliant with auto-healing health system
+- Integration with Fail2Ban for automatic banning
+- Stats & metrics with HTML/JSON/CSV reporting
+- Advanced inventory system (processes, packages, firewall state)
+- Baseline management with drift detection
+- Cryptographic verification and signing
+- Smart mail adapter (auto-detects best transport)
 
 NOTE: For fail2ban installation on Rocky/AlmaLinux:
 1. Enable EPEL: dnf install -y epel-release
@@ -60,13 +73,6 @@ NOTE: For fail2ban installation on Rocky/AlmaLinux:
 3. Install: dnf install -y fail2ban-server
 
 fail2ban-server is recommended (not fail2ban) to avoid firewalld conflict.
-
-- Commit-confirm recovery (prevents lockout)
-- Go binaries for 10-60x faster feed processing
-- 8 security layers (DDoS, port scan, geo-blocking, threat feeds)
-- FHS-compliant with auto-healing health system
-- Integration with Fail2Ban for automatic banning
-- Stats & metrics with HTML/JSON/CSV reporting
 
 %prep
 %setup -q
@@ -170,6 +176,49 @@ install -d -m 0755 %{buildroot}%{_datadir}/polkit-1/rules.d
 install -m 0644 packaging/polkit-1/rules.d/60-nftban-cli.rules \
     %{buildroot}%{_datadir}/polkit-1/rules.d/60-nftban-cli.rules
 
+# ============================================================================
+# Inventory & Health Monitoring System
+# ============================================================================
+
+# Install inventory helpers
+install -d -m 0755 %{buildroot}/usr/libexec/nftban
+install -m 0755 NFTBAN_AI_TESTING/helpers/nftban-procnet %{buildroot}/usr/libexec/nftban/
+install -m 0755 NFTBAN_AI_TESTING/helpers/nftban-pkgs %{buildroot}/usr/libexec/nftban/
+install -m 0755 NFTBAN_AI_TESTING/helpers/nftban-verify %{buildroot}/usr/libexec/nftban/
+install -m 0755 NFTBAN_AI_TESTING/helpers/nftban-firewall %{buildroot}/usr/libexec/nftban/
+
+# Install health monitoring commands
+install -d -m 0755 %{buildroot}/usr/local/lib/nftban
+install -m 0755 NFTBAN_AI_TESTING/health/nftban-health %{buildroot}/usr/local/lib/nftban/
+install -m 0755 NFTBAN_AI_TESTING/health/nftban-baseline-save %{buildroot}/usr/local/lib/nftban/
+install -m 0755 NFTBAN_AI_TESTING/health/nftban-verify-signature %{buildroot}/usr/local/lib/nftban/
+
+# Create symlinks in /usr/local/bin
+install -d -m 0755 %{buildroot}/usr/local/bin
+ln -s /usr/local/lib/nftban/nftban-health %{buildroot}/usr/local/bin/nftban-health
+ln -s /usr/local/lib/nftban/nftban-baseline-save %{buildroot}/usr/local/bin/nftban-baseline-save
+ln -s /usr/local/lib/nftban/nftban-verify-signature %{buildroot}/usr/local/bin/nftban-verify-signature
+
+# Install smart mail adapter
+install -m 0644 NFTBAN_AI_TESTING/mail/nftban_mail_v030.sh %{buildroot}/usr/lib/nftban/core/
+
+# Install Polkit rules for auditors group
+install -m 0644 packaging/polkit-1/rules.d/50-nftban-v030.rules \
+    %{buildroot}%{_datadir}/polkit-1/rules.d/50-nftban-v030.rules
+
+# Create inventory directories
+install -d -m 0755 %{buildroot}/var/lib/nftban/reports/baseline
+install -d -m 0700 %{buildroot}/etc/nftban/keys
+
+# Install architecture documentation
+install -d -m 0755 %{buildroot}/usr/share/doc/nftban/architecture
+install -m 0644 NFTBAN_AI_TESTING/README_START_HERE.md %{buildroot}/usr/share/doc/nftban/architecture/
+install -m 0644 NFTBAN_AI_TESTING/DEPLOYMENT_GUIDE.md %{buildroot}/usr/share/doc/nftban/architecture/
+install -m 0644 NFTBAN_AI_TESTING/DELIVERABLES.txt %{buildroot}/usr/share/doc/nftban/architecture/
+install -m 0644 NFTBAN_AI_TESTING/docs/MODULAR_ARCHITECTURE.md %{buildroot}/usr/share/doc/nftban/architecture/
+install -m 0644 NFTBAN_AI_TESTING/docs/INTEGRATION_SUMMARY.md %{buildroot}/usr/share/doc/nftban/architecture/
+install -m 0644 NFTBAN_AI_TESTING/docs/MAIL_SYSTEM_DESIGN.md %{buildroot}/usr/share/doc/nftban/architecture/
+
 %pre
 # Create nftban user and nftban-cli group (via sysusers.d)
 %sysusers_create_compat packaging/sysusers.d/nftban.conf
@@ -202,13 +251,16 @@ EOF
 
 chmod 0644 /var/lib/nftban/config/system.conf
 
+# Create auditors group for inventory helpers (if doesn't exist)
+groupadd -f auditors 2>/dev/null || true
+
 # Reload systemd
 %systemd_post nftban.timer nftban-health.timer nftban-permissions-audit.timer
 
 # Print installation message
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║  NFTBan v0.10.0 Installation Complete!                    ║"
+echo "║  NFTBan v0.30.0 Installation Complete!                    ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "Next steps:"
@@ -224,9 +276,15 @@ echo ""
 echo "  3. Enable NFTBan health timer (includes auto-heal):"
 echo "     systemctl enable --now nftban-health.timer"
 echo ""
-echo "  4. Check health: nftban health check"
+echo "  4. Check system health:"
+echo "     nftban health check"
+echo ""
+echo "  5. Try inventory features:"
+echo "     nftban-health --inventory | jq ."
+echo "     nftban-baseline-save"
 echo ""
 echo "Documentation: /usr/share/nftban/docs/"
+echo "Architecture: /usr/share/doc/nftban/architecture/"
 echo ""
 
 %preun
@@ -326,6 +384,7 @@ fi
 
 # Polkit rules
 /usr/share/polkit-1/rules.d/60-nftban-cli.rules
+/usr/share/polkit-1/rules.d/50-nftban-v030.rules
 
 # Runtime directories (created by tmpfiles.d)
 %dir %attr(0755,nftban,nftban) /var/lib/nftban
@@ -333,10 +392,53 @@ fi
 %dir %attr(0755,nftban,nftban) /var/cache/nftban
 %dir %attr(0750,nftban,nftban) /var/log/nftban
 
+# Inventory helpers
+/usr/libexec/nftban/nftban-procnet
+/usr/libexec/nftban/nftban-pkgs
+/usr/libexec/nftban/nftban-verify
+/usr/libexec/nftban/nftban-firewall
+
+# Health monitoring commands
+/usr/local/lib/nftban/nftban-health
+/usr/local/lib/nftban/nftban-baseline-save
+/usr/local/lib/nftban/nftban-verify-signature
+/usr/local/bin/nftban-health
+/usr/local/bin/nftban-baseline-save
+/usr/local/bin/nftban-verify-signature
+
+# Smart mail adapter
+/usr/lib/nftban/core/nftban_mail_v030.sh
+
+# Inventory directories
+%dir %attr(0755,nftban,nftban) /var/lib/nftban/reports/baseline
+%dir %attr(0700,root,root) /etc/nftban/keys
+
+# Architecture documentation
+%doc /usr/share/doc/nftban/architecture/README_START_HERE.md
+%doc /usr/share/doc/nftban/architecture/DEPLOYMENT_GUIDE.md
+%doc /usr/share/doc/nftban/architecture/DELIVERABLES.txt
+%doc /usr/share/doc/nftban/architecture/MODULAR_ARCHITECTURE.md
+%doc /usr/share/doc/nftban/architecture/INTEGRATION_SUMMARY.md
+%doc /usr/share/doc/nftban/architecture/MAIL_SYSTEM_DESIGN.md
+
 # Documentation
 %doc README.md CHANGELOG.md
 
 %changelog
+* Sun Nov 03 2025 NFTBan AI Team <contact@nftban.com> - 0.30.0-1
+- Major release: NFTBan v0.30 with self-healing inventory monitoring
+- Add advanced inventory system (processes, packages, firewall state)
+- Add baseline management with drift detection and cryptographic signing
+- Add smart mail adapter (auto-detects v0.10 module, sendmail, msmtp, curl)
+- Add 4 inventory helpers (procnet, pkgs, verify, firewall)
+- Add 3 health commands (nftban-health, baseline-save, verify-signature)
+- Add Polkit rules for auditors group (non-root execution)
+- Add comprehensive documentation (MODULAR_ARCHITECTURE, INTEGRATION_SUMMARY)
+- Integrate v0.30 health checks into existing nftban_health.sh
+- Smart adaptation: uses existing systems, graceful fallbacks
+- Maintain full backward compatibility with v0.10
+- All features from v0.10.0 included and enhanced
+
 * Wed Oct 30 2025 Antonios Voulvoulis <contact@nftban.com> - 0.10.0-1
 - Complete rewrite for v0.10.0
 - Add commit-confirm recovery system

@@ -357,6 +357,88 @@ nftban_health_check_modules() {
 }
 
 # =============================================================================
+# v0.30 INVENTORY HELPERS CHECKS
+# =============================================================================
+
+nftban_health_check_v030_helpers() {
+    # Check v0.30 inventory helpers
+    # Returns: 0=OK, 1=Warning, 2=Error (warnings only - v0.30 is optional)
+
+    local status=$HEALTH_OK
+    local helper_issues=()
+
+    # v0.30 inventory helpers
+    local helpers=(
+        "nftban-procnet"
+        "nftban-pkgs"
+        "nftban-verify"
+        "nftban-firewall"
+    )
+
+    local helpers_found=0
+    local helpers_executable=0
+
+    for helper in "${helpers[@]}"; do
+        local helper_path="/usr/libexec/nftban/$helper"
+
+        if [[ -f "$helper_path" ]]; then
+            helpers_found=$((helpers_found + 1))
+
+            if [[ -x "$helper_path" ]]; then
+                helpers_executable=$((helpers_executable + 1))
+            else
+                helper_issues+=("$helper not executable")
+                status=$HEALTH_WARNING
+            fi
+        fi
+    done
+
+    # Check if v0.30 mail adapter is present
+    if [[ -f "/usr/lib/nftban/core/nftban_mail_v030.sh" ]]; then
+        if [[ ! -r "/usr/lib/nftban/core/nftban_mail_v030.sh" ]]; then
+            helper_issues+=("v0.30 mail adapter not readable")
+            status=$HEALTH_WARNING
+        fi
+    fi
+
+    # Check if v0.30 health commands are present
+    local health_commands=(
+        "nftban-health"
+        "nftban-baseline-save"
+        "nftban-verify-signature"
+    )
+
+    for cmd in "${health_commands[@]}"; do
+        if [[ -f "/usr/local/lib/nftban/$cmd" ]]; then
+            if [[ ! -x "/usr/local/lib/nftban/$cmd" ]]; then
+                helper_issues+=("$cmd not executable")
+                status=$HEALTH_WARNING
+            fi
+
+            # Check symlink in /usr/local/bin
+            if [[ ! -L "/usr/local/bin/$cmd" ]]; then
+                helper_issues+=("$cmd symlink missing in /usr/local/bin")
+                status=$HEALTH_WARNING
+            fi
+        fi
+    done
+
+    # Store results
+    if [[ $helpers_found -eq 0 ]]; then
+        # v0.30 not installed - not an error, just informational
+        NFTBAN_HEALTH_ISSUES["v030_helpers"]="v0.30 extensions not installed"
+    elif [[ ${#helper_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["v030_helpers"]="${helper_issues[*]}"
+        NFTBAN_HEALTH_WARNINGS+=("v0.30 issues: ${helper_issues[*]}")
+    else
+        NFTBAN_HEALTH_ISSUES["v030_helpers"]="All v0.30 helpers OK ($helpers_executable/$helpers_found)"
+    fi
+
+    NFTBAN_HEALTH_RESULTS["v030_helpers"]=$status
+    return $status
+}
+
+# =============================================================================
 # GEOIP CHECKS
 # =============================================================================
 
@@ -741,6 +823,11 @@ nftban_health_check_all() {
     # GeoIP check (keep for now - no dedicated module)
     check_result=0
     nftban_health_check_geoip || check_result=$?
+    [[ $check_result -gt $overall_status ]] && overall_status=$check_result
+
+    # v0.30 inventory helpers check
+    check_result=0
+    nftban_health_check_v030_helpers || check_result=$?
     [[ $check_result -gt $overall_status ]] && overall_status=$check_result
 
     # Databases check (keep for now - no dedicated module)
