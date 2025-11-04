@@ -1,6 +1,6 @@
 # NFTBan Go Binaries - Complete Architecture & Build Guide
 
-**Version:** v0.10.0
+**Version:** v0.30.0
 **Purpose:** Documentation for Go binary architecture, building, and deployment
 **Last Updated:** 2025-10-30
 
@@ -282,11 +282,11 @@ go build -o ../dist/nftban-geoip ./cmd/nftban-geoip
    ├─ go mod download (fetch dependencies)
    ├─ Build x86_64:
    │   CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-   │     go build -ldflags "-s -w -X main.version=0.10.0" \
+   │     go build -ldflags "-s -w -X main.version=0.30.0" \
    │     -o dist/x86_64/nftban-feeds ./cmd/nftban-feeds
    └─ Build aarch64:
        CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-         go build -ldflags "-s -w -X main.version=0.10.0" \
+         go build -ldflags "-s -w -X main.version=0.30.0" \
          -o dist/aarch64/nftban-feeds ./cmd/nftban-feeds
 
 4. Build nftban-geoip
@@ -312,7 +312,7 @@ go build -o ../dist/nftban-geoip ./cmd/nftban-geoip
 CGO_ENABLED=0                          # Disable CGO (static linking)
 GOOS=linux                             # Target OS: Linux
 GOARCH=amd64                           # Target architecture: x86_64
--ldflags "-s -w -X main.version=0.10.0"
+-ldflags "-s -w -X main.version=0.30.0"
          │   │  └─ Set version variable
          │   └─ Strip DWARF debug info (smaller binary)
          └─ Strip symbol table (smaller binary)
@@ -375,10 +375,10 @@ git push --tags
 ### Release Artifacts
 
 Each release includes:
-- `nftban-0.10.0-1.el9.x86_64.rpm` (includes x86_64 Go binaries)
-- `nftban-0.10.0-1.el9.aarch64.rpm` (includes aarch64 Go binaries)
-- `nftban_0.10.0-1_amd64.deb` (includes x86_64 Go binaries)
-- `nftban_0.10.0-1_arm64.deb` (includes aarch64 Go binaries)
+- `nftban-0.30.0-1.el9.x86_64.rpm` (includes x86_64 Go binaries)
+- `nftban-0.30.0-1.el9.aarch64.rpm` (includes aarch64 Go binaries)
+- `nftban_0.30.0-1_amd64.deb` (includes x86_64 Go binaries)
+- `nftban_0.30.0-1_arm64.deb` (includes aarch64 Go binaries)
 - `SHA256SUMS` (checksums for verification)
 
 ---
@@ -390,7 +390,7 @@ Each release includes:
 ```bash
 # After building
 ./dist/x86_64/nftban-feeds --version
-# Expected: nftban-feeds v0.10.0
+# Expected: nftban-feeds v0.30.0
 
 # Test feed processing
 echo "192.0.2.1" > /tmp/test-feed.txt
@@ -409,7 +409,7 @@ cat /tmp/processed.txt
 ```bash
 # After building
 ./dist/x86_64/nftban-geoip --version
-# Expected: nftban-geoip v0.10.0
+# Expected: nftban-geoip v0.30.0
 
 # Test GeoIP lookup (requires GeoLite2 database)
 ./dist/x86_64/nftban-geoip \

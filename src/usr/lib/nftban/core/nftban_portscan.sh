@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - Port Scan Detection Module
+# NFTBan v0.30.0 - Port Scan Detection Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Detects and blocks port scanning activity
@@ -41,7 +41,7 @@ readonly NFTBAN_PORTSCAN_LOADED=1
 # =============================================================================
 
 readonly MODULE_NAME="nftban_portscan"
-readonly MODULE_VERSION="0.10.0"
+readonly MODULE_VERSION="0.30.0"
 readonly MODULE_TYPE="core"
 readonly MODULE_DESCRIPTION="Port Scan Detection Module"
 

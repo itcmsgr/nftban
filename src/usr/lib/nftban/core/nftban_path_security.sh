@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - Path Validation & Write Security Module
+# NFTBan v0.30.0 - Path Validation & Write Security Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Secure path validation for file writes (reports, exports, logs)

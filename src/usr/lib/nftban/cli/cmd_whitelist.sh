@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - Whitelist Command Alias
+# NFTBan v0.30.0 - Whitelist Command Alias
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Friendly alias for whitelist-system command

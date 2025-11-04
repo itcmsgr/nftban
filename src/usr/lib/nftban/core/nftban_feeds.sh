@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v0.10.0 - Threat Feeds Core Module
+# NFTBan v0.30.0 - Threat Feeds Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Dynamic threat intelligence feed management with Go integration

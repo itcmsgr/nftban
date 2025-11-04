@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - Safe Configuration Loader
+# NFTBan v0.30.0 - Safe Configuration Loader
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Secure configuration file parser - prevents code execution
