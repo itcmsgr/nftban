@@ -36,6 +36,7 @@ fi
 NFTBAN_UID=$(id -u nftban)
 NFTBAN_GID=$(id -g nftban)
 NFTBAN_CLI_GID=$(getent group nftban-cli | cut -d: -f3)
+NFTBAN_AUDITORS_GID=$(getent group nftban-auditors | cut -d: -f3)
 
 mkdir -p /var/lib/nftban/config
 cat > /var/lib/nftban/config/system.conf <<EOF
@@ -64,6 +65,8 @@ NFTBAN_GROUP="nftban"
 NFTBAN_GID=${NFTBAN_GID}
 NFTBAN_CLI_GROUP="nftban-cli"
 NFTBAN_CLI_GID=${NFTBAN_CLI_GID}
+NFTBAN_AUDITORS_GROUP="nftban-auditors"
+NFTBAN_AUDITORS_GID=${NFTBAN_AUDITORS_GID}
 EOF
 
 chown root:root /var/lib/nftban/config/system.conf
