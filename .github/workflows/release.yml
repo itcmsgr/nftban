@@ -83,7 +83,7 @@ jobs:
       - name: Build RPM packages in Rocky Linux container
         run: |
           docker run --rm -v "$(pwd):/workspace" -w /workspace rockylinux:9 bash -c "
-            dnf install -y rpm-build rpmdevtools tar gzip which
+            dnf install -y rpm-build rpmdevtools tar gzip which systemd-rpm-macros
             chmod +x scripts/build-rpm.sh
             ./scripts/build-rpm.sh
           "
