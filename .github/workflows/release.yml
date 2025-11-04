@@ -1,9 +1,9 @@
 # =============================================================================
-# NFTBan v0.10.0 - GitHub Actions Release Workflow
+# NFTBan v0.30.0 - GitHub Actions Release Workflow
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Automated package building and release on version tags
-# Triggers: Push to v* tags (e.g., v0.10.0, v0.10.1)
+# Triggers: Push to v* tags (e.g., v0.30.0, v0.10.1)
 #
 # What this does:
 #   1. Builds Go binaries (nftban-feeds, nftban-geoip) for x86_64 and aarch64
@@ -108,7 +108,7 @@ jobs:
           ls -lh dist/packages/*.deb
 
       # =======================================================================
-      # 6. GENERATE CHECKSUMS (v0.10.0: SHA256 only, no GPG yet)
+      # 6. GENERATE CHECKSUMS (v0.30.0: SHA256 only, no GPG yet)
       # =======================================================================
       - name: Generate SHA256SUMS
         run: |
@@ -131,7 +131,7 @@ jobs:
         run: |
           cd dist/packages
           cat > MANIFEST.txt <<'EOF'
-          NFTBan v0.10.0 - Release Artifacts
+          NFTBan v0.30.0 - Release Artifacts
           ===================================
 
           EOF
@@ -153,7 +153,7 @@ jobs:
         run: |
           cd dist/packages
           cat > VERIFY.txt <<'EOF'
-          NFTBan v0.10.0 - Package Verification Guide
+          NFTBan v0.30.0 - Package Verification Guide
           ============================================
 
           1. Verify package integrity:
@@ -162,20 +162,20 @@ jobs:
 
           2. Expected output:
 
-             nftban-0.10.0-1.el9.x86_64.rpm: OK
-             nftban-0.10.0-1.el9.aarch64.rpm: OK
-             nftban_0.10.0-1_amd64.deb: OK
-             nftban_0.10.0-1_arm64.deb: OK
+             nftban-0.30.0-1.el9.x86_64.rpm: OK
+             nftban-0.30.0-1.el9.aarch64.rpm: OK
+             nftban_0.30.0-1_amd64.deb: OK
+             nftban_0.30.0-1_arm64.deb: OK
 
           3. Install package:
 
              # Rocky/AlmaLinux/Fedora
-             sudo dnf install nftban-0.10.0-1.el9.x86_64.rpm
+             sudo dnf install nftban-0.30.0-1.el9.x86_64.rpm
 
              # Ubuntu/Debian
-             sudo apt install ./nftban_0.10.0-1_amd64.deb
+             sudo apt install ./nftban_0.30.0-1_amd64.deb
 
-          NOTE: For v0.10.0 we provide SHA256 checksums only.
+          NOTE: For v0.30.0 we provide SHA256 checksums only.
                 GPG package signing will be added in v0.10.1+
 
           For installation help: https://github.com/itcmsgr/nftban/blob/main/docs/guides/install.md
