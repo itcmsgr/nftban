@@ -190,7 +190,31 @@ jobs:
           cat dist/packages/RELEASE_NOTES.md
 
       # =======================================================================
-      # 10. UPLOAD TO GITHUB RELEASE
+      # 10. CREATE STANDARD PACKAGE NAMES (for easy downloads)
+      # =======================================================================
+      - name: Create standard package names
+        run: |
+          cd dist/packages
+
+          # Find and link RPM (el9 or el10)
+          if ls nftban-*.el*.x86_64.rpm 1> /dev/null 2>&1; then
+            RPM_FILE=$(ls nftban-*.el*.x86_64.rpm | head -n1)
+            cp "$RPM_FILE" nftban.el9.x86_64.rpm
+            echo "✓ Created nftban.el9.x86_64.rpm from $RPM_FILE"
+          fi
+
+          # Find and link DEB (amd64)
+          if ls nftban_*_amd64.deb 1> /dev/null 2>&1; then
+            DEB_FILE=$(ls nftban_*_amd64.deb | head -n1)
+            cp "$DEB_FILE" nftban.ubuntu.amd64.deb
+            echo "✓ Created nftban.ubuntu.amd64.deb from $DEB_FILE"
+          fi
+
+          echo "=== All packages ==="
+          ls -lh
+
+      # =======================================================================
+      # 11. UPLOAD TO GITHUB RELEASE
       # =======================================================================
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
@@ -208,7 +232,7 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       # =======================================================================
-      # 11. OPTIONAL: GPG SIGNING (v0.10.1+)
+      # 12. OPTIONAL: GPG SIGNING (v0.10.1+)
       # =======================================================================
       # Uncomment these steps when ready to enable package signing
       # Prerequisites:
