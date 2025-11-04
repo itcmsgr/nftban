@@ -18,7 +18,7 @@ Usage: nftban-health [--alert|--inventory] [--diff BASELINE.json] [--sign KEY.pe
 Notes:
 - You can combine --diff and --sign (diff first, then sign the final JSON).
 - Requires: python3, openssl, pkexec (for polkit)
-- Non-root users in 'auditors' group can run via polkit
+- Non-root users in 'nftban-auditors' group can run via polkit
 EOF
 }
 
