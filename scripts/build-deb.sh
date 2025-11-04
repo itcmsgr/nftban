@@ -100,8 +100,8 @@ prepare_source() {
     cp "$PROJECT_ROOT/packaging/deb/prerm" "$BUILD_DIR/debian/"
     cp "$PROJECT_ROOT/packaging/deb/postrm" "$BUILD_DIR/debian/"
 
-    # Create compat file
-    echo "13" > "$BUILD_DIR/debian/compat"
+    # Note: compat level specified via debhelper-compat (= 13) in control file
+    # No separate debian/compat file needed for debhelper >= 12
 
     # Make rules executable
     chmod +x "$BUILD_DIR/debian/rules"
