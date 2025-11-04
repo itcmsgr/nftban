@@ -129,10 +129,17 @@ build_package() {
     fi
 
     # Move built packages to package directory
+    # dpkg-buildpackage creates files in parent directory of build dir
     log_info "Moving packages to $PACKAGE_DIR..."
-    mv "$PROJECT_ROOT/dist/build"/*.deb "$PACKAGE_DIR/" 2>/dev/null || true
-    mv "$PROJECT_ROOT/dist/build"/*.buildinfo "$PACKAGE_DIR/" 2>/dev/null || true
-    mv "$PROJECT_ROOT/dist/build"/*.changes "$PACKAGE_DIR/" 2>/dev/null || true
+
+    # Packages are in dist/build/ (parent of dist/build/deb/)
+    if ls "$PROJECT_ROOT/dist/build"/*.deb 1> /dev/null 2>&1; then
+        mv "$PROJECT_ROOT/dist/build"/*.deb "$PACKAGE_DIR/"
+        mv "$PROJECT_ROOT/dist/build"/*.buildinfo "$PACKAGE_DIR/" 2>/dev/null || true
+        mv "$PROJECT_ROOT/dist/build"/*.changes "$PACKAGE_DIR/" 2>/dev/null || true
+    else
+        die "No DEB packages found in $PROJECT_ROOT/dist/build/"
+    fi
 
     cd "$PROJECT_ROOT"
 }
