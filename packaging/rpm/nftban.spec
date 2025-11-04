@@ -264,6 +264,11 @@ EOF
 
 chmod 0644 /var/lib/nftban/config/system.conf
 
+# Create log directory (NOT owned by package - preserved on uninstall)
+mkdir -p /var/log/nftban
+chown nftban:nftban /var/log/nftban
+chmod 0750 /var/log/nftban
+
 # Create nftban-auditors group for inventory helpers (if doesn't exist)
 groupadd -f nftban-auditors 2>/dev/null || true
 
@@ -427,7 +432,8 @@ fi
 %dir %attr(0755,nftban,nftban) /var/lib/nftban
 %dir %attr(0750,nftban,nftban) /var/lib/nftban/*
 %dir %attr(0755,nftban,nftban) /var/cache/nftban
-%dir %attr(0750,nftban,nftban) /var/log/nftban
+# Log directory NOT owned by package - preserved on uninstall
+# Created in %post, managed by systemd-tmpfiles
 
 # Inventory helpers
 /usr/libexec/nftban/nftban-procnet
