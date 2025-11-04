@@ -306,10 +306,34 @@ echo ""
 %postun
 %systemd_postun_with_restart nftban.timer nftban-health.timer
 
-# Only remove nftables config if package is being completely removed (not upgraded)
+# Only perform cleanup if package is being completely removed (not upgraded)
+# $1 = 0 means uninstall, $1 = 1 means upgrade
 if [ $1 -eq 0 ]; then
     # Remove nftables table if empty
     nft list table inet nftban >/dev/null 2>&1 && nft delete table inet nftban || true
+
+    # Remove runtime directories
+    rm -rf /run/nftban
+
+    # Remove cache (not needed after uninstall)
+    rm -rf /var/cache/nftban
+
+    # PRESERVE logs and config (standard RPM practice)
+    # - Logs: /var/log/nftban/ - kept for audit/forensics
+    # - Config: /etc/nftban/ - kept as .rpmsave files automatically
+    # - State: /var/lib/nftban/ - kept for potential reinstall
+
+    # Leave informational note in logs directory
+    cat > /var/log/nftban/README.uninstalled <<'EOF'
+NFTBan has been uninstalled, but logs have been preserved for audit purposes.
+
+To completely remove all NFTBan data including logs:
+  sudo rm -rf /var/log/nftban
+  sudo rm -rf /var/lib/nftban
+  sudo rm -rf /etc/nftban
+
+Configuration files were saved as /etc/nftban/*.rpmsave
+EOF
 fi
 
 %files
