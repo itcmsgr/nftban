@@ -276,7 +276,7 @@ chmod 0750 /var/log/nftban
 groupadd -f nftban-auditors 2>/dev/null || true
 
 # Reload systemd
-%systemd_post nftban.timer nftban-health.timer nftban-permissions-audit.timer
+%systemd_post nftban.timer nftban-health.timer
 
 # Print installation message
 echo ""
