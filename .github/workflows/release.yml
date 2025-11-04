@@ -78,13 +78,18 @@ jobs:
           ls -lh dist/aarch64/
 
       # =======================================================================
-      # 4. BUILD RPM PACKAGES
+      # 4. BUILD RPM PACKAGES (using Rocky Linux container)
       # =======================================================================
-      - name: Build RPM packages
+      - name: Build RPM packages in Rocky Linux container
         run: |
-          chmod +x scripts/build-rpm.sh
-          ./scripts/build-rpm.sh
+          docker run --rm -v "$(pwd):/workspace" -w /workspace rockylinux:9 bash -c "
+            dnf install -y rpm-build rpmdevtools tar gzip which
+            chmod +x scripts/build-rpm.sh
+            ./scripts/build-rpm.sh
+          "
 
+      - name: Verify RPM packages built
+        run: |
           echo "=== RPM packages built ==="
           ls -lh dist/packages/*.rpm
 
