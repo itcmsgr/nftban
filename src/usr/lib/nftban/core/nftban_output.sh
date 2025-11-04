@@ -170,9 +170,9 @@ nftban_get_version() {
     if [[ -n "${NFTBAN_VERSION:-}" ]]; then
         echo "$NFTBAN_VERSION"
     elif command -v nftban >/dev/null 2>&1; then
-        nftban --version 2>/dev/null | sed -n 's/.*\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p' || echo "0.10.0"
+        nftban --version 2>/dev/null | sed -n 's/.*\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p' || echo "0.30.0"
     else
-        echo "0.10.0"
+        echo "0.30.0"
     fi
 }
 
