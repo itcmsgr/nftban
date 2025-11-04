@@ -1,14 +1,26 @@
-#!/bin/bash
+#!/usr/bin/env bash
 # =============================================================================
-# NFTBan Complete Purge Script (for RPM systems)
+# NFTBan v0.30.0 - Complete Purge Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Completely remove all NFTBan data including logs and config
 #
-# Usage:
+# meta:name=nftban_purge
+# meta:type=utility
+# meta:header=NFTBan Complete Purge
+# meta:version=0.30.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# **Description & Purpose**
+# meta:description=Completely purge NFTBan including logs and config (RPM systems)
+# meta:input=User confirmation
+# meta:output=Complete removal status
+#
+# **Usage:**
 #   sudo ./nftban-purge.sh
 #
-# Note: Debian/Ubuntu users should use:
+# **Note:** Debian/Ubuntu users should use:
 #   sudo apt-get purge nftban
 # =============================================================================
 
