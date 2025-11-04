@@ -61,8 +61,8 @@ readonly NFTBAN_PORTSCAN_WHITELIST_FILE="${PORTSCAN_WHITELIST_FILE:-/etc/nftban/
 # NFTABLES CONFIGURATION
 # =============================================================================
 
-readonly NFTBAN_NFT_TABLE_V4="${NFTBAN_NFT_TABLE_V4:-nftban_v4}"
-readonly NFTBAN_NFT_TABLE_V6="${NFTBAN_NFT_TABLE_V6:-nftban_v6}"
+readonly NFTBAN_NFT_TABLE="${NFTBAN_NFT_TABLE:-nftban_main}"
+readonly NFTBAN_NFT_FAMILY="${NFTBAN_NFT_FAMILY:-inet}"
 readonly NFTBAN_NFT_PORTSCAN_CHAIN="portscan_detection"
 readonly NFTBAN_NFT_LOG_PREFIX="nftban: portscan: "
 
@@ -310,58 +310,48 @@ nftban_portscan_setup_nftables_logging() {
     local monitor_ports
     monitor_ports=$(nftban_portscan_load_config "PORTSCAN_MONITOR_PORTS" "closed")
 
-    # Apply to both IPv4 and IPv6
-    for family in ip ip6; do
-        local table
-        if [[ "$family" == "ip" ]]; then
-            table="$NFTBAN_NFT_TABLE_V4"
-        else
-            table="$NFTBAN_NFT_TABLE_V6"
-        fi
+    # Create chain if it doesn't exist
+    if ! nft list chain $NFTBAN_NFT_FAMILY $NFTBAN_NFT_TABLE $NFTBAN_NFT_PORTSCAN_CHAIN &>/dev/null; then
+        nft add chain $NFTBAN_NFT_FAMILY $NFTBAN_NFT_TABLE $NFTBAN_NFT_PORTSCAN_CHAIN \
+            '{ type filter hook input priority -1; policy accept; }' 2>/dev/null || \
+        nft add chain $NFTBAN_NFT_FAMILY $NFTBAN_NFT_TABLE $NFTBAN_NFT_PORTSCAN_CHAIN 2>/dev/null || true
+    fi
 
-        # Create chain if it doesn't exist
-        if ! nft list chain $family $table $NFTBAN_NFT_PORTSCAN_CHAIN &>/dev/null; then
-            nft add chain $family $table $NFTBAN_NFT_PORTSCAN_CHAIN \
-                '{ type filter hook input priority -1; policy accept; }' 2>/dev/null || \
-            nft add chain $family $table $NFTBAN_NFT_PORTSCAN_CHAIN 2>/dev/null || true
-        fi
+    # Flush existing rules
+    nft flush chain $NFTBAN_NFT_FAMILY $NFTBAN_NFT_TABLE $NFTBAN_NFT_PORTSCAN_CHAIN 2>/dev/null || true
 
-        # Flush existing rules
-        nft flush chain $family $table $NFTBAN_NFT_PORTSCAN_CHAIN 2>/dev/null || true
-
-        # Add logging rules based on monitor mode
-        case "$monitor_ports" in
-            all)
-                # Log all new connections
-                nft add rule $family $table $NFTBAN_NFT_PORTSCAN_CHAIN \
+    # Add logging rules based on monitor mode
+    case "$monitor_ports" in
+        all)
+            # Log all new connections
+            nft add rule $NFTBAN_NFT_FAMILY $NFTBAN_NFT_TABLE $NFTBAN_NFT_PORTSCAN_CHAIN \
+                ct state new \
+                limit rate 100/second burst 200 packets \
+                log prefix "\"$NFTBAN_NFT_LOG_PREFIX\"" \
+                counter
+            ;;
+        closed)
+            # Log connections to ports not in allow list (simplified: log rejected)
+            nft add rule $NFTBAN_NFT_FAMILY $NFTBAN_NFT_TABLE $NFTBAN_NFT_PORTSCAN_CHAIN \
+                tcp flags syn \
+                ct state new \
+                limit rate 100/second burst 200 packets \
+                log prefix "\"$NFTBAN_NFT_LOG_PREFIX\"" \
+                counter
+            ;;
+        custom)
+            local custom_ports
+            custom_ports=$(nftban_portscan_load_config "PORTSCAN_CUSTOM_PORTS" "")
+            if [[ -n "$custom_ports" ]]; then
+                nft add rule $NFTBAN_NFT_FAMILY $NFTBAN_NFT_TABLE $NFTBAN_NFT_PORTSCAN_CHAIN \
+                    tcp dport "{ $custom_ports }" \
                     ct state new \
                     limit rate 100/second burst 200 packets \
                     log prefix "\"$NFTBAN_NFT_LOG_PREFIX\"" \
                     counter
-                ;;
-            closed)
-                # Log connections to ports not in allow list (simplified: log rejected)
-                nft add rule $family $table $NFTBAN_NFT_PORTSCAN_CHAIN \
-                    tcp flags syn \
-                    ct state new \
-                    limit rate 100/second burst 200 packets \
-                    log prefix "\"$NFTBAN_NFT_LOG_PREFIX\"" \
-                    counter
-                ;;
-            custom)
-                local custom_ports
-                custom_ports=$(nftban_portscan_load_config "PORTSCAN_CUSTOM_PORTS" "")
-                if [[ -n "$custom_ports" ]]; then
-                    nft add rule $family $table $NFTBAN_NFT_PORTSCAN_CHAIN \
-                        tcp dport "{ $custom_ports }" \
-                        ct state new \
-                        limit rate 100/second burst 200 packets \
-                        log prefix "\"$NFTBAN_NFT_LOG_PREFIX\"" \
-                        counter
-                fi
-                ;;
-        esac
-    done
+            fi
+            ;;
+    esac
 
     nftban_portscan_log "INFO" "nftables logging configured for mode: $monitor_ports"
     echo "  ✅ nftables logging configured (mode: $monitor_ports)"
@@ -373,19 +363,10 @@ nftban_portscan_setup_nftables_logging() {
 nftban_portscan_remove_nftables_logging() {
     nftban_portscan_log "INFO" "Removing nftables logging for port scan detection"
 
-    # Flush chain on both tables
-    for family in ip ip6; do
-        local table
-        if [[ "$family" == "ip" ]]; then
-            table="$NFTBAN_NFT_TABLE_V4"
-        else
-            table="$NFTBAN_NFT_TABLE_V6"
-        fi
-
-        if nft list chain $family $table $NFTBAN_NFT_PORTSCAN_CHAIN &>/dev/null; then
-            nft flush chain $family $table $NFTBAN_NFT_PORTSCAN_CHAIN 2>/dev/null || true
-        fi
-    done
+    # Flush chain
+    if nft list chain $NFTBAN_NFT_FAMILY $NFTBAN_NFT_TABLE $NFTBAN_NFT_PORTSCAN_CHAIN &>/dev/null; then
+        nft flush chain $NFTBAN_NFT_FAMILY $NFTBAN_NFT_TABLE $NFTBAN_NFT_PORTSCAN_CHAIN 2>/dev/null || true
+    fi
 
     nftban_portscan_log "INFO" "nftables logging removed"
 
@@ -543,11 +524,11 @@ nftban_portscan_status() {
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  📊 Active Rules (IPv4)"
+    echo "  📊 Active Rules"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    if nft list chain ip $NFTBAN_NFT_TABLE_V4 $NFTBAN_NFT_PORTSCAN_CHAIN &>/dev/null; then
-        nft list chain ip $NFTBAN_NFT_TABLE_V4 $NFTBAN_NFT_PORTSCAN_CHAIN | grep -v "^table\|^chain" | sed 's/^/  /'
+    if nft list chain $NFTBAN_NFT_FAMILY $NFTBAN_NFT_TABLE $NFTBAN_NFT_PORTSCAN_CHAIN &>/dev/null; then
+        nft list chain $NFTBAN_NFT_FAMILY $NFTBAN_NFT_TABLE $NFTBAN_NFT_PORTSCAN_CHAIN | grep -v "^table\|^chain" | sed 's/^/  /'
     else
         echo "  (no active rules)"
     fi
