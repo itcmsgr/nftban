@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - Permissions CLI Handler
+# NFTBan v0.30.0 - Permissions CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for permission management and auditing

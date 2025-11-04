@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - Statistics & Metrics Core Engine
+# NFTBan v0.30.0 - Statistics & Metrics Core Engine
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Comprehensive statistics collection, analysis, and reporting
@@ -874,5 +874,5 @@ nftban_stats_create_snapshot() {
 
 # Module loaded
 if type -t nftban_print_status >/dev/null 2>&1; then
-    nftban_print_status "debug" "Stats module loaded (v0.10.0)"
+    nftban_print_status "debug" "Stats module loaded (v0.30.0)"
 fi

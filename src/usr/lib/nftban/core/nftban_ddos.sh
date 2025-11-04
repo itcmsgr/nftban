@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - DDoS Protection Module
+# NFTBan v0.30.0 - DDoS Protection Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Comprehensive DDoS protection using nftables
@@ -41,7 +41,7 @@ readonly NFTBAN_DDOS_LOADED=1
 # =============================================================================
 
 readonly MODULE_NAME="nftban_ddos"
-readonly MODULE_VERSION="0.10.0"
+readonly MODULE_VERSION="0.30.0"
 readonly MODULE_TYPE="core"
 readonly MODULE_DESCRIPTION="DDoS Protection Module"
 

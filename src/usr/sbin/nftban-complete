@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# NFTBan v0.10.0 - Ban Management Backend
+# NFTBan v0.30.0 - Ban Management Backend
 # Production-ready ban management with:
 # - Two-table architecture (runtime + main)
 # - Fail2ban integration with temp bans
@@ -575,7 +575,7 @@ nftban_unban() {
 
 usage() {
   cat <<EOF
-NFTBan v0.10.0 - Ban Management
+NFTBan v0.30.0 - Ban Management
 
 MASTER CONTROL:
   nftban enable|disable|status

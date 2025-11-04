@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - Atomic Nftables Reload Module
+# NFTBan v0.30.0 - Atomic Nftables Reload Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Atomic nftables reload with table swap

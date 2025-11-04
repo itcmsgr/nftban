@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - Periodic Maintenance Runner
+# NFTBan v0.30.0 - Periodic Maintenance Runner
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Run periodic maintenance tasks (feeds, GeoIP, cleanup)

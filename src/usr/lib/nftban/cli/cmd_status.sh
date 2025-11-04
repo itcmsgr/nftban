@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - Global Status Command
+# NFTBan v0.30.0 - Global Status Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Global system status overview

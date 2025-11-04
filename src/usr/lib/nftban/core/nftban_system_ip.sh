@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - System IP Auto-Detection Module
+# NFTBan v0.30.0 - System IP Auto-Detection Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Automatic system IP detection and whitelisting

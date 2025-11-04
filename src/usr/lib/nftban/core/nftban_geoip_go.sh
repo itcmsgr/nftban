@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - GO GeoIP Wrapper Module
+# NFTBan v0.30.0 - GO GeoIP Wrapper Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Wrapper for nftban-geoip GO binary

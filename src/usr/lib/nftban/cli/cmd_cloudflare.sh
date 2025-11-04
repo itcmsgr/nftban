@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # NFTBan CLI - Cloudflare Command Handler
-# Part of NFTBan v0.10.0 - FHS-Compliant Architecture
+# Part of NFTBan v0.30.0 - FHS-Compliant Architecture
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI handler for cloudflare commands

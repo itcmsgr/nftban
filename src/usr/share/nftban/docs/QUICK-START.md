@@ -1,4 +1,4 @@
-# NFTBan v0.10.0 - Quick Start Guide
+# NFTBan v0.30.0 - Quick Start Guide
 
 **Get NFTBan running in 5 minutes**
 
@@ -8,11 +8,11 @@
 
 ```bash
 # Rocky Linux / AlmaLinux / Fedora
-sudo dnf install -y nftban-0.10.0-1.el9.x86_64.rpm
+sudo dnf install -y nftban-0.30.0-1.el9.x86_64.rpm
 sudo systemctl enable --now nftban-health.timer
 
 # Ubuntu / Debian
-sudo apt install ./nftban_0.10.0-1_amd64.deb
+sudo apt install ./nftban_0.30.0-1_amd64.deb
 sudo systemctl enable --now nftban-health.timer
 
 # Check health
@@ -40,7 +40,7 @@ nftban health check
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.el9.x86_64.rpm
 
 # Install
-sudo dnf install -y ./nftban-0.10.0-1.el9.x86_64.rpm
+sudo dnf install -y ./nftban-0.30.0-1.el9.x86_64.rpm
 
 # Enable auto-healing
 sudo systemctl enable --now nftban-health.timer
@@ -53,7 +53,7 @@ sudo systemctl enable --now nftban-health.timer
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.amd64.deb
 
 # Install
-sudo apt install ./nftban_0.10.0-1_amd64.deb
+sudo apt install ./nftban_0.30.0-1_amd64.deb
 
 # Enable auto-healing
 sudo systemctl enable --now nftban-health.timer
@@ -224,7 +224,7 @@ sudo vi /etc/nftban/conf.d/feeds.conf
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    NFTBan v0.10.0                           │
+│                    NFTBan v0.30.0                           │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  🐧 Bash Shell Scripts (Core Logic)                        │
@@ -330,6 +330,6 @@ sudo dnf reinstall nftban
 
 ---
 
-**Version:** 0.10.0
+**Version:** 0.30.0
 **Last Updated:** 2025-10-30
 **License:** MPL-2.0

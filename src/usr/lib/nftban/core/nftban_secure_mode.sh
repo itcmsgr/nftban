@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - Secure Mode Directive
+# NFTBan v0.30.0 - Secure Mode Directive
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Generic security wrapper - source this to enable automatic security

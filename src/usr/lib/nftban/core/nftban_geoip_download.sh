@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - GeoIP Database Download Module
+# NFTBan v0.30.0 - GeoIP Database Download Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Download and update MaxMind GeoLite2 database
