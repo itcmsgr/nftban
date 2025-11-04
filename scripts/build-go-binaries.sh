@@ -34,7 +34,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m' # No Color
 
 # Configuration
-VERSION="${VERSION:-0.10.0}"
+VERSION="${VERSION:-0.30.0}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 DIST_DIR="${PROJECT_ROOT}/dist"
 SRC_DIR="${PROJECT_ROOT}/src/usr/lib/nftban/bin"
