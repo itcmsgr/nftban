@@ -9,18 +9,48 @@
 set -e
 
 case "$1" in
-    purge)
-        # Remove nftables table if empty (only on purge, not upgrade)
+    remove)
+        # On remove (not purge): preserve logs and config for audit/forensics
+        # Remove only runtime and cache data
+        rm -rf /run/nftban
+        rm -rf /var/cache/nftban
+
+        # Remove nftables table if empty
         if command -v nft >/dev/null 2>&1; then
             nft list table inet nftban >/dev/null 2>&1 && \
                 nft delete table inet nftban || true
         fi
 
-        # Remove directories (only on purge)
+        # Leave informational note in logs directory
+        if [ -d /var/log/nftban ]; then
+            cat > /var/log/nftban/README.removed <<'EOF'
+NFTBan has been removed, but logs have been preserved for audit purposes.
+
+To completely purge all NFTBan data including logs:
+  sudo apt-get purge nftban
+
+Or manually remove:
+  sudo rm -rf /var/log/nftban
+  sudo rm -rf /var/lib/nftban
+  sudo rm -rf /etc/nftban
+EOF
+        fi
+        ;;
+
+    purge)
+        # On purge: remove EVERYTHING including logs and config
+        # This is explicit user action via "apt-get purge nftban"
         rm -rf /var/lib/nftban
         rm -rf /var/cache/nftban
         rm -rf /var/log/nftban
         rm -rf /etc/nftban
+        rm -rf /run/nftban
+
+        # Remove nftables table
+        if command -v nft >/dev/null 2>&1; then
+            nft list table inet nftban >/dev/null 2>&1 && \
+                nft delete table inet nftban || true
+        fi
         ;;
 esac
 
