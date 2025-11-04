@@ -86,6 +86,9 @@ jobs:
             dnf install -y rpm-build rpmdevtools tar gzip which systemd-rpm-macros
             chmod +x scripts/build-rpm.sh
             ./scripts/build-rpm.sh
+
+            # Fix permissions so Ubuntu runner can read the files
+            chmod -R a+rX /workspace/dist/packages/
           "
 
       - name: Verify RPM packages built
