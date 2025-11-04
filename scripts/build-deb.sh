@@ -134,9 +134,15 @@ build_package() {
 
     # Packages are in dist/build/ (parent of dist/build/deb/)
     if ls "$PROJECT_ROOT/dist/build"/*.deb 1> /dev/null 2>&1; then
-        mv "$PROJECT_ROOT/dist/build"/*.deb "$PACKAGE_DIR/"
-        mv "$PROJECT_ROOT/dist/build"/*.buildinfo "$PACKAGE_DIR/" 2>/dev/null || true
-        mv "$PROJECT_ROOT/dist/build"/*.changes "$PACKAGE_DIR/" 2>/dev/null || true
+        # Use cp instead of mv to avoid permission issues in CI/CD
+        cp "$PROJECT_ROOT/dist/build"/*.deb "$PACKAGE_DIR/"
+        cp "$PROJECT_ROOT/dist/build"/*.buildinfo "$PACKAGE_DIR/" 2>/dev/null || true
+        cp "$PROJECT_ROOT/dist/build"/*.changes "$PACKAGE_DIR/" 2>/dev/null || true
+
+        # Clean up source files after successful copy
+        rm -f "$PROJECT_ROOT/dist/build"/*.deb
+        rm -f "$PROJECT_ROOT/dist/build"/*.buildinfo
+        rm -f "$PROJECT_ROOT/dist/build"/*.changes
     else
         die "No DEB packages found in $PROJECT_ROOT/dist/build/"
     fi
