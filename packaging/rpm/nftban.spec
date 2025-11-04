@@ -220,6 +220,18 @@ install -m 0644 NFTBAN_AI_TESTING/docs/MODULAR_ARCHITECTURE.md %{buildroot}/usr/
 install -m 0644 NFTBAN_AI_TESTING/docs/INTEGRATION_SUMMARY.md %{buildroot}/usr/share/doc/nftban/architecture/
 install -m 0644 NFTBAN_AI_TESTING/docs/MAIL_SYSTEM_DESIGN.md %{buildroot}/usr/share/doc/nftban/architecture/
 
+# Install license files
+install -d -m 0755 %{buildroot}/usr/share/licenses/nftban
+install -m 0644 licenses/MPL-2.0.txt %{buildroot}/usr/share/licenses/nftban/
+install -m 0644 licenses/NFTBAN-Pro-Commercial.md %{buildroot}/usr/share/licenses/nftban/
+install -m 0644 licenses/NFTBAN-Docs.txt %{buildroot}/usr/share/licenses/nftban/
+
+# Install project documentation to /usr/share/nftban/docs/
+mkdir -p %{buildroot}/usr/share/nftban/docs
+install -m 0644 NOTICE.md %{buildroot}/usr/share/nftban/docs/
+install -m 0644 TRADEMARK.md %{buildroot}/usr/share/nftban/docs/
+install -m 0644 CONTRIBUTING.md %{buildroot}/usr/share/nftban/docs/
+
 %pre
 # Create nftban user and nftban-cli group (via sysusers.d)
 %sysusers_create_compat packaging/sysusers.d/nftban.conf
