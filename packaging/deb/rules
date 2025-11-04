@@ -10,9 +10,10 @@
 	dh $@
 
 override_dh_auto_install:
-	# Install from src/ directory structure
+	# Install from src/ directory structure (excluding systemd units - handled separately)
 	install -d debian/nftban
-	cp -a src/* debian/nftban/
+	# Copy everything except systemd directory (will be placed in /lib for DEB)
+	rsync -a --exclude='usr/lib/systemd' src/ debian/nftban/
 
 	# Create FHS directories
 	install -d -m 0755 debian/nftban/var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics,config}
@@ -21,7 +22,7 @@ override_dh_auto_install:
 	install -d -m 0750 debian/nftban/var/log/nftban
 	install -d -m 0700 debian/nftban/etc/nftban/keys
 
-	# Install systemd units
+	# Install systemd units (DEB uses /lib not /usr/lib)
 	install -d -m 0755 debian/nftban/lib/systemd/system
 	install -m 0644 src/usr/lib/systemd/system/*.service debian/nftban/lib/systemd/system/
 	install -m 0644 src/usr/lib/systemd/system/*.timer debian/nftban/lib/systemd/system/
