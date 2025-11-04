@@ -110,15 +110,15 @@ polkit.addRule(function (action, subject) {
     "/usr/libexec/nftban/nftban-verify",
     "/usr/libexec/nftban/nftban-firewall"
   ];
-  if (ok.indexOf(prog) !== -1 && subject.isInGroup("auditors")) {
+  if (ok.indexOf(prog) !== -1 && subject.isInGroup("nftban-auditors")) {
     return polkit.Result.YES;
   }
 });
 EOF
 
-# Create auditors group
-sudo groupadd -f auditors
-sudo usermod -aG auditors $USER
+# Create nftban-auditors group
+sudo groupadd -f nftban-auditors
+sudo usermod -aG nftban-auditors $USER
 ```
 
 ### **Step 6: Test Installation**

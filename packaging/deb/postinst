@@ -20,9 +20,9 @@ case "$1" in
             addgroup --system nftban-cli
         fi
 
-        # Create auditors group for v0.30 inventory helpers
-        if ! getent group auditors >/dev/null; then
-            addgroup --system auditors
+        # Create nftban-auditors group for v0.30 inventory helpers
+        if ! getent group nftban-auditors >/dev/null; then
+            addgroup --system nftban-auditors
         fi
 
         # Generate system.conf with UID/GID

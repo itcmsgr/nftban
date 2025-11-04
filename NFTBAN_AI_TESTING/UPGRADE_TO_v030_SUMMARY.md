@@ -38,12 +38,12 @@ Successfully upgraded NFTBan from v0.10.0 to v0.30.0, integrating all inventory 
 # Smart mail adapter
 /usr/lib/nftban/core/nftban_mail_v030.sh
 
-# Polkit rules for auditors group
+# Polkit rules for nftban-auditors group
 /usr/share/polkit-1/rules.d/50-nftban-v030.rules
 ```
 
 #### Post-Install Scriptlet:
-- Creates `auditors` group automatically
+- Creates `nftban-auditors` group automatically
 - Updated installation message to v0.30.0
 
 #### Documentation Paths:
@@ -58,7 +58,7 @@ Successfully upgraded NFTBan from v0.10.0 to v0.30.0, integrating all inventory 
 - Add baseline management with drift detection and cryptographic signing
 - Add smart mail adapter (auto-detects v0.10 module, sendmail, msmtp, curl)
 - Add 4 inventory helpers + 3 health commands
-- Add Polkit rules for auditors group
+- Add Polkit rules for nftban-auditors group
 - Smart adaptation: uses existing systems, graceful fallbacks
 - Maintain full backward compatibility with v0.10
 ```
@@ -106,7 +106,7 @@ Successfully upgraded NFTBan from v0.10.0 to v0.30.0, integrating all inventory 
 
 **Created:** New file for v0.30 inventory helpers authorization
 
-**Allows Members of `auditors` Group to Execute:**
+**Allows Members of `nftban-auditors` Group to Execute:**
 ```javascript
 /usr/libexec/nftban/nftban-procnet
 /usr/libexec/nftban/nftban-pkgs
