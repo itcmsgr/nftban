@@ -53,7 +53,8 @@ check_dependencies() {
     local missing=()
 
     for dep in "${deps[@]}"; do
-        if ! command -v "$dep" >/dev/null 2>&1 && ! dpkg -l | grep -q "^ii.*$dep"; then
+        # Check if command exists OR package is installed
+        if ! command -v "$dep" >/dev/null 2>&1 && ! dpkg -l 2>/dev/null | grep -q "^ii.*$dep"; then
             missing+=("$dep")
         fi
     done
