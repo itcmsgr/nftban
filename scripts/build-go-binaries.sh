@@ -8,7 +8,7 @@
 # meta:name=build-go-binaries.sh
 # meta:type=tool
 # meta:header=Go Binary Builder
-# meta:version=0.10.0
+# meta:version=0.30.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

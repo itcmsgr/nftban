@@ -8,7 +8,7 @@
 # meta:name=nftban-geoip
 # meta:type=tool
 # meta:header=NFTBan GeoIP Lookup (Go Binary Wrapper)
-# meta:version=0.10.0
+# meta:version=0.30.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

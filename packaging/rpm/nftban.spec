@@ -275,14 +275,19 @@ chmod 0750 /var/log/nftban
 # Create nftban-auditors group for inventory helpers (if doesn't exist)
 groupadd -f nftban-auditors 2>/dev/null || true
 
+# Run autoheal to ensure everything is configured correctly
+/usr/lib/nftban/helpers/autoheal.sh
+
 # Reload systemd
-%systemd_post nftban.timer nftban-health.timer
+%systemd_post nftban.timer
 
 # Print installation message
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
 echo "║  NFTBan v0.30.0 Installation Complete!                    ║"
 echo "╚════════════════════════════════════════════════════════════╝"
+echo ""
+echo "✅ Auto-heal completed - all systems configured"
 echo ""
 echo "Next steps:"
 echo "  1. Install fail2ban (recommended):"
@@ -294,13 +299,11 @@ echo "  2. Enable services:"
 echo "     systemctl enable --now nftables"
 echo "     systemctl enable --now fail2ban"
 echo ""
-echo "  3. Enable NFTBan health timer (includes auto-heal):"
-echo "     systemctl enable --now nftban-health.timer"
+echo "  3. Check status:"
+echo "     systemctl status nftban.timer  # ONE timer for all maintenance"
+echo "     nftban health check             # Manual health check"
 echo ""
-echo "  4. Check system health:"
-echo "     nftban health check"
-echo ""
-echo "  5. Try inventory features:"
+echo "  4. Try inventory features:"
 echo "     nftban-health --inventory | jq ."
 echo "     nftban-baseline-save"
 echo ""
@@ -309,10 +312,10 @@ echo "Architecture: /usr/share/doc/nftban/architecture/"
 echo ""
 
 %preun
-%systemd_preun nftban.timer nftban-health.timer
+%systemd_preun nftban.timer
 
 %postun
-%systemd_postun_with_restart nftban.timer nftban-health.timer
+%systemd_postun_with_restart nftban.timer
 
 # Only perform cleanup if package is being completely removed (not upgraded)
 # $1 = 0 means uninstall, $1 = 1 means upgrade

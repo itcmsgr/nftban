@@ -8,7 +8,7 @@
 # meta:name=cmd_fail2ban
 # meta:type=cli
 # meta:header=Fail2ban CLI
-# meta:version=0.10.0
+# meta:version=0.30.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
