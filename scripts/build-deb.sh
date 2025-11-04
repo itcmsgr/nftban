@@ -24,7 +24,7 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 readonly BUILD_DIR="$PROJECT_ROOT/dist/build/deb"
 readonly PACKAGE_DIR="$PROJECT_ROOT/dist/packages"
-readonly VERSION="0.10.0"
+readonly VERSION="0.30.0"
 readonly RELEASE="1"
 
 # =============================================================================
