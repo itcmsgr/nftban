@@ -290,7 +290,51 @@ to_seconds() {
 
 nftban_fail2ban_ban() {
   local ip bantime source jail comment
-  ip="$1"; shift
+  ip="${1:-}"; shift || true
+
+  # Validate IP argument
+  if [[ -z "$ip" ]]; then
+    echo "ERROR: IP address required" >&2
+    echo "Usage: nftban ban <IP> [reason]" >&2
+    echo "   or: nftban ban <IP> --timeout <time> [--reason <text>]" >&2
+    return 1
+  fi
+
+  # Check for help request
+  if [[ "$ip" == "help" || "$ip" == "--help" || "$ip" == "-h" ]]; then
+    echo "Usage: nftban ban <IP> [reason]"
+    echo ""
+    echo "Options:"
+    echo "  --timeout <time>   Ban duration (default: 1h)"
+    echo "  --reason <text>    Ban reason/comment"
+    echo "  --source <name>    Ban source (default: manual)"
+    echo "  --jail <name>      Jail name (for fail2ban)"
+    echo ""
+    echo "Examples:"
+    echo "  nftban ban 203.0.113.1"
+    echo "  nftban ban 203.0.113.1 'Brute force attack'"
+    echo "  nftban ban 203.0.113.1 --timeout 24h --reason 'Repeated violations'"
+    return 0
+  fi
+
+  # CRITICAL: Check if IP is whitelisted
+  if grep -qr "^${ip}\s*$\|^${ip}\s*#" "$WL_DIR"/*.conf 2>/dev/null; then
+    local wl_file
+    wl_file=$(grep -lr "^${ip}\s*$\|^${ip}\s*#" "$WL_DIR"/*.conf 2>/dev/null | head -1)
+    echo "ERROR: Cannot ban whitelisted IP: $ip" >&2
+    echo "" >&2
+    echo "This IP is protected in: $wl_file" >&2
+    echo "" >&2
+    echo "⚠️  SECURITY WARNING:" >&2
+    echo "Banning whitelisted IPs could LOCK YOU OUT of the server!" >&2
+    echo "" >&2
+    echo "To ban this IP anyway:" >&2
+    echo "  1. Remove from whitelist: sudo nano $wl_file" >&2
+    echo "  2. Reload firewall: sudo nftban firewall reload" >&2
+    echo "  3. Then ban: sudo nftban ban $ip" >&2
+    return 1
+  fi
+
   bantime=""
   source="unknown"
   jail="unknown"
@@ -510,12 +554,24 @@ nftban_list() {
 }
 
 nftban_unban() {
-  local ip="$1"
+  local ip="${1:-}"
 
   if [[ -z "$ip" ]]; then
     echo "ERROR: IP address required" >&2
-    echo "Usage: nftban unban <ip>" >&2
+    echo "Usage: nftban unban <IP>" >&2
     return 1
+  fi
+
+  # Check for help request
+  if [[ "$ip" == "help" || "$ip" == "--help" || "$ip" == "-h" ]]; then
+    echo "Usage: nftban unban <IP>"
+    echo ""
+    echo "Removes an IP from both temporary and permanent ban lists."
+    echo ""
+    echo "Examples:"
+    echo "  nftban unban 203.0.113.1"
+    echo "  nftban unban 2001:db8::1"
+    return 0
   fi
 
   local found=0
