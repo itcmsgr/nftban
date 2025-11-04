@@ -91,6 +91,17 @@ prepare_source() {
     mkdir -p "$BUILD_DIR/licenses"
     cp -a "$PROJECT_ROOT/licenses/"* "$BUILD_DIR/licenses/"
 
+    # Copy NFTBAN_AI_TESTING directory (contains helpers, health scripts, docs)
+    cp -a "$PROJECT_ROOT/NFTBAN_AI_TESTING" "$BUILD_DIR/"
+
+    # Copy docs directory (contains man pages)
+    cp -a "$PROJECT_ROOT/docs" "$BUILD_DIR/"
+
+    # Copy additional documentation files
+    cp "$PROJECT_ROOT/NOTICE.md" "$BUILD_DIR/" 2>/dev/null || true
+    cp "$PROJECT_ROOT/TRADEMARK.md" "$BUILD_DIR/" 2>/dev/null || true
+    cp "$PROJECT_ROOT/CONTRIBUTING.md" "$BUILD_DIR/" 2>/dev/null || true
+
     # Copy debian packaging directory
     mkdir -p "$BUILD_DIR/debian"
     cp "$PROJECT_ROOT/packaging/deb/control" "$BUILD_DIR/debian/"
