@@ -1,84 +1,114 @@
-# GitHub Actions CI/CD Help Needed - RPM Build Failure
-
-## Quick Summary
-NFTBan v0.30.0 GitHub Actions workflow fails on RPM build step. Need help debugging container-based RPM building on Ubuntu runners.
-
-**Repository:** https://github.com/itcmsgr/nftban
-**Branch:** main
-**Tag:** v0.30.0
-**Workflow File:** `.github/workflows/release.yml`
+# 🧩 HELP_NEEDED_CI_CD.md
+**Project:** [nftban](https://github.com/itcmsgr/nftban)
+**Maintainer:** itcmsgr
+**Version under test:** `v0.30.0`
+**Build target:** Rocky Linux 9 (containerized)
+**Focus:** CI/CD pipeline reliability and packaging (RPM + DEB)
 
 ---
 
-## Problem Description
+## ⚡ Quick Summary
 
-### Current Issue
-- **Workflow:** Release Packages (`.github/workflows/release.yml`)
-- **Trigger:** Push to tag `v0.30.0`
-- **Status:** ❌ FAILING on "Build RPM packages" step
-- **Attempt Count:** 3 times with different fixes
-- **DEB Build:** ✅ Works fine
-- **RPM Build:** ❌ Fails consistently
+| Item | Detail |
+|------|--------|
+| **Repository** | [https://github.com/itcmsgr/nftban](https://github.com/itcmsgr/nftban) |
+| **Workflow file** | `.github/workflows/release.yml` |
+| **Current status** | ❌ CI fails during RPM packaging stage (after Go binaries build successfully) |
+| **Target environments** | Rocky Linux 9/10, AlmaLinux 9/10 (RPM) / Ubuntu 22.04+, Debian 12+ (DEB) |
+| **Artifacts** | RPM and DEB packages with nftban binaries |
+| **Last workflow run** | Failed on "Build RPM packages in Rocky Linux container" step |
 
-### Error Details
+---
+
+## 🚨 Problem Description
+
+The CI pipeline fails in the **RPM packaging stage**, specifically when building inside a Rocky Linux 9 container. The failure occurs after:
+- ✅ Go binaries build successfully on Ubuntu runner
+- ✅ Binaries copied to `src/usr/lib/nftban/bin/`
+- ❌ Docker container started for RPM build
+- ❌ Build script executed inside container
+
+**Current error status:**
 ```
-Step: Build RPM packages
+Step: Build RPM packages in Rocky Linux container
 Conclusion: failure
 Status: completed
 ```
 
-Cannot access detailed logs via API (authentication issues).
+**Workflow run:** https://github.com/itcmsgr/nftban/actions/workflows/release.yml
+
+**What we know:**
+- DEB build works fine on Ubuntu runner
+- RPM build script works perfectly on actual Rocky/CentOS servers (tested on lab, lab2, lab3, lab4)
+- Container approach: `docker run --rm -v "$(pwd):/workspace" -w /workspace rockylinux:9`
+- Cannot access detailed logs via API (authentication issues)
+
+**Suspected issues:**
+1. File permissions between Ubuntu runner and Rocky container
+2. Volume mount not accessible inside container
+3. Missing dependencies in container
+4. rpmbuild working directory issues
 
 ---
 
-## What We're Trying to Build
+## 📦 Package Requirements
 
-### Package Output Requirements
+**Expected output:**
 
-1. **RPM Package (for Rocky/AlmaLinux/CentOS/Fedora)**
-   - Versioned: `nftban-0.30.0-1.el*.x86_64.rpm`
-   - Standard name: `nftban.el9.x86_64.rpm` (copy for easy downloads)
-   - Download URL: `https://github.com/itcmsgr/nftban/releases/latest/download/nftban.el9.x86_64.rpm`
+**RPM Package (for Rocky/AlmaLinux/CentOS/Fedora):**
+- Versioned: `nftban-0.30.0-1.el*.x86_64.rpm`
+- Standard name: `nftban.el9.x86_64.rpm` (copy for easy downloads)
+- Download URL: `https://github.com/itcmsgr/nftban/releases/latest/download/nftban.el9.x86_64.rpm`
 
-2. **DEB Package (for Ubuntu/Debian)**
-   - Versioned: `nftban_0.30.0-1_amd64.deb`
-   - Standard name: `nftban.ubuntu.amd64.deb` (copy for easy downloads)
-   - Download URL: `https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.amd64.deb`
+**DEB Package (for Ubuntu/Debian):**
+- Versioned: `nftban_0.30.0-1_amd64.deb`
+- Standard name: `nftban.ubuntu.amd64.deb` (copy for easy downloads)
+- Download URL: `https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.amd64.deb`
 
-### Installation Requirements
-
-Both packages must:
-- ✅ Create 3 system groups: `nftban`, `nftban-cli`, `nftban-auditors`
-- ✅ Create system user: `nftban`
-- ✅ Generate `/var/lib/nftban/config/system.conf` with UID/GID values
-- ✅ Install systemd units: `nftban.timer`, `nftban-health.timer`
-- ✅ Create FHS-compliant directories
-- ✅ Handle conflicts (iptables for RPM, conffiles for DEB)
-
-### Uninstallation Requirements
-
-**RPM Uninstall (`dnf remove nftban`):**
-- Remove binaries and libraries
-- Preserve config files in /etc/nftban
-- Preserve logs in /var/log/nftban
-- Remove cache in /var/cache/nftban
-- Keep state in /var/lib/nftban
-- Remove system groups and user
-
-**DEB Uninstall (`apt-get remove nftban`):**
-- Remove binaries and libraries
-- Keep config files (marked as conffiles)
-
-**DEB Purge (`apt-get purge nftban`):**
-- Remove everything including config files
-- Remove logs, cache, state
-- Remove system groups and user
+**SHA256 checksums:** Generated for all packages
 
 ---
 
-## Current Workflow Implementation
+## 🧰 Installation / Uninstallation Requirements
 
-### Workflow File: `.github/workflows/release.yml`
+### System Components
+
+| Component | Requirement |
+|------------|-------------|
+| **Groups** | `nftban`, `nftban-cli`, `nftban-auditors` |
+| **User** | `nftban` (system user, nologin shell) |
+| **Directories** | `/etc/nftban/`, `/var/lib/nftban/`, `/var/log/nftban/`, `/var/cache/nftban/` |
+| **System config** | `/var/lib/nftban/config/system.conf` (auto-generated with UID/GID values) |
+| **Services** | `nftban.service`, `nftban.timer`, `nftban-health.timer` (systemd) |
+| **Binaries** | `/usr/sbin/nftban`, `/usr/lib/nftban/bin/{nftban-feeds,nftban-geoip}` |
+
+### Uninstall Behavior (CRITICAL)
+
+**RPM (`dnf remove nftban`):**
+- ✅ **PRESERVES** `/var/log/nftban/` (logs for audit/forensics)
+- ✅ **PRESERVES** `/etc/nftban/` (configs as .rpmsave)
+- ✅ **PRESERVES** `/var/lib/nftban/` (state for reinstall)
+- ❌ **REMOVES** `/var/cache/nftban/` (temporary data)
+- ✅ Creates `README.uninstalled` in logs directory
+
+**DEB (`apt-get remove nftban`):**
+- ✅ **PRESERVES** `/var/log/nftban/` (logs for audit)
+- ✅ **PRESERVES** `/etc/nftban/` (configs - marked as conffiles)
+- ✅ **PRESERVES** `/var/lib/nftban/` (state)
+- ❌ **REMOVES** `/var/cache/nftban/` (temporary data)
+- ✅ Creates `README.removed` in logs directory
+
+**DEB (`apt-get purge nftban`):**
+- ❌ **REMOVES EVERYTHING** including logs, config, state
+- This is explicit destructive action by user
+
+**Rationale:** Logs are evidence. Deleting them on uninstall breaks audits and post-mortems. Standard practice for security/audit compliance.
+
+---
+
+## ⚙️ Current Workflow Implementation
+
+**Full workflow:** `.github/workflows/release.yml`
 
 ```yaml
 name: Release Packages
@@ -130,7 +160,7 @@ jobs:
           ls -lh dist/x86_64/
           ls -lh dist/aarch64/
 
-      # THIS STEP FAILS ❌
+      # ❌ THIS STEP FAILS
       - name: Build RPM packages in Rocky Linux container
         run: |
           docker run --rm -v "$(pwd):/workspace" -w /workspace rockylinux:9 bash -c "
@@ -166,14 +196,14 @@ jobs:
         run: |
           cd dist/packages
 
-          # Find and link RPM (el9 or el10)
+          # Find and copy RPM (el9 or el10)
           if ls nftban-*.el*.x86_64.rpm 1> /dev/null 2>&1; then
             RPM_FILE=$(ls nftban-*.el*.x86_64.rpm | head -n1)
             cp "$RPM_FILE" nftban.el9.x86_64.rpm
             echo "✓ Created nftban.el9.x86_64.rpm from $RPM_FILE"
           fi
 
-          # Find and link DEB (amd64)
+          # Find and copy DEB (amd64)
           if ls nftban_*_amd64.deb 1> /dev/null 2>&1; then
             DEB_FILE=$(ls nftban_*_amd64.deb | head -n1)
             cp "$DEB_FILE" nftban.ubuntu.amd64.deb
@@ -195,11 +225,13 @@ jobs:
 
 ---
 
-## Build Scripts
+## 🧩 Build Scripts
 
-### Go Binaries Build Script: `scripts/build-go-binaries.sh`
+### 1. Go Binaries Build (CRITICAL – runs first)
 
-**CRITICAL:** This must run BEFORE RPM/DEB builds! It builds the Go binaries that get packaged.
+**Script:** `scripts/build-go-binaries.sh`
+**Version:** 0.30.0 ✅ (recently fixed)
+**Purpose:** Builds Go binaries that get packaged into RPM/DEB
 
 **What it does:**
 1. Builds `nftban-feeds` (Go binary for feed processing - 10-60x faster than bash)
@@ -208,90 +240,101 @@ jobs:
 4. Copies binaries to `src/usr/lib/nftban/bin/` for packaging
 
 **Requirements:**
-- Go 1.21+ installed
+- Go 1.21+ (provided by `actions/setup-go@v5`)
 - Source directories: `go-feeds/`, `go-geoip/`
-- Output: `dist/x86_64/` and `dist/aarch64/`
+- Output: `dist/x86_64/nftban-{feeds,geoip}`, `dist/aarch64/nftban-{feeds,geoip}`
 
-**Build Command:**
+**Build command:**
 ```bash
 export VERSION=0.30.0
 chmod +x scripts/build-go-binaries.sh
 ./scripts/build-go-binaries.sh
 ```
 
-**Version Issue:** Script has VERSION=0.10.0 hardcoded - should be 0.30.0!
-
-**Dependencies in Container:**
-```bash
-# Rocky Linux container needs:
-dnf install -y golang
-# Or use Go from actions/setup-go@v5 (already in workflow)
-```
-
-### RPM Build Script: `scripts/build-rpm.sh`
-
-**Key Points:**
-- Uses `rpmbuild` command
-- VERSION=0.30.0
-- Creates tarball from source
-- Uses spec file: `packaging/rpm/nftban.spec`
-
-**Dependencies Required:**
-```bash
-rpmbuild --version  # Must be available
-tar --version       # For creating source tarball
-gzip --version      # For compressing tarball
-```
-
-**Build Process:**
-1. Creates `dist/rpm-build/{BUILD,RPMS,SOURCES,SPECS,SRPMS}`
-2. Creates source tarball: `nftban-0.30.0.tar.gz`
-3. Runs: `rpmbuild -ba packaging/rpm/nftban.spec`
-4. Outputs to: `dist/packages/nftban-0.30.0-1.el*.x86_64.rpm`
-
-### DEB Build Script: `scripts/build-deb.sh`
-
-**Key Points:**
-- Uses `dpkg-buildpackage`
-- VERSION=0.30.0
-- debhelper-compat=13
-
-**Dependencies Required:**
-```bash
-dpkg-buildpackage  # From dpkg-dev
-debhelper          # Build system
-fakeroot          # For building as non-root
-rsync             # For file copying in rules
-```
-
-**Build Process:**
-1. Creates `dist/build/deb/`
-2. Copies source and debian/ files
-3. Runs: `dpkg-buildpackage -us -uc -b`
-4. Outputs to: `dist/packages/nftban_0.30.0-1_amd64.deb`
+**Container considerations:**
+- Go binaries built BEFORE RPM step (on Ubuntu runner)
+- Binaries already compiled when container starts
+- RPM just packages pre-built binaries
+- No Go compilation needed inside Rocky container
 
 ---
 
-## Package Specifications
+### 2. RPM Build Script
+
+**Script:** `scripts/build-rpm.sh`
+**Version:** 0.30.0 ✅
+**Container:** Rocky Linux 9
+
+**What it does:**
+1. Creates RPM build directories: `dist/rpm-build/{BUILD,RPMS,SOURCES,SPECS,SRPMS}`
+2. Creates source tarball: `nftban-0.30.0.tar.gz` (includes pre-built Go binaries)
+3. Runs: `rpmbuild -ba packaging/rpm/nftban.spec`
+4. Outputs: `dist/packages/nftban-0.30.0-1.el*.x86_64.rpm`
+
+**Dependencies required in container:**
+```bash
+dnf install -y rpm-build rpmdevtools tar gzip which
+```
+
+**Potential issues:**
+- Volume mount permissions between Ubuntu host and Rocky container
+- Pre-built Go binaries not accessible inside container?
+- Tarball creation fails due to path issues?
+- rpmbuild `%{_topdir}` not set correctly?
+
+---
+
+### 3. DEB Build Script
+
+**Script:** `scripts/build-deb.sh`
+**Version:** 0.30.0 ✅
+**Environment:** Ubuntu runner (native)
+
+**What it does:**
+1. Creates `dist/build/deb/`
+2. Copies source and debian/ files
+3. Runs: `dpkg-buildpackage -us -uc -b`
+4. Outputs: `dist/packages/nftban_0.30.0-1_amd64.deb`
+
+**Dependencies:**
+```bash
+dpkg-dev debhelper fakeroot build-essential devscripts rsync
+```
+
+**Status:** ✅ Works correctly (no container needed)
+
+---
+
+## 📜 Package Specifications
 
 ### RPM Spec File: `packaging/rpm/nftban.spec`
 
-**Important Sections:**
+**Key sections:**
 
 ```spec
 Name:           nftban
 Version:        0.30.0
 Release:        1%{?dist}
+Summary:        Modern nftables firewall with self-healing inventory monitoring
 
-# Groups created in %pre
+# Dependencies
+Requires:       nftables >= 1.0.0
+Requires:       systemd >= 250
+Requires:       bash >= 5.0
+Requires:       python3
+Conflicts:      firewalld iptables iptables-services
+
 %pre
+# Create groups
 getent group nftban >/dev/null || groupadd -r nftban
 getent group nftban-cli >/dev/null || groupadd -r nftban-cli
 getent group nftban-auditors >/dev/null || groupadd -r nftban-auditors
+
+# Create user
 getent passwd nftban >/dev/null || useradd -r -g nftban -d /var/lib/nftban -s /sbin/nologin nftban
 
-# System.conf created in %post
 %post
+# Generate system.conf with actual UID/GID values
 NFTBAN_UID=$(id -u nftban)
 NFTBAN_GID=$(id -g nftban)
 NFTBAN_CLI_GID=$(getent group nftban-cli | cut -d: -f3)
@@ -311,16 +354,38 @@ EOF
 
 %systemd_post nftban.timer nftban-health.timer
 
-# Cleanup in %postun
 %postun
+# Only on complete removal ($1 = 0), not on upgrade ($1 = 1)
 if [ $1 -eq 0 ]; then
-    getent passwd nftban >/dev/null && userdel nftban 2>/dev/null || true
-    getent group nftban-cli >/dev/null && groupdel nftban-cli 2>/dev/null || true
-    getent group nftban-auditors >/dev/null && groupdel nftban-auditors 2>/dev/null || true
-    getent group nftban >/dev/null && groupdel nftban 2>/dev/null || true
+    # PRESERVE logs and config (standard RPM practice)
+    # - Logs: /var/log/nftban/ - kept for audit/forensics
+    # - Config: /etc/nftban/ - kept as .rpmsave files automatically
+    # - State: /var/lib/nftban/ - kept for potential reinstall
+
+    # Remove cache only
     rm -rf /var/cache/nftban
+
+    # Leave informational note
+    cat > /var/log/nftban/README.uninstalled <<'EOFMSG'
+NFTBan has been uninstalled, but logs have been preserved for audit purposes.
+EOFMSG
+
+    # Remove groups and user
+    userdel nftban 2>/dev/null || true
+    groupdel nftban-cli 2>/dev/null || true
+    groupdel nftban-auditors 2>/dev/null || true
+    groupdel nftban 2>/dev/null || true
 fi
 ```
+
+**Files included in RPM:**
+- Go binaries: `/usr/lib/nftban/bin/{nftban-feeds,nftban-geoip}`
+- Main CLI: `/usr/sbin/nftban`
+- Libraries: `/usr/lib/nftban/core/*.sh`
+- Systemd units: `/usr/lib/systemd/system/*.{service,timer}`
+- Config: `/etc/nftban/nftban.conf`
+
+---
 
 ### DEB Control Files
 
@@ -333,12 +398,19 @@ Depends: ${misc:Depends},
          systemd (>= 250),
          bash (>= 5.0),
          python3,
-         ...
+         jq (>= 1.6),
+         curl | wget,
+         bash-completion,
+         adduser
 Conflicts: firewalld, iptables, iptables-persistent
+Description: Modern nftables firewall with self-healing inventory monitoring (v0.30)
 ```
 
 **`packaging/deb/postinst`:**
 ```bash
+#!/bin/bash
+set -e
+
 # Create groups
 addgroup --system nftban || true
 addgroup --system nftban-cli || true
@@ -357,30 +429,55 @@ mkdir -p /var/lib/nftban/config
 cat > /var/lib/nftban/config/system.conf <<EOF
 NFTBAN_USER="nftban"
 NFTBAN_UID=${NFTBAN_UID}
-...
+NFTBAN_GROUP="nftban"
+NFTBAN_GID=${NFTBAN_GID}
+NFTBAN_CLI_GROUP="nftban-cli"
+NFTBAN_CLI_GID=${NFTBAN_CLI_GID}
+NFTBAN_AUDITORS_GROUP="nftban-auditors"
+NFTBAN_AUDITORS_GID=${NFTBAN_AUDITORS_GID}
 EOF
+
+#DEBHELPER#
 ```
 
 **`packaging/deb/postrm`:**
 ```bash
-case "$1" in
-    purge)
-        # Remove users and groups
-        deluser --system nftban 2>/dev/null || true
-        delgroup --system nftban-cli 2>/dev/null || true
-        delgroup --system nftban-auditors 2>/dev/null || true
-        delgroup --system nftban 2>/dev/null || true
+#!/bin/bash
+set -e
 
-        # Remove all data
+case "$1" in
+    remove)
+        # Preserve logs and config for audit/forensics
+        rm -rf /run/nftban
+        rm -rf /var/cache/nftban
+
+        # Leave informational note
+        cat > /var/log/nftban/README.removed <<'EOF'
+NFTBan has been removed, but logs have been preserved for audit purposes.
+
+To completely purge all NFTBan data including logs:
+  sudo apt-get purge nftban
+EOF
+        ;;
+
+    purge)
+        # Remove EVERYTHING including logs (explicit user action)
         rm -rf /var/lib/nftban
         rm -rf /var/cache/nftban
         rm -rf /var/log/nftban
         rm -rf /etc/nftban
-        ;;
-    remove)
-        # Keep config files
+        rm -rf /run/nftban
+
+        # Remove groups and user
+        deluser --system nftban 2>/dev/null || true
+        delgroup --system nftban-cli 2>/dev/null || true
+        delgroup --system nftban-auditors 2>/dev/null || true
+        delgroup --system nftban 2>/dev/null || true
         ;;
 esac
+
+#DEBHELPER#
+exit 0
 ```
 
 **`packaging/deb/rules`:**
@@ -392,192 +489,256 @@ esac
 
 override_dh_auto_install:
 	install -d debian/nftban
+	# Copy everything except systemd directory
 	rsync -a --exclude='usr/lib/systemd' src/ debian/nftban/
 
 	# DEB uses /lib/systemd/system (not /usr/lib)
 	install -d -m 0755 debian/nftban/lib/systemd/system
 	install -m 0644 src/usr/lib/systemd/system/*.service debian/nftban/lib/systemd/system/
 	install -m 0644 src/usr/lib/systemd/system/*.timer debian/nftban/lib/systemd/system/
+
+	# Create FHS directories
+	install -d -m 0755 debian/nftban/var/lib/nftban/reports/baseline
+	install -d -m 0700 debian/nftban/etc/nftban/keys
 	...
 ```
 
 ---
 
-## What We've Already Fixed
+## 🧩 What We've Already Fixed
 
-### ✅ Completed Fixes
-
-1. **Build Script Versions**
-   - Updated `scripts/build-rpm.sh` VERSION: 0.10.0 → 0.30.0
-   - Updated `scripts/build-deb.sh` VERSION: 0.10.0 → 0.30.0
-
-2. **RPM Spec File**
-   - Removed non-existent `nftban-permissions-audit.timer` from `%systemd_post`
-   - Added all 3 groups to system.conf generation
-
-3. **DEB Packaging**
-   - Removed obsolete `dh-systemd` dependencies
-   - Fixed systemd unit paths (/lib vs /usr/lib for DEB)
-   - Added all 3 groups to postinst script
-
-4. **Workflow Enhancements**
-   - Added step to create standard-named package copies
-   - Added rsync to dependencies
-   - Changed to Rocky Linux 9 container for RPM building
+| # | Fix Summary | Status |
+|---|-------------|--------|
+| 1 | Build script versions updated to 0.30.0 | ✅ |
+| 2 | Go binaries build script VERSION fixed | ✅ |
+| 3 | RPM spec: removed non-existent timer reference | ✅ |
+| 4 | DEB packaging: removed obsolete dh-systemd | ✅ |
+| 5 | DEB packaging: fixed systemd paths (/lib vs /usr/lib) | ✅ |
+| 6 | All 3 groups added to system.conf (RPM & DEB) | ✅ |
+| 7 | Log retention policy implemented correctly | ✅ |
+| 8 | Workflow: added rsync dependency | ✅ |
+| 9 | Workflow: changed to Rocky Linux 9 container for RPM | ✅ |
+| 10 | Workflow: added standard package name copies | ✅ |
 
 ---
 
-## Questions for ChatGPT
+## 💬 Questions for ChatGPT
 
 ### Primary Questions
 
 1. **Is the Rocky Linux container approach correct?**
    - Current: `docker run --rm -v "$(pwd):/workspace" -w /workspace rockylinux:9`
    - Should we use a different base image?
-   - Are there volume mount issues?
+   - Are there volume mount issues between Ubuntu host and Rocky container?
 
 2. **What dependencies are missing in the container?**
    - Current: `dnf install -y rpm-build rpmdevtools tar gzip which`
-   - Need: rpmbuild, tar, gzip, spec file processor
-   - Missing: ???
+   - Is this sufficient for rpmbuild?
+   - Does rpmbuild need additional environment variables?
 
 3. **Should we use a pre-built GitHub Action instead?**
    - Options: `rpmbuild-action`, `build-rpm-action`, custom container action
-   - Pros/cons vs current approach?
+   - Pros/cons vs current Docker approach?
+   - Examples of successful RPM builds in GitHub Actions?
 
 4. **Cross-platform build best practices?**
-   - RPM on Rocky Linux container
+   - RPM in Rocky Linux container
    - DEB on Ubuntu runner
-   - Is there a better approach?
+   - Is there a better approach (build matrix, fpm, etc.)?
 
 ### Specific Technical Questions
 
 1. **File permissions in Docker volume mounts?**
    - Does the container have proper permissions to write to `dist/packages/`?
-   - User mapping issues between host and container?
-   - UID/GID mismatch between Ubuntu runner and Rocky container?
+   - User mapping issues between host (UID 1001) and container (UID 0)?
+   - Should we use `--user` flag in docker run?
 
-2. **Go binaries in RPM build?**
+2. **Go binaries accessibility in RPM build?**
    - Go binaries built BEFORE RPM step (on Ubuntu with Go 1.21)
    - Binaries copied to `src/usr/lib/nftban/bin/`
    - Are these accessible inside the Rocky container?
-   - Does the RPM spec file properly include them?
+   - Does the tarball include them correctly?
 
 3. **Tarball creation location?**
    - Build script creates tarball in `dist/rpm-build/SOURCES/`
    - Is this path accessible in the container?
-   - Does `tar` command work inside container with mounted volumes?
+   - Does `tar` command work correctly with mounted volumes?
 
 4. **rpmbuild environment variables?**
    - Does rpmbuild need specific env vars in container?
    - `%{_topdir}` properly set?
    - HOME directory issues in container?
+   - Buildroot permissions?
 
 5. **Go modules in container?**
    - Go binaries already built before RPM step
    - RPM just packages pre-built binaries
    - No Go compilation needed in Rocky container
    - But Go source directories (`go-feeds/`, `go-geoip/`) are included in tarball
+   - Could this cause issues?
 
 6. **Alternative approaches?**
-   - Build matrix with separate RPM/DEB runners?
-   - Use GitHub-hosted Rocky Linux runners?
+   - Build matrix with separate Rocky/Ubuntu runners?
+   - Use GitHub-hosted Rocky Linux runners (if available)?
    - Multi-stage Docker builds?
-   - Build RPM on Ubuntu with `fpm` tool instead of native rpmbuild?
+   - Build RPM on Ubuntu with `fpm` tool instead?
+   - Use `rpmbuild` action from GitHub Marketplace?
 
 ---
 
-## Testing Requirements
+## 🧪 Testing Requirements
 
-### Installation Testing (after packages are built)
+### Lab Servers
 
-**Test on Rocky Linux 10 (lab2.example.test):**
+| Server | OS | Purpose |
+|--------|-----|---------|
+| lab | CentOS Stream 9 | RPM testing |
+| lab1 | Ubuntu 24.04 | DEB testing |
+| lab2 | CentOS Stream 10 | RPM testing |
+| lab3 | AlmaLinux 10.0 | RPM testing |
+| lab4 | Rocky Linux 10 | RPM testing |
+
+### Test Procedure: RPM Installation
+
+**Test on lab2 (CentOS Stream 10):**
 ```bash
 # Download from GitHub Release
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.el9.x86_64.rpm
 
 # Check package info before installing
 rpm -qp --info nftban.el9.x86_64.rpm | grep Version
+rpm -qp --info nftban.el9.x86_64.rpm | grep Release
 
-# Install (should handle iptables conflicts automatically)
-sudo dnf install -y nftban.el9.x86_64.rpm
+# Install (should handle iptables conflicts automatically with --allowerasing)
+sudo dnf install -y --allowerasing nftban.el9.x86_64.rpm
 
 # Verify installation
 cat /var/lib/nftban/config/system.conf
 getent group | grep nftban
 # Expected: nftban, nftban-cli, nftban-auditors
 
-# Test uninstall
+getent passwd nftban
+# Expected: nftban:x:UID:GID::/var/lib/nftban:/sbin/nologin
+
+systemctl status nftban.timer
+systemctl status nftban-health.timer
+
+ls -la /usr/lib/nftban/bin/
+# Expected: nftban-feeds, nftban-geoip
+
+# Test uninstall (keeps logs)
 sudo dnf remove -y nftban
 
 # Verify cleanup
 getent group | grep nftban  # Should be gone
 ls /var/cache/nftban         # Should be gone
 ls /var/lib/nftban           # Should exist (preserved)
-ls /etc/nftban               # Should exist (preserved)
+ls /etc/nftban               # Should exist (preserved as .rpmsave)
+ls /var/log/nftban           # Should exist with README.uninstalled
+
+cat /var/log/nftban/README.uninstalled
 ```
 
-**Test on Ubuntu 24.04 (lab1.example.test):**
+### Test Procedure: DEB Installation
+
+**Test on lab1 (Ubuntu 24.04):**
 ```bash
 # Download from GitHub Release
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.amd64.deb
 
 # Check package info before installing
 dpkg --info nftban.ubuntu.amd64.deb | grep Version
+dpkg --info nftban.ubuntu.amd64.deb | grep Architecture
 
 # Install (should handle conffile prompts with defaults)
-sudo apt-get install -y ./nftban.ubuntu.amd64.deb
+sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
+  -o Dpkg::Options::="--force-confold" \
+  -o Dpkg::Options::="--force-confdef" \
+  ./nftban.ubuntu.amd64.deb
 
 # Verify installation
 cat /var/lib/nftban/config/system.conf
 getent group | grep nftban
 # Expected: nftban, nftban-cli, nftban-auditors
 
-# Test remove (keeps config)
+getent passwd nftban
+# Expected: nftban:x:UID:GID::/var/lib/nftban:/usr/sbin/nologin
+
+systemctl status nftban.timer
+systemctl status nftban-health.timer
+
+ls -la /usr/lib/nftban/bin/
+# Expected: nftban-feeds, nftban-geoip
+
+# Test remove (keeps logs and config)
 sudo apt-get remove -y nftban
-ls /etc/nftban  # Should exist
+
+# Verify
+ls /etc/nftban           # Should exist (conffiles preserved)
+ls /var/lib/nftban       # Should exist (state preserved)
+ls /var/log/nftban       # Should exist with README.removed
+cat /var/log/nftban/README.removed
 
 # Test purge (removes everything)
 sudo apt-get purge -y nftban
+
+# Verify complete removal
 ls /etc/nftban           # Should be gone
 ls /var/lib/nftban       # Should be gone
+ls /var/log/nftban       # Should be gone
 getent group | grep nftban  # Should be gone
 ```
 
-### Verification Checklist
+---
+
+## ✅ Verification Checklist
 
 After successful package installation, verify:
 
 - [ ] All 3 groups exist: `nftban`, `nftban-cli`, `nftban-auditors`
-- [ ] User `nftban` exists with correct home directory
+- [ ] User `nftban` exists with correct home directory (`/var/lib/nftban`)
 - [ ] File `/var/lib/nftban/config/system.conf` exists with all 6 variables:
   - `NFTBAN_USER`, `NFTBAN_UID`, `NFTBAN_GROUP`, `NFTBAN_GID`
   - `NFTBAN_CLI_GROUP`, `NFTBAN_CLI_GID`
   - `NFTBAN_AUDITORS_GROUP`, `NFTBAN_AUDITORS_GID`
-- [ ] Systemd units installed: `nftban.timer`, `nftban-health.timer`
+- [ ] Systemd units installed and working:
+  - `nftban.timer` exists
+  - `nftban-health.timer` exists
+  - `nftban.service` exists
 - [ ] Binary `/usr/sbin/nftban` is executable
+- [ ] Go binaries exist:
+  - `/usr/lib/nftban/bin/nftban-feeds` (executable)
+  - `/usr/lib/nftban/bin/nftban-geoip` (executable)
 - [ ] Directories exist with correct permissions:
   - `/etc/nftban/` (0750, root:nftban)
   - `/var/lib/nftban/` (0750, nftban:nftban)
   - `/var/log/nftban/` (0750, nftban:adm on DEB, nftban:nftban on RPM)
   - `/var/cache/nftban/` (0750, nftban:nftban)
+- [ ] Uninstall preserves logs:
+  - `/var/log/nftban/` still exists after `dnf remove` / `apt remove`
+  - `README.uninstalled` / `README.removed` created
+- [ ] Purge removes everything (DEB only):
+  - All directories gone after `apt purge`
+  - All groups and users removed
 
 ---
 
-## Expected CI/CD Flow
+## 🌐 Expected CI/CD Flow
 
-### Successful Workflow Should:
+**Successful workflow should:**
 
 1. ✅ Trigger on tag push (`v0.30.0`)
-2. ✅ Checkout repository
-3. ✅ Build Go binaries (x86_64, aarch64)
-4. ✅ Build RPM package in Rocky Linux 9 container
-5. ✅ Build DEB package on Ubuntu runner
-6. ✅ Create standard-named copies
-7. ✅ Generate SHA256SUMS
-8. ✅ Upload to GitHub Release at `/releases/download/v0.30.0/`
+2. ✅ Checkout repository with full history
+3. ✅ Set up Go 1.21
+4. ✅ Install packaging dependencies (rpm, dpkg-dev, debhelper, rsync)
+5. ✅ Build Go binaries (nftban-feeds, nftban-geoip) for x86_64 and aarch64
+6. ❌ Build RPM package in Rocky Linux 9 container **← FAILS HERE**
+7. ✅ Build DEB package on Ubuntu runner
+8. ✅ Create standard-named package copies
+9. ✅ Generate SHA256SUMS
+10. ✅ Upload to GitHub Release at `/releases/download/v0.30.0/`
 
-### Download URLs Should Work:
+**Download URLs should work:**
 
 ```bash
 # RPM (works on Rocky, Alma, CentOS, Fedora)
@@ -589,14 +750,74 @@ wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.am
 
 ---
 
+## 🧭 Contributing to CI/CD
+
+If you're assisting with CI/CD debugging:
+
+```bash
+# Clone repository
+git clone https://github.com/itcmsgr/nftban.git
+cd nftban
+
+# Test RPM build locally in Rocky container
+docker run -it --rm -v $(pwd):/workspace -w /workspace rockylinux:9 bash
+dnf install -y rpm-build rpmdevtools tar gzip which golang
+chmod +x scripts/build-go-binaries.sh scripts/build-rpm.sh
+./scripts/build-go-binaries.sh
+./scripts/build-rpm.sh
+
+# Test DEB build locally on Ubuntu
+sudo apt-get install -y dpkg-dev debhelper fakeroot build-essential devscripts rsync golang
+chmod +x scripts/build-go-binaries.sh scripts/build-deb.sh
+./scripts/build-go-binaries.sh
+./scripts/build-deb.sh
+```
+
+**Key files to review:**
+- `.github/workflows/release.yml` - Main CI/CD workflow
+- `scripts/build-go-binaries.sh` - Go binary compilation
+- `scripts/build-rpm.sh` - RPM build script
+- `scripts/build-deb.sh` - DEB build script
+- `packaging/rpm/nftban.spec` - RPM specification
+- `packaging/deb/control` - DEB package metadata
+- `packaging/deb/rules` - DEB build rules
+
+---
+
+## 🔍 Related Issues
+
+- CI/CD build failure during RPM packaging in GitHub Actions
+- Docker volume mount permissions between Ubuntu runner and Rocky container
+- Pre-built Go binaries not being packaged correctly in RPM
+
+---
+
+## 🧠 Action Needed
+
+- [ ] Review failing workflow step and permissions
+- [ ] Confirm Go binaries are accessible inside Rocky container
+- [ ] Verify volume mount works correctly (write test file in container)
+- [ ] Check if rpmbuild needs additional environment variables
+- [ ] Test alternative approaches (GitHub Actions from marketplace, fpm, etc.)
+- [ ] Re-run CI/CD with debug logging enabled (`set -x` in build scripts)
+
+---
+
+**Document maintained by:** itcmsgr
+**Last updated:** 2025-11-04
+**Status:** 🚨 CI/CD broken - RPM build failing in Rocky container
+**Priority:** HIGH - blocking v0.30.0 release
+
+---
+
 ## Additional Context
 
 ### Project Information
 - **Name:** NFTBan
 - **Version:** 0.30.0
-- **Type:** nftables firewall management system
+- **Type:** nftables firewall management system with self-healing inventory
 - **License:** MPL-2.0
-- **Languages:** Bash, Go (for helper binaries)
+- **Languages:** Bash, Go (for performance-critical components)
 - **Target OS:** Rocky/Alma/CentOS 9+, Ubuntu 22.04+, Debian 12+
 
 ### Recent Changes (v0.30.0)
@@ -606,35 +827,15 @@ wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.am
 - Added 3-group system (nftban, nftban-cli, nftban-auditors)
 - Added Polkit integration for group-based service management
 - Added cryptographic verification and signing
+- Go binaries for 10-60x faster feed processing
 
 ### Why This Matters
-Users download packages from GitHub Releases and install via package managers. The CI/CD must work reliably so every tag push creates working packages that:
+Users download packages from GitHub Releases and install via package managers (`dnf install`, `apt install`). The CI/CD must work reliably so every tag push creates working packages that:
 1. Install cleanly without manual intervention
 2. Create all required system users/groups
-3. Generate proper system.conf for GUI/application use
+3. Generate proper system.conf for application use
 4. Handle conflicts (iptables, conffiles) automatically
-5. Uninstall/purge correctly
+5. Uninstall/purge correctly (preserve logs on uninstall)
+6. Work across all major Linux distributions
 
----
-
-## Help Requested
-
-**@ChatGPT:** Please review this document and help us:
-
-1. **Identify why the RPM build is failing in the Rocky Linux container**
-2. **Suggest fixes to the workflow file**
-3. **Recommend best practices for cross-platform package building in GitHub Actions**
-4. **Review our package specifications (RPM spec, DEB control/postinst/postrm) for any issues**
-
-Thank you for your help! 🙏
-
----
-
-## Contact & Repository
-
-- **Repository:** https://github.com/itcmsgr/nftban
-- **Workflow File:** `.github/workflows/release.yml`
-- **Current Tag:** v0.30.0
-- **Status:** CI/CD broken, blocking release
-
-**Last Updated:** 2025-11-04 16:25 UTC
+**Thank you for your help! 🙏**
