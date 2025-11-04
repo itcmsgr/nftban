@@ -59,7 +59,11 @@ jobs:
             fakeroot \
             build-essential \
             debhelper \
-            devscripts
+            devscripts \
+            rsync
+
+          # Verify rpmbuild is available (comes with rpm package on Ubuntu)
+          which rpmbuild || (echo "ERROR: rpmbuild not found" && exit 1)
 
       # =======================================================================
       # 3. BUILD GO BINARIES
