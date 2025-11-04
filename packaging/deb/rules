@@ -7,7 +7,7 @@
 # =============================================================================
 
 %:
-	dh $@ --with systemd
+	dh $@
 
 override_dh_auto_install:
 	# Install from src/ directory structure
@@ -48,12 +48,8 @@ override_dh_auto_install:
 	install -m 0644 packaging/polkit-1/rules.d/60-nftban-cli.rules \
 		debian/nftban/usr/share/polkit-1/rules.d/60-nftban-cli.rules
 
-override_dh_systemd_enable:
-	dh_systemd_enable --name=nftban nftban.timer
-	dh_systemd_enable --name=nftban-health nftban-health.timer
-
-override_dh_systemd_start:
-	dh_systemd_start --no-start
+# Systemd integration is now automatic in debhelper-compat >= 11
+# No manual override_dh_systemd_* needed
 
 override_dh_fixperms:
 	dh_fixperms
