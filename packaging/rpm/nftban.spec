@@ -203,7 +203,7 @@ ln -s /usr/local/lib/nftban/nftban-verify-signature %{buildroot}/usr/local/bin/n
 # Install smart mail adapter
 install -m 0644 NFTBAN_AI_TESTING/mail/nftban_mail_v030.sh %{buildroot}/usr/lib/nftban/core/
 
-# Install Polkit rules for auditors group
+# Install Polkit rules for nftban-auditors group
 install -m 0644 packaging/polkit-1/rules.d/50-nftban-v030.rules \
     %{buildroot}%{_datadir}/polkit-1/rules.d/50-nftban-v030.rules
 
@@ -252,8 +252,8 @@ EOF
 
 chmod 0644 /var/lib/nftban/config/system.conf
 
-# Create auditors group for inventory helpers (if doesn't exist)
-groupadd -f auditors 2>/dev/null || true
+# Create nftban-auditors group for inventory helpers (if doesn't exist)
+groupadd -f nftban-auditors 2>/dev/null || true
 
 # Reload systemd
 %systemd_post nftban.timer nftban-health.timer nftban-permissions-audit.timer
@@ -433,7 +433,7 @@ fi
 - Add smart mail adapter (auto-detects v0.10 module, sendmail, msmtp, curl)
 - Add 4 inventory helpers (procnet, pkgs, verify, firewall)
 - Add 3 health commands (nftban-health, baseline-save, verify-signature)
-- Add Polkit rules for auditors group (non-root execution)
+- Add Polkit rules for nftban-auditors group (non-root execution)
 - Add comprehensive documentation (MODULAR_ARCHITECTURE, INTEGRATION_SUMMARY)
 - Integrate v0.30 health checks into existing nftban_health.sh
 - Smart adaptation: uses existing systems, graceful fallbacks

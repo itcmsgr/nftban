@@ -87,7 +87,7 @@ sudo install -m 0644 mail/nftban-mail.sh /usr/lib/nftban/core/
 # Create directories
 sudo mkdir -p /var/lib/nftban/reports
 sudo mkdir -p /etc/nftban/keys
-sudo chown root:auditors /var/lib/nftban/reports
+sudo chown root:nftban-auditors /var/lib/nftban/reports
 sudo chmod 0750 /var/lib/nftban/reports
 ```
 
@@ -105,16 +105,16 @@ polkit.addRule(function (action, subject) {
     "/usr/libexec/nftban/nftban-verify",
     "/usr/libexec/nftban/nftban-firewall"
   ];
-  if (ok.indexOf(prog) !== -1 && subject.isInGroup("auditors")) {
+  if (ok.indexOf(prog) !== -1 && subject.isInGroup("nftban-auditors")) {
     return polkit.Result.YES;
   }
 });
 ```
 
 ```bash
-# Create auditors group and add user
-sudo groupadd -f auditors
-sudo usermod -aG auditors $USER
+# Create nftban-auditors group and add user
+sudo groupadd -f nftban-auditors
+sudo usermod -aG nftban-auditors $USER
 # Log out and back in for group membership
 ```
 
@@ -227,7 +227,7 @@ export MAIL_TRANSPORT=msmtp
 
 ### Polkit Authorization
 
-Non-root users in the `auditors` group can run inventory helpers via pkexec.
+Non-root users in the `nftban-auditors` group can run inventory helpers via pkexec.
 
 **Why Polkit?**
 - Granular permission control
