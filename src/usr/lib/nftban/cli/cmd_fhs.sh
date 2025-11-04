@@ -9,7 +9,7 @@
 # meta:name=cmd_fhs
 # meta:type=cli
 # meta:header=FHS CLI Command
-# meta:version=1.0.0
+# meta:version=0.30.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

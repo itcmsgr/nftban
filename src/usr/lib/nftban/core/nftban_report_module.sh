@@ -9,7 +9,7 @@
 # meta:name=nftban_report_module
 # meta:type=core
 # meta:header=Module Report Core
-# meta:version=1.1.0
+# meta:version=0.30.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
