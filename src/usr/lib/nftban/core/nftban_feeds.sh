@@ -163,8 +163,16 @@ nftban_feeds_enable() {
     nftban_feeds_set_property "$feed_name" "ENABLED" "true"
     nftban_feeds_log INFO "Feed enabled: $feed_name"
 
-    # Download and activate immediately
-    nftban_feeds_update_single "$feed_name"
+    # Show immediate feedback
+    echo "✓ Feed enabled: $feed_name"
+    echo "⏳ Downloading in background..."
+    echo ""
+    echo "Check status with: nftban feeds status"
+    echo "View progress: tail -f /var/log/nftban/feeds.log"
+
+    # Download in background to avoid hanging CLI
+    (nftban_feeds_update_single "$feed_name" &>/dev/null) &
+    disown
 }
 
 # Disable a feed
