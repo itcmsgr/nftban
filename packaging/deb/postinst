@@ -82,19 +82,25 @@ EOF
         chmod 0755 /var/lib/nftban/reports/baseline
         chmod 0700 /etc/nftban/keys
 
+        # Run autoheal to ensure everything is configured correctly
+        /usr/lib/nftban/helpers/autoheal.sh
+
         # Print installation message
         echo ""
         echo "╔════════════════════════════════════════════════════════════╗"
         echo "║  NFTBan v0.30.0 Installation Complete!                    ║"
         echo "╚════════════════════════════════════════════════════════════╝"
         echo ""
+        echo "✅ Auto-heal completed - all systems configured"
+        echo ""
         echo "Next steps:"
         echo "  1. Review config: /etc/nftban/nftban.conf"
         echo "  2. Customize (optional): /etc/nftban/nftban.conf.local"
         echo "  3. Enable service: systemctl enable --now nftban.timer"
-        echo "  4. Check health: nftban health check"
-        echo "  5. Try inventory: nftban-health --inventory | jq ."
-        echo "  6. Create baseline: nftban-baseline-save"
+        echo "  4. Check status: systemctl status nftban.timer  # ONE timer for all"
+        echo "  5. Manual health check: nftban health check"
+        echo "  6. Try inventory: nftban-health --inventory | jq ."
+        echo "  7. Create baseline: nftban-baseline-save"
         echo ""
         ;;
 esac

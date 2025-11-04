@@ -9,7 +9,7 @@
 # meta:name=nftban_cloudflare
 # meta:type=module
 # meta:header=Cloudflare Integration Module
-# meta:version=0.10.0
+# meta:version=0.30.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

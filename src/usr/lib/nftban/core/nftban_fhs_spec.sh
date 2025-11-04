@@ -8,7 +8,7 @@
 # meta:name=nftban_fhs_spec
 # meta:type=core
 # meta:header=FHS Specification
-# meta:version=0.10.0
+# meta:version=0.30.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

@@ -8,7 +8,7 @@
 # meta:name=cmd_status
 # meta:type=cli
 # meta:header=NFTBan Global Status
-# meta:version=0.10.0
+# meta:version=0.30.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

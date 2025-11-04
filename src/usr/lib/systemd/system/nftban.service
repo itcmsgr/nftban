@@ -1,14 +1,15 @@
 [Unit]
-Description=NFTBAN periodic maintenance (one-shot)
+Description=NFTBan Maintenance Service
 Documentation=man:nftban(8)
 After=network-online.target
 
 [Service]
 Type=oneshot
-User=nftban
-Group=nftban
+User=root
+Group=root
 EnvironmentFile=-/etc/nftban/nftban.env
 ExecStart=/usr/sbin/nftban feeds update
+ExecStart=/usr/sbin/nftban health check
 Nice=5
 IOSchedulingClass=best-effort
 

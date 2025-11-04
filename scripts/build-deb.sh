@@ -6,7 +6,7 @@
 # meta:name=build-deb.sh
 # meta:type=tool
 # meta:header=DEB Package Builder
-# meta:version=0.10.0
+# meta:version=0.30.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 # meta:description=Builds DEB packages for Ubuntu 22.04+, Debian 12+

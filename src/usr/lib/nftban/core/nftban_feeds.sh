@@ -7,7 +7,7 @@
 # meta:name=nftban_feeds
 # meta:type=core
 # meta:header=Threat Feeds Core
-# meta:version=0.10.0
+# meta:version=0.30.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

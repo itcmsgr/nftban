@@ -8,7 +8,7 @@
 # meta:name=nftban_ddos
 # meta:type=core
 # meta:header=DDoS Protection
-# meta:version=0.10.0
+# meta:version=0.30.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
