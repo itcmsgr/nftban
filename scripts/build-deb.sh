@@ -76,6 +76,7 @@ clean_build_dir() {
     rm -rf "$BUILD_DIR"
     mkdir -p "$BUILD_DIR"
     mkdir -p "$PACKAGE_DIR"
+    chmod 755 "$PACKAGE_DIR"  # Ensure writable in CI/CD environments
 }
 
 prepare_source() {
