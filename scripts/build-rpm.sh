@@ -77,8 +77,13 @@ tar czf "${BUILD_DIR}/SOURCES/${TARBALL}" \
     src/ \
     packaging/ \
     licenses/ \
+    docs/ \
+    NFTBAN_AI_TESTING/ \
     README.md \
-    CHANGELOG.md
+    CHANGELOG.md \
+    TRADEMARK.md \
+    NOTICE.md \
+    CONTRIBUTING.md
 
 echo "  ✓ Created ${TARBALL}"
 
