@@ -69,21 +69,16 @@ EOF
         chown -R nftban:nftban /var/cache/nftban
         chown -R nftban:nftban /var/log/nftban
 
-        # Set proper permissions on /var directories
-        chmod 0755 /var/lib/nftban
-        chmod 0750 /var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics,config}
-        chmod 0750 /var/log/nftban
-        chmod 0755 /var/cache/nftban
-
-        # Create and set permissions for v0.30 directories
-        mkdir -p /var/lib/nftban/reports/baseline
-        mkdir -p /etc/nftban/keys
-        chown nftban:nftban /var/lib/nftban/reports/baseline
-        chmod 0755 /var/lib/nftban/reports/baseline
-        chmod 0700 /etc/nftban/keys
-
-        # Run autoheal to ensure everything is configured correctly
+        # Run autoheal first to create all directories
         /usr/lib/nftban/helpers/autoheal.sh
+
+        # Set proper permissions on /var directories (if they exist)
+        [ -d /var/lib/nftban ] && chmod 0755 /var/lib/nftban
+        for dir in state snapshots feeds keyring backup reports metrics config geoip; do
+            [ -d "/var/lib/nftban/$dir" ] && chmod 0750 "/var/lib/nftban/$dir"
+        done
+        [ -d /var/log/nftban ] && chmod 0750 /var/log/nftban
+        [ -d /var/cache/nftban ] && chmod 0755 /var/cache/nftban
 
         # Print installation message
         echo ""
