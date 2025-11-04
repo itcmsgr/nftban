@@ -3,7 +3,6 @@ Section: admin
 Priority: optional
 Maintainer: Antonios Voulvoulis <contact@nftban.com>
 Build-Depends: debhelper-compat (= 13),
-               dh-systemd,
                bash (>= 5.0)
 Standards-Version: 4.6.0
 Homepage: https://nftban.com
