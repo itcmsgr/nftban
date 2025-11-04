@@ -115,7 +115,7 @@ check_project_structure() {
     run_check "README.md exists" "[ -f '$PROJECT_ROOT/README.md' ]"
     run_check "CHANGELOG.md exists" "[ -f '$PROJECT_ROOT/CHANGELOG.md' ]"
     run_check "LICENSE exists" "[ -f '$PROJECT_ROOT/LICENSE' ]"
-    run_check "nftban main script exists" "[ -f '$PROJECT_ROOT/src/usr/bin/nftban' ]"
+    run_check "nftban main script exists" "[ -f '$PROJECT_ROOT/src/usr/sbin/nftban' ]"
 }
 
 check_shellcheck() {
