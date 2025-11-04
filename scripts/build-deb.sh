@@ -10,7 +10,7 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 # meta:description=Builds DEB packages for Ubuntu 22.04+, Debian 12+
-# meta:depends=dpkg-deb,debhelper,dh-systemd,fakeroot
+# meta:depends=dpkg-deb,debhelper,fakeroot
 # =============================================================================
 
 set -Eeuo pipefail
@@ -49,7 +49,7 @@ die() {
 }
 
 check_dependencies() {
-    local deps=(dpkg-deb debhelper dh-systemd fakeroot)
+    local deps=(dpkg-deb debhelper fakeroot)
     local missing=()
 
     for dep in "${deps[@]}"; do
@@ -59,7 +59,7 @@ check_dependencies() {
     done
 
     if [ ${#missing[@]} -gt 0 ]; then
-        die "Missing dependencies: ${missing[*]}\nInstall with: sudo apt-get install dpkg-dev debhelper dh-systemd fakeroot"
+        die "Missing dependencies: ${missing[*]}\nInstall with: sudo apt-get install dpkg-dev debhelper fakeroot"
     fi
 }
 
