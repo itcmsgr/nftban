@@ -9,7 +9,7 @@
 # meta:name=nftban_report_port
 # meta:type=core
 # meta:header=Port Report Core
-# meta:version=1.0.0
+# meta:version=0.30.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
