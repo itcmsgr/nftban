@@ -328,6 +328,14 @@ if [ $1 -eq 0 ]; then
     # - Config: /etc/nftban/ - kept as .rpmsave files automatically
     # - State: /var/lib/nftban/ - kept for potential reinstall
 
+    # Change ownership to root to avoid unknown UID/GID after user removal
+    if [ -d /var/log/nftban ]; then
+        chown -R root:root /var/log/nftban
+    fi
+    if [ -d /var/lib/nftban ]; then
+        chown -R root:root /var/lib/nftban
+    fi
+
     # Leave informational note in logs directory
     cat > /var/log/nftban/README.uninstalled <<'EOF'
 NFTBan has been uninstalled, but logs have been preserved for audit purposes.

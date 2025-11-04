@@ -21,6 +21,14 @@ case "$1" in
                 nft delete table inet nftban || true
         fi
 
+        # Change ownership to root to avoid unknown UID/GID after user removal
+        if [ -d /var/log/nftban ]; then
+            chown -R root:root /var/log/nftban
+        fi
+        if [ -d /var/lib/nftban ]; then
+            chown -R root:root /var/lib/nftban
+        fi
+
         # Leave informational note in logs directory
         if [ -d /var/log/nftban ]; then
             cat > /var/log/nftban/README.removed <<'EOF'
