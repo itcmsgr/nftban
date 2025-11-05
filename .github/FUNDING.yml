@@ -1,8 +1,5 @@
 # GitHub Sponsors configuration for NFTBan
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/displaying-a-sponsor-button-in-your-repository
 
-# GitHub Sponsors username
-github: [itcmsgr]
-
-# Custom sponsorship URLs
+# Custom sponsorship URLs (donation without fixed pricing)
 custom: ["https://nftban.com/sponsor", "https://itcms.gr/donate"]
