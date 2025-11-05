@@ -9,19 +9,43 @@
 %:
 	dh $@
 
+override_dh_auto_build:
+	# Build Go binaries
+	@echo "Building Go binaries..."
+	cd go-geoip && go mod download && go mod tidy && \
+		CGO_ENABLED=0 GOOS=linux GOARCH=$(shell dpkg --print-architecture | sed 's/amd64/amd64/;s/arm64/arm64/') \
+		go build -buildvcs=false -ldflags "-s -w -X main.VERSION=0.31.0" \
+		-o ../dist/$(shell dpkg --print-architecture)/nftban-geoip ./cmd/nftban-geoip
+	cd go-feeds && go mod download && go mod tidy && \
+		CGO_ENABLED=0 GOOS=linux GOARCH=$(shell dpkg --print-architecture | sed 's/amd64/amd64/;s/arm64/arm64/') \
+		go build -buildvcs=false -ldflags "-s -w -X main.VERSION=0.31.0" \
+		-o ../dist/$(shell dpkg --print-architecture)/nftban-feeds ./cmd/nftban-feeds
+	@echo "✓ Go binaries built successfully"
+	ls -lh dist/$(shell dpkg --print-architecture)/
+
 override_dh_auto_install:
 	# Install from src/ directory structure (excluding systemd units - handled separately)
 	install -d debian/nftban
 	# Copy everything except systemd directory (will be placed in /lib for DEB)
 	rsync -a --exclude='usr/lib/systemd' src/ debian/nftban/
 
+	# Install Go binaries
+	install -d -m 0755 debian/nftban/usr/lib/nftban/bin
+	install -d -m 0755 debian/nftban/usr/lib/nftban/bin/.real
+	install -m 0755 dist/$(shell dpkg --print-architecture)/nftban-geoip \
+		debian/nftban/usr/lib/nftban/bin/.real/nftban-geoip-$(shell dpkg --print-architecture)
+	install -m 0755 dist/$(shell dpkg --print-architecture)/nftban-feeds \
+		debian/nftban/usr/lib/nftban/bin/.real/nftban-feeds-$(shell dpkg --print-architecture)
+
 	# Create FHS directories
-	install -d -m 0755 debian/nftban/var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics,config}
+	install -d -m 0755 debian/nftban/var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics,config,geoip}
+	install -d -m 0755 debian/nftban/var/lib/nftban/geoban/tracking
 	install -d -m 0755 debian/nftban/var/lib/nftban/reports/baseline
 	install -d -m 0770 debian/nftban/var/lib/nftban/reports/auditors
-	install -d -m 0755 debian/nftban/var/cache/nftban/{geoip,tmp}
+	install -d -m 0755 debian/nftban/var/cache/nftban/{geoip,geoban,feeds,tmp}
 	install -d -m 0750 debian/nftban/var/log/nftban
 	install -d -m 0700 debian/nftban/etc/nftban/keys
+	install -d -m 0750 debian/nftban/etc/nftban/geoban.d
 
 	# Install systemd units (DEB uses /lib not /usr/lib)
 	install -d -m 0755 debian/nftban/lib/systemd/system
