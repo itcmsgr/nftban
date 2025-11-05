@@ -103,29 +103,33 @@ sudo systemctl restart nftables  # Full root access required
 sudo firewall-cmd --reload        # Every user needs sudo
 
 # NFTBan (SECURE BY DESIGN):
-nftban system restart nftables   # Just add user to nftban-auditors group!
+nftban system restart nftables   # Just add user to nftban-cli group!
 nftban firewall reload            # No sudo, no root, no risk
 ```
 
 **🎯 Security Benefits:**
-- ✅ **Zero-Trust Architecture** - Users in `nftban-auditors` group can ONLY manage firewall services
+- ✅ **Zero-Trust Architecture** - Users in `nftban-cli` group can ONLY manage specific firewall services
 - ✅ **No sudo required** - Eliminates password fatigue and sudo abuse
 - ✅ **Least Privilege Principle** - Users cannot execute arbitrary root commands
 - ✅ **Audit Trail** - All actions logged with user attribution
 - ✅ **Fine-Grained Control** - Separate permissions per service (nftables, fail2ban)
 - ✅ **Enterprise-Ready** - Same model used by systemd, NetworkManager, PackageKit
 
-**📖 How it works:**
+**📖 Two Groups, Two Permission Levels:**
 ```bash
-# 1. Add user to nftban-auditors group (one-time setup)
+# 1. nftban-auditors group (READ-ONLY):
 sudo usermod -aG nftban-auditors alice
+# Alice can ONLY view status and generate reports:
+nftban list                    # ✅ View banned IPs
+nftban stats                   # ✅ View statistics
+nftban health check            # ✅ Check system status
+systemctl restart nftables     # ❌ DENIED (no management rights)
 
-# 2. Alice can now manage firewall WITHOUT sudo:
-systemctl status nftables      # Check status
-systemctl restart nftban       # Restart firewall
-nftban stats                   # View statistics
-
-# 3. Alice CANNOT do anything else with root privileges:
+# 2. nftban-cli group (FULL MANAGEMENT):
+sudo usermod -aG nftban-cli bob
+# Bob can manage firewall services WITHOUT sudo:
+nftban system restart nftables # ✅ Restart firewall
+nftban firewall reload         # ✅ Reload rules
 systemctl restart httpd        # ❌ DENIED (not in Polkit allowlist)
 rm -rf /etc                    # ❌ DENIED (no root access)
 ```
