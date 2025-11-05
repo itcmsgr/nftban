@@ -439,22 +439,30 @@ nftban_feeds_sync_to_nftables() {
         fi
     done
 
-    # Deduplicate and add to nftables
+    # Deduplicate and add to nftables (BULK LOADING for performance)
     local ipv4_count=0
     local ipv6_count=0
 
     if [[ -s "$ipv4_list" ]]; then
-        sort -u "$ipv4_list" | while IFS= read -r ip; do
-            nft add element inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V4" { "$ip" } 2>/dev/null || true
-            ipv4_count=$((ipv4_count + 1))
-        done
+        # Build comma-separated list for bulk insert (FAST)
+        local ipv4_elements
+        ipv4_elements=$(sort -u "$ipv4_list" | tr '\n' ',' | sed 's/,$//')
+        ipv4_count=$(sort -u "$ipv4_list" | wc -l)
+
+        if [[ -n "$ipv4_elements" ]]; then
+            nft add element inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V4" "{ $ipv4_elements }" 2>/dev/null || true
+        fi
     fi
 
     if [[ -s "$ipv6_list" ]]; then
-        sort -u "$ipv6_list" | while IFS= read -r ip; do
-            nft add element inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V6" { "$ip" } 2>/dev/null || true
-            ipv6_count=$((ipv6_count + 1))
-        done
+        # Build comma-separated list for bulk insert (FAST)
+        local ipv6_elements
+        ipv6_elements=$(sort -u "$ipv6_list" | tr '\n' ',' | sed 's/,$//')
+        ipv6_count=$(sort -u "$ipv6_list" | wc -l)
+
+        if [[ -n "$ipv6_elements" ]]; then
+            nft add element inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V6" "{ $ipv6_elements }" 2>/dev/null || true
+        fi
     fi
 
     nftban_feeds_log INFO "Sync complete: $ipv4_count IPv4, $ipv6_count IPv6"
