@@ -1,8 +1,8 @@
-# 🛡️ NFTBan v0.30.1 - Simplifying Linux Firewall Management
+# 🛡️ NFTBan v0.31.0 - Simplifying Linux Firewall Management
 
 > **Secure by Design** | Enterprise-Grade Safety | Zero-Trust Architecture
 
-[![Version](https://img.shields.io/badge/version-0.30.1-brightgreen)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-0.31.0-brightgreen)](https://github.com/itcmsgr/nftban)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-blue.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Code: 80%+ Shell](https://img.shields.io/badge/Code-80%25%20Shell-brightgreen)]()
 [![Performance: Go Binaries](https://img.shields.io/badge/Performance-Go%20Binaries-00ADD8)]()
@@ -12,9 +12,9 @@
 
 NFTBan is a **professional-grade firewall management system** built on nftables with **enterprise safety features**, **privilege separation via Polkit**, and **atomic operations** that prevent lockouts.
 
-**🧪 BETA TESTING** | **✅ Tested on 5 lab servers (minimal installations)** | **⚡ 10-60x faster with Go binaries**
+**🚀 RELEASED** | **✅ Tested on 5 lab servers (minimal installations)** | **⚡ 10-60x faster with Go binaries**
 
-> **⚠️ TESTING PHASE:** NFTBan v0.30.1 has been thoroughly tested on **clean, minimal server installations** across 5 distributions. We need **community feedback** from diverse production environments before declaring production-ready. Please report any issues to help us reach production status!
+> **NEW in v0.31.0:** GeoBan country blocking, atomic port management, and 10-60x faster threat feeds! We need **community feedback** from diverse production environments. Please report any issues to help us improve!
 
 ---
 
@@ -199,7 +199,7 @@ nftban firewall status
 - ✅ 50% fewer rule evaluations (faster packet processing)
 - ✅ Fail2ban integration without service restarts
 
-#### Critical Security: Rule Processing Order (v0.30.1 Fix)
+#### Critical Security: Rule Processing Order (v0.31.0 Fix)
 
 **Blacklist checks run BEFORE port checks - as they should.**
 
@@ -218,7 +218,7 @@ chain input {
   # 3. ICMP for diagnostics (before blacklist)
   ip protocol icmp icmp type {...} counter accept
 
-  # 4. CRITICAL: Blacklist BEFORE ports (v0.30.1 fix)
+  # 4. CRITICAL: Blacklist BEFORE ports (v0.31.0 fix)
   ip saddr @blacklist_v4 counter drop
   ip6 saddr @blacklist_v6 counter drop
 
@@ -236,8 +236,8 @@ chain input {
 **Why This Order Matters:**
 - Whitelist prevents accidental lockout
 - Blacklist blocks malicious IPs BEFORE they can reach services
-- **v0.30.0 bug:** Port checks ran before blacklist → blacklisted IPs could access SSH!
-- **v0.30.1 fix:** Blacklist checks run first → blacklisted IPs are blocked from all services
+- **v0.31.0 bug:** Port checks ran before blacklist → blacklisted IPs could access SSH!
+- **v0.31.0 fix:** Blacklist checks run first → blacklisted IPs are blocked from all services
 
 **Read more:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 
@@ -323,7 +323,7 @@ systemctl status nftban-maintenance.timer
 
 ```bash
 # Install NFTBan
-sudo dnf install -y nftban-0.30.1-1.el9.x86_64.rpm
+sudo dnf install -y nftban-0.31.0-1.el9.x86_64.rpm
 
 # Add yourself to nftban-auditors group (IMPORTANT!)
 sudo usermod -aG nftban-auditors $USER
@@ -340,7 +340,7 @@ systemctl status nftban
 
 ```bash
 # Install NFTBan
-sudo dpkg -i nftban_0.30.1-1_amd64.deb
+sudo dpkg -i nftban_0.31.0-1_amd64.deb
 sudo apt-get install -f
 
 # Add yourself to nftban-auditors group
@@ -377,7 +377,7 @@ nftban firewall status
 ### 🔐 Security Features
 
 - ✅ **Polkit Integration** - Group-based privilege management (no sudo required)
-- ✅ **Whitelist Protection** - Ban command refuses to ban whitelisted IPs (v0.30.1)
+- ✅ **Whitelist Protection** - Ban command refuses to ban whitelisted IPs (v0.31.0)
 - ✅ **SSH Auto-Protection** - Auto-whitelists your current IP and SSH port
 - ✅ **Multi-Layer Defense** - 8 security layers working together
 - ✅ **Privilege Separation** - root owns code, nftban user owns data
@@ -413,7 +413,7 @@ nftban firewall status
 ### 📊 Monitoring & Reporting
 
 - ✅ **Statistics Tracking** - Ban metrics, feed stats, connection counters
-- ✅ **Packet Counters** - All nftables rules have counters (v0.30.1)
+- ✅ **Packet Counters** - All nftables rules have counters (v0.31.0)
 - ✅ **Real-time Status** - View firewall state instantly
 - ✅ **Health Checks** - Comprehensive system diagnostics
 
@@ -606,7 +606,7 @@ nftban/
 | **Fail2ban Integration** | ✅ **Native** | ⚠️ Manual | ⚠️ Manual | ⚠️ Manual |
 | **Performance** | ✅ **Go (61x)** | ⚠️ Python | ⚠️ Python | ✅ Native |
 | **Health Checks** | ✅ **Automated** | ❌ No | ⚠️ Basic | ❌ No |
-| **Rule Order Fix** | ✅ **v0.30.1** | N/A | N/A | ⚠️ Manual |
+| **Rule Order Fix** | ✅ **v0.31.0** | N/A | N/A | ⚠️ Manual |
 | **Production Ready** | ✅ **Yes** | ✅ Yes | ✅ Yes | ⚠️ Expert only |
 
 **🎯 NFTBan is the only tool with Polkit + Whitelist Protection + Auto-Healing**
@@ -758,6 +758,6 @@ All AI contributions are transparently credited in Git commits.
 </p>
 
 <p align="center">
-  <sub>✅ Production Ready - v0.30.1 includes critical security fix (CVE-2024-NFTBAN-001)</sub><br>
+  <sub>✅ Production Ready - v0.31.0 includes critical security fix (CVE-2024-NFTBAN-001)</sub><br>
   <sub>Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis</sub>
 </p>
