@@ -3,7 +3,8 @@ Section: admin
 Priority: optional
 Maintainer: Antonios Voulvoulis <contact@nftban.com>
 Build-Depends: debhelper-compat (= 13),
-               bash (>= 5.0)
+               bash (>= 5.0),
+               golang (>= 2:1.21~)
 Standards-Version: 4.6.0
 Homepage: https://nftban.com
 Vcs-Git: https://github.com/itcmsgr/nftban.git
@@ -37,21 +38,22 @@ Recommends: fail2ban (>= 0.11),
 Conflicts: firewalld,
            iptables,
            iptables-persistent
-Description: Modern nftables firewall with self-healing inventory monitoring (v0.30.1)
- NFTBan v0.30.1 is a modern, high-performance firewall management system for Linux
- servers using nftables with advanced self-healing and inventory monitoring.
+Description: Modern nftables firewall with GeoBan country blocking (v0.31.0)
+ NFTBan v0.31.0 is a modern, high-performance firewall management system for Linux
+ servers using nftables with GeoBan country blocking and self-healing monitoring.
  .
  Features include:
- - Commit-confirm recovery (prevents lockout)
- - Go binaries for 10-60x faster feed processing
+ - GeoBan: Country-based IP blocking (ban/unban/whitelist commands)
+ - Atomic operations: Zero-downtime firewall updates via netlink
+ - Go binaries: 10-60x faster than bash (compiled during package build)
  - 8 security layers (DDoS, port scan, geo-blocking, threat feeds)
+ - Commit-confirm recovery (prevents lockout)
  - FHS-compliant with auto-healing health system
  - Integration with Fail2Ban for automatic banning
  - Stats & metrics with HTML/JSON/CSV reporting
  - Advanced inventory system (processes, packages, firewall state)
  - Baseline management with drift detection
- - System resource monitoring (disk, CPU, RAM)
- - Alert throttling (no spam)
+ - 6-layer system protection (CPU/RAM/I/O limits)
  - Cryptographic verification and signing
  - Smart mail adapter (auto-detects best transport)
  - Group-based service management via Polkit (no sudo required)
