@@ -482,6 +482,8 @@ fi
 /usr/sbin/nftban-rollback
 /usr/lib/nftban/bin/nftban-feeds
 /usr/lib/nftban/bin/nftban-geoip
+/usr/lib/nftban/bin/.real/nftban-feeds
+/usr/lib/nftban/bin/.real/nftban-geoip
 
 # Libraries and modules
 /usr/lib/nftban/core/*.sh
