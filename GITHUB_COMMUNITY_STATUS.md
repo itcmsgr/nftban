@@ -54,18 +54,40 @@
 2. Scroll to "Features" section
 3. Check ☑️ **"Discussions"**
 4. Click "Set up discussions"
-5. Create these categories:
+5. Create these categories **in this order**:
 
 ```
-📢 Announcements (Admin only, comments allowed)
-💡 Ideas & Feature Requests (Open)
-🙋 Q&A (Open, answers can be marked)
-🐛 Bug Reports (Open)
-📦 Distribution Packaging (Open)
-🧪 Beta Testing (Open)
-🔐 Security (Admin only)
-💬 General (Open)
+1. 📢 Announcements (Admin only, comments allowed)
+   └─ Official project news and updates
+
+2. 🧪 Beta Testing (Open)
+   └─ Test reports, feedback, deployment experiences
+
+3. 🐛 Bug Reports (Open)
+   └─ Report bugs and issues
+
+4. 💡 Ideas & Feature Requests (Open)
+   └─ Suggest new features and improvements
+
+5. 🙋 Q&A (Open, answers can be marked)
+   └─ Ask questions, get help
+
+6. 📦 Distribution Packaging (Open)
+   └─ RPM, DEB, distro-specific discussions
+
+7. 🔐 Security (Admin only, comments allowed)
+   └─ Security advisories and vulnerability reports
+
+8. 💬 General (Open)
+   └─ Everything else
 ```
+
+**Why this order?**
+- Most important first (Announcements, Beta Testing)
+- Problem reporting next (Bugs, Ideas)
+- Support in middle (Q&A)
+- Specialized topics (Packaging, Security)
+- Catch-all last (General)
 
 ### 2. Post Beta Testing Announcement
 **After enabling Discussions:**
