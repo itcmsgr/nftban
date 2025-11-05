@@ -1,3 +1,20 @@
+nftban (0.31.0-1) stable; urgency=high
+
+  * NEW: GeoBan country blocking (ban/unban/whitelist commands)
+  * NEW: Atomic port management (port add/remove commands)
+  * NEW: Go feeds atomic loader (10-60x faster, netlink-based)
+  * NEW: Build-time Go compilation (transparent, no precompiled binaries)
+  * NEW: Complete FHS compliance with tmpfiles.d
+  * NEW: Dynamic module inventory system
+  * FIX: All version references aligned to v0.31.0
+  * FIX: Build system for RPM and DEB transparent compilation
+  * ENHANCEMENT: Architecture support for x86_64 and aarch64
+  * ENHANCEMENT: ETag-based HTTP caching for feeds and GeoIP
+  * ENHANCEMENT: CIDR merging for memory optimization
+  * ENHANCEMENT: CPU/RAM monitoring with safety limits
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Wed, 06 Nov 2025 01:30:00 +0200
+
 nftban (0.30.1-1) stable; urgency=critical
 
   * CRITICAL SECURITY FIX: Blacklist now checked BEFORE service ports
