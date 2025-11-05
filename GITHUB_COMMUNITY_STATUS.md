@@ -8,7 +8,6 @@
 ## ✅ COMPLETED - All Community Files Ready
 
 ### Repository Files:
-- ✅ `.github/FUNDING.yml` - Sponsor links configured
 - ✅ `.github/CODE_OF_CONDUCT.md` - Community guidelines
 - ✅ `.github/SUPPORT.md` - Support resources
 - ✅ `.github/PULL_REQUEST_TEMPLATE.md` - PR template
@@ -16,6 +15,11 @@
 - ✅ `.github/DISCUSSION_TEMPLATE/` - Discussion templates
 - ✅ `CONTRIBUTING.md` - Contribution guidelines
 - ✅ `SECURITY.md` - Security policy (comprehensive)
+
+### Project Philosophy:
+- ✅ **No donation solicitation** - Pure open source (MPL-2.0)
+- ✅ **Sponsorship by discussion** - Contact us to discuss collaboration
+- ✅ **Community-driven** - Focus on quality, not funding
 
 ### Lab Testing Completed:
 - ✅ **5 lab servers** tested and working
