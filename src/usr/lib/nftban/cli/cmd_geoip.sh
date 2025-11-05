@@ -58,6 +58,27 @@ nftban_cmd_geoip() {
         update)
             nftban_geoip_cmd_update "$@"
             ;;
+        ban)
+            nftban_geoip_cmd_ban "$@"
+            ;;
+        unban)
+            nftban_geoip_cmd_unban "$@"
+            ;;
+        whitelist)
+            nftban_geoip_cmd_whitelist "$@"
+            ;;
+        unwhitelist)
+            nftban_geoip_cmd_unwhitelist "$@"
+            ;;
+        list)
+            nftban_geoip_cmd_list "$@"
+            ;;
+        refresh)
+            nftban_geoip_cmd_refresh "$@"
+            ;;
+        config)
+            nftban_geoip_cmd_config "$@"
+            ;;
         help|--help|-h)
             nftban_geoip_cmd_help
             ;;
@@ -360,6 +381,298 @@ nftban_geoip_cmd_update() {
     echo ""
 }
 
+nftban_geoip_cmd_ban() {
+    # Ban countries (block all traffic from country)
+    # Args: $@ = country codes (e.g., CN RU KP)
+
+    # Load GeoBan module
+    if ! declare -f nftban_geoban_ban_countries >/dev/null 2>&1; then
+        source /usr/lib/nftban/core/nftban_geoban.sh || {
+            echo "ERROR: Failed to load GeoBan module" >&2
+            return 1
+        }
+    fi
+
+    if [[ $# -eq 0 ]]; then
+        echo "ERROR: At least one country code required" >&2
+        echo "Usage: nftban geoip ban <CC> [CC...]" >&2
+        echo "Example: nftban geoip ban CN RU KP" >&2
+        return 1
+    fi
+
+    nftban_geoban_ban_countries "$@"
+}
+
+nftban_geoip_cmd_unban() {
+    # Remove country bans
+    # Args: $@ = country codes
+
+    # Load GeoBan module
+    if ! declare -f nftban_geoban_unban_countries >/dev/null 2>&1; then
+        source /usr/lib/nftban/core/nftban_geoban.sh || {
+            echo "ERROR: Failed to load GeoBan module" >&2
+            return 1
+        }
+    fi
+
+    if [[ $# -eq 0 ]]; then
+        echo "ERROR: At least one country code required" >&2
+        echo "Usage: nftban geoip unban <CC> [CC...]" >&2
+        echo "Example: nftban geoip unban CN RU" >&2
+        return 1
+    fi
+
+    nftban_geoban_unban_countries "$@"
+}
+
+nftban_geoip_cmd_whitelist() {
+    # Whitelist countries (allow even if banned)
+    # Args: $@ = country codes
+
+    # Load GeoBan module
+    if ! declare -f nftban_geoban_whitelist_countries >/dev/null 2>&1; then
+        source /usr/lib/nftban/core/nftban_geoban.sh || {
+            echo "ERROR: Failed to load GeoBan module" >&2
+            return 1
+        }
+    fi
+
+    if [[ $# -eq 0 ]]; then
+        echo "ERROR: At least one country code required" >&2
+        echo "Usage: nftban geoip whitelist <CC> [CC...]" >&2
+        echo "Example: nftban geoip whitelist US GB DE" >&2
+        return 1
+    fi
+
+    nftban_geoban_whitelist_countries "$@"
+}
+
+nftban_geoip_cmd_unwhitelist() {
+    # Remove country whitelists
+    # Args: $@ = country codes
+
+    # Load GeoBan module
+    if ! declare -f nftban_geoban_unwhitelist_countries >/dev/null 2>&1; then
+        source /usr/lib/nftban/core/nftban_geoban.sh || {
+            echo "ERROR: Failed to load GeoBan module" >&2
+            return 1
+        }
+    fi
+
+    if [[ $# -eq 0 ]]; then
+        echo "ERROR: At least one country code required" >&2
+        echo "Usage: nftban geoip unwhitelist <CC> [CC...]" >&2
+        return 1
+    fi
+
+    nftban_geoban_unwhitelist_countries "$@"
+}
+
+nftban_geoip_cmd_list() {
+    # List all active GeoBan countries
+    # No args
+
+    # Load GeoBan module
+    if ! declare -f nftban_geoban_list >/dev/null 2>&1; then
+        source /usr/lib/nftban/core/nftban_geoban.sh || {
+            echo "ERROR: Failed to load GeoBan module" >&2
+            return 1
+        }
+    fi
+
+    nftban_geoban_list
+}
+
+nftban_geoip_cmd_refresh() {
+    # Refresh all active GeoBan countries (re-download IPs)
+    # No args
+
+    # Load GeoBan module
+    if ! declare -f nftban_geoban_update >/dev/null 2>&1; then
+        source /usr/lib/nftban/core/nftban_geoban.sh || {
+            echo "ERROR: Failed to load GeoBan module" >&2
+            return 1
+        }
+    fi
+
+    nftban_geoban_update
+}
+
+nftban_geoip_cmd_config() {
+    # Configure GeoIP database source and settings
+    # Subcommands: show, set-source, set-key, test-download
+
+    local config_cmd="${1:-show}"
+    shift 2>/dev/null || true
+
+    case "$config_cmd" in
+        show)
+            echo ""
+            echo "═══════════════════════════════════════════════════════════"
+            echo "  GeoIP Configuration"
+            echo "═══════════════════════════════════════════════════════════"
+            echo ""
+
+            # Load config
+            local config_file="/etc/nftban/conf.d/nftban-go.conf"
+            if [[ -f "$config_file" ]]; then
+                source "$config_file"
+            fi
+
+            echo "Database Source:"
+            echo "  Current: ${GEOIP_DB_SOURCE:-github}"
+            echo ""
+
+            if [[ "${GEOIP_DB_SOURCE:-github}" == "maxmind" ]]; then
+                echo "MaxMind Settings:"
+                if [[ -n "${GEOIP_MAXMIND_LICENSE_KEY:-}" ]]; then
+                    echo "  License Key: ••••••••${GEOIP_MAXMIND_LICENSE_KEY: -4}"
+                else
+                    echo "  License Key: NOT SET"
+                    echo "  ⚠ MaxMind source requires a license key!"
+                fi
+                echo "  Account ID:  ${GEOIP_MAXMIND_ACCOUNT_ID:-NOT SET}"
+                echo ""
+                echo "To get a FREE MaxMind license key:"
+                echo "  1. Sign up: https://www.maxmind.com/en/geolite2/signup"
+                echo "  2. Generate license key in account dashboard"
+                echo "  3. Set key: nftban geoip config set-key YOUR_KEY"
+            else
+                echo "GitHub Mirror Settings:"
+                echo "  URL: https://github.com/P3TERX/GeoLite.mmdb"
+                echo "  License: NO KEY REQUIRED"
+                echo "  Updates: Community-maintained"
+                echo ""
+                echo "This is a FREE mirror of MaxMind GeoLite2 database."
+                echo "No account or license key needed!"
+            fi
+
+            echo ""
+            echo "Database Location:"
+            echo "  Path: /var/lib/nftban/geoip/GeoLite2-City.mmdb"
+            if [[ -f "/var/lib/nftban/geoip/GeoLite2-City.mmdb" ]]; then
+                local db_size db_date
+                db_size=$(du -h /var/lib/nftban/geoip/GeoLite2-City.mmdb | cut -f1)
+                db_date=$(stat -c %y /var/lib/nftban/geoip/GeoLite2-City.mmdb | cut -d' ' -f1)
+                echo "  Size: $db_size"
+                echo "  Date: $db_date"
+            else
+                echo "  Status: NOT FOUND"
+                echo "  Run: nftban geoip update"
+            fi
+
+            echo ""
+            echo "═══════════════════════════════════════════════════════════"
+            echo ""
+            ;;
+
+        set-source)
+            local source="${1:-}"
+            if [[ "$source" != "github" && "$source" != "maxmind" ]]; then
+                echo "ERROR: Invalid source: $source" >&2
+                echo "Valid sources: github, maxmind" >&2
+                return 1
+            fi
+
+            local config_local="/etc/nftban/conf.d/nftban-go.conf.local"
+
+            # Ensure directory exists
+            mkdir -p "$(dirname "$config_local")"
+
+            # Update or add setting
+            if [[ -f "$config_local" ]] && grep -q "^GEOIP_DB_SOURCE=" "$config_local"; then
+                sed -i "s/^GEOIP_DB_SOURCE=.*/GEOIP_DB_SOURCE=\"$source\"/" "$config_local"
+            else
+                echo "GEOIP_DB_SOURCE=\"$source\"" >> "$config_local"
+            fi
+
+            echo "✓ Database source set to: $source"
+
+            if [[ "$source" == "maxmind" ]]; then
+                echo ""
+                echo "Next steps:"
+                echo "  1. Get FREE license key: https://www.maxmind.com/en/geolite2/signup"
+                echo "  2. Set key: nftban geoip config set-key YOUR_KEY"
+                echo "  3. Test download: nftban geoip config test-download"
+                echo "  4. Update database: nftban geoip update"
+            fi
+            ;;
+
+        set-key)
+            local key="${1:-}"
+            if [[ -z "$key" ]]; then
+                echo "ERROR: License key required" >&2
+                echo "Usage: nftban geoip config set-key YOUR_KEY" >&2
+                return 1
+            fi
+
+            local config_local="/etc/nftban/conf.d/nftban-go.conf.local"
+
+            # Ensure directory exists
+            mkdir -p "$(dirname "$config_local")"
+
+            # Update or add setting
+            if [[ -f "$config_local" ]] && grep -q "^GEOIP_MAXMIND_LICENSE_KEY=" "$config_local"; then
+                sed -i "s/^GEOIP_MAXMIND_LICENSE_KEY=.*/GEOIP_MAXMIND_LICENSE_KEY=\"$key\"/" "$config_local"
+            else
+                echo "GEOIP_MAXMIND_LICENSE_KEY=\"$key\"" >> "$config_local"
+            fi
+
+            # Set restrictive permissions
+            chmod 600 "$config_local"
+
+            echo "✓ MaxMind license key saved to $config_local"
+            echo "  Permissions: 600 (root only)"
+            echo ""
+            echo "Test download: nftban geoip config test-download"
+            ;;
+
+        test-download)
+            echo "Testing database download..."
+            echo ""
+
+            # Load config
+            source /etc/nftban/conf.d/nftban-go.conf
+            [[ -f /etc/nftban/conf.d/nftban-go.conf.local ]] && source /etc/nftban/conf.d/nftban-go.conf.local
+
+            local test_url=""
+            if [[ "${GEOIP_DB_SOURCE:-github}" == "maxmind" ]]; then
+                if [[ -z "${GEOIP_MAXMIND_LICENSE_KEY:-}" ]]; then
+                    echo "ERROR: MaxMind license key not set" >&2
+                    echo "Set key: nftban geoip config set-key YOUR_KEY" >&2
+                    return 1
+                fi
+                test_url="https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=${GEOIP_MAXMIND_LICENSE_KEY}&suffix=tar.gz"
+                echo "Testing MaxMind download..."
+            else
+                test_url="https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"
+                echo "Testing GitHub mirror download..."
+            fi
+
+            echo "URL: ${test_url%%\?*}..."
+            echo ""
+
+            if curl -I -L "$test_url" 2>&1 | head -20; then
+                echo ""
+                echo "✓ Download test PASSED"
+                echo "  Run: nftban geoip update"
+            else
+                echo ""
+                echo "✗ Download test FAILED"
+                if [[ "${GEOIP_DB_SOURCE:-github}" == "maxmind" ]]; then
+                    echo "  Check your license key is valid"
+                fi
+            fi
+            ;;
+
+        *)
+            echo "ERROR: Unknown config command: $config_cmd" >&2
+            echo "Usage: nftban geoip config <show|set-source|set-key|test-download>" >&2
+            return 1
+            ;;
+    esac
+}
+
 nftban_geoip_cmd_help() {
     # Show help text
 
@@ -367,12 +680,12 @@ nftban_geoip_cmd_help() {
     echo ""
 
     cat << 'EOF'
-nftban geoip - Fast IP geolocation lookups
+nftban geoip - Fast IP geolocation lookups + Country blocking (GeoBan)
 
 USAGE:
     nftban geoip <command> [options]
 
-COMMANDS:
+GEOIP LOOKUP COMMANDS:
     lookup <IP> [format]    Lookup single IP address
                             Formats: json (default), compact, country
 
@@ -388,9 +701,33 @@ COMMANDS:
     update                  Update GeoLite2 database
                             Downloads latest database
 
+    config <cmd>            Configure database source and settings
+                            show - Show current configuration
+                            set-source <github|maxmind> - Set database source
+                            set-key <KEY> - Set MaxMind license key
+                            test-download - Test database download
+
+GEOBAN COUNTRY BLOCKING COMMANDS:
+    ban <CC> [CC...]        Block all traffic from countries
+                            Example: nftban geoip ban CN RU KP
+
+    unban <CC> [CC...]      Remove country bans
+                            Example: nftban geoip unban CN
+
+    whitelist <CC> [CC...]  Allow countries (bypass blocks)
+                            Example: nftban geoip whitelist US GB DE
+
+    unwhitelist <CC> [...]  Remove country whitelists
+
+    list                    Show all active GeoBan countries
+                            (banned and whitelisted)
+
+    refresh                 Update all active countries
+                            (re-download latest IP ranges)
+
     help                    Show this help message
 
-EXAMPLES:
+GEOIP LOOKUP EXAMPLES:
     # Lookup single IP (JSON)
     nftban geoip lookup 8.8.8.8
 
@@ -415,20 +752,53 @@ EXAMPLES:
     # Update database
     nftban geoip update
 
+GEOBAN EXAMPLES:
+    # Block China, Russia, North Korea
+    nftban geoip ban CN RU KP
+
+    # Remove China ban
+    nftban geoip unban CN
+
+    # Whitelist USA, UK, Germany (allow even if banned)
+    nftban geoip whitelist US GB DE
+
+    # Show all active countries
+    nftban geoip list
+
+    # Refresh all countries (re-download IPs)
+    nftban geoip refresh
+
+DATABASE CONFIGURATION:
+    # Show current database configuration
+    nftban geoip config show
+
+    # Use GitHub mirror (FREE, no key required - DEFAULT)
+    nftban geoip config set-source github
+
+    # Use MaxMind direct (FREE, requires license key)
+    nftban geoip config set-source maxmind
+    nftban geoip config set-key YOUR_LICENSE_KEY
+
+    # Test database download
+    nftban geoip config test-download
+
+    # Get FREE MaxMind key: https://www.maxmind.com/en/geolite2/signup
+
 PERFORMANCE:
-    Typical lookup time: 50-200 microseconds (0.05-0.2ms)
+    GeoIP Lookup: 50-200 microseconds (0.05-0.2ms)
+    GeoBan Load:  Atomic, zero-downtime updates
     Unlimited lookups (no rate limits)
-    100% offline operation (no internet required)
+    Offline operation (no internet after database download)
 
-DATABASE:
-    Location: /var/lib/nftban/geoip/GeoLite2-City.mmdb
-    Size: ~61MB
-    Free: MaxMind GeoLite2 (updated monthly)
-
-BINARY:
-    Location: /usr/lib/nftban/bin/nftban-geoip
-    Language: GO 1.21+
-    Size: ~2MB static binary
+FILES AND LOCATIONS:
+    Binary:          /usr/lib/nftban/bin/nftban-geoip (GO 1.21+, ~6MB)
+    Database:        /var/lib/nftban/geoip/GeoLite2-City.mmdb (~61MB)
+    Configuration:   /etc/nftban/conf.d/nftban-go.conf
+    User overrides:  /etc/nftban/conf.d/nftban-go.conf.local
+    GeoBan files:    /etc/nftban/geoban.d/
+    Country IPs:     /var/cache/nftban/geoban/
+    Tracking:        /var/lib/nftban/geoban/tracking/
+    Logs:            /var/log/nftban/go-operations.log
 
 nftban — Simplifying Linux Firewall Management
 EOF
@@ -441,10 +811,19 @@ EOF
 # Export main handler
 export -f nftban_cmd_geoip
 
-# Export subcommand functions
+# Export subcommand functions (GeoIP lookup)
 export -f nftban_geoip_cmd_lookup
 export -f nftban_geoip_cmd_bulk
 export -f nftban_geoip_cmd_status
 export -f nftban_geoip_cmd_test
 export -f nftban_geoip_cmd_update
+export -f nftban_geoip_cmd_config
 export -f nftban_geoip_cmd_help
+
+# Export GeoBan subcommand functions
+export -f nftban_geoip_cmd_ban
+export -f nftban_geoip_cmd_unban
+export -f nftban_geoip_cmd_whitelist
+export -f nftban_geoip_cmd_unwhitelist
+export -f nftban_geoip_cmd_list
+export -f nftban_geoip_cmd_refresh

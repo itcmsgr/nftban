@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"strings"
 	"time"
 
+	"github.com/nftban/geoip/internal/geoban"
 	"github.com/oschwald/maxminddb-golang"
 )
 
@@ -74,6 +76,10 @@ func main() {
 	case "help", "--help", "-h":
 		usage()
 		os.Exit(0)
+	case "geoban":
+		// GeoBan commands don't need MaxMind DB
+		handleGeoBan(os.Args[2:])
+		return
 	}
 
 	// Open database once (stays in memory)
@@ -307,11 +313,161 @@ func usage() {
 	fmt.Println("  nftban-geoip version         Show version")
 	fmt.Println("  nftban-geoip help            Show this help")
 	fmt.Println()
+	fmt.Println("GeoBan Commands:")
+	fmt.Println("  nftban-geoip geoban fetch <CC> --action ban|whitelist")
+	fmt.Println("  nftban-geoip geoban remove <CC> --action ban|whitelist")
+	fmt.Println()
 	fmt.Println("Examples:")
 	fmt.Println("  nftban-geoip lookup 8.8.8.8")
-	fmt.Println("  echo '8.8.8.8' | nftban-geoip bulk")
-	fmt.Println("  cat ips.txt | nftban-geoip bulk")
+	fmt.Println("  nftban-geoip geoban fetch CN --action ban --atomic")
+	fmt.Println("  nftban-geoip geoban remove CN --action ban --atomic")
 	fmt.Println()
 	fmt.Println("Output: JSON format")
 	fmt.Println("Database: " + MMDB_PATH)
+}
+
+// handleGeoBan processes geoban subcommands
+func handleGeoBan(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "ERROR: geoban subcommand required")
+		fmt.Fprintln(os.Stderr, "Usage: nftban-geoip geoban fetch|remove <CC> [options]")
+		os.Exit(1)
+	}
+
+	subcmd := args[0]
+
+	switch subcmd {
+	case "fetch":
+		geoBanFetch(args[1:])
+	case "remove":
+		geoBanRemove(args[1:])
+	default:
+		fmt.Fprintf(os.Stderr, "ERROR: unknown geoban command: %s\n", subcmd)
+		os.Exit(1)
+	}
+}
+
+// geoBanFetch fetches and loads country IP ranges
+func geoBanFetch(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "ERROR: country code required")
+		fmt.Fprintln(os.Stderr, "Usage: nftban-geoip geoban fetch <CC> --action ban|whitelist [--atomic]")
+		os.Exit(1)
+	}
+
+	cc := strings.ToUpper(args[0])
+
+	// Parse flags
+	action := geoban.ActionBan
+	atomic := true
+	filesDir := "/etc/nftban/geoban.d"
+	trackingDir := "/var/lib/nftban/geoban/tracking"
+	cacheDir := "/var/lib/nftban/geoban/cache"
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--action":
+			if i+1 < len(args) {
+				i++
+				if args[i] == "whitelist" {
+					action = geoban.ActionWhitelist
+				}
+			}
+		case "--atomic":
+			if i+1 < len(args) && args[i+1] == "false" {
+				atomic = false
+				i++
+			}
+		case "--files-dir":
+			if i+1 < len(args) {
+				i++
+				filesDir = args[i]
+			}
+		case "--tracking-dir":
+			if i+1 < len(args) {
+				i++
+				trackingDir = args[i]
+			}
+		case "--cache-dir":
+			if i+1 < len(args) {
+				i++
+				cacheDir = args[i]
+			}
+		}
+	}
+
+	opt := geoban.Options{
+		Action:      action,
+		Atomic:      atomic,
+		FilesDir:    filesDir,
+		TrackingDir: trackingDir,
+		CacheDir:    cacheDir,
+	}
+
+	if err := geoban.FetchAndLoad(cc, opt); err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ Successfully %s %s\n", action, cc)
+}
+
+// geoBanRemove removes country IP ranges
+func geoBanRemove(args []string) {
+	if len(args) < 1 {
+		fmt.Fprintln(os.Stderr, "ERROR: country code required")
+		fmt.Fprintln(os.Stderr, "Usage: nftban-geoip geoban remove <CC> --action ban|whitelist [--atomic]")
+		os.Exit(1)
+	}
+
+	cc := strings.ToUpper(args[0])
+
+	// Parse flags
+	action := geoban.ActionBan
+	atomic := true
+	filesDir := "/etc/nftban/geoban.d"
+	trackingDir := "/var/lib/nftban/geoban/tracking"
+	cacheDir := "/var/lib/nftban/geoban/cache"
+
+	for i := 1; i < len(args); i++ {
+		switch args[i] {
+		case "--action":
+			if i+1 < len(args) {
+				i++
+				if args[i] == "whitelist" {
+					action = geoban.ActionWhitelist
+				}
+			}
+		case "--atomic":
+			if i+1 < len(args) && args[i+1] == "false" {
+				atomic = false
+				i++
+			}
+		case "--files-dir":
+			if i+1 < len(args) {
+				i++
+				filesDir = args[i]
+			}
+		case "--tracking-dir":
+			if i+1 < len(args) {
+				i++
+				trackingDir = args[i]
+			}
+		}
+	}
+
+	opt := geoban.Options{
+		Action:      action,
+		Atomic:      atomic,
+		FilesDir:    filesDir,
+		TrackingDir: trackingDir,
+		CacheDir:    cacheDir,
+	}
+
+	if err := geoban.Remove(cc, opt); err != nil {
+		fmt.Fprintf(os.Stderr, "ERROR: %v\n", err)
+		os.Exit(1)
+	}
+
+	fmt.Printf("✅ Successfully removed %s from %s\n", cc, action)
 }
