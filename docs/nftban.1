@@ -314,14 +314,36 @@ Strict adherence to Filesystem Hierarchy Standard
 
 .TP
 .B Polkit Integration
-Group-based authorization via nftban-cli group:
+Two permission levels via group membership:
 .RS
 .TP
-• Manage nftables/fail2ban services without sudo
+.B nftban-auditors group (READ-ONLY)
+View status and generate reports without sudo:
+.RS
 .TP
-• Scoped permissions (no broad system access)
+• nftban list - View banned IPs
+.TP
+• nftban stats - View statistics
+.TP
+• nftban health check - System status
+.TP
+• CANNOT restart or modify services
+.RE
+.TP
+.B nftban-cli group (FULL MANAGEMENT)
+Manage firewall services without sudo:
+.RS
+.TP
+• nftban system restart nftables
+.TP
+• systemctl start/stop/restart nftables
+.TP
+• systemctl start/stop/restart fail2ban
+.TP
+• Scoped permissions (only nftables & fail2ban)
 .TP
 • Audit trail via systemd journal
+.RE
 .RE
 
 .TP
