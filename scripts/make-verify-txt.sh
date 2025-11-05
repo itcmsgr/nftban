@@ -78,10 +78,11 @@ sudo dnf install ./nftban-0.10.0-1.el9.x86_64.rpm
 ### DEB (Ubuntu/Debian):
 sudo apt install ./nftban_0.10.0-1_amd64.deb
 
-### Tarball (Portable):
-tar xzf nftban-0.10.0-x86_64.tar.gz
-cd nftban-0.10.0
-sudo ./install.sh
+### From Source (Development):
+git clone https://github.com/itcmsgr/nftban.git
+cd nftban
+./scripts/build-rpm.sh  # or ./scripts/build-deb.sh
+sudo dnf install dist/packages/nftban-*.rpm
 
 ───────────────────────────────────────────────────────────────
 

@@ -68,19 +68,31 @@ sudo apt-get install -f  # Install dependencies if needed
 
 > **Note:** These links always point to the latest stable release. Old releases are archived in the [Releases Archive](https://github.com/itcmsgr/nftban/releases).
 
-### Installation from Source
+### 🔧 Building from Source (Development)
+
+**For developers and testers:**
 
 ```bash
 # Clone repository
 git clone https://github.com/itcmsgr/nftban.git
 cd nftban
 
-# Run installer
-sudo ./install.sh
+# Build RPM package (Rocky/AlmaLinux/RHEL/Fedora)
+./scripts/build-rpm.sh
 
-# Verify
-nftban --version
+# OR build DEB package (Ubuntu/Debian)
+./scripts/build-deb.sh
+
+# Install the built package
+sudo dnf install dist/packages/nftban-*.rpm    # For RPM
+sudo dpkg -i dist/packages/nftban_*.deb        # For DEB
 ```
+
+**Why build from source?**
+- Test latest git changes before release
+- Customize code for specific needs
+- Contribute to development
+- Verify package building on your platform
 
 ### First Steps After Install
 
