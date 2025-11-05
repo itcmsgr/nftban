@@ -301,7 +301,7 @@ DDoS protection can be enabled and configured via:
 - SYN flood thresholds
 - ICMP rate limiting
 
-See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for command syntax.
+See `nftban help` for command syntax or `man nftban` for complete reference.
 
 ---
 
@@ -355,7 +355,7 @@ Threat feeds are configured via:
 - Abuse.ch (Feodo, SSL blacklists)
 - Custom feeds (user-defined URLs)
 
-See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for feed management commands.
+See `nftban feeds help` for feed management commands.
 
 ### Feed Performance
 
@@ -418,7 +418,7 @@ Geo-blocking requires MaxMind GeoLite2 database (free tier available).
 - **Allow-list mode** (only allow specified countries)
 - **Deny-list mode** (block specified countries)
 
-See [CLI Quick Reference](docs/reference/cli-quick-reference.md) and [Installation Guide](docs/guides/installation.md) for setup details.
+See [README.md](README.md) for installation and `nftban help` for setup commands.
 
 ---
 
@@ -493,7 +493,7 @@ NFTBan provides a Fail2Ban action that integrates seamlessly:
 - **nginx-limit-req** - HTTP rate limit violations
 - **postfix/dovecot** - Mail server attacks
 
-See [Installation Guide](docs/guides/installation.md) for integration setup details.
+See [README.md](README.md) for installation and `nftban fail2ban help` for integration setup.
 
 ---
 
@@ -631,7 +631,7 @@ User runs: sudo nftban apply
 - Can be disabled (NOT RECOMMENDED except for automation)
 - Automatic rollback prevents permanent lockouts
 
-See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for command syntax.
+See `nftban help` for command syntax or `man nftban` for complete reference.
 
 ---
 
@@ -654,7 +654,7 @@ See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for command syn
 - Update Fail2Ban configuration for non-standard ports
 - Document all access methods
 
-See [Quick Start Guide](docs/guides/quick-start.md) for step-by-step setup.
+See [README.md](README.md) for installation and setup instructions.
 
 ### Defense in Depth Strategy
 
@@ -849,7 +849,7 @@ NFTBan v0.10.0 includes comprehensive automated health monitoring that can detec
 - Can trigger email alerts on failures
 - Self-healing prevents manual intervention
 
-See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for health check commands.
+See `nftban health help` or `man nftban` for health check commands.
 
 ### Statistics and Reporting
 
@@ -870,7 +870,7 @@ NFTBan tracks comprehensive statistics about:
 - Automatic retention policy (configurable)
 - Can be emailed automatically on schedule
 
-See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for statistics and reporting commands.
+See `nftban stats help` or `man nftban` for statistics and reporting commands.
 
 ### Email Alerts Configuration
 
@@ -946,7 +946,7 @@ Health checks run automatically via systemd timer (hourly by default):
 - Auto-repairs minor issues
 - Escalates critical issues to administrator
 
-See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for health check commands.
+See `nftban health help` or `man nftban` for health check commands.
 
 ---
 
@@ -1110,7 +1110,7 @@ NFTBan generates logs in `/var/log/nftban/` that need rotation to prevent disk s
 - **RPO (Recovery Point Objective)** - Acceptable data loss window
 - **Priority order** - What to restore first
 
-See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for backup and restore commands.
+See `nftban help` or `man nftban` for backup and restore commands.
 
 ---
 
@@ -1253,7 +1253,7 @@ sudo apt-get install unattended-upgrades  # Ubuntu/Debian
 - Reapply firewall rules if rules missing
 - Contact support if issue persists
 
-See [CLI Quick Reference](docs/reference/cli-quick-reference.md) for emergency commands.
+See `nftban help` or `man nftban` for emergency commands.
 
 ---
 
@@ -1519,8 +1519,8 @@ Use this checklist to verify your security posture:
 
 ### Official Documentation
 - [NFTBan GitHub Repository](https://github.com/itcmsgr/nftban)
-- [NFTBan Installation Guide](docs/guides/installation.md)
-- [NFTBan Quick Start Guide](docs/guides/quick-start.md)
+- [NFTBan Installation & Quick Start](README.md)
+- [NFTBan Documentation Guide](docs/README.md)
 - [nftables Wiki](https://wiki.nftables.org/)
 - [Fail2ban Manual](https://fail2ban.readthedocs.io/)
 
@@ -1544,10 +1544,10 @@ Use this checklist to verify your security posture:
 - [GitHub Discussions](https://github.com/itcmsgr/nftban/discussions)
 
 **Documentation:**
-- [Installation Guide](docs/guides/installation.md)
-- [Quick Start Guide](docs/guides/quick-start.md)
-- [CLI Quick Reference](docs/reference/cli-quick-reference.md)
-- [FHS Auto-Heal Guide](docs/guides/fhs-auto-heal-guide.md)
+- [Installation & Quick Start](README.md)
+- [Documentation Guide](docs/README.md)
+- [Architecture Guide](docs/ARCHITECTURE.md)
+- Man page: `man nftban`
 
 ---
 

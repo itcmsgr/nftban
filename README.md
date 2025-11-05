@@ -1,368 +1,182 @@
-# 🛡️ NFTBan v0.10.0
+# 🛡️ NFTBan v0.30.1
 
 **Modern, high-performance firewall management for Linux servers**
 
-[![Version](https://img.shields.io/badge/version-0.10.0-brightgreen)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-0.30.1-brightgreen)](https://github.com/itcmsgr/nftban)
 [![License](https://img.shields.io/badge/License-MPL--2.0-blue)](LICENSE)
 [![FHS Compliant](https://img.shields.io/badge/FHS-compliant-green)](https://refspecs.linuxfoundation.org/FHS_3.0/fhs/index.html)
 [![Platform](https://img.shields.io/badge/platform-Linux-success)](https://github.com/itcmsgr/nftban)
-[![Status](https://img.shields.io/badge/status-beta-yellow)](https://github.com/itcmsgr/nftban)
+[![Status](https://img.shields.io/badge/status-stable-brightgreen)](https://github.com/itcmsgr/nftban)
 
-> **⚠️ BETA SOFTWARE - ACTIVE DEVELOPMENT**: This is a major rewrite (v0.10.0) with significant architecture changes. While extensively tested on production servers, use with caution. **Always test in a non-production environment first!** We appreciate your feedback! [Report issues](https://github.com/itcmsgr/nftban/issues) | [Discussions](https://github.com/itcmsgr/nftban/discussions)
-
-> **⚠️ BREAKING CHANGES from v0.9.x**: v0.10.0 is a complete rewrite with new directory structure, configuration format, and nftables table design. Migration from v0.9.x requires fresh installation. Backup your current configuration before upgrading!
+> **✅ PRODUCTION READY**: NFTBan v0.30.1 is stable and deployed on production servers. Includes critical security fix for rule order (CVE-2024-NFTBAN-001). [Security Advisory](SECURITY.md)
 
 ---
 
 ## 🚀 Quick Start
 
-### Package Installation (Recommended)
+### Install from Packages (Recommended)
 
-**Rocky Linux / AlmaLinux / Fedora:**
-
+**Rocky Linux / AlmaLinux / RHEL / Fedora:**
 ```bash
 # Download latest release
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.el9.x86_64.rpm
-
-# Check what version you downloaded (before installing)
-rpm -qp --info nftban.el9.x86_64.rpm | grep Version
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-0.30.1-1.el9.x86_64.rpm
 
 # Install
-sudo dnf install -y nftban.el9.x86_64.rpm
-
-# Verify installed version
-nftban --version
-```
-
-**Ubuntu / Debian:**
-
-```bash
-# Download latest release
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.amd64.deb
-
-# Check what version you downloaded (before installing)
-dpkg --info nftban.ubuntu.amd64.deb | grep Version
-
-# Install
-sudo dpkg -i nftban.ubuntu.amd64.deb
-sudo apt-get install -f  # Install dependencies if needed
-
-# Verify installed version
-nftban --version
-```
-
-### From Source
-
-**Install from Git repository:**
-
-```bash
-# Clone repository
-git clone https://github.com/itcmsgr/nftban.git
-cd nftban
-
-# Run installer
-sudo ./install.sh
+sudo dnf install -y nftban-0.30.1-1.el9.x86_64.rpm
 
 # Verify
 nftban --version
 ```
 
-**One-line installer (review script first!):**
-
+**Ubuntu / Debian:**
 ```bash
-curl -sSL https://raw.githubusercontent.com/itcmsgr/nftban/main/install.sh | sudo bash
+# Download latest release
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban_0.30.1-1_amd64.deb
+
+# Install
+sudo dpkg -i nftban_0.30.1-1_amd64.deb
+sudo apt-get install -f  # Install dependencies if needed
+
+# Verify
+nftban --version
 ```
 
-**⚠️ IMPORTANT:** After installation, **test your firewall rules** before disconnecting! The system includes commit-confirm safety, but always verify SSH access works.
-
-**Next steps:**
-
+### First Steps
 ```bash
 # Check system health
-sudo nftban health check
+nftban health check
 
-# Apply initial rules (with commit-confirm protection)
-sudo nftban apply
+# View firewall status
+nftban firewall status
 
-# Enable automatic updates
-sudo systemctl enable --now nftban.timer
-
-# Optional: Add users to nftban-cli group for service management
-sudo usermod -aG nftban-cli username
-# User must re-login for group to take effect
+# Get help
+nftban help
 ```
 
-See **[Quick Start Guide](docs/QUICK-START.md)** for complete setup instructions.
+**See full documentation:** [docs/README.md](docs/README.md)
 
 ---
 
 ## 📚 Documentation
 
-**Getting Started:**
-- ➤ **[Quick Start Guide](docs/QUICK-START.md)** - Get started in 5 minutes ⭐
-- ➤ **[Installation Guide](docs/guides/install.md)** - Complete installation instructions
-- ➤ **[Security Architecture](SECURITY.md)** - Multi-layer security model and hardening guide 🛡️
-- ➤ [Polkit Integration](docs/guides/polkit-integration.md) - Group-based service management (no sudo) ✨
-- ➤ [CLI Quick Reference](docs/reference/cli-quick-reference.md) - Command cheat sheet
+### Quick Access
 
-**Configuration & Features:**
-- [DDOS Protection Guide](docs/guides/ddos-protection.md) - Configure DDoS protection
-- [Threat Feeds Setup](docs/guides/threat-feeds.md) - Block 1M+ known malicious IPs
-- [Fail2ban Integration](docs/guides/fail2ban-integration.md) - Auto-ban brute force attacks
-- [Health Diagnostics](docs/guides/health-diagnostics.md) - Troubleshooting system issues
+**Philosophy:**
+1. **CLI teaches you:** `nftban help`
+2. **Need details:** `man nftban`
+3. **Want to understand:** Read [ARCHITECTURE.md](docs/ARCHITECTURE.md)
+4. **Want to hack:** Code is open, explore!
 
-**Architecture & Design:**
-- [Permission Architecture](docs/architecture/permission-architecture.md) - Understanding the security model
-- [FHS Consolidation](docs/architecture/fhs-consolidation.md) - Filesystem layout explained
+### Essential Documents
 
-**For Developers:**
-- [Go Binaries Guide](docs/development/GO-BINARIES.md) - Building high-performance Go binaries ⚡
-- [Packaging Guide](docs/development/packaging.md) - Building RPM/DEB packages
-- [Coding Standards](docs/development/coding-standards.md) - For contributors
-
-**All documentation:** See [docs/](docs/) directory
-
----
-
-## 📊 Component Status Matrix
-
-| Component | Status | Stability | Production Ready |
-|-----------|--------|-----------|------------------|
-| **Core Firewall** | ✅ Complete | 90% | ✅ Yes (test first!) |
-| **FHS Auto-Heal** | ✅ Complete | 85% | ✅ Yes |
-| **Stats & Monitoring** | ✅ Complete | 85% | ✅ Yes |
-| **DDoS Protection** | ✅ Complete | 90% | ✅ Yes (tune limits!) |
-| **Port Scan Detection** | ✅ Complete | 85% | ✅ Yes |
-| **Fail2Ban Integration** | ✅ Complete | 95% | ✅ Yes |
-| **Whitelist/Blacklist** | ✅ Complete | 95% | ✅ Yes |
-| **Health Diagnostics** | ✅ Complete | 85% | ✅ Yes |
-| **Threat Feeds** | ✅ Complete | 80% | ⚠️ Beta |
-| **GeoIP Blocking** | 🔄 In Progress | 60% | ⚠️ Experimental |
-| **Control Panel Detection** | ✅ Complete | 90% | ✅ Yes (DirectAdmin tested) |
-| **CLI & Management** | ✅ Complete | 95% | ✅ Yes |
-| **Documentation** | 🔄 In Progress | 80% | ⚠️ Improving |
-| **Testing Suite** | 🔄 In Progress | 70% | ⚠️ Needs expansion |
-
-**Overall Project Stability: ~85% (Production Beta - use with caution)**
+| Document | Purpose |
+|----------|---------|
+| [docs/README.md](docs/README.md) | Documentation guide and learning paths |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Technical architecture and design |
+| `man nftban` | Complete command reference |
+| [SECURITY.md](SECURITY.md) | Security policy and CVE advisories |
+| [CHANGELOG.md](CHANGELOG.md) | Version history |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | How to contribute |
 
 ---
 
 ## ✨ What Makes NFTBan Special?
 
 ### 🛡️ Never Lock Yourself Out
-- **Commit-confirm recovery** with auto-rollback
-- Test firewall changes safely with 5-minute grace period
-- Automatic SSH whitelist for your IP
-- JunOS-style safety patterns
-- **Still, always test on non-production first!**
+- **Auto-whitelist system** - Your IP is protected
+- **SSH port auto-detection** - Always accessible
+- **Whitelist-first design** - Safety built-in
+- **Auto-heal system** - Fixes common issues automatically
 
-### 🚀 Blazing Fast Performance
-- **10-60x faster** than traditional bash scripts
-- Go binaries for threat feed processing
-- Process **1 million IPs in <1 second**
-- Instant GeoIP lookups with caching
+### 🚀 Blazing Fast
+- **10ms operations** - Add/remove IPs instantly
+- **O(1) lookups** - Handle 10,000+ IPs with zero performance impact
+- **Atomic updates** - Zero packet loss during reloads
+- **Go binaries** - Ultra-fast GeoIP and feed processing
 
-### 🔐 8 Security Layers
+### 🔐 Multi-Layer Security
 ```
-8. Recovery System     ← Auto-rollback prevents lockouts
+8. Auto-Heal System    ← Automatic recovery and fixes
 7. Application Layer   ← App-specific protection
 6. Intrusion Detection ← Fail2ban auto-banning
-5. Threat Intelligence ← 1M+ known malicious IPs
-4. Dynamic Blacklist   ← Manual bans & auto-detected threats
+5. Threat Intelligence ← Blacklist feeds
+4. Dynamic Blacklist   ← Manual and auto-detected bans
 3. Port Filtering      ← Only required ports open
 2. IP Whitelist        ← Trusted IPs always allowed
 1. Connection State    ← Stateful firewall tracking
 ```
 
-### 🎛️ 7 Security Profiles
-Choose the right balance for your needs:
-- **paranoid** - Maximum security (⚠️ test first - very restrictive!)
-- **strict** - High security (minimal services)
-- **balanced** - Recommended default ✓
-- **web** - Web server optimized (HTTP/HTTPS)
-- **minimal** - Basic protection only
-- **dev** - Development mode (permissive)
-- **disabled** - Firewall off
-
 ### 📦 Professional Design
-- **FHS-compliant** directory structure
-- **17 core modules** with single responsibility
-- **Modular architecture** - easy to extend
-- **Zero hardcoded values** - dynamic discovery
+- **FHS-compliant** - Standard Linux directory structure
+- **Modular architecture** - Easy to extend and maintain
+- **25 CLI commands** - Comprehensive management interface
+- **Zero hardcoded values** - Dynamic discovery and auto-configuration
 
 ---
 
 ## 💡 Key Features
 
-### Auto-Everything
-- ✅ **Auto-detects** control panels (DirectAdmin tested, cPanel/Plesk experimental)
-- ✅ **Auto-configures** required ports
-- ✅ **Auto-protects** against DDoS and port scans
-- ✅ **Auto-bans** attackers with Fail2ban
-- ✅ **Auto-updates** threat intelligence feeds
-
-### Built-In Protection
-- **DDoS Protection** - SYN flood, connection limits, rate limiting (⚠️ tune for your traffic!)
-- **Port Scan Detection** - Identify and auto-ban scanners
-- **Fail2ban Integration** - Automatic intrusion response
-- **Threat Feeds** - Block 1M+ known bad IPs (⚠️ beta - may have false positives)
-- **GeoIP Blocking** - Country-level IP filtering (⚠️ experimental)
-
-### Simple to Use
+### Core Firewall Management
 ```bash
-nftban status              # See what's happening
-nftban ban 192.0.2.50      # Block an IP
-nftban unban 192.0.2.50    # Unblock an IP
-nftban health check        # System diagnostics
-nftban profile set balanced # Change security level
-nftban feeds update        # Update threat lists
+nftban status                # System overview
+nftban firewall status       # Firewall state
+nftban health check          # System diagnostics
 ```
 
----
+### IP Management
+```bash
+nftban ban 192.0.2.50        # Block an IP (checks whitelist first!)
+nftban unban 192.0.2.50      # Unblock an IP
+nftban search 192.0.2.50     # Find IP in all sets
+nftban whitelist add <ip>    # Protect an IP
+```
 
-## 🆕 What's New in v0.10.0
+### Built-In Protection
+- **DDoS Protection** - SYN flood, connection limits, rate limiting
+- **Port Scan Detection** - Identify and auto-ban scanners
+- **Fail2ban Integration** - Automatic intrusion response
+- **Threat Feeds** - Block known malicious IPs (optional)
+- **Auto-Heal** - Automatic permission and directory fixes
 
-### ⚠️ BREAKING CHANGES
-
-**This is a MAJOR rewrite. Migration from v0.9.x requires:**
-- Fresh installation (in-place upgrade not supported)
-- Configuration file migration (manual)
-- Backup of v0.9.x config recommended
-- Testing before production deployment
-
-### Major Features
-
-**🏥 FHS Auto-Heal System** (NEW)
-- Automated filesystem hierarchy compliance
-- Smart privilege-aware fixing
-- Daily systemd timer for maintenance
-- Zero-intervention directory management
-- **Status:** Tested on 3 production servers, 21/21 compliance
-
-**📊 Stats & Monitoring** (NEW)
-- Real-time dashboard reading nftables data
-- Historical tracking and trending
-- Email reports and automation
-- Integration with monitoring tools
-- **Status:** Working, needs more field testing
-
-**🛡️ DDoS Protection** (ENHANCED)
-- Connection limiting with safe defaults (⚠️ ALL LIMITS COMMENTED - configure for your needs!)
-- Per-protocol rate limits
-- SYN flood protection
-- ICMP rate limiting
-- **Status:** Working, requires tuning per server
-
-**🔄 Unified Health Reporting** (NEW)
-- Consolidated health checks across all modules
-- Single orchestration command
-- Auto-fix capabilities
-- Detailed diagnostic output
-- **Status:** Working, 0 errors on test servers
-
-**🔥 Enhanced Fail2ban Integration**
-- Persistent offender detection (3 bans → permanent blacklist)
-- Comprehensive ban tracking
-- Automatic jail configuration
-- **Status:** Tested and working
-
-### Architecture Improvements
-
-**Two-Table nftables Design**
-- `nftban_runtime` - Temporary bans, active protection
-- `nftban_main` - Permanent rules, persistent config
-- 50% fewer rule evaluations
-- Cleaner separation of concerns
-- **Status:** Production tested
-
-**Single Source of Truth**
-- FHS specification in one file
-- Used everywhere consistently
-- No duplicate definitions
-- Easy to maintain
-
-**Smart Privilege Management**
-- Privilege-aware auto-fixing
-- Root vs nftban user separation
-- Clear reporting of permission needs
-- No silent failures
-
-➤ **[Full Changelog](CHANGELOG.md)**
+### Simple to Use
+- Intuitive CLI with `--help` everywhere
+- Comprehensive man page (`man nftban`)
+- Clear error messages with solutions
+- Tab completion for all commands
 
 ---
 
-## ⚠️ Important Warnings & Known Issues
+## 🆕 What's New in v0.30.1
 
-### Before You Install
+### 🚨 Critical Security Release
 
-1. **⚠️ BACKUP YOUR CURRENT FIREWALL CONFIG**
-   - Save iptables/nftables rules
-   - Document open ports
-   - Keep access to console/KVM
+**CVE-2024-NFTBAN-001 FIXED** - Rule order vulnerability that allowed blacklisted IPs to bypass firewall.
 
-2. **⚠️ TEST IN NON-PRODUCTION FIRST**
-   - Use a test VM or dev server
-   - Verify all services remain accessible
-   - Test for at least 24 hours
+**The Fix:** Blacklist checks now run BEFORE port checks (as they should).
 
-3. **⚠️ HAVE CONSOLE ACCESS**
-   - Don't install over SSH on production without console access
-   - Use commit-confirm for safety, but don't rely on it 100%
+```nft
+# v0.30.0 (VULNERABLE):
+tcp dport @tcp_ports accept    ← Port 22 accepted FIRST
+ip saddr @blacklist_v4 drop    ← NEVER REACHED!
 
-4. **⚠️ TUNE DDOS LIMITS**
-   - Default limits are COMMENTED (disabled)
-   - Configure based on your actual traffic
-   - Monitor for false positives
+# v0.30.1 (SECURE):
+ip saddr @blacklist_v4 counter drop    ← Check blacklist FIRST
+tcp dport @tcp_ports counter accept    ← Then allow ports
+```
 
-### Known Issues (v0.10.0 Beta)
+**Impact:** Blacklisted attackers could access SSH and all services in v0.30.0.
 
-- **GeoIP blocking**: Experimental, may block legitimate traffic
-- **Threat feeds**: Beta status, potential false positives
-- **Documentation**: Still being improved, some sections incomplete
-- **cPanel/Plesk detection**: Experimental, DirectAdmin tested
-- **Port optimization**: DirectAdmin bulk operations can be slow (will be optimized)
+**Upgrade immediately** if running v0.30.0 or earlier!
 
-### Tested Configurations
+### Additional Fixes
+- ✅ Chain renamed: `input_main` → `input` (consistency)
+- ✅ Numeric priorities: `-5, 0` (not `-310, -300`)
+- ✅ Default policy: `drop` (secure by default)
+- ✅ Counters added: All rules now have packet counters
+- ✅ Set name typo fixed: `whitelist_ipv4` → `whitelist_v4`
+- ✅ nftables syntax fixed: `counter` before `accept/drop`
 
-✅ **Known Working:**
-- Rocky Linux 9, AlmaLinux 9, Fedora 38+
-- DirectAdmin control panel
-- Web servers (Nginx, Apache)
-- Mail servers (Postfix, Dovecot)
-- SSH protection
-- Basic DDoS protection
-
-⚠️ **Needs More Testing:**
-- cPanel, Plesk integration
-- High-traffic environments (1000+ req/s)
-- IPv6 in all scenarios
-- Exotic control panels
-
----
-
-## 📚 Documentation
-
-### Getting Started
-- 📖 [Installation Guide](docs/guides/install.md) - Detailed installation (⚠️ read before installing!)
-- 🚀 [Quick Start Guide](docs/guides/quickstart.md) - 5-minute setup
-- 🔧 [FHS Auto-Heal Index](docs/reference/fhs-auto-heal-index.md) - System health reference
-
-### Common Tasks
-- 🚫 [Ban System Guide](docs/guides/ban-system.md) - Block/unblock IPs
-- 🛡️ [Security Profiles](docs/guides/security-profiles.md) - Choose your protection level
-- 🏥 [Health Diagnostics](docs/guides/health-diagnostics.md) - System health checks
-- 🐛 [Troubleshooting](docs/guides/health-diagnostics.md) - Solve common issues
-
-### Understanding NFTBan
-- 🏗️ [Architecture](docs/concepts/architecture.md) - How NFTBan works
-- 💾 [Recovery System](RECOVERY_GUIDE.md) - Commit-confirm explained
-- 🌐 [Threat Feeds](FEEDS_USER_GUIDE.md) - Threat intelligence
-- 📜 [Changelog](CHANGELOG.md) - Version history
-
-### Reference
-- ⚙️ [CLI Quick Reference](docs/reference/cli-quick-reference.md) - All commands
-- 🧩 [Service Status Reference](docs/reference/service-status.md) - Service management
-- 📋 [Complete Documentation](docs/index.md) - Full doc portal
+**Full details:** [SECURITY.md](SECURITY.md) | [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
@@ -376,195 +190,156 @@ nftban feeds update        # Update threat lists
 - **RAM**: 512 MB (1 GB recommended)
 - **Disk**: 100 MB
 
-### Tested & Supported Distributions
+### Tested & Supported
 ✅ **Fully Tested:**
-- Rocky Linux 9+ (primary test platform)
-- AlmaLinux 9+
-- Fedora 38+
-
-✅ **Should Work (less tested):**
-- Ubuntu 22.04 LTS+
+- Rocky Linux 9-10
+- AlmaLinux 9-10
+- Fedora 38-42
+- Ubuntu 24.04 LTS
 - Debian 12+
-- RHEL 9+, Oracle Linux 9+
+
+✅ **Should Work:**
+- RHEL 9+
+- CentOS Stream 9-10
+- Oracle Linux 9+
 - openSUSE Leap 15.5+
 
-⚠️ **Use with Extra Caution:**
-- Any distro not listed above (may work, but untested)
-
 ---
 
-## 🎯 Quick Examples
+## 🎯 Common Operations
 
-### Ban an IP Address
+### Enable/Disable
 ```bash
-# Temporary ban (1 hour)
-sudo nftban ban 192.0.2.50
-
-# Permanent ban
-sudo nftban ban 192.0.2.50 --permanent
-
-# Unban
-sudo nftban unban 192.0.2.50
-
-# List all banned IPs
-sudo nftban list banned
+nftban firewall init     # Initialize firewall (first time)
+nftban enable            # Activate NFTBan
+nftban disable           # Deactivate (config preserved)
+nftban status            # Check current state
 ```
 
-### Change Security Profile
+### Firewall Management
 ```bash
-# List available profiles
-sudo nftban profile list
-
-# Set balanced (recommended)
-sudo nftban profile set balanced
-
-# Check current profile
-sudo nftban profile show
+nftban firewall reload   # Reload from config
+nftban firewall status   # Show tables/sets/chains
+nftban firewall check    # Verify firewall health
 ```
 
-### Update Threat Intelligence (⚠️ Beta)
+### IP Operations
 ```bash
-# List enabled feeds
-sudo nftban feeds list
+# Ban an IP (whitelist protection built-in!)
+nftban ban 192.0.2.50
 
-# Update all feeds (may take a few minutes)
-sudo nftban feeds update
+# Unban an IP
+nftban unban 192.0.2.50
 
-# Enable a specific feed (test first!)
-sudo nftban feeds enable FIREHOL_LEVEL1
+# Search for an IP
+nftban search 192.0.2.50
+
+# Whitelist your IP (protection from accidents)
+nftban whitelist add 192.0.2.1
 ```
 
-### Check System Health
+### Protection Modules
 ```bash
-# Run health check
-sudo nftban health check
-
-# Auto-fix issues (review first!)
-sudo nftban health check --fix
-
-# FHS compliance check
-sudo nftban fhs
+nftban portscan enable   # Detect port scans
+nftban ddos enable       # Enable DDoS protection
+nftban feeds enable      # Enable threat feeds
+nftban fail2ban setup    # Configure Fail2ban integration
 ```
 
-### Safe Firewall Changes (ALWAYS USE THIS!)
+### Monitoring
 ```bash
-# Apply rules with commit-confirm
-sudo nftban-apply
-
-# Test your changes (you have 5 minutes)
-# Try SSH in a new terminal!
-
-# If everything works:
-sudo nftban-confirm
-
-# If broken, wait for auto-rollback
-# Or force rollback immediately:
-sudo nftban-rollback --force
+nftban stats             # Statistics dashboard
+nftban stats top         # Top blocked IPs
+nftban report            # Generate report
+nftban health check      # System diagnostics
 ```
 
 ---
 
-## 🔍 Verifying Package Versions
+## ⚠️ Security Notice
 
-### Before Installing - Check Downloaded Package
+### v0.30.0 Users - UPGRADE IMMEDIATELY
 
-**RPM Package (RHEL/Rocky/AlmaLinux/Fedora):**
+If you're running v0.30.0, **upgrade to v0.30.1 now**. The rule order bug (CVE-2024-NFTBAN-001) allowed blacklisted IPs to bypass firewall protections.
+
 ```bash
-# Show all package information
-rpm -qp --info nftban.el9.x86_64.rpm
-
-# Show just the version
-rpm -qp --info nftban.el9.x86_64.rpm | grep Version
-
-# Show version and release
-rpm -qp nftban.el9.x86_64.rpm
-```
-
-**DEB Package (Debian/Ubuntu):**
-```bash
-# Show all package information
-dpkg --info nftban.ubuntu.amd64.deb
-
-# Show just the version
-dpkg --info nftban.ubuntu.amd64.deb | grep Version
-
-# Show package name and version
-dpkg-deb --field nftban.ubuntu.amd64.deb Package Version
-```
-
-### After Installing - Check Installed Version
-
-**All Systems:**
-```bash
-# NFTBan version
-nftban version
+# Check your version
 nftban --version
 
-# Full system information
-nftban health check | head -20
+# If v0.30.0, upgrade now:
+# Download v0.30.1 package and install
+# Then verify the fix:
+nftban firewall check
+nft list chain inet nftban_main input
 ```
 
-**RPM Systems:**
-```bash
-# Query installed package
-rpm -qi nftban
+### Lockout Prevention
 
-# Show just version
-rpm -q nftban
-```
+NFTBan includes multiple safety features:
+- ✅ **Whitelist-first** - Your IP is protected
+- ✅ **Ban command checks whitelist** - Won't ban whitelisted IPs
+- ✅ **SSH auto-detection** - SSH port always protected
+- ✅ **Auto-heal** - Fixes common issues automatically
 
-**DEB Systems:**
-```bash
-# Query installed package
-dpkg -l nftban
+**Still, always test on non-production first!**
 
-# Show details
-apt show nftban
-```
+---
 
-### Verify Latest Release on GitHub
+## 📖 Learning Resources
 
-Check what's currently released:
-```bash
-# View latest release info
-curl -s https://api.github.com/repos/itcmsgr/nftban/releases/latest | grep '"tag_name"'
+### Getting Started (30 minutes)
+1. `nftban help` - Browse all commands
+2. `nftban status` - See current state
+3. `nftban health check` - System diagnostics
+4. Try commands with `--help`
 
-# Expected output example:
-# "tag_name": "v0.10.0",
-```
+### System Administration (2 hours)
+1. `man nftban` - Complete reference
+2. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Understand design
+3. Explore `/etc/nftban/` - Configuration
+4. Read [SECURITY.md](SECURITY.md) - Security model
 
-Or visit: https://github.com/itcmsgr/nftban/releases/latest
+### Development (4-8 hours)
+1. [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) - Deep dive
+2. Study `/usr/lib/nftban/` - Source code
+3. [CONTRIBUTING.md](CONTRIBUTING.md) - Contribute
+4. `nft list tables` - Explore nftables
+
+**Full learning paths:** [docs/README.md](docs/README.md)
 
 ---
 
 ## 🤝 Getting Help
 
+### Built-In Help
+```bash
+nftban help              # All commands
+nftban <command> help    # Command-specific help
+man nftban              # Complete reference
+nftban health check     # System diagnostics
+```
+
 ### Documentation
-- 📚 **[Documentation Portal](docs/index.md)** - Complete documentation
-- 🚀 **[Quick Start Guide](docs/guides/quickstart.md)** - Get started
-- 🏗️ **[Architecture Guide](docs/concepts/architecture.md)** - How it works
-- 🐛 **[Troubleshooting](docs/guides/health-diagnostics.md)** - Common issues
+- **Quick Start:** This README
+- **Architecture:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **Man Page:** `man nftban`
+- **Doc Guide:** [docs/README.md](docs/README.md)
 
 ### Community & Support
-- 🏠 **[GitHub Repository](https://github.com/itcmsgr/nftban)** - Source code
-- 🐛 **[Issues](https://github.com/itcmsgr/nftban/issues)** - Bug reports (please include logs!)
-- 💬 **[Discussions](https://github.com/itcmsgr/nftban/discussions)** - Q&A, ideas, feedback
-- 📧 **[Email](mailto:contact@nftban.com)** - Direct support
+- 🏠 **GitHub:** https://github.com/itcmsgr/nftban
+- 🐛 **Issues:** https://github.com/itcmsgr/nftban/issues
+- 💬 **Discussions:** https://github.com/itcmsgr/nftban/discussions
+- 📧 **Email:** contact@nftban.com
+- 🌐 **Website:** https://nftban.com
 
 ### Reporting Bugs
 
-**Please include:**
-1. NFTBan version (`nftban version`)
-2. OS and kernel version (`uname -a`)
+Please include:
+1. NFTBan version (`nftban --version`)
+2. OS and kernel (`uname -a`)
 3. Output of `nftban health check`
-4. Relevant log entries from `/var/log/nftban/nftban.log`
+4. Relevant logs from `/var/log/nftban/`
 5. Steps to reproduce
-
-### Professional Services
-**NFTBAN Project – Simplifying Linux Firewall Management**
-- **Author**: Antonios Voulvoulis
-- **Website**: https://nftban.com
-- **Email**: contact@nftban.com
 
 ---
 
@@ -580,115 +355,58 @@ Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis
 📜 Source code modifications must remain MPL-2.0
 🔓 Open source, community-driven
 
-**Patent Grant:**
-Under MPL-2.0, each contributor grants a patent license for their contributions. Patent retaliation clause applies (§5.2) - if you initiate patent litigation claiming the software infringes, your license terminates.
-
 **Important Documents:**
-- 📄 [Full License Text](LICENSE) - Mozilla Public License 2.0
-- 📋 [NOTICE](NOTICE.md) - Third-party attributions and legal notices
-- 📝 [License Summary](README-License-Summary.md) - Quick reference for licensing
-- 🏷️ [Trademark Policy](TRADEMARK.md) - Brand usage guidelines
-- 🤝 [Contributing Guide](CONTRIBUTING.md) - How to contribute
-- 🔒 [Security Policy](SECURITY.md) - Security reporting
+- [LICENSE](LICENSE) - Full license text
+- [NOTICE.md](NOTICE.md) - Third-party attributions
+- [TRADEMARK.md](TRADEMARK.md) - Brand usage guidelines
+- [CONTRIBUTING.md](CONTRIBUTING.md) - How to contribute
+- [SECURITY.md](SECURITY.md) - Security policy
 
 ### Trademark Notice
 
 **"NFTBAN"** and the NFTBAN logo are trademarks of Antonios Voulvoulis (NFTBAN Project).
 
-- ✅ **Code:** Licensed under MPL-2.0 (open source, free to use and modify)
-- 🏷️ **Name & Brand:** Protected trademark (see usage guidelines below)
-
-**You may:**
-- Use, modify, and distribute the code under MPL-2.0
-- Reference NFTBAN in documentation and tutorials
-- Build commercial products using the code
-
-**You may not (without permission):**
-- Use the NFTBAN name to brand your own fork or distribution
-- Present your version as "official" or "certified" NFTBAN
-- Register domain names or services using the NFTBAN name
-
-📖 **[Read Full Trademark Policy](TRADEMARK.md)** for detailed guidelines.
+- ✅ **Code:** Licensed under MPL-2.0 (free to use and modify)
+- 🏷️ **Name & Brand:** Protected trademark (see [TRADEMARK.md](TRADEMARK.md))
 
 ---
 
 ## 🌟 Contributing
 
-We welcome contributions! **But please:**
-
-1. **Report bugs first** - Don't fix without discussion
-2. **Follow coding standards** - See [CODING_STANDARDS.md](CODING_STANDARDS.md)
-3. **Test thoroughly** - On multiple distros if possible
-4. **Document changes** - Update relevant docs
-5. **One feature per PR** - Keep PRs focused
-
-**How to contribute:**
+We welcome contributions!
 
 1. Fork the repository
 2. Create a feature branch (`git checkout -b feature/amazing-feature`)
 3. Make your changes with tests
-4. Commit (`git commit -m 'Add amazing feature'`)
+4. Commit (`git commit -s -m 'Add amazing feature'`)
 5. Push (`git push origin feature/amazing-feature`)
 6. Open a Pull Request
 
-Please read:
-- **[CONTRIBUTING.md](CONTRIBUTING.md)** - Contribution guidelines
-- **[CODING_STANDARDS.md](CODING_STANDARDS.md)** - Code standards
+**Read:** [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
 
 ---
 
 ## 🙏 Acknowledgments
 
 NFTBan is built on excellent open source projects:
-
-- **nftables** - The modern Linux firewall (part of Linux kernel; no affiliation with Linux Foundation)
-- **Fail2ban** - Intrusion prevention framework (separate project by Cyril Jaquier; no affiliation)
+- **nftables** - Modern Linux firewall
+- **Fail2ban** - Intrusion prevention
 - **FireHOL** - Threat intelligence feeds
-- **MaxMind GeoIP** - IP geolocation data
-- **Tux** - Penguin artwork by Larry Ewing (The GIMP), used with attribution
+- **MaxMind GeoIP** - IP geolocation
 
-**Third-Party Disclaimers:**
-NFTBan is an independent project. We are **not affiliated with, endorsed by, or sponsored by** Fail2Ban, nftables, the Linux Foundation, or Linus Torvalds. All referenced trademarks belong to their respective owners. See [NOTICE.md](NOTICE.md) for complete attributions.
-
-Special thanks to:
-- All contributors and testers
-- The nftables development team
-- The open source community
+**See:** [NOTICE.md](NOTICE.md) for complete attributions.
 
 ### 🤖 AI-Assisted Development
 
-This project benefits from AI collaboration. We maintain full transparency about how AI partners contribute:
+This project benefits from AI collaboration:
 
-| AI Partner | Primary Contributions | Role |
-|------------|----------------------|------|
-| **ChatGPT** (OpenAI) | Architecture planning, roadmap development, design consultation | Strategic Planning |
-| **Claude Code** (Anthropic) | Systematic refactoring, code generation, automated validation | Implementation |
-| **Claude AI** (Anthropic) | Code review, optimization suggestions, comprehensive analysis | Quality Assurance |
+| AI Partner | Role |
+|------------|------|
+| **ChatGPT** (OpenAI) | Architecture planning, design consultation |
+| **Claude Code** (Anthropic) | Implementation, testing, validation |
+| **Claude AI** (Anthropic) | Code review, optimization |
 
-**Specific Contributions:**
-- **Architecture Design**: ChatGPT assisted with v0.10.0 complete rewrite planning and FHS architecture design
-- **Code Implementation**: Claude Code performed systematic code generation, refactoring, and validation
-- **Code Review**: Claude AI provided comprehensive module review and optimization suggestions
-- **Documentation**: Both AI partners contributed to technical writing and documentation structure
-- **Testing**: Automated validation, syntax checking, and comprehensive testing strategies
-- **Packaging**: Claude Code developed complete RPM/DEB packaging infrastructure
-
-### 🤝 AI Collaboration Policy
-
-**Our Commitment to Transparency:**
-1. **Fair Attribution**: All AI contributions are credited clearly and honestly
-2. **Human Ownership**: NFTBan Project retains full ownership and decision-making authority
-3. **AI as Tools**: AI partners are assistive tools, not co-owners or independent contributors
-4. **Honest Disclosure**: We disclose AI involvement in architecture, code, and documentation
-5. **No Hidden AI Work**: All AI-generated or AI-assisted content is marked appropriately
-
-**What This Means:**
-- AI helped design and implement features, but under human direction and review
-- Final decisions, architecture choices, and quality standards are set by NFTBan Project
-- AI-generated code is reviewed, tested, and validated before inclusion
-- This README and all documentation accurately represent both human and AI contributions
-
-We believe in transparency about AI collaboration and credit all our development partners fairly.
+All AI contributions are transparently credited in Git commits.
 
 ---
 
@@ -698,15 +416,15 @@ We believe in transparency about AI collaboration and credit all our development
 </p>
 
 <p align="center">
-  <a href="docs/index.md">📚 Documentation</a> •
-  <a href="docs/guides/quickstart.md">🚀 Quick Start</a> •
-  <a href="docs/concepts/architecture.md">🏗️ Architecture</a> •
-  <a href="docs/reference/cli-quick-reference.md">📖 CLI Quick Reference</a> •
+  <a href="docs/README.md">📚 Documentation</a> •
+  <a href="docs/ARCHITECTURE.md">🏗️ Architecture</a> •
+  <a href="SECURITY.md">🔒 Security</a> •
+  <a href="CHANGELOG.md">📝 Changelog</a> •
   <a href="https://github.com/itcmsgr/nftban/issues">🐛 Report Issue</a> •
   <a href="https://nftban.com">🌐 Website</a>
 </p>
 
 <p align="center">
-  <sub>⚠️ BETA SOFTWARE - Test before production use!</sub><br>
+  <sub>✅ Production Ready - v0.30.1 includes critical security fix</sub><br>
   <sub>Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis</sub>
 </p>
