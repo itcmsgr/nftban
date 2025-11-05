@@ -37,8 +37,8 @@ Recommends: fail2ban (>= 0.11),
 Conflicts: firewalld,
            iptables,
            iptables-persistent
-Description: Modern nftables firewall with self-healing inventory monitoring (v0.30)
- NFTBan v0.30 is a modern, high-performance firewall management system for Linux
+Description: Modern nftables firewall with self-healing inventory monitoring (v0.30.1)
+ NFTBan v0.30.1 is a modern, high-performance firewall management system for Linux
  servers using nftables with advanced self-healing and inventory monitoring.
  .
  Features include:
