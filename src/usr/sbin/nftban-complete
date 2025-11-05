@@ -1,11 +1,12 @@
 #!/usr/bin/env bash
-# NFTBan v0.30.0 - Ban Management Backend
+# NFTBan v0.30.1 - Ban Management Backend
 # Production-ready ban management with:
 # - Two-table architecture (runtime + main)
 # - Fail2ban integration with temp bans
 # - Persistent offender detection
 # - Comprehensive logging and statistics
 # - Master enable/disable switch
+# - SECURITY FIX: Blacklist checked BEFORE service ports (CVE-fix)
 
 set -euo pipefail
 IFS=$'\n\t'
@@ -200,33 +201,33 @@ table inet nftban_main {
   }
 
   # --------------- Chains ----------------
-  chain input_main {
-    type filter hook input priority -300; policy accept;
+  chain input {
+    type filter hook input priority 0; policy drop;
 
     # 1) Always allow established/related and loopback
-    ct state established,related accept
-    iif lo accept
+    ct state established,related accept counter comment "established connections"
+    iif lo accept counter comment "loopback interface"
 
-    # 2) Whitelist always wins
-    ip   saddr @whitelist_v4 accept
-    ip6  saddr @whitelist_v6 accept
+    # 2) Whitelist always wins (highest priority)
+    ip   saddr @whitelist_v4 accept counter comment "whitelist v4"
+    ip6  saddr @whitelist_v6 accept counter comment "whitelist v6"
 
-    # 3) Basic ICMP/ICMPv6
-    ip   protocol icmp  icmp type { echo-request, echo-reply, destination-unreachable, time-exceeded } accept
-    ip6  nexthdr icmpv6 icmpv6 type { echo-request, echo-reply, destination-unreachable, time-exceeded, packet-too-big } accept
+    # 3) Basic ICMP/ICMPv6 (before blacklist for diagnostics)
+    ip   protocol icmp  icmp type { echo-request, echo-reply, destination-unreachable, time-exceeded } accept counter comment "ICMPv4"
+    ip6  nexthdr icmpv6 icmpv6 type { echo-request, echo-reply, destination-unreachable, time-exceeded, packet-too-big } accept counter comment "ICMPv6"
 
-    # 4) Allowed service ports
-    tcp dport @tcp_ports accept
-    udp dport @udp_ports accept
+    # 4) CRITICAL: Blacklist BEFORE service ports (security fix v0.30.1)
+    ip   saddr @blacklist_v4 drop counter comment "blacklist v4"
+    ip6  saddr @blacklist_v6 drop counter comment "blacklist v6"
 
     # 5) Invalid traffic
-    ct state invalid drop
+    ct state invalid drop counter comment "invalid connection state"
 
-    # 6) Permanent blacklists
-    ip   saddr @blacklist_v4 drop
-    ip6  saddr @blacklist_v6 drop
+    # 6) Allowed service ports (after blacklist check)
+    tcp dport @tcp_ports accept counter comment "TCP services"
+    udp dport @udp_ports accept counter comment "UDP services"
 
-    # 7) Default drop (policy)
+    # 7) Default drop (policy drop, implicit)
   }
 }
 NFT

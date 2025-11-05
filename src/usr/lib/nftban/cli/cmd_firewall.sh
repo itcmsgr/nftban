@@ -477,8 +477,8 @@ firewall_status() {
     if nft list chain inet nftban_runtime input_tempban &>/dev/null; then
         echo "  ✓ nftban_runtime.input_tempban"
     fi
-    if nft list chain inet nftban_main input_main &>/dev/null; then
-        echo "  ✓ nftban_main.input_main"
+    if nft list chain inet nftban_main input &>/dev/null; then
+        echo "  ✓ nftban_main.input"
     fi
     echo ""
 
@@ -625,10 +625,10 @@ firewall_check() {
 
     # Check 5: Main chains
     echo "[5/10] Checking main table chains..."
-    if nft list chain inet nftban_main input_main &>/dev/null; then
-        echo "  ✓ PASS: input_main chain exists"
+    if nft list chain inet nftban_main input &>/dev/null; then
+        echo "  ✓ PASS: input chain exists"
     else
-        echo "  ✗ FAIL: input_main chain missing"
+        echo "  ✗ FAIL: input chain missing"
         errors=$((errors + 1))
     fi
     echo ""
@@ -662,7 +662,7 @@ firewall_check() {
     # Check 8: Priority order
     echo "[8/10] Checking chain priorities..."
     local runtime_prio=$(nft list chain inet nftban_runtime input_tempban 2>/dev/null | grep "priority" | awk '{print $5}')
-    local main_prio=$(nft list chain inet nftban_main input_main 2>/dev/null | grep "priority" | awk '{print $5}')
+    local main_prio=$(nft list chain inet nftban_main input 2>/dev/null | grep "priority" | awk '{print $5}')
 
     if [[ -n "$runtime_prio" && -n "$main_prio" ]]; then
         echo "  ✓ PASS: Priorities set (runtime: $runtime_prio, main: $main_prio)"
