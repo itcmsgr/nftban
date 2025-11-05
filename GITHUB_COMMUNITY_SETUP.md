@@ -108,23 +108,22 @@
 
 ---
 
-### Step 5: Enable GitHub Sponsors (Optional - Funding)
-**URL:** https://github.com/settings/sponsors
+### Step 5: Project Philosophy - No Funding Solicitation
 
-1. Go to your GitHub settings (not repo settings)
-2. Navigate to "GitHub Sponsors"
-3. Click "Join the waitlist" or "Set up GitHub Sponsors"
-4. Add funding options:
-   - GitHub Sponsors
-   - Buy Me a Coffee
-   - Patreon
-   - Custom (ITCMS donation page)
+**NFTBan follows a community-first approach:**
 
-**Create:** `.github/FUNDING.yml`
-```yaml
-github: [itcmsgr]
-custom: ["https://itcms.gr/donate", "https://nftban.com/sponsor"]
-```
+- ✅ **Pure open source** - MPL-2.0 license, no donation requests
+- ✅ **Sponsorship by discussion** - Interested sponsors can contact us
+- ✅ **Quality over funding** - Focus on building great software
+- ✅ **No FUNDING.yml** - No sponsor button cluttering the repository
+
+**Why this approach?**
+- Keeps focus on technical excellence
+- Avoids "pay-to-contribute" perception
+- Professional and enterprise-friendly
+- Sponsors reach out when they see value
+
+**For sponsorship inquiries:** Contact via GitHub Discussions or project website
 
 ---
 
@@ -356,7 +355,6 @@ Copy this checklist and execute:
 - [ ] **Post Beta Testing Announcement** (Discussions → Announcements)
 - [ ] **Update Repository About** (use GITHUB_ABOUT_SECTION.txt)
 - [ ] **Add Topics/Tags** (20 tags for discoverability)
-- [ ] **Create FUNDING.yml** (if seeking sponsors)
 
 ### Verify (Already Done):
 - [x] Issue templates exist
