@@ -398,6 +398,20 @@ main() {
     fi
 
     case "$cmd" in
+        enable|disable)
+            # Route to system enable/disable command
+            if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_system.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_LIB_DIR}/cli/cmd_system.sh"
+                shift
+                nftban_cmd_system "$cmd" "$@"
+                return $?
+            else
+                echo "ERROR: cmd_system.sh not found" >&2
+                exit 1
+            fi
+            ;;
+
         ban|unban|list)
             # Route to nftban-complete for Fail2ban integration
             if [[ -x "/usr/sbin/nftban-complete" ]]; then

@@ -17,7 +17,7 @@
 # meta:output=Parsed IPs/CIDRs to nftables, logs to /var/log/nftban/feeds.log
 #
 # **Inventory & Requirements**
-# meta:depends=bash,curl,nftban-feeds (Go binary)
+# meta:depends=bash,curl,flock,nftban-feeds (Go binary)
 #
 # meta:created_date=2025-10-28
 # =============================================================================
@@ -33,11 +33,54 @@ readonly NFTBAN_FEEDS_STORAGE_DIR="${NFTBAN_FEEDS_STORAGE_DIR:-/var/lib/nftban/f
 readonly NFTBAN_FEEDS_CACHE_DIR="${NFTBAN_FEEDS_CACHE_DIR:-/var/cache/nftban/feeds}"
 readonly NFTBAN_FEEDS_LOG="${NFTBAN_FEEDS_LOG:-/var/log/nftban/feeds.log}"
 readonly NFTBAN_FEEDS_BINARY="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-feeds"
+readonly NFTBAN_FEEDS_LOCKFILE="${RUNDIR:-/run/nftban}/feeds-update.lock"
 
 # nftables configuration
 readonly NFTBAN_NFT_TABLE="nftban_main"
 readonly NFTBAN_NFT_SET_FEEDS_V4="feed_v4"
 readonly NFTBAN_NFT_SET_FEEDS_V6="feed_v6"
+
+# =============================================================================
+# LOCKING - Prevent concurrent updates
+# =============================================================================
+
+# Ensure lock directory exists
+mkdir -p "$(dirname "$NFTBAN_FEEDS_LOCKFILE")" 2>/dev/null || true
+
+# Acquire lock (30 second timeout)
+_feeds_lock() {
+    exec 9>"$NFTBAN_FEEDS_LOCKFILE"
+    if ! flock -w 30 9; then
+        return 1
+    fi
+    return 0
+}
+
+# Release lock
+_feeds_unlock() {
+    flock -u 9 2>/dev/null || true
+}
+
+# Check if another update is running
+_feeds_is_locked() {
+    if [[ -f "$NFTBAN_FEEDS_LOCKFILE" ]]; then
+        # Check if lock is stale (older than 1 hour = hung process)
+        local lock_age=$(( $(date +%s) - $(stat -c %Y "$NFTBAN_FEEDS_LOCKFILE" 2>/dev/null || echo 0) ))
+        if [[ $lock_age -gt 3600 ]]; then
+            # Stale lock, remove it
+            rm -f "$NFTBAN_FEEDS_LOCKFILE"
+            return 1
+        fi
+
+        # Try to acquire lock (non-blocking check)
+        if exec 9>"$NFTBAN_FEEDS_LOCKFILE" && flock -n 9 2>/dev/null; then
+            flock -u 9
+            return 1  # Not locked
+        fi
+        return 0  # Locked
+    fi
+    return 1  # Not locked
+}
 
 # =============================================================================
 # LOGGING
@@ -183,13 +226,22 @@ nftban_feeds_disable() {
     nftban_feeds_set_property "$feed_name" "ENABLED" "false"
     nftban_feeds_log INFO "Feed disabled: $feed_name"
 
-    # Resync nftables (will exclude disabled feed)
-    nftban_feeds_sync_to_nftables
+    # Show immediate feedback
+    echo "✓ Feed disabled: $feed_name"
+    echo "⏳ Updating nftables in background..."
+    echo ""
+    echo "Check status with: nftban feeds status"
+    echo "View progress: tail -f /var/log/nftban/feeds.log"
+
+    # Resync nftables in background to avoid hanging CLI
+    (nftban_feeds_sync_to_nftables &>/dev/null) &
+    disown
 }
 
 # Update single feed
 nftban_feeds_update_single() {
     local feed_name="$1"
+    local no_sync="${2:-false}"  # Optional: skip sync (for batch updates)
 
     nftban_feeds_log INFO "Updating feed: $feed_name"
 
@@ -254,15 +306,43 @@ nftban_feeds_update_single() {
     # Cleanup
     rm -f "$temp_file"
 
-    # Sync to nftables
-    nftban_feeds_sync_to_nftables
+    # Sync to nftables (unless told to skip for batch updates)
+    if [[ "$no_sync" != "true" ]]; then
+        nftban_feeds_sync_to_nftables
+    fi
 
     return 0
 }
 
 # Update all enabled feeds
 nftban_feeds_update_all() {
-    nftban_feeds_log INFO "Updating all enabled feeds..."
+    # Check if another update is already running
+    if _feeds_is_locked; then
+        echo "⚠️  Another feed update is already running"
+        echo ""
+        echo "If this is stuck, check: ps aux | grep 'nftban feeds'"
+        echo "Lock file: $NFTBAN_FEEDS_LOCKFILE"
+        nftban_feeds_log WARN "Update skipped: another update is already running"
+        return 1
+    fi
+
+    # Acquire lock with timeout
+    if ! _feeds_lock; then
+        echo "❌ Failed to acquire lock (timeout after 30 seconds)"
+        echo ""
+        echo "Another update may be running or system is overloaded."
+        echo "Wait and try again, or check: ps aux | grep 'nftban feeds'"
+        nftban_feeds_log ERROR "Failed to acquire update lock (timeout)"
+        return 1
+    fi
+
+    # Ensure lock is released on exit
+    trap '_feeds_unlock' EXIT INT TERM
+
+    nftban_feeds_log INFO "Updating all enabled feeds... (lock acquired)"
+
+    echo "⏳ Downloading all enabled feeds..."
+    echo ""
 
     local all_feeds
     all_feeds=$(nftban_feeds_discover_all)
@@ -270,12 +350,14 @@ nftban_feeds_update_all() {
     local success_count=0
     local fail_count=0
 
+    # Download all feeds WITHOUT syncing (sync once at the end for efficiency)
     for feed in $all_feeds; do
         local enabled
         enabled=$(nftban_feeds_get_property "$feed" "ENABLED")
 
         if [[ "$enabled" == "true" ]]; then
-            if nftban_feeds_update_single "$feed"; then
+            echo "  → Downloading: $feed"
+            if nftban_feeds_update_single "$feed" "true"; then
                 success_count=$((success_count + 1))
             else
                 fail_count=$((fail_count + 1))
@@ -283,8 +365,29 @@ nftban_feeds_update_all() {
         fi
     done
 
+    echo ""
+    echo "✓ Downloaded $success_count feed(s), $fail_count failed"
+
     nftban_feeds_log INFO "Update complete: $success_count succeeded, $fail_count failed"
 
+    # Determine sync mode: synchronous for systemd, background for CLI
+    if [[ -n "${INVOCATION_ID:-}" ]] || [[ "$NFTBAN_FEEDS_SYNC_MODE" == "sync" ]]; then
+        # Running from systemd or explicit sync mode - wait for sync to complete
+        echo "⏳ Syncing to nftables..."
+        nftban_feeds_sync_to_nftables
+        echo "✓ Sync complete"
+    else
+        # Running from CLI - sync in background for better UX
+        echo "⏳ Syncing to nftables in background..."
+        echo ""
+        echo "Check status with: nftban feeds status"
+        echo "View progress: tail -f /var/log/nftban/feeds.log"
+
+        (nftban_feeds_sync_to_nftables &>/dev/null) &
+        disown
+    fi
+
+    # Lock will be released by trap
     return 0
 }
 

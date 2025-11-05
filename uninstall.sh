@@ -83,9 +83,10 @@ if [[ "$PURGE" == "--purge" ]]; then
     # Runtime
     rm -rf /run/nftban
 
-    # Remove user and group
+    # Remove user and groups
     userdel nftban 2>/dev/null || true
     groupdel nftban-cli 2>/dev/null || true
+    groupdel nftban-auditors 2>/dev/null || true
 
     echo "✓ All data purged"
 else
