@@ -43,13 +43,16 @@
 
 ---
 
-## ⏳ MANUAL STEPS REQUIRED (GitHub Web Interface)
+## 📋 TO DO - Community Features (When Ready)
 
-**These require GitHub web access - cannot be automated via git:**
+**Status:** ⏸️ Planned - Will activate when ready for community launch
 
-### 1. Enable GitHub Discussions (CRITICAL for Beta Testing)
+### 1. ⏸️ GitHub Discussions (To Do)
 **URL:** https://github.com/itcmsgr/nftban/settings
 
+**Will enable when we're ready for community feedback.**
+
+Steps to activate:
 1. Go to repository Settings
 2. Scroll to "Features" section
 3. Check ☑️ **"Discussions"**
@@ -89,16 +92,11 @@
 - Specialized topics (Packaging, Security)
 - Catch-all last (General)
 
-### 2. Post Beta Testing Announcement
-**After enabling Discussions:**
+### 2. ⏸️ Post Beta Announcement (To Do - After Discussions)
 
-1. Go to Discussions → New Discussion
-2. Category: Announcements
-3. Title: `🧪 NFTBan v0.30.6 Beta Testing - Help Us Reach Production!`
-4. Announce beta testing, request community feedback
-5. Pin the discussion to top
+When Discussions enabled, post announcement asking for testers.
 
-### 3. Enable GitHub Wiki (Optional but Recommended)
+### 3. ⏸️ Enable GitHub Wiki (To Do - Optional)
 **URL:** https://github.com/itcmsgr/nftban/settings
 
 1. Scroll to "Features"
@@ -110,23 +108,11 @@
    - Troubleshooting
    - FAQ
 
-### 4. Update Repository Description & Topics
-**URL:** https://github.com/itcmsgr/nftban
+### 4. ✅ Repository Description & Topics (Done)
 
-**Description:**
-```
-Modern nftables-based firewall manager with self-healing, fail2ban integration,
-and GeoIP blocking. Production-ready for Rocky Linux, AlmaLinux, Ubuntu, Debian.
-```
+You already set this in the About section!
 
-**Topics/Tags (Add these):**
-```
-nftables, firewall, security, linux, rocky-linux, almalinux, ubuntu,
-debian, fail2ban, ips, geoip, bash, go, systemd, self-healing,
-monitoring, cli, automation, devops, sysadmin
-```
-
-### 5. Enable GitHub Projects (Optional - for Beta Testing Tracker)
+### 5. ⏸️ GitHub Projects (To Do - Optional)
 **URL:** https://github.com/itcmsgr/nftban/settings
 
 1. Check ☑️ **"Projects"**
