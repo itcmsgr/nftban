@@ -8,11 +8,11 @@
 [![Performance: Go Binaries](https://img.shields.io/badge/Performance-Go%20Binaries-00ADD8)]()
 [![Security: Polkit](https://img.shields.io/badge/Security-Polkit%20Integrated-red)]()
 [![FHS: Compliant](https://img.shields.io/badge/FHS-21%2F21%20Compliant-success)]()
-[![Status](https://img.shields.io/badge/status-production%20ready-brightgreen)](https://github.com/itcmsgr/nftban)
+[![Status](https://img.shields.io/badge/status-PRODUCTION%20READY-brightgreen)](https://github.com/itcmsgr/nftban)
 
 NFTBan is a **professional-grade firewall management system** built on nftables with **enterprise safety features**, **privilege separation via Polkit**, and **atomic operations** that prevent lockouts.
 
-**🎯 Designed for production servers** | **✅ Tested on 5 distributions** | **🚀 10-60x faster with Go binaries** | **🔐 CVE-2024-NFTBAN-001 FIXED**
+**🚀 PRODUCTION READY** | **✅ Tested on 5 distributions** | **⚡ 10-60x faster with Go binaries** | **🔐 CVE-2024-NFTBAN-001 FIXED**
 
 ---
 
@@ -38,41 +38,33 @@ tcp dport @tcp_ports counter accept    ← Then allow ports
 
 ## 📥 Download & Installation
 
-### Quick Install (Production Ready)
+### ⚡ Quick Install (One Command)
 
 **Rocky Linux / AlmaLinux / RHEL / Fedora:**
 ```bash
-# Download latest RPM (x86_64)
-wget https://github.com/itcmsgr/nftban/releases/download/v0.30.1/nftban-0.30.1-1.el9.x86_64.rpm
-
-# Verify version
-rpm -qp nftban-0.30.1-1.el9.x86_64.rpm
-
-# Install
-sudo dnf install -y nftban-0.30.1-1.el9.x86_64.rpm
+# Download and install latest RPM (x86_64)
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm
+sudo dnf install -y nftban-x86_64.rpm
 ```
 
 **Ubuntu / Debian:**
 ```bash
-# Download latest DEB (amd64)
-wget https://github.com/itcmsgr/nftban/releases/download/v0.30.1/nftban_0.30.1-1_amd64.deb
-
-# Verify version
-dpkg --info nftban_0.30.1-1_amd64.deb | grep Version
-
-# Install
-sudo dpkg -i nftban_0.30.1-1_amd64.deb
+# Download and install latest DEB (amd64)
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-amd64.deb
+sudo dpkg -i nftban-amd64.deb
 sudo apt-get install -f  # Install dependencies if needed
 ```
 
-### Available Packages (Multi-Architecture)
+### 📦 Available Architectures
 
-| Platform | Architecture | Download Link |
-|----------|-------------|---------------|
-| **RHEL / Rocky / Alma / Fedora** | x86_64 | [`nftban-0.30.1-1.el9.x86_64.rpm`](https://github.com/itcmsgr/nftban/releases/download/v0.30.1/nftban-0.30.1-1.el9.x86_64.rpm) |
-| **RHEL / Rocky / Alma / Fedora** | aarch64 (ARM64) | [`nftban-0.30.1-1.el9.aarch64.rpm`](https://github.com/itcmsgr/nftban/releases/download/v0.30.1/nftban-0.30.1-1.el9.aarch64.rpm) |
-| **Ubuntu 24.04+ / Debian 12+** | amd64 | [`nftban_0.30.1-1_amd64.deb`](https://github.com/itcmsgr/nftban/releases/download/v0.30.1/nftban_0.30.1-1_amd64.deb) |
-| **Ubuntu 24.04+ / Debian 12+** | arm64 | [`nftban_0.30.1-1_arm64.deb`](https://github.com/itcmsgr/nftban/releases/download/v0.30.1/nftban_0.30.1-1_arm64.deb) |
+| Platform | Architecture | Simple Link |
+|----------|-------------|-------------|
+| **RHEL / Rocky / Alma / Fedora** | x86_64 | [`nftban-x86_64.rpm`](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm) |
+| **RHEL / Rocky / Alma / Fedora** | aarch64 (ARM64) | [`nftban-aarch64.rpm`](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-aarch64.rpm) |
+| **Ubuntu 24.04+ / Debian 12+** | amd64 | [`nftban-amd64.deb`](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-amd64.deb) |
+| **Ubuntu 24.04+ / Debian 12+** | arm64 | [`nftban-arm64.deb`](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-arm64.deb) |
+
+> **Note:** These links always point to the latest stable release. Old releases are archived in the [Releases Archive](https://github.com/itcmsgr/nftban/releases).
 
 ### Installation from Source
 
