@@ -134,10 +134,13 @@ build_package() {
 
     # Packages are in dist/build/ (parent of dist/build/deb/)
     if ls "$PROJECT_ROOT/dist/build"/*.deb 1> /dev/null 2>&1; then
-        # Use cp instead of mv to avoid permission issues in CI/CD
-        cp "$PROJECT_ROOT/dist/build"/*.deb "$PACKAGE_DIR/"
-        cp "$PROJECT_ROOT/dist/build"/*.buildinfo "$PACKAGE_DIR/" 2>/dev/null || true
-        cp "$PROJECT_ROOT/dist/build"/*.changes "$PACKAGE_DIR/" 2>/dev/null || true
+        # Use install command to avoid permission issues in CI/CD (handles readonly dest dirs)
+        for deb in "$PROJECT_ROOT/dist/build"/*.deb; do
+            install -m 0644 "$deb" "$PACKAGE_DIR/" 2>/dev/null || cp "$deb" "$PACKAGE_DIR/"
+        done
+        for file in "$PROJECT_ROOT/dist/build"/*.buildinfo "$PROJECT_ROOT/dist/build"/*.changes; do
+            [ -f "$file" ] && (install -m 0644 "$file" "$PACKAGE_DIR/" 2>/dev/null || cp "$file" "$PACKAGE_DIR/" 2>/dev/null || true)
+        done
 
         # Clean up source files after successful copy
         rm -f "$PROJECT_ROOT/dist/build"/*.deb
