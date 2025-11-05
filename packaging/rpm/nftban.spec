@@ -105,9 +105,9 @@ install -m 0644 src/usr/lib/nftban/cli/cmd_*.sh %{buildroot}/usr/lib/nftban/cli/
 # Install help system
 install -m 0644 src/usr/lib/nftban/nftban_help.sh %{buildroot}/usr/lib/nftban/
 
-# Install cron runner
+# Install cron scripts (run.sh, maintenance.sh)
 install -d -m 0755 %{buildroot}/usr/lib/nftban/cron
-install -m 0755 src/usr/lib/nftban/cron/run.sh %{buildroot}/usr/lib/nftban/cron/
+install -m 0755 src/usr/lib/nftban/cron/*.sh %{buildroot}/usr/lib/nftban/cron/
 
 # Install helpers (autoheal, etc.)
 install -d -m 0755 %{buildroot}/usr/lib/nftban/helpers
@@ -512,7 +512,7 @@ fi
 # Libraries and modules
 /usr/lib/nftban/core/*.sh
 /usr/lib/nftban/cli/*.sh
-/usr/lib/nftban/cron/run.sh
+/usr/lib/nftban/cron/*.sh
 /usr/lib/nftban/helpers/*.sh
 /usr/lib/nftban/nft-runtime.nft
 /usr/lib/nftban/nftban_help.sh
