@@ -1,0 +1,3 @@
+#\!/bin/bash
+echo 'Go binary placeholder - will be replaced by actual binary'
+exit 1
