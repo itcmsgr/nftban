@@ -136,16 +136,28 @@ EOF
 
             log "INFO" "✅ SSH port $SSH_PORT added to whitelist"
 
-            # Auto-reload firewall rules to apply the change immediately
-            log "INFO" "Auto-reloading firewall rules to apply SSH port change..."
+            # ATOMIC firewall update - only update whitelist, don't touch other rules
+            log "INFO" "Atomically updating firewall whitelist for SSH port..."
             if nft list table inet nftban_main >/dev/null 2>&1; then
-                # Firewall is active, reload it safely
-                if /usr/lib/nftban/core/nftban_firewall.sh reload >/dev/null 2>&1 || \
-                   nftban firewall reload >/dev/null 2>&1; then
-                    log "INFO" "✅ Firewall rules reloaded successfully"
-                    log "INFO" "⚠️  ALERT: SSH port changed to $SSH_PORT and firewall updated"
+                # Firewall is active - do atomic whitelist update
+                # This only updates the whitelist_ports set, not the entire firewall
+                if nft -f /etc/nftban/nftban.conf list set inet nftban_main whitelist_ports >/dev/null 2>&1; then
+                    # Use nftban-complete for atomic reload of whitelists only
+                    if /usr/sbin/nftban-complete nftables reload-whitelist 2>/dev/null; then
+                        log "INFO" "✅ Whitelist atomically updated - SSH port $SSH_PORT now allowed"
+                        log "INFO" "⚠️  ALERT: SSH port changed and firewall updated (no lockout risk)"
+                    else
+                        # Fallback: full reload is safe for whitelists
+                        log "WARN" "Atomic reload not available, using safe full reload..."
+                        if nftban firewall reload >/dev/null 2>&1; then
+                            log "INFO" "✅ Firewall reloaded - SSH port $SSH_PORT now allowed"
+                        else
+                            log "WARN" "Reload failed - SSH port whitelisted but not yet applied"
+                            log "WARN" "Please run manually: nftban firewall reload"
+                        fi
+                    fi
                 else
-                    log "WARN" "Failed to reload firewall - please run manually: nftban firewall reload"
+                    log "WARN" "Whitelist sets not found - firewall may need reinitialization"
                 fi
             else
                 log "WARN" "Firewall not initialized - whitelist updated but not applied"
@@ -204,18 +216,23 @@ EOF
                 echo "$current_ipv4" >> /etc/nftban/whitelist.d/00-system.conf
                 log "INFO" "✅ Added $current_ipv4 to whitelist"
 
-                # Auto-reload firewall rules to apply the change immediately
-                log "INFO" "Auto-reloading firewall rules to apply IP whitelist..."
+                # ATOMIC firewall update - only update IP whitelist
+                log "INFO" "Atomically adding IP $current_ipv4 to firewall whitelist..."
                 if nft list table inet nftban_main >/dev/null 2>&1; then
-                    # Firewall is active, reload it safely
-                    if /usr/lib/nftban/core/nftban_firewall.sh reload >/dev/null 2>&1 || \
-                       nftban firewall reload >/dev/null 2>&1; then
-                        log "INFO" "✅ Firewall rules reloaded - IP $current_ipv4 now protected"
+                    # Firewall is active - directly add IP to whitelist set atomically
+                    if nft add element inet nftban_main whitelist_ipv4 "{ $current_ipv4 }" 2>/dev/null; then
+                        log "INFO" "✅ IP $current_ipv4 atomically whitelisted (no lockout risk)"
                     else
-                        log "WARN" "Failed to reload firewall - please run manually: nftban firewall reload"
+                        # Fallback: use full reload if direct add fails
+                        log "WARN" "Atomic IP add failed, using safe full reload..."
+                        if nftban firewall reload >/dev/null 2>&1; then
+                            log "INFO" "✅ Firewall reloaded - IP $current_ipv4 now protected"
+                        else
+                            log "WARN" "Reload failed - IP whitelisted in config but not yet active"
+                        fi
                     fi
                 else
-                    log "WARN" "Firewall not initialized - whitelist updated but not applied"
+                    log "WARN" "Firewall not initialized - IP whitelist updated but not applied"
                 fi
 
                 # Save alert state to prevent spam (only alert once per IP)
