@@ -1,5 +1,8 @@
-# Bash completion for nftban
+# =============================================================================
+# Bash Completion for NFTBan v0.30.1
+# =============================================================================
 # Install to: /usr/share/bash-completion/completions/nftban
+# This file provides TAB completion for all nftban commands and subcommands
 
 _nftban() {
     local cur prev opts
@@ -7,40 +10,118 @@ _nftban() {
     cur="${COMP_WORDS[COMP_CWORD]}"
     prev="${COMP_WORDS[COMP_CWORD-1]}"
 
-    # Main commands
-    opts="status version help init feeds fail2ban geoip whitelist stats reports maintain"
+    # Main commands (keep in sync with nftban help output)
+    local main_commands="status check health version help hello \
+        firewall ban unban search whitelist profile panel permissions \
+        ddos portscan login fail2ban feeds cloudflare \
+        stats report port module services fhs nftables geoip mail menu"
 
-    # Complete based on previous word
+    # Complete based on previous word (subcommands)
     case "${prev}" in
-        feeds)
-            COMPREPLY=( $(compgen -W "update list enable disable status" -- ${cur}) )
-            return 0
-            ;;
-        fail2ban)
-            COMPREPLY=( $(compgen -W "status enable disable jails" -- ${cur}) )
-            return 0
-            ;;
-        geoip)
-            COMPREPLY=( $(compgen -W "update status block allow list" -- ${cur}) )
+        # FIREWALL & SECURITY
+        firewall)
+            COMPREPLY=( $(compgen -W "init reload status reset start stop enable disable" -- ${cur}) )
             return 0
             ;;
         whitelist)
-            COMPREPLY=( $(compgen -W "add remove list show" -- ${cur}) )
+            COMPREPLY=( $(compgen -W "add remove list show enable disable" -- ${cur}) )
             return 0
             ;;
+        profile)
+            COMPREPLY=( $(compgen -W "list apply show web-server mail-server" -- ${cur}) )
+            return 0
+            ;;
+        panel)
+            COMPREPLY=( $(compgen -W "directadmin da help" -- ${cur}) )
+            return 0
+            ;;
+        directadmin|da)
+            if [[ "${COMP_WORDS[1]}" == "panel" ]]; then
+                COMPREPLY=( $(compgen -W "enable disable status report repair test help" -- ${cur}) )
+                return 0
+            fi
+            ;;
+        permissions)
+            COMPREPLY=( $(compgen -W "check fix audit" -- ${cur}) )
+            return 0
+            ;;
+
+        # PROTECTION MODULES
+        ddos)
+            COMPREPLY=( $(compgen -W "enable disable status test" -- ${cur}) )
+            return 0
+            ;;
+        portscan)
+            COMPREPLY=( $(compgen -W "enable disable status check history test" -- ${cur}) )
+            return 0
+            ;;
+        login)
+            COMPREPLY=( $(compgen -W "enable disable status test" -- ${cur}) )
+            return 0
+            ;;
+        fail2ban)
+            COMPREPLY=( $(compgen -W "status enable disable jails sync" -- ${cur}) )
+            return 0
+            ;;
+        feeds)
+            COMPREPLY=( $(compgen -W "select list enable disable update status" -- ${cur}) )
+            return 0
+            ;;
+        cloudflare)
+            COMPREPLY=( $(compgen -W "enable disable update status" -- ${cur}) )
+            return 0
+            ;;
+
+        # MONITORING & REPORTING
         stats)
-            COMPREPLY=( $(compgen -W "show update export" -- ${cur}) )
+            COMPREPLY=( $(compgen -W "dashboard top ip recent monitor export" -- ${cur}) )
             return 0
             ;;
-        reports)
-            COMPREPLY=( $(compgen -W "daily weekly monthly generate" -- ${cur}) )
+        report)
+            COMPREPLY=( $(compgen -W "generate email schedule run list" -- ${cur}) )
             return 0
             ;;
+        port)
+            COMPREPLY=( $(compgen -W "scan list summary html-report mail-report detailed status allow-panel help" -- ${cur}) )
+            return 0
+            ;;
+        module)
+            COMPREPLY=( $(compgen -W "list summary html-report mail-report help" -- ${cur}) )
+            return 0
+            ;;
+        services)
+            COMPREPLY=( $(compgen -W "status list" -- ${cur}) )
+            return 0
+            ;;
+        fhs)
+            COMPREPLY=( $(compgen -W "check list summary html-report mail-report help" -- ${cur}) )
+            return 0
+            ;;
+        nftables)
+            COMPREPLY=( $(compgen -W "start stop restart reload enable disable status check list help" -- ${cur}) )
+            return 0
+            ;;
+        geoip)
+            COMPREPLY=( $(compgen -W "lookup bulk status test update help" -- ${cur}) )
+            return 0
+            ;;
+        mail)
+            COMPREPLY=( $(compgen -W "test status config" -- ${cur}) )
+            return 0
+            ;;
+
+        # CORE
+        health)
+            COMPREPLY=( $(compgen -W "check --auto-heal" -- ${cur}) )
+            return 0
+            ;;
+
         *)
             ;;
     esac
 
-    COMPREPLY=( $(compgen -W "${opts}" -- ${cur}) )
+    # Complete main commands
+    COMPREPLY=( $(compgen -W "${main_commands}" -- ${cur}) )
     return 0
 }
 
