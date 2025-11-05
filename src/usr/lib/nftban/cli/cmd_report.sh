@@ -20,7 +20,7 @@
 # **Inventory & Requirements**
 # meta:depends=nftban_stats.sh,nftban_report_engine.sh
 #
-# meta:created_date=2025-10-28
+# meta:created_date=2025-11-05
 # =============================================================================
 
 # Enhanced strict mode

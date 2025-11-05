@@ -12,7 +12,7 @@
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
-# meta:created_date=2025-10-28
+# meta:created_date=2025-11-05
 # =============================================================================
 
 # Enhanced strict mode

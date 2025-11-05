@@ -20,7 +20,7 @@
 # **Inventory & Requirements**
 # meta:depends=bash,nftban_output.sh,nftban_health.sh
 #
-# meta:created_date=2025-11-01
+# meta:created_date=2025-11-05
 
 set -Eeuo pipefail
 

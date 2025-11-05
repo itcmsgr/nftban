@@ -21,7 +21,7 @@
 # **Inventory & Requirements**
 # meta:depends=bash,nftban-complete,nftables
 #
-# meta:created_date=2025-10-29
+# meta:created_date=2025-11-05
 # =============================================================================
 
 # Strict mode

@@ -20,7 +20,7 @@
 # **Inventory & Requirements**
 # meta:depends=ip,hostname,nftban_file_ops.sh,nftban_nftables.sh
 #
-# meta:created_date=2025-10-28
+# meta:created_date=2025-11-05
 # =============================================================================
 #   • Prevents self-lockout
 # =============================================================================

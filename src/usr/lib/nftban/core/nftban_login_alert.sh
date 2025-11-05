@@ -20,7 +20,7 @@
 # **Inventory & Requirements**
 # meta:depends=nftban_geoip_go.sh,last,journalctl
 #
-# meta:created_date=2025-10-28
+# meta:created_date=2025-11-05
 # =============================================================================
 
 # Enhanced strict mode

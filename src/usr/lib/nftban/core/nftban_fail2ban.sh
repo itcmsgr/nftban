@@ -21,7 +21,7 @@
 # meta:depends=fail2ban-client,systemctl
 # meta:requires_env=FAIL2BAN_ENABLED
 #
-# meta:created_date=2025-10-28
+# meta:created_date=2025-11-05
 # =============================================================================
 
 set -Eeuo pipefail
