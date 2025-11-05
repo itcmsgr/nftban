@@ -53,6 +53,7 @@ echo ""
 # Create output directories
 mkdir -p "${DIST_DIR}"/{x86_64,aarch64}
 mkdir -p "${SRC_DIR}"
+mkdir -p "${SRC_DIR}/.real"
 
 # =============================================================================
 # Build nftban-feeds
@@ -172,14 +173,14 @@ echo "  → Detected architecture: ${CURRENT_ARCH}"
 echo "  → Using binaries from: dist/${ARCH_DIR}/"
 echo ""
 
-cp "${DIST_DIR}/${ARCH_DIR}/nftban-feeds" "${SRC_DIR}/"
-cp "${DIST_DIR}/${ARCH_DIR}/nftban-geoip" "${SRC_DIR}/"
+cp "${DIST_DIR}/${ARCH_DIR}/nftban-feeds" "${SRC_DIR}/.real/"
+cp "${DIST_DIR}/${ARCH_DIR}/nftban-geoip" "${SRC_DIR}/.real/"
 
-chmod +x "${SRC_DIR}/nftban-feeds"
-chmod +x "${SRC_DIR}/nftban-geoip"
+chmod +x "${SRC_DIR}/.real/nftban-feeds"
+chmod +x "${SRC_DIR}/.real/nftban-geoip"
 
-echo -e "${GREEN}  ✓ nftban-feeds → ${SRC_DIR}/nftban-feeds${NC}"
-echo -e "${GREEN}  ✓ nftban-geoip → ${SRC_DIR}/nftban-geoip${NC}"
+echo -e "${GREEN}  ✓ nftban-feeds → ${SRC_DIR}/.real/nftban-feeds${NC}"
+echo -e "${GREEN}  ✓ nftban-geoip → ${SRC_DIR}/.real/nftban-geoip${NC}"
 echo ""
 
 # =============================================================================
