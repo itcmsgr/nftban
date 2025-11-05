@@ -8,7 +8,7 @@
 # meta:name=nftban_system_ip
 # meta:type=core
 # meta:header=System IP Auto-Detection
-# meta:version=0.30.0
+# meta:version=0.30.1
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

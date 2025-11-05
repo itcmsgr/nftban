@@ -8,7 +8,7 @@
 # meta:name=nftban_report_engine
 # meta:type=core
 # meta:header=Unified Reporting Engine
-# meta:version=0.30.0
+# meta:version=0.30.1
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

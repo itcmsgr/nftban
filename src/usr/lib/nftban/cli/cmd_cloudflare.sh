@@ -9,7 +9,7 @@
 # meta:name=cmd_cloudflare
 # meta:type=cli
 # meta:header=Cloudflare CLI Handler
-# meta:version=0.30.0
+# meta:version=0.30.1
 # meta:depends=nftban_cloudflare.sh
 #
 # meta:created_date=2025-10-28

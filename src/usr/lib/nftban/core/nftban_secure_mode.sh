@@ -8,7 +8,7 @@
 # meta:name=nftban_secure_mode
 # meta:type=core
 # meta:header=Secure Mode Directive
-# meta:version=0.30.0
+# meta:version=0.30.1
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

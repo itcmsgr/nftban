@@ -8,7 +8,7 @@
 # meta:name=cmd_system
 # meta:type=cli
 # meta:header=System Enable/Disable CLI
-# meta:version=0.30.0
+# meta:version=0.30.1
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
