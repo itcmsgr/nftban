@@ -254,6 +254,9 @@ chmod 0750 /var/log/nftban
 # Create nftban-auditors group for inventory helpers (if doesn't exist)
 groupadd -f nftban-auditors 2>/dev/null || true
 
+# Remove old bash completion file (was in /etc, now in /usr/share)
+rm -f /etc/bash_completion.d/nftban 2>/dev/null || true
+
 # Run autoheal to ensure everything is configured correctly
 /usr/lib/nftban/helpers/autoheal.sh
 

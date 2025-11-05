@@ -140,8 +140,8 @@ EOF
             log "INFO" "Atomically updating firewall whitelist for SSH port..."
             if nft list table inet nftban_main >/dev/null 2>&1; then
                 # Firewall is active - do atomic whitelist update
-                # This only updates the whitelist_ports set, not the entire firewall
-                if nft -f /etc/nftban/nftban.conf list set inet nftban_main whitelist_ports >/dev/null 2>&1; then
+                # This only updates the tcp_ports set, not the entire firewall
+                if nft list set inet nftban_main tcp_ports >/dev/null 2>&1; then
                     # Use nftban-complete for atomic reload of whitelists only
                     if /usr/sbin/nftban-complete nftables reload-whitelist 2>/dev/null; then
                         log "INFO" "✅ Whitelist atomically updated - SSH port $SSH_PORT now allowed"
