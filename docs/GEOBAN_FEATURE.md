@@ -36,7 +36,7 @@ nftban geoip status             # Show banned/whitelisted countries
 
 ### ✅ What Exists in NFTBan:
 
-#### 1. GeoIP System (v0.30.0)
+#### 1. GeoIP System (v0.31.0)
 **Location:** `/usr/lib/nftban/core/nftban_geoip_go.sh`, `/usr/lib/nftban/bin/nftban-geoip`
 
 **Features:**

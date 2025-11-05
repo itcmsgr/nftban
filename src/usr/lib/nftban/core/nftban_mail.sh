@@ -7,7 +7,7 @@
 # meta:name=nftban_mail
 # meta:type=core
 # meta:header=Mail Module
-# meta:version=0.30.1
+# meta:version=0.31.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -374,11 +374,11 @@ nftban_mail_template_replace() {
     # Build version HTML
     local version_html=""
     if [[ "${NFTBAN_VERSION_INCLUDE:-YES}" == "YES" ]]; then
-        version_html="Version: ${NFTBAN_VERSION:-0.30.0}"
+        version_html="Version: ${NFTBAN_VERSION:-0.31.0}"
     fi
 
     # Replace variables
-    content="${content//\{NFTBAN_VERSION\}/${NFTBAN_VERSION:-0.30.0}}"
+    content="${content//\{NFTBAN_VERSION\}/${NFTBAN_VERSION:-0.31.0}}"
     content="${content//\{HOSTNAME\}/$hostname_val}"
     content="${content//\{SERVER_IP\}/$server_ip}"
     content="${content//\{DATE\}/$date_val}"

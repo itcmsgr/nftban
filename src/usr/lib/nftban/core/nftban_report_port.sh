@@ -9,7 +9,7 @@
 # meta:name=nftban_report_port
 # meta:type=core
 # meta:header=Port Report Core
-# meta:version=0.30.1
+# meta:version=0.31.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -551,10 +551,10 @@ nftban_port_generate_html_report() {
     html_content="${html_content//\{SERVER_IP\}/$server_ip}"
     html_content="${html_content//\{DATE\}/$current_date}"
     html_content="${html_content//\{TIME\}/$current_time}"
-    html_content="${html_content//\{NFTBAN_VERSION\}/${NFTBAN_VERSION:-0.30.0}}"
+    html_content="${html_content//\{NFTBAN_VERSION\}/${NFTBAN_VERSION:-0.31.0}}"
     html_content="${html_content//\{COMPANY_NAME\}/${NFTBAN_COMPANY_NAME:-}}"
     html_content="${html_content//\{LOGO_HTML\}/}"
-    html_content="${html_content//\{VERSION_HTML\}/<p>Version: <strong>${NFTBAN_VERSION:-0.30.0}</strong></p>}"
+    html_content="${html_content//\{VERSION_HTML\}/<p>Version: <strong>${NFTBAN_VERSION:-0.31.0}</strong></p>}"
 
     # Statistics
     html_content="${html_content//\{TOTAL_PORTS\}/$total_ports}"

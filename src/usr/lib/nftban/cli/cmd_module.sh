@@ -9,7 +9,7 @@
 # meta:name=cmd_module
 # meta:type=cli
 # meta:header=Module CLI Command
-# meta:version=0.30.1
+# meta:version=0.31.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

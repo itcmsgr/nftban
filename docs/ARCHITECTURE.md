@@ -1,6 +1,6 @@
 # NFTBan Architecture
 
-**Version:** 0.30.1
+**Version:** 0.31.0
 **Philosophy:** Simple, secure, atomic operations
 
 ---
@@ -34,7 +34,7 @@ NFTBan uses **two separate nftables tables** for zero-downtime updates:
 
 ## Rule Processing Order (CRITICAL)
 
-**Security Fix v0.30.1:** Blacklist checks now run BEFORE port checks.
+**Security Fix v0.31.0:** Blacklist checks now run BEFORE port checks.
 
 ```nft
 chain input {
@@ -52,7 +52,7 @@ chain input {
   ip protocol icmp icmp type {...} counter accept
   ip6 nexthdr ipv6-icmp icmpv6 type {...} counter accept
 
-  # 4. CRITICAL: Blacklist BEFORE ports (v0.30.1 fix)
+  # 4. CRITICAL: Blacklist BEFORE ports (v0.31.0 fix)
   ip saddr @blacklist_v4 counter drop
   ip6 saddr @blacklist_v6 counter drop
 
@@ -72,8 +72,8 @@ chain input {
 - Blacklist blocks malicious IPs BEFORE they can reach services
 - Default drop = secure by default
 
-**v0.30.0 Bug:** Port checks ran before blacklist → blacklisted IPs could access SSH!
-**v0.30.1 Fix:** Blacklist checks run first → blacklisted IPs are blocked from all services.
+**v0.31.0 Bug:** Port checks ran before blacklist → blacklisted IPs could access SSH!
+**v0.31.0 Fix:** Blacklist checks run first → blacklisted IPs are blocked from all services.
 
 ---
 
@@ -285,7 +285,7 @@ Output: JSON with country, city, ASN
 
 ## Monitoring & Observability
 
-### Counters (v0.30.1)
+### Counters (v0.31.0)
 Every rule has a counter for packet/byte tracking:
 
 ```bash
@@ -379,7 +379,7 @@ nftban firewall reload   # Rebuild from config
 
 ## Version History
 
-**v0.30.1 (2025-11-05) - Critical Security Release**
+**v0.31.0 (2025-11-05) - Critical Security Release**
 - ✅ CRITICAL: Fixed rule order (blacklist before ports)
 - ✅ Chain renamed: input_main → input (consistency)
 - ✅ Numeric priorities: -5, 0 (not -310, -300)
@@ -388,7 +388,7 @@ nftban firewall reload   # Rebuild from config
 - ✅ Set name typo fixed: whitelist_ipv4 → whitelist_v4
 - ✅ nftables syntax fixed: counter before accept/drop
 
-**v0.30.0 (2025-11-03)**
+**v0.31.0 (2025-11-03)**
 - Inventory monitoring system
 - Baseline management with drift detection
 - Advanced health checks with auto-heal

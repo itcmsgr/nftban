@@ -217,7 +217,7 @@ We prioritize issues based on:
 ```
 Title: [BUG] Ban command crashes when no arguments provided
 
-NFTBan Version: 0.30.1
+NFTBan Version: 0.31.1
 OS: Rocky Linux 9.3
 Kernel: 6.1.0
 
