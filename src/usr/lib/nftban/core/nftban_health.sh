@@ -8,7 +8,7 @@
 # meta:name=nftban_health
 # meta:type=core
 # meta:header=Health Check System
-# meta:version=0.30.0
+# meta:version=0.30.1
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

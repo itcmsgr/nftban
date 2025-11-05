@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v0.30.0 - RPM Spec File
+# NFTBan v0.30.1 - RPM Spec File
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: RPM package specification for Red Hat-based distributions
@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.30.0
+Version:        0.30.1
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 

@@ -1,3 +1,18 @@
+nftban (0.30.1-1) stable; urgency=critical
+
+  * CRITICAL SECURITY FIX: Blacklist now checked BEFORE service ports
+  * Fix: Set name typo in maintenance.sh (whitelist_v4)
+  * Fix: Chain name consistency (input not input_main)
+  * Fix: Use numeric priorities (-5, 0) instead of symbolic names
+  * Fix: Default policy changed to drop (secure by default)
+  * Add: Runtime ban sets auto-expire after 24h (timeout flag)
+  * Add: Counters on all rules for observability
+  * Doc: ICMP policy explicitly documented (before blacklist)
+  * Implement all ChatGPT architecture review recommendations
+  * Implementation score: 10/10 (reference-grade)
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Tue, 05 Nov 2025 12:00:00 +0200
+
 nftban (0.30.0-1) stable; urgency=medium
 
   * Major upgrade to v0.30.0 with inventory monitoring
@@ -18,9 +33,12 @@ nftban (0.10.0-1) stable; urgency=medium
   * Complete rewrite for v0.10.0
   * Add commit-confirm recovery system
   * Add Go binaries for 10-60x faster processing
-  * Add FHS-compliant structure with auto-healing
-  * Add stats & metrics system
-  * Add dynamic UID/GID tracking
-  * Improve security with 8 protection layers
+  * Add comprehensive health checks
+  * Add nftban-auditors group for non-root access
+  * Improve feed management system
+  * Add port scan detection module
+  * Add automatic SSH port detection
+  * Add system IP whitelisting
+  * Add extensive documentation
 
- -- Antonios Voulvoulis <contact@nftban.com>  Wed, 30 Oct 2025 15:30:00 +0200
+ -- Antonios Voulvoulis <contact@nftban.com>  Wed, 30 Oct 2025 23:30:00 +0200

@@ -8,7 +8,7 @@
 # meta:name=nftban_portscan
 # meta:type=core
 # meta:header=Port Scan Detection
-# meta:version=0.30.0
+# meta:version=0.30.1
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

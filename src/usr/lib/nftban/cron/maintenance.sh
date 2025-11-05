@@ -8,7 +8,7 @@
 # meta:name=maintenance
 # meta:type=cron
 # meta:header=Maintenance Runner
-# meta:version=0.30.0
+# meta:version=0.30.1
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -220,7 +220,7 @@ EOF
                 log "INFO" "Atomically adding IP $current_ipv4 to firewall whitelist..."
                 if nft list table inet nftban_main >/dev/null 2>&1; then
                     # Firewall is active - directly add IP to whitelist set atomically
-                    if nft add element inet nftban_main whitelist_ipv4 "{ $current_ipv4 }" 2>/dev/null; then
+                    if nft add element inet nftban_main whitelist_v4 "{ $current_ipv4 }" 2>/dev/null; then
                         log "INFO" "✅ IP $current_ipv4 atomically whitelisted (no lockout risk)"
                     else
                         # Fallback: use full reload if direct add fails
