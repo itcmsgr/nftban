@@ -3,7 +3,7 @@
 # NFTBan v0.30.0 - Search CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Search for IP across all ban lists, feeds, and jails
+# Purpose: Search for IP/Port across all ban lists, feeds, jails, and whitelists
 #
 # meta:name=cmd_search
 # meta:type=cli
@@ -149,6 +149,47 @@ _get_ban_details() {
 
     # Try to get element with timeout info
     nft list set "$table" "$set" | grep "$ip" || echo "No details available"
+}
+
+# Search for port in nftables and config files
+_search_port() {
+    local port="$1"
+    local found_in=()
+
+    # Search in nftables tcp_ports set
+    if nft list set inet nftban_main tcp_ports 2>/dev/null | grep -qw "$port"; then
+        found_in+=("nftables:tcp_ports")
+    fi
+
+    # Search in nftables udp_ports set
+    if nft list set inet nftban_main udp_ports 2>/dev/null | grep -qw "$port"; then
+        found_in+=("nftables:udp_ports")
+    fi
+
+    # Search in config files
+    if [[ -d /etc/nftban/ports.d ]]; then
+        while IFS= read -r file; do
+            if grep -qE "^${port}\|" "$file" 2>/dev/null; then
+                local proto=$(grep -E "^${port}\|" "$file" | cut -d'|' -f2 | head -1)
+                local proto_name="unknown"
+                case "$proto" in
+                    T) proto_name="TCP" ;;
+                    U) proto_name="UDP" ;;
+                    B) proto_name="TCP+UDP" ;;
+                esac
+                found_in+=("config:$(basename "$file"):$proto_name")
+            fi
+        done < <(find /etc/nftban/ports.d -type f -name "*.conf" 2>/dev/null)
+    fi
+
+    if [[ ${#found_in[@]} -gt 0 ]]; then
+        echo "FOUND"
+        printf '%s\n' "${found_in[@]}"
+        return 0
+    else
+        echo "NOT_FOUND"
+        return 1
+    fi
 }
 
 # =============================================================================
@@ -355,15 +396,21 @@ _nftban_search_help() {
     cat <<'HELP'
 
 USAGE:
-    nftban search <ip> [--no-interactive]
+    nftban search <ip|port> [--no-interactive]
 
 DESCRIPTION:
-    Search for an IP address across all NFTBan components:
+    Search for an IP address or port number across all NFTBan components:
+
+    IP Search:
     - nftables sets (whitelist, temp_ban, user_blacklist, system_blacklist, feeds)
     - Threat intelligence feeds
     - Fail2Ban jails
 
-    If IP is found, shows location and details.
+    Port Search:
+    - nftables port sets (tcp_ports, udp_ports)
+    - Port configuration files (/etc/nftban/ports.d/*.conf)
+
+    If IP/port is found, shows location and details.
     If IP is not found, offers interactive options to ban or whitelist.
 
 OPTIONS:
@@ -379,6 +426,9 @@ EXAMPLES:
     # Search CIDR (checks if any IP in range is banned)
     nftban search 192.0.2.0/24
 
+    # Search for port
+    nftban search 8080
+
     # Non-interactive (scripts)
     nftban search 192.0.2.100 --no-interactive
 
@@ -387,6 +437,7 @@ NOTES:
     - Searches all 5 sets per table
     - Searches downloaded threat feeds
     - Searches active Fail2Ban jails
+    - Searches port whitelist sets and config files
     - Shows ban priority and type
     - Shows expiry time for temp bans
 
@@ -398,11 +449,11 @@ HELP
 # =============================================================================
 
 nftban_cmd_search() {
-    local ip="${1:-}"
+    local query="${1:-}"
     local interactive=true
 
     # Check for help
-    if [[ "$ip" == "help" || "$ip" == "--help" || "$ip" == "-h" || -z "$ip" ]]; then
+    if [[ "$query" == "help" || "$query" == "--help" || "$query" == "-h" || -z "$query" ]]; then
         _nftban_search_help
         return 0
     fi
@@ -412,9 +463,65 @@ nftban_cmd_search() {
         interactive=false
     fi
 
+    # Detect if query is port number or IP address
+    if [[ "$query" =~ ^[0-9]+$ ]] && [[ "$query" -ge 1 ]] && [[ "$query" -le 65535 ]]; then
+        # It's a port number
+        echo ""
+        echo "═══════════════════════════════════════════════════════════════"
+        echo "  Port Search Results: $query"
+        echo "═══════════════════════════════════════════════════════════════"
+        echo ""
+
+        local port_result=$(_search_port "$query")
+
+        if [[ "$port_result" == "FOUND"* ]]; then
+            echo "✓ STATUS: WHITELISTED (port is allowed)"
+            echo ""
+            echo "Found in:"
+            echo "───────────────────────────────────────────────────────────────"
+
+            # Skip first line (FOUND)
+            local found_locations=$(echo "$port_result" | tail -n +2)
+
+            while IFS= read -r location; do
+                if [[ "$location" == nftables:* ]]; then
+                    local set="${location##*:}"
+                    echo "  ✓ nftables set: $set (active in firewall)"
+                elif [[ "$location" == config:* ]]; then
+                    local file=$(echo "$location" | cut -d':' -f2)
+                    local proto=$(echo "$location" | cut -d':' -f3)
+                    echo "  ✓ config file: $file (protocol: $proto)"
+                fi
+            done <<< "$found_locations"
+
+            echo ""
+            echo "═══════════════════════════════════════════════════════════════"
+        else
+            echo "✗ STATUS: NOT WHITELISTED (port is blocked by default)"
+            echo ""
+            echo "Not found in:"
+            echo "───────────────────────────────────────────────────────────────"
+            echo "  ✗ nftables tcp_ports set"
+            echo "  ✗ nftables udp_ports set"
+            echo "  ✗ /etc/nftban/ports.d/*.conf"
+            echo ""
+            echo "To whitelist this port, use:"
+            echo "  nftban port add $query tcp     # For TCP"
+            echo "  nftban port add $query udp     # For UDP"
+            echo "  nftban port add $query both    # For both"
+            echo ""
+            echo "═══════════════════════════════════════════════════════════════"
+        fi
+
+        return 0
+    fi
+
+    # It's an IP address - continue with IP search
+    local ip="$query"
+
     # Validate IP (basic check)
     if [[ ! "$ip" =~ ^[0-9a-fA-F:.\/]+$ ]]; then
-        echo "ERROR: Invalid IP address: $ip"
+        echo "ERROR: Invalid IP address or port: $ip"
         return 1
     fi
 
