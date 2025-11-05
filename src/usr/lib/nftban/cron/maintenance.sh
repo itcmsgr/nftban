@@ -88,17 +88,59 @@ main() {
     # ==========================================================================
     log "INFO" "[1/4] Checking SSH port configuration..."
 
-    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_health.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_health.sh"
+    # Auto-detect current SSH port from sshd_config
+    SSH_PORT=22
+    if [[ -f "/etc/ssh/sshd_config" ]]; then
+        DETECTED_PORT=$(grep -E '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
+        if [[ -n "$DETECTED_PORT" ]] && [[ "$DETECTED_PORT" =~ ^[0-9]+$ ]]; then
+            SSH_PORT=$DETECTED_PORT
+        fi
+    fi
 
-        # Run SSH port check
-        if nftban_health_check_ssh_port >/dev/null 2>&1; then
-            log "INFO" "SSH port check: OK"
+    # Check if SSH port is whitelisted
+    SSH_WHITELIST="/etc/nftban/ports.d/00-ssh.conf"
+    if [[ -f "$SSH_WHITELIST" ]]; then
+        # Check if current SSH port is in whitelist
+        if grep -qE "^${SSH_PORT}\|T" "$SSH_WHITELIST" 2>/dev/null; then
+            log "INFO" "SSH port check: OK (port $SSH_PORT whitelisted)"
         else
-            log "WARN" "SSH port check found issues (check health log)"
+            # SSH port changed but not whitelisted - AUTO-FIX
+            log "WARN" "SSH port changed to $SSH_PORT but not whitelisted!"
+            log "INFO" "Auto-updating SSH port whitelist (lockout prevention)..."
+
+            # Backup old whitelist
+            cp "$SSH_WHITELIST" "${SSH_WHITELIST}.backup.$(date +%Y%m%d-%H%M%S)"
+
+            # Update whitelist with new SSH port
+            cat > "$SSH_WHITELIST" <<EOF
+# SSH port auto-updated by maintenance: $(date '+%Y-%m-%d %H:%M:%S')
+# DO NOT DELETE - LOCKOUT RISK!
+# Port format: PORT|PROTO where PROTO = T(tcp), U(udp), B(both)
+${SSH_PORT}|T
+EOF
+            chmod 644 "$SSH_WHITELIST"
+
+            log "INFO" "✅ SSH port $SSH_PORT added to whitelist"
+            log "INFO" "⚠️  ALERT: SSH port changed - please reload firewall: nftban firewall reload"
+
+            # Send alert if mail is configured
+            if command -v mail &>/dev/null && [[ -f "/etc/nftban/conf.d/mail.conf" ]]; then
+                echo "NFTBan Security Alert: SSH port changed to $SSH_PORT and auto-whitelisted on $(hostname) at $(date)" | \
+                    mail -s "[NFTBan] SSH Port Auto-Updated on $(hostname)" root 2>/dev/null || true
+            fi
         fi
     else
-        log "ERROR" "Health module not found: ${NFTBAN_LIB_DIR}/core/nftban_health.sh"
+        # SSH whitelist missing - create it
+        log "WARN" "SSH whitelist missing - creating..."
+        mkdir -p /etc/nftban/ports.d
+        cat > "$SSH_WHITELIST" <<EOF
+# SSH port auto-added during maintenance: $(date '+%Y-%m-%d %H:%M:%S')
+# DO NOT DELETE - LOCKOUT RISK!
+# Port format: PORT|PROTO where PROTO = T(tcp), U(udp), B(both)
+${SSH_PORT}|T
+EOF
+        chmod 644 "$SSH_WHITELIST"
+        log "INFO" "✅ Created SSH whitelist with port $SSH_PORT"
     fi
 
     # ==========================================================================
