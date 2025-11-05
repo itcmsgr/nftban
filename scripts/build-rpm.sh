@@ -35,7 +35,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Configuration
-VERSION="${VERSION:-0.30.1}"
+VERSION="${VERSION:-0.31.0}"
 RELEASE="${RELEASE:-1}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${PROJECT_ROOT}/dist/rpm-build"
@@ -75,9 +75,12 @@ tar czf "${BUILD_DIR}/SOURCES/${TARBALL}" \
     --exclude='*.swp' \
     --exclude='*.tmp' \
     src/ \
+    go-geoip/ \
+    go-feeds/ \
     packaging/ \
     licenses/ \
     docs/ \
+    scripts/ \
     README.md \
     CHANGELOG.md \
     TRADEMARK.md \
