@@ -47,6 +47,8 @@ override_dh_auto_install:
 
 	# Install Polkit rules
 	install -d -m 0755 debian/nftban/usr/share/polkit-1/rules.d
+	install -m 0644 packaging/polkit-1/rules.d/50-nftban-v030.rules \
+		debian/nftban/usr/share/polkit-1/rules.d/50-nftban-v030.rules
 	install -m 0644 packaging/polkit-1/rules.d/60-nftban-cli.rules \
 		debian/nftban/usr/share/polkit-1/rules.d/60-nftban-cli.rules
 
