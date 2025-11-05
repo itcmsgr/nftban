@@ -12,29 +12,9 @@
 
 NFTBan is a **professional-grade firewall management system** built on nftables with **enterprise safety features**, **privilege separation via Polkit**, and **atomic operations** that prevent lockouts.
 
-**🧪 BETA TESTING** | **✅ Tested on 5 lab servers (minimal installations)** | **⚡ 10-60x faster with Go binaries** | **🔐 CVE-2024-NFTBAN-001 FIXED**
+**🧪 BETA TESTING** | **✅ Tested on 5 lab servers (minimal installations)** | **⚡ 10-60x faster with Go binaries**
 
 > **⚠️ TESTING PHASE:** NFTBan v0.30.1 has been thoroughly tested on **clean, minimal server installations** across 5 distributions. We need **community feedback** from diverse production environments before declaring production-ready. Please report any issues to help us reach production status!
-
----
-
-## 🚨 Security Notice: v0.30.1 Critical Release
-
-**CVE-2024-NFTBAN-001 FIXED** - Rule order vulnerability allowing blacklisted IPs to bypass firewall.
-
-**If you're running v0.30.0, upgrade immediately!**
-
-```nft
-# v0.30.0 (VULNERABLE):
-tcp dport @tcp_ports accept    ← Port 22 accepted FIRST
-ip saddr @blacklist_v4 drop    ← NEVER REACHED!
-
-# v0.30.1 (SECURE):
-ip saddr @blacklist_v4 counter drop    ← Check blacklist FIRST
-tcp dport @tcp_ports counter accept    ← Then allow ports
-```
-
-**Details:** [SECURITY.md](SECURITY.md) | **Upgrade:** See [Installation](#-download--installation) below
 
 ---
 
