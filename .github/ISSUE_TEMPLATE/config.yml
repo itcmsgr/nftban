@@ -7,5 +7,5 @@ contact_links:
     url: "https://github.com/itcmsgr/nftban/discussions"
     about: "Questions, feedback, proposals, and community discussions"
   - name: "🔐 Security Contact"
-    url: "mailto:contact@itcms.gr"
+    url: "mailto:contact@nftban.com"
     about: "Report security issues privately. Prefer GitHub Security Advisories when possible."
