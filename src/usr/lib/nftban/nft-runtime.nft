@@ -19,14 +19,14 @@ table inet nftban_runtime {
   }
 
   # Early-drop chain for temporary bans
-  # Priority -310 (higher than main table at -300)
+  # Priority -5 (higher than main table at 0)
   # This ensures temp bans evaluate BEFORE static rules
   chain input_tempban {
-    type filter hook input priority -310; policy accept;
+    type filter hook input priority -5; policy accept;
 
     # Drop temporarily banned IPs
-    ip saddr  @temp_ban_v4 drop
-    ip6 saddr @temp_ban_v6 drop
+    ip saddr  @temp_ban_v4 drop counter comment "temporary ban v4"
+    ip6 saddr @temp_ban_v6 drop counter comment "temporary ban v6"
 
     # Accept everything else (pass to main table)
   }
