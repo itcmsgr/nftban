@@ -371,7 +371,7 @@ nftban_feeds_update_all() {
     nftban_feeds_log INFO "Update complete: $success_count succeeded, $fail_count failed"
 
     # Determine sync mode: synchronous for systemd, background for CLI
-    if [[ -n "${INVOCATION_ID:-}" ]] || [[ "$NFTBAN_FEEDS_SYNC_MODE" == "sync" ]]; then
+    if [[ -n "${INVOCATION_ID:-}" ]] || [[ "${NFTBAN_FEEDS_SYNC_MODE:-}" == "sync" ]]; then
         # Running from systemd or explicit sync mode - wait for sync to complete
         echo "⏳ Syncing to nftables..."
         nftban_feeds_sync_to_nftables
