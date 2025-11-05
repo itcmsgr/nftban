@@ -25,8 +25,8 @@ table inet nftban_runtime {
     type filter hook input priority -5; policy accept;
 
     # Drop temporarily banned IPs
-    ip saddr  @temp_ban_v4 drop counter comment "temporary ban v4"
-    ip6 saddr @temp_ban_v6 drop counter comment "temporary ban v6"
+    ip saddr  @temp_ban_v4 counter drop comment "temporary ban v4"
+    ip6 saddr @temp_ban_v6 counter drop comment "temporary ban v6"
 
     # Accept everything else (pass to main table)
   }
