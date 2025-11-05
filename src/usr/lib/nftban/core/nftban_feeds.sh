@@ -445,7 +445,7 @@ nftban_feeds_sync_to_nftables_go() {
     fi
 }
 
-# Bash feed sync (fallback, v0.30.8)
+# Bash feed sync (fallback, v0.31.8)
 nftban_feeds_sync_to_nftables_bash() {
     # Flush existing sets
     nft flush set inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V4" 2>/dev/null || true
