@@ -82,7 +82,7 @@ _nftban() {
             return 0
             ;;
         port)
-            COMPREPLY=( $(compgen -W "scan list summary html-report mail-report detailed status allow-panel help" -- ${cur}) )
+            COMPREPLY=( $(compgen -W "scan list summary add remove html-report mail-report detailed status allow-panel help" -- ${cur}) )
             return 0
             ;;
         module)

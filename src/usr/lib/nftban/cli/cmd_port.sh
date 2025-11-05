@@ -154,6 +154,270 @@ nftban_cmd_port() {
             fi
             ;;
 
+        add)
+            # Add port to whitelist
+            # Args: <port> [protocol]
+            local port="${1:-}"
+            local proto="${2:-tcp}"
+
+            if [[ -z "$port" ]]; then
+                echo "ERROR: Port number required" >&2
+                echo "Usage: nftban port add <port> [protocol]" >&2
+                echo "       protocol: tcp (default), udp, or both" >&2
+                echo "" >&2
+                echo "Examples:" >&2
+                echo "  nftban port add 8080           # Add TCP port 8080" >&2
+                echo "  nftban port add 53 udp         # Add UDP port 53" >&2
+                echo "  nftban port add 443 both       # Add TCP+UDP port 443" >&2
+                return 1
+            fi
+
+            # Validate port number
+            if ! [[ "$port" =~ ^[0-9]+$ ]] || [[ "$port" -lt 1 ]] || [[ "$port" -gt 65535 ]]; then
+                echo "ERROR: Invalid port number: $port" >&2
+                echo "Port must be between 1-65535" >&2
+                return 1
+            fi
+
+            # Normalize protocol
+            case "${proto,,}" in
+                tcp|t)
+                    proto="T"
+                    proto_name="TCP"
+                    ;;
+                udp|u)
+                    proto="U"
+                    proto_name="UDP"
+                    ;;
+                both|b|tcp+udp)
+                    proto="B"
+                    proto_name="TCP+UDP"
+                    ;;
+                *)
+                    echo "ERROR: Invalid protocol: $proto" >&2
+                    echo "Valid protocols: tcp, udp, both" >&2
+                    return 1
+                    ;;
+            esac
+
+            # Create ports.d directory if missing
+            mkdir -p /etc/nftban/ports.d
+            chmod 750 /etc/nftban/ports.d
+            chown root:nftban /etc/nftban/ports.d 2>/dev/null || true
+
+            # Use 90-custom.conf for user-added ports
+            local config_file="/etc/nftban/ports.d/90-custom.conf"
+
+            # Check if port already exists
+            if [[ -f "$config_file" ]] && grep -qE "^${port}\|" "$config_file" 2>/dev/null; then
+                echo "⚠ Port $port already in whitelist: $config_file" >&2
+                echo "Current entry:" >&2
+                grep -E "^${port}\|" "$config_file" 2>/dev/null
+                return 0
+            fi
+
+            # Add port to config
+            echo "# Added by: nftban port add $port $proto_name ($(date '+%Y-%m-%d %H:%M:%S'))" >> "$config_file"
+            echo "${port}|${proto}" >> "$config_file"
+            chmod 640 "$config_file"
+            chown root:nftban "$config_file" 2>/dev/null || true
+
+            echo "✓ Port $port ($proto_name) added to whitelist: $config_file"
+            echo ""
+
+            # Atomically add to nftables (if firewall is active)
+            if nft list table inet nftban_main >/dev/null 2>&1; then
+                echo "⚡ Atomically adding port to firewall..."
+
+                local add_success=true
+
+                # Add to tcp_ports set (if TCP or both)
+                if [[ "$proto" == "T" || "$proto" == "B" ]]; then
+                    if nft add element inet nftban_main tcp_ports "{ $port }" 2>/dev/null; then
+                        echo "  ✓ TCP port $port added to nftables (immediate)"
+                    else
+                        echo "  ⚠ Could not add TCP port atomically" >&2
+                        add_success=false
+                    fi
+                fi
+
+                # Add to udp_ports set (if UDP or both)
+                if [[ "$proto" == "U" || "$proto" == "B" ]]; then
+                    if nft add element inet nftban_main udp_ports "{ $port }" 2>/dev/null; then
+                        echo "  ✓ UDP port $port added to nftables (immediate)"
+                    else
+                        echo "  ⚠ Could not add UDP port atomically" >&2
+                        add_success=false
+                    fi
+                fi
+
+                # Fallback to full reload if atomic failed
+                if [[ "$add_success" == "false" ]]; then
+                    echo ""
+                    echo "⚠ Atomic add failed, performing full firewall reload..."
+                    if nftban firewall reload >/dev/null 2>&1; then
+                        echo "✓ Firewall reloaded successfully"
+                    else
+                        echo "❌ Firewall reload failed" >&2
+                        echo "Run manually: nftban firewall reload" >&2
+                        return 1
+                    fi
+                fi
+
+                echo ""
+                echo "✅ Port $port is now active in firewall (no restart needed)"
+            else
+                echo "⚠ Firewall not initialized - port saved but not active yet"
+                echo "Run: nftban firewall init"
+            fi
+
+            echo ""
+            echo "To remove this port later, use:"
+            echo "  nftban port remove $port"
+
+            return 0
+            ;;
+
+        remove)
+            # Remove port from whitelist
+            # Args: <port>
+            local port="${1:-}"
+
+            if [[ -z "$port" ]]; then
+                echo "ERROR: Port number required" >&2
+                echo "Usage: nftban port remove <port>" >&2
+                echo "" >&2
+                echo "Examples:" >&2
+                echo "  nftban port remove 8080" >&2
+                echo "  nftban port remove 53" >&2
+                return 1
+            fi
+
+            # Validate port number
+            if ! [[ "$port" =~ ^[0-9]+$ ]] || [[ "$port" -lt 1 ]] || [[ "$port" -gt 65535 ]]; then
+                echo "ERROR: Invalid port number: $port" >&2
+                echo "Port must be between 1-65535" >&2
+                return 1
+            fi
+
+            # Find all config files containing this port
+            local found_files=()
+            local protected_files=()
+
+            if [[ -d /etc/nftban/ports.d ]]; then
+                while IFS= read -r file; do
+                    # Check if file contains the port
+                    if grep -qE "^${port}\|" "$file" 2>/dev/null; then
+                        # Check if it's a protected file (00-*.conf)
+                        if [[ "$(basename "$file")" =~ ^00- ]]; then
+                            protected_files+=("$file")
+                        else
+                            found_files+=("$file")
+                        fi
+                    fi
+                done < <(find /etc/nftban/ports.d -type f -name "*.conf" 2>/dev/null)
+            fi
+
+            # Show protected files (don't remove)
+            if [[ ${#protected_files[@]} -gt 0 ]]; then
+                echo "⚠ WARNING: Port $port found in protected system files:" >&2
+                for file in "${protected_files[@]}"; do
+                    echo "  - $file (PROTECTED - will not remove)" >&2
+                    grep -E "^${port}\|" "$file" 2>/dev/null | sed 's/^/    /' >&2
+                done
+                echo "" >&2
+
+                # If ONLY in protected files, abort
+                if [[ ${#found_files[@]} -eq 0 ]]; then
+                    echo "ERROR: Cannot remove port $port - only exists in protected files" >&2
+                    echo "Protected files (00-*.conf) contain critical system ports." >&2
+                    echo "To remove, edit manually: ${protected_files[0]}" >&2
+                    return 1
+                fi
+            fi
+
+            # Remove from non-protected files
+            if [[ ${#found_files[@]} -eq 0 ]]; then
+                echo "ERROR: Port $port not found in whitelist" >&2
+                echo "Checked: /etc/nftban/ports.d/*.conf" >&2
+                return 1
+            fi
+
+            local removed_count=0
+            local removed_proto=""
+
+            for file in "${found_files[@]}"; do
+                echo "Removing port $port from: $file"
+
+                # Show what we're removing and capture protocol
+                local port_line
+                port_line=$(grep -E "^${port}\|" "$file" 2>/dev/null)
+                echo "  - $port_line"
+
+                # Extract protocol from line (format: PORT|PROTO)
+                removed_proto=$(echo "$port_line" | cut -d'|' -f2)
+
+                # Create backup
+                cp "$file" "${file}.backup.$(date +%Y%m%d-%H%M%S)"
+
+                # Remove port and its comment line (if immediately before)
+                sed -i "/^# Added by: nftban port add ${port} /d; /^${port}|/d" "$file"
+
+                removed_count=$((removed_count + 1))
+            done
+
+            echo ""
+            echo "✓ Port $port removed from $removed_count file(s)"
+            echo ""
+
+            # Atomically remove from nftables (if firewall is active)
+            if nft list table inet nftban_main >/dev/null 2>&1 && [[ -n "$removed_proto" ]]; then
+                echo "⚡ Atomically removing port from firewall..."
+
+                local remove_success=true
+
+                # Remove from tcp_ports set (if TCP or both)
+                if [[ "$removed_proto" == "T" || "$removed_proto" == "B" ]]; then
+                    if nft delete element inet nftban_main tcp_ports "{ $port }" 2>/dev/null; then
+                        echo "  ✓ TCP port $port removed from nftables (immediate)"
+                    else
+                        echo "  ⚠ Could not remove TCP port atomically (may not exist)" >&2
+                        remove_success=false
+                    fi
+                fi
+
+                # Remove from udp_ports set (if UDP or both)
+                if [[ "$removed_proto" == "U" || "$removed_proto" == "B" ]]; then
+                    if nft delete element inet nftban_main udp_ports "{ $port }" 2>/dev/null; then
+                        echo "  ✓ UDP port $port removed from nftables (immediate)"
+                    else
+                        echo "  ⚠ Could not remove UDP port atomically (may not exist)" >&2
+                        remove_success=false
+                    fi
+                fi
+
+                # Fallback to full reload if atomic failed
+                if [[ "$remove_success" == "false" ]]; then
+                    echo ""
+                    echo "⚠ Atomic remove failed, performing full firewall reload..."
+                    if nftban firewall reload >/dev/null 2>&1; then
+                        echo "✓ Firewall reloaded successfully"
+                    else
+                        echo "❌ Firewall reload failed" >&2
+                        echo "Run manually: nftban firewall reload" >&2
+                        return 1
+                    fi
+                fi
+
+                echo ""
+                echo "✅ Port $port is now blocked in firewall (no restart needed)"
+            else
+                echo "⚠ Firewall not initialized - port removed from config only"
+            fi
+
+            return 0
+            ;;
+
         allow-panel)
             # Allow control panel ports in firewall
             # Args: <panel_name>
@@ -188,6 +452,8 @@ nftban_cmd_port() {
             echo "Usage:"
             echo "  nftban port status [ports]       # Show port status (all or filtered)"
             echo "  nftban port detailed [ports]     # Show detailed status with BIND and PROCESS"
+            echo "  nftban port add <port> [proto]   # Add port to whitelist (proto: tcp, udp, both)"
+            echo "  nftban port remove <port>        # Remove port from whitelist"
             echo "  nftban port html-report          # Generate HTML report (coming soon)"
             echo "  nftban port mail-report [path] [recipient]  # Mail report"
             echo "  nftban port allow-panel <panel>  # Allow control panel ports in firewall"
@@ -197,6 +463,10 @@ nftban_cmd_port() {
             echo "  nftban port status               # Show all listening ports"
             echo "  nftban port status 22,80,443     # Show only SSH, HTTP, HTTPS"
             echo "  nftban port detailed             # Show detailed info with bind addresses"
+            echo "  nftban port add 8080             # Whitelist TCP port 8080"
+            echo "  nftban port add 53 udp           # Whitelist UDP port 53 (DNS)"
+            echo "  nftban port add 443 both         # Whitelist TCP+UDP port 443"
+            echo "  nftban port remove 8080          # Remove port 8080 from whitelist"
             echo "  nftban port mail-report /var/lib/nftban/reports/port_report.html admin@example.com"
             echo "  nftban port allow-panel directadmin  # Allow DirectAdmin panel ports"
             echo ""
