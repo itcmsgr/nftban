@@ -1,18 +1,30 @@
 #!/usr/bin/env bash
+
 # =============================================================================
-# NFTBan v0.30.1 - Control Panel Integration CLI Command
+# NFTBan CLI - Panel Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Module: cmd_panel
-# Purpose: Manage control panel firewall integration (DirectAdmin, etc.)
+# Purpose: Web hosting panel firewall integration and management
 #
-# Usage:
+# meta:name=cmd_panel
+# meta:type=cli
+# meta:header=Panel CLI Command
+# meta:version=0.30.1
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# **Description & Purpose**
+# meta:description=Manage web hosting panel firewall integration (DirectAdmin, cPanel, Plesk)
+# meta:input=Panel name and action (enable, disable, status, report, repair, test)
+# meta:output=Panel configuration status and firewall rules
+#
+# **Usage**
 #   nftban panel <panel_name> <action>
 #
-# Supported Panels:
-#   directadmin (da)
+# **Supported Panels**
+#   directadmin (da)     - DirectAdmin Control Panel
 #
-# Actions:
+# **Actions**
 #   enable    - Enable panel ports in firewall
 #   disable   - Disable panel ports in firewall
 #   status    - Show panel port configuration status
