@@ -8,11 +8,13 @@
 [![Performance: Go Binaries](https://img.shields.io/badge/Performance-Go%20Binaries-00ADD8)]()
 [![Security: Polkit](https://img.shields.io/badge/Security-Polkit%20Integrated-red)]()
 [![FHS: Compliant](https://img.shields.io/badge/FHS-21%2F21%20Compliant-success)]()
-[![Status](https://img.shields.io/badge/status-PRODUCTION%20READY-brightgreen)](https://github.com/itcmsgr/nftban)
+[![Status](https://img.shields.io/badge/status-BETA%20TESTING-orange)](https://github.com/itcmsgr/nftban)
 
 NFTBan is a **professional-grade firewall management system** built on nftables with **enterprise safety features**, **privilege separation via Polkit**, and **atomic operations** that prevent lockouts.
 
-**🚀 PRODUCTION READY** | **✅ Tested on 5 distributions** | **⚡ 10-60x faster with Go binaries** | **🔐 CVE-2024-NFTBAN-001 FIXED**
+**🧪 BETA TESTING** | **✅ Tested on 5 lab servers (minimal installations)** | **⚡ 10-60x faster with Go binaries** | **🔐 CVE-2024-NFTBAN-001 FIXED**
+
+> **⚠️ TESTING PHASE:** NFTBan v0.30.1 has been thoroughly tested on **clean, minimal server installations** across 5 distributions. We need **community feedback** from diverse production environments before declaring production-ready. Please report any issues to help us reach production status!
 
 ---
 
