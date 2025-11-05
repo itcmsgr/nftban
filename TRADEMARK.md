@@ -51,11 +51,12 @@ Trademark coverage applies to the **project identity**, not specific language bi
 
 ---
 
-## 5. Related Trademarks
+## 5. Third-Party Trademarks
 
-- **Fail2Ban** — Trademark of Cyril Jaquier and contributors. No affiliation.  
-- **nftables** and **Linux** — Trademarks associated with the Linux Foundation and Linus Torvalds. No affiliation.  
-- **Tux** — Artwork by Larry Ewing, used with attribution under stated permissions.
+- **Linux®** — Linux is a registered trademark of Linus Torvalds in the United States and other countries. No affiliation or endorsement.
+- **nftables** — Part of the Linux kernel project. Associated with the Linux Foundation. No affiliation.
+- **Fail2Ban** — Trademark of Cyril Jaquier and contributors. No affiliation or endorsement.
+- **Tux (Linux Penguin)** — Original artwork by Larry Ewing (lewing@isc.tamu.edu), created with The GIMP. Used with attribution under stated permissions.
 
 ---
 
