@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.30.0 - Global Status Command
+# NFTBan v0.31.0 - Global Status Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Global system status overview
@@ -8,7 +8,7 @@
 # meta:name=cmd_status
 # meta:type=cli
 # meta:header=NFTBan Global Status
-# meta:version=0.30.1
+# meta:version=0.31.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

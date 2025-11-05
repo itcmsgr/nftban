@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.30.0 - Unified Reporting Engine
+# NFTBan v0.31.0 - Unified Reporting Engine
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Unified reporting engine
@@ -8,7 +8,7 @@
 # meta:name=nftban_report_engine
 # meta:type=core
 # meta:header=Unified Reporting Engine
-# meta:version=0.30.1
+# meta:version=0.31.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -29,7 +29,7 @@ set -Eeuo pipefail
 # GLOBAL VARIABLES
 # =============================================================================
 
-declare -g NFTBAN_REPORT_ENGINE_VERSION="0.30.0"
+declare -g NFTBAN_REPORT_ENGINE_VERSION="0.31.0"
 declare -g NFTBAN_REPORT_ENGINE_LOADED=false
 
 # Report data structure

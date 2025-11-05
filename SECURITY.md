@@ -8,11 +8,11 @@ This comprehensive guide explains how NFTBan's multi-layer security system works
 
 ## 🚨 Security Advisories
 
-### CVE-2024-NFTBAN-001 - Rule Order Bypass (FIXED in v0.30.1)
+### CVE-2024-NFTBAN-001 - Rule Order Bypass (FIXED in v0.31.1)
 
 **Severity:** HIGH
-**Affected Versions:** v0.30.0 and earlier
-**Fixed in:** v0.30.1 (2025-11-05)
+**Affected Versions:** v0.31.0 and earlier
+**Fixed in:** v0.31.1 (2025-11-05)
 
 **Issue:** Blacklist checks ran AFTER port allow rules, allowing blacklisted IPs to bypass firewall and access SSH/services.
 
@@ -23,24 +23,24 @@ This comprehensive guide explains how NFTBan's multi-layer security system works
 
 **Root Cause:**
 ```nft
-# VULNERABLE (v0.30.0):
+# VULNERABLE (v0.31.0):
 tcp dport @tcp_ports accept    ← Port 22 accepted FIRST
 ip saddr @blacklist_v4 drop    ← NEVER REACHED!
 ```
 
-**Fix (v0.30.1):**
+**Fix (v0.31.1):**
 ```nft
-# SECURE (v0.30.1):
+# SECURE (v0.31.1):
 ip saddr @blacklist_v4 counter drop    ← Check blacklist FIRST
 tcp dport @tcp_ports counter accept    ← Then allow ports
 ```
 
 **Recommended Action:**
-- **Upgrade immediately to v0.30.1 or later**
+- **Upgrade immediately to v0.31.1 or later**
 - Verify fix: `nftban firewall check`
 - Validate rule order: `nft list chain inet nftban_main input`
 
-**Security Score:** v0.30.0 = 9/10 (critical bug), v0.30.1 = 10/10 (reference-grade)
+**Security Score:** v0.31.0 = 9/10 (critical bug), v0.31.1 = 10/10 (reference-grade)
 
 ---
 

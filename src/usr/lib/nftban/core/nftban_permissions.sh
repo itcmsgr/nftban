@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.30.0 - Permission Hardening Module
+# NFTBan v0.31.0 - Permission Hardening Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Enforce secure ownership and permissions on critical paths
@@ -8,7 +8,7 @@
 # meta:name=nftban_permissions
 # meta:type=core
 # meta:header=Permission Hardening Module
-# meta:version=0.30.1
+# meta:version=0.31.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

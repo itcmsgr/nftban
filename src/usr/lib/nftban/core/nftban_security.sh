@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.30.0 - Security & Capability Helper
+# NFTBan v0.31.0 - Security & Capability Helper
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Capability checks and helpers for privileged operations
@@ -8,7 +8,7 @@
 # meta:name=nftban_security
 # meta:type=core
 # meta:header=Security & Capability Helper
-# meta:version=0.30.1
+# meta:version=0.31.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

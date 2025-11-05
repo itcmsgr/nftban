@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.30.0 - Whitelist Command Alias
+# NFTBan v0.31.0 - Whitelist Command Alias
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Friendly alias for whitelist-system command
@@ -8,7 +8,7 @@
 # meta:name=cmd_whitelist
 # meta:type=cli
 # meta:header=NFTBan Whitelist Alias
-# meta:version=0.30.1
+# meta:version=0.31.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

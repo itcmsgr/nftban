@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.30.0 - Periodic Maintenance Runner
+# NFTBan v0.31.0 - Periodic Maintenance Runner
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Run periodic maintenance tasks (feeds, GeoIP, cleanup)
@@ -8,7 +8,7 @@
 # meta:name=cron_run
 # meta:type=cron
 # meta:header=Periodic Maintenance Runner
-# meta:version=0.30.1
+# meta:version=0.31.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
