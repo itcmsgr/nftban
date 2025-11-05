@@ -1,4 +1,4 @@
-.TH NFTBAN 1 "November 2025" "nftban v0.10.0" "User Commands"
+.TH NFTBAN 1 "November 2025" "nftban v0.31.0" "User Commands"
 .SH NAME
 nftban \- Simplifying Linux Firewall Management
 .SH SYNOPSIS
@@ -8,10 +8,10 @@ nftban \- Simplifying Linux Firewall Management
 .B nftban
 is a modern Linux firewall management system that combines nftables and fail2ban
 to provide comprehensive network security. It offers an intuitive CLI for managing
-bans, whitelists, threat feeds, GeoIP blocking, and health monitoring.
+bans, whitelists, threat feeds, GeoBan country blocking, and health monitoring.
 
-NFTBan uses a dual-table architecture with inet family for unified IPv4/IPv6 management,
-providing 10-60x performance improvements through Go-powered feed processing.
+NFTBan v0.31.0 uses a dual-table architecture with inet family for unified IPv4/IPv6 management,
+providing 10-60x performance improvements through Go-powered atomic operations and feed processing.
 
 .SH OPTIONS
 .TP
@@ -91,35 +91,94 @@ Disable a threat feed
 .TP
 .B feeds update
 Update all enabled feeds (downloads latest threat IPs)
+.RS
+Uses atomic loader (nftban-feeds) for 5-15x faster processing.
+Supports ETag caching, CIDR merging, and intelligent delta limiting.
+.RE
 
 .TP
 .B feeds load
-Load feed IPs into nftables sets
-
-.SS GeoIP Management
-.TP
-.B geoip enable
-Enable GeoIP blocking functionality
+Load feed IPs into nftables sets atomically
 
 .TP
-.B geoip disable
-Disable GeoIP blocking functionality
+.B feeds version
+Show nftban-feeds binary version and build information
+
+.SS Port Management
+.TP
+.B port add \fIPORT\fR [\fIPROTOCOL\fR]
+Add port to allowed services (zero-downtime atomic operation)
+.RS
+.TP
+.B PROTOCOL
+tcp (default), udp, or both
+.TP
+.B Example:
+nftban port add 8080 tcp
+.RE
 
 .TP
-.B geoip update
-Update MaxMind GeoIP database
+.B port remove \fIPORT\fR [\fIPROTOCOL\fR]
+Remove port from allowed services (zero-downtime atomic operation)
+.RS
+System ports (00-*.conf) are protected from accidental removal.
+.RE
 
+.TP
+.B port search \fIPORT\fR
+Search for port in nftables sets and configuration files
+.RS
+Shows if port is currently active in nftables and which config files reference it.
+.RE
+
+.SS GeoBan Management (Country Blocking)
+.TP
+.B geoban ban \fICOUNTRY_CODE\fR
+Ban all traffic from a country (e.g., CN, RU)
+.RS
+Atomically blocks all IPs from the specified country using nftables netlink.
+Creates configuration file in /etc/nftban/geoban.d/50-ban-XX.conf
+.RE
+
+.TP
+.B geoban unban \fICOUNTRY_CODE\fR
+Remove country ban and unload IPs from nftables
+.RS
+Atomically removes all country IPs from nftables sets and deletes config file.
+.RE
+
+.TP
+.B geoban whitelist \fICOUNTRY_CODE\fR
+Whitelist a country (never blocked, even if banned)
+.RS
+Creates configuration file in /etc/nftban/geoban.d/40-whitelist-XX.conf
+Takes precedence over bans.
+.RE
+
+.TP
+.B geoban unwhitelist \fICOUNTRY_CODE\fR
+Remove country from whitelist
+
+.TP
+.B geoban list
+List all banned and whitelisted countries with IP counts
+
+.TP
+.B geoban refresh \fICOUNTRY_CODE\fR
+Refresh IP list for a country (re-download from RIR sources)
+
+.TP
+.B geoban config
+Show current GeoBan configuration and statistics
+
+.SS GeoIP Lookup
 .TP
 .B geoip lookup \fIIP\fR
-Lookup country code for an IP address
+Lookup country code for an IP address using MaxMind GeoLite2
 
 .TP
-.B geoip block \fICOUNTRY_CODE\fR
-Block all traffic from a country (e.g., CN, RU)
-
-.TP
-.B geoip unblock \fICOUNTRY_CODE\fR
-Unblock traffic from a country
+.B geoip version
+Show nftban-geoip binary version and build information
 
 .SS Health & Monitoring
 .TP
@@ -215,11 +274,23 @@ Modular configuration files:
 .I feeds.conf
 Threat feed settings
 .TP
-.I geoip.conf
-GeoIP configuration (requires MaxMind license key)
+.I nftban-go.conf
+Go binary settings (CPU/RAM limits, safety thresholds)
 .TP
 .I mail.conf
 Email notification settings
+.RE
+
+.TP
+.B /etc/nftban/geoban.d/
+GeoBan country configuration directory:
+.RS
+.TP
+.I 40-whitelist-*.conf
+Whitelisted countries (never blocked)
+.TP
+.I 50-ban-*.conf
+Banned countries (all IPs blocked)
 .RE
 
 .SH FILES
@@ -250,8 +321,26 @@ Threat feed data files
 .I geoip/
 MaxMind GeoIP database
 .TP
+.I geoban/
+GeoBan country data files
+.TP
+.I geoban/tracking/
+GeoBan metadata (IP counts, last update)
+.TP
 .I audit/
 Audit log files
+.RE
+
+.TP
+.B /var/cache/nftban/
+Cache directory (nftban:nftban, mode 755)
+.RS
+.TP
+.I geoban/
+Cached country IP files from RIR sources
+.TP
+.I feeds/
+Cached threat feed files (ETag headers)
 .RE
 
 .TP
@@ -284,20 +373,40 @@ threat feeds or fail2ban detections.
 
 .SH PERFORMANCE
 .TP
-.B Go Binaries
-NFTBan includes optimized Go binaries for performance-critical operations:
+.B Go Binaries (Atomic Operations)
+NFTBan includes optimized Go binaries for atomic zero-downtime operations:
 .RS
 .TP
 .I nftban-feeds
-10-60x faster feed parsing (processes 1M+ IPs in <1 second)
+Atomic threat feed loader with 5-15x performance improvement.
+Features: ETag caching, CIDR merging, delta limiting, ENOBUFS retry.
 .TP
 .I nftban-geoip
-Fast GeoIP lookups with intelligent caching
+Atomic GeoBan operations via netlink. Country bans in <1 second.
+Features: Direct netlink, CPU/RAM monitoring, chunk-based loading.
 .RE
 
 .TP
-.B Fallback Mode
-If Go binaries are not installed, NFTBan uses Bash fallbacks (slower but functional)
+.B Architecture Detection
+Wrapper scripts automatically detect architecture (x86_64 or aarch64) and call
+the appropriate binary from /usr/lib/nftban/bin/.real/
+
+.TP
+.B System Protection (6 Layers)
+.RS
+.TP
+• CPU limit: 80% max (configurable)
+.TP
+• RAM limit: 4096 MB max (configurable)
+.TP
+• Chunk size: 4096 IPs per netlink batch
+.TP
+• Delta limit: 500k IPs max per update
+.TP
+• ENOBUFS retry: Exponential backoff on kernel buffer full
+.TP
+• Download limits: 50 MB max, 30s timeout
+.RE
 
 .SH SECURITY
 .TP
@@ -403,8 +512,30 @@ Enable and update threat feeds:
 .B nftban feeds update
 
 .TP
-Block a country by GeoIP:
-.B nftban geoip block CN
+Ban entire country (GeoBan):
+.B nftban geoban ban CN
+.br
+.B nftban geoban ban RU
+
+.TP
+Whitelist a country (never blocked):
+.B nftban geoban whitelist US
+
+.TP
+List all GeoBan countries:
+.B nftban geoban list
+
+.TP
+Refresh country IPs:
+.B nftban geoban refresh CN
+
+.TP
+Add custom port:
+.B nftban port add 8080 tcp
+
+.TP
+Search for port:
+.B nftban port search 22
 
 .TP
 Run health check with auto-healing:
@@ -463,7 +594,7 @@ Set log verbosity: DEBUG, INFO, WARN, ERROR (default: INFO)
 Disable colored output (set to 1)
 
 .SH BUGS
-Report bugs to: https://github.com/itcmsgr/nftban/issues
+Report bugs to: https://github.com/nftban/nftban/issues
 
 .SH SEE ALSO
 .BR nft (8),
