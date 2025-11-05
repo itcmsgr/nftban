@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - System Uninstaller
+# NFTBan v0.30.0 - System Uninstaller
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Remove NFTBan from system
@@ -10,7 +10,7 @@ set -Eeuo pipefail
 
 PURGE="${1:-}"
 
-echo "Uninstalling NFTBan v0.10.0..."
+echo "Uninstalling NFTBan v0.30.0..."
 
 # =============================================================================
 # 1. STOP AND DISABLE SERVICES
@@ -108,11 +108,11 @@ fi
 echo ""
 if [[ "$PURGE" == "--purge" ]]; then
     echo "╔════════════════════════════════════════════════════════════╗"
-    echo "║  NFTBan v0.10.0 Completely Removed (Purged)               ║"
+    echo "║  NFTBan v0.30.0 Completely Removed (Purged)               ║"
     echo "╚════════════════════════════════════════════════════════════╝"
 else
     echo "╔════════════════════════════════════════════════════════════╗"
-    echo "║  NFTBan v0.10.0 Uninstalled (Data Preserved)              ║"
+    echo "║  NFTBan v0.30.0 Uninstalled (Data Preserved)              ║"
     echo "╚════════════════════════════════════════════════════════════╝"
     echo ""
     echo "Preserved:"

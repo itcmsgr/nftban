@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - System Installer
+# NFTBan v0.30.0 - System Installer
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Install NFTBan to system (FHS-compliant)
@@ -11,7 +11,7 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR/src"
 
-echo "Installing NFTBan v0.10.0..."
+echo "Installing NFTBan v0.30.0..."
 
 # =============================================================================
 # 1. CREATE SYSTEM USER AND GROUPS
@@ -372,7 +372,7 @@ echo ""
 # =============================================================================
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║  NFTBan v0.10.0 Installation Complete!                    ║"
+echo "║  NFTBan v0.30.0 Installation Complete!                    ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "✅ SSH port $SSH_PORT whitelisted (lockout prevention)"
