@@ -177,6 +177,13 @@ nftban_complete() {
                 echo "status"
                 echo "test"
                 echo "update"
+                echo "config"
+                echo "ban"
+                echo "unban"
+                echo "whitelist"
+                echo "unwhitelist"
+                echo "list"
+                echo "refresh"
                 echo "help"
                 ;;
             stats)
@@ -329,6 +336,12 @@ nftban_complete() {
                 echo "json"
                 echo "compact"
                 echo "country"
+                ;;
+            geoip_config)
+                echo "show"
+                echo "set-source"
+                echo "set-key"
+                echo "test-download"
                 ;;
             health_fix)
                 echo "all"
