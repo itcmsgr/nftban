@@ -57,5 +57,5 @@ See `/branding/README.md` for further details on artwork attribution and logo co
 
 ---
 
-© 2024–2026 NFTBAN Project / Antonios Voulvoulis. All rights reserved.  
-See also: `LICENSE`, `TRADEMARK.md`, and `README-License-Summary.md`.
+© 2024–2026 NFTBAN Project / Antonios Voulvoulis. All rights reserved.
+See also: `LICENSE` and `TRADEMARK.md`.
