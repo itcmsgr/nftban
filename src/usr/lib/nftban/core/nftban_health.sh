@@ -567,17 +567,17 @@ nftban_health_check_resources() {
 }
 
 # =============================================================================
-# v0.30 INVENTORY HELPERS CHECKS
+# v0.31 INVENTORY HELPERS CHECKS
 # =============================================================================
 
 nftban_health_check_v030_helpers() {
-    # Check v0.30 inventory helpers
-    # Returns: 0=OK, 1=Warning, 2=Error (warnings only - v0.30 is optional)
+    # Check v0.31 inventory helpers
+    # Returns: 0=OK, 1=Warning, 2=Error (warnings only - v0.31 is optional)
 
     local status=$HEALTH_OK
     local helper_issues=()
 
-    # v0.30 inventory helpers
+    # v0.31 inventory helpers
     local helpers=(
         "nftban-procnet"
         "nftban-pkgs"
@@ -603,15 +603,15 @@ nftban_health_check_v030_helpers() {
         fi
     done
 
-    # Check if v0.30 mail adapter is present
+    # Check if v0.31 mail adapter is present
     if [[ -f "/usr/lib/nftban/core/nftban_mail_v030.sh" ]]; then
         if [[ ! -r "/usr/lib/nftban/core/nftban_mail_v030.sh" ]]; then
-            helper_issues+=("v0.30 mail adapter not readable")
+            helper_issues+=("v0.31 mail adapter not readable")
             status=$HEALTH_WARNING
         fi
     fi
 
-    # Check if v0.30 health commands are present
+    # Check if v0.31 health commands are present
     local health_commands=(
         "nftban-health"
         "nftban-baseline-save"
@@ -635,13 +635,13 @@ nftban_health_check_v030_helpers() {
 
     # Store results
     if [[ $helpers_found -eq 0 ]]; then
-        # v0.30 not installed - not an error, just informational
-        NFTBAN_HEALTH_ISSUES["v030_helpers"]="v0.30 extensions not installed"
+        # v0.31 not installed - not an error, just informational
+        NFTBAN_HEALTH_ISSUES["v030_helpers"]="v0.31 extensions not installed"
     elif [[ ${#helper_issues[@]} -gt 0 ]]; then
         NFTBAN_HEALTH_ISSUES["v030_helpers"]="${helper_issues[*]}"
-        NFTBAN_HEALTH_WARNINGS+=("v0.30 issues: ${helper_issues[*]}")
+        NFTBAN_HEALTH_WARNINGS+=("v0.31 issues: ${helper_issues[*]}")
     else
-        NFTBAN_HEALTH_ISSUES["v030_helpers"]="All v0.30 helpers OK ($helpers_executable/$helpers_found)"
+        NFTBAN_HEALTH_ISSUES["v030_helpers"]="All v0.31 helpers OK ($helpers_executable/$helpers_found)"
     fi
 
     NFTBAN_HEALTH_RESULTS["v030_helpers"]=$status
@@ -861,7 +861,7 @@ nftban_health_check_polkit() {
             fi
         fi
 
-        # Check if NFTBAN Auditors authorization rules are installed (v0.30+)
+        # Check if NFTBAN Auditors authorization rules are installed (v0.31+)
         local polkit_auditors_rules="/usr/share/polkit-1/rules.d/50-nftban-v030.rules"
         if [[ ! -f "$polkit_auditors_rules" ]]; then
             polkit_issues+=("WARNING: Polkit auditors rules missing at $polkit_auditors_rules")
@@ -1130,7 +1130,7 @@ nftban_health_check_all() {
     nftban_health_check_geoip || check_result=$?
     [[ $check_result -gt $overall_status ]] && overall_status=$check_result
 
-    # v0.30 inventory helpers check
+    # v0.31 inventory helpers check
     check_result=0
     nftban_health_check_v030_helpers || check_result=$?
     [[ $check_result -gt $overall_status ]] && overall_status=$check_result
@@ -1559,7 +1559,7 @@ nftban_health_fix_system_config() {
         return 1
     fi
 
-    # nftban-auditors is optional (v0.30+), warn if missing but don't fail
+    # nftban-auditors is optional (v0.31+), warn if missing but don't fail
     if [[ "$nftban_auditors_gid" == "MISSING" ]]; then
         echo "  ⚠ WARNING: nftban-auditors group not found (optional, for inventory helpers)" >&2
     fi
