@@ -21,8 +21,7 @@ Source0:        %{name}-%{version}.tar.gz
 # Build requirements
 BuildArch:      x86_64 aarch64
 BuildRequires:  systemd-rpm-macros
-# NOTE: Go binaries are PRECOMPILED and included in source tarball
-# No golang build dependency needed - transparency!
+BuildRequires:  golang >= 1.21
 
 # Runtime requirements - Core dependencies
 Requires:       nftables >= 1.0.0
@@ -80,12 +79,46 @@ fail2ban-server is recommended (not fail2ban) to avoid firewalld conflict.
 %setup -q
 
 %build
-# Go binaries are PRECOMPILED and included in source tarball (dist/ directory)
-# This ensures transparency - users can verify the binaries match the source code
-# For building from source, see: /docs/GO_COMPILATION_GUIDE.md
+# Build Go binaries for current architecture during package build
+# This ensures transparency - source code is built on user's system
 
-echo "Using precompiled Go binaries from dist/%{_arch}/"
-ls -lh dist/%{_arch}/ || echo "ERROR: Precompiled binaries not found!"
+# Detect architecture for Go build
+%ifarch x86_64
+GO_ARCH=amd64
+%endif
+%ifarch aarch64
+GO_ARCH=arm64
+%endif
+
+# Create output directory
+mkdir -p dist/%{_arch}
+
+# Build nftban-geoip
+echo "Building nftban-geoip for ${GO_ARCH}..."
+cd go-geoip
+go mod download
+go mod tidy
+CGO_ENABLED=0 GOOS=linux GOARCH=${GO_ARCH} \
+  go build -buildvcs=false \
+  -ldflags "-s -w -X main.VERSION=%{version}" \
+  -o ../dist/%{_arch}/nftban-geoip \
+  ./cmd/nftban-geoip
+cd ..
+
+# Build nftban-feeds
+echo "Building nftban-feeds for ${GO_ARCH}..."
+cd go-feeds
+go mod download
+go mod tidy
+CGO_ENABLED=0 GOOS=linux GOARCH=${GO_ARCH} \
+  go build -buildvcs=false \
+  -ldflags "-s -w -X main.VERSION=%{version}" \
+  -o ../dist/%{_arch}/nftban-feeds \
+  ./cmd/nftban-feeds
+cd ..
+
+echo "Verifying built binaries..."
+ls -lh dist/%{_arch}/
 
 %install
 # Install binaries
