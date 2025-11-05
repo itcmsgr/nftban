@@ -364,7 +364,7 @@ systemctl start nftban-maintenance.timer 2>/dev/null || true
 # Print installation message
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║  NFTBan v0.30.0 Installation Complete!                    ║"
+echo "║  NFTBan v0.31.0 Installation Complete!                    ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "✅ Auto-heal completed - all systems configured"
