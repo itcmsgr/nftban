@@ -103,7 +103,7 @@ sudo systemctl restart nftables  # Full root access required
 sudo firewall-cmd --reload        # Every user needs sudo
 
 # NFTBan (SECURE BY DESIGN):
-systemctl restart nftables        # Just add user to nftban-auditors group!
+nftban system restart nftables   # Just add user to nftban-auditors group!
 nftban firewall reload            # No sudo, no root, no risk
 ```
 
