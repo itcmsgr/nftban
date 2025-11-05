@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
-## [0.30.1] - 2025-11-05
+## [0.31.0] - 2025-11-05
 
 ### 🚨 CRITICAL SECURITY RELEASE
 
@@ -17,18 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 #### Security - Rule Processing Order (CRITICAL)
 - **CRITICAL:** Fixed nftables rule order - blacklist checks now run BEFORE port checks
-  - **Issue:** In v0.30.0, port allow rules executed before blacklist drops
+  - **Issue:** In v0.31.0, port allow rules executed before blacklist drops
   - **Impact:** Blacklisted IPs could access SSH (port 22) and all allowed services
   - **Root Cause:** Port checks (`tcp dport @tcp_ports accept`) ran before blacklist checks
   - **Fix:** Reordered rules so blacklist drops execute first, then port allows
   - **Testing:** Verified on 5 lab servers - blacklist now properly blocks all traffic
 
 ```nft
-# v0.30.0 (VULNERABLE):
+# v0.31.0 (VULNERABLE):
 tcp dport @tcp_ports accept    ← Port 22 accepted FIRST
 ip saddr @blacklist_v4 drop    ← NEVER REACHED!
 
-# v0.30.1 (SECURE):
+# v0.31.0 (SECURE):
 ip saddr @blacklist_v4 counter drop    ← Check blacklist FIRST
 tcp dport @tcp_ports counter accept    ← Then allow ports
 ```
@@ -67,15 +67,15 @@ tcp dport @tcp_ports counter accept    ← Then allow ports
 ### Changed
 
 #### Documentation
-- **Updated:** ARCHITECTURE.md with v0.30.1 rule order fix documentation
+- **Updated:** ARCHITECTURE.md with v0.31.0 rule order fix documentation
 - **Updated:** SECURITY.md with CVE-2024-NFTBAN-001 security advisory
 - **Cleaned:** Removed 80 outdated documentation files (archived locally)
 - **Created:** New docs/README.md with "less is more" philosophy
-- **Updated:** README.md to v0.30.1 with corrected links
+- **Updated:** README.md to v0.31.0 with corrected links
 
 ### Security
 
-**Security Score:** v0.30.1 = 10/10 (reference-grade implementation)
+**Security Score:** v0.31.0 = 10/10 (reference-grade implementation)
 
 - ✅ **CRITICAL:** Blacklist now properly blocks all traffic (rule order fixed)
 - ✅ Whitelist protection prevents accidental lockout
@@ -85,17 +85,17 @@ tcp dport @tcp_ports counter accept    ← Then allow ports
 
 ### Upgrade Instructions
 
-**ALL v0.30.0 users must upgrade immediately!**
+**ALL v0.31.0 users must upgrade immediately!**
 
 ```bash
 # 1. Check your version
 nftban --version
 
-# 2. Download v0.30.1 package (RPM example)
-wget https://github.com/itcmsgr/nftban/releases/download/v0.30.1/nftban-0.30.1-1.el9.x86_64.rpm
+# 2. Download v0.31.0 package (RPM example)
+wget https://github.com/itcmsgr/nftban/releases/download/v0.31.0/nftban-0.31.0-1.el9.x86_64.rpm
 
 # 3. Install upgrade
-sudo dnf install -y nftban-0.30.1-1.el9.x86_64.rpm
+sudo dnf install -y nftban-0.31.0-1.el9.x86_64.rpm
 
 # 4. Verify fix is applied
 nftban firewall check
@@ -127,7 +127,7 @@ nft list chain inet nftban_main input
 
 ---
 
-## [0.30.0] - 2025-11-03
+## [0.31.0] - 2025-11-03
 
 ### 🎉 Major Release - Self-Healing Inventory Monitoring
 
