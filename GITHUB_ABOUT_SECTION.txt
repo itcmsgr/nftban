@@ -5,7 +5,7 @@
 nftban
 
 ## Description (350 characters max):
-NFTBan — Simplifying Linux Firewall Management. Professional nftables toolkit with Fail2Ban integration, commit-confirm safety, IPv4/IPv6 support, control panel detection, modular rules, and Go-powered performance. | 🔗 ITCMS | 🛡️ MPL-2.0 License
+Modern nftables-based firewall manager with self-healing, fail2ban integration, and GeoIP blocking. Production-ready for Rocky Linux, AlmaLinux, Ubuntu, Debian.
 
 ## Website:
 https://nftban.com
@@ -51,6 +51,5 @@ Professional-grade nftables firewall toolkit with:
 🧪 Status: BETA TESTING (tested on 5 clean minimal installations)
 📦 Distributions: Rocky, AlmaLinux, Fedora, Ubuntu, Debian
 🔐 License: MPL-2.0 (DFSG-compliant, OSI-approved)
-🏢 Maintained by: ITCMS (https://itcms.gr)
 
 🚀 Seeking distribution package maintainers for official repo inclusion!
