@@ -99,11 +99,25 @@ main() {
 
     # Check if SSH port is whitelisted
     SSH_WHITELIST="/etc/nftban/ports.d/00-ssh.conf"
+    SSH_PORT_STATE="/var/lib/nftban/state/ssh_port_alert.state"
+
     if [[ -f "$SSH_WHITELIST" ]]; then
         # Check if current SSH port is in whitelist
         if grep -qE "^${SSH_PORT}\|T" "$SSH_WHITELIST" 2>/dev/null; then
             log "INFO" "SSH port check: OK (port $SSH_PORT whitelisted)"
+            # Clear alert state if port is now correct
+            [[ -f "$SSH_PORT_STATE" ]] && rm -f "$SSH_PORT_STATE"
         else
+            # Check if we already alerted about this port change
+            if [[ -f "$SSH_PORT_STATE" ]]; then
+                LAST_ALERT_PORT=$(cat "$SSH_PORT_STATE" 2>/dev/null || echo "")
+                if [[ "$LAST_ALERT_PORT" == "$SSH_PORT" ]]; then
+                    # Already alerted about this port, skip alert (no spam)
+                    log "INFO" "SSH port $SSH_PORT already updated (waiting for firewall reload)"
+                    return 0
+                fi
+            fi
+
             # SSH port changed but not whitelisted - AUTO-FIX
             log "WARN" "SSH port changed to $SSH_PORT but not whitelisted!"
             log "INFO" "Auto-updating SSH port whitelist (lockout prevention)..."
@@ -123,7 +137,11 @@ EOF
             log "INFO" "✅ SSH port $SSH_PORT added to whitelist"
             log "INFO" "⚠️  ALERT: SSH port changed - please reload firewall: nftban firewall reload"
 
-            # Send alert if mail is configured
+            # Save alert state to prevent spam (only alert once per port change)
+            mkdir -p /var/lib/nftban/state
+            echo "$SSH_PORT" > "$SSH_PORT_STATE"
+
+            # Send alert if mail is configured (ONLY ONCE)
             if command -v mail &>/dev/null && [[ -f "/etc/nftban/conf.d/mail.conf" ]]; then
                 echo "NFTBan Security Alert: SSH port changed to $SSH_PORT and auto-whitelisted on $(hostname) at $(date)" | \
                     mail -s "[NFTBan] SSH Port Auto-Updated on $(hostname)" root 2>/dev/null || true
@@ -148,19 +166,39 @@ EOF
     # ==========================================================================
     log "INFO" "[2/4] Checking system IP addresses..."
 
+    IP_ALERT_STATE="/var/lib/nftban/state/ip_change_alert.state"
+
     # Check if system IPs have changed
     if [[ -f "/etc/nftban/whitelist.d/00-system.conf" ]]; then
         # Get current public IPs
         current_ipv4=$(curl -s -4 --max-time 5 ifconfig.me 2>/dev/null || echo "")
         current_ipv6=$(curl -s -6 --max-time 5 ifconfig.me 2>/dev/null || echo "")
 
-        # Check if IPs are in whitelist
+        # Check if IPv4 changed
         if [[ -n "$current_ipv4" ]] && ! grep -q "$current_ipv4" /etc/nftban/whitelist.d/00-system.conf 2>/dev/null; then
-            log "WARN" "System IPv4 changed: $current_ipv4 (not in whitelist)"
-            # Auto-add to whitelist
-            echo "# Auto-added by maintenance: $(date)" >> /etc/nftban/whitelist.d/00-system.conf
-            echo "$current_ipv4" >> /etc/nftban/whitelist.d/00-system.conf
-            log "INFO" "Added $current_ipv4 to whitelist"
+            # Check if we already alerted about this IP
+            if [[ -f "$IP_ALERT_STATE" ]] && grep -q "$current_ipv4" "$IP_ALERT_STATE" 2>/dev/null; then
+                # Already alerted about this IP, skip alert (no spam)
+                log "INFO" "IPv4 $current_ipv4 already in pending whitelist"
+            else
+                log "WARN" "System IPv4 changed: $current_ipv4 (not in whitelist)"
+                log "INFO" "Auto-adding to whitelist (lockout prevention)..."
+
+                # Auto-add to whitelist
+                echo "# Auto-added by maintenance: $(date)" >> /etc/nftban/whitelist.d/00-system.conf
+                echo "$current_ipv4" >> /etc/nftban/whitelist.d/00-system.conf
+                log "INFO" "✅ Added $current_ipv4 to whitelist"
+
+                # Save alert state to prevent spam (only alert once per IP)
+                mkdir -p /var/lib/nftban/state
+                echo "$current_ipv4 $(date)" >> "$IP_ALERT_STATE"
+
+                # Send email alert if configured (ONLY ONCE)
+                if command -v mail &>/dev/null && [[ -f "/etc/nftban/conf.d/mail.conf" ]]; then
+                    echo "NFTBan Security Alert: System IPv4 changed to $current_ipv4 and auto-whitelisted on $(hostname) at $(date)" | \
+                        mail -s "[NFTBan] IP Address Auto-Updated on $(hostname)" root 2>/dev/null || true
+                fi
+            fi
         fi
 
         log "INFO" "System IP check: OK"
