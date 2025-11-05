@@ -92,8 +92,7 @@ prepare_source() {
     mkdir -p "$BUILD_DIR/licenses"
     cp -a "$PROJECT_ROOT/licenses/"* "$BUILD_DIR/licenses/"
 
-    # Copy NFTBAN_AI_TESTING directory (contains helpers, health scripts, docs)
-    cp -a "$PROJECT_ROOT/NFTBAN_AI_TESTING" "$BUILD_DIR/"
+    # NFTBAN_AI_TESTING was removed in cleanup (development directory)
 
     # Copy docs directory (contains man pages)
     cp -a "$PROJECT_ROOT/docs" "$BUILD_DIR/"

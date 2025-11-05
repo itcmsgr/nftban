@@ -184,28 +184,8 @@ install -m 0644 packaging/polkit-1/rules.d/60-nftban-cli.rules \
 # ============================================================================
 # Inventory & Health Monitoring System
 # ============================================================================
-
-# Install inventory helpers
-install -d -m 0755 %{buildroot}/usr/libexec/nftban
-install -m 0755 NFTBAN_AI_TESTING/helpers/nftban-procnet %{buildroot}/usr/libexec/nftban/
-install -m 0755 NFTBAN_AI_TESTING/helpers/nftban-pkgs %{buildroot}/usr/libexec/nftban/
-install -m 0755 NFTBAN_AI_TESTING/helpers/nftban-verify %{buildroot}/usr/libexec/nftban/
-install -m 0755 NFTBAN_AI_TESTING/helpers/nftban-firewall %{buildroot}/usr/libexec/nftban/
-
-# Install health monitoring commands
-install -d -m 0755 %{buildroot}/usr/local/lib/nftban
-install -m 0755 NFTBAN_AI_TESTING/health/nftban-health %{buildroot}/usr/local/lib/nftban/
-install -m 0755 NFTBAN_AI_TESTING/health/nftban-baseline-save %{buildroot}/usr/local/lib/nftban/
-install -m 0755 NFTBAN_AI_TESTING/health/nftban-verify-signature %{buildroot}/usr/local/lib/nftban/
-
-# Create symlinks in /usr/local/bin
-install -d -m 0755 %{buildroot}/usr/local/bin
-ln -s /usr/local/lib/nftban/nftban-health %{buildroot}/usr/local/bin/nftban-health
-ln -s /usr/local/lib/nftban/nftban-baseline-save %{buildroot}/usr/local/bin/nftban-baseline-save
-ln -s /usr/local/lib/nftban/nftban-verify-signature %{buildroot}/usr/local/bin/nftban-verify-signature
-
-# Install smart mail adapter
-install -m 0644 NFTBAN_AI_TESTING/mail/nftban_mail_v030.sh %{buildroot}/usr/lib/nftban/core/
+# NOTE: NFTBAN_AI_TESTING directory removed (was development-only directory)
+#       All inventory/health/mail features are integrated in main src/ tree
 
 # Install Polkit rules for nftban-auditors group
 install -m 0644 packaging/polkit-1/rules.d/50-nftban-v030.rules \
@@ -215,15 +195,6 @@ install -m 0644 packaging/polkit-1/rules.d/50-nftban-v030.rules \
 install -d -m 0755 %{buildroot}/var/lib/nftban/reports/baseline
 install -d -m 0770 %{buildroot}/var/lib/nftban/reports/auditors
 install -d -m 0700 %{buildroot}/etc/nftban/keys
-
-# Install architecture documentation
-install -d -m 0755 %{buildroot}/usr/share/doc/nftban/architecture
-install -m 0644 NFTBAN_AI_TESTING/README_START_HERE.md %{buildroot}/usr/share/doc/nftban/architecture/
-install -m 0644 NFTBAN_AI_TESTING/DEPLOYMENT_GUIDE.md %{buildroot}/usr/share/doc/nftban/architecture/
-install -m 0644 NFTBAN_AI_TESTING/DELIVERABLES.txt %{buildroot}/usr/share/doc/nftban/architecture/
-install -m 0644 NFTBAN_AI_TESTING/docs/MODULAR_ARCHITECTURE.md %{buildroot}/usr/share/doc/nftban/architecture/
-install -m 0644 NFTBAN_AI_TESTING/docs/INTEGRATION_SUMMARY.md %{buildroot}/usr/share/doc/nftban/architecture/
-install -m 0644 NFTBAN_AI_TESTING/docs/MAIL_SYSTEM_DESIGN.md %{buildroot}/usr/share/doc/nftban/architecture/
 
 # Install license files
 install -d -m 0755 %{buildroot}/usr/share/licenses/nftban
@@ -594,35 +565,10 @@ fi
 # Log directory NOT owned by package - preserved on uninstall
 # Created in %post, managed by systemd-tmpfiles
 
-# Inventory helpers
-/usr/libexec/nftban/nftban-procnet
-/usr/libexec/nftban/nftban-pkgs
-/usr/libexec/nftban/nftban-verify
-/usr/libexec/nftban/nftban-firewall
-
-# Health monitoring commands
-/usr/local/lib/nftban/nftban-health
-/usr/local/lib/nftban/nftban-baseline-save
-/usr/local/lib/nftban/nftban-verify-signature
-/usr/local/bin/nftban-health
-/usr/local/bin/nftban-baseline-save
-/usr/local/bin/nftban-verify-signature
-
-# Smart mail adapter
-/usr/lib/nftban/core/nftban_mail_v030.sh
-
-# Inventory directories
+# Inventory directories (inventory/health features integrated in main src/ tree)
 %dir %attr(0755,nftban,nftban) /var/lib/nftban/reports/baseline
 %dir %attr(0770,root,nftban-auditors) /var/lib/nftban/reports/auditors
 %dir %attr(0700,root,root) /etc/nftban/keys
-
-# Architecture documentation
-%doc /usr/share/doc/nftban/architecture/README_START_HERE.md
-%doc /usr/share/doc/nftban/architecture/DEPLOYMENT_GUIDE.md
-%doc /usr/share/doc/nftban/architecture/DELIVERABLES.txt
-%doc /usr/share/doc/nftban/architecture/MODULAR_ARCHITECTURE.md
-%doc /usr/share/doc/nftban/architecture/INTEGRATION_SUMMARY.md
-%doc /usr/share/doc/nftban/architecture/MAIL_SYSTEM_DESIGN.md
 
 # Documentation
 %doc README.md CHANGELOG.md
