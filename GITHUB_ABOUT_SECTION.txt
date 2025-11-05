@@ -1,0 +1,56 @@
+# GitHub Repository About Section
+# Copy this text to: https://github.com/itcmsgr/nftban/settings
+
+## Repository Name:
+nftban
+
+## Description (350 characters max):
+NFTBan — Simplifying Linux Firewall Management. Professional nftables toolkit with Fail2Ban integration, commit-confirm safety, IPv4/IPv6 support, control panel detection, modular rules, and Go-powered performance. | 🔗 ITCMS | 🛡️ MPL-2.0 License
+
+## Website:
+https://nftban.com
+
+## Topics (add these tags):
+linux
+firewall
+nftables
+security
+fail2ban
+iptables
+netfilter
+ddos-protection
+port-scanning
+threat-intelligence
+ipv6
+geoip
+polkit
+systemd
+bash
+golang
+rpm
+deb
+enterprise
+self-hosted
+
+## About Section (formatted):
+
+🛡️ NFTBan — Simplifying Linux Firewall Management
+
+Professional-grade nftables firewall toolkit with:
+• Commit-confirm safety (prevents SSH lockout)
+• Fail2Ban integration (automated threat blocking)
+• IPv4/IPv6 dual-stack support
+• Control panel detection (DirectAdmin, cPanel, Plesk)
+• Modular rule system
+• Go binaries for 10-60x performance
+• DDoS protection & port-scan detection
+• GeoIP blocking & threat intelligence feeds
+• Polkit-based privilege separation
+• FHS-compliant architecture
+
+🧪 Status: BETA TESTING (tested on 5 clean minimal installations)
+📦 Distributions: Rocky, AlmaLinux, Fedora, Ubuntu, Debian
+🔐 License: MPL-2.0 (DFSG-compliant, OSI-approved)
+🏢 Maintained by: ITCMS (https://itcms.gr)
+
+🚀 Seeking distribution package maintainers for official repo inclusion!
