@@ -62,13 +62,15 @@ _search_nftables() {
         found_in+=("nftban_runtime:temp_ban")
     fi
 
-    # Search in inet nftban_main table (whitelist, blacklist)
-    local main_sets=("whitelist_${ip_suffix}" "blacklist_${ip_suffix}")
+    # Search in inet nftban_main table (whitelist, blacklist, feeds)
+    local main_sets=("whitelist_${ip_suffix}" "blacklist_${ip_suffix}" "feed_${ip_suffix}")
     for set in "${main_sets[@]}"; do
         if nft get element inet nftban_main "$set" { "$ip" } &>/dev/null; then
             # Normalize set names for display (remove _v4/_v6 suffix)
             local display_set="${set//_v4/}"
             display_set="${display_set//_v6/}"
+            # Normalize feed set name
+            [[ "$display_set" == "feed" ]] && display_set="feeds"
             found_in+=("nftban_main:${display_set}")
         fi
     done

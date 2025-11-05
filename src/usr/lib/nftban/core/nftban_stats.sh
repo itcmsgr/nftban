@@ -211,6 +211,22 @@ nftban_stats_count_active_bans() {
         total=$((total + black_v6))
     fi
 
+    # Count feed_v4 (Go feeds implementation v0.31.0)
+    if nft list set inet nftban_main feed_v4 &>/dev/null 2>&1; then
+        local feed_v4
+        feed_v4=$(nft list set inet nftban_main feed_v4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | wc -l 2>/dev/null)
+        feed_v4=${feed_v4:-0}
+        total=$((total + feed_v4))
+    fi
+
+    # Count feed_v6 (Go feeds implementation v0.31.0)
+    if nft list set inet nftban_main feed_v6 &>/dev/null 2>&1; then
+        local feed_v6
+        feed_v6=$(nft list set inet nftban_main feed_v6 2>/dev/null | grep -c '::' 2>/dev/null)
+        feed_v6=${feed_v6:-0}
+        total=$((total + feed_v6))
+    fi
+
     echo "$total"
 }
 
