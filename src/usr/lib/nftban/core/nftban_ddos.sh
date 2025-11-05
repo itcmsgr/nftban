@@ -20,7 +20,7 @@
 # **Inventory & Requirements**
 # meta:depends=bash>=4.0,nftables>=0.9.0,nftban_output.sh
 #
-# meta:created_date=2025-10-28
+# meta:created_date=2025-11-05
 # meta:migrated_from=v0.9.5:lib/nftban_ddos_module.sh
 # =============================================================================
 

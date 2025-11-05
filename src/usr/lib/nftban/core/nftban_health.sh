@@ -20,7 +20,7 @@
 # **Inventory & Requirements**
 # meta:depends=nftban_fhs_spec.sh,nft,systemctl
 #
-# meta:created_date=2025-10-28
+# meta:created_date=2025-11-05
 # =============================================================================
 
 # Enhanced strict mode

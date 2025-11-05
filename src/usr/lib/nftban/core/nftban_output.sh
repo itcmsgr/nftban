@@ -21,7 +21,7 @@
 # meta:depends=tput,uname,hostname,nft (optional)
 # meta:requires_env=NFTBAN_BANNER_MODE,NFTBAN_COLOR
 #
-# meta:created_date=2025-10-26
+# meta:created_date=2025-11-05
 # meta:modified_date=2025-10-26
 
 set -Eeuo pipefail

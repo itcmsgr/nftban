@@ -12,7 +12,7 @@
 # meta:version=0.30.1
 # meta:depends=nftban_cloudflare.sh
 #
-# meta:created_date=2025-10-28
+# meta:created_date=2025-11-05
 # =============================================================================
 
 set -Eeuo pipefail
