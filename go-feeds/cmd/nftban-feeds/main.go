@@ -1,300 +1,216 @@
 package main
 
 import (
-	"bufio"
-	"encoding/json"
+	"context"
 	"fmt"
-	"net"
+	"net/netip"
 	"os"
-	"regexp"
+	"path/filepath"
 	"strings"
 	"time"
-)
 
-const (
-	VERSION = "1.0.0"
-)
-
-// FeedParseResult represents the JSON output structure
-type FeedParseResult struct {
-	TotalLines    int      `json:"total_lines"`
-	ValidIPs      int      `json:"valid_ips"`
-	ValidCIDRs    int      `json:"valid_cidrs"`
-	IPv4Count     int      `json:"ipv4_count"`
-	IPv6Count     int      `json:"ipv6_count"`
-	SkippedLines  int      `json:"skipped_lines"`
-	DuplicatesSkipped int  `json:"duplicates_skipped"`
-	ParseTimeMs   int64    `json:"parse_time_ms"`
-	IPs           []string `json:"ips,omitempty"`
-}
-
-// ValidationResult for single IP/CIDR validation
-type ValidationResult struct {
-	Entry   string `json:"entry"`
-	Valid   bool   `json:"valid"`
-	Type    string `json:"type,omitempty"`
-	Version string `json:"version,omitempty"`
-	Error   string `json:"error,omitempty"`
-}
-
-var (
-	// Regex patterns for quick validation
-	commentRegex = regexp.MustCompile(`^\s*(#|;|//|$)`)
+	"github.com/itcmsgr/nftban/go-feeds/internal/fetcher"
+	"github.com/itcmsgr/nftban/go-feeds/internal/nftloader"
+	"github.com/itcmsgr/nftban/go-feeds/internal/parser"
+	"github.com/itcmsgr/nftban/go-feeds/internal/safety"
 )
 
 func main() {
+	// Initialize CPU/memory safety limits
+	limits := safety.FromEnv()
+	safety.InitCPU(limits)
+
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(1)
 	}
 
-	cmd := os.Args[1]
-
-	switch cmd {
-	case "version", "--version", "-v":
-		fmt.Printf("nftban-feeds v%s\n", VERSION)
-		os.Exit(0)
-	case "help", "--help", "-h":
-		usage()
-		os.Exit(0)
-	case "parse":
-		// Parse feed from stdin
-		outputMode := "json"
-		if len(os.Args) > 2 && os.Args[2] == "--list" {
-			outputMode = "list"
-		}
-		parseFeed(outputMode)
-	case "validate":
-		// Validate single IP/CIDR
+	switch os.Args[1] {
+	case "sync":
 		if len(os.Args) < 3 {
-			fmt.Fprintln(os.Stderr, `{"error":"IP/CIDR required"}`)
+			fmt.Fprintln(os.Stderr, "Usage: nftban-feeds sync <feed1,feed2,...>")
 			os.Exit(1)
 		}
-		validateEntry(os.Args[2])
+		feedList := strings.Split(os.Args[2], ",")
+		if err := syncFeeds(feedList, limits); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "parse":
+		fmt.Fprintln(os.Stderr, "Parse command not yet implemented")
+		os.Exit(1)
+	case "validate":
+		fmt.Fprintln(os.Stderr, "Validate command not yet implemented")
+		os.Exit(1)
 	case "deduplicate":
-		// Deduplicate IPs from stdin
-		deduplicateIPs()
+		fmt.Fprintln(os.Stderr, "Deduplicate command not yet implemented")
+		os.Exit(1)
 	case "stats":
-		// Quick stats without full parse
-		quickStats()
+		fmt.Fprintln(os.Stderr, "Stats command not yet implemented")
+		os.Exit(1)
 	default:
-		fmt.Fprintf(os.Stderr, `{"error":"Unknown command: %s"}`+"\n", cmd)
 		usage()
 		os.Exit(1)
 	}
-}
-
-// parseFeed reads feed from stdin, validates, and outputs results
-func parseFeed(outputMode string) {
-	start := time.Now()
-
-	result := FeedParseResult{}
-	scanner := bufio.NewScanner(os.Stdin)
-
-	var ips []string
-	seen := make(map[string]bool)
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		result.TotalLines++
-
-		// Skip comments and empty lines
-		if line == "" || commentRegex.MatchString(line) {
-			result.SkippedLines++
-			continue
-		}
-
-		// Extract first field (IP/CIDR) - handles space/tab separated
-		fields := strings.Fields(line)
-		if len(fields) == 0 {
-			result.SkippedLines++
-			continue
-		}
-
-		entry := fields[0]
-
-		// Validate entry
-		if !isValidEntry(entry) {
-			result.SkippedLines++
-			continue
-		}
-
-		// Deduplicate
-		if seen[entry] {
-			result.DuplicatesSkipped++
-			continue
-		}
-		seen[entry] = true
-
-		// Categorize
-		if strings.Contains(entry, "/") {
-			result.ValidCIDRs++
-		} else {
-			result.ValidIPs++
-		}
-
-		if strings.Contains(entry, ":") {
-			result.IPv6Count++
-		} else {
-			result.IPv4Count++
-		}
-
-		if outputMode == "list" {
-			fmt.Println(entry)
-		} else {
-			ips = append(ips, entry)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, `{"error":"Reading input: %v"}`+"\n", err)
-		os.Exit(1)
-	}
-
-	result.ParseTimeMs = time.Since(start).Milliseconds()
-
-	if outputMode == "json" {
-		result.IPs = ips
-		jsonOut, _ := json.MarshalIndent(result, "", "  ")
-		fmt.Println(string(jsonOut))
-	}
-}
-
-// isValidEntry validates IP or CIDR notation
-func isValidEntry(entry string) bool {
-	// CIDR notation
-	if strings.Contains(entry, "/") {
-		_, _, err := net.ParseCIDR(entry)
-		return err == nil
-	}
-
-	// Single IP
-	ip := net.ParseIP(entry)
-	return ip != nil
-}
-
-// validateEntry validates and provides details about a single entry
-func validateEntry(entry string) {
-	result := ValidationResult{
-		Entry: entry,
-		Valid: isValidEntry(entry),
-	}
-
-	if result.Valid {
-		if strings.Contains(entry, "/") {
-			result.Type = "cidr"
-			_, ipnet, _ := net.ParseCIDR(entry)
-			if ipnet.IP.To4() != nil {
-				result.Version = "ipv4"
-			} else {
-				result.Version = "ipv6"
-			}
-		} else {
-			result.Type = "ip"
-			ip := net.ParseIP(entry)
-			if ip.To4() != nil {
-				result.Version = "ipv4"
-			} else {
-				result.Version = "ipv6"
-			}
-		}
-	} else {
-		result.Error = "Invalid IP or CIDR notation"
-	}
-
-	jsonOut, _ := json.MarshalIndent(result, "", "  ")
-	fmt.Println(string(jsonOut))
-}
-
-// deduplicateIPs removes duplicate entries from stdin
-func deduplicateIPs() {
-	seen := make(map[string]bool)
-	scanner := bufio.NewScanner(os.Stdin)
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		if line == "" {
-			continue
-		}
-
-		if !seen[line] {
-			seen[line] = true
-			fmt.Println(line)
-		}
-	}
-
-	if err := scanner.Err(); err != nil {
-		fmt.Fprintf(os.Stderr, `{"error":"Reading input: %v"}`+"\n", err)
-		os.Exit(1)
-	}
-}
-
-// quickStats provides quick statistics without full processing
-func quickStats() {
-	scanner := bufio.NewScanner(os.Stdin)
-
-	totalLines := 0
-	commentLines := 0
-	emptyLines := 0
-	potentialEntries := 0
-
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-		totalLines++
-
-		if line == "" {
-			emptyLines++
-			continue
-		}
-
-		if commentRegex.MatchString(line) {
-			commentLines++
-			continue
-		}
-
-		potentialEntries++
-	}
-
-	stats := map[string]interface{}{
-		"total_lines":        totalLines,
-		"comment_lines":      commentLines,
-		"empty_lines":        emptyLines,
-		"potential_entries":  potentialEntries,
-	}
-
-	jsonOut, _ := json.MarshalIndent(stats, "", "  ")
-	fmt.Println(string(jsonOut))
 }
 
 func usage() {
-	fmt.Println("nftban-feeds - Fast threat feed parser")
-	fmt.Println("nftban — Simplifying Linux Firewall Management")
-	fmt.Println()
-	fmt.Println("Usage:")
-	fmt.Println("  nftban-feeds parse [--list]        Parse feed from stdin")
-	fmt.Println("  nftban-feeds validate <entry>      Validate IP/CIDR")
-	fmt.Println("  nftban-feeds deduplicate           Deduplicate IPs from stdin")
-	fmt.Println("  nftban-feeds stats                 Quick statistics")
-	fmt.Println("  nftban-feeds version               Show version")
-	fmt.Println("  nftban-feeds help                  Show this help")
-	fmt.Println()
-	fmt.Println("Examples:")
-	fmt.Println("  # Parse feed and output JSON summary")
-	fmt.Println("  curl https://example.com/feed.txt | nftban-feeds parse")
-	fmt.Println()
-	fmt.Println("  # Parse feed and output IP list")
-	fmt.Println("  cat feed.txt | nftban-feeds parse --list > parsed.txt")
-	fmt.Println()
-	fmt.Println("  # Validate single IP/CIDR")
-	fmt.Println("  nftban-feeds validate 192.168.1.1")
-	fmt.Println("  nftban-feeds validate 10.0.0.0/8")
-	fmt.Println()
-	fmt.Println("  # Deduplicate IP list")
-	fmt.Println("  cat ips.txt | nftban-feeds deduplicate")
-	fmt.Println()
-	fmt.Println("  # Quick stats")
-	fmt.Println("  cat feed.txt | nftban-feeds stats")
-	fmt.Println()
-	fmt.Println("Output: JSON format (or IP list with --list)")
-	fmt.Println("Performance: ~0.5-2 seconds for 50,000 IPs")
+	fmt.Fprintf(os.Stderr, `NFTBan Feeds Manager v0.31.0
+
+Usage:
+  nftban-feeds sync <feed1,feed2,...>    Fetch and load feeds into nftables
+  nftban-feeds parse                      Parse feed content (TODO)
+  nftban-feeds validate                   Validate feed URLs (TODO)
+  nftban-feeds deduplicate                Deduplicate IPs (TODO)
+  nftban-feeds stats                      Show feed statistics (TODO)
+
+Examples:
+  nftban-feeds sync greensnow
+  nftban-feeds sync greensnow,spamhaus-drop,cloudflare
+
+`)
+}
+
+// syncFeeds fetches, parses, and loads feeds atomically
+func syncFeeds(feedNames []string, limits safety.Limits) error {
+	startTime := time.Now()
+
+	// 1. Define feed URLs (TODO: load from /etc/nftban/feeds.conf in future)
+	allFeeds := map[string]string{
+		"greensnow":      "https://blocklist.greensnow.co/greensnow.txt",
+		"cloudflare":     "https://www.cloudflare.com/ips-v4",
+		"spamhaus-drop":  "https://www.spamhaus.org/drop/drop.txt",
+		"spamhaus-edrop": "https://www.spamhaus.org/drop/edrop.txt",
+		"abuse-ch-feodo": "https://feodotracker.abuse.ch/downloads/ipblocklist.txt",
+		"blocklist-de":   "https://lists.blocklist.de/lists/all.txt",
+		// Add more feeds as needed
+	}
+
+	// Filter to requested feeds only
+	urls := make(map[string]string)
+	for _, name := range feedNames {
+		if url, ok := allFeeds[name]; ok {
+			urls[name] = url
+		} else {
+			fmt.Fprintf(os.Stderr, "Warning: unknown feed '%s', skipping\n", name)
+		}
+	}
+
+	if len(urls) == 0 {
+		return fmt.Errorf("no valid feeds specified")
+	}
+
+	fmt.Printf("Fetching %d feeds (with ETag cache)...\n", len(urls))
+
+	// 2. Fetch feeds concurrently with caching (30s global timeout)
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Use worker limit from safety config
+	maxWorkers := safety.WorkerLimit(8, limits)
+	results, anyChanged := fetcher.FetchFeedsWithCache(ctx, urls, maxWorkers)
+	fetchTime := time.Since(startTime)
+
+	// 3. Parse and deduplicate
+	parseStart := time.Now()
+	var allPrefixes []netip.Prefix
+	successCount := 0
+	for _, result := range results {
+		if result.Err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: %s failed: %v\n", result.Name, result.Err)
+			continue
+		}
+
+		prefixes, err := parser.ParseIPs(result.Content)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: %s parse error: %v\n", result.Name, err)
+			continue
+		}
+
+		fmt.Printf("  %s: %d IPs parsed\n", result.Name, len(prefixes))
+		allPrefixes = append(allPrefixes, prefixes...)
+		successCount++
+	}
+
+	if successCount == 0 {
+		return fmt.Errorf("all feeds failed to download or parse")
+	}
+
+	fmt.Printf("\nDeduplicating and merging CIDRs...\n")
+	allPrefixes = parser.MergeCIDRs(allPrefixes)
+
+	v4, v6 := parser.SplitIPv4v6(allPrefixes)
+	fmt.Printf("Total unique: %d IPv4, %d IPv6\n", len(v4), len(v6))
+	parseTime := time.Since(parseStart)
+
+	// 4. Check if merged content hash changed (skip reload if same)
+	currentHash := parser.HashPrefixes(allPrefixes)
+	hashFile := filepath.Join(fetcher.CacheDir, "merged.sha256")
+
+	if cachedHash, err := os.ReadFile(hashFile); err == nil {
+		if parser.CompareHashes(currentHash, strings.TrimSpace(string(cachedHash))) {
+			fmt.Printf("\n⏭️  No changes in merged feeds (hash match). Skipping nftables reload.\n")
+			fmt.Printf("📊 Stats: fetch=%.2fs, parse=%.2fs, total=%.2fs\n",
+				fetchTime.Seconds(), parseTime.Seconds(), time.Since(startTime).Seconds())
+			return nil
+		}
+	}
+
+	if !anyChanged {
+		fmt.Printf("ℹ️  Feeds unchanged (ETag), but proceeding to verify nftables state.\n")
+	}
+
+	// 5. Run preflight safety checks (CPU/RAM protection)
+	fmt.Printf("\n🛡️  Running preflight safety checks...\n")
+	if err := safety.Preflight(len(v4), len(v6), currentHash, limits); err != nil {
+		return fmt.Errorf("preflight check failed: %w", err)
+	}
+
+	// 6. Load atomically into nftables
+	fmt.Printf("\nLoading into nftables atomically...\n")
+	loadStart := time.Now()
+
+	// Create context with timeout from limits
+	applyCtx, applyCancel := context.WithTimeout(context.Background(),
+		time.Duration(limits.ApplyTimeoutSec)*time.Second)
+	defer applyCancel()
+
+	if len(v4) > 0 {
+		fmt.Printf("  Loading %d IPv4 prefixes...", len(v4))
+		if err := nftloader.LoadIPv4(v4); err != nil {
+			return fmt.Errorf("load IPv4: %w", err)
+		}
+		fmt.Println(" ✅")
+	}
+
+	if len(v6) > 0 {
+		fmt.Printf("  Loading %d IPv6 prefixes...", len(v6))
+		if err := nftloader.LoadIPv6(v6); err != nil {
+			return fmt.Errorf("load IPv6: %w", err)
+		}
+		fmt.Println(" ✅")
+	}
+
+	loadTime := time.Since(loadStart)
+
+	// Save hash and snapshot for next run
+	_ = os.MkdirAll(fetcher.CacheDir, 0755)
+	_ = os.WriteFile(hashFile, []byte(currentHash), 0644)
+
+	// Save snapshot for delta tracking
+	snapshot := safety.Snapshot{
+		TotalV4: len(v4),
+		TotalV6: len(v6),
+		Hash:    currentHash,
+	}
+	if err := safety.SaveSnapshot(limits.CacheDir, snapshot); err != nil {
+		fmt.Fprintf(os.Stderr, "⚠️  Warning: failed to save snapshot: %v\n", err)
+	}
+
+	totalTime := time.Since(startTime)
+	fmt.Printf("\n✅ Feeds loaded atomically\n")
+	fmt.Printf("📊 Performance: fetch=%.2fs, parse=%.2fs, load=%.2fs, total=%.2fs\n",
+		fetchTime.Seconds(), parseTime.Seconds(), loadTime.Seconds(), totalTime.Seconds())
+
+	return nil
 }
