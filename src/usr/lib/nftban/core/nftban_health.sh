@@ -800,14 +800,16 @@ nftban_health_check_config() {
         else
             # Verify UID/GID values match actual system
             source "$system_conf" 2>/dev/null
-            local actual_uid actual_gid actual_cli_gid
+            local actual_uid actual_gid actual_cli_gid actual_auditors_gid
             actual_uid=$(id -u nftban 2>/dev/null || echo "MISSING")
             actual_gid=$(id -g nftban 2>/dev/null || echo "MISSING")
             actual_cli_gid=$(getent group nftban-cli 2>/dev/null | cut -d: -f3 || echo "MISSING")
+            actual_auditors_gid=$(getent group nftban-auditors 2>/dev/null | cut -d: -f3 || echo "MISSING")
 
             if [[ "$actual_uid" != "$NFTBAN_UID" ]] || \
                [[ "$actual_gid" != "$NFTBAN_GID" ]] || \
-               [[ "$actual_cli_gid" != "$NFTBAN_CLI_GID" ]]; then
+               [[ "$actual_cli_gid" != "$NFTBAN_CLI_GID" ]] || \
+               [[ "$actual_auditors_gid" != "${NFTBAN_AUDITORS_GID:-MISSING}" ]]; then
                 config_issues+=("System config outdated (UID/GID mismatch, will auto-fix)")
                 [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
             fi
@@ -838,12 +840,13 @@ nftban_health_check_polkit() {
     # Check if Polkit is available on the system
     if ! command -v pkaction >/dev/null 2>&1; then
         polkit_issues+=("Polkit not installed - nftban-cli group requires sudo for service management")
+        polkit_issues+=("nftban-auditors group will also require sudo for inventory helpers")
         status=$HEALTH_WARNING
     else
-        # Check if NFTBAN authorization rules are installed
-        local polkit_rules="/usr/share/polkit-1/rules.d/60-nftban-cli.rules"
-        if [[ ! -f "$polkit_rules" ]]; then
-            polkit_issues+=("CRITICAL: Polkit rules missing at $polkit_rules")
+        # Check if NFTBAN CLI authorization rules are installed
+        local polkit_cli_rules="/usr/share/polkit-1/rules.d/60-nftban-cli.rules"
+        if [[ ! -f "$polkit_cli_rules" ]]; then
+            polkit_issues+=("CRITICAL: Polkit CLI rules missing at $polkit_cli_rules")
             polkit_issues+=("This violates NFTBAN security model - privilege separation not functional!")
             polkit_issues+=("Users in nftban-cli group CANNOT manage services without sudo")
             polkit_issues+=("FIX: Re-run install.sh or manually copy packaging/polkit-1/rules.d/60-nftban-cli.rules")
@@ -851,10 +854,27 @@ nftban_health_check_polkit() {
         else
             # Verify file permissions
             local perms
-            perms=$(stat -c '%a' "$polkit_rules" 2>/dev/null || echo "000")
+            perms=$(stat -c '%a' "$polkit_cli_rules" 2>/dev/null || echo "000")
             if [[ "$perms" != "644" ]]; then
-                polkit_issues+=("Polkit rules have wrong permissions: $perms (should be 644)")
+                polkit_issues+=("Polkit CLI rules have wrong permissions: $perms (should be 644)")
                 status=$HEALTH_WARNING
+            fi
+        fi
+
+        # Check if NFTBAN Auditors authorization rules are installed (v0.30+)
+        local polkit_auditors_rules="/usr/share/polkit-1/rules.d/50-nftban-v030.rules"
+        if [[ ! -f "$polkit_auditors_rules" ]]; then
+            polkit_issues+=("WARNING: Polkit auditors rules missing at $polkit_auditors_rules")
+            polkit_issues+=("Users in nftban-auditors group cannot run inventory helpers without sudo")
+            polkit_issues+=("FIX: Re-run install.sh or manually copy packaging/polkit-1/rules.d/50-nftban-v030.rules")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        else
+            # Verify file permissions
+            local perms
+            perms=$(stat -c '%a' "$polkit_auditors_rules" 2>/dev/null || echo "000")
+            if [[ "$perms" != "644" ]]; then
+                polkit_issues+=("Polkit auditors rules have wrong permissions: $perms (should be 644)")
+                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
             fi
         fi
 
@@ -878,6 +898,76 @@ nftban_health_check_polkit() {
     fi
 
     NFTBAN_HEALTH_RESULTS["polkit"]=$status
+    return $status
+}
+
+nftban_health_check_ssh_port() {
+    # Check and auto-update SSH port whitelist
+    # Returns: 0=OK, 1=Warning (auto-fixed), 2=Error (couldn't fix)
+
+    local status=$HEALTH_OK
+    local ssh_issues=()
+
+    # Detect current SSH port from sshd_config
+    local current_ssh_port=22
+    if [[ -f "/etc/ssh/sshd_config" ]]; then
+        local detected_port
+        detected_port=$(grep -E '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
+        if [[ -n "$detected_port" ]] && [[ "$detected_port" =~ ^[0-9]+$ ]]; then
+            current_ssh_port=$detected_port
+        fi
+    fi
+
+    # Check current whitelisted SSH port in config
+    local config_ssh_port=""
+    if [[ -f "/etc/nftban/ports.d/00-ssh.conf" ]]; then
+        config_ssh_port=$(grep -oP '^\d+' /etc/nftban/ports.d/00-ssh.conf 2>/dev/null | head -1)
+    fi
+
+    # Compare and auto-update if needed
+    if [[ "$current_ssh_port" != "$config_ssh_port" ]]; then
+        ssh_issues+=("SSH port mismatch: sshd_config=$current_ssh_port, nftban=$config_ssh_port")
+
+        # Auto-fix: Update the SSH port config
+        if mkdir -p /etc/nftban/ports.d 2>/dev/null; then
+            cat > /etc/nftban/ports.d/00-ssh.conf << EOF
+# SSH port auto-updated by health check ($(date '+%Y-%m-%d %H:%M:%S'))
+# Port format: PORT|PROTO where PROTO = T(tcp), U(udp), B(both)
+$current_ssh_port|T
+EOF
+            chown nftban:nftban /etc/nftban/ports.d/00-ssh.conf 2>/dev/null || true
+            chmod 644 /etc/nftban/ports.d/00-ssh.conf 2>/dev/null || true
+
+            ssh_issues+=("AUTO-FIXED: Updated SSH port to $current_ssh_port in /etc/nftban/ports.d/00-ssh.conf")
+            ssh_issues+=("Action required: Run 'nftban firewall reload' to apply changes")
+
+            status=$HEALTH_WARNING  # Warning because reload needed
+        else
+            ssh_issues+=("FAILED to auto-fix: Cannot write to /etc/nftban/ports.d/")
+            status=$HEALTH_ERROR
+        fi
+    fi
+
+    # Verify SSH port is actually in nftables (if nftban_main table exists)
+    if nft list table inet nftban_main >/dev/null 2>&1; then
+        if ! nft list set inet nftban_main tcp_ports 2>/dev/null | grep -qw "$current_ssh_port"; then
+            ssh_issues+=("WARNING: SSH port $current_ssh_port NOT in nftables tcp_ports set")
+            ssh_issues+=("LOCKOUT RISK! Run: nftban firewall reload")
+            status=$HEALTH_ERROR
+        fi
+    fi
+
+    # Store results
+    if [[ ${#ssh_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["ssh_port"]="${ssh_issues[*]}"
+        if [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("SSH port issues: ${ssh_issues[*]}")
+        else
+            NFTBAN_HEALTH_WARNINGS+=("SSH port issues: ${ssh_issues[*]}")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["ssh_port"]=$status
     return $status
 }
 
@@ -1053,6 +1143,11 @@ nftban_health_check_all() {
     # Polkit check (CRITICAL security check)
     check_result=0
     nftban_health_check_polkit || check_result=$?
+    [[ $check_result -gt $overall_status ]] && overall_status=$check_result
+
+    # SSH port check (CRITICAL lockout prevention)
+    check_result=0
+    nftban_health_check_ssh_port || check_result=$?
     [[ $check_result -gt $overall_status ]] && overall_status=$check_result
 
     # Bash completion check (CLI usability check)
@@ -1451,16 +1546,22 @@ nftban_health_fix_system_config() {
     fi
 
     # Get current UID/GID values
-    local nftban_uid nftban_gid nftban_cli_gid
+    local nftban_uid nftban_gid nftban_cli_gid nftban_auditors_gid
     nftban_uid=$(id -u nftban 2>/dev/null || echo "MISSING")
     nftban_gid=$(id -g nftban 2>/dev/null || echo "MISSING")
     nftban_cli_gid=$(getent group nftban-cli 2>/dev/null | cut -d: -f3 || echo "MISSING")
+    nftban_auditors_gid=$(getent group nftban-auditors 2>/dev/null | cut -d: -f3 || echo "MISSING")
 
     # Verify users/groups exist
     if [[ "$nftban_uid" == "MISSING" ]] || [[ "$nftban_gid" == "MISSING" ]] || [[ "$nftban_cli_gid" == "MISSING" ]]; then
         echo "  ✖ ERROR: nftban user or nftban-cli group not found" >&2
         echo "    Run installer to create system users/groups" >&2
         return 1
+    fi
+
+    # nftban-auditors is optional (v0.30+), warn if missing but don't fail
+    if [[ "$nftban_auditors_gid" == "MISSING" ]]; then
+        echo "  ⚠ WARNING: nftban-auditors group not found (optional, for inventory helpers)" >&2
     fi
 
     # Check if update needed
@@ -1470,15 +1571,17 @@ nftban_health_fix_system_config() {
         echo "  → System config missing, will create"
     else
         # Source existing config and check for mismatches
-        local existing_uid existing_gid existing_cli_gid
+        local existing_uid existing_gid existing_cli_gid existing_auditors_gid
         if source "$system_conf" 2>/dev/null; then
             existing_uid="${NFTBAN_UID:-}"
             existing_gid="${NFTBAN_GID:-}"
             existing_cli_gid="${NFTBAN_CLI_GID:-}"
+            existing_auditors_gid="${NFTBAN_AUDITORS_GID:-}"
 
             if [[ "$existing_uid" != "$nftban_uid" ]] || \
                [[ "$existing_gid" != "$nftban_gid" ]] || \
-               [[ "$existing_cli_gid" != "$nftban_cli_gid" ]]; then
+               [[ "$existing_cli_gid" != "$nftban_cli_gid" ]] || \
+               [[ "$existing_auditors_gid" != "$nftban_auditors_gid" ]]; then
                 needs_update=1
                 echo "  → System config outdated (UID/GID changed), will update"
             fi
@@ -1516,12 +1619,18 @@ NFTBAN_GROUP="nftban"
 NFTBAN_GID=${nftban_gid}
 NFTBAN_CLI_GROUP="nftban-cli"
 NFTBAN_CLI_GID=${nftban_cli_gid}
+NFTBAN_AUDITORS_GROUP="nftban-auditors"
+NFTBAN_AUDITORS_GID=${nftban_auditors_gid}
 EOF
 
         chown root:root "$system_conf"
         chmod 0644 "$system_conf"
         echo "  ✓ Updated $system_conf"
-        echo "    nftban UID=$nftban_uid GID=$nftban_gid, nftban-cli GID=$nftban_cli_gid"
+        echo "    nftban UID=$nftban_uid GID=$nftban_gid"
+        echo "    nftban-cli GID=$nftban_cli_gid"
+        if [[ "$nftban_auditors_gid" != "MISSING" ]]; then
+            echo "    nftban-auditors GID=$nftban_auditors_gid"
+        fi
     else
         echo "  ✓ System config is up to date"
     fi

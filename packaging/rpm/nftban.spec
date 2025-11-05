@@ -213,6 +213,7 @@ install -m 0644 packaging/polkit-1/rules.d/50-nftban-v030.rules \
 
 # Create inventory directories
 install -d -m 0755 %{buildroot}/var/lib/nftban/reports/baseline
+install -d -m 0770 %{buildroot}/var/lib/nftban/reports/auditors
 install -d -m 0700 %{buildroot}/etc/nftban/keys
 
 # Install architecture documentation
@@ -282,6 +283,35 @@ groupadd -f nftban-auditors 2>/dev/null || true
 # Run autoheal to ensure everything is configured correctly
 /usr/lib/nftban/helpers/autoheal.sh
 
+# Dedicated directory for nftban-auditors group (explicit ownership)
+if [ -d /var/lib/nftban/reports/auditors ]; then
+    chown root:nftban-auditors /var/lib/nftban/reports/auditors
+    chmod 0770 /var/lib/nftban/reports/auditors
+fi
+
+# Auto-detect and whitelist SSH port (LOCKOUT PREVENTION)
+SSH_PORT=22
+if [ -f "/etc/ssh/sshd_config" ]; then
+    DETECTED_PORT=$(grep -E '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
+    if [ -n "$DETECTED_PORT" ] && [ "$DETECTED_PORT" -eq "$DETECTED_PORT" ] 2>/dev/null; then
+        SSH_PORT=$DETECTED_PORT
+    fi
+fi
+
+mkdir -p /etc/nftban/ports.d
+cat > /etc/nftban/ports.d/00-ssh.conf <<SSHEOF
+# SSH port auto-added during installation ($(date '+%%Y-%%m-%%d %%H:%%M:%%S'))
+# DO NOT DELETE - LOCKOUT RISK!
+# Port format: PORT|PROTO where PROTO = T(tcp), U(udp), B(both)
+$SSH_PORT|T
+SSHEOF
+chmod 644 /etc/nftban/ports.d/00-ssh.conf
+
+# Run health check to validate installation
+if command -v nftban >/dev/null 2>&1; then
+    nftban health check --quiet 2>/dev/null || true
+fi
+
 # Reload systemd
 %systemd_post nftban.timer
 
@@ -292,6 +322,7 @@ echo "║  NFTBan v0.30.0 Installation Complete!                    ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "✅ Auto-heal completed - all systems configured"
+echo "✅ SSH port $SSH_PORT whitelisted (lockout prevention)"
 echo ""
 echo "Next steps:"
 echo "  1. Install fail2ban (recommended):"
@@ -299,24 +330,117 @@ echo "     Rocky/Alma: dnf install -y epel-release && crb enable"
 echo "                 dnf install -y fail2ban-server"
 echo "     Fedora:     dnf install -y fail2ban"
 echo ""
-echo "  2. Enable services:"
-echo "     systemctl enable --now nftables"
-echo "     systemctl enable --now fail2ban"
+echo "  2. Review config: /etc/nftban/nftban.conf"
+echo "  3. Initialize firewall: nftban firewall init"
+echo "  4. Enable NFTBan: nftban enable"
+echo "  5. Check status: nftban status"
 echo ""
-echo "  3. Check status:"
-echo "     systemctl status nftban.timer  # ONE timer for all maintenance"
-echo "     nftban health check             # Manual health check"
+echo "⚠️  NOTE: NFTBan is NOT auto-enabled. Run 'nftban enable' when ready."
 echo ""
-echo "  4. Try inventory features:"
-echo "     nftban-health --inventory | jq ."
-echo "     nftban-baseline-save"
+echo "Advanced:"
+echo "  • Manual health check: nftban health check"
+echo "  • Try inventory: nftban-health --inventory | jq ."
+echo "  • Create baseline: nftban-baseline-save"
 echo ""
 echo "Documentation: /usr/share/nftban/docs/"
 echo "Architecture: /usr/share/doc/nftban/architecture/"
 echo ""
 
 %preun
-%systemd_preun nftban.timer
+# =============================================================================
+# NFTBan v0.30.0 - RPM Pre-Uninstall Script
+# =============================================================================
+# Only run on uninstall (not upgrade)
+# $1 = 0 means uninstall, $1 = 1 means upgrade
+if [ $1 -eq 0 ]; then
+    echo ""
+    echo "╔════════════════════════════════════════════════════════════╗"
+    echo "║  NFTBan Uninstallation                                     ║"
+    echo "╚════════════════════════════════════════════════════════════╝"
+    echo ""
+
+    # Ask user if they want to disable NFTBan before removal
+    echo "⚠️  NFTBan is being removed from your system."
+    echo ""
+    echo "Do you want to disable NFTBan services before removal?"
+    echo "  • yes - Stop and disable nftban.timer and fail2ban.service"
+    echo "  • no  - Keep services running (if you're upgrading)"
+    echo ""
+
+    # In non-interactive mode (like automated installs), default to yes
+    if [ -t 0 ]; then
+        read -p "Disable NFTBan services? (yes/no) [yes]: " DISABLE_SERVICES
+        DISABLE_SERVICES=${DISABLE_SERVICES:-yes}
+    else
+        DISABLE_SERVICES="yes"
+        echo "Non-interactive mode: Disabling services automatically"
+    fi
+
+    if [ "$DISABLE_SERVICES" = "yes" ]; then
+        echo ""
+        echo "Disabling NFTBan services..."
+
+        # Stop and disable nftban.timer
+        if systemctl is-active --quiet nftban.timer 2>/dev/null; then
+            systemctl stop nftban.timer || true
+            echo "  ✓ Stopped: nftban.timer"
+        fi
+
+        if systemctl is-enabled --quiet nftban.timer 2>/dev/null; then
+            systemctl disable nftban.timer || true
+            echo "  ✓ Disabled: nftban.timer"
+        fi
+
+        # Stop and disable nftban-health.timer (legacy)
+        if systemctl is-active --quiet nftban-health.timer 2>/dev/null; then
+            systemctl stop nftban-health.timer || true
+            echo "  ✓ Stopped: nftban-health.timer (legacy)"
+        fi
+
+        # Stop and disable fail2ban if it was enabled by NFTBan
+        if systemctl is-active --quiet fail2ban.service 2>/dev/null; then
+            echo ""
+            echo "⚠️  fail2ban.service is running."
+            echo ""
+            if [ -t 0 ]; then
+                read -p "Stop fail2ban.service? (yes/no) [no]: " STOP_FAIL2BAN
+                STOP_FAIL2BAN=${STOP_FAIL2BAN:-no}
+            else
+                STOP_FAIL2BAN="no"
+                echo "Non-interactive mode: Leaving fail2ban.service running"
+            fi
+
+            if [ "$STOP_FAIL2BAN" = "yes" ]; then
+                systemctl stop fail2ban.service || true
+                systemctl disable fail2ban.service || true
+                echo "  ✓ Stopped and disabled: fail2ban.service"
+            else
+                echo "  ⊘ Leaving fail2ban.service running"
+            fi
+        fi
+
+        echo ""
+        echo "✅ NFTBan services disabled"
+    else
+        echo ""
+        echo "⊘ Keeping services enabled (upgrade mode)"
+
+        # Still stop the timer to prevent it running during package removal
+        systemctl stop nftban.timer || true
+        systemctl stop nftban-health.timer || true
+    fi
+
+    echo ""
+    echo "⚠️  NOTE: Firewall rules (nftables) remain active."
+    echo "   To remove firewall rules: nftban firewall stop"
+    echo ""
+    echo "⚠️  NOTE: Configuration files preserved in /etc/nftban/"
+    echo "   To remove completely: dnf remove nftban (or yum remove nftban)"
+    echo ""
+else
+    # Upgrade mode - just stop the timer
+    %systemd_preun nftban.timer
+fi
 
 %postun
 %systemd_postun_with_restart nftban.timer
@@ -473,6 +597,7 @@ fi
 
 # Inventory directories
 %dir %attr(0755,nftban,nftban) /var/lib/nftban/reports/baseline
+%dir %attr(0770,root,nftban-auditors) /var/lib/nftban/reports/auditors
 %dir %attr(0700,root,root) /etc/nftban/keys
 
 # Architecture documentation

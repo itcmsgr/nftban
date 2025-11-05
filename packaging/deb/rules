@@ -18,6 +18,7 @@ override_dh_auto_install:
 	# Create FHS directories
 	install -d -m 0755 debian/nftban/var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics,config}
 	install -d -m 0755 debian/nftban/var/lib/nftban/reports/baseline
+	install -d -m 0770 debian/nftban/var/lib/nftban/reports/auditors
 	install -d -m 0755 debian/nftban/var/cache/nftban/{geoip,tmp}
 	install -d -m 0750 debian/nftban/var/log/nftban
 	install -d -m 0700 debian/nftban/etc/nftban/keys

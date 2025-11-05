@@ -77,8 +77,38 @@ EOF
         for dir in state snapshots feeds keyring backup reports metrics config geoip; do
             [ -d "/var/lib/nftban/$dir" ] && chmod 0750 "/var/lib/nftban/$dir"
         done
+
+        # Dedicated directory for nftban-auditors group
+        if [ -d /var/lib/nftban/reports/auditors ]; then
+            chown root:nftban-auditors /var/lib/nftban/reports/auditors
+            chmod 0770 /var/lib/nftban/reports/auditors
+        fi
+
         [ -d /var/log/nftban ] && chmod 0750 /var/log/nftban
         [ -d /var/cache/nftban ] && chmod 0755 /var/cache/nftban
+
+        # Auto-detect and whitelist SSH port (LOCKOUT PREVENTION)
+        SSH_PORT=22
+        if [ -f "/etc/ssh/sshd_config" ]; then
+            DETECTED_PORT=$(grep -E '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
+            if [ -n "$DETECTED_PORT" ] && [ "$DETECTED_PORT" -eq "$DETECTED_PORT" ] 2>/dev/null; then
+                SSH_PORT=$DETECTED_PORT
+            fi
+        fi
+
+        mkdir -p /etc/nftban/ports.d
+        cat > /etc/nftban/ports.d/00-ssh.conf <<SSHEOF
+# SSH port auto-added during installation ($(date '+%Y-%m-%d %H:%M:%S'))
+# DO NOT DELETE - LOCKOUT RISK!
+# Port format: PORT|PROTO where PROTO = T(tcp), U(udp), B(both)
+$SSH_PORT|T
+SSHEOF
+        chmod 644 /etc/nftban/ports.d/00-ssh.conf
+
+        # Run health check to validate installation
+        if command -v nftban >/dev/null 2>&1; then
+            nftban health check --quiet 2>/dev/null || true
+        fi
 
         # Print installation message
         echo ""
@@ -87,15 +117,19 @@ EOF
         echo "╚════════════════════════════════════════════════════════════╝"
         echo ""
         echo "✅ Auto-heal completed - all systems configured"
+        echo "✅ SSH port $SSH_PORT whitelisted (lockout prevention)"
         echo ""
         echo "Next steps:"
         echo "  1. Review config: /etc/nftban/nftban.conf"
         echo "  2. Customize (optional): /etc/nftban/nftban.conf.local"
-        echo "  3. Enable service: systemctl enable --now nftban.timer"
-        echo "  4. Check status: systemctl status nftban.timer  # ONE timer for all"
-        echo "  5. Manual health check: nftban health check"
-        echo "  6. Try inventory: nftban-health --inventory | jq ."
-        echo "  7. Create baseline: nftban-baseline-save"
+        echo "  3. Initialize firewall: nftban firewall init"
+        echo "  4. Enable NFTBan: nftban enable"
+        echo "  5. Check status: nftban status"
+        echo "  6. Manual health check: nftban health check"
+        echo "  7. Try inventory: nftban-health --inventory | jq ."
+        echo "  8. Create baseline: nftban-baseline-save"
+        echo ""
+        echo "⚠️  NOTE: NFTBan is NOT auto-enabled. Run 'nftban enable' when ready."
         echo ""
         ;;
 esac

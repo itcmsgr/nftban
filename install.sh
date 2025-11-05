@@ -118,6 +118,8 @@ else
 
     # /var directories
     install -d -o nftban -g nftban -m 0750 /var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics}
+    install -d -o nftban -g nftban -m 0750 /var/lib/nftban/reports/baseline
+    install -d -o root -g nftban-auditors -m 0770 /var/lib/nftban/reports/auditors
     install -d -o nftban -g nftban -m 0750 /var/cache/nftban/{geoip,tmp}
     install -d -o nftban -g adm -m 0750 /var/log/nftban
 
@@ -283,6 +285,89 @@ if command -v restorecon >/dev/null 2>&1; then
 fi
 
 # =============================================================================
+# 10. AUTO-DETECT AND WHITELIST SSH PORT (LOCKOUT PREVENTION)
+# =============================================================================
+echo "Detecting SSH port (lockout prevention)..."
+
+# Detect SSH port from sshd_config
+SSH_PORT=22
+if [[ -f "/etc/ssh/sshd_config" ]]; then
+    DETECTED_PORT=$(grep -E '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
+    if [[ -n "$DETECTED_PORT" ]] && [[ "$DETECTED_PORT" =~ ^[0-9]+$ ]]; then
+        SSH_PORT=$DETECTED_PORT
+    fi
+fi
+
+echo "→ Detected SSH port: $SSH_PORT (from sshd_config)"
+
+# Create SSH port whitelist config
+mkdir -p /etc/nftban/ports.d
+cat > /etc/nftban/ports.d/00-ssh.conf << EOF
+# SSH port auto-added during installation ($(date '+%Y-%m-%d %H:%M:%S'))
+# DO NOT DELETE - LOCKOUT RISK!
+# Port format: PORT|PROTO where PROTO = T(tcp), U(udp), B(both)
+$SSH_PORT|T
+EOF
+
+chown root:root /etc/nftban/ports.d/00-ssh.conf 2>/dev/null || true
+chmod 644 /etc/nftban/ports.d/00-ssh.conf 2>/dev/null || true
+
+echo "✓ SSH port $SSH_PORT whitelisted in /etc/nftban/ports.d/00-ssh.conf"
+
+# Detect and whitelist system IPs
+echo "Detecting system IPs for whitelist..."
+
+IPS_TO_WHITELIST=()
+
+# Try to detect SSH client IP
+SSH_CLIENT_IP=$(who am i 2>/dev/null | awk '{print $5}' | tr -d '()')
+if [[ -n "$SSH_CLIENT_IP" ]] && [[ "$SSH_CLIENT_IP" != ":0" ]]; then
+    echo "→ Detected SSH client IP: $SSH_CLIENT_IP"
+    IPS_TO_WHITELIST+=("$SSH_CLIENT_IP")
+fi
+
+# Detect public IPv4
+PUBLIC_IPV4=$(curl -s -4 --max-time 5 ifconfig.me 2>/dev/null || echo "")
+if [[ -n "$PUBLIC_IPV4" ]]; then
+    echo "→ Detected public IPv4: $PUBLIC_IPV4"
+    if [[ ! " ${IPS_TO_WHITELIST[*]} " =~ " $PUBLIC_IPV4 " ]]; then
+        IPS_TO_WHITELIST+=("$PUBLIC_IPV4")
+    fi
+fi
+
+# Detect public IPv6
+PUBLIC_IPV6=$(curl -s -6 --max-time 5 ifconfig.me 2>/dev/null || echo "")
+if [[ -n "$PUBLIC_IPV6" ]]; then
+    echo "→ Detected public IPv6: $PUBLIC_IPV6"
+    if [[ ! " ${IPS_TO_WHITELIST[*]} " =~ " $PUBLIC_IPV6 " ]]; then
+        IPS_TO_WHITELIST+=("$PUBLIC_IPV6")
+    fi
+fi
+
+# Write whitelist config
+if [[ ${#IPS_TO_WHITELIST[@]} -gt 0 ]]; then
+    mkdir -p /etc/nftban/whitelist.d
+    cat > /etc/nftban/whitelist.d/00-system.conf << EOF
+# System IPs auto-added during installation ($(date '+%Y-%m-%d %H:%M:%S'))
+# DO NOT DELETE - LOCKOUT RISK!
+# Format: One IP per line (IPv4 or IPv6)
+EOF
+    for ip in "${IPS_TO_WHITELIST[@]}"; do
+        echo "$ip" >> /etc/nftban/whitelist.d/00-system.conf
+    done
+
+    chown root:root /etc/nftban/whitelist.d/00-system.conf 2>/dev/null || true
+    chmod 644 /etc/nftban/whitelist.d/00-system.conf 2>/dev/null || true
+
+    echo "✓ Whitelisted ${#IPS_TO_WHITELIST[@]} IP(s) in /etc/nftban/whitelist.d/00-system.conf"
+else
+    echo "⚠  WARNING: Could not detect any IP addresses to whitelist"
+    echo "   Add your IP manually to /etc/nftban/whitelist.d/00-system.conf before enabling firewall"
+fi
+
+echo ""
+
+# =============================================================================
 # INSTALLATION COMPLETE
 # =============================================================================
 echo ""
@@ -290,11 +375,17 @@ echo "╔═══════════════════════�
 echo "║  NFTBan v0.10.0 Installation Complete!                    ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
+echo "✅ SSH port $SSH_PORT whitelisted (lockout prevention)"
+echo "✅ System IPs whitelisted (lockout prevention)"
+echo ""
 echo "Next steps:"
 echo "  1. Review config: /etc/nftban/nftban.conf"
 echo "  2. Customize (optional): /etc/nftban/nftban.conf.local"
-echo "  3. Enable service: systemctl enable --now nftban.timer"
-echo "  4. Check status: nftban status"
+echo "  3. Initialize firewall: nftban firewall init"
+echo "  4. Enable NFTBan: nftban enable"
+echo "  5. Check status: nftban status"
+echo ""
+echo "⚠️  NOTE: NFTBan is NOT auto-enabled. Run 'nftban enable' when ready."
 echo ""
 echo "Documentation: /usr/share/nftban/docs/"
 echo "Examples: /usr/share/nftban/examples/"

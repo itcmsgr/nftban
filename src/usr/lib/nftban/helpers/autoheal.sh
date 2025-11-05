@@ -57,6 +57,7 @@ DIRS=(
     "/var/lib/nftban/backup"
     "/var/lib/nftban/reports"
     "/var/lib/nftban/reports/baseline"
+    "/var/lib/nftban/reports/auditors"
     "/var/lib/nftban/metrics"
     "/var/lib/nftban/config"
     "/var/cache/nftban/geoip"
@@ -87,6 +88,17 @@ chmod 755 /var/lib/nftban
 chmod 750 /var/lib/nftban/state
 chmod 750 /var/lib/nftban/feeds
 chmod 750 /var/lib/nftban/reports
+chmod 750 /var/lib/nftban/reports/baseline
+
+# Dedicated directory for nftban-auditors group (separate from main reports)
+if getent group nftban-auditors >/dev/null 2>&1; then
+    chown root:nftban-auditors /var/lib/nftban/reports/auditors
+    chmod 0770 /var/lib/nftban/reports/auditors
+else
+    # Fallback if group doesn't exist
+    chown nftban:nftban /var/lib/nftban/reports/auditors
+    chmod 750 /var/lib/nftban/reports/auditors
+fi
 
 chown -R nftban:nftban /var/cache/nftban
 chmod 755 /var/cache/nftban

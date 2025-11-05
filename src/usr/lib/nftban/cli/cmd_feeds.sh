@@ -399,7 +399,13 @@ nftban_cmd_feeds() {
                 nftban_require_net_admin_or_exit
             fi
             if [[ $# -ge 1 ]]; then
-                nftban_feeds_update_single "$1"
+                echo "⏳ Updating feed: $1"
+                if nftban_feeds_update_single "$1"; then
+                    echo "✓ Feed updated successfully"
+                else
+                    echo "✗ Feed update failed (check /var/log/nftban/feeds.log)"
+                    exit 1
+                fi
             else
                 nftban_feeds_update_all
             fi
