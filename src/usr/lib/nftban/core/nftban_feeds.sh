@@ -391,7 +391,7 @@ nftban_feeds_update_all() {
     return 0
 }
 
-# Sync all enabled feeds to nftables
+# Sync all enabled feeds to nftables (Go-optimized with bash fallback)
 nftban_feeds_sync_to_nftables() {
     nftban_feeds_log INFO "Syncing feeds to nftables..."
 
@@ -406,6 +406,47 @@ nftban_feeds_sync_to_nftables() {
         nft add set inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V6" { type ipv6_addr \; flags interval \; auto-merge \; }
     }
 
+    # Check if Go binary is available (v0.31.0+)
+    local go_binary="/usr/lib/nftban/bin/nftban-feeds"
+    if [[ -x "$go_binary" ]]; then
+        nftban_feeds_log INFO "Using Go-optimized feed loader (fast, atomic)"
+        nftban_feeds_sync_to_nftables_go
+        return $?
+    else
+        nftban_feeds_log INFO "Using bash feed loader (Go binary not found)"
+        nftban_feeds_sync_to_nftables_bash
+        return $?
+    fi
+}
+
+# Go-optimized feed sync (v0.31.0+)
+nftban_feeds_sync_to_nftables_go() {
+    local go_binary="/usr/lib/nftban/bin/nftban-feeds"
+
+    # Get list of enabled feeds
+    local enabled_feeds
+    enabled_feeds=$(nftban_feeds_list_enabled | tr '\n' ',' | sed 's/,$//')
+
+    if [[ -z "$enabled_feeds" ]]; then
+        nftban_feeds_log INFO "No feeds enabled"
+        return 0
+    fi
+
+    nftban_feeds_log INFO "Enabled feeds: $enabled_feeds"
+
+    # Call Go binary with atomic loading
+    if "$go_binary" sync "$enabled_feeds" 2>&1 | tee -a "$NFTBAN_FEEDS_LOG"; then
+        nftban_feeds_log INFO "Go feed sync completed successfully"
+        return 0
+    else
+        nftban_feeds_log ERROR "Go feed sync failed, falling back to bash"
+        nftban_feeds_sync_to_nftables_bash
+        return $?
+    fi
+}
+
+# Bash feed sync (fallback, v0.30.8)
+nftban_feeds_sync_to_nftables_bash() {
     # Flush existing sets
     nft flush set inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V4" 2>/dev/null || true
     nft flush set inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V6" 2>/dev/null || true
