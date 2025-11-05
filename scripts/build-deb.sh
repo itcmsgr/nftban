@@ -24,7 +24,7 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 readonly BUILD_DIR="$PROJECT_ROOT/dist/build/deb"
 readonly PACKAGE_DIR="$PROJECT_ROOT/dist/packages"
-readonly VERSION="0.30.0"
+readonly VERSION="0.31.0"
 readonly RELEASE="1"
 
 # =============================================================================
@@ -87,6 +87,10 @@ prepare_source() {
     cp -a "$PROJECT_ROOT/packaging" "$BUILD_DIR/"
     cp -a "$PROJECT_ROOT/README.md" "$BUILD_DIR/"
     cp -a "$PROJECT_ROOT/CHANGELOG.md" "$BUILD_DIR/"
+
+    # Copy Go source directories (needed for building binaries)
+    cp -a "$PROJECT_ROOT/go-geoip" "$BUILD_DIR/"
+    cp -a "$PROJECT_ROOT/go-feeds" "$BUILD_DIR/"
 
     # Copy licenses directory (FHS-compliant)
     mkdir -p "$BUILD_DIR/licenses"
