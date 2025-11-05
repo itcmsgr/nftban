@@ -170,10 +170,8 @@ func syncFeeds(feedNames []string, limits safety.Limits) error {
 	fmt.Printf("\nLoading into nftables atomically...\n")
 	loadStart := time.Now()
 
-	// Create context with timeout from limits
-	applyCtx, applyCancel := context.WithTimeout(context.Background(),
-		time.Duration(limits.ApplyTimeoutSec)*time.Second)
-	defer applyCancel()
+	// Note: Context prepared for future timeout support in nftloader
+	_ = limits.ApplyTimeoutSec // Timeout will be used when nftloader supports context
 
 	if len(v4) > 0 {
 		fmt.Printf("  Loading %d IPv4 prefixes...", len(v4))
