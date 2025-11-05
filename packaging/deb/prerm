@@ -54,6 +54,17 @@ case "$1" in
                 echo "  ✓ Stopped: nftban-health.timer (legacy)"
             fi
 
+            # Stop and disable nftban-maintenance.timer
+            if systemctl is-active --quiet nftban-maintenance.timer 2>/dev/null; then
+                deb-systemd-invoke stop nftban-maintenance.timer || true
+                echo "  ✓ Stopped: nftban-maintenance.timer"
+            fi
+
+            if systemctl is-enabled --quiet nftban-maintenance.timer 2>/dev/null; then
+                deb-systemd-invoke disable nftban-maintenance.timer || true
+                echo "  ✓ Disabled: nftban-maintenance.timer"
+            fi
+
             # Stop and disable fail2ban if it was enabled by NFTBan
             if systemctl is-active --quiet fail2ban.service 2>/dev/null; then
                 echo ""
@@ -82,9 +93,10 @@ case "$1" in
             echo ""
             echo "⊘ Keeping services enabled (upgrade mode)"
 
-            # Still stop the timer to prevent it running during package removal
+            # Still stop the timers to prevent them running during package removal
             deb-systemd-invoke stop nftban.timer || true
             deb-systemd-invoke stop nftban-health.timer || true
+            deb-systemd-invoke stop nftban-maintenance.timer || true
         fi
 
         echo ""

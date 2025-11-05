@@ -312,8 +312,12 @@ if command -v nftban >/dev/null 2>&1; then
     nftban health check --quiet 2>/dev/null || true
 fi
 
-# Reload systemd
-%systemd_post nftban.timer
+# Reload systemd and enable maintenance timer (ALWAYS enabled)
+%systemd_post nftban.timer nftban-maintenance.timer
+
+# Enable and start maintenance timer (runs even if NFTBan disabled)
+systemctl enable nftban-maintenance.timer 2>/dev/null || true
+systemctl start nftban-maintenance.timer 2>/dev/null || true
 
 # Print installation message
 echo ""
@@ -397,6 +401,17 @@ if [ $1 -eq 0 ]; then
             echo "  ✓ Stopped: nftban-health.timer (legacy)"
         fi
 
+        # Stop and disable nftban-maintenance.timer
+        if systemctl is-active --quiet nftban-maintenance.timer 2>/dev/null; then
+            systemctl stop nftban-maintenance.timer || true
+            echo "  ✓ Stopped: nftban-maintenance.timer"
+        fi
+
+        if systemctl is-enabled --quiet nftban-maintenance.timer 2>/dev/null; then
+            systemctl disable nftban-maintenance.timer || true
+            echo "  ✓ Disabled: nftban-maintenance.timer"
+        fi
+
         # Stop and disable fail2ban if it was enabled by NFTBan
         if systemctl is-active --quiet fail2ban.service 2>/dev/null; then
             echo ""
@@ -425,9 +440,10 @@ if [ $1 -eq 0 ]; then
         echo ""
         echo "⊘ Keeping services enabled (upgrade mode)"
 
-        # Still stop the timer to prevent it running during package removal
+        # Still stop the timers to prevent them running during package removal
         systemctl stop nftban.timer || true
         systemctl stop nftban-health.timer || true
+        systemctl stop nftban-maintenance.timer || true
     fi
 
     echo ""

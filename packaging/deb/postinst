@@ -110,6 +110,10 @@ SSHEOF
             nftban health check --quiet 2>/dev/null || true
         fi
 
+        # Enable and start maintenance timer (ALWAYS enabled - runs even if NFTBan disabled)
+        deb-systemd-invoke enable nftban-maintenance.timer || true
+        deb-systemd-invoke start nftban-maintenance.timer || true
+
         # Print installation message
         echo ""
         echo "╔════════════════════════════════════════════════════════════╗"
