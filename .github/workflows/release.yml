@@ -1,19 +1,20 @@
 # =============================================================================
-# NFTBan v0.30.0 - GitHub Actions Release Workflow
+# NFTBan v0.30.1 - GitHub Actions Release Workflow
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Automated package building and release on version tags
-# Triggers: Push to v* tags (e.g., v0.30.0, v0.10.1)
+# Triggers: Push to v* tags (e.g., v0.30.1, v0.30.2)
 #
 # What this does:
 #   1. Builds Go binaries (nftban-feeds, nftban-geoip) for x86_64 and aarch64
 #   2. Creates RPM packages for Rocky 9, AlmaLinux 9, Fedora
 #   3. Creates DEB packages for Ubuntu 22.04/24.04, Debian 12
 #   4. Generates SHA256SUMS for all artifacts
-#   5. Creates MANIFEST.txt (file inventory)
-#   6. Uploads everything to GitHub Release
+#   5. Creates simplified package names (nftban-amd64.deb, nftban-x86_64.rpm)
+#   6. Creates MANIFEST.txt (file inventory)
+#   7. Uploads everything to GitHub Release
 #
-# Future enhancements (v0.10.1+):
+# Future enhancements:
 #   - GPG signing (infrastructure ready, commented out below)
 #   - SBOM generation (SPDX/CycloneDX)
 #   - Package repository publishing (COPR/PPA)
@@ -130,13 +131,22 @@ jobs:
       - name: Generate MANIFEST.txt
         run: |
           cd dist/packages
-          cat > MANIFEST.txt <<'EOF'
-          NFTBan v0.30.0 - Release Artifacts
+          VERSION="${GITHUB_REF#refs/tags/}"
+
+          cat > MANIFEST.txt <<EOF
+          NFTBan ${VERSION} - Release Artifacts
           ===================================
 
+          Simplified Package Names (for easy downloads):
+          - nftban-x86_64.rpm    (Red Hat/Rocky/Alma/Fedora x86_64)
+          - nftban-aarch64.rpm   (Red Hat/Rocky/Alma/Fedora ARM64)
+          - nftban-amd64.deb     (Ubuntu/Debian amd64)
+          - nftban-arm64.deb     (Ubuntu/Debian ARM64)
+
+          Full Package Names:
           EOF
 
-          for file in *; do
+          for file in nftban-[0-9]* nftban_[0-9]*; do
             if [ -f "$file" ]; then
               size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null || echo "0")
               printf "%-50s %12d bytes\n" "$file" "$size" >> MANIFEST.txt
@@ -152,33 +162,41 @@ jobs:
       - name: Create VERIFY.txt
         run: |
           cd dist/packages
-          cat > VERIFY.txt <<'EOF'
-          NFTBan v0.30.0 - Package Verification Guide
-          ============================================
+          VERSION="${GITHUB_REF#refs/tags/}"
 
-          1. Verify package integrity:
+          cat > VERIFY.txt <<EOF
+          NFTBan ${VERSION} - Package Verification & Installation Guide
+          ============================================================
+
+          1. Download using simple links:
+
+             # Rocky/AlmaLinux/Fedora (x86_64)
+             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm
+
+             # Ubuntu/Debian (amd64)
+             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-amd64.deb
+
+          2. Verify package integrity:
 
              sha256sum -c SHA256SUMS
-
-          2. Expected output:
-
-             nftban-0.30.0-1.el9.x86_64.rpm: OK
-             nftban-0.30.0-1.el9.aarch64.rpm: OK
-             nftban_0.30.0-1_amd64.deb: OK
-             nftban_0.30.0-1_arm64.deb: OK
 
           3. Install package:
 
              # Rocky/AlmaLinux/Fedora
-             sudo dnf install nftban-0.30.0-1.el9.x86_64.rpm
+             sudo dnf install -y nftban-x86_64.rpm
 
              # Ubuntu/Debian
-             sudo apt install ./nftban_0.30.0-1_amd64.deb
+             sudo dpkg -i nftban-amd64.deb
+             sudo apt-get install -f
 
-          NOTE: For v0.30.0 we provide SHA256 checksums only.
-                GPG package signing will be added in v0.10.1+
+          4. Verify installation:
 
-          For installation help: https://github.com/itcmsgr/nftban/blob/main/docs/guides/install.md
+             nftban --version
+             nftban health check
+
+          NOTE: SHA256 checksums provided. GPG signing planned for future release.
+
+          Documentation: https://github.com/itcmsgr/nftban#readme
           EOF
 
       # =======================================================================
@@ -202,25 +220,42 @@ jobs:
           cat dist/packages/RELEASE_NOTES.md
 
       # =======================================================================
-      # 10. CREATE STANDARD PACKAGE NAMES (for easy downloads)
+      # 10. CREATE SIMPLIFIED PACKAGE NAMES (for easy downloads)
       # =======================================================================
-      - name: Create standard package names
+      - name: Create simplified package names
         run: |
           cd dist/packages
 
-          # Find and link RPM (el9 or el10)
+          # RPM packages - x86_64
           if ls nftban-*.el*.x86_64.rpm 1> /dev/null 2>&1; then
-            RPM_FILE=$(ls nftban-*.el*.x86_64.rpm | head -n1)
-            cp "$RPM_FILE" nftban.el9.x86_64.rpm
-            echo "✓ Created nftban.el9.x86_64.rpm from $RPM_FILE"
+            RPM_X86=$(ls nftban-*.el*.x86_64.rpm | head -n1)
+            cp "$RPM_X86" nftban-x86_64.rpm
+            echo "✓ Created nftban-x86_64.rpm from $RPM_X86"
           fi
 
-          # Find and link DEB (amd64)
-          if ls nftban_*_amd64.deb 1> /dev/null 2>&1; then
-            DEB_FILE=$(ls nftban_*_amd64.deb | head -n1)
-            cp "$DEB_FILE" nftban.ubuntu.amd64.deb
-            echo "✓ Created nftban.ubuntu.amd64.deb from $DEB_FILE"
+          # RPM packages - aarch64
+          if ls nftban-*.el*.aarch64.rpm 1> /dev/null 2>&1; then
+            RPM_ARM=$(ls nftban-*.el*.aarch64.rpm | head -n1)
+            cp "$RPM_ARM" nftban-aarch64.rpm
+            echo "✓ Created nftban-aarch64.rpm from $RPM_ARM"
           fi
+
+          # DEB packages - amd64
+          if ls nftban_*_amd64.deb 1> /dev/null 2>&1; then
+            DEB_AMD64=$(ls nftban_*_amd64.deb | head -n1)
+            cp "$DEB_AMD64" nftban-amd64.deb
+            echo "✓ Created nftban-amd64.deb from $DEB_AMD64"
+          fi
+
+          # DEB packages - arm64
+          if ls nftban_*_arm64.deb 1> /dev/null 2>&1; then
+            DEB_ARM64=$(ls nftban_*_arm64.deb | head -n1)
+            cp "$DEB_ARM64" nftban-arm64.deb
+            echo "✓ Created nftban-arm64.deb from $DEB_ARM64"
+          fi
+
+          echo "=== Simplified package names created ==="
+          ls -lh nftban-*.{rpm,deb} 2>/dev/null || echo "No simplified packages"
 
           echo "=== All packages ==="
           ls -lh

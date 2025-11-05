@@ -426,7 +426,6 @@ nftban firewall status
 - ✅ **GeoIP** - MaxMind GeoLite2 support with Go binary
 - ✅ **Cloudflare** - Auto-whitelist Cloudflare IPs
 - ✅ **DirectAdmin** - Tested and working
-- ✅ **cPanel/Plesk** - Experimental support
 
 ---
 
@@ -621,7 +620,7 @@ nftban/
 ### Perfect For:
 
 - ✅ **Production Servers** - Enterprise safety features prevent lockouts
-- ✅ **Web Hosting** - DirectAdmin/cPanel/Plesk integration
+- ✅ **Web Hosting** - DirectAdmin integration
 - ✅ **High-Traffic Sites** - Go binaries handle millions of IPs efficiently
 - ✅ **Security-Conscious Teams** - Polkit privilege separation
 - ✅ **Managed Services** - Multiple admins without sharing sudo
