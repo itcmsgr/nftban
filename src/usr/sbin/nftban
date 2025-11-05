@@ -115,6 +115,7 @@ nftban_complete() {
         echo "stats"
         echo "report"
         echo "port"
+        echo "panel"
         echo "module"
         echo "services"
         echo "fhs"
@@ -136,6 +137,11 @@ nftban_complete() {
                 echo "summary"
                 echo "html-report"
                 echo "mail-report"
+                echo "help"
+                ;;
+            panel)
+                echo "directadmin"
+                echo "da"
                 echo "help"
                 ;;
             module)
