@@ -47,6 +47,11 @@ man nftban
 |----------|---------|----------|
 | **README.md** | This file - Documentation guide | Everyone |
 | **ARCHITECTURE.md** | Technical architecture and design | Admins, Developers |
+| **GEOBAN_FEATURE.md** | GeoBan country blocking guide | Users, Admins |
+| **HLD_GO_MODULES.md** | Go modules high-level design | Developers |
+| **GO_COMPILATION_GUIDE.md** | How to build Go binaries | Developers |
+| **GO_SYSTEM_PROTECTION.md** | Safety limits and protection | Admins, Developers |
+| **PRECOMPILED_BINARIES.md** | Binary transparency guide | Security Auditors |
 | **nftban.1** | Man page (view with `man nftban`) | Users, Admins |
 
 ### In Root Directory
