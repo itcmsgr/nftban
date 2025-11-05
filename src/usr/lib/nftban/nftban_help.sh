@@ -63,6 +63,7 @@ EOF
   search           Search IP across sets, feeds, and jails (interactive)
   whitelist        Manage system and custom whitelists
   profile          Apply security profile (web-server, mail-server, ...)
+  panel            Web hosting panel integration (DirectAdmin)
   permissions      Audit & enforce secure file permissions
 EOF
   echo
@@ -83,7 +84,6 @@ EOF
   stats            Statistics dashboard (top, ip, recent, monitor, export, ...)
   report           Generate/schedule/email reports
   port             Port status and reporting
-  panel            Web hosting panel integration (DirectAdmin)
   module           Module inventory
   services         System services status
   fhs              Filesystem hierarchy checks
