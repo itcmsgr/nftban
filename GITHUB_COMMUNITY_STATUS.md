@@ -16,10 +16,22 @@
 - ✅ `CONTRIBUTING.md` - Contribution guidelines
 - ✅ `SECURITY.md` - Security policy (comprehensive)
 
-### Project Philosophy:
-- ✅ **No donation solicitation** - Pure open source (MPL-2.0)
-- ✅ **Sponsorship by discussion** - Contact us to discuss collaboration
-- ✅ **Community-driven** - Focus on quality, not funding
+### Project Philosophy - How We Build Community:
+
+**Core Values:**
+- ✅ **Pure open source** - MPL-2.0 license, no donation solicitation
+- ✅ **Quality over funding** - Focus on technical excellence first
+- ✅ **Sponsorship by discussion** - Interested sponsors contact us to discuss collaboration
+- ✅ **Community-driven development** - User feedback shapes the roadmap
+
+**Why This Approach?**
+- Keeps focus on building great software, not fundraising
+- Avoids "pay-to-contribute" perception
+- Professional and enterprise-friendly
+- Sponsors reach out when they see value, not solicitation
+- Merit-based contributions, not donation-based influence
+
+**For Sponsorship:** Contact us via GitHub Discussions or nftban.com to discuss collaboration opportunities
 
 ### Lab Testing Completed:
 - ✅ **5 lab servers** tested and working
@@ -61,7 +73,7 @@
 1. Go to Discussions → New Discussion
 2. Category: Announcements
 3. Title: `🧪 NFTBan v0.30.6 Beta Testing - Help Us Reach Production!`
-4. Use template from `GITHUB_COMMUNITY_SETUP.md` lines 184-301
+4. Announce beta testing, request community feedback
 5. Pin the discussion to top
 
 ### 3. Enable GitHub Wiki (Optional but Recommended)
@@ -178,7 +190,6 @@ Priority 2 (This Week):
 Priority 3 (Optional):
 ☐ Enable GitHub Projects
 ☐ Set up beta testing tracker
-☐ Enable GitHub Sponsors (if seeking funding)
 ☐ Create Twitter/Mastodon accounts
 ```
 
@@ -198,9 +209,8 @@ git log --oneline | head -10
 
 ## 📞 Questions or Issues?
 
-- Review full guide: `GITHUB_COMMUNITY_SETUP.md`
 - GitHub Docs: https://docs.github.com/en/communities
-- Need help? Ask in (future) Discussions forum
+- Need help? Ask in Discussions forum (after enabling)
 
 ---
 
