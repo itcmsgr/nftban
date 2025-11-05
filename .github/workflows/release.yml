@@ -61,10 +61,14 @@ jobs:
             build-essential \
             debhelper \
             devscripts \
-            rsync
+            rsync \
+            golang-go
 
           # Verify rpmbuild is available (comes with rpm package on Ubuntu)
           which rpmbuild || (echo "ERROR: rpmbuild not found" && exit 1)
+
+          # Verify golang is available
+          which go || (echo "ERROR: go not found" && exit 1)
 
       # =======================================================================
       # 3. BUILD GO BINARIES
