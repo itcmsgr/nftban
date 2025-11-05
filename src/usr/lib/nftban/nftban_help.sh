@@ -83,6 +83,7 @@ EOF
   stats            Statistics dashboard (top, ip, recent, monitor, export, ...)
   report           Generate/schedule/email reports
   port             Port status and reporting
+  panel            Web hosting panel integration (DirectAdmin)
   module           Module inventory
   services         System services status
   fhs              Filesystem hierarchy checks
