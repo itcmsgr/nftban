@@ -205,27 +205,27 @@ table inet nftban_main {
     type filter hook input priority 0; policy drop;
 
     # 1) Always allow established/related and loopback
-    ct state established,related accept counter comment "established connections"
-    iif lo accept counter comment "loopback interface"
+    ct state established,related counter accept comment "established connections"
+    iif lo counter accept comment "loopback interface"
 
     # 2) Whitelist always wins (highest priority)
-    ip   saddr @whitelist_v4 accept counter comment "whitelist v4"
-    ip6  saddr @whitelist_v6 accept counter comment "whitelist v6"
+    ip   saddr @whitelist_v4 counter accept comment "whitelist v4"
+    ip6  saddr @whitelist_v6 counter accept comment "whitelist v6"
 
     # 3) Basic ICMP/ICMPv6 (before blacklist for diagnostics)
-    ip   protocol icmp  icmp type { echo-request, echo-reply, destination-unreachable, time-exceeded } accept counter comment "ICMPv4"
-    ip6  nexthdr icmpv6 icmpv6 type { echo-request, echo-reply, destination-unreachable, time-exceeded, packet-too-big } accept counter comment "ICMPv6"
+    ip   protocol icmp  icmp type { echo-request, echo-reply, destination-unreachable, time-exceeded } counter accept comment "ICMPv4"
+    ip6  nexthdr icmpv6 icmpv6 type { echo-request, echo-reply, destination-unreachable, time-exceeded, packet-too-big } counter accept comment "ICMPv6"
 
     # 4) CRITICAL: Blacklist BEFORE service ports (security fix v0.30.1)
-    ip   saddr @blacklist_v4 drop counter comment "blacklist v4"
-    ip6  saddr @blacklist_v6 drop counter comment "blacklist v6"
+    ip   saddr @blacklist_v4 counter drop comment "blacklist v4"
+    ip6  saddr @blacklist_v6 counter drop comment "blacklist v6"
 
     # 5) Invalid traffic
-    ct state invalid drop counter comment "invalid connection state"
+    ct state invalid counter drop comment "invalid connection state"
 
     # 6) Allowed service ports (after blacklist check)
-    tcp dport @tcp_ports accept counter comment "TCP services"
-    udp dport @udp_ports accept counter comment "UDP services"
+    tcp dport @tcp_ports counter accept comment "TCP services"
+    udp dport @udp_ports counter accept comment "UDP services"
 
     # 7) Default drop (policy drop, implicit)
   }
