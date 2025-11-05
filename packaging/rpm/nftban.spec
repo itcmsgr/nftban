@@ -90,10 +90,13 @@ install -m 0755 src/usr/sbin/nftban-apply %{buildroot}/usr/sbin/
 install -m 0755 src/usr/sbin/nftban-confirm %{buildroot}/usr/sbin/
 install -m 0755 src/usr/sbin/nftban-rollback %{buildroot}/usr/sbin/
 
-# Install Go binaries
+# Install Go binaries (wrappers + real binaries in .real/)
 install -d -m 0755 %{buildroot}/usr/lib/nftban/bin
+install -d -m 0755 %{buildroot}/usr/lib/nftban/bin/.real
 install -m 0755 src/usr/lib/nftban/bin/nftban-feeds %{buildroot}/usr/lib/nftban/bin/
 install -m 0755 src/usr/lib/nftban/bin/nftban-geoip %{buildroot}/usr/lib/nftban/bin/
+install -m 0755 src/usr/lib/nftban/bin/.real/nftban-feeds %{buildroot}/usr/lib/nftban/bin/.real/
+install -m 0755 src/usr/lib/nftban/bin/.real/nftban-geoip %{buildroot}/usr/lib/nftban/bin/.real/
 
 # Install core and CLI modules
 install -d -m 0755 %{buildroot}/usr/lib/nftban/core
