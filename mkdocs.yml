@@ -2,18 +2,18 @@
 # https://www.mkdocs.org/user-guide/configuration/
 
 # Site Information
-site_name: NFTBan v0.10.0 Documentation
+site_name: NFTBan v0.30.0 Documentation
 site_url: https://nftban.github.io/nftban/
-site_author: Antonios Voulvoulis - ITCMS
+site_author: NFTBAN Project / Antonios Voulvoulis
 site_description: Modern, high-performance firewall management for Linux servers with commit-confirm recovery, Go binaries (10-60x faster), and 8 security layers.
 
 # Repository
 repo_url: https://github.com/itcmsgr/nftban
-repo_name: nftban/nftban
+repo_name: itcmsgr/nftban
 edit_uri: edit/main/docs/
 
 # Copyright
-copyright: Copyright &copy; 2025 Antonios Voulvoulis - ITCMS. Licensed under MPL-2.0.
+copyright: Copyright &copy; 2024-2026 NFTBAN Project / Antonios Voulvoulis. Licensed under MPL-2.0.
 
 # Theme
 theme:
