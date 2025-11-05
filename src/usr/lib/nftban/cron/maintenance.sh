@@ -135,7 +135,22 @@ EOF
             chmod 644 "$SSH_WHITELIST"
 
             log "INFO" "✅ SSH port $SSH_PORT added to whitelist"
-            log "INFO" "⚠️  ALERT: SSH port changed - please reload firewall: nftban firewall reload"
+
+            # Auto-reload firewall rules to apply the change immediately
+            log "INFO" "Auto-reloading firewall rules to apply SSH port change..."
+            if nft list table inet nftban_main >/dev/null 2>&1; then
+                # Firewall is active, reload it safely
+                if /usr/lib/nftban/core/nftban_firewall.sh reload >/dev/null 2>&1 || \
+                   nftban firewall reload >/dev/null 2>&1; then
+                    log "INFO" "✅ Firewall rules reloaded successfully"
+                    log "INFO" "⚠️  ALERT: SSH port changed to $SSH_PORT and firewall updated"
+                else
+                    log "WARN" "Failed to reload firewall - please run manually: nftban firewall reload"
+                fi
+            else
+                log "WARN" "Firewall not initialized - whitelist updated but not applied"
+                log "INFO" "Run 'nftban firewall init' to activate firewall"
+            fi
 
             # Save alert state to prevent spam (only alert once per port change)
             mkdir -p /var/lib/nftban/state
@@ -143,7 +158,7 @@ EOF
 
             # Send alert if mail is configured (ONLY ONCE)
             if command -v mail &>/dev/null && [[ -f "/etc/nftban/conf.d/mail.conf" ]]; then
-                echo "NFTBan Security Alert: SSH port changed to $SSH_PORT and auto-whitelisted on $(hostname) at $(date)" | \
+                echo "NFTBan Security Alert: SSH port changed to $SSH_PORT, auto-whitelisted and firewall reloaded on $(hostname) at $(date)" | \
                     mail -s "[NFTBan] SSH Port Auto-Updated on $(hostname)" root 2>/dev/null || true
             fi
         fi
@@ -189,13 +204,27 @@ EOF
                 echo "$current_ipv4" >> /etc/nftban/whitelist.d/00-system.conf
                 log "INFO" "✅ Added $current_ipv4 to whitelist"
 
+                # Auto-reload firewall rules to apply the change immediately
+                log "INFO" "Auto-reloading firewall rules to apply IP whitelist..."
+                if nft list table inet nftban_main >/dev/null 2>&1; then
+                    # Firewall is active, reload it safely
+                    if /usr/lib/nftban/core/nftban_firewall.sh reload >/dev/null 2>&1 || \
+                       nftban firewall reload >/dev/null 2>&1; then
+                        log "INFO" "✅ Firewall rules reloaded - IP $current_ipv4 now protected"
+                    else
+                        log "WARN" "Failed to reload firewall - please run manually: nftban firewall reload"
+                    fi
+                else
+                    log "WARN" "Firewall not initialized - whitelist updated but not applied"
+                fi
+
                 # Save alert state to prevent spam (only alert once per IP)
                 mkdir -p /var/lib/nftban/state
                 echo "$current_ipv4 $(date)" >> "$IP_ALERT_STATE"
 
                 # Send email alert if configured (ONLY ONCE)
                 if command -v mail &>/dev/null && [[ -f "/etc/nftban/conf.d/mail.conf" ]]; then
-                    echo "NFTBan Security Alert: System IPv4 changed to $current_ipv4 and auto-whitelisted on $(hostname) at $(date)" | \
+                    echo "NFTBan Security Alert: System IPv4 changed to $current_ipv4, auto-whitelisted and firewall reloaded on $(hostname) at $(date)" | \
                         mail -s "[NFTBan] IP Address Auto-Updated on $(hostname)" root 2>/dev/null || true
                 fi
             fi
