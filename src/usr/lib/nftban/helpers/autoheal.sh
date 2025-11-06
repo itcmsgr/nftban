@@ -97,7 +97,7 @@ chmod 700 /etc/nftban/secrets.d
 chmod 700 /etc/nftban/keys
 
 chown -R nftban:nftban /var/lib/nftban
-chmod 755 /var/lib/nftban
+chmod 750 /var/lib/nftban
 chmod 750 /var/lib/nftban/state
 chmod 750 /var/lib/nftban/feeds
 chmod 750 /var/lib/nftban/reports
