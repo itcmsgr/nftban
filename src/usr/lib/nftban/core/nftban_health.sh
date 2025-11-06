@@ -1735,7 +1735,7 @@ nftban_health_render_terminal() {
             echo "  ⚠️  $warning"
         done
         echo ""
-        # Junior-friendly help
+        # Helpful context for optional features
         if [[ $error_count -eq 0 ]]; then
             echo "ℹ️  These warnings are about OPTIONAL features."
             echo "   Your firewall is working! You can safely ignore these warnings."

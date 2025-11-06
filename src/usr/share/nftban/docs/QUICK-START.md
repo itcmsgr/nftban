@@ -6,7 +6,7 @@
 
 ## 🚀 For Impatient Users (The Fast Way)
 
-**NFTBan is the first Linux firewall that a junior can install and use successfully without reading 50 pages of documentation.**
+**NFTBan is designed to be installed and used successfully without reading 50 pages of documentation.**
 
 **What makes NFTBan different:**
 - ✅ **AUTOMATIC SSH protection** - Detects your SSH port instantly
@@ -509,7 +509,7 @@ nftban report generate
 - **Linux:** "RTFM" attitude alienates users
 - **NFTBan:** `nftban setup` → Anyone succeeds
 
-**If junior users can use it successfully, we've built something great for everyone.**
+**If users can deploy it successfully without extensive training, we've built something great for everyone.**
 
 ---
 

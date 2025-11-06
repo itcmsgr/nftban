@@ -2,7 +2,7 @@
 
 **Version:** v0.32.0
 **Priority:** CRITICAL for network-dependent features
-**Audience:** System administrators, junior sysadmins
+**Audience:** System administrators
 
 ---
 
@@ -37,7 +37,7 @@ $ nslookup cloudflare.com
 ```
 
 **Impact:**
-- Junior sysadmins don't understand why features fail
+- Administrators don't understand why features fail
 - No clear error message pointing to DNS
 - Wastes hours troubleshooting the wrong thing
 
@@ -374,7 +374,7 @@ nftban geoip update
 
 ## 🎓 Educational: Why DNS Matters
 
-### For Junior Sysadmins
+### Understanding DNS Requirements
 
 **Q: Why can't NFTBan just use IP addresses?**
 
