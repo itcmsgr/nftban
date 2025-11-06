@@ -215,65 +215,45 @@ else
 fi
 
 # =============================================================================
-# Run health check and report what needs fixing
+# Automatically fix common issues
 # =============================================================================
-echo ""
-log_info "Running health check to verify installation..."
-echo ""
+log_info "Running automated fixes..."
 
+# Fix permissions silently
+/usr/sbin/nftban permissions enforce >/dev/null 2>&1 || true
+
+# Fix FHS issues silently
+/usr/sbin/nftban health check --auto-heal >/dev/null 2>&1 || true
+
+# =============================================================================
+# Run final health check - only report real errors, not warnings
+# =============================================================================
 HEALTH_OUTPUT=$(/usr/sbin/nftban health check 2>&1 || true)
-echo "$HEALTH_OUTPUT"
 
-# Check if there are still errors
+# Check for real errors (not warnings)
 if echo "$HEALTH_OUTPUT" | grep -q "Overall Status:.*ERROR"; then
-    echo ""
-    log_warn "================================================================="
-    log_warn "⚠️  ATTENTION: Some issues still need your attention"
-    log_warn "================================================================="
-    echo ""
+    ERROR_COUNT=$(echo "$HEALTH_OUTPUT" | grep -oP "Errors: \K\d+" || echo "0")
+    WARNING_COUNT=$(echo "$HEALTH_OUTPUT" | grep -oP "Warnings: \K\d+" || echo "0")
 
-    # Check for specific issues and give commands
-    if echo "$HEALTH_OUTPUT" | grep -q "GeoIP.*Database not found"; then
-        echo "📥 GeoIP Database Missing (optional - only for IP lookups):"
-        echo "   Run: nftban geoip update"
+    # Only alert if real errors exist (not just warnings)
+    if [ "$ERROR_COUNT" != "0" ]; then
         echo ""
-    fi
-
-    if echo "$HEALTH_OUTPUT" | grep -q "permission"; then
-        echo "🔒 Permission Issues Detected:"
-        echo "   Run: nftban permissions enforce"
+        echo "$HEALTH_OUTPUT"
         echo ""
-    fi
-
-    if echo "$HEALTH_OUTPUT" | grep -q "FHS.*error"; then
-        echo "📁 FHS Directory Issues:"
-        echo "   Run: nftban health check --auto-heal"
+        log_warn "================================================================="
+        log_warn "⚠️  Some issues require manual attention"
+        log_warn "================================================================="
         echo ""
+        echo "Run: nftban health check --verbose"
+        echo ""
+        HEALTH_STATUS="ERROR"
+    else
+        # Only warnings, treat as success
+        HEALTH_STATUS="OK"
     fi
-
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🚀 TO FIX ALL ISSUES AUTOMATICALLY:"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "   nftban permissions enforce && nftban health check --auto-heal"
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-
-elif echo "$HEALTH_OUTPUT" | grep -q "Overall Status:.*WARNING"; then
-    echo ""
-    log_info "✅ Installation OK (minor warnings only)"
-    echo ""
-    echo "You can ignore warnings or fix them with:"
-    echo "   nftban permissions enforce"
-    echo "   nftban geoip update    # (optional)"
-    echo ""
 else
-    echo ""
-    log_info "================================================================="
-    log_info "✅ Installation Perfect! No issues found!"
-    log_info "================================================================="
-    echo ""
+    # OK or only warnings - both are fine
+    HEALTH_STATUS="OK"
 fi
 
 # =============================================================================
@@ -289,19 +269,13 @@ log_info "✅ Permissions enforced (correct ownership and modes)"
 log_info "✅ System configuration generated"
 log_info "✅ Systemd timer configured"
 echo ""
-log_info "📖 Next Steps (Press button A, B, C...):"
-echo ""
-echo "  A) Fix any remaining issues (if shown above):"
-echo "     nftban permissions enforce && nftban health check --auto-heal"
-echo ""
-echo "  B) Enable NFTBan firewall:"
-echo "     nftban enable"
-echo ""
-echo "  C) Check status:"
-echo "     nftban status"
-echo ""
-echo "  D) Test new GeoBan feature (v0.31.0):"
-echo "     nftban geoban help"
+
+# Only show health status line if errors exist
+if [ "${HEALTH_STATUS:-OK}" = "ERROR" ]; then
+    log_warn "Health: ${HEALTH_STATUS} (some issues need attention)"
+else
+    log_info "Health: OK (system ready)"
+fi
 echo ""
 
 exit 0
