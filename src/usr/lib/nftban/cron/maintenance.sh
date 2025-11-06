@@ -296,9 +296,99 @@ EOF
     fi
 
     # ==========================================================================
-    # 3. Auto-Heal (Fix Permissions, Directories)
+    # 3. Active SSH Session Protection (Auto-Whitelist Logged-In Users)
     # ==========================================================================
-    log "INFO" "[3/4] Running auto-heal..."
+    log "INFO" "[3/5] Protecting active SSH sessions..."
+
+    # File to track active SSH IPs with timestamps
+    ACTIVE_SSH_WHITELIST="/var/lib/nftban/state/active_ssh_whitelist.state"
+    mkdir -p /var/lib/nftban/state
+
+    # Get all current SSH connections (excluding localhost)
+    CURRENT_SSH_IPS=$(ss -tn state established '( dport = :22 or sport = :22 )' 2>/dev/null | \
+                      awk 'NR>1 {print $5}' | \
+                      grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}|([0-9a-f:]+:+)+[0-9a-f]+' | \
+                      grep -v '^127\.' | \
+                      grep -v '^::1' | \
+                      sort -u)
+
+    # Update active SSH whitelist timestamp file
+    > "$ACTIVE_SSH_WHITELIST.new"
+
+    if [[ -n "$CURRENT_SSH_IPS" ]]; then
+        log "INFO" "Found active SSH connections, auto-whitelisting..."
+
+        for ip in $CURRENT_SSH_IPS; do
+            # Add IP to nftables whitelist (temporary, in-memory only)
+            if nft list table inet nftban_main >/dev/null 2>&1; then
+                # Determine if IPv4 or IPv6
+                if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                    # IPv4
+                    if ! nft list set inet nftban_main whitelist_v4 2>/dev/null | grep -q "$ip"; then
+                        nft add element inet nftban_main whitelist_v4 "{ $ip }" 2>/dev/null && \
+                            log "INFO" "✅ Auto-whitelisted active SSH session: $ip (temporary)"
+                    fi
+                else
+                    # IPv6
+                    if ! nft list set inet nftban_main whitelist_v6 2>/dev/null | grep -q "$ip"; then
+                        nft add element inet nftban_main whitelist_v6 "{ $ip }" 2>/dev/null && \
+                            log "INFO" "✅ Auto-whitelisted active SSH session: $ip (temporary)"
+                    fi
+                fi
+            fi
+
+            # Track this IP with current timestamp (for cleanup later)
+            echo "$ip $(date +%s)" >> "$ACTIVE_SSH_WHITELIST.new"
+        done
+
+        mv "$ACTIVE_SSH_WHITELIST.new" "$ACTIVE_SSH_WHITELIST"
+    else
+        log "INFO" "No active SSH sessions to protect"
+        > "$ACTIVE_SSH_WHITELIST"
+    fi
+
+    # Cleanup: Remove IPs that haven't been seen for 2 hours (7200 seconds)
+    if [[ -f "$ACTIVE_SSH_WHITELIST" ]]; then
+        CURRENT_TIME=$(date +%s)
+        CLEANUP_AGE=7200  # 2 hours
+
+        while read -r ip timestamp; do
+            [[ -z "$ip" || -z "$timestamp" ]] && continue
+
+            AGE=$((CURRENT_TIME - timestamp))
+
+            if [[ $AGE -gt $CLEANUP_AGE ]]; then
+                # IP hasn't been seen for 2+ hours, remove from whitelist
+                if nft list table inet nftban_main >/dev/null 2>&1; then
+                    if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+                        # IPv4
+                        if nft list set inet nftban_main whitelist_v4 2>/dev/null | grep -q "$ip"; then
+                            # Only remove if NOT in permanent whitelist file
+                            if ! grep -q "^$ip" /etc/nftban/whitelist.d/00-system.conf 2>/dev/null; then
+                                nft delete element inet nftban_main whitelist_v4 "{ $ip }" 2>/dev/null && \
+                                    log "INFO" "🗑️  Removed stale SSH IP from whitelist: $ip (inactive for 2+ hours)"
+                            fi
+                        fi
+                    else
+                        # IPv6
+                        if nft list set inet nftban_main whitelist_v6 2>/dev/null | grep -q "$ip"; then
+                            if ! grep -q "^$ip" /etc/nftban/whitelist.d/00-system.conf 2>/dev/null; then
+                                nft delete element inet nftban_main whitelist_v6 "{ $ip }" 2>/dev/null && \
+                                    log "INFO" "🗑️  Removed stale SSH IP from whitelist: $ip (inactive for 2+ hours)"
+                            fi
+                        fi
+                    fi
+                fi
+            fi
+        done < "$ACTIVE_SSH_WHITELIST"
+    fi
+
+    log "INFO" "Active SSH session protection: OK"
+
+    # ==========================================================================
+    # 4. Auto-Heal (Fix Permissions, Directories)
+    # ==========================================================================
+    log "INFO" "[4/5] Running auto-heal..."
 
     if [[ -f "${NFTBAN_LIB_DIR}/helpers/autoheal.sh" ]]; then
         if "${NFTBAN_LIB_DIR}/helpers/autoheal.sh" >> "$LOGFILE" 2>&1; then
@@ -311,9 +401,9 @@ EOF
     fi
 
     # ==========================================================================
-    # 4. Configuration Validation (Critical Files)
+    # 5. Configuration Validation (Critical Files)
     # ==========================================================================
-    log "INFO" "[4/4] Validating critical configuration..."
+    log "INFO" "[5/5] Validating critical configuration..."
 
     local config_ok=true
 
