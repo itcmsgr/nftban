@@ -73,13 +73,13 @@ GO_LOG_FILE=/var/log/nftban/go-operations.log
 
 ### [DNS_AND_NETWORK_REQUIREMENTS.md](DNS_AND_NETWORK_REQUIREMENTS.md) ⚠️ IMPORTANT
 **Purpose:** DNS requirements and troubleshooting
-**Audience:** ALL administrators (especially juniors)
+**Audience:** ALL administrators
 **Contains:**
 - Why DNS is required for Cloudflare, Feeds, GeoBan
 - DNS health check feature
 - How to fix broken DNS
 - Testing network-dependent features
-- Educational content for junior sysadmins
+- Educational content for system administrators
 
 **Critical for:**
 - ✅ Cloudflare IP updates

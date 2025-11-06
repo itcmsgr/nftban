@@ -158,7 +158,7 @@ nftban_cmd_port() {
             # Add port to whitelist
             # Args: <port> [protocol]
             local port="${1:-}"
-            local proto="${2:-both}"  # JUNIOR-FRIENDLY: Default to BOTH protocols
+            local proto="${2:-both}"  Default to BOTH protocols
 
             if [[ -z "$port" ]]; then
                 echo "ERROR: Port number required" >&2
@@ -433,7 +433,7 @@ nftban_cmd_port() {
             ;;
 
         block)
-            # Block port (remove from whitelist) - JUNIOR FRIENDLY
+            # Block port (remove from whitelist)
             # Default: blocks TCP+UDP on both IPv4+IPv6
             # Args: <port>
             local port="${1:-}"
@@ -483,7 +483,7 @@ nftban_cmd_port() {
             ;;
 
         unblock)
-            # Unblock port (add to whitelist) - JUNIOR FRIENDLY
+            # Unblock port (add to whitelist)
             # Default: unblocks TCP+UDP on both IPv4+IPv6
             # Args: <port>
             local port="${1:-}"
@@ -558,7 +558,7 @@ nftban_cmd_port() {
             echo "  nftban port allow-panel <panel>  # Allow control panel ports in firewall"
             echo "  nftban port help                 # Show this help"
             echo ""
-            echo "Examples (Junior-friendly):"
+            echo "Examples :"
             echo "  nftban port status               # Show all listening ports"
             echo "  nftban port status 22,80,443     # Show only SSH, HTTP, HTTPS"
             echo "  nftban port detailed             # Show detailed info with bind addresses"

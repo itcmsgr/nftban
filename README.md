@@ -131,8 +131,8 @@ nftban firewall reload      # Atomic reload (no downtime)
 ## 🧩 Why NFTBan Matters
 
 Traditional firewalls either **favor convenience over safety** or require expert‑level
-configuration. NFTBan aims to merge both worlds — a platform where **junior admins can operate safely**
-and **senior engineers retain fine‑grained control**.
+configuration. NFTBan aims to merge both worlds — a platform where **any administrator can operate safely**
+and **engineers retain fine‑grained control**.
 
 **Current Features (Beta):**
 - 🔧 Zero Trust Privilege Model with Polkit (testing in progress)

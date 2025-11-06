@@ -180,7 +180,7 @@ Shows if port is currently active in nftables and which config files reference i
 
 .TP
 .B port block \fIPORT\fR
-Block a port (TCP+UDP on IPv4+IPv6) - junior-friendly
+Block a port (TCP+UDP on IPv4+IPv6)
 .RS
 Removes port from whitelist, blocking all traffic. Protected against blocking active SSH port.
 .TP
@@ -190,7 +190,7 @@ nftban port block 3389        # Block RDP port
 
 .TP
 .B port unblock \fIPORT\fR
-Unblock a port (TCP+UDP on IPv4+IPv6) - junior-friendly
+Unblock a port (TCP+UDP on IPv4+IPv6)
 .RS
 Adds port to whitelist, allowing traffic on both TCP and UDP protocols.
 .TP
