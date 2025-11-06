@@ -279,14 +279,16 @@ install -m 0644 CONTRIBUTING.md %{buildroot}/usr/share/nftban/docs/
 
 %pre
 # =============================================================================
-# STEP A: Enable repositories BEFORE RPM tries to install dependencies
+# STEP A: CHECK repositories are enabled (don't try to enable them)
 # =============================================================================
+# This avoids hanging on dnf commands during %pre execution.
+# Users must enable repos BEFORE installing if on Rocky/Alma/CentOS.
 
 # Only run on fresh install (not upgrade)
 if [ $1 -eq 1 ]; then
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "NFTBan Pre-Installation: Enabling repositories..."
+    echo "NFTBan Pre-Installation: Checking repositories..."
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
@@ -303,55 +305,106 @@ if [ $1 -eq 1 ]; then
     echo "Detected OS: ${OS_ID} ${OS_VERSION_ID}"
     echo ""
 
-    # Enable repos based on OS (repos must be enabled BEFORE RPM dependency check)
+    # Check repos based on OS
     case "${OS_ID}" in
         almalinux|rocky)
-            # AlmaLinux or Rocky Linux - need EPEL + CRB for fail2ban
-            echo "→ Enabling EPEL repository..."
-            dnf install -y epel-release 2>&1 | grep -v "already installed" || true
+            # Rocky/AlmaLinux 9+: need EPEL + CRB
+            # Rocky/AlmaLinux 8: need EPEL + PowerTools
 
-            echo "→ Enabling CRB (CodeReady Builder) repository..."
-            if command -v crb >/dev/null 2>&1; then
-                crb enable 2>&1 | grep -v "already enabled" || true
-            else
-                dnf config-manager --set-enabled crb 2>&1 | grep -v "already enabled" || \
-                dnf config-manager --set-enabled powertools 2>&1 | grep -v "already enabled" || true
+            # Check EPEL
+            if ! dnf repolist enabled 2>/dev/null | grep -q epel; then
+                echo "❌ ERROR: EPEL repository is NOT enabled"
+                echo ""
+                echo "NFTBan requires fail2ban, which is only available in EPEL."
+                echo ""
+                echo "Please enable EPEL and CRB repositories first:"
+                echo ""
+                echo "  sudo dnf install -y epel-release"
+                if [ "$OS_VERSION_ID" -ge 9 ]; then
+                    echo "  sudo dnf config-manager --set-enabled crb"
+                else
+                    echo "  sudo dnf config-manager --set-enabled powertools"
+                fi
+                echo ""
+                echo "Then retry: sudo dnf install -y nftban-x86_64.rpm"
+                echo ""
+                exit 1
             fi
-            echo "✓ Repositories enabled - fail2ban will install automatically"
+
+            # Check CRB/PowerTools
+            if ! dnf repolist enabled 2>/dev/null | grep -qE 'crb|powertools'; then
+                echo "❌ ERROR: CRB/PowerTools repository is NOT enabled"
+                echo ""
+                echo "NFTBan requires fail2ban dependencies from CRB/PowerTools."
+                echo ""
+                if [ "$OS_VERSION_ID" -ge 9 ]; then
+                    echo "Please enable CRB repository:"
+                    echo ""
+                    echo "  sudo dnf config-manager --set-enabled crb"
+                else
+                    echo "Please enable PowerTools repository:"
+                    echo ""
+                    echo "  sudo dnf config-manager --set-enabled powertools"
+                fi
+                echo ""
+                echo "Then retry: sudo dnf install -y nftban-x86_64.rpm"
+                echo ""
+                exit 1
+            fi
+
+            echo "✓ EPEL and CRB/PowerTools repositories are enabled"
+            echo "✓ Proceeding with installation..."
             ;;
 
         centos)
-            # CentOS - need EPEL + PowerTools for fail2ban
-            echo "→ Enabling EPEL repository..."
-            dnf install -y epel-release 2>&1 | grep -v "already installed" || true
+            # CentOS - same as Rocky/Alma
+            if ! dnf repolist enabled 2>/dev/null | grep -q epel; then
+                echo "❌ ERROR: EPEL repository is NOT enabled"
+                echo ""
+                echo "Please enable EPEL and PowerTools:"
+                echo ""
+                echo "  sudo dnf install -y epel-release"
+                if [ "$OS_VERSION_ID" -ge 9 ]; then
+                    echo "  sudo dnf config-manager --set-enabled crb"
+                else
+                    echo "  sudo dnf config-manager --set-enabled powertools"
+                fi
+                echo ""
+                echo "Then retry: sudo dnf install -y nftban-x86_64.rpm"
+                echo ""
+                exit 1
+            fi
 
-            echo "→ Enabling PowerTools repository..."
-            dnf config-manager --set-enabled powertools 2>&1 | grep -v "already enabled" || \
-            dnf config-manager --set-enabled crb 2>&1 | grep -v "already enabled" || true
-            echo "✓ Repositories enabled - fail2ban will install automatically"
+            if ! dnf repolist enabled 2>/dev/null | grep -qE 'crb|powertools'; then
+                echo "❌ ERROR: CRB/PowerTools repository is NOT enabled"
+                echo ""
+                if [ "$OS_VERSION_ID" -ge 9 ]; then
+                    echo "  sudo dnf config-manager --set-enabled crb"
+                else
+                    echo "  sudo dnf config-manager --set-enabled powertools"
+                fi
+                echo ""
+                echo "Then retry: sudo dnf install -y nftban-x86_64.rpm"
+                echo ""
+                exit 1
+            fi
+
+            echo "✓ EPEL and CRB/PowerTools repositories are enabled"
+            echo "✓ Proceeding with installation..."
             ;;
 
         fedora)
-            # Fedora - fail2ban in standard repos, no action needed
-            echo "✓ Fedora - fail2ban in standard repos"
-            ;;
-
-        debian|ubuntu)
-            # Debian/Ubuntu - fail2ban in standard repos, no action needed
-            echo "✓ Debian/Ubuntu - fail2ban in standard repos"
+            # Fedora - fail2ban in standard repos, no check needed
+            echo "✓ Fedora detected - all repos available by default"
             ;;
 
         *)
-            echo "⚠ WARNING: Unknown OS '${OS_ID}'"
-            echo "  Attempting to enable EPEL..."
-            dnf install -y epel-release 2>&1 | grep -v "already installed" || true
+            echo "⚠️  WARNING: Unsupported OS (${OS_ID})"
+            echo "   Installation may fail if fail2ban is not available in repos"
+            echo "   Continuing anyway..."
             ;;
     esac
 
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "Repositories ready - continuing with installation..."
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 fi
 
