@@ -448,8 +448,15 @@ nftban_feeds_sync_to_nftables_go() {
 
     nftban_feeds_log INFO "Enabled feeds: $enabled_feeds"
 
+    # Convert feed names to lowercase for Go binary compatibility
+    # Go binary expects: "firehol_anonymous", Bash config has: "FIREHOL_ANONYMOUS"
+    local enabled_feeds_lowercase
+    enabled_feeds_lowercase=$(echo "$enabled_feeds" | tr '[:upper:]' '[:lower:]')
+
+    nftban_feeds_log DEBUG "Calling Go binary with: $enabled_feeds_lowercase"
+
     # Call Go binary with atomic loading
-    if "$go_binary" sync "$enabled_feeds" 2>&1 | tee -a "$NFTBAN_FEEDS_LOG"; then
+    if "$go_binary" sync "$enabled_feeds_lowercase" 2>&1 | tee -a "$NFTBAN_FEEDS_LOG"; then
         nftban_feeds_log INFO "Go feed sync completed successfully"
         return 0
     else
