@@ -1,19 +1,19 @@
-nftban (0.31.0-1) stable; urgency=high
+nftban (0.32.0-1) stable; urgency=critical
 
-  * NEW: GeoBan country blocking (ban/unban/whitelist commands)
-  * NEW: Atomic port management (port add/remove commands)
-  * NEW: Go feeds atomic loader (10-60x faster, netlink-based)
-  * NEW: Build-time Go compilation (transparent, no precompiled binaries)
-  * NEW: Complete FHS compliance with tmpfiles.d
-  * NEW: Dynamic module inventory system
-  * FIX: All version references aligned to v0.31.0
-  * FIX: Build system for RPM and DEB transparent compilation
-  * ENHANCEMENT: Architecture support for x86_64 and aarch64
-  * ENHANCEMENT: ETag-based HTTP caching for feeds and GeoIP
-  * ENHANCEMENT: CIDR merging for memory optimization
-  * ENHANCEMENT: CPU/RAM monitoring with safety limits
+  * CRITICAL FIX: Single source of truth for feeds (removed hardcoded Go URLs)
+  * BREAKING: Go binary no longer downloads feeds (loads from disk)
+  * NEW ARCHITECTURE: Bash downloads → Go loads (fast, atomic, maintainable)
+  * FIX: Feed name case mismatch (FIREHOL_ANONYMOUS vs firehol_anonymous)
+  * FIX: Missing nftban_feeds_list_enabled() function
+  * FIX: Go binary wrappers architecture detection (-x86_64 suffix)
+  * FIX: Port scan auto-ban integration (calls nftban ban command)
+  * FIX: Port scan status display (check portscan_detection chain)
+  * FIX: GitHub Actions glibc version mismatch in RPM builds
+  * DOCS: Updated README with BETA WARNING (not production-ready)
+  * ENHANCEMENT: Feeds now auto-discovered from config (no hardcoding)
+  * ENHANCEMENT: All version references aligned to v0.32.0
 
- -- Antonios Voulvoulis <contact@nftban.com>  Wed, 06 Nov 2025 01:30:00 +0200
+ -- Antonios Voulvoulis <contact@nftban.com>  Wed, 06 Nov 2025 14:00:00 +0200
 
 nftban (0.30.1-1) stable; urgency=critical
 

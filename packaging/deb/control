@@ -38,8 +38,8 @@ Recommends: fail2ban (>= 0.11),
 Conflicts: firewalld,
            iptables,
            iptables-persistent
-Description: Modern nftables firewall with GeoBan country blocking (v0.31.0)
- NFTBan v0.31.0 is a modern, high-performance firewall management system for Linux
+Description: Modern nftables firewall with GeoBan country blocking (v0.32.0)
+ NFTBan v0.32.0 is a modern, high-performance firewall management system for Linux
  servers using nftables with GeoBan country blocking and self-healing monitoring.
  .
  Features include:
