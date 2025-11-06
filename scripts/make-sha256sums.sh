@@ -27,19 +27,21 @@ echo ""
 rm -f SHA256SUMS
 
 # Get list of all files except SHA256SUMS itself
-tmp=$(mktemp)
-ls -1 | grep -v '^SHA256SUMS$' > "$tmp" || true
+# Use glob instead of ls | grep
+shopt -s nullglob
+files=()
+for f in *; do
+    [[ "$f" != "SHA256SUMS" ]] && [[ -f "$f" ]] && files+=("$f")
+done
 
-if [[ ! -s "$tmp" ]]; then
+if [[ ${#files[@]} -eq 0 ]]; then
     echo "❌ No files found to checksum"
-    rm -f "$tmp"
     exit 1
 fi
 
 # Generate checksums
-echo "Generating checksums for $(wc -l < "$tmp") files..."
-sha256sum $(cat "$tmp") > SHA256SUMS
-rm -f "$tmp"
+echo "Generating checksums for ${#files[@]} files..."
+sha256sum "${files[@]}" > SHA256SUMS
 
 # Display results
 echo ""
