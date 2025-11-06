@@ -91,16 +91,21 @@ jobs:
           docker run --rm -v "$(pwd):/workspace" -w /workspace rockylinux:9 bash -c "
             set -e  # Exit on any error
 
-            # CRITICAL: Update ALL packages to avoid version mismatches
-            echo '=== Updating system packages (fixing base image) ==='
-            dnf update -y || {
-              echo 'ERROR: Failed to update system packages'
+            # CRITICAL: Use distro-sync to align BaseOS/AppStream repo versions
+            # This fixes glibc/glibc-devel version mismatches caused by mirror skew
+            echo '=== Syncing to consistent repo state (distro-sync) ==='
+            dnf clean all
+            rm -rf /var/cache/dnf
+            dnf -y --releasever=9 --refresh distro-sync || {
+              echo 'ERROR: Failed to sync package repos'
               exit 1
             }
 
-            # Now install build dependencies (versions will match)
+            # Now install build dependencies in single consistent transaction
             echo '=== Installing build dependencies ==='
-            dnf install -y glibc-devel rpm-build rpmdevtools tar gzip which systemd-rpm-macros golang gcc || {
+            dnf -y --releasever=9 --refresh install \
+              glibc glibc-devel rpm-build rpmdevtools tar gzip which \
+              systemd-rpm-macros golang gcc || {
               echo 'ERROR: Failed to install build dependencies'
               exit 1
             }
