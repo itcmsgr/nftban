@@ -18,9 +18,34 @@ table inet nftban_runtime {
     comment "Temporary IPv6 bans from Fail2ban"
   }
 
+  # IPv4 temporary whitelist (active SSH sessions)
+  set temp_whitelist_v4 {
+    type ipv4_addr
+    flags timeout
+    comment "Temporary IPv4 whitelist for active SSH sessions"
+  }
+
+  # IPv6 temporary whitelist (active SSH sessions)
+  set temp_whitelist_v6 {
+    type ipv6_addr
+    flags timeout
+    comment "Temporary IPv6 whitelist for active SSH sessions"
+  }
+
+  # Early-accept chain for temporary whitelists
+  # Priority -10 (highest priority - evaluates FIRST)
+  # This ensures active SSH users are NEVER banned
+  chain input_temp_whitelist {
+    type filter hook input priority -10; policy accept;
+
+    # Accept temporarily whitelisted IPs (active SSH sessions)
+    ip saddr  @temp_whitelist_v4 counter accept comment "active SSH session v4"
+    ip6 saddr @temp_whitelist_v6 counter accept comment "active SSH session v6"
+  }
+
   # Early-drop chain for temporary bans
-  # Priority -5 (higher than main table at 0)
-  # This ensures temp bans evaluate BEFORE static rules
+  # Priority -5 (higher than main table at 0, but lower than whitelist)
+  # This ensures temp bans evaluate AFTER whitelist but BEFORE static rules
   chain input_tempban {
     type filter hook input priority -5; policy accept;
 
