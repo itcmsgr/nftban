@@ -281,6 +281,12 @@ install -m 0644 CONTRIBUTING.md %{buildroot}/usr/share/nftban/docs/
 %sysusers_create_compat packaging/sysusers.d/nftban.conf
 
 %post
+# Update NFTBAN_VERSION in config file (handles upgrades with noreplace)
+# This ensures the banner shows the correct version even on upgrades
+if [ -f /etc/nftban/nftban.conf ]; then
+    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.0"/' /etc/nftban/nftban.conf
+fi
+
 # Generate system.conf with UID/GID
 NFTBAN_UID=$(id -u nftban)
 NFTBAN_GID=$(id -g nftban)

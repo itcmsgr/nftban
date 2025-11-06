@@ -303,7 +303,7 @@ Hostname: $(hostname)
 See attached files for detailed statistics.
 
 ---
-Automated by NFTBan v${NFTBAN_VERSION:-0.31.0}
+Automated by NFTBan v${NFTBAN_VERSION:-0.32.0}
 EOF
 )
 
