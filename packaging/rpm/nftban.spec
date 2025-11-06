@@ -44,7 +44,7 @@ Requires:       iproute
 Requires:       ipset
 Requires:       git
 Requires:       polkit
-# fail2ban installed automatically in %post after enabling repos
+Requires:       fail2ban-server >= 0.11
 Recommends:     logrotate
 
 # Conflicts
@@ -278,14 +278,14 @@ install -m 0644 CONTRIBUTING.md %{buildroot}/usr/share/nftban/docs/
 
 %pre
 # =============================================================================
-# STEP A: Enable repositories and install fail2ban BEFORE nftban installation
+# STEP A: Enable repositories BEFORE RPM tries to install dependencies
 # =============================================================================
 
 # Only run on fresh install (not upgrade)
 if [ $1 -eq 1 ]; then
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "NFTBan Pre-Installation: Checking dependencies..."
+    echo "NFTBan Pre-Installation: Enabling repositories..."
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
@@ -302,74 +302,55 @@ if [ $1 -eq 1 ]; then
     echo "Detected OS: ${OS_ID} ${OS_VERSION_ID}"
     echo ""
 
-    # Check if fail2ban is already installed
-    if rpm -q fail2ban-server >/dev/null 2>&1; then
-        echo "✓ fail2ban-server already installed"
-    else
-        echo "Installing fail2ban-server..."
+    # Enable repos based on OS (repos must be enabled BEFORE RPM dependency check)
+    case "${OS_ID}" in
+        almalinux|rocky)
+            # AlmaLinux or Rocky Linux - need EPEL + CRB for fail2ban
+            echo "→ Enabling EPEL repository..."
+            dnf install -y epel-release 2>&1 | grep -v "already installed" || true
 
-        case "${OS_ID}" in
-            almalinux|rocky)
-                # AlmaLinux or Rocky Linux - need EPEL + CRB
-                echo "→ Enabling EPEL repository..."
-                dnf install -y epel-release >/dev/null 2>&1 || {
-                    echo "⚠ WARNING: Failed to install epel-release"
-                }
+            echo "→ Enabling CRB (CodeReady Builder) repository..."
+            if command -v crb >/dev/null 2>&1; then
+                crb enable 2>&1 | grep -v "already enabled" || true
+            else
+                dnf config-manager --set-enabled crb 2>&1 | grep -v "already enabled" || \
+                dnf config-manager --set-enabled powertools 2>&1 | grep -v "already enabled" || true
+            fi
+            echo "✓ Repositories enabled - fail2ban will install automatically"
+            ;;
 
-                echo "→ Enabling CRB (CodeReady Builder) repository..."
-                if command -v crb >/dev/null 2>&1; then
-                    crb enable >/dev/null 2>&1 || {
-                        echo "⚠ WARNING: Failed to enable CRB via 'crb' command"
-                    }
-                elif command -v dnf >/dev/null 2>&1; then
-                    # Try dnf config-manager method
-                    dnf config-manager --set-enabled crb >/dev/null 2>&1 || \
-                    dnf config-manager --set-enabled powertools >/dev/null 2>&1 || {
-                        echo "⚠ WARNING: Failed to enable CRB/PowerTools"
-                    }
-                fi
-                ;;
+        centos)
+            # CentOS - need EPEL + PowerTools for fail2ban
+            echo "→ Enabling EPEL repository..."
+            dnf install -y epel-release 2>&1 | grep -v "already installed" || true
 
-            centos)
-                # CentOS - need EPEL + PowerTools
-                echo "→ Enabling EPEL repository..."
-                dnf install -y epel-release >/dev/null 2>&1 || {
-                    echo "⚠ WARNING: Failed to install epel-release"
-                }
+            echo "→ Enabling PowerTools repository..."
+            dnf config-manager --set-enabled powertools 2>&1 | grep -v "already enabled" || \
+            dnf config-manager --set-enabled crb 2>&1 | grep -v "already enabled" || true
+            echo "✓ Repositories enabled - fail2ban will install automatically"
+            ;;
 
-                echo "→ Enabling PowerTools repository..."
-                dnf config-manager --set-enabled powertools >/dev/null 2>&1 || \
-                dnf config-manager --set-enabled crb >/dev/null 2>&1 || {
-                    echo "⚠ WARNING: Failed to enable PowerTools/CRB"
-                }
-                ;;
+        fedora)
+            # Fedora - fail2ban in standard repos, no action needed
+            echo "✓ Fedora - fail2ban in standard repos"
+            ;;
 
-            fedora)
-                # Fedora - fail2ban in standard repos
-                echo "→ Fedora detected - fail2ban in standard repos"
-                ;;
+        debian|ubuntu)
+            # Debian/Ubuntu - fail2ban in standard repos, no action needed
+            echo "✓ Debian/Ubuntu - fail2ban in standard repos"
+            ;;
 
-            *)
-                echo "⚠ WARNING: Unknown OS '${OS_ID}' - attempting EPEL installation"
-                dnf install -y epel-release >/dev/null 2>&1 || true
-                ;;
-        esac
+        *)
+            echo "⚠ WARNING: Unknown OS '${OS_ID}'"
+            echo "  Attempting to enable EPEL..."
+            dnf install -y epel-release 2>&1 | grep -v "already installed" || true
+            ;;
+    esac
 
-        # Now install fail2ban-server
-        echo "→ Installing fail2ban-server..."
-        dnf install -y fail2ban-server >/dev/null 2>&1 && {
-            echo "✓ fail2ban-server installed successfully"
-        } || {
-            echo "✗ FAILED to install fail2ban-server"
-            echo ""
-            echo "Please install manually:"
-            echo "  dnf install -y epel-release"
-            echo "  crb enable  # or: dnf config-manager --set-enabled crb"
-            echo "  dnf install -y fail2ban-server"
-            echo ""
-        }
-    fi
-
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Repositories ready - continuing with installation..."
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 fi
 
