@@ -325,6 +325,6 @@ Our documentation follows these principles:
 
 ---
 
-**NFTBan v0.32.0** - Simple, Secure, Powerful
+**NFTBan v0.32.3** - Simple, Secure, Powerful
 
 Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis
