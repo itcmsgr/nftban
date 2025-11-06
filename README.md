@@ -12,30 +12,40 @@
 
 NFTBan is a **professional-grade firewall management system** built on nftables with **enterprise safety features**, **privilege separation via Polkit**, and **atomic operations** that prevent lockouts.
 
+**NFTBan is the first Linux firewall that a junior can install and use successfully without reading 50 pages of documentation.**
+
 **🚀 RELEASED** | **✅ Tested on 5 lab servers (minimal installations)** | **⚡ 10-60x faster with Go binaries**
 
-> **NEW in v0.31.0:** GeoBan country blocking, atomic port management, and 10-60x faster threat feeds! We need **community feedback** from diverse production environments. Please report any issues to help us improve!
+> **NEW in v0.31.0:** Interactive setup wizard (`nftban setup`), GeoBan country blocking, atomic port management, and 10-60x faster threat feeds! We need **community feedback** from diverse production environments. Please report any issues to help us improve!
 
 ---
 
 ## 📥 Download & Installation
 
-### ⚡ Quick Install (One Command)
+### ⚡ Quick Install (Two Commands - That's It!)
 
 **Rocky Linux / AlmaLinux / RHEL / Fedora:**
 ```bash
-# Download and install latest RPM (x86_64)
+# 1. Install NFTBan
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm
 sudo dnf install -y nftban-x86_64.rpm
+
+# 2. Run the setup wizard
+sudo nftban setup
 ```
 
 **Ubuntu / Debian:**
 ```bash
-# Download and install latest DEB (amd64)
+# 1. Install NFTBan
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-amd64.deb
 sudo dpkg -i nftban-amd64.deb
 sudo apt-get install -f  # Install dependencies if needed
+
+# 2. Run the setup wizard
+sudo nftban setup
 ```
+
+**That's it!** The interactive wizard will guide you through the rest - no manual configuration needed.
 
 ### 📦 Available Architectures
 
