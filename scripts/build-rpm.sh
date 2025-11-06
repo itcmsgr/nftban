@@ -35,9 +35,17 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Configuration
-VERSION="${VERSION:-0.32.0}"
-RELEASE="${RELEASE:-1}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+
+# Read version from VERSION file (single source of truth)
+if [[ -f "${PROJECT_ROOT}/VERSION" ]]; then
+    VERSION="$(cat "${PROJECT_ROOT}/VERSION" | tr -d '[:space:]')"
+else
+    echo "ERROR: VERSION file not found"
+    exit 1
+fi
+
+RELEASE="${RELEASE:-1}"
 BUILD_DIR="${PROJECT_ROOT}/dist/rpm-build"
 OUTPUT_DIR="${PROJECT_ROOT}/dist/packages"
 

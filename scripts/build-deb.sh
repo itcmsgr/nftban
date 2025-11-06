@@ -24,7 +24,14 @@ readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 readonly BUILD_DIR="$PROJECT_ROOT/dist/build/deb"
 readonly PACKAGE_DIR="$PROJECT_ROOT/dist/packages"
-readonly VERSION="0.32.0"
+
+# Read version from VERSION file (single source of truth)
+if [[ -f "${PROJECT_ROOT}/VERSION" ]]; then
+    readonly VERSION="$(cat "${PROJECT_ROOT}/VERSION" | tr -d '[:space:]')"
+else
+    echo "ERROR: VERSION file not found"
+    exit 1
+fi
 readonly RELEASE="1"
 
 # =============================================================================
