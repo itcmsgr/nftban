@@ -217,10 +217,10 @@ nftban_system_disable() {
     echo "This will:"
     echo "  • Stop nftban.timer (no automatic updates)"
     echo "  • Stop fail2ban.service (no intrusion prevention)"
+    echo "  • Stop nftables firewall (remove all rules)"
     echo "  • Disable auto-start on boot"
     echo ""
-    echo "⚠️  Your firewall rules (nftables) will remain active."
-    echo "⚠️  To remove firewall rules, run: nftban firewall stop"
+    echo "Your server will be UNPROTECTED after this!"
     echo ""
 
     read -p "Are you sure you want to disable NFTBan? (yes/no): " confirm
@@ -230,7 +230,7 @@ nftban_system_disable() {
     fi
 
     echo ""
-    echo "[1/2] Stopping services..."
+    echo "[1/3] Stopping services..."
 
     # Stop nftban timer
     if systemctl stop nftban.timer 2>/dev/null; then
@@ -249,7 +249,19 @@ nftban_system_disable() {
     fi
 
     echo ""
-    echo "[2/2] Disabling auto-start..."
+    echo "[2/3] Stopping firewall (removing nftables rules)..."
+
+    # Delete nftban tables (removes all firewall rules)
+    if nft list table inet nftban_main >/dev/null 2>&1; then
+        nft delete table inet nftban_main 2>/dev/null && echo "  ✓ Removed: nftban_main table"
+    fi
+    if nft list table inet nftban_runtime >/dev/null 2>&1; then
+        nft delete table inet nftban_runtime 2>/dev/null && echo "  ✓ Removed: nftban_runtime table"
+    fi
+    echo "  ✓ Firewall stopped (all protection removed)"
+
+    echo ""
+    echo "[3/3] Disabling auto-start..."
 
     # Disable nftban timer
     if systemctl disable nftban.timer 2>/dev/null; then
@@ -269,24 +281,18 @@ nftban_system_disable() {
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✅ NFTBan System DISABLED"
+    echo "✅ NFTBan DISABLED - Protection Stopped"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "Services stopped and disabled:"
-    echo "  • nftban.timer (attack protection)"
-    echo "  • fail2ban.service (intrusion prevention)"
+    echo "What was stopped:"
+    echo "  • nftban.timer - Stopped and disabled"
+    echo "  • fail2ban.service - Stopped and disabled"
+    echo "  • nftables firewall - All rules removed"
     echo ""
-    echo "ℹ️  NOTE: Maintenance timer still running (safety checks)"
-    echo "   → nftban-maintenance.timer monitors SSH port and system health"
-    echo "   → Runs even when NFTBan is disabled (lockout prevention)"
+    echo "⚠️  Your server is now UNPROTECTED!"
     echo ""
-    echo "⚠️  NOTE: Firewall rules (nftables) are still active!"
-    echo ""
-    echo "To re-enable NFTBan:"
-    echo "  → nftban enable"
-    echo ""
-    echo "To stop firewall completely:"
-    echo "  → nftban firewall stop"
+    echo "To re-enable protection:"
+    echo "  → sudo nftban enable"
     echo ""
 
     return 0
