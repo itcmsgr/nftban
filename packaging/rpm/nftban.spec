@@ -337,6 +337,20 @@ if [ -d /var/lib/nftban/reports/auditors ]; then
     chmod 0770 /var/lib/nftban/reports/auditors
 fi
 
+# On upgrade (not fresh install), reload firewall to apply new rules
+# $1 = 1 means fresh install, $1 = 2 means upgrade
+if [ $1 -eq 2 ]; then
+    # Check if nftban_main table exists (means firewall was previously configured)
+    if /usr/sbin/nft list table inet nftban_main &>/dev/null; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "📦 Upgrade complete - applying updated firewall rules..."
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        /usr/sbin/nftban firewall reload 2>&1 | grep -E '(✓|✅|━)' || true
+        echo ""
+    fi
+fi
+
 # Auto-detect and whitelist SSH port (LOCKOUT PREVENTION)
 SSH_PORT=22
 if [ -f "/etc/ssh/sshd_config" ]; then
@@ -370,14 +384,15 @@ systemctl start nftban-maintenance.timer 2>/dev/null || true
 # Print installation message
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║  NFTBan v0.32.0 Installation Complete!                    ║"
+echo "║  NFTBan v0.32.1 Installation Complete!                    ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "✅ Auto-heal completed - all systems configured"
 echo "✅ SSH port $SSH_PORT automatically whitelisted (lockout prevention)"
+echo "✅ fail2ban installed and ready"
 echo ""
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-echo "🚀 QUICKSTART - Ready to Enable Protection?"
+echo "🚀 QUICKSTART - Enable Protection"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 echo ""
 echo "   Just run ONE command:"
