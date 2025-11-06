@@ -91,29 +91,19 @@ jobs:
           docker run --rm -v "$(pwd):/workspace" -w /workspace rockylinux:9 bash -c "
             set -e  # Exit on any error
 
-            # CRITICAL: Update glibc FIRST to fix version mismatch
-            echo '=== Updating system glibc (fixing base image) ==='
-            dnf update -y glibc || {
-              echo 'ERROR: Failed to update glibc'
+            # CRITICAL: Update ALL packages to avoid version mismatches
+            echo '=== Updating system packages (fixing base image) ==='
+            dnf update -y || {
+              echo 'ERROR: Failed to update system packages'
               exit 1
             }
 
-            # Now install build dependencies (glibc-devel will match updated glibc)
+            # Now install build dependencies (versions will match)
             echo '=== Installing build dependencies ==='
-
-            # Detect OS - Rocky/Alma may need --nobest for glibc mismatch
-            if grep -qE 'rocky|almalinux' /etc/os-release 2>/dev/null; then
-              echo 'Detected Rocky/Alma - using --nobest for glibc compatibility'
-              dnf install -y --nobest --allowerasing glibc-devel rpm-build rpmdevtools tar gzip which systemd-rpm-macros golang gcc || {
-                echo 'ERROR: Failed to install build dependencies'
-                exit 1
-              }
-            else
-              dnf install -y --allowerasing glibc-devel rpm-build rpmdevtools tar gzip which systemd-rpm-macros golang gcc || {
-                echo 'ERROR: Failed to install build dependencies'
-                exit 1
-              }
-            fi
+            dnf install -y glibc-devel rpm-build rpmdevtools tar gzip which systemd-rpm-macros golang gcc || {
+              echo 'ERROR: Failed to install build dependencies'
+              exit 1
+            }
 
             # Verify rpmbuild is available
             which rpmbuild || { echo 'ERROR: rpmbuild not found after install'; exit 1; }
