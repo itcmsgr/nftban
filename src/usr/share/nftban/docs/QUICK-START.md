@@ -1,231 +1,339 @@
-# NFTBan v0.30.0 - Quick Start Guide
+# NFTBan v0.31.0 - Quick Start Guide
 
-**Get NFTBan running in 5 minutes**
+**The Linux firewall that anyone can install - Get running in 2 commands!**
 
 ---
 
-## For Impatient Users
+## 🚀 For Impatient Users (The Fast Way)
 
+**NFTBan is the first Linux firewall that a junior can install and use successfully without reading 50 pages of documentation.**
+
+### Rocky Linux / AlmaLinux / Fedora
 ```bash
-# Rocky Linux / AlmaLinux / Fedora
-sudo dnf install -y nftban-0.30.0-1.el9.x86_64.rpm
-sudo systemctl enable --now nftban-health.timer
+# 1. Install
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm
+sudo dnf install -y nftban-x86_64.rpm
 
-# Ubuntu / Debian
-sudo apt install ./nftban_0.30.0-1_amd64.deb
-sudo systemctl enable --now nftban-health.timer
+# 2. Run setup wizard
+sudo nftban setup
 
-# Check health
-nftban health check
-
-# Done! 🎉
+# That's it! 🎉
 ```
 
+### Ubuntu / Debian
+```bash
+# 1. Install
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-amd64.deb
+sudo dpkg -i nftban-amd64.deb
+sudo apt-get install -f
+
+# 2. Run setup wizard
+sudo nftban setup
+
+# That's it! 🎉
+```
+
+**The interactive wizard will:**
+- ✅ Fix all permissions automatically
+- ✅ Create missing directories
+- ✅ Verify system health
+- ✅ Optionally enable the firewall
+- ✅ Tell you exactly what to do next
+
 ---
 
-## Prerequisites
+## 📋 Prerequisites
 
-- Linux server (Rocky 9+, AlmaLinux 9+, Fedora 38+, Ubuntu 22.04+, Debian 12+)
+- Linux server (Rocky 9+, AlmaLinux 9+, Fedora 38+, Ubuntu 24.04+, Debian 12+)
 - Root or sudo access
 - Internet connection (for package download)
 
 ---
 
-## Installation Methods
+## 📦 Installation Methods
 
-### Method 1: RPM Package (Recommended for RHEL-based)
+### Method 1: One-Line Install (Recommended)
 
+**RHEL/Rocky/Alma/Fedora (x86_64):**
 ```bash
-# Download latest release
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.el9.x86_64.rpm
-
-# Install
-sudo dnf install -y ./nftban-0.30.0-1.el9.x86_64.rpm
-
-# Enable auto-healing
-sudo systemctl enable --now nftban-health.timer
+curl -LO https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm && sudo dnf install -y nftban-x86_64.rpm && sudo nftban setup
 ```
 
-### Method 2: DEB Package (Recommended for Debian-based)
-
+**Ubuntu/Debian (amd64):**
 ```bash
-# Download latest release
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban.ubuntu.amd64.deb
-
-# Install
-sudo apt install ./nftban_0.30.0-1_amd64.deb
-
-# Enable auto-healing
-sudo systemctl enable --now nftban-health.timer
+curl -LO https://github.com/itcmsgr/nftban/releases/latest/download/nftban-amd64.deb && sudo dpkg -i nftban-amd64.deb && sudo nftban setup
 ```
 
-### Method 3: From Source (Developers)
+### Method 2: Available Architectures
+
+| Platform | Architecture | Download Link |
+|----------|-------------|---------------|
+| **RHEL / Rocky / Alma / Fedora** | x86_64 | [nftban-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm) |
+| **RHEL / Rocky / Alma / Fedora** | aarch64 (ARM64) | [nftban-aarch64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-aarch64.rpm) |
+| **Ubuntu 24.04+ / Debian 12+** | amd64 | [nftban-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-amd64.deb) |
+| **Ubuntu 24.04+ / Debian 12+** | arm64 | [nftban-arm64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-arm64.deb) |
+
+After installation, run: `sudo nftban setup`
+
+---
+
+## 🎯 The Setup Wizard (Interactive)
+
+The `nftban setup` command provides a guided, step-by-step setup experience:
 
 ```bash
-# Clone repository
-git clone https://github.com/itcmsgr/nftban.git
-cd nftban
+sudo nftban setup
+```
 
-# Build Go binaries (optional, for performance)
-sudo dnf install golang  # or: sudo apt install golang-go
-./scripts/build-go-binaries.sh
+**What happens:**
 
-# Install from source
-cd src
-sudo ./install.sh
+```
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🚀 NFTBan First-Time Setup Wizard
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+This wizard will:
+  ✓ Fix all permissions
+  ✓ Create missing directories
+  ✓ Verify system configuration
+  ✓ Enable NFTBan (optional)
+
+Continue? (y/n) [y]:
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 1/4: Fixing Permissions
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✅ Permissions fixed
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 2/4: Creating Missing Directories
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✅ All directories created
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 3/4: Running Health Check
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+  ✅ System health: PERFECT
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Step 4/4: Enable NFTBan Firewall
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Enable now? (y/n) [n]: y
+
+  ✅ NFTBan enabled and running!
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+🎉 Setup Complete!
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+✅ NFTBan is now protecting your server!
+
+Next steps:
+  • Check status: nftban status
+  • View logs: journalctl -u nftban -f
+  • Test GeoBan: nftban geoban help
+```
+
+### Non-Interactive Mode
+
+For automation/scripts:
+```bash
+sudo nftban setup --auto
 ```
 
 ---
 
-## Post-Installation Setup
+## 🎓 Basic Usage (After Setup)
 
-### 1. Add Users to nftban-cli Group
-
-Allow users to manage firewall services without sudo:
-
+### Check Status
 ```bash
-# Add user to nftban-cli group
-sudo usermod -aG nftban-cli username
-
-# User must re-login for group to take effect
+nftban status
 ```
 
-**What this enables:**
-- `systemctl start/stop/restart nftables` (no password)
-- `systemctl start/stop/restart fail2ban` (no password)
-- Security-scoped: Cannot manage other services
-
-### 2. Enable Timers (Recommended)
-
+### Ban an IP
 ```bash
-# Auto-healing health checks (every hour)
-sudo systemctl enable --now nftban-health.timer
-
-# Permission audit (weekly, Sundays 02:00 AM)
-sudo systemctl enable --now nftban-permissions-audit.timer
+sudo nftban ban 192.0.2.100
 ```
 
-### 3. Verify Installation
-
+### Block a Country (GeoBan)
 ```bash
-# Check health
+sudo nftban geoban ban CN     # Block China
+sudo nftban geoban ban RU     # Block Russia
+```
+
+### Whitelist a Country
+```bash
+sudo nftban geoban whitelist US    # Never block USA
+```
+
+### Add a Custom Port
+```bash
+sudo nftban port add 8080 tcp
+sudo nftban port search 8080
+```
+
+### Health Check
+```bash
 nftban health check
+```
 
-# Expected output:
-# ✅ Binaries:      OK
-# ✅ Permissions:   OK
-# ✅ Services:      OK
-# ✅ Modules:       OK
-# ✅ Config:        OK
+### Get Help
+```bash
+nftban help
+nftban geoban help
+man nftban
 ```
 
 ---
 
-## Basic Usage
+## 🔧 Manual Setup (Advanced Users)
 
-### Health Checks
+If you prefer manual setup instead of the wizard:
 
+### 1. Fix Permissions
 ```bash
-# Full health check
+sudo nftban permissions enforce
+```
+
+### 2. Create Directories
+```bash
+sudo nftban health check --auto-heal
+```
+
+### 3. Initialize Firewall
+```bash
+sudo nftban firewall init
+```
+
+### 4. Enable NFTBan
+```bash
+sudo nftban enable
+```
+
+### 5. Verify
+```bash
+nftban status
 nftban health check
-
-# Fix issues automatically
-nftban health fix all
-```
-
-### FHS Compliance
-
-```bash
-# Check filesystem hierarchy
-nftban fhs check
-
-# Fix permissions
-nftban permissions enforce
-```
-
-### Service Management (as nftban-cli member)
-
-```bash
-# Manage nftables
-systemctl start nftables
-systemctl stop nftables
-systemctl restart nftables
-
-# Manage fail2ban
-systemctl start fail2ban
-systemctl restart fail2ban
 ```
 
 ---
 
-## Configuration
+## 📖 Key Features in v0.31.0
+
+### 🎯 Interactive Setup Wizard
+- **One command:** `nftban setup` does everything
+- **Guided process:** Clear steps with progress indicators
+- **Smart healing:** Automatically fixes common issues
+- **Optional enable:** Choose when to start firewall
+
+### 🌍 GeoBan Country Blocking
+- **Block countries:** `nftban geoban ban CN`
+- **Whitelist countries:** `nftban geoban whitelist US`
+- **Atomic operations:** Zero-downtime updates
+- **RIR data sources:** ARIN, RIPE, APNIC, LACNIC, AFRINIC
+
+### ⚡ Atomic Port Management
+- **Add ports:** `nftban port add 8080 tcp`
+- **Remove ports:** `nftban port remove 8080`
+- **Search ports:** `nftban port search 22`
+- **SSH protection:** System ports can't be accidentally removed
+
+### 🔄 Go-Powered Performance
+- **10-60x faster:** Go binaries for feeds and GeoIP
+- **Atomic operations:** Direct netlink communication
+- **Safety limits:** CPU/RAM monitoring prevents overload
+- **Intelligent caching:** ETag-based HTTP caching
+
+### 🛠️ Auto-Heal System
+- **Smart detection:** Identifies specific issues
+- **Actionable fixes:** Shows exact commands to run
+- **27 FHS directories:** All required paths auto-created
+- **Permission enforcement:** Correct ownership/modes
+
+---
+
+## 📚 Configuration
+
+NFTBan works out-of-the-box with sensible defaults. Configuration is optional.
 
 ### Main Config
-
-**Location:** `/etc/nftban/nftban.conf`
-
 ```bash
-# View config
-sudo cat /etc/nftban/nftban.conf
+# View current config
+cat /etc/nftban/nftban.conf
 
 # Customize (optional)
-sudo cp /etc/nftban/nftban.conf /etc/nftban/nftban.conf.local
-sudo vi /etc/nftban/nftban.conf.local
+sudo vi /etc/nftban/nftban.conf
 ```
 
 ### Module Configs
-
-**Location:** `/etc/nftban/conf.d/*.conf`
-
 ```bash
 # List available modules
-ls -la /etc/nftban/conf.d/
+ls /etc/nftban/conf.d/
 
 # Edit module config
-sudo vi /etc/nftban/conf.d/ddos.conf
-```
-
----
-
-## Next Steps
-
-### Optional: GeoIP Blocking
-
-```bash
-# Download GeoLite2 database
-sudo mkdir -p /var/lib/nftban/geoip
-cd /var/lib/nftban/geoip
-
-# Get MaxMind license key from: https://www.maxmind.com/en/geolite2/signup
-# Download GeoLite2-City.mmdb
-
-# Test
-/usr/lib/nftban/bin/nftban-geoip \
-  --database /var/lib/nftban/geoip/GeoLite2-City.mmdb \
-  --ip 8.8.8.8
-```
-
-### Optional: Threat Feeds
-
-```bash
-# Configure feed sources
 sudo vi /etc/nftban/conf.d/feeds.conf
+```
 
-# Test feed processing
-/usr/lib/nftban/bin/nftban-feeds \
-  --input /tmp/threat-feed.txt \
-  --output /tmp/processed.nft \
-  --format nftables
+### GeoBan Config
+```bash
+# View banned/whitelisted countries
+nftban geoban list
+
+# View GeoBan configuration
+nftban geoban config
 ```
 
 ---
 
-## Architecture Overview
+## 🔐 User Management (Optional)
+
+### Add Users to nftban-cli Group
+
+Allow users to manage firewall without sudo:
+
+```bash
+# Add user
+sudo usermod -aG nftban-cli username
+
+# User must re-login
+su - username
+
+# Now user can:
+systemctl restart nftables    # No password needed
+systemctl restart fail2ban    # No password needed
+```
+
+**Security:**
+- Scope-limited: Only nftables & fail2ban
+- Audit trail: All actions logged
+- Group-based: Easy to revoke access
+
+### Add Users to nftban-auditors Group
+
+Read-only access for security auditors:
+
+```bash
+# Add auditor
+sudo usermod -aG nftban-auditors auditor_username
+
+# Auditor can:
+nftban stats              # View statistics
+nftban health check       # View health
+nftban list              # View ban lists
+# CANNOT restart services or modify firewall
+```
+
+---
+
+## 🧪 Architecture Overview
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    NFTBan v0.30.0                           │
+│                    NFTBan v0.31.0                           │
 ├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  🎯 Interactive Setup Wizard (NEW!)                        │
+│  └─ nftban setup → Guides users through setup             │
 │                                                             │
 │  🐧 Bash Shell Scripts (Core Logic)                        │
 │  ├─ /usr/sbin/nftban           Main CLI                    │
@@ -234,102 +342,216 @@ sudo vi /etc/nftban/conf.d/feeds.conf
 │                                                             │
 │  ⚡ Go Binaries (High Performance)                          │
 │  ├─ nftban-feeds   10-60x faster feed processing          │
-│  └─ nftban-geoip   10-60x faster GeoIP lookups            │
+│  └─ nftban-geoip   GeoBan country blocking                │
 │                                                             │
-│  🔐 Polkit Integration (Group-Based Access)                │
-│  └─ nftban-cli group → Manage nftables & fail2ban         │
+│  🌍 GeoBan (Country Blocking)                              │
+│  ├─ Ban countries: nftban geoban ban CN                   │
+│  ├─ Whitelist: nftban geoban whitelist US                 │
+│  └─ Atomic netlink operations                             │
 │                                                             │
-│  📊 Auto-Healing System                                     │
-│  ├─ Health checks (hourly)                                │
-│  ├─ Permission audit (weekly)                             │
-│  └─ FHS compliance monitoring                             │
+│  🔐 Polkit Integration                                      │
+│  ├─ nftban-cli → Full firewall management                 │
+│  └─ nftban-auditors → Read-only access                    │
+│                                                             │
+│  🛠️ Auto-Healing System                                     │
+│  ├─ Smart error detection                                 │
+│  ├─ Actionable fix commands                               │
+│  └─ 27 FHS directories autocreated                        │
 │                                                             │
 └─────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## Troubleshooting
+## 🆘 Troubleshooting
 
-### Issue: Health check shows permission errors
+### Issue: Just installed, not sure what to do
 
+**Solution:** Run the setup wizard!
 ```bash
-# Fix permissions automatically
+sudo nftban setup
+```
+
+### Issue: Health check shows errors
+
+**Solution:** Let auto-heal fix it
+```bash
+sudo nftban health check --auto-heal
+```
+
+Or use the setup wizard:
+```bash
+sudo nftban setup
+```
+
+### Issue: Permission errors
+
+**Solution:**
+```bash
 sudo nftban permissions enforce
-
-# Verify
-nftban fhs check
 ```
 
-### Issue: Cannot manage services as nftban-cli member
+### Issue: GeoBan not working
 
+**Solution:** Check if nftban-geoip binary exists
 ```bash
-# Verify group membership
-id username | grep nftban-cli
-
-# If not in group, add user
-sudo usermod -aG nftban-cli username
-
-# User MUST re-login
-su - username
-
-# Test
-systemctl restart nftables
+ls -la /usr/lib/nftban/bin/.real/nftban-geoip
+nftban geoban help
 ```
 
-### Issue: Go binaries not working
+### Issue: Port management not working
 
+**Solution:** Check if ports.d directory exists
 ```bash
-# Check if binaries exist
-ls -la /usr/lib/nftban/bin/
-
-# Test binaries
-/usr/lib/nftban/bin/nftban-feeds --version
-/usr/lib/nftban/bin/nftban-geoip --version
-
-# If missing, reinstall package
-sudo dnf reinstall nftban
+ls -la /etc/nftban/ports.d/
+nftban port search 22
 ```
 
 ---
 
-## Key Locations
+## 🎓 Learning Resources
+
+### Command-Line Help
+```bash
+# General help
+nftban help
+
+# Command-specific help
+nftban geoban help
+nftban port help
+nftban health help
+```
+
+### Man Page
+```bash
+man nftban
+```
+
+### Documentation
+- **ARCHITECTURE.md** - Technical design
+- **GEOBAN_FEATURE.md** - GeoBan guide
+- **GO_COMPILATION_GUIDE.md** - Go binary details
+- **README.md** - Project overview
+
+**Location:** `/usr/share/nftban/docs/` or https://github.com/itcmsgr/nftban/tree/main/docs
+
+---
+
+## 🚀 Next Steps
+
+### 1. Try GeoBan
+```bash
+# Block a country
+sudo nftban geoban ban CN
+
+# Check status
+nftban geoban list
+
+# Unblock
+sudo nftban geoban unban CN
+```
+
+### 2. Enable Threat Feeds
+```bash
+# See available feeds
+nftban feeds list
+
+# Enable a feed
+sudo nftban feeds enable greensnow
+
+# Update feeds
+sudo nftban feeds update
+```
+
+### 3. Add Custom Ports
+```bash
+# Add application port
+sudo nftban port add 8080 tcp
+
+# Verify
+nftban port search 8080
+```
+
+### 4. Set Up Monitoring
+```bash
+# Watch logs
+journalctl -u nftban -f
+
+# Check stats
+nftban stats
+
+# Generate report
+nftban report generate
+```
+
+---
+
+## 💡 Philosophy
+
+**Documentation Approach:**
+1. **CLI teaches you:** `nftban help`
+2. **Need details:** `man nftban`
+3. **Want to understand:** Read `ARCHITECTURE.md`
+4. **Want to hack:** Code is open, explore!
+
+**Why NFTBan Succeeds Where Linux Fails:**
+
+- **Microsoft:** Grandma clicks "Next, Next, Finish"
+- **Linux:** "RTFM" attitude alienates users
+- **NFTBan:** `nftban setup` → Anyone succeeds
+
+**If junior users can use it successfully, we've built something great for everyone.**
+
+---
+
+## 🔑 Key Locations
 
 | Path | Purpose |
 |------|---------|
 | `/usr/sbin/nftban` | Main CLI binary |
 | `/usr/lib/nftban/` | Application code and Go binaries |
+| `/usr/lib/nftban/bin/.real/` | Go binaries (architecture-specific) |
 | `/etc/nftban/` | Configuration files |
+| `/etc/nftban/geoban.d/` | GeoBan country configs |
+| `/etc/nftban/ports.d/` | Port configurations |
 | `/var/lib/nftban/` | Runtime data and state |
+| `/var/lib/nftban/geoban/` | GeoBan country data |
+| `/var/cache/nftban/` | Cache (feeds, geoban) |
 | `/var/log/nftban/` | Log files |
-| `/usr/share/polkit-1/rules.d/60-nftban-cli.rules` | Polkit authorization |
+| `/usr/share/nftban/docs/` | Documentation |
 
 ---
 
-## Getting Help
+## 📞 Getting Help
 
+- **CLI Help:** `nftban help`
+- **Man Page:** `man nftban`
 - **Documentation:** https://github.com/itcmsgr/nftban/tree/main/docs
 - **Issues:** https://github.com/itcmsgr/nftban/issues
-- **Polkit Guide:** https://github.com/itcmsgr/nftban/blob/main/docs/guides/polkit-integration.md
-- **Go Binaries:** https://github.com/itcmsgr/nftban/blob/main/docs/development/GO-BINARIES.md
+- **Discussions:** https://github.com/itcmsgr/nftban/discussions
 
 ---
 
-## Security Notes
+## 🔒 Security Notes
 
-✅ **Safe Defaults**
+✅ **Safe by Design**
 - No sudo required for nftban-cli members
-- Scope-limited service management (only nftables & fail2ban)
-- File permissions enforced (root owns code/config)
-- Auto-healing system monitors permissions
+- Scope-limited service management
+- File permissions enforced automatically
+- Auto-healing monitors permissions
+- SSH port protected from accidental removal
 
-⚠️ **Important**
+⚠️ **Best Practices**
 - Add only trusted users to nftban-cli group
-- Review Polkit logs regularly: `journalctl -u polkit`
-- Monitor permission changes: `journalctl -u nftban-permissions-audit.service`
+- Review Polkit logs: `journalctl -u polkit`
+- Monitor permission changes
+- Test GeoBan on non-production first
+- Keep backups of custom configs
 
 ---
 
-**Version:** 0.30.0
-**Last Updated:** 2025-10-30
+**Version:** 0.31.0
+**Last Updated:** 2025-11-06
 **License:** MPL-2.0
+
+**🎉 Congratulations! You now have a production-grade firewall running with minimal effort!**
