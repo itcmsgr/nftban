@@ -1,7 +1,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"net/netip"
 	"os"
@@ -9,7 +8,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itcmsgr/nftban/go-feeds/internal/fetcher"
 	"github.com/itcmsgr/nftban/go-feeds/internal/nftloader"
 	"github.com/itcmsgr/nftban/go-feeds/internal/parser"
 	"github.com/itcmsgr/nftban/go-feeds/internal/safety"
@@ -55,85 +53,80 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `NFTBan Feeds Manager v0.31.0
+	fmt.Fprintf(os.Stderr, `NFTBan Feeds Manager v0.32.0
+
+Architecture: Bash downloads feeds, Go loads to nftables (fast, atomic)
 
 Usage:
-  nftban-feeds sync <feed1,feed2,...>    Fetch and load feeds into nftables
-  nftban-feeds parse                      Parse feed content (TODO)
-  nftban-feeds validate                   Validate feed URLs (TODO)
-  nftban-feeds deduplicate                Deduplicate IPs (TODO)
-  nftban-feeds stats                      Show feed statistics (TODO)
+  nftban-feeds sync <feed1,feed2,...>    Load pre-downloaded feeds to nftables
+
+Notes:
+  • Feeds must be downloaded first: nftban feeds update
+  • Feed files location: /var/lib/nftban/feeds/*.txt
+  • This binary does NOT download - it loads from disk (single source of truth)
 
 Examples:
-  nftban-feeds sync greensnow
-  nftban-feeds sync greensnow,spamhaus-drop,cloudflare
+  nftban-feeds sync firehol_anonymous
+  nftban-feeds sync firehol_anonymous,spamhaus_drop,greensnow
 
 `)
 }
 
-// syncFeeds fetches, parses, and loads feeds atomically
+// syncFeeds loads pre-downloaded feeds from disk and loads to nftables atomically
+// v0.32.0: Changed architecture - Bash downloads, Go loads (single source of truth)
 func syncFeeds(feedNames []string, limits safety.Limits) error {
 	startTime := time.Now()
 
-	// 1. Define feed URLs (TODO: load from /etc/nftban/feeds.conf in future)
-	allFeeds := map[string]string{
-		"greensnow":      "https://blocklist.greensnow.co/greensnow.txt",
-		"cloudflare":     "https://www.cloudflare.com/ips-v4",
-		"spamhaus-drop":  "https://www.spamhaus.org/drop/drop.txt",
-		"spamhaus-edrop": "https://www.spamhaus.org/drop/edrop.txt",
-		"abuse-ch-feodo": "https://feodotracker.abuse.ch/downloads/ipblocklist.txt",
-		"blocklist-de":   "https://lists.blocklist.de/lists/all.txt",
-		// Add more feeds as needed
-	}
+	// Feed storage directory (Bash downloads feeds here)
+	feedDir := "/var/lib/nftban/feeds"
 
-	// Filter to requested feeds only
-	urls := make(map[string]string)
+	// Check which feeds exist on disk
+	var existingFeeds []string
 	for _, name := range feedNames {
-		if url, ok := allFeeds[name]; ok {
-			urls[name] = url
+		feedFile := filepath.Join(feedDir, name+".txt")
+		if _, err := os.Stat(feedFile); err == nil {
+			existingFeeds = append(existingFeeds, name)
 		} else {
-			fmt.Fprintf(os.Stderr, "Warning: unknown feed '%s', skipping\n", name)
+			fmt.Fprintf(os.Stderr, "Warning: feed file not found: %s (skipping)\n", feedFile)
 		}
 	}
 
-	if len(urls) == 0 {
-		return fmt.Errorf("no valid feeds specified")
+	if len(existingFeeds) == 0 {
+		return fmt.Errorf("no feed files found in %s\n"+
+			"Feeds must be downloaded first using: nftban feeds update", feedDir)
 	}
 
-	fmt.Printf("Fetching %d feeds (with ETag cache)...\n", len(urls))
+	fmt.Printf("Loading %d feeds from %s...\n", len(existingFeeds), feedDir)
 
-	// 2. Fetch feeds concurrently with caching (30s global timeout)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-
-	// Use worker limit from safety config
-	maxWorkers := safety.WorkerLimit(8, limits)
-	results, anyChanged := fetcher.FetchFeedsWithCache(ctx, urls, maxWorkers)
-	fetchTime := time.Since(startTime)
-
-	// 3. Parse and deduplicate
+	// Parse feeds from disk
 	parseStart := time.Now()
 	var allPrefixes []netip.Prefix
 	successCount := 0
-	for _, result := range results {
-		if result.Err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: %s failed: %v\n", result.Name, result.Err)
-			continue
-		}
 
-		prefixes, err := parser.ParseIPs(result.Content)
+	for _, name := range existingFeeds {
+		feedFile := filepath.Join(feedDir, name+".txt")
+
+		// Read feed file
+		content, err := os.ReadFile(feedFile)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: %s parse error: %v\n", result.Name, err)
+			fmt.Fprintf(os.Stderr, "Warning: failed to read %s: %v\n", feedFile, err)
 			continue
 		}
 
-		fmt.Printf("  %s: %d IPs parsed\n", result.Name, len(prefixes))
+		// Parse IPs
+		prefixes, err := parser.ParseIPs(string(content))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: %s parse error: %v\n", name, err)
+			continue
+		}
+
+		fmt.Printf("  %s: %d IPs parsed\n", name, len(prefixes))
 		allPrefixes = append(allPrefixes, prefixes...)
 		successCount++
 	}
 
 	if successCount == 0 {
-		return fmt.Errorf("all feeds failed to download or parse")
+		return fmt.Errorf("all feeds failed to parse")
 	}
 
 	fmt.Printf("\nDeduplicating and merging CIDRs...\n")
@@ -145,19 +138,16 @@ func syncFeeds(feedNames []string, limits safety.Limits) error {
 
 	// 4. Check if merged content hash changed (skip reload if same)
 	currentHash := parser.HashPrefixes(allPrefixes)
-	hashFile := filepath.Join(fetcher.CacheDir, "merged.sha256")
+	cacheDir := "/var/cache/nftban/feeds"
+	hashFile := filepath.Join(cacheDir, "merged.sha256")
 
 	if cachedHash, err := os.ReadFile(hashFile); err == nil {
 		if parser.CompareHashes(currentHash, strings.TrimSpace(string(cachedHash))) {
 			fmt.Printf("\n⏭️  No changes in merged feeds (hash match). Skipping nftables reload.\n")
-			fmt.Printf("📊 Stats: fetch=%.2fs, parse=%.2fs, total=%.2fs\n",
-				fetchTime.Seconds(), parseTime.Seconds(), time.Since(startTime).Seconds())
+			fmt.Printf("📊 Stats: parse=%.2fs, total=%.2fs\n",
+				parseTime.Seconds(), time.Since(startTime).Seconds())
 			return nil
 		}
-	}
-
-	if !anyChanged {
-		fmt.Printf("ℹ️  Feeds unchanged (ETag), but proceeding to verify nftables state.\n")
 	}
 
 	// 5. Run preflight safety checks (CPU/RAM protection)
@@ -189,7 +179,7 @@ func syncFeeds(feedNames []string, limits safety.Limits) error {
 	loadTime := time.Since(loadStart)
 
 	// Save hash and snapshot for next run
-	_ = os.MkdirAll(fetcher.CacheDir, 0755)
+	_ = os.MkdirAll(cacheDir, 0755)
 	_ = os.WriteFile(hashFile, []byte(currentHash), 0644)
 
 	// Save snapshot for delta tracking
@@ -198,14 +188,14 @@ func syncFeeds(feedNames []string, limits safety.Limits) error {
 		TotalV6: len(v6),
 		Hash:    currentHash,
 	}
-	if err := safety.SaveSnapshot(limits.CacheDir, snapshot); err != nil {
+	if err := safety.SaveSnapshot(cacheDir, snapshot); err != nil {
 		fmt.Fprintf(os.Stderr, "⚠️  Warning: failed to save snapshot: %v\n", err)
 	}
 
 	totalTime := time.Since(startTime)
 	fmt.Printf("\n✅ Feeds loaded atomically\n")
-	fmt.Printf("📊 Performance: fetch=%.2fs, parse=%.2fs, load=%.2fs, total=%.2fs\n",
-		fetchTime.Seconds(), parseTime.Seconds(), loadTime.Seconds(), totalTime.Seconds())
+	fmt.Printf("📊 Performance: parse=%.2fs, load=%.2fs, total=%.2fs\n",
+		parseTime.Seconds(), loadTime.Seconds(), totalTime.Seconds())
 
 	return nil
 }
