@@ -14,6 +14,9 @@ NFTBan is an **enterprise‑grade firewall management system** built on Linux *n
 **atomic rule updates, privilege separation through Polkit**, and **AI‑assisted threat intelligence**
 for a resilient, self‑healing network defense layer.
 
+> ⚠️ **BETA TESTING** | We are actively finding and fixing bugs. NOT production-ready yet.
+> Tested on 5 lab servers. **Community feedback needed** from diverse environments. [Report issues here](https://github.com/itcmsgr/nftban/issues).
+
 ---
 
 ## 🚀 Quick Install (2 Commands)
@@ -117,14 +120,17 @@ nftban firewall reload      # Atomic reload (no downtime)
 ## 🧩 Why NFTBan Matters
 
 Traditional firewalls either **favor convenience over safety** or require expert‑level
-configuration. NFTBan merges both worlds — a platform where **junior admins can operate safely**
+configuration. NFTBan aims to merge both worlds — a platform where **junior admins can operate safely**
 and **senior engineers retain fine‑grained control**.
 
-- ✅ Zero Trust Privilege Model with Polkit
-- ✅ Automatic self‑healing for critical paths
-- ✅ AI‑curated threat feeds and GeoIP filtering
+**Current Features (Beta):**
+- 🔧 Zero Trust Privilege Model with Polkit (testing in progress)
+- 🔧 Automatic self‑healing for critical paths (under development)
+- 🔧 AI‑curated threat feeds and GeoIP filtering (bugs being fixed)
 - ✅ Compliant with Linux Foundation FHS standards
-- ✅ Optimized for automation, monitoring, and CI/CD pipelines
+- 🔧 Optimized for automation, monitoring, and CI/CD pipelines (in progress)
+
+> **We're finding and fixing bugs daily.** Your testing and feedback are critical for production readiness.
 
 ---
 
