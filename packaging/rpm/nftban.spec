@@ -446,6 +446,33 @@ $SSH_PORT|T
 SSHEOF
 chmod 644 /etc/nftban/ports.d/00-ssh.conf
 
+# Auto-detect and whitelist system IPs (LOCKOUT PREVENTION)
+mkdir -p /etc/nftban/whitelist.d
+{
+    echo "# System IPs auto-added during installation ($(date '+%%Y-%%m-%%d %%H:%%M:%%S'))"
+    echo "# DO NOT DELETE - LOCKOUT RISK!"
+    echo "# Format: One IP per line (IPv4 or IPv6)"
+
+    # Detect SSH client IP
+    if [ -n "${SSH_CLIENT:-}" ]; then
+        SSH_IP="${SSH_CLIENT%% *}"
+        echo "$SSH_IP"
+    fi
+
+    # Detect public IPv4
+    if command -v curl >/dev/null 2>&1; then
+        IPV4=$(curl -s -4 --max-time 5 ifconfig.me 2>/dev/null || echo "")
+        [ -n "$IPV4" ] && echo "$IPV4"
+    fi
+
+    # Detect public IPv6
+    if command -v curl >/dev/null 2>&1; then
+        IPV6=$(curl -s -6 --max-time 5 ifconfig.me 2>/dev/null || echo "")
+        [ -n "$IPV6" ] && echo "$IPV6"
+    fi
+} > /etc/nftban/whitelist.d/00-system.conf
+chmod 644 /etc/nftban/whitelist.d/00-system.conf
+
 # Run health check to validate installation
 if command -v nftban >/dev/null 2>&1; then
     nftban health check --quiet 2>/dev/null || true
