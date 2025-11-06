@@ -34,17 +34,17 @@ The project embraces an **ethical AI collaboration philosophy** — merging **hu
 
 **Rocky / AlmaLinux 9+** (requires EPEL + CRB)
 ```bash
-sudo dnf install -y epel-release && sudo dnf config-manager --set-enabled crb && wget https://github.com/itcmsgr/nftban/releases/download/v0.32.3/nftban-x86_64.rpm && sudo dnf install -y nftban-x86_64.rpm && sudo nftban enable
+sudo dnf install -y epel-release && sudo dnf config-manager --set-enabled crb && wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm && sudo dnf install -y nftban-x86_64.rpm && sudo nftban enable
 ```
 
 **Fedora** (all repos included)
 ```bash
-wget https://github.com/itcmsgr/nftban/releases/download/v0.32.3/nftban-x86_64.rpm && sudo dnf install -y nftban-x86_64.rpm && sudo nftban enable
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm && sudo dnf install -y nftban-x86_64.rpm && sudo nftban enable
 ```
 
 **Ubuntu / Debian**
 ```bash
-wget https://github.com/itcmsgr/nftban/releases/download/v0.32.3/nftban-amd64.deb && sudo dpkg -i nftban-amd64.deb && sudo apt-get install -f -y && sudo nftban enable
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-amd64.deb && sudo dpkg -i nftban-amd64.deb && sudo apt-get install -f -y && sudo nftban enable
 ```
 
 ---
