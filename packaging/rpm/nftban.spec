@@ -484,34 +484,56 @@ if [ $1 -eq 2 ]; then
     # Reload firewall rules if firewall exists
     if [ "$FIREWALL_EXISTS" = "true" ]; then
         echo "Applying updated firewall rules..."
-        /usr/sbin/nftban firewall reload 2>&1 | grep -E '(✓|✅|━)' || true
+        if /usr/sbin/nftban firewall reload 2>&1 | grep -E '(✓|✅|━)'; then
+            # Verify both tables exist after reload
+            if /usr/sbin/nft list table inet nftban_main &>/dev/null && \
+               /usr/sbin/nft list table inet nftban_runtime &>/dev/null; then
+                echo "  ✓ Both tables verified (nftban_main + nftban_runtime)"
+            else
+                echo "  ⚠️  WARNING: One or more tables missing after reload"
+            fi
+        else
+            echo "  ✗ Firewall reload failed - manual check needed"
+        fi
         echo ""
     fi
+
+    # Ensure maintenance timer always running (safety checks)
+    echo "Ensuring maintenance timer active..."
+    if ! systemctl is-active --quiet nftban-maintenance.timer 2>/dev/null; then
+        systemctl enable nftban-maintenance.timer 2>/dev/null || true
+        systemctl start nftban-maintenance.timer 2>/dev/null || true
+    fi
+    echo "  ✓ nftban-maintenance.timer active"
+    echo ""
 
     # Restart services if they were running before upgrade
     SERVICES_RESTARTED=false
     NFTBAN_RUNNING_NOW=false
     FAIL2BAN_RUNNING_NOW=false
+    SERVICE_FAILURES=""
 
     if [ "$NFTBAN_WAS_RUNNING" = "true" ]; then
         echo "Restarting nftban.timer..."
-        if systemctl start nftban.timer 2>/dev/null; then
+        if systemctl start nftban.timer 2>/dev/null && systemctl is-active --quiet nftban.timer 2>/dev/null; then
             echo "  ✓ nftban.timer restarted"
             SERVICES_RESTARTED=true
             NFTBAN_RUNNING_NOW=true
         else
             echo "  ✗ Failed to restart nftban.timer"
+            SERVICE_FAILURES="${SERVICE_FAILURES}nftban.timer "
         fi
     fi
 
     if [ "$FAIL2BAN_WAS_RUNNING" = "true" ]; then
         echo "Restarting fail2ban.service..."
-        if systemctl start fail2ban.service 2>/dev/null; then
+        if systemctl start fail2ban.service 2>/dev/null && systemctl is-active --quiet fail2ban.service 2>/dev/null; then
             echo "  ✓ fail2ban.service restarted"
             SERVICES_RESTARTED=true
             FAIL2BAN_RUNNING_NOW=true
         else
             echo "  ✗ Failed to restart fail2ban.service"
+            SERVICE_FAILURES="${SERVICE_FAILURES}fail2ban.service "
         fi
     fi
 
@@ -573,6 +595,42 @@ if [ $1 -eq 2 ]; then
     echo "Check detailed status:"
     echo "  → nftban status"
     echo ""
+
+    # Show troubleshooting if services failed to restart
+    if [ -n "$SERVICE_FAILURES" ]; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "⚠️  TROUBLESHOOTING - Service Restart Failed"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "Failed services: $SERVICE_FAILURES"
+        echo ""
+        echo "Quick Diagnostics:"
+        echo ""
+        echo "1. Check service status:"
+        for svc in $SERVICE_FAILURES; do
+            echo "   → systemctl status $svc"
+        done
+        echo ""
+        echo "2. Check configuration:"
+        echo "   → nftban health check"
+        echo "   → fail2ban-client -t  # Test fail2ban config"
+        echo ""
+        echo "3. Check firewall rules:"
+        echo "   → nft list table inet nftban_main"
+        echo "   → nft list table inet nftban_runtime"
+        echo ""
+        echo "4. View recent logs:"
+        echo "   → journalctl -u nftban.timer -n 50"
+        echo "   → journalctl -u fail2ban.service -n 50"
+        echo ""
+        echo "5. Try manual start:"
+        for svc in $SERVICE_FAILURES; do
+            echo "   → systemctl start $svc"
+        done
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+    fi
 fi
 
 # Auto-detect and whitelist SSH port (LOCKOUT PREVENTION)
@@ -821,12 +879,40 @@ elif [ $1 -eq 0 ]; then
         systemctl stop nftban-maintenance.timer || true
     fi
 
+    # Ask about firewall cleanup
     echo ""
-    echo "⚠️  NOTE: Firewall rules (nftables) remain active."
-    echo "   To remove firewall rules: nftban firewall stop"
+    echo "⚠️  Firewall rules and runtime bans still active."
+    echo ""
+    if [ -t 0 ]; then
+        read -p "Remove firewall rules and runtime bans? (yes/no) [no]: " REMOVE_FIREWALL
+        REMOVE_FIREWALL=${REMOVE_FIREWALL:-no}
+    else
+        REMOVE_FIREWALL="no"
+        echo "Non-interactive mode: Leaving firewall active"
+    fi
+
+    if [ "$REMOVE_FIREWALL" = "yes" ]; then
+        echo ""
+        echo "Removing firewall tables..."
+        if nft list table inet nftban_main >/dev/null 2>&1; then
+            nft delete table inet nftban_main 2>/dev/null && echo "  ✓ Removed: nftban_main (permanent rules)"
+        fi
+        if nft list table inet nftban_runtime >/dev/null 2>&1; then
+            nft delete table inet nftban_runtime 2>/dev/null && echo "  ✓ Removed: nftban_runtime (temporary bans)"
+        fi
+        echo "  ✓ All firewall rules removed"
+    else
+        echo ""
+        echo "  ⊘ Leaving firewall rules active"
+        echo ""
+        echo "  To remove later:"
+        echo "    → nft delete table inet nftban_main"
+        echo "    → nft delete table inet nftban_runtime"
+    fi
+
     echo ""
     echo "⚠️  NOTE: Configuration files preserved in /etc/nftban/"
-    echo "   To remove completely: dnf remove nftban (or yum remove nftban)"
+    echo "   Logs preserved in /var/log/nftban/"
     echo ""
 fi
 
@@ -836,8 +922,8 @@ fi
 # Only perform cleanup if package is being completely removed (not upgraded)
 # $1 = 0 means uninstall, $1 = 1 means upgrade
 if [ $1 -eq 0 ]; then
-    # Remove nftables table if empty
-    nft list table inet nftban >/dev/null 2>&1 && nft delete table inet nftban || true
+    # Note: Firewall tables already handled in %preun if user chose to remove them
+    # We don't force-remove here to respect user choice
 
     # Remove runtime directories
     rm -rf /run/nftban
