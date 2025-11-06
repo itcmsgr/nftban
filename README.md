@@ -19,6 +19,17 @@ for a resilient, self‑healing network defense layer.
 
 ---
 
+## 👤 About the Project
+
+**NFTBan** is founded and architected by **Antonios Voulvoulis**, open‑source contributor and cybersecurity architect, through an **AI‑assisted but human‑supervised development workflow**.
+
+The project embraces an **ethical AI collaboration philosophy** — merging **human creativity, accountability, and system‑design expertise** with **AI precision and scalability** to accelerate open‑source cybersecurity innovation.
+
+> All AI‑generated content is human‑reviewed, version‑controlled, and transparently attributed in Git history.
+> NFTBan aligns with open standards encouraged by **OpenSSF** and the **Linux Foundation**.
+
+---
+
 ## 🚀 Quick Install (2 Commands)
 
 **RHEL / Rocky / Alma / Fedora**
