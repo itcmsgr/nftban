@@ -407,7 +407,7 @@ nftban_cmd_feeds() {
 
             for feed in $cat_feeds; do
                 echo "  • Enabling $feed..."
-                if nftban_feeds_enable "$feed"; then
+                if nftban_feeds_enable "$feed" "true"; then  # Use quiet mode for batch
                     echo "    ✅ $feed enabled"
                     ((enabled_count++))
                 else
@@ -423,9 +423,11 @@ nftban_cmd_feeds() {
                 echo "⚠️  $failed_count feed(s) failed (check /var/log/nftban/feeds.log)"
             fi
             echo ""
+            echo "⏳ Feeds downloading in background..."
+            echo ""
             echo "Next steps:"
-            echo "  • Update feeds: nftban feeds update"
             echo "  • Check status: nftban feeds status"
+            echo "  • View progress: tail -f /var/log/nftban/feeds.log"
             ;;
         update)
             # Check CAP_NET_ADMIN capability for nftables modifications

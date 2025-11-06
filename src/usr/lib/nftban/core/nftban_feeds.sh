@@ -208,6 +208,7 @@ nftban_feeds_list_enabled() {
 # Enable a feed
 nftban_feeds_enable() {
     local feed_name="$1"
+    local quiet="${2:-false}"  # Optional: quiet mode for batch operations
 
     # Validate feed exists
     local feed_url
@@ -221,12 +222,14 @@ nftban_feeds_enable() {
     nftban_feeds_set_property "$feed_name" "ENABLED" "true"
     nftban_feeds_log INFO "Feed enabled: $feed_name"
 
-    # Show immediate feedback
-    echo "✓ Feed enabled: $feed_name"
-    echo "⏳ Downloading in background..."
-    echo ""
-    echo "Check status with: nftban feeds status"
-    echo "View progress: tail -f /var/log/nftban/feeds.log"
+    # Show immediate feedback (unless quiet mode)
+    if [[ "$quiet" != "true" ]]; then
+        echo "✓ Feed enabled: $feed_name"
+        echo "⏳ Downloading in background..."
+        echo ""
+        echo "Check status with: nftban feeds status"
+        echo "View progress: tail -f /var/log/nftban/feeds.log"
+    fi
 
     # Download in background to avoid hanging CLI
     (nftban_feeds_update_single "$feed_name" &>/dev/null) &
