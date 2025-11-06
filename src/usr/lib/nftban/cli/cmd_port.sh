@@ -158,17 +158,17 @@ nftban_cmd_port() {
             # Add port to whitelist
             # Args: <port> [protocol]
             local port="${1:-}"
-            local proto="${2:-tcp}"
+            local proto="${2:-both}"  # JUNIOR-FRIENDLY: Default to BOTH protocols
 
             if [[ -z "$port" ]]; then
                 echo "ERROR: Port number required" >&2
                 echo "Usage: nftban port add <port> [protocol]" >&2
-                echo "       protocol: tcp (default), udp, or both" >&2
+                echo "       protocol: both (default), tcp, or udp" >&2
                 echo "" >&2
                 echo "Examples:" >&2
-                echo "  nftban port add 8080           # Add TCP port 8080" >&2
-                echo "  nftban port add 53 udp         # Add UDP port 53" >&2
-                echo "  nftban port add 443 both       # Add TCP+UDP port 443" >&2
+                echo "  nftban port add 8080           # Add TCP+UDP port 8080 (safest)" >&2
+                echo "  nftban port add 53 udp         # Add only UDP port 53" >&2
+                echo "  nftban port add 443 tcp        # Add only TCP port 443" >&2
                 return 1
             fi
 
@@ -300,6 +300,20 @@ nftban_cmd_port() {
                 return 1
             fi
 
+            # CRITICAL: Protect current SSH port from being removed
+            local current_ssh_port="${SSH_CLIENT##* }"
+            if [[ "$port" == "$current_ssh_port" ]]; then
+                echo "❌ ERROR: Cannot remove port $port - this is your ACTIVE SSH port!" >&2
+                echo "" >&2
+                echo "⚠️  DANGER: Removing this port will lock you out of the server!" >&2
+                echo "   Your SSH connection is using port $port right now." >&2
+                echo "" >&2
+                echo "If you really need to remove this port:" >&2
+                echo "  1. Connect via console or alternate SSH port" >&2
+                echo "  2. Then run: nftban port remove $port" >&2
+                return 1
+            fi
+
             # Find all config files containing this port
             local found_files=()
             local protected_files=()
@@ -418,6 +432,89 @@ nftban_cmd_port() {
             return 0
             ;;
 
+        block)
+            # Block port (remove from whitelist) - JUNIOR FRIENDLY
+            # Default: blocks TCP+UDP on both IPv4+IPv6
+            # Args: <port>
+            local port="${1:-}"
+
+            if [[ -z "$port" ]]; then
+                echo "ERROR: Port number required" >&2
+                echo "Usage: nftban port block <port>" >&2
+                echo "" >&2
+                echo "Examples:" >&2
+                echo "  nftban port block 8080    # Block TCP+UDP port 8080 (safest)" >&2
+                echo "" >&2
+                echo "Note: This removes the port from the firewall whitelist." >&2
+                echo "      The port will be blocked by the default DROP policy." >&2
+                return 1
+            fi
+
+            # CRITICAL: Protect current SSH port from being blocked
+            local current_ssh_port="${SSH_CLIENT##* }"
+            if [[ "$port" == "$current_ssh_port" ]]; then
+                echo "❌ ERROR: Cannot block port $port - this is your ACTIVE SSH port!" >&2
+                echo "" >&2
+                echo "⚠️  DANGER: Blocking this port will lock you out of the server!" >&2
+                echo "   Your SSH connection is using port $port right now." >&2
+                echo "" >&2
+                echo "If you really need to block this port:" >&2
+                echo "  1. Connect via console or alternate SSH port" >&2
+                echo "  2. Then run: nftban port block $port" >&2
+                return 1
+            fi
+
+            echo "🛡️  Blocking port $port (TCP+UDP on IPv4+IPv6)..."
+            echo ""
+
+            # Call remove to take it out of whitelist
+            nftban_cmd_port remove "$port"
+            local result=$?
+
+            if [[ $result -eq 0 ]]; then
+                echo ""
+                echo "✅ Port $port is now BLOCKED by firewall"
+                echo ""
+                echo "To unblock this port later, use:"
+                echo "  nftban port unblock $port"
+            fi
+
+            return $result
+            ;;
+
+        unblock)
+            # Unblock port (add to whitelist) - JUNIOR FRIENDLY
+            # Default: unblocks TCP+UDP on both IPv4+IPv6
+            # Args: <port>
+            local port="${1:-}"
+
+            if [[ -z "$port" ]]; then
+                echo "ERROR: Port number required" >&2
+                echo "Usage: nftban port unblock <port>" >&2
+                echo "" >&2
+                echo "Examples:" >&2
+                echo "  nftban port unblock 8080    # Allow TCP+UDP port 8080 (safest)" >&2
+                echo "" >&2
+                echo "Note: This adds the port to the firewall whitelist." >&2
+                return 1
+            fi
+
+            echo "✅ Unblocking port $port (TCP+UDP on IPv4+IPv6)..."
+            echo ""
+
+            # Call add with 'both' to allow TCP+UDP
+            nftban_cmd_port add "$port" "both"
+            local result=$?
+
+            if [[ $result -eq 0 ]]; then
+                echo ""
+                echo "To block this port again, use:"
+                echo "  nftban port block $port"
+            fi
+
+            return $result
+            ;;
+
         allow-panel)
             # Allow control panel ports in firewall
             # Args: <panel_name>
@@ -452,21 +549,27 @@ nftban_cmd_port() {
             echo "Usage:"
             echo "  nftban port status [ports]       # Show port status (all or filtered)"
             echo "  nftban port detailed [ports]     # Show detailed status with BIND and PROCESS"
-            echo "  nftban port add <port> [proto]   # Add port to whitelist (proto: tcp, udp, both)"
+            echo "  nftban port add <port> [proto]   # Add port to whitelist (proto: both, tcp, udp)"
             echo "  nftban port remove <port>        # Remove port from whitelist"
+            echo "  nftban port block <port>         # Block port (TCP+UDP, IPv4+IPv6)"
+            echo "  nftban port unblock <port>       # Unblock port (TCP+UDP, IPv4+IPv6)"
             echo "  nftban port html-report          # Generate HTML report (coming soon)"
             echo "  nftban port mail-report [path] [recipient]  # Mail report"
             echo "  nftban port allow-panel <panel>  # Allow control panel ports in firewall"
             echo "  nftban port help                 # Show this help"
             echo ""
-            echo "Examples:"
+            echo "Examples (Junior-friendly):"
             echo "  nftban port status               # Show all listening ports"
             echo "  nftban port status 22,80,443     # Show only SSH, HTTP, HTTPS"
             echo "  nftban port detailed             # Show detailed info with bind addresses"
-            echo "  nftban port add 8080             # Whitelist TCP port 8080"
-            echo "  nftban port add 53 udp           # Whitelist UDP port 53 (DNS)"
-            echo "  nftban port add 443 both         # Whitelist TCP+UDP port 443"
+            echo "  nftban port add 8080             # Allow TCP+UDP port 8080 (safest)"
             echo "  nftban port remove 8080          # Remove port 8080 from whitelist"
+            echo "  nftban port block 3389           # Block RDP port (TCP+UDP)"
+            echo "  nftban port unblock 3389         # Unblock RDP port (TCP+UDP)"
+            echo ""
+            echo "Examples (Expert - specific protocols):"
+            echo "  nftban port add 53 udp           # Allow only UDP port 53 (DNS)"
+            echo "  nftban port add 443 tcp          # Allow only TCP port 443 (HTTPS)"
             echo "  nftban port mail-report /var/lib/nftban/reports/port_report.html admin@example.com"
             echo "  nftban port allow-panel directadmin  # Allow DirectAdmin panel ports"
             echo ""
