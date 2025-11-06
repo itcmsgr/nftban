@@ -50,6 +50,10 @@ DIRS=(
     "/etc/nftban/conf.d"
     "/etc/nftban/secrets.d"
     "/etc/nftban/keys"
+    "/etc/nftban/feeds.d"
+    "/etc/nftban/rules.d"
+    "/etc/nftban/ports.d"
+    "/etc/nftban/geoban.d"
     "/var/lib/nftban/state"
     "/var/lib/nftban/snapshots"
     "/var/lib/nftban/feeds"
@@ -60,9 +64,16 @@ DIRS=(
     "/var/lib/nftban/reports/auditors"
     "/var/lib/nftban/metrics"
     "/var/lib/nftban/config"
+    "/var/lib/nftban/geoip"
+    "/var/lib/nftban/geoban"
+    "/var/lib/nftban/geoban/tracking"
     "/var/cache/nftban/geoip"
+    "/var/cache/nftban/geoban"
+    "/var/cache/nftban/feeds"
     "/var/cache/nftban/tmp"
     "/var/log/nftban"
+    "/run/nftban"
+    "/run/nftban/locks"
 )
 
 for DIR in "${DIRS[@]}"; do
@@ -78,8 +89,8 @@ done
 log_info "Fixing permissions..."
 
 chown -R root:nftban /etc/nftban
-chmod 755 /etc/nftban
-chmod 755 /etc/nftban/conf.d
+chmod 750 /etc/nftban
+chmod 750 /etc/nftban/conf.d
 chmod 700 /etc/nftban/secrets.d
 chmod 700 /etc/nftban/keys
 
@@ -173,6 +184,68 @@ else
 fi
 
 # =============================================================================
+# Run health check and report what needs fixing
+# =============================================================================
+echo ""
+log_info "Running health check to verify installation..."
+echo ""
+
+HEALTH_OUTPUT=$(/usr/sbin/nftban health check 2>&1 || true)
+echo "$HEALTH_OUTPUT"
+
+# Check if there are still errors
+if echo "$HEALTH_OUTPUT" | grep -q "Overall Status:.*ERROR"; then
+    echo ""
+    log_warn "================================================================="
+    log_warn "⚠️  ATTENTION: Some issues still need your attention"
+    log_warn "================================================================="
+    echo ""
+
+    # Check for specific issues and give commands
+    if echo "$HEALTH_OUTPUT" | grep -q "GeoIP.*Database not found"; then
+        echo "📥 GeoIP Database Missing (optional - only for IP lookups):"
+        echo "   Run: nftban geoip update"
+        echo ""
+    fi
+
+    if echo "$HEALTH_OUTPUT" | grep -q "permission"; then
+        echo "🔒 Permission Issues Detected:"
+        echo "   Run: nftban permissions enforce"
+        echo ""
+    fi
+
+    if echo "$HEALTH_OUTPUT" | grep -q "FHS.*error"; then
+        echo "📁 FHS Directory Issues:"
+        echo "   Run: nftban health check --auto-heal"
+        echo ""
+    fi
+
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "🚀 TO FIX ALL ISSUES AUTOMATICALLY:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "   nftban permissions enforce && nftban health check --auto-heal"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+elif echo "$HEALTH_OUTPUT" | grep -q "Overall Status:.*WARNING"; then
+    echo ""
+    log_info "✅ Installation OK (minor warnings only)"
+    echo ""
+    echo "You can ignore warnings or fix them with:"
+    echo "   nftban permissions enforce"
+    echo "   nftban geoip update    # (optional)"
+    echo ""
+else
+    echo ""
+    log_info "================================================================="
+    log_info "✅ Installation Perfect! No issues found!"
+    log_info "================================================================="
+    echo ""
+fi
+
+# =============================================================================
 # Summary
 # =============================================================================
 echo ""
@@ -180,15 +253,24 @@ log_info "================================================================="
 log_info "Auto-Heal Complete!"
 log_info "================================================================="
 echo ""
-log_info "✅ FHS directory structure verified"
-log_info "✅ Permissions fixed"
+log_info "✅ FHS directories created (27 directories)"
+log_info "✅ Permissions enforced (correct ownership and modes)"
 log_info "✅ System configuration generated"
 log_info "✅ Systemd timer configured"
 echo ""
-log_info "Next steps:"
-echo "  1. systemctl status nftban.timer  # Check timer status"
-echo "  2. nftban config show              # View configuration"
-echo "  3. nftban health check             # Run health check"
+log_info "📖 Next Steps (Press button A, B, C...):"
+echo ""
+echo "  A) Fix any remaining issues (if shown above):"
+echo "     nftban permissions enforce && nftban health check --auto-heal"
+echo ""
+echo "  B) Enable NFTBan firewall:"
+echo "     nftban enable"
+echo ""
+echo "  C) Check status:"
+echo "     nftban status"
+echo ""
+echo "  D) Test new GeoBan feature (v0.31.0):"
+echo "     nftban geoban help"
 echo ""
 
 exit 0
