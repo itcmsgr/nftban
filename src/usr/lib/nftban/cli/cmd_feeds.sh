@@ -389,9 +389,42 @@ nftban_cmd_feeds() {
             fi
             local cat_feeds
             cat_feeds=$(nftban_feeds_get_by_category "$1")
+
+            if [[ -z "$cat_feeds" ]]; then
+                echo "⚠️  No feeds found in category: $1"
+                echo ""
+                echo "Available categories: protection, ssh, web, email, anonymity"
+                echo ""
+                echo "Run 'nftban feeds list' to see all feeds by category"
+                exit 1
+            fi
+
+            echo "⏳ Enabling all feeds in category: $1"
+            echo ""
+            local enabled_count=0
+            local failed_count=0
+
             for feed in $cat_feeds; do
-                nftban_feeds_enable "$feed"
+                echo "  • Enabling $feed..."
+                if nftban_feeds_enable "$feed"; then
+                    echo "    ✅ $feed enabled"
+                    ((enabled_count++))
+                else
+                    echo "    ❌ $feed failed"
+                    ((failed_count++))
+                fi
             done
+
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "✅ Enabled $enabled_count feed(s) in category '$1'"
+            if [[ $failed_count -gt 0 ]]; then
+                echo "⚠️  $failed_count feed(s) failed (check /var/log/nftban/feeds.log)"
+            fi
+            echo ""
+            echo "Next steps:"
+            echo "  • Update feeds: nftban feeds update"
+            echo "  • Check status: nftban feeds status"
             ;;
         update)
             # Check CAP_NET_ADMIN capability for nftables modifications
