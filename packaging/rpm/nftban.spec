@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.2
+Version:        0.32.3
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -1124,6 +1124,11 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
+* Wed Nov 06 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.3-1
+- FIX: Auto-heal now correctly preserves auditors directory permissions
+- FIX: fail2ban shown as REQUIRED (not optional) in enable command
+- FIX: GitHub Actions Rocky/Alma build process (distro-sync for glibc alignment)
+
 * Wed Nov 06 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.0-1
 - CRITICAL FIX: Single source of truth for feeds (removed hardcoded Go URLs)
 - BREAKING: Go binary no longer downloads feeds (loads from disk)
