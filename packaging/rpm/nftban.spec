@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.31.0
+Version:        0.32.0
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -364,7 +364,7 @@ systemctl start nftban-maintenance.timer 2>/dev/null || true
 # Print installation message
 echo ""
 echo "╔════════════════════════════════════════════════════════════╗"
-echo "║  NFTBan v0.31.0 Installation Complete!                    ║"
+echo "║  NFTBan v0.32.0 Installation Complete!                    ║"
 echo "╚════════════════════════════════════════════════════════════╝"
 echo ""
 echo "✅ Auto-heal completed - all systems configured"
@@ -654,18 +654,19 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
-* Wed Nov 06 2025 Antonios Voulvoulis <contact@nftban.com> - 0.31.0-1
-- Implement GeoBan country-based IP blocking (ban, unban, whitelist commands)
-- Add PRECOMPILED Go binaries (included in tarball, verified transparency)
-- Add nftban-geoip with atomic GeoBan operations via netlink
-- Add nftban-feeds atomic threat feed loader (5-15x faster than bash)
-- Add unified configuration: /etc/nftban/conf.d/nftban-go.conf
-- Add 6-layer system protection (CPU/RAM/I/O limits, chunking, ENOBUFS retry)
-- Add comprehensive documentation (10 new docs, ~100KB)
-- Add tab completion for all new GeoBan commands
-- Performance: Country ban in <1s, atomic zero-downtime updates
-- Architecture-specific binaries: nftban-geoip-x86_64, nftban-geoip-aarch64
-- Users can verify binaries against source code (see PRECOMPILED_BINARIES.md)
+* Wed Nov 06 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.0-1
+- CRITICAL FIX: Single source of truth for feeds (removed hardcoded Go URLs)
+- BREAKING: Go binary no longer downloads feeds (loads from disk)
+- NEW ARCHITECTURE: Bash downloads, Go loads (fast, atomic, maintainable)
+- FIX: Feed name case mismatch (FIREHOL_ANONYMOUS vs firehol_anonymous)
+- FIX: Missing nftban_feeds_list_enabled() function
+- FIX: Go binary wrappers architecture detection (-x86_64 suffix)
+- FIX: Port scan auto-ban integration (calls nftban ban command)
+- FIX: Port scan status display (check portscan_detection chain)
+- FIX: GitHub Actions glibc version mismatch in RPM builds
+- DOCS: Updated README with BETA WARNING (not production-ready)
+- ENHANCEMENT: Feeds now auto-discovered from config (no hardcoding)
+- ENHANCEMENT: All version references aligned to v0.32.0
 
 * Sun Nov 03 2025 Antonios Voulvoulis <contact@nftban.com> - 0.30.0-1
 - Major release: NFTBan v0.30 with self-healing inventory monitoring

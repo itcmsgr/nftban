@@ -9,7 +9,7 @@
 # meta:name=build-rpm.sh
 # meta:type=tool
 # meta:header=RPM Package Builder
-# meta:version=0.31.0
+# meta:version=0.32.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -35,7 +35,7 @@ YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Configuration
-VERSION="${VERSION:-0.31.0}"
+VERSION="${VERSION:-0.32.0}"
 RELEASE="${RELEASE:-1}"
 PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BUILD_DIR="${PROJECT_ROOT}/dist/rpm-build"

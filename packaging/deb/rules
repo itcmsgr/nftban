@@ -14,11 +14,11 @@ override_dh_auto_build:
 	@echo "Building Go binaries..."
 	cd go-geoip && go mod download && go mod tidy && \
 		CGO_ENABLED=0 GOOS=linux GOARCH=$(shell dpkg --print-architecture | sed 's/amd64/amd64/;s/arm64/arm64/') \
-		go build -buildvcs=false -ldflags "-s -w -X main.VERSION=0.31.0" \
+		go build -buildvcs=false -ldflags "-s -w -X main.VERSION=0.32.0" \
 		-o ../dist/$(shell dpkg --print-architecture)/nftban-geoip ./cmd/nftban-geoip
 	cd go-feeds && go mod download && go mod tidy && \
 		CGO_ENABLED=0 GOOS=linux GOARCH=$(shell dpkg --print-architecture | sed 's/amd64/amd64/;s/arm64/arm64/') \
-		go build -buildvcs=false -ldflags "-s -w -X main.VERSION=0.31.0" \
+		go build -buildvcs=false -ldflags "-s -w -X main.VERSION=0.32.0" \
 		-o ../dist/$(shell dpkg --print-architecture)/nftban-feeds ./cmd/nftban-feeds
 	@echo "✓ Go binaries built successfully"
 	ls -lh dist/$(shell dpkg --print-architecture)/

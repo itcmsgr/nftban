@@ -1,5 +1,5 @@
 #!/usr/bin/bash
-# Test script for Go feeds implementation (v0.31.0)
+# Test script for Go feeds implementation (v0.32.0)
 # Usage: ./scripts/test-go-feeds.sh <lab-server> <go-binary>
 # Example: ./scripts/test-go-feeds.sh lab.mywebhost.gr ./go-feeds/nftban-feeds
 
@@ -161,5 +161,5 @@ echo "5. Install permanently if successful"
 echo ""
 echo "Benchmark comparison:"
 echo "  v0.30.8 (bash): 10-30 seconds for 100K IPs"
-echo "  v0.31.0 (Go):   1-2 seconds for 100K IPs"
+echo "  v0.32.0 (Go):   1-2 seconds for 100K IPs"
 echo ""
