@@ -1,6 +1,6 @@
 # DNS and Network Requirements for NFTBan
 
-**Version:** v0.31.0
+**Version:** v0.32.0
 **Priority:** CRITICAL for network-dependent features
 **Audience:** System administrators, junior sysadmins
 
