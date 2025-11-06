@@ -129,15 +129,17 @@ nftban_system_enable() {
         config_errors=$((config_errors + 1))
     fi
 
-    # Enable fail2ban if installed
-    if systemctl list-unit-files | grep -q "^fail2ban.service"; then
+    # Enable fail2ban (REQUIRED)
+    if command -v fail2ban-server >/dev/null 2>&1 || rpm -q fail2ban-server >/dev/null 2>&1 || dpkg -l fail2ban >/dev/null 2>&1; then
         if systemctl enable fail2ban.service 2>/dev/null; then
             echo "  ✓ Enabled: fail2ban.service"
         else
             echo "  ⚠️  Warning: Failed to enable fail2ban.service"
         fi
     else
-        echo "  ⚠️  Fail2ban not installed (optional)"
+        echo "  ❌ ERROR: fail2ban is REQUIRED but not installed!"
+        echo "     Install with: sudo dnf install -y fail2ban-server"
+        config_errors=$((config_errors + 1))
     fi
 
     echo ""
@@ -151,12 +153,13 @@ nftban_system_enable() {
         config_errors=$((config_errors + 1))
     fi
 
-    # Start fail2ban if installed
-    if systemctl list-unit-files | grep -q "^fail2ban.service"; then
+    # Start fail2ban (REQUIRED)
+    if command -v fail2ban-server >/dev/null 2>&1 || rpm -q fail2ban-server >/dev/null 2>&1 || dpkg -l fail2ban >/dev/null 2>&1; then
         if systemctl start fail2ban.service 2>/dev/null; then
             echo "  ✓ Started: fail2ban.service"
         else
-            echo "  ⚠️  Warning: Failed to start fail2ban.service"
+            echo "  ❌ ERROR: Failed to start fail2ban.service"
+            config_errors=$((config_errors + 1))
         fi
     fi
 
