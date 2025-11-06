@@ -298,7 +298,7 @@ nftban_feeds_update_single() {
     local parse_result
     local parse_error
     parse_error=$(mktemp)
-    parse_result=$("$NFTBAN_FEEDS_BINARY" parse --list < "$temp_file" 2>"$parse_error")
+    parse_result=$("$NFTBAN_FEEDS_BINARY" parse < "$temp_file" 2>"$parse_error")
     local parse_exit=$?
 
     if [[ $parse_exit -ne 0 ]]; then
