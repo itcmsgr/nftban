@@ -146,7 +146,7 @@ output_terminal() {
     # Port-scan
     local portscan_status="❓ Unknown"
     if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_portscan.sh" ]]; then
-        if nft list chain inet nftban_main input 2>/dev/null | grep -q "tcp flags & (fin|syn|rst|psh|ack|urg)"; then
+        if nft list chain inet nftban_main portscan_detection 2>/dev/null | grep -q "log prefix"; then
             portscan_status="✅ Enabled"
         else
             portscan_status="⚪ Disabled"
