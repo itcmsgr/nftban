@@ -358,6 +358,12 @@ fi
 %sysusers_create_compat packaging/sysusers.d/nftban.conf
 
 %post
+# =============================================================================
+# UPGRADE vs FRESH INSTALL Detection
+# =============================================================================
+# $1 = 1 means FRESH INSTALL
+# $1 = 2 means UPGRADE
+
 # Update NFTBAN_VERSION in config file (handles upgrades with noreplace)
 # This ensures the banner shows the correct version even on upgrades
 if [ -f /etc/nftban/nftban.conf ]; then
@@ -414,18 +420,159 @@ if [ -d /var/lib/nftban/reports/auditors ]; then
     chmod 0770 /var/lib/nftban/reports/auditors
 fi
 
-# On upgrade (not fresh install), reload firewall to apply new rules
-# $1 = 1 means fresh install, $1 = 2 means upgrade
+# =============================================================================
+# UPGRADE FLOW - Check component versions and restart services
+# =============================================================================
 if [ $1 -eq 2 ]; then
-    # Check if nftban_main table exists (means firewall was previously configured)
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "📦 NFTBan Upgrade - Checking Components"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Check if services were running before upgrade (captured in /tmp by %preun)
+    NFTBAN_WAS_RUNNING=false
+    FAIL2BAN_WAS_RUNNING=false
+
+    if [ -f /tmp/nftban-upgrade-state.txt ]; then
+        . /tmp/nftban-upgrade-state.txt
+        rm -f /tmp/nftban-upgrade-state.txt
+    fi
+
+    # Check component version changes
+    COMPONENT_UPDATES=""
+
+    # Check fail2ban version
+    if command -v fail2ban-server >/dev/null 2>&1; then
+        FAIL2BAN_VER=$(fail2ban-server --version 2>/dev/null | head -1 || echo "unknown")
+        if [ -f /var/lib/nftban/config/fail2ban.version ]; then
+            OLD_FAIL2BAN_VER=$(cat /var/lib/nftban/config/fail2ban.version 2>/dev/null || echo "unknown")
+            if [ "$FAIL2BAN_VER" != "$OLD_FAIL2BAN_VER" ]; then
+                COMPONENT_UPDATES="${COMPONENT_UPDATES}  • fail2ban: ${OLD_FAIL2BAN_VER} → ${FAIL2BAN_VER}\n"
+            fi
+        fi
+        echo "$FAIL2BAN_VER" > /var/lib/nftban/config/fail2ban.version
+    fi
+
+    # Check nftables version
+    if command -v nft >/dev/null 2>&1; then
+        NFT_VER=$(nft --version 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
+        if [ -f /var/lib/nftban/config/nftables.version ]; then
+            OLD_NFT_VER=$(cat /var/lib/nftban/config/nftables.version 2>/dev/null || echo "unknown")
+            if [ "$NFT_VER" != "$OLD_NFT_VER" ]; then
+                COMPONENT_UPDATES="${COMPONENT_UPDATES}  • nftables: ${OLD_NFT_VER} → ${NFT_VER}\n"
+            fi
+        fi
+        echo "$NFT_VER" > /var/lib/nftban/config/nftables.version
+    fi
+
+    # Display component updates if any
+    if [ -n "$COMPONENT_UPDATES" ]; then
+        echo "Component updates detected:"
+        echo -e "$COMPONENT_UPDATES"
+    else
+        echo "✓ Components unchanged (nftables, fail2ban)"
+    fi
+    echo ""
+
+    # Check if firewall exists (means user had NFTBan configured)
+    FIREWALL_EXISTS=false
     if /usr/sbin/nft list table inet nftban_main &>/dev/null; then
-        echo ""
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "📦 Upgrade complete - applying updated firewall rules..."
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        FIREWALL_EXISTS=true
+    fi
+
+    # Reload firewall rules if firewall exists
+    if [ "$FIREWALL_EXISTS" = "true" ]; then
+        echo "Applying updated firewall rules..."
         /usr/sbin/nftban firewall reload 2>&1 | grep -E '(✓|✅|━)' || true
         echo ""
     fi
+
+    # Restart services if they were running before upgrade
+    SERVICES_RESTARTED=false
+    NFTBAN_RUNNING_NOW=false
+    FAIL2BAN_RUNNING_NOW=false
+
+    if [ "$NFTBAN_WAS_RUNNING" = "true" ]; then
+        echo "Restarting nftban.timer..."
+        if systemctl start nftban.timer 2>/dev/null; then
+            echo "  ✓ nftban.timer restarted"
+            SERVICES_RESTARTED=true
+            NFTBAN_RUNNING_NOW=true
+        else
+            echo "  ✗ Failed to restart nftban.timer"
+        fi
+    fi
+
+    if [ "$FAIL2BAN_WAS_RUNNING" = "true" ]; then
+        echo "Restarting fail2ban.service..."
+        if systemctl start fail2ban.service 2>/dev/null; then
+            echo "  ✓ fail2ban.service restarted"
+            SERVICES_RESTARTED=true
+            FAIL2BAN_RUNNING_NOW=true
+        else
+            echo "  ✗ Failed to restart fail2ban.service"
+        fi
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "✅ NFTBan v0.32.1 - Upgrade Complete"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "📊 UPGRADE SUMMARY"
+    echo ""
+
+    # Show component updates
+    if [ -n "$COMPONENT_UPDATES" ]; then
+        echo "Component Updates:"
+        echo -e "$COMPONENT_UPDATES"
+    else
+        echo "Components: No version changes"
+    fi
+
+    # Show what was done
+    echo ""
+    echo "Actions Performed:"
+    if [ "$FIREWALL_EXISTS" = "true" ]; then
+        echo "  ✓ Firewall rules reloaded (zero downtime)"
+    fi
+    if [ "$NFTBAN_RUNNING_NOW" = "true" ]; then
+        echo "  ✓ nftban.timer - Running (automatic updates)"
+    fi
+    if [ "$FAIL2BAN_RUNNING_NOW" = "true" ]; then
+        echo "  ✓ fail2ban.service - Running (intrusion prevention)"
+    fi
+
+    # Current protection status
+    echo ""
+    echo "Current Status:"
+    if [ "$FIREWALL_EXISTS" = "true" ]; then
+        if [ "$NFTBAN_RUNNING_NOW" = "true" ] && [ "$FAIL2BAN_RUNNING_NOW" = "true" ]; then
+            echo "  🛡️  PROTECTED - All systems operational"
+        elif [ "$NFTBAN_RUNNING_NOW" = "true" ] || [ "$FAIL2BAN_RUNNING_NOW" = "true" ]; then
+            echo "  🟡 PARTIAL PROTECTION - Some services not running"
+        else
+            echo "  ⚠️  Firewall active, but services disabled"
+        fi
+    else
+        echo "  ⚠️  Not initialized - Run 'nftban enable' to start protection"
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Show next steps if needed
+    if [ "$FIREWALL_EXISTS" = "true" ] && [ "$SERVICES_RESTARTED" = "false" ]; then
+        echo "⚠️  Services not running - To enable protection:"
+        echo "  → sudo nftban enable"
+        echo ""
+    fi
+
+    echo "Check detailed status:"
+    echo "  → nftban status"
+    echo ""
 fi
 
 # Auto-detect and whitelist SSH port (LOCKOUT PREVENTION)
@@ -530,9 +677,61 @@ fi
 # =============================================================================
 # NFTBan v0.30.0 - RPM Pre-Uninstall Script
 # =============================================================================
-# Only run on uninstall (not upgrade)
-# $1 = 0 means uninstall, $1 = 1 means upgrade
-if [ $1 -eq 0 ]; then
+# $1 = 0 means UNINSTALL
+# $1 = 1 means UPGRADE
+
+# =============================================================================
+# UPGRADE FLOW - Capture service states and stop (not disable) services
+# =============================================================================
+if [ $1 -eq 1 ]; then
+    # This is an UPGRADE - capture service states and stop temporarily
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "📦 NFTBan Upgrade - Preparing System"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Capture component versions BEFORE upgrade
+    mkdir -p /var/lib/nftban/config
+
+    if command -v fail2ban-server >/dev/null 2>&1; then
+        fail2ban-server --version 2>/dev/null | head -1 > /var/lib/nftban/config/fail2ban.version || echo "unknown" > /var/lib/nftban/config/fail2ban.version
+    fi
+
+    if command -v nft >/dev/null 2>&1; then
+        nft --version 2>/dev/null | grep -oE 'v[0-9]+\.[0-9]+\.[0-9]+' | head -1 > /var/lib/nftban/config/nftables.version || echo "unknown" > /var/lib/nftban/config/nftables.version
+    fi
+
+    # Capture service states
+    NFTBAN_WAS_RUNNING=false
+    FAIL2BAN_WAS_RUNNING=false
+
+    if systemctl is-active --quiet nftban.timer 2>/dev/null; then
+        NFTBAN_WAS_RUNNING=true
+        echo "Stopping nftban.timer temporarily..."
+        systemctl stop nftban.timer 2>/dev/null || true
+    fi
+
+    if systemctl is-active --quiet fail2ban.service 2>/dev/null; then
+        FAIL2BAN_WAS_RUNNING=true
+        echo "Stopping fail2ban.service temporarily..."
+        systemctl stop fail2ban.service 2>/dev/null || true
+    fi
+
+    # Save state to temp file for %post to restore
+    cat > /tmp/nftban-upgrade-state.txt <<UPGRADEEOF
+NFTBAN_WAS_RUNNING=$NFTBAN_WAS_RUNNING
+FAIL2BAN_WAS_RUNNING=$FAIL2BAN_WAS_RUNNING
+UPGRADEEOF
+
+    echo "✓ Services stopped temporarily (will restart after upgrade)"
+    echo ""
+
+# =============================================================================
+# UNINSTALL FLOW - Ask user to disable services
+# =============================================================================
+elif [ $1 -eq 0 ]; then
+    # This is an UNINSTALL
     echo ""
     echo "╔════════════════════════════════════════════════════════════╗"
     echo "║  NFTBan Uninstallation                                     ║"
@@ -629,9 +828,6 @@ if [ $1 -eq 0 ]; then
     echo "⚠️  NOTE: Configuration files preserved in /etc/nftban/"
     echo "   To remove completely: dnf remove nftban (or yum remove nftban)"
     echo ""
-else
-    # Upgrade mode - just stop the timer
-    %systemd_preun nftban.timer
 fi
 
 %postun
