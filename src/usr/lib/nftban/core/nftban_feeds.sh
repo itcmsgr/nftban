@@ -296,14 +296,19 @@ nftban_feeds_update_single() {
     fi
 
     local parse_result
-    parse_result=$("$NFTBAN_FEEDS_BINARY" parse --list < "$temp_file" 2>/dev/null)
+    local parse_error
+    parse_error=$(mktemp)
+    parse_result=$("$NFTBAN_FEEDS_BINARY" parse --list < "$temp_file" 2>"$parse_error")
     local parse_exit=$?
 
     if [[ $parse_exit -ne 0 ]]; then
-        nftban_feeds_log ERROR "Parsing failed: $feed_name"
-        rm -f "$temp_file"
+        local error_msg
+        error_msg=$(cat "$parse_error" 2>/dev/null || echo "unknown error")
+        nftban_feeds_log ERROR "Parsing failed: $feed_name (exit code: $parse_exit, error: $error_msg)"
+        rm -f "$temp_file" "$parse_error"
         return 1
     fi
+    rm -f "$parse_error"
 
     # Save parsed IPs
     echo "$parse_result" > "$parsed_file"
