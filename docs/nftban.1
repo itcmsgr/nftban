@@ -13,6 +13,34 @@ bans, whitelists, threat feeds, GeoBan country blocking, and health monitoring.
 NFTBan v0.31.0 uses a dual-table architecture with inet family for unified IPv4/IPv6 management,
 providing 10-60x performance improvements through Go-powered atomic operations and feed processing.
 
+.SH QUICKSTART
+Just installed NFTBan and don't know what to do? Run this command:
+.RS
+.B nftban setup
+.RE
+
+This interactive wizard will:
+.RS
+.TP
+• Fix all permissions and directories
+.TP
+• Verify system health
+.TP
+• Optionally enable the firewall
+.TP
+• Guide you step-by-step through setup
+.RE
+
+For non-interactive (automated) setup:
+.RS
+.B nftban setup \-\-auto
+.RE
+
+After setup completes, check your firewall status:
+.RS
+.B nftban status
+.RE
+
 .SH OPTIONS
 .TP
 .BR \-h ", " \-\-help
@@ -28,6 +56,21 @@ Disable interactive prompts (for scripting)
 Output results in JSON format
 
 .SH COMMANDS
+.SS Setup & Configuration
+.TP
+.B setup
+Interactive first-time setup wizard (recommended for new installations)
+.RS
+.TP
+.B \-\-auto
+Non-interactive mode (skip all prompts)
+.TP
+.B Example:
+nftban setup
+.br
+nftban setup \-\-auto
+.RE
+
 .SS Ban Management
 .TP
 .B ban \fIIP\fR [\fIOPTIONS\fR]
