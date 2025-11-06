@@ -1,6 +1,6 @@
 # NFTBan Documentation Index
 
-**Version:** v0.31.0
+**Version:** v0.32.0
 **Last Updated:** 2025-11-05
 **Repository:** https://github.com/nftban/nftban
 
@@ -242,12 +242,12 @@ nftban/
 # Manual x86_64 build
 cd go-geoip
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-  go build -buildvcs=false -ldflags "-s -w -X main.VERSION=0.31.0" \
+  go build -buildvcs=false -ldflags "-s -w -X main.VERSION=0.32.0" \
   -o ../dist/x86_64/nftban-geoip ./cmd/nftban-geoip
 
 # Manual aarch64 build
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-  go build -buildvcs=false -ldflags "-s -w -X main.VERSION=0.31.0" \
+  go build -buildvcs=false -ldflags "-s -w -X main.VERSION=0.32.0" \
   -o ../dist/aarch64/nftban-geoip ./cmd/nftban-geoip
 ```
 

@@ -1,6 +1,6 @@
 # NFTBan Go Binary Compilation Guide
 
-**Version:** v0.31.0
+**Version:** v0.32.0
 **Last Updated:** 2025-01-05
 **Audience:** Developers, Package Maintainers, System Administrators
 
@@ -87,7 +87,7 @@ nftban/
 | `GO_DOWNLOAD_TIMEOUT` | `30` | HTTP timeout (seconds) |
 | `GO_MAX_DOWNLOAD_SIZE_MB` | `50` | Max file size (MB) |
 | `GO_MAX_RETRIES` | `3` | Max retry attempts |
-| `GO_USER_AGENT` | `NFTBan/0.31.0 (+https://nftban.com)` | HTTP User-Agent |
+| `GO_USER_AGENT` | `NFTBan/0.32.0 (+https://nftban.com)` | HTTP User-Agent |
 
 ### Paths
 
@@ -145,7 +145,7 @@ ls -lh src/usr/lib/nftban/bin/.real/nftban-geoip-*
 ```bash
 cd go-geoip
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
-  go build -ldflags "-s -w -X main.VERSION=0.31.0" \
+  go build -ldflags "-s -w -X main.VERSION=0.32.0" \
   -o ../dist/x86_64/nftban-geoip \
   ./cmd/nftban-geoip
 ```
@@ -154,7 +154,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 ```bash
 cd go-geoip
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
-  go build -ldflags "-s -w -X main.VERSION=0.31.0" \
+  go build -ldflags "-s -w -X main.VERSION=0.32.0" \
   -o ../dist/aarch64/nftban-geoip \
   ./cmd/nftban-geoip
 ```
@@ -164,7 +164,7 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 - `GOOS=linux`: Target OS
 - `GOARCH=amd64|arm64`: Target architecture
 - `-ldflags "-s -w"`: Strip debug symbols (smaller binary)
-- `-X main.VERSION=0.31.0`: Embed version string
+- `-X main.VERSION=0.32.0`: Embed version string
 
 ---
 
@@ -186,7 +186,7 @@ cd dist/x86_64  # or dist/aarch64
 
 # Version check
 ./nftban-geoip version
-# Expected: nftban-geoip v0.31.0
+# Expected: nftban-geoip v0.32.0
 
 # Help
 ./nftban-geoip help

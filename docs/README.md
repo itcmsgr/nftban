@@ -1,6 +1,6 @@
 # NFTBan Documentation
 
-**Version:** 0.31.0
+**Version:** 0.32.0
 **Last Updated:** 2025-11-05
 
 ---
@@ -241,7 +241,7 @@ man nftban
 
 ### Key Topics Covered
 - **Two-Table Design** - Runtime vs Main tables
-- **Rule Processing Order** - Critical security fix (v0.31.0)
+- **Rule Processing Order** - Critical security fix (v0.32.0)
 - **Set-Based Filtering** - O(1) performance
 - **Atomic Operations** - Zero-downtime updates
 - **Directory Structure** - FHS-compliant layout
@@ -325,6 +325,6 @@ Our documentation follows these principles:
 
 ---
 
-**NFTBan v0.31.0** - Simple, Secure, Powerful
+**NFTBan v0.32.0** - Simple, Secure, Powerful
 
 Copyright © 2024–2026 NFTBAN Project / Antonios Voulvoulis

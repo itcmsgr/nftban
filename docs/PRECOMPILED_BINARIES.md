@@ -1,6 +1,6 @@
 # NFTBan Precompiled Go Binaries - Transparency & Verification
 
-**Version:** v0.31.0
+**Version:** v0.32.0
 **Purpose:** Explain how we provide precompiled binaries and how users can verify them
 **Audience:** Security-conscious users, system administrators
 
@@ -67,7 +67,7 @@ cat /usr/share/doc/nftban/CHECKSUMS.txt
 strings /usr/lib/nftban/bin/.real/nftban-geoip-x86_64 | grep -E "(VERSION|BuildTime|GoVersion)"
 
 # Example output:
-# VERSION=0.31.0
+# VERSION=0.32.0
 # BuildTime=2025-11-06T00:00:00Z
 # GoVersion=go1.21.5
 ```
@@ -79,7 +79,7 @@ strings /usr/lib/nftban/bin/.real/nftban-geoip-x86_64 | grep -E "(VERSION|BuildT
 /usr/lib/nftban/bin/.real/nftban-geoip-x86_64 version
 
 # Output:
-# nftban-geoip v0.31.0
+# nftban-geoip v0.32.0
 # Build: 2025-11-06
 # Go: go1.21.5
 ```
@@ -90,7 +90,7 @@ strings /usr/lib/nftban/bin/.real/nftban-geoip-x86_64 | grep -E "(VERSION|BuildT
 # Clone repository
 git clone https://github.com/nftban/nftban.git
 cd nftban
-git checkout v0.31.0
+git checkout v0.32.0
 
 # Inspect source code
 cat go-geoip/cmd/nftban-geoip/main.go
@@ -178,14 +178,14 @@ go mod tidy
 # Build for x86_64
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -buildvcs=false \
-  -ldflags "-s -w -X main.VERSION=0.31.0" \
+  -ldflags "-s -w -X main.VERSION=0.32.0" \
   -o ../dist/x86_64/nftban-geoip \
   ./cmd/nftban-geoip
 
 # Build for ARM64
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
   go build -buildvcs=false \
-  -ldflags "-s -w -X main.VERSION=0.31.0" \
+  -ldflags "-s -w -X main.VERSION=0.32.0" \
   -o ../dist/aarch64/nftban-geoip \
   ./cmd/nftban-geoip
 
@@ -204,14 +204,14 @@ go mod tidy
 # Build for x86_64
 CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
   go build -buildvcs=false \
-  -ldflags "-s -w -X main.VERSION=0.31.0" \
+  -ldflags "-s -w -X main.VERSION=0.32.0" \
   -o ../dist/x86_64/nftban-feeds \
   ./cmd/nftban-feeds
 
 # Build for ARM64
 CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
   go build -buildvcs=false \
-  -ldflags "-s -w -X main.VERSION=0.31.0" \
+  -ldflags "-s -w -X main.VERSION=0.32.0" \
   -o ../dist/aarch64/nftban-feeds \
   ./cmd/nftban-feeds
 
@@ -250,7 +250,7 @@ GOARCH=amd64         # or arm64
 
 -buildvcs=false      # Disable VCS stamping
 -ldflags "-s -w"     # Strip symbols (smaller binary)
--ldflags "-X main.VERSION=0.31.0"  # Embed version
+-ldflags "-X main.VERSION=0.32.0"  # Embed version
 ```
 
 **Safety Configuration:**
@@ -445,7 +445,7 @@ sha256sum dist/x86_64/nftban-geoip
 ---
 
 **Last Updated:** 2025-11-06
-**Version:** v0.31.0
+**Version:** v0.32.0
 **License:** MPL-2.0
 
 **We believe in transparency. You shouldn't have to trust us blindly.**

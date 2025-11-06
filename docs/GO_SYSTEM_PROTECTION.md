@@ -384,7 +384,7 @@ nftban feeds sync
 
 ## 📊 Expected Resource Usage
 
-### Normal Operation (Go v0.31.0)
+### Normal Operation (Go v0.32.0)
 | Resource | Expected | Alert If > |
 |----------|----------|------------|
 | CPU | 1-5% | 50% |
