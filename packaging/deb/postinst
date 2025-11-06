@@ -120,14 +120,28 @@ SSHEOF
         deb-systemd-invoke enable nftban-maintenance.timer || true
         deb-systemd-invoke start nftban-maintenance.timer || true
 
+        # On upgrade (not fresh install), reload firewall to apply new rules
+        # Check if this is an upgrade by looking for existing nftban_main table
+        if /usr/sbin/nft list table inet nftban_main &>/dev/null; then
+            echo ""
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📦 Upgrade complete - applying updated firewall rules..."
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            /usr/sbin/nftban firewall reload 2>&1 | grep -E '(✓|✅|━)' || true
+            echo ""
+            # Skip the "first install" message below
+            exit 0
+        fi
+
         # Print installation message
         echo ""
         echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  NFTBan v0.32.0 Installation Complete!                    ║"
+        echo "║  NFTBan v0.32.1 Installation Complete!                    ║"
         echo "╚════════════════════════════════════════════════════════════╝"
         echo ""
         echo "✅ Auto-heal completed - all systems configured"
         echo "✅ SSH port $SSH_PORT automatically whitelisted (lockout prevention)"
+        echo "✅ fail2ban installed and ready"
         echo ""
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo "🚀 QUICKSTART - Ready to Enable Protection?"
