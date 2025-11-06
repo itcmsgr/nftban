@@ -186,6 +186,20 @@ nftban_feeds_get_categories() {
     printf '%s\n' "${categories[@]}" | sort -u
 }
 
+# List all enabled feeds
+nftban_feeds_list_enabled() {
+    local all_feeds
+    all_feeds=$(nftban_feeds_discover_all)
+
+    for feed in $all_feeds; do
+        local enabled
+        enabled=$(nftban_feeds_get_property "$feed" "ENABLED")
+        if [[ "$enabled" == "true" ]]; then
+            echo "$feed"
+        fi
+    done
+}
+
 # =============================================================================
 # FEED OPERATIONS
 # =============================================================================
