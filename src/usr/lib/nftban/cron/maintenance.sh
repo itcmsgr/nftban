@@ -195,6 +195,49 @@ EOF
 
     IP_ALERT_STATE="/var/lib/nftban/state/ip_change_alert.state"
 
+    # Create system whitelist if missing (CRITICAL FOR LOCKOUT PREVENTION)
+    if [[ ! -f "/etc/nftban/whitelist.d/00-system.conf" ]]; then
+        log "WARN" "System whitelist missing - creating now (lockout prevention)..."
+        mkdir -p /etc/nftban/whitelist.d
+        cat > /etc/nftban/whitelist.d/00-system.conf <<'EOF'
+# NFTBan System IP Whitelist (Auto-Generated)
+# This file contains server IPs and SSH client IPs for lockout prevention
+# DO NOT EDIT - Automatically managed by maintenance script
+# Generated: $(date)
+
+# Server IPs (from interfaces)
+EOF
+
+        # Add all server IPs from interfaces
+        ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '^127\.' | while read -r ip; do
+            echo "$ip  # Server IPv4 (auto-detected)" >> /etc/nftban/whitelist.d/00-system.conf
+            log "INFO" "Added server IPv4 to whitelist: $ip"
+        done
+
+        ip -6 addr show | grep -oP '(?<=inet6\s)[0-9a-f:]+' | grep -v '^::1$' | grep -v '^fe80:' | while read -r ip; do
+            echo "$ip  # Server IPv6 (auto-detected)" >> /etc/nftban/whitelist.d/00-system.conf
+            log "INFO" "Added server IPv6 to whitelist: $ip"
+        done
+
+        # Add SSH client IP if available
+        if [[ -n "${SSH_CLIENT:-}" ]]; then
+            SSH_IP="${SSH_CLIENT%% *}"
+            echo "$SSH_IP  # SSH client IP (auto-detected)" >> /etc/nftban/whitelist.d/00-system.conf
+            log "INFO" "Added SSH client IP to whitelist: $SSH_IP"
+        fi
+
+        chmod 640 /etc/nftban/whitelist.d/00-system.conf
+        chown root:nftban /etc/nftban/whitelist.d/00-system.conf 2>/dev/null || true
+        log "INFO" "✅ System whitelist created with all server and client IPs"
+
+        # Reload firewall to apply whitelist
+        if nftban firewall reload >/dev/null 2>&1; then
+            log "INFO" "✅ Firewall reloaded - system IPs now protected"
+        else
+            log "WARN" "Firewall reload failed - whitelist created but not yet active"
+        fi
+    fi
+
     # Check if system IPs have changed
     if [[ -f "/etc/nftban/whitelist.d/00-system.conf" ]]; then
         # Get current public IPs
