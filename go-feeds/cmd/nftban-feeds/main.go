@@ -113,8 +113,8 @@ func syncFeeds(feedNames []string, limits safety.Limits) error {
 			continue
 		}
 
-		// Parse IPs
-		prefixes, err := parser.ParseIPs(string(content))
+		// Parse IPs (content is already []byte from os.ReadFile)
+		prefixes, err := parser.ParseIPs(content)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "Warning: %s parse error: %v\n", name, err)
 			continue
