@@ -173,10 +173,12 @@ table inet nftban_main {
   # Whitelist
   set whitelist_v4 {
     type ipv4_addr
+    flags interval
     comment "IPv4 whitelist (always wins)"
   }
   set whitelist_v6 {
     type ipv6_addr
+    flags interval
     comment "IPv6 whitelist (always wins)"
   }
 
