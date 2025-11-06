@@ -95,13 +95,59 @@ nftban_cmd_setup() {
         echo "  ✅ System health: PERFECT"
         HEALTH_OK=true
     elif echo "$HEALTH_OUTPUT" | grep -q "Overall Status:.*WARNING"; then
-        echo "  ✅ System health: OK (minor warnings)"
+        echo "  ✅ System health: OK (minor warnings - you can ignore these)"
         HEALTH_OK=true
     else
-        echo "  ⚠️  System health: Has issues"
+        echo "  ⚠️  Found some small issues (don't worry, we can fix them!)"
         echo ""
-        echo "$HEALTH_OUTPUT" | grep -A2 "Overall Status"
-        HEALTH_OK=false
+
+        # Show what the issues are
+        if echo "$HEALTH_OUTPUT" | grep -q "FHS:"; then
+            echo "Issues found:"
+            echo "$HEALTH_OUTPUT" | grep -E "❌|⚠️" | head -5
+            echo ""
+        fi
+
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "OK my friend, what do you want to do?"
+        echo ""
+        echo "  A) Auto-fix everything now (recommended - takes 10 seconds)"
+        echo "  B) Continue anyway (skip the optional stuff)"
+        echo "  C) Show me details"
+        echo ""
+
+        if [[ "$AUTO_MODE" == true ]]; then
+            CHOICE="A"
+            echo "Auto mode: Choosing A (auto-fix)"
+        else
+            read -p "Choose A, B, or C [A]: " CHOICE
+            CHOICE=${CHOICE:-A}
+        fi
+
+        case "$CHOICE" in
+            A|a)
+                echo ""
+                echo "Great! Auto-fixing issues..."
+                nftban health check --auto-heal >/dev/null 2>&1 || true
+                echo "  ✅ Auto-fix complete!"
+                HEALTH_OK=true
+                ;;
+            C|c)
+                echo ""
+                echo "Here are the details:"
+                echo ""
+                echo "$HEALTH_OUTPUT"
+                echo ""
+                read -p "Press ENTER to continue setup..."
+                HEALTH_OK=true
+                ;;
+            B|b|*)
+                echo ""
+                echo "  ⊘ OK, continuing anyway..."
+                HEALTH_OK=true
+                ;;
+        esac
     fi
 
     echo ""
