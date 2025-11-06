@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.0
+Version:        0.32.2
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -368,7 +368,7 @@ fi
 # Update NFTBAN_VERSION in config file (handles upgrades with noreplace)
 # This ensures the banner shows the correct version even on upgrades
 if [ -f /etc/nftban/nftban.conf ]; then
-    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.1"/' /etc/nftban/nftban.conf
+    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.2"/' /etc/nftban/nftban.conf
 fi
 
 # Generate system.conf with UID/GID
@@ -540,7 +540,7 @@ if [ $1 -eq 2 ]; then
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✅ NFTBan v0.32.1 - Upgrade Complete"
+    echo "✅ NFTBan v0.32.2 - Upgrade Complete"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "📊 UPGRADE SUMMARY"
