@@ -224,6 +224,130 @@ output_terminal() {
     fi
     echo ""
 
+    # System Requirements & Warnings
+    echo "⚙️  SYSTEM REQUIREMENTS"
+    echo "────────────────────────────────────────────────────────────────"
+
+    local warnings=0
+
+    # Check DNS
+    if host google.com >/dev/null 2>&1 || nslookup google.com >/dev/null 2>&1; then
+        echo "  DNS:            ✅ Working"
+    else
+        echo "  DNS:            ⚠️  Not working"
+        echo "                  → Feeds/Cloudflare updates will FAIL"
+        warnings=$((warnings + 1))
+    fi
+
+    # Check Email capability
+    local email_status="⚪ Not configured"
+    local email_working=false
+    if [[ -f /etc/nftban/conf.d/mail.conf ]]; then
+        # Check if mail is configured
+        if grep -q "MAIL_ENABLED=true" /etc/nftban/conf.d/mail.conf 2>/dev/null; then
+            # Check if can send email (test common methods)
+            if command -v sendmail >/dev/null 2>&1 || \
+               command -v msmtp >/dev/null 2>&1 || \
+               command -v mailx >/dev/null 2>&1; then
+                email_status="✅ Configured"
+                email_working=true
+            else
+                email_status="⚠️  Configured but no mail command"
+                warnings=$((warnings + 1))
+            fi
+        fi
+    fi
+    echo "  Email:          $email_status"
+
+    # Check SMTP ports (25, 587, 465)
+    if [[ "$email_working" == true ]]; then
+        local smtp_port_status=""
+        local ports_open=0
+
+        # Port 25 (SMTP)
+        if timeout 2 bash -c "cat < /dev/null > /dev/tcp/smtp.gmail.com/25" 2>/dev/null; then
+            smtp_port_status="${smtp_port_status}25✅ "
+            ports_open=$((ports_open + 1))
+        else
+            smtp_port_status="${smtp_port_status}25❌ "
+        fi
+
+        # Port 587 (Submission)
+        if timeout 2 bash -c "cat < /dev/null > /dev/tcp/smtp.gmail.com/587" 2>/dev/null; then
+            smtp_port_status="${smtp_port_status}587✅ "
+            ports_open=$((ports_open + 1))
+        else
+            smtp_port_status="${smtp_port_status}587❌ "
+        fi
+
+        # Port 465 (SMTPS)
+        if timeout 2 bash -c "cat < /dev/null > /dev/tcp/smtp.gmail.com/465" 2>/dev/null; then
+            smtp_port_status="${smtp_port_status}465✅"
+            ports_open=$((ports_open + 1))
+        else
+            smtp_port_status="${smtp_port_status}465❌"
+        fi
+
+        echo "  SMTP Ports:     $smtp_port_status"
+
+        if [[ $ports_open -eq 0 ]]; then
+            echo "                  → All ports blocked - Email will FAIL"
+            warnings=$((warnings + 1))
+        fi
+    fi
+
+    # Check Auto-Reports (currently only local save, no remote upload)
+    local report_status="⚪ Disabled"
+
+    # Reports are saved locally in /var/lib/nftban/reports/
+    if [[ -d /var/lib/nftban/reports ]]; then
+        local report_count=$(find /var/lib/nftban/reports -type f -name "*.html" -o -name "*.json" 2>/dev/null | wc -l)
+        if [[ $report_count -gt 0 ]]; then
+            report_status="✅ Enabled (${report_count} reports saved)"
+        else
+            report_status="⚪ Enabled (no reports yet)"
+        fi
+    fi
+
+    echo "  Auto-Reports:   $report_status"
+    echo "                  → Saved to: /var/lib/nftban/reports/"
+
+    # Show warning if email enabled but can't send
+    if [[ "$email_working" == false ]] && [[ -f /etc/nftban/conf.d/mail.conf ]]; then
+        if grep -q "NFTBAN_LOGIN_ALERT=\"YES\"" /etc/nftban/conf.d/mail.conf 2>/dev/null; then
+            echo ""
+            echo "  ⚠️  Login alerts enabled but email not configured!"
+            echo "      Alerts will NOT be sent"
+            warnings=$((warnings + 1))
+        fi
+    fi
+
+    # Check if feeds enabled but DNS broken
+    if [[ $feeds_enabled -gt 0 ]]; then
+        if ! host google.com >/dev/null 2>&1; then
+            echo ""
+            echo "  ⚠️  WARNING: Feeds enabled but DNS not working!"
+            echo "              Feed updates will FAIL"
+            warnings=$((warnings + 1))
+        fi
+    fi
+
+    # Check if Cloudflare enabled but DNS broken
+    if [[ "$cf_status" == "✅ Enabled" ]]; then
+        if ! host cloudflare.com >/dev/null 2>&1; then
+            echo ""
+            echo "  ⚠️  WARNING: Cloudflare enabled but DNS not working!"
+            echo "              Cloudflare updates will FAIL"
+            warnings=$((warnings + 1))
+        fi
+    fi
+
+    if [[ $warnings -eq 0 ]]; then
+        echo ""
+        echo "  ✅ All requirements met"
+    fi
+    echo ""
+
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "💡 QUICK ACTIONS"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
