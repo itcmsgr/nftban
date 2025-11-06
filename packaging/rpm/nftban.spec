@@ -45,6 +45,7 @@ Requires:       ipset
 Requires:       git
 Requires:       polkit
 Requires:       fail2ban-server >= 0.11
+Requires:       newt
 Recommends:     logrotate
 
 # Conflicts

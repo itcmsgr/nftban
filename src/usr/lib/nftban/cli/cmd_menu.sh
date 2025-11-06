@@ -124,8 +124,15 @@ ui_input() {
             dialog --title "$title" --inputbox "$prompt" 10 60 "$default" 3>&1 1>&2 2>&3
             ;;
         select)
-            read -r -p "$prompt: " -i "$default" ans
-            echo "$ans"
+            echo ""
+            echo "[$title]"
+            if [[ -n "$default" ]]; then
+                read -r -p "$prompt [$default]: " ans
+                echo "${ans:-$default}"
+            else
+                read -r -p "$prompt: " ans
+                echo "$ans"
+            fi
             ;;
     esac
 }
@@ -161,6 +168,24 @@ run_cmd() {
 
 main_menu() {
     # Main menu entry point
+
+    # Warn if using fallback select mode
+    if [[ "$UI" == "select" ]]; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "⚠️  WARNING: whiptail/dialog not found"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "Using basic text menu (no TUI interface)"
+        echo ""
+        echo "For better experience, install whiptail:"
+        echo "  → dnf install newt        # RHEL/Rocky/Alma/Fedora"
+        echo "  → apt install whiptail    # Debian/Ubuntu"
+        echo ""
+        read -r -p "Press Enter to continue with basic menu..." _
+        echo ""
+    fi
+
     while true; do
         local choice
         choice="$(ui_menu "$TITLE" "$BACKTITLE" \
@@ -222,17 +247,33 @@ screen_firewall() {
         search)
             local ip
             ip="$(ui_input "IP Search" "Enter IP/CIDR to search:")" || return
-            [[ -z "${ip:-}" ]] || run_cmd "Search $ip" nftban search "$ip"
+            if [[ -n "${ip:-}" ]]; then
+                run_cmd "Search $ip" nftban search "$ip"
+            else
+                ui_msg "Error" "No IP address entered"
+            fi
             ;;
         ban)
             local ip
             ip="$(ui_input "Ban IP" "Enter IP to ban:")" || return
-            [[ -z "${ip:-}" ]] || { require_root && run_cmd "Ban $ip" nftban ban "$ip" ; }
+            if [[ -n "${ip:-}" ]]; then
+                if require_root; then
+                    run_cmd "Ban $ip" nftban ban "$ip"
+                fi
+            else
+                ui_msg "Error" "No IP address entered"
+            fi
             ;;
         unban)
             local ip
             ip="$(ui_input "Unban IP" "Enter IP to unban:")" || return
-            [[ -z "${ip:-}" ]] || { require_root && run_cmd "Unban $ip" nftban unban "$ip" ; }
+            if [[ -n "${ip:-}" ]]; then
+                if require_root; then
+                    run_cmd "Unban $ip" nftban unban "$ip"
+                fi
+            else
+                ui_msg "Error" "No IP address entered"
+            fi
             ;;
         whitelist) screen_whitelist ;;
         profile) screen_profile ;;
