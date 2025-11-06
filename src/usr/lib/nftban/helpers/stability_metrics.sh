@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.31.0 - Stability Metrics Logger
+# NFTBan v0.32.0 - Stability Metrics Logger
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Collect stability metrics to analyze if everything works correctly
@@ -15,7 +15,7 @@
 # meta:name=stability_metrics
 # meta:type=helper
 # meta:header=Stability Metrics Logger
-# meta:version=0.31.0
+# meta:version=0.32.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

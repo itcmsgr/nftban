@@ -9,7 +9,7 @@
 # meta:name=nftban_report_services
 # meta:type=core
 # meta:header=Services Report Core
-# meta:version=0.31.0
+# meta:version=0.32.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

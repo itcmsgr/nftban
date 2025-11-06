@@ -9,7 +9,7 @@
 # meta:name=cmd_services
 # meta:type=cli
 # meta:header=Services CLI Command
-# meta:version=0.31.0
+# meta:version=0.32.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -216,7 +216,7 @@ nftban_services_check_health() {
 # nftban_services_show_help - Show help message
 #
 nftban_services_show_help() {
-    nftban_render_banner simple 2>/dev/null || echo "NFTBan v0.31.0"
+    nftban_render_banner simple 2>/dev/null || echo "NFTBan v0.32.0"
     echo ""
     echo "USAGE:"
     echo "    nftban services <command>"

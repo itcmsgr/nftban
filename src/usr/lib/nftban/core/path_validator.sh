@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.31.0 - Path Validator Module
+# NFTBan v0.32.0 - Path Validator Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Detects and validates critical command paths across different OS distributions
@@ -8,7 +8,7 @@
 # meta:name=path_validator
 # meta:type=tool
 # meta:header=Path Validator Module
-# meta:version=0.31.0
+# meta:version=0.32.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -162,7 +162,7 @@ validate_all_paths() {
     # Required: systemctl
     if ! validate_systemctl_path; then
         echo "✗ CRITICAL: systemctl command not found" >&2
-        echo "  systemd is required for NFTBan v0.31.0" >&2
+        echo "  systemd is required for NFTBan v0.32.0" >&2
         missing_critical=$((missing_critical + 1))
     fi
 

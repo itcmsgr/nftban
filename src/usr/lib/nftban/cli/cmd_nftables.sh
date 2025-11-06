@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.31.0 - NFTables Service Management CLI Handler
+# NFTBan v0.32.0 - NFTables Service Management CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Command-line interface for nftables service management
@@ -8,7 +8,7 @@
 # meta:name=cmd_nftables
 # meta:type=cli
 # meta:header=NFTables Service CLI
-# meta:version=0.31.0
+# meta:version=0.32.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
