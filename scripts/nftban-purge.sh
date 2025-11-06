@@ -46,7 +46,7 @@ echo -e "${RED}This operation CANNOT be undone!${NC}"
 echo ""
 
 # Require explicit confirmation
-read -p "Type 'yes-i-understand' to proceed: " confirmation
+read -r -p "Type 'yes-i-understand' to proceed: " confirmation
 if [ "$confirmation" != "yes-i-understand" ]; then
     echo ""
     echo "Purge cancelled."

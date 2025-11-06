@@ -98,8 +98,8 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 x86_size=$(stat -c%s "${DIST_DIR}/x86_64/nftban-feeds" 2>/dev/null || echo 0)
 arm_size=$(stat -c%s "${DIST_DIR}/aarch64/nftban-feeds" 2>/dev/null || echo 0)
 
-echo -e "${GREEN}  ✓ x86_64:  $(numfmt --to=iec-i --suffix=B $x86_size)${NC}"
-echo -e "${GREEN}  ✓ aarch64: $(numfmt --to=iec-i --suffix=B $arm_size)${NC}"
+echo -e "${GREEN}  ✓ x86_64:  $(numfmt --to=iec-i --suffix=B "$x86_size")${NC}"
+echo -e "${GREEN}  ✓ aarch64: $(numfmt --to=iec-i --suffix=B "$arm_size")${NC}"
 echo ""
 
 # =============================================================================
@@ -145,8 +145,8 @@ CGO_ENABLED=0 GOOS=linux GOARCH=arm64 \
 x86_size=$(stat -c%s "${DIST_DIR}/x86_64/nftban-geoip" 2>/dev/null || echo 0)
 arm_size=$(stat -c%s "${DIST_DIR}/aarch64/nftban-geoip" 2>/dev/null || echo 0)
 
-echo -e "${GREEN}  ✓ x86_64:  $(numfmt --to=iec-i --suffix=B $x86_size)${NC}"
-echo -e "${GREEN}  ✓ aarch64: $(numfmt --to=iec-i --suffix=B $arm_size)${NC}"
+echo -e "${GREEN}  ✓ x86_64:  $(numfmt --to=iec-i --suffix=B "$x86_size")${NC}"
+echo -e "${GREEN}  ✓ aarch64: $(numfmt --to=iec-i --suffix=B "$arm_size")${NC}"
 echo ""
 
 # =============================================================================
