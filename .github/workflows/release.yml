@@ -100,10 +100,20 @@ jobs:
 
             # Now install build dependencies (glibc-devel will match updated glibc)
             echo '=== Installing build dependencies ==='
-            dnf install -y --nobest --allowerasing glibc-devel rpm-build rpmdevtools tar gzip which systemd-rpm-macros golang gcc || {
-              echo 'ERROR: Failed to install build dependencies'
-              exit 1
-            }
+
+            # Detect OS - Rocky/Alma may need --nobest for glibc mismatch
+            if grep -qE 'rocky|almalinux' /etc/os-release 2>/dev/null; then
+              echo 'Detected Rocky/Alma - using --nobest for glibc compatibility'
+              dnf install -y --nobest --allowerasing glibc-devel rpm-build rpmdevtools tar gzip which systemd-rpm-macros golang gcc || {
+                echo 'ERROR: Failed to install build dependencies'
+                exit 1
+              }
+            else
+              dnf install -y --allowerasing glibc-devel rpm-build rpmdevtools tar gzip which systemd-rpm-macros golang gcc || {
+                echo 'ERROR: Failed to install build dependencies'
+                exit 1
+              }
+            fi
 
             # Verify rpmbuild is available
             which rpmbuild || { echo 'ERROR: rpmbuild not found after install'; exit 1; }
