@@ -35,8 +35,10 @@ func main() {
 			os.Exit(1)
 		}
 	case "parse":
-		fmt.Fprintln(os.Stderr, "Parse command not yet implemented")
-		os.Exit(1)
+		if err := parseFeeds(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	case "validate":
 		fmt.Fprintln(os.Stderr, "Validate command not yet implemented")
 		os.Exit(1)
@@ -53,23 +55,53 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `NFTBan Feeds Manager v0.32.0
+	fmt.Fprintf(os.Stderr, `NFTBan Feeds Manager v0.32.3
 
-Architecture: Bash downloads feeds, Go loads to nftables (fast, atomic)
+Architecture: Bash downloads feeds, Go parses and loads to nftables (fast, atomic)
 
 Usage:
-  nftban-feeds sync <feed1,feed2,...>    Load pre-downloaded feeds to nftables
+  nftban-feeds parse                      Parse feed from stdin, output valid IPs
+  nftban-feeds sync <feed1,feed2,...>     Load pre-downloaded feeds to nftables
+
+Commands:
+  parse  - Read feed data from stdin, parse IPs, output to stdout (used by bash wrapper)
+  sync   - Load pre-downloaded feeds from disk to nftables atomically
 
 Notes:
   • Feeds must be downloaded first: nftban feeds update
   • Feed files location: /var/lib/nftban/feeds/*.txt
-  • This binary does NOT download - it loads from disk (single source of truth)
+  • parse command reads from stdin and outputs valid IPs (one per line)
+  • sync command loads from disk (single source of truth)
 
 Examples:
+  cat feed.txt | nftban-feeds parse
   nftban-feeds sync firehol_anonymous
   nftban-feeds sync firehol_anonymous,spamhaus_drop,greensnow
 
 `)
+}
+
+// parseFeeds reads feed data from stdin, parses IPs, and outputs valid IPs to stdout
+// Used by bash wrapper to parse downloaded feeds before storage
+func parseFeeds() error {
+	// Read all input from stdin
+	content, err := os.ReadFile("/dev/stdin")
+	if err != nil {
+		return fmt.Errorf("failed to read stdin: %w", err)
+	}
+
+	// Parse IPs using the same parser as sync command
+	prefixes, err := parser.ParseIPs(content)
+	if err != nil {
+		return fmt.Errorf("parse error: %w", err)
+	}
+
+	// Output each valid IP/prefix to stdout (one per line)
+	for _, prefix := range prefixes {
+		fmt.Println(prefix.String())
+	}
+
+	return nil
 }
 
 // syncFeeds loads pre-downloaded feeds from disk and loads to nftables atomically
