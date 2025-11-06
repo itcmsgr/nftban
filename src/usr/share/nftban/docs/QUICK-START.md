@@ -1,12 +1,18 @@
 # NFTBan v0.31.0 - Quick Start Guide
 
-**The Linux firewall that anyone can install - Get running in 2 commands!**
+**The Linux firewall that AUTOMATICALLY protects you - Get running in 2 commands!**
 
 ---
 
 ## 🚀 For Impatient Users (The Fast Way)
 
 **NFTBan is the first Linux firewall that a junior can install and use successfully without reading 50 pages of documentation.**
+
+**What makes NFTBan different:**
+- ✅ **AUTOMATIC SSH protection** - Detects your SSH port instantly
+- ✅ **AUTOMATIC system IP whitelisting** - No manual configuration
+- ✅ **AUTOMATIC fail2ban integration** - Brute force protection enabled
+- ✅ **AUTOMATIC maintenance** - Timer keeps everything updated
 
 ### Rocky Linux / AlmaLinux / Fedora
 ```bash
@@ -33,12 +39,15 @@ sudo nftban setup
 # That's it! 🎉
 ```
 
-**The interactive wizard will:**
-- ✅ Fix all permissions automatically
-- ✅ Create missing directories
-- ✅ Verify system health
-- ✅ Optionally enable the firewall
-- ✅ Tell you exactly what to do next
+**The interactive wizard automatically:**
+- ✅ Fixes all permissions
+- ✅ Creates missing directories
+- ✅ Verifies system health
+- ✅ Enables SSH protection (fail2ban)
+- ✅ Blocks bad IPs automatically
+- ✅ Protects your system
+
+**Then you're DONE! Go to sleep! 😴**
 
 ---
 
