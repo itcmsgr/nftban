@@ -143,6 +143,12 @@ nftban_module_check_enabled() {
         return 0
     fi
 
+    # nftban_help.sh is also sourced (not executed)
+    if [[ "$file" =~ nftban_help\.sh$ ]]; then
+        echo "ENABLED"
+        return 0
+    fi
+
     # Otherwise disabled
     echo "DISABLED"
 }
