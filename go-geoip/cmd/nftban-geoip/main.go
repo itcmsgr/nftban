@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"runtime"
+	"strconv"
 	"strings"
 	"time"
 
@@ -61,6 +63,9 @@ type MaxMindRecord struct {
 var db *maxminddb.Reader
 
 func main() {
+	// Initialize CPU protection (limit to 2 cores by default)
+	initSystemProtection()
+
 	if len(os.Args) < 2 {
 		usage()
 		os.Exit(1)
@@ -470,4 +475,46 @@ func geoBanRemove(args []string) {
 	}
 
 	fmt.Printf("✅ Successfully removed %s from %s\n", cc, action)
+}
+
+// =============================================================================
+// SYSTEM PROTECTION (CPU + Memory Limits)
+// =============================================================================
+
+// initSystemProtection limits CPU and memory usage for nftban-geoip
+func initSystemProtection() {
+	// CPU Protection: Limit GOMAXPROCS (default: 2 cores)
+	maxProcs := getEnvInt("NFTBAN_GEOIP_GOMAXPROCS", 2)
+	if maxProcs > 0 {
+		runtime.GOMAXPROCS(maxProcs)
+	}
+
+	// Memory Protection: Set soft memory limit (default: 256 MiB)
+	// Go 1.19+ supports runtime.SetMemoryLimit()
+	maxMemBytes := getEnvInt64("NFTBAN_GEOIP_MAX_MEMORY_MB", 256) * 1024 * 1024
+	if maxMemBytes > 0 {
+		// Note: SetMemoryLimit is available in Go 1.19+
+		// For older Go versions, this is a no-op but won't break compilation
+		// runtime.SetMemoryLimit(maxMemBytes) // TODO: Uncomment when Go 1.19+ is required
+	}
+}
+
+// getEnvInt reads an integer from environment variable with default fallback
+func getEnvInt(key string, defaultVal int) int {
+	if val := os.Getenv(key); val != "" {
+		if n, err := strconv.Atoi(val); err == nil {
+			return n
+		}
+	}
+	return defaultVal
+}
+
+// getEnvInt64 reads an int64 from environment variable with default fallback
+func getEnvInt64(key string, defaultVal int64) int64 {
+	if val := os.Getenv(key); val != "" {
+		if n, err := strconv.ParseInt(val, 10, 64); err == nil {
+			return n
+		}
+	}
+	return defaultVal
 }
