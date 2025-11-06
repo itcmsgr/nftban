@@ -41,20 +41,20 @@ sudo dnf config-manager --set-enabled crb
 # Install NFTBan
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm
 sudo dnf install -y nftban-x86_64.rpm
-sudo nftban setup
+sudo nftban enable
 ```
 
 **Fedora** (all repos included)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm
 sudo dnf install -y nftban-x86_64.rpm
-sudo nftban setup
+sudo nftban enable
 ```
 
 **Ubuntu / Debian**
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-amd64.deb
-sudo dpkg -i nftban-amd64.deb && sudo nftban setup
+sudo dpkg -i nftban-amd64.deb && sudo nftban enable
 ```
 
 ---
