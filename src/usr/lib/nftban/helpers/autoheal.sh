@@ -116,8 +116,37 @@ fi
 chown -R nftban:nftban /var/cache/nftban
 chmod 755 /var/cache/nftban
 
-chown -R nftban:nftban /var/log/nftban
+# =============================================================================
+# CRITICAL: Fix log directory and ALL log files for nftban-auditors access
+# =============================================================================
+
+# Determine audit group (prefer nftban-auditors for compliance, fallback to nftban)
+AUDIT_GROUP="nftban"
+if getent group nftban-auditors >/dev/null 2>&1; then
+    AUDIT_GROUP="nftban-auditors"
+    log_info "Using nftban-auditors group for log file access"
+fi
+
+# Fix log directory ownership and permissions
+chown nftban:"$AUDIT_GROUP" /var/log/nftban
 chmod 750 /var/log/nftban
+
+# Fix ALL log files (including those created by root like cloudflare.log, portscan.log)
+# This ensures auditors can read all logs for compliance
+log_info "Fixing log file ownership (including root-owned logs)..."
+if [ -d /var/log/nftban ]; then
+    find /var/log/nftban -type f \( -name "*.log" -o -name "*.log-*" -o -name "*.gz" \) \
+        -exec chown nftban:"$AUDIT_GROUP" {} \; 2>/dev/null || true
+
+    find /var/log/nftban -type f \( -name "*.log" -o -name "*.log-*" \) \
+        -exec chmod 640 {} \; 2>/dev/null || true
+
+    # Compressed logs can be read-only
+    find /var/log/nftban -type f -name "*.gz" \
+        -exec chmod 440 {} \; 2>/dev/null || true
+
+    log_info "✅ All log files now accessible to $AUDIT_GROUP group"
+fi
 
 # =============================================================================
 # 3. Generate system.conf if missing
