@@ -13,7 +13,7 @@ case "$1" in
         # Update NFTBAN_VERSION in config file (handles upgrades with conffile)
         # This ensures the banner shows the correct version even on upgrades
         if [ -f /etc/nftban/nftban.conf ]; then
-            sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.0"/' /etc/nftban/nftban.conf
+            sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.1"/' /etc/nftban/nftban.conf
         fi
 
         # Create nftban user and nftban-cli group if they don't exist

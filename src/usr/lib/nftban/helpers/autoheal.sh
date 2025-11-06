@@ -6,7 +6,7 @@
 # meta:name=autoheal.sh
 # meta:type=helper
 # meta:header=Auto-Heal System Configuration
-# meta:version=0.32.0
+# meta:version=0.32.1
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 # meta:description=Automatically fixes common configuration issues

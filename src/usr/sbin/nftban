@@ -28,7 +28,7 @@ set -Eeuo pipefail
 # CONFIGURATION
 # =============================================================================
 
-export NFTBAN_VERSION="0.32.0"
+export NFTBAN_VERSION="0.32.1"
 export NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 export NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 

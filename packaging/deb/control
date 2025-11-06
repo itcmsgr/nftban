@@ -32,9 +32,9 @@ Depends: ${misc:Depends},
          iproute2,
          ipset,
          git,
-         policykit-1
-Recommends: fail2ban (>= 0.11),
-            logrotate
+         policykit-1,
+         fail2ban (>= 0.11)
+Recommends: logrotate
 Conflicts: firewalld,
            iptables,
            iptables-persistent
