@@ -1214,19 +1214,27 @@ nftban_health_check_all() {
 
         if [[ ${#NFTBAN_HEALTH_ERRORS[@]} -gt 0 ]] || [[ ${#NFTBAN_HEALTH_WARNINGS[@]} -gt 0 ]]; then
             echo "→ Fixing directories..."
-            nftban_health_fix_directories && ((fixes_applied++))
+            if nftban_health_fix_directories; then
+                fixes_applied=$((fixes_applied + 1))
+            fi
             echo ""
 
             echo "→ Fixing permissions..."
-            nftban_health_fix_permissions && ((fixes_applied++))
+            if nftban_health_fix_permissions; then
+                fixes_applied=$((fixes_applied + 1))
+            fi
             echo ""
 
             echo "→ Fixing system config..."
-            nftban_health_fix_system_config && ((fixes_applied++))
+            if nftban_health_fix_system_config; then
+                fixes_applied=$((fixes_applied + 1))
+            fi
             echo ""
 
             echo "→ Fixing services..."
-            nftban_health_fix_services && ((fixes_applied++))
+            if nftban_health_fix_services; then
+                fixes_applied=$((fixes_applied + 1))
+            fi
             echo ""
 
             echo "✅ Auto-heal complete ($fixes_applied fixes applied)"

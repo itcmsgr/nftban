@@ -281,13 +281,25 @@ nftban_permissions_enforce_all() {
 
     local errors=0
 
-    # Enforce permissions on each path
-    perms_enforce_etc || ((errors++))
-    perms_enforce_lib || ((errors++))
-    perms_enforce_sbin || ((errors++))
-    perms_enforce_var || ((errors++))
-    perms_enforce_log || ((errors++))
-    perms_enforce_usrshare || ((errors++))
+    # Enforce permissions on each path (count failures for error tracking)
+    if ! perms_enforce_etc; then
+        errors=$((errors + 1))
+    fi
+    if ! perms_enforce_lib; then
+        errors=$((errors + 1))
+    fi
+    if ! perms_enforce_sbin; then
+        errors=$((errors + 1))
+    fi
+    if ! perms_enforce_var; then
+        errors=$((errors + 1))
+    fi
+    if ! perms_enforce_log; then
+        errors=$((errors + 1))
+    fi
+    if ! perms_enforce_usrshare; then
+        errors=$((errors + 1))
+    fi
 
     perms_say ""
     if ((errors > 0)); then
