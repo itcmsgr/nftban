@@ -44,7 +44,8 @@ check_go() {
         exit 1
     fi
 
-    local go_version=$(go version | awk '{print $3}' | sed 's/go//')
+    local go_version
+    go_version=$(go version | awk '{print $3}' | sed 's/go//')
     echo "✓ Found Go: $go_version"
 }
 
@@ -70,13 +71,12 @@ build_feeds() {
 
     # Build for current platform
     echo "Compiling for $(uname -s)/$(uname -m)..."
-    go build -o "${OUTPUT_DIR}/nftban-feeds" \
+    if go build -o "${OUTPUT_DIR}/nftban-feeds" \
         -ldflags="-s -w" \
-        ./cmd/nftban-feeds/main.go
-
-    if [[ $? -eq 0 ]]; then
+        ./cmd/nftban-feeds/main.go; then
         chmod +x "${OUTPUT_DIR}/nftban-feeds"
-        local size=$(du -h "${OUTPUT_DIR}/nftban-feeds" | cut -f1)
+        local size
+        size=$(du -h "${OUTPUT_DIR}/nftban-feeds" | cut -f1)
         echo -e "${GREEN}✓ Built nftban-feeds (${size})${NC}"
         echo "  Location: ${OUTPUT_DIR}/nftban-feeds"
     else
@@ -102,13 +102,12 @@ build_geoip() {
 
     # Build for current platform
     echo "Compiling for $(uname -s)/$(uname -m)..."
-    go build -o "${OUTPUT_DIR}/nftban-geoip" \
+    if go build -o "${OUTPUT_DIR}/nftban-geoip" \
         -ldflags="-s -w" \
-        ./cmd/nftban-geoip/main.go
-
-    if [[ $? -eq 0 ]]; then
+        ./cmd/nftban-geoip/main.go; then
         chmod +x "${OUTPUT_DIR}/nftban-geoip"
-        local size=$(du -h "${OUTPUT_DIR}/nftban-geoip" | cut -f1)
+        local size
+        size=$(du -h "${OUTPUT_DIR}/nftban-geoip" | cut -f1)
         echo -e "${GREEN}✓ Built nftban-geoip (${size})${NC}"
         echo "  Location: ${OUTPUT_DIR}/nftban-geoip"
     else
@@ -125,7 +124,8 @@ test_binaries() {
     echo "─────────────────────────────────────────────────────────────"
 
     if [[ -x "${OUTPUT_DIR}/nftban-feeds" ]]; then
-        local feeds_version=$("${OUTPUT_DIR}/nftban-feeds" --version 2>&1 || echo "unknown")
+        local feeds_version
+        feeds_version=$("${OUTPUT_DIR}/nftban-feeds" --version 2>&1 || echo "unknown")
         echo "✓ nftban-feeds: $feeds_version"
     else
         echo -e "${YELLOW}⚠  nftban-feeds not found or not executable${NC}"

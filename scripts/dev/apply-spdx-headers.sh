@@ -25,13 +25,13 @@ HAS_SPDX=0
 
 check_file() {
     local file="$1"
-    ((TOTAL++))
+    TOTAL=$((TOTAL + 1))
 
     if head -n 10 "$file" | grep -q "SPDX-License-Identifier"; then
-        ((HAS_SPDX++))
+        HAS_SPDX=$((HAS_SPDX + 1))
         return 0
     else
-        ((MISSING++))
+        MISSING=$((MISSING + 1))
         echo "MISSING: $file"
         return 1
     fi
@@ -111,7 +111,7 @@ case "$MODE" in
     --apply)
         echo "MODE: Apply headers (WILL MODIFY FILES)"
         echo ""
-        read -p "Continue? [y/N] " confirm
+        read -r -p "Continue? [y/N] " confirm
         if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
             echo "Cancelled."
             exit 0
