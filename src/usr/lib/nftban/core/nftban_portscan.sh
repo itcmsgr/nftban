@@ -133,6 +133,19 @@ nftban_portscan_log() {
     # Create log directory if it doesn't exist (only if we have permissions)
     mkdir -p "$(dirname "$NFTBAN_PORTSCAN_LOG_FILE")" 2>/dev/null || true
 
+    # FHS-compliant: Ensure log file has correct ownership for auditors
+    # Fix: portscan.log was owned by root:root, blocking nftban-auditors access
+    if [[ ! -f "$NFTBAN_PORTSCAN_LOG_FILE" ]]; then
+        touch "$NFTBAN_PORTSCAN_LOG_FILE" 2>/dev/null || true
+        # Prefer nftban-auditors group for audit access, fallback to nftban
+        if getent group nftban-auditors >/dev/null 2>&1; then
+            chown nftban:nftban-auditors "$NFTBAN_PORTSCAN_LOG_FILE" 2>/dev/null || chown nftban:nftban "$NFTBAN_PORTSCAN_LOG_FILE" 2>/dev/null || true
+        else
+            chown nftban:nftban "$NFTBAN_PORTSCAN_LOG_FILE" 2>/dev/null || true
+        fi
+        chmod 640 "$NFTBAN_PORTSCAN_LOG_FILE" 2>/dev/null || true
+    fi
+
     # Write to portscan log
     echo "[${timestamp}] [${level}] ${message}" >> "$NFTBAN_PORTSCAN_LOG_FILE" 2>/dev/null || true
 }
