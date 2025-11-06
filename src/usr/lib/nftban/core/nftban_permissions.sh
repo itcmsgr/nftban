@@ -224,14 +224,22 @@ perms_enforce_var() {
     perms_mkd "$PERMS_VAR/geoip" 0750 nftban nftban
     perms_mkd "$PERMS_VAR/snapshots" 0750 nftban nftban
     perms_mkd "$PERMS_VAR/reports" 0750 nftban nftban
+    perms_mkd "$PERMS_VAR/reports/baseline" 0750 nftban nftban
     perms_mkd "$PERMS_VAR/metrics" 0750 nftban nftban
 
-    # Secure all content
+    # CRITICAL: Create auditors directory with special permissions
+    # This directory uses root:nftban-auditors (NOT nftban:nftban)
+    if getent group nftban-auditors >/dev/null 2>&1; then
+        perms_mkd "$PERMS_VAR/reports/auditors" 0770 root nftban-auditors
+    fi
+
+    # Secure all content (excluding auditors which has special perms)
     if [[ -d "$PERMS_VAR" ]]; then
         perms_say "Securing var directory: $PERMS_VAR"
-        perms_run chown -R nftban:nftban "$PERMS_VAR"
-        perms_run find "$PERMS_VAR" -type d -exec chmod 0750 {} \;
-        perms_run find "$PERMS_VAR" -type f -exec chmod 0640 {} \;
+        # Use find to chown, but exclude auditors directory
+        perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -exec chown nftban:nftban {} \;
+        perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -type d -exec chmod 0750 {} \;
+        perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -type f -exec chmod 0640 {} \;
     fi
 }
 
