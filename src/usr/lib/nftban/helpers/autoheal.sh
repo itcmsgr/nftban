@@ -53,6 +53,8 @@ DIRS=(
     "/etc/nftban/feeds.d"
     "/etc/nftban/rules.d"
     "/etc/nftban/ports.d"
+    "/etc/nftban/whitelist.d"
+    "/etc/nftban/blacklist.d"
     "/etc/nftban/geoban.d"
     "/var/lib/nftban/state"
     "/var/lib/nftban/snapshots"
