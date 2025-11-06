@@ -44,7 +44,7 @@ Requires:       iproute
 Requires:       ipset
 Requires:       git
 Requires:       polkit
-Recommends:     fail2ban-server >= 0.11
+Requires:       fail2ban-server >= 0.11
 Recommends:     logrotate
 
 # Conflicts
@@ -284,7 +284,7 @@ install -m 0644 CONTRIBUTING.md %{buildroot}/usr/share/nftban/docs/
 # Update NFTBAN_VERSION in config file (handles upgrades with noreplace)
 # This ensures the banner shows the correct version even on upgrades
 if [ -f /etc/nftban/nftban.conf ]; then
-    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.0"/' /etc/nftban/nftban.conf
+    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.1"/' /etc/nftban/nftban.conf
 fi
 
 # Generate system.conf with UID/GID
