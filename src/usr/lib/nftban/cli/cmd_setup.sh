@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.31.0 - Setup Wizard CLI Handler
+# NFTBan v0.32.0 - Setup Wizard CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Interactive setup wizard for first-time installation
@@ -8,7 +8,7 @@
 # meta:name=cmd_setup
 # meta:type=cli
 # meta:header=Setup Wizard CLI Handler
-# meta:version=0.31.0
+# meta:version=0.32.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -300,7 +300,7 @@ nftban_cmd_setup() {
 
 nftban_setup_help() {
     cat <<'EOF'
-🐧🛡️ NFTBan v0.31.0 - Setup Wizard
+🐧🛡️ NFTBan v0.32.0 - Setup Wizard
 ban · unban · protect
 
 Usage:

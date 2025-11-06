@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # NFTBan Cloudflare Module
-# Part of NFTBan v0.31.0 - FHS-Compliant Architecture
+# Part of NFTBan v0.32.0 - FHS-Compliant Architecture
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Cloudflare IP range management and whitelist integration
@@ -9,7 +9,7 @@
 # meta:name=nftban_cloudflare
 # meta:type=module
 # meta:header=Cloudflare Integration Module
-# meta:version=0.31.0
+# meta:version=0.32.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.31.0 - Statistics CLI Handler
+# NFTBan v0.32.0 - Statistics CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for statistics and metrics
@@ -8,7 +8,7 @@
 # meta:name=cmd_stats
 # meta:type=cli
 # meta:header=Statistics CLI Handler
-# meta:version=0.31.0
+# meta:version=0.32.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

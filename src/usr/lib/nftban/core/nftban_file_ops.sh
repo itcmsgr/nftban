@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.31.0 - Atomic File Operations Module
+# NFTBan v0.32.0 - Atomic File Operations Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Atomic file write operations to prevent race conditions
@@ -8,7 +8,7 @@
 # meta:name=nftban_file_ops
 # meta:type=core
 # meta:header=Atomic File Operations
-# meta:version=0.31.0
+# meta:version=0.32.0
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
