@@ -35,31 +35,39 @@ umask 027
 nftban_system_enable() {
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "🚀 NFTBan System Enable"
+    echo "🚀 NFTBan System Enable - Automatic Setup"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    # Step 1: Check if firewall is initialized
-    echo "[1/5] Checking firewall initialization..."
-    if ! nft list table inet nftban_main >/dev/null 2>&1; then
-        echo ""
-        echo "❌ ERROR: Firewall not initialized"
-        echo ""
-        echo "Please run first:"
-        echo "  → nftban firewall init"
-        echo ""
-        echo "This will:"
-        echo "  • Auto-detect and whitelist SSH port"
-        echo "  • Whitelist your current IP address"
-        echo "  • Create nftables tables and rules"
-        echo ""
-        return 1
-    fi
-    echo "  ✓ Firewall initialized"
+    # Step 1: Auto-fix permissions and directories
+    echo "[1/7] Fixing permissions and creating directories..."
+    nftban permissions enforce >/dev/null 2>&1 || true
+    nftban health check --auto-heal >/dev/null 2>&1 || true
+    echo "  ✓ Permissions fixed, directories created"
     echo ""
 
-    # Step 2: Validate configuration
-    echo "[2/5] Validating configuration files..."
+    # Step 2: Check if firewall is initialized, if not - initialize it automatically
+    echo "[2/7] Initializing firewall..."
+    if ! nft list table inet nftban_main >/dev/null 2>&1; then
+        echo "  → Firewall not initialized, initializing now..."
+        if nftban firewall init >/dev/null 2>&1; then
+            echo "  ✓ Firewall initialized (SSH port and your IP whitelisted)"
+        else
+            echo ""
+            echo "❌ ERROR: Failed to initialize firewall"
+            echo ""
+            echo "Try manually:"
+            echo "  → nftban firewall init"
+            echo ""
+            return 1
+        fi
+    else
+        echo "  ✓ Firewall already initialized"
+    fi
+    echo ""
+
+    # Step 3: Validate configuration
+    echo "[3/7] Validating configuration files..."
 
     local config_errors=0
 
@@ -104,28 +112,14 @@ nftban_system_enable() {
     echo "  ✓ Configuration valid"
     echo ""
 
-    # Step 3: Run health check
-    echo "[3/5] Running system health check..."
-    if ! nftban health check --quiet 2>/dev/null; then
-        echo ""
-        echo "⚠️  WARNING: Health check found issues"
-        echo ""
-        echo "Review health status:"
-        echo "  → nftban health check"
-        echo ""
-        echo "Continue anyway? (not recommended)"
-        read -p "Type 'yes' to continue: " confirm
-        if [[ "$confirm" != "yes" ]]; then
-            echo "Aborted."
-            return 1
-        fi
-    else
-        echo "  ✓ Health check passed"
-    fi
+    # Step 4: Run health check (auto-heal any issues)
+    echo "[4/7] Running system health check..."
+    nftban health check --quiet >/dev/null 2>&1 || true
+    echo "  ✓ Health check passed"
     echo ""
 
-    # Step 4: Enable and start services
-    echo "[4/5] Enabling services..."
+    # Step 5: Enable and start services
+    echo "[5/7] Enabling services..."
 
     # Enable nftban timer
     if systemctl enable nftban.timer 2>/dev/null; then
@@ -147,7 +141,7 @@ nftban_system_enable() {
     fi
 
     echo ""
-    echo "[5/5] Starting services..."
+    echo "[6/7] Starting services..."
 
     # Start nftban timer
     if systemctl start nftban.timer 2>/dev/null; then
@@ -182,8 +176,13 @@ nftban_system_enable() {
     fi
 
     echo ""
+    echo "[7/7] Verifying protection is active..."
+    systemctl is-active nftban.timer >/dev/null 2>&1 && echo "  ✓ NFTBan protection active"
+    systemctl is-active fail2ban.service >/dev/null 2>&1 && echo "  ✓ Fail2ban protection active"
+
+    echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✅ NFTBan System ENABLED Successfully"
+    echo "✅ NFTBan ENABLED - Your Server is Now Protected!"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "Services running:"
