@@ -374,8 +374,19 @@ nftban_port_render_table() {
         bind="$(cut -d'|' -f4 <<<"$svcinfo")"
         scope="$(cut -d'|' -f5 <<<"$svcinfo")"
 
-        # Only show listening services
-        [[ "$running" != "yes" ]] && continue
+        # Show port if EITHER: (1) service is listening, OR (2) port is in firewall rules
+        # This ensures user-added ports show up even if nothing is listening yet
+        local in_firewall=false
+        if [[ -n "${NFTBAN_PORT_NFT_GENERIC["${port}_${proto}_input"]+x}" ]] || \
+           [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_input_ipv4"]+x}" ]] || \
+           [[ -n "${NFTBAN_PORT_NFT_RULES["${port}_${proto}_input_ipv6"]+x}" ]]; then
+            in_firewall=true
+        fi
+
+        # Skip only if: NOT listening AND NOT in firewall
+        if [[ "$running" != "yes" ]] && [[ "$in_firewall" == "false" ]]; then
+            continue
+        fi
 
         local status_line
         status_line="$(nftban_port_determine_status "$port" "$proto")"
@@ -397,33 +408,38 @@ nftban_port_render_table() {
             esac
         }
 
+        # Add note if port is open but not listening
+        if [[ "$running" != "yes" ]] && [[ "$in_firewall" == "true" ]]; then
+            notes="$(nftban_port_trim "$notes OPEN-NO-LISTENER")"
+        fi
+
         if [[ "$NFTBAN_PORT_OUTPUT_FORMAT" == "table" ]]; then
             if (( NFTBAN_PORT_DETAILED )); then
                 printf "%-14s %-6s %-6s %-8s %-12s %-20s %-9s %-9s %-9s %-9s %s\n" \
-                    "$svc" "$port" "$proto" "yes" "${bind:-?}" "${procinfo:-?}" \
+                    "$svc" "$port" "$proto" "$running" "${bind:-?}" "${procinfo:-?}" \
                     "$(badge "$v4in")" "$(badge "$v4out")" "$(badge "$v6in")" "$(badge "$v6out")" "$(nftban_port_trim "$notes")"
             else
                 printf "%-14s %-6s %-6s %-8s %-9s %-9s %-9s %-9s %s\n" \
-                    "$svc" "$port" "$proto" "yes" \
+                    "$svc" "$port" "$proto" "$running" \
                     "$(badge "$v4in")" "$(badge "$v4out")" "$(badge "$v6in")" "$(badge "$v6out")" "$(nftban_port_trim "$notes")"
             fi
         elif [[ "$NFTBAN_PORT_OUTPUT_FORMAT" == "md" ]]; then
             if (( NFTBAN_PORT_DETAILED )); then
                 printf "| %s | %s | %s | %s | %s | %s | %s | %s | %s | %s | %s |\n" \
-                    "$svc" "$port" "$proto" "yes" "${bind:-?}" "${procinfo:-?}" \
+                    "$svc" "$port" "$proto" "$running" "${bind:-?}" "${procinfo:-?}" \
                     "$v4in" "$v4out" "$v6in" "$v6out" "$(nftban_port_trim "$notes")"
             else
                 printf "| %s | %s | %s | %s | %s | %s | %s | %s | %s |\n" \
-                    "$svc" "$port" "$proto" "yes" "$v4in" "$v4out" "$v6in" "$v6out" "$(nftban_port_trim "$notes")"
+                    "$svc" "$port" "$proto" "$running" "$v4in" "$v4out" "$v6in" "$v6out" "$(nftban_port_trim "$notes")"
             fi
         else # csv
             if (( NFTBAN_PORT_DETAILED )); then
                 printf "%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s\n" \
-                    "$svc" "$port" "$proto" "yes" "\"${bind:-}\"" "\"${procinfo:-}\"" \
+                    "$svc" "$port" "$proto" "$running" "\"${bind:-}\"" "\"${procinfo:-}\"" \
                     "$v4in" "$v4out" "$v6in" "$v6out" "\"$(nftban_port_trim "$notes")\""
             else
                 printf "%s,%s,%s,%s,%s,%s,%s,%s,%s\n" \
-                    "$svc" "$port" "$proto" "yes" "$v4in" "$v4out" "$v6in" "$v6out" "\"$(nftban_port_trim "$notes")\""
+                    "$svc" "$port" "$proto" "$running" "$v4in" "$v4out" "$v6in" "$v6out" "\"$(nftban_port_trim "$notes")\""
             fi
         fi
     done
