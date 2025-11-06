@@ -91,10 +91,10 @@ jobs:
           docker run --rm -v "$(pwd):/workspace" -w /workspace rockylinux:9 bash -c "
             set -e  # Exit on any error
 
-            # Update all packages AND install build deps in single transaction
-            # This ensures glibc and glibc-devel are from the same repo snapshot
-            echo '=== Installing build dependencies ==='
-            dnf install -y rpm-build rpmdevtools tar gzip which systemd-rpm-macros golang gcc || {
+            # Update glibc AND install build deps in single transaction
+            # This ensures glibc and glibc-devel have matching versions
+            echo '=== Installing/updating build dependencies ==='
+            dnf install -y --allowerasing glibc glibc-devel rpm-build rpmdevtools tar gzip which systemd-rpm-macros golang gcc || {
               echo 'ERROR: Failed to install build dependencies'
               exit 1
             }
