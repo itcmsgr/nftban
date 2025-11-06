@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan v0.30.0 - DEB Post-Install Script
+# NFTBan v0.31.0 - DEB Post-Install Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Post-installation configuration for DEB packages
@@ -117,23 +117,35 @@ SSHEOF
         # Print installation message
         echo ""
         echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  NFTBan v0.30.0 Installation Complete!                    ║"
+        echo "║  NFTBan v0.31.0 Installation Complete!                    ║"
         echo "╚════════════════════════════════════════════════════════════╝"
         echo ""
         echo "✅ Auto-heal completed - all systems configured"
         echo "✅ SSH port $SSH_PORT whitelisted (lockout prevention)"
         echo ""
-        echo "Next steps:"
-        echo "  1. Review config: /etc/nftban/nftban.conf"
-        echo "  2. Customize (optional): /etc/nftban/nftban.conf.local"
-        echo "  3. Initialize firewall: nftban firewall init"
-        echo "  4. Enable NFTBan: nftban enable"
-        echo "  5. Check status: nftban status"
-        echo "  6. Manual health check: nftban health check"
-        echo "  7. Try inventory: nftban-health --inventory | jq ."
-        echo "  8. Create baseline: nftban-baseline-save"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "🚀 QUICKSTART - Just Installed? Not Sure What to Do?"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
-        echo "⚠️  NOTE: NFTBan is NOT auto-enabled. Run 'nftban enable' when ready."
+        echo "   Run this command first:"
+        echo ""
+        echo "   👉  nftban setup"
+        echo ""
+        echo "   This wizard will guide you through setup step-by-step."
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "📖 Or Manual Setup:"
+        echo "  1. Review config: /etc/nftban/nftban.conf"
+        echo "  2. Initialize firewall: nftban firewall init"
+        echo "  3. Enable NFTBan: nftban enable"
+        echo "  4. Check status: nftban status"
+        echo ""
+        echo "⚠️  NOTE: NFTBan is NOT auto-enabled. Run 'nftban setup' or 'nftban enable'."
+        echo ""
+        echo "📚 Documentation: /usr/share/nftban/docs/"
+        echo "🆘 Help: nftban help"
+        echo "🩺 Health: nftban health check"
         echo ""
         ;;
 esac
