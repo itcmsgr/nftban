@@ -284,15 +284,17 @@ nftban_portscan_handle_detected_scanner() {
 
         nftban_portscan_log "INFO" "Auto-banning scanner: $ip (type: $ban_type, time: ${ban_time}s)"
 
-        # Ban the IP (integrate with nftban ban command if available)
-        if command -v nftban_ban_ip >/dev/null 2>&1; then
+        # Ban the IP using nftban ban command
+        if command -v nftban >/dev/null 2>&1; then
             if [[ "$ban_type" == "permanent" ]]; then
-                nftban_ban_ip "$ip" "0" "Port scan detected" 2>/dev/null || true
+                nftban ban "$ip" --reason "Port scan detected" 2>/dev/null || \
+                    nftban_portscan_log "ERROR" "Failed to ban $ip"
             else
-                nftban_ban_ip "$ip" "$ban_time" "Port scan detected" 2>/dev/null || true
+                nftban ban "$ip" --temp --timeout "$ban_time" --reason "Port scan detected" 2>/dev/null || \
+                    nftban_portscan_log "ERROR" "Failed to ban $ip"
             fi
         else
-            nftban_portscan_log "WARNING" "Ban function not available, cannot ban $ip"
+            nftban_portscan_log "WARNING" "nftban command not found, cannot ban $ip"
         fi
 
         echo "  🚫 Auto-banned: $ip (accessed $port_count ports)"
