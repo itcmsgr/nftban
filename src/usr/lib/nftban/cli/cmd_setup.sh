@@ -91,11 +91,30 @@ nftban_cmd_setup() {
     # Run health check and capture output
     HEALTH_OUTPUT=$(nftban health check 2>&1 || true)
 
+    # Check if only optional stuff is missing (GeoIP, mail, modules)
+    # These are NOT critical - firewall works without them
+    HAS_GEOIP_WARNING=$(echo "$HEALTH_OUTPUT" | grep -c "GeoIP" || true)
+    HAS_MAIL_WARNING=$(echo "$HEALTH_OUTPUT" | grep -c "mail\|sendmail" || true)
+    HAS_MODULE_WARNING=$(echo "$HEALTH_OUTPUT" | grep -c "disabled" || true)
+    HAS_CRITICAL_ERROR=$(echo "$HEALTH_OUTPUT" | grep -E "Services.*ERROR|Config.*ERROR|Binaries.*ERROR" || true)
+
+    # If only optional warnings, treat as OK
     if echo "$HEALTH_OUTPUT" | grep -q "Overall Status:.*OK"; then
-        echo "  ✅ System health: PERFECT"
+        echo "  ✅ System health: PERFECT!"
         HEALTH_OK=true
     elif echo "$HEALTH_OUTPUT" | grep -q "Overall Status:.*WARNING"; then
-        echo "  ✅ System health: OK (minor warnings - you can ignore these)"
+        echo "  ✅ System health: READY! (optional features not installed)"
+        HEALTH_OK=true
+    elif [[ -z "$HAS_CRITICAL_ERROR" ]] && [[ $HAS_GEOIP_WARNING -gt 0 || $HAS_MAIL_WARNING -gt 0 ]]; then
+        # Only optional stuff missing - this is OK!
+        echo "  ✅ System health: READY!"
+        echo ""
+        echo "Your firewall is installed and working!"
+        echo ""
+        echo "Optional stuff not installed (you can skip these):"
+        [[ $HAS_GEOIP_WARNING -gt 0 ]] && echo "  ⊘ GeoIP database (for country lookups - not needed now)"
+        [[ $HAS_MAIL_WARNING -gt 0 ]] && echo "  ⊘ Mail server (for email alerts - not needed now)"
+        [[ $HAS_MODULE_WARNING -gt 0 ]] && echo "  ⊘ Some optional modules disabled (not needed now)"
         HEALTH_OK=true
     else
         echo "  ⚠️  Found some small issues (don't worry, we can fix them!)"
@@ -148,6 +167,22 @@ nftban_cmd_setup() {
                 HEALTH_OK=true
                 ;;
         esac
+    fi
+
+    # Always show "what to do next" after health check
+    if [[ "$HEALTH_OK" == true ]]; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "✅ Good news! Your system is ready!"
+        echo ""
+        echo "What to do next:"
+        echo "  👉 Continue to Step 4 to ENABLE your firewall"
+        echo "  👉 Then you're PROTECTED! That's it!"
+        echo ""
+        if [[ "$AUTO_MODE" == false ]]; then
+            read -p "Press ENTER to continue to Step 4..."
+        fi
     fi
 
     echo ""
