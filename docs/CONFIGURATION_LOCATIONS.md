@@ -1,6 +1,6 @@
 # NFTBan Configuration Locations Reference
 
-**Version:** v0.32.0
+**Version:** v0.32.3
 **Purpose:** Clear reference for ALL configuration file locations
 **Audience:** System administrators, developers, users
 
@@ -143,7 +143,7 @@ GO_CACHE_ENABLED="true"                     # Enable ETag caching
 GO_CACHE_DIR="/var/cache/nftban/go-cache"   # Cache directory
 GO_CACHE_MAX_AGE="86400"                    # Max age (24h)
 GO_CACHE_MAX_SIZE_MB="500"                  # Max total cache size
-GO_USER_AGENT="NFTBan/0.32.0 (+https://nftban.com)"
+GO_USER_AGENT="NFTBan/0.32.3 (+https://nftban.com)"
 ```
 
 #### 3. Threat Feeds Settings

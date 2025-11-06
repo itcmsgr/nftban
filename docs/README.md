@@ -1,6 +1,6 @@
 # NFTBan Documentation
 
-**Version:** 0.32.0
+**Version:** 0.32.3
 **Last Updated:** 2025-11-05
 
 ---

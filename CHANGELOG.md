@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.32.3] - 2025-11-07
+
+### Fixed
+- **RPM Installation:** Fixed %pre script hanging on Rocky/AlmaLinux systems
+  - Changed from auto-enabling repos to checking if repos are enabled
+  - Prevents dnf commands from hanging during installation
+  - Shows clear error with instructions if EPEL/CRB not enabled
+- **Menu System:** Added whiptail (newt) dependency for interactive TUI
+  - Fixed fallback text mode input validation
+  - Added warning if whiptail missing with install instructions
+- **Status Command:** Added system requirements checks (DNS, Email, SMTP ports, Reports)
+- **Version Management:** Created single VERSION file to eliminate build mismatches
+- **Rocky/Alma Builds:** Fixed glibc version mismatch in Rocky Linux 9 containers
+  - Targeted fix using --nobest flag only for Rocky/AlmaLinux
+- **Documentation:** Updated all docs to v0.32.3
+
+---
+
 ## [0.31.0] - 2025-11-05
 
 ### 🚨 CRITICAL SECURITY RELEASE
