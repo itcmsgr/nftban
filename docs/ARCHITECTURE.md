@@ -1,6 +1,6 @@
 # NFTBan Architecture
 
-**Version:** 0.32.0
+**Version:** 0.32.3
 **Philosophy:** Simple, secure, atomic operations
 
 ---

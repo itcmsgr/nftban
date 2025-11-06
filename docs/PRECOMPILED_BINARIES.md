@@ -1,6 +1,6 @@
 # NFTBan Precompiled Go Binaries - Transparency & Verification
 
-**Version:** v0.32.0
+**Version:** v0.32.3
 **Purpose:** Explain how we provide precompiled binaries and how users can verify them
 **Audience:** Security-conscious users, system administrators
 
@@ -445,7 +445,7 @@ sha256sum dist/x86_64/nftban-geoip
 ---
 
 **Last Updated:** 2025-11-06
-**Version:** v0.32.0
+**Version:** v0.32.3
 **License:** MPL-2.0
 
 **We believe in transparency. You shouldn't have to trust us blindly.**

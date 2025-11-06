@@ -1,6 +1,6 @@
 # NFTBan Go Binary Compilation Guide
 
-**Version:** v0.32.0
+**Version:** v0.32.3
 **Last Updated:** 2025-01-05
 **Audience:** Developers, Package Maintainers, System Administrators
 

@@ -1,6 +1,6 @@
 # High-Level Design: NFTBan Go Modules
 
-**Version:** v0.32.0
+**Version:** v0.32.3
 **Date:** 2025-11-06
 **Status:** GeoBan ✅ IMPLEMENTED | Feeds ⏳ IN PROGRESS
 **Owner:** NFTBan Development Team

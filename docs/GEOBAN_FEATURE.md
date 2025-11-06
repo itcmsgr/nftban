@@ -1,6 +1,6 @@
 # NFTBan GeoBan - High-Level Design (HLD)
 **Date:** 2025-11-05
-**Version:** 0.32.0
+**Version:** 0.32.3
 **Status:** 🎯 DESIGN PROPOSAL
 
 ---

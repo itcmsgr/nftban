@@ -1,6 +1,6 @@
 # 🌍 NFTBan GeoBan - Major Feature Achievement
 
-**Version:** v0.32.0
+**Version:** v0.32.3
 **Release Date:** November 2025
 **Status:** ✅ Production Ready
 **Impact:** Enterprise-grade country-based network security
@@ -731,7 +731,7 @@ We've proven that open-source projects can deliver:
 
 ---
 
-**Version:** v0.32.0
+**Version:** v0.32.3
 **Last Updated:** 2025-11-05
 **License:** MPL-2.0
 **Project:** https://github.com/nftban/nftban
