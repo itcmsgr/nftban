@@ -1,0 +1,669 @@
+.TH NFTBAN 1 "November 2025" "nftban v0.31.0" "User Commands"
+.SH NAME
+nftban \- Simplifying Linux Firewall Management
+.SH SYNOPSIS
+.B nftban
+[\fIOPTIONS\fR] \fICOMMAND\fR [\fIARGS\fR]
+.SH DESCRIPTION
+.B nftban
+is a modern Linux firewall management system that combines nftables and fail2ban
+to provide comprehensive network security. It offers an intuitive CLI for managing
+bans, whitelists, threat feeds, GeoBan country blocking, and health monitoring.
+
+NFTBan v0.31.0 uses a dual-table architecture with inet family for unified IPv4/IPv6 management,
+providing 10-60x performance improvements through Go-powered atomic operations and feed processing.
+
+.SH QUICKSTART
+Just installed NFTBan and don't know what to do? Run this command:
+.RS
+.B nftban setup
+.RE
+
+This interactive wizard will:
+.RS
+.TP
+• Fix all permissions and directories
+.TP
+• Verify system health
+.TP
+• Optionally enable the firewall
+.TP
+• Guide you step-by-step through setup
+.RE
+
+For non-interactive (automated) setup:
+.RS
+.B nftban setup \-\-auto
+.RE
+
+After setup completes, check your firewall status:
+.RS
+.B nftban status
+.RE
+
+.SH OPTIONS
+.TP
+.BR \-h ", " \-\-help
+Display help information for the command
+.TP
+.BR \-v ", " \-\-version
+Display version information
+.TP
+.BR \-\-no\-interactive
+Disable interactive prompts (for scripting)
+.TP
+.BR \-\-json
+Output results in JSON format
+
+.SH COMMANDS
+.SS Setup & Configuration
+.TP
+.B setup
+Interactive first-time setup wizard (recommended for new installations)
+.RS
+.TP
+.B \-\-auto
+Non-interactive mode (skip all prompts)
+.TP
+.B Example:
+nftban setup
+.br
+nftban setup \-\-auto
+.RE
+
+.SS Ban Management
+.TP
+.B ban \fIIP\fR [\fIOPTIONS\fR]
+Ban an IP address permanently or temporarily
+.RS
+.TP
+.B \-\-temp
+Create temporary ban
+.TP
+.B \-\-timeout \fISECONDS\fR
+Ban duration for temporary bans (default: 3600)
+.TP
+.B \-\-reason \fIREASON\fR
+Reason for the ban (logged in audit)
+.RE
+
+.TP
+.B unban \fIIP\fR
+Remove ban for an IP address
+.RS
+.TP
+.B \-\-all
+Remove from all ban lists (permanent, temp, fail2ban)
+.RE
+
+.TP
+.B search \fIIP\fR
+Search for IP in all nftables sets and fail2ban jails
+.RS
+.TP
+.B \-\-no\-interactive
+Non-interactive output for scripting
+.RE
+
+.SS Whitelist Management
+.TP
+.B whitelist add \fIIP\fR
+Add IP to permanent whitelist (never blocked)
+
+.TP
+.B whitelist remove \fIIP\fR
+Remove IP from whitelist
+
+.TP
+.B whitelist list
+Show all whitelisted IPs
+
+.SS Feed Management
+.TP
+.B feeds list
+List all available threat intelligence feeds
+
+.TP
+.B feeds enable \fIFEED\fR
+Enable a threat feed (e.g., greensnow, cloudflare)
+
+.TP
+.B feeds disable \fIFEED\fR
+Disable a threat feed
+
+.TP
+.B feeds update
+Update all enabled feeds (downloads latest threat IPs)
+.RS
+Uses atomic loader (nftban-feeds) for 5-15x faster processing.
+Supports ETag caching, CIDR merging, and intelligent delta limiting.
+.RE
+
+.TP
+.B feeds load
+Load feed IPs into nftables sets atomically
+
+.TP
+.B feeds version
+Show nftban-feeds binary version and build information
+
+.SS Port Management
+.TP
+.B port add \fIPORT\fR [\fIPROTOCOL\fR]
+Add port to allowed services (zero-downtime atomic operation)
+.RS
+.TP
+.B PROTOCOL
+tcp (default), udp, or both
+.TP
+.B Example:
+nftban port add 8080 tcp
+.RE
+
+.TP
+.B port remove \fIPORT\fR [\fIPROTOCOL\fR]
+Remove port from allowed services (zero-downtime atomic operation)
+.RS
+System ports (00-*.conf) are protected from accidental removal.
+.RE
+
+.TP
+.B port search \fIPORT\fR
+Search for port in nftables sets and configuration files
+.RS
+Shows if port is currently active in nftables and which config files reference it.
+.RE
+
+.SS GeoBan Management (Country Blocking)
+.TP
+.B geoban ban \fICOUNTRY_CODE\fR
+Ban all traffic from a country (e.g., CN, RU)
+.RS
+Atomically blocks all IPs from the specified country using nftables netlink.
+Creates configuration file in /etc/nftban/geoban.d/50-ban-XX.conf
+.RE
+
+.TP
+.B geoban unban \fICOUNTRY_CODE\fR
+Remove country ban and unload IPs from nftables
+.RS
+Atomically removes all country IPs from nftables sets and deletes config file.
+.RE
+
+.TP
+.B geoban whitelist \fICOUNTRY_CODE\fR
+Whitelist a country (never blocked, even if banned)
+.RS
+Creates configuration file in /etc/nftban/geoban.d/40-whitelist-XX.conf
+Takes precedence over bans.
+.RE
+
+.TP
+.B geoban unwhitelist \fICOUNTRY_CODE\fR
+Remove country from whitelist
+
+.TP
+.B geoban list
+List all banned and whitelisted countries with IP counts
+
+.TP
+.B geoban refresh \fICOUNTRY_CODE\fR
+Refresh IP list for a country (re-download from RIR sources)
+
+.TP
+.B geoban config
+Show current GeoBan configuration and statistics
+
+.SS GeoIP Lookup
+.TP
+.B geoip lookup \fIIP\fR
+Lookup country code for an IP address using MaxMind GeoLite2
+
+.TP
+.B geoip version
+Show nftban-geoip binary version and build information
+
+.SS Health & Monitoring
+.TP
+.B health check
+Run comprehensive system health check
+.RS
+.TP
+.B \-\-auto\-heal
+Automatically fix detected issues (requires permissions)
+.RE
+
+.TP
+.B stats
+Display ban statistics and system metrics
+.RS
+.TP
+.B \-\-summary
+Show summary statistics only
+.TP
+.B \-\-json
+Output in JSON format
+.RE
+
+.TP
+.B report generate
+Generate detailed security report
+.RS
+.TP
+.B \-\-format \fIFORMAT\fR
+Report format: text, json, html (default: text)
+.TP
+.B \-\-output \fIFILE\fR
+Save report to file
+.RE
+
+.SS Service Management
+.TP
+.B start \fISERVICE\fR
+Start nftables or fail2ban service
+
+.TP
+.B stop \fISERVICE\fR
+Stop nftables or fail2ban service
+
+.TP
+.B restart \fISERVICE\fR
+Restart nftables or fail2ban service
+
+.TP
+.B enable \fISERVICE\fR
+Enable service to start on boot
+
+.TP
+.B disable \fISERVICE\fR
+Disable service from starting on boot
+
+.TP
+.B status \fISERVICE\fR
+Show service status
+
+.SS Permission Management
+.TP
+.B permissions check
+Check all file/directory permissions against FHS specification
+
+.TP
+.B permissions enforce
+Fix incorrect permissions (requires root or nftban-cli group)
+
+.SS Mail Integration
+.TP
+.B mail enable
+Enable email notifications for security events
+
+.TP
+.B mail disable
+Disable email notifications
+
+.TP
+.B mail test
+Send test email to verify configuration
+
+.SH CONFIGURATION
+.TP
+.B /etc/nftban/nftban.conf
+Main configuration file
+
+.TP
+.B /etc/nftban/conf.d/*.conf
+Modular configuration files:
+.RS
+.TP
+.I feeds.conf
+Threat feed settings
+.TP
+.I nftban-go.conf
+Go binary settings (CPU/RAM limits, safety thresholds)
+.TP
+.I mail.conf
+Email notification settings
+.RE
+
+.TP
+.B /etc/nftban/geoban.d/
+GeoBan country configuration directory:
+.RS
+.TP
+.I 40-whitelist-*.conf
+Whitelisted countries (never blocked)
+.TP
+.I 50-ban-*.conf
+Banned countries (all IPs blocked)
+.RE
+
+.SH FILES
+.TP
+.B /etc/nftban/
+Configuration directory (root:root, mode 750)
+
+.TP
+.B /usr/sbin/nftban
+Main CLI executable
+
+.TP
+.B /usr/lib/nftban/
+NFTBan libraries and core modules
+
+.TP
+.B /usr/lib/nftban/bin/
+Go binaries (nftban-feeds, nftban-geoip)
+
+.TP
+.B /var/lib/nftban/
+Data directory (nftban:nftban, mode 750)
+.RS
+.TP
+.I feeds/
+Threat feed data files
+.TP
+.I geoip/
+MaxMind GeoIP database
+.TP
+.I geoban/
+GeoBan country data files
+.TP
+.I geoban/tracking/
+GeoBan metadata (IP counts, last update)
+.TP
+.I audit/
+Audit log files
+.RE
+
+.TP
+.B /var/cache/nftban/
+Cache directory (nftban:nftban, mode 755)
+.RS
+.TP
+.I geoban/
+Cached country IP files from RIR sources
+.TP
+.I feeds/
+Cached threat feed files (ETag headers)
+.RE
+
+.TP
+.B /var/log/nftban/
+Log directory (nftban:nftban, mode 750)
+
+.TP
+.B /usr/share/nftban/docs/
+Documentation (LICENSE, NOTICE, TRADEMARK, etc.)
+
+.SH ARCHITECTURE
+NFTBan uses a modern dual-table architecture:
+
+.TP
+.B inet nftban_main
+Main persistent table with priority -10 (processed first)
+.RS
+Contains: whitelist, permanent bans, feeds, GeoIP blocks
+.RE
+
+.TP
+.B inet nftban_runtime
+Runtime table with priority 0 (processed after main)
+.RS
+Contains: temporary bans, fail2ban jails
+.RE
+
+This design ensures whitelisted IPs are never blocked, even if they appear in
+threat feeds or fail2ban detections.
+
+.SH PERFORMANCE
+.TP
+.B Go Binaries (Atomic Operations)
+NFTBan includes optimized Go binaries for atomic zero-downtime operations:
+.RS
+.TP
+.I nftban-feeds
+Atomic threat feed loader with 5-15x performance improvement.
+Features: ETag caching, CIDR merging, delta limiting, ENOBUFS retry.
+.TP
+.I nftban-geoip
+Atomic GeoBan operations via netlink. Country bans in <1 second.
+Features: Direct netlink, CPU/RAM monitoring, chunk-based loading.
+.RE
+
+.TP
+.B Architecture Detection
+Wrapper scripts automatically detect architecture (x86_64 or aarch64) and call
+the appropriate binary from /usr/lib/nftban/bin/.real/
+
+.TP
+.B System Protection (6 Layers)
+.RS
+.TP
+• CPU limit: 80% max (configurable)
+.TP
+• RAM limit: 4096 MB max (configurable)
+.TP
+• Chunk size: 4096 IPs per netlink batch
+.TP
+• Delta limit: 500k IPs max per update
+.TP
+• ENOBUFS retry: Exponential backoff on kernel buffer full
+.TP
+• Download limits: 50 MB max, 30s timeout
+.RE
+
+.SH SECURITY
+.TP
+.B FHS Compliance
+Strict adherence to Filesystem Hierarchy Standard
+.RS
+.TP
+• /etc/nftban/ - root:root 750 (configs are code-sensitive)
+.TP
+• /var/lib/nftban/ - nftban:nftban 750 (data isolation)
+.TP
+• /var/log/nftban/ - nftban:nftban 750 (log privacy)
+.RE
+
+.TP
+.B Polkit Integration
+Two permission levels via group membership:
+.RS
+.TP
+.B nftban-auditors group (READ-ONLY)
+View status and generate reports without sudo:
+.RS
+.TP
+• nftban list - View banned IPs
+.TP
+• nftban stats - View statistics
+.TP
+• nftban health check - System status
+.TP
+• CANNOT restart or modify services
+.RE
+.TP
+.B nftban-cli group (FULL MANAGEMENT)
+Manage firewall services without sudo:
+.RS
+.TP
+• nftban system restart nftables
+.TP
+• systemctl start/stop/restart nftables
+.TP
+• systemctl start/stop/restart fail2ban
+.TP
+• Scoped permissions (only nftables & fail2ban)
+.TP
+• Audit trail via systemd journal
+.RE
+.RE
+
+.TP
+.B Audit Logging
+All critical operations logged to /var/lib/nftban/audit/permissions.log
+
+.TP
+.B SELinux Support
+Fully compatible with SELinux in enforcing mode
+
+.SH TIMERS
+NFTBan includes systemd timers for automated maintenance:
+
+.TP
+.B nftban-main.timer
+Weekly maintenance (Sundays at 02:00 AM)
+.RS
+• Feed updates
+.TP
+• GeoIP database updates
+.TP
+• Health checks
+.RE
+
+.TP
+.B nftban-permissions-audit.timer
+Weekly permission audit (Sundays at 02:00 AM)
+.RS
+• Verify FHS compliance
+.TP
+• Log any deviations
+.TP
+• Alert on security issues
+.RE
+
+.SH EXAMPLES
+.TP
+Ban an IP permanently:
+.B nftban ban 192.0.2.100 \-\-reason "SSH brute force attack"
+
+.TP
+Ban an IP for 1 hour:
+.B nftban ban 192.0.2.101 \-\-temp \-\-timeout 3600
+
+.TP
+Search for an IP:
+.B nftban search 192.0.2.100
+
+.TP
+Add to whitelist:
+.B nftban whitelist add 203.0.113.50
+
+.TP
+Enable and update threat feeds:
+.B nftban feeds enable greensnow
+.br
+.B nftban feeds update
+
+.TP
+Ban entire country (GeoBan):
+.B nftban geoban ban CN
+.br
+.B nftban geoban ban RU
+
+.TP
+Whitelist a country (never blocked):
+.B nftban geoban whitelist US
+
+.TP
+List all GeoBan countries:
+.B nftban geoban list
+
+.TP
+Refresh country IPs:
+.B nftban geoban refresh CN
+
+.TP
+Add custom port:
+.B nftban port add 8080 tcp
+
+.TP
+Search for port:
+.B nftban port search 22
+
+.TP
+Run health check with auto-healing:
+.B nftban health check \-\-auto\-heal
+
+.TP
+Generate JSON report:
+.B nftban report generate \-\-format json \-\-output /tmp/security-report.json
+
+.TP
+Check system statistics:
+.B nftban stats \-\-summary
+
+.SH EXIT STATUS
+.TP
+.B 0
+Success
+.TP
+.B 1
+General error
+.TP
+.B 2
+Invalid arguments
+.TP
+.B 3
+Permission denied
+.TP
+.B 4
+Service not running
+.TP
+.B 5
+Configuration error
+
+.SH AUTHORIZATION
+Service management commands (start, stop, restart, enable, disable) require
+either root privileges or membership in the
+.B nftban-cli
+group (via Polkit).
+
+Add user to nftban-cli group:
+.RS
+.B usermod \-aG nftban-cli username
+.RE
+
+.SH ENVIRONMENT
+.TP
+.B NFTBAN_CONFIG
+Override default configuration file location
+
+.TP
+.B NFTBAN_LOG_LEVEL
+Set log verbosity: DEBUG, INFO, WARN, ERROR (default: INFO)
+
+.TP
+.B NFTBAN_NO_COLOR
+Disable colored output (set to 1)
+
+.SH BUGS
+Report bugs to: https://github.com/nftban/nftban/issues
+
+.SH SEE ALSO
+.BR nft (8),
+.BR fail2ban-client (1),
+.BR systemctl (1),
+.BR polkit (8)
+
+.SH AUTHOR
+Antonios Voulvoulis and the NFTBAN Project contributors
+
+.SH COPYRIGHT
+Copyright © 2024-2026 NFTBAN Project / Antonios Voulvoulis.
+.br
+Licensed under the Mozilla Public License v2.0 (MPL-2.0).
+.br
+See /usr/share/nftban/docs/LICENSE for details.
+
+.SH WEBSITE
+https://nftban.com
+
+.SH TRADEMARK
+"nftban" and the NFTBan logo are trademarks of the NFTBAN Project.
+.br
+See /usr/share/nftban/docs/TRADEMARK.md for trademark policy.
+
+.SH NOTICE
+This project references third-party software (Fail2Ban, nftables, Linux, Tux).
+.br
+See /usr/share/nftban/docs/NOTICE.md for full attributions.

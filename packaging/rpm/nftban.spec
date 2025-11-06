@@ -240,9 +240,9 @@ install -d -m 0755 %{buildroot}%{_datadir}/bash-completion/completions
 install -m 0644 src/usr/share/nftban/completions/nftban.bash \
     %{buildroot}%{_datadir}/bash-completion/completions/nftban
 
-# Man page - TODO: Generate from help system (v0.32.0)
-# install -d -m 0755 %{buildroot}%{_mandir}/man1
-# install -m 0644 docs/nftban.1 %{buildroot}%{_mandir}/man1/nftban.1
+# Install man page
+install -d -m 0755 %{buildroot}%{_mandir}/man1
+install -m 0644 docs/nftban.1 %{buildroot}%{_mandir}/man1/nftban.1
 
 # Install Polkit rules
 install -d -m 0755 %{buildroot}%{_datadir}/polkit-1/rules.d
@@ -572,8 +572,8 @@ fi
 %license /usr/share/licenses/nftban/NFTBAN-Pro-Commercial.md
 %license /usr/share/licenses/nftban/NFTBAN-Docs.txt
 
-# Man page - TODO: Re-enable in v0.32.0
-# %{_mandir}/man1/nftban.1*
+# Man page
+%{_mandir}/man1/nftban.1*
 
 # Configuration
 %dir %attr(0750,root,nftban) /etc/nftban
