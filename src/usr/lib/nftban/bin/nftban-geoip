@@ -21,9 +21,11 @@
 
 set -Eeuo pipefail
 
-REAL="/usr/lib/nftban/bin/.real/nftban-geoip"
+# Auto-detect architecture and find real Go binary
+ARCH=$(uname -m)
+REAL="/usr/lib/nftban/bin/.real/nftban-geoip-${ARCH}"
 
-# If real Go binary exists, use it (10-60x faster)
+# If architecture-specific binary exists, use it (10-60x faster)
 if [ -x "$REAL" ]; then
     exec "$REAL" "$@"
 fi
