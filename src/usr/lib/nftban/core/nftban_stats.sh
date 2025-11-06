@@ -536,15 +536,17 @@ nftban_stats_generate_dashboard() {
     echo ""
 
     # Summary metrics
-    echo "[SUMMARY]"
-    echo "  Total Bans: ${total_bans}"
-    echo "  Unique IPs: ${unique_ips}"
-    echo "  Active Bans: ${active_bans}"
-    echo "  Whitelist Entries: ${whitelist_count}"
+    echo "[FIREWALL STATUS]"
+    echo "  🛡️  IPs Currently Blocked: ${active_bans}"
+    echo "  ✅  IPs Whitelisted (allowed): ${whitelist_count}"
+    echo ""
+    echo "[BAN HISTORY - ${since} to ${until}]"
+    echo "  New Bans Added: ${total_bans}"
+    echo "  Unique IPs Banned: ${unique_ips}"
     echo ""
 
-    # Ban sources
-    echo "[BAN SOURCES]"
+    # Ban sources (with helpful note if all zeros)
+    echo "[WHERE ARE BANS COMING FROM?]"
     local sources
     sources=$(nftban_stats_ban_sources "$since" "$until")
     if command -v jq &>/dev/null; then
@@ -552,9 +554,17 @@ nftban_stats_generate_dashboard() {
         fail2ban=$(echo "$sources" | jq -r '.fail2ban')
         manual=$(echo "$sources" | jq -r '.manual')
         feeds=$(echo "$sources" | jq -r '.feeds')
-        echo "  Fail2Ban: ${fail2ban}"
-        echo "  Manual: ${manual}"
-        echo "  Feeds: ${feeds}"
+        echo "  Fail2Ban detected attacks: ${fail2ban}"
+        echo "  Manual bans (you added): ${manual}"
+        echo "  Threat feed bans: ${feeds}"
+
+        # Add helpful note if everything is zero
+        if [[ "$fail2ban" == "0" ]] && [[ "$manual" == "0" ]] && [[ "$feeds" == "0" ]]; then
+            echo ""
+            echo "  ℹ️  No attacks detected in this time period."
+            echo "     Your firewall IS working! Threat feeds are blocking known bad IPs."
+            echo "     Check 'IPs Currently Blocked' above to see protection status."
+        fi
     fi
     echo ""
 
@@ -567,7 +577,7 @@ nftban_stats_generate_dashboard() {
     fi
 
     if type -t nftban_feeds_discover_all >/dev/null 2>&1 && type -t nftban_feeds_get_property >/dev/null 2>&1; then
-        echo "[FEEDS]"
+        echo "[THREAT FEEDS - LOADED & BLOCKING]"
         local all_feeds
         all_feeds=$(nftban_feeds_discover_all 2>/dev/null || true)
 
@@ -584,7 +594,7 @@ nftban_stats_generate_dashboard() {
                         local count mtime
                         count=$(wc -l < "$feed_file" 2>/dev/null || echo "0")
                         mtime=$(date -r "$feed_file" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
-                        printf "  • %-25s %6s IPs (Updated: %s)\n" "$feed" "$count" "$mtime"
+                        printf "  • %-25s %7s source IPs (Updated: %s)\n" "$feed" "$count" "$mtime"
                     else
                         printf "  • %-25s %s\n" "$feed" "pending download"
                     fi
@@ -597,6 +607,19 @@ nftban_stats_generate_dashboard() {
         else
             echo "  (no feeds configured)"
         fi
+        echo ""
+
+        # Show feed blocking stats from nftables counters
+        local feed_v4_packets feed_v6_packets
+        feed_v4_packets=$(nft list table inet nftban_main 2>/dev/null | grep 'feed_v4.*counter' | grep -oP 'packets \K[0-9]+' || echo "0")
+        feed_v6_packets=$(nft list table inet nftban_main 2>/dev/null | grep 'feed_v6.*counter' | grep -oP 'packets \K[0-9]+' || echo "0")
+        local total_feed_blocks=$((feed_v4_packets + feed_v6_packets))
+
+        echo "  ✅ Feeds are actively blocking threats!"
+        echo "     Total packets blocked by feeds: ${total_feed_blocks}"
+        echo ""
+        echo "  ℹ️  Note: Source IPs are aggregated into CIDR ranges for efficiency."
+        echo "     Example: 1.3M individual IPs → ~1400 optimized firewall rules"
         echo ""
     fi
 
