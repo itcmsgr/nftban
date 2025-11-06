@@ -97,14 +97,18 @@ jobs:
             dnf clean all
             rm -rf /var/cache/dnf
 
-            # IMPORTANT: Install build dependencies AS PART OF distro-sync to avoid
-            # pulling from stale mirrors. This ensures all packages come from the
-            # same consistent repo snapshot.
-            echo '=== Installing build dependencies in single transaction ==='
-            dnf -y --releasever=9 --refresh distro-sync \
+            # First sync existing packages to align repo versions
+            dnf -y --releasever=9 --refresh distro-sync || {
+              echo 'ERROR: Failed to sync package repos'
+              exit 1
+            }
+
+            # Now install build dependencies (uses aligned repos from distro-sync)
+            echo '=== Installing build dependencies ==='
+            dnf -y --releasever=9 install \
               glibc glibc-devel rpm-build rpmdevtools tar gzip which \
               systemd-rpm-macros golang gcc || {
-              echo 'ERROR: Failed to sync repos and install build dependencies'
+              echo 'ERROR: Failed to install build dependencies'
               exit 1
             }
 
