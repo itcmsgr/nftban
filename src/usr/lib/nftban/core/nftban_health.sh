@@ -142,7 +142,7 @@ nftban_health_check_binaries() {
     fi
 
     if [[ ${#missing_optional[@]} -gt 0 ]]; then
-        NFTBAN_HEALTH_WARNINGS+=("Missing optional binaries: ${missing_optional[*]}")
+        NFTBAN_HEALTH_WARNINGS+=("Optional features not installed (OK to ignore): ${missing_optional[*]}")
     fi
 
     NFTBAN_HEALTH_RESULTS["binaries"]=$status
@@ -673,14 +673,15 @@ nftban_health_check_geoip() {
     else
         # Test binary
         if ! "$binary_path" version >/dev/null 2>&1; then
-            geoip_issues+=("Binary test failed")
+            geoip_issues+=("GeoIP binary exists but not working (optional feature)")
             status=$HEALTH_WARNING
         fi
     fi
 
     # Check database
     if [[ ! -f "$db_path" ]]; then
-        geoip_issues+=("Database not found: $db_path")
+        geoip_issues+=("GeoIP database not installed (optional feature)")
+        geoip_issues+=("To enable: nftban geoip download")
         status=$HEALTH_WARNING
     elif [[ ! -r "$db_path" ]]; then
         geoip_issues+=("Database not readable: $db_path")
@@ -1726,6 +1727,13 @@ nftban_health_render_terminal() {
             echo "  ⚠️  $warning"
         done
         echo ""
+        # Junior-friendly help
+        if [[ $error_count -eq 0 ]]; then
+            echo "ℹ️  These warnings are about OPTIONAL features."
+            echo "   Your firewall is working! You can safely ignore these warnings."
+            echo "   To enable optional features, see: nftban help"
+            echo ""
+        fi
     fi
 }
 
