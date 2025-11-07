@@ -1148,18 +1148,7 @@ nftban_port_allow_directadmin() {
 
         # Check if cloudflare module exists
         if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_cloudflare.sh" ]]; then
-            # Update CloudFlare IPs if configured
-            if [[ "$cf_update" == "YES" || "$cf_update" == "yes" ]]; then
-                echo "Updating CloudFlare IP ranges..."
-                if nftban cloudflare update 2>/dev/null; then
-                    echo "✓ CloudFlare IPs updated"
-                else
-                    echo "⚠️  Failed to update CloudFlare IPs (continuing anyway)"
-                fi
-                echo ""
-            fi
-
-            # Enable CloudFlare whitelist
+            # Enable CloudFlare whitelist (downloads and applies)
             echo "Enabling CloudFlare whitelist..."
             if nftban cloudflare enable 2>/dev/null; then
                 echo "✓ CloudFlare whitelist enabled"
@@ -1198,6 +1187,16 @@ nftban_port_allow_directadmin() {
     echo "To verify port status, run:"
     echo "  nftban port status"
     echo ""
+
+    # Run autoheal to fix any permission issues
+    if command -v nftban >/dev/null 2>&1; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Running autoheal to fix permissions..."
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        nftban permissions fix 2>/dev/null || true
+        echo ""
+    fi
 
     return 0
 }

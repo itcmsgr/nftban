@@ -324,12 +324,19 @@ nftban_cloudflare_enable() {
     fi
 
     # Update configuration
-    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" ]]; then
-        if ! grep -q "^CLOUDFLARE_ENABLED=" "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local" 2>/dev/null; then
-            echo 'CLOUDFLARE_ENABLED="true"' >> "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
-        else
-            sed -i 's/^CLOUDFLARE_ENABLED=.*/CLOUDFLARE_ENABLED="true"/' "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
-        fi
+    local config_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
+
+    # Create config file if it doesn't exist
+    if [[ ! -f "$config_local" ]]; then
+        touch "$config_local"
+        chmod 644 "$config_local"
+    fi
+
+    # Update CLOUDFLARE_ENABLED setting
+    if ! grep -q "^CLOUDFLARE_ENABLED=" "$config_local" 2>/dev/null; then
+        echo 'CLOUDFLARE_ENABLED="true"' >> "$config_local"
+    else
+        sed -i 's/^CLOUDFLARE_ENABLED=.*/CLOUDFLARE_ENABLED="true"/' "$config_local"
     fi
 
     echo ""
