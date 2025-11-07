@@ -259,6 +259,32 @@ EOF
 # DIRECTADMIN PANEL SUPPORT
 # =============================================================================
 
+# Helper function: Check if a port is open in nftables
+_nftban_panel_check_port() {
+    local port="$1"
+    local table output
+    local old_ifs="$IFS"
+    IFS=$' \t\n'  # Reset IFS to default for iteration
+    for table in nftban nftban_runtime nftban_filter; do
+        # Use command substitution to avoid SIGPIPE with pipefail
+        output=$(nft list table inet "$table" 2>/dev/null) || true
+        if echo "$output" | grep -q "dport $port"; then
+            IFS="$old_ifs"
+            return 0
+        fi
+    done
+    IFS="$old_ifs"
+    return 1
+}
+
+# Helper function: Check if CloudFlare is enabled
+_nftban_panel_check_cloudflare() {
+    # Use command substitution to avoid SIGPIPE with pipefail
+    local status_output
+    status_output=$(nftban cloudflare status 2>/dev/null) || true
+    echo "$status_output" | grep -q 'Master switch: true'
+}
+
 nftban_panel_directadmin_enable() {
     # Nice header for Web Hosting Panel
     cat <<'EOF'
@@ -349,7 +375,7 @@ nftban_panel_directadmin_status() {
         echo "  Listening: ✗ NO"
     fi
 
-    if nft list table inet nftban 2>/dev/null | grep -q 'dport 2222'; then
+    if _nftban_panel_check_port 2222; then
         echo "  Firewall: ✓ OPEN"
     else
         echo "  Firewall: ✗ CLOSED"
@@ -358,7 +384,7 @@ nftban_panel_directadmin_status() {
 
     # Check CloudFlare whitelist
     echo "CloudFlare Whitelist:"
-    if nftban cloudflare status 2>/dev/null | grep -q 'enabled'; then
+    if _nftban_panel_check_cloudflare; then
         echo "  Status: ✓ ENABLED"
     else
         echo "  Status: ✗ DISABLED (⚠️  Required for licensing!)"
@@ -429,7 +455,7 @@ nftban_panel_directadmin_report() {
     local key_ports=(2222 80 443 22 25 587)
     for port in "${key_ports[@]}"; do
         local status="CLOSED"
-        if nft list table inet nftban 2>/dev/null | grep -q "dport $port"; then
+        if _nftban_panel_check_port "$port"; then
             status="OPEN"
         fi
         printf "   Port %-5s: %s\n" "$port" "$status"
@@ -439,7 +465,7 @@ nftban_panel_directadmin_report() {
     # CloudFlare status
     echo "4. CLOUDFLARE WHITELIST"
     echo "   ───────────────────────────────────────────────────"
-    if nftban cloudflare status 2>/dev/null | grep -q 'enabled'; then
+    if _nftban_panel_check_cloudflare; then
         echo "   Status: ENABLED ✓"
 
         # Count IPs
@@ -462,12 +488,12 @@ nftban_panel_directadmin_report() {
     local recommendations=()
 
     # Check CloudFlare
-    if ! nftban cloudflare status 2>/dev/null | grep -q 'enabled'; then
+    if ! _nftban_panel_check_cloudflare; then
         recommendations+=("Enable CloudFlare whitelist: nftban cloudflare enable")
     fi
 
     # Check panel port
-    if ! nft list table inet nftban 2>/dev/null | grep -q 'dport 2222'; then
+    if ! _nftban_panel_check_port 2222; then
         recommendations+=("Open panel port: nftban panel directadmin enable")
     fi
 
@@ -516,7 +542,7 @@ nftban_panel_directadmin_repair() {
     fi
 
     # Check CloudFlare whitelist
-    if ! nftban cloudflare status 2>/dev/null | grep -q 'enabled'; then
+    if ! _nftban_panel_check_cloudflare; then
         echo "✗ CloudFlare whitelist disabled"
         echo "  Enabling CloudFlare whitelist..."
         if nftban cloudflare enable 2>/dev/null; then
@@ -530,7 +556,7 @@ nftban_panel_directadmin_repair() {
     fi
 
     # Check panel port
-    if ! nft list table inet nftban 2>/dev/null | grep -q 'dport 2222'; then
+    if ! _nftban_panel_check_port 2222; then
         echo "✗ Panel port (2222) not open in firewall"
         echo "  Run: nftban panel directadmin enable"
         ((repairs++))
@@ -573,7 +599,7 @@ nftban_panel_directadmin_test() {
 
     # Test 2: Firewall rules
     echo "Test 2: Firewall Rules (2222/TCP)"
-    if nft list table inet nftban 2>/dev/null | grep -q 'dport 2222'; then
+    if _nftban_panel_check_port 2222; then
         echo "  ✓ PASS: Port 2222 allowed in firewall"
         ((tests_passed++))
     else
@@ -585,7 +611,7 @@ nftban_panel_directadmin_test() {
 
     # Test 3: CloudFlare whitelist
     echo "Test 3: CloudFlare Whitelist"
-    if nftban cloudflare status 2>/dev/null | grep -q 'enabled'; then
+    if _nftban_panel_check_cloudflare; then
         echo "  ✓ PASS: CloudFlare whitelist enabled"
         ((tests_passed++))
     else
@@ -600,7 +626,7 @@ nftban_panel_directadmin_test() {
     echo "Test 4: Web Server Ports (80, 443)"
     local web_ok=true
     for port in 80 443; do
-        if nft list table inet nftban 2>/dev/null | grep -q "dport $port"; then
+        if _nftban_panel_check_port "$port"; then
             echo "  ✓ Port $port: OPEN"
         else
             echo "  ✗ Port $port: CLOSED"
@@ -619,7 +645,7 @@ nftban_panel_directadmin_test() {
     echo "Test 5: Mail Server Ports (25, 587, 465)"
     local mail_ok=true
     for port in 25 587 465; do
-        if nft list table inet nftban 2>/dev/null | grep -q "dport $port"; then
+        if _nftban_panel_check_port "$port"; then
             echo "  ✓ Port $port: OPEN"
         else
             echo "  ✗ Port $port: CLOSED"
@@ -654,6 +680,8 @@ nftban_panel_directadmin_test() {
 
 # Export functions
 export -f nftban_cmd_panel
+export -f _nftban_panel_check_port
+export -f _nftban_panel_check_cloudflare
 export -f nftban_panel_directadmin_enable
 export -f nftban_panel_directadmin_disable
 export -f nftban_panel_directadmin_status
