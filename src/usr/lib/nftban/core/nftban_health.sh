@@ -681,7 +681,7 @@ nftban_health_check_geoip() {
     # Check database
     if [[ ! -f "$db_path" ]]; then
         geoip_issues+=("GeoIP database not installed (optional feature)")
-        geoip_issues+=("To enable: nftban geoip download")
+        geoip_issues+=("To enable: nftban geoip update")
         status=$HEALTH_WARNING
     elif [[ ! -r "$db_path" ]]; then
         geoip_issues+=("Database not readable: $db_path")
