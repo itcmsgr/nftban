@@ -32,6 +32,37 @@ The project embraces an **ethical AI collaboration philosophy** — merging **hu
 
 ## 🚀 Quick Install
 
+### Automated Setup (Recommended for CentOS/Rocky/AlmaLinux)
+
+**CentOS Stream 9/10**
+```bash
+wget https://raw.githubusercontent.com/itcmsgr/nftban/main/scripts/distro-setup/centos.sh
+sudo bash centos.sh
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm
+sudo dnf install -y nftban-x86_64.rpm && sudo nftban enable
+```
+
+**Rocky Linux 8/9/10**
+```bash
+wget https://raw.githubusercontent.com/itcmsgr/nftban/main/scripts/distro-setup/rocky.sh
+sudo bash rocky.sh
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm
+sudo dnf install -y nftban-x86_64.rpm && sudo nftban enable
+```
+
+**AlmaLinux 8/9/10**
+```bash
+wget https://raw.githubusercontent.com/itcmsgr/nftban/main/scripts/distro-setup/almalinux.sh
+sudo bash almalinux.sh
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm
+sudo dnf install -y nftban-x86_64.rpm && sudo nftban enable
+```
+
+> **Automated scripts configure EPEL, CRB, and resolve common repository conflicts automatically.**
+> See [docs/ROCKY-ALMA-INSTALL.md](docs/ROCKY-ALMA-INSTALL.md) for detailed troubleshooting.
+
+### Manual Installation
+
 **Rocky / AlmaLinux 9+** (requires EPEL + CRB)
 ```bash
 sudo dnf install -y epel-release && sudo dnf config-manager --set-enabled crb && wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm && sudo dnf install -y nftban-x86_64.rpm && sudo nftban enable
