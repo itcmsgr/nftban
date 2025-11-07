@@ -36,6 +36,17 @@
 set -Eeuo pipefail
 
 # =============================================================================
+# LOAD DEPENDENCIES
+# =============================================================================
+
+# Load cmd_port.sh for DirectAdmin port configuration functions
+NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_port.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/cli/cmd_port.sh"
+fi
+
+# =============================================================================
 # MAIN COMMAND DISPATCHER
 # =============================================================================
 

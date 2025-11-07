@@ -31,7 +31,6 @@ umask 027
 # Colors
 RED='\033[0;31m'
 GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
 NC='\033[0m'
 
 # Configuration
@@ -39,7 +38,7 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
 # Read version from VERSION file (single source of truth)
 if [[ -f "${PROJECT_ROOT}/VERSION" ]]; then
-    VERSION="$(cat "${PROJECT_ROOT}/VERSION" | tr -d '[:space:]')"
+    VERSION="$(tr -d '[:space:]' < "${PROJECT_ROOT}/VERSION")"
 else
     echo "ERROR: VERSION file not found"
     exit 1

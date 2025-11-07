@@ -308,6 +308,11 @@ nftban_render_banner_full() {
         nftban_show_log_paths
     fi
 
+    # Update check notification (if enabled)
+    if [[ "${NFTBAN_BANNER_UPDATE_CHECK:-false}" == "true" ]]; then
+        nftban_check_updates_banner
+    fi
+
     echo ""
 }
 
@@ -514,6 +519,110 @@ nftban_warning_banner() {
 # nftban_progress_start() { ... }
 # nftban_progress_update() { ... }
 # nftban_progress_end() { ... }
+
+# =============================================================================
+# UPDATE CHECK FUNCTIONS
+# =============================================================================
+
+# Check for updates and display notification in banner
+nftban_check_updates_banner() {
+    local cache_file="/var/cache/nftban/update_check"
+    local cache_ttl="${NFTBAN_UPDATE_TTL:-86400}" # 24 hours default
+    local repo="${NFTBAN_REPO:-itcmsgr/nftban}"
+    local current_version latest_version
+
+    # Get current version
+    current_version="$(nftban_get_version)"
+
+    # Check cache validity
+    if [[ -f "$cache_file" ]]; then
+        local cache_age
+        cache_age=$(( $(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || stat -f %m "$cache_file" 2>/dev/null || echo "0") ))
+
+        # Use cached result if fresh
+        if [[ $cache_age -lt $cache_ttl ]]; then
+            latest_version="$(cat "$cache_file" 2>/dev/null)"
+        fi
+    fi
+
+    # Fetch latest version if no valid cache
+    if [[ -z "$latest_version" ]]; then
+        # Quick check with timeout (3 seconds)
+        latest_version=$(curl -sf --max-time 3 "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null | \
+            grep -oP '"tag_name":\s*"v?\K[0-9]+\.[0-9]+\.[0-9]+' | head -1)
+
+        # Cache the result (create dir if needed)
+        if [[ -n "$latest_version" ]]; then
+            mkdir -p "$(dirname "$cache_file")" 2>/dev/null
+            echo "$latest_version" > "$cache_file" 2>/dev/null || true
+        else
+            # Failed to fetch, don't show anything
+            return 0
+        fi
+    fi
+
+    # Compare versions and show notification if update available
+    if [[ -n "$latest_version" ]] && [[ "$latest_version" != "$current_version" ]]; then
+        nftban_version_compare "$current_version" "$latest_version"
+        local cmp=$?
+
+        # 0 = equal, 1 = current < latest (update available), 2 = current > latest
+        if [[ $cmp -eq 1 ]]; then
+            echo ""
+            echo -e "${NFTBAN_COLOR_YELLOW}╭────────────────────────────────────────────────────────────╮${NFTBAN_COLOR_RESET}"
+            echo -e "${NFTBAN_COLOR_YELLOW}│  📦 Update Available: v${latest_version}$(printf ' %.0s' {1..28})│${NFTBAN_COLOR_RESET}"
+            echo -e "${NFTBAN_COLOR_YELLOW}│  Current: v${current_version}                                      │${NFTBAN_COLOR_RESET}"
+            echo -e "${NFTBAN_COLOR_YELLOW}│  Download: github.com/${repo}/releases   │${NFTBAN_COLOR_RESET}"
+            echo -e "${NFTBAN_COLOR_YELLOW}╰────────────────────────────────────────────────────────────╯${NFTBAN_COLOR_RESET}"
+        fi
+    fi
+}
+
+# Compare two semantic versions (X.Y.Z)
+# Returns: 0 if equal, 1 if v1 < v2, 2 if v1 > v2
+nftban_version_compare() {
+    local v1="$1" v2="$2"
+
+    # Remove 'v' prefix if present
+    v1="${v1#v}"
+    v2="${v2#v}"
+
+    # Split versions into components
+    IFS='.' read -r v1_major v1_minor v1_patch <<< "$v1"
+    IFS='.' read -r v2_major v2_minor v2_patch <<< "$v2"
+
+    # Default to 0 if empty
+    v1_major="${v1_major:-0}"
+    v1_minor="${v1_minor:-0}"
+    v1_patch="${v1_patch:-0}"
+    v2_major="${v2_major:-0}"
+    v2_minor="${v2_minor:-0}"
+    v2_patch="${v2_patch:-0}"
+
+    # Compare major
+    if [[ $v1_major -lt $v2_major ]]; then
+        return 1
+    elif [[ $v1_major -gt $v2_major ]]; then
+        return 2
+    fi
+
+    # Compare minor
+    if [[ $v1_minor -lt $v2_minor ]]; then
+        return 1
+    elif [[ $v1_minor -gt $v2_minor ]]; then
+        return 2
+    fi
+
+    # Compare patch
+    if [[ $v1_patch -lt $v2_patch ]]; then
+        return 1
+    elif [[ $v1_patch -gt $v2_patch ]]; then
+        return 2
+    fi
+
+    # Equal
+    return 0
+}
 
 # =============================================================================
 # FOOTER - Debug & Module Info
