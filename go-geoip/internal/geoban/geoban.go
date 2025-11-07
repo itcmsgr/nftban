@@ -64,6 +64,11 @@ func FetchAndLoad(cc string, opt Options) error {
 
 	// 4. Atomic nftables loading
 	if opt.Atomic {
+		totalRanges := len(v4) + len(v6)
+		if totalRanges > 5000 {
+			fmt.Printf("  ⚠  Large country: %d total IP ranges\n", totalRanges)
+			fmt.Printf("  ℹ️  This may take 30-60 seconds to load into firewall...\n")
+		}
 		fmt.Printf("  Loading into nftables atomically...\n")
 		if err := nftAdd(opt.Action, v4, v6); err != nil {
 			return fmt.Errorf("nftables load: %w", err)
@@ -312,8 +317,12 @@ func nftElements(conn *nftables.Conn, op, setName string, cidrs []string) error 
 		return err
 	}
 
-	// Process in chunks of 4096 elements
-	const chunkSize = 4096
+	// Process in chunks of 1000 elements and commit each chunk
+	// This prevents netlink message size errors for large country sets (e.g., CN with 7500+ ranges)
+	const chunkSize = 1000
+	totalChunks := (len(cidrs) + chunkSize - 1) / chunkSize
+	showProgress := totalChunks > 3 // Show progress for large sets
+
 	for i := 0; i < len(cidrs); i += chunkSize {
 		end := i + chunkSize
 		if end > len(cidrs) {
@@ -345,11 +354,20 @@ func nftElements(conn *nftables.Conn, op, setName string, cidrs []string) error 
 				return fmt.Errorf("delete elements from %s: %w", setShortName, err)
 			}
 		}
-	}
 
-	// Commit transaction
-	if err := conn.Flush(); err != nil {
-		return fmt.Errorf("commit transaction: %w", err)
+		// Commit this chunk immediately to avoid netlink buffer overflow
+		if err := conn.Flush(); err != nil {
+			return fmt.Errorf("commit chunk %d-%d: %w", i, end, err)
+		}
+
+		// Show progress for large sets
+		if showProgress {
+			currentChunk := (i / chunkSize) + 1
+			fmt.Printf("    Progress: %d/%d chunks (%d%%)\r", currentChunk, totalChunks, (currentChunk*100)/totalChunks)
+			if currentChunk == totalChunks {
+				fmt.Println() // Final newline
+			}
+		}
 	}
 
 	return nil
