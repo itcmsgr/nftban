@@ -1,8 +1,10 @@
+# shellcheck disable=SC2148
 # =============================================================================
 # NFTBan Cron Jobs (Fallback if no systemd)
 # =============================================================================
 # Managed by: NFTBan package
 # NOTE: Prefer systemd timers over cron where available
+# NOTE: This is a crontab file, not a shell script
 
 SHELL=/bin/bash
 PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin
