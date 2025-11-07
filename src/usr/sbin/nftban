@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.5 - CLI Interface
+# NFTBan v0.32.6 - CLI Interface
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Main CLI entry point for NFTBan
@@ -28,7 +28,7 @@ set -Eeuo pipefail
 # CONFIGURATION
 # =============================================================================
 
-export NFTBAN_VERSION="0.32.5"
+export NFTBAN_VERSION="0.32.6"
 export NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 export NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 

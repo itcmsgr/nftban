@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# NFTBan v0.30.1 - Ban Management Backend
+# NFTBan v0.32.6 - Ban Management Backend
 # Production-ready ban management with:
 # - Two-table architecture (runtime + main)
 # - Fail2ban integration with temp bans
@@ -192,7 +192,7 @@ table inet nftban_main {
     comment "IPv6 permanent blacklist"
   }
 
-  # Threat intelligence feeds (v0.31.0 Go feeds)
+  # Threat intelligence feeds (v0.32.6 Go feeds)
   set feed_v4 {
     type ipv4_addr
     flags interval
@@ -230,11 +230,11 @@ table inet nftban_main {
     ip   protocol icmp  icmp type { echo-request, echo-reply, destination-unreachable, time-exceeded } counter accept comment "ICMPv4"
     ip6  nexthdr icmpv6 icmpv6 type { echo-request, echo-reply, destination-unreachable, time-exceeded, packet-too-big } counter accept comment "ICMPv6"
 
-    # 4) CRITICAL: Blacklist BEFORE service ports (security fix v0.30.1)
+    # 4) CRITICAL: Blacklist BEFORE service ports (security fix v0.32.6)
     ip   saddr @blacklist_v4 counter drop comment "blacklist v4"
     ip6  saddr @blacklist_v6 counter drop comment "blacklist v6"
 
-    # 4.5) Threat intelligence feeds (v0.31.0 - block before services)
+    # 4.5) Threat intelligence feeds (v0.32.6 - block before services)
     ip   saddr @feed_v4 counter drop comment "threat feeds v4"
     ip6  saddr @feed_v6 counter drop comment "threat feeds v6"
 
@@ -650,7 +650,7 @@ nftban_unban() {
 
 usage() {
   cat <<EOF
-NFTBan v0.30.0 - Ban Management
+NFTBan v0.32.6 - Ban Management
 
 MASTER CONTROL:
   nftban enable|disable|status

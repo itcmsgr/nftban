@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.0 - Maintenance Script (Always Active)
+# NFTBan v0.32.6 - Maintenance Script (Always Active)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Critical maintenance tasks that run even when NFTBan is disabled
@@ -8,7 +8,7 @@
 # meta:name=maintenance
 # meta:type=cron
 # meta:header=Maintenance Runner
-# meta:version=0.32.0
+# meta:version=0.32.6
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

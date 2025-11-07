@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
 # NFTBan Cloudflare Module
-# Part of NFTBan v0.32.0 - FHS-Compliant Architecture
+# Part of NFTBan v0.32.6 - FHS-Compliant Architecture
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Cloudflare IP range management and whitelist integration
@@ -9,7 +9,7 @@
 # meta:name=nftban_cloudflare
 # meta:type=module
 # meta:header=Cloudflare Integration Module
-# meta:version=0.32.0
+# meta:version=0.32.6
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -209,7 +209,7 @@ nftban_cloudflare_download_ips() {
 }
 
 # =============================================================================
-# WRITE TO WHITELIST FILE (v0.31.0 Integration)
+# WRITE TO WHITELIST FILE (v0.32.6 Integration)
 # =============================================================================
 nftban_cloudflare_write_to_whitelist() {
     _cf_log "INFO" "Writing Cloudflare IPs to whitelist file: $CF_WHITELIST_FILE"
@@ -309,14 +309,14 @@ nftban_cloudflare_enable() {
     nftban_cloudflare_write_to_whitelist
     echo "✅ Whitelist file updated: $CF_WHITELIST_FILE"
 
-    # Trigger system whitelist rebuild (v0.31.0 integration)
+    # Trigger system whitelist rebuild (v0.32.6 integration)
     if declare -f nftban_system_ip_rebuild >/dev/null 2>&1; then
         echo "⏳ Rebuilding system whitelist..."
         nftban_system_ip_rebuild
         echo "✅ System whitelist rebuilt"
     fi
 
-    # Trigger atomic reload (v0.31.0 integration)
+    # Trigger atomic reload (v0.32.6 integration)
     if declare -f nftban_atomic_reload >/dev/null 2>&1; then
         echo "⏳ Applying to nftables..."
         nftban_atomic_reload
@@ -368,14 +368,14 @@ nftban_cloudflare_disable() {
     nftban_cloudflare_clear_whitelist
     echo "✅ Whitelist file cleared"
 
-    # Trigger system whitelist rebuild (v0.31.0 integration)
+    # Trigger system whitelist rebuild (v0.32.6 integration)
     if declare -f nftban_system_ip_rebuild >/dev/null 2>&1; then
         echo "⏳ Rebuilding system whitelist..."
         nftban_system_ip_rebuild
         echo "✅ System whitelist rebuilt"
     fi
 
-    # Trigger atomic reload (v0.31.0 integration)
+    # Trigger atomic reload (v0.32.6 integration)
     if declare -f nftban_atomic_reload >/dev/null 2>&1; then
         echo "⏳ Applying to nftables..."
         nftban_atomic_reload

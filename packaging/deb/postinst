@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan v0.32.0 - DEB Post-Install Script
+# NFTBan v0.32.6 - DEB Post-Install Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Post-installation configuration for DEB packages
@@ -136,7 +136,7 @@ SSHEOF
         # Print installation message
         echo ""
         echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  NFTBan v0.32.1 Installation Complete!                    ║"
+        echo "║  NFTBan v0.32.6 Installation Complete!                    ║"
         echo "╚════════════════════════════════════════════════════════════╝"
         echo ""
         echo "✅ Auto-heal completed - all systems configured"

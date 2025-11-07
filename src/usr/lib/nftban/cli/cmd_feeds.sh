@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.0 - Feeds CLI Handler
+# NFTBan v0.32.6 - Feeds CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Beautiful numbered menu interface for threat feeds
@@ -8,7 +8,7 @@
 # meta:name=cmd_feeds
 # meta:type=cli
 # meta:header=Feeds CLI
-# meta:version=0.32.0
+# meta:version=0.32.6
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -64,7 +64,7 @@ nftban_feeds_select() {
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════════════╗"
-    echo "║         NFTBan v0.32.0 - Threat Feeds Selection                  ║"
+    echo "║         NFTBan v0.32.6 - Threat Feeds Selection                  ║"
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo ""
 
@@ -221,7 +221,7 @@ nftban_feeds_list() {
 
     echo ""
     echo "╔══════════════════════════════════════════════════════════════════╗"
-    echo "║        NFTBan v0.32.0 - Available Threat Feeds                   ║"
+    echo "║        NFTBan v0.32.6 - Available Threat Feeds                   ║"
     echo "╚══════════════════════════════════════════════════════════════════╝"
     echo ""
 

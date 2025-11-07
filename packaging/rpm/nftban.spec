@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v0.30.1 - RPM Spec File
+# NFTBan v0.32.6 - RPM Spec File
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: RPM package specification for Red Hat-based distributions
@@ -54,7 +54,7 @@ Conflicts:      iptables-services
 Conflicts:      iptables
 
 %description
-NFTBan v0.30 is a modern, high-performance firewall management system for Linux
+NFTBan is a modern, high-performance firewall management system for Linux
 servers using nftables with advanced self-healing and inventory monitoring.
 
 Features include:
@@ -610,7 +610,7 @@ if [ $1 -eq 2 ]; then
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✅ NFTBan v0.32.2 - Upgrade Complete"
+    echo "✅ NFTBan v0.32.6 - Upgrade Complete"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "📊 UPGRADE SUMMARY"
@@ -804,7 +804,7 @@ fi
 
 %preun
 # =============================================================================
-# NFTBan v0.30.0 - RPM Pre-Uninstall Script
+# NFTBan - RPM Pre-Uninstall Script
 # =============================================================================
 # $1 = 0 means UNINSTALL
 # $1 = 1 means UPGRADE
@@ -1158,7 +1158,7 @@ fi
 - FIX: GitHub Actions glibc version mismatch in RPM builds
 - DOCS: Updated README with BETA WARNING (not production-ready)
 - ENHANCEMENT: Feeds now auto-discovered from config (no hardcoding)
-- ENHANCEMENT: All version references aligned to v0.32.0
+- ENHANCEMENT: All version references aligned to v0.32.6
 
 * Sun Nov 03 2025 Antonios Voulvoulis <contact@nftban.com> - 0.30.0-1
 - Major release: NFTBan v0.30 with self-healing inventory monitoring

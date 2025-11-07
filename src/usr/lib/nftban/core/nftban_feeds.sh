@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.0 - Threat Feeds Core Module
+# NFTBan v0.32.6 - Threat Feeds Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Dynamic threat intelligence feed management with Go integration
@@ -8,7 +8,7 @@
 # meta:name=nftban_feeds
 # meta:type=core
 # meta:header=Threat Feeds Core
-# meta:version=0.32.0
+# meta:version=0.32.6
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -429,7 +429,7 @@ nftban_feeds_sync_to_nftables() {
         nft add set inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V6" { type ipv6_addr \; flags interval \; auto-merge \; }
     }
 
-    # Check if Go binary is available (v0.31.0+)
+    # Check if Go binary is available (v0.32.6+)
     local go_binary="/usr/lib/nftban/bin/nftban-feeds"
     if [[ -x "$go_binary" ]]; then
         nftban_feeds_log INFO "Using Go-optimized feed loader (fast, atomic)"
@@ -442,7 +442,7 @@ nftban_feeds_sync_to_nftables() {
     fi
 }
 
-# Go-optimized feed sync (v0.31.0+)
+# Go-optimized feed sync (v0.32.6+)
 nftban_feeds_sync_to_nftables_go() {
     local go_binary="/usr/lib/nftban/bin/nftban-feeds"
 
@@ -475,7 +475,7 @@ nftban_feeds_sync_to_nftables_go() {
     fi
 }
 
-# Bash feed sync (fallback, v0.31.8)
+# Bash feed sync (fallback, v0.32.6)
 nftban_feeds_sync_to_nftables_bash() {
     # Flush existing sets
     nft flush set inet "$NFTBAN_NFT_TABLE" "$NFTBAN_NFT_SET_FEEDS_V4" 2>/dev/null || true

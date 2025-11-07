@@ -2,7 +2,7 @@
 # https://www.mkdocs.org/user-guide/configuration/
 
 # Site Information
-site_name: NFTBan v0.30.0 Documentation
+site_name: NFTBan v0.32.6 Documentation
 site_url: https://nftban.github.io/nftban/
 site_author: NFTBAN Project / Antonios Voulvoulis
 site_description: Modern, high-performance firewall management for Linux servers with commit-confirm recovery, Go binaries (10-60x faster), and 8 security layers.

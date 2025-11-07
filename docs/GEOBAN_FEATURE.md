@@ -36,7 +36,7 @@ nftban geoip status             # Show banned/whitelisted countries
 
 ### ✅ What Exists in NFTBan:
 
-#### 1. GeoIP System (v0.32.0)
+#### 1. GeoIP System (v0.32.6)
 **Location:** `/usr/lib/nftban/core/nftban_geoip_go.sh`, `/usr/lib/nftban/bin/nftban-geoip`
 
 **Features:**
@@ -532,7 +532,7 @@ nftban_geoip_cmd_list() {
 ```bash
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.0 - GeoBan Core Module
+# NFTBan v0.32.6 - GeoBan Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Country-based IP banning/whitelisting with atomic operations
@@ -1236,7 +1236,7 @@ curl https://www.ipdeny.com/ipblocks/data/aggregated/cn-aggregated.zone
 
 ## 🚀 IMPLEMENTATION PHASES
 
-### Phase 1: Basic GeoBan (v0.32.0)
+### Phase 1: Basic GeoBan (v0.32.6)
 **Timeline:** Now
 **Features:**
 - ✓ CLI commands: `nftban geoip ban/unban/whitelist`
@@ -1252,7 +1252,7 @@ curl https://www.ipdeny.com/ipblocks/data/aggregated/cn-aggregated.zone
 4. CLI commands in `cmd_geoip.sh`
 5. Bash completion updates
 
-### Phase 2: Auto-Update (v0.32.0)
+### Phase 2: Auto-Update (v0.32.6)
 **Timeline:** Future
 **Features:**
 - ✓ Automatic IP range updates (weekly/monthly)
@@ -1567,7 +1567,7 @@ User=root
 3. Create bash wrapper module
 4. Write integration tests
 5. Deploy to lab server for testing
-6. Release as v0.32.0
+6. Release as v0.32.6
 
 **Credits Available:** 144,467 tokens (72%)
 **Estimated Implementation Time:** 4-6 hours

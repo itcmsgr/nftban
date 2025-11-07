@@ -1,4 +1,4 @@
-# NFTBan v0.31.0 - Quick Start Guide
+# NFTBan v0.32.6 - Quick Start Guide
 
 **The Linux firewall that AUTOMATICALLY protects you - Get running in 2 commands!**
 
@@ -227,7 +227,7 @@ nftban health check
 
 ---
 
-## 📖 Key Features in v0.31.0
+## 📖 Key Features in v0.32.6
 
 ### 🎯 Interactive Setup Wizard
 - **One command:** `nftban setup` does everything
@@ -338,7 +338,7 @@ nftban list              # View ban lists
 
 ```
 ┌─────────────────────────────────────────────────────────────┐
-│                    NFTBan v0.31.0                           │
+│                    NFTBan v0.32.6                           │
 ├─────────────────────────────────────────────────────────────┤
 │                                                             │
 │  🎯 Interactive Setup Wizard (NEW!)                        │

@@ -1,6 +1,6 @@
 # NFTBan Go Binary Compilation Guide
 
-**Version:** v0.32.3
+**Version:** v0.32.6
 **Last Updated:** 2025-01-05
 **Audience:** Developers, Package Maintainers, System Administrators
 
@@ -186,7 +186,7 @@ cd dist/x86_64  # or dist/aarch64
 
 # Version check
 ./nftban-geoip version
-# Expected: nftban-geoip v0.32.0
+# Expected: nftban-geoip v0.32.6
 
 # Help
 ./nftban-geoip help

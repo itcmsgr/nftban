@@ -1,6 +1,6 @@
 # High-Level Design: NFTBan Go Modules
 
-**Version:** v0.32.3
+**Version:** v0.32.6
 **Date:** 2025-11-06
 **Status:** GeoBan ✅ IMPLEMENTED | Feeds ⏳ IN PROGRESS
 **Owner:** NFTBan Development Team
@@ -25,7 +25,7 @@ This document describes the architecture, design decisions, and implementation p
 
 ## 🎯 Business Problem
 
-### Current Issues (v0.30.6 - Bash Implementation)
+### Current Issues (v0.32.6 - Bash Implementation)
 
 **Feeds Module:**
 ```
@@ -140,7 +140,7 @@ Impact:
    # Output: US/Mountain View/America/Los_Angeles
    ```
 
-2. **GeoBan Country Blocking** (NEW in v0.32.0)
+2. **GeoBan Country Blocking** (NEW in v0.32.6)
    ```bash
    nftban geoip ban CN RU KP
    nftban geoip unban CN
@@ -332,7 +332,7 @@ saveCache(data, etag)
 - `github.com/google/nftables v0.2.0`
 - `golang.org/x/sys v0.15.0`
 
-### Current Problem (v0.30.6)
+### Current Problem (v0.32.6)
 
 **On lab.mywebhost.gr:**
 ```bash
@@ -350,7 +350,7 @@ RAM:    4-7GB        # sort processes
 Processes: 100K+     # nft zombies
 ```
 
-### Proposed Solution (v0.32.0)
+### Proposed Solution (v0.32.6)
 
 **Atomic Go Implementation:**
 ```go
@@ -575,11 +575,11 @@ func MergeCIDRs(prefixes []netip.Prefix) []netip.Prefix {
 **Trade-off:**
 - Complexity: High (interval tree algorithm)
 - CPU cost: O(n log n) preprocessing
-- Decision: Defer to v0.32.0 (not critical path)
+- Decision: Defer to v0.32.6 (not critical path)
 
 ### Performance Targets
 
-| Metric | v0.30.6 (Bash) | v0.30.8 (Bash Bulk) | v0.32.0 (Go Atomic) | Gain |
+| Metric | v0.32.6 (Bash) | v0.32.6 (Bash Bulk) | v0.32.6 (Go Atomic) | Gain |
 |--------|----------------|---------------------|---------------------|------|
 | **100K IPs** | 24+ hours | 10-30 sec | 1-2 sec | **43,200x** |
 | **1M IPs** | Not tested | 2-5 min | 5-10 sec | **1,440x** |
@@ -901,7 +901,7 @@ ps aux | grep nftban-feeds | awk '{print $6}'
 
 ## 🚀 Rollout Plan
 
-### Phase 1: GeoBan (v0.32.0) ✅ COMPLETE
+### Phase 1: GeoBan (v0.32.6) ✅ COMPLETE
 
 **Completed:**
 - ✅ Go implementation (go-geoip/internal/geoban/)
@@ -916,12 +916,12 @@ ps aux | grep nftban-feeds | awk '{print $6}'
 **Remaining:**
 - [ ] Add country code validation error messages
 - [ ] Commit to repository
-- [ ] Tag v0.32.0
+- [ ] Tag v0.32.6
 - [ ] GitHub Actions build
 - [ ] Deploy to all 5 lab servers
 - [ ] Monitor 24h
 
-### Phase 2: Feeds (v0.32.0) ⏳ NEXT
+### Phase 2: Feeds (v0.32.6) ⏳ NEXT
 
 **Tasks:**
 1. Implement Go modules (2-3 hours)
@@ -990,7 +990,7 @@ ps aux | grep nftban-feeds | awk '{print $6}'
 2. **CIDR Merging (Feeds)**
    - Benefit: 30-70% reduction
    - Complexity: Interval tree algorithm
-   - Question: Worth implementing now vs v0.32.0?
+   - Question: Worth implementing now vs v0.32.6?
 
 3. **Error Handling (Feeds)**
    - If feed download fails mid-sync:
@@ -1069,7 +1069,7 @@ ps aux | grep nftban-feeds | awk '{print $6}'
 - Implemented, tested, and working on lab2
 - 5-10x faster than bash alternative
 - Atomic, safe, zero-downtime
-- Ready for v0.32.0 release
+- Ready for v0.32.6 release
 
 **Feeds: Design Complete, Ready to Code ⏳**
 - Architecture proven (same as GeoBan)

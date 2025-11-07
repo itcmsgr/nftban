@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.31.0 - Project Health Check Script
+# NFTBan v0.32.6 - Project Health Check Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Description: Validates code quality, documentation, structure, and security
@@ -355,7 +355,7 @@ generate_status_md() {
 
 **Status:** $status_emoji $status_text
 **Last Updated:** $TIMESTAMP
-**Version:** v0.31.0
+**Version:** v0.32.6
 
 ---
 
@@ -452,7 +452,7 @@ EOF
 main() {
     echo ""
     log_info "=================================================================="
-    log_info "NFTBan v0.31.0 - Project Health Check"
+    log_info "NFTBan v0.32.6 - Project Health Check"
     log_info "=================================================================="
     echo ""
 

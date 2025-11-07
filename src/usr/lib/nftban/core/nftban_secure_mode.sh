@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.0 - Secure Mode Directive
+# NFTBan v0.32.6 - Secure Mode Directive
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Generic security wrapper - source this to enable automatic security
@@ -8,7 +8,7 @@
 # meta:name=nftban_secure_mode
 # meta:type=core
 # meta:header=Secure Mode Directive
-# meta:version=0.32.0
+# meta:version=0.32.6
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

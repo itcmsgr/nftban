@@ -28,7 +28,7 @@ nftban (0.32.0-1) stable; urgency=critical
   * FIX: GitHub Actions glibc version mismatch in RPM builds
   * DOCS: Updated README with BETA WARNING (not production-ready)
   * ENHANCEMENT: Feeds now auto-discovered from config (no hardcoding)
-  * ENHANCEMENT: All version references aligned to v0.32.0
+  * ENHANCEMENT: All version references aligned to v0.32.6
 
  -- Antonios Voulvoulis <contact@nftban.com>  Wed, 06 Nov 2025 14:00:00 +0200
 
@@ -49,7 +49,7 @@ nftban (0.30.1-1) stable; urgency=critical
 
 nftban (0.30.0-1) stable; urgency=medium
 
-  * Major upgrade to v0.30.0 with inventory monitoring
+  * Major upgrade to v0.32.6 with inventory monitoring
   * Add advanced inventory system (processes, packages, firewall state)
   * Add baseline management with drift detection
   * Add system resource monitoring (disk, CPU, RAM, swap, inodes)

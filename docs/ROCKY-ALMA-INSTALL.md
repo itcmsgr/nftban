@@ -331,7 +331,7 @@ dnf repolist enabled
 
 **Expected output:**
 ```
-NFTBan v0.32.5
+NFTBan v0.32.6
 ✅ All health checks passed
 fail2ban-server-1.1.0-6.el9.noarch
 go version go1.21.0 linux/amd64
