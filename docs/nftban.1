@@ -400,6 +400,9 @@ Go binary settings (CPU/RAM limits, safety thresholds)
 .TP
 .I mail.conf
 Email notification settings
+.TP
+.I banner.conf
+Banner display and update check settings
 .RE
 
 .TP
@@ -412,6 +415,74 @@ Whitelisted countries (never blocked)
 .TP
 .I 50-ban-*.conf
 Banned countries (all IPs blocked)
+.RE
+
+.SS Update Notifications
+NFTBan can automatically check for new versions and display a notification banner when updates are available.
+
+.TP
+.B How It Works
+.RS
+.TP
+• Checks GitHub API for latest release (github.com/itcmsgr/nftban)
+.TP
+• Runs once per 24 hours (configurable cache TTL)
+.TP
+• 3-second timeout to prevent blocking if GitHub is unreachable
+.TP
+• Compares semantic versions (X.Y.Z)
+.TP
+• Shows yellow notification box in banner when update available
+.TP
+• Disabled by default for privacy (no automatic network calls)
+.RE
+
+.TP
+.B Enable Update Check
+Edit /etc/nftban/conf.d/banner.conf and set:
+.RS
+.B NFTBAN_BANNER_UPDATE_CHECK="true"
+.RE
+
+.TP
+.B Configuration Options
+.RS
+.TP
+.B NFTBAN_BANNER_UPDATE_CHECK
+Enable/disable update checking (default: false)
+.TP
+.B NFTBAN_REPO
+GitHub repository for update check (default: "itcmsgr/nftban")
+.TP
+.B NFTBAN_UPDATE_TTL
+Cache duration in seconds (default: 86400 = 24 hours)
+.RE
+
+.TP
+.B Example Notification
+When a new version is available, users see:
+.RS
+.nf
+╭────────────────────────────────────────────────────────────╮
+│  📦 Update Available: v0.33.0                              │
+│  Current: v0.32.6                                          │
+│  Download: github.com/itcmsgr/nftban/releases             │
+╰────────────────────────────────────────────────────────────╯
+.fi
+.RE
+
+.TP
+.B Privacy & Performance
+.RS
+• Disabled by default - no automatic network calls
+.TP
+• When enabled, checks only once per 24 hours
+.TP
+• 3-second timeout prevents CLI delays
+.TP
+• Results cached in /var/cache/nftban/update_check
+.TP
+• Non-blocking - CLI works even if GitHub unreachable
 .RE
 
 .SH FILES
