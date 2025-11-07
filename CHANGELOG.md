@@ -7,6 +7,74 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [0.32.6] - 2025-11-07
+
+### Added
+- **Fail2ban Health-Fix System:** Comprehensive jail health checking and auto-fix
+  - `nftban fail2ban health-fix` command with full diagnostics
+  - Service detection before enabling jails (checks for 12 different services)
+  - Requirements checking: service installed, log file exists, configuration valid
+  - Automatic disabling of problematic jails (never auto-enables)
+  - Report generation with `--save-report` option (saves to `/var/log/nftban/reports/`)
+  - Email reporting with `--mail` option (HTML-formatted reports)
+  - Support for 12 NFTBan jail types: sshd, directadmin, exim, dovecot, postfix, proftpd, vsftpd, apache, nginx, wordpress, named, asterisk
+
+- **Health Check Integration:** Daily monitoring for fail2ban jails
+  - `nftban_health_check_fail2ban_jails()` function in health module
+  - Reports problematic jails without modifying configs
+  - Integrates with existing health check system
+  - Provides warnings for missing services or log files
+
+- **Autoheal Integration:** Automatic jail problem detection
+  - Runs during installation and system maintenance
+  - Automatically disables jails that crash fail2ban
+  - Protects fail2ban service from problematic configurations
+  - Silent mode with detailed logging
+
+- **Interactive Menu:** Fail2ban health-fix in TUI menu
+  - Added to `nftban menu` interactive interface
+  - Requires root privileges with automatic checking
+  - Integrated into fail2ban management screen
+
+### Changed
+- **Report Location:** Standardized diagnostic reports to `/var/log/nftban/reports/`
+  - FHS-compliant location for operational/diagnostic reports
+  - Separate from HTML state reports in `/var/lib/nftban/reports/`
+  - Proper permissions for nftban-auditors group access
+
+### Fixed
+- **Report Output:** Fixed SSH session compatibility
+  - Changed from `/dev/tty` redirection to temporary file approach
+  - Prevents "No such device or address" errors in SSH sessions
+  - Proper output capture for --save-report and --mail options
+
+- **Argument Passing:** Fixed CLI wrapper argument forwarding
+  - Added `"$@"` to pass all arguments through CLI handlers
+  - Ensures --save-report and --mail options work correctly
+
+- **Shell Options:** Protected health-fix from `set -e` early exit
+  - Wrapped function with option saving/restoring
+  - Prevents function exit when checks return non-zero
+  - Maintains proper error handling without breaking parent scripts
+
+- **Awk Exit Codes:** Fixed autoheal awk command compatibility
+  - Changed from conditional exit to output capture
+  - Prevents script termination with `set -e` enabled
+  - More robust jail status checking
+
+### Documentation
+- **Man Page:** Complete fail2ban section added to nftban.1
+  - health-fix command documentation
+  - --save-report and --mail options explained
+  - Examples and usage patterns
+
+- **Bash Completion:** Updated for all fail2ban commands
+  - Added health-fix command completion
+  - Added --save-report and --mail option completion
+  - Integrated with existing completion system
+
+---
+
 ## [0.32.3] - 2025-11-07
 
 ### Fixed
