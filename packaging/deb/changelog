@@ -1,3 +1,20 @@
+nftban (0.32.6-1) stable; urgency=medium
+
+  * NEW: Fail2ban health-fix command with comprehensive jail checking
+  * NEW: Automated service detection before enabling jails (12 jail types)
+  * NEW: Health check integration for fail2ban jails in daily checks
+  * NEW: Autoheal integration to auto-disable problematic jails
+  * NEW: Report generation with --save-report and --mail options
+  * NEW: Interactive TUI menu integration for fail2ban health-fix
+  * ENHANCEMENT: Bash completion for all fail2ban commands
+  * ENHANCEMENT: Comprehensive service/log file checks before jail enable
+  * DOCS: Complete man page section for fail2ban integration
+  * FIX: Report location standardized to /var/log/nftban/reports/
+  * FIX: SSH session compatibility for report output capture
+  * FEATURE: Only disables crashing jails, never auto-enables
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Thu, 07 Nov 2025 18:00:00 +0200
+
 nftban (0.32.0-1) stable; urgency=critical
 
   * CRITICAL FIX: Single source of truth for feeds (removed hardcoded Go URLs)

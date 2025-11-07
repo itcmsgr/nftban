@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.5
+Version:        0.32.6
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
