@@ -226,6 +226,116 @@ log_info "Running automated fixes..."
 /usr/sbin/nftban health check --auto-heal >/dev/null 2>&1 || true
 
 # =============================================================================
+# Fix conflicting fail2ban jails (only NFTBan jails should be enabled)
+# =============================================================================
+log_info "Checking fail2ban jail configuration..."
+
+JAIL_LOCAL="/etc/fail2ban/jail.local"
+if [ -f "$JAIL_LOCAL" ]; then
+    # Check if standard jails are enabled (sshd, exim, directadmin, dovecot, etc.)
+    CONFLICTS_FOUND=false
+
+    # List of standard jail names that conflict with nftban- prefixed jails
+    CONFLICTING_JAILS=(
+        "sshd"
+        "exim"
+        "exim-spam"
+        "directadmin"
+        "dovecot"
+        "pure-ftpd"
+        "roundcube"
+        "roundcube-auth"
+        "modsecurity"
+        "apache-scan"
+        "wp-login"
+        "xmlrpc"
+        "apache-xmlrpc"
+        "apache-wp-login"
+    )
+
+    for jail in "${CONFLICTING_JAILS[@]}"; do
+        # Check if this jail is enabled in jail.local
+        if grep -qE "^\s*\[$jail\]\s*$" "$JAIL_LOCAL" 2>/dev/null; then
+            # Check if enabled = true within this jail section
+            JAIL_ENABLED=$(awk -v jail="$jail" '
+                /^\s*\[.*\]\s*$/ { current_jail = gensub(/^\s*\[(.*)\]\s*$/, "\\1", "g", $0) }
+                current_jail == jail && /^\s*enabled\s*=\s*true/ { print "YES"; found=1 }
+                END { if (!found) print "NO" }
+            ' "$JAIL_LOCAL" 2>/dev/null)
+
+            if [ "$JAIL_ENABLED" = "YES" ]; then
+                CONFLICTS_FOUND=true
+                log_warn "Found conflicting jail enabled: [$jail]"
+            fi
+        fi
+    done
+
+    # If conflicts found, disable them
+    if [ "$CONFLICTS_FOUND" = true ]; then
+        log_warn "Disabling conflicting fail2ban jails (NFTBan manages nftban-* jails only)"
+
+        # Backup jail.local first
+        cp "$JAIL_LOCAL" "${JAIL_LOCAL}.backup-$(date +%Y%m%d-%H%M%S)"
+
+        # Disable all conflicting jails by changing enabled = true to enabled = false
+        for jail in "${CONFLICTING_JAILS[@]}"; do
+            # Use awk to disable enabled=true only within matching jail sections
+            awk -v jail="$jail" '
+                /^\s*\[.*\]\s*$/ {
+                    current_jail = gensub(/^\s*\[(.*)\]\s*$/, "\\1", "g", $0)
+                }
+                current_jail == jail && /^\s*enabled\s*=\s*true/ {
+                    sub(/enabled\s*=\s*true/, "enabled = false  # Disabled by NFTBan autoheal - use nftban-" jail " instead")
+                    print
+                    next
+                }
+                { print }
+            ' "$JAIL_LOCAL" > "${JAIL_LOCAL}.tmp"
+
+            mv "${JAIL_LOCAL}.tmp" "$JAIL_LOCAL"
+        done
+
+        log_info "✅ Disabled conflicting jails in $JAIL_LOCAL"
+        log_info "   Backup saved: ${JAIL_LOCAL}.backup-*"
+        log_info "   Use NFTBan jails: nftban-sshd, nftban-exim, nftban-directadmin, etc."
+
+        # Restart fail2ban if running to apply changes
+        if systemctl is-active --quiet fail2ban 2>/dev/null; then
+            log_info "Restarting fail2ban to apply changes..."
+            systemctl restart fail2ban 2>/dev/null || log_warn "Failed to restart fail2ban"
+        fi
+    else
+        log_info "✅ No conflicting fail2ban jails found"
+    fi
+else
+    log_info "No /etc/fail2ban/jail.local found (using jail.d configs only - correct)"
+fi
+
+# =============================================================================
+# Auto-fix fail2ban jail problems (disable jails that crash fail2ban)
+# =============================================================================
+log_info "Checking fail2ban jail configurations..."
+
+if command -v fail2ban-client &>/dev/null && systemctl is-active --quiet fail2ban 2>/dev/null; then
+    # Fail2ban is installed and running - check for problematic jails
+    if command -v /usr/sbin/nftban &>/dev/null; then
+        # Run health-fix in silent mode (only disable problematic jails)
+        JAIL_FIX_OUTPUT=$(/usr/sbin/nftban fail2ban health-fix 2>&1 || true)
+
+        # Check if any jails were disabled
+        if echo "$JAIL_FIX_OUTPUT" | grep -q "Jails disabled by fix:.*[1-9]"; then
+            DISABLED_COUNT=$(echo "$JAIL_FIX_OUTPUT" | grep -oP "Jails disabled by fix:\s+\K\d+" || echo "0")
+            log_warn "Disabled $DISABLED_COUNT problematic fail2ban jails to prevent crashes"
+            log_info "Run 'nftban fail2ban health-fix' to see detailed report"
+        else
+            log_info "✅ All enabled fail2ban jails are healthy"
+        fi
+    fi
+else
+    log_info "Fail2ban not running - skipping jail health check"
+fi
+
+# =============================================================================
 # Run final health check - only report real errors, not warnings
 # =============================================================================
 HEALTH_OUTPUT=$(/usr/sbin/nftban health check 2>&1 || true)

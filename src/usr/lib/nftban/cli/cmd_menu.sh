@@ -406,12 +406,14 @@ screen_fail2ban() {
         jails "List enabled jails" \
         available "List available jails" \
         banned "List banned IPs" \
+        health-fix "Health check & auto-fix" \
         back "Back")" || return
     case "$choice" in
         status) run_cmd "F2B Status" nftban fail2ban status ;;
         jails) run_cmd "F2B Jails" nftban fail2ban jails ;;
         available) run_cmd "F2B Available Jails" nftban fail2ban available ;;
         banned) run_cmd "F2B Banned" nftban fail2ban banned ;;
+        health-fix) require_root && run_cmd "F2B Health Fix" nftban fail2ban health-fix ;;
         back) ;;
     esac
 }
