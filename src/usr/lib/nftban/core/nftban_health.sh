@@ -563,7 +563,7 @@ nftban_health_check_resources() {
     fi
 
     NFTBAN_HEALTH_RESULTS["resources"]=$status
-    return $status
+    return "$status"
 }
 
 # =============================================================================
@@ -645,7 +645,7 @@ nftban_health_check_v030_helpers() {
     fi
 
     NFTBAN_HEALTH_RESULTS["v030_helpers"]=$status
-    return $status
+    return "$status"
 }
 
 # =============================================================================
@@ -719,7 +719,7 @@ nftban_health_check_geoip() {
     fi
 
     NFTBAN_HEALTH_RESULTS["geoip"]=$status
-    return $status
+    return "$status"
 }
 
 # =============================================================================
@@ -754,7 +754,7 @@ nftban_health_check_databases() {
     fi
 
     NFTBAN_HEALTH_RESULTS["databases"]=$status
-    return $status
+    return "$status"
 }
 
 # =============================================================================
@@ -780,6 +780,7 @@ nftban_health_check_config() {
         # Try to source config files (in subshell)
         for conf_file in "$config_dir"/*.conf; do
             if [[ -f "$conf_file" ]]; then
+                # shellcheck disable=SC1090  # Dynamic source for config validation
                 if ! (source "$conf_file") 2>/dev/null; then
                     config_issues+=("Config has syntax errors: $(basename "$conf_file")")
                     status=$HEALTH_ERROR
@@ -795,11 +796,13 @@ nftban_health_check_config() {
         [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
     else
         # Verify system.conf is readable and has valid syntax
+        # shellcheck disable=SC1090  # Dynamic source for config validation
         if ! (source "$system_conf") 2>/dev/null; then
             config_issues+=("System config has syntax errors: $system_conf")
             status=$HEALTH_ERROR
         else
             # Verify UID/GID values match actual system
+            # shellcheck disable=SC1090  # Dynamic source for config validation
             source "$system_conf" 2>/dev/null
             local actual_uid actual_gid actual_cli_gid actual_auditors_gid
             actual_uid=$(id -u nftban 2>/dev/null || echo "MISSING")
