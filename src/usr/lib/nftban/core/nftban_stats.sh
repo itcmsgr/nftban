@@ -536,17 +536,53 @@ nftban_stats_generate_dashboard() {
     echo ""
 
     # Summary metrics
-    echo "[FIREWALL STATUS]"
+    echo "[FIREWALL STATUS - RIGHT NOW]"
     echo "  🛡️  IPs Currently Blocked: ${active_bans}"
     echo "  ✅  IPs Whitelisted (allowed): ${whitelist_count}"
     echo ""
-    echo "[BAN HISTORY - ${since} to ${until}]"
-    echo "  New Bans Added: ${total_bans}"
-    echo "  Unique IPs Banned: ${unique_ips}"
+
+    # Current breakdown - where blocked IPs are from
+    echo "[CURRENT PROTECTION BREAKDOWN]"
+    local temp_v4=0 temp_v6=0 black_v4=0 black_v6=0 feed_v4=0 feed_v6=0
+
+    # Count each category
+    if nft list set inet nftban_runtime temp_ban_v4 &>/dev/null 2>&1; then
+        temp_v4=$(nft list set inet nftban_runtime temp_ban_v4 2>/dev/null | grep -c 'timeout' 2>/dev/null || echo "0")
+    fi
+    if nft list set inet nftban_runtime temp_ban_v6 &>/dev/null 2>&1; then
+        temp_v6=$(nft list set inet nftban_runtime temp_ban_v6 2>/dev/null | grep -c 'timeout' 2>/dev/null || echo "0")
+    fi
+    if nft list set inet nftban_main blacklist_v4 &>/dev/null 2>&1; then
+        black_v4=$(nft list set inet nftban_main blacklist_v4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | wc -l 2>/dev/null || echo "0")
+    fi
+    if nft list set inet nftban_main blacklist_v6 &>/dev/null 2>&1; then
+        black_v6=$(nft list set inet nftban_main blacklist_v6 2>/dev/null | grep -c '::' 2>/dev/null || echo "0")
+    fi
+    if nft list set inet nftban_main feed_v4 &>/dev/null 2>&1; then
+        feed_v4=$(nft list set inet nftban_main feed_v4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | wc -l 2>/dev/null || echo "0")
+    fi
+    if nft list set inet nftban_main feed_v6 &>/dev/null 2>&1; then
+        feed_v6=$(nft list set inet nftban_main feed_v6 2>/dev/null | grep -c '::' 2>/dev/null || echo "0")
+    fi
+
+    local total_temp=$((temp_v4 + temp_v6))
+    local total_black=$((black_v4 + black_v6))
+    local total_feeds=$((feed_v4 + feed_v6))
+
+    echo "  Threat Feeds:          ${total_feeds} IPs (automated blocking)"
+    echo "  Fail2ban Temp Bans:    ${total_temp} IPs (active jail bans)"
+    echo "  Manual Blacklist:      ${total_black} IPs (permanently blocked)"
+    echo "  ────────────────────────────────────"
+    echo "  Total Protected:       ${active_bans} IPs"
     echo ""
 
-    # Ban sources (with helpful note if all zeros)
-    echo "[WHERE ARE BANS COMING FROM?]"
+    echo "[ACTIVITY HISTORY - ${since} to ${until}]"
+    echo "  New Bans Added (period): ${total_bans}"
+    echo "  Unique IPs Banned:       ${unique_ips}"
+    echo ""
+
+    # Ban sources for the time period (historical)
+    echo "[NEW BANS IN TIME PERIOD - Source Breakdown]"
     local sources
     sources=$(nftban_stats_ban_sources "$since" "$until")
     if command -v jq &>/dev/null; then
@@ -554,16 +590,16 @@ nftban_stats_generate_dashboard() {
         fail2ban=$(echo "$sources" | jq -r '.fail2ban')
         manual=$(echo "$sources" | jq -r '.manual')
         feeds=$(echo "$sources" | jq -r '.feeds')
-        echo "  Fail2Ban detected attacks: ${fail2ban}"
-        echo "  Manual bans (you added): ${manual}"
-        echo "  Threat feed bans: ${feeds}"
+        echo "  Fail2Ban detections: ${fail2ban}"
+        echo "  Manual bans added:   ${manual}"
+        echo "  Feed updates:        ${feeds}"
 
         # Add helpful note if everything is zero
         if [[ "$fail2ban" == "0" ]] && [[ "$manual" == "0" ]] && [[ "$feeds" == "0" ]]; then
             echo ""
-            echo "  ℹ️  No attacks detected in this time period."
+            echo "  ℹ️  No new attacks detected in this time period."
             echo "     Your firewall IS working! Threat feeds are blocking known bad IPs."
-            echo "     Check 'IPs Currently Blocked' above to see protection status."
+            echo "     Check 'Current Protection Breakdown' above for active protection."
         fi
     fi
     echo ""
@@ -623,19 +659,40 @@ nftban_stats_generate_dashboard() {
         echo ""
     fi
 
-    # Top jails
-    echo "[TOP JAILS]"
+    # Top jails (historical)
+    echo "[TOP JAILS - Most Active in Period]"
     if command -v jq &>/dev/null; then
-        nftban_stats_top_jails 5 "$since" "$until" | \
-            jq -r '.[] | "  \(.name): \(.count)"' 2>/dev/null || echo "  (jq not available)"
+        local top_jails
+        top_jails=$(nftban_stats_top_jails 5 "$since" "$until")
+        if [[ "$top_jails" == "[]" ]] || [[ -z "$top_jails" ]]; then
+            echo "  (no jail bans in this time period)"
+        else
+            echo "$top_jails" | jq -r '.[] | "  \(.name): \(.count) bans"' 2>/dev/null
+        fi
     fi
     echo ""
 
-    # Top IPs
-    echo "[TOP BANNED IPs]"
+    # Top IPs (historical + currently active)
+    echo "[TOP BANNED IPs - Most Frequent in Period]"
     if command -v jq &>/dev/null; then
-        nftban_stats_top_ips 5 "$since" "$until" | \
-            jq -r '.[] | "  \(.ip) (\(.country)): \(.count) bans"' 2>/dev/null || echo "  (jq not available)"
+        local top_ips
+        top_ips=$(nftban_stats_top_ips 5 "$since" "$until")
+        if [[ "$top_ips" == "[]" ]] || [[ -z "$top_ips" ]]; then
+            echo "  (no bans in this time period)"
+
+            # Show currently banned IPs instead
+            if [[ $total_temp -gt 0 ]]; then
+                echo ""
+                echo "  Currently Active Fail2ban Bans:"
+                if nft list set inet nftban_runtime temp_ban_v4 &>/dev/null 2>&1; then
+                    nft list set inet nftban_runtime temp_ban_v4 2>/dev/null | \
+                        grep -oP '\d+\.\d+\.\d+\.\d+' | head -5 | \
+                        awk '{print "    " $1 " (temporary)"}'
+                fi
+            fi
+        else
+            echo "$top_ips" | jq -r '.[] | "  \(.ip) (\(.country)): \(.count) bans"' 2>/dev/null
+        fi
     fi
     echo ""
 
