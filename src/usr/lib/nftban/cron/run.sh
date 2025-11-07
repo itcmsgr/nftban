@@ -35,8 +35,11 @@ readonly GEOIP_LOCKFILE="/var/lib/nftban/.geoip_updated_this_week"
 # =============================================================================
 
 _should_update_geoip() {
-    local current_day=$(date +%u)  # 1=Monday, 7=Sunday
-    local current_hour=$(date +%H)
+    # SC2155: Declare and assign separately
+    local current_day
+    current_day=$(date +%u)  # 1=Monday, 7=Sunday
+    local current_hour
+    current_hour=$(date +%H)
 
     # Convert Sunday from 7 to 0 for easier comparison
     [[ "$current_day" == "7" ]] && current_day="0"

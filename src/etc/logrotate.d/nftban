@@ -1,3 +1,5 @@
+# shellcheck disable=SC2148,SC1083,SC2211,SC1089
+# NOTE: This is a logrotate configuration file, not a shell script
 /var/log/nftban/*.log {
     daily
     rotate 14
