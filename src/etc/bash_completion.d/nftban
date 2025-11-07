@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 # =============================================================================
 # NFTBan v0.30.0 - Bash Completion
 # =============================================================================
@@ -17,7 +18,10 @@
 # auto-discovery of commands/subcommands from the CLI modules.
 
 _nftban_complete() {
-    local cur prev words cword
+    local cur
+    # SC2034: These are set by _init_completion but might be unused
+    # shellcheck disable=SC2034
+    local prev words cword
     _init_completion -n : || return
 
     # Build array of words after 'nftban' (what the CLI expects)
@@ -29,6 +33,8 @@ _nftban_complete() {
     # Call the CLI's built-in completion endpoint
     local suggestions
     if suggestions="$(nftban __complete "${args[@]}" 2>/dev/null)"; then
+        # SC2207: bash_completion framework expects this pattern
+        # shellcheck disable=SC2207
         COMPREPLY=( $(compgen -W "$suggestions" -- "$cur") )
     else
         COMPREPLY=()

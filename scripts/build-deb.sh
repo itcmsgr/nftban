@@ -20,14 +20,19 @@ umask 027
 # =============================================================================
 # CONSTANTS
 # =============================================================================
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# SC2155: Declare and assign separately to avoid masking return values
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+readonly PROJECT_ROOT
 readonly BUILD_DIR="$PROJECT_ROOT/dist/build/deb"
 readonly PACKAGE_DIR="$PROJECT_ROOT/dist/packages"
 
 # Read version from VERSION file (single source of truth)
 if [[ -f "${PROJECT_ROOT}/VERSION" ]]; then
-    readonly VERSION="$(cat "${PROJECT_ROOT}/VERSION" | tr -d '[:space:]')"
+    # SC2002: Avoid useless cat
+    VERSION="$(tr -d '[:space:]' < "${PROJECT_ROOT}/VERSION")"
+    readonly VERSION
 else
     echo "ERROR: VERSION file not found"
     exit 1

@@ -10,12 +10,13 @@
 set -Eeuo pipefail
 
 # Colors
-RED='\033[0;31m'
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-NC='\033[0m'
+# RED unused - removed for ShellCheck
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly NC='\033[0m'
 
 # Detect version
+# shellcheck source=/dev/null
 source /etc/os-release
 VER=${VERSION_ID%%.*}
 
@@ -25,7 +26,7 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # Determine correct repo names
-if [ "$VER" -ge 9 ]; then
+if [[ "$VER" -ge 9 ]]; then
     CRB_NAME="crb"
 else
     CRB_NAME="powertools"
@@ -61,11 +62,12 @@ for repo in epel-testing epel-modular epel-next epel-next-testing; do
     if dnf repolist enabled 2>/dev/null | grep -q "$repo"; then
         dnf config-manager --set-disabled "$repo" 2>/dev/null || true
         echo "  Disabled: $repo"
-        ((DISABLED_COUNT++))
+        # BUG-001: Safe arithmetic - do not use ((DISABLED_COUNT++)) with set -e
+        DISABLED_COUNT=$((DISABLED_COUNT + 1))
     fi
 done
 
-if [ $DISABLED_COUNT -eq 0 ]; then
+if [[ $DISABLED_COUNT -eq 0 ]]; then
     echo "✓ No conflicting repos found"
 else
     echo -e "${GREEN}✓ Disabled $DISABLED_COUNT conflicting repos${NC}"
@@ -74,7 +76,7 @@ echo ""
 
 echo "Step 5: Remove manual Go installations (if any)"
 echo "------------------------------------------------"
-if [ -d /usr/local/go ]; then
+if [[ -d /usr/local/go ]]; then
     echo -e "${YELLOW}⚠️  Found manual Go installation at /usr/local/go${NC}"
     echo "   This conflicts with distro golang package."
     rm -rf /usr/local/go
