@@ -121,6 +121,7 @@ nftban_complete() {
         echo "fhs"
         echo "nftables"
         echo "geoip"
+        echo "geoban"
         echo "mail"
         # UI
         echo "menu"
@@ -178,11 +179,17 @@ nftban_complete() {
                 echo "test"
                 echo "update"
                 echo "config"
+                echo "help"
+                ;;
+            geoban)
                 echo "ban"
                 echo "unban"
                 echo "whitelist"
                 echo "unwhitelist"
                 echo "list"
+                echo "status"
+                echo "update"
+                echo "config"
                 echo "refresh"
                 echo "help"
                 ;;
