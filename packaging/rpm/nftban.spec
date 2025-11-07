@@ -279,16 +279,27 @@ install -m 0644 CONTRIBUTING.md %{buildroot}/usr/share/nftban/docs/
 
 %pre
 # =============================================================================
-# STEP A: CHECK repositories are enabled (don't try to enable them)
+# NFTBan Pre-Installation Checks for Rocky/AlmaLinux/CentOS
 # =============================================================================
-# This avoids hanging on dnf commands during %pre execution.
-# Users must enable repos BEFORE installing if on Rocky/Alma/CentOS.
+# Philosophy: We check what WE NEED. If YOUR repos have conflicts, fix them.
+# We don't manage vendor repositories - that's the user's responsibility.
+#
+# What NFTBan requires:
+#   - nftables, systemd, bash, fail2ban-server, golang (for building Go binaries)
+#   - On Rocky/Alma: EPEL + CRB/PowerTools repos (for fail2ban and dependencies)
+#
+# Common problems we detect:
+#   - Missing EPEL or CRB/PowerTools repos
+#   - Conflicting testing repos (epel-testing, epel-modular, epel-next)
+#   - Conflicting golang installs (/usr/local/go vs distro golang)
+#   - Package version mismatches (fixed with: dnf distro-sync)
+# =============================================================================
 
 # Only run on fresh install (not upgrade)
 if [ $1 -eq 1 ]; then
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "NFTBan Pre-Installation: Checking repositories..."
+    echo "NFTBan Pre-Installation: System Requirements Check"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
@@ -307,89 +318,95 @@ if [ $1 -eq 1 ]; then
 
     # Check repos based on OS
     case "${OS_ID}" in
-        almalinux|rocky)
-            # Rocky/AlmaLinux 9+: need EPEL + CRB
-            # Rocky/AlmaLinux 8: need EPEL + PowerTools
+        almalinux|rocky|centos)
+            # Rocky/AlmaLinux/CentOS require EPEL + CRB/PowerTools
+            echo "Checking required repositories..."
+            echo ""
+
+            PROBLEMS_FOUND=false
+            FIX_COMMANDS=""
 
             # Check EPEL
-            if ! dnf repolist enabled 2>/dev/null | grep -q epel; then
-                echo "❌ ERROR: EPEL repository is NOT enabled"
-                echo ""
-                echo "NFTBan requires fail2ban, which is only available in EPEL."
-                echo ""
-                echo "Please enable EPEL and CRB repositories first:"
-                echo ""
-                echo "  sudo dnf install -y epel-release"
-                if [ "$OS_VERSION_ID" -ge 9 ]; then
-                    echo "  sudo dnf config-manager --set-enabled crb"
-                else
-                    echo "  sudo dnf config-manager --set-enabled powertools"
-                fi
-                echo ""
-                echo "Then retry: sudo dnf install -y nftban-x86_64.rpm"
-                echo ""
-                exit 1
+            if ! dnf repolist enabled 2>/dev/null | grep -q 'epel[^-]'; then
+                echo "❌ EPEL repository: NOT enabled"
+                PROBLEMS_FOUND=true
+                FIX_COMMANDS="${FIX_COMMANDS}sudo dnf install -y epel-release\n"
+            else
+                echo "✓ EPEL repository: enabled"
             fi
 
             # Check CRB/PowerTools
-            if ! dnf repolist enabled 2>/dev/null | grep -qE 'crb|powertools'; then
-                echo "❌ ERROR: CRB/PowerTools repository is NOT enabled"
-                echo ""
-                echo "NFTBan requires fail2ban dependencies from CRB/PowerTools."
-                echo ""
-                if [ "$OS_VERSION_ID" -ge 9 ]; then
-                    echo "Please enable CRB repository:"
-                    echo ""
-                    echo "  sudo dnf config-manager --set-enabled crb"
-                else
-                    echo "Please enable PowerTools repository:"
-                    echo ""
-                    echo "  sudo dnf config-manager --set-enabled powertools"
+            if [ "$OS_VERSION_ID" -ge 9 ]; then
+                CRB_NAME="crb"
+            else
+                CRB_NAME="powertools"
+            fi
+
+            if ! dnf repolist enabled 2>/dev/null | grep -qE "${CRB_NAME}"; then
+                echo "❌ ${CRB_NAME} repository: NOT enabled"
+                PROBLEMS_FOUND=true
+                FIX_COMMANDS="${FIX_COMMANDS}sudo dnf config-manager --set-enabled ${CRB_NAME}\n"
+            else
+                echo "✓ ${CRB_NAME} repository: enabled"
+            fi
+
+            # Check for risky/conflicting repos
+            RISKY_REPOS=""
+            for repo in epel-testing epel-modular epel-next epel-next-testing; do
+                if dnf repolist enabled 2>/dev/null | grep -q "$repo"; then
+                    RISKY_REPOS="${RISKY_REPOS}${repo} "
                 fi
+            done
+
+            if [ -n "$RISKY_REPOS" ]; then
+                echo "⚠️  WARNING: Conflicting repos enabled: ${RISKY_REPOS}"
+                echo "   These repos can cause package conflicts with EPEL"
+                PROBLEMS_FOUND=true
+                FIX_COMMANDS="${FIX_COMMANDS}sudo dnf config-manager --set-disabled ${RISKY_REPOS}\n"
+            fi
+
+            # Check for conflicting golang installations
+            if [ -d /usr/local/go ]; then
+                echo "⚠️  WARNING: Manual Go installation detected at /usr/local/go"
+                echo "   This conflicts with distro golang package (required for building)"
+                echo "   Recommendation: Remove /usr/local/go and use distro golang"
+                PROBLEMS_FOUND=true
+                FIX_COMMANDS="${FIX_COMMANDS}sudo rm -rf /usr/local/go\n"
+            fi
+
+            echo ""
+
+            # If problems found, show fix commands and exit
+            if [ "$PROBLEMS_FOUND" = true ]; then
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "❌ System Not Ready for NFTBan Installation"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
                 echo ""
-                echo "Then retry: sudo dnf install -y nftban-x86_64.rpm"
+                echo "NFTBan requires:"
+                echo "  • EPEL repository (for fail2ban)"
+                echo "  • CRB/PowerTools repository (for fail2ban dependencies)"
+                echo "  • No conflicting testing repos"
+                echo "  • No conflicting golang installations"
+                echo ""
+                echo "These are YOUR repository requirements, not ours."
+                echo "Repository management is your responsibility."
+                echo ""
+                echo "Run these commands to fix your system:"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "sudo dnf clean all"
+                echo -e "${FIX_COMMANDS}"
+                echo "sudo dnf distro-sync -y"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo ""
+                echo "After running these commands, retry:"
+                echo "  sudo dnf install -y nftban-x86_64.rpm"
+                echo ""
+                echo "For more help, see: https://github.com/itcmsgr/nftban/docs"
                 echo ""
                 exit 1
             fi
 
-            echo "✓ EPEL and CRB/PowerTools repositories are enabled"
-            echo "✓ Proceeding with installation..."
-            ;;
-
-        centos)
-            # CentOS - same as Rocky/Alma
-            if ! dnf repolist enabled 2>/dev/null | grep -q epel; then
-                echo "❌ ERROR: EPEL repository is NOT enabled"
-                echo ""
-                echo "Please enable EPEL and PowerTools:"
-                echo ""
-                echo "  sudo dnf install -y epel-release"
-                if [ "$OS_VERSION_ID" -ge 9 ]; then
-                    echo "  sudo dnf config-manager --set-enabled crb"
-                else
-                    echo "  sudo dnf config-manager --set-enabled powertools"
-                fi
-                echo ""
-                echo "Then retry: sudo dnf install -y nftban-x86_64.rpm"
-                echo ""
-                exit 1
-            fi
-
-            if ! dnf repolist enabled 2>/dev/null | grep -qE 'crb|powertools'; then
-                echo "❌ ERROR: CRB/PowerTools repository is NOT enabled"
-                echo ""
-                if [ "$OS_VERSION_ID" -ge 9 ]; then
-                    echo "  sudo dnf config-manager --set-enabled crb"
-                else
-                    echo "  sudo dnf config-manager --set-enabled powertools"
-                fi
-                echo ""
-                echo "Then retry: sudo dnf install -y nftban-x86_64.rpm"
-                echo ""
-                exit 1
-            fi
-
-            echo "✓ EPEL and CRB/PowerTools repositories are enabled"
+            echo "✓ All required repositories configured correctly"
             echo "✓ Proceeding with installation..."
             ;;
 
