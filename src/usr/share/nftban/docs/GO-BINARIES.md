@@ -1,6 +1,6 @@
 # NFTBan Go Binaries - Complete Architecture & Build Guide
 
-**Version:** v0.30.0
+**Version:** v0.32.6
 **Purpose:** Documentation for Go binary architecture, building, and deployment
 **Last Updated:** 2025-10-30
 
@@ -390,7 +390,7 @@ Each release includes:
 ```bash
 # After building
 ./dist/x86_64/nftban-feeds --version
-# Expected: nftban-feeds v0.30.0
+# Expected: nftban-feeds v0.32.6
 
 # Test feed processing
 echo "192.0.2.1" > /tmp/test-feed.txt
@@ -409,7 +409,7 @@ cat /tmp/processed.txt
 ```bash
 # After building
 ./dist/x86_64/nftban-geoip --version
-# Expected: nftban-geoip v0.30.0
+# Expected: nftban-geoip v0.32.6
 
 # Test GeoIP lookup (requires GeoLite2 database)
 ./dist/x86_64/nftban-geoip \

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.0 - GeoIP CLI Handler
+# NFTBan v0.32.6 - GeoIP CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for GO GeoIP lookups
@@ -8,7 +8,7 @@
 # meta:name=cmd_geoip
 # meta:type=cli
 # meta:header=GeoIP CLI Handler
-# meta:version=0.32.0
+# meta:version=0.32.6
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

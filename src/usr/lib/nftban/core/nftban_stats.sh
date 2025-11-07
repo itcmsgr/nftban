@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.0 - Statistics & Metrics Core Engine
+# NFTBan v0.32.6 - Statistics & Metrics Core Engine
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Comprehensive statistics collection, analysis, and reporting
@@ -8,7 +8,7 @@
 # meta:name=nftban_stats
 # meta:type=core
 # meta:header=Statistics & Metrics Engine
-# meta:version=0.32.0
+# meta:version=0.32.6
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -211,7 +211,7 @@ nftban_stats_count_active_bans() {
         total=$((total + black_v6))
     fi
 
-    # Count feed_v4 (Go feeds implementation v0.31.0)
+    # Count feed_v4 (Go feeds implementation v0.32.6)
     if nft list set inet nftban_main feed_v4 &>/dev/null 2>&1; then
         local feed_v4
         feed_v4=$(nft list set inet nftban_main feed_v4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | wc -l 2>/dev/null)
@@ -219,7 +219,7 @@ nftban_stats_count_active_bans() {
         total=$((total + feed_v4))
     fi
 
-    # Count feed_v6 (Go feeds implementation v0.31.0)
+    # Count feed_v6 (Go feeds implementation v0.32.6)
     if nft list set inet nftban_main feed_v6 &>/dev/null 2>&1; then
         local feed_v6
         feed_v6=$(nft list set inet nftban_main feed_v6 2>/dev/null | grep -c '::' 2>/dev/null)
@@ -913,5 +913,5 @@ nftban_stats_create_snapshot() {
 
 # Module loaded
 if type -t nftban_print_status >/dev/null 2>&1; then
-    nftban_print_status "debug" "Stats module loaded (v0.31.0)"
+    nftban_print_status "debug" "Stats module loaded (v0.32.6)"
 fi

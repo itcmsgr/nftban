@@ -1,6 +1,6 @@
 # NFTBan Precompiled Go Binaries - Transparency & Verification
 
-**Version:** v0.32.3
+**Version:** v0.32.6
 **Purpose:** Explain how we provide precompiled binaries and how users can verify them
 **Audience:** Security-conscious users, system administrators
 
@@ -79,7 +79,7 @@ strings /usr/lib/nftban/bin/.real/nftban-geoip-x86_64 | grep -E "(VERSION|BuildT
 /usr/lib/nftban/bin/.real/nftban-geoip-x86_64 version
 
 # Output:
-# nftban-geoip v0.32.0
+# nftban-geoip v0.32.6
 # Build: 2025-11-06
 # Go: go1.21.5
 ```
@@ -90,7 +90,7 @@ strings /usr/lib/nftban/bin/.real/nftban-geoip-x86_64 | grep -E "(VERSION|BuildT
 # Clone repository
 git clone https://github.com/nftban/nftban.git
 cd nftban
-git checkout v0.32.0
+git checkout v0.32.6
 
 # Inspect source code
 cat go-geoip/cmd/nftban-geoip/main.go
@@ -125,7 +125,7 @@ nftban feeds version
 **Binaries are precompiled by:**
 - GitHub Actions (automated builds)
 - Reproducible build environment
-- Signed with GPG (coming in v0.32.0)
+- Signed with GPG (coming in v0.32.6)
 
 ---
 
@@ -380,7 +380,7 @@ A: You don't have to! Build from source and compare checksums. We document every
 
 **Q: Are binaries signed?**
 
-A: GPG signing coming in v0.32.0. Currently: checksums + reproducible builds.
+A: GPG signing coming in v0.32.6. Currently: checksums + reproducible builds.
 
 **Q: Why are binaries in git?**
 
@@ -440,12 +440,12 @@ sha256sum dist/x86_64/nftban-geoip
 
 **Found a security issue?**
 - Contact: contact@nftban.com
-- GPG: [Coming in v0.32.0]
+- GPG: [Coming in v0.32.6]
 
 ---
 
 **Last Updated:** 2025-11-06
-**Version:** v0.32.3
+**Version:** v0.32.6
 **License:** MPL-2.0
 
 **We believe in transparency. You shouldn't have to trust us blindly.**

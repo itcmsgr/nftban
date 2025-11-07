@@ -271,5 +271,5 @@ Every bug report helps make NFTBan better for everyone!
 ---
 
 **Last Updated:** November 5, 2025
-**NFTBan Version:** v0.31.0
+**NFTBan Version:** v0.32.6
 **License:** MPL-2.0

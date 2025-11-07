@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.0 - Complete Purge Script
+# NFTBan v0.32.6 - Complete Purge Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Completely remove all NFTBan data including logs and config

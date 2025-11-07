@@ -1,6 +1,6 @@
 # 🌍 NFTBan GeoBan - Major Feature Achievement
 
-**Version:** v0.32.3
+**Version:** v0.32.6
 **Release Date:** November 2025
 **Status:** ✅ Production Ready
 **Impact:** Enterprise-grade country-based network security
@@ -487,7 +487,7 @@ if resp.StatusCode == 304 {
 - Verify systemd limits work correctly
 
 ### Phase 4: General Availability (Week 5+)
-- Include in v0.32.0 release
+- Include in v0.32.6 release
 - Update main README with GeoBan examples
 - Create video tutorial
 - Blog post announcing feature
@@ -731,7 +731,7 @@ We've proven that open-source projects can deliver:
 
 ---
 
-**Version:** v0.32.3
+**Version:** v0.32.6
 **Last Updated:** 2025-11-05
 **License:** MPL-2.0
 **Project:** https://github.com/nftban/nftban

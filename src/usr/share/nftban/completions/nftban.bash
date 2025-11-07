@@ -1,5 +1,5 @@
 # =============================================================================
-# Bash Completion for NFTBan v0.30.1
+# Bash Completion for NFTBan v0.32.6
 # =============================================================================
 # Install to: /usr/share/bash-completion/completions/nftban
 # This file provides TAB completion for all nftban commands and subcommands

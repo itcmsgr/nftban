@@ -377,14 +377,14 @@ nftban feeds sync
 # Should see: "Using bash feed loader (Go binary not found)"
 
 # 4. Old behavior restored
-# Bash bulk loading (v0.30.8) continues working
+# Bash bulk loading (v0.32.6) continues working
 ```
 
 ---
 
 ## 📊 Expected Resource Usage
 
-### Normal Operation (Go v0.32.0)
+### Normal Operation (Go v0.32.6)
 | Resource | Expected | Alert If > |
 |----------|----------|------------|
 | CPU | 1-5% | 50% |
@@ -392,7 +392,7 @@ nftban feeds sync
 | Runtime | 1-10 sec | 60 sec |
 | I/O | Minimal | N/A |
 
-### Comparison with Bash (v0.30.8)
+### Comparison with Bash (v0.32.6)
 | Metric | Bash | Go | Improvement |
 |--------|------|-----|-------------|
 | CPU | 5-10% | 1-5% | 2-5x better |

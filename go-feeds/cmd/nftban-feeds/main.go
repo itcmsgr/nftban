@@ -55,7 +55,7 @@ func main() {
 }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, `NFTBan Feeds Manager v0.32.3
+	fmt.Fprintf(os.Stderr, `NFTBan Feeds Manager v0.32.6
 
 Architecture: Bash downloads feeds, Go parses and loads to nftables (fast, atomic)
 
@@ -105,7 +105,7 @@ func parseFeeds() error {
 }
 
 // syncFeeds loads pre-downloaded feeds from disk and loads to nftables atomically
-// v0.32.0: Changed architecture - Bash downloads, Go loads (single source of truth)
+// v0.32.6: Changed architecture - Bash downloads, Go loads (single source of truth)
 func syncFeeds(feedNames []string, limits safety.Limits) error {
 	startTime := time.Now()
 

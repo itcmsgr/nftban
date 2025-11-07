@@ -429,7 +429,7 @@ nft list ruleset | grep -A5 "table inet nftban"
 
 ### Issue 1: Banner Shows Wrong Version
 
-**Symptom**: `nftban` command shows "NFTBan v0.31.0" but package is v0.32.0
+**Symptom**: `nftban` command shows "NFTBan v0.32.6" but package is v0.32.6
 
 **Cause**: `NFTBAN_VERSION` variable in `/etc/nftban/nftban.conf` not updated
 

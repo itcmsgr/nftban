@@ -1,6 +1,6 @@
 # NFTBan Configuration Locations Reference
 
-**Version:** v0.32.3
+**Version:** v0.32.6
 **Purpose:** Clear reference for ALL configuration file locations
 **Audience:** System administrators, developers, users
 
