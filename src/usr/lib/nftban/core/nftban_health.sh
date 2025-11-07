@@ -1020,6 +1020,104 @@ nftban_health_check_bash_completion() {
     return $status
 }
 
+nftban_health_check_fail2ban_jails() {
+    # Check fail2ban jail configurations for potential problems
+    # Returns: 0=OK, 1=Warning, 2=Error
+    # NOTE: This only checks - does NOT modify configs (that's health-fix job)
+
+    local status=$HEALTH_OK
+    local jail_issues=()
+
+    # Check if fail2ban module is available
+    if ! declare -f nftban_fail2ban_is_installed >/dev/null 2>&1; then
+        # Try to load fail2ban module
+        if [[ -f "/usr/lib/nftban/core/nftban_fail2ban.sh" ]]; then
+            source /usr/lib/nftban/core/nftban_fail2ban.sh 2>/dev/null || true
+        fi
+    fi
+
+    # If module not loaded, skip check
+    if ! declare -f nftban_fail2ban_is_installed >/dev/null 2>&1; then
+        NFTBAN_HEALTH_RESULTS["fail2ban_jails"]=$HEALTH_OK
+        NFTBAN_HEALTH_ISSUES["fail2ban_jails"]="Fail2ban module not loaded (OK to skip)"
+        return $HEALTH_OK
+    fi
+
+    # Check if fail2ban is installed
+    if ! nftban_fail2ban_is_installed 2>/dev/null; then
+        NFTBAN_HEALTH_RESULTS["fail2ban_jails"]=$HEALTH_OK
+        NFTBAN_HEALTH_ISSUES["fail2ban_jails"]="Fail2ban not installed (optional)"
+        return $HEALTH_OK
+    fi
+
+    # Check if fail2ban is running
+    if ! nftban_fail2ban_is_running 2>/dev/null; then
+        NFTBAN_HEALTH_RESULTS["fail2ban_jails"]=$HEALTH_WARNING
+        NFTBAN_HEALTH_ISSUES["fail2ban_jails"]="Fail2ban installed but not running"
+        NFTBAN_HEALTH_WARNINGS+=("Fail2ban: Service installed but not running")
+        return $HEALTH_WARNING
+    fi
+
+    # Get all jail configs
+    local all_jail_configs=()
+    mapfile -t all_jail_configs < <(find /etc/fail2ban/jail.d -name "nftban-*.conf" 2>/dev/null | sort)
+
+    if [[ ${#all_jail_configs[@]} -eq 0 ]]; then
+        NFTBAN_HEALTH_RESULTS["fail2ban_jails"]=$HEALTH_OK
+        NFTBAN_HEALTH_ISSUES["fail2ban_jails"]="No NFTBan jail configurations found"
+        return $HEALTH_OK
+    fi
+
+    # Check each enabled jail for problems (but don't fix them)
+    local enabled_jails=0
+    local problematic_jails=0
+    local problematic_jail_names=()
+
+    for jail_config in "${all_jail_configs[@]}"; do
+        local jail_name=$(basename "$jail_config" .conf)
+
+        # Check if jail is enabled
+        local is_enabled=false
+        if grep -q "^enabled.*=.*true" "$jail_config" 2>/dev/null; then
+            is_enabled=true
+            ((enabled_jails++))
+        fi
+
+        # Only check enabled jails for problems
+        if [[ "$is_enabled" == "true" ]]; then
+            # Check requirements using fail2ban module
+            if declare -f nftban_fail2ban_jail_check_requirements >/dev/null 2>&1; then
+                local check_result=0
+                nftban_fail2ban_jail_check_requirements "$jail_name" >/dev/null 2>&1 || check_result=$?
+
+                if [[ $check_result -ne 0 ]]; then
+                    # Jail has problems
+                    ((problematic_jails++))
+                    problematic_jail_names+=("$jail_name")
+                    status=$HEALTH_ERROR
+                fi
+            fi
+        fi
+    done
+
+    # Store results
+    if [[ $problematic_jails -gt 0 ]]; then
+        jail_issues+=("Found $problematic_jails enabled jails with configuration problems")
+        jail_issues+=("Problematic jails: ${problematic_jail_names[*]}")
+        jail_issues+=("These jails may cause fail2ban to crash")
+        jail_issues+=("FIX: Run 'nftban fail2ban health-fix' to automatically disable problematic jails")
+        NFTBAN_HEALTH_ISSUES["fail2ban_jails"]="${jail_issues[*]}"
+        NFTBAN_HEALTH_ERRORS+=("Fail2ban: $problematic_jails enabled jails with problems - ${problematic_jail_names[*]}")
+    elif [[ $enabled_jails -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["fail2ban_jails"]="$enabled_jails jails enabled and healthy"
+    else
+        NFTBAN_HEALTH_ISSUES["fail2ban_jails"]="No jails enabled (default configuration)"
+    fi
+
+    NFTBAN_HEALTH_RESULTS["fail2ban_jails"]=$status
+    return $status
+}
+
 # =============================================================================
 # COMPREHENSIVE HEALTH CHECK
 # =============================================================================
@@ -1157,6 +1255,11 @@ nftban_health_check_all() {
     # Bash completion check (CLI usability check)
     check_result=0
     nftban_health_check_bash_completion || check_result=$?
+    [[ $check_result -gt $overall_status ]] && overall_status=$check_result
+
+    # Fail2ban jails check (security check)
+    check_result=0
+    nftban_health_check_fail2ban_jails || check_result=$?
     [[ $check_result -gt $overall_status ]] && overall_status=$check_result
 
     # Config check (keep for now - no dedicated module)

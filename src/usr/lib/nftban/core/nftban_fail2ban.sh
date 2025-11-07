@@ -314,46 +314,238 @@ nftban_fail2ban_jail_is_enabled() {
     nftban_fail2ban_list_jails | grep -q "^${jail}$"
 }
 
-# Start a jail
-nftban_fail2ban_jail_start() {
-    local jail="$1"
+# Check if jail requirements are met (service installed, log file exists)
+nftban_fail2ban_jail_check_requirements() {
+    local jail_name="$1"
+    local warnings=()
+    local errors=()
 
-    if ! nftban_fail2ban_is_running; then
-        echo "ERROR: fail2ban not running" >&2
+    # Read jail config to get logpath
+    local jail_config="/etc/fail2ban/jail.d/${jail_name}.conf"
+    if [[ ! -f "$jail_config" ]]; then
+        echo "ERROR:Config file not found"
         return 1
     fi
 
-    fail2ban-client start "$jail" 2>/dev/null
-    local result=$?
+    # Extract logpath from config (handle wildcards)
+    local logpath=$(grep -E "^logpath\s*=" "$jail_config" | sed 's/.*=\s*//' | tr -d ' ')
 
-    if [[ $result -eq 0 ]]; then
-        nftban_fail2ban_log "INFO" "Started jail: ${jail}"
-    else
-        nftban_fail2ban_log "ERROR" "Failed to start jail: ${jail}"
+    # Check based on jail type
+    case "$jail_name" in
+        nftban-sshd)
+            # SSH always available
+            ;;
+        nftban-directadmin)
+            if ! command -v directadmin &>/dev/null && [[ ! -d /usr/local/directadmin ]]; then
+                errors+=("DirectAdmin is not installed")
+            fi
+            if [[ ! -f /var/log/directadmin/login.log ]]; then
+                errors+=("DirectAdmin log not found: /var/log/directadmin/login.log")
+            fi
+            ;;
+        nftban-exim|nftban-exim-spam)
+            if ! command -v exim &>/dev/null; then
+                errors+=("Exim is not installed")
+            fi
+            if [[ ! -f /var/log/exim/mainlog ]]; then
+                errors+=("Exim log not found: /var/log/exim/mainlog")
+            fi
+            ;;
+        nftban-dovecot)
+            if ! systemctl list-unit-files 2>/dev/null | grep -q "dovecot.service"; then
+                errors+=("Dovecot is not installed")
+            fi
+            if [[ ! -f /var/log/maillog ]] && [[ ! -f /var/log/mail.log ]]; then
+                errors+=("Mail log not found (checked: /var/log/maillog, /var/log/mail.log)")
+            fi
+            ;;
+        nftban-apache-*|nftban-modsecurity)
+            if ! systemctl list-unit-files 2>/dev/null | grep -qE "httpd.service|apache2.service"; then
+                errors+=("Apache/httpd is not installed")
+            fi
+            # Check for any httpd log directory
+            if [[ ! -d /var/log/httpd ]] && [[ ! -d /var/log/apache2 ]]; then
+                errors+=("Apache log directory not found (checked: /var/log/httpd, /var/log/apache2)")
+            fi
+            ;;
+        nftban-pure-ftpd)
+            if ! systemctl list-unit-files 2>/dev/null | grep -q "pure-ftpd.service"; then
+                errors+=("Pure-FTPd is not installed")
+            fi
+            ;;
+        nftban-roundcube)
+            if [[ ! -d /var/www/html/roundcube ]] && [[ ! -d /usr/share/roundcube ]]; then
+                errors+=("Roundcube is not installed")
+            fi
+            ;;
+    esac
+
+    # Print results
+    if [[ ${#errors[@]} -gt 0 ]]; then
+        for err in "${errors[@]}"; do
+            echo "ERROR:$err"
+        done
+        return 1
     fi
 
-    return $result
+    if [[ ${#warnings[@]} -gt 0 ]]; then
+        for warn in "${warnings[@]}"; do
+            echo "WARNING:$warn"
+        done
+    fi
+
+    return 0
 }
 
-# Stop a jail
-nftban_fail2ban_jail_stop() {
-    local jail="$1"
+# Start a jail (PERMANENTLY - modifies config file)
+nftban_fail2ban_jail_start() {
+    local jail_input="$1"
+    local jail_name
+    local force="${2:-false}"
+
+    # Auto-prefix with nftban- if not already prefixed
+    if [[ "$jail_input" == nftban-* ]]; then
+        jail_name="$jail_input"
+    else
+        jail_name="nftban-${jail_input}"
+    fi
 
     if ! nftban_fail2ban_is_running; then
         echo "ERROR: fail2ban not running" >&2
         return 1
     fi
 
-    fail2ban-client stop "$jail" 2>/dev/null
-    local result=$?
-
-    if [[ $result -eq 0 ]]; then
-        nftban_fail2ban_log "INFO" "Stopped jail: ${jail}"
-    else
-        nftban_fail2ban_log "ERROR" "Failed to stop jail: ${jail}"
+    # Check if jail config exists
+    local jail_config="/etc/fail2ban/jail.d/${jail_name}.conf"
+    if [[ ! -f "$jail_config" ]]; then
+        echo "ERROR: Jail config not found: ${jail_config}" >&2
+        echo "Available jails:" >&2
+        ls -1 /etc/fail2ban/jail.d/nftban-*.conf 2>/dev/null | xargs -n1 basename | sed 's/\.conf$//' >&2
+        return 1
     fi
 
-    return $result
+    # Check requirements (unless force is enabled)
+    if [[ "$force" != "true" ]]; then
+        echo "Checking requirements for ${jail_name}..."
+        local check_output
+        local check_result
+
+        # Capture output and result separately (avoid set -e killing the script)
+        check_output=$(nftban_fail2ban_jail_check_requirements "$jail_name" 2>&1) || check_result=$?
+        check_result=${check_result:-0}
+
+        if [[ $check_result -ne 0 ]]; then
+            echo ""
+            echo "⚠️  WARNING: This jail cannot be safely enabled"
+            echo "────────────────────────────────────────────────────────────"
+            echo "$check_output" | grep "ERROR:" | sed 's/ERROR:/  ✗ /'
+            echo ""
+            echo "Enabling this jail will cause fail2ban to crash with:"
+            echo "  'Have not found any log file for ${jail_name} jail'"
+            echo ""
+            echo "To enable anyway (not recommended):"
+            echo "  nftban fail2ban enable ${jail_input} --force"
+            echo ""
+            return 1
+        fi
+
+        # Show any warnings but continue
+        if echo "$check_output" | grep -q "WARNING:"; then
+            echo "$check_output" | grep "WARNING:" | sed 's/WARNING:/  ⚠  /'
+            echo ""
+        fi
+    fi
+
+    # Modify config file to enable jail
+    if grep -q "^enabled.*=.*false" "$jail_config"; then
+        sed -i 's/^enabled\s*=\s*false/enabled   = true/' "$jail_config"
+        echo "✓ Enabled ${jail_name} in configuration"
+        nftban_fail2ban_log "INFO" "Enabled jail in config: ${jail_name}"
+    elif grep -q "^enabled.*=.*true" "$jail_config"; then
+        echo "  ${jail_name} already enabled in configuration"
+    else
+        echo "ERROR: No 'enabled' directive found in ${jail_config}" >&2
+        return 1
+    fi
+
+    # Restart fail2ban to apply changes (reload doesn't always work)
+    echo "  Restarting fail2ban..."
+    if systemctl restart fail2ban 2>/dev/null; then
+        echo "✓ Fail2ban restarted successfully"
+
+        # Wait a moment for jail to start
+        sleep 3
+
+        # Verify jail is running
+        if nftban_fail2ban_list_jails | grep -q "^${jail_name}$"; then
+            echo "✓ Jail ${jail_name} is now active"
+            return 0
+        else
+            echo "⚠  Jail enabled in config but not yet active. Check: fail2ban-client status" >&2
+            return 1
+        fi
+    else
+        echo "ERROR: Failed to restart fail2ban" >&2
+        return 1
+    fi
+}
+
+# Stop a jail (PERMANENTLY - modifies config file)
+nftban_fail2ban_jail_stop() {
+    local jail_input="$1"
+    local jail_name
+
+    # Auto-prefix with nftban- if not already prefixed
+    if [[ "$jail_input" == nftban-* ]]; then
+        jail_name="$jail_input"
+    else
+        jail_name="nftban-${jail_input}"
+    fi
+
+    if ! nftban_fail2ban_is_running; then
+        echo "ERROR: fail2ban not running" >&2
+        return 1
+    fi
+
+    # Check if jail config exists
+    local jail_config="/etc/fail2ban/jail.d/${jail_name}.conf"
+    if [[ ! -f "$jail_config" ]]; then
+        echo "ERROR: Jail config not found: ${jail_config}" >&2
+        return 1
+    fi
+
+    # Modify config file to disable jail
+    if grep -q "^enabled.*=.*true" "$jail_config"; then
+        sed -i 's/^enabled\s*=\s*true/enabled   = false/' "$jail_config"
+        echo "✓ Disabled ${jail_name} in configuration"
+        nftban_fail2ban_log "INFO" "Disabled jail in config: ${jail_name}"
+    elif grep -q "^enabled.*=.*false" "$jail_config"; then
+        echo "  ${jail_name} already disabled in configuration"
+    else
+        echo "ERROR: No 'enabled' directive found in ${jail_config}" >&2
+        return 1
+    fi
+
+    # Restart fail2ban to apply changes (reload doesn't always work)
+    echo "  Restarting fail2ban..."
+    if systemctl restart fail2ban 2>/dev/null; then
+        echo "✓ Fail2ban restarted successfully"
+
+        # Wait a moment
+        sleep 2
+
+        # Verify jail is stopped
+        if ! nftban_fail2ban_list_jails | grep -q "^${jail_name}$"; then
+            echo "✓ Jail ${jail_name} is now stopped"
+            return 0
+        else
+            echo "⚠  Jail disabled in config but still active. Check: fail2ban-client status" >&2
+            return 1
+        fi
+    else
+        echo "ERROR: Failed to restart fail2ban" >&2
+        return 1
+    fi
 }
 
 # Reload a jail
@@ -582,6 +774,261 @@ nftban_fail2ban_reload() {
     fi
 
     return $result
+}
+
+# =============================================================================
+# HEALTH CHECK AND AUTO-FIX
+# =============================================================================
+
+# Health check all jails and fix problems
+nftban_fail2ban_health_fix() {
+    # Health check and auto-fix for fail2ban jails with report and mail support
+    # Usage: nftban_fail2ban_health_fix [--save-report FILE] [--mail EMAIL]
+    # Arguments:
+    #   --save-report FILE  - Save report to file (default: /var/log/nftban/reports/fail2ban-health-TIMESTAMP.txt)
+    #   --mail EMAIL        - Send report via email
+    # Returns: 0=OK, 1=problems found and fixed
+
+    # Temporarily disable exit-on-error for this function
+    local old_opts=$(set +o)
+    set +e
+
+    # Parse arguments
+    local save_report=false
+    local report_file=""
+    local mail_to=""
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --save-report)
+                save_report=true
+                if [[ -n "${2:-}" ]] && [[ ! "$2" =~ ^-- ]]; then
+                    report_file="$2"
+                    shift
+                fi
+                shift
+                ;;
+            --mail)
+                if [[ -n "${2:-}" ]] && [[ ! "$2" =~ ^-- ]]; then
+                    mail_to="$2"
+                    shift
+                else
+                    echo "ERROR: --mail requires an email address" >&2
+                    eval "$old_opts"
+                    return 1
+                fi
+                shift
+                ;;
+            *)
+                echo "ERROR: Unknown option: $1" >&2
+                echo "Usage: nftban fail2ban health-fix [--save-report [FILE]] [--mail EMAIL]" >&2
+                eval "$old_opts"
+                return 1
+                ;;
+        esac
+    done
+
+    # Generate default report filename if save requested but no file specified
+    if [[ "$save_report" == "true" ]] && [[ -z "$report_file" ]]; then
+        report_file="/var/log/nftban/reports/fail2ban-health-$(date +%Y%m%d-%H%M%S).txt"
+    fi
+
+    # Start capturing output for report if needed
+    local report_output=""
+    if [[ "$save_report" == "true" ]] || [[ -n "$mail_to" ]]; then
+        # Capture to variable AND show on terminal (use temp file to avoid /dev/tty issues)
+        local temp_output="/tmp/nftban-health-fix-$$.tmp"
+        _nftban_fail2ban_health_fix_core 2>&1 | tee "$temp_output"
+        report_output=$(cat "$temp_output" 2>/dev/null)
+        rm -f "$temp_output"
+    else
+        # Normal output to terminal only
+        _nftban_fail2ban_health_fix_core
+    fi
+
+    # Save report if requested
+    if [[ "$save_report" == "true" ]]; then
+        # Ensure report directory exists
+        mkdir -p "$(dirname "$report_file")" 2>/dev/null || true
+
+        # Save report
+        if echo "$report_output" > "$report_file" 2>/dev/null; then
+            echo ""
+            echo "📄 Report saved to: $report_file"
+        else
+            echo ""
+            echo "⚠️  Failed to save report to: $report_file" >&2
+        fi
+    fi
+
+    # Send email if requested
+    if [[ -n "$mail_to" ]]; then
+        # Load mail module
+        if [[ -f "/usr/lib/nftban/core/nftban_mail.sh" ]]; then
+            source /usr/lib/nftban/core/nftban_mail.sh 2>/dev/null || true
+        fi
+
+        # Check if mail is available
+        if declare -f nftban_mail_send >/dev/null 2>&1; then
+            echo ""
+            echo "📧 Sending report via email to: $mail_to"
+
+            # Create email body with HTML formatting
+            local email_body="<html><head><style>
+body { font-family: monospace; background: #f5f5f5; padding: 20px; }
+pre { background: white; padding: 15px; border-radius: 5px; border: 1px solid #ddd; }
+.header { background: #2c3e50; color: white; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
+.ok { color: green; }
+.warn { color: orange; }
+.error { color: red; }
+</style></head><body>
+<div class='header'>
+<h2>NFTBan Fail2ban Health Report</h2>
+<p>Generated: $(date "+%Y-%m-%d %H:%M:%S")</p>
+<p>Hostname: $(hostname)</p>
+</div>
+<pre>$report_output</pre>
+</body></html>"
+
+            # Send email
+            if echo "$email_body" | nftban_mail_send "$mail_to" "NFTBan Fail2ban Health Report - $(hostname)" "html" 2>/dev/null; then
+                echo "✓ Email sent successfully"
+            else
+                echo "⚠️  Failed to send email (mail system may not be configured)" >&2
+            fi
+        else
+            echo "⚠️  Mail module not available - skipping email" >&2
+        fi
+    fi
+
+    # Restore original shell options
+    eval "$old_opts"
+    return 0
+}
+
+# Core health-fix logic (separated for report capture)
+_nftban_fail2ban_health_fix_core() {
+    echo "════════════════════════════════════════════════════════════"
+    echo "  NFTBan Fail2ban Health Check & Auto-Fix"
+    echo "════════════════════════════════════════════════════════════"
+    echo ""
+
+    local problems_found=false
+    local jails_disabled=0
+    local jails_ok=0
+    local total_jails=0
+
+    # Track detailed jail status for report
+    declare -a enabled_jails=()
+    declare -a disabled_jails=()
+    declare -a problematic_jails=()
+
+    # Get all jail configs
+    local all_jail_configs=()
+    mapfile -t all_jail_configs < <(find /etc/fail2ban/jail.d -name "nftban-*.conf" 2>/dev/null | sort)
+
+    if [[ ${#all_jail_configs[@]} -eq 0 ]]; then
+        echo "No NFTBan jail configurations found."
+        return 0
+    fi
+
+    echo "Scanning ${#all_jail_configs[@]} jail configurations..."
+    echo ""
+
+    for jail_config in "${all_jail_configs[@]}"; do
+        local jail_name=$(basename "$jail_config" .conf)
+        ((total_jails++))
+
+        # Check if jail is enabled
+        local is_enabled=false
+        if grep -q "^enabled.*=.*true" "$jail_config"; then
+            is_enabled=true
+        fi
+
+        # Check requirements
+        local check_output
+        local check_result=0
+        check_output=$(nftban_fail2ban_jail_check_requirements "$jail_name" 2>&1) || check_result=$?
+
+        if [[ "$is_enabled" == "true" ]] && [[ $check_result -ne 0 ]]; then
+            # Jail is enabled but has problems
+            problems_found=true
+            problematic_jails+=("$jail_name")
+            echo "✗ ${jail_name} - PROBLEMS FOUND"
+            echo "$check_output" | grep "ERROR:" | sed 's/ERROR:/    /'
+            echo "    → Disabling this jail to prevent fail2ban crash"
+
+            # Disable the jail
+            sed -i 's/^enabled\s*=\s*true/enabled   = false  # Disabled by health-fix/' "$jail_config"
+            ((jails_disabled++))
+            echo ""
+
+        elif [[ "$is_enabled" == "true" ]] && [[ $check_result -eq 0 ]]; then
+            # Jail is enabled and OK
+            enabled_jails+=("$jail_name")
+            echo "✓ ${jail_name} - OK (enabled)"
+            ((jails_ok++))
+
+        else
+            # Jail is disabled
+            disabled_jails+=("$jail_name")
+            if [[ $check_result -ne 0 ]]; then
+                echo "○ ${jail_name} - disabled (would fail if enabled)"
+            else
+                echo "○ ${jail_name} - disabled (ready to enable)"
+            fi
+        fi
+    done
+
+    echo ""
+    echo "════════════════════════════════════════════════════════════"
+    echo "  Summary"
+    echo "════════════════════════════════════════════════════════════"
+    echo ""
+    echo "Total jails scanned:     ${total_jails}"
+    echo "Jails OK (enabled):      ${jails_ok}"
+    echo "Jails disabled by fix:   ${jails_disabled}"
+    echo ""
+
+    # Show enabled jails list
+    if [[ ${#enabled_jails[@]} -gt 0 ]]; then
+        echo "Currently Enabled Jails:"
+        for jail in "${enabled_jails[@]}"; do
+            echo "  ✓ $jail"
+        done
+        echo ""
+    fi
+
+    # Show problematic jails if any
+    if [[ ${#problematic_jails[@]} -gt 0 ]]; then
+        echo "Disabled Problematic Jails:"
+        for jail in "${problematic_jails[@]}"; do
+            echo "  ✗ $jail"
+        done
+        echo ""
+    fi
+
+    if [[ $jails_disabled -gt 0 ]]; then
+        echo "⚠️  Action Required: Restarting fail2ban..."
+        if systemctl restart fail2ban 2>/dev/null; then
+            sleep 3
+            echo "✓ Fail2ban restarted successfully"
+            echo ""
+            echo "Currently active jails:"
+            nftban_fail2ban_list_jails | sed 's/^/  - /'
+        else
+            echo "✗ Failed to restart fail2ban"
+            echo "  Please check: systemctl status fail2ban"
+        fi
+    else
+        echo "✓ No problems found - all enabled jails are healthy"
+    fi
+
+    echo ""
+    echo "Report generated: $(date "+%Y-%m-%d %H:%M:%S")"
+    echo ""
+
+    return 0
 }
 
 # =============================================================================

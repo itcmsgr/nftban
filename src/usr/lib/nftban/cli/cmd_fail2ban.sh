@@ -74,12 +74,18 @@ COMMANDS:
     unban <jail> <ip>   Unban an IP from a jail
 
     cloudflare          Update Cloudflare IP whitelist
+    health-fix          Check and auto-fix jail configuration problems
 
     start               Start fail2ban service
     stop                Stop fail2ban service
     restart             Restart fail2ban service
 
     help                Show this help message
+
+HEALTH-FIX OPTIONS:
+    --save-report [FILE]    Save health check report to file
+                            Default: /var/log/nftban/reports/fail2ban-health-TIMESTAMP.txt
+    --mail EMAIL            Send health check report via email
 
 DESCRIPTION:
     Integrate fail2ban with NFTBan for comprehensive protection.
@@ -115,6 +121,21 @@ EXAMPLES:
 
     # Update Cloudflare whitelist
     nftban fail2ban cloudflare
+
+    # Check and auto-fix jail problems
+    nftban fail2ban health-fix
+
+    # Save health report to file
+    nftban fail2ban health-fix --save-report
+
+    # Save health report with custom filename
+    nftban fail2ban health-fix --save-report /tmp/my-fail2ban-report.txt
+
+    # Send health report via email
+    nftban fail2ban health-fix --mail admin@example.com
+
+    # Save report and send email
+    nftban fail2ban health-fix --save-report --mail admin@example.com
 
 CLOUDFLARE INTEGRATION:
     When Cloudflare integration is enabled, Cloudflare IPs are
@@ -365,6 +386,12 @@ _nftban_fail2ban_cmd_jail() {
 _nftban_fail2ban_cmd_enable() {
     # Enable a jail
     local jail="$1"
+    local force="false"
+
+    # Check for --force flag
+    if [[ "${2:-}" == "--force" ]]; then
+        force="true"
+    fi
 
     if ! nftban_fail2ban_is_running; then
         echo "ERROR: fail2ban is not running" >&2
@@ -373,7 +400,7 @@ _nftban_fail2ban_cmd_enable() {
     fi
 
     echo "Enabling jail: ${jail}..."
-    nftban_fail2ban_jail_start "$jail"
+    nftban_fail2ban_jail_start "$jail" "$force"
 }
 
 _nftban_fail2ban_cmd_disable() {
@@ -480,6 +507,18 @@ _nftban_fail2ban_cmd_cloudflare() {
     nftban_fail2ban_update_cloudflare_whitelist
 }
 
+_nftban_fail2ban_cmd_health_fix() {
+    # Run health check and auto-fix with optional report and mail
+
+    if [[ $EUID -ne 0 ]]; then
+        echo "ERROR: This command requires root privileges" >&2
+        exit 1
+    fi
+
+    # Pass all arguments to the health-fix function
+    nftban_fail2ban_health_fix "$@"
+}
+
 # =============================================================================
 # MAIN COMMAND HANDLER
 # =============================================================================
@@ -517,14 +556,14 @@ nftban_cmd_fail2ban() {
         enable)
             if [[ -z "${1:-}" ]]; then
                 echo "ERROR: Jail name required" >&2
-                echo "Usage: nftban fail2ban enable <jail>" >&2
+                echo "Usage: nftban fail2ban enable <jail> [--force]" >&2
                 exit 1
             fi
             if [[ $EUID -ne 0 ]]; then
                 echo "ERROR: This command requires root privileges" >&2
                 exit 1
             fi
-            _nftban_fail2ban_cmd_enable "$1"
+            _nftban_fail2ban_cmd_enable "$1" "${2:-}"
             ;;
 
         disable)
@@ -584,6 +623,10 @@ nftban_cmd_fail2ban() {
                 exit 1
             fi
             _nftban_fail2ban_cmd_cloudflare
+            ;;
+
+        health-fix)
+            _nftban_fail2ban_cmd_health_fix "$@"
             ;;
 
         start)

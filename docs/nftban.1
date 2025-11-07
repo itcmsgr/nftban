@@ -328,6 +328,60 @@ Disable email notifications
 .B mail test
 Send test email to verify configuration
 
+.SS Fail2ban Integration
+.TP
+.B fail2ban status
+Show fail2ban status and statistics
+
+.TP
+.B fail2ban jails
+List all currently enabled jails
+
+.TP
+.B fail2ban available
+Show all available jails on this system
+
+.TP
+.B fail2ban jail \fINAME\fR
+Show detailed status for specific jail
+
+.TP
+.B fail2ban enable \fIJAIL\fR [\fIOPTIONS\fR]
+Enable/start a fail2ban jail
+.RS
+.TP
+.B \-\-force
+Force enable even if requirements are not met (not recommended)
+.RE
+
+.TP
+.B fail2ban disable \fIJAIL\fR
+Disable/stop a fail2ban jail
+
+.TP
+.B fail2ban banned [\fIJAIL\fR]
+List banned IPs (all jails or specific)
+
+.TP
+.B fail2ban ban \fIJAIL\fR \fIIP\fR
+Manually ban an IP in a jail
+
+.TP
+.B fail2ban unban \fIJAIL\fR \fIIP\fR
+Unban an IP from a jail
+
+.TP
+.B fail2ban health-fix [\fIOPTIONS\fR]
+Check and auto-fix jail configuration problems
+.RS
+.TP
+.B \-\-save-report [\fIFILE\fR]
+Save health check report to file (default: /var/log/nftban/reports/fail2ban-health-TIMESTAMP.txt)
+.TP
+.B \-\-mail \fIEMAIL\fR
+Send health check report via email
+.RE
+
 .SH CONFIGURATION
 .TP
 .B /etc/nftban/nftban.conf
