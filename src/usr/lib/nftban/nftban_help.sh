@@ -88,7 +88,8 @@ EOF
   services         System services status
   fhs              Filesystem hierarchy checks
   nftables         nftables service management
-  geoip            IP geolocation lookups
+  geoip            IP geolocation lookups (lookup, bulk, status, update)
+  geoban           Country blocking (ban, unban, whitelist, unwhitelist, list)
   mail             Email system and notifications
 EOF
   echo

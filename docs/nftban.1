@@ -238,10 +238,47 @@ Refresh IP list for a country (re-download from RIR sources)
 .B geoban config
 Show current GeoBan configuration and statistics
 
-.SS GeoIP Lookup
+.SS GeoIP Database Management
 .TP
-.B geoip lookup \fIIP\fR
+.B geoip lookup \fIIP\fR [\fIFORMAT\fR]
 Lookup country code for an IP address using MaxMind GeoLite2
+.RS
+Formats: json (default), compact, country
+.RE
+
+.TP
+.B geoip bulk \fIFILE\fR
+Bulk lookup of multiple IPs from file or stdin
+
+.TP
+.B geoip status
+Show GeoIP database status and configuration
+
+.TP
+.B geoip update
+Download or update the GeoIP database
+
+.TP
+.B geoip test
+Run GeoIP system tests
+
+.TP
+.B geoip config \fICOMMAND\fR
+Configure GeoIP database settings
+.RS
+.TP
+.B show
+Display current configuration
+.TP
+.B set-source \fISOURCE\fR
+Set database source (github or maxmind)
+.TP
+.B set-key \fIKEY\fR
+Set MaxMind license key
+.TP
+.B test-download
+Test database download
+.RE
 
 .TP
 .B geoip version
@@ -720,6 +757,18 @@ List all GeoBan countries:
 .TP
 Refresh country IPs:
 .B nftban geoban refresh CN
+
+.TP
+Lookup IP geolocation:
+.B nftban geoip lookup 8.8.8.8
+
+.TP
+Bulk lookup from file:
+.B nftban geoip bulk ip_list.txt
+
+.TP
+Update GeoIP database:
+.B nftban geoip update
 
 .TP
 Add custom port:
