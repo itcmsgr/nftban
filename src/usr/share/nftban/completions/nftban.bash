@@ -14,7 +14,7 @@ _nftban() {
     local main_commands="status check health version help hello \
         firewall ban unban search whitelist profile panel permissions \
         ddos portscan login fail2ban feeds cloudflare \
-        stats report port module services fhs nftables geoip mail menu"
+        stats report port module services fhs nftables geoip geoban mail menu"
 
     # Complete based on previous word (subcommands)
     case "${prev}" in
@@ -109,6 +109,10 @@ _nftban() {
             ;;
         geoip)
             COMPREPLY=( $(compgen -W "lookup bulk status test update help" -- ${cur}) )
+            return 0
+            ;;
+        geoban)
+            COMPREPLY=( $(compgen -W "ban unban whitelist list status refresh update help" -- ${cur}) )
             return 0
             ;;
         mail)
