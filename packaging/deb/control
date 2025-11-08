@@ -33,7 +33,9 @@ Depends: ${misc:Depends},
          ipset,
          git,
          policykit-1,
-         fail2ban (>= 0.11)
+         fail2ban (>= 0.11),
+         geoip-bin,
+         geoip-database
 Recommends: logrotate
 Conflicts: firewalld,
            iptables,
