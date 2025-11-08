@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v0.32.19 - RPM Spec File
+# NFTBan v0.32.20 - RPM Spec File
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: RPM package specification for Red Hat-based distributions
@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.19
+Version:        0.32.20
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -276,6 +276,7 @@ mkdir -p %{buildroot}/usr/share/nftban/docs
 install -m 0644 NOTICE.md %{buildroot}/usr/share/nftban/docs/
 install -m 0644 TRADEMARK.md %{buildroot}/usr/share/nftban/docs/
 install -m 0644 CONTRIBUTING.md %{buildroot}/usr/share/nftban/docs/
+install -m 0644 docs/CODING_STANDARDS.md %{buildroot}/usr/share/nftban/docs/
 
 %pre
 # =============================================================================
@@ -438,7 +439,7 @@ fi
 # Update NFTBAN_VERSION in config file (handles upgrades with noreplace)
 # This ensures the banner shows the correct version even on upgrades
 if [ -f /etc/nftban/nftban.conf ]; then
-    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.19"/' /etc/nftban/nftban.conf
+    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.20"/' /etc/nftban/nftban.conf
 fi
 
 # Generate system.conf with UID/GID
