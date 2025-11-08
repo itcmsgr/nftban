@@ -248,7 +248,11 @@ nftban_fail2ban_list_jails() {
         return 1
     fi
 
-    fail2ban-client status 2>/dev/null | grep "Jail list:" | sed 's/.*Jail list:\s*//' | tr ',' '\n' | tr -d ' \t'
+    # Use command substitution to avoid SIGPIPE with pipefail
+    local status_output jail_line
+    status_output=$(fail2ban-client status 2>/dev/null) || true
+    jail_line=$(echo "$status_output" | grep "Jail list:" || true)
+    echo "$jail_line" | sed 's/.*Jail list:\s*//' | tr ',' '\n' | tr -d ' \t'
 }
 
 # List all available jails (enabled + available but not enabled)
@@ -300,7 +304,11 @@ nftban_fail2ban_jail_banned() {
         return 1
     fi
 
-    fail2ban-client status "$jail" 2>/dev/null | grep "Banned IP list:" | sed 's/.*Banned IP list:\s*//' | tr ' ' '\n' | grep -v '^$'
+    # Use command substitution to avoid SIGPIPE with pipefail
+    local jail_status banned_line
+    jail_status=$(fail2ban-client status "$jail" 2>/dev/null) || return 0
+    banned_line=$(echo "$jail_status" | grep "Banned IP list:" || true)
+    echo "$banned_line" | sed 's/.*Banned IP list:\s*//' | tr ' ' '\n' | grep -v '^$' || true
 }
 
 # Check if jail is enabled
