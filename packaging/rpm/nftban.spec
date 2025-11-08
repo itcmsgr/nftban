@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v0.32.14 - RPM Spec File
+# NFTBan v0.32.15 - RPM Spec File
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: RPM package specification for Red Hat-based distributions
@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.14
+Version:        0.32.15
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -439,7 +439,7 @@ fi
 # Update NFTBAN_VERSION in config file (handles upgrades with noreplace)
 # This ensures the banner shows the correct version even on upgrades
 if [ -f /etc/nftban/nftban.conf ]; then
-    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.2"/' /etc/nftban/nftban.conf
+    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.15"/' /etc/nftban/nftban.conf
 fi
 
 # Generate system.conf with UID/GID
@@ -772,6 +772,68 @@ if [ $1 -eq 1 ]; then
     echo "║                                                            ║"
     echo "╚════════════════════════════════════════════════════════════╝"
     echo ""
+
+    # Check for previous backup
+    LATEST_BACKUP=$(ls -t /var/lib/nftban/config-backup-* 2>/dev/null | head -1)
+
+    if [ -n "$LATEST_BACKUP" ] && [ -d "$LATEST_BACKUP" ]; then
+        BACKUP_DATE=$(grep "Backup Date:" "$LATEST_BACKUP/metadata.txt" 2>/dev/null | cut -d: -f2- || echo "unknown")
+
+        echo ""
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║  Previous NFTBan Configuration Found                       ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "Backup from:$BACKUP_DATE"
+        echo "Location: $LATEST_BACKUP"
+        echo ""
+        echo "Do you want to restore your previous settings?"
+        echo "  1) RESTORE  - Use previous configuration"
+        echo "  2) FRESH    - Start with defaults (keep backup)"
+        echo "  3) DELETE   - Remove backup, use defaults"
+        echo ""
+
+        # In non-interactive mode, default to RESTORE
+        if [ -t 0 ]; then
+            read -p "Choice (1/2/3) [1]: " RESTORE_CHOICE
+            RESTORE_CHOICE=${RESTORE_CHOICE:-1}
+        else
+            RESTORE_CHOICE="1"
+            echo "Non-interactive mode: Restoring previous configuration"
+        fi
+
+        case "$RESTORE_CHOICE" in
+            1)
+                echo "Restoring configuration..."
+                if [ -d "$LATEST_BACKUP/nftban/conf.d" ]; then
+                    cp -a "$LATEST_BACKUP/nftban/conf.d"/* /etc/nftban/conf.d/ 2>/dev/null || true
+                fi
+                if [ -d "$LATEST_BACKUP/fail2ban" ]; then
+                    cp -a "$LATEST_BACKUP/fail2ban"/* /etc/fail2ban/jail.d/ 2>/dev/null || true
+                fi
+
+                # Restore enabled state
+                if [ -f "$LATEST_BACKUP/nftban.timer.state" ]; then
+                    if grep -q "enabled" "$LATEST_BACKUP/nftban.timer.state"; then
+                        systemctl enable nftban.timer 2>/dev/null || true
+                    fi
+                fi
+
+                echo "✓ Configuration restored"
+                echo ""
+                ;;
+            2)
+                echo "⊘ Using fresh defaults (backup kept at $LATEST_BACKUP)"
+                echo ""
+                ;;
+            3)
+                rm -rf "$LATEST_BACKUP"
+                echo "✓ Backup deleted, using fresh defaults"
+                echo ""
+                ;;
+        esac
+    fi
+
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "  ⚠️  Your server is NOT protected yet!"
@@ -867,6 +929,55 @@ elif [ $1 -eq 0 ]; then
     echo "║  NFTBan Uninstallation                                     ║"
     echo "╚════════════════════════════════════════════════════════════╝"
     echo ""
+
+    # Ask user if they want to backup configuration
+    echo "Do you want to backup your configuration for future reinstalls?"
+    echo "  • yes - Backup to /var/lib/nftban/config-backup/"
+    echo "  • no  - Delete everything"
+    echo ""
+
+    # In non-interactive mode, default to yes (backup)
+    if [ -t 0 ]; then
+        read -p "Backup configuration? (yes/no) [yes]: " BACKUP_CONFIG
+        BACKUP_CONFIG=${BACKUP_CONFIG:-yes}
+    else
+        BACKUP_CONFIG="yes"
+        echo "Non-interactive mode: Backing up configuration automatically"
+    fi
+
+    if [ "$BACKUP_CONFIG" = "yes" ]; then
+        BACKUP_DIR="/var/lib/nftban/config-backup-$(date +%Y%m%d-%H%M%S)"
+        mkdir -p "$BACKUP_DIR"/{nftban,fail2ban}
+
+        # Backup nftban configs
+        if [ -d /etc/nftban/conf.d ]; then
+            cp -a /etc/nftban/conf.d "$BACKUP_DIR/nftban/" 2>/dev/null || true
+        fi
+
+        # Backup fail2ban jails
+        if [ -d /etc/fail2ban/jail.d ]; then
+            cp /etc/fail2ban/jail.d/nftban-*.conf "$BACKUP_DIR/fail2ban/" 2>/dev/null || true
+        fi
+
+        # Save enabled/disabled states
+        if systemctl is-enabled nftban.timer >/dev/null 2>&1; then
+            echo "enabled" > "$BACKUP_DIR/nftban.timer.state"
+        else
+            echo "disabled" > "$BACKUP_DIR/nftban.timer.state"
+        fi
+
+        # Create metadata
+        cat > "$BACKUP_DIR/metadata.txt" <<BACKUPEOF
+Backup Date: $(date)
+NFTBan Version: $(cat /var/lib/nftban/config/nftban.version 2>/dev/null || echo "unknown")
+Hostname: $(hostname)
+Reason: Uninstall
+BACKUPEOF
+
+        echo ""
+        echo "✓ Configuration backed up to: $BACKUP_DIR"
+        echo ""
+    fi
 
     # Ask user if they want to disable NFTBan before removal
     echo "⚠️  NFTBan is being removed from your system."
@@ -1068,7 +1179,8 @@ fi
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d
 %config(noreplace) %attr(0640,root,nftban) /etc/nftban/nftban.conf
 %attr(0640,root,nftban) /etc/nftban/baseline.nft
-%attr(0640,root,nftban) /etc/nftban/conf.d/*.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/geoip.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/feeds.conf
 %dir %attr(0750,root,nftban) /etc/nftban/feeds.d
 %attr(0640,root,nftban) /etc/nftban/feeds.d/.gitkeep
 %dir %attr(0750,root,nftban) /etc/nftban/rules.d
@@ -1077,29 +1189,29 @@ fi
 /etc/nftban/secrets.d/.gitkeep
 
 # Fail2ban Integration
-/etc/fail2ban/action.d/nftban.conf
+%config(noreplace) /etc/fail2ban/action.d/nftban.conf
 
 # Fail2ban Filters (all with nftban- prefix)
-/etc/fail2ban/filter.d/nftban-apache-scan.conf
-/etc/fail2ban/filter.d/nftban-apache-wp-login.conf
-/etc/fail2ban/filter.d/nftban-apache-xmlrpc.conf
-/etc/fail2ban/filter.d/nftban-dovecot-custom.conf
-/etc/fail2ban/filter.d/nftban-modsecurity.conf
-/etc/fail2ban/filter.d/nftban-persistent-offenders.conf
+%config(noreplace) /etc/fail2ban/filter.d/nftban-apache-scan.conf
+%config(noreplace) /etc/fail2ban/filter.d/nftban-apache-wp-login.conf
+%config(noreplace) /etc/fail2ban/filter.d/nftban-apache-xmlrpc.conf
+%config(noreplace) /etc/fail2ban/filter.d/nftban-dovecot-custom.conf
+%config(noreplace) /etc/fail2ban/filter.d/nftban-modsecurity.conf
+%config(noreplace) /etc/fail2ban/filter.d/nftban-persistent-offenders.conf
 
 # Fail2ban Jails (all with nftban- prefix)
-/etc/fail2ban/jail.d/nftban-sshd.conf
-/etc/fail2ban/jail.d/nftban-exim.conf
-/etc/fail2ban/jail.d/nftban-exim-spam.conf
-/etc/fail2ban/jail.d/nftban-directadmin.conf
-/etc/fail2ban/jail.d/nftban-pure-ftpd.conf
-/etc/fail2ban/jail.d/nftban-roundcube.conf
-/etc/fail2ban/jail.d/nftban-dovecot.conf
-/etc/fail2ban/jail.d/nftban-modsecurity.conf
-/etc/fail2ban/jail.d/nftban-apache-xmlrpc.conf
-/etc/fail2ban/jail.d/nftban-apache-wp-login.conf
-/etc/fail2ban/jail.d/nftban-apache-scan.conf
-/etc/fail2ban/jail.d/nftban-persistent-offenders.conf
+%config(noreplace) /etc/fail2ban/jail.d/nftban-sshd.conf
+%config(noreplace) /etc/fail2ban/jail.d/nftban-exim.conf
+%config(noreplace) /etc/fail2ban/jail.d/nftban-exim-spam.conf
+%config(noreplace) /etc/fail2ban/jail.d/nftban-directadmin.conf
+%config(noreplace) /etc/fail2ban/jail.d/nftban-pure-ftpd.conf
+%config(noreplace) /etc/fail2ban/jail.d/nftban-roundcube.conf
+%config(noreplace) /etc/fail2ban/jail.d/nftban-dovecot.conf
+%config(noreplace) /etc/fail2ban/jail.d/nftban-modsecurity.conf
+%config(noreplace) /etc/fail2ban/jail.d/nftban-apache-xmlrpc.conf
+%config(noreplace) /etc/fail2ban/jail.d/nftban-apache-wp-login.conf
+%config(noreplace) /etc/fail2ban/jail.d/nftban-apache-scan.conf
+%config(noreplace) /etc/fail2ban/jail.d/nftban-persistent-offenders.conf
 
 # Systemd units
 %{_unitdir}/*.service
