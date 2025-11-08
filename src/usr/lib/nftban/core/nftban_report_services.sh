@@ -123,20 +123,20 @@ nftban_services_scan() {
     # BINARY DEPENDENCIES
     # ==========================================================================
 
-    # golang
-    local go_status="NOT_FOUND"
-    local go_version="n/a"
-    local go_notes=""
+    # nftban-geoip (compiled Go binary for GeoIP features)
+    local geoip_status="NOT_FOUND"
+    local geoip_version="n/a"
+    local geoip_notes=""
 
-    if command -v go &>/dev/null; then
-        go_status="INSTALLED"
-        go_version=$(go version 2>&1 | awk '{print $3}' | sed 's/go//' || echo "unknown")
-        go_notes="GeoIP and advanced features"
+    if [[ -x /usr/lib/nftban/bin/nftban-geoip ]]; then
+        geoip_status="INSTALLED"
+        geoip_version=$(/usr/lib/nftban/bin/nftban-geoip version 2>&1 | grep -oP 'v?\K[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
+        geoip_notes="GeoIP country blocking (Go binary)"
     else
-        go_notes="Not installed (GeoIP features disabled)"
+        geoip_notes="Not installed (GeoIP features disabled)"
     fi
 
-    NFTBAN_SERVICE_STATUS["golang"]="${go_status}|${go_version}|optional|${go_notes}"
+    NFTBAN_SERVICE_STATUS["nftban-geoip"]="${geoip_status}|${geoip_version}|optional|${geoip_notes}"
 
     # mailx/mail
     local mail_status="NOT_FOUND"
