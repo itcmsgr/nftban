@@ -882,31 +882,22 @@ nftban_health_check_polkit() {
             fi
         fi
 
-        # Check if polkit service is running (different names on different distros)
+        # Check if polkit service is running (service name is polkit.service on all distros)
         if command -v systemctl >/dev/null 2>&1; then
-            local polkit_running=false
-            # Try polkit (RHEL/Fedora)
-            if systemctl is-active --quiet polkit 2>/dev/null; then
-                polkit_running=true
-            # Try polkitd (Debian/Ubuntu)
-            elif systemctl is-active --quiet polkitd 2>/dev/null; then
-                polkit_running=true
-            fi
-
-            if [[ "$polkit_running" == "false" ]]; then
+            if ! systemctl is-active --quiet polkit 2>/dev/null; then
                 # Try to auto-heal by starting the service
                 if [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
-                    if systemctl start polkit 2>/dev/null || systemctl start polkitd 2>/dev/null; then
+                    if systemctl start polkit 2>/dev/null; then
                         polkit_issues+=("Polkit service was stopped - AUTO-HEALED: started successfully")
                         status=$HEALTH_WARNING
                     else
                         polkit_issues+=("Polkit service not running - authorization will not work")
-                        polkit_issues+=("AUTO-HEAL FAILED: Could not start polkit/polkitd service")
+                        polkit_issues+=("AUTO-HEAL FAILED: Could not start polkit.service")
                         status=$HEALTH_ERROR
                     fi
                 else
                     polkit_issues+=("Polkit service not running - authorization will not work")
-                    polkit_issues+=("FIX: sudo systemctl start polkit  # or polkitd on Ubuntu/Debian")
+                    polkit_issues+=("FIX: sudo systemctl start polkit")
                     status=$HEALTH_ERROR
                 fi
             fi
