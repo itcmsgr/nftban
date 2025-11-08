@@ -51,8 +51,9 @@ rpm -qa | grep golang
 
 ## Have You Read the Installation Guide?
 
-- [ ] Yes, I have read `docs/ROCKY-ALMA-INSTALL.md`
-- [ ] No, I haven't seen it yet
+- [ ] Yes, I have read `/usr/share/nftban/docs/QUICK-START.md` (after install)
+- [ ] Yes, I have run `scripts/distro-setup/rocky.sh` or `almalinux.sh`
+- [ ] No, I haven't seen them yet
 
 ## Common Solutions (Try These First!)
 
