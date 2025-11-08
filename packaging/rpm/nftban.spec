@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v0.32.8 - RPM Spec File
+# NFTBan v0.32.9 - RPM Spec File
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: RPM package specification for Red Hat-based distributions
@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.8
+Version:        0.32.9
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -1141,6 +1141,13 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
+* Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.9-1
+- FIX: Corrected version display in nftban CLI (was showing outdated version)
+- FIX: Added RHEL/Rocky Apache log patterns (*access_log without .log extension)
+- FIX: Comprehensive logpath validation to prevent fail2ban crashes
+- ENHANCEMENT: Multiline logpath parsing with glob pattern validation
+- ENHANCEMENT: Fail2ban jail enable now validates log files exist before enabling
+
 * Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.8-1
 - NEW: Fail2ban auto-discovery command for automatic jail detection
 - ENHANCEMENT: Auto-discovery scans system for compatible services
