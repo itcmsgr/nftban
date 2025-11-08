@@ -335,9 +335,6 @@ nftban_fail2ban_jail_check_requirements() {
         return 1
     fi
 
-    # Extract logpath from config (handle wildcards)
-    local logpath=$(grep -E "^logpath\s*=" "$jail_config" | sed 's/.*=\s*//' | tr -d ' ')
-
     # Check based on jail type
     case "$jail_name" in
         nftban-sshd)
@@ -396,6 +393,46 @@ nftban_fail2ban_jail_check_requirements() {
             fi
             ;;
     esac
+
+    # CRITICAL: Validate logpath patterns actually match files
+    # This prevents fail2ban from crashing with "Have not found any log file" error
+    local found_files=0
+    local logpath_patterns=()
+
+    # Parse multiline logpath - extract all lines starting with logpath or continuation (whitespace)
+    local in_logpath=false
+    while IFS= read -r line; do
+        # Start of logpath section
+        if [[ "$line" =~ ^[[:space:]]*logpath[[:space:]]*= ]]; then
+            in_logpath=true
+            # Extract value after =
+            pattern=$(echo "$line" | sed 's/.*=\s*//' | sed 's/^\s*//' | sed 's/\s*$//')
+            [[ -n "$pattern" ]] && logpath_patterns+=("$pattern")
+        # Continuation line (starts with whitespace, not a new directive)
+        elif [[ $in_logpath == true ]] && [[ "$line" =~ ^[[:space:]]+[^#] ]] && [[ ! "$line" =~ ^[[:space:]]*[a-z]+[[:space:]]*= ]]; then
+            pattern=$(echo "$line" | sed 's/^\s*//' | sed 's/\s*$//')
+            [[ -n "$pattern" ]] && logpath_patterns+=("$pattern")
+        # New directive or comment - stop continuation
+        elif [[ "$line" =~ ^[[:space:]]*[a-z]+[[:space:]]*= ]] || [[ "$line" =~ ^[[:space:]]*# ]]; then
+            in_logpath=false
+        fi
+    done < "$jail_config"
+
+    # Test each logpath pattern for matching files
+    if [[ ${#logpath_patterns[@]} -gt 0 ]]; then
+        for pattern in "${logpath_patterns[@]}"; do
+            # Use compgen to test if glob pattern matches any files
+            if compgen -G "$pattern" >/dev/null 2>&1; then
+                ((found_files++))
+            fi
+        done
+
+        # Error if ZERO files matched ANY pattern
+        if [[ $found_files -eq 0 ]]; then
+            errors+=("No log files match jail logpath patterns (checked ${#logpath_patterns[@]} patterns)")
+            errors+=("Jail would cause fail2ban to crash with 'Have not found any log file' error")
+        fi
+    fi
 
     # Print results
     if [[ ${#errors[@]} -gt 0 ]]; then
