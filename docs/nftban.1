@@ -372,7 +372,12 @@ Show fail2ban status and statistics
 
 .TP
 .B fail2ban jails
-List all currently enabled jails
+List all jails (enabled and disabled) with their status
+.RS
+Shows all available NFTBan fail2ban jails, marking which are enabled
+(✓ active) and which are disabled, along with banned IP counts for
+active jails. Users can select jails to enable or disable.
+.RE
 
 .TP
 .B fail2ban available
