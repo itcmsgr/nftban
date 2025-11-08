@@ -1,0 +1,15 @@
+# NFTBan Git Workflow
+# ===================
+
+PRODUCTION_BRANCH=main
+DEVELOPMENT_BRANCH=develop
+FEATURE_PREFIX=feature/
+HOTFIX_PREFIX=hotfix/
+RELEASE_PREFIX=release/
+
+# Workflow:
+# 1. Work on develop or feature/* branches
+# 2. Test on develop
+# 3. Merge to main for production releases
+# 4. Tag production releases as v0.x.x
+# 5. Tag dev releases as v0.x.x-dev
