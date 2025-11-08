@@ -1,8 +1,8 @@
 # NFTBan Documentation Index
 
-**Version:** v0.32.6
-**Last Updated:** 2025-11-05
-**Repository:** https://github.com/nftban/nftban
+**Version:** v0.32.19
+**Last Updated:** 2025-11-08
+**Repository:** https://github.com/itcmsgr/nftban
 
 ---
 
@@ -27,6 +27,24 @@ All NFTBan documentation is located in `/docs/` directory within the repository.
 ---
 
 ## 🔧 Development Documentation
+
+### [CODING_STANDARDS.md](CODING_STANDARDS.md) ⚠️ MANDATORY
+**Purpose:** Mandatory coding standards for all NFTBan bash scripts
+**Audience:** ALL developers, contributors, AI assistants
+**Contains:**
+- Error handling (`set -Eeuo pipefail`)
+- Arithmetic expressions (avoid `((counter++))` trap)
+- Logging standards (no `&>/dev/null`)
+- User communication (messages must match reality)
+- Cross-distribution compatibility
+- Package manager integration
+- Real bug lessons learned (v0.32.16-v0.32.19)
+
+**Critical Rules:**
+1. ✅ `set -Eeuo pipefail` in ALL scripts
+2. ✅ Use `counter=$((counter + 1))` not `((counter++))`
+3. ✅ Log to files, NEVER suppress with `&>/dev/null`
+4. ✅ Test on ALL distros before merging
 
 ### [GO_COMPILATION_GUIDE.md](GO_COMPILATION_GUIDE.md)
 **Purpose:** Complete guide for compiling Go binaries
@@ -357,6 +375,7 @@ When adding new features:
 
 | Date | Changes | Updated By |
 |------|---------|------------|
+| 2025-11-08 | Added CODING_STANDARDS.md (comprehensive) | NFTBan Team + Claude Code |
 | 2025-11-05 | Initial documentation consolidation | NFTBan Team |
 | 2025-11-05 | Added GeoBan feature documentation | NFTBan Team |
 | 2025-11-05 | Created unified nftban-go.conf | NFTBan Team |
@@ -364,6 +383,6 @@ When adding new features:
 
 ---
 
-**Last Updated:** 2025-11-05
+**Last Updated:** 2025-11-08
 **Maintained By:** NFTBan Development Team
 **License:** MPL-2.0
