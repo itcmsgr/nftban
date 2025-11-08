@@ -60,8 +60,14 @@ _nftban() {
             return 0
             ;;
         fail2ban)
-            COMPREPLY=( $(compgen -W "status jails available recommended jail enable disable reload banned ban unban cloudflare health-fix start stop restart help" -- ${cur}) )
+            COMPREPLY=( $(compgen -W "status jails available recommended auto-discovery jail enable disable reload banned ban unban cloudflare health-fix start stop restart help" -- ${cur}) )
             return 0
+            ;;
+        auto-discovery)
+            if [[ "${COMP_WORDS[1]}" == "fail2ban" ]]; then
+                COMPREPLY=( $(compgen -W "--enable" -- ${cur}) )
+                return 0
+            fi
             ;;
         health-fix)
             if [[ "${COMP_WORDS[1]}" == "fail2ban" ]]; then

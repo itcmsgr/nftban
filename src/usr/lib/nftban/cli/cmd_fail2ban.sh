@@ -63,6 +63,7 @@ COMMANDS:
     jails               List all jails (enabled and disabled) - select to enable/disable
     available           Show all available jails on this system
     recommended         Show recommended jails for your OS/services
+    auto-discovery      Scan system and show compatible jails (use --enable to activate)
     jail <name>         Show detailed status for specific jail
 
     enable <jail>       Enable/start a fail2ban jail
@@ -106,6 +107,12 @@ EXAMPLES:
 
     # List all jails (enabled and disabled)
     nftban fail2ban jails
+
+    # Scan system and show compatible jails
+    nftban fail2ban auto-discovery
+
+    # Auto-enable all compatible jails
+    nftban fail2ban auto-discovery --enable
 
     # Enable SSH protection
     nftban fail2ban enable nftban-sshd
@@ -383,6 +390,151 @@ _nftban_fail2ban_cmd_recommended() {
     echo ""
 }
 
+_nftban_fail2ban_cmd_auto_discovery() {
+    # Auto-discover compatible jails based on installed services
+    # Flag: --enable to auto-enable discovered jails
+
+    local enable_flag="false"
+
+    # Parse flags
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --enable)
+                enable_flag="true"
+                shift
+                ;;
+            *)
+                echo "ERROR: Unknown flag: $1" >&2
+                echo "Usage: nftban fail2ban auto-discovery [--enable]" >&2
+                return 1
+                ;;
+        esac
+    done
+
+    echo "NFTBan Fail2ban Auto-Discovery:"
+    echo "════════════════════════════════════════════════════════════"
+    echo ""
+    echo "Scanning system for compatible services..."
+    echo ""
+
+    # Get all available NFTBan jails
+    local all_jails
+    mapfile -t all_jails < <(nftban_fail2ban_list_all_available_jails)
+
+    if [[ ${#all_jails[@]} -eq 0 ]]; then
+        echo "  No NFTBan-compatible jail configurations found"
+        echo ""
+        echo "  NFTBan jails should be in: /etc/fail2ban/jail.d/nftban-*.conf"
+        return 0
+    fi
+
+    local discovered_jails=()
+    local already_enabled_jails=()
+    local incompatible_jails=()
+
+    # Check requirements for each jail
+    for jail_entry in "${all_jails[@]}"; do
+        local jail_name="${jail_entry%%:*}"
+        local jail_status="${jail_entry##*:}"
+
+        # Check requirements
+        local check_output
+        local check_result=0
+        check_output=$(nftban_fail2ban_jail_check_requirements "$jail_name" 2>&1) || check_result=$?
+
+        if [[ $check_result -eq 0 ]]; then
+            # Requirements met
+            if [[ "$jail_status" == "enabled" ]]; then
+                already_enabled_jails+=("$jail_name")
+            else
+                discovered_jails+=("$jail_name")
+            fi
+        else
+            # Requirements not met
+            incompatible_jails+=("$jail_name")
+        fi
+    done
+
+    # Display results
+    printf "%-30s %s\n" "JAIL" "STATUS"
+    echo "────────────────────────────────────────────────────────────"
+
+    # Show already enabled jails
+    for jail in "${already_enabled_jails[@]}"; do
+        printf "%-30s ✓ %s\n" "$jail" "already enabled"
+    done
+
+    # Show discovered jails (compatible but not enabled)
+    for jail in "${discovered_jails[@]}"; do
+        printf "%-30s → %s\n" "$jail" "compatible (ready to enable)"
+    done
+
+    # Show incompatible jails
+    for jail in "${incompatible_jails[@]}"; do
+        printf "%-30s ✗ %s\n" "$jail" "service not found"
+    done
+
+    echo ""
+    echo "Summary:"
+    echo "────────────────────────────────────────────────────────────"
+    echo "  Already enabled:   ${#already_enabled_jails[@]}"
+    echo "  Ready to enable:   ${#discovered_jails[@]}"
+    echo "  Not compatible:    ${#incompatible_jails[@]}"
+    echo ""
+
+    # Enable discovered jails if --enable flag is set
+    if [[ "$enable_flag" == "true" ]]; then
+        if [[ ${#discovered_jails[@]} -eq 0 ]]; then
+            echo "No jails to enable."
+            echo ""
+            return 0
+        fi
+
+        echo "Enabling ${#discovered_jails[@]} discovered jail(s)..."
+        echo ""
+
+        if ! nftban_fail2ban_is_running; then
+            echo "ERROR: fail2ban is not running" >&2
+            echo "Start it with: sudo systemctl start fail2ban" >&2
+            return 1
+        fi
+
+        local enabled_count=0
+        local failed_count=0
+
+        for jail in "${discovered_jails[@]}"; do
+            echo "Enabling ${jail}..."
+            if nftban_fail2ban_jail_start "$jail" "false" 2>&1; then
+                echo "  ✓ ${jail} enabled successfully"
+                ((enabled_count++))
+            else
+                echo "  ✗ ${jail} failed to enable"
+                ((failed_count++))
+            fi
+        done
+
+        echo ""
+        echo "Results:"
+        echo "────────────────────────────────────────────────────────────"
+        echo "  Successfully enabled: ${enabled_count}"
+        echo "  Failed to enable:     ${failed_count}"
+        echo ""
+    else
+        if [[ ${#discovered_jails[@]} -gt 0 ]]; then
+            echo "To enable all discovered jails:"
+            echo "  nftban fail2ban auto-discovery --enable"
+            echo ""
+            echo "To enable individually:"
+            for jail in "${discovered_jails[@]}"; do
+                echo "  nftban fail2ban enable ${jail}"
+            done
+            echo ""
+        fi
+    fi
+
+    return 0
+}
+
 _nftban_fail2ban_cmd_jail() {
     # Show detailed jail status
     local jail="$1"
@@ -554,6 +706,10 @@ nftban_cmd_fail2ban() {
 
         recommended)
             _nftban_fail2ban_cmd_recommended
+            ;;
+
+        auto-discovery)
+            _nftban_fail2ban_cmd_auto_discovery "$@"
             ;;
 
         jail)

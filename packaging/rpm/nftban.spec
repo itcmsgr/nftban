@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v0.32.7 - RPM Spec File
+# NFTBan v0.32.8 - RPM Spec File
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: RPM package specification for Red Hat-based distributions
@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.7
+Version:        0.32.8
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -1141,6 +1141,13 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
+* Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.8-1
+- NEW: Fail2ban auto-discovery command for automatic jail detection
+- ENHANCEMENT: Auto-discovery scans system for compatible services
+- ENHANCEMENT: Auto-discovery --enable flag to enable all discovered jails
+- DOCS: Updated man page with auto-discovery command
+- ENHANCEMENT: Bash completion for auto-discovery command
+
 * Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.7-1
 - FIX: DirectAdmin passive FTP port range syntax (35000-35999 not 35000:35999)
 - FIX: Auto-enable DirectAdmin fail2ban jail on panel setup

@@ -384,6 +384,19 @@ active jails. Users can select jails to enable or disable.
 Show all available jails on this system
 
 .TP
+.B fail2ban auto-discovery [\fIOPTIONS\fR]
+Scan system for installed services and show compatible jails
+.RS
+Automatically detects which NFTBan jails are compatible with your system
+by checking for required services and log files. Shows three categories:
+already enabled jails, compatible jails ready to enable, and incompatible
+jails (service not found).
+.TP
+.B \-\-enable
+Automatically enable all discovered compatible jails
+.RE
+
+.TP
 .B fail2ban jail \fINAME\fR
 Show detailed status for specific jail
 
