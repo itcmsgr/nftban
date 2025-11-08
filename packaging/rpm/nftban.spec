@@ -1,17 +1,20 @@
 # =============================================================================
-# NFTBan v0.32.6 - RPM Spec File
+# NFTBan - RPM Spec File
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: RPM package specification for Red Hat-based distributions
 # Supported: Rocky Linux 9+, AlmaLinux 9+, Fedora 38+
+#
+# Version is read from VERSION file and passed via build script:
+#   --define "version ${VERSION}" --define "release ${RELEASE}"
 # =============================================================================
 
 # Disable debuginfo package generation (shell scripts don't need debug symbols)
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.6
-Release:        1%{?dist}
+Version:        %{version}
+Release:        %{release}%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
 License:        MPL-2.0
