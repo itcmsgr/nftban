@@ -60,6 +60,51 @@ if ! command -v rpmbuild >/dev/null 2>&1; then
     exit 1
 fi
 
+# Check for golang >= 1.21 (required for building Go components)
+if ! command -v go >/dev/null 2>&1; then
+    echo -e "${RED}ERROR: golang not found${NC}"
+    echo ""
+    echo "Build dependencies are required. Install with:"
+    echo ""
+    if command -v dnf >/dev/null 2>&1; then
+        echo "  # Install build dependencies"
+        echo "  sudo dnf install -y golang systemd-rpm-macros"
+        echo ""
+        echo "  # Or use dnf builddep to install all BuildRequires from spec:"
+        echo "  sudo dnf builddep -y packaging/rpm/nftban.spec"
+    elif command -v yum >/dev/null 2>&1; then
+        echo "  # Install build dependencies"
+        echo "  sudo yum install -y golang systemd-rpm-macros"
+        echo ""
+        echo "  # Or use yum-builddep to install all BuildRequires from spec:"
+        echo "  sudo yum-builddep -y packaging/rpm/nftban.spec"
+    else
+        echo "  Install golang >= 1.21 and systemd-rpm-macros manually"
+    fi
+    echo ""
+    echo "See: .github/workflows/ for complete build workflow"
+    echo ""
+    exit 1
+fi
+
+# Verify golang version
+GO_VERSION=$(go version | grep -oP 'go\K[0-9.]+' || echo "0.0")
+GO_MAJOR=$(echo "$GO_VERSION" | cut -d. -f1)
+GO_MINOR=$(echo "$GO_VERSION" | cut -d. -f2)
+if [[ "$GO_MAJOR" -lt 1 ]] || [[ "$GO_MAJOR" -eq 1 && "$GO_MINOR" -lt 21 ]]; then
+    echo -e "${RED}ERROR: golang version $GO_VERSION is too old (need >= 1.21)${NC}"
+    echo ""
+    echo "Please upgrade golang:"
+    if command -v dnf >/dev/null 2>&1; then
+        echo "  sudo dnf upgrade golang"
+    elif command -v yum >/dev/null 2>&1; then
+        echo "  sudo yum upgrade golang"
+    fi
+    echo ""
+    exit 1
+fi
+echo "✓ golang $GO_VERSION found"
+
 # Create build directories
 echo "Creating build directories..."
 mkdir -p "${BUILD_DIR}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
