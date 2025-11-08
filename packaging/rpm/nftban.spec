@@ -1,20 +1,17 @@
 # =============================================================================
-# NFTBan - RPM Spec File
+# NFTBan v0.32.7 - RPM Spec File
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: RPM package specification for Red Hat-based distributions
 # Supported: Rocky Linux 9+, AlmaLinux 9+, Fedora 38+
-#
-# Version is read from VERSION file and passed via build script:
-#   --define "version ${VERSION}" --define "release ${RELEASE}"
 # =============================================================================
 
 # Disable debuginfo package generation (shell scripts don't need debug symbols)
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        %{version}
-Release:        %{release}%{?dist}
+Version:        0.32.7
+Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
 License:        MPL-2.0
@@ -613,7 +610,7 @@ if [ $1 -eq 2 ]; then
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✅ NFTBan v0.32.6 - Upgrade Complete"
+    echo "✅ NFTBan v0.32.7 - Upgrade Complete"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "📊 UPGRADE SUMMARY"
@@ -1144,6 +1141,16 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
+* Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.7-1
+- FIX: DirectAdmin passive FTP port range syntax (35000-35999 not 35000:35999)
+- FIX: Auto-enable DirectAdmin fail2ban jail on panel setup
+- FIX: Show all fail2ban jails (enabled and disabled) in CLI display
+- FIX: SIGPIPE issues with pipefail in fail2ban and panel functions
+- FIX: Panel status display with pipefail-safe helper functions
+- DOCS: Build dependency checks and installation guidance
+- DOCS: Updated man pages for fail2ban jails command
+- ENHANCEMENT: Bash completion for geoban command
+
 * Wed Nov 06 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.3-1
 - FIX: Auto-heal now correctly preserves auditors directory permissions
 - FIX: fail2ban shown as REQUIRED (not optional) in enable command
