@@ -100,7 +100,8 @@ _search_feeds() {
         fi
 
         if grep -q "^${ip}$" "$feed_file" 2>/dev/null; then
-            local feed_name=$(basename "$feed_file" .txt)
+            local feed_name
+            feed_name=$(basename "$feed_file" .txt)
             found_feeds+=("$feed_name")
         fi
     done
@@ -124,7 +125,8 @@ _search_fail2ban() {
     fi
 
     # Get list of active jails
-    local jails=$(fail2ban-client status 2>/dev/null | grep "Jail list:" | sed 's/.*Jail list:\s*//' | tr ',' '\n' | tr -d ' ')
+    local jails
+    jails=$(fail2ban-client status 2>/dev/null | grep "Jail list:" | sed 's/.*Jail list:\s*//' | tr ',' '\n' | tr -d ' ')
 
     for jail in $jails; do
         # Check if IP is banned in this jail
@@ -170,7 +172,8 @@ _search_port() {
     if [[ -d /etc/nftban/ports.d ]]; then
         while IFS= read -r file; do
             if grep -qE "^${port}\|" "$file" 2>/dev/null; then
-                local proto=$(grep -E "^${port}\|" "$file" | cut -d'|' -f2 | head -1)
+                local proto
+                proto=$(grep -E "^${port}\|" "$file" | cut -d'|' -f2 | head -1)
                 local proto_name="unknown"
                 case "$proto" in
                     T) proto_name="TCP" ;;
@@ -216,7 +219,8 @@ _display_results() {
         echo "───────────────────────────────────────────────────────────────"
 
         # Skip first line (FOUND)
-        local found_sets=$(echo "$nft_result" | tail -n +2)
+        local found_sets
+        found_sets=$(echo "$nft_result" | tail -n +2)
 
         while IFS= read -r location; do
             local table="${location%%:*}"
@@ -472,7 +476,8 @@ nftban_cmd_search() {
         echo "═══════════════════════════════════════════════════════════════"
         echo ""
 
-        local port_result=$(_search_port "$query")
+        local port_result
+        port_result=$(_search_port "$query")
 
         if [[ "$port_result" == "FOUND"* ]]; then
             echo "✓ STATUS: WHITELISTED (port is allowed)"
@@ -481,15 +486,18 @@ nftban_cmd_search() {
             echo "───────────────────────────────────────────────────────────────"
 
             # Skip first line (FOUND)
-            local found_locations=$(echo "$port_result" | tail -n +2)
+            local found_locations
+            found_locations=$(echo "$port_result" | tail -n +2)
 
             while IFS= read -r location; do
                 if [[ "$location" == nftables:* ]]; then
                     local set="${location##*:}"
                     echo "  ✓ nftables set: $set (active in firewall)"
                 elif [[ "$location" == config:* ]]; then
-                    local file=$(echo "$location" | cut -d':' -f2)
-                    local proto=$(echo "$location" | cut -d':' -f3)
+                    local file
+                    file=$(echo "$location" | cut -d':' -f2)
+                    local proto
+                    proto=$(echo "$location" | cut -d':' -f3)
                     echo "  ✓ config file: $file (protocol: $proto)"
                 fi
             done <<< "$found_locations"
@@ -526,9 +534,12 @@ nftban_cmd_search() {
     fi
 
     # Perform searches
-    local nft_result=$(_search_nftables "$ip")
-    local feeds_result=$(_search_feeds "$ip" || echo "")
-    local f2b_result=$(_search_fail2ban "$ip" || echo "")
+    local nft_result
+    nft_result=$(_search_nftables "$ip")
+    local feeds_result
+    feeds_result=$(_search_feeds "$ip" || echo "")
+    local f2b_result
+    f2b_result=$(_search_fail2ban "$ip" || echo "")
 
     # Display results
     _display_results "$ip" "$nft_result" "$feeds_result" "$f2b_result"
