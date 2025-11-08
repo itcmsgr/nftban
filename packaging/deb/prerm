@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan v0.32.6 - DEB Pre-Remove Script
+# NFTBan v0.32.15 - DEB Pre-Remove Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Pre-removal cleanup for DEB packages
@@ -15,6 +15,55 @@ case "$1" in
         echo "║  NFTBan Uninstallation                                     ║"
         echo "╚════════════════════════════════════════════════════════════╝"
         echo ""
+
+        # Ask user if they want to backup configuration
+        echo "Do you want to backup your configuration for future reinstalls?"
+        echo "  • yes - Backup to /var/lib/nftban/config-backup/"
+        echo "  • no  - Delete everything"
+        echo ""
+
+        # In non-interactive mode, default to yes (backup)
+        if [ -t 0 ]; then
+            read -p "Backup configuration? (yes/no) [yes]: " BACKUP_CONFIG
+            BACKUP_CONFIG=${BACKUP_CONFIG:-yes}
+        else
+            BACKUP_CONFIG="yes"
+            echo "Non-interactive mode: Backing up configuration automatically"
+        fi
+
+        if [ "$BACKUP_CONFIG" = "yes" ]; then
+            BACKUP_DIR="/var/lib/nftban/config-backup-$(date +%Y%m%d-%H%M%S)"
+            mkdir -p "$BACKUP_DIR"/{nftban,fail2ban}
+
+            # Backup nftban configs
+            if [ -d /etc/nftban/conf.d ]; then
+                cp -a /etc/nftban/conf.d "$BACKUP_DIR/nftban/" 2>/dev/null || true
+            fi
+
+            # Backup fail2ban jails
+            if [ -d /etc/fail2ban/jail.d ]; then
+                cp /etc/fail2ban/jail.d/nftban-*.conf "$BACKUP_DIR/fail2ban/" 2>/dev/null || true
+            fi
+
+            # Save enabled/disabled states
+            if systemctl is-enabled nftban.timer >/dev/null 2>&1; then
+                echo "enabled" > "$BACKUP_DIR/nftban.timer.state"
+            else
+                echo "disabled" > "$BACKUP_DIR/nftban.timer.state"
+            fi
+
+            # Create metadata
+            cat > "$BACKUP_DIR/metadata.txt" <<BACKUPEOF
+Backup Date: $(date)
+NFTBan Version: $(cat /var/lib/nftban/config/nftban.version 2>/dev/null || echo "unknown")
+Hostname: $(hostname)
+Reason: Uninstall
+BACKUPEOF
+
+            echo ""
+            echo "✓ Configuration backed up to: $BACKUP_DIR"
+            echo ""
+        fi
 
         # Ask user if they want to disable NFTBan before removal
         echo "⚠️  NFTBan is being removed from your system."
