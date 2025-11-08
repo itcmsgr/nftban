@@ -226,26 +226,15 @@ nftban_feeds_enable() {
     if [[ "$quiet" != "true" ]]; then
         echo "✓ Feed enabled: $feed_name"
         echo ""
-        echo "📥 Downloading feed data now..."
+        echo "📥 Downloading feed in background..."
+        echo "   Progress: tail -f /var/log/nftban/feeds.log"
+        echo "   Status:   nftban feeds status"
         echo ""
     fi
 
-    # Download immediately when enabling (not in background - user should see what happens)
-    if nftban_feeds_update_single "$feed_name"; then
-        if [[ "$quiet" != "true" ]]; then
-            echo ""
-            echo "✅ Feed activated and ready to use"
-            echo ""
-            echo "Check status: nftban feeds status"
-        fi
-    else
-        if [[ "$quiet" != "true" ]]; then
-            echo ""
-            echo "⚠️  Feed enabled but download failed"
-            echo "   Try manually: nftban feeds update $feed_name"
-        fi
-        return 1
-    fi
+    # Download in background (don't block CLI) but LOG output instead of suppressing it
+    nftban_feeds_update_single "$feed_name" >> /var/log/nftban/feeds.log 2>&1 &
+    disown
 }
 
 # Disable a feed
