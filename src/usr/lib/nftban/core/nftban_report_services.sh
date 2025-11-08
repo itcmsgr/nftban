@@ -127,11 +127,21 @@ nftban_services_scan() {
     local geoip_status="NOT_FOUND"
     local geoip_version="n/a"
     local geoip_notes=""
+    local geoip_bin=""
 
-    if [[ -x /usr/lib/nftban/bin/nftban-geoip ]]; then
+    # Check PATH first, then fallback to known locations
+    if command -v nftban-geoip &>/dev/null; then
+        geoip_bin="$(command -v nftban-geoip)"
+    elif [[ -x /usr/sbin/nftban-geoip ]]; then
+        geoip_bin="/usr/sbin/nftban-geoip"
+    elif [[ -x /usr/lib/nftban/bin/nftban-geoip ]]; then
+        geoip_bin="/usr/lib/nftban/bin/nftban-geoip"
+    fi
+
+    if [[ -n "$geoip_bin" ]]; then
         geoip_status="INSTALLED"
-        geoip_version=$(/usr/lib/nftban/bin/nftban-geoip version 2>&1 | grep -oP 'v?\K[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
-        geoip_notes="GeoIP country blocking (Go binary)"
+        geoip_version=$("$geoip_bin" version 2>&1 | grep -oP 'v?\K[0-9]+\.[0-9]+\.[0-9]+' | head -1 || echo "unknown")
+        geoip_notes="GeoIP country blocking ($geoip_bin)"
     else
         geoip_notes="Not installed (GeoIP features disabled)"
     fi

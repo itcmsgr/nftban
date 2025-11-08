@@ -131,34 +131,26 @@ install -m 0755 src/usr/sbin/nftban-confirm %{buildroot}/usr/sbin/
 install -m 0755 src/usr/sbin/nftban-rollback %{buildroot}/usr/sbin/
 
 # Install Go binaries (wrappers + architecture-specific real binaries)
-install -d -m 0755 %{buildroot}/usr/lib/nftban/bin
-install -d -m 0755 %{buildroot}/usr/lib/nftban/bin/.real
+# Lock down private dirs to prevent direct execution bypass
+install -d -m 0750 %{buildroot}/usr/lib/nftban/bin
+install -d -m 0750 %{buildroot}/usr/lib/nftban/bin/.real
 
-# Install wrapper scripts (if they exist)
-if [ -f src/usr/lib/nftban/bin/nftban-feeds ]; then
-    install -m 0755 src/usr/lib/nftban/bin/nftban-feeds %{buildroot}/usr/lib/nftban/bin/
-else
-    # Create simple wrapper if not exists
-    cat > %{buildroot}/usr/lib/nftban/bin/nftban-feeds << 'EOF'
-#!/bin/bash
-exec /usr/lib/nftban/bin/.real/nftban-feeds-$(uname -m) "$@"
-EOF
-    chmod 0755 %{buildroot}/usr/lib/nftban/bin/nftban-feeds
-fi
+# Install Go binary wrappers to /usr/sbin/ (aligned with main nftban binary)
+install -m 0750 src/usr/lib/nftban/bin/nftban-geoip %{buildroot}/usr/sbin/nftban-geoip
+install -m 0750 src/usr/lib/nftban/bin/nftban-feeds %{buildroot}/usr/sbin/nftban-feeds
 
-if [ -f src/usr/lib/nftban/bin/nftban-geoip ]; then
-    install -m 0755 src/usr/lib/nftban/bin/nftban-geoip %{buildroot}/usr/lib/nftban/bin/
-else
-    cat > %{buildroot}/usr/lib/nftban/bin/nftban-geoip << 'EOF'
-#!/bin/bash
-exec /usr/lib/nftban/bin/.real/nftban-geoip-$(uname -m) "$@"
-EOF
-    chmod 0755 %{buildroot}/usr/lib/nftban/bin/nftban-geoip
-fi
+# Install compiled Go binaries to .real/ with restricted permissions
+# (prevents direct bypass; must go through wrapper for group check)
+install -m 0750 dist/%{_arch}/nftban-feeds %{buildroot}/usr/lib/nftban/bin/.real/nftban-feeds-%{_arch}
+install -m 0750 dist/%{_arch}/nftban-geoip %{buildroot}/usr/lib/nftban/bin/.real/nftban-geoip-%{_arch}
 
-# Install compiled Go binaries with architecture suffix
-install -m 0755 dist/%{_arch}/nftban-feeds %{buildroot}/usr/lib/nftban/bin/.real/nftban-feeds-%{_arch}
-install -m 0755 dist/%{_arch}/nftban-geoip %{buildroot}/usr/lib/nftban/bin/.real/nftban-geoip-%{_arch}
+# Backward compatibility symlinks (old location → new location)
+ln -sf /usr/sbin/nftban-geoip %{buildroot}/usr/lib/nftban/bin/nftban-geoip
+ln -sf /usr/sbin/nftban-feeds %{buildroot}/usr/lib/nftban/bin/nftban-feeds
+
+# PATH convenience symlinks (for non-root shells)
+ln -sf /usr/sbin/nftban-geoip %{buildroot}/usr/bin/nftban-geoip
+ln -sf /usr/sbin/nftban-feeds %{buildroot}/usr/bin/nftban-feeds
 
 # Install core and CLI modules
 install -d -m 0755 %{buildroot}/usr/lib/nftban/core
@@ -1141,16 +1133,30 @@ EOF
 fi
 
 %files
-# Binaries
-/usr/sbin/nftban
-/usr/sbin/nftban-complete
-/usr/sbin/nftban-apply
-/usr/sbin/nftban-confirm
-/usr/sbin/nftban-rollback
+# Binaries (all aligned with same permissions: 750 root:nftban for FHS compliance)
+%attr(0750,root,nftban) /usr/sbin/nftban
+%attr(0750,root,nftban) /usr/sbin/nftban-complete
+%attr(0750,root,nftban) /usr/sbin/nftban-apply
+%attr(0750,root,nftban) /usr/sbin/nftban-confirm
+%attr(0750,root,nftban) /usr/sbin/nftban-rollback
+%attr(0750,root,nftban) /usr/sbin/nftban-feeds
+%attr(0750,root,nftban) /usr/sbin/nftban-geoip
+
+# Symlinks (PATH convenience for non-root users in nftban group)
+/usr/bin/nftban-feeds
+/usr/bin/nftban-geoip
+
+# Private directories (locked down to prevent direct .real/ execution bypass)
+%dir %attr(0750,root,nftban) /usr/lib/nftban/bin
+%dir %attr(0750,root,nftban) /usr/lib/nftban/bin/.real
+
+# Backward compatibility symlinks (old location → new location)
 /usr/lib/nftban/bin/nftban-feeds
 /usr/lib/nftban/bin/nftban-geoip
-/usr/lib/nftban/bin/.real/nftban-feeds-%{_arch}
-/usr/lib/nftban/bin/.real/nftban-geoip-%{_arch}
+
+# Real compiled Go binaries (restricted; prevent bypass)
+%attr(0750,root,nftban) /usr/lib/nftban/bin/.real/nftban-feeds-%{_arch}
+%attr(0750,root,nftban) /usr/lib/nftban/bin/.real/nftban-geoip-%{_arch}
 
 # Libraries and modules
 /usr/lib/nftban/core/*.sh

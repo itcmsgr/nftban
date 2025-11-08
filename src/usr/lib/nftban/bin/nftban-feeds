@@ -1,36 +1,74 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.6 - Go Binary Wrapper (nftban-feeds)
+# NFTBan v0.32.21 - Go Binary Wrapper (nftban-feeds)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Smart wrapper that auto-execs real Go binary if available
+# Purpose: Smart wrapper that auto-execs architecture-specific Go binary
 #
 # meta:name=nftban-feeds
 # meta:type=tool
 # meta:header=NFTBan Feeds Parser (Go Binary Wrapper)
-# meta:version=0.30.0
+# meta:version=0.32.21
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
 # **Architecture:**
-# - Source installs: This wrapper runs (slower Bash fallback)
-# - RPM/DEB packages: Real Go binary in .real/ directory (fast)
+# - Supports both kernel arch names (x86_64, aarch64) AND Debian names (amd64, arm64)
+# - Real Go binaries live in /usr/lib/nftban/bin/.real/nftban-feeds-{ARCH}
+# - Falls back to Bash parser if Go binary not available
 #
 # meta:created_date=2025-10-28
+# meta:modified_date=2025-11-08
 # =============================================================================
 
 set -Eeuo pipefail
 
-# Auto-detect architecture and find real Go binary
-ARCH=$(uname -m)
-REAL="/usr/lib/nftban/bin/.real/nftban-feeds-${ARCH}"
+REAL_DIR="/usr/lib/nftban/bin/.real"
 
-# If architecture-specific binary exists, use it (10-60x faster)
-if [ -x "$REAL" ]; then
-    exec "$REAL" "$@"
+# Get architecture from kernel
+kernel_arch="$(uname -m 2>/dev/null || echo unknown)"
+
+# Get Debian architecture if dpkg available
+if command -v dpkg >/dev/null 2>&1; then
+    debian_arch="$(dpkg --print-architecture 2>/dev/null || echo)"
+else
+    debian_arch=""
 fi
 
-# Fallback mode (source installations without compiled binary)
+# Architecture normalization for common cases
+normalize_arch() {
+    case "$1" in
+        x86_64)  echo "x86_64" ;;
+        amd64)   echo "amd64" ;;
+        aarch64) echo "aarch64" ;;
+        arm64)   echo "arm64" ;;
+        ppc64le) echo "ppc64le" ;;
+        s390x)   echo "s390x" ;;
+        *)       echo "$1" ;;
+    esac
+}
+
+k_norm="$(normalize_arch "$kernel_arch")"
+d_norm="$(normalize_arch "$debian_arch")"
+
+# Try kernel-named binary (RPM-style), then Debian arch name (DEB-style)
+candidates=(
+    "$REAL_DIR/nftban-feeds-$k_norm"
+)
+
+# Add Debian candidate if different from kernel
+if [[ -n "$d_norm" && "$d_norm" != "$k_norm" ]]; then
+    candidates+=("$REAL_DIR/nftban-feeds-$d_norm")
+fi
+
+# Try each candidate in order
+for REAL in "${candidates[@]}"; do
+    if [[ -x "$REAL" ]]; then
+        exec "$REAL" "$@"
+    fi
+done
+
+# Fallback mode - Bash parser (slower but works)
 printf "[nftban] ⚠️  nftban-feeds Go binary not present. Using Bash fallback.\n" >&2
 printf "[nftban] For better performance, install from RPM/DEB package or build Go binaries.\n" >&2
 printf "[nftban] See: https://github.com/itcmsgr/nftban/blob/main/docs/development/GO-BINARIES.md\n" >&2
