@@ -707,7 +707,7 @@ nftban_port_allow_directadmin() {
 
     # Parse port configurations from config or use defaults (from DirectAdmin CSF policy)
     # Note: DirectAdmin uses same ports for IPv4 and IPv6
-    local tcp_in="${NFTBAN_DIRECTADMIN_TCP_IN:-20,21,22,25,53,853,80,110,143,443,465,587,993,995,2222,35000:35999}"
+    local tcp_in="${NFTBAN_DIRECTADMIN_TCP_IN:-20,21,22,25,53,853,80,110,143,443,465,587,993,995,2222,35000-35999}"
     local tcp_out="${NFTBAN_DIRECTADMIN_TCP_OUT:-20,21,22,25,53,853,80,110,113,143,443,465,587,993,995,2222}"
     local udp_in="${NFTBAN_DIRECTADMIN_UDP_IN:-20,21,53,853,80,443}"
     local udp_out="${NFTBAN_DIRECTADMIN_UDP_OUT:-20,21,53,853,113,123,443}"
@@ -1131,7 +1131,7 @@ nftban_port_allow_directadmin() {
     echo "  • 80/443           - HTTP/HTTPS (TCP + UDP for QUIC/HTTP3)"
     echo "  • 25/587/465       - SMTP/Submission"
     echo "  • 20/21            - FTP (TCP + UDP)"
-    echo "  • 35000:35999 (TCP) - Passive FTP range"
+    echo "  • 35000-35999 (TCP) - Passive FTP range"
     echo "  • 53               - DNS (TCP + UDP)"
     echo "  • 853              - DNS over TLS"
     echo "  • 993/995          - IMAPS/POP3S"
@@ -1195,6 +1195,43 @@ nftban_port_allow_directadmin() {
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
         nftban permissions fix 2>/dev/null || true
+        echo ""
+    fi
+
+    # Enable fail2ban jail for DirectAdmin if fail2ban is installed
+    if command -v fail2ban-client >/dev/null 2>&1; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "Enabling fail2ban jail for DirectAdmin..."
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+
+        # Check if DirectAdmin log files exist
+        if [[ -f "/var/log/directadmin/login.log" ]] || [[ -f "/var/log/directadmin/error.log" ]]; then
+            # Enable the jail by modifying the config file
+            local jail_config="/etc/fail2ban/jail.d/nftban-directadmin.conf"
+            if [[ -f "$jail_config" ]]; then
+                # Update enabled = false to enabled = true
+                sed -i 's/^enabled[[:space:]]*=[[:space:]]*false/enabled   = true/' "$jail_config"
+                echo "✓ DirectAdmin jail enabled in $jail_config"
+
+                # Reload fail2ban if it's running
+                if systemctl is-active --quiet fail2ban 2>/dev/null; then
+                    echo "  Reloading fail2ban..."
+                    systemctl reload fail2ban 2>/dev/null || true
+                    sleep 2
+                    echo "✓ Fail2ban reloaded"
+                else
+                    echo "  ⚠️  fail2ban is not running"
+                    echo "     Start it with: systemctl start fail2ban"
+                fi
+            else
+                echo "⚠️  Jail config not found: $jail_config"
+            fi
+        else
+            echo "⚠️  DirectAdmin log files not found"
+            echo "   Jail will be enabled but may fail to start until DirectAdmin is fully installed"
+            echo "   Expected logs: /var/log/directadmin/login.log"
+        fi
         echo ""
     fi
 
