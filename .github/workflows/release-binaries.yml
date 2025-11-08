@@ -54,13 +54,15 @@ jobs:
         run: |
           rm -f SHA256SUMS
           for f in nftban-*; do sha256sum "$f" >> SHA256SUMS; done
-      # GPG-sign the checksum file (REQUIRED). Set repo secrets: GPG_PRIVATE_KEY, GPG_PASSPHRASE
+      # GPG-sign the checksum file (OPTIONAL). Only runs if secrets are configured.
       - name: Import GPG key
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
         run: |
           echo "$GPG_PRIVATE_KEY" | gpg --batch --import
         env:
           GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
       - name: Sign SHA256SUMS
+        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
         working-directory: dist
         run: |
           echo "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
