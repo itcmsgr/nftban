@@ -1074,7 +1074,8 @@ nftban_health_check_fail2ban_jails() {
     local problematic_jail_names=()
 
     for jail_config in "${all_jail_configs[@]}"; do
-        local jail_name=$(basename "$jail_config" .conf)
+        local jail_name
+        jail_name=$(basename "$jail_config" .conf)
 
         # Check if jail is enabled
         local is_enabled=false
@@ -1423,9 +1424,12 @@ nftban_health_fix_permissions() {
             IFS='|' read -r expected_perms expected_owner expected_group _purpose <<< "${NFTBAN_FHS_DIRECTORIES[$dir]}"
 
             # Get current perms/owner/group
-            local current_perms=$(stat -c "%a" "$dir" 2>/dev/null || echo "")
-            local current_owner=$(stat -c "%U" "$dir" 2>/dev/null || echo "")
-            local current_group=$(stat -c "%G" "$dir" 2>/dev/null || echo "")
+            local current_perms
+            current_perms=$(stat -c "%a" "$dir" 2>/dev/null || echo "")
+            local current_owner
+            current_owner=$(stat -c "%U" "$dir" 2>/dev/null || echo "")
+            local current_group
+            current_group=$(stat -c "%G" "$dir" 2>/dev/null || echo "")
 
             local can_fix=0
             local issues=()
@@ -1558,7 +1562,8 @@ nftban_health_fix_directories() {
             IFS='|' read -r perms owner group _purpose <<< "${NFTBAN_FHS_DIRECTORIES[$dir]}"
 
             # Check if we can create this directory
-            local parent_dir=$(dirname "$dir")
+            local parent_dir
+            parent_dir=$(dirname "$dir")
             local can_create=0
 
             # Check if nftban user can write to parent
