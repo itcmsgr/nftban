@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.6 - Permissions CLI Handler
+# NFTBan v0.32.20 - Permissions CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for permission management and auditing
@@ -8,7 +8,7 @@
 # meta:name=cmd_permissions
 # meta:type=cli
 # meta:header=Permissions CLI Handler
-# meta:version=0.32.6
+# meta:version=0.32.20
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

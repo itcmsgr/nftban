@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan GeoBan Module - Country-based IP Blocking
+# NFTBan v0.32.20 - GeoBan Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Version: 0.31.0
-# Module: nftban_geoban
 # Purpose: Wrapper for Go-based country blocking (nftban-geoip geoban)
 #
-# This module provides bash wrappers around the nftban-geoip Go binary
-# for easy country-based IP blocking and whitelisting.
+# meta:name=nftban_geoban
+# meta:type=core
+# meta:header=GeoBan Core
+# meta:version=0.32.20
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
 #
-# Commands:
-#   nftban_geoban_ban_countries <CC> [CC...]      - Ban countries
-#   nftban_geoban_unban_countries <CC> [CC...]    - Remove ban
-#   nftban_geoban_whitelist_countries <CC> [CC...] - Whitelist countries
-#   nftban_geoban_unwhitelist_countries <CC> [CC...] - Remove whitelist
-#   nftban_geoban_list                            - List active countries
-#   nftban_geoban_update                          - Update all active countries
-#   nftban_geoban_status                          - Show status
+# **Description & Purpose**
+# meta:description=Country-based IP blocking using nftban-geoip Go binary
+# meta:input=Country codes (ISO alpha-2)
+# meta:output=IP lists to nftables, tracking JSON to /etc/nftban/geoban.d/
+#
+# **Inventory & Requirements**
+# meta:depends=bash,nftban-geoip (Go binary)
+#
+# meta:created_date=2025-11-05
 # =============================================================================
 
 set -Eeuo pipefail
