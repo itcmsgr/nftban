@@ -1,3 +1,16 @@
+nftban (0.32.7-1) stable; urgency=medium
+
+  * FIX: DirectAdmin passive FTP port range syntax (35000-35999)
+  * FIX: Auto-enable DirectAdmin fail2ban jail on panel setup
+  * FIX: Show all fail2ban jails (enabled and disabled) in CLI
+  * FIX: SIGPIPE issues with pipefail in fail2ban functions
+  * FIX: Panel status display with pipefail-safe helpers
+  * DOCS: Build dependency checks and installation guidance
+  * DOCS: Updated man pages for fail2ban jails command
+  * ENHANCEMENT: Bash completion for geoban command
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Fri, 08 Nov 2025 02:30:00 +0200
+
 nftban (0.32.6-1) stable; urgency=medium
 
   * NEW: Fail2ban health-fix command with comprehensive jail checking
