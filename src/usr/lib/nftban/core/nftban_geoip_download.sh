@@ -114,7 +114,8 @@ _download_geoip() {
     fi
 
     # Find and move .mmdb file
-    local mmdb_file=$(find "${extract_dir}" -name "*.mmdb" | head -1)
+    local mmdb_file
+    mmdb_file=$(find "${extract_dir}" -name "*.mmdb" | head -1)
     if [[ -z "${mmdb_file}" ]]; then
         echo "[ERROR] Database file not found in archive"
         rm -rf "${tmp_file}" "${extract_dir}"
@@ -122,7 +123,8 @@ _download_geoip() {
     fi
 
     # Move database to final location
-    local db_file="${db_dir}/$(basename ${edition}).mmdb"
+    local db_file
+    db_file="${db_dir}/$(basename ${edition}).mmdb"
     mv "${mmdb_file}" "${db_file}"
     chown nftban:nftban "${db_file}"
     chmod 640 "${db_file}"
@@ -151,8 +153,10 @@ _check_database() {
     echo "[INFO] Modified: $(stat -c %y ${db_file} | cut -d. -f1)"
 
     # Check if database is old (> 30 days)
-    local mtime=$(stat -c %Y "${db_file}")
-    local now=$(date +%s)
+    local mtime
+    mtime=$(stat -c %Y "${db_file}")
+    local now
+    now=$(date +%s)
     local age=$(( (now - mtime) / 86400 ))
 
     if [[ ${age} -gt 30 ]]; then
