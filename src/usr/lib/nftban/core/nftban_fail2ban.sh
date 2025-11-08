@@ -180,7 +180,8 @@ nftban_fail2ban_discover_available_jails() {
     if [[ -d /etc/fail2ban/jail.d ]]; then
         while IFS= read -r -d '' file; do
             # Extract jail name from filename: nftban-sshd.conf -> nftban-sshd
-            local basename=$(basename "$file" .conf)
+            local basename
+            basename=$(basename "$file" .conf)
             jail_names+=("$basename")
         done < <(find /etc/fail2ban/jail.d -name "nftban-*.conf" -print0 2>/dev/null)
     fi
@@ -191,7 +192,8 @@ nftban_fail2ban_discover_available_jails() {
 
 # Get OS-specific recommended jails
 nftban_fail2ban_get_recommended_jails() {
-    local os_info=$(nftban_fail2ban_detect_os)
+    local os_info
+    os_info=$(nftban_fail2ban_detect_os)
     local os_type="${os_info%%:*}"
     local recommended=()
 
@@ -844,7 +846,8 @@ nftban_fail2ban_health_fix() {
     # Returns: 0=OK, 1=problems found and fixed
 
     # Temporarily disable exit-on-error for this function
-    local old_opts=$(set +o)
+    local old_opts
+    old_opts=$(set +o)
     set +e
 
     # Parse arguments
@@ -928,7 +931,8 @@ nftban_fail2ban_health_fix() {
             echo "📧 Sending report via email to: $mail_to"
 
             # Create email body with HTML formatting
-            local email_body="<html><head><style>
+            local email_body
+            email_body="<html><head><style>
 body { font-family: monospace; background: #f5f5f5; padding: 20px; }
 pre { background: white; padding: 15px; border-radius: 5px; border: 1px solid #ddd; }
 .header { background: #2c3e50; color: white; padding: 15px; border-radius: 5px; margin-bottom: 20px; }
@@ -990,7 +994,8 @@ _nftban_fail2ban_health_fix_core() {
     echo ""
 
     for jail_config in "${all_jail_configs[@]}"; do
-        local jail_name=$(basename "$jail_config" .conf)
+        local jail_name
+        jail_name=$(basename "$jail_config" .conf)
         ((total_jails++))
 
         # Check if jail is enabled

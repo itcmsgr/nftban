@@ -20,14 +20,18 @@ jobs:
           go-version: ${{ matrix.go }}
       - name: Build nftban-feeds (${{ matrix.arch }})
         run: |
+          mkdir -p dist
+          cd go-feeds
           GOOS=linux GOARCH=${{ matrix.arch }} \
           go build -trimpath -ldflags "-s -w" \
-            -o dist/nftban-feeds-${{ matrix.arch }} ./go-feeds/cmd/nftban-feeds
+            -o ../dist/nftban-feeds-${{ matrix.arch }} ./cmd/nftban-feeds
       - name: Build nftban-geoip (${{ matrix.arch }})
         run: |
+          mkdir -p dist
+          cd go-geoip
           GOOS=linux GOARCH=${{ matrix.arch }} \
           go build -trimpath -ldflags "-s -w" \
-            -o dist/nftban-geoip-${{ matrix.arch }} ./go-geoip/cmd/nftban-geoip
+            -o ../dist/nftban-geoip-${{ matrix.arch }} ./cmd/nftban-geoip
       - name: Upload matrix artifacts
         uses: actions/upload-artifact@v4
         with:

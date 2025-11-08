@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.12
+Version:        0.32.13
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -1142,6 +1142,10 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
+* Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.13-1
+- Fixed 17 SC2155 shellcheck issues (cmd_report, cmd_profile, fail2ban)
+- Fixed Go module build in release-binaries.yml workflow
+
 * Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.12-1
 - Fixed 32 SC2155 shellcheck issues across 3 files
 

@@ -304,9 +304,12 @@ _nftban_profile_show() {
     # Show DDoS settings if config exists
     if [[ -f "$NFTBAN_CONFIG_LOCAL" ]]; then
         echo "DDoS Protection:"
-        local ddos_enabled=$(grep "^DDOS_PROTECTION_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
-        local synflood=$(grep "^DDOS_SYNFLOOD_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
-        local connlimit=$(grep "^DDOS_CONNLIMIT_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
+        local ddos_enabled
+        ddos_enabled=$(grep "^DDOS_PROTECTION_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
+        local synflood
+        synflood=$(grep "^DDOS_SYNFLOOD_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
+        local connlimit
+        connlimit=$(grep "^DDOS_CONNLIMIT_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
 
         echo "  Master Switch: $ddos_enabled"
         echo "  SYN Flood: $synflood"
@@ -314,9 +317,12 @@ _nftban_profile_show() {
 
         echo ""
         echo "Port Scan Detection:"
-        local portscan=$(grep "^PORTSCAN_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
-        local threshold=$(grep "^PORTSCAN_THRESHOLD=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
-        local auto_ban=$(grep "^PORTSCAN_AUTO_BAN=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
+        local portscan
+        portscan=$(grep "^PORTSCAN_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
+        local threshold
+        threshold=$(grep "^PORTSCAN_THRESHOLD=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
+        local auto_ban
+        auto_ban=$(grep "^PORTSCAN_AUTO_BAN=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "unknown")
 
         echo "  Enabled: $portscan"
         echo "  Threshold: $threshold ports"

@@ -121,8 +121,10 @@ nftban_report_cmd_generate() {
 
     local format="${REPORTS_DEFAULT_FORMAT:-html}"
     local output=""
-    local since="$(date -d '7 days ago' +%Y-%m-%d)"
-    local until="$(date +%Y-%m-%d)"
+    local since
+    since="$(date -d '7 days ago' +%Y-%m-%d)"
+    local until
+    until="$(date +%Y-%m-%d)"
     local theme="${REPORTS_THEME:-dark}"
     local allow_unsafe=""
 
@@ -192,7 +194,8 @@ nftban_report_cmd_generate() {
             nftban_report_generate_html "$safe_output" "$since" "$until" "$theme"
             ;;
         all)
-            local base_name="report-$(date +%Y%m%d-%H%M%S)"
+            local base_name
+            base_name="report-$(date +%Y%m%d-%H%M%S)"
             local safe_json safe_csv safe_html
 
             # Use filename-only mode for 'all' format
@@ -232,8 +235,10 @@ nftban_report_cmd_email() {
 
     local format="${STATS_EMAIL_FORMAT:-html}"
     local attach_csv="${STATS_EMAIL_ATTACH_CSV:-false}"
-    local since="$(date -d '7 days ago' +%Y-%m-%d)"
-    local until="$(date +%Y-%m-%d)"
+    local since
+    since="$(date -d '7 days ago' +%Y-%m-%d)"
+    local until
+    until="$(date +%Y-%m-%d)"
 
     # Parse options
     while [[ $# -gt 0 ]]; do
@@ -538,7 +543,8 @@ nftban_report_cmd_run() {
     local output_dir="${NFTBAN_REPORTS_DIR}/${frequency}"
     mkdir -p "$output_dir"
 
-    local output_file="${output_dir}/report-$(date +%Y%m%d).html"
+    local output_file
+    output_file="${output_dir}/report-$(date +%Y%m%d).html"
     nftban_report_generate_html "$output_file" "$since" "$until" "${REPORTS_THEME:-dark}"
 
     # Email if configured
