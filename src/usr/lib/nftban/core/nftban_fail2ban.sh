@@ -360,7 +360,10 @@ nftban_fail2ban_jail_check_requirements() {
             fi
             ;;
         nftban-dovecot)
-            if ! systemctl list-unit-files 2>/dev/null | grep -q "dovecot.service"; then
+            # Use command substitution to avoid SIGPIPE with pipefail
+            local unit_files
+            unit_files=$(systemctl list-unit-files 2>/dev/null) || true
+            if ! echo "$unit_files" | grep -q "dovecot.service"; then
                 errors+=("Dovecot is not installed")
             fi
             if [[ ! -f /var/log/maillog ]] && [[ ! -f /var/log/mail.log ]]; then
@@ -368,7 +371,10 @@ nftban_fail2ban_jail_check_requirements() {
             fi
             ;;
         nftban-apache-*|nftban-modsecurity)
-            if ! systemctl list-unit-files 2>/dev/null | grep -qE "httpd.service|apache2.service"; then
+            # Use command substitution to avoid SIGPIPE with pipefail
+            local unit_files
+            unit_files=$(systemctl list-unit-files 2>/dev/null) || true
+            if ! echo "$unit_files" | grep -qE "httpd.service|apache2.service"; then
                 errors+=("Apache/httpd is not installed")
             fi
             # Check for any httpd log directory
@@ -377,7 +383,10 @@ nftban_fail2ban_jail_check_requirements() {
             fi
             ;;
         nftban-pure-ftpd)
-            if ! systemctl list-unit-files 2>/dev/null | grep -q "pure-ftpd.service"; then
+            # Use command substitution to avoid SIGPIPE with pipefail
+            local unit_files
+            unit_files=$(systemctl list-unit-files 2>/dev/null) || true
+            if ! echo "$unit_files" | grep -q "pure-ftpd.service"; then
                 errors+=("Pure-FTPd is not installed")
             fi
             ;;
