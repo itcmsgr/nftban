@@ -72,7 +72,8 @@ declare -A NFTBAN_FAILED_TIMESTAMPS
 nftban_login_log() {
     # Log to file and optionally syslog
     local message="$1"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
     # Ensure log directory exists
     mkdir -p "$(dirname "$NFTBAN_LOGIN_ALERT_LOG")"
@@ -135,9 +136,12 @@ nftban_login_send_alert() {
     local status="$5"
     local details="${6:-}"
 
-    local hostname=$(hostname -f 2>/dev/null || hostname)
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
-    local geoip=$(nftban_login_get_geoip "$ip")
+    local hostname
+    hostname=$(hostname -f 2>/dev/null || hostname)
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
+    local geoip
+    geoip=$(nftban_login_get_geoip "$ip")
 
     # Build subject
     local subject="[NFTBan] $status Login: $user @ $hostname"
@@ -162,7 +166,8 @@ nftban_login_send_text_alert() {
     local hostname="$9"
     local timestamp="${10}"
 
-    local body=$(cat <<EOF
+    local body
+    body=$(cat <<EOF
 NFTBan Login Alert
 ==================
 
@@ -212,7 +217,8 @@ nftban_login_send_html_alert() {
         status_color="#ffc107"  # yellow for suspicious
     fi
 
-    local html=$(cat <<EOF
+    local html
+    html=$(cat <<EOF
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -381,7 +387,8 @@ nftban_login_monitor_ssh() {
     journalctl -u sshd -f -n 0 --output=json 2>/dev/null | \
     while read -r line; do
         # Parse JSON log entry
-        local message=$(echo "$line" | jq -r '.MESSAGE // empty')
+        local message
+        message=$(echo "$line" | jq -r '.MESSAGE // empty')
 
         # Successful login
         if [[ "$message" =~ ^Accepted\ (password|publickey)\ for\ ([^[:space:]]+)\ from\ ([0-9.]+) ]]; then
@@ -414,7 +421,8 @@ nftban_login_track_failed() {
     local service="$3"
 
     local key="${user}@${ip}"
-    local now=$(date +%s)
+    local now
+    now=$(date +%s)
 
     # Initialize if first attempt
     if [[ -z "${NFTBAN_FAILED_ATTEMPTS[$key]:-}" ]]; then
@@ -482,7 +490,8 @@ nftban_login_test() {
     # Check GeoIP
     if [[ "$NFTBAN_LOGIN_ALERT_GEOIP" == "true" ]]; then
         echo "Testing GeoIP:"
-        local geoip=$(nftban_login_get_geoip "8.8.8.8")
+        local geoip
+        geoip=$(nftban_login_get_geoip "8.8.8.8")
         echo "  8.8.8.8 → $geoip"
         echo ""
     fi

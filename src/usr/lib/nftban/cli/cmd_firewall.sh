@@ -63,7 +63,8 @@ detect_ssh_client_ip() {
     fi
 
     # Method 2: Parse active SSH connections from ss command
-    local ssh_ip=$(ss -tn state established '( dport = :22 or sport = :22 )' 2>/dev/null | \
+    local ssh_ip
+    ssh_ip=$(ss -tn state established '( dport = :22 or sport = :22 )' 2>/dev/null | \
                    awk 'NR>1 {print $5}' | \
                    grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}|([0-9a-f:]+:+)+[0-9a-f]+' | \
                    grep -v '^127\.' | \
@@ -76,14 +77,16 @@ detect_ssh_client_ip() {
     fi
 
     # Method 3: who command (shows current logins)
-    local who_ip=$(who | awk '{print $NF}' | tr -d '()' | grep -v '^:' | grep -v '^0.0.0.0' | head -1)
+    local who_ip
+    who_ip=$(who | awk '{print $NF}' | tr -d '()' | grep -v '^:' | grep -v '^0.0.0.0' | head -1)
     if [[ -n "$who_ip" ]]; then
         echo "$who_ip"
         return 0
     fi
 
     # Method 4: w command (shows logged in users)
-    local w_ip=$(w -h | awk '{print $3}' | grep -v '^-' | grep -v '^:' | head -1)
+    local w_ip
+    w_ip=$(w -h | awk '{print $3}' | grep -v '^-' | grep -v '^:' | head -1)
     if [[ -n "$w_ip" ]]; then
         echo "$w_ip"
         return 0
@@ -302,7 +305,8 @@ EOF
         fi
 
         # 2. Public IPv4
-        local current_ipv4=$(curl -s -4 --max-time 5 ifconfig.me 2>/dev/null || echo "")
+        local current_ipv4
+        current_ipv4=$(curl -s -4 --max-time 5 ifconfig.me 2>/dev/null || echo "")
         if [[ -n "$current_ipv4" ]]; then
             echo "→ Detected public IPv4: $current_ipv4"
             # Add if not already in list
@@ -312,7 +316,8 @@ EOF
         fi
 
         # 3. Public IPv6
-        local current_ipv6=$(curl -s -6 --max-time 5 ifconfig.me 2>/dev/null || echo "")
+        local current_ipv6
+        current_ipv6=$(curl -s -6 --max-time 5 ifconfig.me 2>/dev/null || echo "")
         if [[ -n "$current_ipv6" ]]; then
             echo "→ Detected public IPv6: $current_ipv6"
             # Add if not already in list
@@ -452,8 +457,10 @@ firewall_status() {
     # Sets in runtime table
     if nft list table inet nftban_runtime &>/dev/null; then
         echo "Runtime Ban Sets:"
-        local temp_v4_count=$(nft list set inet nftban_runtime temp_ban_v4 2>/dev/null | grep -c "elements" || echo 0)
-        local temp_v6_count=$(nft list set inet nftban_runtime temp_ban_v6 2>/dev/null | grep -c "elements" || echo 0)
+        local temp_v4_count
+        temp_v4_count=$(nft list set inet nftban_runtime temp_ban_v4 2>/dev/null | grep -c "elements" || echo 0)
+        local temp_v6_count
+        temp_v6_count=$(nft list set inet nftban_runtime temp_ban_v6 2>/dev/null | grep -c "elements" || echo 0)
 
         echo "  • temp_ban_v4: $(nft list set inet nftban_runtime temp_ban_v4 2>/dev/null | grep "elements" | wc -w) IPs"
         echo "  • temp_ban_v6: $(nft list set inet nftban_runtime temp_ban_v6 2>/dev/null | grep "elements" | wc -w) IPs"
@@ -661,8 +668,10 @@ firewall_check() {
 
     # Check 8: Priority order
     echo "[8/10] Checking chain priorities..."
-    local runtime_prio=$(nft list chain inet nftban_runtime input_tempban 2>/dev/null | grep "priority" | awk '{print $5}')
-    local main_prio=$(nft list chain inet nftban_main input 2>/dev/null | grep "priority" | awk '{print $5}')
+    local runtime_prio
+    runtime_prio=$(nft list chain inet nftban_runtime input_tempban 2>/dev/null | grep "priority" | awk '{print $5}')
+    local main_prio
+    main_prio=$(nft list chain inet nftban_main input 2>/dev/null | grep "priority" | awk '{print $5}')
 
     if [[ -n "$runtime_prio" && -n "$main_prio" ]]; then
         echo "  ✓ PASS: Priorities set (runtime: $runtime_prio, main: $main_prio)"
@@ -716,8 +725,10 @@ firewall_check() {
     echo "[12/12] Checking system IP protection (LOCKOUT PREVENTION)..."
 
     # Get current IPs
-    local current_ipv4=$(curl -s -4 --max-time 5 ifconfig.me 2>/dev/null || echo "")
-    local current_ipv6=$(curl -s -6 --max-time 5 ifconfig.me 2>/dev/null || echo "")
+    local current_ipv4
+    current_ipv4=$(curl -s -4 --max-time 5 ifconfig.me 2>/dev/null || echo "")
+    local current_ipv6
+    current_ipv6=$(curl -s -6 --max-time 5 ifconfig.me 2>/dev/null || echo "")
 
     # Check IPv4
     if [[ -n "$current_ipv4" ]]; then

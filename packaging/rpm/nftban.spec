@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v0.32.11 - RPM Spec File
+# NFTBan v0.32.12 - RPM Spec File
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: RPM package specification for Red Hat-based distributions
@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.11
+Version:        0.32.12
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -1142,6 +1142,9 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
+* Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.12-1
+- Fixed 32 SC2155 shellcheck issues across 3 files
+
 * Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.11-1
 - Fixed shellcheck issues in nftban_geoban.sh
 
