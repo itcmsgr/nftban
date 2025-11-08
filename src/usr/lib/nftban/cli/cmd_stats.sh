@@ -199,8 +199,10 @@ nftban_stats_cmd_top() {
 
     local type="${1:-ips}"
     local limit="${2:-${STATS_TOP_N:-10}}"
-    local since="$(date -d '30 days ago' +%Y-%m-%d)"
-    local until="$(date +%Y-%m-%d)"
+    local since
+    since="$(date -d '30 days ago' +%Y-%m-%d)"
+    local until
+    until="$(date +%Y-%m-%d)"
 
     # Parse additional options
     shift 2 2>/dev/null || shift $# 2>/dev/null || true
@@ -432,8 +434,10 @@ nftban_stats_cmd_export() {
 
     local format="json"
     local output=""
-    local since="$(date -d '30 days ago' +%Y-%m-%d)"
-    local until="$(date +%Y-%m-%d)"
+    local since
+    since="$(date -d '30 days ago' +%Y-%m-%d)"
+    local until
+    until="$(date +%Y-%m-%d)"
     local allow_unsafe=""
 
     # Parse options

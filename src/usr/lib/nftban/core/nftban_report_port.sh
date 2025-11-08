@@ -528,10 +528,14 @@ nftban_port_generate_html_report() {
         fi
 
         # Status cells with colors
-        local ipv4_in_html="<span class=\"status-${ipv4_in}\">$(nftban_port_status_symbol "$ipv4_in")</span>"
-        local ipv4_out_html="<span class=\"status-${ipv4_out}\">$(nftban_port_status_symbol "$ipv4_out")</span>"
-        local ipv6_in_html="<span class=\"status-${ipv6_in}\">$(nftban_port_status_symbol "$ipv6_in")</span>"
-        local ipv6_out_html="<span class=\"status-${ipv6_out}\">$(nftban_port_status_symbol "$ipv6_out")</span>"
+        local ipv4_in_html
+        ipv4_in_html="<span class=\"status-${ipv4_in}\">$(nftban_port_status_symbol "$ipv4_in")</span>"
+        local ipv4_out_html
+        ipv4_out_html="<span class=\"status-${ipv4_out}\">$(nftban_port_status_symbol "$ipv4_out")</span>"
+        local ipv6_in_html
+        ipv6_in_html="<span class=\"status-${ipv6_in}\">$(nftban_port_status_symbol "$ipv6_in")</span>"
+        local ipv6_out_html
+        ipv6_out_html="<span class=\"status-${ipv6_out}\">$(nftban_port_status_symbol "$ipv6_out")</span>"
 
         table_rows+="                <tr>
                     <td>${service}</td>
