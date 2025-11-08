@@ -67,22 +67,22 @@ if ! command -v go >/dev/null 2>&1; then
     echo "Build dependencies are required. Install with:"
     echo ""
     if command -v dnf >/dev/null 2>&1; then
-        echo "  # Install build dependencies"
-        echo "  sudo dnf install -y golang systemd-rpm-macros"
+        echo "  # Install build dependencies (matches .github/workflows/release.yml)"
+        echo "  sudo dnf install -y golang systemd-rpm-macros gcc"
         echo ""
         echo "  # Or use dnf builddep to install all BuildRequires from spec:"
         echo "  sudo dnf builddep -y packaging/rpm/nftban.spec"
     elif command -v yum >/dev/null 2>&1; then
-        echo "  # Install build dependencies"
-        echo "  sudo yum install -y golang systemd-rpm-macros"
+        echo "  # Install build dependencies (matches .github/workflows/release.yml)"
+        echo "  sudo yum install -y golang systemd-rpm-macros gcc"
         echo ""
         echo "  # Or use yum-builddep to install all BuildRequires from spec:"
         echo "  sudo yum-builddep -y packaging/rpm/nftban.spec"
     else
-        echo "  Install golang >= 1.21 and systemd-rpm-macros manually"
+        echo "  Install golang >= 1.21, systemd-rpm-macros, and gcc manually"
     fi
     echo ""
-    echo "See: .github/workflows/ for complete build workflow"
+    echo "See: .github/workflows/release.yml for complete build workflow"
     echo ""
     exit 1
 fi
