@@ -60,7 +60,7 @@ USAGE:
 
 COMMANDS:
     status              Show fail2ban status and statistics
-    jails               List all currently enabled jails
+    jails               List all jails (enabled and disabled) - select to enable/disable
     available           Show all available jails on this system
     recommended         Show recommended jails for your OS/services
     jail <name>         Show detailed status for specific jail
@@ -104,11 +104,11 @@ EXAMPLES:
     # Check fail2ban status
     nftban fail2ban status
 
-    # List all jails
+    # List all jails (enabled and disabled)
     nftban fail2ban jails
 
     # Enable SSH protection
-    nftban fail2ban enable sshd
+    nftban fail2ban enable nftban-sshd
 
     # Check specific jail
     nftban fail2ban jail sshd
@@ -239,40 +239,52 @@ _nftban_fail2ban_cmd_status() {
 }
 
 _nftban_fail2ban_cmd_jails() {
-    # List all currently enabled jails
+    # List all available jails (enabled and disabled)
 
-    if ! nftban_fail2ban_is_running; then
-        echo "ERROR: fail2ban is not running" >&2
-        echo "Start it with: sudo nftban fail2ban start" >&2
-        return 1
-    fi
-
-    echo "Currently Enabled Fail2ban Jails:"
+    echo "NFTBan Fail2ban Jails:"
     echo "════════════════════════════════════════════════════════════"
     echo ""
 
-    local jails
-    mapfile -t jails < <(nftban_fail2ban_list_jails)
+    # Get all available jails with their status
+    local all_jails
+    mapfile -t all_jails < <(nftban_fail2ban_list_all_available_jails)
 
-    if [[ ${#jails[@]} -eq 0 ]]; then
-        echo "  No jails currently enabled"
+    if [[ ${#all_jails[@]} -eq 0 ]]; then
+        echo "  No NFTBan-compatible jail configurations found"
         echo ""
-        echo "  Use 'nftban fail2ban available' to see available jails"
-        echo "  Use 'nftban fail2ban recommended' for recommendations"
+        echo "  NFTBan jails should be in: /etc/fail2ban/jail.d/nftban-*.conf"
         return 0
     fi
 
-    printf "%-25s %-10s %s\n" "JAIL" "STATUS" "BANNED IPs"
+    printf "%-30s %-12s %s\n" "JAIL" "STATUS" "BANNED IPs"
     echo "────────────────────────────────────────────────────────────"
 
-    for jail in "${jails[@]}"; do
-        local status="active"
-        local banned_count
-        banned_count=$(nftban_fail2ban_jail_banned "$jail" | wc -l)
+    local fail2ban_running="false"
+    if nftban_fail2ban_is_running; then
+        fail2ban_running="true"
+    fi
 
-        printf "%-25s %-10s %d\n" "$jail" "$status" "$banned_count"
+    for jail_entry in "${all_jails[@]}"; do
+        local jail_name="${jail_entry%%:*}"
+        local jail_status="${jail_entry##*:}"
+        local banned_count=0
+        local status_display=""
+
+        if [[ "$jail_status" == "enabled" ]]; then
+            status_display="✓ active"
+            if [[ "$fail2ban_running" == "true" ]]; then
+                banned_count=$(nftban_fail2ban_jail_banned "$jail_name" 2>/dev/null | wc -l)
+            fi
+        else
+            status_display="  disabled"
+        fi
+
+        printf "%-30s %-12s %d\n" "$jail_name" "$status_display" "$banned_count"
     done
 
+    echo ""
+    echo "To enable a jail:  nftban fail2ban enable <jail_name>"
+    echo "To disable a jail: nftban fail2ban disable <jail_name>"
     echo ""
 }
 
