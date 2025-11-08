@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v0.32.9 - RPM Spec File
+# NFTBan v0.32.10 - RPM Spec File
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: RPM package specification for Red Hat-based distributions
@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.9
+Version:        0.32.10
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -46,6 +46,7 @@ Requires:       git
 Requires:       polkit
 Requires:       fail2ban-server >= 0.11
 Requires:       newt
+Requires:       GeoIP
 Recommends:     logrotate
 
 # Conflicts
@@ -1141,6 +1142,12 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
+* Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.10-1
+- FIX: Added GeoIP as MANDATORY dependency (was incorrectly optional)
+- REQUIREMENT: GeoIP package now required for RHEL/Rocky installations
+- REQUIREMENT: geoip-bin and geoip-database now required for Debian/Ubuntu
+- DOCS: Corrected package description - GeoIP is mandatory, not optional
+
 * Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.9-1
 - FIX: Corrected version display in nftban CLI (was showing outdated version)
 - FIX: Added RHEL/Rocky Apache log patterns (*access_log without .log extension)

@@ -1,3 +1,11 @@
+nftban (0.32.10-1) stable; urgency=medium
+
+  * FIX: Added GeoIP as MANDATORY dependency (was incorrectly optional)
+  * REQUIREMENT: geoip-bin and geoip-database now required dependencies
+  * DOCS: Corrected package description - GeoIP is mandatory, not optional
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Fri, 08 Nov 2025 09:00:00 +0200
+
 nftban (0.32.9-1) stable; urgency=medium
 
   * FIX: Corrected version display in nftban CLI (was showing outdated version)
