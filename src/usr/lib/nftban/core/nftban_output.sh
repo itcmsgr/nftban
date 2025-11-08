@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBAN OUTPUT MODULE (CORE)
+# NFTBan v0.32.20 - Output & Banner Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Standardized output, banners, and formatting for all modules
@@ -8,7 +8,7 @@
 # meta:name=nftban_output
 # meta:type=core
 # meta:header=Output & Banner Module
-# meta:version=0.32.6
+# meta:version=0.32.20
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

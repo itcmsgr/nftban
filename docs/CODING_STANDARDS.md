@@ -5,7 +5,7 @@
 - **Purpose**: Mandatory coding standards for all NFTBan bash scripts
 - **Status**: REQUIRED — All code must comply
 - **Last Updated**: November 8, 2025
-- **Version**: 0.32.19
+- **Version**: 0.32.20
 
 **Core Principle**: Security is built-in from day one, not added later. Every script must follow strict safety standards to prevent bugs from hiding and ensure production reliability.
 
@@ -40,7 +40,7 @@ Every bash script MUST include this exact header structure:
 ```bash
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.19 - [Component Name]
+# NFTBan v0.32.20 - [Component Name]
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: [Brief description]
@@ -48,7 +48,7 @@ Every bash script MUST include this exact header structure:
 # meta:name=[script_name]
 # meta:type=[cli|core|tool|cron|exporter]
 # meta:header=[Display Name]
-# meta:version=0.32.19
+# meta:version=0.32.20
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -61,6 +61,7 @@ Every bash script MUST include this exact header structure:
 # meta:depends=[comma,separated,dependencies]
 #
 # meta:created_date=YYYY-MM-DD
+# =============================================================================
 
 set -Eeuo pipefail
 ```
@@ -157,7 +158,7 @@ echo "SUCCESS: x=$x"  # Prints: SUCCESS: x=1
 
 | Variable Type | Convention | Example |
 |---------------|------------|---------|
-| Global constants | `UPPER_CASE` with `readonly` | `readonly NFTBAN_VERSION="0.32.19"` |
+| Global constants | `UPPER_CASE` with `readonly` | `readonly NFTBAN_VERSION="0.32.20"` |
 | Environment variables | `UPPER_CASE` with `export` | `export NFTBAN_CONFIG_DIR="/etc/nftban"` |
 | Local variables | `lower_case` or `snake_case` | `local count=0` |
 | Function names | Prefix with `nftban_` | `nftban_check_health()` |
@@ -170,7 +171,7 @@ echo "SUCCESS: x=$x"  # Prints: SUCCESS: x=1
 set -Eeuo pipefail
 
 # Global constants (readonly)
-readonly NFTBAN_VERSION="0.32.19"
+readonly NFTBAN_VERSION="0.32.20"
 readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
 
 # Environment variables (exported)
@@ -1192,7 +1193,7 @@ monitor_background_task() {
 ---
 
 **Version History:**
-- v0.32.19 (2025-11-08): Added logging, UX, cross-distro, package manager standards
+- v0.32.20 (2025-11-08): Added logging, UX, cross-distro, package manager standards
 - v0.10.0 (2025-11-04): Initial coding standards
 
 **Maintained by**: NFTBan Development Team

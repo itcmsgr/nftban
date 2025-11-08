@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan Module Report Core Module
+# NFTBan v0.32.20 - Module Report Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Module inventory scanning and reporting with validation
@@ -9,7 +9,7 @@
 # meta:name=nftban_report_module
 # meta:type=core
 # meta:header=Module Report Core
-# meta:version=0.32.6
+# meta:version=0.32.20
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

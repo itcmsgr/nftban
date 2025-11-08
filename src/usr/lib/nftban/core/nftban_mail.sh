@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan Mail Module - Core Email Functionality
+# NFTBan v0.32.20 - Mail Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Email sending mechanism for all NFTBan modules
@@ -8,7 +8,7 @@
 # meta:name=nftban_mail
 # meta:type=core
 # meta:header=Mail Module
-# meta:version=0.32.6
+# meta:version=0.32.20
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
