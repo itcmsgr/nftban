@@ -1,3 +1,13 @@
+nftban (0.32.8-1) stable; urgency=medium
+
+  * NEW: Fail2ban auto-discovery command for automatic jail detection
+  * ENHANCEMENT: Auto-discovery scans system for compatible services
+  * ENHANCEMENT: Auto-discovery --enable flag to enable discovered jails
+  * DOCS: Updated man page with auto-discovery command
+  * ENHANCEMENT: Bash completion for auto-discovery command
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Fri, 08 Nov 2025 04:00:00 +0200
+
 nftban (0.32.7-1) stable; urgency=medium
 
   * FIX: DirectAdmin passive FTP port range syntax (35000-35999)
