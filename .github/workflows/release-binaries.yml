@@ -54,21 +54,7 @@ jobs:
         run: |
           rm -f SHA256SUMS
           for f in nftban-*; do sha256sum "$f" >> SHA256SUMS; done
-      # GPG-sign the checksum file (OPTIONAL). Only runs if secrets are configured.
-      - name: Import GPG key
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
-        run: |
-          echo "$GPG_PRIVATE_KEY" | gpg --batch --import
-        env:
-          GPG_PRIVATE_KEY: ${{ secrets.GPG_PRIVATE_KEY }}
-      - name: Sign SHA256SUMS
-        if: ${{ secrets.GPG_PRIVATE_KEY != '' }}
-        working-directory: dist
-        run: |
-          echo "$GPG_PASSPHRASE" | gpg --batch --yes --pinentry-mode loopback \
-            --passphrase-fd 0 --armor --detach-sign --output SHA256SUMS.asc SHA256SUMS
-        env:
-          GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
+      # GPG signing disabled - will be enabled when GPG keys are configured
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
