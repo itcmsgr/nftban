@@ -104,12 +104,21 @@ jobs:
             }
 
             # Now install build dependencies (uses aligned repos from distro-sync)
+            # Let dnf upgrade glibc if needed to match glibc-devel requirements
             echo '=== Installing build dependencies ==='
             dnf -y --releasever=9 install \
-              glibc glibc-devel rpm-build rpmdevtools tar gzip which \
-              systemd-rpm-macros golang gcc || {
-              echo 'ERROR: Failed to install build dependencies'
-              exit 1
+              rpm-build rpmdevtools tar gzip which \
+              systemd-rpm-macros glibc-devel golang gcc || {
+
+              # If install fails due to version conflicts, try with --nobest
+              # This uses slightly older but compatible package versions
+              echo 'WARN: Standard install failed, retrying with --nobest'
+              dnf -y --releasever=9 --nobest install \
+                rpm-build rpmdevtools tar gzip which \
+                systemd-rpm-macros glibc-devel golang gcc || {
+                echo 'ERROR: Failed to install build dependencies even with --nobest'
+                exit 1
+              }
             }
 
             # Verify rpmbuild is available
