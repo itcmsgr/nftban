@@ -20,6 +20,8 @@
 #   nftban_geoban_status                          - Show status
 # =============================================================================
 
+set -Eeuo pipefail
+
 # Simple output functions (self-contained, no dependencies)
 nftban_info() { echo "[INFO] $*"; }
 nftban_success() { echo "[SUCCESS] $*"; }
@@ -348,9 +350,12 @@ nftban_geoban_list() {
         echo "🚫 Banned Countries:"
         for file in "${banned_files[@]}"; do
             if [[ -f "${file}" ]]; then
-                local cc=$(basename "${file}" | sed -n 's/50-ban-\(.*\)\.conf/\1/p')
-                local ipv4_count=$(grep -c "^[0-9]" "${file}" 2>/dev/null || echo "0")
-                local ipv6_count=$(grep -c ":" "${file}" 2>/dev/null || echo "0")
+                local cc
+                cc=$(basename "${file}" | sed -n 's/50-ban-\(.*\)\.conf/\1/p')
+                local ipv4_count
+                ipv4_count=$(grep -c "^[0-9]" "${file}" 2>/dev/null || echo "0")
+                local ipv6_count
+                ipv6_count=$(grep -c ":" "${file}" 2>/dev/null || echo "0")
                 echo "   ${cc} - ${ipv4_count} IPv4 ranges, ${ipv6_count} IPv6 ranges"
                 ((banned_count++))
             fi
@@ -369,9 +374,12 @@ nftban_geoban_list() {
         echo "✅ Whitelisted Countries:"
         for file in "${whitelist_files[@]}"; do
             if [[ -f "${file}" ]]; then
-                local cc=$(basename "${file}" | sed -n 's/40-whitelist-\(.*\)\.conf/\1/p')
-                local ipv4_count=$(grep -c "^[0-9]" "${file}" 2>/dev/null || echo "0")
-                local ipv6_count=$(grep -c ":" "${file}" 2>/dev/null || echo "0")
+                local cc
+                cc=$(basename "${file}" | sed -n 's/40-whitelist-\(.*\)\.conf/\1/p')
+                local ipv4_count
+                ipv4_count=$(grep -c "^[0-9]" "${file}" 2>/dev/null || echo "0")
+                local ipv6_count
+                ipv6_count=$(grep -c ":" "${file}" 2>/dev/null || echo "0")
                 echo "   ${cc} - ${ipv4_count} IPv4 ranges, ${ipv6_count} IPv6 ranges"
                 ((whitelist_count++))
             fi
@@ -419,7 +427,8 @@ nftban_geoban_update() {
 
     for file in "${all_files[@]}"; do
         if [[ -f "${file}" ]]; then
-            local basename=$(basename "${file}" .conf)
+            local basename
+            basename=$(basename "${file}" .conf)
             local cc=""
             local action=""
 
@@ -481,7 +490,8 @@ nftban_geoban_status() {
     # Binary status
     echo "🔧 Go Binary:"
     if [[ -n "${GEOIP_BINARY}" ]] && [[ -x "${GEOIP_BINARY}" ]]; then
-        local version=$("${GEOIP_BINARY}" version 2>/dev/null | grep -oP 'v\S+' || echo "unknown")
+        local version
+        version=$("${GEOIP_BINARY}" version 2>/dev/null | grep -oP 'v\S+' || echo "unknown")
         echo "   Binary: ${GEOIP_BINARY}"
         echo "   Version: ${version}"
         echo "   Status: ✅ Available"
@@ -491,8 +501,10 @@ nftban_geoban_status() {
     echo ""
 
     # Active countries count
-    local banned_count=$(ls -1 "${GEOBAN_FILES_DIR}"/50-ban-*.conf 2>/dev/null | wc -l)
-    local whitelist_count=$(ls -1 "${GEOBAN_FILES_DIR}"/40-whitelist-*.conf 2>/dev/null | wc -l)
+    local banned_count
+    banned_count=$(ls -1 "${GEOBAN_FILES_DIR}"/50-ban-*.conf 2>/dev/null | wc -l)
+    local whitelist_count
+    whitelist_count=$(ls -1 "${GEOBAN_FILES_DIR}"/40-whitelist-*.conf 2>/dev/null | wc -l)
 
     echo "📊 Active Countries:"
     echo "   Banned: ${banned_count}"
