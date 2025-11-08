@@ -946,7 +946,7 @@ elif [ $1 -eq 0 ]; then
     fi
 
     if [ "$BACKUP_CONFIG" = "yes" ]; then
-        BACKUP_DIR="/var/lib/nftban/config-backup-$(date +%Y%m%d-%H%M%S)"
+        BACKUP_DIR="/var/lib/nftban/config-backup-$(date +%%Y%%m%%d-%%H%%M%%S)"
         mkdir -p "$BACKUP_DIR"/{nftban,fail2ban}
 
         # Backup nftban configs
