@@ -1,3 +1,13 @@
+nftban (0.32.21-1) stable; urgency=medium
+
+  * FHS alignment: Move Go binary wrappers to /usr/sbin/
+  * Architecture normalization: Support both x86_64/amd64 and aarch64/arm64
+  * Fix services check: Detect nftban-geoip binary correctly
+  * Security hardening: 0750 root:nftban for all binaries and private dirs
+  * Backward compatibility: Symlinks maintain old paths
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Fri, 08 Nov 2025 17:55:00 +0200
+
 nftban (0.32.14-1) stable; urgency=medium
 
   * Fixed 18 SC2155 shellcheck issues (report_port, cmd_stats, health, geoip_download)

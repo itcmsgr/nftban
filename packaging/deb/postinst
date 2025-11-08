@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan v0.32.20 - DEB Post-Install Script
+# NFTBan v0.32.21 - DEB Post-Install Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Post-installation configuration for DEB packages
@@ -13,7 +13,7 @@ case "$1" in
         # Update NFTBAN_VERSION in config file (handles upgrades with conffile)
         # This ensures the banner shows the correct version even on upgrades
         if [ -f /etc/nftban/nftban.conf ]; then
-            sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.20"/' /etc/nftban/nftban.conf
+            sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.21"/' /etc/nftban/nftban.conf
         fi
 
         # Create nftban user and nftban-cli group if they don't exist
@@ -142,7 +142,7 @@ SSHEOF
         # Print installation message
         echo ""
         echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  NFTBan v0.32.20 Installation Complete!                   ║"
+        echo "║  NFTBan v0.32.21 Installation Complete!                   ║"
         echo "╚════════════════════════════════════════════════════════════╝"
         echo ""
 
