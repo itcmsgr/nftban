@@ -149,6 +149,7 @@ ln -sf /usr/sbin/nftban-geoip %{buildroot}/usr/lib/nftban/bin/nftban-geoip
 ln -sf /usr/sbin/nftban-feeds %{buildroot}/usr/lib/nftban/bin/nftban-feeds
 
 # PATH convenience symlinks (for non-root shells)
+install -d -m 0755 %{buildroot}/usr/bin
 ln -sf /usr/sbin/nftban-geoip %{buildroot}/usr/bin/nftban-geoip
 ln -sf /usr/sbin/nftban-feeds %{buildroot}/usr/bin/nftban-feeds
 
