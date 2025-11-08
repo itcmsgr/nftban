@@ -1,4 +1,4 @@
-# NFTBan v0.32.16 - Quick Start Guide
+# NFTBan v0.32.17 - Quick Start Guide
 
 **The Linux firewall that AUTOMATICALLY protects you - Get running in 2 commands!**
 
