@@ -1263,6 +1263,22 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
+* Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.20-1
+- DOCS: Added comprehensive CODING_STANDARDS.md with all lessons learned from v0.32.16-v0.32.19 bugs
+- DOCS: Standardized ALL 61 module headers to v0.32.20 with proper attribution (Antonios Voulvoulis)
+- DOCS: Fixed header format example in CODING_STANDARDS.md (added closing separator line)
+- FIX: Feeds now download automatically in background with logged output (no silent failures)
+- FIX: Polkit service detection corrected for all distros (polkit.service, not polkitd.service)
+- FIX: Polkit health check now includes auto-heal capability (NFTBAN_HEALTH_AUTO_HEAL)
+- FIX: Config preservation on uninstall/reinstall (all 22 config files protected with %%config(noreplace))
+- FIX: DEB package now uses conffiles mechanism for config protection
+- FIX: Removed incorrect GeoIP system dependency (NFTBan downloads its own GeoLite2 databases)
+- FIX: RPM spec date format escaping (%%Y%%m%%d for RPM macro compatibility)
+- ENHANCEMENT: All version references aligned across entire codebase
+- ENHANCEMENT: All modules now have meta:owner and meta:homepage fields
+- ENHANCEMENT: Package manager backup/restore prompts for uninstall operations
+- COMPLIANCE: All 61 shell scripts now MPL-2.0 licensed with proper headers
+
 * Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.14-1
 - Fixed 18 SC2155 shellcheck issues (report_port, cmd_stats, health, geoip_download)
 
