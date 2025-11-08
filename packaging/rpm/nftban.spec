@@ -1162,9 +1162,6 @@ fi
 
 # Shared data and documentation
 /usr/share/nftban/
-%doc /usr/share/nftban/docs/NOTICE.md
-%doc /usr/share/nftban/docs/TRADEMARK.md
-%doc /usr/share/nftban/docs/CONTRIBUTING.md
 
 # License files (FHS: /usr/share/licenses/<package>/)
 %license /usr/share/licenses/nftban/MPL-2.0.txt
@@ -1179,8 +1176,21 @@ fi
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d
 %config(noreplace) %attr(0640,root,nftban) /etc/nftban/nftban.conf
 %attr(0640,root,nftban) /etc/nftban/baseline.nft
-%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/geoip.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/banner.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/cloudflare.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/ddos.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/directadmin.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/fail2ban.conf
 %config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/feeds.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/geoip.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/health.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/log.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/login_alert.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/mail.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/nftban-go.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/portscan.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/recovery.conf
+%config(noreplace) %attr(0640,root,nftban) /etc/nftban/conf.d/stats.conf
 %dir %attr(0750,root,nftban) /etc/nftban/feeds.d
 %attr(0640,root,nftban) /etc/nftban/feeds.d/.gitkeep
 %dir %attr(0750,root,nftban) /etc/nftban/rules.d
@@ -1223,10 +1233,10 @@ fi
 
 # GeoBan directories
 %dir %attr(0750,root,nftban) /etc/nftban/geoban.d
-%dir /var/lib/nftban/geoban
-%dir /var/lib/nftban/geoban/tracking
-%dir /var/cache/nftban/geoban
-%dir /var/cache/nftban/feeds
+%dir %attr(0750,nftban,nftban) /var/lib/nftban/geoban
+%dir %attr(0750,nftban,nftban) /var/lib/nftban/geoban/tracking
+%dir %attr(0755,nftban,nftban) /var/cache/nftban/geoban
+%dir %attr(0755,nftban,nftban) /var/cache/nftban/feeds
 
 # Logrotate
 /etc/logrotate.d/nftban
@@ -1240,7 +1250,6 @@ fi
 
 # Runtime directories (created by tmpfiles.d)
 %dir %attr(0755,nftban,nftban) /var/lib/nftban
-%dir %attr(0750,nftban,nftban) /var/lib/nftban/*
 %dir %attr(0755,nftban,nftban) /var/cache/nftban
 # Log directory NOT owned by package - preserved on uninstall
 # Created in %post, managed by systemd-tmpfiles
