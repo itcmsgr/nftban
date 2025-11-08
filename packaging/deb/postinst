@@ -78,6 +78,12 @@ EOF
         # Run autoheal first to create all directories
         /usr/lib/nftban/helpers/autoheal.sh
 
+        # Set ownership for binaries and private directories (FHS + security alignment)
+        chown root:nftban /usr/sbin/nftban* 2>/dev/null || true
+        [ -d /usr/lib/nftban/bin ] && chown root:nftban /usr/lib/nftban/bin
+        [ -d /usr/lib/nftban/bin/.real ] && chown root:nftban /usr/lib/nftban/bin/.real
+        find /usr/lib/nftban/bin/.real -type f -name 'nftban-*' -exec chown root:nftban {} \; 2>/dev/null || true
+
         # Set proper permissions on /var directories (if they exist)
         [ -d /var/lib/nftban ] && chmod 0755 /var/lib/nftban
         for dir in state snapshots feeds keyring backup reports metrics config geoip; do
