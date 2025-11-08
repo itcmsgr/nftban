@@ -103,11 +103,7 @@ override_dh_fixperms:
 	chmod 0700 debian/nftban/etc/nftban/secrets.d
 	# Align all nftban binaries with same permissions (FHS compliance)
 	chmod 0750 debian/nftban/usr/sbin/nftban*
-	chown root:nftban debian/nftban/usr/sbin/nftban*
 	# Lock down private directories (prevent direct .real/ execution bypass)
 	chmod 0750 debian/nftban/usr/lib/nftban/bin
 	chmod 0750 debian/nftban/usr/lib/nftban/bin/.real
-	chown root:nftban debian/nftban/usr/lib/nftban/bin
-	chown root:nftban debian/nftban/usr/lib/nftban/bin/.real
-	# Set ownership for real Go binaries
-	find debian/nftban/usr/lib/nftban/bin/.real -type f -name 'nftban-*' -exec chown root:nftban {} \;
+	# Note: Ownership (chown root:nftban) is set by postinst after group creation
