@@ -1,3 +1,15 @@
+nftban (0.32.24-1) stable; urgency=medium
+
+  * UI: NICE_DISPLAYS_FIX - Unicode box drawing for port/services/module reports
+  * UI: Shorter timestamps in CLI displays (YYYY-MM-DD HH:MM)
+  * FIX: DEB prerm upgrade handling (no interactive questions during upgrade)
+  * FIX: DEB postinst cleanup of stale systemd units before autoheal
+  * FIX: autoheal.sh systemctl error handling (prevents upgrade failures)
+  * UPDATE: All script headers and version references to v0.32.24
+  * ALIGN: RPM and DEB packaging scripts to v0.32.24
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 10 Nov 2025 00:15:00 +0200
+
 nftban (0.32.23-1) stable; urgency=critical
 
   * CRITICAL FIX: Revert ChatGPT symlink approach (binaries back to /usr/lib/nftban/bin/)

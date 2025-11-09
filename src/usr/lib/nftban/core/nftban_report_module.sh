@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan v0.32.23 - Module Report Core Module
+# NFTBan v0.32.24 - Module Report Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Module inventory scanning and reporting with validation
@@ -9,7 +9,7 @@
 # meta:name=nftban_report_module
 # meta:type=core
 # meta:header=Module Report Core
-# meta:version=0.32.23
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -468,13 +468,15 @@ nftban_module_render_table() {
     # Uses: NFTBAN_MODULE_OUTPUT_FORMAT
 
     if [[ "$NFTBAN_MODULE_OUTPUT_FORMAT" == "table" ]]; then
-        echo
-        echo "════════════════════════════════════════════════════════════════════════════════════"
-        printf "%s Module Inventory Report — %s %s\n" "${C_BOLD:-}" "$NFTBAN_MODULE_TIMESTAMP" "${C_RESET:-}"
-        echo "════════════════════════════════════════════════════════════════════════════════════"
+        local short_ts=$(date +"%Y-%m-%d %H:%M")
+        echo ""
+        echo "╔════════════════════════════════════════════════════════╗"
+        printf "║  NFTBan Modules                 %-12s    ║\n" "$short_ts"
+        echo "╚════════════════════════════════════════════════════════╝"
+        echo ""
         printf "%-25s %-10s %-8s %-10s %-12s %-40s\n" \
             "NAME" "VERSION" "TYPE" "STATUS" "CREATED" "PATH"
-        echo "------------------------------------------------------------------------------------"
+        echo "────────────────────────────────────────────────────────"
     elif [[ "$NFTBAN_MODULE_OUTPUT_FORMAT" == "md" ]]; then
         echo "| NAME | VERSION | TYPE | STATUS | CREATED | PATH | DEPENDS |"
         echo "|:---|:---|:---:|:---:|:---|:---|:---|"

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.23 - Auto-Heal Script
+# NFTBan v0.32.24 - Auto-Heal Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name=autoheal.sh
 # meta:type=helper
 # meta:header=Auto-Heal System Configuration
-# meta:version=0.32.23
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 # meta:description=Automatically fixes common configuration issues
@@ -182,9 +182,9 @@ fi
 log_info "Configuring systemd timer..."
 
 if systemctl list-unit-files | grep -q "nftban.timer"; then
-    systemctl daemon-reload
-    systemctl enable nftban.timer
-    systemctl start nftban.timer
+    systemctl daemon-reload 2>/dev/null || true
+    systemctl enable nftban.timer 2>/dev/null || log_warn "Failed to enable nftban.timer"
+    systemctl start nftban.timer 2>/dev/null || log_warn "Failed to start nftban.timer"
     log_info "Enabled and started nftban.timer"
 else
     log_warn "nftban.timer not found - may need to complete installation first"

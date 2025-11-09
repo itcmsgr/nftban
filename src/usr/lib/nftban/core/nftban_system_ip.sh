@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.23 - System IP Auto-Detection Module
+# NFTBan v0.32.24 - System IP Auto-Detection Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Automatic system IP detection and whitelisting
@@ -8,7 +8,7 @@
 # meta:name=nftban_system_ip
 # meta:type=core
 # meta:header=System IP Auto-Detection
-# meta:version=0.32.23
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

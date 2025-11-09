@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan v0.32.21 - DEB Post-Install Script
+# NFTBan v0.32.24 - DEB Post-Install Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Post-installation configuration for DEB packages
@@ -10,10 +10,22 @@ set -e
 
 case "$1" in
     configure)
+        # Clean up old/stale systemd units from previous versions (upgrade safety)
+        if [ -n "$2" ]; then
+            # $2 is the old version during upgrade
+            echo "Cleaning up old systemd units from v$2..."
+            systemctl daemon-reload 2>/dev/null || true
+
+            # Remove any stale timer states
+            systemctl reset-failed nftban.timer 2>/dev/null || true
+            systemctl reset-failed nftban-maintenance.timer 2>/dev/null || true
+            systemctl reset-failed nftban-health.timer 2>/dev/null || true
+        fi
+
         # Update NFTBAN_VERSION in config file (handles upgrades with conffile)
         # This ensures the banner shows the correct version even on upgrades
         if [ -f /etc/nftban/nftban.conf ]; then
-            sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.23"/' /etc/nftban/nftban.conf
+            sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.24"/' /etc/nftban/nftban.conf
         fi
 
         # Create nftban user and nftban-cli group if they don't exist
@@ -143,7 +155,7 @@ SSHEOF
         # Print installation message
         echo ""
         echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  NFTBan v0.32.21 Installation Complete!                   ║"
+        echo "║  NFTBan v0.32.24 Installation Complete!                   ║"
         echo "╚════════════════════════════════════════════════════════════╝"
         echo ""
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan v0.32.23 - Services Report Core Module
+# NFTBan v0.32.24 - Services Report Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: System services status scanning and reporting
@@ -9,7 +9,7 @@
 # meta:name=nftban_report_services
 # meta:type=core
 # meta:header=Services Report Core
-# meta:version=0.32.23
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -207,15 +207,18 @@ nftban_services_scan() {
 #
 nftban_services_report_table() {
     local timestamp="$1"
+    local short_ts=$(date +"%Y-%m-%d %H:%M")
 
-    echo "════════════════════════════════════════════════════════════════════════════════════"
-    echo " Services Status Report — ${timestamp} "
-    echo "════════════════════════════════════════════════════════════════════════════════════"
+    echo ""
+    echo "╔════════════════════════════════════════════════════════╗"
+    printf "║  NFTBan Services                %-12s    ║\n" "$short_ts"
+    echo "╚════════════════════════════════════════════════════════╝"
+    echo ""
 
     # Header
     printf "%-20s %-15s %-12s %-10s %s\n" \
         "SERVICE" "STATUS" "VERSION" "REQUIRED" "NOTES"
-    echo "------------------------------------------------------------------------------------"
+    echo "────────────────────────────────────────────────────────"
 
     # Count statistics
     local running_services=0

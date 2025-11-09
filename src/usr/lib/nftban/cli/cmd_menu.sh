@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.23 - Interactive TUI Menu Command
+# NFTBan v0.32.24 - Interactive TUI Menu Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Interactive TUI menu system for NFTBan
@@ -8,7 +8,7 @@
 # meta:name=cmd_menu
 # meta:type=cli
 # meta:header=NFTBan Interactive Menu
-# meta:version=0.32.23
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

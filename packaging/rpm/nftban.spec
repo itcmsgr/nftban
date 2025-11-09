@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v0.32.20 - RPM Spec File
+# NFTBan v0.32.24 - RPM Spec File
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: RPM package specification for Red Hat-based distributions
@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.23
+Version:        0.32.24
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -1253,6 +1253,15 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
+* Sun Nov 10 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.24-1
+- UI: NICE_DISPLAYS_FIX - Unicode box drawing for port/services/module reports
+- UI: Shorter timestamps in CLI displays (YYYY-MM-DD HH:MM)
+- FIX: DEB prerm upgrade handling (no interactive questions during upgrade)
+- FIX: DEB postinst cleanup of stale systemd units before autoheal
+- FIX: autoheal.sh systemctl error handling (prevents upgrade failures)
+- UPDATE: All script headers and version references to v0.32.24
+- ALIGN: RPM and DEB packaging scripts to v0.32.24
+
 * Sat Nov 09 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.23-1
 - FIX: Removed blank line in fail2ban status output
 - FIX: GeoBan help now shows correct text (was showing geoip help)
