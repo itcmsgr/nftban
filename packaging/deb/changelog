@@ -1,3 +1,14 @@
+nftban (0.32.25-1) stable; urgency=critical
+
+  * CRITICAL: Disable default fail2ban sshd jail (NFTBan manages nftban-sshd instead)
+  * CRITICAL: Auto-whitelist system IPs in postinst (SSH_CLIENT + public IPv4/IPv6)
+  * FIX: Align DEB prerm with RPM %preun (capture service states on upgrade)
+  * FIX: Align DEB postrm with RPM %postun (README naming, comments)
+  * ALIGN: Both DEB and RPM now use identical install/upgrade/uninstall logic
+  * ARCH: NFTBan manages only nftban-* jails via 'nftban fail2ban' commands
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 10 Nov 2025 01:30:00 +0200
+
 nftban (0.32.24-1) stable; urgency=medium
 
   * UI: NICE_DISPLAYS_FIX - Unicode box drawing for port/services/module reports

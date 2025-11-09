@@ -314,18 +314,18 @@ nftban_port_render_table() {
     if [[ "$NFTBAN_PORT_OUTPUT_FORMAT" == "table" ]]; then
         local short_ts=$(date +"%Y-%m-%d %H:%M")
         echo ""
-        echo "╔════════════════════════════════════════════════════════╗"
-        printf "║  Port Status                    %-12s    ║\n" "$short_ts"
-        echo "╚════════════════════════════════════════════════════════╝"
+        echo "╔══════════════════════════════════════════════════════════════════════════════════╗"
+        printf "║  Port Status                    %-12s                                      ║\n" "$short_ts"
+        echo "╚══════════════════════════════════════════════════════════════════════════════════╝"
         echo ""
         if (( NFTBAN_PORT_DETAILED )); then
-            printf "%-14s %-6s %-6s %-8s %-12s %-20s %-9s %-9s %-9s %-9s %s\n" \
-                "SERVICE" "PORT" "PROTO" "RUNNING" "BIND" "PROCESS" "IPv4 IN" "IPv4 OUT" "IPv6 IN" "IPv6 OUT" "NOTES"
+            printf "%-12s %-10s %-10s %-12s %-20s %-9s %-9s %-9s %-9s %-12s\n" \
+                "PORT/PROTO" "SERVICE" "STATUS" "BIND" "PROCESS" "IPv4 IN" "IPv4 OUT" "IPv6 IN" "IPv6 OUT" "ACCESS"
         else
-            printf "%-14s %-6s %-6s %-8s %-9s %-9s %-9s %-9s %s\n" \
-                "SERVICE" "PORT" "PROTO" "RUNNING" "IPv4 IN" "IPv4 OUT" "IPv6 IN" "IPv6 OUT" "NOTES"
+            printf "%-12s %-10s %-10s %-9s %-9s %-9s %-9s %-12s\n" \
+                "PORT/PROTO" "SERVICE" "STATUS" "IPv4 IN" "IPv4 OUT" "IPv6 IN" "IPv6 OUT" "ACCESS"
         fi
-        echo "────────────────────────────────────────────────────────"
+        echo "──────────────────────────────────────────────────────────────────────────────────"
     elif [[ "$NFTBAN_PORT_OUTPUT_FORMAT" == "md" ]]; then
         if (( NFTBAN_PORT_DETAILED )); then
             echo "| SERVICE | PORT | PROTO | RUNNING | BIND | PROCESS | IPv4 IN | IPv4 OUT | IPv6 IN | IPv6 OUT | NOTES |"
@@ -402,12 +402,34 @@ nftban_port_render_table() {
 
         badge() {
             case "$1" in
-                Allowed) echo -e "${C_GREEN:-}${NFTBAN_PORT_SYM_OK}${C_RESET:-} Allowed" ;;
-                Blocked) echo -e "${C_RED:-}${NFTBAN_PORT_SYM_KO}${C_RESET:-} Blocked" ;;
-                "No-rule") echo -e "${C_YELLOW:-}${NFTBAN_PORT_SYM_QUEST}${C_RESET:-} No-rule" ;;
-                Unknown) echo -e "${C_YELLOW:-}${NFTBAN_PORT_SYM_QUEST}${C_RESET:-} Unknown" ;;
+                Allowed) echo -e "${C_GREEN:-}✔${C_RESET:-}" ;;
+                Blocked) echo -e "${C_RED:-}✖${C_RESET:-}" ;;
+                "No-rule") echo -e "${C_YELLOW:-}−${C_RESET:-}" ;;
+                Unknown) echo -e "${C_YELLOW:-}?${C_RESET:-}" ;;
                 *) echo "$1" ;;
             esac
+        }
+
+        access_icon() {
+            local scope_notes="$1"
+            if [[ "$scope_notes" == *"PUBLIC"* ]] || [[ "$scope_notes" == *"public"* ]]; then
+                echo "🌍 Public"
+            elif [[ "$scope_notes" == *"LOCAL-ONLY"* ]] || [[ "$scope_notes" == *"local"* ]]; then
+                echo "🔒 Local"
+            elif [[ "$v4in" == "Blocked" ]] && [[ "$v6in" == "Blocked" ]]; then
+                echo "❌ Blocked"
+            else
+                echo "−"
+            fi
+        }
+
+        status_icon() {
+            local run="$1"
+            if [[ "$run" == "yes" ]]; then
+                echo -e "${C_GREEN:-}✓ Running${C_RESET:-}"
+            else
+                echo -e "${C_YELLOW:-}− Stopped${C_RESET:-}"
+            fi
         }
 
         # Add note if port is open but not listening
@@ -416,14 +438,18 @@ nftban_port_render_table() {
         fi
 
         if [[ "$NFTBAN_PORT_OUTPUT_FORMAT" == "table" ]]; then
+            local port_proto="${port}/${proto^^}"  # Combine port/proto as "22/TCP"
+            local status_display="$(status_icon "$running")"
+            local access_display="$(access_icon "$notes")"
+
             if (( NFTBAN_PORT_DETAILED )); then
-                printf "%-14s %-6s %-6s %-8s %-12s %-20s %-9s %-9s %-9s %-9s %s\n" \
-                    "$svc" "$port" "$proto" "$running" "${bind:-?}" "${procinfo:-?}" \
-                    "$(badge "$v4in")" "$(badge "$v4out")" "$(badge "$v6in")" "$(badge "$v6out")" "$(nftban_port_trim "$notes")"
+                printf "%-12s %-10s %-10s %-12s %-20s %-9s %-9s %-9s %-9s %-12s\n" \
+                    "$port_proto" "$svc" "$status_display" "${bind:-?}" "${procinfo:-?}" \
+                    "$(badge "$v4in")" "$(badge "$v4out")" "$(badge "$v6in")" "$(badge "$v6out")" "$access_display"
             else
-                printf "%-14s %-6s %-6s %-8s %-9s %-9s %-9s %-9s %s\n" \
-                    "$svc" "$port" "$proto" "$running" \
-                    "$(badge "$v4in")" "$(badge "$v4out")" "$(badge "$v6in")" "$(badge "$v6out")" "$(nftban_port_trim "$notes")"
+                printf "%-12s %-10s %-10s %-9s %-9s %-9s %-9s %-12s\n" \
+                    "$port_proto" "$svc" "$status_display" \
+                    "$(badge "$v4in")" "$(badge "$v4out")" "$(badge "$v6in")" "$(badge "$v6out")" "$access_display"
             fi
         elif [[ "$NFTBAN_PORT_OUTPUT_FORMAT" == "md" ]]; then
             if (( NFTBAN_PORT_DETAILED )); then
@@ -448,8 +474,13 @@ nftban_port_render_table() {
 
     if [[ "$NFTBAN_PORT_OUTPUT_FORMAT" == "table" ]]; then
         echo
-        echo -e "${C_GREEN:-}${NFTBAN_PORT_SYM_OK}${C_RESET:-} allowed   ${C_RED:-}${NFTBAN_PORT_SYM_KO}${C_RESET:-} blocked   ${C_YELLOW:-}${NFTBAN_PORT_SYM_QUEST}${C_RESET:-} no-rule/unknown"
-        echo "Legend: 'No-rule' = no explicit nft input/output rule for that port; default policy may apply."
+        echo "Firewall Rules:"
+        echo -e "  ${C_GREEN:-}✔${C_RESET:-} Allowed   ${C_RED:-}✖${C_RESET:-} Blocked   ${C_YELLOW:-}−${C_RESET:-} No-rule"
+        echo
+        echo "Access:"
+        echo "  🌍 Public   - Accessible from internet"
+        echo "  🔒 Local    - Localhost only"
+        echo "  ❌ Blocked  - Firewall blocked"
         echo
     fi
 }

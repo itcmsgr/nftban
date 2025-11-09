@@ -137,8 +137,8 @@ nftban_module_check_enabled() {
         return 0
     fi
 
-    # If file is in core/ or cli/, consider it enabled (sourced modules)
-    if [[ "$file" =~ /core/ ]] || [[ "$file" =~ /cli/ ]]; then
+    # If file is in core/, cli/, helpers/, or cron/, consider it enabled (sourced/active modules)
+    if [[ "$file" =~ /core/ ]] || [[ "$file" =~ /cli/ ]] || [[ "$file" =~ /helpers/ ]] || [[ "$file" =~ /cron/ ]]; then
         echo "ENABLED"
         return 0
     fi

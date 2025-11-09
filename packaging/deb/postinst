@@ -166,6 +166,17 @@ SSHEOF
         deb-systemd-invoke enable nftban-maintenance.timer || true
         deb-systemd-invoke start nftban-maintenance.timer || true
 
+        # Disable default fail2ban sshd jail (NFTBan manages nftban-sshd instead)
+        if [ -d /etc/fail2ban/jail.d ]; then
+            cat > /etc/fail2ban/jail.d/00-disable-default-sshd.conf <<'SSHEOF'
+# Disable default fail2ban sshd jail
+# NFTBan uses nftban-sshd instead (managed via 'nftban fail2ban' commands)
+[sshd]
+enabled = false
+SSHEOF
+            chmod 644 /etc/fail2ban/jail.d/00-disable-default-sshd.conf
+        fi
+
         # On upgrade (not fresh install), reload firewall to apply new rules
         # Check if this is an upgrade by looking for existing nftban_main table
         if /usr/sbin/nft list table inet nftban_main &>/dev/null; then
