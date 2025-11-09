@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - GeoBan Core Module
+# NFTBan v0.32.25 - GeoBan Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Wrapper for Go-based country blocking (nftban-geoip geoban)

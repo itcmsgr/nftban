@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - Auto-Heal Script
+# NFTBan v0.32.25 - Auto-Heal Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name=autoheal.sh

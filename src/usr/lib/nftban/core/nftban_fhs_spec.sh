@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - FHS Specification
+# NFTBan v0.32.25 - FHS Specification
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Canonical FHS directory specification for NFTBan

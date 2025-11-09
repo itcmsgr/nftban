@@ -1,5 +1,5 @@
 # =============================================================================
-# NFTBan v0.32.24 - RPM Spec File
+# NFTBan v0.32.25 - RPM Spec File
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: RPM package specification for Red Hat-based distributions
@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.24
+Version:        0.32.25
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -421,7 +421,7 @@ fi
 # Update NFTBAN_VERSION in config file (handles upgrades with noreplace)
 # This ensures the banner shows the correct version even on upgrades
 if [ -f /etc/nftban/nftban.conf ]; then
-    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.24"/' /etc/nftban/nftban.conf
+    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.25"/' /etc/nftban/nftban.conf
 fi
 
 # Generate system.conf with UID/GID
@@ -1253,6 +1253,12 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
+* Sun Nov 10 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.25-1
+- CRITICAL: Auto-whitelist system IPs in postinst (SSH_CLIENT + public IPv4/IPv6)
+- FIX: Align DEB prerm with RPM %preun (capture service states on upgrade)
+- FIX: Align DEB postrm with RPM %postun (README naming, comments)
+- ALIGN: Both DEB and RPM now use identical install/upgrade/uninstall logic
+
 * Sun Nov 10 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.24-1
 - UI: NICE_DISPLAYS_FIX - Unicode box drawing for port/services/module reports
 - UI: Shorter timestamps in CLI displays (YYYY-MM-DD HH:MM)

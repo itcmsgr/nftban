@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - GeoBan CLI Handler
+# NFTBan v0.32.25 - GeoBan CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for country-based IP blocking (wrapper for geoip)
@@ -69,7 +69,7 @@ nftban_cmd_geoban() {
 
 nftban_geoban_help() {
     cat <<'EOF'
-🐧🛡️ NFTBan v0.32.24 - GeoBan Country Blocking
+🐧🛡️ NFTBan v0.32.25 - GeoBan Country Blocking
 ban · unban · protect
 
 Usage:
