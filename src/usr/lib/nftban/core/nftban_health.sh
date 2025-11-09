@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.22 - Health Check System
+# NFTBan v0.32.23 - Health Check System
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: System health checks and diagnostics
@@ -8,7 +8,7 @@
 # meta:name=nftban_health
 # meta:type=core
 # meta:header=Health Check System
-# meta:version=0.32.22
+# meta:version=0.32.23
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

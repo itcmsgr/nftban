@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.22 - Path Validation & Write Security Module
+# NFTBan v0.32.23 - Path Validation & Write Security Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Secure path validation for file writes (reports, exports, logs)
@@ -8,7 +8,7 @@
 # meta:name=nftban_path_security
 # meta:type=core
 # meta:header=Path Validation & Write Security
-# meta:version=0.32.22
+# meta:version=0.32.23
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

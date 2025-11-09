@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.22
+Version:        0.32.23
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -421,7 +421,7 @@ fi
 # Update NFTBAN_VERSION in config file (handles upgrades with noreplace)
 # This ensures the banner shows the correct version even on upgrades
 if [ -f /etc/nftban/nftban.conf ]; then
-    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.22"/' /etc/nftban/nftban.conf
+    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.23"/' /etc/nftban/nftban.conf
 fi
 
 # Generate system.conf with UID/GID
@@ -1253,7 +1253,7 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
-* Sat Nov 09 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.22-1
+* Sat Nov 09 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.23-1
 - FIX: Removed blank line in fail2ban status output
 - FIX: GeoBan help now shows correct text (was showing geoip help)
 - FIX: All GeoBan examples corrected (geoip → geoban)
@@ -1265,7 +1265,7 @@ fi
 - FIX: Fixed geoban help text (changed 'nftban geoip' to 'nftban geoban')
 - ALL CLI COMMANDS NOW WORKING: Comprehensive bug fixes for user-facing commands
 
-* Sat Nov 09 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.22-1
+* Sat Nov 09 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.23-1
 - CRITICAL FIX: Reverted binary symlink approach that broke RPM installations
 - FIX: Go binaries now installed directly in /usr/lib/nftban/bin/ (not /usr/sbin/)
 - FIX: Removed ChatGPT symlink strategy (caused broken symlinks on upgrades)
