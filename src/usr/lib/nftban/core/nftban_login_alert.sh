@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - Login Alert Module
+# NFTBan v0.32.25 - Login Alert Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Login monitoring and alerting

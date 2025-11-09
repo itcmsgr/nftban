@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - Maintenance Script (Always Active)
+# NFTBan v0.32.25 - Maintenance Script (Always Active)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Critical maintenance tasks that run even when NFTBan is disabled

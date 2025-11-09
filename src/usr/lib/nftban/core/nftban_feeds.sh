@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - Threat Feeds Core Module
+# NFTBan v0.32.25 - Threat Feeds Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Dynamic threat intelligence feed management with Go integration

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan v0.32.24 - Port CLI Handler
+# NFTBan v0.32.25 - Port CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Handle port-related CLI commands

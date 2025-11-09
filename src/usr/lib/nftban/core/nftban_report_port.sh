@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan v0.32.24 - Port Report Core Module
+# NFTBan v0.32.25 - Port Report Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Port scanning and nftables firewall status analysis

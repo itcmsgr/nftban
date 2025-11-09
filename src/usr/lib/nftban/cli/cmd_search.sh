@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - Search CLI Handler
+# NFTBan v0.32.25 - Search CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Search for IP/Port across all ban lists, feeds, jails, and whitelists

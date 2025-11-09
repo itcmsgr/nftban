@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - Security & Capability Helper
+# NFTBan v0.32.25 - Security & Capability Helper
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Capability checks and helpers for privileged operations

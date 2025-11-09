@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - Grouped Help System
+# NFTBan v0.32.25 - Grouped Help System
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Grouped help output for NFTBan CLI

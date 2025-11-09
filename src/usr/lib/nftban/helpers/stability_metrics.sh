@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - Stability Metrics Logger
+# NFTBan v0.32.25 - Stability Metrics Logger
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Collect stability metrics to analyze if everything works correctly

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - Report Generation & Scheduling CLI Handler
+# NFTBan v0.32.25 - Report Generation & Scheduling CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for report generation and automated scheduling

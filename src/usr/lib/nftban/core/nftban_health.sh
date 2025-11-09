@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - Health Check System
+# NFTBan v0.32.25 - Health Check System
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: System health checks and diagnostics

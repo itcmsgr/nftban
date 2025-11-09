@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - Cloudflare Core Module
+# NFTBan v0.32.25 - Cloudflare Core Module
 # Part of NFTBan v0.32.6 - FHS-Compliant Architecture
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0

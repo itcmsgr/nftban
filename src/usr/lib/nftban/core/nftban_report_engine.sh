@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - Unified Reporting Engine
+# NFTBan v0.32.25 - Unified Reporting Engine
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Unified reporting engine

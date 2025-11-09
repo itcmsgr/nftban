@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan v0.32.24 - Module CLI Handler
+# NFTBan v0.32.25 - Module CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Handle module inventory CLI commands with validation
