@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan v0.32.20 - Mail CLI Handler
+# NFTBan v0.32.21 - Mail CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Handle mail-related CLI commands
@@ -9,7 +9,7 @@
 # meta:name=cmd_mail
 # meta:type=cli
 # meta:header=Mail CLI Command
-# meta:version=0.32.20
+# meta:version=0.32.21
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.20 - Cloudflare CLI Handler
+# NFTBan v0.32.21 - Cloudflare CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI handler for cloudflare commands
@@ -8,7 +8,7 @@
 # meta:name=cmd_cloudflare
 # meta:type=cli
 # meta:header=Cloudflare CLI Handler
-# meta:version=0.32.20
+# meta:version=0.32.21
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

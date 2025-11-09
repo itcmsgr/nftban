@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.20 - Report Generation & Scheduling CLI Handler
+# NFTBan v0.32.21 - Report Generation & Scheduling CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for report generation and automated scheduling
@@ -8,7 +8,7 @@
 # meta:name=cmd_report
 # meta:type=cli
 # meta:header=Report Generation CLI Handler
-# meta:version=0.32.20
+# meta:version=0.32.21
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
