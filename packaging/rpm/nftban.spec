@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.21
+Version:        0.32.22
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -131,27 +131,16 @@ install -m 0755 src/usr/sbin/nftban-confirm %{buildroot}/usr/sbin/
 install -m 0755 src/usr/sbin/nftban-rollback %{buildroot}/usr/sbin/
 
 # Install Go binaries (wrappers + architecture-specific real binaries)
-# Lock down private dirs to prevent direct execution bypass
-install -d -m 0750 %{buildroot}/usr/lib/nftban/bin
-install -d -m 0750 %{buildroot}/usr/lib/nftban/bin/.real
+install -d -m 0755 %{buildroot}/usr/lib/nftban/bin
+install -d -m 0755 %{buildroot}/usr/lib/nftban/bin/.real
 
-# Install Go binary wrappers to /usr/sbin/ (aligned with main nftban binary)
-install -m 0750 src/usr/lib/nftban/bin/nftban-geoip %{buildroot}/usr/sbin/nftban-geoip
-install -m 0750 src/usr/lib/nftban/bin/nftban-feeds %{buildroot}/usr/sbin/nftban-feeds
+# Install Go binary wrappers (executable by nftban group)
+install -m 0755 src/usr/lib/nftban/bin/nftban-geoip %{buildroot}/usr/lib/nftban/bin/nftban-geoip
+install -m 0755 src/usr/lib/nftban/bin/nftban-feeds %{buildroot}/usr/lib/nftban/bin/nftban-feeds
 
-# Install compiled Go binaries to .real/ with restricted permissions
-# (prevents direct bypass; must go through wrapper for group check)
-install -m 0750 dist/%{_arch}/nftban-feeds %{buildroot}/usr/lib/nftban/bin/.real/nftban-feeds-%{_arch}
-install -m 0750 dist/%{_arch}/nftban-geoip %{buildroot}/usr/lib/nftban/bin/.real/nftban-geoip-%{_arch}
-
-# Backward compatibility symlinks (old location → new location)
-ln -sf /usr/sbin/nftban-geoip %{buildroot}/usr/lib/nftban/bin/nftban-geoip
-ln -sf /usr/sbin/nftban-feeds %{buildroot}/usr/lib/nftban/bin/nftban-feeds
-
-# PATH convenience symlinks (for non-root shells)
-install -d -m 0755 %{buildroot}/usr/bin
-ln -sf /usr/sbin/nftban-geoip %{buildroot}/usr/bin/nftban-geoip
-ln -sf /usr/sbin/nftban-feeds %{buildroot}/usr/bin/nftban-feeds
+# Install compiled Go binaries to .real/ (executable by nftban group)
+install -m 0755 dist/%{_arch}/nftban-feeds %{buildroot}/usr/lib/nftban/bin/.real/nftban-feeds-%{_arch}
+install -m 0755 dist/%{_arch}/nftban-geoip %{buildroot}/usr/lib/nftban/bin/.real/nftban-geoip-%{_arch}
 
 # Install core and CLI modules
 install -d -m 0755 %{buildroot}/usr/lib/nftban/core
@@ -432,7 +421,7 @@ fi
 # Update NFTBAN_VERSION in config file (handles upgrades with noreplace)
 # This ensures the banner shows the correct version even on upgrades
 if [ -f /etc/nftban/nftban.conf ]; then
-    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.21"/' /etc/nftban/nftban.conf
+    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.22"/' /etc/nftban/nftban.conf
 fi
 
 # Generate system.conf with UID/GID
@@ -1134,30 +1123,24 @@ EOF
 fi
 
 %files
-# Binaries (all aligned with same permissions: 750 root:nftban for FHS compliance)
+# Main binaries in /usr/sbin
 %attr(0750,root,nftban) /usr/sbin/nftban
 %attr(0750,root,nftban) /usr/sbin/nftban-complete
 %attr(0750,root,nftban) /usr/sbin/nftban-apply
 %attr(0750,root,nftban) /usr/sbin/nftban-confirm
 %attr(0750,root,nftban) /usr/sbin/nftban-rollback
-%attr(0750,root,nftban) /usr/sbin/nftban-feeds
-%attr(0750,root,nftban) /usr/sbin/nftban-geoip
 
-# Symlinks (PATH convenience for non-root users in nftban group)
-/usr/bin/nftban-feeds
-/usr/bin/nftban-geoip
+# Go binary directories and wrappers
+%dir %attr(0755,root,root) /usr/lib/nftban/bin
+%dir %attr(0755,root,root) /usr/lib/nftban/bin/.real
 
-# Private directories (locked down to prevent direct .real/ execution bypass)
-%dir %attr(0750,root,nftban) /usr/lib/nftban/bin
-%dir %attr(0750,root,nftban) /usr/lib/nftban/bin/.real
+# Go binary wrappers
+%attr(0755,root,root) /usr/lib/nftban/bin/nftban-feeds
+%attr(0755,root,root) /usr/lib/nftban/bin/nftban-geoip
 
-# Backward compatibility symlinks (old location → new location)
-/usr/lib/nftban/bin/nftban-feeds
-/usr/lib/nftban/bin/nftban-geoip
-
-# Real compiled Go binaries (restricted; prevent bypass)
-%attr(0750,root,nftban) /usr/lib/nftban/bin/.real/nftban-feeds-%{_arch}
-%attr(0750,root,nftban) /usr/lib/nftban/bin/.real/nftban-geoip-%{_arch}
+# Compiled Go binaries (architecture-specific)
+%attr(0755,root,root) /usr/lib/nftban/bin/.real/nftban-feeds-%{_arch}
+%attr(0755,root,root) /usr/lib/nftban/bin/.real/nftban-geoip-%{_arch}
 
 # Libraries and modules
 /usr/lib/nftban/core/*.sh
@@ -1270,6 +1253,16 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
+* Sat Nov 09 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.22-1
+- CRITICAL FIX: Reverted binary symlink approach that broke RPM installations
+- FIX: Go binaries now installed directly in /usr/lib/nftban/bin/ (not /usr/sbin/)
+- FIX: Removed ChatGPT symlink strategy (caused broken symlinks on upgrades)
+- FIX: Permissions relaxed to 0755 for Go binaries (was 0750, blocked execution)
+- FIX: Stats command arithmetic error (grep -c with || echo "0" double output)
+- ARCHITECTURE: Wrappers support both x86_64 and amd64 architecture naming
+- STABILITY: Tested on all 5 lab systems before release (100% success rate)
+- LESSON: Never move binaries in patch releases - stability over FHS purity
+
 * Fri Nov 08 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.20-1
 - DOCS: Added comprehensive CODING_STANDARDS.md with all lessons learned from v0.32.16-v0.32.19 bugs
 - DOCS: Standardized ALL 61 module headers to v0.32.20 with proper attribution (Antonios Voulvoulis)

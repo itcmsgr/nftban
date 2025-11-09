@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.21 - Path Validator Module
+# NFTBan v0.32.22 - Path Validator Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Detects and validates critical command paths across different OS distributions
@@ -8,7 +8,7 @@
 # meta:name=path_validator
 # meta:type=tool
 # meta:header=Path Validator Module
-# meta:version=0.32.21
+# meta:version=0.32.22
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
