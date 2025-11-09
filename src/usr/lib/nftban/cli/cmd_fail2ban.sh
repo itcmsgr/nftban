@@ -194,7 +194,6 @@ _nftban_fail2ban_cmd_status() {
     echo "════════════════════════════════════════════════════════════"
     echo "  Fail2ban Integration Status"
     echo "════════════════════════════════════════════════════════════"
-    echo ""
     echo "Service Status: ${status}"
     echo "Version:        ${version}"
     echo "Detected OS:    ${os_info}"

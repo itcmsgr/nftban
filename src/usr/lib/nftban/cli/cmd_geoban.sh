@@ -48,11 +48,11 @@ nftban_cmd_geoban() {
 
     # Map geoban subcommands to geoip subcommands
     case "$subcommand" in
-        ban|unban|whitelist|unwhitelist|list|update|status|config|refresh|help)
+        ban|unban|whitelist|unwhitelist|list|update|status|config|refresh)
             # Pass directly to geoip handler
             nftban_cmd_geoip "$@"
             ;;
-        --help|-h)
+        help|--help|-h)
             nftban_geoban_help
             ;;
         *)
@@ -69,7 +69,7 @@ nftban_cmd_geoban() {
 
 nftban_geoban_help() {
     cat <<'EOF'
-🐧🛡️ NFTBan v0.32.6 - GeoBan Country Blocking
+🐧🛡️ NFTBan v0.32.23 - GeoBan Country Blocking
 ban · unban · protect
 
 Usage:
