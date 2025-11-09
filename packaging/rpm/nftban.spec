@@ -1253,6 +1253,12 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
+* Sat Nov 09 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.24-1
+- FIX: Removed blank line in fail2ban status output
+- FIX: GeoBan help now shows correct text (was showing geoip help)
+- FIX: All GeoBan examples corrected (geoip → geoban)
+- ALL CLI COMMANDS VERIFIED AND WORKING
+
 * Sat Nov 09 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.23-1
 - FIX: Added stats --today and --week flags for filtered dashboards
 - FIX: Added whitelist list alias (now works like whitelist show)
