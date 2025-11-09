@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.24 - Go Binary Wrapper (nftban-geoip)
+# NFTBan v0.32.22 - Go Binary Wrapper (nftban-geoip)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Smart wrapper that auto-execs architecture-specific Go binary
@@ -8,7 +8,7 @@
 # meta:name=nftban-geoip
 # meta:type=tool
 # meta:header=NFTBan GeoIP Lookup (Go Binary Wrapper)
-# meta:version=0.32.24
+# meta:version=0.32.22
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
