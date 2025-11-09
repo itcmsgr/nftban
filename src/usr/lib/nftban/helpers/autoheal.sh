@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.23 - Auto-Heal Script
+# NFTBan v0.32.24 - Auto-Heal Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name=autoheal.sh
 # meta:type=helper
 # meta:header=Auto-Heal System Configuration
-# meta:version=0.32.23
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 # meta:description=Automatically fixes common configuration issues
