@@ -29,29 +29,19 @@ override_dh_auto_install:
 	# Copy everything except systemd directory and Go wrappers (will be placed in proper locations)
 	rsync -a --exclude='usr/lib/systemd' --exclude='usr/lib/nftban/bin/nftban-geoip' --exclude='usr/lib/nftban/bin/nftban-feeds' src/ debian/nftban/
 
-	# Install Go binary wrappers to /usr/sbin/ (aligned with main nftban binary)
-	install -D -m 0750 src/usr/lib/nftban/bin/nftban-geoip debian/nftban/usr/sbin/nftban-geoip
-	install -D -m 0750 src/usr/lib/nftban/bin/nftban-feeds debian/nftban/usr/sbin/nftban-feeds
+	# Install Go binary directories
+	install -d -m 0755 debian/nftban/usr/lib/nftban/bin
+	install -d -m 0755 debian/nftban/usr/lib/nftban/bin/.real
 
-	# Lock down private dirs (prevent direct .real/ execution bypass)
-	install -d -m 0750 debian/nftban/usr/lib/nftban/bin
-	install -d -m 0750 debian/nftban/usr/lib/nftban/bin/.real
+	# Install Go binary wrappers (executable by nftban group)
+	install -D -m 0755 src/usr/lib/nftban/bin/nftban-geoip debian/nftban/usr/lib/nftban/bin/nftban-geoip
+	install -D -m 0755 src/usr/lib/nftban/bin/nftban-feeds debian/nftban/usr/lib/nftban/bin/nftban-feeds
 
-	# Install compiled Go binaries to .real/ with restricted permissions
-	# (prevents direct bypass; must go through wrapper for group check)
-	install -m 0750 dist/$(shell dpkg --print-architecture)/nftban-geoip \
+	# Install compiled Go binaries (architecture-specific)
+	install -m 0755 dist/$(shell dpkg --print-architecture)/nftban-geoip \
 		debian/nftban/usr/lib/nftban/bin/.real/nftban-geoip-$(shell dpkg --print-architecture)
-	install -m 0750 dist/$(shell dpkg --print-architecture)/nftban-feeds \
+	install -m 0755 dist/$(shell dpkg --print-architecture)/nftban-feeds \
 		debian/nftban/usr/lib/nftban/bin/.real/nftban-feeds-$(shell dpkg --print-architecture)
-
-	# Backward compatibility symlinks (old location → new location)
-	ln -sf /usr/sbin/nftban-geoip debian/nftban/usr/lib/nftban/bin/nftban-geoip
-	ln -sf /usr/sbin/nftban-feeds debian/nftban/usr/lib/nftban/bin/nftban-feeds
-
-	# PATH convenience symlinks (for non-root shells)
-	install -d -m 0755 debian/nftban/usr/bin
-	ln -sf /usr/sbin/nftban-geoip debian/nftban/usr/bin/nftban-geoip
-	ln -sf /usr/sbin/nftban-feeds debian/nftban/usr/bin/nftban-feeds
 
 	# Create FHS directories
 	install -d -m 0755 debian/nftban/var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics,config,geoip}
@@ -101,9 +91,9 @@ override_dh_fixperms:
 	chmod 0750 debian/nftban/var/lib/nftban/*
 	chmod 0750 debian/nftban/var/log/nftban
 	chmod 0700 debian/nftban/etc/nftban/secrets.d
-	# Align all nftban binaries with same permissions (FHS compliance)
+	# Align all nftban binaries with same permissions
 	chmod 0750 debian/nftban/usr/sbin/nftban*
-	# Lock down private directories (prevent direct .real/ execution bypass)
-	chmod 0750 debian/nftban/usr/lib/nftban/bin
-	chmod 0750 debian/nftban/usr/lib/nftban/bin/.real
+	# Go binaries and wrappers are 0755 (executable by nftban group)
+	chmod 0755 debian/nftban/usr/lib/nftban/bin
+	chmod 0755 debian/nftban/usr/lib/nftban/bin/.real
 	# Note: Ownership (chown root:nftban) is set by postinst after group creation
