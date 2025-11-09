@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.21 - Fail2ban Integration Core Module
+# NFTBan v0.32.22 - Fail2ban Integration Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Fail2ban integration for NFTBan - manage jails and sync bans
@@ -8,7 +8,7 @@
 # meta:name=nftban_fail2ban
 # meta:type=core
 # meta:header=Fail2ban Integration Module
-# meta:version=0.32.21
+# meta:version=0.32.22
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

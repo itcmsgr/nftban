@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.21 - Login Alert Module
+# NFTBan v0.32.22 - Login Alert Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Login monitoring and alerting
@@ -8,7 +8,7 @@
 # meta:name=nftban_login_alert
 # meta:type=core
 # meta:header=Login Alert Module
-# meta:version=0.32.21
+# meta:version=0.32.22
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
