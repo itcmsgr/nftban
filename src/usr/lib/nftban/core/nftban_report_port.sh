@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan v0.32.23 - Port Report Core Module
+# NFTBan v0.32.24 - Port Report Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Port scanning and nftables firewall status analysis
@@ -9,7 +9,7 @@
 # meta:name=nftban_report_port
 # meta:type=core
 # meta:header=Port Report Core
-# meta:version=0.32.23
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -312,10 +312,12 @@ nftban_port_render_table() {
     # Uses: NFTBAN_PORT_OUTPUT_FORMAT, NFTBAN_PORT_DETAILED, NFTBAN_PORT_FILTER_PORTS
 
     if [[ "$NFTBAN_PORT_OUTPUT_FORMAT" == "table" ]]; then
-        echo
-        echo "════════════════════════════════════════════════════════════════════════════════════"
-        printf "%s Port Status Report — %s %s\n" "${C_BOLD:-}" "$NFTBAN_PORT_TIMESTAMP" "${C_RESET:-}"
-        echo "════════════════════════════════════════════════════════════════════════════════════"
+        local short_ts=$(date +"%Y-%m-%d %H:%M")
+        echo ""
+        echo "╔════════════════════════════════════════════════════════╗"
+        printf "║  Port Status                    %-12s    ║\n" "$short_ts"
+        echo "╚════════════════════════════════════════════════════════╝"
+        echo ""
         if (( NFTBAN_PORT_DETAILED )); then
             printf "%-14s %-6s %-6s %-8s %-12s %-20s %-9s %-9s %-9s %-9s %s\n" \
                 "SERVICE" "PORT" "PROTO" "RUNNING" "BIND" "PROCESS" "IPv4 IN" "IPv4 OUT" "IPv6 IN" "IPv6 OUT" "NOTES"
@@ -323,7 +325,7 @@ nftban_port_render_table() {
             printf "%-14s %-6s %-6s %-8s %-9s %-9s %-9s %-9s %s\n" \
                 "SERVICE" "PORT" "PROTO" "RUNNING" "IPv4 IN" "IPv4 OUT" "IPv6 IN" "IPv6 OUT" "NOTES"
         fi
-        echo "------------------------------------------------------------------------------------"
+        echo "────────────────────────────────────────────────────────"
     elif [[ "$NFTBAN_PORT_OUTPUT_FORMAT" == "md" ]]; then
         if (( NFTBAN_PORT_DETAILED )); then
             echo "| SERVICE | PORT | PROTO | RUNNING | BIND | PROCESS | IPv4 IN | IPv4 OUT | IPv6 IN | IPv6 OUT | NOTES |"

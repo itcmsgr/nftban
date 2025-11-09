@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan v0.32.20 - DEB Pre-Remove Script
+# NFTBan v0.32.24 - DEB Pre-Remove Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Pre-removal cleanup for DEB packages
@@ -9,6 +9,24 @@
 set -e
 
 case "$1" in
+    upgrade)
+        # During upgrade: Just stop services, no questions, no backup
+        echo ""
+        echo "╔════════════════════════════════════════════════════════════╗"
+        echo "║  NFTBan Upgrade in Progress                                ║"
+        echo "╚════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "Stopping services for upgrade..."
+
+        # Stop timers (but leave them enabled for postinst to restart)
+        deb-systemd-invoke stop nftban.timer 2>/dev/null || true
+        deb-systemd-invoke stop nftban-maintenance.timer 2>/dev/null || true
+        deb-systemd-invoke stop nftban-health.timer 2>/dev/null || true
+
+        echo "✓ Services stopped for upgrade"
+        echo ""
+        ;;
+
     remove|deconfigure)
         echo ""
         echo "╔════════════════════════════════════════════════════════════╗"

@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan v0.32.6 - DEB Post-Remove Script
+# NFTBan v0.32.24 - DEB Post-Remove Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Post-removal cleanup for DEB packages
