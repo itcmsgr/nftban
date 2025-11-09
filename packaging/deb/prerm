@@ -10,18 +10,40 @@ set -e
 
 case "$1" in
     upgrade)
-        # During upgrade: Just stop services, no questions, no backup
+        # During upgrade: Capture service states and stop services
         echo ""
         echo "╔════════════════════════════════════════════════════════════╗"
         echo "║  NFTBan Upgrade in Progress                                ║"
         echo "╚════════════════════════════════════════════════════════════╝"
         echo ""
+
+        # Capture service states BEFORE stopping
+        mkdir -p /var/lib/nftban/config
+        NFTBAN_WAS_RUNNING=false
+        FAIL2BAN_WAS_RUNNING=false
+
+        if systemctl is-active --quiet nftban.timer 2>/dev/null; then
+            NFTBAN_WAS_RUNNING=true
+        fi
+
+        if systemctl is-active --quiet fail2ban.service 2>/dev/null; then
+            FAIL2BAN_WAS_RUNNING=true
+        fi
+
+        # Save state for postinst to restore
+        cat > /tmp/nftban-upgrade-state.txt <<UPGRADEEOF
+NFTBAN_WAS_RUNNING=$NFTBAN_WAS_RUNNING
+FAIL2BAN_WAS_RUNNING=$FAIL2BAN_WAS_RUNNING
+UPGRADEEOF
+
         echo "Stopping services for upgrade..."
 
         # Stop timers (but leave them enabled for postinst to restart)
         deb-systemd-invoke stop nftban.timer 2>/dev/null || true
         deb-systemd-invoke stop nftban-maintenance.timer 2>/dev/null || true
         deb-systemd-invoke stop nftban-health.timer 2>/dev/null || true
+
+        [ "$FAIL2BAN_WAS_RUNNING" = "true" ] && systemctl stop fail2ban.service 2>/dev/null || true
 
         echo "✓ Services stopped for upgrade"
         echo ""
