@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan v0.32.23 - Firewall CLI Handler
+# NFTBan v0.32.24 - Firewall CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Firewall table initialization and management
@@ -9,7 +9,7 @@
 # meta:name=cmd_firewall
 # meta:type=cli
 # meta:header=Firewall CLI Command
-# meta:version=0.32.23
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
