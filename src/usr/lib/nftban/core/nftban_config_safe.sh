@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.20 - Safe Configuration Loader
+# NFTBan v0.32.21 - Safe Configuration Loader
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Secure configuration file parser - prevents code execution
@@ -8,7 +8,7 @@
 # meta:name=nftban_config_safe
 # meta:type=core
 # meta:header=Safe Configuration Loader
-# meta:version=0.32.20
+# meta:version=0.32.21
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

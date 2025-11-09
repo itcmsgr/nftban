@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan v0.32.20 - FHS CLI Handler
+# NFTBan v0.32.21 - FHS CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Handle FHS compliance CLI commands
@@ -9,7 +9,7 @@
 # meta:name=cmd_fhs
 # meta:type=cli
 # meta:header=FHS CLI Command
-# meta:version=0.32.20
+# meta:version=0.32.21
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
