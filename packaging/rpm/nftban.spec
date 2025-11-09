@@ -10,7 +10,7 @@
 %global debug_package %{nil}
 
 Name:           nftban
-Version:        0.32.24
+Version:        0.32.22
 Release:        1%{?dist}
 Summary:        Modern nftables firewall with self-healing inventory monitoring
 
@@ -421,7 +421,7 @@ fi
 # Update NFTBAN_VERSION in config file (handles upgrades with noreplace)
 # This ensures the banner shows the correct version even on upgrades
 if [ -f /etc/nftban/nftban.conf ]; then
-    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.24"/' /etc/nftban/nftban.conf
+    sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.22"/' /etc/nftban/nftban.conf
 fi
 
 # Generate system.conf with UID/GID
@@ -1253,7 +1253,7 @@ fi
 %doc README.md CHANGELOG.md
 
 %changelog
-* Sat Nov 09 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.24-1
+* Sat Nov 09 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.22-1
 - FIX: Removed blank line in fail2ban status output
 - FIX: GeoBan help now shows correct text (was showing geoip help)
 - FIX: All GeoBan examples corrected (geoip → geoban)
