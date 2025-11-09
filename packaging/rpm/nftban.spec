@@ -744,6 +744,21 @@ fi
 systemctl enable nftban-maintenance.timer 2>/dev/null || true
 systemctl start nftban-maintenance.timer 2>/dev/null || true
 
+# Enable and start fail2ban for nftban-sshd SSH protection
+if command -v systemctl >/dev/null 2>&1; then
+    if systemctl list-unit-files fail2ban.service &>/dev/null 2>&1; then
+        # Enable fail2ban to start on boot
+        systemctl enable fail2ban.service 2>/dev/null || true
+
+        # Start fail2ban now (this activates nftban-sshd jail)
+        if systemctl start fail2ban.service 2>/dev/null && systemctl is-active --quiet fail2ban.service 2>/dev/null; then
+            echo "✅ fail2ban enabled - nftban-sshd SSH protection active"
+        else
+            echo "⚠️  fail2ban installed but failed to start - run 'systemctl start fail2ban' manually"
+        fi
+    fi
+fi
+
 # Print installation message ONLY on fresh install (not upgrade)
 # $1 = 1 means fresh install, $1 = 2 means upgrade
 if [ $1 -eq 1 ]; then
@@ -1254,10 +1269,12 @@ fi
 
 %changelog
 * Sun Nov 10 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.25-1
+- CRITICAL: Enable and start fail2ban by default (nftban-sshd SSH protection active on install)
 - CRITICAL: Auto-whitelist system IPs in postinst (SSH_CLIENT + public IPv4/IPv6)
 - FIX: Align DEB prerm with RPM %preun (capture service states on upgrade)
 - FIX: Align DEB postrm with RPM %postun (README naming, comments)
 - ALIGN: Both DEB and RPM now use identical install/upgrade/uninstall logic
+- NOTE: Users can manage fail2ban via 'nftban fail2ban' commands
 
 * Sun Nov 10 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.24-1
 - UI: NICE_DISPLAYS_FIX - Unicode box drawing for port/services/module reports
