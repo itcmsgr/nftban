@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.20 - Fail2ban CLI Handler
+# NFTBan v0.32.24 - Fail2ban CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Command-line interface for Fail2ban integration management
@@ -8,7 +8,7 @@
 # meta:name=cmd_fail2ban
 # meta:type=cli
 # meta:header=Fail2ban CLI
-# meta:version=0.32.20
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -194,7 +194,6 @@ _nftban_fail2ban_cmd_status() {
     echo "════════════════════════════════════════════════════════════"
     echo "  Fail2ban Integration Status"
     echo "════════════════════════════════════════════════════════════"
-    echo ""
     echo "Service Status: ${status}"
     echo "Version:        ${version}"
     echo "Detected OS:    ${os_info}"

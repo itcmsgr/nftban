@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.20 - System Whitelist CLI Handler
+# NFTBan v0.32.24 - System Whitelist CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: System IP Whitelist Management
@@ -8,7 +8,7 @@
 # meta:name=cmd_whitelist_system
 # meta:type=cli
 # meta:header=System Whitelist CLI Handler
-# meta:version=0.32.20
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -98,7 +98,7 @@ nftban_cmd_whitelist_system() {
             nftban_whitelist_system_sync
             ;;
 
-        show)
+        show|list)
             # Show current system whitelist
             nftban_show_system_whitelist
             ;;

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.20 - GeoBan CLI Handler
+# NFTBan v0.32.24 - GeoBan CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for country-based IP blocking (wrapper for geoip)
@@ -8,7 +8,7 @@
 # meta:name=cmd_geoban
 # meta:type=cli
 # meta:header=GeoBan CLI Handler
-# meta:version=0.32.20
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -33,8 +33,8 @@ nftban_cmd_geoban() {
     # Args: subcommand [options]
     #
     # This provides a user-friendly alias:
-    #   nftban geoban ban CN    ->  nftban geoip ban CN
-    #   nftban geoban whitelist US  ->  nftban geoip whitelist US
+    #   nftban geoban ban CN    ->  nftban geoban ban CN
+    #   nftban geoban whitelist US  ->  nftban geoban whitelist US
 
     local subcommand="${1:-help}"
 
@@ -48,11 +48,11 @@ nftban_cmd_geoban() {
 
     # Map geoban subcommands to geoip subcommands
     case "$subcommand" in
-        ban|unban|whitelist|unwhitelist|list|update|status|config|refresh|help)
+        ban|unban|whitelist|unwhitelist|list|update|status|config|refresh)
             # Pass directly to geoip handler
             nftban_cmd_geoip "$@"
             ;;
-        --help|-h)
+        help|--help|-h)
             nftban_geoban_help
             ;;
         *)
@@ -69,7 +69,7 @@ nftban_cmd_geoban() {
 
 nftban_geoban_help() {
     cat <<'EOF'
-🐧🛡️ NFTBan v0.32.6 - GeoBan Country Blocking
+🐧🛡️ NFTBan v0.32.24 - GeoBan Country Blocking
 ban · unban · protect
 
 Usage:
