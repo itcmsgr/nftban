@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan v0.32.22 - FHS Report Core Module
+# NFTBan v0.32.23 - FHS Report Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: FHS directory permissions and ownership audit
@@ -9,7 +9,7 @@
 # meta:name=nftban_report_fhs
 # meta:type=core
 # meta:header=FHS Report Core
-# meta:version=0.32.22
+# meta:version=0.32.23
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

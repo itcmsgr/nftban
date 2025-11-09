@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.22 - Port Scan CLI Handler
+# NFTBan v0.32.23 - Port Scan CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Command-line interface for port scan detection management
@@ -8,7 +8,7 @@
 # meta:name=cmd_portscan
 # meta:type=cli
 # meta:header=Port Scan CLI
-# meta:version=0.32.22
+# meta:version=0.32.23
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

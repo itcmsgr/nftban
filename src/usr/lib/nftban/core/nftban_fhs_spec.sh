@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.22 - FHS Specification
+# NFTBan v0.32.23 - FHS Specification
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Canonical FHS directory specification for NFTBan
@@ -8,7 +8,7 @@
 # meta:name=nftban_fhs_spec
 # meta:type=core
 # meta:header=FHS Specification
-# meta:version=0.32.22
+# meta:version=0.32.23
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
