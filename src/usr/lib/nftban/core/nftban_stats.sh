@@ -545,41 +545,25 @@ nftban_stats_generate_dashboard() {
     echo "[CURRENT PROTECTION BREAKDOWN]"
     local temp_v4=0 temp_v6=0 black_v4=0 black_v6=0 feed_v4=0 feed_v6=0
 
-    # Count each category (ensure integer values, trim whitespace)
+    # Count each category (|| true handles grep -c returning exit 1 when count is 0)
     if nft list set inet nftban_runtime temp_ban_v4 &>/dev/null 2>&1; then
-        temp_v4=$(nft list set inet nftban_runtime temp_ban_v4 2>/dev/null | grep -c 'timeout' 2>/dev/null | tr -d '[:space:]' || echo "0")
+        temp_v4=$(nft list set inet nftban_runtime temp_ban_v4 2>/dev/null | grep -c 'timeout' 2>/dev/null  || true)
     fi
     if nft list set inet nftban_runtime temp_ban_v6 &>/dev/null 2>&1; then
-        temp_v6=$(nft list set inet nftban_runtime temp_ban_v6 2>/dev/null | grep -c 'timeout' 2>/dev/null | tr -d '[:space:]' || echo "0")
+        temp_v6=$(nft list set inet nftban_runtime temp_ban_v6 2>/dev/null | grep -c 'timeout' 2>/dev/null  || true)
     fi
     if nft list set inet nftban_main blacklist_v4 &>/dev/null 2>&1; then
-        black_v4=$(nft list set inet nftban_main blacklist_v4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | wc -l 2>/dev/null | tr -d '[:space:]' || echo "0")
+        black_v4=$(nft list set inet nftban_main blacklist_v4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | wc -l 2>/dev/null  || true)
     fi
     if nft list set inet nftban_main blacklist_v6 &>/dev/null 2>&1; then
-        black_v6=$(nft list set inet nftban_main blacklist_v6 2>/dev/null | grep -c '::' 2>/dev/null | tr -d '[:space:]' || echo "0")
+        black_v6=$(nft list set inet nftban_main blacklist_v6 2>/dev/null | grep -c '::' 2>/dev/null  || true)
     fi
     if nft list set inet nftban_main feed_v4 &>/dev/null 2>&1; then
-        feed_v4=$(nft list set inet nftban_main feed_v4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | wc -l 2>/dev/null | tr -d '[:space:]' || echo "0")
+        feed_v4=$(nft list set inet nftban_main feed_v4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | wc -l 2>/dev/null  || true)
     fi
     if nft list set inet nftban_main feed_v6 &>/dev/null 2>&1; then
-        feed_v6=$(nft list set inet nftban_main feed_v6 2>/dev/null | grep -c '::' 2>/dev/null | tr -d '[:space:]' || echo "0")
+        feed_v6=$(nft list set inet nftban_main feed_v6 2>/dev/null | grep -c '::' 2>/dev/null  || true)
     fi
-
-    # Ensure variables are integers (strip any remaining non-numeric chars)
-    temp_v4=${temp_v4//[^0-9]/}
-    temp_v6=${temp_v6//[^0-9]/}
-    black_v4=${black_v4//[^0-9]/}
-    black_v6=${black_v6//[^0-9]/}
-    feed_v4=${feed_v4//[^0-9]/}
-    feed_v6=${feed_v6//[^0-9]/}
-
-    # Default to 0 if empty after sanitization
-    temp_v4=${temp_v4:-0}
-    temp_v6=${temp_v6:-0}
-    black_v4=${black_v4:-0}
-    black_v6=${black_v6:-0}
-    feed_v4=${feed_v4:-0}
-    feed_v6=${feed_v6:-0}
 
     local total_temp=$((temp_v4 + temp_v6))
     local total_black=$((black_v4 + black_v6))
