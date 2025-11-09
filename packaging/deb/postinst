@@ -130,6 +130,22 @@ $SSH_PORT|T
 SSHEOF
         chmod 644 /etc/nftban/ports.d/00-ssh.conf
 
+        # Auto-detect and whitelist system IPs (LOCKOUT PREVENTION)
+        mkdir -p /etc/nftban/whitelist.d
+        SYSTEM_IPS=$(hostname -I 2>/dev/null || ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '^127\.')
+        if [ -n "$SYSTEM_IPS" ]; then
+            cat > /etc/nftban/whitelist.d/00-system.conf <<IPEOF
+# System IPs auto-added during installation ($(date '+%Y-%m-%d %H:%M:%S'))
+# DO NOT DELETE - LOCKOUT RISK!
+# Format: One IP per line
+$(echo "$SYSTEM_IPS" | tr ' ' '\n')
+127.0.0.1
+::1
+IPEOF
+            chmod 644 /etc/nftban/whitelist.d/00-system.conf
+            echo "✅ Auto-whitelisted system IPs: $SYSTEM_IPS"
+        fi
+
         # Run health check to validate installation
         if command -v nftban >/dev/null 2>&1; then
             nftban health check --quiet 2>/dev/null || true
