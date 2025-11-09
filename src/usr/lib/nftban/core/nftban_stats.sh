@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.22 - Statistics & Metrics Core Engine
+# NFTBan v0.32.23 - Statistics & Metrics Core Engine
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Comprehensive statistics collection, analysis, and reporting
@@ -8,7 +8,7 @@
 # meta:name=nftban_stats
 # meta:type=core
 # meta:header=Statistics & Metrics Engine
-# meta:version=0.32.22
+# meta:version=0.32.23
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

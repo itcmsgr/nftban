@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.22 - Cloudflare Core Module
+# NFTBan v0.32.23 - Cloudflare Core Module
 # Part of NFTBan v0.32.6 - FHS-Compliant Architecture
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
@@ -9,7 +9,7 @@
 # meta:name=nftban_cloudflare
 # meta:type=module
 # meta:header=Cloudflare Integration Module
-# meta:version=0.32.22
+# meta:version=0.32.23
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

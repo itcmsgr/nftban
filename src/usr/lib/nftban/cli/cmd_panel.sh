@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 
 # =============================================================================
-# NFTBan v0.32.22 - Panel CLI Handler
+# NFTBan v0.32.23 - Panel CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Web hosting panel firewall integration and management
@@ -9,7 +9,7 @@
 # meta:name=cmd_panel
 # meta:type=cli
 # meta:header=Panel CLI Command
-# meta:version=0.32.22
+# meta:version=0.32.23
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
