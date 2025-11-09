@@ -132,19 +132,30 @@ SSHEOF
 
         # Auto-detect and whitelist system IPs (LOCKOUT PREVENTION)
         mkdir -p /etc/nftban/whitelist.d
-        SYSTEM_IPS=$(hostname -I 2>/dev/null || ip -4 addr show | grep -oP '(?<=inet\s)\d+(\.\d+){3}' | grep -v '^127\.')
-        if [ -n "$SYSTEM_IPS" ]; then
-            cat > /etc/nftban/whitelist.d/00-system.conf <<IPEOF
-# System IPs auto-added during installation ($(date '+%Y-%m-%d %H:%M:%S'))
-# DO NOT DELETE - LOCKOUT RISK!
-# Format: One IP per line
-$(echo "$SYSTEM_IPS" | tr ' ' '\n')
-127.0.0.1
-::1
-IPEOF
-            chmod 644 /etc/nftban/whitelist.d/00-system.conf
-            echo "✅ Auto-whitelisted system IPs: $SYSTEM_IPS"
-        fi
+        {
+            echo "# System IPs auto-added during installation ($(date '+%Y-%m-%d %H:%M:%S'))"
+            echo "# DO NOT DELETE - LOCKOUT RISK!"
+            echo "# Format: One IP per line (IPv4 or IPv6)"
+
+            # Detect SSH client IP
+            if [ -n "${SSH_CLIENT:-}" ]; then
+                SSH_IP="${SSH_CLIENT%% *}"
+                echo "$SSH_IP"
+            fi
+
+            # Detect public IPv4
+            if command -v curl >/dev/null 2>&1; then
+                IPV4=$(curl -s -4 --max-time 5 ifconfig.me 2>/dev/null || echo "")
+                [ -n "$IPV4" ] && echo "$IPV4"
+            fi
+
+            # Detect public IPv6
+            if command -v curl >/dev/null 2>&1; then
+                IPV6=$(curl -s -6 --max-time 5 ifconfig.me 2>/dev/null || echo "")
+                [ -n "$IPV6" ] && echo "$IPV6"
+            fi
+        } > /etc/nftban/whitelist.d/00-system.conf
+        chmod 644 /etc/nftban/whitelist.d/00-system.conf
 
         # Run health check to validate installation
         if command -v nftban >/dev/null 2>&1; then
