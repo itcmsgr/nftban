@@ -13,7 +13,7 @@ case "$1" in
         # Update NFTBAN_VERSION in config file (handles upgrades with conffile)
         # This ensures the banner shows the correct version even on upgrades
         if [ -f /etc/nftban/nftban.conf ]; then
-            sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.21"/' /etc/nftban/nftban.conf
+            sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.22"/' /etc/nftban/nftban.conf
         fi
 
         # Create nftban user and nftban-cli group if they don't exist
@@ -78,11 +78,12 @@ EOF
         # Run autoheal first to create all directories
         /usr/lib/nftban/helpers/autoheal.sh
 
-        # Set ownership for binaries and private directories (FHS + security alignment)
+        # Set ownership for binaries and directories
         chown root:nftban /usr/sbin/nftban* 2>/dev/null || true
-        [ -d /usr/lib/nftban/bin ] && chown root:nftban /usr/lib/nftban/bin
-        [ -d /usr/lib/nftban/bin/.real ] && chown root:nftban /usr/lib/nftban/bin/.real
-        find /usr/lib/nftban/bin/.real -type f -name 'nftban-*' -exec chown root:nftban {} \; 2>/dev/null || true
+        [ -d /usr/lib/nftban/bin ] && chown root:root /usr/lib/nftban/bin
+        [ -d /usr/lib/nftban/bin/.real ] && chown root:root /usr/lib/nftban/bin/.real
+        find /usr/lib/nftban/bin -type f -exec chown root:root {} \; 2>/dev/null || true
+        find /usr/lib/nftban/bin/.real -type f -exec chown root:root {} \; 2>/dev/null || true
 
         # Set proper permissions on /var directories (if they exist)
         [ -d /var/lib/nftban ] && chmod 0755 /var/lib/nftban
