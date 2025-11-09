@@ -15,11 +15,8 @@ case "$1" in
         rm -rf /run/nftban
         rm -rf /var/cache/nftban
 
-        # Remove nftables table if empty
-        if command -v nft >/dev/null 2>&1; then
-            nft list table inet nftban >/dev/null 2>&1 && \
-                nft delete table inet nftban || true
-        fi
+        # Note: Firewall tables already handled in prerm if user chose to remove them
+        # We don't force-remove here to respect user choice
 
         # Change ownership to root to avoid unknown UID/GID after user removal
         if [ -d /var/log/nftban ]; then
@@ -31,10 +28,10 @@ case "$1" in
 
         # Leave informational note in logs directory
         if [ -d /var/log/nftban ]; then
-            cat > /var/log/nftban/README.removed <<'EOF'
-NFTBan has been removed, but logs have been preserved for audit purposes.
+            cat > /var/log/nftban/README.uninstalled <<'EOF'
+NFTBan has been uninstalled, but logs have been preserved for audit purposes.
 
-To completely purge all NFTBan data including logs:
+To completely remove all NFTBan data including logs:
   sudo apt-get purge nftban
 
 Or manually remove:
