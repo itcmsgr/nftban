@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.20 - Grouped Help System
+# NFTBan v0.32.24 - Grouped Help System
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Grouped help output for NFTBan CLI
@@ -8,7 +8,7 @@
 # meta:name=nftban_help
 # meta:type=core
 # meta:header=NFTBan Help System
-# meta:version=0.32.20
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

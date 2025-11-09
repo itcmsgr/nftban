@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.20 - Statistics CLI Handler
+# NFTBan v0.32.24 - Statistics CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for statistics and metrics
@@ -8,7 +8,7 @@
 # meta:name=cmd_stats
 # meta:type=cli
 # meta:header=Statistics CLI Handler
-# meta:version=0.32.20
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -114,6 +114,18 @@ nftban_cmd_stats() {
         check-alerts)
             shift || true
             nftban_stats_cmd_check_alerts "$@"
+            ;;
+        --today)
+            # Show stats for today only
+            local today_start=$(date +%Y-%m-%d)
+            shift
+            nftban_stats_cmd_dashboard --since "$today_start" "$@"
+            ;;
+        --week)
+            # Show stats for last 7 days
+            local week_start=$(date -d "7 days ago" +%Y-%m-%d)
+            shift
+            nftban_stats_cmd_dashboard --since "$week_start" "$@"
             ;;
         *)
             # If it looks like an option, pass to dashboard

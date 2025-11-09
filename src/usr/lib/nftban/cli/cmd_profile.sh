@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.20 - Profile CLI Handler
+# NFTBan v0.32.24 - Profile CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Interactive security profile selection and management
@@ -8,7 +8,7 @@
 # meta:name=cmd_profile
 # meta:type=cli
 # meta:header=Profile CLI
-# meta:version=0.32.20
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

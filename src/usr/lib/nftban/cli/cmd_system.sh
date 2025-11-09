@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.20 - System Enable/Disable CLI Handler
+# NFTBan v0.32.24 - System Enable/Disable CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Enable/disable NFTBan system (nftables + fail2ban)
@@ -8,7 +8,7 @@
 # meta:name=cmd_system
 # meta:type=cli
 # meta:header=System Enable/Disable CLI
-# meta:version=0.32.20
+# meta:version=0.32.24
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
