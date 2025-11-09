@@ -744,6 +744,17 @@ fi
 systemctl enable nftban-maintenance.timer 2>/dev/null || true
 systemctl start nftban-maintenance.timer 2>/dev/null || true
 
+# Disable default fail2ban sshd jail (NFTBan manages nftban-sshd instead)
+if [ -d /etc/fail2ban/jail.d ]; then
+    cat > /etc/fail2ban/jail.d/00-disable-default-sshd.conf <<'SSHEOF'
+# Disable default fail2ban sshd jail
+# NFTBan uses nftban-sshd instead (managed via 'nftban fail2ban' commands)
+[sshd]
+enabled = false
+SSHEOF
+    chmod 644 /etc/fail2ban/jail.d/00-disable-default-sshd.conf
+fi
+
 # Print installation message ONLY on fresh install (not upgrade)
 # $1 = 1 means fresh install, $1 = 2 means upgrade
 if [ $1 -eq 1 ]; then
@@ -1254,10 +1265,12 @@ fi
 
 %changelog
 * Sun Nov 10 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.25-1
+- CRITICAL: Disable default fail2ban sshd jail (NFTBan manages nftban-sshd instead)
 - CRITICAL: Auto-whitelist system IPs in postinst (SSH_CLIENT + public IPv4/IPv6)
 - FIX: Align DEB prerm with RPM %preun (capture service states on upgrade)
 - FIX: Align DEB postrm with RPM %postun (README naming, comments)
 - ALIGN: Both DEB and RPM now use identical install/upgrade/uninstall logic
+- ARCH: NFTBan manages only nftban-* jails via 'nftban fail2ban' commands
 
 * Sun Nov 10 2025 Antonios Voulvoulis <contact@nftban.com> - 0.32.24-1
 - UI: NICE_DISPLAYS_FIX - Unicode box drawing for port/services/module reports

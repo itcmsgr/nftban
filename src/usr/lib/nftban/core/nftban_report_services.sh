@@ -216,8 +216,8 @@ nftban_services_report_table() {
     echo ""
 
     # Header
-    printf "%-20s %-15s %-12s %-10s %s\n" \
-        "SERVICE" "STATUS" "VERSION" "REQUIRED" "NOTES"
+    printf "%-20s %-15s %-12s\n" \
+        "SERVICE" "STATUS" "VERSION"
     echo "────────────────────────────────────────────────────────"
 
     # Count statistics
@@ -249,34 +249,28 @@ nftban_services_report_table() {
         local info="${NFTBAN_SERVICE_STATUS[$service_name]}"
         IFS='|' read -r status version required notes <<< "$info"
 
-        # Determine symbol and color
-        local symbol=""
-        local color=""
+        # Determine status display with icon
+        local status_display=""
 
         case "$status" in
             RUNNING)
-                symbol="$NFTBAN_SERVICE_SYM_OK"
-                color="$C_GREEN"
+                printf "%-20s ${C_GREEN}%-15s${C_RESET} %-12s\n" "$service_name" "✓ Running" "$version"
                 running_services=$((running_services + 1))
                 ;;
             ENABLED)
-                symbol="$NFTBAN_SERVICE_SYM_WARN"
-                color="$C_YELLOW"
+                printf "%-20s ${C_YELLOW}%-15s${C_RESET} %-12s\n" "$service_name" "⚠ Enabled" "$version"
                 stopped_services=$((stopped_services + 1))
                 ;;
             STOPPED)
-                symbol="$NFTBAN_SERVICE_SYM_KO"
-                color="$C_RED"
+                printf "%-20s ${C_RED}%-15s${C_RESET} %-12s\n" "$service_name" "− Stopped" "$version"
                 stopped_services=$((stopped_services + 1))
                 ;;
             INSTALLED)
-                symbol="$NFTBAN_SERVICE_SYM_OK"
-                color="$C_GREEN"
+                printf "%-20s ${C_GREEN}%-15s${C_RESET} %-12s\n" "$service_name" "✓ Installed" "$version"
                 installed_bins=$((installed_bins + 1))
                 ;;
             NOT_FOUND)
-                symbol="$NFTBAN_SERVICE_SYM_KO"
-                color="$C_RED"
+                printf "%-20s ${C_RED}%-15s${C_RESET} %-12s\n" "$service_name" "✖ Missing" "$version"
                 if [[ "$service_name" == "nftables" || "$service_name" == "fail2ban" ]]; then
                     missing_services=$((missing_services + 1))
                 else
@@ -284,19 +278,9 @@ nftban_services_report_table() {
                 fi
                 ;;
             *)
-                symbol="?"
-                color="$C_RESET"
+                printf "%-20s %-15s %-12s\n" "$service_name" "? Unknown" "$version"
                 ;;
         esac
-
-        # Print row with color
-        printf "${color}%-20s${C_RESET} %s %-13s %-12s %-10s %s\n" \
-            "$service_name" \
-            "$symbol" \
-            "$status" \
-            "$version" \
-            "$required" \
-            "$notes"
     done
 
     echo ""
