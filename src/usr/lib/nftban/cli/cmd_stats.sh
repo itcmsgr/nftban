@@ -115,6 +115,18 @@ nftban_cmd_stats() {
             shift || true
             nftban_stats_cmd_check_alerts "$@"
             ;;
+        --today)
+            # Show stats for today only
+            local today_start=$(date +%Y-%m-%d)
+            shift
+            nftban_stats_cmd_dashboard --since "$today_start" "$@"
+            ;;
+        --week)
+            # Show stats for last 7 days
+            local week_start=$(date -d "7 days ago" +%Y-%m-%d)
+            shift
+            nftban_stats_cmd_dashboard --since "$week_start" "$@"
+            ;;
         *)
             # If it looks like an option, pass to dashboard
             if [[ "$subcommand" =~ ^-- ]]; then

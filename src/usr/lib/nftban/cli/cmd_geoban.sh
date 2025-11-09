@@ -33,8 +33,8 @@ nftban_cmd_geoban() {
     # Args: subcommand [options]
     #
     # This provides a user-friendly alias:
-    #   nftban geoban ban CN    ->  nftban geoip ban CN
-    #   nftban geoban whitelist US  ->  nftban geoip whitelist US
+    #   nftban geoban ban CN    ->  nftban geoban ban CN
+    #   nftban geoban whitelist US  ->  nftban geoban whitelist US
 
     local subcommand="${1:-help}"
 

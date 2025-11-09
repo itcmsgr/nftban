@@ -98,7 +98,7 @@ nftban_cmd_whitelist_system() {
             nftban_whitelist_system_sync
             ;;
 
-        show)
+        show|list)
             # Show current system whitelist
             nftban_show_system_whitelist
             ;;
