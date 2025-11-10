@@ -8,7 +8,7 @@
 # meta:name=cmd_feeds
 # meta:type=cli
 # meta:header=Feeds CLI
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -292,6 +292,13 @@ nftban_feeds_list() {
 
 # Show detailed status
 nftban_feeds_status() {
+    # Source output module for banner
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        nftban_banner
+    fi
+
+    echo ""
     echo "═══════════════════════════════════════════════════════════════════"
     echo " NFTBan Threat Feeds Status"
     echo "═══════════════════════════════════════════════════════════════════"
@@ -418,16 +425,15 @@ nftban_cmd_feeds() {
 
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "✅ Enabled $enabled_count feed(s) in category '$1'"
-            if [[ $failed_count -gt 0 ]]; then
-                echo "⚠️  $failed_count feed(s) failed (check /var/log/nftban/feeds.log)"
+            if [[ $failed_count -eq 0 ]]; then
+                echo "✅ Successfully enabled and downloaded $enabled_count feed(s) in category '$1'"
+            else
+                echo "✅ Enabled $enabled_count feed(s), ❌ Failed $failed_count feed(s)"
+                echo "⚠️  Check errors in: /var/log/nftban/feeds.log"
             fi
             echo ""
-            echo "⏳ Feeds downloading in background..."
+            echo "Check status: nftban feeds status"
             echo ""
-            echo "Next steps:"
-            echo "  • Check status: nftban feeds status"
-            echo "  • View progress: tail -f /var/log/nftban/feeds.log"
             ;;
         update)
             # Check CAP_NET_ADMIN capability for nftables modifications

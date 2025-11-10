@@ -15,7 +15,7 @@
 # meta:name=stability_metrics
 # meta:type=helper
 # meta:header=Stability Metrics Logger
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

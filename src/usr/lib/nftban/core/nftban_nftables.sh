@@ -8,7 +8,7 @@
 # meta:name=nftban_nftables
 # meta:type=core
 # meta:header=Atomic Nftables Reload
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

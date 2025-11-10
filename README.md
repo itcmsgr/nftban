@@ -2,7 +2,7 @@
 
 > **Secure by Design  |  Zero Trust Ready  |  AI‑Assisted Defense**
 
-[![Version](https://img.shields.io/badge/version-0.32.24-brightgreen)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-0.32.26-brightgreen)](https://github.com/itcmsgr/nftban)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-blue.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Code: 80%+ Shell](https://img.shields.io/badge/Code-80%25%20Shell-brightgreen)]()
 [![Performance: Go Binaries](https://img.shields.io/badge/Performance-Go%20Binaries-00ADD8)]()

@@ -9,7 +9,7 @@
 # meta:name=cmd_firewall
 # meta:type=cli
 # meta:header=Firewall CLI Command
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

@@ -1,3 +1,18 @@
+nftban (0.32.26-1) stable; urgency=medium
+
+  * FIX: Missing banners in 9 CLI commands (port, services, stats, status, etc.)
+  * FIX: Empty jail name bug in fail2ban jails list
+  * FIX: Cloudflare module crashes due to strict error handling
+  * FIX: Feed downloads failing silently (background mode)
+  * FIX: SPAMHAUS + 6 feeds failing (GO parser limitations)
+  * IMPROVE: Port scanning with netstat fallback (ss → netstat → lsof)
+  * IMPROVE: Feed downloads now foreground with immediate feedback
+  * IMPROVE: Bash parser fallback handles all 16 feed formats
+  * IMPROVE: Error-safe banner loading in all modules
+  * VERSION: Aligned all 59 modules to v0.32.26
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 10 Nov 2025 06:40:00 +0200
+
 nftban (0.32.25-1) stable; urgency=critical
 
   * CRITICAL: Disable default fail2ban sshd jail (NFTBan manages nftban-sshd instead)

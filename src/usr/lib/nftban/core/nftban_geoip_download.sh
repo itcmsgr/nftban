@@ -8,7 +8,7 @@
 # meta:name=nftban_geoip_download
 # meta:type=core
 # meta:header=GeoIP Database Management
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

@@ -9,7 +9,7 @@
 # meta:name=cmd_module
 # meta:type=cli
 # meta:header=Module CLI Command
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -89,9 +89,13 @@ nftban_cmd_module() {
         status|list|detailed|"")
             # Show module inventory (terminal output - default detailed)
             # "list" is backwards compatible alias for "status"
+
+            # Show standard banner
+            nftban_banner
+
             export NFTBAN_MODULE_OUTPUT_FORMAT="table"
             local result=0
-            
+
             if [[ -n "$save_to_file" ]]; then
                 nftban_module_report_status > "$save_to_file"
                 result=$?

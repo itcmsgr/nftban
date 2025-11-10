@@ -9,7 +9,7 @@
 # meta:name=cmd_port
 # meta:type=cli
 # meta:header=Port CLI Command
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -75,6 +75,10 @@ nftban_cmd_port() {
             # Show port status (terminal output)
             # Optional: port filter as argument
             # NOTE: 'list' is deprecated, use 'status' instead
+
+            # Show standard banner
+            nftban_banner
+
             export NFTBAN_PORT_FILTER_PORTS="${1:-}"
             export NFTBAN_PORT_DETAILED=0
             export NFTBAN_PORT_OUTPUT_FORMAT="table"
@@ -84,6 +88,10 @@ nftban_cmd_port() {
 
         detailed)
             # Show detailed port status with BIND and PROCESS columns
+
+            # Show standard banner
+            nftban_banner
+
             export NFTBAN_PORT_FILTER_PORTS="${1:-}"
             export NFTBAN_PORT_DETAILED=1
             export NFTBAN_PORT_OUTPUT_FORMAT="table"

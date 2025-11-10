@@ -8,7 +8,7 @@
 # meta:name=nftban_permissions
 # meta:type=core
 # meta:header=Permission Hardening Module
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #

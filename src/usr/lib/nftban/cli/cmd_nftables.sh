@@ -8,7 +8,7 @@
 # meta:name=cmd_nftables
 # meta:type=cli
 # meta:header=NFTables Service CLI
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -180,6 +180,13 @@ _nftban_nftables_cmd_disable() {
 }
 
 _nftban_nftables_cmd_status() {
+    # Load output module for standard banner
+    source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+
+    # Show standard banner
+    nftban_banner
+    echo ""
+
     echo "NFTables Service Status:"
     echo "════════════════════════════════════════════════════════════"
     echo ""

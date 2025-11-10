@@ -9,7 +9,7 @@
 # meta:name=nftban_report_port
 # meta:type=core
 # meta:header=Port Report Core
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -19,7 +19,7 @@
 # meta:output=Port status reports (terminal, HTML, mail)
 #
 # **Inventory & Requirements**
-# meta:depends=bash,ss,nft,lsof(optional)
+# meta:depends=bash,ss,nft,netstat(optional),lsof(optional)
 #
 # meta:created_date=2025-11-05
 # =============================================================================
@@ -133,7 +133,41 @@ nftban_port_gather_listeners() {
         NFTBAN_PORT_SEEN["${port}_${proto_norm}"]=1
     done < <(ss -tunlp -H 2>/dev/null || true)
 
-    # Fallback: lsof (only if ss found nothing)
+    # Fallback 1: netstat (if ss found nothing)
+    if (( ${#NFTBAN_PORT_LISTEN_MAP[@]} == 0 )) && command -v netstat >/dev/null 2>&1; then
+        while IFS= read -r line; do
+            # Parse netstat output: tcp/tcp6/udp/udp6  0  0  0.0.0.0:22  0.0.0.0:*  LISTEN  1234/sshd
+            [[ "$line" =~ ^(tcp|tcp6|udp|udp6)[[:space:]]+[0-9]+[[:space:]]+[0-9]+[[:space:]]+([^\ :]+):([0-9]+)[[:space:]]+[^\ ]+[[:space:]]+(LISTEN)?[[:space:]]*([0-9]+)/([^\ ]+) ]] || continue
+
+            local proto_raw="${BASH_REMATCH[1]}"
+            local addr="${BASH_REMATCH[2]}"
+            local port="${BASH_REMATCH[3]}"
+            local pid="${BASH_REMATCH[5]}"
+            local cmd="${BASH_REMATCH[6]}"
+
+            # Normalize protocol and family
+            local proto_norm="tcp"
+            local family="ipv4"
+
+            case "$proto_raw" in
+                tcp)  proto_norm="tcp"; family="ipv4" ;;
+                tcp6) proto_norm="tcp"; family="ipv6" ;;
+                udp)  proto_norm="udp"; family="ipv4" ;;
+                udp6) proto_norm="udp"; family="ipv6" ;;
+            esac
+
+            # Normalize address (strip brackets from IPv6)
+            addr="${addr#[}"; addr="${addr%]}"
+            [[ "$addr" == ":::" ]] && addr="::"
+
+            local key="${proto_norm}_${port}_${family}"
+            NFTBAN_PORT_LISTEN_MAP["$key"]="${cmd:+$cmd:}${pid}"
+            NFTBAN_PORT_BIND_ADDR["$key"]="$addr"
+            NFTBAN_PORT_SEEN["${port}_${proto_norm}"]=1
+        done < <(netstat -tulnp 2>/dev/null || true)
+    fi
+
+    # Fallback 2: lsof (only if ss and netstat found nothing)
     if (( ${#NFTBAN_PORT_LISTEN_MAP[@]} == 0 )) && command -v lsof >/dev/null 2>&1; then
         while IFS= read -r l; do
             # mysqld 1234 ... TCP 0.0.0.0:3306 (LISTEN)  OR TCP [::]:22 (LISTEN)

@@ -1,6 +1,6 @@
 # NFTBan Documentation Index
 
-**Version:** v0.32.24
+**Version:** v0.32.26
 **Last Updated:** 2025-11-08
 **Repository:** https://github.com/itcmsgr/nftban
 
