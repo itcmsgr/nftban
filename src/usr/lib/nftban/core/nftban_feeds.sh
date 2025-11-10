@@ -8,7 +8,7 @@
 # meta:name=nftban_feeds
 # meta:type=core
 # meta:header=Threat Feeds Core
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -222,19 +222,26 @@ nftban_feeds_enable() {
     nftban_feeds_set_property "$feed_name" "ENABLED" "true"
     nftban_feeds_log INFO "Feed enabled: $feed_name"
 
-    # Show immediate feedback (unless quiet mode)
+    # Download immediately (foreground) so user can see success/failure
     if [[ "$quiet" != "true" ]]; then
         echo "✓ Feed enabled: $feed_name"
         echo ""
-        echo "📥 Downloading feed in background..."
-        echo "   Progress: tail -f /var/log/nftban/feeds.log"
-        echo "   Status:   nftban feeds status"
-        echo ""
+        echo "📥 Downloading feed..."
     fi
 
-    # Download in background (don't block CLI) but LOG output instead of suppressing it
-    nftban_feeds_update_single "$feed_name" >> /var/log/nftban/feeds.log 2>&1 &
-    disown
+    # Download in foreground with live feedback
+    if nftban_feeds_update_single "$feed_name"; then
+        if [[ "$quiet" != "true" ]]; then
+            echo "✅ Feed downloaded successfully"
+            echo ""
+        fi
+    else
+        if [[ "$quiet" != "true" ]]; then
+            echo "❌ Feed download failed (check /var/log/nftban/feeds.log)"
+            echo ""
+        fi
+        return 1
+    fi
 }
 
 # Disable a feed
@@ -247,14 +254,16 @@ nftban_feeds_disable() {
 
     # Show immediate feedback
     echo "✓ Feed disabled: $feed_name"
-    echo "⏳ Updating nftables in background..."
+    echo "⏳ Updating nftables..."
     echo ""
-    echo "Check status with: nftban feeds status"
-    echo "View progress: tail -f /var/log/nftban/feeds.log"
 
-    # Resync nftables in background to avoid hanging CLI
-    (nftban_feeds_sync_to_nftables &>/dev/null) &
-    disown
+    # Resync nftables immediately (foreground) so user sees result
+    if nftban_feeds_sync_to_nftables >/dev/null 2>&1; then
+        echo "✅ NFTables updated successfully"
+    else
+        echo "⚠️  NFTables update may have issues (check: nftban feeds status)"
+    fi
+    echo ""
 }
 
 # Update single feed
@@ -288,37 +297,63 @@ nftban_feeds_update_single() {
         return 1
     fi
 
-    # Parse with Go binary (FAST!)
+    # Parse with Go binary (FAST!) or fallback to bash
     local parsed_file="${NFTBAN_FEEDS_STORAGE_DIR}/${feed_name}.txt"
+    local parse_result=""
+    local use_bash_parser=0
 
-    if [[ ! -x "$NFTBAN_FEEDS_BINARY" ]]; then
-        nftban_feeds_log ERROR "Go binary not found or not executable: $NFTBAN_FEEDS_BINARY"
-        return 1
+    # Try GO parser first
+    if [[ -x "$NFTBAN_FEEDS_BINARY" ]]; then
+        local parse_error
+        parse_error=$(mktemp)
+        parse_result=$("$NFTBAN_FEEDS_BINARY" parse < "$temp_file" 2>"$parse_error")
+        local parse_exit=$?
+
+        if [[ $parse_exit -ne 0 ]]; then
+            nftban_feeds_log WARN "Go parser failed, falling back to bash parser"
+            use_bash_parser=1
+        fi
+        rm -f "$parse_error"
+    else
+        nftban_feeds_log WARN "Go binary not found, using bash parser"
+        use_bash_parser=1
     fi
 
-    local parse_result
-    local parse_error
-    parse_error=$(mktemp)
-    parse_result=$("$NFTBAN_FEEDS_BINARY" parse < "$temp_file" 2>"$parse_error")
-    local parse_exit=$?
-
-    if [[ $parse_exit -ne 0 ]]; then
-        local error_msg
-        error_msg=$(cat "$parse_error" 2>/dev/null || echo "unknown error")
-        nftban_feeds_log ERROR "Parsing failed: $feed_name (exit code: $parse_exit, error: $error_msg)"
-        rm -f "$temp_file" "$parse_error"
-        return 1
+    # Bash fallback parser (handles all formats)
+    if [[ $use_bash_parser -eq 1 ]]; then
+        parse_result=$(grep -v '^\s*$' "$temp_file" | \
+                      grep -v '^\s*#' | \
+                      grep -v '^\s*;' | \
+                      sed 's/[[:space:]]*;.*//' | \
+                      sed 's/[[:space:]]*#.*//' | \
+                      grep -oE '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]{1,2})?' | \
+                      sort -u)
     fi
-    rm -f "$parse_error"
 
     # Save parsed IPs
     echo "$parse_result" > "$parsed_file"
-    local ip_count=$(echo "$parse_result" | wc -l)
+    local ip_count=$(echo "$parse_result" | grep -c .)
 
     # Validate minimum entries
     local min_entries=$(grep "^FEEDS_MIN_ENTRIES=" "$NFTBAN_FEEDS_CONFIG" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '" ' | grep -oE '[0-9]+')
     min_entries=${min_entries:-10}
 
+    # If GO parser returned too few entries, retry with bash parser
+    if [[ $ip_count -lt $min_entries && $use_bash_parser -eq 0 ]]; then
+        nftban_feeds_log WARN "Go parser returned only $ip_count entries (minimum: $min_entries), retrying with bash parser"
+        parse_result=$(grep -v '^\s*$' "$temp_file" | \
+                      grep -v '^\s*#' | \
+                      grep -v '^\s*;' | \
+                      sed 's/[[:space:]]*;.*//' | \
+                      sed 's/[[:space:]]*#.*//' | \
+                      grep -oE '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]{1,2})?' | \
+                      sort -u)
+        echo "$parse_result" > "$parsed_file"
+        ip_count=$(echo "$parse_result" | grep -c .)
+        use_bash_parser=1
+    fi
+
+    # Final validation
     if [[ $ip_count -lt $min_entries ]]; then
         nftban_feeds_log ERROR "Feed has only $ip_count entries (minimum: $min_entries), rejecting: $feed_name"
         rm -f "$temp_file" "$parsed_file"

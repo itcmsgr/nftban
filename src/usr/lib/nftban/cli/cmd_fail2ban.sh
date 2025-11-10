@@ -8,7 +8,7 @@
 # meta:name=cmd_fail2ban
 # meta:type=cli
 # meta:header=Fail2ban CLI
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -167,6 +167,10 @@ HELP
 _nftban_fail2ban_cmd_status() {
     # Show fail2ban status
 
+    # Show standard banner
+    nftban_banner
+    echo ""
+
     local status version total_banned os_info
 
     # Check if fail2ban is installed
@@ -247,6 +251,10 @@ _nftban_fail2ban_cmd_status() {
 _nftban_fail2ban_cmd_jails() {
     # List all available jails (enabled and disabled)
 
+    # Show standard banner
+    nftban_banner
+    echo ""
+
     echo "NFTBan Fail2ban Jails:"
     echo "════════════════════════════════════════════════════════════"
     echo ""
@@ -273,6 +281,10 @@ _nftban_fail2ban_cmd_jails() {
     for jail_entry in "${all_jails[@]}"; do
         local jail_name="${jail_entry%%:*}"
         local jail_status="${jail_entry##*:}"
+
+        # Skip empty jail names
+        [[ -z "$jail_name" ]] && continue
+
         local banned_count=0
         local status_display=""
 
@@ -326,6 +338,9 @@ _nftban_fail2ban_cmd_available() {
     for jail_entry in "${all_jails[@]}"; do
         local jail_name="${jail_entry%%:*}"
         local jail_status="${jail_entry##*:}"
+
+        # Skip empty jail names
+        [[ -z "$jail_name" ]] && continue
 
         if [[ "$jail_status" == "enabled" ]]; then
             printf "%-30s ✓ %s\n" "$jail_name" "ENABLED"
@@ -435,6 +450,9 @@ _nftban_fail2ban_cmd_auto_discovery() {
     for jail_entry in "${all_jails[@]}"; do
         local jail_name="${jail_entry%%:*}"
         local jail_status="${jail_entry##*:}"
+
+        # Skip empty jail names
+        [[ -z "$jail_name" ]] && continue
 
         # Check requirements
         local check_output

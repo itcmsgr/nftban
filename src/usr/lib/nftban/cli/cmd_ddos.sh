@@ -8,7 +8,7 @@
 # meta:name=cmd_ddos
 # meta:type=cli
 # meta:header=DDoS CLI
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -263,22 +263,32 @@ nftban_cmd_ddos() {
             ;;
 
         status)
+            # Load output module for standard banner
+            # Temporarily disable error traps for banner loading
+            set +e
+            if [[ ! $(type -t nftban_banner) == "function" ]]; then
+                if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_output.sh" ]]; then
+                    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_output.sh" 2>/dev/null || true
+                fi
+            fi
+            if type -t nftban_banner >/dev/null 2>&1; then
+                nftban_banner 2>/dev/null || true
+                echo ""
+            fi
+            set -e
+
             local subaction="${1:-all}"
             case "$subaction" in
                 synflood)
-                    nftban_ddos_banner
                     nftban_ddos_synflood_status
                     ;;
                 connlimit)
-                    nftban_ddos_banner
                     nftban_ddos_connlimit_status
                     ;;
                 portflood)
-                    nftban_ddos_banner
                     nftban_ddos_portflood_status
                     ;;
                 icmp)
-                    nftban_ddos_banner
                     nftban_ddos_icmp_status
                     ;;
                 all|*)

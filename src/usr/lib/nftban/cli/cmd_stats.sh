@@ -8,7 +8,7 @@
 # meta:name=cmd_stats
 # meta:type=cli
 # meta:header=Statistics CLI Handler
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -147,6 +147,20 @@ nftban_cmd_stats() {
 nftban_stats_cmd_dashboard() {
     # Show statistics dashboard
     # Usage: nftban stats [dashboard] [--since DATE] [--until DATE] [--last PERIOD]
+
+    # Show standard banner
+    # Temporarily disable error traps for banner loading
+    set +e
+    if [[ ! $(type -t nftban_banner) == "function" ]]; then
+        if [[ -f "/usr/lib/nftban/core/nftban_output.sh" ]]; then
+            source "/usr/lib/nftban/core/nftban_output.sh" 2>/dev/null || true
+        fi
+    fi
+    if type -t nftban_banner >/dev/null 2>&1; then
+        nftban_banner 2>/dev/null || true
+        echo ""
+    fi
+    set -e
 
     local since=""
     local until=""

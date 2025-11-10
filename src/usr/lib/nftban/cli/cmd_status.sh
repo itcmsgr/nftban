@@ -8,7 +8,7 @@
 # meta:name=cmd_status
 # meta:type=cli
 # meta:header=NFTBan Global Status
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
@@ -64,6 +64,18 @@ nftban_cmd_status() {
                 ;;
         esac
     done
+
+    # Show standard banner (unless in json or quiet mode)
+    if [[ $json_mode -eq 0 && $quiet_mode -eq 0 ]]; then
+        # Load output module for standard banner
+        if [[ ! $(type -t nftban_banner) == "function" ]]; then
+            if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_output.sh" ]]; then
+                source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_output.sh"
+            fi
+        fi
+        nftban_banner
+        echo ""
+    fi
 
     # JSON mode
     if [[ $json_mode -eq 1 ]]; then

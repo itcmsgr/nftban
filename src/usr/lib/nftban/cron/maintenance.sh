@@ -8,7 +8,7 @@
 # meta:name=maintenance
 # meta:type=cron
 # meta:header=Maintenance Runner
-# meta:version=0.32.24
+# meta:version=0.32.26
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage=https://nftban.com
 #
