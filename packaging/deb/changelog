@@ -1,3 +1,13 @@
+nftban (0.32.27-1) stable; urgency=high
+
+  * CRITICAL FIX: Stats command arithmetic error (lines 631, 650-651) with || true
+  * CRITICAL FIX: Uninstaller leaves files behind (add /usr/lib + /usr/share to purge)
+  * IMPROVE: Complete cleanup on dpkg --purge nftban
+  * VERIFY: Autotimer runs autoheal every 15min (nftban-maintenance.timer)
+  * VERIFY: FHS checks run automatically
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 10 Nov 2025 09:00:00 +0200
+
 nftban (0.32.26-1) stable; urgency=medium
 
   * FIX: Missing banners in 9 CLI commands (port, services, stats, status, etc.)

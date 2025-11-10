@@ -628,7 +628,8 @@ nftban_stats_generate_dashboard() {
                     local feed_file="${NFTBAN_FEEDS_STORAGE_DIR:-/var/lib/nftban/feeds}/${feed}.txt"
                     if [[ -f "$feed_file" ]]; then
                         local count mtime
-                        count=$(wc -l < "$feed_file" 2>/dev/null || echo "0")
+                        count=$(wc -l < "$feed_file" 2>/dev/null || true)
+                        count=${count:-0}
                         mtime=$(date -r "$feed_file" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
                         printf "  • %-25s %7s source IPs (Updated: %s)\n" "$feed" "$count" "$mtime"
                     else
@@ -647,8 +648,10 @@ nftban_stats_generate_dashboard() {
 
         # Show feed blocking stats from nftables counters
         local feed_v4_packets feed_v6_packets
-        feed_v4_packets=$(nft list table inet nftban_main 2>/dev/null | grep 'feed_v4.*counter' | grep -oP 'packets \K[0-9]+' || echo "0")
-        feed_v6_packets=$(nft list table inet nftban_main 2>/dev/null | grep 'feed_v6.*counter' | grep -oP 'packets \K[0-9]+' || echo "0")
+        feed_v4_packets=$(nft list table inet nftban_main 2>/dev/null | grep 'feed_v4.*counter' | grep -oP 'packets \K[0-9]+' || true)
+        feed_v4_packets=${feed_v4_packets:-0}
+        feed_v6_packets=$(nft list table inet nftban_main 2>/dev/null | grep 'feed_v6.*counter' | grep -oP 'packets \K[0-9]+' || true)
+        feed_v6_packets=${feed_v6_packets:-0}
         local total_feed_blocks=$((feed_v4_packets + feed_v6_packets))
 
         echo "  ✅ Feeds are actively blocking threats!"

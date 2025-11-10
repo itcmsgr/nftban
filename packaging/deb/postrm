@@ -45,6 +45,11 @@ EOF
     purge)
         # On purge: remove EVERYTHING including logs and config
         # This is explicit user action via "apt-get purge nftban"
+
+        # Remove all nftban directories completely
+        rm -rf /usr/lib/nftban
+        rm -rf /usr/share/nftban
+        rm -rf /usr/share/doc/nftban
         rm -rf /var/lib/nftban
         rm -rf /var/cache/nftban
         rm -rf /var/log/nftban
