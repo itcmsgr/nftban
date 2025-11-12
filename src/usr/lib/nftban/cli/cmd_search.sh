@@ -40,6 +40,12 @@ if [[ ! $(type -t nftban_render_banner) == "function" ]]; then
     fi
 fi
 
+# Load JSON output helper
+if [[ -f "${NFTBAN_LIB_DIR}/json_output.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/json_output.sh"
+fi
+
 # =============================================================================
 # SEARCH FUNCTIONS
 # =============================================================================
@@ -292,6 +298,155 @@ _display_results() {
     echo "═══════════════════════════════════════════════════════════════"
 }
 
+_display_results_json() {
+    local ip="$1"
+    local nft_result="$2"
+    local feeds_result="$3"
+    local f2b_result="$4"
+    local query_type="${5:-ip}"
+
+    # Determine status
+    local status="not_banned"
+    local nft_found=false
+    local feeds_found=false
+    local f2b_found=false
+
+    if [[ "$nft_result" == "FOUND"* ]]; then
+        nft_found=true
+        # Check if whitelisted
+        if echo "$nft_result" | grep -q "whitelist"; then
+            status="whitelisted"
+        else
+            status="banned"
+        fi
+    fi
+
+    [[ -n "$feeds_result" ]] && feeds_found=true
+    [[ -n "$f2b_result" ]] && f2b_found=true
+
+    # Build nftables locations array
+    local nft_locations="[]"
+    if [[ "$nft_found" == "true" ]]; then
+        local locations_json="["
+        local first=true
+        local found_sets
+        found_sets=$(echo "$nft_result" | tail -n +2)
+
+        while IFS= read -r location; do
+            [[ -z "$location" ]] && continue
+
+            local table="${location%%:*}"
+            local set="${location##*:}"
+            local type="unknown"
+            local priority="medium"
+
+            case "$set" in
+                whitelist)
+                    type="whitelist"
+                    priority="highest"
+                    ;;
+                temp_ban)
+                    type="temporary"
+                    priority="high"
+                    ;;
+                blacklist|user_blacklist|system_blacklist)
+                    type="permanent"
+                    priority="high"
+                    ;;
+                feeds)
+                    type="threat_feed"
+                    priority="medium"
+                    ;;
+            esac
+
+            if [[ "$first" == "true" ]]; then
+                first=false
+            else
+                locations_json+=","
+            fi
+
+            locations_json+="{\"table\":\"$table\",\"set\":\"$set\",\"type\":\"$type\",\"priority\":\"$priority\"}"
+        done <<< "$found_sets"
+
+        locations_json+="]"
+        nft_locations="$locations_json"
+    fi
+
+    # Build feeds array
+    local feeds_array="[]"
+    if [[ "$feeds_found" == "true" ]]; then
+        local feeds_json="["
+        local first=true
+
+        while IFS= read -r feed; do
+            [[ -z "$feed" ]] && continue
+
+            if [[ "$first" == "true" ]]; then
+                first=false
+            else
+                feeds_json+=","
+            fi
+
+            feeds_json+="\"$feed\""
+        done <<< "$feeds_result"
+
+        feeds_json+="]"
+        feeds_array="$feeds_json"
+    fi
+
+    # Build fail2ban jails array
+    local f2b_array="[]"
+    if [[ "$f2b_found" == "true" ]]; then
+        local jails_json="["
+        local first=true
+
+        while IFS= read -r jail; do
+            [[ -z "$jail" ]] && continue
+
+            if [[ "$first" == "true" ]]; then
+                first=false
+            else
+                jails_json+=","
+            fi
+
+            jails_json+="\"$jail\""
+        done <<< "$f2b_result"
+
+        jails_json+="]"
+        f2b_array="$jails_json"
+    fi
+
+    # Build final JSON
+    local data_json
+    data_json=$(cat <<JSON
+{
+  "ip": "$ip",
+  "query_type": "$query_type",
+  "status": "$status",
+  "nftables": {
+    "found": $nft_found,
+    "locations": $nft_locations
+  },
+  "feeds": {
+    "found": $feeds_found,
+    "feeds": $feeds_array
+  },
+  "fail2ban": {
+    "found": $f2b_found,
+    "jails": $f2b_array
+  }
+}
+JSON
+)
+
+    # Use json_output if available, otherwise output directly
+    if declare -f json_output >/dev/null 2>&1; then
+        json_output "true" "$data_json"
+    else
+        echo "$data_json"
+    fi
+}
+
 # =============================================================================
 # INTERACTIVE MENU
 # =============================================================================
@@ -419,6 +574,7 @@ DESCRIPTION:
 
 OPTIONS:
     --no-interactive    Show results only, no interactive menu
+    --json              Output results in JSON format (implies --no-interactive)
 
 EXAMPLES:
     # Search for IP
@@ -435,6 +591,9 @@ EXAMPLES:
 
     # Non-interactive (scripts)
     nftban search 192.0.2.100 --no-interactive
+
+    # JSON output (for automation/API)
+    nftban search 192.0.2.100 --json
 
 NOTES:
     - Searches all 3 nftables tables (runtime, v4, v6)
@@ -455,6 +614,7 @@ HELP
 nftban_cmd_search() {
     local query="${1:-}"
     local interactive=true
+    local json_mode=false
 
     # Check for help
     if [[ "$query" == "help" || "$query" == "--help" || "$query" == "-h" || -z "$query" ]]; then
@@ -462,10 +622,23 @@ nftban_cmd_search() {
         return 0
     fi
 
-    # Check for --no-interactive
-    if [[ "${2:-}" == "--no-interactive" ]]; then
-        interactive=false
-    fi
+    # Parse flags
+    shift || true
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --no-interactive)
+                interactive=false
+                ;;
+            --json)
+                json_mode=true
+                interactive=false
+                ;;
+            *)
+                break
+                ;;
+        esac
+        shift || break
+    done
 
     # Detect if query is port number or IP address
     if [[ "$query" =~ ^[0-9]+$ ]] && [[ "$query" -ge 1 ]] && [[ "$query" -le 65535 ]]; then
@@ -535,14 +708,18 @@ nftban_cmd_search() {
 
     # Perform searches
     local nft_result
-    nft_result=$(_search_nftables "$ip")
+    nft_result=$(_search_nftables "$ip" || echo "NOT_FOUND")
     local feeds_result
     feeds_result=$(_search_feeds "$ip" || echo "")
     local f2b_result
     f2b_result=$(_search_fail2ban "$ip" || echo "")
 
     # Display results
-    _display_results "$ip" "$nft_result" "$feeds_result" "$f2b_result"
+    if [[ "$json_mode" == "true" ]]; then
+        _display_results_json "$ip" "$nft_result" "$feeds_result" "$f2b_result"
+    else
+        _display_results "$ip" "$nft_result" "$feeds_result" "$f2b_result"
+    fi
 
     # Interactive menu (only if not disabled)
     if [[ "$interactive" == "true" ]]; then
