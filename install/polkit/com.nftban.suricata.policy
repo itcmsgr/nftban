@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/standards/PolicyKit/1.0/policyconfig.dtd">
+
+<!--
+NFTBan Suricata Integration - Polkit Policy
+Installed to: /usr/share/polkit-1/actions/com.nftban.suricata.policy
+-->
+
+<policyconfig>
+  <vendor>NFTBan</vendor>
+  <vendor_url>https://nftban.com</vendor_url>
+  <icon_name>security-high</icon_name>
+
+  <!-- Suricata Status (Read-only) -->
+  <action id="com.nftban.suricata.status">
+    <description>View Suricata integration status</description>
+    <message>Authentication is required to view Suricata status</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+
+  <!-- Suricata Filters (Read-only) -->
+  <action id="com.nftban.suricata.filters">
+    <description>View Suricata filter configuration</description>
+    <message>Authentication is required to view Suricata filters</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+  </action>
+
+  <!-- Enable/Disable Filters -->
+  <action id="com.nftban.suricata.manage-filters">
+    <description>Manage Suricata filters</description>
+    <message>Authentication is required to enable/disable Suricata filters</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <!-- Set Filter Threshold -->
+  <action id="com.nftban.suricata.set-threshold">
+    <description>Set Suricata filter threshold</description>
+    <message>Authentication is required to modify Suricata filter thresholds</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <!-- Set Filter Action -->
+  <action id="com.nftban.suricata.set-action">
+    <description>Set Suricata filter action mode</description>
+    <message>Authentication is required to modify Suricata filter actions</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+
+  <!-- Daemon Control -->
+  <action id="com.nftban.suricata.daemon-control">
+    <description>Control Suricata daemon</description>
+    <message>Authentication is required to start/stop/restart Suricata daemon</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>auth_admin_keep</allow_active>
+    </defaults>
+  </action>
+</policyconfig>

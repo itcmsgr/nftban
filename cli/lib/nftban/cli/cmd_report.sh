@@ -1,0 +1,1225 @@
+#!/usr/bin/env bash
+# =============================================================================
+
+# Load JSON helper for --json support
+[[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
+
+# Load strict mode library
+# shellcheck source=/usr/lib/nftban/lib/strict.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+else
+    # Fallback to manual strict mode
+    set -Eeuo pipefail
+fi
+
+# Load version library
+# shellcheck source=/usr/lib/nftban/lib/version.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+fi
+JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
+if [[ -f "$JSON_HELPER" ]]; then
+    # shellcheck source=/dev/null
+    source "$JSON_HELPER"
+fi
+# NFTBan v1.0.0 - Report Generation & Scheduling CLI Handler
+# =============================================================================
+
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: CLI interface for report generation and automated scheduling
+#
+# meta:name=cmd_report
+# meta:type=cli
+# meta:header=Report Generation CLI Handler
+# meta:version=1.0.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# **Description & Purpose**
+# meta:description=CLI interface for report generation and automated scheduling
+# meta:input=Report type, format, and scheduling parameters
+# meta:output=Generated reports in text, JSON, or HTML format
+#
+# **Inventory & Requirements**
+# meta:depends=nftban_stats.sh,nftban_report_engine.sh
+#
+# meta:created_date=2025-11-05
+# meta:updated_date=2025-11-24
+# =============================================================================
+
+
+# Enhanced strict mode
+IFS=$'\n\t'
+umask 027
+
+# Prevent double-loading
+[[ -n "${NFTBAN_CLI_REPORT_LOADED:-}" ]] && return 0
+readonly NFTBAN_CLI_REPORT_LOADED=1
+
+# =============================================================================
+
+# LOAD DEPENDENCIES
+# =============================================================================
+
+
+# Load stats core module
+if ! declare -f nftban_stats_generate_dashboard >/dev/null 2>&1; then
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_stats.sh" ]]; then
+        source "${NFTBAN_LIB_DIR}/core/nftban_stats.sh" || {
+            echo "ERROR: Failed to load stats core module" >&2
+            return 1
+        }
+    fi
+fi
+
+# Load mail module if available
+if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" 2>/dev/null || true
+fi
+
+# Load path security module
+if ! declare -f nftban_path_get_safe_output >/dev/null 2>&1; then
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_path_security.sh" ]]; then
+        source "${NFTBAN_LIB_DIR}/core/nftban_path_security.sh" || {
+            echo "ERROR: Failed to load path security module" >&2
+            return 1
+        }
+    fi
+fi
+
+# =============================================================================
+
+# CONFIGURATION
+# =============================================================================
+
+
+readonly NFTBAN_CRON_FILE="/etc/cron.d/nftban-stats"
+readonly NFTBAN_REPORTS_DIR="${STATS_REPORTS_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports}"
+
+# =============================================================================
+
+# MAIN CLI HANDLER
+# =============================================================================
+
+
+nftban_cmd_report() {
+    # Main report command handler
+    # Usage: nftban report [subcommand] [options]
+
+    local subcommand="${1:-help}"
+
+    # Show banner
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+        if [[ $(type -t nftban_banner) == "function" ]]; then
+            nftban_banner
+        fi
+    fi
+    echo ""
+
+    case "$subcommand" in
+        help|--help|-h)
+            nftban_report_cmd_help
+            return 0
+            ;;
+        generate)
+            shift
+            nftban_report_cmd_generate "$@"
+            ;;
+        email)
+            shift
+            nftban_report_cmd_email "$@"
+            ;;
+        email-setup)
+            shift
+            nftban_report_cmd_email_setup "$@"
+            ;;
+        schedule)
+            shift
+            nftban_report_cmd_schedule "$@"
+            ;;
+        run)
+            shift
+            nftban_report_cmd_run "$@"
+            ;;
+        list)
+            shift || true
+            nftban_report_cmd_list "$@"
+            ;;
+        status)
+            shift || true
+            nftban_report_cmd_status "$@"
+            ;;
+        *)
+            echo "ERROR: Unknown report command: $subcommand" >&2
+            echo "Run 'nftban report help' for usage information" >&2
+            return 1
+            ;;
+    esac
+}
+
+# =============================================================================
+
+# SUBCOMMAND: GENERATE
+# =============================================================================
+
+
+nftban_report_cmd_generate() {
+    # Generate report
+    # Usage: nftban report generate [--format FORMAT] [--output FILE] [OPTIONS]
+
+    local format="${REPORTS_DEFAULT_FORMAT:-html}"
+    local output=""
+    local since
+    since="$(date -d '7 days ago' +%Y-%m-%d)"
+    local until
+    until="$(date +%Y-%m-%d)"
+    local theme="${REPORTS_THEME:-dark}"
+    local allow_unsafe=""
+
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --format)
+                format="$2"
+                shift 2
+                ;;
+            --output)
+                output="$2"
+                shift 2
+                ;;
+            --unsafe-allow-tmp)
+                allow_unsafe="allow-unsafe"
+                shift
+                ;;
+            --since)
+                since="$2"
+                shift 2
+                ;;
+            --until)
+                until="$2"
+                shift 2
+                ;;
+            --last)
+                local period="$2"
+                case "$period" in
+                    *d) since="$(date -d "${period%d} days ago" +%Y-%m-%d)" ;;
+                    *h) since="$(date -d "${period%h} hours ago" +%Y-%m-%d)" ;;
+                esac
+                shift 2
+                ;;
+            --theme)
+                theme="$2"
+                shift 2
+                ;;
+            *)
+                echo "WARNING: Unknown option: $1" >&2
+                shift
+                ;;
+        esac
+    done
+
+    # Security notice for users
+    if [[ -n "$output" ]]; then
+        echo "[SECURITY] Output path validation enabled - only approved directories allowed" >&2
+        echo "[INFO] Approved locations: ${NFTBAN_DATA_DIR:-/var/lib/nftban}/* (reports, metrics, exports)" >&2
+    fi
+
+    # Generate based on format
+    case "$format" in
+        json)
+            local safe_output
+            safe_output=$(nftban_path_get_safe_output "$output" "${NFTBAN_REPORTS_DIR}" "$allow_unsafe" ".json") || return 1
+            nftban_stats_export_json "$safe_output" "$since" "$until"
+            ;;
+        csv)
+            local safe_output
+            safe_output=$(nftban_path_get_safe_output "$output" "${NFTBAN_REPORTS_DIR}" "$allow_unsafe" ".csv") || return 1
+            nftban_stats_export_csv "$safe_output" "$since" "$until"
+            ;;
+        html)
+            local safe_output
+            safe_output=$(nftban_path_get_safe_output "$output" "${NFTBAN_REPORTS_DIR}" "$allow_unsafe" ".html") || return 1
+            nftban_report_generate_html "$safe_output" "$since" "$until" "$theme"
+            ;;
+        all)
+            local base_name
+            base_name="report-$(date +%Y%m%d-%H%M%S)"
+            local safe_json safe_csv safe_html
+
+            # Use filename-only mode for 'all' format
+            safe_json=$(nftban_path_get_safe_output "${base_name}.json" "${NFTBAN_REPORTS_DIR}" "$allow_unsafe") || return 1
+            safe_csv=$(nftban_path_get_safe_output "${base_name}.csv" "${NFTBAN_REPORTS_DIR}" "$allow_unsafe") || return 1
+            safe_html=$(nftban_path_get_safe_output "${base_name}.html" "${NFTBAN_REPORTS_DIR}" "$allow_unsafe") || return 1
+
+            nftban_stats_export_json "$safe_json" "$since" "$until"
+            nftban_stats_export_csv "$safe_csv" "$since" "$until"
+            nftban_report_generate_html "$safe_html" "$since" "$until" "$theme"
+            ;;
+        *)
+            echo "ERROR: Unknown format: $format" >&2
+            echo "Valid formats: json, csv, html, all" >&2
+            return 1
+            ;;
+    esac
+}
+
+# =============================================================================
+
+# SUBCOMMAND: EMAIL
+# =============================================================================
+
+
+nftban_report_cmd_email() {
+    # Email report to recipient
+    # Usage: nftban report email <RECIPIENT> [OPTIONS]
+
+    local recipient="${1:-}"
+
+    if [[ -z "$recipient" ]]; then
+        echo "ERROR: Recipient email required" >&2
+        echo "Usage: nftban report email <recipient@example.com>" >&2
+        return 1
+    fi
+
+    shift
+
+    local format="${STATS_EMAIL_FORMAT:-html}"
+    local attach_csv="${STATS_EMAIL_ATTACH_CSV:-false}"
+    local since
+    since="$(date -d '7 days ago' +%Y-%m-%d)"
+    local until
+    until="$(date +%Y-%m-%d)"
+
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --format)
+                format="$2"
+                shift 2
+                ;;
+            --attach-csv)
+                attach_csv=true
+                shift
+                ;;
+            --since)
+                since="$2"
+                shift 2
+                ;;
+            --until)
+                until="$2"
+                shift 2
+                ;;
+            --last)
+                local period="$2"
+                case "$period" in
+                    *d) since="$(date -d "${period%d} days ago" +%Y-%m-%d)" ;;
+                esac
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if type -t nftban_print_status >/dev/null 2>&1; then
+        nftban_print_status "info" "Preparing report email for ${recipient}..."
+    else
+        echo "[INFO] Preparing email..."
+    fi
+
+    # Generate reports
+    local temp_dir
+    temp_dir=$(mktemp -d)
+    local report_json="${temp_dir}/report.json"
+    local report_csv="${temp_dir}/report.csv"
+    local report_html="${temp_dir}/report.html"
+
+    nftban_stats_export_json "$report_json" "$since" "$until" &>/dev/null
+
+    if [[ "$attach_csv" == "true" ]]; then
+        nftban_stats_export_csv "$report_csv" "$since" "$until" &>/dev/null
+    fi
+
+    # Send email with full HTML report
+
+    # Load report email generator if not already loaded
+    if ! declare -f nftban_report_email_generate >/dev/null 2>&1; then
+        if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_report_email.sh" ]]; then
+            source "${NFTBAN_LIB_DIR}/core/nftban_report_email.sh" 2>/dev/null || true
+        fi
+    fi
+
+    # Try to use the full HTML report generator
+    if declare -f nftban_report_email_generate >/dev/null 2>&1; then
+        if ! nftban_report_email_generate "$recipient"; then
+            echo "ERROR: Failed to send email" >&2
+            rm -rf "$temp_dir"
+            return 1
+        fi
+
+        if type -t nftban_print_status >/dev/null 2>&1; then
+            nftban_print_status "success" "Report emailed to ${recipient}"
+        else
+            echo "[SUCCESS] Email sent to ${recipient}"
+        fi
+    elif declare -f nftban_mail_send >/dev/null 2>&1; then
+        # Fallback: Use mail module with basic content
+        local body
+        body=$(cat <<EOF
+<h2>NFTBan Statistics Report</h2>
+
+<p><strong>Period:</strong> ${since} to ${until}</p>
+<p><strong>Generated:</strong> $(date)</p>
+<p><strong>Hostname:</strong> $(hostname)</p>
+
+<p>See attached files for detailed statistics.</p>
+
+<hr>
+<p><small>Automated by NFTBan v${NFTBAN_VERSION:-1.0.0}</small></p>
+EOF
+)
+
+        # nftban_mail_send signature: content, recipient (optional)
+        if ! nftban_mail_send "$body" "$recipient"; then
+            echo "ERROR: Failed to send email" >&2
+            rm -rf "$temp_dir"
+            return 1
+        fi
+
+        if type -t nftban_print_status >/dev/null 2>&1; then
+            nftban_print_status "success" "Report emailed to ${recipient}"
+        else
+            echo "[SUCCESS] Email sent to ${recipient}"
+        fi
+    else
+        echo ""
+        echo "❌ Email not configured"
+        echo ""
+        echo "To enable email reports, you have two options:"
+        echo ""
+        echo "Option 1: Interactive Setup (Recommended)"
+        echo "  └─ Run: nftban report email-setup"
+        echo ""
+        echo "Option 2: Manual Configuration"
+        echo "  1. Edit: /etc/nftban/conf.d/mail.conf"
+        echo "  2. Set: MAIL_ENABLED=\"true\""
+        echo "  3. Set: MAIL_TO=\"admin@example.com\""
+        echo "  4. Configure SMTP settings (or use sendmail)"
+        echo "  5. Test: nftban mail test"
+        echo ""
+        echo "Documentation: nftban help mail"
+        echo ""
+        rm -rf "$temp_dir"
+        return 1
+    fi
+
+    # Cleanup
+    rm -rf "$temp_dir"
+}
+
+nftban_report_cmd_email_setup() {
+    # Interactive email configuration setup
+    # Usage: nftban report email-setup
+
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════"
+    echo "  NFTBan Email Configuration Setup"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo ""
+
+    local mail_conf="/etc/nftban/conf.d/mail.conf"
+
+    # Check if mail.conf exists
+    if [[ ! -f "$mail_conf" ]]; then
+        echo "⚠️  Mail configuration file not found: $mail_conf"
+        echo ""
+        read -p "Create configuration file? (y/n): " create_conf
+        if [[ "${create_conf,,}" != "y" ]]; then
+            echo "Setup cancelled."
+            return 1
+        fi
+        mkdir -p "$(dirname "$mail_conf")"
+        touch "$mail_conf"
+        chmod 640 "$mail_conf"
+        chown root:nftban "$mail_conf"
+        echo "✓ Created $mail_conf"
+        echo ""
+    fi
+
+    # Prompt for email address
+    echo "Email Configuration"
+    echo "───────────────────────────────────────────────────────────────"
+    read -p "Enter your email address: " user_email
+    if [[ -z "$user_email" ]]; then
+        echo "❌ Email address is required"
+        return 1
+    fi
+
+    # Prompt for mail method
+    echo ""
+    echo "Mail Method:"
+    echo "  1) sendmail (recommended if available)"
+    echo "  2) SMTP server (requires configuration)"
+    read -p "Select method (1 or 2): " mail_method
+
+    # Update configuration
+    echo ""
+    echo "Updating configuration..."
+
+    # Backup existing config
+    if [[ -f "$mail_conf" ]] && [[ -s "$mail_conf" ]]; then
+        cp "$mail_conf" "${mail_conf}.backup.$(date +%Y%m%d-%H%M%S)"
+        echo "✓ Backed up existing configuration"
+    fi
+
+    # Check if file already has the standard NFTBan variables
+    if grep -q "NFTBAN_MAIL_RECIPIENT" "$mail_conf" 2>/dev/null; then
+        # File uses standard NFTBan variables - update in place
+        echo "✓ Updating existing mail configuration..."
+
+        # Update recipient (proper escaping for sed)
+        if grep -q "^NFTBAN_MAIL_RECIPIENT=" "$mail_conf"; then
+            # Use different delimiter and proper escaping
+            sed -i "s|^NFTBAN_MAIL_RECIPIENT=.*|NFTBAN_MAIL_RECIPIENT=\"${user_email}\"|g" "$mail_conf"
+        else
+            echo "NFTBAN_MAIL_RECIPIENT=\"$user_email\"" >> "$mail_conf"
+        fi
+
+        # Update mail system based on user choice
+        if [[ "$mail_method" == "1" ]]; then
+            sed -i 's|^NFTBAN_MAIL_SYSTEM=.*|NFTBAN_MAIL_SYSTEM="sendmail"|g' "$mail_conf"
+        else
+            sed -i 's|^NFTBAN_MAIL_SYSTEM=.*|NFTBAN_MAIL_SYSTEM="smtp"|g' "$mail_conf"
+        fi
+
+    else
+        # Old format or empty file - write new configuration using STANDARD variables
+        {
+            echo "# ============================================================================="
+            echo "# NFTBan Mail Configuration"
+            echo "# Generated: $(date)"
+            echo "# ============================================================================="
+            echo ""
+            echo "# Recipient email (STANDARD VARIABLE)"
+            echo "NFTBAN_MAIL_RECIPIENT=\"$user_email\""
+            echo ""
+
+            if [[ "$mail_method" == "1" ]]; then
+                echo "# Use sendmail"
+                echo "NFTBAN_MAIL_SYSTEM=\"sendmail\""
+            else
+                echo "# Use SMTP (requires additional configuration)"
+                echo "NFTBAN_MAIL_SYSTEM=\"smtp\""
+                echo ""
+                echo "# SMTP Configuration (edit these in /etc/nftban/nftban.conf.local)"
+                echo "# NFTBAN_SMTP_HOST=\"smtp.example.com\""
+                echo "# NFTBAN_SMTP_PORT=\"587\""
+                echo "# NFTBAN_SMTP_USER=\"user@example.com\""
+                echo "# NFTBAN_SMTP_PASS=\"your-password\""
+                echo "# NFTBAN_SMTP_TLS=\"yes\""
+            fi
+        } > "$mail_conf"
+    fi
+
+    chmod 640 "$mail_conf"
+    chown root:nftban "$mail_conf" 2>/dev/null || true
+
+    echo "✓ Configuration saved to $mail_conf"
+    echo ""
+
+    if [[ "$mail_method" == "2" ]]; then
+        echo "⚠️  SMTP configuration incomplete!"
+        echo ""
+        echo "Next steps:"
+        echo "  1. Edit $mail_conf"
+        echo "  2. Update SMTP settings (host, port, username, password)"
+        echo "  3. Test: nftban mail test"
+        echo ""
+    else
+        echo "Testing email configuration..."
+        echo ""
+        if command -v sendmail >/dev/null 2>&1; then
+            echo "✓ sendmail found"
+            echo ""
+            read -p "Send test email to $user_email? (y/n): " send_test
+            if [[ "${send_test,,}" == "y" ]]; then
+                if declare -f nftban_mail_send >/dev/null 2>&1; then
+                    nftban_mail_send "$user_email" "NFTBan Test Email" "This is a test email from NFTBan." || {
+                        echo "❌ Test email failed"
+                        echo "   Check /var/log/mail.log for details"
+                    }
+                else
+                    echo "ℹ️  Mail module not loaded, skipping test"
+                    echo "   Run: nftban mail test"
+                fi
+            fi
+        else
+            echo "⚠️  sendmail not found"
+            echo ""
+            echo "Install sendmail or postfix:"
+            echo "  Fedora/RHEL: dnf install postfix"
+            echo "  Debian/Ubuntu: apt install postfix"
+            echo ""
+        fi
+    fi
+
+    echo ""
+    echo "═══════════════════════════════════════════════════════════════"
+    echo "  Email Configuration Complete"
+    echo "═══════════════════════════════════════════════════════════════"
+    echo ""
+    echo "Test email:    nftban mail test"
+    echo "Send report:   nftban report email $user_email"
+    echo "View config:   cat $mail_conf"
+    echo ""
+}
+
+# =============================================================================
+
+# SUBCOMMAND: SCHEDULE
+# =============================================================================
+
+
+nftban_report_cmd_schedule() {
+    # Manage scheduled reports
+    # Usage: nftban report schedule <daily|weekly|monthly|list|remove> [OPTIONS]
+
+    local action="${1:-list}"
+
+    case "$action" in
+        daily|weekly|monthly)
+            shift
+            nftban_report_schedule_add "$action" "$@"
+            ;;
+        list)
+            nftban_report_schedule_list
+            ;;
+        remove)
+            shift
+            nftban_report_schedule_remove "$@"
+            ;;
+        *)
+            echo "ERROR: Unknown schedule action: $action" >&2
+            echo "Valid actions: daily, weekly, monthly, list, remove" >&2
+            return 1
+            ;;
+    esac
+}
+
+nftban_report_schedule_add() {
+    # Add scheduled report
+    local frequency="$1"
+    shift
+
+    local time="08:00"
+    local day=""
+    local email="${STATS_EMAIL_RECIPIENTS:-${NFTBAN_MAIL_RECIPIENT:-}}"
+
+    # Parse options
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --time)
+                time="$2"
+                shift 2
+                ;;
+            --day)
+                day="$2"
+                shift 2
+                ;;
+            --email)
+                email="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    if type -t nftban_print_status >/dev/null 2>&1; then
+        nftban_print_status "info" "Creating ${frequency} scheduled report..."
+    else
+        echo "[INFO] Creating schedule..."
+    fi
+
+    # Create cron file
+    mkdir -p "$(dirname "$NFTBAN_CRON_FILE")"
+
+    # Parse time (HH:MM)
+    local hour="${time%:*}"
+    local minute="${time#*:}"
+
+    # Build cron entry
+    local cron_entry=""
+    case "$frequency" in
+        daily)
+            cron_entry="${minute} ${hour} * * * root /usr/bin/nftban report run daily"
+            ;;
+        weekly)
+            local dow=1  # Monday
+            case "${day,,}" in
+                monday) dow=1 ;;
+                tuesday) dow=2 ;;
+                wednesday) dow=3 ;;
+                thursday) dow=4 ;;
+                friday) dow=5 ;;
+                saturday) dow=6 ;;
+                sunday) dow=0 ;;
+            esac
+            cron_entry="${minute} ${hour} * * ${dow} root /usr/bin/nftban report run weekly"
+            ;;
+        monthly)
+            local dom="${day:-1}"
+            cron_entry="${minute} ${hour} ${dom} * * root /usr/bin/nftban report run monthly"
+            ;;
+    esac
+
+    # Create/update cron file
+    {
+        echo "# NFTBan Statistics Reports - Automated Scheduling"
+        echo "# Generated: $(date)"
+        echo "SHELL=/bin/bash"
+        echo "PATH=/usr/local/sbin:/usr/local/bin:/sbin:/bin:/usr/sbin:/usr/bin"
+        echo ""
+
+        # Add entry
+        echo "# ${frequency^} report"
+        echo "${cron_entry}"
+        echo ""
+
+        # Add other standard entries
+        echo "# Hourly snapshot"
+        echo "0 * * * * root ${NFTBAN_BIN:-/usr/bin/nftban} stats snapshot >> ${NFTBAN_LOG_DIR:-/var/log/nftban}/cron.log 2>&1"
+        echo ""
+        echo "# Daily cleanup"
+        echo "0 3 * * * root ${NFTBAN_BIN:-/usr/bin/nftban} stats cleanup >> ${NFTBAN_LOG_DIR:-/var/log/nftban}/cron.log 2>&1"
+    } > "$NFTBAN_CRON_FILE"
+
+    chmod 644 "$NFTBAN_CRON_FILE"
+
+    if type -t nftban_print_status >/dev/null 2>&1; then
+        nftban_print_status "success" "${frequency^} report scheduled at ${time}"
+    else
+        echo "[SUCCESS] Schedule created: ${time}"
+    fi
+}
+
+nftban_report_schedule_list() {
+    # List scheduled reports
+    if [[ ! -f "$NFTBAN_CRON_FILE" ]]; then
+        echo "No scheduled reports configured"
+        echo "Use: nftban report schedule daily --time \"08:00\""
+        return 0
+    fi
+
+    echo "Scheduled Reports:"
+    echo ""
+    grep -E "^[0-9]" "$NFTBAN_CRON_FILE" | grep -v "^#" || echo "  (none configured)"
+    echo ""
+}
+
+nftban_report_schedule_remove() {
+    # Remove scheduled report
+    local frequency="${1:-}"
+
+    if [[ -z "$frequency" ]]; then
+        echo "ERROR: Specify frequency to remove (daily, weekly, monthly, or all)" >&2
+        return 1
+    fi
+
+    if [[ "$frequency" == "all" ]]; then
+        rm -f "$NFTBAN_CRON_FILE"
+        echo "All scheduled reports removed"
+    else
+        # TODO: Implement selective removal
+        echo "Selective removal not yet implemented"
+        echo "Use: rm /etc/cron.d/nftban-stats"
+    fi
+}
+
+# =============================================================================
+
+# SUBCOMMAND: RUN
+# =============================================================================
+
+
+nftban_report_cmd_run() {
+    # Manually trigger scheduled report
+    # Usage: nftban report run <daily|weekly|monthly>
+
+    local frequency="${1:-daily}"
+
+    local since until
+    case "$frequency" in
+        daily)
+            since="$(date -d '1 day ago' +%Y-%m-%d)"
+            until="$(date +%Y-%m-%d)"
+            ;;
+        weekly)
+            since="$(date -d '7 days ago' +%Y-%m-%d)"
+            until="$(date +%Y-%m-%d)"
+            ;;
+        monthly)
+            since="$(date -d '30 days ago' +%Y-%m-%d)"
+            until="$(date +%Y-%m-%d)"
+            ;;
+        *)
+            echo "ERROR: Unknown frequency: $frequency" >&2
+            return 1
+            ;;
+    esac
+
+    if type -t nftban_print_status >/dev/null 2>&1; then
+        nftban_print_status "info" "Generating ${frequency} report..."
+    else
+        echo "[INFO] Generating ${frequency} report..."
+    fi
+
+    # Generate report
+    local output_dir="${NFTBAN_REPORTS_DIR}/${frequency}"
+    mkdir -p "$output_dir"
+
+    local output_file
+    output_file="${output_dir}/report-$(date +%Y%m%d).html"
+    nftban_report_generate_html "$output_file" "$since" "$until" "${REPORTS_THEME:-dark}"
+
+    # Email if configured
+    if [[ "${STATS_EMAIL_ENABLED}" == "true" ]] && [[ -n "${STATS_EMAIL_RECIPIENTS:-}" ]]; then
+        nftban_report_cmd_email "${STATS_EMAIL_RECIPIENTS}" --format html --since "$since" --until "$until"
+    fi
+
+    # Send login digest if mode is digest or both (only for daily reports)
+    if [[ "$frequency" == "daily" ]]; then
+        # Load login alert config
+        local login_config="/etc/nftban/conf.d/login_alert.conf"
+        local login_config_local="/etc/nftban/conf.d/login_alert.conf.local"
+        [[ -f "$login_config" ]] && source "$login_config"
+        [[ -f "$login_config_local" ]] && source "$login_config_local"
+
+        local alert_mode="${NFTBAN_LOGIN_ALERT_MODE:-realtime}"
+        if [[ "$alert_mode" == "digest" ]] || [[ "$alert_mode" == "both" ]]; then
+            # Load and call digest send function
+            local login_alert_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_login_alert.sh"
+            if [[ -f "$login_alert_lib" ]]; then
+                source "$login_alert_lib"
+                if type -t nftban_login_digest_send >/dev/null 2>&1; then
+                    echo "[INFO] Sending login digest..."
+                    nftban_login_digest_send
+                fi
+            fi
+        fi
+    fi
+}
+
+# =============================================================================
+
+# SUBCOMMAND: LIST
+# =============================================================================
+
+
+nftban_report_cmd_list() {
+    # List generated reports
+    if [[ ! -d "$NFTBAN_REPORTS_DIR" ]]; then
+        echo "No reports directory found"
+        return 0
+    fi
+
+    echo "Generated Reports:"
+    echo ""
+
+    find "$NFTBAN_REPORTS_DIR" -type f -name "*.html" -o -name "*.json" -o -name "*.csv" | \
+    sort -r | head -20 | \
+    while read -r file; do
+        local size
+        size=$(du -h "$file" | cut -f1)
+        local date
+        date=$(stat -c %y "$file" | cut -d' ' -f1)
+        printf "  [%s] %10s  %s\n" "$date" "$size" "$(basename "$file")"
+    done
+
+    echo ""
+}
+
+# =============================================================================
+
+# SUBCOMMAND: STATUS
+# =============================================================================
+
+nftban_report_cmd_status() {
+    # Show comprehensive report configuration status
+    # Usage: nftban report status [--json]
+
+    local json_mode=0
+    [[ "${1:-}" == "--json" ]] && json_mode=1
+
+    # Source mail config if available
+    local mail_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/mail.conf"
+    local mail_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/mail.conf.local"
+    [[ -f "$mail_conf" ]] && source "$mail_conf" 2>/dev/null || true
+    [[ -f "$mail_local" ]] && source "$mail_local" 2>/dev/null || true
+
+    # Source stats config if available
+    local stats_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/stats.conf"
+    local stats_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/stats.conf.local"
+    [[ -f "$stats_conf" ]] && source "$stats_conf" 2>/dev/null || true
+    [[ -f "$stats_local" ]] && source "$stats_local" 2>/dev/null || true
+
+    if [[ $json_mode -eq 1 ]]; then
+        _report_status_json
+        return 0
+    fi
+
+    echo "=============================================================="
+    echo "  NFTBan Report Configuration Status"
+    echo "=============================================================="
+    echo ""
+
+    # ─────────────────────────────────────────────────────────────────
+    # EMAIL DELIVERY
+    # ─────────────────────────────────────────────────────────────────
+    echo "EMAIL DELIVERY"
+    echo "--------------------------------------------------------------"
+
+    local mail_enabled="${MAIL_ENABLED:-${NFTBAN_MAIL_ENABLED:-false}}"
+    local mail_recipients="${STATS_EMAIL_RECIPIENTS:-${NFTBAN_MAIL_RECIPIENT:-}}"
+    local mail_from="${MAIL_FROM:-${NFTBAN_MAIL_FROM:-nftban@$(hostname -f 2>/dev/null || hostname)}}"
+    local mail_cmd=""
+
+    # Detect mail command
+    if command -v msmtp &>/dev/null; then
+        mail_cmd="msmtp"
+    elif command -v sendmail &>/dev/null; then
+        mail_cmd="sendmail"
+    elif command -v mailx &>/dev/null; then
+        mail_cmd="mailx"
+    elif command -v mail &>/dev/null; then
+        mail_cmd="mail"
+    else
+        mail_cmd="NOT FOUND"
+    fi
+
+    if [[ "$mail_enabled" == "true" ]]; then
+        printf "  %-20s %s\n" "Status.............." "ENABLED"
+    else
+        printf "  %-20s %s\n" "Status.............." "DISABLED"
+    fi
+
+    if [[ -n "$mail_recipients" ]]; then
+        printf "  %-20s %s\n" "Recipients.........." "$mail_recipients"
+    else
+        printf "  %-20s %s\n" "Recipients.........." "(not configured)"
+    fi
+
+    printf "  %-20s %s\n" "From Address........" "$mail_from"
+    printf "  %-20s %s\n" "Mail Command........" "$mail_cmd"
+    echo ""
+
+    # ─────────────────────────────────────────────────────────────────
+    # SCHEDULED REPORTS
+    # ─────────────────────────────────────────────────────────────────
+    echo "SCHEDULED REPORTS"
+    echo "--------------------------------------------------------------"
+
+    local cron_file="${NFTBAN_CRON_FILE:-/etc/cron.d/nftban-stats}"
+    local has_schedules=0
+
+    if [[ -f "$cron_file" ]]; then
+        # Parse cron entries
+        local daily_time="" weekly_time="" monthly_time=""
+
+        while IFS= read -r line; do
+            [[ "$line" =~ ^# ]] && continue
+            [[ -z "$line" ]] && continue
+
+            if [[ "$line" =~ nftban.*report.*run.*daily ]]; then
+                local min hour
+                min=$(echo "$line" | awk '{print $1}')
+                hour=$(echo "$line" | awk '{print $2}')
+                # Use 10# to force decimal interpretation (avoid octal issues with 08, 09)
+                daily_time=$(printf "%02d:%02d" "$((10#$hour))" "$((10#$min))")
+                has_schedules=1
+            elif [[ "$line" =~ nftban.*report.*run.*weekly ]]; then
+                local min hour dow
+                min=$(echo "$line" | awk '{print $1}')
+                hour=$(echo "$line" | awk '{print $2}')
+                dow=$(echo "$line" | awk '{print $5}')
+                weekly_time=$(printf "%02d:%02d (day %s)" "$((10#$hour))" "$((10#$min))" "$dow")
+                has_schedules=1
+            elif [[ "$line" =~ nftban.*report.*run.*monthly ]]; then
+                local min hour dom
+                min=$(echo "$line" | awk '{print $1}')
+                hour=$(echo "$line" | awk '{print $2}')
+                dom=$(echo "$line" | awk '{print $3}')
+                monthly_time=$(printf "%02d:%02d (day %s)" "$((10#$hour))" "$((10#$min))" "$dom")
+                has_schedules=1
+            fi
+        done < "$cron_file"
+
+        if [[ -n "$daily_time" ]]; then
+            printf "  %-20s %s\n" "Daily..............." "$daily_time"
+        else
+            printf "  %-20s %s\n" "Daily..............." "Not configured"
+        fi
+
+        if [[ -n "$weekly_time" ]]; then
+            printf "  %-20s %s\n" "Weekly.............." "$weekly_time"
+        else
+            printf "  %-20s %s\n" "Weekly.............." "Not configured"
+        fi
+
+        if [[ -n "$monthly_time" ]]; then
+            printf "  %-20s %s\n" "Monthly............." "$monthly_time"
+        else
+            printf "  %-20s %s\n" "Monthly............." "Not configured"
+        fi
+    else
+        printf "  %-20s %s\n" "Daily..............." "Not configured"
+        printf "  %-20s %s\n" "Weekly.............." "Not configured"
+        printf "  %-20s %s\n" "Monthly............." "Not configured"
+    fi
+    echo ""
+
+    # ─────────────────────────────────────────────────────────────────
+    # STORAGE
+    # ─────────────────────────────────────────────────────────────────
+    echo "STORAGE"
+    echo "--------------------------------------------------------------"
+
+    local reports_dir="${NFTBAN_REPORTS_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports}"
+    printf "  %-20s %s\n" "Reports Directory..." "$reports_dir"
+
+    if [[ -d "$reports_dir" ]]; then
+        local report_count
+        report_count=$(find "$reports_dir" -type f \( -name "*.html" -o -name "*.json" -o -name "*.csv" \) 2>/dev/null | wc -l)
+        local total_size
+        total_size=$(du -sh "$reports_dir" 2>/dev/null | awk '{print $1}' || echo "0")
+        local last_report=""
+        last_report=$(find "$reports_dir" -type f \( -name "*.html" -o -name "*.json" \) -printf '%T@ %p\n' 2>/dev/null | sort -rn | head -1 | awk '{print $2}')
+
+        printf "  %-20s %s\n" "Report Count........" "$report_count files"
+        printf "  %-20s %s\n" "Total Size.........." "$total_size"
+
+        if [[ -n "$last_report" ]]; then
+            local last_date
+            last_date=$(stat -c %y "$last_report" 2>/dev/null | cut -d' ' -f1)
+            printf "  %-20s %s\n" "Last Report........." "$last_date ($(basename "$last_report"))"
+        else
+            printf "  %-20s %s\n" "Last Report........." "(none)"
+        fi
+    else
+        printf "  %-20s %s\n" "Report Count........" "(directory not found)"
+    fi
+    echo ""
+
+    # ─────────────────────────────────────────────────────────────────
+    # QUICK COMMANDS
+    # ─────────────────────────────────────────────────────────────────
+    echo "=============================================================="
+    echo "QUICK COMMANDS"
+    echo "  nftban report generate            Generate report now"
+    echo "  nftban report schedule daily      Set up daily schedule"
+    echo "  nftban report email test          Send test email"
+    echo "  nftban report list                List generated reports"
+    echo "=============================================================="
+
+    return 0
+}
+
+_report_status_json() {
+    # JSON output for report status
+    local mail_enabled="${MAIL_ENABLED:-${NFTBAN_MAIL_ENABLED:-false}}"
+    local mail_recipients="${STATS_EMAIL_RECIPIENTS:-${NFTBAN_MAIL_RECIPIENT:-}}"
+    local reports_dir="${NFTBAN_REPORTS_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports}"
+    local cron_file="${NFTBAN_CRON_FILE:-/etc/cron.d/nftban-stats}"
+
+    local report_count=0
+    [[ -d "$reports_dir" ]] && report_count=$(find "$reports_dir" -type f \( -name "*.html" -o -name "*.json" \) 2>/dev/null | wc -l)
+
+    local has_daily=false has_weekly=false has_monthly=false
+    if [[ -f "$cron_file" ]]; then
+        grep -q "report.*run.*daily" "$cron_file" 2>/dev/null && has_daily=true
+        grep -q "report.*run.*weekly" "$cron_file" 2>/dev/null && has_weekly=true
+        grep -q "report.*run.*monthly" "$cron_file" 2>/dev/null && has_monthly=true
+    fi
+
+    cat <<EOF
+{
+  "email": {
+    "enabled": $mail_enabled,
+    "recipients": "$mail_recipients"
+  },
+  "schedules": {
+    "daily": $has_daily,
+    "weekly": $has_weekly,
+    "monthly": $has_monthly
+  },
+  "storage": {
+    "directory": "$reports_dir",
+    "report_count": $report_count
+  }
+}
+EOF
+}
+
+# =============================================================================
+
+# HTML REPORT GENERATION (PLACEHOLDER)
+# =============================================================================
+
+nftban_report_generate_html() {
+    # Generate HTML report using template with Chart.js
+    local output="$1"
+    local since="$2"
+    local until="$3"
+    local theme="${4:-dark}"
+
+    local template="/usr/share/nftban/templates/reports/stats_dashboard.html"
+
+    if [[ ! -f "$template" ]]; then
+        echo "ERROR: HTML template not found: $template" >&2
+        return 1
+    fi
+
+    # Generate JSON data
+    local temp_json
+    temp_json=$(mktemp)
+    nftban_stats_export_json "$temp_json" "$since" "$until" &>/dev/null
+
+    # Read template
+    local html_content
+    html_content=$(cat "$template")
+
+    # Read JSON data
+    local json_data
+    json_data=$(cat "$temp_json")
+
+    # Inject data into template (replace placeholder)
+    html_content="${html_content//window.__NFTBAN_DATA__ = {            \/\/ Placeholder - will be replaced        }/window.__NFTBAN_DATA__ = ${json_data}}"
+
+    # Write final HTML
+    echo "$html_content" > "$output"
+
+    rm -f "$temp_json"
+
+    if type -t nftban_print_status >/dev/null 2>&1; then
+        nftban_print_status "success" "HTML report generated: $output"
+    else
+        echo "[SUCCESS] Report: $output"
+    fi
+
+    echo "$output"
+}
+
+# =============================================================================
+
+# HELP TEXT
+# =============================================================================
+
+
+nftban_report_cmd_help() {
+    cat <<'EOF'
+NFTBan Report Generation & Scheduling
+
+USAGE:
+    nftban report [COMMAND] [OPTIONS]
+
+COMMANDS:
+    status                 Show report configuration status (email, schedules, storage)
+    generate               Generate report
+    email <RECIPIENT>      Email report to recipient
+    email-setup            Interactive email configuration wizard
+    schedule               Manage scheduled reports (cron)
+    run <FREQ>             Manually trigger scheduled report
+    list                   List generated reports
+    help                   Show this help message
+
+GENERATE OPTIONS:
+    --format FORMAT        Report format (html, json, csv, all)
+    --output FILE          Output file path
+    --since DATE           Start date (YYYY-MM-DD)
+    --until DATE           End date (YYYY-MM-DD)
+    --last PERIOD          Time window (7d, 30d)
+    --theme THEME          HTML theme (dark, light)
+
+EMAIL OPTIONS:
+    --format FORMAT        Email format (html, text)
+    --attach-csv           Attach CSV data
+    --since DATE           Start date
+    --until DATE           End date
+
+SCHEDULE OPTIONS:
+    daily --time HH:MM     Schedule daily report
+    weekly --day DAY       Schedule weekly report
+    monthly --day N        Schedule monthly report (day of month)
+    list                   List scheduled reports
+    remove <FREQ>          Remove scheduled report
+
+EXAMPLES:
+    # Check report configuration status
+    nftban report status
+
+    # Setup email configuration (interactive)
+    nftban report email-setup
+
+    # Generate HTML report (last 7 days)
+    nftban report generate --format html
+
+    # Generate all formats (last 30 days)
+    nftban report generate --format all --last 30d
+
+    # Email report
+    nftban report email admin@example.com --attach-csv
+
+    # Schedule daily report at 8 AM
+    nftban report schedule daily --time "08:00"
+
+    # Schedule weekly report (Monday 9 AM)
+    nftban report schedule weekly --day Monday --time "09:00"
+
+    # Schedule monthly report (1st of month, 10 AM)
+    nftban report schedule monthly --day 1 --time "10:00"
+
+    # List scheduled reports
+    nftban report schedule list
+
+    # Manually run daily report
+    nftban report run daily
+
+    # List generated reports
+    nftban report list
+
+CRON AUTOMATION:
+    Scheduled reports are stored in: /etc/cron.d/nftban-stats
+    Reports are saved to: /var/lib/nftban/reports/
+
+CONFIGURATION:
+    /etc/nftban/conf.d/stats.conf      Statistics configuration
+    /etc/nftban/conf.d/mail.conf       Email configuration
+
+For real-time statistics, see: nftban stats help
+EOF
+}
+
+# =============================================================================
+
+# EXPORTS
+# =============================================================================
+
+
+export -f nftban_cmd_report
+export -f nftban_report_cmd_email_setup
+
+# =============================================================================
+
+# MODULE INITIALIZATION
+# =============================================================================
+
+
+# CLI module loaded
+if type -t nftban_print_status >/dev/null 2>&1; then
+    nftban_print_status "debug" "Report CLI loaded"
+fi

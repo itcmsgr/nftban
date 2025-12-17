@@ -1,0 +1,513 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan Packet Emulation Module
+# =============================================================================
+# Simulates packet evaluation to show what nftban would do with an IP/port
+#
+# Usage:
+#   source nftban_emulate.sh
+#   nftban_emulate_packet "8.8.8.8" "tcp" "22" "in"
+#
+# Version: 1.0.0
+# =============================================================================
+
+# Prevent double-sourcing
+[[ -n "${_NFTBAN_EMULATE_LOADED:-}" ]] && return 0
+_NFTBAN_EMULATE_LOADED=1
+
+# Source dependencies
+NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+[[ -f "${NFTBAN_LIB_DIR}/lib/common.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/common.sh"
+
+# =============================================================================
+# CIDR MATCHING FUNCTIONS
+# =============================================================================
+
+# Convert IP to integer for comparison
+_ip_to_int() {
+    local ip="$1"
+    local a b c d
+    IFS='.' read -r a b c d <<< "$ip"
+    echo $(( (a << 24) + (b << 16) + (c << 8) + d ))
+}
+
+# Convert integer to IP
+_int_to_ip() {
+    local int="$1"
+    echo "$(( (int >> 24) & 255 )).$(( (int >> 16) & 255 )).$(( (int >> 8) & 255 )).$(( int & 255 ))"
+}
+
+# Check if IP is within CIDR range
+# Returns: 0 if in range, 1 if not
+_ip_in_cidr() {
+    local ip="$1"
+    local cidr="$2"
+
+    # Handle single IP (no /)
+    if [[ "$cidr" != *"/"* ]]; then
+        [[ "$ip" == "$cidr" ]] && return 0
+        return 1
+    fi
+
+    local network="${cidr%/*}"
+    local prefix="${cidr#*/}"
+
+    local ip_int network_int mask
+    ip_int=$(_ip_to_int "$ip")
+    network_int=$(_ip_to_int "$network")
+
+    # Calculate mask
+    if [[ "$prefix" -eq 0 ]]; then
+        mask=0
+    else
+        mask=$(( 0xFFFFFFFF << (32 - prefix) ))
+    fi
+
+    # Check if IP is in network
+    [[ $(( ip_int & mask )) -eq $(( network_int & mask )) ]] && return 0
+    return 1
+}
+
+# Check if IPv6 is within CIDR range (simplified - exact match only for now)
+_ipv6_in_cidr() {
+    local ip="$1"
+    local cidr="$2"
+
+    # For now, do simple prefix matching
+    # TODO: Full IPv6 CIDR math
+    if [[ "$cidr" != *"/"* ]]; then
+        [[ "$ip" == "$cidr" ]] && return 0
+        return 1
+    fi
+
+    local network="${cidr%/*}"
+    # Simple prefix match
+    [[ "$ip" == "$network"* ]] && return 0
+    return 1
+}
+
+# =============================================================================
+# SET LOOKUP FUNCTIONS
+# =============================================================================
+
+# Check if IP is in a specific nft set
+# Returns: matching CIDR or empty string
+_check_ip_in_set() {
+    local family="$1"  # ip or ip6
+    local set_name="$2"
+    local check_ip="$3"
+
+    local set_content
+    set_content=$(nft list set "$family" nftban "$set_name" 2>/dev/null)
+    [[ -z "$set_content" ]] && return 1
+
+    # Extract elements section - handle multi-line nft output
+    local elements
+    elements=$(echo "$set_content" | \
+        sed -n '/elements = {/,/}/p' | \
+        sed 's/elements = {//' | \
+        tr ',' '\n' | \
+        tr -d '{}' | \
+        sed 's/^[[:space:]]*//' | \
+        sed 's/[[:space:]]*$//' | \
+        grep -v '^$')
+
+    local best_match=""
+    local best_prefix=0
+
+    while IFS= read -r entry; do
+        # Clean entry (remove timeout info, whitespace)
+        entry=$(echo "$entry" | sed 's/timeout.*//' | tr -d ' \t')
+        [[ -z "$entry" ]] && continue
+
+        # Handle IP ranges (a.b.c.d-e.f.g.h)
+        if [[ "$entry" == *"-"* ]]; then
+            # Range format - check if IP is within
+            local start_ip="${entry%-*}"
+            local end_ip="${entry#*-}"
+            local ip_int start_int end_int
+            ip_int=$(_ip_to_int "$check_ip")
+            start_int=$(_ip_to_int "$start_ip")
+            end_int=$(_ip_to_int "$end_ip")
+
+            if [[ "$ip_int" -ge "$start_int" && "$ip_int" -le "$end_int" ]]; then
+                best_match="$entry"
+                best_prefix=32  # Treat range as most specific
+                break
+            fi
+            continue
+        fi
+
+        # Check CIDR match
+        if [[ "$family" == "ip" ]]; then
+            if _ip_in_cidr "$check_ip" "$entry"; then
+                local prefix=32
+                [[ "$entry" == *"/"* ]] && prefix="${entry#*/}"
+                if [[ "$prefix" -gt "$best_prefix" ]]; then
+                    best_prefix="$prefix"
+                    best_match="$entry"
+                fi
+            fi
+        else
+            if _ipv6_in_cidr "$check_ip" "$entry"; then
+                best_match="$entry"
+                break
+            fi
+        fi
+    done <<< "$elements"
+
+    if [[ -n "$best_match" ]]; then
+        echo "$best_match"
+        return 0
+    fi
+    return 1
+}
+
+# Get rule handle for a set reference in chain
+_get_set_rule_handle() {
+    local family="$1"
+    local chain="$2"
+    local set_name="$3"
+
+    nft -a list chain "$family" nftban "$chain" 2>/dev/null | \
+        grep -E "@${set_name}[[:space:]]" | \
+        grep -oE 'handle [0-9]+' | \
+        head -1 | \
+        awk '{print $2}'
+}
+
+# =============================================================================
+# MODULE DETECTION
+# =============================================================================
+
+# Determine which module added an IP to a set
+_detect_module_source() {
+    local ip="$1"
+    local set_name="$2"
+
+    local module="unknown"
+    local source="unknown"
+
+    # Check blacklist config files for source
+    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+
+    # Check feeds
+    if [[ -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds/feed_ips.txt" ]]; then
+        if grep -q "$ip" "${NFTBAN_DATA_DIR}/feeds/feed_ips.txt" 2>/dev/null; then
+            module="threat_feeds"
+            # Try to find which feed
+            for feed_file in "${NFTBAN_DATA_DIR}"/feeds/*.txt; do
+                [[ -f "$feed_file" ]] || continue
+                if grep -q "$ip" "$feed_file" 2>/dev/null; then
+                    source=$(basename "$feed_file" .txt | tr '[:lower:]' '[:upper:]')
+                    break
+                fi
+            done
+        fi
+    fi
+
+    # Check manual blacklist
+    if [[ "$module" == "unknown" ]]; then
+        for conf_file in "$config_dir"/blacklist.d/*.conf; do
+            [[ -f "$conf_file" ]] || continue
+            if grep -q "$ip" "$conf_file" 2>/dev/null; then
+                module="manual"
+                source=$(basename "$conf_file")
+                break
+            fi
+        done
+    fi
+
+    # Check whitelist
+    if [[ "$set_name" == *"whitelist"* ]]; then
+        module="whitelist"
+        for conf_file in "$config_dir"/whitelist.d/*.conf; do
+            [[ -f "$conf_file" ]] || continue
+            if grep -q "$ip" "$conf_file" 2>/dev/null; then
+                source=$(basename "$conf_file")
+                break
+            fi
+        done
+        [[ "$source" == "unknown" ]] && source="manual"
+    fi
+
+    # Check if from login monitor
+    if grep -q "$ip" "${NFTBAN_LOG_DIR:-/var/log/nftban}/login-monitor.log" 2>/dev/null; then
+        if [[ "$module" == "unknown" ]]; then
+            module="login_monitor"
+            source="ssh_bruteforce"
+        fi
+    fi
+
+    # Check if from portscan
+    if grep -q "$ip" "${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan.log" 2>/dev/null; then
+        if [[ "$module" == "unknown" ]]; then
+            module="portscan"
+            source="port_scan_detection"
+        fi
+    fi
+
+    echo "${module}|${source}"
+}
+
+# =============================================================================
+# PORT CHECKING
+# =============================================================================
+
+# Check if port is in allowed ports set
+_check_port_allowed() {
+    local proto="$1"  # tcp or udp
+    local port="$2"
+
+    local set_name="${proto}_ports"
+    local set_content
+    set_content=$(nft list set ip nftban "$set_name" 2>/dev/null)
+
+    if [[ -z "$set_content" ]]; then
+        # No port restrictions
+        return 0
+    fi
+
+    # Check if port is in set
+    if echo "$set_content" | grep -qE "elements.*[{,][[:space:]]*${port}[[:space:]]*[,}]"; then
+        return 0
+    fi
+
+    return 1
+}
+
+# =============================================================================
+# MAIN EMULATION FUNCTION
+# =============================================================================
+
+# Emulate packet and return JSON result
+# Usage: nftban_emulate_packet <ip> [proto] [port] [direction]
+nftban_emulate_packet() {
+    local ip="$1"
+    local proto="${2:-}"
+    local port="${3:-}"
+    local direction="${4:-in}"
+
+    # Detect IP family
+    local family="ip"
+    if [[ "$ip" == *":"* ]]; then
+        family="ip6"
+    fi
+
+    # Map direction to chain
+    local chain="input"
+    case "$direction" in
+        in|input)   chain="input" ;;
+        out|output) chain="output" ;;
+        fwd|forward) chain="forward" ;;
+    esac
+
+    # Initialize result
+    local decision="allow"
+    local matched_set=""
+    local matched_cidr=""
+    local matched_handle=""
+    local module=""
+    local source=""
+    local list_type=""
+    local explanation=""
+
+    # Evaluation order array for JSON
+    local eval_order=""
+
+    # 1. Check whitelist first
+    local whitelist_set="whitelist_ipv4"
+    [[ "$family" == "ip6" ]] && whitelist_set="whitelist_ipv6"
+
+    local wl_match
+    wl_match=$(_check_ip_in_set "$family" "$whitelist_set" "$ip")
+
+    if [[ -n "$wl_match" ]]; then
+        decision="allow"
+        matched_set="$whitelist_set"
+        matched_cidr="$wl_match"
+        matched_handle=$(_get_set_rule_handle "$family" "$chain" "$whitelist_set")
+        list_type="$whitelist_set"
+        local mod_src
+        mod_src=$(_detect_module_source "$ip" "$whitelist_set")
+        module="${mod_src%|*}"
+        source="${mod_src#*|}"
+        explanation="The address $ip is part of $matched_cidr, which is in the whitelist (trusted IPs)."
+        eval_order="{\"set\":\"$whitelist_set\",\"matched\":true,\"entry\":\"$wl_match\"}"
+    else
+        eval_order="{\"set\":\"$whitelist_set\",\"matched\":false}"
+
+        # 2. Check blacklist
+        local blacklist_set="blacklist_ipv4"
+        [[ "$family" == "ip6" ]] && blacklist_set="blacklist_ipv6"
+
+        local bl_match
+        bl_match=$(_check_ip_in_set "$family" "$blacklist_set" "$ip")
+
+        if [[ -n "$bl_match" ]]; then
+            decision="block"
+            matched_set="$blacklist_set"
+            matched_cidr="$bl_match"
+            matched_handle=$(_get_set_rule_handle "$family" "$chain" "$blacklist_set")
+            list_type="$blacklist_set"
+            local mod_src
+            mod_src=$(_detect_module_source "$ip" "$blacklist_set")
+            module="${mod_src%|*}"
+            source="${mod_src#*|}"
+            explanation="The address $ip is part of $matched_cidr, which is in the unified blacklist."
+            eval_order="${eval_order},{\"set\":\"$blacklist_set\",\"matched\":true,\"entry\":\"$bl_match\"}"
+        else
+            eval_order="${eval_order},{\"set\":\"$blacklist_set\",\"matched\":false}"
+
+            # 3. Check port if specified (only for input chain)
+            if [[ -n "$port" && -n "$proto" && "$chain" == "input" ]]; then
+                if ! _check_port_allowed "$proto" "$port"; then
+                    decision="block"
+                    matched_set="${proto}_ports"
+                    module="port_filter"
+                    source="not_in_allowed_ports"
+                    list_type="${proto}_ports"
+                    explanation="Port $port/$proto is not in the allowed ports list."
+                    eval_order="${eval_order},{\"set\":\"${proto}_ports\",\"matched\":false,\"reason\":\"port_not_allowed\"}"
+                else
+                    eval_order="${eval_order},{\"set\":\"${proto}_ports\",\"matched\":true}"
+                fi
+            fi
+
+            # 4. Default: allow (for established connections / allowed ports)
+            if [[ "$decision" == "allow" && -z "$module" ]]; then
+                module="default_policy"
+                source="no_match"
+                explanation="No blocking rules matched. Traffic allowed by default chain policy or established connection tracking."
+            fi
+        fi
+    fi
+
+    # Build JSON output
+    cat <<EOF
+{
+  "query": {
+    "ip": "$ip",
+    "protocol": "${proto:-null}",
+    "port": ${port:-null},
+    "direction": "$direction",
+    "family": "${family/ip/ipv}4"
+  },
+  "result": {
+    "decision": "$decision",
+    "reason": {
+      "module": "${module:-unknown}",
+      "source": "${source:-unknown}",
+      "list_type": "${list_type:-none}",
+      "matching_cidr": "${matched_cidr:-null}"
+    },
+    "nftables": {
+      "family": "$family",
+      "table": "nftban",
+      "chain": "$chain",
+      "rule_handle": ${matched_handle:-null},
+      "set_name": "${matched_set:-null}"
+    },
+    "explanation": "$explanation"
+  },
+  "evaluation_order": [${eval_order}]
+}
+EOF
+}
+
+# Format emulation result as pretty text
+nftban_emulate_format_text() {
+    local json="$1"
+
+    # Parse JSON (using jq if available, or basic parsing)
+    local ip decision module source list_type matching_cidr chain handle explanation
+
+    if command -v jq &>/dev/null; then
+        ip=$(echo "$json" | jq -r '.query.ip')
+        decision=$(echo "$json" | jq -r '.result.decision')
+        module=$(echo "$json" | jq -r '.result.reason.module')
+        source=$(echo "$json" | jq -r '.result.reason.source')
+        list_type=$(echo "$json" | jq -r '.result.reason.list_type')
+        matching_cidr=$(echo "$json" | jq -r '.result.reason.matching_cidr')
+        chain=$(echo "$json" | jq -r '.result.nftables.chain')
+        handle=$(echo "$json" | jq -r '.result.nftables.rule_handle')
+        explanation=$(echo "$json" | jq -r '.result.explanation')
+    else
+        # Basic parsing without jq
+        ip=$(echo "$json" | grep -o '"ip": *"[^"]*"' | head -1 | cut -d'"' -f4)
+        decision=$(echo "$json" | grep -o '"decision": *"[^"]*"' | cut -d'"' -f4)
+        module=$(echo "$json" | grep -o '"module": *"[^"]*"' | cut -d'"' -f4)
+        source=$(echo "$json" | grep -o '"source": *"[^"]*"' | cut -d'"' -f4)
+        list_type=$(echo "$json" | grep -o '"list_type": *"[^"]*"' | cut -d'"' -f4)
+        matching_cidr=$(echo "$json" | grep -o '"matching_cidr": *"[^"]*"' | cut -d'"' -f4)
+        chain=$(echo "$json" | grep -o '"chain": *"[^"]*"' | cut -d'"' -f4)
+        handle=$(echo "$json" | grep -o '"rule_handle": *[0-9]*' | grep -o '[0-9]*')
+        explanation=$(echo "$json" | grep -o '"explanation": *"[^"]*"' | cut -d'"' -f4)
+    fi
+
+    # Colors
+    local RED='\033[0;31m'
+    local GREEN='\033[0;32m'
+    local YELLOW='\033[1;33m'
+    local CYAN='\033[0;36m'
+    local NC='\033[0m'
+    local BOLD='\033[1m'
+
+    # Disable colors if not terminal or disabled
+    if [[ ! -t 1 ]] || [[ "${NFTBAN_COLOR_OUTPUT:-true}" != "true" ]]; then
+        RED="" GREEN="" YELLOW="" CYAN="" NC="" BOLD=""
+    fi
+
+    local result_icon result_text result_color
+    if [[ "$decision" == "block" ]]; then
+        result_icon="❌"
+        result_text="BLOCKED"
+        result_color="$RED"
+    else
+        result_icon="✅"
+        result_text="ALLOWED"
+        result_color="$GREEN"
+    fi
+
+    cat <<EOF
+
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NFTBan Packet Emulation
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+
+${BOLD}INPUT:${NC}   ${CYAN}${ip}${NC}
+${BOLD}RESULT:${NC}  ${result_color}${result_icon} ${result_text}${NC}
+
+${BOLD}REASON${NC}
+────────────────────────────────────────────────────────────
+  Module............. ${YELLOW}${module}${NC}
+  Source............. ${source}
+  List type.......... ${list_type}
+  Matching entry..... ${matching_cidr:-N/A}
+  Table/Chain........ ip nftban → ${chain}
+  Rule handle........ ${handle:-N/A}
+
+${BOLD}EXPLANATION${NC}
+────────────────────────────────────────────────────────────
+  ${explanation}
+
+${BOLD}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}
+EOF
+}
+
+# Quick check function - returns just allow/block
+nftban_emulate_quick() {
+    local ip="$1"
+    local result
+    result=$(nftban_emulate_packet "$ip")
+    echo "$result" | grep -o '"decision": *"[^"]*"' | cut -d'"' -f4
+}
+
+# Export functions
+export -f nftban_emulate_packet
+export -f nftban_emulate_format_text
+export -f nftban_emulate_quick
+export -f _ip_to_int
+export -f _int_to_ip
+export -f _ip_in_cidr
+export -f _check_ip_in_set

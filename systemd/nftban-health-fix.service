@@ -1,0 +1,54 @@
+# =============================================================================
+# NFTBan Health Fix Service (On-Demand, Root-Privileged)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# This service applies health fixes to the system.
+# It runs with elevated privileges to repair permissions, directories, etc.
+#
+# Design:
+#   - Runs as User=root (needs privilege to fix system state)
+#   - Type=oneshot (manual execution only)
+#   - NO TIMER - only started explicitly by admin
+#   - Uses polkit authorization via systemctl
+#
+# Usage:
+#   sudo systemctl start nftban-health-fix.service
+#   or: nftban health fix-all  (CLI wrapper)
+#
+# Security:
+#   - Not automatic (no timer)
+#   - Requires polkit auth (systemctl already enforces this)
+#   - Still hardened with ProtectSystem=full (limits damage scope)
+# =============================================================================
+
+[Unit]
+Description=NFTBan Health Fix (On-Demand, Privileged)
+Documentation=man:nftban(8) man:nftban-health(8)
+After=network.target nftban.service
+Wants=nftban.service
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+
+# Security: Still sandboxed, but with write access to specific paths
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/etc/nftban /var/lib/nftban /var/cache/nftban /var/log/nftban /run/nftban
+
+# Fix command (applies repairs)
+ExecStart=/usr/sbin/nftban health fix all
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-health-fix
+
+# Timeout (safety)
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target

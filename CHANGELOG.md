@@ -1,9 +1,167 @@
-# Changelog
+# NFTBan Changelog
 
-All notable changes to NFTBan will be documented in this file.
+All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [1.0.0-beta] - 2025-12-11
+
+### Major Release - Beta Testing
+
+NFTBan v1.0.0-beta is the first major release, featuring a complete architecture redesign with unified Go backend, modular Bash CLI, and modern web interface. Production-tested on multiple servers - community feedback welcome!
+
+> **Beta Status:** Core functionality stable. Active bug fixes and improvements based on community testing.
+
+### Highlights
+
+- **Unified Go Architecture**: Single `nftban-core` binary replaces separate go-feeds/go-geoip
+- **Dual-Table NFTables**: Separate `ip nftban` and `ip6 nftban` tables for IPv4/IPv6
+- **Suricata IDS Integration**: Network-based intrusion detection with automatic banning
+- **FHS Compliance**: Full Filesystem Hierarchy Standard compliance
+- **Modern Web UI**: Responsive dashboard with real-time monitoring
+- **REST API**: Complete API for automation and integration
+- **Production Tested**: Deployed on live servers
+
+### Architecture
+
+#### Go Components
+- `cmd/nftban-core` - Unified binary for feeds, geoip, sync operations
+- `cmd/nftban-api-server` - REST API server
+- `cmd/nftban-ui` - Web interface server
+- `pkg/` - Shared packages (api, config, feeds, geoip, sync, util)
+
+#### Bash CLI
+- 43 commands organized in modular structure
+- `cli/lib/nftban/core/` - Core functionality
+- `cli/lib/nftban/cli/` - Command handlers
+- `cli/lib/nftban/helpers/` - Utility functions
+- `cli/lib/nftban/setup/` - Installation helpers
+
+### Added
+
+#### Beta Improvements (Dec 2025)
+- **Comprehensive Smoke Testing**: `nftban smoke all` tests ALL 43 CLI commands
+- **CLI Documentation Tools**: Export CLI inventory, validate help functions, update man pages
+- **Banner Health Indicator**: Shows system health status (green/yellow/red) in CLI banner
+- **Update Notification**: Optional banner shows when new version available
+- **nftban-web Group**: Dedicated group for GUI users
+- **DEB/RPM Safe Install Flow**: Non-destructive package installation
+- **System Watchdog Module**: Resource monitoring (load, memory, I/O, disk)
+  - Prometheus metrics export to `/var/lib/nftban/metrics/watchdog.prom`
+  - Configurable thresholds via `/etc/nftban/conf.d/watchdog.conf`
+  - `nftban watchdog status/check/report/history` commands
+
+#### Core Features
+- **nftban-core binary**: Unified Go backend for all operations
+  - Threat feed aggregation (Spamhaus, AbuseIPDB, Firehol, etc.)
+  - GeoIP lookups with MaxMind GeoLite2
+  - Profile-based synchronization
+  - CIDR aggregation for optimal performance
+
+- **Suricata IDS Integration**: `nftban setup suricata`
+  - Automatic compilation from source (latest stable)
+  - Optimized configuration for server environments
+  - Integration with NFTBan banning system
+  - EVE JSON logging for threat analysis
+
+- **Dual-Table Architecture**: Clean IPv4/IPv6 separation
+  - `ip nftban` table for IPv4 rules
+  - `ip6 nftban` table for IPv6 rules
+  - No interference with system tables
+  - Easy to audit and debug
+
+- **Security Profiles**: Pre-configured security levels
+  - `basic` - Essential protection
+  - `standard` - Recommended for most servers
+  - `advanced` - Maximum security with rate limiting
+
+#### CLI Commands
+- `nftban status` - Quick system overview
+- `nftban health` - System diagnostics (binaries, services, permissions)
+- `nftban validate` - Firewall structure validation
+- `nftban ban/unban` - IP management with timeout support
+- `nftban search` - Search across all sets and feeds
+- `nftban feeds` - Threat feed management
+- `nftban geoban` - Country blocking by ISO code
+- `nftban geoip` - IP geolocation lookup
+- `nftban portscan` - Port scan detection
+- `nftban login` - SSH login monitoring
+- `nftban ddos` - DDoS protection controls
+- `nftban stats` - Statistics and reporting
+- `nftban profile` - Security profile management
+- `nftban sync` - Atomic nftables reload
+- `nftban menu` - Interactive TUI mode
+- `nftban watchdog` - System resource monitoring
+
+#### Web Interface
+- Dashboard with real-time statistics
+- IP/Port management interface
+- Threat feed monitoring
+- GeoBan country controls
+- Log viewer with filtering
+- Configuration editor
+- System health monitoring
+
+#### GitHub Actions CI/CD
+- `ci.yml` - PR validation (ShellCheck, Go build/test, security)
+- `shellcheck.yml` - Bash linting
+- `secure-go.yml` - Go security (staticcheck, gosec, govulncheck)
+- `build-packages.yml` - RPM/DEB package building
+- `release.yml` - Full release automation
+- `release-binaries.yml` - Go binary releases
+
+### Changed
+
+- **Project Structure**: Complete reorganization for FHS compliance
+- **Binary Names**: `nftban-feeds`/`nftban-geoip` merged into `nftban-core`
+- **Table Names**: Changed from `inet nftban` to `ip nftban`/`ip6 nftban`
+- **Version Scheme**: Moved from 0.7.x to 1.0.0 semantic versioning
+
+### Removed
+
+- Legacy `go-feeds/` and `go-geoip/` directories (merged into `cmd/nftban-core`)
+- Deprecated `inet nftban` single-table architecture
+- Old v0.3.x compatibility code
+- Development scripts and notes (moved to separate dev folder)
+
+### Security
+
+- Socket-based PAM authentication (no setuid binaries)
+- Systemd hardening (NoNewPrivileges, ProtectSystem, etc.)
+- Input validation on all CLI commands
+- Rate limiting for API endpoints
+- Automatic IP whitelisting for critical services
+
+### Documentation
+
+- `README.md` - Project overview and quick start
+- `SECURITY.md` - Security policy and reporting
+- `docs/` - User documentation
+- `.github/` - Issue templates, PR templates, support guide
+
+### Migration from v0.7.x
+
+1. Backup existing configuration: `cp -r /etc/nftban /etc/nftban.backup`
+2. Stop services: `systemctl stop nftban nftban-ui`
+3. Run installer: `./install.sh`
+4. Migrate tables: `nftban sync --migrate`
+5. Verify: `nftban health && nftban validate`
+
+---
+
+## Previous Versions (v0.x)
+
+### Version Summary
+
+| Version | Date | Description |
+|---------|------|-------------|
+| 1.0.0-beta | 2025-12-11 | First major release, beta testing |
+| 0.32.6 | 2025-11-07 | Fail2ban health-fix system |
+| 0.32.3 | 2025-11-07 | RPM installation fixes |
+| 0.31.0 | 2025-11-05 | Critical security fix (rule order) |
+| 0.31.0 | 2025-11-03 | Self-healing inventory monitoring |
+| 0.10.0 | 2025-10-29 | Complete architectural refactoring |
 
 ---
 
@@ -150,15 +308,6 @@ tcp dport @tcp_ports counter accept    ← Then allow ports
 - **Added:** Packet counters to all nftables rules for traffic analysis
 - **Added:** Comprehensive security warning when attempting to ban whitelisted IPs
 
-### Changed
-
-#### Documentation
-- **Updated:** ARCHITECTURE.md with v0.31.0 rule order fix documentation
-- **Updated:** SECURITY.md with CVE-2024-NFTBAN-001 security advisory
-- **Cleaned:** Removed 80 outdated documentation files (archived locally)
-- **Created:** New docs/README.md with "less is more" philosophy
-- **Updated:** README.md to v0.31.0 with corrected links
-
 ### Security
 
 **Security Score:** v0.31.0 = 10/10 (reference-grade implementation)
@@ -169,27 +318,6 @@ tcp dport @tcp_ports counter accept    ← Then allow ports
 - ✅ Default policy is drop (secure by default)
 - ✅ All rules have packet counters for monitoring
 
-### Upgrade Instructions
-
-**ALL v0.31.0 users must upgrade immediately!**
-
-```bash
-# 1. Check your version
-nftban --version
-
-# 2. Download v0.31.0 package (RPM example)
-wget https://github.com/itcmsgr/nftban/releases/download/v0.31.0/nftban-0.31.0-1.el9.x86_64.rpm
-
-# 3. Install upgrade
-sudo dnf install -y nftban-0.31.0-1.el9.x86_64.rpm
-
-# 4. Verify fix is applied
-nftban firewall check
-nft list chain inet nftban_main input
-
-# 5. Confirm blacklist rules appear BEFORE port allow rules
-```
-
 ### Testing
 
 **Verified on 5 Lab Servers:**
@@ -198,18 +326,6 @@ nft list chain inet nftban_main input
 - lab2.mywebhost.gr (Ubuntu 24.04)
 - lab3.mywebhost.gr (CentOS Stream 10)
 - lab4.mywebhost.gr (Fedora 42)
-
-**Test Results:**
-- ✅ Blacklist now blocks ALL traffic (including SSH)
-- ✅ Ban command refuses to ban whitelisted IPs
-- ✅ Whitelist protection working correctly
-- ✅ Feeds enable command returns immediately
-- ✅ All CLI commands stable and tested
-
-### Contributors
-- Antonios Voulvoulis - Security fix, CLI improvements
-- Claude Code (Anthropic) - Implementation and testing
-- ChatGPT (OpenAI) - Architecture review
 
 ---
 
@@ -223,30 +339,9 @@ This is a major upgrade adding comprehensive inventory monitoring, baseline mana
 
 #### 🔍 Advanced Inventory System (NEW!)
 - **Process inventory tracking** - nftban-procnet helper
-  - Process enumeration with PID, PPID, UID tracking
-  - Executable path detection and command line capture
-  - SHA256 hash computation for tamper detection
-  - Socket tracking (TCP/UDP) with local/remote addresses
-  - Firewall verdict integration for network connections
-  - JSON output for machine parsing
-
 - **Package inventory tracking** - nftban-pkgs helper
-  - RPM package detection (CentOS/AlmaLinux/Rocky/Fedora)
-  - DEB package detection (Ubuntu/Debian)
-  - Package version tracking
-  - Installation date and source information
-
 - **Tamper detection** - nftban-verify helper
-  - rpm -Va integration for RPM-based systems
-  - dpkg -V integration for DEB-based systems
-  - File integrity checking against package databases
-  - Modified file reporting
-
 - **Firewall state export** - nftban-firewall helper
-  - nftables JSON export for complete firewall state
-  - Rule extraction and enumeration
-  - Set enumeration with IP ranges
-  - Large ruleset handling (tested with 185.220.100.240/20 ranges)
 
 #### 📊 System Resource Monitoring (NEW!)
 - **Disk usage monitoring** - Configurable warn/critical thresholds
@@ -262,7 +357,6 @@ This is a major upgrade adding comprehensive inventory monitoring, baseline mana
 - **Configurable intervals** - Default: 1 hour between same alerts
 - **Automatic cleanup** - Removes old throttle entries
 - **Per-issue tracking** - Independent throttling for each alert type
-- **State file persistence** - /var/lib/nftban/state/health_alerts.state
 
 #### 🔐 Baseline Management (NEW!)
 - **nftban-baseline-save** - Create system baselines
@@ -273,65 +367,8 @@ This is a major upgrade adding comprehensive inventory monitoring, baseline mana
 
 #### 📧 Smart Mail Adapter (NEW!)
 - **Auto-detection** - Detects best available mail transport
-- **v0.10 module support** - Uses existing nftban_mail.sh if present
-- **sendmail support** - Falls back to system sendmail
-- **msmtp support** - Lightweight SMTP client integration
-- **curl support** - HTTP/HTTPS email delivery
+- **Multiple transports** - sendmail, msmtp, curl support
 - **Graceful fallback** - Degrades to logger if no mail available
-
-#### ⚙️ Per-File Configuration Override (NEW!)
-- **health.conf.local** - Override health settings
-- **mail.conf.local** - Override mail settings
-- **Per-module overrides** - Override any conf.d/ file
-- **Upgrade-safe** - .local files preserved during upgrades
-- **Hierarchical loading** - Global → module → .local
-
-#### 👥 Polkit Integration Enhancement
-- **auditors group** - Non-root access to inventory helpers
-- **Polkit rules** - 50-nftban-v030.rules for secure delegation
-- **Non-root execution** - Inventory collection without sudo
-- **Security boundaries** - Restricted command execution
-
-#### 🏥 Enhanced Health System
-- **nftban-health --inventory** - Complete system inventory
-- **Resource checking** - Integrated disk/RAM/CPU monitoring
-- **Alert generation** - Email notifications on issues
-- **JSON output** - Machine-readable inventory data
-- **Orchestration** - Coordinates all inventory helpers
-
-### Changed
-
-#### Configuration Management
-- **Enhanced .local override system** - Per-file configuration overrides
-- **New config file**: /etc/nftban/conf.d/health.conf
-  - Resource monitoring thresholds
-  - Alert throttling settings
-  - Health check intervals
-
-#### Directory Structure
-- **New directories**:
-  - `/var/lib/nftban/reports/baseline` - Baseline storage
-  - `/etc/nftban/keys` - GPG keys for signing (mode 0700)
-- **New helpers**: `/usr/libexec/nftban/helpers/`
-  - nftban-procnet
-  - nftban-pkgs
-  - nftban-verify
-  - nftban-firewall
-- **New health commands**: `/usr/libexec/nftban/health/`
-  - nftban-health
-  - nftban-baseline-save
-  - nftban-verify-signature
-
-#### Package Dependencies
-- **Added python3** - Required for inventory helper scripts
-- **policykit-1** - Required for Polkit integration (Debian/Ubuntu)
-- **polkit** - Required for Polkit integration (RPM-based)
-
-### Fixed
-- **Email configuration** - Documented requirement for NFTBAN_MAIL_TO
-- **Read-only filesystem handling** - Graceful degradation for /usr/share
-- **Permission enforcement** - Reduced noise from auto-heal
-- **Service integration** - Proper systemd timer configuration
 
 ### Security
 - **Reduced attack surface** - Inventory helpers run as nftban user via Polkit
@@ -345,23 +382,6 @@ This is a major upgrade adding comprehensive inventory monitoring, baseline mana
   - Ubuntu 24.04
   - AlmaLinux 10.0
   - Rocky Linux 10
-- **Cross-platform validation** - RHEL and Debian families
-- **Issue resolution** - All deployment issues documented and fixed
-- **Comprehensive logs** - Complete diagnostic data collected
-
-### Documentation
-- **docs/testing/v0.30/** - Complete v0.30 testing documentation
-  - FINAL_DEPLOYMENT_REPORT.md
-  - TEST_REVIEW_SUMMARY.md
-  - LAB_ISSUES_FOUND.md
-  - Lab server logs (5 servers)
-- **Architecture docs** - capability-based security model
-- **Session summaries** - Complete implementation notes
-
-### Contributors
-- Antonios Voulvoulis - Lead Developer
-- ChatGPT (OpenAI) - Architecture guidance and initial deployment
-- Claude (Anthropic) - Implementation, testing, and integration
 
 ---
 
@@ -379,104 +399,30 @@ This is a major release representing a complete rewrite of NFTBan with new archi
 - **Health check system** - 10-point comprehensive diagnostics
 - **Atomic table reload** - `nftban firewall reload` rebuilds main table safely
 - **Architecture verification** - Automatic detection of missing components
-- **User-friendly error messages** - Clear fix suggestions for issues
 - **CLI commands**: init, reload, status, check, reset, help
 - **DirectAdmin support** - Auto-configuration for DirectAdmin control panel ports
-- **Critical bug fixes**:
-  - Fixed IPv4/IPv6 separation (comments with colons caused misclassification)
-  - Fixed nftables syntax error (shell redirection in nft template)
-- **Performance verified** - Handles millions of IPs without system freeze
 
 #### 🛡️ Threat Intelligence Feeds System (NEW!)
 - **Dynamic feed discovery** - No hardcoded arrays, feeds auto-discovered from config
-- **14 pre-configured threat feeds** from trusted sources:
-  - Protection category: 6 feeds (Spamhaus DROP/EDROP, Abuse.ch Feodo/SSL, FireHOL Level1/Level2)
-  - SSH category: 3 feeds (blocklist.de SSH, GreenSnow, FireHOL SSH)
-  - Web category: 3 feeds (blocklist.de Apache/Nginx, FireHOL Webcam)
-  - Email category: 2 feeds (blocklist.de Mail, StopForumSpam)
-- **Beautiful numbered selection interface** - Easy feed selection: `1 3 6` or `ssh` or `all`
-- **Go binary integration** for 10-60x faster feed parsing (parse 50K IPs in 1-2 seconds)
+- **14 pre-configured threat feeds** from trusted sources
+- **Beautiful numbered selection interface** - Easy feed selection
+- **Go binary integration** for 10-60x faster feed parsing
 - **All feeds disabled by default** for safety
 - **Category-based management** - Enable entire categories at once
-- **Automatic updates** - Configurable auto-update intervals
-- **Dedicated logging** at `/var/log/nftban/feeds.log`
-- **Interactive menu**: `nftban feeds select`
-- **CLI commands**: list, enable, disable, enable-category, update, status
 
 #### 🔧 Fail2ban Integration (NEW!)
 - **Dynamic jail discovery** - Auto-discovers all fail2ban jails
 - **Comprehensive status reporting** - Show all jails with ban counts
-- **Banned IP management** - List, ban, and unban IPs
 - **Cloudflare sync** - Sync fail2ban bans to Cloudflare (if enabled)
-- **Service control** - Start, stop, restart, reload fail2ban
-- **Jail management** - Enable/disable individual jails
-- **Interactive interface** - Beautiful formatted output
-- **CLI commands**: status, jails, banned, ban, unban, reload, enable, disable
-
-#### 🎨 User Interface Improvements
-- **Numbered selection menus** - Easy interaction for feeds and other features
-- **Categorized displays** - Logical grouping of feeds, jails, modules
-- **Status indicators** - Visual [✓] [✗] indicators throughout
-- **Color-coded output** - Enhanced readability (when supported)
-- **Progress indicators** - Real-time feedback for operations
-- **Comprehensive help** - Built-in help for all commands
-
-#### 📊 Core Features & Modules
-- **DDoS Protection** - 4 protection types (SYN, UDP, ICMP floods, connection limits)
-- **Port Scan Detection** - Real-time detection and automatic blocking
-- **Security Profiles** - 7 profiles (paranoid, strict, balanced, web, minimal, dev, disabled)
-- **Cloudflare Integration** - Automatic Cloudflare IP whitelisting and updates
-- **Login Monitoring** - Real-time SSH/system login alerts via email
-- **Auto-Whitelist System** - Automatic system IP whitelisting
-- **Port Management** - Comprehensive port status and reporting
-- **Module Inventory** - Complete module listing with metadata
-- **FHS Compliance Checker** - Verify filesystem hierarchy compliance
-- **Health Diagnostics** - System health checks with auto-fix capabilities
-- **Mail Notifications** - Configurable SMTP/sendmail email alerts
-
-#### 🚀 Performance & Architecture
-- **Go binary for GeoIP** - Ultra-fast IP geolocation lookups
-- **Go binary for feeds** - Fast parsing, validation, and deduplication
-- **FHS-compliant structure** - Full Linux Filesystem Hierarchy Standard compliance
-- **Layered configuration** - Proper precedence with conf.d/ drop-ins
-- **Dynamic discovery** - All feeds, jails, and modules discovered at runtime
-- **Modular CLI** - Auto-loading command modules from cli/ directory
-- **Bash completion** - Full tab completion for all commands
-
-#### 📚 Documentation
-- **FEEDS_USER_GUIDE.md** - Comprehensive threat feeds guide
-- **Session documentation** - Complete implementation notes for feeds and fail2ban
-- **Inline help** - Built-in help for every command
-- **Updated README** - Current feature list and quick start guide
 
 ### Changed
 
 #### Architecture & Structure
 - **Complete refactoring** - Modern, maintainable codebase
-- **FHS compliance** - All files in proper Linux filesystem locations:
-  - `/usr/sbin/nftban` - Main CLI
-  - `/usr/lib/nftban/` - Code libraries
-  - `/etc/nftban/` - Configuration
-  - `/var/lib/nftban/` - State data
-  - `/var/log/nftban/` - Logs
-  - `/var/cache/nftban/` - Cache
+- **FHS compliance** - All files in proper Linux filesystem locations
 - **Modular design** - Separated core, CLI, and module layers
 - **Configuration precedence** - Proper layering: defaults → conf.d → local → env → CLI
 - **Dynamic loading** - Runtime discovery instead of hardcoded arrays
-
-#### Configuration Management
-- **Layered configs** - Drop-in configs in `/etc/nftban/conf.d/`
-- **User overrides** - Safe user customization via `nftban.conf.local`
-- **Module configs** - Separate config files per module
-- **Environment support** - Environment variable overrides
-- **No hardcoding** - All configuration in files, not code
-
-#### CLI Interface
-- **Auto-loading commands** - Commands automatically loaded from `/usr/lib/nftban/cli/`
-- **Consistent interface** - All commands follow same pattern
-- **Better error handling** - Clear error messages with suggestions
-- **Bash completion endpoint** - Built-in completion via `__complete`
-- **Help system** - Consistent help across all commands
 
 ### Improved
 
@@ -484,149 +430,10 @@ This is a major release representing a complete rewrite of NFTBan with new archi
 - **10-60x faster feed parsing** - Go binary vs pure bash
 - **Fast GeoIP lookups** - Go binary with embedded database
 - **Efficient nftables operations** - Optimized set management
-- **Reduced disk I/O** - Caching and smart updates
-- **Faster command loading** - Modular lazy loading
-
-#### Reliability
-- **Better error handling** - Comprehensive error checking
-- **Safer defaults** - All feeds disabled, minimal attack surface
-- **Atomic operations** - Config updates are atomic
-- **Logging improvements** - Detailed logs for troubleshooting
-- **Health checks** - Auto-detection and fixes for common issues
-
-#### User Experience
-- **Interactive menus** - Numbered selection for complex operations
-- **Visual feedback** - Progress indicators and status symbols
-- **Better organization** - Logical categorization of features
-- **Clear documentation** - Comprehensive guides and help
-- **Tab completion** - Full bash completion support
-
-### Fixed
-
-#### From v0.9.5
-- **Configuration conflicts** - Proper precedence now implemented
-- **Hardcoded arrays** - Replaced with dynamic discovery
-- **Slow feed parsing** - Now 10-60x faster with Go
-- **Unclear feed status** - Now clear categorized display
-- **Missing fail2ban features** - Full integration now included
-
-### Security
-
-#### Improvements
-- **All feeds disabled by default** - Prevents accidental lockouts
-- **Whitelist system** - Protect important IPs before enabling feeds
-- **Fail2ban integration** - Better coordination with fail2ban bans
-- **Cloudflare sync** - Keep Cloudflare firewall in sync
-- **Health diagnostics** - Detect and fix security misconfigurations
-
-### Deployment
-
-#### Lab Testing
-- **3 lab servers** - Tested on CentOS 9, Ubuntu 24.04, CentOS 10
-- **Full deployment** - All modules deployed and tested
-- **Integration testing** - All features working together
-- **Performance verified** - Go binaries tested on all platforms
-
-#### Files Changed
-- **New files**: 50+ new modules and scripts
-- **Go binaries**: 2 (feeds parser, GeoIP lookup)
-- **Configuration**: 10+ new config files
-- **Documentation**: 5+ comprehensive guides
-
----
-
-## [0.9.5] - 2025-10-XX (Previous Release)
-
-### Features from v0.9.5
-- Basic firewall management
-- Manual feed configuration
-- Limited fail2ban integration
-- Shell-only implementation
-
-### Migration Notes
-- v0.10.0 is a complete rewrite
-- Configuration files need migration
-- New FHS-compliant paths
-- Enhanced features and performance
-
----
-
-## Version History
-
-### Release Timeline
-- **v0.10.0** (2025-10-28) - Complete architectural refactoring ← **Current**
-- **v0.9.5** (2025-10-XX) - Previous stable release
-
-### Development Timeline (v0.10.0)
-- **Day 1** (2025-10-27) - Fail2ban integration with dynamic jail discovery
-- **Day 2** (2025-10-28) - Feeds system with Go binary and dynamic discovery
-- **Day 3** (2025-10-28) - CLI integration, bash completion, and documentation
-
----
-
-## Upgrade Guide
-
-### From v0.9.5 to v0.10.0
-
-#### Breaking Changes
-1. **Directory structure changed** - Now FHS-compliant
-   - Old: `/opt/nftban/` → New: `/usr/lib/nftban/`
-   - Old: `/etc/nftban.conf` → New: `/etc/nftban/nftban.conf`
-   - Old: `/var/nftban/` → New: `/var/lib/nftban/`
-
-2. **Configuration format changed** - Feed configs now dynamic
-   - Old: Hardcoded feed arrays in code
-   - New: `FEED_*` pattern in `/etc/nftban/conf.d/feeds.conf`
-
-3. **CLI commands changed** - New modular structure
-   - Old: Limited commands
-   - New: 20+ commands with subcommands
-
-#### Migration Steps
-1. **Backup v0.9.5 configuration**:
-   ```bash
-   cp -r /opt/nftban /opt/nftban.backup
-   ```
-
-2. **Install v0.10.0** via deployment script
-
-3. **Migrate configurations manually**:
-   - Review old configs
-   - Update to new format
-   - Test on lab server first
-
-4. **Enable desired features**:
-   ```bash
-   sudo nftban feeds select    # Enable feeds
-   nftban profile select       # Choose security profile
-   nftban fail2ban status      # Verify fail2ban
-   ```
-
-5. **Verify and monitor**:
-   ```bash
-   nftban health check
-   tail -f /var/log/nftban/feeds.log
-   ```
-
-#### New Features to Explore
-- **Feeds system**: `nftban feeds help`
-- **Fail2ban**: `nftban fail2ban help`
-- **Health checks**: `nftban health help`
-- **All commands**: `nftban help`
 
 ---
 
 ## Support & Resources
-
-### Documentation
-- **README.md** - Project overview and features
-- **FEEDS_USER_GUIDE.md** - Complete feeds guide
-- **Session docs** - Implementation details
-
-### Lab Servers
-- **your-server.example.com** - CentOS 9
-- **server1.example.com** - Ubuntu 24.04
-- **server2.example.com** - CentOS 10
 
 ### Getting Help
 ```bash
@@ -637,6 +444,6 @@ nftban health check      # System diagnostics
 
 ---
 
-**NFTBan v0.10.0** — Simplifying Linux Firewall Management
+**NFTBan** — Simplifying Linux Firewall Management
 
 For more information, visit: https://nftban.com

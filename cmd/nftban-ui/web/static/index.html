@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>NFTBan Console</title>
+
+  <!-- CSS -->
+  <link rel="stylesheet" href="/static/css/all.min.css" />
+  <link rel="stylesheet" href="/static/css/framework.css" />
+  <link rel="stylesheet" href="/static/css/clean.css" />
+
+  <!-- Chart.js for dashboard charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+  <!-- LOGIN SCREEN -->
+  <div id="login-screen" class="login-container">
+    <div class="login-box">
+      <div class="login-header">
+        <div class="logo-large">🛡️</div>
+        <h1>NFTBan</h1>
+        <p>Adaptive Firewall Panel</p>
+      </div>
+      <form id="login-form">
+        <input type="text" id="login-username" placeholder="Username" required autocomplete="username" />
+        <input type="password" id="login-password" placeholder="Password" required autocomplete="current-password" />
+        <button type="submit" class="btn-primary">Sign In</button>
+        <div id="login-error" class="error-message" style="display:none;"></div>
+      </form>
+    </div>
+  </div>
+
+  <!-- MAIN APP (hidden until logged in) -->
+  <div class="page" id="nftban-app" style="display:none;">
+    <!-- HEADER -->
+    <header class="header-bar">
+      <div class="header-left">
+        <div class="logo-small">🛡️</div>
+        <h2>NFTBan</h2>
+      </div>
+      <div class="header-right">
+        <button id="theme-toggle" class="theme-btn" aria-label="Toggle theme">
+          <i class="fa fa-moon"></i>
+        </button>
+        <button id="logout-btn" class="btn-sm" aria-label="Logout">
+          <i class="fa fa-right-from-bracket"></i> Logout
+        </button>
+      </div>
+    </header>
+
+    <div class="container">
+      <!-- SIDEBAR -->
+      <aside class="sidebar">
+        <a href="#" class="nav-item active" data-page="dashboard">
+          <span><i class="fa fa-gauge"></i></span>
+          <span>Dashboard</span>
+        </a>
+        <a href="#" class="nav-item" data-page="ip-management">
+          <span><i class="fa fa-network-wired"></i></span>
+          <span>IP Management</span>
+        </a>
+        <a href="#" class="nav-item" data-page="feeds">
+          <span><i class="fa fa-rss"></i></span>
+          <span>Threat Feeds</span>
+        </a>
+        <a href="#" class="nav-item" data-page="portscan">
+          <span><i class="fa fa-crosshairs"></i></span>
+          <span>Port Scan Detection</span>
+        </a>
+        <a href="#" class="nav-item" data-page="ddos">
+          <span><i class="fa fa-burst"></i></span>
+          <span>DDoS Protection</span>
+        </a>
+        <a href="#" class="nav-item" data-page="login-monitor">
+          <span><i class="fa fa-user-shield"></i></span>
+          <span>Login Monitor</span>
+        </a>
+        <a href="#" class="nav-item" data-page="ports">
+          <span><i class="fa fa-door-open"></i></span>
+          <span>Port Management</span>
+        </a>
+        <a href="#" class="nav-item" data-page="geoip">
+          <span><i class="fa fa-globe"></i></span>
+          <span>GeoIP Lookup</span>
+        </a>
+        <a href="#" class="nav-item" data-page="geoban">
+          <span><i class="fa fa-earth-americas"></i></span>
+          <span>GeoBan</span>
+        </a>
+        <a href="#" class="nav-item" data-page="analytics">
+          <span><i class="fa fa-chart-line"></i></span>
+          <span>Analytics</span>
+        </a>
+        <a href="#" class="nav-item" data-page="nftables">
+          <span><i class="fa fa-fire"></i></span>
+          <span>Firewall Tools</span>
+        </a>
+        <a href="#" class="nav-item" data-page="validator">
+          <span><i class="fa fa-magnifying-glass"></i></span>
+          <span>IP Validator</span>
+        </a>
+        <a href="#" class="nav-item" data-page="logs">
+          <span><i class="fa fa-file-lines"></i></span>
+          <span>Logs Viewer</span>
+        </a>
+        <a href="#" class="nav-item" data-page="config">
+          <span><i class="fa fa-gear"></i></span>
+          <span>Configuration</span>
+        </a>
+        <a href="#" class="nav-item" data-page="system">
+          <span><i class="fa fa-server"></i></span>
+          <span>System</span>
+        </a>
+        <a href="#" class="nav-item" data-page="help">
+          <span><i class="fa fa-circle-question"></i></span>
+          <span>Help</span>
+        </a>
+      </aside>
+
+      <!-- MAIN CONTENT -->
+      <main class="content">
+        <div id="page-container">
+          <!-- pages/*.html will be injected here -->
+          <div class="loading-message">Loading…</div>
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

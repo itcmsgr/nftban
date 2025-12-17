@@ -1,0 +1,23 @@
+#!/usr/sbin/nft -f
+# =============================================================================
+# NFTBan v0.7.3 - Runtime Table (DEPRECATED)
+# =============================================================================
+#
+# ⚠️  DEPRECATED in v0.7.3 unified architecture
+#
+# In v0.7.3, all runtime sets (temp_whitelist, blacklist with timeout) are
+# managed in the main tables (ip nftban / ip6 nftban), not separate runtime table.
+#
+# This file is kept for backwards compatibility and migration purposes only.
+# New deployments should use the unified architecture in nftables.conf.
+#
+# Migration path:
+# 1. Old: inet nftban_runtime with separate temp_ban/temp_whitelist sets
+# 2. New: ip/ip6 nftban with unified blacklist + temp_whitelist in main tables
+#
+# To migrate:
+#   nftban sync    # Loads unified architecture from nftables.conf
+# =============================================================================
+
+# No operations - unified architecture handles all runtime state in main tables
+# See: install/nftables/nftables.conf for v0.7.3 unified architecture

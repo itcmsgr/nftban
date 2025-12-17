@@ -1,0 +1,22 @@
+// =============================================================================
+// NFTBan Port Status - Polkit Authorization Rule
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+// Purpose: Allow nftban user to run nftban CLI via pkexec as root
+// Location: /etc/polkit-1/rules.d/50-nftban-port-status.rules
+//
+// This rule enables the nftban-ui service (running as user nftban) to
+// execute privileged commands like 'nftban port status' which require
+// root to read process info from ss -tunlp.
+// =============================================================================
+
+polkit.addRule(function(action, subject) {
+    // Allow nftban user to run /usr/bin/nftban via pkexec as root
+    if (action.id == "org.freedesktop.policykit.exec" &&
+        action.lookup("polkit.exec.path") == "/usr/bin/nftban" &&
+        subject.user == "nftban") {
+
+        // No authentication, run as root
+        return polkit.Result.YES;
+    }
+});

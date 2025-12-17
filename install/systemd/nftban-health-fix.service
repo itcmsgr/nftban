@@ -1,0 +1,32 @@
+[Unit]
+Description=NFTBan Health Fixer (On-Demand, Privileged)
+Documentation=man:nftban(8)
+After=network.target nftables.service
+
+# This service is NOT timer-triggered
+# Admin must explicitly run: systemctl start nftban-health-fix.service
+
+[Service]
+Type=oneshot
+
+# Runs as root because fixing permissions/directories requires it
+# This is intentional - fixes need privileged access
+User=root
+
+# Fix all detected issues
+ExecStart=/usr/bin/nftban health fix all
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-health-fix
+
+# Security - still apply some hardening
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+# Allow writes to system paths for fixes
+# ProtectSystem is NOT set - we need to fix permissions
+
+[Install]
+WantedBy=multi-user.target

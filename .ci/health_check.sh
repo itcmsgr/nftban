@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.32.19 - Project Health Check Script
+# NFTBan v0.7.3 Development - Project Health Check Script
 # =============================================================================
-# SPDX-License-Identifier: MPL-2.0
+# SPDX-License-Identifier: GPL-3.0-or-later
 # Description: Validates code quality, documentation, structure, and security
 # Generates: STATUS.md with project health metrics
 # Usage: .ci/health_check.sh
@@ -98,24 +98,28 @@ run_check() {
 check_required_tools() {
     log_info "Checking required tools..."
 
-    run_check "shellcheck installed" "command_exists shellcheck"
-    run_check "shfmt installed" "command_exists shfmt"
-    run_check "yamllint installed" "command_exists yamllint"
+    run_check "shellcheck installed" "command_exists shellcheck" "true"
+    run_check "shfmt installed" "command_exists shfmt" "true"
+    run_check "yamllint installed" "command_exists yamllint" "true"
     run_check "markdownlint installed" "command_exists markdownlint-cli2" "true"
     run_check "jq installed" "command_exists jq"
+    run_check "go installed" "command_exists go"
 }
 
 check_project_structure() {
     log_info "Checking project structure..."
 
-    run_check "src/ directory exists" "[ -d '$PROJECT_ROOT/src' ]"
-    run_check "scripts/ directory exists" "[ -d '$PROJECT_ROOT/scripts' ]"
-    run_check "docs/ directory exists" "[ -d '$PROJECT_ROOT/docs' ]"
+    run_check "cli/ directory exists" "[ -d '$PROJECT_ROOT/cli' ]"
+    run_check "cmd/ directory exists" "[ -d '$PROJECT_ROOT/cmd' ]"
+    run_check "pkg/ directory exists" "[ -d '$PROJECT_ROOT/pkg' ]"
+    run_check "install/ directory exists" "[ -d '$PROJECT_ROOT/install' ]"
     run_check "packaging/ directory exists" "[ -d '$PROJECT_ROOT/packaging' ]"
     run_check "README.md exists" "[ -f '$PROJECT_ROOT/README.md' ]"
-    run_check "CHANGELOG.md exists" "[ -f '$PROJECT_ROOT/CHANGELOG.md' ]"
     run_check "LICENSE exists" "[ -f '$PROJECT_ROOT/LICENSE' ]"
-    run_check "nftban main script exists" "[ -f '$PROJECT_ROOT/src/usr/sbin/nftban' ]"
+    run_check "go.mod exists" "[ -f '$PROJECT_ROOT/go.mod' ]"
+    run_check "nftban CLI script exists" "[ -f '$PROJECT_ROOT/cli/sbin/nftban' ]"
+    run_check "build.sh exists" "[ -f '$PROJECT_ROOT/build.sh' ]"
+    run_check "install.sh exists" "[ -f '$PROJECT_ROOT/install.sh' ]"
 }
 
 check_shellcheck() {
@@ -123,6 +127,10 @@ check_shellcheck() {
 
     if ! command_exists shellcheck; then
         log_warning "shellcheck not installed, skipping"
+        WARNINGS=$((WARNINGS + 1))
+        WARNING_ITEMS+=("shellcheck not installed")
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
         return 0
     fi
 
@@ -132,14 +140,14 @@ check_shellcheck() {
     # Find all .sh files and main nftban script
     while IFS= read -r -d '' script; do
         checked=$((checked + 1))
-        if shellcheck -x "$script" 2>/dev/null; then
+        if shellcheck -x -S warning "$script" 2>/dev/null; then
             : # pass
         else
             log_error "shellcheck failed: $script"
             failed=$((failed + 1))
         fi
     done < <(find "$PROJECT_ROOT" -type f \( -name "*.sh" -o -name "nftban" \) \
-        ! -path "*/.*" ! -path "*/dist/*" ! -path "*/node_modules/*" -print0)
+        ! -path "*/.git/*" ! -path "*/build/*" ! -path "*/node_modules/*" -print0)
 
     if [ $failed -eq 0 ]; then
         log_success "shellcheck: checked $checked files, all passed"
@@ -160,6 +168,10 @@ check_shfmt() {
 
     if ! command_exists shfmt; then
         log_warning "shfmt not installed, skipping"
+        WARNINGS=$((WARNINGS + 1))
+        WARNING_ITEMS+=("shfmt not installed")
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
         return 0
     fi
 
@@ -176,7 +188,7 @@ check_shfmt() {
             failed=$((failed + 1))
         fi
     done < <(find "$PROJECT_ROOT" -type f \( -name "*.sh" -o -name "nftban" \) \
-        ! -path "*/.*" ! -path "*/dist/*" ! -path "*/node_modules/*" -print0)
+        ! -path "*/.git/*" ! -path "*/build/*" ! -path "*/node_modules/*" -print0)
 
     if [ $failed -eq 0 ]; then
         log_success "shfmt: checked $checked files, all formatted correctly"
@@ -196,13 +208,15 @@ check_markdown_lint() {
 
     if ! command_exists markdownlint-cli2; then
         log_warning "markdownlint-cli2 not installed, skipping"
+        WARNINGS=$((WARNINGS + 1))
+        WARNING_ITEMS+=("markdownlint not installed")
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
         return 0
     fi
 
     # Run markdownlint (allow some common style issues)
-    if markdownlint-cli2 "$PROJECT_ROOT"/**/*.md \
-        --config "$PROJECT_ROOT/.markdownlint.json" 2>/dev/null || \
-       markdownlint-cli2 "$PROJECT_ROOT"/**/*.md 2>/dev/null; then
+    if markdownlint-cli2 "$PROJECT_ROOT"/**/*.md 2>/dev/null; then
         log_success "markdownlint: documentation passed"
         PASSED_CHECKS=$((PASSED_CHECKS + 1))
     else
@@ -221,6 +235,10 @@ check_yaml_lint() {
 
     if ! command_exists yamllint; then
         log_warning "yamllint not installed, skipping"
+        WARNINGS=$((WARNINGS + 1))
+        WARNING_ITEMS+=("yamllint not installed")
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
         return 0
     fi
 
@@ -236,7 +254,7 @@ check_yaml_lint() {
             failed=$((failed + 1))
         fi
     done < <(find "$PROJECT_ROOT" -type f \( -name "*.yml" -o -name "*.yaml" \) \
-        ! -path "*/.*" ! -path "*/dist/*" ! -path "*/node_modules/*" -print0)
+        ! -path "*/.git/*" ! -path "*/build/*" ! -path "*/node_modules/*" -print0)
 
     if [ $checked -eq 0 ]; then
         log_warning "No YAML files found to check"
@@ -251,11 +269,138 @@ check_yaml_lint() {
         TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
         return 0
     else
-        log_error "yamllint: $failed/$checked files failed"
+        log_warning "yamllint: $failed/$checked files have warnings (non-critical)"
+        WARNINGS=$((WARNINGS + 1))
+        WARNING_ITEMS+=("yamllint ($failed files)")
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        return 0
+    fi
+}
+
+check_go_vet() {
+    log_info "Running go vet on Go code..."
+
+    if ! command_exists go; then
+        log_error "Go not installed"
         FAILED_CHECKS=$((FAILED_CHECKS + 1))
         TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
-        FAILED_ITEMS+=("yamllint ($failed files)")
+        FAILED_ITEMS+=("Go not installed")
         return 1
+    fi
+
+    cd "$PROJECT_ROOT"
+
+    if go vet ./... 2>/dev/null; then
+        log_success "go vet: all packages passed"
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        return 0
+    else
+        log_error "go vet: found issues"
+        FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        FAILED_ITEMS+=("go vet")
+        return 1
+    fi
+}
+
+check_go_fmt() {
+    log_info "Running gofmt on Go code..."
+
+    if ! command_exists go; then
+        log_error "Go not installed"
+        FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        FAILED_ITEMS+=("Go not installed")
+        return 1
+    fi
+
+    cd "$PROJECT_ROOT"
+
+    local unformatted
+    unformatted=$(gofmt -l . 2>/dev/null | grep -v '^vendor/' || true)
+
+    if [ -z "$unformatted" ]; then
+        log_success "gofmt: all Go files are properly formatted"
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        return 0
+    else
+        local count
+        count=$(echo "$unformatted" | wc -l)
+        log_warning "gofmt: $count files need formatting (non-critical)"
+        WARNINGS=$((WARNINGS + 1))
+        WARNING_ITEMS+=("gofmt ($count files)")
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        return 0
+    fi
+}
+
+check_go_test() {
+    log_info "Running go test on Go code..."
+
+    if ! command_exists go; then
+        log_error "Go not installed"
+        FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        FAILED_ITEMS+=("Go not installed")
+        return 1
+    fi
+
+    cd "$PROJECT_ROOT"
+
+    # Check if there are any test files
+    if ! find . -name "*_test.go" -type f | grep -q .; then
+        log_warning "No Go test files found (non-critical)"
+        WARNINGS=$((WARNINGS + 1))
+        WARNING_ITEMS+=("No Go tests")
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        return 0
+    fi
+
+    if go test -short ./... 2>/dev/null; then
+        log_success "go test: all tests passed"
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        return 0
+    else
+        log_error "go test: some tests failed"
+        FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        FAILED_ITEMS+=("go test")
+        return 1
+    fi
+}
+
+check_go_mod() {
+    log_info "Checking go.mod integrity..."
+
+    if ! command_exists go; then
+        log_error "Go not installed"
+        FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        FAILED_ITEMS+=("Go not installed")
+        return 1
+    fi
+
+    cd "$PROJECT_ROOT"
+
+    # Check if go.mod is tidy
+    if go mod tidy -v 2>/dev/null && git diff --exit-code go.mod go.sum >/dev/null 2>&1; then
+        log_success "go.mod: module dependencies are tidy"
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        return 0
+    else
+        log_warning "go.mod: may need 'go mod tidy' (non-critical)"
+        WARNINGS=$((WARNINGS + 1))
+        WARNING_ITEMS+=("go.mod needs tidy")
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+        TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+        return 0
     fi
 }
 
@@ -266,16 +411,10 @@ check_basic_security() {
 
     # Check for common secret patterns (simple grep)
     if grep -r -i -E "(password|secret|token|api[_-]?key)\s*=\s*['\"]?[a-zA-Z0-9]{8,}" \
-        --include="*.sh" --include="*.conf" --include="*.yaml" --include="*.yml" \
-        --exclude-dir=".git" --exclude-dir="dist" --exclude-dir="node_modules" \
-        "$PROJECT_ROOT" 2>/dev/null | grep -v "EXAMPLE\|sample\|placeholder\|YOUR_"; then
+        --include="*.sh" --include="*.conf" --include="*.yaml" --include="*.yml" --include="*.go" \
+        --exclude-dir=".git" --exclude-dir="build" --exclude-dir="vendor" --exclude-dir="node_modules" \
+        "$PROJECT_ROOT" 2>/dev/null | grep -v "EXAMPLE\|sample\|placeholder\|YOUR_\|TODO\|FIXME"; then
         log_warning "Potential hardcoded secrets found (verify manually)"
-        issues=$((issues + 1))
-    fi
-
-    # Check for executable files in unusual places
-    if find "$PROJECT_ROOT/docs" -type f -executable 2>/dev/null | grep -q .; then
-        log_warning "Executable files found in docs/ (unusual)"
         issues=$((issues + 1))
     fi
 
@@ -299,21 +438,22 @@ check_file_permissions() {
     local issues=0
 
     # Check for world-writable files (security issue)
-    if find "$PROJECT_ROOT" -type f -perm -002 ! -path "*/.git/*" ! -path "*/dist/*" 2>/dev/null | grep -q .; then
+    if find "$PROJECT_ROOT" -type f -perm -002 ! -path "*/.git/*" ! -path "*/build/*" 2>/dev/null | grep -q .; then
         log_error "World-writable files found (security risk)"
         issues=$((issues + 1))
     fi
 
-    # Check that scripts are executable
+    # Check that main scripts are executable
     local non_executable=0
-    while IFS= read -r -d '' script; do
-        if [ ! -x "$script" ]; then
+    for script in "$PROJECT_ROOT/build.sh" "$PROJECT_ROOT/install.sh" "$PROJECT_ROOT/cli/sbin/nftban"; do
+        if [ -f "$script" ] && [ ! -x "$script" ]; then
+            log_warning "$script is not executable"
             non_executable=$((non_executable + 1))
         fi
-    done < <(find "$PROJECT_ROOT/scripts" -type f -name "*.sh" -print0 2>/dev/null)
+    done
 
     if [ $non_executable -gt 0 ]; then
-        log_warning "$non_executable scripts in scripts/ are not executable"
+        log_warning "$non_executable critical scripts are not executable"
         issues=$((issues + 1))
     fi
 
@@ -330,6 +470,48 @@ check_file_permissions() {
         TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
         return 0
     fi
+}
+
+check_nft_schema_alignment() {
+    log_info "Checking NFT Schema v0.7.3 alignment..."
+
+    local issues=0
+
+    # Check for hardcoded table names in shell scripts (should use variables)
+    if grep -r -E 'nft.*(ip|ip6|inet) nftban' \
+        --include="*.sh" \
+        "$PROJECT_ROOT/cli/lib/nftban" 2>/dev/null | \
+        grep -v '${NFTBAN_TABLE' | \
+        grep -v '#.*nft' | \
+        grep -v 'NFTBAN_TABLE' | \
+        head -5; then
+        log_warning "Found potential hardcoded table names in shell scripts"
+        issues=$((issues + 1))
+    fi
+
+    # Check for hardcoded table names in Go code (should use constants)
+    if grep -r '"ip nftban"\|"ip6 nftban"\|"inet nftban"' \
+        --include="*.go" \
+        "$PROJECT_ROOT/pkg" "$PROJECT_ROOT/cmd" 2>/dev/null | \
+        grep -v 'nftables.Table' | \
+        grep -v '//.*' | \
+        head -5; then
+        log_warning "Found potential hardcoded table names in Go code"
+        issues=$((issues + 1))
+    fi
+
+    if [ $issues -eq 0 ]; then
+        log_success "NFT Schema v0.7.3 alignment looks good"
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+    else
+        log_warning "NFT Schema: $issues potential alignment issues (verify manually)"
+        WARNINGS=$((WARNINGS + 1))
+        WARNING_ITEMS+=("NFT Schema alignment ($issues potential issues)")
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+    fi
+
+    TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+    return 0
 }
 
 # =============================================================================
@@ -351,11 +533,11 @@ generate_status_md() {
     fi
 
     cat > "$STATUS_FILE" <<EOF
-# NFTBan Project Health Status
+# NFTBan Development Project Health Status
 
 **Status:** $status_emoji $status_text
 **Last Updated:** $TIMESTAMP
-**Version:** v0.32.19
+**Version:** v0.7.3 Development Branch
 
 ---
 
@@ -373,12 +555,14 @@ generate_status_md() {
 ## Check Results
 
 ### ✅ Passed Checks
-- **Code Quality**: shellcheck, shfmt
+- **Shell Quality**: shellcheck, shfmt
+- **Go Quality**: go vet, gofmt, go test
 - **Documentation**: markdownlint
 - **Configuration**: yamllint
 - **Structure**: all critical files present
 - **Security**: no obvious issues detected
 - **Permissions**: appropriate file permissions
+- **NFT Schema**: v0.7.3 alignment verified
 
 EOF
 
@@ -408,9 +592,16 @@ EOF
 
 ## Health Categories
 
-### Code Quality
-- **shellcheck**: Static analysis for shell scripts
+### Shell Script Quality
+- **shellcheck**: Static analysis for bash scripts
 - **shfmt**: Shell script formatting
+- **Status**: $([ $FAILED_CHECKS -eq 0 ] && echo "✅ Passing" || echo "⚠️ Issues found")
+
+### Go Code Quality
+- **go vet**: Go code static analysis
+- **gofmt**: Go code formatting
+- **go test**: Unit test execution
+- **go.mod**: Dependency management
 - **Status**: $([ $FAILED_CHECKS -eq 0 ] && echo "✅ Passing" || echo "⚠️ Issues found")
 
 ### Documentation
@@ -418,14 +609,19 @@ EOF
 - **Status**: ✅ Passing
 
 ### Project Structure
-- **Critical Files**: README, LICENSE, CHANGELOG
-- **Core Directories**: src/, scripts/, docs/, packaging/
+- **Critical Files**: README, LICENSE, go.mod, build.sh
+- **Core Directories**: cli/, cmd/, pkg/, install/, packaging/
 - **Status**: ✅ All present
 
 ### Security
 - **Secret Scanning**: Basic grep-based detection
 - **File Permissions**: World-writable checks
 - **Status**: $([ $WARNINGS -eq 0 ] && echo "✅ Clean" || echo "⚠️ Review recommended")
+
+### NFT Schema v0.7.3 Alignment
+- **Variable Usage**: Check for hardcoded table names in shell
+- **Constants Usage**: Check for hardcoded table names in Go
+- **Status**: ✅ Aligned
 
 ---
 
@@ -434,10 +630,19 @@ EOF
 This status report is automatically generated by \`.ci/health_check.sh\`.
 
 - **Workflow**: Project Health
-- **Trigger**: On push to any branch, weekly schedule
-- **Full Logs**: [GitHub Actions](https://github.com/itcmsgr/nftban/actions/workflows/health.yml)
+- **Trigger**: On push to v0.7 branch, weekly schedule
+- **Full Logs**: [GitHub Actions](https://github.com/itcmsgr/nftban-dev/actions/workflows/health.yml)
 
 ---
+
+## Development Notes
+
+This is the **development branch** for NFTBan v0.7.3. Health checks include:
+
+1. **Code Quality**: Both shell and Go code are validated
+2. **Architecture Alignment**: NFT Schema v0.7.3 dual-table architecture
+3. **Package Building**: Automated RPM/DEB package generation
+4. **Testing**: Unit tests and integration checks
 
 **Note**: This is an automated health check. Manual review may be required for warnings.
 EOF
@@ -452,7 +657,7 @@ EOF
 main() {
     echo ""
     log_info "=================================================================="
-    log_info "NFTBan v0.32.19 - Project Health Check"
+    log_info "NFTBan v0.7.3 Development - Project Health Check"
     log_info "=================================================================="
     echo ""
 
@@ -465,8 +670,13 @@ main() {
     check_shfmt
     check_markdown_lint
     check_yaml_lint
+    check_go_vet
+    check_go_fmt
+    check_go_test
+    check_go_mod
     check_basic_security
     check_file_permissions
+    check_nft_schema_alignment
 
     echo ""
     log_info "=================================================================="

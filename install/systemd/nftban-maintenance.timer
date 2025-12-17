@@ -1,0 +1,36 @@
+# =============================================================================
+# NFTBan v1.0.0 - Maintenance Timer (Always Active)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Run critical maintenance tasks even when NFTBan is disabled
+#
+# This timer runs INDEPENDENTLY and is ALWAYS enabled.
+# It performs critical safety checks to prevent lockouts and system issues.
+#
+# Runs every 15 minutes to:
+#   - Monitor SSH port changes (lockout prevention)
+#   - Monitor system IP changes (whitelist updates)
+#   - Run autoheal (fix permissions, create directories)
+#   - Validate critical configuration
+#
+# NOTE: This timer is ALWAYS enabled during installation and should NOT
+# be disabled unless you are completely removing NFTBan.
+# =============================================================================
+
+[Unit]
+Description=NFTBan Maintenance Timer (Always Active)
+Documentation=https://nftban.com/docs/maintenance
+After=network-online.target
+
+[Timer]
+# Run every 15 minutes
+OnCalendar=*:0/15
+# Small randomized delay to avoid thundering herd
+RandomizedDelaySec=2m
+# Catch up on missed runs after system sleep/shutdown
+Persistent=true
+# Link to the service unit
+Unit=nftban-maintenance.service
+
+[Install]
+WantedBy=timers.target

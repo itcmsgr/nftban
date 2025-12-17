@@ -1,0 +1,156 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan v1.0 - Suricata Rules Initial Setup
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Initial Suricata rules download and configuration
+# Location: /usr/lib/nftban/setup/setup_suricata_rules.sh
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# meta:name=setup_suricata_rules
+# meta:type=setup
+# meta:header=Suricata Rules Setup
+# meta:version=1.0.0
+#
+# meta:created_date=2025-11-29
+# =============================================================================
+
+set -Eeuo pipefail
+IFS=$'\n\t'
+
+# Colors
+readonly RED='\033[0;31m'
+readonly GREEN='\033[0;32m'
+readonly YELLOW='\033[1;33m'
+readonly BLUE='\033[0;34m'
+readonly NC='\033[0m'
+
+print_status() {
+    echo -e "${GREEN}[✓]${NC} $1" >&2
+}
+
+print_error() {
+    echo -e "${RED}[✗]${NC} $1" >&2
+}
+
+print_info() {
+    echo -e "${BLUE}[i]${NC} $1" >&2
+}
+
+print_warning() {
+    echo -e "${YELLOW}[!]${NC} $1" >&2
+}
+
+main() {
+    print_info "NFTBan Suricata Rules Setup"
+    echo ""
+
+    # Check if running as root
+    if [[ $EUID -ne 0 ]]; then
+        print_error "This script must be run as root"
+        exit 1
+    fi
+
+    # Check if suricata-update is installed
+    if ! command -v suricata-update >/dev/null 2>&1; then
+        print_error "suricata-update not found"
+        print_info "Install: pip3 install --upgrade suricata-update"
+        exit 1
+    fi
+
+    # Check if Suricata is installed
+    if ! command -v suricata >/dev/null 2>&1; then
+        print_error "Suricata not found"
+        print_info "Install Suricata first"
+        exit 1
+    fi
+
+    print_info "Suricata version: $(suricata --version | head -1)"
+    print_info "suricata-update version: $(suricata-update --version 2>&1 | grep -oP 'version \K[0-9.]+' || echo 'unknown')"
+    echo ""
+
+    # Step 1: Update source index
+    print_info "Updating rule source index..."
+    if suricata-update update-sources 2>&1 | grep -q "Source index updated"; then
+        print_status "Source index updated"
+    else
+        print_warning "Source index may already be current"
+    fi
+    echo ""
+
+    # Step 2: List available sources
+    print_info "Available rule sources:"
+    suricata-update list-sources 2>&1 | grep -E "^Name:|Summary:" | head -10
+    echo ""
+
+    # Step 3: Enable ET Open (free ruleset)
+    print_info "Enabling ET/Open ruleset (free)..."
+    if suricata-update enable-source et/open 2>&1; then
+        print_status "ET/Open ruleset enabled"
+    else
+        print_warning "ET/Open may already be enabled"
+    fi
+    echo ""
+
+    # Step 4: Download and install rules
+    print_info "Downloading Suricata rules (this may take a few minutes)..."
+    if suricata-update 2>&1 | tee /tmp/suricata-update.log | grep -q "Writing rules"; then
+        print_status "Rules downloaded and installed"
+
+        # Show rule count
+        local rule_count
+        rule_count=$(find /var/lib/suricata/rules -name "*.rules" -exec cat {} \; 2>/dev/null | grep -c "^alert" || echo "0")
+        print_info "Total alert rules: $rule_count"
+    else
+        print_error "Rule download failed"
+        cat /tmp/suricata-update.log >&2
+        exit 1
+    fi
+    echo ""
+
+    # Step 5: Restart Suricata to load new rules
+    print_info "Restarting Suricata to load rules..."
+    if systemctl is-active --quiet suricata.service; then
+        systemctl restart suricata.service
+        sleep 2
+
+        if systemctl is-active --quiet suricata.service; then
+            print_status "Suricata restarted successfully"
+        else
+            print_error "Suricata failed to restart"
+            systemctl status suricata.service --no-pager -l
+            exit 1
+        fi
+    else
+        print_warning "Suricata not running, starting it..."
+        systemctl start suricata.service
+        sleep 2
+
+        if systemctl is-active --quiet suricata.service; then
+            print_status "Suricata started successfully"
+        else
+            print_error "Suricata failed to start"
+            systemctl status suricata.service --no-pager -l
+            exit 1
+        fi
+    fi
+    echo ""
+
+    # Summary
+    print_status "Suricata rules setup complete!"
+    echo ""
+    print_info "Rule Details:"
+    echo "  Rules directory: /var/lib/suricata/rules/"
+    echo "  Enabled sources: et/open"
+    echo "  Update schedule: Weekly (Sunday 3 AM)"
+    echo ""
+    print_info "Manual update command:"
+    echo "  suricata-update && systemctl restart suricata"
+    echo ""
+    print_info "Check eve.json for alerts:"
+    echo "  tail -f /var/log/suricata/eve.json | jq 'select(.event_type==\"alert\")'"
+    echo ""
+}
+
+main "$@"

@@ -1,0 +1,134 @@
+# =============================================================================
+# Suricata Rule Enable Configuration (LOCAL OVERRIDES - EXAMPLE)
+# =============================================================================
+# This file overrides settings from enable.conf
+# Safe from updates - your customizations are preserved here
+#
+# Copy this file to enable.conf.local and customize:
+#   cp enable.conf.local.example enable.conf.local
+#
+# Then edit enable.conf.local with your custom rule selections
+# =============================================================================
+
+# =============================================================================
+# HOW THIS WORKS
+# =============================================================================
+# 1. enable.conf       = Default rules (managed by NFTBan, updated on upgrades)
+# 2. enable.conf.local = YOUR custom overrides (never overwritten)
+#
+# suricata-update will load BOTH files:
+#   - First: enable.conf (defaults)
+#   - Then: enable.conf.local (your additions/overrides)
+#
+# =============================================================================
+
+# =============================================================================
+# EXAMPLE 1: Enable Mail Server Protection
+# =============================================================================
+# Uncomment these if you run Postfix, Exim, Dovecot, or other mail services:
+
+# re:smtp
+# re:SMTP
+# re:imap
+# re:IMAP
+# re:pop3
+# re:POP3
+# re:mail
+
+
+# =============================================================================
+# EXAMPLE 2: Enable FTP Protection
+# =============================================================================
+# Uncomment if you run ProFTPD, vsftpd, Pure-FTPd, etc:
+
+# re:ftp
+# re:FTP
+
+
+# =============================================================================
+# EXAMPLE 3: Enable Advanced Malware Detection
+# =============================================================================
+# More aggressive malware detection (higher CPU usage):
+
+# re:ET TROJAN
+# re:trojan
+# re:Trojan
+# re:RAT
+# re:ransomware
+# re:exploit.*kit
+
+
+# =============================================================================
+# EXAMPLE 4: Enable Database Protection
+# =============================================================================
+# If you run MySQL, PostgreSQL, MongoDB, etc:
+
+# re:mysql
+# re:MySQL
+# re:postgresql
+# re:PostgreSQL
+# re:mongodb
+# re:redis
+
+
+# =============================================================================
+# EXAMPLE 5: Add Custom Rule Groups
+# =============================================================================
+# Your own custom rule categories:
+
+# group:mycompany-rules
+# group:custom-app-protection
+
+
+# =============================================================================
+# EXAMPLE 6: Enable Specific ET Categories
+# =============================================================================
+# Emerging Threats specific categories:
+
+# re:ET COMPROMISED
+# re:ET EXPLOIT
+# re:ET WORM
+
+
+# =============================================================================
+# EXAMPLE 7: Enable TLS/Certificate Monitoring
+# =============================================================================
+# Deep TLS inspection (CPU-heavy but useful):
+
+# re:certificate
+# re:TLS.*suspicious
+# re:SSL.*suspicious
+
+
+# =============================================================================
+# EXAMPLE 8: Custom Patterns
+# =============================================================================
+# Match specific CVEs, malware families, or attack patterns:
+
+# re:CVE-2024-
+# re:Log4j
+# re:Heartbleed
+# re:Shellshock
+# re:WannaCry
+
+
+# =============================================================================
+# TESTING & VALIDATION
+# =============================================================================
+# After editing enable.conf.local:
+#
+#   1. Update rules:
+#      suricata-update --enable-conf /etc/suricata/enable.conf \
+#                      --enable-conf /etc/suricata/enable.conf.local \
+#                      --disable-conf /etc/suricata/disable.conf
+#
+#   2. Test config:
+#      suricata -T -c /etc/suricata/suricata.yaml
+#
+#   3. Check rule count:
+#      grep "rule reload complete" /var/log/suricata/suricata.log
+#
+#   4. Restart:
+#      systemctl restart suricata
+#
+# =============================================================================

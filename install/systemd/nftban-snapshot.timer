@@ -1,0 +1,17 @@
+[Unit]
+Description=NFTBan Hourly Configuration Snapshot Timer
+Documentation=man:nftban(8)
+Documentation=https://nftban.com/docs
+
+[Timer]
+# Run hourly to create configuration snapshots
+OnCalendar=hourly
+# Run 10 minutes after boot
+OnBootSec=10min
+# Run if missed
+Persistent=true
+# Random delay 0-5min to avoid thundering herd
+RandomizedDelaySec=5min
+
+[Install]
+WantedBy=timers.target

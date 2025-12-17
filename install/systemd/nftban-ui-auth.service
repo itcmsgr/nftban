@@ -1,0 +1,45 @@
+[Unit]
+Description=NFTBan UI Authentication Daemon
+Documentation=man:nftban(8)
+Requires=nftban-ui-auth.socket
+After=nftban-ui-auth.socket
+
+[Service]
+Type=simple
+ExecStart=/usr/libexec/nftban-ui-auth
+Restart=on-failure
+RestartSec=5s
+
+# Runtime directory
+RuntimeDirectory=nftban-ui
+RuntimeDirectoryMode=0750
+
+# Run as root with nftban group for socket access
+User=root
+Group=nftban
+UMask=0077
+
+# Security hardening - all compatible with direct PAM library (no su/setuid)
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+LockPersonality=yes
+# NOTE: MemoryDenyWriteExecute is intentionally NOT set here.
+# It breaks Go binaries on some kernel + LSM combinations
+# (e.g. Ubuntu 24.04 with AppArmor + Landlock, future SELinux distros).
+# Security is maintained via non-root user, capabilities bounding, and other restrictions.
+SystemCallFilter=@system-service
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-ui-auth
+
+[Install]
+WantedBy=multi-user.target

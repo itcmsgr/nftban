@@ -1,0 +1,99 @@
+#!/usr/sbin/nft -f
+# =============================================================================
+# NFTBan v0.7.3 - IPv4 Firewall Configuration
+# =============================================================================
+# Architecture: Separate ip/ip6 tables (canonical schema)
+# Table: ip nftban (IPv4 only)
+# Managed by: nftban-core (Go binary via netlink)
+# =============================================================================
+
+table ip nftban {
+    # =========================================================================
+    # SETS - Managed by nftban-core sync
+    # =========================================================================
+
+    # Whitelist (admin IPs + internal networks)
+    set whitelist_ipv4 {
+        type ipv4_addr
+        flags interval
+        comment "Permanent IPv4 whitelist"
+    }
+
+    # Blacklist (ALL sources consolidated: manual + feeds + geoban)
+    # Supports both permanent and temporary bans via timeout parameter
+    set blacklist_ipv4 {
+        type ipv4_addr
+        flags interval,timeout
+        comment "IPv4 blacklist (permanent + temporary with timeout)"
+    }
+
+    # Service ports
+    set tcp_ports {
+        type inet_service
+        comment "Allowed TCP ports"
+        elements = { 22, 80, 443 }
+    }
+
+    set udp_ports {
+        type inet_service
+        comment "Allowed UDP ports"
+    }
+
+    # =========================================================================
+    # INPUT CHAIN - CORRECT RULE ORDER (security-critical!)
+    # =========================================================================
+    chain input {
+        type filter hook input priority filter; policy drop;
+
+        # 1. Drop invalid packets
+        ct state invalid counter drop comment "invalid state"
+
+        # 2. Always allow loopback
+        iif lo counter accept comment "loopback"
+
+        # 3. Whitelist (bypass all checks)
+        ip saddr @whitelist_ipv4 counter accept comment "whitelist - full access"
+
+        # 4. BLACKLIST (⚠️ BEFORE established!) - permanent + temporary with timeout
+        ip saddr @blacklist_ipv4 counter drop comment "blacklist (permanent + temporary)"
+
+        # 5. NOW allow established connections (safe after all bans checked)
+        ct state established,related counter accept comment "established connections"
+
+        # 7. ICMP (ping, traceroute, etc.)
+        ip protocol icmp icmp type { echo-reply, destination-unreachable, echo-request, time-exceeded } counter accept comment "ICMPv4"
+
+        # 8. CT LIMITS (DDoS protection - SSH)
+        ct state new tcp dport 22 ct count over 5 counter drop comment "SSH: max 5 concurrent per IP"
+
+        # 9. CT LIMITS (DDoS protection - HTTP/HTTPS)
+        ct state new tcp dport { 80, 443 } ct count over 50 counter drop comment "HTTP(S): max 50 concurrent per IP"
+
+        # 10. RATE LIMITS (portscan detection)
+        tcp flags syn ct state new limit rate 100/second burst 200 packets log prefix "nftban: portscan: "
+
+        # 11. TCP SERVICES
+        tcp dport @tcp_ports counter accept comment "TCP services"
+
+        # 12. UDP SERVICES
+        udp dport @udp_ports counter accept comment "UDP services"
+
+        # 13. DEFAULT DENY (log dropped packets)
+        log prefix "nftban: drop: " limit rate 10/minute
+        counter drop comment "default deny"
+    }
+
+    # =========================================================================
+    # FORWARD CHAIN
+    # =========================================================================
+    chain forward {
+        type filter hook forward priority filter; policy drop;
+    }
+
+    # =========================================================================
+    # OUTPUT CHAIN
+    # =========================================================================
+    chain output {
+        type filter hook output priority filter; policy accept;
+    }
+}

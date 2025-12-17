@@ -1,217 +1,48 @@
-nftban (0.32.27-1) stable; urgency=high
+nftban-ui (1.0.0-1) stable; urgency=medium
 
-  * CRITICAL FIX: Stats command arithmetic error (lines 631, 650-651) with || true
-  * CRITICAL FIX: Uninstaller leaves files behind (add /usr/lib + /usr/share to purge)
-  * IMPROVE: Complete cleanup on dpkg --purge nftban
-  * VERIFY: Autotimer runs autoheal every 15min (nftban-maintenance.timer)
-  * VERIFY: FHS checks run automatically
+  * NFTBan v1.0.0 - Unified Security Platform Release
+  * Unified security platform with comprehensive threat protection
+  * 3-group security model (nftban, nftban-web, nftban-auditors)
+  * Enhanced PAM socket authentication
+  * Modern dashboard with real-time metrics
+  * FHS compliant directory structure
+  * Complete CLI with 44+ commands
+  * Full documentation (man page, wiki, guides)
 
- -- Antonios Voulvoulis <contact@nftban.com>  Sun, 10 Nov 2025 09:00:00 +0200
+ -- Antonios Voulvoulis <contact@nftban.com>  Wed, 11 Dec 2024 12:00:00 +0000
 
-nftban (0.32.26-1) stable; urgency=medium
+nftban-ui (0.6.0-1) unstable; urgency=high
 
-  * FIX: Missing banners in 9 CLI commands (port, services, stats, status, etc.)
-  * FIX: Empty jail name bug in fail2ban jails list
-  * FIX: Cloudflare module crashes due to strict error handling
-  * FIX: Feed downloads failing silently (background mode)
-  * FIX: SPAMHAUS + 6 feeds failing (GO parser limitations)
-  * IMPROVE: Port scanning with netstat fallback (ss → netstat → lsof)
-  * IMPROVE: Feed downloads now foreground with immediate feedback
-  * IMPROVE: Bash parser fallback handles all 16 feed formats
-  * IMPROVE: Error-safe banner loading in all modules
-  * VERSION: Aligned all 59 modules to v0.32.26
+  * NFTBan v0.6.0 - Prometheus/Grafana Integration Release
+  * Added bandwidth monitoring with real-time charts
+  * Added 4 Grafana dashboards for metrics visualization
+  * Added Prometheus metrics exporter (16+ metrics)
+  * Added comprehensive health checks for bandwidth module
+  * Security: Updated all components, shellcheck verified
+  * Complete GUI redesign with Chart.js v4
+  * 121 scripts aligned to standard header format
+  * Full package manager testing (DEB/RPM)
 
- -- Antonios Voulvoulis <contact@nftban.com>  Sun, 10 Nov 2025 06:40:00 +0200
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 17 Nov 2025 23:00:00 +0000
 
-nftban (0.32.25-1) stable; urgency=critical
+nftban-ui (0.5.1-1) unstable; urgency=high
 
-  * CRITICAL: Disable default fail2ban sshd jail (NFTBan manages nftban-sshd instead)
-  * CRITICAL: Auto-whitelist system IPs in postinst (SSH_CLIENT + public IPv4/IPv6)
-  * FIX: Align DEB prerm with RPM %preun (capture service states on upgrade)
-  * FIX: Align DEB postrm with RPM %postun (README naming, comments)
-  * ALIGN: Both DEB and RPM now use identical install/upgrade/uninstall logic
-  * ARCH: NFTBan manages only nftban-* jails via 'nftban fail2ban' commands
+  * CRITICAL SECURITY FIX: CVE-2025-NFTBAN-001 detection added
+  * Installer now refuses installation if inet filter table exists
+  * Added nftables security check to health system
+  * Added GUI port access control documentation
+  * Security hardening improvements
 
- -- Antonios Voulvoulis <contact@nftban.com>  Sun, 10 Nov 2025 01:30:00 +0200
+ -- Antonios Voulvoulis <itcmsgr@example.com>  Sat, 16 Nov 2024 20:00:00 +0200
 
-nftban (0.32.24-1) stable; urgency=medium
+nftban-ui (0.5.0-1) unstable; urgency=medium
 
-  * UI: NICE_DISPLAYS_FIX - Unicode box drawing for port/services/module reports
-  * UI: Shorter timestamps in CLI displays (YYYY-MM-DD HH:MM)
-  * FIX: DEB prerm upgrade handling (no interactive questions during upgrade)
-  * FIX: DEB postinst cleanup of stale systemd units before autoheal
-  * FIX: autoheal.sh systemctl error handling (prevents upgrade failures)
-  * UPDATE: All script headers and version references to v0.32.24
-  * ALIGN: RPM and DEB packaging scripts to v0.32.24
+  * Initial Debian packaging for v0.5.0
+  * Socket-based PAM authentication (no setuid binaries)
+  * Systemd socket activation for authentication service
+  * 8-layer security architecture
+  * Modern web UI with JWT session management
+  * Complete systemd hardening
+  * Resource limits and cgroup awareness
 
- -- Antonios Voulvoulis <contact@nftban.com>  Sun, 10 Nov 2025 00:15:00 +0200
-
-nftban (0.32.23-1) stable; urgency=critical
-
-  * CRITICAL FIX: Revert ChatGPT symlink approach (binaries back to /usr/lib/nftban/bin/)
-  * FIX: Align RPM and DEB packaging to use same binary locations
-  * FIX: Change binary permissions from 0750 to 0755 (executable by nftban group)
-  * FIX: Remove /usr/sbin/ symlinks that caused "binary not found" errors
-  * FIX: stats --today and --week flags
-  * FIX: whitelist system list alias
-  * FIX: geoban help routing (was showing geoip help)
-  * FIX: fail2ban status blank line
-  * UPDATE: All 61+ script headers to v0.32.23
-  * ALIGN: Both x86_64/amd64 and aarch64/arm64 CPU architectures
-
- -- Antonios Voulvoulis <contact@nftban.com>  Sat, 09 Nov 2025 18:50:00 +0200
-
-nftban (0.32.21-1) stable; urgency=medium
-
-  * FHS alignment: Move Go binary wrappers to /usr/sbin/
-  * Architecture normalization: Support both x86_64/amd64 and aarch64/arm64
-  * Fix services check: Detect nftban-geoip binary correctly
-  * Security hardening: 0750 root:nftban for all binaries and private dirs
-  * Backward compatibility: Symlinks maintain old paths
-
- -- Antonios Voulvoulis <contact@nftban.com>  Fri, 08 Nov 2025 17:55:00 +0200
-
-nftban (0.32.14-1) stable; urgency=medium
-
-  * Fixed 18 SC2155 shellcheck issues (report_port, cmd_stats, health, geoip_download)
-
- -- Antonios Voulvoulis <contact@nftban.com>  Fri, 08 Nov 2025 15:00:00 +0200
-
-nftban (0.32.13-1) stable; urgency=medium
-
-  * Fixed 17 SC2155 shellcheck issues (cmd_report, cmd_profile, fail2ban)
-  * Fixed Go module build in release-binaries.yml workflow
-
- -- Antonios Voulvoulis <contact@nftban.com>  Fri, 08 Nov 2025 14:00:00 +0200
-
-nftban (0.32.12-1) stable; urgency=medium
-
-  * Fixed 32 SC2155 shellcheck issues across 3 files
-
- -- Antonios Voulvoulis <contact@nftban.com>  Fri, 08 Nov 2025 13:00:00 +0200
-
-nftban (0.32.11-1) stable; urgency=medium
-
-  * Fixed shellcheck issues in nftban_geoban.sh
-
- -- Antonios Voulvoulis <contact@nftban.com>  Fri, 08 Nov 2025 11:00:00 +0200
-
-nftban (0.32.10-1) stable; urgency=medium
-
-  * FIX: Added GeoIP as MANDATORY dependency (was incorrectly optional)
-  * REQUIREMENT: geoip-bin and geoip-database now required dependencies
-  * DOCS: Corrected package description - GeoIP is mandatory, not optional
-
- -- Antonios Voulvoulis <contact@nftban.com>  Fri, 08 Nov 2025 09:00:00 +0200
-
-nftban (0.32.9-1) stable; urgency=medium
-
-  * FIX: Corrected version display in nftban CLI (was showing outdated version)
-  * FIX: Added RHEL/Rocky Apache log patterns (*access_log without .log extension)
-  * FIX: Comprehensive logpath validation to prevent fail2ban crashes
-  * ENHANCEMENT: Multiline logpath parsing with glob pattern validation
-  * ENHANCEMENT: Fail2ban jail enable now validates log files exist before enabling
-
- -- Antonios Voulvoulis <contact@nftban.com>  Fri, 08 Nov 2025 05:00:00 +0200
-
-nftban (0.32.8-1) stable; urgency=medium
-
-  * NEW: Fail2ban auto-discovery command for automatic jail detection
-  * ENHANCEMENT: Auto-discovery scans system for compatible services
-  * ENHANCEMENT: Auto-discovery --enable flag to enable discovered jails
-  * DOCS: Updated man page with auto-discovery command
-  * ENHANCEMENT: Bash completion for auto-discovery command
-
- -- Antonios Voulvoulis <contact@nftban.com>  Fri, 08 Nov 2025 04:00:00 +0200
-
-nftban (0.32.7-1) stable; urgency=medium
-
-  * FIX: DirectAdmin passive FTP port range syntax (35000-35999)
-  * FIX: Auto-enable DirectAdmin fail2ban jail on panel setup
-  * FIX: Show all fail2ban jails (enabled and disabled) in CLI
-  * FIX: SIGPIPE issues with pipefail in fail2ban functions
-  * FIX: Panel status display with pipefail-safe helpers
-  * DOCS: Build dependency checks and installation guidance
-  * DOCS: Updated man pages for fail2ban jails command
-  * ENHANCEMENT: Bash completion for geoban command
-
- -- Antonios Voulvoulis <contact@nftban.com>  Fri, 08 Nov 2025 02:30:00 +0200
-
-nftban (0.32.6-1) stable; urgency=medium
-
-  * NEW: Fail2ban health-fix command with comprehensive jail checking
-  * NEW: Automated service detection before enabling jails (12 jail types)
-  * NEW: Health check integration for fail2ban jails in daily checks
-  * NEW: Autoheal integration to auto-disable problematic jails
-  * NEW: Report generation with --save-report and --mail options
-  * NEW: Interactive TUI menu integration for fail2ban health-fix
-  * ENHANCEMENT: Bash completion for all fail2ban commands
-  * ENHANCEMENT: Comprehensive service/log file checks before jail enable
-  * DOCS: Complete man page section for fail2ban integration
-  * FIX: Report location standardized to /var/log/nftban/reports/
-  * FIX: SSH session compatibility for report output capture
-  * FEATURE: Only disables crashing jails, never auto-enables
-
- -- Antonios Voulvoulis <contact@nftban.com>  Thu, 07 Nov 2025 18:00:00 +0200
-
-nftban (0.32.0-1) stable; urgency=critical
-
-  * CRITICAL FIX: Single source of truth for feeds (removed hardcoded Go URLs)
-  * BREAKING: Go binary no longer downloads feeds (loads from disk)
-  * NEW ARCHITECTURE: Bash downloads → Go loads (fast, atomic, maintainable)
-  * FIX: Feed name case mismatch (FIREHOL_ANONYMOUS vs firehol_anonymous)
-  * FIX: Missing nftban_feeds_list_enabled() function
-  * FIX: Go binary wrappers architecture detection (-x86_64 suffix)
-  * FIX: Port scan auto-ban integration (calls nftban ban command)
-  * FIX: Port scan status display (check portscan_detection chain)
-  * FIX: GitHub Actions glibc version mismatch in RPM builds
-  * DOCS: Updated README with BETA WARNING (not production-ready)
-  * ENHANCEMENT: Feeds now auto-discovered from config (no hardcoding)
-  * ENHANCEMENT: All version references aligned to v0.32.6
-
- -- Antonios Voulvoulis <contact@nftban.com>  Wed, 06 Nov 2025 14:00:00 +0200
-
-nftban (0.30.1-1) stable; urgency=critical
-
-  * CRITICAL SECURITY FIX: Blacklist now checked BEFORE service ports
-  * Fix: Set name typo in maintenance.sh (whitelist_v4)
-  * Fix: Chain name consistency (input not input_main)
-  * Fix: Use numeric priorities (-5, 0) instead of symbolic names
-  * Fix: Default policy changed to drop (secure by default)
-  * Add: Runtime ban sets auto-expire after 24h (timeout flag)
-  * Add: Counters on all rules for observability
-  * Doc: ICMP policy explicitly documented (before blacklist)
-  * Implement all ChatGPT architecture review recommendations
-  * Implementation score: 10/10 (reference-grade)
-
- -- Antonios Voulvoulis <contact@nftban.com>  Tue, 05 Nov 2025 12:00:00 +0200
-
-nftban (0.30.0-1) stable; urgency=medium
-
-  * Major upgrade to v0.32.6 with inventory monitoring
-  * Add advanced inventory system (processes, packages, firewall state)
-  * Add baseline management with drift detection
-  * Add system resource monitoring (disk, CPU, RAM, swap, inodes)
-  * Add alert throttling to prevent notification spam
-  * Add cryptographic verification and signing
-  * Add smart mail adapter (auto-detects best transport)
-  * Add per-file .local configuration override system
-  * Add Polkit-based auditors group for non-root access
-  * Require Python 3 for inventory helpers
-
- -- Antonios Voulvoulis <contact@nftban.com>  Sun, 03 Nov 2025 20:30:00 +0200
-
-nftban (0.10.0-1) stable; urgency=medium
-
-  * Complete rewrite for v0.10.0
-  * Add commit-confirm recovery system
-  * Add Go binaries for 10-60x faster processing
-  * Add comprehensive health checks
-  * Add nftban-auditors group for non-root access
-  * Improve feed management system
-  * Add port scan detection module
-  * Add automatic SSH port detection
-  * Add system IP whitelisting
-  * Add extensive documentation
-
- -- Antonios Voulvoulis <contact@nftban.com>  Tue, 05 Nov 2025 12:00:00 +0200
+ -- Antonios Voulvoulis <itcmsgr@example.com>  Thu, 14 Nov 2024 12:00:00 +0200

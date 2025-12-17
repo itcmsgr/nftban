@@ -1,0 +1,26 @@
+[Unit]
+Description=NFTBan Suricata Rules Update
+Documentation=man:nftban(8) https://nftban.com/docs
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+
+# Run as root
+User=root
+Group=root
+
+# Update rules and restart suricata
+ExecStart=/bin/bash -c 'suricata-update update-sources && suricata-update && systemctl restart suricata.service'
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-suricata-update
+
+# Timeout (10 minutes max)
+TimeoutStartSec=600
+
+[Install]
+WantedBy=multi-user.target

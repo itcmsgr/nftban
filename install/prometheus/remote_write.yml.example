@@ -1,0 +1,31 @@
+# Grafana Cloud Remote Write Configuration
+# Append to prometheus.yml or use as separate config
+
+# Remote write to Grafana Cloud
+remote_write:
+  - url: https://prometheus-prod-XX-prod-XX-XX.grafana.net/api/prom/push
+    basic_auth:
+      username: YOUR_GRAFANA_CLOUD_INSTANCE_ID
+      password: YOUR_GRAFANA_CLOUD_API_KEY
+    
+    # Write relabeling (optional - reduce data sent)
+    write_relabel_configs:
+      # Only send nftban metrics
+      - source_labels: [__name__]
+        regex: 'nftban_.*'
+        action: keep
+    
+    # Queue configuration
+    queue_config:
+      capacity: 10000
+      max_shards: 10
+      min_shards: 1
+      max_samples_per_send: 1000
+      batch_send_deadline: 5s
+      min_backoff: 30ms
+      max_backoff: 100ms
+
+# Alternative: Remote write to Prometheus Cloud (if using)
+# remote_write:
+#   - url: https://your-prometheus-endpoint/api/v1/write
+#     bearer_token: YOUR_AUTH_TOKEN

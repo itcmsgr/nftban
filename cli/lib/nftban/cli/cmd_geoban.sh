@@ -1,0 +1,288 @@
+#!/usr/bin/env bash
+# =============================================================================
+
+# Source central config for canonical paths (NO HARDCODED FALLBACKS)
+# shellcheck source=/etc/nftban/nftban.conf
+[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+
+# Load JSON helper for --json support
+[[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
+[[ -z "${NFTBAN_CONFIG_DIR:-}" ]] && readonly NFTBAN_CONFIG_DIR="/etc/nftban"
+[[ -z "${NFTBAN_DATA_DIR:-}" ]] && readonly NFTBAN_DATA_DIR="/var/lib/nftban"
+[[ -z "${NFTBAN_CACHE_DIR:-}" ]] && readonly NFTBAN_CACHE_DIR="/var/cache/nftban"
+
+# Load strict mode library
+# shellcheck source=/usr/lib/nftban/lib/strict.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
+else
+    # Fallback to manual strict mode
+    set -Eeuo pipefail
+fi
+
+# Load version library
+# shellcheck source=/usr/lib/nftban/lib/version.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/version.sh"
+fi
+JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
+if [[ -f "$JSON_HELPER" ]]; then
+    # shellcheck source=/dev/null
+    source "$JSON_HELPER"
+fi
+# NFTBan v1.0.0 - GeoBan CLI Handler
+# =============================================================================
+
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: CLI interface for country-based IP blocking (wrapper for geoip)
+#
+# meta:name=cmd_geoban
+# meta:type=cli
+# meta:header=GeoBan CLI Handler
+# meta:version=1.0.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# meta:created_date=2025-11-06
+# meta:updated_date=2025-11-24
+# =============================================================================
+
+
+# Enhanced strict mode
+IFS=$'\n\t'
+umask 027
+
+# Prevent double-loading
+[[ -n "${NFTBAN_CLI_GEOBAN_LOADED:-}" ]] && return 0
+readonly NFTBAN_CLI_GEOBAN_LOADED=1
+
+# =============================================================================
+
+# MAIN CLI HANDLER
+# =============================================================================
+
+
+nftban_cmd_geoban() {
+    # Main GeoBan command handler - wraps geoip commands
+    # Args: subcommand [options]
+    #
+    # This provides a user-friendly alias:
+    #   nftban geoban ban CN    ->  nftban geoban ban CN
+    #   nftban geoban whitelist US  ->  nftban geoban whitelist US
+
+    local subcommand="${1:-help}"
+
+    # Check if --json flag is present - skip banner for JSON output
+    local json_mode="false"
+    for arg in "$@"; do
+        [[ "$arg" == "--json" ]] && json_mode="true"
+    done
+
+    # Show banner (skip for JSON output)
+    if [[ "$json_mode" != "true" ]]; then
+        if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
+            # shellcheck source=/dev/null
+            source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+            if [[ $(type -t nftban_banner) == "function" ]]; then
+                nftban_banner
+            fi
+        fi
+        echo ""
+    fi
+
+    # Load geoip command handler
+    if ! declare -f nftban_cmd_geoip >/dev/null 2>&1; then
+        source /usr/lib/nftban/cli/cmd_geoip.sh || {
+            echo "ERROR: Failed to load geoip command handler" >&2
+            return 1
+        }
+    fi
+
+    # Map geoban subcommands to geoip subcommands
+    case "$subcommand" in
+        stats)
+            # Stats command for GUI/API - provides JSON output
+            nftban_geoban_stats "$@"
+            ;;
+        ban|unban|whitelist|unwhitelist|list|update|status|config|refresh)
+            # Pass directly to geoip handler
+            nftban_cmd_geoip "$@"
+            ;;
+        help|--help|-h)
+            nftban_geoban_help
+            ;;
+        *)
+            echo "ERROR: Unknown geoban command: $subcommand" >&2
+            nftban_geoban_help
+            return 1
+            ;;
+    esac
+}
+
+# =============================================================================
+# STATS FUNCTION (for API/GUI)
+# =============================================================================
+
+nftban_geoban_stats() {
+    local json_mode="false"
+
+    # Check for --json flag
+    for arg in "$@"; do
+        [[ "$arg" == "--json" ]] && json_mode="true"
+    done
+
+    # Get banned countries from geoban.d directory
+    local banned_countries=()
+    local whitelisted_countries=()
+    local total_blocked_ips=0
+
+    # Read banned countries
+    local geoban_dir="${NFTBAN_CONFIG_DIR}/geoban.d"
+    if [[ -d "$geoban_dir" ]]; then
+        # Use glob safely - check if files exist
+        shopt -s nullglob 2>/dev/null || true
+        for file in "$geoban_dir"/*.conf; do
+            [[ -f "$file" ]] || continue
+            local cc
+            cc=$(basename "$file" .conf)
+            # Check if it's a ban or whitelist
+            if grep -q "^MODE=.*ban" "$file" 2>/dev/null; then
+                banned_countries+=("$cc")
+                # Count IPs in the country file
+                local ip_file="${NFTBAN_CACHE_DIR}/geoban/${cc}.txt"
+                if [[ -f "$ip_file" ]]; then
+                    local count
+                    count=$(wc -l < "$ip_file" 2>/dev/null) || count=0
+                    total_blocked_ips=$((total_blocked_ips + count))
+                fi
+            elif grep -q "^MODE=.*whitelist" "$file" 2>/dev/null; then
+                whitelisted_countries+=("$cc")
+            fi
+        done
+        shopt -u nullglob 2>/dev/null || true
+    fi
+
+    local banned_count=${#banned_countries[@]}
+    local whitelisted_count=${#whitelisted_countries[@]}
+
+    # Check if geoip database is available
+    local geoip_enabled="false"
+    local db_path="${NFTBAN_DATA_DIR}/geoip/GeoLite2-City.mmdb"
+    [[ -f "$db_path" ]] && geoip_enabled="true"
+
+    if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
+        local banned_json="["
+        local first=true
+        for cc in "${banned_countries[@]}"; do
+            [[ "$first" == "false" ]] && banned_json+=","
+            banned_json+="\"$cc\""
+            first=false
+        done
+        banned_json+="]"
+
+        local whitelist_json="["
+        first=true
+        for cc in "${whitelisted_countries[@]}"; do
+            [[ "$first" == "false" ]] && whitelist_json+=","
+            whitelist_json+="\"$cc\""
+            first=false
+        done
+        whitelist_json+="]"
+
+        local data
+        if command -v jq &>/dev/null; then
+            data=$(jq -n \
+                --argjson banned_count "$banned_count" \
+                --argjson whitelisted_count "$whitelisted_count" \
+                --argjson total_blocked_ips "$total_blocked_ips" \
+                --argjson geoip_enabled "$geoip_enabled" \
+                --argjson banned_countries "$banned_json" \
+                --argjson whitelisted_countries "$whitelist_json" \
+                '{
+                    geoban: {
+                        enabled: $geoip_enabled,
+                        banned_countries: $banned_count,
+                        whitelisted_countries: $whitelisted_count,
+                        total_blocked_ips: $total_blocked_ips,
+                        countries_banned: $banned_countries,
+                        countries_whitelisted: $whitelisted_countries
+                    }
+                }')
+        else
+            data="{\"geoban\":{\"enabled\":$geoip_enabled,\"banned_countries\":$banned_count,\"whitelisted_countries\":$whitelisted_count,\"total_blocked_ips\":$total_blocked_ips,\"countries_banned\":$banned_json,\"countries_whitelisted\":$whitelist_json}}"
+        fi
+
+        json_output "true" "$data"
+        return 0
+    fi
+
+    # Human-readable output
+    echo "GeoBan Statistics"
+    echo "================="
+    echo ""
+    echo "  GeoIP Enabled:      $geoip_enabled"
+    echo "  Banned Countries:   $banned_count"
+    echo "  Whitelisted:        $whitelisted_count"
+    echo "  Total Blocked IPs:  $total_blocked_ips"
+    echo ""
+    if [[ $banned_count -gt 0 ]]; then
+        echo "  Countries Banned:   ${banned_countries[*]}"
+    fi
+    if [[ $whitelisted_count -gt 0 ]]; then
+        echo "  Countries Allowed:  ${whitelisted_countries[*]}"
+    fi
+}
+
+# =============================================================================
+# HELP
+# =============================================================================
+
+
+nftban_geoban_help() {
+    cat <<'EOF'
+GeoBan Country Blocking
+
+Usage:
+  nftban geoban ban <CC> [CC...]           # Ban country traffic
+  nftban geoban unban <CC> [CC...]         # Remove country ban
+  nftban geoban whitelist <CC> [CC...]     # Whitelist country (allow)
+  nftban geoban unwhitelist <CC> [CC...]   # Remove country whitelist
+  nftban geoban list                       # List active country blocks
+  nftban geoban status                     # Show GeoBan status
+  nftban geoban update                     # Update all active countries
+  nftban geoban config                     # Show GeoBan configuration
+  nftban geoban help                       # Show this help
+
+Country Codes:
+  Use ISO 3166-1 alpha-2 codes (2 letters, uppercase)
+  Examples: CN (China), RU (Russia), US (United States), GB (United Kingdom)
+
+Examples:
+  nftban geoban ban CN RU              # Block China and Russia
+  nftban geoban whitelist US GB        # Allow USA and UK
+  nftban geoban list                   # Show active blocks
+  nftban geoban unban CN               # Remove China block
+  nftban geoban status                 # Check GeoBan status
+
+Features:
+  • Atomic Operations: Zero-downtime updates via netlink
+  • RIR Data Sources: ARIN, RIPE, APNIC, LACNIC, AFRINIC
+  • ETag Caching: Reduces bandwidth and API rate limits
+  • CIDR Merging: Optimizes memory footprint
+  • Safety Limits: CPU/RAM monitoring prevents system overload
+
+Notes:
+  • GeoBan uses the nftban-geoip Go binary for performance
+  • Changes are applied atomically to running firewall
+  • Country IP lists are cached in /var/cache/nftban/geoban/
+  • Configuration files stored in /etc/nftban/geoban.d/
+
+EOF
+}
+
+# Export the main function
+# Exit marker for testing validation
+command -v nftban_cmd_exit >/dev/null 2>&1 && nftban_cmd_exit "geoban"
+
+export -f nftban_cmd_geoban
+export -f nftban_geoban_stats

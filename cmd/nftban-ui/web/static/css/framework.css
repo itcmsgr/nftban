@@ -1,0 +1,293 @@
+:root {
+    --blue-color: #0075ff;
+    --blue-alt-color: #0d69d5;
+    --orange-color: #f59e0b;
+    --green-color: #22c55e;
+    --green-alt-color: #26b45a;
+    --red-color: #f44336;
+    --red-alt-color: #dd3327;
+    --grey-color: #888;
+}
+/* Start Box */
+.d-flex {
+    display: flex;
+}
+.align-center {
+    align-items: center;
+}
+.space-between {
+    justify-content: space-between;
+}
+.d-grid {
+    display: grid;
+}
+.grid-cols-2 {
+    grid-template-columns: repeat(2, 1fr);
+}
+.grid-cols-3 {
+    grid-template-columns: repeat(3, 1fr);
+}
+.gap-10 {
+    gap: 10px;
+}
+.gap-15 {
+    gap: 15px;
+}
+.gap-20 {
+    gap: 20px;
+}
+.d-block {
+    display: block;
+}
+@media (max-width: 767px) {
+    .block-mobile {
+        display: block;
+    }
+    .hide-mobile {
+        display: none;
+    }
+}
+/* End Box */
+/* Start Padding + Margin */
+.p-10 {
+    padding: 10px;
+}
+.p-15 {
+    padding: 15px;
+}
+.p-20 {
+    padding: 20px;
+}
+.pt-10 {
+    padding-top: 10px;
+}
+.pt-15 {
+    padding-top: 15px;
+}
+.pb-10 {
+    padding-bottom: 10px;
+}
+.pb-15 {
+    padding-bottom: 15px;
+}
+.pb-20 {
+    padding-bottom: 20px;
+}
+.pl-15 {
+    padding-left: 15px;
+}
+.m-0 {
+    margin: 0;
+}
+.m-15 {
+    margin: 15px;
+}
+.m-20 {
+    margin: 20px;
+}
+.mt-0 {
+    margin-top: 0;
+}
+.mt-5 {
+    margin-top: 5px;
+}
+.mt-10 {
+    margin-top: 10px;
+}
+.mt-15 {
+    margin-top: 15px;
+}
+.mt-20 {
+    margin-top: 20px;
+}
+.mt-25 {
+    margin-top: 25px;
+}
+.mr-10 {
+    margin-right: 10px;
+}
+.mr-15 {
+    margin-right: 15px;
+}
+.mb-0 {
+    margin-bottom: 0;
+}
+.mb-5 {
+    margin-bottom: 5px;
+}
+.mb-10 {
+    margin-bottom: 10px;
+}
+.mb-15 {
+    margin-bottom: 15px;
+}
+.mb-20 {
+    margin-bottom: 20px;
+}
+.mb-25 {
+    margin-bottom: 25px;
+}
+/* End Padding + Margin */
+/* Start Color */
+.bg-white {
+    background-color: white;
+}
+.bg-blue {
+    background-color: var(--blue-color);
+}
+.bg-orange {
+    background-color: var(--orange-color);
+}
+.bg-green {
+    background-color: var(--green-color);
+}
+.bg-red {
+    background-color: var(--red-color);
+}
+.bg-eee {
+    background-color: #eee;
+}
+.c-white {
+    color: white;
+}
+.c-black {
+    color: black;
+}
+.c-grey {
+    color: var(--grey-color);
+}
+.c-blue {
+    color: var(--blue-color);
+}
+.c-orange {
+    color: var(--orange-color);
+}
+.c-green {
+    color: var(--green-color);
+}
+.c-red {
+    color: var(--red-color);
+}
+/* End Color */
+/* Start Position */
+.p-relative {
+    position: relative;
+}
+.p-absolute {
+    position: absolute;
+}
+/* End Position */
+/* Start Font */
+.fw-bold {
+    font-weight: bold;
+}
+.txt-c {
+    text-align: center;
+}
+.fs-13 {
+    font-size: 13px;
+}
+.fs-14 {
+    font-size: 14px;
+}
+.fs-15 {
+    font-size: 15px;
+}
+.fs-25 {
+    font-size: 25px;
+}
+@media (max-width: 767px) {
+    .txt-c-mobile {
+        text-align: center;
+    }
+}
+.all-c {
+    display: flex;
+    justify-content: center;
+    text-align: center;
+}
+@media (max-width: 767px) {
+    .all-c-mobile {
+        display: flex;
+        justify-content: center;
+        text-align: center;
+    }
+}
+/* End Font */
+/* Start Border */
+.main-border {
+    border: 1px solid #ccc;
+}
+.rad-half {
+    border-radius: 50%;
+}
+.rad-6 {
+    border-radius: 6px;
+}
+.rad-10 {
+    border-radius: 10px;
+}
+.b-none {
+    border: none;
+}
+.border-ccc {
+    border: 1px solid #ccc;
+}
+.border-eee {
+    border: 1px solid #eee;
+}
+/* End Border */
+/* Start Width and Height */
+.w-full {
+    width: 100%;
+}
+.w-fit {
+    width: fit-content;
+}
+.w-100 {
+    width: 100px;
+}
+.h-100 {
+    height: 100px;
+}
+.h-full {
+    height: 100%;
+}
+/* End Width and Height */
+/* Start Components */
+.center-flex {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+.between-flex {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+.f-wrap {
+    flex-wrap: wrap;
+}
+.btn-shape {
+    padding: 4px 10px;
+    border-radius: 6px;
+}
+.btn-shape-modern {
+    letter-spacing: 2px;
+    text-decoration: none;
+    color: #000;
+    border: 3px solid;
+    padding: 0.25em 0.5em;
+    box-shadow: 1px 1px 0px 0px, 2px 2px 0px 0px, 3px 3px 0px 0px, 4px 4px 0px 0px, 5px 5px 0px 0px;
+}
+@media (min-width: 768px) {
+    .btn-shape-modern {
+        padding: 0.25em 0.75em;
+    }
+}
+/* End Components */
+/* Start Overflow */
+.overflow-hidden {
+    overflow: hidden;
+}
+/* End Overflow */

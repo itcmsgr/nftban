@@ -1,0 +1,953 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan v1.0 - System Watchdog Module
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Monitor system resources for auditing and alerting
+#
+# meta:name=nftban_watchdog
+# meta:type=core
+# meta:header=System Watchdog Module
+# meta:version=1.0.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# **Description & Purpose**
+# meta:description=Monitors OS-level resources (load, memory, I/O, disk) for troubleshooting
+# meta:input=System /proc filesystem and df command
+# meta:output=Reports, alerts, and Prometheus metrics
+#
+# **Inventory & Requirements**
+# meta:depends=bash,df
+#
+# **What This Module Monitors (NO OVERLAP with other modules)**
+# - Load Average (from /proc/loadavg)
+# - Memory Usage (from /proc/meminfo)
+# - Swap Usage (from /proc/meminfo)
+# - I/O Wait % (from /proc/stat)
+# - Disk Usage (from df command)
+# - File Descriptors (from /proc/sys/fs/file-nr)
+# - Top CPU/Memory Processes (from /proc/[pid]/*)
+#
+# **What OTHER Modules Handle (we don't touch these)**
+# - Connection per IP: nftban_ddos_classic.sh
+# - Ban rate alerts: nftban_stats.sh
+# - Service health: nftban_health.sh
+#
+# meta:created_date=2025-12-17
+# meta:updated_date=2025-12-17
+# =============================================================================
+
+# Enhanced strict mode
+IFS=$'\n\t'
+umask 027
+
+# Prevent double-loading
+[[ -n "${NFTBAN_WATCHDOG_LOADED:-}" ]] && return 0
+readonly NFTBAN_WATCHDOG_LOADED=1
+
+# =============================================================================
+# CONFIGURATION (defaults - override in conf.d/watchdog.conf)
+# =============================================================================
+
+# Load main configuration
+# shellcheck source=/etc/nftban/nftban.conf
+if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+fi
+
+# Watchdog defaults (can be overridden in conf.d/watchdog.conf)
+: "${NFTBAN_WATCHDOG_ENABLED:=false}"
+: "${NFTBAN_WATCHDOG_INTERVAL:=90}"
+: "${NFTBAN_WATCHDOG_ALERT_THROTTLE:=3600}"
+
+# Load thresholds
+: "${NFTBAN_WATCHDOG_LOAD_ENABLED:=true}"
+: "${NFTBAN_WATCHDOG_LOAD_AVG:=5}"
+: "${NFTBAN_WATCHDOG_LOAD_WARNING:=10}"
+: "${NFTBAN_WATCHDOG_LOAD_CRITICAL:=20}"
+
+# Memory thresholds
+: "${NFTBAN_WATCHDOG_MEM_ENABLED:=true}"
+: "${NFTBAN_WATCHDOG_MEM_WARNING:=80}"
+: "${NFTBAN_WATCHDOG_MEM_CRITICAL:=95}"
+: "${NFTBAN_WATCHDOG_SWAP_WARNING:=50}"
+
+# I/O wait thresholds
+: "${NFTBAN_WATCHDOG_IOWAIT_ENABLED:=true}"
+: "${NFTBAN_WATCHDOG_IOWAIT_WARNING:=20}"
+: "${NFTBAN_WATCHDOG_IOWAIT_CRITICAL:=40}"
+
+# Disk thresholds
+: "${NFTBAN_WATCHDOG_DISK_ENABLED:=true}"
+: "${NFTBAN_WATCHDOG_DISK_PATH:=/var/log}"
+: "${NFTBAN_WATCHDOG_DISK_WARNING:=80}"
+: "${NFTBAN_WATCHDOG_DISK_CRITICAL:=95}"
+
+# Process tracking
+: "${NFTBAN_WATCHDOG_PROC_ENABLED:=true}"
+: "${NFTBAN_WATCHDOG_PROC_TOP_COUNT:=10}"
+: "${NFTBAN_WATCHDOG_PROC_CPU_ALERT:=80}"
+: "${NFTBAN_WATCHDOG_PROC_MEM_ALERT:=2048}"
+
+# Logging and metrics
+: "${NFTBAN_WATCHDOG_LOG:=${NFTBAN_LOG_DIR:-/var/log/nftban}/watchdog.log}"
+: "${NFTBAN_WATCHDOG_REPORT_DIR:=${NFTBAN_DATA_DIR:-/var/lib/nftban}/reports/watchdog}"
+: "${NFTBAN_WATCHDOG_ALERT_EMAIL:=true}"
+: "${NFTBAN_WATCHDOG_ALERT_SYSLOG:=true}"
+
+# Prometheus metrics
+: "${NFTBAN_WATCHDOG_METRICS_ENABLED:=true}"
+: "${NFTBAN_WATCHDOG_METRICS_FILE:=${NFTBAN_DATA_DIR:-/var/lib/nftban}/metrics/watchdog.prom}"
+: "${NFTBAN_WATCHDOG_REPORT_RETENTION:=7}"
+
+# Throttle state file
+readonly WATCHDOG_THROTTLE_FILE="${NFTBAN_RUN_DIR:-/run/nftban}/watchdog_throttle"
+
+# Status codes
+readonly WATCHDOG_OK=0
+readonly WATCHDOG_WARNING=1
+readonly WATCHDOG_CRITICAL=2
+
+# Results storage
+declare -A WATCHDOG_RESULTS=()
+declare -a WATCHDOG_ALERTS=()
+
+# =============================================================================
+# HELPER FUNCTIONS
+# =============================================================================
+
+watchdog_log() {
+    # Write to watchdog log
+    local level="$1"
+    shift
+    local msg="$*"
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+    # Ensure log directory exists
+    mkdir -p "$(dirname "$NFTBAN_WATCHDOG_LOG")" 2>/dev/null
+
+    echo "[$timestamp] [$level] $msg" >> "$NFTBAN_WATCHDOG_LOG"
+}
+
+watchdog_alert() {
+    # Add alert to list and optionally send to syslog
+    local severity="$1"
+    local msg="$2"
+
+    WATCHDOG_ALERTS+=("[$severity] $msg")
+
+    # Log to syslog if enabled
+    if [[ "$NFTBAN_WATCHDOG_ALERT_SYSLOG" == "true" ]]; then
+        local priority="user.notice"
+        [[ "$severity" == "WARNING" ]] && priority="user.warning"
+        [[ "$severity" == "CRITICAL" ]] && priority="user.alert"
+        logger -t nftban-watchdog -p "$priority" "$msg"
+    fi
+
+    watchdog_log "$severity" "$msg"
+}
+
+watchdog_should_alert() {
+    # Check if we should send alert (throttle check)
+    local alert_type="$1"
+    local throttle_file="${WATCHDOG_THROTTLE_FILE}_${alert_type}"
+
+    if [[ -f "$throttle_file" ]]; then
+        local last_alert
+        last_alert=$(cat "$throttle_file" 2>/dev/null || echo 0)
+        local now
+        now=$(date +%s)
+        local diff=$((now - last_alert))
+
+        if [[ $diff -lt $NFTBAN_WATCHDOG_ALERT_THROTTLE ]]; then
+            return 1  # Throttled
+        fi
+    fi
+
+    # Update throttle timestamp
+    mkdir -p "$(dirname "$throttle_file")" 2>/dev/null
+    date +%s > "$throttle_file"
+    return 0
+}
+
+# =============================================================================
+# CORE CHECK FUNCTIONS (Read from /proc - no external dependencies)
+# =============================================================================
+
+nftban_watchdog_check_load() {
+    # Check system load average from /proc/loadavg
+    # Returns: status code, sets WATCHDOG_RESULTS
+
+    if [[ "$NFTBAN_WATCHDOG_LOAD_ENABLED" != "true" ]]; then
+        return 0
+    fi
+
+    local load1 load5 load15 running_procs total_procs last_pid
+    # Must use default IFS (space) for reading space-separated values
+    if ! IFS=' ' read -r load1 load5 load15 running_procs last_pid < /proc/loadavg 2>/dev/null; then
+        WATCHDOG_RESULTS[load_status]="ERROR"
+        WATCHDOG_RESULTS[load_error]="Cannot read /proc/loadavg"
+        return $WATCHDOG_CRITICAL
+    fi
+
+    # Parse running/total processes
+    local running total
+    running="${running_procs%/*}"
+    total="${running_procs#*/}"
+
+    WATCHDOG_RESULTS[load_1m]="$load1"
+    WATCHDOG_RESULTS[load_5m]="$load5"
+    WATCHDOG_RESULTS[load_15m]="$load15"
+    WATCHDOG_RESULTS[procs_running]="$running"
+    WATCHDOG_RESULTS[procs_total]="$total"
+
+    # Determine which load to check based on config
+    local check_load
+    case "$NFTBAN_WATCHDOG_LOAD_AVG" in
+        1)  check_load="$load1" ;;
+        15) check_load="$load15" ;;
+        *)  check_load="$load5" ;;
+    esac
+
+    WATCHDOG_RESULTS[load_checked]="$check_load"
+    WATCHDOG_RESULTS[load_avg_type]="$NFTBAN_WATCHDOG_LOAD_AVG"
+
+    # Compare using bc for floating point (or awk if bc not available)
+    local status=$WATCHDOG_OK
+    if command -v bc >/dev/null 2>&1; then
+        if (( $(echo "$check_load >= $NFTBAN_WATCHDOG_LOAD_CRITICAL" | bc -l) )); then
+            status=$WATCHDOG_CRITICAL
+            WATCHDOG_RESULTS[load_status]="CRITICAL"
+            if watchdog_should_alert "load"; then
+                watchdog_alert "CRITICAL" "Load average CRITICAL: ${check_load} >= ${NFTBAN_WATCHDOG_LOAD_CRITICAL}"
+            fi
+        elif (( $(echo "$check_load >= $NFTBAN_WATCHDOG_LOAD_WARNING" | bc -l) )); then
+            status=$WATCHDOG_WARNING
+            WATCHDOG_RESULTS[load_status]="WARNING"
+            if watchdog_should_alert "load"; then
+                watchdog_alert "WARNING" "Load average exceeded: ${check_load} >= ${NFTBAN_WATCHDOG_LOAD_WARNING}"
+            fi
+        else
+            WATCHDOG_RESULTS[load_status]="OK"
+        fi
+    else
+        # Fallback: use awk for comparison
+        if awk "BEGIN {exit !($check_load >= $NFTBAN_WATCHDOG_LOAD_CRITICAL)}"; then
+            status=$WATCHDOG_CRITICAL
+            WATCHDOG_RESULTS[load_status]="CRITICAL"
+            if watchdog_should_alert "load"; then
+                watchdog_alert "CRITICAL" "Load average CRITICAL: ${check_load} >= ${NFTBAN_WATCHDOG_LOAD_CRITICAL}"
+            fi
+        elif awk "BEGIN {exit !($check_load >= $NFTBAN_WATCHDOG_LOAD_WARNING)}"; then
+            status=$WATCHDOG_WARNING
+            WATCHDOG_RESULTS[load_status]="WARNING"
+            if watchdog_should_alert "load"; then
+                watchdog_alert "WARNING" "Load average exceeded: ${check_load} >= ${NFTBAN_WATCHDOG_LOAD_WARNING}"
+            fi
+        else
+            WATCHDOG_RESULTS[load_status]="OK"
+        fi
+    fi
+
+    return $status
+}
+
+nftban_watchdog_check_memory() {
+    # Check memory usage from /proc/meminfo
+    # Returns: status code, sets WATCHDOG_RESULTS
+
+    if [[ "$NFTBAN_WATCHDOG_MEM_ENABLED" != "true" ]]; then
+        return 0
+    fi
+
+    local mem_total=0 mem_free=0 mem_available=0 buffers=0 cached=0
+    local swap_total=0 swap_free=0
+
+    while IFS=': ' read -r key value _; do
+        case "$key" in
+            MemTotal)     mem_total=$value ;;
+            MemFree)      mem_free=$value ;;
+            MemAvailable) mem_available=$value ;;
+            Buffers)      buffers=$value ;;
+            Cached)       cached=$value ;;
+            SwapTotal)    swap_total=$value ;;
+            SwapFree)     swap_free=$value ;;
+        esac
+    done < /proc/meminfo
+
+    # Calculate usage (values are in kB)
+    local mem_used=$((mem_total - mem_available))
+    local mem_used_percent=0
+    if [[ $mem_total -gt 0 ]]; then
+        mem_used_percent=$((mem_used * 100 / mem_total))
+    fi
+
+    local swap_used=$((swap_total - swap_free))
+    local swap_used_percent=0
+    if [[ $swap_total -gt 0 ]]; then
+        swap_used_percent=$((swap_used * 100 / swap_total))
+    fi
+
+    # Store in MB for readability
+    WATCHDOG_RESULTS[mem_total_mb]=$((mem_total / 1024))
+    WATCHDOG_RESULTS[mem_used_mb]=$((mem_used / 1024))
+    WATCHDOG_RESULTS[mem_available_mb]=$((mem_available / 1024))
+    WATCHDOG_RESULTS[mem_used_percent]="$mem_used_percent"
+    WATCHDOG_RESULTS[swap_total_mb]=$((swap_total / 1024))
+    WATCHDOG_RESULTS[swap_used_mb]=$((swap_used / 1024))
+    WATCHDOG_RESULTS[swap_used_percent]="$swap_used_percent"
+
+    # Store in bytes for Prometheus metrics
+    WATCHDOG_RESULTS[mem_total_bytes]=$((mem_total * 1024))
+    WATCHDOG_RESULTS[mem_available_bytes]=$((mem_available * 1024))
+    WATCHDOG_RESULTS[swap_used_bytes]=$((swap_used * 1024))
+
+    # Check thresholds
+    local status=$WATCHDOG_OK
+
+    if [[ $mem_used_percent -ge $NFTBAN_WATCHDOG_MEM_CRITICAL ]]; then
+        status=$WATCHDOG_CRITICAL
+        WATCHDOG_RESULTS[mem_status]="CRITICAL"
+        if watchdog_should_alert "memory"; then
+            watchdog_alert "CRITICAL" "Memory usage CRITICAL: ${mem_used_percent}% >= ${NFTBAN_WATCHDOG_MEM_CRITICAL}%"
+        fi
+    elif [[ $mem_used_percent -ge $NFTBAN_WATCHDOG_MEM_WARNING ]]; then
+        status=$WATCHDOG_WARNING
+        WATCHDOG_RESULTS[mem_status]="WARNING"
+        if watchdog_should_alert "memory"; then
+            watchdog_alert "WARNING" "Memory usage high: ${mem_used_percent}% >= ${NFTBAN_WATCHDOG_MEM_WARNING}%"
+        fi
+    else
+        WATCHDOG_RESULTS[mem_status]="OK"
+    fi
+
+    # Check swap separately
+    if [[ $swap_total -gt 0 && $swap_used_percent -ge $NFTBAN_WATCHDOG_SWAP_WARNING ]]; then
+        if [[ $status -lt $WATCHDOG_WARNING ]]; then
+            status=$WATCHDOG_WARNING
+        fi
+        WATCHDOG_RESULTS[swap_status]="WARNING"
+        if watchdog_should_alert "swap"; then
+            watchdog_alert "WARNING" "Swap usage: ${swap_used_percent}% >= ${NFTBAN_WATCHDOG_SWAP_WARNING}%"
+        fi
+    else
+        WATCHDOG_RESULTS[swap_status]="OK"
+    fi
+
+    return $status
+}
+
+nftban_watchdog_check_iowait() {
+    # Check I/O wait percentage from /proc/stat
+    # Returns: status code, sets WATCHDOG_RESULTS
+
+    if [[ "$NFTBAN_WATCHDOG_IOWAIT_ENABLED" != "true" ]]; then
+        return 0
+    fi
+
+    # Read CPU line from /proc/stat
+    # Format: cpu user nice system idle iowait irq softirq steal guest guest_nice
+    local cpu_line
+    cpu_line=$(head -1 /proc/stat)
+
+    local -a cpu_vals
+    # Must use default IFS (space) for reading space-separated values
+    IFS=' ' read -ra cpu_vals <<< "$cpu_line"
+
+    # cpu_vals[0] = "cpu", [1] = user, [2] = nice, [3] = system, [4] = idle, [5] = iowait
+    local user="${cpu_vals[1]:-0}"
+    local nice="${cpu_vals[2]:-0}"
+    local system="${cpu_vals[3]:-0}"
+    local idle="${cpu_vals[4]:-0}"
+    local iowait="${cpu_vals[5]:-0}"
+    local irq="${cpu_vals[6]:-0}"
+    local softirq="${cpu_vals[7]:-0}"
+
+    local total=$((user + nice + system + idle + iowait + irq + softirq))
+
+    # Calculate percentages
+    local iowait_percent=0
+    local user_percent=0
+    local system_percent=0
+    local idle_percent=0
+
+    if [[ $total -gt 0 ]]; then
+        iowait_percent=$((iowait * 100 / total))
+        user_percent=$((user * 100 / total))
+        system_percent=$((system * 100 / total))
+        idle_percent=$((idle * 100 / total))
+    fi
+
+    WATCHDOG_RESULTS[cpu_user_percent]="$user_percent"
+    WATCHDOG_RESULTS[cpu_system_percent]="$system_percent"
+    WATCHDOG_RESULTS[cpu_idle_percent]="$idle_percent"
+    WATCHDOG_RESULTS[cpu_iowait_percent]="$iowait_percent"
+
+    # Check thresholds
+    local status=$WATCHDOG_OK
+
+    if [[ $iowait_percent -ge $NFTBAN_WATCHDOG_IOWAIT_CRITICAL ]]; then
+        status=$WATCHDOG_CRITICAL
+        WATCHDOG_RESULTS[iowait_status]="CRITICAL"
+        if watchdog_should_alert "iowait"; then
+            watchdog_alert "CRITICAL" "I/O Wait CRITICAL: ${iowait_percent}% >= ${NFTBAN_WATCHDOG_IOWAIT_CRITICAL}%"
+        fi
+    elif [[ $iowait_percent -ge $NFTBAN_WATCHDOG_IOWAIT_WARNING ]]; then
+        status=$WATCHDOG_WARNING
+        WATCHDOG_RESULTS[iowait_status]="WARNING"
+        if watchdog_should_alert "iowait"; then
+            watchdog_alert "WARNING" "I/O Wait high: ${iowait_percent}% >= ${NFTBAN_WATCHDOG_IOWAIT_WARNING}%"
+        fi
+    else
+        WATCHDOG_RESULTS[iowait_status]="OK"
+    fi
+
+    return $status
+}
+
+nftban_watchdog_check_disk() {
+    # Check disk usage using df command
+    # Returns: status code, sets WATCHDOG_RESULTS
+
+    if [[ "$NFTBAN_WATCHDOG_DISK_ENABLED" != "true" ]]; then
+        return 0
+    fi
+
+    local path="$NFTBAN_WATCHDOG_DISK_PATH"
+
+    # Use df -P for POSIX output
+    local df_output
+    if ! df_output=$(df -P "$path" 2>/dev/null | tail -1); then
+        WATCHDOG_RESULTS[disk_status]="ERROR"
+        WATCHDOG_RESULTS[disk_error]="Cannot check disk for $path"
+        return $WATCHDOG_CRITICAL
+    fi
+
+    # Parse: Filesystem 1024-blocks Used Available Capacity Mounted
+    local -a df_vals
+    # Must use default IFS (space) for reading space-separated values
+    IFS=' ' read -ra df_vals <<< "$df_output"
+
+    local total="${df_vals[1]:-0}"
+    local used="${df_vals[2]:-0}"
+    local available="${df_vals[3]:-0}"
+    local percent="${df_vals[4]:-0%}"
+    local mount="${df_vals[5]:-$path}"
+
+    # Remove % from percent
+    percent="${percent%\%}"
+
+    # Store in GB for readability
+    WATCHDOG_RESULTS[disk_path]="$path"
+    WATCHDOG_RESULTS[disk_mount]="$mount"
+    WATCHDOG_RESULTS[disk_total_gb]=$((total / 1024 / 1024))
+    WATCHDOG_RESULTS[disk_used_gb]=$((used / 1024 / 1024))
+    WATCHDOG_RESULTS[disk_available_gb]=$((available / 1024 / 1024))
+    WATCHDOG_RESULTS[disk_used_percent]="$percent"
+
+    # Check thresholds
+    local status=$WATCHDOG_OK
+
+    if [[ $percent -ge $NFTBAN_WATCHDOG_DISK_CRITICAL ]]; then
+        status=$WATCHDOG_CRITICAL
+        WATCHDOG_RESULTS[disk_status]="CRITICAL"
+        if watchdog_should_alert "disk"; then
+            watchdog_alert "CRITICAL" "Disk usage CRITICAL on $path: ${percent}% >= ${NFTBAN_WATCHDOG_DISK_CRITICAL}%"
+        fi
+    elif [[ $percent -ge $NFTBAN_WATCHDOG_DISK_WARNING ]]; then
+        status=$WATCHDOG_WARNING
+        WATCHDOG_RESULTS[disk_status]="WARNING"
+        if watchdog_should_alert "disk"; then
+            watchdog_alert "WARNING" "Disk usage high on $path: ${percent}% >= ${NFTBAN_WATCHDOG_DISK_WARNING}%"
+        fi
+    else
+        WATCHDOG_RESULTS[disk_status]="OK"
+    fi
+
+    return $status
+}
+
+nftban_watchdog_check_fd() {
+    # Check file descriptor usage from /proc/sys/fs/file-nr
+    # Returns: status code, sets WATCHDOG_RESULTS
+
+    local allocated free max
+    # File-nr uses tabs as separator, but also spaces sometimes - use explicit IFS
+    if ! IFS=$' \t' read -r allocated free max < /proc/sys/fs/file-nr 2>/dev/null; then
+        WATCHDOG_RESULTS[fd_status]="ERROR"
+        return $WATCHDOG_WARNING
+    fi
+
+    WATCHDOG_RESULTS[fd_allocated]="$allocated"
+    WATCHDOG_RESULTS[fd_free]="$free"
+    WATCHDOG_RESULTS[fd_max]="$max"
+
+    # Calculate percentage
+    local fd_percent=0
+    if [[ $max -gt 0 ]]; then
+        fd_percent=$((allocated * 100 / max))
+    fi
+    WATCHDOG_RESULTS[fd_used_percent]="$fd_percent"
+
+    # Alert if over 80% (hardcoded threshold for FD exhaustion)
+    if [[ $fd_percent -ge 80 ]]; then
+        WATCHDOG_RESULTS[fd_status]="WARNING"
+        if watchdog_should_alert "fd"; then
+            watchdog_alert "WARNING" "File descriptors at ${fd_percent}% (${allocated}/${max})"
+        fi
+        return $WATCHDOG_WARNING
+    fi
+
+    WATCHDOG_RESULTS[fd_status]="OK"
+    return $WATCHDOG_OK
+}
+
+nftban_watchdog_get_top_cpu() {
+    # Get top CPU-consuming processes from /proc
+    # Stores results in WATCHDOG_RESULTS[top_cpu_*]
+
+    if [[ "$NFTBAN_WATCHDOG_PROC_ENABLED" != "true" ]]; then
+        return 0
+    fi
+
+    local count="${NFTBAN_WATCHDOG_PROC_TOP_COUNT:-10}"
+    local -a procs=()
+
+    # Read all process stats quickly
+    local pid cmdline comm state utime stime
+    for proc_dir in /proc/[0-9]*/; do
+        pid="${proc_dir#/proc/}"
+        pid="${pid%/}"
+        [[ ! -d "/proc/$pid" ]] && continue
+
+        # Read comm (process name)
+        comm=$(cat "/proc/$pid/comm" 2>/dev/null) || continue
+
+        # Read stat for CPU time
+        local stat_line
+        stat_line=$(cat "/proc/$pid/stat" 2>/dev/null) || continue
+
+        # Parse stat: pid (comm) state ... utime(14) stime(15)
+        # Use awk for reliable parsing
+        local cpu_time
+        cpu_time=$(echo "$stat_line" | awk '{print $14 + $15}')
+
+        # Read status for memory
+        local vmrss=0
+        while IFS=': ' read -r key value _; do
+            [[ "$key" == "VmRSS" ]] && { vmrss=$value; break; }
+        done < "/proc/$pid/status" 2>/dev/null
+
+        # Store: cpu_time pid vmrss_kb comm
+        procs+=("$cpu_time $pid $vmrss $comm")
+    done
+
+    # Sort by CPU time (descending) and take top N
+    local sorted
+    sorted=$(printf '%s\n' "${procs[@]}" | sort -rn | head -"$count")
+
+    local i=0
+    while IFS=' ' read -r cpu_time pid vmrss comm; do
+        [[ -z "$pid" ]] && continue
+        WATCHDOG_RESULTS["top_cpu_${i}_pid"]="$pid"
+        WATCHDOG_RESULTS["top_cpu_${i}_comm"]="$comm"
+        WATCHDOG_RESULTS["top_cpu_${i}_cpu_ticks"]="$cpu_time"
+        WATCHDOG_RESULTS["top_cpu_${i}_mem_kb"]="$vmrss"
+        ((++i)) || true  # Avoid exit code 1 when i was 0
+    done <<< "$sorted"
+
+    WATCHDOG_RESULTS[top_cpu_count]="$i"
+    return 0
+}
+
+nftban_watchdog_get_top_mem() {
+    # Get top memory-consuming processes from /proc
+    # Stores results in WATCHDOG_RESULTS[top_mem_*]
+
+    if [[ "$NFTBAN_WATCHDOG_PROC_ENABLED" != "true" ]]; then
+        return 0
+    fi
+
+    local count="${NFTBAN_WATCHDOG_PROC_TOP_COUNT:-10}"
+    local -a procs=()
+
+    # Read all process memory quickly
+    for proc_dir in /proc/[0-9]*/; do
+        local pid="${proc_dir#/proc/}"
+        pid="${pid%/}"
+        [[ ! -d "/proc/$pid" ]] && continue
+
+        # Read comm (process name)
+        local comm
+        comm=$(cat "/proc/$pid/comm" 2>/dev/null) || continue
+
+        # Read status for memory
+        local vmrss=0
+        while IFS=': ' read -r key value _; do
+            [[ "$key" == "VmRSS" ]] && { vmrss=$value; break; }
+        done < "/proc/$pid/status" 2>/dev/null
+
+        [[ $vmrss -gt 0 ]] && procs+=("$vmrss $pid $comm")
+    done
+
+    # Sort by memory (descending) and take top N
+    local sorted
+    sorted=$(printf '%s\n' "${procs[@]}" | sort -rn | head -"$count")
+
+    local i=0
+    local alert_threshold_kb=$((NFTBAN_WATCHDOG_PROC_MEM_ALERT * 1024))
+
+    while IFS=' ' read -r vmrss pid comm; do
+        [[ -z "$pid" ]] && continue
+        WATCHDOG_RESULTS["top_mem_${i}_pid"]="$pid"
+        WATCHDOG_RESULTS["top_mem_${i}_comm"]="$comm"
+        WATCHDOG_RESULTS["top_mem_${i}_mem_kb"]="$vmrss"
+        WATCHDOG_RESULTS["top_mem_${i}_mem_mb"]=$((vmrss / 1024))
+
+        # Alert if single process exceeds threshold
+        if [[ $vmrss -ge $alert_threshold_kb && $i -eq 0 ]]; then
+            if watchdog_should_alert "proc_mem_$pid"; then
+                watchdog_alert "INFO" "High memory process: $comm (PID $pid) using $((vmrss / 1024)) MB"
+            fi
+        fi
+
+        ((++i)) || true  # Avoid exit code 1 when i was 0
+    done <<< "$sorted"
+
+    WATCHDOG_RESULTS[top_mem_count]="$i"
+    return 0
+}
+
+# =============================================================================
+# ORCHESTRATION
+# =============================================================================
+
+nftban_watchdog_run_all() {
+    # Execute all enabled checks
+    # Returns: highest severity status
+
+    # Clear previous results
+    WATCHDOG_RESULTS=()
+    WATCHDOG_ALERTS=()
+
+    local overall_status=$WATCHDOG_OK
+    local status
+
+    # Run all checks
+    nftban_watchdog_check_load
+    status=$?
+    [[ $status -gt $overall_status ]] && overall_status=$status
+
+    nftban_watchdog_check_memory
+    status=$?
+    [[ $status -gt $overall_status ]] && overall_status=$status
+
+    nftban_watchdog_check_iowait
+    status=$?
+    [[ $status -gt $overall_status ]] && overall_status=$status
+
+    nftban_watchdog_check_disk
+    status=$?
+    [[ $status -gt $overall_status ]] && overall_status=$status
+
+    nftban_watchdog_check_fd
+    status=$?
+    [[ $status -gt $overall_status ]] && overall_status=$status
+
+    nftban_watchdog_get_top_cpu
+    nftban_watchdog_get_top_mem
+
+    # Store overall status
+    WATCHDOG_RESULTS[overall_status]="$overall_status"
+    WATCHDOG_RESULTS[check_timestamp]=$(date +%s)
+    WATCHDOG_RESULTS[check_datetime]=$(date '+%Y-%m-%d %H:%M:%S')
+
+    return $overall_status
+}
+
+# =============================================================================
+# OUTPUT FUNCTIONS
+# =============================================================================
+
+nftban_watchdog_report() {
+    # Generate human-readable report
+    # Output: printed to stdout
+
+    local sep="================================================================================"
+
+    echo "$sep"
+    echo "NFTBan System Watchdog Report"
+    echo "Generated: ${WATCHDOG_RESULTS[check_datetime]:-$(date '+%Y-%m-%d %H:%M:%S')}"
+    echo "$sep"
+    echo ""
+
+    # Load Average
+    if [[ -n "${WATCHDOG_RESULTS[load_1m]:-}" ]]; then
+        local load_status="${WATCHDOG_RESULTS[load_status]:-OK}"
+        local status_indicator="[OK]"
+        [[ "$load_status" == "WARNING" ]] && status_indicator="[WARNING]"
+        [[ "$load_status" == "CRITICAL" ]] && status_indicator="[CRITICAL]"
+
+        echo "LOAD AVERAGE: ${status_indicator} ${WATCHDOG_RESULTS[load_avg_type]:-5}-min avg is ${WATCHDOG_RESULTS[load_checked]:-N/A}"
+        echo "  1 minute:  ${WATCHDOG_RESULTS[load_1m]}"
+        echo "  5 minute:  ${WATCHDOG_RESULTS[load_5m]}"
+        echo "  15 minute: ${WATCHDOG_RESULTS[load_15m]}"
+        echo "  Running:   ${WATCHDOG_RESULTS[procs_running]:-0} of ${WATCHDOG_RESULTS[procs_total]:-0} processes"
+        echo ""
+    fi
+
+    # I/O Wait
+    if [[ -n "${WATCHDOG_RESULTS[cpu_iowait_percent]:-}" ]]; then
+        local iowait_status="${WATCHDOG_RESULTS[iowait_status]:-OK}"
+        local status_indicator="[OK]"
+        [[ "$iowait_status" == "WARNING" ]] && status_indicator="[WARNING]"
+        [[ "$iowait_status" == "CRITICAL" ]] && status_indicator="[CRITICAL]"
+
+        echo "CPU: ${WATCHDOG_RESULTS[cpu_iowait_percent]}% I/O Wait ${status_indicator}"
+        echo "  User:     ${WATCHDOG_RESULTS[cpu_user_percent]}%"
+        echo "  System:   ${WATCHDOG_RESULTS[cpu_system_percent]}%"
+        echo "  Idle:     ${WATCHDOG_RESULTS[cpu_idle_percent]}%"
+        echo "  I/O Wait: ${WATCHDOG_RESULTS[cpu_iowait_percent]}%"
+        echo ""
+    fi
+
+    # Memory
+    if [[ -n "${WATCHDOG_RESULTS[mem_used_percent]:-}" ]]; then
+        local mem_status="${WATCHDOG_RESULTS[mem_status]:-OK}"
+        local status_indicator="[OK]"
+        [[ "$mem_status" == "WARNING" ]] && status_indicator="[WARNING]"
+        [[ "$mem_status" == "CRITICAL" ]] && status_indicator="[CRITICAL]"
+
+        echo "MEMORY: ${WATCHDOG_RESULTS[mem_used_percent]}% used ${status_indicator}"
+        echo "  Total:     ${WATCHDOG_RESULTS[mem_total_mb]} MB"
+        echo "  Used:      ${WATCHDOG_RESULTS[mem_used_mb]} MB"
+        echo "  Available: ${WATCHDOG_RESULTS[mem_available_mb]} MB"
+        echo "  Swap Used: ${WATCHDOG_RESULTS[swap_used_mb]} MB (${WATCHDOG_RESULTS[swap_used_percent]}%)"
+        echo ""
+    fi
+
+    # Disk
+    if [[ -n "${WATCHDOG_RESULTS[disk_used_percent]:-}" ]]; then
+        local disk_status="${WATCHDOG_RESULTS[disk_status]:-OK}"
+        local status_indicator="[OK]"
+        [[ "$disk_status" == "WARNING" ]] && status_indicator="[WARNING]"
+        [[ "$disk_status" == "CRITICAL" ]] && status_indicator="[CRITICAL]"
+
+        echo "DISK USAGE: ${status_indicator}"
+        echo "  ${WATCHDOG_RESULTS[disk_path]}: ${WATCHDOG_RESULTS[disk_used_percent]}% used (${WATCHDOG_RESULTS[disk_used_gb]}GB of ${WATCHDOG_RESULTS[disk_total_gb]}GB)"
+        echo ""
+    fi
+
+    # File Descriptors
+    if [[ -n "${WATCHDOG_RESULTS[fd_allocated]:-}" ]]; then
+        local fd_status="${WATCHDOG_RESULTS[fd_status]:-OK}"
+        local status_indicator="[OK]"
+        [[ "$fd_status" == "WARNING" ]] && status_indicator="[WARNING]"
+
+        echo "FILE DESCRIPTORS: ${status_indicator}"
+        echo "  Allocated: ${WATCHDOG_RESULTS[fd_allocated]} / ${WATCHDOG_RESULTS[fd_max]} (${WATCHDOG_RESULTS[fd_used_percent]}%)"
+        echo ""
+    fi
+
+    # Top Processes by Memory
+    local top_mem_count="${WATCHDOG_RESULTS[top_mem_count]:-0}"
+    if [[ $top_mem_count -gt 0 ]]; then
+        echo "TOP PROCESSES BY MEMORY:"
+        printf "  %-8s %-15s %8s  %s\n" "PID" "COMMAND" "MEM(MB)" "MEM(KB)"
+        for ((i=0; i<top_mem_count && i<5; i++)); do
+            printf "  %-8s %-15s %8s  %s\n" \
+                "${WATCHDOG_RESULTS[top_mem_${i}_pid]}" \
+                "${WATCHDOG_RESULTS[top_mem_${i}_comm]}" \
+                "${WATCHDOG_RESULTS[top_mem_${i}_mem_mb]}" \
+                "${WATCHDOG_RESULTS[top_mem_${i}_mem_kb]}"
+        done
+        echo ""
+    fi
+
+    # Alerts
+    if [[ ${#WATCHDOG_ALERTS[@]} -gt 0 ]]; then
+        echo "ALERTS TRIGGERED:"
+        for alert in "${WATCHDOG_ALERTS[@]}"; do
+            echo "  $alert"
+        done
+        echo ""
+    fi
+
+    echo "$sep"
+}
+
+nftban_watchdog_report_save() {
+    # Save report to file for auditing
+    # Returns: path to saved report
+
+    mkdir -p "$NFTBAN_WATCHDOG_REPORT_DIR" 2>/dev/null
+
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d_%H-%M-%S')
+    local report_file="${NFTBAN_WATCHDOG_REPORT_DIR}/${timestamp}.report"
+
+    nftban_watchdog_report > "$report_file"
+
+    # Set permissions
+    chown nftban:nftban "$report_file" 2>/dev/null || true
+    chmod 640 "$report_file"
+
+    echo "$report_file"
+}
+
+nftban_watchdog_metrics_export() {
+    # Write Prometheus-format metrics file
+    # Output: writes to NFTBAN_WATCHDOG_METRICS_FILE
+
+    if [[ "$NFTBAN_WATCHDOG_METRICS_ENABLED" != "true" ]]; then
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$NFTBAN_WATCHDOG_METRICS_FILE")" 2>/dev/null
+
+    local tmp_file="${NFTBAN_WATCHDOG_METRICS_FILE}.tmp"
+
+    {
+        echo "# HELP nftban_watchdog_load_avg System load average"
+        echo "# TYPE nftban_watchdog_load_avg gauge"
+        echo "nftban_watchdog_load_avg{period=\"1m\"} ${WATCHDOG_RESULTS[load_1m]:-0}"
+        echo "nftban_watchdog_load_avg{period=\"5m\"} ${WATCHDOG_RESULTS[load_5m]:-0}"
+        echo "nftban_watchdog_load_avg{period=\"15m\"} ${WATCHDOG_RESULTS[load_15m]:-0}"
+        echo ""
+
+        echo "# HELP nftban_watchdog_memory_used_percent Memory usage percentage"
+        echo "# TYPE nftban_watchdog_memory_used_percent gauge"
+        echo "nftban_watchdog_memory_used_percent ${WATCHDOG_RESULTS[mem_used_percent]:-0}"
+        echo ""
+
+        echo "# HELP nftban_watchdog_memory_bytes Memory usage in bytes"
+        echo "# TYPE nftban_watchdog_memory_bytes gauge"
+        echo "nftban_watchdog_memory_bytes{type=\"total\"} ${WATCHDOG_RESULTS[mem_total_bytes]:-0}"
+        echo "nftban_watchdog_memory_bytes{type=\"available\"} ${WATCHDOG_RESULTS[mem_available_bytes]:-0}"
+        echo "nftban_watchdog_memory_bytes{type=\"swap_used\"} ${WATCHDOG_RESULTS[swap_used_bytes]:-0}"
+        echo ""
+
+        echo "# HELP nftban_watchdog_iowait_percent CPU I/O wait percentage"
+        echo "# TYPE nftban_watchdog_iowait_percent gauge"
+        echo "nftban_watchdog_iowait_percent ${WATCHDOG_RESULTS[cpu_iowait_percent]:-0}"
+        echo ""
+
+        echo "# HELP nftban_watchdog_disk_used_percent Disk usage percentage"
+        echo "# TYPE nftban_watchdog_disk_used_percent gauge"
+        echo "nftban_watchdog_disk_used_percent{path=\"${WATCHDOG_RESULTS[disk_path]:-/var/log}\"} ${WATCHDOG_RESULTS[disk_used_percent]:-0}"
+        echo ""
+
+        echo "# HELP nftban_watchdog_fd_allocated File descriptors allocated"
+        echo "# TYPE nftban_watchdog_fd_allocated gauge"
+        echo "nftban_watchdog_fd_allocated ${WATCHDOG_RESULTS[fd_allocated]:-0}"
+        echo ""
+
+        echo "# HELP nftban_watchdog_fd_max Maximum file descriptors"
+        echo "# TYPE nftban_watchdog_fd_max gauge"
+        echo "nftban_watchdog_fd_max ${WATCHDOG_RESULTS[fd_max]:-0}"
+        echo ""
+
+        # Count alerts by severity
+        local warning_count=0 critical_count=0
+        for alert in "${WATCHDOG_ALERTS[@]}"; do
+            [[ "$alert" == *"[WARNING]"* ]] && ((warning_count++))
+            [[ "$alert" == *"[CRITICAL]"* ]] && ((critical_count++))
+        done
+
+        echo "# HELP nftban_watchdog_alert_total Count of alerts by severity"
+        echo "# TYPE nftban_watchdog_alert_total counter"
+        echo "nftban_watchdog_alert_total{severity=\"warning\"} $warning_count"
+        echo "nftban_watchdog_alert_total{severity=\"critical\"} $critical_count"
+        echo ""
+
+        echo "# HELP nftban_watchdog_last_check_timestamp Last check unix timestamp"
+        echo "# TYPE nftban_watchdog_last_check_timestamp gauge"
+        echo "nftban_watchdog_last_check_timestamp ${WATCHDOG_RESULTS[check_timestamp]:-$(date +%s)}"
+    } > "$tmp_file"
+
+    # Atomic move
+    mv "$tmp_file" "$NFTBAN_WATCHDOG_METRICS_FILE"
+
+    # Set permissions
+    chown nftban:nftban "$NFTBAN_WATCHDOG_METRICS_FILE" 2>/dev/null || true
+    chmod 644 "$NFTBAN_WATCHDOG_METRICS_FILE"
+
+    return 0
+}
+
+nftban_watchdog_cleanup_old() {
+    # Remove reports older than retention period
+    # Returns: number of files removed
+
+    local retention_days="${NFTBAN_WATCHDOG_REPORT_RETENTION:-7}"
+    local removed=0
+
+    if [[ -d "$NFTBAN_WATCHDOG_REPORT_DIR" ]]; then
+        while IFS= read -r -d '' file; do
+            rm -f "$file"
+            ((removed++))
+        done < <(find "$NFTBAN_WATCHDOG_REPORT_DIR" -name "*.report" -type f -mtime +"$retention_days" -print0 2>/dev/null)
+    fi
+
+    watchdog_log "INFO" "Cleanup: removed $removed old reports (retention: ${retention_days} days)"
+    echo "$removed"
+}
+
+# =============================================================================
+# MAIN ENTRY POINT (for timer/service)
+# =============================================================================
+
+nftban_watchdog_run() {
+    # Main entry point called by systemd timer
+    # Runs all checks, saves report, exports metrics
+
+    if [[ "$NFTBAN_WATCHDOG_ENABLED" != "true" ]]; then
+        echo "Watchdog is disabled. Enable with: nftban watchdog enable"
+        return 0
+    fi
+
+    watchdog_log "INFO" "Watchdog check starting"
+
+    # Run all checks
+    nftban_watchdog_run_all
+    local status=$?
+
+    # Save report
+    local report_file
+    report_file=$(nftban_watchdog_report_save)
+    watchdog_log "INFO" "Report saved: $report_file"
+
+    # Export metrics
+    nftban_watchdog_metrics_export
+
+    # Cleanup old reports
+    nftban_watchdog_cleanup_old >/dev/null
+
+    # Log completion
+    local status_text="OK"
+    [[ $status -eq $WATCHDOG_WARNING ]] && status_text="WARNING"
+    [[ $status -eq $WATCHDOG_CRITICAL ]] && status_text="CRITICAL"
+    watchdog_log "INFO" "Watchdog check completed: $status_text"
+
+    return $status
+}
+
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+export -f nftban_watchdog_run_all
+export -f nftban_watchdog_report
+export -f nftban_watchdog_report_save
+export -f nftban_watchdog_metrics_export
+export -f nftban_watchdog_run
+export -f nftban_watchdog_check_load
+export -f nftban_watchdog_check_memory
+export -f nftban_watchdog_check_iowait
+export -f nftban_watchdog_check_disk
+export -f nftban_watchdog_check_fd
+export -f nftban_watchdog_get_top_cpu
+export -f nftban_watchdog_get_top_mem
+export -f nftban_watchdog_cleanup_old

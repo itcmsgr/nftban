@@ -1,12 +1,12 @@
 # =============================================================================
-# NFTBan v0.32.6 - GitHub Actions Release Workflow
+# NFTBan v1.0.0 - GitHub Actions Release Workflow
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Automated package building and release on version tags
-# Triggers: Push to v* tags (e.g., v0.32.6, v0.32.6)
+# Triggers: Push to v* tags (e.g., v1.0.0, v1.0.1)
 #
 # What this does:
-#   1. Builds Go binaries (nftban-feeds, nftban-geoip) for x86_64 and aarch64
+#   1. Builds Go binaries (nftban-core, nftban-api-server) for x86_64 and aarch64
 #   2. Creates RPM packages for Rocky 9, AlmaLinux 9, Fedora
 #   3. Creates DEB packages for Ubuntu 22.04/24.04, Debian 12
 #   4. Generates SHA256SUMS for all artifacts

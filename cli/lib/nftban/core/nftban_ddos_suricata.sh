@@ -1,0 +1,638 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan v1.0 - DDoS Protection Module - SURICATA MODE
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Suricata IDS-integrated DDoS protection with scoring engine
+#
+# meta:name=nftban_ddos_suricata
+# meta:type=core
+# meta:header=DDoS Protection (Suricata)
+# meta:version=1.0.0
+#
+# **Description**
+# Intelligent DDoS protection using Suricata IDS alerts:
+# - EVE JSON parsing for real-time alerts
+# - Signature-based detection (DDoS categories)
+# - Scoring engine with multi-signal correlation
+# - Integration with feeds, GeoIP for enrichment
+#
+# **When to use Suricata Mode:**
+# - Suricata IDS is installed and running
+# - Deep packet inspection required
+# - Protocol-aware detection needed
+# - AI-ready scoring pipeline
+#
+# meta:depends=bash>=4.0,nftables>=0.9.0,suricata,jq
+# meta:created_date=2025-12-01
+# meta:updated_date=2025-12-01
+# =============================================================================
+
+# =============================================================================
+# MODULE GUARD
+# =============================================================================
+
+[[ -n "${NFTBAN_DDOS_SURICATA_LOADED:-}" ]] && return 0
+readonly NFTBAN_DDOS_SURICATA_LOADED=1
+
+# =============================================================================
+# CONFIGURATION LOADING
+# =============================================================================
+
+_nftban_ddos_suricata_load_config() {
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/suricata.conf"
+
+    if [[ -f "$config_file" ]]; then
+        # shellcheck source=/dev/null
+        source "$config_file"
+    fi
+
+    # Set defaults if not configured
+    : "${DDOS_SURICATA_EVE_FILE:=/var/log/suricata/eve.json}"
+    : "${DDOS_SURICATA_EVE_SOCKET:=}"
+    : "${DDOS_SURICATA_SIG_PATTERNS:=DDoS|flood|amplification|reflection|slowloris}"
+    : "${DDOS_SURICATA_CATEGORIES:=attempted-dos,successful-dos,denial-of-service}"
+
+    # Scoring defaults (Severity: 1=High, 2=Medium, 3=Low, 4=Info - matches Go)
+    : "${DDOS_SURICATA_SCORE_SEVERITY_1:=0.50}"
+    : "${DDOS_SURICATA_SCORE_SEVERITY_2:=0.35}"
+    : "${DDOS_SURICATA_SCORE_SEVERITY_3:=0.20}"
+    : "${DDOS_SURICATA_SCORE_SEVERITY_4:=0.10}"
+    : "${DDOS_SURICATA_SCORE_REPEAT_5:=0.10}"
+    : "${DDOS_SURICATA_SCORE_REPEAT_10:=0.20}"
+    : "${DDOS_SURICATA_SCORE_REPEAT_20:=0.30}"
+    : "${DDOS_SURICATA_SCORE_BAD_REPUTATION:=0.15}"
+    : "${DDOS_SURICATA_SCORE_HIGH_RISK_GEO:=0.10}"
+
+    # Action thresholds
+    : "${DDOS_SURICATA_THRESHOLD_OBSERVE:=0.30}"
+    : "${DDOS_SURICATA_THRESHOLD_BLOCK_SHORT:=0.50}"
+    : "${DDOS_SURICATA_THRESHOLD_BLOCK_LONG:=0.70}"
+    : "${DDOS_SURICATA_THRESHOLD_BLOCK_PERMANENT:=0.90}"
+
+    # Ban durations
+    : "${DDOS_SURICATA_BAN_DURATION_SHORT:=600}"
+    : "${DDOS_SURICATA_BAN_DURATION_LONG:=3600}"
+    : "${DDOS_SURICATA_BAN_DURATION_PERMANENT:=86400}"
+    : "${DDOS_SURICATA_SCORE_DECAY:=3600}"
+    : "${DDOS_SURICATA_ALERT_WINDOW:=120}"
+
+    # Integration
+    : "${DDOS_SURICATA_USE_FEEDS:=true}"
+    : "${DDOS_SURICATA_USE_GEOIP:=true}"
+    : "${DDOS_SURICATA_USE_CLASSIC_LAYER0:=true}"
+
+    # Performance
+    : "${DDOS_SURICATA_BATCH_SIZE:=100}"
+    : "${DDOS_SURICATA_POLL_INTERVAL_MS:=500}"
+
+    # Logging
+    : "${DDOS_SURICATA_LOG_FILE:=/var/log/nftban/ddos-suricata.log}"
+    : "${DDOS_SURICATA_LOG_LEVEL:=INFO}"
+    : "${DDOS_SURICATA_LOG_SCORES:=true}"
+}
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+_nftban_ddos_suricata_log() {
+    local level="$1"
+    local message="$2"
+    local log_file="${DDOS_SURICATA_LOG_FILE:-/var/log/nftban/ddos-suricata.log}"
+
+    mkdir -p "$(dirname "$log_file")" 2>/dev/null
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SURICATA] [$level] $message" >> "$log_file"
+}
+
+# =============================================================================
+# SURICATA DETECTION (Is Suricata Available?)
+# =============================================================================
+
+# Check if Suricata binary exists
+nftban_ddos_suricata_binary_exists() {
+    local binary="${DDOS_SURICATA_BINARY:-/usr/bin/suricata}"
+    [[ -x "$binary" ]] || command -v suricata &>/dev/null
+}
+
+# Check if Suricata service is running
+nftban_ddos_suricata_service_running() {
+    local service="${DDOS_SURICATA_SERVICE_NAME:-suricata}"
+
+    # Try systemctl first
+    if command -v systemctl &>/dev/null; then
+        systemctl is-active --quiet "$service" 2>/dev/null && return 0
+    fi
+
+    # Try service command
+    if command -v service &>/dev/null; then
+        service "$service" status &>/dev/null && return 0
+    fi
+
+    # Check for running process
+    pgrep -x suricata &>/dev/null && return 0
+    pgrep -f "suricata.*-c" &>/dev/null && return 0
+
+    return 1
+}
+
+# Check if EVE JSON file exists and is fresh
+nftban_ddos_suricata_eve_active() {
+    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    local threshold="${DDOS_EVE_FRESHNESS_THRESHOLD:-60}"
+
+    # File must exist
+    [[ -f "$eve_file" ]] || return 1
+
+    # File must be readable
+    [[ -r "$eve_file" ]] || return 1
+
+    # Check freshness (modified within threshold seconds)
+    local now file_mtime age
+    now=$(date +%s)
+    file_mtime=$(stat -c %Y "$eve_file" 2>/dev/null || stat -f %m "$eve_file" 2>/dev/null)
+
+    if [[ -n "$file_mtime" ]]; then
+        age=$((now - file_mtime))
+        [[ $age -le $threshold ]] && return 0
+    fi
+
+    return 1
+}
+
+# Combined check: Is Suricata fully operational?
+nftban_ddos_suricata_is_available() {
+    local check_binary="${DDOS_AUTO_CHECK_BINARY:-true}"
+    local check_service="${DDOS_AUTO_CHECK_SERVICE:-true}"
+    local check_eve="${DDOS_AUTO_CHECK_EVE_FILE:-true}"
+
+    # Check binary
+    if [[ "$check_binary" == "true" ]]; then
+        if ! nftban_ddos_suricata_binary_exists; then
+            return 1
+        fi
+    fi
+
+    # Check service
+    if [[ "$check_service" == "true" ]]; then
+        if ! nftban_ddos_suricata_service_running; then
+            return 1
+        fi
+    fi
+
+    # Check EVE file
+    if [[ "$check_eve" == "true" ]]; then
+        if ! nftban_ddos_suricata_eve_active; then
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+# Get Suricata status details
+nftban_ddos_suricata_get_status() {
+    local status=""
+
+    if nftban_ddos_suricata_binary_exists; then
+        local version
+        version=$(suricata -V 2>/dev/null | head -1 | grep -oP '\d+\.\d+\.\d+' || echo "unknown")
+        status+="binary=OK(v$version) "
+    else
+        status+="binary=MISSING "
+    fi
+
+    if nftban_ddos_suricata_service_running; then
+        status+="service=RUNNING "
+    else
+        status+="service=STOPPED "
+    fi
+
+    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    if [[ -f "$eve_file" ]]; then
+        if nftban_ddos_suricata_eve_active; then
+            local size
+            size=$(du -h "$eve_file" 2>/dev/null | cut -f1)
+            status+="eve=ACTIVE($size) "
+        else
+            status+="eve=STALE "
+        fi
+    else
+        status+="eve=MISSING "
+    fi
+
+    echo "$status"
+}
+
+# =============================================================================
+# EVE JSON PARSING
+# =============================================================================
+
+# Parse EVE JSON and extract DDoS-related alerts
+_nftban_ddos_suricata_parse_eve() {
+    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    local patterns="${DDOS_SURICATA_SIG_PATTERNS}"
+    local window="${DDOS_SURICATA_ALERT_WINDOW:-120}"
+
+    # Check if jq is available
+    if ! command -v jq &>/dev/null; then
+        _nftban_ddos_suricata_log "ERROR" "jq not found - required for EVE parsing"
+        return 1
+    fi
+
+    # Get alerts from last N seconds
+    local since
+    since=$(date -d "-${window} seconds" '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || \
+            date -v-${window}S '+%Y-%m-%dT%H:%M:%S' 2>/dev/null)
+
+    # Parse and filter alerts
+    tail -n 10000 "$eve_file" 2>/dev/null | \
+    jq -r --arg since "$since" --arg patterns "$patterns" '
+        select(.event_type == "alert") |
+        select(.timestamp >= $since) |
+        select(.alert.signature | test($patterns; "i")) |
+        [.src_ip, .alert.severity, .alert.signature, .alert.category] | @tsv
+    ' 2>/dev/null
+}
+
+# Count alerts per IP in window
+_nftban_ddos_suricata_count_alerts() {
+    local ip="$1"
+    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    local window="${DDOS_SURICATA_ALERT_WINDOW:-120}"
+
+    local since
+    since=$(date -d "-${window} seconds" '+%Y-%m-%dT%H:%M:%S' 2>/dev/null || \
+            date -v-${window}S '+%Y-%m-%dT%H:%M:%S' 2>/dev/null)
+
+    tail -n 10000 "$eve_file" 2>/dev/null | \
+    jq -r --arg since "$since" --arg ip "$ip" '
+        select(.event_type == "alert") |
+        select(.timestamp >= $since) |
+        select(.src_ip == $ip) |
+        .src_ip
+    ' 2>/dev/null | wc -l
+}
+
+# =============================================================================
+# SCORING ENGINE
+# =============================================================================
+
+# Calculate score for an IP based on alerts
+_nftban_ddos_suricata_calculate_score() {
+    local ip="$1"
+    local severity="$2"
+    local signature="$3"
+
+    local score=0
+
+    # Base score from severity
+    case "$severity" in
+        1) score=$(echo "$score + $DDOS_SURICATA_SCORE_SEVERITY_1" | bc -l) ;;
+        2) score=$(echo "$score + $DDOS_SURICATA_SCORE_SEVERITY_2" | bc -l) ;;
+        3) score=$(echo "$score + $DDOS_SURICATA_SCORE_SEVERITY_3" | bc -l) ;;
+        4) score=$(echo "$score + $DDOS_SURICATA_SCORE_SEVERITY_4" | bc -l) ;;
+    esac
+
+    # Bonus for specific attack types
+    if echo "$signature" | grep -qi "syn.*flood"; then
+        score=$(echo "$score + ${DDOS_SURICATA_SCORE_SYN_FLOOD:-0.15}" | bc -l)
+    fi
+    if echo "$signature" | grep -qi "amplification\|reflection"; then
+        score=$(echo "$score + ${DDOS_SURICATA_SCORE_AMPLIFICATION:-0.20}" | bc -l)
+    fi
+
+    # Repetition bonus
+    local alert_count
+    alert_count=$(_nftban_ddos_suricata_count_alerts "$ip")
+
+    if [[ $alert_count -ge 20 ]]; then
+        score=$(echo "$score + $DDOS_SURICATA_SCORE_REPEAT_20" | bc -l)
+    elif [[ $alert_count -ge 10 ]]; then
+        score=$(echo "$score + $DDOS_SURICATA_SCORE_REPEAT_10" | bc -l)
+    elif [[ $alert_count -ge 5 ]]; then
+        score=$(echo "$score + $DDOS_SURICATA_SCORE_REPEAT_5" | bc -l)
+    fi
+
+    # Feed reputation (if enabled and function exists)
+    if [[ "$DDOS_SURICATA_USE_FEEDS" == "true" ]]; then
+        if type -t nftban_feeds_check_ip &>/dev/null; then
+            if nftban_feeds_check_ip "$ip" &>/dev/null; then
+                score=$(echo "$score + $DDOS_SURICATA_SCORE_BAD_REPUTATION" | bc -l)
+            fi
+        fi
+    fi
+
+    # GeoIP risk (if enabled and function exists)
+    if [[ "$DDOS_SURICATA_USE_GEOIP" == "true" ]]; then
+        if type -t nftban_geoip_lookup &>/dev/null; then
+            local country
+            country=$(nftban_geoip_lookup "$ip" 2>/dev/null)
+            # High-risk countries (configurable)
+            if echo "$country" | grep -qE "^(CN|RU|KP|IR)$"; then
+                score=$(echo "$score + $DDOS_SURICATA_SCORE_HIGH_RISK_GEO" | bc -l)
+            fi
+        fi
+    fi
+
+    # Clamp to 0.0 - 1.0
+    if (( $(echo "$score > 1.0" | bc -l) )); then
+        score="1.0"
+    fi
+    if (( $(echo "$score < 0.0" | bc -l) )); then
+        score="0.0"
+    fi
+
+    echo "$score"
+}
+
+# Decide action based on score
+_nftban_ddos_suricata_decide_action() {
+    local ip="$1"
+    local score="$2"
+
+    if (( $(echo "$score >= $DDOS_SURICATA_THRESHOLD_BLOCK_PERMANENT" | bc -l) )); then
+        echo "block_permanent"
+    elif (( $(echo "$score >= $DDOS_SURICATA_THRESHOLD_BLOCK_LONG" | bc -l) )); then
+        echo "block_long"
+    elif (( $(echo "$score >= $DDOS_SURICATA_THRESHOLD_BLOCK_SHORT" | bc -l) )); then
+        echo "block_short"
+    elif (( $(echo "$score >= $DDOS_SURICATA_THRESHOLD_OBSERVE" | bc -l) )); then
+        echo "observe"
+    else
+        echo "ignore"
+    fi
+}
+
+# =============================================================================
+# BLOCKING ACTIONS
+# =============================================================================
+
+_nftban_ddos_suricata_block_ip() {
+    local ip="$1"
+    local duration="$2"
+    local reason="$3"
+
+    local table="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
+    local set="${DDOS_CLASSIC_BLOCK_SET:-ddos_blocked}"
+
+    # Add to nftables set with timeout
+    nft add element $table "$set" { "$ip" timeout "${duration}s" } 2>/dev/null || {
+        # Set might not exist, create it
+        nft add set $table "$set" { type ipv4_addr \; flags timeout \; } 2>/dev/null
+        nft add element $table "$set" { "$ip" timeout "${duration}s" } 2>/dev/null
+    }
+
+    _nftban_ddos_suricata_log "INFO" "BLOCKED ip=$ip duration=${duration}s reason=$reason"
+}
+
+# =============================================================================
+# MAIN PROCESSING LOOP
+# =============================================================================
+
+_nftban_ddos_suricata_process_alerts() {
+    _nftban_ddos_suricata_load_config
+
+    local processed=0
+    local blocked=0
+
+    while IFS=$'\t' read -r ip severity signature category; do
+        [[ -z "$ip" ]] && continue
+
+        # Skip private/local IPs
+        if echo "$ip" | grep -qE "^(127\.|10\.|172\.(1[6-9]|2[0-9]|3[01])\.|192\.168\.)"; then
+            continue
+        fi
+
+        # Calculate score
+        local score
+        score=$(_nftban_ddos_suricata_calculate_score "$ip" "$severity" "$signature")
+
+        # Decide action
+        local action
+        action=$(_nftban_ddos_suricata_decide_action "$ip" "$score")
+
+        if [[ "$DDOS_SURICATA_LOG_SCORES" == "true" ]]; then
+            _nftban_ddos_suricata_log "DEBUG" "ip=$ip severity=$severity score=$score action=$action sig=$signature"
+        fi
+
+        case "$action" in
+            block_permanent)
+                _nftban_ddos_suricata_block_ip "$ip" "$DDOS_SURICATA_BAN_DURATION_PERMANENT" "permanent_threat"
+                ((blocked++))
+                ;;
+            block_long)
+                _nftban_ddos_suricata_block_ip "$ip" "$DDOS_SURICATA_BAN_DURATION_LONG" "high_threat"
+                ((blocked++))
+                ;;
+            block_short)
+                _nftban_ddos_suricata_block_ip "$ip" "$DDOS_SURICATA_BAN_DURATION_SHORT" "medium_threat"
+                ((blocked++))
+                ;;
+            observe)
+                _nftban_ddos_suricata_log "INFO" "OBSERVE ip=$ip score=$score"
+                ;;
+        esac
+
+        ((processed++))
+
+    done < <(_nftban_ddos_suricata_parse_eve)
+
+    echo "processed=$processed blocked=$blocked"
+}
+
+# =============================================================================
+# PUBLIC API
+# =============================================================================
+
+nftban_ddos_suricata_enable() {
+    _nftban_ddos_suricata_load_config
+
+    echo ""
+    echo "Enabling Suricata DDoS Protection..."
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Check Suricata availability
+    if ! nftban_ddos_suricata_is_available; then
+        echo ""
+        echo "  ERROR: Suricata is not available!"
+        echo ""
+        echo "  Status: $(nftban_ddos_suricata_get_status)"
+        echo ""
+        echo "  To use Suricata mode:"
+        echo "    1. Install Suricata: apt install suricata"
+        echo "    2. Start service:    systemctl start suricata"
+        echo "    3. Verify EVE log:   ls -la $DDOS_SURICATA_EVE_FILE"
+        echo ""
+        return 1
+    fi
+
+    echo "  Suricata: $(nftban_ddos_suricata_get_status)"
+    echo ""
+
+    # Enable Classic Layer 0 if configured
+    if [[ "$DDOS_SURICATA_USE_CLASSIC_LAYER0" == "true" ]]; then
+        echo "  Enabling Classic Layer 0 (hard limits)..."
+        if type -t nftban_ddos_classic_enable &>/dev/null; then
+            nftban_ddos_classic_enable
+        fi
+    fi
+
+    # Create block set if not exists
+    local table="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
+    local set="${DDOS_CLASSIC_BLOCK_SET:-ddos_blocked}"
+
+    nft add set $table "$set" { type ipv4_addr \; flags timeout \; } 2>/dev/null || true
+
+    # Add drop rule for blocked set
+    if ! nft list chain $table input 2>/dev/null | grep -q "@$set drop"; then
+        nft add rule $table input ip saddr @"$set" counter drop \
+            comment "\"DDoS Suricata blocked\"" 2>/dev/null || true
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Suricata DDoS Protection ENABLED"
+    echo ""
+    echo "  EVE File:        $DDOS_SURICATA_EVE_FILE"
+    echo "  Block Threshold: $DDOS_SURICATA_THRESHOLD_BLOCK_SHORT"
+    echo "  Alert Window:    ${DDOS_SURICATA_ALERT_WINDOW}s"
+    echo "  Use Feeds:       $DDOS_SURICATA_USE_FEEDS"
+    echo "  Use GeoIP:       $DDOS_SURICATA_USE_GEOIP"
+    echo "  Classic Layer0:  $DDOS_SURICATA_USE_CLASSIC_LAYER0"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    _nftban_ddos_suricata_log "INFO" "Suricata DDoS protection enabled"
+
+    return 0
+}
+
+nftban_ddos_suricata_disable() {
+    _nftban_ddos_suricata_load_config
+
+    echo ""
+    echo "Disabling Suricata DDoS Protection..."
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Disable Classic Layer 0 if it was enabled
+    if [[ "$DDOS_SURICATA_USE_CLASSIC_LAYER0" == "true" ]]; then
+        if type -t nftban_ddos_classic_disable &>/dev/null; then
+            nftban_ddos_classic_disable
+        fi
+    fi
+
+    # Flush block set
+    local table="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
+    local set="${DDOS_CLASSIC_BLOCK_SET:-ddos_blocked}"
+
+    nft flush set $table "$set" 2>/dev/null || true
+
+    echo ""
+    echo "Suricata DDoS protection disabled"
+    echo ""
+
+    _nftban_ddos_suricata_log "INFO" "Suricata DDoS protection disabled"
+
+    return 0
+}
+
+nftban_ddos_suricata_status() {
+    _nftban_ddos_suricata_load_config
+
+    echo ""
+    echo "Suricata DDoS Protection Status"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Suricata availability
+    echo ""
+    echo "Suricata IDS:"
+    if nftban_ddos_suricata_binary_exists; then
+        local version
+        version=$(suricata -V 2>/dev/null | head -1 | grep -oP '\d+\.\d+\.\d+' || echo "?")
+        echo "  Binary:  OK (v$version)"
+    else
+        echo "  Binary:  NOT FOUND"
+    fi
+
+    if nftban_ddos_suricata_service_running; then
+        echo "  Service: RUNNING"
+    else
+        echo "  Service: STOPPED"
+    fi
+
+    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    if [[ -f "$eve_file" ]]; then
+        local size age
+        size=$(du -h "$eve_file" 2>/dev/null | cut -f1)
+        local mtime
+        mtime=$(stat -c %Y "$eve_file" 2>/dev/null || stat -f %m "$eve_file" 2>/dev/null)
+        age=$(($(date +%s) - mtime))
+        if [[ $age -le 60 ]]; then
+            echo "  EVE Log: ACTIVE (${size}, ${age}s ago)"
+        else
+            echo "  EVE Log: STALE (${size}, ${age}s ago)"
+        fi
+    else
+        echo "  EVE Log: NOT FOUND ($eve_file)"
+    fi
+
+    # Overall status
+    echo ""
+    if nftban_ddos_suricata_is_available; then
+        echo "  Overall: READY"
+    else
+        echo "  Overall: NOT READY"
+    fi
+
+    # Configuration
+    echo ""
+    echo "Configuration:"
+    echo "  Block Threshold:   $DDOS_SURICATA_THRESHOLD_BLOCK_SHORT"
+    echo "  Ban Short:         ${DDOS_SURICATA_BAN_DURATION_SHORT}s"
+    echo "  Ban Long:          ${DDOS_SURICATA_BAN_DURATION_LONG}s"
+    echo "  Alert Window:      ${DDOS_SURICATA_ALERT_WINDOW}s"
+    echo "  Use Feeds:         $DDOS_SURICATA_USE_FEEDS"
+    echo "  Use GeoIP:         $DDOS_SURICATA_USE_GEOIP"
+    echo "  Classic Layer0:    $DDOS_SURICATA_USE_CLASSIC_LAYER0"
+
+    # Block set stats
+    echo ""
+    local table="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
+    local set="${DDOS_CLASSIC_BLOCK_SET:-ddos_blocked}"
+    local blocked_count
+    blocked_count=$(nft list set $table "$set" 2>/dev/null | grep -c "timeout" || echo "0")
+    echo "Currently Blocked: $blocked_count IPs"
+
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    return 0
+}
+
+# Process alerts (called by timer/daemon)
+nftban_ddos_suricata_process() {
+    _nftban_ddos_suricata_load_config
+
+    if ! nftban_ddos_suricata_is_available; then
+        _nftban_ddos_suricata_log "WARN" "Suricata not available, skipping"
+        return 1
+    fi
+
+    _nftban_ddos_suricata_process_alerts
+}
+
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+export -f nftban_ddos_suricata_enable
+export -f nftban_ddos_suricata_disable
+export -f nftban_ddos_suricata_status
+export -f nftban_ddos_suricata_process
+export -f nftban_ddos_suricata_is_available
+export -f nftban_ddos_suricata_get_status
+export -f nftban_ddos_suricata_binary_exists
+export -f nftban_ddos_suricata_service_running
+export -f nftban_ddos_suricata_eve_active

@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFTBan Security Report</title>
+</head>
+<body style="margin:0;padding:0;font-family:Arial,Helvetica,sans-serif;background-color:#0f172a;color:#e2e8f0;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="max-width:600px;margin:0 auto;background-color:#1e293b;">
+        <!-- Header -->
+        <tr>
+            <td style="padding:24px;background:linear-gradient(135deg,#1e40af 0%,#7c3aed 100%);text-align:center;">
+                <h1 style="margin:0;color:#ffffff;font-size:24px;">NFTBan Security Report</h1>
+                <p style="margin:8px 0 0;color:#c7d2fe;font-size:14px;">{{HOSTNAME}} | {{DATE}}</p>
+            </td>
+        </tr>
+
+        <!-- Summary Stats -->
+        <tr>
+            <td style="padding:24px;">
+                <table width="100%" cellpadding="0" cellspacing="0">
+                    <tr>
+                        <td width="50%" style="padding:12px;text-align:center;background-color:#334155;border-radius:8px 0 0 8px;">
+                            <div style="font-size:32px;font-weight:bold;color:#22d3ee;">{{BLOCKED_IPS}}</div>
+                            <div style="font-size:12px;color:#94a3b8;text-transform:uppercase;">IPs Blocked</div>
+                        </td>
+                        <td width="50%" style="padding:12px;text-align:center;background-color:#334155;border-radius:0 8px 8px 0;">
+                            <div style="font-size:32px;font-weight:bold;color:#fbbf24;">{{WHITELIST_COUNT}}</div>
+                            <div style="font-size:12px;color:#94a3b8;text-transform:uppercase;">Whitelisted</div>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+
+        <!-- Threat Feeds -->
+        <tr>
+            <td style="padding:0 24px 24px;">
+                <h2 style="margin:0 0 16px;font-size:16px;color:#f1f5f9;">Threat Feeds Loaded</h2>
+                <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#334155;border-radius:8px;">
+                    {{FEEDS_STATUS}}
+                </table>
+            </td>
+        </tr>
+
+        <!-- New Bans (Period) -->
+        <tr>
+            <td style="padding:0 24px 24px;">
+                <h2 style="margin:0 0 16px;font-size:16px;color:#f1f5f9;">New Bans (Last 24h)</h2>
+                <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#334155;border-radius:8px;">
+                    <tr>
+                        <td style="padding:12px 16px;border-bottom:1px solid #475569;">
+                            <span style="color:#94a3b8;">Login Monitor</span>
+                        </td>
+                        <td style="padding:12px 16px;text-align:right;border-bottom:1px solid #475569;">
+                            <span style="color:#4ade80;font-weight:bold;">{{LOGIN_BANS}}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:12px 16px;border-bottom:1px solid #475569;">
+                            <span style="color:#94a3b8;">Port Scan Detection</span>
+                        </td>
+                        <td style="padding:12px 16px;text-align:right;border-bottom:1px solid #475569;">
+                            <span style="color:#fbbf24;font-weight:bold;">{{PORTSCAN_BANS}}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:12px 16px;border-bottom:1px solid #475569;">
+                            <span style="color:#94a3b8;">DDoS Protection</span>
+                        </td>
+                        <td style="padding:12px 16px;text-align:right;border-bottom:1px solid #475569;">
+                            <span style="color:#f87171;font-weight:bold;">{{DDOS_BANS}}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:12px 16px;">
+                            <span style="color:#94a3b8;">Manual Bans</span>
+                        </td>
+                        <td style="padding:12px 16px;text-align:right;">
+                            <span style="color:#22d3ee;font-weight:bold;">{{MANUAL_BANS}}</span>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+
+        <!-- Protection Status -->
+        <tr>
+            <td style="padding:0 24px 24px;">
+                <h2 style="margin:0 0 16px;font-size:16px;color:#f1f5f9;">Protection Status</h2>
+                <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#334155;border-radius:8px;">
+                    {{PROTECTION_STATUS}}
+                </table>
+            </td>
+        </tr>
+
+        <!-- Top Banned IPs -->
+        <tr>
+            <td style="padding:0 24px 24px;">
+                <h2 style="margin:0 0 16px;font-size:16px;color:#f1f5f9;">Top Banned IPs (Last 24h)</h2>
+                <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#334155;border-radius:8px;">
+                    {{TOP_IPS}}
+                </table>
+            </td>
+        </tr>
+
+        <!-- Footer -->
+        <tr>
+            <td style="padding:24px;text-align:center;background-color:#0f172a;">
+                <p style="margin:0;font-size:12px;color:#64748b;">
+                    Generated by NFTBan v1.0.0 | <a href="https://nftban.com" style="color:#3b82f6;text-decoration:none;">nftban.com</a>
+                </p>
+                <p style="margin:8px 0 0;font-size:11px;color:#475569;">
+                    Report ID: {{REPORT_ID}}
+                </p>
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

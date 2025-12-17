@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan Queue Processor (called by systemd timer)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Process tasks from NFTBan queue
+# Called by: nftban-queue.timer every 2 minutes
+# =============================================================================
+
+set -euo pipefail
+
+# Set NFTBan library directory
+readonly NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+
+# Source task queue helper
+# shellcheck source=/dev/null
+if [[ ! -f "${NFTBAN_LIB_DIR}/helpers/nftban_task_queue.sh" ]]; then
+    echo "ERROR: Cannot find nftban_task_queue.sh at ${NFTBAN_LIB_DIR}/helpers/nftban_task_queue.sh" >&2
+    exit 1
+fi
+source "${NFTBAN_LIB_DIR}/helpers/nftban_task_queue.sh"
+
+# Log startup
+_queue_log "INFO" "Queue processor started by systemd timer"
+
+# Process one task (if available)
+if nftban_queue_process_next; then
+    _queue_log "INFO" "Task processed successfully"
+    exit 0
+else
+    result=$?
+    if [[ $result -eq 1 ]]; then
+        # No tasks in queue (normal)
+        exit 0
+    elif [[ $result -eq 2 ]]; then
+        # Already locked (another instance running)
+        _queue_log "WARN" "Queue processor already running, skipping this cycle"
+        exit 0
+    else
+        # Processing error
+        _queue_log "ERROR" "Task processing failed"
+        exit 1
+    fi
+fi

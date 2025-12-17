@@ -1,0 +1,62 @@
+# ============================================================================
+# NFTBan v1.0 - Suricata Filter Configuration (LOCAL OVERRIDES - EXAMPLE)
+# ============================================================================
+# This file overrides settings from filters.conf
+# Safe from updates - your customizations are preserved here
+#
+# Copy this file to filters.conf.local and customize:
+#   cp filters.conf.local.example filters.conf.local
+#
+# FORMAT:
+# filter_name = enabled | keywords | threshold | ban_time | action | ban_type | description
+#
+# ============================================================================
+
+[global]
+# Override global settings if needed
+# enabled = true
+# default_threshold = 100
+# default_ban_time = 30m
+# default_action = ban
+# score_decay = 1h
+
+[filters]
+# ──────────────────────────────────────────────────────────────────────────
+# EXAMPLE 1: Enable FTP filter with escalation (was disabled by default)
+# ──────────────────────────────────────────────────────────────────────────
+# ftp = true | ftp,vsftpd,proftpd,file transfer | 85 | 1h | ban | escalate:3:24h | FTP attacks (ENABLED, escalating)
+
+# ──────────────────────────────────────────────────────────────────────────
+# EXAMPLE 2: Disable HTTP filter (not running web server)
+# ──────────────────────────────────────────────────────────────────────────
+# http = false | http,web,wordpress,sqli,xss,rfi,lfi | 100 | 1h | ban | escalate:3:24h | Web exploits (DISABLED)
+
+# ──────────────────────────────────────────────────────────────────────────
+# EXAMPLE 3: Tune SSH - more aggressive (threshold lower, faster escalation)
+# ──────────────────────────────────────────────────────────────────────────
+# ssh = true | ssh,brute,bruteforce | 70 | 20m | ban | escalate:2:12h | SSH (tuned: lower threshold, faster escalation)
+
+# ──────────────────────────────────────────────────────────────────────────
+# EXAMPLE 4: Enable RDP in testing mode (no banning yet)
+# ──────────────────────────────────────────────────────────────────────────
+# rdp = true | rdp,3389,remote desktop,terminal | 85 | 1h | log | temporary | RDP attacks (TESTING - log only)
+
+# ──────────────────────────────────────────────────────────────────────────
+# EXAMPLE 5: WordPress - permanent ban immediately (zero tolerance)
+# ──────────────────────────────────────────────────────────────────────────
+# wordpress = true | wordpress,wp-login,xmlrpc,wp-admin | 90 | 0 | ban | permanent | WordPress (PERMANENT immediately)
+
+# ──────────────────────────────────────────────────────────────────────────
+# EXAMPLE 6: Mail filter - observe mode (too many false positives)
+# ──────────────────────────────────────────────────────────────────────────
+# mail = true | smtp,imap,pop3,sasl,postfix,dovecot | 90 | 45m | observe | temporary | Mail (OBSERVING - not banning yet)
+
+# ──────────────────────────────────────────────────────────────────────────
+# EXAMPLE 7: Custom app filter with aggressive escalation
+# ──────────────────────────────────────────────────────────────────────────
+# myapp = true | myapp,api,custom,abuse | 110 | 30m | ban | escalate:2:6h | Custom app (escalate after 2x in 6h)
+
+# ──────────────────────────────────────────────────────────────────────────
+# EXAMPLE 8: Scan filter - very aggressive (1 strike and you're out)
+# ──────────────────────────────────────────────────────────────────────────
+# scan = true | scan,probe,reconnaissance,portscan | 70 | 5m | ban | escalate:1:1h | Port scans (1 strike = permanent)

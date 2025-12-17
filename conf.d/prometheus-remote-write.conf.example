@@ -1,0 +1,181 @@
+# NFTBan Prometheus Remote Write Configuration
+# Copy to /etc/nftban/conf.d/prometheus-remote-write.conf and customize
+
+# =============================================================================
+# REMOTE WRITE CONFIGURATION
+# =============================================================================
+# Enable/disable remote write to central Prometheus/Thanos/Grafana Cloud
+# Default: disabled (keep metrics local only)
+
+NFTBAN_PROMETHEUS_REMOTE_WRITE_ENABLED="false"
+
+# Remote write endpoint URL
+# Examples:
+#   - Central Prometheus: https://prometheus-central.example.com/api/v1/write
+#   - Thanos Receiver: https://thanos-receive.example.com/api/v1/receive
+#   - Grafana Cloud: https://prometheus-prod-XX.grafana.net/api/prom/push
+# Default: none
+NFTBAN_PROMETHEUS_REMOTE_WRITE_URL=""
+
+# Authentication (Basic Auth)
+# Required for most remote write endpoints
+NFTBAN_PROMETHEUS_REMOTE_WRITE_USERNAME=""
+NFTBAN_PROMETHEUS_REMOTE_WRITE_PASSWORD=""
+
+# Or use password file (more secure than inline password)
+# File should contain password in plain text, mode 600
+NFTBAN_PROMETHEUS_REMOTE_WRITE_PASSWORD_FILE="/etc/nftban/prometheus_password.secret"
+
+# Bearer token authentication (alternative to basic auth)
+# Used by some cloud providers (e.g., some Grafana Cloud configs)
+NFTBAN_PROMETHEUS_REMOTE_WRITE_BEARER_TOKEN=""
+NFTBAN_PROMETHEUS_REMOTE_WRITE_BEARER_TOKEN_FILE="/etc/nftban/prometheus_token.secret"
+
+# TLS Configuration
+# Skip TLS verification (for self-signed certificates)
+# Default: false (verify certificates)
+NFTBAN_PROMETHEUS_REMOTE_WRITE_INSECURE_SKIP_VERIFY="false"
+
+# Custom CA certificate for TLS
+# Path to CA certificate file
+NFTBAN_PROMETHEUS_REMOTE_WRITE_CA_FILE=""
+
+# Client certificate authentication (mTLS)
+NFTBAN_PROMETHEUS_REMOTE_WRITE_CERT_FILE=""
+NFTBAN_PROMETHEUS_REMOTE_WRITE_KEY_FILE=""
+
+# =============================================================================
+# QUEUE CONFIGURATION
+# =============================================================================
+# Controls how metrics are batched and sent to remote
+
+# Maximum number of samples in queue
+# Default: 10000
+NFTBAN_PROMETHEUS_REMOTE_WRITE_QUEUE_CAPACITY="10000"
+
+# Maximum samples per send batch
+# Default: 500
+NFTBAN_PROMETHEUS_REMOTE_WRITE_MAX_SAMPLES_PER_SEND="500"
+
+# Batch send deadline
+# How long to wait before sending batch (even if not full)
+# Default: 5s
+NFTBAN_PROMETHEUS_REMOTE_WRITE_BATCH_SEND_DEADLINE="5s"
+
+# Minimum/Maximum backoff on send errors
+# Default: 30ms / 100ms
+NFTBAN_PROMETHEUS_REMOTE_WRITE_MIN_BACKOFF="30ms"
+NFTBAN_PROMETHEUS_REMOTE_WRITE_MAX_BACKOFF="100ms"
+
+# Maximum number of parallel shards for sending
+# Default: 5
+NFTBAN_PROMETHEUS_REMOTE_WRITE_MAX_SHARDS="5"
+
+# Minimum number of shards
+# Default: 1
+NFTBAN_PROMETHEUS_REMOTE_WRITE_MIN_SHARDS="1"
+
+# =============================================================================
+# LABEL CONFIGURATION
+# =============================================================================
+# Add custom labels to all remote-written metrics
+# Useful for identifying source instance in central monitoring
+
+# Instance label (auto-detected from hostname if empty)
+NFTBAN_PROMETHEUS_INSTANCE_LABEL=""
+
+# Environment label (production, staging, development)
+NFTBAN_PROMETHEUS_ENVIRONMENT_LABEL="production"
+
+# Cluster name
+NFTBAN_PROMETHEUS_CLUSTER_LABEL="nftban-cluster"
+
+# Datacenter/Region
+NFTBAN_PROMETHEUS_REGION_LABEL=""
+NFTBAN_PROMETHEUS_DATACENTER_LABEL=""
+
+# Custom labels (key=value pairs, comma-separated)
+# Example: "tier=firewall,team=security,customer=acme"
+NFTBAN_PROMETHEUS_CUSTOM_LABELS=""
+
+# =============================================================================
+# METRIC FILTERING
+# =============================================================================
+# Control which metrics are sent remotely (regex patterns)
+
+# Only send metrics matching this regex
+# Default: "nftban_.*" (all NFTBan metrics)
+NFTBAN_PROMETHEUS_REMOTE_WRITE_METRIC_INCLUDE_REGEX="nftban_.*"
+
+# Exclude metrics matching this regex
+# Default: "" (no exclusions)
+NFTBAN_PROMETHEUS_REMOTE_WRITE_METRIC_EXCLUDE_REGEX=""
+
+# =============================================================================
+# RATE LIMITING
+# =============================================================================
+# Limit network bandwidth used by remote write
+
+# Maximum bytes per second for remote write
+# Set to 0 for unlimited
+# Default: 0 (unlimited)
+# Example: 1048576 = 1 MB/s
+NFTBAN_PROMETHEUS_REMOTE_WRITE_MAX_BYTES_PER_SECOND="0"
+
+# =============================================================================
+# RETRY CONFIGURATION
+# =============================================================================
+
+# Enable retries on send failures
+# Default: true
+NFTBAN_PROMETHEUS_REMOTE_WRITE_RETRY_ON_FAILURE="true"
+
+# Maximum retry attempts before dropping samples
+# Default: 3
+NFTBAN_PROMETHEUS_REMOTE_WRITE_MAX_RETRIES="3"
+
+# =============================================================================
+# EXAMPLE CONFIGURATIONS
+# =============================================================================
+
+# --- Example 1: Central Prometheus with Basic Auth ---
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_ENABLED="true"
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_URL="https://prometheus.example.com/api/v1/write"
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_USERNAME="nftban"
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_PASSWORD_FILE="/etc/nftban/prometheus_password.secret"
+# NFTBAN_PROMETHEUS_ENVIRONMENT_LABEL="production"
+# NFTBAN_PROMETHEUS_CLUSTER_LABEL="firewall-prod"
+
+# --- Example 2: Grafana Cloud ---
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_ENABLED="true"
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_URL="https://prometheus-prod-01-eu-west-0.grafana.net/api/prom/push"
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_USERNAME="123456"
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_PASSWORD="YOUR_GRAFANA_CLOUD_API_KEY"
+# NFTBAN_PROMETHEUS_ENVIRONMENT_LABEL="production"
+
+# --- Example 3: Thanos Receiver ---
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_ENABLED="true"
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_URL="https://thanos-receive.example.com/api/v1/receive"
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_BEARER_TOKEN_FILE="/etc/nftban/thanos_token.secret"
+# NFTBAN_PROMETHEUS_CUSTOM_LABELS="tenant=nftban,region=us-east-1"
+
+# --- Example 4: Self-Signed Certificate ---
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_ENABLED="true"
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_URL="https://prometheus.internal.example.com/api/v1/write"
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_CA_FILE="/etc/nftban/ssl/ca.pem"
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_USERNAME="nftban"
+# NFTBAN_PROMETHEUS_REMOTE_WRITE_PASSWORD_FILE="/etc/nftban/prometheus_password.secret"
+
+# =============================================================================
+# SECURITY NOTES
+# =============================================================================
+#
+# 1. NEVER commit passwords to version control
+# 2. Use password files instead of inline passwords
+# 3. Set proper file permissions: chmod 600 /etc/nftban/prometheus_password.secret
+# 4. Rotate credentials regularly
+# 5. Use TLS for all remote write endpoints
+# 6. Consider using mTLS (client certificates) for additional security
+# 7. Monitor failed remote write attempts in logs
+#
+# =============================================================================

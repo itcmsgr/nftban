@@ -1,0 +1,24 @@
+[Unit]
+Description=NFTBan System Watchdog Timer
+Documentation=man:nftban(8)
+Requires=nftban-watchdog.service
+
+[Timer]
+# Start 2 minutes after boot
+OnBootSec=2min
+
+# Run every 90 seconds for responsive alerting
+# CSF uses 60s, we use 90s for slightly less overhead
+OnUnitActiveSec=90s
+
+# Allow some variance to prevent load spikes
+AccuracySec=10s
+
+# Persist timer across reboots
+Persistent=true
+
+# Unit to activate
+Unit=nftban-watchdog.service
+
+[Install]
+WantedBy=timers.target

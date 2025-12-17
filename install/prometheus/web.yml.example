@@ -1,0 +1,170 @@
+# =============================================================================
+# Prometheus Web Configuration - Authentication & TLS
+# =============================================================================
+# Location: /etc/prometheus/web.yml
+#
+# This file configures authentication and TLS for Prometheus web UI.
+#
+# Usage:
+#   1. Generate bcrypt password hash (see below)
+#   2. Copy this file to /etc/prometheus/web.yml
+#   3. Update prometheus.service to use --web.config.file=/etc/prometheus/web.yml
+#   4. Reload: systemctl restart prometheus
+# =============================================================================
+
+# Basic authentication
+basic_auth_users:
+  # Username: admin
+  # Password: change-this-password
+  # Hash generated with: htpasswd -nBC 10 "" | tr -d ':\n'
+  admin: $2y$10$hKq3P7HhWYJGbHZU5I5YpeLhQMPgJmKGUqJcF7vZnJZpvVXqXqXqm
+
+  # Add more users as needed:
+  # viewer: $2y$10$anotherHashHere
+
+# Optional: TLS configuration
+# tls_server_config:
+#   # Certificate and key
+#   cert_file: /etc/prometheus/tls/prometheus.crt
+#   key_file: /etc/prometheus/tls/prometheus.key
+#
+#   # Minimum TLS version
+#   min_version: TLS12
+#
+#   # Cipher suites (optional, use strong ciphers)
+#   cipher_suites:
+#     - TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+#     - TLS_ECDHE_RSA_WITH_AES_256_GCM_SHA384
+#     - TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+#     - TLS_ECDHE_ECDSA_WITH_AES_256_GCM_SHA384
+#
+#   # Prefer server cipher suites
+#   prefer_server_cipher_suites: true
+#
+#   # Client certificate authentication (optional)
+#   # client_auth_type: RequireAndVerifyClientCert
+#   # client_ca_file: /etc/prometheus/tls/ca.crt
+
+# =============================================================================
+# Generating Password Hashes
+# =============================================================================
+#
+# Method 1: Using htpasswd (recommended)
+#
+#   # Install htpasswd
+#   dnf install httpd-tools          # RHEL/Fedora
+#   apt-get install apache2-utils    # Debian/Ubuntu
+#
+#   # Generate hash (will prompt for password)
+#   htpasswd -nBC 10 "" | tr -d ':\n'
+#
+#   Example output:
+#   $2y$10$hKq3P7HhWYJGbHZU5I5YpeLhQMPgJmKGUqJcF7vZnJZpvVXqXqXqm
+#
+# Method 2: Using Python
+#
+#   python3 -c 'import bcrypt; print(bcrypt.hashpw(b"yourpassword", bcrypt.gensalt(rounds=10)).decode())'
+#
+# Method 3: Using online tool (NOT RECOMMENDED for production)
+#
+#   https://bcrypt-generator.com/
+#
+# =============================================================================
+
+# =============================================================================
+# TLS Certificate Generation
+# =============================================================================
+#
+# Self-signed certificate (testing only):
+#
+#   mkdir -p /etc/prometheus/tls
+#   cd /etc/prometheus/tls
+#
+#   openssl req -new -newkey rsa:2048 -days 365 -nodes -x509 \
+#     -keyout prometheus.key \
+#     -out prometheus.crt \
+#     -subj "/CN=prometheus.local/O=NFTBan/C=US"
+#
+#   chmod 600 prometheus.key
+#   chown prometheus:prometheus prometheus.key prometheus.crt
+#
+# Let's Encrypt (production):
+#
+#   # Install certbot
+#   dnf install certbot                    # RHEL/Fedora
+#   apt-get install certbot                # Debian/Ubuntu
+#
+#   # Get certificate
+#   certbot certonly --standalone -d prometheus.example.com
+#
+#   # Link to Prometheus directory
+#   ln -s /etc/letsencrypt/live/prometheus.example.com/fullchain.pem \
+#         /etc/prometheus/tls/prometheus.crt
+#   ln -s /etc/letsencrypt/live/prometheus.example.com/privkey.pem \
+#         /etc/prometheus/tls/prometheus.key
+#
+#   # Set permissions
+#   chown -h prometheus:prometheus /etc/prometheus/tls/*
+#
+#   # Auto-renewal
+#   echo "0 0 * * * certbot renew --quiet --deploy-hook 'systemctl reload prometheus'" | crontab -
+#
+# =============================================================================
+
+# =============================================================================
+# Systemd Service Configuration
+# =============================================================================
+#
+# Update /etc/systemd/system/prometheus.service.d/web-config.conf:
+#
+#   [Service]
+#   ExecStart=
+#   ExecStart=/usr/bin/prometheus \
+#     --config.file=/etc/prometheus/prometheus.yml \
+#     --storage.tsdb.path=/var/lib/prometheus/ \
+#     --web.console.templates=/etc/prometheus/consoles \
+#     --web.console.libraries=/etc/prometheus/console_libraries \
+#     --web.config.file=/etc/prometheus/web.yml \
+#     --web.listen-address=127.0.0.1:9090
+#
+# Then reload:
+#   systemctl daemon-reload
+#   systemctl restart prometheus
+#
+# =============================================================================
+
+# =============================================================================
+# Testing Authentication
+# =============================================================================
+#
+# Without authentication (should fail with 401):
+#   curl http://localhost:9090/metrics
+#
+# With authentication:
+#   curl -u admin:yourpassword http://localhost:9090/metrics
+#
+# With TLS:
+#   curl -u admin:yourpassword https://localhost:9090/metrics
+#
+# Access in browser:
+#   http://localhost:9090
+#   (will prompt for username/password)
+#
+# =============================================================================
+
+# =============================================================================
+# Security Best Practices
+# =============================================================================
+#
+# 1. Use strong passwords (16+ characters, mixed case, symbols)
+# 2. Enable TLS for production deployments
+# 3. Use bcrypt cost factor of 10 or higher
+# 4. Bind to localhost if using reverse proxy
+# 5. Use reverse proxy (nginx/apache) for public access
+# 6. Regularly rotate passwords
+# 7. Use client certificate auth for service-to-service
+# 8. Monitor failed authentication attempts
+# 9. Use Prometheus behind VPN for sensitive environments
+# 10. Never commit this file with real passwords to git
+#
+# =============================================================================

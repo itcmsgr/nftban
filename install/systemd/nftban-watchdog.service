@@ -1,0 +1,38 @@
+[Unit]
+Description=NFTBan System Watchdog Check
+Documentation=man:nftban(8)
+After=network.target nftables.service
+
+[Service]
+Type=oneshot
+
+# Run as unprivileged nftban user
+User=nftban
+Group=nftban
+
+# Run watchdog checks and export metrics
+# Uses the core watchdog module which:
+# - Reads system metrics from /proc
+# - Saves reports to /var/lib/nftban/reports/watchdog/
+# - Exports Prometheus metrics to /var/lib/nftban/metrics/
+# - Sends alerts to syslog when thresholds exceeded
+ExecStart=/usr/bin/nftban watchdog report --save
+
+# Exit codes: 0=OK, 1=warnings, 2=critical - all are valid check results
+SuccessExitStatus=0 1 2
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-watchdog
+
+# Security hardening - read-only except for output directories
+PrivateTmp=yes
+NoNewPrivileges=yes
+ProtectSystem=full
+ProtectHome=yes
+ReadOnlyPaths=/etc /usr /proc
+ReadWritePaths=/var/log/nftban /var/lib/nftban /run/nftban
+
+[Install]
+WantedBy=multi-user.target

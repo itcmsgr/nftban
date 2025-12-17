@@ -1,0 +1,73 @@
+<h2><i class="fa fa-globe"></i> GeoIP Lookup</h2>
+<p class="text-muted">Look up geographical information for IP addresses</p>
+
+<div class="card">
+    <h3><i class="fa fa-magnifying-glass"></i> IP Lookup</h3>
+    <div class="form-row">
+        <input type="text" id="geoip-input" placeholder="Enter IP address (e.g., 8.8.8.8)">
+        <button onclick="lookupIP()" class="btn-primary">
+            <i class="fa fa-search"></i> Lookup
+        </button>
+    </div>
+
+    <div id="geoip-result" style="margin-top: 20px;"></div>
+</div>
+
+<script>
+async function lookupIP() {
+    const ip = document.getElementById('geoip-input').value.trim();
+    const resultEl = document.getElementById('geoip-result');
+
+    if (!ip) {
+        resultEl.innerHTML = '<p class="text-danger">Please enter an IP address</p>';
+        return;
+    }
+
+    try {
+        resultEl.innerHTML = '<p class="text-muted"><i class="fa fa-spinner fa-spin"></i> Looking up...</p>';
+
+        const response = await apiRequest(`/geo?ip=${encodeURIComponent(ip)}`);
+
+        if (!response.data) {
+            resultEl.innerHTML = '<p class="text-danger">No data found for this IP</p>';
+            return;
+        }
+
+        const data = response.data;
+        let html = `
+            <div style="background: var(--bg-alt); border: 1px solid var(--border); border-radius: 8px; padding: 20px;">
+                <h4 style="margin-bottom: 15px;">${ip}</h4>
+                <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 15px;">
+                    <div>
+                        <strong>Country:</strong> ${data.country || 'Unknown'} ${data.country_code ? `(${data.country_code})` : ''}
+                    </div>
+                    <div>
+                        <strong>City:</strong> ${data.city || 'Unknown'}
+                    </div>
+                    <div>
+                        <strong>Region:</strong> ${data.region || 'Unknown'}
+                    </div>
+                    <div>
+                        <strong>ISP:</strong> ${data.isp || 'Unknown'}
+                    </div>
+                    <div>
+                        <strong>Latitude:</strong> ${data.latitude || 'N/A'}
+                    </div>
+                    <div>
+                        <strong>Longitude:</strong> ${data.longitude || 'N/A'}
+                    </div>
+                </div>
+            </div>
+        `;
+
+        resultEl.innerHTML = html;
+    } catch (error) {
+        resultEl.innerHTML = `<p class="text-danger">Lookup failed: ${error.message}</p>`;
+    }
+}
+
+// Enter key support
+document.getElementById('geoip-input')?.addEventListener('keypress', (e) => {
+    if (e.key === 'Enter') lookupIP();
+});
+</script>

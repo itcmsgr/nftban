@@ -1,0 +1,181 @@
+package middleware
+
+import (
+	"context"
+	"encoding/json"
+	"log"
+	"net/http"
+	"os"
+	"strings"
+	"time"
+
+	"github.com/itcmsgr/nftban-v1.0-dev/internal/config"
+	"github.com/itcmsgr/nftban-v1.0-dev/pkg/auth"
+	"github.com/itcmsgr/nftban-v1.0-dev/pkg/netutil"
+)
+
+type contextKey string
+
+const (
+	UserContextKey contextKey = "user"
+)
+
+// LoggingMiddleware logs all HTTP requests
+func LoggingMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		start := time.Now()
+		clientIP := netutil.GetClientIP(r)
+
+		// Create response writer wrapper to capture status code
+		lrw := &loggingResponseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+		// Call next handler
+		next.ServeHTTP(lrw, r)
+
+		// Log request
+		duration := time.Since(start)
+		log.Printf("[HTTP] %s %s %s - %d - %v", clientIP, r.Method, r.RequestURI, lrw.statusCode, duration)
+	})
+}
+
+// loggingResponseWriter wraps http.ResponseWriter to capture status code
+type loggingResponseWriter struct {
+	http.ResponseWriter
+	statusCode int
+}
+
+func (lrw *loggingResponseWriter) WriteHeader(code int) {
+	lrw.statusCode = code
+	lrw.ResponseWriter.WriteHeader(code)
+}
+
+// IPWhitelistMiddleware enforces IP-based access control
+// SECURITY: Logs warning at startup if whitelist file is missing (all IPs will be denied)
+func IPWhitelistMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
+	// Check whitelist file at startup and warn if missing
+	if _, err := os.Stat(cfg.IPWhitelistFile); os.IsNotExist(err) {
+		log.Printf("[SECURITY] WARNING: IP whitelist file %s does not exist - ALL IPs will be DENIED access", cfg.IPWhitelistFile)
+	} else if err != nil {
+		log.Printf("[SECURITY] WARNING: Cannot access IP whitelist file %s: %v", cfg.IPWhitelistFile, err)
+	} else {
+		log.Printf("[SECURITY] IP whitelist enabled using: %s", cfg.IPWhitelistFile)
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			clientIP := netutil.GetClientIP(r)
+
+			// Check if IP is whitelisted
+			allowed, err := netutil.IsIPWhitelisted(clientIP, cfg.IPWhitelistFile)
+			if err != nil {
+				log.Printf("[SECURITY] IP whitelist check error for %s: %v", clientIP, err)
+				http.Error(w, "Internal server error", http.StatusInternalServerError)
+				return
+			}
+
+			if !allowed {
+				log.Printf("[SECURITY] Blocked access from non-whitelisted IP: %s", clientIP)
+				http.Error(w, "Access denied - IP not whitelisted", http.StatusForbidden)
+				return
+			}
+
+			// IP is whitelisted, proceed
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
+// JWTAuthMiddleware validates JWT tokens
+// The authService is created once and reused for all requests (performance optimization)
+func JWTAuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
+	// Create auth service ONCE at middleware initialization, not per-request
+	authService, err := auth.NewPAMAuth(cfg)
+	if err != nil {
+		log.Printf("[AUTH] FATAL: Failed to initialize auth service for middleware: %v", err)
+		// Return middleware that always fails if auth service couldn't be created
+		return func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				http.Error(w, "Authentication service unavailable", http.StatusInternalServerError)
+			})
+		}
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Extract token from Authorization header
+			authHeader := r.Header.Get("Authorization")
+			if authHeader == "" {
+				http.Error(w, "Missing authorization header", http.StatusUnauthorized)
+				return
+			}
+
+			// Parse Bearer token
+			parts := strings.SplitN(authHeader, " ", 2)
+			if len(parts) != 2 || parts[0] != "Bearer" {
+				http.Error(w, "Invalid authorization header format", http.StatusUnauthorized)
+				return
+			}
+
+			tokenString := parts[1]
+
+			// Validate token using pre-initialized auth service
+			claims, err := authService.ValidateToken(tokenString)
+			if err != nil {
+				log.Printf("[AUTH] Invalid token from %s: %v", netutil.GetClientIP(r), err)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": false,
+					"error":   "Invalid or expired token",
+				})
+				return
+			}
+
+			// Add user to context
+			ctx := context.WithValue(r.Context(), UserContextKey, claims)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// SecurityHeadersMiddleware adds security headers to responses
+func SecurityHeadersMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// Prevent clickjacking
+		w.Header().Set("X-Frame-Options", "DENY")
+
+		// Prevent MIME type sniffing
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+
+		// Enable XSS protection
+		w.Header().Set("X-XSS-Protection", "1; mode=block")
+
+		// HSTS (HTTP Strict Transport Security)
+		w.Header().Set("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+
+		// Content Security Policy - Allow Chart.js CDN only (no external iframes)
+		// NOTE: Tailwind removed in v0.7 - using pure CSS now
+		w.Header().Set("Content-Security-Policy", "default-src 'self'; script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self';")
+
+		// Referrer Policy
+		w.Header().Set("Referrer-Policy", "no-referrer")
+
+		// Permissions Policy
+		w.Header().Set("Permissions-Policy", "geolocation=(), microphone=(), camera=()")
+
+		next.ServeHTTP(w, r)
+	})
+}
+
+// GetClientIP extracts the real client IP address
+// Exported for backward compatibility - delegates to netutil.GetClientIP
+// Deprecated: Use netutil.GetClientIP directly for new code
+func GetClientIP(r *http.Request) string {
+	return netutil.GetClientIP(r)
+}
+
+// isIPWhitelisted is kept for backward compatibility
+// Deprecated: Use netutil.IsIPWhitelisted directly for new code
+func isIPWhitelisted(clientIP string, whitelistFile string) (bool, error) {
+	return netutil.IsIPWhitelisted(clientIP, whitelistFile)
+}

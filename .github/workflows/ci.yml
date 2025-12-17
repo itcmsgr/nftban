@@ -1,0 +1,179 @@
+# =============================================================================
+# NFTBan v1.0.0 - CI Pipeline
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Comprehensive CI for pull request validation
+#
+# Runs on:
+#   - All pull requests to main/master
+#   - Pushes to main/master/develop
+#
+# Checks:
+#   - ShellCheck (bash linting)
+#   - Go build & tests
+#   - Go security scanning (gosec, staticcheck)
+#   - Syntax validation for all scripts
+# =============================================================================
+
+name: CI
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # ===========================================================================
+  # BASH VALIDATION
+  # ===========================================================================
+  bash-check:
+    name: Bash Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Syntax check all bash scripts
+        run: |
+          echo "=== Checking bash syntax ==="
+          find cli install packaging -name "*.sh" -type f | while read -r script; do
+            bash -n "$script" || { echo "FAIL: $script"; exit 1; }
+          done
+          bash -n build.sh install.sh
+          echo "✓ All bash syntax valid"
+
+      - name: ShellCheck core scripts
+        run: |
+          echo "=== ShellCheck: Core ==="
+          shellcheck -x -S warning cli/lib/nftban/core/*.sh || true
+
+      - name: ShellCheck CLI scripts
+        run: |
+          echo "=== ShellCheck: CLI ==="
+          shellcheck -x -S warning cli/lib/nftban/cli/*.sh || true
+
+      - name: ShellCheck lib scripts
+        run: |
+          echo "=== ShellCheck: Lib ==="
+          shellcheck -x -S warning cli/lib/nftban/lib/*.sh || true
+
+      - name: ShellCheck setup scripts
+        run: |
+          echo "=== ShellCheck: Setup ==="
+          shellcheck -x -S warning cli/lib/nftban/setup/*.sh || true
+
+      - name: ShellCheck install scripts
+        run: |
+          echo "=== ShellCheck: Install ==="
+          shellcheck -x -S warning install/*.sh || true
+          shellcheck -x -S warning install.sh build.sh
+
+  # ===========================================================================
+  # GO VALIDATION
+  # ===========================================================================
+  go-check:
+    name: Go Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Cache Go modules
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+
+      - name: Verify go mod tidy
+        run: |
+          go mod tidy
+          git diff --exit-code go.mod go.sum || {
+            echo "::error ::Run 'go mod tidy' and commit changes"
+            exit 1
+          }
+
+      - name: Build all packages
+        run: go build ./...
+
+      - name: Run tests
+        run: go test -race -v ./...
+
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: Run staticcheck
+        run: $(go env GOPATH)/bin/staticcheck ./...
+
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run gosec
+        run: $(go env GOPATH)/bin/gosec -quiet ./... || true
+
+  # ===========================================================================
+  # BUILD VERIFICATION
+  # ===========================================================================
+  build-verify:
+    name: Build Verification
+    runs-on: ubuntu-latest
+    needs: [bash-check, go-check]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+
+      - name: Build Go binaries
+        run: |
+          mkdir -p bin
+          go build -o bin/nftban-core ./cmd/nftban-core
+          go build -o bin/nftban-api-server ./cmd/nftban-api-server
+
+      - name: Verify binaries
+        run: |
+          echo "=== Built binaries ==="
+          ls -lh bin/
+          file bin/nftban-core
+          file bin/nftban-api-server
+
+      - name: Verify CLI structure
+        run: |
+          echo "=== Verifying CLI structure ==="
+          test -f cli/sbin/nftban || { echo "FAIL: cli/sbin/nftban missing"; exit 1; }
+          test -f cli/lib/nftban/nftban_main.sh || { echo "FAIL: nftban_main.sh missing"; exit 1; }
+          test -d cli/lib/nftban/core || { echo "FAIL: core/ missing"; exit 1; }
+          test -d cli/lib/nftban/cli || { echo "FAIL: cli/ missing"; exit 1; }
+          echo "✓ CLI structure valid"
+
+  # ===========================================================================
+  # SUMMARY
+  # ===========================================================================
+  ci-summary:
+    name: CI Summary
+    runs-on: ubuntu-latest
+    needs: [bash-check, go-check, build-verify]
+    if: always()
+    steps:
+      - name: Generate summary
+        run: |
+          echo "## CI Pipeline Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Bash Validation | ${{ needs.bash-check.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Go Validation | ${{ needs.go-check.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build Verification | ${{ needs.build-verify.result }} |" >> $GITHUB_STEP_SUMMARY

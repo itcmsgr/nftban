@@ -1,9 +1,24 @@
+# =============================================================================
+# NFTBan v1.0.0 - Release Go Binaries
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Build and release Go binaries on GitHub releases
+# Triggers: Published releases
+#
+# Builds:
+#   - nftban-core (main Go binary for feeds, geoip, API operations)
+#   - nftban-api-server (REST API server)
+# =============================================================================
+
 name: Release Go Binaries
+
 on:
   release:
     types: [published]
+
 permissions:
   contents: write
+
 jobs:
   build-matrix:
     name: Build (${{ matrix.go }} • ${{ matrix.arch }})
@@ -13,54 +28,61 @@ jobs:
       matrix:
         go: ["1.22.x"]
         arch: [amd64, arm64]
+
     steps:
       - uses: actions/checkout@v4
+
       - uses: actions/setup-go@v5
         with:
           go-version: ${{ matrix.go }}
-      - name: Build nftban-feeds (${{ matrix.arch }})
+
+      - name: Build nftban-core (${{ matrix.arch }})
         run: |
           mkdir -p dist
-          cd go-feeds
           GOOS=linux GOARCH=${{ matrix.arch }} \
           go build -trimpath -ldflags "-s -w" \
-            -o ../dist/nftban-feeds-${{ matrix.arch }} ./cmd/nftban-feeds
-      - name: Build nftban-geoip (${{ matrix.arch }})
+            -o dist/nftban-core-${{ matrix.arch }} ./cmd/nftban-core
+
+      - name: Build nftban-api-server (${{ matrix.arch }})
         run: |
-          mkdir -p dist
-          cd go-geoip
           GOOS=linux GOARCH=${{ matrix.arch }} \
           go build -trimpath -ldflags "-s -w" \
-            -o ../dist/nftban-geoip-${{ matrix.arch }} ./cmd/nftban-geoip
+            -o dist/nftban-api-server-${{ matrix.arch }} ./cmd/nftban-api-server
+
       - name: Upload matrix artifacts
         uses: actions/upload-artifact@v4
         with:
           name: nftban-binaries-${{ matrix.arch }}
           path: dist/*-${{ matrix.arch }}
+
   assemble-release:
     name: Assemble & Sign Artifacts
     needs: [build-matrix]
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: dist
+
       - name: Flatten
         run: |
           shopt -s globstar nullglob
           mv dist/**/nftban-* dist/ || true
+
       - name: Generate SHA256SUMS
         working-directory: dist
         run: |
           rm -f SHA256SUMS
           for f in nftban-*; do sha256sum "$f" >> SHA256SUMS; done
+
       # GPG signing disabled - will be enabled when GPG keys are configured
+
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/nftban-*
             dist/SHA256SUMS
-            dist/SHA256SUMS.asc
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

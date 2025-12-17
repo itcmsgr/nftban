@@ -1,0 +1,539 @@
+package nftbanconf
+
+// =============================================================================
+// NFTBan Central Configuration Loader
+// =============================================================================
+// Purpose: Read /etc/nftban/nftban.conf - the SINGLE SOURCE OF TRUTH
+//          Both bash CLI and Go binaries use the SAME config file
+//
+// IMPORTANT: This package reads configuration from bash config files.
+//            DO NOT hardcode paths here - they come from nftban.conf!
+// =============================================================================
+
+import (
+	"bufio"
+	"os"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+)
+
+// Config holds all NFTBan configuration from /etc/nftban/nftban.conf
+// Variable names match the bash config exactly (e.g., NFTBAN_BIN -> Bin)
+type Config struct {
+	// Version
+	Version       string
+	ConfigVersion string
+
+	// Binary paths (from nftban.conf PATHS section)
+	Bin      string // NFTBAN_BIN - main CLI
+	CoreBin  string // NFTBAN_CORE_BIN - Go core binary
+	UIBin    string // NFTBAN_UI_BIN - Web UI binary
+	AuthBin  string // NFTBAN_AUTH_BIN - Auth helper
+
+	// Directory paths
+	LibDir    string // NFTBAN_LIB_DIR
+	ConfigDir string // NFTBAN_CONFIG_DIR
+	DataDir   string // NFTBAN_DATA_DIR
+	LogDir    string // NFTBAN_LOG_DIR
+	CacheDir  string // NFTBAN_CACHE_DIR
+	RunDir    string // NFTBAN_RUN_DIR
+
+	// Feature flags
+	MetricsEnabled      bool   // NFTBAN_METRICS_ENABLED
+	MetricsBackend      string // NFTBAN_METRICS_BACKEND
+	MetricsSamplingInterval int // NFTBAN_METRICS_SAMPLING_INTERVAL (seconds)
+	MetricsMaxSamples   int    // NFTBAN_METRICS_MAX_SAMPLES
+	PrometheusDir       string // NFTBAN_PROMETHEUS_DIR (node_exporter textfile dir)
+	MetricsPrometheusAddr   string // NFTBAN_METRICS_PROMETHEUS_ADDR
+	MetricsNodeExporterAddr string // NFTBAN_METRICS_NODE_EXPORTER_ADDR
+	MetricsVictoriaAddr     string // NFTBAN_METRICS_VICTORIA_ADDR
+	GeoIPEnabled        bool   // NFTBAN_GEOIP_ENABLED
+	GeoIPLicenseKey     string // NFTBAN_GEOIP_LICENSE_KEY
+	FeedsEnabled        bool   // NFTBAN_FEEDS_ENABLED
+	FeedsAutoUpdate     bool   // NFTBAN_FEEDS_AUTO_UPDATE
+	SuricataEnabled     bool   // NFTBAN_SURICATA_ENABLED
+	GUIEnabled          bool   // NFTBAN_GUI_ENABLED
+	GUIAddr             string // NFTBAN_GUI_ADDR
+	PortscanEnabled     bool   // NFTBAN_PORTSCAN_ENABLED
+	DDoSEnabled         bool   // NFTBAN_DDOS_ENABLED
+	LoginMonitorEnabled bool   // NFTBAN_LOGIN_MONITOR_ENABLED
+
+	// Suricata settings
+	SuricataEveLog            string // NFTBAN_SURICATA_EVE_LOG
+	SuricataLogDir            string // NFTBAN_SURICATA_LOG_DIR
+	SuricataBanThreshold      int    // NFTBAN_SURICATA_BAN_THRESHOLD
+	SuricataScoreDecay        int    // NFTBAN_SURICATA_SCORE_DECAY
+	SuricataCloudflareWhitelist bool // NFTBAN_SURICATA_CLOUDFLARE_WHITELIST
+
+	// Grafana settings
+	GrafanaEnabled bool   // NFTBAN_GRAFANA_ENABLED
+	GrafanaURL     string // NFTBAN_GRAFANA_URL
+	GrafanaAPIKey  string // NFTBAN_GRAFANA_API_KEY
+
+	// Logging
+	LogLevel    string // NFTBAN_LOG_LEVEL
+	ColorOutput bool   // NFTBAN_COLOR_OUTPUT
+	DebugTrace  bool   // NFTBAN_DEBUG_TRACE
+	DebugTraceLog string // NFTBAN_DEBUG_TRACE_LOG
+
+	// Distro config
+	DistroConfDir string // NFTBAN_DISTRO_CONF_DIR
+}
+
+// Derived paths (computed from base paths)
+type Paths struct {
+	// Data subdirectories
+	FeedsDir     string
+	GeoIPDir     string
+	MetricsDir   string
+	SnapshotsDir string
+	ReportsDir   string
+	ExportsDir   string
+
+	// Config subdirectories
+	ConfD        string
+	WhitelistD   string
+	BlacklistD   string
+	PortsD       string
+	GeobanD      string
+	DistrosD     string
+
+	// Log files
+	MainLog      string
+	AuditLog     string
+	BansLog      string
+	PortscanLog  string
+	DDoSLog      string
+	LoginAlertLog string
+	FeedsLog     string
+	GeobanLog    string
+	CronLog      string
+	MaintenanceLog string
+	CLIErrorsLog string
+
+	// Suricata log files
+	SuricataEveLog   string
+	SuricataFastLog  string
+	SuricataStatsLog string
+	SuricataMainLog  string
+
+	// Runtime files
+	PIDFile      string
+	SocketFile   string
+
+	// Metrics files
+	PrometheusFile          string // nftban.prom
+	PrometheusBandwidthFile string // nftban_bandwidth.prom
+	MetricsJSON             string
+}
+
+// Timeouts for CLI command execution (centralized)
+type Timeouts struct {
+	Fast   time.Duration // status, simple queries
+	Medium time.Duration // ban, unban, search
+	Slow   time.Duration // sync, health check, feed updates
+}
+
+// NFTables references (table/chain/set names)
+type NFTables struct {
+	TableIPv4       string
+	TableIPv6       string
+	BlacklistIPv4   string
+	BlacklistIPv6   string
+	WhitelistIPv4   string
+	WhitelistIPv6   string
+	TempBanIPv4     string
+	TempBanIPv6     string
+	GeoBlockIPv4    string
+	GeoBlockIPv6    string
+}
+
+var (
+	// Global singleton
+	globalConfig *Config
+	globalPaths  *Paths
+	globalTimeouts *Timeouts
+	globalNFT    *NFTables
+	loadOnce     sync.Once
+	loadErr      error
+
+	// Default config file path
+	DefaultConfigFile = "/etc/nftban/nftban.conf"
+)
+
+// Load reads configuration from /etc/nftban/nftban.conf
+// This is called once at startup - config is cached
+func Load() (*Config, error) {
+	loadOnce.Do(func() {
+		globalConfig, loadErr = loadFromFile(DefaultConfigFile)
+		if loadErr == nil {
+			globalPaths = derivePaths(globalConfig)
+			globalTimeouts = defaultTimeouts()
+			globalNFT = defaultNFTables()
+		}
+	})
+	return globalConfig, loadErr
+}
+
+// MustLoad loads config or panics - use in init()
+func MustLoad() *Config {
+	cfg, err := Load()
+	if err != nil {
+		panic("nftbanconf: failed to load config: " + err.Error())
+	}
+	return cfg
+}
+
+// Get returns the cached config (Load must be called first)
+func Get() *Config {
+	if globalConfig == nil {
+		Load() // Auto-load if not loaded
+	}
+	return globalConfig
+}
+
+// GetPaths returns derived paths
+func GetPaths() *Paths {
+	if globalPaths == nil {
+		Load()
+	}
+	return globalPaths
+}
+
+// MustLoadPaths loads config and returns paths or panics
+// NO FALLBACK - paths must come from /etc/nftban/nftban.conf
+func MustLoadPaths() *Paths {
+	_, err := Load()
+	if err != nil {
+		panic("nftbanconf: failed to load paths: " + err.Error())
+	}
+	if globalPaths == nil {
+		panic("nftbanconf: paths not initialized after load")
+	}
+	return globalPaths
+}
+
+// GetTimeouts returns command timeouts
+func GetTimeouts() *Timeouts {
+	if globalTimeouts == nil {
+		Load()
+	}
+	return globalTimeouts
+}
+
+// GetNFT returns NFTables references
+func GetNFT() *NFTables {
+	if globalNFT == nil {
+		Load()
+	}
+	return globalNFT
+}
+
+// loadFromFile reads and parses the config file
+func loadFromFile(path string) (*Config, error) {
+	// Start with defaults
+	cfg := defaultConfig()
+
+	file, err := os.Open(path)
+	if err != nil {
+		if os.IsNotExist(err) {
+			// Config file doesn't exist - use defaults
+			return cfg, nil
+		}
+		return nil, err
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+
+		// Skip empty lines and comments
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		// Skip bash-specific lines
+		if strings.HasPrefix(line, "[[") || strings.HasPrefix(line, "_NFTBAN") {
+			continue
+		}
+
+		// Parse KEY="value" or KEY=value
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		value = strings.Trim(value, `"'`)
+
+		// Map to struct fields
+		switch key {
+		// Version
+		case "NFTBAN_VERSION":
+			cfg.Version = value
+		case "NFTBAN_CONFIG_VERSION":
+			cfg.ConfigVersion = value
+
+		// Binary paths
+		case "NFTBAN_BIN":
+			cfg.Bin = value
+		case "NFTBAN_CORE_BIN":
+			cfg.CoreBin = value
+		case "NFTBAN_UI_BIN":
+			cfg.UIBin = value
+		case "NFTBAN_AUTH_BIN":
+			cfg.AuthBin = value
+
+		// Directory paths
+		case "NFTBAN_LIB_DIR":
+			cfg.LibDir = value
+		case "NFTBAN_CONFIG_DIR":
+			cfg.ConfigDir = value
+		case "NFTBAN_DATA_DIR":
+			cfg.DataDir = value
+		case "NFTBAN_LOG_DIR":
+			cfg.LogDir = value
+		case "NFTBAN_CACHE_DIR":
+			cfg.CacheDir = value
+		case "NFTBAN_RUN_DIR":
+			cfg.RunDir = value
+
+		// Features
+		case "NFTBAN_METRICS_ENABLED":
+			cfg.MetricsEnabled = parseBool(value)
+		case "NFTBAN_METRICS_BACKEND":
+			cfg.MetricsBackend = value
+		case "NFTBAN_METRICS_SAMPLING_INTERVAL":
+			cfg.MetricsSamplingInterval = parseInt(value, 10)
+		case "NFTBAN_METRICS_MAX_SAMPLES":
+			cfg.MetricsMaxSamples = parseInt(value, 360)
+		case "NFTBAN_PROMETHEUS_DIR":
+			cfg.PrometheusDir = value
+		case "NFTBAN_METRICS_PROMETHEUS_ADDR":
+			cfg.MetricsPrometheusAddr = value
+		case "NFTBAN_METRICS_NODE_EXPORTER_ADDR":
+			cfg.MetricsNodeExporterAddr = value
+		case "NFTBAN_METRICS_VICTORIA_ADDR":
+			cfg.MetricsVictoriaAddr = value
+		case "NFTBAN_GEOIP_ENABLED":
+			cfg.GeoIPEnabled = parseBool(value)
+		case "NFTBAN_GEOIP_LICENSE_KEY":
+			cfg.GeoIPLicenseKey = value
+		case "NFTBAN_FEEDS_ENABLED":
+			cfg.FeedsEnabled = parseBool(value)
+		case "NFTBAN_FEEDS_AUTO_UPDATE":
+			cfg.FeedsAutoUpdate = parseBool(value)
+		case "NFTBAN_SURICATA_ENABLED":
+			cfg.SuricataEnabled = parseBool(value)
+		case "NFTBAN_GUI_ENABLED":
+			cfg.GUIEnabled = parseBool(value)
+		case "NFTBAN_GUI_ADDR":
+			cfg.GUIAddr = value
+		case "NFTBAN_PORTSCAN_ENABLED":
+			cfg.PortscanEnabled = parseBool(value)
+		case "NFTBAN_DDOS_ENABLED":
+			cfg.DDoSEnabled = parseBool(value)
+		case "NFTBAN_LOGIN_MONITOR_ENABLED":
+			cfg.LoginMonitorEnabled = parseBool(value)
+
+		// Suricata
+		case "NFTBAN_SURICATA_EVE_LOG":
+			cfg.SuricataEveLog = value
+		case "NFTBAN_SURICATA_LOG_DIR":
+			cfg.SuricataLogDir = value
+		case "NFTBAN_SURICATA_BAN_THRESHOLD":
+			cfg.SuricataBanThreshold = parseInt(value, 100)
+		case "NFTBAN_SURICATA_SCORE_DECAY":
+			cfg.SuricataScoreDecay = parseInt(value, 3600)
+		case "NFTBAN_SURICATA_CLOUDFLARE_WHITELIST":
+			cfg.SuricataCloudflareWhitelist = parseBool(value)
+
+		// Grafana
+		case "NFTBAN_GRAFANA_ENABLED":
+			cfg.GrafanaEnabled = parseBool(value)
+		case "NFTBAN_GRAFANA_URL":
+			cfg.GrafanaURL = value
+		case "NFTBAN_GRAFANA_API_KEY":
+			cfg.GrafanaAPIKey = value
+
+		// Logging
+		case "NFTBAN_LOG_LEVEL":
+			cfg.LogLevel = value
+		case "NFTBAN_COLOR_OUTPUT":
+			cfg.ColorOutput = parseBool(value)
+		case "NFTBAN_DEBUG_TRACE":
+			cfg.DebugTrace = parseBool(value)
+		case "NFTBAN_DEBUG_TRACE_LOG":
+			cfg.DebugTraceLog = value
+
+		// Distro
+		case "NFTBAN_DISTRO_CONF_DIR":
+			cfg.DistroConfDir = value
+		}
+	}
+
+	return cfg, scanner.Err()
+}
+
+// defaultConfig returns config with sane defaults
+func defaultConfig() *Config {
+	return &Config{
+		Version:       "1.0.0",
+		ConfigVersion: "2",
+
+		// Binary paths
+		Bin:     "/usr/bin/nftban",
+		CoreBin: "/usr/lib/nftban/bin/nftban-core",
+		UIBin:   "/usr/sbin/nftban-ui",
+		AuthBin: "/usr/libexec/nftban-ui-auth",
+
+		// Directory paths
+		LibDir:    "/usr/lib/nftban",
+		ConfigDir: "/etc/nftban",
+		DataDir:   "/var/lib/nftban",
+		LogDir:    "/var/log/nftban",
+		CacheDir:  "/var/cache/nftban",
+		RunDir:    "/run/nftban",
+
+		// Features (defaults to off for safety)
+		MetricsEnabled:          false,
+		MetricsBackend:          "prometheus",
+		MetricsSamplingInterval: 10,  // 10 seconds
+		MetricsMaxSamples:       360, // 1 hour at 10s intervals
+		PrometheusDir:           "/var/lib/node_exporter/textfile_collector",
+		MetricsPrometheusAddr:   "localhost:9090",
+		MetricsNodeExporterAddr: "localhost:9100",
+		MetricsVictoriaAddr:     "localhost:8428",
+		GeoIPEnabled:            false,
+		FeedsEnabled:        false,
+		FeedsAutoUpdate:     true,
+		SuricataEnabled:     true,
+		GUIEnabled:          false,
+		GUIAddr:             "127.0.0.1:3940",
+		PortscanEnabled:     false,
+		DDoSEnabled:         false,
+		LoginMonitorEnabled: false,
+
+		// Suricata
+		SuricataEveLog:       "/var/log/nftban/suricata/eve.json",
+		SuricataLogDir:       "/var/log/nftban/suricata",
+		SuricataBanThreshold: 100,
+		SuricataScoreDecay:   3600,
+
+		// Grafana
+		GrafanaEnabled: false,
+		GrafanaURL:     "http://localhost:3000",
+		GrafanaAPIKey:  "",
+
+		// Logging
+		LogLevel:      "INFO",
+		ColorOutput:   true,
+		DebugTrace:    false,
+		DebugTraceLog: "/var/log/nftban/debug_trace.log",
+
+		// Distro
+		DistroConfDir: "/etc/nftban/distros",
+	}
+}
+
+// derivePaths computes derived paths from base config
+func derivePaths(cfg *Config) *Paths {
+	return &Paths{
+		// Data subdirectories
+		FeedsDir:     cfg.DataDir + "/feeds",
+		GeoIPDir:     cfg.DataDir + "/geoip",
+		MetricsDir:   cfg.DataDir + "/metrics",
+		SnapshotsDir: cfg.DataDir + "/snapshots",
+		ReportsDir:   cfg.DataDir + "/reports",
+		ExportsDir:   cfg.DataDir + "/exports",
+
+		// Config subdirectories
+		ConfD:      cfg.ConfigDir + "/conf.d",
+		WhitelistD: cfg.ConfigDir + "/whitelist.d",
+		BlacklistD: cfg.ConfigDir + "/blacklist.d",
+		PortsD:     cfg.ConfigDir + "/ports.d",
+		GeobanD:    cfg.ConfigDir + "/geoban.d",
+		DistrosD:   cfg.ConfigDir + "/distros",
+
+		// Log files
+		MainLog:        cfg.LogDir + "/nftban.log",
+		AuditLog:       cfg.LogDir + "/nftban-actions.log",
+		BansLog:        cfg.LogDir + "/bans.log",
+		PortscanLog:    cfg.LogDir + "/portscan.log",
+		DDoSLog:        cfg.LogDir + "/ddos.log",
+		LoginAlertLog:  cfg.LogDir + "/login_alert.log",
+		FeedsLog:       cfg.LogDir + "/feeds.log",
+		GeobanLog:      cfg.LogDir + "/geoban.log",
+		CronLog:        cfg.LogDir + "/cron.log",
+		MaintenanceLog: cfg.LogDir + "/maintenance.log",
+		CLIErrorsLog:   cfg.LogDir + "/cli_errors.log",
+
+		// Suricata log files (use SuricataLogDir if set, else default)
+		SuricataEveLog:   cfg.SuricataLogDir + "/eve.json",
+		SuricataFastLog:  cfg.SuricataLogDir + "/fast.log",
+		SuricataStatsLog: cfg.SuricataLogDir + "/stats.log",
+		SuricataMainLog:  cfg.SuricataLogDir + "/suricata.log",
+
+		// Runtime files
+		PIDFile:    cfg.RunDir + "/nftban.pid",
+		SocketFile: cfg.RunDir + "/nftban.sock",
+
+		// Metrics files (use PrometheusDir from config)
+		PrometheusFile:          cfg.PrometheusDir + "/nftban.prom",
+		PrometheusBandwidthFile: cfg.PrometheusDir + "/nftban_bandwidth.prom",
+		MetricsJSON:             cfg.DataDir + "/metrics/metrics.json",
+	}
+}
+
+// defaultTimeouts returns sensible command timeouts
+func defaultTimeouts() *Timeouts {
+	return &Timeouts{
+		Fast:   5 * time.Second,   // status, simple queries
+		Medium: 30 * time.Second,  // ban, unban, search
+		Slow:   120 * time.Second, // sync, health, feed updates
+	}
+}
+
+// defaultNFTables returns NFTables naming conventions
+func defaultNFTables() *NFTables {
+	return &NFTables{
+		TableIPv4:     "ip nftban",
+		TableIPv6:     "ip6 nftban",
+		BlacklistIPv4: "blacklist_ipv4",
+		BlacklistIPv6: "blacklist_ipv6",
+		WhitelistIPv4: "whitelist_ipv4",
+		WhitelistIPv6: "whitelist_ipv6",
+		TempBanIPv4:   "temp_ban_ipv4",
+		TempBanIPv6:   "temp_ban_ipv6",
+		GeoBlockIPv4:  "geo_block_ipv4",
+		GeoBlockIPv6:  "geo_block_ipv6",
+	}
+}
+
+// Helper functions
+func parseBool(s string) bool {
+	s = strings.ToLower(s)
+	return s == "true" || s == "yes" || s == "1"
+}
+
+func parseInt(s string, defaultVal int) int {
+	if v, err := strconv.Atoi(s); err == nil {
+		return v
+	}
+	return defaultVal
+}
+
+// Reload forces config reload (for testing or config changes)
+func Reload() error {
+	loadOnce = sync.Once{} // Reset once
+	globalConfig = nil
+	globalPaths = nil
+	globalTimeouts = nil
+	globalNFT = nil
+	_, err := Load()
+	return err
+}

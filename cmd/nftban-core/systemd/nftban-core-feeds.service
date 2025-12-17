@@ -1,0 +1,42 @@
+[Unit]
+Description=NFTBan Core - Feed Update
+Documentation=https://github.com/itcmsgr/nftban-dev
+After=network-online.target nftban-core.service
+Requires=nftban-core.service
+
+[Service]
+Type=oneshot
+# Log to both journal AND file for easy viewing
+ExecStart=/bin/bash -c '/usr/local/bin/nftban-core feeds load 2>&1 | tee -a /var/log/nftban/feeds.log'
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-feeds
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/nftban /var/lib/nftban /var/log/nftban
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+# IMPORTANT: MemoryDenyWriteExecute is intentionally NOT set for Go services.
+# It breaks Go runtime on Ubuntu 24.04 (AppArmor + Landlock) and potentially
+# future SELinux-enforcing distributions. Security is maintained through
+# other hardening measures. See: docs/architecture/SYSTEMD_GO_HARDENING.md
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Resource limits
+CPUQuota=80%
+MemoryMax=512M
+TasksMax=20
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target

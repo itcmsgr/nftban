@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFTBan - Firewall Dashboard</title>
+    <link rel="stylesheet" href="/static/css/clean.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+</head>
+<body>
+    <!-- LOGIN PAGE -->
+    <div id="login-page" class="page">
+        <div class="login-box">
+            <div class="logo">🛡️</div>
+            <h1>NFTBan</h1>
+            <p>Adaptive Firewall Panel</p>
+            <form id="login-form">
+                <input type="text" name="username" placeholder="Username" required>
+                <input type="password" name="password" placeholder="Password" required>
+                <button type="submit" class="btn-primary">Sign In</button>
+            </form>
+            <button id="theme-toggle" class="theme-btn" title="Toggle theme">🌙</button>
+        </div>
+    </div>
+
+    <!-- DASHBOARD -->
+    <div id="dashboard-page" class="page hidden">
+        <!-- Header -->
+        <header>
+            <div class="header-left">
+                <span class="logo-small">🛡️</span>
+                <h2>NFTBan</h2>
+            </div>
+            <div class="header-right">
+                <button id="theme-toggle-dash" class="theme-btn">🌙</button>
+                <button id="logout-btn" class="btn-link">Logout</button>
+            </div>
+        </header>
+
+        <div class="container">
+            <!-- Sidebar -->
+            <aside class="sidebar">
+                <nav>
+                    <a href="#" class="nav-item active" onclick="showPanel('dashboard')">
+                        <span>📊</span> Dashboard
+                    </a>
+                    <a href="#" class="nav-item" onclick="showPanel('ipmgmt')">
+                        <span>🎯</span> IP Management
+                    </a>
+                    <a href="#" class="nav-item" onclick="showPanel('fail2ban')">
+                        <span>🔒</span> Fail2Ban
+                        <span class="badge" id="f2b-badge">...</span>
+                    </a>
+                    <a href="#" class="nav-item" onclick="showPanel('feeds')">
+                        <span>🌐</span> Threat Feeds
+                        <span class="badge" id="feeds-badge">...</span>
+                    </a>
+                    <a href="#" class="nav-item" onclick="showPanel('portscan')">
+                        <span>🔍</span> Port Scan
+                        <span class="badge badge-success" id="ps-badge">Active</span>
+                    </a>
+                    <a href="#" class="nav-item" onclick="showPanel('geoban')">
+                        <span>🗺️</span> GeoBan
+                        <span class="badge" id="geoban-badge">...</span>
+                    </a>
+                    <a href="#" class="nav-item" onclick="showPanel('logs')">
+                        <span>📄</span> Logs
+                    </a>
+                </nav>
+            </aside>
+
+            <!-- Main Content -->
+            <main class="content">
+                <!-- Dashboard Panel -->
+                <div id="panel-dashboard" class="panel active">
+                    <h3>Dashboard</h3>
+
+                    <!-- Stats Cards -->
+                    <div class="stats-grid">
+                        <div class="card">
+                            <div class="card-header">Total Bans</div>
+                            <div class="card-value" id="stat-bans">0</div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">Countries</div>
+                            <div class="card-value" id="stat-countries">0</div>
+                        </div>
+                        <div class="card">
+                            <div class="card-header">Traffic</div>
+                            <div class="card-value" id="stat-traffic">0</div>
+                        </div>
+                    </div>
+
+                    <!-- Charts -->
+                    <div class="chart-row">
+                        <div class="card">
+                            <h4>Bans Over Time</h4>
+                            <canvas id="chart-bans"></canvas>
+                        </div>
+                        <div class="card">
+                            <h4>Top Countries</h4>
+                            <canvas id="chart-countries"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- IP Management Panel -->
+                <div id="panel-ipmgmt" class="panel">
+                    <h3>IP Management</h3>
+                    <div class="card">
+                        <h4>Ban IP Address</h4>
+                        <form id="form-ban">
+                            <input type="text" name="ip" placeholder="IP Address" required>
+                            <button type="submit" class="btn-primary">Ban</button>
+                        </form>
+                    </div>
+                    <div class="card">
+                        <h4>Banned IPs</h4>
+                        <div id="banned-ips-list" class="list"></div>
+                    </div>
+                </div>
+
+                <!-- Fail2Ban Panel -->
+                <div id="panel-fail2ban" class="panel">
+                    <h3>Fail2Ban</h3>
+                    <div class="card">
+                        <h4>Jail Status</h4>
+                        <div id="f2b-jails" class="list"></div>
+                    </div>
+                </div>
+
+                <!-- Feeds Panel -->
+                <div id="panel-feeds" class="panel">
+                    <h3>Threat Feeds</h3>
+                    <div class="card">
+                        <h4>Feed Status</h4>
+                        <div id="feeds-list" class="list"></div>
+                    </div>
+                </div>
+
+                <!-- Port Scan Panel -->
+                <div id="panel-portscan" class="panel">
+                    <h3>Port Scan Detection</h3>
+                    <div class="card">
+                        <h4>Control</h4>
+                        <button id="ps-toggle" class="btn-primary" onclick="togglePortScan()">
+                            Enable
+                        </button>
+                        <div id="ps-logs" class="logs"></div>
+                    </div>
+                </div>
+
+                <!-- GeoBan Panel -->
+                <div id="panel-geoban" class="panel">
+                    <h3>GeoBan</h3>
+                    <div class="card">
+                        <h4>Blocked Countries</h4>
+                        <div id="geoban-list" class="list"></div>
+                    </div>
+                </div>
+
+                <!-- Logs Panel -->
+                <div id="panel-logs" class="panel">
+                    <h3>System Logs</h3>
+                    <div class="card">
+                        <select id="log-file">
+                            <option value="fail2ban">Fail2Ban</option>
+                            <option value="nftban">NFTBan</option>
+                            <option value="portscan">Port Scan</option>
+                        </select>
+                        <button onclick="loadLogs()" class="btn-primary">Load</button>
+                        <div id="logs-viewer" class="logs"></div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="/static/js/app.js"></script>
+</body>
+</html>
