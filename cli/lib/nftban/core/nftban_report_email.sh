@@ -1,0 +1,382 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan v1.0.0 - Email Report Generator
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Generate and send HTML email reports with real firewall stats
+#
+# meta:name=nftban_report_email
+# meta:type=core
+# meta:header=Email Report Generator
+# meta:version=1.0.0
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage=https://nftban.com
+#
+# meta:description=Generates HTML email reports with real firewall statistics
+# meta:depends=bash,nft,sendmail
+#
+# meta:created_date=2025-12-03
+# meta:updated_date=2025-12-03
+# =============================================================================
+
+# Load main configuration (service names, paths)
+if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
+    source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+fi
+
+# Prevent double-loading
+[[ -n "${NFTBAN_REPORT_EMAIL_LOADED:-}" ]] && return 0
+readonly NFTBAN_REPORT_EMAIL_LOADED=1
+
+# =============================================================================
+# GENERATE EMAIL REPORT
+# =============================================================================
+
+nftban_report_email_generate() {
+    local recipient="${1:-${NFTBAN_MAIL_RECIPIENT:-}}"
+    local template="/usr/share/nftban/templates/email/report_template.html"
+
+    if [[ -z "$recipient" ]]; then
+        echo "ERROR: No recipient specified" >&2
+        return 1
+    fi
+
+    if [[ ! -f "$template" ]]; then
+        echo "ERROR: Email template not found: $template" >&2
+        return 1
+    fi
+
+    # Get hostname and date
+    local hostname
+    hostname=$(hostname -f 2>/dev/null || hostname)
+    local date_now
+    date_now=$(date '+%Y-%m-%d %H:%M')
+    local report_id
+    report_id=$(date +%Y%m%d%H%M%S)-$(head -c 4 /dev/urandom | xxd -p)
+
+    # ==========================================================================
+    # GET REAL DATA FROM NFTABLES
+    # ==========================================================================
+
+    # Count blocked IPs from nft blacklist set
+    local blocked_ips=0
+    if nft list set ip nftban blacklist_ipv4 &>/dev/null; then
+        blocked_ips=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?' | wc -l || echo 0)
+    fi
+
+    # Count whitelist
+    local whitelist_count=0
+    if nft list set ip nftban whitelist_ipv4 &>/dev/null; then
+        whitelist_count=$(nft list set ip nftban whitelist_ipv4 2>/dev/null | grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+(/[0-9]+)?' | wc -l || echo 0)
+    fi
+
+    # ==========================================================================
+    # GET THREAT FEEDS STATUS
+    # ==========================================================================
+
+    local feeds_status=""
+    local feeds_dir="${NFTBAN_DATA_DIR}/feeds"
+
+    if [[ -d "$feeds_dir" ]]; then
+        local feed_count=0
+        for feed_file in "$feeds_dir"/*.txt; do
+            [[ ! -f "$feed_file" ]] && continue
+            local feed_name
+            feed_name=$(basename "$feed_file" .txt | tr '[:lower:]' '[:upper:]')
+            local ip_count
+            ip_count=$(wc -l < "$feed_file" 2>/dev/null || echo 0)
+            local last_update
+            last_update=$(date -r "$feed_file" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
+
+            ((feed_count++))
+            local border="border-bottom:1px solid #475569;"
+
+            feeds_status+="<tr>
+                <td style=\"padding:12px 16px;${border}\">
+                    <span style=\"color:#f1f5f9;\">${feed_name}</span>
+                    <div style=\"font-size:11px;color:#64748b;\">Updated: ${last_update}</div>
+                </td>
+                <td style=\"padding:12px 16px;text-align:right;${border}\">
+                    <span style=\"color:#22c55e;font-weight:bold;\">${ip_count} IPs</span>
+                </td>
+            </tr>"
+        done
+
+        if [[ $feed_count -eq 0 ]]; then
+            feeds_status="<tr><td style=\"padding:16px;text-align:center;color:#64748b;\" colspan=\"2\">No feeds loaded</td></tr>"
+        fi
+    else
+        feeds_status="<tr><td style=\"padding:16px;text-align:center;color:#64748b;\" colspan=\"2\">Feeds directory not found</td></tr>"
+    fi
+
+    # ==========================================================================
+    # GET NEW BANS FROM LOG (Last 24h)
+    # ==========================================================================
+
+    local login_bans=0 portscan_bans=0 ddos_bans=0 manual_bans=0
+    local yesterday
+    yesterday=$(date -d '1 day ago' '+%Y-%m-%d')
+    local today
+    today=$(date '+%Y-%m-%d')
+
+    # Count login bans from login_alert.log (primary source)
+    local login_alert_log="${NFTBAN_LOG_DIR}/login_alert.log"
+    if [[ -f "$login_alert_log" ]]; then
+        # Count actual "Banning" entries from yesterday and today
+        login_bans=$(grep "Banning IP" "$login_alert_log" 2>/dev/null | grep -E "^\[${yesterday}|^\[${today}" | wc -l)
+        login_bans=${login_bans//[^0-9]/}  # Strip non-digits
+        login_bans=${login_bans:-0}
+    fi
+
+    # Count portscan bans
+    local portscan_log="${NFTBAN_LOG_DIR}/portscan.log"
+    if [[ -f "$portscan_log" ]]; then
+        portscan_bans=$(grep -Ei "ban|block" "$portscan_log" 2>/dev/null | grep -E "^\[${yesterday}|^\[${today}" | wc -l)
+        portscan_bans=${portscan_bans//[^0-9]/}
+        portscan_bans=${portscan_bans:-0}
+    fi
+
+    # Count DDoS bans
+    local ddos_log="${NFTBAN_LOG_DIR}/ddos.log"
+    if [[ -f "$ddos_log" ]]; then
+        ddos_bans=$(grep -Ei "ban|block" "$ddos_log" 2>/dev/null | grep -E "^\[${yesterday}|^\[${today}" | wc -l)
+        ddos_bans=${ddos_bans//[^0-9]/}
+        ddos_bans=${ddos_bans:-0}
+    fi
+
+    # Fallback: try bans.log if it exists
+    local ban_log="${NFTBAN_LOG_DIR}/bans.log"
+    if [[ -f "$ban_log" ]]; then
+        local bans_login bans_portscan bans_ddos
+        bans_login=$(awk -F'|' -v since="$yesterday" '$1 >= since && $3 ~ /login|ssh|auth/ {count++} END {print count+0}' "$ban_log")
+        bans_portscan=$(awk -F'|' -v since="$yesterday" '$1 >= since && $3 ~ /portscan|scan/ {count++} END {print count+0}' "$ban_log")
+        bans_ddos=$(awk -F'|' -v since="$yesterday" '$1 >= since && $3 ~ /ddos|flood/ {count++} END {print count+0}' "$ban_log")
+        manual_bans=$(awk -F'|' -v since="$yesterday" '$1 >= since && $3 == "manual" {count++} END {print count+0}' "$ban_log")
+        # Strip non-digits and ensure defaults
+        bans_login=${bans_login//[^0-9]/}; bans_login=${bans_login:-0}
+        bans_portscan=${bans_portscan//[^0-9]/}; bans_portscan=${bans_portscan:-0}
+        bans_ddos=${bans_ddos//[^0-9]/}; bans_ddos=${bans_ddos:-0}
+        manual_bans=${manual_bans//[^0-9]/}; manual_bans=${manual_bans:-0}
+        # Add to totals
+        login_bans=$((login_bans + bans_login))
+        portscan_bans=$((portscan_bans + bans_portscan))
+        ddos_bans=$((ddos_bans + bans_ddos))
+    fi
+
+    # ==========================================================================
+    # GET PROTECTION STATUS
+    # ==========================================================================
+
+    local protection_status=""
+    local modules=("ddos:DDoS Protection" "portscan:Port Scan Detection" "login:Login Monitor" "feeds:Threat Feeds" "geoip:GeoIP Blocking")
+
+    for mod_info in "${modules[@]}"; do
+        local mod="${mod_info%%:*}"
+        local name="${mod_info#*:}"
+        local status="Disabled"
+        local color="#ef4444"
+        local icon="&#10008;"
+
+        case "$mod" in
+            ddos)
+                # Check via nftban ddos status or config
+                local ddos_output
+                ddos_output=$(nftban ddos status 2>/dev/null | grep -E "Module Enabled:|Master Switch:" | head -1) || true
+                if [[ "$ddos_output" =~ "true" ]] || [[ "$ddos_output" =~ "ENABLED" ]]; then
+                    status="Active"; color="#22c55e"; icon="&#10004;"
+                fi
+                ;;
+            portscan)
+                # Check via nftban portscan status or config
+                local portscan_output
+                portscan_output=$(nftban portscan status 2>/dev/null | grep -E "Module Enabled:|Master Switch:|Status:" | head -1) || true
+                if [[ "$portscan_output" =~ "true" ]] || [[ "$portscan_output" =~ "ENABLED" ]] || [[ "$portscan_output" =~ "Running" ]]; then
+                    status="Active"; color="#22c55e"; icon="&#10004;"
+                fi
+                ;;
+            login)
+                # Check both nftban-login-monitor service and login alert status
+                local login_svc="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+                if systemctl is-active "$login_svc" &>/dev/null 2>&1 || \
+                   systemctl is-active nftban-login &>/dev/null 2>&1 || \
+                   [[ -f /var/run/nftban/login.pid ]] || \
+                   [[ "$(grep -s 'NFTBAN_LOGIN_ALERT_ENABLED=true' /etc/nftban/conf.d/login_alert.conf* 2>/dev/null)" ]]; then
+                    status="Active"; color="#22c55e"; icon="&#10004;"
+                fi
+                ;;
+            feeds)
+                # Feeds are active if we have feed files with content
+                local feed_total=0
+                for f in /var/lib/nftban/feeds/*.txt; do
+                    [[ -f "$f" ]] && feed_total=$((feed_total + $(wc -l < "$f" 2>/dev/null || echo 0)))
+                done
+                if [[ $feed_total -gt 0 ]]; then
+                    status="Active"; color="#22c55e"; icon="&#10004;"
+                fi
+                ;;
+            geoip)
+                if nft list set ip nftban geo_block &>/dev/null 2>&1; then
+                    status="Active"; color="#22c55e"; icon="&#10004;"
+                fi
+                ;;
+        esac
+
+        protection_status+="<tr>
+            <td style=\"padding:12px 16px;border-bottom:1px solid #475569;\">
+                <span style=\"color:#94a3b8;\">${name}</span>
+            </td>
+            <td style=\"padding:12px 16px;text-align:right;border-bottom:1px solid #475569;\">
+                <span style=\"color:${color};font-weight:bold;\">${icon} ${status}</span>
+            </td>
+        </tr>"
+    done
+
+    # ==========================================================================
+    # GET TOP BLOCKED IPs (from nftables blacklist with GeoIP lookup)
+    # ==========================================================================
+
+    local top_ips=""
+    local ip_count=0
+    local geoip_db="${NFTBAN_DATA_DIR}/geoip/GeoLite2-City.mmdb"
+
+    # Helper: Check if IP is public (not private/reserved)
+    is_public_ip() {
+        local ip="$1"
+        # Filter out private, loopback, link-local, multicast, reserved
+        [[ "$ip" =~ ^10\. ]] && return 1
+        [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] && return 1
+        [[ "$ip" =~ ^192\.168\. ]] && return 1
+        [[ "$ip" =~ ^127\. ]] && return 1
+        [[ "$ip" =~ ^169\.254\. ]] && return 1
+        [[ "$ip" =~ ^224\. ]] && return 1
+        [[ "$ip" =~ ^0\. ]] && return 1
+        [[ "$ip" =~ ^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\. ]] && return 1
+        [[ "$ip" =~ ^192\.0\.(0|2)\. ]] && return 1
+        [[ "$ip" =~ ^198\.(1[89])\. ]] && return 1
+        [[ "$ip" =~ ^203\.0\.113\. ]] && return 1  # TEST-NET-3
+        return 0
+    }
+
+    # Helper: Get country from GeoIP
+    get_country() {
+        local ip="$1"
+        local country="Unknown"
+
+        # Try mmdblookup if available
+        if command -v mmdblookup &>/dev/null && [[ -f "$geoip_db" ]]; then
+            country=$(mmdblookup --file "$geoip_db" --ip "$ip" country names en 2>/dev/null | grep -oP '"\K[^"]+' | head -1)
+        # Fallback: try geoiplookup
+        elif command -v geoiplookup &>/dev/null; then
+            country=$(geoiplookup "$ip" 2>/dev/null | head -1 | sed 's/.*: //' | cut -d',' -f2 | xargs)
+        fi
+
+        [[ -z "$country" ]] && country="Unknown"
+        echo "$country"
+    }
+
+    # Get IPs from actual nftables blacklist (not config files)
+    local blacklist_ips=""
+    if nft list set ip nftban blacklist_ipv4 &>/dev/null; then
+        blacklist_ips=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | \
+            grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | \
+            sort -u | head -50)  # Get more than 5 to filter private IPs
+    fi
+
+    # Process IPs: filter private, lookup country, build HTML
+    while IFS= read -r ip; do
+        [[ -z "$ip" ]] && continue
+
+        # Skip private/reserved IPs
+        if ! is_public_ip "$ip"; then
+            continue
+        fi
+
+        ((ip_count++))
+        [[ $ip_count -gt 5 ]] && break
+
+        # Get country
+        local country
+        country=$(get_country "$ip")
+
+        local border="border-bottom:1px solid #475569;"
+        [[ $ip_count -eq 5 ]] && border=""
+
+        top_ips+="<tr>
+            <td style=\"padding:12px 16px;${border}\">
+                <span style=\"color:#f1f5f9;font-family:monospace;\">${ip}</span>
+            </td>
+            <td style=\"padding:12px 16px;text-align:right;${border}\">
+                <span style=\"color:#f59e0b;font-weight:bold;\">${country}</span>
+            </td>
+        </tr>"
+    done <<< "$blacklist_ips"
+
+    # Fallback message if no public IPs found
+    if [[ -z "$top_ips" ]]; then
+        top_ips="<tr><td style=\"padding:16px;text-align:center;color:#64748b;\" colspan=\"2\">No public IPs in blacklist</td></tr>"
+    fi
+
+    # ==========================================================================
+    # BUILD HTML FROM TEMPLATE
+    # ==========================================================================
+
+    local html
+    html=$(cat "$template")
+
+    # Escape & in replacement strings (& is special in bash substitution)
+    # For variables containing HTML entities like &#10004;, we must escape &
+    local feeds_status_escaped="${feeds_status//&/\\&}"
+    local protection_status_escaped="${protection_status//&/\\&}"
+    local top_ips_escaped="${top_ips//&/\\&}"
+
+    html="${html//\{\{HOSTNAME\}\}/$hostname}"
+    html="${html//\{\{DATE\}\}/$date_now}"
+    html="${html//\{\{BLOCKED_IPS\}\}/$blocked_ips}"
+    html="${html//\{\{WHITELIST_COUNT\}\}/$whitelist_count}"
+    html="${html//\{\{FEEDS_STATUS\}\}/$feeds_status_escaped}"
+    html="${html//\{\{LOGIN_BANS\}\}/$login_bans}"
+    html="${html//\{\{PORTSCAN_BANS\}\}/$portscan_bans}"
+    html="${html//\{\{DDOS_BANS\}\}/$ddos_bans}"
+    html="${html//\{\{MANUAL_BANS\}\}/$manual_bans}"
+    html="${html//\{\{PROTECTION_STATUS\}\}/$protection_status_escaped}"
+    html="${html//\{\{TOP_IPS\}\}/$top_ips_escaped}"
+    html="${html//\{\{REPORT_ID\}\}/$report_id}"
+
+    # ==========================================================================
+    # SEND EMAIL
+    # ==========================================================================
+
+    local sender="${NFTBAN_SENDER:-nftban@${hostname}}"
+    local subject="[NFTBan] Security Report - ${hostname} - $(date +%Y-%m-%d)"
+
+    if command -v sendmail &>/dev/null; then
+        {
+            echo "From: NFTBan <${sender}>"
+            echo "To: ${recipient}"
+            echo "Subject: ${subject}"
+            echo "MIME-Version: 1.0"
+            echo "Content-Type: text/html; charset=UTF-8"
+            echo ""
+            echo "$html"
+        } | sendmail -t
+
+        echo "[SUCCESS] Report sent to ${recipient}"
+        return 0
+    else
+        echo "ERROR: sendmail not available" >&2
+        return 1
+    fi
+}
+
+# CLI wrapper
+nftban_cmd_report_send() {
+    local recipient="${1:-}"
+    if [[ -z "$recipient" ]]; then
+        echo "Usage: nftban report send <email@example.com>" >&2
+        return 1
+    fi
+    nftban_report_email_generate "$recipient"
+}
+
+export -f nftban_report_email_generate
+export -f nftban_cmd_report_send

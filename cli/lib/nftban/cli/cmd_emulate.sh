@@ -1,0 +1,237 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan CLI: emulate command
+# =============================================================================
+# Simulate packet evaluation to show what nftban would do
+#
+# Usage:
+#   nftban emulate <ip>
+#   nftban emulate <ip> --proto tcp --port 22 --direction in
+#   nftban emulate <ip> --json
+#
+# Version: 1.0.0
+# =============================================================================
+
+# Source core emulation module
+NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+source "${NFTBAN_LIB_DIR}/core/nftban_emulate.sh"
+
+# =============================================================================
+# COMMAND HANDLER
+# =============================================================================
+
+nftban_cmd_emulate() {
+    local ip=""
+    local proto=""
+    local port=""
+    local direction="in"
+    local json_output=false
+    local help=false
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            -h|--help)
+                help=true
+                shift
+                ;;
+            -j|--json)
+                json_output=true
+                shift
+                ;;
+            -p|--proto|--protocol)
+                proto="$2"
+                shift 2
+                ;;
+            --port)
+                port="$2"
+                shift 2
+                ;;
+            -d|--direction|--dir)
+                direction="$2"
+                shift 2
+                ;;
+            -*)
+                nftban_banner 2>/dev/null || true
+                echo "Error: Unknown option: $1" >&2
+                echo "Use 'nftban emulate --help' for usage" >&2
+                exit 1
+                ;;
+            *)
+                if [[ -z "$ip" ]]; then
+                    ip="$1"
+                else
+                    nftban_banner 2>/dev/null || true
+                    echo "Error: Unexpected argument: $1" >&2
+                    exit 1
+                fi
+                shift
+                ;;
+        esac
+    done
+
+    # Show help
+    if [[ "$help" == "true" ]]; then
+        _emulate_help
+        return 0
+    fi
+
+    # Validate IP
+    if [[ -z "$ip" ]]; then
+        nftban_banner 2>/dev/null || true
+        echo "Error: IP address required" >&2
+        echo "Usage: nftban emulate <ip> [options]" >&2
+        exit 1
+    fi
+
+    # Validate IP format
+    if ! _validate_ip "$ip"; then
+        nftban_banner 2>/dev/null || true
+        echo "Error: Invalid IP address: $ip" >&2
+        exit 1
+    fi
+
+    # Validate protocol if specified
+    if [[ -n "$proto" ]]; then
+        case "$proto" in
+            tcp|udp|icmp|icmpv6) ;;
+            *)
+                nftban_banner 2>/dev/null || true
+                echo "Error: Invalid protocol: $proto (use tcp, udp, icmp)" >&2
+                exit 1
+                ;;
+        esac
+    fi
+
+    # Validate port if specified
+    if [[ -n "$port" ]]; then
+        if ! [[ "$port" =~ ^[0-9]+$ ]] || [[ "$port" -lt 1 ]] || [[ "$port" -gt 65535 ]]; then
+            nftban_banner 2>/dev/null || true
+            echo "Error: Invalid port: $port (must be 1-65535)" >&2
+            exit 1
+        fi
+    fi
+
+    # Validate direction
+    case "$direction" in
+        in|input|out|output|fwd|forward) ;;
+        *)
+            nftban_banner 2>/dev/null || true
+            echo "Error: Invalid direction: $direction (use in, out, fwd)" >&2
+            exit 1
+            ;;
+    esac
+
+    # Run emulation
+    local result
+    result=$(nftban_emulate_packet "$ip" "$proto" "$port" "$direction")
+
+    if [[ "$json_output" == "true" ]]; then
+        echo "$result"
+    else
+        nftban_emulate_format_text "$result"
+    fi
+
+    # Return exit code based on decision
+    local decision
+    decision=$(echo "$result" | grep -o '"decision": *"[^"]*"' | cut -d'"' -f4)
+    [[ "$decision" == "block" ]] && return 2
+    return 0
+}
+
+# Validate IP address format
+_validate_ip() {
+    local ip="$1"
+
+    # IPv4 validation
+    if [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        local IFS='.'
+        read -ra octets <<< "$ip"
+        for octet in "${octets[@]}"; do
+            [[ "$octet" -gt 255 ]] && return 1
+        done
+        return 0
+    fi
+
+    # IPv6 validation (basic)
+    if [[ "$ip" =~ ^[0-9a-fA-F:]+$ ]]; then
+        return 0
+    fi
+
+    return 1
+}
+
+# Show help
+_emulate_help() {
+    cat <<'EOF'
+NFTBan Emulate - Simulate packet decision
+
+USAGE:
+    nftban emulate <ip> [options]
+
+DESCRIPTION:
+    Simulates what nftban would do with a packet from the specified IP.
+    Shows whether the packet would be ALLOWED or BLOCKED, and explains
+    which rule/set/module would make the decision.
+
+ARGUMENTS:
+    <ip>                IP address to test (IPv4 or IPv6)
+
+OPTIONS:
+    -p, --proto <proto> Protocol: tcp, udp, icmp (optional)
+    --port <port>       Port number: 1-65535 (optional)
+    -d, --direction     Direction: in, out, fwd (default: in)
+    -j, --json          Output as JSON
+    -h, --help          Show this help
+
+EXAMPLES:
+    # Basic IP check
+    nftban emulate 8.8.8.8
+
+    # Check with protocol and port
+    nftban emulate 8.8.8.8 --proto tcp --port 22
+
+    # Check outbound traffic
+    nftban emulate 1.2.3.4 --direction out
+
+    # JSON output for scripts/API
+    nftban emulate 8.8.8.8 --json
+
+    # Check if internal IP is whitelisted
+    nftban emulate 10.0.0.1
+
+EXIT CODES:
+    0    Packet would be ALLOWED
+    1    Error (invalid input, etc.)
+    2    Packet would be BLOCKED
+
+EVALUATION ORDER:
+    1. Whitelist check (if match → ALLOW)
+    2. Blacklist check (if match → BLOCK)
+    3. GeoBan check (if match → BLOCK)
+    4. Port filter (if port not allowed → BLOCK)
+    5. Default policy (usually → ALLOW established, DROP new)
+
+OUTPUT FIELDS:
+    Module          Which nftban module made the decision
+    Source          Specific source (feed name, config file, etc.)
+    List type       Which nft set was matched
+    Matching entry  The actual CIDR or IP that matched
+    Table/Chain     NFTables table and chain
+    Rule handle     NFTables rule handle number
+
+SEE ALSO:
+    nftban list          Show current bans
+    nftban whitelist     Manage whitelist
+    nftban search        Search for IP in sets
+EOF
+}
+
+# Subcommand aliases (note: nftban_cmd_test removed - conflicts with cmd_test.sh)
+nftban_cmd_simulate() {
+    nftban_cmd_emulate "$@"
+}
+
+nftban_cmd_explain() {
+    nftban_cmd_emulate "$@"
+}

@@ -1,0 +1,14 @@
+[Unit]
+Description=NFTBan Automatic Rollback Timer
+Documentation=man:nftban(8)
+Documentation=https://nftban.com/docs
+PartOf=nftban-rollback.service
+
+[Timer]
+# Trigger 5 minutes after nftban-apply starts the timer
+# (nftban-apply starts this timer, nftban-confirm stops it)
+OnActiveSec=5min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

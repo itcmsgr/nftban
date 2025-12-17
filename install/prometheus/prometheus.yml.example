@@ -1,0 +1,50 @@
+# Prometheus Configuration for NFTBan Metrics
+# Deploy to: /etc/prometheus/prometheus.yml
+
+global:
+  scrape_interval: 60s
+  evaluation_interval: 60s
+  external_labels:
+    environment: 'production'
+    service: 'nftban'
+
+# Scrape configuration
+scrape_configs:
+  # NFTBan metrics via Node Exporter
+  - job_name: 'nftban'
+    static_configs:
+      - targets: ['localhost:9100']
+        labels:
+          instance: 'nftban-firewall'
+          
+    # Only keep nftban metrics + essential node_exporter metrics
+    metric_relabel_configs:
+      # Keep all nftban metrics
+      - source_labels: [__name__]
+        regex: 'nftban_.*'
+        action: keep
+        
+      # Keep essential node_exporter metrics
+      - source_labels: [__name__]
+        regex: 'node_(cpu|memory|disk|network|load|time)_.*'
+        action: keep
+        
+      # Keep node_exporter build info
+      - source_labels: [__name__]
+        regex: 'node_exporter_build_info'
+        action: keep
+        
+      # Keep textfile collector metrics
+      - source_labels: [__name__]
+        regex: 'node_textfile_.*'
+        action: keep
+
+# Alerting (optional)
+# alerting:
+#   alertmanagers:
+#     - static_configs:
+#         - targets: ['localhost:9093']
+
+# Rule files (optional)
+# rule_files:
+#   - '/etc/prometheus/rules/nftban_alerts.yml'

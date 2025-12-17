@@ -1,0 +1,41 @@
+[Unit]
+Description=NFTBan Core - GeoIP Database Update
+Documentation=https://github.com/itcmsgr/nftban-dev
+After=network-online.target nftban-core.service
+Requires=nftban-core.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/nftban-core geoip update
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-geoip
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/nftban
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+# IMPORTANT: MemoryDenyWriteExecute is intentionally NOT set for Go services.
+# It breaks Go runtime on Ubuntu 24.04 (AppArmor + Landlock) and potentially
+# future SELinux-enforcing distributions. Security is maintained through
+# other hardening measures. See: docs/architecture/SYSTEMD_GO_HARDENING.md
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+
+# Resource limits
+CPUQuota=50%
+MemoryMax=256M
+TasksMax=10
+TimeoutStartSec=10min
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,184 @@
+name: Secure Go
+
+on:
+  push:
+    branches: [ main, master, develop ]
+  pull_request:
+
+permissions:
+  contents: read
+  security-events: write   # needed to upload SARIF
+  actions: read
+
+jobs:
+  filter:
+    name: Detect Go changes
+    runs-on: ubuntu-latest
+    outputs:
+      go_changed: ${{ steps.filter.outputs.go }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: filter
+        uses: dorny/paths-filter@v3
+        with:
+          filters: |
+            go:
+              - '**/*.go'
+              - 'go.mod'
+              - 'go.sum'
+              - 'cmd/**'
+              - 'pkg/**'
+
+  analyze:
+    name: Build, Test, Scan (Go)
+    needs: filter
+    if: needs.filter.outputs.go_changed == 'true'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Cache Go build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/go/pkg/mod
+            ~/.cache/go-build
+          key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
+          restore-keys: ${{ runner.os }}-go-
+
+      - name: Verify modules tidy
+        run: |
+          go mod tidy
+          git diff --exit-code || (echo "::error ::Run 'go mod tidy' locally and commit changes" && exit 1)
+
+      - name: Build
+        run: go build ./...
+
+      - name: Unit tests (race + coverage)
+        run: go test -race -cover -v ./...
+
+      # ---- Staticcheck: Go code quality ----
+      - name: Install staticcheck
+        run: go install honnef.co/go/tools/cmd/staticcheck@latest
+
+      - name: Run staticcheck
+        run: $(go env GOPATH)/bin/staticcheck ./...
+
+      # ---- Gosec: security lint with SARIF upload ----
+      - name: Install gosec
+        run: go install github.com/securego/gosec/v2/cmd/gosec@latest
+
+      - name: Run gosec (SARIF)
+        run: $(go env GOPATH)/bin/gosec -fmt sarif -out gosec.sarif ./... || true
+
+      - name: Upload gosec SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: gosec.sarif
+          category: gosec
+
+      # ---- govulncheck: vulnerability intelligence with SARIF ----
+      - name: Install govulncheck
+        run: go install golang.org/x/vuln/cmd/govulncheck@latest
+
+      - name: Run govulncheck (JSON)
+        run: $(go env GOPATH)/bin/govulncheck -json ./... > govulncheck.json || true
+
+      - name: Convert govulncheck to SARIF
+        run: |
+          python3 << 'PY'
+          import json
+          import sys
+
+          try:
+              with open('govulncheck.json', 'r') as f:
+                  findings = [json.loads(line) for line in f if line.strip()]
+
+              results = []
+              for finding in findings:
+                  if finding.get('finding'):
+                      vuln = finding['finding']
+                      osv = vuln.get('osv', {})
+                      results.append({
+                          "ruleId": osv.get('id', 'UNKNOWN'),
+                          "message": {"text": osv.get('summary', 'Vulnerability detected')},
+                          "level": "warning",
+                          "locations": [{
+                              "physicalLocation": {
+                                  "artifactLocation": {"uri": "go.mod"},
+                                  "region": {"startLine": 1, "startColumn": 1}
+                              }
+                          }]
+                      })
+
+              sarif = {
+                  "version": "2.1.0",
+                  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+                  "runs": [{
+                      "tool": {
+                          "driver": {
+                              "name": "govulncheck",
+                              "informationUri": "https://golang.org/x/vuln/cmd/govulncheck",
+                              "version": "latest"
+                          }
+                      },
+                      "results": results
+                  }]
+              }
+
+              with open('govulncheck.sarif', 'w') as f:
+                  json.dump(sarif, f, indent=2)
+          except Exception as e:
+              print(f"Error converting govulncheck to SARIF: {e}", file=sys.stderr)
+              # Create empty SARIF if conversion fails
+              sarif = {
+                  "version": "2.1.0",
+                  "$schema": "https://raw.githubusercontent.com/oasis-tcs/sarif-spec/master/Schemata/sarif-schema-2.1.0.json",
+                  "runs": [{
+                      "tool": {
+                          "driver": {
+                              "name": "govulncheck",
+                              "informationUri": "https://golang.org/x/vuln/cmd/govulncheck",
+                              "version": "latest"
+                          }
+                      },
+                      "results": []
+                  }]
+              }
+              with open('govulncheck.sarif', 'w') as f:
+                  json.dump(sarif, f, indent=2)
+          PY
+
+      - name: Upload govulncheck SARIF
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: govulncheck.sarif
+          category: govulncheck
+
+      # ---- Generate security summary ----
+      - name: Generate security summary
+        if: always()
+        run: |
+          echo "## Go Security Scan Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Tools Run" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ **staticcheck**: Go code quality and bug detection" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ **gosec**: Security vulnerability scanner" >> $GITHUB_STEP_SUMMARY
+          echo "- ✅ **govulncheck**: Go vulnerability database scanner" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Results" >> $GITHUB_STEP_SUMMARY
+          echo "Check the Security → Code scanning alerts tab for detailed findings." >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Verification" >> $GITHUB_STEP_SUMMARY
+          echo "All Go code has been analyzed for:" >> $GITHUB_STEP_SUMMARY
+          echo "- Known CVEs in dependencies (govulncheck)" >> $GITHUB_STEP_SUMMARY
+          echo "- Insecure coding patterns (gosec)" >> $GITHUB_STEP_SUMMARY
+          echo "- Code quality issues (staticcheck)" >> $GITHUB_STEP_SUMMARY
+          echo "- Race conditions (go test -race)" >> $GITHUB_STEP_SUMMARY

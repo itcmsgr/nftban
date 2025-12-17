@@ -1,0 +1,83 @@
+package main
+
+import (
+	"fmt"
+	"strings"
+
+	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban-v1.0-dev/pkg/runtime"
+	"github.com/itcmsgr/nftban-v1.0-dev/pkg/version"
+)
+
+// getStatusConfigDir returns the config directory from central config
+// NO FALLBACK - path must come from /etc/nftban/nftban.conf
+func getStatusConfigDir() string {
+	cfg := nftbanconf.MustLoad()
+	return cfg.ConfigDir
+}
+
+func cmdStatus() error {
+	fmt.Println(version.BannerWithEmoji("🛡️", "System Status"))
+	fmt.Println(strings.Repeat("=", 70))
+	fmt.Println()
+
+	// Initialize RuntimeState
+	state := runtime.NewRuntimeState(getStatusConfigDir())
+
+	// Load whitelists
+	fmt.Println("Loading whitelists...")
+	if err := state.LoadWhitelists(); err != nil {
+		return fmt.Errorf("failed to load whitelists: %w", err)
+	}
+	fmt.Printf("  ✅ Loaded %d IPv4 + %d IPv6 whitelist entries\n",
+		len(state.WhitelistIPv4), len(state.WhitelistIPv6))
+
+	// Load blacklists
+	fmt.Println("Loading blacklists...")
+	if err := state.LoadBlacklists(); err != nil {
+		return fmt.Errorf("failed to load blacklists: %w", err)
+	}
+	fmt.Printf("  ✅ Loaded %d IPv4 + %d IPv6 blacklist entries\n",
+		len(state.BlacklistIPv4), len(state.BlacklistIPv6))
+
+	fmt.Println()
+
+	// Display stats
+	stats := state.GetStats()
+	fmt.Println("📊 Current Statistics:")
+	fmt.Println(strings.Repeat("-", 70))
+	fmt.Printf("Whitelist IPv4: %d\n", stats["whitelist_ipv4"])
+	fmt.Printf("Whitelist IPv6: %d\n", stats["whitelist_ipv6"])
+	fmt.Printf("Blacklist IPv4: %d\n", stats["blacklist_ipv4"])
+	fmt.Printf("Blacklist IPv6: %d\n", stats["blacklist_ipv6"])
+	fmt.Printf("Last Reload:    %s\n", stats["last_reload"])
+	fmt.Println()
+
+	counters := stats["counters"].(map[string]int64)
+	fmt.Println("📈 Counters:")
+	fmt.Println(strings.Repeat("-", 70))
+	fmt.Printf("Total Bans:     %d\n", counters["bans_total"])
+	fmt.Printf("Total Unbans:   %d\n", counters["unbans_total"])
+	fmt.Printf("Total Reloads:  %d\n", counters["reloads_total"])
+	fmt.Printf("Total Syncs:    %d\n", counters["syncs_total"])
+	fmt.Printf("Sync Errors:    %d\n", counters["sync_errors_total"])
+	fmt.Println()
+
+	// Display source breakdown
+	fmt.Println("📁 Sources:")
+	fmt.Println(strings.Repeat("-", 70))
+	for sourceName, sourceStats := range state.Sources {
+		fmt.Printf("%s:\n", sourceName)
+		fmt.Printf("  IPv4: %d | IPv6: %d | Last Update: %s\n",
+			sourceStats.IPv4Count,
+			sourceStats.IPv6Count,
+			sourceStats.LastUpdate.Format("2006-01-02 15:04:05"))
+	}
+	fmt.Println()
+
+	fmt.Println(strings.Repeat("=", 70))
+	fmt.Println("✅ Status check complete!")
+	fmt.Println()
+
+	return nil
+}

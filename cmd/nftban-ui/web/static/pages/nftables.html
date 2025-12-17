@@ -1,0 +1,519 @@
+<style>
+.hierarchy-card {
+    background: var(--bg-alt);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+    margin-bottom: 20px;
+}
+
+.hierarchy-diagram {
+    font-family: monospace;
+    font-size: 13px;
+    line-height: 1.8;
+    padding: 20px;
+    background: #1a1a1a;
+    color: #00ff00;
+    border-radius: 6px;
+    overflow-x: auto;
+}
+
+.hierarchy-diagram .nftban-table {
+    color: #00ff00;
+    font-weight: bold;
+}
+
+.hierarchy-diagram .system-table {
+    color: #ffaa00;
+}
+
+.hierarchy-diagram .chain {
+    color: #00aaff;
+}
+
+.hierarchy-diagram .rule {
+    color: #ff00ff;
+}
+
+.hierarchy-diagram .warning {
+    color: #ff0000;
+    font-weight: bold;
+}
+
+.status-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+    gap: 15px;
+    margin-bottom: 20px;
+}
+
+.status-box {
+    background: var(--bg-alt);
+    border: 2px solid var(--border);
+    border-radius: 8px;
+    padding: 15px;
+}
+
+.status-box.success {
+    border-color: var(--success);
+}
+
+.status-box.warning {
+    border-color: #ffaa00;
+}
+
+.status-box.error {
+    border-color: var(--danger);
+}
+
+.status-box h4 {
+    margin: 0 0 10px 0;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.status-box .status-value {
+    font-size: 24px;
+    font-weight: 700;
+}
+
+.control-buttons {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.ruleset-display {
+    background: #1a1a1a;
+    color: #00ff00;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 12px;
+    padding: 20px;
+    border-radius: 8px;
+    max-height: 500px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+}
+
+.fhs-comparison {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-bottom: 20px;
+}
+
+@media (max-width: 900px) {
+    .fhs-comparison {
+        grid-template-columns: 1fr;
+    }
+}
+
+.comparison-box {
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 15px;
+}
+
+.comparison-box h4 {
+    margin-top: 0;
+    color: var(--primary);
+}
+
+.comparison-content {
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    color: var(--text);
+    white-space: pre;
+    background: #1a1a1a;
+    color: #00ff00;
+    padding: 15px;
+    border-radius: 6px;
+    overflow-x: auto;
+}
+</style>
+
+<h2><i class="fa fa-network-wired"></i> NFTables Tools</h2>
+<p class="text-muted">Check nftables ruleset, hierarchy, and save configurations</p>
+
+<!-- CONTROL BUTTONS -->
+<div class="control-buttons">
+    <button onclick="checkRuleset()" class="btn-primary">
+        <i class="fa fa-magnifying-glass"></i> Check Current Ruleset
+    </button>
+    <button onclick="validateHierarchy()" class="btn-primary">
+        <i class="fa fa-diagram-project"></i> Validate Hierarchy
+    </button>
+    <button onclick="saveRuleset()" class="btn-primary">
+        <i class="fa fa-save"></i> Save Current Ruleset
+    </button>
+    <button onclick="downloadRuleset()" class="btn-primary">
+        <i class="fa fa-download"></i> Download Ruleset
+    </button>
+    <button onclick="showHierarchyDiagram()" class="btn-primary">
+        <i class="fa fa-sitemap"></i> Show Hierarchy Diagram
+    </button>
+</div>
+
+<!-- STATUS GRID -->
+<div class="status-grid" id="status-grid">
+    <div class="status-box">
+        <h4><i class="fa fa-spinner fa-spin"></i> Checking...</h4>
+        <div class="status-value">-</div>
+    </div>
+</div>
+
+<!-- FHS vs NFTABLES COMPARISON -->
+<div class="fhs-comparison">
+    <div class="comparison-box">
+        <h4><i class="fa fa-folder-tree"></i> FHS (Filesystem Hierarchy Standard)</h4>
+        <div class="comparison-content">
+/ (root)
+├── bin/           # Essential binaries
+├── boot/          # Boot loader files
+├── dev/           # Device files
+├── etc/           # Configuration files
+│   ├── nftban/
+│   │   ├── conf.d/
+│   │   ├── nftban.conf
+│   │   └── nftban.conf.local
+├── home/          # User home directories
+├── lib/           # Shared libraries
+├── opt/           # Optional software
+├── sbin/          # System binaries
+├── tmp/           # Temporary files
+├── usr/           # User programs
+│   ├── bin/
+│   ├── lib/
+│   └── sbin/
+└── var/           # Variable data
+    ├── lib/
+    │   └── nftban/
+    └── log/
+        └── nftban/
+        </div>
+    </div>
+
+    <div class="comparison-box">
+        <h4><i class="fa fa-network-wired"></i> NFTables Hierarchy Schema</h4>
+        <div class="comparison-content">
+nftables
+├── Table (inet/ip/ip6)
+│   ├── <span style="color:#00ff00;">nftban</span> (NFTBan managed)
+│   │   ├── Chain
+│   │   │   ├── input
+│   │   │   ├── forward
+│   │   │   ├── output
+│   │   │   └── prerouting
+│   │   ├── Set
+│   │   │   ├── banned_ips
+│   │   │   ├── whitelist
+│   │   │   ├── geoban_*
+│   │   │   └── feed_*
+│   │   └── Rule
+│   │       ├── Expression (match)
+│   │       └── Statement (action)
+│   │
+│   └── <span style="color:#ffaa00;">filter/nat/mangle</span> (system)
+│       └── (should NOT contain
+│           nftban rules)
+
+<span style="color:#ff0000;">⚠ WARNING:</span> NFTBan rules must
+only exist in 'nftban' table!
+        </div>
+    </div>
+</div>
+
+<!-- HIERARCHY DIAGRAM -->
+<div class="card" id="hierarchy-card" style="display:none;">
+    <h3><i class="fa fa-sitemap"></i> NFTables Hierarchy Diagram</h3>
+    <div class="hierarchy-diagram" id="hierarchy-diagram">
+        <i class="fa fa-spinner fa-spin"></i> Loading...
+    </div>
+</div>
+
+<!-- RULESET DISPLAY -->
+<div class="card">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px;">
+        <h3><i class="fa fa-list"></i> Current NFTables Ruleset</h3>
+        <div style="display: flex; gap: 10px;">
+            <button onclick="refreshRuleset()" class="btn-sm btn-primary">
+                <i class="fa fa-rotate"></i> Refresh
+            </button>
+            <button onclick="copyRuleset()" class="btn-sm btn-primary">
+                <i class="fa fa-copy"></i> Copy
+            </button>
+        </div>
+    </div>
+    <div class="ruleset-display" id="ruleset-display">
+        <i class="fa fa-circle-info"></i> Click "Check Current Ruleset" to load nftables configuration
+    </div>
+</div>
+
+<!-- VALIDATION RESULTS -->
+<div class="card" id="validation-card" style="display:none;">
+    <h3><i class="fa fa-shield-halved"></i> Hierarchy Validation Results</h3>
+    <div id="validation-results"></div>
+</div>
+
+<script>
+// Avoid redeclaration errors when page is loaded multiple times
+window.currentRuleset = window.currentRuleset || '';
+
+async function checkRuleset() {
+    try {
+        document.getElementById('ruleset-display').innerHTML = '<i class="fa fa-spinner fa-spin"></i> Loading ruleset...';
+
+        const response = await apiRequest('/nftables/ruleset');
+
+        if (response.success && response.data) {
+            window.currentRuleset = response.data.ruleset || response.data;
+            displayRuleset(window.currentRuleset);
+            updateStatus(response.data);
+        } else {
+            document.getElementById('ruleset-display').innerHTML =
+                '<span style="color:#ff0000;">Failed to load ruleset: ' + (response.error || 'Unknown error') + '</span>';
+        }
+    } catch (error) {
+        document.getElementById('ruleset-display').innerHTML =
+            '<span style="color:#ff0000;">Error: ' + error.message + '</span>';
+    }
+}
+
+function displayRuleset(ruleset) {
+    const display = document.getElementById('ruleset-display');
+
+    if (typeof ruleset === 'string') {
+        // Syntax highlighting
+        let html = ruleset
+            .replace(/\btable\s+(inet|ip|ip6)\s+(\w+)/g, '<span style="color:#00aaff;">table $1 <span style="color:#00ff00;font-weight:bold;">$2</span></span>')
+            .replace(/\bchain\s+(\w+)/g, '<span style="color:#ffaa00;">chain <span style="font-weight:bold;">$1</span></span>')
+            .replace(/\bset\s+(\w+)/g, '<span style="color:#ff00ff;">set <span style="font-weight:bold;">$1</span></span>')
+            .replace(/\b(drop|accept|reject|return|jump|goto)\b/g, '<span style="color:#ff6600;font-weight:bold;">$1</span>')
+            .replace(/\b(ip|ip6|tcp|udp|icmp|saddr|daddr|sport|dport)\b/g, '<span style="color:#00ffff;">$1</span>')
+            .replace(/#.*/g, '<span style="color:#888888;">$&</span>');
+
+        display.innerHTML = html;
+    } else {
+        display.textContent = JSON.stringify(ruleset, null, 2);
+    }
+}
+
+function updateStatus(data) {
+    const grid = document.getElementById('status-grid');
+
+    let html = '';
+
+    // NFTBan table status
+    const hasNFTBan = currentRuleset.includes('table inet nftban') || currentRuleset.includes('table ip nftban');
+    html += `
+        <div class="status-box ${hasNFTBan ? 'success' : 'error'}">
+            <h4><i class="fa ${hasNFTBan ? 'fa-check-circle' : 'fa-times-circle'}"></i> NFTBan Table</h4>
+            <div class="status-value">${hasNFTBan ? '✅ Found' : '❌ Missing'}</div>
+        </div>
+    `;
+
+    // Count tables
+    const tableMatches = currentRuleset.match(/table\s+(inet|ip|ip6)\s+\w+/g);
+    const tableCount = tableMatches ? tableMatches.length : 0;
+    html += `
+        <div class="status-box">
+            <h4><i class="fa fa-table"></i> Total Tables</h4>
+            <div class="status-value">${tableCount}</div>
+        </div>
+    `;
+
+    // Count chains
+    const chainMatches = currentRuleset.match(/chain\s+\w+/g);
+    const chainCount = chainMatches ? chainMatches.length : 0;
+    html += `
+        <div class="status-box">
+            <h4><i class="fa fa-link"></i> Total Chains</h4>
+            <div class="status-value">${chainCount}</div>
+        </div>
+    `;
+
+    // Count sets
+    const setMatches = currentRuleset.match(/set\s+\w+/g);
+    const setCount = setMatches ? setMatches.length : 0;
+    html += `
+        <div class="status-box">
+            <h4><i class="fa fa-database"></i> Total Sets</h4>
+            <div class="status-value">${setCount}</div>
+        </div>
+    `;
+
+    grid.innerHTML = html;
+}
+
+async function validateHierarchy() {
+    try {
+        const response = await apiRequest('/nftables/validate');
+
+        const card = document.getElementById('validation-card');
+        const results = document.getElementById('validation-results');
+
+        card.style.display = 'block';
+
+        if (response.success && response.data) {
+            let html = '<div style="padding: 15px;">';
+
+            if (response.data.valid) {
+                html += '<p style="color:var(--success);font-size:18px;font-weight:700;"><i class="fa fa-check-circle"></i> Hierarchy is valid!</p>';
+            } else {
+                html += '<p style="color:var(--danger);font-size:18px;font-weight:700;"><i class="fa fa-times-circle"></i> Hierarchy validation failed!</p>';
+            }
+
+            if (response.data.issues && response.data.issues.length > 0) {
+                html += '<h4 style="margin-top:20px;">Issues Found:</h4><ul>';
+                response.data.issues.forEach(issue => {
+                    html += `<li style="color:var(--danger);margin:5px 0;">${issue}</li>`;
+                });
+                html += '</ul>';
+            }
+
+            if (response.data.warnings && response.data.warnings.length > 0) {
+                html += '<h4 style="margin-top:20px;">Warnings:</h4><ul>';
+                response.data.warnings.forEach(warning => {
+                    html += `<li style="color:#ffaa00;margin:5px 0;">${warning}</li>`;
+                });
+                html += '</ul>';
+            }
+
+            html += '</div>';
+            results.innerHTML = html;
+        } else {
+            results.innerHTML = '<p style="color:var(--danger);padding:15px;">Validation failed: ' + (response.error || 'Unknown error') + '</p>';
+        }
+    } catch (error) {
+        console.log('[error]', 'Validation error: ' + error.message);
+    }
+}
+
+async function saveRuleset() {
+    if (!currentRuleset) {
+        console.log('[warning]', 'Please check current ruleset first');
+        return;
+    }
+
+    if (!confirm('Save current nftables ruleset to /etc/nftban/nftables.conf.backup?')) return;
+
+    try {
+        const response = await apiRequest('/nftables/save', {
+            method: 'POST',
+            body: JSON.stringify({ ruleset: currentRuleset })
+        });
+
+        if (response.success) {
+            console.log('[success]', 'Ruleset saved successfully to ' + (response.data.path || '/etc/nftban/nftables.conf.backup'));
+        } else {
+            console.log('[error]', 'Failed to save ruleset: ' + (response.error || 'Unknown error'));
+        }
+    } catch (error) {
+        console.log('[error]', 'Error saving ruleset: ' + error.message);
+    }
+}
+
+function downloadRuleset() {
+    if (!currentRuleset) {
+        console.log('[warning]', 'Please check current ruleset first');
+        return;
+    }
+
+    const blob = new Blob([currentRuleset], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nftables_ruleset_${new Date().toISOString().split('T')[0]}.conf`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    console.log('[success]', 'Ruleset downloaded');
+}
+
+function refreshRuleset() {
+    checkRuleset();
+}
+
+function copyRuleset() {
+    if (!currentRuleset) {
+        console.log('[warning]', 'No ruleset to copy');
+        return;
+    }
+
+    navigator.clipboard.writeText(currentRuleset).then(() => {
+        console.log('[success]', 'Ruleset copied to clipboard');
+    }).catch(err => {
+        console.log('[error]', 'Failed to copy: ' + err.message);
+    });
+}
+
+function showHierarchyDiagram() {
+    const card = document.getElementById('hierarchy-card');
+    const diagram = document.getElementById('hierarchy-diagram');
+
+    card.style.display = 'block';
+
+    if (!currentRuleset) {
+        diagram.innerHTML = '<span style="color:#ffaa00;">Please check current ruleset first</span>';
+        return;
+    }
+
+    // Parse and display hierarchy
+    let html = 'nftables Framework\n';
+    html += '│\n';
+
+    const tableMatches = currentRuleset.match(/table\s+(inet|ip|ip6)\s+(\w+)\s*\{([^}]*)\}/gs);
+
+    if (tableMatches) {
+        tableMatches.forEach((tableBlock, idx) => {
+            const tableMatch = tableBlock.match(/table\s+(inet|ip|ip6)\s+(\w+)/);
+            if (tableMatch) {
+                const family = tableMatch[1];
+                const tableName = tableMatch[2];
+                const isLast = idx === tableMatches.length - 1;
+                const prefix = isLast ? '└──' : '├──';
+
+                const isNFTBan = tableName.includes('nftban');
+                const tableClass = isNFTBan ? 'nftban-table' : 'system-table';
+
+                html += `${prefix} <span class="${tableClass}">Table [${family}] ${tableName}</span>\n`;
+
+                // Extract chains
+                const chainMatches = tableBlock.match(/chain\s+(\w+)/g);
+                if (chainMatches) {
+                    chainMatches.forEach((chain, cidx) => {
+                        const chainName = chain.replace('chain ', '');
+                        const chainPrefix = isLast ? '    ' : '│   ';
+                        const chainSymbol = cidx === chainMatches.length - 1 ? '└──' : '├──';
+                        html += `${chainPrefix}${chainSymbol} <span class="chain">Chain: ${chainName}</span>\n`;
+                    });
+                }
+
+                // Extract sets
+                const setMatches = tableBlock.match(/set\s+(\w+)/g);
+                if (setMatches) {
+                    setMatches.forEach((set, sidx) => {
+                        const setName = set.replace('set ', '');
+                        const setPrefix = isLast ? '    ' : '│   ';
+                        const setSymbol = sidx === setMatches.length - 1 ? '└──' : '├──';
+                        html += `${setPrefix}${setSymbol} <span class="rule">Set: ${setName}</span>\n`;
+                    });
+                }
+            }
+        });
+    }
+
+    diagram.innerHTML = html;
+}
+
+// Initialize - load ruleset on page load
+checkRuleset();
+</script>

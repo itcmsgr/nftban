@@ -1,0 +1,222 @@
+# ============================================================================
+# NFTBan v1.0 - Local Suricata Rules (SSH + WordPress + Custom)
+# ============================================================================
+# Custom rules for nftban integration - lightweight and focused.
+#
+# SID Ranges:
+#   9000001-9000099  = SSH attacks
+#   9000100-9000199  = WordPress attacks
+#   9000200-9000299  = Panel attacks (DirectAdmin, cPanel, Webmin, etc.)
+#   9000300-9000399  = Mail attacks
+#   9001000-9001999  = Malware detection
+# ============================================================================
+
+# ──────────────────────────────────────────────────────────────────────────
+# SSH BRUTE-FORCE DETECTION
+# ──────────────────────────────────────────────────────────────────────────
+
+# SSH failed login attempts
+alert ssh any any -> any 22 (
+    msg:"LOCAL SSH Failed Login Attempt";
+    flow:established,to_server;
+    ssh.event:failed;
+    threshold:type both, track by_src, count 5, seconds 60;
+    classtype:attempted-admin;
+    sid:9000001;
+    rev:1;
+)
+
+# SSH brute-force scan (multiple connections)
+alert tcp any any -> any 22 (
+    msg:"LOCAL SSH Brute-Force Scan";
+    flow:to_server;
+    flags:S;
+    threshold:type both, track by_src, count 10, seconds 60;
+    classtype:attempted-recon;
+    sid:9000002;
+    rev:1;
+)
+
+# ──────────────────────────────────────────────────────────────────────────
+# WORDPRESS ATTACKS
+# ──────────────────────────────────────────────────────────────────────────
+
+# wp-login.php brute-force
+alert http any any -> any any (
+    msg:"LOCAL WordPress wp-login.php Brute-Force";
+    flow:established,to_server;
+    http.method; content:"POST";
+    http.uri; content:"/wp-login.php";
+    threshold:type both, track by_src, count 5, seconds 60;
+    classtype:web-application-attack;
+    sid:9000100;
+    rev:1;
+)
+
+# xmlrpc.php brute-force (system.multicall abuse)
+alert http any any -> any any (
+    msg:"LOCAL WordPress XMLRPC Brute-Force";
+    flow:established,to_server;
+    http.method; content:"POST";
+    http.uri; content:"/xmlrpc.php";
+    http.request_body; content:"system.multicall";
+    classtype:web-application-attack;
+    sid:9000101;
+    rev:1;
+)
+
+# wp-admin directory scanning
+alert http any any -> any any (
+    msg:"LOCAL WordPress Admin Directory Scan";
+    flow:established,to_server;
+    http.uri; content:"/wp-admin/";
+    threshold:type both, track by_src, count 10, seconds 60;
+    classtype:web-application-attack;
+    sid:9000102;
+    rev:1;
+)
+
+# ──────────────────────────────────────────────────────────────────────────
+# CONTROL PANEL ATTACKS
+# ──────────────────────────────────────────────────────────────────────────
+
+# DirectAdmin login brute-force
+alert http any any -> any any (
+    msg:"LOCAL DirectAdmin Login Brute-Force";
+    flow:established,to_server;
+    http.method; content:"POST";
+    http.uri; content:"/CMD_LOGIN";
+    threshold:type both, track by_src, count 5, seconds 60;
+    classtype:web-application-attack;
+    sid:9000200;
+    rev:1;
+)
+
+# cPanel/WHM login attempts
+alert http any any -> any any (
+    msg:"LOCAL cPanel Login Brute-Force";
+    flow:established,to_server;
+    http.method; content:"POST";
+    http.uri; content:"/login/";
+    http.host; content:"cpanel"; nocase;
+    threshold:type both, track by_src, count 5, seconds 60;
+    classtype:web-application-attack;
+    sid:9000201;
+    rev:1;
+)
+
+# Webmin brute-force
+alert http any any -> any 10000 (
+    msg:"LOCAL Webmin Login Brute-Force";
+    flow:established,to_server;
+    http.method; content:"POST";
+    http.uri; content:"/session_login.cgi";
+    threshold:type both, track by_src, count 5, seconds 60;
+    classtype:web-application-attack;
+    sid:9000202;
+    rev:1;
+)
+
+# ──────────────────────────────────────────────────────────────────────────
+# MAIL SERVER ATTACKS
+# ──────────────────────────────────────────────────────────────────────────
+
+# SMTP brute-force (AUTH attempts)
+alert tcp any any -> any 25 (
+    msg:"LOCAL SMTP Auth Brute-Force";
+    flow:established,to_server;
+    content:"AUTH"; nocase;
+    threshold:type both, track by_src, count 5, seconds 60;
+    classtype:attempted-admin;
+    sid:9000300;
+    rev:1;
+)
+
+# IMAP login brute-force
+alert tcp any any -> any 143 (
+    msg:"LOCAL IMAP Login Brute-Force";
+    flow:established,to_server;
+    content:"LOGIN"; nocase; depth:10;
+    threshold:type both, track by_src, count 5, seconds 60;
+    classtype:attempted-admin;
+    sid:9000301;
+    rev:1;
+)
+
+# ──────────────────────────────────────────────────────────────────────────
+# MALWARE DETECTION (Key signatures)
+# ──────────────────────────────────────────────────────────────────────────
+
+# Botnet outbound SYN scanning (kthreadadd64-style behavior)
+alert tcp any any -> any any (
+    msg:"LOCAL BOTNET Outbound SYN Scanning Detected";
+    flags:S,12;
+    threshold:type both, track by_src, count 50, seconds 10;
+    classtype:attempted-recon;
+    sid:9001100;
+    rev:1;
+)
+
+# Suspicious EXE downloads
+alert http any any -> any any (
+    msg:"LOCAL MALWARE Suspicious EXE Download";
+    flow:established,to_client;
+    filemagic:"PE32 executable";
+    filestore;
+    classtype:trojan-activity;
+    sid:9001001;
+    rev:1;
+)
+
+# Cryptominer pool connection (Stratum)
+alert tcp any any -> any [3333,4444,5555,7777,8080,14444,14433] (
+    msg:"LOCAL MALWARE Crypto Mining Pool Connection";
+    flow:established,to_server;
+    content:"mining.subscribe"; nocase;
+    classtype:trojan-activity;
+    sid:9001010;
+    rev:1;
+)
+
+# PowerShell encoded command (malware delivery)
+alert http any any -> any any (
+    msg:"LOCAL MALWARE Encoded PowerShell Command";
+    flow:established;
+    content:"powershell"; nocase;
+    content:"-enc"; nocase; distance:0; within:20;
+    classtype:trojan-activity;
+    sid:9001020;
+    rev:1;
+)
+
+# Bash reverse shell
+alert tcp any any -> any any (
+    msg:"LOCAL MALWARE Bash Reverse Shell";
+    flow:established,to_server;
+    content:"/bin/bash"; nocase;
+    content:">&"; distance:0; within:50;
+    classtype:trojan-activity;
+    sid:9001030;
+    rev:1;
+)
+
+# CobaltStrike Beacon (JA3 hash)
+alert tls any any -> any any (
+    msg:"LOCAL MALWARE JA3 Hash - CobaltStrike Beacon";
+    ja3_hash; content:"72a589da586844d27a3ffde9697a66f6";
+    classtype:trojan-activity;
+    sid:9001050;
+    rev:1;
+)
+
+# ============================================================================
+# INTEGRATION WITH NFTBAN
+# ============================================================================
+# These rules integrate with /etc/nftban/filters.conf:
+#
+# - ssh filter       → triggers on SID 9000001-9000099
+# - wordpress filter → triggers on SID 9000100-9000199
+# - malware filter   → triggers on SID 9001000-9001999
+#
+# Automatic blocking happens via nftban-suricata.service daemon.
+# ============================================================================

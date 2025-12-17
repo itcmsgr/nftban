@@ -1,0 +1,29 @@
+[Unit]
+Description=NFTBan Login Monitor
+Documentation=https://nftban.com
+After=network.target sshd.service
+Wants=sshd.service
+
+[Service]
+Type=simple
+User=root
+Group=nftban
+ExecStart=/usr/bin/nftban login run
+Restart=on-failure
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/nftban /var/lib/nftban /etc/nftban
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
+
+# Resource limits
+MemoryMax=128M
+CPUQuota=25%
+
+[Install]
+WantedBy=multi-user.target

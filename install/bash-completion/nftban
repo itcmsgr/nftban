@@ -1,0 +1,401 @@
+# nftban bash completion v1.0.0
+# =============================================================================
+# NFTBan CLI Tab Completion
+# Install: cp nftban /etc/bash_completion.d/nftban
+# =============================================================================
+
+_nftban() {
+    local cur prev words cword
+    _init_completion || return
+
+    # ==========================================================================
+    # MAIN COMMANDS (from nftban help)
+    # ==========================================================================
+    # CORE: status health validate config sync version help
+    # FIREWALL: firewall ban unban list check search whitelist whitelist-system profile panel permissions
+    # PROTECTION: ddos portscan login feeds trust country cloudflare geoban geoip
+    # MONITORING: gui metrics stats report fhs module services timers mail
+    # DEBUG: debug smoke emulate setup menu
+
+    local commands="status health validate config sync version help firewall ban unban list check search whitelist whitelist-system profile panel permissions ddos portscan login feeds trust country cloudflare geoban geoip gui metrics stats report fhs module services timers mail debug smoke emulate setup menu nftables port system test wizard watchdog"
+
+    # ==========================================================================
+    # SUBCOMMANDS FOR EACH MAIN COMMAND
+    # ==========================================================================
+
+    # Core commands
+    local status_cmds="--json help"
+    local health_cmds="check fix --auto-heal --json help"
+    local validate_cmds="all firewall config permissions --json help"
+    local config_cmds="show edit validate reload get set help"
+    local sync_cmds="status --dry-run help"
+
+    # Firewall & Security commands
+    local firewall_cmds="status init reload reset help"
+    local ban_cmds="--timeout --reason --source --json help"
+    local unban_cmds="--json help"
+    local list_cmds="banned whitelist all --json help"
+    local check_cmds="--json help"
+    local search_cmds="--json help"
+    local whitelist_cmds="add remove list show --json help"
+    local whitelist_system_cmds="--dry-run --json help"
+    local profile_cmds="list apply status basic standard advanced help"
+    local panel_cmds="detect status directadmin help"
+    local permissions_cmds="audit fix status --json help"
+
+    # Protection Modules
+    local ddos_cmds="status enable disable test config --json help"
+    local portscan_cmds="status enable disable check history test --json help"
+    local login_cmds="status stats install enable disable restart health-fix logs test run --json help"
+    local login_targets="ssh su sudo console service all"
+    local feeds_cmds="status list select enable disable update download --json help"
+    local trust_cmds="list enable disable update load status --json help"
+    local trust_providers="CLOUDFLARE AWS GOOGLE AZURE FASTLY DIGITALOCEAN LINODE VULTR OVH HETZNER ALL"
+    local country_cmds="list enable disable mode status apply --json help"
+    local country_codes="CN RU KP IR SY BY CU VE MM AF IQ LY SD YE US GB DE FR NL"
+    local cloudflare_cmds="status update --json help"
+    local geoban_cmds="status ban unban whitelist unwhitelist list --json help"
+    local geoip_cmds="status lookup update config --json help"
+
+    # Monitoring & Reporting
+    local gui_cmds="status enable disable help"
+    local metrics_cmds="status enable disable --backend prometheus victoria help"
+    local stats_cmds="top ip recent monitor export --json help"
+    local report_cmds="generate schedule email --json help"
+    local fhs_cmds="check status --json help"
+    local module_cmds="list status --json help"
+    local services_cmds="status list detailed summary --json help"
+    local timers_cmds="status enable disable help"
+    local mail_cmds="status port-status test config help"
+
+    # Debug & Testing
+    local debug_cmds="enable disable trace help"
+    local smoke_cmds="--verbose --json help"
+    local emulate_cmds="--proto --port --direction --json help"
+    local setup_cmds="install uninstall configure wizard help"
+    local menu_cmds="help"
+    local test_cmds="run all --verbose --json help"
+    local wizard_cmds="help"
+
+    # System & Infrastructure
+    local nftables_cmds="status reload reset backup restore --json help"
+    local port_cmds="list add remove check status --json help"
+    local system_cmds="status enable disable install uninstall --json help"
+
+    # Watchdog (System Resource Monitoring)
+    local watchdog_cmds="status check report history enable disable --json help"
+
+    # Global options available for most commands
+    local global_opts="--json --help --version -h"
+
+    # ==========================================================================
+    # COMPLETION LOGIC
+    # ==========================================================================
+
+    case "${cword}" in
+        1)
+            # Complete main commands
+            COMPREPLY=($(compgen -W "${commands}" -- "${cur}"))
+            ;;
+        2)
+            # Complete subcommands based on main command
+            case "${prev}" in
+                # Core
+                status)
+                    COMPREPLY=($(compgen -W "${status_cmds}" -- "${cur}"))
+                    ;;
+                health)
+                    COMPREPLY=($(compgen -W "${health_cmds}" -- "${cur}"))
+                    ;;
+                validate)
+                    COMPREPLY=($(compgen -W "${validate_cmds}" -- "${cur}"))
+                    ;;
+                config)
+                    COMPREPLY=($(compgen -W "${config_cmds}" -- "${cur}"))
+                    ;;
+                sync)
+                    COMPREPLY=($(compgen -W "${sync_cmds}" -- "${cur}"))
+                    ;;
+
+                # Firewall & Security
+                firewall)
+                    COMPREPLY=($(compgen -W "${firewall_cmds}" -- "${cur}"))
+                    ;;
+                ban)
+                    # Ban expects an IP address first, then options
+                    COMPREPLY=($(compgen -W "${ban_cmds}" -- "${cur}"))
+                    ;;
+                unban)
+                    COMPREPLY=($(compgen -W "${unban_cmds}" -- "${cur}"))
+                    ;;
+                list)
+                    COMPREPLY=($(compgen -W "${list_cmds}" -- "${cur}"))
+                    ;;
+                check)
+                    COMPREPLY=($(compgen -W "${check_cmds}" -- "${cur}"))
+                    ;;
+                search)
+                    COMPREPLY=($(compgen -W "${search_cmds}" -- "${cur}"))
+                    ;;
+                whitelist)
+                    COMPREPLY=($(compgen -W "${whitelist_cmds}" -- "${cur}"))
+                    ;;
+                whitelist-system)
+                    COMPREPLY=($(compgen -W "${whitelist_system_cmds}" -- "${cur}"))
+                    ;;
+                profile)
+                    COMPREPLY=($(compgen -W "${profile_cmds}" -- "${cur}"))
+                    ;;
+                panel)
+                    COMPREPLY=($(compgen -W "${panel_cmds}" -- "${cur}"))
+                    ;;
+                permissions)
+                    COMPREPLY=($(compgen -W "${permissions_cmds}" -- "${cur}"))
+                    ;;
+
+                # Protection Modules
+                ddos)
+                    COMPREPLY=($(compgen -W "${ddos_cmds}" -- "${cur}"))
+                    ;;
+                portscan)
+                    COMPREPLY=($(compgen -W "${portscan_cmds}" -- "${cur}"))
+                    ;;
+                login)
+                    COMPREPLY=($(compgen -W "${login_cmds}" -- "${cur}"))
+                    ;;
+                feeds)
+                    COMPREPLY=($(compgen -W "${feeds_cmds}" -- "${cur}"))
+                    ;;
+                trust)
+                    COMPREPLY=($(compgen -W "${trust_cmds}" -- "${cur}"))
+                    ;;
+                country)
+                    COMPREPLY=($(compgen -W "${country_cmds}" -- "${cur}"))
+                    ;;
+                cloudflare)
+                    COMPREPLY=($(compgen -W "${cloudflare_cmds}" -- "${cur}"))
+                    ;;
+                geoban)
+                    COMPREPLY=($(compgen -W "${geoban_cmds}" -- "${cur}"))
+                    ;;
+                geoip)
+                    COMPREPLY=($(compgen -W "${geoip_cmds}" -- "${cur}"))
+                    ;;
+
+                # Monitoring & Reporting
+                gui)
+                    COMPREPLY=($(compgen -W "${gui_cmds}" -- "${cur}"))
+                    ;;
+                metrics)
+                    COMPREPLY=($(compgen -W "${metrics_cmds}" -- "${cur}"))
+                    ;;
+                stats)
+                    COMPREPLY=($(compgen -W "${stats_cmds}" -- "${cur}"))
+                    ;;
+                report)
+                    COMPREPLY=($(compgen -W "${report_cmds}" -- "${cur}"))
+                    ;;
+                fhs)
+                    COMPREPLY=($(compgen -W "${fhs_cmds}" -- "${cur}"))
+                    ;;
+                module)
+                    COMPREPLY=($(compgen -W "${module_cmds}" -- "${cur}"))
+                    ;;
+                services)
+                    COMPREPLY=($(compgen -W "${services_cmds}" -- "${cur}"))
+                    ;;
+                timers)
+                    COMPREPLY=($(compgen -W "${timers_cmds}" -- "${cur}"))
+                    ;;
+                mail)
+                    COMPREPLY=($(compgen -W "${mail_cmds}" -- "${cur}"))
+                    ;;
+
+                # Debug & Testing
+                debug)
+                    COMPREPLY=($(compgen -W "${debug_cmds}" -- "${cur}"))
+                    ;;
+                smoke)
+                    COMPREPLY=($(compgen -W "${smoke_cmds}" -- "${cur}"))
+                    ;;
+                emulate)
+                    # Emulate expects an IP address first
+                    COMPREPLY=($(compgen -W "${emulate_cmds}" -- "${cur}"))
+                    ;;
+                setup)
+                    COMPREPLY=($(compgen -W "${setup_cmds}" -- "${cur}"))
+                    ;;
+                menu)
+                    COMPREPLY=($(compgen -W "${menu_cmds}" -- "${cur}"))
+                    ;;
+                test)
+                    COMPREPLY=($(compgen -W "${test_cmds}" -- "${cur}"))
+                    ;;
+                wizard)
+                    COMPREPLY=($(compgen -W "${wizard_cmds}" -- "${cur}"))
+                    ;;
+
+                # System & Infrastructure
+                nftables)
+                    COMPREPLY=($(compgen -W "${nftables_cmds}" -- "${cur}"))
+                    ;;
+                port)
+                    COMPREPLY=($(compgen -W "${port_cmds}" -- "${cur}"))
+                    ;;
+                system)
+                    COMPREPLY=($(compgen -W "${system_cmds}" -- "${cur}"))
+                    ;;
+
+                # Watchdog
+                watchdog)
+                    COMPREPLY=($(compgen -W "${watchdog_cmds}" -- "${cur}"))
+                    ;;
+
+                # Fallback
+                *)
+                    COMPREPLY=($(compgen -W "${global_opts}" -- "${cur}"))
+                    ;;
+            esac
+            ;;
+        3)
+            # Complete third-level arguments
+            local main_cmd="${words[1]}"
+            local sub_cmd="${words[2]}"
+
+            case "${main_cmd}" in
+                login)
+                    case "${sub_cmd}" in
+                        enable|disable)
+                            COMPREPLY=($(compgen -W "${login_targets}" -- "${cur}"))
+                            ;;
+                        status|stats)
+                            COMPREPLY=($(compgen -W "--json" -- "${cur}"))
+                            ;;
+                        logs)
+                            # Suggest common log line counts
+                            COMPREPLY=($(compgen -W "10 25 50 100 200" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+                metrics)
+                    case "${sub_cmd}" in
+                        enable)
+                            COMPREPLY=($(compgen -W "--backend prometheus victoria" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+                profile)
+                    case "${sub_cmd}" in
+                        apply)
+                            COMPREPLY=($(compgen -W "basic standard advanced" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+                trust)
+                    case "${sub_cmd}" in
+                        enable|disable)
+                            # Trust providers
+                            COMPREPLY=($(compgen -W "${trust_providers}" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+                country)
+                    case "${sub_cmd}" in
+                        enable|disable)
+                            # Common country codes
+                            COMPREPLY=($(compgen -W "${country_codes}" -- "${cur}"))
+                            ;;
+                        mode)
+                            COMPREPLY=($(compgen -W "blacklist whitelist" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+                geoban)
+                    case "${sub_cmd}" in
+                        ban|unban|whitelist|unwhitelist)
+                            # Common country codes
+                            COMPREPLY=($(compgen -W "RU CN KP IR SY VE BY CU KZ help" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+                emulate)
+                    # After IP, suggest options
+                    case "${sub_cmd}" in
+                        --proto)
+                            COMPREPLY=($(compgen -W "tcp udp icmp" -- "${cur}"))
+                            ;;
+                        --direction)
+                            COMPREPLY=($(compgen -W "in out" -- "${cur}"))
+                            ;;
+                        *)
+                            COMPREPLY=($(compgen -W "--proto --port --direction --json" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+                ban)
+                    # After IP address, suggest ban options
+                    COMPREPLY=($(compgen -W "--timeout --reason --source --json" -- "${cur}"))
+                    ;;
+                stats)
+                    case "${sub_cmd}" in
+                        top|ip|recent|export)
+                            COMPREPLY=($(compgen -W "--json" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+                timers)
+                    case "${sub_cmd}" in
+                        enable|disable)
+                            # List available timers
+                            COMPREPLY=($(compgen -W "nftban-health.timer nftban-metrics-exporter.timer nftban-core-geoip.timer nftban-core-feeds.timer nftban-queue.timer nftban-suricata-update.timer nftban-snapshot.timer nftban-rollback.timer" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+            esac
+            ;;
+        4)
+            # Complete fourth-level arguments (e.g., nftban ban IP --timeout 1h)
+            local main_cmd="${words[1]}"
+            local option="${words[3]}"
+
+            case "${main_cmd}" in
+                ban)
+                    case "${option}" in
+                        --timeout)
+                            # Suggest common timeout values
+                            COMPREPLY=($(compgen -W "1h 2h 6h 12h 24h 48h 7d 30d" -- "${cur}"))
+                            ;;
+                        --source)
+                            COMPREPLY=($(compgen -W "manual suricata login portscan ddos" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+                emulate)
+                    case "${option}" in
+                        --proto)
+                            COMPREPLY=($(compgen -W "tcp udp icmp" -- "${cur}"))
+                            ;;
+                        --direction)
+                            COMPREPLY=($(compgen -W "in out" -- "${cur}"))
+                            ;;
+                        --port)
+                            # Common port numbers
+                            COMPREPLY=($(compgen -W "22 80 443 25 465 587 3306 5432" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+                metrics)
+                    case "${option}" in
+                        --backend)
+                            COMPREPLY=($(compgen -W "prometheus victoria" -- "${cur}"))
+                            ;;
+                    esac
+                    ;;
+            esac
+            ;;
+    esac
+
+    return 0
+}
+
+complete -F _nftban nftban

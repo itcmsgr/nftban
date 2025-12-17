@@ -1,0 +1,40 @@
+[Unit]
+Description=NFTBan Suricata Integration Daemon
+Documentation=man:nftban(8) https://nftban.com/docs
+After=network.target nftables.service suricata.service
+Requires=suricata.service
+PartOf=suricata.service
+
+[Service]
+Type=simple
+
+# Run as root (required for netlink/nftables operations)
+# Add suricata group to read eve.json
+# Add nftban group to write to /var/log/nftban
+User=root
+Group=root
+SupplementaryGroups=suricata nftban
+
+# Daemon command
+ExecStart=/usr/local/bin/nftban-core suricata daemon
+
+# Restart on failure
+Restart=on-failure
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-suricata
+
+# Capabilities required for nftables operations
+# File access via group permissions (nftban group), NOT via DAC override
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
+# Resource limits
+LimitNOFILE=65536
+LimitNPROC=512
+
+[Install]
+WantedBy=multi-user.target

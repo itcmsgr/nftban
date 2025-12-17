@@ -1,0 +1,483 @@
+                <style>
+                    /* Large Toggle Switch for Module Enable/Disable */
+                    .toggle-switch-large { position: relative; display: inline-block; width: 60px; height: 30px; }
+                    .toggle-switch-large input { opacity: 0; width: 0; height: 0; }
+                    .toggle-slider-large {
+                        position: absolute; cursor: pointer; top: 0; left: 0; right: 0; bottom: 0;
+                        background-color: #ef4444; transition: .3s; border-radius: 30px;
+                    }
+                    .toggle-slider-large:before {
+                        position: absolute; content: ""; height: 22px; width: 22px; left: 4px; bottom: 4px;
+                        background-color: white; transition: .3s; border-radius: 50%;
+                    }
+                    input:checked + .toggle-slider-large { background-color: #10b981; }
+                    input:checked + .toggle-slider-large:before { transform: translateX(30px); }
+                    input:disabled + .toggle-slider-large { opacity: 0.5; cursor: not-allowed; }
+
+                    /* Dark theme support for help-feature-box */
+                    [data-theme="dark"] .help-feature-box {
+                        background-color: #2a2a2a !important;
+                        color: #e0e0e0;
+                    }
+                    [data-theme="dark"] .help-feature-box code {
+                        color: #60a5fa;
+                    }
+                </style>
+
+                <!-- PORTSCAN PANEL - Configuration, Logs, and Live Editor -->
+                <div id="panel-portscan">
+                    <!-- Top Section: About (Left) + Statistics (Right) -->
+                    <div class="d-grid gap-20 mb-20" style="grid-template-columns: 2fr 1fr;">
+                        <!-- About Section (Left) -->
+                        <div class="card main-border rad-10 p-20" style="position: relative;">
+                            <!-- Big Toggle Switch in Top Right Corner -->
+                            <div style="position: absolute; top: 20px; right: 20px; text-align: center;">
+                                <label class="toggle-switch-large">
+                                    <input type="checkbox" id="portscan-toggle" onchange="togglePortscan()" disabled>
+                                    <span class="toggle-slider-large"></span>
+                                </label>
+                                <div class="fs-12 mt-5" id="portscan-toggle-status" style="font-weight: bold;">Loading...</div>
+                            </div>
+
+                            <h1 class="p-relative fs-20 fw-bold mb-15" style="padding-right: 120px;"><i class="fa-solid fa-radar text-primary mr-10"></i>Port Scan Detection</h1>
+
+                            <p class="fs-14 mb-15"><strong>NFTBan Port Scan Detection</strong> monitors network traffic and automatically blocks IPs attempting to scan your ports.</p>
+
+                            <div class="help-feature-box p-15 rad-6 mb-15">
+                                <p class="fw-bold mb-10"><i class="fa-solid fa-folder text-warning mr-5"></i>Key Files:</p>
+                                <ul class="list-disc list-inside space-y-1 fs-13">
+                                    <li><code>/etc/nftban/conf.d/portscan.conf</code> - Configuration</li>
+                                    <li><code>/var/log/nftban/portscan.log</code> - Detection logs</li>
+                                    <li><code>/var/log/nftban/nftban-actions.log</code> - Ban actions</li>
+                                </ul>
+                            </div>
+
+                            <p class="fs-14 mb-15"><strong><i class="fa-solid fa-shield-halved text-success mr-5"></i>Protection:</strong> Monitors TCP connection attempts to detect port scanning patterns and blocks malicious scanners automatically.</p>
+
+                            <div id="portscan-msg" class="hidden mt-15"></div>
+                        </div>
+
+                        <!-- Statistics Panel (Right) -->
+                        <div class="card main-border rad-10 p-20">
+                            <h3 class="fs-15 fw-bold mb-20"><i class="fa-solid fa-chart-bar text-primary mr-10"></i>Detection Statistics</h3>
+
+                            <div class="p-15 main-border rad-6 text-center mb-15">
+                                <div class="fs-30 fw-bold text-success" id="ps-monitored-ports">0</div>
+                                <div class="fs-13">Monitored Ports</div>
+                            </div>
+
+                            <div class="p-15 main-border rad-6 text-center mb-15">
+                                <div class="fs-30 fw-bold text-warning" id="ps-blocked-24h">0</div>
+                                <div class="fs-13">Blocked (24h)</div>
+                            </div>
+
+                            <div class="p-15 main-border rad-6 text-center">
+                                <div class="fs-30 fw-bold text-primary" id="ps-blocked-total">0</div>
+                                <div class="fs-13">Total Blocked</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Configuration Table -->
+                    <div class="card main-border rad-10 p-20 mb-20">
+                        <div class="d-flex justify-between align-center mb-20">
+                            <h3 class="fs-15 fw-bold"><i class="fa-solid fa-sliders text-primary mr-10"></i>Configuration Manager</h3>
+                            <div class="d-flex gap-10">
+                                <button onclick="saveAllPortscanConfig()" class="px-15 p-10 bg-green-600 text-white rad-6 fw-bold hover:bg-green-700 fs-13">💾 Save All Changes</button>
+                                <button onclick="resetAllPortscanConfig()" class="px-15 p-10 bg-orange-600 text-white rad-6 fw-bold hover:bg-orange-700 fs-13">🔄 Reset All</button>
+                            </div>
+                        </div>
+
+                        <div id="portscan-config-msg" class="hidden mb-20"></div>
+
+                        <!-- Configuration Table (no scroll - show all) -->
+                        <table class="w-full main-border">
+                            <thead class="help-feature-box">
+                                <tr>
+                                    <th class="px-15 py-10 txt-l fw-bold fs-13">Parameter</th>
+                                    <th class="px-15 py-10 txt-l fw-bold fs-13">Default Value</th>
+                                    <th class="px-15 py-10 txt-l fw-bold fs-13">Current Value</th>
+                                    <th class="px-15 py-10 txt-c fw-bold fs-13">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="portscan-config-table">
+                                <tr><td colspan="4" class="txt-c py-8 text-muted">Loading configuration...</td></tr>
+                            </tbody>
+                        </table>
+
+                        <div class="bg-blue-100 p-15 rad-6 mt-20">
+                            <p><strong>ℹ️ How it works:</strong></p>
+                            <ul class="list-disc list-inside mt-2 space-y-1 fs-13">
+                                <li><strong>White background</strong> = Using default value from /etc/nftban/conf.d/portscan.conf</li>
+                                <li><strong>Yellow background</strong> = Modified value saved to /etc/nftban/nftban.conf.local</li>
+                                <li>Click "Reset" to revert a single parameter to its default value</li>
+                                <li>Changes are saved to <code>/etc/nftban/nftban.conf.local</code> and override defaults</li>
+                                <li>Restart NFTBan after saving changes to apply them</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Log Viewers in Grid -->
+                    <div class="d-grid gap-20" style="grid-template-columns: 1fr 1fr;">
+                        <!-- Portscan Detection Log -->
+                        <div class="card main-border rad-10 p-20">
+                            <div class="d-flex justify-between align-center mb-20">
+                                <h3 class="fs-15 fw-bold"><i class="fa-solid fa-file-lines text-primary mr-10"></i>Detection Log</h3>
+                                <button onclick="loadPortscanLog()" class="px-15 p-10 bg-blue-600 text-white rad-6 fw-bold hover:bg-blue-700 fs-13">🔄 Refresh</button>
+                            </div>
+
+                            <div class="bg-grey-100 p-15 rad-6" style="max-height: 400px; overflow-y: auto;">
+                                <pre id="portscan-log-viewer" class="fs-12 p-10 rad-6" style="background: #1e1e1e; color: #d4d4d4; white-space: pre-wrap; word-wrap: break-word; max-height: 350px; overflow-y: auto;">Loading detection log...</pre>
+                            </div>
+                        </div>
+
+                        <!-- Actions Log (Bans) -->
+                        <div class="card main-border rad-10 p-20">
+                            <div class="d-flex justify-between align-center mb-20">
+                                <h3 class="fs-15 fw-bold"><i class="fa-solid fa-ban text-danger mr-10"></i>Ban Actions Log</h3>
+                                <button onclick="loadPortscanActionsLog()" class="px-15 p-10 bg-blue-600 text-white rad-6 fw-bold hover:bg-blue-700 fs-13">🔄 Refresh</button>
+                            </div>
+
+                            <div class="bg-grey-100 p-15 rad-6" style="max-height: 400px; overflow-y: auto;">
+                                <pre id="actions-log-viewer" class="fs-12 p-10 rad-6" style="background: #1e1e1e; color: #d4d4d4; white-space: pre-wrap; word-wrap: break-word; max-height: 350px; overflow-y: auto;">Loading actions log...</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <script>
+                // ===== PORTSCAN PAGE FUNCTIONS =====
+
+                // Toggle portscan detection (calls nftban portscan enable/disable)
+                async function togglePortscan() {
+                    const toggle = document.getElementById('portscan-toggle');
+                    const msgEl = document.getElementById('portscan-msg');
+                    const statusEl = document.getElementById('portscan-toggle-status');
+                    const isEnabled = toggle.checked;
+
+                    // Disable toggle during operation
+                    toggle.disabled = true;
+                    statusEl.textContent = isEnabled ? 'Enabling...' : 'Disabling...';
+                    statusEl.style.color = '#6b7280';
+
+                    try {
+                        // Call nftban portscan enable/disable via API
+                        const action = isEnabled ? 'enable' : 'disable';
+                        const response = await fetch('/api/v1/portscan/control', {
+                            method: 'POST',
+                            headers: {
+                                ...getAuthHeaders(),
+                                'Content-Type': 'application/json'
+                            },
+                            body: JSON.stringify({ action: action })
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success) {
+                            msgEl.className = 'bg-green-100 text-green-800 p-15 rad-6 mt-15';
+                            msgEl.textContent = isEnabled ? '✅ Port scan detection enabled successfully' : '✅ Port scan detection disabled successfully';
+                            msgEl.classList.remove('hidden');
+
+                            // Update status text
+                            statusEl.textContent = isEnabled ? 'ENABLED' : 'DISABLED';
+                            statusEl.style.color = isEnabled ? '#10b981' : '#ef4444';
+
+                            // Refresh stats
+                            setTimeout(() => loadPortscanStats(), 500);
+                        } else {
+                            // Revert toggle on error
+                            toggle.checked = !isEnabled;
+                            msgEl.className = 'bg-red-100 text-red-800 p-15 rad-6 mt-15';
+                            msgEl.textContent = '❌ Failed to ' + action + ': ' + (result.error || 'Unknown error');
+                            msgEl.classList.remove('hidden');
+                            statusEl.textContent = !isEnabled ? 'ENABLED' : 'DISABLED';
+                            statusEl.style.color = !isEnabled ? '#10b981' : '#ef4444';
+                        }
+                    } catch (err) {
+                        // Revert toggle on error
+                        toggle.checked = !isEnabled;
+                        msgEl.className = 'bg-red-100 text-red-800 p-15 rad-6 mt-15';
+                        msgEl.textContent = '❌ Error: ' + err.message;
+                        msgEl.classList.remove('hidden');
+                        statusEl.textContent = !isEnabled ? 'ENABLED' : 'DISABLED';
+                        statusEl.style.color = !isEnabled ? '#10b981' : '#ef4444';
+                    } finally {
+                        // Re-enable toggle
+                        toggle.disabled = false;
+                    }
+                }
+
+                // Load portscan statistics
+                async function loadPortscanStats() {
+                    const toggle = document.getElementById('portscan-toggle');
+                    const statusEl = document.getElementById('portscan-toggle-status');
+
+                    try {
+                        const response = await fetch('/api/v1/portscan/stats', {
+                            headers: getAuthHeaders()
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success && result.data && result.data.portscan) {
+                            const ps = result.data.portscan;
+
+                            // Update statistics
+                            document.getElementById('ps-monitored-ports').textContent = ps.monitored_ports || 0;
+                            document.getElementById('ps-blocked-24h').textContent = ps.blocked_24h || 0;
+                            document.getElementById('ps-blocked-total').textContent = ps.blocked_total || 0;
+
+                            // Update toggle state
+                            toggle.checked = ps.enabled || false;
+                            toggle.disabled = false;
+
+                            // Update status text with color
+                            statusEl.textContent = ps.enabled ? 'ENABLED' : 'DISABLED';
+                            statusEl.style.color = ps.enabled ? '#10b981' : '#ef4444';
+                        } else {
+                            statusEl.textContent = 'Error';
+                            statusEl.style.color = '#ef4444';
+                        }
+                    } catch (err) {
+                        console.error('[PORTSCAN] Failed to load stats:', err);
+                        statusEl.textContent = 'Error';
+                        statusEl.style.color = '#ef4444';
+                    }
+                }
+
+                // Configuration data storage
+                var portscanConfigData = { defaults: {}, overrides: {}, merged: {} };
+
+                // Load portscan configuration
+                async function loadPortscanConfig() {
+                    try {
+                        const response = await fetch('/api/v1/config/portscan', {
+                            headers: getAuthHeaders()
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success && result.data) {
+                            portscanConfigData = result.data;
+                            renderPortscanConfigTable();
+                        } else {
+                            document.getElementById('portscan-config-table').innerHTML = '<tr><td colspan="4" class="txt-c py-8 text-danger">Failed to load configuration</td></tr>';
+                        }
+                    } catch (err) {
+                        console.error('[PORTSCAN] Failed to load config:', err);
+                        document.getElementById('portscan-config-table').innerHTML = '<tr><td colspan="4" class="txt-c py-8 text-danger">Error: ' + err.message + '</td></tr>';
+                    }
+                }
+
+                // Render configuration table
+                function renderPortscanConfigTable() {
+                    const tbody = document.getElementById('portscan-config-table');
+                    const defaults = portscanConfigData.defaults || {};
+                    const overrides = portscanConfigData.overrides || {};
+                    const merged = portscanConfigData.merged || {};
+
+                    let html = '';
+                    Object.keys(defaults).sort().forEach(key => {
+                        const defaultValue = defaults[key] || '';
+                        const currentValue = merged[key] || '';
+                        const isOverridden = overrides.hasOwnProperty(key);
+                        const bgClass = isOverridden ? 'bg-yellow-100' : '';
+
+                        // Determine input type
+                        let inputHtml = '';
+                        if (currentValue === 'true' || currentValue === 'false') {
+                            // Boolean - dropdown
+                            inputHtml = `
+                                <select id="portscan_config_${key}" class="w-full px-2 py-1 help-feature-box main-border rad-6 fs-14">
+                                    <option value="true" ${currentValue === 'true' ? 'selected' : ''}>true</option>
+                                    <option value="false" ${currentValue === 'false' ? 'selected' : ''}>false</option>
+                                </select>`;
+                        } else {
+                            // String or number - input
+                            inputHtml = `<input type="text" id="portscan_config_${key}" value="${escapeHtml(currentValue)}" class="w-full px-2 py-1 help-feature-box main-border rad-6 fs-14 font-mono">`;
+                        }
+
+                        html += `
+                            <tr class="${bgClass}">
+                                <td class="px-15 py-8 main-border"><code class="fs-13">${key}</code></td>
+                                <td class="px-15 py-8 main-border"><code class="fs-13 text-muted">${escapeHtml(defaultValue)}</code></td>
+                                <td class="px-15 py-8 main-border">${inputHtml}</td>
+                                <td class="px-15 py-8 main-border txt-c">
+                                    <button onclick="resetPortscanConfigKey('${key}')" class="px-10 py-5 bg-orange-500 text-white rad-6 fs-12 hover:bg-orange-600" ${!isOverridden ? 'disabled style="opacity:0.5;cursor:not-allowed;"' : ''}>Reset</button>
+                                </td>
+                            </tr>`;
+                    });
+
+                    tbody.innerHTML = html;
+                }
+
+                // Save all configuration changes
+                async function saveAllPortscanConfig() {
+                    const msgDiv = document.getElementById('portscan-config-msg');
+                    msgDiv.className = 'p-15 rad-6 bg-blue-100 text-blue-800 fs-14';
+                    msgDiv.textContent = '💾 Saving configuration...';
+                    msgDiv.classList.remove('hidden');
+
+                    // Collect all changed values
+                    const updates = {};
+                    Object.keys(portscanConfigData.defaults).forEach(key => {
+                        const input = document.getElementById('portscan_config_' + key);
+                        if (input) {
+                            const newValue = input.value;
+                            const defaultValue = portscanConfigData.defaults[key];
+                            // Only save if different from default
+                            if (newValue !== defaultValue) {
+                                updates[key] = newValue;
+                            }
+                        }
+                    });
+
+                    try {
+                        const response = await fetch('/api/v1/config/portscan', {
+                            method: 'POST',
+                            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+                            body: JSON.stringify(updates)
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success) {
+                            msgDiv.className = 'p-15 rad-6 bg-green-100 text-green-800 fs-14';
+                            msgDiv.innerHTML = '<strong>✓ Configuration saved successfully</strong><br>Restart NFTBan to apply changes: <code>systemctl restart nftban</code>';
+                            loadPortscanConfig(); // Reload to show updated overrides
+                        } else {
+                            msgDiv.className = 'p-15 rad-6 bg-red-100 text-red-800 fs-14';
+                            msgDiv.innerHTML = '<strong>✗ Failed to save configuration</strong><br>' + (result.error || 'Unknown error');
+                        }
+                    } catch (err) {
+                        msgDiv.className = 'p-15 rad-6 bg-red-100 text-red-800 fs-14';
+                        msgDiv.innerHTML = '<strong>✗ Error saving configuration</strong><br>' + err.message;
+                    }
+                }
+
+                // Reset single config key
+                async function resetPortscanConfigKey(key) {
+                    if (!confirm(`Reset ${key} to default value?`)) return;
+
+                    try {
+                        const response = await fetch('/api/v1/config/portscan/reset', {
+                            method: 'POST',
+                            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ key: key })
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success) {
+                            loadPortscanConfig();
+                            const msgDiv = document.getElementById('portscan-config-msg');
+                            msgDiv.className = 'p-15 rad-6 bg-green-100 text-green-800 fs-14';
+                            msgDiv.innerHTML = '<strong>✓ ' + key + ' reset to default</strong>';
+                            msgDiv.classList.remove('hidden');
+                        } else {
+                            alert('Failed to reset: ' + (result.error || 'Unknown error'));
+                        }
+                    } catch (err) {
+                        alert('Error: ' + err.message);
+                    }
+                }
+
+                // Reset all configuration
+                async function resetAllPortscanConfig() {
+                    if (!confirm('Reset ALL portscan configuration to defaults? This will remove all overrides from nftban.conf.local')) return;
+
+                    try {
+                        const response = await fetch('/api/v1/config/portscan/reset', {
+                            method: 'POST',
+                            headers: getAuthHeaders()
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success) {
+                            loadPortscanConfig();
+                            const msgDiv = document.getElementById('portscan-config-msg');
+                            msgDiv.className = 'p-15 rad-6 bg-green-100 text-green-800 fs-14';
+                            msgDiv.innerHTML = '<strong>✓ All configuration reset to defaults</strong>';
+                            msgDiv.classList.remove('hidden');
+                        } else {
+                            alert('Failed to reset: ' + (result.error || 'Unknown error'));
+                        }
+                    } catch (err) {
+                        alert('Error: ' + err.message);
+                    }
+                }
+
+                // HTML escape helper
+                function escapeHtml(text) {
+                    const div = document.createElement('div');
+                    div.textContent = text;
+                    return div.innerHTML;
+                }
+
+                // Load portscan detection log
+                async function loadPortscanLog() {
+                    const viewer = document.getElementById('portscan-log-viewer');
+                    try {
+                        const response = await fetch('/api/v1/logs/file?path=/var/log/nftban/portscan.log&lines=100', {
+                            headers: getAuthHeaders()
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success && result.data) {
+                            viewer.textContent = result.data.content || 'No log entries';
+                        } else {
+                            viewer.textContent = 'Error loading log: ' + (result.error || 'Unknown error');
+                        }
+                    } catch (err) {
+                        viewer.textContent = 'Error loading log: ' + err.message;
+                    }
+                }
+
+                // Load portscan actions log (bans)
+                async function loadPortscanActionsLog() {
+                    const viewer = document.getElementById('actions-log-viewer');
+                    try {
+                        const response = await fetch('/api/v1/logs/file?path=/var/log/nftban/nftban-actions.log&lines=100', {
+                            headers: getAuthHeaders()
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success && result.data) {
+                            // Filter for portscan-related actions
+                            const content = result.data.content || '';
+                            const lines = content.split('\n').filter(line => line.includes('"source":"portscan"'));
+                            viewer.textContent = lines.length > 0 ? lines.join('\n') : 'No portscan ban actions found';
+                        } else {
+                            viewer.textContent = 'Error loading log: ' + (result.error || 'Unknown error');
+                        }
+                    } catch (err) {
+                        viewer.textContent = 'Error loading log: ' + err.message;
+                    }
+                }
+
+                // Auto-load when page is shown
+                // Use setTimeout to ensure DOM is ready
+                setTimeout(() => {
+                    const panel = document.getElementById('panel-portscan');
+                    console.log('[PORTSCAN] Auto-load check, panel exists:', !!panel);
+
+                    if (panel) {
+                        console.log('[PORTSCAN] Auto-loading page data...');
+                        try {
+                            loadPortscanStats();
+                            loadPortscanConfig();
+                            loadPortscanLog();
+                            loadPortscanActionsLog();
+                        } catch (err) {
+                            console.error('[PORTSCAN] Auto-load error:', err);
+                        }
+                    } else {
+                        console.warn('[PORTSCAN] Panel not found, retrying in 200ms...');
+                        setTimeout(() => {
+                            if (document.getElementById('panel-portscan')) {
+                                console.log('[PORTSCAN] Retry: Auto-loading page data...');
+                                loadPortscanStats();
+                                loadPortscanConfig();
+                                loadPortscanLog();
+                                loadPortscanActionsLog();
+                            }
+                        }, 200);
+                    }
+                }, 50);
+                </script>

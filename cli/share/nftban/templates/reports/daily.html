@@ -1,0 +1,319 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="generator" content="NFTBan v1.0.0">
+    <title>NFTBan Daily Security Report</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 650px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #6aa9ff 0%, #4a89df 100%);
+            color: white;
+            padding: 30px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0 0 10px 0;
+            font-size: 26px;
+        }
+        .header .subtitle {
+            margin: 0;
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        .content {
+            padding: 30px 20px;
+        }
+        .summary-box {
+            background: #f9fafb;
+            border-left: 4px solid #6aa9ff;
+            padding: 20px;
+            margin-bottom: 25px;
+            border-radius: 4px;
+        }
+        .summary-box h2 {
+            margin: 0 0 15px 0;
+            font-size: 18px;
+            color: #333;
+        }
+        .stat-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        .stat-row:last-child {
+            border-bottom: none;
+        }
+        .stat-label {
+            color: #6b7280;
+            font-size: 14px;
+        }
+        .stat-value {
+            color: #111827;
+            font-weight: 600;
+            font-size: 16px;
+        }
+        .alert {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+        }
+        .alert.warning {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+        }
+        .alert.danger {
+            background: #fee2e2;
+            border-left: 4px solid #ef4444;
+        }
+        .alert.success {
+            background: #d1fae5;
+            border-left: 4px solid #10b981;
+        }
+        .section {
+            margin-bottom: 25px;
+        }
+        .section h3 {
+            font-size: 16px;
+            color: #333;
+            margin: 0 0 15px 0;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #e5e7eb;
+        }
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+        }
+        .metric-card {
+            background: #f9fafb;
+            padding: 15px;
+            border-radius: 6px;
+            text-align: center;
+        }
+        .metric-card .value {
+            font-size: 28px;
+            font-weight: 700;
+            margin-bottom: 4px;
+        }
+        .metric-card .label {
+            font-size: 12px;
+            color: #6b7280;
+        }
+        .metric-card.primary .value { color: #6aa9ff; }
+        .metric-card.success .value { color: #10b981; }
+        .metric-card.warning .value { color: #f59e0b; }
+        .metric-card.purple .value { color: #8b5cf6; }
+        .metric-card.danger .value { color: #ef4444; }
+        .data-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+        .data-list li {
+            padding: 10px 12px;
+            background: #f9fafb;
+            margin-bottom: 8px;
+            border-radius: 4px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .data-list li:nth-child(1) { border-left: 3px solid #ef4444; }
+        .data-list li:nth-child(2) { border-left: 3px solid #f59e0b; }
+        .data-list li:nth-child(3) { border-left: 3px solid #10b981; }
+        .data-list li:nth-child(4) { border-left: 3px solid #6aa9ff; }
+        .data-list li:nth-child(5) { border-left: 3px solid #8b5cf6; }
+        .ip-code {
+            font-family: 'Courier New', monospace;
+            background: #e5e7eb;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+        .badge {
+            background: #6aa9ff;
+            color: white;
+            padding: 4px 10px;
+            border-radius: 12px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge.danger { background: #ef4444; }
+        .badge.warning { background: #f59e0b; }
+        .badge.success { background: #10b981; }
+        .status-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .status-row:last-child {
+            border-bottom: none;
+        }
+        .status-icon {
+            width: 18px;
+            height: 18px;
+            display: inline-block;
+            text-align: center;
+            border-radius: 50%;
+            color: white;
+            font-size: 12px;
+            line-height: 18px;
+            margin-right: 8px;
+        }
+        .status-icon.active { background: #10b981; }
+        .status-icon.inactive { background: #9ca3af; }
+        .footer {
+            background: #f9fafb;
+            padding: 20px;
+            text-align: center;
+            color: #6b7280;
+            font-size: 12px;
+            border-top: 1px solid #e5e7eb;
+        }
+        .footer a {
+            color: #6aa9ff;
+            text-decoration: none;
+        }
+        @media only screen and (max-width: 600px) {
+            .container { border-radius: 0; }
+            .content { padding: 20px 15px; }
+            .metrics-grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>NFTBan Daily Report</h1>
+            <p class="subtitle">Security Summary for {REPORT_DATE}</p>
+        </div>
+
+        <div class="content">
+            <!-- Server Summary -->
+            <div class="summary-box">
+                <h2>Report Summary</h2>
+                <div class="stat-row">
+                    <span class="stat-label">Server</span>
+                    <span class="stat-value">{HOSTNAME}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Report Period</span>
+                    <span class="stat-value">{REPORT_PERIOD}</span>
+                </div>
+                <div class="stat-row">
+                    <span class="stat-label">Generated</span>
+                    <span class="stat-value">{DATE} {TIME}</span>
+                </div>
+            </div>
+
+            <!-- Alerts Section -->
+            <div id="alerts-section">{ALERTS_HTML}</div>
+
+            <!-- Key Metrics -->
+            <div class="section">
+                <h3>Key Metrics (24h)</h3>
+                <div class="metrics-grid">
+                    <div class="metric-card primary">
+                        <div class="value">{TOTAL_BANS}</div>
+                        <div class="label">Total Bans</div>
+                    </div>
+                    <div class="metric-card success">
+                        <div class="value">{NEW_BANS_24H}</div>
+                        <div class="label">New Bans (24h)</div>
+                    </div>
+                    <div class="metric-card warning">
+                        <div class="value">{ACTIVE_BANS}</div>
+                        <div class="label">Active Bans</div>
+                    </div>
+                    <div class="metric-card purple">
+                        <div class="value">{WHITELIST_COUNT}</div>
+                        <div class="label">Whitelist Entries</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Protection Modules Status -->
+            <div class="section">
+                <h3>Protection Status</h3>
+                <div class="status-row">
+                    <span><span class="status-icon {LOGIN_STATUS}"></span>Login Monitor</span>
+                    <span class="badge {LOGIN_BADGE}">{LOGIN_BANS_24H} bans</span>
+                </div>
+                <div class="status-row">
+                    <span><span class="status-icon {PORTSCAN_STATUS}"></span>Port Scan Detection</span>
+                    <span class="badge {PORTSCAN_BADGE}">{PORTSCAN_BANS_24H} bans</span>
+                </div>
+                <div class="status-row">
+                    <span><span class="status-icon {DDOS_STATUS}"></span>DDoS Protection</span>
+                    <span class="badge {DDOS_BADGE}">{DDOS_BANS_24H} bans</span>
+                </div>
+                <div class="status-row">
+                    <span><span class="status-icon {GEOIP_STATUS}"></span>GeoIP Blocking</span>
+                    <span class="badge">{GEOIP_BLOCKED} countries</span>
+                </div>
+                <div class="status-row">
+                    <span><span class="status-icon {FEEDS_STATUS}"></span>Threat Feeds</span>
+                    <span class="badge">{FEEDS_COUNT} feeds</span>
+                </div>
+            </div>
+
+            <!-- Top Banned IPs -->
+            <div class="section">
+                <h3>Top 5 Banned IPs</h3>
+                <ul class="data-list">
+                    {TOP_IPS_HTML}
+                </ul>
+            </div>
+
+            <!-- Top Countries -->
+            <div class="section">
+                <h3>Top 5 Source Countries</h3>
+                <ul class="data-list">
+                    {TOP_COUNTRIES_HTML}
+                </ul>
+            </div>
+
+            <!-- Top Ban Sources -->
+            <div class="section">
+                <h3>Top Ban Sources</h3>
+                <ul class="data-list">
+                    {TOP_SOURCES_HTML}
+                </ul>
+            </div>
+
+            <!-- Recommendations -->
+            <div class="section">
+                {RECOMMENDATIONS_HTML}
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p><strong>Generated by NFTBan v{NFTBAN_VERSION}</strong></p>
+            <p><a href="https://nftban.com">nftban.com</a></p>
+            <p style="margin-top: 10px; font-size: 11px; color: #9ca3af;">
+                Report ID: {REPORT_ID} | This is an automated security report
+            </p>
+        </div>
+    </div>
+</body>
+</html>

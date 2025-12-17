@@ -1,0 +1,481 @@
+<style>
+.help-tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+    border-bottom: 2px solid var(--border);
+}
+
+.help-tab-btn {
+    padding: 12px 20px;
+    background: none;
+    border: none;
+    border-bottom: 3px solid transparent;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    color: var(--text-muted);
+    transition: all 0.3s;
+}
+
+.help-tab-btn:hover {
+    color: var(--text);
+}
+
+.help-tab-btn.active {
+    color: var(--primary);
+    border-bottom-color: var(--primary);
+}
+
+.help-grid-2 {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 20px;
+}
+
+.help-grid-3 {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+}
+
+.help-feature-box {
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+}
+
+.help-code {
+    background: var(--bg-alt);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 15px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    color: var(--text);
+}
+
+.help-task-box {
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--primary);
+    border-radius: 8px;
+    padding: 20px;
+}
+
+@media (max-width: 768px) {
+    .help-grid-2, .help-grid-3 {
+        grid-template-columns: 1fr;
+    }
+}
+</style>
+
+<h2><i class="fa fa-circle-question"></i> Help & Documentation</h2>
+
+<!-- Tab Buttons -->
+<div class="help-tabs">
+    <button onclick="switchHelpTab('quickstart')" id="help-tab-quickstart" class="help-tab-btn active">
+        🚀 Quick Start
+    </button>
+    <button onclick="switchHelpTab('features')" id="help-tab-features" class="help-tab-btn">
+        ✨ Features
+    </button>
+    <button onclick="switchHelpTab('tasks')" id="help-tab-tasks" class="help-tab-btn">
+        📋 Common Tasks
+    </button>
+    <button onclick="switchHelpTab('cli')" id="help-tab-cli" class="help-tab-btn">
+        💻 CLI Integration
+    </button>
+    <button onclick="switchHelpTab('about')" id="help-tab-about" class="help-tab-btn">
+        ℹ️ About
+    </button>
+</div>
+
+<!-- TAB 1: Quick Start -->
+<div id="helptab-quickstart">
+    <div class="card mb-3">
+        <h3><i class="fa fa-rocket"></i> Welcome to NFTBan Web GUI</h3>
+        <p class="text-muted">
+            This interface provides easy access to all NFTBan firewall features through a modern web interface.
+        </p>
+
+        <div class="help-grid-3">
+            <div class="help-feature-box">
+                <h4><i class="fa fa-shield-halved"></i> Core Features</h4>
+                <ul style="list-style: none; padding: 0; margin-top: 15px;">
+                    <li class="mb-1"><i class="fa fa-chart-line"></i> Dashboard - Real-time stats</li>
+                    <li class="mb-1"><i class="fa fa-ban"></i> IP Management - Ban/unban IPs</li>
+                    <li class="mb-1"><i class="fa fa-shield"></i> Protection Modules</li>
+                    <li class="mb-1"><i class="fa fa-file-lines"></i> Logs Viewer</li>
+                    <li><i class="fa fa-gear"></i> Configuration</li>
+                </ul>
+            </div>
+
+            <div class="help-feature-box">
+                <h4><i class="fa fa-shield-halved"></i> Protection Modules</h4>
+                <ul style="list-style: none; padding: 0; margin-top: 15px;">
+                    <li class="mb-1"><i class="fa fa-lock"></i> Fail2Ban integration</li>
+                    <li class="mb-1"><i class="fa fa-binoculars"></i> Port Scan detection</li>
+                    <li class="mb-1"><i class="fa fa-bolt"></i> DDoS Protection</li>
+                    <li class="mb-1"><i class="fa fa-earth-americas"></i> GeoBan</li>
+                    <li><i class="fa fa-rss"></i> Threat Feeds</li>
+                </ul>
+            </div>
+
+            <div class="help-feature-box">
+                <h4><i class="fa fa-wrench"></i> Firewall Tools</h4>
+                <ul style="list-style: none; padding: 0; margin-top: 15px;">
+                    <li class="mb-1"><i class="fa fa-check-circle"></i> Validate firewall</li>
+                    <li class="mb-1"><i class="fa fa-search"></i> Check IP status</li>
+                    <li class="mb-1"><i class="fa fa-chart-bar"></i> Statistics</li>
+                    <li class="mb-1"><i class="fa fa-list"></i> List Rules</li>
+                    <li><i class="fa fa-sync"></i> Reload firewall</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+
+    <div class="card">
+        <h3><i class="fa fa-play"></i> Getting Started</h3>
+        <div class="help-grid-2">
+            <div class="help-feature-box">
+                <h4>1️⃣ Explore the Dashboard</h4>
+                <p class="text-muted">Start by viewing real-time statistics, system health, and active protections.</p>
+            </div>
+            <div class="help-feature-box">
+                <h4>2️⃣ Configure Protection</h4>
+                <p class="text-muted">Enable/disable modules like Fail2Ban, Port Scan detection, and DDoS protection.</p>
+            </div>
+            <div class="help-feature-box">
+                <h4>3️⃣ Manage IPs</h4>
+                <p class="text-muted">Ban malicious IPs, whitelist trusted networks, and search for IP status.</p>
+            </div>
+            <div class="help-feature-box">
+                <h4>4️⃣ Monitor Logs</h4>
+                <p class="text-muted">View system logs, ban actions, port scan detections, and DDoS events.</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TAB 2: Features -->
+<div id="helptab-features" class="hidden">
+    <div class="help-grid-2">
+        <div class="card">
+            <h4><i class="fa fa-chart-line"></i> Real-Time Dashboard</h4>
+            <p class="text-muted mb-2">
+                View live statistics from nftables: banned IPs, traffic, packets, and active connections.
+                Auto-refreshes every 30 seconds.
+            </p>
+            <div class="help-feature-box">
+                <strong>Metrics:</strong>
+                <ul class="text-muted" style="margin-left: 20px; margin-top: 10px;">
+                    <li>Total banned IPs (permanent + temporary)</li>
+                    <li>24-hour ban activity</li>
+                    <li>Bandwidth and packet statistics</li>
+                    <li>Protection module status</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <h4><i class="fa fa-network-wired"></i> IP Management</h4>
+            <p class="text-muted mb-2">
+                Search for IPs, view ban history, add to whitelist, or ban with custom timeout periods.
+            </p>
+            <div class="help-feature-box">
+                <strong>Actions:</strong>
+                <ul class="text-muted" style="margin-left: 20px; margin-top: 10px;">
+                    <li>Ban IP (permanent or with timeout)</li>
+                    <li>Unban IP (remove from blocklist)</li>
+                    <li>Whitelist IP or CIDR range</li>
+                    <li>Search IP status and history</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <h4><i class="fa fa-shield-halved"></i> Protection Modules</h4>
+            <p class="text-muted mb-2">
+                Enable/disable Fail2Ban jails, port scan detection, DDoS protection, and geographical blocking.
+            </p>
+            <div class="help-feature-box">
+                <strong>Modules:</strong>
+                <ul class="text-muted" style="margin-left: 20px; margin-top: 10px;">
+                    <li>Fail2Ban integration (SSH, HTTP, etc.)</li>
+                    <li>Port scan detection with configurable thresholds</li>
+                    <li>DDoS rate limiting per IP</li>
+                    <li>GeoBan country-based blocking</li>
+                </ul>
+            </div>
+        </div>
+
+        <div class="card">
+            <h4><i class="fa fa-file-code"></i> Safe Configuration</h4>
+            <p class="text-muted mb-2">
+                Edit .conf.local files with validation. Package defaults (.conf) are read-only for safety.
+            </p>
+            <div class="help-feature-box">
+                <strong>Features:</strong>
+                <ul class="text-muted" style="margin-left: 20px; margin-top: 10px;">
+                    <li>Syntax highlighting in editor</li>
+                    <li>Automatic validation on save</li>
+                    <li>Read-only package defaults</li>
+                    <li>Override system for custom settings</li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TAB 3: Common Tasks -->
+<div id="helptab-tasks" class="hidden">
+    <div class="card mb-3">
+        <h3><i class="fa fa-list-check"></i> Common Tasks</h3>
+    </div>
+
+    <div class="help-grid-2">
+        <div class="help-task-box">
+            <h4><i class="fa fa-ban"></i> How to ban an IP address</h4>
+            <ol style="margin-left: 20px; margin-top: 10px;" class="text-muted">
+                <li class="mb-1">Click <strong>"IP Management"</strong> in the left menu</li>
+                <li class="mb-1">Enter the IP address in the <strong>"Ban IP"</strong> field</li>
+                <li class="mb-1">Optionally set a timeout (e.g., "24h", "7d", or leave empty for permanent)</li>
+                <li>Click <strong>"Ban IP"</strong> button</li>
+            </ol>
+        </div>
+
+        <div class="help-task-box" style="border-left-color: var(--success);">
+            <h4><i class="fa fa-check-circle"></i> How to whitelist an IP address</h4>
+            <ol style="margin-left: 20px; margin-top: 10px;" class="text-muted">
+                <li class="mb-1">Click <strong>"IP Management"</strong> in the left menu</li>
+                <li class="mb-1">Scroll to <strong>"Whitelist Management"</strong></li>
+                <li class="mb-1">Enter the IP or CIDR (e.g., 192.168.1.0/24)</li>
+                <li>Click <strong>"Add to Whitelist"</strong></li>
+            </ol>
+        </div>
+
+        <div class="help-task-box" style="border-left-color: var(--warning);">
+            <h4><i class="fa fa-file-code"></i> How to edit configuration</h4>
+            <ol style="margin-left: 20px; margin-top: 10px;" class="text-muted">
+                <li class="mb-1">Click <strong>"Configuration"</strong> in the left menu</li>
+                <li class="mb-1">Select a .conf.local file from the dropdown</li>
+                <li class="mb-1">Edit the file in the editor (syntax highlighting included)</li>
+                <li>Click <strong>"Save"</strong> - validation runs automatically</li>
+            </ol>
+        </div>
+
+        <div class="help-task-box">
+            <h4><i class="fa fa-file-lines"></i> How to view firewall logs</h4>
+            <ol style="margin-left: 20px; margin-top: 10px;" class="text-muted">
+                <li class="mb-1">Click <strong>"Logs Viewer"</strong> in the left menu</li>
+                <li class="mb-1">Select a log type from the dropdown (ban.log, portscan.log, etc.)</li>
+                <li class="mb-1">Choose number of lines to display (default: 100)</li>
+                <li>Click <strong>"Load Log"</strong> to view</li>
+            </ol>
+        </div>
+
+        <div class="help-task-box" style="border-left-color: var(--success);">
+            <h4><i class="fa fa-toggle-on"></i> How to enable a protection module</h4>
+            <ol style="margin-left: 20px; margin-top: 10px;" class="text-muted">
+                <li class="mb-1">Click the module name in the left menu (e.g., <strong>"Port Scan Detection"</strong>)</li>
+                <li class="mb-1">Find the large <strong>toggle switch</strong> in the top-right corner</li>
+                <li class="mb-1">Click the toggle to enable/disable</li>
+                <li>Status will update immediately (ENABLED/DISABLED)</li>
+            </ol>
+        </div>
+
+        <div class="help-task-box" style="border-left-color: var(--warning);">
+            <h4><i class="fa fa-search"></i> How to check IP status</h4>
+            <ol style="margin-left: 20px; margin-top: 10px;" class="text-muted">
+                <li class="mb-1">Click <strong>"IP Management"</strong> in the left menu</li>
+                <li class="mb-1">Enter the IP address in the <strong>"Search IP"</strong> field</li>
+                <li class="mb-1">Click <strong>"Search"</strong> button</li>
+                <li>View ban status, source (Feed/Fail2Ban/Manual), and GeoIP info</li>
+            </ol>
+        </div>
+    </div>
+</div>
+
+<!-- TAB 4: CLI Integration -->
+<div id="helptab-cli" class="hidden">
+    <div class="card mb-3">
+        <h3><i class="fa fa-terminal"></i> CLI Integration</h3>
+        <p class="text-muted">
+            This GUI is a wrapper around the NFTBan CLI. All operations execute CLI commands with <code>--json</code> flag.
+            The CLI is the source of truth.
+        </p>
+    </div>
+
+    <div class="help-grid-2">
+        <div class="card">
+            <h4><i class="fa fa-info-circle"></i> Status Commands</h4>
+            <div class="help-code">
+                <div class="text-muted"># Check system status</div>
+                <div style="margin-bottom: 10px;">$ nftban status --json</div>
+
+                <div class="text-muted"># View statistics</div>
+                <div style="margin-bottom: 10px;">$ nftban stats --json</div>
+
+                <div class="text-muted"># Run health check</div>
+                <div>$ nftban health --json</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h4><i class="fa fa-network-wired"></i> IP Management Commands</h4>
+            <div class="help-code">
+                <div class="text-muted"># Ban an IP</div>
+                <div style="margin-bottom: 10px;">$ nftban ban 192.0.2.10</div>
+
+                <div class="text-muted"># Ban with timeout</div>
+                <div style="margin-bottom: 10px;">$ nftban ban 192.0.2.10 24h</div>
+
+                <div class="text-muted"># Search IP status</div>
+                <div>$ nftban search 192.0.2.10 --json</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h4><i class="fa fa-shield-halved"></i> Module Commands</h4>
+            <div class="help-code">
+                <div class="text-muted"># Enable port scan detection</div>
+                <div style="margin-bottom: 10px;">$ nftban portscan enable</div>
+
+                <div class="text-muted"># Check Fail2Ban status</div>
+                <div style="margin-bottom: 10px;">$ nftban fail2ban status --json</div>
+
+                <div class="text-muted"># View DDoS stats</div>
+                <div>$ nftban ddos stats --json</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h4><i class="fa fa-rss"></i> Feed Commands</h4>
+            <div class="help-code">
+                <div class="text-muted"># List all feeds</div>
+                <div style="margin-bottom: 10px;">$ nftban feeds list --json</div>
+
+                <div class="text-muted"># Update feeds</div>
+                <div style="margin-bottom: 10px;">$ nftban feeds update</div>
+
+                <div class="text-muted"># Add custom feed</div>
+                <div>$ nftban feeds add custom https://...</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- TAB 5: About -->
+<div id="helptab-about" class="hidden">
+    <div class="card mb-3">
+        <h3><i class="fa fa-info-circle"></i> About NFTBan</h3>
+
+        <div class="help-grid-2">
+            <div class="help-feature-box">
+                <h4><i class="fa fa-code"></i> Version Information</h4>
+                <table style="width: 100%; margin-top: 15px;">
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td class="text-muted" style="padding: 8px 0;">GUI Version:</td>
+                        <td style="padding: 8px 0; text-align: right;"><strong>1.0.0</strong></td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td class="text-muted" style="padding: 8px 0;">CLI Version:</td>
+                        <td style="padding: 8px 0; text-align: right;"><strong>1.0.0</strong></td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td class="text-muted" style="padding: 8px 0;">License:</td>
+                        <td style="padding: 8px 0; text-align: right;"><strong>MPL-2.0</strong></td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted" style="padding: 8px 0;">Author:</td>
+                        <td style="padding: 8px 0; text-align: right;"><strong>Antonios Voulvoulis</strong></td>
+                    </tr>
+                </table>
+            </div>
+
+            <div class="help-feature-box">
+                <h4><i class="fa fa-globe"></i> Project Links</h4>
+                <table style="width: 100%; margin-top: 15px;">
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td class="text-muted" style="padding: 8px 0;">Website:</td>
+                        <td style="padding: 8px 0; text-align: right;"><a href="https://nftban.com" target="_blank">nftban.com</a></td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td class="text-muted" style="padding: 8px 0;">GitHub:</td>
+                        <td style="padding: 8px 0; text-align: right;"><a href="https://github.com/itcmsgr/nftban" target="_blank">itcmsgr/nftban</a></td>
+                    </tr>
+                    <tr style="border-bottom: 1px solid var(--border);">
+                        <td class="text-muted" style="padding: 8px 0;">Email:</td>
+                        <td style="padding: 8px 0; text-align: right;">contact@nftban.com</td>
+                    </tr>
+                    <tr>
+                        <td class="text-muted" style="padding: 8px 0;">Issues:</td>
+                        <td style="padding: 8px 0; text-align: right;"><a href="https://github.com/itcmsgr/nftban/issues" target="_blank">Report Issue</a></td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <div class="card mb-3">
+        <h4><i class="fa fa-star"></i> What is NFTBan?</h4>
+        <p class="text-muted mb-2">
+            NFTBan is a comprehensive nftables-based firewall management system designed for Linux servers.
+            It provides automated intrusion prevention, DDoS protection, port scan detection, and threat intelligence integration.
+        </p>
+        <div class="help-grid-3">
+            <div class="help-feature-box text-center">
+                <div style="font-size: 32px; margin-bottom: 10px;">🛡️</div>
+                <div><strong>Security</strong></div>
+                <div class="text-muted">Multi-layer protection</div>
+            </div>
+            <div class="help-feature-box text-center">
+                <div style="font-size: 32px; margin-bottom: 10px;">⚡</div>
+                <div><strong>Performance</strong></div>
+                <div class="text-muted">nftables-based</div>
+            </div>
+            <div class="help-feature-box text-center">
+                <div style="font-size: 32px; margin-bottom: 10px;">🔧</div>
+                <div><strong>Flexible</strong></div>
+                <div class="text-muted">Modular architecture</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="card" style="background: var(--bg-alt); border-color: var(--primary);">
+        <h4><i class="fa fa-life-ring"></i> Need Help?</h4>
+        <p class="text-muted mb-2">
+            For issues, feature requests, or questions, visit the GitHub repository or contact support.
+        </p>
+        <div style="display: flex; gap: 10px;">
+            <a href="https://github.com/itcmsgr/nftban/issues" target="_blank" class="btn-primary">
+                <i class="fa-brands fa-github"></i> GitHub Issues
+            </a>
+            <a href="mailto:contact@nftban.com" class="btn-primary">
+                <i class="fa fa-envelope"></i> Email Support
+            </a>
+        </div>
+    </div>
+</div>
+
+<script>
+// Tab switching for Help page
+function switchHelpTab(tabName) {
+    // Hide all tabs
+    document.querySelectorAll('[id^="helptab-"]').forEach(tab => {
+        tab.classList.add('hidden');
+    });
+
+    // Reset all tab buttons
+    document.querySelectorAll('.help-tab-btn').forEach(btn => {
+        btn.classList.remove('active');
+    });
+
+    // Show selected tab
+    document.getElementById('helptab-' + tabName).classList.remove('hidden');
+
+    // Highlight active tab button
+    document.getElementById('help-tab-' + tabName).classList.add('active');
+}
+</script>

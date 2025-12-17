@@ -1,0 +1,93 @@
+name: Build NFTBan Packages
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  pull_request:
+    branches:
+      - main
+      - master
+  workflow_dispatch:
+
+jobs:
+  build-packages:
+    name: Build RPM and DEB packages
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y rpm dpkg-dev build-essential
+
+      - name: Build binaries
+        run: |
+          chmod +x build.sh
+          ./build.sh
+
+      - name: Build packages
+        run: |
+          chmod +x packaging/build_nftban.sh
+          cd packaging
+          ./build_nftban.sh both
+
+      - name: Upload RPM packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-packages
+          path: build/packages/RPMS/**/*.rpm
+          retention-days: 30
+
+      - name: Upload DEB packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-packages
+          path: build/packages/*.deb
+          retention-days: 30
+
+      - name: Generate package info
+        run: |
+          echo "## Built Packages" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### RPM Packages" >> $GITHUB_STEP_SUMMARY
+          find build/packages/RPMS -name "*.rpm" -exec ls -lh {} \; >> $GITHUB_STEP_SUMMARY || true
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### DEB Packages" >> $GITHUB_STEP_SUMMARY
+          ls -lh build/packages/*.deb >> $GITHUB_STEP_SUMMARY || true
+
+  test-installation:
+    name: Test package installation
+    needs: build-packages
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        distro: ['ubuntu:22.04', 'ubuntu:24.04']
+
+    steps:
+      - name: Download DEB packages
+        uses: actions/download-artifact@v4
+        with:
+          name: deb-packages
+          path: ./packages
+
+      - name: Test installation on ${{ matrix.distro }}
+        run: |
+          docker run --rm -v $(pwd)/packages:/packages ${{ matrix.distro }} bash -c "
+            apt-get update &&
+            apt-get install -y /packages/*.deb &&
+            nftban --version &&
+            systemctl list-unit-files | grep nftban
+          " || echo "Installation test for ${{ matrix.distro }} completed"

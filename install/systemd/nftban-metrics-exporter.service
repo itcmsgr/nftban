@@ -1,0 +1,41 @@
+# =============================================================================
+# NFTBan Prometheus Metrics Exporter - Systemd Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Execute NFTBan metrics collection for Prometheus
+# Location: /etc/systemd/system/nftban-metrics-exporter.service
+#
+# This service is triggered by nftban-metrics-exporter.timer
+# It collects metrics and writes them to the Node Exporter textfile directory
+# =============================================================================
+
+[Unit]
+Description=NFTBan Prometheus Metrics Exporter
+Documentation=https://nftban.com/docs/metrics
+After=network.target nftban.service node_exporter.service
+Wants=node_exporter.service
+
+[Service]
+Type=oneshot
+User=nftban
+Group=nftban
+
+# Capability to read nftables rules (required for metrics collection)
+# CAP_NET_ADMIN allows reading nft rules without full root access
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
+# Environment
+Environment="NFTBAN_LIB_DIR=/usr/lib/nftban"
+Environment="NFTBAN_METRICS_FILE=/var/lib/node_exporter/textfile_collector/nftban.prom"
+
+# Execute exporter script
+ExecStart=/usr/lib/nftban/exporters/nftban_prometheus_exporter.sh
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-exporter
+
+[Install]
+WantedBy=multi-user.target

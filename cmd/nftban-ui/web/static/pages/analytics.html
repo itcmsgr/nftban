@@ -1,0 +1,450 @@
+<!-- ANALYTICS PANEL -->
+<div id="panel-analytics">
+    <h2><i class="fa fa-chart-line"></i> Ban Analytics & Statistics</h2>
+
+    <!-- SUMMARY STATS (3 columns) -->
+    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+        <!-- Total IPs -->
+        <div class="card p-20">
+            <div class="fw-bold mb-2">📊 Total Statistics</div>
+            <div class="d-flex space-between mb-1"><span class="text-muted">Total Banned IPs:</span><span id="analytics-total-ips" class="fw-bold">-</span></div>
+            <div class="d-flex space-between mb-1"><span class="text-muted">Unique Countries:</span><span id="analytics-total-countries" class="fw-bold">-</span></div>
+            <div class="d-flex space-between mb-1"><span class="text-muted">IPv4:</span><span id="analytics-ipv4-count" class="fw-bold">-</span></div>
+            <div class="d-flex space-between"><span class="text-muted">IPv6:</span><span id="analytics-ipv6-count" class="fw-bold">-</span></div>
+        </div>
+
+        <!-- Ban Sources -->
+        <div class="card p-20">
+            <div class="fw-bold mb-2">🎯 Ban Sources</div>
+            <div class="d-flex space-between mb-1"><span class="text-muted">Fail2Ban:</span><span id="analytics-source-fail2ban" class="fw-bold">-</span></div>
+            <div class="d-flex space-between mb-1"><span class="text-muted">Manual:</span><span id="analytics-source-manual" class="fw-bold">-</span></div>
+            <div class="d-flex space-between mb-1"><span class="text-muted">PortScan:</span><span id="analytics-source-portscan" class="fw-bold">-</span></div>
+            <div class="d-flex space-between"><span class="text-muted">Other:</span><span id="analytics-source-other" class="fw-bold">-</span></div>
+        </div>
+
+        <!-- Last Updated -->
+        <div class="card p-20">
+            <div class="fw-bold mb-2">🕐 Last Activity</div>
+            <div class="d-flex space-between mb-1"><span class="text-muted">Last Updated:</span><span id="analytics-last-updated" class="fw-bold">-</span></div>
+            <div class="d-flex space-between mb-1"><span class="text-muted">Database:</span><span class="fw-bold">GeoIP</span></div>
+            <div class="d-flex space-between mb-1"><span class="text-muted">Status:</span><span id="analytics-status" class="text-success fw-bold">Active</span></div>
+            <div class="d-flex space-between"><span class="text-muted">Auto-refresh:</span><span class="fw-bold">30s</span></div>
+        </div>
+    </div>
+
+    <!-- CHARTS (2 columns) -->
+    <div class="d-grid grid-cols-2 gap-20 mb-20">
+        <!-- TOP COUNTRIES BAR CHART -->
+        <div class="card main-border rad-10 p-20">
+            <h3 class="fs-15 fw-bold mb-20">🌍 Top Countries by Banned IPs</h3>
+            <div style="position: relative; height: 350px;">
+                <canvas id="countries-chart"></canvas>
+            </div>
+        </div>
+
+        <!-- BAN DISTRIBUTION PIE CHART -->
+        <div class="card main-border rad-10 p-20">
+            <h3 class="fs-15 fw-bold mb-20">🥧 Geographic Distribution</h3>
+            <div style="position: relative; height: 350px;">
+                <canvas id="distribution-chart"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <!-- DETAILED COUNTRY TABLE -->
+    <div class="card main-border rad-10 p-20 mb-20">
+        <h3 class="fs-15 fw-bold mb-20">📋 All Countries (Detailed View)</h3>
+
+        <!-- Table Header -->
+        <div style="overflow-x: auto;">
+            <table class="analytics-table" style="width: 100%; border-collapse: collapse;">
+                <thead>
+                    <tr style="border-bottom: 2px solid var(--border-color);">
+                        <th style="text-align: left; padding: 10px;">Rank</th>
+                        <th style="text-align: left; padding: 10px;">Country</th>
+                        <th style="text-align: right; padding: 10px;">IP Count</th>
+                        <th style="text-align: right; padding: 10px;">Percentage</th>
+                        <th style="text-align: left; padding: 10px;">Last Updated</th>
+                    </tr>
+                </thead>
+                <tbody id="countries-table-body">
+                    <tr>
+                        <td colspan="5" style="text-align: center; padding: 20px; color: var(--text-muted);">
+                            Loading analytics data...
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <!-- IP LOOKUP TOOL -->
+    <div class="card main-border rad-10 p-20 mb-20">
+        <h3 class="fs-15 fw-bold mb-20">🔍 IP Analytics Lookup</h3>
+        <div style="display: flex; gap: 10px; margin-bottom: 15px;">
+            <input type="text" id="analytics-ip-input" placeholder="Enter IP address (e.g., 192.168.1.1)"
+                   style="flex: 1; padding: 10px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--bg-color); color: var(--text-color);" />
+            <button id="analytics-ip-lookup-btn" class="btn-primary" style="padding: 10px 20px;">
+                <i class="fa fa-search"></i> Lookup
+            </button>
+        </div>
+        <div id="analytics-ip-result" style="display: none; padding: 15px; border: 1px solid var(--border-color); border-radius: 6px; background: var(--card-bg);">
+            <!-- Results will be inserted here -->
+        </div>
+    </div>
+</div>
+
+<script>
+// Analytics Page - Country-based statistics and charts
+let countriesChart = null;
+let distributionChart = null;
+let analyticsData = null;
+
+// Country code to flag emoji mapping (common countries)
+const countryFlags = {
+    'CN': '🇨🇳', 'RU': '🇷🇺', 'US': '🇺🇸', 'KP': '🇰🇵', 'IR': '🇮🇷', 'VN': '🇻🇳',
+    'BR': '🇧🇷', 'IN': '🇮🇳', 'ID': '🇮🇩', 'TR': '🇹🇷', 'DE': '🇩🇪', 'FR': '🇫🇷',
+    'GB': '🇬🇧', 'IT': '🇮🇹', 'ES': '🇪🇸', 'NL': '🇳🇱', 'PL': '🇵🇱', 'UA': '🇺🇦',
+    'KR': '🇰🇷', 'JP': '🇯🇵', 'MX': '🇲🇽', 'AR': '🇦🇷', 'CA': '🇨🇦', 'AU': '🇦🇺',
+    'UNK': '🏴'
+};
+
+function getCountryFlag(code) {
+    return countryFlags[code.toUpperCase()] || '🏳️';
+}
+
+function initAnalyticsCharts() {
+    // Get theme colors
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const textColor = isDark ? '#e9ecef' : '#212529';
+    const gridColor = isDark ? '#495057' : '#dee2e6';
+
+    // Chart.js defaults
+    Chart.defaults.color = textColor;
+    Chart.defaults.borderColor = gridColor;
+
+    // Countries Bar Chart
+    const countriesCtx = document.getElementById('countries-chart');
+    if (countriesCtx) {
+        countriesChart = new Chart(countriesCtx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Banned IPs',
+                    data: [],
+                    backgroundColor: '#ff6b6b',
+                    borderColor: '#ff6b6b',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                indexAxis: 'y', // Horizontal bar chart
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        },
+                        grid: {
+                            color: gridColor
+                        }
+                    },
+                    y: {
+                        grid: {
+                            display: false
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Distribution Pie Chart
+    const distributionCtx = document.getElementById('distribution-chart');
+    if (distributionCtx) {
+        distributionChart = new Chart(distributionCtx, {
+            type: 'doughnut',
+            data: {
+                labels: [],
+                datasets: [{
+                    data: [],
+                    backgroundColor: [
+                        '#ff6b6b', '#4dabf7', '#51cf66', '#ffd43b', '#a78bfa',
+                        '#fb923c', '#ec4899', '#14b8a6', '#8b5cf6', '#f59e0b'
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'right'
+                    }
+                }
+            }
+        });
+    }
+
+    // Load initial data
+    loadAnalyticsData();
+}
+
+async function loadAnalyticsData() {
+    try {
+        console.log('[ANALYTICS] Loading analytics data...');
+
+        // Call the nftban-core analytics commands via API
+        // We need to create API endpoints that execute: nftban-core analytics summary --json
+        // and nftban-core analytics countries --json
+
+        // For now, let's try to fetch from a generic analytics endpoint
+        // The API handler should execute the CLI commands and return JSON
+
+        const summaryResp = await fetch('/api/v1/analytics/summary', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        if (summaryResp && summaryResp.ok) {
+            const data = await summaryResp.json();
+            console.log('[ANALYTICS] Summary data:', data);
+
+            if (data.success && data.data) {
+                const summary = data.data;
+
+                // Update summary stats
+                document.getElementById('analytics-total-ips').textContent = summary.total_ips || '0';
+                document.getElementById('analytics-total-countries').textContent = summary.total_countries || '0';
+                document.getElementById('analytics-ipv4-count').textContent = summary.ipv4_count || '0';
+                document.getElementById('analytics-ipv6-count').textContent = summary.ipv6_count || '0';
+
+                if (summary.last_updated) {
+                    document.getElementById('analytics-last-updated').textContent =
+                        new Date(summary.last_updated).toLocaleString();
+                }
+            }
+        }
+
+        // Load countries data
+        const countriesResp = await fetch('/api/v1/analytics/countries', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        if (countriesResp && countriesResp.ok) {
+            const data = await countriesResp.json();
+            console.log('[ANALYTICS] Countries data:', data);
+
+            if (data.success && data.data) {
+                analyticsData = data.data;
+                updateAnalyticsCharts(data.data);
+                updateCountriesTable(data.data);
+            }
+        } else {
+            console.warn('[ANALYTICS] Countries API not available yet');
+            showPlaceholderData();
+        }
+
+    } catch (error) {
+        console.error('[ANALYTICS] Failed to load analytics:', error);
+        showPlaceholderData();
+    }
+}
+
+function updateAnalyticsCharts(countries) {
+    if (!countries || countries.length === 0) return;
+
+    // Sort by IP count descending
+    const sorted = [...countries].sort((a, b) => b.ip_count - a.ip_count);
+
+    // Top 10 for bar chart
+    const top10 = sorted.slice(0, 10);
+
+    if (countriesChart) {
+        countriesChart.data.labels = top10.map(c => getCountryFlag(c.country) + ' ' + c.country);
+        countriesChart.data.datasets[0].data = top10.map(c => c.ip_count);
+        countriesChart.update();
+    }
+
+    // Top 8 for pie chart (+ "Others" category)
+    const top8 = sorted.slice(0, 8);
+    const othersCount = sorted.slice(8).reduce((sum, c) => sum + c.ip_count, 0);
+
+    if (distributionChart) {
+        const labels = top8.map(c => c.country);
+        const data = top8.map(c => c.ip_count);
+
+        if (othersCount > 0) {
+            labels.push('Others');
+            data.push(othersCount);
+        }
+
+        distributionChart.data.labels = labels;
+        distributionChart.data.datasets[0].data = data;
+        distributionChart.update();
+    }
+}
+
+function updateCountriesTable(countries) {
+    if (!countries || countries.length === 0) {
+        document.getElementById('countries-table-body').innerHTML = `
+            <tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-muted);">
+                No analytics data available
+            </td></tr>
+        `;
+        return;
+    }
+
+    // Calculate total for percentages
+    const total = countries.reduce((sum, c) => sum + c.ip_count, 0);
+
+    // Sort by IP count descending
+    const sorted = [...countries].sort((a, b) => b.ip_count - a.ip_count);
+
+    // Build table rows
+    const rows = sorted.map((country, index) => {
+        const percentage = ((country.ip_count / total) * 100).toFixed(1);
+        const lastUpdated = country.last_updated ?
+            new Date(country.last_updated).toLocaleString() : '-';
+
+        return `
+            <tr style="border-bottom: 1px solid var(--border-color);">
+                <td style="padding: 10px;">#${index + 1}</td>
+                <td style="padding: 10px;">${getCountryFlag(country.country)} ${country.country}</td>
+                <td style="padding: 10px; text-align: right; font-weight: bold;">${country.ip_count}</td>
+                <td style="padding: 10px; text-align: right;">${percentage}%</td>
+                <td style="padding: 10px; color: var(--text-muted);">${lastUpdated}</td>
+            </tr>
+        `;
+    }).join('');
+
+    document.getElementById('countries-table-body').innerHTML = rows;
+}
+
+function showPlaceholderData() {
+    // Show placeholder/example data when API is not available
+    console.log('[ANALYTICS] Showing placeholder data');
+
+    document.getElementById('analytics-total-ips').textContent = '0';
+    document.getElementById('analytics-total-countries').textContent = '0';
+    document.getElementById('analytics-ipv4-count').textContent = '0';
+    document.getElementById('analytics-ipv6-count').textContent = '0';
+    document.getElementById('analytics-last-updated').textContent = 'Never';
+    document.getElementById('analytics-status').textContent = 'No Data';
+    document.getElementById('analytics-status').className = 'text-warning fw-bold';
+
+    document.getElementById('countries-table-body').innerHTML = `
+        <tr><td colspan="5" style="text-align: center; padding: 20px; color: var(--text-muted);">
+            Analytics data not available. Ban some IPs to see statistics here.
+        </td></tr>
+    `;
+}
+
+// IP Lookup functionality
+document.addEventListener('DOMContentLoaded', function() {
+    const lookupBtn = document.getElementById('analytics-ip-lookup-btn');
+    const ipInput = document.getElementById('analytics-ip-input');
+    const resultDiv = document.getElementById('analytics-ip-result');
+
+    if (lookupBtn && ipInput) {
+        lookupBtn.addEventListener('click', async function() {
+            const ip = ipInput.value.trim();
+            if (!ip) {
+                alert('Please enter an IP address');
+                return;
+            }
+
+            lookupBtn.disabled = true;
+            lookupBtn.innerHTML = '<i class="fa fa-spinner fa-spin"></i> Looking up...';
+
+            try {
+                const resp = await fetch(`/api/v1/analytics/ip?ip=${encodeURIComponent(ip)}`, {
+                    headers: window.getAuthHeaders()
+                });
+
+                if (resp.ok) {
+                    const data = await resp.json();
+                    console.log('[ANALYTICS] IP lookup result:', data);
+
+                    if (data.success && data.found && data.origin) {
+                        const origin = data.origin;
+                        resultDiv.innerHTML = `
+                            <div style="display: grid; grid-template-columns: 150px 1fr; gap: 10px;">
+                                <div><strong>IP Address:</strong></div><div>${origin.ip}</div>
+                                <div><strong>Country:</strong></div><div>${getCountryFlag(origin.country)} ${origin.country}</div>
+                                ${origin.city ? `<div><strong>City:</strong></div><div>${origin.city}</div>` : ''}
+                                <div><strong>Banned At:</strong></div><div>${new Date(origin.banned_at).toLocaleString()}</div>
+                                ${origin.jail ? `<div><strong>Source:</strong></div><div>${origin.jail}</div>` : ''}
+                                ${origin.reason ? `<div><strong>Reason:</strong></div><div>${origin.reason}</div>` : ''}
+                            </div>
+                        `;
+                        resultDiv.style.display = 'block';
+                        resultDiv.style.borderColor = '#51cf66';
+                    } else {
+                        resultDiv.innerHTML = `
+                            <div style="text-align: center; color: var(--text-muted);">
+                                <i class="fa fa-circle-xmark"></i> IP not found in analytics database
+                            </div>
+                        `;
+                        resultDiv.style.display = 'block';
+                        resultDiv.style.borderColor = '#ffd43b';
+                    }
+                } else {
+                    throw new Error('API request failed');
+                }
+            } catch (error) {
+                console.error('[ANALYTICS] IP lookup failed:', error);
+                resultDiv.innerHTML = `
+                    <div style="text-align: center; color: #ff6b6b;">
+                        <i class="fa fa-exclamation-triangle"></i> Lookup failed: ${error.message}
+                    </div>
+                `;
+                resultDiv.style.display = 'block';
+                resultDiv.style.borderColor = '#ff6b6b';
+            } finally {
+                lookupBtn.disabled = false;
+                lookupBtn.innerHTML = '<i class="fa fa-search"></i> Lookup';
+            }
+        });
+
+        // Allow Enter key to trigger lookup
+        ipInput.addEventListener('keypress', function(e) {
+            if (e.key === 'Enter') {
+                lookupBtn.click();
+            }
+        });
+    }
+});
+
+// Initialize charts when analytics page loads
+window.initAnalyticsPage = function() {
+    console.log('[ANALYTICS] Initializing analytics page');
+    if (typeof Chart !== 'undefined') {
+        initAnalyticsCharts();
+    } else {
+        console.error('[ANALYTICS] Chart.js not loaded!');
+        setTimeout(() => {
+            if (typeof Chart !== 'undefined') {
+                initAnalyticsCharts();
+            }
+        }, 100);
+    }
+};
+
+// Auto-initialize when script loads
+if (document.getElementById('countries-chart')) {
+    console.log('[ANALYTICS] Auto-initializing analytics page');
+    window.initAnalyticsPage();
+
+    // Auto-refresh every 30 seconds
+    setInterval(loadAnalyticsData, 30000);
+}
+</script>

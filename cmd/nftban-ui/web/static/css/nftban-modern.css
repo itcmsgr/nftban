@@ -1,0 +1,385 @@
+/* NFTBan Modern CSS - Dark/Light Theme Support */
+
+/* ============================================================================= */
+/* THEME VARIABLES */
+/* ============================================================================= */
+
+:root {
+    --bg-body: #f1f5f9;
+    --bg-card: #ffffff;
+    --text-primary: #0f172a;
+    --text-secondary: #64748b;
+    --border-color: #e2e8f0;
+}
+
+[data-theme="dark"] {
+    --bg-body: #0f172a;
+    --bg-card: #1e293b;
+    --text-primary: #f1f5f9;
+    --text-secondary: #94a3b8;
+    --border-color: #334155;
+}
+
+body {
+    background-color: var(--bg-body);
+    color: var(--text-primary);
+    transition: background-color 0.3s, color 0.3s;
+}
+
+/* ============================================================================= */
+/* LOGIN PAGE */
+/* ============================================================================= */
+
+.login-container {
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-body);
+}
+
+.login-box {
+    width: 100%;
+    max-width: 420px;
+    margin: 20px;
+    position: relative;
+    background-color: var(--bg-card) !important;
+    border: 1px solid var(--border-color);
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+
+.logo-big {
+    font-size: 64px;
+}
+
+.theme-toggle {
+    position: absolute;
+    top: 20px;
+    right: 20px;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-body);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s;
+}
+
+.theme-toggle:hover {
+    background-color: var(--blue-color);
+    color: white;
+    border-color: var(--blue-color);
+}
+
+/* ============================================================================= */
+/* SIDEBAR */
+/* ============================================================================= */
+
+.sidebar {
+    width: 250px;
+    min-height: 100vh;
+    background-color: var(--bg-card) !important;
+    border-right: 1px solid var(--border-color);
+}
+
+.logo-sidebar {
+    font-size: 32px;
+}
+
+.sidebar h3 {
+    color: var(--text-primary);
+}
+
+.sidebar ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.sidebar ul li {
+    margin-bottom: 5px;
+}
+
+.sidebar ul li a {
+    text-decoration: none;
+    color: var(--text-secondary) !important;
+    transition: all 0.3s;
+}
+
+.sidebar ul li a:hover {
+    background-color: var(--bg-body) !important;
+    color: var(--text-primary) !important;
+}
+
+.sidebar ul li a.active {
+    background-color: var(--blue-color) !important;
+    color: white !important;
+}
+
+.sidebar ul li a i {
+    margin-right: 10px;
+    width: 20px;
+}
+
+.badge {
+    padding: 2px 8px;
+    border-radius: 12px;
+    font-size: 11px;
+    margin-left: auto;
+}
+
+/* ============================================================================= */
+/* HEADER */
+/* ============================================================================= */
+
+.head {
+    background-color: var(--bg-card) !important;
+    border-bottom: 1px solid var(--border-color);
+}
+
+.search input {
+    background-color: var(--bg-body);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+.search input:focus {
+    outline: none;
+    border-color: var(--blue-color);
+}
+
+.theme-btn {
+    background: transparent;
+    border: 1px solid var(--border-color);
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-secondary);
+    transition: all 0.3s;
+}
+
+.theme-btn:hover {
+    background-color: var(--blue-color);
+    color: white;
+    border-color: var(--blue-color);
+}
+
+.btn-logout {
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    font-size: 14px;
+    transition: color 0.3s;
+}
+
+.btn-logout:hover {
+    color: var(--red-color);
+}
+
+/* ============================================================================= */
+/* MAIN CONTENT */
+/* ============================================================================= */
+
+.content {
+    background-color: var(--bg-body);
+}
+
+.wrapper {
+    padding: 20px;
+}
+
+.wrapper h1 {
+    margin-bottom: 20px;
+    color: var(--text-primary);
+}
+
+/* Stats Grid */
+.stats-grid {
+    grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+}
+
+.stat-card {
+    background-color: var(--bg-card) !important;
+    border: 1px solid var(--border-color);
+    transition: transform 0.3s, box-shadow 0.3s;
+}
+
+.stat-card:hover {
+    transform: translateY(-4px);
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+}
+
+/* Charts Grid */
+.charts-grid {
+    grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+}
+
+.chart-card {
+    background-color: var(--bg-card) !important;
+    border: 1px solid var(--border-color);
+}
+
+.chart-card h4 {
+    color: var(--text-primary);
+}
+
+/* ============================================================================= */
+/* PANELS */
+/* ============================================================================= */
+
+.panel {
+    display: none;
+}
+
+.panel.active {
+    display: block;
+}
+
+/* ============================================================================= */
+/* FORMS */
+/* ============================================================================= */
+
+input[type="text"],
+input[type="password"],
+input[type="search"],
+select {
+    background-color: var(--bg-body);
+    color: var(--text-primary);
+    border-color: var(--border-color);
+}
+
+input:focus,
+select:focus {
+    outline: none;
+    border-color: var(--blue-color);
+}
+
+.btn-shape {
+    cursor: pointer;
+    transition: all 0.3s;
+    border: none;
+    font-weight: 500;
+}
+
+.btn-shape:hover {
+    opacity: 0.9;
+    transform: translateY(-2px);
+}
+
+.flex-1 {
+    flex: 1;
+}
+
+.px-20 {
+    padding-left: 20px;
+    padding-right: 20px;
+}
+
+/* ============================================================================= */
+/* LISTS */
+/* ============================================================================= */
+
+.list-container {
+    max-height: 500px;
+    overflow-y: auto;
+}
+
+.list-item {
+    padding: 15px;
+    border-bottom: 1px solid var(--border-color);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    transition: background-color 0.3s;
+}
+
+.list-item:hover {
+    background-color: var(--bg-body);
+}
+
+.list-item:last-child {
+    border-bottom: none;
+}
+
+/* ============================================================================= */
+/* LOGS */
+/* ============================================================================= */
+
+.logs-container {
+    background-color: var(--bg-body);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 15px;
+    font-family: 'Courier New', monospace;
+    font-size: 13px;
+    max-height: 600px;
+    overflow-y: auto;
+    color: var(--text-primary);
+}
+
+.logs-container pre {
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    margin: 0;
+}
+
+/* ============================================================================= */
+/* DARK THEME OVERRIDES */
+/* ============================================================================= */
+
+[data-theme="dark"] .bg-white {
+    background-color: var(--bg-card) !important;
+}
+
+[data-theme="dark"] .c-black {
+    color: var(--text-primary) !important;
+}
+
+[data-theme="dark"] .main-border {
+    border-color: var(--border-color);
+}
+
+/* ============================================================================= */
+/* RESPONSIVE */
+/* ============================================================================= */
+
+@media (max-width: 768px) {
+    .sidebar {
+        position: fixed;
+        left: -250px;
+        top: 0;
+        z-index: 1000;
+        transition: left 0.3s;
+    }
+
+    .sidebar.open {
+        left: 0;
+    }
+
+    .stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .charts-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ============================================================================= */
+/* UTILITIES */
+/* ============================================================================= */
+
+.hidden {
+    display: none !important;
+}
+
+.cursor-pointer {
+    cursor: pointer;
+}

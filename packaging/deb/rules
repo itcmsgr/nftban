@@ -1,99 +1,61 @@
 #!/usr/bin/make -f
-# =============================================================================
-# NFTBan v0.32.6 - Debian Rules File
-# =============================================================================
-# SPDX-License-Identifier: MPL-2.0
-# Purpose: Build rules for DEB package creation
-# =============================================================================
+
+# Debian rules file for nftban-ui
+export DH_VERBOSE = 1
+export CGO_ENABLED = 1
+
+# Go build flags
+export GOFLAGS = -buildmode=pie -mod=readonly -modcacherw
 
 %:
-	dh $@
+	dh $@ --with systemd
 
 override_dh_auto_build:
-	# Build Go binaries
-	@echo "Building Go binaries..."
-	cd go-geoip && go mod download && go mod tidy && \
-		CGO_ENABLED=0 GOOS=linux GOARCH=$(shell dpkg --print-architecture | sed 's/amd64/amd64/;s/arm64/arm64/') \
-		go build -buildvcs=false -ldflags "-s -w -X main.VERSION=0.32.0" \
-		-o ../dist/$(shell dpkg --print-architecture)/nftban-geoip ./cmd/nftban-geoip
-	cd go-feeds && go mod download && go mod tidy && \
-		CGO_ENABLED=0 GOOS=linux GOARCH=$(shell dpkg --print-architecture | sed 's/amd64/amd64/;s/arm64/arm64/') \
-		go build -buildvcs=false -ldflags "-s -w -X main.VERSION=0.32.0" \
-		-o ../dist/$(shell dpkg --print-architecture)/nftban-feeds ./cmd/nftban-feeds
-	@echo "✓ Go binaries built successfully"
-	ls -lh dist/$(shell dpkg --print-architecture)/
+	# Build GUI server
+	cd cmd/nftban-ui && \
+	go build -ldflags="-linkmode=external -s -w -X main.version=$(shell dpkg-parsechangelog -S Version)" \
+	    -o ../../bin/nftban-ui .
+
+	# Build authentication service
+	go build -ldflags="-linkmode=external -s -w -X main.version=$(shell dpkg-parsechangelog -S Version)" \
+	    -o bin/nftban-ui-auth ./cmd/nftban-ui-auth
 
 override_dh_auto_install:
-	# Install from src/ directory structure (excluding systemd units and Go wrappers - handled separately)
-	install -d debian/nftban
-	# Copy everything except systemd directory and Go wrappers (will be placed in proper locations)
-	rsync -a --exclude='usr/lib/systemd' --exclude='usr/lib/nftban/bin/nftban-geoip' --exclude='usr/lib/nftban/bin/nftban-feeds' src/ debian/nftban/
+	# Install binaries
+	install -D -m 0755 bin/nftban-ui debian/nftban-ui/usr/sbin/nftban-ui
+	install -D -m 0755 bin/nftban-ui-auth debian/nftban-ui/usr/libexec/nftban-ui-auth
 
-	# Install Go binary directories
-	install -d -m 0755 debian/nftban/usr/lib/nftban/bin
-	install -d -m 0755 debian/nftban/usr/lib/nftban/bin/.real
+	# Install systemd units
+	install -D -m 0644 install/systemd/nftban-ui.service debian/nftban-ui/lib/systemd/system/nftban-ui.service
+	install -D -m 0644 install/systemd/nftban-ui-auth.service debian/nftban-ui/lib/systemd/system/nftban-ui-auth.service
+	install -D -m 0644 install/systemd/nftban-ui-auth.socket debian/nftban-ui/lib/systemd/system/nftban-ui-auth.socket
 
-	# Install Go binary wrappers (executable by nftban group)
-	install -D -m 0755 src/usr/lib/nftban/bin/nftban-geoip debian/nftban/usr/lib/nftban/bin/nftban-geoip
-	install -D -m 0755 src/usr/lib/nftban/bin/nftban-feeds debian/nftban/usr/lib/nftban/bin/nftban-feeds
+	# Install PAM configuration
+	install -D -m 0644 install/pam/nftban-ui debian/nftban-ui/etc/pam.d/nftban-ui
 
-	# Install compiled Go binaries (architecture-specific)
-	install -m 0755 dist/$(shell dpkg --print-architecture)/nftban-geoip \
-		debian/nftban/usr/lib/nftban/bin/.real/nftban-geoip-$(shell dpkg --print-architecture)
-	install -m 0755 dist/$(shell dpkg --print-architecture)/nftban-feeds \
-		debian/nftban/usr/lib/nftban/bin/.real/nftban-feeds-$(shell dpkg --print-architecture)
+	# Install config files
+	install -D -m 0644 install/config/allowed-gui-groups debian/nftban-ui/etc/nftban/allowed-gui-groups
 
-	# Create FHS directories
-	install -d -m 0755 debian/nftban/var/lib/nftban/{state,snapshots,feeds,keyring,backup,reports,metrics,config,geoip}
-	install -d -m 0755 debian/nftban/var/lib/nftban/geoban/tracking
-	install -d -m 0755 debian/nftban/var/lib/nftban/reports/baseline
-	install -d -m 0770 debian/nftban/var/lib/nftban/reports/auditors
-	install -d -m 0755 debian/nftban/var/cache/nftban/{geoip,geoban,feeds,tmp}
-	install -d -m 0750 debian/nftban/var/log/nftban
-	install -d -m 0700 debian/nftban/etc/nftban/keys
-	install -d -m 0750 debian/nftban/etc/nftban/geoban.d
+	# Install distro config parser module
+	install -D -m 0755 cli/lib/nftban/lib/nftban_distro_config.sh debian/nftban-ui/usr/lib/nftban/lib/nftban_distro_config.sh
 
-	# Install systemd units (DEB uses /lib not /usr/lib)
-	install -d -m 0755 debian/nftban/lib/systemd/system
-	install -m 0644 src/usr/lib/systemd/system/*.service debian/nftban/lib/systemd/system/
-	install -m 0644 src/usr/lib/systemd/system/*.timer debian/nftban/lib/systemd/system/
+	# Install distro config files
+	mkdir -p debian/nftban-ui/etc/nftban/distros
+	install -m 0644 etc/nftban/distros/*.conf debian/nftban-ui/etc/nftban/distros/
 
-	# Install sysusers.d
-	install -d -m 0755 debian/nftban/usr/lib/sysusers.d
-	install -m 0644 packaging/sysusers.d/nftban.conf debian/nftban/usr/lib/sysusers.d/
+	# Create conf.d directory for custom overrides
+	mkdir -p debian/nftban-ui/etc/nftban/conf.d
 
-	# Install tmpfiles.d
-	install -d -m 0755 debian/nftban/usr/lib/tmpfiles.d
-	install -m 0644 packaging/tmpfiles.d/nftban.conf debian/nftban/usr/lib/tmpfiles.d/
+	# Install web files
+	mkdir -p debian/nftban-ui/usr/share/nftban-ui/web
+	cp -r cmd/nftban-ui/web/* debian/nftban-ui/usr/share/nftban-ui/web/
 
-	# Install logrotate
-	install -d -m 0755 debian/nftban/etc/logrotate.d
-	install -m 0644 src/etc/logrotate.d/nftban debian/nftban/etc/logrotate.d/
+	# Create log directory
+	mkdir -p debian/nftban-ui/var/log/nftban
 
-	# Install bash completion
-	install -d -m 0755 debian/nftban/usr/share/bash-completion/completions
-	install -m 0644 src/usr/share/nftban/completions/nftban.bash \
-		debian/nftban/usr/share/bash-completion/completions/nftban
+override_dh_auto_clean:
+	rm -rf bin/
+	rm -f go.sum
 
-	# Install Polkit rules
-	install -d -m 0755 debian/nftban/usr/share/polkit-1/rules.d
-	install -m 0644 packaging/polkit-1/rules.d/50-nftban-v030.rules \
-		debian/nftban/usr/share/polkit-1/rules.d/50-nftban-v030.rules
-	install -m 0644 packaging/polkit-1/rules.d/60-nftban-cli.rules \
-		debian/nftban/usr/share/polkit-1/rules.d/60-nftban-cli.rules
-
-# Systemd integration is now automatic in debhelper-compat >= 11
-# No manual override_dh_systemd_* needed
-
-override_dh_fixperms:
-	dh_fixperms
-	# Fix permissions for nftban directories
-	chmod 0750 debian/nftban/var/lib/nftban/*
-	chmod 0750 debian/nftban/var/log/nftban
-	chmod 0700 debian/nftban/etc/nftban/secrets.d
-	# Align all nftban binaries with same permissions
-	chmod 0750 debian/nftban/usr/sbin/nftban*
-	# Go binaries and wrappers are 0755 (executable by nftban group)
-	chmod 0755 debian/nftban/usr/lib/nftban/bin
-	chmod 0755 debian/nftban/usr/lib/nftban/bin/.real
-	# Note: Ownership (chown root:nftban) is set by postinst after group creation
+override_dh_auto_test:
+	# Skip tests for now

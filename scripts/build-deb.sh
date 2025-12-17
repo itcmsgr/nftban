@@ -1,204 +1,73 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v0.10.0 - DEB Package Builder
+# NFTBan v1.0.0 - Build DEB Packages
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# meta:name=build-deb.sh
-# meta:type=tool
-# meta:header=DEB Package Builder
-# meta:version=0.32.0
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-# meta:description=Builds DEB packages for Ubuntu 22.04+, Debian 12+
-# meta:depends=dpkg-deb,debhelper,fakeroot
+# Purpose: Build DEB packages for amd64 and arm64
 # =============================================================================
 
 set -Eeuo pipefail
-IFS=$'\n\t'
-umask 027
 
-# =============================================================================
-# CONSTANTS
-# =============================================================================
-# SC2155: Declare and assign separately to avoid masking return values
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly SCRIPT_DIR
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-readonly PROJECT_ROOT
-readonly BUILD_DIR="$PROJECT_ROOT/dist/build/deb"
-readonly PACKAGE_DIR="$PROJECT_ROOT/dist/packages"
 
-# Read version from VERSION file (single source of truth)
-if [[ -f "${PROJECT_ROOT}/VERSION" ]]; then
-    # SC2002: Avoid useless cat
-    VERSION="$(tr -d '[:space:]' < "${PROJECT_ROOT}/VERSION")"
-    readonly VERSION
+cd "$PROJECT_ROOT"
+
+echo "=== Building DEB packages ==="
+
+# Get version from tag or default
+VERSION="${GITHUB_REF#refs/tags/v}"
+VERSION="${VERSION:-1.0.0}"
+
+# Create dist/packages if not exists
+mkdir -p dist/packages
+
+# Use packaging script if available
+if [[ -x packaging/build_nftban.sh ]]; then
+    cd packaging
+    ./build_nftban.sh deb
+    cd ..
+
+    # Move DEBs to dist/packages
+    find . -name "*.deb" -exec mv {} dist/packages/ \; 2>/dev/null || true
 else
-    echo "ERROR: VERSION file not found"
-    exit 1
-fi
-readonly RELEASE="1"
+    echo "WARNING: packaging/build_nftban.sh not found, building manually"
 
-# =============================================================================
-# FUNCTIONS
-# =============================================================================
+    # Create build directory
+    BUILD_DIR=$(mktemp -d)
+    PKG_DIR="$BUILD_DIR/nftban_${VERSION}_amd64"
 
-log_info() {
-    echo "[INFO] $*" >&2
-}
+    mkdir -p "$PKG_DIR/DEBIAN"
+    mkdir -p "$PKG_DIR/usr/bin"
+    mkdir -p "$PKG_DIR/usr/lib/nftban"
+    mkdir -p "$PKG_DIR/etc/nftban"
 
-log_error() {
-    echo "[ERROR] $*" >&2
-}
+    # Create control file
+    cat > "$PKG_DIR/DEBIAN/control" <<EOF
+Package: nftban
+Version: ${VERSION}
+Section: admin
+Priority: optional
+Architecture: amd64
+Depends: bash (>= 4.0), nftables
+Maintainer: NFTBan Project <nftban@nftban.com>
+Description: Intelligent Linux Firewall Management
+ NFTBan is a comprehensive security platform that simplifies
+ nftables configuration and provides intelligent protection.
+EOF
 
-log_success() {
-    echo "[SUCCESS] $*" >&2
-}
+    # Copy files
+    cp -r cli/* "$PKG_DIR/usr/lib/nftban/"
+    cp dist/x86_64/nftban-core "$PKG_DIR/usr/bin/" 2>/dev/null || true
+    cp dist/x86_64/nftban-api-server "$PKG_DIR/usr/bin/" 2>/dev/null || true
 
-die() {
-    log_error "$*"
-    exit 1
-}
+    # Build package
+    dpkg-deb --build "$PKG_DIR"
+    mv "$BUILD_DIR"/*.deb dist/packages/
 
-check_dependencies() {
-    local deps=(dpkg-deb debhelper fakeroot)
-    local missing=()
-
-    for dep in "${deps[@]}"; do
-        # Check if command exists OR package is installed
-        local found=false
-        if command -v "$dep" >/dev/null 2>&1; then
-            found=true
-        elif dpkg -l "$dep" 2>/dev/null | grep -q "^ii"; then
-            found=true
-        fi
-
-        if [ "$found" = false ]; then
-            missing+=("$dep")
-        fi
-    done
-
-    if [ ${#missing[@]} -gt 0 ]; then
-        die "Missing dependencies: ${missing[*]}\nInstall with: sudo apt-get install dpkg-dev debhelper fakeroot"
-    fi
-}
-
-clean_build_dir() {
-    log_info "Cleaning build directory..."
+    # Cleanup
     rm -rf "$BUILD_DIR"
-    mkdir -p "$BUILD_DIR"
-    mkdir -p "$PACKAGE_DIR"
-    chmod 755 "$PACKAGE_DIR" 2>/dev/null || true  # Ensure writable in CI/CD environments (ignore if already exists from RPM build)
-}
+fi
 
-prepare_source() {
-    log_info "Preparing source tree..."
-
-    # Copy source files
-    cp -a "$PROJECT_ROOT/src" "$BUILD_DIR/"
-    cp -a "$PROJECT_ROOT/packaging" "$BUILD_DIR/"
-    cp -a "$PROJECT_ROOT/README.md" "$BUILD_DIR/"
-    cp -a "$PROJECT_ROOT/CHANGELOG.md" "$BUILD_DIR/"
-
-    # Copy Go source directories (needed for building binaries)
-    cp -a "$PROJECT_ROOT/go-geoip" "$BUILD_DIR/"
-    cp -a "$PROJECT_ROOT/go-feeds" "$BUILD_DIR/"
-
-    # Copy licenses directory (FHS-compliant)
-    mkdir -p "$BUILD_DIR/licenses"
-    cp -a "$PROJECT_ROOT/licenses/"* "$BUILD_DIR/licenses/"
-
-    # NFTBAN_AI_TESTING was removed in cleanup (development directory)
-
-    # Copy docs directory (contains man pages)
-    cp -a "$PROJECT_ROOT/docs" "$BUILD_DIR/"
-
-    # Copy additional documentation files
-    cp "$PROJECT_ROOT/NOTICE.md" "$BUILD_DIR/" 2>/dev/null || true
-    cp "$PROJECT_ROOT/TRADEMARK.md" "$BUILD_DIR/" 2>/dev/null || true
-    cp "$PROJECT_ROOT/CONTRIBUTING.md" "$BUILD_DIR/" 2>/dev/null || true
-
-    # Copy debian packaging directory
-    mkdir -p "$BUILD_DIR/debian"
-    cp "$PROJECT_ROOT/packaging/deb/control" "$BUILD_DIR/debian/"
-    cp "$PROJECT_ROOT/packaging/deb/changelog" "$BUILD_DIR/debian/"
-    cp "$PROJECT_ROOT/packaging/deb/rules" "$BUILD_DIR/debian/"
-    cp "$PROJECT_ROOT/packaging/deb/postinst" "$BUILD_DIR/debian/"
-    cp "$PROJECT_ROOT/packaging/deb/prerm" "$BUILD_DIR/debian/"
-    cp "$PROJECT_ROOT/packaging/deb/postrm" "$BUILD_DIR/debian/"
-
-    # Note: compat level specified via debhelper-compat (= 13) in control file
-    # No separate debian/compat file needed for debhelper >= 12
-
-    # Make rules executable
-    chmod +x "$BUILD_DIR/debian/rules"
-}
-
-build_package() {
-    log_info "Building DEB package..."
-
-    cd "$BUILD_DIR"
-
-    # Build using debhelper
-    if ! dpkg-buildpackage -us -uc -b; then
-        die "DEB package build failed"
-    fi
-
-    # Move built packages to package directory
-    # dpkg-buildpackage creates files in parent directory of build dir
-    log_info "Moving packages to $PACKAGE_DIR..."
-
-    # Packages are in dist/build/ (parent of dist/build/deb/)
-    if ls "$PROJECT_ROOT/dist/build"/*.deb 1> /dev/null 2>&1; then
-        # Use install command to avoid permission issues in CI/CD (handles readonly dest dirs)
-        for deb in "$PROJECT_ROOT/dist/build"/*.deb; do
-            install -m 0644 "$deb" "$PACKAGE_DIR/" 2>/dev/null || cp "$deb" "$PACKAGE_DIR/"
-        done
-        for file in "$PROJECT_ROOT/dist/build"/*.buildinfo "$PROJECT_ROOT/dist/build"/*.changes; do
-            [ -f "$file" ] && (install -m 0644 "$file" "$PACKAGE_DIR/" 2>/dev/null || cp "$file" "$PACKAGE_DIR/" 2>/dev/null || true)
-        done
-
-        # Clean up source files after successful copy
-        rm -f "$PROJECT_ROOT/dist/build"/*.deb
-        rm -f "$PROJECT_ROOT/dist/build"/*.buildinfo
-        rm -f "$PROJECT_ROOT/dist/build"/*.changes
-    else
-        die "No DEB packages found in $PROJECT_ROOT/dist/build/"
-    fi
-
-    cd "$PROJECT_ROOT"
-}
-
-show_results() {
-    log_success "DEB packages built successfully!"
-    echo ""
-    echo "Packages available in: $PACKAGE_DIR"
-    echo ""
-    ls -lh "$PACKAGE_DIR"/*.deb 2>/dev/null || true
-    echo ""
-    echo "To install:"
-    echo "  sudo dpkg -i $PACKAGE_DIR/nftban_${VERSION}-${RELEASE}_*.deb"
-    echo "  sudo apt-get install -f  # Install dependencies if needed"
-    echo ""
-    echo "To test in a clean environment:"
-    echo "  docker run -it --rm -v $PACKAGE_DIR:/packages ubuntu:22.04"
-    echo "  apt-get update && apt-get install -y /packages/nftban_${VERSION}-${RELEASE}_*.deb"
-    echo ""
-}
-
-# =============================================================================
-# MAIN
-# =============================================================================
-
-main() {
-    log_info "NFTBan DEB Package Builder v$VERSION"
-    log_info "========================================="
-
-    check_dependencies
-    clean_build_dir
-    prepare_source
-    build_package
-    show_results
-}
-
-main "$@"
+echo "=== DEB packages built ==="
+ls -lh dist/packages/*.deb 2>/dev/null || echo "No DEB packages found"

@@ -1,0 +1,380 @@
+<style>
+.logs-controls {
+    display: grid;
+    grid-template-columns: 1fr 150px 1fr;
+    gap: 15px;
+    margin-bottom: 20px;
+    align-items: end;
+}
+
+.control-group {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.control-group label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text);
+}
+
+.control-group select,
+.control-group input {
+    padding: 10px 12px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    background: var(--bg-alt);
+    color: var(--text);
+    font-size: 14px;
+}
+
+.control-group input[type="number"] {
+    width: 100%;
+}
+
+.search-box {
+    position: relative;
+}
+
+.search-box input {
+    width: 100%;
+    padding-left: 40px;
+}
+
+.search-box i {
+    position: absolute;
+    left: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-muted);
+}
+
+.action-buttons {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.logs-display {
+    background: #1a1a1a;
+    color: #00ff00;
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 13px;
+    padding: 20px;
+    border-radius: 8px;
+    max-height: 600px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-wrap: break-word;
+    line-height: 1.5;
+}
+
+.logs-display.light-mode {
+    background: #f5f5f5;
+    color: #333;
+}
+
+.log-line {
+    margin-bottom: 2px;
+}
+
+.log-line.highlight {
+    background: rgba(255, 255, 0, 0.2);
+}
+
+.auto-scroll-toggle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 15px;
+}
+
+.auto-scroll-toggle input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+.stats-info {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 15px;
+    background: var(--bg-alt);
+    border-radius: 6px;
+    margin-bottom: 15px;
+    font-size: 13px;
+}
+
+.stats-info .stat {
+    color: var(--text-muted);
+}
+
+.stats-info .stat strong {
+    color: var(--text);
+}
+</style>
+
+<h2><i class="fa fa-file-lines"></i> Logs Viewer</h2>
+<p class="text-muted">View and search system logs across all NFTBan components</p>
+
+<div class="card">
+    <div class="logs-controls">
+        <div class="control-group">
+            <label for="log-type">
+                <i class="fa fa-filter"></i> Log Type
+            </label>
+            <select id="log-type" onchange="loadSelectedLogs()">
+                <option value="all">All Logs</option>
+                <optgroup label="NFTBan Core">
+                    <option value="nftban">NFTBan Main</option>
+                    <option value="nftban-actions">Ban Actions</option>
+                    <option value="firewall">Firewall</option>
+                </optgroup>
+                <optgroup label="Protection Modules">
+                    <option value="portscan">Port Scan</option>
+                    <option value="ddos">DDoS</option>
+                    <option value="login-alert">Login Monitor</option>
+                    <option value="feeds">Threat Feeds</option>
+                    <option value="geoban">GeoBan</option>
+                </optgroup>
+                <optgroup label="Suricata IDS">
+                    <option value="suricata-eve">Suricata Events (eve.json)</option>
+                    <option value="suricata-fast">Suricata Alerts (fast.log)</option>
+                    <option value="suricata-stats">Suricata Stats</option>
+                    <option value="suricata-log">Suricata Service Log</option>
+                </optgroup>
+                <optgroup label="System">
+                    <option value="cron">Cron Jobs</option>
+                    <option value="maintenance">Maintenance</option>
+                    <option value="cli-errors">CLI Errors</option>
+                    <option value="system">System</option>
+                </optgroup>
+            </select>
+        </div>
+
+        <div class="control-group">
+            <label for="log-lines">
+                <i class="fa fa-list-ol"></i> Lines
+            </label>
+            <input type="number" id="log-lines" value="100" min="10" max="10000" step="10">
+        </div>
+
+        <div class="control-group">
+            <label for="log-search">
+                <i class="fa fa-magnifying-glass"></i> Search Filter
+            </label>
+            <div class="search-box">
+                <i class="fa fa-magnifying-glass"></i>
+                <input type="text" id="log-search" placeholder="Type to filter logs..." oninput="filterLogs()">
+            </div>
+        </div>
+    </div>
+
+    <div class="action-buttons">
+        <button onclick="loadSelectedLogs()" class="btn-primary">
+            <i class="fa fa-rotate"></i> Load Logs
+        </button>
+        <button onclick="refreshLogs()" class="btn-primary">
+            <i class="fa fa-arrows-rotate"></i> Refresh
+        </button>
+        <button onclick="downloadLogs()" class="btn-primary">
+            <i class="fa fa-download"></i> Download
+        </button>
+        <button onclick="clearLogsDisplay()" class="btn-danger">
+            <i class="fa fa-trash"></i> Clear Display
+        </button>
+    </div>
+
+    <div class="auto-scroll-toggle">
+        <input type="checkbox" id="tail-mode" onchange="toggleTailMode()">
+        <label for="tail-mode" style="margin: 0; cursor: pointer;">
+            <i class="fa fa-terminal"></i> Tail Mode (auto-refresh every 3 seconds)
+        </label>
+    </div>
+
+    <div class="stats-info" id="logs-stats">
+        <div class="stat">
+            <strong id="total-lines">0</strong> lines loaded
+        </div>
+        <div class="stat">
+            <strong id="visible-lines">0</strong> visible
+        </div>
+        <div class="stat" id="last-update-time">
+            Last updated: <strong>Never</strong>
+        </div>
+    </div>
+
+    <div id="logs-container" class="logs-display">
+        <div style="text-align: center; color: var(--text-muted);">
+            <i class="fa fa-circle-info"></i> Select a log type and click "Load Logs" to begin
+        </div>
+    </div>
+</div>
+
+<script>
+// Prevent redeclaration on page reload
+if (typeof window.logsPageLoaded === 'undefined') {
+    window.logsPageLoaded = true;
+    window.currentLogs = [];
+    window.filteredLogs = [];
+    window.tailInterval = null;
+    window.autoScrollEnabled = false;
+}
+
+async function loadSelectedLogs() {
+    const logType = document.getElementById('log-type').value;
+    const lines = document.getElementById('log-lines').value || 100;
+
+    try {
+        const container = document.getElementById('logs-container');
+        container.innerHTML = '<div style="text-align: center;"><i class="fa fa-spinner fa-spin"></i> Loading logs...</div>';
+
+        const response = await apiRequest(`/logs?type=${logType}&lines=${lines}`);
+
+        if (response.success) {
+            // API returns logs in 'lines' field (array), 'logs' field (string), or 'data' field
+            if (Array.isArray(response.lines)) {
+                window.currentLogs = response.lines;
+            } else if (typeof response.logs === 'string') {
+                window.currentLogs = response.logs.split('\n');
+            } else if (Array.isArray(response.data)) {
+                window.currentLogs = response.data;
+            } else if (typeof response.data === 'string') {
+                window.currentLogs = response.data.split('\n');
+            } else {
+                window.currentLogs = [];
+            }
+
+            window.filteredLogs = window.currentLogs;
+            displayLogs();
+            updateStats();
+            updateLastUpdateTime();
+
+            // Show message if no logs
+            if (window.currentLogs.length === 0 && response.message) {
+                container.innerHTML = `<div style="text-align: center; color: var(--text-muted);">${response.message}</div>`;
+            }
+        } else {
+            container.innerHTML = '<div style="text-align: center; color: var(--text-muted);">No logs available</div>';
+            window.currentLogs = [];
+            window.filteredLogs = [];
+            updateStats();
+        }
+    } catch (error) {
+        console.error('Failed to load logs:', error);
+        document.getElementById('logs-container').innerHTML =
+            `<div style="text-align: center; color: #ff6b6b;">Error loading logs: ${error.message}</div>`;
+        window.currentLogs = [];
+        window.filteredLogs = [];
+        updateStats();
+    }
+}
+
+function displayLogs() {
+    const container = document.getElementById('logs-container');
+
+    if (window.filteredLogs.length === 0) {
+        container.innerHTML = '<div style="text-align: center; color: var(--text-muted);">No logs match your search filter</div>';
+        return;
+    }
+
+    // Join lines and display
+    container.textContent = window.filteredLogs.join('\n');
+
+    // Auto-scroll to bottom if enabled
+    if (window.autoScrollEnabled) {
+        container.scrollTop = container.scrollHeight;
+    }
+}
+
+function filterLogs() {
+    const searchTerm = document.getElementById('log-search').value.toLowerCase();
+
+    if (!searchTerm) {
+        window.filteredLogs = window.currentLogs;
+    } else {
+        window.filteredLogs = window.currentLogs.filter(line =>
+            line.toLowerCase().includes(searchTerm)
+        );
+    }
+
+    displayLogs();
+    updateStats();
+}
+
+function refreshLogs() {
+    loadSelectedLogs();
+}
+
+function clearLogsDisplay() {
+    if (!confirm('Clear the logs display? This will not delete actual log files.')) return;
+
+    window.currentLogs = [];
+    window.filteredLogs = [];
+    document.getElementById('logs-container').innerHTML =
+        '<div style="text-align: center; color: var(--text-muted);"><i class="fa fa-circle-info"></i> Display cleared. Select a log type and click "Load Logs".</div>';
+    updateStats();
+}
+
+function downloadLogs() {
+    const logType = document.getElementById('log-type').value;
+    const logsText = window.filteredLogs.join('\n');
+
+    if (!logsText || logsText.length === 0) {
+        console.log('[warning]', 'No logs to download');
+        return;
+    }
+
+    const blob = new Blob([logsText], { type: 'text/plain' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `nftban_${logType}_${new Date().toISOString().replace(/[:.]/g, '-')}.txt`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    console.log('[success]', `Downloaded ${window.filteredLogs.length} lines`);
+}
+
+function toggleTailMode() {
+    const enabled = document.getElementById('tail-mode').checked;
+    window.autoScrollEnabled = enabled;
+
+    if (enabled) {
+        // Start auto-refresh
+        window.tailInterval = setInterval(() => {
+            loadSelectedLogs();
+        }, 3000);
+        console.log('[info]', 'Tail mode enabled - auto-refreshing every 3 seconds');
+    } else {
+        // Stop auto-refresh
+        if (window.tailInterval) {
+            clearInterval(window.tailInterval);
+            window.tailInterval = null;
+        }
+        console.log('[info]', 'Tail mode disabled');
+    }
+}
+
+function updateStats() {
+    document.getElementById('total-lines').textContent = window.currentLogs.length.toLocaleString();
+    document.getElementById('visible-lines').textContent = window.filteredLogs.length.toLocaleString();
+}
+
+function updateLastUpdateTime() {
+    const now = new Date();
+    const timeStr = now.toLocaleTimeString();
+    document.getElementById('last-update-time').innerHTML = `Last updated: <strong>${timeStr}</strong>`;
+}
+
+// Cleanup on page unload
+window.addEventListener('beforeunload', () => {
+    if (window.tailInterval) {
+        clearInterval(window.tailInterval);
+    }
+});
+</script>

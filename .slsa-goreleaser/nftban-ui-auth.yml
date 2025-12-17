@@ -1,0 +1,38 @@
+# =============================================================================
+# NFTBan UI Auth - SLSA GoReleaser Configuration
+# =============================================================================
+# This config tells the SLSA builder how to build nftban-ui-auth (PAM daemon)
+# Note: This binary requires PAM libraries at runtime (CGO needed for PAM)
+# Reference: https://github.com/slsa-framework/slsa-github-generator
+
+version: 1
+
+# Environment variables available during build
+# CGO_ENABLED=1 required for PAM library (github.com/msteinert/pam/v2)
+env:
+  - VERSION={{ .Env.VERSION }}
+  - CGO_ENABLED=1
+
+# Build flags
+flags:
+  - -trimpath
+  - -mod=readonly
+
+# Linker flags (inject version info)
+ldflags:
+  - -s -w
+  - -X main.Version={{ .Env.VERSION }}
+
+# Build targets
+# Note: CGO cross-compilation is complex, so we limit to native arch initially
+goos:
+  - linux
+
+goarch:
+  - amd64
+
+# Main package path
+main: ./cmd/nftban-ui-auth
+
+# Output binary name pattern
+binary: nftban-ui-auth-{{ .Os }}-{{ .Arch }}

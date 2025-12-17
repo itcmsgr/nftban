@@ -1,0 +1,231 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"os"
+	"strings"
+
+	"github.com/itcmsgr/nftban-v1.0-dev/pkg/analytics"
+	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban-v1.0-dev/pkg/version"
+)
+
+// Build-time variables (injected by -ldflags)
+var (
+	GitCommit = "dev"
+	BuildDate = "unknown"
+)
+
+func main() {
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
+	}
+
+	command := os.Args[1]
+
+	// ════════════════════════════════════════════════════════════
+	// Analytics initialization for commands that need it
+	// ════════════════════════════════════════════════════════════
+	needsAnalytics := command == "ban" || command == "analytics"
+
+	if needsAnalytics {
+		// Get data dir from central config
+		// NO FALLBACK - path must come from /etc/nftban/nftban.conf
+		cfg := nftbanconf.MustLoad()
+		dataDir := cfg.DataDir
+		if err := analytics.Init(dataDir, dataDir+"/reports"); err != nil {
+			log.Printf("Warning: Analytics disabled: %v", err)
+		}
+
+		// Ensure we save on exit
+		defer func() {
+			if st := analytics.StateOrNil(); st != nil {
+				if err := st.Save(); err != nil {
+					log.Printf("Warning: Failed to save analytics: %v", err)
+				}
+			}
+		}()
+	}
+	// ════════════════════════════════════════════════════════════
+
+	switch command {
+	case "init":
+		if err := cmdInit(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "status":
+		if err := cmdStatus(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "sync":
+		if err := cmdSync(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "ban":
+		if len(os.Args) < 3 {
+			errorWithUsage("ban", "ban command requires an IP address")
+			os.Exit(1)
+		}
+		ip := os.Args[2]
+
+		// Parse flags
+		var timeout int = 0  // 0 = permanent
+		var reason string = ""
+		var source string = "manual"
+
+		for i := 3; i < len(os.Args); i++ {
+			arg := os.Args[i]
+			if arg == "--timeout" && i+1 < len(os.Args) {
+				fmt.Sscanf(os.Args[i+1], "%d", &timeout)
+				i++
+			} else if arg == "--reason" && i+1 < len(os.Args) {
+				reason = os.Args[i+1]
+				i++
+			} else if arg == "--source" && i+1 < len(os.Args) {
+				source = os.Args[i+1]
+				i++
+			} else if !strings.HasPrefix(arg, "--") {
+				// Legacy: treat non-flag args as reason
+				if reason == "" {
+					reason = arg
+				} else {
+					reason = reason + " " + arg
+				}
+			}
+		}
+
+		if err := cmdBan(ip, reason, source, timeout); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "unban":
+		if len(os.Args) < 3 {
+			errorWithUsage("unban", "unban command requires an IP address")
+			os.Exit(1)
+		}
+		ip := os.Args[2]
+		if err := cmdUnban(ip); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "check":
+		if len(os.Args) < 3 {
+			errorWithUsage("check", "check command requires an IP address")
+			os.Exit(1)
+		}
+		ip := os.Args[2]
+		if err := cmdCheck(ip); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "feeds":
+		if len(os.Args) < 3 {
+			errorWithUsage("feeds", "feeds command requires an action")
+			os.Exit(1)
+		}
+		action := os.Args[2]
+		if err := cmdFeeds(action); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "trust":
+		if len(os.Args) < 3 {
+			errorWithUsage("trust", "trust command requires an action")
+			os.Exit(1)
+		}
+		action := os.Args[2]
+		if err := cmdTrust(action); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "country":
+		if len(os.Args) < 3 {
+			errorWithUsage("country", "country command requires an action")
+			os.Exit(1)
+		}
+		action := os.Args[2]
+		if err := cmdCountry(action); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "ports":
+		if len(os.Args) < 3 {
+			errorWithUsage("ports", "ports command requires an action")
+			os.Exit(1)
+		}
+		action := os.Args[2]
+		if err := cmdPorts(action); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "geoip":
+		if len(os.Args) < 3 {
+			errorWithUsage("geoip", "geoip command requires an action")
+			os.Exit(1)
+		}
+		action := os.Args[2]
+		if err := cmdGeoip(action); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "suricata":
+		if len(os.Args) < 3 {
+			errorWithUsage("suricata", "suricata command requires an action")
+			os.Exit(1)
+		}
+		action := os.Args[2]
+		if err := cmdSuricata(action); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "analytics":
+		if len(os.Args) < 3 {
+			errorWithUsage("analytics", "analytics command requires an action")
+			os.Exit(1)
+		}
+		action := os.Args[2]
+		if err := cmdAnalytics(action); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "profile-sync":
+		if err := runProfileSync(); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
+	case "version":
+		fmt.Printf("nftban-core %s (git %s, build %s)\n", version.FullVersion, GitCommit, BuildDate)
+	case "help", "--help", "-h":
+		printUsage()
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", command)
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+func printUsage() {
+	fmt.Printf("%s - %s Core Engine\n", version.CoreEngineName, version.Banner(""))
+	fmt.Println()
+	fmt.Println("Usage:")
+	fmt.Println("  nftban-core init                 Initialize NFTBan with safety checks")
+	fmt.Println("  nftban-core status               Show current firewall status")
+	fmt.Println("  nftban-core sync                 Sync config files to nftables (differential)")
+	fmt.Println("  nftban-core ban <IP> [reason]    Ban an IP address")
+	fmt.Println("  nftban-core unban <IP>           Unban an IP address")
+	fmt.Println("  nftban-core check <IP>           Check IP status (whitelist/blacklist)")
+	fmt.Println("  nftban-core feeds [list|load|stats] Manage threat feeds")
+	fmt.Println("  nftban-core ports [list|load|status] Manage port rules (IPv4/IPv6 auto-detect)")
+	fmt.Println("  nftban-core geoip [update|status|lookup] Manage GeoIP database and lookups")
+	fmt.Println("  nftban-core suricata [status|filters|enable|disable] Manage Suricata IDS integration (v1.0)")
+	fmt.Println("  nftban-core analytics [summary|countries|top|ip] Show ban analytics (use --json for GUI)")
+	fmt.Println("  nftban-core profile-sync         Run sync operations with profiling enabled (pprof on :6060)")
+	fmt.Println("  nftban-core version              Show version information")
+	fmt.Println("  nftban-core help                 Show this help message")
+	fmt.Println()
+}

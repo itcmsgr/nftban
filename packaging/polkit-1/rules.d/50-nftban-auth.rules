@@ -1,0 +1,23 @@
+// =============================================================================
+// NFTBan Auth Helper - Polkit Authorization Rule
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+// Purpose: Allow nftban group to run auth helper via pkexec without prompting
+// Location: /etc/polkit-1/rules.d/50-nftban-auth.rules
+//
+// Groups:
+//   nftban: All NFTBan operators (CLI, services, web UI)
+//   nftban-auditors: Read-only audit access (separate)
+// =============================================================================
+
+polkit.addRule(function(action, subject) {
+  // Allow running our helper via pkexec without prompt.
+  // This matches the generic pkexec action and filters to our path.
+  if (action.id === "org.freedesktop.policykit.exec" &&
+      action.lookup("polkit.exec.path") === "/usr/libexec/nftban-auth-helper") {
+    if (subject.isInGroup("nftban")) {
+      return polkit.Result.YES; // non-interactive allow
+    }
+    return polkit.Result.NO;
+  }
+});

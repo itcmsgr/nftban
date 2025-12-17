@@ -1,0 +1,178 @@
+# =============================================================================
+# NFTBan v1.0.0 - SLSA Level 3 Go Builder
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Build Go binaries with SLSA Level 3 compliance and provenance
+# Triggers: Published releases OR manual dispatch
+#
+# This workflow uses OpenSSF's SLSA Go builder instead of manual go build.
+# Benefits:
+#   - Isolated, hermetic build environment
+#   - Signed provenance (.intoto.jsonl files)
+#   - Cryptographically verifiable artifacts
+#   - SLSA Level 3 compliance (high security standard)
+#
+# Builds:
+#   - nftban-core (main CLI for firewall operations)
+#   - nftban-ui (web GUI server)
+#   - nftban-ui-auth (PAM authentication daemon)
+# =============================================================================
+
+name: SLSA Go Releaser
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version tag (e.g., v1.0.0)'
+        required: true
+        default: 'v1.0.0'
+
+permissions:
+  contents: write      # To upload release assets
+  id-token: write      # For SLSA provenance signing
+  actions: read        # To read workflow
+
+jobs:
+  # ============================================================================
+  # Job 1: Build nftban-core with SLSA provenance
+  # ============================================================================
+  build-nftban-core:
+    name: Build nftban-core (SLSA3)
+    permissions:
+      id-token: write
+      contents: write
+      actions: read
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.0.0
+    with:
+      go-version: "1.22"
+      # Config file specifies build parameters
+      config-file: .slsa-goreleaser/nftban-core.yml
+      evaluated-envs: "VERSION:${{ github.ref_name }}"
+
+  # ============================================================================
+  # Job 2: Build nftban-ui with SLSA provenance
+  # ============================================================================
+  build-nftban-ui:
+    name: Build nftban-ui (SLSA3)
+    permissions:
+      id-token: write
+      contents: write
+      actions: read
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.0.0
+    with:
+      go-version: "1.22"
+      config-file: .slsa-goreleaser/nftban-ui.yml
+      evaluated-envs: "VERSION:${{ github.ref_name }}"
+
+  # ============================================================================
+  # Job 3: Build nftban-ui-auth with SLSA provenance
+  # ============================================================================
+  build-nftban-ui-auth:
+    name: Build nftban-ui-auth (SLSA3)
+    permissions:
+      id-token: write
+      contents: write
+      actions: read
+    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.0.0
+    with:
+      go-version: "1.22"
+      config-file: .slsa-goreleaser/nftban-ui-auth.yml
+      evaluated-envs: "VERSION:${{ github.ref_name }}"
+
+  # ============================================================================
+  # Job 4: Assemble all artifacts and upload to release
+  # ============================================================================
+  assemble-release:
+    name: Assemble Release Artifacts
+    needs: [build-nftban-core, build-nftban-ui, build-nftban-ui-auth]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'release'
+
+    steps:
+      - name: Download nftban-core artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-nftban-core.outputs.go-binary-name }}
+          path: dist/
+
+      - name: Download nftban-core provenance
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-nftban-core.outputs.go-provenance-name }}
+          path: dist/
+
+      - name: Download nftban-ui artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-nftban-ui.outputs.go-binary-name }}
+          path: dist/
+
+      - name: Download nftban-ui provenance
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-nftban-ui.outputs.go-provenance-name }}
+          path: dist/
+
+      - name: Download nftban-ui-auth artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-nftban-ui-auth.outputs.go-binary-name }}
+          path: dist/
+
+      - name: Download nftban-ui-auth provenance
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build-nftban-ui-auth.outputs.go-provenance-name }}
+          path: dist/
+
+      - name: List artifacts
+        run: ls -la dist/
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          rm -f SHA256SUMS
+          for f in nftban-*; do
+            [ -f "$f" ] && sha256sum "$f" >> SHA256SUMS
+          done
+          cat SHA256SUMS
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            dist/nftban-*
+            dist/*.intoto.jsonl
+            dist/SHA256SUMS
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Generate SLSA Summary
+        run: |
+          echo "## SLSA Level 3 Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Artifacts Built" >> $GITHUB_STEP_SUMMARY
+          echo "| Binary | Architecture | Provenance |" >> $GITHUB_STEP_SUMMARY
+          echo "|--------|--------------|------------|" >> $GITHUB_STEP_SUMMARY
+          for f in dist/nftban-*; do
+            if [[ ! "$f" =~ \.intoto\.jsonl$ ]] && [[ ! "$f" =~ SHA256SUMS$ ]]; then
+              basename=$(basename "$f")
+              provenance="${basename}.intoto.jsonl"
+              if [ -f "dist/$provenance" ]; then
+                echo "| $basename | linux | ✅ Signed |" >> $GITHUB_STEP_SUMMARY
+              else
+                echo "| $basename | linux | ❌ Missing |" >> $GITHUB_STEP_SUMMARY
+              fi
+            fi
+          done
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Verification" >> $GITHUB_STEP_SUMMARY
+          echo "Users can verify provenance using:" >> $GITHUB_STEP_SUMMARY
+          echo '```bash' >> $GITHUB_STEP_SUMMARY
+          echo 'slsa-verifier verify-artifact nftban-core-linux-amd64 \' >> $GITHUB_STEP_SUMMARY
+          echo '  --provenance-path nftban-core-linux-amd64.intoto.jsonl \' >> $GITHUB_STEP_SUMMARY
+          echo '  --source-uri github.com/itcmsgr/nftban-v1.0-dev' >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

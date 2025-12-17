@@ -1,0 +1,264 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="author" content="Antonios Voulvoulis, contact@nftban.com">
+    <meta name="generator" content="NFTBan v1.0.0">
+    <meta name="homepage" content="https://nftban.com">
+    <title>NFTBan Port Report - {HOSTNAME}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background-color: #ffffff;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 3px solid #0066cc;
+            padding-bottom: 20px;
+        }
+        .logo {
+            max-width: 200px;
+            height: auto;
+            margin-bottom: 15px;
+        }
+        h1 {
+            color: #333333;
+            margin: 10px 0;
+            font-size: 28px;
+        }
+        h2 {
+            color: #0066cc;
+            font-size: 22px;
+            margin-top: 30px;
+            margin-bottom: 15px;
+        }
+        .tagline {
+            color: #666666;
+            font-size: 16px;
+            font-style: italic;
+            margin-top: 10px;
+            margin-bottom: 15px;
+        }
+        .server-info {
+            color: #666666;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .server-info p {
+            margin: 5px 0;
+        }
+        .summary-stats {
+            display: flex;
+            justify-content: space-around;
+            margin: 25px 0;
+            flex-wrap: wrap;
+        }
+        .stat-box {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+            min-width: 150px;
+            margin: 10px;
+        }
+        .stat-number {
+            font-size: 36px;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        .stat-label {
+            font-size: 14px;
+            opacity: 0.9;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        th {
+            background-color: #0066cc;
+            color: white;
+            padding: 12px;
+            text-align: left;
+            font-weight: 600;
+            position: sticky;
+            top: 0;
+        }
+        td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+        tr:hover {
+            background-color: #f8f9fa;
+        }
+        tr:nth-child(even) {
+            background-color: #fafafa;
+        }
+        .status-allowed {
+            color: #28a745;
+            font-weight: 600;
+        }
+        .status-blocked {
+            color: #dc3545;
+            font-weight: 600;
+        }
+        .status-no-rule {
+            color: #ffc107;
+            font-weight: 600;
+        }
+        .badge {
+            display: inline-block;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 600;
+        }
+        .badge-public {
+            background-color: #ffc107;
+            color: #000;
+        }
+        .badge-local {
+            background-color: #17a2b8;
+            color: #fff;
+        }
+        .badge-running {
+            background-color: #28a745;
+            color: #fff;
+        }
+        .badge-stopped {
+            background-color: #6c757d;
+            color: #fff;
+        }
+        .alert {
+            padding: 15px;
+            margin: 20px 0;
+            border-radius: 5px;
+        }
+        .alert-info {
+            background-color: #d1ecf1;
+            border-left: 4px solid #17a2b8;
+            color: #0c5460;
+        }
+        .alert-warning {
+            background-color: #fff3cd;
+            border-left: 4px solid #ffc107;
+            color: #856404;
+        }
+        .footer {
+            margin-top: 40px;
+            padding-top: 20px;
+            border-top: 2px solid #e0e0e0;
+            text-align: center;
+            color: #666666;
+            font-size: 12px;
+        }
+        .footer p {
+            margin: 8px 0;
+        }
+        code {
+            background-color: #f4f4f4;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', Courier, monospace;
+            font-size: 13px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            {LOGO_HTML}
+            <h1>NFTBan Port Report</h1>
+            <div class="tagline">nftban - Simplifying Linux Firewall Management</div>
+            <div class="server-info">
+                {COMPANY_NAME}
+                <p>Server: <strong>{HOSTNAME}</strong> | IP: <strong>{SERVER_IP}</strong></p>
+                <p>Generated: <strong>{DATE}</strong> at <strong>{TIME}</strong></p>
+                {VERSION_HTML}
+            </div>
+        </div>
+
+        <div class="summary-stats">
+            <div class="stat-box">
+                <div class="stat-number">{TOTAL_PORTS}</div>
+                <div class="stat-label">Total Ports</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">{RUNNING_SERVICES}</div>
+                <div class="stat-label">Running Services</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">{PUBLIC_PORTS}</div>
+                <div class="stat-label">Public Ports</div>
+            </div>
+            <div class="stat-box">
+                <div class="stat-number">{LOCAL_PORTS}</div>
+                <div class="stat-label">Local-Only Ports</div>
+            </div>
+        </div>
+
+        <h2>Port and Firewall Status</h2>
+
+        <div class="alert alert-info">
+            <strong>Legend:</strong><br>
+            <span class="status-allowed">Allowed</span> - Traffic is permitted through firewall<br>
+            <span class="status-blocked">Blocked</span> - Traffic is blocked by firewall<br>
+            <span class="status-no-rule">No-Rule</span> - No explicit firewall rule found<br>
+        </div>
+
+        <table>
+            <thead>
+                <tr>
+                    <th>Service</th>
+                    <th>Port</th>
+                    <th>Proto</th>
+                    <th>Status</th>
+                    <th>IPv4 IN</th>
+                    <th>IPv4 OUT</th>
+                    <th>IPv6 IN</th>
+                    <th>IPv6 OUT</th>
+                    <th>Bind</th>
+                    <th>Process</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody>
+                {PORT_TABLE_ROWS}
+            </tbody>
+        </table>
+
+        {WARNINGS_SECTION}
+
+        <div class="footer">
+            <p>
+                <strong>Generated by NFTBan v{NFTBAN_VERSION}</strong><br>
+                {DATE} at {TIME}
+            </p>
+            <p>
+                {COMPANY_NAME}
+            </p>
+            <p style="font-style: italic;">
+                This is an automated report from your NFTBan security system.
+            </p>
+            <p style="color: #999999; font-size: 11px;">
+                Server: {HOSTNAME} | IP: {SERVER_IP}
+            </p>
+        </div>
+    </div>
+</body>
+</html>

@@ -1,66 +1,42 @@
-#!/bin/bash
-# =============================================================================
-# NFTBan v0.32.25 - DEB Post-Remove Script
-# =============================================================================
-# SPDX-License-Identifier: MPL-2.0
-# Purpose: Post-removal cleanup for DEB packages
-# =============================================================================
-
+#!/bin/sh
 set -e
 
 case "$1" in
-    remove)
-        # On remove (not purge): preserve logs and config for audit/forensics
-        # Remove only runtime and cache data
-        rm -rf /run/nftban
-        rm -rf /var/cache/nftban
+    purge)
+        # Remove UI-specific configuration files (only if they exist)
+        [ -f /etc/nftban/ui.conf ] && rm -f /etc/nftban/ui.conf
+        [ -f /etc/nftban/ui-whitelist.conf ] && rm -f /etc/nftban/ui-whitelist.conf
+        [ -f /etc/nftban/ui-jwt-secret ] && rm -f /etc/nftban/ui-jwt-secret
 
-        # Note: Firewall tables already handled in prerm if user chose to remove them
-        # We don't force-remove here to respect user choice
-
-        # Change ownership to root to avoid unknown UID/GID after user removal
-        if [ -d /var/log/nftban ]; then
-            chown -R root:root /var/log/nftban
-        fi
-        if [ -d /var/lib/nftban ]; then
-            chown -R root:root /var/lib/nftban
+        # Remove UI SSL certificates (only if directory exists and is not empty)
+        if [ -d /etc/nftban/ssl ]; then
+            [ -f /etc/nftban/ssl/cert.pem ] && rm -f /etc/nftban/ssl/cert.pem
+            [ -f /etc/nftban/ssl/key.pem ] && rm -f /etc/nftban/ssl/key.pem
+            rmdir /etc/nftban/ssl 2>/dev/null || true  # Only if empty
         fi
 
-        # Leave informational note in logs directory
-        if [ -d /var/log/nftban ]; then
-            cat > /var/log/nftban/README.uninstalled <<'EOF'
-NFTBan has been uninstalled, but logs have been preserved for audit purposes.
+        # Remove UI log files
+        rm -f /var/log/nftban/ui-*.log 2>/dev/null || true
 
-To completely remove all NFTBan data including logs:
-  sudo apt-get purge nftban
+        # Runtime directory will be removed automatically by systemd on service stop
+        # But clean it manually if still exists
+        [ -d /run/nftban-ui ] && rm -rf /run/nftban-ui
 
-Or manually remove:
-  sudo rm -rf /var/log/nftban
-  sudo rm -rf /var/lib/nftban
-  sudo rm -rf /etc/nftban
-EOF
-        fi
+        # Disable systemd units
+        deb-systemd-helper purge nftban-ui.service >/dev/null || true
+        deb-systemd-helper purge nftban-ui-auth.socket >/dev/null || true
+        deb-systemd-helper purge nftban-ui-auth.service >/dev/null || true
+        deb-systemd-helper unmask nftban-ui.service >/dev/null || true
+        deb-systemd-helper unmask nftban-ui-auth.socket >/dev/null || true
+        deb-systemd-helper unmask nftban-ui-auth.service >/dev/null || true
+
+        # Informational message
+        echo "nftban-ui: Configuration files in /etc/nftban/ and /etc/pam.d/ have been removed."
+        echo "nftban-ui: User accounts and groups have NOT been removed (manual cleanup required if needed)."
         ;;
 
-    purge)
-        # On purge: remove EVERYTHING including logs and config
-        # This is explicit user action via "apt-get purge nftban"
-
-        # Remove all nftban directories completely
-        rm -rf /usr/lib/nftban
-        rm -rf /usr/share/nftban
-        rm -rf /usr/share/doc/nftban
-        rm -rf /var/lib/nftban
-        rm -rf /var/cache/nftban
-        rm -rf /var/log/nftban
-        rm -rf /etc/nftban
-        rm -rf /run/nftban
-
-        # Remove nftables table
-        if command -v nft >/dev/null 2>&1; then
-            nft list table inet nftban >/dev/null 2>&1 && \
-                nft delete table inet nftban || true
-        fi
+    remove|upgrade|failed-upgrade|abort-install|abort-upgrade|disappear)
+        # Nothing to do
         ;;
 esac
 

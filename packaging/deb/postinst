@@ -1,288 +1,291 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan v0.32.25 - DEB Post-Install Script
+# NFTBan v1.0.0 - DEB Package Post-Install Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Post-installation configuration for DEB packages
+# Purpose: SAFE INSTALL FLOW - Setup user/groups, permissions, whitelist BEFORE
+#          enabling firewall to prevent self-lockout
+#
+# Installation Flow:
+#   1. Create groups (nftban, nftban-auditors)
+#   2. Create nftban system user
+#   3. Create FHS directory structure
+#   4. Set correct permissions
+#   5. Install polkit policies
+#   6. **SAFETY** Auto-whitelist system IPs (SSH client, interfaces, public IP)
+#   7. Run health check / validation
+#   8. THEN enable timers and services
+#
+# This prevents lockout by ensuring whitelist is in place BEFORE firewall is active.
 # =============================================================================
 
 set -e
 
+# Colors for output
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+NC='\033[0m'
+
+log_info() { echo -e "${GREEN}[NFTBan]${NC} $*"; }
+log_warn() { echo -e "${YELLOW}[NFTBan WARN]${NC} $*"; }
+log_error() { echo -e "${RED}[NFTBan ERROR]${NC} $*"; }
+
 case "$1" in
     configure)
-        # Clean up old/stale systemd units from previous versions (upgrade safety)
-        if [ -n "$2" ]; then
-            # $2 is the old version during upgrade
-            echo "Cleaning up old systemd units from v$2..."
-            systemctl daemon-reload 2>/dev/null || true
+        log_info "Configuring NFTBan v1.0.0..."
 
-            # Remove any stale timer states
-            systemctl reset-failed nftban.timer 2>/dev/null || true
-            systemctl reset-failed nftban-maintenance.timer 2>/dev/null || true
-            systemctl reset-failed nftban-health.timer 2>/dev/null || true
+        # =====================================================================
+        # STEP 0: Security Check - CVE-2025-NFTBAN-001
+        # =====================================================================
+        if command -v nft >/dev/null 2>&1; then
+            if nft list table inet filter >/dev/null 2>&1; then
+                log_error "Conflicting 'inet filter' table detected!"
+                log_error "This table will bypass nftban blocking (CVE-2025-NFTBAN-001)."
+                log_error "Please run: nft delete table inet filter"
+                log_error "Then re-install the package."
+                exit 1
+            fi
         fi
 
-        # Update NFTBAN_VERSION in config file (handles upgrades with conffile)
-        # This ensures the banner shows the correct version even on upgrades
-        if [ -f /etc/nftban/nftban.conf ]; then
-            sed -i 's/^NFTBAN_VERSION=.*/NFTBAN_VERSION="0.32.25"/' /etc/nftban/nftban.conf
+        # =====================================================================
+        # STEP 1: Create System Groups
+        # =====================================================================
+        # NFTBan v1.0 uses 3-group model:
+        #   nftban: All operators (CLI, services)
+        #   nftban-web: Web GUI users (authentication required)
+        #   nftban-auditors: Read-only audit access
+        log_info "Creating system groups..."
+
+        if ! getent group nftban > /dev/null 2>&1; then
+            addgroup --system nftban
+            log_info "  Created group: nftban"
         fi
 
-        # Create nftban user and nftban-cli group if they don't exist
-        if ! getent passwd nftban >/dev/null; then
-            adduser --system --group --no-create-home --home /nonexistent \
-                --shell /usr/sbin/nologin nftban
+        if ! getent group nftban-web > /dev/null 2>&1; then
+            addgroup --system nftban-web
+            log_info "  Created group: nftban-web"
         fi
 
-        if ! getent group nftban-cli >/dev/null; then
-            addgroup --system nftban-cli
-        fi
-
-        # Create nftban-auditors group for v0.30 inventory helpers
-        if ! getent group nftban-auditors >/dev/null; then
+        if ! getent group nftban-auditors > /dev/null 2>&1; then
             addgroup --system nftban-auditors
+            log_info "  Created group: nftban-auditors"
         fi
 
-        # Generate system.conf with UID/GID
-        NFTBAN_UID=$(id -u nftban)
-        NFTBAN_GID=$(id -g nftban)
-        NFTBAN_CLI_GID=$(getent group nftban-cli | cut -d: -f3)
-        NFTBAN_AUDITORS_GID=$(getent group nftban-auditors | cut -d: -f3)
+        # Add root to nftban group for CLI access
+        if ! id -nG root 2>/dev/null | grep -qw nftban; then
+            usermod -a -G nftban root 2>/dev/null || true
+        fi
 
-        mkdir -p /var/lib/nftban/config
-        cat > /var/lib/nftban/config/system.conf <<EOF
-# =============================================================================
-# NFTBan System Configuration (AUTO-GENERATED - DO NOT EDIT)
-# =============================================================================
-# Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
-# Hostname: $(hostname)
-#
-# ⚠️  WARNING: DO NOT EDIT THIS FILE MANUALLY
-# This file MUST stay aligned with actual system UID/GID values.
-# =============================================================================
+        # =====================================================================
+        # STEP 2: Create System User
+        # =====================================================================
+        log_info "Creating system user..."
 
-NFTBAN_USER="nftban"
-NFTBAN_UID=${NFTBAN_UID}
-NFTBAN_GROUP="nftban"
-NFTBAN_GID=${NFTBAN_GID}
-NFTBAN_CLI_GROUP="nftban-cli"
-NFTBAN_CLI_GID=${NFTBAN_CLI_GID}
-NFTBAN_AUDITORS_GROUP="nftban-auditors"
-NFTBAN_AUDITORS_GID=${NFTBAN_AUDITORS_GID}
-EOF
+        if ! getent passwd nftban > /dev/null 2>&1; then
+            adduser --system --group --home /var/lib/nftban \
+                --no-create-home --disabled-login \
+                --gecos "NFTBan system user" nftban
+            log_info "  Created user: nftban"
+        fi
 
-        chmod 0644 /var/lib/nftban/config/system.conf
+        # =====================================================================
+        # STEP 3: Create FHS Directory Structure
+        # =====================================================================
+        log_info "Creating FHS directories..."
 
-        # Fix /etc/nftban ownership and permissions (daemon readable)
+        # Configuration directories
+        mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d}
+
+        # Variable data directories
+        mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports}
+        mkdir -p /var/lib/nftban/reports/{baseline,auditors}
+
+        # Log directories
+        mkdir -p /var/log/nftban/reports
+
+        # Cache and runtime
+        mkdir -p /var/cache/nftban/health
+        mkdir -p /run/nftban
+
+        # Shared data
+        mkdir -p /usr/share/nftban/templates/{mail,reports}
+
+        # =====================================================================
+        # STEP 4: Set Permissions (FHS Compliant)
+        # =====================================================================
+        log_info "Setting permissions..."
+
+        # /etc/nftban - root:nftban 750 (daemon readable via group)
         chown root:nftban /etc/nftban
+        chmod 750 /etc/nftban
         chown root:nftban /etc/nftban/conf.d
-        chgrp -R nftban /etc/nftban
-        find /etc/nftban -type d -exec chmod 0750 {} \;
-        find /etc/nftban -type f -exec chmod 0640 {} \;
-        # Secrets directory is root-only
-        chmod 0700 /etc/nftban/secrets.d
+        chmod 750 /etc/nftban/conf.d
+        chown root:root /etc/nftban/distros
+        chmod 755 /etc/nftban/distros
+        chown root:nftban /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d
+        chmod 750 /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d
 
-        # Fix /var ownership
+        # Config files
+        if [ -d /etc/nftban/distros ]; then
+            find /etc/nftban/distros -name "*.conf" -exec chmod 644 {} \;
+            find /etc/nftban/distros -name "*.conf" -exec chown root:root {} \;
+        fi
+
+        # /var/lib/nftban - nftban:nftban 750
         chown -R nftban:nftban /var/lib/nftban
-        chown -R nftban:nftban /var/cache/nftban
+        chmod 750 /var/lib/nftban
+        find /var/lib/nftban -type d -exec chmod 750 {} \;
+
+        # Auditor reports - nftban-auditors group
+        chown root:nftban-auditors /var/lib/nftban/reports/auditors 2>/dev/null || true
+        chmod 770 /var/lib/nftban/reports/auditors 2>/dev/null || true
+
+        # /var/log/nftban - nftban:nftban 750
         chown -R nftban:nftban /var/log/nftban
+        chmod 750 /var/log/nftban
 
-        # Run autoheal first to create all directories
-        /usr/lib/nftban/helpers/autoheal.sh
+        # /var/cache/nftban - nftban:nftban 755
+        chown -R nftban:nftban /var/cache/nftban
+        chmod 755 /var/cache/nftban
 
-        # Set ownership for binaries and directories
-        chown root:nftban /usr/sbin/nftban* 2>/dev/null || true
-        [ -d /usr/lib/nftban/bin ] && chown root:root /usr/lib/nftban/bin
-        [ -d /usr/lib/nftban/bin/.real ] && chown root:root /usr/lib/nftban/bin/.real
-        find /usr/lib/nftban/bin -type f -exec chown root:root {} \; 2>/dev/null || true
-        find /usr/lib/nftban/bin/.real -type f -exec chown root:root {} \; 2>/dev/null || true
+        # /run/nftban - nftban:nftban 755
+        chown nftban:nftban /run/nftban
+        chmod 755 /run/nftban
 
-        # Set proper permissions on /var directories (if they exist)
-        [ -d /var/lib/nftban ] && chmod 0755 /var/lib/nftban
-        for dir in state snapshots feeds keyring backup reports metrics config geoip; do
-            [ -d "/var/lib/nftban/$dir" ] && chmod 0750 "/var/lib/nftban/$dir"
-        done
+        # /usr/share/nftban - root:root 755
+        chown -R root:root /usr/share/nftban 2>/dev/null || true
+        chmod -R 755 /usr/share/nftban 2>/dev/null || true
 
-        # Dedicated directory for nftban-auditors group
-        if [ -d /var/lib/nftban/reports/auditors ]; then
-            chown root:nftban-auditors /var/lib/nftban/reports/auditors
-            chmod 0770 /var/lib/nftban/reports/auditors
+        # Set executable permissions on all shell scripts
+        if [ -d /usr/lib/nftban ]; then
+            find /usr/lib/nftban -name "*.sh" -exec chmod 755 {} \;
         fi
 
-        [ -d /var/log/nftban ] && chmod 0750 /var/log/nftban
-        [ -d /var/cache/nftban ] && chmod 0755 /var/cache/nftban
-
-        # Auto-detect and whitelist SSH port (LOCKOUT PREVENTION)
-        SSH_PORT=22
-        if [ -f "/etc/ssh/sshd_config" ]; then
-            DETECTED_PORT=$(grep -E '^\s*Port\s+[0-9]+' /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
-            if [ -n "$DETECTED_PORT" ] && [ "$DETECTED_PORT" -eq "$DETECTED_PORT" ] 2>/dev/null; then
-                SSH_PORT=$DETECTED_PORT
-            fi
+        # Set capabilities for nftban-core (allows non-root nftables operations)
+        if [ -x /usr/lib/nftban/bin/nftban-core ]; then
+            setcap 'cap_net_admin+ep' /usr/lib/nftban/bin/nftban-core 2>/dev/null || \
+                log_warn "Could not set CAP_NET_ADMIN on nftban-core"
         fi
 
-        mkdir -p /etc/nftban/ports.d
-        cat > /etc/nftban/ports.d/00-ssh.conf <<SSHEOF
-# SSH port auto-added during installation ($(date '+%Y-%m-%d %H:%M:%S'))
-# DO NOT DELETE - LOCKOUT RISK!
-# Port format: PORT|PROTO where PROTO = T(tcp), U(udp), B(both)
-$SSH_PORT|T
-SSHEOF
-        chmod 644 /etc/nftban/ports.d/00-ssh.conf
+        # Set capabilities for nft binary (required for CLI fallback operations)
+        if [ -x /usr/sbin/nft ]; then
+            setcap 'cap_net_admin+ep' /usr/sbin/nft 2>/dev/null || \
+                log_warn "Could not set CAP_NET_ADMIN on nft"
+        fi
 
-        # Auto-detect and whitelist system IPs (LOCKOUT PREVENTION)
-        mkdir -p /etc/nftban/whitelist.d
-        {
-            echo "# System IPs auto-added during installation ($(date '+%Y-%m-%d %H:%M:%S'))"
-            echo "# DO NOT DELETE - LOCKOUT RISK!"
-            echo "# Format: One IP per line (IPv4 or IPv6)"
+        # =====================================================================
+        # STEP 5: Install Polkit Policies
+        # =====================================================================
+        log_info "Installing polkit policies..."
 
-            # Detect SSH client IP
-            if [ -n "${SSH_CLIENT:-}" ]; then
-                SSH_IP="${SSH_CLIENT%% *}"
-                echo "$SSH_IP"
-            fi
+        # Polkit directories
+        mkdir -p /usr/share/polkit-1/rules.d
+        mkdir -p /etc/polkit-1/rules.d
 
-            # Detect public IPv4
-            if command -v curl >/dev/null 2>&1; then
-                IPV4=$(curl -s -4 --max-time 5 ifconfig.me 2>/dev/null || echo "")
-                [ -n "$IPV4" ] && echo "$IPV4"
-            fi
+        # Restart polkit to load new rules
+        systemctl restart polkit 2>/dev/null || true
 
-            # Detect public IPv6
-            if command -v curl >/dev/null 2>&1; then
-                IPV6=$(curl -s -6 --max-time 5 ifconfig.me 2>/dev/null || echo "")
-                [ -n "$IPV6" ] && echo "$IPV6"
-            fi
-        } > /etc/nftban/whitelist.d/00-system.conf
-        chmod 644 /etc/nftban/whitelist.d/00-system.conf
+        # =====================================================================
+        # STEP 6: **SAFETY** Auto-Whitelist System IPs
+        # =====================================================================
+        # CRITICAL: This MUST happen BEFORE enabling any firewall services
+        # to prevent self-lockout during installation
+        log_info "Auto-whitelisting system IPs (lockout prevention)..."
 
-        # Run health check to validate installation
         if command -v nftban >/dev/null 2>&1; then
-            nftban health check --quiet 2>/dev/null || true
+            # Run whitelist-system sync to auto-detect and whitelist:
+            #   - SSH client IP (whoever is installing)
+            #   - All interface IPs (localhost, eth0, etc.)
+            #   - Public IPv4/IPv6
+            #   - Gateway, DNS servers
+            nftban whitelist-system sync 2>/dev/null || log_warn "Auto-whitelist sync failed (non-critical)"
+
+            # Show what was whitelisted
+            log_info "  Whitelisted IPs:"
+            nftban whitelist-system show 2>/dev/null | head -10 || true
+        else
+            log_warn "nftban command not found, skipping auto-whitelist"
         fi
 
-        # Enable and start maintenance timer (ALWAYS enabled - runs even if NFTBan disabled)
-        deb-systemd-invoke enable nftban-maintenance.timer || true
-        deb-systemd-invoke start nftban-maintenance.timer || true
+        # =====================================================================
+        # STEP 7: Health Check / Validation
+        # =====================================================================
+        log_info "Running health check..."
 
-        # Disable default fail2ban sshd jail (NFTBan manages nftban-sshd instead)
-        if [ -d /etc/fail2ban/jail.d ]; then
-            cat > /etc/fail2ban/jail.d/00-disable-default-sshd.conf <<'SSHEOF'
-# Disable default fail2ban sshd jail
-# NFTBan uses nftban-sshd instead (managed via 'nftban fail2ban' commands)
-[sshd]
-enabled = false
-SSHEOF
-            chmod 644 /etc/fail2ban/jail.d/00-disable-default-sshd.conf
+        if command -v nftban >/dev/null 2>&1; then
+            # Run quick validation before enabling services
+            nftban health check --quiet 2>/dev/null || log_warn "Health check returned warnings"
         fi
 
-        # On upgrade (not fresh install), reload firewall to apply new rules
-        # Check if this is an upgrade by looking for existing nftban_main table
-        if /usr/sbin/nft list table inet nftban_main &>/dev/null; then
-            echo ""
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "📦 Upgrade complete - applying updated firewall rules..."
-            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            /usr/sbin/nftban firewall reload 2>&1 | grep -E '(✓|✅|━)' || true
-            echo ""
-            # Skip the "first install" message below
-            exit 0
+        # =====================================================================
+        # STEP 8: Enable Timers and Services
+        # =====================================================================
+        # NOW it's safe to enable services since whitelist is in place
+        log_info "Enabling systemd timers and services..."
+
+        # Fresh install - enable services
+        if [ -z "$2" ]; then
+            # Core timers (maintenance tasks)
+            deb-systemd-helper enable nftban-maintenance.timer >/dev/null 2>&1 || true
+            deb-systemd-helper enable nftban-health.timer >/dev/null 2>&1 || true
+            deb-systemd-helper enable nftban-queue.timer >/dev/null 2>&1 || true
+
+            # Metrics exporter timer
+            deb-systemd-helper enable nftban-metrics-exporter.timer >/dev/null 2>&1 || true
+
+            # Core service (nftables management daemon)
+            deb-systemd-helper enable nftban-core.service >/dev/null 2>&1 || true
+
+            # UI socket (if available)
+            deb-systemd-helper enable nftban-ui-auth.socket >/dev/null 2>&1 || true
+            deb-systemd-invoke start nftban-ui-auth.socket >/dev/null 2>&1 || true
+
+            # Start timers
+            deb-systemd-invoke start nftban-maintenance.timer >/dev/null 2>&1 || true
+            deb-systemd-invoke start nftban-health.timer >/dev/null 2>&1 || true
+
+            log_info "  Fresh install - timers enabled and started"
         fi
 
-        # Print installation message
-        echo ""
-        echo "╔════════════════════════════════════════════════════════════╗"
-        echo "║  NFTBan v0.32.25 Installation Complete!                   ║"
-        echo "╚════════════════════════════════════════════════════════════╝"
-        echo ""
-
-        # Check for previous backup
-        LATEST_BACKUP=$(ls -t /var/lib/nftban/config-backup-* 2>/dev/null | head -1)
-
-        if [ -n "$LATEST_BACKUP" ] && [ -d "$LATEST_BACKUP" ]; then
-            BACKUP_DATE=$(grep "Backup Date:" "$LATEST_BACKUP/metadata.txt" 2>/dev/null | cut -d: -f2- || echo "unknown")
-
-            echo ""
-            echo "╔════════════════════════════════════════════════════════════╗"
-            echo "║  Previous NFTBan Configuration Found                       ║"
-            echo "╚════════════════════════════════════════════════════════════╝"
-            echo ""
-            echo "Backup from:$BACKUP_DATE"
-            echo "Location: $LATEST_BACKUP"
-            echo ""
-            echo "Do you want to restore your previous settings?"
-            echo "  1) RESTORE  - Use previous configuration"
-            echo "  2) FRESH    - Start with defaults (keep backup)"
-            echo "  3) DELETE   - Remove backup, use defaults"
-            echo ""
-
-            # In non-interactive mode, default to RESTORE
-            if [ -t 0 ]; then
-                read -p "Choice (1/2/3) [1]: " RESTORE_CHOICE
-                RESTORE_CHOICE=${RESTORE_CHOICE:-1}
-            else
-                RESTORE_CHOICE="1"
-                echo "Non-interactive mode: Restoring previous configuration"
-            fi
-
-            case "$RESTORE_CHOICE" in
-                1)
-                    echo "Restoring configuration..."
-                    if [ -d "$LATEST_BACKUP/nftban/conf.d" ]; then
-                        cp -a "$LATEST_BACKUP/nftban/conf.d"/* /etc/nftban/conf.d/ 2>/dev/null || true
-                    fi
-                    if [ -d "$LATEST_BACKUP/fail2ban" ]; then
-                        cp -a "$LATEST_BACKUP/fail2ban"/* /etc/fail2ban/jail.d/ 2>/dev/null || true
-                    fi
-
-                    # Restore enabled state
-                    if [ -f "$LATEST_BACKUP/nftban.timer.state" ]; then
-                        if grep -q "enabled" "$LATEST_BACKUP/nftban.timer.state"; then
-                            systemctl enable nftban.timer 2>/dev/null || true
-                        fi
-                    fi
-
-                    echo "✓ Configuration restored"
-                    echo ""
-                    ;;
-                2)
-                    echo "⊘ Using fresh defaults (backup kept at $LATEST_BACKUP)"
-                    echo ""
-                    ;;
-                3)
-                    rm -rf "$LATEST_BACKUP"
-                    echo "✓ Backup deleted, using fresh defaults"
-                    echo ""
-                    ;;
-            esac
+        # Upgrade - restart services if running
+        if [ -n "$2" ]; then
+            deb-systemd-invoke try-restart nftban-core.service >/dev/null 2>&1 || true
+            deb-systemd-invoke try-restart nftban-ui-auth.socket >/dev/null 2>&1 || true
+            deb-systemd-invoke try-restart nftban-ui.service >/dev/null 2>&1 || true
+            log_info "  Upgrade - services restarted"
         fi
 
-        echo "✅ Auto-heal completed - all systems configured"
-        echo "✅ SSH port $SSH_PORT automatically whitelisted (lockout prevention)"
-        echo "✅ fail2ban installed and ready"
-        echo ""
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "🚀 QUICKSTART - Ready to Enable Protection?"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        echo "   Just run ONE command:"
-        echo ""
-        echo "   👉  sudo nftban setup"
-        echo ""
-        echo "   The wizard will automatically:"
-        echo "   ✅ Enable SSH protection (fail2ban)"
-        echo "   ✅ Block bad IPs automatically"
-        echo "   ✅ Protect your system"
-        echo ""
-        echo "   Then you're DONE! Go to sleep! 😴"
-        echo ""
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        echo "📚 Documentation: /usr/share/nftban/docs/"
-        echo "🆘 Help: nftban help"
-        echo "🩺 Health: nftban health check"
-        echo ""
+        # =====================================================================
+        # STEP 9: Reload systemd and nftables
+        # =====================================================================
+        log_info "Reloading systemd daemon..."
+        systemctl daemon-reload
+
+        # Enable and reload nftables
+        if systemctl is-enabled nftables >/dev/null 2>&1; then
+            log_info "Reloading nftables..."
+            systemctl reload nftables 2>/dev/null || log_warn "nftables reload failed"
+        else
+            log_info "Enabling nftables..."
+            systemctl enable nftables 2>/dev/null || true
+        fi
+
+        # =====================================================================
+        # Installation Complete
+        # =====================================================================
+        log_info ""
+        log_info "========================================"
+        log_info " NFTBan v1.0.0 Installation Complete!"
+        log_info "========================================"
+        log_info ""
+        log_info "Quick Start:"
+        log_info "  nftban status              # System overview"
+        log_info "  nftban health              # Health check"
+        log_info "  nftban whitelist-system show  # View safety whitelist"
+        log_info ""
+        log_info "Your IP has been auto-whitelisted to prevent lockout."
+        log_info ""
         ;;
 esac
 

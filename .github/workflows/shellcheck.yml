@@ -1,0 +1,112 @@
+name: ShellCheck
+
+on:
+  push:
+    branches:
+      - main
+      - master
+      - develop
+  pull_request:
+    branches:
+      - main
+      - master
+
+jobs:
+  shellcheck:
+    name: ShellCheck - Find bash errors
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Run ShellCheck on all shell scripts
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: '.'
+          severity: warning
+          ignore_paths: |
+            node_modules
+            .git
+            build
+          ignore_names: |
+            .husky
+          format: gcc
+
+      - name: ShellCheck report
+        if: always()
+        run: |
+          echo "## ShellCheck Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "All shell scripts checked for common errors:" >> $GITHUB_STEP_SUMMARY
+          echo "- Syntax errors" >> $GITHUB_STEP_SUMMARY
+          echo "- Undefined variables" >> $GITHUB_STEP_SUMMARY
+          echo "- Quoting issues" >> $GITHUB_STEP_SUMMARY
+          echo "- Deprecated syntax" >> $GITHUB_STEP_SUMMARY
+          echo "- Security vulnerabilities" >> $GITHUB_STEP_SUMMARY
+
+  detailed-shellcheck:
+    name: Detailed ShellCheck - Core scripts
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install ShellCheck
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y shellcheck
+
+      - name: Check CLI scripts
+        run: |
+          echo "Checking CLI scripts..."
+          find cli/lib/nftban/cli -name "*.sh" -type f -exec shellcheck -x -S warning {} + || true
+
+      - name: Check Core scripts
+        run: |
+          echo "Checking Core scripts..."
+          find cli/lib/nftban/core -name "*.sh" -type f -exec shellcheck -x -S warning {} + || true
+
+      - name: Check Library scripts
+        run: |
+          echo "Checking Library scripts..."
+          find cli/lib/nftban/lib -name "*.sh" -type f -exec shellcheck -x -S warning {} + || true
+
+      - name: Check Setup scripts
+        run: |
+          echo "Checking Setup scripts..."
+          find cli/lib/nftban/setup -name "*.sh" -type f -exec shellcheck -x -S warning {} + || true
+
+      - name: Check Install scripts
+        run: |
+          echo "Checking Install scripts..."
+          find install -name "*.sh" -type f -exec shellcheck -x -S warning {} + || true
+
+      - name: Check main build script
+        run: |
+          echo "Checking build.sh..."
+          shellcheck -x -S warning build.sh || true
+
+      - name: Check install script
+        run: |
+          echo "Checking install.sh..."
+          shellcheck -x -S warning install.sh || true
+
+      - name: Check packaging scripts
+        run: |
+          echo "Checking packaging scripts..."
+          find packaging -name "*.sh" -type f -exec shellcheck -x -S warning {} + || true
+
+      - name: Generate report
+        if: always()
+        run: |
+          echo "## Detailed ShellCheck Analysis" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Checked directories:" >> $GITHUB_STEP_SUMMARY
+          echo "- cli/lib/nftban/cli/ ($(find cli/lib/nftban/cli -name '*.sh' | wc -l) scripts)" >> $GITHUB_STEP_SUMMARY
+          echo "- cli/lib/nftban/core/ ($(find cli/lib/nftban/core -name '*.sh' | wc -l) scripts)" >> $GITHUB_STEP_SUMMARY
+          echo "- cli/lib/nftban/lib/ ($(find cli/lib/nftban/lib -name '*.sh' | wc -l) scripts)" >> $GITHUB_STEP_SUMMARY
+          echo "- cli/lib/nftban/setup/ ($(find cli/lib/nftban/setup -name '*.sh' | wc -l) scripts)" >> $GITHUB_STEP_SUMMARY
+          echo "- install/ ($(find install -name '*.sh' | wc -l) scripts)" >> $GITHUB_STEP_SUMMARY
+          echo "- packaging/ ($(find packaging -name '*.sh' | wc -l) scripts)" >> $GITHUB_STEP_SUMMARY

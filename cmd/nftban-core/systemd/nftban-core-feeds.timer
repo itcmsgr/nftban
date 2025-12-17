@@ -1,0 +1,18 @@
+[Unit]
+Description=NFTBan Core - Daily Feed Update Timer
+Documentation=https://github.com/itcmsgr/nftban-dev
+Requires=nftban-core.service
+
+[Timer]
+# Run daily at 3:00 AM
+OnCalendar=daily
+OnCalendar=03:00
+# Also run 15 minutes after boot
+OnBootSec=15min
+# Run if missed (e.g., system was off)
+Persistent=true
+# Add 0-30 minute random delay to avoid thundering herd
+RandomizedDelaySec=30min
+
+[Install]
+WantedBy=timers.target

@@ -1,0 +1,43 @@
+[Unit]
+Description=NFTBan v0.7 Core Engine
+Documentation=https://github.com/itcmsgr/nftban-dev
+After=network-online.target nftables.service
+Wants=network-online.target
+Before=nftban-core-feeds.timer
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/bin/nftban-core sync
+ExecReload=/usr/local/bin/nftban-core sync
+Restart=on-failure
+RestartSec=10s
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/etc/nftban /var/lib/nftban
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictNamespaces=true
+LockPersonality=true
+# IMPORTANT: MemoryDenyWriteExecute is intentionally NOT set for Go services.
+# It breaks Go runtime on Ubuntu 24.04 (AppArmor + Landlock) and potentially
+# future SELinux-enforcing distributions. Security is maintained through
+# other hardening measures. See: docs/architecture/SYSTEMD_GO_HARDENING.md
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+SystemCallFilter=@system-service
+SystemCallFilter=~@privileged @resources
+SystemCallErrorNumber=EPERM
+
+# Resource limits
+CPUQuota=50%
+MemoryMax=256M
+TasksMax=10
+
+[Install]
+WantedBy=multi-user.target

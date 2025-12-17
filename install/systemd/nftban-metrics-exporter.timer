@@ -1,0 +1,32 @@
+# =============================================================================
+# NFTBan Prometheus Metrics Exporter - Systemd Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Periodic execution of NFTBan metrics collection
+# Location: /usr/lib/systemd/system/nftban-metrics-exporter.timer
+#
+# Triggers metrics collection every 60 seconds for Prometheus scraping
+# =============================================================================
+
+[Unit]
+Description=NFTBan Prometheus Metrics Exporter Timer
+Documentation=https://nftban.com/docs/metrics
+Requires=nftban-metrics-exporter.service
+After=nftban.service
+
+[Timer]
+# Run every 60 seconds
+OnBootSec=30s
+OnUnitActiveSec=60s
+
+# Persistent timer (catches up if system was down)
+Persistent=false
+
+# Accuracy (allow +/- 5s variance for resource optimization)
+AccuracySec=5s
+
+# Prevent timer drift
+FixedRandomDelay=false
+
+[Install]
+WantedBy=timers.target

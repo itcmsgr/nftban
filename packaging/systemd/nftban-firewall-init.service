@@ -1,0 +1,57 @@
+[Unit]
+Description=NFTBan Firewall Initialization (with startup delay)
+Documentation=man:nftban(8)
+After=network-online.target nftables.service
+Wants=network-online.target
+# NOTE: Don't use Before=sshd.service (would delay SSH)
+
+[Service]
+Type=forking
+RemainAfterExit=yes
+
+# CRITICAL: Set environment variable to enable 5-minute startup delay
+Environment="NFTBAN_SYSTEMD_BOOT=1"
+
+# Set PATH to ensure we find nft command (works on RHEL, Debian, Ubuntu)
+Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+
+# Run as root (firewall init requires root privileges)
+User=root
+Group=root
+
+# Load config file for NFTBAN_STARTUP_DELAY value
+EnvironmentFile=-/etc/nftban/nftban.conf
+
+# FIX: Only load snapshot if startup delay is 0 (disabled)
+# If delay is enabled, let 'nftban firewall init' handle everything after the delay
+# This ensures the delay actually works as intended
+ExecStartPre=-/bin/bash -c 'if [ "${NFTBAN_STARTUP_DELAY:-0}" -eq 0 ]; then \
+    command -v nft >/dev/null 2>&1 && nft -f /var/lib/nftban/snapshots/last.nft 2>/dev/null || true; \
+fi'
+
+# Initialize firewall (synchronous execution when delay is set)
+# If delay=0: Run in background for fast boot
+# If delay>0: Run synchronously so delay happens before firewall loads
+ExecStart=/bin/bash -c 'if [ "${NFTBAN_STARTUP_DELAY:-0}" -eq 0 ]; then \
+    /usr/sbin/nftban firewall init &; \
+else \
+    /usr/sbin/nftban firewall init; \
+fi'
+
+# NOTE: Snapshot save will be done by snapshot timer (not here)
+
+# On stop, flush firewall (safety measure)
+ExecStop=/bin/sh -c 'command -v nft >/dev/null 2>&1 && nft flush ruleset || true'
+
+# Don't restart on failure (would cause loops)
+Restart=no
+
+# Security hardening (minimal - service needs root for firewall ops)
+PrivateTmp=yes
+ProtectHome=yes
+NoNewPrivileges=no
+# Note: Cannot use ProtectSystem=strict (needs to write to /var/lib/nftban)
+ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,12 @@
+[Unit]
+Description=NFTBan Task Queue Processor Timer
+Documentation=man:nftban(8)
+
+[Timer]
+# Run every 2 minutes
+OnBootSec=2min
+OnUnitActiveSec=2min
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

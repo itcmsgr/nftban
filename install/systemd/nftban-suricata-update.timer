@@ -1,0 +1,20 @@
+[Unit]
+Description=NFTBan Suricata Rules Weekly Update Timer
+Documentation=man:nftban(8) https://nftban.com/docs
+Requires=nftban-suricata-update.service
+
+[Timer]
+# Run weekly on Sunday at 3 AM
+OnCalendar=Sun *-*-* 03:00:00
+
+# Run 5 minutes after boot if missed
+OnBootSec=5min
+
+# Randomize start time by up to 1 hour (avoid all servers updating at once)
+RandomizedDelaySec=1h
+
+# Persistent: if system was off during scheduled time, run when it comes back
+Persistent=true
+
+[Install]
+WantedBy=timers.target

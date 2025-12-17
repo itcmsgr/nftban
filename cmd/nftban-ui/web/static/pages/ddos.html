@@ -1,0 +1,434 @@
+                <style>
+                    /* Dark theme support for help-feature-box */
+                    [data-theme="dark"] .help-feature-box {
+                        background-color: #2a2a2a !important;
+                        color: #e0e0e0;
+                    }
+                    [data-theme="dark"] .help-feature-box code {
+                        color: #60a5fa;
+                    }
+                </style>
+
+                <!-- DDOS PANEL - Configuration, Logs, and Live Editor -->
+                <div id="panel-ddos">
+                    <!-- Top Section: About (Left) + Statistics (Right) -->
+                    <div class="d-grid gap-20 mb-20" style="grid-template-columns: 2fr 1fr;">
+                        <!-- About Section (Left) -->
+                        <div class="card main-border rad-10 p-20">
+                            <h3 class="fs-15 fw-bold mb-15"><i class="fa-solid fa-bolt text-warning mr-10"></i>About DDoS Protection</h3>
+
+                            <p class="fs-14 mb-15"><strong>NFTBan DDoS Protection</strong> monitors connection rates and automatically blocks IPs attempting distributed denial-of-service attacks.</p>
+
+                            <div class="help-feature-box p-15 rad-6 mb-15">
+                                <p class="fw-bold mb-10"><i class="fa-solid fa-folder text-warning mr-5"></i>Key Files:</p>
+                                <ul class="list-disc list-inside space-y-1 fs-13">
+                                    <li><code>/etc/nftban/conf.d/ddos.conf</code> - Configuration</li>
+                                    <li><code>/var/log/nftban/ddos.log</code> - Attack logs</li>
+                                    <li><code>/var/log/nftban/nftban-actions.log</code> - Ban actions</li>
+                                </ul>
+                            </div>
+
+                            <p class="fs-14 mb-15"><strong><i class="fa-solid fa-shield-halved text-success mr-5"></i>Protection:</strong> Monitors connection rates per IP and blocks sources exceeding configured thresholds to prevent service disruption.</p>
+
+                            <div class="help-feature-box p-15 rad-6 mb-15">
+                                <div class="d-flex justify-between align-center">
+                                    <div>
+                                        <p class="fw-bold mb-5"><i class="fa-solid fa-gears text-primary mr-5"></i>DDoS Protection</p>
+                                        <p class="fs-13 text-muted" id="ddos-toggle-status">Loading status...</p>
+                                    </div>
+                                    <label class="toggle-switch">
+                                        <input type="checkbox" id="ddos-toggle" onchange="toggleDdos()" disabled>
+                                        <span class="toggle-slider"></span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div id="ddos-msg" class="hidden mt-15"></div>
+                        </div>
+
+                        <!-- Statistics Panel (Right) -->
+                        <div class="card main-border rad-10 p-20">
+                            <h3 class="fs-15 fw-bold mb-20"><i class="fa-solid fa-chart-bar text-primary mr-10"></i>Attack Statistics</h3>
+
+                            <div class="p-15 main-border rad-6 text-center mb-15">
+                                <div class="fs-30 fw-bold text-success" id="ddos-rate-limit">0</div>
+                                <div class="fs-13">Rate Limit (conn/s)</div>
+                            </div>
+
+                            <div class="p-15 main-border rad-6 text-center mb-15">
+                                <div class="fs-30 fw-bold text-warning" id="ddos-blocked-24h">0</div>
+                                <div class="fs-13">Blocked (24h)</div>
+                            </div>
+
+                            <div class="p-15 main-border rad-6 text-center">
+                                <div class="fs-30 fw-bold text-primary" id="ddos-blocked-total">0</div>
+                                <div class="fs-13">Total Blocked</div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Configuration Table -->
+                    <div class="card main-border rad-10 p-20 mb-20">
+                        <div class="d-flex justify-between align-center mb-20">
+                            <h3 class="fs-15 fw-bold"><i class="fa-solid fa-sliders text-primary mr-10"></i>Configuration Manager</h3>
+                            <div class="d-flex gap-10">
+                                <button onclick="saveAllDdosConfig()" class="px-15 p-10 bg-green-600 text-white rad-6 fw-bold hover:bg-green-700 fs-13">💾 Save All Changes</button>
+                                <button onclick="resetAllDdosConfig()" class="px-15 p-10 bg-orange-600 text-white rad-6 fw-bold hover:bg-orange-700 fs-13">🔄 Reset All</button>
+                            </div>
+                        </div>
+
+                        <div id="ddos-config-msg" class="hidden mb-20"></div>
+
+                        <table class="w-full main-border">
+                            <thead class="help-feature-box">
+                                <tr>
+                                    <th class="px-15 py-10 txt-l fw-bold fs-13">Parameter</th>
+                                    <th class="px-15 py-10 txt-l fw-bold fs-13">Default Value</th>
+                                    <th class="px-15 py-10 txt-l fw-bold fs-13">Current Value</th>
+                                    <th class="px-15 py-10 txt-c fw-bold fs-13">Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody id="ddos-config-table">
+                                <tr><td colspan="4" class="txt-c py-8 text-muted">Loading configuration...</td></tr>
+                            </tbody>
+                        </table>
+
+                        <div class="bg-blue-100 p-15 rad-6 mt-20">
+                            <p><strong>ℹ️ How it works:</strong></p>
+                            <ul class="list-disc list-inside mt-2 space-y-1 fs-13">
+                                <li><strong>White background</strong> = Using default value from /etc/nftban/conf.d/ddos.conf</li>
+                                <li><strong>Yellow background</strong> = Modified value saved to /etc/nftban/nftban.conf.local</li>
+                                <li>Click "Reset" to revert a single parameter to its default value</li>
+                                <li>Changes are saved to <code>/etc/nftban/nftban.conf.local</code> and override defaults</li>
+                            </ul>
+                        </div>
+                    </div>
+
+                    <!-- Log Viewers in Grid -->
+                    <div class="d-grid gap-20" style="grid-template-columns: 1fr 1fr;">
+                        <!-- DDoS Attack Log -->
+                        <div class="card main-border rad-10 p-20">
+                            <div class="d-flex justify-between align-center mb-20">
+                                <h3 class="fs-15 fw-bold"><i class="fa-solid fa-file-lines text-primary mr-10"></i>Attack Log</h3>
+                                <button onclick="loadDdosLog()" class="px-15 p-10 bg-blue-600 text-white rad-6 fw-bold hover:bg-blue-700 fs-13">🔄 Refresh</button>
+                            </div>
+
+                            <div class="bg-grey-100 p-15 rad-6" style="max-height: 400px; overflow-y: auto;">
+                                <pre id="ddos-log-viewer" class="fs-12 p-10 rad-6" style="background: #1e1e1e; color: #d4d4d4; white-space: pre-wrap; word-wrap: break-word; max-height: 350px; overflow-y: auto;">Loading attack log...</pre>
+                            </div>
+                        </div>
+
+                        <!-- Actions Log (Bans) -->
+                        <div class="card main-border rad-10 p-20">
+                            <div class="d-flex justify-between align-center mb-20">
+                                <h3 class="fs-15 fw-bold"><i class="fa-solid fa-ban text-danger mr-10"></i>Ban Actions Log</h3>
+                                <button onclick="loadDdosActionsLog()" class="px-15 p-10 bg-blue-600 text-white rad-6 fw-bold hover:bg-blue-700 fs-13">🔄 Refresh</button>
+                            </div>
+
+                            <div class="bg-grey-100 p-15 rad-6" style="max-height: 400px; overflow-y: auto;">
+                                <pre id="ddos-actions-log-viewer" class="fs-12 p-10 rad-6" style="background: #1e1e1e; color: #d4d4d4; white-space: pre-wrap; word-wrap: break-word; max-height: 350px; overflow-y: auto;">Loading actions log...</pre>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <script>
+                // ===== DDOS PAGE FUNCTIONS =====
+
+                // Toggle DDoS protection
+                async function toggleDdos() {
+                    const toggle = document.getElementById('ddos-toggle');
+                    const msgEl = document.getElementById('ddos-msg');
+                    const statusEl = document.getElementById('ddos-toggle-status');
+                    const isEnabled = toggle.checked;
+
+                    // Disable toggle during operation
+                    toggle.disabled = true;
+
+                    try {
+                        const endpoint = isEnabled ? '/api/v1/ddos/enable' : '/api/v1/ddos/disable';
+                        const response = await fetch(endpoint, {
+                            method: 'POST',
+                            headers: getAuthHeaders()
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success) {
+                            msgEl.className = 'bg-green-100 text-green-800 p-15 rad-6 mt-15';
+                            msgEl.textContent = isEnabled ? '✅ DDoS protection enabled successfully' : '✅ DDoS protection disabled successfully';
+                            msgEl.classList.remove('hidden');
+
+                            // Update status text
+                            statusEl.textContent = isEnabled ? 'Enabled - Protection active' : 'Disabled';
+
+                            // Refresh stats
+                            await loadDdosStats();
+                        } else {
+                            // Revert toggle on error
+                            toggle.checked = !isEnabled;
+                            msgEl.className = 'bg-red-100 text-red-800 p-15 rad-6 mt-15';
+                            msgEl.textContent = '❌ Failed: ' + (result.error || 'Unknown error');
+                            msgEl.classList.remove('hidden');
+                        }
+                    } catch (err) {
+                        // Revert toggle on error
+                        toggle.checked = !isEnabled;
+                        msgEl.className = 'bg-red-100 text-red-800 p-15 rad-6 mt-15';
+                        msgEl.textContent = '❌ Error: ' + err.message;
+                        msgEl.classList.remove('hidden');
+                    } finally {
+                        // Re-enable toggle
+                        toggle.disabled = false;
+                    }
+                }
+
+                // Load DDoS statistics
+                async function loadDdosStats() {
+                    const toggle = document.getElementById('ddos-toggle');
+                    const statusEl = document.getElementById('ddos-toggle-status');
+
+                    try {
+                        const response = await fetch('/api/v1/ddos/stats', {
+                            headers: getAuthHeaders()
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success && result.data && result.data.ddos) {
+                            const ddos = result.data.ddos;
+
+                            // Update statistics
+                            document.getElementById('ddos-rate-limit').textContent = ddos.rate_limit || 0;
+                            document.getElementById('ddos-blocked-24h').textContent = ddos.blocked_24h || 0;
+                            document.getElementById('ddos-blocked-total').textContent = ddos.blocked_total || 0;
+
+                            // Update toggle state
+                            toggle.checked = ddos.enabled || false;
+                            toggle.disabled = false;
+
+                            // Update status text
+                            statusEl.textContent = ddos.enabled ? 'Enabled - Protection active' : 'Disabled';
+                        } else {
+                            statusEl.textContent = 'Failed to load status';
+                        }
+                    } catch (err) {
+                        console.error('[DDOS] Failed to load stats:', err);
+                        statusEl.textContent = 'Error loading status';
+                    }
+                }
+
+                // Store config data for tracking changes
+                var ddosConfigData = {};
+                var ddosModifiedValues = {};
+
+                // Load DDoS configuration table
+                async function loadDdosConfig() {
+                    const tbody = document.getElementById('ddos-config-table');
+                    try {
+                        const response = await fetch('/api/v1/config/ddos', {
+                            headers: getAuthHeaders()
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success && result.data) {
+                            // Convert API response format to parameters format
+                            const data = result.data;
+                            ddosConfigData = {};
+                            const defaults = data.defaults || {};
+                            const overrides = data.overrides || {};
+                            const merged = data.merged || {};
+
+                            Object.keys(merged).forEach(key => {
+                                ddosConfigData[key] = {
+                                    default: defaults[key] || '',
+                                    current: merged[key] || '',
+                                    is_local: overrides.hasOwnProperty(key)
+                                };
+                            });
+
+                            ddosModifiedValues = {};
+                            renderDdosConfigTable();
+                        } else {
+                            tbody.innerHTML = '<tr><td colspan="4" class="txt-c py-8 text-danger">Error loading config: ' + (result.error || 'Unknown') + '</td></tr>';
+                        }
+                    } catch (err) {
+                        tbody.innerHTML = '<tr><td colspan="4" class="txt-c py-8 text-danger">Error: ' + err.message + '</td></tr>';
+                    }
+                }
+
+                function renderDdosConfigTable() {
+                    const tbody = document.getElementById('ddos-config-table');
+                    const params = Object.keys(ddosConfigData).sort();
+
+                    if (params.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="4" class="txt-c py-8 text-muted">No parameters found</td></tr>';
+                        return;
+                    }
+
+                    let html = '';
+                    params.forEach(key => {
+                        const param = ddosConfigData[key];
+                        const defaultVal = param.default || '';
+                        const currentVal = ddosModifiedValues[key] !== undefined ? ddosModifiedValues[key] : (param.current || defaultVal);
+                        const isModified = param.is_local || ddosModifiedValues[key] !== undefined;
+                        const bgColor = isModified ? 'background: #fef3c7;' : '';
+
+                        html += `
+                        <tr>
+                            <td class="px-15 py-8 main-border fs-13 fw-bold">${key}</td>
+                            <td class="px-15 py-8 main-border fs-13 text-muted">${defaultVal}</td>
+                            <td class="px-15 py-8 main-border" style="${bgColor}">
+                                <input type="text" id="ddos-cfg-${key}" value="${currentVal}"
+                                       onchange="ddosConfigChanged('${key}')"
+                                       class="w-full px-10 py-5 main-border rad-4 fs-13" style="${bgColor}">
+                            </td>
+                            <td class="px-15 py-8 main-border txt-c">
+                                <button onclick="resetDdosParam('${key}')" class="px-10 py-5 bg-orange-500 text-white rad-4 fs-11 hover:bg-orange-600">Reset</button>
+                            </td>
+                        </tr>`;
+                    });
+                    tbody.innerHTML = html;
+                }
+
+                function ddosConfigChanged(key) {
+                    const input = document.getElementById('ddos-cfg-' + key);
+                    ddosModifiedValues[key] = input.value;
+                    input.style.background = '#fef3c7';
+                }
+
+                async function saveAllDdosConfig() {
+                    const msgEl = document.getElementById('ddos-config-msg');
+                    if (Object.keys(ddosModifiedValues).length === 0) {
+                        msgEl.className = 'bg-yellow-100 text-yellow-800 p-15 rad-6';
+                        msgEl.textContent = '⚠️ No changes to save';
+                        msgEl.classList.remove('hidden');
+                        return;
+                    }
+
+                    try {
+                        const response = await fetch('/api/v1/config/ddos', {
+                            method: 'POST',
+                            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+                            body: JSON.stringify(ddosModifiedValues)
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success) {
+                            msgEl.className = 'bg-green-100 text-green-800 p-15 rad-6';
+                            msgEl.textContent = '✅ Configuration saved to /etc/nftban/nftban.conf.local';
+                            ddosModifiedValues = {};
+                            await loadDdosConfig();
+                        } else {
+                            msgEl.className = 'bg-red-100 text-red-800 p-15 rad-6';
+                            msgEl.textContent = '❌ Failed: ' + (result.error || 'Unknown error');
+                        }
+                        msgEl.classList.remove('hidden');
+                    } catch (err) {
+                        msgEl.className = 'bg-red-100 text-red-800 p-15 rad-6';
+                        msgEl.textContent = '❌ Error: ' + err.message;
+                        msgEl.classList.remove('hidden');
+                    }
+                }
+
+                async function resetDdosParam(key) {
+                    try {
+                        const response = await fetch('/api/v1/config/ddos/reset', {
+                            method: 'POST',
+                            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ key: key })
+                        });
+                        if (response.ok) {
+                            delete ddosModifiedValues[key];
+                            await loadDdosConfig();
+                        }
+                    } catch (err) {
+                        console.error('Reset failed:', err);
+                    }
+                }
+
+                async function resetAllDdosConfig() {
+                    if (!confirm('Reset ALL DDoS parameters to defaults?')) return;
+                    try {
+                        const response = await fetch('/api/v1/config/ddos/reset', {
+                            method: 'POST',
+                            headers: { ...getAuthHeaders(), 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ all: true })
+                        });
+                        if (response.ok) {
+                            ddosModifiedValues = {};
+                            await loadDdosConfig();
+                        }
+                    } catch (err) {
+                        console.error('Reset all failed:', err);
+                    }
+                }
+
+                // Load DDoS attack log
+                async function loadDdosLog() {
+                    const viewer = document.getElementById('ddos-log-viewer');
+                    try {
+                        const response = await fetch('/api/v1/logs/file?path=/var/log/nftban/ddos.log&lines=100', {
+                            headers: getAuthHeaders()
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success && result.data) {
+                            viewer.textContent = result.data.content || 'No log entries';
+                        } else {
+                            viewer.textContent = 'Error loading log: ' + (result.error || 'Unknown error');
+                        }
+                    } catch (err) {
+                        viewer.textContent = 'Error loading log: ' + err.message;
+                    }
+                }
+
+                // Load DDoS actions log (bans)
+                async function loadDdosActionsLog() {
+                    const viewer = document.getElementById('ddos-actions-log-viewer');
+                    try {
+                        const response = await fetch('/api/v1/logs/file?path=/var/log/nftban/nftban-actions.log&lines=100', {
+                            headers: getAuthHeaders()
+                        });
+                        const result = await response.json();
+
+                        if (response.ok && result.success && result.data) {
+                            // Filter for DDoS-related actions
+                            const content = result.data.content || '';
+                            const lines = content.split('\n').filter(line => line.includes('"source":"ddos"'));
+                            viewer.textContent = lines.length > 0 ? lines.join('\n') : 'No DDoS ban actions found';
+                        } else {
+                            viewer.textContent = 'Error loading log: ' + (result.error || 'Unknown error');
+                        }
+                    } catch (err) {
+                        viewer.textContent = 'Error loading log: ' + err.message;
+                    }
+                }
+
+                // Auto-load when page is shown
+                // Use setTimeout to ensure DOM is ready
+                setTimeout(() => {
+                    const panel = document.getElementById('panel-ddos');
+                    console.log('[DDOS] Auto-load check, panel exists:', !!panel);
+
+                    if (panel) {
+                        console.log('[DDOS] Auto-loading page data...');
+                        try {
+                            loadDdosStats();
+                            loadDdosConfig();
+                            loadDdosLog();
+                            loadDdosActionsLog();
+                        } catch (err) {
+                            console.error('[DDOS] Auto-load error:', err);
+                        }
+                    } else {
+                        console.warn('[DDOS] Panel not found, retrying in 200ms...');
+                        setTimeout(() => {
+                            if (document.getElementById('panel-ddos')) {
+                                console.log('[DDOS] Retry: Auto-loading page data...');
+                                loadDdosStats();
+                                loadDdosConfig();
+                                loadDdosLog();
+                                loadDdosActionsLog();
+                            }
+                        }, 200);
+                    }
+                }, 50);
+                </script>

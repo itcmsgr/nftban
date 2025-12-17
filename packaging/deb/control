@@ -1,66 +1,32 @@
-Source: nftban
+Source: nftban-ui
 Section: admin
 Priority: optional
-Maintainer: Antonios Voulvoulis <contact@nftban.com>
+Maintainer: Antonios Voulvoulis <itcmsgr@example.com>
 Build-Depends: debhelper-compat (= 13),
-               bash (>= 5.0),
-               golang (>= 2:1.21~)
+               golang-go (>= 2:1.21~),
+               libpam0g-dev,
+               dh-systemd
 Standards-Version: 4.6.0
-Homepage: https://nftban.com
-Vcs-Git: https://github.com/itcmsgr/nftban.git
-Vcs-Browser: https://github.com/itcmsgr/nftban
+Homepage: https://github.com/itcmsgr/nftban-dev
+Vcs-Git: https://github.com/itcmsgr/nftban-dev.git
+Vcs-Browser: https://github.com/itcmsgr/nftban-dev
 
-Package: nftban
-Architecture: amd64 arm64
-Depends: ${misc:Depends},
-         nftables (>= 1.0.0),
-         systemd (>= 250),
-         bash (>= 5.0),
-         bash-completion,
-         jq (>= 1.6),
-         curl | wget,
-         python3,
-         adduser,
-         coreutils,
-         gzip,
-         tar,
-         grep,
-         sed,
-         gawk,
-         findutils,
-         util-linux,
-         iproute2,
-         ipset,
-         git,
-         policykit-1,
-         fail2ban (>= 0.11),
-         geoip-bin,
-         geoip-database
-Recommends: logrotate
-Conflicts: firewalld,
-           iptables,
-           iptables-persistent
-Description: Modern nftables firewall with GeoBan country blocking
- NFTBan is a modern, high-performance firewall management system for Linux
- servers using nftables with GeoBan country blocking and self-healing monitoring.
+Package: nftban-ui
+Architecture: any
+Depends: ${shlibs:Depends},
+         ${misc:Depends},
+         systemd,
+         libpam0g,
+         nftables,
+         adduser
+Description: NFTBan Web GUI - Secure web interface for firewall management
+ NFTBan Web GUI is a secure, modern web interface for managing the NFTBan
+ adaptive firewall system.
  .
- Features include:
- - GeoBan: Country-based IP blocking (ban/unban/whitelist commands)
- - Atomic operations: Zero-downtime firewall updates via netlink
- - Go binaries: 10-60x faster than bash (compiled during package build)
- - 8 security layers (DDoS, port scan, geo-blocking, threat feeds)
- - Commit-confirm recovery (prevents lockout)
- - FHS-compliant with auto-healing health system
- - Integration with Fail2Ban for automatic banning
- - Stats & metrics with HTML/JSON/CSV reporting
- - Advanced inventory system (processes, packages, firewall state)
- - Baseline management with drift detection
- - 6-layer system protection (CPU/RAM/I/O limits)
- - Cryptographic verification and signing
- - Smart mail adapter (auto-detects best transport)
- - Group-based service management via Polkit (no sudo required)
- .
- NOTE: On Ubuntu/Debian, fail2ban is available in default repositories.
- On Rocky/AlmaLinux, enable EPEL and CRB first:
-   dnf install -y epel-release && crb enable
-   dnf install -y fail2ban-server
+ Features:
+  - Socket-based PAM authentication (no setuid binaries)
+  - 8-layer security architecture
+  - 15+ RESTful API endpoints
+  - Modern dark theme UI
+  - Systemd socket activation
+  - Resource limits and cgroup awareness

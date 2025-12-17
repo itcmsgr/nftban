@@ -1,0 +1,45 @@
+# =============================================================================
+# NFTBan Health Check Service (Read-Only, Non-Privileged)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# This service runs periodic health checks WITHOUT making any changes.
+# It only detects and reports issues.
+#
+# Design:
+#   - Runs as User=nftban (non-root)
+#   - ProtectSystem=full (cannot modify /usr, /boot, /efi)
+#   - Check-only mode (no fixes applied)
+#   - Reports via logs and exit code
+#
+# For fixes, use: systemctl start nftban-health-fix.service (manual)
+# =============================================================================
+
+[Unit]
+Description=NFTBan Health Check (Read-Only)
+Documentation=man:nftban(8) man:nftban-health(8)
+After=network.target nftban.service
+Wants=nftban.service
+
+[Service]
+Type=oneshot
+User=nftban
+Group=nftban
+
+# Security: Hardened sandbox (check-only, no system modification)
+ProtectSystem=full
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+ReadWritePaths=/var/log/nftban /var/lib/nftban
+
+# Check-only command (no fixes)
+ExecStart=/usr/sbin/nftban health check --quiet --json=/var/lib/nftban/health-status.json
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-health-check
+
+[Install]
+WantedBy=multi-user.target

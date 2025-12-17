@@ -1,0 +1,637 @@
+                <!-- DASHBOARD PANEL -->
+                <div id="panel-dashboard">
+                    <h2><i class="fa fa-chart-line"></i> Dashboard</h2>
+                    <!-- 3 COLUMN STATS - COMPACT SINGLE LINE LAYOUT -->
+                    <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 20px; margin-bottom: 20px;">
+                        <!-- SYSTEM INFO -->
+                        <div class="card p-20">
+                            <div class="d-flex space-between mb-2">
+                                <span class="fw-bold">💻 System Info</span>
+                                <span id="stat-hostname" class="text-muted">-</span>
+                            </div>
+                            <div class="d-flex space-between mb-1"><span class="text-muted">Version:</span><span class="fw-bold">v1.0.0</span></div>
+                            <div class="d-flex space-between mb-1"><span class="text-muted">Port:</span><span class="fw-bold">3940</span></div>
+                            <div class="d-flex space-between mb-1"><span class="text-muted">TLS:</span><span class="text-success fw-bold">✓ Enabled</span></div>
+                            <div class="d-flex space-between"><span class="text-muted">Auth:</span><span class="text-success fw-bold">JWT</span></div>
+                        </div>
+
+                        <!-- TRAFFIC STATS -->
+                        <div class="card p-20">
+                            <div class="fw-bold mb-2">📈 Traffic (24h)</div>
+                            <div class="d-flex space-between mb-1"><span class="text-muted">Bandwidth IN:</span><span id="stat-bandwidth-in" class="fw-bold">-</span></div>
+                            <div class="d-flex space-between mb-1"><span class="text-muted">Bandwidth OUT:</span><span id="stat-bandwidth-out" class="fw-bold">-</span></div>
+                            <div class="d-flex space-between mb-1"><span class="text-muted">Packets IN:</span><span id="stat-packets-in" class="fw-bold">-</span></div>
+                            <div class="d-flex space-between mb-1"><span class="text-muted">Packets OUT:</span><span id="stat-packets-out" class="fw-bold">-</span></div>
+                            <div class="d-flex space-between"><span class="text-muted">Auto-refresh:</span><span class="fw-bold">30s</span></div>
+                        </div>
+
+                        <!-- SECURITY STATS -->
+                        <div class="card p-20">
+                            <div class="fw-bold mb-2">🛡️ Security Stats</div>
+                            <div class="d-flex space-between mb-1"><span class="text-muted">Blocked IPs:</span><span id="stat-blocked-ips" class="fw-bold">0</span></div>
+                            <div class="d-flex space-between mb-1"><span class="text-muted">Bans (24h):</span><span id="stat-threats-blocked" class="fw-bold">0</span></div>
+                            <div class="d-flex space-between mb-1"><span class="text-muted">Active Feeds:</span><span id="stat-feeds-active" class="fw-bold">0</span></div>
+                            <div class="d-flex space-between mb-1"><span class="text-muted">Feed IPs:</span><span id="stat-feed-ips" class="fw-bold">0</span></div>
+                            <div class="d-flex space-between"><span class="text-muted">Whitelist:</span><span id="stat-whitelist-ips" class="fw-bold">0</span></div>
+                        </div>
+                    </div>
+
+                    <!-- CHARTS (2 columns with spacing) -->
+                    <div class="d-grid grid-cols-2 gap-20 mb-20">
+                        <!-- BANDWIDTH CHART -->
+                        <div class="card main-border rad-10 p-20">
+                            <h3 class="fs-15 fw-bold mb-20">📊 Bandwidth Over Time (24h)</h3>
+                            <div style="position: relative; height: 300px;">
+                                <canvas id="bandwidth-chart"></canvas>
+                            </div>
+                        </div>
+
+                        <!-- THREATS TIMELINE CHART -->
+                        <div class="card main-border rad-10 p-20">
+                            <h3 class="fs-15 fw-bold mb-20">🚨 Threats Blocked Timeline (24h)</h3>
+                            <div style="position: relative; height: 300px;">
+                                <canvas id="threats-chart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- MODULE STATUS (Single Row, Compact Boxes) -->
+                    <div class="card main-border rad-10 p-20 mb-20">
+                        <h3 class="fs-15 fw-bold mb-20">🛡️ Protection Modules</h3>
+                        <div class="d-grid grid-cols-3 gap-20">
+                            <!-- Login Monitor (replaced Fail2Ban in v1.0) -->
+                            <div class="d-flex align-center gap-15 p-15 main-border rad-6">
+                                <i class="fa-solid fa-user-shield fa-2x text-success"></i>
+                                <div class="d-flex flex-column">
+                                    <span class="fw-bold fs-13">Login Monitor</span>
+                                    <span class="fs-12 text-muted" id="login-monitor-status">Loading...</span>
+                                </div>
+                            </div>
+
+                            <!-- Threat Feeds -->
+                            <div class="d-flex align-center gap-15 p-15 main-border rad-6">
+                                <i class="fa-solid fa-rss fa-2x text-success"></i>
+                                <div class="d-flex flex-column">
+                                    <span class="fw-bold fs-13">Threat Feeds</span>
+                                    <span class="fs-12 text-muted" id="feeds-tracked">Loading...</span>
+                                </div>
+                            </div>
+
+                            <!-- Port Scan Detection -->
+                            <div class="d-flex align-center gap-15 p-15 main-border rad-6">
+                                <i class="fa-solid fa-binoculars fa-2x text-success"></i>
+                                <div class="d-flex flex-column">
+                                    <span class="fw-bold fs-13 d-flex align-center gap-10">
+                                        <span id="portscan-indicator" class="status-dot" title="Module status"></span>
+                                        Port Scan
+                                    </span>
+                                    <span class="fs-12 text-muted" id="portscan-status">Loading...</span>
+                                </div>
+                            </div>
+
+                            <!-- DDoS Protection -->
+                            <div class="d-flex align-center gap-15 p-15 main-border rad-6">
+                                <i class="fa-solid fa-bolt fa-2x text-success"></i>
+                                <div class="d-flex flex-column">
+                                    <span class="fw-bold fs-13 d-flex align-center gap-10">
+                                        <span id="ddos-indicator" class="status-dot" title="Module status"></span>
+                                        DDoS Protection
+                                    </span>
+                                    <span class="fs-12 text-muted" id="ddos-status">Loading...</span>
+                                </div>
+                            </div>
+
+                            <!-- GeoBan -->
+                            <div class="d-flex align-center gap-15 p-15 main-border rad-6">
+                                <i class="fa-solid fa-earth-americas fa-2x text-success"></i>
+                                <div class="d-flex flex-column">
+                                    <span class="fw-bold fs-13">GeoBan</span>
+                                    <span class="fs-12 text-muted" id="geoban-countries">Loading...</span>
+                                </div>
+                            </div>
+
+                            <!-- GeoIP -->
+                            <div class="d-flex align-center gap-15 p-15 main-border rad-6">
+                                <i class="fa-solid fa-database fa-2x text-primary"></i>
+                                <div class="d-flex flex-column">
+                                    <span class="fw-bold fs-13">GeoIP</span>
+                                    <span class="fs-12 text-muted">Database updated</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- RECENT ACTIVITY & TOP COUNTRIES (2 columns) -->
+                    <div class="d-grid grid-cols-2 gap-20 mb-20">
+                        <!-- RECENT ACTIVITY -->
+                        <div class="card main-border rad-10 p-20">
+                            <h3 class="fs-15 fw-bold mb-15">🕐 Recent Activity</h3>
+                            <div id="recent-activity-container" class="d-flex flex-column gap-10">
+                                <div class="text-muted fs-13 p-10">Loading...</div>
+                            </div>
+                        </div>
+
+                        <!-- TOP BLOCKED COUNTRIES -->
+                        <div class="card main-border rad-10 p-20">
+                            <h3 class="fs-15 fw-bold mb-15">🌍 Top Blocked Countries (24h)</h3>
+                            <div id="top-countries-container" class="d-flex flex-column gap-10">
+                                <div class="text-muted fs-13 p-10">Loading...</div>
+                            </div>
+                        </div>
+                    </div>
+                    </div>
+                </div>
+
+<script>
+// Dashboard Charts - Initialize when page loads
+// Use var to avoid redeclaration errors on page reload
+if (typeof bandwidthChart === 'undefined') var bandwidthChart = null;
+if (typeof threatsChart === 'undefined') var threatsChart = null;
+
+function initDashboardCharts() {
+    // Get theme colors
+    const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+    const textColor = isDark ? '#e9ecef' : '#212529';
+    const gridColor = isDark ? '#495057' : '#dee2e6';
+
+    // Chart.js defaults
+    Chart.defaults.color = textColor;
+    Chart.defaults.borderColor = gridColor;
+
+    // Bandwidth Chart
+    const bandwidthCtx = document.getElementById('bandwidth-chart');
+    if (bandwidthCtx) {
+        bandwidthChart = new Chart(bandwidthCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Incoming (MB)',
+                    data: [],
+                    borderColor: '#4dabf7',
+                    backgroundColor: 'rgba(77, 171, 247, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }, {
+                    label: 'Outgoing (MB)',
+                    data: [],
+                    borderColor: '#51cf66',
+                    backgroundColor: 'rgba(81, 207, 102, 0.1)',
+                    tension: 0.4,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: gridColor
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: gridColor
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Threats Chart
+    const threatsCtx = document.getElementById('threats-chart');
+    if (threatsCtx) {
+        threatsChart = new Chart(threatsCtx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Threats Blocked',
+                    data: [],
+                    backgroundColor: '#ff6b6b',
+                    borderColor: '#ff6b6b',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        },
+                        grid: {
+                            color: gridColor
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: gridColor
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    // Load initial data
+    loadDashboardChartData();
+}
+
+async function loadDashboardChartData() {
+    try {
+        // Default time labels for last 24 hours
+        const hours = [];
+        const now = new Date();
+        for (let i = 23; i >= 0; i--) {
+            const hour = new Date(now - i * 3600000);
+            hours.push(hour.getHours() + ':00');
+        }
+
+        // Try to load real bandwidth/traffic data
+        try {
+            const trafficResp = await apiRequest('/stats/traffic');
+            if (trafficResp.success && trafficResp.data && bandwidthChart) {
+                const data = trafficResp.data;
+                bandwidthChart.data.labels = data.labels || data.hours || hours;
+                bandwidthChart.data.datasets[0].data = data.bandwidth_in || data.incoming || hours.map(() => 0);
+                bandwidthChart.data.datasets[1].data = data.bandwidth_out || data.outgoing || hours.map(() => 0);
+                bandwidthChart.update();
+            }
+        } catch (err) {
+            console.log('[DASHBOARD] Traffic API not available, using empty data');
+            if (bandwidthChart) {
+                bandwidthChart.data.labels = hours;
+                bandwidthChart.data.datasets[0].data = hours.map(() => 0);
+                bandwidthChart.data.datasets[1].data = hours.map(() => 0);
+                bandwidthChart.update();
+            }
+        }
+
+        // Try to load real threat/ban data
+        try {
+            const bansResp = await apiRequest('/stats/bans');
+            if (bansResp.success && bansResp.data && threatsChart) {
+                const data = bansResp.data;
+                threatsChart.data.labels = data.labels || data.hours || hours;
+                threatsChart.data.datasets[0].data = data.bans || data.threats || hours.map(() => 0);
+                threatsChart.update();
+            }
+        } catch (err) {
+            console.log('[DASHBOARD] Bans API not available, using empty data');
+            if (threatsChart) {
+                threatsChart.data.labels = hours;
+                threatsChart.data.datasets[0].data = hours.map(() => 0);
+                threatsChart.update();
+            }
+        }
+
+    } catch (error) {
+        console.error('[DASHBOARD] Failed to load chart data:', error);
+    }
+}
+
+// Re-initialize charts when theme changes
+window.addEventListener('storage', (e) => {
+    if (e.key === 'theme') {
+        if (bandwidthChart) bandwidthChart.destroy();
+        if (threatsChart) threatsChart.destroy();
+        initDashboardCharts();
+    }
+});
+
+// Initialize charts when dashboard page is loaded
+window.initDashboardPage = function() {
+    console.log('[DASHBOARD] Initializing dashboard page');
+    // Wait for Chart.js to be loaded
+    if (typeof Chart !== 'undefined') {
+        initDashboardCharts();
+    } else {
+        console.error('[DASHBOARD] Chart.js not loaded!');
+        // Retry after a short delay
+        setTimeout(() => {
+            if (typeof Chart !== 'undefined') {
+                initDashboardCharts();
+            } else {
+                console.error('[DASHBOARD] Chart.js still not available');
+            }
+        }, 100);
+    }
+};
+
+// Load dashboard stats from API
+async function loadDashboardStats() {
+    // Check if we're still on dashboard page
+    if (!document.getElementById('stat-hostname')) return;
+
+    try {
+        console.log('[DASHBOARD] Loading stats...');
+
+        // Get hostname
+        const hostnameResp = await fetch('/api/v1/system/hostname', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        const hostnameEl = document.getElementById('stat-hostname');
+        if (hostnameResp && hostnameResp.ok && hostnameEl) {
+            const data = await hostnameResp.json();
+            hostnameEl.textContent = data.hostname || '-';
+        }
+
+        // Helper to safely set element text
+        const setText = (id, value) => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = value;
+        };
+
+        // Get traffic stats
+        const trafficResp = await fetch('/api/v1/stats/traffic', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        if (trafficResp && trafficResp.ok) {
+            const data = await trafficResp.json();
+            if (data.success && data.data) {
+                // Format bytes to human-readable format (MB/GB)
+                const formatBytes = (bytes) => {
+                    if (bytes >= 1073741824) return (bytes / 1073741824).toFixed(2) + ' GB';
+                    if (bytes >= 1048576) return (bytes / 1048576).toFixed(2) + ' MB';
+                    if (bytes >= 1024) return (bytes / 1024).toFixed(2) + ' KB';
+                    return bytes + ' B';
+                };
+                setText('stat-bandwidth-in', formatBytes(data.data.bandwidth_in || 0));
+                setText('stat-bandwidth-out', formatBytes(data.data.bandwidth_out || 0));
+                setText('stat-packets-in', (data.data.packets_in || 0).toLocaleString());
+                setText('stat-packets-out', (data.data.packets_out || 0).toLocaleString());
+            }
+        }
+
+        // Get security stats
+        const bansResp = await fetch('/api/v1/stats/bans', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        if (bansResp && bansResp.ok) {
+            const data = await bansResp.json();
+            if (data.success && data.data) {
+                // API returns: total, last_24h (not total_blocked, bans_24h)
+                setText('stat-blocked-ips', (data.data.total || 0).toLocaleString());
+                setText('stat-threats-blocked', (data.data.last_24h || 0).toLocaleString());
+            }
+        }
+
+        // Get feeds stats
+        const feedsResp = await fetch('/api/v1/feeds/stats', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        if (feedsResp && feedsResp.ok) {
+            const data = await feedsResp.json();
+            if (data.success && data.data) {
+                setText('stat-feeds-active', data.data.active || '0');
+                setText('stat-feed-ips', data.data.total_ips || '0');
+                // Update dashboard module stats
+                const totalIPs = data.data.total_ips || 0;
+                const formatted = totalIPs >= 1000 ? (totalIPs / 1000).toFixed(0) + 'K' : totalIPs;
+                setText('feeds-tracked', formatted + ' IPs tracked');
+            }
+        }
+
+        // Get DDoS stats
+        const ddosResp = await fetch('/api/v1/ddos/stats', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        if (ddosResp && ddosResp.ok) {
+            const data = await ddosResp.json();
+            if (data.success && data.data && data.data.ddos) {
+                const enabled = data.data.ddos.enabled;
+                const indicator = document.getElementById('ddos-indicator');
+                if (indicator) {
+                    indicator.className = 'status-dot ' + (enabled ? 'status-enabled' : 'status-disabled');
+                }
+                setText('ddos-status', enabled ? 'Enabled' : 'Disabled');
+            }
+        }
+
+        // Get PortScan stats
+        const portscanResp = await fetch('/api/v1/portscan/stats', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        if (portscanResp && portscanResp.ok) {
+            const data = await portscanResp.json();
+            if (data.success && data.data && data.data.portscan) {
+                const enabled = data.data.portscan.enabled;
+                const indicator = document.getElementById('portscan-indicator');
+                if (indicator) {
+                    indicator.className = 'status-dot ' + (enabled ? 'status-enabled' : 'status-disabled');
+                }
+                setText('portscan-status', enabled ? 'Enabled' : 'Disabled');
+            }
+        }
+
+        // Get Login Monitor status (replaced Fail2Ban in v1.0)
+        const loginMonitorResp = await fetch('/api/v1/login-monitor/status', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        if (loginMonitorResp && loginMonitorResp.ok) {
+            const data = await loginMonitorResp.json();
+            if (data.success && data.data) {
+                const enabled = data.data.enabled;
+                setText('login-monitor-status', enabled ? 'Active' : 'Disabled');
+            }
+        } else {
+            setText('login-monitor-status', 'Not available');
+        }
+
+        // Get GeoBan stats
+        const geobanResp = await fetch('/api/v1/geoban/stats', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        if (geobanResp && geobanResp.ok) {
+            const data = await geobanResp.json();
+            if (data.success && data.data) {
+                const count = data.data.banned_countries || data.data.total || 0;
+                setText('geoban-countries', count + ' ' + (count === 1 ? 'country' : 'countries') + ' blocked');
+            }
+        }
+
+        // Get whitelist count
+        const whitelistResp = await fetch('/api/v1/whitelist/count', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        if (whitelistResp && whitelistResp.ok) {
+            const data = await whitelistResp.json();
+            if (data.success && data.data) {
+                setText('stat-whitelist-ips', data.data.count || '0');
+            }
+        }
+
+        console.log('[DASHBOARD] Stats loaded');
+    } catch (error) {
+        console.error('[DASHBOARD] Failed to load stats:', error);
+    }
+}
+
+// Load recent activity from API
+async function loadRecentActivity() {
+    const container = document.getElementById('recent-activity-container');
+    if (!container) return;
+
+    try {
+        const resp = await fetch('/api/v1/activity/recent?limit=5', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        if (resp && resp.ok) {
+            const data = await resp.json();
+            if (data.success && data.data && data.data.activities) {
+                const activities = data.data.activities;
+                if (activities.length === 0) {
+                    container.innerHTML = '<div class="text-muted fs-13 p-10">No recent activity</div>';
+                    return;
+                }
+
+                container.innerHTML = activities.map(a => {
+                    // Select icon based on type
+                    let icon = 'fa-circle-info';
+                    let iconClass = 'text-primary';
+                    switch (a.source) {
+                        case 'portscan':
+                            icon = 'fa-ban';
+                            iconClass = 'text-danger';
+                            break;
+                        case 'ddos':
+                            icon = 'fa-bolt';
+                            iconClass = 'text-warning';
+                            break;
+                        case 'fail2ban':
+                            icon = 'fa-lock';
+                            iconClass = 'text-danger';
+                            break;
+                        case 'feeds':
+                        case 'feed':
+                            icon = 'fa-rss';
+                            iconClass = 'text-primary';
+                            break;
+                        case 'whitelist':
+                            icon = 'fa-check';
+                            iconClass = 'text-success';
+                            break;
+                        case 'login_monitor':
+                            icon = 'fa-user-shield';
+                            iconClass = 'text-warning';
+                            break;
+                    }
+
+                    return `<div class="d-flex space-between p-10 main-border rad-6">
+                        <div class="d-flex gap-10 align-center">
+                            <i class="fa-solid ${icon} ${iconClass}"></i>
+                            <div><span class="fw-bold fs-13">${a.type || a.source}</span> <span class="fs-12 text-muted">${a.details || a.ip || ''}</span></div>
+                        </div>
+                        <span class="fs-12 text-muted">${a.time_ago || ''}</span>
+                    </div>`;
+                }).join('');
+            }
+        } else {
+            container.innerHTML = '<div class="text-muted fs-13 p-10">No recent activity</div>';
+        }
+    } catch (error) {
+        console.error('[DASHBOARD] Failed to load recent activity:', error);
+        container.innerHTML = '<div class="text-muted fs-13 p-10">Failed to load</div>';
+    }
+}
+
+// Load top countries from API
+async function loadTopCountries() {
+    const container = document.getElementById('top-countries-container');
+    if (!container) return;
+
+    // Country code to flag emoji mapping
+    const countryFlags = {
+        'CN': '🇨🇳', 'RU': '🇷🇺', 'US': '🇺🇸', 'KP': '🇰🇵', 'IR': '🇮🇷',
+        'VN': '🇻🇳', 'IN': '🇮🇳', 'BR': '🇧🇷', 'ID': '🇮🇩', 'PK': '🇵🇰',
+        'TR': '🇹🇷', 'UA': '🇺🇦', 'DE': '🇩🇪', 'FR': '🇫🇷', 'GB': '🇬🇧',
+        'NL': '🇳🇱', 'KR': '🇰🇷', 'TW': '🇹🇼', 'JP': '🇯🇵', 'AU': '🇦🇺'
+    };
+
+    try {
+        const resp = await fetch('/api/v1/analytics/top?n=5', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        if (resp && resp.ok) {
+            const data = await resp.json();
+            let countries = [];
+
+            // Handle different response formats
+            if (data.top_countries && Array.isArray(data.top_countries)) {
+                countries = data.top_countries;
+            } else if (data.data && Array.isArray(data.data)) {
+                countries = data.data;
+            } else if (Array.isArray(data)) {
+                countries = data;
+            }
+
+            if (countries.length === 0) {
+                container.innerHTML = '<div class="text-muted fs-13 p-10">No country data available</div>';
+                return;
+            }
+
+            container.innerHTML = countries.slice(0, 5).map(c => {
+                const code = c.code || c.country_code || 'XX';
+                const name = c.name || c.country || code;
+                const count = c.count || c.bans || c.blocked || 0;
+                const flag = countryFlags[code.toUpperCase()] || '🏳️';
+
+                return `<div class="d-flex space-between align-center p-10 main-border rad-6">
+                    <div class="d-flex gap-10 align-center">
+                        <span class="fs-20">${flag}</span>
+                        <span class="fw-bold fs-13">${name}</span>
+                    </div>
+                    <span class="fs-13 font-mono fw-bold">${count.toLocaleString()}</span>
+                </div>`;
+            }).join('');
+        } else {
+            container.innerHTML = '<div class="text-muted fs-13 p-10">No country data available</div>';
+        }
+    } catch (error) {
+        console.error('[DASHBOARD] Failed to load top countries:', error);
+        container.innerHTML = '<div class="text-muted fs-13 p-10">Failed to load</div>';
+    }
+}
+
+// Auto-initialize when script loads
+if (document.getElementById('bandwidth-chart')) {
+    console.log('[DASHBOARD] Auto-initializing dashboard');
+    window.initDashboardPage();
+    loadDashboardStats();
+    loadRecentActivity();
+    loadTopCountries();
+
+    // Auto-refresh stats every 30 seconds
+    setInterval(loadDashboardStats, 30000);
+    setInterval(loadRecentActivity, 30000);
+    setInterval(loadTopCountries, 60000);
+}
+</script>

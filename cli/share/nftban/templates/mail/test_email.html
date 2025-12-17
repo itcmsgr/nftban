@@ -1,0 +1,40 @@
+<h2 style="color: #0066cc;">Test Email Successful</h2>
+
+<p>This is a test email from your NFTBan security system.</p>
+
+<p><strong>If you received this email, your mail configuration is working correctly.</strong></p>
+
+<div class="alert alert-success">
+    <strong>Success!</strong> Your NFTBan mail system is configured and working properly.
+</div>
+
+<h3>System Information:</h3>
+<ul>
+    <li><strong>Server:</strong> {HOSTNAME}</li>
+    <li><strong>Server IP:</strong> {SERVER_IP}</li>
+    <li><strong>Mail System:</strong> {MAIL_SYSTEM}</li>
+    <li><strong>NFTBan Version:</strong> {NFTBAN_VERSION}</li>
+    <li><strong>Test Time:</strong> {DATE} at {TIME}</li>
+</ul>
+
+<h3>Mail Configuration:</h3>
+<ul>
+    <li><strong>From:</strong> {SENDER}</li>
+    <li><strong>Default Recipient:</strong> {MAIL_RECIPIENT}</li>
+    <li><strong>Template:</strong> Default HTML</li>
+</ul>
+
+<h3>Next Steps:</h3>
+<ol>
+    <li>Configure your email settings in <code>/etc/nftban/nftban.conf.local</code></li>
+    <li>Customize email templates in <code>/usr/share/nftban/templates/mail/</code></li>
+    <li>Test mail port status with <code>nftban mail port-status</code></li>
+</ol>
+
+<div class="alert alert-info">
+    <strong>Tip:</strong> You can customize this test email template at:<br>
+    <code>/usr/share/nftban/templates/mail/test_email.html</code>
+</div>
+
+<p style="margin-top: 20px;">For more information, run:</p>
+<pre>nftban mail help</pre>

@@ -1,0 +1,149 @@
+# =============================================================================
+# Suricata Rule Disable Configuration (LOCAL OVERRIDES - EXAMPLE)
+# =============================================================================
+# This file overrides settings from disable.conf
+# Safe from updates - your customizations are preserved here
+#
+# Copy this file to disable.conf.local and customize:
+#   cp disable.conf.local.example disable.conf.local
+#
+# Then edit disable.conf.local with your custom rule exclusions
+# =============================================================================
+
+# =============================================================================
+# HOW THIS WORKS
+# =============================================================================
+# 1. disable.conf       = Default disabled rules (managed by NFTBan)
+# 2. disable.conf.local = YOUR custom disable overrides (never overwritten)
+#
+# suricata-update will load BOTH files:
+#   - First: disable.conf (defaults)
+#   - Then: disable.conf.local (your additions)
+#
+# =============================================================================
+
+# =============================================================================
+# EXAMPLE 1: Disable DNS Noise (Too Many Alerts)
+# =============================================================================
+# If you get overwhelmed with DNS query alerts:
+
+# re:ET DNS query
+# re:DNS query for
+
+
+# =============================================================================
+# EXAMPLE 2: Disable Scan Detection (Legitimate Security Scanning)
+# =============================================================================
+# If you run Nmap, Nessus, or other security scanners internally:
+
+# re:ET SCAN
+# re:port scan
+# re:nmap
+
+
+# =============================================================================
+# EXAMPLE 3: Disable Database Rules (Not Running DB Servers)
+# =============================================================================
+# Uncomment the ones you DON'T run:
+
+# re:MYSQL
+# re:PostgreSQL
+# re:MongoDB
+# re:Redis
+
+
+# =============================================================================
+# EXAMPLE 4: Disable Specific Noisy Rules by SID
+# =============================================================================
+# If specific rule IDs generate too many false positives:
+
+# 2001219  # ET SCAN SSH BruteForce Tool
+# 2001569  # ET SCAN Potential VNC Scan
+# 2100498  # GPL SCAN nmap fingerprint
+
+
+# =============================================================================
+# EXAMPLE 5: Disable Cloud Service Alerts (Too Noisy)
+# =============================================================================
+# If you use AWS, GCP, Azure and get too many informational alerts:
+
+# re:Amazon
+# re:AWS
+# re:Google Cloud
+# re:Azure
+# re:Cloudflare
+
+
+# =============================================================================
+# EXAMPLE 6: Re-enable Something Disabled by Default
+# =============================================================================
+# Note: To RE-ENABLE something disabled in disable.conf, you need to:
+#   1. Comment it out in disable.conf.local (won't work)
+#   2. Add it to enable.conf.local instead (correct way)
+#
+# Example: If disable.conf disables "re:MYSQL" but you want it enabled:
+#   - In enable.conf.local, add: re:MYSQL
+#   - DON'T uncomment it here
+
+
+# =============================================================================
+# EXAMPLE 7: Disable TLS Deep Inspection (Save CPU)
+# =============================================================================
+# TLS certificate validation uses CPU:
+
+# re:TLS
+# re:SSL
+# re:certificate
+
+
+# =============================================================================
+# EXAMPLE 8: Disable Policy Rules (Corporate Network Monitoring)
+# =============================================================================
+# If you still get policy alerts:
+
+# re:ET POLICY
+# re:POLICY
+# re:User-Agent
+
+
+# =============================================================================
+# EXAMPLE 9: Disable Informational Rules
+# =============================================================================
+# Pure informational alerts with no security value:
+
+# re:ET INFO
+# re:INFO
+# re:SURICATA STREAM
+
+
+# =============================================================================
+# EXAMPLE 10: Disable Specific Application Monitoring
+# =============================================================================
+# If you don't care about specific apps:
+
+# re:BitTorrent
+# re:Skype
+# re:Telegram
+# re:cryptocurrency
+
+
+# =============================================================================
+# TESTING & VALIDATION
+# =============================================================================
+# After editing disable.conf.local:
+#
+#   1. Update rules:
+#      suricata-update --enable-conf /etc/suricata/enable.conf \
+#                      --disable-conf /etc/suricata/disable.conf \
+#                      --disable-conf /etc/suricata/disable.conf.local
+#
+#   2. Test config:
+#      suricata -T -c /etc/suricata/suricata.yaml
+#
+#   3. Check rule count (should be lower):
+#      grep "rule reload complete" /var/log/suricata/suricata.log
+#
+#   4. Restart:
+#      systemctl restart suricata
+#
+# =============================================================================

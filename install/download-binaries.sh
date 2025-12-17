@@ -1,0 +1,385 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan Binary Download with SLSA Verification
+# =============================================================================
+# Purpose: Download and verify NFTBan Go binaries from GitHub releases
+# Usage: ./download-binaries.sh [VERSION]
+#        VERSION: Tag like v1.0.0 (default: latest)
+#
+# Features:
+#   - Downloads binaries from GitHub releases
+#   - Verifies SLSA Level 3 provenance (cryptographic proof)
+#   - Falls back to SHA256 if SLSA verifier not available
+#   - Supports amd64 and arm64 architectures
+# =============================================================================
+
+set -euo pipefail
+
+# Configuration
+GITHUB_REPO="itcmsgr/nftban-v1.0-dev"
+GITHUB_API="https://api.github.com/repos/${GITHUB_REPO}"
+GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases/download"
+VERSION="${1:-latest}"
+
+# Directories
+DOWNLOAD_DIR="${DOWNLOAD_DIR:-/tmp/nftban-binaries}"
+INSTALL_DIR="${INSTALL_DIR:-/usr/lib/nftban/bin}"
+
+# Colors
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+BLUE='\033[0;34m'
+NC='\033[0m'
+
+log()   { echo -e "${BLUE}[DOWNLOAD]${NC} $*"; }
+ok()    { echo -e "${GREEN}[  OK    ]${NC} $*"; }
+warn()  { echo -e "${YELLOW}[ WARN   ]${NC} $*"; }
+error() { echo -e "${RED}[ ERROR  ]${NC} $*"; exit 1; }
+
+# =============================================================================
+# FUNCTIONS
+# =============================================================================
+
+detect_arch() {
+    local arch
+    arch=$(uname -m)
+    case "$arch" in
+        x86_64)  echo "amd64" ;;
+        aarch64) echo "arm64" ;;
+        *)       error "Unsupported architecture: $arch" ;;
+    esac
+}
+
+get_latest_version() {
+    log "Fetching latest release version..."
+    local latest
+    latest=$(curl -fsSL "${GITHUB_API}/releases/latest" | jq -r '.tag_name' 2>/dev/null)
+    if [[ -z "$latest" || "$latest" == "null" ]]; then
+        error "Failed to get latest version from GitHub API"
+    fi
+    echo "$latest"
+}
+
+install_slsa_verifier() {
+    log "Installing SLSA verifier..."
+
+    # Check if Go is available
+    if command -v go &>/dev/null; then
+        go install github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier@latest
+        export PATH="$PATH:$(go env GOPATH)/bin"
+        return 0
+    fi
+
+    # Download pre-built binary
+    local arch
+    arch=$(detect_arch)
+    local verifier_version="v2.6.0"
+    local verifier_url="https://github.com/slsa-framework/slsa-verifier/releases/download/${verifier_version}/slsa-verifier-linux-${arch}"
+
+    log "Downloading slsa-verifier ${verifier_version}..."
+    curl -fsSL -o "$DOWNLOAD_DIR/slsa-verifier" "$verifier_url"
+    chmod +x "$DOWNLOAD_DIR/slsa-verifier"
+    export PATH="$PATH:$DOWNLOAD_DIR"
+
+    return 0
+}
+
+verify_slsa() {
+    local binary="$1"
+    local provenance="${binary}.intoto.jsonl"
+    local tag="$2"
+
+    if [[ ! -f "$provenance" ]]; then
+        warn "Provenance file not found: $provenance"
+        return 1
+    fi
+
+    log "Verifying SLSA provenance for $(basename "$binary")..."
+
+    if slsa-verifier verify-artifact "$binary" \
+        --provenance-path "$provenance" \
+        --source-uri "github.com/${GITHUB_REPO}" \
+        --source-tag "$tag" 2>&1; then
+        ok "SLSA verification PASSED: $(basename "$binary")"
+        return 0
+    else
+        error "SLSA verification FAILED: $(basename "$binary")"
+        return 1
+    fi
+}
+
+verify_sha256() {
+    local binary="$1"
+    local sums_file="$2"
+
+    if [[ ! -f "$sums_file" ]]; then
+        warn "SHA256SUMS file not found"
+        return 1
+    fi
+
+    local basename
+    basename=$(basename "$binary")
+    local expected
+    expected=$(grep "$basename" "$sums_file" | awk '{print $1}')
+
+    if [[ -z "$expected" ]]; then
+        warn "No SHA256 entry for $basename"
+        return 1
+    fi
+
+    local actual
+    actual=$(sha256sum "$binary" | awk '{print $1}')
+
+    if [[ "$expected" == "$actual" ]]; then
+        ok "SHA256 verification PASSED: $basename"
+        return 0
+    else
+        error "SHA256 verification FAILED: $basename"
+        error "Expected: $expected"
+        error "Got:      $actual"
+        return 1
+    fi
+}
+
+download_binary() {
+    local name="$1"
+    local arch="$2"
+    local version="$3"
+    local filename="${name}-linux-${arch}"
+    local url="${GITHUB_RELEASES}/${version}/${filename}"
+
+    log "Downloading $filename..."
+
+    # Download binary
+    if ! curl -fsSL -o "$DOWNLOAD_DIR/$filename" "$url"; then
+        warn "Failed to download $filename"
+        return 1
+    fi
+
+    # Download provenance
+    log "Downloading provenance for $filename..."
+    curl -fsSL -o "$DOWNLOAD_DIR/${filename}.intoto.jsonl" "${url}.intoto.jsonl" 2>/dev/null || true
+
+    ok "Downloaded: $filename"
+    return 0
+}
+
+download_all() {
+    local version="$1"
+    local arch="$2"
+
+    log "Downloading NFTBan binaries ${version} for ${arch}..."
+
+    # Download main binaries
+    download_binary "nftban-core" "$arch" "$version"
+    download_binary "nftban-ui" "$arch" "$version"
+
+    # nftban-ui-auth is amd64 only (CGO)
+    if [[ "$arch" == "amd64" ]]; then
+        download_binary "nftban-ui-auth" "$arch" "$version"
+    else
+        warn "nftban-ui-auth not available for $arch (requires CGO)"
+    fi
+
+    # Download SHA256SUMS
+    log "Downloading SHA256SUMS..."
+    curl -fsSL -o "$DOWNLOAD_DIR/SHA256SUMS" "${GITHUB_RELEASES}/${version}/SHA256SUMS" 2>/dev/null || true
+}
+
+verify_all() {
+    local version="$1"
+    local arch="$2"
+    local method="$3"
+
+    local binaries=("nftban-core-linux-${arch}" "nftban-ui-linux-${arch}")
+    if [[ "$arch" == "amd64" ]]; then
+        binaries+=("nftban-ui-auth-linux-amd64")
+    fi
+
+    local verified=0
+    local failed=0
+
+    for binary in "${binaries[@]}"; do
+        local path="$DOWNLOAD_DIR/$binary"
+        [[ ! -f "$path" ]] && continue
+
+        case "$method" in
+            slsa)
+                if verify_slsa "$path" "$version"; then
+                    verified=$((verified + 1))
+                else
+                    failed=$((failed + 1))
+                fi
+                ;;
+            sha256)
+                if verify_sha256 "$path" "$DOWNLOAD_DIR/SHA256SUMS"; then
+                    verified=$((verified + 1))
+                else
+                    failed=$((failed + 1))
+                fi
+                ;;
+        esac
+    done
+
+    if [[ $failed -gt 0 ]]; then
+        error "Verification failed for $failed binary(ies). DO NOT USE!"
+        return 1
+    fi
+
+    ok "All binaries verified ($verified total)"
+    return 0
+}
+
+install_binaries() {
+    local arch="$1"
+
+    log "Installing binaries to $INSTALL_DIR..."
+
+    mkdir -p "$INSTALL_DIR"
+
+    # Install nftban-core
+    if [[ -f "$DOWNLOAD_DIR/nftban-core-linux-${arch}" ]]; then
+        cp -f "$DOWNLOAD_DIR/nftban-core-linux-${arch}" "$INSTALL_DIR/nftban-core"
+        chmod 755 "$INSTALL_DIR/nftban-core"
+        ok "Installed: $INSTALL_DIR/nftban-core"
+    fi
+
+    # Install nftban-ui
+    if [[ -f "$DOWNLOAD_DIR/nftban-ui-linux-${arch}" ]]; then
+        cp -f "$DOWNLOAD_DIR/nftban-ui-linux-${arch}" /usr/sbin/nftban-ui
+        chmod 755 /usr/sbin/nftban-ui
+        ok "Installed: /usr/sbin/nftban-ui"
+    fi
+
+    # Install nftban-ui-auth (amd64 only)
+    if [[ -f "$DOWNLOAD_DIR/nftban-ui-auth-linux-amd64" ]]; then
+        cp -f "$DOWNLOAD_DIR/nftban-ui-auth-linux-amd64" /usr/libexec/nftban-ui-auth
+        chmod 755 /usr/libexec/nftban-ui-auth
+        ok "Installed: /usr/libexec/nftban-ui-auth"
+    fi
+
+    ok "Binaries installed successfully"
+}
+
+show_usage() {
+    cat << EOF
+NFTBan Binary Download with SLSA Verification
+
+Usage:
+  $0 [VERSION]
+
+Arguments:
+  VERSION    Release tag (e.g., v1.0.0). Default: latest
+
+Options:
+  --help     Show this help
+
+Environment Variables:
+  DOWNLOAD_DIR   Directory for downloaded files (default: /tmp/nftban-binaries)
+  INSTALL_DIR    Directory for installed binaries (default: /usr/lib/nftban/bin)
+  SKIP_INSTALL   Set to 1 to download only, don't install
+
+Examples:
+  $0                    # Download and install latest version
+  $0 v1.0.0            # Download specific version
+  SKIP_INSTALL=1 $0    # Download only, don't install
+
+Security:
+  This script verifies binaries using SLSA Level 3 provenance.
+  If verification fails, binaries will NOT be installed.
+
+  Learn more: https://slsa.dev/
+
+EOF
+}
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+# Handle help
+if [[ "${1:-}" == "--help" || "${1:-}" == "-h" ]]; then
+    show_usage
+    exit 0
+fi
+
+# Check root for installation
+if [[ "${SKIP_INSTALL:-0}" != "1" && $EUID -ne 0 ]]; then
+    error "Root required for installation. Use sudo or set SKIP_INSTALL=1"
+fi
+
+echo ""
+echo "================================================"
+echo "  NFTBan Binary Download with SLSA Verification"
+echo "================================================"
+echo ""
+
+# Setup
+ARCH=$(detect_arch)
+mkdir -p "$DOWNLOAD_DIR"
+
+log "Architecture: $ARCH"
+log "Download dir: $DOWNLOAD_DIR"
+echo ""
+
+# Get version
+if [[ "$VERSION" == "latest" ]]; then
+    VERSION=$(get_latest_version)
+fi
+log "Version: $VERSION"
+echo ""
+
+# Download all binaries
+download_all "$VERSION" "$ARCH"
+echo ""
+
+# Check for SLSA verifier
+VERIFY_METHOD="sha256"
+if command -v slsa-verifier &>/dev/null; then
+    VERIFY_METHOD="slsa"
+    log "SLSA verifier found"
+else
+    log "SLSA verifier not found, attempting to install..."
+    if install_slsa_verifier; then
+        if command -v slsa-verifier &>/dev/null; then
+            VERIFY_METHOD="slsa"
+            ok "SLSA verifier installed"
+        fi
+    fi
+fi
+
+if [[ "$VERIFY_METHOD" == "slsa" ]]; then
+    log "Using SLSA Level 3 verification (recommended)"
+else
+    warn "Falling back to SHA256 verification"
+    warn "For better security, install slsa-verifier:"
+    echo "  go install github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier@latest"
+fi
+echo ""
+
+# Verify all binaries
+verify_all "$VERSION" "$ARCH" "$VERIFY_METHOD"
+echo ""
+
+# Install binaries
+if [[ "${SKIP_INSTALL:-0}" != "1" ]]; then
+    install_binaries "$ARCH"
+    echo ""
+fi
+
+# Cleanup
+if [[ "${KEEP_DOWNLOADS:-0}" != "1" ]]; then
+    rm -rf "$DOWNLOAD_DIR"
+fi
+
+echo ""
+ok "Download and verification complete!"
+echo ""
+echo "Verification method: $VERIFY_METHOD"
+echo "Version installed:   $VERSION"
+echo ""
+echo "Next steps:"
+echo "  nftban version        # Check installation"
+echo "  nftban health         # Run health check"
+echo ""

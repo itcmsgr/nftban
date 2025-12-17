@@ -1,0 +1,20 @@
+[Unit]
+Description=NFTBan Periodic Health Check Timer
+Documentation=man:nftban(8)
+Requires=nftban-health.service
+
+[Timer]
+# Run daily at 03:00 AM (avoid conflicts with other cron jobs)
+OnCalendar=*-*-* 03:00:00
+
+# Add randomization to avoid load spikes (0-30 minutes)
+RandomizedDelaySec=30m
+
+# Persist timer across reboots
+Persistent=true
+
+# Unit to activate
+Unit=nftban-health.service
+
+[Install]
+WantedBy=timers.target

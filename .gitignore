@@ -1,129 +1,67 @@
-# NFTBan v0.10.0 - Git Ignore File
+# =============================================================================
+# NFTBan .gitignore
 # =============================================================================
 
-# Development archives (internal development history)
-.archive/
-docs/archive/
-docs/sessions/
-docs/deployment/
-docs/updates/
-
-# Internal strategy and migration documents
-docs/COMPLETE_MIGRATION_STRATEGY.md
-docs/DEPLOYMENT_READINESS_CHECKLIST.md
-docs/PORT_DDOS_MIGRATION_ANALYSIS.md
-docs/*_MIGRATION_*.md
-docs/*_STRATEGY*.md
-docs/ARCHITECTURE_VALIDATION_OLD_VS_NEW.md
-
-# Lab deployment scripts (internal use only)
-deploy/
-cleanup-lab.sh
-DEPLOY*.sh
-deploy*.sh
-fix_nftban_permissions.sh
-nftban_init.sh
-*_to_labs.sh
-*_to_lab.sh
-
 # Build artifacts
+bin/
+dist/
+build/
 *.o
-*.so
 *.a
-*.dylib
-*.exe
-*.dll
 
-# Go build artifacts
-go-feeds/nftban-feeds
-go-feeds/nftban-geoip
+# Go
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test artifacts
 *.test
 *.out
+coverage.html
+coverage.txt
 
-# Temporary files
-*.tmp
+# IDE and editor
+.idea/
+.vscode/
 *.swp
 *.swo
 *~
-.#*
-\#*#
-
-# Logs
-*.log
-logs/
-
-# Editor and IDE files
-.vscode/
-.idea/
-*.sublime-*
-*.code-workspace
 .DS_Store
 
-# Python cache (if any Python tools added)
-__pycache__/
-*.pyc
-*.pyo
-*.egg-info/
+# Claude Code (local dev settings)
+.claude/
 
-# Test results
-test-results/
-coverage/
-.coverage
+# Local environment
+.env
+.env.local
+*.local
 
-# Package build artifacts
+# Node modules (for web UI)
+node_modules/
+cmd/nftban-ui/web/node_modules/
+
+# Temporary files
+*.tmp
+*.temp
+*.log
+*.bak
+
+# Package artifacts
 *.rpm
 *.deb
 *.tar.gz
-*.zip
-dist/
-build/
+*.tgz
 
-# Private configurations (user should never commit these)
-**/secrets.d/*
-*.key
-*.pem
-*.crt
-!*.example
+# Debug
+*.debug
+__debug_bin
 
-# Runtime data
-/var/lib/nftban/
-/var/log/nftban/
-/var/cache/nftban/
-/run/nftban/
+# Local test data
+*.mmdb
+GeoLite2-*.mmdb
 
-# Backup files
-*.bak
-*.backup
-*.orig
-
-# OS files
-Thumbs.db
-ehthumbs.db
-Desktop.ini
-$RECYCLE.BIN/
-
-# Terraform (if used for deployment)
-.terraform/
-*.tfstate
-*.tfstate.backup
-
-# Ansible (if used for deployment)
-*.retry
-
-# Docker (if used)
-.dockerignore
-docker-compose.override.yml
-
-# Local testing
-/tmp/
-/temp/
-local-test/
-
-# Personal notes and internal planning
-NOTES.txt
-NOTES.md
-TODO-personal.md
-TODO*.md
-*TESTING*.md
-*PLAN*.md
-ROADMAP-internal.md
+# Config files with secrets (examples are ok)
+/etc/nftban/*.conf
+!/etc/nftban/*.conf.example

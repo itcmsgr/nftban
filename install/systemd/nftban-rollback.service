@@ -1,0 +1,21 @@
+[Unit]
+Description=NFTBan Automatic Rollback Service
+Documentation=man:nftban(8)
+Documentation=https://nftban.com/docs
+After=network-online.target nftables.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/sbin/nftban-rollback --force
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-rollback
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/etc/nftban /var/lib/nftban /var/log/nftban
+
+[Install]
+WantedBy=multi-user.target
