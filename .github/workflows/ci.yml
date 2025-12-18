@@ -88,6 +88,9 @@ jobs:
         with:
           go-version: '1.22'
 
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+
       - name: Cache Go modules
         uses: actions/cache@v4
         with:
@@ -137,18 +140,25 @@ jobs:
         with:
           go-version: '1.22'
 
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+
       - name: Build Go binaries
         run: |
           mkdir -p bin
           go build -o bin/nftban-core ./cmd/nftban-core
-          go build -o bin/nftban-api-server ./cmd/nftban-api-server
+          go build -o bin/nftban-ui ./cmd/nftban-ui
+          go build -o bin/nftban-ui-auth ./cmd/nftban-ui-auth
+          go build -o bin/nftband ./cmd/nftband
 
       - name: Verify binaries
         run: |
           echo "=== Built binaries ==="
           ls -lh bin/
           file bin/nftban-core
-          file bin/nftban-api-server
+          file bin/nftban-ui
+          file bin/nftban-ui-auth
+          file bin/nftband
 
       - name: Verify CLI structure
         run: |

@@ -36,18 +36,35 @@ jobs:
         with:
           go-version: ${{ matrix.go }}
 
+      - name: Install build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+
       - name: Build nftban-core (${{ matrix.arch }})
         run: |
           mkdir -p dist
-          GOOS=linux GOARCH=${{ matrix.arch }} \
+          GOOS=linux GOARCH=${{ matrix.arch }} CGO_ENABLED=0 \
           go build -trimpath -ldflags "-s -w" \
             -o dist/nftban-core-${{ matrix.arch }} ./cmd/nftban-core
 
-      - name: Build nftban-api-server (${{ matrix.arch }})
+      - name: Build nftban-ui (${{ matrix.arch }})
         run: |
-          GOOS=linux GOARCH=${{ matrix.arch }} \
+          GOOS=linux GOARCH=${{ matrix.arch }} CGO_ENABLED=0 \
           go build -trimpath -ldflags "-s -w" \
-            -o dist/nftban-api-server-${{ matrix.arch }} ./cmd/nftban-api-server
+            -o dist/nftban-ui-${{ matrix.arch }} ./cmd/nftban-ui
+
+      - name: Build nftban-ui-auth (${{ matrix.arch }})
+        if: matrix.arch == 'amd64'
+        run: |
+          # nftban-ui-auth requires CGO for PAM support (only amd64 for now)
+          GOOS=linux GOARCH=${{ matrix.arch }} CGO_ENABLED=1 \
+          go build -trimpath -ldflags "-s -w" \
+            -o dist/nftban-ui-auth-${{ matrix.arch }} ./cmd/nftban-ui-auth
+
+      - name: Build nftband (${{ matrix.arch }})
+        run: |
+          GOOS=linux GOARCH=${{ matrix.arch }} CGO_ENABLED=0 \
+          go build -trimpath -ldflags "-s -w" \
+            -o dist/nftband-${{ matrix.arch }} ./cmd/nftband
 
       - name: Upload matrix artifacts
         uses: actions/upload-artifact@v4
