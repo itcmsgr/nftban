@@ -62,7 +62,7 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 
 ## Highlights
 
-- **43 CLI Commands** — Complete firewall management from command line
+- **44 CLI Commands** — Complete firewall management from command line
 - **Unified Go Backend** — High-performance feeds, GeoIP, and sync operations
 - **Web Interface** — Modern dashboard for visual management
 - **Dual-Table Architecture** — Clean IPv4/IPv6 separation with `ip nftban` and `ip6 nftban`
@@ -140,7 +140,7 @@ nftban ddos status     # DDoS protection
 ### Testing
 ```bash
 nftban smoke run       # Standard smoke test
-nftban smoke all       # Comprehensive test (43 commands)
+nftban smoke all       # Comprehensive test (44 commands)
 ```
 
 See [CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference) for complete documentation.
@@ -169,7 +169,7 @@ ip6 nftban {                 # IPv6 rules
 
 | Component | Type | Description |
 |-----------|------|-------------|
-| `nftban` | Bash CLI | Main command-line interface (43 commands) |
+| `nftban` | Bash CLI | Main command-line interface (44 commands) |
 | `nftban-core` | Go Binary | Unified backend (feeds, geoip, sync) |
 | `nftban-ui` | Go Binary | Web interface server |
 
