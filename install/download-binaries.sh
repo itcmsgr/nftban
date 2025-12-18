@@ -67,7 +67,9 @@ install_slsa_verifier() {
     # Check if Go is available
     if command -v go &>/dev/null; then
         go install github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier@latest
-        export PATH="$PATH:$(go env GOPATH)/bin"
+        local gopath
+        gopath=$(go env GOPATH)
+        export PATH="$PATH:${gopath}/bin"
         return 0
     fi
 

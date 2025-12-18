@@ -49,7 +49,6 @@ CORE_BIN_DIR="/usr/lib/nftban/bin"
 CORE_INSTALL_PATH="$CORE_BIN_DIR/nftban-core"
 CLI_INSTALL_PATH="/usr/bin/nftban"
 GUI_INSTALL_PATH="/usr/sbin/nftban-ui"
-AUTH_INSTALL_PATH="/usr/libexec/nftban-ui-auth"
 LIB_DIR="/usr/lib/nftban"
 COMPLETION_PATH="/usr/share/bash-completion/completions/nftban"
 POLKIT_ACTIONS_DIR="/usr/share/polkit-1/actions"
@@ -130,7 +129,8 @@ download_geoip_database() {
 
     local geoip_dir="/var/lib/nftban/geoip"
     local db_file="${geoip_dir}/dbip-country-lite.mmdb"
-    local download_url="https://download.db-ip.com/free/dbip-country-lite-$(date +%Y-%m).mmdb.gz"
+    local download_url
+    download_url="https://download.db-ip.com/free/dbip-country-lite-$(date +%Y-%m).mmdb.gz"
 
     mkdir -p "$geoip_dir"
 
@@ -487,7 +487,8 @@ install_configs() {
         cp -f "$SCRIPT_DIR/etc/nftban/distros/"*.conf /etc/nftban/distros/
         chmod 644 /etc/nftban/distros/*.conf
         chown root:root /etc/nftban/distros/*.conf
-        local count=$(ls -1 /etc/nftban/distros/*.conf 2>/dev/null | wc -l)
+        local count
+        count=$(ls -1 /etc/nftban/distros/*.conf 2>/dev/null | wc -l)
         ok "Installed $count distro config files"
     fi
 
@@ -538,14 +539,16 @@ install_templates() {
     # Install mail templates
     if [[ -d "$SCRIPT_DIR/cli/share/nftban/templates/mail" ]]; then
         cp -f "$SCRIPT_DIR/cli/share/nftban/templates/mail/"*.html /usr/share/nftban/templates/mail/ 2>/dev/null || true
-        local mail_count=$(ls -1 /usr/share/nftban/templates/mail/*.html 2>/dev/null | wc -l)
+        local mail_count
+        mail_count=$(ls -1 /usr/share/nftban/templates/mail/*.html 2>/dev/null | wc -l)
         ok "Installed $mail_count mail templates"
     fi
 
     # Install report templates
     if [[ -d "$SCRIPT_DIR/cli/share/nftban/templates/reports" ]]; then
         cp -f "$SCRIPT_DIR/cli/share/nftban/templates/reports/"*.html /usr/share/nftban/templates/reports/ 2>/dev/null || true
-        local report_count=$(ls -1 /usr/share/nftban/templates/reports/*.html 2>/dev/null | wc -l)
+        local report_count
+        report_count=$(ls -1 /usr/share/nftban/templates/reports/*.html 2>/dev/null | wc -l)
         ok "Installed $report_count report templates"
     fi
 
@@ -560,7 +563,8 @@ install_templates() {
     mkdir -p /usr/share/nftban/specs
     if [[ -d "$SCRIPT_DIR/cli/share/nftban/specs" ]]; then
         cp -f "$SCRIPT_DIR/cli/share/nftban/specs/"*.json /usr/share/nftban/specs/ 2>/dev/null || true
-        local spec_count=$(ls -1 /usr/share/nftban/specs/*.json 2>/dev/null | wc -l)
+        local spec_count
+        spec_count=$(ls -1 /usr/share/nftban/specs/*.json 2>/dev/null | wc -l)
         ok "Installed $spec_count spec files"
     fi
     chown -R root:root /usr/share/nftban/specs
