@@ -83,24 +83,37 @@ jobs:
           ls -lh bin/
 
       # =======================================================================
-      # 4. BUILD PACKAGES (RPM and DEB)
+      # 4. BUILD DEB PACKAGE
       # =======================================================================
-      - name: Build packages
+      - name: Build DEB package
         run: |
           chmod +x packaging/build_nftban.sh
           cd packaging
-          ./build_nftban.sh both
+          ./build_nftban.sh deb
+
+      # =======================================================================
+      # 5. BUILD RPM PACKAGE (Rocky Linux container)
+      # =======================================================================
+      - name: Build RPM package
+        run: |
+          docker run --rm -v "$(pwd):/workspace" -w /workspace rockylinux:9 bash -c "
+            dnf -y install rpm-build rpmdevtools tar gzip systemd-rpm-macros
+            chmod +x packaging/build_nftban.sh
+            cd packaging
+            ./build_nftban.sh rpm
+          "
 
       - name: Move packages to dist
         run: |
           mkdir -p dist/packages
-          find build/packages -name "*.rpm" -exec cp {} dist/packages/ \; 2>/dev/null || true
-          find build/packages -name "*.deb" -exec cp {} dist/packages/ \; 2>/dev/null || true
+          find . -name "*.rpm" -path "*/RPMS/*" -exec cp {} dist/packages/ \; 2>/dev/null || true
+          find . -name "*.rpm" -path "*build*" -exec cp {} dist/packages/ \; 2>/dev/null || true
+          find . -name "*.deb" -path "*build*" -exec cp {} dist/packages/ \; 2>/dev/null || true
           echo "=== Packages built ==="
           ls -lh dist/packages/
 
       # =======================================================================
-      # 5. GENERATE CHECKSUMS
+      # 6. GENERATE CHECKSUMS
       # =======================================================================
       - name: Generate SHA256SUMS
         run: |
