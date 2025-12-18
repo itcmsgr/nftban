@@ -79,12 +79,16 @@ _ipv6_expand() {
         local left="${ip%%::*}"
         local right="${ip#*::}"
 
-        # Count existing groups
+        # Count existing groups (use prefix increment to avoid ((0)) returning false with set -e)
         local left_groups=0 right_groups=0
-        [[ -n "$left" ]] && left_groups=$(echo "$left" | tr -cd ':' | wc -c)
-        [[ -n "$left" ]] && ((left_groups++))
-        [[ -n "$right" ]] && right_groups=$(echo "$right" | tr -cd ':' | wc -c)
-        [[ -n "$right" ]] && ((right_groups++))
+        if [[ -n "$left" ]]; then
+            left_groups=$(echo "$left" | tr -cd ':' | wc -c)
+            left_groups=$((left_groups + 1))
+        fi
+        if [[ -n "$right" ]]; then
+            right_groups=$(echo "$right" | tr -cd ':' | wc -c)
+            right_groups=$((right_groups + 1))
+        fi
 
         # Calculate missing groups
         local missing=$((8 - left_groups - right_groups))

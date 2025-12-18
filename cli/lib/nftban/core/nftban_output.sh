@@ -711,7 +711,7 @@ nftban_progress_start() {
         local spinchars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
         local i=0
         while true; do
-            printf "\r${CYAN}%s${NC} %s " "${spinchars:i++%${#spinchars}:1}" "$message"
+            printf "\r${NFTBAN_COLOR_CYAN}%s${NFTBAN_COLOR_RESET} %s " "${spinchars:i++%${#spinchars}:1}" "$message"
             sleep 0.1
         done
     ) &
@@ -751,7 +751,7 @@ nftban_progress_end() {
     if [[ -t 1 ]]; then
         printf "\r\033[K"  # Clear line
         if [[ -n "$message" ]]; then
-            echo -e "${GREEN}✓${NC} $message"
+            echo -e "${NFTBAN_COLOR_GREEN}✓${NFTBAN_COLOR_RESET} $message"
         fi
     fi
 }
@@ -771,7 +771,7 @@ nftban_progress_bar() {
     local filled=$((current * width / total))
     local empty=$((width - filled))
 
-    printf "\r${CYAN}%s${NC} [" "$message"
+    printf "\r${NFTBAN_COLOR_CYAN}%s${NFTBAN_COLOR_RESET} [" "$message"
     printf "%${filled}s" | tr ' ' '█'
     printf "%${empty}s" | tr ' ' '░'
     printf "] %3d%%" "$percent"

@@ -762,6 +762,8 @@ nftban_report_schedule_remove() {
         # Create temp file without the matching entries
         local temp_file
         temp_file=$(mktemp)
+        # Ensure cleanup on exit/error
+        trap 'rm -f "$temp_file" 2>/dev/null' EXIT
 
         # Remove matching cron entry and its comment line
         local skip_next=false
