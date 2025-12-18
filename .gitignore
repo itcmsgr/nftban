@@ -65,3 +65,5 @@ GeoLite2-*.mmdb
 # Config files with secrets (examples are ok)
 /etc/nftban/*.conf
 !/etc/nftban/*.conf.example
+bin/
+dist/
