@@ -74,82 +74,33 @@ jobs:
       # =======================================================================
       # 3. BUILD GO BINARIES
       # =======================================================================
-      - name: Build Go binaries (x86_64 and aarch64)
+      - name: Build Go binaries
         run: |
-          chmod +x scripts/build-go-binaries.sh
-          ./scripts/build-go-binaries.sh
+          chmod +x build.sh
+          ./build.sh
 
           echo "=== Verify binaries were built ==="
-          ls -lh dist/x86_64/
-          ls -lh dist/aarch64/
+          ls -lh bin/
 
       # =======================================================================
-      # 4. BUILD RPM PACKAGES (using Rocky Linux container)
+      # 4. BUILD PACKAGES (RPM and DEB)
       # =======================================================================
-      - name: Build RPM packages in Rocky Linux container
+      - name: Build packages
         run: |
-          docker run --rm -v "$(pwd):/workspace" -w /workspace rockylinux:9 bash -c "
-            set -e  # Exit on any error
+          chmod +x packaging/build_nftban.sh
+          cd packaging
+          ./build_nftban.sh both
 
-            # CRITICAL: Use distro-sync to align BaseOS/AppStream repo versions
-            # This fixes glibc/glibc-devel version mismatches caused by mirror skew
-            echo '=== Syncing to consistent repo state (distro-sync) ==='
-            dnf clean all
-            rm -rf /var/cache/dnf
-
-            # First sync existing packages to align repo versions
-            dnf -y --releasever=9 --refresh distro-sync || {
-              echo 'ERROR: Failed to sync package repos'
-              exit 1
-            }
-
-            # Now install build dependencies (uses aligned repos from distro-sync)
-            # Let dnf upgrade glibc if needed to match glibc-devel requirements
-            echo '=== Installing build dependencies ==='
-            dnf -y --releasever=9 install \
-              rpm-build rpmdevtools tar gzip which \
-              systemd-rpm-macros glibc-devel golang gcc || {
-
-              # If install fails due to version conflicts, try with --nobest
-              # This uses slightly older but compatible package versions
-              echo 'WARN: Standard install failed, retrying with --nobest'
-              dnf -y --releasever=9 --nobest install \
-                rpm-build rpmdevtools tar gzip which \
-                systemd-rpm-macros glibc-devel golang gcc || {
-                echo 'ERROR: Failed to install build dependencies even with --nobest'
-                exit 1
-              }
-            }
-
-            # Verify rpmbuild is available
-            which rpmbuild || { echo 'ERROR: rpmbuild not found after install'; exit 1; }
-            echo '✓ rpmbuild available'
-
-            chmod +x scripts/build-rpm.sh
-            ./scripts/build-rpm.sh
-
-            # Fix permissions so Ubuntu runner can read AND write to packages directory
-            chmod -R a+rwX /workspace/dist/packages/ || true
-          "
-
-      - name: Verify RPM packages built
+      - name: Move packages to dist
         run: |
-          echo "=== RPM packages built ==="
-          ls -lh dist/packages/*.rpm
+          mkdir -p dist/packages
+          find build/packages -name "*.rpm" -exec cp {} dist/packages/ \; 2>/dev/null || true
+          find build/packages -name "*.deb" -exec cp {} dist/packages/ \; 2>/dev/null || true
+          echo "=== Packages built ==="
+          ls -lh dist/packages/
 
       # =======================================================================
-      # 5. BUILD DEB PACKAGES
-      # =======================================================================
-      - name: Build DEB packages
-        run: |
-          chmod +x scripts/build-deb.sh
-          ./scripts/build-deb.sh
-
-          echo "=== DEB packages built ==="
-          ls -lh dist/packages/*.deb
-
-      # =======================================================================
-      # 6. GENERATE CHECKSUMS (v0.32.6: SHA256 only, no GPG yet)
+      # 5. GENERATE CHECKSUMS
       # =======================================================================
       - name: Generate SHA256SUMS
         run: |
