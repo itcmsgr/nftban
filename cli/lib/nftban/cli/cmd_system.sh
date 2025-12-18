@@ -24,7 +24,7 @@
 # meta:updated_date=2025-12-02
 # =============================================================================
 
-# Enhanced strict mode
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
