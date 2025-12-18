@@ -37,3 +37,10 @@ GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" \
 echo "=== Go binaries built ==="
 ls -lh dist/x86_64/
 ls -lh dist/aarch64/
+
+# Also copy x86_64 binaries to bin/ for RPM packaging
+echo "Copying binaries to bin/ for packaging..."
+mkdir -p bin
+cp dist/x86_64/nftban-core bin/
+cp dist/x86_64/nftban-ui bin/
+ls -lh bin/
