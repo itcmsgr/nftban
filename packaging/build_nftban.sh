@@ -94,9 +94,7 @@ License:        GPL-3.0-or-later
 URL:            https://github.com/itcmsgr/nftban-dev
 Source0:        %{name}-%{version}.tar.gz
 
-BuildRequires:  golang >= 1.21
 BuildRequires:  systemd-rpm-macros
-BuildRequires:  git
 
 Requires:       nftables >= 0.9.0
 Requires:       systemd
@@ -113,8 +111,9 @@ Features nftables v1.0 dual-table architecture (ip nftban + ip6 nftban).
 %autosetup
 
 %build
-cd cmd/nftban-core
-CGO_ENABLED=0 go build -ldflags="-s -w -X main.version=%{version}" -o ../../bin/nftban-core .
+# Binary is pre-built by CI and included in tarball
+echo "Using pre-built nftban-core binary"
+ls -la bin/
 
 %install
 # Binaries
