@@ -741,3 +741,6 @@ nftban_cmd_metrics() {
             ;;
     esac
 }
+
+# Export functions
+export -f nftban_cmd_metrics
