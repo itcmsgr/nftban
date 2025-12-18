@@ -205,10 +205,13 @@ _fallback_country_metrics() {
 
     # Get configured countries from geoban config
     local country_count=0
+    local conf_files=()
     if [[ -d "${NFTBAN_CONFIG_DIR}/geoban.d" ]]; then
-        for conf in "${NFTBAN_CONFIG_DIR}"/geoban.d/*.conf; do
-            [[ -f "$conf" ]] && ((country_count++))
-        done
+        # Use nullglob to handle empty directory gracefully
+        shopt -s nullglob
+        conf_files=("${NFTBAN_CONFIG_DIR}"/geoban.d/*.conf)
+        shopt -u nullglob
+        country_count=${#conf_files[@]}
     fi
 
     [[ $country_count -eq 0 ]] && return 0
@@ -216,12 +219,10 @@ _fallback_country_metrics() {
     # Distribute IPs evenly (approximate)
     local per_country=$((total_ips / country_count))
 
-    for conf in "${NFTBAN_CONFIG_DIR}"/geoban.d/*.conf; do
-        if [[ -f "$conf" ]]; then
-            local country
-            country=$(basename "$conf" .conf | tr '[:lower:]' '[:upper:]')
-            echo "nftban_blocks_by_country{country=\"$country\"} $per_country"
-        fi
+    for conf in "${conf_files[@]}"; do
+        local country
+        country=$(basename "$conf" .conf | tr '[:lower:]' '[:upper:]')
+        echo "nftban_blocks_by_country{country=\"$country\"} $per_country"
     done
 }
 
