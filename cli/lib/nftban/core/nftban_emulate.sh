@@ -68,21 +68,119 @@ _ip_in_cidr() {
     return 1
 }
 
-# Check if IPv6 is within CIDR range (simplified - exact match only for now)
+# Expand IPv6 to full 32-character hex (no colons)
+# 2001:db8::1 -> 20010db8000000000000000000000001
+_ipv6_expand() {
+    local ip="$1"
+    local expanded=""
+
+    # Handle :: expansion
+    if [[ "$ip" == *"::"* ]]; then
+        local left="${ip%%::*}"
+        local right="${ip#*::}"
+
+        # Count existing groups
+        local left_groups=0 right_groups=0
+        [[ -n "$left" ]] && left_groups=$(echo "$left" | tr -cd ':' | wc -c)
+        [[ -n "$left" ]] && ((left_groups++))
+        [[ -n "$right" ]] && right_groups=$(echo "$right" | tr -cd ':' | wc -c)
+        [[ -n "$right" ]] && ((right_groups++))
+
+        # Calculate missing groups
+        local missing=$((8 - left_groups - right_groups))
+
+        # Build zero groups
+        local zeros=""
+        for ((i=0; i<missing; i++)); do
+            zeros="${zeros}0000"
+        done
+
+        # Expand left part
+        if [[ -n "$left" ]]; then
+            IFS=':' read -ra groups <<< "$left"
+            for g in "${groups[@]}"; do
+                printf -v g "%04s" "$g"
+                expanded="${expanded}${g// /0}"
+            done
+        fi
+
+        # Add zeros
+        expanded="${expanded}${zeros}"
+
+        # Expand right part
+        if [[ -n "$right" ]]; then
+            IFS=':' read -ra groups <<< "$right"
+            for g in "${groups[@]}"; do
+                printf -v g "%04s" "$g"
+                expanded="${expanded}${g// /0}"
+            done
+        fi
+    else
+        # No ::, just expand each group
+        IFS=':' read -ra groups <<< "$ip"
+        for g in "${groups[@]}"; do
+            printf -v g "%04s" "$g"
+            expanded="${expanded}${g// /0}"
+        done
+    fi
+
+    # Ensure lowercase
+    echo "${expanded,,}"
+}
+
+# Convert hex string to binary string (for bit operations)
+_hex_to_bin() {
+    local hex="$1"
+    local bin=""
+    for ((i=0; i<${#hex}; i++)); do
+        case "${hex:$i:1}" in
+            0) bin+="0000" ;; 1) bin+="0001" ;; 2) bin+="0010" ;; 3) bin+="0011" ;;
+            4) bin+="0100" ;; 5) bin+="0101" ;; 6) bin+="0110" ;; 7) bin+="0111" ;;
+            8) bin+="1000" ;; 9) bin+="1001" ;; a|A) bin+="1010" ;; b|B) bin+="1011" ;;
+            c|C) bin+="1100" ;; d|D) bin+="1101" ;; e|E) bin+="1110" ;; f|F) bin+="1111" ;;
+        esac
+    done
+    echo "$bin"
+}
+
+# Check if IPv6 is within CIDR range (full implementation)
 _ipv6_in_cidr() {
     local ip="$1"
     local cidr="$2"
 
-    # For now, do simple prefix matching
-    # TODO: Full IPv6 CIDR math
+    # Handle single IP (no /)
     if [[ "$cidr" != *"/"* ]]; then
-        [[ "$ip" == "$cidr" ]] && return 0
+        local ip_exp net_exp
+        ip_exp=$(_ipv6_expand "$ip")
+        net_exp=$(_ipv6_expand "$cidr")
+        [[ "$ip_exp" == "$net_exp" ]] && return 0
         return 1
     fi
 
     local network="${cidr%/*}"
-    # Simple prefix match
-    [[ "$ip" == "$network"* ]] && return 0
+    local prefix="${cidr#*/}"
+
+    # Expand both to full hex
+    local ip_hex net_hex
+    ip_hex=$(_ipv6_expand "$ip")
+    net_hex=$(_ipv6_expand "$network")
+
+    # For /0, everything matches
+    [[ "$prefix" -eq 0 ]] && return 0
+
+    # For /128, exact match required
+    if [[ "$prefix" -eq 128 ]]; then
+        [[ "$ip_hex" == "$net_hex" ]] && return 0
+        return 1
+    fi
+
+    # Convert to binary for bit comparison
+    local ip_bin net_bin
+    ip_bin=$(_hex_to_bin "$ip_hex")
+    net_bin=$(_hex_to_bin "$net_hex")
+
+    # Compare first 'prefix' bits
+    [[ "${ip_bin:0:$prefix}" == "${net_bin:0:$prefix}" ]] && return 0
     return 1
 }
 
