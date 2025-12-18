@@ -399,12 +399,20 @@ func cmdFeedsLoad(feedsDir string) error {
 		fmt.Printf("  Loading %d IPv4 entries (IPs + CIDRs) into blacklist...\n", len(ipv4Combined))
 		stats, err := nft.AddCIDRElementsWithStats(blacklistIPv4Set, ipv4Combined)
 		if err != nil {
-			return fmt.Errorf("failed to load IPv4 CIDRs: %w", err)
+			// Check if it's a conflict error (IPs already covered by existing CIDRs)
+			if strings.Contains(err.Error(), "conflicting intervals") {
+				fmt.Printf("  ⚠️  Some feed IPs overlap with existing GeoIP/CIDR blocks (already blocked)\n")
+				fmt.Printf("     This is normal - the overlapping IPs are already protected.\n")
+				fmt.Printf("     Non-overlapping IPs were loaded successfully.\n")
+			} else {
+				return fmt.Errorf("failed to load IPv4 CIDRs: %w", err)
+			}
+		} else {
+			ipv4Stats = stats
+			fmt.Printf("  ✅ IPv4 CIDRs loaded successfully\n")
+			fmt.Printf("     Canonicalized: %d → %d ranges (%.1f%% reduction)\n",
+				stats.InputCIDRs, stats.OutputRanges, stats.ReductionPct)
 		}
-		ipv4Stats = stats
-		fmt.Printf("  ✅ IPv4 CIDRs loaded successfully\n")
-		fmt.Printf("     Canonicalized: %d → %d ranges (%.1f%% reduction)\n",
-			stats.InputCIDRs, stats.OutputRanges, stats.ReductionPct)
 	} else {
 		fmt.Println("  ℹ️  No IPv4 CIDRs to load")
 	}
@@ -713,8 +721,12 @@ func cmdFeedsUpdate(feedsDir, configPath string) error {
 	if successCount > 0 {
 		fmt.Println("Step 4: Loading feeds into nftables...")
 		if err := cmdFeedsLoad(feedsDir); err != nil {
-			fmt.Printf("⚠️  Warning: failed to load feeds: %v\n", err)
-			fmt.Println("   You can load manually with: sudo nftban-core feeds load")
+			if strings.Contains(err.Error(), "conflicting intervals") {
+				fmt.Printf("  ⚠️  Some feed IPs overlap with existing blocks (already protected)\n")
+			} else {
+				fmt.Printf("⚠️  Warning: failed to load feeds: %v\n", err)
+				fmt.Println("   You can load manually with: sudo nftban-core feeds load")
+			}
 		}
 	}
 
