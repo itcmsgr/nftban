@@ -132,7 +132,7 @@ mkdir -p %{buildroot}/usr/lib/nftban/lib
 cp -r cli/lib/nftban/* %{buildroot}/usr/lib/nftban/
 
 # Nftables config
-install -D -m 0644 install/nftables/nftables.conf %{buildroot}/etc/nftables.conf
+install -D -m 0644 install/nftables/nftables.conf %{buildroot}/etc/nftban/nftables.conf
 
 # Systemd units (actual files that exist)
 install -D -m 0644 install/systemd/nftban-maintenance.service %{buildroot}/usr/lib/systemd/system/nftban-maintenance.service
@@ -260,7 +260,7 @@ fi
 /usr/lib/nftban/bin/nftban-core
 /usr/bin/nftban
 /usr/lib/nftban/
-/etc/nftables.conf
+%config(noreplace) /etc/nftban/nftables.conf
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.timer
 /etc/polkit-1/rules.d/10-nftban-core.rules
@@ -455,8 +455,9 @@ build_deb() {
     # Copy libraries
     cp -r "${PROJECT_ROOT}/cli/lib/nftban"/* "${deb_root}/usr/lib/nftban/"
 
-    # Copy nftables config
-    install -m 0644 "${PROJECT_ROOT}/install/nftables/nftables.conf" "${deb_root}/etc/nftables.conf"
+    # Copy nftables config (to nftban dir to avoid conflict with system nftables package)
+    mkdir -p "${deb_root}/etc/nftban"
+    install -m 0644 "${PROJECT_ROOT}/install/nftables/nftables.conf" "${deb_root}/etc/nftban/nftables.conf"
 
     # Copy systemd units (if they exist)
     if [ -f "${PROJECT_ROOT}/install/systemd/nftban-core.service" ]; then
