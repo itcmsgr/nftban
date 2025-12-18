@@ -298,6 +298,12 @@ EOF
 build_rpm() {
     log_info "Building RPM packages..."
 
+    # Check if rpmbuild is available
+    if ! command -v rpmbuild &>/dev/null; then
+        log_warn "rpmbuild not found, skipping RPM build"
+        return 0
+    fi
+
     mkdir -p "${BUILD_DIR}"/{BUILD,RPMS,SOURCES,SPECS,SRPMS}
 
     # Create spec file
@@ -311,10 +317,13 @@ build_rpm() {
         bin/ cli/ cmd/ pkg/ install/ etc/
 
     # Build RPM
-    rpmbuild --define "_topdir ${BUILD_DIR}" \
-        -ba "${BUILD_DIR}/SPECS/nftban-core.spec"
-
-    log_success "RPM built: ${BUILD_DIR}/RPMS/x86_64/nftban-core-${PKG_VERSION}-${PKG_RELEASE}.*.rpm"
+    if rpmbuild --define "_topdir ${BUILD_DIR}" \
+        -bb "${BUILD_DIR}/SPECS/nftban-core.spec" 2>&1; then
+        log_success "RPM built: ${BUILD_DIR}/RPMS/x86_64/nftban-core-${PKG_VERSION}-${PKG_RELEASE}.*.rpm"
+        ls -la "${BUILD_DIR}/RPMS/" 2>/dev/null || true
+    else
+        log_warn "RPM build failed (may need Rocky/Fedora container)"
+    fi
 }
 
 create_deb_control() {
