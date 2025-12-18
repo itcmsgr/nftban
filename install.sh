@@ -136,7 +136,12 @@ download_geoip_database() {
 
     # Check if recent database exists (less than 30 days old)
     if [[ -f "$db_file" ]]; then
-        local file_age=$(( ($(date +%s) - $(stat -c %Y "$db_file" 2>/dev/null || echo 0)) / 86400 ))
+        local file_age
+        local now_ts
+        local file_ts
+        now_ts=$(date +%s)
+        file_ts=$(stat -c %Y "$db_file" 2>/dev/null || echo 0)
+        file_age=$(( (now_ts - file_ts) / 86400 ))
         if [[ $file_age -lt 30 ]]; then
             ok "GeoIP database exists (${file_age} days old)"
             return 0
