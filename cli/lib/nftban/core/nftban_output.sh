@@ -687,13 +687,103 @@ nftban_warning_banner() {
 }
 
 # =============================================================================
-# PROGRESS INDICATORS (for future use)
+# PROGRESS INDICATORS
 # =============================================================================
 
-# TODO: Implement progress spinner/bar for long operations
-# nftban_progress_start() { ... }
-# nftban_progress_update() { ... }
-# nftban_progress_end() { ... }
+# Progress spinner state
+declare -g _NFTBAN_SPINNER_PID=""
+declare -g _NFTBAN_SPINNER_MSG=""
+
+# Start a background spinner for long operations
+# Usage: nftban_progress_start "Loading feeds..."
+nftban_progress_start() {
+    local message="${1:-Processing...}"
+    _NFTBAN_SPINNER_MSG="$message"
+
+    # Don't start spinner if not a terminal
+    [[ ! -t 1 ]] && return 0
+
+    # Kill any existing spinner
+    nftban_progress_end 2>/dev/null
+
+    # Start spinner in background
+    (
+        local spinchars='⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏'
+        local i=0
+        while true; do
+            printf "\r${CYAN}%s${NC} %s " "${spinchars:i++%${#spinchars}:1}" "$message"
+            sleep 0.1
+        done
+    ) &
+    _NFTBAN_SPINNER_PID=$!
+
+    # Ensure spinner is killed on script exit
+    trap 'nftban_progress_end 2>/dev/null' EXIT
+}
+
+# Update spinner message (optional)
+# Usage: nftban_progress_update "Step 2 of 5..."
+nftban_progress_update() {
+    local message="${1:-Processing...}"
+    _NFTBAN_SPINNER_MSG="$message"
+
+    # If spinner is running, it will pick up new message on next iteration
+    # For simplicity, restart with new message
+    if [[ -n "$_NFTBAN_SPINNER_PID" ]] && kill -0 "$_NFTBAN_SPINNER_PID" 2>/dev/null; then
+        nftban_progress_end
+        nftban_progress_start "$message"
+    fi
+}
+
+# Stop the spinner and optionally show completion message
+# Usage: nftban_progress_end "Done!" or nftban_progress_end
+nftban_progress_end() {
+    local message="${1:-}"
+
+    # Kill spinner process
+    if [[ -n "$_NFTBAN_SPINNER_PID" ]]; then
+        kill "$_NFTBAN_SPINNER_PID" 2>/dev/null
+        wait "$_NFTBAN_SPINNER_PID" 2>/dev/null
+        _NFTBAN_SPINNER_PID=""
+    fi
+
+    # Clear line and show completion message
+    if [[ -t 1 ]]; then
+        printf "\r\033[K"  # Clear line
+        if [[ -n "$message" ]]; then
+            echo -e "${GREEN}✓${NC} $message"
+        fi
+    fi
+}
+
+# Simple progress bar for operations with known count
+# Usage: nftban_progress_bar 50 100 "Processing feeds"
+nftban_progress_bar() {
+    local current="${1:-0}"
+    local total="${2:-100}"
+    local message="${3:-Progress}"
+    local width=40
+
+    [[ ! -t 1 ]] && return 0
+    [[ $total -eq 0 ]] && total=1
+
+    local percent=$((current * 100 / total))
+    local filled=$((current * width / total))
+    local empty=$((width - filled))
+
+    printf "\r${CYAN}%s${NC} [" "$message"
+    printf "%${filled}s" | tr ' ' '█'
+    printf "%${empty}s" | tr ' ' '░'
+    printf "] %3d%%" "$percent"
+
+    # Newline when complete
+    [[ $current -ge $total ]] && echo ""
+}
+
+export -f nftban_progress_start
+export -f nftban_progress_update
+export -f nftban_progress_end
+export -f nftban_progress_bar
 
 # =============================================================================
 # UPDATE CHECK FUNCTIONS

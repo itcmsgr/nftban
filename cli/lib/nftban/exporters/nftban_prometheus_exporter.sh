@@ -140,31 +140,89 @@ get_block_count() {
 }
 
 # Get block count by country
+# Uses nftban stats API for accurate per-country metrics
 get_blocks_by_country() {
-    # v0.7.3: GeoBan IPs are in unified blacklist_ipv4/ipv6
-    # Cannot distinguish geoban IPs from other ban sources via nftables
-    # Would need to query metadata from config files or Go service
+    local cache_file="${NFTBAN_CACHE_DIR}/metrics_countries.json"
+    local cache_max_age=300  # 5 minutes
 
-    # For now, return total blacklist count
-    # TODO: Implement per-country metrics via config file parsing or API
-    local total_ips
-    total_ips=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | { grep -o '[0-9.]\+\.[0-9]\+\.[0-9]\+\.[0-9]\+' || true; } | wc -l)
-    total_ips=${total_ips:-0}
-
-    if [[ $total_ips -gt 0 ]]; then
-        # Get configured countries from geoban config
-        if [[ -d "${NFTBAN_CONFIG_DIR}/geoban.d" ]]; then
-            for conf in ${NFTBAN_CONFIG_DIR}/geoban.d/*.conf; do
-                if [[ -f "$conf" ]]; then
-                    local country
-                    country=$(basename "$conf" .conf | tr '[:lower:]' '[:upper:]')
-                    # Estimate: distribute IPs across configured countries
-                    # This is approximate - real solution needs per-country sets
-                    echo "nftban_blocks_by_country{country=\"$country\"} $total_ips"
-                fi
-            done
+    # Check cache first
+    if [[ -f "$cache_file" ]]; then
+        local cache_age
+        cache_age=$(( $(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || echo 0) ))
+        if [[ $cache_age -lt $cache_max_age ]]; then
+            # Use cached data
+            _parse_country_metrics "$cache_file"
+            return 0
         fi
     fi
+
+    # Query nftban stats for per-country data
+    local json_data
+    if command -v nftban &>/dev/null; then
+        json_data=$(nftban stats top countries 50 --json 2>/dev/null) || json_data=""
+    fi
+
+    # If we got valid JSON, cache it and parse
+    if [[ -n "$json_data" ]] && echo "$json_data" | grep -q '"success":true'; then
+        echo "$json_data" > "$cache_file" 2>/dev/null || true
+        _parse_country_metrics "$cache_file"
+        return 0
+    fi
+
+    # Fallback: Parse geoban.d config files for banned countries
+    _fallback_country_metrics
+}
+
+# Parse country metrics from JSON cache
+_parse_country_metrics() {
+    local cache_file="$1"
+
+    if [[ ! -f "$cache_file" ]]; then
+        return 1
+    fi
+
+    # Check if jq is available
+    if command -v jq &>/dev/null; then
+        # Parse JSON with jq
+        jq -r '.data.items[]? | "nftban_blocks_by_country{country=\"\(.country)\"} \(.count)"' "$cache_file" 2>/dev/null
+    else
+        # Fallback: grep/awk parsing
+        grep -oP '"country":\s*"\K[^"]+|"count":\s*\K\d+' "$cache_file" 2>/dev/null | \
+        while read -r country && read -r count; do
+            echo "nftban_blocks_by_country{country=\"$country\"} $count"
+        done
+    fi
+}
+
+# Fallback: Get approximate metrics from geoban config
+_fallback_country_metrics() {
+    # Get total blacklist count
+    local total_ips
+    total_ips=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | { grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' || true; } | wc -l)
+    total_ips=${total_ips:-0}
+
+    [[ $total_ips -eq 0 ]] && return 0
+
+    # Get configured countries from geoban config
+    local country_count=0
+    if [[ -d "${NFTBAN_CONFIG_DIR}/geoban.d" ]]; then
+        for conf in "${NFTBAN_CONFIG_DIR}"/geoban.d/*.conf; do
+            [[ -f "$conf" ]] && ((country_count++))
+        done
+    fi
+
+    [[ $country_count -eq 0 ]] && return 0
+
+    # Distribute IPs evenly (approximate)
+    local per_country=$((total_ips / country_count))
+
+    for conf in "${NFTBAN_CONFIG_DIR}"/geoban.d/*.conf; do
+        if [[ -f "$conf" ]]; then
+            local country
+            country=$(basename "$conf" .conf | tr '[:lower:]' '[:upper:]')
+            echo "nftban_blocks_by_country{country=\"$country\"} $per_country"
+        fi
+    done
 }
 
 # Get total ban count (cumulative)
