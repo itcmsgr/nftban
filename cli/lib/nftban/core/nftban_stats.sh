@@ -746,7 +746,7 @@ nftban_stats_generate_dashboard() {
         if nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null 2>&1; then
             nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null | \
                 grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' | \
-                awk 'NR<=5 {print "  " $1}'
+                awk 'NR<=5 {print "  " $1}' 2>/dev/null || true
         fi
         echo ""
     fi
