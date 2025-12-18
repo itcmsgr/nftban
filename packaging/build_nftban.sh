@@ -69,6 +69,13 @@ check_dependencies() {
 }
 
 build_binaries() {
+    # Check if pre-built binaries exist (from CI)
+    if [[ -x "${PROJECT_ROOT}/bin/nftban-core" ]]; then
+        log_info "Using pre-built binaries from bin/"
+        ls -la "${PROJECT_ROOT}/bin/"
+        return 0
+    fi
+
     log_info "Building binaries..."
 
     cd "${PROJECT_ROOT}"
