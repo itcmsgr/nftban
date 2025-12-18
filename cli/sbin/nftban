@@ -905,11 +905,11 @@ EOF
 
         timers)
             # Systemd timer management
-            if [[ -f "${NFTBAN_LIB_DIR}/nftban/cli/cmd_timers.sh" ]]; then
+            if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_timers.sh" ]]; then
                 # shellcheck source=/dev/null
-                source "${NFTBAN_LIB_DIR}/nftban/cli/cmd_timers.sh"
+                source "${NFTBAN_LIB_DIR}/cli/cmd_timers.sh"
                 shift
-                cmd_timers "$@"
+                nftban_cmd_timers "$@"
                 return $?
             else
                 echo "ERROR: cmd_timers.sh not found" >&2

@@ -767,6 +767,15 @@ nftban_gui_main() {
     nftban_cmd_gui "$@"
 }
 
+# Export functions
+export -f nftban_cmd_gui
+export -f nftban_gui_main
+export -f nftban_gui_enable
+export -f nftban_gui_disable
+export -f nftban_gui_status
+export -f nftban_gui_restart
+export -f nftban_gui_recompile
+
 # Execute if called directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     nftban_cmd_gui "$@"

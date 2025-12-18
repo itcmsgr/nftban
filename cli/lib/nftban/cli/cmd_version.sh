@@ -164,6 +164,10 @@ EXAMPLES:
 EOF
 }
 
+# Export functions
+export -f nftban_cmd_version
+export -f nftban_cmd_version_usage
+
 # =============================================================================
 # EXECUTE IF RUN DIRECTLY
 # =============================================================================

@@ -332,7 +332,7 @@ cmd_timers_disable() {
 # COMMAND: MAIN ROUTER
 # =============================================================================
 
-cmd_timers() {
+nftban_cmd_timers() {
     local subcommand="${1:-status}"
     shift || true
 
@@ -384,5 +384,14 @@ EOF
             ;;
     esac
 }
+
+# Backwards compatibility alias
+cmd_timers() {
+    nftban_cmd_timers "$@"
+}
+
+# Export functions
+export -f nftban_cmd_timers
+export -f cmd_timers
 
 return 0 2>/dev/null || :

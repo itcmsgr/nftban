@@ -235,3 +235,8 @@ nftban_cmd_simulate() {
 nftban_cmd_explain() {
     nftban_cmd_emulate "$@"
 }
+
+# Export functions
+export -f nftban_cmd_emulate
+export -f nftban_cmd_simulate
+export -f nftban_cmd_explain

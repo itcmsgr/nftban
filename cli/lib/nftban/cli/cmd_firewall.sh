@@ -411,3 +411,6 @@ Output includes:
 
 EOF
 }
+
+# Export functions
+export -f nftban_cmd_firewall
