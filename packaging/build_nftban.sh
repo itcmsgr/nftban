@@ -227,16 +227,19 @@ fi
 
 # STEP 7: Enable services (AFTER whitelist is in place)
 echo "[NFTBan] Enabling systemd services..."
-%systemd_post nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service
+%systemd_post nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service nftban-core-geoip.timer nftban-core-feeds.timer
 
 # Enable nftables
 systemctl enable nftables 2>/dev/null || true
 
-# Enable timers
-systemctl enable nftban-maintenance.timer 2>/dev/null || true
-systemctl enable nftban-health.timer 2>/dev/null || true
-systemctl start nftban-maintenance.timer 2>/dev/null || true
-systemctl start nftban-health.timer 2>/dev/null || true
+# Enable and start timers
+systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
+systemctl enable --now nftban-health.timer 2>/dev/null || true
+systemctl enable --now nftban-core-geoip.timer 2>/dev/null || true
+systemctl enable --now nftban-core-feeds.timer 2>/dev/null || true
+
+# Enable and start login monitor
+systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
 
 # Reload nftables
 systemctl reload nftables 2>/dev/null || true
@@ -413,20 +416,18 @@ if command -v nftban >/dev/null 2>&1; then
 fi
 
 # STEP 8: Enable services (AFTER whitelist is in place)
+echo "[NFTBan] Enabling systemd services..."
 systemctl daemon-reload
 systemctl enable nftables 2>/dev/null || true
 
-if [ -f /usr/lib/systemd/system/nftban-core.service ]; then
-    systemctl enable nftban-core.service || true
-fi
-if [ -f /usr/lib/systemd/system/nftban-maintenance.timer ]; then
-    systemctl enable nftban-maintenance.timer || true
-    systemctl start nftban-maintenance.timer || true
-fi
-if [ -f /usr/lib/systemd/system/nftban-health.timer ]; then
-    systemctl enable nftban-health.timer || true
-    systemctl start nftban-health.timer || true
-fi
+# Enable and start all timers
+systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
+systemctl enable --now nftban-health.timer 2>/dev/null || true
+systemctl enable --now nftban-core-geoip.timer 2>/dev/null || true
+systemctl enable --now nftban-core-feeds.timer 2>/dev/null || true
+
+# Enable and start login monitor
+systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
 
 # STEP 9: Reload nftables
 systemctl reload nftables 2>/dev/null || true
