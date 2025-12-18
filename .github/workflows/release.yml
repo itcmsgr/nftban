@@ -107,13 +107,16 @@ jobs:
           cd dist/packages
           rm -f SHA256SUMS
 
-          # Generate checksums for all packages
-          if ls *.rpm *.deb 1> /dev/null 2>&1; then
-            sha256sum *.rpm *.deb > SHA256SUMS
+          # Generate checksums for whatever packages exist
+          shopt -s nullglob
+          packages=(*.rpm *.deb)
+          if [ ${#packages[@]} -gt 0 ]; then
+            sha256sum "${packages[@]}" > SHA256SUMS
             echo "=== SHA256SUMS ==="
             cat SHA256SUMS
           else
             echo "WARNING: No packages found to checksum"
+            touch SHA256SUMS
           fi
 
       # =======================================================================
