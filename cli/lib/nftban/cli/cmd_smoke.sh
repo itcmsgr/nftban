@@ -19,6 +19,8 @@
 # meta:updated_date=2025-12-04
 # =============================================================================
 
+set -Eeuo pipefail
+
 [[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
 
 # Prevent double-loading

@@ -23,6 +23,7 @@
 # meta:created_date=2025-11-05
 # meta:updated_date=2025-11-24
 
+set -Eeuo pipefail
 
 # =============================================================================
 # CONFIGURATION

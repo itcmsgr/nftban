@@ -12,6 +12,8 @@
 # Version: 1.0.0
 # =============================================================================
 
+set -Eeuo pipefail
+
 # Source core emulation module
 NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 source "${NFTBAN_LIB_DIR}/core/nftban_emulate.sh"
