@@ -142,6 +142,10 @@ nftban_cmd_stats() {
             shift || true
             nftban_stats_cmd_check_alerts "$@"
             ;;
+        trend)
+            shift || true
+            nftban_stats_cmd_trend "$@"
+            ;;
         --today)
             # Show stats for today only
             local today_start=$(date +%Y-%m-%d)
@@ -1032,6 +1036,70 @@ nftban_stats_cmd_check_alerts() {
 }
 
 # =============================================================================
+# SUBCOMMAND: TREND
+# =============================================================================
+
+nftban_stats_cmd_trend() {
+    # Display ban statistics trends (7-day rolling history)
+    # Usage: nftban stats trend [--json] [thresholds]
+
+    local json_mode=0
+    local show_thresholds_only=0
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json)
+                json_mode=1
+                shift
+                ;;
+            thresholds)
+                show_thresholds_only=1
+                shift
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Ensure trend functions are available
+    if ! declare -f nftban_stats_trend_display >/dev/null 2>&1; then
+        echo "ERROR: Trend functions not loaded" >&2
+        return 1
+    fi
+
+    if [[ $show_thresholds_only -eq 1 ]]; then
+        local thresholds
+        thresholds=$(nftban_stats_trend_thresholds)
+
+        if [[ $json_mode -eq 1 ]]; then
+            echo "$thresholds"
+        else
+            echo ""
+            echo "SUGGESTED THRESHOLDS (based on historical data)"
+            echo "══════════════════════════════════════════════════════════════"
+            echo ""
+            local warn crit samples
+            warn=$(echo "$thresholds" | jq -r '.warning')
+            crit=$(echo "$thresholds" | jq -r '.critical')
+            samples=$(echo "$thresholds" | jq -r '.based_on_samples')
+            printf "  %-20s %s bans/hour\n" "Warning threshold..." "$warn"
+            printf "  %-20s %s bans/hour\n" "Critical threshold.." "$crit"
+            printf "  %-20s %s hours\n" "Based on samples...." "$samples"
+            echo ""
+        fi
+        return 0
+    fi
+
+    # Full trend display
+    if [[ $json_mode -eq 1 ]]; then
+        nftban_stats_trend_display --json
+    else
+        nftban_stats_trend_display
+    fi
+}
+
+# =============================================================================
 # HELP TEXT
 # =============================================================================
 
@@ -1044,6 +1112,7 @@ USAGE:
 
 COMMANDS:
     dashboard              Show comprehensive statistics dashboard (default)
+    trend                  Show 7-day trend analysis with averages
     top <type> [N]         Show top lists (ips, countries, jails)
     ip <IP>                Show ban history for specific IP
     recent [N]             Show recent ban activity
@@ -1077,6 +1146,11 @@ MONITOR OPTIONS:
 
 CLEANUP OPTIONS:
     --days N               Retention period (default: 90)
+
+TREND COMMAND:
+    nftban stats trend               Show 7-day trend analysis
+    nftban stats trend --json        JSON output for scripts
+    nftban stats trend thresholds    Show suggested thresholds only
 
 EXAMPLES:
     # Show dashboard for last 24 hours

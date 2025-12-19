@@ -89,7 +89,7 @@ main() {
     # ==========================================================================
     # 1. SSH Port Monitoring (CRITICAL - Lockout Prevention)
     # ==========================================================================
-    log "INFO" "[1/4] Checking SSH port configuration..."
+    log "INFO" "[1/7] Checking SSH port configuration..."
 
     # Auto-detect current SSH port from sshd_config
     SSH_PORT=22
@@ -194,7 +194,7 @@ EOF
     # ==========================================================================
     # 2. System IP Monitoring (Lockout Prevention)
     # ==========================================================================
-    log "INFO" "[2/4] Checking system IP addresses..."
+    log "INFO" "[2/7] Checking system IP addresses..."
 
     IP_ALERT_STATE="${NFTBAN_DATA_DIR}/state/ip_change_alert.state"
 
@@ -301,7 +301,7 @@ EOF
     # ==========================================================================
     # 3. Active SSH Session Protection (Auto-Whitelist Logged-In Users)
     # ==========================================================================
-    log "INFO" "[3/5] Protecting active SSH sessions..."
+    log "INFO" "[3/7] Protecting active SSH sessions..."
 
     # File to track active SSH IPs with timestamps
     ACTIVE_SSH_WHITELIST="${NFTBAN_DATA_DIR}/state/active_ssh_whitelist.state"
@@ -364,7 +364,7 @@ EOF
     # ==========================================================================
     # 4. Auto-Heal (Fix Permissions, Directories)
     # ==========================================================================
-    log "INFO" "[4/5] Running auto-heal..."
+    log "INFO" "[4/7] Running auto-heal..."
 
     if [[ -f "${NFTBAN_LIB_DIR}/helpers/autoheal.sh" ]]; then
         if "${NFTBAN_LIB_DIR}/helpers/autoheal.sh" >> "$LOGFILE" 2>&1; then
@@ -377,9 +377,37 @@ EOF
     fi
 
     # ==========================================================================
-    # 5. Configuration Validation (Critical Files)
+    # 5. Trend Data Collection (Hourly)
     # ==========================================================================
-    log "INFO" "[5/5] Validating critical configuration..."
+    # Check if this is an hourly run (first run at minute 00-14)
+    local current_minute
+    current_minute=$(date +%M)
+    if [[ $current_minute -lt 15 ]]; then
+        log "INFO" "[5/7] Collecting trend data (hourly)..."
+
+        # Collect stats trend data
+        if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_stats.sh" ]]; then
+            source "${NFTBAN_LIB_DIR}/core/nftban_stats.sh" 2>/dev/null || true
+            if declare -f nftban_stats_trend_collect >/dev/null 2>&1; then
+                nftban_stats_trend_collect 2>/dev/null && log "INFO" "Stats trend collected" || true
+            fi
+        fi
+
+        # Collect watchdog trend data
+        if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_watchdog.sh" ]]; then
+            source "${NFTBAN_LIB_DIR}/core/nftban_watchdog.sh" 2>/dev/null || true
+            if declare -f nftban_watchdog_trend_collect >/dev/null 2>&1; then
+                nftban_watchdog_trend_collect 2>/dev/null && log "INFO" "Watchdog trend collected" || true
+            fi
+        fi
+    else
+        log "INFO" "[5/7] Trend collection: Skipped (not hourly run)"
+    fi
+
+    # ==========================================================================
+    # 6. Configuration Validation (Critical Files)
+    # ==========================================================================
+    log "INFO" "[6/7] Validating critical configuration..."
 
     local config_ok=true
 
@@ -408,9 +436,9 @@ EOF
     fi
 
     # ==========================================================================
-    # COMPLETE
+    # 7. Complete
     # ==========================================================================
-    log "INFO" "NFTBan Maintenance Complete"
+    log "INFO" "[7/7] NFTBan Maintenance Complete"
 
     return 0
 }

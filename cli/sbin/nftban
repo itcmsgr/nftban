@@ -736,31 +736,35 @@ EOF
                 echo "  System User:  ⚠️  Not found"
             fi
 
-            # DYNAMIC: Protection Status
+            # DYNAMIC: Protection Status (matches nftban status output)
             echo ""
             echo "  Protection Status:"
 
-            # DDoS
-            if [[ -f /etc/nftban/conf.d/ddos.conf ]]; then
-                local ddos_enabled=$(grep "^DDOS_ENABLED=" /etc/nftban/conf.d/ddos.conf 2>/dev/null | cut -d= -f2 | tr -d '"')
-                [[ "$ddos_enabled" == "true" ]] && echo "    DDoS:         ✅ Enabled" || echo "    DDoS:         ⚪ Disabled"
-            else
-                echo "    DDoS:         ⚪ Not configured"
+            # DDoS - check via nftban ddos status (same as cmd_status.sh)
+            local ddos_output ddos_status="⚪ Unknown"
+            ddos_output=$(nftban ddos status 2>/dev/null | grep -E "Module Enabled:" | head -1) || true
+            if [[ "$ddos_output" =~ "true" ]]; then
+                ddos_status="✅ Enabled"
+            elif [[ "$ddos_output" =~ "false" ]]; then
+                ddos_status="⚪ Disabled"
             fi
+            echo "    DDoS:         ${ddos_status}"
 
-            # Portscan
-            if [[ -f /etc/nftban/conf.d/portscan.conf ]]; then
-                local portscan_enabled=$(grep "^PORTSCAN_ENABLED=" /etc/nftban/conf.d/portscan.conf 2>/dev/null | cut -d= -f2 | tr -d '"')
-                [[ "$portscan_enabled" == "true" ]] && echo "    Portscan:     ✅ Enabled" || echo "    Portscan:     ⚪ Disabled"
-            else
-                echo "    Portscan:     ⚪ Not configured"
+            # Portscan - check via nftban portscan status
+            local portscan_output portscan_status="⚪ Unknown"
+            portscan_output=$(nftban portscan status 2>/dev/null | grep -E "Module Enabled:|Status:" | head -1) || true
+            if [[ "$portscan_output" =~ "true" ]] || [[ "$portscan_output" =~ "Running" ]]; then
+                portscan_status="✅ Enabled"
+            elif [[ "$portscan_output" =~ "false" ]] || [[ "$portscan_output" =~ "Stopped" ]]; then
+                portscan_status="⚪ Disabled"
             fi
+            echo "    Portscan:     ${portscan_status}"
 
-            # Login Monitor
+            # Login Monitor - check systemd service
             if systemctl is-active nftban-login-monitor &>/dev/null; then
                 echo "    Login Mon:    ✅ Active"
             elif systemctl is-enabled nftban-login-monitor &>/dev/null; then
-                echo "    Login Mon:    🔶 Enabled (inactive)"
+                echo "    Login Mon:    🔶 Enabled (stopped)"
             else
                 echo "    Login Mon:    ⚪ Disabled"
             fi

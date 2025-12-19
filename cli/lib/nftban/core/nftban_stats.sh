@@ -1018,6 +1018,322 @@ nftban_stats_create_snapshot() {
 }
 
 # =============================================================================
+# TREND ANALYSIS (7-day rolling history)
+# =============================================================================
+
+# Storage paths for trend data
+readonly NFTBAN_TREND_DIR="${NFTBAN_DATA_DIR:-/var/lib/nftban}/stats"
+readonly NFTBAN_TREND_FILE="${NFTBAN_TREND_DIR}/trend_hourly.json"
+readonly NFTBAN_TREND_RETENTION=168  # 7 days in hours
+
+nftban_stats_trend_collect() {
+    # Collect current hour statistics and append to trend history
+    # Called hourly by maintenance timer
+    # Usage: nftban_stats_trend_collect
+
+    mkdir -p "$NFTBAN_TREND_DIR" 2>/dev/null || true
+
+    local hour_start hour_end
+    hour_start=$(date -d "$(date +%Y-%m-%d\ %H):00:00" +%Y-%m-%dT%H:%M:%SZ)
+    hour_end=$(date +%Y-%m-%dT%H:%M:%SZ)
+
+    # Count bans/unbans in current hour
+    local today bans unbans
+    today=$(date +%Y-%m-%d)
+    local hour_pattern
+    hour_pattern="^${today}|$(date +%H):"
+
+    if [[ -f "$NFTBAN_BAN_LOG" ]]; then
+        bans=$(grep -c "BANNED$" "$NFTBAN_BAN_LOG" 2>/dev/null | grep -cE "$hour_pattern" 2>/dev/null) || bans=0
+        unbans=$(grep -c "UNBANNED$" "$NFTBAN_BAN_LOG" 2>/dev/null | grep -cE "$hour_pattern" 2>/dev/null) || unbans=0
+
+        # Simpler: count today's bans in current hour
+        bans=$(awk -F'|' -v h="$(date +%H)" '$1 ~ /^[0-9]/ && $2 ~ "^"h":" && $6=="BANNED" {c++} END {print c+0}' "$NFTBAN_BAN_LOG" 2>/dev/null) || bans=0
+        unbans=$(awk -F'|' -v h="$(date +%H)" '$1 ~ /^[0-9]/ && $2 ~ "^"h":" && $6=="UNBANNED" {c++} END {print c+0}' "$NFTBAN_BAN_LOG" 2>/dev/null) || unbans=0
+    else
+        bans=0
+        unbans=0
+    fi
+
+    # Count by source
+    local login_c=0 portscan_c=0 feeds_c=0 ddos_c=0 manual_c=0
+    if [[ -f "$NFTBAN_BAN_LOG" ]]; then
+        login_c=$(awk -F'|' -v h="$(date +%H)" '$2 ~ "^"h":" && $3=="login" && $6=="BANNED" {c++} END {print c+0}' "$NFTBAN_BAN_LOG" 2>/dev/null) || login_c=0
+        portscan_c=$(awk -F'|' -v h="$(date +%H)" '$2 ~ "^"h":" && $3=="portscan" && $6=="BANNED" {c++} END {print c+0}' "$NFTBAN_BAN_LOG" 2>/dev/null) || portscan_c=0
+        feeds_c=$(awk -F'|' -v h="$(date +%H)" '$2 ~ "^"h":" && $3=="feeds" && $6=="BANNED" {c++} END {print c+0}' "$NFTBAN_BAN_LOG" 2>/dev/null) || feeds_c=0
+        ddos_c=$(awk -F'|' -v h="$(date +%H)" '$2 ~ "^"h":" && $3=="ddos" && $6=="BANNED" {c++} END {print c+0}' "$NFTBAN_BAN_LOG" 2>/dev/null) || ddos_c=0
+        manual_c=$(awk -F'|' -v h="$(date +%H)" '$2 ~ "^"h":" && $3=="manual" && $6=="BANNED" {c++} END {print c+0}' "$NFTBAN_BAN_LOG" 2>/dev/null) || manual_c=0
+    fi
+
+    # Create new sample JSON
+    local sample
+    sample=$(cat <<EOF
+{"hour":"${hour_start}","bans":${bans},"unbans":${unbans},"sources":{"login":${login_c},"portscan":${portscan_c},"feeds":${feeds_c},"ddos":${ddos_c},"manual":${manual_c}}}
+EOF
+)
+
+    # Load existing data, append, and enforce retention
+    local temp_file="${NFTBAN_TREND_FILE}.tmp"
+
+    if [[ -f "$NFTBAN_TREND_FILE" ]] && command -v jq &>/dev/null; then
+        # Append and trim to retention limit
+        jq --argjson new "$sample" --argjson max "$NFTBAN_TREND_RETENTION" \
+            '.samples += [$new] | .samples = .samples[-$max:]' \
+            "$NFTBAN_TREND_FILE" > "$temp_file" 2>/dev/null && \
+            mv "$temp_file" "$NFTBAN_TREND_FILE"
+    else
+        # Initialize new file
+        echo "{\"samples\":[$sample],\"retention_hours\":$NFTBAN_TREND_RETENTION}" > "$NFTBAN_TREND_FILE"
+    fi
+
+    chown nftban:nftban "$NFTBAN_TREND_FILE" 2>/dev/null || true
+    chmod 640 "$NFTBAN_TREND_FILE" 2>/dev/null || true
+}
+
+nftban_stats_trend_load() {
+    # Load trend history
+    # Usage: nftban_stats_trend_load
+    # Returns: JSON array of samples
+
+    if [[ -f "$NFTBAN_TREND_FILE" ]] && command -v jq &>/dev/null; then
+        jq -r '.samples' "$NFTBAN_TREND_FILE" 2>/dev/null
+    else
+        echo "[]"
+    fi
+}
+
+nftban_stats_trend_averages() {
+    # Calculate averages from trend data
+    # Usage: nftban_stats_trend_averages
+    # Returns: JSON with avg, min, max, stddev
+
+    if [[ ! -f "$NFTBAN_TREND_FILE" ]] || ! command -v jq &>/dev/null; then
+        echo '{"avg_hourly":0,"avg_daily":0,"min":0,"max":0,"stddev":0,"samples":0}'
+        return
+    fi
+
+    jq '
+        .samples as $s |
+        ($s | length) as $n |
+        if $n == 0 then
+            {"avg_hourly":0,"avg_daily":0,"min":0,"max":0,"stddev":0,"samples":0}
+        else
+            ($s | map(.bans) | add / $n) as $avg |
+            ($s | map(.bans) | min) as $min |
+            ($s | map(.bans) | max) as $max |
+            ($s | map((.bans - $avg) * (.bans - $avg)) | add / $n | sqrt) as $stddev |
+            {
+                "avg_hourly": ($avg | . * 10 | floor / 10),
+                "avg_daily": ($avg * 24 | floor),
+                "min": $min,
+                "max": $max,
+                "stddev": ($stddev | . * 10 | floor / 10),
+                "samples": $n
+            }
+        end
+    ' "$NFTBAN_TREND_FILE" 2>/dev/null || echo '{"avg_hourly":0,"avg_daily":0,"min":0,"max":0,"stddev":0,"samples":0}'
+}
+
+nftban_stats_trend_thresholds() {
+    # Calculate suggested thresholds based on stddev
+    # Usage: nftban_stats_trend_thresholds
+    # Returns: JSON with warning and critical thresholds
+
+    local stats
+    stats=$(nftban_stats_trend_averages)
+
+    if ! command -v jq &>/dev/null; then
+        echo '{"warning":10,"critical":25}'
+        return
+    fi
+
+    echo "$stats" | jq '
+        (.avg_hourly + (1.5 * .stddev)) as $warn |
+        (.avg_hourly + (3 * .stddev)) as $crit |
+        {
+            "warning": ([($warn | floor), 10] | max),
+            "critical": ([($crit | floor), 25] | max),
+            "based_on_samples": .samples
+        }
+    ' 2>/dev/null || echo '{"warning":10,"critical":25,"based_on_samples":0}'
+}
+
+nftban_stats_trend_compare() {
+    # Compare current period vs previous periods
+    # Usage: nftban_stats_trend_compare
+    # Returns: JSON with vs_yesterday and vs_last_week percentages
+
+    if [[ ! -f "$NFTBAN_TREND_FILE" ]] || ! command -v jq &>/dev/null; then
+        echo '{"vs_yesterday":0,"vs_last_week":0}'
+        return
+    fi
+
+    jq '
+        .samples as $s |
+        ($s | length) as $n |
+        if $n < 48 then
+            {"vs_yesterday":0,"vs_last_week":0,"insufficient_data":true}
+        else
+            # Last 24 hours
+            ($s[-24:] | map(.bans) | add) as $today |
+            # Previous 24 hours (24-48 hours ago)
+            ($s[-48:-24] | map(.bans) | add) as $yesterday |
+            # Calculate week comparison if enough data
+            (if $n >= 168 then ($s[-168:-144] | map(.bans) | add) else 0 end) as $last_week |
+            {
+                "today_total": $today,
+                "yesterday_total": $yesterday,
+                "vs_yesterday": (if $yesterday > 0 then ((($today - $yesterday) / $yesterday * 100) | . * 10 | floor / 10) else 0 end),
+                "vs_last_week": (if $last_week > 0 and $n >= 168 then ((($today - $last_week) / $last_week * 100) | . * 10 | floor / 10) else null end)
+            }
+        end
+    ' "$NFTBAN_TREND_FILE" 2>/dev/null || echo '{"vs_yesterday":0,"vs_last_week":0}'
+}
+
+nftban_stats_trend_top_sources() {
+    # Get source breakdown for trend period
+    # Usage: nftban_stats_trend_top_sources
+    # Returns: JSON with source totals and percentages
+
+    if [[ ! -f "$NFTBAN_TREND_FILE" ]] || ! command -v jq &>/dev/null; then
+        echo '[]'
+        return
+    fi
+
+    jq '
+        .samples | map(.sources) |
+        reduce .[] as $s ({"login":0,"portscan":0,"feeds":0,"ddos":0,"manual":0};
+            . + {
+                "login": (.login + $s.login),
+                "portscan": (.portscan + $s.portscan),
+                "feeds": (.feeds + $s.feeds),
+                "ddos": (.ddos + $s.ddos),
+                "manual": (.manual + $s.manual)
+            }
+        ) |
+        . as $totals |
+        ($totals | add) as $grand_total |
+        to_entries | map({
+            "source": .key,
+            "count": .value,
+            "percent": (if $grand_total > 0 then (.value / $grand_total * 100 | . * 10 | floor / 10) else 0 end)
+        }) | sort_by(-.count)
+    ' "$NFTBAN_TREND_FILE" 2>/dev/null || echo '[]'
+}
+
+nftban_stats_trend_display() {
+    # Display formatted trend analysis
+    # Usage: nftban_stats_trend_display [--json]
+
+    local json_mode=0
+    [[ "${1:-}" == "--json" ]] && json_mode=1
+
+    if [[ $json_mode -eq 1 ]]; then
+        # JSON output
+        local averages compare sources thresholds
+        averages=$(nftban_stats_trend_averages)
+        compare=$(nftban_stats_trend_compare)
+        sources=$(nftban_stats_trend_top_sources)
+        thresholds=$(nftban_stats_trend_thresholds)
+
+        jq -n --argjson avg "$averages" --argjson cmp "$compare" \
+              --argjson src "$sources" --argjson thr "$thresholds" \
+            '{averages: $avg, comparison: $cmp, sources: $src, thresholds: $thr}'
+        return
+    fi
+
+    # Text output
+    echo ""
+    echo "BAN STATISTICS TREND (Last 7 Days)"
+    echo "══════════════════════════════════════════════════════════════"
+    echo ""
+
+    # Get data
+    local avg_data compare_data sources_data threshold_data
+    avg_data=$(nftban_stats_trend_averages)
+    compare_data=$(nftban_stats_trend_compare)
+    sources_data=$(nftban_stats_trend_top_sources)
+    threshold_data=$(nftban_stats_trend_thresholds)
+
+    if ! command -v jq &>/dev/null; then
+        echo "[WARN] jq not installed - trend analysis requires jq"
+        return 1
+    fi
+
+    local samples avg_h avg_d min_v max_v
+    samples=$(echo "$avg_data" | jq -r '.samples')
+    avg_h=$(echo "$avg_data" | jq -r '.avg_hourly')
+    avg_d=$(echo "$avg_data" | jq -r '.avg_daily')
+    min_v=$(echo "$avg_data" | jq -r '.min')
+    max_v=$(echo "$avg_data" | jq -r '.max')
+
+    if [[ "$samples" == "0" ]]; then
+        echo "  No trend data available yet."
+        echo "  Trend data is collected hourly by the maintenance timer."
+        echo ""
+        echo "  To collect now: nftban maintenance run"
+        return 0
+    fi
+
+    echo "AVERAGES (${samples} samples)"
+    echo "───────────────────────────────────────────────────────────────"
+    printf "  %-20s %s (min: %s, max: %s)\n" "Bans per hour......." "$avg_h" "$min_v" "$max_v"
+    printf "  %-20s %s\n" "Bans per day........" "$avg_d"
+    echo ""
+
+    # Suggested thresholds
+    local warn_t crit_t
+    warn_t=$(echo "$threshold_data" | jq -r '.warning')
+    crit_t=$(echo "$threshold_data" | jq -r '.critical')
+
+    echo "SUGGESTED THRESHOLDS (based on stddev)"
+    echo "───────────────────────────────────────────────────────────────"
+    printf "  %-20s %s/hour\n" "Warning threshold..." "$warn_t"
+    printf "  %-20s %s/hour\n" "Critical threshold.." "$crit_t"
+    echo ""
+
+    # Trend direction
+    local vs_yest vs_week today_t yest_t
+    vs_yest=$(echo "$compare_data" | jq -r '.vs_yesterday')
+    vs_week=$(echo "$compare_data" | jq -r '.vs_last_week // "N/A"')
+    today_t=$(echo "$compare_data" | jq -r '.today_total // 0')
+    yest_t=$(echo "$compare_data" | jq -r '.yesterday_total // 0')
+
+    echo "TREND DIRECTION"
+    echo "───────────────────────────────────────────────────────────────"
+
+    local arrow_yest="→"
+    if [[ "$vs_yest" != "0" ]] && [[ "$vs_yest" != "null" ]]; then
+        if (( $(echo "$vs_yest > 0" | bc -l 2>/dev/null || echo 0) )); then
+            arrow_yest="↑"
+        elif (( $(echo "$vs_yest < 0" | bc -l 2>/dev/null || echo 0) )); then
+            arrow_yest="↓"
+        fi
+    fi
+    printf "  %-20s %s %s%% (%s → %s)\n" "vs Yesterday........" "$arrow_yest" "$vs_yest" "$yest_t" "$today_t"
+
+    if [[ "$vs_week" != "null" ]] && [[ "$vs_week" != "N/A" ]]; then
+        local arrow_week="→"
+        if (( $(echo "$vs_week > 0" | bc -l 2>/dev/null || echo 0) )); then
+            arrow_week="↑"
+        elif (( $(echo "$vs_week < 0" | bc -l 2>/dev/null || echo 0) )); then
+            arrow_week="↓"
+        fi
+        printf "  %-20s %s %s%%\n" "vs Last Week........" "$arrow_week" "$vs_week"
+    else
+        printf "  %-20s %s\n" "vs Last Week........" "(need 7 days of data)"
+    fi
+    echo ""
+
+    # Top sources
+    echo "TOP SOURCES (7-day)"
+    echo "───────────────────────────────────────────────────────────────"
+    echo "$sources_data" | jq -r '.[] | select(.count > 0) | "  \(.source)............ \(.percent)% (\(.count) bans)"' 2>/dev/null || true
+    echo ""
+    echo "══════════════════════════════════════════════════════════════"
+}
+
+# =============================================================================
 # MODULE INITIALIZATION
 # =============================================================================
 

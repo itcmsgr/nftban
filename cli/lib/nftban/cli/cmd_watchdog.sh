@@ -59,6 +59,7 @@ COMMANDS:
   status           Quick one-line status
   check            Run all checks and show alerts only
   report           Full detailed report (like DirectAdmin alert)
+  trend            Show 7-day trend analysis with averages
   history          Show saved reports for auditing
   enable           Enable watchdog timer (auto-monitoring)
   disable          Disable watchdog timer
@@ -398,6 +399,33 @@ nftban_watchdog_cmd_disable() {
 }
 
 # =============================================================================
+# TREND COMMAND
+# =============================================================================
+
+nftban_watchdog_cmd_trend() {
+    # Display system resource trends (7-day rolling history)
+    # Usage: nftban watchdog trend [--json]
+
+    local json_mode=0
+
+    for arg in "$@"; do
+        [[ "$arg" == "--json" ]] && json_mode=1
+    done
+
+    # Ensure trend functions are available
+    if ! declare -f nftban_watchdog_trend_display >/dev/null 2>&1; then
+        echo "ERROR: Trend functions not loaded" >&2
+        return 1
+    fi
+
+    if [[ $json_mode -eq 1 ]]; then
+        nftban_watchdog_trend_display --json
+    else
+        nftban_watchdog_trend_display
+    fi
+}
+
+# =============================================================================
 # MAIN CLI HANDLER
 # =============================================================================
 
@@ -432,6 +460,9 @@ nftban_cmd_watchdog() {
             ;;
         disable)
             nftban_watchdog_cmd_disable "$@"
+            ;;
+        trend)
+            nftban_watchdog_cmd_trend "$@"
             ;;
         help|--help|-h)
             nftban_watchdog_help

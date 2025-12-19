@@ -935,6 +935,244 @@ nftban_watchdog_run() {
 }
 
 # =============================================================================
+# TREND ANALYSIS (7-day rolling history)
+# =============================================================================
+
+readonly NFTBAN_WATCHDOG_TREND_DIR="${NFTBAN_DATA_DIR:-/var/lib/nftban}/watchdog"
+readonly NFTBAN_WATCHDOG_TREND_FILE="${NFTBAN_WATCHDOG_TREND_DIR}/trend_hourly.json"
+readonly NFTBAN_WATCHDOG_TREND_RETENTION=168  # 7 days in hours
+
+nftban_watchdog_trend_collect() {
+    # Collect current system metrics and append to trend history
+    # Called hourly by maintenance timer
+    # Usage: nftban_watchdog_trend_collect
+
+    mkdir -p "$NFTBAN_WATCHDOG_TREND_DIR" 2>/dev/null || true
+
+    # Run checks to populate WATCHDOG_RESULTS
+    nftban_watchdog_run_all >/dev/null 2>&1
+
+    local hour_start
+    hour_start=$(date -d "$(date +%Y-%m-%d\ %H):00:00" +%Y-%m-%dT%H:%M:%SZ)
+
+    # Extract metrics from WATCHDOG_RESULTS
+    local load5="${WATCHDOG_RESULTS[load_5m]:-0}"
+    local mem_pct="${WATCHDOG_RESULTS[mem_used_percent]:-0}"
+    local iowait="${WATCHDOG_RESULTS[cpu_iowait_percent]:-0}"
+    local disk_pct="${WATCHDOG_RESULTS[disk_used_percent]:-0}"
+
+    # Create new sample JSON
+    local sample
+    sample=$(cat <<EOF
+{"hour":"${hour_start}","load_5m":${load5},"mem_percent":${mem_pct},"iowait_percent":${iowait},"disk_percent":${disk_pct}}
+EOF
+)
+
+    # Load existing data, append, and enforce retention
+    local temp_file="${NFTBAN_WATCHDOG_TREND_FILE}.tmp"
+
+    if [[ -f "$NFTBAN_WATCHDOG_TREND_FILE" ]] && command -v jq &>/dev/null; then
+        jq --argjson new "$sample" --argjson max "$NFTBAN_WATCHDOG_TREND_RETENTION" \
+            '.samples += [$new] | .samples = .samples[-$max:]' \
+            "$NFTBAN_WATCHDOG_TREND_FILE" > "$temp_file" 2>/dev/null && \
+            mv "$temp_file" "$NFTBAN_WATCHDOG_TREND_FILE"
+    else
+        echo "{\"samples\":[$sample],\"retention_hours\":$NFTBAN_WATCHDOG_TREND_RETENTION}" > "$NFTBAN_WATCHDOG_TREND_FILE"
+    fi
+
+    chown nftban:nftban "$NFTBAN_WATCHDOG_TREND_FILE" 2>/dev/null || true
+    chmod 640 "$NFTBAN_WATCHDOG_TREND_FILE" 2>/dev/null || true
+}
+
+nftban_watchdog_trend_load() {
+    # Load watchdog trend history
+    # Returns: JSON array of samples
+
+    if [[ -f "$NFTBAN_WATCHDOG_TREND_FILE" ]] && command -v jq &>/dev/null; then
+        jq -r '.samples' "$NFTBAN_WATCHDOG_TREND_FILE" 2>/dev/null
+    else
+        echo "[]"
+    fi
+}
+
+nftban_watchdog_trend_averages() {
+    # Calculate averages from watchdog trend data
+    # Returns: JSON with averages for each metric
+
+    if [[ ! -f "$NFTBAN_WATCHDOG_TREND_FILE" ]] || ! command -v jq &>/dev/null; then
+        echo '{"load_5m":{"avg":0,"min":0,"max":0},"mem_percent":{"avg":0,"min":0,"max":0},"iowait_percent":{"avg":0,"min":0,"max":0},"disk_percent":{"avg":0,"min":0,"max":0},"samples":0}'
+        return
+    fi
+
+    jq '
+        .samples as $s |
+        ($s | length) as $n |
+        if $n == 0 then
+            {"load_5m":{"avg":0,"min":0,"max":0},"mem_percent":{"avg":0,"min":0,"max":0},"iowait_percent":{"avg":0,"min":0,"max":0},"disk_percent":{"avg":0,"min":0,"max":0},"samples":0}
+        else
+            {
+                "load_5m": {
+                    "avg": (($s | map(.load_5m) | add / $n) | . * 10 | floor / 10),
+                    "min": ($s | map(.load_5m) | min),
+                    "max": ($s | map(.load_5m) | max)
+                },
+                "mem_percent": {
+                    "avg": (($s | map(.mem_percent) | add / $n) | floor),
+                    "min": ($s | map(.mem_percent) | min),
+                    "max": ($s | map(.mem_percent) | max)
+                },
+                "iowait_percent": {
+                    "avg": (($s | map(.iowait_percent) | add / $n) | . * 10 | floor / 10),
+                    "min": ($s | map(.iowait_percent) | min),
+                    "max": ($s | map(.iowait_percent) | max)
+                },
+                "disk_percent": {
+                    "avg": (($s | map(.disk_percent) | add / $n) | floor),
+                    "min": ($s | map(.disk_percent) | min),
+                    "max": ($s | map(.disk_percent) | max)
+                },
+                "samples": $n
+            }
+        end
+    ' "$NFTBAN_WATCHDOG_TREND_FILE" 2>/dev/null || echo '{"samples":0}'
+}
+
+nftban_watchdog_trend_thresholds() {
+    # Calculate suggested thresholds based on historical data
+    # Returns: JSON with suggested warning/critical thresholds
+
+    if [[ ! -f "$NFTBAN_WATCHDOG_TREND_FILE" ]] || ! command -v jq &>/dev/null; then
+        echo '{"load":{"warning":10,"critical":20},"mem":{"warning":80,"critical":95},"iowait":{"warning":20,"critical":40}}'
+        return
+    fi
+
+    jq '
+        .samples as $s |
+        ($s | length) as $n |
+        if $n < 24 then
+            {"load":{"warning":10,"critical":20},"mem":{"warning":80,"critical":95},"iowait":{"warning":20,"critical":40},"insufficient_data":true}
+        else
+            # Load thresholds
+            (($s | map(.load_5m) | add / $n) as $avg |
+             ($s | map((.load_5m - $avg) * (.load_5m - $avg)) | add / $n | sqrt) as $sd |
+             {"warning": ([($avg + 1.5 * $sd) | floor, 5] | max), "critical": ([($avg + 3 * $sd) | floor, 10] | max)}) as $load |
+            # Memory thresholds (cap at 95%)
+            (($s | map(.mem_percent) | add / $n) as $avg |
+             ($s | map((.mem_percent - $avg) * (.mem_percent - $avg)) | add / $n | sqrt) as $sd |
+             {"warning": ([($avg + 1.5 * $sd) | floor, 80] | min), "critical": 95}) as $mem |
+            # I/O wait thresholds
+            (($s | map(.iowait_percent) | add / $n) as $avg |
+             ($s | map((.iowait_percent - $avg) * (.iowait_percent - $avg)) | add / $n | sqrt) as $sd |
+             {"warning": ([($avg + 2 * $sd) | floor, 15] | max), "critical": ([($avg + 4 * $sd) | floor, 30] | max)}) as $iowait |
+            {
+                "load": $load,
+                "mem": $mem,
+                "iowait": $iowait,
+                "based_on_samples": $n
+            }
+        end
+    ' "$NFTBAN_WATCHDOG_TREND_FILE" 2>/dev/null || echo '{"load":{"warning":10,"critical":20},"mem":{"warning":80,"critical":95},"iowait":{"warning":20,"critical":40}}'
+}
+
+nftban_watchdog_trend_display() {
+    # Display formatted watchdog trend analysis
+    # Usage: nftban_watchdog_trend_display [--json]
+
+    local json_mode=0
+    [[ "${1:-}" == "--json" ]] && json_mode=1
+
+    if [[ $json_mode -eq 1 ]]; then
+        local averages thresholds
+        averages=$(nftban_watchdog_trend_averages)
+        thresholds=$(nftban_watchdog_trend_thresholds)
+        jq -n --argjson avg "$averages" --argjson thr "$thresholds" \
+            '{averages: $avg, thresholds: $thr}'
+        return
+    fi
+
+    # Text output
+    echo ""
+    echo "SYSTEM RESOURCE TRENDS (Last 7 Days)"
+    echo "══════════════════════════════════════════════════════════════"
+    echo ""
+
+    local avg_data threshold_data
+    avg_data=$(nftban_watchdog_trend_averages)
+    threshold_data=$(nftban_watchdog_trend_thresholds)
+
+    if ! command -v jq &>/dev/null; then
+        echo "[WARN] jq not installed - trend analysis requires jq"
+        return 1
+    fi
+
+    local samples
+    samples=$(echo "$avg_data" | jq -r '.samples')
+
+    if [[ "$samples" == "0" ]]; then
+        echo "  No trend data available yet."
+        echo "  Trend data is collected hourly by the maintenance timer."
+        echo ""
+        echo "  To collect now: nftban maintenance run"
+        return 0
+    fi
+
+    # Load Average
+    local load_avg load_min load_max load_warn
+    load_avg=$(echo "$avg_data" | jq -r '.load_5m.avg')
+    load_min=$(echo "$avg_data" | jq -r '.load_5m.min')
+    load_max=$(echo "$avg_data" | jq -r '.load_5m.max')
+    load_warn=$(echo "$threshold_data" | jq -r '.load.warning')
+
+    echo "LOAD AVERAGE (5-min)"
+    echo "───────────────────────────────────────────────────────────────"
+    printf "  %-20s %s\n" "Average............." "$load_avg"
+    printf "  %-20s %s (min) / %s (max)\n" "Range..............." "$load_min" "$load_max"
+    printf "  %-20s %s (current: ${NFTBAN_WATCHDOG_LOAD_WARNING:-10})\n" "Suggested Warning..." "$load_warn"
+    echo ""
+
+    # Memory
+    local mem_avg mem_min mem_max
+    mem_avg=$(echo "$avg_data" | jq -r '.mem_percent.avg')
+    mem_min=$(echo "$avg_data" | jq -r '.mem_percent.min')
+    mem_max=$(echo "$avg_data" | jq -r '.mem_percent.max')
+
+    echo "MEMORY USAGE"
+    echo "───────────────────────────────────────────────────────────────"
+    printf "  %-20s %s%%\n" "Average............." "$mem_avg"
+    printf "  %-20s %s%% (min) / %s%% (max)\n" "Range..............." "$mem_min" "$mem_max"
+    echo ""
+
+    # I/O Wait
+    local io_avg io_min io_max io_warn
+    io_avg=$(echo "$avg_data" | jq -r '.iowait_percent.avg')
+    io_min=$(echo "$avg_data" | jq -r '.iowait_percent.min')
+    io_max=$(echo "$avg_data" | jq -r '.iowait_percent.max')
+    io_warn=$(echo "$threshold_data" | jq -r '.iowait.warning')
+
+    echo "I/O WAIT"
+    echo "───────────────────────────────────────────────────────────────"
+    printf "  %-20s %s%%\n" "Average............." "$io_avg"
+    printf "  %-20s %s%% (min) / %s%% (max)\n" "Range..............." "$io_min" "$io_max"
+    printf "  %-20s %s%% (current: ${NFTBAN_WATCHDOG_IOWAIT_WARNING:-20}%%)\n" "Suggested Warning..." "$io_warn"
+    echo ""
+
+    # Disk
+    local disk_avg disk_min disk_max
+    disk_avg=$(echo "$avg_data" | jq -r '.disk_percent.avg')
+    disk_min=$(echo "$avg_data" | jq -r '.disk_percent.min')
+    disk_max=$(echo "$avg_data" | jq -r '.disk_percent.max')
+
+    echo "DISK USAGE"
+    echo "───────────────────────────────────────────────────────────────"
+    printf "  %-20s %s%%\n" "Average............." "$disk_avg"
+    printf "  %-20s %s%% (min) / %s%% (max)\n" "Range..............." "$disk_min" "$disk_max"
+    echo ""
+
+    printf "Based on %s hourly samples\n" "$samples"
+    echo "══════════════════════════════════════════════════════════════"
+}
+
+# =============================================================================
 # EXPORTS
 # =============================================================================
 
@@ -951,3 +1189,7 @@ export -f nftban_watchdog_check_fd
 export -f nftban_watchdog_get_top_cpu
 export -f nftban_watchdog_get_top_mem
 export -f nftban_watchdog_cleanup_old
+export -f nftban_watchdog_trend_collect
+export -f nftban_watchdog_trend_display
+export -f nftban_watchdog_trend_averages
+export -f nftban_watchdog_trend_thresholds
