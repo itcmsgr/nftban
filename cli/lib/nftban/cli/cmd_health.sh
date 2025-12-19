@@ -122,6 +122,9 @@ nftban_cmd_health() {
         geoip)
             nftban_health_cmd_geoip "$@"
             ;;
+        install|verify)
+            nftban_health_cmd_install "$@"
+            ;;
         help|--help|-h)
             nftban_health_cmd_help
             ;;
@@ -619,6 +622,44 @@ nftban_health_cmd_geoip() {
     return $result
 }
 
+nftban_health_cmd_install() {
+    # Verify installation completeness
+    # Usage: nftban health install [--verbose]
+
+    local verbose=0
+
+    for arg in "$@"; do
+        case "$arg" in
+            --verbose|-v) verbose=1 ;;
+            --help|-h)
+                echo "Usage: nftban health install [--verbose]"
+                echo ""
+                echo "Verify NFTBan installation completeness."
+                echo "Checks all required timers, services, binaries, directories, and configs."
+                echo ""
+                echo "Options:"
+                echo "  --verbose, -v    Show optional components status"
+                return 0
+                ;;
+        esac
+    done
+
+    # Ensure function is loaded
+    if ! declare -f nftban_health_verify_installation >/dev/null 2>&1; then
+        if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_health.sh" ]]; then
+            source "${NFTBAN_LIB_DIR}/core/nftban_health.sh"
+        fi
+    fi
+
+    if ! declare -f nftban_health_verify_installation >/dev/null 2>&1; then
+        echo "ERROR: Installation verification function not available" >&2
+        return 1
+    fi
+
+    nftban_banner "health"
+    nftban_health_verify_installation "$verbose"
+}
+
 nftban_health_cmd_help() {
     # Show help text
 
@@ -665,6 +706,11 @@ COMMANDS:
     geoip                   Check GeoIP system status
                             Tests binary, database, performance
 
+    install, verify         Verify installation completeness
+                            Checks all required timers, services, binaries,
+                            directories, and config files
+                            --verbose: Show optional components
+
     help                    Show this help message
 
 EXAMPLES:
@@ -697,6 +743,10 @@ EXAMPLES:
 
     # Generate report
     nftban health report terminal
+
+    # Verify installation completeness
+    nftban health install
+    nftban health install --verbose  # Include optional components
 
 HEALTH STATUS CODES:
     ✅ OK       - All checks passed

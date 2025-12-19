@@ -1730,21 +1730,35 @@ nftban_health_check_timers() {
     local status=$HEALTH_OK
     local timer_issues=()
 
-    # All NFTBan timers in priority order
+    # All NFTBan timers in priority order (REQUIRED for complete installation)
     local -a timers=(
-        "nftban-health.timer"
-        "nftban-metrics-exporter.timer"
-        "nftban-core-geoip.timer"
-        "nftban-core-feeds.timer"
-        "nftban-queue.timer"
+        "nftban-maintenance.timer"      # CRITICAL: SSH/IP protection, auto-heal
+        "nftban-health.timer"           # Health checks
+        "nftban-core-feeds.timer"       # Threat feeds sync
+        "nftban-core-geoip.timer"       # GeoIP updates
+        "nftban-queue.timer"            # Ban queue processing
+        "nftban-watchdog.timer"         # System resource monitoring
+        "nftban-metrics-exporter.timer" # Prometheus metrics
+    )
+
+    # Optional timers (only needed for specific features)
+    local -a optional_timers=(
+        "nftban-suricata-update.timer"  # Suricata rules (needs suricata)
+        "nftban-snapshot.timer"         # Firewall snapshots
+        "nftban-rollback.timer"         # Auto-rollback checks
     )
 
     local -A timer_desc=(
+        ["nftban-maintenance.timer"]="CRITICAL: SSH/IP lockout prevention, auto-heal"
         ["nftban-health.timer"]="Health checks and auto-heal"
-        ["nftban-metrics-exporter.timer"]="Metrics collection"
-        ["nftban-core-geoip.timer"]="GeoIP updates"
         ["nftban-core-feeds.timer"]="Threat feeds sync"
+        ["nftban-core-geoip.timer"]="GeoIP database updates"
         ["nftban-queue.timer"]="Ban queue processing"
+        ["nftban-watchdog.timer"]="System resource monitoring"
+        ["nftban-metrics-exporter.timer"]="Prometheus metrics collection"
+        ["nftban-suricata-update.timer"]="Suricata rules update (optional)"
+        ["nftban-snapshot.timer"]="Firewall snapshot creation (optional)"
+        ["nftban-rollback.timer"]="Auto-rollback checks (optional)"
     )
 
     local total=0
@@ -2925,6 +2939,309 @@ nftban_health_render_json() {
 }
 
 # =============================================================================
+# INSTALLATION VERIFICATION
+# =============================================================================
+
+nftban_health_verify_installation() {
+    # Comprehensive installation verification
+    # Returns: 0=COMPLETE, 1=INCOMPLETE (warnings), 2=BROKEN (errors)
+    # Args: $1 = verbose (0=summary, 1=detailed)
+
+    local verbose="${1:-0}"
+    local status=0
+    local missing_required=()
+    local missing_optional=()
+    local issues=()
+
+    echo ""
+    echo "NFTBan Installation Verification"
+    echo "════════════════════════════════════════════════════════════════"
+    echo ""
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 1. REQUIRED TIMERS
+    # ─────────────────────────────────────────────────────────────────────
+    echo "REQUIRED TIMERS"
+    echo "───────────────────────────────────────────────────────────────"
+
+    local -a required_timers=(
+        "nftban-maintenance.timer"      # CRITICAL: SSH/IP lockout prevention
+        "nftban-health.timer"           # Health checks
+        "nftban-core-feeds.timer"       # Threat feeds
+        "nftban-core-geoip.timer"       # GeoIP updates
+        "nftban-queue.timer"            # Ban queue
+        "nftban-watchdog.timer"         # System monitoring
+        "nftban-metrics-exporter.timer" # Prometheus metrics
+    )
+
+    local -A timer_desc=(
+        ["nftban-maintenance.timer"]="SSH/IP lockout prevention (CRITICAL)"
+        ["nftban-health.timer"]="Health checks and auto-heal"
+        ["nftban-core-feeds.timer"]="Threat feeds sync"
+        ["nftban-core-geoip.timer"]="GeoIP database updates"
+        ["nftban-queue.timer"]="Ban queue processing"
+        ["nftban-watchdog.timer"]="System resource monitoring"
+        ["nftban-metrics-exporter.timer"]="Prometheus metrics"
+    )
+
+    local timer_ok=0
+    local timer_missing=0
+
+    for timer in "${required_timers[@]}"; do
+        if systemctl list-unit-files "$timer" --no-legend 2>/dev/null | grep -q "^$timer"; then
+            if systemctl is-active --quiet "$timer" 2>/dev/null; then
+                printf "  ✔ %-30s ACTIVE\n" "$timer"
+                timer_ok=$((timer_ok + 1))
+            elif systemctl is-enabled --quiet "$timer" 2>/dev/null; then
+                printf "  ⚠ %-30s ENABLED (stopped)\n" "$timer"
+                timer_ok=$((timer_ok + 1))
+            else
+                printf "  ✖ %-30s DISABLED\n" "$timer"
+                missing_required+=("Timer: $timer (${timer_desc[$timer]})")
+                timer_missing=$((timer_missing + 1))
+            fi
+        else
+            printf "  ✖ %-30s NOT INSTALLED\n" "$timer"
+            missing_required+=("Timer: $timer (${timer_desc[$timer]})")
+            timer_missing=$((timer_missing + 1))
+        fi
+    done
+
+    echo ""
+    printf "  Summary: %d/%d timers OK\n" "$timer_ok" "${#required_timers[@]}"
+    echo ""
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 2. REQUIRED SERVICES
+    # ─────────────────────────────────────────────────────────────────────
+    echo "REQUIRED SERVICES"
+    echo "───────────────────────────────────────────────────────────────"
+
+    local -a required_services=(
+        "nftables.service"
+        "nftban-core.service"
+    )
+
+    local -a optional_services=(
+        "nftban-login-monitor.service"
+        "nftban-suricata.service"
+        "nftban-ui.service"
+    )
+
+    local svc_ok=0
+    local svc_missing=0
+
+    for svc in "${required_services[@]}"; do
+        if systemctl list-unit-files "$svc" --no-legend 2>/dev/null | grep -q "^$svc"; then
+            if systemctl is-active --quiet "$svc" 2>/dev/null; then
+                printf "  ✔ %-30s ACTIVE\n" "$svc"
+                svc_ok=$((svc_ok + 1))
+            elif systemctl is-enabled --quiet "$svc" 2>/dev/null; then
+                printf "  ⚠ %-30s ENABLED (stopped)\n" "$svc"
+                svc_ok=$((svc_ok + 1))
+            else
+                printf "  ✖ %-30s DISABLED\n" "$svc"
+                missing_required+=("Service: $svc")
+                svc_missing=$((svc_missing + 1))
+            fi
+        else
+            printf "  ✖ %-30s NOT INSTALLED\n" "$svc"
+            missing_required+=("Service: $svc")
+            svc_missing=$((svc_missing + 1))
+        fi
+    done
+
+    echo ""
+    printf "  Summary: %d/%d services OK\n" "$svc_ok" "${#required_services[@]}"
+    echo ""
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 3. REQUIRED BINARIES (using distro config paths)
+    # ─────────────────────────────────────────────────────────────────────
+    echo "REQUIRED BINARIES"
+    echo "───────────────────────────────────────────────────────────────"
+
+    # Load distro config for correct paths
+    if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_distro_config.sh" ]]; then
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_distro_config.sh" 2>/dev/null || true
+        nftban_distro_load 2>/dev/null || true
+    fi
+
+    # Required binaries - check using command -v for distro independence
+    local -a required_bins=(
+        "nftban"
+        "nft"
+        "jq"
+        "curl"
+        "systemctl"
+    )
+
+    local -a optional_bins=(
+        "nftban-core"
+        "nftban-ui"
+        "suricata"
+    )
+
+    local bin_ok=0
+    local bin_missing=0
+    local total_required=${#required_bins[@]}
+
+    for name in "${required_bins[@]}"; do
+        local bin_path=""
+
+        # Try distro config path first
+        if [[ -n "${DISTRO_PATHS[$name]:-}" ]] && [[ -x "${DISTRO_PATHS[$name]}" ]]; then
+            bin_path="${DISTRO_PATHS[$name]}"
+            printf "  ✔ %-15s OK (%s)\n" "$name" "$bin_path"
+            bin_ok=$((bin_ok + 1))
+        elif command -v "$name" &>/dev/null; then
+            bin_path=$(command -v "$name")
+            printf "  ✔ %-15s OK (%s)\n" "$name" "$bin_path"
+            bin_ok=$((bin_ok + 1))
+        else
+            printf "  ✖ %-15s MISSING\n" "$name"
+            missing_required+=("Binary: $name")
+            bin_missing=$((bin_missing + 1))
+        fi
+    done
+
+    echo ""
+    printf "  Summary: %d/%d binaries OK\n" "$bin_ok" "$total_required"
+    echo ""
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 4. REQUIRED DIRECTORIES
+    # ─────────────────────────────────────────────────────────────────────
+    echo "REQUIRED DIRECTORIES"
+    echo "───────────────────────────────────────────────────────────────"
+
+    local -a required_dirs=(
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+        "${NFTBAN_DATA_DIR:-/var/lib/nftban}"
+        "${NFTBAN_LOG_DIR:-/var/log/nftban}"
+        "${NFTBAN_RUN_DIR:-/run/nftban}"
+    )
+
+    local dir_ok=0
+    local dir_missing=0
+
+    for dir in "${required_dirs[@]}"; do
+        if [[ -d "$dir" ]]; then
+            printf "  ✔ %-30s OK\n" "$dir"
+            dir_ok=$((dir_ok + 1))
+        else
+            printf "  ✖ %-30s MISSING\n" "$dir"
+            missing_required+=("Directory: $dir")
+            dir_missing=$((dir_missing + 1))
+        fi
+    done
+
+    echo ""
+    printf "  Summary: %d/%d directories OK\n" "$dir_ok" "${#required_dirs[@]}"
+    echo ""
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 5. REQUIRED CONFIG FILES
+    # ─────────────────────────────────────────────────────────────────────
+    echo "REQUIRED CONFIG FILES"
+    echo "───────────────────────────────────────────────────────────────"
+
+    local -a required_configs=(
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/whitelist.d/00-system.conf"
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/ports.d/00-ssh.conf"
+    )
+
+    local cfg_ok=0
+    local cfg_missing=0
+
+    for cfg in "${required_configs[@]}"; do
+        if [[ -f "$cfg" ]]; then
+            printf "  ✔ %-40s OK\n" "$cfg"
+            cfg_ok=$((cfg_ok + 1))
+        else
+            printf "  ✖ %-40s MISSING\n" "$cfg"
+            missing_required+=("Config: $cfg")
+            cfg_missing=$((cfg_missing + 1))
+        fi
+    done
+
+    echo ""
+    printf "  Summary: %d/%d config files OK\n" "$cfg_ok" "${#required_configs[@]}"
+    echo ""
+
+    # ─────────────────────────────────────────────────────────────────────
+    # 6. OPTIONAL COMPONENTS
+    # ─────────────────────────────────────────────────────────────────────
+    if [[ $verbose -eq 1 ]]; then
+        echo "OPTIONAL COMPONENTS"
+        echo "───────────────────────────────────────────────────────────────"
+
+        for svc in "${optional_services[@]}"; do
+            if systemctl list-unit-files "$svc" --no-legend 2>/dev/null | grep -q "^$svc"; then
+                if systemctl is-active --quiet "$svc" 2>/dev/null; then
+                    printf "  ✔ %-30s ACTIVE\n" "$svc"
+                else
+                    printf "  ○ %-30s INSTALLED (inactive)\n" "$svc"
+                fi
+            else
+                printf "  ○ %-30s NOT INSTALLED\n" "$svc"
+                missing_optional+=("$svc")
+            fi
+        done
+
+        for bin in "${optional_binaries[@]}"; do
+            if [[ -x "$bin" ]]; then
+                printf "  ✔ %-30s OK\n" "$bin"
+            else
+                printf "  ○ %-30s NOT INSTALLED\n" "$bin"
+                missing_optional+=("$bin")
+            fi
+        done
+        echo ""
+    fi
+
+    # ─────────────────────────────────────────────────────────────────────
+    # SUMMARY
+    # ─────────────────────────────────────────────────────────────────────
+    echo "════════════════════════════════════════════════════════════════"
+
+    if [[ ${#missing_required[@]} -eq 0 ]]; then
+        echo "✔ INSTALLATION COMPLETE"
+        echo ""
+        echo "All required components are installed and configured."
+        status=0
+    else
+        echo "✖ INSTALLATION INCOMPLETE"
+        echo ""
+        echo "Missing required components (${#missing_required[@]}):"
+        for item in "${missing_required[@]}"; do
+            echo "  - $item"
+        done
+        echo ""
+        echo "To fix, run:"
+        echo "  nftban health fix"
+        echo ""
+        echo "Or reinstall the package."
+        status=2
+    fi
+
+    if [[ ${#missing_optional[@]} -gt 0 && $verbose -eq 1 ]]; then
+        echo ""
+        echo "Optional components not installed (${#missing_optional[@]}):"
+        for item in "${missing_optional[@]}"; do
+            echo "  - $item"
+        done
+    fi
+
+    echo "════════════════════════════════════════════════════════════════"
+    echo ""
+
+    return $status
+}
+
+# =============================================================================
 # EXPORTS
 # =============================================================================
 
@@ -2956,3 +3273,6 @@ export -f nftban_health_fix_services
 export -f nftban_health_render_terminal
 export -f nftban_health_render_summary
 export -f nftban_health_render_json
+
+# Export installation verification
+export -f nftban_health_verify_installation
