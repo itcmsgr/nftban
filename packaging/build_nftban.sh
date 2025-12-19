@@ -175,6 +175,13 @@ usermod -a -G nftban root 2>/dev/null || true
 
 echo "[NFTBan] Configuring NFTBan v1.0.0..."
 
+# STEP 1: Remove old systemd overrides (prevent conflicts with new package files)
+echo "[NFTBan] Removing old systemd overrides..."
+rm -f /etc/systemd/system/nftban-*.service 2>/dev/null || true
+rm -f /etc/systemd/system/nftban-*.timer 2>/dev/null || true
+rm -rf /etc/systemd/system/nftban-*.service.d 2>/dev/null || true
+systemctl daemon-reload 2>/dev/null || true
+
 # STEP 2: Create FHS directories
 echo "[NFTBan] Creating FHS directories..."
 mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d}
@@ -363,7 +370,14 @@ EOF
 # NFTBan v1.0.0 - SAFE INSTALL FLOW
 set -e
 
-echo "[NFTBan] Configuring..."
+echo "[NFTBan] Configuring NFTBan v1.0.0..."
+
+# STEP 0: Remove old systemd overrides (prevent conflicts with new package files)
+echo "[NFTBan] Removing old systemd overrides..."
+rm -f /etc/systemd/system/nftban-*.service 2>/dev/null || true
+rm -f /etc/systemd/system/nftban-*.timer 2>/dev/null || true
+rm -rf /etc/systemd/system/nftban-*.service.d 2>/dev/null || true
+systemctl daemon-reload 2>/dev/null || true
 
 # STEP 1: Create groups
 if ! getent group nftban >/dev/null; then
