@@ -35,6 +35,10 @@ umask 027
 # shellcheck source=/etc/nftban/nftban.conf
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
 
+# NFTables table names (must match nft_schema.sh)
+: "${NFTBAN_TABLE_IPV4:=ip nftban}"
+: "${NFTBAN_TABLE_IPV6:=ip6 nftban}"
+
 LOGFILE="${NFTBAN_LOG_DIR}/maintenance.log"
 LOCKFILE="${NFTBAN_RUN_DIR}/maintenance.lock"
 
@@ -145,18 +149,18 @@ EOF
                 # Firewall is active - do atomic whitelist update
                 # This only updates the tcp_ports set, not the entire firewall
                 if nft list set ${NFTBAN_TABLE_IPV4} tcp_ports >/dev/null 2>&1; then
-                    # Use nftban-complete for atomic reload of whitelists only
-                    if /usr/sbin/nftban-complete nftables reload-whitelist 2>/dev/null; then
-                        log "INFO" "✅ Whitelist atomically updated - SSH port $SSH_PORT now allowed"
+                    # Direct nft command to add port (most reliable method)
+                    if nft add element ${NFTBAN_TABLE_IPV4} tcp_ports "{ $SSH_PORT }" 2>/dev/null; then
+                        log "INFO" "✅ SSH port $SSH_PORT added to firewall"
                         log "INFO" "⚠️  ALERT: SSH port changed and firewall updated (no lockout risk)"
                     else
-                        # Fallback: full reload is safe for whitelists
-                        log "WARN" "Atomic reload not available, using safe full reload..."
-                        if nftban firewall reload >/dev/null 2>&1; then
+                        # Fallback: try systemctl restart nftables
+                        log "WARN" "Direct add failed, restarting nftables..."
+                        if systemctl restart nftables 2>/dev/null; then
                             log "INFO" "✅ Firewall reloaded - SSH port $SSH_PORT now allowed"
                         else
                             log "WARN" "Reload failed - SSH port whitelisted but not yet applied"
-                            log "WARN" "Please run manually: nftban firewall reload"
+                            log "WARN" "Please run: systemctl restart nftables"
                         fi
                     fi
                 else
