@@ -48,6 +48,102 @@ fi
 readonly CMD_VERSION_LOADED=1
 
 # =============================================================================
+# UPDATE CHECK FUNCTION
+# =============================================================================
+
+nftban_check_for_updates() {
+    # Check GitHub for latest version and compare with installed
+    # Usage: nftban version --update
+
+    local repo="${NFTBAN_REPO:-itcmsgr/nftban}"
+    local current_version
+    current_version="${NFTBAN_VERSION:-1.0.0}"
+    current_version="${current_version#v}"
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "NFTBan Update Check"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    printf "  %-20s %s\n" "Installed version:" "v${current_version}"
+    printf "  %-20s %s\n" "Repository:" "github.com/${repo}"
+    echo ""
+
+    # Check if curl is available
+    if ! command -v curl &>/dev/null; then
+        echo "  ❌ Error: curl is required for update check"
+        return 1
+    fi
+
+    echo "  Checking for updates..."
+    echo ""
+
+    # Fetch latest release from GitHub API
+    local api_response latest_version latest_date
+    api_response=$(curl -sf --max-time 10 "https://api.github.com/repos/${repo}/releases/latest" 2>/dev/null)
+
+    if [[ -z "$api_response" ]]; then
+        # No releases yet, check tags
+        api_response=$(curl -sf --max-time 10 "https://api.github.com/repos/${repo}/tags" 2>/dev/null)
+        if [[ -n "$api_response" ]]; then
+            latest_version=$(echo "$api_response" | grep -oP '"name":\s*"v?\K[0-9]+\.[0-9]+\.[0-9]+[^"]*' | head -1)
+        fi
+    else
+        latest_version=$(echo "$api_response" | grep -oP '"tag_name":\s*"v?\K[0-9]+\.[0-9]+\.[0-9]+[^"]*' | head -1)
+        latest_date=$(echo "$api_response" | grep -oP '"published_at":\s*"\K[^"]+' | head -1)
+    fi
+
+    if [[ -z "$latest_version" ]]; then
+        echo "  ⚠️  Could not fetch latest version from GitHub"
+        echo "  Check: https://github.com/${repo}/releases"
+        return 1
+    fi
+
+    latest_version="${latest_version#v}"
+    printf "  %-20s %s\n" "Latest version:" "v${latest_version}"
+    [[ -n "$latest_date" ]] && printf "  %-20s %s\n" "Released:" "${latest_date%%T*}"
+    echo ""
+
+    # Compare versions
+    local cmp_result=0
+    if declare -f nftban_version_compare &>/dev/null; then
+        nftban_version_compare "$current_version" "$latest_version"
+        cmp_result=$?
+    else
+        # Simple comparison fallback
+        if [[ "$current_version" == "$latest_version" ]]; then
+            cmp_result=0
+        elif [[ "$(printf '%s\n' "$current_version" "$latest_version" | sort -V | head -1)" == "$current_version" ]]; then
+            cmp_result=1
+        else
+            cmp_result=2
+        fi
+    fi
+
+    # Display result
+    case $cmp_result in
+        0)
+            echo "  ✅ You are running the latest version!"
+            ;;
+        1)
+            echo "  📦 UPDATE AVAILABLE!"
+            echo ""
+            echo "  To update, run one of:"
+            echo "    • curl -fsSL https://get.nftban.com | sudo bash"
+            echo "    • Visit: https://github.com/${repo}/releases/latest"
+            return 2
+            ;;
+        2)
+            echo "  🔧 You are running a development version (ahead of release)"
+            ;;
+    esac
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    return 0
+}
+
+# =============================================================================
 # COMMAND HANDLER
 # =============================================================================
 
@@ -71,6 +167,10 @@ nftban_cmd_version() {
                 ;;
             --check|-c)
                 format="check"
+                shift
+                ;;
+            --update|-u)
+                format="update"
                 shift
                 ;;
             --json|-j)
@@ -134,6 +234,9 @@ EOF
             echo "❌ Requirements not met"
             return 1
         fi
+    elif [[ "$format" == "update" ]]; then
+        nftban_check_for_updates
+        return $?
     else
         nftban_version_info
     fi
@@ -149,9 +252,10 @@ Usage: nftban version [OPTIONS]
 Display NFTBan version information.
 
 OPTIONS:
-  --short, -s       Show version number only (e.g., "0.6.5")
-  --numeric, -n     Show numeric version for comparison (e.g., "605")
+  --short, -s       Show version number only (e.g., "1.0.0")
+  --numeric, -n     Show numeric version for comparison (e.g., "100")
   --check, -c       Check system requirements
+  --update, -u      Check GitHub for newer version
   --json, -j        Output in JSON format
   --help, -h        Show this help message
 
@@ -160,6 +264,7 @@ EXAMPLES:
   nftban version --short         # Show version number only
   nftban version --json          # Get version in JSON format
   nftban version --check         # Check system requirements
+  nftban version --update        # Check for updates from GitHub
 
 EOF
 }
@@ -167,6 +272,7 @@ EOF
 # Export functions
 export -f nftban_cmd_version
 export -f nftban_cmd_version_usage
+export -f nftban_check_for_updates
 
 # =============================================================================
 # EXECUTE IF RUN DIRECTLY
