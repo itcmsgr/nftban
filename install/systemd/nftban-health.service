@@ -1,23 +1,20 @@
 [Unit]
-Description=NFTBan Periodic Health Check (Read-Only)
+Description=NFTBan Periodic Health Check with Auto-Heal
 Documentation=man:nftban(8)
 After=network.target nftables.service
 
 [Service]
 Type=oneshot
 
-# Run as unprivileged nftban user - CHECK ONLY, no fixes
-User=nftban
-Group=nftban
+# Run as root to allow auto-heal fixes
+User=root
 
-# Check-only mode: reports issues but cannot fix them
-# Fixes require explicit admin action via nftban-health-fix.service
-# Uses --cache-status to write health result to /var/cache/nftban/health/
-# for banner health indicator display (🟢/🟠/🔴)
-ExecStart=/usr/bin/nftban health check --quiet --cache-status
+# Check and auto-fix issues
+# --auto-heal: Automatically fix detected issues
+# --cache-status: Write health result for banner display
+ExecStart=/usr/bin/nftban health check --auto-heal --cache-status
 
 # Exit codes: 0=OK, 1=warnings, 2=errors - all are valid check results
-# Only treat as failure if command itself crashes
 SuccessExitStatus=0 1 2
 
 # Logging
@@ -25,13 +22,8 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nftban-health
 
-# Security hardening - strict read-only access
+# Security hardening
 PrivateTmp=yes
-NoNewPrivileges=yes
-ProtectSystem=full
-ProtectHome=yes
-ReadOnlyPaths=/etc /usr
-ReadWritePaths=/var/log/nftban /var/lib/nftban /var/cache/nftban
 
 [Install]
 WantedBy=multi-user.target
