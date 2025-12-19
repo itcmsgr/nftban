@@ -14,8 +14,9 @@ User=root
 # --cache-status: Write health result for banner display
 ExecStart=/usr/bin/nftban health check --auto-heal --cache-status
 
-# Exit codes: 0=OK, 1=warnings, 2=errors - all are valid check results
-SuccessExitStatus=0 1 2
+# Exit codes: 0=OK, 1=warnings, 2=errors, 4=permission issues fixed
+# All are valid check results (service ran successfully)
+SuccessExitStatus=0 1 2 4
 
 # Logging
 StandardOutput=journal
