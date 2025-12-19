@@ -411,8 +411,8 @@ output_terminal() {
     today=$(date +%Y-%m-%d)
 
     if [[ -r "$ban_log" ]]; then
-        bans_today=$(grep "^${today}.*BANNED$" "$ban_log" 2>/dev/null | wc -l || echo 0)
-        unbans_today=$(grep "^${today}.*UNBANNED$" "$ban_log" 2>/dev/null | wc -l || echo 0)
+        bans_today=$(grep -c "^${today}.*BANNED$" "$ban_log" 2>/dev/null) || bans_today=0
+        unbans_today=$(grep -c "^${today}.*UNBANNED$" "$ban_log" 2>/dev/null) || unbans_today=0
     fi
 
     printf "  %-20s %s\n" "Bans today.........." "$bans_today"
