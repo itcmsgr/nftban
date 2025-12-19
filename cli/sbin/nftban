@@ -752,10 +752,10 @@ EOF
 
             # Portscan - check via nftban portscan status
             local portscan_output portscan_status="⚪ Unknown"
-            portscan_output=$(nftban portscan status 2>/dev/null | grep -E "Module Enabled:|Status:" | head -1) || true
-            if [[ "$portscan_output" =~ "true" ]] || [[ "$portscan_output" =~ "Running" ]]; then
+            portscan_output=$(nftban portscan status 2>/dev/null | grep -E "Status:" | head -1) || true
+            if [[ "$portscan_output" =~ "ENABLED" ]]; then
                 portscan_status="✅ Enabled"
-            elif [[ "$portscan_output" =~ "false" ]] || [[ "$portscan_output" =~ "Stopped" ]]; then
+            elif [[ "$portscan_output" =~ "DISABLED" ]]; then
                 portscan_status="⚪ Disabled"
             fi
             echo "    Portscan:     ${portscan_status}"
