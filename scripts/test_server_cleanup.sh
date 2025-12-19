@@ -60,7 +60,7 @@ rm -rf /usr/lib/nftban/
 # Remove configs (backup first)
 log "Backing up and removing configs..."
 if [[ -d /etc/nftban ]]; then
-    cp -r /etc/nftban /etc/nftban.backup.$(date +%Y%m%d_%H%M%S) 2>/dev/null || true
+    cp -r /etc/nftban "/etc/nftban.backup.$(date +%Y%m%d_%H%M%S)" 2>/dev/null || true
     rm -rf /etc/nftban
 fi
 

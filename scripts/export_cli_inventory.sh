@@ -45,7 +45,7 @@ case "$FORMAT" in
         # JSON output
         echo "{"
         echo '  "version": "1.0.0",'
-        echo '  "generated": "'$(date -Iseconds)'",'
+        echo '  "generated": "'"$(date -Iseconds)"'",'
         echo '  "total_commands": '$CMD_COUNT','
         echo '  "commands": ['
 
@@ -86,6 +86,7 @@ case "$FORMAT" in
             (
                 export NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
                 [[ -f /etc/nftban/nftban.conf ]] && source /etc/nftban/nftban.conf 2>/dev/null || true
+                # shellcheck source=/dev/null
                 source "$cmd_file" 2>/dev/null || true
 
                 # Try different help function patterns

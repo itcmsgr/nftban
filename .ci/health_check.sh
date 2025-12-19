@@ -15,10 +15,13 @@ IFS=$'\n\t'
 # =============================================================================
 # CONSTANTS
 # =============================================================================
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+readonly PROJECT_ROOT
 readonly STATUS_FILE="$PROJECT_ROOT/STATUS.md"
-readonly TIMESTAMP="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+TIMESTAMP="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
+readonly TIMESTAMP
 
 # Color codes for terminal output
 readonly RED='\033[0;31m'

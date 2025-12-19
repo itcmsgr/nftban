@@ -15,9 +15,12 @@ set -u
 # CONFIGURATION
 # =============================================================================
 
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck disable=SC2034  # SCRIPT_DIR reserved for future use
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
 readonly TEST_TIMEOUT=20  # seconds (increased for commands with network checks)
-readonly TEST_LOG="/tmp/nftban_test_$(date +%Y%m%d_%H%M%S).log"
+TEST_LOG="/tmp/nftban_test_$(date +%Y%m%d_%H%M%S).log"
+readonly TEST_LOG
 readonly TEST_IP="8.8.8.8"  # Safe test IP (Google DNS)
 readonly TEST_PORT="8080"
 
