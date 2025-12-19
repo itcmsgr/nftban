@@ -372,28 +372,20 @@ output_terminal() {
     echo "───────────────────────────────────────────────────────────────"
 
     # Load health module
-    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_health.sh" ]]; then
-        source "${NFTBAN_LIB_DIR}/core/nftban_health.sh"
+    # Read from health cache (written by nftban-health.timer)
+    local health_cache="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/health/health_status.cache"
+    local health_status="UNKNOWN"
 
-        # Run quick check (silent mode)
-        local health_exit=0
-        nftban_health_check_all 0 >/dev/null 2>&1 || health_exit=$?
+    if [[ -r "$health_cache" ]]; then
+        health_status=$(cat "$health_cache" 2>/dev/null) || health_status="UNKNOWN"
+    fi
 
-        local health_status="UNKNOWN"
-        case $health_exit in
-            0) health_status="OK" ;;
-            1) health_status="WARNINGS DETECTED" ;;
-            2) health_status="ERRORS DETECTED" ;;
-        esac
-        printf "  %-20s %s\n" "Overall Status......" "$health_status"
+    printf "  %-20s %s\n" "Overall Status......" "$health_status"
 
-        # Show hints if issues found
-        if [[ $health_exit -gt 0 ]] && [[ $quiet_mode -eq 0 ]]; then
-            echo "      → Run: nftban health check"
-            echo "      → Auto-fix: nftban health check --auto-heal"
-        fi
-    else
-        printf "  %-20s %s\n" "Overall Status......" "UNKNOWN (module not found)"
+    # Show hints if not OK
+    if [[ "$health_status" != "OK" ]] && [[ $quiet_mode -eq 0 ]]; then
+        echo "      → Run: nftban health check"
+        echo "      → Auto-fix: nftban health check --auto-heal"
     fi
     echo ""
 
