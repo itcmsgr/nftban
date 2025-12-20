@@ -355,10 +355,10 @@ export -f nftban_audit_rotate
 
 # Initialize audit log on first load (with correct ownership)
 if [[ ! -f "$NFTBAN_AUDIT_LOG" ]] && [[ "${NFTBAN_AUDIT_ENABLED}" == "true" ]]; then
-    local audit_dir
-    audit_dir="$(dirname "$NFTBAN_AUDIT_LOG")"
-    mkdir -p "$audit_dir" 2>/dev/null || true
+    _nftban_audit_init_dir="$(dirname "$NFTBAN_AUDIT_LOG")"
+    mkdir -p "$_nftban_audit_init_dir" 2>/dev/null || true
     touch "$NFTBAN_AUDIT_LOG" 2>/dev/null || true
     chown nftban:nftban "$NFTBAN_AUDIT_LOG" 2>/dev/null || true
     chmod 640 "$NFTBAN_AUDIT_LOG" 2>/dev/null || true
+    unset _nftban_audit_init_dir
 fi
