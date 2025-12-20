@@ -311,7 +311,8 @@ nftban_portscan_classic_process_logs() {
     local time_window="${PORTSCAN_CLASSIC_TIME_WINDOW}"
     local current_time
     current_time=$(date +%s)
-    local cutoff_time=$((current_time - time_window))
+    local cutoff_time
+    cutoff_time=$((current_time - time_window))
 
     # Read recent log entries
     while IFS= read -r line; do
@@ -382,7 +383,8 @@ nftban_portscan_classic_cleanup_old_entries() {
     local time_window="${PORTSCAN_CLASSIC_TIME_WINDOW}"
     local current_time
     current_time=$(date +%s)
-    local cutoff_time=$((current_time - time_window))
+    local cutoff_time
+    cutoff_time=$((current_time - time_window))
 
     for ip in "${!_PORTSCAN_CLASSIC_IP_TIMESTAMPS[@]}"; do
         local timestamps="${_PORTSCAN_CLASSIC_IP_TIMESTAMPS[$ip]}"
@@ -479,7 +481,8 @@ nftban_portscan_classic_detect_scan_type() {
         if [[ $ts_count -gt 0 ]]; then
             local first_ts="${ts_array[0]}"
             local last_ts="${ts_array[$((ts_count-1))]}"
-            local duration=$((last_ts - first_ts))
+            local duration
+            duration=$((last_ts - first_ts))
 
             # If many connections in short time
             if [[ $duration -lt 10 && $port_count -ge $strobe_ports ]]; then

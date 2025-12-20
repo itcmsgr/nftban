@@ -77,7 +77,8 @@ perms_warn() {
 perms_log_audit() {
     # Log to audit trail
     # Args: message
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
     local user="${SUDO_USER:-${USER:-root}}"
 
     # Create audit log if it doesn't exist (with correct ownership)

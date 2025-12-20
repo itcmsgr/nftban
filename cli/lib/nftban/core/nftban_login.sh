@@ -210,7 +210,8 @@ _nftban_login_eve_file_fresh() {
     file_mtime=$(stat -c %Y "$eve_file" 2>/dev/null) || return 1
     local now
     now=$(date +%s)
-    local age=$((now - file_mtime))
+    local age
+    age=$((now - file_mtime))
 
     [[ $age -lt $threshold ]]
 }

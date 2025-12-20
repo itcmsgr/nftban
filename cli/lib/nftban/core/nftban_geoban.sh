@@ -371,7 +371,8 @@ nftban_geoban_fetch_bash() {
     fi
 
     # Count IPs
-    local ip_count=$(wc -l < "$cache_file")
+    local ip_count
+    ip_count=$(wc -l < "$cache_file")
 
     if [[ $ip_count -lt 10 ]]; then
         nftban_error "Downloaded only $ip_count IP ranges for $cc (expected more)"
@@ -919,8 +920,10 @@ nftban_geoban_status() {
 
     # Cache status
     if [[ -d "${GEOBAN_CACHE_DIR}" ]]; then
-        local cache_files=$(find "${GEOBAN_CACHE_DIR}" -type f 2>/dev/null | wc -l)
-        local cache_size=$(du -sh "${GEOBAN_CACHE_DIR}" 2>/dev/null | awk '{print $1}')
+        local cache_files
+        cache_files=$(find "${GEOBAN_CACHE_DIR}" -type f 2>/dev/null | wc -l)
+        local cache_size
+        cache_size=$(du -sh "${GEOBAN_CACHE_DIR}" 2>/dev/null | awk '{print $1}')
         echo "💾 Cache:"
         echo "   Files: ${cache_files}"
         echo "   Size: ${cache_size}"

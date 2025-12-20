@@ -80,7 +80,8 @@ _feeds_unlock() {
 _feeds_is_locked() {
     if [[ -f "$NFTBAN_FEEDS_LOCKFILE" ]]; then
         # Check if lock is stale (older than 1 hour = hung process)
-        local lock_age=$(( $(date +%s) - $(stat -c %Y "$NFTBAN_FEEDS_LOCKFILE" 2>/dev/null || echo 0) ))
+        local lock_age
+        lock_age=$(( $(date +%s) - $(stat -c %Y "$NFTBAN_FEEDS_LOCKFILE" 2>/dev/null || echo 0) ))
         if [[ $lock_age -gt 3600 ]]; then
             # Stale lock, remove it
             rm -f "$NFTBAN_FEEDS_LOCKFILE"
@@ -104,7 +105,8 @@ _feeds_is_locked() {
 nftban_feeds_log() {
     local level="$1"; shift
     local msg="$*"
-    local timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
 
     # Ensure log directory exists
     mkdir -p "$(dirname "$NFTBAN_FEEDS_LOG")"
@@ -357,10 +359,12 @@ nftban_feeds_update_single() {
 
     # Save parsed IPs
     echo "$parse_result" > "$parsed_file"
-    local ip_count=$(echo "$parse_result" | grep -c .)
+    local ip_count
+    ip_count=$(echo "$parse_result" | grep -c .)
 
     # Validate minimum entries
-    local min_entries=$(grep "^FEEDS_MIN_ENTRIES=" "$NFTBAN_FEEDS_CONFIG" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '" ' | grep -oE '[0-9]+')
+    local min_entries
+    min_entries=$(grep "^FEEDS_MIN_ENTRIES=" "$NFTBAN_FEEDS_CONFIG" | cut -d'=' -f2 | cut -d'#' -f1 | tr -d '" ' | grep -oE '[0-9]+')
     min_entries=${min_entries:-10}
 
     # Final validation

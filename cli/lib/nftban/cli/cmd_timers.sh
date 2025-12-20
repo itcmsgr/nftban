@@ -14,6 +14,7 @@ set -Eeuo pipefail
 NFTBAN_CMD_TIMERS_LOADED="true"
 
 # Load required modules
+# shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
 
 # =============================================================================
@@ -128,8 +129,10 @@ cmd_timers_status() {
         echo "     Status:      $status_text"
 
         if timer_active "$timer"; then
-            local next_run=$(timer_next_run "$timer")
-            local last_trigger=$(timer_last_trigger "$timer")
+            local next_run
+            next_run=$(timer_next_run "$timer")
+            local last_trigger
+            last_trigger=$(timer_last_trigger "$timer")
             echo "     Next run:    $next_run"
             [[ "$last_trigger" != "N/A" && "$last_trigger" != "n/a" ]] && echo "     Last run:    $last_trigger"
         fi

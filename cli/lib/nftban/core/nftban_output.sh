@@ -144,7 +144,8 @@ nftban_center_text() {
         return
     fi
 
-    local pad=$(( (width - len) / 2 ))
+    local pad
+    pad=$(( (width - len) / 2 ))
     printf "%*s%b%*s\n" "$pad" "" "$text" $(( width - len - pad )) ""
 }
 
@@ -326,9 +327,12 @@ nftban_banner_unified() {
     if [[ -f /proc/uptime ]]; then
         local uptime_sec
         uptime_sec=$(awk '{print int($1)}' /proc/uptime)
-        local days=$((uptime_sec / 86400))
-        local hours=$(( (uptime_sec % 86400) / 3600 ))
-        local mins=$(( (uptime_sec % 3600) / 60 ))
+        local days
+        days=$((uptime_sec / 86400))
+        local hours
+        hours=$(( (uptime_sec % 86400) / 3600 ))
+        local mins
+        mins=$(( (uptime_sec % 3600) / 60 ))
 
         if [[ $days -gt 0 ]]; then
             if [[ $days -gt 7 ]]; then
@@ -350,7 +354,8 @@ nftban_banner_unified() {
     icons="$(nftban_icon_pair)"
 
     # Build banner
-    local width=$((NFTBAN_WIDTH - 2))
+    local width
+    width=$((NFTBAN_WIDTH - 2))
     [[ $width -lt 60 ]] && width=60
     [[ $width -gt 70 ]] && width=70
 
@@ -767,9 +772,12 @@ nftban_progress_bar() {
     [[ ! -t 1 ]] && return 0
     [[ $total -eq 0 ]] && total=1
 
-    local percent=$((current * 100 / total))
-    local filled=$((current * width / total))
-    local empty=$((width - filled))
+    local percent
+    percent=$((current * 100 / total))
+    local filled
+    filled=$((current * width / total))
+    local empty
+    empty=$((width - filled))
 
     printf "\r${NFTBAN_COLOR_CYAN}%s${NFTBAN_COLOR_RESET} [" "$message"
     printf "%${filled}s" | tr ' ' '█'

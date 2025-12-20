@@ -208,7 +208,8 @@ _nftban_login_suricata_process_alert() {
         _LOGIN_SURICATA_SCORES[$ip]="0"
     else
         local first="${_LOGIN_SURICATA_ALERT_FIRST[$ip]}"
-        local elapsed=$((now - first))
+        local elapsed
+        elapsed=$((now - first))
 
         if [[ $elapsed -lt $window ]]; then
             ((_LOGIN_SURICATA_ALERT_COUNT[$ip]++))

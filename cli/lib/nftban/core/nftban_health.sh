@@ -424,7 +424,8 @@ nftban_health_check_suricata() {
         last_modified=$(stat -c %Y "$eve_log" 2>/dev/null || echo 0)
         local current_time
         current_time=$(date +%s)
-        local age=$((current_time - last_modified))
+        local age
+        age=$((current_time - last_modified))
 
         if [[ $age -gt 600 ]]; then
             suricata_issues+=("Eve.json not updated in 10+ minutes (may be stalled)")
@@ -921,7 +922,8 @@ nftban_health_check_databases() {
         # Check age (warn if >90 days old)
         local file_age
         file_age=$(( $(date +%s) - $(stat -c %Y "$geolite2" 2>/dev/null || echo 0) ))
-        local days_old=$(( file_age / 86400 ))
+        local days_old
+        days_old=$(( file_age / 86400 ))
 
         if (( days_old > 90 )); then
             db_issues+=("GeoLite2 database is ${days_old} days old (consider updating)")
@@ -1708,7 +1710,8 @@ nftban_health_check_cli_errors() {
     fi
 
     # Check log size (warn if > 10MB)
-    local log_size_mb=$((log_size / 1024 / 1024))
+    local log_size_mb
+    log_size_mb=$((log_size / 1024 / 1024))
     if [[ $log_size_mb -gt 10 ]]; then
         cli_issues+=("CLI error log is ${log_size_mb}MB - consider rotation")
         [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
@@ -2647,7 +2650,8 @@ nftban_health_render_terminal() {
         local label="$1"
         local width=16
         local len=${#label}
-        local dots_needed=$((width - len))
+        local dots_needed
+        dots_needed=$((width - len))
         if [[ $dots_needed -gt 0 ]]; then
             local dots=""
             for ((i=0; i<dots_needed; i++)); do dots+="."; done

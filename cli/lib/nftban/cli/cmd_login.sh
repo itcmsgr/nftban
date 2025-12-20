@@ -150,7 +150,8 @@ nftban_login_cmd_status() {
     # Check log file
     local log_file="${NFTBAN_LOGIN_ALERT_LOG:-/var/log/nftban/login_alerts.log}"
     if [[ -f "$log_file" ]]; then
-        local lines=$(wc -l < "$log_file")
+        local lines
+        lines=$(wc -l < "$log_file")
         echo "Log File: $log_file ($lines lines)"
     else
         echo "Log File: $log_file (not created yet)"
@@ -523,7 +524,8 @@ _nftban_login_cmd_stats_json() {
         local success_events=0
         local failed_events=0
         local today_events=0
-        local today=$(date '+%Y-%m-%d')
+        local today
+        today=$(date '+%Y-%m-%d')
         local service_running="false"
         local service_uptime=""
 

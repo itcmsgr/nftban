@@ -474,7 +474,8 @@ nftban_port_render_table() {
     fi
 
     if [[ "$NFTBAN_PORT_OUTPUT_FORMAT" == "table" ]]; then
-        local short_ts=$(date +"%Y-%m-%d %H:%M")
+        local short_ts
+        short_ts=$(date +"%Y-%m-%d %H:%M")
         echo ""
         echo "╔══════════════════════════════════════════════════════════════════════════════════╗"
         printf "║  Port Status                    %-12s                                      ║\n" "$short_ts"

@@ -227,7 +227,8 @@ _nftban_portscan_stats_json() {
         [[ "$enabled_val" == "true" ]] && portscan_enabled="true"
 
         # Get mode (auto, classic, suricata, hybrid)
-        local mode_val=$(grep "^PORTSCAN_MODE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
+        local mode_val
+        mode_val=$(grep "^PORTSCAN_MODE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
         [[ -n "$mode_val" ]] && portscan_mode="$mode_val"
 
         # If mode is "auto", determine effective mode
@@ -471,7 +472,8 @@ nftban_cmd_portscan() {
             nftban_portscan_sync_logs
 
             local portscan_log="${NFTBAN_PORTSCAN_LOG:-/var/log/nftban/portscan.log}"
-            local line_count=$(wc -l < "$portscan_log" 2>/dev/null || echo "0")
+            local line_count
+            line_count=$(wc -l < "$portscan_log" 2>/dev/null || echo "0")
 
             echo "✅ Log sync complete"
             echo "   File: $portscan_log"

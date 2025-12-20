@@ -159,7 +159,8 @@ watchdog_should_alert() {
         last_alert=$(cat "$throttle_file" 2>/dev/null || echo 0)
         local now
         now=$(date +%s)
-        local diff=$((now - last_alert))
+        local diff
+        diff=$((now - last_alert))
 
         if [[ $diff -lt $NFTBAN_WATCHDOG_ALERT_THROTTLE ]]; then
             return 1  # Throttled
@@ -278,13 +279,15 @@ nftban_watchdog_check_memory() {
     done < /proc/meminfo
 
     # Calculate usage (values are in kB)
-    local mem_used=$((mem_total - mem_available))
+    local mem_used
+    mem_used=$((mem_total - mem_available))
     local mem_used_percent=0
     if [[ $mem_total -gt 0 ]]; then
         mem_used_percent=$((mem_used * 100 / mem_total))
     fi
 
-    local swap_used=$((swap_total - swap_free))
+    local swap_used
+    swap_used=$((swap_total - swap_free))
     local swap_used_percent=0
     if [[ $swap_total -gt 0 ]]; then
         swap_used_percent=$((swap_used * 100 / swap_total))
@@ -365,7 +368,8 @@ nftban_watchdog_check_iowait() {
     local irq="${cpu_vals[6]:-0}"
     local softirq="${cpu_vals[7]:-0}"
 
-    local total=$((user + nice + system + idle + iowait + irq + softirq))
+    local total
+    total=$((user + nice + system + idle + iowait + irq + softirq))
 
     # Calculate percentages
     local iowait_percent=0
@@ -597,7 +601,8 @@ nftban_watchdog_get_top_mem() {
     sorted=$(printf '%s\n' "${procs[@]}" | sort -rn | head -"$count")
 
     local i=0
-    local alert_threshold_kb=$((NFTBAN_WATCHDOG_PROC_MEM_ALERT * 1024))
+    local alert_threshold_kb
+    alert_threshold_kb=$((NFTBAN_WATCHDOG_PROC_MEM_ALERT * 1024))
 
     while IFS=' ' read -r vmrss pid comm; do
         [[ -z "$pid" ]] && continue

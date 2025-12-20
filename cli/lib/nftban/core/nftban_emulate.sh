@@ -91,7 +91,8 @@ _ipv6_expand() {
         fi
 
         # Calculate missing groups
-        local missing=$((8 - left_groups - right_groups))
+        local missing
+        missing=$((8 - left_groups - right_groups))
 
         # Build zero groups
         local zeros=""
