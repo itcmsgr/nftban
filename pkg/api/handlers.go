@@ -2250,6 +2250,69 @@ func StatsCountriesHandler(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, response)
 }
 
+// StatsTrendHandler returns 7-day trend analysis
+// GET /api/v1/stats/trend
+func StatsTrendHandler(w http.ResponseWriter, r *http.Request) {
+	// Get authenticated user
+	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.Claims)
+	if !ok {
+		respondJSON(w, http.StatusUnauthorized, ErrorResponse{Error: "Unauthorized"})
+		return
+	}
+	markUserActive(claims.Username)
+
+	// Execute nftban stats trend --json
+	output, err := execNFTBanCommand("stats", "trend", "--json")
+	if err != nil {
+		log.Printf("[ERROR] Failed to get trend stats: %v", err)
+		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to retrieve trend statistics"})
+		return
+	}
+
+	// Strip comment lines (# NFTBAN_CMD_EXIT: ...) that bash wrapper adds
+	lines := strings.Split(output, "\n")
+	var jsonLines []string
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if !strings.HasPrefix(trimmed, "#") && trimmed != "" {
+			jsonLines = append(jsonLines, line)
+		}
+	}
+	cleanJSON := strings.Join(jsonLines, "\n")
+
+	// Parse JSON response
+	var trendData map[string]interface{}
+	if err := json.Unmarshal([]byte(cleanJSON), &trendData); err != nil {
+		log.Printf("[ERROR] Failed to parse trend JSON: %v - Raw: %s", err, cleanJSON)
+		// Return empty trend data instead of error (trend data may not exist yet)
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"success": true,
+			"data": map[string]interface{}{
+				"averages": map[string]interface{}{
+					"avg_hourly": 0,
+					"avg_daily":  0,
+					"min":        0,
+					"max":        0,
+					"stddev":     0,
+					"samples":    0,
+				},
+				"comparison": map[string]interface{}{
+					"vs_yesterday": 0,
+					"vs_last_week": nil,
+				},
+				"sources":    []interface{}{},
+				"thresholds": map[string]interface{}{},
+			},
+		})
+		return
+	}
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"data":    trendData,
+	})
+}
+
 // Removed: Fail2BanStatusHandler (v1.0 migration to Suricata)
 // Removed: Fail2BanControlHandler (v1.0 migration to Suricata)
 

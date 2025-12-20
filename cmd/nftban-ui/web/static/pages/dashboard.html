@@ -36,6 +36,34 @@
                         </div>
                     </div>
 
+                    <!-- 7-DAY TREND ANALYSIS -->
+                    <div class="card main-border rad-10 p-20 mb-20">
+                        <h3 class="fs-15 fw-bold mb-15">📈 7-Day Trend Analysis</h3>
+                        <div class="d-grid grid-cols-4 gap-20">
+                            <!-- Avg Bans/Hour -->
+                            <div class="p-15 main-border rad-6 text-center">
+                                <div class="fs-24 fw-bold text-primary" id="trend-avg-hourly">-</div>
+                                <div class="fs-12 text-muted">Avg Bans/Hour</div>
+                            </div>
+                            <!-- Avg Bans/Day -->
+                            <div class="p-15 main-border rad-6 text-center">
+                                <div class="fs-24 fw-bold text-primary" id="trend-avg-daily">-</div>
+                                <div class="fs-12 text-muted">Avg Bans/Day</div>
+                            </div>
+                            <!-- vs Yesterday -->
+                            <div class="p-15 main-border rad-6 text-center">
+                                <div class="fs-24 fw-bold" id="trend-vs-yesterday">-</div>
+                                <div class="fs-12 text-muted">vs Yesterday</div>
+                            </div>
+                            <!-- vs Last Week -->
+                            <div class="p-15 main-border rad-6 text-center">
+                                <div class="fs-24 fw-bold" id="trend-vs-week">-</div>
+                                <div class="fs-12 text-muted">vs Last Week</div>
+                            </div>
+                        </div>
+                        <div class="fs-12 text-muted mt-15" id="trend-samples">Loading trend data...</div>
+                    </div>
+
                     <!-- CHARTS (2 columns with spacing) -->
                     <div class="d-grid grid-cols-2 gap-20 mb-20">
                         <!-- BANDWIDTH CHART -->
@@ -621,6 +649,84 @@ async function loadTopCountries() {
     }
 }
 
+// Load 7-day trend data from API
+async function loadTrendData() {
+    const setText = (id, value) => {
+        const el = document.getElementById(id);
+        if (el) el.textContent = value;
+    };
+
+    try {
+        const resp = await fetch('/api/v1/stats/trend', {
+            headers: window.getAuthHeaders()
+        }).catch(() => null);
+
+        if (resp && resp.ok) {
+            const data = await resp.json();
+            if (data.success && data.data) {
+                const trend = data.data;
+
+                // Averages
+                if (trend.averages) {
+                    setText('trend-avg-hourly', trend.averages.avg_hourly || 0);
+                    setText('trend-avg-daily', trend.averages.avg_daily || 0);
+
+                    if (trend.averages.samples > 0) {
+                        setText('trend-samples', `Based on ${trend.averages.samples} hourly samples (min: ${trend.averages.min}, max: ${trend.averages.max})`);
+                    } else {
+                        setText('trend-samples', 'No trend data yet. Data is collected hourly by maintenance timer.');
+                    }
+                }
+
+                // Comparison with colors and arrows
+                if (trend.comparison) {
+                    const vsYesterday = trend.comparison.vs_yesterday || 0;
+                    const vsWeek = trend.comparison.vs_last_week;
+
+                    // vs Yesterday
+                    const yesterdayEl = document.getElementById('trend-vs-yesterday');
+                    if (yesterdayEl) {
+                        let arrow = '→';
+                        let colorClass = 'text-muted';
+                        if (vsYesterday > 0) {
+                            arrow = '↑';
+                            colorClass = 'text-danger';
+                        } else if (vsYesterday < 0) {
+                            arrow = '↓';
+                            colorClass = 'text-success';
+                        }
+                        yesterdayEl.innerHTML = `<span class="${colorClass}">${arrow} ${Math.abs(vsYesterday)}%</span>`;
+                    }
+
+                    // vs Last Week
+                    const weekEl = document.getElementById('trend-vs-week');
+                    if (weekEl) {
+                        if (vsWeek === null || vsWeek === undefined) {
+                            weekEl.innerHTML = '<span class="text-muted">N/A</span>';
+                        } else {
+                            let arrow = '→';
+                            let colorClass = 'text-muted';
+                            if (vsWeek > 0) {
+                                arrow = '↑';
+                                colorClass = 'text-danger';
+                            } else if (vsWeek < 0) {
+                                arrow = '↓';
+                                colorClass = 'text-success';
+                            }
+                            weekEl.innerHTML = `<span class="${colorClass}">${arrow} ${Math.abs(vsWeek)}%</span>`;
+                        }
+                    }
+                }
+            }
+        } else {
+            setText('trend-samples', 'Trend data not available');
+        }
+    } catch (error) {
+        console.error('[DASHBOARD] Failed to load trend data:', error);
+        setText('trend-samples', 'Failed to load trend data');
+    }
+}
+
 // Auto-initialize when script loads
 if (document.getElementById('bandwidth-chart')) {
     console.log('[DASHBOARD] Auto-initializing dashboard');
@@ -628,10 +734,12 @@ if (document.getElementById('bandwidth-chart')) {
     loadDashboardStats();
     loadRecentActivity();
     loadTopCountries();
+    loadTrendData();
 
     // Auto-refresh stats every 30 seconds
     setInterval(loadDashboardStats, 30000);
     setInterval(loadRecentActivity, 30000);
     setInterval(loadTopCountries, 60000);
+    setInterval(loadTrendData, 60000); // Trend data refreshes every 60s
 }
 </script>
