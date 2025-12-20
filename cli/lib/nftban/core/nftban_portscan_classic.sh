@@ -356,7 +356,8 @@ nftban_portscan_classic_record_connection() {
 
     # Add port to tracked list for this IP
     local current_ports="${_PORTSCAN_CLASSIC_IP_PORTS[$src_ip]:-}"
-    if [[ ! " $current_ports " =~ " $dst_port " ]]; then
+    local port_pattern=" ${dst_port} "
+    if [[ ! " $current_ports " =~ $port_pattern ]]; then
         _PORTSCAN_CLASSIC_IP_PORTS["$src_ip"]="${current_ports} ${dst_port}"
     fi
 
@@ -367,7 +368,8 @@ nftban_portscan_classic_record_connection() {
     # Add target if different from self
     if [[ -n "$dst_ip" ]]; then
         local current_targets="${_PORTSCAN_CLASSIC_IP_TARGETS[$src_ip]:-}"
-        if [[ ! " $current_targets " =~ " $dst_ip " ]]; then
+        local target_pattern=" ${dst_ip} "
+        if [[ ! " $current_targets " =~ $target_pattern ]]; then
             _PORTSCAN_CLASSIC_IP_TARGETS["$src_ip"]="${current_targets} ${dst_ip}"
         fi
     fi

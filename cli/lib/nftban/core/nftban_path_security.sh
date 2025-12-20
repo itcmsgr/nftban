@@ -340,7 +340,7 @@ nftban_path_create_file_safe() {
 
     # Create new file with noclobber (prevents race condition)
     set -C
-    if ! { > "$path"; } 2>/dev/null; then
+    if ! { : > "$path"; } 2>/dev/null; then
         # Failed to create (race condition - file appeared)
         set +C
         echo "ERROR: Race condition detected - file appeared during creation" >&2

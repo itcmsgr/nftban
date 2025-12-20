@@ -320,7 +320,7 @@ EOF
                       sort -u || true)
 
     # Update active SSH whitelist timestamp file
-    > "$ACTIVE_SSH_WHITELIST.new"
+    : > "$ACTIVE_SSH_WHITELIST.new"
 
     if [[ -n "$CURRENT_SSH_IPS" ]]; then
         log "INFO" "Found active SSH connections, auto-whitelisting..."
@@ -358,7 +358,7 @@ EOF
         mv "$ACTIVE_SSH_WHITELIST.new" "$ACTIVE_SSH_WHITELIST"
     else
         log "INFO" "No active SSH sessions to protect"
-        > "$ACTIVE_SSH_WHITELIST"
+        : > "$ACTIVE_SSH_WHITELIST"
     fi
 
     # Note: Cleanup handled automatically by nftables timeout

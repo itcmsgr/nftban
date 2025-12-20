@@ -193,7 +193,8 @@ nftban_feeds_get_categories() {
     for feed in $all_feeds; do
         local cat
         cat=$(nftban_feeds_get_property "$feed" "CATEGORY")
-        if [[ -n "$cat" ]] && [[ ! " ${categories[@]} " =~ " ${cat} " ]]; then
+        local cat_pattern=" ${cat} "
+        if [[ -n "$cat" ]] && [[ ! " ${categories[*]} " =~ $cat_pattern ]]; then
             categories+=("$cat")
         fi
     done
@@ -538,8 +539,8 @@ nftban_feeds_sync_to_nftables_bash() {
     local ipv4_list="${NFTBAN_FEEDS_CACHE_DIR}/feeds_ipv4.tmp"
     local ipv6_list="${NFTBAN_FEEDS_CACHE_DIR}/feeds_ipv6.tmp"
 
-    > "$ipv4_list"
-    > "$ipv6_list"
+    : > "$ipv4_list"
+    : > "$ipv6_list"
 
     local all_feeds
     all_feeds=$(nftban_feeds_discover_all)

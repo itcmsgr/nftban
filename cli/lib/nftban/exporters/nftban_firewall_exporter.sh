@@ -161,7 +161,7 @@ main() {
     start_time=$(date +%s.%N)
 
     # Initialize output file
-    > "$TMP_FILE"
+    : > "$TMP_FILE"
 
     # Collect all metrics
     collect_nftables_rules
