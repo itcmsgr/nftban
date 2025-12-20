@@ -39,7 +39,7 @@
                     <!-- 7-DAY TREND ANALYSIS -->
                     <div class="card main-border rad-10 p-20 mb-20">
                         <h3 class="fs-15 fw-bold mb-15">📈 7-Day Trend Analysis</h3>
-                        <div class="d-grid grid-cols-4 gap-20">
+                        <div class="d-grid grid-cols-4 gap-20 mb-20">
                             <!-- Avg Bans/Hour -->
                             <div class="p-15 main-border rad-6 text-center">
                                 <div class="fs-24 fw-bold text-primary" id="trend-avg-hourly">-</div>
@@ -60,6 +60,10 @@
                                 <div class="fs-24 fw-bold" id="trend-vs-week">-</div>
                                 <div class="fs-12 text-muted">vs Last Week</div>
                             </div>
+                        </div>
+                        <!-- Hourly Trend Chart -->
+                        <div style="position: relative; height: 200px;">
+                            <canvas id="trend-chart"></canvas>
                         </div>
                         <div class="fs-12 text-muted mt-15" id="trend-samples">Loading trend data...</div>
                     </div>
@@ -175,6 +179,7 @@
 // Use var to avoid redeclaration errors on page reload
 if (typeof bandwidthChart === 'undefined') var bandwidthChart = null;
 if (typeof threatsChart === 'undefined') var threatsChart = null;
+if (typeof trendChart === 'undefined') var trendChart = null;
 
 function initDashboardCharts() {
     // Get theme colors
@@ -278,6 +283,66 @@ function initDashboardCharts() {
         });
     }
 
+    // 7-Day Trend Chart
+    const trendCtx = document.getElementById('trend-chart');
+    if (trendCtx) {
+        trendChart = new Chart(trendCtx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Bans per Hour',
+                    data: [],
+                    borderColor: '#8b5cf6',
+                    backgroundColor: 'rgba(139, 92, 246, 0.1)',
+                    tension: 0.3,
+                    fill: true,
+                    pointRadius: 1,
+                    pointHoverRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: false
+                    },
+                    tooltip: {
+                        callbacks: {
+                            title: function(context) {
+                                return context[0].label;
+                            },
+                            label: function(context) {
+                                return context.parsed.y + ' bans';
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        ticks: {
+                            precision: 0
+                        },
+                        grid: {
+                            color: gridColor
+                        }
+                    },
+                    x: {
+                        grid: {
+                            display: false
+                        },
+                        ticks: {
+                            maxTicksLimit: 14,
+                            maxRotation: 0
+                        }
+                    }
+                }
+            }
+        });
+    }
+
     // Load initial data
     loadDashboardChartData();
 }
@@ -340,7 +405,9 @@ window.addEventListener('storage', (e) => {
     if (e.key === 'theme') {
         if (bandwidthChart) bandwidthChart.destroy();
         if (threatsChart) threatsChart.destroy();
+        if (trendChart) trendChart.destroy();
         initDashboardCharts();
+        loadTrendData();
     }
 });
 
@@ -716,6 +783,26 @@ async function loadTrendData() {
                             weekEl.innerHTML = `<span class="${colorClass}">${arrow} ${Math.abs(vsWeek)}%</span>`;
                         }
                     }
+                }
+
+                // Update trend chart with hourly data
+                if (trend.hourly && Array.isArray(trend.hourly) && trend.hourly.length > 0 && trendChart) {
+                    const labels = trend.hourly.map(h => {
+                        // Format hour label (e.g., "Dec 20 14:00")
+                        if (h.hour) {
+                            const date = new Date(h.hour);
+                            const month = date.toLocaleString('en', { month: 'short' });
+                            const day = date.getDate();
+                            const hour = date.getHours().toString().padStart(2, '0');
+                            return `${month} ${day} ${hour}:00`;
+                        }
+                        return '';
+                    });
+                    const bansData = trend.hourly.map(h => h.bans || 0);
+
+                    trendChart.data.labels = labels;
+                    trendChart.data.datasets[0].data = bansData;
+                    trendChart.update();
                 }
             }
         } else {

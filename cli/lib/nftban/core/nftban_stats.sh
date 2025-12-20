@@ -1230,15 +1230,23 @@ nftban_stats_trend_display() {
 
     if [[ $json_mode -eq 1 ]]; then
         # JSON output
-        local averages compare sources thresholds
+        local averages compare sources thresholds hourly_data
         averages=$(nftban_stats_trend_averages)
         compare=$(nftban_stats_trend_compare)
         sources=$(nftban_stats_trend_top_sources)
         thresholds=$(nftban_stats_trend_thresholds)
 
+        # Get hourly data points for charting (last 168 hours / 7 days)
+        if [[ -f "$NFTBAN_TREND_FILE" ]] && command -v jq &>/dev/null; then
+            hourly_data=$(jq '[.samples[] | {hour: .hour, bans: .bans, sources: .sources}]' "$NFTBAN_TREND_FILE" 2>/dev/null || echo '[]')
+        else
+            hourly_data='[]'
+        fi
+
         jq -n --argjson avg "$averages" --argjson cmp "$compare" \
               --argjson src "$sources" --argjson thr "$thresholds" \
-            '{averages: $avg, comparison: $cmp, sources: $src, thresholds: $thr}'
+              --argjson hourly "$hourly_data" \
+            '{averages: $avg, comparison: $cmp, sources: $src, thresholds: $thr, hourly: $hourly}'
         return
     fi
 
