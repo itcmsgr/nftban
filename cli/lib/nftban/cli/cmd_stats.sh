@@ -344,10 +344,11 @@ nftban_stats_cmd_dashboard() {
         fi
 
         # Get monitored ports count and enabled status from portscan config
-        if [[ -f "/etc/nftban/conf.d/portscan.conf" ]]; then
+        local portscan_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf"
+        if [[ -f "$portscan_conf" ]]; then
             # Check if enabled
             local enabled_line
-            enabled_line=$(grep "^PORTSCAN_ENABLED=" /etc/nftban/conf.d/portscan.conf 2>/dev/null) || true
+            enabled_line=$(grep "^PORTSCAN_ENABLED=" "$portscan_conf" 2>/dev/null) || true
             if [[ -n "$enabled_line" ]]; then
                 local enabled_value
                 enabled_value=$(echo "$enabled_line" | cut -d= -f2 | tr -d '"' | tr -d "'" | tr -d ' ') || true
@@ -358,7 +359,7 @@ nftban_stats_cmd_dashboard() {
 
             # Get monitored ports
             local ports_line
-            ports_line=$(grep "^PORTSCAN_MONITOR_PORTS=" /etc/nftban/conf.d/portscan.conf 2>/dev/null) || true
+            ports_line=$(grep "^PORTSCAN_MONITOR_PORTS=" "$portscan_conf" 2>/dev/null) || true
             if [[ -n "$ports_line" ]]; then
                 # Extract value: PORTSCAN_MONITOR_PORTS="value"
                 local ports_value
@@ -370,6 +371,45 @@ nftban_stats_cmd_dashboard() {
                 elif [[ -n "$ports_value" ]]; then
                     portscan_monitored_ports=$(echo "$ports_value" | grep -oE '[0-9]+' | wc -l) || portscan_monitored_ports=0
                 fi
+            fi
+        fi
+
+        # Get DDoS statistics from config and nftables counters
+        local ddos_enabled="false"
+        local ddos_packets_dropped=0
+        local ddos_bytes_dropped=0
+        local ddos_blocked_24h=0
+        local ddos_blocked_total=0
+
+        local ddos_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf"
+        if [[ -f "$ddos_conf" ]]; then
+            # Check if enabled
+            local ddos_enabled_line
+            ddos_enabled_line=$(grep "^DDOS_ENABLED=" "$ddos_conf" 2>/dev/null) || true
+            if [[ -n "$ddos_enabled_line" ]]; then
+                local ddos_enabled_value
+                ddos_enabled_value=$(echo "$ddos_enabled_line" | cut -d= -f2 | tr -d '"' | tr -d "'" | tr -d ' ') || true
+                if [[ "$ddos_enabled_value" == "true" ]]; then
+                    ddos_enabled="true"
+                fi
+            fi
+        fi
+
+        # Get DDoS counters from nftables if available
+        if [[ "$ddos_enabled" == "true" ]]; then
+            # Try to get counters from ddos chain
+            local ddos_counter_output
+            ddos_counter_output=$(nft list chain inet nftban ddos_protection 2>/dev/null || nft list chain ip nftban ddos_protection 2>/dev/null || true)
+            if [[ -n "$ddos_counter_output" ]]; then
+                # Extract packets and bytes from counter output
+                ddos_packets_dropped=$(echo "$ddos_counter_output" | grep -oP 'packets \K[0-9]+' | head -1 || echo "0")
+                ddos_bytes_dropped=$(echo "$ddos_counter_output" | grep -oP 'bytes \K[0-9]+' | head -1 || echo "0")
+            fi
+
+            # Get DDoS bans from actions log
+            if [[ -f "$actions_log" ]]; then
+                ddos_blocked_24h=$(jq -r --arg ts "$yesterday_ts" 'select(.source == "ddos" and .event == "ban") | select((.ts | fromdateiso8601) >= ($ts | tonumber))' "$actions_log" 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
+                ddos_blocked_total=$(jq -r 'select(.source == "ddos" and .event == "ban")' "$actions_log" 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
             fi
         fi
 
@@ -401,6 +441,11 @@ nftban_stats_cmd_dashboard() {
                 --arg portscan_blocked_total "$portscan_blocked_total" \
                 --arg portscan_monitored_ports "$portscan_monitored_ports" \
                 --arg portscan_enabled "$portscan_enabled" \
+                --arg ddos_enabled "$ddos_enabled" \
+                --arg ddos_packets_dropped "$ddos_packets_dropped" \
+                --arg ddos_bytes_dropped "$ddos_bytes_dropped" \
+                --arg ddos_blocked_24h "$ddos_blocked_24h" \
+                --arg ddos_blocked_total "$ddos_blocked_total" \
                 --argjson top_ips "$top_ips" \
                 --argjson top_countries "$top_countries" \
                 --argjson top_jails "$top_jails" \
@@ -444,15 +489,24 @@ nftban_stats_cmd_dashboard() {
                         blocked_total: ($portscan_blocked_total | tonumber),
                         enabled: ($portscan_enabled == "true")
                     },
+                    ddos: {
+                        packets_dropped: ($ddos_packets_dropped | tonumber),
+                        bytes_dropped: ($ddos_bytes_dropped | tonumber),
+                        blocked_24h: ($ddos_blocked_24h | tonumber),
+                        blocked_total: ($ddos_blocked_total | tonumber),
+                        enabled: ($ddos_enabled == "true")
+                    },
                     top_ips: $top_ips,
                     top_countries: $top_countries,
                     top_jails: $top_jails
                 }')
         else
             # Fallback without jq
-            local enabled_json="false"
-            [[ "$portscan_enabled" == "true" ]] && enabled_json="true"
-            data="{\"period\":{\"since\":\"$since\",\"until\":\"$until\"},\"summary\":{\"total_bans\":$total_bans,\"active_bans\":$active_bans,\"total_countries\":$total_countries},\"breakdown\":{\"temporary\":{\"total\":$total_temp,\"ipv4\":$temp_v4,\"ipv6\":$temp_v6},\"blacklist\":{\"total\":$total_black,\"ipv4\":$black_v4,\"ipv6\":$black_v6},\"feeds\":{\"total\":$total_feed,\"ipv4\":$feed_v4,\"ipv6\":$feed_v6},\"whitelist\":{\"total\":$total_whitelist,\"ipv4\":$whitelist_v4,\"ipv6\":$whitelist_v6}},\"portscan\":{\"monitored_ports\":$portscan_monitored_ports,\"blocked_24h\":$portscan_blocked_24h,\"blocked_total\":$portscan_blocked_total,\"enabled\":$enabled_json},\"top_ips\":$top_ips,\"top_countries\":$top_countries,\"top_jails\":$top_jails}"
+            local portscan_enabled_json="false"
+            [[ "$portscan_enabled" == "true" ]] && portscan_enabled_json="true"
+            local ddos_enabled_json="false"
+            [[ "$ddos_enabled" == "true" ]] && ddos_enabled_json="true"
+            data="{\"period\":{\"since\":\"$since\",\"until\":\"$until\"},\"summary\":{\"total_bans\":$total_bans,\"active_bans\":$active_bans,\"total_countries\":$total_countries},\"breakdown\":{\"temporary\":{\"total\":$total_temp,\"ipv4\":$temp_v4,\"ipv6\":$temp_v6},\"blacklist\":{\"total\":$total_black,\"ipv4\":$black_v4,\"ipv6\":$black_v6},\"feeds\":{\"total\":$total_feed,\"ipv4\":$feed_v4,\"ipv6\":$feed_v6},\"whitelist\":{\"total\":$total_whitelist,\"ipv4\":$whitelist_v4,\"ipv6\":$whitelist_v6}},\"portscan\":{\"monitored_ports\":$portscan_monitored_ports,\"blocked_24h\":$portscan_blocked_24h,\"blocked_total\":$portscan_blocked_total,\"enabled\":$portscan_enabled_json},\"ddos\":{\"packets_dropped\":$ddos_packets_dropped,\"bytes_dropped\":$ddos_bytes_dropped,\"blocked_24h\":$ddos_blocked_24h,\"blocked_total\":$ddos_blocked_total,\"enabled\":$ddos_enabled_json},\"top_ips\":$top_ips,\"top_countries\":$top_countries,\"top_jails\":$top_jails}"
         fi
 
         json_output "true" "$data"
