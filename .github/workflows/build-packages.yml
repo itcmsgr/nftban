@@ -13,10 +13,12 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-packages:
-    name: Build RPM and DEB packages
+  # ==========================================================================
+  # BUILD GO BINARIES
+  # ==========================================================================
+  build-binaries:
+    name: Build Go binaries
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -28,37 +30,47 @@ jobs:
         with:
           go-version: '1.21'
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y dpkg-dev build-essential
-
       - name: Build binaries
         run: |
           chmod +x build.sh
           ./build.sh
+          ls -la bin/
+
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-binaries
+          path: bin/
+          retention-days: 1
+
+  # ==========================================================================
+  # BUILD DEB PACKAGES (Ubuntu)
+  # ==========================================================================
+  build-deb:
+    name: Build DEB packages
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: go-binaries
+          path: bin/
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev build-essential
+          chmod +x bin/*
 
       - name: Build DEB package
         run: |
           chmod +x packaging/build_nftban.sh
           cd packaging
           ./build_nftban.sh deb
-
-      - name: Build RPM package (Rocky Linux container)
-        run: |
-          docker run --rm -v "$(pwd):/workspace" -w /workspace rockylinux:9 bash -c "
-            dnf -y install rpm-build rpmdevtools tar gzip systemd-rpm-macros
-            chmod +x packaging/build_nftban.sh
-            cd packaging
-            ./build_nftban.sh rpm
-          "
-
-      - name: Upload RPM packages
-        uses: actions/upload-artifact@v4
-        with:
-          name: rpm-packages
-          path: build/packages/RPMS/**/*.rpm
-          retention-days: 30
 
       - name: Upload DEB packages
         uses: actions/upload-artifact@v4
@@ -67,19 +79,114 @@ jobs:
           path: build/packages/*.deb
           retention-days: 30
 
+  # ==========================================================================
+  # BUILD RPM PACKAGES (Multi-distro matrix)
+  # ==========================================================================
+  build-rpm:
+    name: Build RPM (${{ matrix.distro }})
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: rocky9
+            container: rockylinux:9
+            suffix: el9
+          - distro: rocky10
+            container: rockylinux:10
+            suffix: el10
+          - distro: alma9
+            container: almalinux:9
+            suffix: el9
+          - distro: centos-stream9
+            container: quay.io/centos/centos:stream9
+            suffix: el9
+          - distro: centos-stream10
+            container: quay.io/centos/centos:stream10
+            suffix: el10
+          - distro: fedora40
+            container: fedora:40
+            suffix: fc40
+          - distro: fedora41
+            container: fedora:41
+            suffix: fc41
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: go-binaries
+          path: bin/
+
+      - name: Build RPM in ${{ matrix.distro }} container
+        run: |
+          chmod +x bin/*
+          docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
+            # Install build dependencies
+            if command -v dnf &>/dev/null; then
+              dnf -y install rpm-build rpmdevtools tar gzip systemd-rpm-macros make
+            else
+              yum -y install rpm-build rpmdevtools tar gzip systemd-rpm-macros make
+            fi
+
+            # Build RPM
+            chmod +x packaging/build_nftban.sh
+            cd packaging
+            ./build_nftban.sh rpm
+
+            # Fix permissions
+            chmod -R a+rX /workspace/build/
+          "
+
+      - name: Upload RPM packages (${{ matrix.distro }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.distro }}
+          path: build/packages/RPMS/**/*.rpm
+          retention-days: 30
+
+  # ==========================================================================
+  # CONSOLIDATE ALL PACKAGES
+  # ==========================================================================
+  consolidate-packages:
+    name: Consolidate all packages
+    needs: [build-deb, build-rpm]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-packages/
+
+      - name: List all packages
+        run: |
+          echo "=== All packages built ==="
+          find all-packages -name "*.rpm" -o -name "*.deb" | sort
+          echo ""
+          echo "=== Package counts ==="
+          echo "DEB: $(find all-packages -name '*.deb' | wc -l)"
+          echo "RPM: $(find all-packages -name '*.rpm' | wc -l)"
+
       - name: Generate package info
         run: |
           echo "## Built Packages" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### RPM Packages" >> $GITHUB_STEP_SUMMARY
-          find build/packages/RPMS -name "*.rpm" -exec ls -lh {} \; >> $GITHUB_STEP_SUMMARY || true
-          echo "" >> $GITHUB_STEP_SUMMARY
           echo "### DEB Packages" >> $GITHUB_STEP_SUMMARY
-          ls -lh build/packages/*.deb >> $GITHUB_STEP_SUMMARY || true
+          find all-packages -name "*.deb" -exec ls -lh {} \; >> $GITHUB_STEP_SUMMARY || true
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### RPM Packages" >> $GITHUB_STEP_SUMMARY
+          find all-packages -name "*.rpm" -exec ls -lh {} \; >> $GITHUB_STEP_SUMMARY || true
 
+  # ==========================================================================
+  # TEST INSTALLATION (Ubuntu)
+  # ==========================================================================
   test-installation:
-    name: Test package installation
-    needs: build-packages
+    name: Test installation (${{ matrix.distro }})
+    needs: build-deb
     runs-on: ubuntu-latest
     strategy:
       matrix:
