@@ -223,17 +223,24 @@ HELP
 _nftban_ddos_stats_json() {
     local json_mode="${1:-false}"
 
-    # Get DDoS enabled status from config
+    # Get DDoS enabled status and rate limit from config
     local ddos_enabled="false"
+    local rate_limit=0
     local config_file="/etc/nftban/conf.d/ddos.conf"
     local config_main="/etc/nftban/conf.d/ddos/main.conf"
 
     if [[ -f "$config_main" ]]; then
         local enabled_val=$(grep "^DDOS_ENABLED=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
         [[ "$enabled_val" == "true" ]] && ddos_enabled="true"
+        # Get rate limit (e.g., "100/second" -> 100)
+        local rate_val=$(grep "^DDOS_SYNFLOOD_RATE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
+        [[ -n "$rate_val" ]] && rate_limit="$rate_val"
     elif [[ -f "$config_file" ]]; then
         local enabled_val=$(grep "^DDOS_ENABLED=" "$config_file" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
         [[ "$enabled_val" == "true" ]] && ddos_enabled="true"
+        # Get rate limit (e.g., "100/second" -> 100)
+        local rate_val=$(grep "^DDOS_SYNFLOOD_RATE=" "$config_file" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
+        [[ -n "$rate_val" ]] && rate_limit="$rate_val"
     fi
 
     # Count DDoS blocks from nftban-actions.log
@@ -280,19 +287,21 @@ _nftban_ddos_stats_json() {
                 --arg blocked_24h "$blocked_24h" \
                 --arg blocked_total "$blocked_total" \
                 --arg enabled "$ddos_enabled" \
+                --arg rate "$rate_limit" \
                 '{
                     ddos: {
                         packets_dropped: ($packets | tonumber),
                         bytes_dropped: ($bytes | tonumber),
                         blocked_24h: ($blocked_24h | tonumber),
                         blocked_total: ($blocked_total | tonumber),
-                        enabled: ($enabled == "true")
+                        enabled: ($enabled == "true"),
+                        rate_limit: ($rate | tonumber)
                     }
                 }')
         else
             local enabled_json="false"
             [[ "$ddos_enabled" == "true" ]] && enabled_json="true"
-            data="{\"ddos\":{\"packets_dropped\":$packets_dropped,\"bytes_dropped\":$bytes_dropped,\"blocked_24h\":$blocked_24h,\"blocked_total\":$blocked_total,\"enabled\":$enabled_json}}"
+            data="{\"ddos\":{\"packets_dropped\":$packets_dropped,\"bytes_dropped\":$bytes_dropped,\"blocked_24h\":$blocked_24h,\"blocked_total\":$blocked_total,\"enabled\":$enabled_json,\"rate_limit\":$rate_limit}}"
         fi
 
         json_output "true" "$data"
@@ -304,6 +313,7 @@ _nftban_ddos_stats_json() {
     echo "=========================="
     echo ""
     echo "  Enabled:         $ddos_enabled"
+    echo "  Rate Limit:      $rate_limit conn/s"
     echo "  Packets Dropped: $packets_dropped"
     echo "  Bytes Dropped:   $bytes_dropped"
     echo "  Blocked (24h):   $blocked_24h"
