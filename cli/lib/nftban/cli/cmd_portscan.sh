@@ -207,17 +207,44 @@ HELP
 _nftban_portscan_stats_json() {
     local json_mode="${1:-false}"
 
-    # Get portscan enabled status from config
+    # Get portscan enabled status, mode from config
     local portscan_enabled="false"
+    local portscan_mode="classic"
+    local suricata_available="false"
     local config_file="/etc/nftban/conf.d/portscan.conf"
+    local config_main="/etc/nftban/conf.d/portscan/main.conf"
     local monitored_ports=0
 
-    if [[ -f "$config_file" ]]; then
+    # Check if Suricata is available
+    if systemctl is-active suricata.service >/dev/null 2>&1; then
+        suricata_available="true"
+    fi
+
+    # Read from main.conf (new structure)
+    if [[ -f "$config_main" ]]; then
+        local enabled_val
+        enabled_val=$(grep "^PORTSCAN_ENABLED=" "$config_main" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '"' | tr -d "'" | tr -d ' ') || true
+        [[ "$enabled_val" == "true" ]] && portscan_enabled="true"
+
+        # Get mode (auto, classic, suricata, hybrid)
+        local mode_val=$(grep "^PORTSCAN_MODE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
+        [[ -n "$mode_val" ]] && portscan_mode="$mode_val"
+
+        # If mode is "auto", determine effective mode
+        if [[ "$portscan_mode" == "auto" ]]; then
+            if [[ "$suricata_available" == "true" ]]; then
+                portscan_mode="suricata"
+            else
+                portscan_mode="classic"
+            fi
+        fi
+    elif [[ -f "$config_file" ]]; then
+        # Fallback to old config file
         local enabled_val
         enabled_val=$(grep "^PORTSCAN_ENABLED=" "$config_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '"' | tr -d "'" | tr -d ' ') || true
         [[ "$enabled_val" == "true" ]] && portscan_enabled="true"
 
-        # Get monitored ports count
+        # Get monitored ports count from old config
         local ports_val
         ports_val=$(grep "^PORTSCAN_MONITOR_PORTS=" "$config_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '"' | tr -d "'") || true
         if [[ "$ports_val" == "closed" ]] || [[ "$ports_val" == "all" ]]; then
@@ -257,18 +284,24 @@ _nftban_portscan_stats_json() {
                 --arg blocked_24h "$blocked_24h" \
                 --arg blocked_total "$blocked_total" \
                 --arg enabled "$portscan_enabled" \
+                --arg mode "$portscan_mode" \
+                --arg suricata "$suricata_available" \
                 '{
                     portscan: {
                         monitored_ports: ($ports | tonumber),
                         blocked_24h: ($blocked_24h | tonumber),
                         blocked_total: ($blocked_total | tonumber),
-                        enabled: ($enabled == "true")
+                        enabled: ($enabled == "true"),
+                        mode: $mode,
+                        suricata_available: ($suricata == "true")
                     }
                 }')
         else
             local enabled_json="false"
+            local suricata_json="false"
             [[ "$portscan_enabled" == "true" ]] && enabled_json="true"
-            data="{\"portscan\":{\"monitored_ports\":$monitored_ports,\"blocked_24h\":$blocked_24h,\"blocked_total\":$blocked_total,\"enabled\":$enabled_json}}"
+            [[ "$suricata_available" == "true" ]] && suricata_json="true"
+            data="{\"portscan\":{\"monitored_ports\":$monitored_ports,\"blocked_24h\":$blocked_24h,\"blocked_total\":$blocked_total,\"enabled\":$enabled_json,\"mode\":\"$portscan_mode\",\"suricata_available\":$suricata_json}}"
         fi
 
         json_output "true" "$data"
@@ -280,6 +313,8 @@ _nftban_portscan_stats_json() {
     echo "=============================="
     echo ""
     echo "  Enabled:          $portscan_enabled"
+    echo "  Mode:             $portscan_mode"
+    echo "  Suricata:         $suricata_available"
     echo "  Monitored Ports:  $monitored_ports"
     echo "  Blocked (24h):    $blocked_24h"
     echo "  Blocked (Total):  $blocked_total"

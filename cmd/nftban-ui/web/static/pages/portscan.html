@@ -61,6 +61,21 @@
                         <div class="card main-border rad-10 p-20">
                             <h3 class="fs-15 fw-bold mb-20"><i class="fa-solid fa-chart-bar text-primary mr-10"></i>Detection Statistics</h3>
 
+                            <!-- Mode Indicator -->
+                            <div class="p-15 main-border rad-6 mb-15">
+                                <div class="d-flex justify-between align-center">
+                                    <div>
+                                        <span class="fs-12 text-muted">Detection Mode:</span>
+                                        <span class="fw-bold fs-14" id="ps-mode">Classic</span>
+                                    </div>
+                                    <div id="ps-suricata-badge" class="hidden">
+                                        <span class="px-10 py-5 bg-purple-100 text-purple-800 rad-4 fs-11 fw-bold">
+                                            <i class="fa-solid fa-shield-halved mr-5"></i>Suricata
+                                        </span>
+                                    </div>
+                                </div>
+                            </div>
+
                             <div class="p-15 main-border rad-6 text-center mb-15">
                                 <div class="fs-30 fw-bold text-success" id="ps-monitored-ports">0</div>
                                 <div class="fs-13">Monitored Ports</div>
@@ -211,6 +226,8 @@
                 async function loadPortscanStats() {
                     const toggle = document.getElementById('portscan-toggle');
                     const statusEl = document.getElementById('portscan-toggle-status');
+                    const modeEl = document.getElementById('ps-mode');
+                    const suricataBadge = document.getElementById('ps-suricata-badge');
 
                     try {
                         const response = await fetch('/api/v1/portscan/stats', {
@@ -226,12 +243,28 @@
                             document.getElementById('ps-blocked-24h').textContent = ps.blocked_24h || 0;
                             document.getElementById('ps-blocked-total').textContent = ps.blocked_total || 0;
 
+                            // Update mode indicator
+                            const mode = ps.mode || 'classic';
+                            const modeDisplay = mode.charAt(0).toUpperCase() + mode.slice(1);
+                            modeEl.textContent = modeDisplay;
+
+                            // Show Suricata badge if available
+                            if (ps.suricata_available) {
+                                suricataBadge.classList.remove('hidden');
+                            } else {
+                                suricataBadge.classList.add('hidden');
+                            }
+
                             // Update toggle state
                             toggle.checked = ps.enabled || false;
                             toggle.disabled = false;
 
-                            // Update status text with color
-                            statusEl.textContent = ps.enabled ? 'ENABLED' : 'DISABLED';
+                            // Update status text with color and mode
+                            if (ps.enabled) {
+                                statusEl.textContent = `ENABLED (${modeDisplay})`;
+                            } else {
+                                statusEl.textContent = 'DISABLED';
+                            }
                             statusEl.style.color = ps.enabled ? '#10b981' : '#ef4444';
                         } else {
                             statusEl.textContent = 'Error';

@@ -9,10 +9,12 @@ import (
 
 // PortscanStats represents portscan statistics
 type PortscanStats struct {
-	MonitoredPorts int  `json:"monitored_ports"`
-	Blocked24h     int  `json:"blocked_24h"`
-	BlockedTotal   int  `json:"blocked_total"`
-	Enabled        bool `json:"enabled"`
+	MonitoredPorts    int    `json:"monitored_ports"`
+	Blocked24h        int    `json:"blocked_24h"`
+	BlockedTotal      int    `json:"blocked_total"`
+	Enabled           bool   `json:"enabled"`
+	Mode              string `json:"mode"`               // classic, suricata, hybrid
+	SuricataAvailable bool   `json:"suricata_available"` // is Suricata service running
 }
 
 // PortscanStatsHandler returns portscan statistics
