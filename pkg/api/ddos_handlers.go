@@ -14,6 +14,7 @@ type DdosStats struct {
 	Blocked24h     int  `json:"blocked_24h"`
 	BlockedTotal   int  `json:"blocked_total"`
 	Enabled        bool `json:"enabled"`
+	RateLimit      int  `json:"rate_limit"`
 }
 
 // DdosStatsHandler returns DDoS protection statistics
