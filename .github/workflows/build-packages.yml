@@ -50,6 +50,7 @@ jobs:
           name: rpm-packages
           path: build/packages/RPMS/**/*.rpm
           retention-days: 30
+          if-no-files-found: ignore
 
       - name: Upload DEB packages
         uses: actions/upload-artifact@v4
