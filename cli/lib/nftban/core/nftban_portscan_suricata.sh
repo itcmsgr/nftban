@@ -343,7 +343,8 @@ nftban_portscan_suricata_record_alert() {
 
     if [[ -n "$scan_type" ]]; then
         local current_types="${_PORTSCAN_SURICATA_IP_SCAN_TYPES[$src_ip]:-}"
-        if [[ ! " $current_types " =~ " $scan_type " ]]; then
+        local type_pattern=" ${scan_type} "
+        if [[ ! " $current_types " =~ $type_pattern ]]; then
             _PORTSCAN_SURICATA_IP_SCAN_TYPES["$src_ip"]="${current_types} ${scan_type}"
         fi
     fi
