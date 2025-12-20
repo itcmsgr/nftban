@@ -31,18 +31,27 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y rpm dpkg-dev build-essential
+          sudo apt-get install -y dpkg-dev build-essential
 
       - name: Build binaries
         run: |
           chmod +x build.sh
           ./build.sh
 
-      - name: Build packages
+      - name: Build DEB package
         run: |
           chmod +x packaging/build_nftban.sh
           cd packaging
-          ./build_nftban.sh both
+          ./build_nftban.sh deb
+
+      - name: Build RPM package (Rocky Linux container)
+        run: |
+          docker run --rm -v "$(pwd):/workspace" -w /workspace rockylinux:9 bash -c "
+            dnf -y install rpm-build rpmdevtools tar gzip systemd-rpm-macros
+            chmod +x packaging/build_nftban.sh
+            cd packaging
+            ./build_nftban.sh rpm
+          "
 
       - name: Upload RPM packages
         uses: actions/upload-artifact@v4
@@ -50,7 +59,6 @@ jobs:
           name: rpm-packages
           path: build/packages/RPMS/**/*.rpm
           retention-days: 30
-          if-no-files-found: ignore
 
       - name: Upload DEB packages
         uses: actions/upload-artifact@v4
