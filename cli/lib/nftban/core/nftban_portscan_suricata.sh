@@ -96,7 +96,8 @@ nftban_portscan_suricata_eve_active() {
     local current_time
     current_time=$(date +%s)
 
-    local age=$((current_time - file_mtime))
+    local age
+    age=$((current_time - file_mtime))
 
     [[ $age -le $freshness_threshold ]]
 }
@@ -417,7 +418,8 @@ nftban_portscan_suricata_calculate_score() {
     local score_decay="${PORTSCAN_SURICATA_SCORE_DECAY}"
 
     if [[ $last_seen -gt 0 && -n "$current_score" ]]; then
-        local time_diff=$((current_time - last_seen))
+        local time_diff
+        time_diff=$((current_time - last_seen))
         if [[ $time_diff -gt $score_decay ]]; then
             current_score=0
         else
@@ -673,7 +675,8 @@ nftban_portscan_suricata_cleanup() {
     # Remove entries older than alert window
     for ip in "${!_PORTSCAN_SURICATA_IP_LAST_SEEN[@]}"; do
         local last_seen="${_PORTSCAN_SURICATA_IP_LAST_SEEN[$ip]}"
-        local age=$((current_time - last_seen))
+        local age
+        age=$((current_time - last_seen))
 
         if [[ $age -gt $alert_window ]]; then
             # Check if blocked, keep those for longer
@@ -689,7 +692,8 @@ nftban_portscan_suricata_cleanup() {
 
     # If still over limit, remove oldest entries
     if [[ ${#_PORTSCAN_SURICATA_IP_SCORES[@]} -gt $max_tracked ]]; then
-        local count_to_remove=$((${#_PORTSCAN_SURICATA_IP_SCORES[@]} - max_tracked))
+        local count_to_remove
+        count_to_remove=$((${#_PORTSCAN_SURICATA_IP_SCORES[@]} - max_tracked))
         local removed=0
 
         for ip in "${!_PORTSCAN_SURICATA_IP_LAST_SEEN[@]}"; do

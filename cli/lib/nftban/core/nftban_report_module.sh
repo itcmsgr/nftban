@@ -280,7 +280,8 @@ nftban_module_check_duplicates() {
     # Check for duplicates
     for module_name in "${!name_index[@]}"; do
         local entries="${name_index[$module_name]}"
-        local entry_count=$(echo "$entries" | wc -l)
+        local entry_count
+        entry_count=$(echo "$entries" | wc -l)
 
         # If more than one file has this module name, it's a duplicate
         if [[ $entry_count -gt 1 ]]; then
@@ -578,7 +579,8 @@ nftban_module_render_table() {
     # Uses: NFTBAN_MODULE_OUTPUT_FORMAT
 
     if [[ "$NFTBAN_MODULE_OUTPUT_FORMAT" == "table" ]]; then
-        local short_ts=$(date +"%Y-%m-%d %H:%M")
+        local short_ts
+        short_ts=$(date +"%Y-%m-%d %H:%M")
         echo ""
         echo "╔════════════════════════════════════════════════════════╗"
         printf "║  NFTBan Modules                 %-12s    ║\n" "$short_ts"

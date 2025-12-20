@@ -105,7 +105,8 @@ _nftban_ddos_classic_auto_tune() {
 
     local mem_kb
     mem_kb=$(grep MemTotal /proc/meminfo 2>/dev/null | awk '{print $2}')
-    local mem_gb=$(( mem_kb / 1024 / 1024 ))
+    local mem_gb
+    mem_gb=$(( mem_kb / 1024 / 1024 ))
 
     _nftban_ddos_classic_log "INFO" "Auto-tuning: cores=$cores, mem=${mem_gb}GB"
 

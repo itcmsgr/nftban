@@ -540,7 +540,8 @@ output_terminal() {
     # Check Auto-Reports
     local report_status="DISABLED"
     if [[ -d "${NFTBAN_DATA_DIR}/reports" ]]; then
-        local report_count=$(find "${NFTBAN_DATA_DIR}/reports" -type f \( -name "*.html" -o -name "*.json" \) 2>/dev/null | wc -l)
+        local report_count
+        report_count=$(find "${NFTBAN_DATA_DIR}/reports" -type f \( -name "*.html" -o -name "*.json" \) 2>/dev/null | wc -l)
         if [[ $report_count -gt 0 ]]; then
             report_status="ENABLED ($report_count reports)"
         else
@@ -622,7 +623,8 @@ output_json() {
     # threats_blocked_24h: Bans in last 24 hours
     local threats_24h=0
     if command -v nftban_stats_count_bans >/dev/null 2>&1; then
-        local since=$(($(date +%s) - 86400))
+        local since
+        since=$(($(date +%s) - 86400))
         threats_24h=$(nftban_stats_count_bans "$since" 2>/dev/null || echo 0)
     fi
     echo "    \"threats_blocked_24h\": $threats_24h"
@@ -827,7 +829,8 @@ check_service_clean() {
         if [[ -n "$start_time" ]]; then
             start_epoch=$(date -d "$start_time" +%s 2>/dev/null || echo "0")
             now_epoch=$(date +%s)
-            local uptime_sec=$((now_epoch - start_epoch))
+            local uptime_sec
+            uptime_sec=$((now_epoch - start_epoch))
             if [[ $uptime_sec -ge 86400 ]]; then
                 uptime_str="$((uptime_sec / 86400))d"
             elif [[ $uptime_sec -ge 3600 ]]; then

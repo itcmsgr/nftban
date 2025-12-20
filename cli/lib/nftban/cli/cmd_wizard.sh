@@ -31,6 +31,7 @@ NFTBAN_CMD_WIZARD_LOADED="true"
 
 # Load required modules
 [[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
+# shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/core/nftban_output.sh" 2>/dev/null || true
 
 # =============================================================================

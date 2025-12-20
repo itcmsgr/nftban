@@ -239,7 +239,8 @@ nftban_services_scan() {
 #
 nftban_services_report_table() {
     local timestamp="$1"
-    local short_ts=$(date +"%Y-%m-%d %H:%M")
+    local short_ts
+    short_ts=$(date +"%Y-%m-%d %H:%M")
 
     echo ""
     echo "╔════════════════════════════════════════════════════════╗"
@@ -318,8 +319,10 @@ nftban_services_report_table() {
     echo ""
 
     # Summary
-    local total_services=$((running_services + stopped_services + missing_services))
-    local total_bins=$((installed_bins + missing_bins))
+    local total_services
+    total_services=$((running_services + stopped_services + missing_services))
+    local total_bins
+    total_bins=$((installed_bins + missing_bins))
 
     echo "Systemd Services: ${total_services} total | ${running_services} running | ${stopped_services} stopped | ${missing_services} missing"
     echo "Binary Tools: ${total_bins} total | ${installed_bins} installed | ${missing_bins} missing"

@@ -78,7 +78,8 @@ ui_menu() {
             printf "Choose [1-%d] (or empty to quit): " $(( ${#items[@]}/2 ))
             read -r choice || exit 1
             [[ -z "$choice" ]] && return 1
-            local index=$(( (choice-1)*2 ))
+            local index
+            index=$(( (choice-1)*2 ))
             if (( index >= 0 && index < ${#items[@]} )); then
                 echo "${items[index]}"
             else

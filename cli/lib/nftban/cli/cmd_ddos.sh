@@ -238,10 +238,12 @@ _nftban_ddos_stats_json() {
     fi
 
     if [[ -f "$config_main" ]]; then
-        local enabled_val=$(grep "^DDOS_ENABLED=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
+        local enabled_val
+        enabled_val=$(grep "^DDOS_ENABLED=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
         [[ "$enabled_val" == "true" ]] && ddos_enabled="true"
         # Get mode (auto, classic, suricata, hybrid)
-        local mode_val=$(grep "^DDOS_MODE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
+        local mode_val
+        mode_val=$(grep "^DDOS_MODE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
         [[ -n "$mode_val" ]] && ddos_mode="$mode_val"
         # If mode is "auto", determine effective mode
         if [[ "$ddos_mode" == "auto" ]]; then
@@ -252,17 +254,20 @@ _nftban_ddos_stats_json() {
             fi
         fi
     elif [[ -f "$config_file" ]]; then
-        local enabled_val=$(grep "^DDOS_ENABLED=" "$config_file" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
-        [[ "$enabled_val" == "true" ]] && ddos_enabled="true"
+        local enabled_val2
+        enabled_val2=$(grep "^DDOS_ENABLED=" "$config_file" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
+        [[ "$enabled_val2" == "true" ]] && ddos_enabled="true"
     fi
 
     # Get rate limit from classic config (if exists)
     if [[ -f "$config_classic" ]]; then
-        local rate_val=$(grep "^DDOS_SYNFLOOD_RATE=" "$config_classic" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
+        local rate_val
+        rate_val=$(grep "^DDOS_SYNFLOOD_RATE=" "$config_classic" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
         [[ -n "$rate_val" ]] && rate_limit="$rate_val"
     elif [[ -f "$config_main" ]]; then
-        local rate_val=$(grep "^DDOS_SYNFLOOD_RATE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
-        [[ -n "$rate_val" ]] && rate_limit="$rate_val"
+        local rate_val2
+        rate_val2=$(grep "^DDOS_SYNFLOOD_RATE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
+        [[ -n "$rate_val2" ]] && rate_limit="$rate_val2"
     fi
 
     # Count DDoS blocks from nftban-actions.log
@@ -273,7 +278,8 @@ _nftban_ddos_stats_json() {
 
     if [[ -f "/var/log/nftban/nftban-actions.log" ]]; then
         # Count ddos bans in last 24 hours
-        local yesterday_ts=$(date -d '24 hours ago' +%s 2>/dev/null || echo "0")
+        local yesterday_ts
+        yesterday_ts=$(date -d '24 hours ago' +%s 2>/dev/null || echo "0")
         blocked_24h=$(jq -r --arg ts "$yesterday_ts" 'select(.source == "ddos" and .event == "ban") | select((.ts | fromdateiso8601) >= ($ts | tonumber))' /var/log/nftban/nftban-actions.log 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
 
         # Count total ddos bans

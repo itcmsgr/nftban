@@ -148,13 +148,15 @@ nftban_cmd_stats() {
             ;;
         --today)
             # Show stats for today only
-            local today_start=$(date +%Y-%m-%d)
+            local today_start
+            today_start=$(date +%Y-%m-%d)
             shift
             nftban_stats_cmd_dashboard --since "$today_start" "$@"
             ;;
         --week)
             # Show stats for last 7 days
-            local week_start=$(date -d "7 days ago" +%Y-%m-%d)
+            local week_start
+            week_start=$(date -d "7 days ago" +%Y-%m-%d)
             shift
             nftban_stats_cmd_dashboard --since "$week_start" "$@"
             ;;
@@ -336,7 +338,8 @@ nftban_stats_cmd_dashboard() {
         local actions_log="${NFTBAN_ACTIONS_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/nftban-actions.log}"
         if [[ -f "$actions_log" ]]; then
             # Count portscan bans in last 24 hours
-            local yesterday_ts=$(date -d '24 hours ago' +%s)
+            local yesterday_ts
+            yesterday_ts=$(date -d '24 hours ago' +%s)
             portscan_blocked_24h=$(jq -r --arg ts "$yesterday_ts" 'select(.source == "portscan" and .event == "ban") | select((.ts | fromdateiso8601) >= ($ts | tonumber))' "$actions_log" 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
 
             # Count total portscan bans
@@ -626,7 +629,8 @@ nftban_stats_cmd_top() {
                 }')
         else
             # Fallback without jq
-            local count=$(echo "$result_data" | { grep -o "}" || true; } | wc -l)
+            local count
+            count=$(echo "$result_data" | { grep -o "}" || true; } | wc -l)
             data="{\"type\":\"$type\",\"limit\":$limit,\"period\":{\"since\":\"$since\",\"until\":\"$until\"},\"items\":$result_data,\"count\":$count}"
         fi
 
@@ -880,7 +884,8 @@ nftban_stats_cmd_recent() {
                         count: ($items | length)
                     }')
             else
-                local count=$(echo "$activity_data" | { grep -o "}" || true; } | wc -l)
+                local count
+                count=$(echo "$activity_data" | { grep -o "}" || true; } | wc -l)
                 data="{\"limit\":$limit,\"items\":$activity_data,\"count\":$count}"
             fi
 

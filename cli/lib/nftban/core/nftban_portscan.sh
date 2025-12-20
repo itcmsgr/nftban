@@ -169,7 +169,8 @@ _nftban_portscan_suricata_eve_active() {
     local current_time
     current_time=$(date +%s)
 
-    local age=$((current_time - file_mtime))
+    local age
+    age=$((current_time - file_mtime))
     [[ $age -le $freshness ]]
 }
 

@@ -96,7 +96,8 @@ nftban_stats_get_cache() {
     [[ ! -f "$cache_file" ]] && return 1
 
     # Check if cache is fresh
-    local cache_age=$(( $(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || echo 0) ))
+    local cache_age
+    cache_age=$(( $(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || echo 0) ))
     if [[ $cache_age -lt ${STATS_CACHE_TTL} ]]; then
         cat "$cache_file"
         return 0
@@ -559,7 +560,8 @@ nftban_stats_generate_dashboard() {
 
     black_v4=${black_v4//[^0-9]/}
     black_v6=${black_v6//[^0-9]/}
-    local total_black=$((${black_v4:-0} + ${black_v6:-0}))
+    local total_black
+    total_black=$((${black_v4:-0} + ${black_v6:-0}))
 
     # ─────────────────────────────────────────────────────────────────────
     # FIREWALL (CURRENT)
@@ -676,7 +678,8 @@ nftban_stats_generate_dashboard() {
         ipv4_packets=${ipv4_packets:-0}
         ipv6_packets=$(nft list table "${NFTBAN_TABLE_IPV6}" 2>/dev/null | grep 'blacklist_ipv6.*counter' | grep -oP 'packets \K[0-9]+' || true)
         ipv6_packets=${ipv6_packets:-0}
-        local total_blocks=$((ipv4_packets + ipv6_packets))
+        local total_blocks
+        total_blocks=$((ipv4_packets + ipv6_packets))
 
         # Format large numbers with commas
         local formatted_blocks
@@ -874,7 +877,8 @@ nftban_stats_export_csv() {
         "$NFTBAN_BAN_LOG" | \
     sed 's/|/,/g' >> "$output_file"
 
-    local count=$(($(wc -l < "$output_file") - 1))
+    local count
+    count=$(($(wc -l < "$output_file") - 1))
 
     if type -t nftban_print_status >/dev/null 2>&1; then
         nftban_print_status "success" "Exported ${count} records to: $output_file"

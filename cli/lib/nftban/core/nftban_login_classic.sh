@@ -288,7 +288,8 @@ _nftban_login_classic_process_event() {
     else
         # Check if within window
         local first="${_LOGIN_CLASSIC_FAIL_FIRST[$key]}"
-        local elapsed=$((now - first))
+        local elapsed
+        elapsed=$((now - first))
 
         if [[ $elapsed -lt $window ]]; then
             # Within window - increment

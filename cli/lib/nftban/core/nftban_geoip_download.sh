@@ -173,7 +173,8 @@ _check_database() {
     mtime=$(stat -c %Y "${db_file}")
     local now
     now=$(date +%s)
-    local age=$(( (now - mtime) / 86400 ))
+    local age
+    age=$(( (now - mtime) / 86400 ))
 
     if [[ ${age} -gt 30 ]]; then
         echo "[WARNING] Database is ${age} days old (recommended: update monthly)"

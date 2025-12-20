@@ -37,6 +37,7 @@ nftban_cmd_smoke() {
 
     # Source output module for banner
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
+        # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
         nftban_banner
     fi
@@ -99,6 +100,7 @@ nftban_smoke_check_orphans() {
 
     # Source trace library
     if [[ -f "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh" ]]; then
+        # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh"
     else
         echo "ERROR: Trace library not found" >&2
@@ -115,6 +117,7 @@ nftban_smoke_check_orphans() {
 nftban_smoke_stats() {
     # Source trace library
     if [[ -f "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh" ]]; then
+        # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh"
     else
         echo "ERROR: Trace library not found" >&2
@@ -130,6 +133,7 @@ nftban_smoke_trace() {
 
     # Source trace library
     if [[ -f "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh" ]]; then
+        # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/helpers/nftban_trace.sh"
     else
         echo "ERROR: Trace library not found" >&2

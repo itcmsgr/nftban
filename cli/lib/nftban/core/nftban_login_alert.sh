@@ -810,7 +810,8 @@ nftban_login_track_failed() {
     else
         # Check if within time window
         local first_attempt="${NFTBAN_FAILED_TIMESTAMPS[$key]}"
-        local elapsed=$((now - first_attempt))
+        local elapsed
+        elapsed=$((now - first_attempt))
 
         if [[ $elapsed -lt $NFTBAN_LOGIN_FAILED_WINDOW ]]; then
             # Increment counter

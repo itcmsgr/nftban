@@ -168,7 +168,8 @@ nftban_gui_enable() {
     fi
 
     # Check prometheus service
-    local prom_service=$(nftban_distro_get_service prometheus)
+    local prom_service
+    prom_service=$(nftban_distro_get_service prometheus)
     if [[ -n "$prom_service" ]]; then
         set +o pipefail
         systemctl list-unit-files 2>/dev/null | grep -q "^${prom_service}.service"
@@ -181,7 +182,8 @@ nftban_gui_enable() {
     fi
 
     # Check node_exporter service
-    local node_service=$(nftban_distro_get_service node_exporter)
+    local node_service
+    node_service=$(nftban_distro_get_service node_exporter)
     if [[ -n "$node_service" ]]; then
         set +o pipefail
         systemctl list-unit-files 2>/dev/null | grep -q "^${node_service}.service"
