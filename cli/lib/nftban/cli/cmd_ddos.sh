@@ -223,23 +223,45 @@ HELP
 _nftban_ddos_stats_json() {
     local json_mode="${1:-false}"
 
-    # Get DDoS enabled status and rate limit from config
+    # Get DDoS enabled status, mode, and rate limit from config
     local ddos_enabled="false"
+    local ddos_mode="classic"
     local rate_limit=0
+    local suricata_available="false"
     local config_file="/etc/nftban/conf.d/ddos.conf"
     local config_main="/etc/nftban/conf.d/ddos/main.conf"
+    local config_classic="/etc/nftban/conf.d/ddos/classic.conf"
+
+    # Check if Suricata is available
+    if systemctl is-active suricata.service >/dev/null 2>&1; then
+        suricata_available="true"
+    fi
 
     if [[ -f "$config_main" ]]; then
         local enabled_val=$(grep "^DDOS_ENABLED=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
         [[ "$enabled_val" == "true" ]] && ddos_enabled="true"
-        # Get rate limit (e.g., "100/second" -> 100)
-        local rate_val=$(grep "^DDOS_SYNFLOOD_RATE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
-        [[ -n "$rate_val" ]] && rate_limit="$rate_val"
+        # Get mode (auto, classic, suricata, hybrid)
+        local mode_val=$(grep "^DDOS_MODE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
+        [[ -n "$mode_val" ]] && ddos_mode="$mode_val"
+        # If mode is "auto", determine effective mode
+        if [[ "$ddos_mode" == "auto" ]]; then
+            if [[ "$suricata_available" == "true" ]]; then
+                ddos_mode="suricata"
+            else
+                ddos_mode="classic"
+            fi
+        fi
     elif [[ -f "$config_file" ]]; then
         local enabled_val=$(grep "^DDOS_ENABLED=" "$config_file" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
         [[ "$enabled_val" == "true" ]] && ddos_enabled="true"
-        # Get rate limit (e.g., "100/second" -> 100)
-        local rate_val=$(grep "^DDOS_SYNFLOOD_RATE=" "$config_file" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
+    fi
+
+    # Get rate limit from classic config (if exists)
+    if [[ -f "$config_classic" ]]; then
+        local rate_val=$(grep "^DDOS_SYNFLOOD_RATE=" "$config_classic" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
+        [[ -n "$rate_val" ]] && rate_limit="$rate_val"
+    elif [[ -f "$config_main" ]]; then
+        local rate_val=$(grep "^DDOS_SYNFLOOD_RATE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | grep -oE '^[0-9]+' || echo "0")
         [[ -n "$rate_val" ]] && rate_limit="$rate_val"
     fi
 
@@ -288,6 +310,8 @@ _nftban_ddos_stats_json() {
                 --arg blocked_total "$blocked_total" \
                 --arg enabled "$ddos_enabled" \
                 --arg rate "$rate_limit" \
+                --arg mode "$ddos_mode" \
+                --arg suricata "$suricata_available" \
                 '{
                     ddos: {
                         packets_dropped: ($packets | tonumber),
@@ -295,13 +319,17 @@ _nftban_ddos_stats_json() {
                         blocked_24h: ($blocked_24h | tonumber),
                         blocked_total: ($blocked_total | tonumber),
                         enabled: ($enabled == "true"),
-                        rate_limit: ($rate | tonumber)
+                        rate_limit: ($rate | tonumber),
+                        mode: $mode,
+                        suricata_available: ($suricata == "true")
                     }
                 }')
         else
             local enabled_json="false"
+            local suricata_json="false"
             [[ "$ddos_enabled" == "true" ]] && enabled_json="true"
-            data="{\"ddos\":{\"packets_dropped\":$packets_dropped,\"bytes_dropped\":$bytes_dropped,\"blocked_24h\":$blocked_24h,\"blocked_total\":$blocked_total,\"enabled\":$enabled_json,\"rate_limit\":$rate_limit}}"
+            [[ "$suricata_available" == "true" ]] && suricata_json="true"
+            data="{\"ddos\":{\"packets_dropped\":$packets_dropped,\"bytes_dropped\":$bytes_dropped,\"blocked_24h\":$blocked_24h,\"blocked_total\":$blocked_total,\"enabled\":$enabled_json,\"rate_limit\":$rate_limit,\"mode\":\"$ddos_mode\",\"suricata_available\":$suricata_json}}"
         fi
 
         json_output "true" "$data"
@@ -313,6 +341,8 @@ _nftban_ddos_stats_json() {
     echo "=========================="
     echo ""
     echo "  Enabled:         $ddos_enabled"
+    echo "  Mode:            $ddos_mode"
+    echo "  Suricata:        $suricata_available"
     echo "  Rate Limit:      $rate_limit conn/s"
     echo "  Packets Dropped: $packets_dropped"
     echo "  Bytes Dropped:   $bytes_dropped"

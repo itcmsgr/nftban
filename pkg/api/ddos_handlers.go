@@ -9,12 +9,14 @@ import (
 
 // DdosStats represents DDoS protection statistics
 type DdosStats struct {
-	PacketsDropped int  `json:"packets_dropped"`
-	BytesDropped   int  `json:"bytes_dropped"`
-	Blocked24h     int  `json:"blocked_24h"`
-	BlockedTotal   int  `json:"blocked_total"`
-	Enabled        bool `json:"enabled"`
-	RateLimit      int  `json:"rate_limit"`
+	PacketsDropped    int    `json:"packets_dropped"`
+	BytesDropped      int    `json:"bytes_dropped"`
+	Blocked24h        int    `json:"blocked_24h"`
+	BlockedTotal      int    `json:"blocked_total"`
+	Enabled           bool   `json:"enabled"`
+	RateLimit         int    `json:"rate_limit"`
+	Mode              string `json:"mode"`               // classic, suricata, hybrid
+	SuricataAvailable bool   `json:"suricata_available"` // is Suricata service running
 }
 
 // DdosStatsHandler returns DDoS protection statistics
