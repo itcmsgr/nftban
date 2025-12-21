@@ -241,23 +241,26 @@ jobs:
           cd dist/packages
           VERSION="${GITHUB_REF#refs/tags/}"
 
-          cat > MANIFEST.txt <<EOF
-NFTBan ${VERSION} - Release Artifacts
-===================================
+          cat > MANIFEST.txt << MANIFEST_EOF
+          NFTBan ${VERSION} - Release Artifacts
+          ===================================
 
-RPM Packages (EL Family + Fedora):
-  nftban-el9-x86_64.rpm      Rocky / Alma / RHEL / CentOS Stream 9
-  nftban-el10-x86_64.rpm     Rocky / Alma / RHEL / CentOS Stream 10
-  nftban-fc42-x86_64.rpm     Fedora 42
-  nftban-fc43-x86_64.rpm     Fedora 43
+          RPM Packages (EL Family + Fedora):
+            nftban-el9-x86_64.rpm      Rocky / Alma / RHEL / CentOS Stream 9
+            nftban-el10-x86_64.rpm     Rocky / Alma / RHEL / CentOS Stream 10
+            nftban-fc42-x86_64.rpm     Fedora 42
+            nftban-fc43-x86_64.rpm     Fedora 43
 
-DEB Packages (Ubuntu + Debian):
-  nftban-ubuntu22.04-amd64.deb   Ubuntu 22.04 (Jammy)
-  nftban-ubuntu24.04-amd64.deb   Ubuntu 24.04 (Noble)
-  nftban-debian12-amd64.deb      Debian 12 (Bookworm)
+          DEB Packages (Ubuntu + Debian):
+            nftban-ubuntu22.04-amd64.deb   Ubuntu 22.04 (Jammy)
+            nftban-ubuntu24.04-amd64.deb   Ubuntu 24.04 (Noble)
+            nftban-debian12-amd64.deb      Debian 12 (Bookworm)
 
-Package Sizes:
-EOF
+          Package Sizes:
+          MANIFEST_EOF
+
+          # Remove leading spaces from heredoc
+          sed -i 's/^          //' MANIFEST.txt
 
           for file in *.rpm *.deb; do
             if [ -f "$file" ]; then
@@ -274,55 +277,58 @@ EOF
           cd dist/packages
           VERSION="${GITHUB_REF#refs/tags/}"
 
-          cat > VERIFY.txt <<'EOF'
-NFTBan - Package Verification & Installation Guide
-===================================================
+          cat > VERIFY.txt << 'VERIFY_EOF'
+          NFTBan - Package Verification & Installation Guide
+          ===================================================
 
-1. Download the package for your distribution:
+          1. Download the package for your distribution:
 
-   # Rocky / Alma / RHEL / CentOS Stream 9
-   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_64.rpm
+             # Rocky / Alma / RHEL / CentOS Stream 9
+             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_64.rpm
 
-   # Rocky / Alma / RHEL / CentOS Stream 10
-   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el10-x86_64.rpm
+             # Rocky / Alma / RHEL / CentOS Stream 10
+             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el10-x86_64.rpm
 
-   # Fedora 42
-   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc42-x86_64.rpm
+             # Fedora 42
+             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc42-x86_64.rpm
 
-   # Fedora 43
-   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc43-x86_64.rpm
+             # Fedora 43
+             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc43-x86_64.rpm
 
-   # Ubuntu 22.04
-   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb
+             # Ubuntu 22.04
+             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb
 
-   # Ubuntu 24.04
-   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb
+             # Ubuntu 24.04
+             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb
 
-   # Debian 12
-   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb
+             # Debian 12
+             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb
 
-2. Verify package integrity:
+          2. Verify package integrity:
 
-   wget https://github.com/itcmsgr/nftban/releases/latest/download/SHA256SUMS
-   sha256sum -c SHA256SUMS --ignore-missing
+             wget https://github.com/itcmsgr/nftban/releases/latest/download/SHA256SUMS
+             sha256sum -c SHA256SUMS --ignore-missing
 
-3. Install package:
+          3. Install package:
 
-   # Rocky / Alma / Fedora / RHEL
-   sudo dnf install -y nftban-<distro>-x86_64.rpm
+             # Rocky / Alma / Fedora / RHEL
+             sudo dnf install -y nftban-<distro>-x86_64.rpm
 
-   # Ubuntu / Debian
-   sudo dpkg -i nftban-<distro>-amd64.deb
-   sudo apt-get install -f -y
+             # Ubuntu / Debian
+             sudo dpkg -i nftban-<distro>-amd64.deb
+             sudo apt-get install -f -y
 
-4. Enable and verify:
+          4. Enable and verify:
 
-   sudo nftban enable
-   nftban --version
-   nftban health summary
+             sudo nftban enable
+             nftban --version
+             nftban health summary
 
-Documentation: https://github.com/itcmsgr/nftban#readme
-EOF
+          Documentation: https://github.com/itcmsgr/nftban#readme
+          VERIFY_EOF
+
+          # Remove leading spaces from heredoc
+          sed -i 's/^          //' VERIFY.txt
 
       - name: Extract release notes
         run: |
@@ -337,25 +343,28 @@ EOF
           fi
 
           # Add package list to release notes
-          cat >> dist/packages/RELEASE_NOTES.md <<'EOF'
+          cat >> dist/packages/RELEASE_NOTES.md << 'NOTES_EOF'
 
-## Available Packages
+          ## Available Packages
 
-### RPM (x86_64)
-| Distribution | Package |
-|--------------|---------|
-| Rocky / Alma / RHEL / CentOS Stream 9 | `nftban-el9-x86_64.rpm` |
-| Rocky / Alma / RHEL / CentOS Stream 10 | `nftban-el10-x86_64.rpm` |
-| Fedora 42 | `nftban-fc42-x86_64.rpm` |
-| Fedora 43 | `nftban-fc43-x86_64.rpm` |
+          ### RPM (x86_64)
+          | Distribution | Package |
+          |--------------|---------|
+          | Rocky / Alma / RHEL / CentOS Stream 9 | `nftban-el9-x86_64.rpm` |
+          | Rocky / Alma / RHEL / CentOS Stream 10 | `nftban-el10-x86_64.rpm` |
+          | Fedora 42 | `nftban-fc42-x86_64.rpm` |
+          | Fedora 43 | `nftban-fc43-x86_64.rpm` |
 
-### DEB (amd64)
-| Distribution | Package |
-|--------------|---------|
-| Ubuntu 22.04 (Jammy) | `nftban-ubuntu22.04-amd64.deb` |
-| Ubuntu 24.04 (Noble) | `nftban-ubuntu24.04-amd64.deb` |
-| Debian 12 (Bookworm) | `nftban-debian12-amd64.deb` |
-EOF
+          ### DEB (amd64)
+          | Distribution | Package |
+          |--------------|---------|
+          | Ubuntu 22.04 (Jammy) | `nftban-ubuntu22.04-amd64.deb` |
+          | Ubuntu 24.04 (Noble) | `nftban-ubuntu24.04-amd64.deb` |
+          | Debian 12 (Bookworm) | `nftban-debian12-amd64.deb` |
+          NOTES_EOF
+
+          # Remove leading spaces from heredoc
+          sed -i 's/^          //' dist/packages/RELEASE_NOTES.md
 
           echo "=== RELEASE_NOTES.md ==="
           cat dist/packages/RELEASE_NOTES.md
