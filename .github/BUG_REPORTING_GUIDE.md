@@ -205,8 +205,8 @@ When creating an issue, select the appropriate template:
 
 ### Issue: "Permission denied"
 ```bash
-# Add yourself to nftban-cli group
-sudo usermod -aG nftban-cli $USER
+# Add yourself to nftban group (v1.0 uses unified group for CLI + Web GUI)
+sudo usermod -aG nftban $USER
 
 # Re-login for changes to take effect
 exit

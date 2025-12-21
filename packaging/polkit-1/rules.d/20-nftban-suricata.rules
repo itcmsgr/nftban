@@ -73,7 +73,7 @@ polkit.addRule(function (action, subject) {
 // =============================================================================
 //
 // Why this is safe:
-// - Scope limited to nftban and nftban-cli groups only
+// - Scope limited to nftban group only (v1.0 unified group model)
 // - Only allows managing official Suricata units (not arbitrary services)
 // - No nftables access granted (still via nftban-core CAP_NET_ADMIN only)
 // - Standard Polkit authorization flow

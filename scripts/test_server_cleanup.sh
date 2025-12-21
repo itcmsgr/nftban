@@ -95,6 +95,8 @@ rm -f /etc/bash_completion.d/nftban
 log "Removing nftban user/group..."
 userdel nftban 2>/dev/null || true
 groupdel nftban 2>/dev/null || true
+groupdel nftban-auditors 2>/dev/null || true
+# Legacy cleanup (v0.x had nftban-web group)
 groupdel nftban-web 2>/dev/null || true
 
 # Reload systemd

@@ -109,7 +109,7 @@ polkit.addRule(function(action, subject) {
 //
 // Related:
 // - 61-nftban-system.rules (for nftban system user)
-// - 60-nftban-cli.rules (for nftban-cli group - service management)
+// - 60-nftban.rules (for nftban group - service management)
 // - 50-nftban-auth.rules (for auth helper access)
 //
 // =============================================================================

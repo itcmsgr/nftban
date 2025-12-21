@@ -80,7 +80,8 @@ SESSION_TIMEOUT=60
 BLOCK_ROOT_LOGIN=true
 
 # Authentication
-REQUIRED_GROUP=nftban-web
+# v1.0: Simplified to single 'nftban' group (merged nftban-cli + nftban-web)
+REQUIRED_GROUP=nftban
 
 # Access Control
 IP_WHITELIST_FILE=$NFTBAN_UI_WHITELIST
@@ -105,13 +106,12 @@ EOF
         echo "ℹ️  Configuration already exists"
     fi
 
-    # Create nftban-web group if not exists
-    if ! getent group nftban-web >/dev/null 2>&1; then
-        echo "👥 Creating nftban-web group..."
-        groupadd -r nftban-web
-        echo "✅ Group created"
+    # Verify nftban group exists (created by install.sh)
+    if ! getent group nftban >/dev/null 2>&1; then
+        echo "❌ nftban group not found. Run install.sh first."
+        return 1
     else
-        echo "ℹ️  nftban-web group already exists"
+        echo "✅ nftban group exists"
     fi
 
     # Initialize IP whitelist
@@ -121,7 +121,7 @@ EOF
     echo "✅ Web GUI initialization complete!"
     echo ""
     echo "📋 Next steps:"
-    echo "   1. Add users to nftban-web group: usermod -aG nftban-web <username>"
+    echo "   1. Add users to nftban group: sudo usermod -aG nftban <username>"
     echo "   2. Start the GUI server: nftban ui start"
     echo "   3. Access GUI at: https://$(hostname -I | awk '{print $1}'):$NFTBAN_UI_PORT"
     echo ""
