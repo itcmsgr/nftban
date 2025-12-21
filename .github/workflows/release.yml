@@ -6,18 +6,13 @@
 # Triggers: Push to v* tags (e.g., v1.0.0, v1.0.1)
 #
 # What this does:
-#   1. Builds Go binaries (nftban-core, nftban-api-server) for x86_64 and aarch64
-#   2. Creates RPM packages for Rocky 9, AlmaLinux 9, Fedora
+#   1. Builds Go binaries (nftban-core, nftban-api-server) for x86_64
+#   2. Creates RPM packages for EL9, EL10, Fedora 42, Fedora 43
 #   3. Creates DEB packages for Ubuntu 22.04/24.04, Debian 12
 #   4. Generates SHA256SUMS for all artifacts
-#   5. Creates simplified package names (nftban-amd64.deb, nftban-x86_64.rpm)
+#   5. Creates distro-specific package names (nftban-el9-x86_64.rpm, etc.)
 #   6. Creates MANIFEST.txt (file inventory)
 #   7. Uploads everything to GitHub Release
-#
-# Future enhancements:
-#   - GPG signing (infrastructure ready, commented out below)
-#   - SBOM generation (SPDX/CycloneDX)
-#   - Package repository publishing (COPR/PPA)
 # =============================================================================
 
 name: Release Packages
@@ -31,191 +26,309 @@ permissions:
   contents: write  # Required to create/edit GitHub Releases
 
 jobs:
-  build-and-release:
+  # ==========================================================================
+  # BUILD GO BINARIES
+  # ==========================================================================
+  build-binaries:
+    name: Build Go binaries
     runs-on: ubuntu-latest
-
     steps:
-      # =======================================================================
-      # 1. CHECKOUT
-      # =======================================================================
-      - name: Checkout repository
+      - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # Full history for proper version detection
+          fetch-depth: 0
 
-      # =======================================================================
-      # 2. SETUP BUILD ENVIRONMENT
-      # =======================================================================
       - name: Set up Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
 
-      - name: Install packaging dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            rpm \
-            dpkg-dev \
-            fakeroot \
-            build-essential \
-            debhelper \
-            devscripts \
-            rsync \
-            golang
-
-          # Verify rpmbuild is available (comes with rpm package on Ubuntu)
-          which rpmbuild || (echo "ERROR: rpmbuild not found" && exit 1)
-
-          # Verify golang is available
-          which go || (echo "ERROR: go not found" && exit 1)
-          go version
-
-      # =======================================================================
-      # 3. BUILD GO BINARIES
-      # =======================================================================
-      - name: Build Go binaries
+      - name: Build binaries
         run: |
           chmod +x build.sh
           ./build.sh
+          ls -la bin/
 
-          echo "=== Verify binaries were built ==="
-          ls -lh bin/
+      - name: Upload binaries
+        uses: actions/upload-artifact@v4
+        with:
+          name: go-binaries
+          path: bin/
+          retention-days: 1
 
-      # =======================================================================
-      # 4. BUILD DEB PACKAGE
-      # =======================================================================
-      - name: Build DEB package
+  # ==========================================================================
+  # BUILD RPM PACKAGES
+  # ==========================================================================
+  build-rpm:
+    name: Build RPM (${{ matrix.distro }})
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: el9
+            container: rockylinux:9
+            name_suffix: el9
+          - distro: el10
+            container: rockylinux:10
+            name_suffix: el10
+          - distro: fc42
+            container: fedora:42
+            name_suffix: fc42
+          - distro: fc43
+            container: fedora:43
+            name_suffix: fc43
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: go-binaries
+          path: bin/
+
+      - name: Build RPM in ${{ matrix.distro }} container
         run: |
-          chmod +x packaging/build_nftban.sh
-          cd packaging
-          ./build_nftban.sh deb
+          chmod +x bin/*
+          docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
+            # Install build dependencies
+            dnf -y install rpm-build rpmdevtools tar gzip systemd-rpm-macros make
 
-      # =======================================================================
-      # 5. BUILD RPM PACKAGE (Rocky Linux container)
-      # =======================================================================
-      - name: Build RPM package
-        run: |
-          docker run --rm -v "$(pwd):/workspace" -w /workspace rockylinux:9 bash -c "
-            dnf -y install rpm-build rpmdevtools tar gzip systemd-rpm-macros
+            # Build RPM
             chmod +x packaging/build_nftban.sh
             cd packaging
             ./build_nftban.sh rpm
+
+            # Fix permissions
+            chmod -R a+rX /workspace/build/
           "
 
-      - name: Move packages to dist
+      - name: Rename RPM with distro suffix
         run: |
           mkdir -p dist/packages
-          find . -name "*.rpm" -path "*/RPMS/*" -exec cp {} dist/packages/ \; 2>/dev/null || true
-          find . -name "*.rpm" -path "*build*" -exec cp {} dist/packages/ \; 2>/dev/null || true
-          find . -name "*.deb" -path "*build*" -exec cp {} dist/packages/ \; 2>/dev/null || true
-          echo "=== Packages built ==="
+          for rpm in build/packages/RPMS/*/*.rpm; do
+            if [[ -f "$rpm" ]]; then
+              # Create distro-specific name: nftban-el9-x86_64.rpm
+              cp "$rpm" "dist/packages/nftban-${{ matrix.name_suffix }}-x86_64.rpm"
+            fi
+          done
+          ls -la dist/packages/
+
+      - name: Upload RPM packages (${{ matrix.distro }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-${{ matrix.distro }}
+          path: dist/packages/*.rpm
+          retention-days: 30
+
+  # ==========================================================================
+  # BUILD DEB PACKAGES
+  # ==========================================================================
+  build-deb:
+    name: Build DEB (${{ matrix.distro }})
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - distro: ubuntu22.04
+            container: ubuntu:22.04
+            name_suffix: ubuntu22.04
+          - distro: ubuntu24.04
+            container: ubuntu:24.04
+            name_suffix: ubuntu24.04
+          - distro: debian12
+            container: debian:12
+            name_suffix: debian12
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download binaries
+        uses: actions/download-artifact@v4
+        with:
+          name: go-binaries
+          path: bin/
+
+      - name: Build DEB in ${{ matrix.distro }} container
+        run: |
+          chmod +x bin/*
+          docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
+            # Install build dependencies
+            apt-get update
+            apt-get install -y dpkg-dev build-essential
+
+            # Build DEB
+            chmod +x packaging/build_nftban.sh
+            cd packaging
+            ./build_nftban.sh deb
+
+            # Fix permissions
+            chmod -R a+rX /workspace/build/
+          "
+
+      - name: Rename DEB with distro suffix
+        run: |
+          mkdir -p dist/packages
+          for deb in build/packages/*.deb; do
+            if [[ -f "$deb" ]]; then
+              # Create distro-specific name: nftban-ubuntu22.04-amd64.deb
+              cp "$deb" "dist/packages/nftban-${{ matrix.name_suffix }}-amd64.deb"
+            fi
+          done
+          ls -la dist/packages/
+
+      - name: Upload DEB packages (${{ matrix.distro }})
+        uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.distro }}
+          path: dist/packages/*.deb
+          retention-days: 30
+
+  # ==========================================================================
+  # CREATE RELEASE
+  # ==========================================================================
+  create-release:
+    name: Create GitHub Release
+    needs: [build-rpm, build-deb]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: all-packages/
+
+      - name: Consolidate packages
+        run: |
+          mkdir -p dist/packages
+
+          # Copy all RPM packages
+          find all-packages -name "*.rpm" -exec cp {} dist/packages/ \;
+
+          # Copy all DEB packages
+          find all-packages -name "*.deb" -exec cp {} dist/packages/ \;
+
+          echo "=== All packages ==="
           ls -lh dist/packages/
 
-      # =======================================================================
-      # 6. GENERATE CHECKSUMS
-      # =======================================================================
       - name: Generate SHA256SUMS
         run: |
           cd dist/packages
           rm -f SHA256SUMS
 
-          # Generate checksums for whatever packages exist
+          # Generate checksums for all packages
           shopt -s nullglob
           packages=(*.rpm *.deb)
           if [ ${#packages[@]} -gt 0 ]; then
-            sha256sum "${packages[@]}" > SHA256SUMS
+            sha256sum "${packages[@]}" | sort > SHA256SUMS
             echo "=== SHA256SUMS ==="
             cat SHA256SUMS
           else
-            echo "WARNING: No packages found to checksum"
+            echo "WARNING: No packages found"
             touch SHA256SUMS
           fi
 
-      # =======================================================================
-      # 7. GENERATE MANIFEST
-      # =======================================================================
       - name: Generate MANIFEST.txt
         run: |
           cd dist/packages
           VERSION="${GITHUB_REF#refs/tags/}"
 
           cat > MANIFEST.txt <<EOF
-          NFTBan ${VERSION} - Release Artifacts
-          ===================================
+NFTBan ${VERSION} - Release Artifacts
+===================================
 
-          Simplified Package Names (for easy downloads):
-          - nftban-x86_64.rpm    (Red Hat/Rocky/Alma/Fedora x86_64)
-          - nftban-aarch64.rpm   (Red Hat/Rocky/Alma/Fedora ARM64)
-          - nftban-amd64.deb     (Ubuntu/Debian amd64)
-          - nftban-arm64.deb     (Ubuntu/Debian ARM64)
+RPM Packages (EL Family + Fedora):
+  nftban-el9-x86_64.rpm      Rocky / Alma / RHEL / CentOS Stream 9
+  nftban-el10-x86_64.rpm     Rocky / Alma / RHEL / CentOS Stream 10
+  nftban-fc42-x86_64.rpm     Fedora 42
+  nftban-fc43-x86_64.rpm     Fedora 43
 
-          Full Package Names:
-          EOF
+DEB Packages (Ubuntu + Debian):
+  nftban-ubuntu22.04-amd64.deb   Ubuntu 22.04 (Jammy)
+  nftban-ubuntu24.04-amd64.deb   Ubuntu 24.04 (Noble)
+  nftban-debian12-amd64.deb      Debian 12 (Bookworm)
 
-          for file in nftban-[0-9]* nftban_[0-9]*; do
+Package Sizes:
+EOF
+
+          for file in *.rpm *.deb; do
             if [ -f "$file" ]; then
               size=$(stat -c%s "$file" 2>/dev/null || stat -f%z "$file" 2>/dev/null || echo "0")
-              printf "%-50s %12d bytes\n" "$file" "$size" >> MANIFEST.txt
+              printf "  %-35s %12d bytes\n" "$file" "$size" >> MANIFEST.txt
             fi
           done
 
           echo "=== MANIFEST.txt ==="
           cat MANIFEST.txt
 
-      # =======================================================================
-      # 8. CREATE VERIFY.txt
-      # =======================================================================
       - name: Create VERIFY.txt
         run: |
           cd dist/packages
           VERSION="${GITHUB_REF#refs/tags/}"
 
-          cat > VERIFY.txt <<EOF
-          NFTBan ${VERSION} - Package Verification & Installation Guide
-          ============================================================
+          cat > VERIFY.txt <<'EOF'
+NFTBan - Package Verification & Installation Guide
+===================================================
 
-          1. Download using simple links:
+1. Download the package for your distribution:
 
-             # Rocky/AlmaLinux/Fedora (x86_64)
-             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm
+   # Rocky / Alma / RHEL / CentOS Stream 9
+   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_64.rpm
 
-             # Ubuntu/Debian (amd64)
-             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-amd64.deb
+   # Rocky / Alma / RHEL / CentOS Stream 10
+   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el10-x86_64.rpm
 
-          2. Verify package integrity:
+   # Fedora 42
+   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc42-x86_64.rpm
 
-             sha256sum -c SHA256SUMS
+   # Fedora 43
+   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc43-x86_64.rpm
 
-          3. Install package:
+   # Ubuntu 22.04
+   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb
 
-             # Rocky/AlmaLinux/Fedora
-             sudo dnf install -y nftban-x86_64.rpm
+   # Ubuntu 24.04
+   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb
 
-             # Ubuntu/Debian
-             sudo dpkg -i nftban-amd64.deb
-             sudo apt-get install -f
+   # Debian 12
+   wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb
 
-          4. Verify installation:
+2. Verify package integrity:
 
-             nftban --version
-             nftban health check
+   wget https://github.com/itcmsgr/nftban/releases/latest/download/SHA256SUMS
+   sha256sum -c SHA256SUMS --ignore-missing
 
-          NOTE: SHA256 checksums provided. GPG signing planned for future release.
+3. Install package:
 
-          Documentation: https://github.com/itcmsgr/nftban#readme
-          EOF
+   # Rocky / Alma / Fedora / RHEL
+   sudo dnf install -y nftban-<distro>-x86_64.rpm
 
-      # =======================================================================
-      # 9. EXTRACT RELEASE NOTES FROM CHANGELOG
-      # =======================================================================
+   # Ubuntu / Debian
+   sudo dpkg -i nftban-<distro>-amd64.deb
+   sudo apt-get install -f -y
+
+4. Enable and verify:
+
+   sudo nftban enable
+   nftban --version
+   nftban health summary
+
+Documentation: https://github.com/itcmsgr/nftban#readme
+EOF
+
       - name: Extract release notes
         run: |
-          # Extract version section from CHANGELOG.md
           VERSION="${GITHUB_REF#refs/tags/}"
 
           if [ -f "CHANGELOG.md" ]; then
-            # Try to extract section for this version
             awk "/^## \[${VERSION}\]/,/^## \[/" CHANGELOG.md | \
               sed '/^## \[/d' | head -n -1 > dist/packages/RELEASE_NOTES.md || \
               echo "Release ${VERSION}" > dist/packages/RELEASE_NOTES.md
@@ -223,53 +336,30 @@ jobs:
             echo "Release ${VERSION}" > dist/packages/RELEASE_NOTES.md
           fi
 
+          # Add package list to release notes
+          cat >> dist/packages/RELEASE_NOTES.md <<'EOF'
+
+## Available Packages
+
+### RPM (x86_64)
+| Distribution | Package |
+|--------------|---------|
+| Rocky / Alma / RHEL / CentOS Stream 9 | `nftban-el9-x86_64.rpm` |
+| Rocky / Alma / RHEL / CentOS Stream 10 | `nftban-el10-x86_64.rpm` |
+| Fedora 42 | `nftban-fc42-x86_64.rpm` |
+| Fedora 43 | `nftban-fc43-x86_64.rpm` |
+
+### DEB (amd64)
+| Distribution | Package |
+|--------------|---------|
+| Ubuntu 22.04 (Jammy) | `nftban-ubuntu22.04-amd64.deb` |
+| Ubuntu 24.04 (Noble) | `nftban-ubuntu24.04-amd64.deb` |
+| Debian 12 (Bookworm) | `nftban-debian12-amd64.deb` |
+EOF
+
           echo "=== RELEASE_NOTES.md ==="
           cat dist/packages/RELEASE_NOTES.md
 
-      # =======================================================================
-      # 10. CREATE SIMPLIFIED PACKAGE NAMES (for easy downloads)
-      # =======================================================================
-      - name: Create simplified package names
-        run: |
-          cd dist/packages
-
-          # RPM packages - x86_64
-          if ls nftban-*.el*.x86_64.rpm 1> /dev/null 2>&1; then
-            RPM_X86=$(ls nftban-*.el*.x86_64.rpm | head -n1)
-            cp "$RPM_X86" nftban-x86_64.rpm
-            echo "✓ Created nftban-x86_64.rpm from $RPM_X86"
-          fi
-
-          # RPM packages - aarch64
-          if ls nftban-*.el*.aarch64.rpm 1> /dev/null 2>&1; then
-            RPM_ARM=$(ls nftban-*.el*.aarch64.rpm | head -n1)
-            cp "$RPM_ARM" nftban-aarch64.rpm
-            echo "✓ Created nftban-aarch64.rpm from $RPM_ARM"
-          fi
-
-          # DEB packages - amd64
-          if ls nftban_*_amd64.deb 1> /dev/null 2>&1; then
-            DEB_AMD64=$(ls nftban_*_amd64.deb | head -n1)
-            cp "$DEB_AMD64" nftban-amd64.deb
-            echo "✓ Created nftban-amd64.deb from $DEB_AMD64"
-          fi
-
-          # DEB packages - arm64
-          if ls nftban_*_arm64.deb 1> /dev/null 2>&1; then
-            DEB_ARM64=$(ls nftban_*_arm64.deb | head -n1)
-            cp "$DEB_ARM64" nftban-arm64.deb
-            echo "✓ Created nftban-arm64.deb from $DEB_ARM64"
-          fi
-
-          echo "=== Simplified package names created ==="
-          ls -lh nftban-*.{rpm,deb} 2>/dev/null || echo "No simplified packages"
-
-          echo "=== All packages ==="
-          ls -lh
-
-      # =======================================================================
-      # 11. UPLOAD TO GITHUB RELEASE
-      # =======================================================================
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
@@ -284,47 +374,3 @@ jobs:
           prerelease: false
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-      # =======================================================================
-      # 12. OPTIONAL: GPG SIGNING (v0.10.1+)
-      # =======================================================================
-      # Uncomment these steps when ready to enable package signing
-      # Prerequisites:
-      #   1. Generate GPG key: gpg --quick-generate-key "nftban <releases@nftban.com>" rsa3072 sign 0
-      #   2. Export private key: gpg --export-secret-keys --armor KEYID | base64 -w0
-      #   3. Add GitHub secrets: GPG_PRIVATE_KEY_B64, GPG_PASSPHRASE
-      #
-      # - name: Import GPG private key
-      #   if: false  # Set to 'true' when ready
-      #   run: |
-      #     echo "$GPG_PRIVATE_KEY_B64" | base64 -d > /tmp/private.key.asc
-      #     gpg --batch --yes --import /tmp/private.key.asc
-      #     KEYID=$(gpg --list-secret-keys --keyid-format=long | awk '/sec/{print $2}' | sed 's|.*/||' | head -n1)
-      #     echo "KEYID=$KEYID" >> $GITHUB_ENV
-      #   env:
-      #     GPG_PRIVATE_KEY_B64: ${{ secrets.GPG_PRIVATE_KEY_B64 }}
-      #
-      # - name: Sign RPM packages
-      #   if: false
-      #   working-directory: dist/packages
-      #   env:
-      #     GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-      #   run: |
-      #     for rpm in *.rpm; do
-      #       echo "$GPG_PASSPHRASE" | rpmsign --addsign \
-      #         --define "_gpg_digest_algo sha256" \
-      #         --passphrase-fd 0 "$rpm"
-      #       rpm --checksig "$rpm"
-      #     done
-      #
-      # - name: Sign DEB packages
-      #   if: false
-      #   working-directory: dist/packages
-      #   env:
-      #     GPG_PASSPHRASE: ${{ secrets.GPG_PASSPHRASE }}
-      #   run: |
-      #     for deb in *.deb; do
-      #       echo "$GPG_PASSPHRASE" | dpkg-sig --batch \
-      #         --passphrase-fd 0 --sign builder "$deb"
-      #       dpkg-sig --verify "$deb"
-      #     done

@@ -18,23 +18,48 @@ NFTBan is an enterprise-grade firewall management system built on Linux nftables
 
 ## Quick Install
 
-### Rocky / AlmaLinux 8/9/10 (requires EPEL + CRB)
+### Rocky / AlmaLinux / RHEL / CentOS Stream 9
 ```bash
 sudo dnf install -y epel-release && sudo dnf config-manager --set-enabled crb
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm
-sudo dnf install -y nftban-x86_64.rpm && sudo nftban enable
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_64.rpm
+sudo dnf install -y nftban-el9-x86_64.rpm && sudo nftban enable
 ```
 
-### Fedora
+### Rocky / AlmaLinux / RHEL / CentOS Stream 10
 ```bash
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm
-sudo dnf install -y nftban-x86_64.rpm && sudo nftban enable
+sudo dnf install -y epel-release && sudo dnf config-manager --set-enabled crb
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el10-x86_64.rpm
+sudo dnf install -y nftban-el10-x86_64.rpm && sudo nftban enable
 ```
 
-### Ubuntu / Debian
+### Fedora 42
 ```bash
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-amd64.deb
-sudo dpkg -i nftban-amd64.deb && sudo apt-get install -f -y && sudo nftban enable
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc42-x86_64.rpm
+sudo dnf install -y nftban-fc42-x86_64.rpm && sudo nftban enable
+```
+
+### Fedora 43
+```bash
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc43-x86_64.rpm
+sudo dnf install -y nftban-fc43-x86_64.rpm && sudo nftban enable
+```
+
+### Ubuntu 22.04
+```bash
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb
+sudo dpkg -i nftban-ubuntu22.04-amd64.deb && sudo apt-get install -f -y && sudo nftban enable
+```
+
+### Ubuntu 24.04
+```bash
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb
+sudo dpkg -i nftban-ubuntu24.04-amd64.deb && sudo apt-get install -f -y && sudo nftban enable
+```
+
+### Debian 12
+```bash
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb
+sudo dpkg -i nftban-debian12-amd64.deb && sudo apt-get install -f -y && sudo nftban enable
 ```
 
 ### From Source
@@ -49,14 +74,24 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 
 ## Available Packages
 
-| Platform | Architecture | Package |
-|----------|--------------|---------|
-| RHEL / Rocky / Alma / Fedora | x86_64 | [nftban-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-x86_64.rpm) |
-| RHEL / Rocky / Alma / Fedora | aarch64 (ARM64) | [nftban-aarch64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-aarch64.rpm) |
-| Ubuntu 24.04+ / Debian 12+ | amd64 | [nftban-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-amd64.deb) |
-| Ubuntu 24.04+ / Debian 12+ | arm64 | [nftban-arm64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-arm64.deb) |
+### RPM Packages (EL Family + Fedora)
 
-> Packages are self-contained and FHS compliant. Old versions archived in [Releases](https://github.com/itcmsgr/nftban/releases).
+| Distribution | Version | Architecture | Package |
+|--------------|---------|--------------|---------|
+| Rocky / Alma / RHEL / CentOS Stream | 9 | x86_64 | [nftban-el9-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_64.rpm) |
+| Rocky / Alma / RHEL / CentOS Stream | 10 | x86_64 | [nftban-el10-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el10-x86_64.rpm) |
+| Fedora | 42 | x86_64 | [nftban-fc42-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc42-x86_64.rpm) |
+| Fedora | 43 | x86_64 | [nftban-fc43-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc43-x86_64.rpm) |
+
+### DEB Packages (Ubuntu + Debian)
+
+| Distribution | Version | Architecture | Package |
+|--------------|---------|--------------|---------|
+| Ubuntu | 22.04 (Jammy) | amd64 | [nftban-ubuntu22.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb) |
+| Ubuntu | 24.04 (Noble) | amd64 | [nftban-ubuntu24.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb) |
+| Debian | 12 (Bookworm) | amd64 | [nftban-debian12-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb) |
+
+> Packages are distro-specific and FHS compliant. Use the package matching your exact distribution version. Old versions archived in [Releases](https://github.com/itcmsgr/nftban/releases).
 
 ---
 
@@ -177,11 +212,11 @@ ip6 nftban {                 # IPv6 rules
 
 ## Requirements
 
-- **Linux**: Rocky/Alma 8+, Ubuntu 20.04+, Debian 11+, Fedora 38+
+- **Linux**: Rocky/Alma/RHEL 9-10, CentOS Stream 9-10, Ubuntu 22.04+, Debian 12+, Fedora 42+
 - **nftables**: 0.9.3+
 - **Bash**: 4.4+
 - **systemd**: Required
-- **Go 1.22+**: For building from source (optional)
+- **Go 1.21+**: For building from source (optional)
 
 ---
 
