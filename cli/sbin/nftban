@@ -789,7 +789,8 @@ EOF
 
             # Web GUI
             if systemctl is-active nftban-ui &>/dev/null; then
-                local gui_port=$(grep "^PORT=" /etc/nftban/ui.conf 2>/dev/null | cut -d= -f2 || echo "3940")
+                local gui_port
+                gui_port=$(grep "^PORT=" /etc/nftban/ui.conf 2>/dev/null | cut -d= -f2 || echo "3940")
                 echo "    Web GUI:      ✅ Running (port ${gui_port:-3940})"
             else
                 echo "    Web GUI:      ⚪ Disabled"
@@ -817,10 +818,11 @@ EOF
             # Check for --json flag
             if [[ "${2:-}" == "--json" ]] || [[ "${1:-}" == "--json" ]]; then
                 # JSON output - include all component versions
-                local ui_ver=$(/usr/sbin/nftban-ui --version 2>&1 | grep -oP 'v\K[0-9.]+' 2>/dev/null || echo "not_installed")
-                local auth_ver=$(/usr/sbin/nftban-ui-auth --version 2>&1 | grep -oP 'v\K[0-9.]+' 2>/dev/null || echo "not_installed")
-                local feeds_ver=$(/usr/bin/nftban-feeds --version 2>&1 | grep -oP 'v\K[0-9.]+' 2>/dev/null || echo "not_installed")
-                local geoip_ver=$(/usr/bin/nftban-geoip --version 2>&1 | grep -oP 'v\K[0-9.]+' 2>/dev/null || echo "not_installed")
+                local ui_ver auth_ver feeds_ver geoip_ver
+                ui_ver=$(/usr/sbin/nftban-ui --version 2>&1 | grep -oP 'v\K[0-9.]+' 2>/dev/null || echo "not_installed")
+                auth_ver=$(/usr/sbin/nftban-ui-auth --version 2>&1 | grep -oP 'v\K[0-9.]+' 2>/dev/null || echo "not_installed")
+                feeds_ver=$(/usr/bin/nftban-feeds --version 2>&1 | grep -oP 'v\K[0-9.]+' 2>/dev/null || echo "not_installed")
+                geoip_ver=$(/usr/bin/nftban-geoip --version 2>&1 | grep -oP 'v\K[0-9.]+' 2>/dev/null || echo "not_installed")
 
                 if declare -f json_output >/dev/null 2>&1; then
                     json_output true "version" \
@@ -843,8 +845,9 @@ EOF
 
                 # UI
                 if command -v /usr/sbin/nftban-ui &>/dev/null; then
-                    local ui_ver=$(/usr/sbin/nftban-ui --version 2>&1 | grep -oP 'v\K[0-9.]+' || echo "unknown")
-                    local ui_git=$(/usr/sbin/nftban-ui --version 2>&1 | grep -oP 'git \K[a-f0-9]+' || echo "")
+                    local ui_ver ui_git
+                    ui_ver=$(/usr/sbin/nftban-ui --version 2>&1 | grep -oP 'v\K[0-9.]+' || echo "unknown")
+                    ui_git=$(/usr/sbin/nftban-ui --version 2>&1 | grep -oP 'git \K[a-f0-9]+' || echo "")
                     [[ "$ui_ver" == "$NFTBAN_VERSION" ]] && echo "  ui:       v${ui_ver} (git ${ui_git}) ✅" || echo "  ui:       v${ui_ver} (git ${ui_git}) ⚠️"
                 else
                     echo "  ui:       not installed ❌"
@@ -852,8 +855,9 @@ EOF
 
                 # UI Auth
                 if command -v /usr/sbin/nftban-ui-auth &>/dev/null; then
-                    local auth_ver=$(/usr/sbin/nftban-ui-auth --version 2>&1 | grep -oP 'v\K[0-9.]+' || echo "unknown")
-                    local auth_git=$(/usr/sbin/nftban-ui-auth --version 2>&1 | grep -oP 'git \K[a-f0-9]+' || echo "")
+                    local auth_ver auth_git
+                    auth_ver=$(/usr/sbin/nftban-ui-auth --version 2>&1 | grep -oP 'v\K[0-9.]+' || echo "unknown")
+                    auth_git=$(/usr/sbin/nftban-ui-auth --version 2>&1 | grep -oP 'git \K[a-f0-9]+' || echo "")
                     [[ "$auth_ver" == "$NFTBAN_VERSION" ]] && echo "  ui-auth:  v${auth_ver} (git ${auth_git}) ✅" || echo "  ui-auth:  v${auth_ver} (git ${auth_git}) ⚠️"
                 else
                     echo "  ui-auth:  not installed ❌"
@@ -861,8 +865,9 @@ EOF
 
                 # Feeds
                 if command -v /usr/bin/nftban-feeds &>/dev/null; then
-                    local feeds_ver=$(/usr/bin/nftban-feeds --version 2>&1 | grep -oP 'v\K[0-9.]+' || echo "unknown")
-                    local feeds_git=$(/usr/bin/nftban-feeds --version 2>&1 | grep -oP 'git \K[a-f0-9]+' || echo "")
+                    local feeds_ver feeds_git
+                    feeds_ver=$(/usr/bin/nftban-feeds --version 2>&1 | grep -oP 'v\K[0-9.]+' || echo "unknown")
+                    feeds_git=$(/usr/bin/nftban-feeds --version 2>&1 | grep -oP 'git \K[a-f0-9]+' || echo "")
                     [[ "$feeds_ver" == "$NFTBAN_VERSION" ]] && echo "  feeds:    v${feeds_ver} (git ${feeds_git}) ✅" || echo "  feeds:    v${feeds_ver} (git ${feeds_git}) ⚠️"
                 else
                     echo "  feeds:    not installed ❌"
@@ -870,8 +875,9 @@ EOF
 
                 # GeoIP
                 if command -v /usr/bin/nftban-geoip &>/dev/null; then
-                    local geoip_ver=$(/usr/bin/nftban-geoip --version 2>&1 | grep -oP 'v\K[0-9.]+' || echo "unknown")
-                    local geoip_git=$(/usr/bin/nftban-geoip --version 2>&1 | grep -oP 'git \K[a-f0-9]+' || echo "")
+                    local geoip_ver geoip_git
+                    geoip_ver=$(/usr/bin/nftban-geoip --version 2>&1 | grep -oP 'v\K[0-9.]+' || echo "unknown")
+                    geoip_git=$(/usr/bin/nftban-geoip --version 2>&1 | grep -oP 'git \K[a-f0-9]+' || echo "")
                     [[ "$geoip_ver" == "$NFTBAN_VERSION" ]] && echo "  geoip:    v${geoip_ver} (git ${geoip_git}) ✅" || echo "  geoip:    v${geoip_ver} (git ${geoip_git}) ⚠️"
                 else
                     echo "  geoip:    not installed ❌"

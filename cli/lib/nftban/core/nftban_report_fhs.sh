@@ -35,7 +35,8 @@ umask 027
 
 declare -g -A NFTBAN_FHS_DIRECTORIES=()  # key: path -> "expected_perms|expected_owner|expected_group|purpose"
 declare -g -A NFTBAN_FHS_STATUS=()       # key: path -> "OK|ERROR|WARNING"
-declare -g NFTBAN_FHS_TIMESTAMP="$(date --iso-8601=seconds)"
+declare -g NFTBAN_FHS_TIMESTAMP
+NFTBAN_FHS_TIMESTAMP="$(date --iso-8601=seconds)"
 declare -g NFTBAN_FHS_OUTPUT_FORMAT="${NFTBAN_FHS_OUTPUT_FORMAT:-table}"
 
 # Color symbols

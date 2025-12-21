@@ -540,7 +540,8 @@ nftban_mail_send() {
     local sender="${NFTBAN_SENDER:-nftban@$(hostname -f)}"
     local from_name="${NFTBAN_FROM_NAME:-NFTBan Security System}"
     local subject_prefix="${NFTBAN_MAIL_SUBJECT_PREFIX:-[NFTBan]}"
-    local subject="${subject_prefix} Report from $(hostname -f)"
+    local subject
+    subject="${subject_prefix} Report from $(hostname -f)"
 
     # Detect mail command
     local mta
@@ -577,12 +578,13 @@ EOF
                 echo "[DEBUG] Sending via exim to: $recipient"
             fi
 
-            echo "$content_html" | /usr/sbin/exim -t <<EOF
+            /usr/sbin/exim -t <<EOF
 From: ${from_name} <${sender}>
 To: ${recipient}
 Subject: ${subject}
 Content-Type: text/html; charset=UTF-8
 
+${content_html}
 EOF
             ;;
 
@@ -698,7 +700,8 @@ CURLEOF
 
         # Save sent email if debugging
         if [[ -n "${NFTBAN_MAIL_SAVE_SENT:-}" ]] && [[ -d "${NFTBAN_MAIL_SAVE_SENT}" ]]; then
-            local save_file="${NFTBAN_MAIL_SAVE_SENT}/sent_$(date +%Y%m%d_%H%M%S).html"
+            local save_file
+            save_file="${NFTBAN_MAIL_SAVE_SENT}/sent_$(date +%Y%m%d_%H%M%S).html"
             echo "$content_html" > "$save_file"
             echo "  (Saved to: $save_file)"
         fi

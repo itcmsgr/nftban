@@ -312,7 +312,8 @@ nftban_audit_rotate() {
 
     if ((size_mb >= max_size_mb)); then
         # Rotate with timestamp
-        local backup="${NFTBAN_AUDIT_LOG}.$(date '+%Y%m%d-%H%M%S')"
+        local backup
+        backup="${NFTBAN_AUDIT_LOG}.$(date '+%Y%m%d-%H%M%S')"
         mv "$NFTBAN_AUDIT_LOG" "$backup"
         touch "$NFTBAN_AUDIT_LOG"
         chown nftban:nftban "$NFTBAN_AUDIT_LOG" 2>/dev/null || true

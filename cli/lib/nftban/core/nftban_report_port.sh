@@ -621,8 +621,9 @@ nftban_port_render_table() {
 
         if [[ "$NFTBAN_PORT_OUTPUT_FORMAT" == "table" ]]; then
             local port_proto="${port}/${proto^^}"  # Combine port/proto as "22/TCP"
-            local status_display="$(status_icon "$running")"
-            local access_display="$(access_icon "$notes")"
+            local status_display access_display
+            status_display="$(status_icon "$running")"
+            access_display="$(access_icon "$notes")"
 
             if (( NFTBAN_PORT_DETAILED )); then
                 printf "%-12s %-10s %-10s %-12s %-20s %-9s %-9s %-9s %-9s %-12s\n" \

@@ -39,7 +39,8 @@ fi
 # =============================================================================
 
 declare -g -A NFTBAN_SERVICE_STATUS=()  # key: service_name -> "status|version|required|notes"
-declare -g NFTBAN_SERVICE_TIMESTAMP="$(date --iso-8601=seconds)"
+declare -g NFTBAN_SERVICE_TIMESTAMP
+NFTBAN_SERVICE_TIMESTAMP="$(date --iso-8601=seconds)"
 declare -g NFTBAN_SERVICE_OUTPUT_FORMAT="${NFTBAN_SERVICE_OUTPUT_FORMAT:-table}"
 
 # Color symbols

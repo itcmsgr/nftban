@@ -970,7 +970,8 @@ nftban_stats_cleanup_logs() {
         local size
         size=$(stat -c %s "$NFTBAN_BAN_LOG")
         if [[ $size -gt 10485760 ]]; then  # 10MB
-            local backup="${NFTBAN_BAN_LOG}.$(date +%Y%m%d-%H%M%S)"
+            local backup
+            backup="${NFTBAN_BAN_LOG}.$(date +%Y%m%d-%H%M%S)"
             mv "$NFTBAN_BAN_LOG" "$backup"
             gzip "$backup" 2>/dev/null || true
             touch "$NFTBAN_BAN_LOG"

@@ -76,8 +76,10 @@ readonly PEAK_WINDOW=300  # Peak tracking window (5 minutes)
 readonly SKIP_INTERFACES="lo docker0 veth br-"  # Interfaces to skip
 
 # Metric collection start time
-readonly START_TIME=$(date +%s.%N)
-readonly START_TIME_UNIX=$(date +%s)
+START_TIME=$(date +%s.%N)
+readonly START_TIME
+START_TIME_UNIX=$(date +%s)
+readonly START_TIME_UNIX
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -573,50 +575,55 @@ get_nftables_counters() {
     ipv6_data=$(nft list chain ip6 nftban input 2>/dev/null || echo "")
 
     # Default drop counters (aggregate IPv4 + IPv6)
-    local ipv4_drop_pkts=$(echo "$ipv4_data" | grep "default deny" | grep -oP 'counter packets \K\d+' || echo "0")
-    local ipv4_drop_bytes=$(echo "$ipv4_data" | grep "default deny" | grep -oP 'bytes \K\d+' || echo "0")
-    local ipv6_drop_pkts=$(echo "$ipv6_data" | grep "default deny" | grep -oP 'counter packets \K\d+' || echo "0")
-    local ipv6_drop_bytes=$(echo "$ipv6_data" | grep "default deny" | grep -oP 'bytes \K\d+' || echo "0")
+    local ipv4_drop_pkts ipv4_drop_bytes ipv6_drop_pkts ipv6_drop_bytes
+    ipv4_drop_pkts=$(echo "$ipv4_data" | grep "default deny" | grep -oP 'counter packets \K\d+' || echo "0")
+    ipv4_drop_bytes=$(echo "$ipv4_data" | grep "default deny" | grep -oP 'bytes \K\d+' || echo "0")
+    ipv6_drop_pkts=$(echo "$ipv6_data" | grep "default deny" | grep -oP 'counter packets \K\d+' || echo "0")
+    ipv6_drop_bytes=$(echo "$ipv6_data" | grep "default deny" | grep -oP 'bytes \K\d+' || echo "0")
 
     local total_drop_pkts=$((ipv4_drop_pkts + ipv6_drop_pkts))
     local total_drop_bytes=$((ipv4_drop_bytes + ipv6_drop_bytes))
     echo "default_drop ${total_drop_pkts} ${total_drop_bytes}"
 
     # Blacklist counters (unified blacklist_ipv4 set in schema v0.7.3)
-    local ipv4_bl_pkts=$(echo "$ipv4_data" | grep "@blacklist_ipv4" | grep -oP 'counter packets \K\d+' || echo "0")
-    local ipv4_bl_bytes=$(echo "$ipv4_data" | grep "@blacklist_ipv4" | grep -oP 'bytes \K\d+' || echo "0")
-    local ipv6_bl_pkts=$(echo "$ipv6_data" | grep "@blacklist_ipv6" | grep -oP 'counter packets \K\d+' || echo "0")
-    local ipv6_bl_bytes=$(echo "$ipv6_data" | grep "@blacklist_ipv6" | grep -oP 'bytes \K\d+' || echo "0")
+    local ipv4_bl_pkts ipv4_bl_bytes ipv6_bl_pkts ipv6_bl_bytes
+    ipv4_bl_pkts=$(echo "$ipv4_data" | grep "@blacklist_ipv4" | grep -oP 'counter packets \K\d+' || echo "0")
+    ipv4_bl_bytes=$(echo "$ipv4_data" | grep "@blacklist_ipv4" | grep -oP 'bytes \K\d+' || echo "0")
+    ipv6_bl_pkts=$(echo "$ipv6_data" | grep "@blacklist_ipv6" | grep -oP 'counter packets \K\d+' || echo "0")
+    ipv6_bl_bytes=$(echo "$ipv6_data" | grep "@blacklist_ipv6" | grep -oP 'bytes \K\d+' || echo "0")
 
     local total_bl_pkts=$((ipv4_bl_pkts + ipv6_bl_pkts))
     local total_bl_bytes=$((ipv4_bl_bytes + ipv6_bl_bytes))
     echo "blacklist ${total_bl_pkts} ${total_bl_bytes}"
 
     # Whitelist accept counters
-    local ipv4_wl_pkts=$(echo "$ipv4_data" | grep "@whitelist_ipv4" | grep -oP 'counter packets \K\d+' || echo "0")
-    local ipv4_wl_bytes=$(echo "$ipv4_data" | grep "@whitelist_ipv4" | grep -oP 'bytes \K\d+' || echo "0")
-    local ipv6_wl_pkts=$(echo "$ipv6_data" | grep "@whitelist_ipv6" | grep -oP 'counter packets \K\d+' || echo "0")
-    local ipv6_wl_bytes=$(echo "$ipv6_data" | grep "@whitelist_ipv6" | grep -oP 'bytes \K\d+' || echo "0")
+    local ipv4_wl_pkts ipv4_wl_bytes ipv6_wl_pkts ipv6_wl_bytes
+    ipv4_wl_pkts=$(echo "$ipv4_data" | grep "@whitelist_ipv4" | grep -oP 'counter packets \K\d+' || echo "0")
+    ipv4_wl_bytes=$(echo "$ipv4_data" | grep "@whitelist_ipv4" | grep -oP 'bytes \K\d+' || echo "0")
+    ipv6_wl_pkts=$(echo "$ipv6_data" | grep "@whitelist_ipv6" | grep -oP 'counter packets \K\d+' || echo "0")
+    ipv6_wl_bytes=$(echo "$ipv6_data" | grep "@whitelist_ipv6" | grep -oP 'bytes \K\d+' || echo "0")
 
     local total_wl_pkts=$((ipv4_wl_pkts + ipv6_wl_pkts))
     local total_wl_bytes=$((ipv4_wl_bytes + ipv6_wl_bytes))
     echo "whitelist ${total_wl_pkts} ${total_wl_bytes}"
 
     # ICMP counters
-    local ipv4_icmp_pkts=$(echo "$ipv4_data" | grep "ICMPv4" | grep -oP 'counter packets \K\d+' || echo "0")
-    local ipv4_icmp_bytes=$(echo "$ipv4_data" | grep "ICMPv4" | grep -oP 'bytes \K\d+' || echo "0")
-    local ipv6_icmp_pkts=$(echo "$ipv6_data" | grep "ICMPv6" | grep -oP 'counter packets \K\d+' || echo "0")
-    local ipv6_icmp_bytes=$(echo "$ipv6_data" | grep "ICMPv6" | grep -oP 'bytes \K\d+' || echo "0")
+    local ipv4_icmp_pkts ipv4_icmp_bytes ipv6_icmp_pkts ipv6_icmp_bytes
+    ipv4_icmp_pkts=$(echo "$ipv4_data" | grep "ICMPv4" | grep -oP 'counter packets \K\d+' || echo "0")
+    ipv4_icmp_bytes=$(echo "$ipv4_data" | grep "ICMPv4" | grep -oP 'bytes \K\d+' || echo "0")
+    ipv6_icmp_pkts=$(echo "$ipv6_data" | grep "ICMPv6" | grep -oP 'counter packets \K\d+' || echo "0")
+    ipv6_icmp_bytes=$(echo "$ipv6_data" | grep "ICMPv6" | grep -oP 'bytes \K\d+' || echo "0")
 
     local total_icmp_pkts=$((ipv4_icmp_pkts + ipv6_icmp_pkts))
     local total_icmp_bytes=$((ipv4_icmp_bytes + ipv6_icmp_bytes))
     echo "icmp_accept ${total_icmp_pkts} ${total_icmp_bytes}"
 
     # Established connections
-    local ipv4_est_pkts=$(echo "$ipv4_data" | grep "established" | grep -oP 'counter packets \K\d+' || echo "0")
-    local ipv4_est_bytes=$(echo "$ipv4_data" | grep "established" | grep -oP 'bytes \K\d+' || echo "0")
-    local ipv6_est_pkts=$(echo "$ipv6_data" | grep "established" | grep -oP 'counter packets \K\d+' || echo "0")
-    local ipv6_est_bytes=$(echo "$ipv6_data" | grep "established" | grep -oP 'bytes \K\d+' || echo "0")
+    local ipv4_est_pkts ipv4_est_bytes ipv6_est_pkts ipv6_est_bytes
+    ipv4_est_pkts=$(echo "$ipv4_data" | grep "established" | grep -oP 'counter packets \K\d+' || echo "0")
+    ipv4_est_bytes=$(echo "$ipv4_data" | grep "established" | grep -oP 'bytes \K\d+' || echo "0")
+    ipv6_est_pkts=$(echo "$ipv6_data" | grep "established" | grep -oP 'counter packets \K\d+' || echo "0")
+    ipv6_est_bytes=$(echo "$ipv6_data" | grep "established" | grep -oP 'bytes \K\d+' || echo "0")
 
     local total_est_pkts=$((ipv4_est_pkts + ipv6_est_pkts))
     local total_est_bytes=$((ipv4_est_bytes + ipv6_est_bytes))

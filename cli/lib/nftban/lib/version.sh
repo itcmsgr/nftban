@@ -47,7 +47,8 @@ readonly NFTBAN_VERSION_PATCH="0"
 # Version details
 readonly NFTBAN_VERSION_NAME="Unified Security Platform"
 readonly NFTBAN_VERSION_DATE="2025-12-01"
-readonly NFTBAN_BUILD_DATE="$(date '+%Y-%m-%d %H:%M:%S')"
+NFTBAN_BUILD_DATE="$(date '+%Y-%m-%d %H:%M:%S')"
+readonly NFTBAN_BUILD_DATE
 
 # Component versions (kept in sync with main version)
 readonly NFTBAN_CLI_VERSION="$NFTBAN_VERSION"
@@ -92,7 +93,8 @@ nftban_version_check() {
     IFS='.' read -r required_major required_minor required_patch <<< "$required"
 
     local required_numeric=$((required_major * 10000 + required_minor * 100 + required_patch))
-    local current_numeric=$(nftban_version_numeric)
+    local current_numeric
+    current_numeric=$(nftban_version_numeric)
 
     [[ $current_numeric -ge $required_numeric ]]
 }

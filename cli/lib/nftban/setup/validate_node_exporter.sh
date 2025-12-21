@@ -34,7 +34,8 @@ umask 027
 # CONFIGURATION
 # =============================================================================
 
-readonly SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+readonly SCRIPT_NAME
 readonly NODE_EXPORTER_PORT=9100
 readonly TEXTFILE_COLLECTOR_DIR="/var/lib/node_exporter/textfile_collector"
 readonly NFTBAN_METRICS_FILE="${TEXTFILE_COLLECTOR_DIR}/nftban.prom"
