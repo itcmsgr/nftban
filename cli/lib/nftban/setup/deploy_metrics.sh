@@ -28,7 +28,8 @@ readonly NC='\033[0m'
 
 # Configuration
 readonly DEPLOYMENT_MODE="${1:-local}"
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
 
 print_header() {
     echo ""

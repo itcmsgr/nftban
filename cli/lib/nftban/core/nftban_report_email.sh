@@ -347,7 +347,8 @@ nftban_report_email_generate() {
     # ==========================================================================
 
     local sender="${NFTBAN_SENDER:-nftban@${hostname}}"
-    local subject="[NFTBan] Security Report - ${hostname} - $(date +%Y-%m-%d)"
+    local subject
+    subject="[NFTBan] Security Report - ${hostname} - $(date +%Y-%m-%d)"
 
     if command -v sendmail &>/dev/null; then
         {

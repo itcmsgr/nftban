@@ -39,7 +39,8 @@ DEFAULT_TIMEOUT=30            # seconds per command (default)
 QUICK_TIMEOUT=15              # seconds for quick tests
 CURRENT_TIMEOUT=$DEFAULT_TIMEOUT  # actual timeout to use
 readonly TRACE_LOG="/var/log/nftban/debug_trace.log"
-readonly SMOKE_LOG="/tmp/nftban_smoke_$(date +%Y%m%d_%H%M%S).log"
+SMOKE_LOG="/tmp/nftban_smoke_$(date +%Y%m%d_%H%M%S).log"
+readonly SMOKE_LOG
 readonly SMOKE_TRACE_PREFIX="smoke_test"
 
 # Colors

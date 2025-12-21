@@ -29,8 +29,10 @@ readonly PKG_VERSION="1.0.0"
 readonly PKG_RELEASE="1"
 
 # Paths
-readonly SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly SCRIPT_DIR
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+readonly PROJECT_ROOT
 readonly BUILD_DIR="${PROJECT_ROOT}/build/packages"
 
 # Functions

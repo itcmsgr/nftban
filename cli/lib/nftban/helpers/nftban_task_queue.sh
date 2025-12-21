@@ -57,8 +57,9 @@ nftban_queue_add() {
     _queue_init
 
     # Create task file with timestamp
-    local task_id="$(date +%s)-${task_type}"
-    local task_file="${TASK_QUEUE_DIR}/${task_id}.task"
+    local task_id task_file
+    task_id="$(date +%s)-${task_type}"
+    task_file="${TASK_QUEUE_DIR}/${task_id}.task"
 
     cat > "$task_file" <<EOF
 TASK_TYPE="$task_type"

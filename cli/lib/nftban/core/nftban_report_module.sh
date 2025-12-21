@@ -35,7 +35,8 @@ umask 027
 # =============================================================================
 
 declare -g -A NFTBAN_MODULE_INVENTORY=()  # key: file_path -> "name|version|type|created|depends|owner|homepage|description"
-declare -g NFTBAN_MODULE_TIMESTAMP="$(date --iso-8601=seconds)"
+declare -g NFTBAN_MODULE_TIMESTAMP
+NFTBAN_MODULE_TIMESTAMP="$(date --iso-8601=seconds)"
 declare -g NFTBAN_MODULE_OUTPUT_FORMAT="${NFTBAN_MODULE_OUTPUT_FORMAT:-table}"
 
 # Color symbols

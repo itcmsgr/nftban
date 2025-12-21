@@ -131,7 +131,8 @@ EOF
     # Log error to file (if logging enabled and writable)
     local cli_error_log="${NFTBAN_CLI_ERROR_LOG:-${NFTBAN_LOG_DIR}/cli-errors.log}"
     if [[ "${NFTBAN_ENABLE_ERROR_LOGGING:-1}" == "1" ]]; then
-        local log_dir=$(dirname "${cli_error_log}")
+        local log_dir
+        log_dir=$(dirname "${cli_error_log}")
         # Only log if directory exists and is writable
         if [[ -d "${log_dir}" && -w "${log_dir}" ]]; then
             {

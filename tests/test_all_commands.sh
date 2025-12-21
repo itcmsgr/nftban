@@ -104,7 +104,8 @@ test_command() {
     local exit_code_file="/tmp/nftban_test_exit_$$.txt"
 
     # Run command with timeout
-    local start_time=$(date +%s)
+    local start_time end_time duration
+    start_time=$(date +%s)
     timeout $TEST_TIMEOUT bash -c "$cmd > '$output_file' 2>&1; echo \$? > '$exit_code_file'" || {
         local timeout_exit=$?
         if [[ $timeout_exit -eq 124 ]]; then
@@ -114,8 +115,8 @@ test_command() {
             return 1
         fi
     }
-    local end_time=$(date +%s)
-    local duration=$((end_time - start_time))
+    end_time=$(date +%s)
+    duration=$((end_time - start_time))
 
     # Read results
     local output=""

@@ -34,7 +34,8 @@ umask 027
 # CONFIGURATION
 # =============================================================================
 
-readonly SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+SCRIPT_NAME="$(basename "${BASH_SOURCE[0]}")"
+readonly SCRIPT_NAME
 readonly PROMETHEUS_PORT=9090
 
 # Colors for output
