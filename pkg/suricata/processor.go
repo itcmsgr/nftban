@@ -42,7 +42,7 @@ func NewProcessor(cfg *ProcessorConfig) (*Processor, error) {
 	}
 
 	if !config.GlobalEnabled {
-		return nil, fmt.Errorf("Suricata integration is disabled in config")
+		return nil, fmt.Errorf("suricata integration is disabled in config")
 	}
 
 	// Create filter matcher

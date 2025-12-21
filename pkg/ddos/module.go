@@ -157,7 +157,7 @@ func (m *Module) detectMode() {
 	m.mode = strings.TrimSpace(string(out))
 
 	// Check Suricata availability
-	out, err = exec.Command("bash", "-c", "source "+scriptPath+" && nftban_ddos_suricata_available && echo yes || echo no").Output()
+	out, _ = exec.Command("bash", "-c", "source "+scriptPath+" && nftban_ddos_suricata_available && echo yes || echo no").Output()
 	m.suricataAvail = strings.TrimSpace(string(out)) == "yes"
 }
 

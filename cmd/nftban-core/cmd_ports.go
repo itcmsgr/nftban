@@ -187,8 +187,7 @@ func cmdPortsLoad(portsDir string) error {
 	fmt.Printf("  ✅ System: %s\n", ipSupport.String())
 
 	if !ipSupport.HasIPv4 && !ipSupport.HasIPv6 {
-		return fmt.Errorf("CRITICAL: No IP connectivity detected!\n" +
-			"System has no IPv4 or IPv6 addresses. Cannot create firewall rules.")
+		return fmt.Errorf("no IP connectivity detected: system has no IPv4 or IPv6 addresses")
 	}
 
 	// Show what will be created
