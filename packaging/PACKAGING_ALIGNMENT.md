@@ -318,7 +318,7 @@ Use this checklist to verify alignment:
 - [ ] Config paths identical: `/etc/nftban/ui.conf`
 - [ ] PAM config identical: `/etc/pam.d/nftban-ui`
 - [ ] Log directory identical: `/var/log/nftban/`
-- [ ] User/group names identical: `nftban`, `nftban-web`, etc.
+- [ ] User/group names identical: `nftban`, `nftban-auditors`
 - [ ] Socket permissions identical: 0770, root:nftban
 - [ ] Build flags identical
 - [ ] Service restart behavior identical (try-restart on upgrade)

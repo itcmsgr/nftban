@@ -45,7 +45,7 @@ NFTBan v1.0.0-beta is the first major release, featuring a complete architecture
 - **CLI Documentation Tools**: Export CLI inventory, validate help functions, update man pages
 - **Banner Health Indicator**: Shows system health status (green/yellow/red) in CLI banner
 - **Update Notification**: Optional banner shows when new version available
-- **nftban-web Group**: Dedicated group for GUI users
+- **Simplified 2-Group Model**: Single `nftban` group for CLI + Web GUI operators
 - **DEB/RPM Safe Install Flow**: Non-destructive package installation
 - **System Watchdog Module**: Resource monitoring (load, memory, I/O, disk)
   - Prometheus metrics export to `/var/lib/nftban/metrics/watchdog.prom`

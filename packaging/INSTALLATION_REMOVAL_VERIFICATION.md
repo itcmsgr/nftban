@@ -14,16 +14,14 @@
 | Item | Type | UID/GID | Home | Shell | Purpose |
 |------|------|---------|------|-------|---------|
 | `nftban` | User | System (auto) | /var/lib/nftban | /sbin/nologin | Service user |
-| `nftban` | Group | System (auto) | - | - | Primary service group |
-| `nftban-web` | Group | System (auto) | - | - | Web GUI access |
-| `nftban-cli` | Group | System (auto) | - | - | CLI access |
+| `nftban` | Group | System (auto) | - | - | All operators (CLI + Web GUI) |
 | `nftban-auditors` | Group | System (auto) | - | - | Read-only auditors |
+
+> **Note:** NFTBan v1.0 uses simplified 2-group model. Old `nftban-cli` and `nftban-web` merged into `nftban`.
 
 #### RPM Implementation (%pre)
 ```bash
 getent group nftban >/dev/null || groupadd -r nftban
-getent group nftban-web >/dev/null || groupadd -r nftban-web
-getent group nftban-cli >/dev/null || groupadd -r nftban-cli
 getent group nftban-auditors >/dev/null || groupadd -r nftban-auditors
 getent passwd nftban >/dev/null || \
     useradd -r -g nftban -d /var/lib/nftban -s /sbin/nologin \
@@ -34,12 +32,6 @@ getent passwd nftban >/dev/null || \
 ```bash
 if ! getent group nftban > /dev/null 2>&1; then
     addgroup --system nftban
-fi
-if ! getent group nftban-web > /dev/null 2>&1; then
-    addgroup --system nftban-web
-fi
-if ! getent group nftban-cli > /dev/null 2>&1; then
-    addgroup --system nftban-cli
 fi
 if ! getent group nftban-auditors > /dev/null 2>&1; then
     addgroup --system nftban-auditors
@@ -302,8 +294,6 @@ esac
 # WARNING: Only do this if you're sure!
 userdel nftban
 groupdel nftban
-groupdel nftban-web
-groupdel nftban-cli
 groupdel nftban-auditors
 ```
 
@@ -470,7 +460,7 @@ nft add rule inet nftban_main input tcp dport 18443 drop comment "GUI - whitelis
 ```bash
 # Before install
 id nftban  # Should fail
-getent group nftban-web  # Should fail
+getent group nftban  # Should fail
 systemctl list-units | grep nftban  # Should be empty
 
 # Install
@@ -478,7 +468,7 @@ sudo rpm -ivh nftban-ui-0.5.0-1.el9.x86_64.rpm
 
 # Verify
 id nftban  # Should succeed
-getent group nftban-web  # Should succeed
+getent group nftban  # Should succeed
 systemctl is-enabled nftban-ui-auth.socket  # Should be 'enabled'
 systemctl is-active nftban-ui-auth.socket  # Should be 'active'
 ls -la /usr/sbin/nftban-ui  # Should exist
@@ -491,7 +481,7 @@ ls -ld /run/nftban-ui/  # Should exist
 ```bash
 # Before install
 id nftban  # Should fail
-getent group nftban-web  # Should fail
+getent group nftban  # Should fail
 systemctl list-units | grep nftban  # Should be empty
 
 # Install

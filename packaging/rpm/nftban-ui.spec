@@ -86,12 +86,10 @@ cp -r cmd/nftban-ui/web/* %{buildroot}%{_datadir}/nftban-ui/web/
 
 %pre
 # Create nftban system user and groups if they don't exist
-# NFTBan v1.0 uses 3-group model:
-#   nftban: All operators (CLI, services)
-#   nftban-web: Web GUI users (authentication required)
+# NFTBan v1.0 uses 2-group model:
+#   nftban: All operators (CLI + Web GUI)
 #   nftban-auditors: Read-only audit access
 getent group nftban >/dev/null || groupadd -r nftban
-getent group nftban-web >/dev/null || groupadd -r nftban-web
 getent group nftban-auditors >/dev/null || groupadd -r nftban-auditors
 getent passwd nftban >/dev/null || \
     useradd -r -g nftban -d /var/lib/nftban -s /sbin/nologin \
@@ -180,7 +178,7 @@ fi
 * Wed Dec 11 2024 Antonios Voulvoulis <contact@nftban.com> - 1.0.0-1
 - NFTBan v1.0.0 release
 - Unified security platform
-- 3-group security model (nftban, nftban-web, nftban-auditors)
+- 2-group security model (nftban, nftban-auditors)
 - Enhanced PAM socket authentication
 - Modern dashboard with real-time metrics
 - FHS compliant directory structure

@@ -156,12 +156,10 @@ mkdir -p %{buildroot}/var/cache/nftban
 # =============================================================================
 # STEP 1: Create system groups
 # =============================================================================
-# NFTBan v1.0 uses 3-group model:
-#   nftban: All operators (CLI, services)
-#   nftban-web: Web GUI users (authentication required)
+# NFTBan v1.0 uses 2-group model:
+#   nftban: All operators (CLI + Web GUI)
 #   nftban-auditors: Read-only audit access
 getent group nftban >/dev/null || groupadd -r nftban
-getent group nftban-web >/dev/null || groupadd -r nftban-web
 getent group nftban-auditors >/dev/null || groupadd -r nftban-auditors
 getent passwd nftban >/dev/null || useradd -r -g nftban -d /var/lib/nftban -s /usr/sbin/nologin -c "NFTBan system user" nftban
 

@@ -51,20 +51,14 @@ case "$1" in
         # =====================================================================
         # STEP 1: Create System Groups
         # =====================================================================
-        # NFTBan v1.0 uses 3-group model:
-        #   nftban: All operators (CLI, services)
-        #   nftban-web: Web GUI users (authentication required)
+        # NFTBan v1.0 uses 2-group model:
+        #   nftban: All operators (CLI + Web GUI)
         #   nftban-auditors: Read-only audit access
         log_info "Creating system groups..."
 
         if ! getent group nftban > /dev/null 2>&1; then
             addgroup --system nftban
             log_info "  Created group: nftban"
-        fi
-
-        if ! getent group nftban-web > /dev/null 2>&1; then
-            addgroup --system nftban-web
-            log_info "  Created group: nftban-web"
         fi
 
         if ! getent group nftban-auditors > /dev/null 2>&1; then

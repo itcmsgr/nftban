@@ -2,7 +2,7 @@ nftban-ui (1.0.0-1) stable; urgency=medium
 
   * NFTBan v1.0.0 - Unified Security Platform Release
   * Unified security platform with comprehensive threat protection
-  * 3-group security model (nftban, nftban-web, nftban-auditors)
+  * 2-group security model (nftban, nftban-auditors)
   * Enhanced PAM socket authentication
   * Modern dashboard with real-time metrics
   * FHS compliant directory structure
