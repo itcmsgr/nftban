@@ -146,6 +146,8 @@ install -D -m 0644 install/systemd/nftban-core-geoip.service %{buildroot}/usr/li
 install -D -m 0644 install/systemd/nftban-core-geoip.timer %{buildroot}/usr/lib/systemd/system/nftban-core-geoip.timer
 install -D -m 0644 install/systemd/nftban-core-feeds.service %{buildroot}/usr/lib/systemd/system/nftban-core-feeds.service
 install -D -m 0644 install/systemd/nftban-core-feeds.timer %{buildroot}/usr/lib/systemd/system/nftban-core-feeds.timer
+install -D -m 0644 install/systemd/nftban-metrics-exporter.service %{buildroot}/usr/lib/systemd/system/nftban-metrics-exporter.service
+install -D -m 0644 install/systemd/nftban-metrics-exporter.timer %{buildroot}/usr/lib/systemd/system/nftban-metrics-exporter.timer
 
 # PolicyKit rules
 install -D -m 0644 cmd/nftban-core/polkit/10-nftban-core.rules %{buildroot}/etc/polkit-1/rules.d/10-nftban-core.rules
@@ -500,6 +502,8 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-geoip.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-metrics-exporter.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-metrics-exporter.timer" "${deb_root}/usr/lib/systemd/system/"
 
     # Copy PolicyKit rules
     install -m 0644 "${PROJECT_ROOT}/cmd/nftban-core/polkit/10-nftban-core.rules" "${deb_root}/etc/polkit-1/rules.d/"
