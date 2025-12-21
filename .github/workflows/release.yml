@@ -71,7 +71,7 @@ jobs:
             container: rockylinux:9
             name_suffix: el9
           - distro: el10
-            container: rockylinux:10
+            container: almalinux:10
             name_suffix: el10
           - distro: fc42
             container: fedora:42
