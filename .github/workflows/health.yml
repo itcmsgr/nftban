@@ -31,7 +31,7 @@ jobs:
           persist-credentials: false  # security: don't persist token
 
       - name: Ensure health script is executable
-        run: chmod +x .ci/health_check.sh
+        run: chmod +x .github/ci/health_check.sh
 
       - name: Set up Node.js (for jscpd / markdownlint-cli2)
         uses: actions/setup-node@v4
@@ -46,7 +46,7 @@ jobs:
           npm i -g markdownlint-cli2
 
       - name: Run health check
-        run: .ci/health_check.sh
+        run: .github/ci/health_check.sh
 
       - name: Secret scan with TruffleHog
         uses: trufflesecurity/trufflehog@v3.88.1
