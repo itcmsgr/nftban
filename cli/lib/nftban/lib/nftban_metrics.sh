@@ -51,19 +51,24 @@ nftban_metrics_start_stack() {
     mkdir -p /var/lib/node_exporter/textfile_collector
     chown -R nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
 
-    # Start Node Exporter
-    local node_exporter_service
-    node_exporter_service=$(nftban_distro_get_service node_exporter 2>/dev/null || echo "prometheus-node-exporter")
+    # Start Node Exporter (service name varies by distro/install method)
+    local node_exporter_started=false
+    local node_exporter_service=""
 
-    if systemctl list-unit-files 2>/dev/null | grep -q "${node_exporter_service}.service"; then
-        systemctl enable "$node_exporter_service" &>/dev/null || true
-        systemctl restart "$node_exporter_service" &>/dev/null || true
-        if systemctl is-active "$node_exporter_service" &>/dev/null; then
-            [[ "$verbose" == "true" ]] && echo "  ✓ Node Exporter running ($node_exporter_service)"
-        else
-            [[ "$verbose" == "true" ]] && echo "  ❌ Node Exporter failed to start"
-            return 1
+    for svc in node-exporter node_exporter prometheus-node-exporter; do
+        if systemctl list-unit-files 2>/dev/null | grep -q "^${svc}.service"; then
+            node_exporter_service="$svc"
+            systemctl enable "$svc" &>/dev/null || true
+            systemctl restart "$svc" &>/dev/null || true
+            if systemctl is-active "$svc" &>/dev/null; then
+                node_exporter_started=true
+                break
+            fi
         fi
+    done
+
+    if [[ "$node_exporter_started" == "true" ]]; then
+        [[ "$verbose" == "true" ]] && echo "  ✓ Node Exporter running ($node_exporter_service)"
     else
         [[ "$verbose" == "true" ]] && echo "  ❌ Node Exporter service not found"
         return 1
@@ -452,19 +457,24 @@ nftban_metrics_start_stack_victoriametrics() {
     mkdir -p /var/lib/node_exporter/textfile_collector
     chown -R nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
 
-    # Start Node Exporter
-    local node_exporter_service
-    node_exporter_service=$(nftban_distro_get_service node_exporter 2>/dev/null || echo "prometheus-node-exporter")
+    # Start Node Exporter (service name varies by distro/install method)
+    local node_exporter_started=false
+    local node_exporter_service=""
 
-    if systemctl list-unit-files 2>/dev/null | grep -q "${node_exporter_service}.service"; then
-        systemctl enable "$node_exporter_service" &>/dev/null || true
-        systemctl restart "$node_exporter_service" &>/dev/null || true
-        if systemctl is-active "$node_exporter_service" &>/dev/null; then
-            [[ "$verbose" == "true" ]] && echo "  ✓ Node Exporter running ($node_exporter_service)"
-        else
-            [[ "$verbose" == "true" ]] && echo "  ❌ Node Exporter failed to start"
-            return 1
+    for svc in node-exporter node_exporter prometheus-node-exporter; do
+        if systemctl list-unit-files 2>/dev/null | grep -q "^${svc}.service"; then
+            node_exporter_service="$svc"
+            systemctl enable "$svc" &>/dev/null || true
+            systemctl restart "$svc" &>/dev/null || true
+            if systemctl is-active "$svc" &>/dev/null; then
+                node_exporter_started=true
+                break
+            fi
         fi
+    done
+
+    if [[ "$node_exporter_started" == "true" ]]; then
+        [[ "$verbose" == "true" ]] && echo "  ✓ Node Exporter running ($node_exporter_service)"
     else
         [[ "$verbose" == "true" ]] && echo "  ❌ Node Exporter service not found"
         return 1

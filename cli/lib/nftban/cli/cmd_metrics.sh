@@ -619,9 +619,15 @@ nftban_metrics_status() {
     echo ""
 
     # Check Node Exporter (common for both)
-    local node_exporter_service
-    node_exporter_service=$(nftban_distro_get_service node_exporter 2>/dev/null || echo "prometheus-node-exporter")
-    if systemctl is-active "$node_exporter_service" &>/dev/null; then
+    # Service name varies: node_exporter, node-exporter, prometheus-node-exporter
+    local node_exporter_running=false
+    if systemctl is-active node_exporter &>/dev/null || \
+       systemctl is-active node-exporter &>/dev/null || \
+       systemctl is-active prometheus-node-exporter &>/dev/null; then
+        node_exporter_running=true
+    fi
+
+    if [[ "$node_exporter_running" == "true" ]]; then
         echo "✅ Node Exporter:     Running"
         echo "   URL:               http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
     else
