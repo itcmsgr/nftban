@@ -142,6 +142,10 @@ install -D -m 0644 install/systemd/nftban-maintenance.timer %{buildroot}/usr/lib
 install -D -m 0644 install/systemd/nftban-health.service %{buildroot}/usr/lib/systemd/system/nftban-health.service
 install -D -m 0644 install/systemd/nftban-health.timer %{buildroot}/usr/lib/systemd/system/nftban-health.timer
 install -D -m 0644 install/systemd/nftban-login-monitor.service %{buildroot}/usr/lib/systemd/system/nftban-login-monitor.service
+install -D -m 0644 install/systemd/nftban-core-geoip.service %{buildroot}/usr/lib/systemd/system/nftban-core-geoip.service
+install -D -m 0644 install/systemd/nftban-core-geoip.timer %{buildroot}/usr/lib/systemd/system/nftban-core-geoip.timer
+install -D -m 0644 install/systemd/nftban-core-feeds.service %{buildroot}/usr/lib/systemd/system/nftban-core-feeds.service
+install -D -m 0644 install/systemd/nftban-core-feeds.timer %{buildroot}/usr/lib/systemd/system/nftban-core-feeds.timer
 
 # PolicyKit rules
 install -D -m 0644 cmd/nftban-core/polkit/10-nftban-core.rules %{buildroot}/etc/polkit-1/rules.d/10-nftban-core.rules
@@ -254,10 +258,10 @@ systemctl reload nftables 2>/dev/null || true
 echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
 
 %preun
-%systemd_preun nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service
+%systemd_preun nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service nftban-core-geoip.service nftban-core-geoip.timer nftban-core-feeds.service nftban-core-feeds.timer
 
 %postun
-%systemd_postun_with_restart nftban-maintenance.service nftban-health.service nftban-login-monitor.service
+%systemd_postun_with_restart nftban-maintenance.service nftban-health.service nftban-login-monitor.service nftban-core-geoip.service nftban-core-feeds.service
 
 # Inform user about leftover files on complete removal
 if [ $1 -eq 0 ]; then
@@ -474,16 +478,16 @@ build_deb() {
     mkdir -p "${deb_root}/etc/nftban"
     install -m 0644 "${PROJECT_ROOT}/install/nftables/nftables.conf" "${deb_root}/etc/nftban/nftables.conf"
 
-    # Copy systemd units (if they exist)
-    if [ -f "${PROJECT_ROOT}/install/systemd/nftban-core.service" ]; then
-        install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core.service" "${deb_root}/usr/lib/systemd/system/" || true
-    fi
-    if [ -f "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.service" ]; then
-        install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.service" "${deb_root}/usr/lib/systemd/system/" || true
-    fi
-    if [ -f "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.timer" ]; then
-        install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.timer" "${deb_root}/usr/lib/systemd/system/" || true
-    fi
+    # Copy all systemd units
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-maintenance.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-maintenance.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-login-monitor.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-geoip.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-geoip.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.timer" "${deb_root}/usr/lib/systemd/system/"
 
     # Copy PolicyKit rules
     install -m 0644 "${PROJECT_ROOT}/cmd/nftban-core/polkit/10-nftban-core.rules" "${deb_root}/etc/polkit-1/rules.d/"
