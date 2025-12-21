@@ -62,7 +62,7 @@ type IPProfile struct {
 type LoginState struct {
 	Users map[string]*LoginProfile // User -> profile
 	IPs   map[string]*IPProfile    // IP -> profile
-	mu    sync.RWMutex             // Protect concurrent access
+	_     sync.RWMutex             // Reserved for future concurrent access protection
 }
 
 // GeoInfo contains geographic/network information for an IP

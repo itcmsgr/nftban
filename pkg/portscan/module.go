@@ -160,7 +160,7 @@ func (m *Module) detectMode() {
 	m.mode = strings.TrimSpace(string(out))
 
 	// Check Suricata availability
-	out, err = exec.Command("bash", "-c",
+	out, _ = exec.Command("bash", "-c",
 		"source "+scriptPath+" 2>/dev/null && _nftban_portscan_suricata_is_available && echo yes || echo no").Output()
 	m.suricataAvail = strings.TrimSpace(string(out)) == "yes"
 }

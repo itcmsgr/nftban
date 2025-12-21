@@ -41,12 +41,6 @@ func getLogDir() string {
 	return cfg.LogDir
 }
 
-// getDataDir returns the data directory from central config
-func getDataDir() string {
-	cfg := nftbanconf.MustLoad()
-	return cfg.DataDir
-}
-
 // getConfigDir returns the config directory from central config
 func getConfigDir() string {
 	cfg := nftbanconf.MustLoad()
@@ -57,12 +51,6 @@ func getConfigDir() string {
 func getCoreBin() string {
 	cfg := nftbanconf.MustLoad()
 	return cfg.CoreBin
-}
-
-// getLibDir returns the library directory from central config
-func getLibDir() string {
-	cfg := nftbanconf.MustLoad()
-	return cfg.LibDir
 }
 
 // getLogFiles returns log file paths map using central config
@@ -129,13 +117,6 @@ func getGrafanaURL() string {
 	return cfg.GrafanaURL
 }
 
-// isGrafanaEnabled returns whether Grafana integration is enabled
-// NO FALLBACK - value must come from /etc/nftban/nftban.conf
-func isGrafanaEnabled() bool {
-	cfg := nftbanconf.MustLoad()
-	return cfg.GrafanaEnabled
-}
-
 // getPrometheusFile returns the Prometheus metrics file path from central config
 // NO FALLBACK - path must come from /etc/nftban/nftban.conf
 func getPrometheusFile() string {
@@ -147,7 +128,6 @@ func getPrometheusFile() string {
 var (
 	statsCache     map[string]interface{}
 	statsCacheMux  sync.RWMutex
-	statsCacheTime time.Time
 	activeUsers    = make(map[string]time.Time) // Track active sessions
 	activeUsersMux sync.RWMutex
 )
@@ -908,61 +888,6 @@ func FeedsControlHandler(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"message": "Feed " + req.Feed + " " + req.Action + "d successfully",
 	})
-}
-
-// parseNFTSet parses nft list set output and extracts IPs
-func parseNFTSet(output, setName, ipVersion string) []map[string]interface{} {
-	ips := []map[string]interface{}{}
-	lines := strings.Split(output, "\n")
-	inElements := false
-
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-
-		if strings.Contains(trimmed, "elements = {") {
-			inElements = true
-			// Extract IPs from same line if present
-			if idx := strings.Index(trimmed, "{"); idx != -1 {
-				content := trimmed[idx+1:]
-				if endIdx := strings.Index(content, "}"); endIdx != -1 {
-					content = content[:endIdx]
-				}
-				ipsInLine := strings.Split(content, ",")
-				for _, ip := range ipsInLine {
-					ip = strings.TrimSpace(ip)
-					if ip != "" {
-						ips = append(ips, map[string]interface{}{
-							"ip":      ip,
-							"set":     setName,
-							"version": ipVersion,
-						})
-					}
-				}
-			}
-			continue
-		}
-
-		if inElements {
-			if strings.Contains(trimmed, "}") {
-				inElements = false
-				continue
-			}
-			// Parse IP addresses
-			ipsInLine := strings.Split(trimmed, ",")
-			for _, ip := range ipsInLine {
-				ip = strings.TrimSpace(ip)
-				if ip != "" && ip != "{" && ip != "}" {
-					ips = append(ips, map[string]interface{}{
-						"ip":      ip,
-						"set":     setName,
-						"version": ipVersion,
-					})
-				}
-			}
-		}
-	}
-
-	return ips
 }
 
 // UIListBannedIPsHandler returns all banned IPs from nftables sets
@@ -1985,7 +1910,6 @@ func updateStatsCache() {
 	// Store in cache
 	statsCacheMux.Lock()
 	statsCache = newStats
-	statsCacheTime = time.Now()
 	statsCacheMux.Unlock()
 }
 

@@ -79,11 +79,11 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int) erro
 
 	if isIPv4 {
 		if whitelistIPv4[normalizedIP] {
-			return fmt.Errorf("❌ BLOCKED: IP %s is whitelisted - cannot ban!", normalizedIP)
+			return fmt.Errorf("IP %s is whitelisted, cannot ban", normalizedIP)
 		}
 	} else {
 		if whitelistIPv6[normalizedIP] {
-			return fmt.Errorf("❌ BLOCKED: IP %s is whitelisted - cannot ban!", normalizedIP)
+			return fmt.Errorf("IP %s is whitelisted, cannot ban", normalizedIP)
 		}
 	}
 	fmt.Printf("  ✅ IP is not whitelisted\n")
