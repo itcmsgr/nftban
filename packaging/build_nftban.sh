@@ -231,12 +231,18 @@ if command -v nftban >/dev/null 2>&1; then
     nftban whitelist-system sync 2>/dev/null || echo "[NFTBan WARN] Auto-whitelist failed"
 fi
 
-# STEP 6: Health check
+# STEP 6: Download GeoIP database (free DB-IP version)
+echo "[NFTBan] Downloading GeoIP database..."
+if [ -x /usr/lib/nftban/bin/nftban-core ]; then
+    /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null || echo "[NFTBan WARN] GeoIP download failed (will retry via timer)"
+fi
+
+# STEP 7: Health check
 if command -v nftban >/dev/null 2>&1; then
     nftban health check --quiet 2>/dev/null || true
 fi
 
-# STEP 7: Enable services (AFTER whitelist is in place)
+# STEP 8: Enable services (AFTER whitelist is in place)
 echo "[NFTBan] Enabling systemd services..."
 %systemd_post nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service nftban-core-geoip.timer nftban-core-feeds.timer
 
@@ -428,12 +434,18 @@ if command -v nftban >/dev/null 2>&1; then
     nftban whitelist-system sync 2>/dev/null || echo "[NFTBan WARN] Auto-whitelist failed"
 fi
 
-# STEP 7: Health check
+# STEP 7: Download GeoIP database (free DB-IP version)
+echo "[NFTBan] Downloading GeoIP database..."
+if [ -x /usr/lib/nftban/bin/nftban-core ]; then
+    /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null || echo "[NFTBan WARN] GeoIP download failed (will retry via timer)"
+fi
+
+# STEP 8: Health check
 if command -v nftban >/dev/null 2>&1; then
     nftban health check --quiet 2>/dev/null || true
 fi
 
-# STEP 8: Enable services (AFTER whitelist is in place)
+# STEP 9: Enable services (AFTER whitelist is in place)
 echo "[NFTBan] Enabling systemd services..."
 systemctl daemon-reload
 systemctl enable nftables 2>/dev/null || true
@@ -447,7 +459,7 @@ systemctl enable --now nftban-core-feeds.timer 2>/dev/null || true
 # Enable and start login monitor
 systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
 
-# STEP 9: Reload nftables
+# STEP 10: Reload nftables
 systemctl reload nftables 2>/dev/null || true
 
 echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
