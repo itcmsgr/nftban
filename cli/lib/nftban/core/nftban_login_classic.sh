@@ -70,8 +70,8 @@ nftban_login_classic_init() {
         source "$state_file" 2>/dev/null || true
     fi
 
-    # Ban threshold: 5 failures in 5 minutes (300 seconds) for all services
-    : "${LOGIN_CLASSIC_FAIL_THRESHOLD:=5}"
+    # Ban threshold: 10 failures in 5 minutes (300 seconds) for all services
+    : "${LOGIN_CLASSIC_FAIL_THRESHOLD:=10}"
     : "${LOGIN_CLASSIC_FAIL_WINDOW:=300}"
     : "${LOGIN_CLASSIC_SCORE_FAILED:=0.10}"
     : "${LOGIN_CLASSIC_SCORE_INVALID_USER:=0.15}"
