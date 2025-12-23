@@ -58,7 +58,7 @@ USAGE: nftban watchdog <command> [options]
 COMMANDS:
   status           Quick one-line status
   check            Run all checks and show alerts only
-  report           Full detailed report (like DirectAdmin alert)
+  report           Full detailed report
   trend            Show 7-day trend analysis with averages
   history          Show saved reports for auditing
   enable           Enable watchdog timer (auto-monitoring)
