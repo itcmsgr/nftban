@@ -896,6 +896,40 @@ COMMANDS:
 
 NOTE: Login health checks are handled by 'nftban health check --auto-heal'
 
+MONITORED SERVICES (auto-detected):
+    System:
+      • SSH (sshd)        - Failed/successful logins
+      • SU                - Switch user attempts
+      • SUDO              - Privilege escalation
+
+    Email:
+      • Postfix           - SMTP authentication failures
+      • Exim              - SMTP authentication failures
+      • Dovecot           - IMAP/POP3 login failures
+
+    Web/CMS:
+      • WordPress         - wp-login.php + xmlrpc.php attacks
+      • Roundcube         - Webmail login failures
+
+    FTP:
+      • Pure-FTPd         - FTP login failures
+      • vsftpd            - FTP login failures
+      • ProFTPD           - FTP login failures
+
+    Panel:
+      • DirectAdmin       - Control panel login failures
+
+BAN THRESHOLDS:
+    Default: 5 failed attempts in 5 minutes = Auto-ban
+
+    All services use the same threshold for simplicity:
+      LOGIN_FAIL_THRESHOLD=5      # Failed attempts before ban
+      LOGIN_FAIL_WINDOW=300       # Time window (300 sec = 5 min)
+
+    Override per-service in /etc/nftban/conf.d/login_thresholds.conf:
+      LOGIN_SERVICE_SSH_FAIL_THRESHOLD=3        # Stricter for SSH
+      LOGIN_SERVICE_WORDPRESS_FAIL_THRESHOLD=10 # More lenient for WP
+
 TARGETS:
     ssh                 SSH login monitoring
     su                  SU command monitoring
@@ -905,24 +939,17 @@ TARGETS:
     all                 All monitoring types
 
 EXAMPLES:
-    # Quick setup (one command - installs and enables SSH monitoring)
+    # Quick setup (one command - enables all monitoring)
     sudo nftban login enable
 
-    # Check status
+    # Check status (shows detected services)
     nftban login status
 
-    # Enable all monitoring types (ssh, su, sudo)
+    # Enable all monitoring types
     sudo nftban login enable all
-
-    # Enable specific monitoring
-    sudo nftban login enable sudo
-    sudo nftban login enable su
 
     # Disable login monitoring
     sudo nftban login disable
-
-    # Disable SSH only (keep other monitoring active)
-    sudo nftban login disable ssh
 
     # Send test alert
     nftban login test
@@ -938,21 +965,15 @@ CONFIGURATION:
     - NFTBAN_LOGIN_ALERT_EMAIL: Destination email address
     - NFTBAN_LOGIN_ALERT_GEOIP: Include GeoIP information
     - NFTBAN_LOGIN_ALERT_FORMAT: html or text
-    - NFTBAN_LOGIN_FAILED_THRESHOLD: Failed attempts before alert
-
-MONITORING:
-    - SSH logins (success and failed attempts)
-    - GeoIP enrichment (location information)
-    - Failed attempt tracking with thresholds
-    - HTML or text email alerts
-    - IP whitelisting support
+    - LOGIN_FAIL_THRESHOLD: Failed attempts before ban (default: 5)
+    - LOGIN_FAIL_WINDOW: Time window in seconds (default: 300)
 
 SYSTEMD SERVICE:
     Service: ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}
     Status:  systemctl status nftban-login-monitor
     Logs:    journalctl -u nftban-login-monitor -f
 
-For more information, visit: https://nftban.com
+For more information: https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference
 
 nftban — Simplifying Linux Firewall Management
 EOF
