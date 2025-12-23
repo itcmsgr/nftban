@@ -24,6 +24,7 @@ source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
 # All NFTBan timers (in priority order)
 readonly NFTBAN_TIMERS=(
     "nftban-health.timer"
+    "nftban-maintenance.timer"
     "nftban-metrics-exporter.timer"
     "nftban-core-geoip.timer"
     "nftban-core-feeds.timer"
@@ -36,6 +37,7 @@ readonly NFTBAN_TIMERS=(
 # Timer descriptions
 declare -A TIMER_DESC=(
     ["nftban-health.timer"]="System health checks and auto-heal"
+    ["nftban-maintenance.timer"]="SSH/IP monitoring, trend data (every 15m)"
     ["nftban-metrics-exporter.timer"]="Metrics collection and export"
     ["nftban-core-geoip.timer"]="GeoIP database updates"
     ["nftban-core-feeds.timer"]="Threat feed synchronization"
@@ -363,6 +365,7 @@ SUBCOMMANDS:
 
 TIMERS:
   nftban-health.timer              System health checks and auto-heal
+  nftban-maintenance.timer         SSH/IP monitoring, trend data (every 15m)
   nftban-metrics-exporter.timer    Metrics collection and export
   nftban-core-geoip.timer          GeoIP database updates
   nftban-core-feeds.timer          Threat feed synchronization
