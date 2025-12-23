@@ -1115,9 +1115,9 @@ nftban_watchdog_trend_display() {
 
     if [[ "$samples" == "0" ]]; then
         echo "  No trend data available yet."
-        echo "  Trend data is collected hourly by the maintenance timer."
+        echo "  Trend data is collected every 15 minutes by the maintenance timer."
         echo ""
-        echo "  To collect now: nftban maintenance run"
+        echo "  Enable timer: nftban timers enable nftban-maintenance.timer"
         return 0
     fi
 
