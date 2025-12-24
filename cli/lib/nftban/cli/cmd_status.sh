@@ -202,7 +202,6 @@ output_terminal() {
 
     check_service_clean "nftables" "nftables.service"
     check_service_clean "suricata" "suricata.service"
-    check_service_clean "nftban-core" "${NFTBAN_SERVICE_CORE:-nftban-core.service}"
     check_service_clean "nftban-api" "${NFTBAN_SERVICE_UI:-nftban-ui.service}"
     check_service_clean "nftban-suricata" "${NFTBAN_SERVICE_SURICATA:-nftban-suricata.service}"
     check_service_clean "login-monitor" "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
@@ -228,35 +227,41 @@ output_terminal() {
     fi
     printf "  %-20s %s\n" "Suricata IDS........" "$suricata_status"
 
-    # DDoS Protection
-    local ddos_status="UNKNOWN"
-    if command -v nftban &>/dev/null; then
-        local ddos_output
-        ddos_output=$(nftban ddos status 2>/dev/null | grep -E "Module Enabled:|Master Switch:" | head -1) || true
-        if [[ "$ddos_output" =~ "true" ]] || [[ "$ddos_output" =~ "ENABLED" ]]; then
-            ddos_status="ENABLED (rate-limit active)"
-        elif [[ "$ddos_output" =~ "false" ]] || [[ "$ddos_output" =~ "DISABLED" ]]; then
-            ddos_status="DISABLED"
-        fi
+    # DDoS Protection (check config directly to avoid recursion)
+    local ddos_status="DISABLED"
+    local ddos_conf="${NFTBAN_CONFIG_DIR}/conf.d/ddos.conf"
+    local ddos_local="${NFTBAN_CONFIG_DIR}/conf.d/ddos.conf.local"
+    local ddos_enabled="false"
+
+    # Load ddos config
+    [[ -f "$ddos_conf" ]] && source "$ddos_conf" 2>/dev/null || true
+    [[ -f "$ddos_local" ]] && source "$ddos_local" 2>/dev/null || true
+    ddos_enabled="${DDOS_ENABLED:-${NFTBAN_DDOS_ENABLED:-false}}"
+
+    if [[ "$ddos_enabled" == "true" ]]; then
+        ddos_status="ENABLED"
     fi
     printf "  %-20s %s\n" "DDoS................" "$ddos_status"
 
-    # Port-scan Detection
-    local portscan_status="UNKNOWN"
-    if command -v nftban &>/dev/null; then
-        local portscan_output
-        portscan_output=$(nftban portscan status 2>/dev/null | grep -E "Module Status:|Master Switch:" | head -1) || true
-        if [[ "$portscan_output" =~ "ENABLED" ]] && [[ ! "$portscan_output" =~ "NOT" ]]; then
-            portscan_status="ENABLED"
-        elif [[ "$portscan_output" =~ "NOT INITIALIZED" ]]; then
-            if systemctl is-active suricata.service >/dev/null 2>&1; then
-                portscan_status="NOT CONFIGURED"
-            else
-                portscan_status="DISABLED (Suricata required)"
-            fi
-        elif [[ "$portscan_output" =~ "DISABLED" ]]; then
-            portscan_status="DISABLED"
+    # Port-scan Detection (check config directly to avoid recursion)
+    local portscan_status="DISABLED"
+    local portscan_conf="${NFTBAN_CONFIG_DIR}/conf.d/portscan.conf"
+    local portscan_local="${NFTBAN_CONFIG_DIR}/conf.d/portscan.conf.local"
+    local portscan_enabled="false"
+
+    # Load portscan config
+    [[ -f "$portscan_conf" ]] && source "$portscan_conf" 2>/dev/null || true
+    [[ -f "$portscan_local" ]] && source "$portscan_local" 2>/dev/null || true
+    portscan_enabled="${PORTSCAN_ENABLED:-false}"
+
+    if [[ "$portscan_enabled" == "true" ]]; then
+        if systemctl is-active suricata.service >/dev/null 2>&1; then
+            portscan_status="ENABLED (Suricata)"
+        else
+            portscan_status="ENABLED (kernel logs)"
         fi
+    elif systemctl is-active suricata.service >/dev/null 2>&1; then
+        portscan_status="AVAILABLE (not enabled)"
     fi
     printf "  %-20s %s\n" "Port Scan..........." "$portscan_status"
 
@@ -420,6 +425,7 @@ output_terminal() {
     # Define all NFTBan timers with their descriptions
     local -A timer_desc=(
         ["nftban-health.timer"]="Health check"
+        ["nftban-maintenance.timer"]="Maintenance tasks"
         ["nftban-metrics-exporter.timer"]="Prometheus metrics"
         ["nftban-core-feeds.timer"]="Threat feeds update"
         ["nftban-core-geoip.timer"]="GeoIP database update"
