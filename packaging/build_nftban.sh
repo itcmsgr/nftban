@@ -356,7 +356,8 @@ build_rpm() {
         log_success "RPM built: ${BUILD_DIR}/RPMS/x86_64/nftban-core-${PKG_VERSION}-${PKG_RELEASE}.*.rpm"
         ls -la "${BUILD_DIR}/RPMS/" 2>/dev/null || true
     else
-        log_warn "RPM build failed (may need Rocky/Fedora container)"
+        log_error "RPM build failed"
+        return 1
     fi
 }
 
@@ -564,8 +565,21 @@ main() {
     echo ""
 
     # Build packages
-    [[ "$build_type" =~ (rpm|both) ]] && build_rpm && echo ""
-    [[ "$build_type" =~ (deb|both) ]] && build_deb && echo ""
+    if [[ "$build_type" =~ (rpm|both) ]]; then
+        build_rpm || {
+            log_error "RPM build failed"
+            exit 1
+        }
+        echo ""
+    fi
+
+    if [[ "$build_type" =~ (deb|both) ]]; then
+        build_deb || {
+            log_error "DEB build failed"
+            exit 1
+        }
+        echo ""
+    fi
 
     # Show results
     log_success "Build complete!"
