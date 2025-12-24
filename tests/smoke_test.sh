@@ -57,7 +57,8 @@ TESTS_FAILED=0
 TESTS_TIMEOUT=0
 TESTS_ORPHANS=0
 
-# Trace IDs for this run
+# Trace IDs for this run (reserved for future trace tracking)
+# shellcheck disable=SC2034
 declare -a SMOKE_TRACE_IDS=()
 
 # =============================================================================
@@ -115,10 +116,6 @@ check_orphans() {
 
     local orphan_count=0
 
-    # Get all START entries from recent run (last 10 minutes)
-    local cutoff
-    cutoff=$(date -d '10 minutes ago' '+%Y-%m-%d %H:%M')
-
     # Find START without matching END
     while IFS= read -r line; do
         # Extract trace ID
@@ -128,10 +125,6 @@ check_orphans() {
 
         # Check if there's a matching END
         if ! grep -q "\[END\].*\[$trace_id\]" "$TRACE_LOG"; then
-            # Check if it's recent (within our test window)
-            local trace_time
-            trace_time=$(echo "$line" | grep -oP '^\[\K[0-9-]+ [0-9:]+')
-
             ((orphan_count++))
             log_fail "ORPHAN TRACE: $trace_id"
             log "  $line"

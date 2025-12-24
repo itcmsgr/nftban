@@ -41,6 +41,7 @@ readonly NFTBAN_LOGGER_LOADED=1
 # LOG LEVELS
 # =============================================================================
 
+# shellcheck disable=SC2034  # Log level constants for external use
 readonly LOG_LEVEL_DEBUG=0
 readonly LOG_LEVEL_INFO=1
 readonly LOG_LEVEL_WARN=2
