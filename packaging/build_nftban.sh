@@ -160,6 +160,9 @@ install -D -m 0644 install/systemd/nftban-suricata-update.timer %{buildroot}/usr
 # PolicyKit rules
 install -D -m 0644 cmd/nftban-core/polkit/10-nftban-core.rules %{buildroot}/etc/polkit-1/rules.d/10-nftban-core.rules
 
+# Man page
+install -D -m 0644 docs/man/man8/nftban.8 %{buildroot}/usr/share/man/man8/nftban.8
+
 # Config directories (must match %files section)
 mkdir -p %{buildroot}/etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d}
 mkdir -p %{buildroot}/var/lib/nftban/{feeds,geoip,staging,reports}
@@ -294,6 +297,7 @@ fi
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.timer
 /etc/polkit-1/rules.d/10-nftban-core.rules
+/usr/share/man/man8/nftban.8
 %dir /etc/nftban
 %dir /etc/nftban/conf.d
 %dir /etc/nftban/distros
@@ -523,6 +527,10 @@ build_deb() {
 
     # Copy PolicyKit rules
     install -m 0644 "${PROJECT_ROOT}/cmd/nftban-core/polkit/10-nftban-core.rules" "${deb_root}/etc/polkit-1/rules.d/"
+
+    # Copy man page
+    mkdir -p "${deb_root}/usr/share/man/man8"
+    install -m 0644 "${PROJECT_ROOT}/docs/man/man8/nftban.8" "${deb_root}/usr/share/man/man8/"
 
     # Create control file
     create_deb_control

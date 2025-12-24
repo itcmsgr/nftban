@@ -1,0 +1,419 @@
+.\" NFTBan - nftables-based firewall management
+.\" Copyright (c) 2024-2026 Antonios Voulvoulis
+.TH NFTBAN 8 "December 2025" "NFTBan 1.0.0" "System Administration"
+.SH NAME
+nftban \- nftables-based firewall management and intrusion prevention system
+.SH SYNOPSIS
+.B nftban
+.RI [ command ]
+.RI [ subcommand ]
+.RI [ options ]
+.SH DESCRIPTION
+.B NFTBan
+is a comprehensive Linux firewall management tool that simplifies nftables
+configuration and provides intelligent protection against network threats.
+It integrates with Suricata IDS for real-time threat detection and supports
+multiple threat intelligence feeds.
+.PP
+NFTBan provides protection against:
+.IP \(bu 2
+DDoS attacks and traffic flooding
+.IP \(bu 2
+Port scanning and reconnaissance
+.IP \(bu 2
+Brute force login attempts
+.IP \(bu 2
+Known malicious IP addresses via threat feeds
+.IP \(bu 2
+Geographic-based blocking (GeoBan)
+.SH COMMANDS
+.SS "Core Commands"
+.TP
+.B status
+Display system status including firewall state, banned IPs, and service health.
+Use \fB\-\-json\fR for machine-readable output.
+.TP
+.B health
+Run comprehensive health checks on all NFTBan components.
+.TP
+.B check
+Verify environment and prerequisites for NFTBan operation.
+.TP
+.B validate
+Validate configuration files for syntax and logical errors.
+.TP
+.B sync
+Atomic reload of nftables rules preserving runtime state.
+.TP
+.B version
+Display NFTBan version and component versions.
+.TP
+.B help
+Show available commands and usage information.
+.SS "Service Control"
+.TP
+.B enable \fR[\fIservice\fR]
+Enable NFTBan services (all, nftables, suricata, login, timers).
+.TP
+.B disable \fR[\fIservice\fR]
+Disable NFTBan services.
+.TP
+.B restart \fR[\fIservice\fR]
+Restart NFTBan services.
+.TP
+.B services
+Display status of all NFTBan-related services.
+.SS "Firewall Management"
+.TP
+.B firewall \fR[\fIsubcommand\fR]
+Manage nftables firewall: init, reload, status, check, reset, validate, stats.
+.TP
+.B ban \fIIP\fR [\fIoptions\fR]
+Ban an IP address. Options: \fB\-\-timeout\fR, \fB\-\-reason\fR, \fB\-\-permanent\fR.
+.TP
+.B unban \fIIP\fR
+Remove ban on an IP address.
+.TP
+.B list \fR[\fItype\fR]
+List IPs: banned, whitelist, or all. Use \fB\-\-json\fR for JSON output.
+.TP
+.B search \fIIP\fR
+Search for an IP across all blocklists and show ban details.
+.TP
+.B whitelist \fR[\fIsubcommand\fR]
+Manage IP whitelist: sync, show, whitelistme.
+.TP
+.B whitelist-system
+Auto-whitelist essential system IPs (gateway, DNS, server IPs).
+Ensures critical infrastructure is never blocked.
+.SS "Protection Modules"
+.TP
+.B ddos \fR[\fIsubcommand\fR]
+DDoS protection: enable, disable, status, test.
+.TP
+.B portscan \fR[\fIsubcommand\fR]
+Port scan detection: enable, disable, status, check, history, test.
+.TP
+.B login \fR[\fIsubcommand\fR]
+Login monitoring: status, enable, disable, logs, test, run.
+.br
+\fBenable\fR auto-installs the service and enables SSH monitoring in one step.
+.br
+Use \fBenable all\fR for ssh+su+sudo, or \fBenable ssh\fR for specific types.
+.TP
+.B feeds \fR[\fIsubcommand\fR]
+Threat intelligence feeds: select, list, enable, disable, update, status.
+.TP
+.B trust \fR[\fIsubcommand\fR]
+Trust feeds (whitelist CDN/cloud): list, enable, disable, update, load, status.
+Supports Cloudflare, AWS, Google Cloud, Azure, Fastly, and more.
+.TP
+.B country \fR[\fIsubcommand\fR]
+Country blocking: list, enable, disable, mode, status, apply.
+Block or allow traffic by ISO country code (CN, RU, etc.).
+.TP
+.B cloudflare \fR[\fIsubcommand\fR]
+Cloudflare IP management: enable, disable, update, status.
+.br
+\fBDEPRECATED\fR: Use \fBnftban trust enable CLOUDFLARE\fR instead for unified CDN management.
+.SS "GeoIP and Geographic Blocking"
+.TP
+.B geoip \fR[\fIsubcommand\fR]
+GeoIP lookups: lookup, bulk, status, test, update, config.
+.TP
+.B geoban \fR[\fIsubcommand\fR]
+Geographic blocking: ban, unban, whitelist, unwhitelist, list, status.
+.SS "Monitoring and Reporting"
+.TP
+.B stats \fR[\fIsubcommand\fR]
+Statistics and monitoring. Subcommands:
+.RS
+.IP \fBdashboard\fR
+Show statistics dashboard (default). Options: \fB\-\-json\fR, \fB\-\-last\fR, \fB\-\-since\fR, \fB\-\-until\fR.
+.IP "\fBtop\fR \fItype\fR [\fIN\fR]"
+Show top lists: ips, countries, jails. Example: \fBnftban stats top ips 20\fR.
+.IP "\fBip\fR \fIIP\fR"
+Show ban history for specific IP address.
+.IP "\fBrecent\fR [\fIN\fR]"
+Show recent ban activity. Use \fB\-\-follow\fR for real-time.
+.IP \fBmonitor\fR
+Real-time monitoring with auto-refresh. Use \fB\-\-interval\fR to set refresh rate.
+.IP \fBexport\fR
+Export statistics to file. Options: \fB\-\-format\fR (json/csv), \fB\-\-output\fR, \fB\-\-since\fR, \fB\-\-until\fR.
+.IP \fBsnapshot\fR
+Create hourly statistics snapshot.
+.IP \fBcleanup\fR
+Cleanup old logs and snapshots. Use \fB\-\-days\fR to set retention (default: 90).
+.IP \fBclear-cache\fR
+Clear statistics cache.
+.IP \fBcheck-alerts\fR
+Check for threshold alerts.
+.RE
+.TP
+.B watchdog \fR[\fIsubcommand\fR]
+System resource monitoring: status, check, report, history, enable, disable.
+.br
+Monitors load average, memory, I/O wait, disk usage.
+.br
+Exports Prometheus metrics to /var/lib/nftban/metrics/watchdog.prom.
+.TP
+.B report \fR[\fIsubcommand\fR]
+Generate reports: generate, email, schedule, run, list.
+.TP
+.B metrics \fR[\fIsubcommand\fR]
+Prometheus metrics: enable, disable, status.
+.TP
+.B timers \fR[\fIsubcommand\fR]
+Systemd timer management: status, enable, disable.
+.TP
+.B mail \fR[\fIsubcommand\fR]
+Email notifications: test, send, configure.
+Send reports and alerts via email.
+.SS "Configuration and Setup"
+.TP
+.B config \fR[\fIsubcommand\fR]
+Configuration management.
+.TP
+.B setup \fR[\fIsubcommand\fR]
+Initial system setup.
+.TP
+.B wizard
+Interactive setup wizard with step-by-step configuration.
+Guides new users through initial NFTBan configuration.
+.TP
+.B profile \fR[\fIsubcommand\fR]
+Security profiles: select, apply, show, list.
+.TP
+.B permissions \fR[\fIsubcommand\fR]
+File permissions: check, enforce, fix.
+.SS "System Information"
+.TP
+.B module
+Display installed modules inventory.
+.TP
+.B fhs
+Check FHS (Filesystem Hierarchy Standard) compliance.
+.TP
+.B nftables \fR[\fIsubcommand\fR]
+Direct nftables control: start, stop, restart, reload, enable, disable, status.
+.TP
+.B port \fR[\fIsubcommand\fR]
+Port scanning and analysis: scan, list, summary, html-report, mail-report.
+.TP
+.B panel \fR[\fIsubcommand\fR]
+Control panel integration (DirectAdmin).
+.TP
+.B test
+Run CLI command validation tests.
+.SS "Debug and Troubleshooting"
+.TP
+.B debug \fR[\fIsubcommand\fR]
+Debug and troubleshooting tools. Subcommands:
+.RS
+.IP \fBstatus\fR
+Show debug status (trace enabled, log level, orphan count).
+.IP "\fBenable\fR [\fItype\fR]"
+Enable debug trace or verbose logging. Types: trace (default), verbose, all.
+.IP "\fBdisable\fR [\fItype\fR]"
+Disable debug trace or verbose logging.
+.IP "\fBtrace recent\fR [\fIN\fR]"
+Show last N trace entries (default: 30).
+.IP "\fBtrace orphans\fR [\fIMIN\fR]"
+Find stuck scripts (START without END, older than MIN minutes).
+.IP \fBtrace stats\fR
+Show trace statistics.
+.IP "\fBtrace clear\fR [\fIDAYS\fR]"
+Rotate trace log, keep DAYS (default: 7).
+.IP "\fBlogs\fR [\fITYPE\fR] [\fIN\fR]"
+View log files: main, trace, login, bans, all.
+.IP "\fBdump\fR [\fIWHAT\fR]"
+Dump debug info: config, env, services, nft, all.
+.RE
+.TP
+.B emulate \fIIP\fR [\fIoptions\fR]
+Simulate packet decision to test firewall rules without actual traffic.
+Options: \fB\-\-proto\fR (tcp/udp), \fB\-\-port\fR, \fB\-\-direction\fR (in/out), \fB\-\-json\fR.
+Useful for testing before deploying rules.
+.TP
+.B smoke \fR[\fIsubcommand\fR]
+Smoke test suite for CLI health checks. Subcommands:
+.RS
+.IP \fBrun\fR
+Run full smoke test suite (tests all major commands).
+.IP \fBquick\fR
+Run quick test (core commands only).
+.IP "\fBcheck\fR [\fIMIN\fR]"
+Check for orphaned traces (stuck scripts).
+.IP \fBstats\fR
+Show trace statistics.
+.RE
+.SS "User Interface"
+.TP
+.B menu
+Interactive text-based menu interface.
+.TP
+.B gui \fR[\fIsubcommand\fR]
+Web GUI management: enable, disable, status.
+.SH OPTIONS
+.TP
+.B \-\-json
+Output in JSON format (supported by status, list, services, and other commands).
+.TP
+.B \-\-quiet
+Suppress banner and non-essential output.
+.TP
+.B \-\-verbose
+Show detailed output.
+.TP
+.B \-\-help, \-h
+Show help for specific command.
+.SH FILES
+.TP
+.I /etc/nftban/nftban.conf
+Main configuration file.
+.TP
+.I /etc/nftban/conf.d/
+Module configuration directory.
+.TP
+.I /etc/nftban/blacklist.d/
+Custom blacklist files.
+.TP
+.I /etc/nftban/whitelist.d/
+Custom whitelist files.
+.TP
+.I /var/lib/nftban/
+Runtime data directory.
+.TP
+.I /var/lib/nftban/geoip/
+GeoIP database files.
+.TP
+.I /var/log/nftban/
+Log files directory.
+.TP
+.I /var/log/nftban/debug_trace.log
+Debug trace log (when NFTBAN_DEBUG_TRACE=true).
+.TP
+.I /var/log/nftban/watchdog.log
+Watchdog monitoring log.
+.TP
+.I /var/lib/nftban/metrics/watchdog.prom
+Watchdog Prometheus metrics (for node_exporter textfile collector).
+.TP
+.I /var/lib/nftban/reports/watchdog/
+Saved watchdog reports directory.
+.TP
+.I /etc/nftban/conf.d/watchdog.conf
+Watchdog configuration (thresholds, intervals).
+.TP
+.I /usr/lib/nftban/
+Library and module directory.
+.SH EXAMPLES
+.TP
+Check system status:
+.B nftban status
+.TP
+Ban an IP for 1 hour:
+.B nftban ban 192.168.1.100 \-\-timeout 3600 \-\-reason "suspicious activity"
+.TP
+Permanently ban an IP:
+.B nftban ban 192.168.1.100 \-\-permanent
+.TP
+Show statistics dashboard:
+.B nftban stats dashboard
+.TP
+Stats with time filter:
+.B nftban stats \-\-last 7d
+.TP
+Top 20 banned IPs:
+.B nftban stats top ips 20
+.TP
+Export stats to JSON:
+.B nftban stats export \-\-format json \-\-output /tmp/stats.json
+.TP
+Export stats to CSV:
+.B nftban stats export \-\-format csv
+.TP
+Real-time monitoring:
+.B nftban stats monitor
+.TP
+Enable DDoS protection:
+.B nftban ddos enable
+.TP
+GeoIP lookup:
+.B nftban geoip lookup 8.8.8.8
+.TP
+Update threat feeds:
+.B nftban feeds update
+.TP
+List available trust feeds:
+.B nftban trust list
+.TP
+Enable Cloudflare and AWS whitelist:
+.B nftban trust enable CLOUDFLARE AWS
+.TP
+Update all enabled trust feeds:
+.B nftban trust update
+.TP
+Block traffic from China and Russia:
+.B nftban country disable CN RU
+.TP
+List country codes:
+.B nftban country list
+.TP
+JSON status output:
+.B nftban status \-\-json
+.TP
+Enable debug trace:
+.B nftban debug enable
+.TP
+Find stuck scripts:
+.B nftban debug trace orphans
+.TP
+Run smoke test:
+.B nftban smoke run
+.TP
+Quick CLI health check:
+.B nftban smoke quick
+.TP
+View last 50 trace entries:
+.B nftban debug trace recent 50
+.TP
+Full debug dump:
+.B nftban debug dump all
+.TP
+Check system resource health:
+.B nftban watchdog status
+.TP
+Generate watchdog report:
+.B nftban watchdog report
+.TP
+Enable watchdog timer (90-second interval):
+.B nftban watchdog enable
+.SH EXIT STATUS
+.TP
+.B 0
+Success
+.TP
+.B 1
+General error
+.TP
+.B 2
+Command not found
+.TP
+.B 3
+Configuration error
+.SH SEE ALSO
+.BR nftables (8),
+.BR nft (8),
+.BR suricata (8),
+.BR nftban.conf (5),
+.BR systemctl (1)
+.SH BUGS
+Report bugs at https://github.com/itcmsgr/nftban-dev/issues
+.SH AUTHOR
+Antonios Voulvoulis <contact@nftban.com>
+.SH COPYRIGHT
+Copyright (c) 2024-2026 NFTBAN Project.
+Licensed under MPL-2.0 (Mozilla Public License 2.0).
+.PP
+Website: https://nftban.com
