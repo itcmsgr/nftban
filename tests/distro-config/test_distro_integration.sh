@@ -139,6 +139,7 @@ test_parser_loading() {
     fi
 
     # Test 2: Parser can be sourced
+    # shellcheck source=/dev/null
     if source "$PARSER_PATH" 2>/dev/null; then
         echo -e "${GREEN}  ✓ Parser loads without errors${NC}"
         ((TESTS_PASSED++))
@@ -335,7 +336,8 @@ test_all_configs() {
     echo ""
 
     for config in "${config_files[@]}"; do
-        local filename=$(basename "$config")
+        local filename
+        filename=$(basename "$config")
         if nftban_distro_parse_config "$config" 2>/dev/null; then
             echo -e "${GREEN}  ✓ $filename parses successfully${NC}"
             ((TESTS_PASSED++))
