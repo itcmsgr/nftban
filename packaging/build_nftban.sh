@@ -348,7 +348,7 @@ build_rpm() {
     tar czf "${BUILD_DIR}/SOURCES/${tarball}" \
         --transform "s,^,nftban-core-${PKG_VERSION}/," \
         -C "${PROJECT_ROOT}" \
-        bin/ cli/ cmd/ pkg/ install/ etc/
+        bin/ cli/ cmd/ pkg/ install/ etc/ docs/
 
     # Build RPM
     if rpmbuild --define "_topdir ${BUILD_DIR}" \
