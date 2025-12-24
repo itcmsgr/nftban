@@ -148,6 +148,14 @@ install -D -m 0644 install/systemd/nftban-core-feeds.service %{buildroot}/usr/li
 install -D -m 0644 install/systemd/nftban-core-feeds.timer %{buildroot}/usr/lib/systemd/system/nftban-core-feeds.timer
 install -D -m 0644 install/systemd/nftban-metrics-exporter.service %{buildroot}/usr/lib/systemd/system/nftban-metrics-exporter.service
 install -D -m 0644 install/systemd/nftban-metrics-exporter.timer %{buildroot}/usr/lib/systemd/system/nftban-metrics-exporter.timer
+install -D -m 0644 install/systemd/nftban-watchdog.service %{buildroot}/usr/lib/systemd/system/nftban-watchdog.service
+install -D -m 0644 install/systemd/nftban-watchdog.timer %{buildroot}/usr/lib/systemd/system/nftban-watchdog.timer
+install -D -m 0644 install/systemd/nftban-snapshot.service %{buildroot}/usr/lib/systemd/system/nftban-snapshot.service
+install -D -m 0644 install/systemd/nftban-snapshot.timer %{buildroot}/usr/lib/systemd/system/nftban-snapshot.timer
+install -D -m 0644 install/systemd/nftban-rollback.service %{buildroot}/usr/lib/systemd/system/nftban-rollback.service
+install -D -m 0644 install/systemd/nftban-rollback.timer %{buildroot}/usr/lib/systemd/system/nftban-rollback.timer
+install -D -m 0644 install/systemd/nftban-suricata-update.service %{buildroot}/usr/lib/systemd/system/nftban-suricata-update.service
+install -D -m 0644 install/systemd/nftban-suricata-update.timer %{buildroot}/usr/lib/systemd/system/nftban-suricata-update.timer
 
 # PolicyKit rules
 install -D -m 0644 cmd/nftban-core/polkit/10-nftban-core.rules %{buildroot}/etc/polkit-1/rules.d/10-nftban-core.rules
@@ -504,6 +512,14 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-metrics-exporter.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-metrics-exporter.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-watchdog.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-watchdog.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-snapshot.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-snapshot.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rollback.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rollback.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-update.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-update.timer" "${deb_root}/usr/lib/systemd/system/"
 
     # Copy PolicyKit rules
     install -m 0644 "${PROJECT_ROOT}/cmd/nftban-core/polkit/10-nftban-core.rules" "${deb_root}/etc/polkit-1/rules.d/"
