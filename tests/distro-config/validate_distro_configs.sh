@@ -215,8 +215,10 @@ validate_pkgmgr() {
 # Validate query_cmd matches family
 validate_query_cmd() {
     local file="$1"
-    local family=$(get_value "$file" "distro" "family")
-    local query_cmd=$(get_value "$file" "package_manager" "query_cmd")
+    local family
+    family=$(get_value "$file" "distro" "family")
+    local query_cmd
+    query_cmd=$(get_value "$file" "package_manager" "query_cmd")
 
     case "$family" in
         rhel)
@@ -243,7 +245,8 @@ validate_query_cmd() {
 # Validate a single config file
 validate_config() {
     local file="$1"
-    local filename=$(basename "$file")
+    local filename
+    filename=$(basename "$file")
 
     echo ""
     echo -e "${BLUE}Validating: $filename${NC}"

@@ -33,6 +33,7 @@ set -u
 # CONFIGURATION
 # =============================================================================
 
+# shellcheck disable=SC2034  # Reserved for future logging
 readonly SCRIPT_NAME="smoke_test"
 readonly SCRIPT_VERSION="1.0.0"
 DEFAULT_TIMEOUT=30            # seconds per command (default)
@@ -41,6 +42,7 @@ CURRENT_TIMEOUT=$DEFAULT_TIMEOUT  # actual timeout to use
 readonly TRACE_LOG="/var/log/nftban/debug_trace.log"
 SMOKE_LOG="/tmp/nftban_smoke_$(date +%Y%m%d_%H%M%S).log"
 readonly SMOKE_LOG
+# shellcheck disable=SC2034  # Reserved for future trace tracking
 readonly SMOKE_TRACE_PREFIX="smoke_test"
 
 # Colors
