@@ -442,6 +442,7 @@ HEALTH_OUTPUT=$("$NFTBAN_CMD" health check 2>&1 || true)
 # Check for real errors (not warnings)
 if echo "$HEALTH_OUTPUT" | grep -q "Overall Status:.*ERROR"; then
     ERROR_COUNT=$(echo "$HEALTH_OUTPUT" | grep -oP "Errors: \K\d+" || echo "0")
+    # shellcheck disable=SC2034  # WARNING_COUNT reserved for future alerting logic
     WARNING_COUNT=$(echo "$HEALTH_OUTPUT" | grep -oP "Warnings: \K\d+" || echo "0")
 
     # Only alert if real errors exist (not just warnings)
