@@ -17,7 +17,7 @@ IFS=$'\n\t'
 # =============================================================================
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 readonly SCRIPT_DIR
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_ROOT="$(cd "$SCRIPT_DIR/../.." && pwd)"
 readonly PROJECT_ROOT
 readonly STATUS_FILE="$PROJECT_ROOT/STATUS.md"
 TIMESTAMP="$(date -u '+%Y-%m-%d %H:%M:%S UTC')"
