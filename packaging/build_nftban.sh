@@ -262,11 +262,13 @@ echo "[NFTBan] Enabling systemd services..."
 # Enable nftables
 systemctl enable nftables 2>/dev/null || true
 
-# Enable and start timers
+# Enable and start essential timers
+echo "[NFTBan] Starting essential timers..."
 systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
 systemctl enable --now nftban-health.timer 2>/dev/null || true
 systemctl enable --now nftban-core-geoip.timer 2>/dev/null || true
 systemctl enable --now nftban-core-feeds.timer 2>/dev/null || true
+systemctl enable --now nftban-queue.timer 2>/dev/null || true
 
 # Enable and start login monitor
 systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
@@ -275,6 +277,7 @@ systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
 systemctl reload nftables 2>/dev/null || true
 
 echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
+echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all optional timers."
 
 %preun
 %systemd_preun nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service nftban-core-geoip.service nftban-core-geoip.timer nftban-core-feeds.service nftban-core-feeds.timer
@@ -465,11 +468,13 @@ echo "[NFTBan] Enabling systemd services..."
 systemctl daemon-reload
 systemctl enable nftables 2>/dev/null || true
 
-# Enable and start all timers
+# Enable and start essential timers
+echo "[NFTBan] Starting essential timers..."
 systemctl enable --now nftban-maintenance.timer 2>/dev/null || true
 systemctl enable --now nftban-health.timer 2>/dev/null || true
 systemctl enable --now nftban-core-geoip.timer 2>/dev/null || true
 systemctl enable --now nftban-core-feeds.timer 2>/dev/null || true
+systemctl enable --now nftban-queue.timer 2>/dev/null || true
 
 # Enable and start login monitor
 systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
@@ -478,6 +483,7 @@ systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
 systemctl reload nftables 2>/dev/null || true
 
 echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
+echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all optional timers."
 exit 0
 EOF
     fi
