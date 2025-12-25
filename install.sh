@@ -96,6 +96,181 @@ check_nftables() {
     ok "nftables installed successfully"
 }
 
+# Check for conflicting firewalls (CRITICAL - prevents conflicts)
+check_conflicting_firewalls() {
+    log "Checking for conflicting firewalls..."
+
+    local conflicts_found=0
+    local firewall_issues=()
+
+    # 1. Check firewalld
+    if command -v firewall-cmd &>/dev/null; then
+        if systemctl is-active --quiet firewalld 2>/dev/null; then
+            firewall_issues+=("firewalld is ACTIVE")
+            conflicts_found=1
+        elif systemctl is-enabled --quiet firewalld 2>/dev/null; then
+            firewall_issues+=("firewalld is ENABLED (not running)")
+            conflicts_found=1
+        fi
+    fi
+
+    # 2. Check iptables (legacy service)
+    if command -v iptables &>/dev/null; then
+        if systemctl is-active --quiet iptables 2>/dev/null; then
+            firewall_issues+=("iptables service is ACTIVE")
+            conflicts_found=1
+        elif systemctl is-enabled --quiet iptables 2>/dev/null; then
+            firewall_issues+=("iptables service is ENABLED (not running)")
+            conflicts_found=1
+        fi
+    fi
+
+    # 3. Check iptables-services (RHEL/CentOS)
+    if systemctl is-active --quiet iptables.service 2>/dev/null || \
+       systemctl is-active --quiet ip6tables.service 2>/dev/null; then
+        firewall_issues+=("iptables-services is ACTIVE")
+        conflicts_found=1
+    fi
+
+    # 4. Check ufw (Ubuntu/Debian)
+    if command -v ufw &>/dev/null; then
+        if ufw status 2>/dev/null | grep -q "Status: active"; then
+            firewall_issues+=("ufw is ACTIVE")
+            conflicts_found=1
+        fi
+    fi
+
+    # If no conflicts, all good
+    if [[ $conflicts_found -eq 0 ]]; then
+        ok "No conflicting firewalls detected"
+        return 0
+    fi
+
+    # CONFLICT DETECTED - Show warnings
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    error "⚠ CONFLICTING FIREWALL(S) DETECTED!"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    warn "NFTBan uses nftables and CANNOT coexist with these firewalls:"
+    echo ""
+    for issue in "${firewall_issues[@]}"; do
+        echo "  ✗ $issue"
+    done
+    echo ""
+    echo "These firewalls will conflict with NFTBan and cause:"
+    echo "  • Duplicate filtering rules"
+    echo "  • Unpredictable blocking behavior"
+    echo "  • Performance degradation"
+    echo "  • NFTBan blocks may not work"
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "MANUAL FIX INSTRUCTIONS:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Show specific commands for each detected firewall
+    for issue in "${firewall_issues[@]}"; do
+        if [[ "$issue" == *"firewalld"* ]]; then
+            echo "Disable firewalld:"
+            echo "  systemctl stop firewalld"
+            echo "  systemctl disable firewalld"
+            echo ""
+        fi
+        if [[ "$issue" == *"iptables"* ]]; then
+            echo "Disable iptables:"
+            echo "  systemctl stop iptables"
+            echo "  systemctl disable iptables"
+            echo "  systemctl stop ip6tables 2>/dev/null || true"
+            echo "  systemctl disable ip6tables 2>/dev/null || true"
+            echo ""
+        fi
+        if [[ "$issue" == *"ufw"* ]]; then
+            echo "Disable ufw:"
+            echo "  ufw disable"
+            echo "  systemctl stop ufw 2>/dev/null || true"
+            echo "  systemctl disable ufw 2>/dev/null || true"
+            echo ""
+        fi
+    done
+
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Ask user if they want automatic fix
+    read -p "Would you like NFTBan to automatically stop and disable these firewalls? [y/N]: " auto_fix
+
+    if [[ "${auto_fix,,}" == "y" || "${auto_fix,,}" == "yes" ]]; then
+        echo ""
+        log "Automatically stopping and disabling conflicting firewalls..."
+
+        local fixed=0
+        local failed=0
+
+        # Fix firewalld
+        if systemctl is-active --quiet firewalld 2>/dev/null || systemctl is-enabled --quiet firewalld 2>/dev/null; then
+            log "Stopping firewalld..."
+            if systemctl stop firewalld 2>/dev/null && systemctl disable firewalld 2>/dev/null; then
+                ok "firewalld stopped and disabled"
+                fixed=$((fixed + 1))
+            else
+                warn "Failed to stop/disable firewalld"
+                failed=$((failed + 1))
+            fi
+        fi
+
+        # Fix iptables
+        if systemctl is-active --quiet iptables 2>/dev/null || systemctl is-enabled --quiet iptables 2>/dev/null; then
+            log "Stopping iptables..."
+            if systemctl stop iptables 2>/dev/null && systemctl disable iptables 2>/dev/null; then
+                systemctl stop ip6tables 2>/dev/null || true
+                systemctl disable ip6tables 2>/dev/null || true
+                ok "iptables stopped and disabled"
+                fixed=$((fixed + 1))
+            else
+                warn "Failed to stop/disable iptables"
+                failed=$((failed + 1))
+            fi
+        fi
+
+        # Fix ufw
+        if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+            log "Disabling ufw..."
+            if ufw --force disable 2>/dev/null && \
+               systemctl stop ufw 2>/dev/null && \
+               systemctl disable ufw 2>/dev/null; then
+                ok "ufw disabled"
+                fixed=$((fixed + 1))
+            else
+                warn "Failed to disable ufw"
+                failed=$((failed + 1))
+            fi
+        fi
+
+        echo ""
+        if [[ $failed -gt 0 ]]; then
+            error "Some firewalls could not be disabled automatically"
+            echo "Please disable them manually using the commands above."
+            exit 1
+        else
+            ok "All conflicting firewalls have been stopped and disabled ($fixed fixed)"
+            echo ""
+            info "NFTBan will now take over firewall management using nftables"
+        fi
+    else
+        echo ""
+        error "Installation cannot continue with conflicting firewalls active"
+        echo ""
+        echo "Please disable the conflicting firewalls manually and re-run:"
+        echo "  sudo ./install.sh"
+        echo ""
+        exit 1
+    fi
+
+    echo ""
+    return 0
+}
+
 # Check Go binaries exist (REQUIRED)
 check_go_binaries() {
     log "Checking Go binaries..."
@@ -1240,6 +1415,7 @@ echo ""
 
 check_root
 check_nftables
+check_conflicting_firewalls
 check_go_binaries
 
 echo ""

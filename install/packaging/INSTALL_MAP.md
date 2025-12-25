@@ -193,7 +193,7 @@ These directories are **created** during installation per FHS spec (`nftban_fhs_
 | `nftban-json-parser` | JSON parsing |
 | `nftban-ip-validator` | IP validation |
 | `nftban-cidr-merge` | CIDR aggregation |
-| `nftban-web` | Web UI server |
+| `nftban-ui` | Web UI server (requires nftban-cli group) |
 | `nftban-auth` | Authentication service |
 | `nftban-email` | Email sender |
 | `nftban-feed-fetcher` | Threat feed fetcher |

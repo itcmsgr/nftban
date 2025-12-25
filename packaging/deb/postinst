@@ -49,6 +49,85 @@ case "$1" in
         fi
 
         # =====================================================================
+        # STEP 0.5: Check for Conflicting Firewalls
+        # =====================================================================
+        log_info "Checking for conflicting firewalls..."
+
+        CONFLICTS_FOUND=0
+        FIREWALL_ISSUES=""
+
+        # Check firewalld
+        if command -v firewall-cmd >/dev/null 2>&1; then
+            if systemctl is-active --quiet firewalld 2>/dev/null; then
+                FIREWALL_ISSUES="${FIREWALL_ISSUES}firewalld (ACTIVE) "
+                CONFLICTS_FOUND=1
+            elif systemctl is-enabled --quiet firewalld 2>/dev/null; then
+                FIREWALL_ISSUES="${FIREWALL_ISSUES}firewalld (ENABLED) "
+                CONFLICTS_FOUND=1
+            fi
+        fi
+
+        # Check iptables service
+        if systemctl is-active --quiet iptables 2>/dev/null || \
+           systemctl is-active --quiet iptables.service 2>/dev/null || \
+           systemctl is-active --quiet ip6tables.service 2>/dev/null; then
+            FIREWALL_ISSUES="${FIREWALL_ISSUES}iptables-services (ACTIVE) "
+            CONFLICTS_FOUND=1
+        fi
+
+        # Check ufw
+        if command -v ufw >/dev/null 2>&1; then
+            if ufw status 2>/dev/null | grep -q "Status: active"; then
+                FIREWALL_ISSUES="${FIREWALL_ISSUES}ufw (ACTIVE) "
+                CONFLICTS_FOUND=1
+            fi
+        fi
+
+        if [ $CONFLICTS_FOUND -eq 1 ]; then
+            log_error ""
+            log_error "=========================================="
+            log_error " CONFLICTING FIREWALL(S) DETECTED!"
+            log_error "=========================================="
+            log_error ""
+            log_error "NFTBan cannot coexist with: ${FIREWALL_ISSUES}"
+            log_error ""
+            log_error "These firewalls will cause:"
+            log_error "  • Duplicate filtering rules"
+            log_error "  • Unpredictable blocking behavior"
+            log_error "  • NFTBan blocks may not work"
+            log_error ""
+            log_error "Please disable conflicting firewalls:"
+            log_error ""
+
+            if echo "$FIREWALL_ISSUES" | grep -q "firewalld"; then
+                log_error "  systemctl stop firewalld"
+                log_error "  systemctl disable firewalld"
+                log_error ""
+            fi
+
+            if echo "$FIREWALL_ISSUES" | grep -q "iptables"; then
+                log_error "  systemctl stop iptables"
+                log_error "  systemctl disable iptables"
+                log_error "  systemctl stop ip6tables"
+                log_error "  systemctl disable ip6tables"
+                log_error ""
+            fi
+
+            if echo "$FIREWALL_ISSUES" | grep -q "ufw"; then
+                log_error "  ufw disable"
+                log_error "  systemctl stop ufw"
+                log_error "  systemctl disable ufw"
+                log_error ""
+            fi
+
+            log_error "Then re-install: apt install --reinstall nftban"
+            log_error ""
+            exit 1
+        fi
+
+        log_info "  No conflicting firewalls detected"
+
+        # =====================================================================
         # STEP 1: Create System Groups
         # =====================================================================
         # NFTBan v1.0 uses 2-group model:

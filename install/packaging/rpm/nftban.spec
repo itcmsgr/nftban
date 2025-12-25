@@ -39,6 +39,85 @@ exit 0
 %post
 # Post-install: Configure and enable services
 
+# ==========================================================================
+# STEP 0: Check for Conflicting Firewalls
+# ==========================================================================
+echo "Checking for conflicting firewalls..."
+
+CONFLICTS_FOUND=0
+FIREWALL_ISSUES=""
+
+# Check firewalld
+if command -v firewall-cmd >/dev/null 2>&1; then
+    if systemctl is-active --quiet firewalld 2>/dev/null; then
+        FIREWALL_ISSUES="${FIREWALL_ISSUES}firewalld (ACTIVE) "
+        CONFLICTS_FOUND=1
+    elif systemctl is-enabled --quiet firewalld 2>/dev/null; then
+        FIREWALL_ISSUES="${FIREWALL_ISSUES}firewalld (ENABLED) "
+        CONFLICTS_FOUND=1
+    fi
+fi
+
+# Check iptables service
+if systemctl is-active --quiet iptables 2>/dev/null || \
+   systemctl is-active --quiet iptables.service 2>/dev/null || \
+   systemctl is-active --quiet ip6tables.service 2>/dev/null; then
+    FIREWALL_ISSUES="${FIREWALL_ISSUES}iptables-services (ACTIVE) "
+    CONFLICTS_FOUND=1
+fi
+
+# Check ufw
+if command -v ufw >/dev/null 2>&1; then
+    if ufw status 2>/dev/null | grep -q "Status: active"; then
+        FIREWALL_ISSUES="${FIREWALL_ISSUES}ufw (ACTIVE) "
+        CONFLICTS_FOUND=1
+    fi
+fi
+
+if [ $CONFLICTS_FOUND -eq 1 ]; then
+    echo ""
+    echo "=========================================="
+    echo " ERROR: CONFLICTING FIREWALL(S) DETECTED!"
+    echo "=========================================="
+    echo ""
+    echo "NFTBan cannot coexist with: ${FIREWALL_ISSUES}"
+    echo ""
+    echo "These firewalls will cause:"
+    echo "  • Duplicate filtering rules"
+    echo "  • Unpredictable blocking behavior"
+    echo "  • NFTBan blocks may not work"
+    echo ""
+    echo "Please disable conflicting firewalls:"
+    echo ""
+
+    if echo "$FIREWALL_ISSUES" | grep -q "firewalld"; then
+        echo "  systemctl stop firewalld"
+        echo "  systemctl disable firewalld"
+        echo ""
+    fi
+
+    if echo "$FIREWALL_ISSUES" | grep -q "iptables"; then
+        echo "  systemctl stop iptables"
+        echo "  systemctl disable iptables"
+        echo "  systemctl stop ip6tables"
+        echo "  systemctl disable ip6tables"
+        echo ""
+    fi
+
+    if echo "$FIREWALL_ISSUES" | grep -q "ufw"; then
+        echo "  ufw disable"
+        echo "  systemctl stop ufw"
+        echo "  systemctl disable ufw"
+        echo ""
+    fi
+
+    echo "Then re-install: dnf reinstall nftban"
+    echo ""
+    exit 1
+fi
+
+echo "  No conflicting firewalls detected"
+
 # Create directories
 install -d -m 750 -o root -g nftban /etc/nftban/ports.d 2>/dev/null || true
 install -d -m 750 -o root -g nftban /etc/nftban/whitelist.d 2>/dev/null || true
