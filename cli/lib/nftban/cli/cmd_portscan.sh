@@ -130,7 +130,7 @@ BAN SETTINGS:
 
 CONFIGURATION:
     Port scan detection is configured in:
-      /etc/nftban/conf.d/portscan.conf
+      /etc/nftban/conf.d/portscan/main.conf
 
     User overrides:
       /etc/nftban/nftban.conf.local

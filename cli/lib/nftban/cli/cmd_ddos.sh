@@ -152,7 +152,7 @@ PROTECTION TYPES:
 
 CONFIGURATION:
     DDoS protection is configured in:
-      /etc/nftban/conf.d/ddos.conf
+      /etc/nftban/conf.d/ddos/main.conf
 
     User overrides:
       /etc/nftban/nftban.conf.local
