@@ -419,7 +419,7 @@ nftban_ddos_status() {
     echo "  Configuration"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "  Config File:  /etc/nftban/conf.d/ddos.conf"
+    echo "  Config File:  /etc/nftban/conf.d/ddos/main.conf"
     echo ""
     echo "  Key Settings:"
     echo "    DDOS_ENABLED=true|false     - Enable/disable DDoS protection"

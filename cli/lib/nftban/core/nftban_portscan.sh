@@ -570,7 +570,7 @@ nftban_portscan_status() {
     echo "CONFIGURATION"
     echo "───────────────────────────────────────────────────────────"
     echo ""
-    echo "  Config File:  /etc/nftban/conf.d/portscan.conf"
+    echo "  Config File:  /etc/nftban/conf.d/portscan/main.conf"
     echo ""
     echo "  Key Settings:"
     echo "    PORTSCAN_ENABLED=true|false"
