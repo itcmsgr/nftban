@@ -685,7 +685,7 @@ nftban_port_allow_directadmin() {
     echo ""
 
     # Load DirectAdmin configuration
-    local config_file="${NFTBAN_CONFIG_DIR}/conf.d/directadmin.conf"
+    local config_file="${NFTBAN_CONFIG_DIR}/conf.d/directadmin/main.conf"
     if [[ -f "$config_file" ]]; then
         # shellcheck source=/dev/null
         source "$config_file"
