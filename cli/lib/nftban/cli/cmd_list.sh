@@ -329,11 +329,11 @@ nftban_cmd_list_usage() {
     cat <<EOF
 Usage: nftban list [TYPE] [OPTIONS]
 
-List IPs from nftables sets.
+List IPs from nftables sets (active firewall rules).
 
 TYPES:
   banned        List banned IPs (temp_ban + blacklist) [default]
-  whitelist     List whitelisted IPs
+  whitelist     List whitelisted IPs (from firewall)
   all           List all IPs (banned + whitelist)
 
 OPTIONS:
@@ -343,8 +343,16 @@ OPTIONS:
 EXAMPLES:
   nftban list                    # List all banned IPs
   nftban list banned --json      # List banned IPs in JSON
-  nftban list whitelist          # List whitelisted IPs
+  nftban list whitelist          # List whitelisted IPs from firewall
   nftban list all --json         # List all IPs in JSON
+
+WHITELIST COMMANDS COMPARISON:
+  nftban list whitelist          # Shows IPs loaded in nftables (active now)
+  nftban whitelist list          # Shows IPs from config files (persistent)
+  nftban whitelist-system show   # Shows only system auto-detected IPs
+
+TIP: Use 'nftban list whitelist' to see what's currently protecting your IPs.
+     Use 'nftban whitelist list' to see what's saved in configuration.
 
 EOF
 }

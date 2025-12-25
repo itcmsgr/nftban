@@ -178,6 +178,15 @@ output_terminal() {
     fi
     printf "  %-20s %s\n" "Banned IPs.........." "$ban_count"
 
+    # Count whitelisted IPs (from nftables)
+    local whitelist_count=0
+    if command -v nft >/dev/null 2>&1; then
+        local wl_v4=$(nft list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | wc -l 2>/dev/null || echo "0")
+        local wl_v6=$(nft list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | grep -oP '[0-9a-fA-F:]+' | grep ':' | wc -l 2>/dev/null || echo "0")
+        whitelist_count=$((wl_v4 + wl_v6))
+    fi
+    printf "  %-20s %s\n" "Whitelisted IPs....." "$whitelist_count"
+
     # Check master switch
     local master_enabled="true"
     if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local" ]]; then
@@ -192,6 +201,19 @@ output_terminal() {
         master_status="DISABLED (config)"
     fi
     printf "  %-20s %s\n" "Master Control......" "$master_status"
+
+    # Helpful hints (only in non-quiet mode)
+    if [[ $quiet_mode -eq 0 ]] && [[ $ban_count -gt 0 || $whitelist_count -gt 0 ]]; then
+        echo ""
+        echo "  Quick Commands:"
+        if [[ $ban_count -gt 0 ]]; then
+            echo "    View banned IPs:     nftban list banned"
+        fi
+        if [[ $whitelist_count -gt 0 ]]; then
+            echo "    View whitelist:      nftban list whitelist"
+        fi
+        echo "    View all:            nftban list all"
+    fi
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────
