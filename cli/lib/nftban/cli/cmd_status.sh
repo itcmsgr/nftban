@@ -229,12 +229,12 @@ output_terminal() {
 
     # DDoS Protection (check config directly to avoid recursion)
     local ddos_status="DISABLED"
-    local ddos_conf="${NFTBAN_CONFIG_DIR}/conf.d/ddos.conf"
-    local ddos_local="${NFTBAN_CONFIG_DIR}/conf.d/ddos.conf.local"
+    local ddos_main="${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf"
+    local ddos_local="${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf.local"
     local ddos_enabled="false"
 
-    # Load ddos config
-    [[ -f "$ddos_conf" ]] && source "$ddos_conf" 2>/dev/null || true
+    # Load ddos config (new directory structure)
+    [[ -f "$ddos_main" ]] && source "$ddos_main" 2>/dev/null || true
     [[ -f "$ddos_local" ]] && source "$ddos_local" 2>/dev/null || true
     ddos_enabled="${DDOS_ENABLED:-${NFTBAN_DDOS_ENABLED:-false}}"
 
@@ -245,25 +245,53 @@ output_terminal() {
 
     # Port-scan Detection (check config directly to avoid recursion)
     local portscan_status="DISABLED"
-    local portscan_conf="${NFTBAN_CONFIG_DIR}/conf.d/portscan.conf"
-    local portscan_local="${NFTBAN_CONFIG_DIR}/conf.d/portscan.conf.local"
+    local portscan_main="${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf"
+    local portscan_local="${NFTBAN_CONFIG_DIR}/conf.d/portscan/main.conf.local"
     local portscan_enabled="false"
 
-    # Load portscan config
-    [[ -f "$portscan_conf" ]] && source "$portscan_conf" 2>/dev/null || true
+    # Load portscan config (new directory structure)
+    [[ -f "$portscan_main" ]] && source "$portscan_main" 2>/dev/null || true
     [[ -f "$portscan_local" ]] && source "$portscan_local" 2>/dev/null || true
     portscan_enabled="${PORTSCAN_ENABLED:-false}"
 
     if [[ "$portscan_enabled" == "true" ]]; then
         if systemctl is-active suricata.service >/dev/null 2>&1; then
-            portscan_status="ENABLED (Suricata)"
+            portscan_status="ENABLED (Suricata mode)"
         else
-            portscan_status="ENABLED (kernel logs)"
+            portscan_status="ENABLED (Standalone)"
         fi
     elif systemctl is-active suricata.service >/dev/null 2>&1; then
         portscan_status="AVAILABLE (not enabled)"
     fi
     printf "  %-20s %s\n" "Port Scan..........." "$portscan_status"
+
+    # Protection module explanation (if not quiet mode)
+    if [[ $quiet_mode -eq 0 ]]; then
+        local show_note=false
+
+        # Show note if portscan or ddos are enabled
+        if [[ "$portscan_enabled" == "true" ]] || [[ "$ddos_enabled" == "true" ]]; then
+            show_note=true
+        fi
+
+        if [[ "$show_note" == "true" ]]; then
+            echo ""
+            echo "  Detection Modes:"
+            if [[ "$portscan_enabled" == "true" ]]; then
+                if systemctl is-active suricata.service >/dev/null 2>&1; then
+                    echo "    Port Scan: Using Suricata IDS (deep packet inspection)"
+                else
+                    echo "    Port Scan: Standalone mode (kernel log monitoring)"
+                fi
+            fi
+            if [[ "$ddos_enabled" == "true" ]]; then
+                echo "    DDoS: Active (connection rate limiting + SYN flood protection)"
+            fi
+            echo ""
+            echo "  View details: nftban portscan status | nftban ddos status"
+        fi
+    fi
+    echo ""
 
     # Trust Feeds (CDN whitelist - including Cloudflare)
     local trust_status="UNKNOWN"
