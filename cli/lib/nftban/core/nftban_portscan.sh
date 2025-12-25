@@ -289,6 +289,13 @@ nftban_portscan_init_dirs() {
         fi
     done
 
+    # Create log file if it doesn't exist
+    if [[ ! -f "$NFTBAN_PORTSCAN_LOG_FILE" ]]; then
+        touch "$NFTBAN_PORTSCAN_LOG_FILE" 2>/dev/null || true
+        chmod 640 "$NFTBAN_PORTSCAN_LOG_FILE" 2>/dev/null || true
+        chown nftban:nftban "$NFTBAN_PORTSCAN_LOG_FILE" 2>/dev/null || true
+    fi
+
     return 0
 }
 
@@ -571,6 +578,7 @@ nftban_portscan_status() {
     echo "───────────────────────────────────────────────────────────"
     echo ""
     echo "  Config File:  /etc/nftban/conf.d/portscan/main.conf"
+    echo "  Log File:     ${NFTBAN_PORTSCAN_LOG_FILE}"
     echo ""
     echo "  Key Settings:"
     echo "    PORTSCAN_ENABLED=true|false"
