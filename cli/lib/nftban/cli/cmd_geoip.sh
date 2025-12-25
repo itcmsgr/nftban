@@ -156,7 +156,19 @@ nftban_geoip_cmd_lookup() {
 
     if [[ -z "$nftban_core_bin" || ! -x "$nftban_core_bin" ]]; then
         echo "ERROR: nftban-core binary not found" >&2
+        echo "" >&2
+        echo "The 'geoip lookup' command requires the nftban-core Go binary." >&2
         echo "Expected location: ${NFTBAN_LIB_DIR}/bin/nftban-core" >&2
+        echo "" >&2
+        echo "This happens in CLI-only mode (bash scripts only)." >&2
+        echo "" >&2
+        echo "Solutions:" >&2
+        echo "  1. Install full NFTBan package:" >&2
+        echo "     dnf install nftban  (or: apt install nftban)" >&2
+        echo "" >&2
+        echo "  2. Check if binary exists:" >&2
+        echo "     ls -la ${NFTBAN_LIB_DIR}/bin/nftban-core" >&2
+        echo "" >&2
         return 1
     fi
 
@@ -228,7 +240,19 @@ nftban_geoip_cmd_status() {
 
     if [[ -z "$nftban_core_bin" || ! -x "$nftban_core_bin" ]]; then
         echo "ERROR: nftban-core binary not found" >&2
+        echo "" >&2
+        echo "The 'geoip status' command requires the nftban-core Go binary." >&2
         echo "Expected location: ${NFTBAN_LIB_DIR}/bin/nftban-core" >&2
+        echo "" >&2
+        echo "This happens in CLI-only mode (bash scripts only)." >&2
+        echo "" >&2
+        echo "Solutions:" >&2
+        echo "  1. Install full NFTBan package:" >&2
+        echo "     dnf install nftban  (or: apt install nftban)" >&2
+        echo "" >&2
+        echo "  2. Check if binary exists:" >&2
+        echo "     ls -la ${NFTBAN_LIB_DIR}/bin/nftban-core" >&2
+        echo "" >&2
         return 1
     fi
 
@@ -278,7 +302,19 @@ nftban_geoip_cmd_update() {
 
     if [[ -z "$nftban_core_bin" || ! -x "$nftban_core_bin" ]]; then
         echo "ERROR: nftban-core binary not found" >&2
+        echo "" >&2
+        echo "The 'geoip update' command requires the nftban-core Go binary." >&2
         echo "Expected location: ${NFTBAN_LIB_DIR}/bin/nftban-core" >&2
+        echo "" >&2
+        echo "This happens in CLI-only mode (bash scripts only)." >&2
+        echo "" >&2
+        echo "Solutions:" >&2
+        echo "  1. Install full NFTBan package:" >&2
+        echo "     dnf install nftban  (or: apt install nftban)" >&2
+        echo "" >&2
+        echo "  2. Check if binary exists:" >&2
+        echo "     ls -la ${NFTBAN_LIB_DIR}/bin/nftban-core" >&2
+        echo "" >&2
         return 1
     fi
 
