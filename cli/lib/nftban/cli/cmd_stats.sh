@@ -102,7 +102,7 @@ nftban_cmd_stats() {
             nftban_stats_cmd_help
             return 0
             ;;
-        dashboard|"")
+        dashboard|summary|"")
             shift || true
             nftban_stats_cmd_dashboard "$@"
             ;;
@@ -1170,7 +1170,7 @@ USAGE:
     nftban stats [COMMAND] [OPTIONS]
 
 COMMANDS:
-    dashboard              Show comprehensive statistics dashboard (default)
+    dashboard | summary    Show comprehensive statistics dashboard (default)
     trend                  Show 7-day trend analysis with averages
     top <type> [N]         Show top lists (ips, countries, jails)
     ip <IP>                Show ban history for specific IP
@@ -1214,6 +1214,7 @@ TREND COMMAND:
 EXAMPLES:
     # Show dashboard for last 24 hours
     nftban stats
+    nftban stats summary  # Alias for dashboard
 
     # Show dashboard for last 7 days
     nftban stats --last 7d
