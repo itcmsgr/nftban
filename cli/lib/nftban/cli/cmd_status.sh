@@ -400,20 +400,27 @@ output_terminal() {
     echo "RECENT ACTIVITY"
     echo "───────────────────────────────────────────────────────────────"
 
-    # Count bans today from bans.log
-    local bans_today="0"
-    local unbans_today="0"
+    # Count bans in last 24 hours from bans.log (consistent with nftban stats)
+    local bans_24h="0"
+    local unbans_24h="0"
     local ban_log="${NFTBAN_LOG_DIR}/bans.log"
-    local today
-    today=$(date +%Y-%m-%d)
+    local since_date
+    local until_date
+    since_date=$(date -d '24 hours ago' +%Y-%m-%d)
+    until_date=$(date +%Y-%m-%d)
 
     if [[ -r "$ban_log" ]]; then
-        bans_today=$(grep -c "^${today}.*BANNED$" "$ban_log" 2>/dev/null) || bans_today=0
-        unbans_today=$(grep -c "^${today}.*UNBANNED$" "$ban_log" 2>/dev/null) || unbans_today=0
+        # Use awk to count bans in last 24 hours (same logic as nftban_stats_count_bans)
+        bans_24h=$(awk -F'|' -v since="$since_date" -v until="$until_date" \
+            '$1 >= since && $1 <= until && $6 == "BANNED" {count++} END {print count+0}' \
+            "$ban_log" 2>/dev/null) || bans_24h=0
+        unbans_24h=$(awk -F'|' -v since="$since_date" -v until="$until_date" \
+            '$1 >= since && $1 <= until && $6 == "UNBANNED" {count++} END {print count+0}' \
+            "$ban_log" 2>/dev/null) || unbans_24h=0
     fi
 
-    printf "  %-20s %s\n" "Bans today.........." "$bans_today"
-    printf "  %-20s %s\n" "Unbans today........" "$unbans_today"
+    printf "  %-20s %s\n" "Bans (24h).........." "$bans_24h"
+    printf "  %-20s %s\n" "Unbans (24h)........" "$unbans_24h"
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────
