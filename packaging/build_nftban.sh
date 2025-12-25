@@ -136,6 +136,10 @@ cp -r cli/lib/nftban/* %{buildroot}/usr/lib/nftban/
 # Nftables config
 install -D -m 0644 install/nftables/nftables.conf %{buildroot}/etc/nftban/nftables.conf
 
+# Configuration files (conf.d with subdirectories)
+mkdir -p %{buildroot}/etc/nftban/conf.d
+cp -r etc/nftban/conf.d/* %{buildroot}/etc/nftban/conf.d/
+
 # Systemd units (actual files that exist)
 install -D -m 0644 install/systemd/nftban-maintenance.service %{buildroot}/usr/lib/systemd/system/nftban-maintenance.service
 install -D -m 0644 install/systemd/nftban-maintenance.timer %{buildroot}/usr/lib/systemd/system/nftban-maintenance.timer
@@ -202,6 +206,7 @@ systemctl daemon-reload 2>/dev/null || true
 # STEP 2: Create FHS directories
 echo "[NFTBan] Creating FHS directories..."
 mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d}
+mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels}
 mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
 mkdir -p /var/log/nftban/reports

@@ -448,6 +448,7 @@ install_configs() {
 
     # Create config directories
     mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d,conf.d,distros}
+    mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels}
     mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state}
     mkdir -p /var/lib/nftban/reports/auditors
     mkdir -p /var/log/nftban
