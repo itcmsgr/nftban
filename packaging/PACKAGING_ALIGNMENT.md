@@ -75,10 +75,15 @@
 
 | Group | GID Type | RPM | DEB | Purpose | Status |
 |-------|----------|-----|-----|---------|--------|
-| Operators | System | `nftban` | `nftban` | All NFTBan operators (CLI, Web, services) | ✅ ALIGNED |
+| Daemon | System | `nftban` | `nftban` | System daemon group (no human users) | ✅ ALIGNED |
+| CLI/GUI | System | `nftban-cli` | `nftban-cli` | CLI and Web GUI access | ✅ ALIGNED |
 | Auditors | System | `nftban-auditors` | `nftban-auditors` | Read-only audit access | ✅ ALIGNED |
 
-**Note:** NFTBan v1.0 uses a simplified 2-group model. The old `nftban-cli` and `nftban-web` groups have been merged into the single `nftban` group.
+**Note:** NFTBan v1.0 uses a 3-group model:
+- `nftban` - Daemon only (file ownership, no human users)
+- `nftban-cli` - CLI and Web GUI access (human operators)
+- `nftban-auditors` - Read-only log access (auditors)
+- `nftban-web` - **RETIRED** (merged into nftban-cli)
 
 ---
 

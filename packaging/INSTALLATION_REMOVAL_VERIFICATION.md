@@ -14,10 +14,11 @@
 | Item | Type | UID/GID | Home | Shell | Purpose |
 |------|------|---------|------|-------|---------|
 | `nftban` | User | System (auto) | /var/lib/nftban | /sbin/nologin | Service user |
-| `nftban` | Group | System (auto) | - | - | All operators (CLI + Web GUI) |
+| `nftban` | Group | System (auto) | - | - | Daemon group (no human users) |
+| `nftban-cli` | Group | System (auto) | - | - | CLI and Web GUI operators |
 | `nftban-auditors` | Group | System (auto) | - | - | Read-only auditors |
 
-> **Note:** NFTBan v1.0 uses simplified 2-group model. Old `nftban-cli` and `nftban-web` merged into `nftban`.
+> **Note:** NFTBan v1.0 uses 3-group model: `nftban` (daemon only), `nftban-cli` (CLI + Web GUI), `nftban-auditors` (read-only). The old `nftban-web` group is **retired**.
 
 #### RPM Implementation (%pre)
 ```bash

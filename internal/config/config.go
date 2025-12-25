@@ -46,7 +46,7 @@ func Load(path string) (*Config, error) {
 		SessionTimeout:   60,
 		IPWhitelistFile:  configDir + "/whitelist.d/ui-access.conf",
 		AuditLogFile:     logDir + "/ui-access.log",
-		RequiredGroup:    "nftban", // v1.0: Simplified 2-group model (merged nftban-cli + nftban-web)
+		RequiredGroup:    "nftban-cli", // Web GUI users must be in nftban-cli group
 		BlockRootLogin:   true,
 		MaxLoginAttempts: 5,
 		LockoutDuration:  15,

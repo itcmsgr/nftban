@@ -351,6 +351,64 @@ nftban_health_check_nftables_security() {
     return $status
 }
 
+nftban_health_check_conflicting_firewalls() {
+    # Check for conflicting firewall services (firewalld, iptables, ufw)
+    # These cannot coexist with nftban and cause unpredictable behavior
+    # Returns: 0=OK, 1=Warning, 2=Critical Error
+
+    local status=$HEALTH_OK
+    local firewall_conflicts=()
+
+    # Check firewalld
+    if command -v firewall-cmd &>/dev/null; then
+        if systemctl is-active --quiet firewalld 2>/dev/null; then
+            firewall_conflicts+=("ERROR: firewalld is ACTIVE - conflicts with nftban")
+            firewall_conflicts+=("  └─ FIX: systemctl stop firewalld && systemctl disable firewalld")
+            status=$HEALTH_CRITICAL
+        elif systemctl is-enabled --quiet firewalld 2>/dev/null; then
+            firewall_conflicts+=("WARNING: firewalld is ENABLED (not running)")
+            firewall_conflicts+=("  └─ FIX: systemctl disable firewalld")
+            [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+        fi
+    fi
+
+    # Check iptables service
+    if systemctl is-active --quiet iptables 2>/dev/null || \
+       systemctl is-active --quiet iptables.service 2>/dev/null || \
+       systemctl is-active --quiet ip6tables.service 2>/dev/null; then
+        firewall_conflicts+=("ERROR: iptables service is ACTIVE - conflicts with nftban")
+        firewall_conflicts+=("  └─ FIX: systemctl stop iptables && systemctl disable iptables")
+        status=$HEALTH_CRITICAL
+    elif systemctl is-enabled --quiet iptables 2>/dev/null || \
+         systemctl is-enabled --quiet iptables.service 2>/dev/null; then
+        firewall_conflicts+=("WARNING: iptables service is ENABLED (not running)")
+        firewall_conflicts+=("  └─ FIX: systemctl disable iptables")
+        [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+    fi
+
+    # Check ufw
+    if command -v ufw &>/dev/null; then
+        if ufw status 2>/dev/null | grep -q "Status: active"; then
+            firewall_conflicts+=("ERROR: ufw is ACTIVE - conflicts with nftban")
+            firewall_conflicts+=("  └─ FIX: ufw disable")
+            status=$HEALTH_CRITICAL
+        fi
+    fi
+
+    # Store results
+    if [[ ${#firewall_conflicts[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["conflicting_firewalls"]="${firewall_conflicts[*]}"
+        if [[ $status -eq $HEALTH_CRITICAL ]]; then
+            NFTBAN_HEALTH_ERRORS+=("Conflicting firewall(s) detected: ${firewall_conflicts[*]}")
+        else
+            NFTBAN_HEALTH_WARNINGS+=("Conflicting firewall(s) enabled: ${firewall_conflicts[*]}")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["conflicting_firewalls"]=$status
+    return $status
+}
+
 # =============================================================================
 # SERVICE CHECKS
 # =============================================================================
@@ -1985,6 +2043,11 @@ nftban_health_check_all() {
     nftban_health_check_nftables_security || check_result=$?
     [[ $check_result -gt $overall_status ]] && overall_status=$check_result
 
+    # Conflicting firewalls check (firewalld, iptables, ufw)
+    check_result=0
+    nftban_health_check_conflicting_firewalls || check_result=$?
+    [[ $check_result -gt $overall_status ]] && overall_status=$check_result
+
     # Binaries check (keep for now - no dedicated module)
     check_result=0
     nftban_health_check_binaries || check_result=$?
@@ -3272,6 +3335,7 @@ export -f nftban_health_check_all
 
 # Export check functions
 export -f nftban_health_check_nftables_security
+export -f nftban_health_check_conflicting_firewalls
 export -f nftban_health_check_binaries
 export -f nftban_health_check_paths
 export -f nftban_health_check_permissions

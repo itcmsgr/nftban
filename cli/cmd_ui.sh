@@ -80,8 +80,8 @@ SESSION_TIMEOUT=60
 BLOCK_ROOT_LOGIN=true
 
 # Authentication
-# v1.0: Simplified to single 'nftban' group (merged nftban-cli + nftban-web)
-REQUIRED_GROUP=nftban
+# Web GUI requires nftban-cli group (same as CLI access)
+REQUIRED_GROUP=nftban-cli
 
 # Access Control
 IP_WHITELIST_FILE=$NFTBAN_UI_WHITELIST
