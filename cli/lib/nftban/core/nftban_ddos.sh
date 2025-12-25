@@ -180,6 +180,14 @@ nftban_ddos_enable() {
     _nftban_ddos_load_config
     _nftban_ddos_banner
 
+    # Create log file if it doesn't exist
+    if [[ ! -f "$NFTBAN_DDOS_LOG_FILE" ]]; then
+        mkdir -p "$(dirname "$NFTBAN_DDOS_LOG_FILE")" 2>/dev/null || true
+        touch "$NFTBAN_DDOS_LOG_FILE" 2>/dev/null || true
+        chmod 640 "$NFTBAN_DDOS_LOG_FILE" 2>/dev/null || true
+        chown nftban:nftban "$NFTBAN_DDOS_LOG_FILE" 2>/dev/null || true
+    fi
+
     # Check if module is enabled
     if [[ "$DDOS_ENABLED" != "true" ]]; then
         echo ""
@@ -420,6 +428,7 @@ nftban_ddos_status() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "  Config File:  /etc/nftban/conf.d/ddos/main.conf"
+    echo "  Log File:     ${NFTBAN_DDOS_LOG_FILE}"
     echo ""
     echo "  Key Settings:"
     echo "    DDOS_ENABLED=true|false     - Enable/disable DDoS protection"
