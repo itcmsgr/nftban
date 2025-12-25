@@ -126,12 +126,25 @@ nftban_cmd_ban() {
         return 1
     fi
 
-    # Check if nftban-core exists
+    # Check if nftban-core exists (required for ban command)
     if [[ ! -x "$NFTBAN_CORE" ]]; then
         if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
-            json_output "false" '{}' "nftban-core not found"
+            json_output "false" '{}' "nftban-core binary not found - CLI-only mode"
         else
-            echo "ERROR: nftban-core not found at $NFTBAN_CORE" >&2
+            echo "ERROR: nftban-core binary not found" >&2
+            echo "" >&2
+            echo "The 'ban' command requires the nftban-core Go binary." >&2
+            echo "Expected location: $NFTBAN_CORE" >&2
+            echo "" >&2
+            echo "This happens in CLI-only mode (bash scripts only)." >&2
+            echo "" >&2
+            echo "Solutions:" >&2
+            echo "  1. Install full NFTBan package:" >&2
+            echo "     dnf install nftban  (or: apt install nftban)" >&2
+            echo "" >&2
+            echo "  2. Check if binary exists:" >&2
+            echo "     ls -la $NFTBAN_CORE" >&2
+            echo "" >&2
         fi
         return 1
     fi
