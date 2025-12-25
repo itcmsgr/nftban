@@ -93,6 +93,7 @@ create_rpm_spec_nftban_core() {
     cat > "${BUILD_DIR}/SPECS/nftban-core.spec" <<'EOF'
 # Disable debuginfo for Go binary (no debug symbols)
 %global debug_package %{nil}
+%global _missing_build_ids_terminate_build 0
 
 Name:           nftban-core
 Version:        1.0.0
@@ -298,7 +299,6 @@ if [ $1 -eq 0 ]; then
 fi
 
 %files
-/usr/lib/nftban/bin/nftban-core
 /usr/bin/nftban
 /usr/lib/nftban/
 %config(noreplace) /etc/nftban/nftables.conf
