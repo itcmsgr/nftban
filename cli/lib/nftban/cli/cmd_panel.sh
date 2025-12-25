@@ -285,7 +285,7 @@ Key Ports:
     nftban trust update
 
 Configuration Files:
-  /etc/nftban/conf.d/directadmin/main.conf     - Main configuration
+  /etc/nftban/conf.d/panels/directadmin/main.conf - Main configuration
   /etc/nftban/nftban.conf.local                - Your customizations
   /etc/fail2ban/jail.d/nftban-directadmin.conf - Fail2ban integration
 
@@ -455,8 +455,8 @@ nftban_panel_directadmin_status() {
 
     # Configuration file
     echo "Configuration:"
-    if [[ -f "/etc/nftban/conf.d/directadmin/main.conf" ]]; then
-        echo "  Config: ✓ /etc/nftban/conf.d/directadmin/main.conf"
+    if [[ -f "/etc/nftban/conf.d/panels/directadmin/main.conf" ]]; then
+        echo "  Config: ✓ /etc/nftban/conf.d/panels/directadmin/main.conf"
     else
         echo "  Config: ✗ NOT FOUND"
     fi
@@ -496,9 +496,9 @@ nftban_panel_directadmin_report() {
     echo "   ───────────────────────────────────────────────────"
 
     # Load config
-    if [[ -f "/etc/nftban/conf.d/directadmin/main.conf" ]]; then
+    if [[ -f "/etc/nftban/conf.d/panels/directadmin/main.conf" ]]; then
         # shellcheck source=/dev/null
-        source "/etc/nftban/conf.d/directadmin/main.conf"
+        source "/etc/nftban/conf.d/panels/directadmin/main.conf"
 
         echo "   TCP INPUT:  ${NFTBAN_DIRECTADMIN_TCP_IN:-Not configured}"
         echo "   TCP OUTPUT: ${NFTBAN_DIRECTADMIN_TCP_OUT:-Not configured}"
@@ -580,7 +580,7 @@ nftban_panel_directadmin_report() {
     # Configuration files
     echo "6. CONFIGURATION FILES"
     echo "   ───────────────────────────────────────────────────"
-    echo "   /etc/nftban/conf.d/directadmin/main.conf"
+    echo "   /etc/nftban/conf.d/panels/directadmin/main.conf"
     echo "   /etc/nftban/nftban.conf.local (customizations)"
     echo "   /etc/fail2ban/jail.d/nftban-directadmin.conf"
     echo ""
@@ -595,7 +595,7 @@ nftban_panel_directadmin_repair() {
     local repairs=0
 
     # Check configuration file
-    if [[ ! -f "/etc/nftban/conf.d/directadmin/main.conf" ]]; then
+    if [[ ! -f "/etc/nftban/conf.d/panels/directadmin/main.conf" ]]; then
         echo "✗ Configuration file missing!"
         echo "  This file should be restored by: dnf reinstall nftban"
         ((repairs++))

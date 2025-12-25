@@ -1578,7 +1578,7 @@ func ConfigFileHandler(w http.ResponseWriter, r *http.Request) {
 		"conf.d/services.conf":    true,
 		"conf.d/banner.conf":      true,
 		"conf.d/cloudflare.conf":  true,
-		"conf.d/directadmin/main.conf": true,
+		"conf.d/panels/directadmin/main.conf": true,
 		"conf.d/health.conf":      true,
 		"conf.d/login_alert.conf": true,
 		"conf.d/nftban-go.conf":   true,
