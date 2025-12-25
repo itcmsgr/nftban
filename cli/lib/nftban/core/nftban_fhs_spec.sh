@@ -60,6 +60,11 @@ nftban_fhs_load_spec() {
     # ─────────────────────────────────────────────────────────────────────
     NFTBAN_FHS_DIRECTORIES["/etc/nftban"]="750|root|nftban|Configuration files (daemon readable via group)"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d"]="750|root|nftban|Module configurations (daemon readable via group)"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/ddos"]="750|root|nftban|DDoS protection configuration"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/portscan"]="750|root|nftban|Port scan detection configuration"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/login"]="750|root|nftban|Login monitoring configuration"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/panels"]="750|root|nftban|Control panel configurations"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/panels/directadmin"]="750|root|nftban|DirectAdmin panel configuration"
 
     # ─────────────────────────────────────────────────────────────────────
     # Variable Data (nftban:nftban) - Application state and runtime data

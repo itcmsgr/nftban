@@ -962,6 +962,7 @@ nftban_health_check_config() {
     local config_dir="${NFTBAN_CONFIG_DIR}/conf.d"
     if [[ -d "$config_dir" ]]; then
         # Try to source config files (in subshell)
+        # Check top-level conf files
         for conf_file in "$config_dir"/*.conf; do
             if [[ -f "$conf_file" ]]; then
                 # shellcheck disable=SC1090  # Dynamic source for config validation
@@ -969,6 +970,22 @@ nftban_health_check_config() {
                     config_issues+=("Config has syntax errors: $(basename "$conf_file")")
                     status=$HEALTH_ERROR
                 fi
+            fi
+        done
+
+        # Check subdirectory config files (ddos/, portscan/, login/, panels/)
+        for subdir in "$config_dir"/*; do
+            if [[ -d "$subdir" ]]; then
+                for conf_file in "$subdir"/*.conf; do
+                    if [[ -f "$conf_file" ]]; then
+                        # shellcheck disable=SC1090  # Dynamic source for config validation
+                        if ! (source "$conf_file") 2>/dev/null; then
+                            local relative_path="$(basename "$subdir")/$(basename "$conf_file")"
+                            config_issues+=("Config has syntax errors: $relative_path")
+                            status=$HEALTH_ERROR
+                        fi
+                    fi
+                done
             fi
         done
     fi
