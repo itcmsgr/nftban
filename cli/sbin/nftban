@@ -43,6 +43,38 @@ export NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 export NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 
 # =============================================================================
+# PERMISSION CHECK
+# =============================================================================
+
+# Check if user has permission to read nftban config
+# Regular users must be in nftban-cli group OR run as root
+if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && [[ ! -r "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
+    cat >&2 <<EOF
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ERROR: Permission Denied
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+You do not have permission to run nftban.
+
+Requirements:
+  • Be root (uid 0), OR
+  • Be a member of the 'nftban-cli' group
+
+Current user: $(whoami) (uid: $(id -u))
+Current groups: $(id -Gn)
+
+To grant access, your administrator can run:
+  sudo usermod -aG nftban-cli $(whoami)
+
+Then log out and log back in for the group to take effect.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EOF
+    exit 1
+fi
+
+# =============================================================================
 # LOAD CONFIGURATION
 # =============================================================================
 # NOTE: Safe config parser available but temporarily using legacy mode
