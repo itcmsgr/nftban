@@ -581,6 +581,49 @@ nftban_metrics_status() {
         echo ""
     fi
 
+    # ============================================================================
+    # CONFIGURATION MISMATCH DETECTION
+    # ============================================================================
+    # Detect if wrong backend is running (configured != actual)
+    local config_mismatch=false
+    local wrong_backend=""
+    local correct_backend=""
+
+    if [[ "$backend" == "prometheus" ]] && [[ "$CONFLICT_VICTORIAMETRICS_RUNNING" == "true" ]]; then
+        config_mismatch=true
+        wrong_backend="VictoriaMetrics"
+        correct_backend="victoriametrics"
+    elif [[ "$backend" == "victoriametrics" ]] && [[ "$CONFLICT_PROMETHEUS_RUNNING" == "true" ]]; then
+        config_mismatch=true
+        wrong_backend="Prometheus"
+        correct_backend="prometheus"
+    fi
+
+    if [[ "$config_mismatch" == "true" ]]; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "⚠️  CONFIGURATION MISMATCH DETECTED"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "  Configured backend:  $backend"
+        echo "  Actually running:    $correct_backend ($wrong_backend)"
+        echo ""
+        echo "  Your $wrong_backend is working fine, but the configuration"
+        echo "  file points to the wrong backend."
+        echo ""
+        echo "  FIX: Update the configuration to match reality:"
+        echo ""
+        echo "    sed -i 's/NFTBAN_METRICS_BACKEND=\"$backend\"/NFTBAN_METRICS_BACKEND=\"$correct_backend\"/' /etc/nftban/nftban.conf"
+        echo ""
+        echo "  Then verify: nftban metrics status"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        return 0
+    fi
+
+    # ============================================================================
+    # NORMAL STATUS DISPLAY
+    # ============================================================================
     local all_running=true
 
     echo "Active Backend Details:"
@@ -696,13 +739,44 @@ nftban_cmd_metrics() {
         status)
             nftban_metrics_status
             ;;
+        set-backend)
+            # Quick command to update backend configuration
+            local new_backend="${1:-}"
+
+            if [[ -z "$new_backend" ]]; then
+                echo "❌ Error: Backend required"
+                echo ""
+                echo "Usage: nftban metrics set-backend <backend>"
+                echo ""
+                echo "Available backends:"
+                echo "  • prometheus"
+                echo "  • victoriametrics"
+                echo ""
+                return 1
+            fi
+
+            if [[ "$new_backend" != "prometheus" ]] && [[ "$new_backend" != "victoriametrics" ]]; then
+                echo "❌ Invalid backend: $new_backend"
+                echo "   Valid options: prometheus, victoriametrics"
+                return 1
+            fi
+
+            # Update configuration
+            _set_metrics_backend "$new_backend"
+
+            echo "✅ Metrics backend updated to: $new_backend"
+            echo ""
+            echo "Verify: nftban metrics status"
+            echo ""
+            ;;
         help|--help|-h)
-            echo "Usage: nftban metrics {enable|disable|status} [options]"
+            echo "Usage: nftban metrics {enable|disable|status|set-backend} [options]"
             echo ""
             echo "Commands:"
-            echo "  enable      Enable metrics collection"
-            echo "  disable     Disable metrics collection"
-            echo "  status      Show metrics services status"
+            echo "  enable          Enable metrics collection"
+            echo "  disable         Disable metrics collection"
+            echo "  status          Show metrics services status"
+            echo "  set-backend     Update configured backend (prometheus|victoriametrics)"
             echo ""
             echo "Options for 'enable':"
             echo "  --backend prometheus        Use Prometheus (default)"
@@ -733,6 +807,7 @@ nftban_cmd_metrics() {
             echo "  nftban metrics enable                              # Use Prometheus"
             echo "  nftban metrics enable --backend victoriametrics    # Use VictoriaMetrics"
             echo "  nftban metrics status                              # Check status"
+            echo "  nftban metrics set-backend victoriametrics         # Switch to VictoriaMetrics"
             echo "  nftban metrics disable                             # Stop collection"
             echo ""
             echo "Grafana Integration:"
@@ -742,7 +817,7 @@ nftban_cmd_metrics() {
             ;;
         *)
             echo "Unknown command: $subcommand"
-            echo "Usage: nftban metrics {enable|disable|status|help}"
+            echo "Usage: nftban metrics {enable|disable|status|set-backend|help}"
             return 1
             ;;
     esac
