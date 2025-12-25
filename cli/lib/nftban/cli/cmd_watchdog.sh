@@ -436,11 +436,27 @@ nftban_cmd_watchdog() {
     local subcommand="${1:-status}"
     shift || true
 
-    # Load output module (for help banner)
+    # Load output module (for banner)
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
         # shellcheck source=/dev/null
         source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
     fi
+
+    # Show banner for detailed commands (not for quick status)
+    # This keeps "nftban watchdog status" as a one-liner for scripts
+    # while showing banner for interactive commands
+    case "$subcommand" in
+        status)
+            # Quick one-liner - no banner for scripting compatibility
+            ;;
+        *)
+            # Show banner for all other commands (report, check, history, etc.)
+            if [[ $(type -t nftban_banner) == "function" ]]; then
+                nftban_banner
+            fi
+            echo ""
+            ;;
+    esac
 
     case "$subcommand" in
         status)
