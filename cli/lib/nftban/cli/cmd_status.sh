@@ -489,6 +489,18 @@ output_terminal() {
     else
         printf "  %-20s %s\n" "Active timers......." "None installed"
     fi
+
+    # Timer status explanation
+    if [[ $timer_count -gt 0 ]] && [[ $quiet_mode -eq 0 ]]; then
+        echo "  Timer Status Guide:"
+        echo "    OK              - Running automatically"
+        echo "    ENABLED (stopped) - Will start at boot (or run: systemctl start <timer>)"
+        echo "    INACTIVE        - Disabled (optional feature)"
+        echo ""
+        if [[ $timer_active -lt $timer_count ]]; then
+            echo "  To enable all timers: nftban timers enable"
+        fi
+    fi
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────
