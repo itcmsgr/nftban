@@ -297,7 +297,7 @@ fi
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.timer
 /etc/polkit-1/rules.d/10-nftban-core.rules
-/usr/share/man/man8/nftban.8
+/usr/share/man/man8/nftban.8*
 %dir /etc/nftban
 %dir /etc/nftban/conf.d
 %dir /etc/nftban/distros
