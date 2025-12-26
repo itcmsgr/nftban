@@ -308,6 +308,16 @@ fi
 /usr/share/man/man8/nftban.8*
 %dir /etc/nftban
 %dir /etc/nftban/conf.d
+%config(noreplace) /etc/nftban/conf.d/*.conf
+%dir /etc/nftban/conf.d/ddos
+%config(noreplace) /etc/nftban/conf.d/ddos/*.conf
+%dir /etc/nftban/conf.d/login
+%config(noreplace) /etc/nftban/conf.d/login/*.conf
+%dir /etc/nftban/conf.d/portscan
+%config(noreplace) /etc/nftban/conf.d/portscan/*.conf
+%dir /etc/nftban/conf.d/panels
+%dir /etc/nftban/conf.d/panels/directadmin
+%config(noreplace) /etc/nftban/conf.d/panels/directadmin/*.conf
 %dir /etc/nftban/distros
 %dir /etc/nftban/whitelist.d
 %dir /etc/nftban/blacklist.d
