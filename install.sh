@@ -717,20 +717,12 @@ install_templates() {
     # Create template directories
     mkdir -p /usr/share/nftban/templates/{mail,reports}
 
-    # Install mail templates
-    if [[ -d "$SCRIPT_DIR/cli/share/nftban/templates/mail" ]]; then
-        cp -f "$SCRIPT_DIR/cli/share/nftban/templates/mail/"*.html /usr/share/nftban/templates/mail/ 2>/dev/null || true
-        local mail_count
-        mail_count=$(ls -1 /usr/share/nftban/templates/mail/*.html 2>/dev/null | wc -l)
-        ok "Installed $mail_count mail templates"
-    fi
-
-    # Install report templates
-    if [[ -d "$SCRIPT_DIR/cli/share/nftban/templates/reports" ]]; then
-        cp -f "$SCRIPT_DIR/cli/share/nftban/templates/reports/"*.html /usr/share/nftban/templates/reports/ 2>/dev/null || true
-        local report_count
-        report_count=$(ls -1 /usr/share/nftban/templates/reports/*.html 2>/dev/null | wc -l)
-        ok "Installed $report_count report templates"
+    # Install templates (mail, reports, email, partials)
+    if [[ -d "$SCRIPT_DIR/install/share/nftban/templates" ]]; then
+        cp -r "$SCRIPT_DIR/install/share/nftban/templates/"* /usr/share/nftban/templates/ 2>/dev/null || true
+        local template_count
+        template_count=$(find /usr/share/nftban/templates -type f -name "*.html" 2>/dev/null | wc -l)
+        ok "Installed $template_count templates"
     fi
 
     # Set permissions
@@ -742,8 +734,8 @@ install_templates() {
 
     # Install spec files (for nftban validate)
     mkdir -p /usr/share/nftban/specs
-    if [[ -d "$SCRIPT_DIR/cli/share/nftban/specs" ]]; then
-        cp -f "$SCRIPT_DIR/cli/share/nftban/specs/"*.json /usr/share/nftban/specs/ 2>/dev/null || true
+    if [[ -d "$SCRIPT_DIR/install/share/nftban/specs" ]]; then
+        cp -f "$SCRIPT_DIR/install/share/nftban/specs/"*.json /usr/share/nftban/specs/ 2>/dev/null || true
         local spec_count
         spec_count=$(ls -1 /usr/share/nftban/specs/*.json 2>/dev/null | wc -l)
         ok "Installed $spec_count spec files"
