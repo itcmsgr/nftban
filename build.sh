@@ -33,7 +33,10 @@ mkdir -p "$BIN_DIR"
 CGO_ENABLED=1
 GOOS=linux
 GOARCH=amd64
-LDFLAGS="-s -w"
+
+# Read version from VERSION file (single source of truth)
+VERSION=$(cat "$SCRIPT_DIR/VERSION" 2>/dev/null || echo "dev")
+LDFLAGS="-s -w -X github.com/itcmsgr/nftban/pkg/version.Version=$VERSION"
 
 # Component to build (default: all)
 COMPONENT="${1:-all}"

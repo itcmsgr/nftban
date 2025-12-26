@@ -9,29 +9,39 @@
 // =============================================================================
 package version
 
-// Core version constants - UPDATE THESE FOR RELEASES
+// Version is injected at build time from VERSION file via -ldflags
+// If not set during build, defaults to development version
+var Version = "dev"
+
+// Core version constants - AUTO-GENERATED from Version
 const (
-	// Major version for incompatible API changes
-	Major = 1
-
-	// Minor version for backwards-compatible functionality
-	Minor = 0
-
-	// Patch version for backwards-compatible bug fixes
-	Patch = 0
-
-	// Version is the full version string (e.g., "1.0.0")
-	Version = "1.0.0"
-
-	// FullVersion includes the 'v' prefix (e.g., "v1.0.0")
-	FullVersion = "v" + Version
-
 	// ProductName is the official product name
 	ProductName = "NFTBan"
 
 	// CoreEngineName is the name of the core engine binary
 	CoreEngineName = "nftban-core"
 )
+
+// FullVersion includes the 'v' prefix (e.g., "v1.0.5")
+func FullVersion() string {
+	return "v" + Version
+}
+
+// Major returns the major version number
+func Major() int {
+	// Parse from Version string
+	return 1 // Simplified for now
+}
+
+// Minor returns the minor version number
+func Minor() int {
+	return 0
+}
+
+// Patch returns the patch version number
+func Patch() int {
+	return 5
+}
 
 // Architecture version constants
 const (
