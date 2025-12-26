@@ -11,11 +11,30 @@ URL:            https://nftban.com
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  bash
-Requires:       bash >= 4.0
-Requires:       nftables
-Requires:       systemd
+BuildRequires:  systemd-rpm-macros
+
+# Runtime requirements - Core dependencies
+Requires:       nftables >= 1.0.0
+Requires:       systemd >= 250
+Requires:       bash >= 5.0
+Requires:       bash-completion
+Requires:       jq >= 1.6
 Requires:       curl
-Requires:       jq
+Requires:       python3
+Requires:       shadow-utils
+Requires:       coreutils
+Requires:       gzip
+Requires:       tar
+Requires:       grep
+Requires:       sed
+Requires:       gawk
+Requires:       findutils
+Requires:       util-linux
+Requires:       iproute
+Requires:       ipset
+Requires:       git
+Requires:       polkit
+Recommends:     logrotate
 
 %description
 NFTBan is a modern, modular firewall management system built on nftables.
@@ -117,6 +136,61 @@ if [ $CONFLICTS_FOUND -eq 1 ]; then
 fi
 
 echo "  No conflicting firewalls detected"
+
+# ==========================================================================
+# STEP 0.5: Ensure EPEL and CRB Repositories (RHEL Family)
+# ==========================================================================
+echo "Ensuring required repositories..."
+
+# Detect RHEL version
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    VERSION_ID_MAJOR="${VERSION_ID%%.*}"
+fi
+
+# Determine CRB/PowerTools name based on version
+if [ "${VERSION_ID_MAJOR}" -ge 9 ]; then
+    CRB_NAME="crb"
+else
+    CRB_NAME="powertools"
+fi
+
+# Install EPEL if not present
+if ! rpm -qa | grep -q epel-release; then
+    echo "  Installing EPEL repository..."
+    dnf install -y epel-release 2>/dev/null || yum install -y epel-release 2>/dev/null || true
+    echo "  EPEL repository installed"
+else
+    echo "  EPEL repository already installed"
+fi
+
+# Enable CRB/PowerTools repository
+if command -v dnf &>/dev/null; then
+    if ! dnf repolist enabled 2>/dev/null | grep -q "${CRB_NAME}"; then
+        echo "  Enabling ${CRB_NAME} repository..."
+        dnf config-manager --set-enabled "${CRB_NAME}" 2>/dev/null || true
+        echo "  ${CRB_NAME} repository enabled"
+    else
+        echo "  ${CRB_NAME} repository already enabled"
+    fi
+elif command -v yum &>/dev/null; then
+    if ! yum repolist enabled 2>/dev/null | grep -q "${CRB_NAME}"; then
+        echo "  Enabling ${CRB_NAME} repository..."
+        yum-config-manager --enable "${CRB_NAME}" 2>/dev/null || true
+        echo "  ${CRB_NAME} repository enabled"
+    else
+        echo "  ${CRB_NAME} repository already enabled"
+    fi
+fi
+
+# Disable conflicting testing repositories
+for repo in epel-testing epel-modular epel-next epel-next-testing; do
+    if dnf repolist enabled 2>/dev/null | grep -q "$repo" || yum repolist enabled 2>/dev/null | grep -q "$repo"; then
+        dnf config-manager --set-disabled "$repo" 2>/dev/null || yum-config-manager --disable "$repo" 2>/dev/null || true
+    fi
+done
+
+echo "  Repository setup complete"
 
 # Create directories
 install -d -m 750 -o root -g nftban /etc/nftban/ports.d 2>/dev/null || true
