@@ -46,7 +46,7 @@ func validateIPs(ips []string) error {
 	return nil
 }
 
-// validateCIDR validates a CIDR notation
+//nolint:U1000 // Prepared for future validation enhancement
 func validateCIDR(cidrStr string) error {
 	_, _, err := net.ParseCIDR(cidrStr)
 	if err != nil {
