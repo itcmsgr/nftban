@@ -174,7 +174,13 @@ install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-auth.rules.in %{buildroo
 install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-port-status.rules.in %{buildroot}/etc/polkit-1/rules.d/50-nftban-port-status.rules.in
 
 # Validator spec file
-install -D -m 0644 share/specs/structure_default.json %{buildroot}/usr/share/nftban/specs/structure_default.json
+install -D -m 0644 install/share/nftban/specs/structure_default.json %{buildroot}/usr/share/nftban/specs/structure_default.json
+
+# Templates (mail, reports, email, partials)
+find install/share/nftban/templates -type f -name "*.html" | while read -r tmpl; do
+    rel_path="${tmpl#install/share/nftban/templates/}"
+    install -D -m 0644 "$tmpl" "%{buildroot}/usr/share/nftban/templates/$rel_path"
+done
 
 # Man page
 install -D -m 0644 install/man/man8/nftban.8 %{buildroot}/usr/share/man/man8/nftban.8
@@ -578,7 +584,14 @@ build_deb() {
 
     # Copy validator spec
     mkdir -p "${deb_root}/usr/share/nftban/specs"
-    install -m 0644 "${PROJECT_ROOT}/share/specs/structure_default.json" "${deb_root}/usr/share/nftban/specs/"
+    install -m 0644 "${PROJECT_ROOT}/install/share/nftban/specs/structure_default.json" "${deb_root}/usr/share/nftban/specs/"
+
+    # Copy templates (mail, reports, email, partials)
+    mkdir -p "${deb_root}/usr/share/nftban/templates"
+    find "${PROJECT_ROOT}/install/share/nftban/templates" -type f -name "*.html" | while read -r tmpl; do
+        rel_path="${tmpl#${PROJECT_ROOT}/install/share/nftban/templates/}"
+        install -D -m 0644 "$tmpl" "${deb_root}/usr/share/nftban/templates/$rel_path"
+    done
 
     # Copy man page
     mkdir -p "${deb_root}/usr/share/man/man8"
