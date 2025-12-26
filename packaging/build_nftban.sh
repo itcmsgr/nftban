@@ -177,7 +177,7 @@ install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-port-status.rules.in %{b
 install -D -m 0644 share/specs/structure_default.json %{buildroot}/usr/share/nftban/specs/structure_default.json
 
 # Man page
-install -D -m 0644 docs/man/man8/nftban.8 %{buildroot}/usr/share/man/man8/nftban.8
+install -D -m 0644 install/man/man8/nftban.8 %{buildroot}/usr/share/man/man8/nftban.8
 
 # Config directories (must match %files section)
 mkdir -p %{buildroot}/etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d}
@@ -582,7 +582,7 @@ build_deb() {
 
     # Copy man page
     mkdir -p "${deb_root}/usr/share/man/man8"
-    install -m 0644 "${PROJECT_ROOT}/docs/man/man8/nftban.8" "${deb_root}/usr/share/man/man8/"
+    install -m 0644 "${PROJECT_ROOT}/install/man/man8/nftban.8" "${deb_root}/usr/share/man/man8/"
 
     # Create control file
     create_deb_control
