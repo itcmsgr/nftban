@@ -11,22 +11,40 @@ Homepage: https://github.com/itcmsgr/nftban-dev
 Vcs-Git: https://github.com/itcmsgr/nftban-dev.git
 Vcs-Browser: https://github.com/itcmsgr/nftban-dev
 
-Package: nftban-ui
+Package: nftban
 Architecture: any
 Depends: ${shlibs:Depends},
          ${misc:Depends},
-         systemd,
-         libpam0g,
-         nftables,
+         nftables (>= 1.0.0),
+         systemd (>= 250),
+         bash (>= 5.0),
+         bash-completion,
+         jq (>= 1.6),
+         curl,
+         python3,
+         coreutils,
+         gzip,
+         tar,
+         grep,
+         sed,
+         gawk,
+         findutils,
+         util-linux,
+         iproute2,
+         ipset,
+         git,
+         policykit-1,
          adduser
-Description: NFTBan Web GUI - Secure web interface for firewall management
- NFTBan Web GUI is a secure, modern web interface for managing the NFTBan
- adaptive firewall system.
+Recommends: logrotate
+Description: NFTBan - Modern Firewall Management System
+ NFTBan is a modern, modular firewall management system built on nftables.
  .
- Features:
-  - Socket-based PAM authentication (no setuid binaries)
-  - 8-layer security architecture
-  - 15+ RESTful API endpoints
-  - Modern dark theme UI
-  - Systemd socket activation
-  - Resource limits and cgroup awareness
+ Features include:
+  - Native nftables integration
+  - Login monitoring and alerts
+  - Threat intelligence feeds
+  - Geographic blocking (GeoIP)
+  - Port scan detection
+  - DDoS protection
+  - CLI and optional Web GUI
+  - Prometheus metrics support
