@@ -1126,9 +1126,9 @@ install_systemd() {
     fi
 
     # Task queue processor
-    if [[ -f "$SCRIPT_DIR/systemd/system/nftban-queue.service" ]]; then
-        cp -f "$SCRIPT_DIR/systemd/system/nftban-queue.service" "$systemd_dir/"
-        cp -f "$SCRIPT_DIR/systemd/system/nftban-queue.timer" "$systemd_dir/"
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-queue.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-queue.service" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-queue.timer" "$systemd_dir/"
         ok "Queue processor units → $systemd_dir"
     fi
 

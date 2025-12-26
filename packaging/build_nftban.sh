@@ -165,6 +165,16 @@ install -D -m 0644 install/systemd/nftban-suricata-update.timer %{buildroot}/usr
 
 # PolicyKit rules
 install -D -m 0644 cmd/nftban-core/polkit/10-nftban-core.rules %{buildroot}/etc/polkit-1/rules.d/10-nftban-core.rules
+install -D -m 0644 packaging/polkit-1/rules.d/20-nftban-suricata.rules %{buildroot}/etc/polkit-1/rules.d/20-nftban-suricata.rules
+install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-auth.rules %{buildroot}/etc/polkit-1/rules.d/50-nftban-auth.rules
+install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-port-status.rules %{buildroot}/etc/polkit-1/rules.d/50-nftban-port-status.rules
+install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-v030.rules %{buildroot}/etc/polkit-1/rules.d/50-nftban-v030.rules
+install -D -m 0644 packaging/polkit-1/rules.d/60-nftban-services.rules %{buildroot}/etc/polkit-1/rules.d/60-nftban-services.rules
+install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-auth.rules.in %{buildroot}/etc/polkit-1/rules.d/50-nftban-auth.rules.in
+install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-port-status.rules.in %{buildroot}/etc/polkit-1/rules.d/50-nftban-port-status.rules.in
+
+# Validator spec file
+install -D -m 0644 share/specs/structure_default.json %{buildroot}/usr/share/nftban/specs/structure_default.json
 
 # Man page
 install -D -m 0644 docs/man/man8/nftban.8 %{buildroot}/usr/share/man/man8/nftban.8
@@ -306,6 +316,14 @@ fi
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.timer
 /etc/polkit-1/rules.d/10-nftban-core.rules
+/etc/polkit-1/rules.d/20-nftban-suricata.rules
+/etc/polkit-1/rules.d/50-nftban-auth.rules
+/etc/polkit-1/rules.d/50-nftban-port-status.rules
+/etc/polkit-1/rules.d/50-nftban-v030.rules
+/etc/polkit-1/rules.d/60-nftban-services.rules
+/etc/polkit-1/rules.d/50-nftban-auth.rules.in
+/etc/polkit-1/rules.d/50-nftban-port-status.rules.in
+/usr/share/nftban/specs/structure_default.json
 /usr/share/man/man8/nftban.8*
 %dir /etc/nftban
 %dir /etc/nftban/conf.d
@@ -550,6 +568,17 @@ build_deb() {
 
     # Copy PolicyKit rules
     install -m 0644 "${PROJECT_ROOT}/cmd/nftban-core/polkit/10-nftban-core.rules" "${deb_root}/etc/polkit-1/rules.d/"
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/20-nftban-suricata.rules" "${deb_root}/etc/polkit-1/rules.d/"
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-auth.rules" "${deb_root}/etc/polkit-1/rules.d/"
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-port-status.rules" "${deb_root}/etc/polkit-1/rules.d/"
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-v030.rules" "${deb_root}/etc/polkit-1/rules.d/"
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/60-nftban-services.rules" "${deb_root}/etc/polkit-1/rules.d/"
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-auth.rules.in" "${deb_root}/etc/polkit-1/rules.d/"
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-port-status.rules.in" "${deb_root}/etc/polkit-1/rules.d/"
+
+    # Copy validator spec
+    mkdir -p "${deb_root}/usr/share/nftban/specs"
+    install -m 0644 "${PROJECT_ROOT}/share/specs/structure_default.json" "${deb_root}/usr/share/nftban/specs/"
 
     # Copy man page
     mkdir -p "${deb_root}/usr/share/man/man8"
