@@ -38,11 +38,37 @@
 # VERSION CONSTANTS
 # =============================================================================
 
-# Main NFTBan version
-readonly NFTBAN_VERSION="1.0.0"
-readonly NFTBAN_VERSION_MAJOR="1"
-readonly NFTBAN_VERSION_MINOR="0"
-readonly NFTBAN_VERSION_PATCH="0"
+# Read version from VERSION file (single source of truth)
+_nftban_read_version() {
+    local version_file
+    # Try multiple possible locations
+    for path in \
+        "${BASH_SOURCE[0]%/*}/../../../../../VERSION" \
+        "/usr/lib/nftban/VERSION" \
+        "${NFTBAN_ROOT}/VERSION" \
+        "$PWD/VERSION"; do
+        if [[ -f "$path" ]]; then
+            version_file="$path"
+            break
+        fi
+    done
+
+    if [[ -f "$version_file" ]]; then
+        cat "$version_file" | tr -d '[:space:]'
+    else
+        echo "1.0.5"  # Fallback if VERSION file not found
+    fi
+}
+
+# Main NFTBan version (read from VERSION file)
+NFTBAN_VERSION=$(_nftban_read_version)
+readonly NFTBAN_VERSION
+
+# Parse version components
+IFS='.' read -r NFTBAN_VERSION_MAJOR NFTBAN_VERSION_MINOR NFTBAN_VERSION_PATCH <<< "$NFTBAN_VERSION"
+readonly NFTBAN_VERSION_MAJOR
+readonly NFTBAN_VERSION_MINOR
+readonly NFTBAN_VERSION_PATCH
 
 # Version details
 readonly NFTBAN_VERSION_NAME="Unified Security Platform"

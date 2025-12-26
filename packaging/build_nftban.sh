@@ -24,8 +24,9 @@ readonly YELLOW='\033[1;33m'
 readonly BLUE='\033[0;34m'
 readonly NC='\033[0m'
 
-# Package metadata
-readonly PKG_VERSION="1.0.0"
+# Package metadata - Read from VERSION file (single source of truth)
+PKG_VERSION=$(cat "${BASH_SOURCE[0]%/*}/../VERSION" 2>/dev/null || echo "1.0.5")
+readonly PKG_VERSION
 readonly PKG_RELEASE="1"
 
 # Paths
