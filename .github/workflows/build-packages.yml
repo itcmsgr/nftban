@@ -100,14 +100,10 @@ jobs:
           mkdir -p dist/packages
           for rpm in build/packages/RPMS/*/*.rpm; do
             if [[ -f "$rpm" ]]; then
-              basename=$(basename "$rpm")
-              # Replace .x86_64.rpm with .${{ matrix.name_suffix }}.x86_64.rpm if not already present
-              if [[ ! "$basename" =~ \.${{ matrix.name_suffix }}\. ]]; then
-                newname="${basename/.x86_64.rpm/.${{ matrix.name_suffix }}.x86_64.rpm}"
-                cp "$rpm" "dist/packages/$newname"
-              else
-                cp "$rpm" "dist/packages/"
-              fi
+              # Rename: nftban-core-1.0.0-1.el10.x86_64.rpm -> nftban-el10-x86_64.rpm
+              newname="nftban-${{ matrix.name_suffix }}-x86_64.rpm"
+              cp "$rpm" "dist/packages/$newname"
+              echo "Renamed: $(basename "$rpm") -> $newname"
             fi
           done
           ls -la dist/packages/
@@ -172,10 +168,10 @@ jobs:
           mkdir -p dist/packages
           for deb in build/packages/*.deb; do
             if [[ -f "$deb" ]]; then
-              basename=$(basename "$deb")
-              # Add distro suffix: nftban_1.0.0_amd64.deb → nftban_1.0.0_ubuntu22.04_amd64.deb
-              newname="${basename/_amd64.deb/_${{ matrix.name_suffix }}_amd64.deb}"
+              # Rename: nftban-core_1.0.0_amd64.deb -> nftban-ubuntu22.04-amd64.deb
+              newname="nftban-${{ matrix.name_suffix }}-amd64.deb"
               cp "$deb" "dist/packages/$newname"
+              echo "Renamed: $(basename "$deb") -> $newname"
             fi
           done
           ls -la dist/packages/
