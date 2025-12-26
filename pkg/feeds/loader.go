@@ -134,7 +134,7 @@ func loadFeedFile(filePath string, ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet ma
 	return ipv4Count, ipv6Count, ipv4CIDRCount, ipv6CIDRCount, nil
 }
 
-// isIPv4CIDR checks if an IPNet is IPv4
+//nolint:U1000 // Helper function for future CIDR operations
 func isIPv4CIDR(ipNet *net.IPNet) bool {
 	return ipNet.IP.To4() != nil
 }

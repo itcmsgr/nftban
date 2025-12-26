@@ -55,7 +55,7 @@ func MergeCIDRsWithStats(cidrs []string, ipv4 bool) ([]string, *MergeStats, erro
 	return mergeCIDRsIPv6WithStats(cidrs)
 }
 
-// mergeCIDRsIPv4 handles IPv4 CIDR merging
+//nolint:U1000 // Alternative CIDR merge implementation
 func mergeCIDRsIPv4(cidrs []string) ([]string, error) {
 	intervals := make([]ipv4Interval, 0, len(cidrs))
 
@@ -196,7 +196,7 @@ func mergeCIDRsIPv4WithStats(cidrs []string) ([]string, *MergeStats, error) {
 	return result, stats, nil
 }
 
-// mergeCIDRsIPv6 handles IPv6 CIDR merging
+//nolint:U1000 // Alternative CIDR merge implementation
 func mergeCIDRsIPv6(cidrs []string) ([]string, error) {
 	intervals := make([]ipv6Interval, 0, len(cidrs))
 
@@ -389,7 +389,7 @@ func bigIntToIPv6(n *big.Int) net.IP {
 	return net.IP(bytes)
 }
 
-// rangeToCIDRs converts an IPv4 range to minimal set of CIDRs
+//nolint:U1000 // Helper function for range-to-CIDR conversion
 func rangeToCIDRs(start, end net.IP) []string {
 	startInt := ipToUint32(start)
 	endInt := ipToUint32(end)
@@ -422,9 +422,6 @@ func rangeToCIDRs(start, end net.IP) []string {
 
 		// Create CIDR with this prefix length
 		prefixLen := 32 - maxSize
-		if prefixLen < 0 {
-			prefixLen = 0
-		}
 
 		cidr := fmt.Sprintf("%s/%d", uint32ToIP(startInt).String(), prefixLen)
 		result = append(result, cidr)

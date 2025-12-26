@@ -1099,7 +1099,7 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 	return stats, nil
 }
 
-// getSetByName retrieves a set by name from nftables
+//nolint:U1000 // Helper method for set retrieval
 func (m *NFTManager) getSetByName(table *nftables.Table, setName string) (*nftables.Set, error) {
 	sets, err := m.conn.GetSets(table)
 	if err != nil {
@@ -1115,8 +1115,7 @@ func (m *NFTManager) getSetByName(table *nftables.Table, setName string) (*nftab
 	return nil, fmt.Errorf("set %s not found", setName)
 }
 
-// addCIDRElementsBatch adds a single batch of CIDRs to an interval set
-// Uses nft command-line tool for reliable interval set handling
+//nolint:U1000 // Helper method for batch CIDR operations
 func (m *NFTManager) addCIDRElementsBatch(set *nftables.Set, cidrs []string) error {
 	if len(cidrs) == 0 {
 		return nil

@@ -46,8 +46,7 @@ func runNftFast(args ...string) ([]byte, error) {
 	return runNftWithTimeout(nftTimeoutFast, args...)
 }
 
-// runNftSlow executes an nft command with slow timeout (120s)
-// Use for large batch operations like flushing huge sets
+//nolint:U1000 // Helper for large batch operations with extended timeout
 func runNftSlow(args ...string) ([]byte, error) {
 	return runNftWithTimeout(nftTimeoutSlow, args...)
 }
@@ -75,8 +74,7 @@ func runNftFile(path string) ([]byte, error) {
 	return runNft("-f", path)
 }
 
-// runNftFileSlow executes nft -f <file> with slow timeout
-// Use for large rule files
+//nolint:U1000 // Helper for large rule files with extended timeout
 func runNftFileSlow(path string) ([]byte, error) {
 	return runNftSlow("-f", path)
 }
@@ -219,7 +217,7 @@ func nftFamily(ipv4 bool) string {
 	return "ip6"
 }
 
-// nftIPType returns "ipv4_addr" or "ipv6_addr" based on IPv4 flag
+//nolint:U1000 // Helper for nftables type determination
 func nftIPType(ipv4 bool) string {
 	if ipv4 {
 		return "ipv4_addr"
