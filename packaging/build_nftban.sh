@@ -300,7 +300,7 @@ fi
 
 %files
 /usr/bin/nftban
-/usr/lib/nftban/
+/usr/lib/nftban
 %config(noreplace) /etc/nftban/nftables.conf
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.timer
