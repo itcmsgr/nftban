@@ -1106,7 +1106,7 @@ nftban_health_check_polkit() {
         status=$HEALTH_WARNING
     else
         # Check if NFTBAN services authorization rules are installed (v1.0 simplified model)
-        local polkit_services_rules="/etc/polkit-1/rules.d/60-nftban-services.rules"
+        local polkit_services_rules="${NFTBAN_POLKIT_RULES_DIR:-/etc/polkit-1/rules.d}/60-nftban-services.rules"
         if [[ ! -f "$polkit_services_rules" ]]; then
             polkit_issues+=("CRITICAL: Polkit services rules missing at $polkit_services_rules")
             polkit_issues+=("This violates NFTBAN security model - privilege separation not functional!")
@@ -1124,7 +1124,7 @@ nftban_health_check_polkit() {
         fi
 
         # Check if NFTBAN Auditors authorization rules are installed (v0.31+)
-        local polkit_auditors_rules="/etc/polkit-1/rules.d/50-nftban-v030.rules"
+        local polkit_auditors_rules="${NFTBAN_POLKIT_RULES_DIR:-/etc/polkit-1/rules.d}/50-nftban-v030.rules"
         if [[ ! -f "$polkit_auditors_rules" ]]; then
             polkit_issues+=("WARNING: Polkit auditors rules missing at $polkit_auditors_rules")
             polkit_issues+=("Users in nftban-auditors group cannot run inventory helpers without sudo")
