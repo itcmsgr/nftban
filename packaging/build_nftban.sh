@@ -163,8 +163,11 @@ install -D -m 0644 install/systemd/nftban-rollback.timer %{buildroot}/usr/lib/sy
 install -D -m 0644 install/systemd/nftban-suricata-update.service %{buildroot}/usr/lib/systemd/system/nftban-suricata-update.service
 install -D -m 0644 install/systemd/nftban-suricata-update.timer %{buildroot}/usr/lib/systemd/system/nftban-suricata-update.timer
 
+# PolicyKit policy
+install -D -m 0644 packaging/polkit-1/actions/com.nftban.suricata.policy %{buildroot}/usr/share/polkit-1/actions/com.nftban.suricata.policy
+
 # PolicyKit rules
-install -D -m 0644 cmd/nftban-core/polkit/10-nftban-core.rules %{buildroot}/etc/polkit-1/rules.d/10-nftban-core.rules
+install -D -m 0644 packaging/polkit-1/rules.d/10-nftban-core.rules %{buildroot}/etc/polkit-1/rules.d/10-nftban-core.rules
 install -D -m 0644 packaging/polkit-1/rules.d/20-nftban-suricata.rules %{buildroot}/etc/polkit-1/rules.d/20-nftban-suricata.rules
 install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-auth.rules %{buildroot}/etc/polkit-1/rules.d/50-nftban-auth.rules
 install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-port-status.rules %{buildroot}/etc/polkit-1/rules.d/50-nftban-port-status.rules
@@ -334,6 +337,7 @@ fi
 %config(noreplace) /etc/nftban/nftables.conf
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.timer
+/usr/share/polkit-1/actions/com.nftban.suricata.policy
 /etc/polkit-1/rules.d/10-nftban-core.rules
 /etc/polkit-1/rules.d/20-nftban-suricata.rules
 /etc/polkit-1/rules.d/50-nftban-auth.rules
@@ -585,8 +589,12 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-update.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-update.timer" "${deb_root}/usr/lib/systemd/system/"
 
+    # Copy PolicyKit policy
+    mkdir -p "${deb_root}/usr/share/polkit-1/actions"
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/actions/com.nftban.suricata.policy" "${deb_root}/usr/share/polkit-1/actions/"
+
     # Copy PolicyKit rules
-    install -m 0644 "${PROJECT_ROOT}/cmd/nftban-core/polkit/10-nftban-core.rules" "${deb_root}/etc/polkit-1/rules.d/"
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/10-nftban-core.rules" "${deb_root}/etc/polkit-1/rules.d/"
     install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/20-nftban-suricata.rules" "${deb_root}/etc/polkit-1/rules.d/"
     install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-auth.rules" "${deb_root}/etc/polkit-1/rules.d/"
     install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-port-status.rules" "${deb_root}/etc/polkit-1/rules.d/"
