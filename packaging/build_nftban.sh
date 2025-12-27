@@ -505,8 +505,28 @@ systemctl enable --now nftban-queue.timer 2>/dev/null || true
 # Enable and start login monitor
 systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
 
-# Reload nftables
-systemctl reload nftables 2>/dev/null || true
+# STEP 9: Configure nftables to load NFTBan config (distro-aware)
+echo "[NFTBan] Configuring nftables service..."
+# Source distro config library to get correct paths
+if [ -f /usr/lib/nftban/lib/nftban_distro_config.sh ]; then
+    source /usr/lib/nftban/lib/nftban_distro_config.sh 2>/dev/null || true
+
+    # Get distro-specific nftables.conf path
+    nftban_distro_load_config 2>/dev/null || true
+    SYSTEM_NFT_CONF=$(nftban_distro_get_path "nftables_conf" 2>/dev/null)
+
+    if [ -n "$SYSTEM_NFT_CONF" ] && [ -f "$SYSTEM_NFT_CONF" ]; then
+        # Check if already configured
+        if ! grep -q "/etc/nftban/nftables.conf" "$SYSTEM_NFT_CONF" 2>/dev/null; then
+            echo "# NFTBan firewall configuration" >> "$SYSTEM_NFT_CONF"
+            echo "include \"/etc/nftban/nftables.conf\"" >> "$SYSTEM_NFT_CONF"
+            echo "[NFTBan] Added NFTBan config to $SYSTEM_NFT_CONF"
+        fi
+    fi
+fi
+
+# Load nftables configuration
+systemctl reload nftables 2>/dev/null || systemctl restart nftables 2>/dev/null || true
 
 echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
 echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all optional timers."
