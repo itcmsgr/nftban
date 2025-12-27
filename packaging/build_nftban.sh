@@ -151,6 +151,10 @@ install -D -m 0644 install/nftables/nftables.conf %{buildroot}/etc/nftban/nftabl
 mkdir -p %{buildroot}/etc/nftban/conf.d
 cp -r etc/nftban/conf.d/* %{buildroot}/etc/nftban/conf.d/
 
+# Distro configuration files (CRITICAL for distro-aware paths)
+mkdir -p %{buildroot}/etc/nftban/distros
+cp etc/nftban/distros/*.conf %{buildroot}/etc/nftban/distros/
+
 # Systemd units (actual files that exist)
 install -D -m 0644 install/systemd/nftban-maintenance.service %{buildroot}/usr/lib/systemd/system/nftban-maintenance.service
 install -D -m 0644 install/systemd/nftban-maintenance.timer %{buildroot}/usr/lib/systemd/system/nftban-maintenance.timer
@@ -626,6 +630,7 @@ fi
 %dir /etc/nftban/conf.d/panels/directadmin
 %config(noreplace) /etc/nftban/conf.d/panels/directadmin/*.conf
 %dir /etc/nftban/distros
+/etc/nftban/distros/*.conf
 %dir /etc/nftban/whitelist.d
 %dir /etc/nftban/blacklist.d
 %dir /etc/nftban/ports.d
@@ -1086,6 +1091,10 @@ build_deb() {
     # Copy conf.d directory with subdirectories
     mkdir -p "${deb_root}/etc/nftban/conf.d"
     cp -r "${PROJECT_ROOT}/etc/nftban/conf.d"/* "${deb_root}/etc/nftban/conf.d/"
+
+    # Copy distro configuration files (CRITICAL for distro-aware paths)
+    mkdir -p "${deb_root}/etc/nftban/distros"
+    cp "${PROJECT_ROOT}/etc/nftban/distros"/*.conf "${deb_root}/etc/nftban/distros/"
 
     # Copy all systemd units
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-maintenance.service" "${deb_root}/usr/lib/systemd/system/"
