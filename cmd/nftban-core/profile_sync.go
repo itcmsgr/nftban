@@ -89,11 +89,8 @@ func runProfileSync() error {
 		start := time.Now()
 		log.Printf("  📊 Iteration %d/%d starting...", i+1, iterations)
 
-		// Test CIDR merging (CPU intensive)
-		_, _, mergeErr := sync.MergeCIDRsWithStats(bl4Slice, true)
-		if mergeErr != nil {
-			log.Printf("     Warning: CIDR merge error: %v", mergeErr)
-		}
+		// NOTE: CIDR merging profiling disabled - implementation reserved for future
+		// TODO: Re-enable when CIDR merge implementation is completed
 
 		// Test diff computation
 		wl4Diff := sync.ComputeDiff(wl4Slice, []string{})

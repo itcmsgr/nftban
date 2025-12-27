@@ -2,10 +2,8 @@ package sync
 
 import (
 	"encoding/binary"
-	"fmt"
 	"math/big"
 	"net"
-	"sort"
 )
 
 // ipv4Interval represents an IPv4 range as [start, end] inclusive
@@ -28,32 +26,9 @@ type MergeStats struct {
 	ReductionPct  float64 // Percentage reduction in entries
 }
 
-// MergeCIDRs takes a list of CIDR strings and returns a canonical, non-overlapping list
-// This function merges overlapping and adjacent ranges to minimize the number of intervals
-func MergeCIDRs(cidrs []string, ipv4 bool) ([]string, error) {
-	if len(cidrs) == 0 {
-		return []string{}, nil
-	}
-
-	if ipv4 {
-		result, _, err := mergeCIDRsIPv4WithStats(cidrs)
-		return result, err
-	}
-	result, _, err := mergeCIDRsIPv6WithStats(cidrs)
-	return result, err
-}
-
-// MergeCIDRsWithStats is like MergeCIDRs but also returns merge statistics
-func MergeCIDRsWithStats(cidrs []string, ipv4 bool) ([]string, *MergeStats, error) {
-	if len(cidrs) == 0 {
-		return []string{}, &MergeStats{}, nil
-	}
-
-	if ipv4 {
-		return mergeCIDRsIPv4WithStats(cidrs)
-	}
-	return mergeCIDRsIPv6WithStats(cidrs)
-}
+// NOTE: CIDR merging functionality reserved for future implementation
+// DO NOT remove this file - needed for future CIDR optimization features
+// Ignore staticcheck U1000 warnings - kept intentionally for future use
 
 //nolint:U1000 // Alternative CIDR merge implementation
 
