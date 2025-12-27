@@ -843,6 +843,26 @@ install_configs() {
         ok "Mail config exists (not overwriting): /etc/nftban/conf.d/mail.conf"
     fi
 
+    # Install stats configuration (if not exists - don't overwrite user config)
+    if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/stats.conf" ]] && [[ ! -f /etc/nftban/conf.d/stats.conf ]]; then
+        cp -f "$SCRIPT_DIR/etc/nftban/conf.d/stats.conf" /etc/nftban/conf.d/stats.conf
+        chmod 644 /etc/nftban/conf.d/stats.conf
+        chown root:nftban /etc/nftban/conf.d/stats.conf
+        ok "Installed: /etc/nftban/conf.d/stats.conf"
+    elif [[ -f /etc/nftban/conf.d/stats.conf ]]; then
+        ok "Stats config exists (not overwriting): /etc/nftban/conf.d/stats.conf"
+    fi
+
+    # Install banner configuration (if not exists - don't overwrite user config)
+    if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/banner.conf" ]] && [[ ! -f /etc/nftban/conf.d/banner.conf ]]; then
+        cp -f "$SCRIPT_DIR/etc/nftban/conf.d/banner.conf" /etc/nftban/conf.d/banner.conf
+        chmod 644 /etc/nftban/conf.d/banner.conf
+        chown root:nftban /etc/nftban/conf.d/banner.conf
+        ok "Installed: /etc/nftban/conf.d/banner.conf"
+    elif [[ -f /etc/nftban/conf.d/banner.conf ]]; then
+        ok "Banner config exists (not overwriting): /etc/nftban/conf.d/banner.conf"
+    fi
+
     # Install GUI groups config if exists
     if [[ -f "$SCRIPT_DIR/install/config/allowed-gui-groups" ]]; then
         cp -f "$SCRIPT_DIR/install/config/allowed-gui-groups" /etc/nftban/
