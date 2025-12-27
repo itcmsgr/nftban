@@ -16,8 +16,9 @@ set -u
 # =============================================================================
 
 # shellcheck disable=SC2034  # SCRIPT_DIR reserved for future use
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-readonly SCRIPT_DIR
+# Script directory (currently unused, reserved for future use)
+# SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# readonly SCRIPT_DIR
 readonly TEST_TIMEOUT=20  # seconds (increased for commands with network checks)
 TEST_LOG="/tmp/nftban_test_$(date +%Y%m%d_%H%M%S).log"
 readonly TEST_LOG

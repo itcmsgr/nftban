@@ -65,7 +65,6 @@ readonly SURICATA_BIN="/usr/bin/suricata"
 readonly SURICATA_CONF_DIR="/etc/suricata"
 readonly SURICATA_DATA_DIR="/var/lib/suricata"
 readonly SURICATA_LOG_DIR="/var/log/nftban/suricata"  # NFTBan HFS
-readonly NFTBAN_INSTALL_DIR="/usr/lib/nftban"
 readonly NFTBAN_TEMPLATES="/home/gituser/github/nftban-v1.0-dev/install/templates"
 
 # Note: print_status, print_error, print_info, detect_distro are now
@@ -171,7 +170,7 @@ compile_suricata() {
     print_status "Configuration complete"
 
     print_info "Building Suricata (this may take several minutes)..."
-    make -j$(nproc) || {
+    make -j"$(nproc)" || {
         print_error "Build failed"
         return 1
     }
