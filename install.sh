@@ -96,6 +96,35 @@ check_nftables() {
     ok "nftables installed successfully"
 }
 
+# Check and install PAM (REQUIRED for nftban-ui-auth)
+check_pam() {
+    log "Checking PAM (Pluggable Authentication Modules)..."
+
+    # Check for PAM library (not just headers)
+    if ldconfig -p 2>/dev/null | grep -q libpam.so || [[ -f /lib64/libpam.so.0 ]] || [[ -f /lib/x86_64-linux-gnu/libpam.so.0 ]]; then
+        ok "PAM library found"
+        return 0
+    fi
+
+    warn "PAM library not found - installing..."
+
+    # Detect package manager and install
+    if command -v dnf &>/dev/null; then
+        dnf install -y pam || { error "Failed to install PAM"; exit 1; }
+    elif command -v yum &>/dev/null; then
+        yum install -y pam || { error "Failed to install PAM"; exit 1; }
+    elif command -v apt-get &>/dev/null; then
+        apt-get update && apt-get install -y libpam0g || { error "Failed to install PAM"; exit 1; }
+    elif command -v zypper &>/dev/null; then
+        zypper install -y pam || { error "Failed to install PAM"; exit 1; }
+    else
+        error "Unknown package manager. Please install PAM manually."
+        exit 1
+    fi
+
+    ok "PAM installed successfully"
+}
+
 # Check for conflicting firewalls (CRITICAL - prevents conflicts)
 check_conflicting_firewalls() {
     log "Checking for conflicting firewalls..."
@@ -1453,6 +1482,7 @@ echo ""
 
 check_root
 check_nftables
+check_pam
 check_conflicting_firewalls
 check_go_binaries
 
