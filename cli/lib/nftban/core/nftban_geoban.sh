@@ -114,7 +114,7 @@ nftban_geoban_check_binary() {
     if [[ -z "${GEOIP_BINARY}" ]] || [[ ! -x "${GEOIP_BINARY}" ]]; then
         nftban_error "nftban-geoip binary not found or not executable"
         nftban_info "Expected location: ${NFTBAN_LIB_DIR}/bin/.real/nftban-geoip-$(uname -m)"
-        nftban_info "Run: scripts/build-go-binaries.sh to build it"
+        nftban_info "Run: ./build.sh to build Go binaries"
         return 1
     fi
     return 0
