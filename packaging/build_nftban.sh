@@ -185,6 +185,10 @@ done
 # Man page
 install -D -m 0644 install/man/man8/nftban.8 %{buildroot}/usr/share/man/man8/nftban.8
 
+# Test scripts
+mkdir -p %{buildroot}/usr/lib/nftban/tests
+find tests -type f -name "*.sh" -exec install -m 0755 {} %{buildroot}/usr/lib/nftban/tests/ \;
+
 # Config directories (must match %files section)
 mkdir -p %{buildroot}/etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d}
 mkdir -p %{buildroot}/var/lib/nftban/{feeds,geoip,staging,reports}
@@ -317,7 +321,16 @@ fi
 
 %files
 /usr/bin/nftban
-/usr/lib/nftban
+/usr/lib/nftban/bin
+/usr/lib/nftban/cli
+/usr/lib/nftban/core
+/usr/lib/nftban/lib
+/usr/lib/nftban/cron
+/usr/lib/nftban/helpers
+/usr/lib/nftban/setup
+/usr/lib/nftban/exporters
+/usr/lib/nftban/tests
+/usr/lib/nftban/*.sh
 %config(noreplace) /etc/nftban/nftables.conf
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.timer
@@ -596,6 +609,10 @@ build_deb() {
     # Copy man page
     mkdir -p "${deb_root}/usr/share/man/man8"
     install -m 0644 "${PROJECT_ROOT}/install/man/man8/nftban.8" "${deb_root}/usr/share/man/man8/"
+
+    # Copy test scripts
+    mkdir -p "${deb_root}/usr/lib/nftban/tests"
+    find "${PROJECT_ROOT}/tests" -type f -name "*.sh" -exec install -m 0755 {} "${deb_root}/usr/lib/nftban/tests/" \;
 
     # Create control file
     create_deb_control
