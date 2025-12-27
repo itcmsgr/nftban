@@ -134,6 +134,9 @@ install -D -m 0755 cli/sbin/nftban %{buildroot}/usr/bin/nftban
 install -D -m 0755 bin/nftban-ui %{buildroot}/usr/sbin/nftban-ui
 install -D -m 0755 bin/nftban-ui-auth %{buildroot}/usr/libexec/nftban-ui-auth
 
+# Version file
+install -D -m 0644 VERSION %{buildroot}/usr/lib/nftban/VERSION
+
 # Main configuration file
 install -D -m 0644 install/config/nftban.conf %{buildroot}/etc/nftban/nftban.conf
 
@@ -526,6 +529,7 @@ fi
 /usr/sbin/nftban-ui
 /usr/libexec/nftban-ui-auth
 /usr/lib/nftban/bin
+/usr/lib/nftban/VERSION
 /usr/lib/nftban/cli
 /usr/lib/nftban/core
 /usr/lib/nftban/lib
@@ -970,6 +974,9 @@ build_deb() {
     install -m 0755 "${PROJECT_ROOT}/cli/sbin/nftban" "${deb_root}/usr/bin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui" "${deb_root}/usr/sbin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui-auth" "${deb_root}/usr/libexec/"
+
+    # Copy VERSION file
+    install -m 0644 "${PROJECT_ROOT}/VERSION" "${deb_root}/usr/lib/nftban/VERSION"
 
     # Copy libraries
     cp -r "${PROJECT_ROOT}/cli/lib/nftban"/* "${deb_root}/usr/lib/nftban/"

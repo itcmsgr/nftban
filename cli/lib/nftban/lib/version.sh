@@ -45,7 +45,7 @@ _nftban_read_version() {
     for path in \
         "${BASH_SOURCE[0]%/*}/../../../../../VERSION" \
         "/usr/lib/nftban/VERSION" \
-        "${NFTBAN_ROOT}/VERSION" \
+        "${NFTBAN_ROOT:-}/VERSION" \
         "$PWD/VERSION"; do
         if [[ -f "$path" ]]; then
             version_file="$path"
