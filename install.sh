@@ -473,7 +473,7 @@ install_libraries() {
     cp -r "$SCRIPT_DIR/cli/lib/nftban/setup/"* "$LIB_DIR/setup/" 2>/dev/null || true
 
     # Copy test scripts
-    cp -r "$SCRIPT_DIR/tests/"* "$LIB_DIR/tests/" 2>/dev/null || true
+    cp -r "$SCRIPT_DIR/cli/lib/nftban/tests/"* "$LIB_DIR/tests/" 2>/dev/null || true
 
     # Copy root-level library files (help, json_output, etc.)
     cp "$SCRIPT_DIR/cli/lib/nftban/nftban_help.sh" "$LIB_DIR/" 2>/dev/null || true
