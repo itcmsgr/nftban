@@ -199,7 +199,7 @@ func main() {
 			os.Exit(1)
 		}
 	case "version":
-		fmt.Printf("nftban-core %s (git %s, build %s)\n", version.FullVersion, GitCommit, BuildDate)
+		fmt.Printf("nftban-core %s (git %s, build %s)\n", version.FullVersion(), GitCommit, BuildDate)
 	case "help", "--help", "-h":
 		printUsage()
 	default:
