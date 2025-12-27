@@ -209,7 +209,8 @@ nftban_cmd_test() {
         echo "Status: ❌ $failed TESTS FAILED"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
-        echo "Run 'bash /root/nftban-dev/tests/test_all_commands.sh' for detailed testing"
+        local tests_dir="${NFTBAN_TESTS_DIR:-/usr/lib/nftban/tests}"
+        echo "Run 'bash ${tests_dir}/test_all_commands.sh' for detailed testing"
         echo ""
         command -v nftban_cmd_exit >/dev/null 2>&1 && nftban_cmd_exit "test"
         return 1
@@ -249,7 +250,7 @@ EXAMPLES:
   nftban test --verbose       Show detailed output
 
 SEE ALSO:
-  bash /root/nftban-dev/tests/test_all_commands.sh    Full test suite
+  bash /usr/lib/nftban/tests/test_all_commands.sh    Full test suite
 
 EOF
 }
