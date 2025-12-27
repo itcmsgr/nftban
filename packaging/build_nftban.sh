@@ -150,6 +150,8 @@ install -D -m 0644 install/nftables/nftables.conf %{buildroot}/etc/nftban/nftabl
 # Configuration files (conf.d with subdirectories)
 mkdir -p %{buildroot}/etc/nftban/conf.d
 cp -r etc/nftban/conf.d/* %{buildroot}/etc/nftban/conf.d/
+install -D -m 0640 install/config/feeds.conf %{buildroot}/etc/nftban/conf.d/feeds.conf
+install -D -m 0640 install/config/conf.d/watchdog.conf %{buildroot}/etc/nftban/conf.d/watchdog.conf
 
 # Distro configuration files (CRITICAL for distro-aware paths)
 mkdir -p %{buildroot}/etc/nftban/distros
@@ -1098,6 +1100,8 @@ build_deb() {
     # Copy conf.d directory with subdirectories
     mkdir -p "${deb_root}/etc/nftban/conf.d"
     cp -r "${PROJECT_ROOT}/etc/nftban/conf.d"/* "${deb_root}/etc/nftban/conf.d/"
+    install -m 0640 "${PROJECT_ROOT}/install/config/feeds.conf" "${deb_root}/etc/nftban/conf.d/feeds.conf"
+    install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/watchdog.conf" "${deb_root}/etc/nftban/conf.d/watchdog.conf"
 
     # Copy distro configuration files (CRITICAL for distro-aware paths)
     mkdir -p "${deb_root}/etc/nftban/distros"

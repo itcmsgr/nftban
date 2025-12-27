@@ -825,6 +825,14 @@ install_configs() {
         ok "Installed: /etc/nftban/conf.d/feeds.conf (15 feeds)"
     fi
 
+    # Install watchdog config if exists
+    if [[ -f "$SCRIPT_DIR/install/config/conf.d/watchdog.conf" ]]; then
+        cp -f "$SCRIPT_DIR/install/config/conf.d/watchdog.conf" /etc/nftban/conf.d/watchdog.conf
+        chmod 644 /etc/nftban/conf.d/watchdog.conf
+        chown root:nftban /etc/nftban/conf.d/watchdog.conf
+        ok "Installed: /etc/nftban/conf.d/watchdog.conf"
+    fi
+
     # Install mail configuration (if not exists - don't overwrite user config)
     if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/mail.conf" ]] && [[ ! -f /etc/nftban/conf.d/mail.conf ]]; then
         cp -f "$SCRIPT_DIR/etc/nftban/conf.d/mail.conf" /etc/nftban/conf.d/mail.conf
