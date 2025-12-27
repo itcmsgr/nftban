@@ -125,6 +125,116 @@ check_pam() {
     ok "PAM installed successfully"
 }
 
+# Comprehensive prerequisite checks
+check_prerequisites() {
+    echo ""
+    echo "════════════════════════════════════════════════════════════════════════════════"
+    echo "  NFTBan v1.0.0 - Installation Prerequisite Checks"
+    echo "════════════════════════════════════════════════════════════════════════════════"
+    echo ""
+
+    local PREREQ_FAILED=0
+    local CONFLICTS_FOUND=0
+
+    # -------------------------------------------------------------------------
+    # CHECK 1: Operating System Version
+    # -------------------------------------------------------------------------
+    if [[ -f /etc/os-release ]]; then
+        source /etc/os-release
+        ok "Operating System: $PRETTY_NAME"
+
+        # Check for supported OS families
+        case "$ID" in
+            rhel|rocky|almalinux|centos|fedora)
+                ok "Supported OS family: RHEL/Rocky/AlmaLinux/CentOS/Fedora"
+                ;;
+            ubuntu|debian|linuxmint)
+                ok "Supported OS family: Debian/Ubuntu"
+                ;;
+            *)
+                warn "Untested OS: $ID (may work, but not officially supported)"
+                ;;
+        esac
+    else
+        error "Cannot detect OS version (/etc/os-release missing)"
+        PREREQ_FAILED=1
+    fi
+
+    # -------------------------------------------------------------------------
+    # CHECK 2: Required Commands
+    # -------------------------------------------------------------------------
+    echo ""
+    log "Checking required commands..."
+
+    for cmd in nft systemctl ip iptables curl jq; do
+        if command -v $cmd &>/dev/null; then
+            ok "Found: $cmd"
+        else
+            error "MISSING: $cmd"
+            PREREQ_FAILED=1
+        fi
+    done
+
+    # -------------------------------------------------------------------------
+    # CHECK 3: Kernel nftables Support
+    # -------------------------------------------------------------------------
+    echo ""
+    log "Checking kernel nftables support..."
+
+    if [[ -d /proc/sys/net/netfilter ]]; then
+        ok "Netfilter subsystem available"
+    else
+        error "Netfilter not available in kernel"
+        PREREQ_FAILED=1
+    fi
+
+    # Check if nft can list rulesets
+    if nft list ruleset &>/dev/null; then
+        ok "nftables kernel modules loaded"
+    else
+        warn "nftables modules not loaded (will auto-load on first use)"
+    fi
+
+    # -------------------------------------------------------------------------
+    # CHECK 4: Network Connectivity (for GeoIP download)
+    # -------------------------------------------------------------------------
+    echo ""
+    log "Checking network connectivity..."
+
+    if curl -sI --connect-timeout 5 https://github.com &>/dev/null; then
+        ok "Internet connectivity: OK (github.com reachable)"
+    else
+        warn "Cannot reach github.com - GeoIP download may fail"
+        info "You can manually download later: nftban-core geoip update"
+    fi
+
+    # -------------------------------------------------------------------------
+    # FINAL RESULT
+    # -------------------------------------------------------------------------
+    echo ""
+    echo "════════════════════════════════════════════════════════════════════════════════"
+
+    if [[ $PREREQ_FAILED -eq 1 ]]; then
+        echo ""
+        error "PREREQUISITE CHECK FAILED"
+        echo ""
+        echo "Critical requirements are missing. Please fix the errors above and try again."
+        echo ""
+        echo "Installation commands by OS:"
+        echo "  RHEL/Rocky/Alma: dnf install -y nftables curl jq"
+        echo "  Ubuntu/Debian:   apt install -y nftables curl jq"
+        echo "  Fedora:          dnf install -y nftables curl jq"
+        echo ""
+        echo "════════════════════════════════════════════════════════════════════════════════"
+        echo ""
+        exit 1
+    fi
+
+    ok "All critical prerequisites satisfied"
+    echo "════════════════════════════════════════════════════════════════════════════════"
+    echo ""
+}
+
 # Check for conflicting firewalls (CRITICAL - prevents conflicts)
 check_conflicting_firewalls() {
     log "Checking for conflicting firewalls..."
@@ -1482,6 +1592,9 @@ echo ""
 # =============================================================================
 log "Step 1: Checking prerequisites..."
 echo ""
+
+# Run comprehensive prerequisite checks first
+check_prerequisites
 
 check_root
 check_nftables
