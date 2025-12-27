@@ -105,7 +105,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Create temporary test directory
 TEST_DIR=$(mktemp -d)
-trap "rm -rf $TEST_DIR" EXIT
+trap 'rm -rf "$TEST_DIR"' EXIT
 
 echo "Test directory: $TEST_DIR"
 echo "Script directory: $SCRIPT_DIR"
@@ -380,8 +380,8 @@ fi
 
 test_start "Helper Function - Get Package Manager Command"
 
-if cmd=$(nftban_distro_get_pkgmgr_cmd "install_cmd"); then
-    assert_equals "dnf install -y" "$cmd" "Got correct install command" && \
+if result=$(nftban_distro_get_pkgmgr_cmd "install_cmd"); then
+    assert_equals "dnf install -y" "$result" "Got correct install command" && \
     test_pass
 else
     test_fail "Failed to get package manager command"

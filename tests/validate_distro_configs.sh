@@ -98,7 +98,8 @@ get_value() {
 # Validate INI syntax
 validate_syntax() {
     local file="$1"
-    local filename=$(basename "$file")
+    local filename
+    filename=$(basename "$file")
     local syntax_errors=0
 
     # Check for basic INI format issues
@@ -160,7 +161,8 @@ validate_fields() {
     local missing=0
 
     for field in $required; do
-        local value=$(get_value "$file" "$section" "$field")
+        local value
+        value=$(get_value "$file" "$section" "$field")
         if [[ -n "$value" ]]; then
             echo -e "${GREEN}    ✓ $field = $value${NC}"
             ((PASSED++))
@@ -177,7 +179,8 @@ validate_fields() {
 # Validate distro family
 validate_family() {
     local file="$1"
-    local family=$(get_value "$file" "distro" "family")
+    local family
+    family=$(get_value "$file" "distro" "family")
 
     case "$family" in
         rhel|debian)
@@ -196,7 +199,8 @@ validate_family() {
 # Validate package manager type
 validate_pkgmgr() {
     local file="$1"
-    local type=$(get_value "$file" "package_manager" "type")
+    local type
+    type=$(get_value "$file" "package_manager" "type")
 
     case "$type" in
         dnf|yum|apt-get)

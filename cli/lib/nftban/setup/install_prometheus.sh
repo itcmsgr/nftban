@@ -56,7 +56,8 @@ readonly PROM_USER="prometheus"
 readonly PROM_GROUP="prometheus"
 readonly PROM_DIR="/etc/prometheus"
 readonly PROM_DATA_DIR="/var/lib/prometheus"
-readonly PROM_BIN="/usr/local/bin/prometheus"
+# Prometheus binary path (unused currently, reserved for future use)
+# readonly PROM_BIN="/usr/local/bin/prometheus"
 
 install_via_package() {
     local distro="$1"
