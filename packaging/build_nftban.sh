@@ -257,7 +257,7 @@ echo ""
 echo "Checking required commands..."
 
 # Critical commands (must be present)
-for cmd in nft systemctl curl jq; do
+for cmd in nft systemctl curl jq tar unzip; do
     if command -v \$cmd >/dev/null 2>&1; then
         echo "[✓] Found: \$cmd"
     else
