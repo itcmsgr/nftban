@@ -112,6 +112,7 @@ Requires:       systemd
 Requires:       bash >= 4.0
 Requires:       jq
 Requires:       curl
+Requires:       pam
 Requires(pre):  shadow-utils
 
 %description
@@ -481,7 +482,7 @@ Version: ${PKG_VERSION}
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), jq, curl
+Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), jq, curl, libpam0g
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: NFTBan Core - Adaptive firewall with threat intelligence
  NFTBan is an adaptive firewall system with threat intelligence integration.
