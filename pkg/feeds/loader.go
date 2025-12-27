@@ -3,7 +3,6 @@ package feeds
 import (
 	"bufio"
 	"fmt"
-	"net"
 	"os"
 	"path/filepath"
 	"strings"
