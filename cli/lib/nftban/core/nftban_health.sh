@@ -1564,7 +1564,7 @@ nftban_health_check_gui() {
 
     # Check if GUI is installed
     local gui_binary="/usr/sbin/nftban-ui"
-    local gui_source_dir="/root/nftban-dev/cmd/nftban-ui"
+    local gui_source_dir="${NFTBAN_DEV_SOURCE_DIR:-}/cmd/nftban-ui"
     local build_binary="$gui_source_dir/nftban-ui"
 
     if [[ ! -f "$gui_binary" ]]; then

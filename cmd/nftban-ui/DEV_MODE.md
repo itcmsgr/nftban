@@ -53,7 +53,7 @@ func readFile(path string) ([]byte, error) {
 When running in dev mode, files are served from:
 
 ```
-/root/nftban-dev/cmd/nftban-ui/web/static/
+<project-root>/cmd/nftban-ui/web/static/
 ```
 
 You must run `nftban-ui --dev` from the directory containing the `web/` folder.
@@ -63,7 +63,7 @@ You must run `nftban-ui --dev` from the directory containing the `web/` folder.
 ### 1. Build Once
 
 ```bash
-cd /root/nftban-dev/cmd/nftban-ui
+cd /path/to/nftban/cmd/nftban-ui
 CGO_ENABLED=1 go build -o nftban-ui .
 ```
 
@@ -116,11 +116,11 @@ All files maintain proper FHS permissions:
 
 ```bash
 # Files owned by nftban user/group
-chown -R nftban:nftban /root/nftban-dev/cmd/nftban-ui/web/
+chown -R nftban:nftban /path/to/nftban/cmd/nftban-ui/web/
 
 # Secure permissions
-chmod 755 /root/nftban-dev/cmd/nftban-ui/web/
-chmod 644 /root/nftban-dev/cmd/nftban-ui/web/static/**/*
+chmod 755 /path/to/nftban/cmd/nftban-ui/web/
+chmod 644 /path/to/nftban/cmd/nftban-ui/web/static/**/*
 ```
 
 ### Production Deployment
@@ -170,7 +170,7 @@ vim web/static/pages/portscan.html
 
 ```bash
 # 1. Start dev mode
-cd /root/nftban-dev/cmd/nftban-ui
+cd /path/to/nftban/cmd/nftban-ui
 ./nftban-ui --dev
 
 # 2. Edit portscan page
@@ -211,7 +211,7 @@ vim web/static/js/page-loader.js
 **Solution:** Ensure you're running from the directory containing `web/`:
 
 ```bash
-cd /root/nftban-dev/cmd/nftban-ui
+cd /path/to/nftban/cmd/nftban-ui
 ./nftban-ui --dev
 ```
 
@@ -238,7 +238,7 @@ vim /etc/systemd/system/nftban-ui.service
 ExecStart=/usr/sbin/nftban-ui --dev
 
 # But ensure WorkingDirectory is set:
-WorkingDirectory=/root/nftban-dev/cmd/nftban-ui
+WorkingDirectory=/path/to/nftban/cmd/nftban-ui
 
 # Reload and restart
 systemctl daemon-reload

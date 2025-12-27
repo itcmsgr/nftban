@@ -39,13 +39,16 @@ fi
 # Create override directory if it doesn't exist
 mkdir -p "$OVERRIDE_DIR"
 
+# Get source directory (default to /root/nftban-dev for backwards compatibility)
+DEV_SOURCE_DIR="${NFTBAN_DEV_SOURCE_DIR:-/root/nftban-dev}"
+
 # Create dev mode override
-cat > "$DEV_OVERRIDE_FILE" <<'EOF'
+cat > "$DEV_OVERRIDE_FILE" <<EOF
 [Service]
 # Development mode: serve files from disk (no rebuild needed for HTML/JS/CSS)
-WorkingDirectory=/root/nftban-dev/cmd/nftban-ui
+WorkingDirectory=$DEV_SOURCE_DIR/cmd/nftban-ui
 ExecStart=
-ExecStart=/root/nftban-dev/cmd/nftban-ui/nftban-ui --dev
+ExecStart=$DEV_SOURCE_DIR/cmd/nftban-ui/nftban-ui --dev
 
 # Log dev mode startup
 StandardOutput=journal
@@ -71,7 +74,7 @@ echo ""
 echo -e "${GREEN}🎉 Development mode enabled!${NC}"
 echo ""
 echo -e "${YELLOW}Now you can:${NC}"
-echo "  1. Edit HTML/JS/CSS files in /root/nftban-dev/cmd/nftban-ui/web/"
+echo "  1. Edit HTML/JS/CSS files in $DEV_SOURCE_DIR/cmd/nftban-ui/web/"
 echo "  2. Refresh your browser (Ctrl+Shift+R)"
 echo "  3. See changes immediately - NO REBUILD NEEDED!"
 echo ""
