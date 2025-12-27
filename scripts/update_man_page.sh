@@ -17,7 +17,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
-MAN_SOURCE="$PROJECT_DIR/docs/man/man8/nftban.8"
+MAN_SOURCE="$PROJECT_DIR/install/man/man8/nftban.8"
 MAN_DEST="/usr/share/man/man8/nftban.8"
 
 ACTION="${1:-help}"
@@ -113,7 +113,7 @@ case "$ACTION" in
 
         # Generate man section
         echo ""
-        echo "# Add this to docs/man/man8/nftban.8 under appropriate section:"
+        echo "# Add this to install/man/man8/nftban.8 under appropriate section:"
         echo ""
         echo ".TP"
         echo ".B $CMD_NAME \\fR[\\fIsubcommand\\fR]"
@@ -152,7 +152,7 @@ Examples:
   ./update_man_page.sh add update
 
 Files:
-  Source: docs/man/man8/nftban.8
+  Source: install/man/man8/nftban.8
   Dest:   /usr/share/man/man8/nftban.8.gz
 EOF
         ;;
