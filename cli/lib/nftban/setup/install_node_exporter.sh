@@ -294,7 +294,7 @@ configure_service() {
 ExecStart=
 
 # Set new ExecStart with textfile collector and localhost binding
-ExecStart=/usr/bin/node_exporter \\
+ExecStart=/usr/local/bin/node_exporter \\
   --web.listen-address=127.0.0.1:${NODE_EXPORTER_PORT} \\
   --collector.textfile.directory=${TEXTFILE_COLLECTOR_DIR}
 EOF
