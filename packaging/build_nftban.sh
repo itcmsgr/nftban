@@ -408,7 +408,8 @@ build_rpm() {
     tar czf "${BUILD_DIR}/SOURCES/${tarball}" \
         --transform "s,^,nftban-core-${PKG_VERSION}/," \
         -C "${PROJECT_ROOT}" \
-        bin/ cli/ cmd/ pkg/ install/ etc/ docs/
+        bin/ cli/ cmd/ pkg/ install/ etc/ internal/ packaging/ tests/ \
+        VERSION go.mod go.sum LICENSE README.md
 
     # Build RPM
     if rpmbuild --define "_topdir ${BUILD_DIR}" \
