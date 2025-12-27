@@ -213,15 +213,22 @@ smoke_test_cmd() {
     elif [[ "$exit_code" == "0" ]]; then
         log_pass "$name - OK (exit=0, ${output_len} chars, ${duration}s)"
         ((TESTS_PASSED++))
+    elif [[ "$exit_code" == "1" ]] && [[ "$name" == "health summary" ]]; then
+        # Health exit code 1 = warnings only (acceptable)
+        log_pass "$name - OK with warnings (exit=1, ${output_len} chars, ${duration}s)"
+        ((TESTS_PASSED++))
+    elif [[ "$exit_code" == "4" ]] && [[ "$name" == "health summary" ]]; then
+        # Health exit code 4 = permission fixes applied (acceptable)
+        log_pass "$name - OK, fixes applied (exit=4, ${output_len} chars, ${duration}s)"
+        ((TESTS_PASSED++))
+    elif [[ "$exit_code" == "2" ]] && [[ "$name" == "health summary" ]]; then
+        # Health exit code 2 = errors present (failure)
+        log_fail "$name - ERRORS detected (exit=2, ${duration}s)"
+        ((TESTS_FAILED++))
     else
-        # Non-zero exit might be OK for some commands
-        if [[ $output_len -gt 10 ]]; then
-            log_warn "$name - exit=$exit_code but has output (${duration}s)"
-            ((TESTS_PASSED++))
-        else
-            log_fail "$name - exit=$exit_code (${duration}s)"
-            ((TESTS_FAILED++))
-        fi
+        # All other non-zero exits are failures
+        log_fail "$name - FAILED (exit=$exit_code, ${duration}s)"
+        ((TESTS_FAILED++))
     fi
 
     # Show output preview
@@ -255,12 +262,12 @@ run_module_tests() {
     log "MODULE STATUS"
     log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-    smoke_test_cmd "firewall status" "nftban firewall status"
+    smoke_test_cmd "firewall stats" "nftban firewall stats"
     smoke_test_cmd "login status" "nftban login status"
     smoke_test_cmd "portscan status" "nftban portscan status"
     smoke_test_cmd "ddos status" "nftban ddos status"
     smoke_test_cmd "feeds status" "nftban feeds status"
-    smoke_test_cmd "whitelist status" "nftban whitelist status"
+    smoke_test_cmd "whitelist list" "nftban whitelist list"
 }
 
 # Stats and reporting
