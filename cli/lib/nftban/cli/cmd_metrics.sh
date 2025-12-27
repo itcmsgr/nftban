@@ -418,20 +418,21 @@ nftban_metrics_enable() {
             node_exporter_service=$(nftban_distro_get_service node_exporter 2>/dev/null || echo "prometheus-node-exporter")
             if ! systemctl list-unit-files 2>/dev/null | grep -q "${node_exporter_service}.service"; then
                 echo "  📦 Installing Node Exporter..."
+
+                # Get package name from distro config (central config system)
+                local node_exporter_pkg
+                node_exporter_pkg=$(nftban_distro_get_package "node_exporter" 2>/dev/null || echo "prometheus-node-exporter")
+
                 # Try package manager first
                 local pkg_installed=false
                 if command -v apt-get &>/dev/null; then
-                    if apt-get update -qq && apt-get install -y prometheus-node-exporter &>/dev/null; then
+                    if apt-get update -qq && apt-get install -y "$node_exporter_pkg" &>/dev/null; then
                         pkg_installed=true
                     fi
                 elif command -v dnf &>/dev/null; then
-                    # Try multiple package names (different distros use different names)
-                    for pkg in golang-github-prometheus-node-exporter node_exporter prometheus-node-exporter node-exporter; do
-                        if dnf install -y "$pkg" &>/dev/null; then
-                            pkg_installed=true
-                            break
-                        fi
-                    done
+                    if dnf install -y "$node_exporter_pkg" &>/dev/null; then
+                        pkg_installed=true
+                    fi
                 fi
 
                 # Fallback to binary installation if package not available
