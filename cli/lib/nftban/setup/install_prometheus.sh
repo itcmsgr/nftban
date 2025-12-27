@@ -56,8 +56,8 @@ readonly PROM_USER="prometheus"
 readonly PROM_GROUP="prometheus"
 readonly PROM_DIR="/etc/prometheus"
 readonly PROM_DATA_DIR="/var/lib/prometheus"
-# Prometheus binary path (unused currently, reserved for future use)
-# readonly PROM_BIN="/usr/local/bin/prometheus"
+readonly PROM_BIN="/usr/local/bin/prometheus"
+readonly PROMTOOL_BIN="/usr/local/bin/promtool"
 
 install_via_package() {
     local distro="$1"
@@ -116,8 +116,8 @@ install_via_binary() {
     cd "prometheus-${version}.linux-${arch}"
     
     # Install binaries
-    cp prometheus promtool /usr/local/bin/
-    chmod +x /usr/local/bin/prometheus /usr/local/bin/promtool
+    install -m 0755 prometheus "${PROM_BIN}"
+    install -m 0755 promtool "${PROMTOOL_BIN}"
     
     # Create directories
     mkdir -p "$PROM_DIR" "$PROM_DIR/rules" "$PROM_DIR/rules.d"
@@ -138,8 +138,8 @@ install_via_binary() {
 
 create_systemd_service() {
     print_info "Creating systemd service..."
-    
-    cat > /etc/systemd/system/prometheus.service << 'EOF'
+
+    cat > /etc/systemd/system/prometheus.service << EOF
 [Unit]
 Description=Prometheus
 Documentation=https://prometheus.io/docs/introduction/overview/
@@ -151,12 +151,12 @@ Type=simple
 User=prometheus
 Group=prometheus
 ExecReload=/bin/kill -HUP \$MAINPID
-ExecStart=/usr/local/bin/prometheus \
-  --config.file=/etc/prometheus/prometheus.yml \
-  --storage.tsdb.path=/var/lib/prometheus/ \
-  --web.console.templates=/etc/prometheus/consoles \
-  --web.console.libraries=/etc/prometheus/console_libraries \
-  --web.listen-address=127.0.0.1:9090 \
+ExecStart=${PROM_BIN} \\
+  --config.file=/etc/prometheus/prometheus.yml \\
+  --storage.tsdb.path=/var/lib/prometheus/ \\
+  --web.console.templates=/etc/prometheus/consoles \\
+  --web.console.libraries=/etc/prometheus/console_libraries \\
+  --web.listen-address=127.0.0.1:9090 \\
   --storage.tsdb.retention.time=30d
 
 SyslogIdentifier=prometheus
