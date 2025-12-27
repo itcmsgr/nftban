@@ -684,6 +684,175 @@ Description: NFTBan Core - Adaptive firewall with threat intelligence
   - PolicyKit rules
 EOF
 
+    # Create preinst script for prerequisite checks
+    cat > "${BUILD_DIR}/deb/DEBIAN/preinst" <<'PREINST_EOF'
+#!/bin/bash
+# NFTBan v1.0.0 - PREREQUISITE CHECKS (DEB)
+set -e
+
+echo ""
+echo "════════════════════════════════════════════════════════════════════════════════"
+echo "  NFTBan v1.0.0 - Installation Prerequisite Checks"
+echo "════════════════════════════════════════════════════════════════════════════════"
+echo ""
+
+PREREQ_FAILED=0
+
+# -----------------------------------------------------------------------------
+# CHECK 1: Operating System Version
+# -----------------------------------------------------------------------------
+if [ -f /etc/os-release ]; then
+    . /etc/os-release
+    echo "[✓] Operating System: $PRETTY_NAME"
+
+    # Check for supported OS
+    case "$ID" in
+        ubuntu|debian|linuxmint)
+            echo "[✓] Supported OS family: Debian/Ubuntu"
+            ;;
+        *)
+            echo "[!] Warning: Untested OS: $ID (may work, but not officially supported)"
+            ;;
+    esac
+else
+    echo "[✗] ERROR: Cannot detect OS version (/etc/os-release missing)"
+    PREREQ_FAILED=1
+fi
+
+# -----------------------------------------------------------------------------
+# CHECK 2: Required Commands
+# -----------------------------------------------------------------------------
+echo ""
+echo "Checking required commands..."
+
+for cmd in nft systemctl ip iptables curl jq; do
+    if command -v $cmd >/dev/null 2>&1; then
+        echo "[✓] Found: $cmd"
+    else
+        echo "[✗] MISSING: $cmd"
+        PREREQ_FAILED=1
+    fi
+done
+
+# -----------------------------------------------------------------------------
+# CHECK 3: Kernel nftables Support
+# -----------------------------------------------------------------------------
+echo ""
+echo "Checking kernel nftables support..."
+
+if [ -d /proc/sys/net/netfilter ]; then
+    echo "[✓] Netfilter subsystem available"
+else
+    echo "[✗] ERROR: Netfilter not available in kernel"
+    PREREQ_FAILED=1
+fi
+
+# Check if nft can list rulesets (indicates kernel support)
+if nft list ruleset >/dev/null 2>&1; then
+    echo "[✓] nftables kernel modules loaded"
+else
+    echo "[!] Warning: nftables modules not loaded (will auto-load on first use)"
+fi
+
+# -----------------------------------------------------------------------------
+# CHECK 4: Conflicting Firewall Services
+# -----------------------------------------------------------------------------
+echo ""
+echo "Checking for conflicting firewall services..."
+
+CONFLICTS_FOUND=0
+
+# Check ufw (common on Ubuntu/Debian)
+if command -v ufw >/dev/null 2>&1; then
+    if ufw status 2>/dev/null | grep -q "Status: active"; then
+        echo "[!] WARNING: ufw is ACTIVE"
+        echo "    NFTBan manages nftables directly and may conflict with ufw."
+        echo "    Recommended action:"
+        echo "      ufw disable"
+        echo ""
+        CONFLICTS_FOUND=1
+    fi
+fi
+
+# Check firewalld (rare on Debian but possible)
+if systemctl is-active firewalld >/dev/null 2>&1; then
+    echo "[!] WARNING: firewalld is ACTIVE"
+    echo "    NFTBan manages nftables directly and may conflict with firewalld."
+    echo "    Recommended action:"
+        echo "      systemctl stop firewalld"
+        echo "      systemctl disable firewalld"
+    echo ""
+    CONFLICTS_FOUND=1
+fi
+
+# Check iptables-persistent service
+if systemctl is-active iptables-persistent >/dev/null 2>&1 || systemctl is-active netfilter-persistent >/dev/null 2>&1; then
+    echo "[!] WARNING: iptables-persistent/netfilter-persistent is ACTIVE"
+    echo "    NFTBan uses nftables, not legacy iptables."
+    echo "    Recommended action:"
+    echo "      systemctl stop netfilter-persistent"
+    echo "      systemctl disable netfilter-persistent"
+    echo ""
+    CONFLICTS_FOUND=1
+fi
+
+if [ $CONFLICTS_FOUND -eq 0 ]; then
+    echo "[✓] No conflicting firewall services detected"
+fi
+
+# -----------------------------------------------------------------------------
+# CHECK 5: Network Connectivity (for GeoIP download)
+# -----------------------------------------------------------------------------
+echo ""
+echo "Checking network connectivity..."
+
+if curl -sI --connect-timeout 5 https://github.com >/dev/null 2>&1; then
+    echo "[✓] Internet connectivity: OK (github.com reachable)"
+else
+    echo "[!] Warning: Cannot reach github.com"
+    echo "    GeoIP database download may fail."
+    echo "    You can manually download later: nftban-core geoip update"
+    echo ""
+fi
+
+# -----------------------------------------------------------------------------
+# FINAL RESULT
+# -----------------------------------------------------------------------------
+echo ""
+echo "════════════════════════════════════════════════════════════════════════════════"
+
+if [ $PREREQ_FAILED -eq 1 ]; then
+    echo "[✗] PREREQUISITE CHECK FAILED"
+    echo ""
+    echo "Critical requirements are missing. Please fix the errors above and try again."
+    echo "  Ubuntu/Debian: apt install nftables curl jq"
+    echo "════════════════════════════════════════════════════════════════════════════════"
+    echo ""
+    exit 1
+fi
+
+if [ $CONFLICTS_FOUND -eq 1 ]; then
+    echo "[!] WARNING: Firewall conflicts detected"
+    echo ""
+    echo "NFTBan can still be installed, but conflicts may cause issues."
+    echo "Recommended: Disable conflicting firewalls before continuing."
+    echo ""
+    echo "To proceed anyway, you can ignore this warning."
+    echo "To abort installation, press Ctrl+C now (waiting 10 seconds)..."
+    echo "════════════════════════════════════════════════════════════════════════════════"
+    echo ""
+    sleep 10
+fi
+
+echo "[✓] All critical prerequisites satisfied"
+echo "════════════════════════════════════════════════════════════════════════════════"
+echo ""
+
+exit 0
+PREINST_EOF
+
+    chmod 755 "${BUILD_DIR}/deb/DEBIAN/preinst"
+
     # Use the comprehensive postinst from packaging/deb/postinst
     if [[ -f "${PROJECT_ROOT}/packaging/deb/postinst" ]]; then
         cp "${PROJECT_ROOT}/packaging/deb/postinst" "${BUILD_DIR}/deb/DEBIAN/postinst"
