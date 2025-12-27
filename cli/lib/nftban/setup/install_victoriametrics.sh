@@ -165,13 +165,9 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9100']
     metric_relabel_configs:
-      # Keep only NFTBan metrics
+      # Keep NFTBan metrics and essential node_exporter metrics
       - source_labels: [__name__]
-        regex: 'nftban_.*'
-        action: keep
-      # Also keep essential node_exporter metrics
-      - source_labels: [__name__]
-        regex: 'node_(cpu|memory|disk|network).*'
+        regex: '(nftban_.*|node_(cpu|memory|disk|network).*)'
         action: keep
 EOF
 
