@@ -64,6 +64,7 @@ fix_dependencies() {
 log "Checking Go module dependencies..."
 fix_dependencies "$SCRIPT_DIR/cmd/nftban-core"
 fix_dependencies "$SCRIPT_DIR/cmd/nftban-ui"
+fix_dependencies "$SCRIPT_DIR/cmd/nftban-ui-auth"
 ok "Dependencies checked"
 echo ""
 
@@ -113,6 +114,27 @@ build_gui() {
 }
 
 
+build_ui_auth() {
+    log "Building nftban-ui-auth (PAM authentication daemon)..."
+
+    cd "$SCRIPT_DIR/cmd/nftban-ui-auth"
+
+    CGO_ENABLED=1 GOOS=$GOOS GOARCH=$GOARCH \
+        go build -o "$BIN_DIR/nftban-ui-auth" \
+        -ldflags="$LDFLAGS" \
+        . || {
+        error "Failed to build nftban-ui-auth"
+        return 1
+    }
+
+    chmod +x "$BIN_DIR/nftban-ui-auth"
+    ok "Built: $BIN_DIR/nftban-ui-auth"
+
+    cd "$SCRIPT_DIR"
+    return 0
+}
+
+
 show_usage() {
     cat << EOF
 NFTBan Build Script
@@ -124,6 +146,7 @@ Components:
   all       Build all Go binaries (default)
   core      Build nftban-core only
   gui       Build nftban-ui only
+  ui-auth   Build nftban-ui-auth only
 
 Environment Variables:
   CGO_ENABLED   Enable/disable CGO (default: 1)
@@ -162,6 +185,9 @@ case "$COMPONENT" in
         build_gui || exit 1
         echo ""
 
+        build_ui_auth || exit 1
+        echo ""
+
         log "Build Summary:"
         ls -lh "$BIN_DIR"/ 2>/dev/null || true
         echo ""
@@ -174,6 +200,10 @@ case "$COMPONENT" in
 
     gui)
         build_gui || exit 1
+        ;;
+
+    ui-auth)
+        build_ui_auth || exit 1
         ;;
 
     help|-h|--help)
