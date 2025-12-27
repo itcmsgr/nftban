@@ -439,7 +439,7 @@ nftban_metrics_enable() {
                 if [ "$pkg_installed" = false ]; then
                     echo "    Package not available in repos, installing from GitHub..."
                     if [ -f "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" ]; then
-                        bash "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" --yes || echo "    ⚠️  Node Exporter install failed (non-critical)"
+                        bash "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" --method binary || echo "    ⚠️  Node Exporter install failed (non-critical)"
                     fi
                 fi
             fi
