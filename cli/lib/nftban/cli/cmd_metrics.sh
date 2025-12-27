@@ -724,7 +724,11 @@ nftban_metrics_status() {
         echo "⚠️  Some services stopped"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
-        echo "To enable: nftban metrics enable --backend $backend"
+        echo "To enable metrics collection, choose a backend:"
+        echo ""
+        echo "  nftban metrics enable --backend victoriametrics    # Recommended (10x better compression, 20x faster)"
+        echo "  nftban metrics enable --backend prometheus         # Standard (industry default)"
+        echo ""
     fi
 
     echo ""
