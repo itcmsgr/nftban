@@ -554,7 +554,6 @@ fi
 /etc/polkit-1/rules.d/50-nftban-port-status.rules.in
 /usr/share/nftban/specs/structure_default.json
 /usr/share/nftban/templates
-/usr/lib/nftban/nft-runtime.nft
 /usr/share/man/man8/nftban.8*
 %dir /etc/nftban
 %dir /etc/nftban/conf.d
