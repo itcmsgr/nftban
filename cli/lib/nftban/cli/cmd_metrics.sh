@@ -419,10 +419,27 @@ nftban_metrics_enable() {
             if ! systemctl list-unit-files 2>/dev/null | grep -q "${node_exporter_service}.service"; then
                 echo "  📦 Installing Node Exporter..."
                 # Try package manager first
+                local pkg_installed=false
                 if command -v apt-get &>/dev/null; then
-                    apt-get update -qq && apt-get install -y prometheus-node-exporter &>/dev/null || true
+                    if apt-get update -qq && apt-get install -y prometheus-node-exporter &>/dev/null; then
+                        pkg_installed=true
+                    fi
                 elif command -v dnf &>/dev/null; then
-                    dnf install -y node-exporter &>/dev/null || true
+                    # Try multiple package names (different distros use different names)
+                    for pkg in golang-github-prometheus-node-exporter node_exporter prometheus-node-exporter node-exporter; do
+                        if dnf install -y "$pkg" &>/dev/null; then
+                            pkg_installed=true
+                            break
+                        fi
+                    done
+                fi
+
+                # Fallback to binary installation if package not available
+                if [ "$pkg_installed" = false ]; then
+                    echo "    Package not available in repos, installing from GitHub..."
+                    if [ -f "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" ]; then
+                        bash "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" --yes || echo "    ⚠️  Node Exporter install failed (non-critical)"
+                    fi
                 fi
             fi
 
