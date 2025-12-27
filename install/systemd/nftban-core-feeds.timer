@@ -1,7 +1,6 @@
 [Unit]
 Description=NFTBan Core - Daily Feed Update Timer
 Documentation=https://github.com/itcmsgr/nftban-dev
-Requires=nftban-core.service
 
 [Timer]
 # Run daily at 3:00 AM
