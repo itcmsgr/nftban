@@ -176,6 +176,3 @@ func GetClientIP(r *http.Request) string {
 
 //nolint:U1000 // Kept for backward compatibility
 // Deprecated: Use netutil.IsIPWhitelisted directly for new code
-func isIPWhitelisted(clientIP string, whitelistFile string) (bool, error) {
-	return netutil.IsIPWhitelisted(clientIP, whitelistFile)
-}

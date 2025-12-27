@@ -135,9 +135,6 @@ func loadFeedFile(filePath string, ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet ma
 }
 
 //nolint:U1000 // Helper function for future CIDR operations
-func isIPv4CIDR(ipNet *net.IPNet) bool {
-	return ipNet.IP.To4() != nil
-}
 
 // GetFeedStats returns statistics about all feeds
 func GetFeedStats(feedsDir string) ([]FeedInfo, error) {

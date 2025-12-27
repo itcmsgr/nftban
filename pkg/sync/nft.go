@@ -1100,33 +1100,5 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 }
 
 //nolint:U1000 // Helper method for set retrieval
-func (m *NFTManager) getSetByName(table *nftables.Table, setName string) (*nftables.Set, error) {
-	sets, err := m.conn.GetSets(table)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list sets: %w", err)
-	}
-
-	for _, set := range sets {
-		if set.Name == setName {
-			return set, nil
-		}
-	}
-
-	return nil, fmt.Errorf("set %s not found", setName)
-}
 
 //nolint:U1000 // Helper method for batch CIDR operations
-func (m *NFTManager) addCIDRElementsBatch(set *nftables.Set, cidrs []string) error {
-	if len(cidrs) == 0 {
-		return nil
-	}
-
-	// Determine table family
-	family := nftFamily(set.Table.Family == nftables.TableFamilyIPv4)
-
-	// Build elements string
-	elementsStr := "{ " + strings.Join(cidrs, ", ") + " }"
-
-	// Use centralized add element
-	return nftAddElement(family, set.Table.Name, set.Name, elementsStr)
-}
