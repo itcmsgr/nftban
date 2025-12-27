@@ -342,12 +342,12 @@ case "$1" in
             nftban_distro_load_config 2>/dev/null || true
             SYSTEM_NFT_CONF=$(nftban_distro_get_path "nftables_conf" 2>/dev/null)
 
-            if [ -n "$SYSTEM_NFT_CONF" ] && [ -f "$SYSTEM_NFT_CONF" ]; then
+            if [ -n "${SYSTEM_NFT_CONF}" ] && [ -f "${SYSTEM_NFT_CONF}" ]; then
                 # Check if already configured
-                if ! grep -q "/etc/nftban/nftables.conf" "$SYSTEM_NFT_CONF" 2>/dev/null; then
-                    echo "# NFTBan firewall configuration" >> "$SYSTEM_NFT_CONF"
-                    echo "include \"/etc/nftban/nftables.conf\"" >> "$SYSTEM_NFT_CONF"
-                    log_info "  Added NFTBan config to $SYSTEM_NFT_CONF"
+                if ! grep -q "/etc/nftban/nftables.conf" "${SYSTEM_NFT_CONF}" 2>/dev/null; then
+                    echo "# NFTBan firewall configuration" >> "${SYSTEM_NFT_CONF}"
+                    echo "include \"/etc/nftban/nftables.conf\"" >> "${SYSTEM_NFT_CONF}"
+                    log_info "  Added NFTBan config to ${SYSTEM_NFT_CONF}"
                 fi
             fi
         fi
