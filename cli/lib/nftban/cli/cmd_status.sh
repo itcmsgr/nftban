@@ -181,8 +181,11 @@ output_terminal() {
     # Count whitelisted IPs (from nftables)
     local whitelist_count=0
     if command -v nft >/dev/null 2>&1; then
-        local wl_v4=$(nft list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | wc -l 2>/dev/null || echo "0")
-        local wl_v6=$(nft list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | grep -oP '[0-9a-fA-F:]+' | grep ':' | wc -l 2>/dev/null || echo "0")
+        local wl_v4=$(nft list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' 2>/dev/null | wc -l | xargs)
+        local wl_v6=$(nft list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | grep -oP '[0-9a-fA-F:]+' | grep ':' 2>/dev/null | wc -l | xargs)
+        # Ensure valid numbers (strip any whitespace/newlines)
+        wl_v4=${wl_v4:-0}
+        wl_v6=${wl_v6:-0}
         whitelist_count=$((wl_v4 + wl_v6))
     fi
     printf "  %-20s %s\n" "Whitelisted IPs....." "$whitelist_count"
