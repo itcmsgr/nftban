@@ -305,3 +305,74 @@ jobs:
             name=$(basename "$deb")
             echo "| $(dirname "$deb" | xargs basename) | $name |" >> $GITHUB_STEP_SUMMARY
           done
+
+  # ==========================================================================
+  # UPLOAD TO GITHUB RELEASE
+  # ==========================================================================
+  upload-release:
+    name: Upload packages to GitHub Release
+    needs: [build-deb, build-rpm]
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Get version from VERSION file
+        id: version
+        run: echo "version=$(cat VERSION)" >> $GITHUB_OUTPUT
+
+      - name: Download all package artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-packages/
+
+      - name: Organize packages for release
+        run: |
+          mkdir -p release/
+          # Copy RPM packages
+          find release-packages -name "*.rpm" -exec cp {} release/ \;
+          # Copy DEB packages
+          find release-packages -name "*.deb" -exec cp {} release/ \;
+          echo "=== Packages for release ==="
+          ls -lh release/
+
+      - name: Upload to GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.version.outputs.version }}
+          name: NFTBan v${{ steps.version.outputs.version }}
+          body: |
+            ## NFTBan v${{ steps.version.outputs.version }}
+
+            **Installation packages for multiple distributions**
+
+            ### 📦 RPM Packages (RHEL/Rocky/Alma/Fedora)
+            - `nftban-el9-x86_64.rpm` - RHEL/Rocky/Alma 9
+            - `nftban-el10-x86_64.rpm` - RHEL/Rocky/Alma 10
+            - `nftban-fc42-x86_64.rpm` - Fedora 42
+            - `nftban-fc43-x86_64.rpm` - Fedora 43
+
+            ### 📦 DEB Packages (Ubuntu/Debian)
+            - `nftban-ubuntu22.04-amd64.deb` - Ubuntu 22.04 LTS
+            - `nftban-ubuntu24.04-amd64.deb` - Ubuntu 24.04 LTS
+            - `nftban-debian12-amd64.deb` - Debian 12
+
+            ### ✨ Features
+            - **Prerequisite checks** - Validates system before installation
+            - **GeoIP database** - Automatically downloads MaxMind GeoLite2-City (FREE)
+            - **Auto-updates** - Weekly GeoIP and threat feed updates via systemd timers
+            - **No manual config** - Works out of the box
+
+            ### 📖 Documentation
+            - [Installation Guide](https://github.com/itcmsgr/nftban/wiki)
+            - [GeoIP Database Guide](https://github.com/itcmsgr/nftban/wiki/GeoIP-Database-Guide)
+            - [CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference)
+
+            Built from commit: ${{ github.sha }}
+          files: release/*
+          fail_on_unmatched_files: true
+          draft: false
+          prerelease: false
