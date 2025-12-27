@@ -1,13 +1,12 @@
 [Unit]
 Description=NFTBan Core - Feed Update
 Documentation=https://github.com/itcmsgr/nftban-dev
-After=network-online.target nftban-core.service
-Requires=nftban-core.service
+After=network-online.target
 
 [Service]
 Type=oneshot
 # Log to both journal AND file for easy viewing
-ExecStart=/bin/bash -c '/usr/local/bin/nftban-core feeds load 2>&1 | tee -a /var/log/nftban/feeds.log'
+ExecStart=/bin/bash -c '/usr/bin/nftban feeds update 2>&1 | tee -a /var/log/nftban/feeds.log'
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nftban-feeds
