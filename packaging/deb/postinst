@@ -330,8 +330,28 @@ case "$1" in
         fi
 
         # =====================================================================
-        # STEP 9: Reload systemd and nftables
+        # STEP 9: Configure nftables and reload
         # =====================================================================
+        log_info "Configuring nftables service..."
+
+        # Source distro config library to get correct paths
+        if [ -f /usr/lib/nftban/lib/nftban_distro_config.sh ]; then
+            source /usr/lib/nftban/lib/nftban_distro_config.sh 2>/dev/null || true
+
+            # Get distro-specific nftables.conf path
+            nftban_distro_load_config 2>/dev/null || true
+            SYSTEM_NFT_CONF=$(nftban_distro_get_path "nftables_conf" 2>/dev/null)
+
+            if [ -n "$SYSTEM_NFT_CONF" ] && [ -f "$SYSTEM_NFT_CONF" ]; then
+                # Check if already configured
+                if ! grep -q "/etc/nftban/nftables.conf" "$SYSTEM_NFT_CONF" 2>/dev/null; then
+                    echo "# NFTBan firewall configuration" >> "$SYSTEM_NFT_CONF"
+                    echo "include \"/etc/nftban/nftables.conf\"" >> "$SYSTEM_NFT_CONF"
+                    log_info "  Added NFTBan config to $SYSTEM_NFT_CONF"
+                fi
+            fi
+        fi
+
         log_info "Reloading systemd daemon..."
         systemctl daemon-reload
 
@@ -342,6 +362,7 @@ case "$1" in
         else
             log_info "Enabling nftables..."
             systemctl enable nftables 2>/dev/null || true
+            systemctl reload nftables 2>/dev/null || log_warn "nftables load failed"
         fi
 
         # =====================================================================
