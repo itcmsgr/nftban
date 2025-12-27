@@ -47,10 +47,3 @@ func validateIPs(ips []string) error {
 }
 
 //nolint:U1000 // Prepared for future validation enhancement
-func validateCIDR(cidrStr string) error {
-	_, _, err := net.ParseCIDR(cidrStr)
-	if err != nil {
-		return fmt.Errorf("invalid CIDR: %s", cidrStr)
-	}
-	return nil
-}

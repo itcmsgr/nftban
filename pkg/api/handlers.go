@@ -1827,19 +1827,8 @@ func execNFTBanCoreCommand(args ...string) (string, error) {
 }
 
 //nolint:U1000 // Prepared for future API enhancement
-func parseStatusOutput(output string) map[string]interface{} {
-	// Simple parser - can be enhanced
-	return map[string]interface{}{
-		"raw": output,
-	}
-}
 
 //nolint:U1000 // Prepared for future API enhancement
-func parseHealthOutput(output string) map[string]interface{} {
-	return map[string]interface{}{
-		"raw": output,
-	}
-}
 
 func parseWhitelistOutput(output string) []string {
 	lines := strings.Split(output, "\n")
@@ -1854,12 +1843,6 @@ func parseWhitelistOutput(output string) []string {
 }
 
 //nolint:U1000 // Prepared for future API enhancement
-func parseFeedsOutput(output string) []map[string]interface{} {
-	// Simple parser - returns raw for now
-	return []map[string]interface{}{
-		{"raw": output},
-	}
-}
 
 func parseUIWhitelistOutput(output string) []string {
 	return parseWhitelistOutput(output)
