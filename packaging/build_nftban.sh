@@ -130,6 +130,11 @@ ls -la bin/
 # Binaries
 install -D -m 0755 bin/nftban-core %{buildroot}/usr/lib/nftban/bin/nftban-core
 install -D -m 0755 cli/sbin/nftban %{buildroot}/usr/bin/nftban
+install -D -m 0755 bin/nftban-ui %{buildroot}/usr/sbin/nftban-ui
+install -D -m 0755 bin/nftban-ui-auth %{buildroot}/usr/libexec/nftban-ui-auth
+
+# Main configuration file
+install -D -m 0644 install/config/nftban.conf %{buildroot}/etc/nftban/nftban.conf
 
 # Libraries
 mkdir -p %{buildroot}/usr/lib/nftban/lib
@@ -162,6 +167,11 @@ install -D -m 0644 install/systemd/nftban-rollback.service %{buildroot}/usr/lib/
 install -D -m 0644 install/systemd/nftban-rollback.timer %{buildroot}/usr/lib/systemd/system/nftban-rollback.timer
 install -D -m 0644 install/systemd/nftban-suricata-update.service %{buildroot}/usr/lib/systemd/system/nftban-suricata-update.service
 install -D -m 0644 install/systemd/nftban-suricata-update.timer %{buildroot}/usr/lib/systemd/system/nftban-suricata-update.timer
+install -D -m 0644 install/systemd/nftban-suricata.service %{buildroot}/usr/lib/systemd/system/nftban-suricata.service
+install -D -m 0644 install/systemd/nftban-ui.service %{buildroot}/usr/lib/systemd/system/nftban-ui.service
+install -D -m 0644 install/systemd/nftban-ui-auth.service %{buildroot}/usr/lib/systemd/system/nftban-ui-auth.service
+install -D -m 0644 install/systemd/nftban-queue.service %{buildroot}/usr/lib/systemd/system/nftban-queue.service
+install -D -m 0644 install/systemd/nftban-health-fix.service %{buildroot}/usr/lib/systemd/system/nftban-health-fix.service
 
 # PolicyKit policy
 install -D -m 0644 packaging/polkit-1/actions/com.nftban.suricata.policy %{buildroot}/usr/share/polkit-1/actions/com.nftban.suricata.policy
@@ -197,6 +207,7 @@ mkdir -p %{buildroot}/etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d
 mkdir -p %{buildroot}/var/lib/nftban/{feeds,geoip,staging,reports}
 mkdir -p %{buildroot}/var/log/nftban
 mkdir -p %{buildroot}/var/cache/nftban
+mkdir -p %{buildroot}/run/nftban
 
 %pre
 # =============================================================================
@@ -324,6 +335,8 @@ fi
 
 %files
 /usr/bin/nftban
+/usr/sbin/nftban-ui
+/usr/libexec/nftban-ui-auth
 /usr/lib/nftban/bin
 /usr/lib/nftban/cli
 /usr/lib/nftban/core
@@ -334,6 +347,7 @@ fi
 /usr/lib/nftban/exporters
 /usr/lib/nftban/tests
 /usr/lib/nftban/*.sh
+%config(noreplace) /etc/nftban/nftban.conf
 %config(noreplace) /etc/nftban/nftables.conf
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.timer
@@ -371,6 +385,7 @@ fi
 %dir %attr(750,nftban,nftban) /var/lib/nftban/reports
 %dir %attr(750,nftban,nftban) /var/log/nftban
 %dir %attr(755,root,root) /var/cache/nftban
+%dir %attr(755,nftban,nftban) /run/nftban
 
 %changelog
 * Mon Dec 09 2024 NFTBan Team <noreply@nftban.com> - 1.0.0-1
@@ -556,18 +571,27 @@ build_deb() {
     rm -rf "${deb_root}"
 
     # Create directory structure
-    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,polkit-1/rules.d,nftban/blacklist.d},var/{lib/nftban/{feeds,geoip,staging},log/nftban}}
+    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,polkit-1/rules.d,nftban/blacklist.d},var/{lib/nftban/{feeds,geoip,staging},log/nftban,cache/nftban},run/nftban}
 
     # Copy binaries
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-core" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/cli/sbin/nftban" "${deb_root}/usr/bin/"
+    install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui" "${deb_root}/usr/sbin/"
+    install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui-auth" "${deb_root}/usr/libexec/"
 
     # Copy libraries
     cp -r "${PROJECT_ROOT}/cli/lib/nftban"/* "${deb_root}/usr/lib/nftban/"
 
-    # Copy nftables config (to nftban dir to avoid conflict with system nftables package)
+    # Copy main configuration file
     mkdir -p "${deb_root}/etc/nftban"
+    install -m 0644 "${PROJECT_ROOT}/install/config/nftban.conf" "${deb_root}/etc/nftban/nftban.conf"
+
+    # Copy nftables config (to nftban dir to avoid conflict with system nftables package)
     install -m 0644 "${PROJECT_ROOT}/install/nftables/nftables.conf" "${deb_root}/etc/nftban/nftables.conf"
+
+    # Copy conf.d directory with subdirectories
+    mkdir -p "${deb_root}/etc/nftban/conf.d"
+    cp -r "${PROJECT_ROOT}/etc/nftban/conf.d"/* "${deb_root}/etc/nftban/conf.d/"
 
     # Copy all systemd units
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-maintenance.service" "${deb_root}/usr/lib/systemd/system/"
@@ -589,6 +613,11 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-rollback.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-update.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-update.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui-auth.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health-fix.service" "${deb_root}/usr/lib/systemd/system/"
 
     # Copy PolicyKit policy
     mkdir -p "${deb_root}/usr/share/polkit-1/actions"

@@ -744,6 +744,18 @@ install_templates() {
     chmod 755 /usr/share/nftban/specs
     find /usr/share/nftban/specs -type f -name "*.json" -exec chmod 644 {} \;
 
+    # Install man page
+    log "Installing man pages..."
+    if [[ -f "$SCRIPT_DIR/install/man/man8/nftban.8" ]]; then
+        mkdir -p /usr/share/man/man8
+        install -m 0644 "$SCRIPT_DIR/install/man/man8/nftban.8" /usr/share/man/man8/
+        ok "Installed man page → /usr/share/man/man8/nftban.8"
+        # Update man database if available
+        if command -v mandb &>/dev/null; then
+            mandb -q 2>/dev/null || true
+        fi
+    fi
+
     return 0
 }
 
@@ -1148,6 +1160,40 @@ install_systemd() {
         cp -f "$SCRIPT_DIR/install/systemd/nftban-suricata-update.service" "$systemd_dir/"
         cp -f "$SCRIPT_DIR/install/systemd/nftban-suricata-update.timer" "$systemd_dir/"
         ok "Suricata rules updater units → $systemd_dir"
+    fi
+
+    # Login monitor
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-login-monitor.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-login-monitor.service" "$systemd_dir/"
+        ok "Login monitor service → $systemd_dir"
+    fi
+
+    # Maintenance tasks
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-maintenance.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-maintenance.service" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-maintenance.timer" "$systemd_dir/"
+        ok "Maintenance timer units → $systemd_dir"
+    fi
+
+    # Snapshot service
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-snapshot.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-snapshot.service" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-snapshot.timer" "$systemd_dir/"
+        ok "Snapshot timer units → $systemd_dir"
+    fi
+
+    # Rollback service
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-rollback.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-rollback.service" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-rollback.timer" "$systemd_dir/"
+        ok "Rollback timer units → $systemd_dir"
+    fi
+
+    # Watchdog service
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-watchdog.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-watchdog.service" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-watchdog.timer" "$systemd_dir/"
+        ok "Watchdog timer units → $systemd_dir"
     fi
 
     # Reload systemd
