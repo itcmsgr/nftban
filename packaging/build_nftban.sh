@@ -91,14 +91,14 @@ build_binaries() {
 }
 
 create_rpm_spec_nftban_core() {
-    cat > "${BUILD_DIR}/SPECS/nftban-core.spec" <<'EOF'
+    cat > "${BUILD_DIR}/SPECS/nftban-core.spec" <<EOF
 # Disable debuginfo for Go binary (no debug symbols)
 %global debug_package %{nil}
 %global _missing_build_ids_terminate_build 0
 
 Name:           nftban-core
-Version:        1.0.0
-Release:        1%{?dist}
+Version:        ${PKG_VERSION}
+Release:        ${PKG_RELEASE}%{?dist}
 Summary:        NFTBan Core - Adaptive firewall with threat intelligence
 
 License:        GPL-3.0-or-later
@@ -191,8 +191,8 @@ install -D -m 0644 install/share/nftban/specs/structure_default.json %{buildroot
 
 # Templates (mail, reports, email, partials)
 find install/share/nftban/templates -type f -name "*.html" | while read -r tmpl; do
-    rel_path="${tmpl#install/share/nftban/templates/}"
-    install -D -m 0644 "$tmpl" "%{buildroot}/usr/share/nftban/templates/$rel_path"
+    rel_path="\${tmpl#install/share/nftban/templates/}"
+    install -D -m 0644 "\$tmpl" "%{buildroot}/usr/share/nftban/templates/\$rel_path"
 done
 
 # Man page
@@ -327,7 +327,7 @@ echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all
 %systemd_postun_with_restart nftban-maintenance.service nftban-health.service nftban-login-monitor.service nftban-core-geoip.service nftban-core-feeds.service
 
 # Inform user about leftover files on complete removal
-if [ $1 -eq 0 ]; then
+if [ \$1 -eq 0 ]; then
     echo "nftban: Configuration files in /etc/nftban/ have been preserved."
     echo "nftban: Log files in /var/log/nftban/ have been preserved."
     echo "nftban: User accounts and groups have NOT been removed."
@@ -361,6 +361,8 @@ fi
 /etc/polkit-1/rules.d/50-nftban-auth.rules.in
 /etc/polkit-1/rules.d/50-nftban-port-status.rules.in
 /usr/share/nftban/specs/structure_default.json
+/usr/share/nftban/templates
+/usr/lib/nftban/nft-runtime.nft
 /usr/share/man/man8/nftban.8*
 %dir /etc/nftban
 %dir /etc/nftban/conf.d
@@ -420,11 +422,44 @@ build_rpm() {
 
     # Create source tarball
     local tarball="nftban-core-${PKG_VERSION}.tar.gz"
-    tar czf "${BUILD_DIR}/SOURCES/${tarball}" \
+
+    # Verify all required directories exist before creating tarball
+    log_info "Verifying source directories for tarball..."
+    local missing_dirs=()
+    for dir in bin cli cmd pkg install etc internal packaging; do
+        if [[ ! -d "${PROJECT_ROOT}/${dir}" ]]; then
+            missing_dirs+=("${dir}")
+        fi
+    done
+
+    if [[ ${#missing_dirs[@]} -gt 0 ]]; then
+        log_error "Missing required directories: ${missing_dirs[*]}"
+        log_error "PROJECT_ROOT=${PROJECT_ROOT}"
+        ls -la "${PROJECT_ROOT}/" || true
+        return 1
+    fi
+
+    # Create tarball with error checking
+    log_info "Creating source tarball: ${tarball}"
+    if ! tar czf "${BUILD_DIR}/SOURCES/${tarball}" \
         --transform "s,^,nftban-core-${PKG_VERSION}/," \
         -C "${PROJECT_ROOT}" \
         bin/ cli/ cmd/ pkg/ install/ etc/ internal/ packaging/ \
-        VERSION go.mod go.sum LICENSE README.md
+        VERSION go.mod go.sum LICENSE README.md; then
+        log_error "Failed to create source tarball"
+        log_error "tar command failed with exit code $?"
+        return 1
+    fi
+
+    # Verify tarball was created
+    if [[ ! -f "${BUILD_DIR}/SOURCES/${tarball}" ]]; then
+        log_error "Tarball not found after creation: ${BUILD_DIR}/SOURCES/${tarball}"
+        log_error "Contents of ${BUILD_DIR}/SOURCES/:"
+        ls -la "${BUILD_DIR}/SOURCES/" || true
+        return 1
+    fi
+
+    log_success "Tarball created: ${tarball} ($(stat -c%s "${BUILD_DIR}/SOURCES/${tarball}" 2>/dev/null || echo 'unknown') bytes)"
 
     # Build RPM
     if rpmbuild --define "_topdir ${BUILD_DIR}" \
