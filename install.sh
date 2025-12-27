@@ -327,16 +327,16 @@ check_go_binaries() {
     ok "Go binaries found in $BIN_DIR/"
 }
 
-# Download FREE GeoIP database (DB-IP)
+# Download FREE GeoIP database (MaxMind GeoLite2-City)
 download_geoip_database() {
-    log "Downloading FREE GeoIP database..."
+    log "Downloading FREE GeoIP database (MaxMind GeoLite2)..."
 
     local geoip_dir="/var/lib/nftban/geoip"
-    local db_file="${geoip_dir}/dbip-country-lite.mmdb"
-    local download_url
-    download_url="https://download.db-ip.com/free/dbip-country-lite-$(date +%Y-%m).mmdb.gz"
+    local db_file="${geoip_dir}/GeoLite2-City.mmdb"
 
     mkdir -p "$geoip_dir"
+    chown nftban:nftban "$geoip_dir" 2>/dev/null || true
+    chmod 750 "$geoip_dir"
 
     # Check if recent database exists (less than 30 days old)
     if [[ -f "$db_file" ]]; then
@@ -352,15 +352,18 @@ download_geoip_database() {
         fi
     fi
 
-    # Download DB-IP free database
-    if curl -fsSL "$download_url" -o "${db_file}.gz" 2>/dev/null; then
-        gunzip -f "${db_file}.gz" 2>/dev/null || true
-        chown nftban:nftban "$db_file" 2>/dev/null || true
-        chmod 644 "$db_file"
-        ok "GeoIP database downloaded: $db_file"
+    # Use nftban-core to download (same as RPM/DEB packages)
+    if [[ -x "/usr/lib/nftban/bin/nftban-core" ]]; then
+        log "Using nftban-core to download GeoIP database..."
+        if /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null; then
+            ok "GeoIP database downloaded successfully"
+        else
+            warn "Could not download GeoIP database (will retry via timer)"
+            info "Manual download: nftban geoip update"
+        fi
     else
-        warn "Could not download GeoIP database (will retry on first use)"
-        info "Manual download: nftban geoip update"
+        warn "nftban-core not found, skipping GeoIP download"
+        info "Will download on first use via: nftban geoip update"
     fi
 }
 
