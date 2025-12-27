@@ -252,14 +252,52 @@ fi
 echo ""
 echo "Checking required commands..."
 
-for cmd in nft systemctl ip iptables curl jq; do
+# Critical commands (must be present)
+for cmd in nft systemctl curl jq; do
     if command -v \$cmd >/dev/null 2>&1; then
         echo "[✓] Found: \$cmd"
     else
-        echo "[✗] MISSING: \$cmd"
+        echo "[✗] MISSING: \$cmd (CRITICAL)"
         PREREQ_FAILED=1
     fi
 done
+
+# Optional commands (nice to have, but not critical)
+if command -v ip >/dev/null 2>&1; then
+    echo "[✓] Found: ip (iproute2)"
+else
+    echo "[i] Info: ip command not found (optional, will use fallback methods)"
+fi
+
+# Warn about legacy firewall tools (should be removed)
+echo ""
+echo "Checking for legacy firewall tools..."
+LEGACY_FOUND=0
+
+if command -v iptables >/dev/null 2>&1 || command -v ip6tables >/dev/null 2>&1; then
+    echo "[!] WARNING: iptables/ip6tables installed (LEGACY - conflicts with nftables)"
+    echo "    NFTBan uses nftables. Legacy iptables should be removed."
+    echo "    Recommended: dnf remove iptables iptables-services"
+    LEGACY_FOUND=1
+fi
+
+if command -v ufw >/dev/null 2>&1; then
+    echo "[!] WARNING: ufw installed (LEGACY - conflicts with nftables)"
+    echo "    NFTBan manages nftables directly. ufw should be removed."
+    echo "    Recommended: apt remove ufw"
+    LEGACY_FOUND=1
+fi
+
+if command -v firewall-cmd >/dev/null 2>&1; then
+    echo "[!] WARNING: firewalld installed (conflicts with nftables)"
+    echo "    NFTBan manages nftables directly. firewalld should be removed."
+    echo "    Recommended: dnf remove firewalld"
+    LEGACY_FOUND=1
+fi
+
+if [ \$LEGACY_FOUND -eq 0 ]; then
+    echo "[✓] No legacy firewall tools detected"
+fi
 
 # -----------------------------------------------------------------------------
 # CHECK 3: Kernel nftables Support
@@ -748,14 +786,52 @@ fi
 echo ""
 echo "Checking required commands..."
 
-for cmd in nft systemctl ip iptables curl jq; do
+# Critical commands (must be present)
+for cmd in nft systemctl curl jq; do
     if command -v $cmd >/dev/null 2>&1; then
         echo "[✓] Found: $cmd"
     else
-        echo "[✗] MISSING: $cmd"
+        echo "[✗] MISSING: $cmd (CRITICAL)"
         PREREQ_FAILED=1
     fi
 done
+
+# Optional commands (nice to have, but not critical)
+if command -v ip >/dev/null 2>&1; then
+    echo "[✓] Found: ip (iproute2)"
+else
+    echo "[i] Info: ip command not found (optional, will use fallback methods)"
+fi
+
+# Warn about legacy firewall tools (should be removed)
+echo ""
+echo "Checking for legacy firewall tools..."
+LEGACY_FOUND=0
+
+if command -v iptables >/dev/null 2>&1 || command -v ip6tables >/dev/null 2>&1; then
+    echo "[!] WARNING: iptables/ip6tables installed (LEGACY - conflicts with nftables)"
+    echo "    NFTBan uses nftables. Legacy iptables should be removed."
+    echo "    Recommended: dnf remove iptables iptables-services"
+    LEGACY_FOUND=1
+fi
+
+if command -v ufw >/dev/null 2>&1; then
+    echo "[!] WARNING: ufw installed (LEGACY - conflicts with nftables)"
+    echo "    NFTBan manages nftables directly. ufw should be removed."
+    echo "    Recommended: apt remove ufw"
+    LEGACY_FOUND=1
+fi
+
+if command -v firewall-cmd >/dev/null 2>&1; then
+    echo "[!] WARNING: firewalld installed (conflicts with nftables)"
+    echo "    NFTBan manages nftables directly. firewalld should be removed."
+    echo "    Recommended: dnf remove firewalld"
+    LEGACY_FOUND=1
+fi
+
+if [ \$LEGACY_FOUND -eq 0 ]; then
+    echo "[✓] No legacy firewall tools detected"
+fi
 
 # -----------------------------------------------------------------------------
 # CHECK 3: Kernel nftables Support
