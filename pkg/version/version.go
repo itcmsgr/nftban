@@ -56,9 +56,9 @@ const (
 // Banner returns a formatted banner string for CLI output
 func Banner(component string) string {
 	if component == "" {
-		return ProductName + " " + FullVersion
+		return ProductName + " " + FullVersion()
 	}
-	return ProductName + " " + FullVersion + " - " + component
+	return ProductName + " " + FullVersion() + " - " + component
 }
 
 // BannerWithEmoji returns a banner with emoji prefix
