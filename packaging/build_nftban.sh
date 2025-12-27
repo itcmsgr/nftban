@@ -570,6 +570,13 @@ fi
 # Load nftables configuration
 systemctl reload nftables 2>/dev/null || systemctl restart nftables 2>/dev/null || true
 
+# STEP 10: Sync whitelist.d files to nftables sets
+# The nftables template has only default IPs, this loads the actual detected system IPs
+echo "[NFTBan] Syncing whitelist files to nftables..."
+if [ -x /usr/lib/nftban/bin/nftban-core ]; then
+    /usr/lib/nftban/bin/nftban-core sync 2>/dev/null || echo "[NFTBan WARN] Whitelist sync failed (run manually: nftban-core sync)"
+fi
+
 echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
 echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all optional timers."
 

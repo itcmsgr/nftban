@@ -366,6 +366,15 @@ case "$1" in
         fi
 
         # =====================================================================
+        # STEP 10: Sync whitelist.d files to nftables sets
+        # =====================================================================
+        # The nftables template has only default IPs, this loads the actual detected system IPs
+        log_info "Syncing whitelist files to nftables..."
+        if [ -x /usr/lib/nftban/bin/nftban-core ]; then
+            /usr/lib/nftban/bin/nftban-core sync 2>/dev/null || log_warn "Whitelist sync failed (run manually: nftban-core sync)"
+        fi
+
+        # =====================================================================
         # Installation Complete
         # =====================================================================
         log_info ""
