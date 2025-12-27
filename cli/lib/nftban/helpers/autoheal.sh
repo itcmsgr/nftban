@@ -373,6 +373,66 @@ else
 fi
 
 # =============================================================================
+# Auto-fix metrics exporters (node_exporter + VictoriaMetrics)
+# =============================================================================
+log_info "Checking metrics exporters configuration..."
+
+# Fix node_exporter textfile collector directory permissions
+if [ -d "/var/lib/node_exporter" ]; then
+    # Parent directory must be readable by node_exporter user
+    chmod 755 /var/lib/node_exporter 2>/dev/null || true
+
+    # Textfile collector directory - node_exporter needs read, nftban needs write
+    if [ -d "/var/lib/node_exporter/textfile_collector" ]; then
+        # Change owner to node_exporter user (if exists)
+        if id node_exporter &>/dev/null; then
+            chown node_exporter:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
+            chmod 775 /var/lib/node_exporter/textfile_collector 2>/dev/null || true
+            log_info "Fixed node_exporter textfile collector permissions"
+        fi
+    fi
+fi
+
+# Fix VictoriaMetrics scrape configuration (conflicting metric_relabel_configs)
+VICTORIA_SCRAPE_CONF="/etc/victoriametrics/scrape.yml"
+if [ -f "$VICTORIA_SCRAPE_CONF" ]; then
+    # Check if config has the conflicting double-keep pattern
+    if grep -q "action: keep" "$VICTORIA_SCRAPE_CONF" 2>/dev/null; then
+        # Count how many "action: keep" lines exist
+        KEEP_COUNT=$(grep -c "action: keep" "$VICTORIA_SCRAPE_CONF" 2>/dev/null || echo "0")
+
+        if [ "$KEEP_COUNT" -gt 1 ]; then
+            log_info "Fixing VictoriaMetrics scrape config (conflicting rules)..."
+
+            # Backup original
+            cp "$VICTORIA_SCRAPE_CONF" "${VICTORIA_SCRAPE_CONF}.bak" 2>/dev/null || true
+
+            # Write corrected config
+            cat > "$VICTORIA_SCRAPE_CONF" <<'VICTORIA_EOF'
+global:
+  scrape_interval: 60s
+
+scrape_configs:
+  - job_name: 'nftban'
+    static_configs:
+      - targets: ['localhost:9100']
+    metric_relabel_configs:
+      # Keep NFTBan metrics and essential node_exporter metrics
+      - source_labels: [__name__]
+        regex: '(nftban_.*|node_(cpu|memory|disk|network).*)'
+        action: keep
+VICTORIA_EOF
+
+            # Restart VictoriaMetrics if running
+            if systemctl is-active --quiet victoriametrics 2>/dev/null; then
+                systemctl restart victoriametrics 2>/dev/null || true
+                log_info "Restarted VictoriaMetrics with fixed config"
+            fi
+        fi
+    fi
+fi
+
+# =============================================================================
 # Auto-fix login monitor issues
 # =============================================================================
 log_info "Checking login monitor configuration..."
