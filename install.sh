@@ -1039,17 +1039,17 @@ install_polkit() {
     fi
 
     # Install polkit rules for nftban-core services (systemd management)
-    if [[ -f "$SCRIPT_DIR/cmd/nftban-core/polkit/10-nftban-core.rules" ]]; then
-        cp -f "$SCRIPT_DIR/cmd/nftban-core/polkit/10-nftban-core.rules" "$POLKIT_RULES_DIR_ETC/"
+    if [[ -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/10-nftban-core.rules" ]]; then
+        cp -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/10-nftban-core.rules" "$POLKIT_RULES_DIR_ETC/"
         chmod 644 "$POLKIT_RULES_DIR_ETC/10-nftban-core.rules"
         ok "Installed: 10-nftban-core.rules"
     else
-        warn "Polkit nftban-core rules not found: $SCRIPT_DIR/cmd/nftban-core/polkit/10-nftban-core.rules"
+        warn "Polkit nftban-core rules not found: $SCRIPT_DIR/packaging/polkit-1/rules.d/10-nftban-core.rules"
     fi
 
     # Install Suricata IDS integration polkit policy
-    if [[ -f "$SCRIPT_DIR/install/polkit/com.nftban.suricata.policy" ]]; then
-        cp -f "$SCRIPT_DIR/install/polkit/com.nftban.suricata.policy" "$POLKIT_ACTIONS_DIR/"
+    if [[ -f "$SCRIPT_DIR/packaging/polkit-1/actions/com.nftban.suricata.policy" ]]; then
+        cp -f "$SCRIPT_DIR/packaging/polkit-1/actions/com.nftban.suricata.policy" "$POLKIT_ACTIONS_DIR/"
         chmod 644 "$POLKIT_ACTIONS_DIR/com.nftban.suricata.policy"
         ok "Installed: com.nftban.suricata.policy"
     fi
