@@ -2,7 +2,7 @@
 
 **Secure by Design | Zero Trust Ready | AI-Assisted Defense**
 
-[![Version](https://img.shields.io/badge/version-1.0.0--beta-blue)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-1.0.14-blue)](https://github.com/itcmsgr/nftban)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Code: 80%+ Shell](https://img.shields.io/badge/Code-80%25%2B%20Shell-4EAA25.svg)]()
 [![Performance: Go Binaries](https://img.shields.io/badge/Performance-Go%20Binaries-00ADD8.svg)](https://go.dev/)
@@ -133,6 +133,10 @@ nftban login enable      # SSH login monitoring
 nftban feeds enable      # Threat intelligence feeds
 nftban portscan enable   # Port scan detection
 
+# Optional: Advanced IDS integration
+nftban suricata install  # Install Suricata IDS (automated)
+nftban suricata enable   # Enable with weekly rule updates
+
 # Common tasks
 nftban ban 1.2.3.4       # Block IP
 nftban unban 1.2.3.4     # Remove ban
@@ -248,6 +252,9 @@ Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
 - **[Wiki Home](https://github.com/itcmsgr/nftban/wiki)** - Complete documentation
 - **[CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference)** - All 44 commands
 - **[Installation Prerequisites](https://github.com/itcmsgr/nftban/wiki/Installation-Prerequisites)** - System requirements
+
+### Advanced Integration
+- **[Suricata IDS Integration](docs/SURICATA.md)** - Complete guide for Suricata IDS/IPS setup (2-command install, DDoS/portscan integration, performance tuning)
 
 ### Security
 - **[Security Policy](SECURITY.md)** - Vulnerability reporting
