@@ -144,10 +144,8 @@ build_deb() {
     cp "${PROJECT_ROOT}/install/firewall/metrics-firewall-rules.sh" \
         "${deb_build_dir}/usr/lib/nftban/setup/"
 
-    if [ -f "${PROJECT_ROOT}/docs/metrics/SECURITY.md" ]; then
-        cp "${PROJECT_ROOT}/docs/metrics/SECURITY.md" \
-            "${deb_build_dir}/usr/share/doc/nftban/metrics/"
-    fi
+    # Note: Security documentation moved to wiki
+    # See: https://github.com/itcmsgr/nftban/wiki/Security-Operations-Guide
 
     # Set permissions
     chmod 0755 "${deb_build_dir}/usr/lib/nftban/exporters"/*.sh
