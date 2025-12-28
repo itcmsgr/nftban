@@ -82,6 +82,7 @@ EOF
   cat <<'EOF'
   ddos             DDoS protection (SYN flood, rate limiting)
   portscan         Port-scan detection (Suricata or kernel logs)
+  suricata         Suricata IDS/IPS (install, enable, rules update)
   login            SSH login monitor (alerts, auto-ban)
   feeds            Threat feeds (list, enable, disable, update)
   trust            Trust feeds - whitelist CDN/cloud (Cloudflare, AWS)
