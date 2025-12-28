@@ -430,7 +430,7 @@ print_next_steps() {
 
 📚 Documentation:
    - Setup guide: /usr/share/doc/nftban/metrics/NODE_EXPORTER_SETUP.md
-   - Security guide: /usr/share/doc/nftban/metrics/SECURITY.md
+   - Security guide: https://github.com/itcmsgr/nftban/wiki/Security-Operations-Guide
 
 ═══════════════════════════════════════════════════════════════
 
