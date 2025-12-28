@@ -242,12 +242,23 @@ Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
 
 ---
 
-## Links
+## Documentation
 
+### Getting Started
+- **[Wiki Home](https://github.com/itcmsgr/nftban/wiki)** - Complete documentation
+- **[CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference)** - All 44 commands
+- **[Installation Prerequisites](https://github.com/itcmsgr/nftban/wiki/Installation-Prerequisites)** - System requirements
+
+### Security
+- **[Security Policy](SECURITY.md)** - Vulnerability reporting
+- **[Security Architecture](https://github.com/itcmsgr/nftban/wiki/Security-Architecture)** - FHS Auto-Heal, Polkit integration
+- **[Security Operations Guide](https://github.com/itcmsgr/nftban/wiki/Security-Operations-Guide)** - Hardening, monitoring, emergency procedures
+- **[Groups and Permissions](https://github.com/itcmsgr/nftban/wiki/Groups-and-Permissions)** - Access control model
+
+### Community
 - **Website**: https://nftban.com
-- **Wiki**: [GitHub Wiki](https://github.com/itcmsgr/nftban/wiki)
-- **Issues**: [Report Bug](https://github.com/itcmsgr/nftban/issues)
-- **Discussions**: [Community](https://github.com/itcmsgr/nftban/discussions)
+- **[Report Bug](https://github.com/itcmsgr/nftban/issues)** - Issue tracker
+- **[Discussions](https://github.com/itcmsgr/nftban/discussions)** - Community forum
 
 ---
 
