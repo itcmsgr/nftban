@@ -87,6 +87,7 @@ install_via_package() {
     print_status "Prometheus installed via package manager"
 }
 
+# shellcheck disable=SC2120  # Function designed to accept optional version argument
 install_via_binary() {
     local version="${1:-$PROM_VERSION}"
     
