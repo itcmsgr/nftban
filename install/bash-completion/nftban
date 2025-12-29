@@ -4,6 +4,8 @@
 # Install: cp nftban /etc/bash_completion.d/nftban
 # =============================================================================
 
+# shellcheck disable=SC2207  # Bash completion uses traditional array assignment for compatibility
+
 _nftban() {
     local cur prev words cword
     _init_completion || return

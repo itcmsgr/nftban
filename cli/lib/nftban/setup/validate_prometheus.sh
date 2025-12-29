@@ -524,6 +524,7 @@ print_summary() {
 # =============================================================================
 
 main() {
+    # shellcheck disable=SC2034  # verbose reserved for future use
     local verbose=false
     local skip_metrics=false
 

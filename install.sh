@@ -134,7 +134,6 @@ check_prerequisites() {
     echo ""
 
     local PREREQ_FAILED=0
-    local CONFLICTS_FOUND=0
 
     # -------------------------------------------------------------------------
     # CHECK 1: Operating System Version
