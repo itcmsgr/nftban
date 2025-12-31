@@ -110,6 +110,7 @@ BuildRequires:  systemd-rpm-macros
 Requires:       nftables >= 0.9.0
 Requires:       systemd
 Requires:       bash >= 4.0
+Requires:       bash-completion
 Requires:       jq
 Requires:       curl
 Requires:       pam
@@ -206,6 +207,9 @@ done
 
 # Man page
 install -D -m 0644 install/man/man8/nftban.8 %{buildroot}/usr/share/man/man8/nftban.8
+
+# Bash completion
+install -D -m 0644 install/bash-completion/nftban %{buildroot}/usr/share/bash-completion/completions/nftban
 
 # Commands Registry (v1.0.16 - single source of truth)
 install -D -m 0644 commands.registry.yml %{buildroot}/etc/nftban/commands.registry.yml
@@ -636,6 +640,7 @@ fi
 /usr/share/nftban/specs/structure_default.json
 /usr/share/nftban/templates
 /usr/share/man/man8/nftban.8*
+/usr/share/bash-completion/completions/nftban
 %config(noreplace) /etc/nftban/commands.registry.yml
 /usr/lib/nftban/scripts/generate-help.sh
 /usr/lib/nftban/scripts/generate-wiki-operator.sh
@@ -771,7 +776,7 @@ Version: ${PKG_VERSION}
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), jq, curl, libpam0g
+Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, libpam0g
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: NFTBan Core - Adaptive firewall with threat intelligence
  NFTBan is an adaptive firewall system with threat intelligence integration.
@@ -1187,6 +1192,10 @@ build_deb() {
     # Copy man page
     mkdir -p "${deb_root}/usr/share/man/man8"
     install -m 0644 "${PROJECT_ROOT}/install/man/man8/nftban.8" "${deb_root}/usr/share/man/man8/"
+
+    # Copy bash completion
+    mkdir -p "${deb_root}/usr/share/bash-completion/completions"
+    install -m 0644 "${PROJECT_ROOT}/install/bash-completion/nftban" "${deb_root}/usr/share/bash-completion/completions/"
 
     # Copy commands registry (v1.0.16 - single source of truth)
     install -m 0644 "${PROJECT_ROOT}/commands.registry.yml" "${deb_root}/etc/nftban/"
