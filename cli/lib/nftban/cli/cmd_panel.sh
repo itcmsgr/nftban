@@ -462,7 +462,7 @@ EOF
     echo ""
 
     # Load DirectAdmin configuration to show port summary
-    local config_file="${NFTBAN_CONFIG_DIR}/conf.d/panels/directadmin/main.conf"
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/directadmin/main.conf"
     if [[ -f "$config_file" ]]; then
         # shellcheck source=/dev/null
         source "$config_file"
@@ -1022,7 +1022,7 @@ EOF
     echo ""
 
     # Load cPanel configuration to show port summary
-    local config_file="${NFTBAN_CONFIG_DIR}/conf.d/panels/cpanel/main.conf"
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/cpanel/main.conf"
     if [[ -f "$config_file" ]]; then
         # shellcheck source=/dev/null
         source "$config_file"
@@ -1542,6 +1542,9 @@ nftban_panel_cpanel_test() {
 
 # Export functions
 export -f nftban_cmd_panel
+export -f nftban_panel_help
+export -f nftban_panel_directadmin_help
+export -f nftban_panel_cpanel_help
 export -f _nftban_panel_check_port
 export -f _nftban_panel_check_cloudflare
 export -f nftban_panel_directadmin_enable
