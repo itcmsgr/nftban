@@ -65,6 +65,12 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/login"]="750|root|nftban|Login monitoring configuration"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/panels"]="750|root|nftban|Control panel configurations"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/panels/directadmin"]="750|root|nftban|DirectAdmin panel configuration"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/panels/cpanel"]="750|root|nftban|cPanel/WHM panel configuration"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/panels/cwp"]="750|root|nftban|CentOS Web Panel configuration"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/panels/cyberpanel"]="750|root|nftban|CyberPanel configuration"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/panels/interworx"]="750|root|nftban|InterWorx panel configuration"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/panels/vesta"]="750|root|nftban|VestaCP panel configuration"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/conf.d/panels/generic"]="750|root|nftban|Generic server configuration"
 
     # ─────────────────────────────────────────────────────────────────────
     # Variable Data (nftban:nftban) - Application state and runtime data

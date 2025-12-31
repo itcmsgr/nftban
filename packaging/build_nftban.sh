@@ -653,6 +653,18 @@ fi
 %dir /etc/nftban/conf.d/panels
 %dir /etc/nftban/conf.d/panels/directadmin
 %config(noreplace) /etc/nftban/conf.d/panels/directadmin/*.conf
+%dir /etc/nftban/conf.d/panels/cpanel
+%config(noreplace) /etc/nftban/conf.d/panels/cpanel/*.conf
+%dir /etc/nftban/conf.d/panels/cwp
+%config(noreplace) /etc/nftban/conf.d/panels/cwp/*.conf
+%dir /etc/nftban/conf.d/panels/cyberpanel
+%config(noreplace) /etc/nftban/conf.d/panels/cyberpanel/*.conf
+%dir /etc/nftban/conf.d/panels/interworx
+%config(noreplace) /etc/nftban/conf.d/panels/interworx/*.conf
+%dir /etc/nftban/conf.d/panels/vesta
+%config(noreplace) /etc/nftban/conf.d/panels/vesta/*.conf
+%dir /etc/nftban/conf.d/panels/generic
+%config(noreplace) /etc/nftban/conf.d/panels/generic/*.conf
 %dir /etc/nftban/distros
 /etc/nftban/distros/*.conf
 %dir /etc/nftban/whitelist.d
