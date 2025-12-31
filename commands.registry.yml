@@ -1,0 +1,958 @@
+# =============================================================================
+# NFTBan Commands Registry v1.0
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Single source of truth for all CLI commands
+#
+# This registry drives:
+#   - CLI help output (task-grouped)
+#   - Wiki documentation (operator/auditor/panel)
+#   - Bash completion
+#   - RBAC enforcement
+#   - Man page generation
+#
+# Schema Version: 1.0
+# Last Updated: 2025-12-31
+# =============================================================================
+
+# =============================================================================
+# SCHEMA REFERENCE
+# =============================================================================
+# category: setup_discovery | immediate_action | active_protection |
+#           infrastructure | intelligence_reporting | developer_sysadmin
+#
+# risk: core (safe, essential) | setup (one-time) | advanced (use with caution)
+#
+# audience: [cli, auditor, panel] - who can see this command
+#
+# capability: status_read | stats_read | report_read | logs_read |
+#             config_view | service_control | enforcement | policy_change |
+#             debug_internal
+#
+# mutates: true (changes state) | false (read-only) | conditional
+#
+# supports_dry_run: true | false - can preview without executing
+#
+# requires_root: true | false - needs root/sudo privileges
+#
+# panel_expose: true | false - can hosting panels call this?
+#
+# output_modes: [json, text] - supported output formats
+#
+# has_json: true | false - current --json implementation status
+# =============================================================================
+
+# =============================================================================
+# GROUP 0: SETUP & DISCOVERY
+# =============================================================================
+
+setup:
+  category: setup_discovery
+  description: "Initial system setup and configuration"
+  risk: setup
+  audience: [cli]
+  capability: policy_change
+  mutates: true
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban setup"
+    - "nftban setup --auto"
+  subcommands:
+    - install
+    - configure
+    - wizard
+
+wizard:
+  category: setup_discovery
+  description: "Interactive setup wizard for first-time configuration"
+  risk: setup
+  audience: [cli]
+  capability: policy_change
+  mutates: true
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban wizard"
+
+menu:
+  category: setup_discovery
+  description: "Interactive TUI menu for system management"
+  risk: core
+  audience: [cli]
+  capability: status_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban menu"
+
+status:
+  category: setup_discovery
+  description: "Global system status overview"
+  risk: core
+  audience: [cli, auditor, panel]
+  capability: status_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: true
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban status"
+    - "nftban status --json"
+    - "nftban status --quiet"
+
+health:
+  category: setup_discovery
+  description: "System health check and auto-repair diagnostics"
+  risk: core
+  audience: [cli, auditor, panel]
+  capability: status_read
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: true
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban health check"
+    - "nftban health fix"
+    - "nftban health summary"
+    - "nftban health --json"
+  subcommands:
+    check: {mutates: false, description: "Run health diagnostics"}
+    fix: {mutates: true, description: "Auto-repair detected issues", requires_root: true}
+    summary: {mutates: false, description: "One-line health summary"}
+    services: {mutates: false, description: "Check service status"}
+    permissions: {mutates: false, description: "Verify file permissions"}
+
+version:
+  category: setup_discovery
+  description: "Display NFTBan version information"
+  risk: core
+  audience: [cli, auditor, panel]
+  capability: status_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: true
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban version"
+    - "nftban version --json"
+
+validate:
+  category: setup_discovery
+  description: "Validate firewall structure and configuration"
+  risk: core
+  audience: [cli, auditor]
+  capability: status_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban validate"
+    - "nftban validate all"
+    - "nftban validate firewall"
+    - "nftban validate --json"
+  subcommands:
+    - all
+    - firewall
+    - config
+    - permissions
+
+sync:
+  category: setup_discovery
+  description: "Synchronize and apply firewall rules"
+  risk: advanced
+  audience: [cli]
+  capability: enforcement
+  mutates: true
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban sync"
+    - "nftban sync --dry-run"
+
+# =============================================================================
+# GROUP 1: IMMEDIATE ACTION
+# =============================================================================
+
+ban:
+  category: immediate_action
+  description: "Ban an IP address immediately"
+  risk: core
+  audience: [cli]
+  capability: enforcement
+  mutates: true
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban ban 1.2.3.4"
+    - "nftban ban 1.2.3.4 --timeout 3600"
+    - "nftban ban 1.2.3.4 --reason 'brute force attack'"
+    - "nftban ban 1.2.3.4 --source manual --json"
+
+unban:
+  category: immediate_action
+  description: "Remove IP ban"
+  risk: core
+  audience: [cli]
+  capability: enforcement
+  mutates: true
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban unban 1.2.3.4"
+    - "nftban unban 1.2.3.4 --json"
+
+check:
+  category: immediate_action
+  description: "Check if IP or port is blocked"
+  risk: core
+  audience: [cli, auditor, panel]
+  capability: logs_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: true
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban check 1.2.3.4"
+    - "nftban check port 22"
+    - "nftban check 1.2.3.4 --json"
+
+search:
+  category: immediate_action
+  description: "Search for IP across all sets and logs"
+  risk: core
+  audience: [cli, auditor, panel]
+  capability: logs_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: true
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban search 1.2.3.4"
+    - "nftban search 1.2.3.4 --json"
+
+list:
+  category: immediate_action
+  description: "List banned/whitelisted IPs"
+  risk: core
+  audience: [cli, auditor, panel]
+  capability: logs_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: true
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban list banned"
+    - "nftban list whitelist"
+    - "nftban list all"
+    - "nftban list --json"
+
+whitelist:
+  category: immediate_action
+  description: "Manage IP whitelist (never block)"
+  risk: core
+  audience: [cli]
+  capability: policy_change
+  mutates: true
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban whitelist add 10.0.0.1"
+    - "nftban whitelist remove 10.0.0.1"
+    - "nftban whitelist list"
+    - "nftban whitelist show --json"
+
+whitelist-system:
+  category: immediate_action
+  description: "Auto-whitelist system infrastructure IPs"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: true
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban whitelist-system"
+    - "nftban whitelist-system --dry-run"
+    - "nftban whitelist-system --json"
+
+# =============================================================================
+# GROUP 2: ACTIVE PROTECTION
+# =============================================================================
+
+ddos:
+  category: active_protection
+  description: "DDoS protection and rate limiting"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban ddos status"
+    - "nftban ddos enable"
+    - "nftban ddos disable"
+    - "nftban ddos test"
+    - "nftban ddos config --json"
+
+portscan:
+  category: active_protection
+  description: "Port scan detection and blocking"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban portscan status"
+    - "nftban portscan enable"
+    - "nftban portscan disable"
+    - "nftban portscan history"
+    - "nftban portscan test --json"
+
+login:
+  category: active_protection
+  description: "Login abuse monitoring (SSH/su/sudo)"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban login status"
+    - "nftban login enable ssh"
+    - "nftban login disable ssh"
+    - "nftban login stats"
+    - "nftban login logs 50"
+
+feeds:
+  category: active_protection
+  description: "Threat intelligence feeds management"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban feeds list"
+    - "nftban feeds enable spamhaus"
+    - "nftban feeds disable firehol"
+    - "nftban feeds update"
+    - "nftban feeds status --json"
+
+trust:
+  category: active_protection
+  description: "Trusted provider IP ranges (CDN, cloud)"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban trust list"
+    - "nftban trust enable CLOUDFLARE"
+    - "nftban trust disable AWS"
+    - "nftban trust update"
+    - "nftban trust status"
+
+country:
+  category: active_protection
+  description: "Geographic blocking by country code (alias for geoban)"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban country list"
+    - "nftban country enable CN"
+    - "nftban country disable RU"
+    - "nftban country mode blacklist"
+
+geoban:
+  category: active_protection
+  description: "Geographic IP blocking and whitelisting"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban geoban status"
+    - "nftban geoban ban CN"
+    - "nftban geoban unban RU"
+    - "nftban geoban whitelist US"
+    - "nftban geoban list --json"
+
+cloudflare:
+  category: active_protection
+  description: "Cloudflare IP ranges management"
+  risk: core
+  audience: [cli, auditor]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban cloudflare status"
+    - "nftban cloudflare update"
+    - "nftban cloudflare --json"
+
+# =============================================================================
+# GROUP 3: INFRASTRUCTURE
+# =============================================================================
+
+firewall:
+  category: infrastructure
+  description: "Firewall initialization and control"
+  risk: advanced
+  audience: [cli]
+  capability: enforcement
+  mutates: true
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban firewall status"
+    - "nftban firewall init"
+    - "nftban firewall reload"
+    - "nftban firewall reset"
+
+nftables:
+  category: infrastructure
+  description: "nftables service management"
+  risk: advanced
+  audience: [cli]
+  capability: service_control
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban nftables status"
+    - "nftban nftables reload"
+    - "nftban nftables restart"
+    - "nftban nftables backup"
+    - "nftban nftables restore"
+
+config:
+  category: infrastructure
+  description: "Configuration file management"
+  risk: advanced
+  audience: [cli, auditor, panel]
+  capability: config_view
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: true
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban config show"
+    - "nftban config edit"
+    - "nftban config validate"
+    - "nftban config reload"
+    - "nftban config get log_level"
+    - "nftban config set log_level debug"
+  allowlist:
+    paths:
+      - /etc/nftban/nftban.conf
+      - /etc/nftban/geoip.conf
+
+port:
+  category: infrastructure
+  description: "Port allow/block management"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban port list"
+    - "nftban port add 8080"
+    - "nftban port remove 8080"
+    - "nftban port check 443"
+    - "nftban port status --json"
+
+profile:
+  category: infrastructure
+  description: "Security profile management (basic/standard/advanced)"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban profile list"
+    - "nftban profile apply basic"
+    - "nftban profile apply standard"
+    - "nftban profile apply advanced"
+    - "nftban profile status"
+
+panel:
+  category: infrastructure
+  description: "Hosting panel integration detection and management"
+  risk: setup
+  audience: [cli]
+  capability: status_read
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban panel detect"
+    - "nftban panel status"
+    - "nftban panel directadmin"
+
+permissions:
+  category: infrastructure
+  description: "File and directory permissions audit and fix"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban permissions audit"
+    - "nftban permissions fix"
+    - "nftban permissions status --json"
+
+# =============================================================================
+# GROUP 4: INTELLIGENCE & REPORTING
+# =============================================================================
+
+stats:
+  category: intelligence_reporting
+  description: "Traffic and ban statistics"
+  risk: core
+  audience: [cli, auditor, panel]
+  capability: stats_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: true
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban stats top"
+    - "nftban stats ip 1.2.3.4"
+    - "nftban stats recent"
+    - "nftban stats monitor"
+    - "nftban stats export --json"
+
+watchdog:
+  category: intelligence_reporting
+  description: "System resource monitoring and alerting"
+  risk: core
+  audience: [cli, auditor, panel]
+  capability: stats_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: true
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban watchdog status"
+    - "nftban watchdog check"
+    - "nftban watchdog report"
+    - "nftban watchdog history"
+    - "nftban watchdog --json"
+
+report:
+  category: intelligence_reporting
+  description: "Generate security reports"
+  risk: core
+  audience: [cli, auditor, panel]
+  capability: report_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: true
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban report generate"
+    - "nftban report schedule weekly"
+    - "nftban report email admin@example.com"
+    - "nftban report --json"
+
+metrics:
+  category: intelligence_reporting
+  description: "Prometheus/VictoriaMetrics exporter management"
+  risk: setup
+  audience: [cli]
+  capability: service_control
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban metrics status"
+    - "nftban metrics enable"
+    - "nftban metrics enable --backend prometheus"
+    - "nftban metrics enable --backend victoria"
+    - "nftban metrics disable"
+
+gui:
+  category: intelligence_reporting
+  description: "Web GUI management"
+  risk: setup
+  audience: [cli]
+  capability: service_control
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban gui status"
+    - "nftban gui enable"
+    - "nftban gui disable"
+
+geoip:
+  category: intelligence_reporting
+  description: "GeoIP database and lookup utilities"
+  risk: core
+  audience: [cli, auditor]
+  capability: status_read
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban geoip status"
+    - "nftban geoip lookup 1.2.3.4"
+    - "nftban geoip update"
+    - "nftban geoip config --json"
+
+suricata:
+  category: intelligence_reporting
+  description: "Suricata IDS integration (intrusion detection sensor)"
+  risk: advanced
+  audience: [cli]
+  capability: service_control
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban suricata status"
+    - "nftban suricata install"
+    - "nftban suricata enable"
+    - "nftban suricata disable"
+    - "nftban suricata alerts"
+    - "nftban suricata rules update"
+
+mail:
+  category: intelligence_reporting
+  description: "Email notification configuration and testing"
+  risk: setup
+  audience: [cli]
+  capability: config_view
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban mail status"
+    - "nftban mail port-status"
+    - "nftban mail test"
+    - "nftban mail config"
+
+services:
+  category: intelligence_reporting
+  description: "Systemd services status overview"
+  risk: core
+  audience: [cli, auditor, panel]
+  capability: status_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: true
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban services status"
+    - "nftban services list"
+    - "nftban services detailed"
+    - "nftban services summary --json"
+
+# =============================================================================
+# GROUP 5: DEVELOPER / SYSADMIN
+# =============================================================================
+
+debug:
+  category: developer_sysadmin
+  description: "Debug mode and verbose logging control"
+  risk: advanced
+  audience: [cli]
+  capability: debug_internal
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban debug enable"
+    - "nftban debug disable"
+    - "nftban debug trace"
+
+smoke:
+  category: developer_sysadmin
+  description: "Smoke tests for system validation"
+  risk: core
+  audience: [cli]
+  capability: debug_internal
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban smoke run"
+    - "nftban smoke all"
+    - "nftban smoke --verbose"
+
+test:
+  category: developer_sysadmin
+  description: "Test harness for components"
+  risk: advanced
+  audience: [cli]
+  capability: debug_internal
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban test run"
+    - "nftban test all"
+    - "nftban test --verbose --json"
+
+emulate:
+  category: developer_sysadmin
+  description: "Simulate firewall rule evaluation (test packets)"
+  risk: advanced
+  audience: [cli]
+  capability: debug_internal
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban emulate 1.2.3.4"
+    - "nftban emulate 1.2.3.4 --proto tcp --port 22"
+    - "nftban emulate 1.2.3.4 --direction in --json"
+
+module:
+  category: developer_sysadmin
+  description: "Module inspection and diagnostics"
+  risk: advanced
+  audience: [cli]
+  capability: debug_internal
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban module list"
+    - "nftban module status"
+    - "nftban module --json"
+
+fhs:
+  category: developer_sysadmin
+  description: "Filesystem Hierarchy Standard compliance check"
+  risk: core
+  audience: [cli]
+  capability: debug_internal
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban fhs check"
+    - "nftban fhs status --json"
+
+timers:
+  category: developer_sysadmin
+  description: "Systemd timer management"
+  risk: advanced
+  audience: [cli]
+  capability: service_control
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban timers status"
+    - "nftban timers enable nftban-health.timer"
+    - "nftban timers disable nftban-queue.timer"
+
+system:
+  category: developer_sysadmin
+  description: "System-level operations and diagnostics"
+  risk: advanced
+  audience: [cli]
+  capability: debug_internal
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban system status"
+    - "nftban system enable"
+    - "nftban system disable"
+    - "nftban system install"
+    - "nftban system uninstall"
+
+# =============================================================================
+# METADATA
+# =============================================================================
+
+_metadata:
+  version: "1.0"
+  schema_version: "1.0"
+  generated_date: "2025-12-31"
+  total_commands: 45
+  commands_with_json: 34
+  commands_without_json: 11
+  missing_json:
+    - debug
+    - gui
+    - menu
+    - metrics
+    - profile
+    - smoke
+    - suricata
+    - sync
+    - system
+    - timers
+    - wizard
+    - trust
+  task_groups:
+    setup_discovery: 8
+    immediate_action: 7
+    active_protection: 8
+    infrastructure: 7
+    intelligence_reporting: 10
+    developer_sysadmin: 7
+  risk_levels:
+    core: 22
+    setup: 6
+    advanced: 17
+  audience_summary:
+    cli_only: 27
+    auditor_visible: 16
+    panel_expose: 11

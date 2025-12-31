@@ -190,11 +190,10 @@ install -D -m 0644 packaging/polkit-1/actions/com.nftban.suricata.policy %{build
 install -D -m 0644 packaging/polkit-1/rules.d/10-nftban-core.rules %{buildroot}/etc/polkit-1/rules.d/10-nftban-core.rules
 install -D -m 0644 packaging/polkit-1/rules.d/20-nftban-suricata.rules %{buildroot}/etc/polkit-1/rules.d/20-nftban-suricata.rules
 install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-auth.rules %{buildroot}/etc/polkit-1/rules.d/50-nftban-auth.rules
-install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-port-status.rules %{buildroot}/etc/polkit-1/rules.d/50-nftban-port-status.rules
 install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-v030.rules %{buildroot}/etc/polkit-1/rules.d/50-nftban-v030.rules
 install -D -m 0644 packaging/polkit-1/rules.d/60-nftban-services.rules %{buildroot}/etc/polkit-1/rules.d/60-nftban-services.rules
 install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-auth.rules.in %{buildroot}/etc/polkit-1/rules.d/50-nftban-auth.rules.in
-install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-port-status.rules.in %{buildroot}/etc/polkit-1/rules.d/50-nftban-port-status.rules.in
+# NOTE: Removed 50-nftban-port-status.rules* (v1.0.16) - security risk (allowed pkexec of full CLI as root)
 
 # Validator spec file
 install -D -m 0644 install/share/nftban/specs/structure_default.json %{buildroot}/usr/share/nftban/specs/structure_default.json
@@ -207,6 +206,19 @@ done
 
 # Man page
 install -D -m 0644 install/man/man8/nftban.8 %{buildroot}/usr/share/man/man8/nftban.8
+
+# Commands Registry (v1.0.16 - single source of truth)
+install -D -m 0644 commands.registry.yml %{buildroot}/etc/nftban/commands.registry.yml
+
+# Documentation generators (v1.0.16)
+mkdir -p %{buildroot}/usr/lib/nftban/scripts
+install -m 0755 scripts/generate-help.sh %{buildroot}/usr/lib/nftban/scripts/generate-help.sh
+install -m 0755 scripts/generate-wiki-operator.sh %{buildroot}/usr/lib/nftban/scripts/generate-wiki-operator.sh
+install -m 0755 scripts/generate-wiki-auditor.sh %{buildroot}/usr/lib/nftban/scripts/generate-wiki-auditor.sh
+
+# Implementation plan documentation (v1.0.16)
+mkdir -p %{buildroot}/usr/share/doc/nftban
+install -m 0644 docs/JSON_IMPLEMENTATION_PLAN.md %{buildroot}/usr/share/doc/nftban/JSON_IMPLEMENTATION_PLAN.md
 
 # Test scripts
 mkdir -p %{buildroot}/usr/lib/nftban/tests
@@ -618,14 +630,17 @@ fi
 /etc/polkit-1/rules.d/10-nftban-core.rules
 /etc/polkit-1/rules.d/20-nftban-suricata.rules
 /etc/polkit-1/rules.d/50-nftban-auth.rules
-/etc/polkit-1/rules.d/50-nftban-port-status.rules
 /etc/polkit-1/rules.d/50-nftban-v030.rules
 /etc/polkit-1/rules.d/60-nftban-services.rules
 /etc/polkit-1/rules.d/50-nftban-auth.rules.in
-/etc/polkit-1/rules.d/50-nftban-port-status.rules.in
 /usr/share/nftban/specs/structure_default.json
 /usr/share/nftban/templates
 /usr/share/man/man8/nftban.8*
+%config(noreplace) /etc/nftban/commands.registry.yml
+/usr/lib/nftban/scripts/generate-help.sh
+/usr/lib/nftban/scripts/generate-wiki-operator.sh
+/usr/lib/nftban/scripts/generate-wiki-auditor.sh
+/usr/share/doc/nftban/JSON_IMPLEMENTATION_PLAN.md
 %dir /etc/nftban
 %dir /etc/nftban/conf.d
 %config(noreplace) /etc/nftban/conf.d/*.conf
@@ -1141,11 +1156,10 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/10-nftban-core.rules" "${deb_root}/etc/polkit-1/rules.d/"
     install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/20-nftban-suricata.rules" "${deb_root}/etc/polkit-1/rules.d/"
     install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-auth.rules" "${deb_root}/etc/polkit-1/rules.d/"
-    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-port-status.rules" "${deb_root}/etc/polkit-1/rules.d/"
     install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-v030.rules" "${deb_root}/etc/polkit-1/rules.d/"
     install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/60-nftban-services.rules" "${deb_root}/etc/polkit-1/rules.d/"
     install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-auth.rules.in" "${deb_root}/etc/polkit-1/rules.d/"
-    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-port-status.rules.in" "${deb_root}/etc/polkit-1/rules.d/"
+    # NOTE: Removed 50-nftban-port-status.rules* (v1.0.16) - security risk (allowed pkexec of full CLI as root)
 
     # Copy validator spec
     mkdir -p "${deb_root}/usr/share/nftban/specs"
@@ -1161,6 +1175,19 @@ build_deb() {
     # Copy man page
     mkdir -p "${deb_root}/usr/share/man/man8"
     install -m 0644 "${PROJECT_ROOT}/install/man/man8/nftban.8" "${deb_root}/usr/share/man/man8/"
+
+    # Copy commands registry (v1.0.16 - single source of truth)
+    install -m 0644 "${PROJECT_ROOT}/commands.registry.yml" "${deb_root}/etc/nftban/"
+
+    # Copy documentation generators (v1.0.16)
+    mkdir -p "${deb_root}/usr/lib/nftban/scripts"
+    install -m 0755 "${PROJECT_ROOT}/scripts/generate-help.sh" "${deb_root}/usr/lib/nftban/scripts/"
+    install -m 0755 "${PROJECT_ROOT}/scripts/generate-wiki-operator.sh" "${deb_root}/usr/lib/nftban/scripts/"
+    install -m 0755 "${PROJECT_ROOT}/scripts/generate-wiki-auditor.sh" "${deb_root}/usr/lib/nftban/scripts/"
+
+    # Copy implementation plan documentation (v1.0.16)
+    mkdir -p "${deb_root}/usr/share/doc/nftban"
+    install -m 0644 "${PROJECT_ROOT}/docs/JSON_IMPLEMENTATION_PLAN.md" "${deb_root}/usr/share/doc/nftban/"
 
     # Copy test scripts
     mkdir -p "${deb_root}/usr/lib/nftban/tests"

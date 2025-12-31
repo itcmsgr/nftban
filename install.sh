@@ -1080,6 +1080,30 @@ install_templates() {
     chmod 755 /usr/share/nftban/specs
     find /usr/share/nftban/specs -type f -name "*.json" -exec chmod 644 {} \;
 
+    # Install commands registry (v1.0.16 - single source of truth)
+    log "Installing commands registry..."
+    if [[ -f "$SCRIPT_DIR/commands.registry.yml" ]]; then
+        install -m 0644 "$SCRIPT_DIR/commands.registry.yml" /etc/nftban/
+        ok "Installed commands registry → /etc/nftban/commands.registry.yml"
+    fi
+
+    # Install documentation generators (v1.0.16)
+    log "Installing documentation generators..."
+    mkdir -p /usr/lib/nftban/scripts
+    if [[ -f "$SCRIPT_DIR/scripts/generate-help.sh" ]]; then
+        install -m 0755 "$SCRIPT_DIR/scripts/generate-help.sh" /usr/lib/nftban/scripts/
+        install -m 0755 "$SCRIPT_DIR/scripts/generate-wiki-operator.sh" /usr/lib/nftban/scripts/
+        install -m 0755 "$SCRIPT_DIR/scripts/generate-wiki-auditor.sh" /usr/lib/nftban/scripts/
+        ok "Installed documentation generators → /usr/lib/nftban/scripts/"
+    fi
+
+    # Install implementation plan documentation (v1.0.16)
+    if [[ -f "$SCRIPT_DIR/docs/JSON_IMPLEMENTATION_PLAN.md" ]]; then
+        mkdir -p /usr/share/doc/nftban
+        install -m 0644 "$SCRIPT_DIR/docs/JSON_IMPLEMENTATION_PLAN.md" /usr/share/doc/nftban/
+        ok "Installed implementation plan → /usr/share/doc/nftban/"
+    fi
+
     # Install man page
     log "Installing man pages..."
     if [[ -f "$SCRIPT_DIR/install/man/man8/nftban.8" ]]; then
@@ -1348,20 +1372,8 @@ install_polkit() {
     # ==========================================================================
     # GENERATE polkit rules from templates (replace placeholders with config values)
     # ==========================================================================
-
-    # Generate 50-nftban-port-status.rules from template
-    if [[ -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/50-nftban-port-status.rules.in" ]]; then
-        sed "s|@NFTBAN_BIN@|$NFTBAN_BIN|g" \
-            "$SCRIPT_DIR/packaging/polkit-1/rules.d/50-nftban-port-status.rules.in" \
-            > "$POLKIT_RULES_DIR_SHARE/50-nftban-port-status.rules"
-        chmod 644 "$POLKIT_RULES_DIR_SHARE/50-nftban-port-status.rules"
-        ok "Generated: 50-nftban-port-status.rules (NFTBAN_BIN=$NFTBAN_BIN)"
-    elif [[ -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/50-nftban-port-status.rules" ]]; then
-        # Fallback to non-template file if template doesn't exist
-        cp -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/50-nftban-port-status.rules" "$POLKIT_RULES_DIR_SHARE/"
-        chmod 644 "$POLKIT_RULES_DIR_SHARE/50-nftban-port-status.rules"
-        ok "Installed: 50-nftban-port-status.rules (legacy, non-template)"
-    fi
+    # NOTE: Removed 50-nftban-port-status.rules (v1.0.16) - security risk
+    #       It allowed pkexec of full CLI binary as root. Replaced with narrower helpers.
 
     # Generate 50-nftban-auth.rules from template
     if [[ -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/50-nftban-auth.rules.in" ]]; then
