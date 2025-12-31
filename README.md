@@ -282,3 +282,4 @@ Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
   <a href="https://github.com/itcmsgr/nftban/issues">Report Issue</a> |
   <a href="https://github.com/itcmsgr/nftban/discussions">Discussions</a>
 </p>
+
