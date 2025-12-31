@@ -238,7 +238,8 @@ check_prerequisites() {
 backup_firewall_rules() {
     # Create backup directory
     local backup_dir="/var/backups/nftban/firewall-migration"
-    local timestamp=$(date +"%Y%m%d-%H%M%S")
+    local timestamp
+    timestamp=$(date +"%Y%m%d-%H%M%S")
     local backup_path="${backup_dir}/${timestamp}"
 
     mkdir -p "$backup_path" 2>/dev/null || {
@@ -336,8 +337,10 @@ analyze_firewall_rules() {
 
     # Analyze iptables
     if command -v iptables &>/dev/null; then
-        local ipt_count=$(iptables -S 2>/dev/null | grep -v "^-P" | wc -l)
-        local ipt6_count=$(ip6tables -S 2>/dev/null | grep -v "^-P" | wc -l)
+        local ipt_count
+        local ipt6_count
+        ipt_count=$(iptables -S 2>/dev/null | grep -v "^-P" | wc -l)
+        ipt6_count=$(ip6tables -S 2>/dev/null | grep -v "^-P" | wc -l)
 
         if [[ $ipt_count -gt 0 ]] || [[ $ipt6_count -gt 0 ]]; then
             echo "iptables:"
@@ -349,7 +352,8 @@ analyze_firewall_rules() {
 
     # Analyze UFW
     if command -v ufw &>/dev/null; then
-        local ufw_count=$(ufw status numbered 2>/dev/null | grep -c "^\[" || echo "0")
+        local ufw_count
+        ufw_count=$(ufw status numbered 2>/dev/null | grep -c "^\[" || echo "0")
         if [[ $ufw_count -gt 0 ]]; then
             echo "UFW:"
             echo "  • Active rules: $ufw_count"
@@ -363,7 +367,8 @@ analyze_firewall_rules() {
 
     # Analyze firewalld
     if command -v firewall-cmd &>/dev/null && systemctl is-active --quiet firewalld 2>/dev/null; then
-        local zone_count=$(firewall-cmd --get-active-zones 2>/dev/null | grep -c "^[a-z]" || echo "0")
+        local zone_count
+        zone_count=$(firewall-cmd --get-active-zones 2>/dev/null | grep -c "^[a-z]" || echo "0")
         if [[ $zone_count -gt 0 ]]; then
             echo "firewalld:"
             echo "  • Active zones: $zone_count"
