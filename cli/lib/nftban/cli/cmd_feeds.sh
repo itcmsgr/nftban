@@ -218,7 +218,8 @@ nftban_feeds_select() {
     fi
 
     # Deduplicate
-    local unique_feeds=($(printf '%s\n' "${feeds_to_enable[@]}" | sort -u))
+    local unique_feeds=()
+    mapfile -t unique_feeds < <(printf '%s\n' "${feeds_to_enable[@]}" | sort -u)
 
     if [[ ${#unique_feeds[@]} -eq 0 ]]; then
         echo "No feeds selected."

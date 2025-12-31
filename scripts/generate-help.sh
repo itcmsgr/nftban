@@ -30,8 +30,8 @@ fi
 # CONFIGURATION
 # =============================================================================
 
-PROFILE="${1:---profile}"
-PROFILE="${2:-operator}"
+# Reserved for future profile-based filtering
+_PROFILE="${2:-operator}"
 
 # Task group names and descriptions
 declare -A GROUP_NAMES=(

@@ -1,0 +1,30 @@
+# =============================================================================
+# NFTBan RBL Check Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Daily RBL checking schedule
+# =============================================================================
+
+[Unit]
+Description=NFTBan RBL Check Daily Timer
+Documentation=https://nftban.com/docs/rbl
+After=network-online.target
+Wants=network-online.target
+
+[Timer]
+# Run daily at 02:00
+OnCalendar=daily
+OnCalendar=02:00
+Persistent=true
+
+# Randomize by up to 15 minutes to avoid thundering herd
+RandomizedDelaySec=15min
+
+# If system was off during scheduled time, run on next boot (after 10 min delay)
+OnBootSec=10min
+
+# Accuracy (how close to target time)
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

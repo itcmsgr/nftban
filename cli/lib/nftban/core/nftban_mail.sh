@@ -655,6 +655,7 @@ EOF
             )
 
             # Add SSL options
+            # shellcheck disable=SC2206  # Word splitting intentional for SSL options
             [[ -n "$smtp_ssl_opts" ]] && curl_args+=($smtp_ssl_opts)
 
             # Add authentication if configured

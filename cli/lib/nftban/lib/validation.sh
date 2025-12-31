@@ -61,6 +61,7 @@ nftban_validate_ipv4() {
 
     # Check each octet is 0-255
     local IFS='.'
+    # shellcheck disable=SC2206  # Word splitting intentional with IFS='.'
     local -a octets=($ip)
     for octet in "${octets[@]}"; do
         # Remove leading zeros for arithmetic comparison

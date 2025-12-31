@@ -346,7 +346,7 @@ nftban port add 2222  # DirectAdmin
 
 - **[Installation Guide](https://github.com/itcmsgr/nftban#quick-install)**
 - **[Security Architecture](https://github.com/itcmsgr/nftban/wiki/Security-Architecture)**
-- **[Suricata IDS Integration](https://github.com/itcmsgr/nftban/blob/main/docs/SURICATA.md)**
+- **[Suricata IDS Integration](https://github.com/itcmsgr/nftban/wiki/Suricata-Integration)**
 - **[Security Operations Guide](https://github.com/itcmsgr/nftban/wiki/Security-Operations-Guide)**
 
 ---

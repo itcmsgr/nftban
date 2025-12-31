@@ -476,6 +476,7 @@ nftban_portscan_classic_detect_scan_type() {
     # Check for strobe scan (rapid scanning of common ports)
     if [[ $port_count -ge $strobe_ports ]]; then
         local timestamps="${_PORTSCAN_CLASSIC_IP_TIMESTAMPS[$ip]}"
+        # shellcheck disable=SC2206  # Space-separated timestamps intentional
         local ts_array=($timestamps)
         local ts_count=${#ts_array[@]}
 
