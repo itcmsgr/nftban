@@ -1,6 +1,6 @@
 .\" NFTBan - nftables-based firewall management
 .\" Copyright (c) 2024-2026 Antonios Voulvoulis
-.TH NFTBAN 8 "December 2025" "NFTBan 1.0.0" "System Administration"
+.TH NFTBAN 8 "December 2025" "NFTBan 1.0.21" "System Administration"
 .SH NAME
 nftban \- nftables-based firewall management and intrusion prevention system
 .SH SYNOPSIS
@@ -216,7 +216,9 @@ Direct nftables control: start, stop, restart, reload, enable, disable, status.
 Port scanning and analysis: scan, list, summary, html-report, mail-report.
 .TP
 .B panel \fR[\fIsubcommand\fR]
-Control panel integration (DirectAdmin).
+Control panel integration for DirectAdmin and cPanel/WHM.
+Automatically configures firewall rules for hosting panel ports.
+Supports DirectAdmin (port 2222), cPanel (port 2083), and WHM (port 2087).
 .TP
 .B test
 Run CLI command validation tests.
