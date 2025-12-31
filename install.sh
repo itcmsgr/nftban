@@ -235,6 +235,166 @@ check_prerequisites() {
 }
 
 # Check for conflicting firewalls (CRITICAL - prevents conflicts)
+backup_firewall_rules() {
+    # Create backup directory
+    local backup_dir="/var/backups/nftban/firewall-migration"
+    local timestamp=$(date +"%Y%m%d-%H%M%S")
+    local backup_path="${backup_dir}/${timestamp}"
+
+    mkdir -p "$backup_path" 2>/dev/null || {
+        warn "Could not create backup directory at $backup_path"
+        return 1
+    }
+
+    log "Backing up existing firewall rules to: $backup_path"
+
+    # Backup iptables rules
+    if command -v iptables-save &>/dev/null; then
+        if iptables-save > "${backup_path}/iptables-rules.v4" 2>/dev/null; then
+            ok "Backed up IPv4 iptables rules"
+        fi
+    fi
+
+    if command -v ip6tables-save &>/dev/null; then
+        if ip6tables-save > "${backup_path}/iptables-rules.v6" 2>/dev/null; then
+            ok "Backed up IPv6 iptables rules"
+        fi
+    fi
+
+    # Backup UFW rules
+    if command -v ufw &>/dev/null && [[ -d /etc/ufw ]]; then
+        if tar czf "${backup_path}/ufw-config.tar.gz" /etc/ufw 2>/dev/null; then
+            ok "Backed up UFW configuration"
+        fi
+
+        # Export UFW status
+        ufw status verbose > "${backup_path}/ufw-status.txt" 2>/dev/null || true
+    fi
+
+    # Backup firewalld configuration
+    if command -v firewall-cmd &>/dev/null && systemctl is-active --quiet firewalld 2>/dev/null; then
+        firewall-cmd --list-all-zones > "${backup_path}/firewalld-zones.txt" 2>/dev/null || true
+        firewall-cmd --list-all > "${backup_path}/firewalld-default-zone.txt" 2>/dev/null || true
+
+        if [[ -d /etc/firewalld ]]; then
+            tar czf "${backup_path}/firewalld-config.tar.gz" /etc/firewalld 2>/dev/null && \
+                ok "Backed up firewalld configuration"
+        fi
+    fi
+
+    # Create README
+    cat > "${backup_path}/README.txt" <<EOF
+NFTBan Firewall Migration Backup
+=================================
+Date: $(date)
+Host: $(hostname)
+
+This directory contains backups of your previous firewall configuration
+that was disabled during NFTBan installation.
+
+⚠️ IMPORTANT: NFTBan does NOT automatically migrate rules!
+
+Files in this backup:
+- iptables-rules.v4      : IPv4 iptables rules
+- iptables-rules.v6      : IPv6 iptables rules
+- ufw-config.tar.gz      : UFW configuration
+- ufw-status.txt         : UFW status output
+- firewalld-config.tar.gz: firewalld configuration
+- firewalld-zones.txt    : firewalld zones configuration
+
+To manually review your old rules:
+  # For iptables:
+  less ${backup_path}/iptables-rules.v4
+
+  # For UFW:
+  cat ${backup_path}/ufw-status.txt
+
+  # For firewalld:
+  cat ${backup_path}/firewalld-zones.txt
+
+To recreate rules in NFTBan, see:
+  https://github.com/itcmsgr/nftban/wiki/Migrating-from-iptables-UFW-firewalld
+
+For help: https://github.com/itcmsgr/nftban/issues
+EOF
+
+    chmod 600 "${backup_path}"/* 2>/dev/null || true
+
+    info "Backup completed: $backup_path"
+    echo ""
+    return 0
+}
+
+analyze_firewall_rules() {
+    # Analyze and display summary of current firewall rules
+    local has_rules=0
+
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "CURRENT FIREWALL RULES SUMMARY:"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Analyze iptables
+    if command -v iptables &>/dev/null; then
+        local ipt_count=$(iptables -S 2>/dev/null | grep -v "^-P" | wc -l)
+        local ipt6_count=$(ip6tables -S 2>/dev/null | grep -v "^-P" | wc -l)
+
+        if [[ $ipt_count -gt 0 ]] || [[ $ipt6_count -gt 0 ]]; then
+            echo "iptables:"
+            echo "  • IPv4 rules: $ipt_count"
+            echo "  • IPv6 rules: $ipt6_count"
+            has_rules=1
+        fi
+    fi
+
+    # Analyze UFW
+    if command -v ufw &>/dev/null; then
+        local ufw_count=$(ufw status numbered 2>/dev/null | grep -c "^\[" || echo "0")
+        if [[ $ufw_count -gt 0 ]]; then
+            echo "UFW:"
+            echo "  • Active rules: $ufw_count"
+            ufw status numbered 2>/dev/null | head -10
+            if [[ $ufw_count -gt 10 ]]; then
+                echo "  ... and $((ufw_count - 10)) more rules"
+            fi
+            has_rules=1
+        fi
+    fi
+
+    # Analyze firewalld
+    if command -v firewall-cmd &>/dev/null && systemctl is-active --quiet firewalld 2>/dev/null; then
+        local zone_count=$(firewall-cmd --get-active-zones 2>/dev/null | grep -c "^[a-z]" || echo "0")
+        if [[ $zone_count -gt 0 ]]; then
+            echo "firewalld:"
+            echo "  • Active zones: $zone_count"
+            firewall-cmd --list-all 2>/dev/null | head -15
+            has_rules=1
+        fi
+    fi
+
+    echo ""
+
+    if [[ $has_rules -eq 0 ]]; then
+        info "No active firewall rules detected"
+    else
+        warn "⚠️  These rules will be DISABLED when you proceed!"
+        echo ""
+        echo "NFTBan will:"
+        echo "  ✓ Backup your rules to /var/backups/nftban/firewall-migration/"
+        echo "  ✓ Stop and disable the conflicting firewall service(s)"
+        echo "  ✗ NOT automatically convert or migrate your rules"
+        echo ""
+        echo "After installation, you will need to:"
+        echo "  1. Review your backed-up rules"
+        echo "  2. Manually recreate needed rules using NFTBan commands"
+        echo "  3. See: https://github.com/itcmsgr/nftban/wiki/Migration-Guide"
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+}
+
 check_conflicting_firewalls() {
     log "Checking for conflicting firewalls..."
 
@@ -335,11 +495,18 @@ check_conflicting_firewalls() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
+    # Show current firewall rules summary
+    analyze_firewall_rules
+
     # Ask user if they want automatic fix
     read -p "Would you like NFTBan to automatically stop and disable these firewalls? [y/N]: " auto_fix
 
     if [[ "${auto_fix,,}" == "y" || "${auto_fix,,}" == "yes" ]]; then
         echo ""
+
+        # Backup existing rules before disabling
+        backup_firewall_rules || warn "Backup failed, but continuing..."
+
         log "Automatically stopping and disabling conflicting firewalls..."
 
         local fixed=0
