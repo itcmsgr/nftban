@@ -121,6 +121,7 @@ func MergeConfigs() error {
 
 	// Apply whitelist/blacklist
 	effective.EnabledCategories = applyFilters(effective.EnabledCategories, whitelistGroups, blacklistGroups)
+	effective.EnabledSIDs = applyFilters(effective.EnabledSIDs, whitelistSIDs, blacklistSIDs)
 
 	// Build effective.conf content
 	var content strings.Builder
