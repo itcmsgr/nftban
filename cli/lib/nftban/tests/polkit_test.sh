@@ -48,12 +48,11 @@ log_info ""
 # =============================================================================
 log_info "Test 1: Verifying Polkit rules installation..."
 
-# NFTBan v1.0 simplified polkit rules (nftban group for all operators)
+# NFTBan v1.0.19 consolidated polkit rules (3-group RBAC model)
 RULES=(
-    "/etc/polkit-1/rules.d/10-nftban-core.rules"
-    "/etc/polkit-1/rules.d/20-nftban-suricata.rules"
-    "/etc/polkit-1/rules.d/50-nftban-auth.rules"
-    "/etc/polkit-1/rules.d/60-nftban-services.rules"
+    "/etc/polkit-1/rules.d/10-nftban-systemd.rules"
+    "/etc/polkit-1/rules.d/20-nftban-auditor.rules"
+    "/etc/polkit-1/rules.d/30-nftban-panel.rules"
 )
 
 for rule in "${RULES[@]}"; do

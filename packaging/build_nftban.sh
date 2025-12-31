@@ -183,18 +183,20 @@ install -D -m 0644 install/systemd/nftban-ui.service %{buildroot}/usr/lib/system
 install -D -m 0644 install/systemd/nftban-ui-auth.service %{buildroot}/usr/lib/systemd/system/nftban-ui-auth.service
 install -D -m 0644 install/systemd/nftban-queue.service %{buildroot}/usr/lib/systemd/system/nftban-queue.service
 install -D -m 0644 install/systemd/nftban-health-fix.service %{buildroot}/usr/lib/systemd/system/nftban-health-fix.service
+install -D -m 0644 install/systemd/nftban-rbl-check.service %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.service
+install -D -m 0644 install/systemd/nftban-rbl-check.timer %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.timer
 
-# PolicyKit policy
-install -D -m 0644 packaging/polkit-1/actions/com.nftban.suricata.policy %{buildroot}/usr/share/polkit-1/actions/com.nftban.suricata.policy
-
-# PolicyKit rules
-install -D -m 0644 packaging/polkit-1/rules.d/10-nftban-core.rules %{buildroot}/etc/polkit-1/rules.d/10-nftban-core.rules
-install -D -m 0644 packaging/polkit-1/rules.d/20-nftban-suricata.rules %{buildroot}/etc/polkit-1/rules.d/20-nftban-suricata.rules
-install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-auth.rules %{buildroot}/etc/polkit-1/rules.d/50-nftban-auth.rules
-install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-v030.rules %{buildroot}/etc/polkit-1/rules.d/50-nftban-v030.rules
-install -D -m 0644 packaging/polkit-1/rules.d/60-nftban-services.rules %{buildroot}/etc/polkit-1/rules.d/60-nftban-services.rules
-install -D -m 0644 packaging/polkit-1/rules.d/50-nftban-auth.rules.in %{buildroot}/etc/polkit-1/rules.d/50-nftban-auth.rules.in
-# NOTE: Removed 50-nftban-port-status.rules* (v1.0.16) - security risk (allowed pkexec of full CLI as root)
+# PolicyKit rules (v1.0.19: Consolidated 6 files → 3 files)
+# Removed: com.nftban.suricata.policy (unused custom actions)
+# Removed: 50-nftban-auth.rules (auth-helper never existed)
+# Removed: 50-nftban-v030.rules (auditor placeholder)
+# Removed: 60-nftban-services.rules (unsafe wildcard pattern)
+# Consolidated: 10-nftban-core + 20-nftban-suricata → 10-nftban-systemd
+# Added: 20-nftban-auditor.rules (auditor group)
+# Added: 30-nftban-panel.rules (panel group)
+install -D -m 0644 packaging/polkit-1/rules.d/10-nftban-systemd.rules %{buildroot}/etc/polkit-1/rules.d/10-nftban-systemd.rules
+install -D -m 0644 packaging/polkit-1/rules.d/20-nftban-auditor.rules %{buildroot}/etc/polkit-1/rules.d/20-nftban-auditor.rules
+install -D -m 0644 packaging/polkit-1/rules.d/30-nftban-panel.rules %{buildroot}/etc/polkit-1/rules.d/30-nftban-panel.rules
 
 # Validator spec file
 install -D -m 0644 install/share/nftban/specs/structure_default.json %{buildroot}/usr/share/nftban/specs/structure_default.json
@@ -464,11 +466,24 @@ echo ""
 # =============================================================================
 # STEP 1: Create system groups
 # =============================================================================
-# NFTBan v1.0 uses 2-group model:
-#   nftban: All operators (CLI + Web GUI)
-#   nftban-auditors: Read-only audit access
+# NFTBan v1.0.19 uses 3-group model:
+#   nftban: All operators (CLI + full service management)
+#   nftban-auditor: Read-only audit access (systemd status queries)
+#   nftban-panel: Panel integration (limited reload access)
 getent group nftban >/dev/null || groupadd -r nftban
-getent group nftban-auditors >/dev/null || groupadd -r nftban-auditors
+getent group nftban-auditor >/dev/null || groupadd -r nftban-auditor
+getent group nftban-panel >/dev/null || groupadd -r nftban-panel
+
+# Backward compatibility: nftban-auditors → nftban-auditor (renamed in v1.0.19)
+if getent group nftban-auditors >/dev/null 2>&1; then
+    echo "[NFTBan] Migrating nftban-auditors → nftban-auditor group..."
+    # Copy members from old group to new group
+    for user in $(getent group nftban-auditors | cut -d: -f4 | tr ',' ' '); do
+        usermod -a -G nftban-auditor "$user" 2>/dev/null || true
+    done
+fi
+
+# Create system user
 getent passwd nftban >/dev/null || useradd -r -g nftban -d /var/lib/nftban -s /usr/sbin/nologin -c "NFTBan system user" nftban
 
 # Add root to nftban group for CLI access
@@ -476,9 +491,41 @@ usermod -a -G nftban root 2>/dev/null || true
 
 %post
 # =============================================================================
-# NFTBan v1.0.0 - SAFE INSTALL FLOW
+# NFTBan v1.0.19 - SAFE INSTALL/UPGRADE FLOW
 # =============================================================================
-# Order: groups -> dirs -> perms -> polkit -> whitelist -> health -> services
+# Order: cleanup -> groups -> dirs -> perms -> polkit -> whitelist -> health -> services
+
+# =============================================================================
+# STEP 0: Cleanup obsolete files from previous versions
+# =============================================================================
+echo "[NFTBan] Cleaning up obsolete files from previous versions..."
+
+# Remove obsolete Polkit rules (v1.0.18 and earlier)
+rm -f /etc/polkit-1/rules.d/10-nftban-core.rules 2>/dev/null || true
+rm -f /etc/polkit-1/rules.d/20-nftban-suricata.rules 2>/dev/null || true
+rm -f /etc/polkit-1/rules.d/50-nftban-auth.rules 2>/dev/null || true
+rm -f /etc/polkit-1/rules.d/50-nftban-auth.rules.in 2>/dev/null || true
+rm -f /etc/polkit-1/rules.d/50-nftban-v030.rules 2>/dev/null || true
+rm -f /etc/polkit-1/rules.d/60-nftban-services.rules 2>/dev/null || true
+rm -f /usr/share/polkit-1/rules.d/10-nftban-core.rules 2>/dev/null || true
+rm -f /usr/share/polkit-1/rules.d/20-nftban-suricata.rules 2>/dev/null || true
+rm -f /usr/share/polkit-1/rules.d/50-nftban-auth.rules 2>/dev/null || true
+rm -f /usr/share/polkit-1/rules.d/50-nftban-v030.rules 2>/dev/null || true
+rm -f /usr/share/polkit-1/rules.d/60-nftban-services.rules 2>/dev/null || true
+
+# Remove obsolete Polkit actions
+rm -f /usr/share/polkit-1/actions/com.nftban.suricata.policy 2>/dev/null || true
+
+# Remove obsolete port-status rules (v1.0.15 and earlier - security risk)
+rm -f /etc/polkit-1/rules.d/50-nftban-port-status.rules 2>/dev/null || true
+rm -f /etc/polkit-1/rules.d/50-nftban-port-status.rules.in 2>/dev/null || true
+rm -f /usr/share/polkit-1/rules.d/50-nftban-port-status.rules 2>/dev/null || true
+
+echo "[NFTBan] Obsolete file cleanup complete"
+
+# =============================================================================
+# Rest of install flow continues below...
+# =============================================================================
 # This prevents lockout by ensuring whitelist is in place BEFORE firewall is active.
 
 echo "[NFTBan] Configuring NFTBan v1.0.0..."
@@ -630,13 +677,9 @@ fi
 %config(noreplace) /etc/nftban/nftables.conf
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.timer
-/usr/share/polkit-1/actions/com.nftban.suricata.policy
-/etc/polkit-1/rules.d/10-nftban-core.rules
-/etc/polkit-1/rules.d/20-nftban-suricata.rules
-/etc/polkit-1/rules.d/50-nftban-auth.rules
-/etc/polkit-1/rules.d/50-nftban-v030.rules
-/etc/polkit-1/rules.d/60-nftban-services.rules
-/etc/polkit-1/rules.d/50-nftban-auth.rules.in
+/etc/polkit-1/rules.d/10-nftban-systemd.rules
+/etc/polkit-1/rules.d/20-nftban-auditor.rules
+/etc/polkit-1/rules.d/30-nftban-panel.rules
 /usr/share/nftban/specs/structure_default.json
 /usr/share/nftban/templates
 /usr/share/man/man8/nftban.8*
@@ -655,6 +698,8 @@ fi
 %config(noreplace) /etc/nftban/conf.d/login/*.conf
 %dir /etc/nftban/conf.d/portscan
 %config(noreplace) /etc/nftban/conf.d/portscan/*.conf
+%dir /etc/nftban/conf.d/rbl
+%config(noreplace) /etc/nftban/conf.d/rbl/*.conf
 %dir /etc/nftban/conf.d/panels
 %dir /etc/nftban/conf.d/panels/directadmin
 %config(noreplace) /etc/nftban/conf.d/panels/directadmin/*.conf
@@ -1008,21 +1053,58 @@ PREINST_EOF
 # NFTBan v1.0.0 - SAFE INSTALL FLOW
 set -e
 
-echo "[NFTBan] Configuring NFTBan v1.0.0..."
+echo "[NFTBan] Configuring NFTBan v1.0.19..."
 
-# STEP 0: Remove old systemd overrides (prevent conflicts with new package files)
+# STEP 0: Cleanup obsolete files from previous versions
+echo "[NFTBan] Cleaning up obsolete files from previous versions..."
+
+# Remove obsolete Polkit rules (v1.0.18 and earlier)
+rm -f /etc/polkit-1/rules.d/10-nftban-core.rules 2>/dev/null || true
+rm -f /etc/polkit-1/rules.d/20-nftban-suricata.rules 2>/dev/null || true
+rm -f /etc/polkit-1/rules.d/50-nftban-auth.rules 2>/dev/null || true
+rm -f /etc/polkit-1/rules.d/50-nftban-auth.rules.in 2>/dev/null || true
+rm -f /etc/polkit-1/rules.d/50-nftban-v030.rules 2>/dev/null || true
+rm -f /etc/polkit-1/rules.d/60-nftban-services.rules 2>/dev/null || true
+rm -f /usr/share/polkit-1/rules.d/10-nftban-core.rules 2>/dev/null || true
+rm -f /usr/share/polkit-1/rules.d/20-nftban-suricata.rules 2>/dev/null || true
+rm -f /usr/share/polkit-1/rules.d/50-nftban-auth.rules 2>/dev/null || true
+rm -f /usr/share/polkit-1/rules.d/50-nftban-v030.rules 2>/dev/null || true
+rm -f /usr/share/polkit-1/rules.d/60-nftban-services.rules 2>/dev/null || true
+
+# Remove obsolete Polkit actions
+rm -f /usr/share/polkit-1/actions/com.nftban.suricata.policy 2>/dev/null || true
+
+# Remove obsolete port-status rules (v1.0.15 and earlier - security risk)
+rm -f /etc/polkit-1/rules.d/50-nftban-port-status.rules 2>/dev/null || true
+rm -f /etc/polkit-1/rules.d/50-nftban-port-status.rules.in 2>/dev/null || true
+rm -f /usr/share/polkit-1/rules.d/50-nftban-port-status.rules 2>/dev/null || true
+
+# Remove old systemd overrides (prevent conflicts with new package files)
 echo "[NFTBan] Removing old systemd overrides..."
 rm -f /etc/systemd/system/nftban-*.service 2>/dev/null || true
 rm -f /etc/systemd/system/nftban-*.timer 2>/dev/null || true
 rm -rf /etc/systemd/system/nftban-*.service.d 2>/dev/null || true
 systemctl daemon-reload 2>/dev/null || true
 
-# STEP 1: Create groups
+echo "[NFTBan] Obsolete file cleanup complete"
+
+# STEP 1: Create groups (v1.0.19: 3-group model)
 if ! getent group nftban >/dev/null; then
     addgroup --system nftban
 fi
-if ! getent group nftban-auditors >/dev/null; then
-    addgroup --system nftban-auditors
+if ! getent group nftban-auditor >/dev/null; then
+    addgroup --system nftban-auditor
+fi
+if ! getent group nftban-panel >/dev/null; then
+    addgroup --system nftban-panel
+fi
+
+# Backward compatibility: nftban-auditors → nftban-auditor (renamed in v1.0.19)
+if getent group nftban-auditors >/dev/null 2>&1; then
+    echo "[NFTBan] Migrating nftban-auditors → nftban-auditor group..."
+    for user in $(getent group nftban-auditors | cut -d: -f4 | tr ',' ' '); do
+        usermod -a -G nftban-auditor "$user" 2>/dev/null || true
+    done
 fi
 
 # STEP 2: Create user
@@ -1165,18 +1247,10 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health-fix.service" "${deb_root}/usr/lib/systemd/system/"
 
-    # Copy PolicyKit policy
-    mkdir -p "${deb_root}/usr/share/polkit-1/actions"
-    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/actions/com.nftban.suricata.policy" "${deb_root}/usr/share/polkit-1/actions/"
-
-    # Copy PolicyKit rules
-    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/10-nftban-core.rules" "${deb_root}/etc/polkit-1/rules.d/"
-    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/20-nftban-suricata.rules" "${deb_root}/etc/polkit-1/rules.d/"
-    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-auth.rules" "${deb_root}/etc/polkit-1/rules.d/"
-    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-v030.rules" "${deb_root}/etc/polkit-1/rules.d/"
-    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/60-nftban-services.rules" "${deb_root}/etc/polkit-1/rules.d/"
-    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/50-nftban-auth.rules.in" "${deb_root}/etc/polkit-1/rules.d/"
-    # NOTE: Removed 50-nftban-port-status.rules* (v1.0.16) - security risk (allowed pkexec of full CLI as root)
+    # Copy PolicyKit rules (v1.0.19: Consolidated 6 files → 3 files)
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/10-nftban-systemd.rules" "${deb_root}/etc/polkit-1/rules.d/"
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/20-nftban-auditor.rules" "${deb_root}/etc/polkit-1/rules.d/"
+    install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/30-nftban-panel.rules" "${deb_root}/etc/polkit-1/rules.d/"
 
     # Copy validator spec
     mkdir -p "${deb_root}/usr/share/nftban/specs"
