@@ -359,15 +359,138 @@ nftban_panel_directadmin_enable() {
 
 EOF
 
-    # Delegate to existing implementation in cmd_port.sh
-    # This function has all the logic we need
-    if command -v nftban_port_allow_directadmin >/dev/null 2>&1; then
-        nftban_port_allow_directadmin
-    else
-        echo "ERROR: DirectAdmin port configuration function not found" >&2
-        echo "This may indicate a broken installation." >&2
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "DirectAdmin Control Panel - Enable Firewall Rules"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Load DirectAdmin configuration to show port summary
+    local config_file="${NFTBAN_CONFIG_DIR}/conf.d/panels/directadmin/main.conf"
+    if [[ -f "$config_file" ]]; then
+        # shellcheck source=/dev/null
+        source "$config_file"
+        echo "✓ Loaded configuration from: $config_file"
         echo ""
-        echo "Please reinstall: dnf reinstall nftban" >&2
+        echo "Port Configuration (applies to both IPv4 and IPv6):"
+        echo "  TCP IN:  ${NFTBAN_DIRECTADMIN_TCP_IN:-Not configured}"
+        echo "  UDP IN:  ${NFTBAN_DIRECTADMIN_UDP_IN:-Not configured}"
+        echo ""
+    else
+        echo "⚠ Config file not found: $config_file"
+        echo "  This may indicate a broken installation."
+        echo "  Please reinstall: dnf reinstall nftban"
+        return 1
+    fi
+
+    # IMPORTANT WARNING: CloudFlare requirement
+    echo "╔═══════════════════════════════════════════════════════════════════╗"
+    echo "║ ⚠️  IMPORTANT: CloudFlare Whitelist Required                      ║"
+    echo "╚═══════════════════════════════════════════════════════════════════╝"
+    echo ""
+    echo "DirectAdmin licensing servers are behind CloudFlare CDN."
+    echo "You MUST whitelist CloudFlare IP ranges for licensing to work!"
+    echo ""
+
+    # Handle CloudFlare whitelist based on configuration
+    local cf_mode="${NFTBAN_DIRECTADMIN_AUTO_CLOUDFLARE:-ASK}"
+    local enable_cloudflare="no"
+
+    case "$cf_mode" in
+        YES|yes|Y|y)
+            enable_cloudflare="yes"
+            echo "→ CloudFlare whitelist: AUTO-ENABLE (configured)"
+            ;;
+        NO|no|N|n)
+            enable_cloudflare="no"
+            echo "→ CloudFlare whitelist: DISABLED (configured)"
+            echo "  ⚠️  WARNING: You must manually whitelist CloudFlare IPs!"
+            echo "     Run: nftban trust enable CLOUDFLARE"
+            ;;
+        ASK|ask|A|a|*)
+            echo "Do you want to enable CloudFlare IP whitelist? (REQUIRED for licensing)"
+            echo -n "Enable CloudFlare whitelist? [Y/n]: "
+            read -r response
+            case "$response" in
+                n|N|no|NO)
+                    enable_cloudflare="no"
+                    echo "  ⚠️  WARNING: CloudFlare whitelist NOT enabled!"
+                    echo "     DirectAdmin licensing may fail!"
+                    echo "     Enable later with: nftban trust enable CLOUDFLARE"
+                    ;;
+                *)
+                    enable_cloudflare="yes"
+                    echo "  ✓ CloudFlare whitelist will be enabled"
+                    ;;
+            esac
+            ;;
+    esac
+    echo ""
+
+    # Enable CloudFlare if requested
+    if [[ "$enable_cloudflare" == "yes" ]]; then
+        echo "Enabling CloudFlare IP whitelist..."
+        if nftban-core trust enable CLOUDFLARE 2>/dev/null && nftban-core trust update 2>/dev/null; then
+            echo "  ✓ CloudFlare whitelist enabled"
+        else
+            echo "  ⚠️ Failed to enable CloudFlare (non-critical, continuing...)"
+        fi
+        echo ""
+    fi
+
+    # Mark DirectAdmin panel as enabled in state file
+    echo "Enabling DirectAdmin panel in NFTBan..."
+    local state_dir="/var/lib/nftban/panels"
+    local state_file="$state_dir/enabled.conf"
+
+    # Ensure state directory exists
+    if [[ ! -d "$state_dir" ]]; then
+        mkdir -p "$state_dir" 2>/dev/null || {
+            echo "ERROR: Failed to create state directory: $state_dir" >&2
+            echo "This may be a permissions issue." >&2
+            return 1
+        }
+    fi
+
+    # Update state file using a simple approach (create/update)
+    {
+        echo "# NFTBan Panel State Configuration"
+        echo "# Format: panelname=enabled|disabled"
+        echo "# This file is automatically managed by 'nftban panel' commands"
+        echo ""
+        echo "directadmin=enabled"
+    } > "$state_file" || {
+        echo "ERROR: Failed to write state file: $state_file" >&2
+        return 1
+    }
+
+    echo "  ✓ DirectAdmin marked as enabled"
+    echo ""
+
+    # Trigger nftban-core sync to load DirectAdmin ports
+    echo "Loading DirectAdmin ports into firewall..."
+    echo "(This will sync ALL configuration: whitelists, blacklists, ports)"
+    echo ""
+
+    if nftban-core sync; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "✅ DirectAdmin panel enabled successfully!"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "DirectAdmin ports are now active and will persist across reboots."
+        echo ""
+        echo "Next steps:"
+        echo "  1. Verify panel access: https://YOUR_SERVER:2222"
+        echo "  2. Check firewall status: nftban panel directadmin status"
+        echo "  3. Test connectivity: nftban panel directadmin test"
+        echo ""
+        return 0
+    else
+        echo ""
+        echo "❌ ERROR: Failed to sync firewall configuration" >&2
+        echo ""
+        echo "DirectAdmin is marked as enabled but ports may not be loaded." >&2
+        echo "Try running: nftban-core sync" >&2
         return 1
     fi
 }
@@ -377,8 +500,8 @@ nftban_panel_directadmin_disable() {
     echo "DirectAdmin Control Panel - Disable Firewall Rules"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-    echo "⚠️  WARNING: This will remove DirectAdmin port rules."
-    echo "   Essential ports (SSH, HTTP) will be preserved."
+    echo "⚠️  WARNING: This will remove DirectAdmin port rules from firewall."
+    echo "   Essential ports (SSH, HTTP) from ports.d/ will be preserved."
     echo ""
     read -p "Continue? (yes/no) [no]: " confirm
     confirm="${confirm:-no}"
@@ -389,23 +512,61 @@ nftban_panel_directadmin_disable() {
     fi
 
     echo ""
-    echo "Removing DirectAdmin-specific port rules..."
+    echo "Disabling DirectAdmin panel in NFTBan..."
 
-    # Remove DirectAdmin-specific ports (keep SSH/HTTP)
-    local da_specific_ports="2222,35000:35999"
+    # Mark DirectAdmin panel as disabled in state file
+    local state_dir="/var/lib/nftban/panels"
+    local state_file="$state_dir/enabled.conf"
 
-    echo "  Removing DirectAdmin panel port (2222)..."
-    nftban port remove 2222 tcp >/dev/null 2>&1 || true
+    # Ensure state directory exists
+    if [[ ! -d "$state_dir" ]]; then
+        mkdir -p "$state_dir" 2>/dev/null || {
+            echo "ERROR: Failed to create state directory: $state_dir" >&2
+            return 1
+        }
+    fi
 
-    echo "  Removing passive FTP range (35000:35999)..."
-    # Note: Range removal requires special handling
+    # Update state file
+    {
+        echo "# NFTBan Panel State Configuration"
+        echo "# Format: panelname=enabled|disabled"
+        echo "# This file is automatically managed by 'nftban panel' commands"
+        echo ""
+        echo "directadmin=disabled"
+    } > "$state_file" || {
+        echo "ERROR: Failed to write state file: $state_file" >&2
+        return 1
+    }
 
-    echo "✓ DirectAdmin-specific ports removed"
+    echo "  ✓ DirectAdmin marked as disabled"
     echo ""
-    echo "Preserved essential ports:"
-    echo "  • 22 (SSH)"
-    echo "  • 80/443 (HTTP/HTTPS)"
+
+    # Trigger nftban-core sync to remove DirectAdmin ports
+    echo "Removing DirectAdmin ports from firewall..."
+    echo "(This will sync ALL configuration: whitelists, blacklists, ports)"
     echo ""
+
+    if nftban-core sync; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "✅ DirectAdmin panel disabled successfully!"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "DirectAdmin ports have been removed from firewall."
+        echo ""
+        echo "Preserved ports from ports.d/:"
+        echo "  • 22 (SSH - safety port)"
+        echo "  • Any custom ports you configured"
+        echo ""
+        return 0
+    else
+        echo ""
+        echo "❌ ERROR: Failed to sync firewall configuration" >&2
+        echo ""
+        echo "DirectAdmin is marked as disabled but ports may still be active." >&2
+        echo "Try running: nftban-core sync" >&2
+        return 1
+    fi
 }
 
 nftban_panel_directadmin_status() {

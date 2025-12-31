@@ -154,6 +154,13 @@ cp -r etc/nftban/conf.d/* %{buildroot}/etc/nftban/conf.d/
 install -D -m 0640 install/config/feeds.conf %{buildroot}/etc/nftban/conf.d/feeds.conf
 install -D -m 0640 install/config/conf.d/watchdog.conf %{buildroot}/etc/nftban/conf.d/watchdog.conf
 
+# Suricata profile templates
+mkdir -p %{buildroot}/etc/nftban/suricata/profiles
+mkdir -p %{buildroot}/etc/nftban/suricata/config
+install -D -m 0644 etc/nftban/suricata/profiles/minimal.yaml %{buildroot}/etc/nftban/suricata/profiles/minimal.yaml
+install -D -m 0644 etc/nftban/suricata/profiles/standard.yaml %{buildroot}/etc/nftban/suricata/profiles/standard.yaml
+install -D -m 0644 etc/nftban/suricata/profiles/maximum.yaml %{buildroot}/etc/nftban/suricata/profiles/maximum.yaml
+
 # Distro configuration files (CRITICAL for distro-aware paths)
 mkdir -p %{buildroot}/etc/nftban/distros
 cp etc/nftban/distros/*.conf %{buildroot}/etc/nftban/distros/
@@ -541,7 +548,7 @@ systemctl daemon-reload 2>/dev/null || true
 echo "[NFTBan] Creating FHS directories..."
 mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d}
 mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels}
-mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports}
+mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
 mkdir -p /var/log/nftban/reports
 mkdir -p /var/cache/nftban/health
@@ -717,6 +724,10 @@ fi
 %config(noreplace) /etc/nftban/conf.d/panels/generic/*.conf
 %dir /etc/nftban/distros
 /etc/nftban/distros/*.conf
+%dir /etc/nftban/suricata
+%dir /etc/nftban/suricata/profiles
+%config(noreplace) /etc/nftban/suricata/profiles/*.yaml
+%dir /etc/nftban/suricata/config
 %dir /etc/nftban/whitelist.d
 %dir /etc/nftban/blacklist.d
 %dir /etc/nftban/ports.d
@@ -1216,6 +1227,13 @@ build_deb() {
     cp -r "${PROJECT_ROOT}/etc/nftban/conf.d"/* "${deb_root}/etc/nftban/conf.d/"
     install -m 0640 "${PROJECT_ROOT}/install/config/feeds.conf" "${deb_root}/etc/nftban/conf.d/feeds.conf"
     install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/watchdog.conf" "${deb_root}/etc/nftban/conf.d/watchdog.conf"
+
+    # Copy Suricata profile templates
+    mkdir -p "${deb_root}/etc/nftban/suricata/profiles"
+    mkdir -p "${deb_root}/etc/nftban/suricata/config"
+    install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/minimal.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
+    install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/standard.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
+    install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/maximum.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
 
     # Copy distro configuration files (CRITICAL for distro-aware paths)
     mkdir -p "${deb_root}/etc/nftban/distros"
