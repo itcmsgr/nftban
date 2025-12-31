@@ -1,0 +1,257 @@
+# =============================================================================
+# NFTBan Suricata Profile: Maximum
+# =============================================================================
+# Target: 8+ cores, 8-16 GB RAM
+# Focus: Deep inspection and comprehensive coverage
+# Use Case: High-traffic servers, dedicated security appliances
+# =============================================================================
+
+%YAML 1.1
+---
+
+# Packet capture interface
+af-packet:
+  - interface: default
+    cluster-id: 99
+    cluster-type: cluster_flow
+    defrag: yes
+    ring-size: 300000          # LARGE buffer
+    use-mmap: yes
+
+# Threading configuration
+threading:
+  set-cpu-affinity: yes        # Pin threads to CPUs
+  detect-thread-ratio: 2.0     # Aggressive parallelism
+
+# Flow timeout settings (DEFAULT Suricata behavior)
+flow:
+  memcap: 256mb                # High memory allocation
+  hash-size: 262144
+  prealloc: 40000
+  timeout:
+    new: 30
+    established: 300           # DEFAULT timeout (generous)
+    closed: 0
+    bypassed: 100
+    emergency-new: 10
+    emergency-established: 100
+    emergency-closed: 0
+
+# Stream engine
+stream:
+  memcap: 128mb                # Large stream memory
+  checksum-validation: yes
+  inline: no
+
+# HTTP configuration (FULL body inspection)
+app-layer:
+  protocols:
+    http:
+      enabled: yes
+      libhtp:
+        default-config:
+          personality: IDS
+          request-body-limit: 30kb       # FULL inspection
+          response-body-limit: 30kb      # FULL inspection
+          request-body-minimal-inspect-size: 8192
+          request-body-inspect-window: 8192
+          response-body-minimal-inspect-size: 8192
+          response-body-inspect-window: 8192
+          double-decode-path: yes
+          double-decode-query: yes
+
+    tls:
+      enabled: yes
+      detection-ports:
+        dp: 443
+      ja3-fingerprints: yes
+
+    ssh:
+      enabled: yes
+
+    dns:
+      enabled: yes
+      tcp:
+        enabled: yes
+      udp:
+        enabled: yes
+
+    smtp:
+      enabled: yes
+      raw-extraction: yes        # Full SMTP inspection
+      mime:
+        decode-mime: yes
+        decode-base64: yes
+        decode-quoted-printable: yes
+
+    mysql:
+      enabled: yes
+
+    # ALL protocols enabled
+    smb:
+      enabled: yes
+      detection-ports:
+        dp: 139, 445
+
+    dcerpc:
+      enabled: yes
+
+    ftp:
+      enabled: yes
+
+    nfs:
+      enabled: yes
+
+    tftp:
+      enabled: yes
+
+    ikev2:
+      enabled: yes
+
+    krb5:
+      enabled: yes
+
+    ntp:
+      enabled: yes
+
+    dhcp:
+      enabled: yes
+
+    rfb:
+      enabled: yes
+
+    sip:
+      enabled: yes
+
+# Logging configuration (COMPREHENSIVE)
+outputs:
+  - fast:
+      enabled: no
+
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: /var/log/suricata/eve.json
+      rotate-interval: 1h
+
+      types:
+        - alert:
+            payload: yes
+            payload-buffer-size: 8kb    # Large payload capture
+            payload-printable: yes
+            packet: yes
+            metadata: yes
+            tagged-packets: yes
+            http-body: yes              # Include HTTP body in alerts
+            http-body-printable: yes
+
+        - anomaly:
+            enabled: yes
+            types:
+              applayer: yes
+              stream: yes
+              decode: yes
+
+        - http:
+            extended: yes
+            dump-all-headers: yes       # Full header dump
+
+        - dns:
+            query: yes
+            answer: yes
+            version: 2
+
+        - tls:
+            extended: yes
+            session-resumption: yes
+            custom: [subject, issuer, session_resumed, fingerprint, sni, version, not_before, not_after, certificate, chain, ja3, ja3s]
+
+        - ssh:
+            enabled: yes
+
+        - smtp:
+            enabled: yes
+            extended: yes
+
+        - flow:
+            enabled: yes
+
+        - netflow:
+            enabled: yes
+
+        - stats:
+            enabled: yes
+            totals: yes
+            threads: yes
+
+        - files:
+            enabled: yes
+            force-magic: yes
+            force-hash: [md5, sha1, sha256]
+
+# Detection engine (HIGH performance)
+detect:
+  profile: high                # HIGH CPU usage for deep inspection
+  custom-values:
+    toclient-groups: 4
+    toserver-groups: 4
+  sgh-mpm-context: full
+  inspection-recursion-limit: 3000
+
+# Profiling (enabled for tuning)
+profiling:
+  rules:
+    enabled: yes
+    filename: /var/log/suricata/rule_perf.log
+    append: yes
+  keywords:
+    enabled: yes
+    filename: /var/log/suricata/keyword_perf.log
+    append: yes
+
+# Detection engine configuration
+detect-engine:
+  - profile: high
+  - sgh-mpm-context: full
+  - inspection-recursion-limit: 3000
+  - rule-reload: true
+
+# Default rule path
+default-rule-path: /var/lib/suricata/rules
+
+# Rule files (managed by NFTBan)
+rule-files:
+  - /etc/nftban/suricata/rules/enabled.list
+
+# Classification file
+classification-file: /etc/suricata/classification.config
+
+# Reference config file
+reference-config-file: /etc/suricata/reference.config
+
+# GeoIP database
+geoip-database: /var/lib/GeoIP/GeoLite2-Country.mmdb
+
+# File extraction (optional, disabled by default for performance)
+# Uncomment to enable file extraction:
+#file-store:
+#  enabled: yes
+#  dir: /var/log/suricata/files
+#  write-fileinfo: yes
+#  force-hash: [md5, sha256]
+#  force-filestore: no
+#  stream-depth: 1mb
+#  max-open-files: 1000
+
+# =============================================================================
+# NFTBan Integration Notes:
+# - This profile is for HIGH-END servers (8+ cores / 8-16GB RAM)
+# - HTTP body inspection FULLY ENABLED (30KB both request/response)
+# - Flow timeouts: DEFAULT/GENEROUS (300s established)
+# - ALL protocols enabled (HTTP, TLS, SSH, DNS, SMTP, MySQL, SMB, DCERPC, FTP, etc.)
+# - Ring size: 300k frames (6x minimal profile)
+# - Detection profile: HIGH (most aggressive)
+# - CPU affinity enabled (pin threads)
+# - Profiling enabled for performance tuning
+# - Comprehensive logging (files, netflow, stats)
+# =============================================================================

@@ -1,0 +1,162 @@
+# =============================================================================
+# NFTBan Suricata Profile: Minimal
+# =============================================================================
+# Target: 2 cores, 2 GB RAM
+# Focus: Stability over coverage
+# Use Case: Small VPS, minimal resource footprint
+# =============================================================================
+
+%YAML 1.1
+---
+
+# Packet capture interface
+af-packet:
+  - interface: default
+    cluster-id: 99
+    cluster-type: cluster_flow
+    defrag: yes
+    ring-size: 50000           # REDUCED for low memory
+    use-mmap: yes
+
+# Threading configuration
+threading:
+  set-cpu-affinity: no
+  detect-thread-ratio: 1.0     # Conservative
+
+# Flow timeout settings (AGGRESSIVE)
+flow:
+  memcap: 64mb                 # Low memory footprint
+  hash-size: 65536
+  prealloc: 10000
+  timeout:
+    new: 30
+    established: 60            # AGGRESSIVE timeout
+    closed: 0
+    bypassed: 100
+    emergency-new: 10
+    emergency-established: 30
+    emergency-closed: 0
+
+# Stream engine
+stream:
+  memcap: 32mb                 # Reduced
+  checksum-validation: yes
+  inline: no
+
+# HTTP configuration (DISABLED body inspection)
+app-layer:
+  protocols:
+    http:
+      enabled: yes
+      libhtp:
+        default-config:
+          personality: IDS
+          request-body-limit: 0          # DISABLED
+          response-body-limit: 0         # DISABLED
+          request-body-minimal-inspect-size: 0
+          request-body-inspect-window: 0
+          response-body-minimal-inspect-size: 0
+          response-body-inspect-window: 0
+
+    tls:
+      enabled: yes
+      detection-ports:
+        dp: 443
+
+    ssh:
+      enabled: yes
+
+    dns:
+      enabled: yes
+      tcp:
+        enabled: yes
+      udp:
+        enabled: yes
+
+    # Disable resource-intensive protocols
+    smtp:
+      enabled: no
+    smb:
+      enabled: no
+    dcerpc:
+      enabled: no
+    ftp:
+      enabled: no
+    mysql:
+      enabled: no
+
+# Logging configuration
+outputs:
+  - fast:
+      enabled: no
+
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: /var/log/suricata/eve.json
+      rotate-interval: 1h
+
+      types:
+        - alert:
+            payload: no          # Save bandwidth
+            packet: no
+            metadata: yes
+
+        - http:
+            extended: no         # Minimal HTTP logging
+
+        - dns:
+            query: yes
+            answer: yes
+
+        - tls:
+            extended: no
+
+# Detection engine
+detect:
+  profile: low                   # Low CPU usage
+  custom-values:
+    toclient-groups: 2
+    toserver-groups: 2
+  sgh-mpm-context: auto
+  inspection-recursion-limit: 3000
+
+# Profiling (disabled for performance)
+profiling:
+  rules:
+    enabled: no
+  keywords:
+    enabled: no
+
+# Rule reload settings
+detect-engine:
+  - profile: minimal
+  - sgh-mpm-context: auto
+  - inspection-recursion-limit: 3000
+  - rule-reload: true
+
+# Default rule path
+default-rule-path: /var/lib/suricata/rules
+
+# Rule files (managed by NFTBan)
+rule-files:
+  - /etc/nftban/suricata/rules/enabled.list
+
+# Classification file
+classification-file: /etc/suricata/classification.config
+
+# Reference config file
+reference-config-file: /etc/suricata/reference.config
+
+# GeoIP database (if available)
+geoip-database: /var/lib/GeoIP/GeoLite2-Country.mmdb
+
+# =============================================================================
+# NFTBan Integration Notes:
+# - This profile is auto-selected for systems with 2 cores / 2GB RAM
+# - HTTP body inspection is DISABLED to save memory
+# - Flow timeouts are AGGRESSIVE (60s established)
+# - Only essential protocols enabled
+# - Ring size: 50k frames (vs 100k standard, 300k maximum)
+# - Detection profile: LOW (vs MEDIUM/HIGH)
+# =============================================================================
