@@ -212,7 +212,7 @@ nftban_cmd_port() {
             # Add port to whitelist
             # Args: <port> [protocol]
             local port="${1:-}"
-            local proto="${2:-both}"  Default to BOTH protocols
+            local proto="${2:-both}"  # Default to BOTH protocols
 
             if [[ -z "$port" ]]; then
                 echo "ERROR: Port number required" >&2
@@ -712,7 +712,7 @@ nftban_port_allow_directadmin() {
 
     # Handle CloudFlare whitelist based on configuration
     local cf_mode="${NFTBAN_DIRECTADMIN_AUTO_CLOUDFLARE:-ASK}"
-    local cf_update="${NFTBAN_DIRECTADMIN_UPDATE_CLOUDFLARE:-YES}"
+    local _cf_update="${NFTBAN_DIRECTADMIN_UPDATE_CLOUDFLARE:-YES}"  # Reserved for future use
     local enable_cloudflare="no"
 
     case "$cf_mode" in

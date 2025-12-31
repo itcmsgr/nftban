@@ -1,0 +1,43 @@
+# =============================================================================
+# NFTBan RBL Check Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Automated RBL checking service (triggered by timer)
+# =============================================================================
+
+[Unit]
+Description=NFTBan RBL Check Service
+Documentation=https://nftban.com/docs/rbl
+After=network-online.target nftables.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=nftban
+Group=nftban
+
+# Run RBL check with quiet mode and alert
+ExecStart=/usr/sbin/nftban rbl check --quiet --alert
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-rbl
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/nftban/rbl
+
+# Timeout (allow up to 10 minutes for all RBL checks)
+# 20+ RBLs × 4s timeout + overhead = ~5-10 minutes max
+TimeoutStartSec=600
+
+# Resource limits
+CPUQuota=50%
+MemoryMax=256M
+
+[Install]
+WantedBy=multi-user.target

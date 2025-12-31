@@ -988,7 +988,7 @@ install_configs() {
     # Create config directories
     mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d,conf.d,distros,suricata}
     mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels}
-    mkdir -p /etc/nftban/suricata/{profiles,config}
+    mkdir -p /etc/nftban/suricata/{profiles,config,rules,cache}
     mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,panels}
     mkdir -p /var/lib/nftban/reports/auditors
     mkdir -p /var/log/nftban
@@ -1164,12 +1164,8 @@ install_templates() {
         ok "Installed documentation generators → /usr/lib/nftban/scripts/"
     fi
 
-    # Install implementation plan documentation (v1.0.16)
-    if [[ -f "$SCRIPT_DIR/docs/JSON_IMPLEMENTATION_PLAN.md" ]]; then
-        mkdir -p /usr/share/doc/nftban
-        install -m 0644 "$SCRIPT_DIR/docs/JSON_IMPLEMENTATION_PLAN.md" /usr/share/doc/nftban/
-        ok "Installed implementation plan → /usr/share/doc/nftban/"
-    fi
+    # Documentation moved to wiki (v1.0.20+)
+    # See: https://github.com/itcmsgr/nftban/wiki
 
     # Install man page
     log "Installing man pages..."

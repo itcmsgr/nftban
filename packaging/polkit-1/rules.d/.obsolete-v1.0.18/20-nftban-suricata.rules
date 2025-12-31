@@ -1,0 +1,94 @@
+// =============================================================================
+// NFTBan v1.0 - Direct Suricata Service Management
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+// Purpose: Grant nftban groups permission to manage native Suricata services
+// Location: /etc/polkit-1/rules.d/20-nftban-suricata.rules
+//
+// Security Model:
+// - Members of 'nftban' group can manage Suricata directly
+// - Scope limited to official Suricata systemd units
+// - Does NOT grant nftables access (still via nftban-core only)
+//
+// Groups Allowed:
+//   nftban: All NFTBan operators (CLI, services, web UI)
+//
+// Allowed Actions:
+//   - start/stop/restart/reload/enable/disable Suricata services
+//
+// Use Case:
+//   Allow nftban CLI/UI to control native suricata.service without sudo
+//   Complements nftban-suricata.service wrapper (managed by 10-nftban-core.rules)
+//
+// Security Philosophy:
+//   ✓ Whitelist-only (explicit Suricata unit names)
+//   ✓ Verb-based action control
+//   ✓ Single group access (nftban)
+//   ✓ No privilege escalation to nftables
+// =============================================================================
+
+polkit.addRule(function (action, subject) {
+    // Allow nftban group to manage Suricata services
+    if (!subject.isInGroup("nftban")) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    if (action.id == "org.freedesktop.systemd1.manage-units" ||
+        action.id == "org.freedesktop.systemd1.manage-unit-files") {
+
+        var verb = action.lookup("verb");
+        var unit = action.lookup("unit");
+
+        // Allowed service lifecycle operations
+        var allowedVerbs = [
+            "start",
+            "stop",
+            "restart",
+            "reload",
+            "enable",
+            "disable",
+            "try-restart",
+            "reload-or-restart",
+            "try-reload-or-restart"
+        ];
+
+        // Whitelist: ONLY official Suricata units
+        var allowedUnits = [
+            "suricata.service",
+            "suricata-update.service",
+            "suricata-update.timer"
+        ];
+
+        if (allowedVerbs.indexOf(verb) >= 0 &&
+            allowedUnits.indexOf(unit) >= 0) {
+            return polkit.Result.YES;
+        }
+    }
+
+    return polkit.Result.NOT_HANDLED;
+});
+
+// =============================================================================
+// SECURITY NOTES
+// =============================================================================
+//
+// Why this is safe:
+// - Scope limited to nftban group only (v1.0 unified group model)
+// - Only allows managing official Suricata units (not arbitrary services)
+// - No nftables access granted (still via nftban-core CAP_NET_ADMIN only)
+// - Standard Polkit authorization flow
+//
+// Relationship to nftban-suricata.service:
+// - nftban-suricata.service: NFTBan's wrapper daemon (Go code reading eve.json)
+// - suricata.service: Native Suricata IDS daemon (C code capturing packets)
+// - Both can be managed via polkit by appropriate groups
+//
+// To test authorization (as nftban group member):
+//   systemctl restart suricata.service       # Should work without sudo
+//   systemctl status suricata.service        # Should work
+//   systemctl enable suricata-update.timer   # Should work
+//
+// To verify rule is loaded:
+//   pkaction --action-id org.freedesktop.systemd1.manage-units --verbose
+//
+// =============================================================================

@@ -156,7 +156,7 @@ nftban_geoban_apply_to_nftables() {
     local table="inet"
     local tname="nftban"
     local set_v4="geoban_blocked_v4"
-    local set_v6="geoban_blocked_v6"
+    local _set_v6="geoban_blocked_v6"  # Reserved for future IPv6 support
     local chain="geoban_input"
 
     nftban_info "Applying GeoBan rules to nftables..."
@@ -228,17 +228,18 @@ nftban_geoban_apply_to_nftables() {
         done < "$file"
     done
 
-    if [[ $cidr_count -eq 0 ]]; then
+    local total_cidrs=$((cidr_count_v4 + cidr_count_v6))
+    if [[ $total_cidrs -eq 0 ]]; then
         nftban_warn "No valid CIDRs found in ban files"
         return 0
     fi
 
     # Apply all elements in ONE command (much faster than individual adds)
-    nftban_info "Adding $cidr_count CIDRs to $set_v4..."
+    nftban_info "Adding $cidr_count_v4 IPv4 CIDRs to $set_v4..."
 
     # Build comma-separated list
     local cidr_list=""
-    for cidr in "${cidrs[@]}"; do
+    for cidr in "${cidrs_v4[@]}"; do
         cidr_list+="$cidr,"
     done
     cidr_list="${cidr_list%,}"  # Remove trailing comma

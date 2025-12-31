@@ -193,8 +193,6 @@ install -D -m 0644 install/systemd/nftban-ui.service %{buildroot}/usr/lib/system
 install -D -m 0644 install/systemd/nftban-ui-auth.service %{buildroot}/usr/lib/systemd/system/nftban-ui-auth.service
 install -D -m 0644 install/systemd/nftban-queue.service %{buildroot}/usr/lib/systemd/system/nftban-queue.service
 install -D -m 0644 install/systemd/nftban-health-fix.service %{buildroot}/usr/lib/systemd/system/nftban-health-fix.service
-install -D -m 0644 install/systemd/nftban-rbl-check.service %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.service
-install -D -m 0644 install/systemd/nftban-rbl-check.timer %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.timer
 
 # PolicyKit rules (v1.0.19: Consolidated 6 files → 3 files)
 # Removed: com.nftban.suricata.policy (unused custom actions)

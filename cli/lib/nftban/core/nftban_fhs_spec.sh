@@ -90,6 +90,7 @@ nftban_fhs_load_spec() {
     # ─────────────────────────────────────────────────────────────────────
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban"]="750|nftban|nftban|Log files (daemon writes, group reads)"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/reports"]="750|nftban|nftban|Report files (log-style, daemon writes)"
+    NFTBAN_FHS_DIRECTORIES["/var/log/nftban/rbl"]="750|nftban|nftban|RBL check cache and results (temporary read files)"
 
     # ─────────────────────────────────────────────────────────────────────
     # Cache and Runtime (nftban:nftban, 755) - Temporary files

@@ -1,0 +1,115 @@
+// =============================================================================
+// NFTBan - Polkit Authorization for Auditors Group
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+// Purpose: Grant nftban-auditors group members read-only file access for auditing
+// Location: /usr/share/polkit-1/rules.d/50-nftban-v030.rules
+//
+// Security Model:
+// - Members of nftban-auditors group have READ-ONLY access to logs and reports
+// - NO command execution, NO service management, NO configuration changes
+// - Auditors can VIEW files in /var/log/nftban and /var/lib/nftban/reports
+//
+// Usage:
+//   Add users to nftban-auditors group: usermod -a -G nftban-auditors username
+//   Users can then read audit logs and reports without root access
+//
+// Access granted (READ-ONLY):
+//   - /var/log/nftban/*.log (view logs)
+//   - /var/lib/nftban/reports/ (view generated reports)
+//   - /var/lib/nftban/snapshots/ (view state snapshots)
+//
+// Does NOT grant:
+//   ✗ Command execution (no nftban commands)
+//   ✗ Service management (no systemctl)
+//   ✗ Configuration access (no /etc/nftban/)
+//   ✗ Firewall access (no nft commands)
+//   ✗ Write access to any files
+//
+// Design Philosophy:
+//   ✓ VIEW-ONLY access for security auditing
+//   ✓ NO execution capabilities
+//   ✓ Group-based file permissions only
+//   ✓ Principle of least privilege
+//
+// NOTE: This rule uses Unix file permissions, not Polkit command authorization
+//       Directory permissions are managed via FHS (see docs)
+// =============================================================================
+
+// Auditors group uses file system permissions, not Polkit command execution
+// The following directories grant group read access to nftban-auditors:
+//
+// /var/log/nftban/           (nftban:nftban 750, auditors can read if added to ACL)
+// /var/lib/nftban/reports/   (nftban:nftban-auditors 770, auditors can read/write reports)
+//
+// To enable auditor access to logs, use ACL:
+//   setfacl -R -m g:nftban-auditors:rx /var/log/nftban/
+//   setfacl -R -d -m g:nftban-auditors:rx /var/log/nftban/
+//
+// This Polkit rule intentionally does NOT grant command execution privileges.
+// Auditors should use standard Unix tools to view files:
+//   cat /var/log/nftban/audit.log
+//   less /var/lib/nftban/reports/baseline/performance.json
+//   grep "ERROR" /var/log/nftban/nftban.log
+
+polkit.addRule(function(action, subject) {
+  // Auditors do NOT get command execution privileges via Polkit
+  // They use file system permissions (group membership + ACL) for read-only access
+  // This rule is a placeholder documenting the security model
+  return polkit.Result.NOT_HANDLED;
+});
+
+// =============================================================================
+// SECURITY NOTES
+// =============================================================================
+//
+// Why this is safe:
+// - Scope limited to nftban-auditors group members only
+// - Only allows execution of read-only diagnostic tools
+// - No service management capabilities
+// - No configuration modification capabilities
+// - Standard Polkit authorization flow
+//
+// Allowed operations:
+// - Generate system inventory reports
+// - Run health checks
+// - View statistics and metrics
+// - Run security audits
+// - Read log files via audit helpers
+//
+// NOT allowed:
+// - Starting/stopping services
+// - Modifying configurations
+// - Banning/unbanning IPs
+// - Updating feeds
+// - Changing firewall rules
+//
+// Alternative approaches considered:
+// 1. Grant read access to /var/log/nftban - ❌ REJECTED (exposes sensitive data)
+// 2. Use sudo with specific commands - ❌ REJECTED (less flexible)
+// 3. Use Polkit - ✅ CHOSEN (fine-grained control, audit trail)
+//
+// To verify rule is loaded:
+//   pkaction --action-id org.freedesktop.policykit.exec --verbose
+//
+// To test authorization (as nftban-auditors group member):
+//   nftban inventory        # Should work without sudo
+//   nftban health check     # Should work without sudo
+//   nftban stats            # Should work without sudo
+//
+// To add user to group:
+//   sudo usermod -a -G nftban-auditors username
+//   # User must log out and back in for group membership to take effect
+//
+// Use cases:
+// - Security team members reviewing system security posture
+// - Compliance auditors generating reports
+// - DevOps monitoring system health without full admin access
+// - External auditors needing read-only access
+//
+// Related:
+// - 61-nftban-system.rules (for nftban system user)
+// - 60-nftban.rules (for nftban group - service management)
+// - 50-nftban-auth.rules (for auth helper access)
+//
+// =============================================================================

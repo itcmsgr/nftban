@@ -94,6 +94,7 @@ DIRS=(
     "${NFTBAN_CACHE_DIR}/feeds"
     "${NFTBAN_CACHE_DIR}/tmp"
     "${NFTBAN_LOG_DIR}"
+    "${NFTBAN_LOG_DIR}/rbl"
     "${NFTBAN_RUN_DIR}"
     "${NFTBAN_RUN_DIR}/locks"
 )

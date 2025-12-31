@@ -834,8 +834,8 @@ nftban_login_track_failed() {
                     nftban_login_alert_log "Failed to ban $ip (nftban command not found at $nftban_cmd or error)"
 
                 # Reset counter
-                unset NFTBAN_FAILED_ATTEMPTS[$key]
-                unset NFTBAN_FAILED_TIMESTAMPS[$key]
+                unset 'NFTBAN_FAILED_ATTEMPTS[$key]'
+                unset 'NFTBAN_FAILED_TIMESTAMPS[$key]'
             fi
         else
             # Reset if outside window
