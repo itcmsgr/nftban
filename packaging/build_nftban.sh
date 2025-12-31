@@ -704,7 +704,7 @@ build_rpm() {
     # Verify all required directories exist before creating tarball
     log_info "Verifying source directories for tarball..."
     local missing_dirs=()
-    for dir in bin cli cmd pkg install etc internal packaging; do
+    for dir in bin cli cmd pkg install etc internal packaging scripts docs; do
         if [[ ! -d "${PROJECT_ROOT}/${dir}" ]]; then
             missing_dirs+=("${dir}")
         fi
@@ -722,8 +722,8 @@ build_rpm() {
     if ! tar czf "${BUILD_DIR}/SOURCES/${tarball}" \
         --transform "s,^,nftban-core-${PKG_VERSION}/," \
         -C "${PROJECT_ROOT}" \
-        bin/ cli/ cmd/ pkg/ install/ etc/ internal/ packaging/ \
-        VERSION go.mod go.sum LICENSE README.md; then
+        bin/ cli/ cmd/ pkg/ install/ etc/ internal/ packaging/ scripts/ docs/ \
+        VERSION go.mod go.sum LICENSE README.md commands.registry.yml; then
         log_error "Failed to create source tarball"
         log_error "tar command failed with exit code $?"
         return 1
