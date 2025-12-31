@@ -11,9 +11,20 @@
 
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-REGISTRY="${PROJECT_ROOT}/commands.registry.yml"
+# Source central config for canonical paths (NO HARDCODED FALLBACKS)
+# shellcheck source=/etc/nftban/nftban.conf
+[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+
+# Determine registry location (installed vs development)
+if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/commands.registry.yml" ]]; then
+    # Installed location (FHS compliant)
+    REGISTRY="${NFTBAN_CONFIG_DIR:-/etc/nftban}/commands.registry.yml"
+else
+    # Development location (relative to script)
+    SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+    REGISTRY="${PROJECT_ROOT}/commands.registry.yml"
+fi
 
 # =============================================================================
 # CONFIGURATION
