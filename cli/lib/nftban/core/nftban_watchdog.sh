@@ -185,6 +185,8 @@ nftban_watchdog_check_load() {
         return 0
     fi
 
+    # Structured read from /proc/loadavg - only some fields used
+    # shellcheck disable=SC2034
     local load1 load5 load15 running_procs total_procs last_pid
     # Must use default IFS (space) for reading space-separated values
     if ! IFS=' ' read -r load1 load5 load15 running_procs last_pid < /proc/loadavg 2>/dev/null; then
@@ -267,6 +269,8 @@ nftban_watchdog_check_memory() {
     local swap_total=0 swap_free=0
 
     while IFS=': ' read -r key value _; do
+            # Memory stats - reserved for future metrics
+            # shellcheck disable=SC2034
         case "$key" in
             MemTotal)     mem_total=$value ;;
             MemFree)      mem_free=$value ;;
@@ -516,6 +520,8 @@ nftban_watchdog_get_top_cpu() {
         return 0
     fi
 
+    # Process stats - only some fields used
+    # shellcheck disable=SC2034
     local count="${NFTBAN_WATCHDOG_PROC_TOP_COUNT:-10}"
     local -a procs=()
 

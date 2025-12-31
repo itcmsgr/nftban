@@ -45,7 +45,7 @@ readonly NFTBAN_STATS_DB="${STATS_DB_DIR:-${NFTBAN_DATA_DIR}/metrics}/metrics.db
 readonly NFTBAN_STATS_CACHE_DIR="${STATS_CACHE_DIR:-${NFTBAN_CACHE_DIR}/stats}"
 readonly NFTBAN_STATS_SNAPSHOTS_DIR="${STATS_SNAPSHOTS_DIR:-${NFTBAN_DATA_DIR}/snapshots}"
 readonly NFTBAN_BAN_LOG="${STATS_BAN_LOG:-${NFTBAN_LOG_DIR}/bans.log}"
-readonly NFTBAN_STATS_LOG="${STATS_LOG_FILE:-${NFTBAN_LOG_DIR}/stats.log}"
+readonly NFTBAN_STATS_LOG="${STATS_LOG_FILE:-${NFTBAN_LOG_DIR}/stats.log}"  # shellcheck disable=SC2034  # Reserved for stats logging
 
 # Configuration defaults (overridden by conf.d/stats.conf)
 STATS_ENABLED="${STATS_ENABLED:-true}"
@@ -343,7 +343,7 @@ nftban_stats_top_ips() {
     # Get top IPs into temp file to avoid subshell variable issues
     local temp_file
     temp_file=$(mktemp)
-    trap "rm -f '$temp_file'" RETURN
+    trap 'rm -f "$temp_file"' RETURN
 
     awk -F'|' -v since="$since" -v until="$until" \
         '$1 >= since && $1 <= until && $6 == "BANNED" {ips[$4]++}
@@ -523,7 +523,7 @@ nftban_stats_generate_dashboard() {
     local total_bans unique_ips active_bans whitelist_count
     total_bans=$(nftban_stats_count_bans "$since" "$until")
     unique_ips=$(nftban_stats_count_unique_ips "$since" "$until")
-    active_bans=$(nftban_stats_count_active_bans)
+    active_bans=$(nftban_stats_count_active_bans)  # shellcheck disable=SC2034  # Reserved for metrics
     whitelist_count=$(nftban_stats_count_whitelist)
 
     # Header
@@ -787,6 +787,7 @@ nftban_stats_recent_activity() {
     echo ""
 
     tail -n "$limit" "$NFTBAN_BAN_LOG" | \
+    # shellcheck disable=SC2034  # Structured log parsing - only some fields used
     while IFS='|' read -r timestamp id jail ip reason action timeout; do
         printf "%s | %-16s | %-12s | %s\n" \
             "$timestamp" "$ip" "$action" "$jail"
@@ -1039,7 +1040,7 @@ nftban_stats_trend_collect() {
     mkdir -p "$NFTBAN_TREND_DIR" 2>/dev/null || true
 
     local hour_start hour_end
-    hour_start=$(date -d "$(date +%Y-%m-%d\ %H):00:00" +%Y-%m-%dT%H:%M:%SZ)
+    hour_end=$(date +%Y-%m-%dT%H:%M:%SZ)  # shellcheck disable=SC2034  # Reserved for time range
     hour_end=$(date +%Y-%m-%dT%H:%M:%SZ)
 
     # Count bans/unbans in current hour

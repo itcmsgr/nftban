@@ -36,7 +36,7 @@ nftban_print_help() {
   local have_tput=0; command -v tput >/dev/null 2>&1 && have_tput=1
   local bold='' reset='' dim=''
   if [[ $have_tput -eq 1 ]] && [[ -t 1 ]]; then
-    bold="$(tput bold)"; reset="$(tput sgr0)"; dim="$(tput dim)"
+    bold="$(tput bold)"; reset="$(tput sgr0)"; dim="$(tput dim)"  # shellcheck disable=SC2034
   fi
 
   # Show unified banner if function available

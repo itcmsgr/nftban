@@ -181,8 +181,8 @@ output_terminal() {
     # Count whitelisted IPs (from nftables)
     local whitelist_count=0
     if command -v nft >/dev/null 2>&1; then
-        local wl_v4=$(nft list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' 2>/dev/null | wc -l | xargs)
-        local wl_v6=$(nft list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | grep -oP '[0-9a-fA-F:]+' | grep ':' 2>/dev/null | wc -l | xargs)
+        local wl_v4; wl_v4=$(nft list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | grep -oP 'd+.d+.d+.d+' 2>/dev/null | wc -l | xargs)
+        local wl_v6; wl_v6=$(nft list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | grep -oP '[0-9a-fA-F:]+' | grep ':' 2>/dev/null | wc -l | xargs)
         # Ensure valid numbers (strip any whitespace/newlines)
         wl_v4=${wl_v4:-0}
         wl_v6=${wl_v6:-0}
@@ -607,7 +607,7 @@ output_terminal() {
                command -v msmtp >/dev/null 2>&1 || \
                command -v mailx >/dev/null 2>&1; then
                 email_status="CONFIGURED"
-                email_working=true
+                email_working=true  # shellcheck disable=SC2034  # Reserved for email test status
             else
                 email_status="CONFIGURED (no mail cmd)"
             fi

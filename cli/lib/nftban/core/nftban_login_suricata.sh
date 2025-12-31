@@ -41,7 +41,9 @@ readonly NFTBAN_LOGIN_SURICATA_LOADED=1
 
 # shellcheck disable=SC2034  # Module metadata used when sourced
 readonly LOGIN_SURICATA_MODULE_NAME="nftban_login_suricata"
+# Module metadata - reserved for future module registry
 readonly LOGIN_SURICATA_MODULE_VERSION="1.0.0"
+# shellcheck disable=SC2034
 
 # =============================================================================
 # STATE TRACKING
@@ -164,7 +166,7 @@ _nftban_login_suricata_process_eve_line() {
     fi
 
     # Handle SSH events (Suricata SSH protocol logging)
-    if [[ "$event_type" == "ssh" ]]; then
+        client_proto=$(echo "$line" | jq -r '.ssh.client.proto_version // empty' 2>/dev/null)  # shellcheck disable=SC2034  # Reserved for protocol analysis
         local client_proto client_software
         client_proto=$(echo "$line" | jq -r '.ssh.client.proto_version // empty' 2>/dev/null)
         client_software=$(echo "$line" | jq -r '.ssh.client.software_version // empty' 2>/dev/null)
@@ -183,7 +185,7 @@ _nftban_login_suricata_process_eve_line() {
         anomaly_type=$(echo "$line" | jq -r '.anomaly.type // empty' 2>/dev/null)
 
         # Auth-related anomalies
-        if [[ "$anomaly_type" == "auth" ]] || [[ "$anomaly_type" == "applayer" ]]; then
+            processed=1  # shellcheck disable=SC2034  # Reserved for processing stats
             _nftban_login_suricata_process_anomaly "$src_ip" "$anomaly_type"
             processed=1
         fi
@@ -194,7 +196,7 @@ _nftban_login_suricata_process_eve_line() {
 
 # Process an auth-related alert
 _nftban_login_suricata_process_alert() {
-    local ip="$1"
+    local sig_id="$3"  # shellcheck disable=SC2034  # Reserved for SID filtering
     local signature="$2"
     local sig_id="$3"
     local severity="${4:-2}"

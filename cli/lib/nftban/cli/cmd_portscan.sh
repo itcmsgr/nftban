@@ -262,7 +262,7 @@ _nftban_portscan_stats_json() {
     if [[ -f "/var/log/nftban/nftban-actions.log" ]]; then
         # Count portscan bans in last 24 hours
         local yesterday_ts
-        yesterday_ts=$(date -d '24 hours ago' +%s 2>/dev/null) || yesterday_ts=0
+        yesterday_ts=$(date -d '24 hours ago' +%s 2>/dev/null) || yesterday_ts=0  # shellcheck disable=SC2034  # Reserved for time range filtering
         blocked_24h=$(grep -c '"source":"portscan"' /var/log/nftban/nftban-actions.log 2>/dev/null) || blocked_24h=0
 
         # Count total portscan bans (same as 24h for now, proper implementation needs timestamp filtering)

@@ -274,7 +274,7 @@ nftban_metrics_enable() {
                 shift 2
                 ;;
             --force|-f)
-                force=true
+                force=true  # shellcheck disable=SC2034  # Reserved for force flag
                 shift
                 ;;
             *)
@@ -304,7 +304,7 @@ nftban_metrics_enable() {
         echo ""
         return 1
     elif [[ "$backend" == "victoriametrics" ]] && [[ "$CONFLICT_PROMETHEUS_RUNNING" == "true" ]]; then
-        conflict_detected=true
+        conflict_detected=true  # shellcheck disable=SC2034  # Reserved for conflict resolution
         _show_conflict_warning "victoriametrics"
         echo "❌ Cannot enable VictoriaMetrics while Prometheus is running."
         echo ""

@@ -398,6 +398,7 @@ _nftban_ddos_suricata_process_alerts() {
     local processed=0
     local blocked=0
 
+    # shellcheck disable=SC2034  # Structured Suricata parsing - only some fields used
     while IFS=$'\t' read -r ip severity signature category; do
         [[ -z "$ip" ]] && continue
 

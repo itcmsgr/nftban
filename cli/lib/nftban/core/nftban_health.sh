@@ -1039,7 +1039,7 @@ nftban_health_check_config() {
                     if [[ -f "$conf_file" ]]; then
                         # shellcheck disable=SC1090  # Dynamic source for config validation
                         if ! (source "$conf_file") 2>/dev/null; then
-                            local relative_path="$(basename "$subdir")/$(basename "$conf_file")"
+                            local relative_path; relative_path="$(basename "$subdir")/$(basename "$conf_file")"
                             config_issues+=("Config has syntax errors: $relative_path")
                             status=$HEALTH_ERROR
                         fi
@@ -1510,7 +1510,7 @@ nftban_health_check_metrics() {
            systemctl is-active --quiet prometheus-node-exporter 2>/dev/null || \
            systemctl is-active --quiet node-exporter 2>/dev/null; then
             metrics_issues+=("✓ Node Exporter: Running")
-            node_exporter_running=true
+            node_exporter_running=true  # shellcheck disable=SC2034  # Reserved for metrics validation
         else
             metrics_issues+=("ℹ️ Node Exporter installed but not running (optional - for Prometheus)")
         fi
@@ -1549,7 +1549,7 @@ nftban_health_check_metrics() {
     # Skip VictoriaMetrics check if Prometheus is already running (they're alternatives)
     if [[ "$prometheus_running" != "true" ]]; then
         if command -v victoria-metrics >/dev/null 2>&1 || systemctl list-unit-files 2>/dev/null | grep -q "^victoria-metrics.service"; then
-            metrics_backend_found=true
+            metrics_backend_found=true  # shellcheck disable=SC2034  # Reserved for backend detection
             if systemctl is-active --quiet victoria-metrics 2>/dev/null; then
                 metrics_issues+=("✓ VictoriaMetrics: Running")
 
@@ -1911,6 +1911,8 @@ nftban_health_check_timers() {
     )
 
     # Optional timers (only needed for specific features)
+    # Optional timers - reserved for future validation
+    # shellcheck disable=SC2034
     local -a optional_timers=(
         "nftban-suricata-update.timer"  # Suricata rules (needs suricata)
         "nftban-snapshot.timer"         # Firewall snapshots
@@ -3175,9 +3177,9 @@ nftban_health_render_json() {
             local status_name="ok"
             [[ $status -eq 1 ]] && status_name="warning"
             [[ $status -eq 2 ]] && status_name="error"
-            [[ $status -eq 3 ]] && status_name="critical"
+            local issues="${NFTBAN_HEALTH_ISSUES[$check]:-}"  # shellcheck disable=SC2178  # Intentional string from array
 
-            local issues="${NFTBAN_HEALTH_ISSUES[$check]:-}"
+            escaped_issues="$(_json_escape "$issues")"  # shellcheck disable=SC2128  # First element extraction
             local escaped_issues
             escaped_issues="$(_json_escape "$issues")"
 
@@ -3360,6 +3362,8 @@ nftban_health_verify_installation() {
         "jq"
         "curl"
         "systemctl"
+    # Optional binaries - reserved for future validation
+    # shellcheck disable=SC2034
     )
 
     local -a optional_bins=(

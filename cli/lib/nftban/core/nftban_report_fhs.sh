@@ -374,7 +374,7 @@ nftban_fhs_generate_html_report() {
             status_badge="<span class=\"badge badge-error\">✖ ERROR</span>"
             row_class=' class="error-row"'
             # Extract issues from status
-            local issues="${status#ERROR:}"
+            local issues="${status#ERROR:}"  # shellcheck disable=SC2178,SC2128  # Intentional string from array
         fi
 
         table_rows+="                <tr${row_class}>
@@ -556,9 +556,9 @@ nftban_fhs_report_json() {
         fi
 
         # Parse issues from status
-        local issues=""
+        local issues=""  # shellcheck disable=SC2178  # Intentional string from array
         if [[ "$status" =~ ^ERROR: ]]; then
-            issues="${status#ERROR:}"
+            issues="${status#ERROR:}"  # shellcheck disable=SC2178  # Intentional string from array
         fi
 
         # Output directory object

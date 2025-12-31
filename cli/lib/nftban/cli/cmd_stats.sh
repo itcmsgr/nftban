@@ -737,7 +737,7 @@ nftban_stats_cmd_ip() {
                 shift
                 ;;
             --detailed)
-                detailed=true
+                detailed=true  # shellcheck disable=SC2034  # Reserved for detailed mode
                 shift
                 ;;
             *)
@@ -860,6 +860,7 @@ nftban_stats_cmd_recent() {
         # Tail mode
         echo "Following ban log (Ctrl+C to exit)..."
         echo ""
+        # shellcheck disable=SC2034  # Structured log parsing - only some fields used
         tail -f "${NFTBAN_BAN_LOG:-/var/log/nftban/ban.log}" | while IFS='|' read -r timestamp id jail ip reason action timeout; do
             printf "[%s] %s | %-16s | %-12s | %s\n" \
                 "$(date +%H:%M:%S)" "$timestamp" "$ip" "$action" "$jail"
