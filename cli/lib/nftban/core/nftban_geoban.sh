@@ -250,7 +250,7 @@ nftban_geoban_apply_to_nftables() {
     local nft_exit=$?
 
     if [[ $nft_exit -eq 0 ]]; then
-        nftban_success "Loaded $cidr_count CIDRs into $set_v4"
+        nftban_success "Loaded $cidr_count_v4 CIDRs into $set_v4"
     else
         nftban_error "Failed to load CIDRs (nft command failed)"
         nftban_error "nft output: $nft_output"

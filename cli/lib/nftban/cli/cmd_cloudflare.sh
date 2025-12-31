@@ -67,7 +67,7 @@ nftban_cmd_cloudflare() {
 
     # Check for --json flag
     for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true && break
+        [[ "$arg" == "--json" ]] && json_mode=true && break  # shellcheck disable=SC2034  # Reserved for JSON output
     done
     shift || true
 

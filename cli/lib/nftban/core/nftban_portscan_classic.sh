@@ -202,7 +202,7 @@ nftban_portscan_classic_add_jump() {
     local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
-    local position="${PORTSCAN_NFT_JUMP_POSITION:-ddos}"
+    local position="${PORTSCAN_NFT_JUMP_POSITION:-ddos}"  # shellcheck disable=SC2034  # Reserved for chain positioning
 
     nftban_log "INFO" "portscan_classic" "Adding jump to portscan chain"
 

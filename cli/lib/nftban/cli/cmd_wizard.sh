@@ -179,7 +179,7 @@ _wizard_ask_questions() {
         read -rp "     Enable web GUI & metrics? [y/N]: " GUI_CHOICE
         if [[ "${GUI_CHOICE,,}" == "y" ]]; then
             WANT_GUI=1
-            WANT_METRICS=1
+            WANT_METRICS=1  # shellcheck disable=SC2034  # Reserved for metrics setup
         fi
     else
         echo "     GUI & metrics: Skipped (not recommended for small environments)"

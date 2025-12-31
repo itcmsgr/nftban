@@ -337,7 +337,7 @@ nftban_report_cmd_email() {
     temp_dir=$(mktemp -d)
     local report_json="${temp_dir}/report.json"
     local report_csv="${temp_dir}/report.csv"
-    local report_html="${temp_dir}/report.html"
+    local report_html="${temp_dir}/report.html"  # shellcheck disable=SC2034  # Reserved for HTML reports
 
     nftban_stats_export_json "$report_json" "$since" "$until" &>/dev/null
 
@@ -632,7 +632,7 @@ nftban_report_schedule_add() {
                 shift 2
                 ;;
             --email)
-                email="$2"
+                email="$2"  # shellcheck disable=SC2034  # Reserved for email delivery
                 shift 2
                 ;;
             *)
@@ -1026,7 +1026,7 @@ nftban_report_cmd_status() {
                 hour=$(echo "$line" | awk '{print $2}')
                 dom=$(echo "$line" | awk '{print $3}')
                 monthly_time=$(printf "%02d:%02d (day %s)" "$((10#$hour))" "$((10#$min))" "$dom")
-                has_schedules=1
+                has_schedules=1  # shellcheck disable=SC2034  # Reserved for schedule validation
             fi
         done < "$cron_file"
 
