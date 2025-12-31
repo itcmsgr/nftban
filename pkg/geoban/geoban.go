@@ -10,9 +10,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/feeds"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/model"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/feeds"
+	"github.com/itcmsgr/nftban/pkg/model"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
 
 const (

@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/metrics"
+	"github.com/itcmsgr/nftban/pkg/metrics"
 )
 
 // NetworkStats represents network bandwidth statistics

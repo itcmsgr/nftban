@@ -15,10 +15,10 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/auth"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/metrics"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/middleware"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/auth"
+	"github.com/itcmsgr/nftban/pkg/metrics"
+	"github.com/itcmsgr/nftban/pkg/middleware"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
 
 // =============================================================================

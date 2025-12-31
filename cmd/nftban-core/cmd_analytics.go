@@ -11,7 +11,7 @@ import (
 	"strings"
 	"text/tabwriter"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/analytics"
+	"github.com/itcmsgr/nftban/pkg/analytics"
 )
 
 func cmdAnalytics(action string) error {

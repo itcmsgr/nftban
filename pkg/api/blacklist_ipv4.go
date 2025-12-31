@@ -4,8 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/sync"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/util"
+	"github.com/itcmsgr/nftban/pkg/sync"
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // HandleBlacklistIPv4Batch handles batch add/remove for blacklist IPv4

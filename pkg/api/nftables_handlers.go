@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftables"
+	"github.com/itcmsgr/nftban/pkg/nftables"
 )
 
 // NFTablesRulesetHandler returns the current nftables ruleset

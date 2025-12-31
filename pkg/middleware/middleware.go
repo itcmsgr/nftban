@@ -9,9 +9,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/internal/config"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/auth"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/netutil"
+	"github.com/itcmsgr/nftban/internal/config"
+	"github.com/itcmsgr/nftban/pkg/auth"
+	"github.com/itcmsgr/nftban/pkg/netutil"
 )
 
 type contextKey string

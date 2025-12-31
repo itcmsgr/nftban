@@ -6,9 +6,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/analytics"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/version"
+	"github.com/itcmsgr/nftban/pkg/analytics"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 // Build-time variables (injected by -ldflags)

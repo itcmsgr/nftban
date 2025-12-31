@@ -13,11 +13,11 @@ import (
 	"time"
 
 	"github.com/google/nftables"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/feeds"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/runtime"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/sync"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/version"
+	"github.com/itcmsgr/nftban/pkg/feeds"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/runtime"
+	"github.com/itcmsgr/nftban/pkg/sync"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 // getFeedsPaths returns feeds directory and config paths from central config

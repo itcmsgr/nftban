@@ -5,7 +5,7 @@ import (
 	"time"
 
 	"github.com/google/nftables"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/util"
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // DiffResult is a type alias for the generic util.DiffResult[string]

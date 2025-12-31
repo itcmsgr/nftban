@@ -2,7 +2,7 @@ package sync
 
 import (
 	"github.com/google/nftables"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/util"
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // ApplyStringDiffToSet applies a DiffResult[string] to a nftables set via NFTManager.

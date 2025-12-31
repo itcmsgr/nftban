@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/itcmsgr/nftban-v1.0-dev/internal/authproto"
-	"github.com/itcmsgr/nftban-v1.0-dev/internal/config"
+	"github.com/itcmsgr/nftban/internal/authproto"
+	"github.com/itcmsgr/nftban/internal/config"
 )
 
 // PAMAuth handles PAM-based authentication

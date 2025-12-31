@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/runtime"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/version"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/runtime"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 // getStatusConfigDir returns the config directory from central config

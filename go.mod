@@ -1,4 +1,4 @@
-module github.com/itcmsgr/nftban-v1.0-dev
+module github.com/itcmsgr/nftban
 
 go 1.21
 

@@ -5,8 +5,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/blacklist"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/whitelist"
+	"github.com/itcmsgr/nftban/pkg/blacklist"
+	"github.com/itcmsgr/nftban/pkg/whitelist"
 )
 
 // RuntimeState holds the in-memory firewall state

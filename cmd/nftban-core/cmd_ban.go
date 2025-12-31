@@ -6,15 +6,15 @@ import (
 	"time"
 
 	"github.com/google/nftables"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/analytics"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/banlog"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/blacklist"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/geoip"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/persistent"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/sync"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/version"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/whitelist"
+	"github.com/itcmsgr/nftban/pkg/analytics"
+	"github.com/itcmsgr/nftban/pkg/banlog"
+	"github.com/itcmsgr/nftban/pkg/blacklist"
+	"github.com/itcmsgr/nftban/pkg/geoip"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/persistent"
+	"github.com/itcmsgr/nftban/pkg/sync"
+	"github.com/itcmsgr/nftban/pkg/version"
+	"github.com/itcmsgr/nftban/pkg/whitelist"
 )
 
 // getBanConfigDir returns the config directory from central config
