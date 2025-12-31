@@ -104,8 +104,10 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 
 ## Highlights
 
-- **44 CLI Commands** — Complete firewall management from command line
+- **47 CLI Commands** — Complete firewall management from command line
 - **Unified Go Backend** — High-performance feeds, GeoIP, and sync operations
+- **Suricata Integration** — Intelligent rule management with 50-70% rule reduction
+- **RBL Monitoring** — Real-time blackhole list checking and IP reputation tracking
 - **Web Interface** — Modern dashboard for visual management
 - **Dual-Table Architecture** — Clean IPv4/IPv6 separation with `ip nftban` and `ip6 nftban`
 - **FHS Compliant** — Follows Filesystem Hierarchy Standard
