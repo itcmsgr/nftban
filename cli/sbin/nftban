@@ -125,6 +125,7 @@ nftban_complete() {
 
     # Safely get last element if array is not empty
     if (( cword > 0 )); then
+# shellcheck disable=SC2034  # cur reserved for bash completion
         cur="${words[$((cword - 1))]}"
     fi
 

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2120  # Function designed to accept optional args
 # =============================================================================
 # NFTBan v1.0.0 - VictoriaMetrics Installation Script
 # =============================================================================

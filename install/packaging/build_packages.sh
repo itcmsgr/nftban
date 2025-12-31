@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC2155  # Readonly assignments are safe
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2024-2025 NFTBan Development Team
 #
