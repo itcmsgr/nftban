@@ -487,9 +487,8 @@ getent group nftban-panel >/dev/null || groupadd -r nftban-panel
 if getent group nftban-auditors >/dev/null 2>&1; then
     echo "[NFTBan] Migrating nftban-auditors → nftban-auditor group..."
     # Copy members from old group to new group
-    # shellcheck disable=SC2154  # $user is used in RPM scriptlet, not build script
-    for user in \$(getent group nftban-auditors | cut -d: -f4 | tr ',' ' '); do
-        usermod -a -G nftban-auditor "\$user" 2>/dev/null || true
+    for member in \$(getent group nftban-auditors | cut -d: -f4 | tr ',' ' '); do
+        usermod -a -G nftban-auditor "\$member" 2>/dev/null || true
     done
 fi
 

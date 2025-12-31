@@ -1,0 +1,36 @@
+[Unit]
+Description=NFTBan Suricata Statistics Collector
+Documentation=man:nftban(8) https://nftban.com/docs
+After=network.target suricata.service
+Requires=suricata.service
+PartOf=suricata.service
+
+[Service]
+Type=simple
+
+# Run as root to read eve.json and write cache
+User=root
+Group=root
+SupplementaryGroups=suricata nftban
+
+# Daemon command
+ExecStart=/usr/local/bin/nftban-core suricata stats-daemon
+
+# Restart on failure
+Restart=on-failure
+RestartSec=10
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-suricata-stats
+
+# Resource limits (lighter than main daemon)
+LimitNOFILE=8192
+LimitNPROC=64
+
+# Working directory
+WorkingDirectory=/var/lib/nftban
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,187 @@
+# =============================================================================
+# NFTBan Suricata Profile: Standard (DEFAULT)
+# =============================================================================
+# Target: 4 cores, 4-8 GB RAM
+# Focus: Balanced coverage and performance
+# Use Case: Most servers, recommended default
+# =============================================================================
+
+%YAML 1.1
+---
+
+# Packet capture interface
+af-packet:
+  - interface: default
+    cluster-id: 99
+    cluster-type: cluster_flow
+    defrag: yes
+    ring-size: 100000          # BALANCED
+    use-mmap: yes
+
+# Threading configuration
+threading:
+  set-cpu-affinity: no
+  detect-thread-ratio: 1.5     # Balanced
+
+# Flow timeout settings (MODERATE)
+flow:
+  memcap: 128mb                # Moderate memory
+  hash-size: 131072
+  prealloc: 20000
+  timeout:
+    new: 30
+    established: 120           # MODERATE timeout
+    closed: 0
+    bypassed: 100
+    emergency-new: 10
+    emergency-established: 60
+    emergency-closed: 0
+
+# Stream engine
+stream:
+  memcap: 64mb
+  checksum-validation: yes
+  inline: no
+
+# HTTP configuration (LIMITED body inspection)
+app-layer:
+  protocols:
+    http:
+      enabled: yes
+      libhtp:
+        default-config:
+          personality: IDS
+          request-body-limit: 30kb       # LIMITED inspection
+          response-body-limit: 10kb      # LIMITED inspection
+          request-body-minimal-inspect-size: 4096
+          request-body-inspect-window: 4096
+          response-body-minimal-inspect-size: 4096
+          response-body-inspect-window: 4096
+          double-decode-path: no
+          double-decode-query: no
+
+    tls:
+      enabled: yes
+      detection-ports:
+        dp: 443
+      ja3-fingerprints: yes
+
+    ssh:
+      enabled: yes
+
+    dns:
+      enabled: yes
+      tcp:
+        enabled: yes
+      udp:
+        enabled: yes
+
+    smtp:
+      enabled: yes
+      raw-extraction: no
+
+    mysql:
+      enabled: yes
+
+    # Still disabled for performance
+    smb:
+      enabled: no
+    dcerpc:
+      enabled: no
+    ftp:
+      enabled: no
+
+# Logging configuration
+outputs:
+  - fast:
+      enabled: no
+
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: /var/log/suricata/eve.json
+      rotate-interval: 1h
+
+      types:
+        - alert:
+            payload: yes         # Include payload
+            payload-buffer-size: 4kb
+            payload-printable: yes
+            packet: yes
+            metadata: yes
+            tagged-packets: yes
+
+        - anomaly:
+            enabled: yes
+
+        - http:
+            extended: yes        # Extended HTTP logging
+            dump-all-headers: no
+
+        - dns:
+            query: yes
+            answer: yes
+
+        - tls:
+            extended: yes
+            session-resumption: yes
+
+        - ssh:
+            enabled: yes
+
+        - smtp:
+            enabled: yes
+            extended: no
+
+        - flow:
+            enabled: yes
+
+# Detection engine
+detect:
+  profile: medium              # MEDIUM CPU usage
+  custom-values:
+    toclient-groups: 3
+    toserver-groups: 3
+  sgh-mpm-context: auto
+  inspection-recursion-limit: 3000
+
+# Profiling
+profiling:
+  rules:
+    enabled: no
+  keywords:
+    enabled: no
+
+# Detection engine configuration
+detect-engine:
+  - profile: medium
+  - sgh-mpm-context: auto
+  - inspection-recursion-limit: 3000
+  - rule-reload: true
+
+# Default rule path
+default-rule-path: /var/lib/suricata/rules
+
+# Rule files (managed by NFTBan)
+rule-files:
+  - /etc/nftban/suricata/rules/enabled.list
+
+# Classification file
+classification-file: /etc/suricata/classification.config
+
+# Reference config file
+reference-config-file: /etc/suricata/reference.config
+
+# GeoIP database
+geoip-database: /var/lib/GeoIP/GeoLite2-Country.mmdb
+
+# =============================================================================
+# NFTBan Integration Notes:
+# - This is the DEFAULT profile (auto-selected for 4+ cores / 4-8GB RAM)
+# - HTTP body inspection ENABLED with 30KB limit
+# - Flow timeouts: MODERATE (120s established)
+# - Most protocols enabled (HTTP, TLS, SSH, DNS, SMTP, MySQL)
+# - Ring size: 100k frames
+# - Detection profile: MEDIUM
+# - JA3 fingerprinting enabled for TLS
+# =============================================================================
