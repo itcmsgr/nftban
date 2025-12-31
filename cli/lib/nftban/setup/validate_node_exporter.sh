@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC2034  # verbose used in eval context
 # =============================================================================
 # NFTBan v1.0.0 - Node Exporter Validation Script
 # =============================================================================
