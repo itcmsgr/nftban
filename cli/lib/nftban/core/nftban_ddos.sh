@@ -42,6 +42,7 @@ readonly NFTBAN_DDOS_LOADED=1
 # MODULE METADATA
 # =============================================================================
 
+# shellcheck disable=SC2034  # Module metadata used when sourced
 readonly DDOS_MODULE_NAME="nftban_ddos"
 readonly DDOS_MODULE_VERSION="1.0.0"
 readonly DDOS_MODULE_TYPE="core"

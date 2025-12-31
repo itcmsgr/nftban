@@ -3,6 +3,7 @@
 # NFTBan CLI Command: gui
 # ==============================================================================
 # Description:  Enable/disable Web GUI + Prometheus + Go binaries
+# shellcheck disable=SC1083  # Braces in nftables syntax are literal, not bash
 # Author:       NFTBan Team
 # License:      MIT
 # ==============================================================================

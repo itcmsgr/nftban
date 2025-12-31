@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1090  # Dynamic config paths, cannot follow
 # =============================================================================
 # NFTBan v1.0 - Health Check System
 # =============================================================================

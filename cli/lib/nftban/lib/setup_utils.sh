@@ -100,7 +100,7 @@ detect_pkg_manager() {
     local distro="${1:-$(detect_distro)}"
 
     case "$distro" in
-        centos|rhel|fedora|rocky|alma*|almalinux)
+        centos|rhel|fedora|rocky|alma*)
             echo "dnf"
             ;;
         debian|ubuntu)

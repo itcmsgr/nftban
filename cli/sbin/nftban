@@ -265,7 +265,7 @@ nftban_complete() {
                 echo "disable"
                 echo "status"
                 ;;
-            emulate|explain|test)
+            emulate|explain)
                 echo "--proto"
                 echo "--port"
                 echo "--direction"

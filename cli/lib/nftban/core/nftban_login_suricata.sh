@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1090  # Dynamic config paths, cannot follow
 # =============================================================================
 # NFTBan v1.0 - Login Monitor Suricata Mode Module
 # =============================================================================
@@ -38,6 +39,7 @@ readonly NFTBAN_LOGIN_SURICATA_LOADED=1
 # MODULE METADATA
 # =============================================================================
 
+# shellcheck disable=SC2034  # Module metadata used when sourced
 readonly LOGIN_SURICATA_MODULE_NAME="nftban_login_suricata"
 readonly LOGIN_SURICATA_MODULE_VERSION="1.0.0"
 
