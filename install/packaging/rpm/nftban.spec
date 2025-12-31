@@ -4,7 +4,7 @@
 Name:           nftban
 Version:        1.0.0
 Release:        1%{?dist}
-Summary:        NFTBan - Modern Firewall Management System
+Summary:        NFTBAN - Next-generation Linux firewall using nftables
 
 License:        MPL-2.0
 URL:            https://nftban.com
@@ -37,8 +37,18 @@ Requires:       polkit
 Recommends:     logrotate
 
 %description
-NFTBan is a modern, modular firewall management system built on nftables.
-Features include GeoIP blocking, threat feeds, login monitoring, and more.
+NFTBAN is an enterprise-grade firewall management engine built on Linux nftables.
+It replaces legacy firewall scripts with a modern architecture featuring atomic
+rule updates, strict privilege separation via Polkit, and AI-assisted threat
+intelligence.
+
+Named for NFTables BAN actions, NFTBAN provides deterministic, high-performance
+packet filtering at the kernel level. Moving beyond traditional iptables-based
+tools, it delivers a resilient, self-healing network defense layer.
+
+Features: Atomic updates, Polkit security, threat intelligence feeds, GeoIP
+blocking, port scan/DDoS detection, hosting panel integration, and full
+observability via Prometheus/Grafana.
 
 %prep
 %setup -q

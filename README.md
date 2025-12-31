@@ -1,6 +1,6 @@
-# NFTBan — Adaptive Firewall for the Modern Linux Stack
+# 🛡️ NFTBAN: Next-Gen Nftables Firewall
 
-**Secure by Design | Zero Trust Ready | AI-Assisted Defense**
+**Enterprise-Grade | Atomic Updates | Polkit-Secured | AI-Ready**
 
 [![Version](https://img.shields.io/badge/version-1.0.18-blue)](https://github.com/itcmsgr/nftban)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
@@ -10,7 +10,14 @@
 [![FHS: Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
 [![Status](https://img.shields.io/badge/status-BETA-yellow)]()
 
-NFTBan is an enterprise-grade firewall management system built on Linux nftables — combining atomic rule updates, privilege separation through Polkit, and AI-assisted threat intelligence for a resilient, self-healing network defense layer.
+**NFTBAN (NFTables BAN actions)** is a high-performance firewall management system designed for modern Linux environments. Moving beyond legacy iptables-based scripts, NFTBAN provides a resilient, self-healing network defense layer by combining the raw power of **nftables** with advanced privilege separation and real-time threat intelligence.
+
+### Why NFTBAN?
+
+- **⚡ Atomic Performance** — Leverages native nftables for near-instant rule updates without flushing connections
+- **🔐 Security First** — Uses Polkit for granular privilege separation; management without needing full root access
+- **🤖 Intelligent Defense** — Integrated AI-assisted threat intelligence for proactive and self-healing network protection
+- **🌐 Hosting Ready** — Built-in support for DirectAdmin, cPanel, CWP, CyberPanel, and custom panels
 
 > **BETA TESTING** | We are actively finding and fixing bugs. **NOT production-ready yet.** Tested on 5 lab servers. Community feedback needed from diverse environments. [Report issues here](https://github.com/itcmsgr/nftban/issues).
 
@@ -254,7 +261,7 @@ Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
 - **[Installation Prerequisites](https://github.com/itcmsgr/nftban/wiki/Installation-Prerequisites)** - System requirements
 
 ### Advanced Integration
-- **[Suricata IDS Integration](docs/SURICATA.md)** - Complete guide for Suricata IDS/IPS setup (2-command install, DDoS/portscan integration, performance tuning)
+- **[Suricata IDS Integration](https://github.com/itcmsgr/nftban/wiki/Suricata-Integration)** - Complete guide for Suricata IDS/IPS setup (2-command install, auto-detected profiles, DDoS/portscan integration)
 
 ### Security
 - **[Security Policy](SECURITY.md)** - Vulnerability reporting
@@ -270,7 +277,7 @@ Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
 ---
 
 <p align="center">
-  <b>NFTBan - Simplifying Linux Firewall Management</b><br>
+  <b>NFTBan - Linux Firewall Management via nftables</b><br>
   <a href="https://nftban.com">nftban.com</a> |
   <a href="https://github.com/itcmsgr/nftban/issues">Report Issue</a> |
   <a href="https://github.com/itcmsgr/nftban/discussions">Discussions</a>

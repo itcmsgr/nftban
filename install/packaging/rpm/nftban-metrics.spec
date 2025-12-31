@@ -4,7 +4,7 @@
 Name:           nftban-metrics
 Version:        1.0.0
 Release:        1%{?dist}
-Summary:        NFTBan Prometheus/Grafana Integration
+Summary:        NFTBAN Metrics - Prometheus/Grafana observability for nftables firewall
 
 License:        MPL-2.0
 URL:            https://github.com/nftban/nftban
@@ -19,10 +19,9 @@ Recommends:     grafana
 Suggests:       mailx
 
 %description
-NFTBan Prometheus/Grafana Integration
-
-This package provides Prometheus metrics collection for NFTBan firewall,
-including exporters, Grafana dashboards, and automated installation scripts.
+Prometheus metrics collection and Grafana dashboards for NFTBAN firewall
+monitoring. Provides real-time observability into nftables-based firewall
+operations, ban statistics, and threat detection events.
 
 Features:
  - Prometheus metrics exporter for NFTBan statistics

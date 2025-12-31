@@ -1,8 +1,12 @@
 # Security Policy
 
+## About NFTBAN
+
+NFTBAN is an enterprise-grade firewall management engine built on Linux nftables. Security is foundational to our architecture, featuring Polkit-based privilege separation, systemd sandboxing, and strict input validation at all layers.
+
 ## Reporting Security Vulnerabilities
 
-We take the security of NFTBan seriously. If you discover a security vulnerability, please report it responsibly.
+We take security seriously and follow responsible disclosure practices. If you discover a security vulnerability in NFTBAN, please report it responsibly.
 
 ### How to Report
 
