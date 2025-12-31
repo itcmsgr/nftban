@@ -1,7 +1,7 @@
 Name:           nftban-ui
 Version:        1.0.0
 Release:        1%{?dist}
-Summary:        NFTBan Web GUI - Secure web interface for NFTBan firewall management
+Summary:        NFTBAN Web Interface - Management console for nftables-based firewall
 
 License:        MPL-2.0
 URL:            https://github.com/itcmsgr/nftban-dev
@@ -18,17 +18,24 @@ Requires:       nftables
 Requires(pre):  shadow-utils
 
 %description
-NFTBan Web GUI is a secure, modern web interface for managing the NFTBan
-adaptive firewall system. It features socket-based PAM authentication, JWT
-session management, and an 8-layer security architecture.
+Professional web interface for NFTBAN firewall management. Provides enterprise-grade
+control over nftables-based security policies through a modern, security-hardened
+web console.
+
+Built with an 8-layer security architecture featuring socket-based PAM authentication,
+JWT session management, and Polkit integration. No setuid binaries, no privilege
+escalation vulnerabilities.
+
+The interface delivers real-time visibility into kernel-level firewall operations,
+threat detection events, and ban statistics through a modern dark-theme UI.
 
 Features:
-- Socket-based PAM authentication (no setuid binaries)
-- 8-layer security architecture
-- 15+ RESTful API endpoints
-- Modern dark theme UI
-- Systemd socket activation
-- Resource limits and cgroup awareness
+- Socket-based PAM authentication (zero setuid exposure)
+- 8-layer security architecture with strict sandboxing
+- 15+ RESTful API endpoints with role-based access
+- Real-time dashboard with live firewall statistics
+- Systemd socket activation and cgroup resource limits
+- Full audit logging and compliance tracking
 
 %prep
 %autosetup -n %{name}-%{version}

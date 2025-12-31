@@ -1,12 +1,16 @@
 # nftban Trademark Policy
 
-**Owner:** NFTBAN Project / Antonios Voulvoulis  
-**Marks:** “nftban”, the nftban wordmark, the nftban logo, and related brand assets.  
+**Owner:** NFTBAN Project / Antonios Voulvoulis
+**Marks:** "nftban", "NFTBAN", the nftban wordmark, the nftban logo, and related brand assets.
 **Contact:** legal@nftban.com
 
-This policy explains proper use of the **nftban** name and brand assets.  
-It supports fair community use while preventing user confusion and brand misuse.  
-This policy complements the software licenses (MPL‑2.0 for the Core and the nftban Pro Commercial License for Pro components).  
+## About NFTBAN
+
+NFTBAN is an enterprise firewall management engine built on Linux nftables. The name stands for "NFTables BAN actions," emphasizing the system's foundation on native nftables technology for high-performance, kernel-level firewall operations.
+
+This policy explains proper use of the **nftban** name and brand assets.
+It supports fair community use while preventing user confusion and brand misuse.
+This policy complements the software licenses (MPL‑2.0 for the Core and the nftban Pro Commercial License for Pro components).
 **Trademarks are separate from copyright.**
 
 ---

@@ -36,15 +36,21 @@ Depends: ${shlibs:Depends},
          policykit-1,
          adduser
 Recommends: logrotate
-Description: NFTBan - Modern Firewall Management System
- NFTBan is a modern, modular firewall management system built on nftables.
+Description: NFTBAN - Enterprise firewall management engine for Linux
+ NFTBAN is an enterprise-grade firewall management engine built on Linux nftables.
+ It replaces legacy firewall scripts with a modern architecture featuring atomic
+ rule updates, strict privilege separation via Polkit, and AI-assisted threat
+ intelligence to create a resilient, self-healing network defense layer.
  .
- Features include:
-  - Native nftables integration
-  - Login monitoring and alerts
-  - Threat intelligence feeds
-  - Geographic blocking (GeoIP)
-  - Port scan detection
-  - DDoS protection
-  - CLI and optional Web GUI
-  - Prometheus metrics support
+ The name NFTBAN (NFTables BAN actions) emphasizes its foundation on native
+ nftables technology for high-performance, kernel-level packet filtering.
+ .
+ Key features:
+  - Atomic rule updates without connection disruption
+  - Granular privilege separation through Polkit
+  - Real-time threat intelligence integration
+  - Geographic blocking with GeoIP automation
+  - Port scan and DDoS detection at kernel level
+  - Hosting panel integration (DirectAdmin, cPanel, etc.)
+  - Modern CLI + optional Web GUI
+  - Prometheus/Grafana observability

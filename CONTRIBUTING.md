@@ -1,6 +1,24 @@
 # Contributing to NFTBan
 
-Thank you for your interest in contributing to NFTBan! This document provides guidelines for contributing.
+Thank you for your interest in contributing to NFTBAN! This document provides guidelines for contributing.
+
+## About the Project
+
+**NFTBAN** is an enterprise-grade firewall management engine built on Linux nftables. The name stands for **NFTables BAN actions**, emphasizing the system's foundation on native nftables technology for high-performance, kernel-level packet filtering.
+
+## Project Terminology
+
+When writing documentation or code:
+
+- **NFTBAN** (all caps) — Project name in formal contexts, marketing materials, and when emphasizing the acronym
+- **NFTBan** (title case) — Stylized form for README headers and user-facing documentation
+- **nftban** (lowercase) — Command name, binary name, file paths, and code references
+- **nftables** — Always lowercase (the underlying Linux kernel technology)
+
+**Example usage:**
+- ✅ "NFTBAN is built on nftables technology"
+- ✅ "Run the `nftban` command to manage firewall rules"
+- ✅ "See the NFTBan documentation for details"
 
 ## Code of Conduct
 
