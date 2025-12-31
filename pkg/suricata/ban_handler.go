@@ -6,10 +6,10 @@ import (
 	"time"
 
 	"github.com/google/nftables"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/analytics"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/banlog"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/geoip"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/sync"
+	"github.com/itcmsgr/nftban/pkg/analytics"
+	"github.com/itcmsgr/nftban/pkg/banlog"
+	"github.com/itcmsgr/nftban/pkg/geoip"
+	"github.com/itcmsgr/nftban/pkg/sync"
 )
 
 // NetlinkBanHandler implements BanHandler using the existing netlink infrastructure

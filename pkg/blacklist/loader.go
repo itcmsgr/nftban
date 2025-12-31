@@ -6,9 +6,9 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/feeds"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/netutil"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/util"
+	"github.com/itcmsgr/nftban/pkg/feeds"
+	"github.com/itcmsgr/nftban/pkg/netutil"
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // LoadAllBlacklists loads IPs from all blacklist sources:

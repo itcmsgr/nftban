@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/version"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/oschwald/maxminddb-golang"
 )
 

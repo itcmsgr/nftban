@@ -9,10 +9,10 @@ import (
 	"syscall"
 	"text/tabwriter"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/analytics"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/suricata"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/version"
+	"github.com/itcmsgr/nftban/pkg/analytics"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/suricata"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 // getSuricataPaths returns suricata-related paths from central config

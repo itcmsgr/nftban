@@ -30,9 +30,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/eventbus"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/module"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/eventbus"
+	"github.com/itcmsgr/nftban/pkg/module"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
 
 const (

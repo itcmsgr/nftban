@@ -8,8 +8,8 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/version"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 // getCountryConfigPath returns the country config path from central config

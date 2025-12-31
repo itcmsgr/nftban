@@ -22,9 +22,9 @@ import (
 
 	pam "github.com/msteinert/pam/v2"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/internal/authproto"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/auth"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/system"
+	"github.com/itcmsgr/nftban/internal/authproto"
+	"github.com/itcmsgr/nftban/pkg/auth"
+	"github.com/itcmsgr/nftban/pkg/system"
 )
 
 const (

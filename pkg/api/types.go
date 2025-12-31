@@ -2,7 +2,7 @@ package api
 
 import (
 	"github.com/google/nftables"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/sync"
+	"github.com/itcmsgr/nftban/pkg/sync"
 )
 
 // API holds dependencies for all API handlers

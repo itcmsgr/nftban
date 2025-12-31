@@ -14,11 +14,11 @@ import (
 	"text/template"
 	"time"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/feeds"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/geoban"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/model"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftables"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/feeds"
+	"github.com/itcmsgr/nftban/pkg/geoban"
+	"github.com/itcmsgr/nftban/pkg/model"
+	"github.com/itcmsgr/nftban/pkg/nftables"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
 
 const (

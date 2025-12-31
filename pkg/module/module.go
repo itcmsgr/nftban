@@ -32,7 +32,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/eventbus"
+	"github.com/itcmsgr/nftban/pkg/eventbus"
 )
 
 // Module is the interface all nftban modules must implement

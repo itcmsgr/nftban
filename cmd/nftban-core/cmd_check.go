@@ -5,11 +5,11 @@ import (
 	"net"
 	"strings"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/blacklist"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/feeds"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/version"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/whitelist"
+	"github.com/itcmsgr/nftban/pkg/blacklist"
+	"github.com/itcmsgr/nftban/pkg/feeds"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/version"
+	"github.com/itcmsgr/nftban/pkg/whitelist"
 )
 
 // getCheckPaths returns config and data directories from central config

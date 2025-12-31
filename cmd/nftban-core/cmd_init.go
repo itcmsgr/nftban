@@ -7,9 +7,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/config"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/safety"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/version"
+	"github.com/itcmsgr/nftban/pkg/config"
+	"github.com/itcmsgr/nftban/pkg/safety"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 func cmdInit() error {

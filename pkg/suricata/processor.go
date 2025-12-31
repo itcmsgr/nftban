@@ -5,7 +5,7 @@ import (
 	"os"
 	"time"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
 
 // Processor handles the main Suricata event processing loop

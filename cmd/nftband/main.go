@@ -33,12 +33,12 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/ddos"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/eventbus"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/loginmon"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/module"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/portscan"
+	"github.com/itcmsgr/nftban/pkg/ddos"
+	"github.com/itcmsgr/nftban/pkg/eventbus"
+	"github.com/itcmsgr/nftban/pkg/loginmon"
+	"github.com/itcmsgr/nftban/pkg/module"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/portscan"
 )
 
 const (

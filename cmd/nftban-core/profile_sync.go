@@ -7,10 +7,10 @@ import (
 	_ "net/http/pprof"
 	"time"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/blacklist"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/sync"
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/whitelist"
+	"github.com/itcmsgr/nftban/pkg/blacklist"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/sync"
+	"github.com/itcmsgr/nftban/pkg/whitelist"
 )
 
 // getProfileSyncConfigDir returns the config directory from central config

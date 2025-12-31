@@ -5,7 +5,7 @@ import (
 	"net"
 	"strings"
 
-	"github.com/itcmsgr/nftban-v1.0-dev/pkg/netutil"
+	"github.com/itcmsgr/nftban/pkg/netutil"
 )
 
 // ParsedEntry represents a parsed feed line
