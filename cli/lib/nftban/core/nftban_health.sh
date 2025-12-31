@@ -1092,6 +1092,96 @@ nftban_health_check_config() {
     return $status
 }
 
+# =============================================================================
+# REGISTRY HEALTH CHECK (v1.0.16 - Commands Registry)
+# =============================================================================
+
+nftban_health_check_registry() {
+    # Check commands.registry.yml and documentation generators
+    # Returns: 0=OK, 1=Warning, 2=Error
+
+    local status=$HEALTH_OK
+    local registry_issues=()
+
+    # Check registry file exists
+    local registry="${NFTBAN_CONFIG_DIR:-/etc/nftban}/commands.registry.yml"
+    if [[ ! -f "$registry" ]]; then
+        registry_issues+=("Registry missing: $registry")
+        status=$HEALTH_ERROR
+    else
+        # Check registry is readable
+        if [[ ! -r "$registry" ]]; then
+            registry_issues+=("Registry not readable: $registry")
+            status=$HEALTH_ERROR
+        else
+            # Check registry file size (should be ~100KB+)
+            local size
+            size=$(stat -c%s "$registry" 2>/dev/null || stat -f%z "$registry" 2>/dev/null || echo "0")
+            if [[ $size -lt 10000 ]]; then
+                registry_issues+=("Registry suspiciously small: $size bytes (corrupted?)")
+                status=$HEALTH_ERROR
+            fi
+
+            # Check YAML validity if yq available
+            if command -v yq &>/dev/null; then
+                if ! yq -r '._metadata.version' "$registry" >/dev/null 2>&1; then
+                    registry_issues+=("Registry has invalid YAML syntax")
+                    status=$HEALTH_ERROR
+                else
+                    # Verify metadata
+                    local total_commands
+                    total_commands=$(yq -r '._metadata.total_commands // 0' "$registry" 2>/dev/null)
+                    if [[ $total_commands -lt 40 ]]; then
+                        registry_issues+=("Registry appears incomplete: only $total_commands commands (expected 45+)")
+                        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+                    fi
+                fi
+            else
+                registry_issues+=("yq not installed - cannot validate YAML (install: pip install yq)")
+                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            fi
+        fi
+
+        # Check registry permissions (should be 644)
+        local perms
+        perms=$(stat -c "%a" "$registry" 2>/dev/null || stat -f "%Lp" "$registry" 2>/dev/null || echo "000")
+        if [[ "$perms" != "644" ]]; then
+            registry_issues+=("Registry permissions incorrect: $perms (should be 644)")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    fi
+
+    # Check documentation generators exist and are executable
+    local generators=(
+        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/scripts/generate-help.sh"
+        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/scripts/generate-wiki-operator.sh"
+        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/scripts/generate-wiki-auditor.sh"
+    )
+
+    for gen in "${generators[@]}"; do
+        if [[ ! -f "$gen" ]]; then
+            registry_issues+=("Generator missing: $(basename "$gen")")
+            status=$HEALTH_ERROR
+        elif [[ ! -x "$gen" ]]; then
+            registry_issues+=("Generator not executable: $(basename "$gen")")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    done
+
+    # Store results
+    if [[ ${#registry_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["registry"]="${registry_issues[*]}"
+        if [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("Registry issues: ${registry_issues[*]}")
+        else
+            NFTBAN_HEALTH_WARNINGS+=("Registry issues: ${registry_issues[*]}")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["registry"]=$status
+    return $status
+}
+
 nftban_health_check_polkit() {
     # Check Polkit authorization rules installation
     # Returns: 0=OK, 1=Warning, 2=Error (CRITICAL security violation)
@@ -2115,6 +2205,11 @@ nftban_health_check_all() {
     nftban_health_check_config || check_result=$?
     [[ $check_result -gt $overall_status ]] && overall_status=$check_result
 
+    # Registry check (v1.0.16 - commands.registry.yml and generators)
+    check_result=0
+    nftban_health_check_registry || check_result=$?
+    [[ $check_result -gt $overall_status ]] && overall_status=$check_result
+
     # Permissions check (using nftban_permissions module if available)
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_permissions.sh" ]]; then
         if source "${NFTBAN_LIB_DIR}/core/nftban_permissions.sh" 2>/dev/null; then
@@ -2189,6 +2284,12 @@ nftban_health_check_all() {
 
             echo "→ Fixing services..."
             if nftban_health_fix_services; then
+                fixes_applied=$((fixes_applied + 1))
+            fi
+            echo ""
+
+            echo "→ Fixing registry..."
+            if nftban_health_fix_registry; then
                 fixes_applied=$((fixes_applied + 1))
             fi
             echo ""
@@ -2715,6 +2816,106 @@ LOGROTATE
     fi
 
     return 0
+}
+
+nftban_health_fix_registry() {
+    # Fix registry and generator issues
+    # Returns: 0=fixed, 1=partial fix, 2=failed
+
+    local status=0
+    local registry="${NFTBAN_CONFIG_DIR:-/etc/nftban}/commands.registry.yml"
+
+    echo "Checking registry configuration..."
+
+    # Check if registry file exists
+    if [[ ! -f "$registry" ]]; then
+        echo "  ✖ ERROR: Registry file missing: $registry"
+        echo "    This file should be installed by the package manager."
+        echo "    Please reinstall nftban package to restore registry."
+        return 2
+    fi
+
+    # Fix registry permissions (should be 644)
+    local perms
+    perms=$(stat -c "%a" "$registry" 2>/dev/null || stat -f "%Lp" "$registry" 2>/dev/null || echo "000")
+    if [[ "$perms" != "644" ]]; then
+        if chmod 644 "$registry" 2>/dev/null; then
+            echo "  ✓ Fixed registry permissions: $perms → 644"
+        else
+            echo "  ⚠️  Cannot fix registry permissions (need root)"
+            status=1
+        fi
+    fi
+
+    # Fix registry ownership (should be root:root)
+    local owner group
+    owner=$(stat -c "%U" "$registry" 2>/dev/null || echo "unknown")
+    group=$(stat -c "%G" "$registry" 2>/dev/null || echo "unknown")
+    if [[ "$owner" != "root" ]] || [[ "$group" != "root" ]]; then
+        if [[ $EUID -eq 0 ]]; then
+            if chown root:root "$registry" 2>/dev/null; then
+                echo "  ✓ Fixed registry ownership: $owner:$group → root:root"
+            else
+                echo "  ⚠️  Cannot fix registry ownership"
+                status=1
+            fi
+        else
+            echo "  ⚠️  Cannot fix registry ownership (need root)"
+            status=1
+        fi
+    fi
+
+    # Check YAML validity if yq available
+    if command -v yq &>/dev/null; then
+        if ! yq -r '._metadata.version' "$registry" >/dev/null 2>&1; then
+            echo "  ✖ ERROR: Registry has invalid YAML syntax"
+            echo "    Please reinstall nftban package to restore registry."
+            return 2
+        else
+            echo "  ✓ Registry YAML is valid"
+        fi
+    else
+        echo "  ⚠️  Cannot validate YAML (yq not installed)"
+        echo "    Install: pip install yq  OR  brew install yq"
+        status=1
+    fi
+
+    # Fix generator permissions (should be 755)
+    echo ""
+    echo "Checking documentation generators..."
+    local generators=(
+        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/scripts/generate-help.sh"
+        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/scripts/generate-wiki-operator.sh"
+        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/scripts/generate-wiki-auditor.sh"
+    )
+
+    local generators_ok=true
+    for gen in "${generators[@]}"; do
+        if [[ ! -f "$gen" ]]; then
+            echo "  ✖ ERROR: Generator missing: $(basename "$gen")"
+            echo "    Please reinstall nftban package to restore generators."
+            generators_ok=false
+            status=2
+        else
+            # Check if executable
+            if [[ ! -x "$gen" ]]; then
+                if chmod +x "$gen" 2>/dev/null; then
+                    echo "  ✓ Fixed generator permissions: $(basename "$gen")"
+                else
+                    echo "  ⚠️  Cannot fix generator permissions: $(basename "$gen") (need root)"
+                    status=1
+                fi
+            else
+                echo "  ✓ Generator OK: $(basename "$gen")"
+            fi
+        fi
+    done
+
+    if [[ "$generators_ok" == true ]]; then
+        echo "  ✓ All generators present and executable"
+    fi
+
+    return $status
 }
 
 # =============================================================================
@@ -3344,6 +3545,7 @@ export -f nftban_health_check_modules
 export -f nftban_health_check_geoip
 export -f nftban_health_check_databases
 export -f nftban_health_check_config
+export -f nftban_health_check_registry
 export -f nftban_health_check_metrics
 # Removed: export fail2ban health check (v1.0 migration)
 export -f nftban_health_check_timers
@@ -3353,6 +3555,7 @@ export -f nftban_health_check_gui
 export -f nftban_health_fix_permissions
 export -f nftban_health_fix_directories
 export -f nftban_health_fix_services
+export -f nftban_health_fix_registry
 
 # Export render functions
 export -f nftban_health_render_terminal
