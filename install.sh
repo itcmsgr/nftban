@@ -986,9 +986,10 @@ install_configs() {
     log "Installing Configuration Files..."
 
     # Create config directories
-    mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d,conf.d,distros}
+    mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d,conf.d,distros,suricata}
     mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels}
-    mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state}
+    mkdir -p /etc/nftban/suricata/{profiles,config}
+    mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,panels}
     mkdir -p /var/lib/nftban/reports/auditors
     mkdir -p /var/log/nftban
     mkdir -p /var/cache/nftban
@@ -1035,6 +1036,16 @@ install_configs() {
         local count
         count=$(ls -1 /etc/nftban/distros/*.conf 2>/dev/null | wc -l)
         ok "Installed $count distro config files"
+    fi
+
+    # Install Suricata profile templates
+    if [[ -d "$SCRIPT_DIR/etc/nftban/suricata/profiles" ]]; then
+        cp -f "$SCRIPT_DIR/etc/nftban/suricata/profiles/"*.yaml /etc/nftban/suricata/profiles/
+        chmod 644 /etc/nftban/suricata/profiles/*.yaml
+        chown root:nftban /etc/nftban/suricata/profiles/*.yaml
+        local count
+        count=$(ls -1 /etc/nftban/suricata/profiles/*.yaml 2>/dev/null | wc -l)
+        ok "Installed $count Suricata profile templates"
     fi
 
     # Removed: fail2ban config installation (v1.0 migration to Suricata)

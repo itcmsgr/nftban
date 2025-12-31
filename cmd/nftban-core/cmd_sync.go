@@ -6,6 +6,7 @@ import (
 
 	"github.com/google/nftables"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/ports"
 	"github.com/itcmsgr/nftban/pkg/runtime"
 	"github.com/itcmsgr/nftban/pkg/sync"
 	"github.com/itcmsgr/nftban/pkg/version"
@@ -43,6 +44,41 @@ func cmdSync() error {
 	}
 	fmt.Printf("  ✅ Loaded %d IPv4 + %d IPv6 blacklist entries\n",
 		len(state.BlacklistIPv4), len(state.BlacklistIPv6))
+	fmt.Println()
+
+	// Load ports from ALL sources (ports.d/ + enabled panel configs)
+	fmt.Println("Step 1.5: Loading port configurations...")
+	configDir := getSyncConfigDir()
+	allPorts, err := ports.LoadAllPorts(configDir)
+	if err != nil {
+		return fmt.Errorf("failed to load ports: %w", err)
+	}
+
+	// Show port statistics
+	if len(allPorts.AllRules) > 0 {
+		fmt.Printf("  ✅ Loaded %d TCP ports + %d UDP ports from:\n",
+			len(allPorts.TCPPorts), len(allPorts.UDPPorts))
+
+		// Count sources
+		customCount := 0
+		panelCount := 0
+		for _, rule := range allPorts.AllRules {
+			if strings.HasPrefix(rule.Source, "panel:") {
+				panelCount++
+			} else {
+				customCount++
+			}
+		}
+
+		if customCount > 0 {
+			fmt.Printf("     - Custom ports (ports.d/): %d rules\n", customCount)
+		}
+		if panelCount > 0 {
+			fmt.Printf("     - Panel ports (enabled panels): %d rules\n", panelCount)
+		}
+	} else {
+		fmt.Println("  ℹ️  No port rules configured")
+	}
 	fmt.Println()
 
 	// Initialize nftables connection
@@ -94,6 +130,60 @@ func cmdSync() error {
 		return fmt.Errorf("failed to get/create blacklist_ipv6 set: %w", err)
 	}
 	fmt.Printf("  ✅ Set 'blacklist_ipv6' ready\n")
+
+	// Create and populate port sets (if we have ports to load)
+	if len(allPorts.AllRules) > 0 {
+		fmt.Println()
+		fmt.Println("  Creating port sets...")
+
+		// TCP ports
+		tcpSetV4, err := nft.GetOrCreatePortSet(tableIPv4, "tcp_ports")
+		if err != nil {
+			return fmt.Errorf("failed to create IPv4 tcp_ports set: %w", err)
+		}
+		fmt.Printf("  ✅ Set 'tcp_ports' (IPv4) ready\n")
+
+		tcpSetV6, err := nft.GetOrCreatePortSet(tableIPv6, "tcp_ports")
+		if err != nil {
+			return fmt.Errorf("failed to create IPv6 tcp_ports set: %w", err)
+		}
+		fmt.Printf("  ✅ Set 'tcp_ports' (IPv6) ready\n")
+
+		// UDP ports
+		udpSetV4, err := nft.GetOrCreatePortSet(tableIPv4, "udp_ports")
+		if err != nil {
+			return fmt.Errorf("failed to create IPv4 udp_ports set: %w", err)
+		}
+		fmt.Printf("  ✅ Set 'udp_ports' (IPv4) ready\n")
+
+		udpSetV6, err := nft.GetOrCreatePortSet(tableIPv6, "udp_ports")
+		if err != nil {
+			return fmt.Errorf("failed to create IPv6 udp_ports set: %w", err)
+		}
+		fmt.Printf("  ✅ Set 'udp_ports' (IPv6) ready\n")
+
+		// Load ports into sets
+		if len(allPorts.TCPPorts) > 0 {
+			if err := nft.AddPortElements(tcpSetV4, allPorts.TCPPorts); err != nil {
+				return fmt.Errorf("failed to add IPv4 TCP ports: %w", err)
+			}
+			if err := nft.AddPortElements(tcpSetV6, allPorts.TCPPorts); err != nil {
+				return fmt.Errorf("failed to add IPv6 TCP ports: %w", err)
+			}
+			fmt.Printf("  ✅ Loaded %d TCP ports into both IPv4 and IPv6 sets\n", len(allPorts.TCPPorts))
+		}
+
+		if len(allPorts.UDPPorts) > 0 {
+			if err := nft.AddPortElements(udpSetV4, allPorts.UDPPorts); err != nil {
+				return fmt.Errorf("failed to add IPv4 UDP ports: %w", err)
+			}
+			if err := nft.AddPortElements(udpSetV6, allPorts.UDPPorts); err != nil {
+				return fmt.Errorf("failed to add IPv6 UDP ports: %w", err)
+			}
+			fmt.Printf("  ✅ Loaded %d UDP ports into both IPv4 and IPv6 sets\n", len(allPorts.UDPPorts))
+		}
+	}
+
 	fmt.Println()
 
 	// Get snapshots from runtime state
