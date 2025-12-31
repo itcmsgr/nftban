@@ -154,9 +154,11 @@ cp -r etc/nftban/conf.d/* %{buildroot}/etc/nftban/conf.d/
 install -D -m 0640 install/config/feeds.conf %{buildroot}/etc/nftban/conf.d/feeds.conf
 install -D -m 0640 install/config/conf.d/watchdog.conf %{buildroot}/etc/nftban/conf.d/watchdog.conf
 
-# Suricata profile templates
+# Suricata profile templates and config directories
 mkdir -p %{buildroot}/etc/nftban/suricata/profiles
 mkdir -p %{buildroot}/etc/nftban/suricata/config
+mkdir -p %{buildroot}/etc/nftban/suricata/rules
+mkdir -p %{buildroot}/etc/nftban/suricata/cache
 install -D -m 0644 etc/nftban/suricata/profiles/minimal.yaml %{buildroot}/etc/nftban/suricata/profiles/minimal.yaml
 install -D -m 0644 etc/nftban/suricata/profiles/standard.yaml %{buildroot}/etc/nftban/suricata/profiles/standard.yaml
 install -D -m 0644 etc/nftban/suricata/profiles/maximum.yaml %{buildroot}/etc/nftban/suricata/profiles/maximum.yaml
@@ -186,6 +188,7 @@ install -D -m 0644 install/systemd/nftban-rollback.timer %{buildroot}/usr/lib/sy
 install -D -m 0644 install/systemd/nftban-suricata-update.service %{buildroot}/usr/lib/systemd/system/nftban-suricata-update.service
 install -D -m 0644 install/systemd/nftban-suricata-update.timer %{buildroot}/usr/lib/systemd/system/nftban-suricata-update.timer
 install -D -m 0644 install/systemd/nftban-suricata.service %{buildroot}/usr/lib/systemd/system/nftban-suricata.service
+install -D -m 0644 install/systemd/nftban-suricata-stats.service %{buildroot}/usr/lib/systemd/system/nftban-suricata-stats.service
 install -D -m 0644 install/systemd/nftban-ui.service %{buildroot}/usr/lib/systemd/system/nftban-ui.service
 install -D -m 0644 install/systemd/nftban-ui-auth.service %{buildroot}/usr/lib/systemd/system/nftban-ui-auth.service
 install -D -m 0644 install/systemd/nftban-queue.service %{buildroot}/usr/lib/systemd/system/nftban-queue.service
@@ -229,9 +232,8 @@ install -m 0755 scripts/generate-help.sh %{buildroot}/usr/lib/nftban/scripts/gen
 install -m 0755 scripts/generate-wiki-operator.sh %{buildroot}/usr/lib/nftban/scripts/generate-wiki-operator.sh
 install -m 0755 scripts/generate-wiki-auditor.sh %{buildroot}/usr/lib/nftban/scripts/generate-wiki-auditor.sh
 
-# Implementation plan documentation (v1.0.16)
-mkdir -p %{buildroot}/usr/share/doc/nftban
-install -m 0644 docs/JSON_IMPLEMENTATION_PLAN.md %{buildroot}/usr/share/doc/nftban/JSON_IMPLEMENTATION_PLAN.md
+# Documentation moved to wiki (v1.0.20+)
+# See: https://github.com/itcmsgr/nftban/wiki
 
 # Test scripts
 mkdir -p %{buildroot}/usr/lib/nftban/tests
@@ -485,8 +487,8 @@ getent group nftban-panel >/dev/null || groupadd -r nftban-panel
 if getent group nftban-auditors >/dev/null 2>&1; then
     echo "[NFTBan] Migrating nftban-auditors → nftban-auditor group..."
     # Copy members from old group to new group
-    for user in $(getent group nftban-auditors | cut -d: -f4 | tr ',' ' '); do
-        usermod -a -G nftban-auditor "$user" 2>/dev/null || true
+    for user in \$(getent group nftban-auditors | cut -d: -f4 | tr ',' ' '); do
+        usermod -a -G nftban-auditor "\$user" 2>/dev/null || true
     done
 fi
 
@@ -695,7 +697,6 @@ fi
 /usr/lib/nftban/scripts/generate-help.sh
 /usr/lib/nftban/scripts/generate-wiki-operator.sh
 /usr/lib/nftban/scripts/generate-wiki-auditor.sh
-/usr/share/doc/nftban/JSON_IMPLEMENTATION_PLAN.md
 %dir /etc/nftban
 %dir /etc/nftban/conf.d
 %config(noreplace) /etc/nftban/conf.d/*.conf
@@ -728,6 +729,8 @@ fi
 %dir /etc/nftban/suricata/profiles
 %config(noreplace) /etc/nftban/suricata/profiles/*.yaml
 %dir /etc/nftban/suricata/config
+%dir /etc/nftban/suricata/rules
+%dir /etc/nftban/suricata/cache
 %dir /etc/nftban/whitelist.d
 %dir /etc/nftban/blacklist.d
 %dir /etc/nftban/ports.d
@@ -1228,9 +1231,11 @@ build_deb() {
     install -m 0640 "${PROJECT_ROOT}/install/config/feeds.conf" "${deb_root}/etc/nftban/conf.d/feeds.conf"
     install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/watchdog.conf" "${deb_root}/etc/nftban/conf.d/watchdog.conf"
 
-    # Copy Suricata profile templates
+    # Copy Suricata profile templates and create config directories
     mkdir -p "${deb_root}/etc/nftban/suricata/profiles"
     mkdir -p "${deb_root}/etc/nftban/suricata/config"
+    mkdir -p "${deb_root}/etc/nftban/suricata/rules"
+    mkdir -p "${deb_root}/etc/nftban/suricata/cache"
     install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/minimal.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
     install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/standard.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
     install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/maximum.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
@@ -1260,6 +1265,7 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-update.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-update.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-suricata-stats.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui-auth.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.service" "${deb_root}/usr/lib/systemd/system/"
@@ -1298,9 +1304,8 @@ build_deb() {
     install -m 0755 "${PROJECT_ROOT}/scripts/generate-wiki-operator.sh" "${deb_root}/usr/lib/nftban/scripts/"
     install -m 0755 "${PROJECT_ROOT}/scripts/generate-wiki-auditor.sh" "${deb_root}/usr/lib/nftban/scripts/"
 
-    # Copy implementation plan documentation (v1.0.16)
-    mkdir -p "${deb_root}/usr/share/doc/nftban"
-    install -m 0644 "${PROJECT_ROOT}/docs/JSON_IMPLEMENTATION_PLAN.md" "${deb_root}/usr/share/doc/nftban/"
+    # Documentation moved to wiki (v1.0.20+)
+    # See: https://github.com/itcmsgr/nftban/wiki
 
     # Copy test scripts
     mkdir -p "${deb_root}/usr/lib/nftban/tests"
