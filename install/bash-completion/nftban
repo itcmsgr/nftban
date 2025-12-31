@@ -1,3 +1,4 @@
+# shellcheck shell=bash
 # nftban bash completion v1.0.0
 # =============================================================================
 # NFTBan CLI Tab Completion
