@@ -855,6 +855,35 @@ install_nftables() {
     return 0
 }
 
+cleanup_obsolete_files() {
+    log "Cleaning up obsolete files from previous versions..."
+
+    # Remove obsolete Polkit rules (v1.0.18 and earlier)
+    rm -f /etc/polkit-1/rules.d/10-nftban-core.rules 2>/dev/null && ok "Removed: 10-nftban-core.rules"
+    rm -f /etc/polkit-1/rules.d/20-nftban-suricata.rules 2>/dev/null && ok "Removed: 20-nftban-suricata.rules"
+    rm -f /etc/polkit-1/rules.d/50-nftban-auth.rules 2>/dev/null && ok "Removed: 50-nftban-auth.rules"
+    rm -f /etc/polkit-1/rules.d/50-nftban-auth.rules.in 2>/dev/null && ok "Removed: 50-nftban-auth.rules.in"
+    rm -f /etc/polkit-1/rules.d/50-nftban-v030.rules 2>/dev/null && ok "Removed: 50-nftban-v030.rules"
+    rm -f /etc/polkit-1/rules.d/60-nftban-services.rules 2>/dev/null && ok "Removed: 60-nftban-services.rules (UNSAFE wildcard)"
+    rm -f /usr/share/polkit-1/rules.d/10-nftban-core.rules 2>/dev/null
+    rm -f /usr/share/polkit-1/rules.d/20-nftban-suricata.rules 2>/dev/null
+    rm -f /usr/share/polkit-1/rules.d/50-nftban-auth.rules 2>/dev/null
+    rm -f /usr/share/polkit-1/rules.d/50-nftban-v030.rules 2>/dev/null
+    rm -f /usr/share/polkit-1/rules.d/60-nftban-services.rules 2>/dev/null
+
+    # Remove obsolete Polkit actions
+    rm -f /usr/share/polkit-1/actions/com.nftban.suricata.policy 2>/dev/null && ok "Removed: com.nftban.suricata.policy"
+
+    # Remove obsolete port-status rules (v1.0.15 and earlier - security risk)
+    rm -f /etc/polkit-1/rules.d/50-nftban-port-status.rules 2>/dev/null && ok "Removed: 50-nftban-port-status.rules (security risk)"
+    rm -f /etc/polkit-1/rules.d/50-nftban-port-status.rules.in 2>/dev/null
+    rm -f /usr/share/polkit-1/rules.d/50-nftban-port-status.rules 2>/dev/null
+
+    ok "Obsolete file cleanup complete"
+
+    return 0
+}
+
 create_users_groups() {
     log "Creating NFTBan Users and Groups..."
 
@@ -875,15 +904,36 @@ create_users_groups() {
         ok "User already exists: nftban"
     fi
 
-    # Create nftban-auditors group (Read-only auditors)
-    # NFTBan v1.0 uses simplified 2-group model:
-    #   nftban: All operators (CLI, Web, services)
-    #   nftban-auditors: Read-only audit access
-    if ! getent group nftban-auditors >/dev/null 2>&1; then
-        groupadd --system nftban-auditors
-        ok "Created group: nftban-auditors"
+    # Create nftban-auditor group (Read-only auditors)
+    # NFTBan v1.0.19 uses 3-group model:
+    #   nftban: All operators (CLI, Web, full service management)
+    #   nftban-auditor: Read-only audit access (renamed from nftban-auditors)
+    #   nftban-panel: Panel integration (limited reload access)
+    if ! getent group nftban-auditor >/dev/null 2>&1; then
+        groupadd --system nftban-auditor
+        ok "Created group: nftban-auditor"
     else
-        ok "Group already exists: nftban-auditors"
+        ok "Group already exists: nftban-auditor"
+    fi
+
+    # Create nftban-panel group (Panel integration)
+    if ! getent group nftban-panel >/dev/null 2>&1; then
+        groupadd --system nftban-panel
+        ok "Created group: nftban-panel"
+    else
+        ok "Group already exists: nftban-panel"
+    fi
+
+    # Backward compatibility: Migrate nftban-auditors → nftban-auditor (v1.0.19)
+    if getent group nftban-auditors >/dev/null 2>&1; then
+        log "Migrating nftban-auditors → nftban-auditor group..."
+        # Copy members from old group to new group
+        for user in $(getent group nftban-auditors | cut -d: -f4 | tr ',' ' '); do
+            if [ -n "$user" ]; then
+                usermod -aG nftban-auditor "$user" 2>/dev/null || warn "Could not migrate user: $user"
+                ok "Migrated user to nftban-auditor: $user"
+            fi
+        done
     fi
 
     # Add root to nftban group (for CLI access)
@@ -893,9 +943,10 @@ create_users_groups() {
     fi
 
     echo ""
-    log "Groups Summary (v1.0 simplified model):"
-    echo "  • nftban          - All operators (CLI, Web GUI, service management)"
-    echo "  • nftban-auditors - Read-only auditors (logs, reports)"
+    log "Groups Summary (v1.0.19: 3-group RBAC model):"
+    echo "  • nftban         - Operators (CLI, Web GUI, full service management)"
+    echo "  • nftban-auditor - Auditors (read-only: logs, reports, status queries)"
+    echo "  • nftban-panel   - Panel integration (limited reload, read-only data)"
     echo ""
     ok "User and group setup complete"
 
@@ -1351,77 +1402,47 @@ install_polkit() {
     : "${NFTBAN_BIN:=/usr/bin/nftban}"
     : "${NFTBAN_AUTH_BIN:=/usr/libexec/nftban-ui-auth}"
 
-    # Install polkit policies if they exist
+    # ==========================================================================
+    # v1.0.19: Consolidated Polkit rules (Panel Integration Phase 1)
+    # ==========================================================================
+    # Removed: 10-nftban-core.rules + 20-nftban-suricata.rules (merged)
+    # Removed: 50-nftban-auth.rules (auth-helper never existed)
+    # Removed: 50-nftban-v030.rules (auditor placeholder)
+    # Removed: 60-nftban-services.rules (unsafe wildcard pattern)
+    # Removed: com.nftban.suricata.policy (unused custom actions)
+    #
+    # New: 10-nftban-systemd.rules (nftban group - operators)
+    # New: 20-nftban-auditor.rules (nftban-auditor group - read-only)
+    # New: 30-nftban-panel.rules (nftban-panel group - limited reload)
+    # ==========================================================================
+
+    # Install consolidated polkit rules (v1.0.19)
+    local rules=(
+        "10-nftban-systemd.rules"
+        "20-nftban-auditor.rules"
+        "30-nftban-panel.rules"
+    )
+
+    for rule in "${rules[@]}"; do
+        if [[ -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/$rule" ]]; then
+            cp -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/$rule" "$POLKIT_RULES_DIR_ETC/"
+            chmod 644 "$POLKIT_RULES_DIR_ETC/$rule"
+            ok "Installed: $rule"
+        else
+            warn "Polkit rule not found: $SCRIPT_DIR/packaging/polkit-1/rules.d/$rule"
+        fi
+    done
+
+    # Install PAM auth policy if it exists (legacy UI auth)
     if [[ -f "$SCRIPT_DIR/install/pam/com.nftban.auth.policy" ]]; then
         cp -f "$SCRIPT_DIR/install/pam/com.nftban.auth.policy" "$POLKIT_ACTIONS_DIR/"
         chmod 644 "$POLKIT_ACTIONS_DIR/com.nftban.auth.policy"
         ok "Installed: com.nftban.auth.policy"
     fi
 
-    # Install polkit rules for nftban services (v1.0 simplified - all operators in nftban group)
-    if [[ -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/60-nftban-services.rules" ]]; then
-        cp -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/60-nftban-services.rules" "$POLKIT_RULES_DIR_SHARE/"
-        chmod 644 "$POLKIT_RULES_DIR_SHARE/60-nftban-services.rules"
-        ok "Installed: 60-nftban-services.rules"
-    else
-        warn "Polkit services rules not found: $SCRIPT_DIR/packaging/polkit-1/rules.d/60-nftban-services.rules"
-    fi
-
-    # Install polkit rules for Suricata management
-    if [[ -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/20-nftban-suricata.rules" ]]; then
-        cp -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/20-nftban-suricata.rules" "$POLKIT_RULES_DIR_SHARE/"
-        chmod 644 "$POLKIT_RULES_DIR_SHARE/20-nftban-suricata.rules"
-        ok "Installed: 20-nftban-suricata.rules"
-    fi
-
-    # ==========================================================================
-    # GENERATE polkit rules from templates (replace placeholders with config values)
-    # ==========================================================================
-    # NOTE: Removed 50-nftban-port-status.rules (v1.0.16) - security risk
-    #       It allowed pkexec of full CLI binary as root. Replaced with narrower helpers.
-
-    # Generate 50-nftban-auth.rules from template
-    if [[ -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/50-nftban-auth.rules.in" ]]; then
-        sed "s|@NFTBAN_AUTH_BIN@|$NFTBAN_AUTH_BIN|g" \
-            "$SCRIPT_DIR/packaging/polkit-1/rules.d/50-nftban-auth.rules.in" \
-            > "$POLKIT_RULES_DIR_SHARE/50-nftban-auth.rules"
-        chmod 644 "$POLKIT_RULES_DIR_SHARE/50-nftban-auth.rules"
-        ok "Generated: 50-nftban-auth.rules (NFTBAN_AUTH_BIN=$NFTBAN_AUTH_BIN)"
-    elif [[ -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/50-nftban-auth.rules" ]]; then
-        # Fallback to non-template file if template doesn't exist
-        cp -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/50-nftban-auth.rules" "$POLKIT_RULES_DIR_SHARE/"
-        chmod 644 "$POLKIT_RULES_DIR_SHARE/50-nftban-auth.rules"
-        ok "Installed: 50-nftban-auth.rules (legacy, non-template)"
-    fi
-
-    # Install polkit rules for nftban-auditors group
-    if [[ -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/50-nftban-v030.rules" ]]; then
-        cp -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/50-nftban-v030.rules" "$POLKIT_RULES_DIR_SHARE/"
-        chmod 644 "$POLKIT_RULES_DIR_SHARE/50-nftban-v030.rules"
-        ok "Installed: 50-nftban-v030.rules"
-    else
-        warn "Polkit auditors rules not found: $SCRIPT_DIR/packaging/polkit-1/rules.d/50-nftban-v030.rules"
-    fi
-
-    # Install polkit rules for nftban-core services (systemd management)
-    if [[ -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/10-nftban-core.rules" ]]; then
-        cp -f "$SCRIPT_DIR/packaging/polkit-1/rules.d/10-nftban-core.rules" "$POLKIT_RULES_DIR_ETC/"
-        chmod 644 "$POLKIT_RULES_DIR_ETC/10-nftban-core.rules"
-        ok "Installed: 10-nftban-core.rules"
-    else
-        warn "Polkit nftban-core rules not found: $SCRIPT_DIR/packaging/polkit-1/rules.d/10-nftban-core.rules"
-    fi
-
-    # Install Suricata IDS integration polkit policy
-    if [[ -f "$SCRIPT_DIR/packaging/polkit-1/actions/com.nftban.suricata.policy" ]]; then
-        cp -f "$SCRIPT_DIR/packaging/polkit-1/actions/com.nftban.suricata.policy" "$POLKIT_ACTIONS_DIR/"
-        chmod 644 "$POLKIT_ACTIONS_DIR/com.nftban.suricata.policy"
-        ok "Installed: com.nftban.suricata.policy"
-    fi
-
     # Start/restart polkit service
     systemctl restart polkit 2>/dev/null || warn "Failed to restart polkit"
-    ok "Polkit configured"
+    ok "Polkit configured (v1.0.19: 3-group RBAC model)"
 
     return 0
 }
@@ -1827,6 +1848,9 @@ log "Step 2: Installing NFTBan..."
 echo ""
 
 install_dependencies || warn "Dependency installation failed (non-critical)"
+echo ""
+
+cleanup_obsolete_files || warn "Cleanup had some errors (non-critical)"
 echo ""
 
 create_users_groups || exit 1

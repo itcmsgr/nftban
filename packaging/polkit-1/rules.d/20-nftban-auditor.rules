@@ -1,0 +1,161 @@
+// =============================================================================
+// NFTBan v1.0.19 - Auditor Group Read-Only Authorization
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+// Purpose: Grant nftban-auditor group read-only systemd access
+// Location: /etc/polkit-1/rules.d/20-nftban-auditor.rules
+//
+// Security Model:
+// - Members of 'nftban-auditor' group have READ-ONLY access to systemd
+// - Can query service status, view properties, list units
+// - CANNOT start/stop/restart/reload/enable/disable ANY services
+// - CANNOT reload systemd daemon
+// - CANNOT execute commands via pkexec
+//
+// Groups:
+//   nftban-auditor: Security auditors, compliance team, SOC analysts
+//
+// Allowed Actions:
+//   - systemctl status <unit>
+//   - systemctl show <unit>
+//   - systemctl list-units
+//   - systemctl list-unit-files
+//   - systemctl is-active <unit>
+//   - systemctl is-enabled <unit>
+//
+// Does NOT Grant:
+//   ✗ start/stop/restart/reload services
+//   ✗ enable/disable services
+//   ✗ daemon-reload
+//   ✗ pkexec access
+//   ✗ File system modifications
+//   ✗ nftables access
+//   ✗ Configuration changes
+//
+// Use Cases:
+//   - Security team reviewing system security posture
+//   - Compliance auditors generating reports
+//   - SOC analysts investigating incidents
+//   - DevOps monitoring system health without admin access
+//   - External auditors needing read-only access
+//
+// Design Philosophy:
+//   ✓ READ-ONLY access (no state modifications)
+//   ✓ Broad visibility (all systemd units, not just NFTBan)
+//   ✓ No privilege escalation
+//   ✓ Principle of least privilege
+//   ✓ Defense in depth
+//
+// Note: Auditors also use file system permissions for log access
+//       See /var/log/nftban/ (group: nftban-auditor, mode: 750)
+//       See /var/lib/nftban/reports/ (group: nftban-auditor, mode: 750)
+//
+// Version History:
+//   v1.0.19: Created from 50-nftban-v030.rules (which was a placeholder)
+//            Replaces "use file permissions only" model with actual Polkit rules
+//            Enables registry-driven CLI commands for auditors
+// =============================================================================
+
+polkit.addRule(function (action, subject) {
+    // Only handle requests from nftban-auditor group members
+    if (!subject.isInGroup("nftban-auditor")) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    // Allow read-only systemd queries (NO modifications)
+    // NOTE: These actions are for READING state, not changing it
+    if (action.id == "org.freedesktop.systemd1.manage-units") {
+        var verb = action.lookup("verb");
+
+        // READ-ONLY verbs (do not modify state)
+        var allowedVerbs = [
+            "status",           // systemctl status
+            "show",             // systemctl show
+            "is-active",        // systemctl is-active
+            "is-enabled",       // systemctl is-enabled
+            "is-failed",        // systemctl is-failed
+            "list-units",       // systemctl list-units
+            "list-unit-files"   // systemctl list-unit-files
+        ];
+
+        // Allow read-only verbs on ALL units (auditors need broad visibility)
+        if (allowedVerbs.indexOf(verb) >= 0) {
+            return polkit.Result.YES;
+        }
+
+        // Explicitly DENY all state-modifying verbs
+        var deniedVerbs = [
+            "start",
+            "stop",
+            "restart",
+            "reload",
+            "enable",
+            "disable",
+            "try-restart",
+            "reload-or-restart",
+            "try-reload-or-restart",
+            "kill",
+            "reset-failed"
+        ];
+
+        if (deniedVerbs.indexOf(verb) >= 0) {
+            return polkit.Result.NO;  // Explicit denial
+        }
+    }
+
+    // DENY daemon-reload (auditors are read-only)
+    if (action.id == "org.freedesktop.systemd1.reload-daemon") {
+        return polkit.Result.NO;
+    }
+
+    // DENY all pkexec attempts (no command execution)
+    if (action.id == "org.freedesktop.policykit.exec") {
+        return polkit.Result.NO;
+    }
+
+    return polkit.Result.NOT_HANDLED;
+});
+
+// =============================================================================
+// SECURITY NOTES
+// =============================================================================
+//
+// Why Auditors Get Broad Access:
+// - Need to see ALL systemd units for complete system visibility
+// - Cannot see nftables directly (still requires nftban-core)
+// - File system access controlled separately via Unix permissions
+//
+// Registry Integration:
+// - commands.registry.yml defines which CLI commands auditors can run
+// - Commands with audience=["auditor"] are exposed to this group
+// - Examples: status, health, search, list, report, stats
+// - Non-auditor commands (ban, unban, sync) blocked at CLI level
+//
+// File System Permissions:
+// - /var/log/nftban/: nftban:nftban-auditor 750
+// - /var/lib/nftban/reports/: nftban:nftban-auditor 750
+// - /etc/nftban/: nftban:nftban 750 (auditors use --config-view flag)
+//
+// Comparison to nftban Group:
+// - nftban: Full access (start/stop/restart + daemon-reload)
+// - nftban-auditor: Read-only (status/show only)
+// - nftban-panel: Limited reload (specific units only)
+//
+// Testing:
+//   # As auditor group member
+//   systemctl status nftban-core.service       # ✅ Should work
+//   systemctl show nftban-core.service         # ✅ Should work
+//   systemctl list-units 'nftban-*'           # ✅ Should work
+//   systemctl restart nftban-core.service      # ❌ Should FAIL
+//   systemctl daemon-reload                     # ❌ Should FAIL
+//
+// Adding Users to Group:
+//   sudo usermod -a -G nftban-auditor username
+//   # User must log out and back in
+//
+// Related Files:
+// - 10-nftban-systemd.rules: Operator group (full access)
+// - 30-nftban-panel.rules: Panel group (limited reload)
+// - commands.registry.yml: Defines auditor-visible CLI commands
+//
+// =============================================================================
