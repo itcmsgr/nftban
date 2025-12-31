@@ -313,134 +313,37 @@ _display_results() {
 }
 
 # =============================================================================
-# INTERACTIVE MENU
+# ACTION SUGGESTIONS (replaced interactive menu in v1.0.18)
 # =============================================================================
 
-_show_action_menu() {
+_suggest_actions() {
+    # Suggest commands instead of interactive menu
+    # This is simpler, faster, and follows Unix philosophy
     local ip="$1"
     local is_banned="$2"
 
     echo ""
-    echo "Actions:"
+    echo "💡 Quick Actions:"
     echo "───────────────────────────────────────────────────────────────"
 
     if [[ "$is_banned" == "true" ]]; then
-        echo "  1) Unban IP"
-        echo "  2) Move to whitelist (highest priority)"
-        echo "  3) Exit (no action)"
+        echo "  Remove ban:"
+        echo "    nftban unban $ip"
         echo ""
-        read -p "Choose action [1-3]: " action
-
-        case "$action" in
-            1)
-                echo ""
-                echo "Unbanning $ip..."
-                # Use Go binary for range-aware unban (handles nftables auto-merged ranges)
-                local nftban_core="${NFTBAN_LIB_DIR}/bin/nftban-core"
-                if [[ -x "$nftban_core" ]]; then
-                    if "$nftban_core" unban "$ip" 2>&1 | tail -5; then
-                        echo "✓ IP unbanned successfully"
-                    else
-                        echo "⚠️ Unban may have failed - check output above"
-                    fi
-                else
-                    # Fallback to nft command (may fail for IPs in merged ranges)
-                    echo "⚠️ nftban-core not found, using fallback (may fail for merged ranges)"
-                    if [[ "$ip" == *:* ]]; then
-                        nft delete element ${NFTBAN_TABLE_IPV6} blacklist_ipv6 { "$ip" } 2>/dev/null || true
-                    else
-                        nft delete element ${NFTBAN_TABLE_IPV4} blacklist_ipv4 { "$ip" } 2>/dev/null || true
-                    fi
-                    # Also remove from config file
-                    sed -i "/^${ip}$/d" "${NFTBAN_CONFIG_DIR}/blacklist.d"/*.conf 2>/dev/null || true
-                    echo "✓ Attempted unban (verify with: nftban search $ip)"
-                fi
-                ;;
-            2)
-                echo ""
-                echo "Adding $ip to whitelist..."
-                # Add to whitelist (v0.7.3: whitelist_ipv4/ipv6)
-                if [[ "$ip" == *:* ]]; then
-                    nft add element ${NFTBAN_TABLE_IPV6} whitelist_ipv6 { "$ip" } 2>/dev/null || true
-                else
-                    nft add element ${NFTBAN_TABLE_IPV4} whitelist_ipv4 { "$ip" } 2>/dev/null || true
-                fi
-                echo "✓ IP whitelisted (highest priority, cannot be banned)"
-                ;;
-            3)
-                echo "No action taken."
-                ;;
-            *)
-                echo "Invalid choice."
-                ;;
-        esac
+        echo "  Move to whitelist (permanent protection):"
+        echo "    nftban whitelist add $ip"
     else
-        echo "  1) Ban IP temporarily (1 hour)"
-        echo "  2) Ban IP temporarily (custom duration)"
-        echo "  3) Ban IP permanently"
-        echo "  4) Add to whitelist"
-        echo "  5) Exit (no action)"
+        echo "  Ban temporarily (1 hour):"
+        echo "    nftban ban $ip --timeout 3600"
         echo ""
-        read -p "Choose action [1-5]: " action
-
-        case "$action" in
-            1)
-                echo ""
-                echo "Banning $ip for 1 hour..."
-                # Temporary ban (v0.7.3: blacklist with timeout parameter)
-                if [[ "$ip" == *:* ]]; then
-                    nft add element ${NFTBAN_TABLE_IPV6} blacklist_ipv6 { "$ip" timeout 3600s } 2>/dev/null || true
-                else
-                    nft add element ${NFTBAN_TABLE_IPV4} blacklist_ipv4 { "$ip" timeout 3600s } 2>/dev/null || true
-                fi
-                echo "✓ IP banned temporarily (expires in 1 hour)"
-                ;;
-            2)
-                echo ""
-                read -p "Enter duration in seconds (e.g., 7200 for 2 hours): " duration
-                if [[ "$duration" =~ ^[0-9]+$ ]]; then
-                    echo "Banning $ip for $duration seconds..."
-                    # Custom duration temp ban (v0.7.3: blacklist with timeout parameter)
-                    if [[ "$ip" == *:* ]]; then
-                        nft add element ${NFTBAN_TABLE_IPV6} blacklist_ipv6 { "$ip" timeout ${duration}s } 2>/dev/null || true
-                    else
-                        nft add element ${NFTBAN_TABLE_IPV4} blacklist_ipv4 { "$ip" timeout ${duration}s } 2>/dev/null || true
-                    fi
-                    echo "✓ IP banned temporarily (expires in $duration seconds)"
-                else
-                    echo "Invalid duration."
-                fi
-                ;;
-            3)
-                echo ""
-                echo "Banning $ip permanently..."
-                # Permanent ban (v0.7.3: blacklist without timeout = permanent)
-                if [[ "$ip" == *:* ]]; then
-                    nft add element ${NFTBAN_TABLE_IPV6} blacklist_ipv6 { "$ip" } 2>/dev/null || true
-                else
-                    nft add element ${NFTBAN_TABLE_IPV4} blacklist_ipv4 { "$ip" } 2>/dev/null || true
-                fi
-                echo "✓ IP banned permanently (blacklist)"
-                ;;
-            4)
-                echo ""
-                echo "Adding $ip to whitelist..."
-                # Whitelist (v0.7.3: whitelist_ipv4/ipv6)
-                if [[ "$ip" == *:* ]]; then
-                    nft add element ${NFTBAN_TABLE_IPV6} whitelist_ipv6 { "$ip" } 2>/dev/null || true
-                else
-                    nft add element ${NFTBAN_TABLE_IPV4} whitelist_ipv4 { "$ip" } 2>/dev/null || true
-                fi
-                echo "✓ IP whitelisted (highest priority, cannot be banned)"
-                ;;
-            5)
-                echo "No action taken."
-                ;;
-            *)
-                echo "Invalid choice."
-                ;;
-        esac
+        echo "  Ban permanently:"
+        echo "    nftban ban $ip"
+        echo ""
+        echo "  Add to whitelist (permanent protection):"
+        echo "    nftban whitelist add $ip"
     fi
+
+    echo ""
 }
 
 # =============================================================================
@@ -672,12 +575,12 @@ nftban_cmd_search() {
     # Display results (human-readable)
     _display_results "$ip" "$nft_result" "$feeds_result"
 
-    # Interactive menu (only if not disabled)
+    # Show suggested actions (unless --no-interactive flag used)
     if [[ "$interactive" == "true" ]]; then
         local is_banned="false"
         [[ "$nft_result" == "FOUND"* ]] && is_banned="true"
 
-        _show_action_menu "$ip" "$is_banned"
+        _suggest_actions "$ip" "$is_banned"
     fi
 
     # Exit marker for testing validation
