@@ -264,7 +264,7 @@ get_health_status() {
 
         case "$health_output" in
             *"OK"*|*"PASS"*) echo "0" ;;
-            *"WARN"*|*"WARNING"*) echo "1" ;;
+            *"WARN"*) echo "1" ;;  # Matches both WARN and WARNING
             *"ERROR"*|*"FAIL"*) echo "2" ;;
             *"CRITICAL"*) echo "3" ;;
             *) echo "2" ;;  # Default to ERROR if unknown

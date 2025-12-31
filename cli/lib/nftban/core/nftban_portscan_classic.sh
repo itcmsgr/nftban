@@ -1,4 +1,5 @@
 #!/bin/bash
+# shellcheck disable=SC1083  # Braces in nftables syntax are literal, not bash
 # =============================================================================
 # NFTBan Portscan Protection - CLASSIC MODE Implementation
 # =============================================================================

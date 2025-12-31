@@ -35,6 +35,7 @@ readonly NFTBAN_CLOUDFLARE_LOADED=1
 # =============================================================================
 # MODULE CONFIGURATION
 # =============================================================================
+# shellcheck disable=SC2034  # Module metadata used when sourced
 readonly MODULE_NAME="nftban_cloudflare"
 readonly MODULE_VERSION="0.7.3"
 

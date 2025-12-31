@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# shellcheck disable=SC1090  # Dynamic config paths, cannot follow
 # =============================================================================
 
 # Load JSON helper for --json support
