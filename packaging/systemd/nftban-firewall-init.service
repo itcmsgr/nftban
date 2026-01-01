@@ -37,12 +37,50 @@ ExecStop=/bin/sh -c 'command -v nft >/dev/null 2>&1 && nft flush ruleset || true
 # Don't restart on failure (would cause loops)
 Restart=no
 
-# Security hardening (minimal - service needs root for firewall ops)
+# =============================================================================
+# Security Hardening (comprehensive - adapted for root firewall service)
+# =============================================================================
+
+# Filesystem Protection
 PrivateTmp=yes
 ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban
+
+# Kernel Protection
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectKernelLogs=true
+ProtectControlGroups=true
+
+# Namespace Restrictions
+PrivateDevices=yes
+RestrictNamespaces=true
+RestrictRealtime=true
+
+# Privilege Restrictions
+# NOTE: NoNewPrivileges=no is required because service needs CAP_NET_ADMIN
+# for nftables operations. However, other hardening measures compensate.
 NoNewPrivileges=no
-# Note: Cannot use ProtectSystem=strict (needs to write to /var/lib/nftban)
-ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban
+
+# Misc Hardening
+LockPersonality=true
+RestrictSUIDSGID=true
+RemoveIPC=true
+
+# Network Access (firewall service needs full network access)
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+
+# System Call Filtering
+# Allow: @system-service (basic system operations)
+# Allow: @network-io (nftables requires netlink)
+# Deny: @debug @mount @module @raw-io @reboot @swap @privileged @resources
+SystemCallFilter=@system-service @network-io
+SystemCallFilter=~@debug @mount @module @raw-io @reboot @swap @privileged @resources
+SystemCallErrorNumber=EPERM
+
+# Logging
+SystemCallArchitectures=native
 
 [Install]
 WantedBy=multi-user.target
