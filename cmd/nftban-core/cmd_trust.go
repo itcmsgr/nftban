@@ -18,6 +18,15 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
+// replaceConfigValue replaces a config variable value using regex to handle spacing variations
+// Pattern matches: VAR="value", VAR = "value", VAR= "value", etc.
+func replaceConfigValueTrust(content, varName, newValue string) string {
+	// Regex pattern: varName + optional spaces + = + optional spaces + quoted value
+	pattern := regexp.MustCompile(fmt.Sprintf(`(?m)^(\s*)%s\s*=\s*"[^"]*"(.*)$`, regexp.QuoteMeta(varName)))
+	replacement := fmt.Sprintf(`${1}%s="%s"${2}`, varName, newValue)
+	return pattern.ReplaceAllString(content, replacement)
+}
+
 // getTrustPaths returns trust directory and config paths from passed config
 func getTrustPaths(cfg *nftbanconf.Config) (trustDir, trustConfig string) {
 	return cfg.DataDir + "/trust", cfg.ConfigDir + "/conf.d/trust.conf"
@@ -230,13 +239,8 @@ func cmdTrustEnable(configPath, trustName string, enable bool) error {
 
 	// Check if variable exists
 	if strings.Contains(content, varName) {
-		// Replace existing value
-		oldTrue := fmt.Sprintf(`%s="true"`, varName)
-		oldFalse := fmt.Sprintf(`%s="false"`, varName)
-		newLine := fmt.Sprintf(`%s="%s"`, varName, newValue)
-
-		content = strings.ReplaceAll(content, oldTrue, newLine)
-		content = strings.ReplaceAll(content, oldFalse, newLine)
+		// Replace existing value using regex-based replacement (handles spacing variations)
+		content = replaceConfigValueTrust(content, varName, newValue)
 	} else {
 		// Add new variable
 		content += fmt.Sprintf(`%s="%s"`+"\n", varName, newValue)
