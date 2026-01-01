@@ -12,14 +12,12 @@ import (
 	"github.com/itcmsgr/nftban/pkg/whitelist"
 )
 
-// getCheckPaths returns config and data directories from central config
-// NO FALLBACK - paths must come from /etc/nftban/nftban.conf
-func getCheckPaths() (configDir, dataDir string) {
-	cfg := nftbanconf.MustLoad()
+// getCheckPaths returns config and data directories from passed config
+func getCheckPaths(cfg *nftbanconf.Config) (configDir, dataDir string) {
 	return cfg.ConfigDir, cfg.DataDir
 }
 
-func cmdCheck(ipStr string) error {
+func cmdCheck(ipStr string, cfg *nftbanconf.Config) error {
 	fmt.Printf("%s: %s\n", version.BannerWithEmoji("🔍", "Check IP"), ipStr)
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
@@ -38,7 +36,7 @@ func cmdCheck(ipStr string) error {
 	fmt.Printf("IP Address: %s (%s)\n", normalizedIP, ipType)
 	fmt.Println()
 
-	configDir, dataDir := getCheckPaths()
+	configDir, dataDir := getCheckPaths(cfg)
 
 	// Check whitelist
 	fmt.Println("Checking whitelist...")

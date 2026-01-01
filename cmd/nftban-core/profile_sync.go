@@ -13,14 +13,12 @@ import (
 	"github.com/itcmsgr/nftban/pkg/whitelist"
 )
 
-// getProfileSyncConfigDir returns the config directory from central config
-// NO FALLBACK - path must come from /etc/nftban/nftban.conf
-func getProfileSyncConfigDir() string {
-	cfg := nftbanconf.MustLoad()
+// getProfileSyncConfigDir returns the config directory from passed config
+func getProfileSyncConfigDir(cfg *nftbanconf.Config) string {
 	return cfg.ConfigDir
 }
 
-func runProfileSync() error {
+func runProfileSync(cfg *nftbanconf.Config) error {
 	// Start pprof HTTP server
 	go func() {
 		log.Println("🔍 Profiling server starting on :6060")
@@ -54,7 +52,7 @@ func runProfileSync() error {
 	defer nft.Close()
 
 	// Load whitelist
-	configDir := getProfileSyncConfigDir()
+	configDir := getProfileSyncConfigDir(cfg)
 	log.Println("📥 Loading whitelist...")
 	whitelistIPv4, whitelistIPv6, err := whitelist.LoadAllWhitelists(configDir)
 	if err != nil {

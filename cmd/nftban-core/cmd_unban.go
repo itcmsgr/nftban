@@ -13,14 +13,12 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-// getUnbanConfigDir returns the config directory from central config
-// NO FALLBACK - path must come from /etc/nftban/nftban.conf
-func getUnbanConfigDir() string {
-	cfg := nftbanconf.MustLoad()
+// getUnbanConfigDir returns the config directory from passed config
+func getUnbanConfigDir(cfg *nftbanconf.Config) string {
 	return cfg.ConfigDir
 }
 
-func cmdUnban(ipStr string) error {
+func cmdUnban(ipStr string, cfg *nftbanconf.Config) error {
 	// Check for privilege (root OR CAP_NET_ADMIN capability)
 	if err := checkPrivilege(); err != nil {
 		return err
@@ -45,7 +43,7 @@ func cmdUnban(ipStr string) error {
 
 	// Check if currently banned (in files OR in nftables)
 	fmt.Println("Step 2: Checking if IP is banned...")
-	configDir := getUnbanConfigDir()
+	configDir := getUnbanConfigDir(cfg)
 	blacklistIPv4, blacklistIPv6, err := blacklist.LoadAllBlacklists(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to load blacklists: %w", err)

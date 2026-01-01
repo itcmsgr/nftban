@@ -12,15 +12,13 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-// getPortsDir returns the ports directory from central config
-// NO FALLBACK - path must come from /etc/nftban/nftban.conf
-func getPortsDir() string {
-	cfg := nftbanconf.MustLoad()
+// getPortsDir returns the ports directory from passed config
+func getPortsDir(cfg *nftbanconf.Config) string {
 	return cfg.ConfigDir + "/ports.d"
 }
 
-func cmdPorts(action string) error {
-	portsDir := getPortsDir()
+func cmdPorts(action string, cfg *nftbanconf.Config) error {
+	portsDir := getPortsDir(cfg)
 
 	switch action {
 	case "list":

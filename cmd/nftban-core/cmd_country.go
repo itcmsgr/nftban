@@ -12,10 +12,8 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-// getCountryConfigPath returns the country config path from central config
-// NO FALLBACK - path must come from /etc/nftban/nftban.conf
-func getCountryConfigPath() string {
-	cfg := nftbanconf.MustLoad()
+// getCountryConfigPath returns the country config path from passed config
+func getCountryConfigPath(cfg *nftbanconf.Config) string {
 	return cfg.ConfigDir + "/conf.d/country.conf"
 }
 
@@ -86,8 +84,8 @@ var countryNames = map[string]string{
 	"CO": "Colombia",
 }
 
-func cmdCountry(action string) error {
-	countryConfig := getCountryConfigPath()
+func cmdCountry(action string, cfg *nftbanconf.Config) error {
+	countryConfig := getCountryConfigPath(cfg)
 
 	switch action {
 	case "list":
