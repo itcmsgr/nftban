@@ -128,8 +128,8 @@ func nftFlushSet(family, table, setName string) error {
 	return err
 }
 
-// nftListSet lists elements of a set
-func nftListSet(family, table, setName string) (string, error) {
+// NftListSet lists elements of a set (exported for emulate command)
+func NftListSet(family, table, setName string) (string, error) {
 	output, err := runNftFast("list", "set", family, table, setName)
 	return string(output), err
 }

@@ -22,9 +22,9 @@ func getGeoipDir(cfg *nftbanconf.Config) string {
 func cmdGeoip(action string, cfg *nftbanconf.Config) error {
 	switch action {
 	case "update":
-		return cmdGeoipUpdate()
+		return cmdGeoipUpdate(cfg)
 	case "status":
-		return cmdGeoipStatus()
+		return cmdGeoipStatus(cfg)
 	case "lookup":
 		if len(os.Args) < 4 {
 			return fmt.Errorf("lookup requires IP address\nUsage: nftban-core geoip lookup <IP> [--json]")
@@ -34,19 +34,19 @@ func cmdGeoip(action string, cfg *nftbanconf.Config) error {
 		if len(os.Args) > 4 && os.Args[4] == "--json" {
 			jsonOutput = true
 		}
-		return cmdGeoipLookup(os.Args[3], jsonOutput)
+		return cmdGeoipLookup(cfg, os.Args[3], jsonOutput)
 	default:
 		return fmt.Errorf("unknown geoip action: %s\nUsage: nftban-core geoip [update|status|lookup]", action)
 	}
 }
 
 // cmdGeoipUpdate downloads the latest GeoLite2-City database
-func cmdGeoipUpdate() error {
+func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 	fmt.Println(version.BannerWithEmoji("🌍", "GeoIP Database Update"))
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 
-	dbDir := getGeoipDir()
+	dbDir := getGeoipDir(cfg)
 	dbFile := filepath.Join(dbDir, "GeoLite2-City.mmdb")
 	dbBackup := filepath.Join(dbDir, "GeoLite2-City.mmdb.backup")
 	dbURL := "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"
@@ -151,12 +151,12 @@ func cmdGeoipUpdate() error {
 }
 
 // cmdGeoipStatus shows the current status of the GeoIP database
-func cmdGeoipStatus() error {
+func cmdGeoipStatus(cfg *nftbanconf.Config) error {
 	fmt.Println(version.BannerWithEmoji("🌍", "GeoIP Database Status"))
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 
-	dbFile := getGeoipDir() + "/GeoLite2-City.mmdb"
+	dbFile := getGeoipDir(cfg) + "/GeoLite2-City.mmdb"
 
 	// Check if database exists
 	fileInfo, err := os.Stat(dbFile)
@@ -313,8 +313,8 @@ func downloadFile(url, filepath string) error {
 }
 
 // cmdGeoipLookup performs IP→Country lookup
-func cmdGeoipLookup(ipStr string, jsonOutput bool) error {
-	dbFile := getGeoipDir() + "/GeoLite2-City.mmdb"
+func cmdGeoipLookup(cfg *nftbanconf.Config, ipStr string, jsonOutput bool) error {
+	dbFile := getGeoipDir(cfg) + "/GeoLite2-City.mmdb"
 
 	// Open database
 	db, err := maxminddb.Open(dbFile)

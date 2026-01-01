@@ -179,7 +179,7 @@ func emulatePacket(ipStr, proto, port, direction string) (*EmulateResult, error)
 // Returns (match bool, matching_cidr string)
 func checkIPInSet(family, table, setName, ipStr string) (bool, string) {
 	// Query nftables set
-	output, err := sync.nftListSet(family, table, setName)
+	output, err := sync.NftListSet(family, table, setName)
 	if err != nil {
 		// Set doesn't exist or error querying
 		return false, ""
