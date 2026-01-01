@@ -96,6 +96,53 @@ check_nftables() {
     ok "nftables installed successfully"
 }
 
+# Check and install yq (REQUIRED for documentation generation)
+check_yq() {
+    log "Checking yq (YAML processor)..."
+
+    if command -v yq &>/dev/null; then
+        ok "yq found: $(yq --version 2>/dev/null | head -1 || echo 'version unknown')"
+        return 0
+    fi
+
+    warn "yq not found - installing..."
+
+    # Detect package manager and install
+    # yq is available in different forms:
+    # - pip install yq (Python wrapper around jq)
+    # - System packages (newer distros)
+    # - Standalone binary (mikefarah/yq)
+
+    if command -v pip3 &>/dev/null; then
+        log "Installing yq via pip3..."
+        pip3 install yq || {
+            warn "Failed to install yq via pip3, trying pip..."
+            if command -v pip &>/dev/null; then
+                pip install yq || { error "Failed to install yq via pip"; exit 1; }
+            else
+                error "pip not found. Please install python3-pip first."
+                exit 1
+            fi
+        }
+    elif command -v dnf &>/dev/null; then
+        # Fedora/RHEL 9+ has yq in EPEL
+        dnf install -y python3-pip && pip3 install yq || { error "Failed to install yq"; exit 1; }
+    elif command -v yum &>/dev/null; then
+        # RHEL/CentOS - install pip first
+        yum install -y python3-pip && pip3 install yq || { error "Failed to install yq"; exit 1; }
+    elif command -v apt-get &>/dev/null; then
+        # Debian/Ubuntu - install pip first
+        apt-get update && apt-get install -y python3-pip && pip3 install yq || { error "Failed to install yq"; exit 1; }
+    else
+        error "Cannot install yq automatically. Please install manually:"
+        error "  pip3 install yq"
+        error "  OR download from: https://github.com/mikefarah/yq/releases"
+        exit 1
+    fi
+
+    ok "yq installed successfully"
+}
+
 # Check and install PAM (REQUIRED for nftban-ui-auth)
 check_pam() {
     log "Checking PAM (Pluggable Authentication Modules)..."
@@ -165,7 +212,7 @@ check_prerequisites() {
     echo ""
     log "Checking required commands..."
 
-    for cmd in nft systemctl ip iptables curl jq; do
+    for cmd in nft systemctl ip iptables curl jq yq; do
         if command -v $cmd &>/dev/null; then
             ok "Found: $cmd"
         else
@@ -1846,6 +1893,7 @@ check_prerequisites
 
 check_root
 check_nftables
+check_yq
 check_pam
 check_conflicting_firewalls
 check_go_binaries

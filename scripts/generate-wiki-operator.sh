@@ -7,9 +7,28 @@
 #
 # Usage: ./scripts/generate-wiki-operator.sh > wiki/CLI-Commands-Reference.md
 # Output: Markdown wiki page with all commands (operator view)
+#
+# CRITICAL: This script uses 'set -euo pipefail' and will EXIT IMMEDIATELY on
+# any error. Never redirect both stdout AND stderr to a file (don't use &>).
+# Use > for stdout only, so error messages appear on terminal, not in docs.
 # =============================================================================
 
 set -euo pipefail
+
+# SAFETY: Verify we're not being redirected incorrectly
+# If both stdout AND stderr are redirected to the same file, errors would be
+# captured in documentation. We detect this and exit with clear message.
+if [[ ! -t 1 ]] && [[ ! -t 2 ]]; then
+    # Both stdout and stderr are redirected (not a terminal)
+    # Check if they're the same file (dangerous!)
+    if [[ "$(readlink -f /proc/$$/fd/1)" == "$(readlink -f /proc/$$/fd/2)" ]]; then
+        # This would capture errors in the output file - ABORT
+        echo "FATAL: Both stdout and stderr are redirected to the same file!" >&2
+        echo "This would capture error messages in documentation." >&2
+        echo "Use: $0 > output.md   (NOT: $0 &> output.md)" >&2
+        exit 1
+    fi
+fi
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf

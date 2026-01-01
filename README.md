@@ -229,6 +229,8 @@ ip6 nftban {                 # IPv6 rules
 - **nftables**: 0.9.3+
 - **Bash**: 4.4+
 - **systemd**: Required
+- **jq**: JSON processor (auto-installed)
+- **yq**: YAML processor (auto-installed via pip3)
 - **Go 1.21+**: For building from source (optional)
 
 ---

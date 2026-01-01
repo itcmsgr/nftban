@@ -49,6 +49,22 @@ case "$1" in
         fi
 
         # =====================================================================
+        # STEP 0.5: Install yq for documentation generation
+        # =====================================================================
+        log_info "Installing yq (YAML processor) for documentation generation..."
+        if ! command -v yq &>/dev/null; then
+            pip3 install yq >/dev/null 2>&1 || {
+                log_warn "Failed to install yq - documentation generation may not work"
+                log_warn "  Manual install: pip3 install yq"
+            }
+            if command -v yq &>/dev/null; then
+                log_info "yq installed successfully"
+            fi
+        else
+            log_info "yq already installed"
+        fi
+
+        # =====================================================================
         # STEP 0.5: Check for Conflicting Firewalls
         # =====================================================================
         log_info "Checking for conflicting firewalls..."
