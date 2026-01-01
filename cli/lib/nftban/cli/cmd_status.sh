@@ -440,8 +440,24 @@ output_terminal() {
 
     printf "  %-20s %s\n" "Overall Status......" "$health_status"
 
+    # Quick security hardening check (systemd NoNewPrivileges)
+    local security_issues=0
+    local systemd_unit_paths=("/etc/systemd/system" "/usr/lib/systemd/system" "/lib/systemd/system")
+    for unit_path in "${systemd_unit_paths[@]}"; do
+        if [[ -d "$unit_path" ]]; then
+            security_issues=$(find "$unit_path" -maxdepth 1 -name 'nftban*.service' -type f -exec grep -l '^\s*NoNewPrivileges\s*=\s*false\s*$' {} + 2>/dev/null | wc -l)
+            [[ $security_issues -gt 0 ]] && break
+        fi
+    done
+
+    local security_status="✅ OK"
+    if [[ $security_issues -gt 0 ]]; then
+        security_status="⚠️  ${security_issues} systemd hardening issue(s)"
+    fi
+    printf "  %-20s %s\n" "Security Hardening.." "$security_status"
+
     # Show hints if not OK
-    if [[ "$health_status" != "OK" ]] && [[ $quiet_mode -eq 0 ]]; then
+    if [[ "$health_status" != "OK" ]] || [[ $security_issues -gt 0 ]] && [[ $quiet_mode -eq 0 ]]; then
         echo "      → Run: nftban health check"
         echo "      → Auto-fix: nftban health check --auto-heal"
     fi

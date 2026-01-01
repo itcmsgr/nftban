@@ -1279,6 +1279,121 @@ nftban_health_check_polkit() {
     return $status
 }
 
+nftban_health_check_systemd_hardening() {
+    # Check systemd service hardening (NoNewPrivileges, security scores)
+    # Returns: 0=OK, 1=Warning, 2=Error, 3=Critical
+    #
+    # Checks:
+    # 1. NoNewPrivileges=false instances (privilege escalation risk)
+    # 2. systemd-analyze security scores for key services
+
+    local status=$HEALTH_OK
+    local hardening_issues=()
+
+    # =========================================================================
+    # CHECK 1: Scan all NFTBan systemd units for NoNewPrivileges=false
+    # =========================================================================
+
+    local units_with_nnp_false=()
+    local systemd_unit_paths=(
+        "/etc/systemd/system"
+        "/usr/lib/systemd/system"
+        "/lib/systemd/system"
+    )
+
+    # Find all nftban*.service files
+    local nftban_units=()
+    for unit_path in "${systemd_unit_paths[@]}"; do
+        if [[ -d "$unit_path" ]]; then
+            while IFS= read -r -d '' unit_file; do
+                nftban_units+=("$unit_file")
+            done < <(find "$unit_path" -maxdepth 1 -name 'nftban*.service' -type f -print0 2>/dev/null)
+        fi
+    done
+
+    # Scan each unit for NoNewPrivileges=false
+    for unit_file in "${nftban_units[@]}"; do
+        if grep -qE '^\s*NoNewPrivileges\s*=\s*false\s*$' "$unit_file" 2>/dev/null; then
+            local unit_name
+            unit_name=$(basename "$unit_file")
+            units_with_nnp_false+=("$unit_name")
+        fi
+    done
+
+    # Report NoNewPrivileges=false findings
+    if [[ ${#units_with_nnp_false[@]} -gt 0 ]]; then
+        hardening_issues+=("CRITICAL: ${#units_with_nnp_false[@]} systemd service(s) have NoNewPrivileges=false")
+        hardening_issues+=("  └─ This allows privilege escalation via setuid/setcap executables")
+        for unit in "${units_with_nnp_false[@]}"; do
+            hardening_issues+=("  └─ $unit")
+        done
+        hardening_issues+=("  └─ FIX: Set NoNewPrivileges=yes in all units")
+        hardening_issues+=("  └─ See: /home/commonfolder/nftban2026/SECURITY_NONEWPRIVILEGES_FIX.md")
+        status=$HEALTH_CRITICAL
+    fi
+
+    # =========================================================================
+    # CHECK 2: Run systemd-analyze security on key services
+    # =========================================================================
+
+    if command -v systemd-analyze >/dev/null 2>&1; then
+        # Key security-sensitive services to check
+        local key_services=(
+            "nftban-maintenance.service"
+            "nftban-ui.service"
+            "nftband.service"
+        )
+
+        local poor_scores=()
+        for service in "${key_services[@]}"; do
+            # Check if service exists
+            if systemctl list-unit-files "$service" &>/dev/null; then
+                # Run systemd-analyze security (extract exposure score)
+                local score_output
+                score_output=$(systemd-analyze security "$service" 2>/dev/null | grep -E '^→ Overall exposure level:' | head -1)
+
+                if [[ -n "$score_output" ]]; then
+                    # Extract exposure level (SAFE, OK, MEDIUM, EXPOSED, UNSAFE)
+                    local exposure_level
+                    exposure_level=$(echo "$score_output" | awk '{print $NF}')
+
+                    # Warn on EXPOSED or UNSAFE
+                    if [[ "$exposure_level" == "EXPOSED" || "$exposure_level" == "UNSAFE" ]]; then
+                        poor_scores+=("$service: $exposure_level")
+                    fi
+                fi
+            fi
+        done
+
+        if [[ ${#poor_scores[@]} -gt 0 ]]; then
+            hardening_issues+=("WARNING: ${#poor_scores[@]} service(s) have poor systemd security scores")
+            for score in "${poor_scores[@]}"; do
+                hardening_issues+=("  └─ $score")
+            done
+            hardening_issues+=("  └─ Run: systemd-analyze security <service> for details")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    fi
+
+    # =========================================================================
+    # Store results
+    # =========================================================================
+
+    if [[ ${#hardening_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["systemd_hardening"]="${hardening_issues[*]}"
+        if [[ $status -eq $HEALTH_CRITICAL ]]; then
+            NFTBAN_HEALTH_ERRORS+=("CRITICAL systemd hardening issues: ${hardening_issues[*]}")
+        elif [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("systemd hardening issues: ${hardening_issues[*]}")
+        elif [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("systemd hardening warnings: ${hardening_issues[*]}")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["systemd_hardening"]=$status
+    return $status
+}
+
 nftban_health_check_ssh_port() {
     # Check and auto-update SSH port whitelist
     # Returns: 0=OK, 1=Warning (auto-fixed), 2=Error (couldn't fix)
@@ -2169,6 +2284,11 @@ nftban_health_check_all() {
     # Polkit check (CRITICAL security check)
     check_result=0
     nftban_health_check_polkit || check_result=$?
+    [[ $check_result -gt $overall_status ]] && overall_status=$check_result
+
+    # systemd hardening check (CRITICAL security - NoNewPrivileges, security scores)
+    check_result=0
+    nftban_health_check_systemd_hardening || check_result=$?
     [[ $check_result -gt $overall_status ]] && overall_status=$check_result
 
     # SSH port check (CRITICAL lockout prevention)
