@@ -205,9 +205,11 @@ func UnpersistBan(configDir, ip string) (int, error) {
 	return modified, nil
 }
 
-// removeIPFromFile removes an IP from a single file using atomic rewrite
+// removeIPFromFile removes an IP from a single file using atomic rewrite.
+// Uses flock for concurrency + temp+rename for crash safety.
 func removeIPFromFile(filePath, ip string) (bool, error) {
-	f, err := os.OpenFile(filePath, os.O_RDWR, 0640)
+	// Open original file for locking and reading
+	f, err := os.OpenFile(filePath, os.O_RDONLY, 0640)
 	if err != nil {
 		if os.IsNotExist(err) {
 			return false, nil
@@ -216,13 +218,14 @@ func removeIPFromFile(filePath, ip string) (bool, error) {
 	}
 	defer f.Close()
 
-	// Acquire exclusive lock
+	// Acquire exclusive lock on original file
+	// This serializes concurrent access even across processes
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX); err != nil {
 		return false, fmt.Errorf("failed to lock: %w", err)
 	}
 	defer syscall.Flock(int(f.Fd()), syscall.LOCK_UN)
 
-	// Read all lines
+	// Read all lines, filtering out the target IP
 	var lines []string
 	found := false
 	scanner := bufio.NewScanner(f)
@@ -248,22 +251,33 @@ func removeIPFromFile(filePath, ip string) (bool, error) {
 		return false, nil
 	}
 
-	// Truncate and rewrite
-	if err := f.Truncate(0); err != nil {
-		return false, err
-	}
-	if _, err := f.Seek(0, 0); err != nil {
-		return false, err
+	// Write to temp file in same directory (required for atomic rename)
+	tempPath := filePath + ".tmp"
+	tmpFile, err := os.OpenFile(tempPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0640)
+	if err != nil {
+		return false, fmt.Errorf("failed to create temp file: %w", err)
 	}
 
 	for _, line := range lines {
-		if _, err := f.WriteString(line + "\n"); err != nil {
+		if _, err := tmpFile.WriteString(line + "\n"); err != nil {
+			tmpFile.Close()
+			os.Remove(tempPath)
 			return false, err
 		}
 	}
 
-	if err := f.Sync(); err != nil {
+	// Sync temp file to ensure data is on disk before rename
+	if err := tmpFile.Sync(); err != nil {
+		tmpFile.Close()
+		os.Remove(tempPath)
 		return false, err
+	}
+	tmpFile.Close()
+
+	// Atomic rename (POSIX guarantees atomicity on same filesystem)
+	if err := os.Rename(tempPath, filePath); err != nil {
+		os.Remove(tempPath)
+		return false, fmt.Errorf("failed to rename temp file: %w", err)
 	}
 
 	return true, nil

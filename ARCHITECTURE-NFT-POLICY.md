@@ -11,6 +11,9 @@
 > **All nftables WRITE operations MUST go through the nftband daemon.**
 > No other component may directly execute `nft add|delete|flush|insert|create|destroy|replace`.
 
+> **All /etc/nftban/blacklist.d/ writes MUST go through the nftband daemon.**
+> CLI and modules use IPC `persist_ban`/`unpersist_ban` for persistent bans.
+
 ---
 
 ## Definitions
@@ -83,15 +86,30 @@ Read operations may remain direct during migration but should eventually proxy t
 
 Socket: `/run/nftban/nftband.sock`
 
+### Available Methods
+
+| Method | Purpose | Scope |
+|--------|---------|-------|
+| `ban` | Add IP to nftables set | Kernel state |
+| `unban` | Remove IP from nftables set | Kernel state |
+| `persist_ban` | Add IP to /etc/nftban/blacklist.d/ | File persistence |
+| `unpersist_ban` | Remove IP from blacklist.d files | File persistence |
+| `add_element` | Add element to any set | Kernel state |
+| `delete_element` | Remove element from set | Kernel state |
+| `flush_set` | Flush all elements from set | Kernel state |
+| `apply_ruleset` | Apply .nft file atomically | Kernel state |
+| `check` | Check if IP is banned | Read-only |
+| `ping` | Health check | Read-only |
+
 ### Request Format
 ```json
 {
-  "method": "ban|unban|sync|apply|flush",
+  "method": "ban|unban|persist_ban|unpersist_ban|...",
   "params": {
     "ip": "1.2.3.4",
     "timeout": 3600,
     "reason": "manual",
-    "set": "blacklist_ipv4"
+    "source": "login|portscan|ddos|manual"
   }
 }
 ```
@@ -119,27 +137,40 @@ Socket: `/run/nftban/nftband.sock`
 
 ## CI Enforcement
 
-The following CI check runs on every PR:
+Two CI gates enforce single-writer architecture:
+
+### 1. nft WRITE Command Check
 
 ```bash
 # scripts/ci/check-nft-writes.sh
 # Fails if nft WRITE commands found outside allowed paths
 ```
 
-### Pass Criteria
-- `grep -rE 'nft (add|delete|flush|insert|create|destroy|replace)'` finds matches ONLY in:
+**Pass Criteria:**
+- `nft (add|delete|flush|insert|create|destroy|replace)` found ONLY in:
   - `cmd/nftband/`
   - `pkg/nftbackend/`
+  - `pkg/sync/` (used only by daemon)
   - `scripts/ci/` (the check itself)
-  - Comments/documentation
 
-### Fail Criteria
-- Any match in:
-  - `cli/lib/nftban/**/*.sh`
-  - `pkg/firewall/`
+**Fail Criteria:**
+- Any match in `cli/lib/nftban/**/*.sh`, `cron/`, etc.
+
+### 2. Netlink Import Guard
+
+```bash
+# Inline in .github/workflows/ci.yml
+# Fails if github.com/google/nftables imported in CLI
+```
+
+**Pass Criteria:**
+- `github.com/google/nftables` imported ONLY in:
+  - `cmd/nftband/`
+  - `pkg/nftbackend/`
   - `pkg/sync/`
-  - `cron/`
-  - Any other location
+
+**Fail Criteria:**
+- Any import in `cmd/nftban-core/` (CLI must use `pkg/ipc`)
 
 ---
 
