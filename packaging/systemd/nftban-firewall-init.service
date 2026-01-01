@@ -19,24 +19,15 @@ Environment="PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
 User=root
 Group=root
 
-# Load config file for NFTBAN_STARTUP_DELAY value
-EnvironmentFile=-/etc/nftban/nftban.conf
-
-# FIX: Only load snapshot if startup delay is 0 (disabled)
-# If delay is enabled, let 'nftban firewall init' handle everything after the delay
-# This ensures the delay actually works as intended
-ExecStartPre=-/bin/bash -c 'if [ "${NFTBAN_STARTUP_DELAY:-0}" -eq 0 ]; then \
-    command -v nft >/dev/null 2>&1 && nft -f /var/lib/nftban/snapshots/last.nft 2>/dev/null || true; \
-fi'
-
-# Initialize firewall (synchronous execution when delay is set)
-# If delay=0: Run in background for fast boot
-# If delay>0: Run synchronously so delay happens before firewall loads
-ExecStart=/bin/bash -c 'if [ "${NFTBAN_STARTUP_DELAY:-0}" -eq 0 ]; then \
-    /usr/sbin/nftban firewall init &; \
-else \
-    /usr/sbin/nftban firewall init; \
-fi'
+# SECURITY FIX: Do NOT use EnvironmentFile with bash -c variable interpolation
+# Previous code had CRITICAL command injection vulnerability (CWE-78)
+# Attacker could set: NFTBAN_STARTUP_DELAY='0 ]; rm -rf / #'
+# This would execute: bash -c 'if [ "0 ]; rm -rf / #" -eq 0 ]; ...'
+# Result: System wiped as root on boot
+#
+# FIX: Call immutable helper script directly (no variable interpolation)
+# Helper script validates input before use (blocks injection)
+ExecStart=/usr/lib/nftban/helpers/firewall-init-with-delay.sh
 
 # NOTE: Snapshot save will be done by snapshot timer (not here)
 

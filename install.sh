@@ -786,6 +786,14 @@ install_libraries() {
     cp -r "$SCRIPT_DIR/cli/lib/nftban/helpers/"* "$LIB_DIR/helpers/" 2>/dev/null || true
     cp -r "$SCRIPT_DIR/cli/lib/nftban/setup/"* "$LIB_DIR/setup/" 2>/dev/null || true
 
+    # Copy systemd helper scripts (security-critical, immutable)
+    # These scripts are called directly by systemd to prevent command injection
+    if [[ -f "$SCRIPT_DIR/install/helpers/firewall-init-with-delay.sh" ]]; then
+        install -m 0755 -o root -g root \
+            "$SCRIPT_DIR/install/helpers/firewall-init-with-delay.sh" \
+            "$LIB_DIR/helpers/firewall-init-with-delay.sh"
+    fi
+
     # Copy test scripts
     cp -r "$SCRIPT_DIR/cli/lib/nftban/tests/"* "$LIB_DIR/tests/" 2>/dev/null || true
 
