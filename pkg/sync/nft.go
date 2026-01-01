@@ -424,7 +424,7 @@ func (m *NFTManager) splitRangeAndRemoveIP(set *nftables.Set, family string, r *
 // This is the nuclear option when range splitting doesn't work due to kernel auto-merge.
 func (m *NFTManager) fullSetRefreshExcludingIP(set *nftables.Set, family, excludeIP string) error {
 	// Step 1: Get all current elements
-	output, err := nftListSet(family, set.Table.Name, set.Name)
+	output, err := NftListSet(family, set.Table.Name, set.Name)
 	if err != nil {
 		return fmt.Errorf("failed to list set: %w", err)
 	}
