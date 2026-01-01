@@ -370,8 +370,29 @@ if [[ "${SKIP_INSTALL:-0}" != "1" ]]; then
     echo ""
 fi
 
-# Cleanup
+# Cleanup with safety guards (prevents catastrophic rm -rf accidents)
 if [[ "${KEEP_DOWNLOADS:-0}" != "1" ]]; then
+    # Safety Guard 1: Path must not be empty
+    if [[ -z "$DOWNLOAD_DIR" ]]; then
+        error "CRITICAL: DOWNLOAD_DIR is empty, refusing to delete"
+    fi
+
+    # Safety Guard 2: Path must not be root directory
+    if [[ "$DOWNLOAD_DIR" == "/" ]]; then
+        error "CRITICAL: DOWNLOAD_DIR is root (/), refusing to delete"
+    fi
+
+    # Safety Guard 3: Enforce safe prefix (must be under /tmp or /var/tmp)
+    if [[ "$DOWNLOAD_DIR" != /tmp/* ]] && [[ "$DOWNLOAD_DIR" != /var/tmp/* ]]; then
+        error "CRITICAL: DOWNLOAD_DIR ($DOWNLOAD_DIR) is outside safe paths (/tmp, /var/tmp)"
+    fi
+
+    # Safety Guard 4: Path must not contain directory traversal
+    if [[ "$DOWNLOAD_DIR" == *..* ]]; then
+        error "CRITICAL: DOWNLOAD_DIR contains directory traversal: $DOWNLOAD_DIR"
+    fi
+
+    # All guards passed - safe to delete
     rm -rf "$DOWNLOAD_DIR"
 fi
 

@@ -67,6 +67,52 @@ load_distro_config() {
 }
 
 # =============================================================================
+# SAFETY FUNCTIONS
+# =============================================================================
+
+# Safe rm -rf wrapper with multiple guards to prevent catastrophic deletion
+safe_rm_rf() {
+    local path="$1"
+    local expected_prefix="${2:-}"  # Optional: enforce path prefix (e.g., "/var/")
+
+    # Guard 1: Path must not be empty
+    if [[ -z "$path" ]]; then
+        error "CRITICAL: Attempted rm -rf with empty path"
+        exit 1
+    fi
+
+    # Guard 2: Path must not be root directory
+    if [[ "$path" == "/" ]]; then
+        error "CRITICAL: Attempted rm -rf on root directory (/)"
+        exit 1
+    fi
+
+    # Guard 3: Block critical system directories
+    local critical_paths=("/" "/bin" "/boot" "/dev" "/etc" "/home" "/lib" "/lib64" "/opt" "/proc" "/root" "/sbin" "/sys" "/usr")
+    for critical in "${critical_paths[@]}"; do
+        if [[ "$path" == "$critical" ]]; then
+            error "CRITICAL: Attempted rm -rf on critical system path: $path"
+            exit 1
+        fi
+    done
+
+    # Guard 4: Enforce expected prefix if provided
+    if [[ -n "$expected_prefix" ]] && [[ "$path" != ${expected_prefix}* ]]; then
+        error "CRITICAL: Path $path does not start with expected prefix $expected_prefix"
+        exit 1
+    fi
+
+    # Guard 5: Path must not contain directory traversal
+    if [[ "$path" == *..* ]]; then
+        error "CRITICAL: Path contains directory traversal: $path"
+        exit 1
+    fi
+
+    # All guards passed - safe to delete
+    rm -rf "$path"
+}
+
+# =============================================================================
 # UNINSTALL FUNCTIONS
 # =============================================================================
 
@@ -149,7 +195,7 @@ uninstall_binaries() {
     for binary in "${binaries[@]}"; do
         if [[ -e "$binary" ]]; then
             echo "  Removing: $binary"
-            rm -rf "$binary"
+            safe_rm_rf "$binary" "/usr/"  # Enforce /usr/ prefix for safety
             removed=$((removed + 1))
         fi
     done
@@ -247,7 +293,7 @@ uninstall_data() {
         for dir in "${data_dirs[@]}"; do
             if [[ -d "$dir" ]]; then
                 echo "  Removing: $dir"
-                rm -rf "$dir"
+                safe_rm_rf "$dir" "/var/"  # Enforce /var/ prefix for safety
                 removed=$((removed + 1))
             fi
         done
