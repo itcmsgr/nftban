@@ -1,0 +1,39 @@
+# =============================================================================
+# NFTBan Daemon Socket - systemd socket activation
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# Socket is created by systemd with correct permissions.
+# Daemon receives pre-configured socket via file descriptor.
+# This eliminates need for CAP_CHOWN/CAP_FOWNER in daemon.
+#
+# Access Control:
+#   - Socket: 0660 root:nftban
+#   - Only root or nftban group members can connect
+#   - Daemon also validates via SO_PEERCRED (defense-in-depth)
+# =============================================================================
+
+[Unit]
+Description=NFTBan Daemon Socket
+Documentation=man:nftban(8)
+PartOf=nftband.service
+
+[Socket]
+# Socket path in runtime directory
+ListenStream=/run/nftban/nftband.sock
+
+# Permissions: root:nftban with 0660
+# Only root or members of nftban group can connect
+SocketUser=root
+SocketGroup=nftban
+SocketMode=0660
+
+# Runtime directory created automatically
+RuntimeDirectory=nftban
+RuntimeDirectoryMode=0750
+
+# Accept connections (passed to service)
+Accept=no
+
+[Install]
+WantedBy=sockets.target

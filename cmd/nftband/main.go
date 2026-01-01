@@ -30,15 +30,20 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"os/user"
+	"strconv"
 	"syscall"
 	"time"
 
+	"github.com/coreos/go-systemd/v22/activation"
 	"github.com/itcmsgr/nftban/pkg/ddos"
 	"github.com/itcmsgr/nftban/pkg/eventbus"
 	"github.com/itcmsgr/nftban/pkg/loginmon"
 	"github.com/itcmsgr/nftban/pkg/module"
+	"github.com/itcmsgr/nftban/pkg/nftbackend"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/portscan"
+	"golang.org/x/sys/unix"
 )
 
 const (
@@ -77,6 +82,7 @@ func getPidFile() string {
 type Daemon struct {
 	bus       *eventbus.Bus
 	registry  *module.Registry
+	backend   *nftbackend.Backend // AUTHORITATIVE nft writer
 	ctx       context.Context
 	cancel    context.CancelFunc
 	socketLn  net.Listener
@@ -100,6 +106,7 @@ func main() {
 	d := &Daemon{
 		bus:      eventbus.New(),
 		registry: module.NewRegistry(),
+		backend:  nftbackend.New(), // AUTHORITATIVE nft backend
 	}
 
 	// Run
@@ -232,8 +239,29 @@ func (d *Daemon) registerModules() {
 }
 
 // startSocket starts the Unix socket listener
+// Supports two modes:
+//   1. Socket activation (systemd): uses pre-created socket from nftband.socket
+//   2. Manual start: creates socket directly (for testing/development)
 func (d *Daemon) startSocket() error {
 	socketPath := getSocketPath()
+
+	// Check for systemd socket activation first
+	listeners, err := activation.Listeners()
+	if err != nil {
+		log.Printf("Warning: failed to check systemd activation: %v", err)
+	}
+
+	if len(listeners) > 0 {
+		// Systemd socket activation - use the pre-configured socket
+		// Socket permissions (0660 root:nftban) are set by nftband.socket unit
+		d.socketLn = listeners[0]
+		log.Printf("Using systemd socket activation (socket from nftband.socket)")
+		go d.acceptSocketConnections()
+		return nil
+	}
+
+	// Manual start - create socket ourselves (for testing/development)
+	log.Printf("No systemd socket, creating socket manually at %s", socketPath)
 
 	// Remove stale socket
 	os.Remove(socketPath)
@@ -244,13 +272,102 @@ func (d *Daemon) startSocket() error {
 	}
 	d.socketLn = ln
 
-	// Set permissions
-	os.Chmod(socketPath, 0660)
+	// Set permissions: 0660 = owner+group read/write
+	// Socket owned by root:nftban so CLI users in nftban group can connect
+	if err := os.Chmod(socketPath, 0660); err != nil {
+		log.Printf("Warning: failed to chmod socket: %v", err)
+	}
+
+	// Try to set group ownership to 'nftban' if group exists
+	// This allows non-root CLI users in nftban group to connect
+	if err := setSocketGroup(socketPath, "nftban"); err != nil {
+		log.Printf("Info: socket group not set (nftban group may not exist): %v", err)
+	}
 
 	// Handle connections
 	go d.acceptSocketConnections()
 
 	return nil
+}
+
+// setSocketGroup sets the group ownership of a file
+func setSocketGroup(path, groupName string) error {
+	grp, err := user.LookupGroup(groupName)
+	if err != nil {
+		return err
+	}
+	gid, err := strconv.Atoi(grp.Gid)
+	if err != nil {
+		return err
+	}
+	return os.Chown(path, -1, gid)
+}
+
+// nftbanGroupGID caches the nftban group GID for peer validation
+var nftbanGroupGID = -1
+
+func init() {
+	// Cache nftban group GID at startup
+	if grp, err := user.LookupGroup("nftban"); err == nil {
+		if gid, err := strconv.Atoi(grp.Gid); err == nil {
+			nftbanGroupGID = gid
+		}
+	}
+}
+
+// validatePeerCredentials checks if the connecting process is authorized
+// Returns: (uid, gid, error) - error if unauthorized
+func validatePeerCredentials(conn net.Conn) (uint32, uint32, error) {
+	// Get the underlying Unix socket file descriptor
+	unixConn, ok := conn.(*net.UnixConn)
+	if !ok {
+		return 0, 0, fmt.Errorf("not a Unix socket connection")
+	}
+
+	// Get raw connection to access file descriptor
+	rawConn, err := unixConn.SyscallConn()
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to get raw connection: %w", err)
+	}
+
+	var cred *unix.Ucred
+	var credErr error
+
+	err = rawConn.Control(func(fd uintptr) {
+		cred, credErr = unix.GetsockoptUcred(int(fd), unix.SOL_SOCKET, unix.SO_PEERCRED)
+	})
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to control socket: %w", err)
+	}
+	if credErr != nil {
+		return 0, 0, fmt.Errorf("failed to get peer credentials: %w", credErr)
+	}
+
+	// Validate: allow root (uid 0) or members of nftban group
+	if cred.Uid == 0 {
+		// Root is always allowed
+		return cred.Uid, cred.Gid, nil
+	}
+
+	// Check if caller's primary group is nftban
+	if nftbanGroupGID >= 0 && int(cred.Gid) == nftbanGroupGID {
+		return cred.Uid, cred.Gid, nil
+	}
+
+	// Check supplementary groups - lookup user and check group membership
+	u, err := user.LookupId(strconv.Itoa(int(cred.Uid)))
+	if err == nil {
+		groups, err := u.GroupIds()
+		if err == nil {
+			for _, gidStr := range groups {
+				if gid, _ := strconv.Atoi(gidStr); nftbanGroupGID >= 0 && gid == nftbanGroupGID {
+					return cred.Uid, cred.Gid, nil
+				}
+			}
+		}
+	}
+
+	return cred.Uid, cred.Gid, fmt.Errorf("unauthorized: uid=%d gid=%d is not root and not in nftban group", cred.Uid, cred.Gid)
 }
 
 // acceptSocketConnections handles incoming socket connections
@@ -292,6 +409,20 @@ func (d *Daemon) handleSocketConnection(conn net.Conn) {
 	// Set timeout
 	conn.SetDeadline(time.Now().Add(30 * time.Second))
 
+	// SECURITY: Validate peer credentials via SO_PEERCRED
+	// Defense-in-depth: socket permissions (0660 root:nftban) + credential check
+	uid, gid, err := validatePeerCredentials(conn)
+	if err != nil {
+		log.Printf("Socket auth rejected: %v", err)
+		d.writeSocketResponse(conn, SocketResponse{
+			Success: false,
+			Error:   "unauthorized: not root or member of nftban group",
+		})
+		return
+	}
+	_ = uid // Available for audit logging if needed
+	_ = gid
+
 	// Read request
 	decoder := json.NewDecoder(conn)
 	var req SocketRequest
@@ -325,6 +456,16 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 		return d.handleBanRequest(req.Params)
 	case "unban":
 		return d.handleUnbanRequest(req.Params)
+	case "add_element":
+		return d.handleAddElementRequest(req.Params)
+	case "delete_element":
+		return d.handleDeleteElementRequest(req.Params)
+	case "flush_set":
+		return d.handleFlushSetRequest(req.Params)
+	case "apply_ruleset":
+		return d.handleApplyRulesetRequest(req.Params)
+	case "check":
+		return d.handleCheckRequest(req.Params)
 	case "ping":
 		return SocketResponse{Success: true, Data: "pong"}
 	default:
@@ -366,19 +507,47 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 		return SocketResponse{Success: false, Error: "missing ip parameter"}
 	}
 
-	// Publish ban event
-	d.bus.Publish(eventbus.NewEvent(eventbus.EventBan, "cli").
-		WithIP(ip).
-		WithMessage("Manual ban via CLI").
-		WithSeverity(eventbus.SeverityInfo))
+	// Parse optional parameters
+	timeout := 0
+	if t, ok := params["timeout"].(float64); ok {
+		timeout = int(t)
+	}
+	reason := ""
+	if r, ok := params["reason"].(string); ok {
+		reason = r
+	}
+	source := "cli"
+	if s, ok := params["source"].(string); ok {
+		source = s
+	}
 
-	// TODO: Actually perform the ban via NFT manager
+	// Perform the ban via AUTHORITATIVE backend
+	result, err := d.backend.Ban(d.ctx, nftbackend.BanRequest{
+		IP:      ip,
+		Timeout: timeout,
+		Reason:  reason,
+		Source:  source,
+	})
+	if err != nil {
+		return SocketResponse{
+			Success: false,
+			Error:   err.Error(),
+		}
+	}
+
+	// Publish ban event
+	d.bus.Publish(eventbus.NewEvent(eventbus.EventBan, source).
+		WithIP(ip).
+		WithMessage(fmt.Sprintf("Banned: %s", reason)).
+		WithSeverity(eventbus.SeverityInfo))
 
 	return SocketResponse{
 		Success: true,
 		Data: map[string]any{
-			"ip":     ip,
-			"status": "banned",
+			"ip":      ip,
+			"set":     result.Set,
+			"status":  "banned",
+			"message": result.Message,
 		},
 	}
 }
@@ -390,19 +559,176 @@ func (d *Daemon) handleUnbanRequest(params map[string]any) SocketResponse {
 		return SocketResponse{Success: false, Error: "missing ip parameter"}
 	}
 
+	// Perform the unban via AUTHORITATIVE backend
+	result, err := d.backend.Unban(d.ctx, nftbackend.UnbanRequest{
+		IP: ip,
+	})
+	if err != nil {
+		return SocketResponse{
+			Success: false,
+			Error:   err.Error(),
+		}
+	}
+
 	// Publish unban event
 	d.bus.Publish(eventbus.NewEvent(eventbus.EventUnban, "cli").
 		WithIP(ip).
 		WithMessage("Manual unban via CLI").
 		WithSeverity(eventbus.SeverityInfo))
 
-	// TODO: Actually perform the unban via NFT manager
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"ip":      ip,
+			"set":     result.Set,
+			"status":  "unbanned",
+			"message": result.Message,
+		},
+	}
+}
+
+// handleAddElementRequest adds an element to any set
+func (d *Daemon) handleAddElementRequest(params map[string]any) SocketResponse {
+	table, _ := params["table"].(string)
+	set, _ := params["set"].(string)
+	element, _ := params["element"].(string)
+
+	if table == "" || set == "" || element == "" {
+		return SocketResponse{Success: false, Error: "missing table, set, or element parameter"}
+	}
+
+	timeout := 0
+	if t, ok := params["timeout"].(float64); ok {
+		timeout = int(t)
+	}
+
+	err := d.backend.AddElement(d.ctx, nftbackend.AddElementRequest{
+		Table:   table,
+		Set:     set,
+		Element: element,
+		Timeout: timeout,
+	})
+	if err != nil {
+		return SocketResponse{Success: false, Error: err.Error()}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"table":   table,
+			"set":     set,
+			"element": element,
+		},
+	}
+}
+
+// handleDeleteElementRequest removes an element from any set
+func (d *Daemon) handleDeleteElementRequest(params map[string]any) SocketResponse {
+	table, _ := params["table"].(string)
+	set, _ := params["set"].(string)
+	element, _ := params["element"].(string)
+
+	if table == "" || set == "" || element == "" {
+		return SocketResponse{Success: false, Error: "missing table, set, or element parameter"}
+	}
+
+	err := d.backend.DeleteElement(d.ctx, nftbackend.DeleteElementRequest{
+		Table:   table,
+		Set:     set,
+		Element: element,
+	})
+	if err != nil {
+		return SocketResponse{Success: false, Error: err.Error()}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"table":   table,
+			"set":     set,
+			"element": element,
+			"status":  "deleted",
+		},
+	}
+}
+
+// handleFlushSetRequest flushes all elements from a set
+func (d *Daemon) handleFlushSetRequest(params map[string]any) SocketResponse {
+	table, _ := params["table"].(string)
+	set, _ := params["set"].(string)
+
+	if table == "" || set == "" {
+		return SocketResponse{Success: false, Error: "missing table or set parameter"}
+	}
+
+	err := d.backend.FlushSet(d.ctx, nftbackend.FlushSetRequest{
+		Table: table,
+		Set:   set,
+	})
+	if err != nil {
+		return SocketResponse{Success: false, Error: err.Error()}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"table":  table,
+			"set":    set,
+			"status": "flushed",
+		},
+	}
+}
+
+// handleApplyRulesetRequest applies a ruleset from file
+func (d *Daemon) handleApplyRulesetRequest(params map[string]any) SocketResponse {
+	filePath, _ := params["file"].(string)
+	check, _ := params["check"].(bool)
+
+	if filePath == "" {
+		return SocketResponse{Success: false, Error: "missing file parameter"}
+	}
+
+	err := d.backend.ApplyRuleset(d.ctx, nftbackend.ApplyRulesetRequest{
+		FilePath: filePath,
+		Check:    check,
+	})
+	if err != nil {
+		return SocketResponse{Success: false, Error: err.Error()}
+	}
+
+	action := "applied"
+	if check {
+		action = "validated"
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"file":   filePath,
+			"status": action,
+		},
+	}
+}
+
+// handleCheckRequest checks if an IP is banned
+func (d *Daemon) handleCheckRequest(params map[string]any) SocketResponse {
+	ip, _ := params["ip"].(string)
+
+	if ip == "" {
+		return SocketResponse{Success: false, Error: "missing ip parameter"}
+	}
+
+	banned, set, err := d.backend.CheckIP(d.ctx, ip)
+	if err != nil {
+		return SocketResponse{Success: false, Error: err.Error()}
+	}
 
 	return SocketResponse{
 		Success: true,
 		Data: map[string]any{
 			"ip":     ip,
-			"status": "unbanned",
+			"banned": banned,
+			"set":    set,
 		},
 	}
 }
