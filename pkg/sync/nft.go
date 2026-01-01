@@ -1013,13 +1013,10 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 		return nil, fmt.Errorf("unsupported table family: %v", set.Table.Family)
 	}
 
-	// Canonicalize CIDRs: deduplicate invalid ones
-	// nftables auto-merge feature will handle overlapping ranges efficiently
-	var canonicalCIDRs []string
-	var stats *MergeStats
-
+	// Step 1: Validate and deduplicate CIDRs
 	inputCount := len(cidrs)
 	seen := make(map[string]bool, len(cidrs))
+	var validCIDRs []string
 
 	// Parse and deduplicate CIDRs using standard net package
 	for _, cidr := range cidrs {
@@ -1034,19 +1031,21 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 		canonical := ipNet.String()
 		if !seen[canonical] {
 			seen[canonical] = true
-			canonicalCIDRs = append(canonicalCIDRs, canonical)
+			validCIDRs = append(validCIDRs, canonical)
 		}
 	}
 
-	// Calculate statistics
-	// Note: We rely on nftables' auto-merge feature for actual merging
-	// This just tracks deduplication and invalid CIDR removal
-	reduction := inputCount - len(canonicalCIDRs)
-	stats = &MergeStats{
-		InputCIDRs:     inputCount,
-		OutputRanges:   len(canonicalCIDRs),
-		OverlapsMerged: reduction,
-		ReductionPct:   float64(reduction) / float64(inputCount) * 100.0,
+	// Step 2: Merge overlapping and adjacent CIDRs using interval merging algorithm
+	canonicalCIDRs, stats, err := MergeCIDRs(validCIDRs)
+	if err != nil {
+		return nil, fmt.Errorf("failed to merge CIDRs: %w", err)
+	}
+
+	// Update stats to reflect total reduction (including invalid/duplicate removal)
+	stats.InputCIDRs = inputCount
+	if inputCount > 0 {
+		stats.OverlapsMerged = inputCount - len(canonicalCIDRs)
+		stats.ReductionPct = float64(stats.OverlapsMerged) / float64(inputCount) * 100.0
 	}
 
 	// Flush the set first using nft CLI to avoid netlink stale connection issues

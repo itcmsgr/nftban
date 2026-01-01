@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strconv"
 	"strings"
 	"text/tabwriter"
@@ -114,13 +115,9 @@ func cmdAnalyticsCountries() error {
 	}
 
 	// Sort by count descending
-	for i := 0; i < len(rows); i++ {
-		for j := i + 1; j < len(rows); j++ {
-			if rows[i].count < rows[j].count {
-				rows[i], rows[j] = rows[j], rows[i]
-			}
-		}
-	}
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].count > rows[j].count
+	})
 
 	for _, r := range rows {
 		fmt.Fprintf(w, "%s\t%d\t%s\n", r.country, r.count, r.updated)
