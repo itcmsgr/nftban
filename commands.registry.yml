@@ -574,20 +574,31 @@ profile:
 
 panel:
   category: infrastructure
-  description: "Hosting panel integration detection and management"
+  description: "Hosting panel firewall integration (port management)"
   risk: setup
   audience: [cli]
-  capability: status_read
+  capability: policy_change
   mutates: conditional
   supports_dry_run: false
-  requires_root: false
+  requires_root: true
   panel_expose: false
-  output_modes: [json, text]
-  has_json: true
+  output_modes: [text]
+  has_json: false
   examples:
-    - "nftban panel detect"
-    - "nftban panel status"
-    - "nftban panel directadmin"
+    - "nftban panel directadmin enable"
+    - "nftban panel cpanel enable"
+    - "nftban panel cwp enable"
+    - "nftban panel cyberpanel enable"
+    - "nftban panel interworx enable"
+    - "nftban panel vesta enable"
+    - "nftban panel directadmin status"
+  subcommands:
+    directadmin: {description: "DirectAdmin panel (ports 2222, services)"}
+    cpanel: {description: "cPanel/WHM panel (ports 2082-2087, 2095-2096)"}
+    cwp: {description: "CentOS Web Panel (ports 2030, 2031)"}
+    cyberpanel: {description: "CyberPanel/OpenLiteSpeed (ports 7080, 8090)"}
+    interworx: {description: "InterWorx panel (ports 2080, 2443)"}
+    vesta: {description: "VestaCP/HestiaCP (port 8083)"}
 
 permissions:
   category: infrastructure
