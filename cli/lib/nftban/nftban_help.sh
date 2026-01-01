@@ -73,7 +73,7 @@ EOF
   whitelist        Manage whitelists (add, remove, list)
   whitelist-system Auto-whitelist essential IPs (gateway, DNS)
   profile          Apply security profile (basic, standard, advanced)
-  panel            Web hosting panel integration (DirectAdmin)
+  panel            Web hosting panel integration (DA, cPanel, CWP, etc.)
   permissions      Audit & enforce file permissions
 EOF
   echo

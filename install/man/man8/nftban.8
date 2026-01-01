@@ -215,10 +215,26 @@ Direct nftables control: start, stop, restart, reload, enable, disable, status.
 .B port \fR[\fIsubcommand\fR]
 Port scanning and analysis: scan, list, summary, html-report, mail-report.
 .TP
-.B panel \fR[\fIsubcommand\fR]
-Control panel integration for DirectAdmin and cPanel/WHM.
-Automatically configures firewall rules for hosting panel ports.
-Supports DirectAdmin (port 2222), cPanel (port 2083), and WHM (port 2087).
+.B panel \fR[\fIpanel\fR] \fR[\fIaction\fR]
+Web hosting panel firewall integration. Manages firewall ports for control panels.
+.RS
+.IP \fBdirectadmin\fR
+DirectAdmin panel (port 2222, FTP passive 35000-35999). Includes CloudFlare whitelist.
+.IP \fBcpanel\fR
+cPanel/WHM (ports 2082-2087, 2095-2096, webmail).
+.IP \fBcwp\fR
+CentOS Web Panel (ports 2030, 2031).
+.IP \fBcyberpanel\fR
+CyberPanel with OpenLiteSpeed (ports 7080, 8090).
+.IP \fBinterworx\fR
+InterWorx panel (ports 2080, 2443).
+.IP \fBvesta\fR
+VestaCP/HestiaCP (port 8083).
+.RE
+.IP
+Actions: \fBenable\fR, \fBdisable\fR, \fBstatus\fR.
+.br
+Example: \fBnftban panel directadmin enable\fR
 .TP
 .B test
 Run CLI command validation tests.
