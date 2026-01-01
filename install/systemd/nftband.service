@@ -75,13 +75,12 @@ LockPersonality=true
 # FILESYSTEM ACCESS
 # =============================================================================
 # Paths daemon needs to read/write
-# - /etc/nftban: configuration files (read-only)
+# - /etc/nftban: configuration + blacklist.d/ (daemon owns blacklist writes)
 # - /var/lib/nftban: persistent data, snapshots, .nft rulesets
 # - /var/log/nftban: log files
 # - /run/nftban: PID file (socket managed by nftband.socket)
 # - /var/cache/nftban: temporary caches
-ReadOnlyPaths=/etc/nftban
-ReadWritePaths=/var/lib/nftban /var/log/nftban /run/nftban /var/cache/nftban
+ReadWritePaths=/etc/nftban /var/lib/nftban /var/log/nftban /run/nftban /var/cache/nftban
 
 # =============================================================================
 # CAPABILITIES
