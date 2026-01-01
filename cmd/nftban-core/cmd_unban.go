@@ -4,12 +4,11 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/nftables"
 	"github.com/itcmsgr/nftban/pkg/banlog"
 	"github.com/itcmsgr/nftban/pkg/blacklist"
 	"github.com/itcmsgr/nftban/pkg/geoip"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/sync"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -56,39 +55,18 @@ func cmdUnban(ipStr string, cfg *nftbanconf.Config) error {
 		isBannedInFile = blacklistIPv6[normalizedIP]
 	}
 
-	// Also check nftables directly (handles orphan entries not in files)
-	nft, err := sync.NewNFTManager()
-	if err != nil {
-		return fmt.Errorf("failed to create nftables manager: %w", err)
-	}
-	defer nft.Close()
-
-	var table *nftables.Table
-	var setName string
-	if isIPv4 {
-		table, err = nft.GetOrCreateTable(nftables.TableFamilyIPv4)
-		setName = "blacklist_ipv4"
-	} else {
-		table, err = nft.GetOrCreateTable(nftables.TableFamilyIPv6)
-		setName = "blacklist_ipv6"
-	}
-	if err != nil {
-		return fmt.Errorf("failed to get table: %w", err)
-	}
-
-	blacklistSet, err := nft.GetOrCreateSet(table, setName, isIPv4)
-	if err != nil {
-		return fmt.Errorf("failed to get blacklist set: %w", err)
-	}
-
-	// Check if IP is in nftables set
+	// Also check nftables via IPC (handles orphan entries not in files)
+	ipcClient := ipc.NewClient()
 	isBannedInNFT := false
-	currentIPs, err := nft.GetSetElements(blacklistSet)
-	if err == nil {
-		for _, ip := range currentIPs {
-			if ip == normalizedIP {
+
+	resp, err := ipcClient.Check(normalizedIP)
+	if err != nil {
+		// Daemon not running - warn but continue with file-based unban
+		fmt.Printf("  ⚠️  Could not check nftables (daemon not running?): %v\n", err)
+	} else if resp.Success {
+		if data, ok := resp.Data.(map[string]any); ok {
+			if banned, ok := data["banned"].(bool); ok && banned {
 				isBannedInNFT = true
-				break
 			}
 		}
 	}
@@ -108,42 +86,43 @@ func cmdUnban(ipStr string, cfg *nftbanconf.Config) error {
 	}
 	fmt.Println()
 
-	// Remove from blacklist file (only if it's in files)
-	fmt.Println("Step 3: Removing from blacklist...")
+	// Remove from blacklist files via IPC (daemon owns all writes)
+	fmt.Println("Step 3: Removing from blacklist via IPC...")
 	if isBannedInFile {
-		if err := blacklist.RemoveIP(configDir, normalizedIP); err != nil {
-			return fmt.Errorf("failed to remove from blacklist: %w", err)
+		resp, err := ipcClient.UnpersistBan(normalizedIP)
+		if err != nil {
+			return fmt.Errorf("failed to unpersist ban via IPC: %w", err)
 		}
-		fmt.Printf("  ✅ Removed from blacklist.d/*.conf\n")
+		if !resp.Success {
+			return fmt.Errorf("failed to unpersist ban: %s", resp.Error)
+		}
+		// Extract files modified count from response
+		if data, ok := resp.Data.(map[string]any); ok {
+			if filesModified, ok := data["files_modified"].(float64); ok && filesModified > 0 {
+				fmt.Printf("  ✅ Removed from %d blacklist file(s)\n", int(filesModified))
+			}
+		}
 	} else {
 		fmt.Printf("  ⚠️  IP not in blacklist files (orphan in nftables)\n")
 	}
 	fmt.Println()
 
-	// Remove directly from nftables (more efficient than full sync for single IP)
-	fmt.Println("Step 4: Removing from nftables...")
+	// Remove from nftables via IPC (daemon is the single nft writer)
+	fmt.Println("Step 4: Removing from nftables via IPC...")
 
-	// Use range-aware delete for IPv4 interval sets (handles auto-merge ranges)
-	// For IPv6 or non-interval sets, fall back to simple delete
-	if isIPv4 {
-		// IPv4 uses interval sets with auto-merge - need range-aware delete
-		if err := nft.DeleteFromIntervalSetCLI(blacklistSet, normalizedIP); err != nil {
-			// Check if it's just "not found" vs a real error
-			if strings.Contains(err.Error(), "not found in set") {
-				fmt.Printf("  ⚠️  IP %s was not in nftables set\n", normalizedIP)
-			} else {
-				fmt.Printf("  ⚠️  Could not delete from nftables: %v\n", err)
-			}
+	resp, err = ipcClient.Unban(normalizedIP)
+	if err != nil {
+		return fmt.Errorf("failed to unban via IPC: %w", err)
+	}
+	if !resp.Success {
+		// Check if it's just "not found" vs a real error
+		if strings.Contains(resp.Error, "not found") {
+			fmt.Printf("  ⚠️  IP %s was not in nftables set\n", normalizedIP)
 		} else {
-			fmt.Printf("  ✅ Removed %s from nftables (range-aware)\n", normalizedIP)
+			fmt.Printf("  ⚠️  Could not delete from nftables: %s\n", resp.Error)
 		}
 	} else {
-		// IPv6 - use simple delete (or extend to range-aware if needed)
-		if err := nft.DeleteSetElements(blacklistSet, []string{normalizedIP}); err != nil {
-			fmt.Printf("  ⚠️  Could not delete from nftables: %v\n", err)
-		} else {
-			fmt.Printf("  ✅ Removed %s from nftables\n", normalizedIP)
-		}
+		fmt.Printf("  ✅ Removed %s from nftables\n", normalizedIP)
 	}
 	fmt.Println()
 

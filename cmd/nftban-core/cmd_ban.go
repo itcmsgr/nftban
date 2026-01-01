@@ -5,14 +5,13 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/nftables"
 	"github.com/itcmsgr/nftban/pkg/analytics"
 	"github.com/itcmsgr/nftban/pkg/banlog"
 	"github.com/itcmsgr/nftban/pkg/blacklist"
 	"github.com/itcmsgr/nftban/pkg/geoip"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/persistent"
-	"github.com/itcmsgr/nftban/pkg/sync"
 	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/itcmsgr/nftban/pkg/whitelist"
 )
@@ -138,39 +137,41 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 		}
 		fmt.Println()
 	} else {
-		// Permanent ban - add to config file
+		// Permanent ban - add to config file via IPC (daemon owns all writes)
 		if alreadyBanned {
 			fmt.Printf("  ⚠️  IP %s is already banned\n", normalizedIP)
 			fmt.Println()
 			fmt.Println("Re-syncing to ensure nftables is up to date...")
 		} else {
-			// Determine target file based on source
+			// Determine source for file mapping
 			banSource := source
 			if banSource == "" {
 				banSource = "manual"
-			}
-			targetFile := configDir + "/blacklist.d/99-manual.conf"
-			switch banSource {
-			case "login":
-				targetFile = configDir + "/blacklist.d/login-auto.conf"
-			case "portscan":
-				targetFile = configDir + "/blacklist.d/portscan-auto.conf"
-			case "ddos":
-				targetFile = configDir + "/blacklist.d/ddos-auto.conf"
 			}
 			banReason := reason
 
 			if shouldEscalate {
 				// Use persistent offenders file (overrides source-based file)
-				targetFile = configDir + "/blacklist.d/30-persistent-offenders.conf"
 				banReason = fmt.Sprintf("persistent offender (%s)", jailName)
 				banSource = "persistent"
 			}
 
-			if err := blacklist.AddIPWithSource(configDir, normalizedIP, banReason, banSource); err != nil {
-				return fmt.Errorf("failed to add to blacklist: %w", err)
+			// Add to persistent blacklist via IPC
+			ipcClient := ipc.NewClient()
+			resp, err := ipcClient.PersistBan(normalizedIP, banReason, banSource)
+			if err != nil {
+				return fmt.Errorf("failed to persist ban via IPC: %w", err)
 			}
-			fmt.Printf("  ✅ Added to %s\n", targetFile)
+			if !resp.Success {
+				return fmt.Errorf("failed to persist ban: %s", resp.Error)
+			}
+
+			// Extract filename from response
+			if data, ok := resp.Data.(map[string]any); ok {
+				if filename, ok := data["filename"].(string); ok {
+					fmt.Printf("  ✅ Added to %s/blacklist.d/%s\n", configDir, filename)
+				}
+			}
 			if banReason != "" {
 				fmt.Printf("  ✅ Reason: %s\n", banReason)
 			}
@@ -178,43 +179,18 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 		}
 	}
 
-	// Step 6: Add to nftables
-	fmt.Println("Step 6: Adding to nftables...")
+	// Step 6: Add to nftables via IPC (daemon is the single nft writer)
+	fmt.Println("Step 6: Adding to nftables via IPC...")
 
-	nft, err := sync.NewNFTManager()
-	if err != nil {
-		return fmt.Errorf("failed to create nftables manager: %w", err)
-	}
-	defer nft.Close()
-
-	// Get table and set
-	var table *nftables.Table
-	var setName string
-	if isIPv4 {
-		table, err = nft.GetOrCreateTable(nftables.TableFamilyIPv4)
-		setName = "blacklist_ipv4"
-	} else {
-		table, err = nft.GetOrCreateTable(nftables.TableFamilyIPv6)
-		setName = "blacklist_ipv6"
-	}
-	if err != nil {
-		return fmt.Errorf("failed to get table: %w", err)
-	}
-
-	blacklistSet, err := nft.GetOrCreateSet(table, setName, isIPv4)
-	if err != nil {
-		return fmt.Errorf("failed to get blacklist set: %w", err)
-	}
-
-	// Add IP with optional timeout
+	ipcClient := ipc.NewClient()
 	startTime := time.Now()
-	var timeout time.Duration
-	if timeoutSeconds > 0 {
-		timeout = time.Duration(timeoutSeconds) * time.Second
-	}
 
-	if err := nft.AddIPWithTimeout(blacklistSet, normalizedIP, timeout); err != nil {
-		return fmt.Errorf("failed to add to nftables: %w", err)
+	resp, err := ipcClient.Ban(normalizedIP, timeoutSeconds, reason, source)
+	if err != nil {
+		return fmt.Errorf("failed to ban via IPC: %w", err)
+	}
+	if !resp.Success {
+		return fmt.Errorf("failed to ban: %s", resp.Error)
 	}
 	duration := time.Since(startTime)
 

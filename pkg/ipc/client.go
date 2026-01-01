@@ -130,6 +130,26 @@ func (c *Client) Unban(ip string) (*Response, error) {
 	return c.Call("unban", map[string]any{"ip": ip})
 }
 
+// PersistBan adds an IP to persistent blacklist files
+// This is for permanent bans that survive reboots
+func (c *Client) PersistBan(ip, reason, source string) (*Response, error) {
+	params := map[string]any{
+		"ip": ip,
+	}
+	if reason != "" {
+		params["reason"] = reason
+	}
+	if source != "" {
+		params["source"] = source
+	}
+	return c.Call("persist_ban", params)
+}
+
+// UnpersistBan removes an IP from all persistent blacklist files
+func (c *Client) UnpersistBan(ip string) (*Response, error) {
+	return c.Call("unpersist_ban", map[string]any{"ip": ip})
+}
+
 // AddElement adds an element to a set
 func (c *Client) AddElement(table, set, element string, timeout int) (*Response, error) {
 	params := map[string]any{
