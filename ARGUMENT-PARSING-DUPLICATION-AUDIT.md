@@ -5,12 +5,22 @@
 
 ---
 
+## ⚠️ CORRECTION NOTICE ⚠️
+
+**Findings #2 and #3 in this document contain FLAWED ANALYSIS.**
+
+See **DUPLICATION-ANALYSIS-CORRECTION.md** for corrected findings.
+
+**What was wrong**: Superficial analysis confused "structural similarity" with "code duplication". Deep exploration revealed only ~100 lines (~2.5%) of true duplication, not 1,707 lines.
+
+---
+
 ## Executive Summary
 
 **FINDINGS:**
 1. ✅ **Argument parsing in cmd_ddos.sh is CORRECT** - No duplication found
-2. ❌ **MASSIVE code duplication in DDoS modules** - 1,707 lines across 3 files
-3. ❌ **Same pattern likely exists in portscan module** - Needs investigation
+2. ~~❌ **MASSIVE code duplication in DDoS modules** - 1,707 lines across 3 files~~ **CORRECTED:** Only ~54 lines (3%) true duplication
+3. ~~❌ **Same pattern likely exists in portscan module** - Needs investigation~~ **CORRECTED:** Similar minimal duplication (~50 lines)
 
 ---
 

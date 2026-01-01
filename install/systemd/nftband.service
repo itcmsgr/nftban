@@ -1,0 +1,104 @@
+# =============================================================================
+# NFTBan Daemon Service - AUTHORITATIVE nftables Writer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# This daemon is the SINGLE writer for all nftables operations.
+# All CLI and scheduled tasks must communicate via IPC socket.
+#
+# Socket activation:
+#   - nftband.socket creates /run/nftban/nftband.sock (0660 root:nftban)
+#   - Daemon receives socket via systemd file descriptor passing
+#   - No capability escalation needed for socket permissions
+#
+# Access Control:
+#   - Socket permissions: 0660 root:nftban (set by nftband.socket)
+#   - Peer credentials validated via SO_PEERCRED (defense-in-depth)
+#   - Allowed: root OR members of nftban group
+#
+# Activation modes:
+#   - Production: socket activation via nftband.socket
+#   - Dev/test: manual start with fallback socket creation
+# =============================================================================
+
+[Unit]
+Description=NFTBan Daemon (Single nftables Writer)
+Documentation=man:nftban(8)
+
+# Socket activation dependencies
+Requires=nftband.socket
+After=nftband.socket
+
+# Start after network and nftables are ready
+After=network.target nftables.service
+Wants=nftables.service
+
+# For packaging: also enable socket when service is enabled
+Also=nftband.socket
+
+[Service]
+Type=simple
+
+# Daemon runs as root (required for nftables operations)
+# This is the ONLY service allowed to run as root for nft operations
+# See: ARCHITECTURE-NFT-POLICY.md
+User=root
+Group=root
+
+ExecStart=/usr/lib/nftban/bin/nftband
+Restart=on-failure
+RestartSec=5s
+
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
+
+# Prevent privilege escalation
+NoNewPrivileges=true
+
+# Filesystem protection
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+# Kernel protection
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Additional hardening
+RestrictSUIDSGID=true
+LockPersonality=true
+# MemoryDenyWriteExecute=true  # Uncomment if Go runtime is compatible
+
+# =============================================================================
+# FILESYSTEM ACCESS
+# =============================================================================
+# Paths daemon needs to read/write
+# - /etc/nftban: configuration files (read-only)
+# - /var/lib/nftban: persistent data, snapshots, .nft rulesets
+# - /var/log/nftban: log files
+# - /run/nftban: PID file (socket managed by nftband.socket)
+# - /var/cache/nftban: temporary caches
+ReadOnlyPaths=/etc/nftban
+ReadWritePaths=/var/lib/nftban /var/log/nftban /run/nftban /var/cache/nftban
+
+# =============================================================================
+# CAPABILITIES
+# =============================================================================
+# Minimal capability set - ONLY what nftables operations require
+# CAP_NET_ADMIN: required for nft add/delete/flush operations
+# No CAP_CHOWN/CAP_FOWNER needed - socket permissions handled by nftband.socket
+CapabilityBoundingSet=CAP_NET_ADMIN
+AmbientCapabilities=CAP_NET_ADMIN
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftband
+
+[Install]
+WantedBy=multi-user.target
+Also=nftband.socket

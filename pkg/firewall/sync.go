@@ -16,6 +16,7 @@ import (
 
 	"github.com/itcmsgr/nftban/pkg/feeds"
 	"github.com/itcmsgr/nftban/pkg/geoban"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/model"
 	"github.com/itcmsgr/nftban/pkg/nftables"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
@@ -401,34 +402,47 @@ func snapshotRuleset(path string) error {
 	return os.WriteFile(path, output, 0640)
 }
 
-// applyRuleset applies the new ruleset
+// applyRuleset applies the new ruleset via daemon IPC (single-writer architecture)
 func applyRuleset(path string) error {
-	cmd := exec.Command("nft", "-f", path)
-	output, err := cmd.CombinedOutput()
+	client := ipc.NewClient()
+
+	resp, err := client.ApplyRuleset(path, false)
 	if err != nil {
-		return fmt.Errorf("%w: %s", err, output)
+		return fmt.Errorf("daemon IPC failed: %w", err)
 	}
+
+	if !resp.Success {
+		return fmt.Errorf("daemon rejected ruleset: %s", resp.Error)
+	}
+
 	return nil
 }
 
 // restoreRuntimeSets re-adds runtime elements after atomic reload (v0.7.3)
+// Uses daemon IPC for all nftables WRITE operations (single-writer architecture)
 func restoreRuntimeSets(runtime *RuntimeSets) error {
 	// v0.7.3: temp_whitelist moved to main tables (ip/ip6 nftban)
 	// v0.7.3: temp bans handled via CLI (tracks timeout metadata externally)
 
+	client := ipc.NewClient()
+
 	// Restore temp_whitelist_ipv4 (v0.7.3: in main table ip nftban)
 	for _, ip := range runtime.Whitelist.IPv4 {
-		cmd := exec.Command("nft", "add", "element", "ip", "nftban", "temp_whitelist_ipv4", fmt.Sprintf("{ %s }", ip))
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("WARNING: Failed to restore whitelist %s: %v\n", ip, err)
+		resp, err := client.AddElement("ip nftban", "temp_whitelist_ipv4", ip, 0)
+		if err != nil {
+			fmt.Printf("WARNING: Failed to restore whitelist %s (IPC error): %v\n", ip, err)
+		} else if !resp.Success {
+			fmt.Printf("WARNING: Failed to restore whitelist %s: %s\n", ip, resp.Error)
 		}
 	}
 
 	// Restore temp_whitelist_ipv6 (v0.7.3: in main table ip6 nftban)
 	for _, ip := range runtime.Whitelist.IPv6 {
-		cmd := exec.Command("nft", "add", "element", "ip6", "nftban", "temp_whitelist_ipv6", fmt.Sprintf("{ %s }", ip))
-		if err := cmd.Run(); err != nil {
-			fmt.Printf("WARNING: Failed to restore whitelist %s: %v\n", ip, err)
+		resp, err := client.AddElement("ip6 nftban", "temp_whitelist_ipv6", ip, 0)
+		if err != nil {
+			fmt.Printf("WARNING: Failed to restore whitelist %s (IPC error): %v\n", ip, err)
+		} else if !resp.Success {
+			fmt.Printf("WARNING: Failed to restore whitelist %s: %s\n", ip, resp.Error)
 		}
 	}
 
