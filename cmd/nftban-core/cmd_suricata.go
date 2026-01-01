@@ -438,15 +438,16 @@ func cmdSuricataDaemon() error {
 	defer banHandler.Close()
 
 	// Create processor
-	suricataConfigDir, evePath, logDir, _ := getSuricataPaths()
-	cfg := &suricata.ProcessorConfig{
+	nftbanCfg := nftbanconf.MustLoad()
+	suricataConfigDir, evePath, logDir, _ := getSuricataPaths(nftbanCfg)
+	processorCfg := &suricata.ProcessorConfig{
 		ConfigDir:  suricataConfigDir,
 		EvePath:    evePath,
 		LogPath:    logDir + "/suricata-events.log",
 		BanHandler: banHandler,
 	}
 
-	processor, err := suricata.NewProcessor(cfg)
+	processor, err := suricata.NewProcessor(processorCfg)
 	if err != nil {
 		return fmt.Errorf("failed to create processor: %w", err)
 	}
@@ -562,7 +563,8 @@ func initAnalyticsIfNeeded() error {
 	if analytics.StateOrNil() != nil {
 		return nil // Already initialized
 	}
-	_, _, _, dataDir := getSuricataPaths()
+	cfg := nftbanconf.MustLoad()
+	_, _, _, dataDir := getSuricataPaths(cfg)
 	return analytics.Init(dataDir, dataDir+"/reports")
 }
 

@@ -192,7 +192,7 @@ func main() {
 			os.Exit(1)
 		}
 		action := os.Args[2]
-		if err := cmdAnalytics(action, cfg); err != nil {
+		if err := cmdAnalytics(action); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
