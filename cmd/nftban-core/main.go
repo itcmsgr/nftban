@@ -196,6 +196,17 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
+	case "emulate":
+		if len(os.Args) < 3 {
+			errorWithUsage("emulate", "emulate command requires an IP address")
+			os.Exit(1)
+		}
+		// Parse: emulate <ip> [protocol] [port] [direction]
+		emulateArgs := os.Args[2:]
+		if err := cmdEmulate(emulateArgs, cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	case "profile-sync":
 		if err := runProfileSync(cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
@@ -227,6 +238,7 @@ func printUsage() {
 	fmt.Println("  nftban-core geoip [update|status|lookup] Manage GeoIP database and lookups")
 	fmt.Println("  nftban-core suricata [status|filters|enable|disable] Manage Suricata IDS integration (v1.0)")
 	fmt.Println("  nftban-core analytics [summary|countries|top|ip] Show ban analytics (use --json for GUI)")
+	fmt.Println("  nftban-core emulate <IP> [proto] [port] [dir] Emulate packet evaluation (fast IP/CIDR matching)")
 	fmt.Println("  nftban-core profile-sync         Run sync operations with profiling enabled (pprof on :6060)")
 	fmt.Println("  nftban-core version              Show version information")
 	fmt.Println("  nftban-core help                 Show this help message")
