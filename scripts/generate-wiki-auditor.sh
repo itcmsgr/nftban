@@ -7,9 +7,23 @@
 #
 # Usage: ./scripts/generate-wiki-auditor.sh > wiki/CLI-Commands-Reference-Auditor.md
 # Output: Markdown wiki page with auditor-visible commands only
+#
+# CRITICAL: This script uses 'set -euo pipefail' and will EXIT IMMEDIATELY on
+# any error. Never redirect both stdout AND stderr to a file (don't use &>).
+# Use > for stdout only, so error messages appear on terminal, not in docs.
 # =============================================================================
 
 set -euo pipefail
+
+# SAFETY: Verify we're not being redirected incorrectly
+if [[ ! -t 1 ]] && [[ ! -t 2 ]]; then
+    if [[ "$(readlink -f /proc/$$/fd/1)" == "$(readlink -f /proc/$$/fd/2)" ]]; then
+        echo "FATAL: Both stdout and stderr are redirected to the same file!" >&2
+        echo "This would capture error messages in documentation." >&2
+        echo "Use: $0 > output.md   (NOT: $0 &> output.md)" >&2
+        exit 1
+    fi
+fi
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf

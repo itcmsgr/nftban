@@ -29,6 +29,26 @@ concurrency:
 
 jobs:
   # ===========================================================================
+  # ARCHITECTURE POLICY CHECK
+  # ===========================================================================
+  architecture-check:
+    name: Architecture Policy
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check nft write policy
+        run: |
+          echo "=== Checking nft write architecture policy ==="
+          # Two-tier enforcement:
+          #   WRITE operations: enforced (blocks PR)
+          #   READ operations: warned only
+          #
+          # During migration use --warn-all to not block PRs
+          # Remove --warn-all once Wave 1 complete (maintenance.sh + sync.go + health.sh)
+          ./scripts/ci/check-nft-writes.sh --warn-all
+
+  # ===========================================================================
   # BASH VALIDATION
   # ===========================================================================
   bash-check:
@@ -170,12 +190,86 @@ jobs:
           echo "✓ CLI structure valid"
 
   # ===========================================================================
+  # DOCUMENTATION VALIDATION
+  # ===========================================================================
+  documentation-check:
+    name: Documentation Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install yq
+        run: |
+          pip3 install yq
+
+      - name: Check for error messages in documentation
+        run: |
+          echo "=== Checking documentation for build errors ==="
+
+          # List of critical documentation files that must not contain error messages
+          DOC_FILES=(
+            "docs/wiki/OPERATOR_GUIDE.md"
+            "docs/README.md"
+            "README.md"
+          )
+
+          ERRORS_FOUND=0
+
+          for doc in "${DOC_FILES[@]}"; do
+            if [[ -f "$doc" ]]; then
+              echo "Checking $doc..."
+
+              # Check for common error patterns
+              if grep -qE "^ERROR:|^FATAL:|yq is required|pip install|brew install" "$doc"; then
+                echo "❌ FAIL: $doc contains error messages!"
+                grep -n "ERROR:\|FATAL:\|yq is required\|pip install\|brew install" "$doc"
+                ERRORS_FOUND=1
+              else
+                echo "✓ $doc is clean"
+              fi
+            fi
+          done
+
+          if [[ $ERRORS_FOUND -eq 1 ]]; then
+            echo ""
+            echo "=== DOCUMENTATION BUILD ERRORS DETECTED ==="
+            echo "Documentation files contain build error messages."
+            echo "This indicates a failed documentation generation process."
+            echo ""
+            echo "To fix:"
+            echo "  1. Install yq: pip3 install yq"
+            echo "  2. Regenerate docs: ./scripts/generate-wiki-operator.sh > docs/wiki/OPERATOR_GUIDE.md"
+            echo "  3. Commit the corrected files"
+            exit 1
+          fi
+
+          echo "✓ All documentation files are error-free"
+
+      - name: Validate documentation can be generated
+        run: |
+          echo "=== Validating documentation generation ==="
+
+          # Test that scripts can run without errors
+          ./scripts/generate-wiki-operator.sh > /tmp/operator-test.md
+
+          # Verify output is substantial (not just an error message)
+          lines=$(wc -l < /tmp/operator-test.md)
+          if [[ $lines -lt 100 ]]; then
+            echo "❌ FAIL: Generated documentation is suspiciously short ($lines lines)"
+            echo "First 20 lines:"
+            head -20 /tmp/operator-test.md
+            exit 1
+          fi
+
+          echo "✓ Documentation generation successful ($lines lines)"
+
+  # ===========================================================================
   # SUMMARY
   # ===========================================================================
   ci-summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [bash-check, go-check, build-verify]
+    needs: [architecture-check, bash-check, go-check, build-verify, documentation-check]
     if: always()
     steps:
       - name: Generate summary
@@ -184,6 +278,8 @@ jobs:
           echo "" >> $GITHUB_STEP_SUMMARY
           echo "| Check | Status |" >> $GITHUB_STEP_SUMMARY
           echo "|-------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Architecture Policy | ${{ needs.architecture-check.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Bash Validation | ${{ needs.bash-check.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Go Validation | ${{ needs.go-check.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build Verification | ${{ needs.build-verify.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Documentation Validation | ${{ needs.documentation-check.result }} |" >> $GITHUB_STEP_SUMMARY

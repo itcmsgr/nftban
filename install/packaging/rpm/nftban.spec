@@ -19,8 +19,12 @@ Requires:       systemd >= 250
 Requires:       bash >= 5.0
 Requires:       bash-completion
 Requires:       jq >= 1.6
+Requires:       python3-pip
 Requires:       curl
 Requires:       python3
+
+# NOTE: yq is installed via pip in %post since not all distros have it packaged
+# See %post section for: pip3 install yq
 Requires:       shadow-utils
 Requires:       coreutils
 Requires:       gzip
@@ -69,7 +73,23 @@ exit 0
 # Post-install: Configure and enable services
 
 # ==========================================================================
-# STEP 0: Check for Conflicting Firewalls
+# STEP 0: Install yq for documentation generation
+# ==========================================================================
+echo "Installing yq (YAML processor) for documentation generation..."
+if ! command -v yq &>/dev/null; then
+    pip3 install yq >/dev/null 2>&1 || {
+        echo "WARNING: Failed to install yq - documentation generation may not work"
+        echo "  Manual install: pip3 install yq"
+    }
+    if command -v yq &>/dev/null; then
+        echo "yq installed successfully"
+    fi
+else
+    echo "yq already installed"
+fi
+
+# ==========================================================================
+# STEP 1: Check for Conflicting Firewalls
 # ==========================================================================
 echo "Checking for conflicting firewalls..."
 
