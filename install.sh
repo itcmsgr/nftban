@@ -770,7 +770,8 @@ install_libraries() {
     mkdir -p "$LIB_DIR"/{lib,cli,core,exporters,cron,helpers,setup,tests}
 
     # Safety: Remove duplicate nested nftban directories (legacy cleanup)
-    if [ -d "$LIB_DIR/lib/nftban" ]; then
+    # Guard against empty LIB_DIR variable (defense in depth)
+    if [[ -n "$LIB_DIR" ]] && [[ -d "$LIB_DIR/lib/nftban" ]]; then
         rm -rf "$LIB_DIR/lib/nftban"
     fi
 
