@@ -20,6 +20,15 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
+// replaceConfigValue replaces a config variable value using regex to handle spacing variations
+// Pattern matches: VAR="value", VAR = "value", VAR= "value", etc.
+func replaceConfigValue(content, varName, newValue string) string {
+	// Regex pattern: varName + optional spaces + = + optional spaces + quoted value
+	pattern := regexp.MustCompile(fmt.Sprintf(`(?m)^(\s*)%s\s*=\s*"[^"]*"(.*)$`, regexp.QuoteMeta(varName)))
+	replacement := fmt.Sprintf(`${1}%s="%s"${2}`, varName, newValue)
+	return pattern.ReplaceAllString(content, replacement)
+}
+
 // getFeedsPaths returns feeds directory and config paths from passed config
 func getFeedsPaths(cfg *nftbanconf.Config) (feedsDir, feedsConfig, configDir string) {
 	return cfg.DataDir + "/feeds", cfg.ConfigDir + "/conf.d/feeds.conf", cfg.ConfigDir
@@ -508,21 +517,18 @@ func cmdFeedsEnable(configPath, feedName string, enable bool) error {
 
 	// Pattern to match FEED_<NAME>_ENABLED="true" or "false"
 	enabledVar := fmt.Sprintf("FEED_%s_ENABLED", feedNameUpper)
-	oldValueTrue := fmt.Sprintf(`%s="true"`, enabledVar)
-	oldValueFalse := fmt.Sprintf(`%s="false"`, enabledVar)
 
 	// Check if feed exists in config
 	if !strings.Contains(string(content), enabledVar) {
 		return fmt.Errorf("feed '%s' not found in config\nAvailable feeds: run 'nftban-core feeds list'", feedName)
 	}
 
-	// Replace the value
-	newContent := string(content)
+	// Replace the value using regex-based replacement (handles spacing variations)
+	newValue := "false"
 	if enable {
-		newContent = strings.ReplaceAll(newContent, oldValueFalse, oldValueTrue)
-	} else {
-		newContent = strings.ReplaceAll(newContent, oldValueTrue, oldValueFalse)
+		newValue = "true"
 	}
+	newContent := replaceConfigValue(string(content), enabledVar, newValue)
 
 	// Check if anything changed
 	if newContent == string(content) {
