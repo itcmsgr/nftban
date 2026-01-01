@@ -48,17 +48,49 @@ echo "  ✓ Candidate ruleset is valid"
 echo ""
 
 echo "[2/6] Backing up current ruleset..."
-# 2) Save current ruleset as last-known-good (atomic)
-umask 077
-mkdir -p "$(dirname "$BACKUP")"
+# 2) Save current ruleset as last-known-good (atomic with TOCTOU protection)
 
-if ! nft list ruleset > "${BACKUP}.tmp" 2>/dev/null; then
-    echo "WARNING: Could not backup current ruleset (nftables may not be running)"
-    echo "Creating empty backup..."
-    touch "${BACKUP}.tmp"
+# Security: Verify directory permissions before creating temp files
+# Prevents TOCTOU race condition if permissions are misconfigured
+backup_dir="$(dirname "$BACKUP")"
+mkdir -p "$backup_dir"
+
+# Check directory is not group-writable (defense in depth)
+if [[ -d "$backup_dir" ]]; then
+    dir_perms=$(stat -c '%a' "$backup_dir" 2>/dev/null || stat -f '%Lp' "$backup_dir" 2>/dev/null)
+    dir_owner=$(stat -c '%U:%G' "$backup_dir" 2>/dev/null || stat -f '%Su:%Sg' "$backup_dir" 2>/dev/null)
+
+    # Warn if directory is group-writable (potential security issue)
+    if [[ "${dir_perms:1:1}" == "7" ]]; then
+        echo "WARNING: $backup_dir is group-writable (${dir_perms})"
+        echo "This could allow TOCTOU attacks. Recommended: chmod 750 $backup_dir"
+    fi
 fi
 
-mv "${BACKUP}.tmp" "$BACKUP"
+# Use mktemp for unpredictable filename (prevents TOCTOU race condition)
+umask 077
+tmpfile=$(mktemp -p "$backup_dir" backup.rules.XXXXXX) || {
+    echo "ERROR: Could not create secure temporary file"
+    exit 1
+}
+
+# Ensure temp file has correct ownership
+chown nftban:nftban "$tmpfile" 2>/dev/null || true
+
+# Backup current ruleset
+if ! nft list ruleset > "$tmpfile" 2>/dev/null; then
+    echo "WARNING: Could not backup current ruleset (nftables may not be running)"
+    echo "Creating empty backup..."
+    : > "$tmpfile"  # Create empty file securely
+fi
+
+# Atomic move to final location
+if ! mv "$tmpfile" "$BACKUP"; then
+    echo "ERROR: Could not move backup to final location"
+    rm -f "$tmpfile"
+    exit 1
+fi
+
 echo "  ✓ Current ruleset backed up to $BACKUP"
 echo ""
 
