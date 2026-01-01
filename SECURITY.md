@@ -65,6 +65,89 @@ For complete security documentation, see:
 - **[Security Operations Guide](https://github.com/itcmsgr/nftban/wiki/Security-Operations-Guide)** - Hardening and operations
 - **[Groups and Permissions](https://github.com/itcmsgr/nftban/wiki/Groups-and-Permissions)** - Access control
 
+### Systemd Hardening Trade-offs
+
+NFTBan's systemd service files implement comprehensive security hardening, but one directive is intentionally disabled for Go-based services:
+
+#### MemoryDenyWriteExecute Trade-off
+
+**Status:** ⚠️ Intentionally DISABLED for Go services
+
+**Affected Services:**
+- `nftban-core.service`
+- `nftban-core-feeds.service`
+- `nftban-core-geoip.service`
+- `nftban-ui.service`
+- `nftban-ui-auth.service`
+
+**Reason:**
+
+The `MemoryDenyWriteExecute=true` systemd directive prevents memory pages from being both writable and executable, which is a strong defense against memory corruption exploits (buffer overflows, ROP attacks, etc.). However, this directive breaks Go runtime on:
+
+- Ubuntu 24.04+ (AppArmor + Landlock LSM interaction)
+- Potentially other SELinux-enforcing distributions
+- Certain kernel configurations with strict memory protection
+
+**Risk Assessment:**
+
+Without `MemoryDenyWriteExecute=true`, memory pages can be both writable and executable, which increases the attack surface for memory corruption vulnerabilities.
+
+**Risk Level:** LOW to MEDIUM
+
+- Go's memory-safe runtime significantly reduces memory corruption risk
+- Other systemd hardening compensates for this trade-off
+- Attack requires both memory corruption vulnerability AND bypass of other protections
+
+**Mitigation Strategies:**
+
+NFTBan employs defense-in-depth to compensate for this trade-off:
+
+1. **Systemd Sandboxing:**
+   - `ProtectSystem=strict` - Read-only filesystem
+   - `ProtectKernelModules=true` - Cannot load kernel modules
+   - `ProtectKernelTunables=true` - Cannot modify kernel parameters
+   - `NoNewPrivileges=true` - Cannot gain additional privileges
+   - `SystemCallFilter=@system-service` - Strict syscall allowlist
+   - `RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6` - Limited network access
+
+2. **Language-Level Protection:**
+   - Go's garbage collector and bounds checking prevent many memory corruption bugs
+   - Go's type safety reduces attack surface compared to C/C++
+
+3. **System-Level Protection:**
+   - ASLR (Address Space Layout Randomization) enabled system-wide
+   - Stack canaries and other compiler protections
+   - SELinux/AppArmor policies (distribution-dependent)
+
+4. **Input Validation:**
+   - Strict username validation (allowlist-based)
+   - Safe shell script practices (no command injection)
+   - Validated environment variables
+
+**Alternatives Investigated:**
+
+The following alternatives were evaluated but rejected:
+
+- **Custom AppArmor profiles:** Complex, distribution-specific, maintenance burden
+- **Seccomp-bpf filters:** Insufficient for this specific LSM interaction issue
+- **Landlock sandboxing:** Conflicts with Go runtime memory management
+
+**Future Resolution:**
+
+This trade-off will be re-evaluated on:
+- Go 1.23+ releases (improved LSM compatibility)
+- Ubuntu 26.04 LTS (updated AppArmor + Landlock)
+- Future kernel versions with refined memory protection
+
+**Recommendation:**
+
+Accept this trade-off. The defense-in-depth approach provides strong security despite the missing directive. The combination of systemd sandboxing, Go's memory safety, and strict input validation makes exploitation extremely difficult.
+
+**References:**
+- Service files: `install/systemd/*.service`, `cmd/nftban-core/systemd/*.service`
+- Each affected service file contains detailed inline documentation
+- See systemd.exec(5) man page for directive details
+
 ### Known Security Advisories
 
 #### CVE-2024-NFTBAN-001 - Rule Order Bypass (FIXED)

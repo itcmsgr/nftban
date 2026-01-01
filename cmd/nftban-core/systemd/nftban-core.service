@@ -25,10 +25,36 @@ ProtectControlGroups=true
 RestrictRealtime=true
 RestrictNamespaces=true
 LockPersonality=true
-# IMPORTANT: MemoryDenyWriteExecute is intentionally NOT set for Go services.
-# It breaks Go runtime on Ubuntu 24.04 (AppArmor + Landlock) and potentially
-# future SELinux-enforcing distributions. Security is maintained through
-# other hardening measures. See: docs/architecture/SYSTEMD_GO_HARDENING.md
+
+# =============================================================================
+# ⚠️ SECURITY WARNING: MemoryDenyWriteExecute Trade-off
+# =============================================================================
+# MemoryDenyWriteExecute=true is intentionally DISABLED for Go services.
+#
+# REASON: Breaks Go runtime on Ubuntu 24.04+ (AppArmor + Landlock interaction)
+#         and potentially other SELinux-enforcing distributions.
+#
+# RISK: Without this directive, memory pages can be both writable AND executable,
+#       increasing risk from memory corruption vulnerabilities (buffer overflows,
+#       ROP attacks, etc.).
+#
+# MITIGATION:
+#   - Other systemd hardening compensates: SystemCallFilter, ProtectSystem,
+#     RestrictAddressFamilies, NoNewPrivileges, ProtectKernelModules, etc.
+#   - Go's memory-safe runtime reduces exploitation risk
+#   - ASLR (Address Space Layout Randomization) enabled system-wide
+#
+# ALTERNATIVES INVESTIGATED:
+#   - Custom AppArmor profiles (complex, distribution-specific)
+#   - Seccomp-bpf filters (insufficient for this issue)
+#   - Landlock sandboxing (conflicts with Go runtime)
+#
+# TODO: Re-test on Go 1.23+ / Ubuntu 26.04 for potential enablement
+#
+# See: SECURITY.md § "Systemd Hardening Trade-offs"
+# =============================================================================
+# MemoryDenyWriteExecute=true  # DISABLED (see warning above)
+
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 SystemCallFilter=@system-service
 SystemCallFilter=~@privileged @resources
