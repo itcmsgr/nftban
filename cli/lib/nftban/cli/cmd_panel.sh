@@ -1560,33 +1560,41 @@ nftban_panel_cpanel_test() {
 # These panels use a simplified enable/disable/status pattern
 # No plugins, no SSH (handled separately), just port management
 
-# Panel metadata for simple panels
-declare -A PANEL_INFO
-PANEL_INFO[cwp_name]="CentOS Web Panel (CWP)"
-PANEL_INFO[cwp_path]="/usr/local/cwpsrv"
-PANEL_INFO[cwp_ports]="2030,2031"
-PANEL_INFO[cwp_var]="CWP"
+# Helper function to get panel metadata
+# Usage: _get_panel_info <panel> <field>
+# Fields: name, path, ports, var
+_get_panel_info() {
+    local panel="$1"
+    local field="$2"
 
-PANEL_INFO[cyberpanel_name]="CyberPanel"
-PANEL_INFO[cyberpanel_path]="/usr/local/CyberCP"
-PANEL_INFO[cyberpanel_ports]="7080,8090"
-PANEL_INFO[cyberpanel_var]="CYBERPANEL"
-
-PANEL_INFO[interworx_name]="InterWorx"
-PANEL_INFO[interworx_path]="/usr/local/interworx"
-PANEL_INFO[interworx_ports]="2080,2443"
-PANEL_INFO[interworx_var]="INTERWORX"
-
-PANEL_INFO[vesta_name]="VestaCP / HestiaCP"
-PANEL_INFO[vesta_path]="/usr/local/vesta"
-PANEL_INFO[vesta_ports]="8083"
-PANEL_INFO[vesta_var]="VESTA"
+    case "${panel}_${field}" in
+        cwp_name)        echo "CentOS Web Panel (CWP)" ;;
+        cwp_path)        echo "/usr/local/cwpsrv" ;;
+        cwp_ports)       echo "2030,2031" ;;
+        cwp_var)         echo "CWP" ;;
+        cyberpanel_name) echo "CyberPanel" ;;
+        cyberpanel_path) echo "/usr/local/CyberCP" ;;
+        cyberpanel_ports) echo "7080,8090" ;;
+        cyberpanel_var)  echo "CYBERPANEL" ;;
+        interworx_name)  echo "InterWorx" ;;
+        interworx_path)  echo "/usr/local/interworx" ;;
+        interworx_ports) echo "2080,2443" ;;
+        interworx_var)   echo "INTERWORX" ;;
+        vesta_name)      echo "VestaCP / HestiaCP" ;;
+        vesta_path)      echo "/usr/local/vesta" ;;
+        vesta_ports)     echo "8083" ;;
+        vesta_var)       echo "VESTA" ;;
+        *)               echo "" ;;
+    esac
+}
 
 # Simple help for basic panels
 nftban_panel_simple_help() {
     local panel="$1"
-    local name="${PANEL_INFO[${panel}_name]}"
-    local ports="${PANEL_INFO[${panel}_ports]}"
+    local name
+    local ports
+    name=$(_get_panel_info "$panel" "name")
+    ports=$(_get_panel_info "$panel" "ports")
 
     cat <<EOF
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -1617,9 +1625,10 @@ EOF
 # Generic enable function for simple panels
 _nftban_panel_simple_enable() {
     local panel="$1"
-    local name="${PANEL_INFO[${panel}_name]}"
-    local var="${PANEL_INFO[${panel}_var]}"
-    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/${panel}/main.conf"
+    local name var config_file
+    name=$(_get_panel_info "$panel" "name")
+    var=$(_get_panel_info "$panel" "var")
+    config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/${panel}/main.conf"
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "${name} - Enable Firewall Rules"
@@ -1705,7 +1714,8 @@ _nftban_panel_simple_enable() {
 # Generic disable function for simple panels
 _nftban_panel_simple_disable() {
     local panel="$1"
-    local name="${PANEL_INFO[${panel}_name]}"
+    local name
+    name=$(_get_panel_info "$panel" "name")
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "${name} - Disable Firewall Rules"
@@ -1774,11 +1784,12 @@ _nftban_panel_simple_disable() {
 # Generic status function for simple panels
 _nftban_panel_simple_status() {
     local panel="$1"
-    local name="${PANEL_INFO[${panel}_name]}"
-    local path="${PANEL_INFO[${panel}_path]}"
-    local ports="${PANEL_INFO[${panel}_ports]}"
-    local var="${PANEL_INFO[${panel}_var]}"
-    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/${panel}/main.conf"
+    local name path ports var config_file
+    name=$(_get_panel_info "$panel" "name")
+    path=$(_get_panel_info "$panel" "path")
+    ports=$(_get_panel_info "$panel" "ports")
+    var=$(_get_panel_info "$panel" "var")
+    config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/panels/${panel}/main.conf"
 
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "${name} Status"
@@ -1962,6 +1973,7 @@ export -f nftban_panel_directadmin_help
 export -f nftban_panel_cpanel_help
 export -f _nftban_panel_check_port
 export -f _nftban_panel_check_cloudflare
+export -f _get_panel_info
 export -f _nftban_panel_simple_enable
 export -f _nftban_panel_simple_disable
 export -f _nftban_panel_simple_status
