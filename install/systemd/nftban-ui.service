@@ -14,14 +14,13 @@ Restart=on-failure
 RestartSec=10
 
 # Security hardening
-# NOTE: NoNewPrivileges must be false to allow nftban-core child process
-# to gain CAP_NET_ADMIN capability via setcap. Security is maintained through
-# the nftban user/group model and other hardening measures.
-NoNewPrivileges=false
+# NoNewPrivileges=yes prevents gaining additional privileges at runtime
+# Capabilities granted by systemd (AmbientCapabilities) are not affected
+NoNewPrivileges=yes
 
-# Grant CAP_NET_ADMIN to child processes for nftables operations
-# This allows bash CLI scripts (ddos, portscan) to call nft commands
-# Security is maintained by running as unprivileged nftban user
+# Grant CAP_NET_ADMIN for nftables operations
+# Capability is granted by systemd at exec time, not gained dynamically
+# Security: unprivileged nftban user + NoNewPrivileges + capability bounding
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
 PrivateTmp=true

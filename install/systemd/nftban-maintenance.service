@@ -28,12 +28,17 @@ Group=root
 ExecStart=/usr/lib/nftban/cron/maintenance.sh
 
 # Security hardening
+NoNewPrivileges=yes
 PrivateTmp=true
 ProtectSystem=strict
-ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /etc/nftban /run/nftban
-NoNewPrivileges=false
 ProtectHome=true
 RestrictSUIDSGID=true
+
+# Allow only required write locations (maintenance.sh writes to specific paths)
+ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban/ports.d /etc/nftban/whitelist.d
+
+# Allow netlink + network access (used by nft, curl, ss, ip commands)
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 # Resource limits
 CPUQuota=50%
