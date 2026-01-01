@@ -315,6 +315,14 @@ case "$1" in
 
         # Fresh install - enable services
         if [ -z "$2" ]; then
+            # NFTBand daemon (SINGLE nftables writer - MUST start first)
+            # Socket activation: nftband.socket creates socket, service receives FD
+            deb-systemd-helper enable nftband.socket >/dev/null 2>&1 || true
+            deb-systemd-helper enable nftband.service >/dev/null 2>&1 || true
+            deb-systemd-invoke start nftband.socket >/dev/null 2>&1 || true
+            deb-systemd-invoke start nftband.service >/dev/null 2>&1 || true
+            log_info "  NFTBand daemon enabled (single nftables writer)"
+
             # Core timers (maintenance tasks)
             deb-systemd-helper enable nftban-maintenance.timer >/dev/null 2>&1 || true
             deb-systemd-helper enable nftban-health.timer >/dev/null 2>&1 || true
@@ -339,6 +347,7 @@ case "$1" in
 
         # Upgrade - restart services if running
         if [ -n "$2" ]; then
+            deb-systemd-invoke try-restart nftband.service >/dev/null 2>&1 || true
             deb-systemd-invoke try-restart nftban-core.service >/dev/null 2>&1 || true
             deb-systemd-invoke try-restart nftban-ui-auth.socket >/dev/null 2>&1 || true
             deb-systemd-invoke try-restart nftban-ui.service >/dev/null 2>&1 || true

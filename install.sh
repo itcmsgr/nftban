@@ -7,7 +7,7 @@
 # Usage: ./install.sh
 #
 # Installs:
-#   - Go binaries (nftban-core, nftban-ui)
+#   - Go binaries (nftban-core, nftband, nftban-ui)
 #   - CLI modules and libraries
 #   - Polkit rules
 #   - Systemd timers
@@ -790,6 +790,27 @@ install_core() {
         warn "setcap not found - install libcap for capability support"
     fi
 
+    # Install nftband (single-writer daemon for nftables operations)
+    # This is CRITICAL for the single-writer architecture - all nft writes go through IPC
+    if [[ -f "$BIN_DIR/nftband" ]]; then
+        log "Installing nftband (single nftables writer daemon)..."
+        cp -f "$BIN_DIR/nftband" "$CORE_BIN_DIR/nftband"
+        chmod 755 "$CORE_BIN_DIR/nftband"
+        chown root:root "$CORE_BIN_DIR/nftband"
+        ok "Installed: $CORE_BIN_DIR/nftband"
+
+        # Set capabilities for nftband (CAP_NET_ADMIN only - minimal privilege)
+        if command -v setcap &>/dev/null; then
+            setcap 'cap_net_admin+ep' "$CORE_BIN_DIR/nftband" 2>/dev/null && \
+                ok "CAP_NET_ADMIN set on nftband" || \
+                warn "Could not set CAP_NET_ADMIN on nftband"
+        fi
+    else
+        warn "nftband binary not found in $BIN_DIR/"
+        warn "IPC-based nftables operations will not work without nftband"
+        warn "To build: go build -o bin/nftband ./cmd/nftband"
+    fi
+
     return 0
 }
 
@@ -1539,6 +1560,14 @@ install_systemd() {
         ok "Metrics exporter units → $systemd_dir"
     fi
 
+    # NFTBand daemon (SINGLE nftables writer - CRITICAL for architecture)
+    # Socket activation: nftband.socket creates socket, service receives FD
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftband.socket" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftband.socket" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftband.service" "$systemd_dir/"
+        ok "NFTBand daemon units → $systemd_dir"
+    fi
+
     # Health check timer
     if [[ -f "$SCRIPT_DIR/install/systemd/nftban-health.service" ]]; then
         cp -f "$SCRIPT_DIR/install/systemd/nftban-health.service" "$systemd_dir/"
@@ -1639,6 +1668,15 @@ install_systemd() {
 
     # Enable and start timers
     log "Enabling timers..."
+
+    # NFTBand daemon socket (CRITICAL - MUST start before health timer)
+    # Socket activation: systemd creates socket, daemon receives FD on first connection
+    if [[ -f "$systemd_dir/nftband.socket" ]]; then
+        systemctl enable nftband.socket 2>/dev/null || warn "NFTBand socket enable failed"
+        systemctl enable nftband.service 2>/dev/null || warn "NFTBand service enable failed"
+        systemctl start nftband.socket 2>/dev/null || warn "NFTBand socket start failed"
+        ok "NFTBand daemon enabled (single nftables writer)"
+    fi
 
     # Health timer (always enabled)
     if [[ -f "$systemd_dir/nftban-health.timer" ]]; then
