@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/config"
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/safety"
 	"github.com/itcmsgr/nftban/pkg/version"
 )

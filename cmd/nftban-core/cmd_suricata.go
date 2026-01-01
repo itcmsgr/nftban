@@ -37,9 +37,9 @@ func getSuricataPaths(cfg *nftbanconf.Config) (suricataConfigDir, evePath, logDi
 func cmdSuricata(action string, cfg *nftbanconf.Config) error {
 	switch action {
 	case "status":
-		return cmdSuricataStatus()
+		return cmdSuricataStatus(cfg)
 	case "filters":
-		return cmdSuricataFilters()
+		return cmdSuricataFilters(cfg)
 	case "daemon":
 		return cmdSuricataDaemon()
 	case "enable":
@@ -47,13 +47,13 @@ func cmdSuricata(action string, cfg *nftbanconf.Config) error {
 			return fmt.Errorf("usage: nftban-core suricata enable <FILTER_NAME>")
 		}
 		filterName := os.Args[3]
-		return cmdSuricataEnable(filterName, true)
+		return cmdSuricataEnable(cfg, filterName, true)
 	case "disable":
 		if len(os.Args) < 4 {
 			return fmt.Errorf("usage: nftban-core suricata disable <FILTER_NAME>")
 		}
 		filterName := os.Args[3]
-		return cmdSuricataEnable(filterName, false)
+		return cmdSuricataEnable(cfg, filterName, false)
 	case "set-threshold":
 		if len(os.Args) < 5 {
 			return fmt.Errorf("usage: nftban-core suricata set-threshold <FILTER_NAME> <THRESHOLD>")
@@ -63,14 +63,14 @@ func cmdSuricata(action string, cfg *nftbanconf.Config) error {
 		if _, err := fmt.Sscanf(os.Args[4], "%d", &threshold); err != nil {
 			return fmt.Errorf("invalid threshold: %v", err)
 		}
-		return cmdSuricataSetThreshold(filterName, threshold)
+		return cmdSuricataSetThreshold(cfg, filterName, threshold)
 	case "set-action":
 		if len(os.Args) < 5 {
 			return fmt.Errorf("usage: nftban-core suricata set-action <FILTER_NAME> <ACTION>")
 		}
 		filterName := os.Args[3]
-		action := os.Args[4]
-		return cmdSuricataSetAction(filterName, action)
+		actionArg := os.Args[4]
+		return cmdSuricataSetAction(cfg, filterName, actionArg)
 
 	// NEW: Profile Management
 	case "profile-detect":
@@ -181,30 +181,30 @@ func cmdSuricata(action string, cfg *nftbanconf.Config) error {
 }
 
 // cmdSuricataStatus shows Suricata integration status
-func cmdSuricataStatus() error {
+func cmdSuricataStatus(cfg *nftbanconf.Config) error {
 	fmt.Println(version.BannerWithEmoji("🛡️", "Suricata Integration Status"))
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 
 	// Load config
-	configDir, _, _, _ := getSuricataPaths()
-	config, err := suricata.LoadConfig(configDir)
+	configDir, _, _, _ := getSuricataPaths(cfg)
+	suricataCfg, err := suricata.LoadConfig(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Global status
 	fmt.Println("Global Configuration:")
-	fmt.Printf("  Enabled:          %v\n", config.GlobalEnabled)
-	fmt.Printf("  Default Threshold: %d points\n", config.DefaultThreshold)
-	fmt.Printf("  Default Ban Time:  %s\n", config.DefaultBanTime)
-	fmt.Printf("  Default Action:    %s\n", config.DefaultAction)
-	fmt.Printf("  Score Decay:       %s\n", config.ScoreDecay)
+	fmt.Printf("  Enabled:          %v\n", suricataCfg.GlobalEnabled)
+	fmt.Printf("  Default Threshold: %d points\n", suricataCfg.DefaultThreshold)
+	fmt.Printf("  Default Ban Time:  %s\n", suricataCfg.DefaultBanTime)
+	fmt.Printf("  Default Action:    %s\n", suricataCfg.DefaultAction)
+	fmt.Printf("  Score Decay:       %s\n", suricataCfg.ScoreDecay)
 	fmt.Println()
 
 	// Filter counts
-	enabledFilters := config.GetEnabledFilters()
-	totalFilters := len(config.Filters)
+	enabledFilters := suricataCfg.GetEnabledFilters()
+	totalFilters := len(suricataCfg.Filters)
 	enabledCount := len(enabledFilters)
 	disabledCount := totalFilters - enabledCount
 
@@ -215,7 +215,7 @@ func cmdSuricataStatus() error {
 	fmt.Println()
 
 	// Eve.json path
-	_, evePath, _, _ := getSuricataPaths()
+	_, evePath, _, _ := getSuricataPaths(cfg)
 	if _, err := os.Stat(evePath); err == nil {
 		fmt.Printf("✅ Eve log found: %s\n", evePath)
 	} else {
@@ -227,14 +227,14 @@ func cmdSuricataStatus() error {
 }
 
 // cmdSuricataFilters lists all configured filters
-func cmdSuricataFilters() error {
+func cmdSuricataFilters(cfg *nftbanconf.Config) error {
 	fmt.Println(version.BannerWithEmoji("🛡️", "Suricata Filters"))
 	fmt.Println(strings.Repeat("=", 100))
 	fmt.Println()
 
 	// Load config
-	configDir, _, _, _ := getSuricataPaths()
-	config, err := suricata.LoadConfig(configDir)
+	configDir, _, _, _ := getSuricataPaths(cfg)
+	suricataCfg, err := suricata.LoadConfig(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
@@ -245,7 +245,7 @@ func cmdSuricataFilters() error {
 	fmt.Fprintln(w, "------\t-------\t---------\t--------\t------\t--------\t-----------")
 
 	// Print each filter
-	for name, filter := range config.Filters {
+	for name, filter := range suricataCfg.Filters {
 		enabled := "✗"
 		if filter.Enabled {
 			enabled = "✓"
@@ -288,18 +288,18 @@ func cmdSuricataFilters() error {
 }
 
 // cmdSuricataEnable enables/disables a filter
-func cmdSuricataEnable(filterName string, enable bool) error {
-	configDir, _, _, _ := getSuricataPaths()
+func cmdSuricataEnable(cfg *nftbanconf.Config, filterName string, enable bool) error {
+	configDir, _, _, _ := getSuricataPaths(cfg)
 	localPath := configDir + "/filters.conf.local"
 
 	// Load existing config
-	config, err := suricata.LoadConfig(configDir)
+	suricataCfg, err := suricata.LoadConfig(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Check if filter exists
-	filter, ok := config.GetFilter(filterName)
+	filter, ok := suricataCfg.GetFilter(filterName)
 	if !ok {
 		return fmt.Errorf("filter '%s' not found", filterName)
 	}
@@ -326,18 +326,18 @@ func cmdSuricataEnable(filterName string, enable bool) error {
 }
 
 // cmdSuricataSetThreshold sets the threshold for a filter
-func cmdSuricataSetThreshold(filterName string, threshold int) error {
-	configDir, _, _, _ := getSuricataPaths()
+func cmdSuricataSetThreshold(cfg *nftbanconf.Config, filterName string, threshold int) error {
+	configDir, _, _, _ := getSuricataPaths(cfg)
 	localPath := configDir + "/filters.conf.local"
 
 	// Load existing config
-	config, err := suricata.LoadConfig(configDir)
+	suricataCfg, err := suricata.LoadConfig(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Check if filter exists
-	filter, ok := config.GetFilter(filterName)
+	filter, ok := suricataCfg.GetFilter(filterName)
 	if !ok {
 		return fmt.Errorf("filter '%s' not found", filterName)
 	}
@@ -359,23 +359,23 @@ func cmdSuricataSetThreshold(filterName string, threshold int) error {
 }
 
 // cmdSuricataSetAction sets the action for a filter
-func cmdSuricataSetAction(filterName string, action string) error {
+func cmdSuricataSetAction(cfg *nftbanconf.Config, filterName string, action string) error {
 	// Validate action
 	if action != "log" && action != "observe" && action != "ban" {
 		return fmt.Errorf("invalid action '%s' (must be log/observe/ban)", action)
 	}
 
-	configDir, _, _, _ := getSuricataPaths()
+	configDir, _, _, _ := getSuricataPaths(cfg)
 	localPath := configDir + "/filters.conf.local"
 
 	// Load existing config
-	config, err := suricata.LoadConfig(configDir)
+	suricataCfg, err := suricata.LoadConfig(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to load config: %w", err)
 	}
 
 	// Check if filter exists
-	filter, ok := config.GetFilter(filterName)
+	filter, ok := suricataCfg.GetFilter(filterName)
 	if !ok {
 		return fmt.Errorf("filter '%s' not found", filterName)
 	}
