@@ -42,6 +42,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/module"
 	"github.com/itcmsgr/nftban/pkg/nftbackend"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/persistence"
 	"github.com/itcmsgr/nftban/pkg/portscan"
 	"golang.org/x/sys/unix"
 )
@@ -466,6 +467,10 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 		return d.handleApplyRulesetRequest(req.Params)
 	case "check":
 		return d.handleCheckRequest(req.Params)
+	case "persist_ban":
+		return d.handlePersistBanRequest(req.Params)
+	case "unpersist_ban":
+		return d.handleUnpersistBanRequest(req.Params)
 	case "ping":
 		return SocketResponse{Success: true, Data: "pong"}
 	default:
@@ -729,6 +734,63 @@ func (d *Daemon) handleCheckRequest(params map[string]any) SocketResponse {
 			"ip":     ip,
 			"banned": banned,
 			"set":    set,
+		},
+	}
+}
+
+// handlePersistBanRequest adds an IP to persistent blacklist files
+func (d *Daemon) handlePersistBanRequest(params map[string]any) SocketResponse {
+	ip, _ := params["ip"].(string)
+	if ip == "" {
+		return SocketResponse{Success: false, Error: "missing ip parameter"}
+	}
+
+	reason, _ := params["reason"].(string)
+	source, _ := params["source"].(string)
+	if source == "" {
+		source = "manual"
+	}
+
+	// Get config directory
+	_, configDir, _, _ := getDaemonPaths()
+
+	// Persist the ban
+	result, filename, err := persistence.PersistBan(configDir, ip, reason, source)
+	if err != nil {
+		return SocketResponse{Success: false, Error: err.Error()}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"ip":       ip,
+			"result":   string(result),
+			"filename": filename,
+		},
+	}
+}
+
+// handleUnpersistBanRequest removes an IP from all persistent blacklist files
+func (d *Daemon) handleUnpersistBanRequest(params map[string]any) SocketResponse {
+	ip, _ := params["ip"].(string)
+	if ip == "" {
+		return SocketResponse{Success: false, Error: "missing ip parameter"}
+	}
+
+	// Get config directory
+	_, configDir, _, _ := getDaemonPaths()
+
+	// Remove from all blacklist files
+	filesModified, err := persistence.UnpersistBan(configDir, ip)
+	if err != nil {
+		return SocketResponse{Success: false, Error: err.Error()}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"ip":             ip,
+			"files_modified": filesModified,
 		},
 	}
 }
