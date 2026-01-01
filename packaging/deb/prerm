@@ -3,6 +3,11 @@ set -e
 
 case "$1" in
     remove|deconfigure)
+        # Stop NFTBand daemon (single nftables writer) - stop socket first
+        deb-systemd-invoke stop nftband.socket >/dev/null 2>&1 || true
+        deb-systemd-invoke stop nftband.service >/dev/null 2>&1 || true
+
+        # Stop Web UI services
         deb-systemd-invoke stop nftban-ui.service >/dev/null || true
         deb-systemd-invoke stop nftban-ui-auth.socket >/dev/null || true
         deb-systemd-invoke stop nftban-ui-auth.service >/dev/null || true

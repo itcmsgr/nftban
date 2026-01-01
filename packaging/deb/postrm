@@ -18,11 +18,19 @@ case "$1" in
         # Remove UI log files
         rm -f /var/log/nftban/ui-*.log 2>/dev/null || true
 
-        # Runtime directory will be removed automatically by systemd on service stop
-        # But clean it manually if still exists
+        # Runtime directories will be removed automatically by systemd on service stop
+        # But clean them manually if still exist
         [ -d /run/nftban-ui ] && rm -rf /run/nftban-ui
+        [ -S /run/nftban/nftband.sock ] && rm -f /run/nftban/nftband.sock
+        [ -d /run/nftban ] && rmdir /run/nftban 2>/dev/null || true
 
-        # Disable systemd units
+        # Disable NFTBand daemon units
+        deb-systemd-helper purge nftband.socket >/dev/null 2>&1 || true
+        deb-systemd-helper purge nftband.service >/dev/null 2>&1 || true
+        deb-systemd-helper unmask nftband.socket >/dev/null 2>&1 || true
+        deb-systemd-helper unmask nftband.service >/dev/null 2>&1 || true
+
+        # Disable Web UI systemd units
         deb-systemd-helper purge nftban-ui.service >/dev/null || true
         deb-systemd-helper purge nftban-ui-auth.socket >/dev/null || true
         deb-systemd-helper purge nftban-ui-auth.service >/dev/null || true
