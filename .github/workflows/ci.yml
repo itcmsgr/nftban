@@ -52,6 +52,49 @@ jobs:
           #   - maintenance.sh + sync.go migrated to IPC
           ./scripts/ci/check-nft-writes.sh
 
+      - name: Check netlink import policy
+        run: |
+          echo "=== Checking netlink import architecture policy ==="
+          # Single-writer architecture: only nftband daemon may use netlink
+          #
+          # Allowed paths:
+          #   cmd/nftband/       - the daemon itself
+          #   pkg/nftbackend/    - daemon's nft backend
+          #   pkg/sync/          - nft operations library (used by daemon)
+          #
+          # Forbidden in CLI:
+          #   cmd/nftban-core/   - CLI must use IPC, not netlink
+          #
+          VIOLATIONS=0
+
+          echo "Checking cmd/nftban-core for forbidden netlink imports..."
+          if grep -r "github.com/google/nftables" cmd/nftban-core/ 2>/dev/null; then
+            echo "❌ FAIL: cmd/nftban-core imports netlink directly!"
+            echo "   CLI must use IPC (pkg/ipc) to communicate with daemon."
+            VIOLATIONS=1
+          else
+            echo "✓ cmd/nftban-core: No direct netlink imports"
+          fi
+
+          # Verify daemon is allowed
+          echo ""
+          echo "Verifying daemon uses netlink (expected)..."
+          if grep -q "github.com/google/nftables" cmd/nftband/main.go 2>/dev/null || \
+             grep -q "nftbackend" cmd/nftband/main.go 2>/dev/null; then
+            echo "✓ cmd/nftband: Uses nftbackend (correct - daemon owns nft writes)"
+          fi
+
+          if [[ $VIOLATIONS -gt 0 ]]; then
+            echo ""
+            echo "=== NETLINK IMPORT POLICY VIOLATION ==="
+            echo "The CLI (cmd/nftban-core) must not import netlink libraries."
+            echo "Use pkg/ipc to send requests to nftband daemon instead."
+            exit 1
+          fi
+
+          echo ""
+          echo "✓ Netlink import policy: PASSED"
+
   # ===========================================================================
   # BASH VALIDATION
   # ===========================================================================

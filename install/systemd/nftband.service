@@ -74,13 +74,24 @@ LockPersonality=true
 # =============================================================================
 # FILESYSTEM ACCESS
 # =============================================================================
-# Paths daemon needs to read/write
-# - /etc/nftban: configuration + blacklist.d/ (daemon owns blacklist writes)
-# - /var/lib/nftban: persistent data, snapshots, .nft rulesets
-# - /var/log/nftban: log files
-# - /run/nftban: PID file (socket managed by nftband.socket)
-# - /var/cache/nftban: temporary caches
-ReadWritePaths=/etc/nftban /var/lib/nftban /var/log/nftban /run/nftban /var/cache/nftban
+# Principle of least privilege: daemon writes ONLY to specific paths
+#
+# READ-ONLY (implicit via ProtectSystem=strict):
+#   /etc/nftban/nftban.conf      - main config
+#   /etc/nftban/whitelist.d/     - whitelist entries (admin-managed)
+#   /etc/nftban/distros/         - distro detection configs
+#   /etc/nftban/ports.d/         - port configs
+#   /etc/nftban/conf.d/          - module configs
+#
+# READ-WRITE (explicit):
+#   /etc/nftban/blacklist.d/     - ONLY directory daemon writes to in /etc
+#   /var/lib/nftban              - persistent data, snapshots, .nft rulesets
+#   /var/log/nftban              - log files
+#   /run/nftban                  - PID file (socket managed by nftband.socket)
+#   /var/cache/nftban            - temporary caches
+#
+# This minimizes damage if daemon is compromised - cannot modify main config
+ReadWritePaths=/etc/nftban/blacklist.d /var/lib/nftban /var/log/nftban /run/nftban /var/cache/nftban
 
 # =============================================================================
 # CAPABILITIES
