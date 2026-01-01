@@ -14,14 +14,12 @@ import (
 	"github.com/oschwald/maxminddb-golang"
 )
 
-// getGeoipDir returns the GeoIP database directory from central config
-// NO FALLBACK - path must come from /etc/nftban/nftban.conf
-func getGeoipDir() string {
-	cfg := nftbanconf.MustLoad()
+// getGeoipDir returns the GeoIP database directory from passed config
+func getGeoipDir(cfg *nftbanconf.Config) string {
 	return cfg.DataDir + "/geoip"
 }
 
-func cmdGeoip(action string) error {
+func cmdGeoip(action string, cfg *nftbanconf.Config) error {
 	switch action {
 	case "update":
 		return cmdGeoipUpdate()

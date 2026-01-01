@@ -12,14 +12,12 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-// getSyncConfigDir returns the config directory from central config
-// NO FALLBACK - path must come from /etc/nftban/nftban.conf
-func getSyncConfigDir() string {
-	cfg := nftbanconf.MustLoad()
+// getSyncConfigDir returns the config directory from passed config
+func getSyncConfigDir(cfg *nftbanconf.Config) string {
 	return cfg.ConfigDir
 }
 
-func cmdSync() error {
+func cmdSync(cfg *nftbanconf.Config) error {
 	// Check for privilege (root OR CAP_NET_ADMIN capability)
 	if err := checkPrivilege(); err != nil {
 		return err
@@ -31,7 +29,7 @@ func cmdSync() error {
 
 	// Initialize RuntimeState
 	fmt.Println("Step 1: Loading current state from config files...")
-	state := runtime.NewRuntimeState(getSyncConfigDir())
+	state := runtime.NewRuntimeState(getSyncConfigDir(cfg))
 
 	if err := state.LoadWhitelists(); err != nil {
 		return fmt.Errorf("failed to load whitelists: %w", err)
@@ -48,7 +46,7 @@ func cmdSync() error {
 
 	// Load ports from ALL sources (ports.d/ + enabled panel configs)
 	fmt.Println("Step 1.5: Loading port configurations...")
-	configDir := getSyncConfigDir()
+	configDir := getSyncConfigDir(cfg)
 	allPorts, err := ports.LoadAllPorts(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to load ports: %w", err)

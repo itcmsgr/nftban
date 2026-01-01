@@ -20,21 +20,19 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-// getFeedsPaths returns feeds directory and config paths from central config
-// NO FALLBACK - paths must come from /etc/nftban/nftban.conf
-func getFeedsPaths() (feedsDir, feedsConfig, configDir string) {
-	cfg := nftbanconf.MustLoad()
+// getFeedsPaths returns feeds directory and config paths from passed config
+func getFeedsPaths(cfg *nftbanconf.Config) (feedsDir, feedsConfig, configDir string) {
 	return cfg.DataDir + "/feeds", cfg.ConfigDir + "/conf.d/feeds.conf", cfg.ConfigDir
 }
 
-func cmdFeeds(action string) error {
-	feedsDir, feedsConfig, _ := getFeedsPaths()
+func cmdFeeds(action string, cfg *nftbanconf.Config) error {
+	feedsDir, feedsConfig, _ := getFeedsPaths(cfg)
 
 	switch action {
 	case "list":
-		return cmdFeedsList(feedsDir)
+		return cmdFeedsList(feedsDir, cfg)
 	case "load":
-		return cmdFeedsLoad(feedsDir)
+		return cmdFeedsLoad(feedsDir, cfg)
 	case "stats":
 		return cmdFeedsStats(feedsDir)
 	case "enable":
@@ -50,9 +48,9 @@ func cmdFeeds(action string) error {
 		feedName := os.Args[3]
 		return cmdFeedsEnable(feedsConfig, feedName, false)
 	case "sync":
-		return cmdFeedsSync(feedsDir, feedsConfig)
+		return cmdFeedsSync(feedsDir, feedsConfig, cfg)
 	case "update":
-		return cmdFeedsUpdate(feedsDir, feedsConfig)
+		return cmdFeedsUpdate(feedsDir, feedsConfig, cfg)
 	default:
 		return fmt.Errorf("unknown feeds action: %s\nUsage: nftban-core feeds [list|load|stats|update|enable|disable|sync] [FEED_NAME]", action)
 	}
@@ -104,12 +102,12 @@ func getFeedsEnabledStatus(configPath string) map[string]bool {
 	return enabledMap
 }
 
-func cmdFeedsList(feedsDir string) error {
+func cmdFeedsList(feedsDir string, cfg *nftbanconf.Config) error {
 	// Check for --json flag
 	jsonOutput := hasFlag("--json")
 
 	// Read config to get enabled/disabled status
-	_, configPath, _ := getFeedsPaths()
+	_, configPath, _ := getFeedsPaths(cfg)
 	enabledMap := getFeedsEnabledStatus(configPath)
 
 	feedsList, err := feeds.ListAvailableFeeds(feedsDir)
@@ -283,7 +281,7 @@ func cmdFeedsStats(feedsDir string) error {
 	return nil
 }
 
-func cmdFeedsLoad(feedsDir string) error {
+func cmdFeedsLoad(feedsDir string, cfg *nftbanconf.Config) error {
 	// Check for privilege (root OR CAP_NET_ADMIN capability)
 	if err := checkPrivilege(); err != nil {
 		return err
@@ -325,7 +323,7 @@ func cmdFeedsLoad(feedsDir string) error {
 
 	// Step 2: Initialize RuntimeState and load existing blacklists
 	fmt.Println("Step 2: Loading existing blacklists...")
-	_, _, configDir := getFeedsPaths()
+	_, _, configDir := getFeedsPaths(cfg)
 	state := runtime.NewRuntimeState(configDir)
 	if err := state.LoadWhitelists(); err != nil {
 		return fmt.Errorf("failed to load whitelists: %w", err)
@@ -559,16 +557,14 @@ func cmdFeedsEnable(configPath, feedName string, enable bool) error {
 	return nil
 }
 
-func cmdFeedsSync(feedsDir, configPath string) error {
+func cmdFeedsSync(feedsDir, configPath string, cfg *nftbanconf.Config) error {
 	// Check for privilege (root OR CAP_NET_ADMIN capability)
 	if err := checkPrivilege(); err != nil {
 		return err
 	}
 
-	// Path to store last config hash - use data dir from central config
-	// NO FALLBACK - path must come from /etc/nftban/nftban.conf
-	syncCfg := nftbanconf.MustLoad()
-	stateFile := syncCfg.DataDir + "/feeds.state"
+	// Path to store last config hash - use data dir from passed config
+	stateFile := cfg.DataDir + "/feeds.state"
 
 	// Check both .conf and .conf.local files
 	configFiles := []string{
@@ -616,7 +612,7 @@ func cmdFeedsSync(feedsDir, configPath string) error {
 	fmt.Println()
 
 	// Reload feeds
-	err := cmdFeedsLoad(feedsDir)
+	err := cmdFeedsLoad(feedsDir, cfg)
 	if err != nil {
 		return fmt.Errorf("failed to reload feeds: %w", err)
 	}
@@ -644,7 +640,7 @@ type FeedConfig struct {
 }
 
 // cmdFeedsUpdate downloads all enabled feeds using native Go HTTP (no curl needed)
-func cmdFeedsUpdate(feedsDir, configPath string) error {
+func cmdFeedsUpdate(feedsDir, configPath string, cfg *nftbanconf.Config) error {
 	fmt.Println(version.BannerWithEmoji("🔄", "Update Feeds"))
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
@@ -720,7 +716,7 @@ func cmdFeedsUpdate(feedsDir, configPath string) error {
 	// Step 4: Auto-load feeds into nftables
 	if successCount > 0 {
 		fmt.Println("Step 4: Loading feeds into nftables...")
-		if err := cmdFeedsLoad(feedsDir); err != nil {
+		if err := cmdFeedsLoad(feedsDir, cfg); err != nil {
 			if strings.Contains(err.Error(), "conflicting intervals") {
 				fmt.Printf("  ⚠️  Some feed IPs overlap with existing blocks (already protected)\n")
 			} else {

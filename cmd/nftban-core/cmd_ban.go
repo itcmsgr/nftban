@@ -17,10 +17,8 @@ import (
 	"github.com/itcmsgr/nftban/pkg/whitelist"
 )
 
-// getBanConfigDir returns the config directory from central config
-// NO FALLBACK - path must come from /etc/nftban/nftban.conf
-func getBanConfigDir() string {
-	cfg := nftbanconf.MustLoad()
+// getBanConfigDir returns the config directory from passed config
+func getBanConfigDir(cfg *nftbanconf.Config) string {
 	return cfg.ConfigDir
 }
 
@@ -46,7 +44,7 @@ func formatDuration(seconds int) string {
 	return fmt.Sprintf("%dd", days)
 }
 
-func cmdBan(ipStr string, reason string, source string, timeoutSeconds int) error {
+func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg *nftbanconf.Config) error {
 	// Check for privilege (root OR CAP_NET_ADMIN capability)
 	if err := checkPrivilege(); err != nil {
 		return err
@@ -71,7 +69,7 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int) erro
 
 	// Check if IP is whitelisted
 	fmt.Println("Step 2: Checking whitelist...")
-	configDir := getBanConfigDir()
+	configDir := getBanConfigDir(cfg)
 	whitelistIPv4, whitelistIPv6, err := whitelist.LoadAllWhitelists(configDir)
 	if err != nil {
 		return fmt.Errorf("failed to load whitelists: %w", err)
@@ -246,11 +244,10 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int) erro
 	if banSource == "" {
 		banSource = banlog.SourceManual
 	}
-	banCfg := nftbanconf.MustLoad()
 	if err := banlog.LogBan(normalizedIP, banSource, country); err != nil {
 		fmt.Printf("  ⚠️  Failed to write to bans.log: %v\n", err)
 	} else {
-		fmt.Printf("  ✅ Ban logged to %s/bans.log\n", banCfg.LogDir)
+		fmt.Printf("  ✅ Ban logged to %s/bans.log\n", cfg.LogDir)
 	}
 	fmt.Println()
 

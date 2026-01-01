@@ -12,7 +12,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-func cmdInit() error {
+func cmdInit(cfg *nftbanconf.Config) error {
 	fmt.Println(version.BannerWithEmoji("🛡️", "Safety-First Initialization"))
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()

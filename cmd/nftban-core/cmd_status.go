@@ -9,20 +9,18 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-// getStatusConfigDir returns the config directory from central config
-// NO FALLBACK - path must come from /etc/nftban/nftban.conf
-func getStatusConfigDir() string {
-	cfg := nftbanconf.MustLoad()
+// getStatusConfigDir returns the config directory from passed config
+func getStatusConfigDir(cfg *nftbanconf.Config) string {
 	return cfg.ConfigDir
 }
 
-func cmdStatus() error {
+func cmdStatus(cfg *nftbanconf.Config) error {
 	fmt.Println(version.BannerWithEmoji("🛡️", "System Status"))
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 
 	// Initialize RuntimeState
-	state := runtime.NewRuntimeState(getStatusConfigDir())
+	state := runtime.NewRuntimeState(getStatusConfigDir(cfg))
 
 	// Load whitelists
 	fmt.Println("Loading whitelists...")

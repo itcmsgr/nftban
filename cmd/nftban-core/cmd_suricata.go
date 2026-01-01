@@ -23,11 +23,9 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-// getSuricataPaths returns suricata-related paths from central config
-// NO FALLBACK for nftban paths - must come from /etc/nftban/nftban.conf
+// getSuricataPaths returns suricata-related paths from passed config
 // Note: Suricata itself uses /etc/suricata (external dependency, not nftban config)
-func getSuricataPaths() (suricataConfigDir, evePath, logDir, dataDir string) {
-	cfg := nftbanconf.MustLoad()
+func getSuricataPaths(cfg *nftbanconf.Config) (suricataConfigDir, evePath, logDir, dataDir string) {
 	// Suricata itself uses /etc/suricata (external dependency, not nftban config)
 	suricataConfigDir = "/etc/suricata"
 	evePath = "/var/log/suricata/eve.json"
@@ -36,7 +34,7 @@ func getSuricataPaths() (suricataConfigDir, evePath, logDir, dataDir string) {
 	return
 }
 
-func cmdSuricata(action string) error {
+func cmdSuricata(action string, cfg *nftbanconf.Config) error {
 	switch action {
 	case "status":
 		return cmdSuricataStatus()

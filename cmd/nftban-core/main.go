@@ -26,14 +26,17 @@ func main() {
 	command := os.Args[1]
 
 	// ════════════════════════════════════════════════════════════
+	// LOAD CONFIG ONCE - Pass to all commands
+	// ════════════════════════════════════════════════════════════
+	cfg := nftbanconf.MustLoad()
+
+	// ════════════════════════════════════════════════════════════
 	// Analytics initialization for commands that need it
 	// ════════════════════════════════════════════════════════════
 	needsAnalytics := command == "ban" || command == "analytics"
 
 	if needsAnalytics {
-		// Get data dir from central config
-		// NO FALLBACK - path must come from /etc/nftban/nftban.conf
-		cfg := nftbanconf.MustLoad()
+		// Get data dir from config (already loaded above)
 		dataDir := cfg.DataDir
 		if err := analytics.Init(dataDir, dataDir+"/reports"); err != nil {
 			log.Printf("Warning: Analytics disabled: %v", err)
@@ -52,17 +55,17 @@ func main() {
 
 	switch command {
 	case "init":
-		if err := cmdInit(); err != nil {
+		if err := cmdInit(cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	case "status":
-		if err := cmdStatus(); err != nil {
+		if err := cmdStatus(cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	case "sync":
-		if err := cmdSync(); err != nil {
+		if err := cmdSync(cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -99,7 +102,7 @@ func main() {
 			}
 		}
 
-		if err := cmdBan(ip, reason, source, timeout); err != nil {
+		if err := cmdBan(ip, reason, source, timeout, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -109,7 +112,7 @@ func main() {
 			os.Exit(1)
 		}
 		ip := os.Args[2]
-		if err := cmdUnban(ip); err != nil {
+		if err := cmdUnban(ip, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -119,7 +122,7 @@ func main() {
 			os.Exit(1)
 		}
 		ip := os.Args[2]
-		if err := cmdCheck(ip); err != nil {
+		if err := cmdCheck(ip, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -129,7 +132,7 @@ func main() {
 			os.Exit(1)
 		}
 		action := os.Args[2]
-		if err := cmdFeeds(action); err != nil {
+		if err := cmdFeeds(action, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -139,7 +142,7 @@ func main() {
 			os.Exit(1)
 		}
 		action := os.Args[2]
-		if err := cmdTrust(action); err != nil {
+		if err := cmdTrust(action, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -149,7 +152,7 @@ func main() {
 			os.Exit(1)
 		}
 		action := os.Args[2]
-		if err := cmdCountry(action); err != nil {
+		if err := cmdCountry(action, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -159,7 +162,7 @@ func main() {
 			os.Exit(1)
 		}
 		action := os.Args[2]
-		if err := cmdPorts(action); err != nil {
+		if err := cmdPorts(action, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -169,7 +172,7 @@ func main() {
 			os.Exit(1)
 		}
 		action := os.Args[2]
-		if err := cmdGeoip(action); err != nil {
+		if err := cmdGeoip(action, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -179,7 +182,7 @@ func main() {
 			os.Exit(1)
 		}
 		action := os.Args[2]
-		if err := cmdSuricata(action); err != nil {
+		if err := cmdSuricata(action, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
@@ -189,12 +192,12 @@ func main() {
 			os.Exit(1)
 		}
 		action := os.Args[2]
-		if err := cmdAnalytics(action); err != nil {
+		if err := cmdAnalytics(action, cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
 	case "profile-sync":
-		if err := runProfileSync(); err != nil {
+		if err := runProfileSync(cfg); err != nil {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}

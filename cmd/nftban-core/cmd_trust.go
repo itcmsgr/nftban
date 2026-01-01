@@ -18,10 +18,8 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-// getTrustPaths returns trust directory and config paths from central config
-// NO FALLBACK - paths must come from /etc/nftban/nftban.conf
-func getTrustPaths() (trustDir, trustConfig string) {
-	cfg := nftbanconf.MustLoad()
+// getTrustPaths returns trust directory and config paths from passed config
+func getTrustPaths(cfg *nftbanconf.Config) (trustDir, trustConfig string) {
 	return cfg.DataDir + "/trust", cfg.ConfigDir + "/conf.d/trust.conf"
 }
 
@@ -88,8 +86,8 @@ var builtInTrustFeeds = []TrustConfig{
 	},
 }
 
-func cmdTrust(action string) error {
-	trustDir, trustConfig := getTrustPaths()
+func cmdTrust(action string, cfg *nftbanconf.Config) error {
+	trustDir, trustConfig := getTrustPaths(cfg)
 
 	switch action {
 	case "list":
