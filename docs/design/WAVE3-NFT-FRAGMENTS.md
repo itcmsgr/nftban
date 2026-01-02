@@ -14,13 +14,13 @@
 │   bash script                                                   │
 │       │                                                         │
 │       ├─1─▶ Render fragment from template                       │
-│       │     /var/lib/nftban/rules.d/portscan-classic.nft       │
+│       │     /etc/nftban/rules.d/portscan-classic.nft       │
 │       │                                                         │
 │       ├─2─▶ IPC: apply_ruleset(path)                           │
 │       │                                                         │
 │       │         nftband daemon                                  │
 │       │              │                                          │
-│       │              └─3─▶ nft -f /var/lib/nftban/rules.d/...  │
+│       │              └─3─▶ nft -f /etc/nftban/rules.d/...  │
 │       │                                                         │
 │   ✓ Transaction applied atomically                              │
 └─────────────────────────────────────────────────────────────────┘
@@ -31,13 +31,17 @@
 ## Fragment Directory Structure
 
 ```
-/var/lib/nftban/
+/etc/nftban/
 └── rules.d/
     ├── 10-portscan-classic.nft   # Portscan detection chain + rules
     ├── 20-ddos-classic.nft       # DDoS protection chain + rules
     ├── 30-port-config.nft        # Port-based access rules
     └── 99-cleanup.nft            # Removal fragments (flush chains)
 ```
+
+**Note**: Fragments are stored in `/etc/nftban/rules.d/` (not `/var/lib/nftban/`)
+for SELinux compatibility. The `nft` binary (iptables_exec_t context) can read
+files with `etc_t` context but not `var_lib_t` context.
 
 ---
 
@@ -115,7 +119,7 @@ add rule ip6 nftban input jump portscan_detection
 
 ```bash
 # Render portscan classic fragment
-# Writes to: /var/lib/nftban/rules.d/10-portscan-classic.nft
+# Writes to: /etc/nftban/rules.d/10-portscan-classic.nft
 nftban_fragment_render_portscan_classic() {
     local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"
@@ -124,7 +128,7 @@ nftban_fragment_render_portscan_classic() {
     local log_rate="${PORTSCAN_CLASSIC_LOG_RATE:-10/second}"
     local log_burst="${PORTSCAN_CLASSIC_LOG_BURST:-50}"
 
-    local fragment_path="/var/lib/nftban/rules.d/10-portscan-classic.nft"
+    local fragment_path="/etc/nftban/rules.d/10-portscan-classic.nft"
 
     cat > "${fragment_path}.tmp" <<EOF
 #!/usr/sbin/nft -f
@@ -193,7 +197,7 @@ Already defined in ARCHITECTURE-NFT-POLICY.md:
 {
   "method": "apply_ruleset",
   "params": {
-    "path": "/var/lib/nftban/rules.d/10-portscan-classic.nft"
+    "path": "/etc/nftban/rules.d/10-portscan-classic.nft"
   }
 }
 ```
@@ -204,7 +208,7 @@ func (d *Daemon) handleApplyRuleset(params map[string]any) SocketResponse {
     path, _ := params["path"].(string)
 
     // Validate path is in allowed directory
-    if !strings.HasPrefix(path, "/var/lib/nftban/rules.d/") {
+    if !strings.HasPrefix(path, "/etc/nftban/rules.d/") {
         return SocketResponse{Success: false, Error: "path not in allowed directory"}
     }
 
@@ -305,7 +309,7 @@ flush chain ip6 nftban portscan_detection
 ## CI Enforcement Update
 
 The `check-nft-writes.sh` script should allow:
-- Fragment files in `/var/lib/nftban/rules.d/*.nft`
+- Fragment files in `/etc/nftban/rules.d/*.nft`
 - These are data files, not scripts
 
 The nft WRITE check only applies to bash scripts (`.sh`) and Go files (`.go`).
@@ -319,10 +323,10 @@ The nft WRITE check only applies to bash scripts (`.sh`) and Go files (`.go`).
 nftban_fragment_render_portscan_classic
 
 # 2. Verify fragment syntax
-nft -c -f /var/lib/nftban/rules.d/10-portscan-classic.nft
+nft -c -f /etc/nftban/rules.d/10-portscan-classic.nft
 
 # 3. Apply via IPC
-echo '{"method":"apply_ruleset","params":{"path":"/var/lib/nftban/rules.d/10-portscan-classic.nft"}}' | \
+echo '{"method":"apply_ruleset","params":{"path":"/etc/nftban/rules.d/10-portscan-classic.nft"}}' | \
   socat - /run/nftban/nftband.sock
 
 # 4. Verify rules applied

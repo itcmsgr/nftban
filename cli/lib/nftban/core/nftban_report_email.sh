@@ -233,83 +233,109 @@ nftban_report_email_generate() {
 
     # ==========================================================================
     # GET TOP BLOCKED IPs (from nftables blacklist with GeoIP lookup)
+    # OPTIMIZED: Use Go batch GeoIP lookup instead of spawning process per IP
     # ==========================================================================
 
     local top_ips=""
-    local ip_count=0
-    local geoip_db="${NFTBAN_DATA_DIR}/geoip/GeoLite2-City.mmdb"
-
-    # Helper: Check if IP is public (not private/reserved)
-    is_public_ip() {
-        local ip="$1"
-        # Filter out private, loopback, link-local, multicast, reserved
-        [[ "$ip" =~ ^10\. ]] && return 1
-        [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] && return 1
-        [[ "$ip" =~ ^192\.168\. ]] && return 1
-        [[ "$ip" =~ ^127\. ]] && return 1
-        [[ "$ip" =~ ^169\.254\. ]] && return 1
-        [[ "$ip" =~ ^224\. ]] && return 1
-        [[ "$ip" =~ ^0\. ]] && return 1
-        [[ "$ip" =~ ^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\. ]] && return 1
-        [[ "$ip" =~ ^192\.0\.(0|2)\. ]] && return 1
-        [[ "$ip" =~ ^198\.(1[89])\. ]] && return 1
-        [[ "$ip" =~ ^203\.0\.113\. ]] && return 1  # TEST-NET-3
-        return 0
-    }
-
-    # Helper: Get country from GeoIP
-    get_country() {
-        local ip="$1"
-        local country="Unknown"
-
-        # Try mmdblookup if available
-        if command -v mmdblookup &>/dev/null && [[ -f "$geoip_db" ]]; then
-            country=$(mmdblookup --file "$geoip_db" --ip "$ip" country names en 2>/dev/null | grep -oP '"\K[^"]+' | head -1)
-        # Fallback: try geoiplookup
-        elif command -v geoiplookup &>/dev/null; then
-            country=$(geoiplookup "$ip" 2>/dev/null | head -1 | sed 's/.*: //' | cut -d',' -f2 | xargs)
-        fi
-
-        [[ -z "$country" ]] && country="Unknown"
-        echo "$country"
-    }
 
     # Get IPs from actual nftables blacklist (not config files)
     local blacklist_ips=""
     if nft list set ip nftban blacklist_ipv4 &>/dev/null; then
         blacklist_ips=$(nft list set ip nftban blacklist_ipv4 2>/dev/null | \
             grep -oE '[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+' | \
-            sort -u | head -50)  # Get more than 5 to filter private IPs
+            sort -u | tr '\n' ',' | sed 's/,$//')  # Convert to comma-separated for Go
     fi
 
-    # Process IPs: filter private, lookup country, build HTML
-    while IFS= read -r ip; do
-        [[ -z "$ip" ]] && continue
+    # Use Go for batch GeoIP lookup (100x faster than spawning mmdblookup per IP)
+    if [[ -n "$blacklist_ips" ]] && command -v nftban-core &>/dev/null; then
+        local report_json
+        report_json=$(nftban-core analytics report --ips="$blacklist_ips" --limit=5 2>/dev/null)
 
-        # Skip private/reserved IPs
-        if ! is_public_ip "$ip"; then
-            continue
+        if [[ -n "$report_json" ]] && command -v jq &>/dev/null; then
+            # Parse JSON and build HTML
+            local ip_count=0
+            while IFS= read -r ip_json; do
+                local ip country
+                ip=$(echo "$ip_json" | jq -r '.ip')
+                country=$(echo "$ip_json" | jq -r '.country')
+
+                ((ip_count++))
+                local border="border-bottom:1px solid #475569;"
+                [[ $ip_count -eq 5 ]] && border=""
+
+                top_ips+="<tr>
+                    <td style=\"padding:12px 16px;${border}\">
+                        <span style=\"color:#f1f5f9;font-family:monospace;\">${ip}</span>
+                    </td>
+                    <td style=\"padding:12px 16px;text-align:right;${border}\">
+                        <span style=\"color:#f59e0b;font-weight:bold;\">${country}</span>
+                    </td>
+                </tr>"
+            done < <(echo "$report_json" | jq -c '.top_ips[]')
         fi
+    fi
 
-        ((ip_count++))
-        [[ $ip_count -gt 5 ]] && break
+    # Fallback to old method if Go command not available or failed
+    if [[ -z "$top_ips" ]] && [[ -n "$blacklist_ips" ]]; then
+        local geoip_db="${NFTBAN_DATA_DIR}/geoip/GeoLite2-City.mmdb"
 
-        # Get country
-        local country
-        country=$(get_country "$ip")
+        # Helper: Check if IP is public (not private/reserved)
+        is_public_ip() {
+            local ip="$1"
+            [[ "$ip" =~ ^10\. ]] && return 1
+            [[ "$ip" =~ ^172\.(1[6-9]|2[0-9]|3[01])\. ]] && return 1
+            [[ "$ip" =~ ^192\.168\. ]] && return 1
+            [[ "$ip" =~ ^127\. ]] && return 1
+            [[ "$ip" =~ ^169\.254\. ]] && return 1
+            [[ "$ip" =~ ^224\. ]] && return 1
+            [[ "$ip" =~ ^0\. ]] && return 1
+            [[ "$ip" =~ ^100\.(6[4-9]|[7-9][0-9]|1[01][0-9]|12[0-7])\. ]] && return 1
+            [[ "$ip" =~ ^192\.0\.(0|2)\. ]] && return 1
+            [[ "$ip" =~ ^198\.(1[89])\. ]] && return 1
+            [[ "$ip" =~ ^203\.0\.113\. ]] && return 1
+            return 0
+        }
 
-        local border="border-bottom:1px solid #475569;"
-        [[ $ip_count -eq 5 ]] && border=""
+        # Helper: Get country from GeoIP
+        get_country() {
+            local ip="$1"
+            local country="Unknown"
 
-        top_ips+="<tr>
-            <td style=\"padding:12px 16px;${border}\">
-                <span style=\"color:#f1f5f9;font-family:monospace;\">${ip}</span>
-            </td>
-            <td style=\"padding:12px 16px;text-align:right;${border}\">
-                <span style=\"color:#f59e0b;font-weight:bold;\">${country}</span>
-            </td>
-        </tr>"
-    done <<< "$blacklist_ips"
+            if command -v mmdblookup &>/dev/null && [[ -f "$geoip_db" ]]; then
+                country=$(mmdblookup --file "$geoip_db" --ip "$ip" country names en 2>/dev/null | grep -oP '"\K[^"]+' | head -1)
+            elif command -v geoiplookup &>/dev/null; then
+                country=$(geoiplookup "$ip" 2>/dev/null | head -1 | sed 's/.*: //' | cut -d',' -f2 | xargs)
+            fi
+
+            [[ -z "$country" ]] && country="Unknown"
+            echo "$country"
+        }
+
+        # Process IPs with old method
+        local ip_count=0
+        while IFS= read -r ip; do
+            [[ -z "$ip" ]] && continue
+            is_public_ip "$ip" || continue
+
+            ((ip_count++))
+            [[ $ip_count -gt 5 ]] && break
+
+            local country
+            country=$(get_country "$ip")
+
+            local border="border-bottom:1px solid #475569;"
+            [[ $ip_count -eq 5 ]] && border=""
+
+            top_ips+="<tr>
+                <td style=\"padding:12px 16px;${border}\">
+                    <span style=\"color:#f1f5f9;font-family:monospace;\">${ip}</span>
+                </td>
+                <td style=\"padding:12px 16px;text-align:right;${border}\">
+                    <span style=\"color:#f59e0b;font-weight:bold;\">${country}</span>
+                </td>
+            </tr>"
+        done <<< "${blacklist_ips//,/$'\n'}"
+    fi
 
     # Fallback message if no public IPs found
     if [[ -z "$top_ips" ]]; then
