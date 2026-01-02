@@ -1,7 +1,6 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"net/http"
 	_ "net/http/pprof"
@@ -9,7 +8,6 @@ import (
 
 	"github.com/itcmsgr/nftban/pkg/blacklist"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/sync"
 	"github.com/itcmsgr/nftban/pkg/whitelist"
 )
 
@@ -42,14 +40,6 @@ func runProfileSync(cfg *nftbanconf.Config) error {
 
 	// Small delay to ensure pprof server is ready
 	time.Sleep(100 * time.Millisecond)
-
-	// Initialize NFT Manager
-	log.Println("🔧 Initializing NFT Manager...")
-	nft, err := sync.NewNFTManager()
-	if err != nil {
-		return fmt.Errorf("failed to create NFT manager: %w", err)
-	}
-	defer nft.Close()
 
 	// Load whitelist
 	configDir := getProfileSyncConfigDir(cfg)
@@ -87,23 +77,18 @@ func runProfileSync(cfg *nftbanconf.Config) error {
 		start := time.Now()
 		log.Printf("  📊 Iteration %d/%d starting...", i+1, iterations)
 
-		// NOTE: CIDR merging profiling disabled - implementation reserved for future
-		// TODO: Re-enable when CIDR merge implementation is completed
-
-		// Test diff computation
-		wl4Diff := sync.ComputeDiff(wl4Slice, []string{})
-		wl6Diff := sync.ComputeDiff(wl6Slice, []string{})
-		bl4Diff := sync.ComputeDiff(bl4Slice, []string{})
-		bl6Diff := sync.ComputeDiff(bl6Slice, []string{})
+		// Simulate diff computation by comparing sets
+		// This profiles the set comparison logic without netlink
+		wl4Add := computeSimpleDiff(wl4Slice, []string{})
+		wl6Add := computeSimpleDiff(wl6Slice, []string{})
+		bl4Add := computeSimpleDiff(bl4Slice, []string{})
+		bl6Add := computeSimpleDiff(bl6Slice, []string{})
 
 		duration := time.Since(start)
 		totalDuration += duration
 		log.Printf("  ✅ Iteration %d/%d completed in %s", i+1, iterations, duration)
-		log.Printf("     WL4: +%d -%d | WL6: +%d -%d | BL4: +%d -%d | BL6: +%d -%d",
-			len(wl4Diff.ToAdd), len(wl4Diff.ToRemove),
-			len(wl6Diff.ToAdd), len(wl6Diff.ToRemove),
-			len(bl4Diff.ToAdd), len(bl4Diff.ToRemove),
-			len(bl6Diff.ToAdd), len(bl6Diff.ToRemove))
+		log.Printf("     WL4: +%d | WL6: +%d | BL4: +%d | BL6: +%d",
+			len(wl4Add), len(wl6Add), len(bl4Add), len(bl6Add))
 
 		// Small delay between iterations
 		time.Sleep(100 * time.Millisecond)
@@ -131,4 +116,20 @@ func mapKeysToSlice(m map[string]bool) []string {
 		result = append(result, k)
 	}
 	return result
+}
+
+// computeSimpleDiff computes elements to add (in desired but not in current)
+func computeSimpleDiff(desired, current []string) []string {
+	currentSet := make(map[string]bool, len(current))
+	for _, item := range current {
+		currentSet[item] = true
+	}
+
+	var toAdd []string
+	for _, item := range desired {
+		if !currentSet[item] {
+			toAdd = append(toAdd, item)
+		}
+	}
+	return toAdd
 }

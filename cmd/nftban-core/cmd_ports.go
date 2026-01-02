@@ -4,11 +4,10 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/google/nftables"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/network"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/ports"
-	"github.com/itcmsgr/nftban/pkg/sync"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -128,38 +127,24 @@ func cmdPortsStatus(portsDir string) error {
 	fmt.Printf("  ✅ Loaded %d UDP ports\n", len(config.UDPPorts))
 	fmt.Println()
 
-	// Check nftables status
-	fmt.Println("Step 3: Checking nftables status...")
-	nft, err := sync.NewNFTManager()
-	if err != nil {
-		return fmt.Errorf("failed to connect to nftables: %w", err)
-	}
-	defer nft.Close()
-
-	// Check for inet table (dual-stack)
-	inetTable, _ := nft.GetOrCreateTable(nftables.TableFamilyINet)
-	if inetTable != nil {
-		fmt.Println("  ✅ Found inet (dual-stack) table")
-	}
-
-	// Check IPv4 table (only if system has IPv4)
-	if ipSupport.HasIPv4 {
-		ipv4Table, _ := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
-		if ipv4Table != nil {
-			fmt.Println("  ✅ Found IPv4 table")
-		}
+	// Check daemon status via IPC
+	fmt.Println("Step 3: Checking nftband daemon status...")
+	client := ipc.NewClient()
+	if err := client.Ping(); err != nil {
+		fmt.Println("  ⚠️  Daemon not running")
+		fmt.Println("     Start with: sudo systemctl start nftband")
 	} else {
-		fmt.Println("  ℹ️  IPv4 table skipped (system has no IPv4)")
-	}
+		fmt.Println("  ✅ Daemon is running")
 
-	// Check IPv6 table (only if system has IPv6)
-	if ipSupport.HasIPv6 {
-		ipv6Table, _ := nft.GetOrCreateTable(nftables.TableFamilyIPv6)
-		if ipv6Table != nil {
-			fmt.Println("  ✅ Found IPv6 table")
+		// Get daemon status
+		resp, err := client.Status()
+		if err == nil && resp.Success {
+			if data, ok := resp.Data.(map[string]any); ok {
+				if v, ok := data["version"].(string); ok {
+					fmt.Printf("  ✅ Daemon version: %s\n", v)
+				}
+			}
 		}
-	} else {
-		fmt.Println("  ℹ️  IPv6 table skipped (system has no IPv6)")
 	}
 	fmt.Println()
 
@@ -176,7 +161,7 @@ func cmdPortsLoad(portsDir string) error {
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 
-	// Step 1: Detect IP family support (CRITICAL!)
+	// Step 1: Detect IP family support
 	fmt.Println("Step 1: Detecting IP family support...")
 	ipSupport, err := network.DetectIPFamilySupport()
 	if err != nil {
@@ -186,20 +171,6 @@ func cmdPortsLoad(portsDir string) error {
 
 	if !ipSupport.HasIPv4 && !ipSupport.HasIPv6 {
 		return fmt.Errorf("no IP connectivity detected: system has no IPv4 or IPv6 addresses")
-	}
-
-	// Show what will be created
-	fmt.Println()
-	fmt.Println("  Will create rules for:")
-	if ipSupport.HasIPv4 {
-		fmt.Println("  ✅ IPv4 (system has IPv4 addresses)")
-	} else {
-		fmt.Println("  ⏭️  IPv4 SKIPPED (system has NO IPv4 addresses)")
-	}
-	if ipSupport.HasIPv6 {
-		fmt.Println("  ✅ IPv6 (system has IPv6 addresses)")
-	} else {
-		fmt.Println("  ⏭️  IPv6 SKIPPED (system has NO IPv6 addresses)")
 	}
 	fmt.Println()
 
@@ -223,105 +194,43 @@ func cmdPortsLoad(portsDir string) error {
 	fmt.Printf("  ✅ UDP ports: %d\n", len(config.UDPPorts))
 	fmt.Println()
 
-	// Step 3: Initialize nftables manager
-	fmt.Println("Step 3: Connecting to nftables...")
-	nft, err := sync.NewNFTManager()
-	if err != nil {
-		return fmt.Errorf("failed to create nftables manager: %w", err)
+	// Step 3: Connect to daemon
+	fmt.Println("Step 3: Connecting to nftband daemon...")
+	client := ipc.NewClient()
+	if err := client.Ping(); err != nil {
+		return fmt.Errorf("daemon not running: %w\nStart with: sudo systemctl start nftband", err)
 	}
-	defer nft.Close()
-	fmt.Println("  ✅ Connected to nftables")
+	fmt.Println("  ✅ Connected to nftband daemon")
 	fmt.Println()
 
-	// Step 4: ALWAYS create port sets for BOTH IPv4 and IPv6 (for compatibility)
-	// But only load data into families that actually exist on the system
-	fmt.Println("Step 4: Creating port sets in nftables...")
-
-	// Create IPv4 table and sets (ALWAYS - even if no IPv4)
-	fmt.Println("  Creating IPv4 port sets...")
-	ipv4Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
+	// Step 4: Load ports via IPC
+	fmt.Println("Step 4: Loading ports into nftables via daemon...")
+	resp, err := client.LoadPorts()
 	if err != nil {
-		return fmt.Errorf("failed to get IPv4 table: %w", err)
+		return fmt.Errorf("failed to load ports: %w", err)
 	}
 
-	tcpSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "tcp_ports")
-	if err != nil {
-		return fmt.Errorf("failed to create IPv4 tcp_ports set: %w", err)
-	}
-	fmt.Println("  ✅ Created/verified tcp_ports set (IPv4)")
-
-	udpSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "udp_ports")
-	if err != nil {
-		return fmt.Errorf("failed to create IPv4 udp_ports set: %w", err)
-	}
-	fmt.Println("  ✅ Created/verified udp_ports set (IPv4)")
-
-	// Create IPv6 table and sets (ALWAYS - even if no IPv6)
-	fmt.Println("  Creating IPv6 port sets...")
-	ipv6Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv6)
-	if err != nil {
-		return fmt.Errorf("failed to get IPv6 table: %w", err)
+	if !resp.Success {
+		return fmt.Errorf("failed to load ports: %s", resp.Error)
 	}
 
-	tcpSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "tcp_ports")
-	if err != nil {
-		return fmt.Errorf("failed to create IPv6 tcp_ports set: %w", err)
-	}
-	fmt.Println("  ✅ Created/verified tcp_ports set (IPv6)")
-
-	udpSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "udp_ports")
-	if err != nil {
-		return fmt.Errorf("failed to create IPv6 udp_ports set: %w", err)
-	}
-	fmt.Println("  ✅ Created/verified udp_ports set (IPv6)")
-	fmt.Println()
-
-	// Step 5: Load ports ONLY into families that exist on the system
-	fmt.Println("Step 5: Loading ports into nftables sets...")
-
-	// Load IPv4 ports (only if system has IPv4)
-	if ipSupport.HasIPv4 {
-		if len(config.TCPPorts) > 0 {
-			if err := nft.AddPortElements(tcpSetV4, config.TCPPorts); err != nil {
-				return fmt.Errorf("failed to add IPv4 TCP ports: %w", err)
-			}
-			fmt.Printf("  ✅ Loaded %d TCP ports into IPv4 set\n", len(config.TCPPorts))
-		}
-		if len(config.UDPPorts) > 0 {
-			if err := nft.AddPortElements(udpSetV4, config.UDPPorts); err != nil {
-				return fmt.Errorf("failed to add IPv4 UDP ports: %w", err)
-			}
-			fmt.Printf("  ✅ Loaded %d UDP ports into IPv4 set\n", len(config.UDPPorts))
-		}
-	} else {
-		fmt.Println("  ⏭️  IPv4 sets left EMPTY (system has no IPv4 addresses)")
-	}
-
-	// Load IPv6 ports (only if system has IPv6)
-	if ipSupport.HasIPv6 {
-		if len(config.TCPPorts) > 0 {
-			if err := nft.AddPortElements(tcpSetV6, config.TCPPorts); err != nil {
-				return fmt.Errorf("failed to add IPv6 TCP ports: %w", err)
-			}
-			fmt.Printf("  ✅ Loaded %d TCP ports into IPv6 set\n", len(config.TCPPorts))
-		}
-		if len(config.UDPPorts) > 0 {
-			if err := nft.AddPortElements(udpSetV6, config.UDPPorts); err != nil {
-				return fmt.Errorf("failed to add IPv6 UDP ports: %w", err)
-			}
-			fmt.Printf("  ✅ Loaded %d UDP ports into IPv6 set\n", len(config.UDPPorts))
-		}
-	} else {
-		fmt.Println("  ⏭️  IPv6 sets left EMPTY (system has no IPv6 addresses)")
+	// Extract results
+	data, ok := resp.Data.(map[string]any)
+	if !ok {
+		return fmt.Errorf("unexpected response format")
 	}
 
 	fmt.Println()
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Printf("✅ Port rules loaded successfully!\n")
 	fmt.Println()
-	fmt.Printf("System configuration: %s\n", ipSupport.String())
-	fmt.Printf("TCP ports loaded: %d\n", len(config.TCPPorts))
-	fmt.Printf("UDP ports loaded: %d\n", len(config.UDPPorts))
+
+	if tcp, ok := data["tcp_ports"].(float64); ok {
+		fmt.Printf("TCP ports loaded: %.0f\n", tcp)
+	}
+	if udp, ok := data["udp_ports"].(float64); ok {
+		fmt.Printf("UDP ports loaded: %.0f\n", udp)
+	}
 	fmt.Println()
 	fmt.Println("Port sets are now configured in nftables.")
 	fmt.Println("Use firewall rules to reference @tcp_ports and @udp_ports sets.")

@@ -12,11 +12,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/nftables"
 	"github.com/itcmsgr/nftban/pkg/feeds"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/runtime"
-	"github.com/itcmsgr/nftban/pkg/sync"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -330,62 +328,22 @@ func cmdFeedsLoad(feedsDir string, cfg *nftbanconf.Config) error {
 		fmt.Println()
 	}
 
-	// Step 2: Initialize RuntimeState and load existing blacklists
-	fmt.Println("Step 2: Loading existing blacklists...")
-	_, _, configDir := getFeedsPaths(cfg)
-	state := runtime.NewRuntimeState(configDir)
-	if err := state.LoadWhitelists(); err != nil {
-		return fmt.Errorf("failed to load whitelists: %w", err)
+	// Step 2: Connect to daemon
+	fmt.Println("Step 2: Connecting to nftband daemon...")
+	client := ipc.NewClient()
+	if err := client.Ping(); err != nil {
+		return fmt.Errorf("daemon not running: %w\nStart with: sudo systemctl start nftband", err)
 	}
-	if err := state.LoadBlacklists(); err != nil {
-		return fmt.Errorf("failed to load blacklists: %w", err)
-	}
-	fmt.Printf("  ✅ Loaded %d existing blacklist entries\n",
-		len(state.BlacklistIPv4)+len(state.BlacklistIPv6))
+	fmt.Println("  ✅ Connected to nftband daemon")
 	fmt.Println()
 
-	// Step 3: Create feeds sets in nftables
-	fmt.Println("Step 3: Getting blacklist sets from nftables...")
-	nft, err := sync.NewNFTManager()
-	if err != nil {
-		return fmt.Errorf("failed to create nftables manager: %w", err)
-	}
-	defer nft.Close()
-
-	// Get IPv4 table and blacklist set (v1.0 schema: all sources consolidated)
-	tableIPv4, err := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
-	if err != nil {
-		return fmt.Errorf("failed to get IPv4 table: %w", err)
-	}
-
-	// Use blacklist_ipv4 set (consolidates: manual bans + feeds + geoban + countries)
-	blacklistIPv4Set, err := nft.GetOrCreateIntervalSet(tableIPv4, "blacklist_ipv4", true)
-	if err != nil {
-		return fmt.Errorf("failed to get blacklist_ipv4 set: %w", err)
-	}
-	fmt.Println("  ✅ Using blacklist_ipv4 set (consolidated architecture)")
-
-	// Get IPv6 table and blacklist set
-	tableIPv6, err := nft.GetOrCreateTable(nftables.TableFamilyIPv6)
-	if err != nil {
-		return fmt.Errorf("failed to get IPv6 table: %w", err)
-	}
-
-	// Use blacklist_ipv6 set (consolidates all sources)
-	blacklistIPv6Set, err := nft.GetOrCreateIntervalSet(tableIPv6, "blacklist_ipv6", false)
-	if err != nil {
-		return fmt.Errorf("failed to get blacklist_ipv6 set: %w", err)
-	}
-	fmt.Println("  ✅ Using blacklist_ipv6 set (consolidated architecture)")
-	fmt.Println()
-
-	// Step 4: Merge IPs and CIDRs into combined lists for blacklist (interval sets support both)
-	fmt.Println("Step 4: Merging feeds into blacklist...")
+	// Step 3: Load feeds via IPC
+	fmt.Println("Step 3: Loading feeds into blacklist via daemon...")
 
 	// Combine IPv4 IPs (as /32) and CIDRs into single list
 	var ipv4Combined []string
 	for ip := range ipv4Set {
-		ipv4Combined = append(ipv4Combined, ip+"/32") // Convert individual IPs to CIDR notation
+		ipv4Combined = append(ipv4Combined, ip+"/32")
 	}
 	for cidr := range ipv4CIDRSet {
 		ipv4Combined = append(ipv4Combined, cidr)
@@ -394,54 +352,31 @@ func cmdFeedsLoad(feedsDir string, cfg *nftbanconf.Config) error {
 	// Combine IPv6 IPs (as /128) and CIDRs into single list
 	var ipv6Combined []string
 	for ip := range ipv6Set {
-		ipv6Combined = append(ipv6Combined, ip+"/128") // Convert individual IPs to CIDR notation
+		ipv6Combined = append(ipv6Combined, ip+"/128")
 	}
 	for cidr := range ipv6CIDRSet {
 		ipv6Combined = append(ipv6Combined, cidr)
 	}
 
-	// Load IPv4 feeds into blacklist (with CIDR canonicalization)
-	var ipv4Stats *sync.MergeStats
-	if len(ipv4Combined) > 0 {
-		fmt.Printf("  Loading %d IPv4 entries (IPs + CIDRs) into blacklist...\n", len(ipv4Combined))
-		stats, err := nft.AddCIDRElementsWithStats(blacklistIPv4Set, ipv4Combined)
-		if err != nil {
-			// Check if it's a conflict error (IPs already covered by existing CIDRs)
-			if strings.Contains(err.Error(), "conflicting intervals") {
-				fmt.Printf("  ⚠️  Some feed IPs overlap with existing GeoIP/CIDR blocks (already blocked)\n")
-				fmt.Printf("     This is normal - the overlapping IPs are already protected.\n")
-				fmt.Printf("     Non-overlapping IPs were loaded successfully.\n")
-			} else {
-				return fmt.Errorf("failed to load IPv4 CIDRs: %w", err)
-			}
-		} else {
-			ipv4Stats = stats
-			fmt.Printf("  ✅ IPv4 CIDRs loaded successfully\n")
-			fmt.Printf("     Canonicalized: %d → %d ranges (%.1f%% reduction)\n",
-				stats.InputCIDRs, stats.OutputRanges, stats.ReductionPct)
-		}
-	} else {
-		fmt.Println("  ℹ️  No IPv4 CIDRs to load")
+	// Combine all CIDRs
+	allCIDRs := append(ipv4Combined, ipv6Combined...)
+
+	resp, err := client.LoadCIDRs("blacklist", allCIDRs)
+	if err != nil {
+		return fmt.Errorf("failed to load feeds: %w", err)
 	}
 
-	// Load IPv6 feeds into blacklist (with CIDR canonicalization)
-	var ipv6Stats *sync.MergeStats
-	if len(ipv6Combined) > 0 {
-		fmt.Printf("  Loading %d IPv6 entries (IPs + CIDRs) into blacklist...\n", len(ipv6Combined))
-		stats, err := nft.AddCIDRElementsWithStats(blacklistIPv6Set, ipv6Combined)
-		if err != nil {
-			return fmt.Errorf("failed to load IPv6 feeds: %w", err)
-		}
-		ipv6Stats = stats
-		fmt.Printf("  ✅ IPv6 feeds loaded successfully\n")
-		fmt.Printf("     Canonicalized: %d → %d ranges (%.1f%% reduction)\n",
-			stats.InputCIDRs, stats.OutputRanges, stats.ReductionPct)
-	} else {
-		fmt.Println("  ℹ️  No IPv6 feeds to load")
+	if !resp.Success {
+		return fmt.Errorf("failed to load feeds: %s", resp.Error)
 	}
+
+	// Extract results
+	data, ok := resp.Data.(map[string]any)
+	if !ok {
+		return fmt.Errorf("unexpected response format")
+	}
+
 	fmt.Println()
-
-	// Success!
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Printf("✅ Feeds loaded into blacklist successfully!\n")
 	fmt.Println()
@@ -452,14 +387,20 @@ func cmdFeedsLoad(feedsDir string, cfg *nftbanconf.Config) error {
 	fmt.Printf("Feed entries: %d IPv4 IPs + %d IPv4 CIDRs\n", len(ipv4Set), len(ipv4CIDRSet))
 	fmt.Printf("              %d IPv6 IPs + %d IPv6 CIDRs\n", len(ipv6Set), len(ipv6CIDRSet))
 
-	// Show canonicalization results
-	if ipv4Stats != nil {
-		fmt.Printf("Optimized to:  %d IPv4 ranges (%.1f%% reduction)\n",
-			ipv4Stats.OutputRanges, ipv4Stats.ReductionPct)
+	// Show results from daemon
+	if ipv4Input, ok := data["ipv4_input"].(float64); ok && ipv4Input > 0 {
+		if ipv4Ranges, ok := data["ipv4_output_ranges"].(float64); ok {
+			if reduction, ok := data["ipv4_reduction_pct"].(float64); ok {
+				fmt.Printf("Optimized to:  %.0f IPv4 ranges (%.1f%% reduction)\n", ipv4Ranges, reduction)
+			}
+		}
 	}
-	if ipv6Stats != nil {
-		fmt.Printf("              %d IPv6 ranges (%.1f%% reduction)\n",
-			ipv6Stats.OutputRanges, ipv6Stats.ReductionPct)
+	if ipv6Input, ok := data["ipv6_input"].(float64); ok && ipv6Input > 0 {
+		if ipv6Ranges, ok := data["ipv6_output_ranges"].(float64); ok {
+			if reduction, ok := data["ipv6_reduction_pct"].(float64); ok {
+				fmt.Printf("              %.0f IPv6 ranges (%.1f%% reduction)\n", ipv6Ranges, reduction)
+			}
+		}
 	}
 	fmt.Println()
 	fmt.Println("⚠️  NOTE: Existing blacklist entries (manual bans, etc.) preserved.")
@@ -467,18 +408,14 @@ func cmdFeedsLoad(feedsDir string, cfg *nftbanconf.Config) error {
 	fmt.Println()
 
 	// Performance warning for large sets
-	totalRanges := 0
-	if ipv4Stats != nil {
-		totalRanges += ipv4Stats.OutputRanges
+	totalInput := 0
+	if v, ok := data["total_input"].(float64); ok {
+		totalInput = int(v)
 	}
-	if ipv6Stats != nil {
-		totalRanges += ipv6Stats.OutputRanges
-	}
-
-	if totalRanges > 100000 {
+	if totalInput > 100000 {
 		fmt.Println(strings.Repeat("=", 70))
 		fmt.Println("⚠️  PERFORMANCE WARNING:")
-		fmt.Printf("   You have %d ranges loaded in nftables.\n", totalRanges)
+		fmt.Printf("   You have %d entries loaded in nftables.\n", totalInput)
 		fmt.Println()
 		fmt.Println("   IMPORTANT: Use terse mode when listing rules:")
 		fmt.Println("   ✅ nft -t list ruleset      (fast - < 1 second)")
