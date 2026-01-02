@@ -9,11 +9,6 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-// getSyncConfigDir returns the config directory from passed config
-func getSyncConfigDir(cfg *nftbanconf.Config) string {
-	return cfg.ConfigDir
-}
-
 func cmdSync(cfg *nftbanconf.Config) error {
 	// Check for privilege (root OR CAP_NET_ADMIN capability)
 	if err := checkPrivilege(); err != nil {
