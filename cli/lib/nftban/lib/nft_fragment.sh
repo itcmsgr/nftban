@@ -109,7 +109,7 @@ nft_fragment_render_portscan_classic() {
     timestamp=$(date -Iseconds)
 
     local content
-    # Note: Using printf to avoid here-doc issues with shell escaping
+    # Note: Rules on single lines to avoid heredoc backslash issues
     content=$(cat <<EOF
 #!/usr/sbin/nft -f
 # NFTBan Portscan Classic Detection
@@ -120,33 +120,17 @@ nft_fragment_render_portscan_classic() {
 add chain ${table_ipv4} ${chain}
 flush chain ${table_ipv4} ${chain}
 
-add rule ${table_ipv4} ${chain} \\
-    tcp flags syn / syn,ack,fin,rst \\
-    ct state new \\
-    limit rate ${log_rate} burst ${log_burst} packets \\
-    log prefix "${log_prefix}SYN " level info
+add rule ${table_ipv4} ${chain} tcp flags syn / syn,ack,fin,rst ct state new limit rate ${log_rate} burst ${log_burst} packets log prefix "${log_prefix}SYN " level info
 
-add rule ${table_ipv4} ${chain} \\
-    udp dport != { 53, 123, 443 } \\
-    ct state new \\
-    limit rate ${log_rate} burst ${log_burst} packets \\
-    log prefix "${log_prefix}UDP " level info
+add rule ${table_ipv4} ${chain} udp dport != { 53, 123, 443 } ct state new limit rate ${log_rate} burst ${log_burst} packets log prefix "${log_prefix}UDP " level info
 
 # --- IPv6 ---
 add chain ${table_ipv6} ${chain}
 flush chain ${table_ipv6} ${chain}
 
-add rule ${table_ipv6} ${chain} \\
-    tcp flags syn / syn,ack,fin,rst \\
-    ct state new \\
-    limit rate ${log_rate} burst ${log_burst} packets \\
-    log prefix "${log_prefix}SYN " level info
+add rule ${table_ipv6} ${chain} tcp flags syn / syn,ack,fin,rst ct state new limit rate ${log_rate} burst ${log_burst} packets log prefix "${log_prefix}SYN " level info
 
-add rule ${table_ipv6} ${chain} \\
-    udp dport != { 53, 123, 443 } \\
-    ct state new \\
-    limit rate ${log_rate} burst ${log_burst} packets \\
-    log prefix "${log_prefix}UDP " level info
+add rule ${table_ipv6} ${chain} udp dport != { 53, 123, 443 } ct state new limit rate ${log_rate} burst ${log_burst} packets log prefix "${log_prefix}UDP " level info
 EOF
     )
 
@@ -267,19 +251,13 @@ add chain ${table_ipv4} ${chain}
 flush chain ${table_ipv4} ${chain}
 
 # Rate limiting for new connections
-add rule ${table_ipv4} ${chain} \\
-    ct state new \\
-    limit rate over ${rate_limit} burst ${burst} packets \\
-    drop
+add rule ${table_ipv4} ${chain} ct state new limit rate over ${rate_limit} burst ${burst} packets drop
 
 # --- IPv6 ---
 add chain ${table_ipv6} ${chain}
 flush chain ${table_ipv6} ${chain}
 
-add rule ${table_ipv6} ${chain} \\
-    ct state new \\
-    limit rate over ${rate_limit} burst ${burst} packets \\
-    drop
+add rule ${table_ipv6} ${chain} ct state new limit rate over ${rate_limit} burst ${burst} packets drop
 EOF
     )
 
