@@ -2038,6 +2038,84 @@ nftban_health_check_cli_errors() {
     return $status
 }
 
+nftban_health_check_rbl() {
+    # Check RBL monitoring status (v1.0.24)
+    # Returns: 0=OK, 1=WARNING, 2=ERROR
+    # Checks: enabled status, last check time, blacklist status
+
+    local status=$HEALTH_OK
+    local rbl_issues=()
+
+    # Load RBL configuration
+    local rbl_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
+    local rbl_cache_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/rbl"
+
+    # Check if RBL is enabled
+    local rbl_enabled="NO"
+    if [[ -f "$rbl_config" ]]; then
+        rbl_enabled=$(grep -E "^NFTBAN_RBL_ENABLED=" "$rbl_config" 2>/dev/null | cut -d'"' -f2 || echo "NO")
+    fi
+
+    if [[ "$rbl_enabled" != "YES" ]]; then
+        rbl_issues+=("RBL monitoring disabled (optional)")
+        # Not an error - just informational
+        NFTBAN_HEALTH_RESULTS["rbl"]=$HEALTH_OK
+        NFTBAN_HEALTH_ISSUES["rbl"]="RBL monitoring disabled (enable in $rbl_config)"
+        return $HEALTH_OK
+    fi
+
+    # Check last check time
+    local last_check_file="${rbl_cache_dir}/last_check"
+    if [[ -f "$last_check_file" ]]; then
+        local last_check
+        last_check=$(cat "$last_check_file" 2>/dev/null)
+        local last_check_epoch
+        last_check_epoch=$(date -d "$last_check" +%s 2>/dev/null || echo 0)
+        local now_epoch
+        now_epoch=$(date +%s)
+        local hours_ago=$(( (now_epoch - last_check_epoch) / 3600 ))
+
+        if [[ $hours_ago -gt 48 ]]; then
+            rbl_issues+=("Last RBL check was ${hours_ago}h ago (stale)")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    else
+        rbl_issues+=("RBL check never run")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    fi
+
+    # Check for blacklisted IPs in state file
+    local state_file="${rbl_cache_dir}/state.json"
+    if [[ -f "$state_file" ]]; then
+        if grep -q '"listed"' "$state_file" 2>/dev/null; then
+            rbl_issues+=("Server IP(s) currently BLACKLISTED on RBLs!")
+            status=$HEALTH_ERROR
+            NFTBAN_HEALTH_ERRORS+=("RBL: Server IP blacklisted - run 'nftban rbl check' for details")
+        fi
+    fi
+
+    # Check RBL timer status
+    if systemctl is-enabled nftban-rbl-check.timer &>/dev/null; then
+        if ! systemctl is-active nftban-rbl-check.timer &>/dev/null; then
+            rbl_issues+=("RBL timer enabled but not active")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    else
+        rbl_issues+=("RBL timer not enabled (run: nftban rbl enable)")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    fi
+
+    # Store results
+    NFTBAN_HEALTH_RESULTS["rbl"]=$status
+    if [[ ${#rbl_issues[@]} -eq 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["rbl"]="RBL monitoring active, no blacklistings"
+    else
+        NFTBAN_HEALTH_ISSUES["rbl"]="${rbl_issues[*]}"
+    fi
+
+    return $status
+}
+
 nftban_health_check_timers() {
     # Check all NFTBan systemd timers (v0.7.3)
     # Returns: 0=OK, 1=WARNING, 2=ERROR, 3=CRITICAL
@@ -2364,6 +2442,11 @@ nftban_health_check_all() {
     # Registry check (v1.0.16 - commands.registry.yml and generators)
     check_result=0
     nftban_health_check_registry || check_result=$?
+    [[ $check_result -gt $overall_status ]] && overall_status=$check_result
+
+    # RBL monitoring check (v1.0.24 - blacklist monitoring)
+    check_result=0
+    nftban_health_check_rbl || check_result=$?
     [[ $check_result -gt $overall_status ]] && overall_status=$check_result
 
     # Permissions check (using nftban_permissions module if available)
@@ -3708,6 +3791,7 @@ export -f nftban_health_check_databases
 export -f nftban_health_check_config
 export -f nftban_health_check_registry
 export -f nftban_health_check_metrics
+export -f nftban_health_check_rbl
 # Removed: export fail2ban health check (v1.0 migration)
 export -f nftban_health_check_timers
 export -f nftban_health_check_gui
