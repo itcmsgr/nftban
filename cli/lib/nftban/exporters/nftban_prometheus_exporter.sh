@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Unified Prometheus Metrics Exporter (ALL-IN-ONE)
+# NFTBan v1.0.0 - Unified Prometheus Metrics Exporter (BASH FALLBACK)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Export comprehensive NFTBan metrics in Prometheus text exposition format
@@ -9,9 +9,13 @@
 # meta:homepage=https://nftban.com
 # nftban — Simplifying Linux Firewall Management
 #
+# ⚠️ COMPATIBILITY FALLBACK: This bash exporter is used when Go binary unavailable.
+# For better performance, install nftban-core (Go exporter runs 20x faster).
+# See: METRICS-MIGRATION.md
+#
 # meta:name=nftban_prometheus_exporter
 # meta:type=exporter
-# meta:header=Unified Prometheus Metrics Exporter (Consolidated)
+# meta:header=Unified Prometheus Metrics Exporter (Bash Fallback)
 # meta:version=1.0.0
 #
 # **Description & Purpose**
