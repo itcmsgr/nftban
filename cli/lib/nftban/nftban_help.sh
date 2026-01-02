@@ -37,6 +37,7 @@ nftban_print_help() {
   # shellcheck disable=SC2034  # dim reserved for future use
   local bold='' reset='' dim=''
   if [[ $have_tput -eq 1 ]] && [[ -t 1 ]]; then
+    # shellcheck disable=SC2034  # dim reserved for future use
     bold="$(tput bold)"; reset="$(tput sgr0)"; dim="$(tput dim)"
   fi
 
