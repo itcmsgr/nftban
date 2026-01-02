@@ -32,6 +32,7 @@ import (
 	"os/signal"
 	"os/user"
 	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -1020,14 +1021,14 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	return SocketResponse{
 		Success: result.Success,
 		Data: map[string]any{
-			"whitelist_ipv4_added":   result.WhitelistIPv4.Added,
-			"whitelist_ipv4_removed": result.WhitelistIPv4.Removed,
-			"whitelist_ipv6_added":   result.WhitelistIPv6.Added,
-			"whitelist_ipv6_removed": result.WhitelistIPv6.Removed,
-			"blacklist_ipv4_added":   result.BlacklistIPv4.Added,
-			"blacklist_ipv4_removed": result.BlacklistIPv4.Removed,
-			"blacklist_ipv6_added":   result.BlacklistIPv6.Added,
-			"blacklist_ipv6_removed": result.BlacklistIPv6.Removed,
+			"whitelist_ipv4_added":   result.WhitelistIPv4.IPsAdded,
+			"whitelist_ipv4_removed": result.WhitelistIPv4.IPsRemoved,
+			"whitelist_ipv6_added":   result.WhitelistIPv6.IPsAdded,
+			"whitelist_ipv6_removed": result.WhitelistIPv6.IPsRemoved,
+			"blacklist_ipv4_added":   result.BlacklistIPv4.IPsAdded,
+			"blacklist_ipv4_removed": result.BlacklistIPv4.IPsRemoved,
+			"blacklist_ipv6_added":   result.BlacklistIPv6.IPsAdded,
+			"blacklist_ipv6_removed": result.BlacklistIPv6.IPsRemoved,
 			"tcp_ports":              len(allPorts.TCPPorts),
 			"udp_ports":              len(allPorts.UDPPorts),
 		},
