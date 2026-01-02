@@ -158,23 +158,89 @@ type Subscription struct {
 	handler   Handler
 }
 
+// Default worker pool settings
+const (
+	DefaultWorkerCount = 16    // Number of worker goroutines
+	DefaultQueueSize   = 1024  // Size of event dispatch queue
+)
+
+// dispatchJob represents a handler invocation to be executed by a worker
+type dispatchJob struct {
+	handler Handler
+	event   Event
+}
+
 // Bus is the central event distributor
 type Bus struct {
 	subscriptions []Subscription
 	mu            sync.RWMutex
 	closed        bool
 
+	// Worker pool
+	workers    int
+	jobQueue   chan dispatchJob
+	workerWg   sync.WaitGroup
+	workerOnce sync.Once
+
 	// Metrics
 	published   int64
 	delivered   int64
+	dropped     int64  // Events dropped due to full queue
 	errors      int64
 	metricsMu   sync.Mutex
 }
 
-// New creates a new event bus
+// New creates a new event bus with default worker pool settings
 func New() *Bus {
-	return &Bus{
+	return NewWithConfig(DefaultWorkerCount, DefaultQueueSize)
+}
+
+// NewWithConfig creates a new event bus with custom worker pool settings
+func NewWithConfig(workers, queueSize int) *Bus {
+	if workers <= 0 {
+		workers = DefaultWorkerCount
+	}
+	if queueSize <= 0 {
+		queueSize = DefaultQueueSize
+	}
+
+	b := &Bus{
 		subscriptions: make([]Subscription, 0),
+		workers:       workers,
+		jobQueue:      make(chan dispatchJob, queueSize),
+	}
+
+	// Start worker pool
+	b.startWorkers()
+
+	return b
+}
+
+// startWorkers initializes the worker goroutines
+func (b *Bus) startWorkers() {
+	b.workerOnce.Do(func() {
+		for i := 0; i < b.workers; i++ {
+			b.workerWg.Add(1)
+			go b.worker()
+		}
+	})
+}
+
+// worker processes jobs from the queue
+func (b *Bus) worker() {
+	defer b.workerWg.Done()
+
+	for job := range b.jobQueue {
+		func() {
+			defer func() {
+				if r := recover(); r != nil {
+					b.metricsMu.Lock()
+					b.errors++
+					b.metricsMu.Unlock()
+				}
+			}()
+			job.handler(job.event)
+		}()
 	}
 }
 
@@ -236,7 +302,8 @@ func (b *Bus) Unsubscribe(id string) bool {
 }
 
 // Publish sends an event to all matching subscribers
-// Handlers are called asynchronously in goroutines
+// Handlers are called asynchronously via the worker pool
+// Non-blocking: if the queue is full, the event dispatch is dropped (backpressure)
 func (b *Bus) Publish(e Event) {
 	b.mu.RLock()
 	if b.closed {
@@ -261,24 +328,23 @@ func (b *Bus) Publish(e Event) {
 	b.published++
 	b.metricsMu.Unlock()
 
-	// Dispatch to matching handlers
+	// Dispatch to matching handlers via worker pool
 	for _, sub := range subs {
 		if sub.eventType == "" || sub.eventType == e.Type {
-			b.metricsMu.Lock()
-			b.delivered++
-			b.metricsMu.Unlock()
+			job := dispatchJob{handler: sub.handler, event: e}
 
-			// Call handler in goroutine for async delivery
-			go func(h Handler, ev Event) {
-				defer func() {
-					if r := recover(); r != nil {
-						b.metricsMu.Lock()
-						b.errors++
-						b.metricsMu.Unlock()
-					}
-				}()
-				h(ev)
-			}(sub.handler, e)
+			// Non-blocking send with backpressure
+			select {
+			case b.jobQueue <- job:
+				b.metricsMu.Lock()
+				b.delivered++
+				b.metricsMu.Unlock()
+			default:
+				// Queue full - drop this dispatch (backpressure)
+				b.metricsMu.Lock()
+				b.dropped++
+				b.metricsMu.Unlock()
+			}
 		}
 	}
 }
@@ -331,18 +397,32 @@ func (b *Bus) PublishSync(e Event) {
 	wg.Wait()
 }
 
-// Close stops the bus from accepting new events
+// Close stops the bus from accepting new events and shuts down workers
 func (b *Bus) Close() {
 	b.mu.Lock()
-	defer b.mu.Unlock()
+	if b.closed {
+		b.mu.Unlock()
+		return
+	}
 	b.closed = true
+	b.mu.Unlock()
+
+	// Close job queue to signal workers to exit
+	close(b.jobQueue)
+
+	// Wait for all workers to finish processing
+	b.workerWg.Wait()
 }
 
 // Stats returns bus statistics
 type Stats struct {
 	Subscriptions int   `json:"subscriptions"`
+	Workers       int   `json:"workers"`
+	QueueSize     int   `json:"queue_size"`
+	QueueUsed     int   `json:"queue_used"`
 	Published     int64 `json:"published"`
 	Delivered     int64 `json:"delivered"`
+	Dropped       int64 `json:"dropped"`  // Events dropped due to backpressure
 	Errors        int64 `json:"errors"`
 }
 
@@ -350,15 +430,26 @@ type Stats struct {
 func (b *Bus) Stats() Stats {
 	b.mu.RLock()
 	subCount := len(b.subscriptions)
+	closed := b.closed
 	b.mu.RUnlock()
+
+	var queueUsed, queueSize int
+	if !closed && b.jobQueue != nil {
+		queueUsed = len(b.jobQueue)
+		queueSize = cap(b.jobQueue)
+	}
 
 	b.metricsMu.Lock()
 	defer b.metricsMu.Unlock()
 
 	return Stats{
 		Subscriptions: subCount,
+		Workers:       b.workers,
+		QueueSize:     queueSize,
+		QueueUsed:     queueUsed,
 		Published:     b.published,
 		Delivered:     b.delivered,
+		Dropped:       b.dropped,
 		Errors:        b.errors,
 	}
 }
