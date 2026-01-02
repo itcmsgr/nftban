@@ -101,9 +101,12 @@ func TestMergeCIDRs_IPv6(t *testing.T) {
 		t.Fatalf("MergeCIDRs failed: %v", err)
 	}
 
-	// Should remain separate (not adjacent in IPv6 space)
-	if len(result) != 2 {
-		t.Errorf("Expected 2 CIDRs, got %d: %v", len(result), result)
+	// These are adjacent and should merge to 2001:db8::/63
+	if len(result) != 1 {
+		t.Errorf("Expected 1 CIDR (merged), got %d: %v", len(result), result)
+	}
+	if len(result) == 1 && result[0] != "2001:db8::/63" {
+		t.Errorf("Expected 2001:db8::/63, got %s", result[0])
 	}
 
 	t.Logf("Stats: %+v", stats)
