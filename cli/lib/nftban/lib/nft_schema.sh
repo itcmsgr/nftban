@@ -169,6 +169,7 @@ declare -g -A NFTBAN_IPV6_CHAINS=(
 # HELPER CHAINS (optional - modular protection features)
 # These chains MAY exist when protection features are enabled
 # If present, they MUST be called via "jump" from input chain AFTER ct state established
+# shellcheck disable=SC2034  # Schema data structure for validation
 declare -g -A NFTBAN_IPV6_HELPER_CHAINS=(
     ["portscan_detection"]="optional|Port scan detection logging"
     ["ddos_protection"]="optional|DDoS protection (SYN flood, conn limits, rate limits)"
@@ -482,6 +483,7 @@ nftban_nft_validate_chains() {
 
     local status=0
     local chain_name chain_spec chain_type chain_hook chain_priority chain_policy
+    # shellcheck disable=SC2034  # Structured read - actual_hook/actual_type validated elsewhere
     local actual_type actual_hook actual_policy
 
     # Validate IPv4 chains
@@ -741,7 +743,6 @@ nftban_nft_validate_full() {
     ipv6_bl=$(nft list set ip6 nftban blacklist_ipv6 2>/dev/null | grep -c "elements = {" || echo 0)
     ipv4_udp=$(nft list set ip nftban udp_ports 2>/dev/null | grep -oP 'elements = \{ [^}]+' | tr ',' '\n' | wc -l || echo 0)
     ipv6_wl=$(nft list set ip6 nftban whitelist_ipv6 2>/dev/null | grep -c "elements = {" || echo 0)
-    ipv6_bl=$(nft list set ip6 nftban blacklist_ipv6 2>/dev/null | grep -c "elements = {" || echo 0)
 
     echo "   IPv4: whitelist=${ipv4_wl:-0}, blacklist=active, tcp_ports=${ipv4_tcp:-0}, udp_ports=${ipv4_udp:-0}"
     echo "   IPv6: whitelist=${ipv6_wl:-0}, blacklist=active"

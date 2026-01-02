@@ -63,7 +63,7 @@ echo ""
 
 WRITE_FILE=$(mktemp)
 READ_FILE=$(mktemp)
-trap "rm -f $WRITE_FILE $READ_FILE" EXIT
+trap 'rm -f "$WRITE_FILE" "$READ_FILE"' EXIT
 
 # -----------------------------------------------------------------------------
 # WRITE VIOLATIONS (ENFORCED)

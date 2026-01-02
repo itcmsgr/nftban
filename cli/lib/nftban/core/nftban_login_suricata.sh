@@ -41,9 +41,7 @@ readonly NFTBAN_LOGIN_SURICATA_LOADED=1
 
 # shellcheck disable=SC2034  # Module metadata used when sourced
 readonly LOGIN_SURICATA_MODULE_NAME="nftban_login_suricata"
-# Module metadata - reserved for future module registry
 readonly LOGIN_SURICATA_MODULE_VERSION="1.0.0"
-# shellcheck disable=SC2034
 
 # =============================================================================
 # STATE TRACKING
@@ -149,6 +147,7 @@ _nftban_login_suricata_process_eve_line() {
         return 0
     fi
 
+    # shellcheck disable=SC2034  # Reserved for event tracking
     local processed=0
 
     # Handle alert events

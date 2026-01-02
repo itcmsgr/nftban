@@ -526,6 +526,7 @@ nftban_watchdog_get_top_cpu() {
     local -a procs=()
 
     # Read all process stats quickly
+    # shellcheck disable=SC2034  # Structured read - only some fields used
     local pid cmdline comm state utime stime
     for proc_dir in /proc/[0-9]*/; do
         pid="${proc_dir#/proc/}"

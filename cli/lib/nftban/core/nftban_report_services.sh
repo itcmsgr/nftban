@@ -54,6 +54,7 @@ C_RESET="\e[0m"
 C_RED="\e[31m"
 C_GREEN="\e[32m"
 C_YELLOW="\e[33m"
+# shellcheck disable=SC2034  # Color constants for future use
 C_CYAN="\e[36m"
 C_BOLD="\e[1m"
 

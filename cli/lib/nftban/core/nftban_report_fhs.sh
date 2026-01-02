@@ -570,6 +570,7 @@ nftban_fhs_report_json() {
         echo "      \"expected\": \"$expected\","
         echo "      \"actual\": \"$actual\","
         echo "      \"status\": \"${status%%:*}\","
+        # shellcheck disable=SC2128  # issues is a string, not an array
         echo "      \"issues\": \"$issues\","
         echo "      \"purpose\": \"$purpose\""
         echo -n "    }"
