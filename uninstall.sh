@@ -184,6 +184,15 @@ uninstall_systemd_units() {
 uninstall_binaries() {
     log "Removing binaries..."
 
+    # ==========================================================================
+    # SECURITY: Remove immutable flag before deletion
+    # ==========================================================================
+    # Remove immutable flag from nft_schema.sh to allow deletion
+    if [[ -f /usr/lib/nftban/lib/nft_schema.sh ]]; then
+        chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
+        ok "Security: Removed immutable flag from nft_schema.sh"
+    fi
+
     local removed=0
     local binaries=(
         "/usr/bin/nftban"

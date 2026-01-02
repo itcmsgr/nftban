@@ -166,6 +166,17 @@ EOF
         echo "  nftban ddos enable       # DDoS protection"
         echo "  nftban gui enable        # Web GUI"
         echo "  nftban metrics enable    # Metrics collection"
+
+        # ==========================================================================
+        # SECURITY: Protect nft_schema.sh from modification (P0 CRITICAL)
+        # ==========================================================================
+        # Make nft_schema.sh immutable to prevent command injection attacks
+        # This file defines the canonical nftables schema used by all components
+        if [ -f /usr/lib/nftban/lib/nft_schema.sh ]; then
+            chmod 444 /usr/lib/nftban/lib/nft_schema.sh
+            chattr +i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
+            echo "Security: nft_schema.sh protected (immutable)"
+        fi
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)

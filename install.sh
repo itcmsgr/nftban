@@ -1759,6 +1759,18 @@ run_post_install() {
     log "Reloading nftables..."
     systemctl reload nftables 2>/dev/null || warn "nftables reload failed"
 
+    # ==========================================================================
+    # SECURITY: Protect nft_schema.sh from modification (P0 CRITICAL)
+    # ==========================================================================
+    # Make nft_schema.sh immutable to prevent command injection attacks
+    # This file defines the canonical nftables schema used by all components
+    log "Applying security protections..."
+    if [[ -f /usr/lib/nftban/lib/nft_schema.sh ]]; then
+        chmod 444 /usr/lib/nftban/lib/nft_schema.sh
+        chattr +i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
+        ok "Security: nft_schema.sh protected (immutable)"
+    fi
+
     ok "Post-install configuration completed"
     return 0
 }
