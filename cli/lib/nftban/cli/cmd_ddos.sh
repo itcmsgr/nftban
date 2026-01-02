@@ -1,31 +1,7 @@
 #!/usr/bin/env bash
 # =============================================================================
-
-# Load JSON helper for --json support
-[[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
-
-# Load strict mode library
-# shellcheck source=/usr/lib/nftban/lib/strict.sh
-if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/strict.sh"
-else
-    # Fallback to manual strict mode
-    set -Eeuo pipefail
-fi
-
-# Load version library
-# shellcheck source=/usr/lib/nftban/lib/version.sh
-if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/lib/version.sh"
-fi
-JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
-if [[ -f "$JSON_HELPER" ]]; then
-    # shellcheck source=/dev/null
-    source "$JSON_HELPER"
-fi
 # NFTBan v1.0.0 - DDoS CLI Handler
 # =============================================================================
-
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Command-line interface for DDoS protection management
 #
@@ -48,15 +24,14 @@ fi
 # meta:updated_date=2025-11-24
 # =============================================================================
 
+# Load common CLI helpers (provides cmd_init, cmd_error, cmd_is_json_mode, etc.)
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh"
 
+# Initialize CLI environment (loads config, sets paths, enables strict mode)
+cmd_init
 
 # =============================================================================
-
-# CONFIGURATION
-# =============================================================================
-
-# =============================================================================
-
 # HELP TEXT
 # =============================================================================
 
@@ -317,34 +292,32 @@ _nftban_ddos_stats_json() {
 }
 
 # =============================================================================
-
 # MAIN COMMAND HANDLER
 # =============================================================================
 
-
 nftban_cmd_ddos() {
     local action="${1:-status}"
-    local json_mode=false
+    local json_mode
 
-    # Check for --json flag
-    for arg in "$@"; do
-        [[ "$arg" == "--json" ]] && json_mode=true && break
-    done
+    # Check for help first
+    cmd_wants_help "$@" && { _nftban_ddos_help; return 0; }
+
+    # Detect JSON mode and load helper
+    json_mode=$(cmd_is_json_mode "$@")
+    cmd_load_helpers json
+
+    # Shift past the action argument
     shift || true
 
     # Load core DDoS module (lazy loading for performance)
-    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_ddos.sh" ]]; then
+    local ddos_module="${NFTBAN_LIB_DIR}/core/nftban_ddos.sh"
+    if [[ -f "$ddos_module" ]]; then
         # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/core/nftban_ddos.sh"
+        source "$ddos_module"
     else
-        echo "ERROR: DDoS protection module not found"
-        echo "Expected: ${NFTBAN_LIB_DIR}/core/nftban_ddos.sh"
-        exit 1
+        cmd_error "DDoS protection module not found at $ddos_module" "$json_mode"
+        return 1
     fi
-
-    # NOTE: Root check removed - nftables operations require CAP_NET_ADMIN
-    # which can be granted via capabilities, not just EUID==0.
-    # Let the actual nft commands fail with proper error if privileges missing.
 
     # Handle commands
     case "$action" in
@@ -373,8 +346,7 @@ nftban_cmd_ddos() {
             if type -t nftban_ddos_test &>/dev/null; then
                 nftban_ddos_test
             else
-                echo "ERROR: DDoS test function not available"
-                echo "Ensure nftban_ddos.sh is loaded"
+                cmd_error "DDoS test function not available" "$json_mode"
                 return 1
             fi
             ;;
@@ -384,28 +356,18 @@ nftban_cmd_ddos() {
             ;;
 
         *)
-            echo "ERROR: Unknown command: $action"
-            echo ""
-            echo "Available commands: enable, disable, status, stats, test, help"
-            echo "Run 'nftban ddos help' for detailed usage information"
-            exit 1
+            cmd_error "Unknown command: $action. Use: enable, disable, status, stats, test, help" "$json_mode"
+            return 1
             ;;
     esac
 
-
-    # Exit marker for testing validation
-    command -v nftban_cmd_exit >/dev/null 2>&1 && nftban_cmd_exit "ddos"
     return 0
 }
 
 # =============================================================================
-
 # EXPORT FOR MAIN CLI
 # =============================================================================
 
 export -f nftban_cmd_ddos
-
-# Execute if called directly (shouldn't happen, but handle gracefully)
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    nftban_cmd_ddos "$@"
-fi
+export -f _nftban_ddos_help
+export -f _nftban_ddos_stats_json
