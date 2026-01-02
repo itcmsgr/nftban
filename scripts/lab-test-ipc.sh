@@ -131,9 +131,10 @@ test_build_and_start() {
     fi
 
     # Check socket permissions (MUST be exactly 0660 root:nftban)
-    local perms=$(stat -c %a "$SOCKET" 2>/dev/null)
-    local owner=$(stat -c %U "$SOCKET" 2>/dev/null)
-    local group=$(stat -c %G "$SOCKET" 2>/dev/null)
+    local perms owner group
+    perms=$(stat -c %a "$SOCKET" 2>/dev/null)
+    owner=$(stat -c %U "$SOCKET" 2>/dev/null)
+    group=$(stat -c %G "$SOCKET" 2>/dev/null)
 
     if [[ "$perms" == "660" ]]; then
         log_pass "Socket permissions: 660"
@@ -173,7 +174,8 @@ test_ipc_functions() {
 
     # 3.1 Ping
     log_info "Testing ping..."
-    local resp=$(ipc_request "ping")
+    local resp
+    resp=$(ipc_request "ping")
     if [[ "$resp" == *'"success":true'* && "$resp" == *'pong'* ]]; then
         log_pass "ping -> pong"
     else
@@ -348,7 +350,8 @@ test_failure_modes() {
 
     # Test that IPC returns error when daemon is down
     log_info "Testing IPC with daemon down..."
-    local resp=$(ipc_request "ping" 2>/dev/null || echo '{"error":"connection failed"}')
+    local resp
+    resp=$(ipc_request "ping" 2>/dev/null || echo '{"error":"connection failed"}')
     if [[ "$resp" == *'"success":false'* || "$resp" == *'error'* || -z "$resp" ]]; then
         log_pass "IPC correctly fails when daemon is down"
     else
@@ -424,7 +427,8 @@ test_anti_regression() {
     log_info "Wave 2/3 scripts (NOT tested - still have direct nft calls):"
     for script in "${wave2_scripts[@]}"; do
         if [[ -f "$script" ]]; then
-            local violations=$(grep -cE 'nft[[:space:]]+(add|delete|flush|insert)' "$script" 2>/dev/null || echo 0)
+            local violations
+            violations=$(grep -cE 'nft[[:space:]]+(add|delete|flush|insert)' "$script" 2>/dev/null || echo 0)
             echo "  - $script ($violations WRITE violations)"
         fi
     done
@@ -435,8 +439,9 @@ test_anti_regression() {
 
     # maintenance.sh should have nft_ipc calls, not direct nft add
     if [[ -f "cli/lib/nftban/cron/maintenance.sh" ]]; then
-        local ipc_calls=$(grep -c 'nft_ipc_' cli/lib/nftban/cron/maintenance.sh 2>/dev/null || echo 0)
-        local direct_adds=$(grep -cE '^[^#]*nft[[:space:]]+add[[:space:]]' cli/lib/nftban/cron/maintenance.sh 2>/dev/null || echo 0)
+        local ipc_calls direct_adds
+        ipc_calls=$(grep -c 'nft_ipc_' cli/lib/nftban/cron/maintenance.sh 2>/dev/null || echo 0)
+        direct_adds=$(grep -cE '^[^#]*nft[[:space:]]+add[[:space:]]' cli/lib/nftban/cron/maintenance.sh 2>/dev/null || echo 0)
 
         if [[ $ipc_calls -gt 0 && $direct_adds -eq 0 ]]; then
             log_pass "maintenance.sh: $ipc_calls IPC calls, 0 direct nft adds"
@@ -448,7 +453,8 @@ test_anti_regression() {
     # 6.3 Count total remaining violations
     log_info "Current WRITE violation count..."
     if [[ -x "./scripts/ci/check-nft-writes.sh" ]]; then
-        local violations=$(./scripts/ci/check-nft-writes.sh 2>&1 | grep "WRITE VIOLATIONS:" | grep -oE '[0-9]+' || echo "?")
+        local violations
+        violations=$(./scripts/ci/check-nft-writes.sh 2>&1 | grep "WRITE VIOLATIONS:" | grep -oE '[0-9]+' || echo "?")
         echo "  Total WRITE violations remaining: $violations"
         if [[ "$violations" =~ ^[0-9]+$ && "$violations" -lt 100 ]]; then
             log_pass "Violation count is tracked ($violations)"
@@ -549,9 +555,10 @@ test_socket_activation() {
     # Verify socket exists with correct permissions BEFORE daemon starts
     sleep 1
     if [[ -S "$SOCKET" ]]; then
-        local perms=$(stat -c %a "$SOCKET" 2>/dev/null)
-        local owner=$(stat -c %U "$SOCKET" 2>/dev/null)
-        local group=$(stat -c %G "$SOCKET" 2>/dev/null)
+        local perms owner group
+        perms=$(stat -c %a "$SOCKET" 2>/dev/null)
+        owner=$(stat -c %U "$SOCKET" 2>/dev/null)
+        group=$(stat -c %G "$SOCKET" 2>/dev/null)
 
         if [[ "$perms" == "660" && "$owner" == "root" && "$group" == "nftban" ]]; then
             log_pass "Socket created by systemd: $owner:$group $perms"
@@ -581,7 +588,8 @@ test_socket_activation() {
 
     # Test IPC through systemd-managed socket
     log_info "Testing IPC via systemd socket..."
-    local resp=$(ipc_request "ping")
+    local resp
+    resp=$(ipc_request "ping")
     if [[ "$resp" == *'"success":true'* ]]; then
         log_pass "IPC works via systemd socket activation"
     else

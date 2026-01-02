@@ -44,9 +44,7 @@ readonly NFTBAN_DDOS_LOADED=1
 
 # shellcheck disable=SC2034  # Module metadata used when sourced
 readonly DDOS_MODULE_NAME="nftban_ddos"
-# Module metadata - reserved for future module registry
 readonly DDOS_MODULE_VERSION="1.0.0"
-# shellcheck disable=SC2034
 readonly DDOS_MODULE_TYPE="core"
 readonly DDOS_MODULE_DESCRIPTION="DDoS Protection (Dual-Mode)"
 
@@ -256,8 +254,6 @@ nftban_ddos_enable() {
             # Enable Suricata as Layer 1
             echo "  [Layer 1] Suricata (intelligent detection)..."
                 # shellcheck disable=SC2034  # Reserved for dual-mode toggle
-                DDOS_SURICATA_USE_CLASSIC_LAYER0="false"
-                # Don't let Suricata module enable classic again
                 DDOS_SURICATA_USE_CLASSIC_LAYER0="false"
                 nftban_ddos_suricata_enable
             ;;

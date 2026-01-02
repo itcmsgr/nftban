@@ -301,7 +301,8 @@ nftban_geoban_apply_to_nftables() {
     # 6. Summary
     echo ""
     nftban_success "GeoBan nftables integration complete!"
-    nftban_info "Set: $set_v4 ($cidr_count CIDRs)"
+    nftban_info "Set: $set_v4 ($cidr_count_v4 IPv4 CIDRs)"
+    [[ $cidr_count_v6 -gt 0 ]] && nftban_info "Note: $cidr_count_v6 IPv6 CIDRs found (IPv6 geoban not yet implemented)"
     nftban_info "Chain: $chain (priority filter-15)"
     nftban_info "Rule: ip saddr @$set_v4 drop"
     echo ""
