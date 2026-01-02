@@ -21,24 +21,39 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-User=root
-Group=root
+
+# SECURITY FIX: Run as unprivileged nftban user (not root)
+# Maintenance script now uses IPC (nft_ipc_add_element) for all firewall writes
+# No direct nft commands, no root required
+# See: SYSTEMD-SERVICE-CLASSIFICATION.md
+User=nftban
+Group=nftban
+SupplementaryGroups=suricata adm
 
 # Run maintenance script
 ExecStart=/usr/lib/nftban/cron/maintenance.sh
 
-# Security hardening
+# =============================================================================
+# SECURITY HARDENING (Enhanced after privilege drop)
+# =============================================================================
+
+# Core hardening
 NoNewPrivileges=yes
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
 RestrictSUIDSGID=true
+LockPersonality=true
 
-# Allow only required write locations (maintenance.sh writes to specific paths)
+# Minimal filesystem access (nftban user can only write to these)
+# NOTE: /etc/nftban/ports.d and /etc/nftban/whitelist.d must be group-writable
 ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban/ports.d /etc/nftban/whitelist.d
 
-# Allow netlink + network access (used by nft, curl, ss, ip commands)
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+# Network access (IPC socket + curl for SSH port detection)
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 # Resource limits
 CPUQuota=50%

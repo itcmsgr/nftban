@@ -6,23 +6,44 @@ Wants=sshd.service
 
 [Service]
 Type=simple
-User=root
+
+# SECURITY FIX: Run as unprivileged nftban user (not root)
+# Reads: /var/log/auth.log, /var/log/secure (via adm group)
+# Writes: /var/lib/nftban/login/, /var/log/nftban/
+# Firewall bans via IPC to daemon
+# See: SYSTEMD-SERVICE-CLASSIFICATION.md
+User=nftban
 Group=nftban
+SupplementaryGroups=adm systemd-journal
+
 ExecStart=/usr/bin/nftban login run
 Restart=on-failure
 RestartSec=10
 
-# Security hardening
+# =============================================================================
+# SECURITY HARDENING (Enhanced after privilege drop)
+# =============================================================================
+
+# Core hardening
 NoNewPrivileges=true
+PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/var/log/nftban /var/lib/nftban /etc/nftban
-PrivateTmp=true
 ProtectKernelTunables=true
+ProtectKernelModules=true
 ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# Minimal filesystem access
+ReadWritePaths=/var/log/nftban /var/lib/nftban /var/cache/nftban /run/nftban
+
+# Network for IPC socket
+RestrictAddressFamilies=AF_UNIX
 
 # Resource limits
 MemoryMax=128M
+TasksMax=20
 CPUQuota=25%
 
 [Install]

@@ -6,25 +6,54 @@ After=network.target nftables.service
 [Service]
 Type=oneshot
 
-# Run as root to allow auto-heal fixes
-User=root
+# SECURITY FIX: Run as unprivileged nftban user (not root)
+# Health checks are READ-ONLY operations
+# Writes: /var/lib/nftban/health/ (status cache)
+# For FIXES, use: systemctl start nftban-health-fix.service (root, manual)
+# See: SYSTEMD-SERVICE-CLASSIFICATION.md
+User=nftban
+Group=nftban
 
-# Check and auto-fix issues
-# --auto-heal: Automatically fix detected issues
+# Read-only health checks (no auto-heal - use nftban-health-fix.service for that)
 # --cache-status: Write health result for banner display
-ExecStart=/usr/bin/nftban health check --auto-heal --cache-status
+ExecStart=/usr/bin/nftban health check --cache-status
 
-# Exit codes: 0=OK, 1=warnings, 2=errors, 4=permission issues fixed
-# All are valid check results (service ran successfully)
-SuccessExitStatus=0 1 2 4
+# CAP_NET_ADMIN required for read-only nft list operations
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
+# Exit codes: 0=OK, 1=warnings, 2=errors
+SuccessExitStatus=0 1 2
+
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
+
+# Core hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# Minimal filesystem access
+ReadWritePaths=/var/lib/nftban /var/cache/nftban /var/log/nftban
+
+# Network for nft list operations
+RestrictAddressFamilies=AF_UNIX AF_NETLINK
+
+# Resource limits
+MemoryMax=128M
+TasksMax=10
 
 # Logging
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nftban-health
-
-# Security hardening
-PrivateTmp=yes
 
 [Install]
 WantedBy=multi-user.target
