@@ -232,9 +232,10 @@ jobs:
         run: |
           echo "=== Verifying CLI structure ==="
           test -f cli/sbin/nftban || { echo "FAIL: cli/sbin/nftban missing"; exit 1; }
-          test -f cli/lib/nftban/nftban_main.sh || { echo "FAIL: nftban_main.sh missing"; exit 1; }
+          test -f cli/lib/nftban/nftban_help.sh || { echo "FAIL: nftban_help.sh missing"; exit 1; }
           test -d cli/lib/nftban/core || { echo "FAIL: core/ missing"; exit 1; }
           test -d cli/lib/nftban/cli || { echo "FAIL: cli/ missing"; exit 1; }
+          test -d cli/lib/nftban/lib || { echo "FAIL: lib/ missing"; exit 1; }
           echo "✓ CLI structure valid"
 
   # ===========================================================================
