@@ -68,6 +68,7 @@ else
     C_RED="\e[31m"
     C_GREEN="\e[32m"
     C_YELLOW="\e[33m"
+    # shellcheck disable=SC2034  # Reserved for future formatting
     C_BOLD="\e[1m"
 fi
 

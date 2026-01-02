@@ -37,9 +37,8 @@ readonly NFTBAN_CLOUDFLARE_LOADED=1
 # =============================================================================
 # shellcheck disable=SC2034  # Module metadata used when sourced
 readonly MODULE_NAME="nftban_cloudflare"
-# Module metadata - reserved for future module registry
+# shellcheck disable=SC2034  # Module metadata - reserved for future module registry
 readonly MODULE_VERSION="0.7.3"
-# shellcheck disable=SC2034
 
 # FHS Paths (loaded from conf.d/cloudflare.conf)
 readonly CF_CACHE_DIR="${CLOUDFLARE_CACHE_DIR:-/var/cache/nftban/cloudflare}"

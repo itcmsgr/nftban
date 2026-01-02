@@ -166,8 +166,8 @@ _nftban_login_suricata_process_eve_line() {
     fi
 
     # Handle SSH events (Suricata SSH protocol logging)
+    if [[ "$event_type" == "ssh" ]]; then
         # shellcheck disable=SC2034  # Reserved for protocol analysis
-        client_proto=$(echo "$line" | jq -r '.ssh.client.proto_version // empty' 2>/dev/null)
         local client_proto client_software
         client_proto=$(echo "$line" | jq -r '.ssh.client.proto_version // empty' 2>/dev/null)
         client_software=$(echo "$line" | jq -r '.ssh.client.software_version // empty' 2>/dev/null)
