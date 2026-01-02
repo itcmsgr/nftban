@@ -7,6 +7,10 @@
 #
 # This service is triggered by nftban-metrics-exporter.timer
 # It collects metrics and writes them to the Node Exporter textfile directory
+#
+# PERFORMANCE: Uses hybrid wrapper that auto-detects:
+#   - Go exporter (fast, low CPU) if nftban-core installed
+#   - Bash exporter (compatible) as fallback
 # =============================================================================
 
 [Unit]
@@ -29,8 +33,8 @@ CapabilityBoundingSet=CAP_NET_ADMIN
 Environment="NFTBAN_LIB_DIR=/usr/lib/nftban"
 Environment="NFTBAN_METRICS_FILE=/var/lib/node_exporter/textfile_collector/nftban.prom"
 
-# Execute exporter script
-ExecStart=/usr/lib/nftban/exporters/nftban_prometheus_exporter.sh
+# Execute hybrid wrapper (auto-detects Go vs bash exporter)
+ExecStart=/usr/lib/nftban/exporters/nftban_metrics_wrapper.sh
 
 # Logging
 StandardOutput=journal
