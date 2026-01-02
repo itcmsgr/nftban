@@ -3303,7 +3303,6 @@ nftban_health_render_json() {
             local issues="${NFTBAN_HEALTH_ISSUES[$check]:-}"
 
             # shellcheck disable=SC2128  # First element extraction
-            escaped_issues="$(_json_escape "$issues")"
             local escaped_issues
             escaped_issues="$(_json_escape "$issues")"
 
@@ -3490,6 +3489,7 @@ nftban_health_verify_installation() {
     # shellcheck disable=SC2034
     )
 
+    # shellcheck disable=SC2034  # Reserved for optional binary checks
     local -a optional_bins=(
         "nftban-core"
         "nftban-ui"
