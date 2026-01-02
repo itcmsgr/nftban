@@ -448,8 +448,8 @@ output_terminal() {
         if [[ -d "$unit_path" ]]; then
             # Count service files with NoNewPrivileges=false (security weakness)
             local count
-            count=$(find "$unit_path" -maxdepth 1 -name 'nftban*.service' -type f 2>/dev/null | \
-                    xargs grep -l '^\s*NoNewPrivileges\s*=\s*false\s*$' 2>/dev/null | wc -l) || count=0
+            count=$(find "$unit_path" -maxdepth 1 -name 'nftban*.service' -type f \
+                    -exec grep -l '^\s*NoNewPrivileges\s*=\s*false\s*$' {} + 2>/dev/null | wc -l) || count=0
             security_issues=$((count + 0))  # Ensure numeric
             [[ $security_issues -gt 0 ]] && break
         fi

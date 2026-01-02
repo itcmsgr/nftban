@@ -92,6 +92,7 @@ readonly PANEL_UNITS=(
 )
 
 # Panel: Read-only units (status only)
+# shellcheck disable=SC2034  # Reserved for future runtime tests
 readonly PANEL_READONLY_UNITS=(
     "nftban-core-feeds.timer"
     "nftban-core-geoip.timer"
@@ -99,6 +100,7 @@ readonly PANEL_READONLY_UNITS=(
 )
 
 # Panel: Allowed verbs (reload + read-only)
+# shellcheck disable=SC2034  # Reserved for future runtime tests
 readonly PANEL_ALLOWED_VERBS=(
     "status"
     "show"
@@ -137,7 +139,9 @@ readonly AUDITOR_DENIED_VERBS=(
 # Polkit action IDs
 readonly ACTION_MANAGE_UNITS="org.freedesktop.systemd1.manage-units"
 readonly ACTION_MANAGE_UNIT_FILES="org.freedesktop.systemd1.manage-unit-files"
+# shellcheck disable=SC2034  # Reserved for future runtime tests
 readonly ACTION_RELOAD_DAEMON="org.freedesktop.systemd1.reload-daemon"
+# shellcheck disable=SC2034  # Reserved for future runtime tests
 readonly ACTION_PKEXEC="org.freedesktop.policykit.exec"
 
 # =============================================================================
@@ -753,9 +757,8 @@ test_authorization() {
     local verb="$3"
     local unit="$4"
 
-    # Get user's UID
-    local uid
-    uid=$(id -u "$user" 2>/dev/null) || return 2
+    # Verify user exists
+    id -u "$user" >/dev/null 2>&1 || return 2
 
     # Use pkcheck to test authorization
     # Note: pkcheck requires a valid process ID, so we spawn a sleep process as the user
