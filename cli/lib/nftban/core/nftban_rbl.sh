@@ -222,7 +222,8 @@ nftban_rbl_check_ip() {
     local ip="$1"
     local format="${2:-text}"
     local reversed_ip
-    local results=()  # shellcheck disable=SC2034  # Reserved for detailed RBL results
+    # shellcheck disable=SC2034  # Reserved for detailed RBL results
+    local results=()
     local listed_count=0
     local clean_count=0
     local timeout_count=0

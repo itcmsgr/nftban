@@ -512,7 +512,8 @@ nftban_mail_send() {
     if [[ -f "$content_arg" ]]; then
         # It's a file
         if nftban_mail_validate_path "$content_arg"; then
-            is_file=1  # shellcheck disable=SC2034  # Reserved for attachment handling
+            # shellcheck disable=SC2034  # Reserved for attachment handling
+            is_file=1
             content_text="$(cat "$content_arg")"
         else
             echo "Error: File not allowed to be sent: $content_arg" >&2

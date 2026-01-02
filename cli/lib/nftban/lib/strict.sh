@@ -87,7 +87,8 @@ umask 027
 # Called when any command fails (via ERR trap)
 nftban_error_handler() {
     local exit_code=$?
-    local line_no=$1  # shellcheck disable=SC2034  # Used in ERR trap context
+    # shellcheck disable=SC2034  # Used in ERR trap context
+    local line_no=$1
     local bash_lineno=${BASH_LINENO[0]}
     local function_name="${FUNCNAME[1]:-main}"
     local script_name="${BASH_SOURCE[1]:-${0}}"

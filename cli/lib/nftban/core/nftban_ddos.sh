@@ -255,11 +255,11 @@ nftban_ddos_enable() {
 
             # Enable Suricata as Layer 1
             echo "  [Layer 1] Suricata (intelligent detection)..."
-                DDOS_SURICATA_USE_CLASSIC_LAYER0="false"  # shellcheck disable=SC2034  # Reserved for dual-mode toggle
+                # shellcheck disable=SC2034  # Reserved for dual-mode toggle
+                DDOS_SURICATA_USE_CLASSIC_LAYER0="false"
                 # Don't let Suricata module enable classic again
                 DDOS_SURICATA_USE_CLASSIC_LAYER0="false"
                 nftban_ddos_suricata_enable
-            fi
             ;;
 
         *)

@@ -41,11 +41,15 @@ declare -g NFTBAN_MODULE_OUTPUT_FORMAT="${NFTBAN_MODULE_OUTPUT_FORMAT:-table}"
 
 # Color symbols
 if type -t nftban_render_banner >/dev/null 2>&1; then
-    NFTBAN_MODULE_SYM_OK="✔"  # shellcheck disable=SC2034  # Symbols for UI rendering
-    NFTBAN_MODULE_SYM_KO="✖"  # shellcheck disable=SC2034  # Symbols for UI rendering
+    # shellcheck disable=SC2034  # Symbols for UI rendering
+    NFTBAN_MODULE_SYM_OK="✔"
+    # shellcheck disable=SC2034  # Symbols for UI rendering
+    NFTBAN_MODULE_SYM_KO="✖"
 else
-    NFTBAN_MODULE_SYM_OK="✔"  # shellcheck disable=SC2034  # Symbols for UI rendering
-    NFTBAN_MODULE_SYM_KO="✖"  # shellcheck disable=SC2034  # Symbols for UI rendering
+    # shellcheck disable=SC2034  # Symbols for UI rendering
+    NFTBAN_MODULE_SYM_OK="✔"
+    # shellcheck disable=SC2034  # Symbols for UI rendering
+    NFTBAN_MODULE_SYM_KO="✖"
     C_RESET="\e[0m"
     C_RED="\e[31m"
     C_GREEN="\e[32m"

@@ -44,9 +44,12 @@ NFTBAN_SERVICE_TIMESTAMP="$(date --iso-8601=seconds)"
 declare -g NFTBAN_SERVICE_OUTPUT_FORMAT="${NFTBAN_SERVICE_OUTPUT_FORMAT:-table}"
 
 # Color symbols
-NFTBAN_SERVICE_SYM_OK="✔"  # shellcheck disable=SC2034  # Symbols for UI rendering
-NFTBAN_SERVICE_SYM_KO="✖"  # shellcheck disable=SC2034  # Symbols for UI rendering
-NFTBAN_SERVICE_SYM_WARN="⚠"  # shellcheck disable=SC2034  # Symbols for UI rendering
+# shellcheck disable=SC2034  # Symbols for UI rendering
+NFTBAN_SERVICE_SYM_OK="✔"
+# shellcheck disable=SC2034  # Symbols for UI rendering
+NFTBAN_SERVICE_SYM_KO="✖"
+# shellcheck disable=SC2034  # Symbols for UI rendering
+NFTBAN_SERVICE_SYM_WARN="⚠"
 C_RESET="\e[0m"
 C_RED="\e[31m"
 C_GREEN="\e[32m"
@@ -239,7 +242,8 @@ nftban_services_scan() {
 # nftban_services_report_table - Terminal table output
 #
 nftban_services_report_table() {
-    local timestamp="$1"  # shellcheck disable=SC2034  # Reserved for timestamp formatting
+    # shellcheck disable=SC2034  # Reserved for timestamp formatting
+    local timestamp="$1"
     local short_ts
     short_ts=$(date +"%Y-%m-%d %H:%M")
 

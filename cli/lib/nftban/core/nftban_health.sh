@@ -1625,7 +1625,8 @@ nftban_health_check_metrics() {
            systemctl is-active --quiet prometheus-node-exporter 2>/dev/null || \
            systemctl is-active --quiet node-exporter 2>/dev/null; then
             metrics_issues+=("✓ Node Exporter: Running")
-            node_exporter_running=true  # shellcheck disable=SC2034  # Reserved for metrics validation
+            # shellcheck disable=SC2034  # Reserved for metrics validation
+            node_exporter_running=true
         else
             metrics_issues+=("ℹ️ Node Exporter installed but not running (optional - for Prometheus)")
         fi
@@ -1664,7 +1665,8 @@ nftban_health_check_metrics() {
     # Skip VictoriaMetrics check if Prometheus is already running (they're alternatives)
     if [[ "$prometheus_running" != "true" ]]; then
         if command -v victoria-metrics >/dev/null 2>&1 || systemctl list-unit-files 2>/dev/null | grep -q "^victoria-metrics.service"; then
-            metrics_backend_found=true  # shellcheck disable=SC2034  # Reserved for backend detection
+            # shellcheck disable=SC2034  # Reserved for backend detection
+            metrics_backend_found=true
             if systemctl is-active --quiet victoria-metrics 2>/dev/null; then
                 metrics_issues+=("✓ VictoriaMetrics: Running")
 
@@ -3297,9 +3299,11 @@ nftban_health_render_json() {
             local status_name="ok"
             [[ $status -eq 1 ]] && status_name="warning"
             [[ $status -eq 2 ]] && status_name="error"
-            local issues="${NFTBAN_HEALTH_ISSUES[$check]:-}"  # shellcheck disable=SC2178  # Intentional string from array
+            # shellcheck disable=SC2178  # Intentional string from array
+            local issues="${NFTBAN_HEALTH_ISSUES[$check]:-}"
 
-            escaped_issues="$(_json_escape "$issues")"  # shellcheck disable=SC2128  # First element extraction
+            # shellcheck disable=SC2128  # First element extraction
+            escaped_issues="$(_json_escape "$issues")"
             local escaped_issues
             escaped_issues="$(_json_escape "$issues")"
 
