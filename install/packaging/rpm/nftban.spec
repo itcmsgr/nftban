@@ -330,8 +330,29 @@ echo "  nftban ddos enable       # DDoS protection"
 echo "  nftban gui enable        # Web GUI"
 echo "  nftban metrics enable    # Metrics collection"
 
+# ==========================================================================
+# SECURITY: Protect nft_schema.sh from modification (P0 CRITICAL)
+# ==========================================================================
+# Make nft_schema.sh immutable to prevent command injection attacks
+# This file defines the canonical nftables schema used by all components
+if [ -f %{_libdir}/nftban/lib/nft_schema.sh ]; then
+    chmod 444 %{_libdir}/nftban/lib/nft_schema.sh
+    chattr +i %{_libdir}/nftban/lib/nft_schema.sh 2>/dev/null || true
+    echo "Security: nft_schema.sh protected (immutable)"
+fi
+
 %preun
 # Pre-uninstall: Stop all services
+
+# ==========================================================================
+# SECURITY: Remove immutable flag before uninstall/upgrade
+# ==========================================================================
+# Remove immutable flag to allow RPM to replace/remove the file
+# This runs on BOTH uninstall ($1=0) and upgrade ($1=1)
+if [ -f %{_libdir}/nftban/lib/nft_schema.sh ]; then
+    chattr -i %{_libdir}/nftban/lib/nft_schema.sh 2>/dev/null || true
+fi
+
 if [ $1 -eq 0 ]; then
     echo "Stopping NFTBan services..."
 

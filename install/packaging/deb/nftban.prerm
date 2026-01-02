@@ -9,6 +9,15 @@ set -e
 
 case "$1" in
     remove|upgrade|deconfigure)
+        # ==========================================================================
+        # SECURITY: Remove immutable flag before uninstall/upgrade
+        # ==========================================================================
+        # Remove immutable flag to allow package manager to replace/remove the file
+        # This runs on BOTH uninstall (remove) and upgrade
+        if [ -f /usr/lib/nftban/lib/nft_schema.sh ]; then
+            chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
+        fi
+
         echo "Stopping NFTBan services..."
 
         # Stop all timers first (complete list from install.sh)
