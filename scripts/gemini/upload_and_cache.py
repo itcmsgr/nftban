@@ -29,7 +29,7 @@ except ImportError:
 
 # Configuration
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY")
-MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")  # 2M context window
+MODEL_NAME = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")  # Latest flash model with caching support
 CACHE_TTL_HOURS = int(os.getenv("CACHE_TTL_HOURS", "24"))
 
 SYSTEM_INSTRUCTION = """You are a Senior Software Architect with expertise in:
@@ -77,7 +77,8 @@ def upload_and_cache_repo(bundle_path):
 
     print(f"📤 Uploading {bundle_path} to Gemini Files API...")
     try:
-        uploaded_file = client.files.upload(path=bundle_path)
+        # New API - file must be a keyword argument
+        uploaded_file = client.files.upload(file=bundle_path)
     except Exception as e:
         print(f"❌ Upload failed: {e}")
         sys.exit(1)

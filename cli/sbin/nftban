@@ -158,6 +158,7 @@ nftban_complete() {
         echo "whitelist-system"
         echo "profile"
         echo "permissions"
+        echo "polkit"
         echo "sync"
         # PROTECTION MODULES
         echo "ddos"
@@ -335,6 +336,16 @@ nftban_complete() {
                 echo "binaries"
                 echo "permissions"
                 echo "geoip"
+                ;;
+            polkit)
+                echo "validate"
+                echo "static"
+                echo "runtime"
+                echo "status"
+                echo "groups"
+                echo "rules"
+                echo "test"
+                echo "help"
                 ;;
             login)
                 echo "status"

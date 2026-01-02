@@ -80,6 +80,7 @@ EOF
   profile          Apply security profile (basic, standard, advanced)
   panel            Web hosting panel integration (DA, cPanel, CWP, etc.)
   permissions      Audit & enforce file permissions
+  polkit           Polkit authorization (validate, groups, rules)
 EOF
   echo
 

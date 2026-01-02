@@ -519,7 +519,7 @@ config:
   mutates: conditional
   supports_dry_run: false
   requires_root: false
-  panel_expose: true
+  panel_expose: false
   output_modes: [json, text]
   has_json: true
   examples:
@@ -616,6 +616,36 @@ permissions:
     - "nftban permissions audit"
     - "nftban permissions fix"
     - "nftban permissions status --json"
+
+polkit:
+  category: infrastructure
+  description: "Polkit authorization validation and group management"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: conditional
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban polkit status"
+    - "nftban polkit validate"
+    - "nftban polkit static"
+    - "sudo nftban polkit runtime"
+    - "nftban polkit groups list"
+    - "sudo nftban polkit groups add john"
+    - "nftban polkit rules list"
+    - "nftban polkit test"
+  subcommands:
+    validate: {mutates: false, description: "Full validation (static + runtime)"}
+    static: {mutates: false, description: "Static-only checks (no test users)"}
+    runtime: {mutates: true, description: "Runtime tests with test users", requires_root: true}
+    status: {mutates: false, description: "Quick status of rules and groups"}
+    groups: {mutates: conditional, description: "Manage authorization groups"}
+    rules: {mutates: conditional, description: "View/install Polkit rules"}
+    test: {mutates: false, description: "Test authorization for current user"}
 
 # =============================================================================
 # GROUP 4: INTELLIGENCE & REPORTING
@@ -863,12 +893,12 @@ module:
   category: developer_sysadmin
   description: "Module inspection and diagnostics"
   risk: advanced
-  audience: [cli]
+  audience: [cli, auditor, panel]
   capability: debug_internal
   mutates: false
   supports_dry_run: false
   requires_root: false
-  panel_expose: false
+  panel_expose: true
   output_modes: [json, text]
   has_json: true
   examples:
@@ -880,12 +910,12 @@ fhs:
   category: developer_sysadmin
   description: "Filesystem Hierarchy Standard compliance check"
   risk: core
-  audience: [cli]
+  audience: [cli, auditor, panel]
   capability: debug_internal
   mutates: false
   supports_dry_run: false
   requires_root: false
-  panel_expose: false
+  panel_expose: true
   output_modes: [json, text]
   has_json: true
   examples:
