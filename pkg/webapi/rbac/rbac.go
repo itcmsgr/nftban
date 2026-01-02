@@ -5,6 +5,8 @@ package rbac
 
 import (
 	"net/http"
+
+	"github.com/itcmsgr/nftban/pkg/webapi"
 )
 
 // Role represents user roles
@@ -85,7 +87,7 @@ func (m *Middleware) Require(perm Permission) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			// Get role from context (set by auth middleware)
-			role, ok := r.Context().Value("role").(string)
+			role, ok := r.Context().Value(webapi.ContextKeyRole).(string)
 			if !ok {
 				http.Error(w, "Unauthorized", http.StatusUnauthorized)
 				return

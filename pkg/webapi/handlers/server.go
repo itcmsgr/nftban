@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/itcmsgr/nftban/pkg/webapi"
 	"github.com/itcmsgr/nftban/pkg/webapi/auth"
 	"github.com/itcmsgr/nftban/pkg/webapi/rbac"
 	"github.com/itcmsgr/nftban/pkg/webapi/session"
@@ -114,8 +115,8 @@ func (s *Server) handleLogout(w http.ResponseWriter, r *http.Request) {
 
 // handleMe handles GET /api/v1/me
 func (s *Server) handleMe(w http.ResponseWriter, r *http.Request) {
-	username, _ := r.Context().Value("username").(string)
-	role, _ := r.Context().Value("role").(string)
+	username, _ := r.Context().Value(webapi.ContextKeyUsername).(string)
+	role, _ := r.Context().Value(webapi.ContextKeyRole).(string)
 
 	json.NewEncoder(w).Encode(map[string]interface{}{
 		"username": username,
@@ -203,8 +204,8 @@ func (s *Server) requireAuth(next http.Handler) http.Handler {
 		}
 
 		// Add user info to context
-		ctx := context.WithValue(r.Context(), "username", sess.Username)
-		ctx = context.WithValue(ctx, "role", sess.Role)
+		ctx := context.WithValue(r.Context(), webapi.ContextKeyUsername, sess.Username)
+		ctx = context.WithValue(ctx, webapi.ContextKeyRole, sess.Role)
 
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
