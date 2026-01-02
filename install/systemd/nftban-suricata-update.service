@@ -7,12 +7,35 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 
-# Run as root
+# SECURITY NOTE: Runs as root for system update function
+# This is similar to apt-get update - requires privilege to:
+#   1. Write to /etc/suricata/rules/ (suricata-update)
+#   2. Restart suricata.service (systemctl restart)
+# Not in audit scope (not stats/parser/exporter)
+# Alternative: Run as suricata user + sudo, but adds complexity
 User=root
-Group=root
+Group=suricata
 
 # Update rules and restart suricata
 ExecStart=/bin/bash -c 'suricata-update update-sources && suricata-update && systemctl restart suricata.service'
+
+# =============================================================================
+# SECURITY HARDENING (Limited, but better than nothing)
+# =============================================================================
+
+# Core hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelModules=true
+RestrictSUIDSGID=true
+
+# Network required for downloads
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Resource limits
+MemoryMax=512M
+TasksMax=50
 
 # Logging
 StandardOutput=journal

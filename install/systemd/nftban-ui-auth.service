@@ -14,22 +14,39 @@ RestartSec=5s
 RuntimeDirectory=nftban-ui
 RuntimeDirectoryMode=0750
 
-# Run as root with nftban group for socket access
-User=root
+# SECURITY FIX: Run as unprivileged nftban user (not root)
+# PAM authentication via shadow group membership for /etc/shadow access
+# Socket access via nftban group
+# See: SYSTEMD-SERVICE-CLASSIFICATION.md
+User=nftban
 Group=nftban
+SupplementaryGroups=shadow
 UMask=0077
 
-# Security hardening - all compatible with direct PAM library (no su/setuid)
-NoNewPrivileges=yes
-PrivateTmp=yes
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
+
+# Core hardening
+NoNewPrivileges=true
+PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=yes
-ProtectKernelTunables=yes
-ProtectKernelModules=yes
-ProtectControlGroups=yes
-RestrictRealtime=yes
-RestrictNamespaces=yes
-LockPersonality=yes
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# Minimal filesystem access
+ReadWritePaths=/run/nftban-ui
+
+# Network for socket activation
+RestrictAddressFamilies=AF_UNIX
+
+# Resource limits
+MemoryMax=128M
+TasksMax=10
 
 # =============================================================================
 # ⚠️ SECURITY WARNING: MemoryDenyWriteExecute Trade-off
