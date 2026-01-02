@@ -24,17 +24,16 @@
 # meta:updated_date=2025-11-26
 # =============================================================================
 
-set -Eeuo pipefail
-
-# Source central config for canonical paths (NO HARDCODED FALLBACKS)
-# shellcheck source=/etc/nftban/nftban.conf
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
-
-[[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
-readonly NFTBAN_CORE="${NFTBAN_LIB_DIR}/bin/nftban-core"
-
 # Prevent double-loading
 [[ -n "${CMD_UNBAN_LOADED:-}" ]] && return 0
+
+# Load common CLI helpers (provides cmd_init, cmd_error, cmd_require_binary, etc.)
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh"
+
+# Initialize CLI environment (loads config, sets paths, enables strict mode)
+cmd_init
+
 readonly CMD_UNBAN_LOADED=1
 
 # =============================================================================
@@ -46,41 +45,23 @@ nftban_cmd_unban() {
     # Usage: nftban unban <ip> [--json]
 
     local ip=""
-    local json_mode=false
+    local json_mode
 
-    # Parse arguments first to detect JSON mode
-    local args=("$@")
-    for arg in "${args[@]}"; do
-        [[ "$arg" == "--json" ]] && json_mode=true
-    done
+    # Check for help first
+    cmd_wants_help "$@" && { nftban_cmd_unban_usage; return 0; }
 
-    # NOTE: No banner here - nftban-core displays its own banner
-    # This avoids duplicate banners when delegating to the Go binary
-
-    # Load JSON helper
-    if [[ -f "${NFTBAN_LIB_DIR}/helpers/json_output.sh" ]]; then
-        # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/helpers/json_output.sh"
-    fi
+    # Detect JSON mode and load helper
+    json_mode=$(cmd_is_json_mode "$@")
+    cmd_load_helpers json
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            help|--help|-h)
-                nftban_cmd_unban_usage
-                return 0
-                ;;
             --json)
-                json_mode=true
                 shift
                 ;;
             -*)
-                if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
-                    json_output "false" '{}' "Unknown option: $1"
-                else
-                    echo "ERROR: Unknown option: $1" >&2
-                    nftban_cmd_unban_usage
-                fi
+                cmd_error "Unknown option: $1" "$json_mode" nftban_cmd_unban_usage
                 return 1
                 ;;
             *)
@@ -88,11 +69,7 @@ nftban_cmd_unban() {
                     ip="$1"
                     shift
                 else
-                    if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
-                        json_output "false" '{}' "Multiple IP addresses not supported"
-                    else
-                        echo "ERROR: Multiple IP addresses not supported" >&2
-                    fi
+                    cmd_error "Multiple IP addresses not supported" "$json_mode"
                     return 1
                 fi
                 ;;
@@ -100,44 +77,17 @@ nftban_cmd_unban() {
     done
 
     # Validate required arguments
-    if [[ -z "$ip" ]]; then
-        if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
-            json_output "false" '{}' "IP address is required"
-        else
-            echo "ERROR: IP address is required" >&2
-            echo "" >&2
-            nftban_cmd_unban_usage
-        fi
-        return 1
-    fi
+    cmd_require_arg "$ip" "IP address" "$json_mode" nftban_cmd_unban_usage || return 1
 
     # Check if nftban-core exists (required for unban command)
-    if [[ ! -x "$NFTBAN_CORE" ]]; then
-        if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
-            json_output "false" '{}' "nftban-core binary not found - CLI-only mode"
-        else
-            echo "ERROR: nftban-core binary not found" >&2
-            echo "" >&2
-            echo "The 'unban' command requires the nftban-core Go binary." >&2
-            echo "Expected location: $NFTBAN_CORE" >&2
-            echo "" >&2
-            echo "This happens in CLI-only mode (bash scripts only)." >&2
-            echo "" >&2
-            echo "Solutions:" >&2
-            echo "  1. Install full NFTBan package:" >&2
-            echo "     dnf install nftban  (or: apt install nftban)" >&2
-            echo "" >&2
-            echo "  2. Check if binary exists:" >&2
-            echo "     ls -la $NFTBAN_CORE" >&2
-            echo "" >&2
-        fi
-        return 1
-    fi
+    local NFTBAN_CORE
+    NFTBAN_CORE=$(cmd_get_core_binary)
+    cmd_require_binary "$NFTBAN_CORE" "nftban-core" "$json_mode" || return 1
 
     # Call nftban-core unban
-    local output
+    local output exit_code
     output=$("$NFTBAN_CORE" unban "$ip" 2>&1)
-    local exit_code=$?
+    exit_code=$?
 
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
         if [[ $exit_code -eq 0 ]]; then
