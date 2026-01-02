@@ -110,6 +110,11 @@ func (c *Client) Ping() error {
 
 // Ban bans an IP address
 func (c *Client) Ban(ip string, timeout int, reason, source string) (*Response, error) {
+	// Client-side validation
+	if ip == "" {
+		return nil, fmt.Errorf("ip parameter is required")
+	}
+
 	params := map[string]any{
 		"ip": ip,
 	}
@@ -222,6 +227,11 @@ func (c *Client) LoadPorts() (*Response, error) {
 // setType should be "blacklist" or "whitelist"
 // If cidrs is nil/empty, loads from feeds/trust directories
 func (c *Client) LoadCIDRs(setType string, cidrs []string) (*Response, error) {
+	// Client-side validation
+	if setType == "" {
+		return nil, fmt.Errorf("set_type parameter is required")
+	}
+
 	params := map[string]any{
 		"set_type": setType,
 	}
