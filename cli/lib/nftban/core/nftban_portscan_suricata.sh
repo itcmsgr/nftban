@@ -14,6 +14,14 @@
 declare -g _NFTBAN_PORTSCAN_SURICATA_LOADED=1
 
 # =============================================================================
+# LOAD IPC LIBRARY (for single-writer architecture)
+# =============================================================================
+
+NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
+
+# =============================================================================
 # CONFIGURATION LOADING
 # =============================================================================
 
@@ -575,15 +583,18 @@ nftban_portscan_suricata_block_ip() {
             --reason "portscan:suricata:${level}:${scan_types}" \
             --source "portscan-suricata" \
             --score "$score"
+    elif type -t nft_ipc_ban &>/dev/null; then
+        # Use IPC to ban (single-writer architecture)
+        nft_ipc_ban "$ip" "$duration" "portscan:suricata:${level}:${scan_types}" "portscan-suricata" 2>/dev/null || true
     else
-        # Direct nftables block
+        # Fallback: Direct IPC add element
         local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
         local table_ipv6="${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"
 
         if [[ "$ip" =~ : ]]; then
-            nft add element ${table_ipv6} blacklist { $ip timeout ${duration}s } 2>/dev/null || true
+            nft_ipc_add_element "$table_ipv6" "blacklist" "$ip" "$duration" 2>/dev/null || true
         else
-            nft add element ${table_ipv4} blacklist { $ip timeout ${duration}s } 2>/dev/null || true
+            nft_ipc_add_element "$table_ipv4" "blacklist" "$ip" "$duration" 2>/dev/null || true
         fi
     fi
 

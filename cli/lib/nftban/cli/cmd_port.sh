@@ -34,6 +34,11 @@ if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER"
 fi
+
+# Load IPC library for single-writer architecture
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
+
 # NFTBan v1.0.0 - Port CLI Handler
 # =============================================================================
 
@@ -287,7 +292,7 @@ nftban_cmd_port() {
 
                 # Add to tcp_ports set (if TCP or both)
                 if [[ "$proto" == "T" || "$proto" == "B" ]]; then
-                    if nft add element ${NFTBAN_TABLE_IPV4} tcp_ports "{ $port }" 2>/dev/null; then
+                    if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "tcp_ports" "$port" 2>/dev/null; then
                         echo "  ✓ TCP port $port added to nftables (immediate)"
                     else
                         echo "  ⚠ Could not add TCP port atomically" >&2
@@ -297,7 +302,7 @@ nftban_cmd_port() {
 
                 # Add to udp_ports set (if UDP or both)
                 if [[ "$proto" == "U" || "$proto" == "B" ]]; then
-                    if nft add element ${NFTBAN_TABLE_IPV4} udp_ports "{ $port }" 2>/dev/null; then
+                    if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" "udp_ports" "$port" 2>/dev/null; then
                         echo "  ✓ UDP port $port added to nftables (immediate)"
                     else
                         echo "  ⚠ Could not add UDP port atomically" >&2
@@ -446,7 +451,7 @@ nftban_cmd_port() {
 
                 # Remove from tcp_ports set (if TCP or both)
                 if [[ "$removed_proto" == "T" || "$removed_proto" == "B" ]]; then
-                    if nft delete element ${NFTBAN_TABLE_IPV4} tcp_ports "{ $port }" 2>/dev/null; then
+                    if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "tcp_ports" "$port" 2>/dev/null; then
                         echo "  ✓ TCP port $port removed from nftables (immediate)"
                     else
                         echo "  ⚠ Could not remove TCP port atomically (may not exist)" >&2
@@ -456,7 +461,7 @@ nftban_cmd_port() {
 
                 # Remove from udp_ports set (if UDP or both)
                 if [[ "$removed_proto" == "U" || "$removed_proto" == "B" ]]; then
-                    if nft delete element ${NFTBAN_TABLE_IPV4} udp_ports "{ $port }" 2>/dev/null; then
+                    if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "udp_ports" "$port" 2>/dev/null; then
                         echo "  ✓ UDP port $port removed from nftables (immediate)"
                     else
                         echo "  ⚠ Could not remove UDP port atomically (may not exist)" >&2
@@ -878,31 +883,37 @@ nftban_port_allow_directadmin() {
             fi
         done
 
-        # If no chains found, create them
+        # If no chains found, create them via IPC
         if [[ -z "${chain_map[inet_input]:-}" ]]; then
             echo "Creating input chain in inet $nftban_table_inet..."
-            if nft add chain inet "$nftban_table_inet" input "{ type filter hook input priority 0; }" 2>/dev/null; then
+            local chain_fragment="/etc/nftban/rules.d/port-audit-chain-input.nft"
+            echo "add chain inet $nftban_table_inet input { type filter hook input priority 0; }" > "$chain_fragment"
+            if nft_ipc_apply_ruleset "$chain_fragment" 2>/dev/null; then
                 chain_map["inet_input"]="input"
                 echo "✓ Created chain: input"
             else
                 echo "⚠ Failed to create input chain" >&2
             fi
+            rm -f "$chain_fragment" 2>/dev/null
         fi
 
         if [[ -z "${chain_map[inet_output]:-}" ]]; then
             echo "Creating output chain in inet $nftban_table_inet..."
-            if nft add chain inet "$nftban_table_inet" output "{ type filter hook output priority 0; }" 2>/dev/null; then
+            local chain_fragment="/etc/nftban/rules.d/port-audit-chain-output.nft"
+            echo "add chain inet $nftban_table_inet output { type filter hook output priority 0; }" > "$chain_fragment"
+            if nft_ipc_apply_ruleset "$chain_fragment" 2>/dev/null; then
                 chain_map["inet_output"]="output"
                 echo "✓ Created chain: output"
             else
                 echo "⚠ Failed to create output chain" >&2
             fi
+            rm -f "$chain_fragment" 2>/dev/null
         fi
     fi
 
     echo ""
 
-    # Function to add rule if it doesn't exist
+    # Function to add rule if it doesn't exist (via IPC)
     add_port_rule() {
         local family="$1"
         local table="$2"
@@ -916,12 +927,16 @@ nftban_port_allow_directadmin() {
             return 0  # Rule already exists
         fi
 
-        # Add the rule
-        nft add rule "$family" "$table" "$chain" "$proto" "$direction" "$port" counter accept 2>/dev/null || return 1
-        return 0
+        # Add the rule via IPC
+        local rule_fragment="/etc/nftban/rules.d/port-audit-rule-$$.nft"
+        echo "add rule $family $table $chain $proto $direction $port counter accept" > "$rule_fragment"
+        local result=0
+        nft_ipc_apply_ruleset "$rule_fragment" 2>/dev/null || result=1
+        rm -f "$rule_fragment" 2>/dev/null
+        return $result
     }
 
-    # Bulk add ports (60x faster for large port lists)
+    # Bulk add ports (60x faster for large port lists) via IPC
     add_ports_bulk() {
         local family="$1"
         local table="$2"
@@ -933,12 +948,13 @@ nftban_port_allow_directadmin() {
         # Convert comma list to nftables set syntax: { 20, 21, 22 }
         local port_set="{ ${ports//,/, } }"
 
-        # Add bulk rule (single nft call for all ports)
-        if nft add rule "$family" "$table" "$chain" "$proto" "$direction" "$port_set" counter accept 2>/dev/null; then
-            return 0
-        else
-            return 1
-        fi
+        # Add bulk rule via IPC
+        local rule_fragment="/etc/nftban/rules.d/port-audit-bulk-$$.nft"
+        echo "add rule $family $table $chain $proto $direction $port_set counter accept" > "$rule_fragment"
+        local result=0
+        nft_ipc_apply_ruleset "$rule_fragment" 2>/dev/null || result=1
+        rm -f "$rule_fragment" 2>/dev/null
+        return $result
     }
 
     local rules_added=0
