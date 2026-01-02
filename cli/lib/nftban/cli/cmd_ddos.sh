@@ -77,25 +77,14 @@ COMMANDS:
     enable              Enable DDoS protection (all configured protections)
     disable             Disable all DDoS protections
     status              Show status of all DDoS protections
-
-    enable synflood     Enable SYN flood protection only
-    disable synflood    Disable SYN flood protection only
-    status synflood     Show SYN flood protection status
-
-    enable connlimit    Enable connection limit protection only
-    disable connlimit   Disable connection limit protection only
-    status connlimit    Show connection limit protection status
-
-    enable portflood    Enable port flood protection only
-    disable portflood   Disable port flood protection only
-    status portflood    Show port flood protection status
-
-    enable icmp         Enable ICMP flood protection only
-    disable icmp        Disable ICMP flood protection only
-    status icmp         Show ICMP flood protection status
-
+    stats               Show DDoS statistics (use --json for GUI)
     test                Test DDoS protection rules
     help                Show this help message
+
+NOTE:
+    DDoS protections are managed as a unified set. Individual protection
+    types (synflood, connlimit, etc.) are controlled via configuration
+    files, not separate commands.
 
 DESCRIPTION:
     The DDoS protection module provides comprehensive protection against
@@ -104,51 +93,26 @@ DESCRIPTION:
 
 PROTECTION TYPES:
 
-    1. SYN Flood Protection
-       Protects against TCP SYN flood attacks by rate limiting new
-       connections with SYN flag set.
+    The DDoS module includes multiple protection layers:
 
-       ⚠️  WARNING: Only enable during active attack (adds connection latency)
+    • SYN Flood Protection - Rate limits TCP SYN packets
+    • Connection Limits - Limits concurrent connections per IP/port
+    • ICMP Rate Limiting - Prevents ping floods
+    • UDP Flood Protection - Rate limits UDP traffic
 
-       Configuration:
-         DDOS_SYNFLOOD_ENABLED="false"    # Master switch
-         DDOS_SYNFLOOD_RATE="100/second"  # Rate limit
-         DDOS_SYNFLOOD_BURST="150"        # Burst allowance
+    All protections are configured via environment variables in:
+      /etc/nftban/conf.d/ddos/main.conf
+      /etc/nftban/conf.d/ddos/classic.conf
 
-    2. Connection Limit Protection
-       Limits concurrent connections per IP address to specific ports.
-       Prevents connection exhaustion attacks.
-
-       ✅ Recommended: Enable for all servers
-
-       Configuration:
-         DDOS_CONNLIMIT_ENABLED="true"    # Master switch
-         DDOS_CONNLIMIT_SSH="5"           # Max SSH connections per IP
-         DDOS_CONNLIMIT_HTTP="20"         # Max HTTP connections per IP
-         DDOS_CONNLIMIT_HTTPS="20"        # Max HTTPS connections per IP
-         DDOS_CONNLIMIT_SMTP="5"          # Max SMTP connections per IP
-         ... (9 services total)
-
-    3. Port Flood Protection
-       Rate limits new connection attempts per time period.
-       Effective against slowloris and brute force attacks.
-
-       Configuration:
-         DDOS_PORTFLOOD_ENABLED="true"    # Master switch
-         DDOS_PORTFLOOD_SSH="5/300"       # 5 connections per 5 minutes
-         DDOS_PORTFLOOD_HTTP="20/5"       # 20 connections per 5 seconds
-         DDOS_PORTFLOOD_HTTPS="20/5"      # 20 connections per 5 seconds
-
-    4. ICMP Flood Protection
-       Rate limits ICMP echo requests (ping) to prevent ping floods.
-       Allows legitimate monitoring but blocks abuse.
-
-       ✅ Recommended: Always enable
-
-       Configuration:
-         DDOS_ICMPFLOOD_ENABLED="true"    # Master switch
-         DDOS_ICMPFLOOD_RATE="1/second"   # 1 ping per second per IP
-         DDOS_ICMPFLOOD_BURST="10"        # Burst allowance
+    Key configuration variables:
+      DDOS_ENABLED="true"                        # Master enable/disable
+      DDOS_MODE="auto"                           # auto|classic|suricata|hybrid
+      DDOS_CLASSIC_SYN_RATE="25/second"         # SYN flood rate limit
+      DDOS_CLASSIC_SYN_BURST="50"               # Burst allowance
+      DDOS_CLASSIC_SSH_CONN_LIMIT="10"          # Max SSH connections/IP
+      DDOS_CLASSIC_HTTP_CONN_LIMIT="100"        # Max HTTP connections/IP
+      DDOS_CLASSIC_ICMP_RATE="10/second"        # ICMP rate limit
+      DDOS_CLASSIC_UDP_RATE="100/second"        # UDP rate limit
 
 CONFIGURATION:
     DDoS protection is configured in:
@@ -157,9 +121,10 @@ CONFIGURATION:
     User overrides:
       /etc/nftban/nftban.conf.local
 
-    Example override:
-      DDOS_CONNLIMIT_HTTP="50"         # Increase HTTP limit to 50
-      DDOS_SYNFLOOD_ENABLED="true"     # Enable SYN flood protection
+    Example overrides:
+      DDOS_CLASSIC_HTTP_CONN_LIMIT="200"   # Increase HTTP limit
+      DDOS_CLASSIC_SYN_RATE="50/second"    # Increase SYN rate limit
+      DDOS_MODE="classic"                   # Force classic mode
 
 PROFILE SELECTION:
     Instead of manually configuring DDoS protection, you can select
@@ -186,14 +151,8 @@ EXAMPLES:
     # Show status of all protections
     nftban ddos status
 
-    # Enable only connection limit protection
-    sudo nftban ddos enable connlimit
-
-    # Show SYN flood protection status
-    nftban ddos status synflood
-
-    # Disable ICMP flood protection
-    sudo nftban ddos disable icmp
+    # Show statistics
+    nftban ddos stats
 
     # Test DDoS protection rules
     nftban ddos test
@@ -390,67 +349,18 @@ nftban_cmd_ddos() {
     # Handle commands
     case "$action" in
         enable)
-            local subaction="${1:-all}"
-            case "$subaction" in
-                synflood)
-                    nftban_ddos_synflood_enable
-                    ;;
-                connlimit)
-                    nftban_ddos_connlimit_enable
-                    ;;
-                portflood)
-                    nftban_ddos_portflood_enable
-                    ;;
-                icmp)
-                    nftban_ddos_icmp_enable
-                    ;;
-                all|*)
-                    nftban_ddos_enable
-                    ;;
-            esac
+            # Enable all DDoS protections (granular controls not implemented)
+            nftban_ddos_enable
             ;;
 
         disable)
-            local subaction="${1:-all}"
-            case "$subaction" in
-                synflood)
-                    nftban_ddos_synflood_disable
-                    ;;
-                connlimit)
-                    nftban_ddos_connlimit_disable
-                    ;;
-                portflood)
-                    nftban_ddos_portflood_disable
-                    ;;
-                icmp)
-                    nftban_ddos_icmp_disable
-                    ;;
-                all|*)
-                    nftban_ddos_disable
-                    ;;
-            esac
+            # Disable all DDoS protections
+            nftban_ddos_disable
             ;;
 
         status)
-            # Banner is handled by main CLI router
-            local subaction="${1:-all}"
-            case "$subaction" in
-                synflood)
-                    nftban_ddos_synflood_status
-                    ;;
-                connlimit)
-                    nftban_ddos_connlimit_status
-                    ;;
-                portflood)
-                    nftban_ddos_portflood_status
-                    ;;
-                icmp)
-                    nftban_ddos_icmp_status
-                    ;;
-                all|*)
-                    nftban_ddos_status
-                    ;;
-            esac
+            # Show status of all DDoS protections
+            nftban_ddos_status
             ;;
 
         stats)
@@ -459,43 +369,14 @@ nftban_cmd_ddos() {
             ;;
 
         test)
-            nftban_ddos_banner
-            echo ""
-            echo "🧪 Testing DDoS Protection Rules"
-            echo ""
-            echo "Checking nftables chains..."
-            echo ""
-
-            # Check for SYN flood chain
-            if nft list chain ${NFTBAN_TABLE_IPV4} synflood_protection &>/dev/null; then
-                echo "  ✅ SYN flood chain exists (IPv4)"
+            # Delegate to main controller's test function
+            if type -t nftban_ddos_test &>/dev/null; then
+                nftban_ddos_test
             else
-                echo "  ❌ SYN flood chain not found (IPv4)"
+                echo "ERROR: DDoS test function not available"
+                echo "Ensure nftban_ddos.sh is loaded"
+                return 1
             fi
-
-            # Check for connection limit chain
-            if nft list chain ${NFTBAN_TABLE_IPV4} connlimit_protection &>/dev/null; then
-                echo "  ✅ Connection limit chain exists (IPv4)"
-            else
-                echo "  ❌ Connection limit chain not found (IPv4)"
-            fi
-
-            # Check for port flood chain
-            if nft list chain ${NFTBAN_TABLE_IPV4} portflood_protection &>/dev/null; then
-                echo "  ✅ Port flood chain exists (IPv4)"
-            else
-                echo "  ❌ Port flood chain not found (IPv4)"
-            fi
-
-            # Check for ICMP chain
-            if nft list chain ${NFTBAN_TABLE_IPV4} icmp_protection &>/dev/null; then
-                echo "  ✅ ICMP protection chain exists (IPv4)"
-            else
-                echo "  ❌ ICMP protection chain not found (IPv4)"
-            fi
-
-            echo ""
-            echo "Test complete. Run 'nftban ddos status' for detailed information."
             ;;
 
         help|--help|-h)
@@ -505,7 +386,7 @@ nftban_cmd_ddos() {
         *)
             echo "ERROR: Unknown command: $action"
             echo ""
-            echo "Available commands: enable, disable, status, test, help"
+            echo "Available commands: enable, disable, status, stats, test, help"
             echo "Run 'nftban ddos help' for detailed usage information"
             exit 1
             ;;
