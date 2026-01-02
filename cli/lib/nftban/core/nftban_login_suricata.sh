@@ -197,8 +197,9 @@ _nftban_login_suricata_process_eve_line() {
 
 # Process an auth-related alert
 _nftban_login_suricata_process_alert() {
-    local sig_id="$3"  # shellcheck disable=SC2034  # Reserved for SID filtering
+    local ip="$1"
     local signature="$2"
+    # shellcheck disable=SC2034  # Reserved for SID filtering
     local sig_id="$3"
     local severity="${4:-2}"
     local now

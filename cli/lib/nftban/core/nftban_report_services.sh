@@ -288,7 +288,8 @@ nftban_services_report_table() {
         IFS='|' read -r status version required notes <<< "$info"
 
         # Determine status display with icon
-        local status_display=""  # shellcheck disable=SC2034  # Reserved for formatted status
+        # shellcheck disable=SC2034  # Reserved for formatted status
+        local status_display=""
 
         case "$status" in
             RUNNING)

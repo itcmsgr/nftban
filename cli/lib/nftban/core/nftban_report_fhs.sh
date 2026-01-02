@@ -557,7 +557,8 @@ nftban_fhs_report_json() {
         fi
 
         # Parse issues from status
-        local issues=""  # shellcheck disable=SC2178  # Intentional string from array
+        # shellcheck disable=SC2178  # Intentional string from array
+        local issues=""
         if [[ "$status" =~ ^ERROR: ]]; then
             issues="${status#ERROR:}"  # shellcheck disable=SC2178  # Intentional string from array
         fi

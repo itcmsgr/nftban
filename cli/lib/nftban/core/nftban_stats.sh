@@ -524,7 +524,8 @@ nftban_stats_generate_dashboard() {
     local total_bans unique_ips active_bans whitelist_count
     total_bans=$(nftban_stats_count_bans "$since" "$until")
     unique_ips=$(nftban_stats_count_unique_ips "$since" "$until")
-    active_bans=$(nftban_stats_count_active_bans)  # shellcheck disable=SC2034  # Reserved for metrics
+    # shellcheck disable=SC2034  # Reserved for metrics
+    active_bans=$(nftban_stats_count_active_bans)
     whitelist_count=$(nftban_stats_count_whitelist)
 
     # Header
@@ -787,8 +788,8 @@ nftban_stats_recent_activity() {
     echo "───────────────────────────────────────────────────────────────"
     echo ""
 
-    tail -n "$limit" "$NFTBAN_BAN_LOG" | \
     # shellcheck disable=SC2034  # Structured log parsing - only some fields used
+    tail -n "$limit" "$NFTBAN_BAN_LOG" | \
     while IFS='|' read -r timestamp id jail ip reason action timeout; do
         printf "%s | %-16s | %-12s | %s\n" \
             "$timestamp" "$ip" "$action" "$jail"
