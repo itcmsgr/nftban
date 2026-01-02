@@ -54,7 +54,6 @@ func (a *PAMAuthenticator) Authenticate(username, password string) (string, erro
 	if err != nil {
 		return "", fmt.Errorf("PAM start failed: %w", err)
 	}
-	defer t.End()
 
 	if err := t.Authenticate(0); err != nil {
 		return "", fmt.Errorf("authentication failed: %w", err)
