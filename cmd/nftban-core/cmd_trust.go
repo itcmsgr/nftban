@@ -12,9 +12,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/nftables"
+	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/sync"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -410,55 +409,52 @@ func cmdTrustLoad(trustDir string) error {
 		return nil
 	}
 
-	// Load into nftables whitelist sets
-	fmt.Println("Loading into nftables whitelist sets...")
-
-	nft, err := sync.NewNFTManager()
-	if err != nil {
-		return fmt.Errorf("failed to create nftables manager: %w", err)
+	// Connect to daemon
+	fmt.Println("Connecting to nftband daemon...")
+	client := ipc.NewClient()
+	if err := client.Ping(); err != nil {
+		return fmt.Errorf("daemon not running: %w\nStart with: sudo systemctl start nftband", err)
 	}
-	defer nft.Close()
+	fmt.Println("  ✅ Connected to nftband daemon")
+	fmt.Println()
 
-	// Get IPv4 whitelist set
-	tableIPv4, err := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
+	// Load into nftables whitelist via IPC
+	fmt.Println("Loading into nftables whitelist sets via daemon...")
+
+	// Combine all CIDRs
+	allCIDRs := append(ipv4List, ipv6List...)
+
+	resp, err := client.LoadCIDRs("whitelist", allCIDRs)
 	if err != nil {
-		return fmt.Errorf("failed to get IPv4 table: %w", err)
+		return fmt.Errorf("failed to load trust feeds: %w", err)
 	}
 
-	whitelistIPv4Set, err := nft.GetOrCreateIntervalSet(tableIPv4, "whitelist_ipv4", true)
-	if err != nil {
-		return fmt.Errorf("failed to get whitelist_ipv4 set: %w", err)
+	if !resp.Success {
+		return fmt.Errorf("failed to load trust feeds: %s", resp.Error)
 	}
 
-	// Load IPv4
-	if len(ipv4List) > 0 {
-		stats, err := nft.AddCIDRElementsWithStats(whitelistIPv4Set, ipv4List)
-		if err != nil {
-			return fmt.Errorf("failed to load IPv4 trust feeds: %w", err)
+	// Extract results
+	data, ok := resp.Data.(map[string]any)
+	if !ok {
+		return fmt.Errorf("unexpected response format")
+	}
+
+	// Show results
+	if ipv4Input, ok := data["ipv4_input"].(float64); ok && ipv4Input > 0 {
+		if ipv4Ranges, ok := data["ipv4_output_ranges"].(float64); ok {
+			if reduction, ok := data["ipv4_reduction_pct"].(float64); ok {
+				fmt.Printf("  ✅ IPv4: %.0f CIDRs → %.0f ranges (%.1f%% reduction)\n",
+					ipv4Input, ipv4Ranges, reduction)
+			}
 		}
-		fmt.Printf("  ✅ IPv4: %d CIDRs → %d ranges (%.1f%% reduction)\n",
-			stats.InputCIDRs, stats.OutputRanges, stats.ReductionPct)
 	}
-
-	// Get IPv6 whitelist set
-	tableIPv6, err := nft.GetOrCreateTable(nftables.TableFamilyIPv6)
-	if err != nil {
-		return fmt.Errorf("failed to get IPv6 table: %w", err)
-	}
-
-	whitelistIPv6Set, err := nft.GetOrCreateIntervalSet(tableIPv6, "whitelist_ipv6", false)
-	if err != nil {
-		return fmt.Errorf("failed to get whitelist_ipv6 set: %w", err)
-	}
-
-	// Load IPv6
-	if len(ipv6List) > 0 {
-		stats, err := nft.AddCIDRElementsWithStats(whitelistIPv6Set, ipv6List)
-		if err != nil {
-			return fmt.Errorf("failed to load IPv6 trust feeds: %w", err)
+	if ipv6Input, ok := data["ipv6_input"].(float64); ok && ipv6Input > 0 {
+		if ipv6Ranges, ok := data["ipv6_output_ranges"].(float64); ok {
+			if reduction, ok := data["ipv6_reduction_pct"].(float64); ok {
+				fmt.Printf("  ✅ IPv6: %.0f CIDRs → %.0f ranges (%.1f%% reduction)\n",
+					ipv6Input, ipv6Ranges, reduction)
+			}
 		}
-		fmt.Printf("  ✅ IPv6: %d CIDRs → %d ranges (%.1f%% reduction)\n",
-			stats.InputCIDRs, stats.OutputRanges, stats.ReductionPct)
 	}
 
 	fmt.Println()

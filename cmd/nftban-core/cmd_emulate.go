@@ -4,10 +4,10 @@ import (
 	"encoding/json"
 	"fmt"
 	"net"
+	"os/exec"
 	"strings"
 
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/sync"
 )
 
 // EmulateQuery represents the query parameters
@@ -175,11 +175,22 @@ func emulatePacket(ipStr, proto, port, direction string) (*EmulateResult, error)
 	return result, nil
 }
 
+// nftListSet runs nft list set and returns the output
+func nftListSet(family, table, setName string) (string, error) {
+	tableSpec := family + " " + table
+	cmd := exec.Command("nft", "list", "set", tableSpec, setName)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", err
+	}
+	return string(output), nil
+}
+
 // checkIPInSet checks if an IP is in a specific nft set
 // Returns (match bool, matching_cidr string)
 func checkIPInSet(family, table, setName, ipStr string) (bool, string) {
-	// Query nftables set
-	output, err := sync.NftListSet(family, table, setName)
+	// Query nftables set (READ operation via nft CLI)
+	output, err := nftListSet(family, table, setName)
 	if err != nil {
 		// Set doesn't exist or error querying
 		return false, ""

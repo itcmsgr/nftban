@@ -36,14 +36,19 @@ import (
 	"time"
 
 	"github.com/coreos/go-systemd/v22/activation"
+	"github.com/google/nftables"
 	"github.com/itcmsgr/nftban/pkg/ddos"
 	"github.com/itcmsgr/nftban/pkg/eventbus"
+	"github.com/itcmsgr/nftban/pkg/feeds"
 	"github.com/itcmsgr/nftban/pkg/loginmon"
 	"github.com/itcmsgr/nftban/pkg/module"
 	"github.com/itcmsgr/nftban/pkg/nftbackend"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/persistence"
+	"github.com/itcmsgr/nftban/pkg/ports"
 	"github.com/itcmsgr/nftban/pkg/portscan"
+	"github.com/itcmsgr/nftban/pkg/runtime"
+	"github.com/itcmsgr/nftban/pkg/sync"
 	"golang.org/x/sys/unix"
 )
 
@@ -471,6 +476,12 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 		return d.handlePersistBanRequest(req.Params)
 	case "unpersist_ban":
 		return d.handleUnpersistBanRequest(req.Params)
+	case "sync":
+		return d.handleSyncRequest(req.Params)
+	case "load_ports":
+		return d.handleLoadPortsRequest(req.Params)
+	case "load_cidrs":
+		return d.handleLoadCIDRsRequest(req.Params)
 	case "ping":
 		return SocketResponse{Success: true, Data: "pong"}
 	default:
@@ -878,4 +889,421 @@ func (d *Daemon) waitForShutdown() {
 	d.cancel()
 
 	log.Println("nftband stopped")
+}
+
+// =============================================================================
+// HIGH-LEVEL IPC HANDLERS (for CLI delegation)
+// =============================================================================
+
+// handleSyncRequest performs a full differential sync of whitelists/blacklists
+func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
+	_, configDir, _, _ := getDaemonPaths()
+
+	// Initialize RuntimeState
+	state := runtime.NewRuntimeState(configDir)
+
+	if err := state.LoadWhitelists(); err != nil {
+		return SocketResponse{Success: false, Error: "failed to load whitelists: " + err.Error()}
+	}
+
+	if err := state.LoadBlacklists(); err != nil {
+		return SocketResponse{Success: false, Error: "failed to load blacklists: " + err.Error()}
+	}
+
+	// Load ports from ALL sources
+	allPorts, err := ports.LoadAllPorts(configDir)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to load ports: " + err.Error()}
+	}
+
+	// Initialize nftables manager
+	nft, err := sync.NewNFTManager()
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create nftables manager: " + err.Error()}
+	}
+	defer nft.Close()
+
+	// Get or create tables
+	tableIPv4, err := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get/create IPv4 table: " + err.Error()}
+	}
+
+	tableIPv6, err := nft.GetOrCreateTable(nftables.TableFamilyIPv6)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get/create IPv6 table: " + err.Error()}
+	}
+
+	// Create sets
+	whitelistIPv4Set, err := nft.GetOrCreateIntervalSet(tableIPv4, "whitelist_ipv4", true)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get/create whitelist_ipv4 set: " + err.Error()}
+	}
+
+	whitelistIPv6Set, err := nft.GetOrCreateIntervalSet(tableIPv6, "whitelist_ipv6", false)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get/create whitelist_ipv6 set: " + err.Error()}
+	}
+
+	blacklistIPv4Set, err := nft.GetOrCreateSet(tableIPv4, "blacklist_ipv4", true)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get/create blacklist_ipv4 set: " + err.Error()}
+	}
+
+	blacklistIPv6Set, err := nft.GetOrCreateSet(tableIPv6, "blacklist_ipv6", false)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get/create blacklist_ipv6 set: " + err.Error()}
+	}
+
+	// Create and populate port sets if we have ports
+	if len(allPorts.AllRules) > 0 {
+		tcpSetV4, err := nft.GetOrCreatePortSet(tableIPv4, "tcp_ports")
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports set: " + err.Error()}
+		}
+
+		tcpSetV6, err := nft.GetOrCreatePortSet(tableIPv6, "tcp_ports")
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to create IPv6 tcp_ports set: " + err.Error()}
+		}
+
+		udpSetV4, err := nft.GetOrCreatePortSet(tableIPv4, "udp_ports")
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to create IPv4 udp_ports set: " + err.Error()}
+		}
+
+		udpSetV6, err := nft.GetOrCreatePortSet(tableIPv6, "udp_ports")
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to create IPv6 udp_ports set: " + err.Error()}
+		}
+
+		// Load ports into sets
+		if len(allPorts.TCPPorts) > 0 {
+			if err := nft.AddPortElements(tcpSetV4, allPorts.TCPPorts); err != nil {
+				return SocketResponse{Success: false, Error: "failed to add IPv4 TCP ports: " + err.Error()}
+			}
+			if err := nft.AddPortElements(tcpSetV6, allPorts.TCPPorts); err != nil {
+				return SocketResponse{Success: false, Error: "failed to add IPv6 TCP ports: " + err.Error()}
+			}
+		}
+
+		if len(allPorts.UDPPorts) > 0 {
+			if err := nft.AddPortElements(udpSetV4, allPorts.UDPPorts); err != nil {
+				return SocketResponse{Success: false, Error: "failed to add IPv4 UDP ports: " + err.Error()}
+			}
+			if err := nft.AddPortElements(udpSetV6, allPorts.UDPPorts); err != nil {
+				return SocketResponse{Success: false, Error: "failed to add IPv6 UDP ports: " + err.Error()}
+			}
+		}
+	}
+
+	// Get snapshots from runtime state
+	whitelistIPv4, whitelistIPv6 := state.GetWhitelistSnapshot()
+	blacklistIPv4, blacklistIPv6 := state.GetBlacklistSnapshot()
+
+	// Perform full sync
+	result, err := sync.FullSync(
+		nft,
+		whitelistIPv4Set, whitelistIPv6Set,
+		blacklistIPv4Set, blacklistIPv6Set,
+		whitelistIPv4, whitelistIPv6,
+		blacklistIPv4, blacklistIPv6,
+	)
+
+	if err != nil {
+		return SocketResponse{Success: false, Error: "sync failed: " + err.Error()}
+	}
+
+	// Update counters
+	state.IncrementSyncCounter(result.Success)
+
+	return SocketResponse{
+		Success: result.Success,
+		Data: map[string]any{
+			"whitelist_ipv4_added":   result.WhitelistIPv4.Added,
+			"whitelist_ipv4_removed": result.WhitelistIPv4.Removed,
+			"whitelist_ipv6_added":   result.WhitelistIPv6.Added,
+			"whitelist_ipv6_removed": result.WhitelistIPv6.Removed,
+			"blacklist_ipv4_added":   result.BlacklistIPv4.Added,
+			"blacklist_ipv4_removed": result.BlacklistIPv4.Removed,
+			"blacklist_ipv6_added":   result.BlacklistIPv6.Added,
+			"blacklist_ipv6_removed": result.BlacklistIPv6.Removed,
+			"tcp_ports":              len(allPorts.TCPPorts),
+			"udp_ports":              len(allPorts.UDPPorts),
+		},
+	}
+}
+
+// handleLoadPortsRequest loads ports into nftables port sets
+func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
+	_, configDir, _, _ := getDaemonPaths()
+	portsDir := configDir + "/ports.d"
+
+	// Load port configuration
+	config, err := ports.LoadPortsFromDirectory(portsDir)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to load ports: " + err.Error()}
+	}
+
+	if len(config.AllRules) == 0 {
+		return SocketResponse{
+			Success: true,
+			Data: map[string]any{
+				"message":   "no port rules configured",
+				"tcp_ports": 0,
+				"udp_ports": 0,
+			},
+		}
+	}
+
+	// Initialize nftables manager
+	nft, err := sync.NewNFTManager()
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create nftables manager: " + err.Error()}
+	}
+	defer nft.Close()
+
+	// Create IPv4 table and sets
+	ipv4Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get IPv4 table: " + err.Error()}
+	}
+
+	tcpSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "tcp_ports")
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create IPv4 tcp_ports set: " + err.Error()}
+	}
+
+	udpSetV4, err := nft.GetOrCreatePortSet(ipv4Table, "udp_ports")
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create IPv4 udp_ports set: " + err.Error()}
+	}
+
+	// Create IPv6 table and sets
+	ipv6Table, err := nft.GetOrCreateTable(nftables.TableFamilyIPv6)
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to get IPv6 table: " + err.Error()}
+	}
+
+	tcpSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "tcp_ports")
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create IPv6 tcp_ports set: " + err.Error()}
+	}
+
+	udpSetV6, err := nft.GetOrCreatePortSet(ipv6Table, "udp_ports")
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create IPv6 udp_ports set: " + err.Error()}
+	}
+
+	// Load ports into sets
+	if len(config.TCPPorts) > 0 {
+		if err := nft.AddPortElements(tcpSetV4, config.TCPPorts); err != nil {
+			return SocketResponse{Success: false, Error: "failed to add IPv4 TCP ports: " + err.Error()}
+		}
+		if err := nft.AddPortElements(tcpSetV6, config.TCPPorts); err != nil {
+			return SocketResponse{Success: false, Error: "failed to add IPv6 TCP ports: " + err.Error()}
+		}
+	}
+
+	if len(config.UDPPorts) > 0 {
+		if err := nft.AddPortElements(udpSetV4, config.UDPPorts); err != nil {
+			return SocketResponse{Success: false, Error: "failed to add IPv4 UDP ports: " + err.Error()}
+		}
+		if err := nft.AddPortElements(udpSetV6, config.UDPPorts); err != nil {
+			return SocketResponse{Success: false, Error: "failed to add IPv6 UDP ports: " + err.Error()}
+		}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"tcp_ports": len(config.TCPPorts),
+			"udp_ports": len(config.UDPPorts),
+			"total":     len(config.AllRules),
+		},
+	}
+}
+
+// handleLoadCIDRsRequest loads CIDRs into a blacklist or whitelist set
+func (d *Daemon) handleLoadCIDRsRequest(params map[string]any) SocketResponse {
+	setType, _ := params["set_type"].(string) // "blacklist" or "whitelist"
+	if setType == "" {
+		setType = "blacklist"
+	}
+
+	// Get CIDRs from params
+	cidrsRaw, ok := params["cidrs"].([]any)
+	if !ok || len(cidrsRaw) == 0 {
+		// Try to load from feeds/trust directory
+		_, _, dataDir, _ := getDaemonPaths()
+
+		var ipv4CIDRs, ipv6CIDRs []string
+
+		if setType == "blacklist" {
+			// Load feeds
+			feedsDir := dataDir + "/feeds"
+			ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, _, err := feeds.LoadAllFeeds(feedsDir)
+			if err != nil {
+				return SocketResponse{Success: false, Error: "failed to load feeds: " + err.Error()}
+			}
+
+			// Combine IPs and CIDRs
+			for ip := range ipv4Set {
+				ipv4CIDRs = append(ipv4CIDRs, ip+"/32")
+			}
+			for cidr := range ipv4CIDRSet {
+				ipv4CIDRs = append(ipv4CIDRs, cidr)
+			}
+			for ip := range ipv6Set {
+				ipv6CIDRs = append(ipv6CIDRs, ip+"/128")
+			}
+			for cidr := range ipv6CIDRSet {
+				ipv6CIDRs = append(ipv6CIDRs, cidr)
+			}
+		} else {
+			// Load trust feeds
+			trustDir := dataDir + "/trust"
+			files, err := os.ReadDir(trustDir)
+			if err != nil {
+				return SocketResponse{Success: false, Error: "failed to read trust directory: " + err.Error()}
+			}
+
+			for _, file := range files {
+				if file.IsDir() || !strings.HasSuffix(file.Name(), ".txt") {
+					continue
+				}
+
+				content, err := os.ReadFile(trustDir + "/" + file.Name())
+				if err != nil {
+					continue
+				}
+
+				lines := strings.Split(string(content), "\n")
+				for _, line := range lines {
+					line = strings.TrimSpace(line)
+					if line == "" || strings.HasPrefix(line, "#") {
+						continue
+					}
+
+					if strings.Contains(line, ":") {
+						// IPv6
+						if !strings.Contains(line, "/") {
+							line += "/128"
+						}
+						ipv6CIDRs = append(ipv6CIDRs, line)
+					} else {
+						// IPv4
+						if !strings.Contains(line, "/") {
+							line += "/32"
+						}
+						ipv4CIDRs = append(ipv4CIDRs, line)
+					}
+				}
+			}
+		}
+
+		// Load into nftables
+		return d.loadCIDRsIntoSets(setType, ipv4CIDRs, ipv6CIDRs)
+	}
+
+	// Parse CIDRs from params
+	var ipv4CIDRs, ipv6CIDRs []string
+	for _, cidrRaw := range cidrsRaw {
+		cidr, ok := cidrRaw.(string)
+		if !ok {
+			continue
+		}
+		if strings.Contains(cidr, ":") {
+			ipv6CIDRs = append(ipv6CIDRs, cidr)
+		} else {
+			ipv4CIDRs = append(ipv4CIDRs, cidr)
+		}
+	}
+
+	return d.loadCIDRsIntoSets(setType, ipv4CIDRs, ipv6CIDRs)
+}
+
+// loadCIDRsIntoSets loads CIDRs into the appropriate nftables sets
+func (d *Daemon) loadCIDRsIntoSets(setType string, ipv4CIDRs, ipv6CIDRs []string) SocketResponse {
+	// Initialize nftables manager
+	nft, err := sync.NewNFTManager()
+	if err != nil {
+		return SocketResponse{Success: false, Error: "failed to create nftables manager: " + err.Error()}
+	}
+	defer nft.Close()
+
+	// Determine set names
+	var setNameV4, setNameV6 string
+	if setType == "whitelist" {
+		setNameV4 = "whitelist_ipv4"
+		setNameV6 = "whitelist_ipv6"
+	} else {
+		setNameV4 = "blacklist_ipv4"
+		setNameV6 = "blacklist_ipv6"
+	}
+
+	var ipv4Stats, ipv6Stats *sync.MergeStats
+
+	// Load IPv4 CIDRs
+	if len(ipv4CIDRs) > 0 {
+		tableIPv4, err := nft.GetOrCreateTable(nftables.TableFamilyIPv4)
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to get IPv4 table: " + err.Error()}
+		}
+
+		setIPv4, err := nft.GetOrCreateIntervalSet(tableIPv4, setNameV4, true)
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to get " + setNameV4 + " set: " + err.Error()}
+		}
+
+		stats, err := nft.AddCIDRElementsWithStats(setIPv4, ipv4CIDRs)
+		if err != nil {
+			// Check for overlap errors (not fatal)
+			if !strings.Contains(err.Error(), "conflicting intervals") {
+				return SocketResponse{Success: false, Error: "failed to load IPv4 CIDRs: " + err.Error()}
+			}
+		}
+		ipv4Stats = stats
+	}
+
+	// Load IPv6 CIDRs
+	if len(ipv6CIDRs) > 0 {
+		tableIPv6, err := nft.GetOrCreateTable(nftables.TableFamilyIPv6)
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to get IPv6 table: " + err.Error()}
+		}
+
+		setIPv6, err := nft.GetOrCreateIntervalSet(tableIPv6, setNameV6, false)
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to get " + setNameV6 + " set: " + err.Error()}
+		}
+
+		stats, err := nft.AddCIDRElementsWithStats(setIPv6, ipv6CIDRs)
+		if err != nil {
+			return SocketResponse{Success: false, Error: "failed to load IPv6 CIDRs: " + err.Error()}
+		}
+		ipv6Stats = stats
+	}
+
+	// Build response data
+	data := map[string]any{
+		"set_type":    setType,
+		"ipv4_input":  len(ipv4CIDRs),
+		"ipv6_input":  len(ipv6CIDRs),
+		"total_input": len(ipv4CIDRs) + len(ipv6CIDRs),
+	}
+
+	if ipv4Stats != nil {
+		data["ipv4_output_ranges"] = ipv4Stats.OutputRanges
+		data["ipv4_reduction_pct"] = ipv4Stats.ReductionPct
+	}
+	if ipv6Stats != nil {
+		data["ipv6_output_ranges"] = ipv6Stats.OutputRanges
+		data["ipv6_reduction_pct"] = ipv6Stats.ReductionPct
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data:    data,
+	}
 }

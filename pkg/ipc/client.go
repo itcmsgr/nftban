@@ -207,3 +207,26 @@ func (c *Client) Modules() (*Response, error) {
 func (c *Client) IsConnected() bool {
 	return c.Ping() == nil
 }
+
+// Sync performs a full differential sync of whitelists/blacklists/ports
+func (c *Client) Sync() (*Response, error) {
+	return c.Call("sync", nil)
+}
+
+// LoadPorts loads ports into nftables port sets
+func (c *Client) LoadPorts() (*Response, error) {
+	return c.Call("load_ports", nil)
+}
+
+// LoadCIDRs loads CIDRs into blacklist or whitelist sets
+// setType should be "blacklist" or "whitelist"
+// If cidrs is nil/empty, loads from feeds/trust directories
+func (c *Client) LoadCIDRs(setType string, cidrs []string) (*Response, error) {
+	params := map[string]any{
+		"set_type": setType,
+	}
+	if len(cidrs) > 0 {
+		params["cidrs"] = cidrs
+	}
+	return c.Call("load_cidrs", params)
+}
