@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFTBan - Dashboard</title>
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="stylesheet" href="/assets/css/dashboard.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar" role="navigation" aria-label="Main navigation">
+            <div class="nav-brand">NFTBan</div>
+            <ul class="nav-menu">
+                <li><a href="/dashboard.html" class="active" aria-current="page">Dashboard</a></li>
+                <li><a href="/ban-list.html">Ban List</a></li>
+                <li><a href="/metrics.html">Metrics</a></li>
+                <li><span class="nav-user" id="nav-user" aria-label="Current user"></span></li>
+                <li><a href="#" onclick="logout()">Logout</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main class="container">
+        <h1>System Overview</h1>
+
+        <!-- KPI Cards -->
+        <div class="kpi-grid">
+            <div class="kpi-card">
+                <div class="kpi-label">Blocked IPs</div>
+                <div id="blocked-ips" class="kpi-value">Loading...</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">Firewall Rules</div>
+                <div id="firewall-rules" class="kpi-value">Loading...</div>
+            </div>
+            <div class="kpi-card" id="health-card">
+                <div class="kpi-label">Health Status</div>
+                <div id="health-status" class="kpi-value">Loading...</div>
+            </div>
+            <div class="kpi-card">
+                <div class="kpi-label">System Uptime</div>
+                <div id="uptime" class="kpi-value">Loading...</div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="section">
+            <h2>Quick Actions</h2>
+            <div class="actions-grid">
+                <div class="action-card" id="ban-ip-card">
+                    <h3>Ban IP</h3>
+                    <form id="ban-form">
+                        <input type="text" id="ban-ip" placeholder="Enter IP address" pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$">
+                        <input type="text" id="ban-reason" placeholder="Reason (optional)">
+                        <button type="submit" class="btn btn-danger">Ban</button>
+                    </form>
+                </div>
+
+                <div class="action-card">
+                    <h3>Unban IP</h3>
+                    <form id="unban-form">
+                        <input type="text" id="unban-ip" placeholder="Enter IP address" pattern="^(?:[0-9]{1,3}\.){3}[0-9]{1,3}$">
+                        <button type="submit" class="btn btn-success">Unban</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity -->
+        <div class="section">
+            <h2>Recent Bans</h2>
+            <div id="recent-bans" class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>IP Address</th>
+                            <th>Reason</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="recent-bans-body">
+                        <tr><td colspan="3">Loading...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </main>
+
+    <!-- Load JavaScript -->
+    <script src="/assets/js/session.js"></script>
+    <script src="/assets/js/common.js"></script>
+    <script>
+        // Show username in nav
+        const user = Session.getUser();
+        document.getElementById('nav-user').textContent = `${user.username} (${user.role})`;
+
+        // Load dashboard data
+        async function loadDashboard() {
+            try {
+                const data = await API.get('/metrics/overview');
+
+                // Update KPIs
+                document.getElementById('blocked-ips').textContent = formatNumber(data.blocked_ips || 0);
+                document.getElementById('firewall-rules').textContent = formatNumber(data.firewall_rules || 0);
+
+                const healthEl = document.getElementById('health-status');
+                const healthCard = document.getElementById('health-card');
+                if (data.health_ok) {
+                    healthEl.textContent = '✓ OK';
+                    healthCard.classList.add('status-ok');
+                    healthCard.classList.remove('status-error');
+                } else {
+                    healthEl.textContent = '✗ Error';
+                    healthCard.classList.add('status-error');
+                    healthCard.classList.remove('status-ok');
+                }
+
+                document.getElementById('uptime').textContent = formatUptime(data.uptime_seconds || 0);
+
+            } catch (error) {
+                handleError(error, 'Failed to load dashboard data');
+            }
+        }
+
+        // Load banned IPs list
+        async function loadBannedIPs() {
+            try {
+                const data = await API.get('/list');
+                const tbody = document.getElementById('recent-bans-body');
+
+                if (!data.ips || data.ips.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="3">No banned IPs</td></tr>';
+                    return;
+                }
+
+                tbody.innerHTML = data.ips.slice(0, 10).map(ip => `
+                    <tr>
+                        <td data-label="IP Address">${ip}</td>
+                        <td data-label="Reason">-</td>
+                        <td data-label="Actions">
+                            <button
+                                onclick="unbanIP('${ip}')"
+                                class="btn btn-sm"
+                                aria-label="Unban IP address ${ip}"
+                                title="Unban ${ip}">
+                                Unban
+                            </button>
+                        </td>
+                    </tr>
+                `).join('');
+
+            } catch (error) {
+                handleError(error, 'Failed to load banned IPs');
+            }
+        }
+
+        // Ban IP form handler
+        document.getElementById('ban-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const ip = document.getElementById('ban-ip').value;
+            const reason = document.getElementById('ban-reason').value || 'Manual ban';
+
+            // Check role permission
+            if (user.role !== 'admin' && user.role !== 'panel-admin') {
+                showNotification('Permission denied: Only admins can ban IPs', 'error');
+                return;
+            }
+
+            try {
+                await API.post('/ban', { ip, reason });
+                showNotification(`IP ${ip} banned successfully`, 'success');
+                document.getElementById('ban-ip').value = '';
+                document.getElementById('ban-reason').value = '';
+                loadBannedIPs();
+                loadDashboard();
+            } catch (error) {
+                handleError(error, 'Failed to ban IP');
+            }
+        });
+
+        // Unban IP form handler
+        document.getElementById('unban-form').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            const ip = document.getElementById('unban-ip').value;
+
+            // Check role permission
+            if (user.role !== 'admin' && user.role !== 'panel-admin') {
+                showNotification('Permission denied: Only admins can unban IPs', 'error');
+                return;
+            }
+
+            try {
+                await API.post('/unban', { ip });
+                showNotification(`IP ${ip} unbanned successfully`, 'success');
+                document.getElementById('unban-ip').value = '';
+                loadBannedIPs();
+                loadDashboard();
+            } catch (error) {
+                handleError(error, 'Failed to unban IP');
+            }
+        });
+
+        // Unban from table
+        async function unbanIP(ip) {
+            if (!confirm(`Unban IP ${ip}?`)) return;
+
+            try {
+                await API.post('/unban', { ip });
+                showNotification(`IP ${ip} unbanned successfully`, 'success');
+                loadBannedIPs();
+                loadDashboard();
+            } catch (error) {
+                handleError(error, 'Failed to unban IP');
+            }
+        }
+
+        // Hide ban/unban forms for non-admin roles
+        if (user.role === 'operator' || user.role === 'panel-user') {
+            document.getElementById('ban-ip-card').style.display = 'none';
+            document.querySelector('.actions-grid').style.gridTemplateColumns = '1fr';
+        }
+
+        // Initial load
+        loadDashboard();
+        loadBannedIPs();
+
+        // Auto-refresh every 10 seconds
+        autoRefresh(loadDashboard, 10);
+        autoRefresh(loadBannedIPs, 30);
+    </script>
+</body>
+</html>

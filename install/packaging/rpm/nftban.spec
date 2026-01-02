@@ -226,6 +226,10 @@ echo "  Repository setup complete"
 install -d -m 750 -o root -g nftban /etc/nftban/ports.d 2>/dev/null || true
 install -d -m 750 -o root -g nftban /etc/nftban/whitelist.d 2>/dev/null || true
 install -d -m 750 -o nftban -g nftban /var/log/nftban 2>/dev/null || true
+install -d -m 750 -o nftban -g nftban /var/log/nftban/watchdog 2>/dev/null || true
+install -d -m 750 -o nftban -g nftban /var/lib/nftban/stats 2>/dev/null || true
+install -d -m 750 -o nftban -g nftban /var/lib/nftban/stats/history 2>/dev/null || true
+install -d -m 750 -o nftban -g nftban /var/lib/nftban/stats/profiles 2>/dev/null || true
 
 # Auto-detect SSH port
 SSH_PORT="22"

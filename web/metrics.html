@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFTBan - Metrics</title>
+    <link rel="stylesheet" href="/assets/css/style.css">
+    <link rel="stylesheet" href="/assets/css/dashboard.css">
+</head>
+<body>
+    <header>
+        <nav class="navbar" role="navigation" aria-label="Main navigation">
+            <div class="nav-brand">NFTBan</div>
+            <ul class="nav-menu">
+                <li><a href="/dashboard.html">Dashboard</a></li>
+                <li><a href="/ban-list.html">Ban List</a></li>
+                <li><a href="/metrics.html" class="active" aria-current="page">Metrics</a></li>
+                <li><span class="nav-user" id="nav-user" aria-label="Current user"></span></li>
+                <li><a href="#" onclick="logout()">Logout</a></li>
+            </ul>
+        </nav>
+    </header>
+
+    <main class="container">
+        <h1>System Metrics</h1>
+
+        <!-- System Health -->
+        <div class="section">
+            <h2>System Health</h2>
+            <div class="metrics-grid">
+                <div class="metric-item">
+                    <div class="metric-label">NFTBan Status</div>
+                    <div id="nftban-status" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Uptime</div>
+                    <div id="uptime" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Config Last Reload</div>
+                    <div id="config-reload" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Health Status</div>
+                    <div id="health-status" class="metric-value">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Ban Statistics -->
+        <div class="section">
+            <h2>Ban Statistics</h2>
+            <div class="metrics-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Total Banned IPs</div>
+                    <div id="total-banned" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Ban Operations</div>
+                    <div id="ban-ops" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Unban Operations</div>
+                    <div id="unban-ops" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Permanent Bans</div>
+                    <div id="permanent-bans" class="metric-value">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detection Metrics -->
+        <div class="section">
+            <h2>Detection Metrics</h2>
+
+            <h3>DDoS Protection</h3>
+            <div class="metrics-grid">
+                <div class="metric-item">
+                    <div class="metric-label">DDoS Detections</div>
+                    <div id="ddos-detections" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">SYN Flood</div>
+                    <div id="synflood" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Port Flood</div>
+                    <div id="portflood" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">ICMP Flood</div>
+                    <div id="icmpflood" class="metric-value">Loading...</div>
+                </div>
+            </div>
+
+            <h3>Port Scanning</h3>
+            <div class="metrics-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Portscan Detections</div>
+                    <div id="portscan-detections" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Vertical Scans</div>
+                    <div id="vertical-scans" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Horizontal Scans</div>
+                    <div id="horizontal-scans" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Scan Attempts</div>
+                    <div id="scan-attempts" class="metric-value">Loading...</div>
+                </div>
+            </div>
+
+            <h3>Login Attacks</h3>
+            <div class="metrics-grid">
+                <div class="metric-item">
+                    <div class="metric-label">SSH Attacks</div>
+                    <div id="ssh-attacks" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">FTP Attacks</div>
+                    <div id="ftp-attacks" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Web Attacks</div>
+                    <div id="web-attacks" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Mail Attacks</div>
+                    <div id="mail-attacks" class="metric-value">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Firewall Performance -->
+        <div class="section">
+            <h2>Firewall Performance</h2>
+            <div class="metrics-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Total Rules</div>
+                    <div id="total-rules" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">IPv4 Rules</div>
+                    <div id="ipv4-rules" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">IPv6 Rules</div>
+                    <div id="ipv6-rules" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Rule Processing</div>
+                    <div id="rule-processing" class="metric-value">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- GeoIP Analysis -->
+        <div class="section">
+            <h2>GeoIP Analysis</h2>
+            <div class="metrics-grid">
+                <div class="metric-item">
+                    <div class="metric-label">Unique Countries</div>
+                    <div id="unique-countries" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Top Country</div>
+                    <div id="top-country" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">Unique ASNs</div>
+                    <div id="unique-asns" class="metric-value">Loading...</div>
+                </div>
+                <div class="metric-item">
+                    <div class="metric-label">RBL Hits</div>
+                    <div id="rbl-hits" class="metric-value">Loading...</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Charts Placeholder (Future: Chart.js integration) -->
+        <div class="section">
+            <h2>Visual Analytics</h2>
+            <div class="charts-grid">
+                <div class="chart-card">
+                    <h3>Ban Trends (Last 24 Hours)</h3>
+                    <div class="chart-container">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📊</div>
+                            <p>Chart.js integration coming soon</p>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3>Detection Types Distribution</h3>
+                    <div class="chart-container">
+                        <div class="empty-state">
+                            <div class="empty-state-icon">📈</div>
+                            <p>Chart.js integration coming soon</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- GeoIP Map Placeholder (Future: Leaflet integration) -->
+        <div class="section">
+            <h2>Geographic Distribution</h2>
+            <div class="chart-card">
+                <div class="chart-container" style="height: 400px;">
+                    <div class="empty-state">
+                        <div class="empty-state-icon">🗺️</div>
+                        <p>Leaflet GeoIP map coming soon</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </main>
+
+    <!-- Load JavaScript -->
+    <script src="/assets/js/session.js"></script>
+    <script src="/assets/js/common.js"></script>
+    <script>
+        // Show username in nav
+        const user = Session.getUser();
+        document.getElementById('nav-user').textContent = `${user.username} (${user.role})`;
+
+        // Load metrics data
+        async function loadMetrics() {
+            try {
+                const data = await API.get('/metrics/overview');
+
+                // System Health
+                document.getElementById('nftban-status').textContent = data.health_ok ? '✓ Running' : '✗ Error';
+                document.getElementById('uptime').textContent = formatUptime(data.uptime_seconds || 0);
+                document.getElementById('config-reload').textContent = '-';
+                document.getElementById('health-status').textContent = data.health_ok ? '✓ OK' : '✗ Error';
+
+                // Ban Statistics
+                document.getElementById('total-banned').textContent = formatNumber(data.blocked_ips || 0);
+                document.getElementById('ban-ops').textContent = '-';
+                document.getElementById('unban-ops').textContent = '-';
+                document.getElementById('permanent-bans').textContent = '-';
+
+                // Detection Metrics (placeholders - requires Prometheus integration)
+                document.getElementById('ddos-detections').textContent = '0';
+                document.getElementById('synflood').textContent = '0';
+                document.getElementById('portflood').textContent = '0';
+                document.getElementById('icmpflood').textContent = '0';
+
+                document.getElementById('portscan-detections').textContent = '0';
+                document.getElementById('vertical-scans').textContent = '0';
+                document.getElementById('horizontal-scans').textContent = '0';
+                document.getElementById('scan-attempts').textContent = '0';
+
+                document.getElementById('ssh-attacks').textContent = '0';
+                document.getElementById('ftp-attacks').textContent = '0';
+                document.getElementById('web-attacks').textContent = '0';
+                document.getElementById('mail-attacks').textContent = '0';
+
+                // Firewall Performance
+                document.getElementById('total-rules').textContent = formatNumber(data.firewall_rules || 0);
+                document.getElementById('ipv4-rules').textContent = '-';
+                document.getElementById('ipv6-rules').textContent = '-';
+                document.getElementById('rule-processing').textContent = '-';
+
+                // GeoIP Analysis
+                document.getElementById('unique-countries').textContent = '0';
+                document.getElementById('top-country').textContent = '-';
+                document.getElementById('unique-asns').textContent = '0';
+                document.getElementById('rbl-hits').textContent = '0';
+
+            } catch (error) {
+                handleError(error, 'Failed to load metrics data');
+            }
+        }
+
+        // Initial load
+        loadMetrics();
+
+        // Auto-refresh every 10 seconds
+        autoRefresh(loadMetrics, 10);
+    </script>
+</body>
+</html>

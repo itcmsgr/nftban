@@ -53,8 +53,16 @@ case "$1" in
         install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/exports"
         install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/geoip"
 
+        # Stats directories (watchdog runtime stats and profiling)
+        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/stats"
+        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/stats/history"
+        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/stats/profiles"
+
         # Log directory
         install -d -m 750 -o nftban -g nftban "${NFTBAN_LOG_DIR}"
+
+        # Watchdog log subdirectory
+        install -d -m 750 -o nftban -g nftban "${NFTBAN_LOG_DIR}/watchdog"
 
         # Cache and runtime
         install -d -m 755 -o nftban -g nftban "${NFTBAN_CACHE_DIR}"

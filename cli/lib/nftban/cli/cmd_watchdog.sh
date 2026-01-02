@@ -65,10 +65,19 @@ COMMANDS:
   disable          Disable watchdog timer
   help             Show this help message
 
+DAEMON STATS COMMANDS:
+  stats            Show daemon runtime stats (memory, goroutines, IPC)
+  stats-history    Show historical daemon stats (daily summaries)
+  snapshot         Capture a pprof profile (heap, goroutine, cpu)
+  profiles         List captured pprof profiles
+
 OPTIONS:
-  --json           Output in JSON format (for status, check)
+  --json           Output in JSON format (for status, check, stats)
   --last=N         Show last N reports (for history, default: 10)
   --format=FORMAT  Output format: text, json (for history)
+  --days=N         Number of days for stats-history (1-30, default: 7)
+  --type=TYPE      Profile type for snapshot: heap, goroutine, cpu
+  --duration=N     CPU profile duration in seconds (default: 30)
 
 EXAMPLES:
   nftban watchdog status         # Quick status check
@@ -77,6 +86,14 @@ EXAMPLES:
   nftban watchdog history        # Last 10 reports
   nftban watchdog history --last=24
   nftban watchdog enable         # Enable auto-monitoring
+
+  # Daemon stats examples:
+  nftban watchdog stats          # Current daemon stats
+  nftban watchdog stats --json   # JSON format
+  nftban watchdog stats-history --days=7
+  nftban watchdog snapshot --type=heap
+  nftban watchdog snapshot --type=cpu --duration=30
+  nftban watchdog profiles       # List captured profiles
 
 WHAT WATCHDOG MONITORS:
   - Load Average     (from /proc/loadavg)
@@ -87,8 +104,19 @@ WHAT WATCHDOG MONITORS:
   - File Descriptors (from /proc/sys/fs/file-nr)
   - Top Processes    (CPU and memory consumers)
 
+DAEMON STATS (from nftband via IPC):
+  - Memory usage     (heap, alloc, system)
+  - Goroutine count
+  - GC cycles/pauses
+  - IPC throughput   (requests, latency, errors)
+  - Ban/unban rates
+  - Module status
+
 CONFIGURATION:
   Config file: /etc/nftban/conf.d/watchdog.conf
+  Stats file:  /var/lib/nftban/stats/current.json
+  History dir: /var/lib/nftban/stats/history/
+  Profile dir: /var/lib/nftban/stats/profiles/
   Reports dir: /var/lib/nftban/reports/watchdog/
   Metrics:     /var/lib/nftban/metrics/watchdog.prom
 
@@ -399,6 +427,284 @@ nftban_watchdog_cmd_disable() {
 }
 
 # =============================================================================
+# DAEMON STATS COMMANDS (via IPC)
+# =============================================================================
+
+# Helper: Call daemon via Unix socket
+_watchdog_ipc_call() {
+    local method="$1"
+    local params="${2:-{}}"
+    local socket_path="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock"
+
+    if [[ ! -S "$socket_path" ]]; then
+        echo '{"success":false,"error":"daemon not running (socket not found)"}'
+        return 1
+    fi
+
+    # Send JSON request, receive JSON response
+    echo "{\"method\":\"$method\",\"params\":$params}" | \
+        timeout 30 socat - "UNIX-CONNECT:$socket_path" 2>/dev/null
+}
+
+nftban_watchdog_cmd_stats() {
+    # Show daemon runtime stats
+    local json_mode=false
+
+    for arg in "$@"; do
+        [[ "$arg" == "--json" ]] && json_mode=true
+    done
+
+    local response
+    response=$(_watchdog_ipc_call "stats" "{}")
+
+    if [[ -z "$response" ]]; then
+        echo "Error: No response from daemon"
+        return 1
+    fi
+
+    # Check for error
+    local success
+    success=$(echo "$response" | jq -r '.success // false')
+    if [[ "$success" != "true" ]]; then
+        local error
+        error=$(echo "$response" | jq -r '.error // "unknown error"')
+        echo "Error: $error"
+        return 1
+    fi
+
+    if [[ "$json_mode" == "true" ]]; then
+        echo "$response" | jq '.data'
+    else
+        # Human-readable format
+        local data
+        data=$(echo "$response" | jq '.data')
+
+        echo "NFTBan Daemon Stats"
+        echo "==================="
+        echo ""
+        echo "Daemon:"
+        echo "  Version:     $(echo "$data" | jq -r '.daemon.version // "N/A"')"
+        echo "  Uptime:      $(echo "$data" | jq -r '.daemon.uptime_seconds // 0') seconds"
+        echo "  PID:         $(echo "$data" | jq -r '.daemon.pid // "N/A"')"
+        echo "  Health:      $(echo "$data" | jq -r '.health // "N/A"')"
+        echo ""
+        echo "Runtime:"
+        printf "  Heap Memory: %.2f MB\n" "$(echo "$data" | jq -r '.runtime.memory_heap_mb // 0')"
+        printf "  Sys Memory:  %.2f MB\n" "$(echo "$data" | jq -r '.runtime.memory_sys_mb // 0')"
+        echo "  Goroutines:  $(echo "$data" | jq -r '.runtime.goroutines // 0')"
+        echo "  GC Cycles:   $(echo "$data" | jq -r '.runtime.gc_cycles // 0')"
+        printf "  GC Pause:    %.2f ms\n" "$(echo "$data" | jq -r '.runtime.gc_pause_ms // 0')"
+        echo ""
+        echo "Throughput:"
+        echo "  Bans Total:   $(echo "$data" | jq -r '.throughput.bans_total // 0')"
+        echo "  Unbans Total: $(echo "$data" | jq -r '.throughput.unbans_total // 0')"
+        echo "  Events Total: $(echo "$data" | jq -r '.throughput.events_total // 0')"
+        printf "  Bans/min:    %.2f\n" "$(echo "$data" | jq -r '.throughput.bans_per_min // 0')"
+        echo ""
+        echo "IPC:"
+        echo "  Requests:    $(echo "$data" | jq -r '.ipc.requests_total // 0')"
+        printf "  Avg Latency: %.2f ms\n" "$(echo "$data" | jq -r '.ipc.avg_latency_ms // 0')"
+        echo "  Errors:      $(echo "$data" | jq -r '.ipc.errors_total // 0')"
+
+        # Show alerts if any
+        local alert_count
+        alert_count=$(echo "$data" | jq '.alerts | length // 0')
+        if [[ "$alert_count" -gt 0 ]]; then
+            echo ""
+            echo "Alerts ($alert_count):"
+            echo "$data" | jq -r '.alerts[] | "  [\(.level)] \(.type): \(.message)"'
+        fi
+    fi
+}
+
+nftban_watchdog_cmd_stats_history() {
+    # Show historical daemon stats
+    local days=7
+    local json_mode=false
+
+    for arg in "$@"; do
+        case "$arg" in
+            --days=*) days="${arg#--days=}" ;;
+            --json) json_mode=true ;;
+        esac
+    done
+
+    local response
+    response=$(_watchdog_ipc_call "stats_history" "{\"days\":$days}")
+
+    if [[ -z "$response" ]]; then
+        echo "Error: No response from daemon"
+        return 1
+    fi
+
+    local success
+    success=$(echo "$response" | jq -r '.success // false')
+    if [[ "$success" != "true" ]]; then
+        local error
+        error=$(echo "$response" | jq -r '.error // "unknown error"')
+        echo "Error: $error"
+        return 1
+    fi
+
+    if [[ "$json_mode" == "true" ]]; then
+        echo "$response" | jq '.data'
+    else
+        local history
+        history=$(echo "$response" | jq '.data.history')
+        local count
+        count=$(echo "$history" | jq 'length')
+
+        if [[ "$count" -eq 0 ]]; then
+            echo "No historical data available (daemon may have just started)"
+            return 0
+        fi
+
+        echo "Daemon Stats History (last $days days)"
+        echo "======================================="
+        echo ""
+        printf "%-12s  %8s  %8s  %10s  %10s  %8s\n" \
+            "DATE" "BANS" "UNBANS" "PEAK_MEM" "PEAK_GOR" "ALERTS"
+        echo "------------------------------------------------------------------------"
+
+        echo "$history" | jq -r '.[] | "\(.date)  \(.total_bans)  \(.total_unbans)  \(.peak_memory_mb)  \(.peak_goroutines)  \(.warning_count + .critical_count)"' | \
+        while read -r line; do
+            # shellcheck disable=SC2086
+            printf "%-12s  %8s  %8s  %8.1f MB  %10s  %8s\n" $line
+        done
+    fi
+}
+
+nftban_watchdog_cmd_snapshot() {
+    # Trigger a pprof profile capture
+    local profile_type="heap"
+    local duration=30
+
+    for arg in "$@"; do
+        case "$arg" in
+            --type=*) profile_type="${arg#--type=}" ;;
+            --duration=*) duration="${arg#--duration=}" ;;
+        esac
+    done
+
+    # Validate type
+    case "$profile_type" in
+        heap|goroutine|cpu) ;;
+        *)
+            echo "Error: Invalid profile type '$profile_type'"
+            echo "Valid types: heap, goroutine, cpu"
+            return 1
+            ;;
+    esac
+
+    echo "Capturing $profile_type profile..."
+    [[ "$profile_type" == "cpu" ]] && echo "  Duration: ${duration}s (CPU profiling is async)"
+
+    local response
+    response=$(_watchdog_ipc_call "snapshot_profile" "{\"type\":\"$profile_type\",\"duration\":$duration}")
+
+    if [[ -z "$response" ]]; then
+        echo "Error: No response from daemon"
+        return 1
+    fi
+
+    local success
+    success=$(echo "$response" | jq -r '.success // false')
+    if [[ "$success" != "true" ]]; then
+        local error
+        error=$(echo "$response" | jq -r '.error // "unknown error"')
+        echo "Error: $error"
+        return 1
+    fi
+
+    local path
+    path=$(echo "$response" | jq -r '.data.path // "unknown"')
+    local filename
+    filename=$(echo "$response" | jq -r '.data.filename // "unknown"')
+
+    echo ""
+    echo "Profile captured successfully!"
+    echo "  Type:     $profile_type"
+    echo "  File:     $filename"
+    echo "  Path:     $path"
+    echo ""
+    echo "Analyze with:"
+    echo "  go tool pprof $path"
+}
+
+nftban_watchdog_cmd_profiles() {
+    # List captured pprof profiles
+    local profile_dir="${NFTBAN_WATCHDOG_PROFILE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/stats/profiles}"
+    local json_mode=false
+
+    for arg in "$@"; do
+        [[ "$arg" == "--json" ]] && json_mode=true
+    done
+
+    if [[ ! -d "$profile_dir" ]]; then
+        echo "No profiles directory: $profile_dir"
+        return 0
+    fi
+
+    local -a profiles
+    mapfile -t profiles < <(find "$profile_dir" -name "*.pprof" -type f 2>/dev/null | sort -r)
+
+    if [[ ${#profiles[@]} -eq 0 ]]; then
+        echo "No profiles found in $profile_dir"
+        echo ""
+        echo "Capture a profile with: nftban watchdog snapshot --type=heap"
+        return 0
+    fi
+
+    if [[ "$json_mode" == "true" ]]; then
+        echo "["
+        local first=true
+        for profile in "${profiles[@]}"; do
+            local filename size mtime
+            filename=$(basename "$profile")
+            size=$(stat -c %s "$profile" 2>/dev/null || echo 0)
+            mtime=$(stat -c %Y "$profile" 2>/dev/null || echo 0)
+
+            [[ "$first" == "true" ]] || echo ","
+            first=false
+
+            printf '  {"file": "%s", "path": "%s", "size": %d, "mtime": %d}' \
+                "$filename" "$profile" "$size" "$mtime"
+        done
+        echo ""
+        echo "]"
+    else
+        echo "Captured Profiles"
+        echo "================="
+        echo "Directory: $profile_dir"
+        echo ""
+        printf "%-35s  %10s  %s\n" "FILENAME" "SIZE" "CREATED"
+        echo "--------------------------------------------------------------------"
+
+        for profile in "${profiles[@]}"; do
+            local filename size mtime_fmt
+            filename=$(basename "$profile")
+            size=$(stat -c %s "$profile" 2>/dev/null || echo 0)
+            mtime_fmt=$(stat -c %y "$profile" 2>/dev/null | cut -d. -f1)
+
+            # Human-readable size
+            local size_hr
+            if [[ $size -gt 1048576 ]]; then
+                size_hr="$(awk "BEGIN {printf \"%.1f\", $size/1048576}") MB"
+            elif [[ $size -gt 1024 ]]; then
+                size_hr="$(awk "BEGIN {printf \"%.1f\", $size/1024}") KB"
+            else
+                size_hr="$size B"
+            fi
+
+            printf "%-35s  %10s  %s\n" "$filename" "$size_hr" "$mtime_fmt"
+        done
+
+        echo ""
+        echo "Analyze with: go tool pprof <path>"
+    fi
+}
+
+# =============================================================================
 # TREND COMMAND
 # =============================================================================
 
@@ -479,6 +785,18 @@ nftban_cmd_watchdog() {
             ;;
         trend)
             nftban_watchdog_cmd_trend "$@"
+            ;;
+        stats)
+            nftban_watchdog_cmd_stats "$@"
+            ;;
+        stats-history)
+            nftban_watchdog_cmd_stats_history "$@"
+            ;;
+        snapshot)
+            nftban_watchdog_cmd_snapshot "$@"
+            ;;
+        profiles)
+            nftban_watchdog_cmd_profiles "$@"
             ;;
         help|--help|-h)
             nftban_watchdog_help

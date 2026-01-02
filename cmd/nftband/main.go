@@ -28,9 +28,13 @@ import (
 	"log"
 	"net"
 	"net/http"
+	_ "net/http/pprof" // Enable pprof endpoints
 	"os"
 	"os/signal"
 	"os/user"
+	"path/filepath"
+	goruntime "runtime"
+	"runtime/pprof"
 	"strconv"
 	"strings"
 	"syscall"
@@ -49,6 +53,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/ports"
 	"github.com/itcmsgr/nftban/pkg/portscan"
 	"github.com/itcmsgr/nftban/pkg/runtime"
+	"github.com/itcmsgr/nftban/pkg/stats"
 	"github.com/itcmsgr/nftban/pkg/sync"
 	"golang.org/x/sys/unix"
 )
@@ -58,6 +63,9 @@ const (
 
 	// HTTP API
 	HTTPAddr = ":8080"
+
+	// Profiling (pprof) - localhost only for security
+	PprofAddr = "127.0.0.1:6060"
 )
 
 // Build-time variables (injected by -ldflags)
@@ -65,6 +73,9 @@ var (
 	GitCommit = "dev"
 	BuildDate = "unknown"
 )
+
+// Runtime flags
+var profileEnabled = false
 
 // getDaemonPaths returns paths from central config
 // NO FALLBACK - paths must come from /etc/nftban/nftban.conf
@@ -90,6 +101,7 @@ type Daemon struct {
 	bus       *eventbus.Bus
 	registry  *module.Registry
 	backend   *nftbackend.Backend // AUTHORITATIVE nft writer
+	stats     *stats.Collector    // Runtime stats collector
 	ctx       context.Context
 	cancel    context.CancelFunc
 	socketLn  net.Listener
@@ -97,15 +109,17 @@ type Daemon struct {
 }
 
 func main() {
-	// Handle version/help
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
+	// Handle version/help and parse flags
+	for _, arg := range os.Args[1:] {
+		switch arg {
 		case "--version", "-v":
 			fmt.Printf("nftband v%s (git %s, build %s)\n", Version, GitCommit, BuildDate)
 			return
 		case "--help", "-h":
 			printHelp()
 			return
+		case "--profile":
+			profileEnabled = true
 		}
 	}
 
@@ -114,6 +128,7 @@ func main() {
 		bus:      eventbus.New(),
 		registry: module.NewRegistry(),
 		backend:  nftbackend.New(), // AUTHORITATIVE nft backend
+		stats:    stats.NewCollector(stats.DefaultConfig()),
 	}
 
 	// Run
@@ -127,6 +142,7 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("Usage:")
 	fmt.Println("  nftband              Run the daemon")
+	fmt.Println("  nftband --profile    Run with pprof profiling enabled")
 	fmt.Println("  nftband --version    Show version")
 	fmt.Println("  nftband --help       Show this help")
 	fmt.Println()
@@ -135,6 +151,21 @@ func printHelp() {
 	fmt.Println("  - Provides HTTP API on", HTTPAddr)
 	fmt.Println("  - Provides Unix socket at", getSocketPath())
 	fmt.Println("  - Handles graceful shutdown on SIGTERM/SIGINT")
+	fmt.Println()
+	fmt.Println("Profiling (--profile):")
+	fmt.Println("  When enabled, pprof endpoints are available at", PprofAddr)
+	fmt.Println("  Endpoints:")
+	fmt.Println("    /debug/pprof/          - Index page")
+	fmt.Println("    /debug/pprof/heap      - Heap profile")
+	fmt.Println("    /debug/pprof/profile   - CPU profile (add ?seconds=N)")
+	fmt.Println("    /debug/pprof/goroutine - Goroutine profile")
+	fmt.Println("    /debug/pprof/block     - Block profile")
+	fmt.Println("    /debug/pprof/trace     - Execution trace")
+	fmt.Println()
+	fmt.Println("  Example usage:")
+	fmt.Println("    go tool pprof http://127.0.0.1:6060/debug/pprof/heap")
+	fmt.Println("    go tool pprof http://127.0.0.1:6060/debug/pprof/profile?seconds=30")
+	fmt.Println("    curl http://127.0.0.1:6060/debug/pprof/goroutine?debug=2")
 	fmt.Println()
 }
 
@@ -185,11 +216,21 @@ func (d *Daemon) Run() error {
 		return fmt.Errorf("failed to start HTTP: %w", err)
 	}
 
+	// Start pprof server if profiling enabled
+	if profileEnabled {
+		log.Println("Starting pprof server...")
+		d.startPprof()
+	}
+
 	// Start all modules
 	log.Println("Starting modules...")
 	if err := d.registry.StartAll(d.ctx); err != nil {
 		return fmt.Errorf("failed to start modules: %w", err)
 	}
+
+	// Start stats collector (respects enabled flag - no work if disabled)
+	log.Println("Starting stats collector...")
+	d.stats.Start(d.ctx)
 
 	// Publish startup event
 	d.bus.Publish(eventbus.NewEvent(eventbus.EventModuleStart, "nftband").
@@ -483,6 +524,12 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 		return d.handleLoadPortsRequest(req.Params)
 	case "load_cidrs":
 		return d.handleLoadCIDRsRequest(req.Params)
+	case "stats":
+		return d.handleStatsRequest()
+	case "stats_history":
+		return d.handleStatsHistoryRequest(req.Params)
+	case "snapshot_profile":
+		return d.handleSnapshotProfileRequest(req.Params)
 	case "ping":
 		return SocketResponse{Success: true, Data: "pong"}
 	default:
@@ -856,6 +903,19 @@ func (d *Daemon) startHTTP() error {
 	}()
 
 	return nil
+}
+
+// startPprof starts a pprof HTTP server for profiling
+// The server listens on localhost only (127.0.0.1:6060) for security
+func (d *Daemon) startPprof() {
+	// pprof handlers are already registered by the blank import
+	// We just need to start a server on the pprof port
+	go func() {
+		log.Printf("pprof server listening on http://%s/debug/pprof/", PprofAddr)
+		if err := http.ListenAndServe(PprofAddr, nil); err != nil {
+			log.Printf("pprof server error: %v", err)
+		}
+	}()
 }
 
 // waitForShutdown blocks until SIGTERM/SIGINT
@@ -1307,4 +1367,222 @@ func (d *Daemon) loadCIDRsIntoSets(setType string, ipv4CIDRs, ipv6CIDRs []string
 		Success: true,
 		Data:    data,
 	}
+}
+
+// =============================================================================
+// STATS IPC HANDLERS
+// =============================================================================
+
+// handleStatsRequest returns current daemon runtime stats
+func (d *Daemon) handleStatsRequest() SocketResponse {
+	if d.stats == nil {
+		return SocketResponse{
+			Success: false,
+			Error:   "stats collector not initialized",
+		}
+	}
+
+	snapshot := d.stats.Collect()
+	// Set version from const
+	snapshot.Daemon.Version = Version
+
+	return SocketResponse{
+		Success: true,
+		Data:    snapshot,
+	}
+}
+
+// handleStatsHistoryRequest returns historical stats for specified days
+func (d *Daemon) handleStatsHistoryRequest(params map[string]any) SocketResponse {
+	if d.stats == nil {
+		return SocketResponse{
+			Success: false,
+			Error:   "stats collector not initialized",
+		}
+	}
+
+	days := 1
+	if d, ok := params["days"].(float64); ok {
+		days = int(d)
+	}
+	if days < 1 {
+		days = 1
+	}
+	if days > 30 {
+		days = 30
+	}
+
+	config := d.stats.GetConfig()
+	historyDir := config.HistoryDir
+
+	// Read history files
+	var history []stats.DailyStats
+	for i := 0; i < days; i++ {
+		date := time.Now().AddDate(0, 0, -i).Format("2006-01-02")
+		filePath := historyDir + "/" + date + ".json"
+
+		var daily stats.DailyStats
+		if err := stats.ReadJSON(filePath, &daily); err == nil && daily.Date != "" {
+			history = append(history, daily)
+		}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"days":    days,
+			"history": history,
+		},
+	}
+}
+
+// handleSnapshotProfileRequest triggers a pprof capture
+func (d *Daemon) handleSnapshotProfileRequest(params map[string]any) SocketResponse {
+	if d.stats == nil {
+		return SocketResponse{
+			Success: false,
+			Error:   "stats collector not initialized",
+		}
+	}
+
+	config := d.stats.GetConfig()
+
+	// Check if profiling is enabled
+	if !config.IsProfileEnabled() {
+		return SocketResponse{
+			Success: false,
+			Error:   "profiling is disabled in configuration (NFTBAN_WATCHDOG_PROFILE_ENABLED=false)",
+		}
+	}
+
+	// Check if we can create a new profile (max count limit)
+	if !stats.CanCreateProfile(config.ProfileDir, config.ProfileMaxCount) {
+		return SocketResponse{
+			Success: false,
+			Error:   fmt.Sprintf("max profile count (%d) reached, cleanup required", config.ProfileMaxCount),
+		}
+	}
+
+	profileType := "heap"
+	if t, ok := params["type"].(string); ok && t != "" {
+		profileType = t
+	}
+
+	duration := 0
+	if d, ok := params["duration"].(float64); ok {
+		duration = int(d)
+	}
+
+	// Create profile based on type
+	timestamp := time.Now().Format("20060102_150405")
+	var filename string
+	var err error
+
+	switch profileType {
+	case "heap":
+		filename = fmt.Sprintf("heap_%s.pprof", timestamp)
+		err = d.captureHeapProfile(config.ProfileDir + "/" + filename)
+	case "goroutine":
+		filename = fmt.Sprintf("goroutine_%s.pprof", timestamp)
+		err = d.captureGoroutineProfile(config.ProfileDir + "/" + filename)
+	case "cpu":
+		if duration < 1 {
+			duration = 30 // Default 30 seconds
+		}
+		if duration > 120 {
+			duration = 120 // Max 2 minutes
+		}
+		filename = fmt.Sprintf("cpu_%s_%ds.pprof", timestamp, duration)
+		err = d.captureCPUProfile(config.ProfileDir+"/"+filename, duration)
+	default:
+		return SocketResponse{
+			Success: false,
+			Error:   "unsupported profile type: " + profileType + " (use: heap, goroutine, cpu)",
+		}
+	}
+
+	if err != nil {
+		return SocketResponse{
+			Success: false,
+			Error:   "failed to capture profile: " + err.Error(),
+		}
+	}
+
+	// Log the capture
+	d.logProfileCapture(config.ProfileLog, profileType, filename)
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"type":     profileType,
+			"filename": filename,
+			"path":     config.ProfileDir + "/" + filename,
+			"duration": duration,
+		},
+	}
+}
+
+// captureHeapProfile writes a heap profile to file
+func (d *Daemon) captureHeapProfile(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	goruntime.GC() // Force GC for accurate heap stats
+	return pprof.WriteHeapProfile(f)
+}
+
+// captureGoroutineProfile writes a goroutine profile to file
+func (d *Daemon) captureGoroutineProfile(path string) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return pprof.Lookup("goroutine").WriteTo(f, 0)
+}
+
+// captureCPUProfile captures CPU profile for specified duration
+func (d *Daemon) captureCPUProfile(path string, seconds int) error {
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+
+	if err := pprof.StartCPUProfile(f); err != nil {
+		f.Close()
+		return err
+	}
+
+	// Run in goroutine so we don't block
+	go func() {
+		time.Sleep(time.Duration(seconds) * time.Second)
+		pprof.StopCPUProfile()
+		f.Close()
+	}()
+
+	return nil
+}
+
+// logProfileCapture logs profile capture to profiles.log
+func (d *Daemon) logProfileCapture(logPath, profileType, filename string) {
+	// Ensure directory exists
+	os.MkdirAll(filepath.Dir(logPath), 0750)
+
+	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0640)
+	if err != nil {
+		log.Printf("stats: failed to open profile log: %v", err)
+		return
+	}
+	defer f.Close()
+
+	line := fmt.Sprintf("%s captured %s profile: %s\n",
+		time.Now().Format(time.RFC3339),
+		profileType,
+		filename,
+	)
+	f.WriteString(line)
 }

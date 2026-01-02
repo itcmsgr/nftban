@@ -240,3 +240,42 @@ func (c *Client) LoadCIDRs(setType string, cidrs []string) (*Response, error) {
 	}
 	return c.Call("load_cidrs", params)
 }
+
+// =============================================================================
+// STATS IPC CLIENT METHODS
+// =============================================================================
+
+// Stats returns current daemon runtime statistics
+func (c *Client) Stats() (*Response, error) {
+	return c.Call("stats", nil)
+}
+
+// StatsHistory returns historical daily stats for specified number of days
+// days: number of days to retrieve (1-30)
+func (c *Client) StatsHistory(days int) (*Response, error) {
+	if days < 1 {
+		days = 1
+	}
+	if days > 30 {
+		days = 30
+	}
+	return c.Call("stats_history", map[string]any{
+		"days": days,
+	})
+}
+
+// SnapshotProfile triggers a pprof profile capture
+// profileType: "heap", "goroutine", or "cpu"
+// duration: seconds for CPU profile (only used for cpu type, default 30s)
+func (c *Client) SnapshotProfile(profileType string, duration int) (*Response, error) {
+	if profileType == "" {
+		profileType = "heap"
+	}
+	params := map[string]any{
+		"type": profileType,
+	}
+	if duration > 0 {
+		params["duration"] = duration
+	}
+	return c.Call("snapshot_profile", params)
+}
