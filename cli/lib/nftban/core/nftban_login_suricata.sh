@@ -186,7 +186,7 @@ _nftban_login_suricata_process_eve_line() {
         anomaly_type=$(echo "$line" | jq -r '.anomaly.type // empty' 2>/dev/null)
 
         # Auth-related anomalies
-            processed=1  # shellcheck disable=SC2034  # Reserved for processing stats
+        if [[ "$anomaly_type" == "auth" ]] || [[ "$anomaly_type" == "applayer" ]]; then
             _nftban_login_suricata_process_anomaly "$src_ip" "$anomaly_type"
             processed=1
         fi
