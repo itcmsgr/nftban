@@ -1033,10 +1033,20 @@ nftban_health_check_config() {
         done
 
         # Check subdirectory config files (ddos/, portscan/, login/, panels/)
+        # Skip data files that aren't meant to be sourced as bash
+        local skip_files=("rbls.conf" "feeds.conf")  # Data files, not bash configs
         for subdir in "$config_dir"/*; do
             if [[ -d "$subdir" ]]; then
                 for conf_file in "$subdir"/*.conf; do
                     if [[ -f "$conf_file" ]]; then
+                        local filename; filename=$(basename "$conf_file")
+                        # Skip known data files that aren't bash configs
+                        local skip=false
+                        for skip_file in "${skip_files[@]}"; do
+                            [[ "$filename" == "$skip_file" ]] && { skip=true; break; }
+                        done
+                        [[ "$skip" == "true" ]] && continue
+
                         # shellcheck disable=SC1090  # Dynamic source for config validation
                         if ! (source "$conf_file") 2>/dev/null; then
                             local relative_path; relative_path="$(basename "$subdir")/$(basename "$conf_file")"
@@ -1196,37 +1206,58 @@ nftban_health_check_polkit() {
         polkit_issues+=("nftban-auditors group will also require sudo for inventory helpers")
         status=$HEALTH_WARNING
     else
-        # Check if NFTBAN services authorization rules are installed (v1.0 simplified model)
-        local polkit_services_rules="${NFTBAN_POLKIT_RULES_DIR:-/etc/polkit-1/rules.d}/60-nftban-services.rules"
-        if [[ ! -f "$polkit_services_rules" ]]; then
-            polkit_issues+=("CRITICAL: Polkit services rules missing at $polkit_services_rules")
+        # Check if NFTBAN systemd authorization rules are installed (v1.0.19+ naming)
+        # Old names: 60-nftban-services.rules, 50-nftban-v030.rules (removed in v1.0.19)
+        # New names: 10-nftban-systemd.rules, 20-nftban-auditor.rules, 30-nftban-panel.rules
+        local polkit_rules_dir="${NFTBAN_POLKIT_RULES_DIR:-/etc/polkit-1/rules.d}"
+
+        local polkit_systemd_rules="${polkit_rules_dir}/10-nftban-systemd.rules"
+        if [[ ! -f "$polkit_systemd_rules" ]]; then
+            polkit_issues+=("CRITICAL: Polkit systemd rules missing at $polkit_systemd_rules")
             polkit_issues+=("This violates NFTBAN security model - privilege separation not functional!")
             polkit_issues+=("Users in nftban group CANNOT manage services without sudo")
-            polkit_issues+=("FIX: Re-run install.sh or manually copy packaging/polkit-1/rules.d/60-nftban-services.rules")
+            polkit_issues+=("FIX: Re-run install.sh or reinstall nftban package")
             status=$HEALTH_ERROR
         else
             # Verify file permissions
             local perms
-            perms=$(stat -c '%a' "$polkit_services_rules" 2>/dev/null || echo "000")
+            perms=$(stat -c '%a' "$polkit_systemd_rules" 2>/dev/null || echo "000")
             if [[ "$perms" != "644" ]]; then
-                polkit_issues+=("Polkit services rules have wrong permissions: $perms (should be 644)")
+                polkit_issues+=("Polkit systemd rules have wrong permissions: $perms (should be 644)")
                 status=$HEALTH_WARNING
             fi
         fi
 
-        # Check if NFTBAN Auditors authorization rules are installed (v0.31+)
-        local polkit_auditors_rules="${NFTBAN_POLKIT_RULES_DIR:-/etc/polkit-1/rules.d}/50-nftban-v030.rules"
-        if [[ ! -f "$polkit_auditors_rules" ]]; then
-            polkit_issues+=("WARNING: Polkit auditors rules missing at $polkit_auditors_rules")
-            polkit_issues+=("Users in nftban-auditors group cannot run inventory helpers without sudo")
-            polkit_issues+=("FIX: Re-run install.sh or manually copy packaging/polkit-1/rules.d/50-nftban-v030.rules")
+        # Check if NFTBAN Auditor authorization rules are installed (v1.0.19+)
+        local polkit_auditor_rules="${polkit_rules_dir}/20-nftban-auditor.rules"
+        if [[ ! -f "$polkit_auditor_rules" ]]; then
+            polkit_issues+=("WARNING: Polkit auditor rules missing at $polkit_auditor_rules")
+            polkit_issues+=("Users in nftban-auditor group cannot run inventory helpers without sudo")
+            polkit_issues+=("FIX: Re-run install.sh or reinstall nftban package")
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
         else
             # Verify file permissions
             local perms
-            perms=$(stat -c '%a' "$polkit_auditors_rules" 2>/dev/null || echo "000")
+            perms=$(stat -c '%a' "$polkit_auditor_rules" 2>/dev/null || echo "000")
             if [[ "$perms" != "644" ]]; then
-                polkit_issues+=("Polkit auditors rules have wrong permissions: $perms (should be 644)")
+                polkit_issues+=("Polkit auditor rules have wrong permissions: $perms (should be 644)")
+                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            fi
+        fi
+
+        # Check if NFTBAN Panel authorization rules are installed (v1.0.19+)
+        local polkit_panel_rules="${polkit_rules_dir}/30-nftban-panel.rules"
+        if [[ ! -f "$polkit_panel_rules" ]]; then
+            polkit_issues+=("WARNING: Polkit panel rules missing at $polkit_panel_rules")
+            polkit_issues+=("Control panel integrations may not work without sudo")
+            polkit_issues+=("FIX: Re-run install.sh or reinstall nftban package")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        else
+            # Verify file permissions
+            local perms
+            perms=$(stat -c '%a' "$polkit_panel_rules" 2>/dev/null || echo "000")
+            if [[ "$perms" != "644" ]]; then
+                polkit_issues+=("Polkit panel rules have wrong permissions: $perms (should be 644)")
                 [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
             fi
         fi
