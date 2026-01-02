@@ -48,8 +48,11 @@ readonly NFTBAN_PORTSCAN_LOADED=1
 
 # shellcheck disable=SC2034  # Module metadata used when sourced
 readonly PORTSCAN_MODULE_NAME="nftban_portscan"
+# shellcheck disable=SC2034  # Module metadata used when sourced
 readonly PORTSCAN_MODULE_VERSION="1.0.0"
+# shellcheck disable=SC2034  # Module metadata used when sourced
 readonly PORTSCAN_MODULE_TYPE="core"
+# shellcheck disable=SC2034  # Module metadata used when sourced
 readonly PORTSCAN_MODULE_DESCRIPTION="Port Scan Detection Module (Dual-Mode)"
 
 # =============================================================================

@@ -3335,6 +3335,7 @@ nftban_health_render_json() {
 
             # shellcheck disable=SC2128  # First element extraction
             local escaped_issues
+            # shellcheck disable=SC2128  # First element extraction (issues is string not array here)
             escaped_issues="$(_json_escape "$issues")"
 
             echo -n "    \"$check\": {\"status\": \"$status_name\", \"exit_code\": $status, \"message\": \"$escaped_issues\"}"
