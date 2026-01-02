@@ -14,6 +14,7 @@ package persistence
 import (
 	"bufio"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
@@ -138,7 +139,7 @@ func PersistBan(configDir, ip, reason, source string) (Result, string, error) {
 	}
 
 	// Seek to end (after potential header write or existing content)
-	if _, err := f.Seek(0, os.SEEK_END); err != nil {
+	if _, err := f.Seek(0, io.SeekEnd); err != nil {
 		return "", "", fmt.Errorf("failed to seek: %w", err)
 	}
 
