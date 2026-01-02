@@ -34,9 +34,9 @@ nftban_print_help() {
   # Uses tput for bold formatting if available (graceful fallback)
 
   local have_tput=0; command -v tput >/dev/null 2>&1 && have_tput=1
+  # shellcheck disable=SC2034  # dim reserved for future use
   local bold='' reset='' dim=''
   if [[ $have_tput -eq 1 ]] && [[ -t 1 ]]; then
-    # shellcheck disable=SC2034
     bold="$(tput bold)"; reset="$(tput sgr0)"; dim="$(tput dim)"
   fi
 

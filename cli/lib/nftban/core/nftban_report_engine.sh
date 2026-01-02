@@ -39,6 +39,7 @@ declare -gA NFTBAN_REPORT_METADATA=()
 # Default configuration
 # shellcheck disable=SC2034  # Default report settings - reserved for future use
 declare -g NFTBAN_REPORT_DEFAULT_FORMAT="text"
+# shellcheck disable=SC2034  # Default report settings - reserved for future use
 declare -g NFTBAN_REPORT_DEFAULT_MODE="detailed"
 
 # =============================================================================

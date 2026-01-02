@@ -186,9 +186,10 @@ nftban_watchdog_check_load() {
     fi
 
     # Structured read from /proc/loadavg - only some fields used
-    # shellcheck disable=SC2034
+    # shellcheck disable=SC2034  # last_pid not used but required for proper parsing
     local load1 load5 load15 running_procs total_procs last_pid
     # Must use default IFS (space) for reading space-separated values
+    # shellcheck disable=SC2034  # last_pid captures trailing field
     if ! IFS=' ' read -r load1 load5 load15 running_procs last_pid < /proc/loadavg 2>/dev/null; then
         WATCHDOG_RESULTS[load_status]="ERROR"
         WATCHDOG_RESULTS[load_error]="Cannot read /proc/loadavg"

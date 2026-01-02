@@ -1041,8 +1041,9 @@ nftban_stats_trend_collect() {
 
     mkdir -p "$NFTBAN_TREND_DIR" 2>/dev/null || true
 
-    # shellcheck disable=SC2034  # Reserved for time range
+    # shellcheck disable=SC2034  # Reserved for time range queries
     local hour_start hour_end
+    # shellcheck disable=SC2034  # Reserved for time range queries
     hour_end=$(date +%Y-%m-%dT%H:%M:%SZ)
 
     # Count bans/unbans in current hour
