@@ -137,7 +137,8 @@ nftban_cmd_list() {
 
     # Collect IPs from sets
     declare -A all_ips=()
-    local ip_count=0  # shellcheck disable=SC2034  # Reserved for pagination
+    # shellcheck disable=SC2034  # Reserved for pagination
+    local ip_count=0
 
     if [[ "$list_type" == "banned" || "$list_type" == "all" ]]; then
         # v0.7.3: Unified blacklist (contains both permanent and temporary bans)

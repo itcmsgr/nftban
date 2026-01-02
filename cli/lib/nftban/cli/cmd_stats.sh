@@ -737,7 +737,8 @@ nftban_stats_cmd_ip() {
                 shift
                 ;;
             --detailed)
-                detailed=true  # shellcheck disable=SC2034  # Reserved for detailed mode
+                # shellcheck disable=SC2034  # Reserved for detailed mode
+                detailed=true
                 shift
                 ;;
             *)

@@ -264,7 +264,8 @@ EOF
     if [[ -f "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" ]]; then
         # Get current public IPs
         current_ipv4=$(curl -s -4 --max-time 5 ifconfig.me 2>/dev/null || echo "")
-        current_ipv6=$(curl -s -6 --max-time 5 ifconfig.me 2>/dev/null || echo "")  # shellcheck disable=SC2034  # Reserved for IPv6 monitoring
+        # shellcheck disable=SC2034  # Reserved for IPv6 monitoring
+        current_ipv6=$(curl -s -6 --max-time 5 ifconfig.me 2>/dev/null || echo "")
 
         # Check if IPv4 changed
         if [[ -n "$current_ipv4" ]] && ! grep -q "$current_ipv4" "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" 2>/dev/null; then

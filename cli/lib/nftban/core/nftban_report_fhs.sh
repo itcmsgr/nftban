@@ -374,7 +374,8 @@ nftban_fhs_generate_html_report() {
             status_badge="<span class=\"badge badge-error\">✖ ERROR</span>"
             row_class=' class="error-row"'
             # Extract issues from status
-            local issues="${status#ERROR:}"  # shellcheck disable=SC2178,SC2128  # Intentional string from array
+            # shellcheck disable=SC2178,SC2128  # Intentional string from array
+            local issues="${status#ERROR:}"
         fi
 
         table_rows+="                <tr${row_class}>

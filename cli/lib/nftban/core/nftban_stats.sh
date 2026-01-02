@@ -45,7 +45,8 @@ readonly NFTBAN_STATS_DB="${STATS_DB_DIR:-${NFTBAN_DATA_DIR}/metrics}/metrics.db
 readonly NFTBAN_STATS_CACHE_DIR="${STATS_CACHE_DIR:-${NFTBAN_CACHE_DIR}/stats}"
 readonly NFTBAN_STATS_SNAPSHOTS_DIR="${STATS_SNAPSHOTS_DIR:-${NFTBAN_DATA_DIR}/snapshots}"
 readonly NFTBAN_BAN_LOG="${STATS_BAN_LOG:-${NFTBAN_LOG_DIR}/bans.log}"
-readonly NFTBAN_STATS_LOG="${STATS_LOG_FILE:-${NFTBAN_LOG_DIR}/stats.log}"  # shellcheck disable=SC2034  # Reserved for stats logging
+# shellcheck disable=SC2034  # Reserved for stats logging
+readonly NFTBAN_STATS_LOG="${STATS_LOG_FILE:-${NFTBAN_LOG_DIR}/stats.log}"
 
 # Configuration defaults (overridden by conf.d/stats.conf)
 STATS_ENABLED="${STATS_ENABLED:-true}"

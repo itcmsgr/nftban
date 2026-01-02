@@ -336,7 +336,8 @@ test_config_safety() {
 
     local line n=0
     local errors=0
-    local warnings=0  # shellcheck disable=SC2034  # Reserved for warning count
+    # shellcheck disable=SC2034  # Reserved for warning count
+    local warnings=0
 
     while IFS= read -r line || [[ -n "$line" ]]; do
         ((n++))

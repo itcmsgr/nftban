@@ -337,7 +337,8 @@ nftban_report_cmd_email() {
     temp_dir=$(mktemp -d)
     local report_json="${temp_dir}/report.json"
     local report_csv="${temp_dir}/report.csv"
-    local report_html="${temp_dir}/report.html"  # shellcheck disable=SC2034  # Reserved for HTML reports
+    # shellcheck disable=SC2034  # Reserved for HTML reports
+    local report_html="${temp_dir}/report.html"
 
     nftban_stats_export_json "$report_json" "$since" "$until" &>/dev/null
 

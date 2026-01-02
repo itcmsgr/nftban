@@ -41,7 +41,8 @@ declare -g -A NFTBAN_PORT_SEEN=()          # key: port_proto -> 1
 declare -g -A NFTBAN_PORT_SERVICE_NAME=()  # key: port_proto -> service name
 declare -g -A NFTBAN_PORT_STATUS=()        # key: port/proto/family/direction -> status (BUG-005 FIX)
 
-NFTBAN_PORT_TIMESTAMP="$(date --iso-8601=seconds)"  # shellcheck disable=SC2034  # Reserved for report headers
+# shellcheck disable=SC2034  # Reserved for report headers
+NFTBAN_PORT_TIMESTAMP="$(date --iso-8601=seconds)"
 NFTBAN_PORT_DETAILED="${NFTBAN_PORT_DETAILED:-0}"
 NFTBAN_PORT_OUTPUT_FORMAT="${NFTBAN_PORT_OUTPUT_FORMAT:-table}"
 NFTBAN_PORT_FILTER_PORTS="${NFTBAN_PORT_FILTER_PORTS:-}"
@@ -49,14 +50,20 @@ NFTBAN_PORT_FILTER_PORTS="${NFTBAN_PORT_FILTER_PORTS:-}"
 # Color symbols (use nftban_output.sh if available)
 if type -t nftban_render_banner >/dev/null 2>&1; then
     # nftban_output.sh loaded, use its colors
-    NFTBAN_PORT_SYM_OK="✔"  # shellcheck disable=SC2034  # Symbols for UI rendering
-    NFTBAN_PORT_SYM_KO="✖"  # shellcheck disable=SC2034  # Symbols for UI rendering
-    NFTBAN_PORT_SYM_QUEST="−"  # shellcheck disable=SC2034  # Symbols for UI rendering
+    # shellcheck disable=SC2034  # Symbols for UI rendering
+    NFTBAN_PORT_SYM_OK="✔"
+    # shellcheck disable=SC2034  # Symbols for UI rendering
+    NFTBAN_PORT_SYM_KO="✖"
+    # shellcheck disable=SC2034  # Symbols for UI rendering
+    NFTBAN_PORT_SYM_QUEST="−"
 else
     # Fallback colors
-    NFTBAN_PORT_SYM_OK="✔"  # shellcheck disable=SC2034  # Symbols for UI rendering
-    NFTBAN_PORT_SYM_KO="✖"  # shellcheck disable=SC2034  # Symbols for UI rendering
-    NFTBAN_PORT_SYM_QUEST="−"  # shellcheck disable=SC2034  # Symbols for UI rendering
+    # shellcheck disable=SC2034  # Symbols for UI rendering
+    NFTBAN_PORT_SYM_OK="✔"
+    # shellcheck disable=SC2034  # Symbols for UI rendering
+    NFTBAN_PORT_SYM_KO="✖"
+    # shellcheck disable=SC2034  # Symbols for UI rendering
+    NFTBAN_PORT_SYM_QUEST="−"
     C_RESET="\e[0m"
     C_RED="\e[31m"
     C_GREEN="\e[32m"

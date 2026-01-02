@@ -128,7 +128,8 @@ validate_systemctl_path() {
 ##
 validate_all_paths() {
     local missing_critical=0
-    local missing_optional=0  # shellcheck disable=SC2034  # Reserved for optional validation
+    # shellcheck disable=SC2034  # Reserved for optional validation
+    local missing_optional=0
 
     # Required: nft
     if ! validate_nft_path; then

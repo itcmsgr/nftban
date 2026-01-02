@@ -623,7 +623,8 @@ output_terminal() {
                command -v msmtp >/dev/null 2>&1 || \
                command -v mailx >/dev/null 2>&1; then
                 email_status="CONFIGURED"
-                email_working=true  # shellcheck disable=SC2034  # Reserved for email test status
+                # shellcheck disable=SC2034  # Reserved for email test status
+                email_working=true
             else
                 email_status="CONFIGURED (no mail cmd)"
             fi
