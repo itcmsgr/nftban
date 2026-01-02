@@ -182,11 +182,8 @@ output_terminal() {
     local whitelist_count=0
     if command -v nft >/dev/null 2>&1; then
         local wl_v4=0 wl_v6=0
-        # Use default table names if not set
-        local table_v4="${NFTBAN_TABLE_IPV4:-nftban}"
-        local table_v6="${NFTBAN_TABLE_IPV6:-nftban6}"
-        wl_v4=$(nft list set "$table_v4" whitelist_ipv4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' 2>/dev/null | wc -l) || wl_v4=0
-        wl_v6=$(nft list set "$table_v6" whitelist_ipv6 2>/dev/null | grep -oP '[0-9a-fA-F:]+' 2>/dev/null | grep -c ':') || wl_v6=0
+        wl_v4=$(nft list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' 2>/dev/null | wc -l) || wl_v4=0
+        wl_v6=$(nft list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | grep -oP '[0-9a-fA-F:]+' 2>/dev/null | grep -c ':') || wl_v6=0
         # Ensure valid numbers
         [[ "$wl_v4" =~ ^[0-9]+$ ]] || wl_v4=0
         [[ "$wl_v6" =~ ^[0-9]+$ ]] || wl_v6=0
@@ -698,16 +695,14 @@ output_json() {
 
     # v0.7.3: Use unified blacklist_ipv4/ipv6 sets (all bans consolidated)
     local ban_count=0
-    local tbl_v4="${NFTBAN_TABLE_IPV4:-nftban}"
-    local tbl_v6="${NFTBAN_TABLE_IPV6:-nftban6}"
     if command -v nftban_stats_count_active_bans >/dev/null 2>&1; then
         # Use stats module function (correct for v0.7.3)
         ban_count=$(nftban_stats_count_active_bans 2>/dev/null || echo 0)
-    elif nft list set "$tbl_v4" blacklist_ipv4 >/dev/null 2>&1; then
+    elif nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 >/dev/null 2>&1; then
         # Fallback: Count blacklist_ipv4 + blacklist_ipv6 manually
         local black_v4 black_v6
-        black_v4=$(nft list set "$tbl_v4" blacklist_ipv4 2>/dev/null | { grep -oP '\d+\.\d+\.\d+\.\d+' || true; } | wc -l || echo 0)
-        black_v6=$(nft list set "$tbl_v6" blacklist_ipv6 2>/dev/null | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*|[0-9a-fA-F:]+:[0-9a-fA-F:]+' || true; } | wc -l || echo 0)
+        black_v4=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | { grep -oP '\d+\.\d+\.\d+\.\d+' || true; } | wc -l || echo 0)
+        black_v6=$(nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*|[0-9a-fA-F:]+:[0-9a-fA-F:]+' || true; } | wc -l || echo 0)
         ban_count=$((black_v4 + black_v6))
     fi
     echo "    \"banned_ips\": $ban_count,"
