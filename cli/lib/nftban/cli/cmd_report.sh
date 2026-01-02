@@ -633,7 +633,8 @@ nftban_report_schedule_add() {
                 shift 2
                 ;;
             --email)
-                email="$2"  # shellcheck disable=SC2034  # Reserved for email delivery
+                # shellcheck disable=SC2034  # Reserved for email delivery
+                email="$2"
                 shift 2
                 ;;
             *)
@@ -1027,7 +1028,8 @@ nftban_report_cmd_status() {
                 hour=$(echo "$line" | awk '{print $2}')
                 dom=$(echo "$line" | awk '{print $3}')
                 monthly_time=$(printf "%02d:%02d (day %s)" "$((10#$hour))" "$((10#$min))" "$dom")
-                has_schedules=1  # shellcheck disable=SC2034  # Reserved for schedule validation
+                # shellcheck disable=SC2034  # Reserved for schedule validation
+                has_schedules=1
             fi
         done < "$cron_file"
 
