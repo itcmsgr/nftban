@@ -13,6 +13,14 @@
 [[ -n "${_NFTBAN_PORTSCAN_CLASSIC_LOADED:-}" ]] && return 0
 declare -g _NFTBAN_PORTSCAN_CLASSIC_LOADED=1
 
+# Load fragment and IPC libraries for single-writer architecture
+# See: ARCHITECTURE-NFT-POLICY.md
+NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
+
 # =============================================================================
 # CONFIGURATION LOADING
 # =============================================================================
@@ -128,103 +136,99 @@ nftban_portscan_classic_load_state() {
 }
 
 # =============================================================================
-# NFTABLES RULES
+# NFTABLES RULES (via IPC - single-writer architecture)
 # =============================================================================
 
 # Create nftables chain for portscan detection
+# Uses fragment renderer + IPC instead of direct nft calls
 nftban_portscan_classic_create_chain() {
-    local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
-    local table_ipv6="${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"
-    local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
-    local log_prefix="${PORTSCAN_CLASSIC_LOG_PREFIX}"
-    local log_rate="${PORTSCAN_CLASSIC_LOG_RATE}"
-    local log_burst="${PORTSCAN_CLASSIC_LOG_BURST}"
+    nftban_log "INFO" "portscan_classic" "Creating portscan detection chain via IPC"
 
-    nftban_log "INFO" "portscan_classic" "Creating portscan detection chain"
-
-    # Create IPv4 chain
-    nft add chain ${table_ipv4} ${chain} 2>/dev/null || true
-
-    # Create IPv6 chain
-    nft add chain ${table_ipv6} ${chain} 2>/dev/null || true
-
+    # Chain creation is handled by the fragment in add_rules
+    # This function is kept for compatibility but is now a no-op
+    # The fragment includes "add chain" which is idempotent
     return 0
 }
 
 # Add logging rules for portscan detection
+# Uses fragment renderer + IPC instead of direct nft calls
 nftban_portscan_classic_add_rules() {
-    local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
-    local table_ipv6="${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"
-    local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
-    local log_prefix="${PORTSCAN_CLASSIC_LOG_PREFIX}"
-    local log_rate="${PORTSCAN_CLASSIC_LOG_RATE}"
-    local log_burst="${PORTSCAN_CLASSIC_LOG_BURST}"
+    nftban_log "INFO" "portscan_classic" "Adding portscan logging rules via IPC"
 
-    nftban_log "INFO" "portscan_classic" "Adding portscan logging rules"
+    # Check if IPC is available
+    if ! type -t nft_fragment_render_portscan_classic &>/dev/null; then
+        nftban_log "ERROR" "portscan_classic" "Fragment library not loaded"
+        return 1
+    fi
 
-    # Flush existing rules in chain
-    nft flush chain ${table_ipv4} ${chain} 2>/dev/null || true
-    nft flush chain ${table_ipv6} ${chain} 2>/dev/null || true
+    # Render the fragment with current configuration
+    local fragment_path
+    fragment_path=$(nft_fragment_render_portscan_classic) || {
+        nftban_log "ERROR" "portscan_classic" "Failed to render fragment"
+        return 1
+    }
 
-    # IPv4 rules
-    # Log SYN packets to closed ports (rate limited)
-    nft add rule ${table_ipv4} ${chain} \
-        tcp flags syn / syn,ack,fin,rst \
-        ct state new \
-        limit rate ${log_rate} burst ${log_burst} packets \
-        log prefix "\"${log_prefix}SYN \"" level info 2>/dev/null || true
+    nftban_log "DEBUG" "portscan_classic" "Fragment rendered: $fragment_path"
 
-    # Log UDP to uncommon ports
-    nft add rule ${table_ipv4} ${chain} \
-        udp dport != { 53, 123, 443 } \
-        ct state new \
-        limit rate ${log_rate} burst ${log_burst} packets \
-        log prefix "\"${log_prefix}UDP \"" level info 2>/dev/null || true
+    # Apply via IPC
+    if ! nft_fragment_apply "$fragment_path"; then
+        nftban_log "ERROR" "portscan_classic" "Failed to apply fragment via IPC"
+        return 1
+    fi
 
-    # IPv6 rules
-    nft add rule ${table_ipv6} ${chain} \
-        tcp flags syn / syn,ack,fin,rst \
-        ct state new \
-        limit rate ${log_rate} burst ${log_burst} packets \
-        log prefix "\"${log_prefix}SYN \"" level info 2>/dev/null || true
-
-    nft add rule ${table_ipv6} ${chain} \
-        udp dport != { 53, 123, 443 } \
-        ct state new \
-        limit rate ${log_rate} burst ${log_burst} packets \
-        log prefix "\"${log_prefix}UDP \"" level info 2>/dev/null || true
-
+    nftban_log "INFO" "portscan_classic" "Portscan rules applied via IPC"
     return 0
 }
 
 # Add jump to portscan chain from input chain
+# Uses fragment renderer + IPC instead of direct nft calls
 nftban_portscan_classic_add_jump() {
     local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
-    local table_ipv6="${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
-    local position="${PORTSCAN_NFT_JUMP_POSITION:-ddos}"  # shellcheck disable=SC2034  # Reserved for chain positioning
 
-    nftban_log "INFO" "portscan_classic" "Adding jump to portscan chain"
+    nftban_log "INFO" "portscan_classic" "Adding jump to portscan chain via IPC"
 
-    # Add jump rule to input chain (position handling simplified)
-    nft add rule ${table_ipv4} input jump ${chain} 2>/dev/null || true
-    nft add rule ${table_ipv6} input jump ${chain} 2>/dev/null || true
+    # Check if jump already exists (to avoid duplicates)
+    if nft_fragment_has_jump "$table_ipv4" "$chain" 2>/dev/null; then
+        nftban_log "DEBUG" "portscan_classic" "Jump rule already exists, skipping"
+        return 0
+    fi
 
+    # Render and apply jump fragment
+    local fragment_path
+    fragment_path=$(nft_fragment_render_portscan_classic_jump) || {
+        nftban_log "ERROR" "portscan_classic" "Failed to render jump fragment"
+        return 1
+    }
+
+    if ! nft_fragment_apply "$fragment_path"; then
+        nftban_log "ERROR" "portscan_classic" "Failed to apply jump fragment via IPC"
+        return 1
+    fi
+
+    nftban_log "INFO" "portscan_classic" "Jump rules applied via IPC"
     return 0
 }
 
 # Remove portscan rules
+# Uses fragment renderer + IPC instead of direct nft calls
 nftban_portscan_classic_remove_rules() {
-    local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
-    local table_ipv6="${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"
-    local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
+    nftban_log "INFO" "portscan_classic" "Removing portscan rules via IPC"
 
-    nftban_log "INFO" "portscan_classic" "Removing portscan rules"
+    # Render cleanup fragment
+    local fragment_path
+    fragment_path=$(nft_fragment_render_portscan_classic_cleanup) || {
+        nftban_log "ERROR" "portscan_classic" "Failed to render cleanup fragment"
+        return 1
+    }
 
-    # Flush chains
-    nft flush chain ${table_ipv4} ${chain} 2>/dev/null || true
-    nft flush chain ${table_ipv6} ${chain} 2>/dev/null || true
+    # Apply via IPC
+    if ! nft_fragment_apply "$fragment_path"; then
+        nftban_log "ERROR" "portscan_classic" "Failed to apply cleanup fragment via IPC"
+        return 1
+    fi
 
+    nftban_log "INFO" "portscan_classic" "Portscan rules removed via IPC"
     return 0
 }
 
@@ -537,6 +541,7 @@ nftban_portscan_classic_handle_detection() {
 }
 
 # Block an IP
+# Uses IPC instead of direct nft calls (single-writer architecture)
 nftban_portscan_classic_block_ip() {
     local ip="$1"
     local scan_type="$2"
@@ -565,22 +570,18 @@ nftban_portscan_classic_block_ip() {
         _PORTSCAN_CLASSIC_IP_BAN_COUNT["$ip"]=$((ban_count + 1))
     fi
 
-    # Use nftban ban command if available
+    # Use nftban ban command if available (preferred - handles all logic)
     if type -t nftban_ban &>/dev/null; then
         nftban_ban "$ip" \
             --timeout "$duration" \
             --reason "portscan:${scan_type}" \
             --source "portscan-classic"
+    # Fall back to IPC directly (single-writer architecture)
+    elif type -t nft_ipc_ban &>/dev/null; then
+        nft_ipc_ban "$ip" "$duration" "portscan:${scan_type}" "portscan-classic"
     else
-        # Direct nftables block
-        local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
-        local table_ipv6="${PORTSCAN_NFT_TABLE_IPV6:-ip6 nftban}"
-
-        if [[ "$ip" =~ : ]]; then
-            nft add element ${table_ipv6} blacklist { $ip timeout ${duration}s } 2>/dev/null || true
-        else
-            nft add element ${table_ipv4} blacklist { $ip timeout ${duration}s } 2>/dev/null || true
-        fi
+        nftban_log "ERROR" "portscan_classic" "No ban method available (IPC library not loaded)"
+        return 1
     fi
 
     # Record block
