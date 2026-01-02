@@ -1,11 +1,32 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0 - Polkit Authorization Test Suite
+# NFTBan v1.0 - Polkit Authorization Test Suite (DEPRECATED)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Verify Polkit rules grant correct permissions without privilege escalation
-# Usage: sudo bash tests/polkit_test.sh [username]
+#
+# DEPRECATED: This script has been superseded by polkit_validator.sh
+#
+# The new validator provides:
+#   - Comprehensive static content analysis
+#   - Wildcard/pattern matching detection
+#   - Unit and verb whitelist validation
+#   - Runtime authorization tests for all three roles
+#   - Risk ratings and detailed failure explanations
+#
+# Usage: sudo ./polkit_validator.sh [--static-only] [--create-test-users]
+#
+# This file is kept for backwards compatibility and will be removed in v2.0
 # =============================================================================
+
+echo "WARNING: This script is deprecated. Use polkit_validator.sh instead."
+echo ""
+echo "New usage:"
+echo "  sudo ./polkit_validator.sh                   # Full validation"
+echo "  sudo ./polkit_validator.sh --static-only    # Static checks only"
+echo "  sudo ./polkit_validator.sh --create-test-users  # With test users"
+echo ""
+echo "Proceeding with legacy tests..."
+echo ""
 
 set -euo pipefail
 
@@ -70,10 +91,11 @@ echo ""
 # =============================================================================
 log_info "Test 2: Verifying group memberships for $TEST_USER..."
 
-# NFTBan v1.0 simplified 2-group model
+# NFTBan v1.0.19 3-group RBAC model
 GROUPS=(
     "nftban"
-    "nftban-auditors"
+    "nftban-auditor"
+    "nftban-panel"
 )
 
 for group in "${GROUPS[@]}"; do
