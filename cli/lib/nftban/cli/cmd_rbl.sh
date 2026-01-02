@@ -97,6 +97,7 @@ SUBCOMMANDS:
   disable     Disable scheduled RBL checks
   cache       Manage RBL cache
   alert       Test alert system
+  critical    Manage critical IPs (mail, web, panel servers)
 
 CHECK OPTIONS:
   --ip IP           Check specific IP address
@@ -110,6 +111,11 @@ CACHE OPTIONS:
   purge             Purge all cache files
   purge --ip IP     Purge cache for specific IP
   show              Show cache statistics
+
+CRITICAL IPS OPTIONS:
+  list              Show configured critical IPs
+  add IP TAG        Add critical IP (tag: mail, web, panel)
+  remove IP         Remove critical IP
 
 EXAMPLES:
   # Check full server (all IPs + hostname)
@@ -135,6 +141,12 @@ EXAMPLES:
 
   # Purge cache
   nftban rbl cache purge
+
+  # Add mail server as critical IP
+  nftban rbl critical add 203.0.113.10 mail
+
+  # List critical IPs
+  nftban rbl critical list
 
 CONFIGURATION:
   /etc/nftban/conf.d/rbl/main.conf     Main configuration
@@ -190,6 +202,9 @@ nftban_cmd_rbl() {
             ;;
         alert)
             nftban_cmd_rbl_alert "$@"
+            ;;
+        critical)
+            nftban_cmd_rbl_critical "$@"
             ;;
         *)
             echo "Error: Unknown subcommand: $subcommand" >&2
@@ -737,6 +752,168 @@ nftban_cmd_rbl_alert() {
     nftban_rbl_send_alert "$ip" "$rbl" "$reason" "$tag"
 
     echo "✅ Test alert sent to: ${NFTBAN_RBL_ALERT_EMAIL}"
+}
+
+nftban_cmd_rbl_critical() {
+    # Manage critical IPs for RBL monitoring
+    # Subcommands: list, add, remove
+
+    local subcmd="${1:-list}"
+    shift || true
+
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
+
+    case "$subcmd" in
+        list)
+            echo "Critical IPs for RBL Monitoring"
+            echo "─────────────────────────────────────────────────────────"
+
+            # Get current value from config
+            local current_ips=""
+            if [[ -f "$config_file" ]]; then
+                current_ips=$(grep -E "^NFTBAN_RBL_CRITICAL_IPS=" "$config_file" 2>/dev/null | cut -d'"' -f2 || echo "")
+            fi
+
+            if [[ -z "$current_ips" ]]; then
+                echo "(No critical IPs configured)"
+                echo ""
+                echo "Add critical IPs with:"
+                echo "  nftban rbl critical add <IP> <tag>"
+                echo ""
+                echo "Tags: mail, web, panel, smtp, dns"
+                return 0
+            fi
+
+            echo ""
+            local count=0
+            IFS=',' read -ra ips <<< "$current_ips"
+            for entry in "${ips[@]}"; do
+                local ip="${entry%%:*}"
+                local tag="${entry#*:}"
+                [[ "$tag" == "$ip" ]] && tag="default"
+                ((count++))
+
+                local severity
+                severity=$(nftban_rbl_get_severity "$tag" 2>/dev/null || echo "medium")
+
+                printf "  %d. %-20s  tag: %-10s  severity: %s\n" "$count" "$ip" "$tag" "$severity"
+            done
+
+            echo ""
+            echo "─────────────────────────────────────────────────────────"
+            echo "Total: $count critical IP(s)"
+            ;;
+
+        add)
+            local ip="${1:-}"
+            local tag="${2:-default}"
+
+            if [[ -z "$ip" ]]; then
+                echo "Error: IP address required" >&2
+                echo "Usage: nftban rbl critical add <IP> [tag]" >&2
+                echo "" >&2
+                echo "Tags: mail, web, panel, smtp, dns" >&2
+                return 1
+            fi
+
+            # Validate IP format
+            if ! [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && \
+               ! [[ "$ip" =~ ^[0-9a-fA-F:]+$ ]]; then
+                echo "Error: Invalid IP address format: $ip" >&2
+                return 1
+            fi
+
+            # Check if running as root
+            if [[ $EUID -ne 0 ]]; then
+                echo "Error: Must run as root to modify configuration" >&2
+                return 1
+            fi
+
+            # Get current value
+            local current_ips=""
+            if [[ -f "$config_file" ]]; then
+                current_ips=$(grep -E "^NFTBAN_RBL_CRITICAL_IPS=" "$config_file" 2>/dev/null | cut -d'"' -f2 || echo "")
+            fi
+
+            # Check if already exists
+            if [[ "$current_ips" == *"$ip:"* ]] || [[ "$current_ips" == *"$ip,"* ]] || [[ "$current_ips" == "$ip" ]]; then
+                echo "Warning: IP $ip already in critical list (updating tag)" >&2
+                # Remove old entry before adding new one
+                current_ips=$(echo "$current_ips" | sed "s/${ip}:[^,]*,*//g" | sed 's/,$//')
+            fi
+
+            # Build new value
+            local new_ips
+            if [[ -z "$current_ips" ]]; then
+                new_ips="${ip}:${tag}"
+            else
+                new_ips="${current_ips},${ip}:${tag}"
+            fi
+
+            # Update config file
+            if grep -q "^NFTBAN_RBL_CRITICAL_IPS=" "$config_file" 2>/dev/null; then
+                sed -i "s|^NFTBAN_RBL_CRITICAL_IPS=.*|NFTBAN_RBL_CRITICAL_IPS=\"$new_ips\"|" "$config_file"
+            else
+                echo "" >> "$config_file"
+                echo "NFTBAN_RBL_CRITICAL_IPS=\"$new_ips\"" >> "$config_file"
+            fi
+
+            local severity
+            severity=$(nftban_rbl_get_severity "$tag" 2>/dev/null || echo "medium")
+
+            echo "✅ Added critical IP: $ip (tag: $tag, severity: $severity)"
+            echo ""
+            echo "Run 'nftban rbl check' to check this IP immediately"
+            ;;
+
+        remove)
+            local ip="${1:-}"
+
+            if [[ -z "$ip" ]]; then
+                echo "Error: IP address required" >&2
+                echo "Usage: nftban rbl critical remove <IP>" >&2
+                return 1
+            fi
+
+            # Check if running as root
+            if [[ $EUID -ne 0 ]]; then
+                echo "Error: Must run as root to modify configuration" >&2
+                return 1
+            fi
+
+            # Get current value
+            local current_ips=""
+            if [[ -f "$config_file" ]]; then
+                current_ips=$(grep -E "^NFTBAN_RBL_CRITICAL_IPS=" "$config_file" 2>/dev/null | cut -d'"' -f2 || echo "")
+            fi
+
+            if [[ -z "$current_ips" ]]; then
+                echo "Error: No critical IPs configured" >&2
+                return 1
+            fi
+
+            # Check if IP exists
+            if ! [[ "$current_ips" == *"$ip:"* ]] && ! [[ "$current_ips" == *"$ip,"* ]] && ! [[ "$current_ips" == "$ip" ]]; then
+                echo "Error: IP $ip not found in critical list" >&2
+                return 1
+            fi
+
+            # Remove IP entry
+            local new_ips
+            new_ips=$(echo "$current_ips" | sed "s/${ip}:[^,]*,*//g" | sed 's/,$//' | sed 's/^,//')
+
+            # Update config file
+            sed -i "s|^NFTBAN_RBL_CRITICAL_IPS=.*|NFTBAN_RBL_CRITICAL_IPS=\"$new_ips\"|" "$config_file"
+
+            echo "✅ Removed critical IP: $ip"
+            ;;
+
+        *)
+            echo "Error: Unknown critical subcommand: $subcmd" >&2
+            echo "Available: list, add, remove" >&2
+            return 1
+            ;;
+    esac
 }
 
 # Export main function

@@ -487,6 +487,29 @@ nftban_rbl_update_state() {
     } > "$state_file"
 }
 
+nftban_rbl_get_severity() {
+    # Get severity level for IP tag
+    # Args: $1 = tag (mail/web/panel/unknown)
+    # Output: critical/high/medium/low
+
+    local tag="${1:-unknown}"
+
+    case "$tag" in
+        mail|smtp|mta)
+            echo "${NFTBAN_RBL_SEVERITY_MAIL:-critical}"
+            ;;
+        web|http|https)
+            echo "${NFTBAN_RBL_SEVERITY_WEB:-high}"
+            ;;
+        panel|cpanel|directadmin|plesk)
+            echo "${NFTBAN_RBL_SEVERITY_PANEL:-high}"
+            ;;
+        *)
+            echo "${NFTBAN_RBL_SEVERITY_DEFAULT:-medium}"
+            ;;
+    esac
+}
+
 nftban_rbl_send_alert() {
     # Send RBL listing alert
     # Args: $1 = IP address
@@ -504,15 +527,42 @@ nftban_rbl_send_alert() {
         return 0
     fi
 
+    # Get severity based on tag
+    local severity
+    severity=$(nftban_rbl_get_severity "$tag")
+    local severity_upper
+    severity_upper=$(echo "$severity" | tr '[:lower:]' '[:upper:]')
+
     # Build alert message
-    local subject="[NFTBAN ALERT] IP Blacklisted: $ip ($tag)"
+    local subject="[NFTBAN ${severity_upper}] IP Blacklisted: $ip ($tag)"
+    # Build impact message based on tag
+    local impact_msg
+    case "$tag" in
+        mail|smtp|mta)
+            impact_msg="  - Email delivery WILL FAIL to many recipients
+  - Server reputation severely damaged
+  - Spam complaints may escalate
+  - Possible mail server compromise"
+            ;;
+        web|http|https)
+            impact_msg="  - Some security filters may block access
+  - Web reputation affected
+  - May indicate malware/spam on server"
+            ;;
+        *)
+            impact_msg="  - Reputation damage
+  - Some services may be blocked
+  - Possible compromise indicator"
+            ;;
+    esac
+
     local body
     body=$(cat <<EOF
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 NFTBan RBL Alert - IP Blacklisted
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-Severity:     CRITICAL
+Severity:     ${severity_upper}
 IP Address:   $ip
 Tag:          $tag
 Blacklist:    $rbl
@@ -520,9 +570,7 @@ Reason:       $reason
 Detected:     $(date)
 
 Impact:
-  - Email delivery may fail
-  - Reputation damage
-  - Possible compromise indicator
+$impact_msg
 
 Recommended Actions:
   1. Check outbound mail logs for spam
@@ -541,6 +589,73 @@ EOF
     # Send via mail command (basic implementation)
     echo "$body" | mail -s "$subject" "$email" 2>/dev/null || \
         echo "Warning: Failed to send RBL alert email" >&2
+}
+
+nftban_rbl_send_degraded_alert() {
+    # Send alert when too many RBLs timeout (degraded monitoring)
+    # Args: $1 = timeout count
+    #       $2 = total RBL count
+
+    local timeout_count="$1"
+    local total_count="$2"
+    local email="${NFTBAN_RBL_ALERT_EMAIL:-}"
+
+    if [[ -z "$email" ]]; then
+        return 0
+    fi
+
+    # Only alert if degraded alerts are enabled
+    if [[ "${NFTBAN_RBL_ALERT_ON_DEGRADED:-NO}" != "YES" ]]; then
+        return 0
+    fi
+
+    # Calculate timeout percentage
+    local timeout_pct=$(( (timeout_count * 100) / total_count ))
+
+    # Only alert if >30% of RBLs timeout
+    if [[ $timeout_pct -lt 30 ]]; then
+        return 0
+    fi
+
+    local subject="[NFTBAN WARNING] RBL Monitoring Degraded (${timeout_pct}% timeouts)"
+    local body
+    body=$(cat <<EOF
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+NFTBan RBL Alert - Monitoring Degraded
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Severity:     WARNING
+Issue:        Many RBL servers timing out
+Timeouts:     $timeout_count / $total_count (${timeout_pct}%)
+Detected:     $(date)
+
+Impact:
+  - RBL monitoring is incomplete
+  - Blacklisted IPs may go undetected
+  - False sense of security
+
+Possible Causes:
+  1. Network connectivity issues
+  2. DNS resolver problems
+  3. RBL servers experiencing issues
+  4. Firewall blocking DNS queries
+
+Recommended Actions:
+  1. Check DNS resolver: dig +short zen.spamhaus.org
+  2. Check network: ping -c 3 8.8.8.8
+  3. Increase timeout: NFTBAN_RBL_TIMEOUT=10
+  4. Review firewall rules for outbound DNS (port 53)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Run manually: nftban rbl check --fresh --verbose
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+EOF
+)
+
+    # Send via mail command
+    echo "$body" | mail -s "$subject" "$email" 2>/dev/null || \
+        echo "Warning: Failed to send degraded alert email" >&2
 }
 
 # =============================================================================
@@ -584,6 +699,16 @@ nftban_rbl_status() {
 
 # Export functions for use by CLI module
 export -f nftban_rbl_get_public_ips
+export -f nftban_rbl_get_critical_ips
+export -f nftban_rbl_is_public_ip
 export -f nftban_rbl_check_ip
 export -f nftban_rbl_cache_purge
+export -f nftban_rbl_cache_get
+export -f nftban_rbl_cache_set
 export -f nftban_rbl_status
+export -f nftban_rbl_load_providers
+export -f nftban_rbl_get_severity
+export -f nftban_rbl_send_alert
+export -f nftban_rbl_send_degraded_alert
+export -f nftban_rbl_check_new_listing
+export -f nftban_rbl_update_state
