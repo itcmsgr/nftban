@@ -39,6 +39,10 @@ source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" 2>/dev/null || {
     exit 1
 }
 
+# Load IPC library for single-writer architecture
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_ipc.sh" 2>/dev/null || true
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -602,8 +606,8 @@ EOF
         echo "}" >> "$nft_file"
     fi
 
-    # Atomic reload using nft -f
-    if nft -f "$nft_file" 2>&1 | tee -a "$NFTBAN_FEEDS_LOG"; then
+    # Atomic reload using IPC
+    if nft_ipc_apply_ruleset "$nft_file" 2>&1 | tee -a "$NFTBAN_FEEDS_LOG"; then
         nftban_feeds_log INFO "Sync complete: $ipv4_count IPv4, $ipv6_count IPv6"
     else
         nftban_feeds_log ERROR "Atomic reload failed"

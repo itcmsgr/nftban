@@ -23,6 +23,11 @@ if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER"
 fi
+
+# Load IPC library for single-writer architecture
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
+
 # NFTBan v1.0.0 - NFTables Service Management CLI Handler
 # =============================================================================
 
@@ -171,7 +176,10 @@ _nftban_nftables_cmd_restart() {
 
 _nftban_nftables_cmd_reload() {
     echo "Reloading nftables ruleset..."
-    systemctl reload "${NFTABLES_SERVICE}" 2>/dev/null || nft -f /etc/nftables/nftban.nft
+    if ! systemctl reload "${NFTABLES_SERVICE}" 2>/dev/null; then
+        # Fallback: use IPC to apply ruleset
+        nft_ipc_apply_ruleset "/etc/nftables/nftban.nft" 2>/dev/null
+    fi
     local result=$?
 
     if [[ $result -eq 0 ]]; then

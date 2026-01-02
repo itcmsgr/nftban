@@ -27,6 +27,10 @@ if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
 fi
 
+# Load IPC library for single-writer architecture
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
+
 # Load shared metrics library
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_metrics.sh" ]]; then
     # shellcheck source=/dev/null
@@ -339,10 +343,10 @@ nftban_gui_enable() {
     # Port 3940 should only be accessible from whitelisted IPs
     if nft list set ${NFTBAN_TABLE_IPV4} tcp_ports 2>/dev/null | grep -q "3940"; then
         echo "  🔒 Removing port 3940 from public access (security fix)"
-        nft delete element ${NFTBAN_TABLE_IPV4} tcp_ports { 3940 } 2>/dev/null || true
+        nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" "tcp_ports" "3940" 2>/dev/null || true
     fi
     if nft list set ${NFTBAN_TABLE_IPV6} tcp_ports 2>/dev/null | grep -q "3940"; then
-        nft delete element ${NFTBAN_TABLE_IPV6} tcp_ports { 3940 } 2>/dev/null || true
+        nft_ipc_delete_element "${NFTBAN_TABLE_IPV6}" "tcp_ports" "3940" 2>/dev/null || true
     fi
 
     echo "  ✓ Port 3940: Whitelist-only access (secure configuration)"

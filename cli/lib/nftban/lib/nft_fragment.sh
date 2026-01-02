@@ -226,13 +226,32 @@ nft_fragment_has_jump() {
 # DDOS CLASSIC FRAGMENTS
 # =============================================================================
 
-# Render DDoS classic fragment
+# Render DDoS classic fragment with full protection rules
 nft_fragment_render_ddos_classic() {
     local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
     local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
     local chain="${DDOS_NFT_CHAIN:-ddos_protection}"
-    local rate_limit="${DDOS_CLASSIC_RATE_LIMIT:-100/second}"
-    local burst="${DDOS_CLASSIC_BURST:-200}"
+
+    # Rate limits and bursts
+    local syn_rate="${DDOS_CLASSIC_SYN_RATE:-25/second}"
+    local syn_burst="${DDOS_CLASSIC_SYN_BURST:-50}"
+    local icmp_rate="${DDOS_CLASSIC_ICMP_RATE:-10/second}"
+    local icmp_burst="${DDOS_CLASSIC_ICMP_BURST:-20}"
+    local icmpv6_rate="${DDOS_CLASSIC_ICMPV6_RATE:-10/second}"
+    local icmpv6_burst="${DDOS_CLASSIC_ICMPV6_BURST:-20}"
+    local udp_rate="${DDOS_CLASSIC_UDP_RATE:-100/second}"
+    local udp_burst="${DDOS_CLASSIC_UDP_BURST:-200}"
+
+    # Connection limits per service
+    local ssh_limit="${DDOS_CLASSIC_SSH_CONN_LIMIT:-10}"
+    local http_limit="${DDOS_CLASSIC_HTTP_CONN_LIMIT:-100}"
+    local https_limit="${DDOS_CLASSIC_HTTPS_CONN_LIMIT:-100}"
+    local smtp_limit="${DDOS_CLASSIC_SMTP_CONN_LIMIT:-20}"
+
+    # Meter names
+    local syn_meter="${DDOS_CLASSIC_SYN_METER:-ddos_syn_flood}"
+    local icmp_meter="${DDOS_CLASSIC_ICMP_METER:-ddos_icmp_flood}"
+    local udp_meter="${DDOS_CLASSIC_UDP_METER:-ddos_udp_flood}"
 
     nft_fragment_init || return 1
 
@@ -246,19 +265,122 @@ nft_fragment_render_ddos_classic() {
 # NFTBan DDoS Classic Protection
 # Generated: ${timestamp}
 # Managed by nftband - DO NOT EDIT MANUALLY
+#
+# Thresholds:
+#   SYN Rate: ${syn_rate} burst ${syn_burst}
+#   SSH Conn: max ${ssh_limit}/IP
+#   HTTP Conn: max ${http_limit}/IP
+#   ICMP Rate: ${icmp_rate} burst ${icmp_burst}
+#   UDP Rate: ${udp_rate} burst ${udp_burst}
 
-# --- IPv4 ---
+# --- IPv4 DDoS Protection ---
 add chain ${table_ipv4} ${chain}
 flush chain ${table_ipv4} ${chain}
 
-# Rate limiting for new connections
-add rule ${table_ipv4} ${chain} ct state new limit rate over ${rate_limit} burst ${burst} packets drop
+# SYN Flood Protection
+add rule ${table_ipv4} ${chain} tcp flags syn meter ${syn_meter} { ip saddr limit rate ${syn_rate} burst ${syn_burst} packets } return comment "SYN: rate OK"
+add rule ${table_ipv4} ${chain} tcp flags syn counter drop comment "SYN flood: rate exceeded"
 
-# --- IPv6 ---
+# Connection Limits per Service
+add rule ${table_ipv4} ${chain} tcp dport 22 ct state new ct count over ${ssh_limit} counter drop comment "SSH: max ${ssh_limit} conn/IP"
+add rule ${table_ipv4} ${chain} tcp dport 80 ct state new ct count over ${http_limit} counter drop comment "HTTP: max ${http_limit} conn/IP"
+add rule ${table_ipv4} ${chain} tcp dport 443 ct state new ct count over ${https_limit} counter drop comment "HTTPS: max ${https_limit} conn/IP"
+add rule ${table_ipv4} ${chain} tcp dport 25 ct state new ct count over ${smtp_limit} counter drop comment "SMTP: max ${smtp_limit} conn/IP"
+
+# ICMP Rate Limiting
+add rule ${table_ipv4} ${chain} ip protocol icmp meter ${icmp_meter} { ip saddr limit rate ${icmp_rate} burst ${icmp_burst} packets } return comment "ICMP: rate OK"
+add rule ${table_ipv4} ${chain} ip protocol icmp counter drop comment "ICMP flood: rate exceeded"
+
+# UDP Flood Protection
+add rule ${table_ipv4} ${chain} ip protocol udp meter ${udp_meter} { ip saddr limit rate ${udp_rate} burst ${udp_burst} packets } return comment "UDP: rate OK"
+add rule ${table_ipv4} ${chain} ip protocol udp counter drop comment "UDP flood: rate exceeded"
+
+# Return to input chain
+add rule ${table_ipv4} ${chain} return
+
+# --- IPv6 DDoS Protection ---
 add chain ${table_ipv6} ${chain}
 flush chain ${table_ipv6} ${chain}
 
-add rule ${table_ipv6} ${chain} ct state new limit rate over ${rate_limit} burst ${burst} packets drop
+# SYN Flood Protection
+add rule ${table_ipv6} ${chain} tcp flags syn meter ${syn_meter}6 { ip6 saddr limit rate ${syn_rate} burst ${syn_burst} packets } return comment "SYN: rate OK"
+add rule ${table_ipv6} ${chain} tcp flags syn counter drop comment "SYN flood: rate exceeded"
+
+# Connection Limits
+add rule ${table_ipv6} ${chain} tcp dport 22 ct state new ct count over ${ssh_limit} counter drop comment "SSH: max ${ssh_limit} conn/IP"
+add rule ${table_ipv6} ${chain} tcp dport { 80, 443 } ct state new ct count over ${http_limit} counter drop comment "HTTP(S): max ${http_limit} conn/IP"
+
+# ICMPv6 Rate Limiting
+add rule ${table_ipv6} ${chain} meta l4proto icmpv6 meter ${icmp_meter}6 { ip6 saddr limit rate ${icmpv6_rate} burst ${icmpv6_burst} packets } return comment "ICMPv6: rate OK"
+add rule ${table_ipv6} ${chain} meta l4proto icmpv6 counter drop comment "ICMPv6 flood: rate exceeded"
+
+# Return to input chain
+add rule ${table_ipv6} ${chain} return
+EOF
+    )
+
+    _nft_fragment_write "$fragment_path" "$content" || {
+        echo "ERROR: Failed to write fragment: $fragment_path" >&2
+        return 1
+    }
+
+    echo "$fragment_path"
+}
+
+# Render DDoS classic jump rules fragment
+nft_fragment_render_ddos_classic_jump() {
+    local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
+    local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
+    local chain="${DDOS_NFT_CHAIN:-ddos_protection}"
+
+    nft_fragment_init || return 1
+
+    local fragment_path="${NFTBAN_FRAGMENT_DIR}/21-ddos-classic-jump.nft"
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    local content
+    content=$(cat <<EOF
+#!/usr/sbin/nft -f
+# NFTBan DDoS Classic - Jump Rules
+# Generated: ${timestamp}
+# Managed by nftband - DO NOT EDIT MANUALLY
+
+add rule ${table_ipv4} input jump ${chain} comment "DDoS classic protection"
+add rule ${table_ipv6} input jump ${chain} comment "DDoS classic protection"
+EOF
+    )
+
+    _nft_fragment_write "$fragment_path" "$content" || {
+        echo "ERROR: Failed to write fragment: $fragment_path" >&2
+        return 1
+    }
+
+    echo "$fragment_path"
+}
+
+# Render DDoS classic cleanup fragment (for disable)
+nft_fragment_render_ddos_classic_cleanup() {
+    local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
+    local table_ipv6="${DDOS_NFT_TABLE_IPV6:-ip6 nftban}"
+    local chain="${DDOS_NFT_CHAIN:-ddos_protection}"
+
+    nft_fragment_init || return 1
+
+    local fragment_path="${NFTBAN_FRAGMENT_DIR}/99-ddos-classic-cleanup.nft"
+    local timestamp
+    timestamp=$(date -Iseconds)
+
+    local content
+    content=$(cat <<EOF
+#!/usr/sbin/nft -f
+# NFTBan DDoS Classic - CLEANUP
+# Generated: ${timestamp}
+# Managed by nftband
+
+# Flush chains (removes all rules but keeps chain for reference safety)
+flush chain ${table_ipv4} ${chain}
+flush chain ${table_ipv6} ${chain}
 EOF
     )
 
@@ -353,6 +475,15 @@ nft_fragment_enable_module() {
         ddos-classic|ddos_classic)
             fragment_path=$(nft_fragment_render_ddos_classic) || return 1
             nft_fragment_apply "$fragment_path" || return 1
+
+            # Add jump if not present
+            local table_ipv4="${DDOS_NFT_TABLE_IPV4:-ip nftban}"
+            local chain="${DDOS_NFT_CHAIN:-ddos_protection}"
+            if ! nft_fragment_has_jump "$table_ipv4" "$chain"; then
+                local jump_path
+                jump_path=$(nft_fragment_render_ddos_classic_jump) || return 1
+                nft_fragment_apply "$jump_path" || return 1
+            fi
             ;;
         *)
             echo "ERROR: Unknown module: $module" >&2
@@ -372,6 +503,10 @@ nft_fragment_disable_module() {
     case "$module" in
         portscan-classic|portscan_classic)
             fragment_path=$(nft_fragment_render_portscan_classic_cleanup) || return 1
+            nft_fragment_apply "$fragment_path" || return 1
+            ;;
+        ddos-classic|ddos_classic)
+            fragment_path=$(nft_fragment_render_ddos_classic_cleanup) || return 1
             nft_fragment_apply "$fragment_path" || return 1
             ;;
         *)
@@ -403,6 +538,8 @@ export -f nft_fragment_render_portscan_classic
 export -f nft_fragment_render_portscan_classic_jump
 export -f nft_fragment_render_portscan_classic_cleanup
 export -f nft_fragment_render_ddos_classic
+export -f nft_fragment_render_ddos_classic_jump
+export -f nft_fragment_render_ddos_classic_cleanup
 export -f nft_fragment_render_ports
 export -f nft_fragment_has_jump
 export -f nft_fragment_enable_module

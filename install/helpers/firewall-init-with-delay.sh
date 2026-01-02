@@ -31,12 +31,21 @@ if ! [[ "$DELAY" =~ ^[0-9]+$ ]]; then
     DELAY=0  # Fallback to safe default
 fi
 
+# Load IPC library if available
+# shellcheck source=/dev/null
+source /usr/lib/nftban/lib/nft_ipc.sh 2>/dev/null || true
+
 # Optional: Load snapshot if delay is disabled
 # This provides fast firewall activation on boot
 if [[ "$DELAY" -eq 0 ]]; then
-    if command -v nft >/dev/null 2>&1; then
-        if [[ -f /var/lib/nftban/snapshots/last.nft ]]; then
-            echo "Loading snapshot (delay=0)..." >&2
+    if [[ -f /var/lib/nftban/snapshots/last.nft ]]; then
+        echo "Loading snapshot (delay=0)..." >&2
+        # Try IPC first (if daemon is ready), fallback to direct nft
+        if type -t nft_ipc_apply_ruleset &>/dev/null && [[ -S /run/nftban/nftband.sock ]]; then
+            nft_ipc_apply_ruleset /var/lib/nftban/snapshots/last.nft 2>/dev/null || true
+        elif command -v nft >/dev/null 2>&1; then
+            # Boot-time fallback: daemon not ready yet, use direct nft
+            # This is safe because we're loading our own snapshot
             nft -f /var/lib/nftban/snapshots/last.nft 2>/dev/null || true
         fi
     fi
