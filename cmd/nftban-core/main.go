@@ -196,6 +196,16 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
 			os.Exit(1)
 		}
+	case "metrics":
+		if len(os.Args) < 3 {
+			errorWithUsage("metrics", "metrics command requires an action (export)")
+			os.Exit(1)
+		}
+		action := os.Args[2]
+		if err := cmdMetrics(action, cfg); err != nil {
+			fmt.Fprintf(os.Stderr, "Error: %v\n", err)
+			os.Exit(1)
+		}
 	case "emulate":
 		if len(os.Args) < 3 {
 			errorWithUsage("emulate", "emulate command requires an IP address")
@@ -238,6 +248,7 @@ func printUsage() {
 	fmt.Println("  nftban-core geoip [update|status|lookup] Manage GeoIP database and lookups")
 	fmt.Println("  nftban-core suricata [status|filters|enable|disable] Manage Suricata IDS integration (v1.0)")
 	fmt.Println("  nftban-core analytics [summary|countries|top|ip] Show ban analytics (use --json for GUI)")
+	fmt.Println("  nftban-core metrics export       Export Prometheus metrics (high-performance Go exporter)")
 	fmt.Println("  nftban-core emulate <IP> [proto] [port] [dir] Emulate packet evaluation (fast IP/CIDR matching)")
 	fmt.Println("  nftban-core profile-sync         Run sync operations with profiling enabled (pprof on :6060)")
 	fmt.Println("  nftban-core version              Show version information")
