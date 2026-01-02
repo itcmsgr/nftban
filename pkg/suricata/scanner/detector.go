@@ -63,7 +63,7 @@ func ScanLocalhost() (*ScanResult, error) {
 
 // scanPort attempts to connect to a port and detect the service
 func scanPort(host string, port int) *Service {
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	conn, err := net.DialTimeout("tcp", address, 1*time.Second)
 	if err != nil {
 		return nil // Port closed or filtered

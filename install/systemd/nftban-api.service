@@ -1,0 +1,31 @@
+[Unit]
+Description=NFTBan Web API
+After=network-online.target nftband.service
+Wants=network-online.target
+Documentation=man:nftban(8)
+
+[Service]
+Type=simple
+User=nftban-www
+Group=nftban-web
+ExecStart=/usr/sbin/nftban-api --listen=:3940
+Restart=on-failure
+RestartSec=5s
+
+# Security
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/run/nftban
+
+# Limits
+LimitNOFILE=65536
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-api
+
+[Install]
+WantedBy=multi-user.target

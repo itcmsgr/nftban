@@ -672,11 +672,11 @@ stats:
 
 watchdog:
   category: intelligence_reporting
-  description: "System resource monitoring and alerting"
+  description: "System resource monitoring, daemon stats, and profiling"
   risk: core
   audience: [cli, auditor, panel]
   capability: stats_read
-  mutates: false
+  mutates: conditional
   supports_dry_run: false
   requires_root: false
   panel_expose: true
@@ -687,7 +687,23 @@ watchdog:
     - "nftban watchdog check"
     - "nftban watchdog report"
     - "nftban watchdog history"
-    - "nftban watchdog --json"
+    - "nftban watchdog stats"
+    - "nftban watchdog stats --json"
+    - "nftban watchdog stats-history --days=7"
+    - "nftban watchdog snapshot --type=heap"
+    - "nftban watchdog profiles"
+  subcommands:
+    status: {mutates: false, description: "Quick one-line system status"}
+    check: {mutates: false, description: "Run all checks and show alerts"}
+    report: {mutates: false, description: "Full detailed system report"}
+    history: {mutates: false, description: "Show saved reports for auditing"}
+    trend: {mutates: false, description: "7-day trend analysis"}
+    enable: {mutates: true, description: "Enable watchdog timer", requires_root: true}
+    disable: {mutates: true, description: "Disable watchdog timer", requires_root: true}
+    stats: {mutates: false, description: "Daemon runtime stats (memory, goroutines, IPC)"}
+    stats-history: {mutates: false, description: "Historical daemon stats (daily summaries)"}
+    snapshot: {mutates: true, description: "Capture pprof profile (heap/goroutine/cpu)"}
+    profiles: {mutates: false, description: "List captured pprof profiles"}
 
 report:
   category: intelligence_reporting

@@ -1,0 +1,132 @@
+// =============================================================================
+// NFTBan v1.0 - Stats Configuration
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+//
+// Configuration for watchdog stats collection.
+// Safe defaults ensure backwards compatibility when config keys are missing.
+// =============================================================================
+
+package stats
+
+import "time"
+
+// Config holds stats collection configuration
+// All fields have safe defaults for backwards compatibility
+type Config struct {
+	// Enable stats collection (default: true)
+	Enabled bool
+
+	// Collection intervals
+	LiveInterval time.Duration // Memory/goroutines (default: 60s)
+	IOInterval   time.Duration // Events/throughput (default: 300s)
+
+	// File paths
+	CurrentFile string // current.json path
+	HistoryDir  string // history/ directory
+	ProfileDir  string // profiles/ directory
+
+	// Retention limits (HARD LIMITS)
+	HistoryRetentionDays  int // Days to keep history (default: 30)
+	ProfileRetentionDays  int // Days to keep profiles (default: 7)
+	ProfileMaxCount       int // Max profiles to keep (default: 10)
+
+	// Thresholds
+	MemoryWarnMB      float64 // Warning threshold (default: 200)
+	MemoryCritMB      float64 // Critical threshold (default: 500)
+	GoroutinesWarn    int     // Warning threshold (default: 100)
+	GoroutinesCrit    int     // Critical threshold (default: 500)
+	StaleThresholdSec int     // Stale data threshold (default: 300)
+
+	// Profiling
+	ProfileEnabled    bool // pprof enabled (default: false)
+	ProfileAutoCapture bool // Auto-capture on breach (default: false)
+
+	// Logging
+	LogDir      string // Watchdog log directory
+	StatsLog    string // Stats log file
+	AlertsLog   string // Alerts log file
+	ProfileLog  string // Profile log file
+}
+
+// DefaultConfig returns configuration with safe defaults
+// Used when config keys are missing for backwards compatibility
+func DefaultConfig() *Config {
+	return &Config{
+		Enabled:      true,
+		LiveInterval: 60 * time.Second,
+		IOInterval:   300 * time.Second,
+
+		CurrentFile: "/var/lib/nftban/stats/current.json",
+		HistoryDir:  "/var/lib/nftban/stats/history",
+		ProfileDir:  "/var/lib/nftban/stats/profiles",
+
+		HistoryRetentionDays: 30,
+		ProfileRetentionDays: 7,
+		ProfileMaxCount:      10,
+
+		MemoryWarnMB:      200,
+		MemoryCritMB:      500,
+		GoroutinesWarn:    100,
+		GoroutinesCrit:    500,
+		StaleThresholdSec: 300,
+
+		ProfileEnabled:     false,
+		ProfileAutoCapture: false,
+
+		LogDir:     "/var/log/nftban/watchdog",
+		StatsLog:   "/var/log/nftban/watchdog/stats.log",
+		AlertsLog:  "/var/log/nftban/watchdog/alerts.log",
+		ProfileLog: "/var/log/nftban/watchdog/profiles.log",
+	}
+}
+
+// Validate checks config values and applies safe bounds
+func (c *Config) Validate() {
+	// Ensure minimum intervals (prevent CPU thrashing)
+	if c.LiveInterval < 10*time.Second {
+		c.LiveInterval = 10 * time.Second
+	}
+	if c.IOInterval < 60*time.Second {
+		c.IOInterval = 60 * time.Second
+	}
+
+	// Ensure positive retention
+	if c.HistoryRetentionDays < 1 {
+		c.HistoryRetentionDays = 1
+	}
+	if c.ProfileRetentionDays < 1 {
+		c.ProfileRetentionDays = 1
+	}
+	if c.ProfileMaxCount < 1 {
+		c.ProfileMaxCount = 1
+	}
+
+	// Ensure positive thresholds
+	if c.MemoryWarnMB < 1 {
+		c.MemoryWarnMB = 200
+	}
+	if c.MemoryCritMB < c.MemoryWarnMB {
+		c.MemoryCritMB = c.MemoryWarnMB * 2
+	}
+	if c.GoroutinesWarn < 1 {
+		c.GoroutinesWarn = 100
+	}
+	if c.GoroutinesCrit < c.GoroutinesWarn {
+		c.GoroutinesCrit = c.GoroutinesWarn * 5
+	}
+	if c.StaleThresholdSec < 60 {
+		c.StaleThresholdSec = 60
+	}
+}
+
+// IsStatsEnabled returns true if stats collection is enabled
+// Used to check before starting any background work
+func (c *Config) IsStatsEnabled() bool {
+	return c.Enabled
+}
+
+// IsProfileEnabled returns true if profiling is enabled
+func (c *Config) IsProfileEnabled() bool {
+	return c.ProfileEnabled
+}

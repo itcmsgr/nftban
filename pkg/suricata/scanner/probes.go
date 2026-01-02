@@ -49,7 +49,7 @@ func ProbeService(host string, port int) (*Service, error) {
 
 // probeHTTP sends an HTTP request to verify HTTP service
 func probeHTTP(host string, port int, service *Service) bool {
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
 	if err != nil {
 		return false
@@ -94,7 +94,7 @@ func probeHTTP(host string, port int, service *Service) bool {
 
 // probeHTTPS attempts TLS handshake to verify HTTPS
 func probeHTTPS(host string, port int, service *Service) bool {
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	config := &tls.Config{
 		InsecureSkipVerify: true,
 	}
@@ -122,7 +122,7 @@ func probeHTTPS(host string, port int, service *Service) bool {
 
 // probeSSH reads SSH banner
 func probeSSH(host string, port int, service *Service) bool {
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
 	if err != nil {
 		return false
@@ -149,7 +149,7 @@ func probeSSH(host string, port int, service *Service) bool {
 
 // probeMySQL attempts MySQL handshake
 func probeMySQL(host string, port int, service *Service) bool {
-	address := fmt.Sprintf("%s:%d", host, port)
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
 	if err != nil {
 		return false
