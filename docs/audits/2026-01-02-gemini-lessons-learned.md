@@ -403,7 +403,7 @@ from google import genai
 from google.genai import types
 
 # Configuration
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "REDACTED")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "YOUR_API_KEY_HERE")
 MODEL_NAME = "gemini-2.0-flash-exp"  # 2M context window
 CACHE_TTL_HOURS = 24
 
