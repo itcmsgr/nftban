@@ -49,8 +49,11 @@ readonly NFTBAN_LOGIN_LOADED=1
 
 # shellcheck disable=SC2034  # Module metadata used when sourced
 readonly LOGIN_MODULE_NAME="nftban_login"
+# shellcheck disable=SC2034  # Module metadata used when sourced
 readonly LOGIN_MODULE_VERSION="1.0.0"
+# shellcheck disable=SC2034  # Module metadata used when sourced
 readonly LOGIN_MODULE_TYPE="core"
+# shellcheck disable=SC2034  # Module metadata used when sourced
 readonly LOGIN_MODULE_DESCRIPTION="Login Monitor Module (Dual-Mode)"
 
 # =============================================================================

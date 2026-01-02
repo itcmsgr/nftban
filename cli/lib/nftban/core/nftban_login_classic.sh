@@ -42,6 +42,7 @@ readonly NFTBAN_LOGIN_CLASSIC_LOADED=1
 
 # shellcheck disable=SC2034  # Module metadata used when sourced
 readonly LOGIN_CLASSIC_MODULE_NAME="nftban_login_classic"
+# shellcheck disable=SC2034  # Module metadata used when sourced
 readonly LOGIN_CLASSIC_MODULE_VERSION="1.0.0"
 
 # =============================================================================
