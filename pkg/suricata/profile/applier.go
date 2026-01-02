@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/itcmsgr/nftban/pkg/config"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
@@ -135,8 +136,10 @@ func ValidateProfile() error {
 		return fmt.Errorf("profile template not found: %s", target)
 	}
 
-	// Check if target is in correct directory
-	if !filepath.HasPrefix(target, profilesDir) {
+	// Check if target is in correct directory (use strings.HasPrefix with cleaned paths)
+	cleanTarget := filepath.Clean(target)
+	cleanProfilesDir := filepath.Clean(profilesDir) + string(filepath.Separator)
+	if !strings.HasPrefix(cleanTarget, cleanProfilesDir) && cleanTarget != filepath.Clean(profilesDir) {
 		return fmt.Errorf("profile symlink points outside profiles directory: %s", target)
 	}
 
