@@ -157,15 +157,16 @@ nftban_geoban_validate_country_code() {
 # =============================================================================
 
 # Apply GeoBan rules to nftables (minimal MVP implementation)
-# Creates geoban_blocked_v4 set and geoban_input chain
+# Creates geoban sets and chains for IPv4 and IPv6
 nftban_geoban_apply_to_nftables() {
-    local table="inet"
-    local tname="nftban"
+    # Use correct table families (consistent with rest of nftban)
+    local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+    local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
     local set_v4="geoban_blocked_v4"
-    local _set_v6="geoban_blocked_v6"  # Reserved for future IPv6 support
+    local set_v6="geoban_blocked_v6"
     local chain="geoban_input"
 
-    nftban_info "Applying GeoBan rules to nftables..."
+    nftban_info "Applying GeoBan rules to nftables (IPv4 + IPv6)..."
 
     # Check if nftables is available
     if ! command -v nft &>/dev/null; then
@@ -173,18 +174,29 @@ nftban_geoban_apply_to_nftables() {
         return 1
     fi
 
-    # Check if table exists
-    if ! nft list table "$table" "$tname" &>/dev/null; then
-        nftban_error "Table $table $tname does not exist"
+    # Check if IPv4 table exists (required)
+    if ! nft list table $table_v4 &>/dev/null; then
+        nftban_error "Table $table_v4 does not exist"
         nftban_info "Run: nft -f /etc/nftables.conf"
         return 1
     fi
 
-    # 1. Ensure IPv4 set exists (should already exist from Phase 0)
-    if ! nft list set "$table" "$tname" "$set_v4" &>/dev/null; then
-        nftban_info "Creating set: $set_v4"
-        local set_fragment="/etc/nftban/rules.d/geoban-set-$$.nft"
-        echo "add set $table $tname $set_v4 { type ipv4_addr; flags interval; comment \"GeoBan blocked countries (IPv4)\"; }" > "$set_fragment"
+    # Check if IPv6 table exists (optional, warn if missing)
+    local has_ipv6=true
+    if ! nft list table $table_v6 &>/dev/null; then
+        nftban_warn "Table $table_v6 does not exist - IPv6 geoban disabled"
+        has_ipv6=false
+    fi
+
+    # =========================================================================
+    # 1. Ensure sets exist
+    # =========================================================================
+
+    # IPv4 set
+    if ! nft list set $table_v4 "$set_v4" &>/dev/null; then
+        nftban_info "Creating set: $set_v4 in $table_v4"
+        local set_fragment="/etc/nftban/rules.d/geoban-set-v4-$$.nft"
+        echo "add set $table_v4 $set_v4 { type ipv4_addr; flags interval; comment \"GeoBan blocked countries (IPv4)\"; }" > "$set_fragment"
         if ! nft_ipc_apply_ruleset "$set_fragment"; then
             rm -f "$set_fragment" 2>/dev/null
             nftban_error "Failed to create set $set_v4"
@@ -193,14 +205,39 @@ nftban_geoban_apply_to_nftables() {
         rm -f "$set_fragment" 2>/dev/null
     fi
 
+    # IPv6 set
+    if [[ "$has_ipv6" == "true" ]]; then
+        if ! nft list set $table_v6 "$set_v6" &>/dev/null; then
+            nftban_info "Creating set: $set_v6 in $table_v6"
+            local set_fragment="/etc/nftban/rules.d/geoban-set-v6-$$.nft"
+            echo "add set $table_v6 $set_v6 { type ipv6_addr; flags interval; comment \"GeoBan blocked countries (IPv6)\"; }" > "$set_fragment"
+            if ! nft_ipc_apply_ruleset "$set_fragment"; then
+                rm -f "$set_fragment" 2>/dev/null
+                nftban_warn "Failed to create set $set_v6"
+            else
+                rm -f "$set_fragment" 2>/dev/null
+            fi
+        fi
+    fi
+
+    # =========================================================================
     # 2. Flush old contents
+    # =========================================================================
+
     nftban_info "Flushing old GeoBan entries..."
-    if ! nft_ipc_flush_set "$table $tname" "$set_v4"; then
+    if ! nft_ipc_flush_set "$table_v4" "$set_v4"; then
         nftban_error "Failed to flush set $set_v4"
         return 1
     fi
 
-    # 3. Load all banned country CIDRs into set
+    if [[ "$has_ipv6" == "true" ]]; then
+        nft_ipc_flush_set "$table_v6" "$set_v6" 2>/dev/null || true
+    fi
+
+    # =========================================================================
+    # 3. Load all banned country CIDRs
+    # =========================================================================
+
     local ban_files=()
     mapfile -t ban_files < <(find "${GEOBAN_FILES_DIR}" -name "50-ban-*.conf" 2>/dev/null)
 
@@ -212,7 +249,6 @@ nftban_geoban_apply_to_nftables() {
 
     nftban_info "Loading CIDRs from ${#ban_files[@]} country file(s)..."
 
-    # Build CIDR list (all elements in ONE command for efficiency)
     # Separate IPv4 and IPv6 addresses
     local cidrs_v4=()
     local cidrs_v6=()
@@ -244,90 +280,178 @@ nftban_geoban_apply_to_nftables() {
         return 0
     fi
 
-    # Apply all elements in ONE command (much faster than individual adds)
-    nftban_info "Adding $cidr_count_v4 IPv4 CIDRs to $set_v4..."
+    # =========================================================================
+    # 4. Load IPv4 CIDRs
+    # =========================================================================
 
-    # Build comma-separated list
-    local cidr_list=""
-    for cidr in "${cidrs_v4[@]}"; do
-        cidr_list+="$cidr,"
-    done
-    cidr_list="${cidr_list%,}"  # Remove trailing comma
+    if [[ $cidr_count_v4 -gt 0 ]]; then
+        nftban_info "Adding $cidr_count_v4 IPv4 CIDRs to $set_v4..."
 
-    # Single command: add element to geoban set via IPC
-    local element_fragment="/etc/nftban/rules.d/geoban-elements-$$.nft"
-    echo "add element $table $tname $set_v4 { $cidr_list }" > "$element_fragment"
+        # Build comma-separated list
+        local cidr_list_v4=""
+        for cidr in "${cidrs_v4[@]}"; do
+            cidr_list_v4+="$cidr,"
+        done
+        cidr_list_v4="${cidr_list_v4%,}"  # Remove trailing comma
 
-    if nft_ipc_apply_ruleset "$element_fragment" 2>/dev/null; then
-        rm -f "$element_fragment" 2>/dev/null
-        nftban_success "Loaded $cidr_count_v4 CIDRs into $set_v4"
-    else
-        rm -f "$element_fragment" 2>/dev/null
-        nftban_error "Failed to load CIDRs (IPC command failed)"
-        return 1
+        local element_fragment="/etc/nftban/rules.d/geoban-elements-v4-$$.nft"
+        echo "add element $table_v4 $set_v4 { $cidr_list_v4 }" > "$element_fragment"
+
+        if nft_ipc_apply_ruleset "$element_fragment" 2>/dev/null; then
+            rm -f "$element_fragment" 2>/dev/null
+            nftban_success "Loaded $cidr_count_v4 IPv4 CIDRs into $set_v4"
+        else
+            rm -f "$element_fragment" 2>/dev/null
+            nftban_error "Failed to load IPv4 CIDRs (IPC command failed)"
+            return 1
+        fi
     fi
 
-    # 4. Ensure geoban_input chain exists (priority filter-15)
-    if ! nft list chain "$table" "$tname" "$chain" &>/dev/null; then
+    # =========================================================================
+    # 5. Load IPv6 CIDRs
+    # =========================================================================
+
+    if [[ "$has_ipv6" == "true" && $cidr_count_v6 -gt 0 ]]; then
+        nftban_info "Adding $cidr_count_v6 IPv6 CIDRs to $set_v6..."
+
+        # Build comma-separated list
+        local cidr_list_v6=""
+        for cidr in "${cidrs_v6[@]}"; do
+            cidr_list_v6+="$cidr,"
+        done
+        cidr_list_v6="${cidr_list_v6%,}"  # Remove trailing comma
+
+        local element_fragment="/etc/nftban/rules.d/geoban-elements-v6-$$.nft"
+        echo "add element $table_v6 $set_v6 { $cidr_list_v6 }" > "$element_fragment"
+
+        if nft_ipc_apply_ruleset "$element_fragment" 2>/dev/null; then
+            rm -f "$element_fragment" 2>/dev/null
+            nftban_success "Loaded $cidr_count_v6 IPv6 CIDRs into $set_v6"
+        else
+            rm -f "$element_fragment" 2>/dev/null
+            nftban_warn "Failed to load IPv6 CIDRs (IPC command failed)"
+        fi
+    fi
+
+    # =========================================================================
+    # 6. Ensure geoban_input chain exists in IPv4 table
+    # =========================================================================
+
+    if ! nft list chain $table_v4 "$chain" &>/dev/null; then
         nftban_info "Creating GeoBan input chain at priority filter-15..."
-        local chain_fragment="/etc/nftban/rules.d/geoban-chain-$$.nft"
-        echo "add chain $table $tname $chain { type filter hook input priority filter - 15; policy accept; }" > "$chain_fragment"
+        local chain_fragment="/etc/nftban/rules.d/geoban-chain-v4-$$.nft"
+        echo "add chain $table_v4 $chain { type filter hook input priority filter - 15; policy accept; }" > "$chain_fragment"
         if ! nft_ipc_apply_ruleset "$chain_fragment"; then
             rm -f "$chain_fragment" 2>/dev/null
             nftban_error "Failed to create chain $chain"
             return 1
         fi
         rm -f "$chain_fragment" 2>/dev/null
-        nftban_success "Created chain: $chain"
+        nftban_success "Created chain: $chain in $table_v4"
     fi
 
-    # 5. Ensure drop rule exists in geoban_input chain
-    # Check if rule already exists (avoid duplicates)
-    if nft list chain "$table" "$tname" "$chain" 2>/dev/null | grep -q "GeoBan blocked IPv4"; then
-        nftban_info "GeoBan drop rule already exists"
+    # =========================================================================
+    # 7. Ensure geoban_input chain exists in IPv6 table
+    # =========================================================================
+
+    if [[ "$has_ipv6" == "true" ]]; then
+        if ! nft list chain $table_v6 "$chain" &>/dev/null; then
+            nftban_info "Creating GeoBan input chain for IPv6..."
+            local chain_fragment="/etc/nftban/rules.d/geoban-chain-v6-$$.nft"
+            echo "add chain $table_v6 $chain { type filter hook input priority filter - 15; policy accept; }" > "$chain_fragment"
+            if nft_ipc_apply_ruleset "$chain_fragment" 2>/dev/null; then
+                rm -f "$chain_fragment" 2>/dev/null
+                nftban_success "Created chain: $chain in $table_v6"
+            else
+                rm -f "$chain_fragment" 2>/dev/null
+                nftban_warn "Failed to create IPv6 chain"
+            fi
+        fi
+    fi
+
+    # =========================================================================
+    # 8. Ensure drop rules exist
+    # =========================================================================
+
+    # IPv4 drop rule
+    if nft list chain $table_v4 "$chain" 2>/dev/null | grep -q "GeoBan blocked IPv4"; then
+        nftban_info "GeoBan IPv4 drop rule already exists"
     else
-        nftban_info "Adding GeoBan drop rule..."
-        local rule_fragment="/etc/nftban/rules.d/geoban-rule-$$.nft"
-        echo "add rule $table $tname $chain ip saddr @$set_v4 drop comment \"GeoBan blocked IPv4\"" > "$rule_fragment"
+        nftban_info "Adding GeoBan IPv4 drop rule..."
+        local rule_fragment="/etc/nftban/rules.d/geoban-rule-v4-$$.nft"
+        echo "add rule $table_v4 $chain ip saddr @$set_v4 drop comment \"GeoBan blocked IPv4\"" > "$rule_fragment"
         if ! nft_ipc_apply_ruleset "$rule_fragment"; then
             rm -f "$rule_fragment" 2>/dev/null
-            nftban_error "Failed to add drop rule"
+            nftban_error "Failed to add IPv4 drop rule"
             return 1
         fi
         rm -f "$rule_fragment" 2>/dev/null
-        nftban_success "Added drop rule to $chain"
+        nftban_success "Added IPv4 drop rule to $chain"
     fi
 
-    # 6. Summary
+    # IPv6 drop rule
+    if [[ "$has_ipv6" == "true" && $cidr_count_v6 -gt 0 ]]; then
+        if nft list chain $table_v6 "$chain" 2>/dev/null | grep -q "GeoBan blocked IPv6"; then
+            nftban_info "GeoBan IPv6 drop rule already exists"
+        else
+            nftban_info "Adding GeoBan IPv6 drop rule..."
+            local rule_fragment="/etc/nftban/rules.d/geoban-rule-v6-$$.nft"
+            echo "add rule $table_v6 $chain ip6 saddr @$set_v6 drop comment \"GeoBan blocked IPv6\"" > "$rule_fragment"
+            if nft_ipc_apply_ruleset "$rule_fragment" 2>/dev/null; then
+                rm -f "$rule_fragment" 2>/dev/null
+                nftban_success "Added IPv6 drop rule to $chain"
+            else
+                rm -f "$rule_fragment" 2>/dev/null
+                nftban_warn "Failed to add IPv6 drop rule"
+            fi
+        fi
+    fi
+
+    # =========================================================================
+    # 9. Summary
+    # =========================================================================
+
     echo ""
     nftban_success "GeoBan nftables integration complete!"
-    nftban_info "Set: $set_v4 ($cidr_count_v4 IPv4 CIDRs)"
-    [[ $cidr_count_v6 -gt 0 ]] && nftban_info "Note: $cidr_count_v6 IPv6 CIDRs found (IPv6 geoban not yet implemented)"
+    nftban_info "IPv4: $set_v4 ($cidr_count_v4 CIDRs) in $table_v4"
+    if [[ "$has_ipv6" == "true" && $cidr_count_v6 -gt 0 ]]; then
+        nftban_info "IPv6: $set_v6 ($cidr_count_v6 CIDRs) in $table_v6"
+    elif [[ $cidr_count_v6 -gt 0 ]]; then
+        nftban_warn "IPv6: $cidr_count_v6 CIDRs found but IPv6 table not available"
+    fi
     nftban_info "Chain: $chain (priority filter-15)"
-    nftban_info "Rule: ip saddr @$set_v4 drop"
     echo ""
     nftban_info "GeoBan is now ACTIVELY BLOCKING at firewall level"
-    nftban_info "Verify: nft list set $table $tname $set_v4"
-    nftban_info "Verify: nft list chain $table $tname $chain"
+    nftban_info "Verify IPv4: nft list set $table_v4 $set_v4"
+    [[ "$has_ipv6" == "true" ]] && nftban_info "Verify IPv6: nft list set $table_v6 $set_v6"
 
     return 0
 }
 
 # Remove GeoBan nftables rules (cleanup)
 nftban_geoban_remove_from_nftables() {
-    local table="inet"
-    local tname="nftban"
+    local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+    local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
     local set_v4="geoban_blocked_v4"
-    local chain="geoban_input"
+    local set_v6="geoban_blocked_v6"
 
     nftban_info "Removing GeoBan from nftables..."
 
-    # Flush set via IPC
-    if nft list set "$table" "$tname" "$set_v4" &>/dev/null; then
-        if nft_ipc_flush_set "$table $tname" "$set_v4"; then
+    # Flush IPv4 set via IPC
+    if nft list set $table_v4 "$set_v4" &>/dev/null; then
+        if nft_ipc_flush_set "$table_v4" "$set_v4"; then
             nftban_success "Flushed $set_v4"
         else
             nftban_warn "Failed to flush $set_v4"
+        fi
+    fi
+
+    # Flush IPv6 set via IPC
+    if nft list set $table_v6 "$set_v6" &>/dev/null; then
+        if nft_ipc_flush_set "$table_v6" "$set_v6"; then
+            nftban_success "Flushed $set_v6"
+        else
+            nftban_warn "Failed to flush $set_v6"
         fi
     fi
 
