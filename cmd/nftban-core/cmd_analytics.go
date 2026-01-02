@@ -16,12 +16,9 @@ import (
 )
 
 func cmdAnalytics(action string) error {
-	st := analytics.StateOrNil()
-	if st == nil {
-		return fmt.Errorf("analytics state not initialized")
-	}
-
 	switch action {
+	case "report":
+		return cmdAnalyticsReport()
 	case "summary":
 		return cmdAnalyticsSummary()
 	case "countries":
@@ -31,8 +28,74 @@ func cmdAnalytics(action string) error {
 	case "ip":
 		return cmdAnalyticsIP()
 	default:
-		return fmt.Errorf("unknown analytics action: %s\nUsage: nftban-core analytics [summary|countries|top|ip]", action)
+		return fmt.Errorf("unknown analytics action: %s\nUsage: nftban-core analytics [report|summary|countries|top|ip]", action)
 	}
+}
+
+// cmdAnalyticsReport generates report data for email reporting (optimized batch operations).
+// Usage: nftban-core analytics report --ips="ip1,ip2,..." [--limit=5]
+func cmdAnalyticsReport() error {
+	// Parse flags
+	var ipsStr string
+	limit := 5
+
+	for i, arg := range os.Args {
+		if strings.HasPrefix(arg, "--ips=") {
+			ipsStr = strings.TrimPrefix(arg, "--ips=")
+		}
+		if strings.HasPrefix(arg, "--limit=") {
+			if val, err := strconv.Atoi(strings.TrimPrefix(arg, "--limit=")); err == nil {
+				limit = val
+			}
+		}
+		// Support space-separated format too
+		if arg == "--ips" && i+1 < len(os.Args) {
+			ipsStr = os.Args[i+1]
+		}
+		if arg == "--limit" && i+1 < len(os.Args) {
+			if val, err := strconv.Atoi(os.Args[i+1]); err == nil {
+				limit = val
+			}
+		}
+	}
+
+	if ipsStr == "" {
+		return fmt.Errorf("usage: nftban-core analytics report --ips=\"ip1,ip2,...\" [--limit=5]")
+	}
+
+	// Parse IPs
+	ips := strings.Split(ipsStr, ",")
+	for i := range ips {
+		ips[i] = strings.TrimSpace(ips[i])
+	}
+
+	// Get data directory
+	dataDir := os.Getenv("NFTBAN_DATA_DIR")
+	if dataDir == "" {
+		dataDir = "/var/lib/nftban"
+	}
+
+	// Create reporter
+	reporter, err := analytics.NewReporter(dataDir)
+	if err != nil {
+		return fmt.Errorf("failed to create reporter: %w", err)
+	}
+	defer reporter.Close()
+
+	// Generate report
+	report, err := reporter.GenerateReport(ips, limit)
+	if err != nil {
+		return fmt.Errorf("failed to generate report: %w", err)
+	}
+
+	// Output JSON
+	jsonStr, err := report.ToJSON()
+	if err != nil {
+		return fmt.Errorf("failed to marshal JSON: %w", err)
+	}
+
+	fmt.Println(jsonStr)
+	return nil
 }
 
 // cmdAnalyticsSummary shows overall analytics summary.

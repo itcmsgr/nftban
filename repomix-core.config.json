@@ -1,0 +1,53 @@
+{
+  "output": {
+    "filePath": "/home/commonfolder/nftban2026/GEMINI_UPLOAD/repomix-output-core.xml",
+    "style": "xml",
+    "headerText": "NFTBan Firewall Platform - Core Code Only (No GUI, No Wiki)",
+    "instructionFilePath": "/home/gituser/github/nftban/repomix-instruction.md",
+    "removeComments": false,
+    "removeEmptyLines": false,
+    "topFilesLength": 5,
+    "showLineNumbers": true
+  },
+  "ignore": {
+    "useGitignore": true,
+    "useDefaultPatterns": true,
+    "customPatterns": [
+      "node_modules/**",
+      ".git/**",
+      "*.png",
+      "*.jpg",
+      "*.jpeg",
+      "*.gif",
+      "*.svg",
+      "*.ico",
+      "*.woff",
+      "*.woff2",
+      "*.ttf",
+      "*.eot",
+      "cmd/nftban-ui/**",
+      "pkg/api/**",
+      "**/*.min.js",
+      "**/*.min.css",
+      "**/*.css",
+      "**/*.js",
+      "**/*.html",
+      ".github/**",
+      "tests/**",
+      "wiki/**",
+      "docs/wiki/**"
+    ]
+  },
+  "include": [
+    "cmd/nftban-core/**",
+    "cmd/nftband/**",
+    "pkg/**",
+    "!pkg/api/**",
+    "cli/**",
+    "install/**",
+    "README.md",
+    "ARCHITECTURE.md",
+    "CONTRIBUTING.md",
+    "*.sh"
+  ]
+}

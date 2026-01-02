@@ -30,8 +30,9 @@ declare -g _NFTBAN_NFT_FRAGMENT_LOADED=1
 # CONFIGURATION
 # =============================================================================
 
-# Fragment directory
-NFTBAN_FRAGMENT_DIR="${NFTBAN_FRAGMENT_DIR:-/var/lib/nftban/rules.d}"
+# Fragment directory - use /etc/nftban/rules.d for SELinux compatibility
+# (nft with iptables_exec_t context can read etc_t but not var_lib_t)
+NFTBAN_FRAGMENT_DIR="${NFTBAN_FRAGMENT_DIR:-/etc/nftban/rules.d}"
 
 # =============================================================================
 # CORE FUNCTIONS
