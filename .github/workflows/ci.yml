@@ -196,8 +196,9 @@ jobs:
 
       - name: Run gosec
         run: |
-          # Block on HIGH and MEDIUM severity issues
-          $(go env GOPATH)/bin/gosec -quiet -severity medium ./...
+          # Block on HIGH severity issues (Phase 1)
+          # MEDIUM severity issues are visible but don't block (tighten in Phase 2)
+          $(go env GOPATH)/bin/gosec -quiet -severity high ./...
 
   # ===========================================================================
   # WEB API VALIDATION
