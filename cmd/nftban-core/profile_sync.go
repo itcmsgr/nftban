@@ -4,7 +4,9 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	_ "net/http/pprof"
+	// #nosec G108 - pprof is intentionally enabled for profiling sync operations
+	// Only runs with 'nftban profile-sync' command and binds to localhost:6060
+	_ "net/http/pprof" // #nosec G108 - Enable pprof for sync performance profiling
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/blacklist"

@@ -28,7 +28,9 @@ import (
 	"log"
 	"net"
 	"net/http"
-	_ "net/http/pprof" // Enable pprof endpoints
+	// #nosec G108 - pprof is intentionally enabled for performance debugging
+	// Only accessible via --profile flag and bound to localhost (127.0.0.1:6060)
+	_ "net/http/pprof" // #nosec G108 - Enable pprof endpoints (localhost only, behind --profile flag)
 	"os"
 	"os/signal"
 	"os/user"

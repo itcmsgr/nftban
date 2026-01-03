@@ -104,6 +104,10 @@ func mergeCIDRsIPv4WithStats(cidrs []string) ([]string, *MergeStats, error) {
 		start := ipToUint32(ipNet.IP)
 		// Calculate end: broadcast address of the network
 		ones, bits := ipNet.Mask.Size()
+		// Safe conversion: ensure bits >= ones before converting to uint32
+		if bits < ones {
+			return nil, nil, fmt.Errorf("invalid mask: bits(%d) < ones(%d)", bits, ones)
+		}
 		hostBits := uint32(bits - ones)
 		end := start + (1 << hostBits) - 1
 
@@ -177,6 +181,10 @@ func mergeCIDRsIPv6WithStats(cidrs []string) ([]string, *MergeStats, error) {
 		// Calculate end address
 		ones, bits := ipNet.Mask.Size()
 		hostBits := bits - ones
+		// Safe conversion: ensure hostBits is non-negative before converting to uint
+		if hostBits < 0 {
+			return nil, nil, fmt.Errorf("invalid mask: bits(%d) < ones(%d)", bits, ones)
+		}
 
 		// end = start + (2^hostBits - 1)
 		hostCount := new(big.Int).Lsh(big.NewInt(1), uint(hostBits))
@@ -336,11 +344,18 @@ func rangeToCIDRsIPv6(start, end *big.Int) []string {
 		rangeSize := new(big.Int).Sub(end, current)
 		rangeSize.Add(rangeSize, one) // +1 because range is inclusive
 
+		// Safe conversion: maxPrefixLen should always be >= 0 (starts at 128, decreases)
+		if maxPrefixLen < 0 {
+			maxPrefixLen = 0
+		}
 		blockSize := new(big.Int).Lsh(one, uint(maxPrefixLen))
 
 		// Don't exceed remaining range
 		for blockSize.Cmp(rangeSize) > 0 && maxPrefixLen > 0 {
 			maxPrefixLen--
+			if maxPrefixLen < 0 {
+				maxPrefixLen = 0
+			}
 			blockSize = new(big.Int).Lsh(one, uint(maxPrefixLen))
 		}
 

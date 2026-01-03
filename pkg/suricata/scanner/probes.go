@@ -95,8 +95,10 @@ func probeHTTP(host string, port int, service *Service) bool {
 // probeHTTPS attempts TLS handshake to verify HTTPS
 func probeHTTPS(host string, port int, service *Service) bool {
 	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	// #nosec G402 - InsecureSkipVerify is intentional for service detection probes
+	// This function only checks if TLS handshake succeeds, not certificate validity
 	config := &tls.Config{
-		InsecureSkipVerify: true,
+		InsecureSkipVerify: true, // #nosec G402
 	}
 
 	conn, err := tls.DialWithDialer(
