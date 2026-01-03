@@ -182,6 +182,15 @@ jobs:
       - name: Run tests (including IPC integration tests)
         run: go test -race -v ./...
 
+      - name: Coverage threshold (total)
+        run: |
+          set -euo pipefail
+          go test ./... -coverprofile=coverage.out
+          total=$(go tool cover -func=coverage.out | awk '/^total:/ {gsub(/%/,"",$3); print $3}')
+          echo "Total coverage: ${total}%"
+          # 60% threshold
+          awk -v t="$total" 'BEGIN { exit !(t >= 60.0) }' || (echo "Coverage ${total}% is below 60%" && exit 1)
+
       - name: Install staticcheck
         run: go install honnef.co/go/tools/cmd/staticcheck@latest
 
@@ -237,6 +246,32 @@ jobs:
           test -d cli/lib/nftban/cli || { echo "FAIL: cli/ missing"; exit 1; }
           test -d cli/lib/nftban/lib || { echo "FAIL: lib/ missing"; exit 1; }
           echo "✓ CLI structure valid"
+
+  # ===========================================================================
+  # SMOKE / INTEGRATION TESTS (Phase 2)
+  # ===========================================================================
+  smoke-tests:
+    name: Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [build-verify]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.22'
+          cache: true
+
+      - name: Build binaries (for smoke tests)
+        run: |
+          # Rebuild locally in this job to keep it self-contained
+          go build -v -o /tmp/nftban-core ./cmd/nftban-core
+          go build -v -o /tmp/nftband ./cmd/nftband
+          go build -v -o /tmp/nftban-api ./cmd/nftban-api
+
+      - name: Run smoke tests
+        run: |
+          bash ./scripts/ci/smoke.sh
 
   # ===========================================================================
   # DOCUMENTATION VALIDATION
@@ -318,7 +353,7 @@ jobs:
   ci-summary:
     name: CI Summary
     runs-on: ubuntu-latest
-    needs: [architecture-check, bash-check, go-check, build-verify, documentation-check]
+    needs: [architecture-check, bash-check, go-check, build-verify, smoke-tests, documentation-check]
     if: always()
     steps:
       - name: Generate summary
@@ -331,4 +366,5 @@ jobs:
           echo "| Bash Validation | ${{ needs.bash-check.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Go Validation | ${{ needs.go-check.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Build Verification | ${{ needs.build-verify.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Smoke Tests | ${{ needs.smoke-tests.result }} |" >> $GITHUB_STEP_SUMMARY
           echo "| Documentation Validation | ${{ needs.documentation-check.result }} |" >> $GITHUB_STEP_SUMMARY
