@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -105,8 +106,8 @@ func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 	fmt.Printf("  ✅ Database Type: %s\n", metadata.DatabaseType)
 	// Safe conversion: BuildEpoch is uint, check bounds before converting to int64
 	buildEpoch := int64(metadata.BuildEpoch)
-	if metadata.BuildEpoch > uint(^int64(0)>>1) {
-		buildEpoch = ^int64(0) >> 1 // Cap at max int64
+	if metadata.BuildEpoch > math.MaxInt64 {
+		buildEpoch = math.MaxInt64 // Cap at max int64
 	}
 	fmt.Printf("  ✅ Build Date: %s\n", time.Unix(buildEpoch, 0).Format("2006-01-02"))
 	fmt.Printf("  ✅ Description: %s\n", metadata.Description["en"])
@@ -200,8 +201,8 @@ func cmdGeoipStatus(cfg *nftbanconf.Config) error {
 	fmt.Printf("  Type: %s\n", metadata.DatabaseType)
 	// Safe conversion: BuildEpoch is uint, check bounds before converting to int64
 	buildEpoch := int64(metadata.BuildEpoch)
-	if metadata.BuildEpoch > uint(^int64(0)>>1) {
-		buildEpoch = ^int64(0) >> 1 // Cap at max int64
+	if metadata.BuildEpoch > math.MaxInt64 {
+		buildEpoch = math.MaxInt64 // Cap at max int64
 	}
 	fmt.Printf("  Build Date: %s\n", time.Unix(buildEpoch, 0).Format("2006-01-02"))
 	fmt.Printf("  Description: %s\n", metadata.Description["en"])
