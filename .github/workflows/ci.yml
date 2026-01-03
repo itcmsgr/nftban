@@ -262,6 +262,11 @@ jobs:
           go-version: '1.22'
           cache: true
 
+      - name: Install system deps (PAM headers)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpam0g-dev
+
       - name: Build binaries (for smoke tests)
         run: |
           # Rebuild locally in this job to keep it self-contained

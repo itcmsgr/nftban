@@ -1,6 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Trap to guarantee cleanup even if script exits early
+API_PID=""
+cleanup() {
+  if [[ -n "${API_PID}" ]] && ps -p "${API_PID}" > /dev/null 2>&1; then
+    echo "[smoke] Cleaning up API process ${API_PID}..."
+    kill "${API_PID}" 2>/dev/null || true
+    wait "${API_PID}" 2>/dev/null || true
+  fi
+}
+trap cleanup EXIT
+
 echo "[smoke] starting"
 
 # Ensure expected binaries exist
@@ -38,25 +49,20 @@ API_PID=$!
 # Give it a moment to attempt binding
 sleep 2
 
-# Check if process is still running (may have exited due to missing TLS certs, that's OK)
-# What matters is it didn't panic during argument parsing or port binding
-if ps -p ${API_PID} > /dev/null 2>&1; then
-  echo "[smoke] nftban-api started successfully (PID: ${API_PID})"
-  kill ${API_PID} 2>/dev/null || true
-  wait ${API_PID} 2>/dev/null || true
-elif grep -qiE "(panic|fatal error)" /tmp/nftban-api.log; then
-  echo "[smoke] FAIL: nftban-api panicked on startup"
+# Check for fatal errors: panics, bind failures, listen failures
+if grep -qiE "(panic|fatal error|address already in use|permission denied|cannot assign requested address|listen tcp.*failed)" /tmp/nftban-api.log; then
+  echo "[smoke] FAIL: nftban-api encountered fatal error on startup"
   cat /tmp/nftban-api.log
   exit 1
+fi
+
+# Check if process is still running (may have exited due to missing TLS certs, that's OK)
+if ps -p ${API_PID} > /dev/null 2>&1; then
+  echo "[smoke] nftban-api started successfully (PID: ${API_PID})"
+  # Cleanup will happen via trap
 else
-  # Process exited (likely due to missing TLS certs), but check it wasn't a panic
-  echo "[smoke] nftban-api exited (expected without TLS certs, checking for panic...)"
-  if grep -qiE "panic" /tmp/nftban-api.log; then
-    echo "[smoke] FAIL: Found panic in logs"
-    cat /tmp/nftban-api.log
-    exit 1
-  fi
-  echo "[smoke] nftban-api exited cleanly (no panic detected)"
+  # Process exited - as long as no fatal errors detected above, this is acceptable
+  echo "[smoke] nftban-api exited cleanly (expected without TLS certs, no fatal errors detected)"
 fi
 
 echo "[smoke] OK"
