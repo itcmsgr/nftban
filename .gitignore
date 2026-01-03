@@ -67,3 +67,7 @@ GeoLite2-*.mmdb
 !/etc/nftban/*.conf.example
 bin/
 dist/
+
+# Repomix analysis files
+repomix*.json
+repomix*.xml
