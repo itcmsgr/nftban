@@ -49,8 +49,9 @@ API_PID=$!
 # Give it a moment to attempt binding
 sleep 2
 
-# Check for fatal errors: panics, bind failures, listen failures
-if grep -qiE "(panic|fatal error|address already in use|permission denied|cannot assign requested address|listen tcp.*failed)" /tmp/nftban-api.log; then
+# Check for fatal errors: panics, bind failures, listen failures, runtime errors
+# Note: Missing TLS cert/key is treated as non-fatal (expected in CI)
+if grep -qiE "(panic|fatal error|bind:|address already in use|permission denied|cannot assign requested address|listen tcp.*failed|error while loading shared libraries)" /tmp/nftban-api.log; then
   echo "[smoke] FAIL: nftban-api encountered fatal error on startup"
   cat /tmp/nftban-api.log
   exit 1
