@@ -108,7 +108,7 @@ func mergeCIDRsIPv4WithStats(cidrs []string) ([]string, *MergeStats, error) {
 		if bits < ones {
 			return nil, nil, fmt.Errorf("invalid mask: bits(%d) < ones(%d)", bits, ones)
 		}
-		hostBits := uint32(bits - ones)
+		hostBits := uint32(bits - ones) // #nosec G115 - validated bits >= ones above
 		end := start + (1 << hostBits) - 1
 
 		intervals = append(intervals, ipv4Interval{Start: start, End: end})
@@ -348,7 +348,7 @@ func rangeToCIDRsIPv6(start, end *big.Int) []string {
 		if maxPrefixLen < 0 {
 			maxPrefixLen = 0
 		}
-		blockSize := new(big.Int).Lsh(one, uint(maxPrefixLen))
+		blockSize := new(big.Int).Lsh(one, uint(maxPrefixLen)) // #nosec G115 - validated maxPrefixLen >= 0 above
 
 		// Don't exceed remaining range
 		for blockSize.Cmp(rangeSize) > 0 && maxPrefixLen > 0 {
@@ -356,7 +356,7 @@ func rangeToCIDRsIPv6(start, end *big.Int) []string {
 			if maxPrefixLen < 0 {
 				maxPrefixLen = 0
 			}
-			blockSize = new(big.Int).Lsh(one, uint(maxPrefixLen))
+			blockSize = new(big.Int).Lsh(one, uint(maxPrefixLen)) // #nosec G115 - validated maxPrefixLen >= 0 above
 		}
 
 		// Create CIDR
