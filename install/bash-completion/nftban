@@ -20,7 +20,7 @@ _nftban() {
     # MONITORING: gui metrics stats report fhs module services timers mail
     # DEBUG: debug smoke emulate setup menu
 
-    local commands="status health validate config sync version help firewall ban unban list check search whitelist whitelist-system profile panel permissions ddos portscan login feeds trust country cloudflare geoban geoip gui metrics stats report fhs module services timers mail debug smoke emulate setup menu nftables port system test wizard watchdog"
+    local commands="status health validate config sync version help firewall ban unban list check search whitelist whitelist-system profile panel permissions ddos portscan login feeds trust country cloudflare geoban geoip gui metrics stats report fhs module services timers mail debug smoke emulate setup menu nftables port system test wizard watchdog flush"
 
     # ==========================================================================
     # SUBCOMMANDS FOR EACH MAIN COMMAND
@@ -87,6 +87,9 @@ _nftban() {
 
     # Watchdog (System Resource Monitoring)
     local watchdog_cmds="status check report history enable disable --json help"
+
+    # Emergency/Recovery
+    local flush_cmds="blacklist whitelist feeds geoban ddos all --yes --dry-run help"
 
     # Global options available for most commands
     local global_opts="--json --help --version -h"
@@ -252,6 +255,11 @@ _nftban() {
                 # Watchdog
                 watchdog)
                     COMPREPLY=($(compgen -W "${watchdog_cmds}" -- "${cur}"))
+                    ;;
+
+                # Emergency/Recovery
+                flush)
+                    COMPREPLY=($(compgen -W "${flush_cmds}" -- "${cur}"))
                     ;;
 
                 # Fallback

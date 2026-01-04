@@ -127,6 +127,13 @@ EOF
 EOF
   echo
 
+  printf "%sEMERGENCY & RECOVERY:%s\n" "$bold" "$reset"
+  cat <<'EOF'
+  flush            Flush IPs from nftables (blacklist, feeds, geoban, all)
+                   SOS mode: flush all + restore system whitelist
+EOF
+  echo
+
   printf "%sBANNER & HEALTH INDICATOR:%s\n" "$bold" "$reset"
   cat <<'EOF'
   The CLI banner displays a health indicator showing system status:
