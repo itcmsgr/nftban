@@ -96,6 +96,26 @@ func Login(format string, args ...any) {
 	log.Printf("[LOGIN] "+format, args...)
 }
 
+// Watchdog logs dynamic watchdog events (pressure, mode changes, actions)
+func Watchdog(format string, args ...any) {
+	log.Printf("[WATCHDOG] "+format, args...)
+}
+
+// Daemon logs daemon lifecycle events
+func Daemon(format string, args ...any) {
+	log.Printf("[DAEMON] "+format, args...)
+}
+
+// IPC logs inter-process communication events
+func IPC(format string, args ...any) {
+	log.Printf("[IPC] "+format, args...)
+}
+
+// Module logs module lifecycle events
+func Module(format string, args ...any) {
+	log.Printf("[MODULE] "+format, args...)
+}
+
 // =============================================================================
 // Severity-based Logging
 // =============================================================================
@@ -137,6 +157,26 @@ func SecurityWarn(format string, args ...any) {
 // FirewallError logs firewall errors
 func FirewallError(format string, args ...any) {
 	log.Printf("[FIREWALL][ERROR] "+format, args...)
+}
+
+// WatchdogWarn logs watchdog warnings (pressure threshold breaches)
+func WatchdogWarn(format string, args ...any) {
+	log.Printf("[WATCHDOG][WARN] "+format, args...)
+}
+
+// WatchdogError logs watchdog errors
+func WatchdogError(format string, args ...any) {
+	log.Printf("[WATCHDOG][ERROR] "+format, args...)
+}
+
+// WatchdogCritical logs watchdog critical events (mode transitions to SURVIVAL)
+func WatchdogCritical(format string, args ...any) {
+	log.Printf("[WATCHDOG][CRITICAL] "+format, args...)
+}
+
+// DaemonError logs daemon errors
+func DaemonError(format string, args ...any) {
+	log.Printf("[DAEMON][ERROR] "+format, args...)
 }
 
 // =============================================================================

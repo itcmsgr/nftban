@@ -55,6 +55,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/runtime"
 	"github.com/itcmsgr/nftban/pkg/stats"
 	"github.com/itcmsgr/nftban/pkg/sync"
+	"github.com/itcmsgr/nftban/pkg/watchdog"
 	"golang.org/x/sys/unix"
 )
 
@@ -102,6 +103,8 @@ type Daemon struct {
 	registry  *module.Registry
 	backend   *nftbackend.Backend // AUTHORITATIVE nft writer
 	stats     *stats.Collector    // Runtime stats collector
+	watchdog  *watchdog.Watchdog  // Dynamic watchdog
+	wdMetrics *watchdog.MetricsExporter // Watchdog metrics exporter
 	ctx       context.Context
 	cancel    context.CancelFunc
 	socketLn  net.Listener
@@ -131,10 +134,41 @@ func main() {
 		stats:    stats.NewCollector(stats.DefaultConfig()),
 	}
 
+	// Initialize dynamic watchdog
+	if err := d.initWatchdog(); err != nil {
+		log.Printf("Warning: watchdog init failed: %v (continuing without watchdog)", err)
+	}
+
 	// Run
 	if err := d.Run(); err != nil {
 		log.Fatalf("Daemon error: %v", err)
 	}
+}
+
+// initWatchdog initializes the dynamic watchdog
+func (d *Daemon) initWatchdog() error {
+	// Load watchdog configuration
+	cfg := watchdog.LoadConfig("")
+
+	// Create runtime controls
+	controls := watchdog.NewRuntimeControls()
+
+	// Create watchdog
+	wd, err := watchdog.New(cfg, controls)
+	if err != nil {
+		return err
+	}
+
+	// Create metrics exporter
+	d.wdMetrics = watchdog.NewMetricsExporter()
+
+	// Wire up metrics callback
+	wd.SetOnMetrics(func(snapshot *watchdog.Snapshot, state *watchdog.PressureState) {
+		d.wdMetrics.Update(snapshot, state)
+	})
+
+	d.watchdog = wd
+	return nil
 }
 
 func printHelp() {
@@ -231,6 +265,12 @@ func (d *Daemon) Run() error {
 	// Start stats collector (respects enabled flag - no work if disabled)
 	log.Println("Starting stats collector...")
 	d.stats.Start(d.ctx)
+
+	// Start dynamic watchdog
+	if d.watchdog != nil {
+		log.Println("Starting dynamic watchdog...")
+		go d.watchdog.Run(d.ctx)
+	}
 
 	// Publish startup event
 	d.bus.Publish(eventbus.NewEvent(eventbus.EventModuleStart, "nftband").
@@ -532,11 +572,153 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 		return d.handleSnapshotProfileRequest(req.Params)
 	case "ping":
 		return SocketResponse{Success: true, Data: "pong"}
+	case "watchdog_status":
+		return d.handleWatchdogStatusRequest()
+	case "watchdog_pressure":
+		return d.handleWatchdogPressureRequest()
+	case "watchdog_events":
+		return d.handleWatchdogEventsRequest(req.Params)
 	default:
 		return SocketResponse{
 			Success: false,
 			Error:   "unknown method: " + req.Method,
 		}
+	}
+}
+
+// =============================================================================
+// WATCHDOG IPC HANDLERS
+// =============================================================================
+
+// handleWatchdogStatusRequest returns watchdog status
+func (d *Daemon) handleWatchdogStatusRequest() SocketResponse {
+	if d.watchdog == nil {
+		return SocketResponse{
+			Success: false,
+			Error:   "watchdog not initialized",
+		}
+	}
+
+	state := d.watchdog.GetState()
+	snapshot := d.watchdog.GetSnapshot()
+
+	data := map[string]any{
+		"running": d.watchdog.IsRunning(),
+		"mode":    string(state.Mode),
+		"mode_duration_seconds": state.ModeDuration.Seconds(),
+	}
+
+	// Add per-dimension info
+	dimensions := make(map[string]any)
+	for dim, score := range state.Scores {
+		dimensions[string(dim)] = map[string]any{
+			"score": score,
+			"level": string(state.Levels[dim]),
+		}
+	}
+	data["dimensions"] = dimensions
+
+	// Add key metrics if snapshot available
+	if snapshot != nil {
+		data["metrics"] = map[string]any{
+			"rss_bytes":             snapshot.Process.RSS,
+			"cpu_percent":           snapshot.Process.CPUPct,
+			"goroutines":            snapshot.Runtime.Goroutines,
+			"heap_alloc_bytes":      snapshot.Runtime.HeapAlloc,
+			"conntrack_utilization": snapshot.Kernel.ConntrackUtilization,
+			"iowait_percent":        snapshot.System.IOWaitPct,
+		}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data:    data,
+	}
+}
+
+// handleWatchdogPressureRequest returns detailed pressure info
+func (d *Daemon) handleWatchdogPressureRequest() SocketResponse {
+	if d.watchdog == nil {
+		return SocketResponse{
+			Success: false,
+			Error:   "watchdog not initialized",
+		}
+	}
+
+	state := d.watchdog.GetState()
+
+	// Build detailed pressure response
+	data := map[string]any{
+		"timestamp": state.Timestamp.Format(time.RFC3339),
+		"mode":      string(state.Mode),
+	}
+
+	dimensions := make(map[string]any)
+	for _, dim := range watchdog.AllDimensions() {
+		dimensions[string(dim)] = map[string]any{
+			"score": state.Scores[dim],
+			"level": string(state.Levels[dim]),
+		}
+	}
+	data["dimensions"] = dimensions
+
+	// Runtime controls
+	controls := d.watchdog.GetControls()
+	data["controls"] = map[string]any{
+		"max_workers":               controls.MaxWorkers.Load(),
+		"expensive_collectors":      controls.EnableExpensiveCollectors.Load(),
+		"nft_ruleset_scan":          controls.EnableNFTRulesetScan.Load(),
+		"sampling_factor":           controls.GetSamplingFactor(),
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data:    data,
+	}
+}
+
+// handleWatchdogEventsRequest returns recent watchdog events
+func (d *Daemon) handleWatchdogEventsRequest(params map[string]any) SocketResponse {
+	if d.watchdog == nil {
+		return SocketResponse{
+			Success: false,
+			Error:   "watchdog not initialized",
+		}
+	}
+
+	count := 20
+	if c, ok := params["count"].(float64); ok && c > 0 {
+		count = int(c)
+		if count > 100 {
+			count = 100
+		}
+	}
+
+	events := d.watchdog.GetRecentEvents(count)
+
+	// Convert to simple format
+	eventList := make([]map[string]any, len(events))
+	for i, e := range events {
+		eventList[i] = map[string]any{
+			"type":      string(e.Type),
+			"timestamp": e.Timestamp.Format(time.RFC3339),
+			"message":   e.Message,
+		}
+		if e.Action != nil {
+			eventList[i]["action"] = string(e.Action.Type)
+		}
+		if e.Dimension != "" {
+			eventList[i]["dimension"] = string(e.Dimension)
+			eventList[i]["score"] = e.Score
+		}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"count":  len(events),
+			"events": eventList,
+		},
 	}
 }
 
