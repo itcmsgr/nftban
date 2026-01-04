@@ -46,6 +46,12 @@ if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_watchdog.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_watchdog.sh"
 fi
 
+# Load pipeline validation library
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh"
+fi
+
 # =============================================================================
 # HELP TEXT
 # =============================================================================
@@ -94,6 +100,22 @@ EXAMPLES:
   nftban watchdog snapshot --type=heap
   nftban watchdog snapshot --type=cpu --duration=30
   nftban watchdog profiles       # List captured profiles
+
+CAPABILITY MODES:
+  LOCAL (always available):
+    - Load, Memory, I/O Wait, Disk monitoring
+    - Alerts to syslog
+    - No external dependencies
+
+  PERFORMANCE (requires metrics pipeline):
+    - All LOCAL features plus:
+    - 7-day historical trends
+    - Prometheus/VictoriaMetrics integration
+    - Remote alerting support
+
+  The watchdog auto-detects capability based on pipeline health.
+  LOCAL mode always enables immediately; PERFORMANCE requires:
+    nftban metrics enable
 
 WHAT WATCHDOG MONITORS:
   - Load Average     (from /proc/loadavg)
@@ -356,9 +378,12 @@ nftban_watchdog_cmd_history() {
 # =============================================================================
 
 nftban_watchdog_cmd_enable() {
-    # Enable watchdog timer
+    # Enable watchdog timer with smart capability detection
+    # LOCAL capability always enables immediately
+    # PERF capability requires metrics pipeline
 
     echo "Enabling NFTBan Watchdog..."
+    echo ""
 
     # Check if timer exists
     if ! systemctl list-unit-files nftban-watchdog.timer >/dev/null 2>&1; then
@@ -366,6 +391,77 @@ nftban_watchdog_cmd_enable() {
         echo "The watchdog timer needs to be installed first."
         return 1
     fi
+
+    # ==========================================================================
+    # CAPABILITY DETECTION
+    # ==========================================================================
+    local capability="local"
+    local pipeline_status=0
+
+    # Check if validation library is loaded
+    if declare -f nftban_detect_watchdog_capability &>/dev/null; then
+        capability=$(nftban_detect_watchdog_capability false)
+        nftban_pipeline_status false
+        pipeline_status=$?
+    fi
+
+    echo "Detected capability: ${capability^^}"
+
+    # ==========================================================================
+    # SMART BEHAVIOR: LOCAL always enables, PERF offers metrics prompt
+    # ==========================================================================
+    if [[ "$capability" == "local" ]]; then
+        # Check if perf deps are available but just not running
+        if declare -f nftban_check_perf_deps_available &>/dev/null; then
+            if nftban_check_perf_deps_available; then
+                # Deps available - suggest enabling metrics
+                echo ""
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "  Performance monitoring available"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo ""
+                echo "  Metrics infrastructure is installed but not running."
+                echo "  Enable it for historical trends and remote alerting:"
+                echo ""
+                echo "    nftban metrics enable"
+                echo ""
+                echo "  Continuing with LOCAL watchdog (always works)..."
+                echo ""
+            else
+                # Deps not installed - single prompt offer
+                echo ""
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "  Optional: Enable performance monitoring"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo ""
+                echo "  LOCAL watchdog provides:"
+                echo "    - Load, Memory, I/O Wait, Disk monitoring"
+                echo "    - Alerts to syslog"
+                echo ""
+                echo "  PERFORMANCE monitoring adds:"
+                echo "    - 7-day historical trends"
+                echo "    - Prometheus/VictoriaMetrics integration"
+                echo "    - Remote alerting support"
+                echo ""
+                echo "  Missing: ${NFTBAN_PERF_DEPS_MISSING[*]:-metrics backend}"
+                echo ""
+                echo "  To enable performance monitoring later:"
+                echo "    nftban metrics enable"
+                echo ""
+                echo "  Continuing with LOCAL watchdog (always works)..."
+                echo ""
+            fi
+        fi
+    else
+        # PERF capability available
+        echo "  Metrics pipeline: $([ $pipeline_status -eq 2 ] && echo "OK" || echo "DEGRADED")"
+        echo ""
+    fi
+
+    # ==========================================================================
+    # ENABLE WATCHDOG (never blocked for LOCAL)
+    # ==========================================================================
+    echo "Enabling watchdog timer..."
 
     # Enable and start the timer
     if systemctl enable nftban-watchdog.timer 2>/dev/null; then
@@ -382,18 +478,27 @@ nftban_watchdog_cmd_enable() {
 
     # Update config file to set ENABLED=true
     local conf_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/watchdog.conf"
+    mkdir -p "$(dirname "$conf_file")" 2>/dev/null || true
     if [[ -f "$conf_file" ]]; then
         if grep -q "^NFTBAN_WATCHDOG_ENABLED=" "$conf_file"; then
             sed -i 's/^NFTBAN_WATCHDOG_ENABLED=.*/NFTBAN_WATCHDOG_ENABLED="true"/' "$conf_file"
         else
             echo 'NFTBAN_WATCHDOG_ENABLED="true"' >> "$conf_file"
         fi
-        echo "  Config updated: $conf_file"
+    else
+        echo 'NFTBAN_WATCHDOG_ENABLED="true"' > "$conf_file"
     fi
+    echo "  Config updated: $conf_file"
 
     echo ""
-    echo "Watchdog enabled. Checks will run every 90 seconds."
-    echo "View status: nftban watchdog status"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "Watchdog enabled (${capability^^} mode)"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  Checks run every 90 seconds"
+    echo "  View status: nftban watchdog status"
+    echo "  Full report: nftban watchdog report"
+    echo ""
 
     # Show timer status
     systemctl status nftban-watchdog.timer --no-pager 2>/dev/null || true

@@ -1066,8 +1066,9 @@ install_configs() {
     mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d,conf.d,distros,suricata}
     mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels}
     mkdir -p /etc/nftban/suricata/{profiles,config,rules,cache}
-    mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,panels}
+    mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,panels,metrics,stats}
     mkdir -p /var/lib/nftban/reports/auditors
+    mkdir -p /var/lib/nftban/stats/{history,profiles}
     mkdir -p /var/log/nftban
     mkdir -p /var/cache/nftban
     mkdir -p /run/nftban

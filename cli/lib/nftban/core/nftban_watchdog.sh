@@ -101,6 +101,12 @@ fi
 : "${NFTBAN_WATCHDOG_METRICS_FILE:=${NFTBAN_DATA_DIR:-/var/lib/nftban}/metrics/watchdog.prom}"
 : "${NFTBAN_WATCHDOG_REPORT_RETENTION:=7}"
 
+# Load pipeline validation library for capability metric
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_pipeline_validation.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_pipeline_validation.sh"
+fi
+
 # Throttle state file
 readonly WATCHDOG_THROTTLE_FILE="${NFTBAN_RUN_DIR:-/run/nftban}/watchdog_throttle"
 
@@ -878,6 +884,16 @@ nftban_watchdog_metrics_export() {
         echo "# HELP nftban_watchdog_last_check_timestamp Last check unix timestamp"
         echo "# TYPE nftban_watchdog_last_check_timestamp gauge"
         echo "nftban_watchdog_last_check_timestamp ${WATCHDOG_RESULTS[check_timestamp]:-$(date +%s)}"
+        echo ""
+
+        # Capability metric (0=local, 1=perf_degraded, 2=perf_full)
+        local capability_value=0
+        if declare -f nftban_get_capability_metric_value &>/dev/null; then
+            capability_value=$(nftban_get_capability_metric_value)
+        fi
+        echo "# HELP nftban_watchdog_capability Watchdog capability level (0=local, 1=perf_degraded, 2=perf_full)"
+        echo "# TYPE nftban_watchdog_capability gauge"
+        echo "nftban_watchdog_capability $capability_value"
     } > "$tmp_file"
 
     # Atomic move

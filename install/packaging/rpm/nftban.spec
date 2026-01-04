@@ -230,6 +230,7 @@ install -d -m 750 -o nftban -g nftban /var/log/nftban/watchdog 2>/dev/null || tr
 install -d -m 750 -o nftban -g nftban /var/lib/nftban/stats 2>/dev/null || true
 install -d -m 750 -o nftban -g nftban /var/lib/nftban/stats/history 2>/dev/null || true
 install -d -m 750 -o nftban -g nftban /var/lib/nftban/stats/profiles 2>/dev/null || true
+install -d -m 750 -o nftban -g nftban /var/lib/nftban/metrics 2>/dev/null || true
 
 # Auto-detect SSH port
 SSH_PORT="22"

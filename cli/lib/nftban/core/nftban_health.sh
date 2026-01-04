@@ -1605,6 +1605,20 @@ nftban_health_check_metrics() {
         status=$HEALTH_ERROR
     fi
 
+    # Check pipeline validation library (watchdog capability detection)
+    if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh" ]]; then
+        metrics_issues+=("✓ Pipeline validation library: Installed")
+        # Test if it can be sourced
+        if bash -n "${NFTBAN_LIB_DIR}/lib/nftban_pipeline_validation.sh" 2>/dev/null; then
+            metrics_issues+=("✓ Pipeline validation library: Syntax OK")
+        else
+            metrics_issues+=("Pipeline validation library has syntax errors")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    else
+        metrics_issues+=("ℹ️ Pipeline validation library not installed (optional for watchdog)")
+    fi
+
     # Check if metrics file exists and is recent (PRIMARY CHECK)
     local metrics_file="/var/lib/node_exporter/textfile_collector/nftban.prom"
     if [[ -f "$metrics_file" ]]; then
