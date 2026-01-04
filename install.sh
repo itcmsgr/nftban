@@ -660,8 +660,6 @@ download_geoip_database() {
     log "Downloading FREE GeoIP database..."
 
     local geoip_dir="/var/lib/nftban/geoip"
-    # Check for any supported database file
-    local db_file="${geoip_dir}/dbip-country-lite.mmdb"
 
     mkdir -p "$geoip_dir"
     chown nftban:nftban "$geoip_dir" 2>/dev/null || true
