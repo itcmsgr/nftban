@@ -194,6 +194,8 @@ nftban_complete() {
         echo "test"
         echo "emulate"
         echo "explain"
+        # EMERGENCY/RECOVERY
+        echo "flush"
         return 0
     fi
 
@@ -423,6 +425,17 @@ nftban_complete() {
                 echo "enable-category"
                 echo "update"
                 echo "status"
+                echo "help"
+                ;;
+            flush)
+                echo "blacklist"
+                echo "whitelist"
+                echo "feeds"
+                echo "geoban"
+                echo "ddos"
+                echo "all"
+                echo "--yes"
+                echo "--dry-run"
                 echo "help"
                 ;;
             trust)
