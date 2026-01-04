@@ -696,6 +696,7 @@ _nftban_flush_main() {
     # Parse options
     local skip_confirm=false
     local dry_run=false
+    # shellcheck disable=SC2034  # Reserved for future JSON output support
     local json_mode=false
 
     while [[ $# -gt 0 ]]; do
