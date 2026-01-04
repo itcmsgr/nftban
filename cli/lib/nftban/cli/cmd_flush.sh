@@ -142,10 +142,17 @@ _count_file_ips() {
     echo "$count"
 }
 
-# Read system whitelist IPs for restoration
-_get_system_whitelist_ips() {
-    local ips_v4=()
-    local ips_v6=()
+# Restore system whitelist after flush
+_restore_system_whitelist() {
+    local dry_run="${1:-false}"
+
+    echo "Restoring system whitelist (anti-lockout)..."
+
+    # Collect IPv4 and IPv6 IPs
+    local ips_v4=""
+    local ips_v6=""
+    local count_v4=0
+    local count_v6=0
 
     # Read from system whitelist file
     if [[ -f "$NFTBAN_SYSTEM_WHITELIST" ]]; then
@@ -154,35 +161,24 @@ _get_system_whitelist_ips() {
             [[ "$line" =~ ^#.* ]] && continue
 
             if [[ "$line" =~ : ]]; then
-                ips_v6+=("$line")
+                [[ -n "$ips_v6" ]] && ips_v6+=","
+                ips_v6+="$line"
+                ((count_v6++))
             else
-                ips_v4+=("$line")
+                [[ -n "$ips_v4" ]] && ips_v4+=","
+                ips_v4+="$line"
+                ((count_v4++))
             fi
         done < "$NFTBAN_SYSTEM_WHITELIST"
     fi
 
     # Also add current SSH source IP (anti-lockout)
     local ssh_ip="${SSH_CLIENT%% *}"
-    if [[ -n "$ssh_ip" ]] && [[ ! " ${ips_v4[*]} " =~ " $ssh_ip " ]]; then
-        ips_v4+=("$ssh_ip")
+    if [[ -n "$ssh_ip" ]] && [[ ! "$ips_v4" =~ $ssh_ip ]]; then
+        [[ -n "$ips_v4" ]] && ips_v4+=","
+        ips_v4+="$ssh_ip"
+        ((count_v4++))
     fi
-
-    echo "V4:${ips_v4[*]}"
-    echo "V6:${ips_v6[*]}"
-}
-
-# Restore system whitelist after flush
-_restore_system_whitelist() {
-    local dry_run="${1:-false}"
-
-    echo "Restoring system whitelist (anti-lockout)..."
-
-    local system_ips
-    system_ips=$(_get_system_whitelist_ips)
-
-    local ips_v4="${system_ips#*V4:}"
-    ips_v4="${ips_v4%%$'\n'*}"
-    local ips_v6="${system_ips#*V6:}"
 
     if [[ "$dry_run" == "true" ]]; then
         echo "  [DRY-RUN] Would restore IPv4: $ips_v4"
@@ -192,16 +188,14 @@ _restore_system_whitelist() {
 
     # Add IPv4 system IPs back
     if [[ -n "$ips_v4" ]]; then
-        local ip_list="${ips_v4// /, }"
-        nft add element $NFTBAN_TABLE_IPV4 whitelist_ipv4 "{ $ip_list }" 2>/dev/null || true
-        echo "  Restored ${#ips_v4[@]} IPv4 system IPs"
+        nft add element $NFTBAN_TABLE_IPV4 whitelist_ipv4 "{ $ips_v4 }" 2>/dev/null || true
+        echo "  Restored $count_v4 IPv4 system IPs"
     fi
 
     # Add IPv6 system IPs back
     if [[ -n "$ips_v6" ]]; then
-        local ip_list="${ips_v6// /, }"
-        nft add element $NFTBAN_TABLE_IPV6 whitelist_ipv6 "{ $ip_list }" 2>/dev/null || true
-        echo "  Restored ${#ips_v6[@]} IPv6 system IPs"
+        nft add element $NFTBAN_TABLE_IPV6 whitelist_ipv6 "{ $ips_v6 }" 2>/dev/null || true
+        echo "  Restored $count_v6 IPv6 system IPs"
     fi
 }
 
@@ -708,6 +702,7 @@ _nftban_flush_main() {
                 dry_run=true
                 ;;
             --json)
+                # shellcheck disable=SC2034  # Reserved for future JSON output
                 json_mode=true
                 ;;
             --help|-h)
