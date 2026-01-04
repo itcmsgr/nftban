@@ -1,6 +1,7 @@
 package main
 
 import (
+	"compress/gzip"
 	"fmt"
 	"io"
 	"net/http"
@@ -40,16 +41,22 @@ func cmdGeoip(action string, cfg *nftbanconf.Config) error {
 	}
 }
 
-// cmdGeoipUpdate downloads the latest GeoLite2-City database
+// cmdGeoipUpdate downloads the latest GeoIP Country database
+// Default: DB-IP Lite (free, no registration required, CC BY 4.0)
+// Alternative: MaxMind GeoLite2 (requires free account + license key)
 func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 	fmt.Println(version.BannerWithEmoji("🌍", "GeoIP Database Update"))
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 
 	dbDir := getGeoipDir(cfg)
-	dbFile := filepath.Join(dbDir, "GeoLite2-City.mmdb")
-	dbBackup := filepath.Join(dbDir, "GeoLite2-City.mmdb.backup")
-	dbURL := "https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"
+	dbFile := filepath.Join(dbDir, "dbip-country-lite.mmdb")
+	dbBackup := filepath.Join(dbDir, "dbip-country-lite.mmdb.backup")
+
+	// DB-IP Lite: Free, no registration, CC BY 4.0 license
+	// URL format: https://download.db-ip.com/free/dbip-country-lite-YYYY-MM.mmdb.gz
+	currentMonth := time.Now().Format("2006-01")
+	dbURL := fmt.Sprintf("https://download.db-ip.com/free/dbip-country-lite-%s.mmdb.gz", currentMonth)
 
 	// Step 1: Ensure directory exists
 	fmt.Println("Step 1: Preparing database directory...")
@@ -72,12 +79,12 @@ func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 	fmt.Println()
 
 	// Step 3: Download new database
-	fmt.Println("Step 3: Downloading GeoLite2-City database...")
+	fmt.Println("Step 3: Downloading DB-IP Country Lite database...")
 	fmt.Printf("  Source: %s\n", dbURL)
-	fmt.Println("  This may take a minute (~61MB download)...")
+	fmt.Println("  This may take a moment (~7MB download)...")
 	fmt.Println()
 
-	if err := downloadFile(dbURL, dbFile); err != nil {
+	if err := downloadAndDecompressGzip(dbURL, dbFile); err != nil {
 		// Restore backup if exists
 		if _, statErr := os.Stat(dbBackup); statErr == nil {
 			fmt.Println("  ❌ Download failed, restoring backup...")
@@ -151,26 +158,41 @@ func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 }
 
 // cmdGeoipStatus shows the current status of the GeoIP database
+// Supports both DB-IP Country Lite and MaxMind GeoLite2-City databases
 func cmdGeoipStatus(cfg *nftbanconf.Config) error {
 	fmt.Println(version.BannerWithEmoji("🌍", "GeoIP Database Status"))
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 
-	dbFile := getGeoipDir(cfg) + "/GeoLite2-City.mmdb"
+	dbDir := getGeoipDir(cfg)
 
-	// Check if database exists
-	fileInfo, err := os.Stat(dbFile)
-	if err != nil {
-		if os.IsNotExist(err) {
-			fmt.Println("❌ Database: NOT FOUND")
-			fmt.Printf("   Path: %s\n", dbFile)
-			fmt.Println()
-			fmt.Println("To install the database:")
-			fmt.Println("  nftban-core geoip update")
-			fmt.Println()
-			return fmt.Errorf("database not found")
+	// Try databases in order of preference
+	dbFiles := []string{
+		dbDir + "/dbip-country-lite.mmdb",  // Default: DB-IP Country
+		dbDir + "/GeoLite2-City.mmdb",      // Legacy: MaxMind City
+		dbDir + "/GeoLite2-Country.mmdb",   // Legacy: MaxMind Country
+	}
+
+	var dbFile string
+	var fileInfo os.FileInfo
+	var err error
+
+	for _, f := range dbFiles {
+		fileInfo, err = os.Stat(f)
+		if err == nil {
+			dbFile = f
+			break
 		}
-		return fmt.Errorf("failed to stat database: %w", err)
+	}
+
+	if dbFile == "" {
+		fmt.Println("❌ Database: NOT FOUND")
+		fmt.Printf("   Checked: %v\n", dbFiles)
+		fmt.Println()
+		fmt.Println("To install the database:")
+		fmt.Println("  nftban-core geoip update")
+		fmt.Println()
+		return fmt.Errorf("database not found")
 	}
 
 	fmt.Println("✅ Database: FOUND")
@@ -313,17 +335,39 @@ func downloadFile(url, filepath string) error {
 }
 
 // cmdGeoipLookup performs IP→Country lookup
+// Supports both DB-IP Country Lite and MaxMind GeoLite2-City databases
 func cmdGeoipLookup(cfg *nftbanconf.Config, ipStr string, jsonOutput bool) error {
-	dbFile := getGeoipDir(cfg) + "/GeoLite2-City.mmdb"
+	dbDir := getGeoipDir(cfg)
 
-	// Open database
-	db, err := maxminddb.Open(dbFile)
-	if err != nil {
-		return fmt.Errorf("failed to open GeoIP database: %w\nDatabase path: %s\nRun: nftban-core geoip update", err, dbFile)
+	// Try databases in order of preference
+	dbFiles := []string{
+		dbDir + "/dbip-country-lite.mmdb",  // Default: DB-IP Country
+		dbDir + "/GeoLite2-City.mmdb",      // Legacy: MaxMind City
+		dbDir + "/GeoLite2-Country.mmdb",   // Legacy: MaxMind Country
+	}
+
+	var db *maxminddb.Reader
+	var dbFile string
+	var err error
+
+	for _, f := range dbFiles {
+		db, err = maxminddb.Open(f)
+		if err == nil {
+			dbFile = f
+			break
+		}
+	}
+
+	if db == nil {
+		return fmt.Errorf("failed to open GeoIP database\nTried: %v\nRun: nftban-core geoip update", dbFiles)
 	}
 	defer db.Close()
 
-	// Lookup IP
+	// Check database type to determine available fields
+	dbType := db.Metadata.DatabaseType
+	hasCity := strings.Contains(dbType, "City")
+
+	// Lookup IP with full record structure (works for both Country and City)
 	var record struct {
 		Country struct {
 			ISOCode string            `maxminddb:"iso_code"`
@@ -355,28 +399,37 @@ func cmdGeoipLookup(cfg *nftbanconf.Config, ipStr string, jsonOutput bool) error
 		countryName = "Unknown"
 	}
 
-	cityName := record.City.Names["en"]
-	if cityName == "" {
-		cityName = "Unknown"
-	}
-
-	timezone := record.Location.TimeZone
-	if timezone == "" {
-		timezone = "Unknown"
-	}
-
-	latitude := record.Location.Latitude
-	longitude := record.Location.Longitude
-
 	// Output format
 	if jsonOutput {
 		// JSON format for GUI/API
-		fmt.Printf(`{"ip":"%s","country_code":"%s","country_name":"%s","city":"%s","timezone":"%s","latitude":%f,"longitude":%f}`,
-			ipStr, countryCode, countryName, cityName, timezone, latitude, longitude)
+		if hasCity {
+			cityName := record.City.Names["en"]
+			if cityName == "" {
+				cityName = "Unknown"
+			}
+			timezone := record.Location.TimeZone
+			if timezone == "" {
+				timezone = "Unknown"
+			}
+			fmt.Printf(`{"ip":"%s","country_code":"%s","country_name":"%s","city":"%s","timezone":"%s","latitude":%f,"longitude":%f,"database":"%s"}`,
+				ipStr, countryCode, countryName, cityName, timezone,
+				record.Location.Latitude, record.Location.Longitude, filepath.Base(dbFile))
+		} else {
+			fmt.Printf(`{"ip":"%s","country_code":"%s","country_name":"%s","database":"%s"}`,
+				ipStr, countryCode, countryName, filepath.Base(dbFile))
+		}
 		fmt.Println()
 	} else {
-		// Compact format for shell scripts: CC/City/Timezone
-		fmt.Printf("%s/%s/%s\n", countryCode, cityName, timezone)
+		// Compact format for shell scripts
+		if hasCity {
+			cityName := record.City.Names["en"]
+			if cityName == "" {
+				cityName = "Unknown"
+			}
+			fmt.Printf("%s/%s/%s\n", countryCode, cityName, record.Location.TimeZone)
+		} else {
+			fmt.Printf("%s/%s\n", countryCode, countryName)
+		}
 	}
 
 	return nil
@@ -398,4 +451,93 @@ func copyFile(src, dst string) error {
 
 	_, err = io.Copy(destFile, sourceFile)
 	return err
+}
+
+// downloadAndDecompressGzip downloads a .gz file and decompresses it
+func downloadAndDecompressGzip(url, destPath string) error {
+	tmpFile := destPath + ".tmp"
+
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 5 * time.Minute,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("download failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
+	}
+
+	// Show download progress
+	totalSize := resp.ContentLength
+	downloaded := int64(0)
+	lastProgress := 0
+
+	// Create a progress reader
+	progressReader := &progressReader{
+		reader:       resp.Body,
+		total:        totalSize,
+		downloaded:   &downloaded,
+		lastProgress: &lastProgress,
+	}
+
+	// Decompress gzip stream
+	gzReader, err := gzip.NewReader(progressReader)
+	if err != nil {
+		return fmt.Errorf("gzip open failed: %w", err)
+	}
+	defer gzReader.Close()
+
+	// Write decompressed data to temp file
+	out, err := os.Create(tmpFile)
+	if err != nil {
+		return err
+	}
+	defer out.Close()
+
+	_, err = io.Copy(out, gzReader)
+	if err != nil {
+		os.Remove(tmpFile)
+		return fmt.Errorf("decompress failed: %w", err)
+	}
+
+	// Move temp file to final location
+	if err := os.Rename(tmpFile, destPath); err != nil {
+		os.Remove(tmpFile)
+		return err
+	}
+
+	return nil
+}
+
+// progressReader wraps an io.Reader to show download progress
+type progressReader struct {
+	reader       io.Reader
+	total        int64
+	downloaded   *int64
+	lastProgress *int
+}
+
+func (pr *progressReader) Read(p []byte) (int, error) {
+	n, err := pr.reader.Read(p)
+	if n > 0 {
+		*pr.downloaded += int64(n)
+
+		// Print progress every 10%
+		if pr.total > 0 {
+			progress := int(float64(*pr.downloaded) / float64(pr.total) * 100)
+			if progress >= *pr.lastProgress+10 {
+				fmt.Printf("  Progress: %d%% (%.1f MB / %.1f MB)\n",
+					progress,
+					float64(*pr.downloaded)/1024/1024,
+					float64(pr.total)/1024/1024)
+				*pr.lastProgress = progress
+			}
+		}
+	}
+	return n, err
 }

@@ -43,14 +43,23 @@ type Reporter struct {
 
 // NewReporter creates a new analytics reporter
 func NewReporter(dataDir string) (*Reporter, error) {
-	// Try to open GeoIP database
-	geoipPath := filepath.Join(dataDir, "geoip", "GeoLite2-City.mmdb")
+	// Try to open GeoIP database (check for multiple providers)
+	geoipDir := filepath.Join(dataDir, "geoip")
+	dbFiles := []string{
+		filepath.Join(geoipDir, "dbip-country-lite.mmdb"),  // Default: DB-IP Country
+		filepath.Join(geoipDir, "GeoLite2-City.mmdb"),      // Legacy: MaxMind City
+		filepath.Join(geoipDir, "GeoLite2-Country.mmdb"),   // Legacy: MaxMind Country
+	}
+
 	var db *geoip2.Reader
 	var err error
 
-	if _, statErr := os.Stat(geoipPath); statErr == nil {
-		db, err = geoip2.Open(geoipPath)
-		if err != nil {
+	for _, geoipPath := range dbFiles {
+		if _, statErr := os.Stat(geoipPath); statErr == nil {
+			db, err = geoip2.Open(geoipPath)
+			if err == nil {
+				break // Successfully opened
+			}
 			// Don't fail if GeoIP DB not available, just log
 			fmt.Fprintf(os.Stderr, "Warning: GeoIP database not available: %v\n", err)
 		}

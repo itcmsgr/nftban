@@ -655,24 +655,34 @@ check_go_binaries() {
     ok "Go binaries found in $BIN_DIR/"
 }
 
-# Download FREE GeoIP database (MaxMind GeoLite2-City)
+# Download FREE GeoIP database (DB-IP Lite or MaxMind GeoLite2)
 download_geoip_database() {
-    log "Downloading FREE GeoIP database (MaxMind GeoLite2)..."
+    log "Downloading FREE GeoIP database..."
 
     local geoip_dir="/var/lib/nftban/geoip"
-    local db_file="${geoip_dir}/GeoLite2-City.mmdb"
+    # Check for any supported database file
+    local db_file="${geoip_dir}/dbip-country-lite.mmdb"
 
     mkdir -p "$geoip_dir"
     chown nftban:nftban "$geoip_dir" 2>/dev/null || true
     chmod 750 "$geoip_dir"
 
     # Check if recent database exists (less than 30 days old)
-    if [[ -f "$db_file" ]]; then
+    # Check for any supported database
+    local existing_db=""
+    for check_db in "${geoip_dir}/dbip-country-lite.mmdb" "${geoip_dir}/GeoLite2-City.mmdb" "${geoip_dir}/GeoLite2-Country.mmdb"; do
+        if [[ -f "$check_db" ]]; then
+            existing_db="$check_db"
+            break
+        fi
+    done
+
+    if [[ -n "$existing_db" ]]; then
         local file_age
         local now_ts
         local file_ts
         now_ts=$(date +%s)
-        file_ts=$(stat -c %Y "$db_file" 2>/dev/null || echo 0)
+        file_ts=$(stat -c %Y "$existing_db" 2>/dev/null || echo 0)
         file_age=$(( (now_ts - file_ts) / 86400 ))
         if [[ $file_age -lt 30 ]]; then
             ok "GeoIP database exists (${file_age} days old)"

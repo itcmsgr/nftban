@@ -5,6 +5,7 @@ package geoip
 
 import (
 	"net"
+	"os"
 	"sync"
 
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
@@ -18,14 +19,35 @@ var (
 )
 
 // getGeoIPDBPath returns the GeoIP database path from central config
-// NO FALLBACK - path must come from /etc/nftban/nftban.conf
+// Checks for databases in order of preference:
+// 1. dbip-country-lite.mmdb (Default: DB-IP Lite)
+// 2. GeoLite2-City.mmdb (Legacy: MaxMind City)
+// 3. GeoLite2-Country.mmdb (Legacy: MaxMind Country)
 func getGeoIPDBPath() string {
+	var geoipDir string
 	paths := nftbanconf.MustLoadPaths()
 	if paths.GeoIPDir != "" {
-		return paths.GeoIPDir + "/GeoLite2-City.mmdb"
+		geoipDir = paths.GeoIPDir
+	} else {
+		cfg := nftbanconf.MustLoad()
+		geoipDir = cfg.DataDir + "/geoip"
 	}
-	cfg := nftbanconf.MustLoad()
-	return cfg.DataDir + "/geoip/GeoLite2-City.mmdb"
+
+	// Check for databases in order of preference
+	dbFiles := []string{
+		geoipDir + "/dbip-country-lite.mmdb",  // Default: DB-IP Country
+		geoipDir + "/GeoLite2-City.mmdb",      // Legacy: MaxMind City
+		geoipDir + "/GeoLite2-Country.mmdb",   // Legacy: MaxMind Country
+	}
+
+	for _, f := range dbFiles {
+		if _, err := os.Stat(f); err == nil {
+			return f
+		}
+	}
+
+	// Return default (will error on open if not exists)
+	return dbFiles[0]
 }
 
 // LookupIP performs a GeoIP lookup for an IP address.
