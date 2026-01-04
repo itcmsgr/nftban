@@ -12,6 +12,7 @@ require (
 	github.com/oschwald/geoip2-golang v1.13.0
 	github.com/oschwald/maxminddb-golang v1.13.1
 	github.com/prometheus/client_golang v1.19.0
+	github.com/prometheus/procfs v0.12.0
 	golang.org/x/sys v0.21.0
 )
 
@@ -24,7 +25,6 @@ require (
 	github.com/mdlayher/socket v0.5.0 // indirect
 	github.com/prometheus/client_model v0.5.0 // indirect
 	github.com/prometheus/common v0.48.0 // indirect
-	github.com/prometheus/procfs v0.12.0 // indirect
 	golang.org/x/net v0.22.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
 	google.golang.org/protobuf v1.32.0 // indirect
