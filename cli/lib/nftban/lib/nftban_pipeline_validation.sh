@@ -288,14 +288,15 @@ nftban_pipeline_status() {
 
     if [[ "$verbose" == "true" ]]; then
         echo ""
+        # shellcheck disable=SC2254  # Intentional: matching numeric constants
         case $status in
-            $NFTBAN_PIPELINE_OK)
+            "$NFTBAN_PIPELINE_OK")
                 echo "Pipeline Status: OK (full functionality)"
                 ;;
-            $NFTBAN_PIPELINE_DEGRADED)
+            "$NFTBAN_PIPELINE_DEGRADED")
                 echo "Pipeline Status: DEGRADED (local metrics only)"
                 ;;
-            $NFTBAN_PIPELINE_FAIL)
+            "$NFTBAN_PIPELINE_FAIL")
                 echo "Pipeline Status: FAIL (no metrics collection)"
                 ;;
         esac
@@ -362,14 +363,15 @@ nftban_get_capability_metric_value() {
     nftban_pipeline_status false
     pipeline_status=$?
 
+    # shellcheck disable=SC2254  # Intentional: matching numeric constants
     case $pipeline_status in
-        $NFTBAN_PIPELINE_FAIL)
+        "$NFTBAN_PIPELINE_FAIL")
             echo "0"  # local only
             ;;
-        $NFTBAN_PIPELINE_DEGRADED)
+        "$NFTBAN_PIPELINE_DEGRADED")
             echo "1"  # perf_degraded
             ;;
-        $NFTBAN_PIPELINE_OK)
+        "$NFTBAN_PIPELINE_OK")
             echo "2"  # perf_full
             ;;
         *)
