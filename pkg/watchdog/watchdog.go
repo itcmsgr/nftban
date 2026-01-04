@@ -20,9 +20,6 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/logx"
-	"github.com/itcmsgr/nftban/pkg/watchdog/actions"
-	"github.com/itcmsgr/nftban/pkg/watchdog/collectors"
-	"github.com/itcmsgr/nftban/pkg/watchdog/recorder"
 )
 
 // Watchdog is the main watchdog coordinator
@@ -31,17 +28,17 @@ type Watchdog struct {
 	controls *RuntimeControls
 
 	// Collectors
-	processCollector  *collectors.ProcessCollector
-	runtimeCollector  *collectors.RuntimeCollector
-	systemCollector   *collectors.SystemCollector
-	kernelCollector   *collectors.KernelCollector
-	nftablesCollector *collectors.NFTablesCollector
+	processCollector  *ProcessCollector
+	runtimeCollector  *RuntimeCollector
+	systemCollector   *SystemCollector
+	kernelCollector   *KernelCollector
+	nftablesCollector *NFTablesCollector
 
 	// Core components
 	calculator *PressureCalculator
 	state      *StateMachine
-	executor   *actions.ActionExecutor
-	recorder   *recorder.Recorder
+	executor   *ActionExecutor
+	recorder   *Recorder
 
 	// State tracking
 	mu              sync.RWMutex
@@ -66,7 +63,7 @@ func New(cfg *Config, controls *RuntimeControls) (*Watchdog, error) {
 	}
 
 	// Create collectors
-	processCollector, err := collectors.NewProcessCollector()
+	processCollector, err := NewProcessCollector()
 	if err != nil {
 		return nil, err
 	}
@@ -76,15 +73,15 @@ func New(cfg *Config, controls *RuntimeControls) (*Watchdog, error) {
 		controls: controls,
 
 		processCollector:  processCollector,
-		runtimeCollector:  collectors.NewRuntimeCollector(),
-		systemCollector:   collectors.NewSystemCollector("/var/log"),
-		kernelCollector:   collectors.NewKernelCollector(),
-		nftablesCollector: collectors.NewNFTablesCollector(cfg.NFTRulesetInterval),
+		runtimeCollector:  NewRuntimeCollector(),
+		systemCollector:   NewSystemCollector("/var/log"),
+		kernelCollector:   NewKernelCollector(),
+		nftablesCollector: NewNFTablesCollector(cfg.NFTRulesetInterval),
 
 		calculator: NewPressureCalculator(cfg),
 		state:      NewStateMachine(cfg),
-		executor:   actions.NewActionExecutor(cfg, controls),
-		recorder:   recorder.New(cfg),
+		executor:   NewActionExecutor(cfg, controls),
+		recorder:   NewRecorder(cfg),
 
 		levelDurations: make(map[Dimension]time.Time),
 	}
@@ -345,7 +342,7 @@ func (w *Watchdog) SetOnMetrics(cb func(*Snapshot, *PressureState)) {
 }
 
 // GetRecorderStats returns flight recorder statistics
-func (w *Watchdog) GetRecorderStats() recorder.RecorderStats {
+func (w *Watchdog) GetRecorderStats() RecorderStats {
 	return w.recorder.GetStats()
 }
 

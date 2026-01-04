@@ -4,27 +4,15 @@
 // SPDX-License-Identifier: MPL-2.0
 // =============================================================================
 
-package collectors
+package watchdog
 
-import (
-	"context"
-
-	"github.com/itcmsgr/nftban/pkg/watchdog"
-)
+import "context"
 
 // Collector defines the interface for metrics collectors
 type Collector interface {
-	// Name returns the collector name
 	Name() string
-
-	// Collect gathers metrics and populates the snapshot
-	// Only modifies fields relevant to this collector
-	Collect(ctx context.Context, snapshot *watchdog.Snapshot) error
-
-	// Enabled returns whether this collector should run
+	Collect(ctx context.Context, snapshot *Snapshot) error
 	Enabled() bool
-
-	// SetEnabled enables or disables the collector
 	SetEnabled(enabled bool)
 }
 

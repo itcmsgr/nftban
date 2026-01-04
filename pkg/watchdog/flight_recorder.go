@@ -3,9 +3,7 @@
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 //
-// Package recorder provides an on-disk flight recorder for post-mortem analysis.
-//
-// Features:
+// Flight recorder for post-mortem analysis:
 //   - Ring buffer of recent events in memory
 //   - Periodic snapshots written to disk
 //   - Event log with JSON format
@@ -13,7 +11,7 @@
 //
 // =============================================================================
 
-package recorder
+package watchdog
 
 import (
 	"encoding/json"
@@ -23,38 +21,36 @@ import (
 	"sort"
 	"sync"
 	"time"
-
-	"github.com/itcmsgr/nftban/pkg/watchdog"
 )
 
 // Recorder maintains a flight recorder for watchdog events
 type Recorder struct {
-	config *watchdog.Config
+	config *Config
 
 	mu sync.Mutex
 
 	// Ring buffer of recent events
-	events    []watchdog.Event
+	events    []Event
 	eventHead int // Next write position
 
 	// Last snapshot for comparison
-	lastSnapshot *watchdog.Snapshot
+	lastSnapshot *Snapshot
 
 	// Last write times
 	lastEventWrite    time.Time
 	lastSnapshotWrite time.Time
 }
 
-// New creates a new flight recorder
-func New(cfg *watchdog.Config) *Recorder {
+// NewRecorder creates a new flight recorder
+func NewRecorder(cfg *Config) *Recorder {
 	return &Recorder{
 		config: cfg,
-		events: make([]watchdog.Event, cfg.RecorderMaxEvents),
+		events: make([]Event, cfg.RecorderMaxEvents),
 	}
 }
 
 // RecordEvent adds an event to the ring buffer
-func (r *Recorder) RecordEvent(event watchdog.Event) {
+func (r *Recorder) RecordEvent(event Event) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -68,9 +64,9 @@ func (r *Recorder) RecordEvent(event watchdog.Event) {
 }
 
 // RecordModeChange records a mode transition event
-func (r *Recorder) RecordModeChange(oldMode, newMode watchdog.Mode, snapshot *watchdog.Snapshot) {
-	event := watchdog.Event{
-		Type:      watchdog.EventModeChange,
+func (r *Recorder) RecordModeChange(oldMode, newMode Mode, snapshot *Snapshot) {
+	event := Event{
+		Type:      EventModeChange,
 		Timestamp: time.Now(),
 		Message:   fmt.Sprintf("mode transition: %s -> %s", oldMode, newMode),
 		Snapshot:  snapshot,
@@ -81,9 +77,9 @@ func (r *Recorder) RecordModeChange(oldMode, newMode watchdog.Mode, snapshot *wa
 }
 
 // RecordPressureChange records a pressure level change
-func (r *Recorder) RecordPressureChange(dim watchdog.Dimension, oldLevel, newLevel watchdog.Level, score float64) {
-	event := watchdog.Event{
-		Type:      watchdog.EventPressureChange,
+func (r *Recorder) RecordPressureChange(dim Dimension, oldLevel, newLevel Level, score float64) {
+	event := Event{
+		Type:      EventPressureChange,
 		Timestamp: time.Now(),
 		Message:   fmt.Sprintf("%s pressure: %s -> %s (score=%.1f)", dim, oldLevel, newLevel, score),
 		Dimension: dim,
@@ -94,9 +90,9 @@ func (r *Recorder) RecordPressureChange(dim watchdog.Dimension, oldLevel, newLev
 }
 
 // RecordAction records an action taken
-func (r *Recorder) RecordAction(action watchdog.Action, snapshot *watchdog.Snapshot) {
-	event := watchdog.Event{
-		Type:      watchdog.EventActionTaken,
+func (r *Recorder) RecordAction(action Action, snapshot *Snapshot) {
+	event := Event{
+		Type:      EventActionTaken,
 		Timestamp: action.Timestamp,
 		Message:   fmt.Sprintf("action: %s - %s", action.Type, action.Reason),
 		Snapshot:  snapshot,
@@ -106,9 +102,9 @@ func (r *Recorder) RecordAction(action watchdog.Action, snapshot *watchdog.Snaps
 }
 
 // RecordThresholdBreach records a threshold breach
-func (r *Recorder) RecordThresholdBreach(dim watchdog.Dimension, score float64, threshold float64, snapshot *watchdog.Snapshot) {
-	event := watchdog.Event{
-		Type:      watchdog.EventThresholdBreach,
+func (r *Recorder) RecordThresholdBreach(dim Dimension, score float64, threshold float64, snapshot *Snapshot) {
+	event := Event{
+		Type:      EventThresholdBreach,
 		Timestamp: time.Now(),
 		Message:   fmt.Sprintf("%s threshold breached: %.1f >= %.1f", dim, score, threshold),
 		Snapshot:  snapshot,
@@ -119,7 +115,7 @@ func (r *Recorder) RecordThresholdBreach(dim watchdog.Dimension, score float64, 
 }
 
 // RecordSnapshot records a periodic snapshot
-func (r *Recorder) RecordSnapshot(snapshot *watchdog.Snapshot) {
+func (r *Recorder) RecordSnapshot(snapshot *Snapshot) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -132,7 +128,7 @@ func (r *Recorder) RecordSnapshot(snapshot *watchdog.Snapshot) {
 }
 
 // GetRecentEvents returns recent events from the ring buffer
-func (r *Recorder) GetRecentEvents(count int) []watchdog.Event {
+func (r *Recorder) GetRecentEvents(count int) []Event {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -140,7 +136,7 @@ func (r *Recorder) GetRecentEvents(count int) []watchdog.Event {
 		count = len(r.events)
 	}
 
-	result := make([]watchdog.Event, 0, count)
+	result := make([]Event, 0, count)
 
 	// Read backwards from head
 	pos := (r.eventHead - 1 + len(r.events)) % len(r.events)
@@ -239,7 +235,7 @@ func (r *Recorder) flushEventsLocked() error {
 }
 
 // writeSnapshotLocked writes a snapshot to disk
-func (r *Recorder) writeSnapshotLocked(snapshot *watchdog.Snapshot) error {
+func (r *Recorder) writeSnapshotLocked(snapshot *Snapshot) error {
 	if !r.config.RecorderEnabled {
 		return nil
 	}

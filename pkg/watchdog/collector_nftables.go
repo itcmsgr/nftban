@@ -13,7 +13,7 @@
 // Uses google/nftables library for netlink access (no shelling out).
 // =============================================================================
 
-package collectors
+package watchdog
 
 import (
 	"context"
@@ -21,7 +21,6 @@ import (
 	"time"
 
 	"github.com/google/nftables"
-	"github.com/itcmsgr/nftban/pkg/watchdog"
 )
 
 // NFTablesCollector collects nftables metrics
@@ -51,7 +50,7 @@ func NewNFTablesCollector(cacheDuration time.Duration) *NFTablesCollector {
 }
 
 // Collect gathers nftables metrics
-func (c *NFTablesCollector) Collect(ctx context.Context, snapshot *watchdog.Snapshot) error {
+func (c *NFTablesCollector) Collect(ctx context.Context, snapshot *Snapshot) error {
 	if !c.Enabled() {
 		return nil
 	}
@@ -84,7 +83,7 @@ func (c *NFTablesCollector) Collect(ctx context.Context, snapshot *watchdog.Snap
 }
 
 // collectSetSizes counts elements in nftban sets
-func (c *NFTablesCollector) collectSetSizes(conn *nftables.Conn, snapshot *watchdog.Snapshot) {
+func (c *NFTablesCollector) collectSetSizes(conn *nftables.Conn, snapshot *Snapshot) {
 	// Get tables
 	tables, err := conn.ListTables()
 	if err != nil {
@@ -129,7 +128,7 @@ func (c *NFTablesCollector) collectSetSizes(conn *nftables.Conn, snapshot *watch
 }
 
 // collectRulesCount counts total rules (cached for performance)
-func (c *NFTablesCollector) collectRulesCount(conn *nftables.Conn, snapshot *watchdog.Snapshot) {
+func (c *NFTablesCollector) collectRulesCount(conn *nftables.Conn, snapshot *Snapshot) {
 	// Check cache
 	if time.Since(c.lastFullScan) < c.cacheDuration && c.cachedRulesCount > 0 {
 		snapshot.NFTables.RulesTotal = c.cachedRulesCount

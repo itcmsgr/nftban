@@ -279,7 +279,7 @@ func (sm *StateMachine) stateChanged(old, new *PressureState) bool {
 		return true
 	}
 
-	for dim := range AllDimensions() {
+	for _, dim := range AllDimensions() {
 		if old.Levels[dim] != new.Levels[dim] {
 			return true
 		}

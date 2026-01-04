@@ -5,16 +5,13 @@
 //
 // Collects system-level metrics:
 //   - Load average
-//   - CPU count
 //   - I/O wait percentage
-//   - Memory (total, free, available)
-//   - Swap usage
-//   - Disk usage (log partition)
-//   - Entropy available
+//   - Memory usage
+//   - Disk usage
 //
 // =============================================================================
 
-package collectors
+package watchdog
 
 import (
 	"bufio"
@@ -26,8 +23,6 @@ import (
 	"sync"
 	"syscall"
 	"time"
-
-	"github.com/itcmsgr/nftban/pkg/watchdog"
 )
 
 // SystemCollector collects OS-level metrics
@@ -36,25 +31,15 @@ type SystemCollector struct {
 
 	mu sync.Mutex
 
-	// For iowait calculation
-	lastSample     time.Time
-	lastCPUStats   cpuStats
-	currentIOWait  float64
-
-	// Disk path to monitor
-	diskPath string
+	lastSample    time.Time
+	lastCPUStats  cpuStats
+	currentIOWait float64
+	diskPath      string
 }
 
-// cpuStats holds CPU time values from /proc/stat
 type cpuStats struct {
-	user    uint64
-	nice    uint64
-	system  uint64
-	idle    uint64
-	iowait  uint64
-	irq     uint64
-	softirq uint64
-	steal   uint64
+	user, nice, system, idle    uint64
+	iowait, irq, softirq, steal uint64
 }
 
 // NewSystemCollector creates a new system collector
@@ -69,7 +54,7 @@ func NewSystemCollector(diskPath string) *SystemCollector {
 }
 
 // Collect gathers system metrics
-func (c *SystemCollector) Collect(ctx context.Context, snapshot *watchdog.Snapshot) error {
+func (c *SystemCollector) Collect(ctx context.Context, snapshot *Snapshot) error {
 	if !c.Enabled() {
 		return nil
 	}
@@ -77,46 +62,31 @@ func (c *SystemCollector) Collect(ctx context.Context, snapshot *watchdog.Snapsh
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// CPU count
 	snapshot.System.NumCPU = runtime.NumCPU()
-
-	// Load average
 	c.collectLoadAvg(snapshot)
-
-	// I/O wait percentage
 	c.collectIOWait(snapshot)
-
-	// Memory info
 	c.collectMemInfo(snapshot)
-
-	// Disk usage
 	c.collectDiskUsage(snapshot)
-
-	// Entropy
 	c.collectEntropy(snapshot)
 
 	return nil
 }
 
-// collectLoadAvg reads load average from /proc/loadavg
-func (c *SystemCollector) collectLoadAvg(snapshot *watchdog.Snapshot) {
+func (c *SystemCollector) collectLoadAvg(snapshot *Snapshot) {
 	data, err := os.ReadFile("/proc/loadavg")
 	if err != nil {
 		return
 	}
 
 	fields := strings.Fields(string(data))
-	if len(fields) < 3 {
-		return
+	if len(fields) >= 3 {
+		snapshot.System.LoadAvg1, _ = strconv.ParseFloat(fields[0], 64)
+		snapshot.System.LoadAvg5, _ = strconv.ParseFloat(fields[1], 64)
+		snapshot.System.LoadAvg15, _ = strconv.ParseFloat(fields[2], 64)
 	}
-
-	snapshot.System.LoadAvg1, _ = strconv.ParseFloat(fields[0], 64)
-	snapshot.System.LoadAvg5, _ = strconv.ParseFloat(fields[1], 64)
-	snapshot.System.LoadAvg15, _ = strconv.ParseFloat(fields[2], 64)
 }
 
-// collectIOWait calculates I/O wait percentage from /proc/stat
-func (c *SystemCollector) collectIOWait(snapshot *watchdog.Snapshot) {
+func (c *SystemCollector) collectIOWait(snapshot *Snapshot) {
 	stats, err := c.readCPUStats()
 	if err != nil {
 		return
@@ -124,14 +94,12 @@ func (c *SystemCollector) collectIOWait(snapshot *watchdog.Snapshot) {
 
 	now := time.Now()
 
-	// First sample - no delta yet
 	if c.lastSample.IsZero() {
 		c.lastSample = now
 		c.lastCPUStats = stats
 		return
 	}
 
-	// Calculate delta
 	totalDelta := c.totalCPUTime(stats) - c.totalCPUTime(c.lastCPUStats)
 	if totalDelta <= 0 {
 		return
@@ -139,15 +107,12 @@ func (c *SystemCollector) collectIOWait(snapshot *watchdog.Snapshot) {
 
 	iowaitDelta := float64(stats.iowait - c.lastCPUStats.iowait)
 	c.currentIOWait = (iowaitDelta / float64(totalDelta)) * 100
-
 	snapshot.System.IOWaitPct = c.currentIOWait
 
-	// Update for next calculation
 	c.lastSample = now
 	c.lastCPUStats = stats
 }
 
-// readCPUStats reads CPU stats from /proc/stat
 func (c *SystemCollector) readCPUStats() (cpuStats, error) {
 	var stats cpuStats
 
@@ -179,14 +144,12 @@ func (c *SystemCollector) readCPUStats() (cpuStats, error) {
 	return stats, nil
 }
 
-// totalCPUTime returns total CPU time from stats
 func (c *SystemCollector) totalCPUTime(stats cpuStats) uint64 {
 	return stats.user + stats.nice + stats.system + stats.idle +
 		stats.iowait + stats.irq + stats.softirq + stats.steal
 }
 
-// collectMemInfo reads memory info from /proc/meminfo
-func (c *SystemCollector) collectMemInfo(snapshot *watchdog.Snapshot) {
+func (c *SystemCollector) collectMemInfo(snapshot *Snapshot) {
 	f, err := os.Open("/proc/meminfo")
 	if err != nil {
 		return
@@ -203,7 +166,7 @@ func (c *SystemCollector) collectMemInfo(snapshot *watchdog.Snapshot) {
 
 		key := strings.TrimSuffix(parts[0], ":")
 		value, _ := strconv.ParseUint(parts[1], 10, 64)
-		value *= 1024 // Convert from KB to bytes
+		value *= 1024
 
 		switch key {
 		case "MemTotal":
@@ -220,8 +183,7 @@ func (c *SystemCollector) collectMemInfo(snapshot *watchdog.Snapshot) {
 	}
 }
 
-// collectDiskUsage gets disk usage for the configured path
-func (c *SystemCollector) collectDiskUsage(snapshot *watchdog.Snapshot) {
+func (c *SystemCollector) collectDiskUsage(snapshot *Snapshot) {
 	var stat syscall.Statfs_t
 	if err := syscall.Statfs(c.diskPath, &stat); err != nil {
 		return
@@ -236,12 +198,10 @@ func (c *SystemCollector) collectDiskUsage(snapshot *watchdog.Snapshot) {
 	}
 }
 
-// collectEntropy reads available entropy from kernel
-func (c *SystemCollector) collectEntropy(snapshot *watchdog.Snapshot) {
+func (c *SystemCollector) collectEntropy(snapshot *Snapshot) {
 	data, err := os.ReadFile("/proc/sys/kernel/random/entropy_avail")
 	if err != nil {
 		return
 	}
-
 	snapshot.System.Entropy, _ = strconv.Atoi(strings.TrimSpace(string(data)))
 }
