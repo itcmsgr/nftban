@@ -4,15 +4,13 @@
 // SPDX-License-Identifier: MPL-2.0
 //
 // Collects kernel and netfilter metrics:
-//   - Conntrack count and max
-//   - Conntrack utilization
-//   - Softnet drops (aggregated across CPUs)
-//   - Softnet time squeeze
-//   - NIC RX drops (aggregated across interfaces)
+//   - Conntrack count and utilization
+//   - Softnet drops
+//   - NIC RX drops
 //
 // =============================================================================
 
-package collectors
+package watchdog
 
 import (
 	"bufio"
@@ -23,8 +21,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/itcmsgr/nftban/pkg/watchdog"
 )
 
 // KernelCollector collects kernel/netfilter metrics
@@ -33,7 +29,6 @@ type KernelCollector struct {
 
 	mu sync.Mutex
 
-	// For rate calculation
 	lastSample       time.Time
 	lastSoftnetDrops uint64
 	lastNICDrops     uint64
@@ -49,7 +44,7 @@ func NewKernelCollector() *KernelCollector {
 }
 
 // Collect gathers kernel metrics
-func (c *KernelCollector) Collect(ctx context.Context, snapshot *watchdog.Snapshot) error {
+func (c *KernelCollector) Collect(ctx context.Context, snapshot *Snapshot) error {
 	if !c.Enabled() {
 		return nil
 	}
@@ -57,46 +52,33 @@ func (c *KernelCollector) Collect(ctx context.Context, snapshot *watchdog.Snapsh
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	// Conntrack
 	c.collectConntrack(snapshot)
-
-	// Softnet stats
 	c.collectSoftnet(snapshot)
-
-	// NIC drops
 	c.collectNICDrops(snapshot)
 
 	return nil
 }
 
-// collectConntrack reads conntrack metrics
-func (c *KernelCollector) collectConntrack(snapshot *watchdog.Snapshot) {
-	// Read current count
+func (c *KernelCollector) collectConntrack(snapshot *Snapshot) {
 	countData, err := os.ReadFile("/proc/sys/net/netfilter/nf_conntrack_count")
 	if err != nil {
-		// Conntrack might not be loaded
 		return
 	}
 	snapshot.Kernel.ConntrackCount, _ = strconv.Atoi(strings.TrimSpace(string(countData)))
 
-	// Read max
 	maxData, err := os.ReadFile("/proc/sys/net/netfilter/nf_conntrack_max")
 	if err != nil {
 		return
 	}
 	snapshot.Kernel.ConntrackMax, _ = strconv.Atoi(strings.TrimSpace(string(maxData)))
 
-	// Calculate utilization
 	if snapshot.Kernel.ConntrackMax > 0 {
 		snapshot.Kernel.ConntrackUtilization = float64(snapshot.Kernel.ConntrackCount) /
 			float64(snapshot.Kernel.ConntrackMax)
 	}
 }
 
-// collectSoftnet reads softnet statistics from /proc/net/softnet_stat
-// Format: Per-CPU lines with hex fields
-// Fields: processed, dropped, time_squeeze, ...
-func (c *KernelCollector) collectSoftnet(snapshot *watchdog.Snapshot) {
+func (c *KernelCollector) collectSoftnet(snapshot *Snapshot) {
 	f, err := os.Open("/proc/net/softnet_stat")
 	if err != nil {
 		return
@@ -113,13 +95,11 @@ func (c *KernelCollector) collectSoftnet(snapshot *watchdog.Snapshot) {
 			continue
 		}
 
-		// Field 1 (index 1) is drops in hex
 		drops, err := strconv.ParseUint(fields[1], 16, 64)
 		if err == nil {
 			totalDrops += drops
 		}
 
-		// Field 2 (index 2) is time_squeeze in hex
 		squeeze, err := strconv.ParseUint(fields[2], 16, 64)
 		if err == nil {
 			totalSqueeze += squeeze
@@ -129,7 +109,6 @@ func (c *KernelCollector) collectSoftnet(snapshot *watchdog.Snapshot) {
 	snapshot.Kernel.SoftnetDrops = totalDrops
 	snapshot.Kernel.SoftnetTimeSqueeze = totalSqueeze
 
-	// Calculate rate if we have a previous sample
 	now := time.Now()
 	if !c.lastSample.IsZero() {
 		elapsed := now.Sub(c.lastSample).Seconds()
@@ -142,11 +121,9 @@ func (c *KernelCollector) collectSoftnet(snapshot *watchdog.Snapshot) {
 	c.lastSoftnetDrops = totalDrops
 }
 
-// collectNICDrops aggregates RX drops across all network interfaces
-func (c *KernelCollector) collectNICDrops(snapshot *watchdog.Snapshot) {
+func (c *KernelCollector) collectNICDrops(snapshot *Snapshot) {
 	var totalDrops uint64
 
-	// Read from /sys/class/net/*/statistics/rx_dropped
 	entries, err := os.ReadDir("/sys/class/net")
 	if err != nil {
 		return
@@ -157,7 +134,6 @@ func (c *KernelCollector) collectNICDrops(snapshot *watchdog.Snapshot) {
 			continue
 		}
 
-		// Skip loopback and virtual interfaces
 		name := entry.Name()
 		if name == "lo" || strings.HasPrefix(name, "docker") ||
 			strings.HasPrefix(name, "veth") || strings.HasPrefix(name, "br-") ||
@@ -179,7 +155,6 @@ func (c *KernelCollector) collectNICDrops(snapshot *watchdog.Snapshot) {
 
 	snapshot.Kernel.NICDrops = totalDrops
 
-	// Update rate calculation
 	if !c.lastSample.IsZero() {
 		elapsed := time.Since(c.lastSample).Seconds()
 		if elapsed > 0 && c.lastNICDrops > 0 {
@@ -194,11 +169,4 @@ func (c *KernelCollector) GetSoftnetDropsRate() float64 {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.softnetDropsRate
-}
-
-// GetNICDropsRate returns the current NIC drops rate per second
-func (c *KernelCollector) GetNICDropsRate() float64 {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	return c.nicDropsRate
 }

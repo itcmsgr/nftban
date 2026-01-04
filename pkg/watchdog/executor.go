@@ -1,23 +1,17 @@
 // =============================================================================
-// NFTBan v1.0 - Watchdog Actions
+// NFTBan v1.0 - Watchdog Action Executor
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 //
-// Package actions provides automatic alignment actions for the watchdog:
-//
+// Action executor provides automatic alignment actions:
 //   - Throttle: Reduce worker count, disable expensive collectors
 //   - Profiler: Capture CPU/heap/goroutine profiles
 //   - MemoryValve: Call debug.FreeOSMemory under safe conditions
 //   - DegradeMode: Limit functionality to core operations
 //
-// All actions are:
-//   - Rate-limited with cooldowns
-//   - Condition-gated (e.g., don't free memory during high CPU)
-//   - Logged to flight recorder
-//
 // =============================================================================
 
-package actions
+package watchdog
 
 import (
 	"fmt"
@@ -30,32 +24,31 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/logx"
-	"github.com/itcmsgr/nftban/pkg/watchdog"
 )
 
 // ActionExecutor handles action execution with cooldowns
 type ActionExecutor struct {
-	config   *watchdog.Config
-	controls *watchdog.RuntimeControls
+	config   *Config
+	controls *RuntimeControls
 
 	mu        sync.Mutex
-	cooldowns *watchdog.Cooldowns
+	cooldowns *Cooldowns
 
 	// Callbacks for recording events
-	onAction func(action watchdog.Action)
+	onAction func(action Action)
 }
 
 // NewActionExecutor creates a new action executor
-func NewActionExecutor(cfg *watchdog.Config, controls *watchdog.RuntimeControls) *ActionExecutor {
+func NewActionExecutor(cfg *Config, controls *RuntimeControls) *ActionExecutor {
 	return &ActionExecutor{
 		config:    cfg,
 		controls:  controls,
-		cooldowns: watchdog.NewCooldowns(),
+		cooldowns: NewCooldowns(),
 	}
 }
 
 // SetOnAction sets the callback for when actions are taken
-func (e *ActionExecutor) SetOnAction(cb func(watchdog.Action)) {
+func (e *ActionExecutor) SetOnAction(cb func(Action)) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	e.onAction = cb
@@ -66,29 +59,29 @@ func (e *ActionExecutor) SetOnAction(cb func(watchdog.Action)) {
 // =============================================================================
 
 // ApplyMode applies settings for the given mode
-func (e *ActionExecutor) ApplyMode(mode watchdog.Mode, snapshot *watchdog.Snapshot) error {
+func (e *ActionExecutor) ApplyMode(mode Mode, snapshot *Snapshot) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
 	// Apply runtime controls
 	e.controls.SetMode(mode)
 
-	action := watchdog.Action{
-		Type:      watchdog.ActionDegradeMode,
+	action := Action{
+		Type:      ActionDegradeMode,
 		Timestamp: time.Now(),
 		Reason:    fmt.Sprintf("mode transition to %s", mode),
 		Success:   true,
 	}
 
 	switch mode {
-	case watchdog.ModeNormal:
+	case ModeNormal:
 		action.Details = "restored normal operation"
 
-	case watchdog.ModeDegraded:
+	case ModeDegraded:
 		action.Details = fmt.Sprintf("workers=%d, expensive_collectors=false",
 			e.controls.MaxWorkers.Load())
 
-	case watchdog.ModeSurvival:
+	case ModeSurvival:
 		action.Details = fmt.Sprintf("workers=%d, minimal operation",
 			e.controls.MaxWorkers.Load())
 	}
@@ -106,7 +99,7 @@ func (e *ActionExecutor) Throttle(reason string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if !e.cooldowns.CanExecute(watchdog.ActionThrottle, time.Minute) {
+	if !e.cooldowns.CanExecute(ActionThrottle, time.Minute) {
 		return nil // Still in cooldown
 	}
 
@@ -118,15 +111,15 @@ func (e *ActionExecutor) Throttle(reason string) error {
 	e.controls.MaxWorkers.Store(newWorkers)
 	e.controls.EnableExpensiveCollectors.Store(false)
 
-	action := watchdog.Action{
-		Type:      watchdog.ActionThrottle,
+	action := Action{
+		Type:      ActionThrottle,
 		Timestamp: time.Now(),
 		Reason:    reason,
 		Details:   fmt.Sprintf("workers: %d->%d", currentWorkers, newWorkers),
 		Success:   true,
 	}
 
-	e.cooldowns.Record(watchdog.ActionThrottle)
+	e.cooldowns.Record(ActionThrottle)
 	e.recordAction(action)
 	return nil
 }
@@ -136,7 +129,7 @@ func (e *ActionExecutor) DisableOptional(reason string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if !e.cooldowns.CanExecute(watchdog.ActionDisableOptional, time.Minute) {
+	if !e.cooldowns.CanExecute(ActionDisableOptional, time.Minute) {
 		return nil
 	}
 
@@ -144,15 +137,15 @@ func (e *ActionExecutor) DisableOptional(reason string) error {
 	e.controls.EnableTopProcesses.Store(false)
 	e.controls.EnableVerboseLogging.Store(false)
 
-	action := watchdog.Action{
-		Type:      watchdog.ActionDisableOptional,
+	action := Action{
+		Type:      ActionDisableOptional,
 		Timestamp: time.Now(),
 		Reason:    reason,
 		Details:   "disabled nft_ruleset_scan, top_processes, verbose_logging",
 		Success:   true,
 	}
 
-	e.cooldowns.Record(watchdog.ActionDisableOptional)
+	e.cooldowns.Record(ActionDisableOptional)
 	e.recordAction(action)
 	return nil
 }
@@ -162,7 +155,7 @@ func (e *ActionExecutor) DisableOptional(reason string) error {
 // =============================================================================
 
 // CaptureCPUProfile captures a CPU profile
-func (e *ActionExecutor) CaptureCPUProfile(reason string, snapshot *watchdog.Snapshot) (string, error) {
+func (e *ActionExecutor) CaptureCPUProfile(reason string, snapshot *Snapshot) (string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -170,7 +163,7 @@ func (e *ActionExecutor) CaptureCPUProfile(reason string, snapshot *watchdog.Sna
 		return "", nil
 	}
 
-	if !e.cooldowns.CanExecute(watchdog.ActionProfileCPU, e.config.ProfileCPUCooldown) {
+	if !e.cooldowns.CanExecute(ActionProfileCPU, e.config.ProfileCPUCooldown) {
 		return "", nil
 	}
 
@@ -205,21 +198,21 @@ func (e *ActionExecutor) CaptureCPUProfile(reason string, snapshot *watchdog.Sna
 		e.writeProfileSidecar(path, "cpu", reason, snapshot)
 	}()
 
-	action := watchdog.Action{
-		Type:      watchdog.ActionProfileCPU,
+	action := Action{
+		Type:      ActionProfileCPU,
 		Timestamp: time.Now(),
 		Reason:    reason,
 		Details:   fmt.Sprintf("path=%s duration=%s", path, e.config.ProfileCPUDuration),
 		Success:   true,
 	}
 
-	e.cooldowns.Record(watchdog.ActionProfileCPU)
+	e.cooldowns.Record(ActionProfileCPU)
 	e.recordAction(action)
 	return path, nil
 }
 
 // CaptureHeapProfile captures a heap profile
-func (e *ActionExecutor) CaptureHeapProfile(reason string, snapshot *watchdog.Snapshot) (string, error) {
+func (e *ActionExecutor) CaptureHeapProfile(reason string, snapshot *Snapshot) (string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -227,7 +220,7 @@ func (e *ActionExecutor) CaptureHeapProfile(reason string, snapshot *watchdog.Sn
 		return "", nil
 	}
 
-	if !e.cooldowns.CanExecute(watchdog.ActionProfileHeap, e.config.ProfileHeapCooldown) {
+	if !e.cooldowns.CanExecute(ActionProfileHeap, e.config.ProfileHeapCooldown) {
 		return "", nil
 	}
 
@@ -253,21 +246,21 @@ func (e *ActionExecutor) CaptureHeapProfile(reason string, snapshot *watchdog.Sn
 
 	e.writeProfileSidecar(path, "heap", reason, snapshot)
 
-	action := watchdog.Action{
-		Type:      watchdog.ActionProfileHeap,
+	action := Action{
+		Type:      ActionProfileHeap,
 		Timestamp: time.Now(),
 		Reason:    reason,
 		Details:   fmt.Sprintf("path=%s", path),
 		Success:   true,
 	}
 
-	e.cooldowns.Record(watchdog.ActionProfileHeap)
+	e.cooldowns.Record(ActionProfileHeap)
 	e.recordAction(action)
 	return path, nil
 }
 
 // CaptureGoroutineProfile captures a goroutine profile
-func (e *ActionExecutor) CaptureGoroutineProfile(reason string, snapshot *watchdog.Snapshot) (string, error) {
+func (e *ActionExecutor) CaptureGoroutineProfile(reason string, snapshot *Snapshot) (string, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -275,7 +268,7 @@ func (e *ActionExecutor) CaptureGoroutineProfile(reason string, snapshot *watchd
 		return "", nil
 	}
 
-	if !e.cooldowns.CanExecute(watchdog.ActionProfileGoroutine, e.config.ProfileGoroutineCooldown) {
+	if !e.cooldowns.CanExecute(ActionProfileGoroutine, e.config.ProfileGoroutineCooldown) {
 		return "", nil
 	}
 
@@ -300,15 +293,15 @@ func (e *ActionExecutor) CaptureGoroutineProfile(reason string, snapshot *watchd
 
 	e.writeProfileSidecar(path, "goroutine", reason, snapshot)
 
-	action := watchdog.Action{
-		Type:      watchdog.ActionProfileGoroutine,
+	action := Action{
+		Type:      ActionProfileGoroutine,
 		Timestamp: time.Now(),
 		Reason:    reason,
 		Details:   fmt.Sprintf("path=%s goroutines=%d", path, snapshot.Runtime.Goroutines),
 		Success:   true,
 	}
 
-	e.cooldowns.Record(watchdog.ActionProfileGoroutine)
+	e.cooldowns.Record(ActionProfileGoroutine)
 	e.recordAction(action)
 	return path, nil
 }
@@ -325,7 +318,7 @@ func (e *ActionExecutor) CaptureGoroutineProfile(reason string, snapshot *watchd
 func (e *ActionExecutor) TryFreeOSMemory(
 	memCriticalDuration time.Duration,
 	cpuPercent float64,
-	snapshot *watchdog.Snapshot,
+	snapshot *Snapshot,
 ) (bool, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()
@@ -335,7 +328,7 @@ func (e *ActionExecutor) TryFreeOSMemory(
 	}
 
 	// Check cooldown
-	if !e.cooldowns.CanExecute(watchdog.ActionFreeOSMemory, e.config.FreeOSMemoryCooldown) {
+	if !e.cooldowns.CanExecute(ActionFreeOSMemory, e.config.FreeOSMemoryCooldown) {
 		return false, nil
 	}
 
@@ -361,8 +354,8 @@ func (e *ActionExecutor) TryFreeOSMemory(
 	runtime.ReadMemStats(&memStats)
 	afterHeap := memStats.HeapAlloc
 
-	action := watchdog.Action{
-		Type:      watchdog.ActionFreeOSMemory,
+	action := Action{
+		Type:      ActionFreeOSMemory,
 		Timestamp: time.Now(),
 		Reason:    fmt.Sprintf("MEM CRITICAL for %s, CPU=%.1f%%", memCriticalDuration, cpuPercent),
 		Details: fmt.Sprintf("before_rss=%d before_heap=%d after_heap=%d",
@@ -370,7 +363,7 @@ func (e *ActionExecutor) TryFreeOSMemory(
 		Success: true,
 	}
 
-	e.cooldowns.Record(watchdog.ActionFreeOSMemory)
+	e.cooldowns.Record(ActionFreeOSMemory)
 	e.recordAction(action)
 
 	logx.Watchdog("FreeOSMemory executed (heap: %d -> %d bytes)",
@@ -384,14 +377,14 @@ func (e *ActionExecutor) TryFreeOSMemory(
 // =============================================================================
 
 // recordAction records an action via callback
-func (e *ActionExecutor) recordAction(action watchdog.Action) {
+func (e *ActionExecutor) recordAction(action Action) {
 	if e.onAction != nil {
 		e.onAction(action)
 	}
 }
 
 // writeProfileSidecar writes JSON metadata alongside profile
-func (e *ActionExecutor) writeProfileSidecar(profilePath, profileType, reason string, snapshot *watchdog.Snapshot) {
+func (e *ActionExecutor) writeProfileSidecar(profilePath, profileType, reason string, snapshot *Snapshot) {
 	sidecarPath := profilePath + ".json"
 
 	data := map[string]interface{}{
