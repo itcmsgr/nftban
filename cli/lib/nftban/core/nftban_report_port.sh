@@ -39,7 +39,7 @@ declare -g -A NFTBAN_PORT_NFT_RULES=()     # key: port_proto_chain_family -> act
 declare -g -A NFTBAN_PORT_NFT_GENERIC=()   # key: port_proto_chain -> action
 declare -g -A NFTBAN_PORT_SEEN=()          # key: port_proto -> 1
 declare -g -A NFTBAN_PORT_SERVICE_NAME=()  # key: port_proto -> service name
-declare -g -A NFTBAN_PORT_STATUS=()        # key: port/proto/family/direction -> status (BUG-005 FIX)
+declare -g -A NFTBAN_PORT_STATUS=()        # key: port/proto/family/direction -> status (populated in caller, not subshell)
 
 # shellcheck disable=SC2034  # Reserved for report headers
 NFTBAN_PORT_TIMESTAMP="$(date --iso-8601=seconds)"
@@ -302,11 +302,8 @@ nftban_port_determine_status() {
         esac
     }
 
-    # Populate NFTBAN_PORT_STATUS array (BUG-005 FIX)
-    NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/in"]="$(map_action "${v4i%%_*}")"
-    NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/out"]="$(map_action "${v4o%%_*}")"
-    NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/in"]="$(map_action "${v6i%%_*}")"
-    NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/out"]="$(map_action "${v6o%%_*}")"
+    # NOTE: Array population moved to caller scope (BUG-005 FIX)
+    # Command substitution runs in subshell - array changes were lost here
 
     printf "%s|%s|%s|%s|%s\n" \
         "$(map_action "${v4i%%_*}")" "$(map_action "${v4o%%_*}")" \
@@ -411,6 +408,12 @@ nftban_port_render_json() {
         v6in="$(cut -d'|' -f3 <<< "$status_line")"
         v6out="$(cut -d'|' -f4 <<< "$status_line")"
         notes="$(cut -d'|' -f5 <<< "$status_line")"
+
+        # Populate array in caller scope (BUG-005 FIX - subshell can't modify parent arrays)
+        NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/in"]="$v4in"
+        NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/out"]="$v4out"
+        NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/in"]="$v6in"
+        NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/out"]="$v6out"
 
         # Determine direction (IN/OUT/BOTH)
         local direction="IN"
@@ -570,6 +573,12 @@ nftban_port_render_table() {
         v6out="$(cut -d'|' -f4 <<< "$status_line")"
         notes="$(cut -d'|' -f5 <<< "$status_line")"
         [[ -n "$scope" ]] && notes="$(nftban_port_trim "$notes $scope")"
+
+        # Populate array in caller scope (BUG-005 FIX - subshell can't modify parent arrays)
+        NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/in"]="$v4in"
+        NFTBAN_PORT_STATUS["${port}/${proto}/ipv4/out"]="$v4out"
+        NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/in"]="$v6in"
+        NFTBAN_PORT_STATUS["${port}/${proto}/ipv6/out"]="$v6out"
 
         badge() {
             case "$1" in

@@ -2,6 +2,7 @@ package api
 
 import (
 	"bufio"
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -251,13 +252,14 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 	// 	json.Unmarshal([]byte(healthOutput), &healthData)
 	// }
 
-	// Get feeds data from CLI (skip for now - command hangs)
-	// TODO: Fix feeds status command timeout issue
+	// Get feeds data from CLI with timeout (5 seconds max)
 	var feedsData map[string]interface{}
-	// feedsOutput, err := execNFTBanCommand("feeds", "status", "--json")
-	// if err == nil {
-	// 	json.Unmarshal([]byte(feedsOutput), &feedsData)
-	// }
+	feedsOutput, err := execNFTBanCommandWithTimeout(5*time.Second, "feeds", "status", "--json")
+	if err == nil {
+		json.Unmarshal([]byte(feedsOutput), &feedsData)
+	} else {
+		log.Printf("[WARN] Feeds status timed out or failed: %v", err)
+	}
 
 	// Build response matching frontend expectations
 	userInfo := map[string]interface{}{
@@ -1788,6 +1790,29 @@ func execNFTBanCommand(args ...string) (string, error) {
 			return outputStr, nil
 		}
 		// Return output even on error so caller can check for success messages
+		return outputStr, fmt.Errorf("command failed: %v (output: %s)", err, outputStr)
+	}
+	return outputStr, nil
+}
+
+// execNFTBanCommandWithTimeout executes nftban CLI with a timeout
+// Use this for commands that may hang (feeds status, health, etc.)
+func execNFTBanCommandWithTimeout(timeout time.Duration, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, getNFTBanCLI(), args...)
+	output, err := cmd.CombinedOutput()
+
+	outputStr := string(output)
+	if ctx.Err() == context.DeadlineExceeded {
+		return outputStr, fmt.Errorf("command timed out after %v", timeout)
+	}
+	if err != nil {
+		// Check if it's just netlink warnings (exit code 3 with netlink message)
+		if strings.Contains(outputStr, "Unable to initialize Netlink socket") {
+			return outputStr, nil
+		}
 		return outputStr, fmt.Errorf("command failed: %v (output: %s)", err, outputStr)
 	}
 	return outputStr, nil
