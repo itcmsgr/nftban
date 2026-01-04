@@ -1,0 +1,360 @@
+// =============================================================================
+// NFTBan v1.0 - Watchdog Core
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+//
+// The Watchdog ties together all components:
+//   - Collectors gather metrics
+//   - PressureCalculator computes scores
+//   - StateMachine handles transitions
+//   - ActionExecutor applies actions
+//   - Recorder logs events
+//
+// =============================================================================
+
+package watchdog
+
+import (
+	"context"
+	"sync"
+	"time"
+
+	"github.com/itcmsgr/nftban/pkg/logx"
+	"github.com/itcmsgr/nftban/pkg/watchdog/actions"
+	"github.com/itcmsgr/nftban/pkg/watchdog/collectors"
+	"github.com/itcmsgr/nftban/pkg/watchdog/recorder"
+)
+
+// Watchdog is the main watchdog coordinator
+type Watchdog struct {
+	config   *Config
+	controls *RuntimeControls
+
+	// Collectors
+	processCollector  *collectors.ProcessCollector
+	runtimeCollector  *collectors.RuntimeCollector
+	systemCollector   *collectors.SystemCollector
+	kernelCollector   *collectors.KernelCollector
+	nftablesCollector *collectors.NFTablesCollector
+
+	// Core components
+	calculator *PressureCalculator
+	state      *StateMachine
+	executor   *actions.ActionExecutor
+	recorder   *recorder.Recorder
+
+	// State tracking
+	mu              sync.RWMutex
+	running         bool
+	lastSnapshot    *Snapshot
+	lastState       *PressureState
+	levelDurations  map[Dimension]time.Time // When each dimension entered current level
+
+	// Metrics callbacks
+	onMetrics func(*Snapshot, *PressureState)
+}
+
+// New creates a new watchdog
+func New(cfg *Config, controls *RuntimeControls) (*Watchdog, error) {
+	if cfg == nil {
+		cfg = DefaultConfig()
+	}
+	cfg.Validate()
+
+	if controls == nil {
+		controls = NewRuntimeControls()
+	}
+
+	// Create collectors
+	processCollector, err := collectors.NewProcessCollector()
+	if err != nil {
+		return nil, err
+	}
+
+	w := &Watchdog{
+		config:   cfg,
+		controls: controls,
+
+		processCollector:  processCollector,
+		runtimeCollector:  collectors.NewRuntimeCollector(),
+		systemCollector:   collectors.NewSystemCollector("/var/log"),
+		kernelCollector:   collectors.NewKernelCollector(),
+		nftablesCollector: collectors.NewNFTablesCollector(cfg.NFTRulesetInterval),
+
+		calculator: NewPressureCalculator(cfg),
+		state:      NewStateMachine(cfg),
+		executor:   actions.NewActionExecutor(cfg, controls),
+		recorder:   recorder.New(cfg),
+
+		levelDurations: make(map[Dimension]time.Time),
+	}
+
+	// Wire up callbacks
+	w.state.SetOnModeChange(w.handleModeChange)
+	w.executor.SetOnAction(w.handleAction)
+
+	return w, nil
+}
+
+// Run starts the watchdog loop
+func (w *Watchdog) Run(ctx context.Context) error {
+	if !w.config.Enabled {
+		logx.Watchdog("disabled, not starting")
+		return nil
+	}
+
+	w.mu.Lock()
+	w.running = true
+	w.mu.Unlock()
+
+	defer func() {
+		w.mu.Lock()
+		w.running = false
+		w.mu.Unlock()
+	}()
+
+	logx.Watchdog("starting with interval=%s", w.config.BaseInterval)
+
+	ticker := time.NewTicker(w.config.BaseInterval)
+	defer ticker.Stop()
+
+	cleanupTicker := time.NewTicker(time.Hour)
+	defer cleanupTicker.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			logx.Watchdog("stopping")
+			w.recorder.Flush()
+			return ctx.Err()
+
+		case <-ticker.C:
+			w.tick(ctx)
+
+		case <-cleanupTicker.C:
+			w.recorder.Cleanup()
+		}
+	}
+}
+
+// tick performs one watchdog cycle
+func (w *Watchdog) tick(ctx context.Context) {
+	// Collect metrics
+	snapshot, err := w.collect(ctx)
+	if err != nil {
+		logx.WatchdogError("collect error: %v", err)
+		return
+	}
+
+	// Calculate pressure scores
+	scores := w.calculator.Calculate(snapshot)
+
+	// Update state machine
+	state := w.state.Update(scores)
+
+	// Store for access
+	w.mu.Lock()
+	w.lastSnapshot = snapshot
+	w.lastState = state
+	w.mu.Unlock()
+
+	// Record snapshot
+	w.recorder.RecordSnapshot(snapshot)
+
+	// Evaluate and execute actions
+	w.evaluateActions(snapshot, state)
+
+	// Callback for external metrics
+	if w.onMetrics != nil {
+		w.onMetrics(snapshot, state)
+	}
+}
+
+// collect runs all collectors
+func (w *Watchdog) collect(ctx context.Context) (*Snapshot, error) {
+	snapshot := &Snapshot{
+		Timestamp: time.Now(),
+		NFTables: NFTablesMetrics{
+			SetElements: make(map[string]int),
+		},
+	}
+
+	// Process collector
+	if err := w.processCollector.Collect(ctx, snapshot); err != nil {
+		logx.WatchdogError("process collector: %v", err)
+	}
+
+	// Runtime collector
+	if err := w.runtimeCollector.Collect(ctx, snapshot); err != nil {
+		logx.WatchdogError("runtime collector: %v", err)
+	}
+
+	// System collector
+	if err := w.systemCollector.Collect(ctx, snapshot); err != nil {
+		logx.WatchdogError("system collector: %v", err)
+	}
+
+	// Kernel collector
+	if err := w.kernelCollector.Collect(ctx, snapshot); err != nil {
+		logx.WatchdogError("kernel collector: %v", err)
+	}
+
+	// nftables collector (may be disabled in degraded mode)
+	if w.controls.EnableExpensiveCollectors.Load() || w.controls.GetMode() == ModeNormal {
+		if err := w.nftablesCollector.Collect(ctx, snapshot); err != nil {
+			logx.WatchdogError("nftables collector: %v", err)
+		}
+	}
+
+	return snapshot, nil
+}
+
+// evaluateActions checks conditions and triggers appropriate actions
+func (w *Watchdog) evaluateActions(snapshot *Snapshot, state *PressureState) {
+	mode := state.Mode
+
+	// Track level durations for each dimension
+	for dim, level := range state.Levels {
+		w.mu.Lock()
+		if _, exists := w.levelDurations[dim]; !exists || level == LevelOK {
+			w.levelDurations[dim] = time.Now()
+		}
+		w.mu.Unlock()
+	}
+
+	// === CPU CRITICAL Actions ===
+	if state.Levels[DimCPU] == LevelCritical {
+		duration := time.Since(w.getLevelEntryTime(DimCPU))
+
+		// Capture CPU profile after 10s of CRITICAL
+		if duration >= 10*time.Second {
+			w.executor.CaptureCPUProfile("CPU_CRITICAL_10s", snapshot)
+		}
+	}
+
+	// === MEM CRITICAL Actions ===
+	if state.Levels[DimMEM] == LevelCritical {
+		duration := time.Since(w.getLevelEntryTime(DimMEM))
+
+		// Capture heap profile after 30s
+		if duration >= 30*time.Second {
+			w.executor.CaptureHeapProfile("MEM_CRITICAL_30s", snapshot)
+		}
+
+		// Try FreeOSMemory after 30s if CPU is low
+		if duration >= 30*time.Second {
+			w.executor.TryFreeOSMemory(duration, snapshot.Process.CPUPct, snapshot)
+		}
+	}
+
+	// === Goroutine spike ===
+	if snapshot.Runtime.Goroutines > w.config.GoroutinesCrit {
+		w.executor.CaptureGoroutineProfile("goroutine_spike", snapshot)
+	}
+
+	// === Mode-based throttling ===
+	switch mode {
+	case ModeDegraded:
+		w.executor.DisableOptional("degraded_mode")
+
+	case ModeSurvival:
+		w.executor.Throttle("survival_mode")
+		w.executor.DisableOptional("survival_mode")
+	}
+}
+
+// handleModeChange is called when operating mode changes
+func (w *Watchdog) handleModeChange(oldMode, newMode Mode) {
+	logx.Watchdog("mode change %s -> %s", oldMode, newMode)
+
+	w.mu.RLock()
+	snapshot := w.lastSnapshot
+	w.mu.RUnlock()
+
+	// Record in flight recorder
+	w.recorder.RecordModeChange(oldMode, newMode, snapshot)
+
+	// Apply mode settings
+	w.executor.ApplyMode(newMode, snapshot)
+}
+
+// handleAction is called when an action is executed
+func (w *Watchdog) handleAction(action Action) {
+	logx.Watchdog("action %s - %s", action.Type, action.Reason)
+
+	w.mu.RLock()
+	snapshot := w.lastSnapshot
+	w.mu.RUnlock()
+
+	w.recorder.RecordAction(action, snapshot)
+}
+
+// getLevelEntryTime returns when a dimension entered its current level
+func (w *Watchdog) getLevelEntryTime(dim Dimension) time.Time {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if t, exists := w.levelDurations[dim]; exists {
+		return t
+	}
+	return time.Now()
+}
+
+// =============================================================================
+// Public Accessors
+// =============================================================================
+
+// GetState returns the current pressure state
+func (w *Watchdog) GetState() *PressureState {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	if w.lastState != nil {
+		return w.lastState
+	}
+	return NewPressureState()
+}
+
+// GetSnapshot returns the last collected snapshot
+func (w *Watchdog) GetSnapshot() *Snapshot {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.lastSnapshot
+}
+
+// GetMode returns the current operating mode
+func (w *Watchdog) GetMode() Mode {
+	return w.state.GetMode()
+}
+
+// GetControls returns the runtime controls
+func (w *Watchdog) GetControls() *RuntimeControls {
+	return w.controls
+}
+
+// IsRunning returns whether the watchdog is running
+func (w *Watchdog) IsRunning() bool {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
+	return w.running
+}
+
+// SetOnMetrics sets a callback for metrics updates
+func (w *Watchdog) SetOnMetrics(cb func(*Snapshot, *PressureState)) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	w.onMetrics = cb
+}
+
+// GetRecorderStats returns flight recorder statistics
+func (w *Watchdog) GetRecorderStats() recorder.RecorderStats {
+	return w.recorder.GetStats()
+}
+
+// GetRecentEvents returns recent events from the flight recorder
+func (w *Watchdog) GetRecentEvents(count int) []Event {
+	return w.recorder.GetRecentEvents(count)
+}
+
+// RecordNFTApplyLatency records nft apply latency
+func (w *Watchdog) RecordNFTApplyLatency(latency time.Duration) {
+	w.nftablesCollector.RecordApplyLatency(latency)
+}
