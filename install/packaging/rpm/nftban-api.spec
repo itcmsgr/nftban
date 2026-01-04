@@ -8,8 +8,10 @@ URL:            https://github.com/nftban/nftban
 Source0:        %{name}-%{version}.tar.gz
 
 BuildRequires:  golang >= 1.21
+BuildRequires:  pam-devel
 BuildRequires:  systemd-rpm-macros
 Requires:       nftban >= 1.0.0
+Requires:       pam
 Requires:       systemd
 Requires(post): systemd
 Requires(preun): systemd
