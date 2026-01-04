@@ -1,6 +1,8 @@
 package main
 
 import (
+	"archive/tar"
+	"bufio"
 	"compress/gzip"
 	"fmt"
 	"io"
@@ -15,6 +17,48 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/oschwald/maxminddb-golang"
 )
+
+// GeoIP provider configuration
+type geoipConfig struct {
+	Source     string // "dbip" or "maxmind"
+	LicenseKey string // MaxMind license key
+}
+
+// loadGeoIPConfig reads GeoIP settings from config files
+func loadGeoIPConfig(cfg *nftbanconf.Config) geoipConfig {
+	config := geoipConfig{
+		Source: "dbip", // Default
+	}
+
+	// Read from config files (shell variable format)
+	configFiles := []string{
+		cfg.ConfigDir + "/conf.d/nftban-go.conf",
+		cfg.ConfigDir + "/conf.d/nftban-go.conf.local",
+	}
+
+	for _, configFile := range configFiles {
+		if file, err := os.Open(configFile); err == nil {
+			scanner := bufio.NewScanner(file)
+			for scanner.Scan() {
+				line := strings.TrimSpace(scanner.Text())
+				if strings.HasPrefix(line, "#") || line == "" {
+					continue
+				}
+				if strings.HasPrefix(line, "GEOIP_DB_SOURCE=") {
+					val := strings.TrimPrefix(line, "GEOIP_DB_SOURCE=")
+					config.Source = strings.Trim(val, "\"'")
+				}
+				if strings.HasPrefix(line, "GEOIP_MAXMIND_LICENSE_KEY=") {
+					val := strings.TrimPrefix(line, "GEOIP_MAXMIND_LICENSE_KEY=")
+					config.LicenseKey = strings.Trim(val, "\"'")
+				}
+			}
+			file.Close()
+		}
+	}
+
+	return config
+}
 
 // getGeoipDir returns the GeoIP database directory from passed config
 func getGeoipDir(cfg *nftbanconf.Config) string {
@@ -50,14 +94,35 @@ func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 
-	dbDir := getGeoipDir(cfg)
-	dbFile := filepath.Join(dbDir, "dbip-country-lite.mmdb")
-	dbBackup := filepath.Join(dbDir, "dbip-country-lite.mmdb.backup")
+	// Load GeoIP configuration
+	geoipCfg := loadGeoIPConfig(cfg)
 
-	// DB-IP Lite: Free, no registration, CC BY 4.0 license
-	// URL format: https://download.db-ip.com/free/dbip-country-lite-YYYY-MM.mmdb.gz
-	currentMonth := time.Now().Format("2006-01")
-	dbURL := fmt.Sprintf("https://download.db-ip.com/free/dbip-country-lite-%s.mmdb.gz", currentMonth)
+	dbDir := getGeoipDir(cfg)
+	var dbFile, dbBackup, dbURL, providerName string
+	var useMaxMind bool
+
+	if geoipCfg.Source == "maxmind" && geoipCfg.LicenseKey != "" {
+		// MaxMind GeoLite2
+		useMaxMind = true
+		dbFile = filepath.Join(dbDir, "GeoLite2-Country.mmdb")
+		dbBackup = filepath.Join(dbDir, "GeoLite2-Country.mmdb.backup")
+		dbURL = fmt.Sprintf("https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=%s&suffix=tar.gz", geoipCfg.LicenseKey)
+		providerName = "MaxMind GeoLite2-Country"
+	} else {
+		// DB-IP Lite (default)
+		dbFile = filepath.Join(dbDir, "dbip-country-lite.mmdb")
+		dbBackup = filepath.Join(dbDir, "dbip-country-lite.mmdb.backup")
+		currentMonth := time.Now().Format("2006-01")
+		dbURL = fmt.Sprintf("https://download.db-ip.com/free/dbip-country-lite-%s.mmdb.gz", currentMonth)
+		providerName = "DB-IP Country Lite"
+	}
+
+	fmt.Printf("Provider: %s\n", providerName)
+	if geoipCfg.Source == "maxmind" && geoipCfg.LicenseKey == "" {
+		fmt.Println("  ⚠️  MaxMind selected but no license key configured")
+		fmt.Println("  Falling back to DB-IP Lite")
+	}
+	fmt.Println()
 
 	// Step 1: Ensure directory exists
 	fmt.Println("Step 1: Preparing database directory...")
@@ -80,18 +145,29 @@ func cmdGeoipUpdate(cfg *nftbanconf.Config) error {
 	fmt.Println()
 
 	// Step 3: Download new database
-	fmt.Println("Step 3: Downloading DB-IP Country Lite database...")
-	fmt.Printf("  Source: %s\n", dbURL)
-	fmt.Println("  This may take a moment (~7MB download)...")
+	fmt.Printf("Step 3: Downloading %s database...\n", providerName)
+	fmt.Printf("  Source: %s\n", strings.Split(dbURL, "?")[0]+"...")
+	if useMaxMind {
+		fmt.Println("  This may take a moment (~6MB download)...")
+	} else {
+		fmt.Println("  This may take a moment (~7MB download)...")
+	}
 	fmt.Println()
 
-	if err := downloadAndDecompressGzip(dbURL, dbFile); err != nil {
+	var downloadErr error
+	if useMaxMind {
+		downloadErr = downloadMaxMindTarGz(dbURL, dbFile)
+	} else {
+		downloadErr = downloadAndDecompressGzip(dbURL, dbFile)
+	}
+
+	if downloadErr != nil {
 		// Restore backup if exists
 		if _, statErr := os.Stat(dbBackup); statErr == nil {
 			fmt.Println("  ❌ Download failed, restoring backup...")
 			os.Rename(dbBackup, dbFile)
 		}
-		return fmt.Errorf("download failed: %w", err)
+		return fmt.Errorf("download failed: %w", downloadErr)
 	}
 	fmt.Println("  ✅ Download complete")
 	fmt.Println()
@@ -547,4 +623,81 @@ func (pr *progressReader) Read(p []byte) (int, error) {
 		}
 	}
 	return n, err
+}
+
+// downloadMaxMindTarGz downloads and extracts MaxMind tar.gz format
+func downloadMaxMindTarGz(url, destPath string) error {
+	tmpFile := destPath + ".tmp"
+
+	// Create HTTP client with timeout
+	client := &http.Client{
+		Timeout: 5 * time.Minute,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return fmt.Errorf("download failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("bad status: %s", resp.Status)
+	}
+
+	// Show download progress
+	totalSize := resp.ContentLength
+	downloaded := int64(0)
+	lastProgress := 0
+
+	progressReader := &progressReader{
+		reader:       resp.Body,
+		total:        totalSize,
+		downloaded:   &downloaded,
+		lastProgress: &lastProgress,
+	}
+
+	// Open gzip reader
+	gzReader, err := gzip.NewReader(progressReader)
+	if err != nil {
+		return fmt.Errorf("gzip open failed: %w", err)
+	}
+	defer gzReader.Close()
+
+	// Open tar reader
+	tarReader := tar.NewReader(gzReader)
+
+	// Find .mmdb file in tar archive
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			return fmt.Errorf("no .mmdb file found in archive")
+		}
+		if err != nil {
+			return fmt.Errorf("tar read failed: %w", err)
+		}
+
+		// Look for .mmdb file
+		if strings.HasSuffix(header.Name, ".mmdb") {
+			// Write to temp file
+			out, err := os.Create(tmpFile)
+			if err != nil {
+				return err
+			}
+
+			_, err = io.Copy(out, tarReader)
+			out.Close()
+			if err != nil {
+				os.Remove(tmpFile)
+				return fmt.Errorf("extract failed: %w", err)
+			}
+
+			// Move temp file to final location
+			if err := os.Rename(tmpFile, destPath); err != nil {
+				os.Remove(tmpFile)
+				return err
+			}
+
+			return nil
+		}
+	}
 }
