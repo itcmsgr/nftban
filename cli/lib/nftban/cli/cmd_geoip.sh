@@ -462,11 +462,11 @@ nftban_geoip_cmd_config() {
             fi
 
             echo "Database Source:"
-            echo "  Current: ${GEOIP_DB_SOURCE:-github}"
+            echo "  Current: ${GEOIP_DB_SOURCE:-dbip}"
             echo ""
 
-            if [[ "${GEOIP_DB_SOURCE:-github}" == "maxmind" ]]; then
-                echo "MaxMind Settings:"
+            if [[ "${GEOIP_DB_SOURCE:-dbip}" == "maxmind" ]]; then
+                echo "MaxMind GeoLite2 Settings:"
                 if [[ -n "${GEOIP_MAXMIND_LICENSE_KEY:-}" ]]; then
                     echo "  License Key: ••••••••${GEOIP_MAXMIND_LICENSE_KEY: -4}"
                 else
@@ -480,18 +480,19 @@ nftban_geoip_cmd_config() {
                 echo "  2. Generate license key in account dashboard"
                 echo "  3. Set key: nftban geoip config set-key YOUR_KEY"
             else
-                echo "GitHub Mirror Settings:"
-                echo "  URL: https://github.com/P3TERX/GeoLite.mmdb"
-                echo "  License: NO KEY REQUIRED"
-                echo "  Updates: Community-maintained"
+                echo "DB-IP Lite Settings (DEFAULT):"
+                echo "  URL: https://download.db-ip.com/free/"
+                echo "  License: CC BY 4.0 (Free, no registration)"
+                echo "  Updates: Monthly (automatic)"
                 echo ""
-                echo "This is a FREE mirror of MaxMind GeoLite2 database."
+                echo "DB-IP Lite provides free IP geolocation data."
                 echo "No account or license key needed!"
+                echo "Attribution: IP Geolocation by DB-IP (https://db-ip.com)"
             fi
 
             echo ""
             echo "Database Location:"
-            local geoip_db="${NFTBAN_DATA_DIR}/geoip/GeoLite2-City.mmdb"
+            local geoip_db="${NFTBAN_DATA_DIR}/geoip/dbip-country-lite.mmdb"
             echo "  Path: ${geoip_db}"
             if [[ -f "${geoip_db}" ]]; then
                 local db_size db_date
@@ -511,9 +512,9 @@ nftban_geoip_cmd_config() {
 
         set-source)
             local source="${1:-}"
-            if [[ "$source" != "github" && "$source" != "maxmind" ]]; then
+            if [[ "$source" != "dbip" && "$source" != "maxmind" ]]; then
                 echo "ERROR: Invalid source: $source" >&2
-                echo "Valid sources: github, maxmind" >&2
+                echo "Valid sources: dbip (default), maxmind" >&2
                 return 1
             fi
 
@@ -575,21 +576,24 @@ nftban_geoip_cmd_config() {
             echo ""
 
             # Load config
-            source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf"
+            [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf"
             [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local"
 
             local test_url=""
-            if [[ "${GEOIP_DB_SOURCE:-github}" == "maxmind" ]]; then
+            local current_month
+            current_month=$(date +%Y-%m)
+
+            if [[ "${GEOIP_DB_SOURCE:-dbip}" == "maxmind" ]]; then
                 if [[ -z "${GEOIP_MAXMIND_LICENSE_KEY:-}" ]]; then
                     echo "ERROR: MaxMind license key not set" >&2
                     echo "Set key: nftban geoip config set-key YOUR_KEY" >&2
                     return 1
                 fi
-                test_url="https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-City&license_key=${GEOIP_MAXMIND_LICENSE_KEY}&suffix=tar.gz"
+                test_url="https://download.maxmind.com/app/geoip_download?edition_id=GeoLite2-Country&license_key=${GEOIP_MAXMIND_LICENSE_KEY}&suffix=tar.gz"
                 echo "Testing MaxMind download..."
             else
-                test_url="https://github.com/P3TERX/GeoLite.mmdb/raw/download/GeoLite2-City.mmdb"
-                echo "Testing GitHub mirror download..."
+                test_url="https://download.db-ip.com/free/dbip-country-lite-${current_month}.mmdb.gz"
+                echo "Testing DB-IP Lite download..."
             fi
 
             echo "URL: ${test_url%%\?*}..."
@@ -602,7 +606,7 @@ nftban_geoip_cmd_config() {
             else
                 echo ""
                 echo "✗ Download test FAILED"
-                if [[ "${GEOIP_DB_SOURCE:-github}" == "maxmind" ]]; then
+                if [[ "${GEOIP_DB_SOURCE:-dbip}" == "maxmind" ]]; then
                     echo "  Check your license key is valid"
                 fi
             fi
@@ -715,10 +719,10 @@ DATABASE CONFIGURATION:
     # Show current database configuration
     nftban geoip config show
 
-    # Use GitHub mirror (FREE, no key required - DEFAULT)
-    nftban geoip config set-source github
+    # Use DB-IP Lite (FREE, no key required - DEFAULT)
+    nftban geoip config set-source dbip
 
-    # Use MaxMind direct (FREE, requires license key)
+    # Use MaxMind GeoLite2 (FREE, requires license key)
     nftban geoip config set-source maxmind
     nftban geoip config set-key YOUR_LICENSE_KEY
 
@@ -727,6 +731,21 @@ DATABASE CONFIGURATION:
 
     # Get FREE MaxMind key: https://www.maxmind.com/en/geolite2/signup
 
+DATABASE PROVIDERS:
+    DB-IP Lite (DEFAULT):
+      - Free, no registration required
+      - License: CC BY 4.0
+      - Country-level accuracy
+      - Monthly updates (~7MB)
+      - https://db-ip.com
+
+    MaxMind GeoLite2 (OPTIONAL):
+      - Free with registration
+      - Requires license key
+      - City-level accuracy available
+      - Weekly updates
+      - https://www.maxmind.com
+
 PERFORMANCE:
     GeoIP Lookup: 50-200 microseconds (0.05-0.2ms)
     GeoBan Load:  Atomic, zero-downtime updates
@@ -734,14 +753,17 @@ PERFORMANCE:
     Offline operation (no internet after database download)
 
 FILES AND LOCATIONS:
-    Binary:          /usr/lib/nftban/bin/nftban-geoip (GO 1.21+, ~6MB)
-    Database:        /var/lib/nftban/geoip/GeoLite2-City.mmdb (~61MB)
+    Binary:          /usr/lib/nftban/bin/nftban-core (GO 1.21+)
+    Database:        /var/lib/nftban/geoip/dbip-country-lite.mmdb (~7MB)
     Configuration:   /etc/nftban/conf.d/nftban-go.conf
     User overrides:  /etc/nftban/conf.d/nftban-go.conf.local
     GeoBan files:    /etc/nftban/geoban.d/
     Country IPs:     /var/cache/nftban/geoban/
     Tracking:        /var/lib/nftban/geoban/tracking/
     Logs:            /var/log/nftban/go-operations.log
+
+ATTRIBUTION:
+    IP Geolocation by DB-IP (https://db-ip.com)
 
 nftban — Simplifying Linux Firewall Management
 EOF
