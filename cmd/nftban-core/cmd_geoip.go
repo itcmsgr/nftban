@@ -4,6 +4,7 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -383,7 +384,13 @@ func cmdGeoipLookup(cfg *nftbanconf.Config, ipStr string, jsonOutput bool) error
 		} `maxminddb:"location"`
 	}
 
-	err = db.Lookup([]byte(ipStr), &record)
+	// Parse IP string to net.IP
+	parsedIP := net.ParseIP(ipStr)
+	if parsedIP == nil {
+		return fmt.Errorf("invalid IP address: %s", ipStr)
+	}
+
+	err = db.Lookup(parsedIP, &record)
 	if err != nil {
 		return fmt.Errorf("lookup failed: %w", err)
 	}
