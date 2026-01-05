@@ -37,6 +37,11 @@ const (
 
 	// Check interval
 	DefaultCheckInterval = 60 * time.Second
+
+	// Ban thresholds
+	DefaultBanThreshold = 3              // Ban after 3 portscan detections
+	DefaultBanDuration  = 1 * time.Hour  // 1 hour ban
+	DefaultTrackWindow  = 5 * time.Minute // Track scans within 5 minutes
 )
 
 // getPortscanScript returns the portscan script path from central config
@@ -44,6 +49,13 @@ const (
 func getPortscanScript() string {
 	cfg := nftbanconf.MustLoad()
 	return cfg.LibDir + "/core/nftban_portscan.sh"
+}
+
+// ipTracker tracks portscan events per IP
+type ipTracker struct {
+	count     int
+	firstSeen time.Time
+	lastSeen  time.Time
 }
 
 // Module implements the portscan detection module
@@ -59,6 +71,10 @@ type Module struct {
 	enabled       bool
 	suricataAvail bool
 	scansDetected int64
+
+	// IP tracking for ban decisions
+	ipTrackers    map[string]*ipTracker
+	bannedIPs     map[string]time.Time // Track recently banned to avoid duplicates
 }
 
 // New creates a new portscan detection module
@@ -211,18 +227,56 @@ func (m *Module) runCycle() {
 
 // handlePortscanEvent handles portscan events from other sources
 func (m *Module) handlePortscanEvent(e eventbus.Event) {
+	if e.IP == "" {
+		return
+	}
+
 	m.mu.Lock()
 	m.scansDetected++
 	m.status.RecordEvent()
+
+	// Track IP for ban threshold
+	if m.ipTrackers == nil {
+		m.ipTrackers = make(map[string]*ipTracker)
+	}
+	if m.bannedIPs == nil {
+		m.bannedIPs = make(map[string]time.Time)
+	}
+
+	// Skip if recently banned
+	if bannedAt, exists := m.bannedIPs[e.IP]; exists {
+		if time.Since(bannedAt) < DefaultBanDuration {
+			m.mu.Unlock()
+			return
+		}
+		delete(m.bannedIPs, e.IP)
+	}
+
+	// Track this IP
+	tracker, exists := m.ipTrackers[e.IP]
+	if !exists || time.Since(tracker.firstSeen) > DefaultTrackWindow {
+		tracker = &ipTracker{
+			count:     0,
+			firstSeen: time.Now(),
+		}
+		m.ipTrackers[e.IP] = tracker
+	}
+	tracker.count++
+	tracker.lastSeen = time.Now()
+
+	shouldBan := tracker.count >= DefaultBanThreshold
 	m.mu.Unlock()
 
-	// Publish processed event
-	if m.bus != nil {
-		m.bus.Publish(eventbus.NewEvent(eventbus.EventPortscan, ModuleName).
+	// Trigger ban if threshold exceeded
+	if shouldBan && m.bus != nil {
+		m.bannedIPs[e.IP] = time.Now()
+		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
 			WithIP(e.IP).
-			WithMessage("Portscan detected and processed").
-			WithSeverity(eventbus.SeverityWarning).
-			WithData("total_scans", m.scansDetected))
+			WithMessage("Banning " + e.IP + ": portscan threshold exceeded").
+			WithSeverity(eventbus.SeverityCritical).
+			WithData("duration", DefaultBanDuration.String()).
+			WithData("reason", "portscan_detection").
+			WithData("scan_count", tracker.count))
 	}
 }
 

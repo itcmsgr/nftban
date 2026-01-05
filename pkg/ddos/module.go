@@ -37,6 +37,11 @@ const (
 
 	// Check interval
 	DefaultCheckInterval = 30 * time.Second
+
+	// Ban thresholds
+	DefaultBanThreshold = 3               // Ban after 3 DDoS detections
+	DefaultBanDuration  = 30 * time.Minute // 30 minute ban (shorter, re-escalate if continues)
+	DefaultTrackWindow  = 1 * time.Minute  // Track events within 1 minute
 )
 
 // getDDOSScript returns the DDoS script path from central config
@@ -44,6 +49,13 @@ const (
 func getDDOSScript() string {
 	cfg := nftbanconf.MustLoad()
 	return cfg.LibDir + "/core/nftban_ddos.sh"
+}
+
+// ipTracker tracks DDoS events per IP
+type ipTracker struct {
+	count     int
+	firstSeen time.Time
+	lastSeen  time.Time
 }
 
 // Module implements the DDoS protection module
@@ -58,6 +70,10 @@ type Module struct {
 	mode          string // classic, suricata, hybrid, auto
 	enabled       bool
 	suricataAvail bool
+
+	// IP tracking for ban decisions
+	ipTrackers    map[string]*ipTracker
+	bannedIPs     map[string]time.Time
 }
 
 // New creates a new DDoS protection module
@@ -200,16 +216,55 @@ func (m *Module) checkStatus() {
 
 // handleDDoSEvent handles DDoS detection events from other sources
 func (m *Module) handleDDoSEvent(e eventbus.Event) {
+	if e.IP == "" {
+		return
+	}
+
 	m.mu.Lock()
 	m.status.RecordEvent()
+
+	// Track IP for ban threshold
+	if m.ipTrackers == nil {
+		m.ipTrackers = make(map[string]*ipTracker)
+	}
+	if m.bannedIPs == nil {
+		m.bannedIPs = make(map[string]time.Time)
+	}
+
+	// Skip if recently banned
+	if bannedAt, exists := m.bannedIPs[e.IP]; exists {
+		if time.Since(bannedAt) < DefaultBanDuration {
+			m.mu.Unlock()
+			return
+		}
+		delete(m.bannedIPs, e.IP)
+	}
+
+	// Track this IP
+	tracker, exists := m.ipTrackers[e.IP]
+	if !exists || time.Since(tracker.firstSeen) > DefaultTrackWindow {
+		tracker = &ipTracker{
+			count:     0,
+			firstSeen: time.Now(),
+		}
+		m.ipTrackers[e.IP] = tracker
+	}
+	tracker.count++
+	tracker.lastSeen = time.Now()
+
+	shouldBan := tracker.count >= DefaultBanThreshold
 	m.mu.Unlock()
 
-	// Log the event
-	if m.bus != nil {
-		m.bus.Publish(eventbus.NewEvent(eventbus.EventDDoSDetected, ModuleName).
+	// Trigger ban if threshold exceeded
+	if shouldBan && m.bus != nil {
+		m.bannedIPs[e.IP] = time.Now()
+		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
 			WithIP(e.IP).
-			WithMessage("DDoS event processed").
-			WithSeverity(eventbus.SeverityWarning))
+			WithMessage("Banning " + e.IP + ": DDoS threshold exceeded").
+			WithSeverity(eventbus.SeverityCritical).
+			WithData("duration", DefaultBanDuration.String()).
+			WithData("reason", "ddos_protection").
+			WithData("event_count", tracker.count))
 	}
 }
 
