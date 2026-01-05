@@ -291,3 +291,196 @@
     overflow: hidden;
 }
 /* End Overflow */
+
+/* ============================================================================= */
+/* ADDITIONAL UTILITIES - Added for full GUI support                             */
+/* ============================================================================= */
+
+/* Font Sizes */
+.fs-11 { font-size: 11px; }
+.fs-12 { font-size: 12px; }
+.fs-16 { font-size: 16px; }
+.fs-18 { font-size: 18px; }
+.fs-20 { font-size: 20px; }
+.fs-24 { font-size: 24px; }
+.fs-30 { font-size: 30px; }
+
+/* Grid Columns */
+.grid-cols-4 { grid-template-columns: repeat(4, 1fr); }
+.grid-cols-5 { grid-template-columns: repeat(5, 1fr); }
+.grid-cols-6 { grid-template-columns: repeat(6, 1fr); }
+
+/* Flex Utilities */
+.flex-column { flex-direction: column; }
+.flex-row { flex-direction: row; }
+.flex-wrap { flex-wrap: wrap; }
+.flex-1 { flex: 1; }
+.justify-between { justify-content: space-between; }
+.justify-center { justify-content: center; }
+.justify-end { justify-content: flex-end; }
+.align-start { align-items: flex-start; }
+.align-end { align-items: flex-end; }
+
+/* Font Family */
+.font-mono { font-family: 'Courier New', Courier, monospace; }
+
+/* Additional Padding */
+.px-2 { padding-left: 8px; padding-right: 8px; }
+.px-5 { padding-left: 5px; padding-right: 5px; }
+.px-10 { padding-left: 10px; padding-right: 10px; }
+.px-15 { padding-left: 15px; padding-right: 15px; }
+.py-1 { padding-top: 4px; padding-bottom: 4px; }
+.py-5 { padding-top: 5px; padding-bottom: 5px; }
+.py-8 { padding-top: 8px; padding-bottom: 8px; }
+.py-10 { padding-top: 10px; padding-bottom: 10px; }
+
+/* Additional Margin */
+.mr-5 { margin-right: 5px; }
+.ml-5 { margin-left: 5px; }
+.ml-10 { margin-left: 10px; }
+.ml-15 { margin-left: 15px; }
+.mb-1 { margin-bottom: 4px; }
+.mb-2 { margin-bottom: 8px; }
+
+/* Text Alignment */
+.txt-l { text-align: left; }
+.txt-r { text-align: right; }
+.text-center { text-align: center; }
+
+/* List Styles */
+.list-disc { list-style-type: disc; }
+.list-inside { list-style-position: inside; }
+.space-y-1 > * + * { margin-top: 4px; }
+.space-y-2 > * + * { margin-top: 8px; }
+
+/* Status Indicators */
+.status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    background: var(--grey-color);
+}
+.status-enabled { background: var(--green-color); }
+.status-disabled { background: var(--red-color); }
+.status-warning { background: var(--orange-color); }
+
+/* Tailwind-like Background Colors */
+.bg-blue-100 { background-color: #dbeafe; }
+.bg-blue-600 { background-color: #2563eb; }
+.bg-green-100 { background-color: #dcfce7; }
+.bg-green-600 { background-color: #16a34a; }
+.bg-red-100 { background-color: #fee2e2; }
+.bg-red-600 { background-color: #dc2626; }
+.bg-yellow-100 { background-color: #fef3c7; }
+.bg-yellow-600 { background-color: #ca8a04; }
+.bg-orange-500 { background-color: #f97316; }
+.bg-orange-600 { background-color: #ea580c; }
+.bg-purple-100 { background-color: #f3e8ff; }
+.bg-grey-100 { background-color: #f3f4f6; }
+
+/* Tailwind-like Text Colors */
+.text-blue-800 { color: #1e40af; }
+.text-green-800 { color: #166534; }
+.text-red-800 { color: #991b1b; }
+.text-yellow-800 { color: #854d0e; }
+.text-purple-800 { color: #6b21a8; }
+.text-white { color: white; }
+
+/* Dark theme support for utility colors */
+[data-theme="dark"] .bg-blue-100 { background-color: rgba(37, 99, 235, 0.2); }
+[data-theme="dark"] .bg-green-100 { background-color: rgba(22, 163, 74, 0.2); }
+[data-theme="dark"] .bg-red-100 { background-color: rgba(220, 38, 38, 0.2); }
+[data-theme="dark"] .bg-yellow-100 { background-color: rgba(202, 138, 4, 0.2); }
+[data-theme="dark"] .bg-purple-100 { background-color: rgba(107, 33, 168, 0.2); }
+[data-theme="dark"] .bg-grey-100 { background-color: rgba(55, 65, 81, 0.5); }
+[data-theme="dark"] .text-blue-800 { color: #93c5fd; }
+[data-theme="dark"] .text-green-800 { color: #86efac; }
+[data-theme="dark"] .text-red-800 { color: #fca5a5; }
+[data-theme="dark"] .text-yellow-800 { color: #fde047; }
+[data-theme="dark"] .text-purple-800 { color: #d8b4fe; }
+[data-theme="dark"] .main-border { border-color: var(--border); }
+
+/* Help Feature Box (for documentation sections) */
+.help-feature-box {
+    background-color: #f8fafc;
+    border: 1px solid #e2e8f0;
+}
+[data-theme="dark"] .help-feature-box {
+    background-color: #1e293b;
+    border-color: #334155;
+}
+[data-theme="dark"] .help-feature-box code {
+    color: #60a5fa;
+}
+
+/* Toggle Switch Component */
+.toggle-switch {
+    position: relative;
+    display: inline-block;
+    width: 50px;
+    height: 26px;
+}
+.toggle-switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+}
+.toggle-slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #ef4444;
+    transition: 0.3s;
+    border-radius: 26px;
+}
+.toggle-slider:before {
+    position: absolute;
+    content: "";
+    height: 20px;
+    width: 20px;
+    left: 3px;
+    bottom: 3px;
+    background-color: white;
+    transition: 0.3s;
+    border-radius: 50%;
+}
+input:checked + .toggle-slider {
+    background-color: var(--green-color);
+}
+input:checked + .toggle-slider:before {
+    transform: translateX(24px);
+}
+input:disabled + .toggle-slider {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+/* Hover States */
+.hover\:bg-blue-700:hover { background-color: #1d4ed8; }
+.hover\:bg-green-700:hover { background-color: #15803d; }
+.hover\:bg-red-700:hover { background-color: #b91c1c; }
+.hover\:bg-orange-600:hover { background-color: #ea580c; }
+.hover\:bg-orange-700:hover { background-color: #c2410c; }
+
+/* Responsive Grid Adjustments */
+@media (max-width: 1200px) {
+    .grid-cols-4 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 992px) {
+    .grid-cols-3 { grid-template-columns: repeat(2, 1fr); }
+}
+@media (max-width: 768px) {
+    .grid-cols-2 { grid-template-columns: 1fr; }
+    .grid-cols-3 { grid-template-columns: 1fr; }
+    .grid-cols-4 { grid-template-columns: 1fr; }
+}
+
+/* Radius Utility */
+.rad-4 { border-radius: 4px; }
+
+/* Hidden Utility */
+.hidden { display: none !important; }
