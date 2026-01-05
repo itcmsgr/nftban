@@ -17,6 +17,10 @@
 #
 # =============================================================================
 
+# Prevent double-loading (required for circular dependency with nftban_feeds.sh)
+[[ -n "${NFTBAN_TASK_QUEUE_LOADED:-}" ]] && return 0
+readonly NFTBAN_TASK_QUEUE_LOADED=1
+
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
