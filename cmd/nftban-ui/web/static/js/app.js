@@ -229,11 +229,53 @@
   }
 
   // -----------------------------
+  // MOBILE MENU TOGGLE
+  // -----------------------------
+  function initMobileMenu() {
+    const menuToggle = document.getElementById('menu-toggle');
+    const sidebar = document.querySelector('.sidebar');
+
+    if (menuToggle && sidebar) {
+      // Create overlay element
+      let overlay = document.querySelector('.sidebar-overlay');
+      if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'sidebar-overlay';
+        document.querySelector('.container').appendChild(overlay);
+      }
+
+      // Toggle menu on button click
+      menuToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        sidebar.classList.toggle('open');
+        overlay.classList.toggle('active');
+      });
+
+      // Close menu when clicking overlay
+      overlay.addEventListener('click', () => {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('active');
+      });
+
+      // Close menu when clicking a nav item (on mobile)
+      navItems.forEach(item => {
+        item.addEventListener('click', () => {
+          if (window.innerWidth <= 768) {
+            sidebar.classList.remove('open');
+            overlay.classList.remove('active');
+          }
+        });
+      });
+    }
+  }
+
+  // -----------------------------
   // INIT
   // -----------------------------
   document.addEventListener("DOMContentLoaded", () => {
     initTheme();
     initNav();
+    initMobileMenu();
 
     // Setup login handler
     const loginForm = document.getElementById("login-form");

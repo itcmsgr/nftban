@@ -75,7 +75,8 @@ body {
 }
 
 /* Header */
-header {
+header,
+.header-bar {
     height: 60px;
     background: var(--bg-alt);
     border-bottom: 1px solid var(--border);
@@ -224,6 +225,48 @@ button {
 
 .btn-primary:hover {
     background: var(--primary-hover);
+}
+
+.btn-danger {
+    background: var(--danger);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.btn-danger:hover {
+    background: #c82333;
+}
+
+.btn-success {
+    background: var(--success);
+    color: white;
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.btn-success:hover {
+    background: #218838;
+}
+
+.btn-sm {
+    padding: 6px 12px;
+    font-size: 12px;
+    border-radius: 4px;
+}
+
+.btn-sm.btn-primary {
+    background: var(--primary);
+    color: white;
+}
+
+.btn-sm.btn-danger {
+    background: var(--danger);
+    color: white;
 }
 
 .btn-link {
@@ -388,14 +431,49 @@ button {
 /* RESPONSIVE */
 /* ============================================================================= */
 
+/* Mobile Menu Toggle Button */
+.menu-toggle {
+    display: none;
+    background: none;
+    border: none;
+    font-size: 24px;
+    cursor: pointer;
+    color: var(--text);
+    padding: 8px;
+    margin-right: 10px;
+}
+.menu-toggle:hover {
+    color: var(--primary);
+}
+
+/* Sidebar Overlay for Mobile */
+.sidebar-overlay {
+    display: none;
+    position: fixed;
+    top: 60px;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    z-index: 99;
+}
+.sidebar-overlay.active {
+    display: block;
+}
+
 @media (max-width: 768px) {
+    .menu-toggle {
+        display: block;
+    }
+
     .sidebar {
         position: fixed;
         left: -250px;
         top: 60px;
         height: calc(100vh - 60px);
         z-index: 100;
-        transition: left 0.3s;
+        transition: left 0.3s ease;
+        box-shadow: 2px 0 10px rgba(0,0,0,0.3);
     }
 
     .sidebar.open {
@@ -412,6 +490,11 @@ button {
 
     .chart-row {
         grid-template-columns: 1fr;
+    }
+
+    /* Hide long nav text on small screens */
+    .header-left h2 {
+        font-size: 16px;
     }
 }
 
@@ -445,6 +528,23 @@ button {
 
 .p-1 {
     padding: 10px;
+}
+
+/* Loading Message */
+.loading-message {
+    text-align: center;
+    padding: 40px;
+    color: var(--text-muted);
+    font-size: 16px;
+}
+
+.loading-message i {
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
 }
 
 /* ============================================================================= */
