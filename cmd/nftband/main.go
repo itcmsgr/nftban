@@ -237,6 +237,39 @@ func (d *Daemon) Run() error {
 			e.Type, e.Source, e.IP, e.User, e.Message)
 	})
 
+	// Subscribe to ban events and actually execute the bans
+	d.bus.Subscribe(eventbus.EventBan, func(e eventbus.Event) {
+		if e.IP == "" {
+			return
+		}
+
+		// Extract timeout from event data (default 1 hour)
+		timeout := 3600
+		if dur, ok := e.Data["duration"].(string); ok {
+			if parsed, err := time.ParseDuration(dur); err == nil {
+				timeout = int(parsed.Seconds())
+			}
+		}
+
+		reason := "module_ban"
+		if r, ok := e.Data["reason"].(string); ok {
+			reason = r
+		}
+
+		// Execute the ban via nftables backend
+		_, err := d.backend.Ban(d.ctx, nftbackend.BanRequest{
+			IP:      e.IP,
+			Timeout: timeout,
+			Reason:  reason,
+			Source:  e.Source,
+		})
+		if err != nil {
+			log.Printf("[BAN] Failed to ban %s: %v", e.IP, err)
+		} else {
+			log.Printf("[BAN] Successfully banned %s (timeout=%ds, source=%s)", e.IP, timeout, e.Source)
+		}
+	})
+
 	// Start Unix socket
 	log.Println("Starting Unix socket...")
 	if err := d.startSocket(); err != nil {
