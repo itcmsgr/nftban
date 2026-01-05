@@ -23,18 +23,18 @@ threading:
   set-cpu-affinity: yes        # Pin threads to CPUs
   detect-thread-ratio: 2.0     # Aggressive parallelism
 
-# Flow timeout settings (DEFAULT Suricata behavior)
+# Flow timeout settings (ALIGNED: 60s established per NFTBan constraint)
 flow:
   memcap: 256mb                # High memory allocation
   hash-size: 262144
   prealloc: 40000
   timeout:
     new: 30
-    established: 300           # DEFAULT timeout (generous)
+    established: 60            # ALIGNED with NFTBan constraint (was 300)
     closed: 0
     bypassed: 100
     emergency-new: 10
-    emergency-established: 100
+    emergency-established: 30
     emergency-closed: 0
 
 # Stream engine
@@ -51,8 +51,8 @@ app-layer:
       libhtp:
         default-config:
           personality: IDS
-          request-body-limit: 30kb       # FULL inspection
-          response-body-limit: 30kb      # FULL inspection
+          request-body-limit: 30kb       # FULL request inspection
+          response-body-limit: 0         # DISABLED per NFTBan constraint
           request-body-minimal-inspect-size: 8192
           request-body-inspect-window: 8192
           response-body-minimal-inspect-size: 8192
@@ -123,71 +123,77 @@ app-layer:
     sip:
       enabled: yes
 
-# Logging configuration (COMPREHENSIVE)
+# Logging configuration (ALIGNED with NFTBan constraints)
 outputs:
   - fast:
       enabled: no
 
+  # 1) NFTBan daemon reads ONLY this file (alert-only, minimal I/O)
   - eve-log:
       enabled: yes
       filetype: regular
-      filename: /var/log/suricata/eve.json
-      rotate-interval: 1h
+      filename: /var/log/nftban/suricata/eve-alerts.json
+      threaded: yes
+
+      types:
+        - alert:
+            payload: no          # DISABLED per NFTBan constraint
+            packet: no           # DISABLED per NFTBan constraint
+            metadata: yes
+
+  # 2) Optional admin/audit log (OFF by default to avoid I/O storms)
+  #    Enable manually for deep forensics when needed
+  - eve-log:
+      enabled: no
+      filetype: regular
+      filename: /var/log/nftban/suricata/eve-audit.json
+      threaded: yes
 
       types:
         - alert:
             payload: yes
-            payload-buffer-size: 8kb    # Large payload capture
+            payload-buffer-size: 8kb
             payload-printable: yes
             packet: yes
             metadata: yes
             tagged-packets: yes
-            http-body: yes              # Include HTTP body in alerts
-            http-body-printable: yes
-
         - anomaly:
             enabled: yes
             types:
               applayer: yes
               stream: yes
               decode: yes
-
         - http:
             extended: yes
-            dump-all-headers: yes       # Full header dump
-
+            dump-all-headers: yes
         - dns:
             query: yes
             answer: yes
             version: 2
-
         - tls:
             extended: yes
             session-resumption: yes
             custom: [subject, issuer, session_resumed, fingerprint, sni, version, not_before, not_after, certificate, chain, ja3, ja3s]
-
-        - ssh:
-            enabled: yes
-
+        - ssh
         - smtp:
-            enabled: yes
             extended: yes
+        # NOTE: flow/netflow/stats/files moved to separate optional log
+        # to prevent I/O storms on audit path
 
-        - flow:
-            enabled: yes
+  # 3) Optional performance/stats log (OFF by default)
+  #    Enable for capacity planning or debugging only
+  - eve-log:
+      enabled: no
+      filetype: regular
+      filename: /var/log/nftban/suricata/eve-stats.json
+      threaded: yes
 
-        - netflow:
-            enabled: yes
-
+      types:
         - stats:
-            enabled: yes
             totals: yes
             threads: yes
-
-        - files:
-            enabled: yes
-            force-magic: yes
-            force-hash: [md5, sha1, sha256]
+        - flow
+        - netflow
 
 # Detection engine (HIGH performance)
 detect:
@@ -198,15 +204,15 @@ detect:
   sgh-mpm-context: full
   inspection-recursion-limit: 3000
 
-# Profiling (enabled for tuning)
+# Profiling (OFF by default - enable only for tuning sessions)
 profiling:
   rules:
-    enabled: yes
-    filename: /var/log/suricata/rule_perf.log
+    enabled: no
+    filename: /var/log/nftban/suricata/rule_perf.log
     append: yes
   keywords:
-    enabled: yes
-    filename: /var/log/suricata/keyword_perf.log
+    enabled: no
+    filename: /var/log/nftban/suricata/keyword_perf.log
     append: yes
 
 # Detection engine configuration
@@ -246,12 +252,13 @@ geoip-database: /var/lib/GeoIP/GeoLite2-Country.mmdb
 # =============================================================================
 # NFTBan Integration Notes:
 # - This profile is for HIGH-END servers (8+ cores / 8-16GB RAM)
-# - HTTP body inspection FULLY ENABLED (30KB both request/response)
-# - Flow timeouts: DEFAULT/GENEROUS (300s established)
+# - HTTP request body inspection ENABLED (30KB), response body DISABLED
+# - Flow timeouts: ALIGNED (60s established per NFTBan constraint)
 # - ALL protocols enabled (HTTP, TLS, SSH, DNS, SMTP, MySQL, SMB, DCERPC, FTP, etc.)
 # - Ring size: 300k frames (6x minimal profile)
 # - Detection profile: HIGH (most aggressive)
 # - CPU affinity enabled (pin threads)
-# - Profiling enabled for performance tuning
-# - Comprehensive logging (files, netflow, stats)
+# - Output: alert-only to eve-alerts.json (daemon path)
+# - Audit log: disabled by default (eve-audit.json)
+# - Stats log: disabled by default (eve-stats.json) - for capacity planning only
 # =============================================================================

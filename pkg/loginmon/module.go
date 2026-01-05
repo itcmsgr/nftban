@@ -39,8 +39,8 @@ const (
 	ModuleName    = "loginmon"
 	ModuleVersion = "1.0.0"
 
-	// Suricata paths (external dependency)
-	DefaultEVEPath        = "/var/log/suricata/eve.json"
+	// Suricata paths (NFTBan alert-only output)
+	DefaultEVEPath        = "/var/log/nftban/suricata/eve-alerts.json"
 	DefaultSuricataBin    = "/usr/bin/suricata"
 	EVEFreshnessThreshold = 60 // seconds
 

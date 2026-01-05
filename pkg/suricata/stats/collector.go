@@ -58,8 +58,8 @@ func getEveJSONPath() (string, error) {
 
 	evePath := distro.Paths["suricata_eve_log"]
 	if evePath == "" {
-		// Fallback to common paths
-		evePath = "/var/log/suricata/eve.json"
+		// Fallback to NFTBan standard path (alert-only output)
+		evePath = "/var/log/nftban/suricata/eve-alerts.json"
 	}
 
 	return evePath, nil

@@ -419,7 +419,7 @@ func defaultConfig() *Config {
 		LoginMonitorEnabled: false,
 
 		// Suricata
-		SuricataEveLog:       "/var/log/nftban/suricata/eve.json",
+		SuricataEveLog:       "/var/log/nftban/suricata/eve-alerts.json",
 		SuricataLogDir:       "/var/log/nftban/suricata",
 		SuricataBanThreshold: 100,
 		SuricataScoreDecay:   3600,
@@ -473,7 +473,7 @@ func derivePaths(cfg *Config) *Paths {
 		CLIErrorsLog:   cfg.LogDir + "/cli_errors.log",
 
 		// Suricata log files (use SuricataLogDir if set, else default)
-		SuricataEveLog:   cfg.SuricataLogDir + "/eve.json",
+		SuricataEveLog:   cfg.SuricataLogDir + "/eve-alerts.json",
 		SuricataFastLog:  cfg.SuricataLogDir + "/fast.log",
 		SuricataStatsLog: cfg.SuricataLogDir + "/stats.log",
 		SuricataMainLog:  cfg.SuricataLogDir + "/suricata.log",

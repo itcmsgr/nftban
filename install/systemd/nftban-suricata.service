@@ -9,7 +9,7 @@ PartOf=suricata.service
 Type=simple
 
 # SECURITY FIX: Run as unprivileged nftban user (not root)
-# Reads: /var/log/suricata/eve.json (via suricata group)
+# Reads: /var/log/nftban/suricata/eve-alerts.json (via suricata group)
 # Writes: /var/lib/nftban/, /var/log/nftban/
 # Firewall bans via IPC to daemon (no direct nft operations)
 # See: SYSTEMD-SERVICE-CLASSIFICATION.md

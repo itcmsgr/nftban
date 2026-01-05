@@ -74,7 +74,7 @@ func getLogFiles() map[string]string {
 		"feeds":                logDir + "/feeds.log",
 		"geoban":               logDir + "/geoban.log",
 		// Suricata IDS (v1.0) - paths from central config
-		"suricata-eve":         getSuricataLogPath("eve.json"),
+		"suricata-eve":         getSuricataLogPath("eve-alerts.json"),
 		"suricata-fast":        getSuricataLogPath("fast.log"),
 		"suricata-stats":       getSuricataLogPath("stats.log"),
 		"suricata-log":         getSuricataLogPath("suricata.log"),

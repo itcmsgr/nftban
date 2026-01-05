@@ -23,8 +23,8 @@
     endscript
 }
 
-# Suricata eve.json - rotated more frequently due to size
-/var/log/nftban/suricata/eve.json {
+# Suricata eve-alerts.json (daemon path) - low volume, alert-only
+/var/log/nftban/suricata/eve-alerts.json {
     daily
     rotate 7
     compress
@@ -33,11 +33,39 @@
     notifempty
     create 0640 suricata nftban
     copytruncate
-    size 100M
+    size 50M
     postrotate
         # Signal Suricata to reopen log file
         systemctl kill -s USR2 suricata.service >/dev/null 2>&1 || true
     endscript
+}
+
+# Suricata eve-audit.json (optional, higher volume when enabled)
+/var/log/nftban/suricata/eve-audit.json {
+    daily
+    rotate 3
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 suricata nftban
+    copytruncate
+    size 100M
+    postrotate
+        systemctl kill -s USR2 suricata.service >/dev/null 2>&1 || true
+    endscript
+}
+
+# Suricata eve-stats.json (optional, for capacity planning)
+/var/log/nftban/suricata/eve-stats.json {
+    weekly
+    rotate 2
+    compress
+    delaycompress
+    missingok
+    notifempty
+    create 0640 suricata nftban
+    copytruncate
 }
 
 # Fast.log for Suricata

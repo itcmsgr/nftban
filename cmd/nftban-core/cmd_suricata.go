@@ -28,7 +28,8 @@ import (
 func getSuricataPaths(cfg *nftbanconf.Config) (suricataConfigDir, evePath, logDir, dataDir string) {
 	// Suricata itself uses /etc/suricata (external dependency, not nftban config)
 	suricataConfigDir = "/etc/suricata"
-	evePath = "/var/log/suricata/eve.json"
+	// NFTBan alert-only EVE output (daemon reads this file)
+	evePath = "/var/log/nftban/suricata/eve-alerts.json"
 	logDir = cfg.LogDir
 	dataDir = cfg.DataDir
 	return
@@ -1156,7 +1157,7 @@ func cmdSuricataStatsDaemon() error {
 	fmt.Println("║  📊 Statistics Collector Running                             ║")
 	fmt.Println("╚══════════════════════════════════════════════════════════════╝")
 	fmt.Println()
-	fmt.Println("Monitoring:  /var/log/suricata/eve.json")
+	fmt.Println("Monitoring:  /var/log/nftban/suricata/eve-alerts.json")
 	fmt.Println("Cache:       /etc/nftban/suricata/cache/sid-stats.json")
 	fmt.Println("Auto-save:   Every 5 minutes")
 	fmt.Println()

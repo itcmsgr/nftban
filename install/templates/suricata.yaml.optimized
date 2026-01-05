@@ -229,78 +229,70 @@ app-layer:
 # =============================================================================
 # LOGGING - EVE JSON OUTPUT (OPTIMIZED FOR NFTBAN)
 # =============================================================================
-# Only log what NFTBan needs - saves disk I/O and CPU
+# Dual-output model: alert-only for daemon, optional audit for admin
 outputs:
+  # 1) NFTBan daemon reads ONLY this file (alert-only, minimal I/O)
   - eve-log:
       enabled: yes
       filetype: regular
-      filename: /var/log/nftban/suricata/eve.json
-
-      # Prevent file from growing infinitely
-      rotate-interval: 1h
+      filename: /var/log/nftban/suricata/eve-alerts.json
+      threaded: yes
 
       # JSON formatting
       community-id: yes
       community-id-seed: 0
 
-      # === ENABLED EVENT TYPES (minimal set for NFTBan) ===
       types:
-        # CRITICAL: Alerts (signature matches)
         - alert:
-            payload: no              # Don't log packet payloads (saves space)
+            payload: no
             payload-buffer-size: 0
             payload-printable: no
-            packet: no               # Don't log full packets
-            metadata: yes            # Keep metadata for correlation
+            packet: no
+            metadata: yes
             tagged-packets: no
 
-        # HTTP logs (for WordPress/web attack detection)
+  # 2) Optional admin/audit log (OFF by default to avoid I/O storms)
+  #    Enable manually: set enabled: yes when you need deep forensics
+  - eve-log:
+      enabled: no
+      filetype: regular
+      filename: /var/log/nftban/suricata/eve-audit.json
+      threaded: yes
+
+      community-id: yes
+      community-id-seed: 0
+
+      types:
+        - alert:
+            payload: yes
+            payload-buffer-size: 4kb
+            payload-printable: yes
+            packet: yes
+            metadata: yes
+
         - http:
-            extended: yes            # Include extended HTTP fields
+            extended: yes
             custom: [accept, accept-charset, accept-encoding, accept-language,
                      authorization, cache-control, cookie, from,
                      referer, user-agent, x-forwarded-for]
 
-        # SSH logs (for brute-force detection)
         - ssh
 
-        # DNS logs (useful for C2/malware detection)
         - dns:
             version: 2
             query: yes
             answer: yes
 
-        # TLS logs (for encrypted traffic analysis)
         - tls:
             extended: yes
             session-resumption: yes
 
-        # === DISABLED EVENT TYPES (save CPU + disk) ===
-        # Uncomment only if you specifically need them
-        # - stats:
-        #     totals: no
-        #     threads: no
-
-        # - flow              # Flow logs (verbose, not needed for NFTBan)
-        # - netflow           # Netflow export (not needed)
-        # - drop              # Packet drops (only for debugging)
-        # - files             # File extraction (not needed)
-        # - fileinfo          # File metadata (not needed)
-        # - smtp              # SMTP logs (if you monitor mail)
-        # - ftp               # FTP logs
-        # - rdp               # RDP logs
-        # - nfs               # NFS logs
-        # - smb               # SMB logs
-        # - dcerpc            # DCERPC logs
-        # - dhcp              # DHCP logs
-        # - anomaly           # Anomaly detection events
-
-  # Fast log (optional, for quick alert review)
+  # Fast log (disabled, we use eve-alerts.json)
   - fast:
       enabled: no
       filename: /var/log/nftban/suricata/fast.log
 
-  # Unified2 output (disable, we use eve.json)
+  # Unified2 output (disabled, we use eve-alerts.json)
   - unified2-alert:
       enabled: no
 
@@ -403,12 +395,14 @@ pcap-file:
 #
 # Optimizations applied:
 # ✅ AF_PACKET ring buffers (300k)
-# ✅ Short flow timeouts (60s vs 5min)
+# ✅ Short flow timeouts (60s established)
 # ✅ HTTP body inspection DISABLED (40-60% CPU savings)
+# ✅ Response body inspection DISABLED (all profiles)
 # ✅ Unused protocols DISABLED (SMB, NFS, FTP, etc)
-# ✅ Minimal eve.json logging (alerts + ssh + http only)
-# ✅ No packet payloads in logs
+# ✅ Dual-output model: eve-alerts.json (daemon) + eve-audit.json (optional)
+# ✅ Alert-only output for daemon (no payload/packet)
 # ✅ No profiling overhead
 #
+# NFTBan daemon should watch: /var/log/nftban/suricata/eve-alerts.json
 # Perfect for: NFTBan SSH/WordPress/web server protection
 # =============================================================================
