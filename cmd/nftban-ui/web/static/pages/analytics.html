@@ -95,13 +95,31 @@
 </div>
 
 <script>
-// Analytics Page - Country-based statistics and charts
-let countriesChart = null;
-let distributionChart = null;
-let analyticsData = null;
+(function() {
+// Analytics Page - Country-based statistics and charts (wrapped in IIFE to prevent redeclaration)
+
+// Destroy existing charts to prevent canvas reuse errors
+if (window._analyticsCountriesChart) {
+    window._analyticsCountriesChart.destroy();
+    window._analyticsCountriesChart = null;
+}
+if (window._analyticsDistributionChart) {
+    window._analyticsDistributionChart.destroy();
+    window._analyticsDistributionChart = null;
+}
+
+// Clear any existing refresh interval
+if (window._analyticsRefreshInterval) {
+    clearInterval(window._analyticsRefreshInterval);
+    window._analyticsRefreshInterval = null;
+}
+
+var countriesChart = null;
+var distributionChart = null;
+var analyticsData = null;
 
 // Country code to flag emoji mapping (common countries)
-const countryFlags = {
+var countryFlags = {
     'CN': '🇨🇳', 'RU': '🇷🇺', 'US': '🇺🇸', 'KP': '🇰🇵', 'IR': '🇮🇷', 'VN': '🇻🇳',
     'BR': '🇧🇷', 'IN': '🇮🇳', 'ID': '🇮🇩', 'TR': '🇹🇷', 'DE': '🇩🇪', 'FR': '🇫🇷',
     'GB': '🇬🇧', 'IT': '🇮🇹', 'ES': '🇪🇸', 'NL': '🇳🇱', 'PL': '🇵🇱', 'UA': '🇺🇦',
@@ -124,7 +142,7 @@ function initAnalyticsCharts() {
     Chart.defaults.borderColor = gridColor;
 
     // Countries Bar Chart
-    const countriesCtx = document.getElementById('countries-chart');
+    var countriesCtx = document.getElementById('countries-chart');
     if (countriesCtx) {
         countriesChart = new Chart(countriesCtx, {
             type: 'bar',
@@ -165,10 +183,11 @@ function initAnalyticsCharts() {
                 }
             }
         });
+        window._analyticsCountriesChart = countriesChart;
     }
 
     // Distribution Pie Chart
-    const distributionCtx = document.getElementById('distribution-chart');
+    var distributionCtx = document.getElementById('distribution-chart');
     if (distributionCtx) {
         distributionChart = new Chart(distributionCtx, {
             type: 'doughnut',
@@ -193,6 +212,7 @@ function initAnalyticsCharts() {
                 }
             }
         });
+        window._analyticsDistributionChart = distributionChart;
     }
 
     // Load initial data
@@ -348,13 +368,14 @@ function showPlaceholderData() {
     `;
 }
 
-// IP Lookup functionality
-document.addEventListener('DOMContentLoaded', function() {
-    const lookupBtn = document.getElementById('analytics-ip-lookup-btn');
-    const ipInput = document.getElementById('analytics-ip-input');
-    const resultDiv = document.getElementById('analytics-ip-result');
+// IP Lookup functionality (inline, no DOMContentLoaded needed in SPA)
+function initIpLookup() {
+    var lookupBtn = document.getElementById('analytics-ip-lookup-btn');
+    var ipInput = document.getElementById('analytics-ip-input');
+    var resultDiv = document.getElementById('analytics-ip-result');
 
-    if (lookupBtn && ipInput) {
+    if (lookupBtn && ipInput && !lookupBtn._analyticsListenerAdded) {
+        lookupBtn._analyticsListenerAdded = true;
         lookupBtn.addEventListener('click', async function() {
             const ip = ipInput.value.trim();
             if (!ip) {
@@ -416,35 +437,42 @@ document.addEventListener('DOMContentLoaded', function() {
         });
 
         // Allow Enter key to trigger lookup
-        ipInput.addEventListener('keypress', function(e) {
-            if (e.key === 'Enter') {
-                lookupBtn.click();
-            }
-        });
+        if (!ipInput._analyticsKeyListenerAdded) {
+            ipInput._analyticsKeyListenerAdded = true;
+            ipInput.addEventListener('keypress', function(e) {
+                if (e.key === 'Enter') {
+                    lookupBtn.click();
+                }
+            });
+        }
     }
-});
+}
 
 // Initialize charts when analytics page loads
-window.initAnalyticsPage = function() {
+function initPage() {
     console.log('[ANALYTICS] Initializing analytics page');
     if (typeof Chart !== 'undefined') {
         initAnalyticsCharts();
+        initIpLookup();
     } else {
         console.error('[ANALYTICS] Chart.js not loaded!');
-        setTimeout(() => {
+        setTimeout(function() {
             if (typeof Chart !== 'undefined') {
                 initAnalyticsCharts();
+                initIpLookup();
             }
         }, 100);
     }
-};
+}
 
 // Auto-initialize when script loads
 if (document.getElementById('countries-chart')) {
     console.log('[ANALYTICS] Auto-initializing analytics page');
-    window.initAnalyticsPage();
+    initPage();
 
-    // Auto-refresh every 30 seconds
-    setInterval(loadAnalyticsData, 30000);
+    // Auto-refresh every 30 seconds (store reference to clear on page change)
+    window._analyticsRefreshInterval = setInterval(loadAnalyticsData, 30000);
 }
+
+})(); // End IIFE
 </script>
