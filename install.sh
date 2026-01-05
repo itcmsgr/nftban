@@ -1080,6 +1080,7 @@ install_configs() {
     mkdir -p /var/log/nftban
     mkdir -p /var/cache/nftban
     mkdir -p /run/nftban
+    mkdir -p /run/nftban-ui
 
     # Set ownership (nftban user/group must exist first)
     chown -R root:nftban /etc/nftban
@@ -1101,6 +1102,10 @@ install_configs() {
 
     chown -R nftban:nftban /run/nftban
     chmod 755 /run/nftban
+
+    # UI auth service runtime directory (root:nftban for PAM auth daemon)
+    chown root:nftban /run/nftban-ui
+    chmod 750 /run/nftban-ui
 
     ok "Directory ownership configured"
 
