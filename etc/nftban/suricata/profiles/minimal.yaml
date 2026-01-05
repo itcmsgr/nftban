@@ -90,27 +90,31 @@ outputs:
   - fast:
       enabled: no
 
+  # 1) NFTBan daemon reads ONLY this file (alert-only, minimal I/O)
   - eve-log:
       enabled: yes
       filetype: regular
-      filename: /var/log/suricata/eve.json
-      rotate-interval: 1h
+      filename: /var/log/nftban/suricata/eve-alerts.json
+      threaded: yes
 
       types:
         - alert:
-            payload: no          # Save bandwidth
+            payload: no
             packet: no
             metadata: yes
 
-        - http:
-            extended: no         # Minimal HTTP logging
+  # 2) Optional admin/audit log (OFF by default to avoid I/O storms)
+  - eve-log:
+      enabled: no
+      filetype: regular
+      filename: /var/log/nftban/suricata/eve-audit.json
+      threaded: yes
 
-        - dns:
-            query: yes
-            answer: yes
-
-        - tls:
-            extended: no
+      types:
+        - alert
+        - http
+        - dns
+        - tls
 
 # Detection engine
 detect:
@@ -154,9 +158,11 @@ geoip-database: /var/lib/GeoIP/GeoLite2-Country.mmdb
 # =============================================================================
 # NFTBan Integration Notes:
 # - This profile is auto-selected for systems with 2 cores / 2GB RAM
-# - HTTP body inspection is DISABLED to save memory
+# - HTTP body inspection is DISABLED (request: 0, response: 0)
 # - Flow timeouts are AGGRESSIVE (60s established)
 # - Only essential protocols enabled
 # - Ring size: 50k frames (vs 100k standard, 300k maximum)
 # - Detection profile: LOW (vs MEDIUM/HIGH)
+# - Output: alert-only to eve-alerts.json (daemon path)
+# - Audit log: disabled by default (eve-audit.json)
 # =============================================================================

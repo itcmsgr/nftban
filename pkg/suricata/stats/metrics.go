@@ -102,7 +102,7 @@ func InitMetrics() *Metrics {
 			ProcessingLatency: promauto.NewHistogram(
 				prometheus.HistogramOpts{
 					Name:    "nftban_suricata_processing_latency_seconds",
-					Help:    "Latency of eve.json event processing",
+					Help:    "Latency of eve-alerts.json event processing",
 					Buckets: prometheus.DefBuckets,
 				},
 			),
@@ -110,7 +110,7 @@ func InitMetrics() *Metrics {
 			EventsProcessed: promauto.NewCounter(
 				prometheus.CounterOpts{
 					Name: "nftban_suricata_events_processed_total",
-					Help: "Total number of eve.json events processed",
+					Help: "Total number of eve-alerts.json events processed",
 				},
 			),
 
