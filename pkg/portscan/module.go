@@ -21,7 +21,10 @@ package portscan
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,11 +40,6 @@ const (
 
 	// Check interval
 	DefaultCheckInterval = 60 * time.Second
-
-	// Ban thresholds
-	DefaultBanThreshold = 3              // Ban after 3 portscan detections
-	DefaultBanDuration  = 1 * time.Hour  // 1 hour ban
-	DefaultTrackWindow  = 5 * time.Minute // Track scans within 5 minutes
 )
 
 // getPortscanScript returns the portscan script path from central config
@@ -49,6 +47,18 @@ const (
 func getPortscanScript() string {
 	cfg := nftbanconf.MustLoad()
 	return cfg.LibDir + "/core/nftban_portscan.sh"
+}
+
+// portscanConfig holds module configuration loaded from config files
+type portscanConfig struct {
+	// From main.conf
+	Enabled bool
+	Mode    string // auto, classic, suricata, hybrid
+
+	// Ban thresholds (from classic.conf or suricata.conf)
+	BanThreshold int           // Number of detections before ban
+	BanDuration  time.Duration // Default ban duration
+	TrackWindow  time.Duration // Time window to track events
 }
 
 // ipTracker tracks portscan events per IP
@@ -66,6 +76,9 @@ type Module struct {
 	cancel        context.CancelFunc
 	checkInterval time.Duration
 
+	// Configuration from files
+	config portscanConfig
+
 	// Runtime state
 	mode          string // classic, suricata, hybrid, auto
 	enabled       bool
@@ -79,11 +92,120 @@ type Module struct {
 
 // New creates a new portscan detection module
 func New() *Module {
-	return &Module{
+	m := &Module{
 		status:        module.NewStatus(ModuleName),
 		checkInterval: DefaultCheckInterval,
 		mode:          "auto",
 		enabled:       true,
+		config: portscanConfig{
+			Enabled:      true,
+			Mode:         "auto",
+			BanThreshold: 3,                    // Default: 3 detections
+			BanDuration:  30 * time.Minute,     // Default: 30 min ban
+			TrackWindow:  5 * time.Minute,      // Default: 5 min window
+		},
+	}
+	// Load config from files (will override defaults)
+	m.loadConfig()
+	return m
+}
+
+// loadConfig loads configuration from config files with .local overrides
+func (m *Module) loadConfig() {
+	cfg := nftbanconf.MustLoad()
+	configDir := filepath.Join(cfg.ConfigDir, "conf.d", "portscan")
+
+	// 1. Load main.conf
+	mainPath := filepath.Join(configDir, "main.conf")
+	if data, err := os.ReadFile(mainPath); err == nil {
+		m.parseMainConfig(string(data))
+	}
+
+	// 2. Load main.conf.local overrides
+	localMainPath := filepath.Join(configDir, "main.conf.local")
+	if data, err := os.ReadFile(localMainPath); err == nil {
+		m.parseMainConfig(string(data))
+	}
+
+	// 3. Determine which mode-specific config to load based on mode
+	modeConfigFile := "classic.conf"
+	if m.config.Mode == "suricata" || (m.config.Mode == "auto" && m.suricataAvail) {
+		modeConfigFile = "suricata.conf"
+	}
+
+	// 4. Load mode-specific config (classic.conf or suricata.conf)
+	modePath := filepath.Join(configDir, modeConfigFile)
+	if data, err := os.ReadFile(modePath); err == nil {
+		m.parseModeConfig(string(data))
+	}
+
+	// 5. Load mode-specific .local override
+	localModePath := filepath.Join(configDir, modeConfigFile+".local")
+	if data, err := os.ReadFile(localModePath); err == nil {
+		m.parseModeConfig(string(data))
+	}
+
+	m.enabled = m.config.Enabled
+	m.mode = m.config.Mode
+}
+
+// parseMainConfig parses main.conf settings
+func (m *Module) parseMainConfig(content string) {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+
+		switch key {
+		case "PORTSCAN_ENABLED":
+			m.config.Enabled = strings.ToLower(value) == "true"
+		case "PORTSCAN_MODE":
+			m.config.Mode = value
+		}
+	}
+}
+
+// parseModeConfig parses classic.conf or suricata.conf settings
+func (m *Module) parseModeConfig(content string) {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+
+		switch key {
+		// Classic mode thresholds
+		case "PORTSCAN_CLASSIC_MIN_PORTS":
+			if v, err := strconv.Atoi(value); err == nil {
+				m.config.BanThreshold = v
+			}
+		case "PORTSCAN_CLASSIC_TIME_WINDOW":
+			if v, err := strconv.Atoi(value); err == nil {
+				m.config.TrackWindow = time.Duration(v) * time.Second
+			}
+		case "PORTSCAN_CLASSIC_BAN_DEFAULT":
+			if v, err := strconv.Atoi(value); err == nil {
+				m.config.BanDuration = time.Duration(v) * time.Second
+			}
+		// Suricata mode thresholds
+		case "PORTSCAN_SURICATA_BAN_DURATION_SHORT":
+			if v, err := strconv.Atoi(value); err == nil {
+				m.config.BanDuration = time.Duration(v) * time.Second
+			}
+		}
 	}
 }
 
@@ -245,7 +367,7 @@ func (m *Module) handlePortscanEvent(e eventbus.Event) {
 
 	// Skip if recently banned
 	if bannedAt, exists := m.bannedIPs[e.IP]; exists {
-		if time.Since(bannedAt) < DefaultBanDuration {
+		if time.Since(bannedAt) < m.config.BanDuration {
 			m.mu.Unlock()
 			return
 		}
@@ -254,7 +376,7 @@ func (m *Module) handlePortscanEvent(e eventbus.Event) {
 
 	// Track this IP
 	tracker, exists := m.ipTrackers[e.IP]
-	if !exists || time.Since(tracker.firstSeen) > DefaultTrackWindow {
+	if !exists || time.Since(tracker.firstSeen) > m.config.TrackWindow {
 		tracker = &ipTracker{
 			count:     0,
 			firstSeen: time.Now(),
@@ -264,7 +386,7 @@ func (m *Module) handlePortscanEvent(e eventbus.Event) {
 	tracker.count++
 	tracker.lastSeen = time.Now()
 
-	shouldBan := tracker.count >= DefaultBanThreshold
+	shouldBan := tracker.count >= m.config.BanThreshold
 	m.mu.Unlock()
 
 	// Trigger ban if threshold exceeded
@@ -274,7 +396,7 @@ func (m *Module) handlePortscanEvent(e eventbus.Event) {
 			WithIP(e.IP).
 			WithMessage("Banning " + e.IP + ": portscan threshold exceeded").
 			WithSeverity(eventbus.SeverityCritical).
-			WithData("duration", DefaultBanDuration.String()).
+			WithData("duration", m.config.BanDuration.String()).
 			WithData("reason", "portscan_detection").
 			WithData("scan_count", tracker.count))
 	}

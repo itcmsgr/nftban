@@ -21,7 +21,10 @@ package ddos
 
 import (
 	"context"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -37,11 +40,6 @@ const (
 
 	// Check interval
 	DefaultCheckInterval = 30 * time.Second
-
-	// Ban thresholds
-	DefaultBanThreshold = 3               // Ban after 3 DDoS detections
-	DefaultBanDuration  = 30 * time.Minute // 30 minute ban (shorter, re-escalate if continues)
-	DefaultTrackWindow  = 1 * time.Minute  // Track events within 1 minute
 )
 
 // getDDOSScript returns the DDoS script path from central config
@@ -49,6 +47,20 @@ const (
 func getDDOSScript() string {
 	cfg := nftbanconf.MustLoad()
 	return cfg.LibDir + "/core/nftban_ddos.sh"
+}
+
+// ddosConfig holds module configuration loaded from config files
+type ddosConfig struct {
+	// From main.conf
+	Enabled bool
+	Mode    string // auto, classic, suricata, hybrid
+
+	// Ban thresholds (from classic.conf or suricata.conf)
+	EscalateThreshold int           // DDOS_CLASSIC_ESCALATE_THRESHOLD
+	BanDurationShort  time.Duration // DDOS_CLASSIC_BAN_DURATION_SHORT
+	BanDurationMedium time.Duration // DDOS_CLASSIC_BAN_DURATION_MEDIUM
+	BanDurationLong   time.Duration // DDOS_CLASSIC_BAN_DURATION_LONG
+	TrackWindow       time.Duration // Time window to track events
 }
 
 // ipTracker tracks DDoS events per IP
@@ -66,6 +78,9 @@ type Module struct {
 	cancel        context.CancelFunc
 	checkInterval time.Duration
 
+	// Configuration from files
+	config ddosConfig
+
 	// Runtime state
 	mode          string // classic, suricata, hybrid, auto
 	enabled       bool
@@ -78,11 +93,130 @@ type Module struct {
 
 // New creates a new DDoS protection module
 func New() *Module {
-	return &Module{
+	m := &Module{
 		status:        module.NewStatus(ModuleName),
 		checkInterval: DefaultCheckInterval,
 		mode:          "auto",
 		enabled:       true,
+		config: ddosConfig{
+			Enabled:           true,
+			Mode:              "auto",
+			EscalateThreshold: 3,                    // Default: 3 detections
+			BanDurationShort:  5 * time.Minute,     // Default: 5 min ban (first)
+			BanDurationMedium: 30 * time.Minute,    // Default: 30 min ban (repeat)
+			BanDurationLong:   1 * time.Hour,       // Default: 1 hour (persistent)
+			TrackWindow:       1 * time.Minute,     // Default: 1 min window
+		},
+	}
+	// Load config from files (will override defaults)
+	m.loadConfig()
+	return m
+}
+
+// loadConfig loads configuration from config files with .local overrides
+func (m *Module) loadConfig() {
+	cfg := nftbanconf.MustLoad()
+	configDir := filepath.Join(cfg.ConfigDir, "conf.d", "ddos")
+
+	// 1. Load main.conf
+	mainPath := filepath.Join(configDir, "main.conf")
+	if data, err := os.ReadFile(mainPath); err == nil {
+		m.parseMainConfig(string(data))
+	}
+
+	// 2. Load main.conf.local overrides
+	localMainPath := filepath.Join(configDir, "main.conf.local")
+	if data, err := os.ReadFile(localMainPath); err == nil {
+		m.parseMainConfig(string(data))
+	}
+
+	// 3. Determine which mode-specific config to load based on mode
+	modeConfigFile := "classic.conf"
+	if m.config.Mode == "suricata" || (m.config.Mode == "auto" && m.suricataAvail) {
+		modeConfigFile = "suricata.conf"
+	}
+
+	// 4. Load mode-specific config (classic.conf or suricata.conf)
+	modePath := filepath.Join(configDir, modeConfigFile)
+	if data, err := os.ReadFile(modePath); err == nil {
+		m.parseModeConfig(string(data))
+	}
+
+	// 5. Load mode-specific .local override
+	localModePath := filepath.Join(configDir, modeConfigFile+".local")
+	if data, err := os.ReadFile(localModePath); err == nil {
+		m.parseModeConfig(string(data))
+	}
+
+	m.enabled = m.config.Enabled
+	m.mode = m.config.Mode
+}
+
+// parseMainConfig parses main.conf settings
+func (m *Module) parseMainConfig(content string) {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+
+		switch key {
+		case "DDOS_ENABLED":
+			m.config.Enabled = strings.ToLower(value) == "true"
+		case "DDOS_MODE":
+			m.config.Mode = value
+		}
+	}
+}
+
+// parseModeConfig parses classic.conf or suricata.conf settings
+func (m *Module) parseModeConfig(content string) {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		key := strings.TrimSpace(parts[0])
+		value := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
+
+		switch key {
+		// Classic mode thresholds
+		case "DDOS_CLASSIC_ESCALATE_THRESHOLD":
+			if v, err := strconv.Atoi(value); err == nil {
+				m.config.EscalateThreshold = v
+			}
+		case "DDOS_CLASSIC_BAN_DURATION_SHORT":
+			if v, err := strconv.Atoi(value); err == nil {
+				m.config.BanDurationShort = time.Duration(v) * time.Second
+			}
+		case "DDOS_CLASSIC_BAN_DURATION_MEDIUM":
+			if v, err := strconv.Atoi(value); err == nil {
+				m.config.BanDurationMedium = time.Duration(v) * time.Second
+			}
+		case "DDOS_CLASSIC_BAN_DURATION_LONG":
+			if v, err := strconv.Atoi(value); err == nil {
+				m.config.BanDurationLong = time.Duration(v) * time.Second
+			}
+		// Suricata mode thresholds
+		case "DDOS_SURICATA_BAN_DURATION_SHORT":
+			if v, err := strconv.Atoi(value); err == nil {
+				m.config.BanDurationShort = time.Duration(v) * time.Second
+			}
+		case "DDOS_SURICATA_BAN_DURATION_LONG":
+			if v, err := strconv.Atoi(value); err == nil {
+				m.config.BanDurationLong = time.Duration(v) * time.Second
+			}
+		}
 	}
 }
 
@@ -231,9 +365,9 @@ func (m *Module) handleDDoSEvent(e eventbus.Event) {
 		m.bannedIPs = make(map[string]time.Time)
 	}
 
-	// Skip if recently banned
+	// Skip if recently banned (use longest duration)
 	if bannedAt, exists := m.bannedIPs[e.IP]; exists {
-		if time.Since(bannedAt) < DefaultBanDuration {
+		if time.Since(bannedAt) < m.config.BanDurationLong {
 			m.mu.Unlock()
 			return
 		}
@@ -242,7 +376,7 @@ func (m *Module) handleDDoSEvent(e eventbus.Event) {
 
 	// Track this IP
 	tracker, exists := m.ipTrackers[e.IP]
-	if !exists || time.Since(tracker.firstSeen) > DefaultTrackWindow {
+	if !exists || time.Since(tracker.firstSeen) > m.config.TrackWindow {
 		tracker = &ipTracker{
 			count:     0,
 			firstSeen: time.Now(),
@@ -252,17 +386,26 @@ func (m *Module) handleDDoSEvent(e eventbus.Event) {
 	tracker.count++
 	tracker.lastSeen = time.Now()
 
-	shouldBan := tracker.count >= DefaultBanThreshold
+	shouldBan := tracker.count >= m.config.EscalateThreshold
 	m.mu.Unlock()
 
-	// Trigger ban if threshold exceeded
+	// Trigger ban if threshold exceeded - escalating duration
 	if shouldBan && m.bus != nil {
 		m.bannedIPs[e.IP] = time.Now()
+
+		// Escalate ban duration based on repeat offenses
+		banDuration := m.config.BanDurationShort
+		if tracker.count >= m.config.EscalateThreshold*3 {
+			banDuration = m.config.BanDurationLong
+		} else if tracker.count >= m.config.EscalateThreshold*2 {
+			banDuration = m.config.BanDurationMedium
+		}
+
 		m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
 			WithIP(e.IP).
 			WithMessage("Banning " + e.IP + ": DDoS threshold exceeded").
 			WithSeverity(eventbus.SeverityCritical).
-			WithData("duration", DefaultBanDuration.String()).
+			WithData("duration", banDuration.String()).
 			WithData("reason", "ddos_protection").
 			WithData("event_count", tracker.count))
 	}
