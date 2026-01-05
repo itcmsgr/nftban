@@ -20,6 +20,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/metrics"
 	"github.com/itcmsgr/nftban/pkg/middleware"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/session"
 )
 
 // =============================================================================
@@ -318,6 +319,209 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 	userInfo["updated_at"] = time.Now().Format(time.RFC3339)
 
 	respondJSON(w, http.StatusOK, userInfo)
+}
+
+// =============================================================================
+// Session-Based Authentication Handlers (v1.1 - JWT Replacement)
+// =============================================================================
+
+// SessionLoginHandler authenticates user via PAM and creates server-side session
+// Replaces JWT-based LoginHandler for improved security (revocable tokens)
+func SessionLoginHandler(authService *auth.PAMAuth, store *session.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req LoginRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+			return
+		}
+
+		// Authenticate user via PAM socket
+		user, err := authService.Authenticate(req.Username, req.Password)
+		if err != nil {
+			clientIP := middleware.GetClientIP(r)
+			authService.AuditLog(req.Username, "login", "failed", clientIP)
+			respondJSON(w, http.StatusUnauthorized, LoginResponse{
+				Success: false,
+				Message: "Authentication failed",
+			})
+			return
+		}
+
+		// Create server-side session (replaces JWT token generation)
+		clientIP := middleware.GetClientIP(r)
+		sess, err := store.Create(user.Username, user.Groups, clientIP)
+		if err != nil {
+			log.Printf("[ERROR] Failed to create session: %v", err)
+			respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to create session"})
+			return
+		}
+
+		// Log success
+		authService.AuditLog(req.Username, "login", "success", clientIP)
+
+		// Start metrics sampling for this session
+		sampler := metrics.GetSampler()
+		sampler.AddSession()
+		log.Printf("[SESSION] Created session for user %s (token: %s...)", req.Username, sess.Token[:8])
+
+		respondJSON(w, http.StatusOK, LoginResponse{
+			Success: true,
+			Token:   sess.Token,
+			Message: "Login successful",
+		})
+	}
+}
+
+// LogoutHandler invalidates the current session (server-side)
+// This is a key security improvement over JWT - tokens can be revoked
+func LogoutHandler(store *session.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract token from header
+		token := r.Header.Get("X-Session-Token")
+		if token == "" {
+			// Fallback to Authorization header
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "" {
+				parts := strings.SplitN(authHeader, " ", 2)
+				if len(parts) == 2 && parts[0] == "Bearer" {
+					token = parts[1]
+				}
+			}
+		}
+
+		if token == "" {
+			respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "No session token provided"})
+			return
+		}
+
+		// Get session info for logging before deletion
+		sess, _ := store.Get(token)
+		username := "unknown"
+		if sess != nil {
+			username = sess.Username
+		}
+
+		// Delete session
+		store.Delete(token)
+
+		// Remove metrics session
+		sampler := metrics.GetSampler()
+		sampler.RemoveSession()
+
+		log.Printf("[SESSION] Logged out user %s", username)
+		respondJSON(w, http.StatusOK, SuccessResponse{
+			Success: true,
+			Message: "Logged out successfully",
+		})
+	}
+}
+
+// SessionInfoHandler returns current session information
+func SessionInfoHandler(store *session.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Extract token
+		token := r.Header.Get("X-Session-Token")
+		if token == "" {
+			authHeader := r.Header.Get("Authorization")
+			if authHeader != "" {
+				parts := strings.SplitN(authHeader, " ", 2)
+				if len(parts) == 2 && parts[0] == "Bearer" {
+					token = parts[1]
+				}
+			}
+		}
+
+		if token == "" {
+			respondJSON(w, http.StatusUnauthorized, ErrorResponse{Error: "No session token"})
+			return
+		}
+
+		sess, err := store.Get(token)
+		if err != nil {
+			respondJSON(w, http.StatusUnauthorized, ErrorResponse{Error: "Invalid session"})
+			return
+		}
+
+		// Return session info (excluding token itself)
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"username":   sess.Username,
+			"groups":     sess.Groups,
+			"client_ip":  sess.ClientIP,
+			"created_at": sess.CreatedAt.Format(time.RFC3339),
+			"expires_at": sess.ExpiresAt.Format(time.RFC3339),
+			"is_admin":   sess.IsAdmin(),
+		})
+	}
+}
+
+// SessionsListHandler returns all active sessions (admin only)
+func SessionsListHandler(store *session.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Get current user from context
+		claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.Claims)
+		if !ok || !claims.IsAdmin() {
+			respondJSON(w, http.StatusForbidden, ErrorResponse{Error: "Admin access required"})
+			return
+		}
+
+		// Get all sessions
+		sessions := store.List()
+
+		// Build response (mask tokens for security)
+		sessionList := make([]map[string]interface{}, 0, len(sessions))
+		for _, sess := range sessions {
+			sessionList = append(sessionList, map[string]interface{}{
+				"token_prefix": sess.Token[:8] + "...",
+				"username":     sess.Username,
+				"groups":       sess.Groups,
+				"client_ip":    sess.ClientIP,
+				"created_at":   sess.CreatedAt.Format(time.RFC3339),
+				"expires_at":   sess.ExpiresAt.Format(time.RFC3339),
+			})
+		}
+
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"count":    len(sessions),
+			"sessions": sessionList,
+		})
+	}
+}
+
+// SessionRevokeHandler revokes a specific session (admin only)
+func SessionRevokeHandler(store *session.Store) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// Get current user from context
+		claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.Claims)
+		if !ok || !claims.IsAdmin() {
+			respondJSON(w, http.StatusForbidden, ErrorResponse{Error: "Admin access required"})
+			return
+		}
+
+		// Get username to revoke from query or body
+		var req struct {
+			Username string `json:"username"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+			return
+		}
+
+		if req.Username == "" {
+			respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Username required"})
+			return
+		}
+
+		// Delete all sessions for this user
+		count := store.DeleteByUser(req.Username)
+
+		log.Printf("[ADMIN] User %s revoked %d sessions for user %s", claims.Username, count, req.Username)
+		respondJSON(w, http.StatusOK, map[string]interface{}{
+			"success":  true,
+			"message":  fmt.Sprintf("Revoked %d sessions for user %s", count, req.Username),
+			"revoked":  count,
+			"username": req.Username,
+		})
+	}
 }
 
 // DashboardHandler returns dashboard statistics

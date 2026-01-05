@@ -185,16 +185,41 @@
     }
   }
 
-  function handleLogout() {
+  async function handleLogout() {
+    const token = localStorage.getItem("token") || localStorage.getItem("session_token");
+
+    // Call logout API to invalidate session server-side (key security improvement)
+    if (token) {
+      try {
+        await fetch("/api/v1/logout", {
+          method: "POST",
+          headers: {
+            "X-Session-Token": token,
+            "Content-Type": "application/json"
+          }
+        });
+        console.log("[AUTH] Session invalidated on server");
+      } catch (err) {
+        console.warn("[AUTH] Logout API call failed:", err);
+        // Continue with local cleanup even if server call fails
+      }
+    }
+
+    // Clear all token variants from localStorage
     localStorage.removeItem("token");
+    localStorage.removeItem("session_token");
     localStorage.removeItem("nftban-token");
     localStorage.removeItem("jwt_token");
-    console.log("[AUTH] Logged out, token cleared");
+    console.log("[AUTH] Logged out, tokens cleared");
     showLogin();
   }
 
   async function checkAuth() {
-    const token = localStorage.getItem("token") || localStorage.getItem("nftban-token") || localStorage.getItem("jwt_token");
+    // Check all possible token storage keys
+    const token = localStorage.getItem("token") ||
+                  localStorage.getItem("session_token") ||
+                  localStorage.getItem("nftban-token") ||
+                  localStorage.getItem("jwt_token");
 
     if (!token) {
       console.log("[AUTH] No token found, showing login");
@@ -202,11 +227,14 @@
       return false;
     }
 
-    // Validate token with backend
+    // Validate token with backend using session header
     try {
       console.log("[AUTH] Token found, validating with backend...");
       const response = await fetch("/api/v1/health", {
-        headers: { "Authorization": "Bearer " + token }
+        headers: {
+          "X-Session-Token": token,
+          "Authorization": "Bearer " + token  // Fallback for backward compatibility
+        }
       });
 
       if (response.ok) {
@@ -216,6 +244,7 @@
       } else {
         console.log("[AUTH] Token invalid or expired, clearing and showing login");
         localStorage.removeItem("token");
+        localStorage.removeItem("session_token");
         localStorage.removeItem("nftban-token");
         localStorage.removeItem("jwt_token");
         showLogin();
@@ -389,16 +418,21 @@
   // -----------------------------
   // AUTH HEADER HELPER
   // -----------------------------
-  // Used by older code: getAuthHeaders()
+  // Returns auth headers for API requests (session-based auth)
   window.getAuthHeaders = function () {
-    // Read token from localStorage and send as Bearer
-    const token = localStorage.getItem("token") || localStorage.getItem("nftban-token") || localStorage.getItem("jwt_token");
+    // Check all possible token storage keys
+    const token = localStorage.getItem("token") ||
+                  localStorage.getItem("session_token") ||
+                  localStorage.getItem("nftban-token") ||
+                  localStorage.getItem("jwt_token");
     if (!token) {
       console.warn('[AUTH] No token found');
       return {};
     }
+    // Use X-Session-Token header (with Bearer fallback for compatibility)
     return {
-      Authorization: "Bearer " + token,
+      "X-Session-Token": token,
+      "Authorization": "Bearer " + token,  // Backward compatibility
     };
   };
 
