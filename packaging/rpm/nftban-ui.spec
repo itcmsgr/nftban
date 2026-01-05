@@ -86,6 +86,10 @@ install -m 0644 install/systemd/nftband.socket %{buildroot}%{_unitdir}/nftband.s
 # Install PAM configuration
 install -m 0644 install/pam/nftban-ui %{buildroot}%{_sysconfdir}/pam.d/nftban-ui
 
+# Install tmpfiles.d configuration for runtime directories
+install -d %{buildroot}%{_tmpfilesdir}
+install -m 0644 install/tmpfiles.d/nftban.conf %{buildroot}%{_tmpfilesdir}/nftban.conf
+
 # Install config files
 install -m 0644 install/config/allowed-gui-groups %{buildroot}%{_sysconfdir}/nftban/allowed-gui-groups
 
@@ -133,6 +137,14 @@ fi
 # Enable and start socket (will auto-start service on-demand)
 %systemd_post nftban-ui-auth.socket
 %systemd_post nftban-ui.service
+
+# Create runtime directories (tmpfiles.d handles this on reboot)
+mkdir -p /run/nftban-ui
+chown root:nftban /run/nftban-ui
+chmod 0750 /run/nftban-ui
+
+# Apply tmpfiles.d configuration
+systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf >/dev/null 2>&1 || :
 
 # Only enable services if this is initial install
 if [ $1 -eq 1 ]; then
@@ -194,6 +206,9 @@ fi
 # Configuration
 %config(noreplace) %{_sysconfdir}/pam.d/nftban-ui
 %config(noreplace) %{_sysconfdir}/nftban/allowed-gui-groups
+
+# tmpfiles.d configuration
+%{_tmpfilesdir}/nftban.conf
 
 # Distro config parser module
 %{_prefix}/lib/nftban/lib/nftban_distro_config.sh

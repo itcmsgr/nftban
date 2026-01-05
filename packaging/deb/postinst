@@ -196,6 +196,7 @@ case "$1" in
         # Cache and runtime
         mkdir -p /var/cache/nftban/health
         mkdir -p /run/nftban
+        mkdir -p /run/nftban-ui
 
         # Shared data
         mkdir -p /usr/share/nftban/templates/{mail,reports}
@@ -241,6 +242,10 @@ case "$1" in
         # /run/nftban - nftban:nftban 755
         chown nftban:nftban /run/nftban
         chmod 755 /run/nftban
+
+        # /run/nftban-ui - root:nftban 750 (auth daemon runs as root, nftban group access)
+        chown root:nftban /run/nftban-ui
+        chmod 750 /run/nftban-ui
 
         # /usr/share/nftban - root:root 755
         chown -R root:root /usr/share/nftban 2>/dev/null || true

@@ -10,18 +10,21 @@ ExecStart=/usr/libexec/nftban-ui-auth
 Restart=on-failure
 RestartSec=5s
 
-# Runtime directory
+# Runtime directory (created by systemd, permissions fixed by ExecStartPre)
 RuntimeDirectory=nftban-ui
 RuntimeDirectoryMode=0750
 
-# SECURITY FIX: Run as unprivileged nftban user (not root)
-# PAM authentication via shadow group membership for /etc/shadow access
-# Socket access via nftban group
+# SECURITY: Run as root for PAM authentication
+# The auth daemon MUST run as root to perform PAM authentication.
+# Socket permissions (root:nftban 0770) restrict access to nftban group.
 # See: SYSTEMD-SERVICE-CLASSIFICATION.md
-User=nftban
-Group=nftban
-SupplementaryGroups=shadow
+User=root
+Group=root
 UMask=0077
+
+# Fix runtime directory permissions for nftban group access
+ExecStartPre=/bin/chown root:nftban /run/nftban-ui
+ExecStartPre=/bin/chmod 0750 /run/nftban-ui
 
 # =============================================================================
 # SECURITY HARDENING
