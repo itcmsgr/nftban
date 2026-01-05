@@ -779,7 +779,7 @@ geoip:
 
 suricata:
   category: intelligence_reporting
-  description: "Suricata IDS integration (intrusion detection sensor)"
+  description: "Suricata IDS integration (deep packet inspection)"
   risk: advanced
   audience: [cli]
   capability: service_control
@@ -787,15 +787,61 @@ suricata:
   supports_dry_run: false
   requires_root: true
   panel_expose: false
-  output_modes: [text]
-  has_json: false
+  output_modes: [json, text]
+  has_json: true
   examples:
     - "nftban suricata status"
-    - "nftban suricata install"
-    - "nftban suricata enable"
-    - "nftban suricata disable"
-    - "nftban suricata alerts"
-    - "nftban suricata rules update"
+    - "nftban suricata filters"
+    - "nftban suricata enable SSH_BRUTE_FORCE"
+    - "nftban suricata disable POLICY_VIOLATIONS"
+    - "nftban suricata set-threshold SSH_BRUTE_FORCE 50"
+    - "nftban suricata set-action WEB_ATTACKS alert"
+    - "nftban suricata profile-detect"
+    - "nftban suricata profile-apply standard"
+    - "nftban suricata scan"
+    - "nftban suricata rules-generate"
+    - "nftban suricata sid-top"
+    - "nftban suricata recommend"
+  subcommands:
+    # Core
+    status: {mutates: false, description: "Show Suricata integration status"}
+    filters: {mutates: false, description: "List detection filters and state"}
+    daemon: {mutates: false, description: "Run alert processing daemon"}
+    enable: {mutates: true, description: "Enable a detection filter"}
+    disable: {mutates: true, description: "Disable a detection filter"}
+    set-threshold: {mutates: true, description: "Set scoring threshold for filter"}
+    set-action: {mutates: true, description: "Set action (alert/drop) for filter"}
+    # Profiles
+    profile-detect: {mutates: false, description: "Auto-detect optimal profile"}
+    profile-apply: {mutates: true, description: "Apply profile (minimal/standard/maximum)"}
+    profile-show: {mutates: false, description: "Show current profile configuration"}
+    profile-validate: {mutates: false, description: "Validate profile configuration"}
+    # Service Detection
+    scan: {mutates: false, description: "Quick scan for running services"}
+    scan-deep: {mutates: false, description: "Deep service detection with port probing"}
+    # Rules Management
+    rules-generate: {mutates: true, description: "Generate enabled rules list"}
+    rules-stats: {mutates: false, description: "Show rule statistics"}
+    rules-init: {mutates: true, description: "Initialize rule management system"}
+    # SID Statistics
+    sid-stats: {mutates: false, description: "Show signature trigger statistics"}
+    sid-info: {mutates: false, description: "Show details for specific SID"}
+    sid-top: {mutates: false, description: "Show top triggered signatures"}
+    sid-recent: {mutates: false, description: "Show recently triggered signatures"}
+    stats-daemon: {mutates: false, description: "Run statistics collection daemon"}
+    # Custom Rules
+    custom-add: {mutates: true, description: "Add a custom Suricata rule"}
+    custom-remove: {mutates: true, description: "Remove a custom rule by SID"}
+    custom-edit: {mutates: true, description: "Edit an existing custom rule"}
+    custom-list: {mutates: false, description: "List all custom rules"}
+    custom-validate: {mutates: false, description: "Validate custom rules syntax"}
+    custom-enable: {mutates: true, description: "Enable a custom rule"}
+    custom-disable: {mutates: true, description: "Disable a custom rule"}
+    custom-backup: {mutates: true, description: "Backup custom rules"}
+    custom-rollback: {mutates: true, description: "Restore from backup"}
+    # Recommendations
+    recommend: {mutates: false, description: "Get rule recommendations for detected services"}
+    recommend-summary: {mutates: false, description: "Show recommendation summary"}
 
 mail:
   category: intelligence_reporting
@@ -983,8 +1029,8 @@ _metadata:
   schema_version: "1.0"
   generated_date: "2025-12-31"
   total_commands: 45
-  commands_with_json: 34
-  commands_without_json: 11
+  commands_with_json: 35
+  commands_without_json: 10
   missing_json:
     - debug
     - gui
@@ -992,7 +1038,6 @@ _metadata:
     - metrics
     - profile
     - smoke
-    - suricata
     - sync
     - system
     - timers
