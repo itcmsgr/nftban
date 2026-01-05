@@ -18,6 +18,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/middleware"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/safety"
+	"github.com/itcmsgr/nftban/pkg/session"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
@@ -105,11 +106,29 @@ func main() {
 		cfg.TLSKey = *keyFile
 	}
 
-	// Initialize authentication
+	// Initialize authentication (PAM service for user validation)
 	authService, err := auth.NewPAMAuth(cfg)
 	if err != nil {
 		log.Fatalf("Failed to initialize authentication: %v", err)
 	}
+
+	// Initialize session store (in-memory, with configurable timeout)
+	// Sessions are server-side tokens that can be revoked (unlike JWT)
+	sessionTimeout := time.Duration(cfg.SessionTimeout) * time.Minute
+	sessionStore := session.NewStore(sessionTimeout)
+	log.Printf("[SESSION] Session store initialized (timeout: %v)", sessionTimeout)
+
+	// Start session cleanup goroutine (runs every 5 minutes)
+	go func() {
+		ticker := time.NewTicker(5 * time.Minute)
+		defer ticker.Stop()
+		for range ticker.C {
+			cleaned := sessionStore.Cleanup()
+			if cleaned > 0 {
+				log.Printf("[SESSION] Cleaned up %d expired sessions", cleaned)
+			}
+		}
+	}()
 
 	// Create router
 	router := mux.NewRouter()
@@ -123,11 +142,19 @@ func main() {
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 
 	// Public routes (no auth required)
-	apiRouter.HandleFunc("/login", api.LoginHandler(authService)).Methods("POST")
+	// Use session-based login (replaces JWT-based login for better security)
+	apiRouter.HandleFunc("/login", api.SessionLoginHandler(authService, sessionStore)).Methods("POST")
 
 	// Protected routes (auth required)
+	// Use session middleware instead of JWT middleware (tokens can be revoked)
 	protected := apiRouter.PathPrefix("").Subrouter()
-	protected.Use(middleware.JWTAuthMiddleware(cfg))
+	protected.Use(middleware.SessionAuthMiddleware(sessionStore))
+
+	// Session management routes
+	protected.HandleFunc("/logout", api.LogoutHandler(sessionStore)).Methods("POST")
+	protected.HandleFunc("/session", api.SessionInfoHandler(sessionStore)).Methods("GET")
+	protected.HandleFunc("/sessions", api.SessionsListHandler(sessionStore)).Methods("GET")
+	protected.HandleFunc("/sessions/revoke", api.SessionRevokeHandler(sessionStore)).Methods("POST")
 
 	protected.HandleFunc("/me", api.MeHandler).Methods("GET")
 	protected.HandleFunc("/dashboard", api.DashboardHandler).Methods("GET")

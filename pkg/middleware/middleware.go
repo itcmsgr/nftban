@@ -12,6 +12,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/config"
 	"github.com/itcmsgr/nftban/pkg/auth"
 	"github.com/itcmsgr/nftban/pkg/netutil"
+	"github.com/itcmsgr/nftban/pkg/session"
 )
 
 type contextKey string
@@ -132,6 +133,57 @@ func JWTAuthMiddleware(cfg *config.Config) func(http.Handler) http.Handler {
 			}
 
 			// Add user to context
+			ctx := context.WithValue(r.Context(), UserContextKey, claims)
+			next.ServeHTTP(w, r.WithContext(ctx))
+		})
+	}
+}
+
+// SessionAuthMiddleware validates session tokens (replacement for JWT)
+// Uses in-memory session store for token validation
+// Maintains backward compatibility by putting *auth.Claims in context
+func SessionAuthMiddleware(store *session.Store) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Extract token from X-Session-Token header or Authorization header
+			token := r.Header.Get("X-Session-Token")
+			if token == "" {
+				// Fallback: check Authorization header for backward compatibility
+				authHeader := r.Header.Get("Authorization")
+				if authHeader != "" {
+					parts := strings.SplitN(authHeader, " ", 2)
+					if len(parts) == 2 && parts[0] == "Bearer" {
+						token = parts[1]
+					}
+				}
+			}
+
+			if token == "" {
+				http.Error(w, "Missing session token", http.StatusUnauthorized)
+				return
+			}
+
+			// Validate session token
+			sess, err := store.Get(token)
+			if err != nil {
+				log.Printf("[AUTH] Invalid session from %s: %v", netutil.GetClientIP(r), err)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusUnauthorized)
+				json.NewEncoder(w).Encode(map[string]interface{}{
+					"success": false,
+					"error":   "Invalid or expired session",
+				})
+				return
+			}
+
+			// Create auth.Claims for backward compatibility with handlers
+			// This allows existing handlers to work unchanged
+			claims := &auth.Claims{
+				Username: sess.Username,
+				Groups:   sess.Groups,
+			}
+
+			// Add claims to context (same key as JWT middleware)
 			ctx := context.WithValue(r.Context(), UserContextKey, claims)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
