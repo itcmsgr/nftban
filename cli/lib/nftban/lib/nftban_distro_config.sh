@@ -287,6 +287,46 @@ nftban_distro_is_package_installed() {
     esac
 }
 
+# =============================================================================
+# POLKIT PATH RESOLUTION
+# =============================================================================
+# Get canonical polkit rules directory for current distribution
+# This is the SINGLE SOURCE OF TRUTH for polkit path resolution.
+# See: /home/commonfolder/POLKIT-PATH-AUDIT-REPORT.md
+#
+# Resolution order:
+#   1. Distro config [paths].polkit_rules_dir (preferred)
+#   2. Fallback by distro family (debian vs rhel)
+#   3. Final fallback: /etc/polkit-1/rules.d
+#
+# Usage:
+#   polkit_dir=$(nftban_distro_get_polkit_dir)
+#   install -m 644 "$rule_file" "$polkit_dir/"
+# =============================================================================
+nftban_distro_get_polkit_dir() {
+    # 1. Try distro config first (source of truth)
+    local path="${DISTRO_PATHS[polkit_rules_dir]:-}"
+    if [[ -n "$path" ]]; then
+        echo "$path"
+        return 0
+    fi
+
+    # 2. Fallback: detect by distro family
+    local family="${DISTRO_INFO[family]:-unknown}"
+    case "$family" in
+        debian|ubuntu)
+            echo "/usr/share/polkit-1/rules.d"
+            ;;
+        rhel|fedora|centos|rocky|almalinux)
+            echo "/etc/polkit-1/rules.d"
+            ;;
+        *)
+            # 3. Final fallback: /etc is most common
+            echo "/etc/polkit-1/rules.d"
+            ;;
+    esac
+}
+
 # Show current configuration (diagnostic)
 nftban_distro_show_config() {
     echo "=== Distribution Configuration ==="
