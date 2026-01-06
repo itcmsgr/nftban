@@ -723,6 +723,8 @@ fi
 %config(noreplace) /etc/nftban/conf.d/panels/vesta/*.conf
 %dir /etc/nftban/conf.d/panels/generic
 %config(noreplace) /etc/nftban/conf.d/panels/generic/*.conf
+%dir /etc/nftban/conf.d/panels/plesk
+%config(noreplace) /etc/nftban/conf.d/panels/plesk/*.conf
 %dir /etc/nftban/distros
 /etc/nftban/distros/*.conf
 %dir /etc/nftban/suricata
