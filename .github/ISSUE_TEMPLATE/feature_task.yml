@@ -1,0 +1,91 @@
+name: "Feature / Component Task"
+description: "Request a new feature or component enhancement"
+title: "FEAT: [Component] - [Goal]"
+labels: ["type:feature"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which component is affected?
+      options:
+        - Suricata Config
+        - Rule Orchestrator
+        - Service Scanner
+        - Daemon Hot Path (Ban)
+        - EVE Reader
+        - Packaging/Systemd
+        - CLI
+        - Core Daemon
+        - Docs
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Profile Impact
+      description: Which installation profiles are affected?
+      multiple: true
+      options:
+        - A (Minimal VPS)
+        - B (Standard Server)
+        - C (Full/Enterprise)
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: Why
+      description: Why is this feature needed? What problem does it solve?
+      placeholder: |
+        Describe the use case and motivation for this feature.
+    validations:
+      required: true
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk Level
+      description: What's the risk/impact of this change?
+      options:
+        - Low
+        - Medium
+        - High
+    validations:
+      required: true
+
+  - type: dropdown
+    id: effort
+    attributes:
+      label: Effort Estimate
+      description: Estimated effort to implement
+      options:
+        - S (Small - hours)
+        - M (Medium - days)
+        - L (Large - week+)
+    validations:
+      required: true
+
+  - type: textarea
+    id: dod
+    attributes:
+      label: Definition of Done
+      description: Clear, verifiable criteria for completion
+      placeholder: |
+        - [ ] Feature X is implemented
+        - [ ] Unit tests pass
+        - [ ] Documentation updated
+        - [ ] Works on Profile A/B/C
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any additional information, designs, or screenshots
+    validations:
+      required: false

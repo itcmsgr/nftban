@@ -1,0 +1,125 @@
+name: "Performance / Tuning Task"
+description: "Report performance issues or request tuning improvements"
+title: "PERF: [Component] - [Goal]"
+labels: ["type:perf"]
+body:
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Which component is affected?
+      options:
+        - Suricata Config
+        - Rule Orchestrator
+        - Service Scanner
+        - Daemon Hot Path (Ban)
+        - EVE Reader
+        - Packaging/Systemd
+        - CLI
+        - Core Daemon
+        - Other
+    validations:
+      required: true
+
+  - type: dropdown
+    id: profile
+    attributes:
+      label: Profile Impact
+      description: Which installation profiles are affected?
+      multiple: true
+      options:
+        - A (Minimal VPS)
+        - B (Standard Server)
+        - C (Full/Enterprise)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: metric
+    attributes:
+      label: Metric
+      description: What metric are we optimizing?
+      options:
+        - Latency
+        - CPU
+        - RAM
+        - Drops
+        - IO
+        - Correctness
+    validations:
+      required: true
+
+  - type: input
+    id: current
+    attributes:
+      label: Current Value
+      description: Current measured value (include units)
+      placeholder: "e.g., 480ms, 15% CPU, 256MB"
+    validations:
+      required: true
+
+  - type: input
+    id: target
+    attributes:
+      label: Target Value
+      description: Target value to achieve (include units)
+      placeholder: "e.g., <300ms, <10% CPU, <128MB"
+    validations:
+      required: true
+
+  - type: textarea
+    id: measurement
+    attributes:
+      label: How to Measure
+      description: Command, log path, or method to verify improvement
+      placeholder: |
+        ```bash
+        # Example measurement command
+        time nftban sync --profile B
+        ```
+    validations:
+      required: true
+
+  - type: dropdown
+    id: risk
+    attributes:
+      label: Risk Level
+      description: What's the risk if this isn't addressed?
+      options:
+        - Low
+        - Medium
+        - High
+    validations:
+      required: true
+
+  - type: dropdown
+    id: effort
+    attributes:
+      label: Effort Estimate
+      description: Estimated effort to implement
+      options:
+        - S (Small - hours)
+        - M (Medium - days)
+        - L (Large - week+)
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance Criteria
+      description: Measurable criteria for completion (1-3 bullets)
+      placeholder: |
+        - [ ] Metric improved from X to Y
+        - [ ] No regression in other metrics
+        - [ ] Passes profile test suite
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Additional Context
+      description: Any additional information, logs, or screenshots
+    validations:
+      required: false
