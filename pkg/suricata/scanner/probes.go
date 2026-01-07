@@ -1,7 +1,7 @@
 // =============================================================================
 // NFTBan - Service Protocol Probes
 // =============================================================================
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // meta:name="probes"
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -1,7 +1,7 @@
 // =============================================================================
 // NFTBan - Blacklist IPv4 API Handlers
 // =============================================================================
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // meta:name="blacklist_ipv4"
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

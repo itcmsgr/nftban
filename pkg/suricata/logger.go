@@ -1,7 +1,7 @@
 // =============================================================================
 // NFTBan - Suricata Event Logger
 // =============================================================================
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // meta:name="logger"
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -1,7 +1,7 @@
 // =============================================================================
 // NFTBan - HTTP Middleware
 // =============================================================================
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // meta:name="middleware"
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
