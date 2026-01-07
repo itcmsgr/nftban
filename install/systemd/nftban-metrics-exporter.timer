@@ -15,7 +15,7 @@ Requires=nftban-metrics-exporter.service
 After=nftban.service
 
 [Timer]
-# Run every 60 seconds
+# Run every 60 seconds with jitter
 OnBootSec=30s
 OnUnitActiveSec=60s
 
@@ -24,6 +24,9 @@ Persistent=false
 
 # Accuracy (allow +/- 5s variance for resource optimization)
 AccuracySec=5s
+
+# Add jitter to prevent synchronized scrapes across hosts
+RandomizedDelaySec=10s
 
 # Prevent timer drift
 FixedRandomDelay=false
