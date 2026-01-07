@@ -5,6 +5,118 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+#### Task Queue System (Reliability Improvements)
+- **Dead-Letter Queue (DLQ)**: Failed tasks now preserved for manual review instead of being deleted
+- **Exponential Backoff**: Configurable retry delays (default: 30s base, 900s max)
+- **Atomic Task Claiming**: Tasks moved to work/ directory during processing (prevents duplicate execution)
+- **Stuck Lock Recovery**: Auto-kills processors stuck >20 minutes, recovers orphaned tasks
+- **Queue Metrics**: Prometheus metrics for pending/working/DLQ counts and processing totals
+- **CLI Commands**: `nftban queue status|list|dlq list|dlq retry|dlq retry-all|dlq purge|metrics`
+
+#### Mail Delivery System (Reliability Improvements)
+- **Retry Wrapper**: `nftban_mail_send_with_retry()` with configurable attempts and backoff
+- **Mail Spooling**: Failed emails spooled to queue system for later retry
+- **Transport Metrics**: Prometheus counters per transport (postfix, sendmail, curl, etc.)
+- **Spool Status**: `nftban mail spool status` command
+
+#### Service Alerting
+- **OnFailure Units**: `nftban-alert@.service` template for systemd service failures
+- **Alert Throttling**: Prevents spam (default: 1 hour between same-service alerts)
+- **Service Alert Script**: Collects diagnostics (journal, status, resources) on failure
+
+#### Timer Improvements
+- **Jitter**: `RandomizedDelaySec=30s` on timers to prevent thundering herd
+
+#### Module Safety
+- **Loading Guards**: Modules check for function availability before calling queue/mail APIs
+
+#### Security (CWE-400 Mitigation)
+- **Queue Capacity Limit**: Rejects tasks when queue exceeds `NFTBAN_QUEUE_MAX_PENDING` (default: 10000)
+- **DLQ Auto-Purge**: Automatically removes DLQ entries older than `NFTBAN_QUEUE_DLQ_AUTO_RETENTION_DAYS` (default: 7)
+
+### Changed
+
+- **Queue Architecture**: Tasks now flow through `pending/ → work/ → success|retry|DLQ`
+- **Queue Processor**: Returns proper exit codes (0=success, 1=empty, 2=locked, 3=error)
+- **Timer OnFailure**: Queue and other timers now trigger alerts on failure
+
+### Configuration
+
+New variables in `/etc/nftban/nftban.conf`:
+
+```bash
+# Task Queue
+NFTBAN_QUEUE_MAX_RETRIES="3"
+NFTBAN_QUEUE_BACKOFF_BASE_SECONDS="30"
+NFTBAN_QUEUE_BACKOFF_MAX_SECONDS="900"
+NFTBAN_QUEUE_PENDING_DIR="${NFTBAN_DATA_DIR}/queue/pending"
+NFTBAN_QUEUE_WORK_DIR="${NFTBAN_DATA_DIR}/queue/work"
+NFTBAN_QUEUE_DLQ_DIR="${NFTBAN_DATA_DIR}/queue/dlq"
+NFTBAN_QUEUE_LOCK_STUCK_THRESHOLD="1200"
+NFTBAN_QUEUE_MAX_PENDING="10000"           # CWE-400: Queue capacity limit
+NFTBAN_QUEUE_DLQ_AUTO_RETENTION_DAYS="7"   # CWE-400: DLQ auto-purge
+NFTBAN_QUEUE_METRICS_FILE="${NFTBAN_DATA_DIR}/metrics/queue.prom"
+
+# Mail Delivery
+NFTBAN_MAIL_RETRY_ATTEMPTS="3"
+NFTBAN_MAIL_RETRY_BACKOFF="5,15,45"
+NFTBAN_MAIL_SPOOL_DIR="${NFTBAN_DATA_DIR}/mailspool"
+NFTBAN_MAIL_METRICS_FILE="${NFTBAN_DATA_DIR}/metrics/mail.prom"
+
+# SMTP Timeouts (curl direct SMTP transport)
+NFTBAN_SMTP_CONNECT_TIMEOUT="10"   # Preferred naming
+NFTBAN_SMTP_MAX_TIME="30"          # Legacy: NFTBAN_CURL_* still works
+
+# Service Alerts
+NFTBAN_ALERT_THROTTLE_SECONDS="3600"
+```
+
+### New Prometheus Metrics
+
+**Queue Metrics** (`/var/lib/nftban/metrics/queue.prom`):
+- `nftban_queue_tasks_pending` - Tasks waiting to be processed
+- `nftban_queue_tasks_working` - Tasks currently processing
+- `nftban_queue_tasks_dlq` - Tasks in dead-letter queue
+- `nftban_queue_oldest_pending_age_seconds` - Age of oldest pending task
+- `nftban_queue_tasks_processed_total` - Total successful tasks
+- `nftban_queue_tasks_failed_total` - Total failed tasks
+- `nftban_queue_task_retries_total` - Total retry attempts
+- `nftban_queue_dlq_total` - Total tasks moved to DLQ
+
+**Mail Metrics** (`/var/lib/nftban/metrics/mail.prom`):
+- `nftban_mail_send_attempts_total{transport="..."}` - Send attempts by transport
+- `nftban_mail_send_success_total{transport="..."}` - Successful sends
+- `nftban_mail_send_failures_total{transport="..."}` - Failed sends
+- `nftban_mail_spool_depth` - Number of mails in retry spool
+- `nftban_mail_last_success_timestamp` - Unix timestamp of last success
+
+### Logrotate Changes
+
+- **mail.log, queue.log**: Changed from `create` to `copytruncate` (safer for bash appenders)
+
+### Upgrade Notes
+
+**From 1.0.0-beta:**
+
+1. **New directories created automatically**: `queue/work/`, `queue/dlq/`, `mailspool/`
+2. **Existing queue tasks**: Continue processing normally
+3. **Configuration**: New variables have sensible defaults - no action required
+4. **Timers**: Reload systemd to pick up OnFailure units:
+   ```bash
+   systemctl daemon-reload
+   ```
+5. **Metrics**: New Prometheus metrics available at:
+   - `/var/lib/nftban/metrics/queue.prom`
+   - `/var/lib/nftban/metrics/mail.prom`
+
+**Breaking Changes:** None
+
+---
+
 ## [1.0.0-beta] - 2025-12-11
 
 ### Major Release - Beta Testing
