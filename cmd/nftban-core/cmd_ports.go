@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Port Management Command
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="cmd_ports"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Manage allowed ports in nftables firewall"
+// meta:input="Subcommand (list, load, status)"
+// meta:output="Console output with port configuration"
+// meta:depends="github.com/itcmsgr/nftban/pkg/ipc,github.com/itcmsgr/nftban/pkg/network,github.com/itcmsgr/nftban/pkg/ports"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/ports.d/*.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="root"
+// =============================================================================
+
 package main
 
 import (

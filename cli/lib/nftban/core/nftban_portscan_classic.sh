@@ -1,12 +1,25 @@
 #!/bin/bash
+# =============================================================================
+# NFTBan v1.0.0 - Portscan Protection Classic Mode
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban_portscan_classic"
+# meta:type="module"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Pure nftables-based portscan detection without external IDS"
+# meta:input="Kernel log entries with NFTBAN_PORTSCAN prefix"
+# meta:output="Ban actions for detected port scanners"
+# meta:depends="nft_fragment.sh, nft_ipc.sh"
+# meta:inventory.files="/var/lib/nftban/portscan-state.db"
+# meta:inventory.binaries="nft"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/portscan/classic.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
 # shellcheck disable=SC1083  # Braces in nftables syntax are literal, not bash
-# =============================================================================
-# NFTBan Portscan Protection - CLASSIC MODE Implementation
-# =============================================================================
-# Pure nftables-based portscan detection without external IDS.
-# Uses nftables logging + kernel log parsing to detect port scans.
-#
-# File: /usr/lib/nftban/core/nftban_portscan_classic.sh
 # =============================================================================
 
 # Prevent double sourcing

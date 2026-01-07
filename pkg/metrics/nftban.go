@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Prometheus Metrics
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="nftban"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Prometheus metrics for ban/unban, feeds, sync, and auth operations"
+// meta:input="Metric recording calls"
+// meta:output="Prometheus metrics"
+// meta:depends="github.com/prometheus/client_golang/prometheus"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 // Package metrics provides Prometheus metrics for NFTBan operations
 // This file contains application-level metrics for ban/unban operations,
 // feed loading, sync operations, and authentication

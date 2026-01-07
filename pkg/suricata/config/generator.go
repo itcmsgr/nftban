@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata Rule Configuration Generator
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="generator"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Generates auto.conf and effective.conf for Suricata rules"
+// meta:input="Service detection, local config"
+// meta:output="Configuration files"
+// meta:depends="github.com/itcmsgr/nftban/pkg/nftbanconf,github.com/itcmsgr/nftban/pkg/suricata/scanner"
+// meta:inventory.files="/etc/nftban/suricata/rules/*.conf"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package config
 
 import (

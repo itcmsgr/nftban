@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata Event Logger
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="logger"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Logs Suricata events and ban actions to file"
+// meta:input="Suricata events, ban actions"
+// meta:output="Structured log entries"
+// meta:depends="os,sync,time,github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:inventory.files="/var/log/nftban/suricata.log"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package suricata
 
 import (

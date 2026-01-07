@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Web UI Server
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="main"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="HTTPS web server providing GUI dashboard for NFTBan management"
+// meta:input="Command line flags (config, port, cert, key, version, dev)"
+// meta:output="HTTPS web server on configured port"
+// meta:depends="github.com/gorilla/mux,github.com/itcmsgr/nftban/pkg/api,github.com/itcmsgr/nftban/pkg/auth"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/ui.conf,/etc/nftban/ssl/cert.pem,/etc/nftban/ssl/key.pem"
+// meta:inventory.systemd_units="nftban-ui.service"
+// meta:inventory.network="https:3940"
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package main
 
 import (

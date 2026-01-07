@@ -1,12 +1,25 @@
 #!/bin/bash
+# =============================================================================
+# NFTBan v1.0.0 - Portscan Protection Suricata Mode
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban_portscan_suricata"
+# meta:type="module"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Suricata IDS-based portscan detection via EVE JSON alerts"
+# meta:input="Suricata EVE JSON alerts"
+# meta:output="Ban actions for detected port scanners"
+# meta:depends="nft_ipc.sh, suricata"
+# meta:inventory.files="/var/lib/nftban/portscan-suricata-state.db"
+# meta:inventory.binaries="nft, suricata"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/portscan/suricata.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
 # shellcheck disable=SC1083  # Braces in nftables syntax are literal, not bash
-# =============================================================================
-# NFTBan Portscan Protection - SURICATA MODE Implementation
-# =============================================================================
-# Uses Suricata IDS for intelligent portscan detection via EVE JSON alerts.
-# Leverages Suricata's built-in sfportscan preprocessor and signature rules.
-#
-# File: /usr/lib/nftban/core/nftban_portscan_suricata.sh
 # =============================================================================
 
 # Prevent double sourcing

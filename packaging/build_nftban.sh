@@ -2,8 +2,23 @@
 # =============================================================================
 # NFTBan v1.0.0 - Complete Package Builder
 # =============================================================================
-# Builds RPM and DEB packages for NFTBan core components
-#
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="build_nftban"
+# meta:type="installer"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Builds RPM and DEB packages for NFTBan core components"
+# meta:input="deb, rpm, or both (default)"
+# meta:output="RPM and/or DEB packages"
+# meta:depends="rpmbuild, dpkg-deb, go"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
 # Usage:
 #   ./build_nftban.sh [deb|rpm|both]
 #
@@ -12,7 +27,6 @@
 #   - nftban-libs     - Shell libraries
 #   - nftban-ui       - Web GUI
 #   - nftban-all      - Meta-package (depends on all above)
-#
 # =============================================================================
 
 set -Eeuo pipefail

@@ -1,3 +1,24 @@
+# =============================================================================
+# NFTBan v1.0.0 - Feed Update Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-core-feeds.service"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Threat feed update service"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/bin/nftban"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network="outbound"
+# meta:inventory.privileges="root"
+# =============================================================================
+
 [Unit]
 Description=NFTBan Core - Feed Update
 Documentation=https://github.com/itcmsgr/nftban-dev

@@ -1,7 +1,28 @@
+// =============================================================================
+// NFTBan - CLI Command Builders
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="commands"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Build CLI command strings using central config paths"
+// meta:input="None"
+// meta:output="Command paths and feature flags"
+// meta:depends="path/filepath"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/nftban.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package nftbanconf
 
 // =============================================================================
-// NFTBan CLI Command Builders
+// CLI Command Builders
 // =============================================================================
 // Purpose: Build CLI command strings using central config paths
 //          This eliminates hardcoded paths scattered across the codebase

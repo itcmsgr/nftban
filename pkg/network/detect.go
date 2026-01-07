@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Network IP Family Detection
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="detect"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Detects IPv4 and IPv6 availability on system interfaces"
+// meta:input="Network interfaces"
+// meta:output="IP family support flags"
+// meta:depends="net"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package network
 
 import (

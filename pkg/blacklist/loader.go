@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Blacklist Loader
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="loader"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Loads and manages IP blacklist entries from config files"
+// meta:input="Blacklist configuration files"
+// meta:output="IPv4 and IPv6 address sets"
+// meta:depends="github.com/itcmsgr/nftban/pkg/feeds,github.com/itcmsgr/nftban/pkg/netutil"
+// meta:inventory.files="/etc/nftban/blacklist.d/*.conf"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package blacklist
 
 import (

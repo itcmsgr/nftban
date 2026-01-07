@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata Integration Command
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="cmd_suricata"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Suricata IDS integration with profile, rules, and filter management"
+// meta:input="Subcommand (status, filters, daemon, enable, disable, profile-*, scan, rules-*, sid-*, custom-*, recommend)"
+// meta:output="Console output with Suricata configuration and status"
+// meta:depends="github.com/itcmsgr/nftban/pkg/suricata,github.com/itcmsgr/nftban/pkg/analytics,github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:inventory.files="/var/log/nftban/suricata/eve-alerts.json"
+// meta:inventory.binaries="suricata"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/suricata/*.conf"
+// meta:inventory.systemd_units="suricata.service"
+// meta:inventory.network=""
+// meta:inventory.privileges="root"
+// =============================================================================
+
 package main
 
 import (

@@ -1,16 +1,30 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan Man Page Update Script
+# NFTBan v1.0.0 - Man Page Update Script
 # =============================================================================
-# Updates man page version, date, and optionally adds new commands
-#
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="update_man_page"
+# meta:type="script"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Updates man page version, date, and adds new commands"
+# meta:input="action (version, preview, check, install, add)"
+# meta:output="Updated man page"
+# meta:depends="groff, man"
+# meta:inventory.files="install/man/man8/nftban.8"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root for install"
+# =============================================================================
 # Usage:
 #   ./update_man_page.sh version <version>     - Update version number
 #   ./update_man_page.sh preview               - Preview man page
 #   ./update_man_page.sh install               - Install man page
 #   ./update_man_page.sh check                 - Check for syntax errors
 #   ./update_man_page.sh add <command>         - Generate section for new command
-#
 # =============================================================================
 
 set -euo pipefail

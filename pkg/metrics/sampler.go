@@ -1,7 +1,23 @@
-// NFTBan v0.50 - Global Metrics Sampler
-// SPDX-License-Identifier: MPL-2.0
-// Copyright (c) 2025 Antonios Voulvoulis
-// Homepage: https://github.com/itcmsgr/nftban
+// =============================================================================
+// NFTBan - Global Metrics Sampler
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="sampler"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Global metrics sampler with Prometheus integration"
+// meta:input="NFTBan status JSON, /proc/net/dev"
+// meta:output="Prometheus metrics, sample ring buffer"
+// meta:depends="github.com/prometheus/client_golang/prometheus"
+// meta:inventory.files="/proc/net/dev"
+// meta:inventory.binaries="nftban"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/nftban.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
 
 package metrics
 

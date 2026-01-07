@@ -1,12 +1,26 @@
 #!/usr/bin/env bash
-# ==============================================================================
-# NFTBan CLI Command: gui
-# ==============================================================================
-# Description:  Enable/disable Web GUI + Prometheus + Go binaries
+# =============================================================================
+# NFTBan v1.0.0 - Web GUI Management CLI Command
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="cmd_gui"
+# meta:type="cli"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Enable/disable Web GUI + Prometheus + Go binaries"
+# meta:input="Subcommand (enable, disable, status, restart, recompile)"
+# meta:output="GUI status and management results"
+# meta:depends="systemd, golang, prometheus, node_exporter"
+# meta:inventory.files=""
+# meta:inventory.binaries="nftban-ui, nftban-core"
+# meta:inventory.env_vars="NFTBAN_GUI_MODE"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="nftban-ui.service"
+# meta:inventory.network="port 3940"
+# meta:inventory.privileges="root"
+# =============================================================================
 # shellcheck disable=SC1083  # Braces in nftables syntax are literal, not bash
-# Author:       NFTBan Team
-# License:      MIT
-# ==============================================================================
+# =============================================================================
 
 # shellcheck disable=SC2034  # Variables used by framework
 

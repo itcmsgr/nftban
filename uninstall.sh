@@ -1,8 +1,24 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan Uninstall Script
+# NFTBan v1.0.0 - Uninstall Script
 # =============================================================================
-# Purpose: Complete removal of NFTBan from system
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="uninstall"
+# meta:type="script"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Complete removal of NFTBan from system"
+# meta:input="--purge flag (optional)"
+# meta:output="Removed NFTBan installation"
+# meta:depends="systemd, nft"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
 # Usage: ./uninstall.sh [--purge]
 #        --purge: Remove ALL data including configs, logs, and databases
 # =============================================================================

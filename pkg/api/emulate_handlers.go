@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Firewall Emulation API Handlers
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="emulate_handlers"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="HTTP API handlers for firewall rule emulation and testing"
+// meta:input="HTTP requests with IP, protocol, port, direction"
+// meta:output="JSON responses with allow/block decisions"
+// meta:depends="net/http"
+// meta:inventory.files=""
+// meta:inventory.binaries="nftban"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package api
 
 import (

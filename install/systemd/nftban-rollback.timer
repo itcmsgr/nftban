@@ -1,3 +1,24 @@
+# =============================================================================
+# NFTBan v1.0.0 - Automatic Rollback Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-rollback.timer"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Timer for automatic rollback after apply"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-rollback.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
 [Unit]
 Description=NFTBan Automatic Rollback Timer
 Documentation=man:nftban(8)

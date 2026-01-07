@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata Integration Configuration
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="config"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Configuration management for Suricata filter integration"
+// meta:input="Suricata filter configuration files"
+// meta:output="Filter configurations"
+// meta:depends="os,time"
+// meta:inventory.files="/etc/nftban/suricata/filters/*.conf"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/suricata/suricata.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package suricata
 
 import (

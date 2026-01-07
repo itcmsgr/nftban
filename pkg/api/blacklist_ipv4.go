@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Blacklist IPv4 API Handlers
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="blacklist_ipv4"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="HTTP API handlers for IPv4 blacklist batch operations"
+// meta:input="HTTP requests with IP addresses"
+// meta:output="JSON responses with operation results"
+// meta:depends="github.com/itcmsgr/nftban/pkg/sync,github.com/itcmsgr/nftban/pkg/util"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package api
 
 import (

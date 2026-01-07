@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Threat Feeds Management Command
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="cmd_feeds"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Manage threat intelligence feeds for IP blocking"
+// meta:input="Subcommand (list, load, stats, enable, disable, sync, update)"
+// meta:output="Console output with feed status and operations"
+// meta:depends="github.com/itcmsgr/nftban/pkg/feeds,github.com/itcmsgr/nftban/pkg/ipc,github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/conf.d/feeds.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network="http"
+// meta:inventory.privileges="root"
+// =============================================================================
+
 package main
 
 import (

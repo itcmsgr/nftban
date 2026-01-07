@@ -1,3 +1,24 @@
+# =============================================================================
+# NFTBan v1.0.0 - Health Fixer Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-health-fix.service"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="On-demand privileged health fix service"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/bin/nftban"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
 [Unit]
 Description=NFTBan Health Fixer (On-Demand, Privileged)
 Documentation=man:nftban(8)

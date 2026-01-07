@@ -1,7 +1,28 @@
+// =============================================================================
+// NFTBan - Central Configuration Loader
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="loader"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Reads /etc/nftban/nftban.conf - the single source of truth"
+// meta:input="Bash configuration file"
+// meta:output="Config struct with all paths and settings"
+// meta:depends="bufio,os"
+// meta:inventory.files="/etc/nftban/nftban.conf"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/nftban.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package nftbanconf
 
 // =============================================================================
-// NFTBan Central Configuration Loader
+// Central Configuration Loader
 // =============================================================================
 // Purpose: Read /etc/nftban/nftban.conf - the SINGLE SOURCE OF TRUTH
 //          Both bash CLI and Go binaries use the SAME config file

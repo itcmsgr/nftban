@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - System Lookup Utilities
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="lookup"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Unified system lookup for groups and users with fallback parsing"
+// meta:input="User/group names"
+// meta:output="UIDs and GIDs"
+// meta:depends="os/user,os"
+// meta:inventory.files="/etc/group,/etc/passwd"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 // Package system provides unified system lookup utilities
 package system
 

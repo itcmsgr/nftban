@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - PAM Authentication Handler
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="pam"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="PAM-based authentication with JWT token generation and RBAC"
+// meta:input="Unix socket auth requests"
+// meta:output="JWT tokens and user claims"
+// meta:depends="github.com/golang-jwt/jwt/v5"
+// meta:inventory.files="/run/nftban-ui/auth.sock"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package auth
 
 import (

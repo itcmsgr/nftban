@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata Rules Generator
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="generator"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Generates enabled.list and custom.rules for Suricata"
+// meta:input="Category configuration"
+// meta:output="Rule files"
+// meta:depends="github.com/itcmsgr/nftban/pkg/config,github.com/itcmsgr/nftban/pkg/suricata/config"
+// meta:inventory.files="/var/lib/suricata/rules/*.rules"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package rules
 
 import (

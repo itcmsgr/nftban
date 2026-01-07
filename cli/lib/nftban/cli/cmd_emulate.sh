@@ -1,15 +1,28 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan CLI: emulate command
+# NFTBan v1.0.0 - Packet Emulation CLI Command
 # =============================================================================
-# Simulate packet evaluation to show what nftban would do
-#
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="cmd_emulate"
+# meta:type="cli"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Simulate packet evaluation to show what nftban would do"
+# meta:input="IP address, optional protocol/port/direction"
+# meta:output="Emulation result (JSON or text)"
+# meta:depends="nftban_emulate.sh"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
 # Usage:
 #   nftban emulate <ip>
 #   nftban emulate <ip> --proto tcp --port 22 --direction in
 #   nftban emulate <ip> --json
-#
-# Version: 1.0.0
 # =============================================================================
 
 set -Eeuo pipefail

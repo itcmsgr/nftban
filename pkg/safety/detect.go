@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - System IP Detection
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="detect"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Auto-detects critical IPs that must never be blocked"
+// meta:input="Network interfaces, resolv.conf"
+// meta:output="Server IPs, gateway, DNS servers"
+// meta:depends="net,os"
+// meta:inventory.files="/etc/resolv.conf"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package safety
 
 import (

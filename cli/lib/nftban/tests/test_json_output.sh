@@ -1,5 +1,24 @@
 #!/usr/bin/env bash
-# Test script for json_output.sh helper module
+# =============================================================================
+# NFTBan v1.0.0 - JSON Output Helper Test Suite
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="test_json_output"
+# meta:type="test"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Test script for json_output.sh helper module"
+# meta:input="None"
+# meta:output="Test results (pass/fail)"
+# meta:depends="json_output.sh"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
 
 set -Eeuo pipefail
 

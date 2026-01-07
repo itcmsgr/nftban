@@ -1,3 +1,24 @@
+# =============================================================================
+# NFTBan v1.0.0 - Login Monitor Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-login-monitor.service"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="SSH and authentication login monitoring"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/bin/nftban"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="sshd.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
+# =============================================================================
+
 [Unit]
 Description=NFTBan Login Monitor
 Documentation=https://nftban.com

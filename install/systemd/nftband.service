@@ -1,7 +1,23 @@
 # =============================================================================
-# NFTBan Daemon Service - AUTHORITATIVE nftables Writer
+# NFTBan v1.0.0 - Daemon Service (Single nftables Writer)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# meta:name="nftband.service"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Main daemon service with socket activation"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/lib/nftban/bin/nftband"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="nftband.socket"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
 #
 # This daemon is the SINGLE writer for all nftables operations.
 # All CLI and scheduled tasks must communicate via IPC socket.

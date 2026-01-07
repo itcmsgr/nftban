@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Feed Parser
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="parser"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Unified parser for threat feed and blacklist file lines"
+// meta:input="Feed file lines"
+// meta:output="Parsed IP/CIDR entries"
+// meta:depends="github.com/itcmsgr/nftban/pkg/netutil"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package feeds
 
 import (

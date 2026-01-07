@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata IP Threat Scorer
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="scorer"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Calculates threat scores for IPs based on Suricata events"
+// meta:input="Suricata events"
+// meta:output="IP threat scores"
+// meta:depends="github.com/itcmsgr/nftban/pkg/safety"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package suricata
 
 import (

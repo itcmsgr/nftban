@@ -1,3 +1,24 @@
+# =============================================================================
+# NFTBan v1.0.0 - Suricata Integration Daemon Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-suricata.service"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Suricata IDS integration daemon"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/local/bin/nftban-core"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="suricata.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
+# =============================================================================
+
 [Unit]
 Description=NFTBan Suricata Integration Daemon
 Documentation=man:nftban(8) https://nftban.com/docs

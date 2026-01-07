@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Configuration Loader
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="loader"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Loads FHS spec, distro config, and service configuration"
+// meta:input="Configuration files"
+// meta:output="Parsed configuration structures"
+// meta:depends="github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:inventory.files="/etc/nftban/distros/*.conf"
+// meta:inventory.binaries="bash"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/conf.d/services.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package config
 
 import (

@@ -1,8 +1,22 @@
 # =============================================================================
-# NFTBan RBL Check Service
+# NFTBan v1.0.0 - RBL Check Service
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Automated RBL checking service (triggered by timer)
+# meta:name="nftban-rbl-check.service"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Automated RBL checking service"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/sbin/nftban"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-rbl-check.timer"
+# meta:inventory.network="outbound"
+# meta:inventory.privileges="nftban"
 # =============================================================================
 
 [Unit]
