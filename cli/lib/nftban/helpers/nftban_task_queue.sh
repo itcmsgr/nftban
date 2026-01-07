@@ -47,6 +47,10 @@ readonly QUEUE_BACKOFF_BASE="${NFTBAN_QUEUE_BACKOFF_BASE_SECONDS:-30}"
 readonly QUEUE_BACKOFF_MAX="${NFTBAN_QUEUE_BACKOFF_MAX_SECONDS:-900}"
 readonly QUEUE_LOCK_STUCK_THRESHOLD="${NFTBAN_QUEUE_LOCK_STUCK_THRESHOLD:-1200}"
 
+# CWE-400 mitigation: Bounded queue to prevent resource exhaustion
+readonly QUEUE_MAX_PENDING="${NFTBAN_QUEUE_MAX_PENDING:-10000}"
+readonly QUEUE_DLQ_AUTO_RETENTION_DAYS="${NFTBAN_QUEUE_DLQ_AUTO_RETENTION_DAYS:-7}"
+
 readonly QUEUE_PENDING_DIR="${NFTBAN_QUEUE_PENDING_DIR:-${NFTBAN_DATA_DIR}/queue/pending}"
 readonly QUEUE_WORK_DIR="${NFTBAN_QUEUE_WORK_DIR:-${NFTBAN_DATA_DIR}/queue/work}"
 readonly QUEUE_DLQ_DIR="${NFTBAN_QUEUE_DLQ_DIR:-${NFTBAN_DATA_DIR}/queue/dlq}"
@@ -238,6 +242,15 @@ nftban_queue_add() {
     local payload_file="${3:-}"
 
     _queue_init
+
+    # CWE-400 mitigation: Check pending queue capacity
+    local pending_count
+    pending_count=$(find "$QUEUE_PENDING_DIR" -name "*.task" -type f 2>/dev/null | wc -l)
+    if [[ $pending_count -ge $QUEUE_MAX_PENDING ]]; then
+        _queue_log "ERROR" "Queue at capacity ($QUEUE_MAX_PENDING tasks). Rejecting task: $task_type"
+        echo "ERROR: Queue full" >&2
+        return 1
+    fi
 
     local task_id task_file now
     task_id=$(_queue_generate_task_id "$task_type")
@@ -508,6 +521,9 @@ nftban_queue_process_next() {
         return 2
     fi
 
+    # CWE-400 mitigation: Auto-purge old DLQ entries to prevent unbounded growth
+    _queue_auto_purge_dlq
+
     # Find next eligible task
     task_file=$(_queue_get_next_eligible_task)
 
@@ -649,6 +665,38 @@ nftban_queue_dlq_purge() {
 
     _queue_log "INFO" "Purged $count DLQ tasks older than $days days"
     echo "Purged $count tasks from DLQ"
+}
+
+# =============================================================================
+# AUTO-PURGE DLQ (CWE-400 mitigation)
+# =============================================================================
+
+_queue_auto_purge_dlq() {
+    # Silently purge old DLQ entries based on configured retention
+    # Called automatically during queue processing to prevent unbounded growth
+    local days="$QUEUE_DLQ_AUTO_RETENTION_DAYS"
+    local cutoff now count
+    now=$(date +%s)
+    cutoff=$((now - (days * 86400)))
+    count=0
+
+    local task_file
+    for task_file in "$QUEUE_DLQ_DIR"/*.task; do
+        [[ ! -f "$task_file" ]] && continue
+
+        # shellcheck source=/dev/null
+        source "$task_file"
+
+        if [[ ${TASK_DLQ_EPOCH:-0} -lt $cutoff ]]; then
+            rm -f "$task_file"
+            [[ -n "$TASK_PAYLOAD_FILE" ]] && [[ -f "$TASK_PAYLOAD_FILE" ]] && rm -f "$TASK_PAYLOAD_FILE"
+            ((count++))
+        fi
+    done
+
+    if [[ $count -gt 0 ]]; then
+        _queue_log "INFO" "Auto-purged $count DLQ tasks older than $days days"
+    fi
 }
 
 # =============================================================================

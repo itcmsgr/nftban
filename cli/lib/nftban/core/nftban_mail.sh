@@ -652,8 +652,9 @@ EOF
             local smtp_url="${smtp_proto}://${NFTBAN_SMTP_HOST}:${smtp_port}"
 
             # Build curl command arguments with timeouts
-            local connect_timeout="${NFTBAN_CURL_CONNECT_TIMEOUT:-10}"
-            local max_time="${NFTBAN_CURL_MAX_TIME:-30}"
+            # SMTP-centric naming preferred, CURL fallback for compatibility
+            local connect_timeout="${NFTBAN_SMTP_CONNECT_TIMEOUT:-${NFTBAN_CURL_CONNECT_TIMEOUT:-10}}"
+            local max_time="${NFTBAN_SMTP_MAX_TIME:-${NFTBAN_CURL_MAX_TIME:-30}}"
             local curl_args=(
                 --url "$smtp_url"
                 --mail-from "$sender"
