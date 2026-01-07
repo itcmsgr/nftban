@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
 //
 // meta:name="cmd_country"

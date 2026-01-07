@@ -1,7 +1,7 @@
 // =============================================================================
 // NFTBan - Diff Computation Tests
 // =============================================================================
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // meta:name="diff_test"
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"

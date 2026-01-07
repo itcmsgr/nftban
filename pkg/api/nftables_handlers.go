@@ -1,7 +1,7 @@
 // =============================================================================
 // NFTBan - NFTables API Handlers
 // =============================================================================
-// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: MPL-2.0
 // meta:name="nftables_handlers"
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
