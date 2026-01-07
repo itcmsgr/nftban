@@ -1,3 +1,27 @@
+# =============================================================================
+# NFTBan v1.0.0 - Queue Processor Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Systemd service unit for NFTBan task queue processor
+#
+# meta:name="nftban_queue_service"
+# meta:type="config"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-11-05"
+# meta:description="Oneshot service that processes tasks from NFTBan queue"
+# meta:input="None"
+# meta:output="Task execution results"
+# meta:depends="nftban-queue-processor"
+#
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-queue.timer,nftban-alert@.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
+
 [Unit]
 Description=NFTBan Task Queue Processor
 Documentation=man:nftban(8)

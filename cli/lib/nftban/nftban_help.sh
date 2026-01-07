@@ -5,22 +5,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Grouped help output for NFTBan CLI
 #
-# meta:name=nftban_help
-# meta:type=core
-# meta:header=NFTBan Help System
-# meta:version=1.0.0
+# meta:name="nftban_help"
+# meta:type="module"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:created_date="2025-11-05"
 #
-# **Description & Purpose**
-# meta:description=Provides grouped, categorized help output for main CLI
-# meta:input=None (called from main router)
-# meta:output=Formatted help text with categories (CORE, FIREWALL, PROTECTION, MONITORING)
+# meta:description="Provides grouped, categorized help output for main CLI"
+# meta:input="None (called from main router)"
+# meta:output="Formatted help text with categories (CORE, FIREWALL, PROTECTION, MONITORING)"
+# meta:depends="bash,tput"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,tput
-#
-# meta:created_date=2025-11-05
+# meta:inventory.files=""
+# meta:inventory.binaries="tput"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 
 set -Eeuo pipefail
 

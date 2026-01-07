@@ -1,8 +1,33 @@
 #!/usr/bin/env bash
-
+# =============================================================================
+# NFTBan v1.0.0 - Mail CLI Handler
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Handle mail-related CLI commands
+#
+# meta:name="cmd_mail"
+# meta:type="cli"
+# meta:header="Mail CLI Command"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
+#
+# meta:description="CLI interface for mail module commands"
+# meta:input="Command line arguments for mail operations"
+# meta:output="Mail command results"
+# meta:depends="bash,nftban_mail.sh"
+# meta:created_date="2025-11-05"
+#
+# meta:inventory.files="nftban_mail.sh,nftban_output.sh,strict.sh,version.sh,json_output.sh"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_LIB_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 # =============================================================================
 
-# Load JSON helper for --json support
+# Load dependencies
 [[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
 
 # Load strict mode library
@@ -19,38 +44,15 @@ fi
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/version.sh"
 fi
+
+# Load JSON helper for --json support
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER"
 fi
-# NFTBan v1.0.0 - Mail CLI Handler
-# =============================================================================
 
-# SPDX-License-Identifier: MPL-2.0
-# Purpose: Handle mail-related CLI commands
-#
-# meta:name=cmd_mail
-# meta:type=cli
-# meta:header=Mail CLI Command
-# meta:version=1.0.0
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=CLI interface for mail module commands
-# meta:input=Command line arguments for mail operations
-# meta:output=Mail command results
-#
-# **Inventory & Requirements**
-# meta:depends=bash,nftban_mail.sh
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
-# =============================================================================
-
-
-# Strict mode
+# Strict mode settings
 IFS=$'\n\t'
 umask 027
 
@@ -70,10 +72,8 @@ if [[ ! $(type -t nftban_mail_check_status) == "function" ]]; then
 fi
 
 # =============================================================================
-
 # MAIL COMMAND HANDLER
 # =============================================================================
-
 
 nftban_cmd_mail() {
     # Handle mail subcommands

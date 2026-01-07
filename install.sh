@@ -1,10 +1,30 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan Installation Script
+# NFTBan v1.0.0 - Installation Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Install NFTBan on the local system
-# Usage: ./install.sh
+#
+# meta:name="nftban_install"
+# meta:type="cli"
+# meta:header="NFTBan Installer"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
+#
+# meta:description="Main installation script for NFTBan firewall management system"
+# meta:input="Interactive prompts for configuration options"
+# meta:output="Installed NFTBan system with binaries, configs, and systemd units"
+# meta:depends="bash,curl,systemctl,useradd,chmod,chown,mkdir,cp,ln"
+# meta:created_date="2025-10-26"
+#
+# meta:inventory.files=""
+# meta:inventory.binaries="curl,systemctl,useradd,groupadd,chmod,chown,mkdir,cp,ln,tput,id"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="nftban.service,nftban-watchdog.timer,nftban-metrics-exporter.timer,nftban-queue.timer"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
 # Installs:
 #   - Go binaries (nftban-core, nftband, nftban-ui)

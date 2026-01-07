@@ -1,10 +1,32 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan Service Failure Alert Script
+# NFTBan v1.0.0 - Service Failure Alert Worker
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Log and optionally email alerts when a service fails
-# Called by: nftban-alert@.service (OnFailure handler)
+#
+# meta:name="nftban_service_alert"
+# meta:type="worker"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-01-07"
+#
+# meta:description="Systemd OnFailure handler that logs and emails service failure alerts"
+# meta:input="Failed service name as argument"
+# meta:output="Alert logs, diagnostic reports, optional email notifications"
+# meta:depends="bash,systemctl,journalctl,logger,date,hostname,free,df,uptime"
+#
+# meta:trigger="systemd-onfailure"
+# meta:systemd_timer=""
+# meta:systemd_service="nftban-alert@.service"
+# meta:interval_seconds=""
+#
+# meta:inventory.files="nftban.conf,nftban_mail.sh,service_failure.html"
+# meta:inventory.binaries="systemctl,journalctl,logger,date,hostname,free,df,uptime,flock"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LOG_DIR,NFTBAN_DATA_DIR,NFTBAN_LIB_DIR,NFTBAN_SHARE_DIR,NFTBAN_MAIL_RECIPIENT,NFTBAN_ALERT_THROTTLE_SECONDS"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="nftban-alert@.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 #
 # Usage: nftban-service-alert <failed-service-name>
 # =============================================================================

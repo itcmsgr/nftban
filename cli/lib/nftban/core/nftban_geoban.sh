@@ -5,23 +5,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Wrapper for Go-based country blocking (nftban-geoip geoban)
 #
-# meta:name=nftban_geoban
-# meta:type=core
-# meta:header=GeoBan Core
-# meta:version=1.0.0
+# meta:name="nftban_geoban"
+# meta:type="module"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:created_date="2025-11-05"
 #
-# **Description & Purpose**
-# meta:description=Country-based IP blocking using nftban-geoip Go binary
-# meta:input=Country codes (ISO alpha-2)
-# meta:output=IP lists to nftables, tracking JSON to /etc/nftban/geoban.d/
+# meta:description="Country-based IP blocking using nftban-geoip Go binary"
+# meta:input="Country codes (ISO alpha-2)"
+# meta:output="IP lists to nftables, tracking JSON to /etc/nftban/geoban.d/"
+# meta:depends="bash,nftban-geoip"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,nftban-geoip (Go binary)
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:inventory.files="nftban.conf,nft_schema.sh,nftban_logger.sh,nftban_audit.sh,nft_ipc.sh,nft_fragment.sh"
+# meta:inventory.binaries="nftban-geoip"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf,/etc/nftban/geoban.d/"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban user"
 # =============================================================================
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)

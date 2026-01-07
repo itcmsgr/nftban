@@ -1,3 +1,24 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+//
+// meta:name="privilege"
+// meta:type="go"
+// meta:package="main"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-01-01"
+// meta:description="Privilege and capability checks for nftables operations"
+// meta:input="None"
+// meta:output="Boolean privilege status"
+// meta:depends="go"
+//
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="cap_net_admin"
+
 package main
 
 import (
@@ -6,20 +27,6 @@ import (
 	"syscall"
 	"unsafe"
 )
-
-// =============================================================================
-// NFTBan Privilege Check
-// =============================================================================
-// Purpose: Check for sufficient privileges to manipulate nftables
-//
-// Two ways to have privilege:
-// 1. Running as root (euid == 0)
-// 2. Having CAP_NET_ADMIN capability set on the binary
-//
-// The second method allows nftban-ui (running as user nftban) to call
-// nftban-core without sudo, because:
-//   setcap 'cap_net_admin+ep' /usr/lib/nftban/bin/nftban-core
-// =============================================================================
 
 // CAP_NET_ADMIN is capability to perform various network operations
 const CAP_NET_ADMIN = 12

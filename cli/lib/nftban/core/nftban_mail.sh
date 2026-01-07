@@ -5,23 +5,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Email sending mechanism for all NFTBan modules
 #
-# meta:name=nftban_mail
-# meta:type=core
-# meta:header=Mail Module
-# meta:version=1.0.0
+# meta:name="nftban_mail"
+# meta:type="module"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:created_date="2025-11-05"
 #
-# **Description & Purpose**
-# meta:description=Provides email sending capabilities for all modules
-# meta:input=Email content (text or file path), recipient
-# meta:output=Sent emails with HTML templates
+# meta:description="Provides email sending capabilities for all modules"
+# meta:input="Email content (text or file path), recipient"
+# meta:output="Sent emails with HTML templates"
+# meta:depends="bash,sendmail,hostname,curl"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,sendmail,nft,hostname
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:inventory.files=""
+# meta:inventory.binaries="sendmail,postfix,exim,msmtp,curl,mailx,hostname"
+# meta:inventory.env_vars="NFTBAN_MAIL_METHOD,NFTBAN_MAIL_RECIPIENT,NFTBAN_MAIL_FROM,NFTBAN_MAIL_SMTP_HOST,NFTBAN_MAIL_SMTP_PORT,NFTBAN_MAIL_SMTP_USER,NFTBAN_MAIL_SMTP_PASS"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network="SMTP server (if configured)"
+# meta:inventory.privileges="none"
 # =============================================================================
 
 # Guard against multiple sourcing
