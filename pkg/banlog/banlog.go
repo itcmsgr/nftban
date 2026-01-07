@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+
 // Package banlog provides centralized ban logging for NFTBan
 // All ban actions (from any source) should log here for stats tracking
 package banlog

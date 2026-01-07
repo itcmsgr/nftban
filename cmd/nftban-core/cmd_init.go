@@ -1,3 +1,24 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+//
+// meta:name="cmd_init"
+// meta:type="go"
+// meta:package="main"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-01-01"
+// meta:description="Safety-first initialization with IP detection"
+// meta:input="Config, user confirmation"
+// meta:output="Whitelist configuration"
+// meta:depends="go"
+//
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/nftban.conf,/etc/nftban/conf.d/whitelist.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+
 package main
 
 import (

@@ -1,3 +1,27 @@
+# =============================================================================
+# NFTBan v1.0.0 - System Watchdog Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Systemd timer unit for NFTBan system watchdog
+#
+# meta:name="nftban_watchdog_timer"
+# meta:type="config"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Timer that triggers NFTBan watchdog every 90 seconds"
+# meta:input="None"
+# meta:output="Triggers nftban-watchdog.service"
+# meta:depends="nftban-watchdog.service"
+#
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-watchdog.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
+
 [Unit]
 Description=NFTBan System Watchdog Timer
 Documentation=man:nftban(8)

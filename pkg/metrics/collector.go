@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+
 // Package metrics provides efficient metrics collection for NFTBan
 // This collector replaces slow bash-based metrics with fast Go implementation
 package metrics

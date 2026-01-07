@@ -1,28 +1,27 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan Sync Module - Atomic Firewall Reload
+# NFTBan v1.0.0 - Sync Core Module
 # =============================================================================
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Atomic firewall reload using Go-based sync engine
 #
-# meta:name=nftban_sync
-# meta:type=core
-# meta:header=NFTBan Sync Module
-# meta:version=1.0.0
+# meta:name="nftban_sync"
+# meta:type="module"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:created_date="2025-11-18"
 #
-# **Description & Purpose**
-# meta:description=Atomic firewall reload using Go-based sync engine
-# meta:input=Configuration files (whitelist, blacklist, feeds, geoban)
-# meta:output=Updated nftables ruleset with preserved Fail2Ban state
+# meta:description="Atomic firewall reload using Go-based sync engine"
+# meta:input="Configuration files (whitelist, blacklist, feeds, geoban)"
+# meta:output="Updated nftables ruleset with preserved Fail2Ban state"
+# meta:depends="bash,nftables,nftban-sync"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,nftables,nftban-sync (Go binary)
-#
-# meta:created_date=2025-11-18
-# meta:updated_date=2025-11-24
-# meta:last_updated=2025-11-18
+# meta:inventory.files=""
+# meta:inventory.binaries="nftban-sync,nft"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban user"
 # =============================================================================
 
 # Strict mode

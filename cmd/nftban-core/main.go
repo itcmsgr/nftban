@@ -1,3 +1,24 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+//
+// meta:name="nftban-core"
+// meta:type="go"
+// meta:package="main"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-01-01"
+// meta:description="Main entry point for nftban-core CLI binary"
+// meta:input="Command line arguments"
+// meta:output="CLI output, nftables operations"
+// meta:depends="go,nftables"
+//
+// meta:inventory.files="cmd_*.go,privilege.go,usage.go"
+// meta:inventory.binaries="nft"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/nftban.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="cap_net_admin"
+
 package main
 
 import (

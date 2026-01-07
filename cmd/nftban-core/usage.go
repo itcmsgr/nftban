@@ -1,15 +1,30 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+//
+// meta:name="usage"
+// meta:type="go"
+// meta:package="main"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-01-01"
+// meta:description="Centralized usage strings for CLI subcommands"
+// meta:input="None"
+// meta:output="Usage text to stderr"
+// meta:depends="go"
+//
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+
 package main
 
 import (
 	"fmt"
 	"os"
 )
-
-// =============================================================================
-// Centralized Usage Strings
-// =============================================================================
-// Each subcommand has its own usage function to avoid duplication
-// =============================================================================
 
 // usageBan prints usage for the ban command
 func usageBan() {

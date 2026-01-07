@@ -1,3 +1,24 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+//
+// meta:name="cmd_ban"
+// meta:type="go"
+// meta:package="main"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-01-01"
+// meta:description="Ban IP subcommand with timeout and reason support"
+// meta:input="IP address, timeout, reason, source"
+// meta:output="nftables ban operation, logging"
+// meta:depends="go,nftables"
+//
+// meta:inventory.files=""
+// meta:inventory.binaries="nft"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/nftban.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="cap_net_admin"
+
 package main
 
 import (

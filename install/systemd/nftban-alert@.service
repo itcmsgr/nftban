@@ -1,10 +1,27 @@
 # =============================================================================
-# NFTBan Service Failure Alert (Template Unit)
+# NFTBan v1.0.0 - Service Failure Alert (Template Unit)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Send alert when a critical NFTBan service fails
-# Usage: Add "OnFailure=nftban-alert@%n.service" to critical services
 #
+# meta:name="nftban_alert_service"
+# meta:type="config"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-01-07"
+# meta:description="Template service unit for NFTBan service failure alerts"
+# meta:input="Failed service name via %i substitution"
+# meta:output="Alert logs and optional email notifications"
+# meta:depends="nftban-service-alert"
+#
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_CONFIG_DIR,NFTBAN_LOG_DIR,NFTBAN_DATA_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban user"
+#
+# Usage: Add "OnFailure=nftban-alert@%n.service" to critical services
 # This is a template unit - %i is replaced with the failed service name
 # Example: nftban-alert@nftban-queue.service
 # =============================================================================

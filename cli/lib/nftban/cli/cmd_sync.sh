@@ -1,28 +1,27 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan CLI - Sync Command
+# NFTBan v1.0.0 - Sync CLI Command
 # =============================================================================
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: CLI command for atomic firewall reload
 #
-# meta:name=nftban_cmd_sync
-# meta:type=cli
-# meta:header=NFTBan Sync Command
-# meta:version=1.0.0
+# meta:name="nftban_cmd_sync"
+# meta:type="cli"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:created_date="2025-11-18"
 #
-# **Description & Purpose**
-# meta:description=CLI command for atomic firewall reload
-# meta:input=Subcommands (validate, status, help) and flags (--dry-run)
-# meta:output=Firewall sync status and results
+# meta:description="CLI command for atomic firewall reload"
+# meta:input="Subcommands (validate, status, help) and flags (--dry-run)"
+# meta:output="Firewall sync status and results"
+# meta:depends="bash,nftban_sync.sh"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,nftban_sync.sh
-#
-# meta:created_date=2025-11-18
-# meta:updated_date=2025-11-24
-# meta:last_updated=2025-11-18
+# meta:inventory.files="nftban_sync.sh"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_LIB_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban user"
 # =============================================================================
 
 # Strict mode

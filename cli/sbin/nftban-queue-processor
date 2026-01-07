@@ -1,10 +1,32 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan Queue Processor v2.0 (called by systemd timer)
+# NFTBan v1.0.0 - Queue Processor Worker
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Process tasks from NFTBan queue with retry/DLQ support
-# Called by: nftban-queue.timer every 2 minutes
+#
+# meta:name="nftban_queue_processor"
+# meta:type="worker"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-11-05"
+#
+# meta:description="Systemd worker that processes tasks from NFTBan queue"
+# meta:input="None (reads from queue directories)"
+# meta:output="Task execution results, logs to queue.log"
+# meta:depends="bash,nftban_task_queue.sh"
+#
+# meta:trigger="systemd-timer"
+# meta:systemd_timer="nftban-queue.timer"
+# meta:systemd_service="nftban-queue.service"
+# meta:interval_seconds="120"
+#
+# meta:inventory.files="nftban_task_queue.sh"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_LIB_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-queue.timer,nftban-queue.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban user"
 #
 # Exit codes:
 #   0 - Task processed successfully OR no tasks pending

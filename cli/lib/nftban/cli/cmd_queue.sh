@@ -5,22 +5,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Handle task queue CLI commands including DLQ management
 #
-# meta:name=cmd_queue
-# meta:type=cli
-# meta:header=Queue CLI Command
-# meta:version=1.0.0
+# meta:name="cmd_queue"
+# meta:type="cli"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:created_date="2026-01-07"
 #
-# **Description & Purpose**
-# meta:description=CLI interface for task queue and dead-letter queue management
-# meta:input=Command line arguments for queue operations
-# meta:output=Queue status, DLQ listings, and operation results
+# meta:description="CLI interface for task queue and dead-letter queue management"
+# meta:input="Command line arguments for queue operations"
+# meta:output="Queue status, DLQ listings, and operation results"
+# meta:depends="bash,nftban_task_queue.sh"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,nftban_task_queue.sh
-#
-# meta:created_date=2026-01-07
+# meta:inventory.files="nftban_task_queue.sh,strict.sh,version.sh,json_output.sh,nftban_output.sh"
+# meta:inventory.binaries="find,date"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_DATA_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban user"
 # =============================================================================
 
 # Strict mode

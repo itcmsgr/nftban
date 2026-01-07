@@ -1,12 +1,27 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.21 Development - Project Health Check Script
+# NFTBan v1.0.0 - Project Health Check Script
 # =============================================================================
-# SPDX-License-Identifier: GPL-3.0-or-later
-# Description: Validates code quality, documentation, structure, and security
-# Generates: STATUS.md with project health metrics
-# Usage: .ci/health_check.sh
-# Exit codes: 0 = all checks pass, 1 = one or more checks failed
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Validates code quality, documentation, structure, and security
+#
+# meta:name="nftban_health_check"
+# meta:type="cli"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+#
+# meta:description="Validates code quality, documentation, structure, and security"
+# meta:input="Project files"
+# meta:output="STATUS.md with project health metrics"
+# meta:depends="bash,shellcheck,go,grep,find"
+#
+# meta:inventory.files=""
+# meta:inventory.binaries="shellcheck,go,grep,find,wc,date"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 # =============================================================================
 
 set -euo pipefail
