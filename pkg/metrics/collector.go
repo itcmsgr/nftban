@@ -11,6 +11,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/safety"
 )
 
 // Collector efficiently gathers NFTBan metrics for Prometheus export
@@ -33,9 +35,9 @@ func NewCollector(outputFile, stateDir, logDir string) *Collector {
 func (c *Collector) Collect() error {
 	startTime := time.Now()
 
-	// Create temp file for atomic write
+	// Create temp file for atomic write (TOCTOU-safe)
 	tempFile := c.outputFile + ".tmp"
-	f, err := os.Create(tempFile)
+	f, err := safety.SafeCreate(tempFile, 0644)
 	if err != nil {
 		return fmt.Errorf("create temp file: %w", err)
 	}
