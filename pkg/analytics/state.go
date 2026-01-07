@@ -4,6 +4,7 @@
 package analytics
 
 import (
+	"container/list"
 	"encoding/json"
 	"errors"
 	"os"
@@ -12,6 +13,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/safety"
 )
 
 type State struct {
@@ -19,6 +22,11 @@ type State struct {
 
 	countries map[string]*CountryStats
 	ipOrigins map[string]*IPOrigin
+
+	// LRU eviction for ipOrigins (CWE-400 mitigation)
+	ipOriginsLRU *list.List
+	maxIPOrigins int
+	maxIPsPerCountry int
 
 	analyticsDir string // /var/lib/nftban/analytics
 	reportsDir   string // /var/lib/nftban/reports
@@ -51,11 +59,16 @@ func Init(libPath string, reportsPath string) error {
 		return err
 	}
 
+	limits := safety.GetMemoryLimits()
+
 	st := &State{
-		countries:    make(map[string]*CountryStats),
-		ipOrigins:    make(map[string]*IPOrigin),
-		analyticsDir: analyticsDir,
-		reportsDir:   reportsPath,
+		countries:        make(map[string]*CountryStats),
+		ipOrigins:        make(map[string]*IPOrigin),
+		ipOriginsLRU:     list.New(),
+		maxIPOrigins:     limits.AnalyticsMaxIPOrigins,
+		maxIPsPerCountry: limits.AnalyticsMaxIPsPerCountry,
+		analyticsDir:     analyticsDir,
+		reportsDir:       reportsPath,
 	}
 
 	if err := st.loadIfExists(); err != nil {
@@ -87,16 +100,49 @@ func (s *State) loadIfExists() error {
 		if err := json.Unmarshal(data, &m); err != nil {
 			return err
 		}
+		// Migrate: convert IPs slice to IPSet map for O(1) lookups
+		for _, cs := range m {
+			if cs.IPSet == nil {
+				cs.IPSet = make(map[string]struct{})
+			}
+			for _, ip := range cs.IPs {
+				if len(cs.IPSet) < s.maxIPsPerCountry {
+					cs.IPSet[ip] = struct{}{}
+				}
+			}
+			// Clear legacy IPs slice to save memory
+			cs.IPs = nil
+			cs.IPCount = len(cs.IPSet)
+		}
 		s.countries = m
 	}
 
-	// IP origins
+	// IP origins - load with LRU and cap
 	if data, err := os.ReadFile(ipPath); err == nil {
 		var m map[string]*IPOrigin
 		if err := json.Unmarshal(data, &m); err != nil {
 			return err
 		}
-		s.ipOrigins = m
+
+		// Convert to slice, sort by BannedAt (oldest first), and load with cap
+		origins := make([]*IPOrigin, 0, len(m))
+		for _, o := range m {
+			origins = append(origins, o)
+		}
+		sort.Slice(origins, func(i, j int) bool {
+			return origins[i].BannedAt.Before(origins[j].BannedAt)
+		})
+
+		// Load most recent entries up to cap
+		startIdx := 0
+		if len(origins) > s.maxIPOrigins {
+			startIdx = len(origins) - s.maxIPOrigins
+		}
+		for i := startIdx; i < len(origins); i++ {
+			o := origins[i]
+			s.ipOrigins[o.IP] = o
+			o.lruElement = s.ipOriginsLRU.PushFront(o.IP)
+		}
 	}
 
 	return nil
@@ -121,36 +167,81 @@ func (s *State) RecordBan(ip, country, city, source, reason string, t time.Time)
 	s.mu.Lock()
 	defer s.mu.Unlock()
 
-	// Per-country stats
+	// Per-country stats with O(1) dedup using map
 	cs := s.countries[country]
 	if cs == nil {
 		cs = &CountryStats{
 			Country: country,
-			IPs:     []string{},
+			IPSet:   make(map[string]struct{}),
 		}
 		s.countries[country] = cs
 	}
-	if !containsString(cs.IPs, ip) {
-		cs.IPs = append(cs.IPs, ip)
-		cs.IPCount = len(cs.IPs)
+
+	// O(1) dedup check instead of O(n) containsString
+	if _, exists := cs.IPSet[ip]; !exists {
+		// Cap per-country IPs
+		if len(cs.IPSet) < s.maxIPsPerCountry {
+			cs.IPSet[ip] = struct{}{}
+			cs.IPCount = len(cs.IPSet)
+		}
 	}
 	cs.LastUpdated = t
 
 	// Parse source to determine service (dynamic from reason/source)
-	// Examples: "ssh_brute_force" -> service="ssh", "malware_c2" -> service="malware"
 	service := extractServiceFromReason(reason, source)
 
-	// Per-IP origin
-	s.ipOrigins[ip] = &IPOrigin{
-		IP:       ip,
-		Country:  country,
-		City:     city,
-		BannedAt: t,
-		Jail:     source,   // Legacy compatibility
-		Source:   source,   // New: suricata, login-monitor, manual, feeds
-		Service:  service,  // New: Dynamic service extracted from reason
-		Reason:   reason,
-		Duration: 0,        // TODO: Add duration parameter if needed
+	// Per-IP origin with LRU eviction
+	if existing, exists := s.ipOrigins[ip]; exists {
+		// Update existing entry, touch LRU
+		existing.BannedAt = t
+		existing.Source = source
+		existing.Service = service
+		existing.Reason = reason
+		if existing.lruElement != nil {
+			s.ipOriginsLRU.MoveToFront(existing.lruElement)
+		}
+	} else {
+		// Evict oldest if at capacity
+		if len(s.ipOrigins) >= s.maxIPOrigins {
+			s.evictOldestIPOrigin()
+		}
+
+		origin := &IPOrigin{
+			IP:       ip,
+			Country:  country,
+			City:     city,
+			BannedAt: t,
+			Jail:     source,   // Legacy compatibility
+			Source:   source,   // New: suricata, login-monitor, manual, feeds
+			Service:  service,  // New: Dynamic service extracted from reason
+			Reason:   reason,
+			Duration: 0,        // TODO: Add duration parameter if needed
+		}
+		s.ipOrigins[ip] = origin
+		origin.lruElement = s.ipOriginsLRU.PushFront(ip)
+	}
+}
+
+// evictOldestIPOrigin removes the oldest (least recently used) IP origin
+func (s *State) evictOldestIPOrigin() {
+	if s.ipOriginsLRU.Len() == 0 {
+		return
+	}
+	oldest := s.ipOriginsLRU.Back()
+	if oldest != nil {
+		if ip, ok := oldest.Value.(string); ok {
+			if origin, exists := s.ipOrigins[ip]; exists {
+				// Also remove from country stats
+				if origin.Country != "" {
+					if cs, ok := s.countries[origin.Country]; ok {
+						delete(cs.IPSet, ip)
+						cs.IPCount = len(cs.IPSet)
+					}
+				}
+				delete(s.ipOrigins, ip)
+			}
+			s.ipOriginsLRU.Remove(oldest)
+		}
 	}
 }
 
@@ -244,7 +335,19 @@ func (s *State) Save() error {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 
-	if err := writeJSONAtomic(filepath.Join(s.analyticsDir, "country-bans.json"), s.countries); err != nil {
+	// Prepare countries for serialization (convert IPSet back to IPs slice)
+	countriesForSave := make(map[string]*CountryStats, len(s.countries))
+	for k, cs := range s.countries {
+		csCopy := *cs
+		csCopy.IPs = make([]string, 0, len(cs.IPSet))
+		for ip := range cs.IPSet {
+			csCopy.IPs = append(csCopy.IPs, ip)
+		}
+		csCopy.IPSet = nil // Don't serialize the map
+		countriesForSave[k] = &csCopy
+	}
+
+	if err := writeJSONAtomic(filepath.Join(s.analyticsDir, "country-bans.json"), countriesForSave); err != nil {
 		return err
 	}
 	if err := writeJSONAtomic(filepath.Join(s.analyticsDir, "ip-origins.json"), s.ipOrigins); err != nil {
@@ -363,6 +466,30 @@ func (s *State) GetSummary() *AnalyticsSummary {
 	}
 }
 
+// GetStats returns memory usage statistics for monitoring
+func (s *State) GetStats() map[string]int {
+	if s == nil {
+		return nil
+	}
+
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	totalCountryIPs := 0
+	for _, cs := range s.countries {
+		totalCountryIPs += len(cs.IPSet)
+	}
+
+	return map[string]int{
+		"ip_origins":          len(s.ipOrigins),
+		"max_ip_origins":      s.maxIPOrigins,
+		"countries":           len(s.countries),
+		"total_country_ips":   totalCountryIPs,
+		"max_ips_per_country": s.maxIPsPerCountry,
+		"lru_size":            s.ipOriginsLRU.Len(),
+	}
+}
+
 // writeJSONAtomic writes JSON atomically using temp file + rename.
 func writeJSONAtomic(path string, v any) error {
 	tmp := path + ".tmp"
@@ -381,14 +508,4 @@ func writeJSONAtomic(path string, v any) error {
 		return err
 	}
 	return os.Rename(tmp, path)
-}
-
-// containsString checks if a string slice contains a value.
-func containsString(xs []string, s string) bool {
-	for _, x := range xs {
-		if x == s {
-			return true
-		}
-	}
-	return false
 }

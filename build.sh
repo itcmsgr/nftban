@@ -134,6 +134,45 @@ build_ui_auth() {
     return 0
 }
 
+build_daemon() {
+    log "Building nftband (IPC daemon for nft operations)..."
+
+    cd "$SCRIPT_DIR/cmd/nftband"
+
+    CGO_ENABLED=$CGO_ENABLED GOOS=$GOOS GOARCH=$GOARCH \
+        go build -o "$BIN_DIR/nftband" \
+        -ldflags="$LDFLAGS" \
+        . || {
+        error "Failed to build nftband"
+        return 1
+    }
+
+    chmod +x "$BIN_DIR/nftband"
+    ok "Built: $BIN_DIR/nftband"
+
+    cd "$SCRIPT_DIR"
+    return 0
+}
+
+build_api() {
+    log "Building nftban-api (API server)..."
+
+    cd "$SCRIPT_DIR/cmd/nftban-api"
+
+    CGO_ENABLED=$CGO_ENABLED GOOS=$GOOS GOARCH=$GOARCH \
+        go build -o "$BIN_DIR/nftban-api" \
+        -ldflags="$LDFLAGS" \
+        . || {
+        error "Failed to build nftban-api"
+        return 1
+    }
+
+    chmod +x "$BIN_DIR/nftban-api"
+    ok "Built: $BIN_DIR/nftban-api"
+
+    cd "$SCRIPT_DIR"
+    return 0
+}
 
 show_usage() {
     cat << EOF
@@ -147,6 +186,8 @@ Components:
   core      Build nftban-core only
   gui       Build nftban-ui only
   ui-auth   Build nftban-ui-auth only
+  daemon    Build nftband only
+  api       Build nftban-api only
 
 Environment Variables:
   CGO_ENABLED   Enable/disable CGO (default: 1)
@@ -158,6 +199,7 @@ Examples:
   $0 all          # Build everything
   $0 core         # Build core binary only
   $0 gui          # Build GUI only
+  $0 daemon       # Build IPC daemon only
 
 Output:
   All binaries are placed in: $BIN_DIR/
@@ -188,6 +230,12 @@ case "$COMPONENT" in
         build_ui_auth || exit 1
         echo ""
 
+        build_daemon || exit 1
+        echo ""
+
+        build_api || exit 1
+        echo ""
+
         log "Build Summary:"
         ls -lh "$BIN_DIR"/ 2>/dev/null || true
         echo ""
@@ -204,6 +252,14 @@ case "$COMPONENT" in
 
     ui-auth)
         build_ui_auth || exit 1
+        ;;
+
+    daemon)
+        build_daemon || exit 1
+        ;;
+
+    api)
+        build_api || exit 1
         ;;
 
     help|-h|--help)

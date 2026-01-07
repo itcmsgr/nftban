@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/safety"
 )
 
 // SIDStats holds statistics for a single SID
@@ -20,27 +21,37 @@ type SIDStats struct {
 	TriggerCount  int       `json:"trigger_count"`
 	LastTrigger   time.Time `json:"last_trigger"`
 	FirstTrigger  time.Time `json:"first_trigger"`
-	UniqueSources map[string]bool `json:"-"` // Not serialized
+	UniqueSources map[string]bool `json:"-"` // Not serialized (capped in memory)
 	SourceCount   int       `json:"source_count"`
 	SourceIPs     []string  `json:"source_ips,omitempty"` // Top 10 for display
 }
 
 // Cache holds in-memory SID statistics
+// Implements bounded memory via caps on SIDs and sources per SID.
+// Protects against CWE-400 (Uncontrolled Resource Consumption).
 type Cache struct {
 	mu            sync.RWMutex
 	stats         map[string]*SIDStats // Key: SID
 	snapshotPath  string
 	lastSnapshot  time.Time
+
+	// Memory limits (CWE-400 mitigation)
+	maxSIDs          int
+	maxSourcesPerSID int
 }
 
-// NewCache creates a new statistics cache
+// NewCache creates a new statistics cache with bounded memory
 func NewCache() (*Cache, error) {
 	cfg := nftbanconf.MustLoad()
 	snapshotPath := filepath.Join(cfg.ConfigDir, "suricata/cache/sid-stats.json")
 
+	limits := safety.GetMemoryLimits()
+
 	cache := &Cache{
-		stats:        make(map[string]*SIDStats),
-		snapshotPath: snapshotPath,
+		stats:            make(map[string]*SIDStats),
+		snapshotPath:     snapshotPath,
+		maxSIDs:          limits.StatsMaxSIDs,
+		maxSourcesPerSID: limits.StatsMaxSourcesPerSID,
 	}
 
 	// Load existing snapshot if available
@@ -58,6 +69,12 @@ func (c *Cache) RecordTrigger(sid, category, signature, sourceIP string, timesta
 
 	stats, exists := c.stats[sid]
 	if !exists {
+		// Check SID capacity before adding
+		if len(c.stats) >= c.maxSIDs {
+			// Evict oldest SID (by LastTrigger)
+			c.evictOldestSIDLocked()
+		}
+
 		stats = &SIDStats{
 			SID:           sid,
 			Category:      category,
@@ -75,10 +92,39 @@ func (c *Cache) RecordTrigger(sid, category, signature, sourceIP string, timesta
 		stats.FirstTrigger = timestamp
 	}
 
-	// Track unique sources
+	// Track unique sources with cap
 	if sourceIP != "" {
-		stats.UniqueSources[sourceIP] = true
+		// Only add if under cap or already exists
+		if _, exists := stats.UniqueSources[sourceIP]; !exists {
+			if len(stats.UniqueSources) < c.maxSourcesPerSID {
+				stats.UniqueSources[sourceIP] = true
+			}
+			// Note: if at cap, we don't add new sources but still count triggers
+		}
 		stats.SourceCount = len(stats.UniqueSources)
+	}
+}
+
+// evictOldestSIDLocked removes the oldest SID by LastTrigger (must be called with lock held)
+func (c *Cache) evictOldestSIDLocked() {
+	if len(c.stats) == 0 {
+		return
+	}
+
+	var oldestSID string
+	var oldestTime time.Time
+	first := true
+
+	for sid, stats := range c.stats {
+		if first || stats.LastTrigger.Before(oldestTime) {
+			oldestSID = sid
+			oldestTime = stats.LastTrigger
+			first = false
+		}
+	}
+
+	if oldestSID != "" {
+		delete(c.stats, oldestSID)
 	}
 }
 
@@ -260,18 +306,33 @@ func (c *Cache) Load() error {
 		return fmt.Errorf("failed to unmarshal snapshot: %w", err)
 	}
 
-	// Rebuild cache
+	// Rebuild cache with caps
 	c.stats = make(map[string]*SIDStats)
+
+	// Sort by LastTrigger to keep most recent if we need to cap
+	sort.Slice(snapshot, func(i, j int) bool {
+		return snapshot[i].LastTrigger.After(snapshot[j].LastTrigger)
+	})
+
 	for _, stats := range snapshot {
-		// Reconstruct UniqueSources map
+		// Cap total SIDs
+		if len(c.stats) >= c.maxSIDs {
+			break
+		}
+
+		// Reconstruct UniqueSources map with cap
 		stats.UniqueSources = make(map[string]bool)
-		for _, ip := range stats.SourceIPs {
+		for i, ip := range stats.SourceIPs {
+			if i >= c.maxSourcesPerSID {
+				break
+			}
 			stats.UniqueSources[ip] = true
 		}
+		stats.SourceCount = len(stats.UniqueSources)
 		c.stats[stats.SID] = stats
 	}
 
-	fmt.Printf("Cache snapshot loaded: %s (%d SIDs)\n", c.snapshotPath, len(snapshot))
+	fmt.Printf("Cache snapshot loaded: %s (%d SIDs)\n", c.snapshotPath, len(c.stats))
 	return nil
 }
 
@@ -292,4 +353,22 @@ func (c *Cache) StartAutoSave(interval time.Duration) {
 			}
 		}
 	}()
+}
+
+// GetStats returns memory usage statistics for monitoring
+func (c *Cache) GetStats() map[string]int {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	totalSources := 0
+	for _, stats := range c.stats {
+		totalSources += len(stats.UniqueSources)
+	}
+
+	return map[string]int{
+		"sids":                 len(c.stats),
+		"max_sids":             c.maxSIDs,
+		"total_sources":        totalSources,
+		"max_sources_per_sid":  c.maxSourcesPerSID,
+	}
 }

@@ -44,6 +44,7 @@ fi
 # Load JSON helper for --json support
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
+    # shellcheck source=../helpers/json_output.sh
     source "$JSON_HELPER"
 fi
 
@@ -187,6 +188,7 @@ _queue_list_pending() {
     for task_file in "$QUEUE_PENDING_DIR"/*.task; do
         [[ ! -f "$task_file" ]] && continue
 
+        # shellcheck disable=SC1090
         source "$task_file"
         ((count++))
 
@@ -252,6 +254,7 @@ _queue_dlq_show() {
         return 1
     fi
 
+    # shellcheck disable=SC1090
     source "$task_file"
 
     local created_date dlq_date
