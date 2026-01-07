@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/safety"
 )
 
 // =============================================================================
@@ -89,12 +90,12 @@ func writeEntry(ip, source, country, status string) error {
 
 	// Ensure log directory exists (use LogDir from central config)
 	cfg := nftbanconf.MustLoad()
-	if err := os.MkdirAll(cfg.LogDir, 0755); err != nil {
+	if err := safety.SafeMkdirAll(cfg.LogDir, 0755); err != nil {
 		return fmt.Errorf("failed to create log directory: %w", err)
 	}
 
-	// Open file for append
-	f, err := os.OpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	// Open file for append (TOCTOU-safe with O_NOFOLLOW)
+	f, err := safety.SafeOpenFile(logPath, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open ban log: %w", err)
 	}

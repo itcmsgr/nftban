@@ -6,6 +6,8 @@ import (
 	"os"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/safety"
 )
 
 // BanEntry represents a ban logged in bans.log (v1.0: removed fail2ban prefix)
@@ -19,7 +21,8 @@ type BanEntry struct {
 // LogTempBan logs a temporary ban to the tracking file for escalation tracking
 // This tracks temp bans to detect persistent offenders who should be escalated
 func LogTempBan(logPath, ip, jail, reason string) error {
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// TOCTOU-safe file open with O_NOFOLLOW
+	f, err := safety.SafeOpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open ban log: %w", err)
 	}
@@ -107,8 +110,8 @@ func AddToPersistentOffenders(confPath, ip, reason string) error {
 		return nil // Already persistent
 	}
 
-	// Append to file
-	f, err := os.OpenFile(confPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// Append to file (TOCTOU-safe)
+	f, err := safety.SafeOpenFile(confPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open persistent offenders file: %w", err)
 	}
@@ -124,7 +127,8 @@ func AddToPersistentOffenders(confPath, ip, reason string) error {
 
 // LogPersistentOffender logs to persistent-offenders.log
 func LogPersistentOffender(logPath, ip, jail string, banCount int) error {
-	f, err := os.OpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	// TOCTOU-safe file open
+	f, err := safety.SafeOpenFile(logPath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 	if err != nil {
 		return fmt.Errorf("failed to open offenders log: %w", err)
 	}
