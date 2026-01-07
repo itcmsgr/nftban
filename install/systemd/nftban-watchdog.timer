@@ -14,6 +14,9 @@ OnUnitActiveSec=90s
 # Allow some variance to prevent load spikes
 AccuracySec=10s
 
+# Add jitter to prevent synchronized runs across hosts
+RandomizedDelaySec=15s
+
 # Persist timer across reboots
 Persistent=true
 
