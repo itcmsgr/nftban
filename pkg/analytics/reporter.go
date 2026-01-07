@@ -226,66 +226,54 @@ func (r *Report) ToJSON() (string, error) {
 }
 
 // isPublicIP checks if an IP is public (not private/reserved)
+// Optimized: Uses Go's built-in IP classification methods (Go 1.17+)
+// instead of manual range parsing on each call.
 func isPublicIP(ipStr string) bool {
 	ip := net.ParseIP(ipStr)
 	if ip == nil {
 		return false
 	}
 
-	// Check for private ranges
-	privateRanges := []struct {
-		start string
-		end   string
-	}{
-		{"10.0.0.0", "10.255.255.255"},
-		{"172.16.0.0", "172.31.255.255"},
-		{"192.168.0.0", "192.168.255.255"},
-		{"127.0.0.0", "127.255.255.255"},
-		{"169.254.0.0", "169.254.255.255"},
-		{"224.0.0.0", "239.255.255.255"},
-		{"100.64.0.0", "100.127.255.255"},
-		{"192.0.0.0", "192.0.0.255"},
-		{"192.0.2.0", "192.0.2.255"},
-		{"198.18.0.0", "198.19.255.255"},
-		{"198.51.100.0", "198.51.100.255"},
-		{"203.0.113.0", "203.0.113.255"},
-		{"240.0.0.0", "255.255.255.255"},
-		{"0.0.0.0", "0.255.255.255"},
+	// Use Go's built-in methods for common cases (O(1) instead of O(n) range checks)
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() ||
+		ip.IsLinkLocalMulticast() || ip.IsMulticast() || ip.IsUnspecified() {
+		return false
 	}
 
-	for _, r := range privateRanges {
-		start := net.ParseIP(r.start)
-		end := net.ParseIP(r.end)
-		if start != nil && end != nil {
-			if bytesInRange(ip, start, end) {
-				return false
-			}
+	// Additional reserved ranges not covered by standard library
+	// Pre-parsed at package init for O(1) lookup
+	for _, ipNet := range reservedIPNets {
+		if ipNet.Contains(ip) {
+			return false
 		}
 	}
 
 	return true
 }
 
-// bytesInRange checks if IP is in range
-func bytesInRange(ip, start, end net.IP) bool {
-	ipv4 := ip.To4()
-	startv4 := start.To4()
-	endv4 := end.To4()
+// reservedIPNets contains pre-parsed reserved IP ranges not covered by Go's standard methods
+// Initialized once at package load for O(1) Contains checks
+var reservedIPNets []*net.IPNet
 
-	if ipv4 == nil || startv4 == nil || endv4 == nil {
-		return false
+func init() {
+	// Additional reserved ranges (RFC 5737 documentation, RFC 6598 CGN, etc.)
+	reservedCIDRs := []string{
+		"100.64.0.0/10",    // RFC 6598 - Shared Address Space (CGN)
+		"192.0.0.0/24",     // RFC 6890 - IETF Protocol Assignments
+		"192.0.2.0/24",     // RFC 5737 - Documentation (TEST-NET-1)
+		"198.18.0.0/15",    // RFC 2544 - Benchmarking
+		"198.51.100.0/24",  // RFC 5737 - Documentation (TEST-NET-2)
+		"203.0.113.0/24",   // RFC 5737 - Documentation (TEST-NET-3)
+		"240.0.0.0/4",      // RFC 1112 - Reserved for future use
 	}
 
-	for i := 0; i < 4; i++ {
-		if ipv4[i] < startv4[i] || ipv4[i] > endv4[i] {
-			return false
-		}
-		if ipv4[i] > startv4[i] && ipv4[i] < endv4[i] {
-			return true
+	reservedIPNets = make([]*net.IPNet, 0, len(reservedCIDRs))
+	for _, cidr := range reservedCIDRs {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err == nil {
+			reservedIPNets = append(reservedIPNets, ipNet)
 		}
 	}
-
-	return true
 }
 
 // containsMetric checks if metrics content contains a specific metric value

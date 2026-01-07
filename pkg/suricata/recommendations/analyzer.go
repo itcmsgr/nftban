@@ -3,10 +3,23 @@ package recommendations
 import (
 	"fmt"
 	"sort"
+	"strings"
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/suricata/stats"
 )
+
+// attackCategorySet is a pre-built hash set for O(1) attack category lookup
+// Initialized once at package load instead of creating slice on each call
+var attackCategorySet = map[string]struct{}{
+	"exploit":                {},
+	"attack":                 {},
+	"shellcode":              {},
+	"trojan":                 {},
+	"malware":                {},
+	"web-application-attack": {},
+	"sql-injection":          {},
+}
 
 // RecommendationType represents the type of recommendation
 type RecommendationType string
@@ -176,18 +189,7 @@ func (a *Analyzer) analyzeDropMode(sidStats *stats.SIDStats) *Recommendation {
 	// - From many sources (>10)
 	// - Ratio between 2-10 (targeted but distributed)
 	// - Category indicates attack pattern
-	attackCategories := []string{
-		"exploit", "attack", "shellcode", "trojan",
-		"malware", "web-application-attack", "sql-injection",
-	}
-
-	isAttackCategory := false
-	for _, cat := range attackCategories {
-		if contains(sidStats.Category, cat) {
-			isAttackCategory = true
-			break
-		}
-	}
+	isAttackCategory := isAttackCategoryMatch(sidStats.Category)
 
 	if sidStats.TriggerCount > 50 && sidStats.SourceCount > 10 && ratio >= 2 && ratio <= 10 && isAttackCategory {
 		severity := "high"
@@ -296,7 +298,27 @@ func (a *Analyzer) GenerateSummary() map[string]interface{} {
 	}
 }
 
-// Helper function
+// isAttackCategoryMatch checks if a category matches known attack patterns
+// Optimized: Uses hash set for O(1) lookup instead of O(n) linear search
+func isAttackCategoryMatch(category string) bool {
+	categoryLower := strings.ToLower(category)
+
+	// Direct match in hash set - O(1)
+	if _, ok := attackCategorySet[categoryLower]; ok {
+		return true
+	}
+
+	// Check if category contains any attack keyword (for compound categories)
+	for keyword := range attackCategorySet {
+		if strings.Contains(categoryLower, keyword) {
+			return true
+		}
+	}
+
+	return false
+}
+
+// contains checks if s contains substr (proper substring search)
 func contains(s, substr string) bool {
-	return len(s) >= len(substr) && s[:len(substr)] == substr
+	return strings.Contains(s, substr)
 }

@@ -3,14 +3,18 @@
 
 package analytics
 
-import "time"
+import (
+	"container/list"
+	"time"
+)
 
 // CountryStats keeps aggregate info for a country.
 type CountryStats struct {
-	Country     string    `json:"country"`
-	IPCount     int       `json:"ip_count"`
-	IPs         []string  `json:"ips"`
-	LastUpdated time.Time `json:"last_updated"`
+	Country     string              `json:"country"`
+	IPCount     int                 `json:"ip_count"`
+	IPs         []string            `json:"ips,omitempty"`     // Used for JSON serialization
+	IPSet       map[string]struct{} `json:"-"`                 // O(1) lookup set (not serialized)
+	LastUpdated time.Time           `json:"last_updated"`
 }
 
 // IPOrigin describes origin info for a specific IP.
@@ -24,6 +28,9 @@ type IPOrigin struct {
 	Service  string    `json:"service,omitempty"` // ssh, http, wordpress, malware, etc.
 	Reason   string    `json:"reason,omitempty"`
 	Duration int       `json:"duration,omitempty"` // Ban duration in seconds (0 = permanent)
+
+	// LRU bookkeeping (not serialized)
+	lruElement *list.Element `json:"-"`
 }
 
 // DailySummary represents a daily analytics snapshot.

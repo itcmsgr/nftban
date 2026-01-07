@@ -22,9 +22,9 @@ type RuntimeState struct {
 	BlacklistIPv4 map[string]*IPEntry
 	BlacklistIPv6 map[string]*IPEntry
 
-	// Effective sets (computed from sources)
-	EffectiveBlackIPv4 map[string]bool
-	EffectiveBlackIPv6 map[string]bool
+	// Note: EffectiveBlack* maps removed (CWE-400 mitigation)
+	// They duplicated BlacklistIPv4/IPv6 and were unused.
+	// Use IsBlacklisted() method instead.
 
 	// Per-source tracking
 	Sources map[string]*SourceStats
@@ -94,12 +94,10 @@ func NewRuntimeState(configDir string) *RuntimeState {
 		WhitelistIPv6: make(map[string]*IPEntry),
 		BlacklistIPv4: make(map[string]*IPEntry),
 		BlacklistIPv6: make(map[string]*IPEntry),
-		EffectiveBlackIPv4: make(map[string]bool),
-		EffectiveBlackIPv6: make(map[string]bool),
-		Sources:    make(map[string]*SourceStats),
-		Counters:   &Counters{},
-		ConfigDir:  configDir,
-		LastReload: time.Now(),
+		Sources:       make(map[string]*SourceStats),
+		Counters:      &Counters{},
+		ConfigDir:     configDir,
+		LastReload:    time.Now(),
 	}
 }
 

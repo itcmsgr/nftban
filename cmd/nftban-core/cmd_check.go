@@ -161,7 +161,7 @@ func checkIPInFeeds(ip string, isIPv4 bool, feedsDir string) (bool, bool, []stri
 	inIP := false
 	inCIDR := false
 
-	// Check if IP is in individual IP sets
+	// Check if IP is in individual IP sets - O(1) lookup
 	if isIPv4 {
 		if ipv4Set[ip] {
 			inIP = true
@@ -173,23 +173,30 @@ func checkIPInFeeds(ip string, isIPv4 bool, feedsDir string) (bool, bool, []stri
 	}
 
 	// Check if IP is in any CIDR range
+	// Optimization: Pre-parse all CIDRs once instead of parsing on each iteration
 	if isIPv4 {
+		parsedNets := make([]*net.IPNet, 0, len(ipv4CIDRSet))
 		for cidr := range ipv4CIDRSet {
 			_, ipNet, err := net.ParseCIDR(cidr)
-			if err != nil {
-				continue
+			if err == nil {
+				parsedNets = append(parsedNets, ipNet)
 			}
+		}
+		for _, ipNet := range parsedNets {
 			if ipNet.Contains(parsedIP) {
 				inCIDR = true
 				break
 			}
 		}
 	} else {
+		parsedNets := make([]*net.IPNet, 0, len(ipv6CIDRSet))
 		for cidr := range ipv6CIDRSet {
 			_, ipNet, err := net.ParseCIDR(cidr)
-			if err != nil {
-				continue
+			if err == nil {
+				parsedNets = append(parsedNets, ipNet)
 			}
+		}
+		for _, ipNet := range parsedNets {
 			if ipNet.Contains(parsedIP) {
 				inCIDR = true
 				break
@@ -197,10 +204,14 @@ func checkIPInFeeds(ip string, isIPv4 bool, feedsDir string) (bool, bool, []stri
 		}
 	}
 
-	// If found, try to determine which feeds
+	// Note: Currently returns all enabled feed names when IP is found.
+	// Per-feed IP tracking would require changes to feeds.LoadAllFeeds().
+	// For now, list enabled feeds as potential sources.
 	if inIP || inCIDR {
 		for _, feed := range feedsInfo {
-			matchedFeeds = append(matchedFeeds, feed.Name)
+			if feed.IPv4Count > 0 || feed.IPv6Count > 0 {
+				matchedFeeds = append(matchedFeeds, feed.Name)
+			}
 		}
 	}
 

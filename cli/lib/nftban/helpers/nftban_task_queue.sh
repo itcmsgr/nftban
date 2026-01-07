@@ -394,7 +394,7 @@ _queue_execute_task() {
 
     case "$task_type" in
         feeds_sync)
-            _queue_log "INFO" "Executing: feeds sync"
+            _queue_log "INFO" "Executing: $task_description"
             error_output=$(nftban_feeds_sync_to_nftables 2>&1) && return 0
             ;;
         geoban_apply)

@@ -35,51 +35,61 @@ const (
 )
 
 // Middleware implements RBAC authorization
+// Uses O(1) hash set lookups instead of O(n) linear search
 type Middleware struct {
-	permissions map[Role][]Permission
+	permissions map[Role]map[Permission]struct{} // O(1) lookup
 }
 
-// NewMiddleware creates a new RBAC middleware
+// NewMiddleware creates a new RBAC middleware with O(1) permission lookups
 func NewMiddleware() *Middleware {
-	return &Middleware{
-		permissions: map[Role][]Permission{
-			RoleAdmin: {
-				PermBan, PermUnban, PermList, PermSearch,
-				PermMetricsRead, PermAuditRead,
-				PermConfigRead, PermConfigWrite,
-				PermServiceControl,
-			},
-			RoleOperator: {
-				PermList, PermSearch,
-				PermMetricsRead, PermAuditRead,
-				PermConfigRead,
-			},
-			RolePanelAdmin: {
-				PermBan, PermUnban, PermList, PermSearch,
-				PermMetricsRead, PermAuditRead,
-			},
-			RolePanelUser: {
-				PermList, PermSearch,
-				PermMetricsRead,
-			},
+	m := &Middleware{
+		permissions: make(map[Role]map[Permission]struct{}),
+	}
+
+	// Define permissions per role - converted to sets for O(1) lookup
+	rolePerms := map[Role][]Permission{
+		RoleAdmin: {
+			PermBan, PermUnban, PermList, PermSearch,
+			PermMetricsRead, PermAuditRead,
+			PermConfigRead, PermConfigWrite,
+			PermServiceControl,
+		},
+		RoleOperator: {
+			PermList, PermSearch,
+			PermMetricsRead, PermAuditRead,
+			PermConfigRead,
+		},
+		RolePanelAdmin: {
+			PermBan, PermUnban, PermList, PermSearch,
+			PermMetricsRead, PermAuditRead,
+		},
+		RolePanelUser: {
+			PermList, PermSearch,
+			PermMetricsRead,
 		},
 	}
+
+	// Convert slices to sets for O(1) lookup
+	for role, perms := range rolePerms {
+		m.permissions[role] = make(map[Permission]struct{}, len(perms))
+		for _, p := range perms {
+			m.permissions[role][p] = struct{}{}
+		}
+	}
+
+	return m
 }
 
 // HasPermission checks if a role has a specific permission
+// Optimized: O(1) hash lookup instead of O(n) linear search
 func (m *Middleware) HasPermission(role Role, perm Permission) bool {
 	perms, exists := m.permissions[role]
 	if !exists {
 		return false
 	}
 
-	for _, p := range perms {
-		if p == perm {
-			return true
-		}
-	}
-
-	return false
+	_, hasPerm := perms[perm]
+	return hasPerm
 }
 
 // Require returns a middleware that enforces permission

@@ -135,7 +135,13 @@ func cmdFeedsList(feedsDir string, cfg *nftbanconf.Config) error {
 		// Get feed stats for counts
 		feedsInfo, _ := feeds.GetFeedStats(feedsDir)
 
-		// Build feeds array with details
+		// Build hash map for O(1) lookup instead of O(n²) nested loops
+		feedsInfoMap := make(map[string]*feeds.FeedInfo, len(feedsInfo))
+		for i := range feedsInfo {
+			feedsInfoMap[feedsInfo[i].Name] = &feedsInfo[i]
+		}
+
+		// Build feeds array with details - now O(n) instead of O(n²)
 		feedsData := []map[string]interface{}{}
 		for _, feedName := range feedsList {
 			// Check if enabled in config
@@ -147,15 +153,12 @@ func cmdFeedsList(feedsDir string, cfg *nftbanconf.Config) error {
 				"count":   0,
 			}
 
-			// Find matching stats
-			for _, info := range feedsInfo {
-				if info.Name == feedName {
-					feedData["count"] = info.IPv4Count + info.IPv6Count
-					feedData["ipv4_count"] = info.IPv4Count
-					feedData["ipv6_count"] = info.IPv6Count
-					feedData["last_updated"] = info.LastUpdated
-					break
-				}
+			// O(1) lookup instead of O(n) linear search
+			if info, ok := feedsInfoMap[feedName]; ok {
+				feedData["count"] = info.IPv4Count + info.IPv6Count
+				feedData["ipv4_count"] = info.IPv4Count
+				feedData["ipv6_count"] = info.IPv6Count
+				feedData["last_updated"] = info.LastUpdated
 			}
 
 			feedsData = append(feedsData, feedData)
