@@ -108,6 +108,33 @@ nftban_cmd_mail() {
             return $?
             ;;
 
+        spool)
+            # Mail spool management
+            local spool_cmd="${1:-status}"
+            shift || true
+            case "$spool_cmd" in
+                status|list)
+                    nftban_mail_spool_status
+                    ;;
+                help)
+                    echo "Usage: nftban mail spool <command>"
+                    echo ""
+                    echo "Commands:"
+                    echo "  status    Show spooled mail status (default)"
+                    echo "  list      Alias for status"
+                    echo ""
+                    echo "Spooled mails are automatically retried by the queue processor."
+                    echo "To view queue status: nftban queue status"
+                    ;;
+                *)
+                    echo "Unknown spool command: $spool_cmd" >&2
+                    echo "Usage: nftban mail spool {status|list|help}" >&2
+                    return 1
+                    ;;
+            esac
+            return $?
+            ;;
+
         help|--help|-h)
             # Show help
             nftban_mail_show_help

@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan Queue Processor (called by systemd timer)
+# NFTBan Queue Processor v2.0 (called by systemd timer)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Process tasks from NFTBan queue
+# Purpose: Process tasks from NFTBan queue with retry/DLQ support
 # Called by: nftban-queue.timer every 2 minutes
+#
+# Exit codes:
+#   0 - Task processed successfully OR no tasks pending
+#   1 - Task processing failed (will retry via DLQ system)
+#   2 - Lock held by another instance (normal, skip)
 # =============================================================================
 
 set -euo pipefail
@@ -23,22 +28,33 @@ source "${NFTBAN_LIB_DIR}/helpers/nftban_task_queue.sh"
 # Log startup
 _queue_log "INFO" "Queue processor started by systemd timer"
 
-# Process one task (if available)
-if nftban_queue_process_next; then
-    _queue_log "INFO" "Task processed successfully"
-    exit 0
-else
-    result=$?
-    if [[ $result -eq 1 ]]; then
-        # No tasks in queue (normal)
+# Process tasks (one at a time, with retry support)
+result=0
+nftban_queue_process_next || result=$?
+
+case $result in
+    0)
+        # Task processed successfully
+        _queue_log "INFO" "Queue cycle completed successfully"
         exit 0
-    elif [[ $result -eq 2 ]]; then
+        ;;
+    1)
+        # No eligible tasks in queue (normal - may have tasks waiting for backoff)
+        pending_count=$(nftban_queue_count 2>/dev/null || echo "0")
+        if [[ "$pending_count" -gt 0 ]]; then
+            _queue_log "DEBUG" "No eligible tasks ($pending_count pending, waiting for backoff)"
+        fi
+        exit 0
+        ;;
+    2)
         # Already locked (another instance running)
-        _queue_log "WARN" "Queue processor already running, skipping this cycle"
+        _queue_log "DEBUG" "Queue processor already running, skipping this cycle"
         exit 0
-    else
-        # Processing error
-        _queue_log "ERROR" "Task processing failed"
-        exit 1
-    fi
-fi
+        ;;
+    *)
+        # Processing error (task will be retried via DLQ system)
+        _queue_log "WARN" "Task processing returned error (rc=$result), retry scheduled"
+        # Exit 0 because the DLQ system handles retries - don't trigger OnFailure
+        exit 0
+        ;;
+esac

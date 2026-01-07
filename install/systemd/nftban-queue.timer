@@ -3,10 +3,11 @@ Description=NFTBan Task Queue Processor Timer
 Documentation=man:nftban(8)
 
 [Timer]
-# Run every 2 minutes
+# Run every 2 minutes with jitter to prevent synchronized bursts
 OnBootSec=2min
 OnUnitActiveSec=2min
 AccuracySec=10s
+RandomizedDelaySec=30s
 
 [Install]
 WantedBy=timers.target

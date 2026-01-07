@@ -106,12 +106,13 @@ EOF
   stats            Statistics (top IPs, recent bans, trends)
   watchdog         System resource monitoring (load, memory, I/O)
   report           Security reports (HTML, email)
+  queue            Task queue management (status, DLQ retry/purge)
   port             Port scan and service discovery
   fhs              Filesystem hierarchy compliance
   module           Module inventory (list, status)
   services         System services status
   timers           Systemd timer management
-  mail             Email notifications
+  mail             Email notifications (test, spool status)
 EOF
   echo
 

@@ -836,6 +836,20 @@ install_cli() {
         return 1
     fi
 
+    # Install helper scripts to /usr/lib/nftban/sbin/
+    local sbin_dir="$LIB_DIR/sbin"
+    mkdir -p "$sbin_dir"
+
+    for script in nftban-apply nftban-confirm nftban-panelctl nftban-queue-processor \
+                  nftban-rollback nftban-service-alert; do
+        if [[ -f "$SCRIPT_DIR/cli/sbin/$script" ]]; then
+            cp -f "$SCRIPT_DIR/cli/sbin/$script" "$sbin_dir/"
+            chmod 755 "$sbin_dir/$script"
+            chown root:nftban "$sbin_dir/$script"
+        fi
+    done
+    ok "Installed helper scripts → $sbin_dir"
+
     return 0
 }
 
@@ -1077,6 +1091,8 @@ install_configs() {
     mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,panels,metrics,stats}
     mkdir -p /var/lib/nftban/reports/auditors
     mkdir -p /var/lib/nftban/stats/{history,profiles}
+    mkdir -p /var/lib/nftban/queue/{pending,work,dlq}
+    mkdir -p /var/lib/nftban/mailspool
     mkdir -p /var/log/nftban
     mkdir -p /var/cache/nftban
     mkdir -p /run/nftban
@@ -1614,6 +1630,12 @@ install_systemd() {
         cp -f "$SCRIPT_DIR/install/systemd/nftban-queue.service" "$systemd_dir/"
         cp -f "$SCRIPT_DIR/install/systemd/nftban-queue.timer" "$systemd_dir/"
         ok "Queue processor units → $systemd_dir"
+    fi
+
+    # Service failure alert template
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-alert@.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-alert@.service" "$systemd_dir/"
+        ok "Alert service template → $systemd_dir"
     fi
 
     # Web GUI service

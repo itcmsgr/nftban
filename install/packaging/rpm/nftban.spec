@@ -231,6 +231,10 @@ install -d -m 750 -o nftban -g nftban /var/lib/nftban/stats 2>/dev/null || true
 install -d -m 750 -o nftban -g nftban /var/lib/nftban/stats/history 2>/dev/null || true
 install -d -m 750 -o nftban -g nftban /var/lib/nftban/stats/profiles 2>/dev/null || true
 install -d -m 750 -o nftban -g nftban /var/lib/nftban/metrics 2>/dev/null || true
+install -d -m 750 -o nftban -g nftban /var/lib/nftban/queue/pending 2>/dev/null || true
+install -d -m 750 -o nftban -g nftban /var/lib/nftban/queue/work 2>/dev/null || true
+install -d -m 750 -o nftban -g nftban /var/lib/nftban/queue/dlq 2>/dev/null || true
+install -d -m 750 -o nftban -g nftban /var/lib/nftban/mailspool 2>/dev/null || true
 
 # Auto-detect SSH port
 SSH_PORT="22"
@@ -393,7 +397,98 @@ if [ $1 -eq 0 ]; then
 fi
 
 %files
-# File list generated during build
+# ==========================================================================
+# BINARIES & CLI
+# ==========================================================================
+%{_bindir}/nftban
+%dir %{_libdir}/nftban
+%{_libdir}/nftban/*
+
+# ==========================================================================
+# SYSTEMD UNITS
+# ==========================================================================
+%{_unitdir}/nftban*.service
+%{_unitdir}/nftban*.timer
+%{_unitdir}/nftban*.socket
+
+# ==========================================================================
+# CONFIGURATION
+# ==========================================================================
+%dir %attr(750,root,nftban) /etc/nftban
+%config(noreplace) /etc/nftban/nftban.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d
+%config(noreplace) /etc/nftban/conf.d/*
+%dir %attr(750,root,nftban) /etc/nftban/whitelist.d
+%dir %attr(750,root,nftban) /etc/nftban/blacklist.d
+%dir %attr(750,root,nftban) /etc/nftban/ports.d
+%dir %attr(755,root,root) /etc/nftban/distros
+%config(noreplace) /etc/nftban/distros/*
+
+# ==========================================================================
+# DATA DIRECTORIES
+# ==========================================================================
+%dir %attr(750,nftban,nftban) /var/lib/nftban
+%dir %attr(750,nftban,nftban) /var/lib/nftban/banned
+%dir %attr(750,nftban,nftban) /var/lib/nftban/whitelist
+%dir %attr(750,nftban,nftban) /var/lib/nftban/feeds
+%dir %attr(750,nftban,nftban) /var/lib/nftban/geoip
+%dir %attr(750,nftban,nftban) /var/lib/nftban/reports
+%dir %attr(750,nftban,nftban) /var/lib/nftban/metrics
+%dir %attr(750,nftban,nftban) /var/lib/nftban/stats
+%dir %attr(750,nftban,nftban) /var/lib/nftban/stats/history
+%dir %attr(750,nftban,nftban) /var/lib/nftban/stats/profiles
+%dir %attr(750,nftban,nftban) /var/lib/nftban/queue
+%dir %attr(750,nftban,nftban) /var/lib/nftban/queue/pending
+%dir %attr(750,nftban,nftban) /var/lib/nftban/queue/work
+%dir %attr(750,nftban,nftban) /var/lib/nftban/queue/dlq
+%dir %attr(750,nftban,nftban) /var/lib/nftban/mailspool
+
+# ==========================================================================
+# LOG DIRECTORIES
+# ==========================================================================
+%dir %attr(750,nftban,nftban) /var/log/nftban
+%dir %attr(750,nftban,nftban) /var/log/nftban/watchdog
+
+# ==========================================================================
+# SHARED DATA (templates, specs)
+# ==========================================================================
+%dir /usr/share/nftban
+%dir /usr/share/nftban/templates
+%dir /usr/share/nftban/templates/mail
+%dir /usr/share/nftban/templates/reports
+/usr/share/nftban/templates/mail/*
+/usr/share/nftban/templates/reports/*
+%dir /usr/share/nftban/specs
+/usr/share/nftban/specs/*
+
+# ==========================================================================
+# BASH COMPLETION
+# ==========================================================================
+/usr/share/bash-completion/completions/nftban
+
+# ==========================================================================
+# POLKIT
+# ==========================================================================
+/usr/share/polkit-1/actions/com.nftban.*.policy
+%config(noreplace) /etc/polkit-1/rules.d/*-nftban*.rules
+
+# ==========================================================================
+# LOGROTATE
+# ==========================================================================
+%config(noreplace) /etc/logrotate.d/nftban
+
+# ==========================================================================
+# HOSTING PANELS (optional)
+# ==========================================================================
+%dir /etc/nftban/conf.d/panels
+%dir /usr/local/directadmin/plugins/nftban
+/usr/local/directadmin/plugins/nftban/*
+%dir /usr/local/cpanel/whostmgr/docroot/cgi/nftban
+/usr/local/cpanel/whostmgr/docroot/cgi/nftban/*
+%dir /usr/local/cwpsrv/htdocs/resources/admin/modules/nftban
+/usr/local/cwpsrv/htdocs/resources/admin/modules/nftban/*
+%dir /usr/local/psa/admin/htdocs/modules/nftban
+/usr/local/psa/admin/htdocs/modules/nftban/*
 
 %changelog
 * Tue Dec 17 2024 NFTBan Team <contact@nftban.com> - 1.0.0-1
