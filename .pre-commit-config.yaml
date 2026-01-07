@@ -1,0 +1,53 @@
+# =============================================================================
+# NFTBan v1.0.0 - Pre-commit Configuration
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="pre-commit-config"
+# meta:type="config"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-01-07"
+# meta:description="Pre-commit framework configuration for header validation"
+# meta:input="None"
+# meta:output="Pre-commit hook configuration"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
+#
+# Usage:
+#   pip install pre-commit
+#   pre-commit install
+#
+# This ensures all contributors automatically run header validation.
+# =============================================================================
+
+repos:
+  # NFTBan Header & Metadata Validator
+  - repo: local
+    hooks:
+      - id: nftban-header-spec
+        name: NFTBan header/metadata validator
+        entry: tools/validate-headers.sh
+        language: system
+        pass_filenames: false
+        always_run: true
+
+  # ShellCheck for Bash scripts
+  - repo: https://github.com/koalaman/shellcheck-precommit
+    rev: v0.10.0
+    hooks:
+      - id: shellcheck
+        args: ["--severity=warning"]
+        files: \.sh$
+
+  # Go formatting
+  - repo: https://github.com/dnephin/pre-commit-golang
+    rev: v0.5.1
+    hooks:
+      - id: go-fmt
+      - id: go-vet

@@ -95,22 +95,69 @@ nftban/
 └── docs/                  # Documentation
 ```
 
-## Coding Standards
+## Mandatory Standards
+
+All contributions **must** comply with these authoritative standards:
+
+### 1. HEADER_SPEC.md (File Headers)
+
+Every source file must have a compliant header with:
+- **SPDX-License-Identifier: MPL-2.0** (exactly one per file)
+- All `meta:` tags with quoted values: `meta:key="value"`
+- All inventory keys present (even if empty):
+  ```
+  meta:inventory.files=""
+  meta:inventory.binaries=""
+  meta:inventory.env_vars=""
+  meta:inventory.config_files=""
+  meta:inventory.systemd_units=""
+  meta:inventory.network=""
+  meta:inventory.privileges=""
+  ```
+
+See [HEADER_SPEC.md](HEADER_SPEC.md) for complete specification.
+
+### 2. Coding Standards
+
+Full standards available at: **https://nftban.com/coding-standards.html**
 
 ### Bash
 
-- Use `set -Eeuo pipefail` at the top
+- **Required:** `set -Eeuo pipefail` at the top of every script
 - Quote all variables: `"$var"`
 - Use `[[` for conditionals
 - Add comments for complex logic
 - Follow existing naming conventions
+- **Avoid:** `((counter++))` patterns in conditionals under `set -e` (arithmetic integrity rule)
 
 ### Go
 
 - Run `go fmt` before committing
 - Run `go vet` and fix warnings
+- Run `staticcheck` and address issues
 - Use meaningful variable names
 - Add tests for new functionality
+
+### Pre-commit Validation
+
+Headers and coding standards are enforced via pre-commit hook:
+
+```bash
+# Install pre-commit framework (recommended)
+pip install pre-commit
+pre-commit install
+
+# Or use the Makefile
+make lint-headers
+make lint
+```
+
+The hook validates:
+- SPDX license identifier (exactly one, must be MPL-2.0)
+- All meta: lines are quoted
+- All inventory keys are present
+- Bash scripts have `set -Eeuo pipefail`
+- No free-text header lines (From:, Called by:, etc.)
 
 ### Commits
 
