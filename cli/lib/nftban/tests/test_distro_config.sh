@@ -1,8 +1,24 @@
 #!/usr/bin/env bash
 # =============================================================================
-# TEST SCRIPT - Distribution Configuration Parser
+# NFTBan v1.0.0 - Distribution Configuration Parser Test Suite
 # =============================================================================
-# Purpose: Test all functions of nftban_distro_config.sh
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="test_distro_config"
+# meta:type="test"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Test all functions of nftban_distro_config.sh"
+# meta:input="None"
+# meta:output="Test results (pass/fail)"
+# meta:depends="nftban_distro_config.sh"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
 # Usage: ./test_distro_config.sh
 # =============================================================================
 

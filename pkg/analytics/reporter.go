@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Analytics Reporter for Batch GeoIP and Module Status
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="reporter"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Efficient batch operations for report generation with GeoIP lookup"
+// meta:input="IP addresses, metrics files"
+// meta:output="Analytics reports with geographic data"
+// meta:depends="github.com/oschwald/geoip2-golang"
+// meta:inventory.files="/var/lib/nftban/geoip/*.mmdb"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 // Package analytics provides efficient batch operations for report generation
 package analytics
 

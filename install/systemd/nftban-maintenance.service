@@ -2,7 +2,22 @@
 # NFTBan v1.0.0 - Maintenance Service (Always Active)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Critical maintenance tasks that run even when NFTBan is disabled
+# meta:name="nftban-maintenance.service"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Critical maintenance tasks that run even when NFTBan is disabled"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/lib/nftban/cron/maintenance.sh"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-maintenance.timer"
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
+# =============================================================================
 #
 # This service performs safety-critical checks:
 #   - SSH port monitoring (prevents lockout)

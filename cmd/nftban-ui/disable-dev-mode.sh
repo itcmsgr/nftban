@@ -1,9 +1,23 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Disable Development Mode for nftban-ui.service
+# NFTBan v1.0.0 - Disable Development Mode Script
 # =============================================================================
-# This script removes development mode configuration and restores production
-# mode, which uses embedded files.
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="disable_dev_mode"
+# meta:type="installer"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Removes dev mode configuration and restores production mode"
+# meta:input="None"
+# meta:output="Production mode configuration restored"
+# meta:depends="systemd"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-ui.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
 set -Eeuo pipefail

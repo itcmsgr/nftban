@@ -1,3 +1,24 @@
+# =============================================================================
+# NFTBan v1.0.0 - Configuration Snapshot Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-snapshot.timer"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Timer for hourly configuration snapshots"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-snapshot.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
 [Unit]
 Description=NFTBan Hourly Configuration Snapshot Timer
 Documentation=man:nftban(8)

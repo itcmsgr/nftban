@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - NFTables Diff Application
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="apply"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Applies DiffResult changes to nftables sets"
+// meta:input="DiffResult, NFTManager, nftables set"
+// meta:output="Applied changes to firewall"
+// meta:depends="github.com/google/nftables,github.com/itcmsgr/nftban/pkg/util"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="root"
+// =============================================================================
+
 package sync
 
 import (

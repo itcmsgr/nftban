@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Port Configuration Loader
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="loader"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Loads port rules from configuration files (PORT/PROTOCOL format)"
+// meta:input="Port configuration files"
+// meta:output="TCP and UDP port lists"
+// meta:depends="bufio,os"
+// meta:inventory.files="/etc/nftban/ports.d/*.conf"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package ports
 
 import (

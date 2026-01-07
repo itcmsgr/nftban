@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Login Monitor API Handlers
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="login_monitor_handlers"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="HTTP API handlers for login monitoring status and events"
+// meta:input="HTTP requests for login events and status"
+// meta:output="JSON responses with login statistics and events"
+// meta:depends="net/http"
+// meta:inventory.files="/var/log/nftban/login_alert.log,/var/log/auth.log"
+// meta:inventory.binaries="nftban"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package api
 
 import (

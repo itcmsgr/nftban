@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Session Management
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="store"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="In-memory session store for nftban-ui authentication"
+// meta:input="Session tokens"
+// meta:output="Session objects"
+// meta:depends="crypto/rand,sync,time"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 // Package session provides simple in-memory session management for nftban-ui.
 package session
 

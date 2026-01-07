@@ -1,10 +1,23 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBAN TIMERS MANAGEMENT COMMAND
+# NFTBan v1.0.0 - Timers Management CLI Command
 # =============================================================================
-# Purpose: Manage systemd timers for automated tasks
-# Version: 1.0.0
-# Created: 2025-11-28
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="cmd_timers"
+# meta:type="cli"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Manage systemd timers for automated tasks"
+# meta:input="Subcommand (status, enable, disable)"
+# meta:output="Timer status and management results"
+# meta:depends="systemd"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-*.timer"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
 set -Eeuo pipefail

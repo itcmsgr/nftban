@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - HTTP Middleware
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="middleware"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="HTTP middleware for logging, auth, IP whitelist, and security headers"
+// meta:input="HTTP requests"
+// meta:output="Processed HTTP requests"
+// meta:depends="github.com/itcmsgr/nftban/pkg/auth,github.com/itcmsgr/nftban/pkg/netutil"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package middleware
 
 import (

@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata EVE JSON Reader
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="reader"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Reads and parses Suricata eve.json alert entries"
+// meta:input="Suricata eve.json file"
+// meta:output="Parsed EveAlert structs"
+// meta:depends="bufio,encoding/json"
+// meta:inventory.files="/var/log/suricata/eve.json"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package suricata
 
 import (

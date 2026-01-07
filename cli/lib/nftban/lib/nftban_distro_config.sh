@@ -1,11 +1,23 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBAN DISTRIBUTION CONFIGURATION MODULE
+# NFTBan v1.0.0 - Distribution Configuration Module
 # =============================================================================
-# Purpose: Load and parse distribution-specific configuration
-# Version: 1.0.0
-# Created: 2025-11-16
-# Part of: Centralized Distro Config Project
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban_distro_config"
+# meta:type="library"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Load and parse distribution-specific configuration"
+# meta:input="Distro config files from /etc/nftban/distros/"
+# meta:output="Associative arrays with distro-specific settings"
+# meta:depends="bash 4.0+"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_DISTRO_CONF_DIR"
+# meta:inventory.config_files="/etc/nftban/distros/*.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 # =============================================================================
 
 set -Eeuo pipefail

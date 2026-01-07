@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Network Utilities
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="ip"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="IP address utilities, whitelist checking, and CIDR operations"
+// meta:input="IP address strings"
+// meta:output="Validated and normalized IP data"
+// meta:depends="net"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 // Package netutil provides network utility functions for NFTBan
 // Centralizes IP address handling, whitelist checking, and CIDR operations
 package netutil

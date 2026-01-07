@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata Ban Handler
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="ban_handler"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Implements ban operations using netlink infrastructure"
+// meta:input="IP addresses to ban, ban duration"
+// meta:output="NFTables set modifications"
+// meta:depends="github.com/google/nftables,github.com/itcmsgr/nftban/pkg/sync"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="root"
+// =============================================================================
+
 package suricata
 
 import (

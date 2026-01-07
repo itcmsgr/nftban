@@ -1,12 +1,26 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan Test Server Cleanup Script
+# NFTBan v1.0.0 - Test Server Cleanup Script
 # =============================================================================
-# Removes NFTBan completely from a test server for clean reinstall testing
-#
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="test_server_cleanup"
+# meta:type="script"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Removes NFTBan completely from test server for clean reinstall"
+# meta:input="None"
+# meta:output="Clean server state"
+# meta:depends="systemd, nft"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
 # Usage: ssh root@server 'bash -s' < scripts/test_server_cleanup.sh
 #        OR: ./scripts/test_server_cleanup.sh (run on server directly)
-#
 # =============================================================================
 
 set -euo pipefail

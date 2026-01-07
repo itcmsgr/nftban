@@ -1,17 +1,24 @@
 #!/usr/bin/env bash
-# ====================================================================
-# NFTBan v1.0.0
-# Script: nftban_geoban_exporter.sh
-# Description: Prometheus exporter for Geo-blocking metrics
-# Author: Antonios Voulvoulis
-# License: GPL-3.0
-#
-# Meta Information:
-# meta:version=1.0.0
-# meta:category=exporter
-# meta:priority=high
-# meta:dependencies=nft,wc
-# ====================================================================
+# =============================================================================
+# NFTBan v1.0.0 - Geoban Prometheus Exporter
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban_geoban_exporter"
+# meta:type="exporter"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Prometheus exporter for Geo-blocking metrics"
+# meta:input="nftables geoban sets"
+# meta:output="Prometheus metrics format"
+# meta:depends="nft, wc, bc"
+# meta:inventory.files="/var/lib/node_exporter/textfile_collector/nftban_geoban.prom"
+# meta:inventory.binaries="nft"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
 
 set -euo pipefail
 IFS=$'\n\t'

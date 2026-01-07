@@ -1,10 +1,24 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Enable Development Mode for nftban-ui.service
+# NFTBan v1.0.0 - Enable Development Mode Script
 # =============================================================================
-# This script configures the nftban-ui systemd service to run in development
-# mode, which serves files from disk instead of embedded FS.
-#
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="enable_dev_mode"
+# meta:type="installer"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Configures nftban-ui for development with disk-served files"
+# meta:input="None"
+# meta:output="Development mode configuration applied"
+# meta:depends="systemd"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-ui.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
 # WARNING: Only use this on development servers, NEVER in production!
 # =============================================================================
 

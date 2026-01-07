@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Standardized API Response Types
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="response"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Standardized JSON response types and helpers for API endpoints"
+// meta:input="None"
+// meta:output="JSON response structures"
+// meta:depends="net/http"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 // Package api provides HTTP API handlers for NFTBan
 package api
 

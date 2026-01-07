@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - System Status API Handlers
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="system_handlers"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="HTTP API handlers for system status, health, and services"
+// meta:input="HTTP requests for system information"
+// meta:output="JSON responses with system status data"
+// meta:depends="net/http"
+// meta:inventory.files=""
+// meta:inventory.binaries="nftban,systemctl"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package api
 
 import (

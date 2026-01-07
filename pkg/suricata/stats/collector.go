@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata EVE Log Collector
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="collector"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Tails eve.json and collects alert statistics"
+// meta:input="Suricata eve.json"
+// meta:output="Parsed alerts, metrics, cache updates"
+// meta:depends="github.com/itcmsgr/nftban/pkg/config"
+// meta:inventory.files="/var/log/nftban/suricata/eve-alerts.json"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package stats
 
 import (

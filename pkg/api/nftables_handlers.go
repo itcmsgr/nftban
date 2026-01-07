@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - NFTables API Handlers
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="nftables_handlers"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="HTTP API handlers for nftables ruleset viewing and validation"
+// meta:input="HTTP requests for ruleset operations"
+// meta:output="JSON responses with ruleset data and validation results"
+// meta:depends="github.com/itcmsgr/nftban/pkg/nftables"
+// meta:inventory.files=""
+// meta:inventory.binaries="nftban"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/nftables.conf.backup"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package api
 
 import (

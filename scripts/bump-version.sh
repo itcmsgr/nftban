@@ -1,9 +1,24 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan Version Bumper
+# NFTBan v1.0.0 - Version Bumper Script
 # =============================================================================
-# Automatically bumps version number in the VERSION file
-#
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="bump_version"
+# meta:type="script"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Automatically bumps version number in the VERSION file"
+# meta:input="major, minor, patch, or specific version"
+# meta:output="Updated VERSION file"
+# meta:depends="bash"
+# meta:inventory.files="VERSION"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
 # Usage:
 #   ./scripts/bump-version.sh major    # 1.0.5 -> 2.0.0
 #   ./scripts/bump-version.sh minor    # 1.0.5 -> 1.1.0

@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Generic Diff Computation
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="diff"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Generic diff computation for any comparable type"
+// meta:input="Current and desired slices"
+// meta:output="DiffResult with adds and removes"
+// meta:depends="None"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package util
 
 // DiffResult is a generic diff result between two slices of comparable values.

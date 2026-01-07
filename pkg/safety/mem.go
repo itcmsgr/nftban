@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Memory Availability Detection
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="mem"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Cgroup-aware memory detection for containers and hosts"
+// meta:input="/proc/meminfo, cgroup memory files"
+// meta:output="Available memory information"
+// meta:depends="os"
+// meta:inventory.files="/proc/meminfo,/sys/fs/cgroup/memory.max"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package safety
 
 import (

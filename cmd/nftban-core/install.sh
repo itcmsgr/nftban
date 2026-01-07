@@ -1,6 +1,24 @@
 #!/bin/bash
-# NFTBan Core v1.0.0 - Installation Script
-# Installs systemd services, PolicyKit rules, and sets up proper permissions
+# =============================================================================
+# NFTBan v1.0.0 - Core Go Binary Installer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="install"
+# meta:type="installer"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Installs systemd services, PolicyKit rules, and permissions"
+# meta:input="None"
+# meta:output="Installed nftban-core binary and services"
+# meta:depends="systemd"
+# meta:inventory.files=""
+# meta:inventory.binaries="nftban-core"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-core.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
 
 set -e
 

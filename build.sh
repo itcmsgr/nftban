@@ -1,8 +1,24 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan Build Script - Consolidated Build System
+# NFTBan v1.0.0 - Consolidated Build Script
 # =============================================================================
-# Purpose: Build all NFTBan Go binaries in one place
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="build"
+# meta:type="script"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Build all NFTBan Go binaries in one place"
+# meta:input="component (all, core, gui, ui-auth, daemon, api)"
+# meta:output="Compiled Go binaries in bin/"
+# meta:depends="go"
+# meta:inventory.files=""
+# meta:inventory.binaries="nftban-core, nftban-ui, nftban-ui-auth, nftband, nftban-api"
+# meta:inventory.env_vars="CGO_ENABLED, GOOS, GOARCH"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
 # Usage: ./build.sh [component]
 #        component: all (default), gui, auth, or specific binary name
 # =============================================================================

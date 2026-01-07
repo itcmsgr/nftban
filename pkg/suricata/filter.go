@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata Filter Matcher
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="filter"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Matches Suricata signatures against configured filters"
+// meta:input="Signature strings"
+// meta:output="Filter matches"
+// meta:depends="strings"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package suricata
 
 import (

@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - GeoIP Database Management Command
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="cmd_geoip"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Manage GeoIP database for country-based IP lookups"
+// meta:input="Subcommand (update, status, lookup)"
+// meta:output="Console output with GeoIP status and lookup results"
+// meta:depends="github.com/itcmsgr/nftban/pkg/nftbanconf,github.com/oschwald/maxminddb-golang"
+// meta:inventory.files="/var/lib/nftban/geoip/*.mmdb"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/conf.d/nftban-go.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network="http"
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package main
 
 import (

@@ -1,7 +1,28 @@
+// =============================================================================
+// NFTBan - Log Files Registry
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="logs"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Centralized log file paths and management helpers"
+// meta:input="None"
+// meta:output="Log file paths and metadata"
+// meta:depends="path/filepath"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/nftban.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package nftbanconf
 
 // =============================================================================
-// NFTBan Log Files Registry
+// Log Files Registry
 // =============================================================================
 // Centralizes all log file paths and provides helpers for log management.
 // All paths are derived from the central configuration.

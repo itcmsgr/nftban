@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Metrics Export Command
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="cmd_metrics"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Export Prometheus metrics for node_exporter textfile collector"
+// meta:input="Subcommand (export)"
+// meta:output="Prometheus metrics file"
+// meta:depends="github.com/itcmsgr/nftban/pkg/metrics,github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:inventory.files="/var/lib/node_exporter/textfile_collector/nftban.prom"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars="NFTBAN_METRICS_FILE,NFTBAN_DATA_DIR,NFTBAN_LOG_DIR"
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package main
 
 import (

@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Profile Sync for Performance Testing
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="profile_sync"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Run sync operations with pprof profiling for performance analysis"
+// meta:input="None"
+// meta:output="Profiling data on localhost:6060"
+// meta:depends="github.com/itcmsgr/nftban/pkg/blacklist,github.com/itcmsgr/nftban/pkg/whitelist,github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network="http:6060"
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package main
 
 import (

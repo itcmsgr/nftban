@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - NFT CLI Execution Layer
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="nft_cli"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Centralized nft CLI command execution with timeout and error handling"
+// meta:input="NFT commands"
+// meta:output="Command results"
+// meta:depends="os/exec"
+// meta:inventory.files=""
+// meta:inventory.binaries="nft"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="root"
+// =============================================================================
+
 // Package sync provides nftables synchronization utilities
 package sync
 

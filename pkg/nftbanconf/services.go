@@ -1,7 +1,28 @@
+// =============================================================================
+// NFTBan - Service Names Registry
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="services"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Systemd service, timer, and socket name registry"
+// meta:input="None"
+// meta:output="Service and socket names"
+// meta:depends="None"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units="nftban*.service,nftban*.timer"
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package nftbanconf
 
 // =============================================================================
-// NFTBan Service Names Registry
+// Service Names Registry
 // =============================================================================
 // Centralizes all systemd service names, timer names, and socket names
 // to avoid hardcoding these strings throughout the codebase.

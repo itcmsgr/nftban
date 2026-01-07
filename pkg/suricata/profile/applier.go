@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata Profile Applier
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="applier"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Applies Suricata performance profiles to suricata.yaml"
+// meta:input="Profile type, distro config"
+// meta:output="Modified suricata.yaml"
+// meta:depends="github.com/itcmsgr/nftban/pkg/config,github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:inventory.files="/etc/suricata/suricata.yaml"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="root"
+// =============================================================================
+
 package profile
 
 import (

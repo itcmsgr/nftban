@@ -1,9 +1,25 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan Web API - Installation Script
+# NFTBan v1.0.0 - Web API Installation Script
 # =============================================================================
-# Description:  Install nftban-api (Web API v2.0) on any system
-# Usage:        sudo ./install-webapi.sh
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="install_webapi"
+# meta:type="installer"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Install nftban-api (Web API v2.0) on any system"
+# meta:input="None"
+# meta:output="Installed nftban-api binary and service"
+# meta:depends="systemd, curl"
+# meta:inventory.files=""
+# meta:inventory.binaries="nftban-api"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/api.conf"
+# meta:inventory.systemd_units="nftban-api.service"
+# meta:inventory.network="port 8080"
+# meta:inventory.privileges="root"
+# =============================================================================
+# Usage: sudo ./install-webapi.sh
 # =============================================================================
 
 set -euo pipefail

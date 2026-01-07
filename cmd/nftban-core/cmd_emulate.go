@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Packet Emulation Command
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="cmd_emulate"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Emulate packet decisions through nftables firewall rules"
+// meta:input="IP address, protocol, port, direction"
+// meta:output="JSON result with firewall decision"
+// meta:depends="github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:inventory.files=""
+// meta:inventory.binaries="nft"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package main
 
 import (

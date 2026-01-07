@@ -1,18 +1,31 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan CLI Inventory Export Script
+# NFTBan v1.0.0 - CLI Inventory Export Script
 # =============================================================================
-# Exports all CLI commands with metadata to various formats
-#
-# Usage:
-#   ./export_cli_inventory.sh [format]
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="export_cli_inventory"
+# meta:type="script"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Exports all CLI commands with metadata to various formats"
+# meta:input="format (table, json, list, help)"
+# meta:output="CLI inventory in specified format"
+# meta:depends="bash, grep"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_LIB_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
+# Usage: ./export_cli_inventory.sh [format]
 #
 # Formats:
 #   table    - Markdown table (default)
 #   json     - JSON output
 #   list     - Simple command list
 #   help     - Export all help text
-#
 # =============================================================================
 
 set -euo pipefail

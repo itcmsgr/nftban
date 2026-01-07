@@ -1,3 +1,24 @@
+# =============================================================================
+# NFTBan v1.0.0 - Suricata Rules Update Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-suricata-update.timer"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Timer for weekly Suricata rules updates"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-suricata-update.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
 [Unit]
 Description=NFTBan Suricata Rules Weekly Update Timer
 Documentation=man:nftban(8) https://nftban.com/docs

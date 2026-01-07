@@ -1,12 +1,26 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan Installation Verification Script
+# NFTBan v1.0.0 - Installation Test Script
 # =============================================================================
-# Tests that installation completed correctly
-#
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="test_installation"
+# meta:type="script"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Tests that installation completed correctly"
+# meta:input="mode (cli, gui, all)"
+# meta:output="Test results (pass/fail)"
+# meta:depends="bash, systemd"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# =============================================================================
 # Usage: ./scripts/test_installation.sh [mode]
 #        mode: cli (default), gui, all
-#
 # =============================================================================
 
 set -uo pipefail

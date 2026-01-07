@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata Recommendations Analyzer
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="analyzer"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Analyzes SID statistics for false positives, noisy rules, and attack patterns"
+// meta:input="SID statistics from cache"
+// meta:output="Rule recommendations (tune, disable, drop mode)"
+// meta:depends="github.com/itcmsgr/nftban/pkg/suricata/stats"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package recommendations
 
 import (

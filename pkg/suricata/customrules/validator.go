@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata Custom Rule Validator
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="validator"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Validates Suricata rule syntax with SID range 9000000-9999999"
+// meta:input="Suricata rule strings"
+// meta:output="Validation results, extracted SID"
+// meta:depends="os/exec,regexp"
+// meta:inventory.files=""
+// meta:inventory.binaries="suricata"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package customrules
 
 import (

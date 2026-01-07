@@ -1,3 +1,24 @@
+// =============================================================================
+// NFTBan - Suricata SID Statistics Cache
+// =============================================================================
+// SPDX-License-Identifier: GPL-3.0-or-later
+// meta:name="cache"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="In-memory SID statistics with LRU eviction and disk persistence"
+// meta:input="SID trigger events"
+// meta:output="Statistics per SID"
+// meta:depends="github.com/itcmsgr/nftban/pkg/nftbanconf,github.com/itcmsgr/nftban/pkg/safety"
+// meta:inventory.files="/etc/nftban/suricata/cache/sid-stats.json"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
 package stats
 
 import (
