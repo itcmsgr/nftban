@@ -3,11 +3,6 @@
 
 package safety
 
-import (
-	"os"
-	"strconv"
-)
-
 // MemoryLimits holds caps and TTLs to prevent unbounded memory growth (CWE-400)
 // All limits are configurable via environment variables with sane defaults.
 type MemoryLimits struct {
@@ -60,14 +55,4 @@ func GetMemoryLimits() MemoryLimits {
 // ReloadMemoryLimits reloads limits from environment (for testing/config changes)
 func ReloadMemoryLimits() {
 	memLimits = DefaultMemoryLimits()
-}
-
-// getEnvInt is a local helper (duplicated to avoid circular imports)
-func getEnvIntMem(k string, def int) int {
-	if v := os.Getenv(k); v != "" {
-		if n, err := strconv.Atoi(v); err == nil && n > 0 {
-			return n
-		}
-	}
-	return def
 }

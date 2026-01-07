@@ -317,8 +317,3 @@ func isAttackCategoryMatch(category string) bool {
 
 	return false
 }
-
-// contains checks if s contains substr (proper substring search)
-func contains(s, substr string) bool {
-	return strings.Contains(s, substr)
-}
