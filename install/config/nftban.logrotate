@@ -8,7 +8,10 @@
 #
 # Policy: Compress old files, keep reasonable history
 
-/var/log/nftban/*.log {
+# Main application logs (services that can be reloaded)
+/var/log/nftban/nftban.log
+/var/log/nftban/login-monitor.log
+/var/log/nftban/service-alerts.log {
     weekly
     rotate 4
     compress
@@ -21,6 +24,19 @@
         # Reload any services that need to reopen log files
         systemctl reload nftban-login-monitor >/dev/null 2>&1 || true
     endscript
+}
+
+# Mail and queue logs - bash scripts appending via >>
+# Use copytruncate: safer for transient appenders, no reload needed
+/var/log/nftban/mail.log
+/var/log/nftban/queue.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
 }
 
 # Suricata eve-alerts.json (daemon path) - low volume, alert-only

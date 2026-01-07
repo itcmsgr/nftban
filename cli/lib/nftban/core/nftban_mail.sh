@@ -24,6 +24,9 @@
 # meta:updated_date=2025-11-24
 # =============================================================================
 
+# Guard against multiple sourcing
+[[ -n "${NFTBAN_MAIL_LOADED:-}" ]] && return 0
+readonly NFTBAN_MAIL_LOADED=1
 
 # =============================================================================
 # MAIL SYSTEM DETECTION
@@ -648,11 +651,15 @@ EOF
 
             local smtp_url="${smtp_proto}://${NFTBAN_SMTP_HOST}:${smtp_port}"
 
-            # Build curl command arguments
+            # Build curl command arguments with timeouts
+            local connect_timeout="${NFTBAN_CURL_CONNECT_TIMEOUT:-10}"
+            local max_time="${NFTBAN_CURL_MAX_TIME:-30}"
             local curl_args=(
                 --url "$smtp_url"
                 --mail-from "$sender"
                 --mail-rcpt "$recipient"
+                --connect-timeout "$connect_timeout"
+                --max-time "$max_time"
             )
 
             # Add SSL options
@@ -833,6 +840,261 @@ Default Recipient: ${NFTBAN_MAIL_RECIPIENT:-not configured}
 Force Method: ${NFTBAN_MAIL_METHOD:-auto-detect}
 
 EOF
+}
+
+# =============================================================================
+# MAIL METRICS
+# =============================================================================
+
+# Metrics file and counters
+readonly MAIL_METRICS_FILE="${NFTBAN_MAIL_METRICS_FILE:-${NFTBAN_DATA_DIR}/metrics/mail.prom}"
+readonly MAIL_COUNTERS_DIR="${NFTBAN_DATA_DIR}/metrics/counters"
+
+_mail_counter_inc() {
+    local counter_name="$1"
+    local transport="${2:-unknown}"
+    local counter_file="${MAIL_COUNTERS_DIR}/mail_${counter_name}_${transport}"
+
+    mkdir -p "$MAIL_COUNTERS_DIR" 2>/dev/null || true
+
+    (
+        flock -x 200
+        local current
+        current=$(cat "$counter_file" 2>/dev/null || echo "0")
+        echo "$((current + 1))" > "$counter_file"
+    ) 200>"${counter_file}.lock"
+}
+
+_mail_write_metrics() {
+    mkdir -p "$(dirname "$MAIL_METRICS_FILE")" 2>/dev/null || true
+
+    local attempts_sendmail attempts_postfix attempts_curl attempts_msmtp attempts_mailx attempts_exim
+    local success_sendmail success_postfix success_curl success_msmtp success_mailx success_exim
+    local failures_sendmail failures_postfix failures_curl failures_msmtp failures_mailx failures_exim
+
+    # Read counters for each transport
+    for transport in sendmail postfix curl msmtp mailx exim; do
+        eval "attempts_${transport}=\$(cat '${MAIL_COUNTERS_DIR}/mail_attempts_${transport}' 2>/dev/null || echo '0')"
+        eval "success_${transport}=\$(cat '${MAIL_COUNTERS_DIR}/mail_success_${transport}' 2>/dev/null || echo '0')"
+        eval "failures_${transport}=\$(cat '${MAIL_COUNTERS_DIR}/mail_failures_${transport}' 2>/dev/null || echo '0')"
+    done
+
+    # Count spooled mails (failed mails awaiting retry)
+    local spool_dir="${NFTBAN_MAIL_SPOOL_DIR:-${NFTBAN_DATA_DIR}/mailspool}"
+    local spool_depth=0
+    if [[ -d "$spool_dir" ]]; then
+        spool_depth=$(find "$spool_dir" -name "*.mail" -type f 2>/dev/null | wc -l)
+    fi
+
+    cat > "${MAIL_METRICS_FILE}.tmp" <<EOF
+# HELP nftban_mail_send_attempts_total Total mail send attempts
+# TYPE nftban_mail_send_attempts_total counter
+nftban_mail_send_attempts_total{transport="sendmail"} $attempts_sendmail
+nftban_mail_send_attempts_total{transport="postfix"} $attempts_postfix
+nftban_mail_send_attempts_total{transport="curl"} $attempts_curl
+nftban_mail_send_attempts_total{transport="msmtp"} $attempts_msmtp
+nftban_mail_send_attempts_total{transport="mailx"} $attempts_mailx
+nftban_mail_send_attempts_total{transport="exim"} $attempts_exim
+
+# HELP nftban_mail_send_success_total Total successful mail sends
+# TYPE nftban_mail_send_success_total counter
+nftban_mail_send_success_total{transport="sendmail"} $success_sendmail
+nftban_mail_send_success_total{transport="postfix"} $success_postfix
+nftban_mail_send_success_total{transport="curl"} $success_curl
+nftban_mail_send_success_total{transport="msmtp"} $success_msmtp
+nftban_mail_send_success_total{transport="mailx"} $success_mailx
+nftban_mail_send_success_total{transport="exim"} $success_exim
+
+# HELP nftban_mail_send_failures_total Total failed mail sends
+# TYPE nftban_mail_send_failures_total counter
+nftban_mail_send_failures_total{transport="sendmail"} $failures_sendmail
+nftban_mail_send_failures_total{transport="postfix"} $failures_postfix
+nftban_mail_send_failures_total{transport="curl"} $failures_curl
+nftban_mail_send_failures_total{transport="msmtp"} $failures_msmtp
+nftban_mail_send_failures_total{transport="mailx"} $failures_mailx
+nftban_mail_send_failures_total{transport="exim"} $failures_exim
+
+# HELP nftban_mail_spool_depth Number of mails in retry spool
+# TYPE nftban_mail_spool_depth gauge
+nftban_mail_spool_depth $spool_depth
+
+# HELP nftban_mail_last_success_timestamp Unix timestamp of last successful send
+# TYPE nftban_mail_last_success_timestamp gauge
+nftban_mail_last_success_timestamp $(cat "${MAIL_COUNTERS_DIR}/mail_last_success_ts" 2>/dev/null || echo "0")
+EOF
+
+    mv "${MAIL_METRICS_FILE}.tmp" "$MAIL_METRICS_FILE" 2>/dev/null || true
+    chmod 644 "$MAIL_METRICS_FILE" 2>/dev/null || true
+}
+
+_mail_log() {
+    local level="$1"
+    shift
+    local timestamp
+    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    local log_file="${NFTBAN_LOG_DIR}/mail.log"
+
+    mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
+    echo "[$timestamp] [$level] $*" >> "$log_file"
+}
+
+# =============================================================================
+# SEND WITH RETRY (Wrapper with exponential backoff)
+# =============================================================================
+
+nftban_mail_send_with_retry() {
+    # Send email with retry logic and queue fallback
+    # Args: $1 = content (text or file path)
+    #       $2 = recipient (optional)
+    #       $3 = subject (optional, for reporting)
+    #
+    # On transient failure: retries with backoff
+    # On persistent failure: enqueues to mail spool for later delivery
+
+    local content_arg="${1:-}"
+    local recipient="${2:-${NFTBAN_MAIL_RECIPIENT:-}}"
+    local subject="${3:-NFTBan Alert}"
+
+    # Config
+    local max_retries="${NFTBAN_MAIL_RETRY_ATTEMPTS:-3}"
+    local backoff_list="${NFTBAN_MAIL_RETRY_BACKOFF:-5,15,45}"
+    IFS=',' read -ra backoffs <<< "$backoff_list"
+
+    # Detect transport
+    local mta
+    mta="$(nftban_mail_detect_mta)"
+
+    if [[ "$mta" == "none" ]]; then
+        _mail_log "ERROR" "No mail system available, spooling for later"
+        _mail_spool_enqueue "$content_arg" "$recipient" "$subject"
+        return 1
+    fi
+
+    local attempt=0
+    local send_result=1
+    local last_error=""
+
+    while [[ $attempt -lt $max_retries ]]; do
+        ((attempt++))
+
+        _mail_counter_inc "attempts" "$mta"
+        _mail_log "INFO" "MAIL_SEND_ATTEMPT task_id=inline attempt=$attempt transport=$mta to=${recipient%%@*}@..."
+
+        # Try to send
+        if nftban_mail_send "$content_arg" "$recipient" 2>/dev/null; then
+            send_result=0
+            _mail_counter_inc "success" "$mta"
+            echo "$(date +%s)" > "${MAIL_COUNTERS_DIR}/mail_last_success_ts"
+            _mail_log "INFO" "MAIL_SEND_RESULT task_id=inline status=success transport=$mta attempt=$attempt"
+            _mail_write_metrics
+            return 0
+        else
+            last_error="send_failed_rc_$?"
+        fi
+
+        _mail_log "WARN" "MAIL_SEND_ATTEMPT failed attempt=$attempt/$max_retries error=$last_error"
+
+        # Calculate backoff
+        local backoff_idx=$((attempt - 1))
+        if [[ $backoff_idx -lt ${#backoffs[@]} ]]; then
+            local sleep_time="${backoffs[$backoff_idx]}"
+            _mail_log "DEBUG" "Retrying in ${sleep_time}s..."
+            sleep "$sleep_time"
+        fi
+    done
+
+    # All retries exhausted - spool for later
+    _mail_counter_inc "failures" "$mta"
+    _mail_log "ERROR" "MAIL_SEND_RESULT task_id=inline status=failed transport=$mta retries=$max_retries last_error=$last_error"
+    _mail_write_metrics
+
+    # Enqueue to mail spool (uses queue system)
+    _mail_spool_enqueue "$content_arg" "$recipient" "$subject"
+
+    return 1
+}
+
+# =============================================================================
+# MAIL SPOOL INTEGRATION (Uses task queue)
+# =============================================================================
+
+_mail_spool_enqueue() {
+    # Enqueue failed mail to task queue for later delivery
+    local content_arg="$1"
+    local recipient="$2"
+    local subject="$3"
+
+    local spool_dir="${NFTBAN_MAIL_SPOOL_DIR:-${NFTBAN_DATA_DIR}/mailspool}"
+    mkdir -p "$spool_dir" 2>/dev/null || true
+
+    # Generate unique ID
+    local mail_id
+    mail_id="mail-$(date +%Y%m%dT%H%M%SZ)-$(head -c 4 /dev/urandom | xxd -p 2>/dev/null || echo $$)"
+
+    # Save mail content to spool
+    local payload_dir="${spool_dir}/${mail_id}"
+    mkdir -p "$payload_dir"
+
+    # Determine if content is file or text
+    if [[ -f "$content_arg" ]]; then
+        cp "$content_arg" "${payload_dir}/body.html"
+    else
+        echo "$content_arg" > "${payload_dir}/body.txt"
+    fi
+
+    # Save metadata
+    cat > "${payload_dir}/meta.sh" <<EOF
+MAIL_TO="$recipient"
+MAIL_SUBJECT="$subject"
+MAIL_BODY_FILE="${payload_dir}/body.html"
+MAIL_CREATED_EPOCH="$(date +%s)"
+EOF
+
+    # Check if queue functions available
+    if type nftban_queue_add &>/dev/null; then
+        local task_id
+        task_id=$(nftban_queue_add "mail_send" "Spooled mail to ${recipient%%@*}@..." "${payload_dir}/meta.sh")
+        _mail_log "INFO" "Mail spooled to queue: $task_id (recipient: ${recipient%%@*}@...)"
+        echo "Mail spooled for later delivery: $task_id"
+    else
+        # Queue not available - just leave in spool directory
+        _mail_log "WARN" "Queue not available, mail saved to spool: ${payload_dir}"
+        echo "Mail saved to spool (queue unavailable): ${payload_dir}"
+    fi
+}
+
+nftban_mail_spool_status() {
+    # Show mail spool status
+    local spool_dir="${NFTBAN_MAIL_SPOOL_DIR:-${NFTBAN_DATA_DIR}/mailspool}"
+
+    if [[ ! -d "$spool_dir" ]]; then
+        echo "Mail spool directory not found: $spool_dir"
+        return 0
+    fi
+
+    local count
+    count=$(find "$spool_dir" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l)
+
+    echo "Mail Spool Status"
+    echo "================="
+    echo "Directory: $spool_dir"
+    echo "Spooled mails: $count"
+    echo ""
+
+    if [[ $count -gt 0 ]]; then
+        echo "Pending mails:"
+        for mail_dir in "$spool_dir"/mail-*; do
+            [[ ! -d "$mail_dir" ]] && continue
+
+            if [[ -f "${mail_dir}/meta.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${mail_dir}/meta.sh"
+                local created_date
+                created_date=$(date -d "@${MAIL_CREATED_EPOCH:-0}" '+%Y-%m-%d %H:%M' 2>/dev/null || echo "unknown")
+                printf "  %s | To: %s | Created: %s\n" "$(basename "$mail_dir")" "${MAIL_TO%%@*}@..." "$created_date"
+            fi
+        done
+    fi
 }
 
 # =============================================================================

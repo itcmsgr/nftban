@@ -58,6 +58,14 @@ case "$1" in
         install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/stats/history"
         install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/stats/profiles"
 
+        # Queue directories (task queue with retry and DLQ)
+        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/queue/pending"
+        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/queue/work"
+        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/queue/dlq"
+
+        # Mail spool directory (failed mail retry queue)
+        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/mailspool"
+
         # Log directory
         install -d -m 750 -o nftban -g nftban "${NFTBAN_LOG_DIR}"
 

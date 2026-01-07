@@ -1,0 +1,49 @@
+# =============================================================================
+# NFTBan Service Failure Alert (Template Unit)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Send alert when a critical NFTBan service fails
+# Usage: Add "OnFailure=nftban-alert@%n.service" to critical services
+#
+# This is a template unit - %i is replaced with the failed service name
+# Example: nftban-alert@nftban-queue.service
+# =============================================================================
+
+[Unit]
+Description=NFTBan Service Failure Alert for %i
+Documentation=https://nftban.com/docs/alerts
+
+# Don't start if another alert is already running for same service
+# This prevents alert storms
+After=network.target
+
+[Service]
+Type=oneshot
+
+# Run as nftban user
+User=nftban
+Group=nftban
+
+# Environment
+Environment="NFTBAN_LIB_DIR=/usr/lib/nftban"
+Environment="NFTBAN_CONFIG_DIR=/etc/nftban"
+Environment="NFTBAN_LOG_DIR=/var/log/nftban"
+Environment="NFTBAN_DATA_DIR=/var/lib/nftban"
+
+# Execute alert script with failed service name
+ExecStart=/usr/lib/nftban/sbin/nftban-service-alert %i
+
+# Timeout - alert should complete quickly
+TimeoutStartSec=60
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/nftban /var/lib/nftban
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-alert

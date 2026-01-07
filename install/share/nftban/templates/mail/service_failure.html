@@ -1,0 +1,63 @@
+<!-- NFTBan Service Failure Alert Template -->
+<!-- Used for: OnFailure systemd service alerts -->
+<!-- Variables: {SERVICE_NAME}, {SERVICE_STATUS}, {JOURNAL_EXCERPT}, {DIAG_FILE}, {MEMORY_INFO}, {DISK_INFO}, {LOAD_INFO} -->
+
+<div class="alert alert-danger">
+    <strong>Service Failure Alert</strong>
+</div>
+
+<h2 style="color: #dc2626;">A critical NFTBan service has failed</h2>
+
+<table style="border-collapse: collapse; margin: 20px 0; width: 100%;">
+    <tr>
+        <td style="padding: 10px; border: 1px solid #ddd; background: #f9f9f9; width: 30%;"><strong>Service</strong></td>
+        <td style="padding: 10px; border: 1px solid #ddd;">{SERVICE_NAME}</td>
+    </tr>
+    <tr>
+        <td style="padding: 10px; border: 1px solid #ddd; background: #f9f9f9;"><strong>Server</strong></td>
+        <td style="padding: 10px; border: 1px solid #ddd;">{HOSTNAME}</td>
+    </tr>
+    <tr>
+        <td style="padding: 10px; border: 1px solid #ddd; background: #f9f9f9;"><strong>Time</strong></td>
+        <td style="padding: 10px; border: 1px solid #ddd;">{DATE} {TIME}</td>
+    </tr>
+    <tr>
+        <td style="padding: 10px; border: 1px solid #ddd; background: #f9f9f9;"><strong>Diagnostic Report</strong></td>
+        <td style="padding: 10px; border: 1px solid #ddd;"><code>{DIAG_FILE}</code></td>
+    </tr>
+</table>
+
+<h3>Service Status</h3>
+<pre style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 13px;">{SERVICE_STATUS}</pre>
+
+<h3>Recent Journal Entries</h3>
+<pre style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 12px; max-height: 300px; overflow-y: auto;">{JOURNAL_EXCERPT}</pre>
+
+<h3>System Resources</h3>
+<table style="border-collapse: collapse; margin: 10px 0; width: 100%;">
+    <tr>
+        <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9; width: 20%;"><strong>Memory</strong></td>
+        <td style="padding: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 12px;">{MEMORY_INFO}</td>
+    </tr>
+    <tr>
+        <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>Disk (/var)</strong></td>
+        <td style="padding: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 12px;">{DISK_INFO}</td>
+    </tr>
+    <tr>
+        <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>Load</strong></td>
+        <td style="padding: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 12px;">{LOAD_INFO}</td>
+    </tr>
+</table>
+
+<h3>Immediate Actions</h3>
+<ul>
+    <li>Check service status: <code>systemctl status {SERVICE_NAME}</code></li>
+    <li>View full logs: <code>journalctl -u {SERVICE_NAME} -n 100</code></li>
+    <li>Restart service: <code>systemctl restart {SERVICE_NAME}</code></li>
+    <li>View diagnostic report: <code>cat {DIAG_FILE}</code></li>
+</ul>
+
+<p style="color: #666; font-size: 12px; margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 3px;">
+    This alert was triggered by NFTBan's OnFailure handler.<br>
+    Alert throttling: {ALERT_THROTTLE_SECONDS}s (configure via <code>NFTBAN_ALERT_THROTTLE_SECONDS</code>)
+</p>

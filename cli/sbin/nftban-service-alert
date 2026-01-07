@@ -1,0 +1,243 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan Service Failure Alert Script
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Log and optionally email alerts when a service fails
+# Called by: nftban-alert@.service (OnFailure handler)
+#
+# Usage: nftban-service-alert <failed-service-name>
+# =============================================================================
+
+set -euo pipefail
+
+readonly FAILED_SERVICE="${1:-unknown}"
+readonly TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')
+readonly HOSTNAME=$(hostname -f 2>/dev/null || hostname)
+
+# Load config
+NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+NFTBAN_LOG_DIR="${NFTBAN_LOG_DIR:-/var/log/nftban}"
+NFTBAN_DATA_DIR="${NFTBAN_DATA_DIR:-/var/lib/nftban}"
+NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+
+# shellcheck source=/etc/nftban/nftban.conf
+[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+
+readonly ALERT_LOG="${NFTBAN_LOG_DIR}/service-alerts.log"
+readonly ALERT_THROTTLE_FILE="${NFTBAN_DATA_DIR}/alert_throttle_${FAILED_SERVICE//[^a-zA-Z0-9]/_}"
+readonly ALERT_THROTTLE_SECONDS="${NFTBAN_ALERT_THROTTLE_SECONDS:-3600}"
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+log_alert() {
+    local level="$1"
+    shift
+    mkdir -p "$(dirname "$ALERT_LOG")" 2>/dev/null || true
+    echo "[$TIMESTAMP] [$level] $*" >> "$ALERT_LOG"
+    logger -t nftban-alert -p "user.${level,,}" "$*"
+}
+
+# =============================================================================
+# THROTTLING (prevent alert storms)
+# =============================================================================
+
+should_throttle() {
+    if [[ -f "$ALERT_THROTTLE_FILE" ]]; then
+        local last_alert
+        last_alert=$(cat "$ALERT_THROTTLE_FILE" 2>/dev/null || echo "0")
+        local now
+        now=$(date +%s)
+        local age=$((now - last_alert))
+
+        if [[ $age -lt $ALERT_THROTTLE_SECONDS ]]; then
+            log_alert "DEBUG" "Alert throttled for $FAILED_SERVICE (last alert ${age}s ago)"
+            return 0  # Should throttle
+        fi
+    fi
+    return 1  # Should not throttle
+}
+
+update_throttle() {
+    mkdir -p "$(dirname "$ALERT_THROTTLE_FILE")" 2>/dev/null || true
+    date +%s > "$ALERT_THROTTLE_FILE"
+}
+
+# =============================================================================
+# COLLECT DIAGNOSTIC INFO
+# =============================================================================
+
+collect_diagnostics() {
+    local diag_file="${NFTBAN_DATA_DIR}/alerts/${FAILED_SERVICE}_$(date +%Y%m%d_%H%M%S).txt"
+    mkdir -p "$(dirname "$diag_file")" 2>/dev/null || true
+
+    {
+        echo "=========================================="
+        echo "NFTBan Service Failure Report"
+        echo "=========================================="
+        echo "Service: $FAILED_SERVICE"
+        echo "Hostname: $HOSTNAME"
+        echo "Timestamp: $TIMESTAMP"
+        echo ""
+
+        echo "=========================================="
+        echo "Service Status"
+        echo "=========================================="
+        systemctl status "$FAILED_SERVICE" --no-pager 2>&1 || true
+        echo ""
+
+        echo "=========================================="
+        echo "Recent Journal Entries (last 50 lines)"
+        echo "=========================================="
+        journalctl -u "$FAILED_SERVICE" -n 50 --no-pager 2>&1 || true
+        echo ""
+
+        echo "=========================================="
+        echo "System Resources"
+        echo "=========================================="
+        echo "Memory:"
+        free -h 2>&1 || true
+        echo ""
+        echo "Disk:"
+        df -h /var 2>&1 || true
+        echo ""
+        echo "Load:"
+        uptime 2>&1 || true
+        echo ""
+
+    } > "$diag_file"
+
+    echo "$diag_file"
+}
+
+# =============================================================================
+# SEND EMAIL ALERT (if configured)
+# =============================================================================
+
+send_email_alert() {
+    local diag_file="$1"
+
+    # Check if mail is configured
+    if [[ -z "${NFTBAN_MAIL_RECIPIENT:-}" ]]; then
+        log_alert "DEBUG" "No mail recipient configured, skipping email alert"
+        return 0
+    fi
+
+    # Source mail module
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/core/nftban_mail.sh"
+    else
+        log_alert "WARN" "Mail module not found, cannot send email alert"
+        return 1
+    fi
+
+    # Collect system info for template
+    local service_status journal_excerpt memory_info disk_info load_info
+    service_status=$(systemctl status "$FAILED_SERVICE" --no-pager 2>&1 | head -20 || echo "Status unavailable")
+    journal_excerpt=$(journalctl -u "$FAILED_SERVICE" -n 30 --no-pager 2>&1 || echo "Journal unavailable")
+    memory_info=$(free -h 2>&1 | grep -E "^Mem:" || echo "Memory info unavailable")
+    disk_info=$(df -h /var 2>&1 | tail -1 || echo "Disk info unavailable")
+    load_info=$(uptime 2>&1 || echo "Load info unavailable")
+
+    # Try loading template
+    local template_file="${NFTBAN_SHARE_DIR:-/usr/share/nftban}/templates/mail/service_failure.html"
+    local alert_content
+
+    if [[ -f "$template_file" ]]; then
+        alert_content=$(cat "$template_file")
+        # Replace template variables
+        alert_content="${alert_content//\{SERVICE_NAME\}/$FAILED_SERVICE}"
+        alert_content="${alert_content//\{SERVICE_STATUS\}/$service_status}"
+        alert_content="${alert_content//\{JOURNAL_EXCERPT\}/$journal_excerpt}"
+        alert_content="${alert_content//\{DIAG_FILE\}/$diag_file}"
+        alert_content="${alert_content//\{MEMORY_INFO\}/$memory_info}"
+        alert_content="${alert_content//\{DISK_INFO\}/$disk_info}"
+        alert_content="${alert_content//\{LOAD_INFO\}/$load_info}"
+        alert_content="${alert_content//\{ALERT_THROTTLE_SECONDS\}/$ALERT_THROTTLE_SECONDS}"
+        alert_content="${alert_content//\{DATE\}/$(date +%Y-%m-%d)}"
+        alert_content="${alert_content//\{TIME\}/$(date +%H:%M:%S)}"
+        alert_content="${alert_content//\{HOSTNAME\}/$HOSTNAME}"
+    else
+        # Fallback to inline HTML if template not found
+        alert_content=$(cat <<EOF
+<div class="alert alert-danger"><strong>Service Failure Alert</strong></div>
+<h2 style="color: #dc2626;">A critical NFTBan service has failed</h2>
+<table style="border-collapse: collapse; margin: 20px 0;">
+    <tr><td style="padding: 8px; border: 1px solid #ccc; background: #f5f5f5;"><strong>Service</strong></td>
+        <td style="padding: 8px; border: 1px solid #ccc;">${FAILED_SERVICE}</td></tr>
+    <tr><td style="padding: 8px; border: 1px solid #ccc; background: #f5f5f5;"><strong>Time</strong></td>
+        <td style="padding: 8px; border: 1px solid #ccc;">${TIMESTAMP}</td></tr>
+    <tr><td style="padding: 8px; border: 1px solid #ccc; background: #f5f5f5;"><strong>Hostname</strong></td>
+        <td style="padding: 8px; border: 1px solid #ccc;">${HOSTNAME}</td></tr>
+</table>
+<h3>Immediate Actions</h3>
+<ul>
+    <li>Check service status: <code>systemctl status ${FAILED_SERVICE}</code></li>
+    <li>View logs: <code>journalctl -u ${FAILED_SERVICE} -n 100</code></li>
+    <li>Restart service: <code>systemctl restart ${FAILED_SERVICE}</code></li>
+</ul>
+<p>Diagnostic report: <code>${diag_file}</code></p>
+EOF
+)
+    fi
+
+    # Use retry wrapper if available, otherwise direct send
+    if type nftban_mail_send_with_retry &>/dev/null; then
+        nftban_mail_send_with_retry "$alert_content" "${NFTBAN_MAIL_RECIPIENT}" "[ALERT] ${FAILED_SERVICE} failed on ${HOSTNAME}"
+    else
+        nftban_mail_send "$alert_content" "${NFTBAN_MAIL_RECIPIENT}" 2>/dev/null || true
+    fi
+}
+
+# =============================================================================
+# INCREMENT FAILURE METRIC
+# =============================================================================
+
+increment_failure_metric() {
+    local counters_dir="${NFTBAN_DATA_DIR}/metrics/counters"
+    local counter_file="${counters_dir}/service_failures_${FAILED_SERVICE//[^a-zA-Z0-9]/_}"
+
+    mkdir -p "$counters_dir" 2>/dev/null || true
+
+    (
+        flock -x 200
+        local current
+        current=$(cat "$counter_file" 2>/dev/null || echo "0")
+        echo "$((current + 1))" > "$counter_file"
+    ) 200>"${counter_file}.lock"
+}
+
+# =============================================================================
+# MAIN
+# =============================================================================
+
+main() {
+    log_alert "ALERT" "Service failure detected: $FAILED_SERVICE on $HOSTNAME"
+
+    # Check throttling
+    if should_throttle; then
+        log_alert "INFO" "Alert throttled (already alerted recently)"
+        exit 0
+    fi
+
+    # Update throttle timestamp
+    update_throttle
+
+    # Increment failure counter (for metrics)
+    increment_failure_metric
+
+    # Collect diagnostic information
+    local diag_file
+    diag_file=$(collect_diagnostics)
+    log_alert "INFO" "Diagnostic report saved: $diag_file"
+
+    # Send email alert
+    send_email_alert "$diag_file"
+
+    log_alert "INFO" "Alert processing completed for $FAILED_SERVICE"
+}
+
+main "$@"

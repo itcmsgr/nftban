@@ -1,0 +1,20 @@
+<!-- NFTBan Alert Template -->
+<!-- Used for: Login alerts, Ban events, Threshold breaches, Suricata alerts -->
+<!-- Variables: {ALERT_TYPE}, {ALERT_SEVERITY}, {ALERT_TITLE}, {ALERT_MESSAGE}, {ALERT_DETAILS}, {ALERT_ACTIONS} -->
+
+<div class="alert alert-{ALERT_SEVERITY_CLASS}">
+    <strong>{ALERT_TYPE}</strong>
+</div>
+
+<h2>{ALERT_TITLE}</h2>
+
+<p>{ALERT_MESSAGE}</p>
+
+{ALERT_DETAILS}
+
+<h3>Recommended Actions</h3>
+{ALERT_ACTIONS}
+
+<p style="color: #666; font-size: 12px; margin-top: 20px;">
+    Alert generated at {DATE} {TIME} on {HOSTNAME}
+</p>

@@ -174,6 +174,7 @@ nftban_complete() {
         echo "metrics"
         echo "timers"
         echo "watchdog"
+        echo "queue"
         echo "port"
         echo "panel"
         echo "module"
@@ -373,7 +374,17 @@ nftban_complete() {
             mail)
                 echo "test"
                 echo "send"
+                echo "spool"
+                echo "status"
                 echo "configure"
+                echo "help"
+                ;;
+            queue)
+                echo "status"
+                echo "list"
+                echo "process"
+                echo "dlq"
+                echo "metrics"
                 echo "help"
                 ;;
             cloudflare)
@@ -512,6 +523,19 @@ nftban_complete() {
                 ;;
             metrics_enable)
                 echo "--backend"
+                ;;
+            queue_dlq)
+                echo "list"
+                echo "retry"
+                echo "retry-all"
+                echo "purge"
+                echo "show"
+                echo "help"
+                ;;
+            mail_spool)
+                echo "status"
+                echo "list"
+                echo "help"
                 ;;
             *)
                 # No further completions
