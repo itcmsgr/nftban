@@ -3,26 +3,25 @@
 # NFTBan v1.0.0 - Permission Hardening Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Enforce secure ownership and permissions on critical paths
 #
-# meta:name=nftban_permissions
-# meta:type=core
-# meta:header=Permission Hardening Module
-# meta:version=1.0.0
+# meta:name="nftban_permissions"
+# meta:type="core"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Enforces strict permissions on NFTBan directories and files to prevent unauthorized access
-# meta:input=System paths and current permission states
-# meta:output=Enforced secure permissions and ownership
-#
-# **Inventory & Requirements**
-# meta:depends=bash,chmod,chown
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:description="Enforces strict permissions on NFTBan directories and files"
+# meta:input="System paths and current permission states"
+# meta:output="Enforced secure permissions and ownership"
+# meta:depends="bash,chmod,chown,find"
+# meta:inventory.files="/etc/nftban/,/var/lib/nftban/,/var/log/nftban/"
+# meta:inventory.binaries="chmod,chown,find,mkdir"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Enhanced strict mode
 IFS=$'\n\t'
@@ -213,21 +212,23 @@ perms_enforce_sbin() {
 
 perms_enforce_var() {
     # Enforce permissions on /var/lib/nftban
-    # Security: nftban:nftban, 0750 (mutable state data)
+    # Security: nftban:nftban, 0755 for dirs (allows nftband daemon traversal), 0640 for files
 
     perms_say "Enforcing permissions on: $PERMS_VAR"
 
-    # Create base directory
-    perms_mkd "$PERMS_VAR" 0750 nftban nftban
+    # Create base directory (755 for daemon access via systemd sandboxing)
+    perms_mkd "$PERMS_VAR" 0755 nftban nftban
 
     # Create subdirectories per FHS spec (see nftban_fhs_spec.sh)
-    perms_mkd "$PERMS_VAR/reports" 0750 nftban nftban
-    perms_mkd "$PERMS_VAR/reports/baseline" 0750 nftban nftban
-    perms_mkd "$PERMS_VAR/reports/watchdog" 0750 nftban nftban
-    perms_mkd "$PERMS_VAR/metrics" 0750 nftban nftban
-    perms_mkd "$PERMS_VAR/snapshots" 0750 nftban nftban
-    perms_mkd "$PERMS_VAR/exports" 0750 nftban nftban
-    perms_mkd "$PERMS_VAR/geoip" 0750 nftban nftban
+    perms_mkd "$PERMS_VAR/reports" 0755 nftban nftban
+    perms_mkd "$PERMS_VAR/reports/baseline" 0755 nftban nftban
+    perms_mkd "$PERMS_VAR/reports/watchdog" 0755 nftban nftban
+    perms_mkd "$PERMS_VAR/metrics" 0755 nftban nftban
+    perms_mkd "$PERMS_VAR/snapshots" 0755 nftban nftban
+    perms_mkd "$PERMS_VAR/exports" 0755 nftban nftban
+    perms_mkd "$PERMS_VAR/geoip" 0755 nftban nftban
+    perms_mkd "$PERMS_VAR/panels" 0755 nftban nftban
+    perms_mkd "$PERMS_VAR/stats" 0755 nftban nftban
 
     # CRITICAL: Create auditors directory with special permissions
     # This directory uses root:nftban-auditors (NOT nftban:nftban)
@@ -243,7 +244,8 @@ perms_enforce_var() {
         perms_say "Securing var directory: $PERMS_VAR"
         # Use find to chown, but exclude auditors directory
         perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -exec chown nftban:nftban {} \;
-        perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -type d -exec chmod 0750 {} \;
+        # Dirs 755 (allows nftband daemon traversal), files 640 (only owner read/write)
+        perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -type d -exec chmod 0755 {} \;
         perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -type f -exec chmod 0640 {} \;
     fi
 }
