@@ -127,6 +127,8 @@ Requires:       bash >= 4.0
 Requires:       bash-completion
 Requires:       jq
 Requires:       curl
+Requires:       tar
+Requires:       gzip
 Requires:       pam
 Requires(pre):  shadow-utils
 
@@ -303,7 +305,7 @@ echo ""
 echo "Checking required commands..."
 
 # Critical commands (must be present)
-for cmd in nft systemctl curl jq tar unzip; do
+for cmd in nft systemctl curl jq tar; do
     if command -v \$cmd >/dev/null 2>&1; then
         echo "[✓] Found: \$cmd"
     else
@@ -855,7 +857,7 @@ Version: ${PKG_VERSION}
 Section: net
 Priority: optional
 Architecture: amd64
-Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, libpam0g
+Depends: nftables (>= 0.9.0), systemd, bash (>= 4.0), bash-completion, jq, curl, tar, gzip, libpam0g
 Maintainer: NFTBan Team <noreply@nftban.com>
 Description: NFTBan Core - Adaptive firewall with threat intelligence
  NFTBan is an adaptive firewall system with threat intelligence integration.
@@ -918,7 +920,7 @@ echo ""
 echo "Checking required commands..."
 
 # Critical commands (must be present)
-for cmd in nft systemctl curl jq; do
+for cmd in nft systemctl curl jq tar; do
     if command -v $cmd >/dev/null 2>&1; then
         echo "[✓] Found: $cmd"
     else
