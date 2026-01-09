@@ -1810,6 +1810,10 @@ run_post_install() {
     log "Fixing permissions..."
     nftban permissions enforce 2>/dev/null || warn "Permission enforcement failed"
 
+    # Run health check with auto-heal to fix any remaining issues
+    log "Running health check with auto-heal..."
+    nftban health check --auto-heal --quiet 2>/dev/null || warn "Health check returned warnings"
+
     # Auto-detect SSH port from sshd_config
     log "Auto-detecting SSH port..."
     _install_auto_whitelist_ssh_port
