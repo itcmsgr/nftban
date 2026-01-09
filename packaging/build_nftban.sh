@@ -505,11 +505,11 @@ getent group nftban >/dev/null || groupadd -r nftban
 getent group nftban-auditor >/dev/null || groupadd -r nftban-auditor
 getent group nftban-panel >/dev/null || groupadd -r nftban-panel
 
-# Backward compatibility: nftban-auditors → nftban-auditor (renamed in v1.0.19)
-if getent group nftban-auditors >/dev/null 2>&1; then
-    echo "[NFTBan] Migrating nftban-auditors → nftban-auditor group..."
+# Backward compatibility: nftban-auditor → nftban-auditor (renamed in v1.0.19)
+if getent group nftban-auditor >/dev/null 2>&1; then
+    echo "[NFTBan] Migrating nftban-auditor → nftban-auditor group..."
     # Copy members from old group to new group
-    for member in \$(getent group nftban-auditors | cut -d: -f4 | tr ',' ' '); do
+    for member in \$(getent group nftban-auditor | cut -d: -f4 | tr ',' ' '); do
         usermod -a -G nftban-auditor "\$member" 2>/dev/null || true
     done
 fi
@@ -646,6 +646,10 @@ echo "[NFTBan] Enabling systemd services..."
 
 # Enable nftables
 systemctl enable nftables 2>/dev/null || true
+
+# Enable and start nftband daemon socket (CRITICAL for CLI communication)
+echo "[NFTBan] Starting nftband daemon..."
+systemctl enable --now nftband.socket 2>/dev/null || true
 
 # Enable and start essential timers
 echo "[NFTBan] Starting essential timers..."
@@ -806,7 +810,7 @@ fi
 - NFTBan v1.0.0 release
 - SAFE INSTALL FLOW: Auto-whitelist before enabling firewall
 - FHS compliant directory structure
-- 2-group security model (nftban, nftban-auditors)
+- 2-group security model (nftban, nftban-auditor)
 - Polkit policies for service management
 - Built-in login monitor (no fail2ban dependency)
 
@@ -1181,10 +1185,10 @@ if ! getent group nftban-panel >/dev/null; then
     addgroup --system nftban-panel
 fi
 
-# Backward compatibility: nftban-auditors → nftban-auditor (renamed in v1.0.19)
-if getent group nftban-auditors >/dev/null 2>&1; then
-    echo "[NFTBan] Migrating nftban-auditors → nftban-auditor group..."
-    for user in $(getent group nftban-auditors | cut -d: -f4 | tr ',' ' '); do
+# Backward compatibility: nftban-auditor → nftban-auditor (renamed in v1.0.19)
+if getent group nftban-auditor >/dev/null 2>&1; then
+    echo "[NFTBan] Migrating nftban-auditor → nftban-auditor group..."
+    for user in $(getent group nftban-auditor | cut -d: -f4 | tr ',' ' '); do
         usermod -a -G nftban-auditor "$user" 2>/dev/null || true
     done
 fi
@@ -1256,6 +1260,10 @@ fi
 echo "[NFTBan] Enabling systemd services..."
 systemctl daemon-reload
 systemctl enable nftables 2>/dev/null || true
+
+# Enable and start nftband daemon socket (CRITICAL for CLI communication)
+echo "[NFTBan] Starting nftband daemon..."
+systemctl enable --now nftband.socket 2>/dev/null || true
 
 # Enable and start essential timers
 echo "[NFTBan] Starting essential timers..."

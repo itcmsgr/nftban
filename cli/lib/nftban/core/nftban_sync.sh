@@ -13,10 +13,10 @@
 # meta:description="Atomic firewall reload using Go-based sync engine"
 # meta:input="Configuration files (whitelist, blacklist, feeds, geoban)"
 # meta:output="Updated nftables ruleset with preserved Fail2Ban state"
-# meta:depends="bash,nftables,nftban-sync"
+# meta:depends="bash,nftables,nftban-core"
 #
 # meta:inventory.files=""
-# meta:inventory.binaries="nftban-sync,nft"
+# meta:inventory.binaries="nftban-core,nft"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
 # meta:inventory.config_files="/etc/nftban/nftban.conf"
 # meta:inventory.systemd_units=""
@@ -27,8 +27,8 @@
 # Strict mode
 umask 027
 
-# Constants
-readonly NFTBAN_SYNC_BIN="${NFTBAN_SYNC_BIN:-/usr/lib/nftban/bin/nftban-sync}"
+# Constants - sync is a subcommand of nftban-core, not a separate binary
+readonly NFTBAN_CORE_BIN="${NFTBAN_CORE_BIN:-/usr/lib/nftban/bin/nftban-core}"
 # NFTBAN_LIB_DIR is set by the calling script - don't set it here
 
 # Load strict mode library
@@ -84,11 +84,11 @@ nftban_sync_full() {
     fi
 
     # Check if Go binary exists
-    if [[ ! -x "$NFTBAN_SYNC_BIN" ]]; then
-        nftban_output "error" "nftban-sync binary not found: $NFTBAN_SYNC_BIN"
+    if [[ ! -x "$NFTBAN_CORE_BIN" ]]; then
+        nftban_output "error" "nftban-core binary not found: $NFTBAN_CORE_BIN"
         nftban_output "info" "Install the Go binary or build from source:"
-        nftban_output "info" "  cd /home/gituser/github/nftban-dev/cmd/nftban-sync"
-        nftban_output "info" "  go build -o $NFTBAN_SYNC_BIN ."
+        nftban_output "info" "  cd /path/to/nftban/cmd/nftban-core"
+        nftban_output "info" "  go build -o $NFTBAN_CORE_BIN ."
         return 1
     fi
 
@@ -102,13 +102,13 @@ nftban_sync_full() {
     nftban_output "info" "Architecture: Dual-table (ip nftban + ip6 nftban)"
     echo ""
 
-    # Execute Go binary
+    # Execute Go binary - sync is a subcommand of nftban-core
     if [[ -n "$dry_run" ]]; then
         nftban_output "info" "Mode: DRY RUN (validate only)"
-        "$NFTBAN_SYNC_BIN" --dry-run
+        "$NFTBAN_CORE_BIN" sync --dry-run
     else
         nftban_output "info" "Mode: FULL SYNC (apply changes)"
-        "$NFTBAN_SYNC_BIN"
+        "$NFTBAN_CORE_BIN" sync
     fi
 
     local exit_code=$?
