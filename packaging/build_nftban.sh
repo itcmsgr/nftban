@@ -87,7 +87,7 @@ check_dependencies() {
 
 build_binaries() {
     # Check if pre-built binaries exist (from CI)
-    if [[ -x "${PROJECT_ROOT}/bin/nftban-core" ]]; then
+    if [[ -x "${PROJECT_ROOT}/bin/nftban-core" ]] && [[ -x "${PROJECT_ROOT}/bin/nftband" ]]; then
         log_info "Using pre-built binaries from bin/"
         ls -la "${PROJECT_ROOT}/bin/"
         return 0
@@ -147,6 +147,7 @@ ls -la bin/
 %install
 # Binaries
 install -D -m 0755 bin/nftban-core %{buildroot}/usr/lib/nftban/bin/nftban-core
+install -D -m 0755 bin/nftband %{buildroot}/usr/lib/nftban/bin/nftband
 install -D -m 0755 cli/sbin/nftban %{buildroot}/usr/bin/nftban
 install -D -m 0755 bin/nftban-ui %{buildroot}/usr/sbin/nftban-ui
 install -D -m 0755 bin/nftban-ui-auth %{buildroot}/usr/libexec/nftban-ui-auth
@@ -261,7 +262,7 @@ mkdir -p %{buildroot}/usr/lib/nftban/tests
 find cli/lib/nftban/tests -type f -name "*.sh" -exec install -m 0755 {} %{buildroot}/usr/lib/nftban/tests/ \;
 
 # Config directories (must match %files section)
-mkdir -p %{buildroot}/etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d}
+mkdir -p %{buildroot}/etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d}
 mkdir -p %{buildroot}/var/lib/nftban/{feeds,geoip,staging,reports}
 mkdir -p %{buildroot}/var/log/nftban
 mkdir -p %{buildroot}/var/cache/nftban
@@ -569,7 +570,7 @@ systemctl daemon-reload 2>/dev/null || true
 
 # STEP 2: Create FHS directories
 echo "[NFTBan] Creating FHS directories..."
-mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d}
+mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d}
 mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels}
 mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
@@ -775,6 +776,7 @@ fi
 %dir /etc/nftban/whitelist.d
 %dir /etc/nftban/blacklist.d
 %dir /etc/nftban/ports.d
+%dir /etc/nftban/rules.d
 %dir %attr(750,nftban,nftban) /var/lib/nftban
 %dir %attr(750,nftban,nftban) /var/lib/nftban/feeds
 %dir %attr(750,nftban,nftban) /var/lib/nftban/geoip
@@ -1181,7 +1183,7 @@ fi
 usermod -a -G nftban root 2>/dev/null || true
 
 # STEP 3: Create FHS directories
-mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d}
+mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d}
 mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
 mkdir -p /var/log/nftban/reports
@@ -1259,10 +1261,11 @@ build_deb() {
     rm -rf "${deb_root}"
 
     # Create directory structure
-    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,polkit-1/rules.d,nftban/blacklist.d},var/{lib/nftban/{feeds,geoip,staging},log/nftban,cache/nftban},run/nftban}
+    mkdir -p "${deb_root}"/{DEBIAN,usr/bin,usr/sbin,usr/libexec,usr/lib/nftban/bin,usr/lib/systemd/system,etc/{nftables,polkit-1/rules.d,nftban/{blacklist.d,rules.d}},var/{lib/nftban/{feeds,geoip,staging},log/nftban,cache/nftban},run/nftban}
 
     # Copy binaries
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-core" "${deb_root}/usr/lib/nftban/bin/"
+    install -m 0755 "${PROJECT_ROOT}/bin/nftband" "${deb_root}/usr/lib/nftban/bin/"
     install -m 0755 "${PROJECT_ROOT}/cli/sbin/nftban" "${deb_root}/usr/bin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui" "${deb_root}/usr/sbin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui-auth" "${deb_root}/usr/libexec/"
