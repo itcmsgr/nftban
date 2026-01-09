@@ -240,65 +240,44 @@ _nftban_login_cmd_status_json() {
 }
 
 nftban_login_cmd_install() {
-    # Install systemd service
+    # Install/verify systemd service
+    # NOTE: Package installs service to /lib/systemd/system/ - don't duplicate!
 
     if [[ $EUID -ne 0 ]]; then
         echo "ERROR: Service installation requires root privileges" >&2
         return 1
     fi
 
+    local service_name="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+
     echo "Installing NFTBan Login Monitor Service"
     echo "========================================"
     echo ""
 
-    # Create service file
-    local service_file="/etc/systemd/system/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
-    echo "Creating service file: $service_file"
+    # Check if service already exists (from package)
+    if [[ -f "/lib/systemd/system/${service_name}" ]] || \
+       [[ -f "/usr/lib/systemd/system/${service_name}" ]]; then
+        echo "✅ Service file exists (from package)"
 
-    cat > "$service_file" <<'EOF'
-[Unit]
-Description=NFTBan Login Monitor
-Documentation=https://nftban.com
-After=network.target sshd.service
+        # Remove any duplicate in /etc/systemd/system/ that may override
+        if [[ -f "/etc/systemd/system/${service_name}" ]]; then
+            echo "Removing duplicate override in /etc/systemd/system/..."
+            rm -f "/etc/systemd/system/${service_name}"
+            systemctl daemon-reload
+            echo "✅ Duplicate removed, using package service"
+        fi
+    else
+        # No package service - this shouldn't happen with proper install
+        echo "WARNING: No package service file found" >&2
+        echo "Please reinstall nftban package" >&2
+        return 1
+    fi
 
-[Service]
-Type=simple
-User=root
-Group=root
-ExecStart=/usr/bin/nftban login run
-Restart=on-failure
-RestartSec=5s
-StandardOutput=journal
-StandardError=journal
-SyslogIdentifier=nftban-login-monitor
-
-# Security hardening
-PrivateTmp=yes
-NoNewPrivileges=yes
-ProtectSystem=strict
-ProtectHome=yes
-ReadWritePaths=${NFTBAN_LOG_DIR:-/var/log/nftban}
-
-[Install]
-WantedBy=multi-user.target
-EOF
-
-    echo "✅ Service file created"
     echo ""
-
-    # Reload systemd
-    echo "Reloading systemd daemon..."
-    systemctl daemon-reload
-    echo "✅ Systemd reloaded"
-    echo ""
-
-    echo "Service installed successfully!"
+    echo "Service ready!"
     echo ""
     echo "To start monitoring:"
-    echo "  systemctl start nftban-login-monitor"
-    echo ""
-    echo "To enable on boot:"
-    echo "  systemctl enable nftban-login-monitor"
+    echo "  nftban login enable"
     echo ""
     echo "To check status:"
     echo "  nftban login status"
