@@ -20,6 +20,8 @@
 # meta:inventory.privileges="none"
 # =============================================================================
 
+set -Eeuo pipefail
+
 # Prevent double-sourcing
 [[ -n "${_NFTBAN_METRICS_HELPERS_LOADED:-}" ]] && return 0
 _NFTBAN_METRICS_HELPERS_LOADED=1
@@ -94,11 +96,12 @@ _check_backend_conflict() {
         fi
     fi
 
-    # Return status via global variables
-    CONFLICT_PROMETHEUS_INSTALLED="$prometheus_installed"
-    CONFLICT_VICTORIAMETRICS_INSTALLED="$victoriametrics_installed"
-    CONFLICT_PROMETHEUS_RUNNING="$prometheus_running"
-    CONFLICT_VICTORIAMETRICS_RUNNING="$victoriametrics_running"
+    # Return status via global variables (exported for callers)
+    # shellcheck disable=SC2034  # Variables used by callers
+    export CONFLICT_PROMETHEUS_INSTALLED="$prometheus_installed"
+    export CONFLICT_VICTORIAMETRICS_INSTALLED="$victoriametrics_installed"
+    export CONFLICT_PROMETHEUS_RUNNING="$prometheus_running"
+    export CONFLICT_VICTORIAMETRICS_RUNNING="$victoriametrics_running"
 
     # Check for actual conflict (both running)
     if [[ "$prometheus_running" == "true" ]] && [[ "$victoriametrics_running" == "true" ]]; then
