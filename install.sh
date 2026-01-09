@@ -41,7 +41,7 @@
 #   - nftban suricata setup
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -1836,9 +1836,14 @@ run_post_install() {
         fi
     done
 
-    # Reload nftables to apply config
-    log "Reloading nftables..."
-    systemctl reload nftables 2>/dev/null || warn "nftables reload failed"
+    # Start or reload nftables to apply config
+    log "Starting nftables..."
+    if systemctl is-active nftables >/dev/null 2>&1; then
+        systemctl reload nftables 2>/dev/null || warn "nftables reload failed"
+    else
+        systemctl enable nftables 2>/dev/null || true
+        systemctl start nftables 2>/dev/null || warn "nftables start failed"
+    fi
 
     # ==========================================================================
     # SECURITY: Protect nft_schema.sh from modification (P0 CRITICAL)
