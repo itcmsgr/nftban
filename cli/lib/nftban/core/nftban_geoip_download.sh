@@ -46,12 +46,12 @@ fi
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" ]]; then
     source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh"
 fi
-readonly NFTBAN_CONF_DIR="${NFTBAN_CONF_DIR:-/etc/nftban}"
+readonly NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 
 # Load GeoIP configuration
-if [[ -f "${NFTBAN_CONF_DIR}/conf.d/geoip.conf" ]]; then
+if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoip.conf" ]]; then
     # shellcheck source=/dev/null
-    source "${NFTBAN_CONF_DIR}/conf.d/geoip.conf"
+    source "${NFTBAN_CONFIG_DIR}/conf.d/geoip.conf"
 fi
 
 # Load output module

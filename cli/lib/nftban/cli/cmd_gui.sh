@@ -27,12 +27,12 @@
 set -euo pipefail
 
 # Simple config functions (no external dependencies)
-NFTBAN_CONF_DIR="${NFTBAN_CONF_DIR:-/etc/nftban}"
+NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 
 # Load main configuration (service names, paths)
-if [[ -f "${NFTBAN_CONF_DIR}/nftban.conf" ]]; then
-    source "${NFTBAN_CONF_DIR}/nftban.conf"
+if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
+    source "${NFTBAN_CONFIG_DIR}/nftban.conf"
 fi
 
 # Load distro configuration
@@ -54,7 +54,7 @@ fi
 # GUI-specific config helpers (local to this module to avoid conflicts with nftban_config.sh)
 _gui_config_get() {
     local key="$1"
-    local conf_file="${NFTBAN_CONF_DIR}/nftban.conf"
+    local conf_file="${NFTBAN_CONFIG_DIR}/nftban.conf"
 
     if [[ -f "$conf_file" ]]; then
         local value
@@ -66,9 +66,9 @@ _gui_config_get() {
 _gui_config_set() {
     local key="$1"
     local value="$2"
-    local conf_file="${NFTBAN_CONF_DIR}/nftban.conf"
+    local conf_file="${NFTBAN_CONFIG_DIR}/nftban.conf"
 
-    mkdir -p "${NFTBAN_CONF_DIR}"
+    mkdir -p "${NFTBAN_CONFIG_DIR}"
 
     if [[ ! -f "$conf_file" ]]; then
         cat > "$conf_file" << 'EOF'
