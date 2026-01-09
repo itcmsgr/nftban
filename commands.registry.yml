@@ -362,7 +362,7 @@ portscan:
 
 login:
   category: active_protection
-  description: "Login abuse monitoring (SSH/su/sudo)"
+  description: "Login abuse monitoring (SSH/su/sudo brute-force protection)"
   risk: advanced
   audience: [cli]
   capability: policy_change
@@ -373,11 +373,19 @@ login:
   output_modes: [json, text]
   has_json: true
   examples:
+    - "nftban login enable"
     - "nftban login status"
-    - "nftban login enable ssh"
-    - "nftban login disable ssh"
+    - "nftban login disable"
     - "nftban login stats"
-    - "nftban login logs 50"
+    - "nftban login logs"
+  subcommands:
+    enable: {description: "Enable login monitoring (auto-installs service)"}
+    disable: {description: "Disable login monitoring"}
+    status: {description: "Show login monitor status"}
+    stats: {description: "Show ban/alert statistics"}
+    logs: {description: "View recent login alerts"}
+    restart: {description: "Restart login monitor service"}
+    test: {description: "Test login monitoring configuration"}
 
 feeds:
   category: active_protection
