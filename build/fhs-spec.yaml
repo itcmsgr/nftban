@@ -1,0 +1,511 @@
+# =============================================================================
+# NFTBan v1.0.0 - Canonical FHS Specification
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Single source of truth for FHS directory/permission specification
+#
+# This file is the canonical source. All packaging artifacts are generated from it.
+# DO NOT manually edit generated files - they will be overwritten.
+#
+# Run: build/generate-fhs-outputs.sh
+# =============================================================================
+
+version: "1.0.0"
+generated_header: "Generated from build/fhs-spec.yaml - DO NOT EDIT"
+
+# =============================================================================
+# SYSTEM USERS AND GROUPS (sysusers.d)
+# =============================================================================
+sysusers:
+  groups:
+    - name: nftban
+      system: true
+      comment: "NFTBan service group"
+    - name: nftban-auditor
+      system: true
+      comment: "NFTBan auditor group (read-only report access)"
+
+  users:
+    - name: nftban
+      system: true
+      group: nftban
+      groups:
+        - nftban-auditor
+      home: /var/lib/nftban
+      shell: /usr/sbin/nologin
+      comment: "NFTBan service account"
+
+# =============================================================================
+# BINARIES AND EXECUTABLES
+# =============================================================================
+binaries:
+  cli:
+    path: /usr/bin/nftban
+    mode: "0755"
+    owner: root
+    group: root
+    description: "NFTBan CLI entry point"
+
+  go_binaries:
+    directory: /usr/lib/nftban/bin
+    mode: "0755"
+    owner: root
+    group: root
+    description: "Go binaries (nftband, nftban-api, etc.)"
+    binaries:
+      - nftband
+      - nftban-api
+
+# =============================================================================
+# DIRECTORIES
+# =============================================================================
+directories:
+  # ---------------------------------------------------------------------------
+  # System Directories (root:root) - Application libraries and modules
+  # ---------------------------------------------------------------------------
+  system:
+    - path: /usr/lib/nftban
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Application libraries and modules"
+      created_by: package
+
+    - path: /usr/lib/nftban/core
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Core modules"
+      created_by: package
+
+    - path: /usr/lib/nftban/cli
+      mode: "0755"
+      owner: root
+      group: root
+      description: "CLI command modules"
+      created_by: package
+
+    - path: /usr/lib/nftban/lib
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Library modules"
+      created_by: package
+
+    - path: /usr/lib/nftban/bin
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Application binaries (Go, etc.)"
+      created_by: package
+
+    - path: /usr/lib/nftban/exporters
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Metrics exporters"
+      created_by: package
+
+    - path: /usr/lib/nftban/setup
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Setup and installation scripts"
+      created_by: package
+
+    - path: /usr/lib/nftban/tests
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Test scripts (smoke tests, validation)"
+      created_by: package
+
+    - path: /usr/lib/nftban/helpers
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Helper scripts (trace, autoheal)"
+      created_by: package
+
+  # ---------------------------------------------------------------------------
+  # Configuration (root:nftban, 750) - Daemon needs read access via group
+  # Note: /etc stays root-owned, nftban user has read-only via group
+  # ---------------------------------------------------------------------------
+  config:
+    - path: /etc/nftban
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Configuration files (daemon readable via group)"
+      created_by: package
+
+    - path: /etc/nftban/conf.d
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Module configurations"
+      created_by: package
+
+    - path: /etc/nftban/conf.d/ddos
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "DDoS protection configuration"
+      created_by: package
+
+    - path: /etc/nftban/conf.d/portscan
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Port scan detection configuration"
+      created_by: package
+
+    - path: /etc/nftban/conf.d/login
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Login monitoring configuration"
+      created_by: package
+
+    - path: /etc/nftban/conf.d/panels
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Control panel configurations"
+      created_by: package
+
+    - path: /etc/nftban/whitelist.d
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Whitelist entries"
+      created_by: package
+
+    - path: /etc/nftban/blacklist.d
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Blacklist entries"
+      created_by: package
+
+    - path: /etc/nftban/ports.d
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Port whitelist entries"
+      created_by: package
+
+    - path: /etc/nftban/rules.d
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Custom nftables rules"
+      created_by: package
+
+    - path: /etc/nftban/distros
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Distro-specific configuration files"
+      created_by: package
+
+  # ---------------------------------------------------------------------------
+  # Variable Data (root:nftban or nftban:nftban) - Application state
+  # Top-level /var/lib/nftban is root:nftban (security boundary)
+  # Subdirs where daemon writes are nftban:nftban
+  # ---------------------------------------------------------------------------
+  data:
+    - path: /var/lib/nftban
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Application state data (root-owned security boundary)"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/banned
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Banned IP state files"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/whitelist
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Whitelist state files"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/feeds
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Threat feed data"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/reports
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Generated reports"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/reports/baseline
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Baseline reports"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/reports/watchdog
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Watchdog system reports"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/reports/auditors
+      mode: "0770"
+      owner: root
+      group: nftban-auditor
+      description: "Auditor reports (nftban-auditor group access)"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/metrics
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Metrics database"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/snapshots
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Hourly stats snapshots"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/exports
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "User data exports (JSON, CSV)"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/geoip
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "GeoIP database"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/stats
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Runtime statistics"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/stats/history
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Stats history"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/stats/profiles
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Stats profiles"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/queue
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Task queue root"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/queue/pending
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Pending tasks"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/queue/work
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "In-progress tasks"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/queue/dlq
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Dead letter queue"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/mailspool
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Failed mail retry queue"
+      created_by: tmpfiles
+
+    - path: /var/lib/nftban/pro
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Pro subscription data"
+      created_by: tmpfiles
+
+  # ---------------------------------------------------------------------------
+  # Logs (nftban:nftban, 750) - Daemon writes, group reads
+  # ---------------------------------------------------------------------------
+  logs:
+    - path: /var/log/nftban
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Log files"
+      created_by: tmpfiles
+
+    - path: /var/log/nftban/watchdog
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Watchdog logs"
+      created_by: tmpfiles
+
+    - path: /var/log/nftban/reports
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Report logs"
+      created_by: tmpfiles
+
+    - path: /var/log/nftban/rbl
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "RBL check cache"
+      created_by: tmpfiles
+
+  # ---------------------------------------------------------------------------
+  # Cache and Runtime (nftban:nftban) - Temporary files
+  # ---------------------------------------------------------------------------
+  runtime:
+    - path: /var/cache/nftban
+      mode: "0755"
+      owner: nftban
+      group: nftban
+      description: "Cache files"
+      created_by: tmpfiles
+
+    - path: /var/cache/nftban/health
+      mode: "0750"
+      owner: nftban
+      group: nftban
+      description: "Health check status cache"
+      created_by: tmpfiles
+
+    - path: /run/nftban
+      mode: "0755"
+      owner: nftban
+      group: nftban
+      description: "Runtime data (PID files, sockets)"
+      created_by: tmpfiles
+      note: "Managed by tmpfiles only - do not use RuntimeDirectory= in units to avoid conflict"
+
+  # ---------------------------------------------------------------------------
+  # Shared Data (root:root, 755) - Read-only application data
+  # ---------------------------------------------------------------------------
+  shared:
+    - path: /usr/share/nftban
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Shared application data"
+      created_by: package
+
+    - path: /usr/share/nftban/templates
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Templates"
+      created_by: package
+
+    - path: /usr/share/nftban/templates/mail
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Mail templates"
+      created_by: package
+
+    - path: /usr/share/nftban/templates/reports
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Report templates"
+      created_by: package
+
+    - path: /usr/share/nftban/specs
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Specification files"
+      created_by: package
+
+# =============================================================================
+# CONDITIONAL DIRECTORIES (feature-gated, not in base tmpfiles)
+# =============================================================================
+conditional:
+  # Metrics feature directories - created by 'nftban metrics enable'
+  metrics:
+    condition: "metrics_enabled"
+    directories:
+      - path: /etc/nftban/metrics
+        mode: "0750"
+        owner: root
+        group: nftban
+        description: "Metrics configuration (VictoriaMetrics, Prometheus)"
+        created_by: feature_enable
+
+      - path: /var/lib/node_exporter
+        mode: "0755"
+        owner: node_exporter
+        group: node_exporter
+        description: "Node exporter textfile directory"
+        created_by: feature_enable
+        note: "External service - only create if node_exporter installed"
+
+  # GUI feature directories - created by 'nftban gui enable'
+  gui:
+    condition: "gui_enabled"
+    directories:
+      - path: /etc/nftban/gui
+        mode: "0750"
+        owner: root
+        group: nftban
+        description: "GUI configuration"
+        created_by: feature_enable
+
+  # Panel directories - created during panel detection/install
+  panels:
+    condition: "panel_detected"
+    note: "Panel plugin directories are created by panel integration installers, not by base nftban"
+
+# =============================================================================
+# DISTRO-SPECIFIC PATH RESOLUTION
+# =============================================================================
+distro_paths:
+  note: "Resolved at runtime from /etc/nftban/distros/*.conf"
+  keys:
+    - polkit_rules_dir
+    - polkit_actions_dir
+    - systemd_unit_dir
+    - bash_completion_dir
+    - logrotate_dir

@@ -1,0 +1,451 @@
+{
+  "_comment": "Generated from build/fhs-spec.yaml - DO NOT EDIT",
+  "_version": "1.0.0",
+  "directories": {
+    "system": [
+      {
+        "path": "/usr/lib/nftban",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Application libraries and modules",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/core",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Core modules",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/cli",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "CLI command modules",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/lib",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Library modules",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/bin",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Application binaries (Go, etc.)",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/exporters",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Metrics exporters",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/setup",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Setup and installation scripts",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/tests",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Test scripts (smoke tests, validation)",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/helpers",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Helper scripts (trace, autoheal)",
+        "created_by": "package"
+      }
+    ],
+    "config": [
+      {
+        "path": "/etc/nftban",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Configuration files (daemon readable via group)",
+        "created_by": "package"
+      },
+      {
+        "path": "/etc/nftban/conf.d",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Module configurations",
+        "created_by": "package"
+      },
+      {
+        "path": "/etc/nftban/conf.d/ddos",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "DDoS protection configuration",
+        "created_by": "package"
+      },
+      {
+        "path": "/etc/nftban/conf.d/portscan",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Port scan detection configuration",
+        "created_by": "package"
+      },
+      {
+        "path": "/etc/nftban/conf.d/login",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Login monitoring configuration",
+        "created_by": "package"
+      },
+      {
+        "path": "/etc/nftban/conf.d/panels",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Control panel configurations",
+        "created_by": "package"
+      },
+      {
+        "path": "/etc/nftban/whitelist.d",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Whitelist entries",
+        "created_by": "package"
+      },
+      {
+        "path": "/etc/nftban/blacklist.d",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Blacklist entries",
+        "created_by": "package"
+      },
+      {
+        "path": "/etc/nftban/ports.d",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Port whitelist entries",
+        "created_by": "package"
+      },
+      {
+        "path": "/etc/nftban/rules.d",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Custom nftables rules",
+        "created_by": "package"
+      },
+      {
+        "path": "/etc/nftban/distros",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Distro-specific configuration files",
+        "created_by": "package"
+      }
+    ],
+    "data": [
+      {
+        "path": "/var/lib/nftban",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Application state data (root-owned security boundary)",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/banned",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Banned IP state files",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/whitelist",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Whitelist state files",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/feeds",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Threat feed data",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/reports",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Generated reports",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/reports/baseline",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Baseline reports",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/reports/watchdog",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Watchdog system reports",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/reports/auditors",
+        "mode": "0770",
+        "owner": "root",
+        "group": "nftban-auditor",
+        "description": "Auditor reports (nftban-auditor group access)",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/metrics",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Metrics database",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/snapshots",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Hourly stats snapshots",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/exports",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "User data exports (JSON, CSV)",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/geoip",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "GeoIP database",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/stats",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Runtime statistics",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/stats/history",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Stats history",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/stats/profiles",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Stats profiles",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/queue",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Task queue root",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/queue/pending",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Pending tasks",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/queue/work",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "In-progress tasks",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/queue/dlq",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Dead letter queue",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/mailspool",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Failed mail retry queue",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/lib/nftban/pro",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Pro subscription data",
+        "created_by": "tmpfiles"
+      }
+    ],
+    "logs": [
+      {
+        "path": "/var/log/nftban",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Log files",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/log/nftban/watchdog",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Watchdog logs",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/log/nftban/reports",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Report logs",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/log/nftban/rbl",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "RBL check cache",
+        "created_by": "tmpfiles"
+      }
+    ],
+    "runtime": [
+      {
+        "path": "/var/cache/nftban",
+        "mode": "0755",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Cache files",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/var/cache/nftban/health",
+        "mode": "0750",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Health check status cache",
+        "created_by": "tmpfiles"
+      },
+      {
+        "path": "/run/nftban",
+        "mode": "0755",
+        "owner": "nftban",
+        "group": "nftban",
+        "description": "Runtime data (PID files, sockets)",
+        "created_by": "tmpfiles"
+      }
+    ],
+    "shared": [
+      {
+        "path": "/usr/share/nftban",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Shared application data",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/share/nftban/templates",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Templates",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/share/nftban/templates/mail",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Mail templates",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/share/nftban/templates/reports",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Report templates",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/share/nftban/specs",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Specification files",
+        "created_by": "package"
+      }
+    ]
+  },
+  "binaries": {
+    "cli": "/usr/bin/nftban",
+    "go_binaries_dir": "/usr/lib/nftban/bin"
+  },
+  "sysusers": {
+    "user": "nftban",
+    "group": "nftban",
+    "auditor_group": "nftban-auditor"
+  }
+}

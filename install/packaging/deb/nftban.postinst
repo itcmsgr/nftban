@@ -5,104 +5,100 @@
 # postinst script for nftban (main package)
 # Configure after installation
 #
+# NOTE: Directory creation is handled by:
+#   - systemd-sysusers (users/groups)
+#   - systemd-tmpfiles (runtime directories)
+#   - dh_installdirs (package directories from nftban.dirs)
+#
+# This script only handles:
+#   - Invoking systemd-sysusers and systemd-tmpfiles
+#   - Writing initial receipt
+#   - Feature-specific configuration (SSH port, GeoIP, etc.)
+#   - Enabling default services/timers
+#
 # meta:name="nftban.postinst"
 # meta:type="packaging"
+# meta:header="DEB Post-Install"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
+#
 # meta:description="DEB package post-installation script"
 # meta:inventory.files=""
-# meta:inventory.binaries="install,chown,chmod,systemctl"
+# meta:inventory.binaries="systemd-sysusers,systemd-tmpfiles,systemctl"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
+#
+# meta:created_date="2024-12-17"
+# meta:updated_date="2026-01-10"
 
 set -Eeuo pipefail
 
 # =============================================================================
-# PATH DEFAULTS (can be overridden by config)
+# PATH DEFAULTS
 # =============================================================================
 NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 NFTBAN_DATA_DIR="${NFTBAN_DATA_DIR:-/var/lib/nftban}"
-NFTBAN_LOG_DIR="${NFTBAN_LOG_DIR:-/var/log/nftban}"
-NFTBAN_CACHE_DIR="${NFTBAN_CACHE_DIR:-/var/cache/nftban}"
-NFTBAN_RUN_DIR="${NFTBAN_RUN_DIR:-/run/nftban}"
-
-# Source config if exists (allows custom paths)
-if [ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]; then
-    # shellcheck source=/dev/null
-    . "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
-fi
 
 case "$1" in
     configure)
         echo "Configuring NFTBan..."
 
-        # Create user and group if not exists
-        if ! getent group nftban >/dev/null; then
-            groupadd -r nftban
+        # ======================================================================
+        # STEP 1: Create users and groups via systemd-sysusers
+        # ======================================================================
+        # Uses /usr/lib/sysusers.d/nftban.conf (generated from build/fhs-spec.yaml)
+        if [ -f /usr/lib/sysusers.d/nftban.conf ]; then
+            echo "Creating system users and groups..."
+            systemd-sysusers /usr/lib/sysusers.d/nftban.conf 2>/dev/null || {
+                # Fallback for systems without systemd-sysusers
+                echo "systemd-sysusers not available, using fallback..."
+                if ! getent group nftban >/dev/null; then
+                    groupadd -r nftban
+                fi
+                if ! getent group nftban-auditor >/dev/null; then
+                    groupadd -r nftban-auditor
+                fi
+                if ! getent passwd nftban >/dev/null; then
+                    useradd -r -g nftban -G nftban-auditor -d "${NFTBAN_DATA_DIR}" \
+                        -s /usr/sbin/nologin -c "NFTBan service account" nftban
+                fi
+            }
         fi
-        if ! getent group nftban-auditor >/dev/null; then
-            groupadd -r nftban-auditor
+
+        # ======================================================================
+        # STEP 2: Create runtime directories via systemd-tmpfiles
+        # ======================================================================
+        # Uses /usr/lib/tmpfiles.d/nftban.conf (generated from build/fhs-spec.yaml)
+        if [ -f /usr/lib/tmpfiles.d/nftban.conf ]; then
+            echo "Creating runtime directories..."
+            systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf 2>/dev/null || {
+                echo "Warning: systemd-tmpfiles failed, directories may need manual creation"
+            }
         fi
-        if ! getent passwd nftban >/dev/null; then
-            useradd -r -g nftban -G nftban-auditor -d "${NFTBAN_DATA_DIR}" \
-                -s /usr/sbin/nologin -c "NFTBan Service Account" nftban
+
+        # ======================================================================
+        # STEP 3: Set config directory permissions (root-owned, group readable)
+        # ======================================================================
+        # Config directories are created by dh_installdirs from nftban.dirs
+        # Just ensure correct ownership for daemon read access
+        if [ -d "${NFTBAN_CONFIG_DIR}" ]; then
+            chown root:nftban "${NFTBAN_CONFIG_DIR}"
+            chmod 750 "${NFTBAN_CONFIG_DIR}"
+            # Set first-level subdirs only (not recursive into user files)
+            find "${NFTBAN_CONFIG_DIR}" -maxdepth 1 -type d -exec chown root:nftban {} \;
+            find "${NFTBAN_CONFIG_DIR}" -maxdepth 1 -type d -exec chmod 750 {} \;
         fi
 
-        # Create directories per FHS spec (see nftban_fhs_spec.sh)
-        # Config directories (root:nftban)
-        install -d -m 750 -o root -g nftban "${NFTBAN_CONFIG_DIR}"
-        install -d -m 750 -o root -g nftban "${NFTBAN_CONFIG_DIR}/conf.d"
+        # Reload systemd
+        systemctl daemon-reload >/dev/null 2>&1 || true
 
-        # Data directories (nftban:nftban)
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}"
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/reports"
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/reports/baseline"
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/reports/watchdog"
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/metrics"
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/snapshots"
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/exports"
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/geoip"
-
-        # Stats directories (watchdog runtime stats and profiling)
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/stats"
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/stats/history"
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/stats/profiles"
-
-        # Queue directories (task queue with retry and DLQ)
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/queue/pending"
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/queue/work"
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/queue/dlq"
-
-        # Mail spool directory (failed mail retry queue)
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/mailspool"
-
-        # Pro subscription data directory
-        install -d -m 750 -o root -g nftban "${NFTBAN_DATA_DIR}/pro"
-
-        # Log directory
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_LOG_DIR}"
-
-        # Watchdog log subdirectory
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_LOG_DIR}/watchdog"
-
-        # Cache and runtime
-        install -d -m 755 -o nftban -g nftban "${NFTBAN_CACHE_DIR}"
-        install -d -m 750 -o nftban -g nftban "${NFTBAN_CACHE_DIR}/health"
-        install -d -m 755 -o nftban -g nftban "${NFTBAN_RUN_DIR}"
-
-        # ==========================================================================
-        # FIX CONFIG DIRECTORY PERMISSIONS (nftban group must be able to read)
-        # ==========================================================================
-        # IMPORTANT: Do NOT use recursive -R to preserve user-edited file permissions
-        # Only set ownership on top-level directories, not recursively into files
-        chown root:nftban "${NFTBAN_CONFIG_DIR}"
-        chmod 750 "${NFTBAN_CONFIG_DIR}"
-        # Set permissions on first-level subdirs only (not recursive into files)
-        find "${NFTBAN_CONFIG_DIR}" -maxdepth 1 -type d -exec chown root:nftban {} \;
-        find "${NFTBAN_CONFIG_DIR}" -maxdepth 1 -type d -exec chmod 750 {} \;
-
-        # Auto-detect SSH port
+        # ======================================================================
+        # STEP 4: Auto-detect SSH port and create whitelist
+        # ======================================================================
         SSH_PORT="22"
         if [ -f /etc/ssh/sshd_config ]; then
             DETECTED=$(grep -E "^Port\s+" /etc/ssh/sshd_config 2>/dev/null | awk '{print $2}' | head -1)
@@ -111,9 +107,7 @@ case "$1" in
             fi
         fi
 
-        # Create SSH port whitelist if not exists
         if [ ! -f "${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf" ]; then
-            mkdir -p "${NFTBAN_CONFIG_DIR}/ports.d"
             cat > "${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf" << EOF
 # Auto-generated SSH port whitelist
 # Created by: NFTBan package installer
@@ -127,13 +121,14 @@ EOF
             echo "SSH port whitelisted: $SSH_PORT/tcp"
         fi
 
-        # Auto-whitelist system IP (prevents lockout)
+        # ======================================================================
+        # STEP 5: Auto-whitelist system IP (prevents lockout)
+        # ======================================================================
         SYSTEM_IP=$(ip route get 1.1.1.1 2>/dev/null | grep -oP 'src \K[0-9.]+' | head -1)
         if [ -z "$SYSTEM_IP" ]; then
             SYSTEM_IP=$(hostname -I 2>/dev/null | awk '{print $1}')
         fi
         if [ -n "$SYSTEM_IP" ]; then
-            mkdir -p "${NFTBAN_CONFIG_DIR}/whitelist.d"
             if [ ! -f "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" ]; then
                 cat > "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" << EOF
 # Auto-generated system IP whitelist
@@ -147,20 +142,12 @@ EOF
             fi
         fi
 
-        # Reload systemd
-        systemctl daemon-reload >/dev/null 2>&1 || true
-
-        # ==========================================================================
-        # AUTO-ENABLE DEFAULT FEATURES (aligned with install.sh)
-        # ==========================================================================
-
-        # 1. Download FREE GeoIP database (DB-IP)
+        # ======================================================================
+        # STEP 6: Download FREE GeoIP database
+        # ======================================================================
         GEOIP_DIR="${NFTBAN_DATA_DIR}/geoip"
         GEOIP_FILE="${GEOIP_DIR}/dbip-country-lite.mmdb"
         GEOIP_URL="https://download.db-ip.com/free/dbip-country-lite-$(date +%Y-%m).mmdb.gz"
-
-        mkdir -p "$GEOIP_DIR"
-        chown nftban:nftban "$GEOIP_DIR"
 
         if [ ! -f "$GEOIP_FILE" ]; then
             echo "Downloading FREE GeoIP database..."
@@ -174,8 +161,9 @@ EOF
             fi
         fi
 
-        # 2. Enable Login Monitoring
-        # Create login_alert.conf if not exists (required for 'nftban login status')
+        # ======================================================================
+        # STEP 7: Create login_alert.conf if not exists
+        # ======================================================================
         if [ ! -f "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf" ]; then
             cat > "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf" << 'LOGINEOF'
 # NFTBan Login Alert Configuration (auto-generated by installer)
@@ -190,24 +178,37 @@ LOGINEOF
             chmod 644 "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf"
             chown root:nftban "${NFTBAN_CONFIG_DIR}/conf.d/login_alert.conf"
         fi
+
+        # Enable login monitoring in main config
         if [ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]; then
             sed -i 's/^NFTBAN_LOGIN_ALERT_ENABLED=.*/NFTBAN_LOGIN_ALERT_ENABLED="true"/' "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
             sed -i 's/^NFTBAN_LOGIN_ALERT_SSH=.*/NFTBAN_LOGIN_ALERT_SSH="true"/' "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
-        fi
-        systemctl enable nftban-login-monitor.service >/dev/null 2>&1 || true
-        systemctl start nftban-login-monitor.service >/dev/null 2>&1 || true
-
-        # 3. Enable GeoIP Blocking
-        if [ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]; then
             sed -i 's/^NFTBAN_GEOIP_ENABLED=.*/NFTBAN_GEOIP_ENABLED="true"/' "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
         fi
 
-        # 4. Enable core timers (health, maintenance)
+        # ======================================================================
+        # STEP 8: Enable default services and timers
+        # ======================================================================
+        systemctl enable nftban-login-monitor.service >/dev/null 2>&1 || true
+        systemctl start nftban-login-monitor.service >/dev/null 2>&1 || true
+
         for timer in nftban-health.timer nftban-maintenance.timer; do
             systemctl enable "$timer" >/dev/null 2>&1 || true
             systemctl start "$timer" >/dev/null 2>&1 || true
         done
 
+        # ======================================================================
+        # STEP 9: Security - Protect nft_schema.sh from modification
+        # ======================================================================
+        if [ -f /usr/lib/nftban/lib/nft_schema.sh ]; then
+            chmod 444 /usr/lib/nftban/lib/nft_schema.sh
+            chattr +i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
+            echo "Security: nft_schema.sh protected (immutable)"
+        fi
+
+        # ======================================================================
+        # COMPLETE
+        # ======================================================================
         echo ""
         echo "NFTBan installed successfully!"
         echo ""
@@ -223,17 +224,6 @@ LOGINEOF
         echo "  nftban gui enable        # Web GUI"
         echo "  nftban metrics enable    # Metrics collection"
         echo "  nftban pro enroll        # NFTBan Pro subscription"
-
-        # ==========================================================================
-        # SECURITY: Protect nft_schema.sh from modification (P0 CRITICAL)
-        # ==========================================================================
-        # Make nft_schema.sh immutable to prevent command injection attacks
-        # This file defines the canonical nftables schema used by all components
-        if [ -f /usr/lib/nftban/lib/nft_schema.sh ]; then
-            chmod 444 /usr/lib/nftban/lib/nft_schema.sh
-            chattr +i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
-            echo "Security: nft_schema.sh protected (immutable)"
-        fi
     ;;
 
     abort-upgrade|abort-remove|abort-deconfigure)
