@@ -738,6 +738,7 @@ fi
 /usr/lib/nftban/setup
 /usr/lib/nftban/exporters
 /usr/lib/nftban/tests
+/usr/lib/nftban/data
 /usr/lib/nftban/*.sh
 %config(noreplace) /etc/nftban/nftban.conf
 %config(noreplace) /etc/nftban/nftables.conf

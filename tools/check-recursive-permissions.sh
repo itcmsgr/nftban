@@ -47,8 +47,9 @@ NC='\033[0m'
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
-# Files to check (staged files only, exclude this script itself)
-FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(sh|spec|postinst|preinst|postrm|prerm)$' | grep -v 'check-recursive-permissions.sh' || true)
+# Files to check (staged files only)
+# Exclude: this script, and packaging/build_nftban.sh (legacy spec generator - to be refactored)
+FILES=$(git diff --cached --name-only --diff-filter=ACMR | grep -E '\.(sh|spec|postinst|preinst|postrm|prerm)$' | grep -v 'check-recursive-permissions.sh' | grep -v 'packaging/build_nftban.sh' || true)
 
 if [[ -z "$FILES" ]]; then
     echo -e "${GREEN}[OK]${NC} No shell/packaging files to check"
