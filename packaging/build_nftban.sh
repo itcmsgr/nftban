@@ -909,32 +909,11 @@ else
 fi
 
 # -----------------------------------------------------------------------------
-# CHECK 2: Update package lists and install missing dependencies
+# CHECK 2: Check for missing dependencies
 # -----------------------------------------------------------------------------
+# NOTE: We cannot install packages here because dpkg holds the database lock.
+# Dependencies are handled by apt when using: apt install ./package.deb
 echo ""
-
-# Auto-install missing dependencies on Debian/Ubuntu
-if [ "$IS_DEBIAN_FAMILY" = "1" ]; then
-    # Always refresh package lists first (required on fresh Debian 13 / Ubuntu)
-    echo "Refreshing package lists..."
-    apt-get update -qq >/dev/null 2>&1 || true
-
-    MISSING_PKGS=""
-
-    # Check which packages need to be installed
-    command -v nft >/dev/null 2>&1 || MISSING_PKGS="$MISSING_PKGS nftables"
-    command -v curl >/dev/null 2>&1 || MISSING_PKGS="$MISSING_PKGS curl"
-    command -v jq >/dev/null 2>&1 || MISSING_PKGS="$MISSING_PKGS jq"
-
-    if [ -n "$MISSING_PKGS" ]; then
-        echo "Installing missing dependencies:$MISSING_PKGS"
-        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $MISSING_PKGS >/dev/null 2>&1 || {
-            echo "[✗] Failed to install dependencies. Please run manually:"
-            echo "    apt update && apt install -y$MISSING_PKGS"
-            PREREQ_FAILED=1
-        }
-    fi
-fi
 
 echo "Checking required commands..."
 
@@ -1075,8 +1054,12 @@ echo "════════════════════════�
 if [ $PREREQ_FAILED -eq 1 ]; then
     echo "[✗] PREREQUISITE CHECK FAILED"
     echo ""
-    echo "Critical requirements are missing. Please fix the errors above and try again."
-    echo "  Ubuntu/Debian: apt install nftables curl jq"
+    echo "Critical requirements are missing. Please install using apt (not dpkg):"
+    echo ""
+    echo "  sudo apt update"
+    echo "  sudo apt install -y ./nftban-*.deb"
+    echo ""
+    echo "apt will automatically install missing dependencies (nftables, curl, jq)."
     echo "════════════════════════════════════════════════════════════════════════════════"
     echo ""
     exit 1

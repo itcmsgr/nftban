@@ -162,6 +162,108 @@ nftban_service_auto_start() {
 }
 
 # =============================================================================
+# FIREWALL CONFLICT RESOLUTION
+# =============================================================================
+
+# Resolve conflicting firewalls before enabling NFTBan
+# Detects firewalld, ufw, iptables services and offers to disable them
+# Usage: nftban_resolve_firewall_conflicts
+nftban_resolve_firewall_conflicts() {
+    local conflicts_found=0
+    local backup_dir="/var/lib/nftban/backups/firewall-migration-$(date +%Y%m%d-%H%M%S)"
+
+    echo ""
+    echo "Checking for conflicting firewalls..."
+
+    # Check firewalld (RHEL/CentOS/Fedora)
+    if systemctl is-active --quiet firewalld 2>/dev/null; then
+        echo ""
+        echo "[!] CONFLICT: firewalld is ACTIVE"
+        echo "    NFTBan cannot coexist with firewalld."
+        echo ""
+        read -r -p "    Backup firewalld rules and disable it? [Y/n] " response
+        response=${response:-Y}
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            mkdir -p "$backup_dir"
+            echo "    Backing up firewalld config to $backup_dir/..."
+            firewall-cmd --list-all-zones > "$backup_dir/firewalld-zones.txt" 2>/dev/null || true
+            cp -r /etc/firewalld "$backup_dir/" 2>/dev/null || true
+            echo "    Stopping and disabling firewalld..."
+            systemctl stop firewalld
+            systemctl disable firewalld
+            echo "    [✓] firewalld disabled"
+        else
+            echo "    [!] Skipped - firewalld still active (may cause issues)"
+            conflicts_found=1
+        fi
+    fi
+
+    # Check ufw (Ubuntu/Debian)
+    if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+        echo ""
+        echo "[!] CONFLICT: ufw is ACTIVE"
+        echo "    NFTBan cannot coexist with ufw."
+        echo ""
+        read -r -p "    Backup ufw rules and disable it? [Y/n] " response
+        response=${response:-Y}
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            mkdir -p "$backup_dir"
+            echo "    Backing up ufw config to $backup_dir/..."
+            ufw status verbose > "$backup_dir/ufw-status.txt" 2>/dev/null || true
+            cp -r /etc/ufw "$backup_dir/" 2>/dev/null || true
+            echo "    Disabling ufw..."
+            ufw disable
+            echo "    [✓] ufw disabled"
+        else
+            echo "    [!] Skipped - ufw still active (may cause issues)"
+            conflicts_found=1
+        fi
+    fi
+
+    # Check iptables service (legacy systems)
+    if systemctl is-active --quiet iptables 2>/dev/null || \
+       systemctl is-active --quiet iptables.service 2>/dev/null; then
+        echo ""
+        echo "[!] CONFLICT: iptables service is ACTIVE"
+        echo "    NFTBan uses nftables and cannot coexist with iptables service."
+        echo ""
+        read -r -p "    Backup iptables rules and disable service? [Y/n] " response
+        response=${response:-Y}
+        if [[ "$response" =~ ^[Yy]$ ]]; then
+            mkdir -p "$backup_dir"
+            echo "    Backing up iptables rules to $backup_dir/..."
+            iptables-save > "$backup_dir/iptables-v4.rules" 2>/dev/null || true
+            ip6tables-save > "$backup_dir/iptables-v6.rules" 2>/dev/null || true
+            echo "    Stopping and disabling iptables service..."
+            systemctl stop iptables 2>/dev/null || true
+            systemctl stop ip6tables 2>/dev/null || true
+            systemctl disable iptables 2>/dev/null || true
+            systemctl disable ip6tables 2>/dev/null || true
+            echo "    [✓] iptables service disabled"
+        else
+            echo "    [!] Skipped - iptables service still active (may cause issues)"
+            conflicts_found=1
+        fi
+    fi
+
+    # Show backup location if backups were created
+    if [[ -d "$backup_dir" ]]; then
+        echo ""
+        echo "[✓] Firewall configs backed up to: $backup_dir"
+    fi
+
+    if [[ $conflicts_found -eq 1 ]]; then
+        echo ""
+        echo "[!] WARNING: Some conflicting firewalls are still active."
+        echo "    NFTBan may not work correctly until they are disabled."
+        return 1
+    fi
+
+    echo "[✓] No firewall conflicts"
+    return 0
+}
+
+# =============================================================================
 # SERVICE CONTROL FUNCTIONS
 # =============================================================================
 
@@ -173,6 +275,10 @@ nftban_enable_all() {
         return 1
     fi
 
+    # Check and resolve firewall conflicts first
+    nftban_resolve_firewall_conflicts
+
+    echo ""
     echo "Enabling all NFTBan services..."
 
     # Set master switch

@@ -54,25 +54,25 @@ sudo dnf install -y nftban-fc43-x86_64.rpm && sudo nftban enable
 ### Ubuntu 22.04
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb
-sudo dpkg -i nftban-ubuntu22.04-amd64.deb && sudo apt-get install -f -y && sudo nftban enable
+sudo apt update && sudo apt install -y ./nftban-ubuntu22.04-amd64.deb && sudo nftban enable
 ```
 
 ### Ubuntu 24.04
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb
-sudo dpkg -i nftban-ubuntu24.04-amd64.deb && sudo apt-get install -f -y && sudo nftban enable
+sudo apt update && sudo apt install -y ./nftban-ubuntu24.04-amd64.deb && sudo nftban enable
 ```
 
 ### Debian 12
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb
-sudo dpkg -i nftban-debian12-amd64.deb && sudo apt-get install -f -y && sudo nftban enable
+sudo apt update && sudo apt install -y ./nftban-debian12-amd64.deb && sudo nftban enable
 ```
 
 ### Debian 13
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb
-sudo dpkg -i nftban-debian13-amd64.deb && sudo apt-get install -f -y && sudo nftban enable
+sudo apt update && sudo apt install -y ./nftban-debian13-amd64.deb && sudo nftban enable
 ```
 
 ### From Source
