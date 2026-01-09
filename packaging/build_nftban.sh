@@ -168,6 +168,9 @@ cp -r etc/nftban/conf.d/* %{buildroot}/etc/nftban/conf.d/
 install -D -m 0640 install/config/feeds.conf %{buildroot}/etc/nftban/conf.d/feeds.conf
 install -D -m 0640 install/config/conf.d/watchdog.conf %{buildroot}/etc/nftban/conf.d/watchdog.conf
 
+# Logrotate configuration
+install -D -m 0644 install/config/nftban.logrotate %{buildroot}/etc/logrotate.d/nftban
+
 # Suricata profile templates and config directories
 mkdir -p %{buildroot}/etc/nftban/suricata/profiles
 mkdir -p %{buildroot}/etc/nftban/suricata/config
@@ -698,6 +701,7 @@ fi
 /usr/lib/nftban/*.sh
 %config(noreplace) /etc/nftban/nftban.conf
 %config(noreplace) /etc/nftban/nftables.conf
+%config(noreplace) /etc/logrotate.d/nftban
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.timer
 /etc/polkit-1/rules.d/10-nftban-systemd.rules
@@ -1246,6 +1250,10 @@ build_deb() {
     cp -r "${PROJECT_ROOT}/etc/nftban/conf.d"/* "${deb_root}/etc/nftban/conf.d/"
     install -m 0640 "${PROJECT_ROOT}/install/config/feeds.conf" "${deb_root}/etc/nftban/conf.d/feeds.conf"
     install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/watchdog.conf" "${deb_root}/etc/nftban/conf.d/watchdog.conf"
+
+    # Install logrotate configuration
+    mkdir -p "${deb_root}/etc/logrotate.d"
+    install -m 0644 "${PROJECT_ROOT}/install/config/nftban.logrotate" "${deb_root}/etc/logrotate.d/nftban"
 
     # Copy Suricata profile templates and create config directories
     mkdir -p "${deb_root}/etc/nftban/suricata/profiles"
