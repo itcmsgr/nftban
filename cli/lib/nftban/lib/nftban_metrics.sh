@@ -5,23 +5,30 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Shared functions for Prometheus/VictoriaMetrics/Node Exporter management
 #
-# meta:name=nftban_metrics
-# meta:type=lib
-# meta:header=Metrics Stack Library
-# meta:version=1.0.0
+# meta:name="nftban_metrics"
+# meta:type="lib"
+# meta:header="Metrics Stack Library"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Shared helper functions for metrics stack (Prometheus or VictoriaMetrics)
-# meta:input=N/A (library only)
-# meta:output=Functions for Prometheus/VictoriaMetrics/Node Exporter/NFTBan metrics
+# meta:description="Shared helper functions for metrics stack (Prometheus or VictoriaMetrics)"
+# meta:input="N/A (library only)"
+# meta:output="Functions for Prometheus/VictoriaMetrics/Node Exporter/NFTBan metrics"
 #
 # **Inventory & Requirements**
-# meta:depends=systemd,nftban_distro.sh
+# meta:depends="systemd,nftban_distro.sh"
+# meta:inventory.files=""
+# meta:inventory.binaries="systemctl,curl"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="prometheus.service,victoriametrics.service,node_exporter.service,nftban-metrics-exporter.timer"
+# meta:inventory.network="localhost:9090,localhost:9100,localhost:8428"
+# meta:inventory.privileges="root"
 #
-# meta:created_date=2025-11-28
-# meta:updated_date=2025-11-28
+# meta:created_date="2025-11-28"
+# meta:updated_date="2026-01-09"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -426,8 +433,8 @@ StandardError=journal
 WantedBy=multi-user.target
 PROMSERVICE
 
-    # Node Exporter service
-    cat > /etc/systemd/system/node-exporter.service << 'NODESERVICE'
+    # Node Exporter service (HLD: upstream name is node_exporter.service)
+    cat > /etc/systemd/system/node_exporter.service << 'NODESERVICE'
 [Unit]
 Description=Prometheus Node Exporter
 Documentation=https://github.com/prometheus/node_exporter
