@@ -136,6 +136,8 @@ health:
     summary: {mutates: false, description: "One-line health summary"}
     services: {mutates: false, description: "Check service status"}
     permissions: {mutates: false, description: "Verify file permissions"}
+    geoip: {mutates: false, description: "Check GeoIP system status"}
+    pro: {mutates: false, description: "Check Pro subscription status"}
 
 version:
   category: setup_discovery
@@ -725,7 +727,7 @@ report:
 
 metrics:
   category: intelligence_reporting
-  description: "Prometheus/VictoriaMetrics exporter management"
+  description: "Metrics collection with Prometheus or VictoriaMetrics (local or remote)"
   risk: setup
   audience: [cli]
   capability: service_control
@@ -733,14 +735,204 @@ metrics:
   supports_dry_run: false
   requires_root: true
   panel_expose: false
-  output_modes: [text]
-  has_json: false
+  output_modes: [json, text]
+  has_json: true
+  # ==========================================================================
+  # AGENT/STORAGE MODEL
+  # ==========================================================================
+  # Two-step selection: Agent (what collects) + Storage (where stored)
+  #
+  # AGENT OPTIONS:
+  #   prometheus  - Prometheus scrapes metrics (can also store locally)
+  #   vmagent     - vmagent scrapes metrics (ships via remote_write)
+  #   none        - No agent (use external scraper)
+  #
+  # STORAGE OPTIONS:
+  #   prometheus-local - Store in local Prometheus TSDB
+  #   vm-local         - Store in local VictoriaMetrics
+  #   remote           - Ship to remote endpoint via remote_write
+  # ==========================================================================
+  options:
+    # Collection agent
+    agent:
+      type: enum
+      values: [prometheus, vmagent, none]
+      default: prometheus
+      description: "Metrics collection agent"
+    # Storage target
+    storage:
+      type: enum
+      values: [prometheus-local, vm-local, remote]
+      default: prometheus-local
+      description: "Where metrics are stored/shipped"
+    # Remote endpoint (required when storage=remote)
+    remote-write-url:
+      type: url
+      required_when: "storage=remote"
+      description: "Remote write endpoint URL"
+    # Retention period
+    retention:
+      type: duration
+      default: "90d"
+      description: "Data retention for local storage"
+    # VM version override
+    vm-version:
+      type: string
+      default: "v1.99.0"
+      description: "VictoriaMetrics version to install"
+    # Auth token file
+    token:
+      type: filepath
+      description: "Bearer token file for remote auth"
+    # External labels
+    labels:
+      type: string
+      description: "External labels (key=val,key=val)"
+    # DEPRECATED
+    backend:
+      type: enum
+      values: [prometheus, victoriametrics]
+      deprecated: true
+      description: "DEPRECATED: Use --agent/--storage instead"
+  # ==========================================================================
+  # INSTALLATION MODES
+  # ==========================================================================
+  modes:
+    # --- PROMETHEUS SETUPS ---
+    A:
+      name: "Prometheus Local"
+      agent: prometheus
+      storage: prometheus-local
+      description: "Prometheus all-in-one: scrapes + stores locally"
+      command: "nftban metrics enable --agent=prometheus --storage=prometheus-local"
+      installs: [prometheus, node_exporter]
+    C1:
+      name: "Prometheus + VictoriaMetrics"
+      agent: prometheus
+      storage: vm-local
+      description: "Prometheus scrapes -> VictoriaMetrics stores locally"
+      command: "nftban metrics enable --agent=prometheus --storage=vm-local"
+      installs: [prometheus, victoriametrics, node_exporter]
+    # --- VMAGENT SETUPS ---
+    B:
+      name: "vmagent Remote"
+      agent: vmagent
+      storage: remote
+      description: "vmagent ships to YOUR remote backend (Grafana Cloud, Mimir, etc.)"
+      command: "nftban metrics enable --agent=vmagent --storage=remote --remote-write-url=<URL>"
+      installs: [vmagent, node_exporter]
+      requires: [remote-write-url]
+    C2:
+      name: "vmagent + VictoriaMetrics"
+      agent: vmagent
+      storage: vm-local
+      description: "vmagent scrapes -> local VictoriaMetrics stores"
+      command: "nftban metrics enable --agent=vmagent --storage=vm-local"
+      installs: [vmagent, victoriametrics, node_exporter]
+    # --- SPECIAL MODES ---
+    pro:
+      name: "NFTBan Pro"
+      agent: vmagent
+      storage: remote
+      description: "Ship to pro.nftban.com (subscription required)"
+      command: "nftban metrics enable --pro"
+      installs: [vmagent, node_exporter]
+      requires: [pro_token]
+    external:
+      name: "External Agent"
+      agent: none
+      storage: remote
+      description: "Only expose exporters, use your own agent"
+      command: "nftban metrics enable --agent=none --storage=remote"
+      installs: [node_exporter]
+  # ==========================================================================
+  # EXAMPLES
+  # ==========================================================================
   examples:
+    # Prometheus setups
+    - "nftban metrics enable --agent=prometheus --storage=prometheus-local"
+    - "nftban metrics enable --agent=prometheus --storage=vm-local --retention=180d"
+    # vmagent setups
+    - "nftban metrics enable --agent=vmagent --storage=remote --remote-write-url=https://vm.example.com/api/v1/write"
+    - "nftban metrics enable --agent=vmagent --storage=remote --remote-write-url=https://grafana.net/api/prom/push --token=/etc/nftban/grafana.token"
+    - "nftban metrics enable --agent=vmagent --storage=vm-local"
+    # NFTBan Pro
+    - "nftban metrics enable --pro"
+    # Status
     - "nftban metrics status"
-    - "nftban metrics enable"
-    - "nftban metrics enable --backend prometheus"
-    - "nftban metrics enable --backend victoria"
-    - "nftban metrics disable"
+    - "nftban metrics pipeline --json"
+    # Enterprise key
+    - "nftban metrics enterprise-key set"
+    - "nftban metrics enterprise-key status"
+  # ==========================================================================
+  # SUBCOMMANDS
+  # ==========================================================================
+  subcommands:
+    status:
+      mutates: false
+      description: "Show metrics stack status"
+    enable:
+      mutates: true
+      description: "Enable metrics with specified agent/storage"
+    disable:
+      mutates: true
+      description: "Disable metrics collection"
+    pipeline:
+      mutates: false
+      description: "Validate metrics pipeline health"
+    set-backend:
+      mutates: true
+      deprecated: true
+      description: "DEPRECATED: Use enable with --agent/--storage"
+    enterprise-key:
+      mutates: conditional
+      description: "Manage VictoriaMetrics Enterprise trial keys"
+      subcommands:
+        set: {mutates: true, description: "Set enterprise trial key"}
+        remove: {mutates: true, description: "Remove enterprise key"}
+        status: {mutates: false, description: "Show enterprise key status"}
+        validate: {mutates: false, description: "Validate key permissions"}
+        fix-permissions: {mutates: true, description: "Fix key permissions"}
+
+pro:
+  category: intelligence_reporting
+  description: "NFTBan Pro subscription management and remote metrics"
+  risk: setup
+  audience: [cli]
+  capability: service_control
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban pro status"
+    - "nftban pro status --json"
+    - "nftban pro enroll"
+    - "nftban pro enroll --token-file /path/to/token"
+    - "nftban pro disable"
+    - "nftban pro token check"
+    - "nftban pro token rotate"
+    - "nftban pro inventory show"
+    - "nftban pro inventory run"
+  subcommands:
+    status: {mutates: false, description: "Show Pro subscription status"}
+    enroll: {mutates: true, description: "Enroll server with Pro token"}
+    disable: {mutates: true, description: "Disable Pro (keeps token, stops vmagent)"}
+    token:
+      description: "Token lifecycle management"
+      subcommands:
+        check: {mutates: false, description: "Verify token validity with Pro API"}
+        rotate: {mutates: true, description: "Request new token from Pro API"}
+        revoke: {mutates: true, description: "Revoke current token"}
+    inventory:
+      description: "Server inventory management"
+      subcommands:
+        show: {mutates: false, description: "Display current inventory JSON"}
+        run: {mutates: true, description: "Collect and submit inventory to Pro"}
+        submit: {mutates: true, description: "Force submit inventory (bypass checksum)"}
+    license-check: {mutates: true, description: "Check license status (called by timer)"}
 
 gui:
   category: intelligence_reporting
@@ -1027,15 +1219,14 @@ system:
 _metadata:
   version: "1.0"
   schema_version: "1.0"
-  generated_date: "2025-12-31"
-  total_commands: 45
-  commands_with_json: 35
-  commands_without_json: 10
+  generated_date: "2026-01-08"
+  total_commands: 46
+  commands_with_json: 37
+  commands_without_json: 9
   missing_json:
     - debug
     - gui
     - menu
-    - metrics
     - profile
     - smoke
     - sync
@@ -1048,13 +1239,13 @@ _metadata:
     immediate_action: 7
     active_protection: 8
     infrastructure: 7
-    intelligence_reporting: 10
+    intelligence_reporting: 11
     developer_sysadmin: 7
   risk_levels:
     core: 22
-    setup: 6
+    setup: 7
     advanced: 17
   audience_summary:
-    cli_only: 27
+    cli_only: 28
     auditor_visible: 16
     panel_expose: 11
