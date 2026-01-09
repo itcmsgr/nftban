@@ -111,32 +111,35 @@ done
 # =============================================================================
 log_info "Fixing permissions..."
 
-chown -R root:nftban "${NFTBAN_CONFIG_DIR}"
+# IMPORTANT: Use explicit per-directory operations, NOT recursive -R on /etc
+# to preserve user-edited file permissions
+chown root:nftban "${NFTBAN_CONFIG_DIR}"
 chmod 750 "${NFTBAN_CONFIG_DIR}"
+chown root:nftban "${NFTBAN_CONFIG_DIR}/conf.d"
 chmod 750 "${NFTBAN_CONFIG_DIR}/conf.d"
-chmod 700 "${NFTBAN_CONFIG_DIR}/secrets.d"
-chmod 700 "${NFTBAN_CONFIG_DIR}/keys"
+[ -d "${NFTBAN_CONFIG_DIR}/secrets.d" ] && chown root:nftban "${NFTBAN_CONFIG_DIR}/secrets.d" && chmod 700 "${NFTBAN_CONFIG_DIR}/secrets.d"
+[ -d "${NFTBAN_CONFIG_DIR}/keys" ] && chown root:nftban "${NFTBAN_CONFIG_DIR}/keys" && chmod 700 "${NFTBAN_CONFIG_DIR}/keys"
 
-# Suricata config directories (nftban group read access)
-chown -R root:nftban /etc/suricata 2>/dev/null || true
-chmod 750 /etc/suricata 2>/dev/null || true
-chmod 640 /etc/suricata/*.conf 2>/dev/null || true
-chmod 640 /etc/suricata/rules/*.rules 2>/dev/null || true
+# Suricata config directories (explicit, not recursive)
+[ -d /etc/suricata ] && chown root:nftban /etc/suricata 2>/dev/null && chmod 750 /etc/suricata 2>/dev/null || true
+# Only fix suricata files if they exist (don't recurse)
+for f in /etc/suricata/*.conf; do [ -f "$f" ] && chmod 640 "$f" 2>/dev/null || true; done
+for f in /etc/suricata/rules/*.rules; do [ -f "$f" ] && chmod 640 "$f" 2>/dev/null || true; done
 
-# nftables config
-chown -R root:nftban /etc/nftables/nftban.d 2>/dev/null || true
-chmod 750 /etc/nftables/nftban.d 2>/dev/null || true
+# nftables config (explicit, not recursive)
+[ -d /etc/nftables/nftban.d ] && chown root:nftban /etc/nftables/nftban.d 2>/dev/null && chmod 750 /etc/nftables/nftban.d 2>/dev/null || true
 
-chown -R nftban:nftban "${NFTBAN_DATA_DIR}"
+# /var/lib/nftban: Set directory ownership only
+chown nftban:nftban "${NFTBAN_DATA_DIR}"
 chmod 750 "${NFTBAN_DATA_DIR}"
-chmod 750 "${NFTBAN_DATA_DIR}/state"
-chmod 750 "${NFTBAN_DATA_DIR}/feeds"
-chmod 750 "${NFTBAN_DATA_DIR}/reports"
-chmod 750 "${NFTBAN_DATA_DIR}/reports/baseline"
+[ -d "${NFTBAN_DATA_DIR}/state" ] && chown nftban:nftban "${NFTBAN_DATA_DIR}/state" && chmod 750 "${NFTBAN_DATA_DIR}/state"
+[ -d "${NFTBAN_DATA_DIR}/feeds" ] && chown nftban:nftban "${NFTBAN_DATA_DIR}/feeds" && chmod 750 "${NFTBAN_DATA_DIR}/feeds"
+[ -d "${NFTBAN_DATA_DIR}/reports" ] && chown nftban:nftban "${NFTBAN_DATA_DIR}/reports" && chmod 750 "${NFTBAN_DATA_DIR}/reports"
+[ -d "${NFTBAN_DATA_DIR}/reports/baseline" ] && chown nftban:nftban "${NFTBAN_DATA_DIR}/reports/baseline" && chmod 750 "${NFTBAN_DATA_DIR}/reports/baseline"
 
-# Dedicated directory for nftban-auditors group (separate from main reports)
-if getent group nftban-auditors >/dev/null 2>&1; then
-    chown root:nftban-auditors "${NFTBAN_DATA_DIR}/reports/auditors"
+# Dedicated directory for nftban-auditor group (separate from main reports)
+if getent group nftban-auditor >/dev/null 2>&1; then
+    chown root:nftban-auditor "${NFTBAN_DATA_DIR}/reports/auditors"
     chmod 0770 "${NFTBAN_DATA_DIR}/reports/auditors"
 else
     # Fallback if group doesn't exist
@@ -144,11 +147,13 @@ else
     chmod 750 "${NFTBAN_DATA_DIR}/reports/auditors"
 fi
 
-chown -R nftban:nftban "${NFTBAN_CACHE_DIR}"
+# Cache directory (explicit, not recursive - files created at runtime)
+chown nftban:nftban "${NFTBAN_CACHE_DIR}"
 chmod 755 "${NFTBAN_CACHE_DIR}"
 
 # Application libraries directory (FHS: /usr/lib = root:root, 755)
-chown -R root:root "${NFTBAN_LIB_DIR}" 2>/dev/null || true
+# NOTE: These are package-managed files, not user-editable config
+chown root:root "${NFTBAN_LIB_DIR}" 2>/dev/null || true
 chmod 755 "${NFTBAN_LIB_DIR}" 2>/dev/null || true
 chmod 755 "${NFTBAN_LIB_DIR}/bin" 2>/dev/null || true
 chmod 755 "${NFTBAN_LIB_DIR}/core" 2>/dev/null || true
@@ -167,7 +172,8 @@ if [ -x "${NFTBAN_LIB_DIR}/bin/nftban-core" ]; then
 fi
 
 # Templates directory (FHS: /usr/share = root:root, 755)
-chown -R root:root /usr/share/nftban 2>/dev/null || true
+# NOTE: These are package-managed files, not user-editable
+chown root:root /usr/share/nftban 2>/dev/null || true
 chmod 755 /usr/share/nftban 2>/dev/null || true
 chmod 755 /usr/share/nftban/templates 2>/dev/null || true
 chmod 755 /usr/share/nftban/templates/mail 2>/dev/null || true
@@ -175,14 +181,14 @@ chmod 755 /usr/share/nftban/templates/reports 2>/dev/null || true
 find /usr/share/nftban/templates -type f -name "*.html" -exec chmod 644 {} \; 2>/dev/null || true
 
 # =============================================================================
-# CRITICAL: Fix log directory and ALL log files for nftban-auditors access
+# CRITICAL: Fix log directory and ALL log files for nftban-auditor access
 # =============================================================================
 
-# Determine audit group (prefer nftban-auditors for compliance, fallback to nftban)
+# Determine audit group (prefer nftban-auditor for compliance, fallback to nftban)
 AUDIT_GROUP="nftban"
-if getent group nftban-auditors >/dev/null 2>&1; then
-    AUDIT_GROUP="nftban-auditors"
-    log_info "Using nftban-auditors group for log file access"
+if getent group nftban-auditor >/dev/null 2>&1; then
+    AUDIT_GROUP="nftban-auditor"
+    log_info "Using nftban-auditor group for log file access"
 fi
 
 # Fix log directory ownership and permissions
@@ -218,12 +224,12 @@ if [ ! -f "$SYSTEM_CONF" ]; then
     # NFTBan v1.0 simplified 2-group model
     NFTBAN_UID=$(id -u nftban)
     NFTBAN_GID=$(getent group nftban | cut -d: -f3)
-    NFTBAN_AUDITORS_GID=$(getent group nftban-auditors | cut -d: -f3)
+    NFTBAN_AUDITORS_GID=$(getent group nftban-auditor | cut -d: -f3)
 
     cat > "$SYSTEM_CONF" <<EOF
 # NFTBan System Configuration
 # Auto-generated during installation
-# v1.0 simplified 2-group model: nftban + nftban-auditors
+# v1.0 simplified 2-group model: nftban + nftban-auditor
 NFTBAN_UID=$NFTBAN_UID
 NFTBAN_GID=$NFTBAN_GID
 NFTBAN_AUDITORS_GID=$NFTBAN_AUDITORS_GID

@@ -12,7 +12,7 @@
 //
 // Groups:
 //   nftban: All NFTBan operators (CLI, services, web UI)
-//   nftban-auditors: Read-only audit access (separate)
+//   nftban-auditor: Read-only audit access (separate)
 // =============================================================================
 
 polkit.addRule(function(action, subject) {

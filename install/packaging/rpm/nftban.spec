@@ -63,9 +63,9 @@ observability via Prometheus/Grafana.
 %pre
 # Pre-install: Create user and group
 getent group nftban >/dev/null || groupadd -r nftban
-getent group nftban-auditors >/dev/null || groupadd -r nftban-auditors
+getent group nftban-auditor >/dev/null || groupadd -r nftban-auditor
 getent passwd nftban >/dev/null || \
-    useradd -r -g nftban -G nftban-auditors -d /var/lib/nftban \
+    useradd -r -g nftban -G nftban-auditor -d /var/lib/nftban \
     -s /sbin/nologin -c "NFTBan Service Account" nftban
 exit 0
 

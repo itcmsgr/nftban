@@ -996,11 +996,11 @@ nftban_health_check_config() {
             # Verify UID/GID values match actual system
             # shellcheck disable=SC1090  # Dynamic source for config validation
             source "$system_conf" 2>/dev/null
-            # NFTBan v1.0 simplified 2-group model: nftban + nftban-auditors
+            # NFTBan v1.0 simplified 2-group model: nftban + nftban-auditor
             local actual_uid actual_gid actual_auditors_gid
             actual_uid=$(id -u nftban 2>/dev/null || echo "MISSING")
             actual_gid=$(id -g nftban 2>/dev/null || echo "MISSING")
-            actual_auditors_gid=$(getent group nftban-auditors 2>/dev/null | cut -d: -f3 || echo "MISSING")
+            actual_auditors_gid=$(getent group nftban-auditor 2>/dev/null | cut -d: -f3 || echo "MISSING")
 
             if [[ "$actual_uid" != "$NFTBAN_UID" ]] || \
                [[ "$actual_gid" != "$NFTBAN_GID" ]] || \
@@ -1125,7 +1125,7 @@ nftban_health_check_polkit() {
     # Check if Polkit is available on the system
     if ! command -v pkaction >/dev/null 2>&1; then
         polkit_issues+=("Polkit not installed - nftban group requires sudo for service management")
-        polkit_issues+=("nftban-auditors group will also require sudo for inventory helpers")
+        polkit_issues+=("nftban-auditor group will also require sudo for inventory helpers")
         status=$HEALTH_WARNING
     else
         # Check if NFTBAN systemd authorization rules are installed (v1.0.19+ naming)

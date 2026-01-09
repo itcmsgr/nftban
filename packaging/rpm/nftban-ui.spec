@@ -109,9 +109,9 @@ cp -r cmd/nftban-ui/web/* %{buildroot}%{_datadir}/nftban-ui/web/
 # Create nftban system user and groups if they don't exist
 # NFTBan v1.0 uses 2-group model:
 #   nftban: All operators (CLI + Web GUI)
-#   nftban-auditors: Read-only audit access
+#   nftban-auditor: Read-only audit access
 getent group nftban >/dev/null || groupadd -r nftban
-getent group nftban-auditors >/dev/null || groupadd -r nftban-auditors
+getent group nftban-auditor >/dev/null || groupadd -r nftban-auditor
 getent passwd nftban >/dev/null || \
     useradd -r -g nftban -d /var/lib/nftban -s /sbin/nologin \
     -c "NFTBan system user" nftban
@@ -184,7 +184,7 @@ if [ $1 -eq 0 ]; then
     echo "nftban-ui: Configuration files in /etc/nftban/ (/ui.conf, ui-whitelist.conf, ssl/) have been preserved."
     echo "nftban-ui: Log files in /var/log/nftban/ui-*.log have been preserved."
     echo "nftban-ui: User accounts and groups have NOT been removed."
-    echo "nftban-ui: To manually remove: userdel nftban; groupdel nftban nftban-auditors"
+    echo "nftban-ui: To manually remove: userdel nftban; groupdel nftban nftban-auditor"
 fi
 
 %files
@@ -228,7 +228,7 @@ fi
 * Wed Dec 11 2024 Antonios Voulvoulis <contact@nftban.com> - 1.0.0-1
 - NFTBan v1.0.0 release
 - Unified security platform
-- 2-group security model (nftban, nftban-auditors)
+- 2-group security model (nftban, nftban-auditor)
 - Enhanced PAM socket authentication
 - Modern dashboard with real-time metrics
 - FHS compliant directory structure

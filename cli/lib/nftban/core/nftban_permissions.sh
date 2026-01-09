@@ -155,12 +155,15 @@ perms_enforce_etc() {
     perms_mkd "$PERMS_ETC" 0750 root nftban
     perms_mkd "$PERMS_ETC/conf.d" 0750 root nftban
 
-    # Secure all files in /etc/nftban (readable by nftban group)
+    # Secure directories in /etc/nftban (readable by nftban group)
+    # IMPORTANT: Do NOT use recursive -R to preserve user-edited file permissions
     if [[ -d "$PERMS_ETC" ]]; then
         perms_say "Securing config directory: $PERMS_ETC"
-        perms_run chown -R root:nftban "$PERMS_ETC"
-        perms_run find "$PERMS_ETC" -type d -exec chmod 0750 {} \;
-        perms_run find "$PERMS_ETC" -type f -exec chmod 0640 {} \;
+        perms_run chown root:nftban "$PERMS_ETC"
+        perms_run chmod 0750 "$PERMS_ETC"
+        # Set permissions on subdirectories only (not recursively into files)
+        perms_run find "$PERMS_ETC" -maxdepth 1 -type d -exec chown root:nftban {} \;
+        perms_run find "$PERMS_ETC" -maxdepth 1 -type d -exec chmod 0750 {} \;
 
         # Special handling for .local files (user overrides - keep 0640)
         if compgen -G "$PERMS_ETC/*.local" > /dev/null 2>&1; then
@@ -177,7 +180,9 @@ perms_enforce_lib() {
 
     if [[ -d "$PERMS_LIB" ]]; then
         perms_say "Securing lib directory: $PERMS_LIB"
-        perms_run chown -R root:root "$PERMS_LIB"
+        # Set ownership on directory tree (package-managed, not user-editable)
+        perms_run chown root:root "$PERMS_LIB"
+        perms_run find "$PERMS_LIB" -type d -exec chown root:root {} \;
         perms_run find "$PERMS_LIB" -type d -exec chmod 0755 {} \;
         perms_run find "$PERMS_LIB" -type f -name "*.sh" -exec chmod 0644 {} \;
     fi
@@ -231,10 +236,10 @@ perms_enforce_var() {
     perms_mkd "$PERMS_VAR/stats" 0755 nftban nftban
 
     # CRITICAL: Create auditors directory with special permissions
-    # This directory uses root:nftban-auditors (NOT nftban:nftban)
-    # If nftban-auditors group doesn't exist, fallback to nftban:nftban
-    if getent group nftban-auditors >/dev/null 2>&1; then
-        perms_mkd "$PERMS_VAR/reports/auditors" 0770 root nftban-auditors
+    # This directory uses root:nftban-auditor (NOT nftban:nftban)
+    # If nftban-auditor group doesn't exist, fallback to nftban:nftban
+    if getent group nftban-auditor >/dev/null 2>&1; then
+        perms_mkd "$PERMS_VAR/reports/auditors" 0770 root nftban-auditor
     else
         perms_mkd "$PERMS_VAR/reports/auditors" 0770 nftban nftban
     fi

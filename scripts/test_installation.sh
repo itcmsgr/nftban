@@ -170,11 +170,11 @@ else
     fail "Group 'nftban' MISSING"
 fi
 
-# v1.0: 2-group model - nftban handles both CLI and Web GUI
-if getent group nftban-auditors &>/dev/null; then
-    pass "Group 'nftban-auditors' exists"
+# v1.0.19+: 3-group model - nftban, nftban-auditor, nftban-panel
+if getent group nftban-auditor &>/dev/null; then
+    pass "Group 'nftban-auditor' exists"
 else
-    warn "Group 'nftban-auditors' missing (auditors only)"
+    warn "Group 'nftban-auditor' missing (auditors only)"
 fi
 
 echo ""

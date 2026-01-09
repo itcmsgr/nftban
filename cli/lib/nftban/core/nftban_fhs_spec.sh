@@ -79,7 +79,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports"]="750|nftban|nftban|Generated reports (application state)"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/baseline"]="750|nftban|nftban|Baseline reports (service use)"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/watchdog"]="750|nftban|nftban|Watchdog system reports"
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/auditors"]="770|root|nftban-auditors|Auditor reports (nftban-auditors group)"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/auditors"]="770|root|nftban-auditor|Auditor reports (nftban-auditor group)"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/metrics"]="750|nftban|nftban|Statistics metrics database"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/snapshots"]="750|nftban|nftban|Hourly stats snapshots"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/exports"]="750|nftban|nftban|User data exports (JSON, CSV)"

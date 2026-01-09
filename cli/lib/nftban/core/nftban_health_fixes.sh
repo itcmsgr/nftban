@@ -384,11 +384,11 @@ nftban_health_fix_system_config() {
     fi
 
     # Get current UID/GID values
-    # NFTBan v1.0 simplified 2-group model: nftban + nftban-auditors
+    # NFTBan v1.0 simplified 2-group model: nftban + nftban-auditor
     local nftban_uid nftban_gid nftban_auditors_gid
     nftban_uid=$(id -u nftban 2>/dev/null || echo "MISSING")
     nftban_gid=$(id -g nftban 2>/dev/null || echo "MISSING")
-    nftban_auditors_gid=$(getent group nftban-auditors 2>/dev/null | cut -d: -f3 || echo "MISSING")
+    nftban_auditors_gid=$(getent group nftban-auditor 2>/dev/null | cut -d: -f3 || echo "MISSING")
 
     # Verify users/groups exist
     if [[ "$nftban_uid" == "MISSING" ]] || [[ "$nftban_gid" == "MISSING" ]]; then
@@ -397,9 +397,9 @@ nftban_health_fix_system_config() {
         return 1
     fi
 
-    # nftban-auditors is optional, warn if missing but don't fail
+    # nftban-auditor is optional, warn if missing but don't fail
     if [[ "$nftban_auditors_gid" == "MISSING" ]]; then
-        echo "  ⚠ WARNING: nftban-auditors group not found (optional, for inventory helpers)" >&2
+        echo "  ⚠ WARNING: nftban-auditor group not found (optional, for inventory helpers)" >&2
     fi
 
     # Check if update needed
@@ -454,7 +454,7 @@ NFTBAN_USER="nftban"
 NFTBAN_UID=${nftban_uid}
 NFTBAN_GROUP="nftban"
 NFTBAN_GID=${nftban_gid}
-NFTBAN_AUDITORS_GROUP="nftban-auditors"
+NFTBAN_AUDITORS_GROUP="nftban-auditor"
 NFTBAN_AUDITORS_GID=${nftban_auditors_gid}
 EOF
 
@@ -463,7 +463,7 @@ EOF
         echo "  ✓ Updated $system_conf"
         echo "    nftban UID=$nftban_uid GID=$nftban_gid"
         if [[ "$nftban_auditors_gid" != "MISSING" ]]; then
-            echo "    nftban-auditors GID=$nftban_auditors_gid"
+            echo "    nftban-auditor GID=$nftban_auditors_gid"
         fi
     else
         echo "  ✓ System config is up to date"

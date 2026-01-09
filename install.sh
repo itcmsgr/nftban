@@ -1120,24 +1120,38 @@ install_configs() {
     mkdir -p /run/nftban-ui
 
     # Set ownership (nftban user/group must exist first)
-    chown -R root:nftban /etc/nftban
+    # IMPORTANT: Use explicit per-directory chown, NOT recursive -R on /etc
+    # to avoid overwriting user-edited file permissions
+    chown root:nftban /etc/nftban
     chmod 750 /etc/nftban
+    chown root:nftban /etc/nftban/conf.d
     chmod 750 /etc/nftban/conf.d
+    chown root:root /etc/nftban/distros
     chmod 755 /etc/nftban/distros
+    # Set ownership on config subdirs (not recursive into files)
+    for subdir in whitelist.d blacklist.d ports.d rules.d suricata; do
+        [ -d "/etc/nftban/$subdir" ] && chown root:nftban "/etc/nftban/$subdir" && chmod 750 "/etc/nftban/$subdir"
+    done
 
-    chown -R nftban:nftban /var/lib/nftban
+    # /var/lib/nftban: Set directory ownership only, files created at runtime
+    chown nftban:nftban /var/lib/nftban
     chmod 750 /var/lib/nftban
+    chown nftban:nftban /var/lib/nftban/reports
     chmod 750 /var/lib/nftban/reports
     chmod 770 /var/lib/nftban/reports/auditors
-    chown root:nftban-auditors /var/lib/nftban/reports/auditors
+    chown root:nftban-auditor /var/lib/nftban/reports/auditors
+    # Set ownership on state subdirs (not recursive into files)
+    for subdir in banned whitelist feeds geoip config state panels metrics stats queue mailspool pro; do
+        [ -d "/var/lib/nftban/$subdir" ] && chown nftban:nftban "/var/lib/nftban/$subdir" && chmod 750 "/var/lib/nftban/$subdir"
+    done
 
-    chown -R nftban:nftban /var/log/nftban
+    chown nftban:nftban /var/log/nftban
     chmod 750 /var/log/nftban
 
-    chown -R nftban:nftban /var/cache/nftban
+    chown nftban:nftban /var/cache/nftban
     chmod 755 /var/cache/nftban
 
-    chown -R nftban:nftban /run/nftban
+    chown nftban:nftban /run/nftban
     chmod 755 /run/nftban
 
     # UI auth service runtime directory (root:nftban for PAM auth daemon)
