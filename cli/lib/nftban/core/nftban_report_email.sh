@@ -277,7 +277,16 @@ nftban_report_email_generate() {
 
     # Fallback to old method if Go command not available or failed
     if [[ -z "$top_ips" ]] && [[ -n "$blacklist_ips" ]]; then
-        local geoip_db="${NFTBAN_DATA_DIR}/geoip/GeoLite2-City.mmdb"
+        # Auto-detect GeoIP database from config
+        local geoip_db=""
+        local geoip_dir="${NFTBAN_DATA_DIR}/geoip"
+        if [[ -n "${NFTBAN_GEOIP_DATABASE:-}" ]] && [[ -f "${NFTBAN_GEOIP_DATABASE}" ]]; then
+            geoip_db="${NFTBAN_GEOIP_DATABASE}"
+        else
+            for db_file in ${NFTBAN_GEOIP_DATABASES:-dbip-country-lite.mmdb GeoLite2-City.mmdb GeoLite2-Country.mmdb}; do
+                [[ -f "${geoip_dir}/${db_file}" ]] && geoip_db="${geoip_dir}/${db_file}" && break
+            done
+        fi
 
         # Helper: Check if IP is public (not private/reserved)
         is_public_ip() {

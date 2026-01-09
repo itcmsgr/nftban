@@ -822,7 +822,16 @@ nftban_health_check_geoip() {
     local geoip_issues=()
 
     local nftban_core="${NFTBAN_LIB_DIR}/bin/nftban-core"
-    local db_path="${NFTBAN_DATA_DIR}/geoip/GeoLite2-City.mmdb"
+
+    # Check for ANY supported GeoIP database (DB-IP free or MaxMind)
+    local db_path=""
+    local geoip_dir="${NFTBAN_DATA_DIR}/geoip"
+    for db_file in "dbip-country-lite.mmdb" "GeoLite2-City.mmdb" "GeoLite2-Country.mmdb"; do
+        if [[ -f "${geoip_dir}/${db_file}" ]]; then
+            db_path="${geoip_dir}/${db_file}"
+            break
+        fi
+    done
 
     # Check nftban-core (REQUIRED CORE MODULE - handles country/feeds/geoip)
     if [[ ! -x "$nftban_core" ]]; then
@@ -841,9 +850,9 @@ nftban_health_check_geoip() {
     fi
 
     # Check database (nftban-core is installed, now check if GeoIP DB is downloaded)
-    if [[ ! -f "$db_path" ]]; then
+    if [[ -z "$db_path" ]]; then
         geoip_issues+=("GeoIP database not downloaded")
-        geoip_issues+=("FIX: Run 'nftban geoip update' to download GeoLite2 database")
+        geoip_issues+=("FIX: Run 'nftban geoip update' to download database")
         status=$HEALTH_ERROR
     elif [[ ! -r "$db_path" ]]; then
         geoip_issues+=("Database not readable: $db_path")
@@ -897,17 +906,28 @@ nftban_health_check_databases() {
     local status=$HEALTH_OK
     local db_issues=()
 
-    # GeoLite2 database
-    local geolite2="${NFTBAN_DATA_DIR}/geoip/GeoLite2-City.mmdb"
-    if [[ -f "$geolite2" ]]; then
+    # Auto-detect GeoIP database from config
+    local geoip_db=""
+    local geoip_dir="${NFTBAN_DATA_DIR}/geoip"
+    if [[ -n "${NFTBAN_GEOIP_DATABASE:-}" ]] && [[ -f "${NFTBAN_GEOIP_DATABASE}" ]]; then
+        geoip_db="${NFTBAN_GEOIP_DATABASE}"
+    else
+        for db_file in ${NFTBAN_GEOIP_DATABASES:-dbip-country-lite.mmdb GeoLite2-City.mmdb GeoLite2-Country.mmdb}; do
+            [[ -f "${geoip_dir}/${db_file}" ]] && geoip_db="${geoip_dir}/${db_file}" && break
+        done
+    fi
+
+    if [[ -n "$geoip_db" ]] && [[ -f "$geoip_db" ]]; then
         # Check age (warn if >90 days old)
         local file_age
-        file_age=$(( $(date +%s) - $(stat -c %Y "$geolite2" 2>/dev/null || echo 0) ))
+        file_age=$(( $(date +%s) - $(stat -c %Y "$geoip_db" 2>/dev/null || echo 0) ))
         local days_old
         days_old=$(( file_age / 86400 ))
+        local db_name
+        db_name=$(basename "$geoip_db")
 
         if (( days_old > 90 )); then
-            db_issues+=("GeoLite2 database is ${days_old} days old (consider updating)")
+            db_issues+=("${db_name} is ${days_old} days old (consider updating)")
             status=$HEALTH_WARNING
         fi
     fi

@@ -167,8 +167,9 @@ nftban_geoban_stats() {
 
     # Check if geoip database is available
     local geoip_enabled="false"
-    local db_path="${NFTBAN_DATA_DIR}/geoip/GeoLite2-City.mmdb"
-    [[ -f "$db_path" ]] && geoip_enabled="true"
+    local db_path
+    db_path=$(cmd_get_geoip_database 2>/dev/null) || db_path=""
+    [[ -n "$db_path" ]] && [[ -f "$db_path" ]] && geoip_enabled="true"
 
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
         local banned_json="["
