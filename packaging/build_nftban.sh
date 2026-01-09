@@ -214,6 +214,8 @@ install -D -m 0644 install/systemd/nftban-queue.service %{buildroot}/usr/lib/sys
 install -D -m 0644 install/systemd/nftban-health-fix.service %{buildroot}/usr/lib/systemd/system/nftban-health-fix.service
 install -D -m 0644 install/systemd/nftban-rbl-check.service %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.service
 install -D -m 0644 install/systemd/nftban-rbl-check.timer %{buildroot}/usr/lib/systemd/system/nftban-rbl-check.timer
+install -D -m 0644 install/systemd/nftband.service %{buildroot}/usr/lib/systemd/system/nftband.service
+install -D -m 0644 install/systemd/nftband.socket %{buildroot}/usr/lib/systemd/system/nftband.socket
 
 # PolicyKit rules (v1.0.19: Consolidated 6 files → 3 files)
 # Removed: com.nftban.suricata.policy (unused custom actions)
@@ -721,6 +723,7 @@ fi
 %config(noreplace) /etc/nftban/nftables.conf
 %config(noreplace) /etc/logrotate.d/nftban
 /usr/lib/systemd/system/*.service
+/usr/lib/systemd/system/*.socket
 /usr/lib/systemd/system/*.timer
 /etc/polkit-1/rules.d/10-nftban-systemd.rules
 /etc/polkit-1/rules.d/20-nftban-auditor.rules
@@ -1326,6 +1329,8 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-ui-auth.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-queue.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-health-fix.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftband.socket" "${deb_root}/usr/lib/systemd/system/"
 
     # Copy PolicyKit rules (v1.0.19: Consolidated 6 files → 3 files)
     install -m 0644 "${PROJECT_ROOT}/packaging/polkit-1/rules.d/10-nftban-systemd.rules" "${deb_root}/etc/polkit-1/rules.d/"
