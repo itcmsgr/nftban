@@ -932,7 +932,7 @@ LEGACY_FOUND=0
 if command -v iptables >/dev/null 2>&1 || command -v ip6tables >/dev/null 2>&1; then
     echo "[!] WARNING: iptables/ip6tables installed (LEGACY - conflicts with nftables)"
     echo "    NFTBan uses nftables. Legacy iptables should be removed."
-    echo "    Recommended: dnf remove iptables iptables-services"
+    echo "    Recommended: apt remove iptables"
     LEGACY_FOUND=1
 fi
 
@@ -946,11 +946,11 @@ fi
 if command -v firewall-cmd >/dev/null 2>&1; then
     echo "[!] WARNING: firewalld installed (conflicts with nftables)"
     echo "    NFTBan manages nftables directly. firewalld should be removed."
-    echo "    Recommended: dnf remove firewalld"
+    echo "    Recommended: apt remove firewalld"
     LEGACY_FOUND=1
 fi
 
-if [ \$LEGACY_FOUND -eq 0 ]; then
+if [ $LEGACY_FOUND -eq 0 ]; then
     echo "[✓] No legacy firewall tools detected"
 fi
 
