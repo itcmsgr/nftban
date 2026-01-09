@@ -51,15 +51,25 @@ nftban_metrics_start_stack() {
     mkdir -p /var/lib/node_exporter/textfile_collector
     chown -R nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
 
-    # Start Node Exporter (service name varies by distro/install method)
+    # Start Node Exporter (get service name from distro config, fallback to common names)
     local node_exporter_started=false
     local node_exporter_service=""
 
-    for svc in node-exporter node_exporter prometheus-node-exporter; do
-        if systemctl list-unit-files 2>/dev/null | grep -q "^${svc}.service"; then
+    # First try distro config
+    node_exporter_service=$(nftban_distro_get_service node_exporter 2>/dev/null || echo "")
+
+    # Build list of services to try (distro config first, then common fallbacks)
+    local services_to_try=()
+    [[ -n "$node_exporter_service" ]] && services_to_try+=("$node_exporter_service")
+    services_to_try+=("prometheus-node-exporter" "node_exporter" "node-exporter")
+
+    for svc in "${services_to_try[@]}"; do
+        # Check if service exists (avoid pipefail issues with grep)
+        if systemctl list-unit-files "${svc}.service" &>/dev/null; then
             node_exporter_service="$svc"
             systemctl enable "$svc" &>/dev/null || true
             systemctl restart "$svc" &>/dev/null || true
+            sleep 1  # Give service time to start
             if systemctl is-active "$svc" &>/dev/null; then
                 node_exporter_started=true
                 break
@@ -74,13 +84,15 @@ nftban_metrics_start_stack() {
         return 1
     fi
 
-    # Start Prometheus
+    # Start Prometheus (get service name from distro config)
     local prometheus_service
     prometheus_service=$(nftban_distro_get_service prometheus 2>/dev/null || echo "prometheus")
 
-    if systemctl list-unit-files 2>/dev/null | grep -q "${prometheus_service}.service"; then
+    # Check if service exists (avoid pipefail issues with grep)
+    if systemctl list-unit-files "${prometheus_service}.service" &>/dev/null; then
         systemctl enable "$prometheus_service" &>/dev/null || true
         systemctl restart "$prometheus_service" &>/dev/null || true
+        sleep 1  # Give service time to start
         if systemctl is-active "$prometheus_service" &>/dev/null; then
             [[ "$verbose" == "true" ]] && echo "  ✓ Prometheus running ($prometheus_service)"
         else
@@ -130,7 +142,7 @@ nftban_metrics_stop_stack() {
     # Stop Prometheus
     local prometheus_service
     prometheus_service=$(nftban_distro_get_service prometheus 2>/dev/null || echo "prometheus")
-    if systemctl list-unit-files 2>/dev/null | grep -q "${prometheus_service}.service"; then
+    if systemctl list-unit-files "${prometheus_service}.service"; then
         systemctl stop "$prometheus_service" &>/dev/null || true
         systemctl disable "$prometheus_service" &>/dev/null || true
         [[ "$verbose" == "true" ]] && echo "  ✓ Prometheus stopped"
@@ -139,7 +151,7 @@ nftban_metrics_stop_stack() {
     # Stop Node Exporter
     local node_exporter_service
     node_exporter_service=$(nftban_distro_get_service node_exporter 2>/dev/null || echo "prometheus-node-exporter")
-    if systemctl list-unit-files 2>/dev/null | grep -q "${node_exporter_service}.service"; then
+    if systemctl list-unit-files "${node_exporter_service}.service"; then
         systemctl stop "$node_exporter_service" &>/dev/null || true
         systemctl disable "$node_exporter_service" &>/dev/null || true
         [[ "$verbose" == "true" ]] && echo "  ✓ Node Exporter stopped"
@@ -189,7 +201,7 @@ nftban_metrics_check_deps() {
     # Check Node Exporter
     local node_exporter_service
     node_exporter_service=$(nftban_distro_get_service node_exporter 2>/dev/null || echo "prometheus-node-exporter")
-    if ! systemctl list-unit-files 2>/dev/null | grep -q "${node_exporter_service}.service"; then
+    if ! systemctl list-unit-files "${node_exporter_service}.service"; then
         NFTBAN_METRICS_MISSING+=("node-exporter")
     fi
 
@@ -457,15 +469,25 @@ nftban_metrics_start_stack_victoriametrics() {
     mkdir -p /var/lib/node_exporter/textfile_collector
     chown -R nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
 
-    # Start Node Exporter (service name varies by distro/install method)
+    # Start Node Exporter (get service name from distro config, fallback to common names)
     local node_exporter_started=false
     local node_exporter_service=""
 
-    for svc in node-exporter node_exporter prometheus-node-exporter; do
-        if systemctl list-unit-files 2>/dev/null | grep -q "^${svc}.service"; then
+    # First try distro config
+    node_exporter_service=$(nftban_distro_get_service node_exporter 2>/dev/null || echo "")
+
+    # Build list of services to try (distro config first, then common fallbacks)
+    local services_to_try=()
+    [[ -n "$node_exporter_service" ]] && services_to_try+=("$node_exporter_service")
+    services_to_try+=("prometheus-node-exporter" "node_exporter" "node-exporter")
+
+    for svc in "${services_to_try[@]}"; do
+        # Check if service exists (avoid pipefail issues with grep)
+        if systemctl list-unit-files "${svc}.service" &>/dev/null; then
             node_exporter_service="$svc"
             systemctl enable "$svc" &>/dev/null || true
             systemctl restart "$svc" &>/dev/null || true
+            sleep 1  # Give service time to start
             if systemctl is-active "$svc" &>/dev/null; then
                 node_exporter_started=true
                 break
@@ -481,7 +503,7 @@ nftban_metrics_start_stack_victoriametrics() {
     fi
 
     # Start VictoriaMetrics
-    if systemctl list-unit-files 2>/dev/null | grep -q "victoriametrics.service"; then
+    if systemctl list-unit-files "victoriametrics.service" &>/dev/null; then
         systemctl enable victoriametrics &>/dev/null || true
         systemctl restart victoriametrics &>/dev/null || true
         if systemctl is-active victoriametrics &>/dev/null; then
@@ -531,7 +553,7 @@ nftban_metrics_stop_stack_victoriametrics() {
     fi
 
     # Stop VictoriaMetrics
-    if systemctl list-unit-files 2>/dev/null | grep -q "victoriametrics.service"; then
+    if systemctl list-unit-files "victoriametrics.service" &>/dev/null; then
         systemctl stop victoriametrics &>/dev/null || true
         systemctl disable victoriametrics &>/dev/null || true
         [[ "$verbose" == "true" ]] && echo "  ✓ VictoriaMetrics stopped"
@@ -540,7 +562,7 @@ nftban_metrics_stop_stack_victoriametrics() {
     # Stop Node Exporter
     local node_exporter_service
     node_exporter_service=$(nftban_distro_get_service node_exporter 2>/dev/null || echo "prometheus-node-exporter")
-    if systemctl list-unit-files 2>/dev/null | grep -q "${node_exporter_service}.service"; then
+    if systemctl list-unit-files "${node_exporter_service}.service"; then
         systemctl stop "$node_exporter_service" &>/dev/null || true
         systemctl disable "$node_exporter_service" &>/dev/null || true
         [[ "$verbose" == "true" ]] && echo "  ✓ Node Exporter stopped"
