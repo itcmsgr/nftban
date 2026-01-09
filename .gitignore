@@ -6,6 +6,9 @@
 bin/
 dist/
 build/
+# Exception: FHS spec files are tracked
+!build/fhs-spec.yaml
+!build/generate-fhs-outputs.sh
 *.o
 *.a
 

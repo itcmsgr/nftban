@@ -61,16 +61,33 @@ observability via Prometheus/Grafana.
 # Installation handled by install.sh during build
 
 %pre
-# Pre-install: Create user and group
-getent group nftban >/dev/null || groupadd -r nftban
-getent group nftban-auditor >/dev/null || groupadd -r nftban-auditor
-getent passwd nftban >/dev/null || \
-    useradd -r -g nftban -G nftban-auditor -d /var/lib/nftban \
-    -s /sbin/nologin -c "NFTBan Service Account" nftban
+# Pre-install: Create user and group via systemd-sysusers
+# Uses /usr/lib/sysusers.d/nftban.conf (generated from build/fhs-spec.yaml)
+if [ -f /usr/lib/sysusers.d/nftban.conf ]; then
+    systemd-sysusers /usr/lib/sysusers.d/nftban.conf 2>/dev/null || {
+        # Fallback for systems without systemd-sysusers
+        getent group nftban >/dev/null || groupadd -r nftban
+        getent group nftban-auditor >/dev/null || groupadd -r nftban-auditor
+        getent passwd nftban >/dev/null || \
+            useradd -r -g nftban -G nftban-auditor -d /var/lib/nftban \
+            -s /sbin/nologin -c "NFTBan Service Account" nftban
+    }
+else
+    # Fallback if sysusers.d file not yet installed
+    getent group nftban >/dev/null || groupadd -r nftban
+    getent group nftban-auditor >/dev/null || groupadd -r nftban-auditor
+    getent passwd nftban >/dev/null || \
+        useradd -r -g nftban -G nftban-auditor -d /var/lib/nftban \
+        -s /sbin/nologin -c "NFTBan Service Account" nftban
+fi
 exit 0
 
 %post
 # Post-install: Configure and enable services
+#
+# NOTE: Directory creation is handled by:
+#   - systemd-tmpfiles (runtime directories via /usr/lib/tmpfiles.d/nftban.conf)
+#   - RPM %files section (package directories)
 
 # ==========================================================================
 # STEP 0: Install yq for documentation generation
@@ -132,9 +149,9 @@ if [ $CONFLICTS_FOUND -eq 1 ]; then
     echo "NFTBan cannot coexist with: ${FIREWALL_ISSUES}"
     echo ""
     echo "These firewalls will cause:"
-    echo "  • Duplicate filtering rules"
-    echo "  • Unpredictable blocking behavior"
-    echo "  • NFTBan blocks may not work"
+    echo "  - Duplicate filtering rules"
+    echo "  - Unpredictable blocking behavior"
+    echo "  - NFTBan blocks may not work"
     echo ""
     echo "Please disable conflicting firewalls:"
     echo ""
@@ -222,19 +239,24 @@ done
 
 echo "  Repository setup complete"
 
-# Create directories
-install -d -m 750 -o root -g nftban /etc/nftban/ports.d 2>/dev/null || true
-install -d -m 750 -o root -g nftban /etc/nftban/whitelist.d 2>/dev/null || true
-install -d -m 750 -o nftban -g nftban /var/log/nftban 2>/dev/null || true
-install -d -m 750 -o nftban -g nftban /var/log/nftban/watchdog 2>/dev/null || true
-install -d -m 750 -o nftban -g nftban /var/lib/nftban/stats 2>/dev/null || true
-install -d -m 750 -o nftban -g nftban /var/lib/nftban/stats/history 2>/dev/null || true
-install -d -m 750 -o nftban -g nftban /var/lib/nftban/stats/profiles 2>/dev/null || true
-install -d -m 750 -o nftban -g nftban /var/lib/nftban/metrics 2>/dev/null || true
-install -d -m 750 -o nftban -g nftban /var/lib/nftban/queue/pending 2>/dev/null || true
-install -d -m 750 -o nftban -g nftban /var/lib/nftban/queue/work 2>/dev/null || true
-install -d -m 750 -o nftban -g nftban /var/lib/nftban/queue/dlq 2>/dev/null || true
-install -d -m 750 -o nftban -g nftban /var/lib/nftban/mailspool 2>/dev/null || true
+# ==========================================================================
+# STEP 2: Create runtime directories via systemd-tmpfiles
+# ==========================================================================
+# Uses /usr/lib/tmpfiles.d/nftban.conf (generated from build/fhs-spec.yaml)
+if [ -f /usr/lib/tmpfiles.d/nftban.conf ]; then
+    echo "Creating runtime directories..."
+    systemd-tmpfiles --create /usr/lib/tmpfiles.d/nftban.conf 2>/dev/null || {
+        echo "Warning: systemd-tmpfiles failed, directories may need manual creation"
+    }
+fi
+
+# Set config directory permissions (root-owned, group readable)
+if [ -d /etc/nftban ]; then
+    chown root:nftban /etc/nftban
+    chmod 750 /etc/nftban
+    find /etc/nftban -maxdepth 1 -type d -exec chown root:nftban {} \;
+    find /etc/nftban -maxdepth 1 -type d -exec chmod 750 {} \;
+fi
 
 # Auto-detect SSH port
 SSH_PORT="22"
@@ -412,43 +434,33 @@ fi
 %{_unitdir}/nftban*.socket
 
 # ==========================================================================
-# CONFIGURATION
+# SYSUSERS AND TMPFILES (generated from build/fhs-spec.yaml)
+# ==========================================================================
+%{_prefix}/lib/sysusers.d/nftban.conf
+%{_prefix}/lib/tmpfiles.d/nftban.conf
+
+# ==========================================================================
+# CONFIGURATION (package-created, root:nftban)
+# Note: Data/log/runtime dirs are created by tmpfiles, not listed here
 # ==========================================================================
 %dir %attr(750,root,nftban) /etc/nftban
 %config(noreplace) /etc/nftban/nftban.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/ddos
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/portscan
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/login
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels
 %config(noreplace) /etc/nftban/conf.d/*
 %dir %attr(750,root,nftban) /etc/nftban/whitelist.d
 %dir %attr(750,root,nftban) /etc/nftban/blacklist.d
 %dir %attr(750,root,nftban) /etc/nftban/ports.d
+%dir %attr(750,root,nftban) /etc/nftban/rules.d
 %dir %attr(755,root,root) /etc/nftban/distros
 %config(noreplace) /etc/nftban/distros/*
 
-# ==========================================================================
-# DATA DIRECTORIES
-# ==========================================================================
-%dir %attr(750,nftban,nftban) /var/lib/nftban
-%dir %attr(750,nftban,nftban) /var/lib/nftban/banned
-%dir %attr(750,nftban,nftban) /var/lib/nftban/whitelist
-%dir %attr(750,nftban,nftban) /var/lib/nftban/feeds
-%dir %attr(750,nftban,nftban) /var/lib/nftban/geoip
-%dir %attr(750,nftban,nftban) /var/lib/nftban/reports
-%dir %attr(750,nftban,nftban) /var/lib/nftban/metrics
-%dir %attr(750,nftban,nftban) /var/lib/nftban/stats
-%dir %attr(750,nftban,nftban) /var/lib/nftban/stats/history
-%dir %attr(750,nftban,nftban) /var/lib/nftban/stats/profiles
-%dir %attr(750,nftban,nftban) /var/lib/nftban/queue
-%dir %attr(750,nftban,nftban) /var/lib/nftban/queue/pending
-%dir %attr(750,nftban,nftban) /var/lib/nftban/queue/work
-%dir %attr(750,nftban,nftban) /var/lib/nftban/queue/dlq
-%dir %attr(750,nftban,nftban) /var/lib/nftban/mailspool
-%dir %attr(750,root,nftban) /var/lib/nftban/pro
-
-# ==========================================================================
-# LOG DIRECTORIES
-# ==========================================================================
-%dir %attr(750,nftban,nftban) /var/log/nftban
-%dir %attr(750,nftban,nftban) /var/log/nftban/watchdog
+# Note: /var/lib/nftban, /var/log/nftban, /var/cache/nftban, /run/nftban
+# are created by systemd-tmpfiles from /usr/lib/tmpfiles.d/nftban.conf
+# and are NOT listed here to avoid conflicts
 
 # ==========================================================================
 # SHARED DATA (templates, specs)

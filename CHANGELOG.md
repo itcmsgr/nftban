@@ -5,6 +5,32 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.26] - 2026-01-10
+
+### Added
+
+#### FHS Single Source of Truth Architecture
+- **Canonical YAML Spec**: `build/fhs-spec.yaml` is now the single source of truth for all FHS paths, permissions, and ownership
+- **Deterministic Generator**: `build/generate-fhs-outputs.sh` produces all packaging artifacts from the YAML spec
+- **Generated Outputs**:
+  - `install/systemd/tmpfiles.d/nftban.conf` - Runtime directory creation
+  - `install/systemd/sysusers.d/nftban.conf` - User/group creation with memberships
+  - `install/packaging/deb/nftban.dirs` - Debian package directories
+  - `install/packaging/rpm/nftban-files.inc` - RPM %files include
+  - `cli/lib/nftban/data/fhs_directories.json` - JSON for receipt consumption
+  - `cli/lib/nftban/core/nftban_fhs_spec.sh` - Generated shell helper
+- **CI Guard**: `tools/check-recursive-permissions.sh` blocks `chmod -R` and `chown -R` in commits
+- **Debian 13 (Trixie) Support**: Added distro configuration for Debian 13
+
+### Changed
+- **Packaging Refactor**: postinst/spec now use `systemd-sysusers` and `systemd-tmpfiles` instead of hardcoded `install -d`
+- **Security Boundary**: `/var/lib/nftban` is now `root:nftban` (not `nftban:nftban`) - subdirs remain daemon-writable
+- **Conditional Directories**: External/feature directories (metrics, node_exporter, gui) are condition-gated, not in base tmpfiles
+
+### Fixed
+- Permission drift between packaging scripts and FHS spec
+- Recursive permission changes that could affect user config files
+
 ## [Unreleased]
 
 ### Added
