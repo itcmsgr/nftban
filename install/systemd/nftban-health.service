@@ -37,7 +37,8 @@ Group=nftban
 
 # Read-only health checks (no auto-heal - use nftban-health-fix.service for that)
 # --cache-status: Write health result for banner display
-ExecStart=/usr/bin/nftban health check --cache-status
+# flock: Prevent timer+manual overlap (non-blocking, exit if already running)
+ExecStart=/usr/bin/flock -n /run/nftban/health.lock /usr/bin/nftban health check --cache-status
 
 # CAP_NET_ADMIN required for read-only nft list operations
 AmbientCapabilities=CAP_NET_ADMIN
@@ -61,8 +62,8 @@ ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
 
-# Minimal filesystem access
-ReadWritePaths=/var/lib/nftban /var/cache/nftban /var/log/nftban
+# Minimal filesystem access (includes /run/nftban for flock)
+ReadWritePaths=/var/lib/nftban /var/cache/nftban /var/log/nftban /run/nftban
 
 # Network for nft list operations
 RestrictAddressFamilies=AF_UNIX AF_NETLINK

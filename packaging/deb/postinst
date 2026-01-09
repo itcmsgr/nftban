@@ -24,7 +24,7 @@
 #          enabling firewall to prevent self-lockout
 #
 # Installation Flow:
-#   1. Create groups (nftban, nftban-auditors)
+#   1. Create groups (nftban, nftban-auditor)
 #   2. Create nftban system user
 #   3. Create FHS directory structure
 #   4. Set correct permissions
@@ -165,7 +165,7 @@ case "$1" in
         # =====================================================================
         # NFTBan v1.0 uses 2-group model:
         #   nftban: All operators (CLI + Web GUI)
-        #   nftban-auditors: Read-only audit access
+        #   nftban-auditor: Read-only audit access
         log_info "Creating system groups..."
 
         if ! getent group nftban > /dev/null 2>&1; then
@@ -173,9 +173,9 @@ case "$1" in
             log_info "  Created group: nftban"
         fi
 
-        if ! getent group nftban-auditors > /dev/null 2>&1; then
-            addgroup --system nftban-auditors
-            log_info "  Created group: nftban-auditors"
+        if ! getent group nftban-auditor > /dev/null 2>&1; then
+            addgroup --system nftban-auditor
+            log_info "  Created group: nftban-auditor"
         fi
 
         # Add root to nftban group for CLI access
@@ -239,21 +239,22 @@ case "$1" in
             find /etc/nftban/distros -name "*.conf" -exec chown root:root {} \;
         fi
 
-        # /var/lib/nftban - nftban:nftban 750
-        chown -R nftban:nftban /var/lib/nftban
+        # /var/lib/nftban - nftban:nftban 750 (set ownership on directories only)
+        chown nftban:nftban /var/lib/nftban
         chmod 750 /var/lib/nftban
-        find /var/lib/nftban -type d -exec chmod 750 {} \;
+        find /var/lib/nftban -maxdepth 1 -type d -exec chown nftban:nftban {} \;
+        find /var/lib/nftban -maxdepth 1 -type d -exec chmod 750 {} \;
 
-        # Auditor reports - nftban-auditors group
-        chown root:nftban-auditors /var/lib/nftban/reports/auditors 2>/dev/null || true
+        # Auditor reports - nftban-auditor group
+        chown root:nftban-auditor /var/lib/nftban/reports/auditors 2>/dev/null || true
         chmod 770 /var/lib/nftban/reports/auditors 2>/dev/null || true
 
-        # /var/log/nftban - nftban:nftban 750
-        chown -R nftban:nftban /var/log/nftban
+        # /var/log/nftban - nftban:nftban 750 (directory only)
+        chown nftban:nftban /var/log/nftban
         chmod 750 /var/log/nftban
 
-        # /var/cache/nftban - nftban:nftban 755
-        chown -R nftban:nftban /var/cache/nftban
+        # /var/cache/nftban - nftban:nftban 755 (directory only)
+        chown nftban:nftban /var/cache/nftban
         chmod 755 /var/cache/nftban
 
         # /run/nftban - nftban:nftban 755
@@ -264,9 +265,9 @@ case "$1" in
         chown root:nftban /run/nftban-ui
         chmod 750 /run/nftban-ui
 
-        # /usr/share/nftban - root:root 755
-        chown -R root:root /usr/share/nftban 2>/dev/null || true
-        chmod -R 755 /usr/share/nftban 2>/dev/null || true
+        # /usr/share/nftban - root:root 755 (package-managed, set top-level only)
+        chown root:root /usr/share/nftban 2>/dev/null || true
+        chmod 755 /usr/share/nftban 2>/dev/null || true
 
         # Set executable permissions on all shell scripts
         if [ -d /usr/lib/nftban ]; then

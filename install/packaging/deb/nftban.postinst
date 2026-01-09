@@ -41,11 +41,11 @@ case "$1" in
         if ! getent group nftban >/dev/null; then
             groupadd -r nftban
         fi
-        if ! getent group nftban-auditors >/dev/null; then
-            groupadd -r nftban-auditors
+        if ! getent group nftban-auditor >/dev/null; then
+            groupadd -r nftban-auditor
         fi
         if ! getent passwd nftban >/dev/null; then
-            useradd -r -g nftban -G nftban-auditors -d "${NFTBAN_DATA_DIR}" \
+            useradd -r -g nftban -G nftban-auditor -d "${NFTBAN_DATA_DIR}" \
                 -s /usr/sbin/nologin -c "NFTBan Service Account" nftban
         fi
 
@@ -92,13 +92,15 @@ case "$1" in
         install -d -m 755 -o nftban -g nftban "${NFTBAN_RUN_DIR}"
 
         # ==========================================================================
-        # FIX CONFIG FILE PERMISSIONS (nftban group must be able to read)
+        # FIX CONFIG DIRECTORY PERMISSIONS (nftban group must be able to read)
         # ==========================================================================
-        # Config files: root:nftban 0640 (nftban services can read)
-        chown -R root:nftban "${NFTBAN_CONFIG_DIR}"
+        # IMPORTANT: Do NOT use recursive -R to preserve user-edited file permissions
+        # Only set ownership on top-level directories, not recursively into files
+        chown root:nftban "${NFTBAN_CONFIG_DIR}"
         chmod 750 "${NFTBAN_CONFIG_DIR}"
-        find "${NFTBAN_CONFIG_DIR}" -type d -exec chmod 750 {} \;
-        find "${NFTBAN_CONFIG_DIR}" -type f -exec chmod 640 {} \;
+        # Set permissions on first-level subdirs only (not recursive into files)
+        find "${NFTBAN_CONFIG_DIR}" -maxdepth 1 -type d -exec chown root:nftban {} \;
+        find "${NFTBAN_CONFIG_DIR}" -maxdepth 1 -type d -exec chmod 750 {} \;
 
         # Auto-detect SSH port
         SSH_PORT="22"

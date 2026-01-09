@@ -91,12 +91,12 @@ _cf_log() {
     mkdir -p "$(dirname "$CF_LOG")"
 
     # FHS-compliant: Ensure log file has correct ownership for auditors
-    # Fix: cloudflare.log was owned by root:root, blocking nftban-auditors access
+    # Fix: cloudflare.log was owned by root:root, blocking nftban-auditor access
     if [[ ! -f "$CF_LOG" ]]; then
         touch "$CF_LOG"
-        # Prefer nftban-auditors group for audit access, fallback to nftban
-        if getent group nftban-auditors >/dev/null 2>&1; then
-            chown nftban:nftban-auditors "$CF_LOG" 2>/dev/null || chown nftban:nftban "$CF_LOG"
+        # Prefer nftban-auditor group for audit access, fallback to nftban
+        if getent group nftban-auditor >/dev/null 2>&1; then
+            chown nftban:nftban-auditor "$CF_LOG" 2>/dev/null || chown nftban:nftban "$CF_LOG"
         else
             chown nftban:nftban "$CF_LOG"
         fi

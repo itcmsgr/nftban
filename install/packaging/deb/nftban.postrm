@@ -38,8 +38,8 @@ case "$1" in
         if getent group nftban &>/dev/null; then
             groupdel nftban 2>/dev/null || true
         fi
-        if getent group nftban-auditors &>/dev/null; then
-            groupdel nftban-auditors 2>/dev/null || true
+        if getent group nftban-auditor &>/dev/null; then
+            groupdel nftban-auditor 2>/dev/null || true
         fi
 
         echo "NFTBan data purged."

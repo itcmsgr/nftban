@@ -16,7 +16,7 @@
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units="nftban-maintenance.timer"
 # meta:inventory.network=""
-# meta:inventory.privileges="nftban"
+# meta:inventory.privileges="root"
 # =============================================================================
 #
 # This service performs safety-critical checks:
@@ -24,6 +24,11 @@
 #   - System IP monitoring (updates whitelists)
 #   - Autoheal (fixes permissions, creates directories)
 #   - Configuration validation
+#
+# SECURITY NOTE: Runs as root because it must write to /etc/nftban/ports.d and
+# /etc/nftban/whitelist.d for SSH lockout prevention. This is safety-critical.
+# /etc must remain root-owned (not group-writable by nftban) per FHS standards.
+# Strict sandboxing limits root to only necessary paths.
 #
 # Runs every 15 minutes via nftban-maintenance.timer
 # =============================================================================
@@ -37,22 +42,19 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 
-# SECURITY FIX: Run as unprivileged nftban user (not root)
-# Maintenance script now uses IPC (nft_ipc_add_element) for all firewall writes
-# No direct nft commands, no root required
-# See: SYSTEMD-SERVICE-CLASSIFICATION.md
-User=nftban
-Group=nftban
-SupplementaryGroups=adm
+# Run as root for /etc writes (safety-critical SSH lockout prevention)
+# Security is enforced via strict sandboxing below
+User=root
+Group=root
 
-# Run maintenance script
-ExecStart=/usr/lib/nftban/cron/maintenance.sh
+# Run maintenance script with flock to prevent overlap
+ExecStart=/usr/bin/flock -n /run/nftban/maintenance.lock /usr/lib/nftban/cron/maintenance.sh
 
 # =============================================================================
-# SECURITY HARDENING (Enhanced after privilege drop)
+# SECURITY HARDENING (strict sandboxing for root service)
 # =============================================================================
 
-# Core hardening
+# Core hardening (applies even when running as root)
 NoNewPrivileges=yes
 PrivateTmp=true
 ProtectSystem=strict
@@ -63,8 +65,9 @@ ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
 
-# Minimal filesystem access (nftban user can only write to these)
-# NOTE: /etc/nftban/ports.d and /etc/nftban/whitelist.d must be group-writable
+# Minimal filesystem access - root can only write to these paths
+# /etc/nftban/ports.d and /etc/nftban/whitelist.d: SSH lockout prevention
+# /var/lib/nftban, /var/log/nftban, /var/cache/nftban, /run/nftban: normal state
 ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban /etc/nftban/ports.d /etc/nftban/whitelist.d
 
 # Network access (IPC socket + curl for SSH port detection)
