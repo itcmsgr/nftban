@@ -53,6 +53,7 @@ declare -a NFTBAN_HEALTH_WARNINGS
 declare -a NFTBAN_HEALTH_ERRORS
 
 # Health status codes (exported for callers)
+# shellcheck disable=SC2034  # Constants exported for external use
 readonly HEALTH_OK=0
 # shellcheck disable=SC2034  # Constants exported for external use
 readonly HEALTH_WARNING=1

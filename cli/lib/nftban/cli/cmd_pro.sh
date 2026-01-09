@@ -149,7 +149,8 @@ nftban_pro_cmd_enroll() {
 
     local token=""
     local token_file=""
-    local from_env=false
+    # shellcheck disable=SC2034  # Reserved for future env token support
+    local _from_env=false
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
