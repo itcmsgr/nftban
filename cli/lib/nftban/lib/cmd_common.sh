@@ -347,6 +347,32 @@ cmd_get_geoip_binary() {
     echo "${NFTBAN_GEOIP:-${NFTBAN_LIB_DIR}/bin/nftban-geoip}"
 }
 
+# Get GeoIP database path (auto-detects if not explicitly configured)
+# Usage: local db; db=$(cmd_get_geoip_database)
+# Returns: Path to database file, or empty string if not found
+cmd_get_geoip_database() {
+    local geoip_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip"
+
+    # Use explicit config if set
+    if [[ -n "${NFTBAN_GEOIP_DATABASE:-}" ]] && [[ -f "${NFTBAN_GEOIP_DATABASE}" ]]; then
+        echo "${NFTBAN_GEOIP_DATABASE}"
+        return 0
+    fi
+
+    # Auto-detect from supported databases (priority order from config)
+    local databases="${NFTBAN_GEOIP_DATABASES:-dbip-country-lite.mmdb GeoLite2-City.mmdb GeoLite2-Country.mmdb}"
+    local db_file
+    for db_file in $databases; do
+        if [[ -f "${geoip_dir}/${db_file}" ]]; then
+            echo "${geoip_dir}/${db_file}"
+            return 0
+        fi
+    done
+
+    # Not found
+    return 1
+}
+
 # =============================================================================
 # EXPORT FUNCTIONS
 # =============================================================================
@@ -368,6 +394,7 @@ export -f cmd_kv
 export -f cmd_success
 export -f cmd_get_core_binary
 export -f cmd_get_geoip_binary
+export -f cmd_get_geoip_database
 
 # =============================================================================
 # MARK AS LOADED

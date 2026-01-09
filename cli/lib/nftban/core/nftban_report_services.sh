@@ -160,16 +160,27 @@ nftban_services_scan() {
     local geoip_status="NOT_FOUND"
     local geoip_version="n/a"
     local geoip_notes=""
-    local geoip_db="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip/GeoLite2-City.mmdb"
+    local geoip_db=""
+    local geoip_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip"
+
+    # Check explicit config first, then auto-detect from supported databases
+    if [[ -n "${NFTBAN_GEOIP_DATABASE:-}" ]] && [[ -f "${NFTBAN_GEOIP_DATABASE}" ]]; then
+        geoip_db="${NFTBAN_GEOIP_DATABASE}"
+    else
+        for db_file in ${NFTBAN_GEOIP_DATABASES:-dbip-country-lite.mmdb GeoLite2-City.mmdb GeoLite2-Country.mmdb}; do
+            [[ -f "${geoip_dir}/${db_file}" ]] && geoip_db="${geoip_dir}/${db_file}" && break
+        done
+    fi
 
     # Check if GeoIP database exists
-    if [[ -f "$geoip_db" ]]; then
+    if [[ -n "$geoip_db" ]] && [[ -f "$geoip_db" ]]; then
         geoip_status="INSTALLED"
         # Get database modification date as version
         geoip_version=$(stat -c '%Y' "$geoip_db" 2>/dev/null | xargs -I{} date -d @{} '+%Y-%m-%d' 2>/dev/null || echo "unknown")
-        local db_size
+        local db_size db_name
         db_size=$(du -h "$geoip_db" 2>/dev/null | awk '{print $1}')
-        geoip_notes="GeoLite2-City database ($db_size)"
+        db_name=$(basename "$geoip_db")
+        geoip_notes="${db_name} database ($db_size)"
     else
         # Check for alternative database locations
         local alt_db=""

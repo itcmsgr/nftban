@@ -156,10 +156,19 @@ _download_geoip() {
 
 # Check database status
 _check_database() {
-    local db_file="${GEOIP_DATABASE:-/var/lib/nftban/geoip/GeoLite2-City.mmdb}"
+    # Auto-detect GeoIP database from config
+    local db_file=""
+    local geoip_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip"
+    if [[ -n "${NFTBAN_GEOIP_DATABASE:-}" ]] && [[ -f "${NFTBAN_GEOIP_DATABASE}" ]]; then
+        db_file="${NFTBAN_GEOIP_DATABASE}"
+    else
+        for db_name in ${NFTBAN_GEOIP_DATABASES:-dbip-country-lite.mmdb GeoLite2-City.mmdb GeoLite2-Country.mmdb}; do
+            [[ -f "${geoip_dir}/${db_name}" ]] && db_file="${geoip_dir}/${db_name}" && break
+        done
+    fi
 
-    if [[ ! -f "${db_file}" ]]; then
-        echo "[WARNING] GeoIP database not found: ${db_file}"
+    if [[ -z "${db_file}" ]] || [[ ! -f "${db_file}" ]]; then
+        echo "[WARNING] GeoIP database not found in ${geoip_dir}"
         return 1
     fi
 

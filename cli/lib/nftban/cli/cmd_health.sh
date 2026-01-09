@@ -575,7 +575,8 @@ nftban_health_cmd_geoip() {
 
         # Show additional details if available
         local binary_path="${NFTBAN_LIB_DIR}/bin/nftban-geoip"
-        local db_path="${NFTBAN_DATA_DIR}/geoip/GeoLite2-City.mmdb"
+        local db_path
+        db_path=$(cmd_get_geoip_database 2>/dev/null) || db_path=""
 
         if [[ -x "$binary_path" ]]; then
             local version
@@ -584,7 +585,7 @@ nftban_health_cmd_geoip() {
             echo "  Version: $version"
         fi
 
-        if [[ -f "$db_path" ]]; then
+        if [[ -n "$db_path" ]] && [[ -f "$db_path" ]]; then
             local db_size
             db_size=$(du -h "$db_path" | cut -f1)
             echo "  Database: $db_path"

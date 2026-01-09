@@ -377,9 +377,10 @@ output_terminal() {
     [[ -n "$login_details" ]] && printf "      %-16s %s\n" "Watching........" "$login_details"
 
     # GeoIP/GeoBan
-    local geoip_db="${NFTBAN_DATA_DIR}/geoip/GeoLite2-City.mmdb"
+    local geoip_db
+    geoip_db=$(cmd_get_geoip_database 2>/dev/null) || geoip_db=""
     local geoban_status="NOT INSTALLED"
-    if [[ -f "$geoip_db" ]]; then
+    if [[ -n "$geoip_db" ]] && [[ -f "$geoip_db" ]]; then
         local db_size db_date
         db_size=$(du -h "$geoip_db" 2>/dev/null | awk '{print $1}' || echo "?")
         db_date=$(stat -c %y "$geoip_db" 2>/dev/null | cut -d' ' -f1 || echo "?")
@@ -848,7 +849,9 @@ output_json() {
 
     # GeoIP
     local geoip_installed=false geoip_countries=0
-    if [[ -f "${NFTBAN_DATA_DIR}/geoip/GeoLite2-City.mmdb" ]]; then
+    local geoip_db
+    geoip_db=$(cmd_get_geoip_database 2>/dev/null) || geoip_db=""
+    if [[ -n "$geoip_db" ]] && [[ -f "$geoip_db" ]]; then
         geoip_installed=true
         geoip_countries=$(nftban geoban list 2>/dev/null | grep -c "BLOCKED" 2>/dev/null || true)
         geoip_countries="${geoip_countries:-0}"
