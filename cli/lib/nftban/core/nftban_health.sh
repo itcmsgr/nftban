@@ -442,6 +442,65 @@ nftban_health_verify_installation() {
 }
 
 # =============================================================================
+# MAIN HEALTH CHECK FUNCTION
+# =============================================================================
+
+nftban_health_check_all() {
+    # Run all health checks and collect results
+    # Args: $1 = auto_heal (1 to auto-fix, 0 to just report)
+    # Returns: 0=OK, 1=warnings, 2=errors
+
+    local auto_heal="${1:-0}"
+    local result=0
+    local errors=0
+    local warnings=0
+
+    # Initialize health state
+    nftban_health_init
+
+    # Run core checks
+    nftban_health_check_binaries || ((errors++))
+    nftban_health_check_paths || ((errors++))
+    nftban_health_check_permissions || ((warnings++))
+    nftban_health_check_config || ((warnings++))
+
+    # Run security checks
+    nftban_health_check_nftables_security || ((warnings++))
+    nftban_health_check_conflicting_firewalls || ((warnings++))
+
+    # Run service checks
+    nftban_health_check_services || ((warnings++))
+    nftban_health_check_timers || ((warnings++))
+
+    # Run optional feature checks (don't count as errors)
+    nftban_health_check_modules 2>/dev/null || true
+    nftban_health_check_geoip 2>/dev/null || true
+    nftban_health_check_metrics 2>/dev/null || true
+
+    # Auto-heal if requested
+    if [[ "$auto_heal" == "1" ]] && [[ $errors -gt 0 || $warnings -gt 0 ]]; then
+        echo ""
+        echo "Running auto-fix..."
+        nftban_health_fix_permissions 2>/dev/null || true
+        nftban_health_fix_directories 2>/dev/null || true
+        nftban_health_fix_services 2>/dev/null || true
+    fi
+
+    # Set return value
+    if [[ $errors -gt 0 ]]; then
+        result=2
+    elif [[ $warnings -gt 0 ]]; then
+        result=1
+    fi
+
+    # Store results for render functions
+    export NFTBAN_HEALTH_ERRORS=$errors
+    export NFTBAN_HEALTH_WARNINGS=$warnings
+
+    return $result
+}
+
+# =============================================================================
 # EXPORTS
 # =============================================================================
 
