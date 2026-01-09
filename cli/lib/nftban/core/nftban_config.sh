@@ -32,9 +32,9 @@ umask 027
 # CONFIGURATION
 # =============================================================================
 
-readonly NFTBAN_CONF_DIR="${NFTBAN_CONF_DIR:-/etc/nftban}"
+readonly NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 readonly NFTBAN_CONFD_DIR="${NFTBAN_CONFD_DIR:-/etc/nftban/conf.d}"
-readonly NFTBAN_LOCAL_CONF="${NFTBAN_CONF_DIR}/nftban.conf.local"
+readonly NFTBAN_LOCAL_CONF="${NFTBAN_CONFIG_DIR}/nftban.conf.local"
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -398,7 +398,7 @@ nftban_config_get() {
     # Output: value (without quotes), or empty if not found
 
     local key="$1"
-    local conf_file="${NFTBAN_CONF_DIR}/nftban.conf"
+    local conf_file="${NFTBAN_CONFIG_DIR}/nftban.conf"
 
     # Check main config file
     if [[ -f "$conf_file" ]]; then
@@ -417,10 +417,10 @@ nftban_config_set_global() {
 
     local key="$1"
     local value="$2"
-    local conf_file="${NFTBAN_CONF_DIR}/nftban.conf"
+    local conf_file="${NFTBAN_CONFIG_DIR}/nftban.conf"
 
     # Create config directory if needed
-    mkdir -p "${NFTBAN_CONF_DIR}"
+    mkdir -p "${NFTBAN_CONFIG_DIR}"
 
     # Create config file if it doesn't exist
     if [[ ! -f "$conf_file" ]]; then

@@ -31,7 +31,7 @@ NFTBAN_CMD_SURICATA_LOADED="true"
 # =============================================================================
 
 NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
-NFTBAN_CONF_DIR="${NFTBAN_CONF_DIR:-/etc/nftban}"
+NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 
 # Load output library
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
@@ -184,17 +184,17 @@ cmd_suricata_install() {
     echo ""
 
     # Set config flags
-    if [[ -f "${NFTBAN_CONF_DIR}/nftban.conf" ]]; then
-        if grep -q "^ENABLE_IDS_INTEGRATION=" "${NFTBAN_CONF_DIR}/nftban.conf"; then
-            sed -i 's/^ENABLE_IDS_INTEGRATION=.*/ENABLE_IDS_INTEGRATION=1/' "${NFTBAN_CONF_DIR}/nftban.conf"
+    if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
+        if grep -q "^ENABLE_IDS_INTEGRATION=" "${NFTBAN_CONFIG_DIR}/nftban.conf"; then
+            sed -i 's/^ENABLE_IDS_INTEGRATION=.*/ENABLE_IDS_INTEGRATION=1/' "${NFTBAN_CONFIG_DIR}/nftban.conf"
         else
-            echo "ENABLE_IDS_INTEGRATION=1" >> "${NFTBAN_CONF_DIR}/nftban.conf"
+            echo "ENABLE_IDS_INTEGRATION=1" >> "${NFTBAN_CONFIG_DIR}/nftban.conf"
         fi
 
-        if grep -q "^NFTBAN_SURICATA_ENABLED=" "${NFTBAN_CONF_DIR}/nftban.conf"; then
-            sed -i 's/^NFTBAN_SURICATA_ENABLED=.*/NFTBAN_SURICATA_ENABLED=true/' "${NFTBAN_CONF_DIR}/nftban.conf"
+        if grep -q "^NFTBAN_SURICATA_ENABLED=" "${NFTBAN_CONFIG_DIR}/nftban.conf"; then
+            sed -i 's/^NFTBAN_SURICATA_ENABLED=.*/NFTBAN_SURICATA_ENABLED=true/' "${NFTBAN_CONFIG_DIR}/nftban.conf"
         else
-            echo "NFTBAN_SURICATA_ENABLED=true" >> "${NFTBAN_CONF_DIR}/nftban.conf"
+            echo "NFTBAN_SURICATA_ENABLED=true" >> "${NFTBAN_CONFIG_DIR}/nftban.conf"
         fi
         echo "  ✓ NFTBan config updated (IDS enabled)"
     fi
