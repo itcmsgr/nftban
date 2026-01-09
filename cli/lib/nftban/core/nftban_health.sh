@@ -53,11 +53,14 @@ declare -a NFTBAN_HEALTH_WARNINGS
 declare -a NFTBAN_HEALTH_ERRORS
 
 # Health status codes (exported for callers)
-# shellcheck disable=SC2034  # Constants exported for external use
 readonly HEALTH_OK=0
+# shellcheck disable=SC2034  # Constants exported for external use
 readonly HEALTH_WARNING=1
+# shellcheck disable=SC2034  # Constants exported for external use
 readonly HEALTH_ERROR=2
+# shellcheck disable=SC2034  # Constants exported for external use
 readonly HEALTH_CRITICAL=3
+# shellcheck disable=SC2034  # Constants exported for external use
 readonly HEALTH_NOT_INSTALLED=4
 
 # Load main configuration (service names, paths)
@@ -89,8 +92,11 @@ nftban_health_init() {
     # Clear previous results (MUST be associative arrays)
     # shellcheck disable=SC2034  # Arrays used by render functions
     declare -gA NFTBAN_HEALTH_RESULTS=()
+    # shellcheck disable=SC2034  # Arrays used by render functions
     declare -gA NFTBAN_HEALTH_ISSUES=()
+    # shellcheck disable=SC2034  # Arrays used by render functions
     declare -ga NFTBAN_HEALTH_WARNINGS=()
+    # shellcheck disable=SC2034  # Arrays used by render functions
     declare -ga NFTBAN_HEALTH_ERRORS=()
 
     # Load report modules (orchestrate, don't duplicate!)
