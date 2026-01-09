@@ -80,6 +80,15 @@ case "$1" in
         install -d -m 750 -o nftban -g nftban "${NFTBAN_CACHE_DIR}/health"
         install -d -m 755 -o nftban -g nftban "${NFTBAN_RUN_DIR}"
 
+        # ==========================================================================
+        # FIX CONFIG FILE PERMISSIONS (nftban group must be able to read)
+        # ==========================================================================
+        # Config files: root:nftban 0640 (nftban services can read)
+        chown -R root:nftban "${NFTBAN_CONFIG_DIR}"
+        chmod 750 "${NFTBAN_CONFIG_DIR}"
+        find "${NFTBAN_CONFIG_DIR}" -type d -exec chmod 750 {} \;
+        find "${NFTBAN_CONFIG_DIR}" -type f -exec chmod 640 {} \;
+
         # Auto-detect SSH port
         SSH_PORT="22"
         if [ -f /etc/ssh/sshd_config ]; then
