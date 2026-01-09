@@ -140,6 +140,9 @@ jobs:
           - distro: debian12
             container: debian:12
             name_suffix: debian12
+          - distro: debian13
+            container: debian:trixie
+            name_suffix: debian13
 
     steps:
       - name: Checkout code
@@ -247,6 +250,9 @@ jobs:
           - distro: debian12
             container: debian:12
             deb_artifact: deb-debian12
+          - distro: debian13
+            container: debian:trixie
+            deb_artifact: deb-debian13
 
     steps:
       - name: Download DEB packages
@@ -358,7 +364,8 @@ jobs:
             ### 📦 DEB Packages (Ubuntu/Debian)
             - `nftban-ubuntu22.04-amd64.deb` - Ubuntu 22.04 LTS
             - `nftban-ubuntu24.04-amd64.deb` - Ubuntu 24.04 LTS
-            - `nftban-debian12-amd64.deb` - Debian 12
+            - `nftban-debian12-amd64.deb` - Debian 12 (Bookworm)
+            - `nftban-debian13-amd64.deb` - Debian 13 (Trixie)
 
             ### ✨ Features
             - **Prerequisite checks** - Validates system before installation

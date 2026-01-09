@@ -69,6 +69,12 @@ wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-
 sudo dpkg -i nftban-debian12-amd64.deb && sudo apt-get install -f -y && sudo nftban enable
 ```
 
+### Debian 13
+```bash
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb
+sudo dpkg -i nftban-debian13-amd64.deb && sudo apt-get install -f -y && sudo nftban enable
+```
+
 ### From Source
 ```bash
 git clone https://github.com/itcmsgr/nftban.git && cd nftban
@@ -97,6 +103,7 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 | Ubuntu | 22.04 (Jammy) | amd64 | [nftban-ubuntu22.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb) |
 | Ubuntu | 24.04 (Noble) | amd64 | [nftban-ubuntu24.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb) |
 | Debian | 12 (Bookworm) | amd64 | [nftban-debian12-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb) |
+| Debian | 13 (Trixie) | amd64 | [nftban-debian13-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb) |
 
 > Packages are distro-specific and FHS compliant. Use the package matching your exact distribution version. Old versions archived in [Releases](https://github.com/itcmsgr/nftban/releases).
 
