@@ -6,24 +6,33 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Auto-fix functions for health issues (permissions, directories, etc.)
 #
-# meta:name=nftban_health_fixes
-# meta:type=lib
-# meta:header=Health Fix Functions
-# meta:version=1.0.0
+# meta:name="nftban_health_fixes"
+# meta:type="lib"
+# meta:header="Health Fix Functions"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Auto-fix functions for common health issues
-# meta:input=Health check results
-# meta:output=Fixed system state
+# meta:description="Auto-fix functions for common health issues"
+# meta:input="Health check results"
+# meta:output="Fixed system state"
 #
 # **Inventory & Requirements**
-# meta:depends=nftban_health.sh
+# meta:depends="nftban_health.sh"
+# meta:inventory.files=""
+# meta:inventory.binaries="systemctl,chown,chmod,mkdir"
+# meta:inventory.env_vars="NFTBAN_DATA_DIR,NFTBAN_CONFIG_DIR,NFTBAN_METRICS_ENABLED,NFTBAN_METRICS_BACKEND"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="nftban-health.timer,nftban-metrics-exporter.timer,prometheus.service,victoriametrics.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# meta:created_date=2026-01-09
-# meta:updated_date=2026-01-09
+# meta:created_date="2026-01-09"
+# meta:updated_date="2026-01-09"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Prevent double-loading
 [[ -n "${_NFTBAN_HEALTH_FIXES_LOADED:-}" ]] && return 0
@@ -342,24 +351,139 @@ nftban_health_fix_directories() {
 }
 
 nftban_health_fix_services() {
-    # Restart failed services
+    # Restart failed services AND timers
+    # Auto-heals enabled but stopped services/timers
 
-    echo "Restarting failed services..."
+    echo "Checking services and timers..."
 
+    # Core services that should be running if enabled
     local services=(
         "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+        "nftband.service"
     )
 
+    # Core timers that should be running if enabled
+    local timers=(
+        "nftban-health.timer"
+        "nftban-maintenance.timer"
+        "nftban-metrics-exporter.timer"
+        "nftban-watchdog.timer"
+        "nftban-queue.timer"
+        "nftban-core-geoip.timer"
+    )
+
+    local fixed_count=0
+
+    # Fix services
     for service in "${services[@]}"; do
-        if systemctl list-unit-files "$service" >/dev/null 2>&1; then
-            if systemctl is-enabled "$service" >/dev/null 2>&1; then
-                if ! systemctl is-active "$service" >/dev/null 2>&1; then
+        if systemctl list-unit-files "$service" &>/dev/null; then
+            if systemctl is-enabled "$service" &>/dev/null; then
+                if ! systemctl is-active "$service" &>/dev/null; then
                     systemctl restart "$service" 2>/dev/null || true
                     echo "  ✓ Restarted $service"
+                    ((fixed_count++))
                 fi
             fi
         fi
     done
+
+    # Fix timers (enabled but dead)
+    for timer in "${timers[@]}"; do
+        if systemctl list-unit-files "$timer" &>/dev/null; then
+            if systemctl is-enabled "$timer" &>/dev/null; then
+                if ! systemctl is-active "$timer" &>/dev/null; then
+                    systemctl start "$timer" 2>/dev/null || true
+                    echo "  ✓ Started $timer"
+                    ((fixed_count++))
+                fi
+            fi
+        fi
+    done
+
+    if [[ $fixed_count -eq 0 ]]; then
+        echo "  ✓ All enabled services/timers are running"
+    else
+        echo "  ✓ Fixed $fixed_count service(s)/timer(s)"
+    fi
+
+    return 0
+}
+
+nftban_health_fix_metrics() {
+    # Auto-heal metrics collection issues
+    # Called by health timer for automatic recovery
+
+    local fixed=0
+
+    # Check if metrics is enabled in config
+    if [[ "${NFTBAN_METRICS_ENABLED:-false}" != "true" ]]; then
+        return 0  # Metrics disabled, nothing to fix
+    fi
+
+    # Fix 1: Ensure metrics exporter timer is running
+    if systemctl is-enabled nftban-metrics-exporter.timer &>/dev/null; then
+        if ! systemctl is-active nftban-metrics-exporter.timer &>/dev/null; then
+            systemctl start nftban-metrics-exporter.timer 2>/dev/null || true
+            echo "  ✓ Started metrics exporter timer"
+            ((fixed++))
+        fi
+    fi
+
+    # Fix 2: Ensure textfile collector directory exists
+    local textfile_dir="/var/lib/node_exporter/textfile_collector"
+    if [[ ! -d "$textfile_dir" ]]; then
+        mkdir -p "$textfile_dir" 2>/dev/null || true
+        chown -R nftban:nftban "$textfile_dir" 2>/dev/null || true
+        chmod 755 "$textfile_dir" 2>/dev/null || true
+        echo "  ✓ Created textfile collector directory"
+        ((fixed++))
+    fi
+
+    # Fix 3: Check configured backend and restart if needed
+    local backend="${NFTBAN_METRICS_BACKEND:-prometheus}"
+    case "$backend" in
+        prometheus)
+            if systemctl is-enabled prometheus &>/dev/null; then
+                if ! systemctl is-active prometheus &>/dev/null; then
+                    systemctl restart prometheus 2>/dev/null || true
+                    echo "  ✓ Restarted Prometheus"
+                    ((fixed++))
+                fi
+            fi
+            ;;
+        victoriametrics)
+            if systemctl is-enabled victoriametrics &>/dev/null; then
+                if ! systemctl is-active victoriametrics &>/dev/null; then
+                    systemctl restart victoriametrics 2>/dev/null || true
+                    echo "  ✓ Restarted VictoriaMetrics"
+                    ((fixed++))
+                fi
+            fi
+            ;;
+    esac
+
+    # Fix 4: Ensure node_exporter is running (try all possible service names)
+    local node_running=false
+    for svc in prometheus-node-exporter node_exporter node-exporter; do
+        if systemctl is-active "$svc" &>/dev/null; then
+            node_running=true
+            break
+        fi
+    done
+
+    if [[ "$node_running" == "false" ]]; then
+        for svc in prometheus-node-exporter node_exporter node-exporter; do
+            if systemctl is-enabled "$svc" &>/dev/null; then
+                systemctl start "$svc" 2>/dev/null || true
+                if systemctl is-active "$svc" &>/dev/null; then
+                    echo "  ✓ Started Node Exporter ($svc)"
+                    ((fixed++))
+                    break
+                fi
+            fi
+        done
+    fi
+
     return 0
 }
 

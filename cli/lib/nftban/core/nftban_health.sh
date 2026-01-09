@@ -506,6 +506,7 @@ nftban_health_check_all() {
         nftban_health_fix_permissions 2>/dev/null || true
         nftban_health_fix_directories 2>/dev/null || true
         nftban_health_fix_services 2>/dev/null || true
+        nftban_health_fix_metrics 2>/dev/null || true
     fi
 
     # Set return value
@@ -553,6 +554,7 @@ export -f nftban_health_should_alert
 export -f nftban_health_fix_permissions
 export -f nftban_health_fix_directories
 export -f nftban_health_fix_services
+export -f nftban_health_fix_metrics
 export -f nftban_health_fix_registry
 
 # Export render functions (from nftban_health_render.sh)
