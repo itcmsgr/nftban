@@ -308,9 +308,17 @@ nftban_enable_all() {
         fi
     fi
 
-    # Sync whitelists to nftables
+    # EMERGENCY: Auto-whitelist system IPs to prevent lockout
+    # This adds server's own IPs directly to nftables as safety measure
+    # Even if Go daemon fails, server won't lock itself out
+    echo "  Auto-detecting system IPs (lockout prevention)..."
+    if command -v nftban &>/dev/null; then
+        nftban whitelist-system sync 2>/dev/null || echo "  Warning: whitelist-system sync failed"
+    fi
+
+    # Primary sync via Go daemon (handles full whitelist/blacklist sync)
     if command -v nftban-core &>/dev/null; then
-        echo "  Syncing whitelists..."
+        echo "  Syncing via daemon..."
         nftban-core sync 2>/dev/null || true
     fi
 
