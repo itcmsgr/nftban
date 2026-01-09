@@ -3,30 +3,26 @@
 # NFTBan v1.0.0 - System IP Auto-Detection Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Automatic system IP detection and whitelisting
-#
-# meta:name=nftban_system_ip
-# meta:type=core
-# meta:header=System IP Auto-Detection
-# meta:version=1.0.0
+# meta:name="nftban_system_ip"
+# meta:type="core"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Automatic detection and protection of system IPs with atomic operations
-# meta:input=Network interfaces and current connections
-# meta:output=Auto-whitelisted system IPs and synchronization to nftables
-#
-# **Inventory & Requirements**
-# meta:depends=ip,hostname,nftban_file_ops.sh
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
-# =============================================================================
-#   • Prevents self-lockout
+# meta:created_date="2025-11-05"
+# meta:description="Automatic detection and protection of system IPs with atomic operations"
+# meta:input="Network interfaces and current connections"
+# meta:output="Auto-whitelisted system IPs and synchronization to nftables"
+# meta:depends="ip,hostname,nftban_file_ops.sh,nft"
+# meta:platform="linux"
+# meta:inventory.files="/etc/nftban/whitelist.d/00-system.conf"
+# meta:inventory.binaries="ip,hostname,nft"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/whitelist.d/00-system.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
 # Strict mode for production-grade security
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
@@ -197,6 +193,17 @@ HEADER
     else
         # Fallback to regular append if atomic not available
         echo "$ip  # $comment (added: $(date -u +'%Y-%m-%d %H:%M:%S UTC'))" >> "$NFTBAN_WHITELIST_SYSTEM"
+    fi
+
+    # Also add to nftables immediately (don't wait for sync)
+    if command -v nft &>/dev/null; then
+        if [[ "$ip" =~ : ]]; then
+            # IPv6
+            nft add element ip6 nftban whitelist_ipv6 "{ $ip }" 2>/dev/null || true
+        else
+            # IPv4
+            nft add element ip nftban whitelist_ipv4 "{ $ip }" 2>/dev/null || true
+        fi
     fi
 
     echo "[ADD] Whitelisted: $ip ($comment)"
