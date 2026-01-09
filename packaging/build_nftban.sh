@@ -632,9 +632,12 @@ if [ -x /usr/lib/nftban/bin/nftban-core ]; then
     /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null || echo "[NFTBan WARN] GeoIP download failed (will retry via timer)"
 fi
 
-# STEP 7: Health check
+# STEP 7: Enforce permissions and health check
 if command -v nftban >/dev/null 2>&1; then
-    nftban health check --quiet 2>/dev/null || true
+    echo "[NFTBan] Enforcing permissions..."
+    nftban permissions enforce 2>/dev/null || true
+    echo "[NFTBan] Running health check with auto-heal..."
+    nftban health check --auto-heal --quiet 2>/dev/null || true
 fi
 
 # STEP 8: Enable services (AFTER whitelist is in place)
@@ -1241,9 +1244,12 @@ if [ -x /usr/lib/nftban/bin/nftban-core ]; then
     /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null || echo "[NFTBan WARN] GeoIP download failed (will retry via timer)"
 fi
 
-# STEP 8: Health check
+# STEP 8: Enforce permissions and health check
 if command -v nftban >/dev/null 2>&1; then
-    nftban health check --quiet 2>/dev/null || true
+    echo "[NFTBan] Enforcing permissions..."
+    nftban permissions enforce 2>/dev/null || true
+    echo "[NFTBan] Running health check with auto-heal..."
+    nftban health check --auto-heal --quiet 2>/dev/null || true
 fi
 
 # STEP 9: Enable services (AFTER whitelist is in place)

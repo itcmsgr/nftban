@@ -320,13 +320,17 @@ case "$1" in
         fi
 
         # =====================================================================
-        # STEP 7: Health Check / Validation
+        # STEP 7: Enforce Permissions and Health Check
         # =====================================================================
-        log_info "Running health check..."
+        log_info "Enforcing permissions..."
 
         if command -v nftban >/dev/null 2>&1; then
-            # Run quick validation before enabling services
-            nftban health check --quiet 2>/dev/null || log_warn "Health check returned warnings"
+            # Enforce correct permissions using the built-in permission system
+            nftban permissions enforce 2>/dev/null || log_warn "Permission enforcement returned warnings"
+
+            # Run health check with auto-heal to fix any remaining issues
+            log_info "Running health check with auto-heal..."
+            nftban health check --auto-heal --quiet 2>/dev/null || log_warn "Health check returned warnings"
         fi
 
         # =====================================================================
