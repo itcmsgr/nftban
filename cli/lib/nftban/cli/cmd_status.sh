@@ -320,7 +320,7 @@ output_terminal() {
     echo ""
 
     # Trust Feeds (CDN whitelist - including Cloudflare)
-    local trust_status="UNKNOWN"
+    local trust_status="NOT INSTALLED"
     local trust_count=0
     if command -v nftban-core &>/dev/null; then
         local trust_output
@@ -358,14 +358,15 @@ output_terminal() {
         [[ "${NFTBAN_LOGIN_ALERT_SUDO:-true}" == "true" ]] && monitors="${monitors}SUDO, "
         monitors="${monitors%, }"
         [[ -n "$monitors" ]] && login_details="$monitors"
-    elif command -v nftban &>/dev/null; then
-        local login_output
-        login_output=$(nftban login status 2>/dev/null | grep "Enabled:" | head -1) || true
-        if [[ "$login_output" =~ "true" ]]; then
-            login_status="ENABLED (stopped)"
-        elif [[ "$login_output" =~ "false" ]]; then
-            login_status="DISABLED"
-        fi
+    elif systemctl is-enabled nftban-login-monitor.service >/dev/null 2>&1; then
+        # Service is enabled but not running
+        login_status="ENABLED (stopped)"
+    elif [[ -f /lib/systemd/system/nftban-login-monitor.service ]] || \
+         [[ -f /etc/systemd/system/nftban-login-monitor.service ]]; then
+        # Service exists but not enabled
+        login_status="DISABLED"
+    else
+        login_status="NOT INSTALLED"
     fi
     printf "  %-20s %s\n" "Login Monitor......." "$login_status"
     [[ -n "$login_details" ]] && printf "      %-16s %s\n" "Watching........" "$login_details"
