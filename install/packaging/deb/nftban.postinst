@@ -66,6 +66,9 @@ case "$1" in
         # Mail spool directory (failed mail retry queue)
         install -d -m 750 -o nftban -g nftban "${NFTBAN_DATA_DIR}/mailspool"
 
+        # Pro subscription data directory
+        install -d -m 750 -o root -g nftban "${NFTBAN_DATA_DIR}/pro"
+
         # Log directory
         install -d -m 750 -o nftban -g nftban "${NFTBAN_LOG_DIR}"
 
@@ -182,6 +185,7 @@ EOF
         echo "  nftban ddos enable       # DDoS protection"
         echo "  nftban gui enable        # Web GUI"
         echo "  nftban metrics enable    # Metrics collection"
+        echo "  nftban pro enroll        # NFTBan Pro subscription"
 
         # ==========================================================================
         # SECURITY: Protect nft_schema.sh from modification (P0 CRITICAL)

@@ -1,0 +1,42 @@
+# =============================================================================
+# NFTBan v1.0.0 - Pro Inventory Collection Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-pro-inventory.timer"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-01-08"
+# meta:description="Timer for daily Pro inventory collection"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-pro-inventory.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
+[Unit]
+Description=NFTBan Pro Daily Inventory Collection Timer
+Documentation=man:nftban(8)
+Requires=nftban-pro-inventory.service
+ConditionPathExists=/etc/nftban/pro.token
+
+[Timer]
+# Run daily at 04:00 AM (after license check at 00/6:00)
+OnCalendar=*-*-* 04:00:00
+
+# Add randomization to avoid load spikes (0-60 minutes)
+RandomizedDelaySec=60m
+
+# Persist timer across reboots
+Persistent=true
+
+# Unit to activate
+Unit=nftban-pro-inventory.service
+
+[Install]
+WantedBy=timers.target

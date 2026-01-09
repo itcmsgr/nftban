@@ -1,0 +1,45 @@
+# =============================================================================
+# NFTBan v1.0.0 - Pro License Check Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-pro-license.timer"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-01-08"
+# meta:description="Timer for periodic Pro license validation"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-pro-license.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
+[Unit]
+Description=NFTBan Pro License Check Timer
+Documentation=man:nftban(8)
+Requires=nftban-pro-license.service
+ConditionPathExists=/etc/nftban/pro.token
+
+[Timer]
+# Run every 6 hours
+OnCalendar=*-*-* 00/6:00:00
+
+# Add randomization to avoid load spikes (0-15 minutes)
+RandomizedDelaySec=15m
+
+# Also run 5 minutes after boot
+OnBootSec=5min
+
+# Persist timer across reboots
+Persistent=true
+
+# Unit to activate
+Unit=nftban-pro-license.service
+
+[Install]
+WantedBy=timers.target

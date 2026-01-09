@@ -65,993 +65,15 @@ if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_vm_enterprise.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/nftban_vm_enterprise.sh"
 fi
 
-# ==============================================================================
-# CONFLICT DETECTION FUNCTIONS
-# ==============================================================================
-
-# Check if Prometheus is installed (service exists)
-_is_prometheus_installed() {
-    local prometheus_service
-    prometheus_service=$(nftban_distro_get_service prometheus 2>/dev/null || echo "prometheus")
-
-    # Check if service file exists
-    if systemctl list-unit-files 2>/dev/null | grep -q "^${prometheus_service}.service"; then
-        return 0
-    fi
-
-    # Check if binary exists
-    if [[ -f "/usr/bin/prometheus" ]] || [[ -f "/usr/local/bin/prometheus" ]]; then
-        return 0
-    fi
-
-    return 1
-}
-
-# Check if VictoriaMetrics is installed (service exists)
-_is_victoriametrics_installed() {
-    # Check if service file exists
-    if systemctl list-unit-files 2>/dev/null | grep -q "^victoriametrics.service"; then
-        return 0
-    fi
-
-    # Check if binary exists
-    if [[ -f "/usr/local/bin/victoria-metrics-prod" ]] || [[ -f "/usr/bin/victoria-metrics-prod" ]]; then
-        return 0
-    fi
-
-    return 1
-}
-
-# Check if Prometheus is running
-_is_prometheus_running() {
-    local prometheus_service
-    prometheus_service=$(nftban_distro_get_service prometheus 2>/dev/null || echo "prometheus")
-    systemctl is-active "$prometheus_service" &>/dev/null
-}
-
-# Check if VictoriaMetrics is running
-_is_victoriametrics_running() {
-    systemctl is-active victoriametrics &>/dev/null
-}
-
-# Detect conflict: both backends installed
-_check_backend_conflict() {
-    local prometheus_installed=false
-    local victoriametrics_installed=false
-    local prometheus_running=false
-    local victoriametrics_running=false
-
-    if _is_prometheus_installed; then
-        prometheus_installed=true
-        if _is_prometheus_running; then
-            prometheus_running=true
-        fi
-    fi
-
-    if _is_victoriametrics_installed; then
-        victoriametrics_installed=true
-        if _is_victoriametrics_running; then
-            victoriametrics_running=true
-        fi
-    fi
-
-    # Return status via global variables
-    CONFLICT_PROMETHEUS_INSTALLED="$prometheus_installed"
-    CONFLICT_VICTORIAMETRICS_INSTALLED="$victoriametrics_installed"
-    CONFLICT_PROMETHEUS_RUNNING="$prometheus_running"
-    CONFLICT_VICTORIAMETRICS_RUNNING="$victoriametrics_running"
-
-    # Check for actual conflict (both running)
-    if [[ "$prometheus_running" == "true" ]] && [[ "$victoriametrics_running" == "true" ]]; then
-        return 1  # Conflict: both running
-    fi
-
-    return 0
-}
-
-# Display conflict warning and instructions
-_show_conflict_warning() {
-    local requested_backend="$1"
-    local other_backend=""
-    local other_service=""
-
-    if [[ "$requested_backend" == "prometheus" ]]; then
-        other_backend="VictoriaMetrics"
-        other_service="victoriametrics"
-    else
-        other_backend="Prometheus"
-        other_service=$(nftban_distro_get_service prometheus 2>/dev/null || echo "prometheus")
-    fi
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  ⚠️  METRICS BACKEND CONFLICT DETECTED"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "  You requested: $requested_backend"
-    echo "  Already running: $other_backend"
-    echo ""
-    echo "  NFTBan supports only ONE metrics backend at a time."
-    echo "  Running both wastes resources and causes confusion."
-    echo ""
-    echo "  To switch to $requested_backend, first disable $other_backend:"
-    echo ""
-    echo "    # Stop $other_backend"
-    echo "    sudo systemctl stop $other_service"
-    echo "    sudo systemctl disable $other_service"
-    echo ""
-    echo "    # Then enable $requested_backend"
-    echo "    nftban metrics enable --backend $requested_backend"
-    echo ""
-    echo "  Or use 'nftban metrics disable' to stop all metrics first."
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-}
-
-# Show warning when both backends are installed (even if not both running)
-_show_dual_install_warning() {
-    local requested_backend="$1"
-    local other_backend=""
-    local other_service=""
-
-    if [[ "$requested_backend" == "prometheus" ]]; then
-        other_backend="VictoriaMetrics"
-        other_service="victoriametrics"
-    else
-        other_backend="Prometheus"
-        other_service=$(nftban_distro_get_service prometheus 2>/dev/null || echo "prometheus")
-    fi
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  ℹ️  NOTE: Both metrics backends are installed"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "  Installed:"
-    echo "    • Prometheus"
-    echo "    • VictoriaMetrics"
-    echo ""
-    echo "  Using: $requested_backend"
-    echo ""
-    echo "  You only need one metrics database. Consider removing the other:"
-    echo ""
-    if [[ "$requested_backend" == "prometheus" ]]; then
-        echo "    # Remove VictoriaMetrics (optional)"
-        echo "    sudo systemctl stop victoriametrics"
-        echo "    sudo systemctl disable victoriametrics"
-        echo "    sudo rm /etc/systemd/system/victoriametrics.service"
-        echo "    sudo rm /usr/local/bin/victoria-metrics-prod"
-    else
-        echo "    # Remove Prometheus (optional)"
-        echo "    sudo systemctl stop $other_service"
-        echo "    sudo systemctl disable $other_service"
-        echo "    # Then use package manager: dnf remove prometheus2 / apt remove prometheus"
-    fi
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-}
-
-# ==============================================================================
-# Helper: Get current backend from config
-# ==============================================================================
-_get_metrics_backend() {
-    # Returns: "prometheus" or "victoriametrics" (defaults to prometheus)
-    if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-        local backend
-        backend=$(grep "^NFTBAN_METRICS_BACKEND=" "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null | cut -d'=' -f2 | tr -d '"' || echo "")
-        if [[ -n "$backend" ]]; then
-            echo "$backend"
-            return
-        fi
-    fi
-    echo "prometheus"  # Default
-}
-
-# ==============================================================================
-# Helper: Set backend in config
-# ==============================================================================
-_set_metrics_backend() {
-    local backend="$1"
-
-    if [[ ! -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-        mkdir -p "${NFTBAN_CONFIG_DIR}"
-        touch "${NFTBAN_CONFIG_DIR}/nftban.conf"
-    fi
-
-    if grep -q "^NFTBAN_METRICS_BACKEND=" "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null; then
-        sed -i "s|^NFTBAN_METRICS_BACKEND=.*|NFTBAN_METRICS_BACKEND=\"${backend}\"|" "${NFTBAN_CONFIG_DIR}/nftban.conf"
-    else
-        echo "NFTBAN_METRICS_BACKEND=\"${backend}\"" >> "${NFTBAN_CONFIG_DIR}/nftban.conf"
-    fi
-
-    # Also set metrics mode to true
-    if grep -q "^NFTBAN_METRICS_MODE=" "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null; then
-        sed -i 's|^NFTBAN_METRICS_MODE=.*|NFTBAN_METRICS_MODE="true"|' "${NFTBAN_CONFIG_DIR}/nftban.conf"
-    else
-        echo 'NFTBAN_METRICS_MODE="true"' >> "${NFTBAN_CONFIG_DIR}/nftban.conf"
-    fi
-}
-
-# ==============================================================================
-# CASE A: Remote submission to user's own backend
-# ==============================================================================
-_metrics_enable_remote_user() {
-    local remote_url="${1:-}"
-    local token_file="${2:-}"
-    local external_labels="${3:-}"
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  NFTBan Metrics - Remote Submission (Case A: Your Backend)"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-
-    # Validate remote_write URL is provided
-    if [[ -z "$remote_url" ]]; then
-        echo "❌ Error: Remote write URL required"
-        echo ""
-        echo "Usage: nftban metrics enable --remote --url <remote_write_url> [--token <file>] [--labels key=val,...]"
-        echo ""
-        echo "Examples:"
-        echo "  nftban metrics enable --remote --url https://mimir.example.com/api/v1/push"
-        echo "  nftban metrics enable --remote --url https://vm.example.com/api/v1/write --token /etc/nftban/grafana.token"
-        echo "  nftban metrics enable --remote --url https://grafana-cloud.example.com/api/prom/push --labels site=prod,env=production"
-        echo ""
-        return 1
-    fi
-
-    # Step 1: Install vmagent
-    echo "Step 1/4: Installing vmagent..."
-    if [[ -f "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh" ]]; then
-        # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh"
-        if ! install_vmagent_binary true; then
-            echo "❌ Failed to install vmagent"
-            return 1
-        fi
-    else
-        echo "❌ vmagent installation script not found"
-        return 1
-    fi
-
-    # Step 2: Ensure node_exporter is running (for metrics source)
-    echo ""
-    echo "Step 2/4: Ensuring Node Exporter is running..."
-    local node_exporter_running=false
-    for svc in node-exporter node_exporter prometheus-node-exporter; do
-        if systemctl is-active "$svc" &>/dev/null; then
-            node_exporter_running=true
-            echo "  ✓ Node Exporter already running ($svc)"
-            break
-        fi
-    done
-
-    if [[ "$node_exporter_running" == "false" ]]; then
-        echo "  Installing Node Exporter..."
-        if [[ -f "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" ]]; then
-            bash "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" --method binary 2>/dev/null || true
-        fi
-        # Try to start node_exporter
-        for svc in node-exporter node_exporter prometheus-node-exporter; do
-            if systemctl list-unit-files 2>/dev/null | grep -q "^${svc}.service"; then
-                systemctl enable --now "$svc" &>/dev/null && break
-            fi
-        done
-    fi
-
-    # Ensure metrics exporter timer is enabled
-    systemctl enable --now nftban-metrics-exporter.timer &>/dev/null || true
-    systemctl start nftban-metrics-exporter.service &>/dev/null || true
-    echo "  ✓ NFTBan metrics exporter enabled"
-
-    # Step 3: Configure vmagent for user's backend
-    echo ""
-    echo "Step 3/4: Configuring vmagent for remote_write..."
-    create_vmagent_config_user_backend "$remote_url" "$token_file" "$external_labels"
-
-    # Step 4: Start vmagent
-    echo ""
-    echo "Step 4/4: Starting vmagent..."
-    create_vmagent_systemd_service
-    if ! start_vmagent; then
-        echo "❌ Failed to start vmagent"
-        return 1
-    fi
-
-    # Validate pipeline
-    echo ""
-    echo "Validating metrics pipeline..."
-    sleep 2  # Give vmagent time to start
-
-    nftban_print_pipeline_report
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✅ Remote Metrics Submission Enabled"
-    echo ""
-    echo "   Remote Write URL:  $remote_url"
-    [[ -n "$token_file" ]] && echo "   Token File:        $token_file"
-    [[ -n "$external_labels" ]] && echo "   External Labels:   $external_labels"
-    echo ""
-    echo "   vmagent Status:    http://localhost:8429/"
-    echo "   vmagent Targets:   http://localhost:8429/targets"
-    echo ""
-    echo "   NOTE: Inventory submission is NOT enabled for user backends."
-    echo "         Use --pro for NFTBan Pro features."
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-}
-
-# ==============================================================================
-# CASE B: Remote submission to NFTBan Pro
-# ==============================================================================
-_metrics_enable_pro() {
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  NFTBan Metrics - Pro Subscription (Case B)"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-
-    # Step 1: Check/create server_id
-    echo "Step 1/6: Ensuring server identity..."
-    local server_id
-    server_id=$(nftban_pro_ensure_server_id)
-    echo "  ✓ Server ID: $server_id"
-
-    # Step 2: Check token exists
-    echo ""
-    echo "Step 2/6: Checking Pro token..."
-    local token_file="${NFTBAN_PRO_TOKEN_FILE:-/etc/nftban/pro.token}"
-
-    if [[ ! -f "$token_file" ]]; then
-        echo ""
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "  ⚠️  Pro Token Required"
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        echo "  To enable NFTBan Pro, you need a subscription token."
-        echo ""
-        echo "  1. Visit https://pro.nftban.com to get your token"
-        echo "  2. Save it to: $token_file"
-        echo ""
-        echo "     echo 'YOUR_TOKEN_HERE' | sudo tee $token_file"
-        echo "     sudo chmod 640 $token_file"
-        echo "     sudo chown root:nftban $token_file"
-        echo ""
-        echo "  3. Re-run: nftban metrics enable --pro"
-        echo ""
-        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo ""
-        return 1
-    fi
-    echo "  ✓ Token file exists: $token_file"
-
-    # Step 3: Validate license
-    echo ""
-    echo "Step 3/6: Validating Pro subscription..."
-    if nftban_pro_check_license; then
-        echo "  ✓ Subscription valid"
-    else
-        echo "  ⚠️  Could not validate subscription (may work offline)"
-        echo "      Will retry validation later via license timer"
-    fi
-
-    # Step 4: Install vmagent
-    echo ""
-    echo "Step 4/6: Installing vmagent..."
-    if [[ -f "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh" ]]; then
-        # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh"
-        if ! install_vmagent_binary true; then
-            echo "❌ Failed to install vmagent"
-            return 1
-        fi
-    else
-        echo "❌ vmagent installation script not found"
-        return 1
-    fi
-
-    # Ensure node_exporter is running
-    local node_exporter_running=false
-    for svc in node-exporter node_exporter prometheus-node-exporter; do
-        if systemctl is-active "$svc" &>/dev/null; then
-            node_exporter_running=true
-            break
-        fi
-    done
-
-    if [[ "$node_exporter_running" == "false" ]]; then
-        echo "  Installing Node Exporter..."
-        if [[ -f "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" ]]; then
-            bash "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" --method binary 2>/dev/null || true
-        fi
-        for svc in node-exporter node_exporter prometheus-node-exporter; do
-            if systemctl list-unit-files 2>/dev/null | grep -q "^${svc}.service"; then
-                systemctl enable --now "$svc" &>/dev/null && break
-            fi
-        done
-    fi
-
-    # Ensure metrics exporter timer is enabled
-    systemctl enable --now nftban-metrics-exporter.timer &>/dev/null || true
-    systemctl start nftban-metrics-exporter.service &>/dev/null || true
-
-    # Step 5: Configure vmagent for Pro
-    echo ""
-    echo "Step 5/6: Configuring vmagent for NFTBan Pro..."
-    create_vmagent_config_pro "$server_id" "$(hostname -f 2>/dev/null || hostname)"
-    create_vmagent_systemd_service
-
-    if ! start_vmagent; then
-        echo "❌ Failed to start vmagent"
-        return 1
-    fi
-
-    # Step 6: Collect and submit inventory
-    echo ""
-    echo "Step 6/6: Collecting server inventory..."
-    local inventory_hash
-    inventory_hash=$(nftban_pro_save_inventory)
-    echo "  ✓ Inventory collected (hash: ${inventory_hash:0:16}...)"
-
-    # Try to submit inventory (don't fail if endpoint not reachable)
-    echo "  Submitting inventory to Pro..."
-    if nftban_pro_submit_inventory true; then
-        echo "  ✓ Inventory submitted"
-    else
-        echo "  ⚠️  Inventory submission deferred (will retry via timer)"
-    fi
-
-    # Enable license timer
-    echo ""
-    echo "Enabling Pro license timer..."
-    systemctl enable nftban-pro-license.timer &>/dev/null || true
-    systemctl start nftban-pro-license.timer &>/dev/null || true
-    echo "  ✓ License timer enabled (checks every 6 hours)"
-
-    # Validate pipeline
-    echo ""
-    echo "Validating metrics pipeline..."
-    sleep 2
-
-    nftban_print_pipeline_report
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✅ NFTBan Pro Enabled Successfully"
-    echo ""
-    echo "   Server ID:         $server_id"
-    echo "   Remote Write:      https://pro.nftban.com/api/v1/write"
-    echo "   Inventory:         /var/lib/nftban/pro/inventory.json"
-    echo ""
-    echo "   vmagent Status:    http://localhost:8429/"
-    echo "   vmagent Targets:   http://localhost:8429/targets"
-    echo ""
-    echo "   Pro Features:"
-    echo "   • Metrics streaming to pro.nftban.com"
-    echo "   • Server inventory and benchmarking"
-    echo "   • AI-powered recommendations (coming soon)"
-    echo "   • Centralized dashboard at https://pro.nftban.com"
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-}
-
-# ==============================================================================
-# AGENT/STORAGE MODEL FUNCTIONS (VictoriaMetrics integration)
-# ==============================================================================
-
-# Validate agent/storage combination
-_validate_agent_storage() {
-    local agent="$1"
-    local storage="$2"
-    local remote_url="$3"
-
-    # Set defaults if not specified
-    if [[ -z "$agent" ]]; then
-        agent="prometheus"
-    fi
-    if [[ -z "$storage" ]]; then
-        storage="prometheus-local"
-    fi
-
-    # Validate agent value
-    case "$agent" in
-        prometheus|vmagent|none) ;;
-        *)
-            echo "❌ Invalid agent: $agent"
-            echo "   Valid options: prometheus, vmagent, none"
-            return 1
-            ;;
-    esac
-
-    # Validate storage value
-    case "$storage" in
-        prometheus-local|vm-local|remote) ;;
-        *)
-            echo "❌ Invalid storage: $storage"
-            echo "   Valid options: prometheus-local, vm-local, remote"
-            return 1
-            ;;
-    esac
-
-    # Validate combination
-    case "${agent}:${storage}" in
-        "prometheus:prometheus-local") ;; # Mode A
-        "prometheus:vm-local") ;;          # Mode C1
-        "vmagent:remote") ;;               # Mode B
-        "vmagent:vm-local") ;;             # Mode C2
-        "none:remote") ;;                  # External agent
-        *)
-            echo "❌ Invalid agent/storage combination: ${agent}/${storage}"
-            echo ""
-            echo "   Valid combinations:"
-            echo "   • --agent=prometheus --storage=prometheus-local  (Mode A)"
-            echo "   • --agent=prometheus --storage=vm-local          (Mode C1)"
-            echo "   • --agent=vmagent --storage=remote               (Mode B)"
-            echo "   • --agent=vmagent --storage=vm-local             (Mode C2)"
-            echo "   • --agent=none --storage=remote                  (External agent)"
-            return 1
-            ;;
-    esac
-
-    # Validate remote_url is provided when storage=remote
-    if [[ "$storage" == "remote" ]] && [[ -z "$remote_url" ]]; then
-        echo "❌ --remote-write-url is required when --storage=remote"
-        return 1
-    fi
-
-    return 0
-}
-
-# ==============================================================================
-# Mode A: Prometheus all-in-one (scrape + store locally)
-# ==============================================================================
-_metrics_enable_mode_a() {
-    local retention="${1:-90d}"
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  NFTBan Metrics - Mode A: Prometheus All-in-One"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "  Agent:     Prometheus (scrape)"
-    echo "  Storage:   Prometheus TSDB (local)"
-    echo "  Retention: ${retention}"
-    echo ""
-
-    # Check if already enabled
-    if systemctl is-active prometheus &>/dev/null && \
-       systemctl is-active nftban-metrics-exporter.timer &>/dev/null; then
-        echo "✅ Prometheus metrics already enabled"
-        echo ""
-        echo "📊 Prometheus:  http://${NFTBAN_METRICS_PROMETHEUS_ADDR}/"
-        echo "📈 Metrics:     http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
-        return 0
-    fi
-
-    # Step 1: Check and install dependencies
-    echo "Step 1/3: Checking Prometheus dependencies..."
-
-    if ! nftban_metrics_check_deps; then
-        echo "  ⚠️  Missing: ${NFTBAN_METRICS_MISSING[*]}"
-        if ! nftban_metrics_install_deps; then
-            return 1
-        fi
-    else
-        echo "  ✓ All dependencies present"
-    fi
-
-    # Step 2: Start metrics stack
-    echo ""
-    echo "Step 2/3: Starting Prometheus stack..."
-
-    if ! nftban_metrics_start_stack; then
-        echo "  ❌ Failed to start Prometheus stack"
-        return 1
-    fi
-
-    # Step 3: Update config
-    echo ""
-    echo "Step 3/3: Updating configuration..."
-    _set_metrics_backend "prometheus"
-    _set_metrics_agent_storage "prometheus" "prometheus-local"
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✅ Mode A Enabled Successfully!"
-    echo ""
-    echo "📊 Prometheus UI:   http://${NFTBAN_METRICS_PROMETHEUS_ADDR}/"
-    echo "📈 Node Exporter:   http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
-    echo "📁 NFTBan Metrics:  /var/lib/node_exporter/textfile_collector/nftban.prom"
-    echo "⏱️  Collection:      Every 60 seconds"
-    echo ""
-    echo "Test: nftban metrics status"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-}
-
-# ==============================================================================
-# Mode B: Agent-only (vmagent -> remote_write)
-# ==============================================================================
-_metrics_enable_mode_b() {
-    local remote_url="$1"
-    local token_file="$2"
-    local external_labels="$3"
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  NFTBan Metrics - Mode B: Agent-Only (vmagent -> remote)"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "  Agent:     vmagent (scrape + ship)"
-    echo "  Storage:   Remote backend"
-    echo "  URL:       ${remote_url}"
-    echo ""
-
-    # Delegate to existing remote user function
-    _metrics_enable_remote_user "$remote_url" "$token_file" "$external_labels"
-    local result=$?
-
-    if [[ $result -eq 0 ]]; then
-        _set_metrics_agent_storage "vmagent" "remote"
-    fi
-
-    return $result
-}
-
-# ==============================================================================
-# Mode C1: Prometheus scrapes -> remote_write to local VictoriaMetrics
-# ==============================================================================
-_metrics_enable_mode_c1() {
-    local retention="${1:-90d}"
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  NFTBan Metrics - Mode C1: Prometheus -> Local VictoriaMetrics"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "  Agent:     Prometheus (scrape + remote_write)"
-    echo "  Storage:   VictoriaMetrics (local)"
-    echo "  Retention: ${retention}"
-    echo ""
-
-    # Step 1: Install VictoriaMetrics storage
-    echo "Step 1/5: Installing VictoriaMetrics storage..."
-    if ! nftban_metrics_install_victoriametrics true; then
-        echo "  ❌ Failed to install VictoriaMetrics"
-        return 1
-    fi
-
-    # Step 2: Install Prometheus if not present
-    echo ""
-    echo "Step 2/5: Checking Prometheus dependencies..."
-    if ! nftban_metrics_check_deps; then
-        echo "  ⚠️  Missing: ${NFTBAN_METRICS_MISSING[*]}"
-        if ! nftban_metrics_install_deps; then
-            return 1
-        fi
-    else
-        echo "  ✓ All dependencies present"
-    fi
-
-    # Step 3: Configure Prometheus for remote_write to local VM
-    echo ""
-    echo "Step 3/5: Configuring Prometheus for remote_write to local VM..."
-    _configure_prometheus_remote_write "http://localhost:8428/api/v1/write"
-
-    # Step 4: Start VictoriaMetrics
-    echo ""
-    echo "Step 4/5: Starting VictoriaMetrics storage..."
-    systemctl enable victoriametrics &>/dev/null || true
-    systemctl start victoriametrics &>/dev/null || true
-
-    # Wait for VM to be ready
-    local retries=10
-    while ! curl -sf "http://localhost:8428/health" &>/dev/null && [[ $retries -gt 0 ]]; do
-        sleep 1
-        ((retries--))
-    done
-
-    if ! systemctl is-active victoriametrics &>/dev/null; then
-        echo "  ❌ Failed to start VictoriaMetrics"
-        return 1
-    fi
-    echo "  ✓ VictoriaMetrics running"
-
-    # Step 5: Start Prometheus with remote_write
-    echo ""
-    echo "Step 5/5: Starting Prometheus (agent mode)..."
-    if ! nftban_metrics_start_stack; then
-        echo "  ❌ Failed to start Prometheus stack"
-        return 1
-    fi
-
-    # Update config
-    _set_metrics_backend "victoriametrics"
-    _set_metrics_agent_storage "prometheus" "vm-local"
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✅ Mode C1 Enabled Successfully!"
-    echo ""
-    echo "📊 Prometheus (scraper): http://${NFTBAN_METRICS_PROMETHEUS_ADDR}/"
-    echo "📊 VictoriaMetrics UI:   http://${NFTBAN_METRICS_VICTORIA_ADDR}/vmui"
-    echo "📈 Node Exporter:        http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
-    echo "📁 NFTBan Metrics:       /var/lib/node_exporter/textfile_collector/nftban.prom"
-    echo "💾 Retention:            ${retention}"
-    echo ""
-    echo "💡 VictoriaMetrics Benefits:"
-    echo "   • 10x better compression"
-    echo "   • Faster queries"
-    echo "   • Lower resource usage"
-    echo ""
-    echo "Test: nftban metrics status"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-}
-
-# ==============================================================================
-# Mode C2: vmagent scrapes -> writes to local VictoriaMetrics
-# ==============================================================================
-_metrics_enable_mode_c2() {
-    local retention="${1:-90d}"
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  NFTBan Metrics - Mode C2: vmagent -> Local VictoriaMetrics"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "  Agent:     vmagent (scrape + write)"
-    echo "  Storage:   VictoriaMetrics (local)"
-    echo "  Retention: ${retention}"
-    echo ""
-
-    # Step 1: Install VictoriaMetrics storage
-    echo "Step 1/5: Installing VictoriaMetrics storage..."
-    if ! nftban_metrics_install_victoriametrics true; then
-        echo "  ❌ Failed to install VictoriaMetrics"
-        return 1
-    fi
-
-    # Step 2: Install vmagent
-    echo ""
-    echo "Step 2/5: Installing vmagent..."
-    if [[ -f "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh" ]]; then
-        # shellcheck source=/dev/null
-        source "${NFTBAN_LIB_DIR}/setup/install_vmagent.sh"
-        if ! install_vmagent_binary true; then
-            echo "  ❌ Failed to install vmagent"
-            return 1
-        fi
-    else
-        echo "  ❌ vmagent installation script not found"
-        return 1
-    fi
-
-    # Step 3: Ensure node_exporter is running
-    echo ""
-    echo "Step 3/5: Ensuring Node Exporter is running..."
-    local node_exporter_running=false
-    for svc in node-exporter node_exporter prometheus-node-exporter; do
-        if systemctl is-active "$svc" &>/dev/null; then
-            node_exporter_running=true
-            echo "  ✓ Node Exporter already running ($svc)"
-            break
-        fi
-    done
-
-    if [[ "$node_exporter_running" == "false" ]]; then
-        echo "  Installing Node Exporter..."
-        if [[ -f "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" ]]; then
-            bash "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" --method binary 2>/dev/null || true
-        fi
-        for svc in node-exporter node_exporter prometheus-node-exporter; do
-            if systemctl list-unit-files 2>/dev/null | grep -q "^${svc}.service"; then
-                systemctl enable --now "$svc" &>/dev/null && break
-            fi
-        done
-    fi
-
-    # Ensure metrics exporter timer is enabled
-    systemctl enable --now nftban-metrics-exporter.timer &>/dev/null || true
-    systemctl start nftban-metrics-exporter.service &>/dev/null || true
-    echo "  ✓ NFTBan metrics exporter enabled"
-
-    # Step 4: Configure vmagent for local VM
-    echo ""
-    echo "Step 4/5: Configuring vmagent for local VictoriaMetrics..."
-    create_vmagent_config_local_vm "http://localhost:8428/api/v1/write"
-    create_vmagent_systemd_service
-
-    # Step 5: Start services
-    echo ""
-    echo "Step 5/5: Starting services..."
-
-    # Start VictoriaMetrics
-    systemctl enable victoriametrics &>/dev/null || true
-    systemctl start victoriametrics &>/dev/null || true
-
-    # Wait for VM to be ready
-    local retries=10
-    while ! curl -sf "http://localhost:8428/health" &>/dev/null && [[ $retries -gt 0 ]]; do
-        sleep 1
-        ((retries--))
-    done
-
-    if ! systemctl is-active victoriametrics &>/dev/null; then
-        echo "  ❌ Failed to start VictoriaMetrics"
-        return 1
-    fi
-    echo "  ✓ VictoriaMetrics running"
-
-    # Start vmagent
-    if ! start_vmagent; then
-        echo "  ❌ Failed to start vmagent"
-        return 1
-    fi
-    echo "  ✓ vmagent running"
-
-    # Update config
-    _set_metrics_backend "victoriametrics"
-    _set_metrics_agent_storage "vmagent" "vm-local"
-
-    # Validate pipeline
-    echo ""
-    echo "Validating metrics pipeline..."
-    sleep 2
-    nftban_print_pipeline_report
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✅ Mode C2 Enabled Successfully!"
-    echo ""
-    echo "📊 VictoriaMetrics UI:   http://${NFTBAN_METRICS_VICTORIA_ADDR}/vmui"
-    echo "📊 vmagent Status:       http://localhost:8429/"
-    echo "📊 vmagent Targets:      http://localhost:8429/targets"
-    echo "📈 Node Exporter:        http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
-    echo "📁 NFTBan Metrics:       /var/lib/node_exporter/textfile_collector/nftban.prom"
-    echo "💾 Retention:            ${retention}"
-    echo ""
-    echo "💡 VictoriaMetrics Benefits:"
-    echo "   • 10x better compression"
-    echo "   • Faster queries"
-    echo "   • Lower resource usage"
-    echo ""
-    echo "Test: nftban metrics status"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-}
-
-# ==============================================================================
-# Exporters-only mode (external agent)
-# ==============================================================================
-_metrics_enable_exporters_only() {
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  NFTBan Metrics - Exporters Only (External Agent)"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-    echo "  Agent:     External (not managed by NFTBan)"
-    echo "  Storage:   Remote"
-    echo ""
-
-    # Ensure node_exporter is running
-    echo "Step 1/2: Ensuring Node Exporter is running..."
-    local node_exporter_running=false
-    for svc in node-exporter node_exporter prometheus-node-exporter; do
-        if systemctl is-active "$svc" &>/dev/null; then
-            node_exporter_running=true
-            echo "  ✓ Node Exporter already running ($svc)"
-            break
-        fi
-    done
-
-    if [[ "$node_exporter_running" == "false" ]]; then
-        echo "  Installing Node Exporter..."
-        if [[ -f "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" ]]; then
-            bash "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" --method binary 2>/dev/null || true
-        fi
-        for svc in node-exporter node_exporter prometheus-node-exporter; do
-            if systemctl list-unit-files 2>/dev/null | grep -q "^${svc}.service"; then
-                systemctl enable --now "$svc" &>/dev/null && break
-            fi
-        done
-    fi
-
-    # Ensure metrics exporter timer is enabled
-    echo ""
-    echo "Step 2/2: Enabling NFTBan metrics exporter..."
-    systemctl enable --now nftban-metrics-exporter.timer &>/dev/null || true
-    systemctl start nftban-metrics-exporter.service &>/dev/null || true
-    echo "  ✓ NFTBan metrics exporter enabled"
-
-    _set_metrics_agent_storage "none" "remote"
-
-    echo ""
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "✅ Exporters Enabled Successfully!"
-    echo ""
-    echo "📈 Node Exporter:   http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
-    echo "📁 NFTBan Metrics:  /var/lib/node_exporter/textfile_collector/nftban.prom"
-    echo ""
-    echo "Configure your external agent to scrape localhost:9100"
-    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo ""
-}
-
-# ==============================================================================
-# Helper: Configure Prometheus for remote_write (Mode C1)
-# ==============================================================================
-_configure_prometheus_remote_write() {
-    local remote_url="$1"
-    local prom_config="/etc/prometheus/prometheus.yml"
-
-    # Backup existing config
-    if [[ -f "$prom_config" ]]; then
-        cp "$prom_config" "${prom_config}.bak.$(date +%Y%m%d%H%M%S)"
-    fi
-
-    # Create prometheus config with remote_write
-    mkdir -p "$(dirname "$prom_config")"
-    cat > "$prom_config" << EOF
-# Prometheus Configuration - Mode C1 (remote_write to local VictoriaMetrics)
-# Generated by NFTBan on $(date -Iseconds)
-
-global:
-  scrape_interval: 60s
-  evaluation_interval: 60s
-  external_labels:
-    service: 'nftban'
-
-scrape_configs:
-  - job_name: 'nftban'
-    static_configs:
-      - targets: ['localhost:9100']
-    metric_relabel_configs:
-      - source_labels: [__name__]
-        regex: 'nftban_.*|node_.*'
-        action: keep
-
-remote_write:
-  - url: '${remote_url}'
-    queue_config:
-      max_samples_per_send: 10000
-      batch_send_deadline: 10s
-      capacity: 100000
-EOF
-
-    echo "  ✓ Prometheus configured with remote_write to ${remote_url}"
-}
-
-# ==============================================================================
-# Helper: Set agent/storage in config
-# ==============================================================================
-_set_metrics_agent_storage() {
-    local agent="$1"
-    local storage="$2"
-
-    if [[ ! -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-        mkdir -p "${NFTBAN_CONFIG_DIR}"
-        touch "${NFTBAN_CONFIG_DIR}/nftban.conf"
-    fi
-
-    # Update or add NFTBAN_METRICS_AGENT
-    if grep -q "^NFTBAN_METRICS_AGENT=" "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null; then
-        sed -i "s|^NFTBAN_METRICS_AGENT=.*|NFTBAN_METRICS_AGENT=\"${agent}\"|" "${NFTBAN_CONFIG_DIR}/nftban.conf"
-    else
-        echo "NFTBAN_METRICS_AGENT=\"${agent}\"" >> "${NFTBAN_CONFIG_DIR}/nftban.conf"
-    fi
-
-    # Update or add NFTBAN_METRICS_STORAGE
-    if grep -q "^NFTBAN_METRICS_STORAGE=" "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null; then
-        sed -i "s|^NFTBAN_METRICS_STORAGE=.*|NFTBAN_METRICS_STORAGE=\"${storage}\"|" "${NFTBAN_CONFIG_DIR}/nftban.conf"
-    else
-        echo "NFTBAN_METRICS_STORAGE=\"${storage}\"" >> "${NFTBAN_CONFIG_DIR}/nftban.conf"
-    fi
-}
+# Load metrics helpers (conflict detection, config helpers, validation)
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_metrics_helpers.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_metrics_helpers.sh"
+fi
+
+# Load metrics modes (mode A/B/C1/C2/Pro handlers)
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_metrics_modes.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_metrics_modes.sh"
+fi
 
 # ==============================================================================
 # Command: nftban metrics enable [options]
@@ -1261,7 +283,7 @@ nftban_metrics_enable() {
                 return $?
                 ;;
             *)
-                echo "❌ Unsupported agent/storage combination: ${agent}/${storage}"
+                echo "Unsupported agent/storage combination: ${agent}/${storage}"
                 return 1
                 ;;
         esac
@@ -1294,7 +316,7 @@ nftban_metrics_enable() {
 
     # Validate backend
     if [[ "$backend" != "prometheus" ]] && [[ "$backend" != "victoriametrics" ]]; then
-        echo "❌ Invalid backend: $backend"
+        echo "Invalid backend: $backend"
         echo "   Valid options: prometheus, victoriametrics"
         return 1
     fi
@@ -1309,14 +331,14 @@ nftban_metrics_enable() {
     if [[ "$backend" == "prometheus" ]] && [[ "$CONFLICT_VICTORIAMETRICS_RUNNING" == "true" ]]; then
         conflict_detected=true
         _show_conflict_warning "prometheus"
-        echo "❌ Cannot enable Prometheus while VictoriaMetrics is running."
+        echo "Cannot enable Prometheus while VictoriaMetrics is running."
         echo ""
         return 1
     elif [[ "$backend" == "victoriametrics" ]] && [[ "$CONFLICT_PROMETHEUS_RUNNING" == "true" ]]; then
         # shellcheck disable=SC2034  # Reserved for conflict resolution
         conflict_detected=true
         _show_conflict_warning "victoriametrics"
-        echo "❌ Cannot enable VictoriaMetrics while Prometheus is running."
+        echo "Cannot enable VictoriaMetrics while Prometheus is running."
         echo ""
         return 1
     fi
@@ -1339,10 +361,10 @@ nftban_metrics_enable() {
             # Check if already enabled
             if systemctl is-active prometheus &>/dev/null && \
                systemctl is-active nftban-metrics-exporter.timer &>/dev/null; then
-                echo "✅ Prometheus metrics already enabled"
+                echo "Prometheus metrics already enabled"
                 echo ""
-                echo "📊 Prometheus:  http://${NFTBAN_METRICS_PROMETHEUS_ADDR}/"
-                echo "📈 Metrics:     http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
+                echo "Prometheus:  http://${NFTBAN_METRICS_PROMETHEUS_ADDR}/"
+                echo "Metrics:     http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
                 echo ""
 
                 # Show dual install warning if applicable
@@ -1357,12 +379,12 @@ nftban_metrics_enable() {
             echo "Step 1/3: Checking Prometheus dependencies..."
 
             if ! nftban_metrics_check_deps; then
-                echo "  ⚠️  Missing: ${NFTBAN_METRICS_MISSING[*]}"
+                echo "  Missing: ${NFTBAN_METRICS_MISSING[*]}"
                 if ! nftban_metrics_install_deps; then
                     return 1
                 fi
             else
-                echo "  ✓ All dependencies present"
+                echo "  All dependencies present"
             fi
 
             # Step 2: Start metrics stack
@@ -1370,7 +392,7 @@ nftban_metrics_enable() {
             echo "Step 2/3: Starting Prometheus stack..."
 
             if ! nftban_metrics_start_stack; then
-                echo "  ❌ Failed to start Prometheus stack"
+                echo "  Failed to start Prometheus stack"
                 return 1
             fi
 
@@ -1380,12 +402,12 @@ nftban_metrics_enable() {
             # Final output
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "✅ Prometheus Metrics Enabled Successfully!"
+            echo "Prometheus Metrics Enabled Successfully!"
             echo ""
-            echo "📊 Prometheus UI:   http://${NFTBAN_METRICS_PROMETHEUS_ADDR}/"
-            echo "📈 Node Exporter:   http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
-            echo "📁 NFTBan Metrics:  /var/lib/node_exporter/textfile_collector/nftban.prom"
-            echo "⏱️  Collection:      Every 60 seconds"
+            echo "Prometheus UI:   http://${NFTBAN_METRICS_PROMETHEUS_ADDR}/"
+            echo "Node Exporter:   http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
+            echo "NFTBan Metrics:  /var/lib/node_exporter/textfile_collector/nftban.prom"
+            echo "Collection:      Every 60 seconds"
             echo ""
             echo "Test: nftban metrics status"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1401,10 +423,10 @@ nftban_metrics_enable() {
             # Check if already enabled
             if systemctl is-active victoriametrics &>/dev/null && \
                systemctl is-active nftban-metrics-exporter.timer &>/dev/null; then
-                echo "✅ VictoriaMetrics already enabled"
+                echo "VictoriaMetrics already enabled"
                 echo ""
-                echo "📊 VictoriaMetrics:  http://${NFTBAN_METRICS_VICTORIA_ADDR}/vmui"
-                echo "📈 Metrics:          http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
+                echo "VictoriaMetrics:  http://${NFTBAN_METRICS_VICTORIA_ADDR}/vmui"
+                echo "Metrics:          http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
                 echo ""
 
                 # Show dual install warning if applicable
@@ -1419,7 +441,7 @@ nftban_metrics_enable() {
             echo "Step 1/3: Installing VictoriaMetrics..."
 
             if ! nftban_metrics_install_victoriametrics true; then
-                echo "  ❌ Failed to install VictoriaMetrics"
+                echo "  Failed to install VictoriaMetrics"
                 return 1
             fi
 
@@ -1427,7 +449,7 @@ nftban_metrics_enable() {
             local node_exporter_service
             node_exporter_service=$(nftban_distro_get_service node_exporter 2>/dev/null || echo "prometheus-node-exporter")
             if ! systemctl list-unit-files 2>/dev/null | grep -q "${node_exporter_service}.service"; then
-                echo "  📦 Installing Node Exporter..."
+                echo "  Installing Node Exporter..."
 
                 # Get package name from distro config (central config system)
                 local node_exporter_pkg
@@ -1449,7 +471,7 @@ nftban_metrics_enable() {
                 if [ "$pkg_installed" = false ]; then
                     echo "    Package not available in repos, installing from GitHub..."
                     if [ -f "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" ]; then
-                        bash "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" --method binary || echo "    ⚠️  Node Exporter install failed (non-critical)"
+                        bash "${NFTBAN_LIB_DIR}/setup/install_node_exporter.sh" --method binary || echo "    Node Exporter install failed (non-critical)"
                     fi
                 fi
             fi
@@ -1459,7 +481,7 @@ nftban_metrics_enable() {
             echo "Step 2/3: Starting VictoriaMetrics stack..."
 
             if ! nftban_metrics_start_stack_victoriametrics true; then
-                echo "  ❌ Failed to start VictoriaMetrics stack"
+                echo "  Failed to start VictoriaMetrics stack"
                 return 1
             fi
 
@@ -1469,20 +491,20 @@ nftban_metrics_enable() {
             # Final output
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "✅ VictoriaMetrics Enabled Successfully!"
+            echo "VictoriaMetrics Enabled Successfully!"
             echo ""
-            echo "📊 VictoriaMetrics UI:  http://${NFTBAN_METRICS_VICTORIA_ADDR}/vmui"
-            echo "📊 API Endpoint:        http://${NFTBAN_METRICS_VICTORIA_ADDR}"
-            echo "📈 Node Exporter:       http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
-            echo "📁 NFTBan Metrics:      /var/lib/node_exporter/textfile_collector/nftban.prom"
-            echo "⏱️  Collection:          Every 60 seconds"
-            echo "💾 Retention:           12 months (vs Prometheus 30 days)"
+            echo "VictoriaMetrics UI:  http://${NFTBAN_METRICS_VICTORIA_ADDR}/vmui"
+            echo "API Endpoint:        http://${NFTBAN_METRICS_VICTORIA_ADDR}"
+            echo "Node Exporter:       http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
+            echo "NFTBan Metrics:      /var/lib/node_exporter/textfile_collector/nftban.prom"
+            echo "Collection:          Every 60 seconds"
+            echo "Retention:           12 months (vs Prometheus 30 days)"
             echo ""
-            echo "💡 VictoriaMetrics Benefits:"
-            echo "   • 10x better compression (90% less disk)"
-            echo "   • 20x faster queries"
-            echo "   • Lower RAM/CPU usage"
-            echo "   • Prometheus-compatible (same queries work)"
+            echo "VictoriaMetrics Benefits:"
+            echo "   - 10x better compression (90% less disk)"
+            echo "   - 20x faster queries"
+            echo "   - Lower RAM/CPU usage"
+            echo "   - Prometheus-compatible (same queries work)"
             echo ""
             echo "Test: nftban metrics status"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1529,7 +551,7 @@ nftban_metrics_disable() {
     esac
 
     if [[ "$is_running" == false ]]; then
-        echo "ℹ️  Metrics already disabled"
+        echo "Metrics already disabled"
         return 0
     fi
 
@@ -1551,7 +573,7 @@ nftban_metrics_disable() {
     fi
 
     echo ""
-    echo "✅ Metrics collection disabled"
+    echo "Metrics collection disabled"
     echo ""
 }
 
@@ -1579,29 +601,29 @@ nftban_metrics_status() {
     echo "Installation Status:"
     if [[ "$CONFLICT_PROMETHEUS_INSTALLED" == "true" ]]; then
         if [[ "$CONFLICT_PROMETHEUS_RUNNING" == "true" ]]; then
-            echo "  • Prometheus:       Installed ✅ Running"
+            echo "  - Prometheus:       Installed, Running"
         else
-            echo "  • Prometheus:       Installed (stopped)"
+            echo "  - Prometheus:       Installed (stopped)"
         fi
     else
-        echo "  • Prometheus:       Not installed"
+        echo "  - Prometheus:       Not installed"
     fi
 
     if [[ "$CONFLICT_VICTORIAMETRICS_INSTALLED" == "true" ]]; then
         if [[ "$CONFLICT_VICTORIAMETRICS_RUNNING" == "true" ]]; then
-            echo "  • VictoriaMetrics:  Installed ✅ Running"
+            echo "  - VictoriaMetrics:  Installed, Running"
         else
-            echo "  • VictoriaMetrics:  Installed (stopped)"
+            echo "  - VictoriaMetrics:  Installed (stopped)"
         fi
     else
-        echo "  • VictoriaMetrics:  Not installed"
+        echo "  - VictoriaMetrics:  Not installed"
     fi
     echo ""
 
     # Warn if both are running
     if [[ "$CONFLICT_PROMETHEUS_RUNNING" == "true" ]] && [[ "$CONFLICT_VICTORIAMETRICS_RUNNING" == "true" ]]; then
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "⚠️  WARNING: Both backends are running!"
+        echo "WARNING: Both backends are running!"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
         echo "This wastes resources. Stop one of them:"
@@ -1629,7 +651,7 @@ nftban_metrics_status() {
 
     if [[ "$config_mismatch" == "true" ]]; then
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "⚠️  CONFIGURATION MISMATCH DETECTED"
+        echo "CONFIGURATION MISMATCH DETECTED"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
         echo "  Configured backend:  $backend"
@@ -1661,10 +683,10 @@ nftban_metrics_status() {
             local prometheus_service
             prometheus_service=$(nftban_distro_get_service prometheus 2>/dev/null || echo "prometheus")
             if systemctl is-active "$prometheus_service" &>/dev/null; then
-                echo "✅ Prometheus:        Running"
+                echo "  Prometheus:        Running"
                 echo "   URL:               http://${NFTBAN_METRICS_PROMETHEUS_ADDR}/"
             else
-                echo "❌ Prometheus:        Stopped"
+                echo "  Prometheus:        Stopped"
                 all_running=false
             fi
             ;;
@@ -1672,7 +694,7 @@ nftban_metrics_status() {
         victoriametrics)
             # Check VictoriaMetrics
             if systemctl is-active victoriametrics &>/dev/null; then
-                echo "✅ VictoriaMetrics:   Running"
+                echo "  VictoriaMetrics:   Running"
                 echo "   UI:                http://${NFTBAN_METRICS_VICTORIA_ADDR}/vmui"
                 echo "   API:               http://${NFTBAN_METRICS_VICTORIA_ADDR}"
 
@@ -1681,7 +703,7 @@ nftban_metrics_status() {
                     echo "   Health:            OK"
                 fi
             else
-                echo "❌ VictoriaMetrics:   Stopped"
+                echo "  VictoriaMetrics:   Stopped"
                 all_running=false
             fi
             ;;
@@ -1699,10 +721,10 @@ nftban_metrics_status() {
     fi
 
     if [[ "$node_exporter_running" == "true" ]]; then
-        echo "✅ Node Exporter:     Running"
+        echo "  Node Exporter:     Running"
         echo "   URL:               http://${NFTBAN_METRICS_NODE_EXPORTER_ADDR}/metrics"
     else
-        echo "❌ Node Exporter:     Stopped"
+        echo "  Node Exporter:     Stopped"
         all_running=false
     fi
 
@@ -1710,7 +732,7 @@ nftban_metrics_status() {
 
     # Check NFTBan metrics exporter (common for both)
     if systemctl is-active nftban-metrics-exporter.timer &>/dev/null; then
-        echo "✅ NFTBan Exporter:   Running"
+        echo "  NFTBan Exporter:   Running"
         local last_run
         last_run=$(systemctl show nftban-metrics-exporter.timer -p LastTriggerUSec --value 2>/dev/null || echo "n/a")
         if [[ -n "$last_run" ]] && [[ "$last_run" != "n/a" ]]; then
@@ -1719,7 +741,7 @@ nftban_metrics_status() {
         echo "   Interval:          60 seconds"
         echo "   Output:            /var/lib/node_exporter/textfile_collector/nftban.prom"
     else
-        echo "❌ NFTBan Exporter:   Stopped"
+        echo "  NFTBan Exporter:   Stopped"
         all_running=false
     fi
 
@@ -1727,11 +749,11 @@ nftban_metrics_status() {
 
     if [[ "$all_running" == true ]]; then
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "✅ All metrics services running"
+        echo "All metrics services running"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     else
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-        echo "⚠️  Some services stopped"
+        echo "Some services stopped"
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
         echo "To enable metrics collection, choose a setup:"
@@ -1751,10 +773,8 @@ nftban_metrics_status() {
 }
 
 # ==============================================================================
-# ==============================================================================
 # VictoriaMetrics Enterprise Key Management
 # ==============================================================================
-
 nftban_metrics_enterprise_key() {
     local action="${1:-status}"
     shift || true
@@ -1815,7 +835,7 @@ nftban_metrics_enterprise_key() {
 
                 if [[ -z "$key" ]]; then
                     echo ""
-                    echo "  ❌ No key provided"
+                    echo "  No key provided"
                     return 1
                 fi
 
@@ -1956,19 +976,19 @@ nftban_cmd_metrics() {
             local new_backend="${1:-}"
 
             if [[ -z "$new_backend" ]]; then
-                echo "❌ Error: Backend required"
+                echo "Error: Backend required"
                 echo ""
                 echo "Usage: nftban metrics set-backend <backend>"
                 echo ""
                 echo "Available backends:"
-                echo "  • prometheus"
-                echo "  • victoriametrics"
+                echo "  - prometheus"
+                echo "  - victoriametrics"
                 echo ""
                 return 1
             fi
 
             if [[ "$new_backend" != "prometheus" ]] && [[ "$new_backend" != "victoriametrics" ]]; then
-                echo "❌ Invalid backend: $new_backend"
+                echo "Invalid backend: $new_backend"
                 echo "   Valid options: prometheus, victoriametrics"
                 return 1
             fi
@@ -1976,7 +996,7 @@ nftban_cmd_metrics() {
             # Update configuration
             _set_metrics_backend "$new_backend"
 
-            echo "✅ Metrics backend updated to: $new_backend"
+            echo "Metrics backend updated to: $new_backend"
             echo ""
             echo "Verify: nftban metrics status"
             echo ""

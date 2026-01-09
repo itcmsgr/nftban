@@ -861,3 +861,7 @@ export -f nftban_print_pipeline_report
 export NFTBAN_PIPELINE_FAIL
 export NFTBAN_PIPELINE_DEGRADED
 export NFTBAN_PIPELINE_OK
+
+# Export global status variables (set by validation functions)
+export NFTBAN_REMOTE_WRITE_STATUS
+export NFTBAN_REMOTE_WRITE_REASON
