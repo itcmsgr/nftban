@@ -915,6 +915,10 @@ echo ""
 
 # Auto-install missing dependencies on Debian/Ubuntu
 if [ "$IS_DEBIAN_FAMILY" = "1" ]; then
+    # Always refresh package lists first (required on fresh Debian 13 / Ubuntu)
+    echo "Refreshing package lists..."
+    apt-get update -qq >/dev/null 2>&1 || true
+
     MISSING_PKGS=""
 
     # Check which packages need to be installed
@@ -924,7 +928,6 @@ if [ "$IS_DEBIAN_FAMILY" = "1" ]; then
 
     if [ -n "$MISSING_PKGS" ]; then
         echo "Installing missing dependencies:$MISSING_PKGS"
-        apt-get update -qq >/dev/null 2>&1 || true
         DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $MISSING_PKGS >/dev/null 2>&1 || {
             echo "[✗] Failed to install dependencies. Please run manually:"
             echo "    apt update && apt install -y$MISSING_PKGS"
