@@ -5,29 +5,32 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Centralized service enable/disable logic for NFTBan
 # Location: /usr/lib/nftban/lib/service_control.sh
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
 #
-# meta:name=service_control
-# meta:type=lib
-# meta:header=Service Control Library
-# meta:version=1.0.0
+# meta:name="service_control"
+# meta:type="lib"
+# meta:header="Service Control Library"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Centralized service control for enable/disable NFTBan and subsystems
-# meta:input=Service name (nftban, nftables, suricata, login)
-# meta:output=Service state changes and status
+# meta:description="Centralized service control for enable/disable NFTBan and subsystems"
+# meta:input="Service name (nftban, nftables, suricata, login)"
+# meta:output="Service state changes and status"
 #
-# **Functions Provided**
-# - nftban_is_enabled(): Check if NFTBan master switch is on
-# - nftban_service_is_enabled(): Check if specific service is enabled
-# - nftban_enable_all(): Enable all NFTBan services
-# - nftban_disable_all(): Disable all NFTBan services (emergency)
-# - nftban_service_start(): Start a specific service
-# - nftban_service_stop(): Stop a specific service
+# **Inventory & Requirements**
+# meta:inventory.files=""
+# meta:inventory.binaries="systemctl,nftban,nftban-core"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="nftables.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# meta:created_date=2025-12-02
+# meta:created_date="2025-12-02"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Guard against multiple sourcing
 [[ -n "${_NFTBAN_SERVICE_CONTROL_LOADED:-}" ]] && return 0
@@ -176,7 +179,7 @@ nftban_enable_all() {
     _nftban_set_config "NFTBAN_ENABLED" "true"
 
     # Enable systemd services
-    local services=("nftban" "nftables")
+    local services=("nftables")
 
     # Add suricata if installed
     if command -v suricata &>/dev/null; then
@@ -190,6 +193,20 @@ nftban_enable_all() {
             systemctl start "${svc}.service" 2>/dev/null || true
         fi
     done
+
+    # Initialize nftban firewall tables if not present
+    if ! nft list table ip nftban &>/dev/null 2>&1; then
+        echo "  Initializing nftban firewall..."
+        if command -v nftban &>/dev/null; then
+            nftban firewall init 2>/dev/null || echo "  Warning: firewall init failed"
+        fi
+    fi
+
+    # Sync whitelists to nftables
+    if command -v nftban-core &>/dev/null; then
+        echo "  Syncing whitelists..."
+        nftban-core sync 2>/dev/null || true
+    fi
 
     echo "All services enabled"
     return 0
