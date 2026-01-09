@@ -661,13 +661,29 @@ if [ -f /usr/lib/nftban/lib/nftban_distro_config.sh ]; then
 fi
 
 # Load nftables configuration
-systemctl reload nftables 2>/dev/null || systemctl restart nftables 2>/dev/null || true
+if systemctl is-active nftables >/dev/null 2>&1; then
+    systemctl reload nftables 2>/dev/null || echo "[NFTBan WARN] nftables reload failed"
+else
+    systemctl enable nftables 2>/dev/null || true
+    systemctl start nftables 2>/dev/null || echo "[NFTBan WARN] nftables start failed"
+fi
 
 # STEP 10: Sync whitelist.d files to nftables sets
 # The nftables template has only default IPs, this loads the actual detected system IPs
 echo "[NFTBan] Syncing whitelist files to nftables..."
 if [ -x /usr/lib/nftban/bin/nftban-core ]; then
-    /usr/lib/nftban/bin/nftban-core sync 2>/dev/null || echo "[NFTBan WARN] Whitelist sync failed (run manually: nftban-core sync)"
+    # Wait for nftband daemon to be ready (socket activation)
+    SYNC_SUCCESS=0
+    for i in 1 2 3; do
+        sleep 1
+        if /usr/lib/nftban/bin/nftban-core sync 2>/dev/null; then
+            SYNC_SUCCESS=1
+            break
+        fi
+    done
+    if [ "\$SYNC_SUCCESS" -eq 0 ]; then
+        echo "[NFTBan WARN] Whitelist sync failed (run manually: nftban-core sync)"
+    fi
 fi
 
 echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
@@ -1217,8 +1233,12 @@ systemctl enable --now nftban-queue.timer 2>/dev/null || true
 # Enable and start login monitor
 systemctl enable --now nftban-login-monitor.service 2>/dev/null || true
 
-# STEP 10: Reload nftables
-systemctl reload nftables 2>/dev/null || true
+# STEP 10: Start or reload nftables
+if systemctl is-active nftables >/dev/null 2>&1; then
+    systemctl reload nftables 2>/dev/null || true
+else
+    systemctl start nftables 2>/dev/null || true
+fi
 
 echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
 echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all optional timers."

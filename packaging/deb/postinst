@@ -3,6 +3,23 @@
 # NFTBan v1.0.0 - DEB Package Post-Install Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+#
+# meta:name="postinst"
+# meta:type="packaging"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="DEB package post-install script for NFTBan"
+# meta:input="None"
+# meta:output="Configured NFTBan system"
+# meta:depends="adduser,addgroup,systemctl,chown,chmod,mkdir"
+# meta:inventory.files="/etc/nftban/,/var/lib/nftban/,/var/log/nftban/"
+# meta:inventory.binaries="adduser,addgroup,usermod,systemctl,chown,chmod,mkdir,setcap"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/nftban.conf,/etc/nftables.conf"
+# meta:inventory.systemd_units="nftband.socket,nftband.service,nftban-maintenance.timer,nftban-health.timer"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
 # Purpose: SAFE INSTALL FLOW - Setup user/groups, permissions, whitelist BEFORE
 #          enabling firewall to prevent self-lockout
 #
@@ -19,7 +36,7 @@
 # This prevents lockout by ensuring whitelist is in place BEFORE firewall is active.
 # =============================================================================
 
-set -e
+set -Eeuo pipefail
 
 # Colors for output
 RED='\033[0;31m'
@@ -385,14 +402,14 @@ case "$1" in
         log_info "Reloading systemd daemon..."
         systemctl daemon-reload
 
-        # Enable and reload nftables
-        if systemctl is-enabled nftables >/dev/null 2>&1; then
+        # Enable and start nftables
+        if systemctl is-active nftables >/dev/null 2>&1; then
             log_info "Reloading nftables..."
             systemctl reload nftables 2>/dev/null || log_warn "nftables reload failed"
         else
-            log_info "Enabling nftables..."
+            log_info "Enabling and starting nftables..."
             systemctl enable nftables 2>/dev/null || true
-            systemctl reload nftables 2>/dev/null || log_warn "nftables load failed"
+            systemctl start nftables 2>/dev/null || log_warn "nftables start failed"
         fi
 
         # =====================================================================
@@ -401,7 +418,18 @@ case "$1" in
         # The nftables template has only default IPs, this loads the actual detected system IPs
         log_info "Syncing whitelist files to nftables..."
         if [ -x /usr/lib/nftban/bin/nftban-core ]; then
-            /usr/lib/nftban/bin/nftban-core sync 2>/dev/null || log_warn "Whitelist sync failed (run manually: nftban-core sync)"
+            # Wait for nftband daemon to be ready (socket activation)
+            SYNC_SUCCESS=0
+            for i in 1 2 3; do
+                sleep 1
+                if /usr/lib/nftban/bin/nftban-core sync 2>/dev/null; then
+                    SYNC_SUCCESS=1
+                    break
+                fi
+            done
+            if [ "$SYNC_SUCCESS" -eq 0 ]; then
+                log_warn "Whitelist sync failed (run manually: nftban-core sync)"
+            fi
         fi
 
         # =====================================================================
