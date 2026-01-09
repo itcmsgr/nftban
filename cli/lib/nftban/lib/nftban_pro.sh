@@ -5,16 +5,24 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Server ID, inventory collection, license management for NFTBan Pro
 #
-# meta:name=nftban_pro
-# meta:type=lib
-# meta:header=Pro Subscription Library
-# meta:version=1.0.0
+# meta:name="nftban_pro"
+# meta:type="lib"
+# meta:header="Pro Subscription Library"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:description=Manages NFTBan Pro subscription, inventory, and license
-# meta:created_date=2026-01-08
-# meta:updated_date=2026-01-08
+# meta:description="Manages NFTBan Pro subscription, inventory, and license"
+# meta:inventory.files=""
+# meta:inventory.binaries="curl"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_DATA_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network="https://api.nftban.com"
+# meta:inventory.privileges="nftban"
+#
+# meta:created_date="2026-01-08"
+# meta:updated_date="2026-01-08"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -527,8 +535,8 @@ nftban_pro_disable_remote() {
 
     # Mark Pro as disabled
     mkdir -p "$NFTBAN_PRO_DATA_DIR"
-    echo '{"enabled": false, "reason": "subscription_invalid", "disabled_at": "'$(date -u '+%Y-%m-%dT%H:%M:%SZ')'"}' \
-        > "$NFTBAN_PRO_DATA_DIR/status.json"
+    printf '{"enabled": false, "reason": "subscription_invalid", "disabled_at": "%s"}\n' \
+        "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$NFTBAN_PRO_DATA_DIR/status.json"
 }
 
 nftban_pro_enable_remote() {
@@ -545,8 +553,8 @@ nftban_pro_enable_remote() {
 
     # Mark Pro as enabled
     mkdir -p "$NFTBAN_PRO_DATA_DIR"
-    echo '{"enabled": true, "enabled_at": "'$(date -u '+%Y-%m-%dT%H:%M:%SZ')'"}' \
-        > "$NFTBAN_PRO_DATA_DIR/status.json"
+    printf '{"enabled": true, "enabled_at": "%s"}\n' \
+        "$(date -u '+%Y-%m-%dT%H:%M:%SZ')" > "$NFTBAN_PRO_DATA_DIR/status.json"
 }
 
 # =============================================================================

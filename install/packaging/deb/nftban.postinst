@@ -4,8 +4,19 @@
 #
 # postinst script for nftban (main package)
 # Configure after installation
+#
+# meta:name="nftban.postinst"
+# meta:type="packaging"
+# meta:description="DEB package post-installation script"
+# meta:inventory.files=""
+# meta:inventory.binaries="install,chown,chmod,systemctl"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 
-set -e
+set -Eeuo pipefail
 
 # =============================================================================
 # PATH DEFAULTS (can be overridden by config)
@@ -121,15 +132,15 @@ EOF
         fi
         if [ -n "$SYSTEM_IP" ]; then
             mkdir -p "${NFTBAN_CONFIG_DIR}/whitelist.d"
-            if [ ! -f "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system-ip.conf" ]; then
-                cat > "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system-ip.conf" << EOF
+            if [ ! -f "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" ]; then
+                cat > "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf" << EOF
 # Auto-generated system IP whitelist
 # Created by: NFTBan package installer
 # Purpose: Prevent lockout from this server
 $SYSTEM_IP
 EOF
-                chmod 644 "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system-ip.conf"
-                chown root:nftban "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system-ip.conf"
+                chmod 644 "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"
+                chown root:nftban "${NFTBAN_CONFIG_DIR}/whitelist.d/00-system.conf"
                 echo "System IP whitelisted: $SYSTEM_IP"
             fi
         fi

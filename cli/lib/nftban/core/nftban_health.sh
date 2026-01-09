@@ -6,24 +6,33 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: System health checks and diagnostics
 #
-# meta:name=nftban_health
-# meta:type=core
-# meta:header=Health Check System
-# meta:version=1.0.0
+# meta:name="nftban_health"
+# meta:type="core"
+# meta:header="Health Check System"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Comprehensive system health verification and auto-fix capabilities
-# meta:input=System state and configuration files
-# meta:output=Health status reports and automated fixes
+# meta:description="Comprehensive system health verification and auto-fix capabilities"
+# meta:input="System state and configuration files"
+# meta:output="Health status reports and automated fixes"
 #
 # **Inventory & Requirements**
-# meta:depends=nftban_fhs_spec.sh,nft,systemctl
+# meta:depends="nftban_fhs_spec.sh,nft,systemctl"
+# meta:inventory.files=""
+# meta:inventory.binaries="nft,systemctl"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:updated_date="2025-11-24"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Enhanced strict mode
 IFS=$'\n\t'
@@ -43,7 +52,8 @@ declare -A NFTBAN_HEALTH_ISSUES
 declare -a NFTBAN_HEALTH_WARNINGS
 declare -a NFTBAN_HEALTH_ERRORS
 
-# Health status codes
+# Health status codes (exported for callers)
+# shellcheck disable=SC2034  # Constants exported for external use
 readonly HEALTH_OK=0
 readonly HEALTH_WARNING=1
 readonly HEALTH_ERROR=2
@@ -77,6 +87,7 @@ nftban_health_init() {
     # Initialize health check system and load report modules
 
     # Clear previous results (MUST be associative arrays)
+    # shellcheck disable=SC2034  # Arrays used by render functions
     declare -gA NFTBAN_HEALTH_RESULTS=()
     declare -gA NFTBAN_HEALTH_ISSUES=()
     declare -ga NFTBAN_HEALTH_WARNINGS=()
@@ -148,7 +159,6 @@ nftban_health_verify_installation() {
     local status=0
     local missing_required=()
     local missing_optional=()
-    local issues=()
 
     echo ""
     echo "NFTBan Installation Verification"
@@ -223,6 +233,11 @@ nftban_health_verify_installation() {
         "nftban-login-monitor.service"
         "nftban-suricata.service"
         "nftban-ui.service"
+    )
+
+    local -a optional_binaries=(
+        "/usr/lib/nftban/bin/nftban-ui"
+        "/usr/lib/nftban/bin/nftban-ui-auth"
     )
 
     local svc_ok=0
@@ -493,9 +508,9 @@ nftban_health_check_all() {
         result=1
     fi
 
-    # Store results for render functions
-    export NFTBAN_HEALTH_ERRORS=$errors
-    export NFTBAN_HEALTH_WARNINGS=$warnings
+    # Store results for render functions (as scalar values, not arrays)
+    export NFTBAN_HEALTH_ERROR_COUNT=$errors
+    export NFTBAN_HEALTH_WARNING_COUNT=$warnings
 
     return $result
 }

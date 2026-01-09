@@ -43,7 +43,7 @@ Type=oneshot
 # See: SYSTEMD-SERVICE-CLASSIFICATION.md
 User=nftban
 Group=nftban
-SupplementaryGroups=suricata adm
+SupplementaryGroups=adm
 
 # Run maintenance script
 ExecStart=/usr/lib/nftban/cron/maintenance.sh
