@@ -49,9 +49,6 @@ After=nftband.socket
 After=network.target nftables.service
 Wants=nftables.service
 
-# For packaging: also enable socket when service is enabled
-Also=nftband.socket
-
 [Service]
 Type=simple
 
