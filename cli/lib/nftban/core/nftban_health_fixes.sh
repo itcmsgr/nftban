@@ -381,7 +381,7 @@ nftban_health_fix_services() {
                 if ! systemctl is-active "$service" &>/dev/null; then
                     systemctl restart "$service" 2>/dev/null || true
                     echo "  ✓ Restarted $service"
-                    ((fixed_count++))
+                    fixed_count=$((fixed_count + 1))
                 fi
             fi
         fi
@@ -394,7 +394,7 @@ nftban_health_fix_services() {
                 if ! systemctl is-active "$timer" &>/dev/null; then
                     systemctl start "$timer" 2>/dev/null || true
                     echo "  ✓ Started $timer"
-                    ((fixed_count++))
+                    fixed_count=$((fixed_count + 1))
                 fi
             fi
         fi
@@ -425,7 +425,7 @@ nftban_health_fix_metrics() {
         if ! systemctl is-active nftban-metrics-exporter.timer &>/dev/null; then
             systemctl start nftban-metrics-exporter.timer 2>/dev/null || true
             echo "  ✓ Started metrics exporter timer"
-            ((fixed++))
+            fixed=$((fixed + 1))
         fi
     fi
 
@@ -436,7 +436,7 @@ nftban_health_fix_metrics() {
         chown -R nftban:nftban "$textfile_dir" 2>/dev/null || true
         chmod 755 "$textfile_dir" 2>/dev/null || true
         echo "  ✓ Created textfile collector directory"
-        ((fixed++))
+        fixed=$((fixed + 1))
     fi
 
     # Fix 3: Check configured backend and restart if needed
@@ -447,7 +447,7 @@ nftban_health_fix_metrics() {
                 if ! systemctl is-active prometheus &>/dev/null; then
                     systemctl restart prometheus 2>/dev/null || true
                     echo "  ✓ Restarted Prometheus"
-                    ((fixed++))
+                    fixed=$((fixed + 1))
                 fi
             fi
             ;;
@@ -456,7 +456,7 @@ nftban_health_fix_metrics() {
                 if ! systemctl is-active victoriametrics &>/dev/null; then
                     systemctl restart victoriametrics 2>/dev/null || true
                     echo "  ✓ Restarted VictoriaMetrics"
-                    ((fixed++))
+                    fixed=$((fixed + 1))
                 fi
             fi
             ;;
@@ -477,7 +477,7 @@ nftban_health_fix_metrics() {
                 systemctl start "$svc" 2>/dev/null || true
                 if systemctl is-active "$svc" &>/dev/null; then
                     echo "  ✓ Started Node Exporter ($svc)"
-                    ((fixed++))
+                    fixed=$((fixed + 1))
                     break
                 fi
             fi
