@@ -3,25 +3,22 @@
 # NFTBan v1.0.0 - Global Status Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Global system status overview
-#
-# meta:name=cmd_status
-# meta:type=cli
-# meta:header=NFTBan Global Status
-# meta:version=1.0.0
+# meta:name="cmd_status"
+# meta:type="cli"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Provides consolidated system status overview (firewall, services, protections, alerts)
-# meta:input=Command line options (--json, --quiet)
-# meta:output=Formatted status dashboard with health indicators
-#
-# **Inventory & Requirements**
-# meta:depends=bash,nftban_output.sh,nftban_health.sh
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:description="Provides consolidated system status overview (firewall, services, protections, alerts)"
+# meta:input="Command line options (--json, --quiet)"
+# meta:output="Formatted status dashboard with health indicators"
+# meta:depends="bash,nftban_output.sh,nftban_health.sh"
+# meta:platform="linux"
+# meta:inventory.files=""
+# meta:inventory.binaries="nft,systemctl"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 
 
 # =============================================================================
@@ -253,7 +250,7 @@ output_terminal() {
     fi
     printf "  %-20s %s\n" "Suricata IDS........" "$suricata_status"
 
-    # DDoS Protection (check config directly to avoid recursion)
+    # DDoS Protection (check config AND verify rules exist)
     local ddos_status="DISABLED"
     local ddos_main="${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf"
     local ddos_local="${NFTBAN_CONFIG_DIR}/conf.d/ddos/main.conf.local"
@@ -264,8 +261,16 @@ output_terminal() {
     [[ -f "$ddos_local" ]] && source "$ddos_local" 2>/dev/null || true
     ddos_enabled="${DDOS_ENABLED:-${NFTBAN_DDOS_ENABLED:-false}}"
 
-    if [[ "$ddos_enabled" == "true" ]]; then
+    # Check if DDoS rules actually exist in nftables
+    local ddos_rules_exist="false"
+    if nft list chain ip nftban ddos_protection &>/dev/null 2>&1; then
+        ddos_rules_exist="true"
+    fi
+
+    if [[ "$ddos_enabled" == "true" ]] && [[ "$ddos_rules_exist" == "true" ]]; then
         ddos_status="ENABLED"
+    elif [[ "$ddos_enabled" == "true" ]] && [[ "$ddos_rules_exist" == "false" ]]; then
+        ddos_status="NOT INSTALLED"
     fi
     printf "  %-20s %s\n" "DDoS................" "$ddos_status"
 
