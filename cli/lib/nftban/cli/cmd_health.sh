@@ -122,6 +122,9 @@ nftban_cmd_health() {
         geoip)
             nftban_health_cmd_geoip "$@"
             ;;
+        pro)
+            nftban_health_cmd_pro "$@"
+            ;;
         install|verify)
             nftban_health_cmd_install "$@"
             ;;
@@ -622,6 +625,53 @@ nftban_health_cmd_geoip() {
     return $result
 }
 
+nftban_health_cmd_pro() {
+    # Check NFTBan Pro subscription status
+    # Args: none
+
+    # Load health module
+    if ! declare -f nftban_health_check_pro >/dev/null 2>&1; then
+        source "${NFTBAN_LIB_DIR}/core/nftban_health.sh" || {
+            echo "ERROR: Failed to load health check module" >&2
+            return 1
+        }
+    fi
+
+    echo "NFTBan Pro Subscription Status"
+    echo "==============================="
+    echo ""
+
+    nftban_health_init
+
+    # Check Pro (capture result immediately to avoid strict mode issues)
+    local result=0
+    nftban_health_check_pro || result=$?
+
+    # Display results
+    if [[ $result -eq 0 ]]; then
+        echo "✅ Pro subscription: OK"
+    elif [[ $result -eq 4 ]]; then
+        # HEALTH_NOT_INSTALLED
+        echo "ℹ️  Pro subscription: NOT ENABLED"
+        echo "  └─ To enable: nftban pro enroll"
+    elif [[ $result -eq 1 ]]; then
+        echo "⚠️  Pro subscription: WARNING"
+    else
+        echo "❌ Pro subscription: ERROR"
+    fi
+
+    # Show detailed issues if available
+    if [[ -n "${NFTBAN_HEALTH_ISSUES[pro]:-}" ]]; then
+        echo ""
+        echo "Details:"
+        # Format with proper indentation
+        echo "  ${NFTBAN_HEALTH_ISSUES[pro]}" | sed 's/^/  /'
+    fi
+
+    echo ""
+    return $result
+}
+
 nftban_health_cmd_install() {
     # Verify installation completeness
     # Usage: nftban health install [--verbose]
@@ -706,6 +756,9 @@ COMMANDS:
     geoip                   Check GeoIP system status
                             Tests binary, database, performance
 
+    pro                     Check NFTBan Pro subscription status
+                            Validates token, vmagent, server ID, timers
+
     install, verify         Verify installation completeness
                             Checks all required timers, services, binaries,
                             directories, and config files
@@ -727,6 +780,7 @@ EXAMPLES:
     # Check specific component
     nftban health geoip
     nftban health binaries
+    nftban health pro          # Pro subscription status
 
     # Auto-heal during check (combines check + fix)
     sudo nftban health check --auto-heal
@@ -790,4 +844,5 @@ export -f nftban_health_cmd_modules
 export -f nftban_health_cmd_binaries
 export -f nftban_health_cmd_permissions
 export -f nftban_health_cmd_geoip
+export -f nftban_health_cmd_pro
 export -f nftban_health_cmd_help

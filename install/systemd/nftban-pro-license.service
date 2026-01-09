@@ -1,0 +1,74 @@
+# =============================================================================
+# NFTBan v1.0.0 - Pro License Check Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-pro-license.service"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-01-08"
+# meta:description="Periodic Pro license validation and inventory submission"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/bin/nftban"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/pro.token"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
+# =============================================================================
+
+[Unit]
+Description=NFTBan Pro License Check and Inventory Submission
+Documentation=man:nftban(8)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/nftban/pro.token
+
+[Service]
+Type=oneshot
+
+# Run as nftban user (reads token, writes to /var/lib/nftban/pro/)
+User=nftban
+Group=nftban
+
+# Check license and submit inventory if changed
+ExecStart=/usr/bin/nftban pro license-check
+
+# Exit codes: 0=OK, 1=license invalid, 2=network error
+SuccessExitStatus=0 1 2
+
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
+
+# Core hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# Filesystem access
+ReadWritePaths=/var/lib/nftban/pro
+ReadOnlyPaths=/etc/nftban
+
+# Network for Pro API calls
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Resource limits
+MemoryMax=64M
+TasksMax=5
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-pro-license
+
+[Install]
+WantedBy=multi-user.target

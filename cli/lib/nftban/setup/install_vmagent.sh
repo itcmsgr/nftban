@@ -134,14 +134,15 @@ _vmagent_backup_config() {
 
     if [[ -f "$config_file" ]]; then
         # Check if already managed by nftban
+        local backup_file
         if grep -q "^# Managed by nftban" "$config_file" 2>/dev/null; then
             # Already managed - create timestamped backup
-            local backup_file="${config_file}.bak.$(date +%Y%m%d_%H%M%S)"
+            backup_file="${config_file}.bak.$(date +%Y%m%d_%H%M%S)"
             cp "$config_file" "$backup_file"
             log_info "Backed up existing config to: $backup_file"
         else
             # Not managed - warn and backup
-            local backup_file="${config_file}.pre-nftban.$(date +%Y%m%d_%H%M%S)"
+            backup_file="${config_file}.pre-nftban.$(date +%Y%m%d_%H%M%S)"
             cp "$config_file" "$backup_file"
             log_info "WARNING: Existing config not managed by nftban"
             log_info "Backed up to: $backup_file"

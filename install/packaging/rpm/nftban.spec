@@ -442,6 +442,7 @@ fi
 %dir %attr(750,nftban,nftban) /var/lib/nftban/queue/work
 %dir %attr(750,nftban,nftban) /var/lib/nftban/queue/dlq
 %dir %attr(750,nftban,nftban) /var/lib/nftban/mailspool
+%dir %attr(750,root,nftban) /var/lib/nftban/pro
 
 # ==========================================================================
 # LOG DIRECTORIES

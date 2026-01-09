@@ -589,14 +589,17 @@ panel:
   examples:
     - "nftban panel directadmin enable"
     - "nftban panel cpanel enable"
+    - "nftban panel plesk enable"
     - "nftban panel cwp enable"
     - "nftban panel cyberpanel enable"
     - "nftban panel interworx enable"
     - "nftban panel vesta enable"
     - "nftban panel directadmin status"
+    - "nftban panel plesk test"
   subcommands:
     directadmin: {description: "DirectAdmin panel (ports 2222, services)"}
     cpanel: {description: "cPanel/WHM panel (ports 2082-2087, 2095-2096)"}
+    plesk: {description: "Plesk panel (ports 8443, 8447, 8880)"}
     cwp: {description: "CentOS Web Panel (ports 2030, 2031)"}
     cyberpanel: {description: "CyberPanel/OpenLiteSpeed (ports 7080, 8090)"}
     interworx: {description: "InterWorx panel (ports 2080, 2443)"}

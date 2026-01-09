@@ -1113,6 +1113,7 @@ install_configs() {
     mkdir -p /var/lib/nftban/stats/{history,profiles}
     mkdir -p /var/lib/nftban/queue/{pending,work,dlq}
     mkdir -p /var/lib/nftban/mailspool
+    mkdir -p /var/lib/nftban/pro
     mkdir -p /var/log/nftban
     mkdir -p /var/cache/nftban
     mkdir -p /run/nftban
@@ -1718,6 +1719,19 @@ install_systemd() {
         ok "Watchdog timer units → $systemd_dir"
     fi
 
+    # Pro subscription services (license check, inventory)
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-pro-license.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-pro-license.service" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-pro-license.timer" "$systemd_dir/"
+        ok "Pro license timer units → $systemd_dir"
+    fi
+
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-pro-inventory.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-pro-inventory.service" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-pro-inventory.timer" "$systemd_dir/"
+        ok "Pro inventory timer units → $systemd_dir"
+    fi
+
     # Reload systemd
     systemctl daemon-reload
     ok "Systemd reloaded"
@@ -1765,6 +1779,17 @@ install_systemd() {
     # Suricata update timer (only if suricata enabled)
     if [[ "${NFTBAN_SURICATA_ENABLED:-false}" == "true" ]] && [[ -f "$systemd_dir/nftban-suricata-update.timer" ]]; then
         systemctl enable --now nftban-suricata-update.timer 2>/dev/null || warn "Suricata rules update timer enable failed"
+    fi
+
+    # Pro timers (only if Pro enabled)
+    if [[ "${NFTBAN_PRO_ENABLED:-false}" == "true" ]]; then
+        if [[ -f "$systemd_dir/nftban-pro-license.timer" ]]; then
+            systemctl enable --now nftban-pro-license.timer 2>/dev/null || warn "Pro license timer enable failed"
+        fi
+        if [[ -f "$systemd_dir/nftban-pro-inventory.timer" ]]; then
+            systemctl enable --now nftban-pro-inventory.timer 2>/dev/null || warn "Pro inventory timer enable failed"
+        fi
+        ok "Pro timers enabled"
     fi
 
     ok "Timers enabled and started"

@@ -1,0 +1,77 @@
+# =============================================================================
+# NFTBan v1.0.0 - Pro Inventory Collection Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-pro-inventory.service"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2026-01-08"
+# meta:description="Daily Pro inventory collection and submission"
+# meta:input="None"
+# meta:output="Systemd unit"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/bin/nftban"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/pro.token"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
+[Unit]
+Description=NFTBan Pro Inventory Collection and Submission
+Documentation=man:nftban(8)
+After=network-online.target
+Wants=network-online.target
+ConditionPathExists=/etc/nftban/pro.token
+
+[Service]
+Type=oneshot
+
+# Run as root to read system info (CPU, RAM, disk)
+# Inventory needs to read /proc/cpuinfo, /proc/meminfo, /sys/block/*/
+User=root
+Group=root
+
+# Collect and submit inventory (idempotent, checksum-based)
+ExecStart=/usr/bin/nftban pro inventory run --verbose
+
+# Exit codes: 0=OK, 1=error (non-fatal)
+SuccessExitStatus=0 1
+
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
+
+# Core hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+# Filesystem access
+# Read system info from /proc, /sys
+ReadOnlyPaths=/proc /sys /etc/os-release
+# Write inventory to Pro data dir
+ReadWritePaths=/var/lib/nftban/pro
+# Read token
+ReadOnlyPaths=/etc/nftban
+
+# Network for Pro API calls
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Resource limits
+MemoryMax=64M
+TasksMax=5
+TimeoutStartSec=120
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-pro-inventory
+
+[Install]
+WantedBy=multi-user.target
