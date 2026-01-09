@@ -583,6 +583,18 @@ mkdir -p /usr/share/nftban/templates/{mail,reports}
 echo "[NFTBan] Setting permissions..."
 chown root:nftban /etc/nftban 2>/dev/null || true
 chmod 750 /etc/nftban 2>/dev/null || true
+# CRITICAL: Fix conf.d permissions - services run as nftban user need group read access
+chown -R root:nftban /etc/nftban/conf.d 2>/dev/null || true
+find /etc/nftban/conf.d -type d -exec chmod 750 {} \; 2>/dev/null || true
+find /etc/nftban/conf.d -type f -exec chmod 640 {} \; 2>/dev/null || true
+# Fix other config subdirs
+for subdir in distros whitelist.d blacklist.d ports.d rules.d suricata; do
+    if [ -d "/etc/nftban/\$subdir" ]; then
+        chown -R root:nftban "/etc/nftban/\$subdir" 2>/dev/null || true
+        find "/etc/nftban/\$subdir" -type d -exec chmod 750 {} \; 2>/dev/null || true
+        find "/etc/nftban/\$subdir" -type f -exec chmod 640 {} \; 2>/dev/null || true
+    fi
+done
 chown -R nftban:nftban /var/lib/nftban /var/log/nftban /var/cache/nftban 2>/dev/null || true
 chmod 750 /var/lib/nftban /var/log/nftban 2>/dev/null || true
 chmod 755 /var/cache/nftban 2>/dev/null || true
@@ -1194,6 +1206,18 @@ mkdir -p /usr/share/nftban/templates/{mail,reports}
 # STEP 4: Set permissions
 chown root:nftban /etc/nftban
 chmod 750 /etc/nftban
+# CRITICAL: Fix conf.d permissions - services run as nftban user need group read access
+chown -R root:nftban /etc/nftban/conf.d 2>/dev/null || true
+find /etc/nftban/conf.d -type d -exec chmod 750 {} \; 2>/dev/null || true
+find /etc/nftban/conf.d -type f -exec chmod 640 {} \; 2>/dev/null || true
+# Fix other config subdirs
+for subdir in distros whitelist.d blacklist.d ports.d rules.d suricata; do
+    if [ -d "/etc/nftban/\$subdir" ]; then
+        chown -R root:nftban "/etc/nftban/\$subdir" 2>/dev/null || true
+        find "/etc/nftban/\$subdir" -type d -exec chmod 750 {} \; 2>/dev/null || true
+        find "/etc/nftban/\$subdir" -type f -exec chmod 640 {} \; 2>/dev/null || true
+    fi
+done
 chown -R nftban:nftban /var/lib/nftban /var/log/nftban /var/cache/nftban
 chmod 750 /var/lib/nftban /var/log/nftban
 chmod 755 /var/cache/nftban
