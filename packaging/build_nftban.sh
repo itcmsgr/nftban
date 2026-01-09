@@ -895,20 +895,44 @@ if [ -f /etc/os-release ]; then
     case "$ID" in
         ubuntu|debian|linuxmint)
             echo "[✓] Supported OS family: Debian/Ubuntu"
+            IS_DEBIAN_FAMILY=1
             ;;
         *)
             echo "[!] Warning: Untested OS: $ID (may work, but not officially supported)"
+            IS_DEBIAN_FAMILY=0
             ;;
     esac
 else
     echo "[✗] ERROR: Cannot detect OS version (/etc/os-release missing)"
     PREREQ_FAILED=1
+    IS_DEBIAN_FAMILY=0
 fi
 
 # -----------------------------------------------------------------------------
-# CHECK 2: Required Commands
+# CHECK 2: Update package lists and install missing dependencies
 # -----------------------------------------------------------------------------
 echo ""
+
+# Auto-install missing dependencies on Debian/Ubuntu
+if [ "$IS_DEBIAN_FAMILY" = "1" ]; then
+    MISSING_PKGS=""
+
+    # Check which packages need to be installed
+    command -v nft >/dev/null 2>&1 || MISSING_PKGS="$MISSING_PKGS nftables"
+    command -v curl >/dev/null 2>&1 || MISSING_PKGS="$MISSING_PKGS curl"
+    command -v jq >/dev/null 2>&1 || MISSING_PKGS="$MISSING_PKGS jq"
+
+    if [ -n "$MISSING_PKGS" ]; then
+        echo "Installing missing dependencies:$MISSING_PKGS"
+        apt-get update -qq >/dev/null 2>&1 || true
+        DEBIAN_FRONTEND=noninteractive apt-get install -y -qq $MISSING_PKGS >/dev/null 2>&1 || {
+            echo "[✗] Failed to install dependencies. Please run manually:"
+            echo "    apt update && apt install -y$MISSING_PKGS"
+            PREREQ_FAILED=1
+        }
+    fi
+fi
+
 echo "Checking required commands..."
 
 # Critical commands (must be present)
