@@ -351,7 +351,10 @@ nftban_login_cmd_enable() {
             ;;
         service|"")
             # Enable and start systemd service (auto-install if needed)
-            if [[ ! -f "/etc/systemd/system/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" ]]; then
+            local service_name="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+            if [[ ! -f "/etc/systemd/system/${service_name}" ]] && \
+               [[ ! -f "/lib/systemd/system/${service_name}" ]] && \
+               [[ ! -f "/usr/lib/systemd/system/${service_name}" ]]; then
                 echo "Installing login monitor service..."
                 nftban_login_cmd_install >/dev/null 2>&1
                 echo "✅ Service installed"
