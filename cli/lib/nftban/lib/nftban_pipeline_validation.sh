@@ -436,16 +436,426 @@ nftban_check_perf_deps_available() {
 }
 
 # =============================================================================
+# VMAGENT VALIDATION
+# =============================================================================
+
+nftban_validate_vmagent_targets() {
+    # Check if vmagent is scraping nftban targets
+    #
+    # Returns:
+    #   0 = vmagent targets show nftban UP
+    #   1 = vmagent not scraping or nftban DOWN
+    #
+    # Output: Writes status to stdout if verbose
+
+    local verbose="${1:-false}"
+    local result=1
+
+    # Check vmagent targets endpoint
+    local targets_response
+    targets_response=$(curl -sf --connect-timeout "$NFTBAN_PIPELINE_TIMEOUT" \
+        "http://${NFTBAN_METRICS_VMAGENT_ADDR}/targets" 2>/dev/null || echo "")
+
+    if [[ -n "$targets_response" ]]; then
+        # Check if nftban target is UP
+        if echo "$targets_response" | grep -q '"job":"nftban".*"health":"up"'; then
+            result=0
+            [[ "$verbose" == "true" ]] && echo "  [B2] vmagent targets: nftban UP"
+        elif echo "$targets_response" | grep -q '"job":"nftban"'; then
+            [[ "$verbose" == "true" ]] && echo "  [B2] vmagent targets: nftban DOWN"
+        else
+            [[ "$verbose" == "true" ]] && echo "  [B2] vmagent targets: nftban not configured"
+        fi
+    else
+        [[ "$verbose" == "true" ]] && echo "  [B2] vmagent targets: endpoint not responding"
+    fi
+
+    return $result
+}
+
+nftban_validate_vmagent_remote_write() {
+    # Check vmagent remote_write health using agent metrics
+    #
+    # Classifies as:
+    #   OK = bytes written, no persistent errors
+    #   DEGRADED = bytes written but some retries/errors
+    #   FAIL = no bytes written or connection refused
+    #
+    # Returns:
+    #   0 = OK
+    #   1 = DEGRADED
+    #   2 = FAIL
+    #
+    # Output: Sets NFTBAN_REMOTE_WRITE_STATUS global
+
+    local verbose="${1:-false}"
+    NFTBAN_REMOTE_WRITE_STATUS="FAIL"
+    NFTBAN_REMOTE_WRITE_REASON=""
+
+    # Get vmagent metrics
+    local metrics_response
+    metrics_response=$(curl -sf --connect-timeout "$NFTBAN_PIPELINE_TIMEOUT" \
+        "http://${NFTBAN_METRICS_VMAGENT_ADDR}/metrics" 2>/dev/null || echo "")
+
+    if [[ -z "$metrics_response" ]]; then
+        NFTBAN_REMOTE_WRITE_REASON="vmagent not responding"
+        [[ "$verbose" == "true" ]] && echo "  [C] Remote write: FAIL (vmagent not responding)"
+        return 2
+    fi
+
+    # Check for bytes written (indicates successful writes)
+    local bytes_written
+    bytes_written=$(echo "$metrics_response" | grep 'vmagent_remotewrite_bytes_sent_total' | \
+        awk '{sum += $2} END {print sum+0}')
+
+    # Check for persistent errors
+    local persistent_errors
+    persistent_errors=$(echo "$metrics_response" | grep 'vmagent_remotewrite_requests_total.*status="4' | \
+        awk '{sum += $2} END {print sum+0}')
+
+    # Check for retries
+    local retries
+    retries=$(echo "$metrics_response" | grep 'vmagent_remotewrite_retries_count_total' | \
+        awk '{sum += $2} END {print sum+0}')
+
+    # Classify status
+    if [[ "$bytes_written" -gt 0 ]] && [[ "$persistent_errors" -eq 0 ]]; then
+        NFTBAN_REMOTE_WRITE_STATUS="OK"
+        [[ "$verbose" == "true" ]] && echo "  [C] Remote write: OK (${bytes_written} bytes sent)"
+        return 0
+    elif [[ "$bytes_written" -gt 0 ]]; then
+        NFTBAN_REMOTE_WRITE_STATUS="DEGRADED"
+        NFTBAN_REMOTE_WRITE_REASON="${retries} retries, ${persistent_errors} 4xx errors"
+        [[ "$verbose" == "true" ]] && echo "  [C] Remote write: DEGRADED (${NFTBAN_REMOTE_WRITE_REASON})"
+        return 1
+    else
+        NFTBAN_REMOTE_WRITE_STATUS="FAIL"
+        NFTBAN_REMOTE_WRITE_REASON="no bytes sent to remote"
+        [[ "$verbose" == "true" ]] && echo "  [C] Remote write: FAIL (no bytes sent)"
+        return 2
+    fi
+}
+
+# =============================================================================
+# PRINT PIPELINE REPORT (User-Friendly Output)
+# =============================================================================
+
+nftban_print_pipeline_report() {
+    # Print user-friendly pipeline status with remediation steps
+    #
+    # Usage: nftban_print_pipeline_report [--json]
+    #
+    # Runs all validations and prints detailed report with fixes
+    # Includes: metrics endpoint, agent, remote_write, auth, Pro entitlement, inventory
+
+    local json_mode=false
+    [[ "${1:-}" == "--json" ]] && json_mode=true
+
+    # Load Pro library if available
+    local pro_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_pro.sh"
+    if [[ -f "$pro_lib" ]] && ! declare -f nftban_pro_is_enabled &>/dev/null; then
+        # shellcheck source=/dev/null
+        source "$pro_lib"
+    fi
+
+    # Run all validations
+    local val_a=1 val_b=1 val_c=0 val_d=0 val_e=0 val_f=0
+    local val_a_msg="" val_b_msg="" val_c_msg="" val_d_msg="" val_e_msg="" val_f_msg=""
+
+    # Validation A: NFTBan metrics endpoint
+    if nftban_validate_metrics_endpoint false; then
+        val_a=0
+        val_a_msg="OK"
+    else
+        val_a_msg="FAIL"
+    fi
+
+    # Validation B: Agent scraping
+    if nftban_validate_agent_scrape false; then
+        val_b=0
+        val_b_msg="OK"
+    else
+        val_b_msg="FAIL"
+    fi
+
+    # Validation C: Remote write (only if vmagent configured)
+    local is_pro_mode=false
+    if [[ -f /etc/victoriametrics/vmagent.yml ]]; then
+        if grep -q "pro.nftban.com" /etc/victoriametrics/vmagent.yml 2>/dev/null; then
+            is_pro_mode=true
+        fi
+
+        if systemctl is-active vmagent &>/dev/null 2>&1; then
+            nftban_validate_vmagent_remote_write false
+            local rw_status=$?
+            case $rw_status in
+                0) val_c=0; val_c_msg="OK" ;;
+                1) val_c=1; val_c_msg="DEGRADED" ;;
+                *) val_c=2; val_c_msg="FAIL" ;;
+            esac
+        else
+            val_c=2
+            val_c_msg="AGENT_STOPPED"
+        fi
+    else
+        val_c=0
+        val_c_msg="NOT_CONFIGURED"
+    fi
+
+    # Validation D: Auth status (check for 401/403 in vmagent metrics)
+    val_d=0
+    val_d_msg="NOT_APPLICABLE"
+    if [[ "$val_c_msg" != "NOT_CONFIGURED" ]] && [[ "$val_c_msg" != "AGENT_STOPPED" ]]; then
+        local auth_errors
+        auth_errors=$(curl -sf --connect-timeout 5 \
+            "http://${NFTBAN_METRICS_VMAGENT_ADDR:-localhost:8429}/metrics" 2>/dev/null | \
+            grep 'vmagent_remotewrite_requests_total.*status="4' | \
+            awk '{sum += $2} END {print sum+0}')
+
+        if [[ "${auth_errors:-0}" -gt 0 ]]; then
+            val_d=1
+            val_d_msg="AUTH_REJECTED (${auth_errors} errors)"
+        else
+            val_d=0
+            val_d_msg="OK"
+        fi
+    fi
+
+    # Validation E: Pro entitlement (only if Pro mode)
+    val_e=0
+    val_e_msg="NOT_APPLICABLE"
+    if [[ "$is_pro_mode" == "true" ]]; then
+        local pro_token_file="${NFTBAN_PRO_TOKEN_FILE:-/etc/nftban/pro.token}"
+        if [[ ! -f "$pro_token_file" ]]; then
+            val_e=2
+            val_e_msg="TOKEN_MISSING"
+        elif declare -f nftban_pro_is_enabled &>/dev/null && nftban_pro_is_enabled; then
+            val_e=0
+            val_e_msg="ACTIVE"
+        else
+            val_e=1
+            val_e_msg="INACTIVE"
+        fi
+    fi
+
+    # Validation F: Inventory submit (only if Pro mode)
+    val_f=0
+    val_f_msg="NOT_APPLICABLE"
+    if [[ "$is_pro_mode" == "true" ]]; then
+        local last_submit_file="${NFTBAN_PRO_DATA_DIR:-/var/lib/nftban/pro}/last_submit.json"
+        if [[ -f "$last_submit_file" ]]; then
+            local submit_success
+            submit_success=$(jq -r '.success // false' "$last_submit_file" 2>/dev/null || echo "false")
+            if [[ "$submit_success" == "true" ]]; then
+                val_f=0
+                val_f_msg="OK"
+            else
+                val_f=1
+                val_f_msg="LAST_FAILED"
+            fi
+        else
+            if [[ "$val_e" -eq 0 ]]; then
+                val_f=1
+                val_f_msg="PENDING"
+            else
+                val_f=0
+                val_f_msg="SKIPPED (entitlement inactive)"
+            fi
+        fi
+    fi
+
+    # Determine overall status
+    local overall_status="FAIL"
+    local overall_code=0
+    if [[ $val_a -eq 0 ]] && [[ $val_b -eq 0 ]] && [[ $val_c -le 1 ]]; then
+        if [[ $val_c -eq 0 ]] || [[ "$val_c_msg" == "NOT_CONFIGURED" ]]; then
+            overall_status="OK"
+            overall_code=2
+        else
+            overall_status="DEGRADED"
+            overall_code=1
+        fi
+    elif [[ $val_a -eq 0 ]]; then
+        overall_status="DEGRADED"
+        overall_code=1
+    fi
+
+    # Check for auth or entitlement failures that should degrade status
+    if [[ $val_d -gt 0 ]] || [[ $val_e -gt 0 ]]; then
+        if [[ "$overall_status" == "OK" ]]; then
+            overall_status="DEGRADED"
+            overall_code=1
+        fi
+    fi
+
+    if [[ "$json_mode" == "true" ]]; then
+        cat << EOF
+{
+  "status": "$overall_status",
+  "status_code": $overall_code,
+  "pro_mode": $is_pro_mode,
+  "validations": {
+    "metrics_endpoint": {"status": "$val_a_msg", "passed": $([[ $val_a -eq 0 ]] && echo "true" || echo "false")},
+    "agent_scraping": {"status": "$val_b_msg", "passed": $([[ $val_b -eq 0 ]] && echo "true" || echo "false")},
+    "remote_write": {"status": "$val_c_msg", "passed": $([[ $val_c -le 1 ]] && echo "true" || echo "false")},
+    "auth": {"status": "$val_d_msg", "passed": $([[ $val_d -eq 0 ]] && echo "true" || echo "false")},
+    "pro_entitlement": {"status": "$val_e_msg", "passed": $([[ $val_e -eq 0 ]] && echo "true" || echo "false")},
+    "inventory_submit": {"status": "$val_f_msg", "passed": $([[ $val_f -eq 0 ]] && echo "true" || echo "false")}
+  },
+  "capability": "$(nftban_detect_watchdog_capability false)",
+  "capability_value": $(nftban_get_capability_metric_value)
+}
+EOF
+        return $overall_code
+    fi
+
+    # Text output
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  NFTBan Metrics Pipeline Report"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Status summary
+    local status_icon="❌"
+    [[ "$overall_status" == "OK" ]] && status_icon="✅"
+    [[ "$overall_status" == "DEGRADED" ]] && status_icon="⚠️"
+
+    echo "  Overall Status: $status_icon $overall_status"
+    echo ""
+    echo "  Validations:"
+
+    # Validation A
+    local a_icon="❌"
+    [[ $val_a -eq 0 ]] && a_icon="✅"
+    echo "    [A] NFTBan Metrics Endpoint: $a_icon $val_a_msg"
+
+    # Validation B
+    local b_icon="❌"
+    [[ $val_b -eq 0 ]] && b_icon="✅"
+    echo "    [B] Agent Scraping:          $b_icon $val_b_msg"
+
+    # Validation C
+    local c_icon="❌"
+    [[ $val_c -eq 0 ]] && c_icon="✅"
+    [[ $val_c -eq 1 ]] && c_icon="⚠️"
+    [[ "$val_c_msg" == "NOT_CONFIGURED" ]] && c_icon="⏭️"
+    echo "    [C] Remote Write:            $c_icon $val_c_msg"
+
+    # Validation D (Auth) - only show if relevant
+    if [[ "$val_d_msg" != "NOT_APPLICABLE" ]]; then
+        local d_icon="❌"
+        [[ $val_d -eq 0 ]] && d_icon="✅"
+        echo "    [D] Auth Status:             $d_icon $val_d_msg"
+    fi
+
+    # Pro-specific validations (only show in Pro mode)
+    if [[ "$is_pro_mode" == "true" ]]; then
+        echo ""
+        echo "  Pro Status:"
+
+        # Validation E (Entitlement)
+        local e_icon="❌"
+        [[ $val_e -eq 0 ]] && e_icon="✅"
+        [[ $val_e -eq 1 ]] && e_icon="⚠️"
+        echo "    [E] Pro Entitlement:         $e_icon $val_e_msg"
+
+        # Validation F (Inventory)
+        local f_icon="❌"
+        [[ $val_f -eq 0 ]] && f_icon="✅"
+        [[ $val_f -eq 1 ]] && f_icon="⚠️"
+        [[ "$val_f_msg" == "SKIPPED"* ]] && f_icon="⏭️"
+        echo "    [F] Inventory Submit:        $f_icon $val_f_msg"
+    fi
+
+    echo ""
+
+    # Remediation steps if issues found
+    local has_issues=false
+
+    if [[ $val_a -ne 0 ]]; then
+        has_issues=true
+        echo "  ─────────────────────────────────────────────────────────────────────────"
+        echo "  [A] FIX: NFTBan Metrics Endpoint"
+        echo "  ─────────────────────────────────────────────────────────────────────────"
+        echo ""
+        echo "    The metrics .prom file is missing or stale."
+        echo ""
+        echo "    1. Enable metrics exporter timer:"
+        echo "       sudo systemctl enable --now nftban-metrics-exporter.timer"
+        echo ""
+        echo "    2. Trigger immediate collection:"
+        echo "       sudo systemctl start nftban-metrics-exporter.service"
+        echo ""
+        echo "    3. Verify file exists:"
+        echo "       ls -la /var/lib/node_exporter/textfile_collector/nftban.prom"
+        echo ""
+    fi
+
+    if [[ $val_b -ne 0 ]]; then
+        has_issues=true
+        echo "  ─────────────────────────────────────────────────────────────────────────"
+        echo "  [B] FIX: Agent Scraping"
+        echo "  ─────────────────────────────────────────────────────────────────────────"
+        echo ""
+        echo "    No metrics agent is running to scrape nftban metrics."
+        echo ""
+        echo "    Option 1: Enable local metrics stack"
+        echo "       nftban metrics enable --backend victoriametrics"
+        echo ""
+        echo "    Option 2: Install vmagent for remote submission"
+        echo "       nftban metrics enable --remote"
+        echo ""
+    fi
+
+    if [[ $val_c -eq 2 ]]; then
+        has_issues=true
+        echo "  ─────────────────────────────────────────────────────────────────────────"
+        echo "  [C] FIX: Remote Write"
+        echo "  ─────────────────────────────────────────────────────────────────────────"
+        echo ""
+        echo "    Remote write is configured but failing."
+        echo "    Reason: ${NFTBAN_REMOTE_WRITE_REASON:-unknown}"
+        echo ""
+        echo "    1. Check vmagent status:"
+        echo "       systemctl status vmagent"
+        echo ""
+        echo "    2. Check vmagent logs:"
+        echo "       journalctl -u vmagent -n 50"
+        echo ""
+        echo "    3. Verify remote endpoint is reachable:"
+        echo "       curl -I <remote_write_url>"
+        echo ""
+        echo "    4. Verify token file exists:"
+        echo "       ls -la /etc/nftban/pro.token"
+        echo ""
+    fi
+
+    if [[ "$has_issues" == "false" ]]; then
+        echo "  All validations passed. Metrics pipeline is healthy."
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    return $overall_code
+}
+
+# =============================================================================
 # EXPORTS
 # =============================================================================
 
 export -f nftban_validate_metrics_endpoint
 export -f nftban_validate_agent_scrape
 export -f nftban_validate_remote_write
+export -f nftban_validate_vmagent_targets
+export -f nftban_validate_vmagent_remote_write
 export -f nftban_pipeline_status
 export -f nftban_detect_watchdog_capability
 export -f nftban_get_capability_metric_value
 export -f nftban_check_perf_deps_available
+export -f nftban_print_pipeline_report
 
 # Export constants
 export NFTBAN_PIPELINE_FAIL
