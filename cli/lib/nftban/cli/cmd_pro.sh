@@ -5,15 +5,24 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Manage NFTBan Pro subscription, enrollment, and inventory
 #
-# meta:name=cmd_pro
-# meta:type=cli
-# meta:header=Pro Subscription CLI Handler
-# meta:version=1.0.0
+# meta:name="cmd_pro"
+# meta:type="cli"
+# meta:header="Pro Subscription CLI Handler"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:created_date=2026-01-08
-# meta:updated_date=2026-01-08
+# meta:description="CLI interface for NFTBan Pro subscription management"
+# meta:inventory.files=""
+# meta:inventory.binaries="curl"
+# meta:inventory.env_vars="NFTBAN_PRO_TOKEN"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network="https://api.nftban.com"
+# meta:inventory.privileges="nftban"
+#
+# meta:created_date="2026-01-08"
+# meta:updated_date="2026-01-08"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -189,7 +198,6 @@ nftban_pro_cmd_enroll() {
     elif [[ -n "${NFTBAN_PRO_TOKEN:-}" ]]; then
         # From environment variable
         token="$NFTBAN_PRO_TOKEN"
-        from_env=true
         echo "  Using token from NFTBAN_PRO_TOKEN environment variable"
     else
         # Interactive prompt (hidden input)

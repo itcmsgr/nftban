@@ -6,24 +6,33 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: All health check functions (binaries, paths, services, etc.)
 #
-# meta:name=nftban_health_checks
-# meta:type=lib
-# meta:header=Health Check Functions
-# meta:version=1.0.0
+# meta:name="nftban_health_checks"
+# meta:type="lib"
+# meta:header="Health Check Functions"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Health check functions for system verification
-# meta:input=System state and configuration
-# meta:output=Health status codes and issue reports
+# meta:description="Health check functions for system verification"
+# meta:input="System state and configuration"
+# meta:output="Health status codes and issue reports"
 #
 # **Inventory & Requirements**
-# meta:depends=nftban_health.sh
+# meta:depends="nftban_health.sh"
+# meta:inventory.files=""
+# meta:inventory.binaries="nft,systemctl"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 #
-# meta:created_date=2026-01-09
-# meta:updated_date=2026-01-09
+# meta:created_date="2026-01-09"
+# meta:updated_date="2026-01-09"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Prevent double-loading
 [[ -n "${_NFTBAN_HEALTH_CHECKS_LOADED:-}" ]] && return 0
@@ -2327,8 +2336,10 @@ nftban_health_check_timers() {
         timer_issues+=("FIX: Run install script - sudo ./install.sh systemd")
     fi
 
-    # Store results
+    # Store results (used by render functions)
+    # shellcheck disable=SC2034
     NFTBAN_HEALTH_RESULTS["timers"]=$status
+    # shellcheck disable=SC2034
     NFTBAN_HEALTH_ISSUES["timers"]="${timer_issues[*]}"
 
     return $status
