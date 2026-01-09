@@ -201,7 +201,7 @@ case "$1" in
         log_info "Creating FHS directories..."
 
         # Configuration directories
-        mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d}
+        mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d}
 
         # Variable data directories
         mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports}
@@ -230,8 +230,8 @@ case "$1" in
         chmod 750 /etc/nftban/conf.d
         chown root:root /etc/nftban/distros
         chmod 755 /etc/nftban/distros
-        chown root:nftban /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d
-        chmod 750 /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d
+        chown root:nftban /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d /etc/nftban/rules.d
+        chmod 750 /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d /etc/nftban/rules.d
 
         # Config files
         if [ -d /etc/nftban/distros ]; then
