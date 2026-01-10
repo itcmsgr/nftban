@@ -50,6 +50,22 @@ Environment="NFTBAN_METRICS_FILE=/var/lib/node_exporter/textfile_collector/nftba
 # Execute hybrid wrapper (auto-detects Go vs bash exporter)
 ExecStart=/usr/lib/nftban/exporters/nftban_metrics_wrapper.sh
 
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# Filesystem access - needs to write to node_exporter textfile dir
+ReadWritePaths=/var/lib/nftban /var/log/nftban /run/nftban /var/lib/node_exporter
+
 # Logging
 StandardOutput=journal
 StandardError=journal
