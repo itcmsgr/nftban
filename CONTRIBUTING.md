@@ -95,6 +95,111 @@ nftban/
 └── docs/                  # Documentation
 ```
 
+## Engineering Rules & Platform Contract (2026)
+
+All contributors, automation, and AI assistants must comply with this engineering contract.
+**If a change violates this document, it must not be merged.**
+
+### 1. Supported Platforms (Non-Negotiable)
+
+NFTBan supports platforms by tier. Only Tier 0 platforms define correctness.
+
+**Tier 0 — Focus (CI-required)**
+- Ubuntu 24.04 LTS
+- Debian 12
+- Rocky Linux 9.x
+
+A change is correct only if it builds, installs, and passes receipt-based audit on all Tier 0 platforms.
+
+**Tier 1 — Future Planning (Limited CI)**
+- Rocky Linux 10.x
+- Debian 13
+- Ubuntu 26.04 LTS
+
+Rules: Architecture must accommodate. No hardcoded assumptions. Failures do not block Tier 0 releases.
+
+**Tier 2 — Legacy (Best-Effort Only)**
+- Rocky/RHEL 8.x
+- Ubuntu 22.04 LTS
+- Debian 11
+
+Rules: Must not break catastrophically. No new features or design decisions for these platforms.
+
+### 2. Build Strategy (Build Old, Run New)
+
+**This rule is mandatory.**
+
+| Package | Build Host | Result |
+|---------|------------|--------|
+| RPM | Rocky Linux 9 | Ensures binaries run on Rocky 10+ |
+| DEB | Debian 12 or Ubuntu 22.04 | Ensures binaries run on Ubuntu 26.04+ |
+
+Violating this rule risks GLIBC incompatibility and is not allowed.
+
+### 3. Filesystem & Permissions (FHS Contract)
+
+- `build/fhs-spec.yaml` is the single source of truth
+- All directories, ownership, and modes are generated
+- No hardcoded mkdir, chmod, or chown outside generated outputs
+
+**Forbidden patterns:**
+- `chmod -R`
+- `chown -R`
+- Hardcoded `/etc/nftban`, `/var/lib/nftban`, `/run/nftban` creation
+- Runtime writes to `/etc` by non-root services
+
+Violations are rejected by CI and pre-commit hooks.
+
+### 4. Distro Differences (No Guessing)
+
+All distro-specific paths live in:
+```
+/etc/nftban/distros/*.conf
+```
+
+**Rules:**
+- Installers, services, and validators must not guess paths
+- Resolved values are written to the installation receipt
+- Validation checks the receipt, not the OS
+
+**Required keys:**
+```ini
+[paths]
+nft =
+systemctl =
+polkit_rules_dir =
+journalctl =
+```
+
+### 5. nftables Networking Standard
+
+- **nftables only** — iptables legacy is not supported
+- Always use the `inet` family
+- Example: `nft add rule inet filter input tcp dport 22 accept`
+
+### 6. Systemd & Security
+
+- Use systemd sandboxing (ProtectSystem, NoNewPrivileges, etc.)
+- Use sysusers.d and tmpfiles.d (generated)
+- Services must not escalate privileges silently
+- **Cron is forbidden** — use systemd timers only
+
+### 7. Receipt Is the Authority
+
+- Every install produces a receipt
+- Receipt defines: paths, permissions, distro resolution
+- Audit compares system → receipt
+- **If receipt says it's wrong, it is wrong**
+
+### 8. AI / Automation Rule
+
+Any AI (Claude, etc.) must obey:
+- README "Official Supported Platforms & Build Contract"
+- This CONTRIBUTING.md
+- No exceptions
+
+---
+
 ## Mandatory Standards
 
 All contributions **must** comply with these authoritative standards:
