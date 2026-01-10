@@ -114,6 +114,13 @@ if [[ -x "${REPO_ROOT}/tools/check-recursive-permissions.sh" ]]; then
 fi
 
 # -----------------------------------------------------------------------------
+# 2.5) Validate service capabilities match contract
+# -----------------------------------------------------------------------------
+if [[ -x "${REPO_ROOT}/tools/validate-service-capabilities.sh" ]]; then
+    "${REPO_ROOT}/tools/validate-service-capabilities.sh" || exit 1
+fi
+
+# -----------------------------------------------------------------------------
 # 3) Block recursive chmod/chown (hard rule - causes drift)
 # -----------------------------------------------------------------------------
 for f in "${SCAN_FILES[@]}"; do
