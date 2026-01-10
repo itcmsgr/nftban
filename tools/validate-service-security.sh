@@ -85,10 +85,11 @@ normalize() {
 }
 
 # Check a single field
+# Args: service, field, unit_key (reserved), expected, actual, is_critical
 check_field() {
-    local service="$1"
+    local _service="$1"      # Reserved for future use
     local field="$2"
-    local unit_key="$3"
+    local _unit_key="$3"     # Reserved for future use
     local expected="$4"
     local actual="$5"
     local is_critical="${6:-0}"
