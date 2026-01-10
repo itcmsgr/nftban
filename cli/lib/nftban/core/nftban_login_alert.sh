@@ -741,7 +741,9 @@ nftban_login_monitor_ssh() {
         nftban_login_alert_log "Monitoring SSH service: ${ssh_service}"
     fi
 
-    journalctl "${journal_units[@]}" -f -n 0 --output=json 2>/dev/null | \
+    # CRITICAL: Use process substitution instead of pipe to avoid subshell
+    # With pipe (|), the while loop runs in a subshell and NFTBAN_FAILED_ATTEMPTS
+    # array changes are lost. Process substitution keeps the loop in current shell.
     while read -r line; do
         # Parse JSON log entry
         local message
@@ -791,7 +793,7 @@ nftban_login_monitor_ssh() {
 
             nftban_login_track_failed "unknown" "$ip" "SSH"
         fi
-    done
+    done < <(journalctl "${journal_units[@]}" -f -n 0 --output=json 2>/dev/null)
 }
 
 nftban_login_track_failed() {

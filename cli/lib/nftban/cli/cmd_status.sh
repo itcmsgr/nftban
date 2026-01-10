@@ -400,13 +400,17 @@ output_terminal() {
     # Metrics Database
     local metrics_db_status="NOT INSTALLED"
     local prom_running=false vm_running=false
-    systemctl is-active prometheus >/dev/null 2>&1 && prom_running=true
-    systemctl is-active victoriametrics >/dev/null 2>&1 && vm_running=true
+    # Use distro abstraction layer for service names (with fallback if not loaded)
+    local prometheus_service victoriametrics_service
+    prometheus_service=$(nftban_distro_get_service prometheus 2>/dev/null || echo "prometheus")
+    victoriametrics_service=$(nftban_distro_get_service victoriametrics 2>/dev/null || echo "victoriametrics")
+    systemctl is-active "$prometheus_service" >/dev/null 2>&1 && prom_running=true
+    systemctl is-active "$victoriametrics_service" >/dev/null 2>&1 && vm_running=true
     if [[ "$prom_running" == "true" ]]; then
         metrics_db_status="Prometheus (running)"
     elif [[ "$vm_running" == "true" ]]; then
         metrics_db_status="VictoriaMetrics (running)"
-    elif systemctl list-unit-files 2>/dev/null | grep -qE "^(prometheus|victoriametrics).service"; then
+    elif systemctl list-unit-files 2>/dev/null | grep -qE "^(${prometheus_service}|${victoriametrics_service}).service"; then
         metrics_db_status="INSTALLED (stopped)"
     fi
     printf "  %-20s %s\n" "Metrics DB.........." "$metrics_db_status"
