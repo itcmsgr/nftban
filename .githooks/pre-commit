@@ -114,7 +114,21 @@ if [[ -x "${REPO_ROOT}/tools/check-recursive-permissions.sh" ]]; then
 fi
 
 # -----------------------------------------------------------------------------
-# 3) Block cron installation or crontab mutations (systemd timers only)
+# 3) Block recursive chmod/chown (hard rule - causes drift)
+# -----------------------------------------------------------------------------
+for f in "${SCAN_FILES[@]}"; do
+    # Allow in documentation only
+    case "$f" in
+        README.md|CONTRIBUTING.md|docs/*|*.wiki/*|*.md) continue ;;
+    esac
+    out="$(grep_staged '(^|[[:space:]])(chmod|chown)[[:space:]]+-R([[:space:]]|$)' "$f")"
+    if [[ -n "$out" ]]; then
+        fail "Recursive chmod/chown detected in $f (causes permission drift):\n$out\nUse explicit paths or FHS generator instead."
+    fi
+done
+
+# -----------------------------------------------------------------------------
+# 4) Block cron installation or crontab mutations (systemd timers only)
 # -----------------------------------------------------------------------------
 # Allow mentions in docs only
 for f in "${SCAN_FILES[@]}"; do
@@ -128,7 +142,7 @@ for f in "${SCAN_FILES[@]}"; do
 done
 
 # -----------------------------------------------------------------------------
-# 4) Block hardcoded polkit rules dirs (must resolve via distro config)
+# 5) Block hardcoded polkit rules dirs (must resolve via distro config)
 # -----------------------------------------------------------------------------
 # Allowed in distro config files and documentation only
 for f in "${SCAN_FILES[@]}"; do
@@ -142,7 +156,7 @@ for f in "${SCAN_FILES[@]}"; do
 done
 
 # -----------------------------------------------------------------------------
-# 5) Block hardcoded creation of core NFTBan dirs outside generator
+# 6) Block hardcoded creation of core NFTBan dirs outside generator
 # -----------------------------------------------------------------------------
 ALLOW_DIR_CREATION_REGEX='^(build/|cli/lib/nftban/core/nftban_fhs_spec\.sh|install/systemd/)'
 for f in "${SCAN_FILES[@]}"; do
@@ -156,7 +170,7 @@ for f in "${SCAN_FILES[@]}"; do
 done
 
 # -----------------------------------------------------------------------------
-# 6) Ensure OnCalendar is only in .timer files
+# 7) Ensure OnCalendar is only in .timer files
 # -----------------------------------------------------------------------------
 for f in "${SCAN_FILES[@]}"; do
     if [[ "$f" =~ \.service$ ]]; then
@@ -168,7 +182,7 @@ for f in "${SCAN_FILES[@]}"; do
 done
 
 # -----------------------------------------------------------------------------
-# 7) Ensure exporter scripts are executable
+# 8) Ensure exporter scripts are executable
 # -----------------------------------------------------------------------------
 for f in $STAGED_FILES; do
     if [[ "$f" =~ ^(usr/lib/nftban/exporters/|install/.*exporters/).*\.sh$ ]]; then

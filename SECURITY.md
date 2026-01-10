@@ -89,6 +89,41 @@ NFTBan supports platforms by tier. Security fixes are prioritized for Tier 0 fir
 - Maintenance and health timers are security features (e.g., SSH lockout prevention)
 - Disabling them can increase risk
 
+## Hardening Requirements
+
+### systemd Service Hardening
+
+Services should use conservative hardening where compatible:
+
+```ini
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictNamespaces=true
+LockPersonality=true
+RestrictSUIDSGID=true
+RestrictRealtime=true
+MemoryDenyWriteExecute=true  # See trade-off section below
+ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban
+```
+
+### Filesystem Permissions
+
+- `/etc/nftban` is root-owned and not writable by the `nftban` user
+- `/var/lib/nftban` is root:nftban (top-level boundary) with daemon-writable subdirectories
+- Scripts invoked by systemd must be executable (0755) and installed deterministically by packaging
+
+### Polkit Rules
+
+- Polkit rules must be least-privilege and profile-gated
+- Rule installation path is distro-dependent and resolved via distro config + receipt:
+  - Debian/Ubuntu: `/usr/share/polkit-1/rules.d`
+  - RHEL/Rocky: `/etc/polkit-1/rules.d`
+
 ### Security Features
 
 NFTBan includes comprehensive security features:
