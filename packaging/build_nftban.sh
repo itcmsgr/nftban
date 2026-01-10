@@ -740,8 +740,9 @@ fi
 /usr/lib/nftban/tests
 /usr/lib/nftban/data
 /usr/lib/nftban/*.sh
-%config(noreplace) /etc/nftban/nftban.conf
-%config(noreplace) /etc/nftban/nftables.conf
+# Main config files - root:nftban so services can read configs
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/nftban.conf
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/nftables.conf
 %config(noreplace) /etc/logrotate.d/nftban
 /usr/lib/systemd/system/*.service
 /usr/lib/systemd/system/*.socket
@@ -753,50 +754,51 @@ fi
 /usr/share/nftban/templates
 /usr/share/man/man8/nftban.8*
 /usr/share/bash-completion/completions/nftban
-%config(noreplace) /etc/nftban/commands.registry.yml
+%attr(644,root,nftban) %config(noreplace) /etc/nftban/commands.registry.yml
 /usr/lib/nftban/scripts/generate-help.sh
 /usr/lib/nftban/scripts/generate-wiki-operator.sh
 /usr/lib/nftban/scripts/generate-wiki-auditor.sh
-%dir /etc/nftban
-%dir /etc/nftban/conf.d
-%config(noreplace) /etc/nftban/conf.d/*.conf
-%dir /etc/nftban/conf.d/ddos
-%config(noreplace) /etc/nftban/conf.d/ddos/*.conf
-%dir /etc/nftban/conf.d/login
-%config(noreplace) /etc/nftban/conf.d/login/*.conf
-%dir /etc/nftban/conf.d/portscan
-%config(noreplace) /etc/nftban/conf.d/portscan/*.conf
-%dir /etc/nftban/conf.d/rbl
-%config(noreplace) /etc/nftban/conf.d/rbl/*.conf
-%dir /etc/nftban/conf.d/panels
-%dir /etc/nftban/conf.d/panels/directadmin
-%config(noreplace) /etc/nftban/conf.d/panels/directadmin/*.conf
-%dir /etc/nftban/conf.d/panels/cpanel
-%config(noreplace) /etc/nftban/conf.d/panels/cpanel/*.conf
-%dir /etc/nftban/conf.d/panels/cwp
-%config(noreplace) /etc/nftban/conf.d/panels/cwp/*.conf
-%dir /etc/nftban/conf.d/panels/cyberpanel
-%config(noreplace) /etc/nftban/conf.d/panels/cyberpanel/*.conf
-%dir /etc/nftban/conf.d/panels/interworx
-%config(noreplace) /etc/nftban/conf.d/panels/interworx/*.conf
-%dir /etc/nftban/conf.d/panels/vesta
-%config(noreplace) /etc/nftban/conf.d/panels/vesta/*.conf
-%dir /etc/nftban/conf.d/panels/generic
-%config(noreplace) /etc/nftban/conf.d/panels/generic/*.conf
-%dir /etc/nftban/conf.d/panels/plesk
-%config(noreplace) /etc/nftban/conf.d/panels/plesk/*.conf
-%dir /etc/nftban/distros
-/etc/nftban/distros/*.conf
-%dir /etc/nftban/suricata
-%dir /etc/nftban/suricata/profiles
-%config(noreplace) /etc/nftban/suricata/profiles/*.yaml
-%dir /etc/nftban/suricata/config
-%dir /etc/nftban/suricata/rules
-%dir /etc/nftban/suricata/cache
-%dir /etc/nftban/whitelist.d
-%dir /etc/nftban/blacklist.d
-%dir /etc/nftban/ports.d
-%dir /etc/nftban/rules.d
+# Config directories - root:nftban so services can read configs
+%dir %attr(750,root,nftban) /etc/nftban
+%dir %attr(750,root,nftban) /etc/nftban/conf.d
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/ddos
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/ddos/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/login
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/login/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/portscan
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/portscan/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/rbl
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/rbl/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/directadmin
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/directadmin/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/cpanel
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/cpanel/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/cwp
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/cwp/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/cyberpanel
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/cyberpanel/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/interworx
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/interworx/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/vesta
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/vesta/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/generic
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/generic/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/plesk
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/plesk/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/distros
+%attr(644,root,nftban) /etc/nftban/distros/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/suricata
+%dir %attr(750,root,nftban) /etc/nftban/suricata/profiles
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/suricata/profiles/*.yaml
+%dir %attr(750,root,nftban) /etc/nftban/suricata/config
+%dir %attr(750,root,nftban) /etc/nftban/suricata/rules
+%dir %attr(750,root,nftban) /etc/nftban/suricata/cache
+%dir %attr(750,root,nftban) /etc/nftban/whitelist.d
+%dir %attr(750,root,nftban) /etc/nftban/blacklist.d
+%dir %attr(750,root,nftban) /etc/nftban/ports.d
+%dir %attr(750,root,nftban) /etc/nftban/rules.d
 %dir %attr(750,nftban,nftban) /var/lib/nftban
 %dir %attr(750,nftban,nftban) /var/lib/nftban/feeds
 %dir %attr(750,nftban,nftban) /var/lib/nftban/geoip
