@@ -110,11 +110,12 @@ ReadWritePaths=/etc/nftban/blacklist.d /etc/nftban/rules.d /var/lib/nftban /var/
 # =============================================================================
 # CAPABILITIES
 # =============================================================================
-# Minimal capability set - ONLY what nftables operations require
+# Minimal capability set for nftban operations:
 # CAP_NET_ADMIN: required for nft add/delete/flush operations
+# CAP_DAC_OVERRIDE: required to write stats/metrics to nftban-owned directories
 # No CAP_CHOWN/CAP_FOWNER needed - socket permissions handled by nftband.socket
-CapabilityBoundingSet=CAP_NET_ADMIN
-AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_OVERRIDE
+AmbientCapabilities=CAP_NET_ADMIN CAP_DAC_OVERRIDE
 
 # =============================================================================
 # LOGGING
