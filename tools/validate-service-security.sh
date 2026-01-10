@@ -93,8 +93,10 @@ check_field() {
     local actual="$5"
     local is_critical="${6:-0}"
 
-    local expected_norm=$(normalize "$expected")
-    local actual_norm=$(normalize "$actual")
+    local expected_norm
+    local actual_norm
+    expected_norm=$(normalize "$expected")
+    actual_norm=$(normalize "$actual")
 
     if [[ "$expected_norm" == "$actual_norm" ]]; then
         echo -e "  ${GREEN}✓${NC} ${field}: ${actual:-<not set>}"
@@ -127,7 +129,6 @@ for service in $sections; do
     fi
 
     ((checked++)) || true
-    service_errors=0
 
     echo -e "${BLUE}[CHECK]${NC} ${service}.service"
 
@@ -139,7 +140,6 @@ for service in $sections; do
     exp_readwrite=$(get_contract_value "$service" "readwrite")
     exp_nonewprivs=$(get_contract_value "$service" "nonewprivs")
     exp_privatetmp=$(get_contract_value "$service" "privatetmp")
-    exp_dynamicuser=$(get_contract_value "$service" "dynamicuser")
 
     # Get actual values from unit file
     act_user=$(get_unit_value "$service_file" "User")
