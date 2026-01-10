@@ -702,16 +702,23 @@ nftban_stats_generate_dashboard() {
     local blacklist_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/blacklist.d"
     local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
 
-    # FEEDS: Count total IPs from all feeds
-    if [[ -d "$feeds_dir" ]]; then
-        shopt -s nullglob 2>/dev/null || true
-        for feed_file in "$feeds_dir"/*.txt "$feeds_dir"/*.netset; do
-            [[ -f "$feed_file" ]] || continue
-            local count
-            count=$(grep -cE '^[0-9]' "$feed_file" 2>/dev/null) || count=0
-            feeds_total=$((feeds_total + count))
+    # FEEDS: Count total IPs from ENABLED feeds only
+    if type -t nftban_feeds_discover_all >/dev/null 2>&1 && type -t nftban_feeds_get_property >/dev/null 2>&1; then
+        local all_feeds
+        all_feeds=$(nftban_feeds_discover_all 2>/dev/null || true)
+        for feed in $all_feeds; do
+            local enabled
+            enabled=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
+            if [[ "$enabled" == "true" ]]; then
+                local feed_lower="${feed,,}"
+                local feed_file="${feeds_dir}/${feed_lower}.txt"
+                if [[ -f "$feed_file" ]]; then
+                    local count
+                    count=$(grep -cE '^[0-9]' "$feed_file" 2>/dev/null) || count=0
+                    feeds_total=$((feeds_total + count))
+                fi
+            fi
         done
-        shopt -u nullglob 2>/dev/null || true
     fi
 
     # LOGIN: Count from login-auto.conf (source-specific file)
