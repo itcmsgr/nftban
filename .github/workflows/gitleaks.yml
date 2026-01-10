@@ -1,0 +1,44 @@
+name: Secret Scanning (Gitleaks)
+
+on:
+  push:
+    branches: [main, master, develop]
+  pull_request:
+    branches: [main, master, develop]
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  gitleaks:
+    name: Scan for secrets
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # Full history for thorough scanning
+
+      - name: Run Gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITLEAKS_ENABLE_COMMENTS: false
+
+      - name: Generate summary
+        if: always()
+        run: |
+          echo "## Secret Scanning Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Gitleaks has scanned the repository for:" >> $GITHUB_STEP_SUMMARY
+          echo "- API keys and tokens" >> $GITHUB_STEP_SUMMARY
+          echo "- Passwords and credentials" >> $GITHUB_STEP_SUMMARY
+          echo "- Private keys (SSH, PGP, etc.)" >> $GITHUB_STEP_SUMMARY
+          echo "- Cloud provider secrets (AWS, GCP, Azure)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          if [ "${{ job.status }}" == "success" ]; then
+            echo "No secrets detected." >> $GITHUB_STEP_SUMMARY
+          else
+            echo "**Potential secrets detected. Please review and remove before merging.**" >> $GITHUB_STEP_SUMMARY
+          fi
