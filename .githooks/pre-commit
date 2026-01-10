@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan v1.0.0 - Pre-commit Hook (Policy Enforcement)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# meta:name="pre-commit"
+# meta:type="tools"
+# meta:header="Pre-commit Policy Enforcement"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
+#
+# meta:description="Prevent drift, hardcoding, unsafe perms, cron usage, and policy violations"
+# meta:inventory.files=""
+# meta:inventory.binaries="git,grep"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="user"
+#
+# meta:created_date="2026-01-10"
+# meta:updated_date="2026-01-10"
+#
+# This hook intentionally errs on the side of blocking risky commits.
+#
+# Usage:
+#   git config core.hooksPath .githooks
+#   chmod +x .githooks/pre-commit
+# =============================================================================
+
+set -Eeuo pipefail
+
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+NC='\033[0m'
+
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+
+# Only inspect staged changes (not working tree)
+STAGED_FILES="$(git diff --cached --name-only --diff-filter=ACMR || true)"
+[[ -z "${STAGED_FILES}" ]] && exit 0
+
+fail() {
+    echo -e "${RED}[ERROR]${NC} $*" >&2
+    exit 1
+}
+
+warn() {
+    echo -e "[WARN] $*" >&2
+}
+
+# Files to scan (text-like only)
+SCAN_FILES=()
+while IFS= read -r f; do
+    [[ -z "$f" ]] && continue
+    # Skip binaries
+    case "$f" in
+        *.png|*.jpg|*.jpeg|*.gif|*.pdf|*.ico|*.zip|*.gz|*.xz|*.bz2|*.tar|*.7z|*.woff|*.woff2) continue ;;
+    esac
+    if [[ -f "${REPO_ROOT}/${f}" ]]; then
+        SCAN_FILES+=("$f")
+    fi
+done <<< "$STAGED_FILES"
+
+# Helper: grep staged content (from index, not working tree)
+grep_staged() {
+    local pattern="$1"
+    local file="$2"
+    git show ":$file" 2>/dev/null | grep -nE "$pattern" || true
+}
+
+echo "Running NFTBan pre-commit policy checks..."
+
+# -----------------------------------------------------------------------------
+# 0) Require FHS spec changes to regenerate outputs
+# -----------------------------------------------------------------------------
+FHS_SPEC="build/fhs-spec.yaml"
+GENERATED_HINTS=(
+    "install/systemd/tmpfiles.d/nftban.conf"
+    "install/systemd/sysusers.d/nftban.conf"
+    "install/packaging/deb/nftban.dirs"
+    "install/packaging/rpm/nftban-files.inc"
+    "cli/lib/nftban/data/fhs_directories.json"
+    "cli/lib/nftban/core/nftban_fhs_spec.sh"
+)
+
+if echo "$STAGED_FILES" | grep -qx "$FHS_SPEC"; then
+    changed_any_generated=0
+    for g in "${GENERATED_HINTS[@]}"; do
+        if echo "$STAGED_FILES" | grep -qx "$g"; then
+            changed_any_generated=1
+            break
+        fi
+    done
+    if [[ "$changed_any_generated" -eq 0 ]]; then
+        fail "build/fhs-spec.yaml changed but no generated outputs are staged.\nRun: ./build/generate-fhs-outputs.sh && git add <generated files>"
+    fi
+fi
+
+# -----------------------------------------------------------------------------
+# 1) Run existing header validator
+# -----------------------------------------------------------------------------
+if [[ -x "${REPO_ROOT}/tools/validate-headers.sh" ]]; then
+    "${REPO_ROOT}/tools/validate-headers.sh" || exit 1
+fi
+
+# -----------------------------------------------------------------------------
+# 2) Run existing recursive permission check
+# -----------------------------------------------------------------------------
+if [[ -x "${REPO_ROOT}/tools/check-recursive-permissions.sh" ]]; then
+    "${REPO_ROOT}/tools/check-recursive-permissions.sh" || exit 1
+fi
+
+# -----------------------------------------------------------------------------
+# 3) Block cron installation or crontab mutations (systemd timers only)
+# -----------------------------------------------------------------------------
+# Allow mentions in docs only
+for f in "${SCAN_FILES[@]}"; do
+    case "$f" in
+        README.md|CONTRIBUTING.md|docs/*|*.wiki/*) continue ;;
+    esac
+    out="$(grep_staged '(crontab|/etc/cron\.|/etc/cron/|cron\.d|cron\.daily|cron\.hourly|@reboot)' "$f")"
+    if [[ -n "$out" ]]; then
+        fail "Cron usage detected in $f (systemd timers only):\n$out"
+    fi
+done
+
+# -----------------------------------------------------------------------------
+# 4) Block hardcoded polkit rules dirs (must resolve via distro config)
+# -----------------------------------------------------------------------------
+# Allowed in distro config files and documentation only
+for f in "${SCAN_FILES[@]}"; do
+    case "$f" in
+        etc/nftban/distros/*|install/config/distros/*|docs/*|README.md|CONTRIBUTING.md|*.wiki/*|build/*) continue ;;
+    esac
+    out="$(grep_staged '(/usr/share/polkit-1/rules\.d|/etc/polkit-1/rules\.d)' "$f")"
+    if [[ -n "$out" ]]; then
+        fail "Hardcoded polkit rules path in $f. Must be resolved via distro config + receipt:\n$out"
+    fi
+done
+
+# -----------------------------------------------------------------------------
+# 5) Block hardcoded creation of core NFTBan dirs outside generator
+# -----------------------------------------------------------------------------
+ALLOW_DIR_CREATION_REGEX='^(build/|cli/lib/nftban/core/nftban_fhs_spec\.sh|install/systemd/)'
+for f in "${SCAN_FILES[@]}"; do
+    if [[ "$f" =~ $ALLOW_DIR_CREATION_REGEX ]]; then
+        continue
+    fi
+    out="$(grep_staged '(mkdir[[:space:]]+-p|install[[:space:]]+-d).*(/etc/nftban|/var/lib/nftban|/var/log/nftban|/var/cache/nftban|/run/nftban)' "$f")"
+    if [[ -n "$out" ]]; then
+        fail "Hardcoded dir creation for NFTBan paths in $f. Must use generated outputs:\n$out"
+    fi
+done
+
+# -----------------------------------------------------------------------------
+# 6) Ensure OnCalendar is only in .timer files
+# -----------------------------------------------------------------------------
+for f in "${SCAN_FILES[@]}"; do
+    if [[ "$f" =~ \.service$ ]]; then
+        out="$(grep_staged 'OnCalendar=' "$f")"
+        if [[ -n "$out" ]]; then
+            fail "OnCalendar found in .service file ($f). Scheduling must be in .timer units."
+        fi
+    fi
+done
+
+# -----------------------------------------------------------------------------
+# 7) Ensure exporter scripts are executable
+# -----------------------------------------------------------------------------
+for f in $STAGED_FILES; do
+    if [[ "$f" =~ ^(usr/lib/nftban/exporters/|install/.*exporters/).*\.sh$ ]]; then
+        mode="$(git ls-files -s "$f" 2>/dev/null | awk '{print $1}' || true)"
+        if [[ "$mode" == "100644" ]]; then
+            fail "Exporter script $f is not executable in git (mode 100644). Must be 100755.\nRun: git update-index --chmod=+x $f"
+        fi
+    fi
+done
+
+echo -e "${GREEN}[OK]${NC} All pre-commit policy checks passed"
+exit 0

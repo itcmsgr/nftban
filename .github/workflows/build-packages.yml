@@ -60,19 +60,15 @@ jobs:
       matrix:
         include:
           # EL family (covers Rocky, Alma, RHEL, CentOS Stream)
+          # Tier 0: el9 (primary/required)
           - distro: el9
             container: rockylinux:9
             name_suffix: el9
+          # Tier 1: el10 (future/planned)
           - distro: el10
             container: almalinux:10
             name_suffix: el10
-          # Fedora (current stable + previous)
-          - distro: fc42
-            container: fedora:42
-            name_suffix: fc42
-          - distro: fc43
-            container: fedora:43
-            name_suffix: fc43
+          # Note: Fedora removed - rolling release, not LTS
 
     steps:
       - name: Checkout code
@@ -131,18 +127,21 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - distro: ubuntu22.04
-            container: ubuntu:22.04
-            name_suffix: ubuntu22.04
+          # Tier 0: Primary/Required
           - distro: ubuntu24.04
             container: ubuntu:24.04
             name_suffix: ubuntu24.04
           - distro: debian12
             container: debian:12
             name_suffix: debian12
+          # Tier 1: Future/Planned
           - distro: debian13
             container: debian:trixie
             name_suffix: debian13
+          # Tier 2: Legacy/Best-Effort
+          - distro: ubuntu22.04
+            container: ubuntu:22.04
+            name_suffix: ubuntu22.04
 
     steps:
       - name: Checkout code
@@ -355,17 +354,15 @@ jobs:
 
             **Installation packages for multiple distributions**
 
-            ### 📦 RPM Packages (RHEL/Rocky/Alma/Fedora)
-            - `nftban-el9-x86_64.rpm` - RHEL/Rocky/Alma 9
-            - `nftban-el10-x86_64.rpm` - RHEL/Rocky/Alma 10
-            - `nftban-fc42-x86_64.rpm` - Fedora 42
-            - `nftban-fc43-x86_64.rpm` - Fedora 43
+            ### 📦 RPM Packages (RHEL/Rocky/Alma)
+            - `nftban-el9-x86_64.rpm` - RHEL/Rocky/Alma 9 (Tier 0)
+            - `nftban-el10-x86_64.rpm` - RHEL/Rocky/Alma 10 (Tier 1)
 
             ### 📦 DEB Packages (Ubuntu/Debian)
-            - `nftban-ubuntu22.04-amd64.deb` - Ubuntu 22.04 LTS
-            - `nftban-ubuntu24.04-amd64.deb` - Ubuntu 24.04 LTS
-            - `nftban-debian12-amd64.deb` - Debian 12 (Bookworm)
-            - `nftban-debian13-amd64.deb` - Debian 13 (Trixie)
+            - `nftban-ubuntu24.04-amd64.deb` - Ubuntu 24.04 LTS (Tier 0)
+            - `nftban-debian12-amd64.deb` - Debian 12 (Tier 0)
+            - `nftban-debian13-amd64.deb` - Debian 13 (Tier 1)
+            - `nftban-ubuntu22.04-amd64.deb` - Ubuntu 22.04 LTS (Tier 2)
 
             ### ✨ Features
             - **Prerequisite checks** - Validates system before installation

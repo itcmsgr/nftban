@@ -25,54 +25,48 @@
 
 ## Quick Install
 
-### Rocky / AlmaLinux / RHEL / CentOS Stream 9
+### Tier 0 — Primary Platforms (Recommended)
+
+#### Ubuntu 24.04 LTS (Noble)
+```bash
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb
+sudo apt update && sudo apt install -y ./nftban-ubuntu24.04-amd64.deb && sudo nftban enable
+```
+
+#### Debian 12 (Bookworm)
+```bash
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb
+sudo apt update && sudo apt install -y ./nftban-debian12-amd64.deb && sudo nftban enable
+```
+
+#### Rocky / AlmaLinux / RHEL 9
 ```bash
 sudo dnf install -y epel-release && sudo dnf config-manager --set-enabled crb
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_64.rpm
 sudo dnf install -y nftban-el9-x86_64.rpm && sudo nftban enable
 ```
 
-### Rocky / AlmaLinux / RHEL / CentOS Stream 10
+### Tier 1 — Future Platforms
+
+#### Debian 13 (Trixie)
+```bash
+wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb
+sudo apt update && sudo apt install -y ./nftban-debian13-amd64.deb && sudo nftban enable
+```
+
+#### Rocky / AlmaLinux / RHEL 10
 ```bash
 sudo dnf install -y epel-release && sudo dnf config-manager --set-enabled crb
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el10-x86_64.rpm
 sudo dnf install -y nftban-el10-x86_64.rpm && sudo nftban enable
 ```
 
-### Fedora 42
-```bash
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc42-x86_64.rpm
-sudo dnf install -y nftban-fc42-x86_64.rpm && sudo nftban enable
-```
+### Tier 2 — Legacy Platforms
 
-### Fedora 43
-```bash
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc43-x86_64.rpm
-sudo dnf install -y nftban-fc43-x86_64.rpm && sudo nftban enable
-```
-
-### Ubuntu 22.04
+#### Ubuntu 22.04 LTS (Jammy)
 ```bash
 wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb
 sudo apt update && sudo apt install -y ./nftban-ubuntu22.04-amd64.deb && sudo nftban enable
-```
-
-### Ubuntu 24.04
-```bash
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb
-sudo apt update && sudo apt install -y ./nftban-ubuntu24.04-amd64.deb && sudo nftban enable
-```
-
-### Debian 12
-```bash
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb
-sudo apt update && sudo apt install -y ./nftban-debian12-amd64.deb && sudo nftban enable
-```
-
-### Debian 13
-```bash
-wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb
-sudo apt update && sudo apt install -y ./nftban-debian13-amd64.deb && sudo nftban enable
 ```
 
 ### From Source
@@ -87,25 +81,25 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 
 ## Available Packages
 
-### RPM Packages (EL Family + Fedora)
+### RPM Packages (EL Family)
 
-| Distribution | Version | Architecture | Package |
-|--------------|---------|--------------|---------|
-| Rocky / Alma / RHEL / CentOS Stream | 9 | x86_64 | [nftban-el9-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_64.rpm) |
-| Rocky / Alma / RHEL / CentOS Stream | 10 | x86_64 | [nftban-el10-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el10-x86_64.rpm) |
-| Fedora | 42 | x86_64 | [nftban-fc42-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc42-x86_64.rpm) |
-| Fedora | 43 | x86_64 | [nftban-fc43-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc43-x86_64.rpm) |
+| Tier | Distribution | Version | Package |
+|------|--------------|---------|---------|
+| 0 | Rocky / Alma / RHEL / CentOS Stream | 9 | [nftban-el9-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_64.rpm) |
+| 1 | Rocky / Alma / RHEL / CentOS Stream | 10 | [nftban-el10-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el10-x86_64.rpm) |
+
+> **Note:** Fedora is the upstream development platform for RHEL. The `el9` package (based on Fedora 34) and `el10` package (based on Fedora 40) cover enterprise use cases. Fedora users can use the corresponding EL package.
 
 ### DEB Packages (Ubuntu + Debian)
 
-| Distribution | Version | Architecture | Package |
-|--------------|---------|--------------|---------|
-| Ubuntu | 22.04 (Jammy) | amd64 | [nftban-ubuntu22.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb) |
-| Ubuntu | 24.04 (Noble) | amd64 | [nftban-ubuntu24.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb) |
-| Debian | 12 (Bookworm) | amd64 | [nftban-debian12-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb) |
-| Debian | 13 (Trixie) | amd64 | [nftban-debian13-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb) |
+| Tier | Distribution | Version | Package |
+|------|--------------|---------|---------|
+| 0 | Ubuntu | 24.04 (Noble) | [nftban-ubuntu24.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb) |
+| 0 | Debian | 12 (Bookworm) | [nftban-debian12-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb) |
+| 1 | Debian | 13 (Trixie) | [nftban-debian13-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb) |
+| 2 | Ubuntu | 22.04 (Jammy) | [nftban-ubuntu22.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb) |
 
-> Packages are distro-specific and FHS compliant. Use the package matching your exact distribution version. Old versions archived in [Releases](https://github.com/itcmsgr/nftban/releases).
+> Packages are distro-specific and FHS compliant. Use the package matching your exact distribution version. See [Supported Platforms](https://github.com/itcmsgr/nftban/wiki/Supported-Platforms) for the full platform contract. Old versions archived in [Releases](https://github.com/itcmsgr/nftban/releases).
 
 ---
 
@@ -232,13 +226,39 @@ ip6 nftban {                 # IPv6 rules
 
 ## Requirements
 
-- **Linux**: Rocky/Alma/RHEL 9-10, CentOS Stream 9-10, Ubuntu 22.04+, Debian 12+, Fedora 42+
-- **nftables**: 0.9.3+
+- **Linux**: Rocky/Alma/RHEL 9-10, CentOS Stream 9-10, Ubuntu 22.04+, Debian 12+
+- **nftables**: 1.0+ (native backend)
 - **Bash**: 4.4+
-- **systemd**: Required
+- **systemd**: 252+ (sysusers.d, tmpfiles.d support)
 - **jq**: JSON processor (auto-installed)
 - **yq**: YAML processor (auto-installed via pip3)
 - **Go 1.21+**: For building from source (optional)
+
+---
+
+## Supported Platforms
+
+NFTBan uses a tiered support model. See the [full platform contract](https://github.com/itcmsgr/nftban/wiki/Supported-Platforms) for details.
+
+### Tier 0 — Primary (CI-Required)
+
+| Family | Platform | Kernel | nftables |
+|--------|----------|--------|----------|
+| DEB | Ubuntu 24.04 LTS | 6.8 | 1.0 |
+| DEB | Debian 12 | 6.1 | 1.0 |
+| RPM | Rocky Linux 9.x | 5.14 | 1.0 |
+
+**NFTBan is correct if it builds and passes receipt-based audit on these platforms.**
+
+### Tier 1 — Future (Planned)
+
+- Rocky Linux 10.x / AlmaLinux 10.x / RHEL 10
+- Debian 13 (Trixie)
+- Ubuntu 26.04 LTS
+
+### Tier 2 — Legacy (Best-Effort)
+
+- Rocky/RHEL 8.x, Ubuntu 22.04, Debian 11
 
 ---
 

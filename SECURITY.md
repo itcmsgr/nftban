@@ -42,11 +42,52 @@ Instead, please report security vulnerabilities by:
 
 | Version | Supported          |
 | ------- | ------------------ |
-| 1.0.x   | ✅ Full support    |
-| 0.32.x  | ⚠️ Security fixes only |
-| < 0.32  | ❌ Not supported   |
+| 1.0.x   | Full support    |
+| 0.32.x  | Security fixes only |
+| < 0.32  | Not supported   |
 
 **Recommendation:** Always use the latest stable release (v1.0.x) for best security.
+
+### Supported Platforms by Tier
+
+NFTBan supports platforms by tier. Security fixes are prioritized for Tier 0 first.
+
+**Tier 0 — Focus (fully supported)**
+- Ubuntu 24.04 LTS
+- Debian 12
+- Rocky Linux 9.x
+
+**Tier 1 — Future targets (planned)**
+- Rocky Linux 10.x
+- Debian 13
+- Ubuntu 26.04 LTS
+
+**Tier 2 — Legacy (best-effort)**
+- Rocky/RHEL 8.x
+- Ubuntu 22.04 LTS
+- Debian 11
+
+### Security Model
+
+#### Privilege Boundaries
+- NFTBan uses a dedicated system user: `nftban`
+- Root privileges are constrained to specific operations (e.g., applying nftables changes)
+- Privileged operations use polkit or tightly sandboxed root-run services
+
+#### Receipt-Driven Installation
+- Installations produce `/var/lib/nftban/install-receipt.json`
+- The receipt defines the expected system state and is used for validation
+- Drift (extra units, leftover scripts, unexpected permissions) is treated as a security risk
+
+#### Distro-Specific Policy Resolution
+- Distro differences (polkit rules location, binary paths) resolve via `/etc/nftban/distros/*.conf`
+- No hardcoded distro paths are allowed in installers or validators
+- Resolved values are recorded in the receipt
+
+#### Scheduling and Autoheal
+- Scheduling is systemd timers only. **Cron is forbidden.**
+- Maintenance and health timers are security features (e.g., SSH lockout prevention)
+- Disabling them can increase risk
 
 ### Security Features
 
@@ -147,6 +188,17 @@ Accept this trade-off. The defense-in-depth approach provides strong security de
 - Service files: `install/systemd/*.service`, `cmd/nftban-core/systemd/*.service`
 - Each affected service file contains detailed inline documentation
 - See systemd.exec(5) man page for directive details
+
+### Known High-Risk Areas (Review Hotspots)
+
+Changes touching any of the following require extra security review:
+
+- systemd unit files, timers, sockets
+- polkit rules or helpers
+- nftables rule generation
+- installer scripts and maintainer scripts (deb/rpm)
+- receipt schema or validation logic
+- any code paths that modify `/etc/nftban` or firewall state
 
 ### Known Security Advisories
 
