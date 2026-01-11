@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.29] - 2026-01-11
+
+### Added
+
+#### New Bot Scanner Module (`nftban botscan`)
+- **Webshell Detection**: Detect and block webshell scanner bots (shell.php, c99.php, r57.php)
+- **Exploit Probe Detection**: Block CVE exploit probes (Log4j, PHPUnit, CGI-bin)
+- **404 Flood Detection**: Track excessive 404 requests as scanner behavior
+- **Pattern-Based System**: Simple text file patterns with flexible matching
+- **Pattern Categories**:
+  - `webshell.patterns` - Backdoor/shell scanners
+  - `exploit.patterns` - CVE and vulnerability probes
+  - `scanner.patterns` - Directory and file scanners
+  - `custom.patterns` - User-defined patterns
+
+#### Bad Bot Detection (User-Agent Based)
+- **`badbots.patterns`** - Block aggressive/malicious bots by User-Agent:
+  - PetalBot, AwarioBot, MauiBot, DotBot (aggressive crawlers)
+  - GPTBot, Bytespider, CCBot (AI training scrapers)
+  - masscan, zgrab, sqlmap, nikto, nuclei (security scanners)
+  - XRumer, ScrapeBox (spam bots)
+
+#### Pattern Management CLI
+- `nftban botscan patterns list` - List all patterns
+- `nftban botscan patterns add NAME PATTERN [MATCH_TYPE] [THRESHOLD]` - Add custom pattern
+- `nftban botscan patterns enable/disable NAME` - Toggle patterns
+- `nftban botscan patterns remove NAME` - Remove custom pattern
+
+#### Bot Scanner Commands
+- `nftban botscan enable/disable` - Enable or disable module
+- `nftban botscan status` - Show module status and configuration
+- `nftban botscan check` - Run manual log analysis
+- `nftban botscan history` - Show detection history
+- `nftban botscan test [URL|UA] [ua]` - Test pattern matching
+
+#### Match Types
+- `url-404` - Match only 404 responses (webshell probes)
+- `url-any` - Match any HTTP response
+- `url-post` - Match POST requests only
+- `url-get` - Match GET requests only
+- `useragent` - Match User-Agent header (bad bot detection)
+
+### Fixed
+- **Stats BANS BY MODULE**: Use dynamic table name `${NFTBAN_TABLE_IPV4}`
+- **Stats arithmetic**: Safe increment for strict mode compatibility
+
+---
+
 ## [1.0.28] - 2026-01-11
 
 ### Added

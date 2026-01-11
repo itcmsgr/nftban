@@ -1105,8 +1105,9 @@ install_configs() {
     log "Installing Configuration Files..."
 
     # Create config directories
-    mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d,conf.d,distros,suricata,rules.d}
-    mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels}
+    mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d,conf.d,distros,suricata,rules.d,patterns.d}
+    mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan}
+    mkdir -p /etc/nftban/patterns.d/botscan
     mkdir -p /etc/nftban/suricata/{profiles,config,rules,cache}
     mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,panels,metrics,stats}
     mkdir -p /var/lib/nftban/reports/auditors

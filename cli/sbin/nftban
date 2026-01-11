@@ -168,6 +168,7 @@ nftban_complete() {
         echo "ddos"
         echo "portscan"
         echo "login"
+        echo "botscan"
         echo "feeds"
         echo "trust"
         echo "country"
@@ -418,6 +419,17 @@ nftban_complete() {
                 echo "test"
                 echo "help"
                 ;;
+            botscan)
+                echo "enable"
+                echo "disable"
+                echo "status"
+                echo "stats"
+                echo "check"
+                echo "patterns"
+                echo "history"
+                echo "test"
+                echo "help"
+                ;;
             watchdog)
                 echo "status"
                 echo "check"
@@ -563,6 +575,17 @@ nftban_complete() {
                 echo "status"
                 echo "list"
                 echo "help"
+                ;;
+            botscan_patterns)
+                echo "list"
+                echo "add"
+                echo "remove"
+                echo "enable"
+                echo "disable"
+                ;;
+            botscan_test)
+                echo "ua"
+                echo "useragent"
                 ;;
             *)
                 # No further completions

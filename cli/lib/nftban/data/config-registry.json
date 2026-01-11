@@ -1,6 +1,6 @@
 {
   "registry_version": "1.0.0",
-  "schema_version": "1.0.27",
+  "schema_version": "1.0.29",
   "generated_at": "2026-01-11",
   "description": "NFTBan Configuration Registry - Mode-aware validation metadata",
 
@@ -143,6 +143,14 @@
       "depends_on": "conf.d/login/main.conf"
     },
 
+    "conf.d/botscan/main.conf": {
+      "description": "Bot scanner module configuration (URL and User-Agent detection)",
+      "active_when": "always",
+      "category": "modules",
+      "key_count": 25,
+      "comment": "Detects webshell probes, exploit scanners, bad bots via access log analysis"
+    },
+
     "conf.d/panels/directadmin/main.conf": {
       "description": "DirectAdmin panel integration",
       "active_when": "panel_detected",
@@ -256,6 +264,11 @@
       "active_when": "always",
       "category": "modules",
       "description": "Login general settings"
+    },
+    "BOTSCAN_": {
+      "active_when": "always",
+      "category": "modules",
+      "description": "Bot scanner settings (webshell, exploit, bad bot detection)"
     },
     "NFTBAN_BANNER_": {
       "active_when": "always",

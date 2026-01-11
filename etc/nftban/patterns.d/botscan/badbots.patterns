@@ -1,0 +1,91 @@
+# =============================================================================
+# NFTBan Bot Scanner - Bad Bots (User-Agent Based Detection)
+# =============================================================================
+# Format: NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION
+#
+# MATCH_TYPE for user-agent based detection:
+#   useragent  = Match against User-Agent header
+#
+# These bots are known to be aggressive, ignore robots.txt, or are used
+# for malicious purposes. Detection is based on User-Agent strings.
+# =============================================================================
+
+# =============================================================================
+# AGGRESSIVE CRAWLERS (Ignore robots.txt, excessive crawling)
+# =============================================================================
+PETALBOT|PetalBot|useragent|20|60|3600|true|Huawei's PetalBot - aggressive crawler
+AWARIOBOT|AwarioBot|useragent|20|60|3600|true|AwarioBot - aggressive social monitoring bot
+SEMRUSHBOT|SemrushBot|useragent|50|300|1800|false|SEMrush bot - can be aggressive
+AHREFSBOT|AhrefsBot|useragent|50|300|1800|false|Ahrefs SEO bot - can be aggressive
+MAUIBOT|MauiBot|useragent|20|60|3600|true|MauiBot - known aggressive crawler
+DOTBOT|DotBot|useragent|30|120|3600|true|DotBot - aggressive SEO crawler
+BLEXBOT|BLEXBot|useragent|30|120|3600|true|BLEXBot - aggressive crawler
+MEGAINDEX|MegaIndex|useragent|30|120|3600|true|MegaIndex - Russian SEO bot
+ZOOMINFOBOT|ZoominfoBot|useragent|30|120|3600|true|ZoomInfo scraper bot
+LINKFLUENCE|linkfluence|useragent|30|120|3600|true|Linkfluence crawler
+
+# =============================================================================
+# AI TRAINING BOTS (Content scrapers for LLM training)
+# =============================================================================
+GPTBOT|GPTBot|useragent|10|60|7200|true|OpenAI GPTBot - AI training scraper
+CLAUDEBOT|ClaudeBot|useragent|10|60|7200|false|Anthropic ClaudeBot - AI training
+CCBOT|CCBot|useragent|20|120|3600|true|Common Crawl - mass scraper
+BYTESPIDER|Bytespider|useragent|10|60|7200|true|ByteDance AI training spider
+APPLEBOT_EXTENDED|AppleBot-Extended|useragent|30|300|1800|false|Apple extended bot
+
+# =============================================================================
+# KNOWN MALICIOUS BOTS
+# =============================================================================
+MASSCAN|masscan|useragent|1|60|86400|true|Masscan - port scanner
+ZGRAB|zgrab|useragent|1|60|86400|true|ZGrab - TLS scanner
+NMAP|Nmap|useragent|1|60|86400|true|Nmap scripting engine
+SQLMAP|sqlmap|useragent|1|60|86400|true|SQLMap - SQL injection tool
+NIKTO|Nikto|useragent|1|60|86400|true|Nikto - vulnerability scanner
+WPSCAN|WPScan|useragent|1|60|86400|true|WPScan - WordPress scanner
+DIRBUSTER|DirBuster|useragent|1|60|86400|true|DirBuster - directory scanner
+GOBUSTER|gobuster|useragent|1|60|86400|true|Gobuster - directory scanner
+NUCLEI|nuclei|useragent|1|60|86400|true|Nuclei vulnerability scanner
+HTTPX|httpx|useragent|3|60|7200|true|ProjectDiscovery httpx scanner
+
+# =============================================================================
+# GENERIC SCRAPERS AND BOTS
+# =============================================================================
+PYTHON_REQUESTS|python-requests|useragent|50|300|1800|false|Python requests library
+PYTHON_URLLIB|Python-urllib|useragent|50|300|1800|false|Python urllib library
+CURL_UA|curl/|useragent|100|300|900|false|Curl user agent
+WGET_UA|Wget/|useragent|100|300|900|false|Wget user agent
+JAVA_UA|Java/|useragent|50|300|1800|false|Java HTTP client
+LIBWWW|libwww|useragent|50|300|1800|false|Perl LWP library
+
+# =============================================================================
+# HEADLESS BROWSERS (Often used for scraping)
+# =============================================================================
+HEADLESS_CHROME|HeadlessChrome|useragent|30|120|3600|false|Headless Chrome
+PHANTOMJS|PhantomJS|useragent|20|60|7200|true|PhantomJS headless browser
+SELENIUM|Selenium|useragent|20|60|7200|false|Selenium automation
+
+# =============================================================================
+# EMPTY OR SUSPICIOUS USER AGENTS
+# =============================================================================
+EMPTY_UA|-$|useragent|20|60|3600|true|Empty user agent
+SINGLE_DASH|^-$|useragent|20|60|3600|true|Single dash user agent
+
+# =============================================================================
+# SPAM BOTS AND COMMENT BOTS
+# =============================================================================
+XRUMER|XRumer|useragent|1|60|86400|true|XRumer spam bot
+SCRAPEBOX|ScrapeBox|useragent|1|60|86400|true|ScrapeBox SEO spam tool
+GSCRAPER|GScraper|useragent|1|60|86400|true|GScraper spam tool
+SENUKE|SEnuke|useragent|1|60|86400|true|SEnuke spam bot
+HREFER|Hrefer|useragent|1|60|86400|true|Hrefer spam bot
+
+# =============================================================================
+# DATA CENTER / PROXY DETECTION (by common patterns)
+# =============================================================================
+DATACENTER_BOT|Go-http-client|useragent|50|300|1800|false|Go HTTP client (often bots)
+AXIOS|axios|useragent|50|300|1800|false|Axios HTTP client
+NODE_FETCH|node-fetch|useragent|50|300|1800|false|Node.js fetch
+
+# =============================================================================
+# ADD YOUR CUSTOM BAD BOTS BELOW
+# =============================================================================

@@ -1,0 +1,73 @@
+# =============================================================================
+# NFTBan Bot Scanner - Directory/File Scanner Patterns
+# =============================================================================
+# Format: NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Backup File Scanners
+# -----------------------------------------------------------------------------
+SCAN_BACKUP_ZIP|\.zip$|url-404|5|60|1800|true|ZIP backup probe
+SCAN_BACKUP_TAR|\.tar\.gz$|url-404|5|60|1800|true|TAR backup probe
+SCAN_BACKUP_SQL|\.(sql|sql\.gz)$|url-404|3|60|3600|true|SQL backup probe
+SCAN_BACKUP_BAK|\.bak$|url-404|5|60|1800|true|BAK file probe
+SCAN_BACKUP_OLD|\.old$|url-404|5|60|1800|true|OLD file probe
+SCAN_BACKUP_SAVE|\.save$|url-404|5|60|1800|true|SAVE file probe
+SCAN_BACKUP_ORIG|\.orig$|url-404|5|60|1800|true|ORIG file probe
+SCAN_BACKUP_SWP|\.swp$|url-404|3|60|1800|true|VIM swap probe
+
+# -----------------------------------------------------------------------------
+# Admin Panel Scanners
+# -----------------------------------------------------------------------------
+SCAN_ADMIN|^/admin|url-404|10|60|1800|true|Admin panel probe
+SCAN_ADMINISTRATOR|/administrator|url-404|5|60|1800|true|Administrator probe
+SCAN_CPANEL|/cpanel|url-404|3|60|1800|true|cPanel probe
+SCAN_PLESK|/plesk|url-404|3|60|1800|true|Plesk probe
+SCAN_WEBMIN|/webmin|url-404|3|60|1800|true|Webmin probe
+SCAN_MANAGER|/manager|url-404|5|60|1800|true|Manager probe
+SCAN_CONSOLE|/console|url-404|5|60|1800|true|Console probe
+SCAN_DASHBOARD|/dashboard|url-404|10|60|1800|true|Dashboard probe
+
+# -----------------------------------------------------------------------------
+# Directory Scanners (common dirb/dirbuster patterns)
+# -----------------------------------------------------------------------------
+SCAN_HIDDEN|^/\.[a-z]|url-404|10|60|1800|true|Hidden file probe
+SCAN_DEV|^/dev|url-404|10|60|1800|true|Dev directory probe
+SCAN_TEST|^/test|url-404|10|60|1800|true|Test directory probe
+SCAN_TMP|^/tmp|url-404|5|60|1800|true|Tmp directory probe
+SCAN_TEMP|^/temp|url-404|5|60|1800|true|Temp directory probe
+SCAN_LOGS|^/logs|url-404|5|60|1800|true|Logs directory probe
+SCAN_BACKUP|^/backup|url-404|5|60|1800|true|Backup directory probe
+SCAN_DATA|^/data|url-404|10|60|1800|true|Data directory probe
+SCAN_CONFIG|^/config|url-404|5|60|1800|true|Config directory probe
+
+# -----------------------------------------------------------------------------
+# Version Control Exposure
+# -----------------------------------------------------------------------------
+SCAN_GIT|/\.git/|url-any|2|60|7200|true|Git repo exposure
+SCAN_SVN|/\.svn/|url-any|2|60|7200|true|SVN repo exposure
+SCAN_HG|/\.hg/|url-any|2|60|7200|true|Mercurial repo exposure
+SCAN_CVS|/CVS/|url-any|3|60|3600|true|CVS repo exposure
+
+# -----------------------------------------------------------------------------
+# Install/Setup Scanners
+# -----------------------------------------------------------------------------
+SCAN_INSTALL|/install\.php|url-404|3|60|1800|true|Install script probe
+SCAN_SETUP|/setup\.php|url-404|3|60|1800|true|Setup script probe
+SCAN_INSTALLER|/installer|url-404|5|60|1800|true|Installer probe
+SCAN_UPGRADE|/upgrade\.php|url-404|3|60|1800|true|Upgrade script probe
+
+# -----------------------------------------------------------------------------
+# API/Endpoint Scanners
+# -----------------------------------------------------------------------------
+SCAN_API|^/api/|url-404|20|60|1800|true|API endpoint probe
+SCAN_V1|^/v1/|url-404|10|60|1800|true|API v1 probe
+SCAN_V2|^/v2/|url-404|10|60|1800|true|API v2 probe
+SCAN_REST|^/rest/|url-404|10|60|1800|true|REST endpoint probe
+SCAN_AJAX|^/ajax|url-404|15|60|1800|true|AJAX endpoint probe
+
+# -----------------------------------------------------------------------------
+# Well-Known Path Abuse
+# -----------------------------------------------------------------------------
+SCAN_WELLKNOWN|/\.well-known/.*[^a-z-]|url-404|5|60|1800|true|Well-known abuse
+SCAN_ACME|/\.well-known/acme-challenge/.*\.php|url-any|1|60|7200|true|ACME PHP probe

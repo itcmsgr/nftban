@@ -450,7 +450,11 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/portscan
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/login
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/panels
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/botscan
 %config(noreplace) /etc/nftban/conf.d/*
+%dir %attr(750,root,nftban) /etc/nftban/patterns.d
+%dir %attr(750,root,nftban) /etc/nftban/patterns.d/botscan
+%config(noreplace) /etc/nftban/patterns.d/*
 %dir %attr(750,root,nftban) /etc/nftban/whitelist.d
 %dir %attr(750,root,nftban) /etc/nftban/blacklist.d
 %dir %attr(750,root,nftban) /etc/nftban/ports.d

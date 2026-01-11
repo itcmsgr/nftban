@@ -1,0 +1,68 @@
+# =============================================================================
+# NFTBan Bot Scanner - Webshell Patterns
+# =============================================================================
+# Format: NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION
+#
+# MATCH_TYPE:
+#   url-404  = Match only if HTTP 404 response
+#   url-any  = Match any HTTP response code
+#   url-post = Match POST requests only
+#   url-get  = Match GET requests only
+#
+# THRESHOLD = Number of matches before ban
+# WINDOW    = Time window in seconds
+# BAN       = Ban duration in seconds
+# ENABLED   = true/false
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# Critical Webshells (immediate ban)
+# -----------------------------------------------------------------------------
+WS_C99|c99\.php|url-any|1|60|7200|true|C99 shell - critical
+WS_R57|r57\.php|url-any|1|60|7200|true|R57 shell - critical
+WS_WSO|wso\.php|url-any|1|60|7200|true|WSO shell - critical
+WS_B374K|b374k\.php|url-any|1|60|7200|true|B374K shell - critical
+WS_ALFA|alfa\.php|url-any|1|60|7200|true|Alfa shell - critical
+WS_ANGEL|angel\.php|url-any|1|60|7200|true|Angel shell - critical
+
+# -----------------------------------------------------------------------------
+# Common Webshell Names
+# -----------------------------------------------------------------------------
+WS_SHELL|shell[0-9]*\.php|url-404|3|60|3600|true|Generic shell probe
+WS_CMD|cmd\.php|url-404|2|60|3600|true|Command shell
+WS_EVAL|eval\.php|url-404|2|60|3600|true|Eval shell
+WS_EXEC|exec\.php|url-404|2|60|3600|true|Exec shell
+WS_UPLOAD|upload\.php|url-404|3|60|1800|true|Upload shell
+WS_FILE|file[0-9]*\.php|url-404|3|60|1800|true|File shell
+WS_TEST|test\.php|url-404|5|60|1800|true|Test shell
+
+# -----------------------------------------------------------------------------
+# Backdoor Campaign Names (known malware)
+# -----------------------------------------------------------------------------
+WS_BLESS|bless[0-9]*\.php|url-404|2|60|3600|true|Bless backdoor campaign
+WS_FLOWER|flower[0-9]*\.php|url-404|2|60|3600|true|Flower backdoor
+WS_LOCK|lock[0-9]*\.php|url-404|2|60|3600|true|Lock backdoor
+WS_WIN|win\.php|url-404|2|60|3600|true|Win backdoor
+WS_CLASS|class\.php|url-404|3|60|1800|true|Class backdoor
+WS_CLASSGOTO|classgoto[0-9]*\.php|url-404|2|60|3600|true|ClassGoto backdoor
+WS_WSHEET|wsheet[0-9]*\.php|url-404|2|60|3600|true|WSheet backdoor
+
+# -----------------------------------------------------------------------------
+# Random/Short Names (scanner behavior)
+# -----------------------------------------------------------------------------
+WS_SHORT_2|^/[a-z]{2}\.php$|url-404|5|60|1800|true|2-char PHP probe
+WS_SHORT_3|^/[a-z]{3}\.php$|url-404|5|60|1800|true|3-char PHP probe
+WS_NUMERIC|^/[0-9]+\.php$|url-404|5|60|1800|true|Numeric PHP probe
+WS_RANDOM|^/[a-z0-9]{4,8}\.php$|url-404|10|60|1800|true|Random name probe
+
+# -----------------------------------------------------------------------------
+# Suspicious Paths
+# -----------------------------------------------------------------------------
+WS_WPADMIN|/wp-admin/.*\.php.*\.php|url-any|1|60|7200|true|WP double extension
+WS_WPINCLUDES|/wp-includes/.*/about\.php|url-404|2|60|3600|true|WP includes backdoor
+WS_WPCONTENT|/wp-content/uploads/.*\.php|url-any|2|60|3600|true|WP uploads PHP
+WS_FILEMANAGER|/filemanager/dialog\.php|url-404|2|60|3600|true|Filemanager exploit
+WS_CKEDITOR|/ckeditor/.*\.php|url-404|3|60|3600|true|CKEditor exploit
+WS_FCKEDITOR|/fckeditor/.*\.php|url-404|3|60|3600|true|FCKEditor exploit
+WS_ELFINDER|/elfinder/.*\.php|url-404|3|60|3600|true|elFinder exploit
+WS_TINYMCE|/tinymce/.*\.php|url-404|3|60|3600|true|TinyMCE exploit

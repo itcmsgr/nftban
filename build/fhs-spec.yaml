@@ -174,6 +174,27 @@ directories:
       description: "Control panel configurations"
       created_by: package
 
+    - path: /etc/nftban/conf.d/botscan
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Bot scanner configuration"
+      created_by: package
+
+    - path: /etc/nftban/patterns.d
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Detection pattern files"
+      created_by: package
+
+    - path: /etc/nftban/patterns.d/botscan
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Bot scanner patterns"
+      created_by: package
+
     - path: /etc/nftban/whitelist.d
       mode: "0750"
       owner: root
