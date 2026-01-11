@@ -36,6 +36,7 @@ readonly NFTBAN_CONFIG_SCHEMA_LOADED=1
 
 readonly NFTBAN_SCHEMA_VERSION=1
 readonly NFTBAN_SCHEMA_FILE="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data/config-schema.json"
+readonly NFTBAN_REGISTRY_FILE="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data/config-registry.json"
 readonly NFTBAN_CONFIG_STATE_FILE="${NFTBAN_DATA_DIR:-/var/lib/nftban}/config/schema-state.json"
 
 # Exit codes for configtest
@@ -43,6 +44,174 @@ readonly CONFIG_OK=0
 readonly CONFIG_WARNING=1
 readonly CONFIG_ERROR=2
 readonly CONFIG_CRITICAL=3
+
+# =============================================================================
+# MODE DETECTION (Smart Validation)
+# =============================================================================
+
+# Detect if Suricata is available and running
+# Returns: 0 if suricata detected, 1 otherwise
+nftban_detect_suricata() {
+    local service_ok=false
+    local binary_ok=false
+    local eve_ok=false
+
+    # Service check
+    if systemctl is-active --quiet suricata 2>/dev/null; then
+        service_ok=true
+    fi
+
+    # Binary check
+    if [[ -x "/usr/bin/suricata" ]]; then
+        binary_ok=true
+    fi
+
+    # EVE freshness check (if file exists and is recent)
+    local eve_file="/var/log/suricata/eve.json"
+    local threshold=300  # 5 minutes
+    if [[ -f "$eve_file" ]]; then
+        local now age
+        now=$(date +%s)
+        age=$(stat -c %Y "$eve_file" 2>/dev/null || echo 0)
+        if (( now - age < threshold )); then
+            eve_ok=true
+        fi
+    fi
+
+    # All checks must pass for full suricata detection
+    if $service_ok && $binary_ok && $eve_ok; then
+        return 0
+    fi
+
+    # Partial detection (binary exists but not running)
+    if $binary_ok; then
+        return 2  # Installed but not running
+    fi
+
+    return 1  # Not detected
+}
+
+# Get effective mode for a module
+# Args: $1 = module (portscan, ddos, login)
+# Returns: effective mode (classic, suricata, hybrid)
+nftban_get_effective_mode() {
+    local module="$1"
+    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+    local mode_key="${module^^}_MODE"  # e.g., PORTSCAN_MODE
+    local mode=""
+
+    # Read from main.conf
+    local main_conf="$config_dir/conf.d/$module/main.conf"
+    local local_conf="$config_dir/conf.d/$module/main.conf.local"
+
+    # Check local override first
+    if [[ -f "$local_conf" ]]; then
+        mode=$(grep -E "^${mode_key}=" "$local_conf" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '"' | tr -d "'")
+    fi
+
+    # Fall back to main conf
+    if [[ -z "$mode" && -f "$main_conf" ]]; then
+        mode=$(grep -E "^${mode_key}=" "$main_conf" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '"' | tr -d "'")
+    fi
+
+    # Default to auto
+    mode="${mode:-auto}"
+
+    # If auto, detect based on suricata availability
+    if [[ "$mode" == "auto" ]]; then
+        if nftban_detect_suricata; then
+            echo "suricata"
+        else
+            echo "classic"
+        fi
+    else
+        echo "$mode"
+    fi
+}
+
+# Check if a config file is active based on mode
+# Args: $1 = file path (relative), $2 = module
+# Returns: 0 if active, 1 if inactive
+nftban_is_config_active() {
+    local file_path="$1"
+    local effective_mode=""
+
+    # Determine module from path
+    local module=""
+    case "$file_path" in
+        *portscan*) module="portscan" ;;
+        *ddos*) module="ddos" ;;
+        *login*) module="login" ;;
+        *) return 0 ;;  # Non-module files are always active
+    esac
+
+    effective_mode=$(nftban_get_effective_mode "$module")
+
+    # Check file type and compare with mode
+    case "$file_path" in
+        *classic.conf*)
+            [[ "$effective_mode" == "classic" || "$effective_mode" == "hybrid" ]] && return 0
+            return 1
+            ;;
+        *suricata.conf*)
+            [[ "$effective_mode" == "suricata" || "$effective_mode" == "hybrid" ]] && return 0
+            return 1
+            ;;
+        *)
+            return 0  # main.conf and other files always active
+            ;;
+    esac
+}
+
+# Get key prefix activation based on mode
+# Args: $1 = key name
+# Returns: 0 if key should be validated, 1 if should be skipped
+nftban_is_key_active() {
+    local key="$1"
+
+    # Check module-specific prefixes
+    case "$key" in
+        PORTSCAN_CLASSIC_*)
+            local mode
+            mode=$(nftban_get_effective_mode "portscan")
+            [[ "$mode" == "classic" || "$mode" == "hybrid" ]] && return 0
+            return 1
+            ;;
+        PORTSCAN_SURICATA_*)
+            local mode
+            mode=$(nftban_get_effective_mode "portscan")
+            [[ "$mode" == "suricata" || "$mode" == "hybrid" ]] && return 0
+            return 1
+            ;;
+        DDOS_CLASSIC_*)
+            local mode
+            mode=$(nftban_get_effective_mode "ddos")
+            [[ "$mode" == "classic" || "$mode" == "hybrid" ]] && return 0
+            return 1
+            ;;
+        DDOS_SURICATA_*)
+            local mode
+            mode=$(nftban_get_effective_mode "ddos")
+            [[ "$mode" == "suricata" || "$mode" == "hybrid" ]] && return 0
+            return 1
+            ;;
+        LOGIN_CLASSIC_*)
+            local mode
+            mode=$(nftban_get_effective_mode "login")
+            [[ "$mode" == "classic" || "$mode" == "hybrid" ]] && return 0
+            return 1
+            ;;
+        LOGIN_SURICATA_*)
+            local mode
+            mode=$(nftban_get_effective_mode "login")
+            [[ "$mode" == "suricata" || "$mode" == "hybrid" ]] && return 0
+            return 1
+            ;;
+        *)
+            return 0  # All other keys are active
+            ;;
+    esac
+}
 
 # =============================================================================
 # SCHEMA LOADING
@@ -364,6 +533,8 @@ nftban_configtest() {
 
     local errors=0
     local warnings=0
+    local skipped=0
+    local validated=0
     local messages=()
 
     # Check schema exists
@@ -371,6 +542,20 @@ nftban_configtest() {
         echo "ERROR: Schema file not found: $schema_file" >&2
         return $CONFIG_CRITICAL
     fi
+
+    # Detect runtime environment
+    local suricata_status="not detected"
+    if nftban_detect_suricata; then
+        suricata_status="running"
+    elif [[ -x "/usr/bin/suricata" ]]; then
+        suricata_status="installed (not running)"
+    fi
+
+    # Get effective modes
+    local portscan_mode ddos_mode login_mode
+    portscan_mode=$(nftban_get_effective_mode "portscan")
+    ddos_mode=$(nftban_get_effective_mode "ddos")
+    login_mode=$(nftban_get_effective_mode "login")
 
     # Load effective config
     local effective_config
@@ -381,13 +566,24 @@ nftban_configtest() {
         return $CONFIG_CRITICAL
     fi
 
-    # Validate each key
+    # Validate each key (mode-aware)
     local keys
     keys=$(echo "$effective_config" | jq -r 'keys[]' || true)
 
     while IFS= read -r key; do
         [[ -z "$key" ]] && continue
         [[ "$key" == "_"* ]] && continue  # Skip internal keys
+
+        # Check if key is active based on mode
+        if ! nftban_is_key_active "$key"; then
+            ((skipped++))
+            if [[ $verbose -eq 1 ]]; then
+                messages+=("SKIPPED: $key (inactive mode)")
+            fi
+            continue
+        fi
+
+        ((validated++))
 
         local value
         value=$(echo "$effective_config" | jq -r --arg k "$key" '.[$k]' || true)
@@ -425,42 +621,79 @@ nftban_configtest() {
         jq -n \
             --argjson errors "$errors" \
             --argjson warnings "$warnings" \
+            --argjson validated "$validated" \
+            --argjson skipped "$skipped" \
+            --arg suricata "$suricata_status" \
+            --arg portscan_mode "$portscan_mode" \
+            --arg ddos_mode "$ddos_mode" \
+            --arg login_mode "$login_mode" \
             --argjson messages "$(printf '%s\n' "${messages[@]}" | jq -R -s 'split("\n") | map(select(. != ""))')" \
-            '{status: (if $errors > 0 then "error" elif $warnings > 0 then "warning" else "ok" end), errors: $errors, warnings: $warnings, messages: $messages}'
+            '{
+                status: (if $errors > 0 then "error" elif $warnings > 0 then "warning" else "ok" end),
+                runtime: {
+                    suricata: $suricata,
+                    modes: { portscan: $portscan_mode, ddos: $ddos_mode, login: $login_mode }
+                },
+                stats: { validated: $validated, skipped: $skipped, errors: $errors, warnings: $warnings },
+                messages: $messages
+            }'
     else
         echo ""
         echo "NFTBan Configuration Test"
         echo "========================="
         echo ""
 
+        # Runtime status
+        echo "[RUNTIME DETECTION]"
+        echo "  Suricata: $suricata_status"
+        echo ""
+
+        # Module modes
+        echo "[MODULE STATUS]"
+        echo "  portscan: MODE=$portscan_mode"
+        echo "  ddos:     MODE=$ddos_mode"
+        echo "  login:    MODE=$login_mode"
+        echo ""
+
+        # Messages
         if [[ ${#messages[@]} -gt 0 ]]; then
+            echo "[VALIDATION RESULTS]"
             for msg in "${messages[@]}"; do
                 case "$msg" in
                     "ERROR:"*|"INVALID:"*|"MISSING:"*)
-                        echo -e "\033[0;31m$msg\033[0m"
+                        echo -e "  \033[0;31m$msg\033[0m"
                         ;;
                     "DEPRECATED:"*|"RENAMED:"*|"UNKNOWN:"*)
-                        echo -e "\033[0;33m$msg\033[0m"
+                        echo -e "  \033[0;33m$msg\033[0m"
                         ;;
                     "OK:"*)
-                        echo -e "\033[0;32m$msg\033[0m"
+                        echo -e "  \033[0;32m$msg\033[0m"
+                        ;;
+                    "SKIPPED:"*)
+                        echo -e "  \033[0;90m$msg\033[0m"
                         ;;
                     *)
-                        echo "$msg"
+                        echo "  $msg"
                         ;;
                 esac
             done
             echo ""
         fi
 
-        echo "Summary: $errors error(s), $warnings warning(s)"
+        # Summary
+        echo "[SUMMARY]"
+        echo "  Keys validated: $validated"
+        echo "  Keys skipped:   $skipped (inactive mode)"
+        echo "  Errors:         $errors"
+        echo "  Warnings:       $warnings"
+        echo ""
 
         if [[ $errors -gt 0 ]]; then
-            echo -e "\033[0;31mConfiguration INVALID\033[0m"
+            echo -e "\033[0;31mRESULT: FAIL ($errors errors)\033[0m"
         elif [[ $warnings -gt 0 ]]; then
-            echo -e "\033[0;33mConfiguration OK (with warnings)\033[0m"
+            echo -e "\033[0;33mRESULT: PASS with $warnings warnings\033[0m"
         else
-            echo -e "\033[0;32mConfiguration OK\033[0m"
+            echo -e "\033[0;32mRESULT: PASS\033[0m"
         fi
     fi
 
@@ -702,6 +935,10 @@ nftban_configaudit() {
 # EXPORTS
 # =============================================================================
 
+export -f nftban_detect_suricata
+export -f nftban_get_effective_mode
+export -f nftban_is_config_active
+export -f nftban_is_key_active
 export -f nftban_schema_load
 export -f nftban_schema_get_property
 export -f nftban_schema_get_keys
