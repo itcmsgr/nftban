@@ -5,26 +5,34 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Comprehensive statistics collection, analysis, and reporting
 #
-# meta:name=nftban_stats
-# meta:type=core
-# meta:header=Statistics & Metrics Engine
-# meta:version=1.0.0
+# meta:name="nftban_stats"
+# meta:type="core"
+# meta:header="Statistics & Metrics Engine"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Production-grade stats engine with real-time metrics and analytics
-# meta:input=System metrics, ban data, and firewall statistics
-# meta:output=Dashboards, analytics reports, and statistical summaries
+# meta:description="Production-grade stats engine with real-time metrics and analytics"
+# meta:input="System metrics, ban data, and firewall statistics"
+# meta:output="Dashboards, analytics reports, and statistical summaries"
 #
 # **Inventory & Requirements**
-# meta:depends=nft,sqlite3,nftban_geoip_go.sh
+# meta:depends="nft,nftban_geoip_go.sh"
+# meta:inventory.files="/usr/lib/nftban/core/nftban_stats.sh"
+# meta:inventory.binaries="nft"
+# meta:inventory.env_vars="NFTBAN_LOG_DIR,NFTBAN_DATA_DIR,NFTBAN_CACHE_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="none"
+# meta:inventory.network="none"
+# meta:inventory.privileges="root:read-nftables,read-logs"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-01-11"
 # =============================================================================
 
 # Enhanced strict mode
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
@@ -692,17 +700,36 @@ nftban_stats_generate_dashboard() {
     fi
 
     # ─────────────────────────────────────────────────────────────────────
-    # BANS BY MODULE (count IPs by source/module)
+    # BANS BY MODULE (count currently blocked IPs by source from bans.log)
     # ─────────────────────────────────────────────────────────────────────
     echo "BANS BY MODULE"
     echo "───────────────────────────────────────────────────────────"
 
-    # Count IPs from each module
     local feeds_total=0 login_count=0 portscan_count=0 ddos_count=0 manual_count=0
-    local blacklist_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/blacklist.d"
     local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+    local bans_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
 
-    # FEEDS: Count total IPs from ENABLED feeds only
+    # Get currently blocked IPs from nftables
+    local current_blocked
+    current_blocked=$(nft list set inet nftban blacklist_v4 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | sort -u || true)
+
+    # Cross-reference with bans.log to count by module
+    if [[ -f "$bans_log" ]] && [[ -n "$current_blocked" ]]; then
+        while IFS= read -r ip; do
+            # Get most recent source for this IP from bans.log
+            local source
+            source=$(grep "|${ip}|" "$bans_log" 2>/dev/null | tail -1 | cut -d'|' -f3 || true)
+            case "$source" in
+                login|loginmon) ((login_count++)) ;;
+                portscan|portscan-classic) ((portscan_count++)) ;;
+                ddos) ((ddos_count++)) ;;
+                manual|cli) ((manual_count++)) ;;
+                feeds|*feed*) ((feeds_total++)) ;;
+            esac
+        done <<< "$current_blocked"
+    fi
+
+    # FEEDS: Also count from enabled feed files (for IPs not in bans.log)
     if type -t nftban_feeds_discover_all >/dev/null 2>&1 && type -t nftban_feeds_get_property >/dev/null 2>&1; then
         local all_feeds
         all_feeds=$(nftban_feeds_discover_all 2>/dev/null || true)
@@ -719,26 +746,6 @@ nftban_stats_generate_dashboard() {
                 fi
             fi
         done
-    fi
-
-    # LOGIN: Count from login-auto.conf (source-specific file)
-    if [[ -f "$blacklist_dir/login-auto.conf" ]]; then
-        login_count=$(grep -cE '^[0-9]' "$blacklist_dir/login-auto.conf" 2>/dev/null) || login_count=0
-    fi
-
-    # PORTSCAN: Count from portscan-auto.conf (source-specific file)
-    if [[ -f "$blacklist_dir/portscan-auto.conf" ]]; then
-        portscan_count=$(grep -cE '^[0-9]' "$blacklist_dir/portscan-auto.conf" 2>/dev/null) || portscan_count=0
-    fi
-
-    # DDOS: Count from ddos-auto.conf (source-specific file)
-    if [[ -f "$blacklist_dir/ddos-auto.conf" ]]; then
-        ddos_count=$(grep -cE '^[0-9]' "$blacklist_dir/ddos-auto.conf" 2>/dev/null) || ddos_count=0
-    fi
-
-    # MANUAL: Count from 99-manual.conf
-    if [[ -f "$blacklist_dir/99-manual.conf" ]]; then
-        manual_count=$(grep -cE '^[0-9]' "$blacklist_dir/99-manual.conf" 2>/dev/null) || manual_count=0
     fi
 
     # Display counts
