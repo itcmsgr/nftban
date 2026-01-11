@@ -281,6 +281,21 @@ func (d *Daemon) Run() error {
 			log.Printf("[BAN] Failed to ban %s: %v", e.IP, err)
 		} else {
 			log.Printf("[BAN] Successfully banned %s (timeout=%ds, source=%s)", e.IP, timeout, e.Source)
+			// Log to bans.log for stats tracking
+			banSource := banlog.SourceManual
+			switch {
+			case strings.Contains(e.Source, "portscan"):
+				banSource = banlog.SourcePortscan
+			case strings.Contains(e.Source, "login"):
+				banSource = banlog.SourceLogin
+			case strings.Contains(e.Source, "ddos"):
+				banSource = banlog.SourceDDoS
+			case strings.Contains(e.Source, "feed"):
+				banSource = banlog.SourceFeeds
+			case strings.Contains(e.Source, "suricata"):
+				banSource = banlog.SourceSuricata
+			}
+			_ = banlog.LogBan(e.IP, banSource, "UNK")
 		}
 	})
 
