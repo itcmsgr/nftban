@@ -720,11 +720,11 @@ nftban_stats_generate_dashboard() {
             local source
             source=$(grep "|${ip}|" "$bans_log" 2>/dev/null | tail -1 | cut -d'|' -f3 || true)
             case "$source" in
-                login|loginmon) ((login_count++)) ;;
-                portscan|portscan-classic) ((portscan_count++)) ;;
-                ddos) ((ddos_count++)) ;;
-                manual|cli) ((manual_count++)) ;;
-                feeds|*feed*) ((feeds_total++)) ;;
+                login|loginmon) login_count=$((login_count + 1)) ;;
+                portscan|portscan-classic) portscan_count=$((portscan_count + 1)) ;;
+                ddos) ddos_count=$((ddos_count + 1)) ;;
+                manual|cli) manual_count=$((manual_count + 1)) ;;
+                feeds|*feed*) feeds_total=$((feeds_total + 1)) ;;
             esac
         done <<< "$current_blocked"
     fi
