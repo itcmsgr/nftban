@@ -917,7 +917,10 @@ install_libraries() {
     find "$LIB_DIR" -type f -name "*.conf" -exec chmod 644 {} \;
     find "$LIB_DIR" -type d -exec chmod 755 {} \;
 
-    chown -R root:nftban "$LIB_DIR"
+    # Set ownership on lib directory and contents (explicit, not recursive on parent)
+    chown root:nftban "$LIB_DIR"
+    find "$LIB_DIR" -type d -exec chown root:nftban {} \;
+    find "$LIB_DIR" -type f -exec chown root:nftban {} \;
 
     ok "Shell libraries installed to $LIB_DIR"
     return 0
@@ -1130,9 +1133,15 @@ install_configs() {
     chown root:root /etc/nftban/distros
     chmod 755 /etc/nftban/distros
     # Set ownership on config subdirs (not recursive into files)
-    for subdir in whitelist.d blacklist.d ports.d rules.d suricata; do
+    for subdir in whitelist.d blacklist.d ports.d rules.d suricata patterns.d; do
         [ -d "/etc/nftban/$subdir" ] && chown root:nftban "/etc/nftban/$subdir" && chmod 750 "/etc/nftban/$subdir"
     done
+    # Set ownership on conf.d subdirectories (botscan, ddos, portscan, login, panels, rbl)
+    for subdir in botscan ddos portscan login panels rbl; do
+        [ -d "/etc/nftban/conf.d/$subdir" ] && chown root:nftban "/etc/nftban/conf.d/$subdir" && chmod 750 "/etc/nftban/conf.d/$subdir"
+    done
+    # Set ownership on patterns.d subdirectories
+    [ -d "/etc/nftban/patterns.d/botscan" ] && chown root:nftban "/etc/nftban/patterns.d/botscan" && chmod 750 "/etc/nftban/patterns.d/botscan"
 
     # /var/lib/nftban: Set directory ownership only, files created at runtime
     chown nftban:nftban /var/lib/nftban
@@ -1239,6 +1248,33 @@ install_configs() {
         ok "Banner config exists (not overwriting): /etc/nftban/conf.d/banner.conf"
     fi
 
+    # Install botscan configuration (if not exists - don't overwrite user config)
+    if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/botscan/main.conf" ]] && [[ ! -f /etc/nftban/conf.d/botscan/main.conf ]]; then
+        cp -f "$SCRIPT_DIR/etc/nftban/conf.d/botscan/main.conf" /etc/nftban/conf.d/botscan/main.conf
+        chmod 640 /etc/nftban/conf.d/botscan/main.conf
+        chown root:nftban /etc/nftban/conf.d/botscan/main.conf
+        ok "Installed: /etc/nftban/conf.d/botscan/main.conf"
+    elif [[ -f /etc/nftban/conf.d/botscan/main.conf ]]; then
+        ok "Botscan config exists (not overwriting): /etc/nftban/conf.d/botscan/main.conf"
+    fi
+
+    # Install botscan pattern files (if not exists - don't overwrite user patterns)
+    if [[ -d "$SCRIPT_DIR/etc/nftban/patterns.d/botscan" ]]; then
+        for pattern_file in "$SCRIPT_DIR/etc/nftban/patterns.d/botscan"/*.patterns; do
+            if [[ -f "$pattern_file" ]]; then
+                pattern_name=$(basename "$pattern_file")
+                if [[ ! -f "/etc/nftban/patterns.d/botscan/$pattern_name" ]]; then
+                    cp -f "$pattern_file" "/etc/nftban/patterns.d/botscan/$pattern_name"
+                    chmod 640 "/etc/nftban/patterns.d/botscan/$pattern_name"
+                    chown root:nftban "/etc/nftban/patterns.d/botscan/$pattern_name"
+                fi
+            fi
+        done
+        local pattern_count
+        pattern_count=$(ls -1 /etc/nftban/patterns.d/botscan/*.patterns 2>/dev/null | wc -l)
+        ok "Installed $pattern_count botscan pattern files"
+    fi
+
     # Install GUI groups config if exists
     if [[ -f "$SCRIPT_DIR/install/config/allowed-gui-groups" ]]; then
         cp -f "$SCRIPT_DIR/install/config/allowed-gui-groups" /etc/nftban/
@@ -1271,12 +1307,14 @@ install_templates() {
         ok "Installed $template_count templates"
     fi
 
-    # Set permissions
-    chown -R root:root /usr/share/nftban/templates
+    # Set permissions (explicit ownership, not recursive on parent)
+    chown root:root /usr/share/nftban/templates
     chmod 755 /usr/share/nftban/templates
     chmod 755 /usr/share/nftban/templates/mail
     chmod 755 /usr/share/nftban/templates/reports
     find /usr/share/nftban/templates -type f -name "*.html" -exec chmod 644 {} \;
+    find /usr/share/nftban/templates -type f -exec chown root:root {} \;
+    find /usr/share/nftban/templates -type d -exec chown root:root {} \;
 
     # Install spec files (for nftban validate)
     mkdir -p /usr/share/nftban/specs
@@ -1286,9 +1324,10 @@ install_templates() {
         spec_count=$(ls -1 /usr/share/nftban/specs/*.json 2>/dev/null | wc -l)
         ok "Installed $spec_count spec files"
     fi
-    chown -R root:root /usr/share/nftban/specs
+    chown root:root /usr/share/nftban/specs
     chmod 755 /usr/share/nftban/specs
     find /usr/share/nftban/specs -type f -name "*.json" -exec chmod 644 {} \;
+    find /usr/share/nftban/specs -type f -exec chown root:root {} \;
 
     # Install commands registry (v1.0.16 - single source of truth)
     log "Installing commands registry..."
