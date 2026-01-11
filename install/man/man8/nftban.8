@@ -187,7 +187,44 @@ Send reports and alerts via email.
 .SS "Configuration and Setup"
 .TP
 .B config \fR[\fIsubcommand\fR]
-Configuration management.
+Configuration management. Subcommands:
+.RS
+.IP \fBtest\fR
+Validate all configuration against the JSON schema.
+Reports errors, warnings, unknown keys, and deprecated keys.
+Options: \fB\-\-verbose\fR (show all keys), \fB\-\-json\fR (machine-readable).
+Exit codes: 0=OK, 1=warnings, 2=errors, 3=critical.
+.IP \fBaudit\fR
+Audit configuration for drift and changes since installation or upgrade.
+Shows: overridden keys, unknown keys, deprecated keys, renamed keys, and new keys.
+Options: \fB\-\-json\fR (machine-readable output).
+.IP \fBshow\fR
+Display effective merged configuration from all sources.
+Merges base .conf files with .conf.local overrides.
+Groups output by category (system, paths, features, modules).
+Options: \fB\-\-json\fR (machine-readable output).
+.IP \fBdiff\fR
+Show differences between defaults and local overrides.
+Lists all settings in .conf.local files that differ from defaults.
+.IP "\fBget\fR \fIMODULE\fR"
+Get configuration for specified module.
+.IP "\fBset\fR \fIMODULE KEY=VALUE\fR"
+Set configuration value for module.
+.IP "\fBreset\fR \fIMODULE KEY\fR"
+Reset configuration key to default value.
+.IP "\fBdefaults\fR \fIMODULE\fR"
+Show default values for module.
+.IP "\fBoverrides\fR \fIMODULE\fR"
+Show override values from .conf.local files.
+.RE
+.TP
+.B configtest \fR[\fIoptions\fR]
+Validate configuration against schema (alias for \fBconfig test\fR).
+Options: \fB\-\-verbose\fR, \fB\-\-json\fR.
+.TP
+.B configaudit \fR[\fIoptions\fR]
+Audit configuration for drift (alias for \fBconfig audit\fR).
+Options: \fB\-\-json\fR.
 .TP
 .B setup \fR[\fIsubcommand\fR]
 Initial system setup.
@@ -340,6 +377,12 @@ Watchdog configuration (thresholds, intervals).
 .TP
 .I /usr/lib/nftban/
 Library and module directory.
+.TP
+.I /usr/lib/nftban/data/config-schema.json
+JSON schema for configuration validation.
+.TP
+.I /var/lib/nftban/config/schema-state.json
+Saved schema state for upgrade drift detection.
 .SH EXAMPLES
 .TP
 Check system status:
@@ -422,6 +465,21 @@ Generate watchdog report:
 .TP
 Enable watchdog timer (90-second interval):
 .B nftban watchdog enable
+.TP
+Validate all configuration:
+.B nftban configtest
+.TP
+Verbose configuration validation:
+.B nftban config test \-\-verbose
+.TP
+Audit configuration for drift:
+.B nftban configaudit
+.TP
+Show effective merged config:
+.B nftban config show
+.TP
+Show local overrides vs defaults:
+.B nftban config diff
 .SH EXIT STATUS
 .TP
 .B 0

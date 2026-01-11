@@ -61,6 +61,8 @@ nftban_print_help() {
   health           System diagnostics (binaries, services, permissions)
   validate         Firewall validation (tables, sets, chain policies)
   config           Manage configuration settings
+  configtest       Validate config against schema (alias: config test)
+  configaudit      Audit config for drift and changes (alias: config audit)
   sync             Atomic reload of nftables rules
   version          Show version and component info
   help             Show this help
