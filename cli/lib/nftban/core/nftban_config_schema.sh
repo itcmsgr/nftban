@@ -392,9 +392,8 @@ nftban_configtest() {
         local value
         value=$(echo "$effective_config" | jq -r --arg k "$key" '.[$k]' || true)
 
-        local result
-        result=$(nftban_config_validate_value "$key" "$value" "$schema_file")
-        local exit_code=$?
+        local result exit_code=0
+        result=$(nftban_config_validate_value "$key" "$value" "$schema_file") || exit_code=$?
 
         if [[ -n "$result" ]]; then
             messages+=("$result")
@@ -409,9 +408,8 @@ nftban_configtest() {
     done <<< "$keys"
 
     # Validate conditional requirements
-    local cond_result
-    cond_result=$(nftban_config_validate_conditionals "$effective_config" "$schema_file")
-    local cond_code=$?
+    local cond_result cond_code=0
+    cond_result=$(nftban_config_validate_conditionals "$effective_config" "$schema_file") || cond_code=$?
 
     if [[ -n "$cond_result" ]]; then
         while IFS= read -r line; do
