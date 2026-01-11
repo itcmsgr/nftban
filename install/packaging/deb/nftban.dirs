@@ -26,6 +26,9 @@
 /etc/nftban/conf.d/portscan
 /etc/nftban/conf.d/login
 /etc/nftban/conf.d/panels
+/etc/nftban/conf.d/botscan
+/etc/nftban/patterns.d
+/etc/nftban/patterns.d/botscan
 /etc/nftban/whitelist.d
 /etc/nftban/blacklist.d
 /etc/nftban/ports.d

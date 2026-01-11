@@ -1,0 +1,20 @@
+# =============================================================================
+# NFTBan Bot Scanner - Custom User Patterns
+# =============================================================================
+# Add your custom patterns below. Format:
+#
+# NAME|PATTERN|MATCH_TYPE|THRESHOLD|WINDOW|BAN|ENABLED|DESCRIPTION
+#
+# MATCH_TYPE options:
+#   url-404  = Match only if HTTP 404 response
+#   url-any  = Match any HTTP response code
+#   url-post = Match POST requests only
+#   url-get  = Match GET requests only
+#
+# Example:
+# MY_PATTERN|malicious\.php|url-404|3|60|3600|true|My custom pattern
+#
+# =============================================================================
+
+# Add your custom patterns here:
+

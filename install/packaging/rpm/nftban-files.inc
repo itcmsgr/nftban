@@ -32,6 +32,9 @@
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d/portscan
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d/login
 %dir %attr(0750,root,nftban) /etc/nftban/conf.d/panels
+%dir %attr(0750,root,nftban) /etc/nftban/conf.d/botscan
+%dir %attr(0750,root,nftban) /etc/nftban/patterns.d
+%dir %attr(0750,root,nftban) /etc/nftban/patterns.d/botscan
 %dir %attr(0750,root,nftban) /etc/nftban/whitelist.d
 %dir %attr(0750,root,nftban) /etc/nftban/blacklist.d
 %dir %attr(0750,root,nftban) /etc/nftban/ports.d
