@@ -5,6 +5,19 @@
 // Binary: nftband
 // Purpose: Single daemon that runs all nftban modules
 //
+// meta:name="nftband"
+// meta:type="binary"
+// meta:version="1.0.0"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:homepage="https://nftban.com"
+// meta:inventory.files="/usr/lib/nftban/bin/nftband"
+// meta:inventory.binaries="nftband"
+// meta:inventory.env_vars="NFTBAN_CONFIG_DIR, NFTBAN_LOG_DIR"
+// meta:inventory.config_files="/etc/nftban/nftban.conf"
+// meta:inventory.systemd_units="nftband.service, nftband.socket"
+// meta:inventory.network="8080/tcp (HTTP API), /run/nftban/nftband.sock (Unix)"
+// meta:inventory.privileges="root (nftables, systemd socket)"
+//
 // Architecture:
 // - Runs all modules as goroutines
 // - Provides event bus for inter-module communication
@@ -42,6 +55,7 @@ import (
 
 	"github.com/coreos/go-systemd/v22/activation"
 	"github.com/google/nftables"
+	"github.com/itcmsgr/nftban/pkg/banlog"
 	"github.com/itcmsgr/nftban/pkg/ddos"
 	"github.com/itcmsgr/nftban/pkg/eventbus"
 	"github.com/itcmsgr/nftban/pkg/feeds"
@@ -813,6 +827,22 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 			Error:   err.Error(),
 		}
 	}
+
+	// Log ban to bans.log for stats tracking
+	banSource := banlog.SourceManual
+	switch {
+	case strings.Contains(source, "portscan"):
+		banSource = banlog.SourcePortscan
+	case strings.Contains(source, "login"):
+		banSource = banlog.SourceLogin
+	case strings.Contains(source, "ddos"):
+		banSource = banlog.SourceDDoS
+	case strings.Contains(source, "feed"):
+		banSource = banlog.SourceFeeds
+	case strings.Contains(source, "suricata"):
+		banSource = banlog.SourceSuricata
+	}
+	_ = banlog.LogBan(ip, banSource, "UNK") // Country lookup done separately
 
 	// Publish ban event
 	d.bus.Publish(eventbus.NewEvent(eventbus.EventBan, source).
