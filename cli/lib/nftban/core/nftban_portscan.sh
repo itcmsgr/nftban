@@ -3,35 +3,28 @@
 # NFTBan v1.0 - Port Scan Detection Module (Dual-Mode Controller)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Master controller for portscan detection with dual-mode support
 #
-# meta:name=nftban_portscan
-# meta:type=core
-# meta:header=Port Scan Detection
-# meta:version=1.0.0
+# meta:name="nftban_portscan"
+# meta:type="core"
+# meta:header="Port Scan Detection"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=Detects IP addresses accessing multiple ports and auto-bans scanners
-# meta:input=Configuration from /etc/nftban/conf.d/portscan/
-# meta:output=nftables logging rules and ban actions
+# meta:description="Dual-mode portscan detection with journalctl support"
+# meta:inventory.files="/var/lib/nftban/portscan/"
+# meta:inventory.binaries="nft,journalctl"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/portscan/main.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# **Dual-Mode Architecture**
-# - Classic Mode: Pure nftables log-based detection (no IDS required)
-# - Suricata Mode: Uses Suricata IDS EVE JSON alerts for intelligent detection
-# - Auto Mode: Automatically selects mode based on Suricata availability
-# - Hybrid Mode: Classic for logging + Suricata for intelligent detection
-#
-# **Inventory & Requirements**
-# meta:depends=bash>=4.0,nftables>=0.9.0,nftban_output.sh
-# meta:optional=suricata,jq
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-12-01
-# meta:migrated_from=v0.7.3:cli/lib/nftban/core/nftban_portscan.sh
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-01-11"
 # =============================================================================
 
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
@@ -713,6 +706,91 @@ if ! type -t nftban_log &>/dev/null; then
         echo "[$(date -Iseconds)] [${level}] [${module}] ${message}" >&2
     }
 fi
+
+# =============================================================================
+# LOG CHECKING FUNCTIONS (for CLI)
+# =============================================================================
+
+# Check/process logs for portscan detection
+# Supports both traditional log files and journalctl
+nftban_portscan_check() {
+    local log_source="${1:-}"
+
+    # Load classic module if needed
+    if ! type -t nftban_portscan_classic_process_logs &>/dev/null; then
+        local classic_module="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_portscan_classic.sh"
+        if [[ -f "$classic_module" ]]; then
+            source "$classic_module"
+            nftban_portscan_classic_load_config
+            nftban_portscan_classic_init_state
+        fi
+    fi
+
+    # If journalctl source, run the classic processor which handles it
+    if [[ "$log_source" == "journalctl" ]]; then
+        echo "Processing kernel logs from journalctl..."
+        if type -t nftban_portscan_classic_process_logs &>/dev/null; then
+            nftban_portscan_classic_process_logs
+        else
+            echo "ERROR: Classic portscan module not loaded" >&2
+            return 1
+        fi
+    else
+        # Traditional file-based processing
+        echo "Processing log file: $log_source"
+        if type -t nftban_portscan_classic_process_logs &>/dev/null; then
+            # Override the log file temporarily
+            PORTSCAN_CLASSIC_LOG_FILE="$log_source"
+            nftban_portscan_classic_process_logs
+        else
+            echo "ERROR: Classic portscan module not loaded" >&2
+            return 1
+        fi
+    fi
+
+    # Show results
+    local tracked=0
+    local blocked=0
+    # Check if arrays are declared (empty arrays still have count 0)
+    if declare -p _PORTSCAN_CLASSIC_IP_PORTS &>/dev/null; then
+        tracked="${#_PORTSCAN_CLASSIC_IP_PORTS[@]}"
+    fi
+    if declare -p _PORTSCAN_CLASSIC_IP_BLOCKED &>/dev/null; then
+        blocked="${#_PORTSCAN_CLASSIC_IP_BLOCKED[@]}"
+    fi
+    echo ""
+    echo "Detection Summary:"
+    echo "  IPs tracked: $tracked"
+    echo "  IPs blocked: $blocked"
+
+    return 0
+}
+
+# Sync logs from journalctl to portscan log file
+nftban_portscan_sync_logs() {
+    local portscan_log="${NFTBAN_PORTSCAN_LOG:-/var/log/nftban/portscan.log}"
+    local log_prefix="${PORTSCAN_CLASSIC_LOG_PREFIX:-NFTBAN_PORTSCAN:}"
+    local time_range="${1:-24h}"
+
+    # Ensure log directory exists
+    local log_dir
+    log_dir=$(dirname "$portscan_log")
+    [[ -d "$log_dir" ]] || mkdir -p "$log_dir"
+
+    echo "Syncing portscan logs from journalctl (last $time_range)..."
+
+    # Extract portscan entries from journalctl and append to log
+    if command -v journalctl &>/dev/null; then
+        journalctl -k --since "$time_range ago" --no-pager 2>/dev/null | \
+            grep "$log_prefix" >> "$portscan_log" 2>/dev/null || true
+        echo "Logs synced to: $portscan_log"
+    else
+        echo "ERROR: journalctl not available" >&2
+        return 1
+    fi
+
+    return 0
+}
 
 # =============================================================================
 # AUTO-INITIALIZATION

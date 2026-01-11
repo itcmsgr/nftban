@@ -3,24 +3,30 @@
 # NFTBan v1.0.0 - Portscan Protection Classic Mode
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+#
 # meta:name="nftban_portscan_classic"
 # meta:type="module"
+# meta:header="Portscan Classic Mode"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:created_date="2025-10-26"
-# meta:description="Pure nftables-based portscan detection without external IDS"
-# meta:input="Kernel log entries with NFTBAN_PORTSCAN prefix"
-# meta:output="Ban actions for detected port scanners"
-# meta:depends="nft_fragment.sh, nft_ipc.sh"
+# meta:homepage="https://nftban.com"
+#
+# meta:description="Pure nftables-based portscan detection with journalctl support"
 # meta:inventory.files="/var/lib/nftban/portscan-state.db"
-# meta:inventory.binaries="nft"
+# meta:inventory.binaries="nft,journalctl"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files="/etc/nftban/conf.d/portscan/classic.conf"
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
+#
+# meta:created_date="2025-10-26"
+# meta:updated_date="2026-01-11"
 # =============================================================================
 # shellcheck disable=SC1083  # Braces in nftables syntax are literal, not bash
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Prevent double sourcing
 [[ -n "${_NFTBAN_PORTSCAN_CLASSIC_LOADED:-}" ]] && return 0
@@ -249,10 +255,20 @@ nftban_portscan_classic_remove_rules() {
 # LOG PARSING
 # =============================================================================
 
-# Find the correct log file
+# Find the correct log source
+# Returns: file path OR "journalctl" for systemd journal
 nftban_portscan_classic_find_log() {
     local log_file="${PORTSCAN_CLASSIC_LOG_FILE}"
-    local alt_logs="${PORTSCAN_CLASSIC_LOG_FILE_ALT}"
+    local alt_logs="${PORTSCAN_CLASSIC_LOG_FILE_ALT:-/var/log/messages,/var/log/syslog}"
+    local use_journalctl="${PORTSCAN_CLASSIC_USE_JOURNALCTL:-auto}"
+
+    # Check if journalctl is explicitly enabled or auto-detect
+    if [[ "$use_journalctl" == "true" ]]; then
+        if command -v journalctl &>/dev/null; then
+            echo "journalctl"
+            return 0
+        fi
+    fi
 
     # Check primary log file
     if [[ -f "$log_file" ]]; then
@@ -273,6 +289,13 @@ nftban_portscan_classic_find_log() {
     # Default to syslog
     if [[ -f "/var/log/syslog" ]]; then
         echo "/var/log/syslog"
+        return 0
+    fi
+
+    # Auto-detect: if no traditional log files exist and journalctl is available, use it
+    # This handles systemd-only systems (Fedora, RHEL 8+, AlmaLinux 9, etc.)
+    if [[ "$use_journalctl" == "auto" ]] && command -v journalctl &>/dev/null; then
+        echo "journalctl"
         return 0
     fi
 
@@ -319,9 +342,9 @@ nftban_portscan_classic_parse_line() {
 
 # Process log entries and detect portscans
 nftban_portscan_classic_process_logs() {
-    local log_file
-    log_file=$(nftban_portscan_classic_find_log) || {
-        nftban_log "ERROR" "portscan_classic" "No log file found"
+    local log_source
+    log_source=$(nftban_portscan_classic_find_log) || {
+        nftban_log "ERROR" "portscan_classic" "No log source found (checked /var/log/kern.log, /var/log/messages, /var/log/syslog, journalctl)"
         return 1
     }
 
@@ -332,7 +355,20 @@ nftban_portscan_classic_process_logs() {
     local cutoff_time
     cutoff_time=$((current_time - time_window))
 
-    # Read recent log entries
+    # Read recent log entries - handle both file and journalctl
+    local log_cmd
+    if [[ "$log_source" == "journalctl" ]]; then
+        # Use journalctl for kernel logs on systemd systems
+        # --since filters to recent entries, --no-pager for non-interactive
+        # Use || true in case --grep returns no matches (exit code 1)
+        log_cmd="{ journalctl -k --since '${time_window} seconds ago' --no-pager --grep='${log_prefix}' 2>/dev/null || true; } | tail -1000"
+        nftban_log "DEBUG" "portscan_classic" "Reading from journalctl (kernel logs)"
+    else
+        # grep returns 1 when no matches found - use || true to handle this
+        log_cmd="{ grep '${log_prefix}' '$log_source' 2>/dev/null || true; } | tail -1000"
+        nftban_log "DEBUG" "portscan_classic" "Reading from file: $log_source"
+    fi
+
     while IFS= read -r line; do
         local parsed
         parsed=$(nftban_portscan_classic_parse_line "$line") || continue
@@ -347,7 +383,7 @@ nftban_portscan_classic_process_logs() {
         # Record this connection
         nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$current_time"
 
-    done < <(grep "${log_prefix}" "$log_file" 2>/dev/null | tail -1000)
+    done < <(eval "$log_cmd")
 
     # Analyze and block if needed
     nftban_portscan_classic_analyze_all
@@ -442,7 +478,8 @@ nftban_portscan_classic_analyze_all() {
         [[ -n "${_PORTSCAN_CLASSIC_IP_BLOCKED[$ip]:-}" ]] && continue
 
         local scan_type
-        scan_type=$(nftban_portscan_classic_detect_scan_type "$ip")
+        # detect_scan_type returns 1 if no scan detected - that's normal behavior
+        scan_type=$(nftban_portscan_classic_detect_scan_type "$ip") || true
 
         if [[ -n "$scan_type" ]]; then
             nftban_portscan_classic_handle_detection "$ip" "$scan_type"
@@ -734,7 +771,13 @@ nftban_portscan_classic_status() {
     echo "Configuration:"
     echo "  Min ports for detection: ${PORTSCAN_CLASSIC_MIN_PORTS:-5}"
     echo "  Time window: ${PORTSCAN_CLASSIC_TIME_WINDOW:-60}s"
-    echo "  Log file: $(nftban_portscan_classic_find_log 2>/dev/null || echo 'not found')"
+    local log_source
+    log_source=$(nftban_portscan_classic_find_log 2>/dev/null) || log_source="not found"
+    if [[ "$log_source" == "journalctl" ]]; then
+        echo "  Log source: journalctl -k (systemd kernel journal)"
+    else
+        echo "  Log source: $log_source"
+    fi
 
     return 0
 }
