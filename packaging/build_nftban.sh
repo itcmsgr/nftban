@@ -570,8 +570,9 @@ systemctl daemon-reload 2>/dev/null || true
 
 # STEP 2: Create FHS directories
 echo "[NFTBan] Creating FHS directories..."
-mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d}
-mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels}
+mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,patterns.d}
+mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan}
+mkdir -p /etc/nftban/patterns.d/botscan
 mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
 mkdir -p /var/log/nftban/reports
@@ -588,7 +589,7 @@ chown -R root:nftban /etc/nftban/conf.d 2>/dev/null || true
 find /etc/nftban/conf.d -type d -exec chmod 750 {} \; 2>/dev/null || true
 find /etc/nftban/conf.d -type f -exec chmod 640 {} \; 2>/dev/null || true
 # Fix other config subdirs
-for subdir in distros whitelist.d blacklist.d ports.d rules.d suricata; do
+for subdir in distros whitelist.d blacklist.d ports.d rules.d suricata patterns.d; do
     if [ -d "/etc/nftban/\$subdir" ]; then
         chown -R root:nftban "/etc/nftban/\$subdir" 2>/dev/null || true
         find "/etc/nftban/\$subdir" -type d -exec chmod 750 {} \; 2>/dev/null || true
@@ -787,6 +788,11 @@ fi
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/generic/*.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/plesk
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/plesk/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/botscan
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botscan/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/patterns.d
+%dir %attr(750,root,nftban) /etc/nftban/patterns.d/botscan
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/patterns.d/botscan/*.patterns
 %dir %attr(750,root,nftban) /etc/nftban/distros
 %attr(644,root,nftban) /etc/nftban/distros/*.conf
 %dir %attr(750,root,nftban) /etc/nftban/suricata
@@ -1205,7 +1211,9 @@ fi
 usermod -a -G nftban root 2>/dev/null || true
 
 # STEP 3: Create FHS directories
-mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d}
+mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,patterns.d}
+mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan}
+mkdir -p /etc/nftban/patterns.d/botscan
 mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
 mkdir -p /var/log/nftban/reports
@@ -1221,7 +1229,7 @@ chown -R root:nftban /etc/nftban/conf.d 2>/dev/null || true
 find /etc/nftban/conf.d -type d -exec chmod 750 {} \; 2>/dev/null || true
 find /etc/nftban/conf.d -type f -exec chmod 640 {} \; 2>/dev/null || true
 # Fix other config subdirs
-for subdir in distros whitelist.d blacklist.d ports.d rules.d suricata; do
+for subdir in distros whitelist.d blacklist.d ports.d rules.d suricata patterns.d; do
     if [ -d "/etc/nftban/\$subdir" ]; then
         chown -R root:nftban "/etc/nftban/\$subdir" 2>/dev/null || true
         find "/etc/nftban/\$subdir" -type d -exec chmod 750 {} \; 2>/dev/null || true
@@ -1329,6 +1337,10 @@ build_deb() {
     cp -r "${PROJECT_ROOT}/etc/nftban/conf.d"/* "${deb_root}/etc/nftban/conf.d/"
     install -m 0640 "${PROJECT_ROOT}/install/config/feeds.conf" "${deb_root}/etc/nftban/conf.d/feeds.conf"
     install -m 0640 "${PROJECT_ROOT}/install/config/conf.d/watchdog.conf" "${deb_root}/etc/nftban/conf.d/watchdog.conf"
+
+    # Copy patterns.d directory (botscan patterns)
+    mkdir -p "${deb_root}/etc/nftban/patterns.d/botscan"
+    cp "${PROJECT_ROOT}/etc/nftban/patterns.d/botscan"/*.patterns "${deb_root}/etc/nftban/patterns.d/botscan/"
 
     # Install logrotate configuration
     mkdir -p "${deb_root}/etc/logrotate.d"
