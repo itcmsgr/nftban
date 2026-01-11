@@ -1,16 +1,37 @@
 #!/usr/bin/env bash
 # =============================================================================
+# NFTBan v1.0.0 - Port Scan CLI Handler
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+#
+# meta:name="cmd_portscan"
+# meta:type="cli"
+# meta:header="Port Scan CLI"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
+#
+# meta:description="CLI handler for port scan detection commands"
+# meta:inventory.files=""
+# meta:inventory.binaries="nft"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/portscan/main.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-01-11"
+# =============================================================================
 
-# Load JSON helper for --json support
+set -Eeuo pipefail
+
 [[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
 
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/strict.sh"
-else
-    # Fallback to manual strict mode
-    set -Eeuo pipefail
 fi
 
 # Load version library
@@ -18,34 +39,13 @@ fi
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/version.sh"
 fi
+
+# Load JSON helper for --json support
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER"
 fi
-# NFTBan v1.0.0 - Port Scan CLI Handler
-# =============================================================================
-
-# SPDX-License-Identifier: MPL-2.0
-# Purpose: Command-line interface for port scan detection management
-#
-# meta:name=cmd_portscan
-# meta:type=cli
-# meta:header=Port Scan CLI
-# meta:version=1.0.0
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=CLI handler for port scan detection commands
-# meta:input=Command line arguments (enable, disable, status, etc.)
-# meta:output=Port scan detection management output
-#
-# **Inventory & Requirements**
-# meta:depends=bash,nftban_portscan.sh
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
 # =============================================================================
 
 
@@ -378,22 +378,37 @@ nftban_cmd_portscan() {
             echo "🔍 Running port scan check..."
             echo ""
 
-            # Parse kernel log
-            local log_file="/var/log/kern.log"
-            if [[ ! -f "$log_file" ]]; then
-                log_file="/var/log/messages"
+            # Detect log source - support both traditional files and journalctl
+            local log_source=""
+            local use_journalctl=false
+
+            # Check traditional log files first
+            if [[ -f "/var/log/kern.log" ]]; then
+                log_source="/var/log/kern.log"
+            elif [[ -f "/var/log/messages" ]]; then
+                log_source="/var/log/messages"
+            elif [[ -f "/var/log/syslog" ]]; then
+                log_source="/var/log/syslog"
+            elif command -v journalctl &>/dev/null; then
+                # Use journalctl on systemd systems without traditional log files
+                log_source="journalctl"
+                use_journalctl=true
             fi
 
-            if [[ ! -f "$log_file" ]]; then
-                echo "❌ No suitable log file found"
-                echo "   Tried: /var/log/kern.log, /var/log/messages"
+            if [[ -z "$log_source" ]]; then
+                echo "❌ No suitable log source found"
+                echo "   Tried: /var/log/kern.log, /var/log/messages, /var/log/syslog, journalctl"
                 exit 1
             fi
 
-            echo "Parsing log file: $log_file"
+            if [[ "$use_journalctl" == "true" ]]; then
+                echo "Using log source: journalctl -k (systemd kernel journal)"
+            else
+                echo "Parsing log file: $log_source"
+            fi
             echo ""
 
-            nftban_portscan_check "$log_file"
+            nftban_portscan_check "$log_source"
 
             echo ""
             echo "✅ Port scan check complete"
