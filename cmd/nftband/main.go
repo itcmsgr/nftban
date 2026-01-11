@@ -58,6 +58,8 @@ import (
 	"github.com/itcmsgr/nftban/pkg/banlog"
 	"github.com/itcmsgr/nftban/pkg/ddos"
 	"github.com/itcmsgr/nftban/pkg/eventbus"
+	"github.com/itcmsgr/nftban/pkg/metrics"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/itcmsgr/nftban/pkg/feeds"
 	"github.com/itcmsgr/nftban/pkg/loginmon"
 	"github.com/itcmsgr/nftban/pkg/module"
@@ -279,10 +281,17 @@ func (d *Daemon) Run() error {
 		})
 		if err != nil {
 			log.Printf("[BAN] Failed to ban %s: %v", e.IP, err)
+			metrics.RecordBanError(e.Source, "nft_error")
 		} else {
 			log.Printf("[BAN] Successfully banned %s (timeout=%ds, source=%s)", e.IP, timeout, e.Source)
 			// Record in stats collector
 			d.stats.RecordBan()
+			// Record Prometheus metric
+			family := "ipv4"
+			if strings.Contains(e.IP, ":") {
+				family = "ipv6"
+			}
+			metrics.RecordBan(e.Source, family)
 			// Log to bans.log for stats tracking
 			banSource := banlog.SourceManual
 			switch {
@@ -851,6 +860,13 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 	// Record in stats collector
 	d.stats.RecordBan()
 
+	// Record Prometheus metric
+	family := "ipv4"
+	if strings.Contains(ip, ":") {
+		family = "ipv6"
+	}
+	metrics.RecordBan(source, family)
+
 	// Log ban to bans.log for stats tracking
 	banSource := banlog.SourceManual
 	switch {
@@ -904,6 +920,13 @@ func (d *Daemon) handleUnbanRequest(params map[string]any) SocketResponse {
 
 	// Record in stats collector
 	d.stats.RecordUnban()
+
+	// Record Prometheus metric
+	family := "ipv4"
+	if strings.Contains(ip, ":") {
+		family = "ipv6"
+	}
+	metrics.RecordUnban("manual", family)
 
 	// Publish unban event
 	d.bus.Publish(eventbus.NewEvent(eventbus.EventUnban, "cli").
@@ -1136,6 +1159,9 @@ func (d *Daemon) startHTTP() error {
 			"version": Version,
 		})
 	})
+
+	// Prometheus metrics endpoint
+	mux.Handle("/metrics", promhttp.Handler())
 
 	// Status endpoint
 	mux.HandleFunc("/api/v1/status", func(w http.ResponseWriter, r *http.Request) {
