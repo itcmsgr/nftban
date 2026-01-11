@@ -388,6 +388,9 @@ nftban_portscan_classic_process_logs() {
     # Analyze and block if needed
     nftban_portscan_classic_analyze_all
 
+    # Save state for progressive banning persistence
+    nftban_portscan_classic_save_state
+
     return 0
 }
 
