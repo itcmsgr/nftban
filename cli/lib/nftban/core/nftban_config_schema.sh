@@ -292,11 +292,22 @@ nftban_config_parse_to_json() {
             val = substr($0, idx + 1)
             gsub(/^[[:space:]]+|[[:space:]]+$/, "", val)
 
-            # Remove surrounding quotes
-            if (val ~ /^".*"$/) {
-                val = substr(val, 2, length(val) - 2)
-            } else if (val ~ /^'"'"'.*'"'"'$/) {
-                val = substr(val, 2, length(val) - 2)
+            # Handle quoted values with potential inline comments
+            if (val ~ /^"/) {
+                # Find closing quote
+                match(val, /^"[^"]*"/)
+                if (RSTART > 0) {
+                    val = substr(val, 2, RLENGTH - 2)
+                }
+            } else if (val ~ /^'"'"'/) {
+                # Single quoted - find closing quote
+                match(val, /^'"'"'[^'"'"']*'"'"'/)
+                if (RSTART > 0) {
+                    val = substr(val, 2, RLENGTH - 2)
+                }
+            } else {
+                # Unquoted - strip inline comment
+                sub(/[[:space:]]*#.*$/, "", val)
             }
 
             # Escape for JSON
@@ -425,7 +436,9 @@ nftban_config_validate_value() {
 
     case "$ref_type" in
         boolean_string)
-            if ! [[ "$value" =~ ^(true|false|yes|no|1|0|on|off)$ ]]; then
+            # Case-insensitive check for boolean values
+            local lower_value="${value,,}"  # Bash 4+ lowercase
+            if ! [[ "$lower_value" =~ ^(true|false|yes|no|1|0|on|off)$ ]]; then
                 echo "INVALID: $key='$value' (must be true/false/yes/no/1/0/on/off)"
                 return 2
             fi
