@@ -199,6 +199,9 @@ nftban_complete() {
         echo "test"
         echo "emulate"
         echo "explain"
+        # CONFIG VALIDATION
+        echo "configtest"
+        echo "configaudit"
         # EMERGENCY/RECOVERY
         echo "flush"
         return 0
@@ -491,6 +494,26 @@ nftban_complete() {
             test)
                 echo "--verbose"
                 echo "help"
+                ;;
+            config)
+                echo "get"
+                echo "defaults"
+                echo "overrides"
+                echo "set"
+                echo "reset"
+                echo "reset-all"
+                echo "test"
+                echo "audit"
+                echo "show"
+                echo "diff"
+                echo "help"
+                ;;
+            configtest)
+                echo "--verbose"
+                echo "--json"
+                ;;
+            configaudit)
+                echo "--json"
                 ;;
             *)
                 # No subcommands

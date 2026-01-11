@@ -6,23 +6,24 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Configuration management CLI interface
 #
-# meta:name=cmd_config
-# meta:type=cli
-# meta:header=Configuration CLI Handler
-# meta:version=1.0.0
+# meta:name="cmd_config"
+# meta:type="cli"
+# meta:header="Configuration CLI Handler"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=CLI interface for configuration management with .conf.local support
-# meta:input=Config commands and parameters
-# meta:output=Configuration values or status messages
+# meta:description="CLI interface for configuration management with schema validation"
+# meta:inventory.files=""
+# meta:inventory.binaries="jq"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_CONFIG_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="user"
 #
-# **Inventory & Requirements**
-# meta:depends=nftban_config.sh
-#
-# meta:created_date=2025-11-15
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-15"
+# meta:updated_date="2026-01-11"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -54,13 +55,18 @@ else
     exit 1
 fi
 
+# Load schema validation module
+if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_config_schema.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/core/nftban_config_schema.sh"
+fi
+
 # =============================================================================
 # USAGE
 # =============================================================================
 
 show_usage() {
     cat <<'EOF'
-Usage: nftban config <command> <module> [options]
+Usage: nftban config <command> [module] [options]
 
 COMMANDS:
   get <module>              Get current configuration (merged defaults + overrides)
@@ -70,44 +76,62 @@ COMMANDS:
   reset <module> KEY        Reset single key to default (remove override)
   reset-all <module>        Reset all configuration to defaults
 
+VALIDATION COMMANDS:
+  test [--verbose] [--json] Validate all configuration against schema
+  audit [--json]            Audit config for drift, deprecated, and new options
+  show                      Show effective merged configuration (all sources)
+  diff                      Show differences between defaults and local overrides
+
 MODULES:
   portscan                  Port scan detection configuration
   ddos                      DDoS protection configuration
+  login                     Login monitoring configuration
 
 OPTIONS:
   --json                    Output in JSON format
+  --verbose                 Show detailed output (for test command)
 
 EXAMPLES:
+  # Validate all configuration
+  nftban config test
+
+  # Validate with verbose output
+  nftban config test --verbose
+
+  # Audit configuration for drift and deprecated options
+  nftban config audit
+
+  # Show effective merged configuration
+  nftban config show
+
+  # Show what has been overridden locally
+  nftban config diff
+
   # View current portscan configuration (defaults + overrides)
   nftban config get portscan
 
-  # View only default values
-  nftban config defaults portscan
-
-  # View only local overrides
-  nftban config overrides portscan
-
   # Set a configuration value (saves to .conf.local)
-  sudo nftban config set portscan PORTSCAN_THRESHOLD=15
+  sudo nftban config set portscan PORTSCAN_BAN_THRESHOLD=15
 
   # Reset a single value to default
-  sudo nftban config reset portscan PORTSCAN_THRESHOLD
-
-  # Reset all portscan config to defaults
-  sudo nftban config reset-all portscan
+  sudo nftban config reset portscan PORTSCAN_BAN_THRESHOLD
 
   # Get config in JSON format
   nftban config get portscan --json
 
 CONFIGURATION FILES:
-  /etc/nftban/conf.d/*.conf     Default configuration files (DO NOT EDIT)
-  /etc/nftban/nftban.conf.local Local overrides (auto-managed by this command)
+  /etc/nftban/nftban.conf           Main config defaults (DO NOT EDIT)
+  /etc/nftban/nftban.conf.local     Main config local overrides
+  /etc/nftban/conf.d/*.conf         Module config defaults (DO NOT EDIT)
+  /etc/nftban/conf.d/*.conf.local   Module config local overrides
 
 HOW IT WORKS:
-  - Default values come from /etc/nftban/conf.d/<module>.conf
-  - Local overrides are stored in /etc/nftban/nftban.conf.local
+  - Default values come from .conf files (shipped with packages)
+  - Local overrides are stored in .conf.local files
   - Overrides take precedence over defaults
   - Use 'set' to add/update overrides, 'reset' to remove them
+  - The 'test' command validates against the schema
+  - The 'audit' command detects drift, deprecated keys, and new options
 
 EOF
 }
@@ -188,6 +212,198 @@ nftban_cmd_config_reset_all() {
     nftban_config_reset_all "$module"
 }
 
+nftban_cmd_config_test() {
+    # Validate configuration against schema
+    local verbose=0
+    local json_mode=0
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --verbose|-v) verbose=1 ;;
+            --json) json_mode=1 ;;
+            *) ;;
+        esac
+        shift
+    done
+
+    # Check if schema module is loaded
+    if ! command -v nftban_configtest >/dev/null 2>&1; then
+        echo "ERROR: Schema validation module not available"
+        return 1
+    fi
+
+    nftban_configtest "$verbose" "$json_mode"
+}
+
+nftban_cmd_config_audit() {
+    # Audit configuration for drift, deprecated keys, etc.
+    local json_mode=0
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --json) json_mode=1 ;;
+            *) ;;
+        esac
+        shift
+    done
+
+    # Check if schema module is loaded
+    if ! command -v nftban_configaudit >/dev/null 2>&1; then
+        echo "ERROR: Schema validation module not available"
+        return 1
+    fi
+
+    nftban_configaudit "$json_mode"
+}
+
+nftban_cmd_config_show() {
+    # Show effective merged configuration
+    local json_mode="${1:-0}"
+
+    # Check if schema module is loaded
+    if ! command -v nftban_config_load_effective >/dev/null 2>&1; then
+        echo "ERROR: Schema validation module not available"
+        return 1
+    fi
+
+    local effective
+    effective=$(nftban_config_load_effective)
+
+    if [[ "$json_mode" == "--json" || "$json_mode" == "1" ]]; then
+        echo "$effective" | jq '.'
+    else
+        echo "Effective Configuration (all sources merged)"
+        echo "════════════════════════════════════════════════════════════"
+        echo ""
+
+        # Group by category from schema
+        local schema_file="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data/config-schema.json"
+
+        if [[ -f "$schema_file" ]]; then
+            # Display by category
+            local categories
+            categories=$(jq -r '.categories | keys[]' "$schema_file" 2>/dev/null)
+
+            while IFS= read -r category; do
+                [[ -z "$category" ]] && continue
+
+                local cat_name
+                cat_name=$(jq -r --arg c "$category" '.categories[$c]' "$schema_file" 2>/dev/null)
+
+                # Find keys in this category
+                local keys_in_cat
+                keys_in_cat=$(jq -r --arg c "$category" '.properties | to_entries[] | select(.value.category == $c) | .key' "$schema_file" 2>/dev/null)
+
+                if [[ -n "$keys_in_cat" ]]; then
+                    echo "[$cat_name]"
+
+                    while IFS= read -r key; do
+                        [[ -z "$key" ]] && continue
+                        local val
+                        val=$(echo "$effective" | jq -r --arg k "$key" '.[$k] // "<not set>"')
+                        printf "  %-35s = %s\n" "$key" "$val"
+                    done <<< "$keys_in_cat"
+                    echo ""
+                fi
+            done <<< "$categories"
+
+            # Show keys not in schema
+            echo "[Other/Unrecognized]"
+            local all_keys
+            all_keys=$(echo "$effective" | jq -r 'keys[]')
+
+            while IFS= read -r key; do
+                [[ -z "$key" ]] && continue
+                local in_schema
+                in_schema=$(jq -r --arg k "$key" '.properties | has($k)' "$schema_file" 2>/dev/null)
+                if [[ "$in_schema" != "true" ]]; then
+                    local val
+                    val=$(echo "$effective" | jq -r --arg k "$key" '.[$k]')
+                    printf "  %-35s = %s\n" "$key" "$val"
+                fi
+            done <<< "$all_keys"
+        else
+            # No schema, just dump all
+            echo "$effective" | jq -r 'to_entries | sort_by(.key) | .[] | "  \(.key) = \(.value)"'
+        fi
+    fi
+}
+
+nftban_cmd_config_diff() {
+    # Show differences between defaults and local overrides
+    local json_mode="${1:-0}"
+    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+
+    echo "Configuration Differences (defaults vs local overrides)"
+    echo "════════════════════════════════════════════════════════════"
+    echo ""
+
+    local has_diff=0
+
+    # Check main config
+    if [[ -f "$config_dir/nftban.conf.local" ]]; then
+        local local_json defaults_json
+        local_json=$(nftban_config_parse_to_json "$config_dir/nftban.conf.local" 2>/dev/null || echo "{}")
+        defaults_json=$(nftban_config_parse_to_json "$config_dir/nftban.conf" 2>/dev/null || echo "{}")
+
+        local local_keys
+        local_keys=$(echo "$local_json" | jq -r 'keys[]' 2>/dev/null)
+
+        if [[ -n "$local_keys" ]]; then
+            echo "[nftban.conf.local]"
+            while IFS= read -r key; do
+                [[ -z "$key" ]] && continue
+                local local_val default_val
+                local_val=$(echo "$local_json" | jq -r --arg k "$key" '.[$k]')
+                default_val=$(echo "$defaults_json" | jq -r --arg k "$key" '.[$k] // "<not in defaults>"')
+
+                if [[ "$local_val" != "$default_val" ]]; then
+                    printf "  %-30s: %s -> %s\n" "$key" "$default_val" "$local_val"
+                    has_diff=1
+                fi
+            done <<< "$local_keys"
+            echo ""
+        fi
+    fi
+
+    # Check conf.d/*.conf.local files
+    local local_file
+    for local_file in "$config_dir"/conf.d/*.conf.local "$config_dir"/conf.d/*/*.conf.local; do
+        [[ -f "$local_file" ]] || continue
+
+        local base_file="${local_file%.local}"
+        local module_name
+        module_name=$(basename "$local_file" .conf.local)
+
+        local local_json defaults_json
+        local_json=$(nftban_config_parse_to_json "$local_file" 2>/dev/null || echo "{}")
+        defaults_json=$(nftban_config_parse_to_json "$base_file" 2>/dev/null || echo "{}")
+
+        local local_keys
+        local_keys=$(echo "$local_json" | jq -r 'keys[]' 2>/dev/null)
+
+        if [[ -n "$local_keys" ]]; then
+            echo "[${module_name}.conf.local]"
+            while IFS= read -r key; do
+                [[ -z "$key" ]] && continue
+                local local_val default_val
+                local_val=$(echo "$local_json" | jq -r --arg k "$key" '.[$k]')
+                default_val=$(echo "$defaults_json" | jq -r --arg k "$key" '.[$k] // "<not in defaults>"')
+
+                if [[ "$local_val" != "$default_val" ]]; then
+                    printf "  %-30s: %s -> %s\n" "$key" "$default_val" "$local_val"
+                    has_diff=1
+                fi
+            done <<< "$local_keys"
+            echo ""
+        fi
+    done
+
+    if [[ $has_diff -eq 0 ]]; then
+        echo "No local overrides found. Using all defaults."
+    fi
+}
+
 # =============================================================================
 # MAIN COMMAND HANDLER
 # =============================================================================
@@ -262,6 +478,22 @@ nftban_cmd_config() {
                 return 1
             fi
             nftban_cmd_config_reset_all "$@"
+            ;;
+
+        test|validate)
+            nftban_cmd_config_test "$@"
+            ;;
+
+        audit)
+            nftban_cmd_config_audit "$@"
+            ;;
+
+        show)
+            nftban_cmd_config_show "$@"
+            ;;
+
+        diff)
+            nftban_cmd_config_diff "$@"
             ;;
 
         help|--help|-h|"")

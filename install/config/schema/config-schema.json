@@ -1,0 +1,328 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://nftban.com/schemas/config-v1.json",
+  "title": "NFTBan Configuration Schema",
+  "description": "Schema for NFTBan configuration validation and audit",
+  "version": "1.0.0",
+  "type": "object",
+
+  "metadata": {
+    "schema_version": 1,
+    "min_nftban_version": "1.0.0",
+    "documentation_url": "https://nftban.com/docs/config"
+  },
+
+  "definitions": {
+    "boolean_string": {
+      "type": "string",
+      "enum": ["true", "false", "yes", "no", "1", "0", "on", "off"],
+      "description": "Boolean value as string (shell-compatible)"
+    },
+    "positive_integer": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "description": "Positive integer as string"
+    },
+    "duration_seconds": {
+      "type": "string",
+      "pattern": "^[0-9]+$",
+      "description": "Duration in seconds"
+    },
+    "path": {
+      "type": "string",
+      "pattern": "^/[a-zA-Z0-9/_.-]*$",
+      "description": "Absolute filesystem path"
+    },
+    "ip_address": {
+      "type": "string",
+      "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}$|^([0-9a-fA-F:]+)$"
+    },
+    "cidr": {
+      "type": "string",
+      "pattern": "^([0-9]{1,3}\\.){3}[0-9]{1,3}/[0-9]{1,2}$|^([0-9a-fA-F:]+)/[0-9]{1,3}$"
+    }
+  },
+
+  "properties": {
+    "_config_version": {
+      "type": "integer",
+      "description": "Schema version this config was created with",
+      "default": 1,
+      "minimum": 1
+    },
+
+    "NFTBAN_VERSION": {
+      "type": "string",
+      "description": "NFTBan version (informational)",
+      "default": "1.0.0",
+      "introduced_in": "1.0.0",
+      "category": "system"
+    },
+
+    "NFTBAN_CONFIG_DIR": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/etc/nftban",
+      "description": "Main configuration directory",
+      "introduced_in": "1.0.0",
+      "category": "paths",
+      "required": true
+    },
+
+    "NFTBAN_DATA_DIR": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/var/lib/nftban",
+      "description": "Data storage directory",
+      "introduced_in": "1.0.0",
+      "category": "paths",
+      "required": true
+    },
+
+    "NFTBAN_LOG_DIR": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/var/log/nftban",
+      "description": "Log files directory",
+      "introduced_in": "1.0.0",
+      "category": "paths",
+      "required": true
+    },
+
+    "NFTBAN_RUN_DIR": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/run/nftban",
+      "description": "Runtime directory (PID files, sockets)",
+      "introduced_in": "1.0.0",
+      "category": "paths",
+      "required": true
+    },
+
+    "NFTBAN_CACHE_DIR": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/var/cache/nftban",
+      "description": "Cache directory",
+      "introduced_in": "1.0.0",
+      "category": "paths"
+    },
+
+    "NFTBAN_METRICS_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable Prometheus/VictoriaMetrics metrics",
+      "introduced_in": "1.0.0",
+      "category": "features"
+    },
+
+    "NFTBAN_METRICS_BACKEND": {
+      "type": "string",
+      "enum": ["prometheus", "victoriametrics"],
+      "default": "prometheus",
+      "description": "Metrics backend type",
+      "introduced_in": "1.0.0",
+      "category": "features",
+      "required_when": {
+        "key": "NFTBAN_METRICS_ENABLED",
+        "value": "true"
+      }
+    },
+
+    "NFTBAN_SURICATA_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Enable Suricata IDS integration",
+      "introduced_in": "1.0.0",
+      "category": "features"
+    },
+
+    "NFTBAN_GEOIP_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable GeoIP-based blocking",
+      "introduced_in": "1.0.0",
+      "category": "features"
+    },
+
+    "NFTBAN_GEOIP_DATABASE": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/var/lib/nftban/geoip/dbip-country-lite.mmdb",
+      "description": "Path to GeoIP database file",
+      "introduced_in": "1.0.0",
+      "category": "features",
+      "required_when": {
+        "key": "NFTBAN_GEOIP_ENABLED",
+        "value": "true"
+      }
+    },
+
+    "NFTBAN_FEEDS_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable threat feed integration",
+      "introduced_in": "1.0.0",
+      "category": "features"
+    },
+
+    "NFTBAN_GUI_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable web GUI",
+      "introduced_in": "1.0.0",
+      "category": "features"
+    },
+
+    "NFTBAN_DEFAULT_BAN_DURATION": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "3600",
+      "description": "Default ban duration in seconds",
+      "introduced_in": "1.0.0",
+      "category": "banning",
+      "minimum": 60,
+      "maximum": 31536000
+    },
+
+    "NFTBAN_MAX_BLOCKED_IPS": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "100000",
+      "description": "Maximum number of blocked IPs (safety limit)",
+      "introduced_in": "1.0.0",
+      "category": "banning",
+      "minimum": 100,
+      "maximum": 10000000
+    },
+
+    "PORTSCAN_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Enable portscan detection module",
+      "introduced_in": "1.0.0",
+      "category": "modules",
+      "config_file": "conf.d/portscan/main.conf"
+    },
+
+    "PORTSCAN_MODE": {
+      "type": "string",
+      "enum": ["auto", "classic", "suricata", "hybrid"],
+      "default": "auto",
+      "description": "Portscan detection mode",
+      "introduced_in": "1.0.0",
+      "category": "modules",
+      "config_file": "conf.d/portscan/main.conf"
+    },
+
+    "PORTSCAN_BAN_THRESHOLD": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "5",
+      "description": "Number of portscan events before banning",
+      "introduced_in": "1.0.0",
+      "category": "modules",
+      "config_file": "conf.d/portscan/main.conf",
+      "minimum": 1,
+      "maximum": 100
+    },
+
+    "LOGIN_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Enable login monitoring module",
+      "introduced_in": "1.0.0",
+      "category": "modules",
+      "config_file": "conf.d/login/main.conf"
+    },
+
+    "LOGIN_MAX_FAILURES": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "5",
+      "description": "Maximum failed logins before banning",
+      "introduced_in": "1.0.0",
+      "category": "modules",
+      "config_file": "conf.d/login/main.conf",
+      "minimum": 1,
+      "maximum": 100
+    },
+
+    "DDOS_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable DDoS protection module",
+      "introduced_in": "1.0.0",
+      "category": "modules",
+      "config_file": "conf.d/ddos/main.conf"
+    },
+
+    "DDOS_MAX_BLOCKED_IPS": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "10000",
+      "description": "Maximum IPs to block for DDoS",
+      "introduced_in": "1.0.0",
+      "category": "modules",
+      "config_file": "conf.d/ddos/main.conf",
+      "minimum": 100,
+      "maximum": 1000000
+    },
+
+    "WATCHDOG_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable system watchdog",
+      "introduced_in": "1.0.0",
+      "category": "modules"
+    },
+
+    "WATCHDOG_INTERVAL": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "60",
+      "description": "Watchdog check interval in seconds",
+      "introduced_in": "1.0.0",
+      "category": "modules",
+      "minimum": 5,
+      "maximum": 3600,
+      "required_when": {
+        "key": "WATCHDOG_ENABLED",
+        "value": "true"
+      }
+    }
+  },
+
+  "deprecated": {
+    "NFTBAN_FAIL2BAN_ENABLED": {
+      "deprecated_in": "1.0.0",
+      "removed_in": null,
+      "replaced_by": null,
+      "message": "Fail2ban integration removed in v1.0; use Suricata mode instead"
+    }
+  },
+
+  "renamed": {
+    "PORTSCAN_THRESHOLD": {
+      "renamed_to": "PORTSCAN_BAN_THRESHOLD",
+      "renamed_in": "1.0.0"
+    }
+  },
+
+  "categories": {
+    "system": "Core system settings",
+    "paths": "Filesystem paths",
+    "features": "Feature toggles",
+    "banning": "Ban behavior settings",
+    "modules": "Module-specific settings"
+  }
+}
