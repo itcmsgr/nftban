@@ -387,6 +387,36 @@ login:
     restart: {description: "Restart login monitor service"}
     test: {description: "Test login monitoring configuration"}
 
+botscan:
+  category: active_protection
+  description: "Bot scanner detection (webshell probes, exploit scanners, bad bots)"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban botscan enable"
+    - "nftban botscan status"
+    - "nftban botscan disable"
+    - "nftban botscan check"
+    - "nftban botscan patterns list"
+    - "nftban botscan history"
+    - "nftban botscan test"
+  subcommands:
+    enable: {description: "Enable bot scanner detection"}
+    disable: {description: "Disable bot scanner detection"}
+    status: {description: "Show bot scanner status and configuration"}
+    stats: {description: "Show detection statistics (JSON supported)"}
+    check: {description: "Run manual log analysis"}
+    patterns: {description: "Pattern management (list/add/remove/enable/disable)"}
+    history: {description: "Show detection history"}
+    test: {description: "Test pattern matching against URLs or User-Agents"}
+
 feeds:
   category: active_protection
   description: "Threat intelligence feeds management"
@@ -1230,9 +1260,9 @@ system:
 _metadata:
   version: "1.0"
   schema_version: "1.0"
-  generated_date: "2026-01-08"
-  total_commands: 46
-  commands_with_json: 37
+  generated_date: "2026-01-11"
+  total_commands: 47
+  commands_with_json: 38
   commands_without_json: 9
   missing_json:
     - debug
@@ -1248,15 +1278,15 @@ _metadata:
   task_groups:
     setup_discovery: 8
     immediate_action: 7
-    active_protection: 8
+    active_protection: 9
     infrastructure: 7
     intelligence_reporting: 11
     developer_sysadmin: 7
   risk_levels:
     core: 22
     setup: 7
-    advanced: 17
+    advanced: 18
   audience_summary:
-    cli_only: 28
+    cli_only: 29
     auditor_visible: 16
     panel_expose: 11
