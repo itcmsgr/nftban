@@ -281,6 +281,8 @@ func (d *Daemon) Run() error {
 			log.Printf("[BAN] Failed to ban %s: %v", e.IP, err)
 		} else {
 			log.Printf("[BAN] Successfully banned %s (timeout=%ds, source=%s)", e.IP, timeout, e.Source)
+			// Record in stats collector
+			d.stats.RecordBan()
 			// Log to bans.log for stats tracking
 			banSource := banlog.SourceManual
 			switch {
@@ -584,8 +586,11 @@ func (d *Daemon) handleSocketConnection(conn net.Conn) {
 		return
 	}
 
-	// Handle request
+	// Handle request with timing
+	start := time.Now()
 	resp := d.handleSocketRequest(req)
+	latency := time.Since(start).Nanoseconds()
+	d.stats.RecordIPCRequest(latency, resp.Success)
 	d.writeSocketResponse(conn, resp)
 }
 
@@ -843,6 +848,9 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 		}
 	}
 
+	// Record in stats collector
+	d.stats.RecordBan()
+
 	// Log ban to bans.log for stats tracking
 	banSource := banlog.SourceManual
 	switch {
@@ -893,6 +901,9 @@ func (d *Daemon) handleUnbanRequest(params map[string]any) SocketResponse {
 			Error:   err.Error(),
 		}
 	}
+
+	// Record in stats collector
+	d.stats.RecordUnban()
 
 	// Publish unban event
 	d.bus.Publish(eventbus.NewEvent(eventbus.EventUnban, "cli").
