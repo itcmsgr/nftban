@@ -105,7 +105,7 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 
 ## Highlights
 
-- **47 CLI Commands** — Complete firewall management from command line
+- **49 CLI Commands** — Complete firewall management from command line
 - **Unified Go Backend** — High-performance feeds, GeoIP, and sync operations
 - **Suricata Integration** — Intelligent rule management with 50-70% rule reduction
 - **RBL Monitoring** — Real-time blackhole list checking and IP reputation tracking
@@ -167,6 +167,8 @@ nftban status          # Quick system overview
 nftban health          # System diagnostics with auto-heal
 nftban validate        # Firewall structure validation
 nftban services        # Systemd services status
+nftban configtest      # Validate config against schema
+nftban configaudit     # Audit config for drift and changes
 ```
 
 ### IP Management
