@@ -1,0 +1,306 @@
+{
+  "registry_version": "1.0.0",
+  "schema_version": "1.0.27",
+  "generated_at": "2026-01-11",
+  "description": "NFTBan Configuration Registry - Mode-aware validation metadata",
+
+  "activation_rules": {
+    "always": "File is always active",
+    "portscan_classic": "PORTSCAN_MODE in [classic, hybrid] OR (PORTSCAN_MODE=auto AND !suricata_detected)",
+    "portscan_suricata": "PORTSCAN_MODE in [suricata, hybrid] OR (PORTSCAN_MODE=auto AND suricata_detected)",
+    "ddos_classic": "DDOS_MODE in [classic, hybrid] OR (DDOS_MODE=auto AND !suricata_detected)",
+    "ddos_suricata": "DDOS_MODE in [suricata, hybrid] OR (DDOS_MODE=auto AND suricata_detected)",
+    "login_classic": "LOGIN_MODE in [classic, hybrid] OR (LOGIN_MODE=auto AND !suricata_detected)",
+    "login_suricata": "LOGIN_MODE in [suricata, hybrid] OR (LOGIN_MODE=auto AND suricata_detected)",
+    "panel_detected": "Panel auto-detected or explicitly configured"
+  },
+
+  "runtime_checks": {
+    "suricata_detected": {
+      "description": "Check if Suricata is available and running",
+      "checks": [
+        {"type": "service", "name": "suricata", "check": "is-active"},
+        {"type": "binary", "path": "/usr/bin/suricata", "check": "exists"},
+        {"type": "file_fresh", "path": "/var/log/suricata/eve.json", "max_age_seconds": 300}
+      ],
+      "require_all": true
+    }
+  },
+
+  "categories": {
+    "system": "Core system settings",
+    "paths": "Filesystem paths",
+    "features": "Feature toggles",
+    "modules": "Protection module settings",
+    "banning": "Ban behavior settings",
+    "detection": "Detection thresholds and tuning",
+    "notifications": "Alert and notification settings",
+    "panels": "Hosting panel integration"
+  },
+
+  "files": {
+    "conf.d/banner.conf": {
+      "description": "CLI banner configuration",
+      "active_when": "always",
+      "category": "system",
+      "key_count": 29
+    },
+    "conf.d/mail.conf": {
+      "description": "Email notification settings",
+      "active_when": "always",
+      "category": "notifications",
+      "key_count": 24
+    },
+    "conf.d/stats.conf": {
+      "description": "Statistics and reporting settings",
+      "active_when": "always",
+      "category": "system",
+      "key_count": 24
+    },
+    "conf.d/rbl/main.conf": {
+      "description": "RBL (Real-time Blackhole List) checking",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 18
+    },
+
+    "conf.d/portscan/main.conf": {
+      "description": "Portscan module main configuration (MODE selector)",
+      "active_when": "always",
+      "category": "modules",
+      "key_count": 26,
+      "mode_key": "PORTSCAN_MODE",
+      "mode_values": ["auto", "classic", "suricata", "hybrid"]
+    },
+    "conf.d/portscan/classic.conf": {
+      "description": "Portscan classic mode (log-based detection)",
+      "active_when": "portscan_classic",
+      "category": "detection",
+      "key_count": 44,
+      "depends_on": "conf.d/portscan/main.conf"
+    },
+    "conf.d/portscan/suricata.conf": {
+      "description": "Portscan suricata mode (IDS-based detection)",
+      "active_when": "portscan_suricata",
+      "category": "detection",
+      "key_count": 52,
+      "depends_on": "conf.d/portscan/main.conf",
+      "requires_runtime": "suricata_detected"
+    },
+
+    "conf.d/ddos/main.conf": {
+      "description": "DDoS module main configuration (MODE selector)",
+      "active_when": "always",
+      "category": "modules",
+      "key_count": 26,
+      "mode_key": "DDOS_MODE",
+      "mode_values": ["auto", "classic", "suricata", "hybrid"]
+    },
+    "conf.d/ddos/classic.conf": {
+      "description": "DDoS classic mode (rate limiting, SYN flood protection)",
+      "active_when": "ddos_classic",
+      "category": "detection",
+      "key_count": 33,
+      "depends_on": "conf.d/ddos/main.conf"
+    },
+    "conf.d/ddos/suricata.conf": {
+      "description": "DDoS suricata mode (IDS-based detection)",
+      "active_when": "ddos_suricata",
+      "category": "detection",
+      "key_count": 44,
+      "depends_on": "conf.d/ddos/main.conf",
+      "requires_runtime": "suricata_detected"
+    },
+
+    "conf.d/login/main.conf": {
+      "description": "Login monitor main configuration (MODE selector)",
+      "active_when": "always",
+      "category": "modules",
+      "key_count": 51,
+      "mode_key": "LOGIN_MODE",
+      "mode_values": ["auto", "classic", "suricata", "hybrid"]
+    },
+    "conf.d/login/classic.conf": {
+      "description": "Login classic mode (auth log monitoring)",
+      "active_when": "login_classic",
+      "category": "detection",
+      "key_count": 59,
+      "depends_on": "conf.d/login/main.conf"
+    },
+    "conf.d/login/suricata.conf": {
+      "description": "Login suricata mode (IDS-based detection)",
+      "active_when": "login_suricata",
+      "category": "detection",
+      "key_count": 54,
+      "depends_on": "conf.d/login/main.conf",
+      "requires_runtime": "suricata_detected"
+    },
+    "conf.d/login/services.conf": {
+      "description": "Per-service login configuration (SSH, Dovecot, Exim, etc.)",
+      "active_when": "always",
+      "category": "detection",
+      "key_count": 253,
+      "depends_on": "conf.d/login/main.conf"
+    },
+
+    "conf.d/panels/directadmin/main.conf": {
+      "description": "DirectAdmin panel integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 22,
+      "panel_name": "directadmin"
+    },
+    "conf.d/panels/cpanel/main.conf": {
+      "description": "cPanel/WHM integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 25,
+      "panel_name": "cpanel"
+    },
+    "conf.d/panels/cwp/main.conf": {
+      "description": "CentOS Web Panel integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 23,
+      "panel_name": "cwp"
+    },
+    "conf.d/panels/cyberpanel/main.conf": {
+      "description": "CyberPanel integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 21,
+      "panel_name": "cyberpanel"
+    },
+    "conf.d/panels/interworx/main.conf": {
+      "description": "InterWorx panel integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 21,
+      "panel_name": "interworx"
+    },
+    "conf.d/panels/vesta/main.conf": {
+      "description": "VestaCP/HestiaCP integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 20,
+      "panel_name": "vesta"
+    },
+    "conf.d/panels/plesk/main.conf": {
+      "description": "Plesk panel integration",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 28,
+      "panel_name": "plesk"
+    },
+    "conf.d/panels/generic/main.conf": {
+      "description": "Generic panel integration template",
+      "active_when": "panel_detected",
+      "category": "panels",
+      "key_count": 20,
+      "panel_name": "generic"
+    }
+  },
+
+  "key_prefixes": {
+    "PORTSCAN_CLASSIC_": {
+      "active_when": "portscan_classic",
+      "category": "detection",
+      "description": "Portscan classic mode settings"
+    },
+    "PORTSCAN_SURICATA_": {
+      "active_when": "portscan_suricata",
+      "category": "detection",
+      "description": "Portscan suricata mode settings"
+    },
+    "PORTSCAN_AUTO_": {
+      "active_when": "always",
+      "category": "detection",
+      "description": "Portscan auto-detection settings"
+    },
+    "PORTSCAN_": {
+      "active_when": "always",
+      "category": "modules",
+      "description": "Portscan general settings"
+    },
+    "DDOS_CLASSIC_": {
+      "active_when": "ddos_classic",
+      "category": "detection",
+      "description": "DDoS classic mode settings"
+    },
+    "DDOS_SURICATA_": {
+      "active_when": "ddos_suricata",
+      "category": "detection",
+      "description": "DDoS suricata mode settings"
+    },
+    "DDOS_": {
+      "active_when": "always",
+      "category": "modules",
+      "description": "DDoS general settings"
+    },
+    "LOGIN_CLASSIC_": {
+      "active_when": "login_classic",
+      "category": "detection",
+      "description": "Login classic mode settings"
+    },
+    "LOGIN_SURICATA_": {
+      "active_when": "login_suricata",
+      "category": "detection",
+      "description": "Login suricata mode settings"
+    },
+    "LOGIN_SERVICE_": {
+      "active_when": "always",
+      "category": "detection",
+      "description": "Per-service login settings"
+    },
+    "LOGIN_": {
+      "active_when": "always",
+      "category": "modules",
+      "description": "Login general settings"
+    },
+    "NFTBAN_BANNER_": {
+      "active_when": "always",
+      "category": "system",
+      "description": "CLI banner settings"
+    },
+    "NFTBAN_MAIL_": {
+      "active_when": "always",
+      "category": "notifications",
+      "description": "Mail notification settings"
+    },
+    "NFTBAN_SMTP_": {
+      "active_when": "always",
+      "category": "notifications",
+      "description": "SMTP transport settings"
+    },
+    "NFTBAN_STATS_": {
+      "active_when": "always",
+      "category": "system",
+      "description": "Statistics settings"
+    },
+    "NFTBAN_RBL_": {
+      "active_when": "always",
+      "category": "features",
+      "description": "RBL checking settings"
+    },
+    "PANEL_": {
+      "active_when": "panel_detected",
+      "category": "panels",
+      "description": "Panel integration settings"
+    }
+  },
+
+  "deprecated_keys": {
+    "NFTBAN_FAIL2BAN_ENABLED": {
+      "deprecated_in": "1.0.15",
+      "removed_in": "2.0.0",
+      "message": "Fail2ban integration removed, use native suricata mode"
+    }
+  },
+
+  "renamed_keys": {
+    "PORTSCAN_THRESHOLD": {
+      "renamed_to": "PORTSCAN_BAN_THRESHOLD",
+      "renamed_in": "1.0.10"
+    }
+  }
+}
