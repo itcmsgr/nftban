@@ -419,8 +419,8 @@ nftban_config_validate_value() {
     fi
 
     # Type validation (reserved for future type checking)
-    # shellcheck disable=SC2034
     local prop_type
+    # shellcheck disable=SC2034
     prop_type=$(echo "$prop_def" | jq -r '.type // "string"' || echo "string")
 
     # Enum validation
