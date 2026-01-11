@@ -171,6 +171,10 @@ cp -r etc/nftban/conf.d/* %{buildroot}/etc/nftban/conf.d/
 install -D -m 0640 install/config/feeds.conf %{buildroot}/etc/nftban/conf.d/feeds.conf
 install -D -m 0640 install/config/conf.d/watchdog.conf %{buildroot}/etc/nftban/conf.d/watchdog.conf
 
+# Pattern files (patterns.d for botscan)
+mkdir -p %{buildroot}/etc/nftban/patterns.d/botscan
+cp etc/nftban/patterns.d/botscan/*.patterns %{buildroot}/etc/nftban/patterns.d/botscan/
+
 # Logrotate configuration
 install -D -m 0644 install/config/nftban.logrotate %{buildroot}/etc/logrotate.d/nftban
 
