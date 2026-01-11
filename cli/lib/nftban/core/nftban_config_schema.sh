@@ -34,8 +34,10 @@ readonly NFTBAN_CONFIG_SCHEMA_LOADED=1
 # CONSTANTS
 # =============================================================================
 
+# shellcheck disable=SC2034  # Used by external callers for API versioning
 readonly NFTBAN_SCHEMA_VERSION=1
 readonly NFTBAN_SCHEMA_FILE="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data/config-schema.json"
+# shellcheck disable=SC2034  # Used by external callers for registry operations
 readonly NFTBAN_REGISTRY_FILE="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data/config-registry.json"
 readonly NFTBAN_CONFIG_STATE_FILE="${NFTBAN_DATA_DIR:-/var/lib/nftban}/config/schema-state.json"
 
@@ -416,7 +418,8 @@ nftban_config_validate_value() {
         return 1
     fi
 
-    # Type validation
+    # Type validation (reserved for future type checking)
+    # shellcheck disable=SC2034
     local prop_type
     prop_type=$(echo "$prop_def" | jq -r '.type // "string"' || echo "string")
 
@@ -617,8 +620,8 @@ nftban_configtest() {
     done <<< "$keys"
 
     # Validate conditional requirements
-    local cond_result cond_code=0
-    cond_result=$(nftban_config_validate_conditionals "$effective_config" "$schema_file") || cond_code=$?
+    local cond_result
+    cond_result=$(nftban_config_validate_conditionals "$effective_config" "$schema_file") || true
 
     if [[ -n "$cond_result" ]]; then
         while IFS= read -r line; do
@@ -776,10 +779,8 @@ nftban_configaudit() {
     local state_file="${3:-$NFTBAN_CONFIG_STATE_FILE}"
     local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 
-    local audit_result=()
-
     # 1. Load configs
-    local defaults_json local_json effective_json
+    local defaults_json local_json
 
     if [[ -f "$config_dir/nftban.conf" ]]; then
         defaults_json=$(nftban_config_parse_to_json "$config_dir/nftban.conf")
@@ -792,8 +793,6 @@ nftban_configaudit() {
     else
         local_json="{}"
     fi
-
-    effective_json=$(nftban_config_load_effective)
 
     # 2. Find overridden keys (in .local)
     local overridden_keys=()

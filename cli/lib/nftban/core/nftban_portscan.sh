@@ -720,6 +720,7 @@ nftban_portscan_check() {
     if ! type -t nftban_portscan_classic_process_logs &>/dev/null; then
         local classic_module="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_portscan_classic.sh"
         if [[ -f "$classic_module" ]]; then
+            # shellcheck source=/dev/null
             source "$classic_module"
             nftban_portscan_classic_load_config
             nftban_portscan_classic_init_state
@@ -739,7 +740,8 @@ nftban_portscan_check() {
         # Traditional file-based processing
         echo "Processing log file: $log_source"
         if type -t nftban_portscan_classic_process_logs &>/dev/null; then
-            # Override the log file temporarily
+            # Override the log file temporarily (used by sourced module)
+            # shellcheck disable=SC2034
             PORTSCAN_CLASSIC_LOG_FILE="$log_source"
             nftban_portscan_classic_process_logs
         else
