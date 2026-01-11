@@ -709,9 +709,9 @@ nftban_stats_generate_dashboard() {
     local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
     local bans_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
 
-    # Get currently blocked IPs from nftables
+    # Get currently blocked IPs from nftables (using dynamic table name)
     local current_blocked
-    current_blocked=$(nft list set inet nftban blacklist_v4 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | sort -u || true)
+    current_blocked=$(nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | sort -u || true)
 
     # Cross-reference with bans.log to count by module
     if [[ -f "$bans_log" ]] && [[ -n "$current_blocked" ]]; then
