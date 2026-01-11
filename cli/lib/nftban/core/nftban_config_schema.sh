@@ -71,28 +71,28 @@ nftban_schema_get_property() {
     local key="$1"
     local schema_file="${2:-$NFTBAN_SCHEMA_FILE}"
 
-    jq -r --arg key "$key" '.properties[$key] // empty' "$schema_file" 2>/dev/null
+    jq -r --arg key "$key" '.properties[$key] // empty' "$schema_file" 2>/dev/null || true
 }
 
 # Get all known keys from schema
 # Returns: newline-separated list of keys
 nftban_schema_get_keys() {
     local schema_file="${1:-$NFTBAN_SCHEMA_FILE}"
-    jq -r '.properties | keys[]' "$schema_file" 2>/dev/null
+    jq -r '.properties | keys[]' "$schema_file" 2>/dev/null || true
 }
 
 # Get deprecated keys
 # Returns: JSON object of deprecated keys
 nftban_schema_get_deprecated() {
     local schema_file="${1:-$NFTBAN_SCHEMA_FILE}"
-    jq -r '.deprecated // {}' "$schema_file" 2>/dev/null
+    jq -r '.deprecated // {}' "$schema_file" 2>/dev/null || true
 }
 
 # Get renamed keys
 # Returns: JSON object of renamed keys
 nftban_schema_get_renamed() {
     local schema_file="${1:-$NFTBAN_SCHEMA_FILE}"
-    jq -r '.renamed // {}' "$schema_file" 2>/dev/null
+    jq -r '.renamed // {}' "$schema_file" 2>/dev/null || true
 }
 
 # =============================================================================
@@ -148,7 +148,7 @@ nftban_config_merge_json() {
     local base="$1"
     local override="$2"
 
-    echo "$base" "$override" | jq -s '.[0] * .[1]' 2>/dev/null
+    echo "$base" "$override" | jq -s '.[0] * .[1]' 2>/dev/null || echo "{}"
 }
 
 # Load and merge config with local overrides
@@ -215,17 +215,17 @@ nftban_config_validate_value() {
     if [[ -z "$prop_def" ]]; then
         # Check if deprecated
         local deprecated
-        deprecated=$(jq -r --arg key "$key" '.deprecated[$key] // empty' "$schema_file" 2>/dev/null)
+        deprecated=$(jq -r --arg key "$key" '.deprecated[$key] // empty' "$schema_file" 2>/dev/null || true)
         if [[ -n "$deprecated" ]]; then
             local msg
-            msg=$(echo "$deprecated" | jq -r '.message // "This option is deprecated"')
+            msg=$(echo "$deprecated" | jq -r '.message // "This option is deprecated"' || echo "Deprecated")
             echo "DEPRECATED: $key - $msg"
             return 1
         fi
 
         # Check if renamed
         local renamed
-        renamed=$(jq -r --arg key "$key" '.renamed[$key].renamed_to // empty' "$schema_file" 2>/dev/null)
+        renamed=$(jq -r --arg key "$key" '.renamed[$key].renamed_to // empty' "$schema_file" 2>/dev/null || true)
         if [[ -n "$renamed" ]]; then
             echo "RENAMED: $key -> $renamed (update your config)"
             return 1
@@ -238,21 +238,21 @@ nftban_config_validate_value() {
 
     # Type validation
     local prop_type
-    prop_type=$(echo "$prop_def" | jq -r '.type // "string"')
+    prop_type=$(echo "$prop_def" | jq -r '.type // "string"' || echo "string")
 
     # Enum validation
     local enum_values
-    enum_values=$(echo "$prop_def" | jq -r '.enum // empty | @json')
+    enum_values=$(echo "$prop_def" | jq -r '.enum // empty | @json' || true)
     if [[ -n "$enum_values" && "$enum_values" != "null" ]]; then
         if ! echo "$enum_values" | jq -e --arg val "$value" 'index($val) != null' >/dev/null 2>&1; then
-            echo "INVALID: $key='$value' (must be one of: $(echo "$enum_values" | jq -r 'join(", ")'))"
+            echo "INVALID: $key='$value' (must be one of: $(echo "$enum_values" | jq -r 'join(", ")' || true))"
             return 2
         fi
     fi
 
     # Pattern validation (for boolean_string, positive_integer, etc.)
     local ref_type
-    ref_type=$(echo "$prop_def" | jq -r '."$ref" // empty' | sed 's|#/definitions/||')
+    ref_type=$(echo "$prop_def" | jq -r '."$ref" // empty' 2>/dev/null | sed 's|#/definitions/||' || true)
 
     case "$ref_type" in
         boolean_string)
@@ -268,8 +268,8 @@ nftban_config_validate_value() {
             fi
             # Check min/max
             local min max
-            min=$(echo "$prop_def" | jq -r '.minimum // empty')
-            max=$(echo "$prop_def" | jq -r '.maximum // empty')
+            min=$(echo "$prop_def" | jq -r '.minimum // empty' || true)
+            max=$(echo "$prop_def" | jq -r '.maximum // empty' || true)
             if [[ -n "$min" && "$value" -lt "$min" ]]; then
                 echo "INVALID: $key=$value (minimum is $min)"
                 return 2
@@ -310,15 +310,15 @@ nftban_config_validate_conditionals() {
 
         # Check required_when
         local required_when
-        required_when=$(echo "$prop_def" | jq -r '.required_when // empty')
+        required_when=$(echo "$prop_def" | jq -r '.required_when // empty' || true)
 
         if [[ -n "$required_when" && "$required_when" != "null" ]]; then
             local cond_key cond_value
-            cond_key=$(echo "$required_when" | jq -r '.key')
-            cond_value=$(echo "$required_when" | jq -r '.value')
+            cond_key=$(echo "$required_when" | jq -r '.key' || true)
+            cond_value=$(echo "$required_when" | jq -r '.value' || true)
 
             local actual_cond_value
-            actual_cond_value=$(echo "$config_json" | jq -r --arg k "$cond_key" '.[$k] // empty')
+            actual_cond_value=$(echo "$config_json" | jq -r --arg k "$cond_key" '.[$k] // empty' || true)
 
             # Normalize boolean for comparison
             local norm_actual norm_expected
@@ -328,7 +328,7 @@ nftban_config_validate_conditionals() {
             if [[ "$norm_actual" == "$norm_expected" ]]; then
                 # Condition is met, check if key is present
                 local key_value
-                key_value=$(echo "$config_json" | jq -r --arg k "$key" '.[$k] // empty')
+                key_value=$(echo "$config_json" | jq -r --arg k "$key" '.[$k] // empty' || true)
 
                 if [[ -z "$key_value" ]]; then
                     echo "MISSING: $key is required when $cond_key=$cond_value"
@@ -383,14 +383,14 @@ nftban_configtest() {
 
     # Validate each key
     local keys
-    keys=$(echo "$effective_config" | jq -r 'keys[]')
+    keys=$(echo "$effective_config" | jq -r 'keys[]' || true)
 
     while IFS= read -r key; do
         [[ -z "$key" ]] && continue
         [[ "$key" == "_"* ]] && continue  # Skip internal keys
 
         local value
-        value=$(echo "$effective_config" | jq -r --arg k "$key" '.[$k]')
+        value=$(echo "$effective_config" | jq -r --arg k "$key" '.[$k]' || true)
 
         local result
         result=$(nftban_config_validate_value "$key" "$value" "$schema_file")
