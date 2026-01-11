@@ -5,6 +5,55 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.28] - 2026-01-11
+
+### Added
+
+#### Prometheus Metrics Integration
+- **`/metrics` Endpoint**: Native Prometheus metrics endpoint on nftband HTTP server
+- **Ban/Unban Counters**: `nftban_bans_total` and `nftban_unbans_total` with labels:
+  - `source`: portscan-classic, loginmon, ddos, manual, etc.
+  - `family`: ipv4, ipv6
+- **IPC Metrics**: Request counts, latency histograms for daemon communication
+
+#### Journalctl Support for Portscan Detection
+- **Systemd-Only Systems**: Full support for Debian 12, Fedora 39+, and other systems without `/var/log/kern.log`
+- **Auto-Detection**: Automatically falls back to journalctl when traditional log files don't exist
+- **New Config Option**: `PORTSCAN_CLASSIC_USE_JOURNALCTL` (auto/true/false)
+- **CLI Commands**: `nftban portscan check` and `nftban portscan sync` for manual log processing
+
+#### Statistics and Tracking
+- **Daemon Stats Recording**: All ban events now properly logged to `/var/log/nftban/bans.log`
+- **Real-time Metrics**: `current.json` updated with accurate ban/unban counts
+- **IPC Request Tracking**: Latency and success rate metrics for daemon communication
+
+#### Security Enhancements
+- **Service Security Contract**: Comprehensive capability and permission documentation
+- **Security Validator**: `tools/validate-service-security.sh` for compliance checking
+- **Gitleaks CI**: Automated secret scanning in CI pipeline
+
+### Fixed
+
+#### Portscan Module
+- **Progressive Ban Persistence**: State now saved after each detection cycle, not just on disable
+- **Journalctl Silent Failures**: Fixed detection failing silently on systemd-only distributions
+- **Empty Array Checks**: Use `declare -p` instead of `-v` for associative array validation
+
+#### Statistics System
+- **Daemon Ban Logging**: Fixed `handleBanRequest` and EventBan subscriber missing `banlog.LogBan()` calls
+- **Metrics Recording**: Added `RecordBan()`, `RecordUnban()`, `RecordIPCRequest()` calls to daemon handlers
+- **Cache Staleness**: Stats cache now properly invalidated (300s TTL)
+
+#### Code Quality
+- **Shellcheck Warnings**: Fixed SC1090 (dynamic source) and SC2034 (unused variables) across modules
+- **Unused Variables**: Removed `audit_result`, `effective_json`, `cond_code` from config schema module
+
+### Changed
+- **Config Schema**: Expanded to 910+ configuration keys with improved validation
+- **Whitelist Commands**: Added `nftban whitelist add/remove/list` CLI commands
+
+---
+
 ## [1.0.27] - 2026-01-11
 
 ### Added

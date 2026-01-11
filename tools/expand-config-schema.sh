@@ -103,7 +103,7 @@ def make_description:
   "$id": "https://nftban.com/schemas/config-v1.json",
   title: "NFTBan Configuration Schema",
   description: "Schema for NFTBan configuration validation and audit",
-  version: "1.0.27",
+  version: "1.0.28",
   type: "object",
 
   metadata: {
