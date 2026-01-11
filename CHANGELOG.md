@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.27] - 2026-01-11
+
+### Added
+
+#### Smart Configuration Validation System
+- **Schema-Driven Validation**: JSON schema at `/usr/lib/nftban/data/config-schema.json` defines all configuration keys with types, defaults, and constraints
+- **Mode-Aware Validation**: Validates only ACTIVE config files based on module MODE settings (classic/suricata/hybrid/auto)
+- **New CLI Commands**:
+  - `nftban configtest [--verbose] [--json]` - Validate config against schema
+  - `nftban configaudit [--json]` - Audit config for drift, deprecated keys, new options
+  - `nftban config show` - Display effective merged configuration
+  - `nftban config diff` - Show differences from defaults
+- **Upgrade Drift Detection**: Tracks new keys added in upgrades, renamed keys, deprecated keys
+- **Conditional Requirements**: Keys can be marked required only when other keys have specific values
+- **Key Extraction Tool**: `tools/extract-nftban-keys.sh` for automated registry building
+
+#### Configuration Registry Architecture
+- **Zero-Registry Discovery**: Filesystem-based config discovery (matches CLI pattern)
+- **918 Configuration Keys**: Full inventory across 22 config files
+- **Module-Specific Configs**: Proper handling of portscan/ddos/login with classic/suricata variants
+- **Panel Integrations**: 8 hosting panels (DirectAdmin, cPanel, CWP, CyberPanel, InterWorx, Vesta, Plesk, Generic)
+
+### Changed
+- **Help System**: Added configtest/configaudit to CORE commands section
+- **Man Page**: Expanded config command documentation with examples
+- **README**: Updated CLI Overview with new config commands (49 total commands)
+
+### Configuration
+New validation infrastructure:
+```bash
+# Validate all configuration
+nftban configtest --verbose
+
+# Audit for drift and changes
+nftban configaudit
+
+# Show effective merged config
+nftban config show
+```
+
+Exit codes for configtest:
+- 0 = OK (no issues)
+- 1 = Warnings present
+- 2 = Errors present
+- 3 = Critical errors
+
+---
+
 ## [1.0.26] - 2026-01-10
 
 ### Added
