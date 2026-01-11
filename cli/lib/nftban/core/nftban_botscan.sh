@@ -516,12 +516,8 @@ nftban_botscan_process_logs() {
     echo "Processing: $log_file"
     echo "Patterns loaded: ${#_BOTSCAN_PATTERNS[@]}"
 
-    # Process recent entries
-    local since
-    since=$(date -d "-${time_window} seconds" '+%d/%b/%Y:%H:%M:%S' 2>/dev/null || date '+%d/%b/%Y:%H:%M:%S')
-
+    # Process recent entries (last 1000 lines)
     local processed=0
-    local matched=0
 
     while IFS= read -r line; do
         local parsed
