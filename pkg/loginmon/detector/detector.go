@@ -50,6 +50,7 @@ const (
 	ReasonCPanelLogin          uint16 = 4002
 	ReasonWordPressXMLRPC      uint16 = 5001
 	ReasonWordPressWPLogin     uint16 = 5002
+	ReasonPleskLogin           uint16 = 4003
 	ReasonGenericAuthFail      uint16 = 9001
 )
 
@@ -68,6 +69,7 @@ var ReasonName = map[uint16]string{
 	ReasonCPanelLogin:        "cpanel_login_fail",
 	ReasonWordPressXMLRPC:    "wordpress_xmlrpc",
 	ReasonWordPressWPLogin:   "wordpress_wp_login",
+	ReasonPleskLogin:         "plesk_login_fail",
 	ReasonGenericAuthFail:    "generic_auth_fail",
 }
 
@@ -107,11 +109,9 @@ func NewRegistry() *Registry {
 
 	// Register default detectors in priority order
 	r.Register(NewSSHDetector())
-	// Additional detectors will be registered here:
-	// r.Register(NewDovecotDetector())
-	// r.Register(NewPostfixDetector())
-	// r.Register(NewFTPDetector())
-	// r.Register(NewDirectAdminDetector())
+	r.Register(NewMailDetector())
+	r.Register(NewFTPDetector())
+	r.Register(NewPanelDetector())
 
 	return r
 }
