@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.29 - Bot Scanner Core Module
+# NFTBan v1.0.30 - Bot Scanner Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Detect and block bot scanners, webshell probes, exploit attempts
@@ -8,7 +8,7 @@
 # meta:name="nftban_botscan"
 # meta:type="core"
 # meta:header="Bot Scanner Detection Engine"
-# meta:version="1.0.29"
+# meta:version="1.0.30"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 # meta:description="Bot scanner detection using pattern matching on access logs"
