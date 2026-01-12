@@ -297,10 +297,7 @@ func (d *SSHDetector) extractUser(line []byte, fromIdx int) string {
 	}
 
 	// Handle "invalid user <user>" case
-	userBytes := line[userStart:userEnd]
-	if bytes.HasPrefix(userBytes, d.markerInvalid) {
-		userBytes = userBytes[len(d.markerInvalid):]
-	}
+	userBytes := bytes.TrimPrefix(line[userStart:userEnd], d.markerInvalid)
 
 	return string(bytes.TrimSpace(userBytes))
 }

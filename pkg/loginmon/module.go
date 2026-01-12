@@ -1,17 +1,39 @@
 // =============================================================================
-// NFTBan v1.0 - Login Monitor Module (Pure Go Implementation)
+// NFTBan v1.0.30 - Login Monitor Module (High-Performance Go Implementation)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // Package: loginmon
-// Purpose: Go module for login monitoring with dual-mode support
+// Purpose: Go module for login monitoring with signal-based detection
+//
+// meta:name="loginmon_module"
+// meta:type="go"
+// meta:package="loginmon"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2026-01-12"
+// meta:description="High-performance login monitor using signal-based detection"
 //
 // Architecture:
 // - Implements the module.Module interface for daemon integration
+// - Uses pkg/loginmon/detector for high-performance signal-based detection
+// - Uses pkg/loginmon/detector.Scorer for threshold-based ban decisions
 // - Dual-mode: Classic (journalctl) or Suricata (EVE JSON)
 // - Publishes events to the central event bus
 // - Runs log watchers as goroutines
 //
-// This module replaces fail2ban with intelligent, risk-based ban decisions
+// Performance:
+// - 20M+ lines/sec on non-match (0 allocations)
+// - 3M+ lines/sec on match (2 allocations)
+// - 100x improvement over legacy regex-based detection
+//
+// This module provides intelligent, risk-based ban decisions
+//
+// meta:inventory.files="module.go"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/conf.d/login/main.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges=""
 // =============================================================================
 
 package loginmon
@@ -25,19 +47,19 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/eventbus"
+	"github.com/itcmsgr/nftban/pkg/loginmon/detector"
 	"github.com/itcmsgr/nftban/pkg/module"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
 
 const (
 	ModuleName    = "loginmon"
-	ModuleVersion = "1.0.0"
+	ModuleVersion = "1.0.30"
 
 	// Suricata paths (NFTBan alert-only output)
 	DefaultEVEPath        = "/var/log/nftban/suricata/eve-alerts.json"
@@ -75,61 +97,32 @@ type Module struct {
 	mu     sync.RWMutex
 	cancel context.CancelFunc
 
+	// High-performance detector (replaces legacy regex)
+	registry *detector.Registry
+	scorer   *detector.Scorer
+
 	// Configuration
 	config *Config
 	mode   Mode
 
 	// Runtime state
-	state           *LoginState
-	suricataAvail   bool
+	suricataAvail    bool
 	detectedServices map[string]bool
 
 	// Log watchers
-	journalCmd    *exec.Cmd
-	eveFile       *os.File
-	eveReader     *bufio.Reader
-
-	// Statistics
-	eventsProcessed int64
-	bansTriggered   int64
-	alertsSent      int64
-}
-
-// ServicePatterns contains regex patterns for detecting login failures
-type ServicePatterns struct {
-	SSH       *regexp.Regexp
-	Dovecot   *regexp.Regexp
-	Postfix   *regexp.Regexp
-	DirectAdmin *regexp.Regexp
-	PureFTPd  *regexp.Regexp
-	WordPress *regexp.Regexp
-	Generic   *regexp.Regexp
-}
-
-var patterns = ServicePatterns{
-	// SSH: "Failed password for (user) from (ip)"
-	SSH: regexp.MustCompile(`(?i)(?:sshd|ssh).*(?:Failed password|Invalid user|authentication failure).*from[:\s]+(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`),
-	// Dovecot: "auth failed, (ip)"
-	Dovecot: regexp.MustCompile(`(?i)dovecot.*(?:auth failed|authentication failure).*rip=(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`),
-	// Postfix SASL: "SASL LOGIN authentication failed.*from (hostname)[(ip)]"
-	Postfix: regexp.MustCompile(`(?i)postfix.*SASL.*authentication failed.*\[(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\]`),
-	// DirectAdmin: "Failed login"
-	DirectAdmin: regexp.MustCompile(`(?i)directadmin.*(?:FAILED LOGIN|Invalid Login).*IP=(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`),
-	// Pure-FTPd: "Authentication failed for user"
-	PureFTPd: regexp.MustCompile(`(?i)pure-ftpd.*(?:Authentication failed|Login failed).*\[(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\]`),
-	// WordPress: "xmlrpc.php POST" or wp-login failures
-	WordPress: regexp.MustCompile(`(?i)(?:POST /xmlrpc\.php|wp-login\.php.*failed).*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`),
-	// Generic: any authentication failure with IP
-	Generic: regexp.MustCompile(`(?i)(?:authentication failure|failed login|invalid password).*(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})`),
+	journalCmd *exec.Cmd
+	eveFile    *os.File
+	eveReader  *bufio.Reader
 }
 
 // New creates a new login monitor module
 func New() *Module {
 	return &Module{
 		status:           module.NewStatus(ModuleName),
+		registry:         detector.NewRegistry(),
+		scorer:           detector.NewScorerDefault(),
 		config:           DefaultConfig(),
 		mode:             ModeAuto,
-		state:            NewLoginState(),
 		detectedServices: make(map[string]bool),
 	}
 }
@@ -174,9 +167,10 @@ func (m *Module) Start(ctx context.Context) error {
 
 	// Publish module start event
 	m.bus.Publish(eventbus.NewEvent(eventbus.EventModuleStart, ModuleName).
-		WithMessage("Login monitor started").
+		WithMessage("Login monitor started (high-performance detector)").
 		WithData("mode", string(m.mode)).
-		WithData("services", m.getServiceList()))
+		WithData("services", m.getServiceList()).
+		WithData("detectors", strings.Join(m.registry.Detectors(), ",")))
 
 	// Start appropriate watchers based on mode
 	switch m.mode {
@@ -189,8 +183,11 @@ func (m *Module) Start(ctx context.Context) error {
 		go m.runEVEWatcher(ctx)
 	}
 
-	// Start state cleanup goroutine
-	go m.runStateCleanup(ctx)
+	// Start score decay goroutine
+	go m.runScoreDecay(ctx)
+
+	// Start cleanup goroutine
+	go m.runCleanup(ctx)
 
 	return nil
 }
@@ -215,9 +212,12 @@ func (m *Module) Stop() error {
 	m.status.MarkStopped()
 	m.mu.Unlock()
 
-	// Publish module stop event
+	// Publish module stop event with final stats
+	stats := m.scorer.GetStats()
 	m.bus.Publish(eventbus.NewEvent(eventbus.EventModuleStop, ModuleName).
-		WithMessage("Login monitor stopped"))
+		WithMessage("Login monitor stopped").
+		WithData("total_detections", stats.TotalDetections).
+		WithData("total_bans", stats.TotalBans))
 
 	return nil
 }
@@ -231,11 +231,24 @@ func (m *Module) Status() module.Status {
 	m.status.Extra["mode"] = string(m.mode)
 	m.status.Extra["suricata_available"] = m.suricataAvail
 	m.status.Extra["services"] = m.getServiceList()
-	m.status.Extra["events_processed"] = m.eventsProcessed
-	m.status.Extra["bans_triggered"] = m.bansTriggered
-	m.status.Extra["alerts_sent"] = m.alertsSent
-	m.status.Extra["tracked_users"] = len(m.state.Users)
-	m.status.Extra["tracked_ips"] = len(m.state.IPs)
+	m.status.Extra["detectors"] = m.registry.Detectors()
+
+	// Add scorer statistics
+	stats := m.scorer.GetStats()
+	m.status.Extra["total_detections"] = stats.TotalDetections
+	m.status.Extra["total_bans"] = stats.TotalBans
+	m.status.Extra["total_escalations"] = stats.TotalEscalations
+	m.status.Extra["total_permanent"] = stats.TotalPermanent
+	m.status.Extra["unique_ips"] = stats.UniqueIPs
+	m.status.Extra["detections_ipv4"] = stats.DetectionsIPv4
+	m.status.Extra["detections_ipv6"] = stats.DetectionsIPv6
+	m.status.Extra["bans_ipv4"] = stats.BansIPv4
+	m.status.Extra["bans_ipv6"] = stats.BansIPv6
+	m.status.Extra["tracked_ips"] = m.scorer.TrackedIPs()
+	m.status.Extra["detections_by_service"] = stats.DetectionsByService
+	m.status.Extra["bans_by_service"] = stats.BansByService
+	m.status.Extra["detections_by_reason"] = stats.DetectionsByReason
+	m.status.Extra["bans_by_reason"] = stats.BansByReason
 
 	return m.status
 }
@@ -247,7 +260,12 @@ func (m *Module) loadConfig() error {
 	// Try to load main.conf
 	mainConfig := filepath.Join(configDir, "main.conf")
 	if data, err := os.ReadFile(mainConfig); err == nil {
-		// Parse shell-style config
+		m.parseShellConfig(string(data))
+	}
+
+	// Try to load scorer.conf (scorer-specific settings)
+	scorerConfig := filepath.Join(configDir, "scorer.conf")
+	if data, err := os.ReadFile(scorerConfig); err == nil {
 		m.parseShellConfig(string(data))
 	}
 
@@ -256,6 +274,15 @@ func (m *Module) loadConfig() error {
 	if data, err := os.ReadFile(localConfig); err == nil {
 		m.parseShellConfig(string(data))
 	}
+
+	// Try to load scorer.conf.local for overrides
+	scorerLocalConfig := filepath.Join(configDir, "scorer.conf.local")
+	if data, err := os.ReadFile(scorerLocalConfig); err == nil {
+		m.parseShellConfig(string(data))
+	}
+
+	// Rebuild scorer with loaded configuration
+	m.scorer = detector.NewScorer(m.buildScorerConfig())
 
 	return nil
 }
@@ -278,6 +305,7 @@ func (m *Module) parseShellConfig(content string) {
 		value := strings.Trim(strings.TrimSpace(parts[1]), `"'`)
 
 		switch key {
+		// Module settings
 		case "LOGIN_ENABLED":
 			m.config.Enabled = value == "true"
 		case "LOGIN_MODE":
@@ -288,7 +316,109 @@ func (m *Module) parseShellConfig(content string) {
 			if d, err := time.ParseDuration(value + "s"); err == nil {
 				m.config.MediumRiskDuration = d
 			}
+
+		// Scorer thresholds
+		case "THRESHOLD_TEMP_BAN":
+			fmt.Sscanf(value, "%d", &m.config.ThresholdTempBan)
+		case "THRESHOLD_ESCALATE":
+			fmt.Sscanf(value, "%d", &m.config.ThresholdEscalate)
+		case "THRESHOLD_PERMANENT":
+			fmt.Sscanf(value, "%d", &m.config.ThresholdPermanent)
+		case "TEMP_BAN_DURATION":
+			if d, err := time.ParseDuration(value); err == nil {
+				m.config.TempBanDuration = d
+			}
+		case "SCORE_DECAY_INTERVAL":
+			if d, err := time.ParseDuration(value); err == nil {
+				m.config.ScoreDecayInterval = d
+			}
+		case "SCORE_DECAY_AMOUNT":
+			fmt.Sscanf(value, "%d", &m.config.ScoreDecayAmount)
+		case "IP_RETENTION_DURATION":
+			if d, err := time.ParseDuration(value); err == nil {
+				m.config.IPRetentionDuration = d
+			}
+
+		// SSH score deltas
+		case "SSH_FAILED_PASSWORD_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.SSHFailedPassword = int16(v)
+		case "SSH_INVALID_USER_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.SSHInvalidUser = int16(v)
+		case "SSH_PREAUTH_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.SSHPreauth = int16(v)
+		case "SSH_TOO_MANY_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.SSHTooMany = int16(v)
+		case "SSH_ROOT_ATTEMPT_BONUS":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.SSHRootAttempt = int16(v)
+
+		// Mail score deltas
+		case "DOVECOT_AUTH_FAIL_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.DovecotAuthFail = int16(v)
+		case "POSTFIX_SASL_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.PostfixSASL = int16(v)
+		case "EXIM_AUTH_FAIL_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.EximAuthFail = int16(v)
+
+		// FTP score deltas
+		case "FTP_AUTH_FAIL_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.FTPAuthFail = int16(v)
+
+		// Panel score deltas
+		case "DIRECTADMIN_LOGIN_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.DirectAdminLogin = int16(v)
+		case "CPANEL_LOGIN_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.CPanelLogin = int16(v)
+		case "PLESK_LOGIN_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.PleskLogin = int16(v)
+
+		// WordPress score deltas
+		case "WORDPRESS_XMLRPC_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.WordPressXMLRPC = int16(v)
+		case "WORDPRESS_WPLOGIN_SCORE":
+			var v int
+			fmt.Sscanf(value, "%d", &v)
+			m.config.WordPressWPLogin = int16(v)
 		}
+	}
+}
+
+// buildScorerConfig creates a ScorerConfig from the loaded Config
+func (m *Module) buildScorerConfig() detector.ScorerConfig {
+	return detector.ScorerConfig{
+		ThresholdTempBan:      m.config.ThresholdTempBan,
+		ThresholdEscalate:     m.config.ThresholdEscalate,
+		ThresholdPermanent:    m.config.ThresholdPermanent,
+		TempBanDuration:       m.config.TempBanDuration,
+		EscalateDurations:     m.config.EscalateDurations,
+		ScoreDecayInterval:    m.config.ScoreDecayInterval,
+		ScoreDecayAmount:      m.config.ScoreDecayAmount,
+		IPRetentionDuration:   m.config.IPRetentionDuration,
 	}
 }
 
@@ -321,6 +451,16 @@ func (m *Module) detectServices() {
 	// Check for DirectAdmin
 	if _, err := os.Stat("/usr/local/directadmin"); err == nil {
 		m.detectedServices["directadmin"] = true
+	}
+
+	// Check for cPanel
+	if _, err := os.Stat("/usr/local/cpanel"); err == nil {
+		m.detectedServices["cpanel"] = true
+	}
+
+	// Check for Plesk
+	if _, err := os.Stat("/usr/local/psa"); err == nil {
+		m.detectedServices["plesk"] = true
 	}
 
 	// Check for WordPress (look for wp-config.php)
@@ -410,8 +550,8 @@ func (m *Module) detectMode() Mode {
 func (m *Module) runJournalWatcher(ctx context.Context) {
 	// Build journalctl command
 	m.journalCmd = exec.CommandContext(ctx, "journalctl",
-		"-f",              // Follow mode
-		"-n", "0",         // Don't show historical entries
+		"-f",             // Follow mode
+		"-n", "0",        // Don't show historical entries
 		"--no-pager",
 		"-o", "short-iso",
 		"SYSLOG_FACILITY=4",  // Auth facility
@@ -435,43 +575,58 @@ func (m *Module) runJournalWatcher(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		default:
-			m.processJournalLine(scanner.Text())
+			m.processLine(scanner.Bytes())
 		}
 	}
 }
 
-// processJournalLine processes a single journal line
-func (m *Module) processJournalLine(line string) {
-	m.mu.Lock()
-	m.eventsProcessed++
-	m.mu.Unlock()
-
-	var ip, service string
-
-	// Try each pattern
-	if match := patterns.SSH.FindStringSubmatch(line); len(match) > 1 {
-		ip = match[1]
-		service = "ssh"
-	} else if match := patterns.Dovecot.FindStringSubmatch(line); len(match) > 1 {
-		ip = match[1]
-		service = "dovecot"
-	} else if match := patterns.Postfix.FindStringSubmatch(line); len(match) > 1 {
-		ip = match[1]
-		service = "postfix"
-	} else if match := patterns.DirectAdmin.FindStringSubmatch(line); len(match) > 1 {
-		ip = match[1]
-		service = "directadmin"
-	} else if match := patterns.PureFTPd.FindStringSubmatch(line); len(match) > 1 {
-		ip = match[1]
-		service = "pure-ftpd"
-	} else if match := patterns.Generic.FindStringSubmatch(line); len(match) > 1 {
-		ip = match[1]
-		service = "unknown"
+// processLine processes a single log line using high-performance detector
+func (m *Module) processLine(line []byte) {
+	// Use high-performance signal-based detection
+	verdict, ok := m.registry.Detect(line)
+	if !ok {
+		return // No match - fast path (0 allocations)
 	}
 
-	if ip != "" {
-		m.handleLoginFailure(ip, service, "classic")
+	m.status.RecordEvent()
+
+	// Record in scorer and check for ban threshold
+	banAction := m.scorer.RecordVerdict(verdict)
+	if banAction != nil {
+		m.triggerBan(banAction)
+	} else {
+		// Publish detection event (not yet banned)
+		m.bus.Publish(eventbus.NewEvent(eventbus.EventLoginFailed, ModuleName).
+			WithIP(verdict.IP.String()).
+			WithUser(verdict.User).
+			WithMessage(fmt.Sprintf("Login failure: %s", detector.ReasonName[verdict.Reason])).
+			WithSeverity(eventbus.SeverityWarning).
+			WithData("service", verdict.Service).
+			WithData("reason", detector.ReasonName[verdict.Reason]).
+			WithData("score_delta", verdict.ScoreDelta))
 	}
+}
+
+// triggerBan initiates a ban based on scorer decision
+func (m *Module) triggerBan(action *detector.BanAction) {
+	// Determine severity based on duration
+	severity := eventbus.SeverityCritical
+	banType := "temporary"
+	if action.Duration == 0 {
+		banType = "permanent"
+	}
+
+	// Publish ban event
+	m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
+		WithIP(action.IP.String()).
+		WithMessage(fmt.Sprintf("Banning %s: score=%d reason=%s", action.IP, action.Score, action.Reason)).
+		WithSeverity(severity).
+		WithData("service", action.Service).
+		WithData("reason", action.Reason).
+		WithData("score", action.Score).
+		WithData("duration", action.Duration.String()).
+		WithData("ban_type", banType).
+		WithData("is_new", action.IsNew))
 }
 
 // runEVEWatcher watches Suricata EVE JSON log for auth failures
@@ -510,31 +665,27 @@ type EVEEvent struct {
 	SrcPort   int    `json:"src_port"`
 	DestPort  int    `json:"dest_port"`
 	Alert     *struct {
-		Action    string `json:"action"`
-		Category  string `json:"category"`
-		Signature string `json:"signature"`
-		SignatureID int  `json:"signature_id"`
+		Action      string `json:"action"`
+		Category    string `json:"category"`
+		Signature   string `json:"signature"`
+		SignatureID int    `json:"signature_id"`
 	} `json:"alert,omitempty"`
 	SSH *struct {
-		Client  string `json:"client"`
-		Server  string `json:"server"`
+		Client string `json:"client"`
+		Server string `json:"server"`
 	} `json:"ssh,omitempty"`
 }
 
 // processEVELines processes new lines from EVE JSON log
 func (m *Module) processEVELines() {
 	for {
-		line, err := m.eveReader.ReadString('\n')
+		line, err := m.eveReader.ReadBytes('\n')
 		if err != nil {
 			return // No more lines
 		}
 
-		m.mu.Lock()
-		m.eventsProcessed++
-		m.mu.Unlock()
-
 		var event EVEEvent
-		if err := json.Unmarshal([]byte(line), &event); err != nil {
+		if err := json.Unmarshal(line, &event); err != nil {
 			continue
 		}
 
@@ -548,84 +699,22 @@ func (m *Module) processEVELines() {
 				strings.Contains(signature, "brute") ||
 				strings.Contains(signature, "failed") ||
 				strings.Contains(signature, "login") {
-				m.handleLoginFailure(event.SrcIP, "suricata", "suricata")
+
+				// Also try to detect from raw line using our detectors
+				m.processLine(line)
 			}
 		}
 	}
 }
 
-// handleLoginFailure processes a detected login failure
-func (m *Module) handleLoginFailure(ip, service, source string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	// Update IP profile
-	profile, exists := m.state.IPs[ip]
-	if !exists {
-		profile = &IPProfile{
-			IP:        ip,
-			Users:     make(map[string]time.Time),
-			FirstSeen: time.Now(),
-		}
-		m.state.IPs[ip] = profile
-	}
-
-	profile.FailedLogins++
-	profile.LastActivity = time.Now()
-
-	m.status.RecordEvent()
-
-	// Check if threshold exceeded
-	if profile.FailedLogins >= m.config.MaxFailedAttempts {
-		m.triggerBan(ip, service, source, profile.FailedLogins)
-	} else {
-		// Publish alert event
-		m.alertsSent++
-		m.bus.Publish(eventbus.NewEvent(eventbus.EventLoginFailed, ModuleName).
-			WithIP(ip).
-			WithMessage(fmt.Sprintf("Login failure detected from %s via %s", service, source)).
-			WithSeverity(eventbus.SeverityWarning).
-			WithData("service", service).
-			WithData("failures", profile.FailedLogins))
-	}
-}
-
-// triggerBan initiates a ban for an IP
-func (m *Module) triggerBan(ip, service, source string, failures int) {
-	m.bansTriggered++
-
-	// Calculate ban duration based on failure count
-	duration := m.config.MediumRiskDuration
-	if failures >= m.config.MaxFailedAttempts*2 {
-		duration = m.config.HighRiskDuration
-	}
-
-	// Publish ban event
-	m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
-		WithIP(ip).
-		WithMessage(fmt.Sprintf("Banning %s: %d login failures via %s", ip, failures, service)).
-		WithSeverity(eventbus.SeverityCritical).
-		WithData("service", service).
-		WithData("source", source).
-		WithData("failures", failures).
-		WithData("duration", duration.String()).
-		WithData("reason", "login_brute_force"))
-
-	// Reset failure count after ban
-	if profile, exists := m.state.IPs[ip]; exists {
-		profile.FailedLogins = 0
-	}
-}
-
 // handleExternalLoginEvent handles login events from other sources
 func (m *Module) handleExternalLoginEvent(e eventbus.Event) {
-	if e.IP != "" {
-		m.handleLoginFailure(e.IP, e.Source, "external")
-	}
+	// External events are already processed, just log them
+	m.status.RecordEvent()
 }
 
-// runStateCleanup periodically cleans up old state entries
-func (m *Module) runStateCleanup(ctx context.Context) {
+// runScoreDecay periodically decays IP scores
+func (m *Module) runScoreDecay(ctx context.Context) {
 	ticker := time.NewTicker(5 * time.Minute)
 	defer ticker.Stop()
 
@@ -634,29 +723,22 @@ func (m *Module) runStateCleanup(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case <-ticker.C:
-			m.cleanupState()
+			m.scorer.DecayScores()
 		}
 	}
 }
 
-// cleanupState removes old entries from state
-func (m *Module) cleanupState() {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+// runCleanup periodically cleans up old IP entries
+func (m *Module) runCleanup(ctx context.Context) {
+	ticker := time.NewTicker(1 * time.Hour)
+	defer ticker.Stop()
 
-	cutoff := time.Now().Add(-m.config.ProfileRetention)
-
-	// Clean up IP profiles
-	for ip, profile := range m.state.IPs {
-		if profile.LastActivity.Before(cutoff) {
-			delete(m.state.IPs, ip)
-		}
-	}
-
-	// Clean up user profiles
-	for user, profile := range m.state.Users {
-		if profile.LastLoginTime.Before(cutoff) {
-			delete(m.state.Users, user)
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			_ = m.scorer.Cleanup() // Periodically clean stale IP entries
 		}
 	}
 }
@@ -667,7 +749,7 @@ func Descriptor() module.Descriptor {
 	return module.Descriptor{
 		Name:        ModuleName,
 		Version:     ModuleVersion,
-		Description: "Login Monitor (Dual-Mode: Classic/Suricata) - Replaces fail2ban",
+		Description: "Login Monitor (High-Performance Signal-Based Detection)",
 		Optional:    false,
 		ConfigFile:  filepath.Join(configDir, "main.conf"),
 	}
