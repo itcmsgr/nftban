@@ -583,8 +583,13 @@ nftban_configtest() {
     fi
 
     # Validate each key (mode-aware)
+    # Temporarily disable errexit for validation loop (validation returns non-zero for warnings)
+    local old_errexit
+    old_errexit=$(set +o | grep errexit)
+    set +e
+
     local keys
-    keys=$(echo "$effective_config" | jq -r 'keys[]' || true)
+    keys=$(echo "$effective_config" | jq -r 'keys[]' 2>/dev/null || true)
 
     while IFS= read -r key; do
         [[ -z "$key" ]] && continue
@@ -602,10 +607,11 @@ nftban_configtest() {
         ((validated++))
 
         local value
-        value=$(echo "$effective_config" | jq -r --arg k "$key" '.[$k]' || true)
+        value=$(echo "$effective_config" | jq -r --arg k "$key" '.[$k]' 2>/dev/null || true)
 
-        local result exit_code=0
-        result=$(nftban_config_validate_value "$key" "$value" "$schema_file") || exit_code=$?
+        local result exit_code
+        result=$(nftban_config_validate_value "$key" "$value" "$schema_file" 2>/dev/null)
+        exit_code=$?
 
         if [[ -n "$result" ]]; then
             messages+=("$result")
@@ -618,6 +624,9 @@ nftban_configtest() {
             messages+=("OK: $key=$value")
         fi
     done <<< "$keys"
+
+    # Restore errexit state
+    eval "$old_errexit"
 
     # Validate conditional requirements
     local cond_result
