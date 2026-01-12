@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.29 - Bot Scanner CLI Handler
+# NFTBan v1.0.30 - Bot Scanner CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #
 # meta:name="cmd_botscan"
 # meta:type="cli"
 # meta:header="Bot Scanner CLI"
-# meta:version="1.0.29"
+# meta:version="1.0.30"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

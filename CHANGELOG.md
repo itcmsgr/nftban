@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.30] - 2026-01-12
+
+### Added
+
+#### High-Performance Go Login Detection Engine (Phase 1)
+- **New Binary**: `nftban-login-detect` - Go-based auth log stream processor
+- **Signal-Based Detection**: `bytes.Contains` prefilter before expensive parsing (SIMD-accelerated)
+- **Zero-Copy Processing**: `[]byte` slicing, no string allocation on non-match lines
+- **SSH Detector**: First detector implementation with production-proven patterns
+  - `Failed password for` - Standard failed login
+  - `Invalid user` - Unknown user attempts
+  - `Disconnected from ... preauth` - Scanner detection
+  - `Too many authentication failures` - Brute force detection
+- **Modern IP Handling**: `netip.Addr` for IPv4/IPv6 support (including IPv4-mapped IPv6)
+- **Batched Enforcement**: 50-250ms action batching to reduce nftables syscalls
+- **Unified Scoring Engine**: Native Go float64 (replaces `bc` subprocess)
+- **Integration**: Uses existing `nftban ban` mechanism via IPC
+
+#### Architecture Improvements
+- **Detector Interface**: Modular `Detector` interface for easy service extension
+- **Cross-Source Correlation Ready**: Foundation for Phase 2 Suricata integration
+- **Performance Target**: 100,000+ lines/sec (100x improvement over Bash)
+
+### Unchanged (Scope Validation)
+The following modules remain **100% unaffected** by this release:
+- **Botscan**: HTTP access log analysis (`cmd_botscan.sh`, `nftban_botscan.sh`)
+- **Portscan**: Network port scan detection (`cmd_portscan.sh`)
+- **DDoS**: Rate limiting/flood protection (`nftban_ddos.sh`)
+- **Panel**: Port management (`cmd_panel.sh`)
+- **Pattern files**: All `patterns.d/botscan/` patterns unchanged
+- **Suricata mode**: Login Suricata detection deferred to Phase 2
+
+### Technical Notes
+- Phase 1 focuses on Classic mode (journalctl-based) login detection only
+- Suricata EVE JSON integration planned for Phase 2
+- Full architectural review documented in `/home/commonfolder/log_management_nftban/SENIOR_DEVOPS_REVIEW.md`
+
+---
+
 ## [1.0.29] - 2026-01-11
 
 ### Added
