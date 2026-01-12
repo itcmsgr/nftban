@@ -9189,6 +9189,296 @@
       "category": "system",
       "config_file": "conf.d/stats.conf",
       "active_when": "always"
+    },
+    "BOTSCAN_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Bot scanner enabled",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_ACTION_MODE": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "both",
+      "description": "Bot scanner action mode",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_LOG_AUTO": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Bot scanner log auto",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_LOG_APACHE": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "/var/log/apache2/access.log",
+      "description": "Bot scanner log apache",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_LOG_APACHE_ALT": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "/var/log/httpd/access_log",
+      "description": "Bot scanner log apache alt",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_LOG_NGINX": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "/var/log/nginx/access.log",
+      "description": "Bot scanner log nginx",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_DEFAULT_THRESHOLD": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "5",
+      "description": "Bot scanner default threshold",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_DEFAULT_WINDOW": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "60",
+      "description": "Bot scanner default window",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_DEFAULT_BAN_SHORT": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "1800",
+      "description": "Bot scanner default ban short",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_DEFAULT_BAN_LONG": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "7200",
+      "description": "Bot scanner default ban long",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_404_TRACKING": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Bot scanner 404 tracking",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_404_THRESHOLD": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "50",
+      "description": "Bot scanner 404 threshold",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_404_WINDOW": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "300",
+      "description": "Bot scanner 404 window",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_404_BAN": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "3600",
+      "description": "Bot scanner 404 ban",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_PROGRESSIVE_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Bot scanner progressive enabled",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_PROGRESSIVE_MULTIPLIER": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "2",
+      "description": "Bot scanner progressive multiplier",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_PROGRESSIVE_MAX": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "86400",
+      "description": "Bot scanner progressive max",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_PATTERNS_DIR": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "${NFTBAN_CONFIG_DIR:-/etc/nftban}/patterns.d/botscan",
+      "description": "Bot scanner patterns dir",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_PATTERN_FILES": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "webshell.patterns,exploit.patterns,scanner.patterns,custom.patterns",
+      "description": "Bot scanner pattern files",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_WHITELIST_BOTS": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "googlebot,bingbot,yandexbot,duckduckbot,slurp,facebot",
+      "description": "Bot scanner whitelist bots",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_WHITELIST_PATHS": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "/robots\\.txt|/favicon\\.ico|/sitemap\\.xml|/ads\\.txt",
+      "description": "Bot scanner whitelist paths",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_USE_GLOBAL_WHITELIST": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Bot scanner use global whitelist",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_STATE_FILE": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "${NFTBAN_DATA_DIR:-/var/lib/nftban}/botscan-state.db",
+      "description": "Bot scanner state file",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_LOG_FILE": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "${NFTBAN_LOG_DIR:-/var/log/nftban}/botscan.log",
+      "description": "Bot scanner log file",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_DEBUG": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Bot scanner debug",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_PROMETHEUS_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Bot scanner prometheus enabled",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_GEOIP_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Bot scanner geoip enabled",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "BOTSCAN_ALERT_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Bot scanner alert enabled",
+      "introduced_in": "1.0.29",
+      "category": "modules",
+      "config_file": "conf.d/botscan/main.conf",
+      "active_when": "always"
+    },
+    "PORTSCAN_CLASSIC_USE_JOURNALCTL": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "auto",
+      "description": "Portscan classic use journalctl for log reading (auto/true/false)",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/portscan/classic.conf",
+      "active_when": "portscan_classic"
     }
   },
   "deprecated": {
