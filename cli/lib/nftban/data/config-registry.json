@@ -3,7 +3,6 @@
   "schema_version": "1.0.30",
   "generated_at": "2026-01-11",
   "description": "NFTBan Configuration Registry - Mode-aware validation metadata",
-
   "activation_rules": {
     "always": "File is always active",
     "portscan_classic": "PORTSCAN_MODE in [classic, hybrid] OR (PORTSCAN_MODE=auto AND !suricata_detected)",
@@ -14,19 +13,29 @@
     "login_suricata": "LOGIN_MODE in [suricata, hybrid] OR (LOGIN_MODE=auto AND suricata_detected)",
     "panel_detected": "Panel auto-detected or explicitly configured"
   },
-
   "runtime_checks": {
     "suricata_detected": {
       "description": "Check if Suricata is available and running",
       "checks": [
-        {"type": "service", "name": "suricata", "check": "is-active"},
-        {"type": "binary", "path": "/usr/bin/suricata", "check": "exists"},
-        {"type": "file_fresh", "path": "/var/log/suricata/eve.json", "max_age_seconds": 300}
+        {
+          "type": "service",
+          "name": "suricata",
+          "check": "is-active"
+        },
+        {
+          "type": "binary",
+          "path": "/usr/bin/suricata",
+          "check": "exists"
+        },
+        {
+          "type": "file_fresh",
+          "path": "/var/log/suricata/eve.json",
+          "max_age_seconds": 300
+        }
       ],
       "require_all": true
     }
   },
-
   "categories": {
     "system": "Core system settings",
     "paths": "Filesystem paths",
@@ -37,7 +46,6 @@
     "notifications": "Alert and notification settings",
     "panels": "Hosting panel integration"
   },
-
   "files": {
     "conf.d/banner.conf": {
       "description": "CLI banner configuration",
@@ -63,14 +71,18 @@
       "category": "features",
       "key_count": 18
     },
-
     "conf.d/portscan/main.conf": {
       "description": "Portscan module main configuration (MODE selector)",
       "active_when": "always",
       "category": "modules",
       "key_count": 26,
       "mode_key": "PORTSCAN_MODE",
-      "mode_values": ["auto", "classic", "suricata", "hybrid"]
+      "mode_values": [
+        "auto",
+        "classic",
+        "suricata",
+        "hybrid"
+      ]
     },
     "conf.d/portscan/classic.conf": {
       "description": "Portscan classic mode (log-based detection)",
@@ -87,14 +99,18 @@
       "depends_on": "conf.d/portscan/main.conf",
       "requires_runtime": "suricata_detected"
     },
-
     "conf.d/ddos/main.conf": {
       "description": "DDoS module main configuration (MODE selector)",
       "active_when": "always",
       "category": "modules",
       "key_count": 26,
       "mode_key": "DDOS_MODE",
-      "mode_values": ["auto", "classic", "suricata", "hybrid"]
+      "mode_values": [
+        "auto",
+        "classic",
+        "suricata",
+        "hybrid"
+      ]
     },
     "conf.d/ddos/classic.conf": {
       "description": "DDoS classic mode (rate limiting, SYN flood protection)",
@@ -111,14 +127,18 @@
       "depends_on": "conf.d/ddos/main.conf",
       "requires_runtime": "suricata_detected"
     },
-
     "conf.d/login/main.conf": {
       "description": "Login monitor main configuration (MODE selector)",
       "active_when": "always",
       "category": "modules",
       "key_count": 51,
       "mode_key": "LOGIN_MODE",
-      "mode_values": ["auto", "classic", "suricata", "hybrid"]
+      "mode_values": [
+        "auto",
+        "classic",
+        "suricata",
+        "hybrid"
+      ]
     },
     "conf.d/login/classic.conf": {
       "description": "Login classic mode (auth log monitoring)",
@@ -142,7 +162,6 @@
       "key_count": 253,
       "depends_on": "conf.d/login/main.conf"
     },
-
     "conf.d/botscan/main.conf": {
       "description": "Bot scanner module configuration (URL and User-Agent detection)",
       "active_when": "always",
@@ -150,7 +169,6 @@
       "key_count": 25,
       "comment": "Detects webshell probes, exploit scanners, bad bots via access log analysis"
     },
-
     "conf.d/panels/directadmin/main.conf": {
       "description": "DirectAdmin panel integration",
       "active_when": "panel_detected",
@@ -206,9 +224,16 @@
       "category": "panels",
       "key_count": 20,
       "panel_name": "generic"
+    },
+    "conf.d/login/scorer.conf": {
+      "description": "Login scorer configuration (high-performance score-based detection)",
+      "active_when": "always",
+      "category": "detection",
+      "key_count": 21,
+      "depends_on": "conf.d/login/main.conf",
+      "comment": "Score-based login failure detection with decay and thresholds"
     }
   },
-
   "key_prefixes": {
     "PORTSCAN_CLASSIC_": {
       "active_when": "portscan_classic",
@@ -299,9 +324,18 @@
       "active_when": "panel_detected",
       "category": "panels",
       "description": "Panel integration settings"
+    },
+    "THRESHOLD_": {
+      "active_when": "always",
+      "category": "detection",
+      "description": "Login scorer threshold settings"
+    },
+    "SCORE_DECAY_": {
+      "active_when": "always",
+      "category": "detection",
+      "description": "Login scorer decay settings"
     }
   },
-
   "deprecated_keys": {
     "NFTBAN_FAIL2BAN_ENABLED": {
       "deprecated_in": "1.0.15",
@@ -309,7 +343,6 @@
       "message": "Fail2ban integration removed, use native suricata mode"
     }
   },
-
   "renamed_keys": {
     "PORTSCAN_THRESHOLD": {
       "renamed_to": "PORTSCAN_BAN_THRESHOLD",

@@ -1275,6 +1275,29 @@ install_configs() {
         ok "Installed $pattern_count botscan pattern files"
     fi
 
+    # Install module config directories (login, ddos, portscan, rbl)
+    # These contain mode-specific configurations (classic.conf, suricata.conf, etc.)
+    for module in login ddos portscan rbl; do
+        local src_dir="$SCRIPT_DIR/etc/nftban/conf.d/$module"
+        local dst_dir="/etc/nftban/conf.d/$module"
+        if [[ -d "$src_dir" ]]; then
+            for conf_file in "$src_dir"/*.conf; do
+                if [[ -f "$conf_file" ]]; then
+                    local conf_name
+                    conf_name=$(basename "$conf_file")
+                    if [[ ! -f "$dst_dir/$conf_name" ]]; then
+                        cp -f "$conf_file" "$dst_dir/$conf_name"
+                        chmod 640 "$dst_dir/$conf_name"
+                        chown root:nftban "$dst_dir/$conf_name"
+                    fi
+                fi
+            done
+            local conf_count
+            conf_count=$(ls -1 "$dst_dir"/*.conf 2>/dev/null | wc -l)
+            ok "Installed $conf_count $module config files"
+        fi
+    done
+
     # Install GUI groups config if exists
     if [[ -f "$SCRIPT_DIR/install/config/allowed-gui-groups" ]]; then
         cp -f "$SCRIPT_DIR/install/config/allowed-gui-groups" /etc/nftban/
