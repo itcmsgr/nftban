@@ -629,7 +629,7 @@ func (m *Module) triggerBan(action *detector.BanAction) {
 
 	// Determine IP family
 	family := "ipv4"
-	if action.IP.To4() == nil {
+	if !action.IP.Is4() {
 		family = "ipv6"
 	}
 
