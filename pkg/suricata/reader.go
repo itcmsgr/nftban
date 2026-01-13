@@ -10,7 +10,7 @@
 // meta:input="Suricata eve.json file"
 // meta:output="Parsed EveAlert structs"
 // meta:depends="bufio,encoding/json"
-// meta:inventory.files="/var/log/suricata/eve.json"
+// meta:inventory.files="/var/log/nftban/suricata/eve-alerts.json"
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
 // meta:inventory.config_files=""
