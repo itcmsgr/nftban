@@ -5,25 +5,32 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Standardized output, banners, and formatting for all modules
 #
-# meta:name=nftban_output
-# meta:type=core
-# meta:header=Output & Banner Module
-# meta:version=1.0.0
+# meta:name="nftban_output"
+# meta:type="core"
+# meta:header="Output & Banner Module"
+# meta:version="1.0.32"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Core output module providing banners, formatting, and module load messages
-# meta:input=Configuration from conf.d/banner.conf, module meta fields
-# meta:output=Formatted banners, module load messages, error messages
+# meta:description="Core output module providing banners, formatting, and module load messages"
+# meta:input="Configuration from conf.d/banner.conf, module meta fields"
+# meta:output="Formatted banners, module load messages, error messages"
 #
 # **Inventory & Requirements**
-# meta:depends=tput,uname,hostname,nft (optional)
-# meta:requires_env=NFTBAN_BANNER_MODE,NFTBAN_COLOR
+# meta:depends="bash"
+# meta:inventory.files=""
+# meta:inventory.binaries="tput,uname,hostname"
+# meta:inventory.env_vars="NFTBAN_BANNER_MODE,NFTBAN_COLOR,NFTBAN_CACHE_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
-# meta:modified_date=2025-10-26
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-01-13"
+
+set -Eeuo pipefail
 
 
 # =============================================================================
@@ -376,8 +383,31 @@ nftban_banner_unified() {
     local line2="${dim}Host: ${cyan}${hostname}${reset}${dim} | Kernel: ${kernel}${reset}"
     printf "${dim}|${reset} %-$((width - 2))b ${dim}|${reset}\n" "$line2"
 
-    # Line 3: Uptime + Mode
-    local line3="${dim}Uptime: ${uptime_str} | Mode: ${mode}${reset}"
+    # Detect panel (cached for performance)
+    local panel_info=""
+    if [[ -z "${NFTBAN_DETECTED_PANEL:-}" ]]; then
+        if [[ -d "/usr/local/cpanel" ]]; then
+            NFTBAN_DETECTED_PANEL="cPanel"
+        elif [[ -d "/usr/local/directadmin" ]]; then
+            NFTBAN_DETECTED_PANEL="DirectAdmin"
+        elif [[ -d "/usr/local/psa" ]]; then
+            NFTBAN_DETECTED_PANEL="Plesk"
+        elif [[ -d "/usr/local/cwpsrv" ]]; then
+            NFTBAN_DETECTED_PANEL="CWP"
+        elif [[ -d "/usr/local/CyberCP" ]]; then
+            NFTBAN_DETECTED_PANEL="CyberPanel"
+        else
+            NFTBAN_DETECTED_PANEL="none"
+        fi
+        export NFTBAN_DETECTED_PANEL
+    fi
+
+    if [[ "$NFTBAN_DETECTED_PANEL" != "none" ]]; then
+        panel_info=" | Panel: ${cyan}${NFTBAN_DETECTED_PANEL}${reset}${dim}"
+    fi
+
+    # Line 3: Uptime + Mode + Panel
+    local line3="${dim}Uptime: ${uptime_str} | Mode: ${mode}${panel_info}${reset}"
     printf "${dim}|${reset} %-$((width - 2))b ${dim}|${reset}\n" "$line3"
 
     # Bottom border
