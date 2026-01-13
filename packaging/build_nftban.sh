@@ -748,6 +748,7 @@ fi
 /usr/lib/nftban/exporters
 /usr/lib/nftban/tests
 /usr/lib/nftban/data
+/usr/lib/nftban/health
 /usr/lib/nftban/*.sh
 # Main config files - root:nftban so services can read configs
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/nftban.conf
