@@ -129,6 +129,8 @@ health:
     - "nftban health check"
     - "nftban health fix"
     - "nftban health summary"
+    - "nftban health registries"
+    - "nftban health install"
     - "nftban health --json"
   subcommands:
     check: {mutates: false, description: "Run health diagnostics"}
@@ -138,6 +140,8 @@ health:
     permissions: {mutates: false, description: "Verify file permissions"}
     geoip: {mutates: false, description: "Check GeoIP system status"}
     pro: {mutates: false, description: "Check Pro subscription status"}
+    registries: {mutates: false, description: "Validate registry files (commands, config, reports)"}
+    install: {mutates: false, description: "Verify installation completeness"}
 
 version:
   category: setup_discovery
