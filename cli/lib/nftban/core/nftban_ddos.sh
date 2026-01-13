@@ -83,10 +83,18 @@ fi
 
 _nftban_ddos_load_config() {
     local main_config="${NFTBAN_DDOS_CONFIG_DIR}/conf.d/ddos/main.conf"
+    local main_local="${NFTBAN_DDOS_CONFIG_DIR}/conf.d/ddos/main.conf.local"
 
+    # Load defaults first
     if [[ -f "$main_config" ]]; then
         # shellcheck source=/dev/null
         source "$main_config"
+    fi
+
+    # Load user overrides (takes precedence)
+    if [[ -f "$main_local" ]]; then
+        # shellcheck source=/dev/null
+        source "$main_local"
     fi
 
     # Set defaults
