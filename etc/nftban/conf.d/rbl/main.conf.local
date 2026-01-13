@@ -1,0 +1,15 @@
+# =============================================================================
+# NFTBan RBL Local Overrides
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: User customizations - survives package updates
+#
+# This file takes precedence over main.conf (package defaults)
+# Add your custom settings here - they will not be overwritten by updates
+#
+# Example settings:
+#   NFTBAN_RBL_ENABLED="YES"
+#   NFTBAN_RBL_ALERT_EMAIL="admin@example.com"
+#   NFTBAN_RBL_CRITICAL_IPS="1.2.3.4:mail,5.6.7.8:web"
+# =============================================================================
+
