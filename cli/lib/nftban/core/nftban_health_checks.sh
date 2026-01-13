@@ -59,15 +59,22 @@ nftban_health_check_binaries() {
         "wget"
     )
 
+    # NOTE: 'go' is NOT required - NFTBan ships prebuilt Go binaries
+    # NOTE: 'git' is only needed for development
     local optional_binaries=(
-        "go"
         "git"
+    )
+
+    # Mail binaries - only check if NOT on a panel server
+    # Panels manage their own mail services (Exim, Postfix via cPanel/DirectAdmin/Plesk)
+    local mail_binaries=(
         "mail"
         "sendmail"
     )
 
     local missing_required=()
     local missing_optional=()
+    local missing_mail=()
 
     # Check required binaries
     for binary in "${required_binaries[@]}"; do
@@ -81,7 +88,19 @@ nftban_health_check_binaries() {
     for binary in "${optional_binaries[@]}"; do
         if ! command -v "$binary" >/dev/null 2>&1; then
             missing_optional+=("$binary")
-            [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+            # git is truly optional - don't even warn
+        fi
+    done
+
+    # Check mail binaries (panel-aware)
+    local is_panel=0
+    if [[ -d "/usr/local/cpanel" ]] || [[ -d "/usr/local/directadmin" ]] || [[ -d "/usr/local/psa" ]]; then
+        is_panel=1
+    fi
+
+    for binary in "${mail_binaries[@]}"; do
+        if ! command -v "$binary" >/dev/null 2>&1; then
+            missing_mail+=("$binary")
         fi
     done
 
@@ -91,8 +110,10 @@ nftban_health_check_binaries() {
         NFTBAN_HEALTH_ERRORS+=("Missing required binaries: ${missing_required[*]}")
     fi
 
-    if [[ ${#missing_optional[@]} -gt 0 ]]; then
-        NFTBAN_HEALTH_WARNINGS+=("Optional features not installed (OK to ignore): ${missing_optional[*]}")
+    # Only warn about mail if NOT on a panel (panels manage their own mail)
+    if [[ ${#missing_mail[@]} -gt 0 ]] && [[ $is_panel -eq 0 ]]; then
+        NFTBAN_HEALTH_WARNINGS+=("Mail notifications disabled (install mailx or sendmail to enable)")
+        [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
     fi
 
     NFTBAN_HEALTH_RESULTS["binaries"]=$status

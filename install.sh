@@ -648,6 +648,91 @@ check_conflicting_firewalls() {
     return 0
 }
 
+# Check and fix xtables compatibility expressions in nftables.conf
+# These are created by cPanel and other systems that translate iptables rules
+# Native nftables cannot load xtables compat expressions
+check_xtables_compat() {
+    log "Checking for xtables compatibility expressions..."
+
+    # Possible nftables config file locations
+    local nft_configs=(
+        "/etc/sysconfig/nftables.conf"   # RHEL/CentOS/AlmaLinux
+        "/etc/nftables.conf"              # Debian/Ubuntu
+    )
+
+    local found_compat=0
+    local fixed_files=()
+
+    for config_file in "${nft_configs[@]}"; do
+        if [[ -f "$config_file" ]]; then
+            # Check for xtables compat expressions
+            if grep -qE 'xt (target|match)' "$config_file" 2>/dev/null; then
+                found_compat=1
+                warn "Found xtables compat expressions in: $config_file"
+
+                # Show what we found
+                echo ""
+                echo "  Incompatible rules detected:"
+                grep -n 'xt target\|xt match' "$config_file" 2>/dev/null | head -5 | while read -r line; do
+                    echo "    $line"
+                done
+                echo ""
+
+                # Create backup
+                local backup_dir="/var/backups/nftban/firewall-migration"
+                local timestamp
+                timestamp=$(date +"%Y%m%d-%H%M%S")
+                local backup_path="${backup_dir}/${timestamp}"
+                mkdir -p "$backup_path" 2>/dev/null || true
+
+                if cp "$config_file" "${backup_path}/$(basename "$config_file").backup" 2>/dev/null; then
+                    ok "Backed up to: ${backup_path}/$(basename "$config_file").backup"
+                fi
+
+                # Create cleaned version (remove xt target/match lines)
+                local temp_file
+                temp_file=$(mktemp)
+                grep -v 'xt target\|xt match' "$config_file" > "$temp_file" 2>/dev/null || true
+
+                # Replace original with cleaned version
+                if mv "$temp_file" "$config_file" 2>/dev/null; then
+                    ok "Removed xtables compat expressions from: $config_file"
+                    fixed_files+=("$config_file")
+                else
+                    warn "Could not modify $config_file (check permissions)"
+                    rm -f "$temp_file" 2>/dev/null || true
+                fi
+            fi
+        fi
+    done
+
+    if [[ $found_compat -eq 1 ]]; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        info "xtables Compatibility Fix Applied"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "NFTBan detected xtables compat expressions (commonly created by cPanel"
+        echo "mail routing or iptables-translate). These are incompatible with native"
+        echo "nftables and have been removed."
+        echo ""
+        echo "What this means:"
+        echo "  • nftables.service will now start correctly"
+        echo "  • cPanel mail routing continues via iptables-nft (parallel system)"
+        echo "  • Original files backed up to: /var/backups/nftban/firewall-migration/"
+        echo ""
+        echo "If you experience issues, see:"
+        echo "  nftban uninstall --restore-firewall"
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+    else
+        ok "No xtables compat expressions found (clean nftables config)"
+    fi
+
+    return 0
+}
+
 # Check Go binaries exist (REQUIRED)
 check_go_binaries() {
     log "Checking Go binaries..."
@@ -2056,7 +2141,15 @@ show_usage() {
 NFTBan Installation Script
 
 Usage:
-  $0 [--help]
+  $0 [OPTIONS]
+
+Options:
+  --help, -h              Show this help message
+  --skip-xtables-fix      Skip automatic removal of xtables compat expressions
+                          (Use if you manage nftables.conf manually)
+
+Environment Variables:
+  NFTBAN_SKIP_XTABLES_FIX=1   Same as --skip-xtables-fix
 
 This script installs NFTBan with all components:
   - Go binaries (nftban-core)
@@ -2086,11 +2179,27 @@ EOF
 # MAIN INSTALLATION LOGIC
 # =============================================================================
 
-# Handle --help
-if [[ "${1:-}" == "--help" || "${1:-}" == "-h" || "${1:-}" == "help" ]]; then
-    show_usage
-    exit 0
-fi
+# Installation flags (can be set via CLI or environment)
+SKIP_XTABLES_FIX="${NFTBAN_SKIP_XTABLES_FIX:-0}"
+
+# Parse command line arguments
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        --help|-h|help)
+            show_usage
+            exit 0
+            ;;
+        --skip-xtables-fix)
+            SKIP_XTABLES_FIX=1
+            shift
+            ;;
+        *)
+            warn "Unknown option: $1"
+            show_usage
+            exit 1
+            ;;
+    esac
+done
 
 # Print banner
 echo ""
@@ -2113,6 +2222,14 @@ check_nftables
 check_yq
 check_pam
 check_conflicting_firewalls
+
+# Check for xtables compat expressions (cPanel, etc.)
+if [[ "$SKIP_XTABLES_FIX" == "1" ]]; then
+    info "Skipping xtables compat fix (--skip-xtables-fix)"
+else
+    check_xtables_compat
+fi
+
 check_go_binaries
 
 echo ""
