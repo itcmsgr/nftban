@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.31] - 2026-01-13
+
+### Added
+
+#### Registry Architecture Redesign
+- **Unified Registry System**: 4 interconnected registries for complete system metadata
+  - `commands.registry.yml` - 51 CLI commands with RBAC, capabilities, audiences
+  - `config-registry.json` - 24 config files with mode-aware activation rules
+  - `config-schema.json` - 960 config keys with types, defaults, validation
+  - `reports-registry.json` - 18 report types with metrics, delivery, API endpoints
+
+#### RBL Module Enhancements (P1)
+- **Watchlist Feature** (`nftban rbl watchlist`):
+  - Monitor external IPs of interest (customers, partners, infrastructure)
+  - Config file: `/etc/nftban/conf.d/rbl/watchlist.conf`
+  - Format: `IP|description|tags|notify_email`
+  - Per-IP email notification override support
+  - Tags: customer, partner, mail, web, critical
+- **Parallel DNS Queries**:
+  - 10 concurrent DNS queries by default (~15 sec vs 2-3 min)
+  - 10-12x faster RBL checks against 41 providers
+  - `--sequential` option for old behavior
+- **RBL Reports Registry**: Added 4 RBL report types to reports-registry.json
+  - `rbl_status` - Monitoring status
+  - `rbl_check` - Server IP check results
+  - `rbl_watchlist` - Watchlist check report
+  - `rbl_alerts` - Alert notifications
+
+#### Health Check - Registry Validation
+- **`nftban health registries`**: Validate all registry files
+  - JSON/YAML syntax validation
+  - File existence checks
+  - `--json` output for monitoring integration
+- **`cli/lib/nftban/health/check_registries.sh`**: Standalone registry validator
+
+#### Commands Registry Updates
+- Added `rbl watchlist` subcommands (list, add, remove, check)
+- Added `health registries` and `health install` subcommands
+- Added `--sequential` option documentation for RBL commands
+- Total commands: 51
+
+### Technical Notes
+- Registry validation integrated into nftban-validator (REG-001 through REG-006)
+- Deep analysis: `nftban-validator/scripts/validate_registries.sh`
+- Production health check: `nftban health registries`
+
+---
+
 ## [1.0.30] - 2026-01-12
 
 ### Added

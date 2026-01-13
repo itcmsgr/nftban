@@ -33,15 +33,23 @@ fi
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for system health checks and diagnostics
 #
-# meta:name=cmd_health
-# meta:type=cli
-# meta:header=Health Check CLI Handler
-# meta:version=1.0.0
+# meta:name="cmd_health"
+# meta:type="cli"
+# meta:header="Health Check CLI Handler"
+# meta:version="1.0.31"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
+# meta:description="CLI commands for health checks including registry validation"
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-01-13"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:inventory.files=""
+# meta:inventory.binaries="python3"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="conditional"
 # =============================================================================
 
 
@@ -124,6 +132,9 @@ nftban_cmd_health() {
             ;;
         pro)
             nftban_health_cmd_pro "$@"
+            ;;
+        registries|registry)
+            nftban_health_cmd_registries "$@"
             ;;
         install|verify)
             nftban_health_cmd_install "$@"
@@ -711,6 +722,85 @@ nftban_health_cmd_install() {
     nftban_health_verify_installation "$verbose"
 }
 
+nftban_health_cmd_registries() {
+    # Check NFTBan registry files validity
+    # Args: [--json]
+
+    local format="text"
+
+    for arg in "$@"; do
+        case "$arg" in
+            --json) format="json" ;;
+        esac
+    done
+
+    # Use dedicated registry check script if available
+    local registry_check="${NFTBAN_LIB_DIR}/health/check_registries.sh"
+
+    if [[ -x "$registry_check" ]]; then
+        "$registry_check" "$format"
+        return $?
+    fi
+
+    # Fallback: inline check
+    echo "NFTBan Registry Validation"
+    echo "=========================="
+    echo ""
+
+    local errors=0
+    local warnings=0
+
+    # Registry paths
+    local commands_reg="${NFTBAN_LIB_DIR}/../commands.registry.yml"
+    local config_reg="${NFTBAN_LIB_DIR}/data/config-registry.json"
+    local schema_reg="${NFTBAN_LIB_DIR}/data/config-schema.json"
+    local reports_reg="${NFTBAN_LIB_DIR}/data/reports-registry.json"
+
+    # Check commands registry (YAML)
+    if [[ -f "$commands_reg" ]]; then
+        if python3 -c "import yaml; yaml.safe_load(open('$commands_reg'))" 2>/dev/null; then
+            echo "  ✓ commands.registry.yml: Valid"
+        else
+            echo "  ✗ commands.registry.yml: Invalid YAML"
+            ((errors++))
+        fi
+    else
+        echo "  ⚠ commands.registry.yml: Not found"
+        ((warnings++))
+    fi
+
+    # Check JSON registries
+    for reg_file in "$config_reg" "$schema_reg" "$reports_reg"; do
+        local reg_name
+        reg_name=$(basename "$reg_file")
+        if [[ -f "$reg_file" ]]; then
+            if python3 -m json.tool "$reg_file" >/dev/null 2>&1; then
+                echo "  ✓ $reg_name: Valid"
+            else
+                echo "  ✗ $reg_name: Invalid JSON"
+                ((errors++))
+            fi
+        else
+            echo "  ⚠ $reg_name: Not found"
+            ((warnings++))
+        fi
+    done
+
+    echo ""
+    echo "─────────────────────────────────────────────────────────"
+
+    if [[ $errors -gt 0 ]]; then
+        echo "Status: ERROR ($errors errors, $warnings warnings)"
+        return 2
+    elif [[ $warnings -gt 0 ]]; then
+        echo "Status: WARNING ($warnings warnings)"
+        return 1
+    else
+        echo "Status: OK (all registries valid)"
+        return 0
+    fi
+}
+
 nftban_health_cmd_help() {
     # Show help text
 
@@ -759,6 +849,14 @@ COMMANDS:
 
     pro                     Check NFTBan Pro subscription status
                             Validates token, vmagent, server ID, timers
+
+    registries              Check registry files validity
+                            Validates JSON/YAML syntax for:
+                            - commands.registry.yml (CLI commands)
+                            - config-registry.json (config files)
+                            - config-schema.json (config keys)
+                            - reports-registry.json (report types)
+                            Use --json for machine-readable output
 
     install, verify         Verify installation completeness
                             Checks all required timers, services, binaries,
@@ -846,4 +944,5 @@ export -f nftban_health_cmd_binaries
 export -f nftban_health_cmd_permissions
 export -f nftban_health_cmd_geoip
 export -f nftban_health_cmd_pro
+export -f nftban_health_cmd_registries
 export -f nftban_health_cmd_help
