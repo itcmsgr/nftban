@@ -1,7 +1,7 @@
 [Unit]
 Description=NFTBan Core - Weekly GeoIP Database Update Timer
 Documentation=https://github.com/itcmsgr/nftban-dev
-Requires=nftban-core.service
+# Note: Does NOT require nftband.service - geoip update is standalone
 
 [Timer]
 # Run weekly on Sundays at 2:00 AM

@@ -579,7 +579,7 @@ systemctl daemon-reload 2>/dev/null || true
 # STEP 2: Create FHS directories
 echo "[NFTBan] Creating FHS directories..."
 mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,patterns.d}
-mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan}
+mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,rbl}
 mkdir -p /etc/nftban/patterns.d/botscan
 mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports,panels}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
@@ -779,6 +779,7 @@ fi
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/portscan/*.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/rbl
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/rbl/*.conf
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/rbl/*.local
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/panels
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/directadmin
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/directadmin/*.conf
@@ -1220,7 +1221,7 @@ usermod -a -G nftban root 2>/dev/null || true
 
 # STEP 3: Create FHS directories
 mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d,patterns.d}
-mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan}
+mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,rbl}
 mkdir -p /etc/nftban/patterns.d/botscan
 mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports}
 mkdir -p /var/lib/nftban/reports/{baseline,auditors}
@@ -1309,6 +1310,20 @@ EOF
     fi
 
     chmod 0755 "${BUILD_DIR}/deb/DEBIAN/postinst"
+
+    # Create conffiles to mark user configuration files (preserved on upgrade)
+    cat > "${BUILD_DIR}/deb/DEBIAN/conffiles" <<'CONFFILES_EOF'
+/etc/nftban/nftban.conf
+/etc/nftban/conf.d/feeds.conf
+/etc/nftban/conf.d/rbl/main.conf
+/etc/nftban/conf.d/rbl/main.conf.local
+/etc/nftban/conf.d/rbl/rbls.conf
+/etc/nftban/conf.d/rbl/custom.conf
+/etc/nftban/conf.d/ddos/main.conf
+/etc/nftban/conf.d/portscan/main.conf
+/etc/nftban/conf.d/login/main.conf
+/etc/nftban/conf.d/botscan/main.conf
+CONFFILES_EOF
 }
 
 build_deb() {

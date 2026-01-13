@@ -40,6 +40,8 @@ coverage.txt
 .env
 .env.local
 *.local
+# Exception: Track .conf.local templates in source tree (shipped as empty templates)
+!etc/nftban/conf.d/**/*.local
 
 # Node modules (for web UI)
 node_modules/
