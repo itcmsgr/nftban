@@ -436,6 +436,85 @@ feeds:
     - "nftban feeds update"
     - "nftban feeds status --json"
 
+rbl:
+  category: active_protection
+  description: "RBL (Real-time Blackhole List) monitoring for server IP reputation"
+  risk: core
+  audience: [cli, auditor]
+  capability: status_read
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: conditional
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban rbl status"
+    - "nftban rbl check"
+    - "nftban rbl check --ip 1.2.3.4"
+    - "nftban rbl check --fresh --verbose"
+    - "nftban rbl server check"
+    - "nftban rbl server check --alert"
+    - "nftban rbl list"
+    - "nftban rbl list --verbose"
+    - "nftban rbl enable"
+    - "nftban rbl disable"
+    - "nftban rbl cache show"
+    - "nftban rbl cache purge"
+    - "nftban rbl critical list"
+    - "nftban rbl critical add 1.2.3.4 mail"
+    - "nftban rbl critical remove 1.2.3.4"
+    - "nftban rbl alert test --ip 1.2.3.4"
+    - "nftban rbl status --json"
+  subcommands:
+    check:
+      mutates: false
+      description: "Check IP(s) against RBL servers"
+      options:
+        --ip: "Check specific IP address"
+        --fresh: "Ignore cache, force fresh check"
+        --json: "Output in JSON format"
+        --verbose: "Show all results including clean"
+        --quiet: "Minimal output (for cron)"
+        --alert: "Send alert email if listings found"
+    server:
+      mutates: false
+      description: "Full server assessment (all IPs + hostname)"
+      subcommands:
+        check: {mutates: false, description: "Check all server IPs against RBLs"}
+    status:
+      mutates: false
+      description: "Show RBL monitoring status"
+    list:
+      mutates: false
+      description: "List configured RBL providers"
+    enable:
+      mutates: true
+      requires_root: true
+      description: "Enable scheduled RBL checks (systemd timer)"
+    disable:
+      mutates: true
+      requires_root: true
+      description: "Disable scheduled RBL checks"
+    cache:
+      mutates: conditional
+      description: "Manage RBL cache"
+      subcommands:
+        show: {mutates: false, description: "Show cache statistics"}
+        purge: {mutates: true, description: "Purge cache (all or by IP)"}
+    alert:
+      mutates: false
+      description: "Alert system management"
+      subcommands:
+        test: {mutates: false, description: "Send test alert email"}
+    critical:
+      mutates: conditional
+      description: "Manage critical IPs for monitoring (mail, web, panel servers)"
+      subcommands:
+        list: {mutates: false, description: "Show configured critical IPs"}
+        add: {mutates: true, requires_root: true, description: "Add critical IP with tag"}
+        remove: {mutates: true, requires_root: true, description: "Remove critical IP"}
+
 trust:
   category: active_protection
   description: "Trusted provider IP ranges (CDN, cloud)"
@@ -1260,9 +1339,9 @@ system:
 _metadata:
   version: "1.0"
   schema_version: "1.0"
-  generated_date: "2026-01-11"
-  total_commands: 47
-  commands_with_json: 38
+  generated_date: "2026-01-13"
+  total_commands: 48
+  commands_with_json: 39
   commands_without_json: 9
   missing_json:
     - debug
@@ -1278,15 +1357,15 @@ _metadata:
   task_groups:
     setup_discovery: 8
     immediate_action: 7
-    active_protection: 9
+    active_protection: 10
     infrastructure: 7
     intelligence_reporting: 11
     developer_sysadmin: 7
   risk_levels:
-    core: 22
+    core: 23
     setup: 7
     advanced: 18
   audience_summary:
     cli_only: 29
-    auditor_visible: 16
+    auditor_visible: 17
     panel_expose: 11
