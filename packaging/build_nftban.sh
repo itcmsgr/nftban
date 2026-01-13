@@ -162,6 +162,10 @@ install -D -m 0644 install/config/nftban.conf %{buildroot}/etc/nftban/nftban.con
 mkdir -p %{buildroot}/usr/lib/nftban/lib
 cp -r cli/lib/nftban/* %{buildroot}/usr/lib/nftban/
 
+# CRITICAL: Set executable permissions on all shell scripts
+# (cp -r doesn't preserve permissions from source)
+find %{buildroot}/usr/lib/nftban -name "*.sh" -exec chmod 755 {} \;
+
 # Nftables config
 install -D -m 0644 install/nftables/nftables.conf %{buildroot}/etc/nftban/nftables.conf
 
@@ -1328,6 +1332,10 @@ build_deb() {
 
     # Copy libraries
     cp -r "${PROJECT_ROOT}/cli/lib/nftban"/* "${deb_root}/usr/lib/nftban/"
+
+    # CRITICAL: Set executable permissions on all shell scripts
+    # (cp -r doesn't preserve permissions from source)
+    find "${deb_root}/usr/lib/nftban" -name "*.sh" -exec chmod 755 {} \;
 
     # Copy main configuration file
     mkdir -p "${deb_root}/etc/nftban"

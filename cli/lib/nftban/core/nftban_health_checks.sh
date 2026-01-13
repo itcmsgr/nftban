@@ -204,6 +204,21 @@ nftban_health_check_permissions() {
         fi
     fi
 
+    # Check critical scripts are executable (cron, helpers)
+    local executable_scripts=(
+        "${NFTBAN_LIB_DIR}/cron/maintenance.sh"
+        "${NFTBAN_LIB_DIR}/cron/run.sh"
+    )
+
+    for script in "${executable_scripts[@]}"; do
+        if [[ -f "$script" ]]; then
+            if [[ ! -x "$script" ]]; then
+                permission_issues+=("$script not executable (run: chmod +x $script)")
+                status=$HEALTH_ERROR
+            fi
+        fi
+    done
+
     # Store results
     if [[ ${#permission_issues[@]} -gt 0 ]]; then
         NFTBAN_HEALTH_ISSUES["permissions"]="${permission_issues[*]}"
