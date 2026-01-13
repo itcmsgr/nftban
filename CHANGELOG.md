@@ -33,11 +33,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Panels manage their own mail (Exim via cPanel, etc.)
 - **Panel detection in health**: Checks `/usr/local/cpanel`, `/usr/local/directadmin`, `/usr/local/psa`
 
-### Technical Notes
-- cPanel support ticket document: `/home/commonfolder/CPANEL-NFTABLES-COMPAT-TICKET.md`
-- xtables compat rules come from cPanel's mail routing (ports 25, 465, 587 REDIRECT)
-- cPanel mail continues working via `iptables-nft` (parallel to native nftables)
-
 ---
 
 ## [1.0.31] - 2026-01-13
