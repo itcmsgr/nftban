@@ -757,22 +757,62 @@ nftban_cmd_rbl_alert() {
 nftban_cmd_rbl_critical() {
     # Manage critical IPs for RBL monitoring
     # Subcommands: list, add, remove
+    # Uses .conf.local override architecture (never modifies package defaults)
 
     local subcmd="${1:-list}"
     shift || true
 
-    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
+    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl"
+    local main_conf="${config_dir}/main.conf"
+    local local_conf="${config_dir}/main.conf.local"
+
+    # Helper: Get current critical IPs (checks .local first, then main)
+    _get_critical_ips() {
+        local value=""
+        # Check .conf.local first (user overrides)
+        if [[ -f "$local_conf" ]]; then
+            value=$(grep -E "^NFTBAN_RBL_CRITICAL_IPS=" "$local_conf" 2>/dev/null | tail -1 | cut -d'"' -f2)
+        fi
+        # Fallback to main.conf if not in .local
+        if [[ -z "$value" ]] && [[ -f "$main_conf" ]]; then
+            value=$(grep -E "^NFTBAN_RBL_CRITICAL_IPS=" "$main_conf" 2>/dev/null | tail -1 | cut -d'"' -f2)
+        fi
+        echo "$value"
+    }
+
+    # Helper: Set critical IPs (always writes to .conf.local)
+    _set_critical_ips() {
+        local new_value="$1"
+
+        # Create .conf.local if it doesn't exist
+        if [[ ! -f "$local_conf" ]]; then
+            cat > "$local_conf" << 'EOF'
+# =============================================================================
+# NFTBan RBL Local Overrides
+# =============================================================================
+# User customizations - survives package updates
+# This file takes precedence over main.conf
+# =============================================================================
+
+EOF
+        fi
+
+        # Update or add the setting
+        if grep -q "^NFTBAN_RBL_CRITICAL_IPS=" "$local_conf" 2>/dev/null; then
+            sed -i "s|^NFTBAN_RBL_CRITICAL_IPS=.*|NFTBAN_RBL_CRITICAL_IPS=\"$new_value\"|" "$local_conf"
+        else
+            echo "NFTBAN_RBL_CRITICAL_IPS=\"$new_value\"" >> "$local_conf"
+        fi
+    }
 
     case "$subcmd" in
         list)
             echo "Critical IPs for RBL Monitoring"
             echo "─────────────────────────────────────────────────────────"
 
-            # Get current value from config
-            local current_ips=""
-            if [[ -f "$config_file" ]]; then
-                current_ips=$(grep -E "^NFTBAN_RBL_CRITICAL_IPS=" "$config_file" 2>/dev/null | cut -d'"' -f2 || echo "")
-            fi
+            # Get current value using config architecture
+            local current_ips
+            current_ips=$(_get_critical_ips)
 
             if [[ -z "$current_ips" ]]; then
                 echo "(No critical IPs configured)"
@@ -802,6 +842,11 @@ nftban_cmd_rbl_critical() {
             echo ""
             echo "─────────────────────────────────────────────────────────"
             echo "Total: $count critical IP(s)"
+
+            # Show config source
+            if [[ -f "$local_conf" ]] && grep -q "^NFTBAN_RBL_CRITICAL_IPS=" "$local_conf" 2>/dev/null; then
+                echo "Config: ${local_conf}"
+            fi
             ;;
 
         add)
@@ -829,11 +874,9 @@ nftban_cmd_rbl_critical() {
                 return 1
             fi
 
-            # Get current value
-            local current_ips=""
-            if [[ -f "$config_file" ]]; then
-                current_ips=$(grep -E "^NFTBAN_RBL_CRITICAL_IPS=" "$config_file" 2>/dev/null | cut -d'"' -f2 || echo "")
-            fi
+            # Get current value using config architecture
+            local current_ips
+            current_ips=$(_get_critical_ips)
 
             # Check if already exists
             if [[ "$current_ips" == *"$ip:"* ]] || [[ "$current_ips" == *"$ip,"* ]] || [[ "$current_ips" == "$ip" ]]; then
@@ -850,18 +893,14 @@ nftban_cmd_rbl_critical() {
                 new_ips="${current_ips},${ip}:${tag}"
             fi
 
-            # Update config file
-            if grep -q "^NFTBAN_RBL_CRITICAL_IPS=" "$config_file" 2>/dev/null; then
-                sed -i "s|^NFTBAN_RBL_CRITICAL_IPS=.*|NFTBAN_RBL_CRITICAL_IPS=\"$new_ips\"|" "$config_file"
-            else
-                echo "" >> "$config_file"
-                echo "NFTBAN_RBL_CRITICAL_IPS=\"$new_ips\"" >> "$config_file"
-            fi
+            # Write to .conf.local (never modifies package defaults)
+            _set_critical_ips "$new_ips"
 
             local severity
             severity=$(nftban_rbl_get_severity "$tag" 2>/dev/null || echo "medium")
 
             echo "✅ Added critical IP: $ip (tag: $tag, severity: $severity)"
+            echo "Config: ${local_conf}"
             echo ""
             echo "Run 'nftban rbl check' to check this IP immediately"
             ;;
@@ -881,11 +920,9 @@ nftban_cmd_rbl_critical() {
                 return 1
             fi
 
-            # Get current value
-            local current_ips=""
-            if [[ -f "$config_file" ]]; then
-                current_ips=$(grep -E "^NFTBAN_RBL_CRITICAL_IPS=" "$config_file" 2>/dev/null | cut -d'"' -f2 || echo "")
-            fi
+            # Get current value using config architecture
+            local current_ips
+            current_ips=$(_get_critical_ips)
 
             if [[ -z "$current_ips" ]]; then
                 echo "Error: No critical IPs configured" >&2
@@ -902,10 +939,11 @@ nftban_cmd_rbl_critical() {
             local new_ips
             new_ips=$(echo "$current_ips" | sed "s/${ip}:[^,]*,*//g" | sed 's/,$//' | sed 's/^,//')
 
-            # Update config file
-            sed -i "s|^NFTBAN_RBL_CRITICAL_IPS=.*|NFTBAN_RBL_CRITICAL_IPS=\"$new_ips\"|" "$config_file"
+            # Write to .conf.local (never modifies package defaults)
+            _set_critical_ips "$new_ips"
 
             echo "✅ Removed critical IP: $ip"
+            echo "Config: ${local_conf}"
             ;;
 
         *)

@@ -38,10 +38,16 @@ readonly NFTBAN_RBL_CORE_LOADED=1
 [[ -z "${NFTBAN_CONFIG_DIR:-}" ]] && readonly NFTBAN_CONFIG_DIR="/etc/nftban"
 [[ -z "${NFTBAN_LOG_DIR:-}" ]] && readonly NFTBAN_LOG_DIR="/var/log/nftban"
 
-# Load RBL configuration
+# Load RBL configuration (package defaults)
 if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf" ]]; then
     # shellcheck source=/dev/null
     source "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf"
+fi
+
+# Load user overrides (takes precedence over defaults)
+if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf.local" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_CONFIG_DIR}/conf.d/rbl/main.conf.local"
 fi
 
 # Set defaults if not configured
@@ -428,14 +434,14 @@ nftban_rbl_cache_expired() {
 # =============================================================================
 
 nftban_rbl_check_new_listing() {
-    # Check if IP has new listing (state transition)
+    # Check if IP has new listing (state transition: clean → listed)
     # Args: $1 = IP address
     #       $2 = current status (listed/clean)
     # Return: 0 if new listing, 1 otherwise
 
     local ip="$1"
     local current_status="$2"
-    local state_file="${NFTBAN_RBL_CACHE_DIR}/state.json"
+    local state_file="${NFTBAN_RBL_CACHE_DIR}/state.dat"
 
     # If currently clean, no alert needed
     if [[ "$current_status" != "listed" ]]; then
@@ -444,26 +450,65 @@ nftban_rbl_check_new_listing() {
 
     # Check previous state
     if [[ ! -f "$state_file" ]]; then
-        # No previous state - this is first check
+        # No previous state - this is first check, treat as new
         return 0
     fi
 
-    # Check if IP was listed before
-    if grep -q "\"$ip\".*\"listed\"" "$state_file" 2>/dev/null; then
-        return 1  # Already listed
+    # Check if IP was already listed (format: IP=status|timestamp|...)
+    local prev_status
+    prev_status=$(grep "^${ip}=" "$state_file" 2>/dev/null | head -1 | cut -d'|' -f1 | cut -d'=' -f2)
+
+    if [[ "$prev_status" == "listed" ]]; then
+        return 1  # Already listed, not new
     fi
 
-    return 0  # New listing
+    return 0  # New listing (was clean or unknown)
+}
+
+nftban_rbl_check_delisting() {
+    # Check if IP was delisted (state transition: listed → clean)
+    # Args: $1 = IP address
+    #       $2 = current status (listed/clean)
+    # Return: 0 if delisted, 1 otherwise
+
+    local ip="$1"
+    local current_status="$2"
+    local state_file="${NFTBAN_RBL_CACHE_DIR}/state.dat"
+
+    # If currently listed, not delisted
+    if [[ "$current_status" != "clean" ]]; then
+        return 1
+    fi
+
+    # Check previous state
+    if [[ ! -f "$state_file" ]]; then
+        return 1  # No previous state
+    fi
+
+    # Check if IP was previously listed
+    local prev_status
+    prev_status=$(grep "^${ip}=" "$state_file" 2>/dev/null | head -1 | cut -d'|' -f1 | cut -d'=' -f2)
+
+    if [[ "$prev_status" == "listed" ]]; then
+        return 0  # Was listed, now clean = DELISTED
+    fi
+
+    return 1  # Was not listed before
 }
 
 nftban_rbl_update_state() {
-    # Update RBL state file
+    # Update RBL state file (preserves all IP states)
     # Args: $1 = IP address
     #       $2 = status (listed/clean/timeout)
+    #
+    # State file format: Simple key=value for bash compatibility
+    # IP=status|timestamp|previous_status|previous_timestamp
+    # This preserves history and supports multi-IP tracking
 
     local ip="$1"
     local status="$2"
-    local state_file="${NFTBAN_RBL_CACHE_DIR}/state.json"
+    local state_file="${NFTBAN_RBL_CACHE_DIR}/state.dat"
+    local state_json="${NFTBAN_RBL_CACHE_DIR}/state.json"  # JSON view for compatibility
     local timestamp
     timestamp=$(date -Iseconds)
 
@@ -471,20 +516,73 @@ nftban_rbl_update_state() {
     mkdir -p "$NFTBAN_RBL_CACHE_DIR"
 
     # Initialize state file if missing
-    if [[ ! -f "$state_file" ]]; then
-        echo "{}" > "$state_file"
+    [[ ! -f "$state_file" ]] && touch "$state_file"
+
+    # Get previous state for this IP (for history tracking)
+    local prev_entry=""
+    local prev_status=""
+    local prev_timestamp=""
+    if [[ -f "$state_file" ]]; then
+        prev_entry=$(grep "^${ip}=" "$state_file" 2>/dev/null | head -1)
+        if [[ -n "$prev_entry" ]]; then
+            prev_status=$(echo "$prev_entry" | cut -d'|' -f1 | cut -d'=' -f2)
+            prev_timestamp=$(echo "$prev_entry" | cut -d'|' -f2)
+        fi
     fi
 
-    # Update state (simple JSON append for now)
-    # Note: This is simplified - production would use jq
-    {
-        echo "{"
+    # Remove old entry for this IP
+    if [[ -f "$state_file" ]]; then
+        grep -v "^${ip}=" "$state_file" > "${state_file}.tmp" 2>/dev/null || true
+        mv "${state_file}.tmp" "$state_file"
+    fi
+
+    # Add updated entry (format: IP=status|timestamp|prev_status|prev_timestamp)
+    echo "${ip}=${status}|${timestamp}|${prev_status}|${prev_timestamp}" >> "$state_file"
+
+    # Generate JSON view for API compatibility
+    _nftban_rbl_state_to_json > "$state_json"
+}
+
+_nftban_rbl_state_to_json() {
+    # Convert state.dat to state.json for API compatibility
+    local state_file="${NFTBAN_RBL_CACHE_DIR}/state.dat"
+
+    echo "{"
+    local first=1
+    while IFS='=' read -r ip data; do
+        [[ -z "$ip" ]] && continue
+        [[ "$ip" =~ ^# ]] && continue
+
+        local status timestamp prev_status prev_timestamp
+        status=$(echo "$data" | cut -d'|' -f1)
+        timestamp=$(echo "$data" | cut -d'|' -f2)
+        prev_status=$(echo "$data" | cut -d'|' -f3)
+        prev_timestamp=$(echo "$data" | cut -d'|' -f4)
+
+        [[ $first -eq 0 ]] && echo ","
         echo "  \"$ip\": {"
         echo "    \"status\": \"$status\","
-        echo "    \"timestamp\": \"$timestamp\""
-        echo "  }"
-        echo "}"
-    } > "$state_file"
+        echo "    \"timestamp\": \"$timestamp\","
+        echo "    \"previous_status\": \"${prev_status:-null}\","
+        echo "    \"previous_timestamp\": \"${prev_timestamp:-null}\""
+        echo -n "  }"
+        first=0
+    done < "$state_file"
+    echo ""
+    echo "}"
+}
+
+nftban_rbl_get_state() {
+    # Get current state for an IP
+    # Args: $1 = IP address
+    # Output: status (listed/clean/timeout) or empty if not tracked
+
+    local ip="$1"
+    local state_file="${NFTBAN_RBL_CACHE_DIR}/state.dat"
+
+    if [[ -f "$state_file" ]]; then
+        grep "^${ip}=" "$state_file" 2>/dev/null | head -1 | cut -d'|' -f1 | cut -d'=' -f2
+    fi
 }
 
 nftban_rbl_get_severity() {
@@ -711,4 +809,6 @@ export -f nftban_rbl_get_severity
 export -f nftban_rbl_send_alert
 export -f nftban_rbl_send_degraded_alert
 export -f nftban_rbl_check_new_listing
+export -f nftban_rbl_check_delisting
 export -f nftban_rbl_update_state
+export -f nftban_rbl_get_state
