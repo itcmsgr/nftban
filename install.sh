@@ -2380,7 +2380,118 @@ fi
 echo ""
 
 # =============================================================================
-# STEP 7: Post-install and verification
+# STEP 7: Panel Detection and Auto-Enable
+# =============================================================================
+log "Checking for web hosting panels..."
+
+DETECTED_PANEL=""
+PANEL_ENABLED=""
+
+# Detect cPanel
+if [[ -d "/usr/local/cpanel" ]]; then
+    DETECTED_PANEL="cpanel"
+    info "Detected: cPanel/WHM"
+fi
+
+# Detect DirectAdmin
+if [[ -d "/usr/local/directadmin" ]]; then
+    DETECTED_PANEL="directadmin"
+    info "Detected: DirectAdmin"
+fi
+
+# Detect Plesk
+if [[ -d "/usr/local/psa" ]]; then
+    DETECTED_PANEL="plesk"
+    info "Detected: Plesk"
+fi
+
+# Detect CWP
+if [[ -d "/usr/local/cwpsrv" ]]; then
+    DETECTED_PANEL="cwp"
+    info "Detected: CentOS Web Panel"
+fi
+
+# Detect CyberPanel
+if [[ -d "/usr/local/CyberCP" ]]; then
+    DETECTED_PANEL="cyberpanel"
+    info "Detected: CyberPanel"
+fi
+
+# If panel detected, ask to enable
+if [[ -n "$DETECTED_PANEL" ]]; then
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  🖥️  Web Hosting Panel Detected: ${DETECTED_PANEL^^}"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "NFTBan can automatically configure firewall rules for your panel."
+    echo "This will enable all required ports for:"
+    case "$DETECTED_PANEL" in
+        cpanel)
+            echo "  • cPanel (2082, 2083)"
+            echo "  • WHM (2086, 2087)"
+            echo "  • Webmail (2095, 2096)"
+            echo "  • HTTP/HTTPS (80, 443)"
+            echo "  • Email (25, 110, 143, 465, 587, 993, 995)"
+            echo "  • FTP (20, 21)"
+            echo "  • DNS (53)"
+            ;;
+        directadmin)
+            echo "  • DirectAdmin (2222)"
+            echo "  • HTTP/HTTPS (80, 443)"
+            echo "  • Email (25, 110, 143, 465, 587, 993, 995)"
+            echo "  • FTP (20, 21)"
+            echo "  • DNS (53)"
+            ;;
+        plesk)
+            echo "  • Plesk Panel (8443, 8447, 8880)"
+            echo "  • HTTP/HTTPS (80, 443)"
+            echo "  • Email (25, 110, 143, 465, 587, 993, 995)"
+            echo "  • FTP (20, 21)"
+            ;;
+        *)
+            echo "  • Panel ports"
+            echo "  • HTTP/HTTPS"
+            echo "  • Email services"
+            ;;
+    esac
+    echo ""
+
+    read -p "Enable ${DETECTED_PANEL} firewall rules automatically? [Y/n]: " enable_panel
+    enable_panel="${enable_panel:-y}"
+
+    if [[ "${enable_panel,,}" == "y" || "${enable_panel,,}" == "yes" ]]; then
+        echo ""
+        log "Enabling ${DETECTED_PANEL} panel ports..."
+
+        # Mark panel as enabled in state file
+        PANEL_STATE_DIR="/var/lib/nftban/panels"
+        PANEL_STATE_FILE="$PANEL_STATE_DIR/enabled.conf"
+        mkdir -p "$PANEL_STATE_DIR" 2>/dev/null || true
+
+        {
+            echo "# NFTBan Panel State Configuration"
+            echo "# Auto-generated during installation"
+            echo "${DETECTED_PANEL}=enabled"
+        } > "$PANEL_STATE_FILE"
+        chmod 640 "$PANEL_STATE_FILE" 2>/dev/null || true
+        chown root:nftban "$PANEL_STATE_FILE" 2>/dev/null || true
+
+        PANEL_ENABLED="$DETECTED_PANEL"
+        ok "${DETECTED_PANEL} panel: ENABLED"
+        info "Ports will be loaded when nftban-core sync runs"
+    else
+        info "Panel ports: not enabled (run 'nftban panel $DETECTED_PANEL enable' later)"
+    fi
+    echo ""
+else
+    ok "No web hosting panel detected (standalone server)"
+fi
+
+echo ""
+
+# =============================================================================
+# STEP 8: Post-install and verification
 # =============================================================================
 run_post_install || exit 1
 echo ""
@@ -2414,7 +2525,26 @@ if [[ "${NFTBAN_METRICS_ENABLED:-false}" == "true" ]]; then
     echo "  ✓ Metrics (${NFTBAN_METRICS_BACKEND})"
     echo "  ✓ Watchdog (system monitoring)"
 fi
+if [[ -n "${PANEL_ENABLED:-}" ]]; then
+    echo "  ✓ ${PANEL_ENABLED^} panel ports"
+fi
 echo ""
+
+# Panel-specific instructions
+if [[ -n "${DETECTED_PANEL:-}" ]]; then
+    if [[ -n "${PANEL_ENABLED:-}" ]]; then
+        echo "Panel commands:"
+        echo "  nftban panel $DETECTED_PANEL status   # Check panel port status"
+        echo "  nftban panel $DETECTED_PANEL test     # Test panel connectivity"
+        echo "  nftban port status                    # View all port rules"
+        echo ""
+    else
+        echo "Panel detected but not enabled:"
+        echo "  nftban panel $DETECTED_PANEL enable   # Enable ${DETECTED_PANEL} ports"
+        echo ""
+    fi
+fi
+
 echo "Enable optional features:"
 echo "  nftban feeds enable      # Threat intel feeds"
 echo "  nftban portscan enable   # Port scan detection"
@@ -2429,4 +2559,5 @@ echo ""
 echo "Check status:"
 echo "  nftban status            # System status"
 echo "  nftban health            # Health check"
+echo "  nftban port status       # Port/firewall status"
 echo ""
