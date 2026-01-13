@@ -24,13 +24,9 @@ ldflags:
   - -X main.BuildDate={{ .CommitDate }}
   - -X main.Version={{ .Env.VERSION }}
 
-# Build targets (cross-compilation)
-goos:
-  - linux
-
-goarch:
-  - amd64
-  - arm64
+# Build targets (single target per config - SLSA builder requirement)
+goos: linux
+goarch: amd64
 
 # Main package path
 main: ./cmd/nftban-ui
