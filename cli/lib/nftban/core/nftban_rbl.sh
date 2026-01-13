@@ -5,28 +5,30 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Real-time Blackhole List (RBL) checking core logic
 #
-# meta:name=nftban_rbl
-# meta:type=core
-# meta:header=RBL Core Logic
-# meta:version=1.0.0
+# meta:name="nftban_rbl"
+# meta:type="core"
+# meta:header="RBL Core Logic"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
+# meta:description="RBL checking against 40+ DNS blackhole lists"
+# meta:input="IP addresses, RBL configuration"
+# meta:output="Blacklist status, cached results, alerts"
+# meta:depends="bash>=4.0, dig, host"
+# meta:created_date="2025-12-31"
+# meta:updated_date="2026-01-13"
 #
-# **Description**
-# meta:description=RBL checking against 20+ DNS blackhole lists
-# meta:input=IP addresses, RBL configuration
-# meta:output=Blacklist status, cached results, alerts
-#
-# **Based on CSF RBL Implementation**
-# Source: ConfigServer Security & Firewall
-# Method: DNS reverse lookup with caching
-#
-# meta:created_date=2025-12-31
-# meta:updated_date=2025-12-31
+# meta:inventory.files=""
+# meta:inventory.binaries="dig, host, mail"
+# meta:inventory.env_vars="NFTBAN_RBL_ENABLED, NFTBAN_RBL_TIMEOUT, NFTBAN_RBL_PARALLEL_JOBS"
+# meta:inventory.config_files="/etc/nftban/conf.d/rbl/main.conf, /etc/nftban/conf.d/rbl/rbls.conf, /etc/nftban/conf.d/rbl/watchlist.conf"
+# meta:inventory.systemd_units="nftban-rbl-check.timer"
+# meta:inventory.network="DNS queries (port 53/udp)"
+# meta:inventory.privileges="none"
 # =============================================================================
 
 # Strict mode
-set -euo pipefail
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
@@ -59,7 +61,9 @@ fi
 : "${NFTBAN_RBL_CACHE_DIR:=${NFTBAN_LOG_DIR}/rbl}"
 : "${NFTBAN_RBL_PROVIDERS_FILE:=${NFTBAN_CONFIG_DIR}/conf.d/rbl/rbls.conf}"
 : "${NFTBAN_RBL_CUSTOM_FILE:=${NFTBAN_CONFIG_DIR}/conf.d/rbl/custom.conf}"
+: "${NFTBAN_RBL_WATCHLIST_FILE:=${NFTBAN_CONFIG_DIR}/conf.d/rbl/watchlist.conf}"
 : "${NFTBAN_RBL_ALERT_ON_NEW_LISTING:=YES}"
+: "${NFTBAN_RBL_PARALLEL_JOBS:=10}"
 
 # =============================================================================
 # IP DISCOVERY FUNCTIONS
@@ -152,6 +156,282 @@ nftban_rbl_reverse_ip() {
         # IPv4: Simple octet reversal
         echo "$ip" | awk -F. '{print $4"."$3"."$2"."$1}'
     fi
+}
+
+# =============================================================================
+# WATCHLIST FUNCTIONS
+# =============================================================================
+
+nftban_rbl_watchlist_get() {
+    # Get all watchlist entries
+    # Output: IP|description|tags|notify_email (one per line)
+
+    local watchlist_file="${NFTBAN_RBL_WATCHLIST_FILE}"
+
+    if [[ ! -f "$watchlist_file" ]]; then
+        return 0
+    fi
+
+    # Read entries, skip comments and empty lines
+    grep -v '^#' "$watchlist_file" 2>/dev/null | grep -v '^$' | grep '|'
+}
+
+nftban_rbl_watchlist_add() {
+    # Add IP to watchlist
+    # Args: $1 = IP address
+    #       $2 = description (optional)
+    #       $3 = tags (optional, comma-separated)
+    #       $4 = notify_email (optional)
+
+    local ip="$1"
+    local description="${2:-}"
+    local tags="${3:-}"
+    local notify_email="${4:-}"
+    local watchlist_file="${NFTBAN_RBL_WATCHLIST_FILE}"
+
+    # Validate IP format
+    if ! [[ "$ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]] && \
+       ! [[ "$ip" =~ ^[0-9a-fA-F:]+$ ]]; then
+        echo "Error: Invalid IP address format: $ip" >&2
+        return 1
+    fi
+
+    # Check if already exists
+    if grep -q "^${ip}|" "$watchlist_file" 2>/dev/null; then
+        echo "Error: IP $ip already in watchlist" >&2
+        return 1
+    fi
+
+    # Sanitize description (remove pipes)
+    description="${description//|/-}"
+
+    # Add entry
+    echo "${ip}|${description}|${tags}|${notify_email}" >> "$watchlist_file"
+
+    echo "Added to watchlist: $ip"
+    [[ -n "$description" ]] && echo "  Description: $description"
+    [[ -n "$tags" ]] && echo "  Tags: $tags"
+    return 0
+}
+
+nftban_rbl_watchlist_remove() {
+    # Remove IP from watchlist
+    # Args: $1 = IP address
+
+    local ip="$1"
+    local watchlist_file="${NFTBAN_RBL_WATCHLIST_FILE}"
+
+    if [[ ! -f "$watchlist_file" ]]; then
+        echo "Error: Watchlist file not found" >&2
+        return 1
+    fi
+
+    # Check if exists
+    if ! grep -q "^${ip}|" "$watchlist_file" 2>/dev/null; then
+        echo "Error: IP $ip not found in watchlist" >&2
+        return 1
+    fi
+
+    # Remove entry
+    grep -v "^${ip}|" "$watchlist_file" > "${watchlist_file}.tmp"
+    mv "${watchlist_file}.tmp" "$watchlist_file"
+
+    echo "Removed from watchlist: $ip"
+    return 0
+}
+
+nftban_rbl_watchlist_list() {
+    # List all watchlist entries in formatted output
+    # Args: $1 = format (text|json)
+
+    local format="${1:-text}"
+    local count=0
+
+    if [[ "$format" == "json" ]]; then
+        echo "["
+        local first=1
+        while IFS='|' read -r ip description tags notify_email; do
+            [[ -z "$ip" ]] && continue
+            [[ $first -eq 0 ]] && echo ","
+            echo "  {"
+            echo "    \"ip\": \"$ip\","
+            echo "    \"description\": \"${description:-}\","
+            echo "    \"tags\": \"${tags:-}\","
+            echo "    \"notify_email\": \"${notify_email:-}\""
+            echo -n "  }"
+            first=0
+            ((count++))
+        done < <(nftban_rbl_watchlist_get)
+        echo ""
+        echo "]"
+    else
+        echo "RBL Watchlist"
+        echo "─────────────────────────────────────────────────────────"
+
+        while IFS='|' read -r ip description tags notify_email; do
+            [[ -z "$ip" ]] && continue
+            ((count++))
+            printf "%d. %-18s" "$count" "$ip"
+            [[ -n "$description" ]] && printf "  %s" "$description"
+            echo ""
+            [[ -n "$tags" ]] && echo "   Tags: $tags"
+            [[ -n "$notify_email" ]] && echo "   Notify: $notify_email"
+        done < <(nftban_rbl_watchlist_get)
+
+        if [[ $count -eq 0 ]]; then
+            echo "(No IPs in watchlist)"
+            echo ""
+            echo "Add IPs with: nftban rbl watchlist add <IP> [description]"
+        fi
+
+        echo "─────────────────────────────────────────────────────────"
+        echo "Total: $count watched IP(s)"
+    fi
+}
+
+# =============================================================================
+# PARALLEL DNS FUNCTIONS
+# =============================================================================
+
+nftban_rbl_check_ip_parallel() {
+    # Check single IP against all RBL providers using parallel DNS queries
+    # Args: $1 = IP address
+    #       $2 = output format (text|json)
+    # Output: RBL check results (much faster than sequential)
+
+    local ip="$1"
+    local format="${2:-text}"
+    local reversed_ip
+    local temp_dir
+    local jobs="${NFTBAN_RBL_PARALLEL_JOBS:-10}"
+
+    reversed_ip=$(nftban_rbl_reverse_ip "$ip")
+    temp_dir=$(mktemp -d)
+
+    # Create list of RBL checks to run
+    local rbl_list=()
+    while IFS=: read -r rbl_domain rbl_url; do
+        rbl_list+=("${rbl_domain}:${rbl_url}")
+    done < <(nftban_rbl_load_providers)
+
+    # Run DNS lookups in parallel using background jobs
+    local pids=()
+    local job_count=0
+
+    for rbl_entry in "${rbl_list[@]}"; do
+        local rbl_domain="${rbl_entry%%:*}"
+        local rbl_url="${rbl_entry#*:}"
+
+        # Run lookup in background, write result to temp file
+        (
+            local result
+            local txt_record=""
+            result=$(nftban_rbl_dns_lookup "$reversed_ip" "$rbl_domain")
+
+            if [[ "$result" == "LISTED" ]]; then
+                txt_record=$(nftban_rbl_get_txt_record "$reversed_ip" "$rbl_domain")
+            fi
+
+            echo "${result}|${rbl_domain}|${rbl_url}|${txt_record}" > "${temp_dir}/${rbl_domain}.result"
+        ) &
+
+        pids+=($!)
+        ((job_count++))
+
+        # Limit concurrent jobs
+        if [[ $job_count -ge $jobs ]]; then
+            wait "${pids[0]}"
+            pids=("${pids[@]:1}")
+            ((job_count--))
+        fi
+    done
+
+    # Wait for all remaining jobs
+    wait
+
+    # Collect results
+    local listed_count=0
+    local clean_count=0
+    local timeout_count=0
+
+    if [[ "$format" == "json" ]]; then
+        echo "{"
+        echo "  \"ip\": \"$ip\","
+        echo "  \"checks\": ["
+    else
+        echo "RBL Check Results for: $ip"
+        echo "─────────────────────────────────────────────────────────"
+    fi
+
+    local first=1
+    for result_file in "${temp_dir}"/*.result; do
+        [[ ! -f "$result_file" ]] && continue
+
+        IFS='|' read -r result rbl_domain rbl_url txt_record < "$result_file"
+
+        if [[ "$result" == "LISTED" ]]; then
+            ((listed_count++))
+
+            if [[ "$format" == "json" ]]; then
+                [[ $first -eq 0 ]] && echo ","
+                echo "    {"
+                echo "      \"rbl\": \"$rbl_domain\","
+                echo "      \"status\": \"listed\","
+                echo "      \"reason\": \"$txt_record\","
+                echo "      \"url\": \"$rbl_url\""
+                echo -n "    }"
+                first=0
+            else
+                echo "❌ LISTED: $rbl_domain"
+                [[ -n "$txt_record" ]] && echo "   Reason: $txt_record"
+                echo "   Info: $rbl_url"
+            fi
+        elif [[ "$result" == "TIMEOUT" ]]; then
+            ((timeout_count++))
+
+            if [[ "$format" == "json" ]]; then
+                [[ $first -eq 0 ]] && echo ","
+                echo "    {"
+                echo "      \"rbl\": \"$rbl_domain\","
+                echo "      \"status\": \"timeout\","
+                echo "      \"url\": \"$rbl_url\""
+                echo -n "    }"
+                first=0
+            else
+                echo "⏱️  TIMEOUT: $rbl_domain"
+            fi
+        else
+            ((clean_count++))
+
+            if [[ "$format" == "text" ]] && [[ "${NFTBAN_RBL_VERBOSE:-NO}" == "YES" ]]; then
+                echo "✅ CLEAN: $rbl_domain"
+            fi
+        fi
+    done
+
+    # Cleanup temp dir
+    rm -rf "$temp_dir"
+
+    if [[ "$format" == "json" ]]; then
+        echo ""
+        echo "  ],"
+        echo "  \"summary\": {"
+        echo "    \"listed\": $listed_count,"
+        echo "    \"clean\": $clean_count,"
+        echo "    \"timeout\": $timeout_count"
+        echo "  }"
+        echo "}"
+    else
+        echo "─────────────────────────────────────────────────────────"
+        echo "Summary:"
+        echo "  Listed: $listed_count"
+        echo "  Clean: $clean_count"
+        echo "  Timeout: $timeout_count"
+    fi
+
+    # Return 1 if any listings found
+    [[ $listed_count -gt 0 ]] && return 1
+    return 0
 }
 
 # =============================================================================
@@ -812,3 +1092,8 @@ export -f nftban_rbl_check_new_listing
 export -f nftban_rbl_check_delisting
 export -f nftban_rbl_update_state
 export -f nftban_rbl_get_state
+export -f nftban_rbl_watchlist_get
+export -f nftban_rbl_watchlist_add
+export -f nftban_rbl_watchlist_remove
+export -f nftban_rbl_watchlist_list
+export -f nftban_rbl_check_ip_parallel

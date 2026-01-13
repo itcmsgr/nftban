@@ -465,11 +465,15 @@ rbl:
     - "nftban rbl critical add 1.2.3.4 mail"
     - "nftban rbl critical remove 1.2.3.4"
     - "nftban rbl alert test --ip 1.2.3.4"
+    - "nftban rbl watchlist list"
+    - "nftban rbl watchlist add 198.51.100.5 'Customer ABC mail'"
+    - "nftban rbl watchlist check --alert"
+    - "nftban rbl check --sequential"
     - "nftban rbl status --json"
   subcommands:
     check:
       mutates: false
-      description: "Check IP(s) against RBL servers"
+      description: "Check IP(s) against RBL servers (parallel DNS by default)"
       options:
         --ip: "Check specific IP address"
         --fresh: "Ignore cache, force fresh check"
@@ -477,11 +481,12 @@ rbl:
         --verbose: "Show all results including clean"
         --quiet: "Minimal output (for cron)"
         --alert: "Send alert email if listings found"
+        --sequential: "Use sequential DNS (default: parallel)"
     server:
       mutates: false
       description: "Full server assessment (all IPs + hostname)"
       subcommands:
-        check: {mutates: false, description: "Check all server IPs against RBLs"}
+        check: {mutates: false, description: "Check all server IPs against RBLs (--sequential for slow mode)"}
     status:
       mutates: false
       description: "Show RBL monitoring status"
@@ -514,6 +519,14 @@ rbl:
         list: {mutates: false, description: "Show configured critical IPs"}
         add: {mutates: true, requires_root: true, description: "Add critical IP with tag"}
         remove: {mutates: true, requires_root: true, description: "Remove critical IP"}
+    watchlist:
+      mutates: conditional
+      description: "Monitor external IPs of interest (customers, partners, etc.)"
+      subcommands:
+        list: {mutates: false, description: "Show all watched IPs"}
+        add: {mutates: true, requires_root: true, description: "Add IP to watchlist with description"}
+        remove: {mutates: true, requires_root: true, description: "Remove IP from watchlist"}
+        check: {mutates: false, description: "Check all watched IPs against RBLs (--alert to send notifications)"}
 
 trust:
   category: active_protection

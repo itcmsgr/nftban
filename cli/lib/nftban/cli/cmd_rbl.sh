@@ -1,5 +1,28 @@
 #!/usr/bin/env bash
 # =============================================================================
+# NFTBan v1.0.0 - RBL CLI Handler
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: CLI interface for RBL (Real-time Blackhole List) monitoring
+#
+# meta:name="cmd_rbl"
+# meta:type="cli"
+# meta:header="RBL CLI Handler"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
+# meta:description="CLI commands for RBL monitoring and watchlist management"
+# meta:created_date="2025-12-31"
+# meta:updated_date="2026-01-13"
+#
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/rbl/main.conf, /etc/nftban/conf.d/rbl/watchlist.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="conditional"
+# =============================================================================
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
@@ -27,21 +50,6 @@ if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER"
 fi
-# NFTBan v1.0.0 - RBL CLI Handler
-# =============================================================================
-
-# SPDX-License-Identifier: MPL-2.0
-# Purpose: CLI interface for RBL (Real-time Blackhole List) monitoring
-#
-# meta:name=cmd_rbl
-# meta:type=cli
-# meta:header=RBL CLI Handler
-# meta:version=1.0.0
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# meta:created_date=2025-12-31
-# meta:updated_date=2025-12-31
 # =============================================================================
 
 # Enhanced strict mode
@@ -89,7 +97,7 @@ USAGE:
   nftban rbl <subcommand> [options]
 
 SUBCOMMANDS:
-  check       Check specific IP(s) against RBL servers
+  check       Check specific IP(s) against RBL servers (parallel DNS)
   server      Check full server (all IPs + hostname)
   status      Show RBL monitoring status
   list        List configured RBL providers
@@ -98,6 +106,7 @@ SUBCOMMANDS:
   cache       Manage RBL cache
   alert       Test alert system
   critical    Manage critical IPs (mail, web, panel servers)
+  watchlist   Monitor external IPs of interest (customers, partners)
 
 CHECK OPTIONS:
   --ip IP           Check specific IP address
@@ -106,6 +115,7 @@ CHECK OPTIONS:
   --verbose         Show all results (including clean)
   --quiet           Minimal output (for cron)
   --alert           Send alert email if listings found
+  --sequential      Use sequential DNS (default: parallel)
 
 CACHE OPTIONS:
   purge             Purge all cache files
@@ -116,6 +126,13 @@ CRITICAL IPS OPTIONS:
   list              Show configured critical IPs
   add IP TAG        Add critical IP (tag: mail, web, panel)
   remove IP         Remove critical IP
+
+WATCHLIST OPTIONS:
+  list              Show all watched IPs
+  add IP [DESC]     Add IP to watchlist with description
+  remove IP         Remove IP from watchlist
+  check             Check all watched IPs against RBLs
+  check --alert     Check watched IPs and send alerts
 
 EXAMPLES:
   # Check full server (all IPs + hostname)
@@ -148,13 +165,25 @@ EXAMPLES:
   # List critical IPs
   nftban rbl critical list
 
+  # Add customer server to watchlist
+  nftban rbl watchlist add 198.51.100.5 "Customer ABC mail server"
+
+  # Check all watched IPs
+  nftban rbl watchlist check --alert
+
 CONFIGURATION:
-  /etc/nftban/conf.d/rbl/main.conf     Main configuration
-  /etc/nftban/conf.d/rbl/rbls.conf     RBL providers list
-  /etc/nftban/conf.d/rbl/custom.conf   Custom enable/disable
+  /etc/nftban/conf.d/rbl/main.conf       Main configuration
+  /etc/nftban/conf.d/rbl/main.conf.local User overrides
+  /etc/nftban/conf.d/rbl/rbls.conf       RBL providers list
+  /etc/nftban/conf.d/rbl/custom.conf     Custom enable/disable
+  /etc/nftban/conf.d/rbl/watchlist.conf  Watched IPs
 
 CACHE LOCATION:
   /var/log/nftban/rbl/{IP}.cache       Cached results per IP
+
+PERFORMANCE:
+  Parallel DNS queries (default): ~10-15 seconds for 41 RBLs
+  Sequential DNS queries: ~2-3 minutes for 41 RBLs
 
 For more information: https://nftban.com/docs/rbl
 EOF
@@ -206,6 +235,9 @@ nftban_cmd_rbl() {
         critical)
             nftban_cmd_rbl_critical "$@"
             ;;
+        watchlist)
+            nftban_cmd_rbl_watchlist "$@"
+            ;;
         *)
             echo "Error: Unknown subcommand: $subcommand" >&2
             echo "Run 'nftban rbl help' for usage" >&2
@@ -219,8 +251,8 @@ nftban_cmd_rbl() {
 # =============================================================================
 
 nftban_cmd_rbl_check() {
-    # Check IPs against RBL servers
-    # Options: --ip, --fresh, --json, --verbose, --quiet, --alert
+    # Check IPs against RBL servers (parallel DNS by default)
+    # Options: --ip, --fresh, --json, --verbose, --quiet, --alert, --sequential
 
     local ip=""
     local fresh=0
@@ -228,6 +260,7 @@ nftban_cmd_rbl_check() {
     local verbose=0
     local quiet=0
     local alert=0
+    local sequential=0
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -255,6 +288,10 @@ nftban_cmd_rbl_check() {
                 ;;
             --alert)
                 alert=1
+                shift
+                ;;
+            --sequential)
+                sequential=1
                 shift
                 ;;
             *)
@@ -306,9 +343,13 @@ nftban_cmd_rbl_check() {
             [[ $quiet -eq 0 ]] && echo "(Using cached results)"
             cat "$cache_file"
         else
-            # Perform fresh check
+            # Perform fresh check (parallel DNS by default)
             local results
-            results=$(nftban_rbl_check_ip "$check_ip" "$format")
+            if [[ $sequential -eq 1 ]]; then
+                results=$(nftban_rbl_check_ip "$check_ip" "$format")
+            else
+                results=$(nftban_rbl_check_ip_parallel "$check_ip" "$format")
+            fi
 
             # Cache results
             echo "$results" | nftban_rbl_cache_set "$check_ip"
@@ -348,9 +389,9 @@ nftban_cmd_rbl_check() {
 }
 
 nftban_cmd_rbl_server() {
-    # Check full server: all IPs (IPv4 + IPv6) + hostname
+    # Check full server: all IPs (IPv4 + IPv6) + hostname (parallel DNS by default)
     # Subcommands: check
-    # Options: --fresh, --json, --verbose, --quiet, --alert
+    # Options: --fresh, --json, --verbose, --quiet, --alert, --sequential
 
     local subcmd="${1:-check}"
     shift || true
@@ -366,6 +407,7 @@ nftban_cmd_rbl_server() {
     local verbose=0
     local quiet=0
     local alert=0
+    local sequential=0
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -389,6 +431,10 @@ nftban_cmd_rbl_server() {
                 ;;
             --alert)
                 alert=1
+                shift
+                ;;
+            --sequential)
+                sequential=1
                 shift
                 ;;
             *)
@@ -478,9 +524,13 @@ nftban_cmd_rbl_server() {
             [[ $quiet -eq 0 ]] && echo "(Using cached results)"
             cat "$cache_file"
         else
-            # Perform fresh check
+            # Perform fresh check (parallel DNS by default)
             local results
-            results=$(nftban_rbl_check_ip "$check_ip" "$format")
+            if [[ $sequential -eq 1 ]]; then
+                results=$(nftban_rbl_check_ip "$check_ip" "$format")
+            else
+                results=$(nftban_rbl_check_ip_parallel "$check_ip" "$format")
+            fi
 
             # Cache results
             echo "$results" | nftban_rbl_cache_set "$check_ip"
@@ -949,6 +999,207 @@ EOF
         *)
             echo "Error: Unknown critical subcommand: $subcmd" >&2
             echo "Available: list, add, remove" >&2
+            return 1
+            ;;
+    esac
+}
+
+nftban_cmd_rbl_watchlist() {
+    # Manage watchlist IPs for external RBL monitoring (customers, partners, etc.)
+    # Subcommands: list, add, remove, check
+    # Uses config-based file architecture
+
+    local subcmd="${1:-list}"
+    shift || true
+
+    case "$subcmd" in
+        list)
+            local format="text"
+
+            # Parse options
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --json)
+                        format="json"
+                        shift
+                        ;;
+                    *)
+                        echo "Error: Unknown option: $1" >&2
+                        return 1
+                        ;;
+                esac
+            done
+
+            nftban_rbl_watchlist_list "$format"
+            ;;
+
+        add)
+            local ip="${1:-}"
+            local description="${2:-}"
+            local tags="${3:-}"
+            local notify_email="${4:-}"
+
+            if [[ -z "$ip" ]]; then
+                echo "Error: IP address required" >&2
+                echo "Usage: nftban rbl watchlist add <IP> [description] [tags] [notify_email]" >&2
+                echo "" >&2
+                echo "Tags: customer, partner, mail, web, critical (comma-separated)" >&2
+                return 1
+            fi
+
+            # Check if running as root
+            if [[ $EUID -ne 0 ]]; then
+                echo "Error: Must run as root to modify watchlist" >&2
+                return 1
+            fi
+
+            nftban_rbl_watchlist_add "$ip" "$description" "$tags" "$notify_email"
+            ;;
+
+        remove)
+            local ip="${1:-}"
+
+            if [[ -z "$ip" ]]; then
+                echo "Error: IP address required" >&2
+                echo "Usage: nftban rbl watchlist remove <IP>" >&2
+                return 1
+            fi
+
+            # Check if running as root
+            if [[ $EUID -ne 0 ]]; then
+                echo "Error: Must run as root to modify watchlist" >&2
+                return 1
+            fi
+
+            nftban_rbl_watchlist_remove "$ip"
+            ;;
+
+        check)
+            local alert=0
+            local format="text"
+            local verbose=0
+            local sequential=0
+
+            # Parse options
+            while [[ $# -gt 0 ]]; do
+                case "$1" in
+                    --alert)
+                        alert=1
+                        shift
+                        ;;
+                    --json)
+                        format="json"
+                        shift
+                        ;;
+                    --verbose)
+                        verbose=1
+                        export NFTBAN_RBL_VERBOSE="YES"
+                        shift
+                        ;;
+                    --sequential)
+                        sequential=1
+                        shift
+                        ;;
+                    *)
+                        echo "Error: Unknown option: $1" >&2
+                        return 1
+                        ;;
+                esac
+            done
+
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "NFTBan RBL Watchlist Check"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo ""
+
+            local total_checked=0
+            local total_listed=0
+            local total_clean=0
+
+            # Check each watchlist entry
+            while IFS='|' read -r ip description tags notify_email; do
+                [[ -z "$ip" ]] && continue
+                ((total_checked++))
+
+                echo "─────────────────────────────────────────────────────────────"
+                echo "Checking: $ip"
+                [[ -n "$description" ]] && echo "Description: $description"
+                [[ -n "$tags" ]] && echo "Tags: $tags"
+                echo ""
+
+                # Use parallel or sequential DNS
+                local results
+                if [[ $sequential -eq 1 ]]; then
+                    results=$(nftban_rbl_check_ip "$ip" "$format")
+                else
+                    results=$(nftban_rbl_check_ip_parallel "$ip" "$format")
+                fi
+
+                # Cache results
+                echo "$results" | nftban_rbl_cache_set "$ip"
+
+                # Output results
+                echo "$results"
+
+                # Check if listed
+                if echo "$results" | grep -q "LISTED"; then
+                    ((total_listed++))
+                    nftban_rbl_update_state "$ip" "listed"
+
+                    # Send alert if requested
+                    if [[ $alert -eq 1 ]]; then
+                        local alert_email="${notify_email:-${NFTBAN_RBL_ALERT_EMAIL:-}}"
+                        if [[ -n "$alert_email" ]]; then
+                            # Extract first RBL and reason for alert
+                            local first_rbl
+                            local first_reason
+                            first_rbl=$(echo "$results" | grep "LISTED:" | head -n1 | awk '{print $3}')
+                            first_reason=$(echo "$results" | grep "Reason:" | head -n1 | sed 's/.*Reason: //')
+
+                            if nftban_rbl_check_new_listing "$ip" "listed"; then
+                                NFTBAN_RBL_ALERT_EMAIL="$alert_email" \
+                                    nftban_rbl_send_alert "$ip" "$first_rbl" "$first_reason" "watchlist"
+                            fi
+                        fi
+                    fi
+                else
+                    ((total_clean++))
+                    nftban_rbl_update_state "$ip" "clean"
+                fi
+
+                echo ""
+            done < <(nftban_rbl_watchlist_get)
+
+            if [[ $total_checked -eq 0 ]]; then
+                echo "(No IPs in watchlist)"
+                echo ""
+                echo "Add IPs with: nftban rbl watchlist add <IP> [description]"
+                return 0
+            fi
+
+            # Final summary
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "Watchlist Check Summary"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "IPs Checked: $total_checked"
+            echo "Listed: $total_listed"
+            echo "Clean: $total_clean"
+            echo ""
+
+            if [[ $total_listed -gt 0 ]]; then
+                echo "⚠️  WARNING: $total_listed watchlist IP(s) on RBL blacklists!"
+            else
+                echo "✅ All watchlist IPs are clean (not blacklisted)"
+            fi
+
+            # Return exit code based on listings
+            [[ $total_listed -gt 0 ]] && return 1
+            return 0
+            ;;
+
+        *)
+            echo "Error: Unknown watchlist subcommand: $subcmd" >&2
+            echo "Available: list, add, remove, check" >&2
             return 1
             ;;
     esac
