@@ -52,6 +52,22 @@ func ProbeService(host string, port int) (*Service, error) {
 		if probeSSH(host, port, service) {
 			return service, nil
 		}
+	case 21:
+		if probeFTP(host, port, service) {
+			return service, nil
+		}
+	case 25, 465, 587:
+		if probeSMTP(host, port, service) {
+			return service, nil
+		}
+	case 110, 995:
+		if probePOP3(host, port, service) {
+			return service, nil
+		}
+	case 143, 993:
+		if probeIMAP(host, port, service) {
+			return service, nil
+		}
 	case 3306:
 		if probeMySQL(host, port, service) {
 			return service, nil
@@ -199,6 +215,114 @@ func probeMySQL(host string, port int, service *Service) bool {
 				service.Banner = string(buffer[5:versionEnd])
 			}
 		}
+		return true
+	}
+
+	return false
+}
+
+// probeSMTP checks for SMTP server greeting (220 response)
+func probeSMTP(host string, port int, service *Service) bool {
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+
+	// SMTP server sends 220 greeting immediately
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	reader := bufio.NewReader(conn)
+	banner, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+
+	// Check for SMTP 220 greeting
+	if strings.HasPrefix(banner, "220") {
+		service.Name = "smtp"
+		service.Banner = strings.TrimSpace(banner)
+		return true
+	}
+
+	return false
+}
+
+// probeFTP checks for FTP server greeting (220 response)
+func probeFTP(host string, port int, service *Service) bool {
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+
+	// FTP server sends 220 greeting immediately
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	reader := bufio.NewReader(conn)
+	banner, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+
+	// Check for FTP 220 greeting
+	if strings.HasPrefix(banner, "220") {
+		service.Name = "ftp"
+		service.Banner = strings.TrimSpace(banner)
+		return true
+	}
+
+	return false
+}
+
+// probePOP3 checks for POP3 server greeting (+OK response)
+func probePOP3(host string, port int, service *Service) bool {
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+
+	// POP3 server sends +OK greeting immediately
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	reader := bufio.NewReader(conn)
+	banner, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+
+	// Check for POP3 +OK greeting
+	if strings.HasPrefix(banner, "+OK") {
+		service.Name = "pop3"
+		service.Banner = strings.TrimSpace(banner)
+		return true
+	}
+
+	return false
+}
+
+// probeIMAP checks for IMAP server greeting (* OK response)
+func probeIMAP(host string, port int, service *Service) bool {
+	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
+	conn, err := net.DialTimeout("tcp", address, 2*time.Second)
+	if err != nil {
+		return false
+	}
+	defer conn.Close()
+
+	// IMAP server sends * OK greeting immediately
+	conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	reader := bufio.NewReader(conn)
+	banner, err := reader.ReadString('\n')
+	if err != nil {
+		return false
+	}
+
+	// Check for IMAP * OK greeting
+	if strings.HasPrefix(banner, "* OK") {
+		service.Name = "imap"
+		service.Banner = strings.TrimSpace(banner)
 		return true
 	}
 

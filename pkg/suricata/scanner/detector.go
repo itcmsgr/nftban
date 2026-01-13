@@ -51,6 +51,10 @@ var CommonPorts = []int{
 	110,   // POP3
 	143,   // IMAP
 	443,   // HTTPS
+	465,   // SMTPS
+	587,   // SMTP Submission
+	993,   // IMAPS
+	995,   // POP3S
 	3306,  // MySQL
 	5432,  // PostgreSQL
 	6379,  // Redis
@@ -120,6 +124,10 @@ func detectServiceByPort(port int) string {
 		110:   "pop3",
 		143:   "imap",
 		443:   "https",
+		465:   "smtps",
+		587:   "smtp-submission",
+		993:   "imaps",
+		995:   "pop3s",
 		3306:  "mysql",
 		5432:  "postgresql",
 		6379:  "redis",
@@ -169,7 +177,7 @@ func mapServicesToCategories(services []Service) []string {
 		case "ftp":
 			categories["emerging-ftp"] = true
 
-		case "smtp":
+		case "smtp", "smtps", "smtp-submission":
 			categories["emerging-smtp"] = true
 			categories["emerging-malware"] = true
 
@@ -181,8 +189,10 @@ func mapServicesToCategories(services []Service) []string {
 			categories["emerging-sql"] = true
 			categories["emerging-exploit"] = true
 
-		case "pop3", "imap":
+		case "pop3", "pop3s":
 			categories["emerging-pop3"] = true
+
+		case "imap", "imaps":
 			categories["emerging-imap"] = true
 
 		case "redis", "memcached":
