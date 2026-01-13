@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.32] - 2026-01-13
+
+### Added
+
+#### Panel Auto-Detection and Auto-Enable
+- **Installation Panel Detection**: Automatically detects web hosting panels during install
+  - cPanel/WHM (`/usr/local/cpanel`)
+  - DirectAdmin (`/usr/local/directadmin`)
+  - Plesk (`/usr/local/psa`)
+  - CentOS Web Panel (`/usr/local/cwpsrv`)
+  - CyberPanel (`/usr/local/CyberCP`)
+- **Auto-Enable Prompt**: Asks user to enable panel ports during installation
+- **Panel State File**: Creates `/var/lib/nftban/panels/enabled.conf`
+- **Completion Message**: Shows panel-specific commands after installation
+
+#### xtables Compatibility Fix (cPanel/Exim)
+- **`check_xtables_compat()`**: Detects xtables compat expressions in nftables.conf
+- **Auto-Remove**: Removes `xt target`/`xt match` lines that block native nftables
+- **Backup**: Saves original config to `/var/backups/nftban/firewall-migration/`
+- **Skip Option**: `--skip-xtables-fix` or `NFTBAN_SKIP_XTABLES_FIX=1` to bypass
+- **Resolves**: cPanel mail routing rules using `xt target "REDIRECT"` that break nftables.service
+
+#### Panel-Aware Health Checks
+- **Removed `go` from optional binaries**: Not needed (prebuilt packages shipped)
+- **Panel-aware mail check**: Don't warn about mail/sendmail on panel servers
+  - Panels manage their own mail (Exim via cPanel, etc.)
+- **Panel detection in health**: Checks `/usr/local/cpanel`, `/usr/local/directadmin`, `/usr/local/psa`
+
+### Technical Notes
+- cPanel support ticket document: `/home/commonfolder/CPANEL-NFTABLES-COMPAT-TICKET.md`
+- xtables compat rules come from cPanel's mail routing (ports 25, 465, 587 REDIRECT)
+- cPanel mail continues working via `iptables-nft` (parallel to native nftables)
+
+---
+
 ## [1.0.31] - 2026-01-13
 
 ### Added
