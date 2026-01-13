@@ -1,0 +1,507 @@
+{
+  "registry_version": "1.0.0",
+  "schema_version": "1.0.30",
+  "generated_at": "2026-01-13",
+  "description": "NFTBan Reports Registry - Report types, scheduling, delivery, and metrics metadata",
+
+  "categories": {
+    "on_demand": "User-triggered reports via CLI or API",
+    "scheduled": "Automatically scheduled reports (cron/systemd)",
+    "health": "System health and compliance reports",
+    "analytics": "Statistical analysis and trend reports",
+    "alerts": "Real-time alert notifications"
+  },
+
+  "report_types": {
+    "dashboard": {
+      "description": "Real-time statistics dashboard",
+      "category": "on_demand",
+      "cli_command": "nftban stats dashboard",
+      "api_endpoint": "/api/v1/stats/dashboard",
+      "formats": ["html", "json", "text"],
+      "default_format": "html",
+      "template": "stats_dashboard.html",
+      "refresh_interval_seconds": 60,
+      "typical_size_kb": 250,
+      "metrics": ["total_bans", "active_bans", "unique_countries", "module_status"]
+    },
+    "daily": {
+      "description": "24-hour statistics report",
+      "category": "scheduled",
+      "cli_command": "nftban report generate daily",
+      "formats": ["html", "json", "csv"],
+      "default_format": "html",
+      "template": "daily.html",
+      "schedule": "03:00",
+      "retention_days": 90,
+      "typical_size_kb": 180,
+      "output_path": "/var/lib/nftban/reports/daily/",
+      "metrics": ["total_bans", "active_bans", "top_ips", "top_countries", "module_status"]
+    },
+    "weekly": {
+      "description": "7-day statistics report",
+      "category": "scheduled",
+      "cli_command": "nftban report generate weekly",
+      "formats": ["html", "json", "csv"],
+      "default_format": "html",
+      "schedule": "Sun 04:00",
+      "retention_days": 365,
+      "typical_size_kb": 350,
+      "output_path": "/var/lib/nftban/reports/weekly/",
+      "metrics": ["total_bans", "active_bans", "trend_7d", "top_ips", "top_countries"]
+    },
+    "monthly": {
+      "description": "30-day statistics report",
+      "category": "scheduled",
+      "cli_command": "nftban report generate monthly",
+      "formats": ["html", "json", "csv"],
+      "default_format": "html",
+      "schedule": "1st 05:00",
+      "retention_days": 2555,
+      "typical_size_kb": 500,
+      "output_path": "/var/lib/nftban/reports/monthly/",
+      "metrics": ["total_bans", "active_bans", "trend_30d", "top_ips", "top_countries", "geoip_distribution"]
+    },
+    "health": {
+      "description": "System health check report",
+      "category": "health",
+      "cli_command": "nftban health",
+      "api_endpoint": "/api/v1/health",
+      "formats": ["json", "text"],
+      "default_format": "text",
+      "systemd_service": "nftban-health.service",
+      "systemd_timer": "nftban-health.timer",
+      "cache_file": "/var/lib/nftban/state/health-status.json",
+      "cache_ttl_seconds": 300,
+      "checks": ["service_status", "nftables_rules", "disk_space", "memory", "config_syntax"]
+    },
+    "fhs_compliance": {
+      "description": "Filesystem Hierarchy Standard compliance report",
+      "category": "health",
+      "cli_command": "nftban health fhs",
+      "formats": ["html", "json", "text"],
+      "default_format": "text",
+      "template": "fhs_report.html",
+      "checks": ["directories", "permissions", "ownership", "symlinks"]
+    },
+    "module_status": {
+      "description": "Protection module status report",
+      "category": "on_demand",
+      "cli_command": "nftban status",
+      "api_endpoint": "/api/v1/status",
+      "formats": ["json", "text"],
+      "default_format": "text",
+      "template": "module_report.html",
+      "modules": ["ddos", "portscan", "login", "botscan", "geoban", "feeds"]
+    },
+    "trend": {
+      "description": "7-day rolling average trend analysis",
+      "category": "analytics",
+      "cli_command": "nftban stats trend",
+      "formats": ["json", "text"],
+      "default_format": "text",
+      "data_source": "/var/lib/nftban/snapshots/",
+      "period_days": 7,
+      "metrics": ["bans_per_day", "unique_ips", "country_distribution"]
+    },
+    "top_ips": {
+      "description": "Top banned IP addresses report",
+      "category": "analytics",
+      "cli_command": "nftban stats top",
+      "api_endpoint": "/api/v1/stats/top",
+      "formats": ["json", "text"],
+      "default_format": "text",
+      "limit": 10,
+      "includes_geoip": true
+    },
+    "ip_history": {
+      "description": "Single IP address history report",
+      "category": "analytics",
+      "cli_command": "nftban stats ip <IP>",
+      "api_endpoint": "/api/v1/stats/ip/{ip}",
+      "formats": ["json", "text"],
+      "default_format": "text",
+      "includes_geoip": true,
+      "includes_rbl": true
+    },
+    "port_status": {
+      "description": "Protected ports status report",
+      "category": "on_demand",
+      "cli_command": "nftban port list",
+      "formats": ["json", "text"],
+      "default_format": "text",
+      "template": "port_report.html"
+    },
+    "feed_status": {
+      "description": "Threat intelligence feed status report",
+      "category": "on_demand",
+      "cli_command": "nftban feeds status",
+      "api_endpoint": "/api/v1/feeds/status",
+      "formats": ["json", "text"],
+      "default_format": "text",
+      "metrics": ["feeds_loaded", "total_entries", "last_update"]
+    },
+    "geoip_status": {
+      "description": "GeoIP database status report",
+      "category": "on_demand",
+      "cli_command": "nftban geoip status",
+      "formats": ["json", "text"],
+      "default_format": "text",
+      "metrics": ["database_type", "build_date", "lookup_performance"]
+    },
+    "country_stats": {
+      "description": "Country-level ban statistics",
+      "category": "analytics",
+      "cli_command": "nftban analytics countries",
+      "api_endpoint": "/api/v1/stats/countries",
+      "formats": ["json", "text"],
+      "default_format": "text",
+      "output_path": "/var/lib/nftban/analytics/country-bans.json"
+    },
+    "rbl_status": {
+      "description": "RBL monitoring status report",
+      "category": "on_demand",
+      "cli_command": "nftban rbl status",
+      "api_endpoint": "/api/v1/rbl/status",
+      "formats": ["json", "text"],
+      "default_format": "text",
+      "metrics": ["rbl_enabled", "last_check", "cached_ips", "cache_ttl_hours"]
+    },
+    "rbl_check": {
+      "description": "RBL check results for server IPs",
+      "category": "on_demand",
+      "cli_command": "nftban rbl server check",
+      "api_endpoint": "/api/v1/rbl/check",
+      "formats": ["json", "text"],
+      "default_format": "text",
+      "typical_size_kb": 50,
+      "cache_file": "/var/log/nftban/rbl/{ip}.cache",
+      "cache_ttl_hours": 24,
+      "metrics": ["listed_count", "clean_count", "timeout_count", "rbl_providers"]
+    },
+    "rbl_watchlist": {
+      "description": "Watchlist IP RBL check report",
+      "category": "on_demand",
+      "cli_command": "nftban rbl watchlist check",
+      "formats": ["json", "text"],
+      "default_format": "text",
+      "config_file": "/etc/nftban/conf.d/rbl/watchlist.conf",
+      "metrics": ["ips_checked", "total_listed", "total_clean", "alerts_sent"]
+    },
+    "rbl_alerts": {
+      "description": "RBL listing alert notifications",
+      "category": "alerts",
+      "trigger": "new_listing",
+      "delivery_methods": ["email"],
+      "config_keys": ["NFTBAN_RBL_ALERT_EMAIL", "NFTBAN_RBL_ALERT_ON_NEW_LISTING"],
+      "severity_levels": ["critical", "high", "medium", "low"]
+    }
+  },
+
+  "delivery_methods": {
+    "stdout": {
+      "description": "Direct terminal output",
+      "supports_color": true,
+      "supports_unicode": true
+    },
+    "filesystem": {
+      "description": "Save to local filesystem",
+      "base_directory": "/var/lib/nftban/reports/",
+      "subdirectories": ["daily", "weekly", "monthly", "on_demand"],
+      "requires_space_mb": 500,
+      "cleanup_enabled": true
+    },
+    "email": {
+      "description": "Email delivery via sendmail/SMTP",
+      "config_file": "conf.d/mail.conf",
+      "config_keys": ["NFTBAN_MAIL_ENABLED", "NFTBAN_MAIL_DAILY_REPORT"],
+      "template": "email/report_template.html",
+      "attachment_formats": ["csv"],
+      "max_attachment_size_mb": 10
+    },
+    "api": {
+      "description": "JSON via REST API",
+      "base_endpoint": "/api/v1/",
+      "requires_service": "nftban-ui.service",
+      "authentication": "session_token"
+    },
+    "prometheus": {
+      "description": "Prometheus metrics export",
+      "output_path": "/var/lib/nftban/metrics/",
+      "file_extension": ".prom",
+      "systemd_timer": "nftban-metrics-exporter.timer"
+    }
+  },
+
+  "scheduling": {
+    "cron_file": "/etc/cron.d/nftban-stats",
+    "systemd_timers": [
+      "nftban-health.timer",
+      "nftban-maintenance.timer",
+      "nftban-metrics-exporter.timer"
+    ],
+    "frequencies": {
+      "hourly": "Snapshot collection",
+      "daily": "Daily report generation at 03:00",
+      "weekly": "Weekly report generation on Sunday 04:00",
+      "monthly": "Monthly report generation on 1st at 05:00"
+    },
+    "cli_command": "nftban report schedule"
+  },
+
+  "metrics_definitions": {
+    "total_bans": {
+      "description": "Total number of bans (cumulative)",
+      "type": "counter",
+      "source": "ban.log",
+      "prometheus_name": "nftban_bans_total"
+    },
+    "active_bans": {
+      "description": "Currently active bans",
+      "type": "gauge",
+      "source": "nft list set",
+      "prometheus_name": "nftban_bans_active"
+    },
+    "unique_countries": {
+      "description": "Unique countries in ban list",
+      "type": "gauge",
+      "requires": "geoip",
+      "prometheus_name": "nftban_countries_unique"
+    },
+    "top_ips": {
+      "description": "Most frequently banned IP addresses",
+      "type": "array",
+      "limit": 10,
+      "includes": ["ip", "count", "country", "city"]
+    },
+    "top_countries": {
+      "description": "Countries with most bans",
+      "type": "array",
+      "limit": 10,
+      "includes": ["country_code", "country_name", "count", "percentage"]
+    },
+    "module_status": {
+      "description": "Protection module enabled/active status",
+      "type": "object",
+      "modules": ["ddos", "portscan", "login", "botscan", "geoban", "feeds"]
+    },
+    "trend_7d": {
+      "description": "7-day rolling average",
+      "type": "timeseries",
+      "period_days": 7,
+      "interval": "daily"
+    },
+    "trend_30d": {
+      "description": "30-day rolling average",
+      "type": "timeseries",
+      "period_days": 30,
+      "interval": "daily"
+    },
+    "geoip_distribution": {
+      "description": "Geographic distribution of bans",
+      "type": "object",
+      "requires": "geoip"
+    },
+    "rbl_enabled": {
+      "description": "RBL monitoring enabled status",
+      "type": "boolean",
+      "source": "config",
+      "prometheus_name": "nftban_rbl_enabled"
+    },
+    "rbl_listed_count": {
+      "description": "Number of IPs found on RBL blacklists",
+      "type": "gauge",
+      "source": "rbl_check",
+      "prometheus_name": "nftban_rbl_listed_total"
+    },
+    "rbl_clean_count": {
+      "description": "Number of IPs clean on all RBLs",
+      "type": "gauge",
+      "source": "rbl_check",
+      "prometheus_name": "nftban_rbl_clean_total"
+    },
+    "rbl_providers_count": {
+      "description": "Number of RBL providers configured",
+      "type": "gauge",
+      "source": "rbls.conf",
+      "prometheus_name": "nftban_rbl_providers_total"
+    },
+    "rbl_watchlist_count": {
+      "description": "Number of IPs in watchlist",
+      "type": "gauge",
+      "source": "watchlist.conf",
+      "prometheus_name": "nftban_rbl_watchlist_total"
+    }
+  },
+
+  "log_files": {
+    "ban_log": {
+      "path": "/var/log/nftban/ban.log",
+      "format": "pipe_separated",
+      "fields": ["timestamp", "id", "jail", "ip", "reason", "action", "timeout"],
+      "rotation": "daily",
+      "retention_days": 90
+    },
+    "actions_log": {
+      "path": "/var/log/nftban/nftban-actions.log",
+      "format": "json",
+      "fields": ["source", "event", "data", "timestamp"],
+      "rotation": "daily",
+      "retention_days": 30
+    },
+    "login_monitor_log": {
+      "path": "/var/log/nftban/login-monitor.log",
+      "format": "structured_text",
+      "rotation": "daily",
+      "retention_days": 30
+    },
+    "ddos_classic_log": {
+      "path": "/var/log/nftban/ddos-classic.log",
+      "format": "text",
+      "rotation": "daily",
+      "retention_days": 30
+    },
+    "botscan_log": {
+      "path": "/var/log/nftban/botscan.log",
+      "format": "text",
+      "rotation": "daily",
+      "retention_days": 30
+    },
+    "feeds_log": {
+      "path": "/var/log/nftban/feeds.log",
+      "format": "text",
+      "rotation": "weekly",
+      "retention_days": 90
+    },
+    "rbl_cache_dir": {
+      "path": "/var/log/nftban/rbl/",
+      "format": "text",
+      "files": ["*.cache", "state.dat", "state.json", "last_check"],
+      "retention_days": 7
+    }
+  },
+
+  "data_directories": {
+    "reports": {
+      "path": "/var/lib/nftban/reports/",
+      "subdirs": ["daily", "weekly", "monthly"],
+      "cleanup_policy": "retention_days"
+    },
+    "snapshots": {
+      "path": "/var/lib/nftban/snapshots/",
+      "format": "json",
+      "interval": "hourly",
+      "retention_days": 7
+    },
+    "analytics": {
+      "path": "/var/lib/nftban/analytics/",
+      "files": ["country-bans.json", "ip-origins.json"]
+    },
+    "metrics": {
+      "path": "/var/lib/nftban/metrics/",
+      "format": "prometheus"
+    },
+    "exports": {
+      "path": "/var/lib/nftban/exports/",
+      "purpose": "staging_for_email_attachments"
+    }
+  },
+
+  "templates": {
+    "directory": "/usr/share/nftban/templates/",
+    "email": {
+      "report_template": "email/report_template.html",
+      "variables": ["HOSTNAME", "DATE", "BLOCKED_IPS", "WHITELIST_COUNT", "REPORT_ID"]
+    },
+    "html_reports": {
+      "dashboard": "reports/stats_dashboard.html",
+      "daily": "reports/daily.html",
+      "module": "reports/module_report.html",
+      "port": "reports/port_report.html",
+      "fhs": "reports/fhs_report.html"
+    }
+  },
+
+  "configuration_keys": {
+    "stats.conf": [
+      "NFTBAN_STATS_ENABLED",
+      "NFTBAN_STATS_RETENTION_DAYS",
+      "NFTBAN_STATS_DEFAULT_FORMAT",
+      "NFTBAN_STATS_DETAILED",
+      "NFTBAN_STATS_COLLECTION_INTERVAL"
+    ],
+    "mail.conf": [
+      "NFTBAN_MAIL_ENABLED",
+      "NFTBAN_MAIL_DAILY_REPORT",
+      "NFTBAN_MAIL_TO",
+      "NFTBAN_MAIL_FROM",
+      "NFTBAN_SMTP_HOST",
+      "NFTBAN_SMTP_PORT"
+    ],
+    "rbl/main.conf": [
+      "NFTBAN_RBL_ENABLED",
+      "NFTBAN_RBL_TIMEOUT",
+      "NFTBAN_RBL_CACHE_TTL",
+      "NFTBAN_RBL_PARALLEL_JOBS",
+      "NFTBAN_RBL_AUTO_DISCOVER_IPS",
+      "NFTBAN_RBL_CHECK_IPV6",
+      "NFTBAN_RBL_ALERT_EMAIL",
+      "NFTBAN_RBL_ALERT_ON_NEW_LISTING",
+      "NFTBAN_RBL_CRITICAL_IPS"
+    ]
+  },
+
+  "api_endpoints": {
+    "/api/v1/stats/dashboard": {
+      "method": "GET",
+      "returns": "dashboard",
+      "auth_required": true
+    },
+    "/api/v1/stats/top": {
+      "method": "GET",
+      "returns": "top_ips",
+      "auth_required": true
+    },
+    "/api/v1/stats/countries": {
+      "method": "GET",
+      "returns": "country_stats",
+      "auth_required": true
+    },
+    "/api/v1/stats/ip/{ip}": {
+      "method": "GET",
+      "returns": "ip_history",
+      "auth_required": true
+    },
+    "/api/v1/health": {
+      "method": "GET",
+      "returns": "health",
+      "auth_required": false
+    },
+    "/api/v1/status": {
+      "method": "GET",
+      "returns": "module_status",
+      "auth_required": true
+    },
+    "/api/v1/feeds/status": {
+      "method": "GET",
+      "returns": "feed_status",
+      "auth_required": true
+    },
+    "/api/v1/rbl/status": {
+      "method": "GET",
+      "returns": "rbl_status",
+      "auth_required": true
+    },
+    "/api/v1/rbl/check": {
+      "method": "GET",
+      "returns": "rbl_check",
+      "auth_required": true,
+      "parameters": ["ip", "fresh"]
+    },
+    "/api/v1/rbl/watchlist": {
+      "method": "GET",
+      "returns": "rbl_watchlist",
+      "auth_required": true
+    }
+  }
+}
