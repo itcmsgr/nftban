@@ -9479,6 +9479,216 @@
       "category": "detection",
       "config_file": "conf.d/portscan/classic.conf",
       "active_when": "portscan_classic"
+    },
+    "THRESHOLD_TEMP_BAN": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "45",
+      "description": "Login scorer threshold temp ban",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "THRESHOLD_ESCALATE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "65",
+      "description": "Login scorer threshold escalate",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "THRESHOLD_PERMANENT": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "100",
+      "description": "Login scorer threshold permanent",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "TEMP_BAN_DURATION": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "15m",
+      "description": "Login scorer temp ban duration",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "SCORE_DECAY_INTERVAL": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "5m",
+      "description": "Login scorer score decay interval",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "SCORE_DECAY_AMOUNT": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "5",
+      "description": "Login scorer score decay amount",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "IP_RETENTION_DURATION": {
+      "type": "string",
+      "$ref": "#/definitions/string",
+      "default": "24h",
+      "description": "Login scorer ip retention duration",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "SSH_FAILED_PASSWORD_SCORE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "10",
+      "description": "Login scorer ssh failed password score",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "SSH_INVALID_USER_SCORE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "15",
+      "description": "Login scorer ssh invalid user score",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "SSH_PREAUTH_SCORE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "20",
+      "description": "Login scorer ssh preauth score",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "SSH_TOO_MANY_SCORE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "30",
+      "description": "Login scorer ssh too many score",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "SSH_ROOT_ATTEMPT_BONUS": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "10",
+      "description": "Login scorer ssh root attempt bonus",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "DOVECOT_AUTH_FAIL_SCORE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "15",
+      "description": "Login scorer dovecot auth fail score",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "POSTFIX_SASL_SCORE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "15",
+      "description": "Login scorer postfix sasl score",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "EXIM_AUTH_FAIL_SCORE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "15",
+      "description": "Login scorer exim auth fail score",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "FTP_AUTH_FAIL_SCORE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "15",
+      "description": "Login scorer ftp auth fail score",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "DIRECTADMIN_LOGIN_SCORE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "20",
+      "description": "Login scorer directadmin login score",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "CPANEL_LOGIN_SCORE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "20",
+      "description": "Login scorer cpanel login score",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "PLESK_LOGIN_SCORE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "20",
+      "description": "Login scorer plesk login score",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "WORDPRESS_XMLRPC_SCORE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "25",
+      "description": "Login scorer wordpress xmlrpc score",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
+    },
+    "WORDPRESS_WPLOGIN_SCORE": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "20",
+      "description": "Login scorer wordpress wplogin score",
+      "introduced_in": "1.0.29",
+      "category": "detection",
+      "config_file": "conf.d/login/scorer.conf",
+      "active_when": "always"
     }
   },
   "deprecated": {
