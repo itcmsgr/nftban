@@ -16,7 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Plesk (`/usr/local/psa`)
   - CentOS Web Panel (`/usr/local/cwpsrv`)
   - CyberPanel (`/usr/local/CyberCP`)
-- **Auto-Enable Prompt**: Asks user to enable panel ports during installation
+- **Auto-Enable**: Panel ports enabled automatically (no prompt)
 - **Panel State File**: Creates `/var/lib/nftban/panels/enabled.conf`
 - **Completion Message**: Shows panel-specific commands after installation
 
