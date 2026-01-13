@@ -23,7 +23,7 @@
 #        component: all (default), gui, auth, or specific binary name
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -44,6 +44,64 @@ cd "$SCRIPT_DIR"
 # Build directories
 BIN_DIR="$SCRIPT_DIR/bin"
 mkdir -p "$BIN_DIR"
+
+# =============================================================================
+# BUILD PREREQUISITES CHECK
+# =============================================================================
+
+check_prerequisites() {
+    local missing=0
+
+    # Check Go version (need 1.21+)
+    if ! command -v go &>/dev/null; then
+        error "Go is not installed"
+        echo "  Install: https://go.dev/dl/ (need Go 1.21+)"
+        missing=1
+    else
+        local go_version
+        go_version=$(go version | grep -oP 'go\K[0-9]+\.[0-9]+' | head -1)
+        local major minor
+        major=$(echo "$go_version" | cut -d. -f1)
+        minor=$(echo "$go_version" | cut -d. -f2)
+        if [[ "$major" -lt 1 ]] || [[ "$major" -eq 1 && "$minor" -lt 21 ]]; then
+            error "Go version $go_version is too old (need 1.21+)"
+            echo "  Update: https://go.dev/dl/"
+            missing=1
+        else
+            ok "Go $go_version"
+        fi
+    fi
+
+    # Check C compiler (needed for CGO)
+    if ! command -v gcc &>/dev/null; then
+        error "GCC is not installed (needed for CGO)"
+        echo "  Install (Debian/Ubuntu): apt install build-essential"
+        echo "  Install (RHEL/Fedora):   dnf install gcc"
+        missing=1
+    else
+        ok "GCC $(gcc --version | head -1 | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' | head -1)"
+    fi
+
+    # Check PAM headers (needed for nftban-ui-auth)
+    if [[ ! -f /usr/include/security/pam_appl.h ]]; then
+        warn "PAM development headers not found (needed for nftban-ui-auth)"
+        echo "  Install (Debian/Ubuntu): apt install libpam0g-dev"
+        echo "  Install (RHEL/Fedora):   dnf install pam-devel"
+        echo "  Build will skip nftban-ui-auth if missing"
+    else
+        ok "PAM headers"
+    fi
+
+    if [[ $missing -eq 1 ]]; then
+        echo ""
+        error "Missing build prerequisites. Install them and try again."
+        exit 1
+    fi
+}
+
+log "Checking build prerequisites..."
+check_prerequisites
+echo ""
 
 # Build configuration
 CGO_ENABLED=1
