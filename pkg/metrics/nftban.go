@@ -158,6 +158,152 @@ var (
 		Name:      "nft_cli_errors_total",
 		Help:      "Total nft CLI command errors",
 	}, []string{"operation", "error_type"})
+
+	// =============================================================================
+	// Loginmon Module Metrics
+	// =============================================================================
+
+	loginmonDetectionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Subsystem: "loginmon",
+		Name:      "detections_total",
+		Help:      "Total login failure detections",
+	}, []string{"reason", "service"}) // reason: ssh_invalid_user, ssh_root_attempt, etc.
+
+	loginmonBansTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Subsystem: "loginmon",
+		Name:      "bans_total",
+		Help:      "Total bans triggered by loginmon",
+	}, []string{"family", "reason"}) // family: ipv4, ipv6
+
+	loginmonTrackedIPs = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Subsystem: "loginmon",
+		Name:      "tracked_ips",
+		Help:      "Number of IPs currently being tracked/scored",
+	})
+
+	loginmonScoreHistogram = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "nftban",
+		Subsystem: "loginmon",
+		Name:      "score_at_ban",
+		Help:      "Score distribution when bans are triggered",
+		Buckets:   []float64{45, 50, 65, 75, 100, 150, 200}, // threshold buckets
+	})
+
+	loginmonDetectionLatency = promauto.NewHistogram(prometheus.HistogramOpts{
+		Namespace: "nftban",
+		Subsystem: "loginmon",
+		Name:      "detection_latency_seconds",
+		Help:      "Time from log event to detection processing",
+		Buckets:   prometheus.ExponentialBuckets(0.0001, 2, 12), // 0.1ms to ~400ms
+	})
+
+	// =============================================================================
+	// Portscan Module Metrics
+	// =============================================================================
+
+	portscanDetectionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Subsystem: "portscan",
+		Name:      "detections_total",
+		Help:      "Total port scan detections",
+	}, []string{"protocol"}) // protocol: tcp, udp
+
+	portscanTrackedIPs = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Subsystem: "portscan",
+		Name:      "tracked_ips",
+		Help:      "Number of IPs currently being tracked for port scanning",
+	})
+
+	portscanBansTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Subsystem: "portscan",
+		Name:      "bans_total",
+		Help:      "Total bans triggered by portscan detection",
+	}, []string{"family"})
+
+	// =============================================================================
+	// DDoS Module Metrics
+	// =============================================================================
+
+	ddosDetectionsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Subsystem: "ddos",
+		Name:      "detections_total",
+		Help:      "Total DDoS attack detections",
+	}, []string{"attack_type"}) // attack_type: syn_flood, icmp_flood, udp_flood, etc.
+
+	ddosMitigationsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Subsystem: "ddos",
+		Name:      "mitigations_total",
+		Help:      "Total DDoS mitigation actions taken",
+	}, []string{"action"}) // action: rate_limit, block, drop
+
+	ddosActiveMitigations = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Subsystem: "ddos",
+		Name:      "active_mitigations",
+		Help:      "Number of currently active DDoS mitigations",
+	})
+
+	// =============================================================================
+	// IPC Metrics
+	// =============================================================================
+
+	ipcRequestsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Subsystem: "ipc",
+		Name:      "requests_total",
+		Help:      "Total IPC requests to nftband daemon",
+	}, []string{"method", "status"}) // method: ban, unban, sync, etc. status: success, error
+
+	ipcLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Namespace: "nftban",
+		Subsystem: "ipc",
+		Name:      "latency_seconds",
+		Help:      "IPC request latency in seconds",
+		Buckets:   prometheus.ExponentialBuckets(0.0001, 2, 14), // 0.1ms to ~1.6s
+	}, []string{"method"})
+
+	// =============================================================================
+	// Active Bans Gauge
+	// =============================================================================
+
+	activeBans = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "active_bans",
+		Help:      "Number of currently active bans (real-time count)",
+	}, []string{"family", "type"}) // family: ipv4, ipv6. type: temp, permanent, feed
+
+	// =============================================================================
+	// GeoIP Metrics
+	// =============================================================================
+
+	bansByCountry = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Name:      "bans_by_country_total",
+		Help:      "Total bans by country code",
+	}, []string{"country"}) // ISO 3166-1 alpha-2 country code
+
+	detectionsCountry = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Name:      "detections_by_country_total",
+		Help:      "Total detections by country code",
+	}, []string{"country", "module"}) // module: loginmon, portscan, ddos
+
+	// =============================================================================
+	// Error Metrics
+	// =============================================================================
+
+	errorsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
+		Namespace: "nftban",
+		Name:      "errors_total",
+		Help:      "Total errors by module and type",
+	}, []string{"module", "error_type"}) // module: loginmon, portscan, ddos, ipc, etc.
 )
 
 // =============================================================================
@@ -250,6 +396,119 @@ func RecordNFTCLI(operation string, durationSec float64, err error) {
 	if err != nil {
 		nftCLIErrorsTotal.WithLabelValues(operation, "execution_error").Inc()
 	}
+}
+
+// =============================================================================
+// Loginmon Metrics Recording Functions
+// =============================================================================
+
+// RecordLoginmonDetection records a login failure detection
+func RecordLoginmonDetection(reason, service string) {
+	loginmonDetectionsTotal.WithLabelValues(reason, service).Inc()
+}
+
+// RecordLoginmonBan records a ban triggered by loginmon
+func RecordLoginmonBan(family, reason string) {
+	loginmonBansTotal.WithLabelValues(family, reason).Inc()
+}
+
+// SetLoginmonTrackedIPs sets the current number of tracked IPs
+func SetLoginmonTrackedIPs(count int) {
+	loginmonTrackedIPs.Set(float64(count))
+}
+
+// RecordLoginmonScoreAtBan records the score when a ban is triggered
+func RecordLoginmonScoreAtBan(score float64) {
+	loginmonScoreHistogram.Observe(score)
+}
+
+// RecordLoginmonDetectionLatency records detection processing latency
+func RecordLoginmonDetectionLatency(latencySec float64) {
+	loginmonDetectionLatency.Observe(latencySec)
+}
+
+// =============================================================================
+// Portscan Metrics Recording Functions
+// =============================================================================
+
+// RecordPortscanDetection records a port scan detection
+func RecordPortscanDetection(protocol string) {
+	portscanDetectionsTotal.WithLabelValues(protocol).Inc()
+}
+
+// SetPortscanTrackedIPs sets the current number of IPs being tracked for port scanning
+func SetPortscanTrackedIPs(count int) {
+	portscanTrackedIPs.Set(float64(count))
+}
+
+// RecordPortscanBan records a ban triggered by portscan detection
+func RecordPortscanBan(family string) {
+	portscanBansTotal.WithLabelValues(family).Inc()
+}
+
+// =============================================================================
+// DDoS Metrics Recording Functions
+// =============================================================================
+
+// RecordDDoSDetection records a DDoS attack detection
+func RecordDDoSDetection(attackType string) {
+	ddosDetectionsTotal.WithLabelValues(attackType).Inc()
+}
+
+// RecordDDoSMitigation records a DDoS mitigation action
+func RecordDDoSMitigation(action string) {
+	ddosMitigationsTotal.WithLabelValues(action).Inc()
+}
+
+// SetDDoSActiveMitigations sets the number of currently active mitigations
+func SetDDoSActiveMitigations(count int) {
+	ddosActiveMitigations.Set(float64(count))
+}
+
+// =============================================================================
+// IPC Metrics Recording Functions
+// =============================================================================
+
+// RecordIPCRequest records an IPC request with its status
+func RecordIPCRequest(method string, success bool, latencySec float64) {
+	status := "success"
+	if !success {
+		status = "error"
+	}
+	ipcRequestsTotal.WithLabelValues(method, status).Inc()
+	ipcLatency.WithLabelValues(method).Observe(latencySec)
+}
+
+// =============================================================================
+// Active Bans Recording Functions
+// =============================================================================
+
+// SetActiveBans sets the current number of active bans
+func SetActiveBans(family, banType string, count int) {
+	activeBans.WithLabelValues(family, banType).Set(float64(count))
+}
+
+// =============================================================================
+// GeoIP Metrics Recording Functions
+// =============================================================================
+
+// RecordBanByCountry records a ban for a specific country
+func RecordBanByCountry(country string) {
+	bansByCountry.WithLabelValues(country).Inc()
+}
+
+// RecordDetectionByCountry records a detection for a specific country and module
+func RecordDetectionByCountry(country, module string) {
+	detectionsCountry.WithLabelValues(country, module).Inc()
+}
+
+// =============================================================================
+// Error Recording Functions
+// =============================================================================
+
+// RecordError records an error for a module
+func RecordError(module, errorType string) {
+	errorsTotal.WithLabelValues(module, errorType).Inc()
 }
 
 // =============================================================================

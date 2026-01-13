@@ -53,6 +53,7 @@ import (
 
 	"github.com/itcmsgr/nftban/pkg/eventbus"
 	"github.com/itcmsgr/nftban/pkg/loginmon/detector"
+	"github.com/itcmsgr/nftban/pkg/metrics"
 	"github.com/itcmsgr/nftban/pkg/module"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
@@ -582,6 +583,8 @@ func (m *Module) runJournalWatcher(ctx context.Context) {
 
 // processLine processes a single log line using high-performance detector
 func (m *Module) processLine(line []byte) {
+	startTime := time.Now()
+
 	// Use high-performance signal-based detection
 	verdict, ok := m.registry.Detect(line)
 	if !ok {
@@ -589,6 +592,14 @@ func (m *Module) processLine(line []byte) {
 	}
 
 	m.status.RecordEvent()
+
+	// Record detection metrics
+	reasonName := detector.ReasonName[verdict.Reason]
+	metrics.RecordLoginmonDetection(reasonName, verdict.Service)
+	metrics.SetLoginmonTrackedIPs(m.scorer.TrackedIPs())
+
+	// Record detection latency
+	metrics.RecordLoginmonDetectionLatency(time.Since(startTime).Seconds())
 
 	// Record in scorer and check for ban threshold
 	banAction := m.scorer.RecordVerdict(verdict)
@@ -615,6 +626,17 @@ func (m *Module) triggerBan(action *detector.BanAction) {
 	if action.Duration == 0 {
 		banType = "permanent"
 	}
+
+	// Determine IP family
+	family := "ipv4"
+	if action.IP.To4() == nil {
+		family = "ipv6"
+	}
+
+	// Record ban metrics
+	metrics.RecordLoginmonBan(family, action.Reason)
+	metrics.RecordLoginmonScoreAtBan(float64(action.Score))
+	metrics.RecordBan("loginmon", family)
 
 	// Publish ban event
 	m.bus.Publish(eventbus.NewEvent(eventbus.EventBan, ModuleName).
