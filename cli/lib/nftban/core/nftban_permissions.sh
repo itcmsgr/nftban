@@ -184,7 +184,9 @@ perms_enforce_lib() {
         perms_run chown root:root "$PERMS_LIB"
         perms_run find "$PERMS_LIB" -type d -exec chown root:root {} \;
         perms_run find "$PERMS_LIB" -type d -exec chmod 0755 {} \;
-        perms_run find "$PERMS_LIB" -type f -name "*.sh" -exec chmod 0644 {} \;
+        # CRITICAL: Shell scripts in lib need to be executable (755)
+        # Scripts like cron/maintenance.sh are executed directly by systemd
+        perms_run find "$PERMS_LIB" -type f -name "*.sh" -exec chmod 0755 {} \;
     fi
 }
 

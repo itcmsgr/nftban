@@ -184,8 +184,9 @@ nftban_health_fix_permissions() {
             find "${NFTBAN_LIB_DIR}" -type d -exec chmod 755 {} \; 2>/dev/null
 
             # Fix file ownership and permissions
+            # CRITICAL: Shell scripts MUST be executable (755), not 644
             find "${NFTBAN_LIB_DIR}" -type f -name "*.sh" -exec chown root:root {} \; 2>/dev/null
-            find "${NFTBAN_LIB_DIR}" -type f -name "*.sh" -exec chmod 644 {} \; 2>/dev/null
+            find "${NFTBAN_LIB_DIR}" -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null
 
             # Fix binary permissions (if they exist)
             find "${NFTBAN_LIB_DIR}/bin" -type f 2>/dev/null | while read -r binary; do
