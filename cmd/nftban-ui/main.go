@@ -32,6 +32,7 @@ import (
 	"time"
 
 	"github.com/gorilla/mux"
+	"github.com/itcmsgr/nftban/cmd/nftban-ui/handlers"
 	"github.com/itcmsgr/nftban/internal/config"
 	"github.com/itcmsgr/nftban/pkg/api"
 	"github.com/itcmsgr/nftban/pkg/auth"
@@ -158,6 +159,28 @@ func main() {
 	router.Use(middleware.LoggingMiddleware)
 	router.Use(middleware.IPWhitelistMiddleware(cfg))
 	router.Use(middleware.SecurityHeadersMiddleware)
+
+	// ==========================================================================
+	// GOTH GUI Routes (Go + Templ + HTMX) - v1.1.0+
+	// ==========================================================================
+	gothHandlers := handlers.NewGOTHHandlers(authService, sessionStore)
+
+	// Public GOTH routes
+	router.HandleFunc("/ui/login", gothHandlers.HandleLogin).Methods("GET")
+	router.HandleFunc("/ui/action/login", gothHandlers.HandleActionLogin).Methods("POST")
+
+	// Protected GOTH routes (require session)
+	router.HandleFunc("/ui/", gothHandlers.RequireSession(gothHandlers.HandleDashboard)).Methods("GET")
+	router.HandleFunc("/ui/action/logout", gothHandlers.RequireSession(gothHandlers.HandleActionLogout)).Methods("POST")
+
+	// GOTH fragments (HTMX partial updates)
+	router.HandleFunc("/ui/frag/summary", gothHandlers.RequireSession(gothHandlers.HandleFragSummary)).Methods("GET")
+
+	log.Printf("[GOTH] GOTH GUI routes registered at /ui/*")
+
+	// ==========================================================================
+	// Legacy API Routes (v1) - Keep for backwards compatibility
+	// ==========================================================================
 
 	// API routes (v1)
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()

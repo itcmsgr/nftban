@@ -3,6 +3,7 @@ module github.com/itcmsgr/nftban
 go 1.23
 
 require (
+	github.com/a-h/templ v0.3.977
 	github.com/coreos/go-systemd/v22 v22.6.0
 	github.com/golang-jwt/jwt/v5 v5.2.0
 	github.com/google/nftables v0.2.0
