@@ -1,33 +1,40 @@
 #!/usr/bin/env bash
-
 # =============================================================================
 # NFTBan v1.0.0 - Port Report Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Port scanning and nftables firewall status analysis
 #
-# meta:name=nftban_report_port
-# meta:type=core
-# meta:header=Port Report Core
-# meta:version=1.0.0
+# meta:name="nftban_report_port"
+# meta:type="core"
+# meta:header="Port Report Core"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Scans listening services and analyzes nftables firewall status per port
-# meta:input=Port filters, output format options
-# meta:output=Port status reports (terminal, HTML, mail)
-#
-# **Inventory & Requirements**
-# meta:depends=bash,ss,nft,netstat(optional),lsof(optional)
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:homepage="https://nftban.com"
+# meta:description="Scans listening services and analyzes nftables firewall status per port"
+# meta:input="Port filters, output format options"
+# meta:output="Port status reports (terminal, HTML, mail)"
+# meta:depends="bash,ss,nft"
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-01-14"
+# meta:inventory.files=""
+# meta:inventory.binaries="ss,nft"
+# meta:inventory.env_vars="NFTBAN_TABLE_IPV4,NFTBAN_TABLE_IPV6"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
-# Strict mode
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
+
+# =============================================================================
+# TABLE DEFAULTS (must be set before any nft commands)
+# =============================================================================
+: "${NFTBAN_TABLE_IPV4:=ip nftban}"
+: "${NFTBAN_TABLE_IPV6:=ip6 nftban}"
 
 # =============================================================================
 # GLOBALS
@@ -224,8 +231,9 @@ nftban_port_gather_nft_rules() {
         [[ "$chain" =~ output|_out$ ]] && norm_chain="output"
 
         # Get set contents (v0.7.3: check IPv4 table, could also check IPv6)
+        # Note: elements may span multiple lines, so we use tr to join lines first
         local set_contents
-        set_contents=$(nft list set ${NFTBAN_TABLE_IPV4} "$set_name" 2>/dev/null | grep -o 'elements = {[^}]*}' | sed 's/elements = {//; s/}//' || true)
+        set_contents=$(nft list set ${NFTBAN_TABLE_IPV4} "$set_name" 2>/dev/null | tr '\n' ' ' | grep -oP 'elements = \{\K[^}]+' || true)
         if [[ -n "$set_contents" ]]; then
             # Parse ports from set (handles: 22, 80, 443, etc.)
             local port
