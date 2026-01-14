@@ -322,6 +322,32 @@ whitelist-system:
     - "nftban whitelist-system --dry-run"
     - "nftban whitelist-system --json"
 
+flush:
+  category: immediate_action
+  description: "Emergency flush/reset of nftables sets (blacklist, whitelist, feeds, geoban)"
+  risk: advanced
+  audience: [cli]
+  capability: enforcement
+  mutates: true
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban flush blacklist"
+    - "nftban flush whitelist"
+    - "nftban flush feeds"
+    - "nftban flush geoban"
+    - "nftban flush all"
+    - "nftban flush blacklist --dry-run"
+  subcommands:
+    blacklist: {description: "Flush all banned IPs from blacklist set"}
+    whitelist: {description: "Flush all whitelisted IPs"}
+    feeds: {description: "Flush all threat feed IPs"}
+    geoban: {description: "Flush all geoban entries"}
+    all: {description: "Flush all nftables sets (emergency reset)"}
+
 # =============================================================================
 # GROUP 2: ACTIVE PROTECTION
 # =============================================================================
@@ -669,6 +695,39 @@ config:
     paths:
       - /etc/nftban/nftban.conf
       - /etc/nftban/geoip.conf
+
+configaudit:
+  category: infrastructure
+  description: "Audit configuration for drift, deprecated keys, and new options (alias for config audit)"
+  risk: core
+  audience: [cli, auditor]
+  capability: config_view
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban configaudit"
+    - "nftban configaudit --json"
+
+configtest:
+  category: infrastructure
+  description: "Validate configuration against schema (alias for config test)"
+  risk: core
+  audience: [cli, auditor]
+  capability: config_view
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban configtest"
+    - "nftban configtest --verbose"
+    - "nftban configtest --json"
 
 port:
   category: infrastructure
@@ -1330,6 +1389,37 @@ timers:
     - "nftban timers enable nftban-health.timer"
     - "nftban timers disable nftban-queue.timer"
 
+queue:
+  category: developer_sysadmin
+  description: "Task queue and dead-letter queue (DLQ) management"
+  risk: advanced
+  audience: [cli]
+  capability: service_control
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban queue status"
+    - "nftban queue list"
+    - "nftban queue dlq list"
+    - "nftban queue dlq retry"
+    - "nftban queue dlq purge"
+    - "nftban queue status --json"
+  subcommands:
+    status: {mutates: false, description: "Show queue status and statistics"}
+    list: {mutates: false, description: "List queued tasks"}
+    clear: {mutates: true, description: "Clear queue (requires root)"}
+    dlq:
+      description: "Dead-letter queue management"
+      subcommands:
+        list: {mutates: false, description: "List failed tasks in DLQ"}
+        retry: {mutates: true, description: "Retry failed tasks"}
+        purge: {mutates: true, description: "Purge DLQ entries"}
+        inspect: {mutates: false, description: "Inspect a specific DLQ entry"}
+
 system:
   category: developer_sysadmin
   description: "System-level operations and diagnostics"
@@ -1356,9 +1446,9 @@ system:
 _metadata:
   version: "1.0"
   schema_version: "1.0"
-  generated_date: "2026-01-13"
-  total_commands: 48
-  commands_with_json: 39
+  generated_date: "2026-01-15"
+  total_commands: 52
+  commands_with_json: 43
   commands_without_json: 9
   missing_json:
     - debug
@@ -1373,16 +1463,16 @@ _metadata:
     - trust
   task_groups:
     setup_discovery: 8
-    immediate_action: 7
+    immediate_action: 8
     active_protection: 10
-    infrastructure: 7
+    infrastructure: 9
     intelligence_reporting: 11
-    developer_sysadmin: 7
+    developer_sysadmin: 8
   risk_levels:
-    core: 23
+    core: 25
     setup: 7
-    advanced: 18
+    advanced: 20
   audience_summary:
-    cli_only: 29
-    auditor_visible: 17
+    cli_only: 31
+    auditor_visible: 19
     panel_expose: 11

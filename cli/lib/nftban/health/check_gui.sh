@@ -33,7 +33,6 @@ NC='\033[0m'
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 NFTBAN_ROOT="${SCRIPT_DIR}/../../../../"
 REGISTRY="${NFTBAN_ROOT}/internal/ui/ui-registry.json"
-UI_DIR="${NFTBAN_ROOT}/internal/ui"
 HANDLERS_FILE="${NFTBAN_ROOT}/cmd/nftban-ui/handlers/goth.go"
 MAIN_FILE="${NFTBAN_ROOT}/cmd/nftban-ui/main.go"
 
