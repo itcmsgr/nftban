@@ -2441,9 +2441,57 @@ if [[ -n "$DETECTED_PANEL" ]]; then
 
     PANEL_ENABLED="$DETECTED_PANEL"
     ok "${DETECTED_PANEL} panel ports: AUTO-ENABLED"
+
+    # =========================================================================
+    # CPANEL SECURITY HARDENING
+    # =========================================================================
+    # Check for rpcbind exposure (BSI/Hetzner compliance)
+    # Port 111 is commonly flagged by security scanners
+
+    if ss -lunpt 2>/dev/null | grep -q ':111 '; then
+        echo ""
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        warn "Security: rpcbind (port 111) detected"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "Port 111 (rpcbind/portmapper) is exposed and can trigger:"
+        echo "  • BSI/Hetzner security alerts"
+        echo "  • DDoS reflection attack vectors"
+        echo "  • Security compliance violations"
+        echo ""
+
+        # Check if NFS is in use
+        if systemctl is-active nfs-server.service &>/dev/null 2>&1; then
+            info "NFS server detected - rpcbind may be required"
+            info "NFTBan will block port 111 from internet (allow local only)"
+
+            # Add to blocked ports (will be applied on sync)
+            mkdir -p /etc/nftban/blacklist.d 2>/dev/null || true
+            echo "# Auto-generated: Block rpcbind from internet" > /etc/nftban/blacklist.d/rpcbind.conf
+            echo "NFTBAN_BLOCK_RPCBIND=true" >> /etc/nftban/blacklist.d/rpcbind.conf
+            ok "Port 111 will be blocked from internet (local NFS still works)"
+        else
+            log "Disabling rpcbind (not needed without NFS)..."
+            systemctl stop rpcbind rpcbind.socket 2>/dev/null || true
+            systemctl disable rpcbind rpcbind.socket 2>/dev/null || true
+            ok "rpcbind: DISABLED (security hardening)"
+        fi
+    fi
     echo ""
 else
     ok "No web hosting panel detected (standalone server)"
+
+    # Check for rpcbind on standalone servers too
+    if ss -lunpt 2>/dev/null | grep -q ':111 '; then
+        echo ""
+        warn "Security: rpcbind (port 111) detected"
+        if ! systemctl is-active nfs-server.service &>/dev/null 2>&1; then
+            log "Disabling rpcbind (not needed)..."
+            systemctl stop rpcbind rpcbind.socket 2>/dev/null || true
+            systemctl disable rpcbind rpcbind.socket 2>/dev/null || true
+            ok "rpcbind: DISABLED (security hardening)"
+        fi
+    fi
 fi
 
 echo ""
