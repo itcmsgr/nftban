@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.0.33] - 2026-01-15
+
+### Deprecated
+
+#### Web GUI (nftban-ui)
+- **GUI Marked for Rewrite**: Current SPA-based GUI deprecated
+  - Multiple issues: JWT config, TLS setup, broken endpoints, missing configs
+  - Will be replaced with GOTH stack (Go + Templ + HTMX) in v1.1.0+
+  - Current GUI continues to be shipped but is not production-ready
+- **Migration Plan**: Phase-based rewrite starting with v1.1.0
+  - v1.1.0: Login + Dashboard (Templ/HTMX foundation)
+  - v1.2.0: Ban/Unban/Search functionality
+  - v1.3.0: Events/Whitelist management
+  - v1.4.0: Modules/Ports management
+  - v1.5.0: Panel integration
+  - v1.6.0: Advanced features, old GUI removal
+- **Tracking**: See GitHub Issue for progress updates
+- **CLI Unaffected**: Command-line interface remains fully functional
+
+---
+
 ## [1.0.32] - 2026-01-13
 
 ### Added
