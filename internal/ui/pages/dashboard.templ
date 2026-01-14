@@ -1,0 +1,54 @@
+// =============================================================================
+// NFTBan - GOTH GUI Dashboard Page
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+// meta:name="dashboard"
+// meta:type="templ"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2026-01-15"
+// meta:description="Dashboard page template for GOTH GUI"
+// meta:input="summary ui.SummaryData"
+// meta:output="Dashboard HTML page"
+// meta:depends="github.com/a-h/templ"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
+package pages
+
+import (
+	"github.com/itcmsgr/nftban/internal/ui"
+	"github.com/itcmsgr/nftban/internal/ui/fragments"
+)
+
+// Dashboard renders the main dashboard page
+templ Dashboard(summary ui.SummaryData) {
+	@ui.LayoutWithNav("Dashboard", "dashboard") {
+		<div class="page-header">
+			<h1 class="page-title">Dashboard</h1>
+		</div>
+
+		<!-- Summary cards with HTMX auto-refresh -->
+		<div
+			id="summary-section"
+			hx-get="/ui/frag/summary"
+			hx-trigger="every 5s"
+			hx-swap="innerHTML"
+		>
+			@fragments.SummaryCards(summary)
+		</div>
+
+		<!-- Recent Activity Section -->
+		<div class="card" style="margin-top: 2rem;">
+			<h3 style="margin-bottom: 1rem;">System Status</h3>
+			<p style="color: var(--text-muted);">
+				NFTBan is protecting your server. Statistics refresh automatically every 5 seconds.
+			</p>
+		</div>
+	}
+}

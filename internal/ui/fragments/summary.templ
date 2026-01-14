@@ -1,0 +1,60 @@
+// =============================================================================
+// NFTBan - GOTH GUI Summary Fragment
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+// meta:name="summary"
+// meta:type="templ"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2026-01-15"
+// meta:description="Summary cards fragment for HTMX updates"
+// meta:input="data ui.SummaryData"
+// meta:output="Summary cards HTML fragment"
+// meta:depends="github.com/a-h/templ"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+// =============================================================================
+
+package fragments
+
+import (
+	"strconv"
+	"github.com/itcmsgr/nftban/internal/ui"
+)
+
+// SummaryCards renders the dashboard summary statistics cards
+templ SummaryCards(data ui.SummaryData) {
+	<div class="card-grid">
+		<div class="card stat-card">
+			<div class="stat-label">Active Bans</div>
+			<div class="stat-value" style="color: var(--accent-red);">
+				{ strconv.Itoa(data.ActiveBans) }
+			</div>
+		</div>
+
+		<div class="card stat-card">
+			<div class="stat-label">Events (1h)</div>
+			<div class="stat-value" style="color: var(--accent-yellow);">
+				{ strconv.Itoa(data.EventsLastHour) }
+			</div>
+		</div>
+
+		<div class="card stat-card">
+			<div class="stat-label">Modules Active</div>
+			<div class="stat-value" style="color: var(--accent-green);">
+				{ strconv.Itoa(data.ModulesUp) }
+			</div>
+		</div>
+
+		<div class="card stat-card">
+			<div class="stat-label">Whitelisted IPs</div>
+			<div class="stat-value">
+				{ strconv.Itoa(data.WhitelistCount) }
+			</div>
+		</div>
+	</div>
+}
