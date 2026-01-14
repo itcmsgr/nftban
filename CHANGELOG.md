@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.0] - 2026-01-15
+
+### Added
+
+#### GOTH GUI - New Web Interface (Phase 1)
+- **GOTH Stack**: Go + Templ + HTMX server-side rendering
+  - No JavaScript framework complexity
+  - Type-safe templates with compile-time checking
+  - Progressive enhancement via HTMX
+- **Login Page**: PAM-based authentication
+  - System user credentials
+  - Session-based auth (cookies, not JWT)
+  - Secure cookie settings (HttpOnly, Secure, SameSite)
+- **Dashboard Page**: Live statistics overview
+  - Active bans count
+  - Events in last hour
+  - Active modules count
+  - Whitelisted IPs count
+- **Auto-Refresh**: HTMX updates every 5 seconds
+- **Dark Theme UI**: Modern responsive design
+- **Sidebar Navigation**: Quick access to all sections
+
+#### New Routes
+- `GET /ui/login` - Login page
+- `POST /ui/action/login` - Login form handler
+- `GET /ui/` - Dashboard (requires session)
+- `POST /ui/action/logout` - Logout handler
+- `GET /ui/frag/summary` - Summary cards fragment (HTMX)
+
+#### New Files
+- `internal/ui/layout.templ` - Base HTML layout
+- `internal/ui/pages/login.templ` - Login page template
+- `internal/ui/pages/dashboard.templ` - Dashboard template
+- `internal/ui/fragments/summary.templ` - HTMX fragment
+- `internal/ui/types.go` - Data types for templates
+- `cmd/nftban-ui/handlers/goth.go` - GOTH route handlers
+
+#### Build Prerequisites
+- `github.com/a-h/templ v0.3.977` - Templ template engine
+
+### Notes
+- Legacy SPA GUI still available at `/` (deprecated)
+- GOTH GUI accessible at `/ui/`
+- API routes unchanged at `/api/v1/`
+- Tracking: [GitHub Issue #51](https://github.com/itcmsgr/nftban/issues/51)
+
+---
+
 ## [1.0.33] - 2026-01-15
 
 ### Deprecated
