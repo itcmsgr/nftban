@@ -21,7 +21,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - v1.4.0: Modules/Ports management
   - v1.5.0: Panel integration
   - v1.6.0: Advanced features, old GUI removal
-- **Tracking**: See GitHub Issue for progress updates
+- **Tracking**: See [GitHub Issue #51](https://github.com/itcmsgr/nftban/issues/51) for progress updates
 - **CLI Unaffected**: Command-line interface remains fully functional
 
 ---
