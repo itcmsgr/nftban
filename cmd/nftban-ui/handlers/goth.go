@@ -57,7 +57,7 @@ func NewGOTHHandlers(authService *auth.PAMAuth, sessionStore *session.Store) *GO
 func (h *GOTHHandlers) HandleLogin(w http.ResponseWriter, r *http.Request) {
 	// If already logged in, redirect to dashboard
 	if cookie, err := r.Cookie("session_id"); err == nil {
-		if _, valid := h.SessionStore.Get(cookie.Value); valid {
+		if _, err := h.SessionStore.Get(cookie.Value); err == nil {
 			http.Redirect(w, r, "/ui/", http.StatusSeeOther)
 			return
 		}
@@ -97,20 +97,32 @@ func (h *GOTHHandlers) HandleActionLogin(w http.ResponseWriter, r *http.Request)
 	username := r.FormValue("username")
 	password := r.FormValue("password")
 
-	// Validate credentials via PAM
-	if err := h.Auth.Validate(username, password); err != nil {
+	// Authenticate via PAM (through Unix socket to nftban-ui-auth)
+	user, err := h.Auth.Authenticate(username, password)
+	if err != nil {
 		log.Printf("[GOTH] Login failed for user %s: %v", username, err)
 		http.Redirect(w, r, "/ui/login?error=Invalid+credentials", http.StatusSeeOther)
 		return
 	}
 
+	// Get client IP
+	clientIP := r.RemoteAddr
+	if forwarded := r.Header.Get("X-Forwarded-For"); forwarded != "" {
+		clientIP = forwarded
+	}
+
 	// Create session
-	sessionID := h.SessionStore.Create(username)
+	sess, err := h.SessionStore.Create(user.Username, user.Groups, clientIP)
+	if err != nil {
+		log.Printf("[GOTH] Failed to create session for user %s: %v", username, err)
+		http.Redirect(w, r, "/ui/login?error=Session+error", http.StatusSeeOther)
+		return
+	}
 
 	// Set session cookie
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session_id",
-		Value:    sessionID,
+		Value:    sess.Token,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   true,
@@ -153,7 +165,7 @@ func (h *GOTHHandlers) RequireSession(next http.HandlerFunc) http.HandlerFunc {
 			return
 		}
 
-		if _, valid := h.SessionStore.Get(cookie.Value); !valid {
+		if _, err := h.SessionStore.Get(cookie.Value); err != nil {
 			http.Redirect(w, r, "/ui/login", http.StatusSeeOther)
 			return
 		}
