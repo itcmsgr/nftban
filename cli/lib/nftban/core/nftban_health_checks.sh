@@ -2085,6 +2085,61 @@ nftban_health_check_gui() {
         fi
     fi
 
+    # ==========================================================================
+    # GUI-AUTH: Check auth socket and directory permissions
+    # ==========================================================================
+    # The nftban-ui service (runs as 'nftban' user) must be able to connect
+    # to /run/nftban-ui/auth.sock (created by nftban-ui-auth as root)
+    # Directory must be root:nftban 750, socket must be root:nftban 770
+    local auth_socket_dir="/run/nftban-ui"
+    local auth_socket="${auth_socket_dir}/auth.sock"
+
+    if [[ -d "$auth_socket_dir" ]]; then
+        # Check directory ownership (must be root:nftban for nftban user access)
+        local dir_owner dir_group
+        dir_owner=$(stat -c '%U' "$auth_socket_dir" 2>/dev/null)
+        dir_group=$(stat -c '%G' "$auth_socket_dir" 2>/dev/null)
+
+        if [[ "$dir_group" != "nftban" ]]; then
+            gui_issues+=("GUI-AUTH: Auth socket directory has wrong group: ${dir_owner}:${dir_group} (should be root:nftban)")
+            [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR
+
+            if [[ $auto_heal -eq 1 ]]; then
+                echo "  🔧 Auto-heal: Fixing auth socket directory permissions..."
+                chown root:nftban "$auth_socket_dir" 2>&1 && \
+                chmod 750 "$auth_socket_dir" 2>&1 && \
+                gui_issues+=("✓ GUI-AUTH: Fixed directory permissions")
+            fi
+        else
+            gui_issues+=("✓ GUI-AUTH: Socket directory permissions OK (${dir_owner}:${dir_group})")
+        fi
+
+        # Check socket exists and has correct ownership
+        if [[ -S "$auth_socket" ]]; then
+            local sock_owner sock_group
+            sock_owner=$(stat -c '%U' "$auth_socket" 2>/dev/null)
+            sock_group=$(stat -c '%G' "$auth_socket" 2>/dev/null)
+
+            if [[ "$sock_group" != "nftban" ]]; then
+                gui_issues+=("GUI-AUTH: Auth socket has wrong group: ${sock_owner}:${sock_group} (should be root:nftban)")
+                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            else
+                gui_issues+=("✓ GUI-AUTH: Socket permissions OK (${sock_owner}:${sock_group})")
+            fi
+        else
+            # Socket doesn't exist - check if auth service is running
+            if systemctl is-active --quiet nftban-ui-auth.service 2>/dev/null; then
+                gui_issues+=("GUI-AUTH: Auth service running but socket missing")
+                [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR
+            fi
+        fi
+    elif systemctl is-active --quiet ${NFTBAN_SERVICE_UI:-nftban-ui.service} 2>/dev/null; then
+        # GUI running but auth directory doesn't exist
+        gui_issues+=("GUI-AUTH: Auth socket directory missing (/run/nftban-ui)")
+        gui_issues+=("ℹ️  Restart auth service: systemctl restart nftban-ui-auth")
+        [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR
+    fi
+
     # Check GUI log file for recent errors (last 50 lines)
     if [[ -f "/var/log/nftban-ui.log" ]]; then
         local error_count

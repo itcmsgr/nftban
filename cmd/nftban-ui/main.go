@@ -1,13 +1,13 @@
 // =============================================================================
-// NFTBan - Web UI Server
+// NFTBan - Web UI Server (GOTH GUI)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="main"
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2025-10-26"
-// meta:description="HTTPS web server providing GUI dashboard for NFTBan management"
-// meta:input="Command line flags (config, port, cert, key, version, dev)"
+// meta:description="HTTPS web server providing GOTH GUI dashboard for NFTBan management"
+// meta:input="Command line flags (config, port, cert, key, version)"
 // meta:output="HTTPS web server on configured port"
 // meta:depends="github.com/gorilla/mux,github.com/itcmsgr/nftban/pkg/api,github.com/itcmsgr/nftban/pkg/auth"
 // meta:inventory.files=""
@@ -22,13 +22,11 @@
 package main
 
 import (
-	"embed"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
-	"strings"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -44,11 +42,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-//go:embed web/static web/templates
-var embedFS embed.FS
-
 const (
-	Version = "1.0.0"
+	Version = "1.1.0"
 	AppName = "NFTBan Web GUI"
 )
 
@@ -58,22 +53,8 @@ var (
 	BuildDate = "unknown"
 )
 
-// Global dev mode flag (set during startup)
-var isDevelopmentMode bool
-
-// readFile reads from disk in dev mode, or from embedded FS in production
-func readFile(path string) ([]byte, error) {
-	if isDevelopmentMode {
-		// Development mode: read from disk (no rebuild needed for HTML/JS/CSS changes)
-		return os.ReadFile(path)
-	}
-	// Production mode: read from embedded FS (compiled into binary)
-	return embedFS.ReadFile(path)
-}
-
 func main() {
 	// Initialize CPU/memory safety limits (from environment)
-	// This matches the pattern from go-feeds/cmd/nftban-feeds/main.go
 	limits := safety.FromEnv()
 	safety.InitCPU(limits)
 	safety.InitMemory(limits)
@@ -86,7 +67,6 @@ func main() {
 		safety.FormatBytes(mem.Avail))
 
 	// Get default paths from central config
-	// NO FALLBACK - path must come from /etc/nftban/nftban.conf
 	nftbanCfg := nftbanconf.MustLoad()
 	defaultConfigDir := nftbanCfg.ConfigDir
 
@@ -96,19 +76,12 @@ func main() {
 	certFile := flag.String("cert", defaultConfigDir+"/ssl/cert.pem", "TLS certificate file")
 	keyFile := flag.String("key", defaultConfigDir+"/ssl/key.pem", "TLS private key file")
 	version := flag.Bool("version", false, "Show version information")
-	devMode := flag.Bool("dev", false, "Development mode: serve files from disk instead of embedded FS (no rebuild needed)")
 	flag.Parse()
 
 	// Show version
 	if *version {
 		fmt.Printf("nftban-ui v%s (git %s, build %s)\n", Version, GitCommit, BuildDate)
 		os.Exit(0)
-	}
-
-	// Set development mode
-	isDevelopmentMode = *devMode
-	if isDevelopmentMode {
-		log.Printf("[DEV MODE] Serving files from disk (cmd/nftban-ui/web/) - No rebuild needed for HTML/JS/CSS changes!")
 	}
 
 	// Load configuration
@@ -135,7 +108,6 @@ func main() {
 	}
 
 	// Initialize session store (in-memory, with configurable timeout)
-	// Sessions are server-side tokens that can be revoked (unlike JWT)
 	sessionTimeout := time.Duration(cfg.SessionTimeout) * time.Minute
 	sessionStore := session.NewStore(sessionTimeout)
 	log.Printf("[SESSION] Session store initialized (timeout: %v)", sessionTimeout)
@@ -161,7 +133,7 @@ func main() {
 	router.Use(middleware.SecurityHeadersMiddleware)
 
 	// ==========================================================================
-	// GOTH GUI Routes (Go + Templ + HTMX) - v1.1.0+
+	// GOTH GUI Routes (Go + Templ + HTMX) - v1.1.0
 	// ==========================================================================
 	gothHandlers := handlers.NewGOTHHandlers(authService, sessionStore)
 
@@ -173,6 +145,7 @@ func main() {
 	router.HandleFunc("/ui/", gothHandlers.RequireSession(gothHandlers.HandleDashboard)).Methods("GET")
 	router.HandleFunc("/ui/health", gothHandlers.RequireSession(gothHandlers.HandleHealth)).Methods("GET")
 	router.HandleFunc("/ui/modules", gothHandlers.RequireSession(gothHandlers.HandleModules)).Methods("GET")
+	router.HandleFunc("/ui/inventory", gothHandlers.RequireSession(gothHandlers.HandleInventory)).Methods("GET")
 	router.HandleFunc("/ui/action/logout", gothHandlers.RequireSession(gothHandlers.HandleActionLogout)).Methods("POST")
 
 	// GOTH fragments (HTMX partial updates) - Professional Dashboard
@@ -182,6 +155,7 @@ func main() {
 	router.HandleFunc("/ui/frag/resources", gothHandlers.RequireSession(gothHandlers.HandleFragResources)).Methods("GET")
 	router.HandleFunc("/ui/frag/modules", gothHandlers.RequireSession(gothHandlers.HandleFragModules)).Methods("GET")
 	router.HandleFunc("/ui/frag/recent", gothHandlers.RequireSession(gothHandlers.HandleFragRecent)).Methods("GET")
+	router.HandleFunc("/ui/frag/inventory", gothHandlers.RequireSession(gothHandlers.HandleFragInventory)).Methods("GET")
 
 	// Backwards compat fragments
 	router.HandleFunc("/ui/frag/summary", gothHandlers.RequireSession(gothHandlers.HandleFragSummary)).Methods("GET")
@@ -199,22 +173,19 @@ func main() {
 	// Dashboard action endpoints
 	router.HandleFunc("/ui/action/flush-temp", gothHandlers.RequireSession(gothHandlers.HandleFlushTemp)).Methods("POST")
 	router.HandleFunc("/ui/action/restart/{service}", gothHandlers.RequireSession(gothHandlers.HandleRestartService)).Methods("POST")
+	router.HandleFunc("/ui/action/health-fix", gothHandlers.RequireSession(gothHandlers.HandleHealthFix)).Methods("POST")
 
 	log.Printf("[GOTH] GOTH GUI routes registered at /ui/*")
 
 	// ==========================================================================
-	// Legacy API Routes (v1) - Keep for backwards compatibility
+	// REST API Routes (v1) - Backend API for programmatic access
 	// ==========================================================================
-
-	// API routes (v1)
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 
 	// Public routes (no auth required)
-	// Use session-based login (replaces JWT-based login for better security)
 	apiRouter.HandleFunc("/login", api.SessionLoginHandler(authService, sessionStore)).Methods("POST")
 
 	// Protected routes (auth required)
-	// Use session middleware instead of JWT middleware (tokens can be revoked)
 	protected := apiRouter.PathPrefix("").Subrouter()
 	protected.Use(middleware.SessionAuthMiddleware(sessionStore))
 
@@ -254,7 +225,7 @@ func main() {
 	protected.HandleFunc("/metrics/status", api.MetricsStatusHandler).Methods("GET")
 	protected.HandleFunc("/metrics/snapshot", api.MetricsSnapshotHandler).Methods("GET")
 
-	// Dashboard Statistics API routes (NEW for v0.5.0)
+	// Dashboard Statistics API routes
 	protected.HandleFunc("/stats/traffic", api.StatsTrafficHandler).Methods("GET")
 	protected.HandleFunc("/stats/bans", api.StatsBansHandler).Methods("GET")
 	protected.HandleFunc("/stats/countries", api.StatsCountriesHandler).Methods("GET")
@@ -268,7 +239,7 @@ func main() {
 	protected.HandleFunc("/network/connections", api.ConnectionsHandler).Methods("GET")
 	protected.HandleFunc("/network/metrics/samples", api.MetricsSamplesHandler).Methods("GET")
 
-	// Bandwidth monitoring API routes (v0.6 - new Prometheus-based endpoints)
+	// Bandwidth monitoring API routes
 	protected.HandleFunc("/bandwidth/current", api.BandwidthCurrentHandler).Methods("GET")
 	protected.HandleFunc("/bandwidth/history", api.BandwidthHistoryHandler).Methods("GET")
 	protected.HandleFunc("/bandwidth/interfaces", api.BandwidthInterfacesHandler).Methods("GET")
@@ -284,15 +255,10 @@ func main() {
 	protected.HandleFunc("/nftables/validate", api.NFTablesValidateHandler).Methods("GET")
 	protected.HandleFunc("/nftables/save", api.NFTablesSaveHandler).Methods("POST")
 
-	// Emulate/Validator API routes (v1.0 - packet decision simulation)
+	// Emulate/Validator API routes
 	protected.HandleFunc("/emulate", api.EmulateHandler).Methods("GET")
 	protected.HandleFunc("/emulate/quick", api.EmulateQuickHandler).Methods("GET")
 	protected.HandleFunc("/emulate/batch", api.EmulateBatchHandler).Methods("POST")
-
-	// Fail2Ban API routes (deprecated in v1.0 - replaced by Login Monitor)
-	// protected.HandleFunc("/fail2ban/status", api.Fail2BanStatusHandler).Methods("GET")
-	// protected.HandleFunc("/fail2ban/jails", api.Fail2BanJailsHandler).Methods("GET")
-	// protected.HandleFunc("/fail2ban/control", api.Fail2BanControlHandler).Methods("POST")
 
 	// Portscan API routes
 	protected.HandleFunc("/portscan/control", api.PortscanControlHandler).Methods("POST")
@@ -316,7 +282,7 @@ func main() {
 	protected.HandleFunc("/ports/unban", api.PortUnbanHandler).Methods("POST")
 	protected.HandleFunc("/ports/status", api.PortStatusHandler).Methods("GET")
 
-	// Configuration API routes (unified config management)
+	// Configuration API routes
 	protected.HandleFunc("/config/{module}", api.ConfigGetHandler).Methods("GET")
 	protected.HandleFunc("/config/{module}", api.ConfigSetHandler).Methods("POST")
 	protected.HandleFunc("/config/{module}/reset", api.ConfigResetHandler).Methods("POST")
@@ -324,7 +290,7 @@ func main() {
 	// Log file viewer API route
 	protected.PathPrefix("/logs/").HandlerFunc(api.LogFileHandler).Methods("GET")
 
-	// Config file editor API route (legacy - for direct file editing)
+	// Config file editor API route
 	protected.PathPrefix("/config/").HandlerFunc(api.ConfigFileHandler).Methods("GET", "POST")
 
 	// System API routes
@@ -333,7 +299,7 @@ func main() {
 	protected.HandleFunc("/system/timers", api.SystemTimersHandler).Methods("GET")
 	protected.HandleFunc("/system/service/control", api.SystemServiceControlHandler).Methods("POST")
 
-	// System Management GUI routes (v0.6.4)
+	// System Management routes
 	protected.HandleFunc("/system/status", api.SystemOverviewStatusHandler).Methods("GET")
 	protected.HandleFunc("/system/info", api.SystemInfoHandler).Methods("GET")
 	protected.HandleFunc("/system/health", api.SystemHealthHandler).Methods("GET")
@@ -343,239 +309,33 @@ func main() {
 	protected.HandleFunc("/system/timers/detail", api.SystemTimersDetailHandler).Methods("GET")
 	protected.HandleFunc("/system/services/detail", api.SystemServicesDetailHandler).Methods("GET")
 
-	// NEW v0.6: Impressive Dashboard API routes
+	// Dashboard API routes
 	protected.HandleFunc("/prometheus/metrics", api.PrometheusMetricsHandler).Methods("GET")
-	// protected.HandleFunc("/fail2ban/logs", api.Fail2BanLogsHandler).Methods("GET") // deprecated v1.0
 	protected.HandleFunc("/portscan/logs", api.PortScanLogsHandler).Methods("GET")
 	protected.HandleFunc("/geoban/stats", api.GeoBanStatsHandler).Methods("GET")
 	protected.HandleFunc("/system/logs", api.SystemLogsHandler).Methods("GET")
 	protected.HandleFunc("/dashboard/metrics", api.DashboardMetricsHandler).Methods("GET")
 
-	// Analytics API routes (v0.7.3 - Ban Analytics & Statistics)
+	// Analytics API routes
 	protected.HandleFunc("/analytics/summary", api.AnalyticsSummaryHandler).Methods("GET")
 	protected.HandleFunc("/analytics/countries", api.AnalyticsCountriesHandler).Methods("GET")
 	protected.HandleFunc("/analytics/top", api.AnalyticsTopCountriesHandler).Methods("GET")
 	protected.HandleFunc("/analytics/ip", api.AnalyticsIPHandler).Methods("GET")
 
-	// Activity API routes (v1.0.0 - Recent Activity for Dashboard)
+	// Activity API routes
 	protected.HandleFunc("/activity/recent", api.RecentActivityHandler).Methods("GET")
 
-	// Prometheus metrics endpoint (public for scraping) - MUST be before static files catch-all
+	// ==========================================================================
+	// Prometheus metrics endpoint (public for scraping)
+	// ==========================================================================
 	sampler := metrics.GetSampler()
 	router.Handle("/metrics", promhttp.HandlerFor(sampler.Registry(), promhttp.HandlerOpts{})).Methods("GET")
 
-	// ========================================================================
-	// STATIC FILES: Modern Panel CSS (Pure CSS - No Tailwind/Pico)
-	// ========================================================================
-	// Modern Panel Template: https://github.com/abdelrahman-samy-dev/modern-panel
-
-	// Handler for modern-panel CSS files (v0.6 GUI - pure CSS)
-	router.HandleFunc("/static/css/all.min.css", func(w http.ResponseWriter, r *http.Request) {
-		data, err := embedFS.ReadFile("web/static/css/all.min.css")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age=31536000")
-		w.Write(data)
-	})
-
-	router.HandleFunc("/static/css/framework.css", func(w http.ResponseWriter, r *http.Request) {
-		data, err := embedFS.ReadFile("web/static/css/framework.css")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age=31536000")
-		w.Write(data)
-	})
-
-	router.HandleFunc("/static/css/master.css", func(w http.ResponseWriter, r *http.Request) {
-		data, err := embedFS.ReadFile("web/static/css/master.css")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age=31536000")
-		w.Write(data)
-	})
-
-	router.HandleFunc("/static/css/nftban-modern.css", func(w http.ResponseWriter, r *http.Request) {
-		data, err := embedFS.ReadFile("web/static/css/nftban-modern.css")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age=31536000")
-		w.Write(data)
-	})
-
-	router.HandleFunc("/static/css/clean.css", func(w http.ResponseWriter, r *http.Request) {
-		data, err := readFile("web/static/css/clean.css")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-		if *devMode {
-			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		} else {
-			w.Header().Set("Cache-Control", "public, max-age=31536000")
-		}
-		w.Write(data)
-	})
-
-	// Handler for JavaScript
-	router.HandleFunc("/static/js/nftban-app.js", func(w http.ResponseWriter, r *http.Request) {
-		data, err := embedFS.ReadFile("web/static/js/nftban-app.js")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age=31536000")
-		w.Write(data)
-	})
-
-	// Handler for app.js (main application script)
-	router.HandleFunc("/static/js/app.js", func(w http.ResponseWriter, r *http.Request) {
-		data, err := readFile("web/static/js/app.js")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		if *devMode {
-			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-		} else {
-			w.Header().Set("Cache-Control", "public, max-age=31536000")
-		}
-		w.Write(data)
-	})
-
-	// Handler for page-loader.js (dynamic page loading)
-	router.HandleFunc("/static/js/page-loader.js", func(w http.ResponseWriter, r *http.Request) {
-		data, err := readFile("web/static/js/page-loader.js")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0")
-		w.Header().Set("Pragma", "no-cache")
-		w.Header().Set("Expires", "0")
-		w.Write(data)
-	})
-
-	// Handler for Chart.js (vendor library)
-	router.HandleFunc("/static/js/vendor/chart.min.js", func(w http.ResponseWriter, r *http.Request) {
-		data, err := readFile("web/static/js/vendor/chart.min.js")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		w.Header().Set("Cache-Control", "public, max-age=31536000") // Cache for 1 year
-		w.Write(data)
-	})
-
-	// Handler for modular HTML pages
-	router.PathPrefix("/static/pages/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		file := r.URL.Path[len("/static/"):]
-		data, err := readFile("web/static/" + file)
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate, max-age=0")
-		w.Header().Set("Pragma", "no-cache")
-		w.Header().Set("Expires", "0")
-		w.Header().Set("X-Content-Type-Options", "nosniff")
-		w.Write(data)
-	})
-
-	// Handler for Font Awesome webfonts
-	router.PathPrefix("/static/webfonts/").HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		file := r.URL.Path[len("/static/"):]
-		data, err := embedFS.ReadFile("web/static/" + file)
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		if strings.HasSuffix(file, ".woff2") {
-			w.Header().Set("Content-Type", "font/woff2")
-		} else if strings.HasSuffix(file, ".woff") {
-			w.Header().Set("Content-Type", "font/woff")
-		} else if strings.HasSuffix(file, ".ttf") {
-			w.Header().Set("Content-Type", "font/ttf")
-		}
-		w.Header().Set("Cache-Control", "public, max-age=31536000")
-		w.Write(data)
-	})
-
-	// Bandwidth monitoring panel (v0.6 GUI)
-	router.HandleFunc("/bandwidth", func(w http.ResponseWriter, r *http.Request) {
-		data, err := embedFS.ReadFile("web/static/bandwidth/index.html")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/html; charset=utf-8")
-		w.Write(data)
-	})
-
-	router.HandleFunc("/bandwidth/js/bandwidth.js", func(w http.ResponseWriter, r *http.Request) {
-		data, err := embedFS.ReadFile("web/static/bandwidth/js/bandwidth.js")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		w.Write(data)
-	})
-
-	router.HandleFunc("/bandwidth/js/chart-utils.js", func(w http.ResponseWriter, r *http.Request) {
-		data, err := embedFS.ReadFile("web/static/bandwidth/js/chart-utils.js")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "application/javascript; charset=utf-8")
-		w.Write(data)
-	})
-
-	router.HandleFunc("/bandwidth/css/bandwidth.css", func(w http.ResponseWriter, r *http.Request) {
-		data, err := embedFS.ReadFile("web/static/bandwidth/css/bandwidth.css")
-		if err != nil {
-			http.Error(w, "Not found", http.StatusNotFound)
-			return
-		}
-		w.Header().Set("Content-Type", "text/css; charset=utf-8")
-		w.Write(data)
-	})
-
-
-	// Serve index.html at root
+	// ==========================================================================
+	// Root redirect to GOTH UI
+	// ==========================================================================
 	router.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/" || r.URL.Path == "/index.html" {
-			data, err := readFile("web/static/index.html")
-			if err != nil {
-				http.Error(w, "Not found", http.StatusNotFound)
-				return
-			}
-			w.Header().Set("Content-Type", "text/html; charset=utf-8")
-			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
-			w.Header().Set("Pragma", "no-cache")
-			w.Header().Set("Expires", "0")
-			w.Write(data)
-			return
-		}
-		http.Error(w, "Not found", http.StatusNotFound)
+		http.Redirect(w, r, "/ui/", http.StatusFound)
 	})
 
 	// Server configuration with safety limits

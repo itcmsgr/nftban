@@ -90,14 +90,16 @@ func (c *Claims) HasAllGroups(groups ...string) bool {
 	return true
 }
 
-// IsAdmin checks if the user has admin privileges (root, wheel, sudo, or nftban-admin)
+// IsAdmin checks if the user has admin privileges (nftban-cli)
+// Note: System groups (wheel, sudo, root) are NOT granted admin access
+// Users must be in nftban-cli group for CLI/GUI access and admin privileges
 func (c *Claims) IsAdmin() bool {
-	return c.HasAnyGroup("root", "wheel", "sudo", "nftban-admin")
+	return c.HasGroup("nftban-cli")
 }
 
 // IsOperator checks if the user has operator privileges (can view/search but not modify)
 func (c *Claims) IsOperator() bool {
-	return c.HasAnyGroup("nftban-operator", "nftban-admin") || c.IsAdmin()
+	return c.HasAnyGroup("nftban-cli", "nftban-auditor")
 }
 
 // CanModify checks if the user can modify firewall rules (ban/unban/whitelist)

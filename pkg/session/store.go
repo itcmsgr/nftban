@@ -61,9 +61,11 @@ func (s *Session) HasGroup(group string) bool {
 	return false
 }
 
-// IsAdmin checks for admin privileges
+// IsAdmin checks for admin privileges (nftban-cli)
+// Note: System groups (wheel, sudo, root) are NOT granted admin access
+// Users must be in nftban-cli group for CLI/GUI access and admin privileges
 func (s *Session) IsAdmin() bool {
-	return s.HasGroup("root") || s.HasGroup("wheel") || s.HasGroup("sudo") || s.HasGroup("nftban-admin")
+	return s.HasGroup("nftban-cli")
 }
 
 // Store is a simple in-memory session store

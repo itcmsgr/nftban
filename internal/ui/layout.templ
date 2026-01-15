@@ -87,6 +87,11 @@ templ sidebar(activePage string) {
 						<span class="nav-icon">&#x1F3E5;</span> Health
 					</a>
 				</li>
+				<li class="nav-item">
+					<a href="/ui/inventory" class={ "nav-link", templ.KV("active", activePage == "inventory") }>
+						<span class="nav-icon">&#x1F4E6;</span> Inventory
+					</a>
+				</li>
 			</ul>
 		</nav>
 		<div class="sidebar-footer">
@@ -685,6 +690,122 @@ templ themeStyles() {
 		.login-logo p {
 			color: var(--text-muted);
 			margin-top: 0.5rem;
+		}
+
+		/* =================================================================
+		   PAGE HEADERS
+		   ================================================================= */
+		.page-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 1.5rem;
+		}
+
+		.page-title {
+			font-size: 1.5rem;
+			font-weight: 600;
+		}
+
+		/* =================================================================
+		   DATA TABLES
+		   ================================================================= */
+		.data-table {
+			width: 100%;
+			border-collapse: collapse;
+		}
+
+		.data-table th,
+		.data-table td {
+			padding: 0.75rem 1rem;
+			text-align: left;
+			border-bottom: 1px solid var(--border-color);
+		}
+
+		.data-table th {
+			font-size: 0.7rem;
+			text-transform: uppercase;
+			color: var(--text-muted);
+			font-weight: 500;
+			background: var(--bg-elevated);
+		}
+
+		.data-table tbody tr:hover {
+			background: var(--bg-elevated);
+		}
+
+		/* =================================================================
+		   BADGES
+		   ================================================================= */
+		.badge {
+			display: inline-flex;
+			align-items: center;
+			padding: 0.25rem 0.5rem;
+			border-radius: 4px;
+			font-size: 0.75rem;
+			font-weight: 500;
+		}
+
+		.badge-success {
+			background: rgba(16, 185, 129, 0.15);
+			color: var(--accent-safe);
+		}
+
+		.badge-warning {
+			background: rgba(245, 158, 11, 0.15);
+			color: var(--accent-warning);
+		}
+
+		.badge-danger {
+			background: rgba(239, 68, 68, 0.15);
+			color: var(--accent-danger);
+		}
+
+		.badge-info {
+			background: rgba(59, 130, 246, 0.15);
+			color: var(--accent-info);
+		}
+
+		.badge-muted {
+			background: var(--bg-elevated);
+			color: var(--text-muted);
+		}
+
+		/* =================================================================
+		   STATUS BANNER (Health Page)
+		   ================================================================= */
+		.status-banner {
+			padding: 1.25rem;
+		}
+
+		.status-banner.ok {
+			border-left: 4px solid var(--accent-safe);
+		}
+
+		.status-banner.warning {
+			border-left: 4px solid var(--accent-warning);
+		}
+
+		.status-banner.error {
+			border-left: 4px solid var(--accent-danger);
+		}
+
+		/* =================================================================
+		   COMMAND BOXES (Health Page Quick Commands)
+		   ================================================================= */
+		.cmd-box {
+			display: flex;
+			flex-direction: column;
+			gap: 0.25rem;
+			padding: 0.75rem;
+			background: var(--bg-elevated);
+			border-radius: 6px;
+		}
+
+		.cmd-box code {
+			font-family: 'SF Mono', Monaco, monospace;
+			font-size: 0.85rem;
+			color: var(--accent-info);
 		}
 
 		/* =================================================================

@@ -17,7 +17,7 @@ import (
 
 // ModulesData holds module information
 type ModulesData struct {
-	Modules []ui.ModuleInfo
+	Modules []ui.ModuleStatus
 	Summary ModulesSummary
 }
 
@@ -68,7 +68,7 @@ templ Modules(data ModulesData) {
 }
 
 // ModulesListFragment renders the list of modules
-templ ModulesListFragment(modules []ui.ModuleInfo) {
+templ ModulesListFragment(modules []ui.ModuleStatus) {
 	<div class="card">
 		<table class="data-table">
 			<thead>
