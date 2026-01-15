@@ -38,7 +38,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `internal/ui/layout.templ` - Base HTML layout
 - `internal/ui/pages/login.templ` - Login page template
 - `internal/ui/pages/dashboard.templ` - Dashboard template
-- `internal/ui/fragments/summary.templ` - HTMX fragment
+- `internal/ui/pages/inventory.templ` - Inventory page template
+- `internal/ui/pages/health.templ` - Health check page template
 - `internal/ui/types.go` - Data types for templates
 - `cmd/nftban-ui/handlers/goth.go` - GOTH route handlers
 
