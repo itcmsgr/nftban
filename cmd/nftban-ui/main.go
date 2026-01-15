@@ -299,9 +299,9 @@ func main() {
 	protected.HandleFunc("/portscan/stats", api.PortscanStatsHandler).Methods("GET")
 
 	// DDoS API routes
-	protected.HandleFunc("/ddos/stats", api.DdosStatsHandler).Methods("GET")
-	protected.HandleFunc("/ddos/enable", api.DdosEnableHandler).Methods("POST")
-	protected.HandleFunc("/ddos/disable", api.DdosDisableHandler).Methods("POST")
+	protected.HandleFunc("/ddos/stats", api.DDoSStatsHandler).Methods("GET")
+	protected.HandleFunc("/ddos/enable", api.DDoSEnableHandler).Methods("POST")
+	protected.HandleFunc("/ddos/disable", api.DDoSDisableHandler).Methods("POST")
 
 	// Login Monitor API routes
 	protected.HandleFunc("/login-monitor/status", api.LoginMonitorStatusHandler).Methods("GET")

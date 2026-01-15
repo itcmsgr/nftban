@@ -28,8 +28,8 @@ import (
 	"strings"
 )
 
-// DdosStats represents DDoS protection statistics
-type DdosStats struct {
+// DDoSStats represents DDoS protection statistics
+type DDoSStats struct {
 	PacketsDropped    int    `json:"packets_dropped"`
 	BytesDropped      int    `json:"bytes_dropped"`
 	Blocked24h        int    `json:"blocked_24h"`
@@ -40,9 +40,9 @@ type DdosStats struct {
 	SuricataAvailable bool   `json:"suricata_available"` // is Suricata service running
 }
 
-// DdosStatsHandler returns DDoS protection statistics
+// DDoSStatsHandler returns DDoS protection statistics
 // GET /api/v1/ddos/stats
-func DdosStatsHandler(w http.ResponseWriter, r *http.Request) {
+func DDoSStatsHandler(w http.ResponseWriter, r *http.Request) {
 	// Execute: nftban ddos stats --json (dedicated DDoS stats command)
 	output, err := execNFTBanCommand("ddos", "stats", "--json")
 	if err != nil {
@@ -51,7 +51,7 @@ func DdosStatsHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"success": true,
 			"data": map[string]interface{}{
-				"ddos": DdosStats{
+				"ddos": DDoSStats{
 					Enabled: false,
 				},
 			},
@@ -71,7 +71,7 @@ func DdosStatsHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"success": true,
 			"data": map[string]interface{}{
-				"ddos": DdosStats{
+				"ddos": DDoSStats{
 					Enabled: false,
 				},
 			},
@@ -85,7 +85,7 @@ func DdosStatsHandler(w http.ResponseWriter, r *http.Request) {
 	var result struct {
 		Success bool `json:"success"`
 		Data    struct {
-			Ddos DdosStats `json:"ddos"`
+			DDoS DDoSStats `json:"ddos"`
 		} `json:"data"`
 	}
 
@@ -95,7 +95,7 @@ func DdosStatsHandler(w http.ResponseWriter, r *http.Request) {
 		respondJSON(w, http.StatusOK, map[string]interface{}{
 			"success": true,
 			"data": map[string]interface{}{
-				"ddos": DdosStats{
+				"ddos": DDoSStats{
 					Enabled: false,
 				},
 			},
@@ -106,9 +106,9 @@ func DdosStatsHandler(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
-// DdosControlHandler handles DDoS enable/disable
+// DDoSControlHandler handles DDoS enable/disable
 // POST /api/v1/ddos/enable or /api/v1/ddos/disable
-func DdosControlHandler(w http.ResponseWriter, r *http.Request) {
+func DDoSControlHandler(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		Action string `json:"action"` // "enable" or "disable"
 	}
@@ -143,9 +143,9 @@ func DdosControlHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// DdosEnableHandler enables DDoS protection
+// DDoSEnableHandler enables DDoS protection
 // POST /api/v1/ddos/enable
-func DdosEnableHandler(w http.ResponseWriter, r *http.Request) {
+func DDoSEnableHandler(w http.ResponseWriter, r *http.Request) {
 	// Use bash CLI for ddos enable - it handles the actual implementation
 	output, err := execNFTBanCommand("ddos", "enable")
 	if err != nil {
@@ -160,9 +160,9 @@ func DdosEnableHandler(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
-// DdosDisableHandler disables DDoS protection
+// DDoSDisableHandler disables DDoS protection
 // POST /api/v1/ddos/disable
-func DdosDisableHandler(w http.ResponseWriter, r *http.Request) {
+func DDoSDisableHandler(w http.ResponseWriter, r *http.Request) {
 	// Use bash CLI for ddos disable - it handles the actual implementation
 	output, err := execNFTBanCommand("ddos", "disable")
 	if err != nil {
