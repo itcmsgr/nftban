@@ -169,6 +169,13 @@
       "key_count": 25,
       "comment": "Detects webshell probes, exploit scanners, bad bots via access log analysis"
     },
+    "conf.d/trust.conf": {
+      "description": "Trusted provider IP whitelist (CDN, Cloud providers)",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 28,
+      "comment": "Auto-whitelist IP ranges from Cloudflare, AWS, Google Cloud, Azure, etc."
+    },
     "conf.d/panels/directadmin/main.conf": {
       "description": "DirectAdmin panel integration",
       "active_when": "panel_detected",

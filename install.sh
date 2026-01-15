@@ -1123,7 +1123,7 @@ create_users_groups() {
     # Create nftban-auditor group (Read-only auditors)
     # NFTBan v1.1.0 uses 4-group model:
     #   nftban: System group for file ownership
-    #   nftban-cli: CLI and Web GUI access (required to use nftban)
+    #   nftban-cli: CLI and Web GUI access + admin privileges
     #   nftban-auditor: Read-only audit access
     #   nftban-panel: Panel integration (limited reload access)
     if ! getent group nftban-auditor >/dev/null 2>&1; then
@@ -1341,6 +1341,16 @@ install_configs() {
         ok "Installed: /etc/nftban/conf.d/banner.conf"
     elif [[ -f /etc/nftban/conf.d/banner.conf ]]; then
         ok "Banner config exists (not overwriting): /etc/nftban/conf.d/banner.conf"
+    fi
+
+    # Install trust configuration (if not exists - don't overwrite user config)
+    if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/trust.conf" ]] && [[ ! -f /etc/nftban/conf.d/trust.conf ]]; then
+        cp -f "$SCRIPT_DIR/etc/nftban/conf.d/trust.conf" /etc/nftban/conf.d/trust.conf
+        chmod 640 /etc/nftban/conf.d/trust.conf
+        chown root:nftban /etc/nftban/conf.d/trust.conf
+        ok "Installed: /etc/nftban/conf.d/trust.conf"
+    elif [[ -f /etc/nftban/conf.d/trust.conf ]]; then
+        ok "Trust config exists (not overwriting): /etc/nftban/conf.d/trust.conf"
     fi
 
     # Install botscan configuration (if not exists - don't overwrite user config)
