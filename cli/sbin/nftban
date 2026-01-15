@@ -43,16 +43,14 @@ set -Eeuo pipefail
 #   6. Build all binaries with -ldflags to inject version
 # The 'nftban version' command will show warnings if components don't match.
 export NFTBAN_VERSION="1.0.0"
-export NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
-export NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 
 # =============================================================================
-# DEFAULT PATHS (can be overridden by config files)
+# LOAD CENTRAL ENVIRONMENT (single source of truth for paths)
 # =============================================================================
-# These MUST be set before any module is loaded to prevent strict mode errors
-export NFTBAN_LOG_DIR="${NFTBAN_LOG_DIR:-/var/log/nftban}"
-export NFTBAN_CACHE_DIR="${NFTBAN_CACHE_DIR:-/var/cache/nftban}"
-export NFTBAN_DATA_DIR="${NFTBAN_DATA_DIR:-/var/lib/nftban}"
+# Must be loaded BEFORE anything else to ensure vars are set for strict mode
+export NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/env.sh"
 
 # =============================================================================
 # PERMISSION CHECK
@@ -96,6 +94,7 @@ fi
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
     # shellcheck source=/dev/null
     source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+    export NFTBAN_CONFIG_LOADED="true"
 fi
 
 # Load module configs (conf.d/*.conf) in alphabetical order

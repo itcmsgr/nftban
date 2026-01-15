@@ -3,26 +3,28 @@
 # NFTBan v1.0.0 - Threat Feeds Core Module
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Dynamic threat intelligence feed management with Go integration
-#
-# meta:name=nftban_feeds
-# meta:type=core
-# meta:header=Threat Feeds Core
-# meta:version=1.0.0
+# meta:name="nftban_feeds"
+# meta:type="core"
+# meta:header="Threat Feeds Core"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Dynamic threat intelligence feeds with beautiful selection UI
-# meta:input=Feed URLs from config (dynamic discovery)
-# meta:output=Parsed IPs/CIDRs to nftables, logs to /var/log/nftban/feeds.log
-#
-# **Inventory & Requirements**
-# meta:depends=bash,curl,flock,nftban-feeds (Go binary)
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:homepage="https://nftban.com"
+# meta:description="Dynamic threat intelligence feeds with beautiful selection UI"
+# meta:input="Feed URLs from config (dynamic discovery)"
+# meta:output="Parsed IPs/CIDRs to nftables, logs to /var/log/nftban/feeds.log"
+# meta:depends="bash,curl,flock,nftban-feeds"
+# meta:inventory.files=""
+# meta:inventory.binaries="nftban-feeds"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
+# meta:inventory.config_files="/etc/nftban/conf.d/feeds.conf"
+# meta:inventory.systemd_units="nftban-core-feeds.timer"
+# meta:inventory.network="outbound"
+# meta:inventory.privileges="nftban"
+# meta:created_date="2025-11-05"
+# meta:updated_date="2025-11-24"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Prevent double-loading (required for circular dependency with task_queue.sh)
 [[ -n "${NFTBAN_FEEDS_LOADED:-}" ]] && return 0
@@ -47,9 +49,9 @@ source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_ipc.sh" 2>/dev/null || true
 # CONFIGURATION
 # =============================================================================
 
-# Source central config for canonical paths (NO HARDCODED FALLBACKS)
-# shellcheck source=/etc/nftban/nftban.conf
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+# Source central environment loader (single source of truth for paths)
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh"
 
 readonly NFTBAN_FEEDS_CONFIG="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/feeds.conf"
 readonly NFTBAN_FEEDS_STORAGE_DIR="${NFTBAN_FEEDS_STORAGE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds}"

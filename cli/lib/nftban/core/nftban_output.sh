@@ -40,6 +40,12 @@ set -Eeuo pipefail
 NFTBAN_OUTPUT_LOADED="true"
 
 # =============================================================================
+# LOAD CENTRAL ENVIRONMENT (ensures vars are set for strict mode)
+# =============================================================================
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh"
+
+# =============================================================================
 # GLOBAL VARIABLES
 # =============================================================================
 
