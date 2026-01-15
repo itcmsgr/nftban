@@ -31,19 +31,31 @@ if [[ -f "$JSON_HELPER" ]]; then
 fi
 # NFTBan v1.0.0 - Login Alert CLI Handler
 # =============================================================================
-
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Provides CLI interface for login monitoring and alerting
 #
-# meta:name=cmd_login
-# meta:type=cli
-# meta:header=Login Alert CLI Handler
-# meta:version=1.0.0
+# meta:name="cmd_login"
+# meta:type="cli"
+# meta:header="Login Alert CLI Handler"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:description="CLI commands for login monitoring and alerting"
+# meta:input="CLI arguments"
+# meta:output="Status messages and service control"
+# meta:depends="nftban_login_alert.sh,systemctl"
+#
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-01-15"
+#
+# meta:inventory.files="nftban_login_alert.sh,json_output.sh"
+# meta:inventory.binaries="systemctl,journalctl"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_CONFIG_DIR,NFTBAN_SERVICE_LOGIN_MONITOR"
+# meta:inventory.config_files="/etc/nftban/conf.d/login_alert.conf,/etc/nftban/conf.d/login_alert.conf.local"
+# meta:inventory.systemd_units="nftban-login-monitor.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
 
@@ -340,9 +352,27 @@ nftban_login_cmd_enable() {
             fi
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_ENABLED" "true" "$config_local"
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_SSH" "true" "$config_local"
-            systemctl enable ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} >/dev/null 2>&1
-            systemctl start ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}
-            echo "✅ Login monitoring enabled and started (SSH alerts active)"
+            systemctl daemon-reload >/dev/null 2>&1 || true
+            systemctl enable "${service_name}" >/dev/null 2>&1
+            if systemctl start "${service_name}" 2>&1; then
+                # Verify the service is actually running
+                sleep 1
+                if systemctl is-active --quiet "${service_name}"; then
+                    echo "✅ Login monitoring enabled and started (SSH alerts active)"
+                else
+                    echo "⚠️  Service enabled but failed to stay running" >&2
+                    echo "" >&2
+                    echo "Recent logs:" >&2
+                    journalctl -u "${service_name}" -n 10 --no-pager 2>/dev/null || true
+                    return 1
+                fi
+            else
+                echo "❌ Failed to start login monitor service" >&2
+                echo "" >&2
+                echo "Check service logs:" >&2
+                journalctl -u "${service_name}" -n 10 --no-pager 2>/dev/null || true
+                return 1
+            fi
             ;;
         *)
             echo "ERROR: Unknown target: $target" >&2
@@ -395,11 +425,15 @@ nftban_login_cmd_disable() {
             ;;
         service|"")
             # Stop and disable systemd service
+            local service_name="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_ENABLED" "false" "$config_local"
             _nftban_login_set_config "NFTBAN_LOGIN_ALERT_SSH" "false" "$config_local"
-            if [[ -f "/etc/systemd/system/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" ]]; then
-                systemctl stop ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null || true
-                systemctl disable ${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service} 2>/dev/null || true
+            # Check all possible service file locations
+            if [[ -f "/etc/systemd/system/${service_name}" ]] || \
+               [[ -f "/lib/systemd/system/${service_name}" ]] || \
+               [[ -f "/usr/lib/systemd/system/${service_name}" ]]; then
+                systemctl stop "${service_name}" 2>/dev/null || true
+                systemctl disable "${service_name}" 2>/dev/null || true
             fi
             echo "✅ Login monitoring disabled"
             ;;
@@ -417,10 +451,19 @@ _nftban_login_set_config() {
     local value="$2"
     local file="$3"
 
+    # Ensure file exists and has correct permissions
+    if [[ ! -f "$file" ]]; then
+        mkdir -p "$(dirname "$file")"
+        touch "$file"
+        chmod 640 "$file"
+        chown root:nftban "$file" 2>/dev/null || true
+    fi
+
+    # Write with quotes for consistency with base config
     if grep -q "^${key}=" "$file" 2>/dev/null; then
-        sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+        sed -i "s|^${key}=.*|${key}=\"${value}\"|" "$file"
     else
-        echo "${key}=${value}" >> "$file"
+        echo "${key}=\"${value}\"" >> "$file"
     fi
 }
 
@@ -643,8 +686,10 @@ CONF
     fi
 
     # 3. Check service file
-    local service_file="/etc/systemd/system/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
-    if [[ ! -f "$service_file" ]]; then
+    local service_name="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
+    if [[ ! -f "/etc/systemd/system/${service_name}" ]] && \
+       [[ ! -f "/lib/systemd/system/${service_name}" ]] && \
+       [[ ! -f "/usr/lib/systemd/system/${service_name}" ]]; then
         echo "⚠️  Service not installed (run 'nftban login install')"
         ((issues_found++))
     else
