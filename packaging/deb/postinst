@@ -418,7 +418,25 @@ case "$1" in
         fi
 
         # =====================================================================
-        # STEP 10: Sync whitelist.d files to nftables sets
+        # STEP 10: Download GeoIP Database
+        # =====================================================================
+        log_info "Downloading GeoIP database..."
+        if command -v nftban >/dev/null 2>&1; then
+            if nftban geoip update 2>/dev/null; then
+                log_info "  GeoIP database downloaded successfully"
+            else
+                log_warn "  GeoIP download failed (run manually: nftban geoip update)"
+            fi
+        elif [ -x /usr/lib/nftban/bin/nftban-core ]; then
+            if /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null; then
+                log_info "  GeoIP database downloaded successfully"
+            else
+                log_warn "  GeoIP download failed (run manually: nftban geoip update)"
+            fi
+        fi
+
+        # =====================================================================
+        # STEP 11: Sync whitelist.d files to nftables sets
         # =====================================================================
         # The nftables template has only default IPs, this loads the actual detected system IPs
         log_info "Syncing whitelist files to nftables..."
