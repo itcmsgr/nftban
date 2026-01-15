@@ -6,26 +6,33 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: FHS directory permissions and ownership audit
 #
-# meta:name=nftban_report_fhs
-# meta:type=core
-# meta:header=FHS Report Core
-# meta:version=1.0.0
+# meta:name="nftban_report_fhs"
+# meta:type="core"
+# meta:header="FHS Report Core"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Audits NFTBan directory permissions and ownership against FHS standards
-# meta:input=Output format options
-# meta:output=FHS compliance reports (terminal, HTML, mail)
+# meta:description="Audits NFTBan directory permissions and ownership against FHS standards"
+# meta:input="Output format options"
+# meta:output="FHS compliance reports (terminal, HTML, mail)"
 #
 # **Inventory & Requirements**
-# meta:depends=bash,stat
+# meta:depends="bash,stat"
+# meta:inventory.files=""
+# meta:inventory.binaries="stat"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_DATA_DIR,NFTBAN_CONFIG_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-01-15"
 # =============================================================================
 
-# Strict mode
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
@@ -155,7 +162,10 @@ nftban_fhs_check_directory() {
     # Compare
     local issues=()
     # Skip permission check if expected is "*" (OS-managed directory)
-    [[ "$exp_perms" != "*" && "$act_perms" != "$exp_perms" ]] && issues+=("perms")
+    # Normalize permissions: strip leading zeros for comparison (0750 vs 750)
+    local exp_perms_normalized="${exp_perms#0}"
+    local act_perms_normalized="${act_perms#0}"
+    [[ "$exp_perms" != "*" && "$act_perms_normalized" != "$exp_perms_normalized" ]] && issues+=("perms")
     [[ "$act_owner" != "$exp_owner" ]] && issues+=("owner")
     [[ "$act_group" != "$exp_group" ]] && issues+=("group")
 

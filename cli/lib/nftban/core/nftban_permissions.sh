@@ -35,12 +35,15 @@ readonly NFTBAN_PERMISSIONS_LOADED=1
 # CONFIGURATION
 # =============================================================================
 
-# Load FHS spec for canonical paths
-if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_fhs_spec.sh" ]]; then
-    source "${NFTBAN_LIB_DIR}/core/nftban_fhs_spec.sh"
+# CRITICAL: Load FHS spec - this is the SINGLE SOURCE OF TRUTH for permissions!
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_fhs_spec.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_fhs_spec.sh"
+else
+    echo "ERROR: FHS spec not found - cannot enforce permissions" >&2
+    return 1
 fi
 
-# Fallback paths if FHS spec not available
+# Path shortcuts (for legacy compatibility, but permissions come from FHS spec)
 readonly PERMS_ETC="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 readonly PERMS_LIB="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 readonly PERMS_SBIN="${NFTBAN_SBIN_DIR:-/usr/sbin}"
@@ -139,11 +142,11 @@ perms_mkd() {
 # PERMISSION ENFORCEMENT FUNCTIONS
 # =============================================================================
 
-perms_enforce_etc() {
-    # Enforce permissions on /etc/nftban
-    # Security: root:nftban, directories 0750, files 0640
+perms_enforce_etc_files() {
+    # Enforce file permissions in /etc/nftban (directories handled by FHS spec)
+    # Security: files 0640
 
-    perms_say "Enforcing permissions on: $PERMS_ETC"
+    perms_say "Enforcing file permissions in: $PERMS_ETC"
 
     # Check if nftban group exists
     if ! getent group nftban >/dev/null 2>&1; then
@@ -151,20 +154,10 @@ perms_enforce_etc() {
         groupadd nftban 2>/dev/null || perms_err "Failed to create nftban group"
     fi
 
-    # Create base directory if missing
-    perms_mkd "$PERMS_ETC" 0750 root nftban
-    perms_mkd "$PERMS_ETC/conf.d" 0750 root nftban
+    # NOTE: Directory permissions now handled by perms_enforce_from_fhs_spec()
 
-    # Secure directories in /etc/nftban (readable by nftban group)
+    # Secure files in /etc/nftban (readable by nftban group)
     if [[ -d "$PERMS_ETC" ]]; then
-        perms_say "Securing config directory: $PERMS_ETC"
-        perms_run chown root:nftban "$PERMS_ETC"
-        perms_run chmod 0750 "$PERMS_ETC"
-
-        # Set permissions on all subdirectories
-        perms_run find "$PERMS_ETC" -type d -exec chown root:nftban {} \;
-        perms_run find "$PERMS_ETC" -type d -exec chmod 0750 {} \;
-
         # Fix conf.d/*.conf files - MUST be readable by nftban group for services
         if [[ -d "$PERMS_ETC/conf.d" ]]; then
             perms_run find "$PERMS_ETC/conf.d" -type f -name "*.conf" -exec chown root:nftban {} \;
@@ -172,7 +165,7 @@ perms_enforce_etc() {
         fi
 
         # Fix whitelist.d, blacklist.d, etc.
-        for subdir in whitelist.d blacklist.d ports.d rules.d; do
+        for subdir in whitelist.d blacklist.d ports.d rules.d patterns.d; do
             if [[ -d "$PERMS_ETC/$subdir" ]]; then
                 perms_run find "$PERMS_ETC/$subdir" -type f -exec chown root:nftban {} \;
                 perms_run find "$PERMS_ETC/$subdir" -type f -exec chmod 0640 {} \;
@@ -185,21 +178,20 @@ perms_enforce_etc() {
     fi
 }
 
-perms_enforce_lib() {
-    # Enforce permissions on /usr/lib/nftban
-    # Security: root:root, directories 0755, files 0644 (immutable)
+perms_enforce_lib_files() {
+    # Enforce file permissions in /usr/lib/nftban (directories handled by FHS spec)
+    # Security: files 0644, shell scripts 0755 (executable)
 
-    perms_say "Enforcing permissions on: $PERMS_LIB"
+    perms_say "Enforcing file permissions in: $PERMS_LIB"
+
+    # NOTE: Directory permissions now handled by perms_enforce_from_fhs_spec()
 
     if [[ -d "$PERMS_LIB" ]]; then
-        perms_say "Securing lib directory: $PERMS_LIB"
-        # Set ownership on directory tree (package-managed, not user-editable)
-        perms_run chown root:root "$PERMS_LIB"
-        perms_run find "$PERMS_LIB" -type d -exec chown root:root {} \;
-        perms_run find "$PERMS_LIB" -type d -exec chmod 0755 {} \;
         # CRITICAL: Shell scripts in lib need to be executable (755)
         # Scripts like cron/maintenance.sh are executed directly by systemd
         perms_run find "$PERMS_LIB" -type f -name "*.sh" -exec chmod 0755 {} \;
+        # Other files are 644
+        perms_run find "$PERMS_LIB" -type f ! -name "*.sh" -exec chmod 0644 {} \;
     fi
 }
 
@@ -230,71 +222,45 @@ perms_enforce_sbin() {
     done
 }
 
-perms_enforce_var() {
-    # Enforce permissions on /var/lib/nftban
-    # Security: nftban:nftban, 0755 for dirs (allows nftband daemon traversal), 0640 for files
+perms_enforce_var_files() {
+    # Enforce file permissions in /var/lib/nftban (directories handled by FHS spec)
+    # Security: files 0640
 
-    perms_say "Enforcing permissions on: $PERMS_VAR"
+    perms_say "Enforcing file permissions in: $PERMS_VAR"
 
-    # Create base directory (755 for daemon access via systemd sandboxing)
-    perms_mkd "$PERMS_VAR" 0755 nftban nftban
+    # NOTE: Directory permissions now handled by perms_enforce_from_fhs_spec()
 
-    # Create subdirectories per FHS spec (see nftban_fhs_spec.sh)
-    perms_mkd "$PERMS_VAR/reports" 0755 nftban nftban
-    perms_mkd "$PERMS_VAR/reports/baseline" 0755 nftban nftban
-    perms_mkd "$PERMS_VAR/reports/watchdog" 0755 nftban nftban
-    perms_mkd "$PERMS_VAR/metrics" 0755 nftban nftban
-    perms_mkd "$PERMS_VAR/snapshots" 0755 nftban nftban
-    perms_mkd "$PERMS_VAR/exports" 0755 nftban nftban
-    perms_mkd "$PERMS_VAR/geoip" 0755 nftban nftban
-    perms_mkd "$PERMS_VAR/panels" 0755 nftban nftban
-    perms_mkd "$PERMS_VAR/stats" 0755 nftban nftban
-
-    # CRITICAL: Create auditors directory with special permissions
-    # This directory uses root:nftban-auditor (NOT nftban:nftban)
-    # If nftban-auditor group doesn't exist, fallback to nftban:nftban
-    if getent group nftban-auditor >/dev/null 2>&1; then
-        perms_mkd "$PERMS_VAR/reports/auditors" 0770 root nftban-auditor
-    else
-        perms_mkd "$PERMS_VAR/reports/auditors" 0770 nftban nftban
-    fi
-
-    # Secure all content (excluding auditors which has special perms)
+    # Secure all files (excluding auditors which has special perms)
     if [[ -d "$PERMS_VAR" ]]; then
-        perms_say "Securing var directory: $PERMS_VAR"
-        # Use find to chown, but exclude auditors directory
-        perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -exec chown nftban:nftban {} \;
-        # Dirs 755 (allows nftband daemon traversal), files 640 (only owner read/write)
-        perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -type d -exec chmod 0755 {} \;
+        # Files 640 (only owner read/write, group read)
         perms_run find "$PERMS_VAR" -path "$PERMS_VAR/reports/auditors" -prune -o -type f -exec chmod 0640 {} \;
+
+        # Files in auditors directory need group write
+        if [[ -d "$PERMS_VAR/reports/auditors" ]]; then
+            perms_run find "$PERMS_VAR/reports/auditors" -type f -exec chmod 0660 {} \;
+        fi
     fi
 }
 
-perms_enforce_log() {
-    # Enforce permissions on /var/log/nftban
-    # Security: nftban:nftban, 0750, files 0640
+perms_enforce_log_files() {
+    # Enforce file permissions in /var/log/nftban (directories handled by FHS spec)
+    # Security: files 0640
     # EXCEPTION: suricata/ subdirectory owned by suricata:nftban (Suricata writes, nftban reads)
 
-    perms_say "Enforcing permissions on: $PERMS_LOG"
+    perms_say "Enforcing file permissions in: $PERMS_LOG"
 
-    # Create base directory
-    perms_mkd "$PERMS_LOG" 0750 nftban nftban
+    # NOTE: Directory permissions now handled by perms_enforce_from_fhs_spec()
 
     # Secure all log files (excluding suricata subdirectory)
     if [[ -d "$PERMS_LOG" ]]; then
-        perms_say "Securing log directory: $PERMS_LOG"
-        # Set ownership on directories and files (excluding suricata)
-        perms_run find "$PERMS_LOG" -type d ! -path "*/suricata*" -exec chown nftban:nftban {} \;
+        # Fix file ownership and permissions (excluding suricata)
         perms_run find "$PERMS_LOG" -type f ! -path "*/suricata*" -exec chown nftban:nftban {} \;
-        perms_run find "$PERMS_LOG" -type d ! -path "*/suricata*" -exec chmod 0750 {} \;
         perms_run find "$PERMS_LOG" -type f ! -path "*/suricata*" -exec chmod 0640 {} \;
 
         # Handle suricata directory specially: suricata:nftban so Suricata can write, nftban can read
         if [[ -d "$PERMS_LOG/suricata" ]]; then
-            perms_say "Securing suricata log directory (suricata:nftban)"
-            perms_run find "$PERMS_LOG/suricata" -type d -exec chown suricata:nftban {} \;
+            perms_say "Securing suricata log files (suricata:nftban)"
             perms_run find "$PERMS_LOG/suricata" -type f -exec chown suricata:nftban {} \;
-            perms_run chmod 0750 "$PERMS_LOG/suricata"
             perms_run find "$PERMS_LOG/suricata" -type f -exec chmod 0640 {} \;
             # Add suricata to nftban group if not already
             if id suricata >/dev/null 2>&1 && ! groups suricata 2>/dev/null | grep -q '\bnftban\b'; then
@@ -304,19 +270,82 @@ perms_enforce_log() {
     fi
 }
 
-perms_enforce_usrshare() {
-    # Enforce permissions on /usr/share/nftban
-    # Security: root:root, directories 0755, files 0644
+# NOTE: perms_enforce_usrshare removed - now handled by perms_enforce_from_fhs_spec()
 
-    perms_say "Enforcing permissions on: $PERMS_USRSHARE"
+# =============================================================================
+# FHS SPEC-BASED ENFORCEMENT (NEW - USES SINGLE SOURCE OF TRUTH)
+# =============================================================================
 
-    if [[ -d "$PERMS_USRSHARE" ]]; then
-        perms_say "Securing share directory: $PERMS_USRSHARE"
-        perms_run find "$PERMS_USRSHARE" -type d -exec chown root:root {} \;
-        perms_run find "$PERMS_USRSHARE" -type f -exec chown root:root {} \;
-        perms_run find "$PERMS_USRSHARE" -type d -exec chmod 0755 {} \;
-        perms_run find "$PERMS_USRSHARE" -type f -exec chmod 0644 {} \;
+perms_enforce_from_fhs_spec() {
+    # Enforce permissions using the canonical FHS spec
+    # This is the CORRECT way - using the single source of truth!
+
+    perms_say "Enforcing permissions from FHS specification..."
+
+    # Ensure FHS spec is loaded
+    if [[ ${#NFTBAN_FHS_DIRECTORIES[@]} -eq 0 ]]; then
+        nftban_fhs_load_spec
     fi
+
+    local errors=0
+    local fixed=0
+
+    # Iterate through ALL paths defined in FHS spec
+    for path in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
+        local spec="${NFTBAN_FHS_DIRECTORIES[$path]}"
+
+        # Parse spec: mode|owner|group|description
+        IFS='|' read -r exp_mode exp_owner exp_group description <<< "$spec"
+
+        # Check if directory exists
+        if [[ ! -d "$path" ]]; then
+            perms_say "Creating missing directory: $path"
+            if ! perms_run install -d -o "$exp_owner" -g "$exp_group" -m "$exp_mode" "$path"; then
+                perms_err "Failed to create: $path"
+                ((errors++))
+            else
+                ((fixed++))
+            fi
+            continue
+        fi
+
+        # Get actual values
+        local act_mode act_owner act_group
+        act_mode=$(stat -c "%a" "$path" 2>/dev/null || echo "000")
+        act_owner=$(stat -c "%U" "$path" 2>/dev/null || echo "nobody")
+        act_group=$(stat -c "%G" "$path" 2>/dev/null || echo "nogroup")
+
+        # Normalize expected mode (strip leading 0)
+        local exp_mode_norm="${exp_mode#0}"
+
+        # Check and fix ownership
+        if [[ "$act_owner" != "$exp_owner" || "$act_group" != "$exp_group" ]]; then
+            perms_say "Fixing ownership: $path ($act_owner:$act_group → $exp_owner:$exp_group)"
+            if ! perms_run chown "$exp_owner:$exp_group" "$path"; then
+                perms_err "Failed to fix ownership: $path"
+                ((errors++))
+            else
+                ((fixed++))
+            fi
+        fi
+
+        # Check and fix permissions
+        if [[ "$act_mode" != "$exp_mode_norm" ]]; then
+            perms_say "Fixing permissions: $path ($act_mode → $exp_mode_norm)"
+            if ! perms_run chmod "$exp_mode" "$path"; then
+                perms_err "Failed to fix permissions: $path"
+                ((errors++))
+            else
+                ((fixed++))
+            fi
+        fi
+    done
+
+    perms_say ""
+    perms_say "FHS spec enforcement: $fixed fixes applied, $errors errors"
+
+    [[ $errors -gt 0 ]] && return 1
+    return 0
 }
 
 # =============================================================================
@@ -333,23 +362,26 @@ nftban_permissions_enforce_all() {
 
     local errors=0
 
-    # Enforce permissions on each path (count failures for error tracking)
-    if ! perms_enforce_etc; then
+    # NEW: Use FHS spec as single source of truth for directory permissions
+    if ! perms_enforce_from_fhs_spec; then
         errors=$((errors + 1))
     fi
-    if ! perms_enforce_lib; then
+
+    # Additional file-level permissions (not in FHS spec which only covers directories)
+    # These are kept for files within directories
+    if ! perms_enforce_etc_files; then
+        errors=$((errors + 1))
+    fi
+    if ! perms_enforce_lib_files; then
         errors=$((errors + 1))
     fi
     if ! perms_enforce_sbin; then
         errors=$((errors + 1))
     fi
-    if ! perms_enforce_var; then
+    if ! perms_enforce_var_files; then
         errors=$((errors + 1))
     fi
-    if ! perms_enforce_log; then
-        errors=$((errors + 1))
-    fi
-    if ! perms_enforce_usrshare; then
+    if ! perms_enforce_log_files; then
         errors=$((errors + 1))
     fi
 
@@ -368,50 +400,51 @@ nftban_permissions_enforce_all() {
 # =============================================================================
 
 nftban_permissions_check() {
-    # Check current permissions and report issues
+    # Check current permissions against FHS spec (single source of truth)
     # Args: none
     # Returns: 0 if all OK, 1 if issues found
 
-    perms_say "Checking current permissions..."
+    perms_say "Checking permissions against FHS specification..."
     perms_say ""
+
+    # Ensure FHS spec is loaded
+    if [[ ${#NFTBAN_FHS_DIRECTORIES[@]} -eq 0 ]]; then
+        nftban_fhs_load_spec
+    fi
 
     local issues=0
 
-    # Check /etc/nftban
-    if [[ -d "$PERMS_ETC" ]]; then
-        local owner
-        owner="$(stat -c '%U:%G' "$PERMS_ETC" 2>/dev/null || stat -f '%Su:%Sg' "$PERMS_ETC")"
-        local mode
-        mode="$(stat -c '%a' "$PERMS_ETC" 2>/dev/null || stat -f '%Lp' "$PERMS_ETC")"
+    # Check ALL paths defined in FHS spec
+    for path in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
+        local spec="${NFTBAN_FHS_DIRECTORIES[$path]}"
 
-        if [[ "$owner" != "root:nftban" ]]; then
-            perms_warn "$PERMS_ETC has wrong ownership: $owner (expected: root:nftban)"
+        # Parse spec: mode|owner|group|description
+        IFS='|' read -r exp_mode exp_owner exp_group description <<< "$spec"
+
+        # Skip if directory doesn't exist
+        [[ ! -d "$path" ]] && continue
+
+        # Get actual values
+        local act_mode act_owner act_group
+        act_mode=$(stat -c "%a" "$path" 2>/dev/null || echo "000")
+        act_owner=$(stat -c "%U" "$path" 2>/dev/null || echo "nobody")
+        act_group=$(stat -c "%G" "$path" 2>/dev/null || echo "nogroup")
+
+        # Normalize expected mode (strip leading 0)
+        local exp_mode_norm="${exp_mode#0}"
+
+        # Check ownership
+        if [[ "$act_owner" != "$exp_owner" || "$act_group" != "$exp_group" ]]; then
+            perms_warn "$path has wrong ownership: $act_owner:$act_group (expected: $exp_owner:$exp_group)"
             ((issues++))
         fi
 
-        if [[ "$mode" != "750" ]]; then
-            perms_warn "$PERMS_ETC has wrong permissions: $mode (expected: 750)"
+        # Check permissions
+        if [[ "$act_mode" != "$exp_mode_norm" ]]; then
+            perms_warn "$path has wrong permissions: $act_mode (expected: $exp_mode_norm)"
             ((issues++))
         fi
-    fi
-
-    # Check /var/lib/nftban
-    if [[ -d "$PERMS_VAR" ]]; then
-        local owner
-        owner="$(stat -c '%U:%G' "$PERMS_VAR" 2>/dev/null || stat -f '%Su:%Sg' "$PERMS_VAR")"
-        local mode
-        mode="$(stat -c '%a' "$PERMS_VAR" 2>/dev/null || stat -f '%Lp' "$PERMS_VAR")"
-
-        if [[ "$owner" != "nftban:nftban" ]]; then
-            perms_warn "$PERMS_VAR has wrong ownership: $owner (expected: nftban:nftban)"
-            ((issues++))
-        fi
-
-        if [[ "$mode" != "750" ]]; then
-            perms_warn "$PERMS_VAR has wrong permissions: $mode (expected: 750)"
-            ((issues++))
-        fi
-    fi
+    done
 
     perms_say ""
     if ((issues > 0)); then
@@ -419,7 +452,7 @@ nftban_permissions_check() {
         perms_say "Run 'nftban permissions enforce' to fix"
         return 1
     else
-        perms_say "✅ All permissions are correct"
+        perms_say "✅ All permissions match FHS specification"
         return 0
     fi
 }

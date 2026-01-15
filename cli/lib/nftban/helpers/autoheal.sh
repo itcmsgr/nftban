@@ -3,21 +3,47 @@
 # NFTBan v1.0 - Auto-Heal Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# meta:name=autoheal.sh
-# meta:type=helper
-# meta:header=Auto-Heal System Configuration
-# meta:version=1.0.0
+# meta:name="autoheal.sh"
+# meta:type="helper"
+# meta:header="Auto-Heal System Configuration"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-# meta:description=Automatically fixes common configuration issues
+# meta:homepage="https://nftban.com"
+#
+# **Description & Purpose**
+# meta:description="Automatically fixes common configuration issues using FHS spec"
+# meta:input="None"
+# meta:output="Fixed system state"
+#
+# **Inventory & Requirements**
+# meta:depends="bash,nftban_fhs_spec.sh"
+# meta:inventory.files=""
+# meta:inventory.binaries="install,chown,chmod,systemctl"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_CONFIG_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="nftban-maintenance.timer"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2025-10-26"
+# meta:updated_date="2026-01-15"
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 IFS=$'\n\t'
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+
+# CRITICAL: Load FHS spec - single source of truth for directory structure
+# shellcheck source=/usr/lib/nftban/core/nftban_fhs_spec.sh
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_fhs_spec.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_fhs_spec.sh"
+else
+    echo "[AUTOHEAL] ERROR: FHS spec not found - cannot proceed" >&2
+    exit 1
+fi
 
 # Colors for output
 readonly GREEN='\033[0;32m'
@@ -46,138 +72,83 @@ fi
 log_info "Starting NFTBan Auto-Heal..."
 
 # =============================================================================
-# 1. Verify and create all FHS directories
+# 1. Verify and create all FHS directories FROM SPEC (single source of truth)
 # =============================================================================
-log_info "Checking FHS directory structure..."
+log_info "Checking FHS directory structure from specification..."
 
-DIRS=(
-    "${NFTBAN_CONFIG_DIR}/conf.d"
-    "${NFTBAN_CONFIG_DIR}/secrets.d"
-    "${NFTBAN_CONFIG_DIR}/keys"
-    "${NFTBAN_CONFIG_DIR}/feeds.d"
-    "${NFTBAN_CONFIG_DIR}/distros"
-    "${NFTBAN_CONFIG_DIR}/ports.d"
-    "${NFTBAN_CONFIG_DIR}/whitelist.d"
-    "${NFTBAN_CONFIG_DIR}/blacklist.d"
-    "${NFTBAN_CONFIG_DIR}/geoban.d"
-    "/etc/suricata/rules"
-    "/etc/suricata/update.d"
-    "/etc/nftables/nftban.d"
-    "${NFTBAN_LIB_DIR}"
-    "${NFTBAN_LIB_DIR}/bin"
-    "${NFTBAN_LIB_DIR}/core"
-    "${NFTBAN_LIB_DIR}/cli"
-    "${NFTBAN_LIB_DIR}/helpers"
-    "${NFTBAN_LIB_DIR}/exporters"
-    "${NFTBAN_LIB_DIR}/setup"
-    "/usr/share/nftban"
-    "/usr/share/nftban/templates"
-    "/usr/share/nftban/templates/mail"
-    "/usr/share/nftban/templates/reports"
-    "${NFTBAN_DATA_DIR}/state"
-    "${NFTBAN_DATA_DIR}/snapshots"
-    "${NFTBAN_DATA_DIR}/feeds"
-    "${NFTBAN_DATA_DIR}/geoip"
-    "${NFTBAN_DATA_DIR}/reports"
-    "${NFTBAN_DATA_DIR}/keyring"
-    "${NFTBAN_DATA_DIR}/backup"
-    "${NFTBAN_DATA_DIR}/reports"
-    "${NFTBAN_DATA_DIR}/reports/baseline"
-    "${NFTBAN_DATA_DIR}/reports/auditors"
-    "${NFTBAN_DATA_DIR}/metrics"
-    "${NFTBAN_DATA_DIR}/config"
-    "${NFTBAN_DATA_DIR}/geoip"
-    "${NFTBAN_DATA_DIR}/geoban"
-    "${NFTBAN_DATA_DIR}/geoban/tracking"
-    "${NFTBAN_CACHE_DIR}/geoip"
-    "${NFTBAN_CACHE_DIR}/geoban"
-    "${NFTBAN_CACHE_DIR}/feeds"
-    "${NFTBAN_CACHE_DIR}/tmp"
-    "${NFTBAN_LOG_DIR}"
-    "${NFTBAN_LOG_DIR}/rbl"
-    "${NFTBAN_RUN_DIR}"
-    "${NFTBAN_RUN_DIR}/locks"
-)
+# Use the FHS spec (already loaded above) - iterate through ALL defined paths
+fixed_dirs=0
+for path in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
+    spec="${NFTBAN_FHS_DIRECTORIES[$path]}"
 
-for DIR in "${DIRS[@]}"; do
-    if [ ! -d "$DIR" ]; then
-        mkdir -p "$DIR"
-        log_info "Created missing directory: $DIR"
+    # Parse spec: mode|owner|group|description
+    IFS='|' read -r exp_mode exp_owner exp_group description <<< "$spec"
+
+    # Create directory if missing
+    if [ ! -d "$path" ]; then
+        install -d -o "$exp_owner" -g "$exp_group" -m "$exp_mode" "$path" 2>/dev/null || {
+            log_warn "Failed to create: $path"
+            continue
+        }
+        log_info "Created missing directory: $path"
+        ((fixed_dirs++))
     fi
 done
 
+log_info "FHS directory check complete ($fixed_dirs directories created)"
+
 # =============================================================================
-# 2. Fix permissions
+# 2. Fix permissions FROM FHS SPEC (single source of truth)
 # =============================================================================
-log_info "Fixing permissions..."
+log_info "Fixing permissions from FHS specification..."
 
-# IMPORTANT: Use explicit per-directory operations, NOT recursive -R on /etc
-# to preserve user-edited file permissions
-chown root:nftban "${NFTBAN_CONFIG_DIR}"
-chmod 750 "${NFTBAN_CONFIG_DIR}"
-chown root:nftban "${NFTBAN_CONFIG_DIR}/conf.d"
-chmod 750 "${NFTBAN_CONFIG_DIR}/conf.d"
-[ -d "${NFTBAN_CONFIG_DIR}/secrets.d" ] && chown root:nftban "${NFTBAN_CONFIG_DIR}/secrets.d" && chmod 700 "${NFTBAN_CONFIG_DIR}/secrets.d"
-[ -d "${NFTBAN_CONFIG_DIR}/keys" ] && chown root:nftban "${NFTBAN_CONFIG_DIR}/keys" && chmod 700 "${NFTBAN_CONFIG_DIR}/keys"
+fixed_perms=0
+for path in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
+    spec="${NFTBAN_FHS_DIRECTORIES[$path]}"
 
-# Suricata config directories (explicit, not recursive)
-[ -d /etc/suricata ] && chown root:nftban /etc/suricata 2>/dev/null && chmod 750 /etc/suricata 2>/dev/null || true
-# Only fix suricata files if they exist (don't recurse)
-for f in /etc/suricata/*.conf; do [ -f "$f" ] && chmod 640 "$f" 2>/dev/null || true; done
-for f in /etc/suricata/rules/*.rules; do [ -f "$f" ] && chmod 640 "$f" 2>/dev/null || true; done
+    # Parse spec: mode|owner|group|description
+    IFS='|' read -r exp_mode exp_owner exp_group description <<< "$spec"
 
-# nftables config (explicit, not recursive)
-[ -d /etc/nftables/nftban.d ] && chown root:nftban /etc/nftables/nftban.d 2>/dev/null && chmod 750 /etc/nftables/nftban.d 2>/dev/null || true
+    # Skip if directory doesn't exist
+    [ ! -d "$path" ] && continue
 
-# /var/lib/nftban: Set directory ownership only
-chown nftban:nftban "${NFTBAN_DATA_DIR}"
-chmod 750 "${NFTBAN_DATA_DIR}"
-[ -d "${NFTBAN_DATA_DIR}/state" ] && chown nftban:nftban "${NFTBAN_DATA_DIR}/state" && chmod 750 "${NFTBAN_DATA_DIR}/state"
-[ -d "${NFTBAN_DATA_DIR}/feeds" ] && chown nftban:nftban "${NFTBAN_DATA_DIR}/feeds" && chmod 750 "${NFTBAN_DATA_DIR}/feeds"
-[ -d "${NFTBAN_DATA_DIR}/reports" ] && chown nftban:nftban "${NFTBAN_DATA_DIR}/reports" && chmod 750 "${NFTBAN_DATA_DIR}/reports"
-[ -d "${NFTBAN_DATA_DIR}/reports/baseline" ] && chown nftban:nftban "${NFTBAN_DATA_DIR}/reports/baseline" && chmod 750 "${NFTBAN_DATA_DIR}/reports/baseline"
+    # Get actual values
+    act_mode=$(stat -c "%a" "$path" 2>/dev/null || echo "000")
+    act_owner=$(stat -c "%U" "$path" 2>/dev/null || echo "nobody")
+    act_group=$(stat -c "%G" "$path" 2>/dev/null || echo "nogroup")
 
-# Dedicated directory for nftban-auditor group (separate from main reports)
-if getent group nftban-auditor >/dev/null 2>&1; then
-    chown root:nftban-auditor "${NFTBAN_DATA_DIR}/reports/auditors"
-    chmod 0770 "${NFTBAN_DATA_DIR}/reports/auditors"
-else
-    # Fallback if group doesn't exist
-    chown nftban:nftban "${NFTBAN_DATA_DIR}/reports/auditors"
-    chmod 750 "${NFTBAN_DATA_DIR}/reports/auditors"
-fi
+    # Normalize expected mode (strip leading 0)
+    exp_mode_norm="${exp_mode#0}"
 
-# Cache directory (explicit, not recursive - files created at runtime)
-chown nftban:nftban "${NFTBAN_CACHE_DIR}"
-chmod 755 "${NFTBAN_CACHE_DIR}"
+    # Fix ownership if wrong
+    if [ "$act_owner" != "$exp_owner" ] || [ "$act_group" != "$exp_group" ]; then
+        chown "$exp_owner:$exp_group" "$path" 2>/dev/null && {
+            log_info "Fixed ownership: $path → $exp_owner:$exp_group"
+            ((fixed_perms++))
+        }
+    fi
 
-# Application libraries directory (FHS: /usr/lib = root:root, 755)
-# NOTE: These are package-managed files, not user-editable config
-chown root:root "${NFTBAN_LIB_DIR}" 2>/dev/null || true
-chmod 755 "${NFTBAN_LIB_DIR}" 2>/dev/null || true
-chmod 755 "${NFTBAN_LIB_DIR}/bin" 2>/dev/null || true
-chmod 755 "${NFTBAN_LIB_DIR}/core" 2>/dev/null || true
-chmod 755 "${NFTBAN_LIB_DIR}/cli" 2>/dev/null || true
-chmod 755 "${NFTBAN_LIB_DIR}/helpers" 2>/dev/null || true
-chmod 755 "${NFTBAN_LIB_DIR}/exporters" 2>/dev/null || true
-chmod 755 "${NFTBAN_LIB_DIR}/setup" 2>/dev/null || true
+    # Fix permissions if wrong
+    if [ "$act_mode" != "$exp_mode_norm" ]; then
+        chmod "$exp_mode" "$path" 2>/dev/null && {
+            log_info "Fixed permissions: $path → $exp_mode_norm"
+            ((fixed_perms++))
+        }
+    fi
+done
+
+log_info "Permission fixes complete ($fixed_perms items fixed)"
+
+# Additional file-level fixes not in FHS spec (which only covers directories)
 # Make all shell scripts executable
-find "${NFTBAN_LIB_DIR}" -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
+find "${NFTBAN_LIB_DIR:-/usr/lib/nftban}" -type f -name "*.sh" -exec chmod 755 {} \; 2>/dev/null || true
 # Make binaries executable
-find "${NFTBAN_LIB_DIR}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
+find "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 # CRITICAL: Set CAP_NET_ADMIN on nftban-core for GUI ban/unban functionality
-# The GUI (nftban-ui) runs as non-root and calls nftban-core for firewall operations
-if [ -x "${NFTBAN_LIB_DIR}/bin/nftban-core" ]; then
-    setcap cap_net_admin+ep "${NFTBAN_LIB_DIR}/bin/nftban-core" 2>/dev/null || log_warn "Failed to set CAP_NET_ADMIN on nftban-core"
+if [ -x "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" ]; then
+    setcap cap_net_admin+ep "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" 2>/dev/null || log_warn "Failed to set CAP_NET_ADMIN on nftban-core"
 fi
-
-# Templates directory (FHS: /usr/share = root:root, 755)
-# NOTE: These are package-managed files, not user-editable
-chown root:root /usr/share/nftban 2>/dev/null || true
-chmod 755 /usr/share/nftban 2>/dev/null || true
-chmod 755 /usr/share/nftban/templates 2>/dev/null || true
-chmod 755 /usr/share/nftban/templates/mail 2>/dev/null || true
-chmod 755 /usr/share/nftban/templates/reports 2>/dev/null || true
+# Fix HTML templates
 find /usr/share/nftban/templates -type f -name "*.html" -exec chmod 644 {} \; 2>/dev/null || true
 
 # =============================================================================
@@ -541,8 +512,8 @@ log_info "================================================================="
 log_info "Auto-Heal Complete!"
 log_info "================================================================="
 echo ""
-log_info "✅ FHS directories created (38 directories)"
-log_info "✅ Permissions enforced (correct ownership and modes)"
+log_info "✅ FHS directories verified from specification (${#NFTBAN_FHS_DIRECTORIES[@]} paths)"
+log_info "✅ Permissions enforced from FHS spec (single source of truth)"
 log_info "✅ System configuration generated"
 log_info "✅ Systemd timer configured"
 echo ""

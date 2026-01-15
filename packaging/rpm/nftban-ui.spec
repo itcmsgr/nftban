@@ -87,8 +87,9 @@ install -m 0644 install/systemd/nftband.socket %{buildroot}%{_unitdir}/nftband.s
 install -m 0644 install/pam/nftban-ui %{buildroot}%{_sysconfdir}/pam.d/nftban-ui
 
 # Install tmpfiles.d configuration for runtime directories
+# NOTE: Using GENERATED file from build/fhs-spec.yaml (single source of truth)
 install -d %{buildroot}%{_tmpfilesdir}
-install -m 0644 install/tmpfiles.d/nftban.conf %{buildroot}%{_tmpfilesdir}/nftban.conf
+install -m 0644 install/systemd/tmpfiles.d/nftban.conf %{buildroot}%{_tmpfilesdir}/nftban.conf
 
 # Install config files
 install -m 0644 install/config/allowed-gui-groups %{buildroot}%{_sysconfdir}/nftban/allowed-gui-groups
