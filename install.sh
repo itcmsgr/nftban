@@ -1669,12 +1669,13 @@ install_tmpfiles() {
     log "Installing tmpfiles.d Configuration..."
 
     # Install tmpfiles.d configuration for runtime directories
-    if [[ -f "$SCRIPT_DIR/install/tmpfiles.d/nftban.conf" ]]; then
+    # NOTE: Using GENERATED file from build/fhs-spec.yaml (single source of truth)
+    if [[ -f "$SCRIPT_DIR/install/systemd/tmpfiles.d/nftban.conf" ]]; then
         mkdir -p /etc/tmpfiles.d
-        cp -f "$SCRIPT_DIR/install/tmpfiles.d/nftban.conf" /etc/tmpfiles.d/
+        cp -f "$SCRIPT_DIR/install/systemd/tmpfiles.d/nftban.conf" /etc/tmpfiles.d/
         chmod 644 /etc/tmpfiles.d/nftban.conf
         chown root:root /etc/tmpfiles.d/nftban.conf
-        ok "Installed: /etc/tmpfiles.d/nftban.conf"
+        ok "Installed: /etc/tmpfiles.d/nftban.conf (from FHS spec)"
 
         # Apply tmpfiles configuration immediately
         if command -v systemd-tmpfiles &>/dev/null; then
@@ -1682,7 +1683,7 @@ install_tmpfiles() {
             ok "Applied tmpfiles configuration"
         fi
     else
-        warn "tmpfiles.d config not found: $SCRIPT_DIR/install/tmpfiles.d/nftban.conf"
+        warn "tmpfiles.d config not found: $SCRIPT_DIR/install/systemd/tmpfiles.d/nftban.conf"
     fi
 
     return 0
