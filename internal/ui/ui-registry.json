@@ -63,24 +63,6 @@
         }
       }
     },
-    "fragments": {
-      "path": "internal/ui/fragments",
-      "description": "HTMX partial update fragments",
-      "files": {
-        "summary.templ": {
-          "type": "templ",
-          "generates": "summary_templ.go",
-          "exports": ["SummaryCards"],
-          "route": "/ui/frag/summary",
-          "auth_required": true,
-          "htmx": {
-            "trigger": "every 5s",
-            "swap": "innerHTML"
-          },
-          "description": "Dashboard summary statistics cards"
-        }
-      }
-    },
     "components": {
       "path": "internal/ui/components",
       "description": "Reusable UI components",
@@ -107,17 +89,7 @@
         "description": "Dashboard page"
       }
     ],
-    "fragments": [
-      {
-        "method": "GET",
-        "path": "/ui/frag/summary",
-        "handler": "HandleFragSummary",
-        "template": "fragments.SummaryCards",
-        "auth_required": true,
-        "htmx": true,
-        "description": "Summary cards fragment"
-      }
-    ],
+    "fragments": [],
     "actions": [
       {
         "method": "POST",

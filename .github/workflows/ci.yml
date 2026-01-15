@@ -176,6 +176,21 @@ jobs:
             exit 1
           }
 
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate templ files
+        run: $(go env GOPATH)/bin/templ generate
+
+      - name: Run go vet
+        run: |
+          go vet ./... 2>&1 | tee /tmp/vet.out
+          if [ -s /tmp/vet.out ]; then
+            echo "::error ::go vet found issues:"
+            cat /tmp/vet.out
+            exit 1
+          fi
+
       - name: Build all packages
         run: go build ./...
 
@@ -210,6 +225,12 @@ jobs:
 
       - name: Install build dependencies
         run: sudo apt-get update && sudo apt-get install -y libpam0g-dev
+
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate templ files
+        run: $(go env GOPATH)/bin/templ generate
 
       - name: Build Go binaries
         run: |
