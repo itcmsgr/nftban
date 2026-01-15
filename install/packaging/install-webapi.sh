@@ -22,7 +22,7 @@
 # Usage: sudo ./install-webapi.sh
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Colors
 RED='\033[0;31m'
@@ -141,10 +141,17 @@ fi
 # Step 4: Install web files
 log_info "Step 4/7: Installing web files..."
 
-mkdir -p /var/www/nftban
+# Create directory with correct ownership
+install -d -o nftban-www -g nftban-web -m 0755 /var/www/nftban
+
+# Copy web files
 cp -r "$SRC_DIR/web/"* /var/www/nftban/
-chown -R nftban-www:nftban-web /var/www/nftban
-chmod -R 755 /var/www/nftban
+
+# Set ownership on directory and immediate contents (no deep -R recursion)
+chown nftban-www:nftban-web /var/www/nftban
+find /var/www/nftban -maxdepth 1 -exec chown nftban-www:nftban-web {} \;
+find /var/www/nftban -maxdepth 1 -type f -exec chmod 644 {} \;
+find /var/www/nftban -maxdepth 1 -type d -exec chmod 755 {} \;
 
 log_success "Web files installed to /var/www/nftban/"
 

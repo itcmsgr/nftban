@@ -6,14 +6,24 @@
 # Purpose: Install and configure Prometheus for NFTBan metrics
 # Location: /usr/lib/nftban/setup/install_prometheus.sh
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:name=install_prometheus
-# meta:type=setup
-# meta:header=Prometheus Installation
-# meta:version=1.0.0
+# meta:name="install_prometheus"
+# meta:type="setup"
+# meta:header="Prometheus Installation"
+# meta:version="1.0.0"
 #
-# meta:created_date=2025-11-16
+# meta:description="Install and configure Prometheus for NFTBan metrics"
+# meta:inventory.files=""
+# meta:inventory.binaries="curl,tar,install"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR"
+# meta:inventory.config_files="/etc/prometheus/prometheus.yml"
+# meta:inventory.systemd_units="prometheus.service"
+# meta:inventory.network="https://github.com/prometheus/prometheus"
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2025-11-16"
+# meta:updated_date="2026-01-15"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -122,13 +132,17 @@ install_via_binary() {
     
     # Create directories
     mkdir -p "$PROM_DIR" "$PROM_DIR/rules" "$PROM_DIR/rules.d"
-    mkdir -p "$PROM_DATA_DIR"
-    
+    # Create data directory with correct ownership (no -R, fresh directory)
+    install -d -o "$PROM_USER" -g "$PROM_GROUP" -m 0755 "$PROM_DATA_DIR"
+
     # Install console templates and libraries
     cp -r consoles console_libraries "$PROM_DIR/"
-    
-    # Set ownership
-    chown -R "$PROM_USER:$PROM_GROUP" "$PROM_DIR" "$PROM_DATA_DIR"
+
+    # Set ownership on top-level directories (avoid recursive -R)
+    chown "$PROM_USER:$PROM_GROUP" "$PROM_DIR" "$PROM_DATA_DIR"
+    # Set ownership on copied subdirectories explicitly
+    chown "$PROM_USER:$PROM_GROUP" "$PROM_DIR/consoles" "$PROM_DIR/console_libraries" 2>/dev/null || true
+    find "$PROM_DIR/consoles" "$PROM_DIR/console_libraries" -maxdepth 1 -exec chown "$PROM_USER:$PROM_GROUP" {} \; 2>/dev/null || true
     
     # Cleanup
     cd /

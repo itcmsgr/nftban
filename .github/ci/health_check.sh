@@ -494,6 +494,50 @@ check_file_permissions() {
     fi
 }
 
+check_recursive_permissions() {
+    log_info "Checking for recursive chmod/chown commands..."
+
+    local errors=0
+
+    # Exclude: check-recursive-permissions.sh itself, packaging/build_nftban.sh (legacy),
+    # and health_check.sh (this file - contains grep patterns, not actual recursive commands)
+    local files
+    files=$(find "$PROJECT_ROOT" \( -name "*.sh" -o -name "*.spec" -o -name "postinst" -o -name "preinst" \) \
+        ! -path "*/.git/*" \
+        ! -path "*/build/*" \
+        ! -name "check-recursive-permissions.sh" \
+        ! -name "health_check.sh" \
+        ! -path "*/packaging/build_nftban.sh" \
+        -type f 2>/dev/null || true)
+
+    for file in $files; do
+        # Check for chmod -R (various forms)
+        if grep -n -E '(chmod\s+-R|chmod\s+--recursive)' "$file" 2>/dev/null; then
+            log_error "Found 'chmod -R' in: $file"
+            errors=$((errors + 1))
+        fi
+
+        # Check for chown -R (various forms)
+        if grep -n -E '(chown\s+-R|chown\s+--recursive)' "$file" 2>/dev/null; then
+            log_error "Found 'chown -R' in: $file"
+            errors=$((errors + 1))
+        fi
+    done
+
+    TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
+    if [ $errors -eq 0 ]; then
+        log_success "No recursive permission commands found"
+        PASSED_CHECKS=$((PASSED_CHECKS + 1))
+        return 0
+    else
+        log_error "Recursive permission commands: $errors found (security risk)"
+        log_error "Use explicit permissions or systemd-tmpfiles instead"
+        FAILED_CHECKS=$((FAILED_CHECKS + 1))
+        FAILED_ITEMS+=("Recursive permissions ($errors files)")
+        return 1
+    fi
+}
+
 check_nft_schema_alignment() {
     log_info "Checking NFT Schema v1.0.21 alignment..."
 
@@ -698,6 +742,7 @@ main() {
     check_go_mod
     check_basic_security
     check_file_permissions
+    check_recursive_permissions
     check_nft_schema_alignment
 
     echo ""

@@ -356,17 +356,21 @@ fi
 log_info "Checking metrics exporters configuration..."
 
 # Fix node_exporter textfile collector directory permissions
+# NOTE: This is INTENTIONAL external tool integration, NOT managed by nftban FHS spec
+# node_exporter is a Prometheus exporter owned by its own package
+# nftban writes metrics to textfile_collector; node_exporter reads them
 if [ -d "/var/lib/node_exporter" ]; then
-    # Parent directory must be readable by node_exporter user
+    # Parent directory: node_exporter package default (755 root:root)
+    # We don't change ownership - just ensure readable
     chmod 755 /var/lib/node_exporter 2>/dev/null || true
 
-    # Textfile collector directory - node_exporter needs read, nftban needs write
+    # Textfile collector directory - shared between node_exporter (read) and nftban (write)
+    # Permission model: node_exporter:nftban 775 allows both services access
     if [ -d "/var/lib/node_exporter/textfile_collector" ]; then
-        # Change owner to node_exporter user (if exists)
         if id node_exporter &>/dev/null; then
             chown node_exporter:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
             chmod 775 /var/lib/node_exporter/textfile_collector 2>/dev/null || true
-            log_info "Fixed node_exporter textfile collector permissions"
+            log_info "Fixed node_exporter textfile collector permissions (node_exporter:nftban 775)"
         fi
     fi
 fi

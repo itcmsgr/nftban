@@ -20,7 +20,7 @@
 # meta:inventory.privileges="root"
 # =============================================================================
 
-set -e
+set -Eeuo pipefail
 
 # Colors for output
 RED='\033[0.31m'
@@ -66,12 +66,14 @@ else
 fi
 echo
 
-# Step 3: Create directories
+# Step 3: Create directories with correct ownership (no -R needed for fresh dirs)
 echo -e "${YELLOW}[3/6]${NC} Creating required directories..."
-mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d}
-mkdir -p /var/lib/nftban/feeds
-chown -R root:nftban /etc/nftban /var/lib/nftban
-chmod -R 775 /etc/nftban /var/lib/nftban
+install -d -o root -g nftban -m 0775 /etc/nftban
+install -d -o root -g nftban -m 0775 /etc/nftban/whitelist.d
+install -d -o root -g nftban -m 0775 /etc/nftban/blacklist.d
+install -d -o root -g nftban -m 0775 /etc/nftban/ports.d
+install -d -o root -g nftban -m 0775 /var/lib/nftban
+install -d -o root -g nftban -m 0775 /var/lib/nftban/feeds
 echo -e "${GREEN}✓${NC} Directories created with proper permissions"
 echo
 

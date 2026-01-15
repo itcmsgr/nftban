@@ -6,14 +6,24 @@
 # Purpose: Install and configure Suricata IDS for NFTBan (from source)
 # Location: /usr/lib/nftban/setup/install_suricata.sh
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:name=install_suricata
-# meta:type=setup
-# meta:header=Suricata IDS Installation
-# meta:version=1.0.0
+# meta:name="install_suricata"
+# meta:type="setup"
+# meta:header="Suricata IDS Installation"
+# meta:version="1.0.0"
 #
-# meta:created_date=2025-11-29
+# meta:description="Install and configure Suricata IDS from source"
+# meta:inventory.files=""
+# meta:inventory.binaries="curl,tar,make,install"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR"
+# meta:inventory.config_files="/etc/suricata/suricata.yaml"
+# meta:inventory.systemd_units="suricata.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2025-11-29"
+# meta:updated_date="2026-01-15"
 # =============================================================================
 #
 # This script compiles Suricata from source for distributions where
@@ -227,21 +237,15 @@ create_directories() {
     # NFTBan-controlled directories
     mkdir -p "$SURICATA_CONF_DIR"
     mkdir -p "$SURICATA_DATA_DIR/rules"
-    mkdir -p /var/log/nftban  # Parent directory
-    mkdir -p "$SURICATA_LOG_DIR"  # /var/log/nftban/suricata
-    mkdir -p /var/run/suricata
-
-    # Set ownership
-    chown -R "$SURICATA_USER:$SURICATA_GROUP" "$SURICATA_DATA_DIR"
-    chown -R "$SURICATA_USER:$SURICATA_GROUP" "$SURICATA_LOG_DIR"
-    chown -R "$SURICATA_USER:$SURICATA_GROUP" /var/run/suricata
-
-    # Set permissions (NFTBan HFS compliance)
+    # Create directories with correct ownership/permissions (no -R needed for fresh dirs)
+    # Parent log directory (nftban-owned per FHS spec)
+    install -d -o nftban -g nftban -m 0750 /var/log/nftban
+    # Suricata-specific directories
+    install -d -o "$SURICATA_USER" -g "$SURICATA_GROUP" -m 0750 "$SURICATA_DATA_DIR"
+    install -d -o "$SURICATA_USER" -g "$SURICATA_GROUP" -m 0750 "$SURICATA_LOG_DIR"
+    install -d -o "$SURICATA_USER" -g "$SURICATA_GROUP" -m 0755 /var/run/suricata
+    # Config directory
     chmod 755 "$SURICATA_CONF_DIR"
-    chmod 750 "$SURICATA_DATA_DIR"
-    chmod 750 /var/log/nftban
-    chmod 750 "$SURICATA_LOG_DIR"
-    chmod 755 /var/run/suricata
 
     print_status "Directories created (logs under NFTBan control)"
 }

@@ -199,7 +199,9 @@ nftban_health_fix_permissions() {
         fi
 
         if [[ -d "/usr/share/nftban" ]]; then
-            chown -R root:root /usr/share/nftban 2>/dev/null && \
+            # Fix ownership on share directory and immediate contents (no deep recursion)
+            chown root:root /usr/share/nftban 2>/dev/null
+            find /usr/share/nftban -maxdepth 1 -exec chown root:root {} \; 2>/dev/null && \
             echo "  ✓ Fixed /usr/share/nftban ownership (root:root)" && \
             : $((fixed_count++))
         fi
@@ -433,8 +435,10 @@ nftban_health_fix_metrics() {
     # Fix 2: Ensure textfile collector directory exists
     local textfile_dir="/var/lib/node_exporter/textfile_collector"
     if [[ ! -d "$textfile_dir" ]]; then
-        mkdir -p "$textfile_dir" 2>/dev/null || true
-        chown -R nftban:nftban "$textfile_dir" 2>/dev/null || true
+        # Create with correct ownership (no -R needed for fresh directory)
+        install -d -o nftban -g nftban -m 0755 "$textfile_dir" 2>/dev/null || \
+            mkdir -p "$textfile_dir" 2>/dev/null
+        chown nftban:nftban "$textfile_dir" 2>/dev/null || true
         chmod 755 "$textfile_dir" 2>/dev/null || true
         echo "  ✓ Created textfile collector directory"
         fixed=$((fixed + 1))
