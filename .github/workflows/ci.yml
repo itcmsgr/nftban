@@ -168,6 +168,12 @@ jobs:
           key: ${{ runner.os }}-go-${{ hashFiles('**/go.sum') }}
           restore-keys: ${{ runner.os }}-go-
 
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate templ files
+        run: $(go env GOPATH)/bin/templ generate
+
       - name: Verify go mod tidy
         run: |
           go mod tidy
@@ -175,12 +181,6 @@ jobs:
             echo "::error ::Run 'go mod tidy' and commit changes"
             exit 1
           }
-
-      - name: Install templ
-        run: go install github.com/a-h/templ/cmd/templ@latest
-
-      - name: Generate templ files
-        run: $(go env GOPATH)/bin/templ generate
 
       - name: Run go vet
         run: |
