@@ -6,24 +6,24 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Output rendering functions (terminal, JSON, summary)
 #
-# meta:name=nftban_health_render
-# meta:type=lib
-# meta:header=Health Render Functions
-# meta:version=1.0.0
+# meta:name="nftban_health_render"
+# meta:type="library"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Render health check results in various formats
-# meta:input=Health check results arrays
-# meta:output=Formatted output (terminal, JSON)
-#
-# **Inventory & Requirements**
-# meta:depends=nftban_health.sh
-#
-# meta:created_date=2026-01-09
-# meta:updated_date=2026-01-09
+# meta:created_date="2026-01-09"
+# meta:description="Render health check results in various formats"
+# meta:input="Health check results arrays"
+# meta:output="Formatted output (terminal, JSON)"
+# meta:depends="nftban_health.sh"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Prevent double-loading
 [[ -n "${_NFTBAN_HEALTH_RENDER_LOADED:-}" ]] && return 0
@@ -66,6 +66,18 @@ nftban_health_render_terminal() {
         [config]="Configuration"
         [metrics]="Metrics"
         [gui]="Web GUI"
+        [nftables_security]="NFT Security"
+        [conflicting_firewalls]="Firewall Conf"
+        [suricata]="Suricata"
+        [resources]="Resources"
+        [registry]="Registry"
+        [systemd_hardening]="Systemd Hard"
+        [ssh_port]="SSH Port"
+        [cli_errors]="CLI Errors"
+        [rbl]="RBL"
+        [timers]="Timers"
+        [fhs]="FHS Layout"
+        [pro]="Pro Features"
     )
 
     # Count errors and warnings
@@ -273,9 +285,9 @@ nftban_health_render_json() {
     echo "  },"
     echo "  \"checks\": {"
 
-    # Output each check result
+    # Output ALL check results (iterate over all keys in results array)
     local first=true
-    for check in binaries paths permissions services modules geoip databases config fhs metrics gui; do
+    for check in "${!NFTBAN_HEALTH_RESULTS[@]}"; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             [[ "$first" == "false" ]] && echo ","
             first=false
