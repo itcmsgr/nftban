@@ -167,8 +167,32 @@ build_core() {
 }
 
 
+generate_templ() {
+    log "Generating templ files..."
+
+    # Check if templ is installed
+    if ! command -v templ &>/dev/null; then
+        log "Installing templ..."
+        go install github.com/a-h/templ/cmd/templ@latest || {
+            error "Failed to install templ"
+            return 1
+        }
+    fi
+
+    cd "$SCRIPT_DIR"
+    templ generate || {
+        error "Failed to generate templ files"
+        return 1
+    }
+    ok "Templ files generated"
+    return 0
+}
+
 build_gui() {
     log "Building nftban-ui (Web GUI)..."
+
+    # Generate templ files first
+    generate_templ || return 1
 
     cd "$SCRIPT_DIR/cmd/nftban-ui"
 
