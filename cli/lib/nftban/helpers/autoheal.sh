@@ -82,7 +82,7 @@ for path in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
     spec="${NFTBAN_FHS_DIRECTORIES[$path]}"
 
     # Parse spec: mode|owner|group|description
-    IFS='|' read -r exp_mode exp_owner exp_group description <<< "$spec"
+    IFS='|' read -r exp_mode exp_owner exp_group _description <<< "$spec"
 
     # Create directory if missing
     if [ ! -d "$path" ]; then
@@ -107,7 +107,7 @@ for path in "${!NFTBAN_FHS_DIRECTORIES[@]}"; do
     spec="${NFTBAN_FHS_DIRECTORIES[$path]}"
 
     # Parse spec: mode|owner|group|description
-    IFS='|' read -r exp_mode exp_owner exp_group description <<< "$spec"
+    IFS='|' read -r exp_mode exp_owner exp_group _description <<< "$spec"
 
     # Skip if directory doesn't exist
     [ ! -d "$path" ] && continue

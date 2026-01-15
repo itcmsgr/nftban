@@ -49,6 +49,7 @@ readonly PERMS_LIB="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 readonly PERMS_SBIN="${NFTBAN_SBIN_DIR:-/usr/sbin}"
 readonly PERMS_VAR="${NFTBAN_VAR_DIR:-/var/lib/nftban}"
 readonly PERMS_LOG="${NFTBAN_LOG_DIR:-/var/log/nftban}"
+# shellcheck disable=SC2034  # May be used by sourcing scripts
 readonly PERMS_USRSHARE="${NFTBAN_SHARE_DIR:-/usr/share/nftban}"
 
 # Audit logging
@@ -295,7 +296,7 @@ perms_enforce_from_fhs_spec() {
         local spec="${NFTBAN_FHS_DIRECTORIES[$path]}"
 
         # Parse spec: mode|owner|group|description
-        IFS='|' read -r exp_mode exp_owner exp_group description <<< "$spec"
+        IFS='|' read -r exp_mode exp_owner exp_group _description <<< "$spec"
 
         # Check if directory exists
         if [[ ! -d "$path" ]]; then
@@ -419,7 +420,7 @@ nftban_permissions_check() {
         local spec="${NFTBAN_FHS_DIRECTORIES[$path]}"
 
         # Parse spec: mode|owner|group|description
-        IFS='|' read -r exp_mode exp_owner exp_group description <<< "$spec"
+        IFS='|' read -r exp_mode exp_owner exp_group _description <<< "$spec"
 
         # Skip if directory doesn't exist
         [[ ! -d "$path" ]] && continue
