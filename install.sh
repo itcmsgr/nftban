@@ -1111,10 +1111,20 @@ create_users_groups() {
         ok "User already exists: nftban"
     fi
 
+    # Create nftban-cli group (CLI and GUI access)
+    # Users must be in this group to use nftban CLI or Web GUI
+    if ! getent group nftban-cli >/dev/null 2>&1; then
+        groupadd --system nftban-cli
+        ok "Created group: nftban-cli"
+    else
+        ok "Group already exists: nftban-cli"
+    fi
+
     # Create nftban-auditor group (Read-only auditors)
-    # NFTBan v1.0.19 uses 3-group model:
-    #   nftban: All operators (CLI, Web, full service management)
-    #   nftban-auditor: Read-only audit access (renamed from nftban-auditors)
+    # NFTBan v1.1.0 uses 4-group model:
+    #   nftban: System group for file ownership
+    #   nftban-cli: CLI and Web GUI access (required to use nftban)
+    #   nftban-auditor: Read-only audit access
     #   nftban-panel: Panel integration (limited reload access)
     if ! getent group nftban-auditor >/dev/null 2>&1; then
         groupadd --system nftban-auditor
