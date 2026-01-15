@@ -24,7 +24,7 @@
 # meta:inventory.privileges="none"
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 IFS=$'\n\t'
 
 # =============================================================================
@@ -309,13 +309,17 @@ check_go_vet() {
 
     cd "$PROJECT_ROOT"
 
-    if go vet ./... 2>/dev/null; then
+    local vet_output
+    vet_output=$(go vet ./... 2>&1) || true
+
+    if [[ -z "$vet_output" ]]; then
         log_success "go vet: all packages passed"
         PASSED_CHECKS=$((PASSED_CHECKS + 1))
         TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
         return 0
     else
         log_error "go vet: found issues"
+        echo "$vet_output" >&2
         FAILED_CHECKS=$((FAILED_CHECKS + 1))
         TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
         FAILED_ITEMS+=("go vet")
