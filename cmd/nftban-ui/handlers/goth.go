@@ -456,16 +456,22 @@ func (h *GOTHHandlers) getIdentity() ui.SystemIdentity {
 }
 
 func (h *GOTHHandlers) getPanelMode() string {
-	// Check core service
-	if _, err := exec.Command("systemctl", "is-active", "--quiet", "nftban-core").Output(); err != nil {
-		return "error"
+	// Primary check: nftables must be working
+	output, err := exec.Command("nft", "list", "tables").Output()
+	if err != nil {
+		return "error" // nftables not working at all
 	}
 
-	// Check nftables has nftban table
-	if output, err := exec.Command("nft", "list", "tables").Output(); err == nil {
-		if !strings.Contains(string(output), "nftban") {
-			return "warning"
-		}
+	// Check if nftban table exists
+	hasTable := strings.Contains(string(output), "nftban")
+	if !hasTable {
+		return "warning" // nftables works but nftban not initialized
+	}
+
+	// Optional: check if core daemon is running (degraded if not)
+	if err := exec.Command("systemctl", "is-active", "--quiet", "nftban-core").Run(); err != nil {
+		// Daemon not running but nftables is configured - still functional
+		return "active" // CLI-only mode is fine
 	}
 
 	return "active"
@@ -943,7 +949,49 @@ func (h *GOTHHandlers) getModulesList() []ui.ModuleStatus {
 		}
 	}
 
-	// If no modules found, return basic fallback
+	// If no modules found or nftables not in list, add direct nftables check
+	hasNftables := false
+	for _, m := range modules {
+		if m.Name == "nftables" {
+			hasNftables = true
+			break
+		}
+	}
+
+	if !hasNftables {
+		// Direct nftables check as fallback
+		nftMod := ui.ModuleStatus{
+			Name:        "nftables",
+			Description: "Packet filtering firewall",
+			LastSync:    now,
+			Status:      "error",
+		}
+
+		// Check if nftables service is running
+		if err := exec.Command("systemctl", "is-active", "--quiet", "nftables").Run(); err == nil {
+			nftMod.Status = "active"
+			nftMod.Running = true
+			nftMod.Enabled = true
+
+			// Check if nftban table exists
+			if output, err := exec.Command("nft", "list", "tables").Output(); err == nil {
+				if !strings.Contains(string(output), "nftban") {
+					nftMod.Status = "warning" // nftables running but no nftban table
+				}
+			}
+		} else {
+			// Check if nft command works at all
+			if _, err := exec.Command("nft", "list", "tables").Output(); err == nil {
+				nftMod.Status = "active" // nft works even if service not "active"
+				nftMod.Running = true
+			}
+		}
+
+		// Prepend nftables to modules list
+		modules = append([]ui.ModuleStatus{nftMod}, modules...)
+	}
+
+	// If still no modules, add minimal fallback
 	if len(modules) == 0 {
 		modules = []ui.ModuleStatus{
 			{Name: "nftables", Description: "Packet filtering", Status: "unknown", LastSync: now},
