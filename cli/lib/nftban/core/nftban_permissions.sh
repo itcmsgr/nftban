@@ -156,19 +156,32 @@ perms_enforce_etc() {
     perms_mkd "$PERMS_ETC/conf.d" 0750 root nftban
 
     # Secure directories in /etc/nftban (readable by nftban group)
-    # IMPORTANT: Do NOT use recursive -R to preserve user-edited file permissions
     if [[ -d "$PERMS_ETC" ]]; then
         perms_say "Securing config directory: $PERMS_ETC"
         perms_run chown root:nftban "$PERMS_ETC"
         perms_run chmod 0750 "$PERMS_ETC"
-        # Set permissions on subdirectories only (not recursively into files)
-        perms_run find "$PERMS_ETC" -maxdepth 1 -type d -exec chown root:nftban {} \;
-        perms_run find "$PERMS_ETC" -maxdepth 1 -type d -exec chmod 0750 {} \;
 
-        # Special handling for .local files (user overrides - keep 0640)
-        if compgen -G "$PERMS_ETC/*.local" > /dev/null 2>&1; then
-            perms_run find "$PERMS_ETC" -type f -name "*.local" -exec chmod 0640 {} \;
+        # Set permissions on all subdirectories
+        perms_run find "$PERMS_ETC" -type d -exec chown root:nftban {} \;
+        perms_run find "$PERMS_ETC" -type d -exec chmod 0750 {} \;
+
+        # Fix conf.d/*.conf files - MUST be readable by nftban group for services
+        if [[ -d "$PERMS_ETC/conf.d" ]]; then
+            perms_run find "$PERMS_ETC/conf.d" -type f -name "*.conf" -exec chown root:nftban {} \;
+            perms_run find "$PERMS_ETC/conf.d" -type f -name "*.conf" -exec chmod 0640 {} \;
         fi
+
+        # Fix whitelist.d, blacklist.d, etc.
+        for subdir in whitelist.d blacklist.d ports.d rules.d; do
+            if [[ -d "$PERMS_ETC/$subdir" ]]; then
+                perms_run find "$PERMS_ETC/$subdir" -type f -exec chown root:nftban {} \;
+                perms_run find "$PERMS_ETC/$subdir" -type f -exec chmod 0640 {} \;
+            fi
+        done
+
+        # Handle .local files (user overrides)
+        perms_run find "$PERMS_ETC" -type f -name "*.local" -exec chown root:nftban {} \;
+        perms_run find "$PERMS_ETC" -type f -name "*.local" -exec chmod 0640 {} \;
     fi
 }
 
@@ -270,16 +283,17 @@ perms_enforce_log() {
     # Secure all log files (excluding suricata subdirectory)
     if [[ -d "$PERMS_LOG" ]]; then
         perms_say "Securing log directory: $PERMS_LOG"
-        # Exclude suricata directory from recursive chown
-        perms_run find "$PERMS_LOG" -mindepth 1 -maxdepth 1 -type d ! -name "suricata" -exec chown -R nftban:nftban {} \;
-        perms_run find "$PERMS_LOG" -maxdepth 1 -type f -exec chown nftban:nftban {} \;
+        # Set ownership on directories and files (excluding suricata)
+        perms_run find "$PERMS_LOG" -type d ! -path "*/suricata*" -exec chown nftban:nftban {} \;
+        perms_run find "$PERMS_LOG" -type f ! -path "*/suricata*" -exec chown nftban:nftban {} \;
         perms_run find "$PERMS_LOG" -type d ! -path "*/suricata*" -exec chmod 0750 {} \;
         perms_run find "$PERMS_LOG" -type f ! -path "*/suricata*" -exec chmod 0640 {} \;
 
         # Handle suricata directory specially: suricata:nftban so Suricata can write, nftban can read
         if [[ -d "$PERMS_LOG/suricata" ]]; then
             perms_say "Securing suricata log directory (suricata:nftban)"
-            perms_run chown -R suricata:nftban "$PERMS_LOG/suricata"
+            perms_run find "$PERMS_LOG/suricata" -type d -exec chown suricata:nftban {} \;
+            perms_run find "$PERMS_LOG/suricata" -type f -exec chown suricata:nftban {} \;
             perms_run chmod 0750 "$PERMS_LOG/suricata"
             perms_run find "$PERMS_LOG/suricata" -type f -exec chmod 0640 {} \;
             # Add suricata to nftban group if not already
@@ -298,7 +312,8 @@ perms_enforce_usrshare() {
 
     if [[ -d "$PERMS_USRSHARE" ]]; then
         perms_say "Securing share directory: $PERMS_USRSHARE"
-        perms_run chown -R root:root "$PERMS_USRSHARE"
+        perms_run find "$PERMS_USRSHARE" -type d -exec chown root:root {} \;
+        perms_run find "$PERMS_USRSHARE" -type f -exec chown root:root {} \;
         perms_run find "$PERMS_USRSHARE" -type d -exec chmod 0755 {} \;
         perms_run find "$PERMS_USRSHARE" -type f -exec chmod 0644 {} \;
     fi
