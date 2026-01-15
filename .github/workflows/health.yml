@@ -50,6 +50,12 @@ jobs:
             devscripts nftables libpam0g-dev
           npm i -g markdownlint-cli2
 
+      - name: Install templ
+        run: go install github.com/a-h/templ/cmd/templ@latest
+
+      - name: Generate templ files
+        run: $(go env GOPATH)/bin/templ generate
+
       - name: Run health check
         run: .github/ci/health_check.sh
 
