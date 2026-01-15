@@ -47,6 +47,14 @@ export NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 export NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 
 # =============================================================================
+# DEFAULT PATHS (can be overridden by config files)
+# =============================================================================
+# These MUST be set before any module is loaded to prevent strict mode errors
+export NFTBAN_LOG_DIR="${NFTBAN_LOG_DIR:-/var/log/nftban}"
+export NFTBAN_CACHE_DIR="${NFTBAN_CACHE_DIR:-/var/cache/nftban}"
+export NFTBAN_DATA_DIR="${NFTBAN_DATA_DIR:-/var/lib/nftban}"
+
+# =============================================================================
 # PERMISSION CHECK
 # =============================================================================
 
