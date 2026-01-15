@@ -233,7 +233,13 @@ case "$1" in
         chown root:nftban /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d /etc/nftban/rules.d
         chmod 750 /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d /etc/nftban/rules.d
 
-        # Config files
+        # Config files in conf.d - must be readable by nftban group
+        if [ -d /etc/nftban/conf.d ]; then
+            find /etc/nftban/conf.d -name "*.conf" -exec chown root:nftban {} \;
+            find /etc/nftban/conf.d -name "*.conf" -exec chmod 640 {} \;
+        fi
+
+        # Distro config files - public readable
         if [ -d /etc/nftban/distros ]; then
             find /etc/nftban/distros -name "*.conf" -exec chmod 644 {} \;
             find /etc/nftban/distros -name "*.conf" -exec chown root:root {} \;
