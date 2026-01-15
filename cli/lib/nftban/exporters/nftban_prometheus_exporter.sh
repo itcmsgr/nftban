@@ -3,25 +3,28 @@
 # NFTBan v1.0.0 - Unified Prometheus Metrics Exporter (BASH FALLBACK)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban_prometheus_exporter"
+# meta:type="exporter"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-11-17"
+# meta:description="Consolidated all-in-one metrics exporter: blocks, bandwidth, counters, health"
+# meta:input="NFTables sets/counters, /proc/net/*, nftban state, system stats"
+# meta:output="Prometheus text exposition format metrics to textfile collector"
+# meta:depends="bash,bc,date,awk,grep,nft,ss"
+# meta:inventory.files=""
+# meta:inventory.binaries="nft,ss,bc"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_DATA_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-metrics-exporter.timer"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
 # Purpose: Export comprehensive NFTBan metrics in Prometheus text exposition format
 # Location: /usr/lib/nftban/exporters/nftban_prometheus_exporter.sh
-# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-# nftban — Simplifying Linux Firewall Management
 #
 # ⚠️ COMPATIBILITY FALLBACK: This bash exporter is used when Go binary unavailable.
 # For better performance, install nftban-core (Go exporter runs 20x faster).
 # See: METRICS-MIGRATION.md
-#
-# meta:name=nftban_prometheus_exporter
-# meta:type=exporter
-# meta:header=Unified Prometheus Metrics Exporter (Bash Fallback)
-# meta:version=1.0.0
-#
-# **Description & Purpose**
-# meta:description=Consolidated all-in-one metrics exporter: blocks, bandwidth, counters, health
-# meta:input=NFTables sets/counters, /proc/net/*, nftban state, system stats
-# meta:output=Prometheus text exposition format metrics to textfile collector
 #
 # **Metrics Collected**
 # - Block metrics: total, permanent, temporary, by-country
@@ -30,14 +33,6 @@
 # - NFTables set sizes: element counts for all sets
 # - Health metrics: component status (nftables, polkit, ssh)
 # - Performance metrics: exporter duration, last update timestamp
-#
-# **Inventory & Requirements**
-# meta:depends=bash,bc,date,awk,grep,nft,ss
-# meta:requires_env=NFTBAN_LIB_DIR
-#
-# meta:created_date=2025-11-17
-# meta:updated_date=2025-11-26
-# meta:changelog=v0.7.3: Removed deprecated files, fixed permissions, cleaned up for v0.7 release
 # =============================================================================
 
 # Enhanced strict mode
@@ -544,8 +539,8 @@ get_nftables_set_sizes() {
         nft list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -oP 'set \K\w+' || echo "")
 
     if [[ -z "$sets" ]]; then
-        # Fallback: try common set names (v0.6.2: fixed geoban set names)
-        sets="whitelist_v4 whitelist_v6 blacklist_v4 blacklist_v6 temp_ban_v4 temp_ban_v6 feed_v4 feed_v6 geoban_blocked_v4 geoban_blocked_v6"
+        # Fallback: try common set names (v0.7.3 schema uses ipv4/ipv6 suffix)
+        sets="whitelist_ipv4 whitelist_ipv6 blacklist_ipv4 blacklist_ipv6"
     fi
 
     # Count elements in each set
@@ -560,6 +555,75 @@ get_nftables_set_sizes() {
             echo "${set_name} ${count:-0}"
         fi
     done
+}
+
+# Get detailed ban metrics (IPv4/IPv6, temp/perm breakdown)
+# Returns: family type count (e.g., "ipv4 permanent 10")
+get_ban_breakdown() {
+    local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+    local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
+
+    # IPv4 blacklist
+    local v4_output v4_total=0 v4_temp=0 v4_perm=0
+    if nft list set ${table_v4} blacklist_ipv4 &>/dev/null 2>&1; then
+        v4_output=$(nft list set ${table_v4} blacklist_ipv4 2>/dev/null || true)
+        v4_temp=$(echo "$v4_output" | grep -c "timeout" 2>/dev/null || echo "0")
+        v4_total=$(echo "$v4_output" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | wc -l 2>/dev/null || echo "0")
+        v4_temp=${v4_temp:-0}
+        v4_total=${v4_total:-0}
+        v4_perm=$((v4_total - v4_temp))
+        [[ $v4_perm -lt 0 ]] && v4_perm=0
+    fi
+
+    # IPv6 blacklist
+    local v6_output v6_total=0 v6_temp=0 v6_perm=0
+    if nft list set ${table_v6} blacklist_ipv6 &>/dev/null 2>&1; then
+        v6_output=$(nft list set ${table_v6} blacklist_ipv6 2>/dev/null || true)
+        v6_temp=$(echo "$v6_output" | grep -c "timeout" 2>/dev/null || echo "0")
+        v6_total=$(echo "$v6_output" | grep -oE '[0-9a-fA-F:]+::[0-9a-fA-F:]*|[0-9a-fA-F:]+:[0-9a-fA-F:]+' | wc -l 2>/dev/null || echo "0")
+        v6_temp=${v6_temp:-0}
+        v6_total=${v6_total:-0}
+        v6_perm=$((v6_total - v6_temp))
+        [[ $v6_perm -lt 0 ]] && v6_perm=0
+    fi
+
+    echo "ipv4 permanent $v4_perm"
+    echo "ipv4 temporary $v4_temp"
+    echo "ipv4 total $v4_total"
+    echo "ipv6 permanent $v6_perm"
+    echo "ipv6 temporary $v6_temp"
+    echo "ipv6 total $v6_total"
+}
+
+# Get threat feeds metrics
+get_feeds_metrics() {
+    local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+    local total_ipv4=0 total_ipv6=0 enabled_count=0
+
+    if [[ -d "$feeds_dir" ]] && type -t nftban_feeds_discover_all >/dev/null 2>&1; then
+        local all_feeds
+        all_feeds=$(nftban_feeds_discover_all 2>/dev/null || true)
+        for feed in $all_feeds; do
+            local enabled
+            enabled=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
+            if [[ "$enabled" == "true" ]]; then
+                ((enabled_count++))
+                local feed_lower="${feed,,}"
+                local feed_file="${feeds_dir}/${feed_lower}.txt"
+                if [[ -f "$feed_file" ]]; then
+                    local v4 v6
+                    v4=$(grep -cE '^[0-9]+\.' "$feed_file" 2>/dev/null) || v4=0
+                    v6=$(grep -cE '^[0-9a-fA-F]*:' "$feed_file" 2>/dev/null) || v6=0
+                    total_ipv4=$((total_ipv4 + v4))
+                    total_ipv6=$((total_ipv6 + v6))
+                fi
+            fi
+        done
+    fi
+
+    echo "enabled $enabled_count"
+    echo "ipv4 $total_ipv4"
+    echo "ipv6 $total_ipv6"
 }
 
 # Get NFTables firewall counters (packets and bytes per rule/chain)
@@ -731,6 +795,51 @@ collect_metrics() {
             echo "nftban_set_size{set=\"${set_name}\"} ${set_count}" >> "$TEMP_FILE"
         fi
     done <<< "$set_sizes"
+
+    echo "" >> "$TEMP_FILE"
+
+    # -------------------------------------------------------------------------
+    # Ban Breakdown Metrics (v1.1.0 - IPv4/IPv6 and temp/perm)
+    # -------------------------------------------------------------------------
+
+    echo "# HELP nftban_banned_ips Number of banned IPs by family and type" >> "$TEMP_FILE"
+    echo "# TYPE nftban_banned_ips gauge" >> "$TEMP_FILE"
+
+    local ban_breakdown
+    ban_breakdown=$(get_ban_breakdown)
+
+    while IFS= read -r line; do
+        if [[ -n "$line" ]]; then
+            local family ban_type ban_count
+            family=$(echo "$line" | awk '{print $1}')
+            ban_type=$(echo "$line" | awk '{print $2}')
+            ban_count=$(echo "$line" | awk '{print $3}')
+            echo "nftban_banned_ips{family=\"${family}\",type=\"${ban_type}\"} ${ban_count}" >> "$TEMP_FILE"
+        fi
+    done <<< "$ban_breakdown"
+
+    echo "" >> "$TEMP_FILE"
+
+    # -------------------------------------------------------------------------
+    # Threat Feeds Metrics (v1.1.0)
+    # -------------------------------------------------------------------------
+
+    echo "# HELP nftban_feeds_enabled Number of enabled threat feeds" >> "$TEMP_FILE"
+    echo "# TYPE nftban_feeds_enabled gauge" >> "$TEMP_FILE"
+    echo "# HELP nftban_feeds_ips Total IPs from enabled threat feeds" >> "$TEMP_FILE"
+    echo "# TYPE nftban_feeds_ips gauge" >> "$TEMP_FILE"
+
+    local feeds_metrics
+    feeds_metrics=$(get_feeds_metrics)
+
+    local feeds_enabled feeds_ipv4 feeds_ipv6
+    feeds_enabled=$(echo "$feeds_metrics" | grep "^enabled" | awk '{print $2}')
+    feeds_ipv4=$(echo "$feeds_metrics" | grep "^ipv4" | awk '{print $2}')
+    feeds_ipv6=$(echo "$feeds_metrics" | grep "^ipv6" | awk '{print $2}')
+
+    echo "nftban_feeds_enabled ${feeds_enabled:-0}" >> "$TEMP_FILE"
+    echo "nftban_feeds_ips{family=\"ipv4\"} ${feeds_ipv4:-0}" >> "$TEMP_FILE"
+    echo "nftban_feeds_ips{family=\"ipv6\"} ${feeds_ipv6:-0}" >> "$TEMP_FILE"
 
     echo "" >> "$TEMP_FILE"
 
@@ -1007,9 +1116,9 @@ main() {
 
     if [[ ! -d "$output_dir" ]]; then
         mkdir -p "$output_dir"
-        # Set ownership if running as root
+        # Set ownership if running as root (non-recursive - just the directory)
         if [[ $EUID -eq 0 ]]; then
-            chown -R nftban:nftban "$output_dir" 2>/dev/null || true
+            chown nftban:nftban "$output_dir" 2>/dev/null || true
         fi
     fi
 
