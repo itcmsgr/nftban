@@ -601,15 +601,57 @@ nftban_stats_generate_dashboard() {
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────
-    # UNIFIED BLACKLIST BREAKDOWN
+    # PROTECTION BREAKDOWN (all sources)
     # ─────────────────────────────────────────────────────────────────────
-    echo "BLACKLIST BREAKDOWN"
+    echo "PROTECTION BREAKDOWN"
     echo "───────────────────────────────────────────────────────────"
-    printf "  %-20s %s\n" "IPv4 Entries........" "$black_v4"
-    printf "  %-20s %s\n" "IPv6 Entries........" "$black_v6"
-    printf "  %-20s %s\n" "TOTAL..............." "$total_black"
-    echo ""
-    echo "  Note: Unified blacklist contains manual + feeds + geoban + temp bans"
+
+    # Direct bans (blacklist set)
+    printf "  %-20s %'d IPs\n" "Direct Bans........." "$total_black"
+
+    # Count feeds from files
+    local feeds_ipv4_total=0 feeds_ipv6_total=0
+    local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+    if [[ -d "$feeds_dir" ]]; then
+        if type -t nftban_feeds_discover_all >/dev/null 2>&1 && type -t nftban_feeds_get_property >/dev/null 2>&1; then
+            local all_feeds
+            all_feeds=$(nftban_feeds_discover_all 2>/dev/null || true)
+            for feed in $all_feeds; do
+                local enabled
+                enabled=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
+                if [[ "$enabled" == "true" ]]; then
+                    local feed_lower="${feed,,}"
+                    local feed_file="${feeds_dir}/${feed_lower}.txt"
+                    if [[ -f "$feed_file" ]]; then
+                        local count
+                        count=$(grep -cE '^[0-9]' "$feed_file" 2>/dev/null) || count=0
+                        feeds_ipv4_total=$((feeds_ipv4_total + count))
+                    fi
+                fi
+            done
+        fi
+    fi
+    printf "  %-20s %'d IPs\n" "Threat Feeds........" "$feeds_ipv4_total"
+
+    # Count geoban entries
+    local geoban_total=0
+    local geoban_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoban"
+    if [[ -d "$geoban_dir" ]]; then
+        local blocked_countries=0
+        shopt -s nullglob 2>/dev/null || true
+        for file in "$geoban_dir"/*.conf; do
+            [[ -f "$file" ]] && grep -q "^MODE=.*block" "$file" 2>/dev/null && ((blocked_countries++))
+        done
+        shopt -u nullglob 2>/dev/null || true
+        if [[ $blocked_countries -gt 0 ]]; then
+            geoban_total=$blocked_countries
+            printf "  %-20s %d countries\n" "GeoBan.............." "$geoban_total"
+        fi
+    fi
+
+    local grand_total=$((total_black + feeds_ipv4_total))
+    echo "  ─────────────────────────────────────"
+    printf "  %-20s %'d IPs\n" "TOTAL PROTECTION...." "$grand_total"
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────
