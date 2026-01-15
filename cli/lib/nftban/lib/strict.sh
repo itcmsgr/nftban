@@ -3,22 +3,24 @@
 # NFTBan v1.0.0 - Strict Mode Library
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Standardizes error handling across all bash modules
-#
-# meta:name=strict
-# meta:type=library
-# meta:header=Strict Mode Library
-# meta:version=1.0.0
+# meta:name="strict"
+# meta:type="library"
+# meta:header="Strict Mode Library"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Provides consistent strict mode configuration for all bash scripts
-# meta:input=None (sourced by other scripts)
-# meta:output=Sets shell options and error handlers
-#
-# **Inventory & Requirements**
-# meta:depends=bash>=4.0
+# meta:homepage="https://nftban.com"
+# meta:description="Provides consistent strict mode configuration for all bash scripts"
+# meta:input="None (sourced by other scripts)"
+# meta:output="Sets shell options and error handlers"
+# meta:depends="bash>=4.0"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_CLI_ERROR_LOG,NFTBAN_ENABLE_ERROR_LOGGING"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# meta:created_date="2025-11-24"
 #
 # **Usage**
 # Source this file at the beginning of every bash script:
@@ -29,9 +31,9 @@
 # Configure with:
 #   export NFTBAN_CLI_ERROR_LOG="/custom/path/errors.log"  # Custom log path
 #   export NFTBAN_ENABLE_ERROR_LOGGING=0                    # Disable logging
-#
-# meta:created_date=2025-11-24
 # =============================================================================
+
+set -Eeuo pipefail
 
 # =============================================================================
 # GUARD: Prevent double-loading
@@ -41,24 +43,12 @@
 [[ -n "${NFTBAN_STRICT_MODE_LOADED:-}" ]] && return 0
 
 # =============================================================================
-# STRICT MODE SETTINGS
+# STRICT MODE SETTINGS (already set at top: set -Eeuo pipefail)
 # =============================================================================
-
-# Exit on error
-# Any command that returns non-zero will cause script to exit
-set -e
-
-# Exit on undefined variable
-# Referencing undefined variables will cause script to exit
-set -u
-
-# Exit on pipe failure
-# If any command in a pipeline fails, the whole pipeline fails
-set -o pipefail
-
-# Optional: Enable extended debugging
-# Uncomment for development/debugging
-# set -x
+# -E: ERR traps are inherited by functions, subshells, etc.
+# -e: Exit on error (any command returning non-zero causes script exit)
+# -u: Exit on undefined variable
+# -o pipefail: If any command in pipeline fails, the whole pipeline fails
 
 # =============================================================================
 # SAFE INTERNAL FIELD SEPARATOR
@@ -130,7 +120,7 @@ Exit:     ${exit_code}
 EOF
 
     # Log error to file (if logging enabled and writable)
-    local cli_error_log="${NFTBAN_CLI_ERROR_LOG:-${NFTBAN_LOG_DIR}/cli-errors.log}"
+    local cli_error_log="${NFTBAN_CLI_ERROR_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/cli-errors.log}"
     if [[ "${NFTBAN_ENABLE_ERROR_LOGGING:-1}" == "1" ]]; then
         local log_dir
         log_dir=$(dirname "${cli_error_log}")
