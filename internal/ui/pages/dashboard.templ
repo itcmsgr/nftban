@@ -1,54 +1,423 @@
 // =============================================================================
-// NFTBan - GOTH GUI Dashboard Page
+// NFTBan - Professional Dashboard (Blueprint Implementation)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-// meta:name="dashboard"
-// meta:type="templ"
-// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-// meta:created_date="2026-01-15"
-// meta:description="Dashboard page template for GOTH GUI"
-// meta:input="summary ui.SummaryData"
-// meta:output="Dashboard HTML page"
-// meta:depends="github.com/a-h/templ"
-// meta:inventory.files=""
-// meta:inventory.binaries=""
-// meta:inventory.env_vars=""
-// meta:inventory.config_files=""
-// meta:inventory.systemd_units=""
-// meta:inventory.network=""
-// meta:inventory.privileges="none"
+// 5-Second Rule: Admin knows system state in 5 seconds
 // =============================================================================
 
 package pages
 
 import (
+	"fmt"
+	"strconv"
 	"github.com/itcmsgr/nftban/internal/ui"
-	"github.com/itcmsgr/nftban/internal/ui/fragments"
 )
 
-// Dashboard renders the main dashboard page
-templ Dashboard(summary ui.SummaryData) {
+// Dashboard renders the professional admin dashboard
+templ Dashboard(data ui.DashboardData) {
 	@ui.LayoutWithNav("Dashboard", "dashboard") {
-		<div class="page-header">
-			<h1 class="page-title">Dashboard</h1>
+		<!-- IP Quick-Check Search -->
+		<div class="search-box">
+			<input
+				type="text"
+				class="search-input"
+				placeholder="Quick IP Check: paste IP to check status..."
+				hx-get="/ui/api/ip-check"
+				hx-trigger="keyup changed delay:300ms"
+				hx-target="#ip-result"
+				name="ip"
+			/>
+			<div id="ip-result"></div>
 		</div>
 
-		<!-- Summary cards with HTMX auto-refresh -->
-		<div
-			id="summary-section"
-			hx-get="/ui/frag/summary"
-			hx-trigger="every 5s"
-			hx-swap="innerHTML"
-		>
-			@fragments.SummaryCards(summary)
+		<!-- 3-Column Hero Grid -->
+		<div class="dashboard-hero">
+			<!-- Box 1: System Identity -->
+			<div class="identity-box" id="identity-box" hx-get="/ui/frag/identity" hx-trigger="every 5s" hx-swap="innerHTML">
+				@IdentityFragment(data.Identity)
+			</div>
+
+			<!-- Box 2: Security KPIs -->
+			<div class="security-box" id="security-box" hx-get="/ui/frag/security" hx-trigger="every 2s" hx-swap="innerHTML">
+				@SecurityFragment(data.Security)
+			</div>
+
+			<!-- Box 3: Network Stats -->
+			<div class="network-box" id="network-box" hx-get="/ui/frag/network" hx-trigger="every 2s" hx-swap="innerHTML">
+				@NetworkFragment(data.Security)
+			</div>
 		</div>
 
-		<!-- Recent Activity Section -->
-		<div class="card" style="margin-top: 2rem;">
-			<h3 style="margin-bottom: 1rem;">System Status</h3>
-			<p style="color: var(--text-muted);">
-				NFTBan is protecting your server. Statistics refresh automatically every 5 seconds.
-			</p>
+		<!-- Resource Consumption Grid -->
+		<div class="resource-grid" id="resource-grid" hx-get="/ui/frag/resources" hx-trigger="every 5s" hx-swap="innerHTML">
+			@ResourcesFragment(data.Resources)
+		</div>
+
+		<!-- Module Status Grid -->
+		<div class="card" style="margin-bottom: 1.5rem;">
+			<div class="card-header">
+				<span class="card-title">Module Status</span>
+				<button class="btn btn-danger btn-sm" hx-post="/ui/action/flush-temp" hx-confirm="Clear ALL temporary bans?">
+					Flush Temp Bans
+				</button>
+			</div>
+			<div id="module-grid" hx-get="/ui/frag/modules" hx-trigger="every 10s" hx-swap="innerHTML">
+				@ModulesFragment(data.Modules)
+			</div>
+		</div>
+
+		<!-- Recent Activity -->
+		<div class="card">
+			<div class="card-header">
+				<span class="card-title">Recent Bans</span>
+			</div>
+			<div id="recent-bans" hx-get="/ui/frag/recent" hx-trigger="every 3s" hx-swap="innerHTML">
+				@RecentFragment(data.RecentBans)
+			</div>
+		</div>
+
+		<!-- Uptime counter script -->
+		<script>
+			document.addEventListener('DOMContentLoaded', function() {
+				startUptimeCounter('uptime-counter', { fmt.Sprintf("%d", data.Identity.UptimeSeconds) });
+			});
+		</script>
+	}
+}
+
+// =============================================================================
+// FRAGMENT: System Identity (Top Left)
+// =============================================================================
+
+templ IdentityFragment(id ui.SystemIdentity) {
+	<div class="box-title">System Identity</div>
+	<div class="identity-row">
+		<span class="identity-label">Hostname</span>
+		<span class="identity-value">{ id.Hostname }</span>
+	</div>
+	<div class="identity-row">
+		<span class="identity-label">Kernel</span>
+		<span class="identity-value">{ id.Kernel }</span>
+	</div>
+	<div class="identity-row">
+		<span class="identity-label">Uptime</span>
+		<span class="identity-value" id="uptime-counter">{ id.Uptime }</span>
+	</div>
+	<div class="identity-row">
+		<span class="identity-label">NFTBan</span>
+		<span class="identity-value">{ id.NFTBanVersion }</span>
+	</div>
+	<div class="identity-row">
+		<span class="identity-label">Status</span>
+		<span>
+			<span class={ "status-badge", id.PanelMode }>
+				if id.PanelMode == "active" {
+					ACTIVE
+				} else if id.PanelMode == "warning" {
+					WARNING
+				} else {
+					ERROR
+				}
+			</span>
+			<span class={ "heartbeat", id.PanelMode }></span>
+		</span>
+	</div>
+}
+
+// =============================================================================
+// FRAGMENT: Security KPIs (Top Center)
+// =============================================================================
+
+templ SecurityFragment(sec ui.SecurityKPIs) {
+	<div class="box-title">Security Pulse</div>
+	<div class="kpi-grid">
+		<div class="kpi-item">
+			<div class={ "kpi-value", templ.KV("danger", sec.BansTotal > 0) }>{ strconv.Itoa(sec.BansTotal) }</div>
+			<div class="kpi-label">Active Bans</div>
+			<div class="kpi-split">v4: { strconv.Itoa(sec.BansIPv4) } | v6: { strconv.Itoa(sec.BansIPv6) }</div>
+		</div>
+		<div class="kpi-item">
+			<div class="kpi-value safe">{ strconv.Itoa(sec.WhitelistTotal) }</div>
+			<div class="kpi-label">Whitelist</div>
+			<div class="kpi-split">v4: { strconv.Itoa(sec.WhitelistIPv4) } | v6: { strconv.Itoa(sec.WhitelistIPv6) }</div>
+		</div>
+		<div class="kpi-item">
+			<div class="kpi-value info">{ strconv.Itoa(sec.EventsLastHour) }</div>
+			<div class="kpi-label">Events/Hour</div>
+		</div>
+		<div class="kpi-item">
+			<div class="kpi-value">{ strconv.Itoa(sec.TotalBansEver) }</div>
+			<div class="kpi-label">Total Ever</div>
+		</div>
+	</div>
+}
+
+// =============================================================================
+// FRAGMENT: Network Stats (Top Right)
+// =============================================================================
+
+templ NetworkFragment(sec ui.SecurityKPIs) {
+	<div class="box-title">Traffic Meter</div>
+	<div class="kpi-grid">
+		<div class="kpi-item">
+			<div class="kpi-value info">{ fmt.Sprintf("%.1f", sec.NetworkInMbps) }</div>
+			<div class="kpi-label">IN Mbps</div>
+		</div>
+		<div class="kpi-item">
+			<div class="kpi-value info">{ fmt.Sprintf("%.1f", sec.NetworkOutMbps) }</div>
+			<div class="kpi-label">OUT Mbps</div>
+		</div>
+		<div class="kpi-item" style="grid-column: span 2;">
+			<div class={ "kpi-value", templ.KV("danger", sec.PacketDropRate > 100) }>{ strconv.Itoa(sec.PacketDropRate) }</div>
+			<div class="kpi-label">Packets Dropped/sec</div>
+		</div>
+	</div>
+}
+
+// =============================================================================
+// FRAGMENT: Resource Consumption
+// =============================================================================
+
+templ ResourcesFragment(res ui.ResourceStats) {
+	<!-- CPU -->
+	<div class="resource-item">
+		<div class="resource-label">CPU</div>
+		<div class={ "resource-value", getResourceColor(res.CPUPercent) }>{ fmt.Sprintf("%.1f%%", res.CPUPercent) }</div>
+		<div class="resource-detail">Load: { fmt.Sprintf("%.2f", res.CPULoadAvg1) } / { fmt.Sprintf("%.2f", res.CPULoadAvg5) } / { fmt.Sprintf("%.2f", res.CPULoadAvg15) }</div>
+		<div class="progress-bar">
+			<div class={ "progress-fill", getResourceColor(res.CPUPercent) } style={ fmt.Sprintf("width: %.0f%%", res.CPUPercent) }></div>
+		</div>
+	</div>
+
+	<!-- RAM -->
+	<div class="resource-item">
+		<div class="resource-label">RAM</div>
+		<div class={ "resource-value", getResourceColor(res.RAMPercent) }>{ fmt.Sprintf("%.1f%%", res.RAMPercent) }</div>
+		<div class="resource-detail">{ fmt.Sprintf("%.1f", res.RAMUsedGB) } / { fmt.Sprintf("%.1f", res.RAMTotalGB) } GB</div>
+		<div class="progress-bar">
+			<div class={ "progress-fill", getResourceColor(res.RAMPercent) } style={ fmt.Sprintf("width: %.0f%%", res.RAMPercent) }></div>
+		</div>
+	</div>
+
+	<!-- Disk -->
+	<div class="resource-item">
+		<div class="resource-label">Disk ({ res.DiskPath })</div>
+		<div class={ "resource-value", getResourceColor(res.DiskPercent) }>{ fmt.Sprintf("%.0f%%", res.DiskPercent) }</div>
+		<div class="resource-detail">{ fmt.Sprintf("%.1f", res.DiskUsedGB) } / { fmt.Sprintf("%.1f", res.DiskTotalGB) } GB</div>
+		<div class="progress-bar">
+			<div class={ "progress-fill", getResourceColor(res.DiskPercent) } style={ fmt.Sprintf("width: %.0f%%", res.DiskPercent) }></div>
+		</div>
+	</div>
+
+	<!-- NFTBan Process -->
+	<div class="resource-item">
+		<div class="resource-label">NFTBan Daemon</div>
+		<div class="resource-value" style="font-size: 1.25rem;">{ fmt.Sprintf("%.1f%%", res.NFTBanCPU) } CPU</div>
+		<div class="resource-detail">{ fmt.Sprintf("%.1f", res.NFTBanMemMB) } MB | { res.NFTBanUptime }</div>
+	</div>
+}
+
+// =============================================================================
+// FRAGMENT: Module Status Table
+// =============================================================================
+
+templ ModulesFragment(modules []ui.ModuleStatus) {
+	<table class="module-table">
+		<thead>
+			<tr>
+				<th>Module</th>
+				<th>Status</th>
+				<th>Bans</th>
+				<th>Resources</th>
+				<th>Last Sync</th>
+				<th>Action</th>
+			</tr>
+		</thead>
+		<tbody>
+			for _, mod := range modules {
+				<tr>
+					<td>
+						<strong>{ mod.Name }</strong>
+						<div style="font-size: 0.75rem; color: var(--text-muted);">{ mod.Description }</div>
+					</td>
+					<td>
+						<span class="module-status">
+							<span class={ "module-dot", mod.Status }></span>
+							if mod.Status == "active" {
+								Active
+							} else if mod.Status == "inactive" {
+								Inactive
+							} else if mod.Status == "failed" {
+								Failed
+							} else {
+								Warning
+							}
+						</span>
+					</td>
+					<td>{ strconv.Itoa(mod.BansProduced) }</td>
+					<td style="font-size: 0.8rem;">
+						{ fmt.Sprintf("%.1f%%", mod.CPUPercent) } / { fmt.Sprintf("%.0f", mod.MemoryMB) }MB
+					</td>
+					<td style="font-size: 0.8rem; color: var(--text-muted);">{ mod.LastSync }</td>
+					<td>
+						if mod.ServiceName != "" && mod.Status != "active" {
+							<button
+								class="btn btn-sm btn-primary"
+								hx-post={ "/ui/action/restart/" + mod.ServiceName }
+								hx-confirm={ "Restart " + mod.Name + "?" }
+							>
+								Restart
+							</button>
+						}
+					</td>
+				</tr>
+			}
+			if len(modules) == 0 {
+				<tr>
+					<td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">
+						No modules configured
+					</td>
+				</tr>
+			}
+		</tbody>
+	</table>
+}
+
+// =============================================================================
+// FRAGMENT: Recent Bans
+// =============================================================================
+
+templ RecentFragment(bans []ui.RecentBan) {
+	if len(bans) == 0 {
+		<div style="text-align: center; color: var(--text-muted); padding: 2rem;">
+			No recent bans - System is clean
+		</div>
+	} else {
+		<table class="module-table">
+			<thead>
+				<tr>
+					<th>IP Address</th>
+					<th>Country</th>
+					<th>Module</th>
+					<th>Reason</th>
+					<th>Time</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, ban := range bans {
+					<tr>
+						<td style="font-family: monospace; color: var(--accent-danger);">{ ban.IP }</td>
+						<td>{ ban.Country }</td>
+						<td>{ ban.Module }</td>
+						<td style="font-size: 0.8rem; color: var(--text-muted);">{ ban.Reason }</td>
+						<td style="font-size: 0.8rem; color: var(--text-muted);">{ ban.Timestamp }</td>
+					</tr>
+				}
+			</tbody>
+		</table>
+	}
+}
+
+// =============================================================================
+// HELPER FUNCTIONS
+// =============================================================================
+
+// getResourceColor returns CSS class based on resource usage percentage
+func getResourceColor(percent float64) string {
+	if percent >= 90 {
+		return "danger"
+	} else if percent >= 70 {
+		return "warning"
+	}
+	return "safe"
+}
+
+// =============================================================================
+// BACKWARDS COMPAT FRAGMENTS (for old handlers)
+// =============================================================================
+
+templ SummaryCardsFragment(summary ui.SecurityKPIs) {
+	@SecurityFragment(summary)
+}
+
+templ HealthFragment(health []ui.HealthItem) {
+	<div class="box-title">Health</div>
+	for _, item := range health {
+		<div class="identity-row">
+			<span class="identity-label">{ item.Name }</span>
+			<span class={ "status-badge", item.Status }>
+				if item.Status == "ok" {
+					OK
+				} else if item.Status == "warning" {
+					WARN
+				} else {
+					ERR
+				}
+			</span>
+		</div>
+	}
+}
+
+templ SystemStatsFragment(stats ui.ResourceStats) {
+	@ResourcesFragment(stats)
+}
+
+templ ServicesQuickFragment(health []ui.HealthItem) {
+	@HealthFragment(health)
+}
+
+templ BanStatsFragment(summary ui.SecurityKPIs) {
+	@SecurityFragment(summary)
+}
+
+templ WhitelistStatsFragment(summary ui.SecurityKPIs) {
+	<div class="box-title">Whitelist</div>
+	<div class="kpi-grid">
+		<div class="kpi-item">
+			<div class="kpi-value safe">{ strconv.Itoa(summary.WhitelistTotal) }</div>
+			<div class="kpi-label">Total</div>
+		</div>
+		<div class="kpi-item">
+			<div class="kpi-value">{ strconv.Itoa(summary.WhitelistIPv4) }</div>
+			<div class="kpi-label">IPv4</div>
+		</div>
+	</div>
+}
+
+templ RecentBansFragment(bans []ui.RecentBan) {
+	@RecentFragment(bans)
+}
+
+// =============================================================================
+// FRAGMENT: IP Check Result
+// =============================================================================
+
+templ IPCheckResultFragment(result ui.IPCheckResult) {
+	if result.IP != "" {
+		<div class="ip-result" style="margin-top: 0.5rem; padding: 0.75rem; border-radius: 0.5rem; background: var(--bg-surface);">
+			<div style="display: flex; align-items: center; gap: 0.75rem;">
+				<span style="font-family: monospace; font-weight: 600;">{ result.IP }</span>
+				if result.Status == "banned" {
+					<span class="status-badge" style="background: var(--accent-danger); color: white;">BANNED</span>
+				} else if result.Status == "whitelisted" {
+					<span class="status-badge" style="background: var(--accent-safe); color: white;">WHITELISTED</span>
+				} else {
+					<span class="status-badge" style="background: var(--accent-info); color: white;">CLEAN</span>
+				}
+			</div>
+			if result.Status == "banned" && result.Reason != "" {
+				<div style="margin-top: 0.5rem; font-size: 0.85rem; color: var(--text-muted);">
+					if result.Module != "" {
+						<span>Module: { result.Module }</span>
+						<span style="margin: 0 0.5rem;">|</span>
+					}
+					<span>{ result.Reason }</span>
+					if result.BannedSince != "" {
+						<span style="margin: 0 0.5rem;">|</span>
+						<span>Since: { result.BannedSince }</span>
+					}
+				</div>
+			}
 		</div>
 	}
 }

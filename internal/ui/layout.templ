@@ -1,363 +1,782 @@
 // =============================================================================
-// NFTBan - GOTH GUI Base Layout
+// NFTBan - GOTH GUI Base Layout (Professional Theme System)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-// meta:name="layout"
-// meta:type="templ"
-// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-// meta:created_date="2026-01-15"
-// meta:description="Base HTML layout for all GOTH GUI pages"
-// meta:input="title string, children templ.Component"
-// meta:output="Complete HTML page"
-// meta:depends="github.com/a-h/templ"
-// meta:inventory.files=""
-// meta:inventory.binaries=""
-// meta:inventory.env_vars=""
-// meta:inventory.config_files=""
-// meta:inventory.systemd_units=""
-// meta:inventory.network=""
-// meta:inventory.privileges="none"
+// Theme: Dark default, cookie-based persistence, proper color specs
 // =============================================================================
 
 package ui
 
-// Layout renders the base HTML structure for all pages
+// Layout renders the base HTML structure (login page)
 templ Layout(title string) {
 	<!DOCTYPE html>
-	<html lang="en">
+	<html lang="en" data-theme="dark">
 	<head>
 		<meta charset="utf-8"/>
 		<meta name="viewport" content="width=device-width, initial-scale=1"/>
 		<title>NFTBan - { title }</title>
 		<script src="https://unpkg.com/htmx.org@1.9.12"></script>
-		<style>
-			/* Dark theme variables */
-			:root {
-				--bg-primary: #0b0f14;
-				--bg-secondary: #0f1520;
-				--bg-card: #141b27;
-				--border-color: #233043;
-				--text-primary: #e6edf3;
-				--text-muted: #a8b3c3;
-				--accent-blue: #58a6ff;
-				--accent-green: #3fb950;
-				--accent-red: #f85149;
-				--accent-yellow: #d29922;
-			}
-
-			* {
-				box-sizing: border-box;
-				margin: 0;
-				padding: 0;
-			}
-
-			body {
-				font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-				background: var(--bg-primary);
-				color: var(--text-primary);
-				line-height: 1.6;
-				min-height: 100vh;
-			}
-
-			/* Layout */
-			.app-container {
-				display: flex;
-				min-height: 100vh;
-			}
-
-			.sidebar {
-				width: 240px;
-				background: var(--bg-secondary);
-				border-right: 1px solid var(--border-color);
-				padding: 1rem;
-				position: fixed;
-				height: 100vh;
-				overflow-y: auto;
-			}
-
-			.main-content {
-				margin-left: 240px;
-				flex: 1;
-				padding: 2rem;
-				min-height: 100vh;
-			}
-
-			/* Logo */
-			.logo {
-				font-size: 1.5rem;
-				font-weight: 700;
-				color: var(--accent-blue);
-				margin-bottom: 2rem;
-				padding: 0.5rem;
-			}
-
-			/* Navigation */
-			.nav-menu {
-				list-style: none;
-			}
-
-			.nav-item {
-				margin-bottom: 0.25rem;
-			}
-
-			.nav-link {
-				display: flex;
-				align-items: center;
-				padding: 0.75rem 1rem;
-				color: var(--text-muted);
-				text-decoration: none;
-				border-radius: 6px;
-				transition: all 0.2s;
-			}
-
-			.nav-link:hover {
-				background: var(--bg-card);
-				color: var(--text-primary);
-			}
-
-			.nav-link.active {
-				background: var(--accent-blue);
-				color: white;
-			}
-
-			.nav-icon {
-				margin-right: 0.75rem;
-				width: 20px;
-				text-align: center;
-			}
-
-			/* Cards */
-			.card {
-				background: var(--bg-card);
-				border: 1px solid var(--border-color);
-				border-radius: 8px;
-				padding: 1.5rem;
-			}
-
-			.card-grid {
-				display: grid;
-				grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-				gap: 1rem;
-				margin-bottom: 2rem;
-			}
-
-			.stat-card {
-				text-align: center;
-			}
-
-			.stat-label {
-				color: var(--text-muted);
-				font-size: 0.875rem;
-				margin-bottom: 0.5rem;
-			}
-
-			.stat-value {
-				font-size: 2rem;
-				font-weight: 700;
-				color: var(--accent-blue);
-			}
-
-			/* Page header */
-			.page-header {
-				margin-bottom: 2rem;
-			}
-
-			.page-title {
-				font-size: 1.75rem;
-				font-weight: 600;
-			}
-
-			/* Buttons */
-			.btn {
-				display: inline-flex;
-				align-items: center;
-				justify-content: center;
-				padding: 0.625rem 1.25rem;
-				border-radius: 6px;
-				font-size: 0.875rem;
-				font-weight: 500;
-				cursor: pointer;
-				transition: all 0.2s;
-				border: none;
-				text-decoration: none;
-			}
-
-			.btn-primary {
-				background: var(--accent-blue);
-				color: white;
-			}
-
-			.btn-primary:hover {
-				background: #4393e6;
-			}
-
-			.btn-danger {
-				background: var(--accent-red);
-				color: white;
-			}
-
-			/* Forms */
-			.form-group {
-				margin-bottom: 1rem;
-			}
-
-			.form-label {
-				display: block;
-				margin-bottom: 0.5rem;
-				color: var(--text-muted);
-				font-size: 0.875rem;
-			}
-
-			.form-input {
-				width: 100%;
-				padding: 0.75rem 1rem;
-				background: var(--bg-primary);
-				border: 1px solid var(--border-color);
-				border-radius: 6px;
-				color: var(--text-primary);
-				font-size: 1rem;
-			}
-
-			.form-input:focus {
-				outline: none;
-				border-color: var(--accent-blue);
-			}
-
-			/* Alerts */
-			.alert {
-				padding: 1rem;
-				border-radius: 6px;
-				margin-bottom: 1rem;
-			}
-
-			.alert-error {
-				background: rgba(248, 81, 73, 0.1);
-				border: 1px solid var(--accent-red);
-				color: var(--accent-red);
-			}
-
-			.alert-success {
-				background: rgba(63, 185, 80, 0.1);
-				border: 1px solid var(--accent-green);
-				color: var(--accent-green);
-			}
-
-			/* Login page specific */
-			.login-container {
-				display: flex;
-				align-items: center;
-				justify-content: center;
-				min-height: 100vh;
-				padding: 2rem;
-			}
-
-			.login-box {
-				width: 100%;
-				max-width: 400px;
-			}
-
-			.login-logo {
-				text-align: center;
-				margin-bottom: 2rem;
-			}
-
-			.login-logo h1 {
-				font-size: 2rem;
-				color: var(--accent-blue);
-			}
-
-			.login-logo p {
-				color: var(--text-muted);
-				margin-top: 0.5rem;
-			}
-
-			/* HTMX loading indicator */
-			.htmx-indicator {
-				opacity: 0;
-				transition: opacity 200ms ease-in;
-			}
-
-			.htmx-request .htmx-indicator {
-				opacity: 1;
-			}
-
-			.htmx-request.htmx-indicator {
-				opacity: 1;
-			}
-
-			/* Responsive */
-			@media (max-width: 768px) {
-				.sidebar {
-					display: none;
-				}
-				.main-content {
-					margin-left: 0;
-				}
-			}
-		</style>
+		@themeStyles()
 	</head>
 	<body>
 		{ children... }
+		@themeScript()
 	</body>
 	</html>
 }
 
-// LayoutWithNav renders layout with sidebar navigation (for authenticated pages)
+// LayoutWithNav renders pages with sidebar navigation
 templ LayoutWithNav(title string, activePage string) {
-	@Layout(title) {
+	<!DOCTYPE html>
+	<html lang="en" data-theme="dark">
+	<head>
+		<meta charset="utf-8"/>
+		<meta name="viewport" content="width=device-width, initial-scale=1"/>
+		<title>NFTBan - { title }</title>
+		<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+		@themeStyles()
+	</head>
+	<body>
 		<div class="app-container">
-			@Navbar(activePage)
+			@sidebar(activePage)
 			<main class="main-content">
 				{ children... }
 			</main>
 		</div>
-	}
+		@themeScript()
+	</body>
+	</html>
 }
 
-// Navbar renders the sidebar navigation
-templ Navbar(activePage string) {
+// sidebar renders the navigation sidebar
+templ sidebar(activePage string) {
 	<aside class="sidebar">
 		<div class="logo">NFTBan</div>
+		<button class="theme-toggle" onclick="toggleTheme()" title="Toggle theme">
+			<svg class="theme-icon-sun" fill="currentColor" viewBox="0 0 20 20">
+				<path fill-rule="evenodd" d="M10 2a1 1 0 011 1v1a1 1 0 11-2 0V3a1 1 0 011-1zm4 8a4 4 0 11-8 0 4 4 0 018 0zm-.464 4.95l.707.707a1 1 0 001.414-1.414l-.707-.707a1 1 0 00-1.414 1.414zm2.12-10.607a1 1 0 010 1.414l-.706.707a1 1 0 11-1.414-1.414l.707-.707a1 1 0 011.414 0zM17 11a1 1 0 100-2h-1a1 1 0 100 2h1zm-7 4a1 1 0 011 1v1a1 1 0 11-2 0v-1a1 1 0 011-1zM5.05 6.464A1 1 0 106.465 5.05l-.708-.707a1 1 0 00-1.414 1.414l.707.707zm1.414 8.486l-.707.707a1 1 0 01-1.414-1.414l.707-.707a1 1 0 011.414 1.414zM4 11a1 1 0 100-2H3a1 1 0 000 2h1z" clip-rule="evenodd"></path>
+			</svg>
+			<svg class="theme-icon-moon" fill="currentColor" viewBox="0 0 20 20">
+				<path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z"></path>
+			</svg>
+		</button>
 		<nav>
 			<ul class="nav-menu">
 				<li class="nav-item">
 					<a href="/ui/" class={ "nav-link", templ.KV("active", activePage == "dashboard") }>
-						<span class="nav-icon">&#x1F4CA;</span>
-						Dashboard
+						<span class="nav-icon">&#x1F4CA;</span> Dashboard
 					</a>
 				</li>
 				<li class="nav-item">
 					<a href="/ui/bans" class={ "nav-link", templ.KV("active", activePage == "bans") }>
-						<span class="nav-icon">&#x1F6AB;</span>
-						Bans
+						<span class="nav-icon">&#x1F6AB;</span> Bans
 					</a>
 				</li>
 				<li class="nav-item">
 					<a href="/ui/whitelist" class={ "nav-link", templ.KV("active", activePage == "whitelist") }>
-						<span class="nav-icon">&#x2705;</span>
-						Whitelist
-					</a>
-				</li>
-				<li class="nav-item">
-					<a href="/ui/events" class={ "nav-link", templ.KV("active", activePage == "events") }>
-						<span class="nav-icon">&#x1F4DD;</span>
-						Events
+						<span class="nav-icon">&#x2705;</span> Whitelist
 					</a>
 				</li>
 				<li class="nav-item">
 					<a href="/ui/modules" class={ "nav-link", templ.KV("active", activePage == "modules") }>
-						<span class="nav-icon">&#x2699;</span>
-						Modules
+						<span class="nav-icon">&#x2699;</span> Modules
+					</a>
+				</li>
+				<li class="nav-item">
+					<a href="/ui/health" class={ "nav-link", templ.KV("active", activePage == "health") }>
+						<span class="nav-icon">&#x1F3E5;</span> Health
 					</a>
 				</li>
 			</ul>
 		</nav>
-		<div style="position: absolute; bottom: 1rem; left: 1rem; right: 1rem;">
+		<div class="sidebar-footer">
 			<form method="POST" action="/ui/action/logout">
-				<button type="submit" class="btn" style="width: 100%; background: var(--bg-card);">
-					Logout
-				</button>
+				<button type="submit" class="btn btn-secondary" style="width: 100%;">Logout</button>
 			</form>
 		</div>
 	</aside>
+}
+
+// themeStyles contains all CSS with proper color specs
+templ themeStyles() {
+	<style>
+		/* =================================================================
+		   THEME SYSTEM - CSS Variables
+		   Dark Mode: Default (Industry standard for security dashboards)
+		   Light Mode: For high-glare environments
+		   ================================================================= */
+
+		/* Dark Theme (Default) - No pure black to prevent eye strain */
+		:root,
+		[data-theme="dark"] {
+			--bg-primary: #121212;      /* Deep Gray, not pure black */
+			--bg-surface: #1e1e1e;      /* Card/Box surface */
+			--bg-elevated: #2d2d2d;     /* Elevated elements */
+			--border-color: #333333;
+			--text-primary: #e5e7eb;    /* Off-white, not pure white */
+			--text-muted: #9ca3af;
+			--accent-safe: #10b981;     /* Emerald Green */
+			--accent-danger: #ef4444;   /* Neon Red */
+			--accent-warning: #f59e0b;  /* Amber */
+			--accent-info: #3b82f6;     /* Blue */
+			--shadow: 0 4px 6px rgba(0,0,0,0.3);
+		}
+
+		/* Light Theme - Soft colors, not harsh white */
+		[data-theme="light"] {
+			--bg-primary: #f9fafb;      /* Soft White */
+			--bg-surface: #ffffff;      /* Pure White for cards */
+			--bg-elevated: #f3f4f6;
+			--border-color: #e5e7eb;
+			--text-primary: #111827;    /* Deep Blue/Black */
+			--text-muted: #6b7280;
+			--accent-safe: #059669;     /* Dark Emerald */
+			--accent-danger: #dc2626;   /* Crimson */
+			--accent-warning: #d97706;
+			--accent-info: #2563eb;
+			--shadow: 0 4px 6px rgba(0,0,0,0.1);
+		}
+
+		/* =================================================================
+		   BASE STYLES
+		   ================================================================= */
+		* {
+			box-sizing: border-box;
+			margin: 0;
+			padding: 0;
+		}
+
+		body {
+			font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+			background: var(--bg-primary);
+			color: var(--text-primary);
+			line-height: 1.6;
+			min-height: 100vh;
+		}
+
+		/* =================================================================
+		   LAYOUT
+		   ================================================================= */
+		.app-container {
+			display: flex;
+			min-height: 100vh;
+		}
+
+		.sidebar {
+			width: 220px;
+			background: var(--bg-surface);
+			border-right: 1px solid var(--border-color);
+			padding: 1rem;
+			position: fixed;
+			height: 100vh;
+			display: flex;
+			flex-direction: column;
+		}
+
+		.sidebar-footer {
+			margin-top: auto;
+			padding-top: 1rem;
+		}
+
+		.main-content {
+			margin-left: 220px;
+			flex: 1;
+			padding: 1.5rem;
+			min-height: 100vh;
+		}
+
+		/* =================================================================
+		   LOGO & THEME TOGGLE
+		   ================================================================= */
+		.logo {
+			font-size: 1.5rem;
+			font-weight: 700;
+			color: var(--accent-info);
+			margin-bottom: 1rem;
+			padding: 0.5rem;
+		}
+
+		.theme-toggle {
+			background: var(--bg-elevated);
+			border: 1px solid var(--border-color);
+			border-radius: 6px;
+			padding: 0.5rem;
+			cursor: pointer;
+			color: var(--text-muted);
+			margin-bottom: 1.5rem;
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			width: 40px;
+			height: 40px;
+		}
+
+		.theme-toggle:hover {
+			color: var(--text-primary);
+			border-color: var(--accent-info);
+		}
+
+		.theme-toggle svg {
+			width: 20px;
+			height: 20px;
+		}
+
+		/* Show correct icon based on theme */
+		[data-theme="dark"] .theme-icon-sun { display: block; }
+		[data-theme="dark"] .theme-icon-moon { display: none; }
+		[data-theme="light"] .theme-icon-sun { display: none; }
+		[data-theme="light"] .theme-icon-moon { display: block; }
+
+		/* =================================================================
+		   NAVIGATION
+		   ================================================================= */
+		.nav-menu {
+			list-style: none;
+		}
+
+		.nav-item {
+			margin-bottom: 0.25rem;
+		}
+
+		.nav-link {
+			display: flex;
+			align-items: center;
+			padding: 0.75rem 1rem;
+			color: var(--text-muted);
+			text-decoration: none;
+			border-radius: 6px;
+			transition: all 0.2s;
+			font-size: 0.9rem;
+		}
+
+		.nav-link:hover {
+			background: var(--bg-elevated);
+			color: var(--text-primary);
+		}
+
+		.nav-link.active {
+			background: var(--accent-info);
+			color: white;
+		}
+
+		.nav-icon {
+			margin-right: 0.75rem;
+			font-size: 1rem;
+		}
+
+		/* =================================================================
+		   CARDS & BOXES
+		   ================================================================= */
+		.card {
+			background: var(--bg-surface);
+			border: 1px solid var(--border-color);
+			border-radius: 8px;
+			padding: 1.25rem;
+		}
+
+		.card-header {
+			display: flex;
+			justify-content: space-between;
+			align-items: center;
+			margin-bottom: 1rem;
+			padding-bottom: 0.75rem;
+			border-bottom: 1px solid var(--border-color);
+		}
+
+		.card-title {
+			font-size: 0.875rem;
+			font-weight: 600;
+			color: var(--text-muted);
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+		}
+
+		/* =================================================================
+		   DASHBOARD GRID - 3 Column Hero
+		   ================================================================= */
+		.dashboard-hero {
+			display: grid;
+			grid-template-columns: repeat(3, 1fr);
+			gap: 1rem;
+			margin-bottom: 1.5rem;
+		}
+
+		.identity-box, .security-box, .network-box {
+			background: var(--bg-surface);
+			border: 1px solid var(--border-color);
+			border-radius: 8px;
+			padding: 1rem;
+		}
+
+		.identity-box .box-title,
+		.security-box .box-title,
+		.network-box .box-title {
+			font-size: 0.7rem;
+			text-transform: uppercase;
+			letter-spacing: 1px;
+			color: var(--text-muted);
+			margin-bottom: 0.75rem;
+		}
+
+		/* Identity Box specific */
+		.identity-row {
+			display: flex;
+			justify-content: space-between;
+			padding: 0.25rem 0;
+			font-size: 0.875rem;
+		}
+
+		.identity-label {
+			color: var(--text-muted);
+		}
+
+		.identity-value {
+			font-weight: 500;
+			font-family: 'SF Mono', Monaco, monospace;
+		}
+
+		.heartbeat {
+			display: inline-block;
+			width: 8px;
+			height: 8px;
+			border-radius: 50%;
+			margin-left: 0.5rem;
+			animation: pulse 2s infinite;
+		}
+
+		.heartbeat.active { background: var(--accent-safe); }
+		.heartbeat.warning { background: var(--accent-warning); }
+		.heartbeat.error { background: var(--accent-danger); }
+
+		@keyframes pulse {
+			0%, 100% { opacity: 1; }
+			50% { opacity: 0.5; }
+		}
+
+		/* Status Badges */
+		.status-badge {
+			display: inline-flex;
+			align-items: center;
+			padding: 0.25rem 0.5rem;
+			border-radius: 4px;
+			font-size: 0.75rem;
+			font-weight: 500;
+		}
+
+		.status-badge.active {
+			background: rgba(16, 185, 129, 0.15);
+			color: var(--accent-safe);
+		}
+
+		.status-badge.warning {
+			background: rgba(245, 158, 11, 0.15);
+			color: var(--accent-warning);
+		}
+
+		.status-badge.error {
+			background: rgba(239, 68, 68, 0.15);
+			color: var(--accent-danger);
+		}
+
+		/* =================================================================
+		   KPI STATS
+		   ================================================================= */
+		.kpi-grid {
+			display: grid;
+			grid-template-columns: repeat(2, 1fr);
+			gap: 0.75rem;
+		}
+
+		.kpi-item {
+			text-align: center;
+			padding: 0.5rem;
+			background: var(--bg-elevated);
+			border-radius: 6px;
+		}
+
+		.kpi-value {
+			font-size: 1.5rem;
+			font-weight: 700;
+			font-family: 'SF Mono', Monaco, monospace;
+		}
+
+		.kpi-value.danger { color: var(--accent-danger); }
+		.kpi-value.safe { color: var(--accent-safe); }
+		.kpi-value.info { color: var(--accent-info); }
+
+		.kpi-label {
+			font-size: 0.7rem;
+			color: var(--text-muted);
+			text-transform: uppercase;
+		}
+
+		.kpi-split {
+			font-size: 0.75rem;
+			color: var(--text-muted);
+		}
+
+		/* =================================================================
+		   RESOURCE GAUGES
+		   ================================================================= */
+		.resource-grid {
+			display: grid;
+			grid-template-columns: repeat(4, 1fr);
+			gap: 1rem;
+			margin-bottom: 1.5rem;
+		}
+
+		.resource-item {
+			background: var(--bg-surface);
+			border: 1px solid var(--border-color);
+			border-radius: 8px;
+			padding: 1rem;
+			text-align: center;
+		}
+
+		.resource-label {
+			font-size: 0.7rem;
+			text-transform: uppercase;
+			color: var(--text-muted);
+			margin-bottom: 0.5rem;
+		}
+
+		.resource-value {
+			font-size: 1.75rem;
+			font-weight: 700;
+		}
+
+		.resource-detail {
+			font-size: 0.75rem;
+			color: var(--text-muted);
+			margin-top: 0.25rem;
+		}
+
+		/* Progress bar for resources */
+		.progress-bar {
+			height: 6px;
+			background: var(--bg-elevated);
+			border-radius: 3px;
+			margin-top: 0.5rem;
+			overflow: hidden;
+		}
+
+		.progress-fill {
+			height: 100%;
+			border-radius: 3px;
+			transition: width 0.3s;
+		}
+
+		.progress-fill.safe { background: var(--accent-safe); }
+		.progress-fill.warning { background: var(--accent-warning); }
+		.progress-fill.danger { background: var(--accent-danger); }
+
+		/* =================================================================
+		   MODULE STATUS TABLE
+		   ================================================================= */
+		.module-table {
+			width: 100%;
+			border-collapse: collapse;
+		}
+
+		.module-table th,
+		.module-table td {
+			padding: 0.75rem 1rem;
+			text-align: left;
+			border-bottom: 1px solid var(--border-color);
+		}
+
+		.module-table th {
+			font-size: 0.7rem;
+			text-transform: uppercase;
+			color: var(--text-muted);
+			font-weight: 500;
+		}
+
+		.module-table tbody tr:hover {
+			background: var(--bg-elevated);
+		}
+
+		.module-status {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.5rem;
+		}
+
+		.module-dot {
+			width: 10px;
+			height: 10px;
+			border-radius: 50%;
+		}
+
+		.module-dot.active { background: var(--accent-safe); }
+		.module-dot.inactive { background: var(--text-muted); }
+		.module-dot.failed { background: var(--accent-danger); }
+		.module-dot.warning { background: var(--accent-warning); }
+
+		/* =================================================================
+		   SEARCH BOX
+		   ================================================================= */
+		.search-box {
+			display: flex;
+			gap: 0.5rem;
+			margin-bottom: 1.5rem;
+		}
+
+		.search-input {
+			flex: 1;
+			padding: 0.75rem 1rem;
+			background: var(--bg-surface);
+			border: 1px solid var(--border-color);
+			border-radius: 6px;
+			color: var(--text-primary);
+			font-size: 0.9rem;
+			font-family: 'SF Mono', Monaco, monospace;
+		}
+
+		.search-input:focus {
+			outline: none;
+			border-color: var(--accent-info);
+		}
+
+		.search-input::placeholder {
+			color: var(--text-muted);
+		}
+
+		/* =================================================================
+		   BUTTONS
+		   ================================================================= */
+		.btn {
+			display: inline-flex;
+			align-items: center;
+			justify-content: center;
+			padding: 0.625rem 1rem;
+			border-radius: 6px;
+			font-size: 0.875rem;
+			font-weight: 500;
+			cursor: pointer;
+			transition: all 0.2s;
+			border: none;
+			text-decoration: none;
+		}
+
+		.btn-primary {
+			background: var(--accent-info);
+			color: white;
+		}
+
+		.btn-primary:hover {
+			opacity: 0.9;
+		}
+
+		.btn-danger {
+			background: var(--accent-danger);
+			color: white;
+		}
+
+		.btn-secondary {
+			background: var(--bg-elevated);
+			color: var(--text-primary);
+			border: 1px solid var(--border-color);
+		}
+
+		.btn-sm {
+			padding: 0.375rem 0.75rem;
+			font-size: 0.75rem;
+		}
+
+		/* =================================================================
+		   FORMS
+		   ================================================================= */
+		.form-group {
+			margin-bottom: 1rem;
+		}
+
+		.form-label {
+			display: block;
+			margin-bottom: 0.5rem;
+			color: var(--text-muted);
+			font-size: 0.875rem;
+		}
+
+		.form-input {
+			width: 100%;
+			padding: 0.75rem 1rem;
+			background: var(--bg-elevated);
+			border: 1px solid var(--border-color);
+			border-radius: 6px;
+			color: var(--text-primary);
+			font-size: 1rem;
+		}
+
+		.form-input:focus {
+			outline: none;
+			border-color: var(--accent-info);
+		}
+
+		/* =================================================================
+		   ALERTS & TOASTS
+		   ================================================================= */
+		.alert {
+			padding: 1rem;
+			border-radius: 6px;
+			margin-bottom: 1rem;
+		}
+
+		.alert-error {
+			background: rgba(239, 68, 68, 0.1);
+			border: 1px solid var(--accent-danger);
+			color: var(--accent-danger);
+		}
+
+		.alert-success {
+			background: rgba(16, 185, 129, 0.1);
+			border: 1px solid var(--accent-safe);
+			color: var(--accent-safe);
+		}
+
+		.toast-container {
+			position: fixed;
+			top: 1rem;
+			right: 1rem;
+			z-index: 1000;
+		}
+
+		.toast {
+			background: var(--bg-surface);
+			border: 1px solid var(--border-color);
+			border-radius: 6px;
+			padding: 1rem;
+			margin-bottom: 0.5rem;
+			box-shadow: var(--shadow);
+			animation: slideIn 0.3s ease;
+		}
+
+		@keyframes slideIn {
+			from { transform: translateX(100%); opacity: 0; }
+			to { transform: translateX(0); opacity: 1; }
+		}
+
+		/* =================================================================
+		   LOGIN PAGE
+		   ================================================================= */
+		.login-container {
+			display: flex;
+			align-items: center;
+			justify-content: center;
+			min-height: 100vh;
+			padding: 2rem;
+		}
+
+		.login-box {
+			width: 100%;
+			max-width: 380px;
+		}
+
+		.login-logo {
+			text-align: center;
+			margin-bottom: 2rem;
+		}
+
+		.login-logo h1 {
+			font-size: 2rem;
+			color: var(--accent-info);
+		}
+
+		.login-logo p {
+			color: var(--text-muted);
+			margin-top: 0.5rem;
+		}
+
+		/* =================================================================
+		   RESPONSIVE
+		   ================================================================= */
+		@media (max-width: 1024px) {
+			.dashboard-hero {
+				grid-template-columns: 1fr;
+			}
+
+			.resource-grid {
+				grid-template-columns: repeat(2, 1fr);
+			}
+		}
+
+		@media (max-width: 768px) {
+			.sidebar {
+				width: 100%;
+				height: auto;
+				position: relative;
+			}
+
+			.main-content {
+				margin-left: 0;
+			}
+
+			.resource-grid {
+				grid-template-columns: 1fr;
+			}
+		}
+
+		/* =================================================================
+		   HTMX LOADING
+		   ================================================================= */
+		.htmx-indicator {
+			opacity: 0;
+			transition: opacity 200ms;
+		}
+
+		.htmx-request .htmx-indicator {
+			opacity: 1;
+		}
+
+		.htmx-request.htmx-indicator {
+			opacity: 1;
+		}
+	</style>
+}
+
+// themeScript handles theme toggle with cookie persistence
+templ themeScript() {
+	<script>
+		// Initialize theme from cookie or default to dark
+		(function() {
+			const theme = getCookie('nftban_theme') || 'dark';
+			document.documentElement.setAttribute('data-theme', theme);
+		})();
+
+		function toggleTheme() {
+			const current = document.documentElement.getAttribute('data-theme');
+			const next = current === 'dark' ? 'light' : 'dark';
+			document.documentElement.setAttribute('data-theme', next);
+			// Store in cookie (readable by backend for SSR)
+			setCookie('nftban_theme', next, 365);
+		}
+
+		function getCookie(name) {
+			const value = '; ' + document.cookie;
+			const parts = value.split('; ' + name + '=');
+			if (parts.length === 2) return parts.pop().split(';').shift();
+			return null;
+		}
+
+		function setCookie(name, value, days) {
+			const d = new Date();
+			d.setTime(d.getTime() + (days * 24 * 60 * 60 * 1000));
+			document.cookie = name + '=' + value + ';expires=' + d.toUTCString() + ';path=/;SameSite=Lax';
+		}
+
+		// Dynamic uptime counter
+		function startUptimeCounter(elementId, startSeconds) {
+			let seconds = startSeconds;
+			const el = document.getElementById(elementId);
+			if (!el) return;
+
+			setInterval(() => {
+				seconds++;
+				const days = Math.floor(seconds / 86400);
+				const hours = Math.floor((seconds % 86400) / 3600);
+				const mins = Math.floor((seconds % 3600) / 60);
+				el.textContent = days + 'd ' + hours + 'h ' + mins + 'm';
+			}, 1000);
+		}
+	</script>
 }
