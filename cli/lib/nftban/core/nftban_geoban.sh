@@ -24,9 +24,11 @@
 # meta:inventory.privileges="nftban user"
 # =============================================================================
 
-# Source central config for canonical paths (NO HARDCODED FALLBACKS)
-# shellcheck source=/etc/nftban/nftban.conf
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+set -Eeuo pipefail
+
+# Source central environment loader (single source of truth for paths)
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh"
 
 # Source NFT schema for canonical table/set names
 # shellcheck source=/dev/null
