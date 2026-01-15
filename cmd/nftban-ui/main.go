@@ -171,10 +171,34 @@ func main() {
 
 	// Protected GOTH routes (require session)
 	router.HandleFunc("/ui/", gothHandlers.RequireSession(gothHandlers.HandleDashboard)).Methods("GET")
+	router.HandleFunc("/ui/health", gothHandlers.RequireSession(gothHandlers.HandleHealth)).Methods("GET")
+	router.HandleFunc("/ui/modules", gothHandlers.RequireSession(gothHandlers.HandleModules)).Methods("GET")
 	router.HandleFunc("/ui/action/logout", gothHandlers.RequireSession(gothHandlers.HandleActionLogout)).Methods("POST")
 
-	// GOTH fragments (HTMX partial updates)
+	// GOTH fragments (HTMX partial updates) - Professional Dashboard
+	router.HandleFunc("/ui/frag/identity", gothHandlers.RequireSession(gothHandlers.HandleFragIdentity)).Methods("GET")
+	router.HandleFunc("/ui/frag/security", gothHandlers.RequireSession(gothHandlers.HandleFragSecurity)).Methods("GET")
+	router.HandleFunc("/ui/frag/network", gothHandlers.RequireSession(gothHandlers.HandleFragNetwork)).Methods("GET")
+	router.HandleFunc("/ui/frag/resources", gothHandlers.RequireSession(gothHandlers.HandleFragResources)).Methods("GET")
+	router.HandleFunc("/ui/frag/modules", gothHandlers.RequireSession(gothHandlers.HandleFragModules)).Methods("GET")
+	router.HandleFunc("/ui/frag/recent", gothHandlers.RequireSession(gothHandlers.HandleFragRecent)).Methods("GET")
+
+	// Backwards compat fragments
 	router.HandleFunc("/ui/frag/summary", gothHandlers.RequireSession(gothHandlers.HandleFragSummary)).Methods("GET")
+	router.HandleFunc("/ui/frag/system", gothHandlers.RequireSession(gothHandlers.HandleFragSystem)).Methods("GET")
+	router.HandleFunc("/ui/frag/health", gothHandlers.RequireSession(gothHandlers.HandleFragHealth)).Methods("GET")
+	router.HandleFunc("/ui/frag/services-quick", gothHandlers.RequireSession(gothHandlers.HandleFragServicesQuick)).Methods("GET")
+	router.HandleFunc("/ui/frag/ban-stats", gothHandlers.RequireSession(gothHandlers.HandleFragBanStats)).Methods("GET")
+	router.HandleFunc("/ui/frag/whitelist-stats", gothHandlers.RequireSession(gothHandlers.HandleFragWhitelistStats)).Methods("GET")
+	router.HandleFunc("/ui/frag/health-all", gothHandlers.RequireSession(gothHandlers.HandleFragHealthAll)).Methods("GET")
+	router.HandleFunc("/ui/frag/modules-list", gothHandlers.RequireSession(gothHandlers.HandleFragModulesList)).Methods("GET")
+
+	// Dashboard API endpoints
+	router.HandleFunc("/ui/api/ip-check", gothHandlers.RequireSession(gothHandlers.HandleIPCheck)).Methods("GET")
+
+	// Dashboard action endpoints
+	router.HandleFunc("/ui/action/flush-temp", gothHandlers.RequireSession(gothHandlers.HandleFlushTemp)).Methods("POST")
+	router.HandleFunc("/ui/action/restart/{service}", gothHandlers.RequireSession(gothHandlers.HandleRestartService)).Methods("POST")
 
 	log.Printf("[GOTH] GOTH GUI routes registered at /ui/*")
 

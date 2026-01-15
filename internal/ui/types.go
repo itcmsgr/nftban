@@ -1,15 +1,12 @@
 // =============================================================================
-// NFTBan - GOTH GUI Types
+// NFTBan - GOTH GUI Types (Professional Dashboard Blueprint)
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="types"
 // meta:type="go"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-01-15"
-// meta:description="Data types for GOTH GUI templates"
-// meta:input="None"
-// meta:output="None"
-// meta:depends=""
+// meta:description="Data types for GOTH GUI - Professional Admin Dashboard"
 // meta:inventory.files=""
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
@@ -21,13 +18,175 @@
 
 package ui
 
-// SummaryData holds dashboard summary statistics
-type SummaryData struct {
-	ActiveBans     int
-	EventsLastHour int
-	ModulesUp      int
-	WhitelistCount int
+// =============================================================================
+// DASHBOARD DATA - Main structure for front page
+// =============================================================================
+
+// DashboardData contains all dashboard information for zero-refresh updates
+type DashboardData struct {
+	// System Identity (Top Left)
+	Identity SystemIdentity
+
+	// Security KPIs (Top Right)
+	Security SecurityKPIs
+
+	// Hardware Resources
+	Resources ResourceStats
+
+	// Module Status Grid
+	Modules []ModuleStatus
+
+	// Recent Activity
+	RecentBans []RecentBan
+
+	// Theme preference
+	Theme string // "dark" or "light"
 }
+
+// =============================================================================
+// SYSTEM IDENTITY - The Fingerprint (Top Left)
+// =============================================================================
+
+// SystemIdentity holds system identification info
+type SystemIdentity struct {
+	Hostname      string
+	Kernel        string
+	Uptime        string
+	UptimeSeconds int64  // For JS counter
+	NFTBanVersion string
+	PanelMode     string // "active", "warning", "error"
+	Heartbeat     bool   // Backend responding
+}
+
+// =============================================================================
+// SECURITY KPIs - Real-Time Stats (Top Right)
+// =============================================================================
+
+// SecurityKPIs holds security statistics
+type SecurityKPIs struct {
+	// Active Bans
+	BansTotal int
+	BansIPv4  int
+	BansIPv6  int
+
+	// Whitelist
+	WhitelistTotal int
+	WhitelistIPv4  int
+	WhitelistIPv6  int
+
+	// Network Stats
+	NetworkInMbps  float64
+	NetworkOutMbps float64
+	PacketDropRate int // Packets rejected per second
+
+	// Event counts
+	EventsLastHour int
+	TotalBansEver  int
+}
+
+// =============================================================================
+// RESOURCE STATS - Hardware Consumption
+// =============================================================================
+
+// ResourceStats holds system resource information
+type ResourceStats struct {
+	// CPU
+	CPUPercent   float64
+	CPULoadAvg1  float64
+	CPULoadAvg5  float64
+	CPULoadAvg15 float64
+
+	// RAM
+	RAMUsedGB  float64
+	RAMTotalGB float64
+	RAMPercent float64
+
+	// Disk (focus on log partition)
+	DiskUsedGB  float64
+	DiskTotalGB float64
+	DiskPercent float64
+	DiskPath    string // Which partition we're monitoring
+
+	// NFTBan Process specifically
+	NFTBanCPU    float64
+	NFTBanMemMB  float64
+	NFTBanUptime string
+}
+
+// =============================================================================
+// MODULE STATUS - The Engine Room
+// =============================================================================
+
+// ModuleStatus holds individual module information
+type ModuleStatus struct {
+	Name        string
+	Description string
+	Status      string // "active", "inactive", "failed", "warning"
+	Enabled     bool
+	Running     bool
+
+	// Module-specific metrics
+	BansProduced int     // How many IPs this module has added
+	CPUPercent   float64 // Module-specific CPU (if separate process)
+	MemoryMB     float64 // Module-specific memory
+	LastSync     string  // Last time module reported in
+	ServiceName  string  // Systemd service name for restart
+}
+
+// =============================================================================
+// RECENT ACTIVITY
+// =============================================================================
+
+// RecentBan represents a recent ban entry
+type RecentBan struct {
+	IP        string
+	Country   string
+	CountryCode string
+	Reason    string
+	Module    string // Which module triggered the ban
+	Timestamp string
+}
+
+// =============================================================================
+// IP CHECK - Quick lookup result
+// =============================================================================
+
+// IPCheckResult holds the result of an IP lookup
+type IPCheckResult struct {
+	IP          string
+	Status      string // "banned", "whitelisted", "clean"
+	BannedSince string
+	Reason      string
+	Module      string
+	Country     string
+}
+
+// =============================================================================
+// COUNTRY STATS - For map visualization
+// =============================================================================
+
+// CountryStats for geo distribution
+type CountryStats struct {
+	CountryCode string
+	Country     string
+	Count       int
+	Percent     float64
+}
+
+// =============================================================================
+// HEALTH PAGE DATA
+// =============================================================================
+
+// HealthItem represents a single health check
+type HealthItem struct {
+	Name   string
+	Status string // "ok", "warning", "error"
+	Detail string // Additional info
+}
+
+// =============================================================================
+// NAVIGATION
+// =============================================================================
 
 // NavItem represents a navigation menu item
 type NavItem struct {
@@ -36,6 +195,10 @@ type NavItem struct {
 	Icon   string
 	Active bool
 }
+
+// =============================================================================
+// USER SESSION
+// =============================================================================
 
 // UserInfo holds current user session info
 type UserInfo struct {

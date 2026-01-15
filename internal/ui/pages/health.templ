@@ -1,0 +1,154 @@
+// =============================================================================
+// NFTBan - GOTH GUI Health Page
+// =============================================================================
+// SPDX-License-Identifier: MPL-2.0
+// meta:name="health"
+// meta:type="templ"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2026-01-15"
+// meta:description="Detailed health analysis page"
+// =============================================================================
+
+package pages
+
+import (
+	"strconv"
+	"github.com/itcmsgr/nftban/internal/ui"
+)
+
+// HealthData holds all health check information
+type HealthData struct {
+	Services    []ui.HealthItem
+	Network     []ui.HealthItem
+	Permissions []ui.HealthItem
+	Config      []ui.HealthItem
+	Summary     HealthSummary
+}
+
+// HealthSummary holds overall health summary
+type HealthSummary struct {
+	Total   int
+	OK      int
+	Warning int
+	Error   int
+}
+
+// Health renders the full health analysis page
+templ Health(data HealthData) {
+	@ui.LayoutWithNav("Health", "health") {
+		<div class="page-header">
+			<h1 class="page-title">System Health</h1>
+			<button class="btn btn-primary" hx-get="/ui/frag/health-all" hx-target="#health-content" hx-swap="innerHTML">
+				Refresh
+			</button>
+		</div>
+
+		<!-- Health Summary -->
+		<div class="card" style="margin-bottom: 1.5rem;">
+			<div class="system-grid">
+				<div class="system-stat">
+					<div class="system-label">Total Checks</div>
+					<div class="system-value">{ intToStr(data.Summary.Total) }</div>
+				</div>
+				<div class="system-stat">
+					<div class="system-label">Passed</div>
+					<div class="system-value" style="color: var(--accent-green);">{ intToStr(data.Summary.OK) }</div>
+				</div>
+				<div class="system-stat">
+					<div class="system-label">Warnings</div>
+					<div class="system-value" style="color: var(--accent-yellow);">{ intToStr(data.Summary.Warning) }</div>
+				</div>
+				<div class="system-stat">
+					<div class="system-label">Errors</div>
+					<div class="system-value" style="color: var(--accent-red);">{ intToStr(data.Summary.Error) }</div>
+				</div>
+			</div>
+		</div>
+
+		<div id="health-content">
+			@HealthContentFragment(data)
+		</div>
+	}
+}
+
+// HealthContentFragment renders all health sections
+templ HealthContentFragment(data HealthData) {
+	<!-- Services Section -->
+	<div class="card" style="margin-bottom: 1rem;">
+		<h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
+			Services Status
+		</h3>
+		<div class="health-list">
+			for _, item := range data.Services {
+				@HealthRow(item)
+			}
+			if len(data.Services) == 0 {
+				<p style="color: var(--text-muted);">No service checks available</p>
+			}
+		</div>
+	</div>
+
+	<!-- Network Section -->
+	<div class="card" style="margin-bottom: 1rem;">
+		<h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
+			Network Status
+		</h3>
+		<div class="health-list">
+			for _, item := range data.Network {
+				@HealthRow(item)
+			}
+			if len(data.Network) == 0 {
+				<p style="color: var(--text-muted);">No network checks available</p>
+			}
+		</div>
+	</div>
+
+	<!-- Permissions Section -->
+	<div class="card" style="margin-bottom: 1rem;">
+		<h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
+			File Permissions
+		</h3>
+		<div class="health-list">
+			for _, item := range data.Permissions {
+				@HealthRow(item)
+			}
+			if len(data.Permissions) == 0 {
+				<p style="color: var(--text-muted);">No permission checks available</p>
+			}
+		</div>
+	</div>
+
+	<!-- Config Section -->
+	<div class="card" style="margin-bottom: 1rem;">
+		<h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
+			Configuration
+		</h3>
+		<div class="health-list">
+			for _, item := range data.Config {
+				@HealthRow(item)
+			}
+			if len(data.Config) == 0 {
+				<p style="color: var(--text-muted);">No config checks available</p>
+			}
+		</div>
+	</div>
+}
+
+// HealthRow renders a single health check row
+templ HealthRow(item ui.HealthItem) {
+	<div class="health-row">
+		<span class={ "health-dot", item.Status }></span>
+		<span class="health-name">{ item.Name }</span>
+		if item.Status == "ok" {
+			<span class="health-status-text" style="color: var(--accent-green);">OK</span>
+		} else if item.Status == "warning" {
+			<span class="health-status-text" style="color: var(--accent-yellow);">WARNING</span>
+		} else {
+			<span class="health-status-text" style="color: var(--accent-red);">ERROR</span>
+		}
+	</div>
+}
+
+func intToStr(n int) string {
+	return strconv.Itoa(n)
+}
