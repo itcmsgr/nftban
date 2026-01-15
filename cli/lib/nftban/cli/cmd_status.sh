@@ -376,26 +376,35 @@ output_terminal() {
     printf "  %-20s %s\n" "Login Monitor......." "$login_status"
     [[ -n "$login_details" ]] && printf "      %-16s %s\n" "Watching........" "$login_details"
 
-    # GeoIP/GeoBan
-    local geoip_db
-    geoip_db=$(cmd_get_geoip_database 2>/dev/null) || geoip_db=""
-    local geoban_status="NOT INSTALLED"
-    if [[ -n "$geoip_db" ]] && [[ -f "$geoip_db" ]]; then
-        local db_size db_date
-        db_size=$(du -h "$geoip_db" 2>/dev/null | awk '{print $1}' || echo "?")
-        db_date=$(stat -c %y "$geoip_db" 2>/dev/null | cut -d' ' -f1 || echo "?")
-
-        local banned_countries
-        banned_countries=$(nftban geoban list 2>/dev/null | grep -c "BLOCKED" 2>/dev/null || echo "0")
-        banned_countries=$(echo "$banned_countries" | tr -d '\n' | tr -d ' ')
-
-        if [[ "$banned_countries" =~ ^[0-9]+$ ]] && [[ "$banned_countries" -gt 0 ]]; then
-            geoban_status="ACTIVE ($banned_countries countries blocked)"
+    # GeoIP (database module) - use nftban-core directly for accurate detection
+    local geoip_status="NOT INSTALLED"
+    local nftban_core="${NFTBAN_LIB_DIR}/bin/nftban-core"
+    [[ ! -x "$nftban_core" ]] && nftban_core=$(command -v nftban-core 2>/dev/null || echo "")
+    if [[ -n "$nftban_core" ]] && [[ -x "$nftban_core" ]]; then
+        if "$nftban_core" geoip status >/dev/null 2>&1; then
+            # Get database info from status output
+            local db_info
+            db_info=$("$nftban_core" geoip status 2>/dev/null | grep -i "database" | head -1 || echo "")
+            if [[ -n "$db_info" ]]; then
+                geoip_status="ACTIVE"
+            else
+                geoip_status="ACTIVE"
+            fi
         else
-            geoban_status="READY (DB: $db_size, $db_date)"
+            geoip_status="DB MISSING (run: nftban geoip update)"
         fi
     fi
-    printf "  %-20s %s\n" "GeoIP / GeoBan......" "$geoban_status"
+    printf "  %-20s %s\n" "GeoIP..............." "$geoip_status"
+
+    # GeoBan (country blocking module) - separate from GeoIP database
+    local geoban_status="DISABLED"
+    local banned_countries
+    banned_countries=$(nftban geoban list 2>/dev/null | grep -c "BLOCKED" 2>/dev/null || echo "0")
+    banned_countries=$(echo "$banned_countries" | tr -d '\n' | tr -d ' ')
+    if [[ "$banned_countries" =~ ^[0-9]+$ ]] && [[ "$banned_countries" -gt 0 ]]; then
+        geoban_status="ACTIVE ($banned_countries countries blocked)"
+    fi
+    printf "  %-20s %s\n" "GeoBan.............." "$geoban_status"
 
     # Metrics Database
     local metrics_db_status="NOT INSTALLED"
@@ -851,16 +860,21 @@ output_json() {
     systemctl is-active nftban-login-monitor.service >/dev/null 2>&1 && login_enabled=true
     echo "    \"login_monitor\": {\"enabled\": $login_enabled},"
 
-    # GeoIP
-    local geoip_installed=false geoip_countries=0
-    local geoip_db
-    geoip_db=$(cmd_get_geoip_database 2>/dev/null) || geoip_db=""
-    if [[ -n "$geoip_db" ]] && [[ -f "$geoip_db" ]]; then
-        geoip_installed=true
-        geoip_countries=$(nftban geoban list 2>/dev/null | grep -c "BLOCKED" 2>/dev/null || true)
-        geoip_countries="${geoip_countries:-0}"
+    # GeoIP (database) - use nftban-core for accurate detection
+    local geoip_installed=false
+    local nftban_core="${NFTBAN_LIB_DIR}/bin/nftban-core"
+    [[ ! -x "$nftban_core" ]] && nftban_core=$(command -v nftban-core 2>/dev/null || echo "")
+    if [[ -n "$nftban_core" ]] && [[ -x "$nftban_core" ]]; then
+        "$nftban_core" geoip status >/dev/null 2>&1 && geoip_installed=true
     fi
-    echo "    \"geoip\": {\"installed\": $geoip_installed, \"blocked_countries\": $geoip_countries},"
+    echo "    \"geoip\": {\"installed\": $geoip_installed},"
+
+    # GeoBan (country blocking) - separate from GeoIP
+    local geoban_enabled=false geoban_countries=0
+    geoban_countries=$(nftban geoban list 2>/dev/null | grep -c "BLOCKED" 2>/dev/null || true)
+    geoban_countries="${geoban_countries:-0}"
+    [[ "$geoban_countries" =~ ^[0-9]+$ ]] && [[ "$geoban_countries" -gt 0 ]] && geoban_enabled=true
+    echo "    \"geoban\": {\"enabled\": $geoban_enabled, \"blocked_countries\": $geoban_countries},"
 
     # Feeds
     local feeds_count=0

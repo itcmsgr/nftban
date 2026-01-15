@@ -932,6 +932,65 @@ nftban_health_check_geoip() {
 }
 
 # =============================================================================
+# GEOBAN (COUNTRY BLOCKING) CHECK
+# =============================================================================
+
+nftban_health_check_geoban() {
+    # Check GeoBan country blocking module
+    # This is SEPARATE from GeoIP (database) - GeoBan is the country blocking feature
+    # Returns: 0=OK (configured or not needed), 1=Warning, 2=Error
+
+    local status=$HEALTH_OK
+    local geoban_issues=()
+
+    # Check for country blocking configurations
+    local geoban_dir="${NFTBAN_DATA_DIR}/geoban"
+    local blocked_count=0
+
+    if [[ -d "$geoban_dir" ]]; then
+        # Count blocked countries
+        shopt -s nullglob 2>/dev/null || true
+        for file in "$geoban_dir"/*.conf; do
+            if [[ -f "$file" ]] && grep -q "^MODE=.*block" "$file" 2>/dev/null; then
+                ((blocked_count++))
+            fi
+        done
+        shopt -u nullglob 2>/dev/null || true
+    fi
+
+    # GeoBan is optional - not having it configured is fine
+    if [[ $blocked_count -gt 0 ]]; then
+        # If GeoBan is configured, verify GeoIP database is available
+        local nftban_core="${NFTBAN_LIB_DIR}/bin/nftban-core"
+        [[ ! -x "$nftban_core" ]] && nftban_core=$(command -v nftban-core 2>/dev/null || echo "")
+
+        if [[ -n "$nftban_core" ]] && [[ -x "$nftban_core" ]]; then
+            if ! "$nftban_core" geoip status >/dev/null 2>&1; then
+                geoban_issues+=("GeoBan has $blocked_count countries configured but GeoIP database is missing")
+                geoban_issues+=("FIX: Run 'nftban geoip update' to download the database")
+                status=$HEALTH_WARNING
+            fi
+        else
+            geoban_issues+=("GeoBan has $blocked_count countries configured but nftban-core is missing")
+            status=$HEALTH_WARNING
+        fi
+    fi
+
+    # Store results
+    if [[ ${#geoban_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["geoban"]="${geoban_issues[*]}"
+        if [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("geoban: ${geoban_issues[*]}")
+        elif [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("geoban: ${geoban_issues[*]}")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["geoban"]=$status
+    return "$status"
+}
+
+# =============================================================================
 # DATABASE CHECKS
 # =============================================================================
 
