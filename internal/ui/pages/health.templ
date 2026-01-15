@@ -6,7 +6,7 @@
 // meta:type="templ"
 // meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 // meta:created_date="2026-01-15"
-// meta:description="Detailed health analysis page"
+// meta:description="Comprehensive health analysis page from nftban health check"
 // =============================================================================
 
 package pages
@@ -16,51 +16,48 @@ import (
 	"github.com/itcmsgr/nftban/internal/ui"
 )
 
-// HealthData holds all health check information
-type HealthData struct {
-	Services    []ui.HealthItem
-	Network     []ui.HealthItem
-	Permissions []ui.HealthItem
-	Config      []ui.HealthItem
-	Summary     HealthSummary
-}
-
-// HealthSummary holds overall health summary
-type HealthSummary struct {
-	Total   int
-	OK      int
-	Warning int
-	Error   int
-}
-
 // Health renders the full health analysis page
-templ Health(data HealthData) {
+templ Health(data ui.HealthData) {
 	@ui.LayoutWithNav("Health", "health") {
 		<div class="page-header">
 			<h1 class="page-title">System Health</h1>
-			<button class="btn btn-primary" hx-get="/ui/frag/health-all" hx-target="#health-content" hx-swap="innerHTML">
-				Refresh
-			</button>
+			<div style="display: flex; gap: 0.5rem;">
+				<button class="btn btn-primary" hx-get="/ui/frag/health-all" hx-target="#health-content" hx-swap="innerHTML">
+					Refresh
+				</button>
+				<button class="btn btn-danger" hx-post="/ui/action/health-fix" hx-confirm="Run auto-heal to fix issues?">
+					Auto-Heal
+				</button>
+			</div>
 		</div>
 
-		<!-- Health Summary -->
-		<div class="card" style="margin-bottom: 1.5rem;">
-			<div class="system-grid">
-				<div class="system-stat">
-					<div class="system-label">Total Checks</div>
-					<div class="system-value">{ intToStr(data.Summary.Total) }</div>
+		<!-- Overall Status Banner -->
+		<div class={ "card", "status-banner", data.OverallStatus } style="margin-bottom: 1.5rem;">
+			<div style="display: flex; align-items: center; justify-content: space-between;">
+				<div style="display: flex; align-items: center; gap: 1rem;">
+					if data.OverallStatus == "ok" {
+						<span style="font-size: 2rem;">&#x2705;</span>
+						<div>
+							<div style="font-size: 1.25rem; font-weight: 600;">All Systems Healthy</div>
+							<div style="color: var(--text-muted); font-size: 0.9rem;">No issues detected</div>
+						</div>
+					} else if data.OverallStatus == "warning" {
+						<span style="font-size: 2rem;">&#x26A0;</span>
+						<div>
+							<div style="font-size: 1.25rem; font-weight: 600;">Warnings Detected</div>
+							<div style="color: var(--text-muted); font-size: 0.9rem;">{ intToStr(data.WarningCount) } warning(s) need attention</div>
+						</div>
+					} else {
+						<span style="font-size: 2rem;">&#x274C;</span>
+						<div>
+							<div style="font-size: 1.25rem; font-weight: 600;">Errors Detected</div>
+							<div style="color: var(--text-muted); font-size: 0.9rem;">{ intToStr(data.ErrorCount) } error(s), { intToStr(data.WarningCount) } warning(s)</div>
+						</div>
+					}
 				</div>
-				<div class="system-stat">
-					<div class="system-label">Passed</div>
-					<div class="system-value" style="color: var(--accent-green);">{ intToStr(data.Summary.OK) }</div>
-				</div>
-				<div class="system-stat">
-					<div class="system-label">Warnings</div>
-					<div class="system-value" style="color: var(--accent-yellow);">{ intToStr(data.Summary.Warning) }</div>
-				</div>
-				<div class="system-stat">
-					<div class="system-label">Errors</div>
-					<div class="system-value" style="color: var(--accent-red);">{ intToStr(data.Summary.Error) }</div>
+				<div style="text-align: right; font-size: 0.85rem; color: var(--text-muted);">
+					<div>Last check: { data.Timestamp }</div>
+					<div>Exit code: { intToStr(data.ExitCode) }</div>
 				</div>
 			</div>
 		</div>
@@ -72,80 +69,108 @@ templ Health(data HealthData) {
 }
 
 // HealthContentFragment renders all health sections
-templ HealthContentFragment(data HealthData) {
-	<!-- Services Section -->
-	<div class="card" style="margin-bottom: 1rem;">
-		<h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
-			Services Status
-		</h3>
-		<div class="health-list">
-			for _, item := range data.Services {
-				@HealthRow(item)
-			}
-			if len(data.Services) == 0 {
-				<p style="color: var(--text-muted);">No service checks available</p>
-			}
+templ HealthContentFragment(data ui.HealthData) {
+	<!-- Errors Section (if any) -->
+	if len(data.Errors) > 0 {
+		<div class="card" style="margin-bottom: 1.5rem; border-left: 4px solid var(--accent-danger);">
+			<div class="card-header">
+				<span class="card-title" style="color: var(--accent-danger);">Errors ({ intToStr(len(data.Errors)) })</span>
+			</div>
+			<div style="display: flex; flex-direction: column; gap: 0.75rem;">
+				for _, err := range data.Errors {
+					<div style="background: rgba(239, 68, 68, 0.1); padding: 0.75rem; border-radius: 6px;">
+						<pre style="margin: 0; white-space: pre-wrap; font-size: 0.85rem; color: var(--text-primary);">{ err }</pre>
+					</div>
+				}
+			</div>
 		</div>
+	}
+
+	<!-- Warnings Section (if any) -->
+	if len(data.Warnings) > 0 {
+		<div class="card" style="margin-bottom: 1.5rem; border-left: 4px solid var(--accent-warning);">
+			<div class="card-header">
+				<span class="card-title" style="color: var(--accent-warning);">Warnings ({ intToStr(len(data.Warnings)) })</span>
+			</div>
+			<div style="display: flex; flex-direction: column; gap: 0.75rem;">
+				for _, warn := range data.Warnings {
+					<div style="background: rgba(245, 158, 11, 0.1); padding: 0.75rem; border-radius: 6px;">
+						<pre style="margin: 0; white-space: pre-wrap; font-size: 0.85rem; color: var(--text-primary);">{ warn }</pre>
+					</div>
+				}
+			</div>
+		</div>
+	}
+
+	<!-- Health Checks Table -->
+	<div class="card">
+		<div class="card-header">
+			<span class="card-title">Health Checks</span>
+		</div>
+		<table class="data-table">
+			<thead>
+				<tr>
+					<th>Check</th>
+					<th>Status</th>
+					<th>Details</th>
+				</tr>
+			</thead>
+			<tbody>
+				for _, check := range data.Checks {
+					<tr>
+						<td style="font-weight: 500; text-transform: capitalize;">{ check.Name }</td>
+						<td>
+							if check.Status == "ok" {
+								<span class="badge badge-success">OK</span>
+							} else if check.Status == "warning" {
+								<span class="badge badge-warning">Warning</span>
+							} else {
+								<span class="badge badge-danger">Error</span>
+							}
+						</td>
+						<td style="font-size: 0.85rem; color: var(--text-muted); max-width: 400px;">
+							if check.Message != "" {
+								<span style="white-space: pre-wrap;">{ check.Message }</span>
+							} else {
+								<span>-</span>
+							}
+						</td>
+					</tr>
+				}
+				if len(data.Checks) == 0 {
+					<tr>
+						<td colspan="3" style="text-align: center; color: var(--text-muted);">
+							No health checks available. Run: nftban health check
+						</td>
+					</tr>
+				}
+			</tbody>
+		</table>
 	</div>
 
-	<!-- Network Section -->
-	<div class="card" style="margin-bottom: 1rem;">
-		<h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
-			Network Status
-		</h3>
-		<div class="health-list">
-			for _, item := range data.Network {
-				@HealthRow(item)
-			}
-			if len(data.Network) == 0 {
-				<p style="color: var(--text-muted);">No network checks available</p>
-			}
+	<!-- Quick Commands -->
+	<div class="card" style="margin-top: 1.5rem;">
+		<div class="card-header">
+			<span class="card-title">Quick Commands</span>
 		</div>
-	</div>
-
-	<!-- Permissions Section -->
-	<div class="card" style="margin-bottom: 1rem;">
-		<h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
-			File Permissions
-		</h3>
-		<div class="health-list">
-			for _, item := range data.Permissions {
-				@HealthRow(item)
-			}
-			if len(data.Permissions) == 0 {
-				<p style="color: var(--text-muted);">No permission checks available</p>
-			}
+		<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 1rem;">
+			<div class="cmd-box">
+				<code>nftban health check</code>
+				<span style="color: var(--text-muted); font-size: 0.85rem;">Full diagnostics</span>
+			</div>
+			<div class="cmd-box">
+				<code>nftban health check --auto-heal</code>
+				<span style="color: var(--text-muted); font-size: 0.85rem;">Fix issues automatically</span>
+			</div>
+			<div class="cmd-box">
+				<code>nftban geoip update</code>
+				<span style="color: var(--text-muted); font-size: 0.85rem;">Update GeoIP database</span>
+			</div>
+			<div class="cmd-box">
+				<code>nftban services status</code>
+				<span style="color: var(--text-muted); font-size: 0.85rem;">Check all services</span>
+			</div>
 		</div>
-	</div>
-
-	<!-- Config Section -->
-	<div class="card" style="margin-bottom: 1rem;">
-		<h3 style="margin-bottom: 1rem; border-bottom: 1px solid var(--border-color); padding-bottom: 0.5rem;">
-			Configuration
-		</h3>
-		<div class="health-list">
-			for _, item := range data.Config {
-				@HealthRow(item)
-			}
-			if len(data.Config) == 0 {
-				<p style="color: var(--text-muted);">No config checks available</p>
-			}
-		</div>
-	</div>
-}
-
-// HealthRow renders a single health check row
-templ HealthRow(item ui.HealthItem) {
-	<div class="health-row">
-		<span class={ "health-dot", item.Status }></span>
-		<span class="health-name">{ item.Name }</span>
-		if item.Status == "ok" {
-			<span class="health-status-text" style="color: var(--accent-green);">OK</span>
-		} else if item.Status == "warning" {
-			<span class="health-status-text" style="color: var(--accent-yellow);">WARNING</span>
-		} else {
-			<span class="health-status-text" style="color: var(--accent-red);">ERROR</span>
-		}
 	</div>
 }
 

@@ -46,6 +46,13 @@ type GOTHHandlers struct {
 	SessionStore *session.Store
 }
 
+// Network stats tracking for bandwidth calculation
+var (
+	lastNetRxBytes uint64
+	lastNetTxBytes uint64
+	lastNetTime    time.Time
+)
+
 // NewGOTHHandlers creates a new GOTHHandlers instance
 func NewGOTHHandlers(authService *auth.PAMAuth, sessionStore *session.Store) *GOTHHandlers {
 	return &GOTHHandlers{
@@ -86,6 +93,18 @@ func (h *GOTHHandlers) HandleHealth(w http.ResponseWriter, r *http.Request) {
 func (h *GOTHHandlers) HandleModules(w http.ResponseWriter, r *http.Request) {
 	data := h.getModulesData()
 	pages.Modules(data).Render(r.Context(), w)
+}
+
+// HandleInventory renders inventory page
+func (h *GOTHHandlers) HandleInventory(w http.ResponseWriter, r *http.Request) {
+	data := h.getInventoryData()
+	pages.Inventory(data).Render(r.Context(), w)
+}
+
+// HandleFragInventory renders inventory fragment for HTMX
+func (h *GOTHHandlers) HandleFragInventory(w http.ResponseWriter, r *http.Request) {
+	data := h.getInventoryData()
+	pages.InventoryContent(data).Render(r.Context(), w)
 }
 
 // =============================================================================
@@ -169,7 +188,7 @@ func (h *GOTHHandlers) HandleActionLogin(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	sess, err := h.SessionStore.Create(user.Username, user.UID, user.Groups)
+	sess, err := h.SessionStore.Create(user.Username, user.Groups, r.RemoteAddr)
 	if err != nil {
 		log.Printf("[GOTH] Session create failed: %v", err)
 		http.Redirect(w, r, "/ui/login?error=Session+error", http.StatusSeeOther)
@@ -178,7 +197,7 @@ func (h *GOTHHandlers) HandleActionLogin(w http.ResponseWriter, r *http.Request)
 
 	http.SetCookie(w, &http.Cookie{
 		Name:     "session_id",
-		Value:    sess.ID,
+		Value:    sess.Token,
 		Path:     "/",
 		HttpOnly: true,
 		Secure:   true,
@@ -307,6 +326,25 @@ func (h *GOTHHandlers) HandleRestartService(w http.ResponseWriter, r *http.Reque
 	log.Printf("[GOTH] Service %s restarted successfully", serviceName)
 	w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"message": "%s restarted", "type": "success"}}`, serviceName))
 	w.WriteHeader(http.StatusOK)
+}
+
+// HandleHealthFix runs auto-heal to fix issues
+func (h *GOTHHandlers) HandleHealthFix(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[GOTH] Health auto-fix requested")
+
+	// Execute health check with auto-heal flag
+	output, err := execNFTBanCommand("health", "check", "--auto-heal")
+	if err != nil {
+		log.Printf("[GOTH] Health auto-fix failed: %v - %s", err, output)
+		w.Header().Set("HX-Trigger", `{"showToast": {"message": "Auto-heal completed with errors", "type": "warning"}}`)
+	} else {
+		log.Printf("[GOTH] Health auto-fix completed successfully")
+		w.Header().Set("HX-Trigger", `{"showToast": {"message": "Auto-heal completed", "type": "success"}}`)
+	}
+
+	// Refresh the health content
+	data := h.getHealthData()
+	pages.HealthContentFragment(data).Render(r.Context(), w)
 }
 
 // RequireSession middleware
@@ -440,8 +478,14 @@ func (h *GOTHHandlers) getSecurity() ui.SecurityKPIs {
 	if output, err := execNFTBanCommand("stats", "--json"); err == nil {
 		var stats map[string]interface{}
 		if json.Unmarshal([]byte(extractJSON(output)), &stats) == nil {
+			// Stats JSON wraps data in "data" field
+			data, hasData := stats["data"].(map[string]interface{})
+			if !hasData {
+				data = stats // Fallback to root level
+			}
+
 			// Summary section
-			if summary, ok := stats["summary"].(map[string]interface{}); ok {
+			if summary, ok := data["summary"].(map[string]interface{}); ok {
 				if active, ok := summary["active_bans"].(float64); ok {
 					sec.BansTotal = int(active)
 				}
@@ -451,7 +495,7 @@ func (h *GOTHHandlers) getSecurity() ui.SecurityKPIs {
 			}
 
 			// Breakdown section with IPv4/IPv6 details
-			if breakdown, ok := stats["breakdown"].(map[string]interface{}); ok {
+			if breakdown, ok := data["breakdown"].(map[string]interface{}); ok {
 				// Blacklist (main bans)
 				if blacklist, ok := breakdown["blacklist"].(map[string]interface{}); ok {
 					if v4, ok := blacklist["ipv4"].(float64); ok {
@@ -503,23 +547,72 @@ func (h *GOTHHandlers) getSecurity() ui.SecurityKPIs {
 		sec.WhitelistIPv4 = sec.WhitelistTotal
 	}
 
-	// Network stats from metrics pipeline --json
-	if output, err := execNFTBanCommand("metrics", "pipeline", "--json"); err == nil {
-		var metrics map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &metrics) == nil {
-			if inMbps, ok := metrics["network_in_mbps"].(float64); ok {
-				sec.NetworkInMbps = inMbps
+	// Network stats from /sys/class/net
+	sec.NetworkInMbps, sec.NetworkOutMbps = getNetworkBandwidth()
+
+	// Packet drop rate from nftables counters
+	if output, err := exec.Command("nft", "list", "counters").CombinedOutput(); err == nil {
+		// Count drop entries (rough estimate)
+		sec.PacketDropRate = strings.Count(string(output), "drop")
+	}
+
+	return sec
+}
+
+// getNetworkBandwidth calculates network bandwidth in Mbps from all interfaces
+func getNetworkBandwidth() (inMbps, outMbps float64) {
+	var totalRxBytes, totalTxBytes uint64
+
+	// Read /sys/class/net to get all interfaces
+	entries, err := os.ReadDir("/sys/class/net")
+	if err != nil {
+		return 0, 0
+	}
+
+	for _, entry := range entries {
+		iface := entry.Name()
+		// Skip loopback and virtual interfaces
+		if iface == "lo" || strings.HasPrefix(iface, "veth") ||
+			strings.HasPrefix(iface, "docker") || strings.HasPrefix(iface, "br-") ||
+			strings.HasPrefix(iface, "virbr") {
+			continue
+		}
+
+		rxPath := fmt.Sprintf("/sys/class/net/%s/statistics/rx_bytes", iface)
+		txPath := fmt.Sprintf("/sys/class/net/%s/statistics/tx_bytes", iface)
+
+		if rxData, err := os.ReadFile(rxPath); err == nil {
+			if v, err := strconv.ParseUint(strings.TrimSpace(string(rxData)), 10, 64); err == nil {
+				totalRxBytes += v
 			}
-			if outMbps, ok := metrics["network_out_mbps"].(float64); ok {
-				sec.NetworkOutMbps = outMbps
-			}
-			if drops, ok := metrics["packet_drop_rate"].(float64); ok {
-				sec.PacketDropRate = int(drops)
+		}
+		if txData, err := os.ReadFile(txPath); err == nil {
+			if v, err := strconv.ParseUint(strings.TrimSpace(string(txData)), 10, 64); err == nil {
+				totalTxBytes += v
 			}
 		}
 	}
 
-	return sec
+	now := time.Now()
+
+	// Calculate rate if we have previous measurement
+	if !lastNetTime.IsZero() {
+		elapsed := now.Sub(lastNetTime).Seconds()
+		if elapsed > 0 {
+			// Calculate bytes per second, then convert to Mbps
+			rxRate := float64(totalRxBytes-lastNetRxBytes) / elapsed
+			txRate := float64(totalTxBytes-lastNetTxBytes) / elapsed
+			inMbps = (rxRate * 8) / 1000000  // bits to Mbps
+			outMbps = (txRate * 8) / 1000000
+		}
+	}
+
+	// Store current values for next calculation
+	lastNetRxBytes = totalRxBytes
+	lastNetTxBytes = totalTxBytes
+	lastNetTime = now
+
+	return inMbps, outMbps
 }
 
 func (h *GOTHHandlers) getResources() ui.ResourceStats {
@@ -681,101 +774,180 @@ func (h *GOTHHandlers) getResources() ui.ResourceStats {
 
 func (h *GOTHHandlers) getModulesList() []ui.ModuleStatus {
 	modules := []ui.ModuleStatus{}
+	now := time.Now().Format("15:04:05")
 
-	// Try nftban module list --json first
-	if output, err := execNFTBanCommand("module", "list", "--json"); err == nil {
-		var modList []map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &modList) == nil {
-			for _, m := range modList {
-				mod := ui.ModuleStatus{
-					LastSync: time.Now().Format("15:04:05"),
+	// Get comprehensive status from nftban status --json
+	if output, err := execNFTBanCommand("status", "--json"); err == nil {
+		var status map[string]interface{}
+		if json.Unmarshal([]byte(extractJSON(output)), &status) == nil {
+			// Parse services section
+			if services, ok := status["services"].(map[string]interface{}); ok {
+				// nftables
+				if svc, ok := services["nftables"].(map[string]interface{}); ok {
+					mod := ui.ModuleStatus{
+						Name:        "nftables",
+						Description: "Packet filtering firewall",
+						LastSync:    now,
+					}
+					if st, ok := svc["status"].(string); ok {
+						mod.Status = st
+						mod.Running = st == "active"
+						mod.Enabled = true
+					}
+					modules = append(modules, mod)
 				}
-				if name, ok := m["name"].(string); ok {
-					mod.Name = name
+
+				// Login Monitor
+				if svc, ok := services["login_monitor"].(map[string]interface{}); ok {
+					mod := ui.ModuleStatus{
+						Name:        "login-monitor",
+						Description: "SSH/FTP login failure detection",
+						ServiceName: "nftban-login-monitor",
+						LastSync:    now,
+					}
+					if st, ok := svc["status"].(string); ok {
+						mod.Status = st
+						mod.Running = st == "active"
+						mod.Enabled = st == "active"
+					}
+					if pid, ok := svc["pid"].(float64); ok && pid > 0 {
+						mod.Running = true
+					}
+					if mem, ok := svc["memory_mb"].(float64); ok {
+						mod.MemoryMB = mem
+					}
+					modules = append(modules, mod)
 				}
-				if desc, ok := m["description"].(string); ok {
-					mod.Description = desc
+
+				// Metrics Exporter
+				if svc, ok := services["metrics_exporter"].(map[string]interface{}); ok {
+					mod := ui.ModuleStatus{
+						Name:        "metrics-exporter",
+						Description: "Prometheus metrics exporter",
+						ServiceName: "nftban-metrics-exporter",
+						LastSync:    now,
+					}
+					if st, ok := svc["status"].(string); ok {
+						mod.Status = st
+						mod.Running = st == "active"
+						mod.Enabled = st == "active" || st == "timer"
+					}
+					modules = append(modules, mod)
 				}
-				if status, ok := m["status"].(string); ok {
-					mod.Status = status
-				}
-				if enabled, ok := m["enabled"].(bool); ok {
-					mod.Enabled = enabled
-				}
-				if running, ok := m["running"].(bool); ok {
-					mod.Running = running
-				}
-				if service, ok := m["service"].(string); ok {
-					mod.ServiceName = service
-				}
-				if bans, ok := m["bans_produced"].(float64); ok {
-					mod.BansProduced = int(bans)
-				}
-				if cpu, ok := m["cpu_percent"].(float64); ok {
-					mod.CPUPercent = cpu
-				}
-				if mem, ok := m["memory_mb"].(float64); ok {
-					mod.MemoryMB = mem
-				}
-				if sync, ok := m["last_sync"].(string); ok {
-					mod.LastSync = sync
-				}
-				modules = append(modules, mod)
 			}
-			if len(modules) > 0 {
-				return modules
+
+			// Parse protection section
+			if protection, ok := status["protection"].(map[string]interface{}); ok {
+				// Suricata IDS
+				if suri, ok := protection["suricata"].(map[string]interface{}); ok {
+					mod := ui.ModuleStatus{
+						Name:        "suricata",
+						Description: "Network intrusion detection",
+						ServiceName: "nftban-suricata",
+						LastSync:    now,
+					}
+					if enabled, ok := suri["enabled"].(bool); ok {
+						mod.Enabled = enabled
+						if enabled {
+							mod.Status = "active"
+							mod.Running = true
+						} else {
+							mod.Status = "inactive"
+						}
+					}
+					modules = append(modules, mod)
+				}
+
+				// GeoIP/GeoBan
+				if geo, ok := protection["geoip"].(map[string]interface{}); ok {
+					mod := ui.ModuleStatus{
+						Name:        "geoban",
+						Description: "Country-based IP blocking",
+						LastSync:    now,
+					}
+					if installed, ok := geo["installed"].(bool); ok {
+						mod.Enabled = installed
+						if installed {
+							mod.Status = "active"
+							mod.Running = true
+						} else {
+							mod.Status = "inactive"
+						}
+					}
+					if countries, ok := geo["blocked_countries"].(float64); ok {
+						mod.BansProduced = int(countries)
+					}
+					modules = append(modules, mod)
+				}
+
+				// Feeds
+				if feeds, ok := protection["feeds"].(map[string]interface{}); ok {
+					mod := ui.ModuleStatus{
+						Name:        "threat-feeds",
+						Description: "Threat intelligence feeds",
+						ServiceName: "nftban-core-feeds",
+						LastSync:    now,
+					}
+					if count, ok := feeds["count"].(float64); ok {
+						mod.BansProduced = int(count)
+						mod.Enabled = count > 0
+						if count > 0 {
+							mod.Status = "active"
+							mod.Running = true
+						} else {
+							mod.Status = "inactive"
+						}
+					}
+					modules = append(modules, mod)
+				}
+			}
+
+			// Check timers for portscan and ddos status
+			if timers, ok := status["timers"].(map[string]interface{}); ok {
+				// Add portscan module based on config check
+				portscanMod := ui.ModuleStatus{
+					Name:        "portscan",
+					Description: "Port scan detection",
+					LastSync:    now,
+					Status:      "inactive",
+				}
+				// Check if portscan is enabled via config
+				if output, err := execNFTBanCommand("config", "get", "portscan.enabled"); err == nil {
+					if strings.Contains(string(output), "true") || strings.Contains(string(output), "1") {
+						portscanMod.Enabled = true
+						portscanMod.Status = "active"
+						portscanMod.Running = true
+					}
+				}
+				modules = append(modules, portscanMod)
+
+				// Add ddos module
+				ddosMod := ui.ModuleStatus{
+					Name:        "ddos",
+					Description: "DDoS protection",
+					LastSync:    now,
+					Status:      "inactive",
+				}
+				if output, err := execNFTBanCommand("config", "get", "ddos.enabled"); err == nil {
+					if strings.Contains(string(output), "true") || strings.Contains(string(output), "1") {
+						ddosMod.Enabled = true
+						ddosMod.Status = "active"
+						ddosMod.Running = true
+					}
+				}
+				modules = append(modules, ddosMod)
+
+				// Show timer status
+				_ = timers // Used above for reference
 			}
 		}
 	}
 
-	// Fallback: known modules with service checks
-	knownModules := []struct {
-		name        string
-		description string
-		service     string
-	}{
-		{"login-monitor", "SSH/FTP login failure detection", "nftban-login-monitor"},
-		{"feeds", "Threat intelligence feeds", "nftban-feeds"},
-		{"geoblock", "Country-based blocking", ""},
-		{"ratelimit", "Connection rate limiting", ""},
-	}
-
-	for _, mod := range knownModules {
-		info := ui.ModuleStatus{
-			Name:        mod.name,
-			Description: mod.description,
-			ServiceName: mod.service,
-			Status:      "inactive",
-			LastSync:    time.Now().Format("15:04:05"),
+	// If no modules found, return basic fallback
+	if len(modules) == 0 {
+		modules = []ui.ModuleStatus{
+			{Name: "nftables", Description: "Packet filtering", Status: "unknown", LastSync: now},
 		}
-
-		// Check module status via JSON
-		if output, err := execNFTBanCommand("module", "status", mod.name, "--json"); err == nil {
-			var modStatus map[string]interface{}
-			if json.Unmarshal([]byte(extractJSON(output)), &modStatus) == nil {
-				if enabled, ok := modStatus["enabled"].(bool); ok {
-					info.Enabled = enabled
-				}
-				if running, ok := modStatus["running"].(bool); ok {
-					info.Running = running
-				}
-				if status, ok := modStatus["status"].(string); ok {
-					info.Status = status
-				}
-			}
-		}
-
-		// Check service status if applicable
-		if mod.service != "" && !info.Running {
-			if output, err := exec.Command("systemctl", "is-active", mod.service).Output(); err == nil {
-				if strings.TrimSpace(string(output)) == "active" {
-					info.Running = true
-					info.Status = "active"
-				}
-			}
-		}
-
-		modules = append(modules, info)
 	}
 
 	return modules
@@ -855,58 +1027,116 @@ func (h *GOTHHandlers) getHealthItems() []ui.HealthItem {
 	return items
 }
 
-func (h *GOTHHandlers) getHealthData() pages.HealthData {
-	data := pages.HealthData{}
-
-	// Services
-	data.Services = []ui.HealthItem{
-		checkServiceHealth("nftban-core", "NFTBan Core"),
-		checkServiceHealth("nftban-login-monitor", "Login Monitor"),
-		checkServiceHealth("nftban-ui", "Web UI"),
-		checkServiceHealth("nftban-ui-auth", "Auth Service"),
+func (h *GOTHHandlers) getHealthData() ui.HealthData {
+	data := ui.HealthData{
+		Timestamp:     time.Now().Format("2006-01-02 15:04:05"),
+		OverallStatus: "ok",
+		ExitCode:      0,
 	}
 
-	// Network
-	data.Network = []ui.HealthItem{}
-	if output, err := exec.Command("nft", "list", "tables").Output(); err == nil {
-		if strings.Contains(string(output), "nftban") {
-			data.Network = append(data.Network, ui.HealthItem{Name: "NFTables table", Status: "ok"})
-		} else {
-			data.Network = append(data.Network, ui.HealthItem{Name: "NFTables table", Status: "error"})
-		}
-	}
-
-	// Permissions
-	data.Permissions = []ui.HealthItem{}
-	paths := []string{"/etc/nftban", "/var/lib/nftban", "/var/log/nftban"}
-	for _, path := range paths {
-		if _, err := os.Stat(path); err == nil {
-			data.Permissions = append(data.Permissions, ui.HealthItem{Name: path, Status: "ok"})
-		} else {
-			data.Permissions = append(data.Permissions, ui.HealthItem{Name: path, Status: "error"})
-		}
-	}
-
-	// Config
-	data.Config = []ui.HealthItem{}
-	if _, err := os.Stat("/etc/nftban/nftban.conf"); err == nil {
-		data.Config = append(data.Config, ui.HealthItem{Name: "Main config", Status: "ok"})
-	} else {
-		data.Config = append(data.Config, ui.HealthItem{Name: "Main config", Status: "error"})
-	}
-
-	// Calculate summary
-	for _, items := range [][]ui.HealthItem{data.Services, data.Network, data.Permissions, data.Config} {
-		for _, item := range items {
-			data.Summary.Total++
-			switch item.Status {
-			case "ok":
-				data.Summary.OK++
-			case "warning":
-				data.Summary.Warning++
-			default:
-				data.Summary.Error++
+	// Use nftban health check --json for comprehensive health data
+	if output, err := execNFTBanCommand("health", "check", "--json"); err == nil {
+		var healthJSON map[string]interface{}
+		if json.Unmarshal([]byte(extractJSON(output)), &healthJSON) == nil {
+			// Timestamp
+			if ts, ok := healthJSON["timestamp"].(string); ok {
+				data.Timestamp = ts
 			}
+
+			// Overall status
+			if status, ok := healthJSON["overall_status"].(string); ok {
+				data.OverallStatus = status
+			}
+
+			// Exit code
+			if exitCode, ok := healthJSON["exit_code"].(float64); ok {
+				data.ExitCode = int(exitCode)
+			}
+
+			// Summary counts
+			if summary, ok := healthJSON["summary"].(map[string]interface{}); ok {
+				if errors, ok := summary["errors"].(float64); ok {
+					data.ErrorCount = int(errors)
+				}
+				if warnings, ok := summary["warnings"].(float64); ok {
+					data.WarningCount = int(warnings)
+				}
+			}
+
+			// Parse checks section
+			if checks, ok := healthJSON["checks"].(map[string]interface{}); ok {
+				for name, checkData := range checks {
+					if checkMap, ok := checkData.(map[string]interface{}); ok {
+						check := ui.HealthCheck{
+							Name: name,
+						}
+						if status, ok := checkMap["status"].(string); ok {
+							check.Status = status
+						}
+						if exitCode, ok := checkMap["exit_code"].(float64); ok {
+							check.ExitCode = int(exitCode)
+						}
+						if message, ok := checkMap["message"].(string); ok {
+							check.Message = message
+						}
+						data.Checks = append(data.Checks, check)
+					}
+				}
+			}
+
+			// Parse errors array
+			if errors, ok := healthJSON["errors"].([]interface{}); ok {
+				for _, err := range errors {
+					if errStr, ok := err.(string); ok {
+						data.Errors = append(data.Errors, errStr)
+					}
+				}
+			}
+
+			// Parse warnings array
+			if warnings, ok := healthJSON["warnings"].([]interface{}); ok {
+				for _, warn := range warnings {
+					if warnStr, ok := warn.(string); ok {
+						data.Warnings = append(data.Warnings, warnStr)
+					}
+				}
+			}
+		}
+	} else {
+		// Fallback if health check command fails
+		data.OverallStatus = "error"
+		data.ExitCode = 1
+		data.ErrorCount = 1
+		data.Errors = append(data.Errors, "Health check command failed: "+err.Error())
+
+		// Still try to get basic service status
+		services := []struct {
+			service string
+			name    string
+		}{
+			{"nftban-core", "core"},
+			{"nftban-login-monitor", "login_monitor"},
+			{"nftban-ui", "ui"},
+		}
+
+		for _, svc := range services {
+			check := ui.HealthCheck{Name: svc.name}
+			if output, err := exec.Command("systemctl", "is-active", svc.service).Output(); err == nil {
+				switch strings.TrimSpace(string(output)) {
+				case "active":
+					check.Status = "ok"
+				case "inactive":
+					check.Status = "warning"
+					check.Message = "Service inactive"
+				default:
+					check.Status = "error"
+					check.Message = "Service not running"
+				}
+			} else {
+				check.Status = "error"
+				check.Message = "Unable to check service"
+			}
+			data.Checks = append(data.Checks, check)
 		}
 	}
 
@@ -1001,4 +1231,283 @@ func isValidIP(ip string) bool {
 		return true // Basic check - let the CLI validate fully
 	}
 	return false
+}
+
+// =============================================================================
+// INVENTORY DATA
+// =============================================================================
+
+func (h *GOTHHandlers) getInventoryData() ui.InventoryData {
+	data := ui.InventoryData{}
+
+	// Get services from systemctl
+	data.Services = h.getServicesList()
+
+	// Get timers from systemctl
+	data.Timers = h.getTimersList()
+
+	// Get binaries
+	data.Binaries = h.getBinariesList()
+
+	// Get config files
+	data.Configs = h.getConfigsList()
+
+	// Get FHS data (limited to avoid too much data)
+	data.FHS = h.getFHSList()
+
+	return data
+}
+
+func (h *GOTHHandlers) getServicesList() []ui.ServiceInfo {
+	services := []ui.ServiceInfo{}
+
+	// NFTBan services to check
+	svcNames := []struct {
+		name string
+		desc string
+	}{
+		{"nftables", "Packet filtering firewall"},
+		{"nftban-ui", "Web GUI server"},
+		{"nftban-api", "REST API server"},
+		{"nftban-login-monitor", "Login failure detection"},
+		{"nftban-suricata", "Suricata IDS integration"},
+		{"prometheus", "Metrics database"},
+		{"node_exporter", "System metrics exporter"},
+	}
+
+	for _, s := range svcNames {
+		svc := ui.ServiceInfo{
+			Name:        s.name,
+			Description: s.desc,
+			Status:      "inactive",
+		}
+
+		// Check if service exists and get status
+		if output, err := exec.Command("systemctl", "show", s.name,
+			"--property=ActiveState,MainPID,MemoryCurrent,ActiveEnterTimestamp").Output(); err == nil {
+
+			lines := strings.Split(string(output), "\n")
+			for _, line := range lines {
+				parts := strings.SplitN(line, "=", 2)
+				if len(parts) != 2 {
+					continue
+				}
+				key, val := parts[0], parts[1]
+				switch key {
+				case "ActiveState":
+					svc.Status = val
+				case "MainPID":
+					if pid, err := strconv.Atoi(val); err == nil {
+						svc.PID = pid
+					}
+				case "MemoryCurrent":
+					if mem, err := strconv.ParseUint(val, 10, 64); err == nil && mem > 0 {
+						svc.MemoryMB = float64(mem) / 1024 / 1024
+					}
+				case "ActiveEnterTimestamp":
+					if val != "" && val != "n/a" {
+						// Parse timestamp and calculate uptime
+						svc.Uptime = val
+					}
+				}
+			}
+		}
+
+		services = append(services, svc)
+	}
+
+	return services
+}
+
+func (h *GOTHHandlers) getTimersList() []ui.TimerInfo {
+	timers := []ui.TimerInfo{}
+
+	// NFTBan timers
+	timerNames := []struct {
+		name string
+		desc string
+	}{
+		{"nftban-health.timer", "Health checks & auto-heal"},
+		{"nftban-maintenance.timer", "Maintenance tasks"},
+		{"nftban-metrics-exporter.timer", "Metrics collection"},
+		{"nftban-core-feeds.timer", "Threat feed sync"},
+		{"nftban-core-geoip.timer", "GeoIP database updates"},
+		{"nftban-queue.timer", "Ban queue processing"},
+	}
+
+	for _, t := range timerNames {
+		timer := ui.TimerInfo{
+			Name:        strings.TrimSuffix(t.name, ".timer"),
+			Description: t.desc,
+			Status:      "inactive",
+		}
+
+		// Check timer status
+		if output, err := exec.Command("systemctl", "show", t.name,
+			"--property=ActiveState,NextElapseUSecRealtime,LastTriggerUSec").Output(); err == nil {
+
+			lines := strings.Split(string(output), "\n")
+			for _, line := range lines {
+				parts := strings.SplitN(line, "=", 2)
+				if len(parts) != 2 {
+					continue
+				}
+				key, val := parts[0], parts[1]
+				switch key {
+				case "ActiveState":
+					timer.Status = val
+				case "NextElapseUSecRealtime":
+					if val != "" && val != "n/a" {
+						timer.NextRun = val
+					}
+				case "LastTriggerUSec":
+					if val != "" && val != "n/a" {
+						timer.LastRun = val
+					}
+				}
+			}
+		}
+
+		// Check if timer is enabled
+		if output, err := exec.Command("systemctl", "is-enabled", t.name).Output(); err == nil {
+			if strings.TrimSpace(string(output)) == "enabled" && timer.Status == "inactive" {
+				timer.Status = "enabled"
+			}
+		}
+
+		timers = append(timers, timer)
+	}
+
+	return timers
+}
+
+func (h *GOTHHandlers) getBinariesList() []ui.BinaryInfo {
+	binaries := []ui.BinaryInfo{}
+
+	// NFTBan binaries to check
+	binPaths := []struct {
+		name string
+		path string
+	}{
+		{"nftban", "/usr/sbin/nftban"},
+		{"nftban-ui", "/usr/sbin/nftban-ui"},
+		{"nftban-core", "/usr/sbin/nftban-core"},
+		{"nftban-api", "/usr/sbin/nftban-api"},
+		{"nft", "/usr/sbin/nft"},
+	}
+
+	for _, b := range binPaths {
+		bin := ui.BinaryInfo{
+			Name: b.name,
+			Path: b.path,
+		}
+
+		// Check if binary exists and get info
+		if info, err := os.Stat(b.path); err == nil {
+			bin.Size = formatBytes(info.Size())
+
+			// Try to get version
+			if output, err := exec.Command(b.path, "--version").Output(); err == nil {
+				ver := strings.TrimSpace(string(output))
+				if len(ver) > 50 {
+					ver = ver[:50]
+				}
+				bin.Version = ver
+			}
+		} else {
+			bin.Version = "not installed"
+		}
+
+		binaries = append(binaries, bin)
+	}
+
+	return binaries
+}
+
+func (h *GOTHHandlers) getConfigsList() []ui.ConfigInfo {
+	configs := []ui.ConfigInfo{}
+
+	// Important config files
+	cfgPaths := []struct {
+		name string
+		path string
+	}{
+		{"nftban.conf", "/etc/nftban/nftban.conf"},
+		{"ui.conf", "/etc/nftban/ui.conf"},
+		{"services.conf", "/etc/nftban/conf.d/services.conf"},
+		{"trust.conf", "/etc/nftban/conf.d/trust.conf"},
+		{"login/main.conf", "/etc/nftban/conf.d/login/main.conf"},
+		{"ddos/main.conf", "/etc/nftban/conf.d/ddos/main.conf"},
+		{"portscan/main.conf", "/etc/nftban/conf.d/portscan/main.conf"},
+	}
+
+	for _, c := range cfgPaths {
+		cfg := ui.ConfigInfo{
+			Name: c.name,
+			Path: c.path,
+		}
+
+		if info, err := os.Stat(c.path); err == nil {
+			cfg.Size = formatBytes(info.Size())
+			cfg.Modified = info.ModTime().Format("2006-01-02 15:04")
+		} else {
+			cfg.Modified = "not found"
+		}
+
+		configs = append(configs, cfg)
+	}
+
+	return configs
+}
+
+func (h *GOTHHandlers) getFHSList() []ui.FHSItem {
+	fhs := []ui.FHSItem{}
+
+	// Key FHS directories
+	dirs := []string{
+		"/etc/nftban",
+		"/var/lib/nftban",
+		"/var/log/nftban",
+		"/var/cache/nftban",
+		"/run/nftban",
+		"/usr/lib/nftban",
+		"/usr/share/nftban",
+	}
+
+	for _, dir := range dirs {
+		item := ui.FHSItem{
+			Path:   dir,
+			Status: "ok",
+		}
+
+		if info, err := os.Stat(dir); err == nil {
+			mode := info.Mode()
+			item.Actual = fmt.Sprintf("%04o", mode.Perm())
+			item.Expected = "0755"
+			if item.Actual != "0755" && item.Actual != "0750" {
+				item.Status = "warning"
+			}
+		} else {
+			item.Status = "error"
+			item.Actual = "missing"
+			item.Notes = "Directory does not exist"
+		}
+
+		fhs = append(fhs, item)
+	}
+
+	return fhs
+}
+
+func formatBytes(bytes int64) string {
+	const unit = 1024
+	if bytes < unit {
+		return fmt.Sprintf("%d B", bytes)
+	}
+	div, exp := int64(unit), 0
+	for n := bytes / unit; n >= unit; n /= unit {
+		div *= unit
+		exp++
+	}
+	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }

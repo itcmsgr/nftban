@@ -177,7 +177,27 @@ type CountryStats struct {
 // HEALTH PAGE DATA
 // =============================================================================
 
-// HealthItem represents a single health check
+// HealthData holds comprehensive health check results
+type HealthData struct {
+	Timestamp     string
+	OverallStatus string // "ok", "warning", "error"
+	ExitCode      int
+	ErrorCount    int
+	WarningCount  int
+	Checks        []HealthCheck
+	Errors        []string
+	Warnings      []string
+}
+
+// HealthCheck represents a single health check category
+type HealthCheck struct {
+	Name     string
+	Status   string // "ok", "warning", "error"
+	ExitCode int
+	Message  string
+}
+
+// HealthItem represents a single health check (legacy)
 type HealthItem struct {
 	Name   string
 	Status string // "ok", "warning", "error"
@@ -204,4 +224,61 @@ type NavItem struct {
 type UserInfo struct {
 	Username string
 	Role     string
+}
+
+// =============================================================================
+// INVENTORY PAGE
+// =============================================================================
+
+// InventoryData holds all inventory information
+type InventoryData struct {
+	Services []ServiceInfo
+	Timers   []TimerInfo
+	Binaries []BinaryInfo
+	Configs  []ConfigInfo
+	FHS      []FHSItem
+}
+
+// ServiceInfo represents a systemd service
+type ServiceInfo struct {
+	Name        string
+	Description string
+	Status      string // "active", "inactive", "failed"
+	PID         int
+	MemoryMB    float64
+	Uptime      string
+}
+
+// TimerInfo represents a systemd timer
+type TimerInfo struct {
+	Name        string
+	Description string
+	Status      string // "active", "inactive", "enabled"
+	NextRun     string
+	LastRun     string
+}
+
+// BinaryInfo represents an installed binary
+type BinaryInfo struct {
+	Name    string
+	Path    string
+	Version string
+	Size    string
+}
+
+// ConfigInfo represents a configuration file
+type ConfigInfo struct {
+	Name     string
+	Path     string
+	Modified string
+	Size     string
+}
+
+// FHSItem represents a filesystem hierarchy item
+type FHSItem struct {
+	Path     string
+	Expected string
+	Actual   string
+	Status   string // "ok", "error", "warning"
+	Notes    string
 }
