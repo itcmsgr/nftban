@@ -443,6 +443,7 @@ nftban_trust_list_providers() {
 }
 
 nftban_trust_list() {
+    # shellcheck disable=SC2034  # Reserved for future JSON output support
     local json_mode="${1:-false}"
 
     nftban_trust_banner
@@ -470,7 +471,7 @@ nftban_trust_enable() {
     local provider="${1^^}"
 
     # Validate provider
-    if [[ ! " $TRUST_PROVIDER_LIST " =~ " $provider " ]]; then
+    if [[ ! " $TRUST_PROVIDER_LIST " =~ [[:space:]]${provider}[[:space:]] ]]; then
         echo "ERROR: Unknown provider: $provider" >&2
         echo ""
         echo "Available providers:"
@@ -549,7 +550,7 @@ nftban_trust_disable() {
     local provider="${1^^}"
 
     # Validate provider
-    if [[ ! " $TRUST_PROVIDER_LIST " =~ " $provider " ]]; then
+    if [[ ! " $TRUST_PROVIDER_LIST " =~ [[:space:]]${provider}[[:space:]] ]]; then
         echo "ERROR: Unknown provider: $provider" >&2
         return 1
     fi
