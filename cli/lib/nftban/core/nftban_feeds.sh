@@ -153,12 +153,12 @@ nftban_feeds_get_property() {
 
     # 1. Check .conf.local override first (user customizations)
     if [[ -f "$local_conf" ]]; then
-        value=$(grep "^${var_name}=" "$local_conf" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"')
+        value=$(grep "^${var_name}=" "$local_conf" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"' || true)
     fi
 
     # 2. Fallback to feeds.conf default if not overridden
     if [[ -z "$value" ]] && [[ -f "$NFTBAN_FEEDS_CONFIG" ]]; then
-        value=$(grep "^${var_name}=" "$NFTBAN_FEEDS_CONFIG" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"')
+        value=$(grep "^${var_name}=" "$NFTBAN_FEEDS_CONFIG" 2>/dev/null | head -1 | cut -d'=' -f2- | tr -d '"' || true)
     fi
 
     echo "$value"
