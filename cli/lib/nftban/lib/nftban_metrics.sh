@@ -54,9 +54,10 @@ nftban_metrics_start_stack() {
 
     local verbose="${1:-true}"  # Show output by default
 
-    # Create textfile collector directory
-    mkdir -p /var/lib/node_exporter/textfile_collector
-    chown -R nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
+    # Create textfile collector directory with correct ownership (no -R needed)
+    install -d -o nftban -g nftban -m 0755 /var/lib/node_exporter/textfile_collector 2>/dev/null || \
+        mkdir -p /var/lib/node_exporter/textfile_collector
+    chown nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
 
     # Start Node Exporter (get service name from distro config, fallback to common names)
     local node_exporter_started=false
@@ -343,13 +344,14 @@ nftban_metrics_install_from_binaries() {
         useradd --system --no-create-home --shell /usr/sbin/nologin prometheus 2>/dev/null || true
     fi
 
-    # Create directories
-    mkdir -p /etc/prometheus
-    mkdir -p /var/lib/prometheus
-    mkdir -p /var/lib/node_exporter/textfile_collector
+    # Create directories with correct ownership (no -R needed for fresh dirs)
+    install -d -o prometheus -g prometheus -m 0755 /etc/prometheus 2>/dev/null || mkdir -p /etc/prometheus
+    install -d -o prometheus -g prometheus -m 0755 /var/lib/prometheus 2>/dev/null || mkdir -p /var/lib/prometheus
+    install -d -o nftban -g nftban -m 0755 /var/lib/node_exporter/textfile_collector 2>/dev/null || \
+        mkdir -p /var/lib/node_exporter/textfile_collector
 
-    chown -R prometheus:prometheus /etc/prometheus /var/lib/prometheus 2>/dev/null || true
-    chown -R nftban:nftban /var/lib/node_exporter 2>/dev/null || true
+    chown prometheus:prometheus /etc/prometheus /var/lib/prometheus 2>/dev/null || true
+    chown nftban:nftban /var/lib/node_exporter /var/lib/node_exporter/textfile_collector 2>/dev/null || true
 
     # Create minimal Prometheus config if doesn't exist
     if [[ ! -f /etc/prometheus/prometheus.yml ]]; then
@@ -472,9 +474,10 @@ nftban_metrics_start_stack_victoriametrics() {
 
     local verbose="${1:-true}"  # Show output by default
 
-    # Create textfile collector directory (same as Prometheus)
-    mkdir -p /var/lib/node_exporter/textfile_collector
-    chown -R nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
+    # Create textfile collector directory with correct ownership (no -R needed)
+    install -d -o nftban -g nftban -m 0755 /var/lib/node_exporter/textfile_collector 2>/dev/null || \
+        mkdir -p /var/lib/node_exporter/textfile_collector
+    chown nftban:nftban /var/lib/node_exporter/textfile_collector 2>/dev/null || true
 
     # Start Node Exporter (get service name from distro config, fallback to common names)
     local node_exporter_started=false

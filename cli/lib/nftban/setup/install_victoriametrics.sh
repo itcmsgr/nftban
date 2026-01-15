@@ -106,11 +106,9 @@ install_via_binary() {
     cp victoria-metrics-prod /usr/local/bin/
     chmod +x /usr/local/bin/victoria-metrics-prod
 
-    # Create directories
-    mkdir -p "$VM_DIR" "$VM_DATA_DIR"
-
-    # Set ownership
-    chown -R "$VM_USER:$VM_GROUP" "$VM_DIR" "$VM_DATA_DIR"
+    # Create directories with correct ownership (no -R needed for fresh directories)
+    install -d -o "$VM_USER" -g "$VM_GROUP" -m 0755 "$VM_DIR"
+    install -d -o "$VM_USER" -g "$VM_GROUP" -m 0755 "$VM_DATA_DIR"
 
     # Cleanup
     cd /

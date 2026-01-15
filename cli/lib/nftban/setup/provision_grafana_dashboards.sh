@@ -6,14 +6,24 @@
 # Purpose: Automatically provision NFTBan dashboards to Grafana
 # Location: /usr/lib/nftban/setup/provision_grafana_dashboards.sh
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:name=provision_grafana_dashboards
-# meta:type=setup
-# meta:header=Grafana Dashboard Provisioning
-# meta:version=1.0.0
+# meta:name="provision_grafana_dashboards"
+# meta:type="setup"
+# meta:header="Grafana Dashboard Provisioning"
+# meta:version="1.0.0"
 #
-# meta:created_date=2025-11-17
+# meta:description="Automatically provision NFTBan dashboards to Grafana"
+# meta:inventory.files=""
+# meta:inventory.binaries="cp,chown,chmod,find,systemctl"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="grafana-server.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2025-11-17"
+# meta:updated_date="2026-01-15"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -146,17 +156,25 @@ copy_dashboards() {
 set_permissions() {
     print_info "Setting permissions..."
 
+    local target_user="root"
+    local target_group="root"
+
     # Check if grafana user exists
-    if ! id "$GRAFANA_USER" &>/dev/null; then
-        print_warn "Grafana user '$GRAFANA_USER' not found, using root ownership"
-        chown -R root:root "$GRAFANA_DASHBOARDS_DIR"
-    else
-        chown -R "$GRAFANA_USER:$GRAFANA_GROUP" "$GRAFANA_DASHBOARDS_DIR"
+    if id "$GRAFANA_USER" &>/dev/null; then
+        target_user="$GRAFANA_USER"
+        target_group="$GRAFANA_GROUP"
         print_status "Set ownership to $GRAFANA_USER:$GRAFANA_GROUP"
+    else
+        print_warn "Grafana user '$GRAFANA_USER' not found, using root ownership"
     fi
 
+    # Set directory permissions (no -R, explicit operations)
+    chown "$target_user:$target_group" "$GRAFANA_DASHBOARDS_DIR"
     chmod 755 "$GRAFANA_DASHBOARDS_DIR"
-    chmod 644 "$GRAFANA_DASHBOARDS_DIR"/*.json
+
+    # Set file permissions explicitly (only JSON files in this directory)
+    find "$GRAFANA_DASHBOARDS_DIR" -maxdepth 1 -name "*.json" -exec chown "$target_user:$target_group" {} \;
+    find "$GRAFANA_DASHBOARDS_DIR" -maxdepth 1 -name "*.json" -exec chmod 644 {} \;
 
     print_status "Set permissions (755 for directory, 644 for JSON files)"
 }
