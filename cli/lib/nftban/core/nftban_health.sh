@@ -497,6 +497,7 @@ nftban_health_check_all() {
     # Run optional feature checks (don't count as errors)
     nftban_health_check_modules 2>/dev/null || true
     nftban_health_check_geoip 2>/dev/null || true
+    nftban_health_check_geoban 2>/dev/null || true
     nftban_health_check_metrics 2>/dev/null || true
 
     # Auto-heal if requested
@@ -540,6 +541,7 @@ export -f nftban_health_check_permissions
 export -f nftban_health_check_services
 export -f nftban_health_check_modules
 export -f nftban_health_check_geoip
+export -f nftban_health_check_geoban
 export -f nftban_health_check_databases
 export -f nftban_health_check_config
 export -f nftban_health_check_registry

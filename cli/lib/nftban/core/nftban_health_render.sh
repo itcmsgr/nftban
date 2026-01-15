@@ -60,6 +60,7 @@ nftban_health_render_terminal() {
         [services]="Services"
         [modules]="Modules"
         [geoip]="GeoIP"
+        [geoban]="GeoBan"
         [databases]="Databases"
         [polkit]="Polkit"
         [bash_completion]="Bash Complet"
@@ -101,7 +102,7 @@ nftban_health_render_terminal() {
     echo "SYSTEM CHECKS"
     echo "───────────────────────────────────────────────────────────"
 
-    for check in binaries paths permissions services modules config geoip databases; do
+    for check in binaries paths permissions services modules config geoip geoban databases; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local status_text
