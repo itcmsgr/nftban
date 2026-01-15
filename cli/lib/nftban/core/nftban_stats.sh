@@ -427,12 +427,16 @@ nftban_stats_top_countries() {
     # Get top countries (requires GeoIP)
     # Usage: nftban_stats_top_countries [limit] [since] [until]
     # Returns: JSON array [{"country":"XX","count":N},...]
+    #
+    # OPTIMIZED: 2026-01-15 - Aggregate IPs first, then lookup unique IPs only
+    # Previous: O(n) process spawns (one per IP)
+    # Now: O(unique_ips) process spawns + O(n) in-memory aggregation
 
     local limit="${1:-${STATS_TOP_N}}"
     local since="${2:-1970-01-01}"
     local until="${3:-$(date +%Y-%m-%d)}"
 
-    if [[ "${STATS_GEOIP_ENABLED}" != "true" ]] || ! command -v nftban-geoip &>/dev/null; then
+    if [[ "${STATS_GEOIP_ENABLED}" != "true" ]] || ! command -v nftban-core &>/dev/null; then
         echo "[]"
         return 0
     fi
@@ -442,25 +446,38 @@ nftban_stats_top_countries() {
         return 0
     fi
 
-    # Extract banned IPs and lookup countries
-    local temp_file
-    temp_file=$(mktemp)
+    local temp_ips temp_countries
+    temp_ips=$(mktemp)
+    temp_countries=$(mktemp)
 
+    # Step 1: Extract and count unique IPs (O(n) in awk, very fast)
     awk -F'|' -v since="$since" -v until="$until" \
-        '$1 >= since && $1 <= until && $6 == "BANNED" {print $4}' \
-        "$NFTBAN_BAN_LOG" | \
-    while read -r ip; do
-        nftban-core geoip lookup "$ip" 2>/dev/null | cut -d'/' -f1 || echo "Unknown"
-    done | \
-    sort | uniq -c | sort -rn | awk -v limit="$limit" 'NR<=limit' > "$temp_file"
+        '$1 >= since && $1 <= until && $6 == "BANNED" {ips[$4]++}
+         END {for (ip in ips) print ip, ips[ip]}' \
+        "$NFTBAN_BAN_LOG" > "$temp_ips"
 
-    # Convert to JSON
+    # Step 2: Lookup country for each unique IP (O(unique_ips) lookups)
+    # This is much faster than looking up every ban event
+    declare -A country_counts
+    while read -r ip count; do
+        local country
+        country=$(nftban-core geoip lookup "$ip" 2>/dev/null | cut -d'/' -f1) || country="Unknown"
+        [[ -z "$country" ]] && country="Unknown"
+        country_counts["$country"]=$(( ${country_counts["$country"]:-0} + count ))
+    done < "$temp_ips"
+
+    # Step 3: Sort by count and limit
+    for country in "${!country_counts[@]}"; do
+        echo "${country_counts[$country]} $country"
+    done | sort -rn | head -n "$limit" > "$temp_countries"
+
+    # Step 4: Convert to JSON
     awk 'BEGIN{printf "["}
          NR>1{printf ","}
          {printf "{\"country\":\"%s\",\"count\":%d}", $2, $1}
-         END{printf "]"}' "$temp_file"
+         END{printf "]"}' "$temp_countries"
 
-    rm -f "$temp_file"
+    rm -f "$temp_ips" "$temp_countries"
 }
 
 # =============================================================================
