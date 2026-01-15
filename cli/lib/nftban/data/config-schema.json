@@ -9689,6 +9689,156 @@
       "category": "detection",
       "config_file": "conf.d/login/scorer.conf",
       "active_when": "always"
+    },
+    "TRUST_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Master switch for trust module",
+      "introduced_in": "1.0.30",
+      "category": "features",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_AUTO_UPDATE": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Auto-update enabled providers daily",
+      "introduced_in": "1.0.30",
+      "category": "features",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_AUTO_UPDATE_INTERVAL": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "24",
+      "description": "Auto-update interval in hours",
+      "introduced_in": "1.0.30",
+      "category": "features",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_LOG_FILE": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/var/log/nftban/trust.log",
+      "description": "Trust module log file",
+      "introduced_in": "1.0.30",
+      "category": "paths",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_CACHE_DIR": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/var/cache/nftban/trust",
+      "description": "Cache directory for downloaded IP ranges",
+      "introduced_in": "1.0.30",
+      "category": "paths",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_DATA_DIR": {
+      "type": "string",
+      "$ref": "#/definitions/path",
+      "default": "/var/lib/nftban/trust",
+      "description": "Data directory for persistent state",
+      "introduced_in": "1.0.30",
+      "category": "paths",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_CLOUDFLARE_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable Cloudflare IP whitelist",
+      "introduced_in": "1.0.30",
+      "category": "features",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_AWS_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable AWS IP whitelist",
+      "introduced_in": "1.0.30",
+      "category": "features",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_GOOGLE_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable Google Cloud IP whitelist",
+      "introduced_in": "1.0.30",
+      "category": "features",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_AZURE_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable Microsoft Azure IP whitelist",
+      "introduced_in": "1.0.30",
+      "category": "features",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_DIGITALOCEAN_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable DigitalOcean IP whitelist",
+      "introduced_in": "1.0.30",
+      "category": "features",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_FASTLY_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "false",
+      "description": "Enable Fastly CDN IP whitelist",
+      "introduced_in": "1.0.30",
+      "category": "features",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_MIN_RANGES": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "5",
+      "description": "Minimum IP ranges to accept download",
+      "introduced_in": "1.0.30",
+      "category": "features",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_MAX_RANGES": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "50000",
+      "description": "Maximum IP ranges to accept",
+      "introduced_in": "1.0.30",
+      "category": "features",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
+    },
+    "TRUST_DOWNLOAD_TIMEOUT": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "60",
+      "description": "HTTP download timeout in seconds",
+      "introduced_in": "1.0.30",
+      "category": "features",
+      "config_file": "conf.d/trust.conf",
+      "active_when": "always"
     }
   },
   "deprecated": {

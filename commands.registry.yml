@@ -616,7 +616,7 @@ geoban:
 
 cloudflare:
   category: active_protection
-  description: "Cloudflare IP ranges management"
+  description: "Cloudflare IP ranges management (alias for: trust ... CLOUDFLARE)"
   risk: core
   audience: [cli, auditor]
   capability: policy_change
@@ -624,12 +624,15 @@ cloudflare:
   supports_dry_run: false
   requires_root: false
   panel_expose: false
-  output_modes: [json, text]
-  has_json: true
+  output_modes: [text]
+  has_json: false
+  alias_for: "trust CLOUDFLARE"
   examples:
     - "nftban cloudflare status"
+    - "nftban cloudflare enable"
     - "nftban cloudflare update"
-    - "nftban cloudflare --json"
+  see_also:
+    - trust
 
 # =============================================================================
 # GROUP 3: INFRASTRUCTURE
