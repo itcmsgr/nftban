@@ -456,6 +456,18 @@ case "$1" in
         fi
 
         # =====================================================================
+        # STEP 12: Enable Login Monitoring (Default Protection)
+        # =====================================================================
+        log_info "Enabling login monitoring (SSH/FTP brute-force protection)..."
+        if command -v nftban >/dev/null 2>&1; then
+            if nftban login enable 2>/dev/null; then
+                log_info "  Login monitoring enabled successfully"
+            else
+                log_warn "  Login monitoring enable failed (run manually: nftban login enable)"
+            fi
+        fi
+
+        # =====================================================================
         # Installation Complete
         # =====================================================================
         log_info ""
