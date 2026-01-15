@@ -43,6 +43,11 @@ NFTBAN_OUTPUT_LOADED="true"
 # GLOBAL VARIABLES
 # =============================================================================
 
+# Core paths (with defaults for strict mode)
+: "${NFTBAN_CACHE_DIR:=/var/cache/nftban}"
+: "${NFTBAN_LOG_DIR:=/var/log/nftban}"
+: "${NFTBAN_DATA_DIR:=/var/lib/nftban}"
+
 # Terminal detection
 NFTBAN_TTY="${NFTBAN_TTY:-$([ -t 1 ] && echo "true" || echo "false")}"
 
