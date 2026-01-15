@@ -1242,18 +1242,6 @@ func extractJSON(output string) string {
 	return output[startIdx : endIdx+1]
 }
 
-func checkServiceHealth(service, name string) ui.HealthItem {
-	status := "error"
-	if output, err := exec.Command("systemctl", "is-active", service).Output(); err == nil {
-		switch strings.TrimSpace(string(output)) {
-		case "active":
-			status = "ok"
-		case "inactive":
-			status = "warning"
-		}
-	}
-	return ui.HealthItem{Name: name, Status: status}
-}
 
 func isValidIP(ip string) bool {
 	// Simple IPv4/IPv6 validation
