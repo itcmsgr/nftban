@@ -575,15 +575,31 @@ nftban_stats_generate_dashboard() {
     # UNIFIED BLACKLIST (count first, used by FIREWALL section)
     # ─────────────────────────────────────────────────────────────────────
     local black_v4=0 black_v6=0
+    local black_v4_temp=0 black_v4_perm=0
+    local black_v6_temp=0 black_v6_perm=0
 
-    # Count blacklist sets (contains ALL bans: manual, feeds, geoban, temporary)
+    # Count blacklist sets - separate temporary (with timeout) and permanent
     if nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null 2>&1; then
-        black_v4=$(nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null | { grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
+        local v4_output
+        v4_output=$(nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null || true)
+        # Temporary bans have "timeout" in their line
+        black_v4_temp=$(echo "$v4_output" | grep -c "timeout" 2>/dev/null || echo "0")
+        # Total count
+        black_v4=$(echo "$v4_output" | { grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
         black_v4=${black_v4:-0}
+        black_v4_temp=${black_v4_temp:-0}
+        black_v4_perm=$((black_v4 - black_v4_temp))
+        [[ $black_v4_perm -lt 0 ]] && black_v4_perm=0
     fi
     if nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 &>/dev/null 2>&1; then
-        black_v6=$(nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 2>/dev/null | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
+        local v6_output
+        v6_output=$(nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 2>/dev/null || true)
+        black_v6_temp=$(echo "$v6_output" | grep -c "timeout" 2>/dev/null || echo "0")
+        black_v6=$(echo "$v6_output" | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
         black_v6=${black_v6:-0}
+        black_v6_temp=${black_v6_temp:-0}
+        black_v6_perm=$((black_v6 - black_v6_temp))
+        [[ $black_v6_perm -lt 0 ]] && black_v6_perm=0
     fi
 
     black_v4=${black_v4//[^0-9]/}
@@ -606,10 +622,12 @@ nftban_stats_generate_dashboard() {
     echo "PROTECTION BREAKDOWN"
     echo "───────────────────────────────────────────────────────────"
 
-    # Direct bans (blacklist set)
-    printf "  %-20s %'d IPs\n" "Direct Bans........." "$total_black"
+    # Direct bans (blacklist sets) - show IPv4/IPv6 and temp/permanent
+    echo "  Direct Bans (nftables):"
+    printf "      %-16s %'d (perm: %'d, temp: %'d)\n" "IPv4............" "$black_v4" "$black_v4_perm" "$black_v4_temp"
+    printf "      %-16s %'d (perm: %'d, temp: %'d)\n" "IPv6............" "$black_v6" "$black_v6_perm" "$black_v6_temp"
 
-    # Count feeds from files
+    # Count feeds from files (separate IPv4/IPv6)
     local feeds_ipv4_total=0 feeds_ipv6_total=0
     local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
     if [[ -d "$feeds_dir" ]]; then
@@ -623,15 +641,20 @@ nftban_stats_generate_dashboard() {
                     local feed_lower="${feed,,}"
                     local feed_file="${feeds_dir}/${feed_lower}.txt"
                     if [[ -f "$feed_file" ]]; then
-                        local count
-                        count=$(grep -cE '^[0-9]' "$feed_file" 2>/dev/null) || count=0
-                        feeds_ipv4_total=$((feeds_ipv4_total + count))
+                        # Count IPv4 (lines starting with digit, no colon)
+                        local v4_count v6_count
+                        v4_count=$(grep -cE '^[0-9]+\.' "$feed_file" 2>/dev/null) || v4_count=0
+                        v6_count=$(grep -cE '^[0-9a-fA-F]*:' "$feed_file" 2>/dev/null) || v6_count=0
+                        feeds_ipv4_total=$((feeds_ipv4_total + v4_count))
+                        feeds_ipv6_total=$((feeds_ipv6_total + v6_count))
                     fi
                 fi
             done
         fi
     fi
-    printf "  %-20s %'d IPs\n" "Threat Feeds........" "$feeds_ipv4_total"
+    echo "  Threat Feeds:"
+    printf "      %-16s %'d\n" "IPv4............" "$feeds_ipv4_total"
+    printf "      %-16s %'d\n" "IPv6............" "$feeds_ipv6_total"
 
     # Count geoban entries
     local geoban_total=0
@@ -649,9 +672,14 @@ nftban_stats_generate_dashboard() {
         fi
     fi
 
-    local grand_total=$((total_black + feeds_ipv4_total))
+    local total_ipv4=$((black_v4 + feeds_ipv4_total))
+    local total_ipv6=$((black_v6 + feeds_ipv6_total))
+    local grand_total=$((total_ipv4 + total_ipv6))
     echo "  ─────────────────────────────────────"
-    printf "  %-20s %'d IPs\n" "TOTAL PROTECTION...." "$grand_total"
+    echo "  TOTAL:"
+    printf "      %-16s %'d\n" "IPv4............" "$total_ipv4"
+    printf "      %-16s %'d\n" "IPv6............" "$total_ipv6"
+    printf "      %-16s %'d\n" "TOTAL..........." "$grand_total"
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────
