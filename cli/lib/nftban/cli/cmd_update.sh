@@ -148,7 +148,8 @@ _check_for_updates() {
 
 _create_backup() {
     # Create backup before update
-    local backup_name="backup-$(date '+%Y%m%d-%H%M%S')-$(_get_current_commit)"
+    local backup_name
+    backup_name="backup-$(date '+%Y%m%d-%H%M%S')-$(_get_current_commit)"
     local backup_path="$UPDATE_BACKUP_DIR/$backup_name"
 
     mkdir -p "$UPDATE_BACKUP_DIR"
@@ -162,9 +163,15 @@ _create_backup() {
         2>/dev/null; then
         _update_log OK "Backup created: $backup_name"
 
-        # Cleanup old backups (keep last N)
+        # Cleanup old backups (keep last N) - use glob instead of ls
         local count=0
-        for old_backup in $(ls -t "$UPDATE_BACKUP_DIR"/backup-*.tar.gz 2>/dev/null); do
+        local -a backups=()
+        # shellcheck disable=SC2312
+        while IFS= read -r -d '' f; do
+            backups+=("$f")
+        done < <(find "$UPDATE_BACKUP_DIR" -maxdepth 1 -name "backup-*.tar.gz" -print0 2>/dev/null | sort -rz)
+
+        for old_backup in "${backups[@]}"; do
             count=$((count + 1))
             if [[ $count -gt $NFTBAN_UPDATE_BACKUP_COUNT ]]; then
                 rm -f "$old_backup"
@@ -261,7 +268,13 @@ _list_backups() {
     fi
 
     local idx=0
-    for backup in $(ls -t "$UPDATE_BACKUP_DIR"/backup-*.tar.gz 2>/dev/null); do
+    local -a backups=()
+    # shellcheck disable=SC2312
+    while IFS= read -r -d '' backup; do
+        backups+=("$backup")
+    done < <(find "$UPDATE_BACKUP_DIR" -maxdepth 1 -name "backup-*.tar.gz" -print0 2>/dev/null | sort -rz)
+
+    for backup in "${backups[@]}"; do
         idx=$((idx + 1))
         local name
         name=$(basename "$backup" .tar.gz)
@@ -282,8 +295,12 @@ _do_rollback() {
     fi
 
     # Get most recent backup
-    local latest_backup
-    latest_backup=$(ls -t "$UPDATE_BACKUP_DIR"/backup-*.tar.gz 2>/dev/null | head -1)
+    local latest_backup=""
+    # shellcheck disable=SC2312
+    while IFS= read -r -d '' f; do
+        latest_backup="$f"
+        break
+    done < <(find "$UPDATE_BACKUP_DIR" -maxdepth 1 -name "backup-*.tar.gz" -print0 2>/dev/null | sort -rz)
 
     if [[ -z "$latest_backup" ]]; then
         _update_log ERROR "No backup found"
