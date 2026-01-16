@@ -33,18 +33,26 @@ nftban health check
 
 ## 🐛 Reporting Bugs
 
-Found a bug? Please use our bug report template:
+Found a bug? The fastest way to get help:
+
+```bash
+# Generate a support bundle (recommended)
+sudo nftban support
+# Attach /tmp/nftban-support-*.tar.gz to your issue
+```
+
+Then use our bug report template:
 
 1. Go to [Issues](https://github.com/itcmsgr/nftban/issues/new/choose)
 2. Select "🐛 Bug Report"
-3. Fill in ALL required fields:
-   - NFTBan version (`nftban --version`)
+3. Attach your support bundle OR fill in ALL required fields:
+   - NFTBan version (`nftban version`)
    - OS and kernel (`uname -a`)
    - Output of `nftban health check`
    - Relevant logs from `/var/log/nftban/`
    - Steps to reproduce
 
-**Important:** Mask sensitive data (real IPs, domains, keys) before posting!
+**Important:** The support bundle automatically redacts secrets, but always review before posting!
 
 ## 💡 Feature Requests
 
@@ -161,11 +169,35 @@ nftban search <ip>
 nftban whitelist list
 ```
 
-### Diagnostic Commands
+### Support Bundle (Recommended)
+
+The fastest way to collect all diagnostic information:
+
+```bash
+# Generate support bundle (auto-collects everything, redacts secrets)
+sudo nftban support
+
+# Output: /tmp/nftban-support-YYYYMMDD-HHMMSS.tar.gz
+# Attach this file to your GitHub issue
+```
+
+The support bundle includes:
+- Version info and git commit
+- OS and kernel info
+- nftables ruleset and sets
+- Config files (secrets redacted)
+- Last 24h of logs
+- Health check output
+- Service status
+
+### Manual Diagnostic Commands
 
 ```bash
 # System health
 nftban health check
+
+# Quick diagnostics (no file output)
+sudo nftban support --quick
 
 # Firewall status
 nftban firewall status
@@ -177,7 +209,7 @@ journalctl -u nftban -n 100
 tail -f /var/log/nftban/*.log
 
 # Version info
-nftban --version
+nftban version
 nft --version
 uname -a
 ```
