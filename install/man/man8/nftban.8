@@ -1,6 +1,6 @@
 .\" NFTBan - nftables-based firewall management
 .\" Copyright (c) 2024-2026 Antonios Voulvoulis
-.TH NFTBAN 8 "December 2025" "NFTBan 1.0.21" "System Administration"
+.TH NFTBAN 8 "January 2026" "NFTBan 1.2.1" "System Administration"
 .SH NAME
 nftban \- nftables-based firewall management and intrusion prevention system
 .SH SYNOPSIS
@@ -275,6 +275,42 @@ Example: \fBnftban panel directadmin enable\fR
 .TP
 .B test
 Run CLI command validation tests.
+.SS "System Administration"
+.TP
+.B update \fR[\fIoptions\fR]
+Automated updates from git repository with backup and rollback support.
+.RS
+.IP \fB\-\-check\fR
+Check if updates are available without making changes.
+.IP \fB\-\-force\fR
+Force reinstall even if already at current version.
+.IP \fB\-\-dry\-run\fR
+Preview what would happen without executing changes.
+.IP \fB\-\-rollback\fR
+Revert to the previous backup.
+.IP \fB\-\-list\fR
+List available backups.
+.RE
+.IP
+Creates automatic backup before updating. Configurable via /etc/nftban/update.conf.
+.TP
+.B support \fR[\fIoptions\fR]
+Collect diagnostic information for troubleshooting. Creates a support bundle tarball.
+.RS
+.IP \fB\-\-quick\fR
+Quick terminal diagnostics without creating a file.
+.IP \fB\-\-network\fR
+Include network information (ip addr, routes, listening ports).
+.IP "\fB\-\-output\fR \fIDIR\fR"
+Output directory (default: /tmp).
+.RE
+.IP
+Output: /tmp/nftban-support-YYYYMMDD-HHMMSS.tar.gz
+.br
+Collects: version, OS info, nftables ruleset, configs (secrets redacted),
+logs (last 24h), health check, service status.
+.br
+Alias: \fBsupport-bundle\fR
 .SS "Debug and Troubleshooting"
 .TP
 .B debug \fR[\fIsubcommand\fR]
@@ -341,6 +377,9 @@ Show help for specific command.
 .TP
 .I /etc/nftban/nftban.conf
 Main configuration file.
+.TP
+.I /etc/nftban/update.conf
+Update command configuration (git repo, branch, backup count).
 .TP
 .I /etc/nftban/conf.d/
 Module configuration directory.
@@ -480,6 +519,24 @@ Show effective merged config:
 .TP
 Show local overrides vs defaults:
 .B nftban config diff
+.TP
+Check for updates:
+.B nftban update \-\-check
+.TP
+Update to latest version:
+.B nftban update
+.TP
+Force reinstall:
+.B nftban update \-\-force
+.TP
+Rollback to previous version:
+.B nftban update \-\-rollback
+.TP
+Generate support bundle for troubleshooting:
+.B nftban support
+.TP
+Quick terminal diagnostics:
+.B nftban support \-\-quick
 .SH EXIT STATUS
 .TP
 .B 0

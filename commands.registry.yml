@@ -1442,26 +1442,99 @@ system:
     - "nftban system install"
     - "nftban system uninstall"
 
+update:
+  category: developer_sysadmin
+  description: "Automated updates from git repository with backup and rollback"
+  risk: advanced
+  audience: [cli]
+  capability: policy_change
+  mutates: conditional
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban update"
+    - "nftban update --check"
+    - "nftban update --force"
+    - "nftban update --dry-run"
+    - "nftban update --rollback"
+    - "nftban update --list"
+  subcommands:
+    --check: {mutates: false, description: "Check for available updates (no changes)"}
+    --force: {mutates: true, description: "Force reinstall even if already current"}
+    --dry-run: {mutates: false, description: "Preview what would happen"}
+    --rollback: {mutates: true, description: "Revert to previous backup"}
+    --list: {mutates: false, description: "List available backups"}
+  config_file: "/etc/nftban/update.conf"
+  config_vars:
+    NFTBAN_GIT_REPO: {default: "/opt/nftban", description: "Git repository path"}
+    NFTBAN_GIT_REMOTE: {default: "origin", description: "Git remote name"}
+    NFTBAN_GIT_BRANCH: {default: "main", description: "Git branch to track"}
+    NFTBAN_UPDATE_BACKUP_COUNT: {default: "3", description: "Backups to keep"}
+
+support:
+  category: developer_sysadmin
+  description: "Collect diagnostic information for troubleshooting (support bundle)"
+  risk: core
+  audience: [cli, auditor]
+  capability: logs_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  examples:
+    - "nftban support"
+    - "nftban support --quick"
+    - "nftban support --network"
+    - "nftban support --output /home"
+    - "nftban support-bundle"
+  subcommands:
+    --quick: {mutates: false, description: "Quick terminal diagnostics (no file)"}
+    --network: {mutates: false, description: "Include network info (ip addr, routes, ports)"}
+    --output: {mutates: false, description: "Output directory (default: /tmp)"}
+  output_file: "/tmp/nftban-support-YYYYMMDD-HHMMSS.tar.gz"
+  collects:
+    - version.txt: "NFTBan version, git commit, VERSION file"
+    - system/: "OS, kernel, memory, SELinux/AppArmor, virtualization"
+    - nftables/: "Full ruleset, tables, sets, counters"
+    - config/: "Config files (secrets redacted)"
+    - logs/: "Last 24h journalctl + last 500 lines of log files"
+    - health.txt: "Health check output"
+    - status.txt: "NFTBan status output"
+    - update/: "Update check, backup list, git status"
+    - services/: "Systemd service status"
+    - network/: "IP addresses, routes, ports (optional)"
+  security:
+    - "Automatic secret redaction (API keys, tokens, passwords)"
+    - "Network info excluded by default"
+    - "Review reminder before sharing"
+
 # =============================================================================
 # METADATA
 # =============================================================================
 
 _metadata:
-  version: "1.0"
+  version: "1.1"
   schema_version: "1.0"
-  generated_date: "2026-01-15"
-  total_commands: 52
+  generated_date: "2026-01-16"
+  total_commands: 54
   commands_with_json: 43
-  commands_without_json: 9
+  commands_without_json: 11
   missing_json:
     - debug
     - gui
     - menu
     - profile
     - smoke
+    - support
     - sync
     - system
     - timers
+    - update
     - wizard
     - trust
   task_groups:
@@ -1470,12 +1543,12 @@ _metadata:
     active_protection: 10
     infrastructure: 9
     intelligence_reporting: 11
-    developer_sysadmin: 8
+    developer_sysadmin: 10
   risk_levels:
-    core: 25
+    core: 26
     setup: 7
-    advanced: 20
+    advanced: 21
   audience_summary:
-    cli_only: 31
-    auditor_visible: 19
+    cli_only: 32
+    auditor_visible: 20
     panel_expose: 11
