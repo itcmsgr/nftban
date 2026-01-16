@@ -5,6 +5,93 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.1] - 2026-01-16
+
+### Added
+
+#### Support Bundle Command (`nftban support`)
+- **Automated Diagnostics Collection**: New command to collect all troubleshooting information
+  - `nftban support` - Generate full support bundle tarball
+  - `nftban support --quick` - Quick terminal diagnostics (no file)
+  - `nftban support --network` - Include network info (ip addr, routes, ports)
+  - `nftban support-bundle` - Alias for `nftban support`
+
+#### Collected Information
+- **Version**: NFTBan version, git commit, VERSION file
+- **System**: OS release, kernel, hostname, uptime, memory, SELinux/AppArmor status
+- **Virtualization**: Container/VM detection (Docker, KVM, etc.)
+- **nftables**: Full ruleset, tables, sets, counters
+- **Config**: All config files with automatic secret redaction
+- **Logs**: Last 24h journalctl + last 500 lines of log files
+- **Health**: `nftban health check` output
+- **Status**: `nftban status` output
+- **Update**: Update check, backup list, git status
+- **Services**: Systemd service status for nftban-* units
+- **Network**: IP addresses, routes, listening ports (optional)
+
+#### Security Features
+- **Secret Redaction**: API keys, tokens, passwords, auth headers automatically masked
+- **Network Exclusion**: Network info excluded by default (use --network to include)
+- **Review Reminder**: Warning to review bundle before sharing
+
+#### Documentation Updates
+- Updated bug report template with support bundle reference
+- Updated SUPPORT.md with support bundle documentation
+- Added CLI completions for support/support-bundle commands
+
+### Fixed
+- **Shellcheck SC2045**: Replaced `ls` iteration with `find -print0` in `cmd_update.sh`
+
+---
+
+## [1.2.0] - 2026-01-16
+
+### Added
+
+#### Update Command (`nftban update`)
+- **Automated Git Updates**: New command to update NFTBan from git repository
+  - `nftban update` - Pull latest code, install, run health check
+  - `nftban update --check` - Check for available updates (no changes)
+  - `nftban update --force` - Force reinstall even if current
+  - `nftban update --dry-run` - Preview what would happen
+  - `nftban update --rollback` - Revert to previous backup
+  - `nftban update --list` - List available backups
+
+#### Update Features
+- **Pre-Update Backup**: Automatic tarball backup before updates
+- **Backup Rotation**: Configurable backup count (default: 3)
+- **Health Check**: Automatic health check after update
+- **Rollback Support**: One-command rollback to previous state
+- **Dry-Run Mode**: Preview changes without applying
+
+#### Configuration
+- New config file: `/etc/nftban/update.conf`
+  - `NFTBAN_GIT_REPO` - Git repository path (default: /opt/nftban)
+  - `NFTBAN_GIT_REMOTE` - Git remote name (default: origin)
+  - `NFTBAN_GIT_BRANCH` - Git branch to track (default: main)
+  - `NFTBAN_UPDATE_BACKUP_COUNT` - Backups to keep (default: 3)
+
+---
+
+## [1.1.1] - 2026-01-16
+
+### Fixed
+
+#### Security: Recursive Permission Operations
+- **Replaced all `chmod -R` and `chown -R`** with safe alternatives
+- Uses `install -d -o -g -m` for directory creation
+- Uses `find -maxdepth 1 -exec` for targeted file operations
+- Prevents TOCTOU race conditions and symlink attacks
+- Files fixed: install_prometheus.sh, install_suricata.sh, install_vmagent.sh,
+  install_victoriametrics.sh, provision_grafana_dashboards.sh, nftban_health_fixes.sh,
+  nftban_metrics.sh, cmd/nftban-core/install.sh, install-webapi.sh
+
+#### CI/CD
+- Added `check_recursive_permissions()` to health check
+- Pre-commit hook now blocks recursive chmod/chown
+
+---
+
 ## [1.1.0] - 2026-01-15
 
 ### Added
