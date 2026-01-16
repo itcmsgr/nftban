@@ -12,6 +12,8 @@ body:
         Use this form to report bugs reproducible on Linux servers (Debian/Ubuntu/RHEL/Rocky/Alma/Fedora).
         Please include exact commands, outputs, and versions. Mask any sensitive data (real IPs, keys, domains).
 
+        **Quick option:** Run `sudo nftban support` to generate a support bundle with all diagnostic info automatically collected (secrets are redacted). Attach the generated `.tar.gz` file to this issue.
+
         **Not for feature requests** — use "💡 Feature Request" instead.
 
         Thank you for helping improve nftban!
@@ -173,9 +175,59 @@ body:
       required: false
 
   - type: textarea
+    id: health_check
+    attributes:
+      label: "Health Check Output"
+      description: "Output of: sudo nftban health check"
+      placeholder: |
+        ```text
+        sudo nftban health check
+        (paste output here)
+        ```
+    validations:
+      required: false
+
+  - type: textarea
+    id: nftables_ruleset
+    attributes:
+      label: "nftables Ruleset (if firewall issue)"
+      description: "Output of: sudo nft list ruleset (can be large - attach file if needed)"
+      placeholder: |
+        ```text
+        sudo nft list tables
+        (paste output here, or attach full ruleset as file)
+        ```
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: environment
+    attributes:
+      label: "Environment (check all that apply)"
+      options:
+        - label: "Running in container (Docker/Podman)"
+        - label: "Running in VM (KVM/VMware/VirtualBox)"
+        - label: "Cloud provider (AWS/GCP/Azure/DO)"
+        - label: "SELinux enforcing"
+        - label: "AppArmor enabled"
+        - label: "Custom nftables rules outside NFTBan"
+    validations:
+      required: false
+
+  - type: textarea
     id: additional
     attributes:
       label: "Additional Context"
       placeholder: "Workarounds tried, related issues, environment peculiarities"
     validations:
       required: false
+
+  - type: markdown
+    attributes:
+      value: |
+        ---
+        **Tip:** For fastest resolution, attach a support bundle:
+        ```bash
+        sudo nftban support
+        # Then attach /tmp/nftban-support-*.tar.gz to this issue
+        ```

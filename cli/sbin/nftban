@@ -214,6 +214,8 @@ nftban_complete() {
         echo "flush"
         # SYSTEM ADMINISTRATION
         echo "update"
+        echo "support"
+        echo "support-bundle"
         return 0
     fi
 
@@ -485,6 +487,12 @@ nftban_complete() {
                 echo "--list"
                 echo "--help"
                 ;;
+            support|support-bundle)
+                echo "--quick"
+                echo "--network"
+                echo "--output"
+                echo "--help"
+                ;;
             trust)
                 echo "list"
                 echo "enable"
@@ -671,6 +679,11 @@ main() {
     # Special case: whitelist-system uses underscore in filename
     if [[ "$cmd" == "whitelist-system" ]]; then
         cmd_file="${NFTBAN_LIB_DIR}/cli/cmd_whitelist_system.sh"
+    fi
+
+    # Special case: support-bundle is an alias for support
+    if [[ "$cmd" == "support-bundle" ]]; then
+        cmd_file="${NFTBAN_LIB_DIR}/cli/cmd_support.sh"
     fi
 
     if [[ -f "$cmd_file" ]]; then
