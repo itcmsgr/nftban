@@ -212,6 +212,8 @@ nftban_complete() {
         echo "configaudit"
         # EMERGENCY/RECOVERY
         echo "flush"
+        # SYSTEM ADMINISTRATION
+        echo "update"
         return 0
     fi
 
@@ -474,6 +476,14 @@ nftban_complete() {
                 echo "--yes"
                 echo "--dry-run"
                 echo "help"
+                ;;
+            update)
+                echo "--check"
+                echo "--force"
+                echo "--dry-run"
+                echo "--rollback"
+                echo "--list"
+                echo "--help"
                 ;;
             trust)
                 echo "list"

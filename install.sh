@@ -1313,6 +1313,16 @@ install_configs() {
         ok "Installed: /etc/nftban/conf.d/watchdog.conf"
     fi
 
+    # Install update config (if not exists - don't overwrite user config)
+    if [[ -f "$SCRIPT_DIR/install/config/update.conf" ]] && [[ ! -f /etc/nftban/update.conf ]]; then
+        cp -f "$SCRIPT_DIR/install/config/update.conf" /etc/nftban/update.conf
+        chmod 640 /etc/nftban/update.conf
+        chown root:nftban /etc/nftban/update.conf
+        ok "Installed: /etc/nftban/update.conf"
+    elif [[ -f /etc/nftban/update.conf ]]; then
+        ok "Update config exists (not overwriting): /etc/nftban/update.conf"
+    fi
+
     # Install mail configuration (if not exists - don't overwrite user config)
     if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/mail.conf" ]] && [[ ! -f /etc/nftban/conf.d/mail.conf ]]; then
         cp -f "$SCRIPT_DIR/etc/nftban/conf.d/mail.conf" /etc/nftban/conf.d/mail.conf
