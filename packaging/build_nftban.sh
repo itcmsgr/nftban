@@ -800,6 +800,10 @@ fi
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/plesk/*.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/botscan
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/botscan/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/geoban
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/geoban/main.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/geoip
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/geoip/main.conf
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d/botscan
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/patterns.d/botscan/*.patterns
@@ -1324,6 +1328,8 @@ EOF
 /etc/nftban/conf.d/portscan/main.conf
 /etc/nftban/conf.d/login/main.conf
 /etc/nftban/conf.d/botscan/main.conf
+/etc/nftban/conf.d/geoban/main.conf
+/etc/nftban/conf.d/geoip/main.conf
 CONFFILES_EOF
 }
 
