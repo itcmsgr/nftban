@@ -1489,6 +1489,52 @@ install_configs() {
         fi
     done
 
+    # Install rbl/*.local files (user override files)
+    local rbl_src_dir="$SCRIPT_DIR/etc/nftban/conf.d/rbl"
+    local rbl_dst_dir="/etc/nftban/conf.d/rbl"
+    if [[ -d "$rbl_src_dir" ]]; then
+        for local_file in "$rbl_src_dir"/*.local; do
+            if [[ -f "$local_file" ]]; then
+                local local_name
+                local_name=$(basename "$local_file")
+                if [[ ! -f "$rbl_dst_dir/$local_name" ]]; then
+                    cp -f "$local_file" "$rbl_dst_dir/$local_name"
+                    chmod 640 "$rbl_dst_dir/$local_name"
+                    chown root:nftban "$rbl_dst_dir/$local_name"
+                fi
+            fi
+        done
+    fi
+
+    # Install panel config directories (cpanel, cwp, directadmin, etc.)
+    local panels_src="$SCRIPT_DIR/etc/nftban/conf.d/panels"
+    local panels_dst="/etc/nftban/conf.d/panels"
+    if [[ -d "$panels_src" ]]; then
+        for panel_dir in "$panels_src"/*/; do
+            if [[ -d "$panel_dir" ]]; then
+                local panel_name
+                panel_name=$(basename "$panel_dir")
+                mkdir -p "$panels_dst/$panel_name"
+                chown root:nftban "$panels_dst/$panel_name"
+                chmod 750 "$panels_dst/$panel_name"
+                for panel_conf in "$panel_dir"*.conf; do
+                    if [[ -f "$panel_conf" ]]; then
+                        local conf_name
+                        conf_name=$(basename "$panel_conf")
+                        if [[ ! -f "$panels_dst/$panel_name/$conf_name" ]]; then
+                            cp -f "$panel_conf" "$panels_dst/$panel_name/$conf_name"
+                            chmod 640 "$panels_dst/$panel_name/$conf_name"
+                            chown root:nftban "$panels_dst/$panel_name/$conf_name"
+                        fi
+                    fi
+                done
+            fi
+        done
+        local panel_count
+        panel_count=$(find "$panels_dst" -name "*.conf" 2>/dev/null | wc -l)
+        ok "Installed $panel_count panel config files"
+    fi
+
     # Install GUI groups config if exists
     if [[ -f "$SCRIPT_DIR/install/config/allowed-gui-groups" ]]; then
         cp -f "$SCRIPT_DIR/install/config/allowed-gui-groups" /etc/nftban/

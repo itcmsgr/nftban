@@ -450,6 +450,15 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/portscan
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/login
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/panels
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/cpanel
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/cwp
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/cyberpanel
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/directadmin
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/generic
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/interworx
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/plesk
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/vesta
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/rbl
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/botscan
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/geoban
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/geoip
@@ -460,6 +469,21 @@ fi
 %config(noreplace) /etc/nftban/conf.d/botscan/*
 %config(noreplace) /etc/nftban/conf.d/geoban/main.conf
 %config(noreplace) /etc/nftban/conf.d/geoip/main.conf
+%config(noreplace) /etc/nftban/conf.d/rbl/*
+%config(noreplace) /etc/nftban/conf.d/panels/cpanel/*
+%config(noreplace) /etc/nftban/conf.d/panels/cwp/*
+%config(noreplace) /etc/nftban/conf.d/panels/cyberpanel/*
+%config(noreplace) /etc/nftban/conf.d/panels/directadmin/*
+%config(noreplace) /etc/nftban/conf.d/panels/generic/*
+%config(noreplace) /etc/nftban/conf.d/panels/interworx/*
+%config(noreplace) /etc/nftban/conf.d/panels/plesk/*
+%config(noreplace) /etc/nftban/conf.d/panels/vesta/*
+%dir %attr(750,root,nftban) /etc/nftban/suricata
+%dir %attr(750,root,nftban) /etc/nftban/suricata/profiles
+%dir %attr(750,root,nftban) /etc/nftban/suricata/config
+%dir %attr(750,root,nftban) /etc/nftban/suricata/rules
+%dir %attr(750,root,nftban) /etc/nftban/suricata/cache
+%config(noreplace) /etc/nftban/suricata/profiles/*
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d/botscan
 %config(noreplace) /etc/nftban/patterns.d/botscan/*
