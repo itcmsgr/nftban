@@ -370,7 +370,7 @@ nftban_ddos_status() {
     fi
 
     if type -t nftban_ddos_suricata_eve_active &>/dev/null; then
-        local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+        local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
         if [[ -f "$eve_file" ]]; then
             if nftban_ddos_suricata_eve_active; then
                 local size

@@ -156,7 +156,7 @@ _nftban_portscan_suricata_service_running() {
 
 # Check if EVE JSON file is being actively written
 _nftban_portscan_suricata_eve_active() {
-    local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
     local freshness="${PORTSCAN_EVE_FRESHNESS_THRESHOLD:-60}"
 
     [[ -f "$eve_file" ]] || return 1
@@ -494,7 +494,7 @@ nftban_portscan_status() {
     if [[ "$suricata_available" == "true" ]]; then
         echo "  Available:   ✅ YES - Suricata is installed and running"
         echo "  Service:     $(systemctl is-active suricata 2>/dev/null || echo 'unknown')"
-        local eve_file="${SURICATA_EVE_LOG:-/var/log/suricata/eve.json}"
+        local eve_file="${SURICATA_EVE_LOG:-/var/log/nftban/suricata/eve-alerts.json}"
         if [[ -f "$eve_file" ]]; then
             local eve_age
             eve_age=$(( $(date +%s) - $(stat -c %Y "$eve_file" 2>/dev/null || echo 0) ))

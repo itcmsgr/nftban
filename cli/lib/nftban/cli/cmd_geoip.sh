@@ -456,7 +456,7 @@ nftban_geoip_cmd_config() {
             echo ""
 
             # Load config
-            local config_file="${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf"
+            local config_file="${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf"
             if [[ -f "$config_file" ]]; then
                 source "$config_file"
             fi
@@ -518,7 +518,7 @@ nftban_geoip_cmd_config() {
                 return 1
             fi
 
-            local config_local="${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local"
+            local config_local="${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local"
 
             # Ensure directory exists
             mkdir -p "$(dirname "$config_local")"
@@ -550,7 +550,7 @@ nftban_geoip_cmd_config() {
                 return 1
             fi
 
-            local config_local="${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local"
+            local config_local="${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local"
 
             # Ensure directory exists
             mkdir -p "$(dirname "$config_local")"
@@ -576,8 +576,8 @@ nftban_geoip_cmd_config() {
             echo ""
 
             # Load config
-            [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf"
-            [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local"
+            [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf"
+            [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/geoip/main.conf.local"
 
             local test_url=""
             local current_month
@@ -753,14 +753,15 @@ PERFORMANCE:
     Offline operation (no internet after database download)
 
 FILES AND LOCATIONS:
-    Binary:          /usr/lib/nftban/bin/nftban-core (GO 1.21+)
+    Binary:          /usr/lib/nftban/bin/nftban-core (Go 1.21+)
     Database:        /var/lib/nftban/geoip/dbip-country-lite.mmdb (~7MB)
-    Configuration:   /etc/nftban/conf.d/nftban-go.conf
-    User overrides:  /etc/nftban/conf.d/nftban-go.conf.local
+    GeoIP config:    /etc/nftban/conf.d/geoip/main.conf
+    GeoBan config:   /etc/nftban/conf.d/geoban/main.conf
+    User overrides:  *.conf.local files in same directories
     GeoBan files:    /etc/nftban/geoban.d/
     Country IPs:     /var/cache/nftban/geoban/
     Tracking:        /var/lib/nftban/geoban/tracking/
-    Logs:            /var/log/nftban/go-operations.log
+    Logs:            /var/log/nftban/geoip.log
 
 ATTRIBUTION:
     IP Geolocation by DB-IP (https://db-ip.com)

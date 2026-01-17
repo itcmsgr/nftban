@@ -800,19 +800,47 @@ download_geoip_database() {
         fi
     fi
 
-    # Use nftban-core to download (same as RPM/DEB packages)
+    # Try nftban-core first (preferred - handles all providers)
     if [[ -x "/usr/lib/nftban/bin/nftban-core" ]]; then
         log "Using nftban-core to download GeoIP database..."
         if /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null; then
             ok "GeoIP database downloaded successfully"
+            return 0
+        fi
+        warn "nftban-core download failed, trying direct download..."
+    fi
+
+    # Fallback: Download free DB-IP database directly via curl
+    # This ensures GeoIP is ALWAYS available even without nftban-core
+    local current_month
+    current_month=$(date +%Y-%m)
+    local db_url="https://download.db-ip.com/free/dbip-country-lite-${current_month}.mmdb.gz"
+    local db_file="${geoip_dir}/dbip-country-lite.mmdb"
+    local tmp_file="/tmp/dbip-country-lite-$$.mmdb.gz"
+
+    log "Downloading free DB-IP Lite database..."
+    log "URL: $db_url"
+
+    if curl -fsSL -o "$tmp_file" "$db_url" --max-time 60; then
+        # Decompress the database
+        if gunzip -c "$tmp_file" > "$db_file" 2>/dev/null; then
+            rm -f "$tmp_file"
+            chmod 644 "$db_file"
+            chown nftban:nftban "$db_file" 2>/dev/null || true
+            ok "GeoIP database downloaded successfully (DB-IP Lite)"
+            info "Attribution: IP Geolocation by DB-IP (https://db-ip.com)"
+            return 0
         else
-            warn "Could not download GeoIP database (will retry via timer)"
-            info "Manual download: nftban geoip update"
+            rm -f "$tmp_file"
+            warn "Failed to decompress GeoIP database"
         fi
     else
-        warn "nftban-core not found, skipping GeoIP download"
-        info "Will download on first use via: nftban geoip update"
+        rm -f "$tmp_file" 2>/dev/null
+        warn "Failed to download GeoIP database"
     fi
+
+    warn "Could not download GeoIP database (will retry via timer)"
+    info "Manual download: nftban geoip update"
 }
 
 # Ask user about metrics
@@ -1022,10 +1050,18 @@ install_libraries() {
     find "$LIB_DIR" -type f -name "*.conf" -exec chmod 644 {} \;
     find "$LIB_DIR" -type d -exec chmod 755 {} \;
 
+    # CRITICAL: Ensure Go binaries are executable (defense in depth)
+    # These may have been installed by install_core but we ensure they stay executable
+    if [[ -d "$LIB_DIR/bin" ]]; then
+        find "$LIB_DIR/bin" -type f -exec chmod 755 {} \;
+        find "$LIB_DIR/bin" -type f -exec chown root:root {} \;
+    fi
+
     # Set ownership on lib directory and contents (explicit, not recursive on parent)
     chown root:nftban "$LIB_DIR"
     find "$LIB_DIR" -type d -exec chown root:nftban {} \;
-    find "$LIB_DIR" -type f -exec chown root:nftban {} \;
+    # Exclude bin directory from nftban ownership (binaries need root:root)
+    find "$LIB_DIR" -type f ! -path "$LIB_DIR/bin/*" -exec chown root:nftban {} \;
 
     ok "Shell libraries installed to $LIB_DIR"
     return 0

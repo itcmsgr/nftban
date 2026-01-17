@@ -81,7 +81,7 @@ nftban_login_suricata_init() {
     fi
 
     # Set defaults
-    : "${LOGIN_SURICATA_EVE_FILE:=/var/log/suricata/eve.json}"
+    : "${LOGIN_SURICATA_EVE_FILE:=/var/log/nftban/suricata/eve-alerts.json}"
     : "${LOGIN_SURICATA_SIG_PATTERNS:=[Aa]uth|[Ll]ogin|[Pp]assword|[Cc]redential|[Bb]rute|SSH|FTP|SMTP|POP3|IMAP}"
     : "${LOGIN_SURICATA_ALERT_WINDOW:=300}"
     # Severity scoring (1=High, 2=Medium, 3=Low, 4=Info - matches Go)
@@ -105,7 +105,7 @@ nftban_login_suricata_init() {
 
 # Monitor EVE JSON file for auth-related alerts
 _nftban_login_suricata_monitor_eve() {
-    local eve_file="${LOGIN_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    local eve_file="${LOGIN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
     local poll_ms="${LOGIN_SURICATA_POLL_INTERVAL_MS:-500}"
     local poll_sec
     poll_sec=$(echo "scale=3; $poll_ms / 1000" | bc)
@@ -455,10 +455,10 @@ _nftban_login_suricata_save_state() {
 nftban_login_suricata_status() {
     echo "Suricata Mode Status:"
     echo "  Running: $_LOGIN_SURICATA_RUNNING"
-    echo "  EVE File: ${LOGIN_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    echo "  EVE File: ${LOGIN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
 
     local eve_exists="no"
-    [[ -f "${LOGIN_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}" ]] && eve_exists="yes"
+    [[ -f "${LOGIN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}" ]] && eve_exists="yes"
     echo "  EVE Exists: $eve_exists"
 
     if [[ -n "$_LOGIN_SURICATA_MONITOR_PID" ]]; then
@@ -494,7 +494,7 @@ nftban_login_suricata_test() {
     echo "Suricata Mode Test:"
     echo "  jq available: $(command -v jq &>/dev/null && echo "yes" || echo "no")"
 
-    local eve_file="${LOGIN_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    local eve_file="${LOGIN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
     echo "  EVE file: $eve_file"
     echo "  EVE exists: $([[ -f "$eve_file" ]] && echo "yes" || echo "no")"
 

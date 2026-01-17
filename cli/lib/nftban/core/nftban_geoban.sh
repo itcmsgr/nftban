@@ -82,7 +82,10 @@ nftban_warn() {
     fi
 }
 
-# Load configuration (uses central config paths)
+# Load configuration (new standard paths)
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf"
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf.local"
+# Legacy path support (deprecated - will be removed in v2.0)
 [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf"
 [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local"
 
@@ -114,7 +117,7 @@ fi
 nftban_geoban_check_enabled() {
     if [[ "${GEOBAN_ENABLED}" != "true" ]]; then
         nftban_error "GeoBan is disabled in configuration"
-        nftban_info "Enable it in ${NFTBAN_CONFIG_DIR}/conf.d/nftban-go.conf.local:"
+        nftban_info "Enable it in ${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf.local:"
         nftban_info "  GEOBAN_ENABLED=\"true\""
         return 1
     fi

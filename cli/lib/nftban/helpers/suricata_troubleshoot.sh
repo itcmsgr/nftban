@@ -23,11 +23,11 @@ readonly YELLOW='\033[1;33m'
 readonly BLUE='\033[0;34m'
 readonly NC='\033[0m'
 
-# Paths
+# Paths - use central config first, then NFTBan defaults (NOT Suricata defaults)
 readonly SURICATA_BIN="${SURICATA_BIN:-/usr/bin/suricata}"
 readonly SURICATA_YAML="${SURICATA_YAML:-/etc/suricata/suricata.yaml}"
-readonly EVE_LOG="${EVE_LOG:-/var/log/suricata/eve.json}"
-readonly SURICATA_LOG="${SURICATA_LOG:-/var/log/suricata/suricata.log}"
+readonly EVE_LOG="${NFTBAN_SURICATA_EVE_LOG:-/var/log/nftban/suricata/eve-alerts.json}"
+readonly SURICATA_LOG="${SURICATA_LOG:-/var/log/nftban/suricata/suricata.log}"
 
 # Counters
 CHECKS_PASSED=0
@@ -230,7 +230,7 @@ check_rules() {
 check_logging() {
     print_header "5. Logging Check"
 
-    print_check "Checking eve.json log file..."
+    print_check "Checking eve-alerts.json log file..."
     if [[ -f "$EVE_LOG" ]]; then
         local size
         size=$(du -h "$EVE_LOG" | awk '{print $1}')
@@ -253,7 +253,7 @@ check_logging() {
         fi
 
         # Parse event types
-        print_check "Analyzing event types in eve.json..."
+        print_check "Analyzing event types in eve-alerts.json..."
         if command -v jq &>/dev/null; then
             local event_summary
             event_summary=$(tail -1000 "$EVE_LOG" 2>/dev/null | jq -r '.event_type' 2>/dev/null | sort | uniq -c | sort -rn || echo "")
@@ -272,14 +272,14 @@ check_logging() {
                     print_info "This is expected if there's no malicious traffic"
                 fi
             else
-                print_warn "Could not parse eve.json (may be empty or invalid JSON)"
+                print_warn "Could not parse eve-alerts.json (may be empty or invalid JSON)"
             fi
         else
             print_warn "jq not installed - skipping JSON analysis"
             print_fix "Install jq: sudo yum install jq (RHEL) or sudo apt install jq (Debian)"
         fi
     else
-        print_fail "eve.json not found at $EVE_LOG"
+        print_fail "eve-alerts.json not found at $EVE_LOG"
         print_fix "Check suricata.yaml eve-log configuration"
         print_fix "Verify Suricata has write permissions to /var/log/suricata/"
         return 1
@@ -381,7 +381,7 @@ check_network_test() {
         ssh_events=$(tail -100 "$EVE_LOG" 2>/dev/null | jq -r 'select(.event_type=="ssh")' 2>/dev/null | wc -l || echo 0)
 
         if [[ $ssh_events -gt 0 ]]; then
-            print_pass "SSH events detected in eve.json (Suricata IS capturing traffic)"
+            print_pass "SSH events detected in eve-alerts.json (Suricata IS capturing traffic)"
         else
             print_warn "No SSH events found - Suricata may not be capturing traffic"
             print_fix "Check interface configuration in suricata.yaml"
@@ -412,7 +412,7 @@ check_nftban_integration() {
             fi
         fi
 
-        # Check eve.json path
+        # Check eve-alerts.json path
         local eve_path
         eve_path=$(grep "NFTBAN_SURICATA_EVE_LOG" "$nftban_conf" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "")
         if [[ -n "$eve_path" ]]; then

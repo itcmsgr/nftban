@@ -467,6 +467,34 @@
     "cli": "/usr/bin/nftban",
     "go_binaries_dir": "/usr/lib/nftban/bin"
   },
+  "files": {
+    "_comment": "File permissions (not directories) - used for health check verification",
+    "executables": [
+      {
+        "path": "/usr/lib/nftban/bin/nftban-core",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Go binary for core nftables operations",
+        "capabilities": "cap_net_admin+ep"
+      },
+      {
+        "path": "/usr/lib/nftban/bin/nftband",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Go daemon for single-writer nftables IPC",
+        "capabilities": "cap_net_admin+ep"
+      },
+      {
+        "path": "/usr/sbin/nftban",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Main CLI entrypoint (restricted to nftban group)"
+      }
+    ]
+  },
   "sysusers": {
     "user": "nftban",
     "group": "nftban",

@@ -207,7 +207,7 @@ nftban_health_fix_permissions() {
         fi
 
         # Fix Suricata permissions for NFTBan integration
-        # Suricata writes to LOG_DIR/suricata/, nftban needs to read eve.json
+        # Suricata writes to LOG_DIR/suricata/, nftban needs to read eve-alerts.json
         if [[ -d "${NFTBAN_LOG_DIR}/suricata" ]]; then
             local suricata_fixed=0
 
@@ -222,10 +222,10 @@ nftban_health_fix_permissions() {
             chgrp -R nftban "${NFTBAN_LOG_DIR}/suricata" 2>/dev/null
             chmod 750 "${NFTBAN_LOG_DIR}/suricata" 2>/dev/null
 
-            # Fix eve.json: suricata:nftban 640 so nftban can read
-            if [[ -f "${NFTBAN_LOG_DIR}/suricata/eve.json" ]]; then
-                chown suricata:nftban "${NFTBAN_LOG_DIR}/suricata/eve.json" 2>/dev/null
-                chmod 640 "${NFTBAN_LOG_DIR}/suricata/eve.json" 2>/dev/null
+            # Fix eve-alerts.json: suricata:nftban 640 so nftban can read
+            if [[ -f "${NFTBAN_LOG_DIR}/suricata/eve-alerts.json" ]]; then
+                chown suricata:nftban "${NFTBAN_LOG_DIR}/suricata/eve-alerts.json" 2>/dev/null
+                chmod 640 "${NFTBAN_LOG_DIR}/suricata/eve-alerts.json" 2>/dev/null
                 suricata_fixed=1
             fi
 
@@ -627,7 +627,7 @@ EOF
     create 0640 nftban nftban
 }
 
-/var/log/nftban/suricata/eve.json {
+/var/log/nftban/suricata/eve-alerts.json {
     daily
     rotate 7
     compress

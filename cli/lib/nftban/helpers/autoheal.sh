@@ -284,17 +284,17 @@ if systemctl list-unit-files suricata.service &>/dev/null 2>&1; then
         log_info "✅ Suricata service is running"
     fi
 
-    # Verify eve.json is being written (use central config path)
-    EVE_LOG="${NFTBAN_SURICATA_EVE_LOG:-/var/log/suricata/eve.json}"
+    # Verify eve-alerts.json is being written (use central config path)
+    EVE_LOG="${NFTBAN_SURICATA_EVE_LOG:-/var/log/nftban/suricata/eve-alerts.json}"
     if [ -f "$EVE_LOG" ]; then
         # Check if file is recent (modified in last 5 minutes)
         if [ "$(find "$EVE_LOG" -mmin -5 2>/dev/null)" ]; then
-            log_info "✅ Suricata eve.json is actively writing"
+            log_info "✅ Suricata eve-alerts.json is actively writing"
         else
-            log_warn "Suricata eve.json not recently updated - may not be capturing traffic"
+            log_warn "Suricata eve-alerts.json not recently updated - may not be capturing traffic"
         fi
     else
-        log_warn "Suricata eve.json not found at $EVE_LOG"
+        log_warn "Suricata eve-alerts.json not found at $EVE_LOG"
     fi
 else
     log_warn "Suricata not installed - IDS protection disabled"

@@ -13,7 +13,7 @@
 // meta:inventory.files="/var/lib/nftban/geoip/*.mmdb"
 // meta:inventory.binaries=""
 // meta:inventory.env_vars=""
-// meta:inventory.config_files="/etc/nftban/conf.d/nftban-go.conf"
+// meta:inventory.config_files="/etc/nftban/conf.d/geoip/main.conf"
 // meta:inventory.systemd_units=""
 // meta:inventory.network="http"
 // meta:inventory.privileges="none"
@@ -52,9 +52,12 @@ func loadGeoIPConfig(cfg *nftbanconf.Config) geoipConfig {
 	}
 
 	// Read from config files (shell variable format)
+	// New standard paths first, then legacy paths for backwards compatibility
 	configFiles := []string{
-		cfg.ConfigDir + "/conf.d/nftban-go.conf",
-		cfg.ConfigDir + "/conf.d/nftban-go.conf.local",
+		cfg.ConfigDir + "/conf.d/geoip/main.conf",
+		cfg.ConfigDir + "/conf.d/geoip/main.conf.local",
+		cfg.ConfigDir + "/conf.d/nftban-go.conf",       // Legacy (deprecated)
+		cfg.ConfigDir + "/conf.d/nftban-go.conf.local", // Legacy (deprecated)
 	}
 
 	for _, configFile := range configFiles {

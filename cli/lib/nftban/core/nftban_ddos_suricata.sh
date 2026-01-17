@@ -59,7 +59,7 @@ _nftban_ddos_suricata_load_config() {
     fi
 
     # Set defaults if not configured
-    : "${DDOS_SURICATA_EVE_FILE:=/var/log/suricata/eve.json}"
+    : "${DDOS_SURICATA_EVE_FILE:=/var/log/nftban/suricata/eve-alerts.json}"
     : "${DDOS_SURICATA_EVE_SOCKET:=}"
     : "${DDOS_SURICATA_SIG_PATTERNS:=DDoS|flood|amplification|reflection|slowloris}"
     : "${DDOS_SURICATA_CATEGORIES:=attempted-dos,successful-dos,denial-of-service}"
@@ -150,7 +150,7 @@ nftban_ddos_suricata_service_running() {
 
 # Check if EVE JSON file exists and is fresh
 nftban_ddos_suricata_eve_active() {
-    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
     local threshold="${DDOS_EVE_FRESHNESS_THRESHOLD:-60}"
 
     # File must exist
@@ -220,7 +220,7 @@ nftban_ddos_suricata_get_status() {
         status+="service=STOPPED "
     fi
 
-    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
     if [[ -f "$eve_file" ]]; then
         if nftban_ddos_suricata_eve_active; then
             local size
@@ -242,7 +242,7 @@ nftban_ddos_suricata_get_status() {
 
 # Parse EVE JSON and extract DDoS-related alerts
 _nftban_ddos_suricata_parse_eve() {
-    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
     local patterns="${DDOS_SURICATA_SIG_PATTERNS}"
     local window="${DDOS_SURICATA_ALERT_WINDOW:-120}"
 
@@ -270,7 +270,7 @@ _nftban_ddos_suricata_parse_eve() {
 # Count alerts per IP in window
 _nftban_ddos_suricata_count_alerts() {
     local ip="$1"
-    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
     local window="${DDOS_SURICATA_ALERT_WINDOW:-120}"
 
     local since
@@ -582,7 +582,7 @@ nftban_ddos_suricata_status() {
         echo "  Service: STOPPED"
     fi
 
-    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    local eve_file="${DDOS_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
     if [[ -f "$eve_file" ]]; then
         local size age
         size=$(du -h "$eve_file" 2>/dev/null | cut -f1)

@@ -58,7 +58,7 @@ nftban_portscan_suricata_load_config() {
     fi
 
     # Set defaults
-    : "${PORTSCAN_SURICATA_EVE_FILE:=/var/log/suricata/eve.json}"
+    : "${PORTSCAN_SURICATA_EVE_FILE:=/var/log/nftban/suricata/eve-alerts.json}"
     : "${PORTSCAN_SURICATA_SIG_PATTERNS:=[Pp]ort[Ss]can|[Pp]ort [Ss]weep|SCAN|Nmap|masscan}"
     : "${PORTSCAN_SURICATA_THRESHOLD_OBSERVE:=0.25}"
     : "${PORTSCAN_SURICATA_THRESHOLD_BLOCK_SHORT:=0.45}"
@@ -798,7 +798,7 @@ nftban_portscan_suricata_status() {
 
     echo ""
     echo "Configuration:"
-    echo "  EVE file: ${PORTSCAN_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    echo "  EVE file: ${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
     echo "  Alert window: ${PORTSCAN_SURICATA_ALERT_WINDOW:-300}s"
     echo "  Score decay: ${PORTSCAN_SURICATA_SCORE_DECAY:-1800}s"
 

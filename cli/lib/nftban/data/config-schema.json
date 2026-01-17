@@ -1123,7 +1123,7 @@
     "DDOS_SURICATA_EVE_FILE": {
       "type": "string",
       "$ref": "#/definitions/path",
-      "default": "/var/log/suricata/eve.json",
+      "default": "/var/log/nftban/suricata/eve-alerts.json",
       "description": "D S E F",
       "introduced_in": "1.0.0",
       "category": "modules",
@@ -5183,7 +5183,7 @@
     "LOGIN_SURICATA_EVE_FILE": {
       "type": "string",
       "$ref": "#/definitions/path",
-      "default": "/var/log/suricata/eve.json",
+      "default": "/var/log/nftban/suricata/eve-alerts.json",
       "description": "L S E F",
       "introduced_in": "1.0.0",
       "category": "modules",
@@ -8363,7 +8363,7 @@
     "PORTSCAN_SURICATA_EVE_FILE": {
       "type": "string",
       "$ref": "#/definitions/path",
-      "default": "/var/log/suricata/eve.json",
+      "default": "/var/log/nftban/suricata/eve-alerts.json",
       "description": "P S E F",
       "introduced_in": "1.0.0",
       "category": "modules",

@@ -40,7 +40,7 @@ type Metrics struct {
 	SIDUniqueSources *prometheus.GaugeVec
 
 	// User actions (enabled/disabled)
-	SIDUserEnabled *prometheus.GaugeVec
+	SIDUserEnabled  *prometheus.GaugeVec
 	SIDUserDisabled *prometheus.GaugeVec
 
 	// Category aggregates
@@ -51,8 +51,17 @@ type Metrics struct {
 
 	// Performance metrics
 	ProcessingLatency prometheus.Histogram
-	EventsProcessed prometheus.Counter
-	ParseErrors prometheus.Counter
+	EventsProcessed   prometheus.Counter
+	ParseErrors       prometheus.Counter
+
+	// Service-level metrics (for web UI alignment)
+	ServiceRunning   prometheus.Gauge
+	RulesTotal       prometheus.Gauge
+	RulesEnabled     prometheus.Gauge
+	AlertsLast24h    prometheus.Gauge
+	DropRate         prometheus.Gauge
+	MemoryUsageBytes prometheus.Gauge
+	UptimeSeconds    prometheus.Gauge
 }
 
 var (
@@ -141,6 +150,56 @@ func InitMetrics() *Metrics {
 					Help: "Total number of JSON parse errors",
 				},
 			),
+
+			// Service-level metrics
+			ServiceRunning: promauto.NewGauge(
+				prometheus.GaugeOpts{
+					Name: "nftban_suricata_service_running",
+					Help: "Suricata service running status (1=running, 0=stopped)",
+				},
+			),
+
+			RulesTotal: promauto.NewGauge(
+				prometheus.GaugeOpts{
+					Name: "nftban_suricata_rules_total",
+					Help: "Total number of Suricata rules loaded",
+				},
+			),
+
+			RulesEnabled: promauto.NewGauge(
+				prometheus.GaugeOpts{
+					Name: "nftban_suricata_rules_enabled",
+					Help: "Number of enabled Suricata rules",
+				},
+			),
+
+			AlertsLast24h: promauto.NewGauge(
+				prometheus.GaugeOpts{
+					Name: "nftban_suricata_alerts_last_24h",
+					Help: "Number of alerts in the last 24 hours",
+				},
+			),
+
+			DropRate: promauto.NewGauge(
+				prometheus.GaugeOpts{
+					Name: "nftban_suricata_drop_rate",
+					Help: "Packet drop rate percentage",
+				},
+			),
+
+			MemoryUsageBytes: promauto.NewGauge(
+				prometheus.GaugeOpts{
+					Name: "nftban_suricata_memory_usage_bytes",
+					Help: "Memory usage of Suricata process in bytes",
+				},
+			),
+
+			UptimeSeconds: promauto.NewGauge(
+				prometheus.GaugeOpts{
+					Name: "nftban_suricata_uptime_seconds",
+					Help: "Suricata service uptime in seconds",
+				},
+			),
 		}
 	})
 
@@ -198,4 +257,39 @@ func (m *Metrics) ClearUserDisabled(sid string) {
 // RecordParseError increments parse error counter
 func (m *Metrics) RecordParseError() {
 	m.ParseErrors.Inc()
+}
+
+// SetServiceRunning sets Suricata service running status
+func (m *Metrics) SetServiceRunning(running bool) {
+	if running {
+		m.ServiceRunning.Set(1)
+	} else {
+		m.ServiceRunning.Set(0)
+	}
+}
+
+// SetRulesCount sets total and enabled rules count
+func (m *Metrics) SetRulesCount(total, enabled int) {
+	m.RulesTotal.Set(float64(total))
+	m.RulesEnabled.Set(float64(enabled))
+}
+
+// SetAlertsLast24h sets alerts count for last 24 hours
+func (m *Metrics) SetAlertsLast24h(count int) {
+	m.AlertsLast24h.Set(float64(count))
+}
+
+// SetDropRate sets packet drop rate
+func (m *Metrics) SetDropRate(rate float64) {
+	m.DropRate.Set(rate)
+}
+
+// SetMemoryUsage sets memory usage in bytes
+func (m *Metrics) SetMemoryUsage(bytes int64) {
+	m.MemoryUsageBytes.Set(float64(bytes))
+}
+
+// SetUptime sets service uptime in seconds
+func (m *Metrics) SetUptime(seconds float64) {
+	m.UptimeSeconds.Set(seconds)
 }

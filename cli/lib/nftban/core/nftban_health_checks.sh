@@ -59,6 +59,12 @@ nftban_health_check_binaries() {
         "wget"
     )
 
+    # NFTBan's own Go binaries - CRITICAL for core functionality
+    local nftban_binaries=(
+        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftband"
+    )
+
     # NOTE: 'go' is NOT required - NFTBan ships prebuilt Go binaries
     # NOTE: 'git' is only needed for development
     local optional_binaries=(
@@ -75,6 +81,7 @@ nftban_health_check_binaries() {
     local missing_required=()
     local missing_optional=()
     local missing_mail=()
+    local broken_nftban=()
 
     # Check required binaries
     for binary in "${required_binaries[@]}"; do
@@ -83,6 +90,23 @@ nftban_health_check_binaries() {
             status=$HEALTH_ERROR
         fi
     done
+
+    # CRITICAL: Check NFTBan's own binaries exist AND are executable
+    # BUG FIX: This was missing, so non-executable binaries went undetected
+    for binary in "${nftban_binaries[@]}"; do
+        if [[ ! -f "$binary" ]]; then
+            broken_nftban+=("$binary (missing)")
+            status=$HEALTH_ERROR
+        elif [[ ! -x "$binary" ]]; then
+            broken_nftban+=("$binary (not executable - mode=$(stat -c '%a' "$binary" 2>/dev/null || echo 'unknown'))")
+            status=$HEALTH_ERROR
+        fi
+    done
+
+    if [[ ${#broken_nftban[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ERRORS+=("NFTBan binaries broken: ${broken_nftban[*]}")
+        NFTBAN_HEALTH_ISSUES["nftban_binaries"]="Broken: ${broken_nftban[*]}"
+    fi
 
     # Check optional binaries
     for binary in "${optional_binaries[@]}"; do
@@ -432,9 +456,9 @@ nftban_health_check_suricata() {
         fi
     fi
 
-    # 3. Check eve.json log file exists and has recent activity
-    # Use central config path, with fallback to common locations
-    local eve_log="${NFTBAN_SURICATA_EVE_LOG:-/var/log/suricata/eve.json}"
+    # 3. Check eve-alerts.json log file exists and has recent activity
+    # Use central config path, with fallback to NFTBan's path (NOT Suricata default)
+    local eve_log="${NFTBAN_SURICATA_EVE_LOG:-/var/log/nftban/suricata/eve-alerts.json}"
     if [[ -f "$eve_log" ]]; then
         # Check if file has been modified in last 10 minutes
         local last_modified
@@ -445,7 +469,7 @@ nftban_health_check_suricata() {
         age=$((current_time - last_modified))
 
         if [[ $age -gt 600 ]]; then
-            suricata_issues+=("Eve.json not updated in 10+ minutes (may be stalled)")
+            suricata_issues+=("eve-alerts.json not updated in 10+ minutes (may be stalled)")
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
         fi
 
@@ -453,12 +477,12 @@ nftban_health_check_suricata() {
         local file_size
         file_size=$(stat -c %s "$eve_log" 2>/dev/null || echo 0)
         if [[ $file_size -gt 1073741824 ]]; then
-            suricata_issues+=("Eve.json large ($(numfmt --to=iec "$file_size")), consider log rotation")
+            suricata_issues+=("eve-alerts.json large ($(numfmt --to=iec "$file_size")), consider log rotation")
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
         fi
     elif systemctl is-active --quiet suricata.service 2>/dev/null; then
         # Service running but no log file
-        suricata_issues+=("Suricata running but eve.json not found at $eve_log")
+        suricata_issues+=("Suricata running but eve-alerts.json not found at $eve_log")
         status=$HEALTH_ERROR
     fi
 
