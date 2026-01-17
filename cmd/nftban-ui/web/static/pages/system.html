@@ -615,7 +615,7 @@ async function loadOverview() {
         if (statusResp.success && statusResp.data) {
             const d = statusResp.data;
             setText('nftban-status', d.active ? 'Active' : 'Inactive');
-            setText('nftban-version', d.version || 'v1.0.0');
+            setText('nftban-version', d.version || 'Unknown');
             setText('nftban-rules', d.rules || '0');
             setText('nftban-banned', d.banned || '0');
 

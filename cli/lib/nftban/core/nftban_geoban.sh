@@ -585,7 +585,7 @@ nftban_geoban_ban_countries() {
 
         # Validate
         nftban_geoban_validate_country_code "${cc}" || {
-            ((failed++))
+            ((++failed))
             continue
         }
 
@@ -598,10 +598,10 @@ nftban_geoban_ban_countries() {
             if [[ "$LOGGING_ENABLED" == "true" ]]; then
                 nftban_audit_geoban "block" "${cc}" "geoban_ban_countries"
             fi
-            ((success++))
+            ((++success))
         else
             nftban_error "Failed to ban ${cc}"
-            ((failed++))
+            ((++failed))
         fi
     done
 
@@ -656,7 +656,7 @@ nftban_geoban_unban_countries() {
 
         # Validate
         nftban_geoban_validate_country_code "${cc}" || {
-            ((failed++))
+            ((++failed))
             continue
         }
 
@@ -675,7 +675,7 @@ nftban_geoban_unban_countries() {
                 if [[ "$LOGGING_ENABLED" == "true" ]]; then
                     nftban_audit_geoban "unblock" "${cc}" "geoban_unban_countries"
                 fi
-                ((success++))
+                ((++success))
                 continue
             else
                 nftban_warn "Go binary failed, using bash fallback"
@@ -694,10 +694,10 @@ nftban_geoban_unban_countries() {
             if [[ "$LOGGING_ENABLED" == "true" ]]; then
                 nftban_audit_geoban "unblock" "${cc}" "geoban_unban_countries"
             fi
-            ((success++))
+            ((++success))
         else
             nftban_error "Country $cc not found in ban list"
-            ((failed++))
+            ((++failed))
         fi
     done
 
@@ -753,7 +753,7 @@ nftban_geoban_whitelist_countries() {
 
         # Validate
         nftban_geoban_validate_country_code "${cc}" || {
-            ((failed++))
+            ((++failed))
             continue
         }
 
@@ -762,10 +762,10 @@ nftban_geoban_whitelist_countries() {
         # Use smart fetch (Go with bash fallback)
         if nftban_geoban_fetch_country "${cc}" "whitelist"; then
             nftban_success "Successfully whitelisted ${cc}"
-            ((success++))
+            ((++success))
         else
             nftban_error "Failed to whitelist ${cc}"
-            ((failed++))
+            ((++failed))
         fi
     done
 
@@ -805,7 +805,7 @@ nftban_geoban_unwhitelist_countries() {
 
         # Validate
         nftban_geoban_validate_country_code "${cc}" || {
-            ((failed++))
+            ((++failed))
             continue
         }
 
@@ -820,7 +820,7 @@ nftban_geoban_unwhitelist_countries() {
                 --tracking-dir="${GEOBAN_TRACKING_DIR}" 2>&1; then
 
                 nftban_success "Successfully removed whitelist for ${cc}"
-                ((success++))
+                ((++success))
                 continue
             else
                 nftban_warn "Go binary failed, using bash fallback"
@@ -835,10 +835,10 @@ nftban_geoban_unwhitelist_countries() {
         if [[ -f "$whitelist_file" ]]; then
             rm -f "$whitelist_file" "$tracking_file" "$cache_file"
             nftban_success "Successfully removed whitelist for ${cc} (bash mode)"
-            ((success++))
+            ((++success))
         else
             nftban_error "Country $cc not found in whitelist"
-            ((failed++))
+            ((++failed))
         fi
     done
 
@@ -973,7 +973,7 @@ nftban_geoban_update() {
                 ((updated++))
             else
                 nftban_error "Failed to update ${cc}"
-                ((failed++))
+                ((++failed))
             fi
         fi
     done

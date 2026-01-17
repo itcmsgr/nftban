@@ -25,9 +25,27 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"os"
 	"regexp"
 	"strings"
 )
+
+// readVersionFromFile reads the NFTBan version from the VERSION file
+func readVersionFromFile() string {
+	versionPaths := []string{
+		"/usr/lib/nftban/VERSION",
+		"/opt/nftban/VERSION",
+	}
+	for _, path := range versionPaths {
+		if data, err := os.ReadFile(path); err == nil {
+			version := strings.TrimSpace(string(data))
+			if version != "" {
+				return "v" + version
+			}
+		}
+	}
+	return "v1.2.1" // Fallback to current version
+}
 
 // SystemOverviewStatusHandler returns comprehensive system status for overview
 // GET /api/v1/system/status
@@ -59,7 +77,7 @@ func SystemOverviewStatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	if data["active"] == nil {
 		data["active"] = false
-		data["version"] = "v1.0.0"
+		data["version"] = readVersionFromFile()
 		data["rules"] = 0
 		data["banned"] = 0
 	}

@@ -996,6 +996,11 @@ install_libraries() {
     cp "$SCRIPT_DIR/cli/lib/nftban/nftban_help.sh" "$LIB_DIR/" 2>/dev/null || true
     cp "$SCRIPT_DIR/cli/lib/nftban/json_output.sh" "$LIB_DIR/" 2>/dev/null || true
 
+    # Copy VERSION file (single source of truth for version)
+    if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
+        install -m 0644 -o root -g nftban "$SCRIPT_DIR/VERSION" "$LIB_DIR/VERSION"
+    fi
+
     # Set permissions - ALL shell scripts need to be executable for sourcing
     # The CLI sources these via 'source' or '.' which requires read+execute
     find "$LIB_DIR" -type f -name "*.sh" -exec chmod 755 {} \;

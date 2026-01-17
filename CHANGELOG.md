@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.2] - 2026-01-17
+
+### Fixed
+
+#### Critical: GeoIP Binary Missing from Installation
+- **nftban-geoip binary**: Added to `download-binaries.sh` download, verification, and installation
+  - Binary now downloaded alongside nftban-core and nftban-ui
+  - Installed to `/usr/lib/nftban/bin/nftban-geoip`
+  - Enables full geoban functionality (country-based IP blocking)
+
+#### Critical: Arithmetic Bug in GeoBan Module
+- **Exit code 1 on first success**: Fixed `((success++))` pattern in `nftban_geoban.sh`
+  - Changed to `((++success))` (prefix increment) to avoid exit code 1 when var=0
+  - Affected 12 instances across ban/unban/whitelist operations
+  - **Root cause**: `((0++))` evaluates to 0, returns exit 1 under `set -e`
+
+#### Version Display Hardcoded
+- **API version fallback**: `pkg/api/system_handlers.go` now reads from VERSION file
+  - Added `readVersionFromFile()` to read `/usr/lib/nftban/VERSION`
+  - Falls back gracefully if file not found
+- **UI version fallback**: Changed from hardcoded "v1.0.0" to "Unknown"
+- **Install script**: Added VERSION file installation to `/usr/lib/nftban/VERSION`
+
+### Changed
+
+- **Package managers**: Ensured all installation methods (binary, rpm, deb) include VERSION file
+
+---
+
 ## [1.2.1] - 2026-01-16
 
 ### Added
