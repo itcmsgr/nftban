@@ -27,6 +27,8 @@
 /etc/nftban/conf.d/login
 /etc/nftban/conf.d/panels
 /etc/nftban/conf.d/botscan
+/etc/nftban/conf.d/geoban
+/etc/nftban/conf.d/geoip
 /etc/nftban/patterns.d
 /etc/nftban/patterns.d/botscan
 /etc/nftban/whitelist.d
