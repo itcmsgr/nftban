@@ -572,11 +572,4 @@ func extractJSON(output string) string {
 	return output[startIdx : endIdx+1]
 }
 
-// isServiceRunning checks if a systemd service is running
-func isServiceRunning(service string) bool {
-	output, err := execCommand("systemctl", "is-active", service)
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(output) == "active"
-}
+// Note: isServiceRunning is defined in system_handlers.go
