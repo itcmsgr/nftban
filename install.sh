@@ -1670,6 +1670,7 @@ install_dependencies() {
         suricata
         suricata_update
         jq
+        socat
     )
 
     # Optional packages (install if available)
