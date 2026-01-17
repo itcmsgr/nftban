@@ -2444,8 +2444,19 @@ fi
 
 # Enable GeoIP blocking
 if [[ -f /etc/nftban/nftban.conf ]]; then
-    sed -i "s/^NFTBAN_GEOIP_ENABLED=.*/NFTBAN_GEOIP_ENABLED=\"true\"/" /etc/nftban/nftban.conf 2>/dev/null || true
+    # Update existing line or add if missing
+    if grep -q "^NFTBAN_GEOIP_ENABLED=" /etc/nftban/nftban.conf 2>/dev/null; then
+        sed -i "s/^NFTBAN_GEOIP_ENABLED=.*/NFTBAN_GEOIP_ENABLED=\"true\"/" /etc/nftban/nftban.conf 2>/dev/null || true
+    else
+        echo 'NFTBAN_GEOIP_ENABLED="true"' >> /etc/nftban/nftban.conf
+    fi
     ok "GeoIP blocking: ENABLED"
+fi
+
+# Enable GeoIP timer for automatic database updates
+if [[ -f /etc/systemd/system/nftban-core-geoip.timer ]]; then
+    systemctl enable --now nftban-core-geoip.timer 2>/dev/null || true
+    ok "GeoIP update timer: ENABLED"
 fi
 
 # Enable core timers (health, maintenance) - watchdog only with metrics
