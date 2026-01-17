@@ -12,7 +12,7 @@
 # meta:output="Downloaded and verified binaries"
 # meta:depends="curl, jq, sha256sum"
 # meta:inventory.files=""
-# meta:inventory.binaries="nftban-core, nftban-ui, nftban-ui-auth"
+# meta:inventory.binaries="nftban-core, nftban-ui, nftban-ui-auth, nftban-geoip"
 # meta:inventory.env_vars="DOWNLOAD_DIR, INSTALL_DIR, SKIP_INSTALL"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -29,7 +29,7 @@
 #   - Supports amd64 and arm64 architectures
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Configuration
 GITHUB_REPO="itcmsgr/nftban-v1.0-dev"
@@ -192,6 +192,7 @@ download_all() {
     # Download main binaries
     download_binary "nftban-core" "$arch" "$version"
     download_binary "nftban-ui" "$arch" "$version"
+    download_binary "nftban-geoip" "$arch" "$version"
 
     # nftban-ui-auth is amd64 only (CGO)
     if [[ "$arch" == "amd64" ]]; then
@@ -210,7 +211,7 @@ verify_all() {
     local arch="$2"
     local method="$3"
 
-    local binaries=("nftban-core-linux-${arch}" "nftban-ui-linux-${arch}")
+    local binaries=("nftban-core-linux-${arch}" "nftban-ui-linux-${arch}" "nftban-geoip-linux-${arch}")
     if [[ "$arch" == "amd64" ]]; then
         binaries+=("nftban-ui-auth-linux-amd64")
     fi
@@ -268,6 +269,13 @@ install_binaries() {
         cp -f "$DOWNLOAD_DIR/nftban-ui-linux-${arch}" /usr/sbin/nftban-ui
         chmod 755 /usr/sbin/nftban-ui
         ok "Installed: /usr/sbin/nftban-ui"
+    fi
+
+    # Install nftban-geoip
+    if [[ -f "$DOWNLOAD_DIR/nftban-geoip-linux-${arch}" ]]; then
+        cp -f "$DOWNLOAD_DIR/nftban-geoip-linux-${arch}" "$INSTALL_DIR/nftban-geoip"
+        chmod 755 "$INSTALL_DIR/nftban-geoip"
+        ok "Installed: $INSTALL_DIR/nftban-geoip"
     fi
 
     # Install nftban-ui-auth (amd64 only)
