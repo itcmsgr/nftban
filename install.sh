@@ -1429,6 +1429,26 @@ install_configs() {
         ok "Botscan config exists (not overwriting): /etc/nftban/conf.d/botscan/main.conf"
     fi
 
+    # Install geoban configuration (if not exists - don't overwrite user config)
+    if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/geoban/main.conf" ]] && [[ ! -f /etc/nftban/conf.d/geoban/main.conf ]]; then
+        cp -f "$SCRIPT_DIR/etc/nftban/conf.d/geoban/main.conf" /etc/nftban/conf.d/geoban/main.conf
+        chmod 640 /etc/nftban/conf.d/geoban/main.conf
+        chown root:nftban /etc/nftban/conf.d/geoban/main.conf
+        ok "Installed: /etc/nftban/conf.d/geoban/main.conf"
+    elif [[ -f /etc/nftban/conf.d/geoban/main.conf ]]; then
+        ok "GeoBan config exists (not overwriting): /etc/nftban/conf.d/geoban/main.conf"
+    fi
+
+    # Install geoip configuration (if not exists - don't overwrite user config)
+    if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/geoip/main.conf" ]] && [[ ! -f /etc/nftban/conf.d/geoip/main.conf ]]; then
+        cp -f "$SCRIPT_DIR/etc/nftban/conf.d/geoip/main.conf" /etc/nftban/conf.d/geoip/main.conf
+        chmod 640 /etc/nftban/conf.d/geoip/main.conf
+        chown root:nftban /etc/nftban/conf.d/geoip/main.conf
+        ok "Installed: /etc/nftban/conf.d/geoip/main.conf"
+    elif [[ -f /etc/nftban/conf.d/geoip/main.conf ]]; then
+        ok "GeoIP config exists (not overwriting): /etc/nftban/conf.d/geoip/main.conf"
+    fi
+
     # Install botscan pattern files (if not exists - don't overwrite user patterns)
     if [[ -d "$SCRIPT_DIR/etc/nftban/patterns.d/botscan" ]]; then
         for pattern_file in "$SCRIPT_DIR/etc/nftban/patterns.d/botscan"/*.patterns; do
