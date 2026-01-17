@@ -276,6 +276,21 @@ func main() {
 	protected.HandleFunc("/login-monitor/users", api.LoginMonitorUsersHandler).Methods("GET")
 	protected.HandleFunc("/login-monitor/control", api.LoginMonitorControlHandler).Methods("POST")
 
+	// Suricata IDS API routes
+	protected.HandleFunc("/suricata/status", api.SuricataStatusHandler).Methods("GET")
+	protected.HandleFunc("/suricata/control", api.SuricataControlHandler).Methods("POST")
+	protected.HandleFunc("/suricata/profile/detect", api.SuricataProfileDetectHandler).Methods("POST")
+	protected.HandleFunc("/suricata/profile/apply", api.SuricataProfileApplyHandler).Methods("POST")
+	protected.HandleFunc("/suricata/profile/show", api.SuricataProfileShowHandler).Methods("GET")
+	protected.HandleFunc("/suricata/scan", api.SuricataScanHandler).Methods("POST")
+	protected.HandleFunc("/suricata/services", api.SuricataServicesHandler).Methods("GET")
+	protected.HandleFunc("/suricata/rules/stats", api.SuricataRulesStatsHandler).Methods("GET")
+	protected.HandleFunc("/suricata/rules/reload", api.SuricataRulesReloadHandler).Methods("POST")
+	protected.HandleFunc("/suricata/rules/generate", api.SuricataRulesGenerateHandler).Methods("POST")
+	protected.HandleFunc("/suricata/rules/update", api.SuricataRulesUpdateHandler).Methods("POST")
+	protected.HandleFunc("/suricata/alerts", api.SuricataAlertsHandler).Methods("GET")
+	protected.HandleFunc("/suricata/config/validate", api.SuricataConfigValidateHandler).Methods("POST")
+
 	// Port Management API routes
 	protected.HandleFunc("/ports", api.PortsHandler).Methods("GET")
 	protected.HandleFunc("/ports/ban", api.PortBanHandler).Methods("POST")

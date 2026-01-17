@@ -218,7 +218,7 @@ cmd_suricata_install() {
     echo "Next steps:"
     echo "  1. Enable and start: nftban suricata enable"
     echo "  2. Check status:     nftban suricata status"
-    echo "  3. View alerts:      tail -f /var/log/suricata/eve.json"
+    echo "  3. View alerts:      tail -f /var/log/nftban/suricata/eve-alerts.json"
     echo ""
 }
 
@@ -290,7 +290,7 @@ cmd_suricata_enable() {
     echo "  Manual update: nftban suricata rules update"
     echo ""
     echo "Monitor alerts:"
-    echo "  tail -f /var/log/suricata/eve.json | jq 'select(.event_type==\"alert\")'"
+    echo "  tail -f /var/log/nftban/suricata/eve-alerts.json | jq 'select(.event_type==\"alert\")'"
     echo ""
     echo "Check status:"
     echo "  nftban suricata status"
@@ -393,8 +393,8 @@ cmd_suricata_status() {
     # Recent alerts
     echo ""
     echo "  Recent Alerts (last 5):"
-    if [[ -f /var/log/suricata/eve.json ]]; then
-        tail -100 /var/log/suricata/eve.json 2>/dev/null | \
+    if [[ -f /var/log/nftban/suricata/eve-alerts.json ]]; then
+        tail -100 /var/log/nftban/suricata/eve-alerts.json 2>/dev/null | \
             jq -r 'select(.event_type=="alert") | "    [\(.timestamp)] \(.alert.signature) - \(.src_ip):\(.src_port) -> \(.dest_ip):\(.dest_port)"' 2>/dev/null | \
             tail -5 || echo "    (no recent alerts or jq not installed)"
     else
@@ -1031,7 +1031,7 @@ WHAT IT SHOWS:
     - Rule categories and signatures
 
 DATA SOURCE:
-    - Real-time: Tails /var/log/suricata/eve.json
+    - Real-time: Tails /var/log/nftban/suricata/eve-alerts.json
     - Cache: /etc/nftban/suricata/cache/sid-stats.json
     - Metrics: Prometheus (if nftban-core metrics server running)
 
@@ -1494,7 +1494,7 @@ EXAMPLES:
     nftban suricata rules update
 
     # View live alerts:
-    tail -f /var/log/suricata/eve.json | jq 'select(.event_type=="alert")'
+    tail -f /var/log/nftban/suricata/eve-alerts.json | jq 'select(.event_type=="alert")'
 
 REQUIREMENTS:
     - Root privileges (sudo)
@@ -1567,8 +1567,32 @@ nftban_cmd_suricata() {
     esac
 }
 
-# Export for main CLI
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+# Export main command router
 export -f nftban_cmd_suricata
+
+# Export sub-commands for external access
+export -f cmd_suricata_install
+export -f cmd_suricata_enable
+export -f cmd_suricata_disable
+export -f cmd_suricata_status
+export -f cmd_suricata_rules
+export -f cmd_suricata_profile
+export -f cmd_suricata_scan
+export -f cmd_suricata_services
+export -f cmd_suricata_sid
+export -f cmd_suricata_custom
+export -f cmd_suricata_recommend
+export -f cmd_suricata_help
+
+# Export helper functions
+export -f _suricata_is_installed
+export -f _suricata_is_running
+export -f _suricata_is_enabled
+export -f _check_root
 
 # Execute if called directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

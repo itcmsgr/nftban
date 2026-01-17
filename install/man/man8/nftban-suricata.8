@@ -64,7 +64,7 @@ Check status:
 
 .TP
 View live alerts:
-.B tail -f /var/log/suricata/eve.json | jq 'select(.event_type=="alert")'
+.B tail -f /var/log/nftban/suricata/eve-alerts.json | jq 'select(.event_type=="alert")'
 
 .TP
 Manual rule update:
@@ -80,7 +80,7 @@ Main Suricata configuration file (NFTBan-optimized)
 Installed detection rules (ET/Open ruleset)
 
 .TP
-.I /var/log/suricata/eve.json
+.I /var/log/nftban/suricata/eve-alerts.json
 Alert output in EVE JSON format
 
 .TP

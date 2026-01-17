@@ -181,7 +181,7 @@ perms_enforce_etc_files() {
 
 perms_enforce_lib_files() {
     # Enforce file permissions in /usr/lib/nftban (directories handled by FHS spec)
-    # Security: files 0644, shell scripts 0755 (executable)
+    # Security: files 0644, shell scripts 0755 (executable), binaries 0755 (executable)
 
     perms_say "Enforcing file permissions in: $PERMS_LIB"
 
@@ -191,8 +191,31 @@ perms_enforce_lib_files() {
         # CRITICAL: Shell scripts in lib need to be executable (755)
         # Scripts like cron/maintenance.sh are executed directly by systemd
         perms_run find "$PERMS_LIB" -type f -name "*.sh" -exec chmod 0755 {} \;
-        # Other files are 644
-        perms_run find "$PERMS_LIB" -type f ! -name "*.sh" -exec chmod 0644 {} \;
+
+        # CRITICAL: Go binaries in bin/ need to be executable (755)
+        # BUG FIX: Previously all non-.sh files got 644, breaking nftban-core/nftband
+        if [[ -d "$PERMS_LIB/bin" ]]; then
+            perms_run find "$PERMS_LIB/bin" -type f -exec chmod 0755 {} \;
+            perms_run find "$PERMS_LIB/bin" -type f -exec chown root:root {} \;
+            perms_say "  ✓ Binaries in $PERMS_LIB/bin set to 755 (executable)"
+
+            # CRITICAL: Restore CAP_NET_ADMIN for nftables operations
+            # Without this capability, nftban-core and nftband cannot modify firewall rules
+            if command -v setcap &>/dev/null; then
+                for binary in nftban-core nftband; do
+                    if [[ -f "$PERMS_LIB/bin/$binary" ]]; then
+                        if setcap 'cap_net_admin+ep' "$PERMS_LIB/bin/$binary" 2>/dev/null; then
+                            perms_say "  ✓ CAP_NET_ADMIN set on $binary"
+                        else
+                            perms_warn "  Failed to set CAP_NET_ADMIN on $binary"
+                        fi
+                    fi
+                done
+            fi
+        fi
+
+        # Other files are 644 (EXCLUDING bin/ directory which was handled above)
+        perms_run find "$PERMS_LIB" -type f ! -name "*.sh" ! -path "*/bin/*" -exec chmod 0644 {} \;
     fi
 }
 

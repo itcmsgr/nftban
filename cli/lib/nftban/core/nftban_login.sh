@@ -204,7 +204,7 @@ _nftban_login_suricata_service_running() {
 
 # Check if EVE JSON file exists and is fresh
 _nftban_login_eve_file_fresh() {
-    local eve_file="${LOGIN_SURICATA_EVE_FILE:-/var/log/suricata/eve.json}"
+    local eve_file="${LOGIN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
     local threshold="${LOGIN_EVE_FRESHNESS_THRESHOLD:-60}"
 
     if [[ ! -f "$eve_file" ]]; then

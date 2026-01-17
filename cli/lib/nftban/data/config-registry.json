@@ -29,7 +29,7 @@
         },
         {
           "type": "file_fresh",
-          "path": "/var/log/suricata/eve.json",
+          "path": "/var/log/nftban/suricata/eve-alerts.json",
           "max_age_seconds": 300
         }
       ],
@@ -175,6 +175,22 @@
       "category": "features",
       "key_count": 28,
       "comment": "Auto-whitelist IP ranges from Cloudflare, AWS, Google Cloud, Azure, etc."
+    },
+    "conf.d/geoban/main.conf": {
+      "description": "GeoBan module - country-based IP blocking",
+      "active_when": "always",
+      "category": "modules",
+      "key_count": 8,
+      "comment": "Country-based IP blocking using GeoIP database (DBIP/MaxMind)",
+      "legacy_name": "nftban-go.conf",
+      "note": "Replaces legacy 'nftban-go.conf' naming"
+    },
+    "conf.d/geoip/main.conf": {
+      "description": "GeoIP database configuration",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 12,
+      "comment": "GeoIP database source (DBIP/MaxMind), auto-updates, lookup settings"
     },
     "conf.d/panels/directadmin/main.conf": {
       "description": "DirectAdmin panel integration",

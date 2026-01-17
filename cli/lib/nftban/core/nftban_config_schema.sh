@@ -69,7 +69,7 @@ nftban_detect_suricata() {
     fi
 
     # EVE freshness check (if file exists and is recent)
-    local eve_file="/var/log/suricata/eve.json"
+    local eve_file="/var/log/nftban/suricata/eve-alerts.json"
     local threshold=300  # 5 minutes
     if [[ -f "$eve_file" ]]; then
         local now age

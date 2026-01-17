@@ -1808,7 +1808,9 @@ func ConfigFileHandler(w http.ResponseWriter, r *http.Request) {
 		"conf.d/panels/directadmin/main.conf": true,
 		"conf.d/health.conf":      true,
 		"conf.d/login_alert.conf": true,
-		"conf.d/nftban-go.conf":   true,
+		"conf.d/geoip/main.conf":  true,
+		"conf.d/geoban/main.conf": true,
+		"conf.d/nftban-go.conf":   true, // Legacy (deprecated)
 		"conf.d/recovery.conf":    true,
 		"conf.d/stats.conf":       true,
 	}
