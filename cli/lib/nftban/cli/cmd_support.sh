@@ -395,8 +395,8 @@ _cmd_support_bundle() {
     _support_banner
     echo ""
 
-    local is_root=true
-    _check_root || is_root=false
+    # Check root (optional - collection works in user mode too)
+    _check_root || true
 
     # Create temporary bundle directory
     local timestamp
@@ -577,9 +577,7 @@ EOF
 # =============================================================================
 
 nftban_cmd_support() {
-    local cmd="${1:-}"
     local include_network="false"
-    local output_dir="$SUPPORT_OUTPUT_DIR"
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
