@@ -417,12 +417,12 @@ func SuricataRulesStatsHandler(w http.ResponseWriter, r *http.Request) {
 // SuricataRulesReloadHandler reloads Suricata rules
 // POST /api/v1/suricata/rules/reload
 func SuricataRulesReloadHandler(w http.ResponseWriter, r *http.Request) {
-	output, err := execCommand("suricatasc", "-c", "reload-rules")
+	_, err := execCommand("suricatasc", "-c", "reload-rules")
 	if err != nil {
 		// Fallback to systemctl
-		output, err = execCommand("systemctl", "reload", "suricata")
-		if err != nil {
-			log.Printf("[SURICATA] Rules reload failed: %v - Output: %s", err, output)
+		output, fallbackErr := execCommand("systemctl", "reload", "suricata")
+		if fallbackErr != nil {
+			log.Printf("[SURICATA] Rules reload failed: %v - Output: %s", fallbackErr, output)
 			respondJSON(w, http.StatusInternalServerError, map[string]interface{}{
 				"success": false,
 				"error":   "Failed to reload rules",
