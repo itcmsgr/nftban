@@ -451,11 +451,15 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/login
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/panels
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/botscan
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/geoban
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/geoip
 %config(noreplace) /etc/nftban/conf.d/*.conf
 %config(noreplace) /etc/nftban/conf.d/ddos/*
 %config(noreplace) /etc/nftban/conf.d/portscan/*
 %config(noreplace) /etc/nftban/conf.d/login/*
 %config(noreplace) /etc/nftban/conf.d/botscan/*
+%config(noreplace) /etc/nftban/conf.d/geoban/*
+%config(noreplace) /etc/nftban/conf.d/geoip/*
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d/botscan
 %config(noreplace) /etc/nftban/patterns.d/botscan/*

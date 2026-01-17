@@ -134,6 +134,22 @@
         "created_by": "package"
       },
       {
+        "path": "/etc/nftban/conf.d/geoban",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "GeoBan country blocking configuration",
+        "created_by": "package"
+      },
+      {
+        "path": "/etc/nftban/conf.d/geoip",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "GeoIP database configuration",
+        "created_by": "package"
+      },
+      {
         "path": "/etc/nftban/patterns.d",
         "mode": "0750",
         "owner": "root",
