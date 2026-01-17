@@ -570,8 +570,15 @@ check_conflicting_firewalls() {
     # Show current firewall rules summary
     analyze_firewall_rules
 
-    # Ask user if they want automatic fix
-    read -p "Would you like NFTBan to automatically stop and disable these firewalls? [y/N]: " auto_fix
+    # In quiet mode, skip prompt and auto-fix
+    local auto_fix="n"
+    if [[ "${NFTBAN_QUIET:-0}" == "1" ]]; then
+        auto_fix="y"
+        info "Quiet mode: Automatically fixing conflicting firewalls"
+    else
+        # Ask user if they want automatic fix
+        read -p "Would you like NFTBan to automatically stop and disable these firewalls? [y/N]: " auto_fix
+    fi
 
     if [[ "${auto_fix,,}" == "y" || "${auto_fix,,}" == "yes" ]]; then
         echo ""
@@ -810,6 +817,14 @@ download_geoip_database() {
 
 # Ask user about metrics
 ask_metrics_question() {
+    # In quiet mode, skip prompts and keep existing settings or disable
+    if [[ "${NFTBAN_QUIET:-0}" == "1" ]]; then
+        NFTBAN_METRICS_ENABLED="${NFTBAN_METRICS_ENABLED:-false}"
+        NFTBAN_METRICS_BACKEND="${NFTBAN_METRICS_BACKEND:-}"
+        info "Quiet mode: Metrics configuration skipped (enable later: nftban metrics enable)"
+        return 0
+    fi
+
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  METRICS CONFIGURATION"
@@ -2181,10 +2196,12 @@ Usage:
 
 Options:
   --help, -h              Show this help message
+  --quiet, --yes, -y      Non-interactive mode (skip prompts, use defaults)
   --skip-xtables-fix      Skip automatic removal of xtables compat expressions
                           (Use if you manage nftables.conf manually)
 
 Environment Variables:
+  NFTBAN_QUIET=1              Same as --quiet (non-interactive)
   NFTBAN_SKIP_XTABLES_FIX=1   Same as --skip-xtables-fix
 
 This script installs NFTBan with all components:
@@ -2217,6 +2234,7 @@ EOF
 
 # Installation flags (can be set via CLI or environment)
 SKIP_XTABLES_FIX="${NFTBAN_SKIP_XTABLES_FIX:-0}"
+NFTBAN_QUIET="${NFTBAN_QUIET:-0}"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -2224,6 +2242,10 @@ while [[ $# -gt 0 ]]; do
         --help|-h|help)
             show_usage
             exit 0
+            ;;
+        --quiet|--yes|-y)
+            NFTBAN_QUIET=1
+            shift
             ;;
         --skip-xtables-fix)
             SKIP_XTABLES_FIX=1
