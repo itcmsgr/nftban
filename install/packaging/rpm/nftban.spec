@@ -36,6 +36,7 @@ Requires:       findutils
 Requires:       util-linux
 Requires:       iproute
 Requires:       ipset
+Requires:       socat
 Requires:       git
 Requires:       polkit
 Recommends:     logrotate
