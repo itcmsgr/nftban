@@ -755,6 +755,98 @@ nftban_health_fix_registry() {
 }
 
 # =============================================================================
+# GEOIP FIX
+# =============================================================================
+
+nftban_health_fix_geoip() {
+    # Auto-heal GeoIP database issues
+    # Downloads database if missing, using nftban-core or fallback to curl
+    # Returns: 0=fixed, 1=warning, 2=failed
+
+    echo "Checking GeoIP database..."
+
+    local geoip_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip"
+    local nftban_core="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+    local db_found=false
+    local status=0
+
+    # Check for any supported database
+    for db_file in "dbip-country-lite.mmdb" "GeoLite2-City.mmdb" "GeoLite2-Country.mmdb"; do
+        if [[ -f "${geoip_dir}/${db_file}" ]]; then
+            db_found=true
+            local file_age
+            local now_ts file_ts
+            now_ts=$(date +%s)
+            file_ts=$(stat -c %Y "${geoip_dir}/${db_file}" 2>/dev/null || echo 0)
+            file_age=$(( (now_ts - file_ts) / 86400 ))
+
+            if [[ $file_age -gt 45 ]]; then
+                echo "  ⚠️  Database is ${file_age} days old (recommend update)"
+                status=1
+            else
+                echo "  ✓ GeoIP database present (${file_age} days old)"
+            fi
+            break
+        fi
+    done
+
+    # If no database found, try to download
+    if [[ "$db_found" == "false" ]]; then
+        echo "  ⚠️  GeoIP database not found - downloading..."
+
+        # Ensure directory exists
+        mkdir -p "$geoip_dir" 2>/dev/null
+        chown nftban:nftban "$geoip_dir" 2>/dev/null || true
+        chmod 750 "$geoip_dir" 2>/dev/null || true
+
+        # Method 1: Try nftban-core (handles DB-IP and MaxMind based on config)
+        if [[ -x "$nftban_core" ]]; then
+            echo "  → Using nftban-core to download GeoIP database..."
+            if "$nftban_core" geoip update 2>/dev/null; then
+                echo "  ✓ GeoIP database downloaded successfully"
+                return 0
+            fi
+            echo "  ⚠️  nftban-core download failed, trying direct download..."
+        fi
+
+        # Method 2: Fallback to direct curl download (DB-IP free)
+        if command -v curl &>/dev/null; then
+            local current_month
+            current_month=$(date +%Y-%m)
+            local db_url="https://download.db-ip.com/free/dbip-country-lite-${current_month}.mmdb.gz"
+            local db_file="${geoip_dir}/dbip-country-lite.mmdb"
+            local tmp_file="/tmp/dbip-geoip-$$.mmdb.gz"
+
+            echo "  → Downloading DB-IP Lite database..."
+            if curl -fsSL -o "$tmp_file" "$db_url" --max-time 120 2>/dev/null; then
+                if gunzip -c "$tmp_file" > "$db_file" 2>/dev/null; then
+                    rm -f "$tmp_file"
+                    chmod 644 "$db_file"
+                    chown nftban:nftban "$db_file" 2>/dev/null || true
+                    echo "  ✓ GeoIP database downloaded (DB-IP Lite)"
+                    return 0
+                else
+                    rm -f "$tmp_file"
+                    echo "  ✖ Failed to decompress database"
+                    status=2
+                fi
+            else
+                rm -f "$tmp_file" 2>/dev/null
+                echo "  ✖ Failed to download database"
+                echo "    Manual fix: nftban geoip update"
+                status=2
+            fi
+        else
+            echo "  ✖ curl not available for download"
+            echo "    Manual fix: nftban geoip update"
+            status=2
+        fi
+    fi
+
+    return $status
+}
+
+# =============================================================================
 # REPORTING
 # =============================================================================
 
