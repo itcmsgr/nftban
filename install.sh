@@ -1221,6 +1221,23 @@ create_users_groups() {
     echo "  • nftban-auditor - Auditors (read-only: logs, reports, status queries)"
     echo "  • nftban-panel   - Panel integration (limited reload, read-only data)"
     echo ""
+
+    # ==========================================================================
+    # DIRECTADMIN PANEL: Add nftban to mysyslog group for logger access
+    # ==========================================================================
+    # DirectAdmin uses 'mysyslog' group for /dev/log socket permissions.
+    # Without this, nftban-login-monitor fails with:
+    #   logger: socket /dev/log: Permission denied
+    # Ref: /run/systemd/journal/dev-log is owned by root:mysyslog (srw-rw----)
+    if [[ -d /usr/local/directadmin ]]; then
+        if getent group mysyslog &>/dev/null; then
+            if ! id -nG nftban 2>/dev/null | grep -qw mysyslog; then
+                usermod -a -G mysyslog nftban 2>/dev/null && \
+                    ok "DirectAdmin: Added nftban to mysyslog group (syslog access)"
+            fi
+        fi
+    fi
+
     ok "User and group setup complete"
 
     return 0
