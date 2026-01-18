@@ -1742,10 +1742,13 @@ nftban_health_check_metrics() {
     fi
 
     # Check Prometheus or VictoriaMetrics (optional alternatives - only one needed)
+    # Only warn about unconfigured backend if it's the one selected in config
     local metrics_backend_found=false
     local prometheus_running=false
+    local victoriametrics_running=false
+    local configured_backend="${NFTBAN_METRICS_BACKEND:-prometheus}"
 
-    # Check Prometheus first
+    # Check Prometheus (only warn if it's the configured backend)
     if command -v prometheus >/dev/null 2>&1 || systemctl list-unit-files 2>/dev/null | grep -q "^prometheus.service"; then
         metrics_backend_found=true
         if systemctl is-active --quiet prometheus 2>/dev/null; then
@@ -1762,30 +1765,34 @@ nftban_health_check_metrics() {
                 fi
             fi
         else
-            metrics_issues+=("Prometheus installed but not running")
-            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            # Only warn if prometheus is the configured backend
+            if [[ "$configured_backend" == "prometheus" ]]; then
+                metrics_issues+=("Prometheus installed but not running")
+                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            fi
         fi
     fi
 
-    # Check VictoriaMetrics (alternative to Prometheus) - only if Prometheus not running
-    # Skip VictoriaMetrics check if Prometheus is already running (they're alternatives)
-    if [[ "$prometheus_running" != "true" ]]; then
-        if command -v victoria-metrics >/dev/null 2>&1 || systemctl list-unit-files 2>/dev/null | grep -q "^victoria-metrics.service"; then
-            # shellcheck disable=SC2034  # Reserved for backend detection
-            metrics_backend_found=true
-            if systemctl is-active --quiet victoria-metrics 2>/dev/null; then
-                metrics_issues+=("✓ VictoriaMetrics: Running")
+    # Check VictoriaMetrics (alternative to Prometheus)
+    if command -v victoria-metrics >/dev/null 2>&1 || systemctl list-unit-files 2>/dev/null | grep -q "^victoria-metrics.service"; then
+        # shellcheck disable=SC2034  # Reserved for backend detection
+        metrics_backend_found=true
+        if systemctl is-active --quiet victoria-metrics 2>/dev/null; then
+            victoriametrics_running=true
+            metrics_issues+=("✓ VictoriaMetrics: Running")
 
-                # Check if VictoriaMetrics is accessible
-                if command -v curl >/dev/null 2>&1; then
-                    if curl -s --connect-timeout "${NFTBAN_TIMEOUT_FAST}" "http://${NFTBAN_METRICS_VICTORIA_ADDR}/metrics" >/dev/null 2>&1; then
-                        metrics_issues+=("✓ VictoriaMetrics: Healthy")
-                    else
-                        metrics_issues+=("VictoriaMetrics not responding on ${NFTBAN_METRICS_VICTORIA_ADDR}")
-                        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
-                    fi
+            # Check if VictoriaMetrics is accessible
+            if command -v curl >/dev/null 2>&1; then
+                if curl -s --connect-timeout "${NFTBAN_TIMEOUT_FAST}" "http://${NFTBAN_METRICS_VICTORIA_ADDR}/metrics" >/dev/null 2>&1; then
+                    metrics_issues+=("✓ VictoriaMetrics: Healthy")
+                else
+                    metrics_issues+=("VictoriaMetrics not responding on ${NFTBAN_METRICS_VICTORIA_ADDR}")
+                    [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
                 fi
-            else
+            fi
+        else
+            # Only warn if victoriametrics is the configured backend
+            if [[ "$configured_backend" == "victoriametrics" ]]; then
                 metrics_issues+=("VictoriaMetrics installed but not running")
                 [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
             fi
