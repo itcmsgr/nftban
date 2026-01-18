@@ -344,6 +344,8 @@ nftban_banner_unified() {
         # Quick inline check (non-blocking, minimal overhead)
         if systemctl is-active --quiet firewalld 2>/dev/null || \
            systemctl is-active --quiet fail2ban 2>/dev/null || \
+           systemctl is-active --quiet iptables 2>/dev/null || \
+           systemctl is-active --quiet ip6tables 2>/dev/null || \
            { command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "^Status: active"; } || \
            { [[ -f /etc/csf/csf.conf ]] && grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; }; then
             conflict_icon=" ⚔️"
