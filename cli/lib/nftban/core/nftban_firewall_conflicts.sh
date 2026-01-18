@@ -165,7 +165,10 @@ nftban_detect_iptables_nft() {
 
         # Check for active iptables rules that create nftables tables
         local rule_count
-        rule_count=$(iptables -S 2>/dev/null | grep -cv "^-P" || echo "0")
+        rule_count=$(iptables -S 2>/dev/null | grep -cv "^-P" 2>/dev/null || true)
+        # Ensure rule_count is a valid number (remove any whitespace/newlines)
+        rule_count="${rule_count//[^0-9]/}"
+        [[ -z "$rule_count" ]] && rule_count=0
 
         if [[ $rule_count -gt 0 ]]; then
             status=2
