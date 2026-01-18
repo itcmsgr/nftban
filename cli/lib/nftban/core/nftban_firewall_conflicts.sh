@@ -140,13 +140,14 @@ nftban_detect_fail2ban() {
 }
 
 # =============================================================================
-# IPTABLES-NFT DETECTION (Translation Layer)
+# IPTABLES-NFT DETECTION (Translation Layer) - REQUIRED FOR CPANEL
 # =============================================================================
 
 nftban_detect_iptables_nft() {
     # Detect if iptables is using nf_tables backend (iptables-nft)
     # This creates shadow nftables rules that conflict with native nftables
-    # Returns: 0=legacy/not found, 1=iptables-nft detected, 2=active rules found
+    # Used by cPanel detection - DO NOT REMOVE
+    # Returns: 0=not found, 1=iptables-nft detected, 2=active rules found
 
     local status=0
 
@@ -161,40 +162,55 @@ nftban_detect_iptables_nft() {
 
     if [[ "$ipt_version" == *"nf_tables"* ]]; then
         status=1
-        NFTBAN_FIREWALL_CONFLICTS+=("IPTABLES-NFT: System uses iptables-nft translation layer")
 
         # Check for active iptables rules that create nftables tables
         local rule_count
         rule_count=$(iptables -S 2>/dev/null | grep -cv "^-P" 2>/dev/null || true)
-        # Ensure rule_count is a valid number (remove any whitespace/newlines)
         rule_count="${rule_count//[^0-9]/}"
         [[ -z "$rule_count" ]] && rule_count=0
 
         if [[ $rule_count -gt 0 ]]; then
             status=2
-            NFTBAN_FIREWALL_CONFLICTS+=("  WARNING: $rule_count iptables rules creating shadow nftables")
+            NFTBAN_FIREWALL_CONFLICTS+=("IPTABLES-NFT: $rule_count rules creating shadow nftables")
 
             # Check if 'ip filter' table exists in nftables (created by iptables-nft)
             if nft list table ip filter &>/dev/null 2>&1; then
-                NFTBAN_FIREWALL_CONFLICTS+=("  CRITICAL: 'ip filter' table exists (iptables-nft managed)")
-                NFTBAN_FIREWALL_CONFLICTS+=("  └─ This table conflicts with nftban's 'ip nftban' table")
-
-                # Show what's in the filter table
-                local chains
-                chains=$(nft list table ip filter 2>/dev/null | grep "chain " | awk '{print $2}' | tr '\n' ', ' | sed 's/,$//')
-                if [[ -n "$chains" ]]; then
-                    NFTBAN_FIREWALL_CONFLICTS+=("  └─ Chains: $chains")
-                fi
-
+                NFTBAN_FIREWALL_CONFLICTS+=("  └─ CRITICAL: 'ip filter' table conflicts with nftban")
                 [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
             else
                 [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_WARNING ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
             fi
 
-            NFTBAN_FIREWALL_FIXES+=("Flush iptables rules to remove shadow nftables:")
-            NFTBAN_FIREWALL_FIXES+=("  iptables -F && iptables -X")
-            NFTBAN_FIREWALL_FIXES+=("  ip6tables -F && ip6tables -X")
+            NFTBAN_FIREWALL_FIXES+=("Flush iptables-nft: iptables -F && iptables -X && ip6tables -F && ip6tables -X")
         fi
+    fi
+
+    return $status
+}
+
+# =============================================================================
+# IPTABLES SERVICE DETECTION (iptables.service / ip6tables.service)
+# =============================================================================
+
+nftban_detect_iptables_service() {
+    # Detect if iptables.service or ip6tables.service is active
+    # These are systemd services that manage iptables rules
+    # Returns: 0=not active, 1=service active
+
+    local status=0
+
+    if systemctl is-active --quiet iptables 2>/dev/null; then
+        status=1
+        NFTBAN_FIREWALL_CONFLICTS+=("IPTABLES: iptables.service is ACTIVE")
+        [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
+        NFTBAN_FIREWALL_FIXES+=("Disable iptables: systemctl disable --now iptables")
+    fi
+
+    if systemctl is-active --quiet ip6tables 2>/dev/null; then
+        status=1
+        NFTBAN_FIREWALL_CONFLICTS+=("IP6TABLES: ip6tables.service is ACTIVE")
+        [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
+        NFTBAN_FIREWALL_FIXES+=("Disable ip6tables: systemctl disable --now ip6tables")
     fi
 
     return $status
@@ -434,6 +450,7 @@ nftban_detect_all_conflicts() {
     # Run all detectors (order matters for reporting)
     nftban_detect_fail2ban || true
     nftban_detect_iptables_nft || true
+    nftban_detect_iptables_service || true
     nftban_detect_conflicting_tables || true
     nftban_detect_firewalld || true
     nftban_detect_ufw || true
@@ -533,6 +550,7 @@ nftban_report_conflicts_json() {
 
 export -f nftban_detect_fail2ban
 export -f nftban_detect_iptables_nft
+export -f nftban_detect_iptables_service
 export -f nftban_detect_conflicting_tables
 export -f nftban_detect_firewalld
 export -f nftban_detect_ufw
@@ -669,44 +687,44 @@ nftban_detect_panel() {
 # Format: CONFLICT_REGISTRY[panel:distro]="fw1 fw2"
 declare -gA NFTBAN_CONFLICT_REGISTRY=(
     # Plesk conflicts per distro
-    ["plesk:rhel"]="fail2ban firewalld"
-    ["plesk:debian"]="fail2ban ufw"
-    ["plesk:default"]="fail2ban ufw firewalld"
+    ["plesk:rhel"]="fail2ban firewalld iptables"
+    ["plesk:debian"]="fail2ban ufw iptables"
+    ["plesk:default"]="fail2ban ufw firewalld iptables"
 
     # DirectAdmin conflicts per distro
-    ["directadmin:rhel"]="csf firewalld"
-    ["directadmin:debian"]="csf ufw"
-    ["directadmin:default"]="csf firewalld"
+    ["directadmin:rhel"]="csf firewalld iptables"
+    ["directadmin:debian"]="csf ufw iptables"
+    ["directadmin:default"]="csf firewalld iptables"
 
     # cPanel conflicts (cPHulk coexists, don't remove)
-    ["cpanel:rhel"]="csf firewalld"
-    ["cpanel:debian"]="csf ufw"
-    ["cpanel:default"]="csf firewalld"
+    ["cpanel:rhel"]="csf firewalld iptables"
+    ["cpanel:debian"]="csf ufw iptables"
+    ["cpanel:default"]="csf firewalld iptables"
 
     # CWP conflicts
-    ["cwp:rhel"]="csf firewalld"
-    ["cwp:debian"]="csf ufw"
-    ["cwp:default"]="csf firewalld"
+    ["cwp:rhel"]="csf firewalld iptables"
+    ["cwp:debian"]="csf ufw iptables"
+    ["cwp:default"]="csf firewalld iptables"
 
     # CyberPanel conflicts
-    ["cyberpanel:rhel"]="firewalld"
-    ["cyberpanel:debian"]="ufw"
-    ["cyberpanel:default"]="firewalld ufw"
+    ["cyberpanel:rhel"]="firewalld iptables"
+    ["cyberpanel:debian"]="ufw iptables"
+    ["cyberpanel:default"]="firewalld ufw iptables"
 
     # HestiaCP conflicts
-    ["hestia:rhel"]="firewalld"
-    ["hestia:debian"]="ufw"
-    ["hestia:default"]="firewalld ufw"
+    ["hestia:rhel"]="firewalld iptables"
+    ["hestia:debian"]="ufw iptables"
+    ["hestia:default"]="firewalld ufw iptables"
 
     # VestaCP conflicts
-    ["vesta:rhel"]="firewalld"
-    ["vesta:debian"]="ufw"
-    ["vesta:default"]="firewalld ufw"
+    ["vesta:rhel"]="firewalld iptables"
+    ["vesta:debian"]="ufw iptables"
+    ["vesta:default"]="firewalld ufw iptables"
 
     # Generic server (no panel)
-    ["none:rhel"]="firewalld fail2ban csf"
-    ["none:debian"]="ufw fail2ban csf"
-    ["none:default"]="ufw firewalld fail2ban csf"
+    ["none:rhel"]="firewalld fail2ban csf iptables"
+    ["none:debian"]="ufw fail2ban csf iptables"
+    ["none:default"]="ufw firewalld fail2ban csf iptables"
 )
 
 nftban_get_panel_conflicts() {
@@ -853,6 +871,68 @@ nftban_remove_firewalld() {
         echo "  ✓ firewalld uninstalled"
     else
         echo "  ✓ firewalld disabled"
+    fi
+
+    return 0
+}
+
+# shellcheck disable=SC2120  # Function accepts optional --uninstall flag
+nftban_remove_iptables() {
+    # Remove/disable iptables services and flush rules
+    # Usage: nftban_remove_iptables [--uninstall]
+    # Returns: 0=success, 1=not installed, 2=failed
+
+    local uninstall=false
+    [[ "${1:-}" == "--uninstall" ]] && uninstall=true
+
+    echo "Disabling iptables..."
+
+    # Stop and disable iptables/ip6tables services
+    systemctl stop iptables 2>/dev/null || true
+    systemctl disable iptables 2>/dev/null || true
+    systemctl stop ip6tables 2>/dev/null || true
+    systemctl disable ip6tables 2>/dev/null || true
+
+    # Flush iptables rules (works for both nft and legacy)
+    if command -v iptables &>/dev/null; then
+        iptables -F 2>/dev/null || true
+        iptables -X 2>/dev/null || true
+        iptables -t nat -F 2>/dev/null || true
+        iptables -t mangle -F 2>/dev/null || true
+    fi
+
+    if command -v ip6tables &>/dev/null; then
+        ip6tables -F 2>/dev/null || true
+        ip6tables -X 2>/dev/null || true
+    fi
+
+    # Also flush legacy if exists
+    if command -v iptables-legacy &>/dev/null; then
+        iptables-legacy -F 2>/dev/null || true
+        iptables-legacy -X 2>/dev/null || true
+    fi
+
+    # Remove shadow nftables tables created by iptables-nft
+    nft delete table ip filter 2>/dev/null || true
+    nft delete table ip6 filter 2>/dev/null || true
+    nft delete table ip nat 2>/dev/null || true
+    nft delete table ip mangle 2>/dev/null || true
+
+    # Uninstall if requested
+    if [[ "$uninstall" == true ]]; then
+        local pkg_mgr
+        pkg_mgr=$(nftban_get_pkg_manager)
+        case "$pkg_mgr" in
+            dnf|yum)
+                $pkg_mgr remove -y iptables-services 2>/dev/null || true
+                ;;
+            apt)
+                apt-get remove -y iptables-persistent 2>/dev/null || true
+                ;;
+        esac
+        echo "  ✓ iptables services uninstalled"
+    else
+        echo "  ✓ iptables disabled and flushed"
     fi
 
     return 0
@@ -1009,6 +1089,7 @@ nftban_remove_conflicts() {
             fail2ban) nftban_remove_fail2ban && ((removed_count++)) ;;
             ufw) nftban_remove_ufw && ((removed_count++)) ;;
             firewalld) nftban_remove_firewalld && ((removed_count++)) ;;
+            iptables) nftban_remove_iptables && ((removed_count++)) ;;
             csf) nftban_remove_csf && ((removed_count++)) ;;
         esac
     done
@@ -1041,12 +1122,14 @@ export -f nftban_get_panel_conflicts
 export -f nftban_remove_fail2ban
 export -f nftban_remove_ufw
 export -f nftban_remove_firewalld
+export -f nftban_remove_iptables
 export -f nftban_remove_csf
 export -f nftban_remove_conflicts
 
 # Detection functions
 export -f nftban_detect_fail2ban
 export -f nftban_detect_iptables_nft
+export -f nftban_detect_iptables_service
 export -f nftban_detect_conflicting_tables
 export -f nftban_detect_firewalld
 export -f nftban_detect_ufw
