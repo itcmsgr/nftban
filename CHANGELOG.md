@@ -9,6 +9,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### DirectAdmin Panel: Login Monitor Syslog Access
+- **logger permission denied**: DirectAdmin uses `mysyslog` group for `/dev/log` socket
+  - Added `nftban` user to `mysyslog` group when DirectAdmin detected
+  - Fixes: `logger: socket /dev/log: Permission denied`
+  - Updated: `install.sh`, `nftban.spec`, `nftban.postinst`
+
+#### RPM Upgrade: Immutable File Handling
+- **%pretrans section**: Added Lua script to remove immutable flag before upgrade
+  - Fixes upgrade from old versions that don't have `chattr -i` in `%preun`
+  - Error was: `cpio: rename failed - No data available`
+  - The `nft_schema.sh` file is protected with `chattr +i` for security
+
+#### Missing Dependency: socat
+- **IPC communication**: Added `socat` as required dependency
+  - Required for CLI communication with `nftband` daemon via Unix socket
+  - Updated: RPM spec, install.sh, all 12 distro config files
+
 #### Critical: GeoIP Binary Missing from Installation
 - **nftban-geoip binary**: Added to `download-binaries.sh` download, verification, and installation
   - Binary now downloaded alongside nftban-core and nftban-ui
