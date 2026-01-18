@@ -70,6 +70,22 @@ case "$1" in
         fi
 
         # ======================================================================
+        # DIRECTADMIN PANEL: Add nftban to mysyslog group for logger access
+        # ======================================================================
+        # DirectAdmin uses 'mysyslog' group for /dev/log socket permissions.
+        # Without this, nftban-login-monitor fails with:
+        #   logger: socket /dev/log: Permission denied
+        # Ref: /run/systemd/journal/dev-log is owned by root:mysyslog (srw-rw----)
+        if [ -d /usr/local/directadmin ]; then
+            if getent group mysyslog >/dev/null 2>&1; then
+                if ! id -nG nftban 2>/dev/null | grep -qw mysyslog; then
+                    usermod -a -G mysyslog nftban 2>/dev/null && \
+                        echo "DirectAdmin: Added nftban to mysyslog group (syslog access)"
+                fi
+            fi
+        fi
+
+        # ======================================================================
         # STEP 2: Create runtime directories via systemd-tmpfiles
         # ======================================================================
         # Uses /usr/lib/tmpfiles.d/nftban.conf (generated from build/fhs-spec.yaml)

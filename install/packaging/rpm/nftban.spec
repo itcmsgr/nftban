@@ -61,6 +61,20 @@ observability via Prometheus/Grafana.
 %install
 # Installation handled by install.sh during build
 
+%pretrans -p <lua>
+-- ==========================================================================
+-- PRETRANS: Remove immutable flag before upgrade (runs FIRST, before old pkg)
+-- ==========================================================================
+-- Required when upgrading from old versions that don't have chattr -i in %preun.
+-- The nft_schema.sh file is protected with chattr +i for security.
+-- Without this, RPM fails: "cpio: rename failed - No data available"
+local schema_file = "/usr/lib/nftban/lib/nft_schema.sh"
+local f = io.open(schema_file, "r")
+if f then
+    f:close()
+    os.execute("chattr -i " .. schema_file .. " 2>/dev/null")
+end
+
 %pre
 # Pre-install: Create user and group via systemd-sysusers
 # Uses /usr/lib/sysusers.d/nftban.conf (generated from build/fhs-spec.yaml)
@@ -104,6 +118,22 @@ if ! command -v yq &>/dev/null; then
     fi
 else
     echo "yq already installed"
+fi
+
+# ==========================================================================
+# DIRECTADMIN PANEL: Add nftban to mysyslog group for logger access
+# ==========================================================================
+# DirectAdmin uses 'mysyslog' group for /dev/log socket permissions.
+# Without this, nftban-login-monitor fails with:
+#   logger: socket /dev/log: Permission denied
+# Ref: /run/systemd/journal/dev-log is owned by root:mysyslog (srw-rw----)
+if [ -d /usr/local/directadmin ]; then
+    if getent group mysyslog >/dev/null 2>&1; then
+        if ! id -nG nftban 2>/dev/null | grep -qw mysyslog; then
+            usermod -a -G mysyslog nftban 2>/dev/null && \
+                echo "DirectAdmin: Added nftban to mysyslog group (syslog access)"
+        fi
+    fi
 fi
 
 # ==========================================================================
