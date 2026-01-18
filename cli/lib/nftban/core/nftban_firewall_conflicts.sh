@@ -537,9 +537,520 @@ export -f nftban_detect_conflicting_tables
 export -f nftban_detect_firewalld
 export -f nftban_detect_ufw
 export -f nftban_detect_csf
+# =============================================================================
+# DISTRO DETECTION
+# =============================================================================
+
+nftban_detect_distro() {
+    # Detect Linux distribution
+    # Returns: rhel, debian, arch, unknown
+
+    if [[ -f /etc/os-release ]]; then
+        # shellcheck source=/dev/null
+        source /etc/os-release
+        case "${ID:-}" in
+            rhel|centos|rocky|alma|fedora|ol)
+                echo "rhel"
+                ;;
+            debian|ubuntu|linuxmint|pop)
+                echo "debian"
+                ;;
+            arch|manjaro)
+                echo "arch"
+                ;;
+            *)
+                # Check ID_LIKE for derivatives
+                case "${ID_LIKE:-}" in
+                    *rhel*|*fedora*|*centos*)
+                        echo "rhel"
+                        ;;
+                    *debian*|*ubuntu*)
+                        echo "debian"
+                        ;;
+                    *)
+                        echo "unknown"
+                        ;;
+                esac
+                ;;
+        esac
+    else
+        echo "unknown"
+    fi
+}
+
+nftban_get_pkg_manager() {
+    # Get package manager for current distro
+    # Returns: dnf, apt, pacman, unknown
+
+    local distro="${1:-$(nftban_detect_distro)}"
+
+    case "$distro" in
+        rhel)
+            if command -v dnf &>/dev/null; then
+                echo "dnf"
+            elif command -v yum &>/dev/null; then
+                echo "yum"
+            else
+                echo "unknown"
+            fi
+            ;;
+        debian)
+            echo "apt"
+            ;;
+        arch)
+            echo "pacman"
+            ;;
+        *)
+            echo "unknown"
+            ;;
+    esac
+}
+
+# =============================================================================
+# PANEL DETECTION
+# =============================================================================
+
+nftban_detect_panel() {
+    # Detect which control panel is installed
+    # Returns: cpanel, plesk, directadmin, cwp, cyberpanel, hestia, none
+
+    # cPanel
+    if [[ -d /usr/local/cpanel ]] && [[ -f /usr/local/cpanel/cpanel ]]; then
+        echo "cpanel"
+        return 0
+    fi
+
+    # Plesk
+    if [[ -d /usr/local/psa ]] && command -v plesk &>/dev/null; then
+        echo "plesk"
+        return 0
+    fi
+
+    # DirectAdmin
+    if [[ -d /usr/local/directadmin ]] && [[ -f /usr/local/directadmin/directadmin ]]; then
+        echo "directadmin"
+        return 0
+    fi
+
+    # CWP (CentOS Web Panel / Control Web Panel)
+    if [[ -d /usr/local/cwpsrv ]]; then
+        echo "cwp"
+        return 0
+    fi
+
+    # CyberPanel
+    if [[ -d /usr/local/CyberCP ]]; then
+        echo "cyberpanel"
+        return 0
+    fi
+
+    # HestiaCP
+    if [[ -d /usr/local/hestia ]]; then
+        echo "hestia"
+        return 0
+    fi
+
+    # VestaCP
+    if [[ -d /usr/local/vesta ]]; then
+        echo "vesta"
+        return 0
+    fi
+
+    echo "none"
+    return 0
+}
+
+# =============================================================================
+# PANEL-SPECIFIC CONFLICT MAPPING (Panel + Distro aware)
+# =============================================================================
+
+# Conflict registry: panel_distro -> "firewall1 firewall2 ..."
+# Format: CONFLICT_REGISTRY[panel:distro]="fw1 fw2"
+declare -gA NFTBAN_CONFLICT_REGISTRY=(
+    # Plesk conflicts per distro
+    ["plesk:rhel"]="fail2ban firewalld"
+    ["plesk:debian"]="fail2ban ufw"
+    ["plesk:default"]="fail2ban ufw firewalld"
+
+    # DirectAdmin conflicts per distro
+    ["directadmin:rhel"]="csf firewalld"
+    ["directadmin:debian"]="csf ufw"
+    ["directadmin:default"]="csf firewalld"
+
+    # cPanel conflicts (cPHulk coexists, don't remove)
+    ["cpanel:rhel"]="csf firewalld"
+    ["cpanel:debian"]="csf ufw"
+    ["cpanel:default"]="csf firewalld"
+
+    # CWP conflicts
+    ["cwp:rhel"]="csf firewalld"
+    ["cwp:debian"]="csf ufw"
+    ["cwp:default"]="csf firewalld"
+
+    # CyberPanel conflicts
+    ["cyberpanel:rhel"]="firewalld"
+    ["cyberpanel:debian"]="ufw"
+    ["cyberpanel:default"]="firewalld ufw"
+
+    # HestiaCP conflicts
+    ["hestia:rhel"]="firewalld"
+    ["hestia:debian"]="ufw"
+    ["hestia:default"]="firewalld ufw"
+
+    # VestaCP conflicts
+    ["vesta:rhel"]="firewalld"
+    ["vesta:debian"]="ufw"
+    ["vesta:default"]="firewalld ufw"
+
+    # Generic server (no panel)
+    ["none:rhel"]="firewalld fail2ban csf"
+    ["none:debian"]="ufw fail2ban csf"
+    ["none:default"]="ufw firewalld fail2ban csf"
+)
+
+nftban_get_panel_conflicts() {
+    # Get list of conflicting firewalls for panel+distro combination
+    # Usage: nftban_get_panel_conflicts [panel] [distro]
+    # Returns: Space-separated list of conflicting firewalls
+
+    local panel="${1:-$(nftban_detect_panel)}"
+    local distro="${2:-$(nftban_detect_distro)}"
+
+    # Try panel:distro first, then panel:default
+    local key="${panel}:${distro}"
+    if [[ -n "${NFTBAN_CONFLICT_REGISTRY[$key]:-}" ]]; then
+        echo "${NFTBAN_CONFLICT_REGISTRY[$key]}"
+    else
+        key="${panel}:default"
+        echo "${NFTBAN_CONFLICT_REGISTRY[$key]:-}"
+    fi
+}
+
+# =============================================================================
+# FIREWALL REMOVAL FUNCTIONS (Distro-aware)
+# =============================================================================
+
+nftban_remove_fail2ban() {
+    # Remove/disable fail2ban (distro-aware)
+    # Usage: nftban_remove_fail2ban [--uninstall]
+    # Returns: 0=success, 1=not installed, 2=failed
+
+    local uninstall=false
+    [[ "${1:-}" == "--uninstall" ]] && uninstall=true
+
+    if ! command -v fail2ban-client &>/dev/null; then
+        return 1
+    fi
+
+    echo "Disabling fail2ban..."
+
+    # Flush any bans first
+    fail2ban-client unban --all 2>/dev/null || true
+
+    # Stop and disable service
+    systemctl stop fail2ban 2>/dev/null || true
+    systemctl disable fail2ban 2>/dev/null || true
+
+    # Uninstall if requested
+    if [[ "$uninstall" == true ]]; then
+        local pkg_mgr
+        pkg_mgr=$(nftban_get_pkg_manager)
+        case "$pkg_mgr" in
+            dnf|yum)
+                $pkg_mgr remove -y fail2ban fail2ban-server 2>/dev/null || true
+                ;;
+            apt)
+                apt-get remove -y fail2ban 2>/dev/null || true
+                ;;
+            pacman)
+                pacman -R --noconfirm fail2ban 2>/dev/null || true
+                ;;
+        esac
+        echo "  ✓ fail2ban uninstalled"
+    else
+        echo "  ✓ fail2ban disabled"
+    fi
+
+    return 0
+}
+
+nftban_remove_ufw() {
+    # Remove/disable ufw (distro-aware)
+    # Usage: nftban_remove_ufw [--uninstall]
+    # Returns: 0=success, 1=not installed, 2=failed
+
+    local uninstall=false
+    [[ "${1:-}" == "--uninstall" ]] && uninstall=true
+
+    if ! command -v ufw &>/dev/null; then
+        return 1
+    fi
+
+    echo "Disabling ufw..."
+
+    # Disable ufw (flushes rules)
+    ufw disable 2>/dev/null || true
+    systemctl stop ufw 2>/dev/null || true
+    systemctl disable ufw 2>/dev/null || true
+
+    # Uninstall if requested
+    if [[ "$uninstall" == true ]]; then
+        local pkg_mgr
+        pkg_mgr=$(nftban_get_pkg_manager)
+        case "$pkg_mgr" in
+            apt)
+                apt-get remove -y ufw 2>/dev/null || true
+                ;;
+            pacman)
+                pacman -R --noconfirm ufw 2>/dev/null || true
+                ;;
+        esac
+        echo "  ✓ ufw uninstalled"
+    else
+        echo "  ✓ ufw disabled"
+    fi
+
+    return 0
+}
+
+nftban_remove_firewalld() {
+    # Remove/disable firewalld (distro-aware)
+    # Usage: nftban_remove_firewalld [--uninstall]
+    # Returns: 0=success, 1=not installed, 2=failed
+
+    local uninstall=false
+    [[ "${1:-}" == "--uninstall" ]] && uninstall=true
+
+    if ! command -v firewall-cmd &>/dev/null; then
+        return 1
+    fi
+
+    echo "Disabling firewalld..."
+
+    systemctl stop firewalld 2>/dev/null || true
+    systemctl disable firewalld 2>/dev/null || true
+    systemctl mask firewalld 2>/dev/null || true
+
+    # Flush any nftables tables created by firewalld
+    nft delete table inet firewalld 2>/dev/null || true
+
+    # Uninstall if requested
+    if [[ "$uninstall" == true ]]; then
+        local pkg_mgr
+        pkg_mgr=$(nftban_get_pkg_manager)
+        case "$pkg_mgr" in
+            dnf|yum)
+                $pkg_mgr remove -y firewalld 2>/dev/null || true
+                ;;
+            pacman)
+                pacman -R --noconfirm firewalld 2>/dev/null || true
+                ;;
+        esac
+        echo "  ✓ firewalld uninstalled"
+    else
+        echo "  ✓ firewalld disabled"
+    fi
+
+    return 0
+}
+
+nftban_remove_csf() {
+    # Remove/disable CSF (ConfigServer Firewall)
+    # Usage: nftban_remove_csf [--uninstall]
+    # Returns: 0=success, 1=not installed, 2=failed
+
+    local uninstall=false
+    [[ "${1:-}" == "--uninstall" ]] && uninstall=true
+
+    if ! command -v csf &>/dev/null && [[ ! -f /etc/csf/csf.conf ]]; then
+        return 1
+    fi
+
+    echo "Disabling CSF..."
+
+    # Disable CSF (flushes all rules)
+    csf -x 2>/dev/null || true
+
+    # Stop lfd (Login Failure Daemon)
+    systemctl stop lfd 2>/dev/null || true
+    systemctl disable lfd 2>/dev/null || true
+    systemctl stop csf 2>/dev/null || true
+    systemctl disable csf 2>/dev/null || true
+
+    # Uninstall if requested (CSF has its own uninstaller)
+    if [[ "$uninstall" == true ]]; then
+        if [[ -x /etc/csf/uninstall.sh ]]; then
+            /etc/csf/uninstall.sh 2>/dev/null || true
+            echo "  ✓ CSF uninstalled"
+        else
+            echo "  ✓ CSF disabled (uninstall script not found)"
+        fi
+    else
+        echo "  ✓ CSF disabled"
+    fi
+
+    return 0
+}
+
+# =============================================================================
+# MAIN CONFLICT REMOVAL FUNCTION
+# =============================================================================
+
+nftban_remove_conflicts() {
+    # Remove all conflicting firewalls based on detected panel
+    # Usage: nftban_remove_conflicts [--yes] [--panel <panel>]
+    # Returns: 0=success, 1=nothing to remove, 2=failed
+
+    local auto_yes=false
+    local panel=""
+    local removed_count=0
+
+    # Parse arguments
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --yes|-y)
+                auto_yes=true
+                shift
+                ;;
+            --panel)
+                panel="$2"
+                shift 2
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    # Detect panel if not specified
+    if [[ -z "$panel" ]]; then
+        panel=$(nftban_detect_panel)
+    fi
+
+    # Get conflicts for this panel
+    local conflicts
+    conflicts=$(nftban_get_panel_conflicts "$panel")
+
+    echo "=============================================="
+    echo "NFTBan Conflict Removal"
+    echo "=============================================="
+    echo ""
+    echo "Detected panel: $panel"
+    echo "Conflicts to check: $conflicts"
+    echo ""
+
+    # Check what's actually installed and active
+    local to_remove=()
+
+    for fw in $conflicts; do
+        case "$fw" in
+            fail2ban)
+                if systemctl is-active --quiet fail2ban 2>/dev/null; then
+                    to_remove+=("fail2ban")
+                fi
+                ;;
+            ufw)
+                if command -v ufw &>/dev/null; then
+                    local status
+                    status=$(ufw status 2>/dev/null | head -1 || echo "")
+                    if [[ "$status" == *"active"* ]]; then
+                        to_remove+=("ufw")
+                    fi
+                fi
+                ;;
+            firewalld)
+                if systemctl is-active --quiet firewalld 2>/dev/null; then
+                    to_remove+=("firewalld")
+                fi
+                ;;
+            csf)
+                if [[ -f /etc/csf/csf.conf ]] && grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; then
+                    to_remove+=("csf")
+                fi
+                ;;
+        esac
+    done
+
+    if [[ ${#to_remove[@]} -eq 0 ]]; then
+        echo "No active conflicting firewalls found."
+        return 1
+    fi
+
+    echo "Active conflicts found:"
+    for fw in "${to_remove[@]}"; do
+        echo "  - $fw"
+    done
+    echo ""
+
+    # Confirm unless --yes
+    if [[ "$auto_yes" != true ]]; then
+        echo "These firewalls will be DISABLED (not uninstalled)."
+        echo "NFTBan will take over firewall protection."
+        echo ""
+        read -p "Continue? (yes/no) [no]: " confirm
+        if [[ "$confirm" != "yes" && "$confirm" != "y" ]]; then
+            echo "Aborted."
+            return 0
+        fi
+    fi
+
+    echo ""
+    echo "Removing conflicts..."
+    echo ""
+
+    # Remove each conflict
+    for fw in "${to_remove[@]}"; do
+        case "$fw" in
+            fail2ban) nftban_remove_fail2ban && ((removed_count++)) ;;
+            ufw) nftban_remove_ufw && ((removed_count++)) ;;
+            firewalld) nftban_remove_firewalld && ((removed_count++)) ;;
+            csf) nftban_remove_csf && ((removed_count++)) ;;
+        esac
+    done
+
+    echo ""
+    echo "=============================================="
+    echo "Removed $removed_count conflicting firewall(s)"
+    echo "=============================================="
+    echo ""
+    echo "NFTBan is now the primary firewall."
+    echo "Run 'nftban health' to verify."
+    echo ""
+
+    return 0
+}
+
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+# Distro detection
+export -f nftban_detect_distro
+export -f nftban_get_pkg_manager
+
+# Panel detection
+export -f nftban_detect_panel
+export -f nftban_get_panel_conflicts
+
+# Removal functions
+export -f nftban_remove_fail2ban
+export -f nftban_remove_ufw
+export -f nftban_remove_firewalld
+export -f nftban_remove_csf
+export -f nftban_remove_conflicts
+
+# Detection functions
+export -f nftban_detect_fail2ban
+export -f nftban_detect_iptables_nft
+export -f nftban_detect_conflicting_tables
+export -f nftban_detect_firewalld
+export -f nftban_detect_ufw
+export -f nftban_detect_csf
 export -f nftban_is_cpanel_environment
 export -f nftban_detect_cphulk
 export -f nftban_detect_all_conflicts
+
+# Reporting functions
 export -f nftban_report_conflicts
 export -f nftban_report_conflicts_json
 export -f nftban_severity_to_string
