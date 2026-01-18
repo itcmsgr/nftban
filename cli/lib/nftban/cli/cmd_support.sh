@@ -622,7 +622,14 @@ nftban_cmd_support_bundle() {
     nftban_cmd_support "$@"
 }
 
-# If sourced, export. If executed directly, run.
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+export -f nftban_cmd_support
+export -f nftban_cmd_support_bundle
+
+# If executed directly, run.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     nftban_cmd_support "$@"
 fi

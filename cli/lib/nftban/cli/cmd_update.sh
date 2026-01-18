@@ -532,7 +532,13 @@ nftban_cmd_update() {
     esac
 }
 
-# If sourced, export. If executed directly, run.
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+export -f nftban_cmd_update
+
+# If executed directly, run.
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
     nftban_cmd_update "$@"
 fi
