@@ -18,16 +18,17 @@
 # meta:inventory.systemd_units="nftban-firewall-init.service"
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
+# meta:called_by="systemd (nftban-firewall-init.service)"
+# meta:runs_as="root"
 # =============================================================================
-# Called by: systemd (nftban-firewall-init.service)
-# Runs as: root
 #
 # SECURITY: This script is called directly by systemd to prevent command
 # injection via EnvironmentFile variable interpolation. Variables are
 # validated before use.
+#
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Load configuration from file
 if [[ -f /etc/nftban/nftban.conf ]]; then
@@ -73,11 +74,11 @@ fi
 if [[ "$DELAY" -eq 0 ]]; then
     # No delay: run in background for fast boot
     echo "Initializing firewall (background, no delay)..." >&2
-    /usr/sbin/nftban firewall init &
+    "${NFTBAN_BIN:-/usr/bin/nftban}" firewall init &
 else
     # With delay: run synchronously
     echo "Initializing firewall (synchronous, delay=${DELAY}s)..." >&2
-    /usr/sbin/nftban firewall init
+    "${NFTBAN_BIN:-/usr/bin/nftban}" firewall init
 fi
 
 exit 0

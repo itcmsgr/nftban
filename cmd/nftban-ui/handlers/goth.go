@@ -1425,7 +1425,7 @@ func (h *GOTHHandlers) getBinariesList() []ui.BinaryInfo {
 		name string
 		path string
 	}{
-		{"nftban", "/usr/sbin/nftban"},
+		{"nftban", "/usr/bin/nftban"},
 		{"nftban-ui", "/usr/sbin/nftban-ui"},
 		{"nftban-core", "/usr/sbin/nftban-core"},
 		{"nftban-api", "/usr/sbin/nftban-api"},

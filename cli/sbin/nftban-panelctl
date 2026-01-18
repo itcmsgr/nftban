@@ -3,7 +3,22 @@
 # NFTBan v1.0.24 - Panel Control Wrapper (nftban-panelctl)
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Secure wrapper for hosting panel integration (DirectAdmin, cPanel, etc.)
+# meta:name="nftban-panelctl"
+# meta:type="cli"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Secure wrapper for hosting panel integration (DirectAdmin, cPanel, etc.)"
+# meta:input="panel command requests"
+# meta:output="JSON response"
+# meta:depends="nftban"
+# meta:inventory.files="/usr/sbin/nftban-panelctl"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_BIN,NFTBAN_REGISTRY"
+# meta:inventory.config_files="/usr/lib/nftban/commands.registry.yml"
+# meta:inventory.systemd_units=""
+# meta:inventory.network="none"
+# meta:inventory.privileges="nftban-panel group"
+# =============================================================================
 #
 # Security Model:
 #   - Only allows commands marked with panel_expose=true in registry
@@ -14,12 +29,6 @@
 #
 # Usage:
 #   nftban-panelctl <command> [subcommand] [options]
-#
-# Examples:
-#   nftban-panelctl status
-#   nftban-panelctl health summary
-#   nftban-panelctl list banned
-#   nftban-panelctl stats dashboard
 #
 # Service Accounts:
 #   nftban-da  - DirectAdmin integration
@@ -40,7 +49,7 @@ set -Eeuo pipefail
 # =============================================================================
 
 readonly VERSION="1.0.24"
-readonly NFTBAN_BIN="${NFTBAN_BIN:-/usr/sbin/nftban}"
+readonly NFTBAN_BIN="${NFTBAN_BIN:-/usr/bin/nftban}"
 readonly REGISTRY_FILE="${NFTBAN_REGISTRY:-/usr/lib/nftban/commands.registry.yml}"
 readonly LOG_TAG="nftban-panelctl"
 readonly PANEL_GROUP="nftban-panel"
