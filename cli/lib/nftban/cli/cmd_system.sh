@@ -5,23 +5,28 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Enable/disable NFTBan system (nftables + suricata + login monitor)
 #
-# meta:name=cmd_system
-# meta:type=cli
-# meta:header=System Enable/Disable CLI
-# meta:version=1.0.0
+# meta:name="cmd_system"
+# meta:type="cli"
+# meta:header="System Enable/Disable CLI"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=Enable or disable NFTBan system with comprehensive config validation
-# meta:input=enable|disable|restart|status command with safety checks
-# meta:output=System status, validation results, and service management
+# meta:description="Enable or disable NFTBan system with comprehensive config validation"
+# meta:input="enable|disable|restart|status command with safety checks"
+# meta:output="System status, validation results, and service management"
+# meta:depends="bash,systemctl,nft,service_control.sh,nftban_health.sh,nftban_firewall.sh"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,systemctl,nft,service_control.sh,nftban_health.sh,nftban_firewall.sh
+# meta:inventory.files="service_control.sh,nftban_health.sh,nftban_firewall.sh"
+# meta:inventory.binaries="systemctl,nft"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_CONFIG_DIR"
+# meta:inventory.config_files="nftban.conf"
+# meta:inventory.systemd_units="nftban.service,nftables.service,suricata.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-12-02
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-01-18"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -110,6 +115,17 @@ nftban_system_enable() {
         timers)
             echo "Enabling all NFTBan timers..."
             _nftban_timers_control "enable"
+            ;;
+        help|--help|-h)
+            echo "Usage: nftban enable [TARGET]"
+            echo ""
+            echo "Targets:"
+            echo "  all       - Enable all NFTBan services (default)"
+            echo "  nftables  - Enable nftables firewall management"
+            echo "  suricata  - Enable Suricata IDS"
+            echo "  login     - Enable login monitoring"
+            echo "  timers    - Enable all maintenance timers"
+            return 0
             ;;
         *)
             echo "ERROR: Unknown target: $target" >&2
@@ -441,8 +457,20 @@ nftban_system_disable() {
             echo "Disabling all NFTBan timers..."
             _nftban_timers_control "disable"
             ;;
+        help|--help|-h)
+            echo "Usage: nftban disable [TARGET]"
+            echo ""
+            echo "Targets:"
+            echo "  all       - Disable all NFTBan services"
+            echo "  nftables  - Disable nftables firewall management"
+            echo "  suricata  - Disable Suricata IDS"
+            echo "  login     - Disable login monitoring"
+            echo "  timers    - Disable all maintenance timers"
+            return 0
+            ;;
         *)
             echo "ERROR: Unknown target: $target" >&2
+            echo "Use 'nftban disable help' for usage" >&2
             return 1
             ;;
     esac
@@ -555,9 +583,20 @@ nftban_system_restart() {
             echo "Restarting all NFTBan timers..."
             _nftban_timers_control "restart"
             ;;
+        help|--help|-h)
+            echo "Usage: nftban restart [TARGET]"
+            echo ""
+            echo "Targets:"
+            echo "  all       - Restart all NFTBan services (default)"
+            echo "  nftables  - Restart nftables service"
+            echo "  suricata  - Restart Suricata IDS"
+            echo "  login     - Restart login monitoring"
+            echo "  timers    - Restart all maintenance timers"
+            return 0
+            ;;
         *)
             echo "ERROR: Unknown target: $target" >&2
-            echo "Targets: all, nftables, suricata, login, timers" >&2
+            echo "Use 'nftban restart help' for usage" >&2
             return 1
             ;;
     esac
