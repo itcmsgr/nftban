@@ -1763,12 +1763,10 @@ nftban_health_check_metrics() {
 
     # Check Prometheus or VictoriaMetrics (optional alternatives - only one needed)
     # Only warn about unconfigured backend if it's the one selected in config
-    local metrics_backend_found=false
     local configured_backend="${NFTBAN_METRICS_BACKEND:-prometheus}"
 
     # Check Prometheus (only warn if it's the configured backend)
     if command -v prometheus >/dev/null 2>&1 || systemctl list-unit-files 2>/dev/null | grep -q "^prometheus.service"; then
-        metrics_backend_found=true
         if systemctl is-active --quiet prometheus 2>/dev/null; then
             metrics_issues+=("✓ Prometheus: Running")
 
@@ -1792,7 +1790,6 @@ nftban_health_check_metrics() {
 
     # Check VictoriaMetrics (alternative to Prometheus)
     if command -v victoria-metrics >/dev/null 2>&1 || systemctl list-unit-files 2>/dev/null | grep -q "^victoria-metrics.service"; then
-        metrics_backend_found=true
         if systemctl is-active --quiet victoria-metrics 2>/dev/null; then
             metrics_issues+=("✓ VictoriaMetrics: Running")
 
