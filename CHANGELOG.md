@@ -49,6 +49,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Added sanitization: `${var//[^0-9]/}` to strip non-numeric characters
   - Affected: IPv4/IPv6 ban counting, feed IP counting
 
+#### Health Check: False Warning for Unconfigured Metrics Backend
+- **Prometheus warning with VictoriaMetrics**: Fixed false warning about inactive backend
+  - Was warning "Prometheus installed but not running" even when VictoriaMetrics configured
+  - Now only warns about backends matching `NFTBAN_METRICS_BACKEND` config
+  - Applies to both Prometheus and VictoriaMetrics detection
+
 #### Critical: Arithmetic Bug in GeoBan Module
 - **Exit code 1 on first success**: Fixed `((success++))` pattern in `nftban_geoban.sh`
   - Changed to `((++success))` (prefix increment) to avoid exit code 1 when var=0
