@@ -2409,21 +2409,21 @@ nftban_health_check_timers() {
     local status=$HEALTH_OK
     local timer_issues=()
 
-    # All NFTBan timers in priority order (REQUIRED for complete installation)
+    # Core NFTBan timers (REQUIRED - always enabled)
     local -a timers=(
         "nftban-maintenance.timer"      # CRITICAL: SSH/IP protection, auto-heal
         "nftban-health.timer"           # Health checks
-        "nftban-core-feeds.timer"       # Threat feeds sync
         "nftban-core-geoip.timer"       # GeoIP updates
         "nftban-queue.timer"            # Ban queue processing
-        "nftban-watchdog.timer"         # System resource monitoring
-        "nftban-metrics-exporter.timer" # Prometheus metrics
     )
 
-    # Optional timers (only needed for specific features)
-    # Optional timers - reserved for future validation
+    # Optional timers (only enabled when feature is configured)
+    # These are not checked by default - only if the feature is enabled
     # shellcheck disable=SC2034
     local -a optional_timers=(
+        "nftban-watchdog.timer"         # System resource monitoring (nftban watchdog enable)
+        "nftban-core-feeds.timer"       # Threat feeds sync (nftban feeds enable)
+        "nftban-metrics-exporter.timer" # Prometheus metrics (nftban metrics enable)
         "nftban-suricata-update.timer"  # Suricata rules (needs suricata)
         "nftban-snapshot.timer"         # Firewall snapshots
         "nftban-rollback.timer"         # Auto-rollback checks
