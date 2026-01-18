@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+#### Health Check: Timers Not Displayed
+- **Timers check hidden**: Timer health check was running but not displayed
+  - Added `timers` to render output list in `nftban_health_render.sh`
+  - Caused yellow status with no visible warnings
+
+#### Health Check: Feature Timers Incorrectly Required
+- **Optional timers as required**: Moved feature-dependent timers to optional list
+  - `watchdog`, `feeds`, `metrics-exporter` are now optional
+  - Only core timers required: `maintenance`, `health`, `geoip`, `queue`
+
 #### DirectAdmin Panel: Login Monitor Syslog Access
 - **logger permission denied**: DirectAdmin uses `mysyslog` group for `/dev/log` socket
   - Added `nftban` user to `mysyslog` group when DirectAdmin detected
