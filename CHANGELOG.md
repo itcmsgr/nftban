@@ -42,6 +42,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Installed to `/usr/lib/nftban/bin/nftban-geoip`
   - Enables full geoban functionality (country-based IP blocking)
 
+#### Metrics Exporter: Arithmetic Syntax Error
+- **Non-numeric values in arithmetic**: Fixed bash arithmetic error in Prometheus exporter
+  - `get_ban_breakdown()` function failed with: `syntax error in expression`
+  - Cause: `wc -l` and `grep -c` outputs may contain newlines/whitespace
+  - Added sanitization: `${var//[^0-9]/}` to strip non-numeric characters
+  - Affected: IPv4/IPv6 ban counting, feed IP counting
+
 #### Critical: Arithmetic Bug in GeoBan Module
 - **Exit code 1 on first success**: Fixed `((success++))` pattern in `nftban_geoban.sh`
   - Changed to `((++success))` (prefix increment) to avoid exit code 1 when var=0

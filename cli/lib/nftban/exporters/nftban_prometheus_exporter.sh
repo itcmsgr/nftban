@@ -569,8 +569,9 @@ get_ban_breakdown() {
         v4_output=$(nft list set ${table_v4} blacklist_ipv4 2>/dev/null || true)
         v4_temp=$(echo "$v4_output" | grep -c "timeout" 2>/dev/null || echo "0")
         v4_total=$(echo "$v4_output" | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | wc -l 2>/dev/null || echo "0")
-        v4_temp=${v4_temp:-0}
-        v4_total=${v4_total:-0}
+        # Sanitize to ensure numeric-only values (strip newlines/whitespace)
+        v4_temp=${v4_temp//[^0-9]/}; v4_temp=${v4_temp:-0}
+        v4_total=${v4_total//[^0-9]/}; v4_total=${v4_total:-0}
         v4_perm=$((v4_total - v4_temp))
         [[ $v4_perm -lt 0 ]] && v4_perm=0
     fi
@@ -581,8 +582,9 @@ get_ban_breakdown() {
         v6_output=$(nft list set ${table_v6} blacklist_ipv6 2>/dev/null || true)
         v6_temp=$(echo "$v6_output" | grep -c "timeout" 2>/dev/null || echo "0")
         v6_total=$(echo "$v6_output" | grep -oE '[0-9a-fA-F:]+::[0-9a-fA-F:]*|[0-9a-fA-F:]+:[0-9a-fA-F:]+' | wc -l 2>/dev/null || echo "0")
-        v6_temp=${v6_temp:-0}
-        v6_total=${v6_total:-0}
+        # Sanitize to ensure numeric-only values (strip newlines/whitespace)
+        v6_temp=${v6_temp//[^0-9]/}; v6_temp=${v6_temp:-0}
+        v6_total=${v6_total//[^0-9]/}; v6_total=${v6_total:-0}
         v6_perm=$((v6_total - v6_temp))
         [[ $v6_perm -lt 0 ]] && v6_perm=0
     fi
@@ -614,6 +616,9 @@ get_feeds_metrics() {
                     local v4 v6
                     v4=$(grep -cE '^[0-9]+\.' "$feed_file" 2>/dev/null) || v4=0
                     v6=$(grep -cE '^[0-9a-fA-F]*:' "$feed_file" 2>/dev/null) || v6=0
+                    # Sanitize to ensure numeric-only values
+                    v4=${v4//[^0-9]/}; v4=${v4:-0}
+                    v6=${v6//[^0-9]/}; v6=${v6:-0}
                     total_ipv4=$((total_ipv4 + v4))
                     total_ipv6=$((total_ipv6 + v6))
                 fi
