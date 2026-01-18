@@ -120,7 +120,23 @@ install_via_binary() {
 create_systemd_service() {
     print_info "Creating systemd service..."
 
-    cat > /etc/systemd/system/victoriametrics.service << 'EOF'
+    # Check if enterprise key is configured
+    local license_line=""
+    local env_line=""
+
+    if [[ -f "/etc/nftban/metrics/enterprise.key" ]] && [[ -s "/etc/nftban/metrics/enterprise.key" ]]; then
+        # Enterprise mode: include license file configuration
+        print_info "Enterprise key detected - configuring enterprise mode"
+        env_line="EnvironmentFile=-/etc/nftban/metrics/enterprise.env"
+        license_line="  -license.file=\${VM_LICENSE_FILE}"
+    else
+        # Community mode: no license configuration
+        print_info "No enterprise key - configuring community edition"
+        env_line="# Enterprise mode not configured (community edition)"
+        license_line=""
+    fi
+
+    cat > /etc/systemd/system/victoriametrics.service << EOF
 [Unit]
 Description=VictoriaMetrics - High-Performance Time Series Database
 Documentation=https://docs.victoriametrics.com/
@@ -133,15 +149,14 @@ User=victoriametrics
 Group=victoriametrics
 
 # Enterprise key support (HLD Section 7.4)
-# Load environment file if exists (contains VM_LICENSE_FILE path)
-EnvironmentFile=-/etc/nftban/metrics/enterprise.env
+${env_line}
 
-ExecStart=/usr/local/bin/victoria-metrics-prod \
-  -storageDataPath=/var/lib/victoriametrics \
-  -retentionPeriod=12 \
-  -httpListenAddr=127.0.0.1:8428 \
-  -promscrape.config=/etc/victoriametrics/scrape.yml \
-  -license.file=${VM_LICENSE_FILE:-}
+ExecStart=/usr/local/bin/victoria-metrics-prod \\
+  -storageDataPath=/var/lib/victoriametrics \\
+  -retentionPeriod=12 \\
+  -httpListenAddr=127.0.0.1:8428 \\
+  -promscrape.config=/etc/victoriametrics/scrape.yml${license_line:+ \\
+${license_line}}
 
 SyslogIdentifier=victoriametrics
 Restart=always
