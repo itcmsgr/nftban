@@ -1308,6 +1308,10 @@ install_configs() {
     mkdir -p /etc/nftban/suricata/{profiles,config,rules,cache}
     mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,panels,metrics,stats}
     mkdir -p /var/lib/nftban/reports/auditors
+
+    # Create manual whitelist/blacklist files if missing (used by nftban ban/whitelist commands)
+    [[ -f /etc/nftban/whitelist.d/99-manual.conf ]] || touch /etc/nftban/whitelist.d/99-manual.conf
+    [[ -f /etc/nftban/blacklist.d/99-manual.conf ]] || touch /etc/nftban/blacklist.d/99-manual.conf
     mkdir -p /var/lib/nftban/stats/{history,profiles}
     mkdir -p /var/lib/nftban/queue/{pending,work,dlq}
     mkdir -p /var/lib/nftban/mailspool
