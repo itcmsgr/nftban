@@ -195,6 +195,12 @@ install -D -m 0644 etc/nftban/suricata/profiles/maximum.yaml %{buildroot}/etc/nf
 mkdir -p %{buildroot}/etc/nftban/distros
 cp etc/nftban/distros/*.conf %{buildroot}/etc/nftban/distros/
 
+# Manual whitelist/blacklist files (user-managed, noreplace)
+mkdir -p %{buildroot}/etc/nftban/whitelist.d
+mkdir -p %{buildroot}/etc/nftban/blacklist.d
+install -m 0640 etc/nftban/whitelist.d/99-manual.conf %{buildroot}/etc/nftban/whitelist.d/99-manual.conf
+install -m 0640 etc/nftban/blacklist.d/99-manual.conf %{buildroot}/etc/nftban/blacklist.d/99-manual.conf
+
 # Systemd units (actual files that exist)
 install -D -m 0644 install/systemd/nftban-maintenance.service %{buildroot}/usr/lib/systemd/system/nftban-maintenance.service
 install -D -m 0644 install/systemd/nftban-maintenance.timer %{buildroot}/usr/lib/systemd/system/nftban-maintenance.timer
@@ -816,7 +822,9 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban/suricata/rules
 %dir %attr(750,root,nftban) /etc/nftban/suricata/cache
 %dir %attr(750,root,nftban) /etc/nftban/whitelist.d
+%config(noreplace) %attr(640,root,nftban) /etc/nftban/whitelist.d/99-manual.conf
 %dir %attr(750,root,nftban) /etc/nftban/blacklist.d
+%config(noreplace) %attr(640,root,nftban) /etc/nftban/blacklist.d/99-manual.conf
 %dir %attr(750,root,nftban) /etc/nftban/ports.d
 %dir %attr(750,root,nftban) /etc/nftban/rules.d
 %dir %attr(750,nftban,nftban) /var/lib/nftban
@@ -1330,6 +1338,8 @@ EOF
 /etc/nftban/conf.d/botscan/main.conf
 /etc/nftban/conf.d/geoban/main.conf
 /etc/nftban/conf.d/geoip/main.conf
+/etc/nftban/whitelist.d/99-manual.conf
+/etc/nftban/blacklist.d/99-manual.conf
 CONFFILES_EOF
 }
 
@@ -1392,6 +1402,12 @@ build_deb() {
     # Copy distro configuration files (CRITICAL for distro-aware paths)
     mkdir -p "${deb_root}/etc/nftban/distros"
     cp "${PROJECT_ROOT}/etc/nftban/distros"/*.conf "${deb_root}/etc/nftban/distros/"
+
+    # Manual whitelist/blacklist files (user-managed, preserved on upgrade)
+    mkdir -p "${deb_root}/etc/nftban/whitelist.d"
+    mkdir -p "${deb_root}/etc/nftban/blacklist.d"
+    install -m 0640 "${PROJECT_ROOT}/etc/nftban/whitelist.d/99-manual.conf" "${deb_root}/etc/nftban/whitelist.d/"
+    install -m 0640 "${PROJECT_ROOT}/etc/nftban/blacklist.d/99-manual.conf" "${deb_root}/etc/nftban/blacklist.d/"
 
     # Copy all systemd units
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-maintenance.service" "${deb_root}/usr/lib/systemd/system/"
