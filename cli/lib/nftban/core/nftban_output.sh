@@ -331,6 +331,25 @@ nftban_banner_unified() {
             ;;
     esac
 
+    # Quick conflict detection (cached or inline)
+    local conflict_icon=""
+    local conflict_cache="${NFTBAN_CACHE_DIR}/health/conflicts.cache"
+    if [[ -f "$conflict_cache" ]]; then
+        local conflict_status
+        conflict_status=$(cat "$conflict_cache" 2>/dev/null || echo "0")
+        if [[ "$conflict_status" -gt 0 ]]; then
+            conflict_icon=" ⚔️"  # Conflict indicator
+        fi
+    else
+        # Quick inline check (non-blocking, minimal overhead)
+        if systemctl is-active --quiet firewalld 2>/dev/null || \
+           systemctl is-active --quiet fail2ban 2>/dev/null || \
+           { command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "^Status: active"; } || \
+           { [[ -f /etc/csf/csf.conf ]] && grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; }; then
+            conflict_icon=" ⚔️"
+        fi
+    fi
+
     # Get system info
     local hostname kernel uptime_str
     hostname=$(hostname -f 2>/dev/null || hostname -s 2>/dev/null || uname -n)
@@ -381,8 +400,8 @@ nftban_banner_unified() {
     # Top border (use simple ASCII for SSH compatibility)
     echo -e "${dim}+$(nftban_repeat_char $width '-')+${reset}"
 
-    # Line 1: Icon + Health + Version + System Status
-    local line1="${icons}  (${health_icon})  ${bold}NFTBan v${version}${reset}${dim} - System Status${reset}"
+    # Line 1: Icon + Health + Conflicts + Version + System Status
+    local line1="${icons}  (${health_icon}${conflict_icon})  ${bold}NFTBan v${version}${reset}${dim} - System Status${reset}"
     printf "${dim}|${reset} %-$((width - 2))b ${dim}|${reset}\n" "$line1"
 
     # Line 2: Host, Kernel, Uptime

@@ -82,7 +82,7 @@ fi
 #   --agent prometheus|vmagent|none       Collection agent
 #   --storage prometheus-local|vm-local|remote  Storage target
 #   --remote-write-url URL                Remote endpoint (required if storage=remote)
-#   --retention DURATION                  Retention period (default: 90d)
+#   --retention DURATION                  Retention period (default: 60d)
 #   --vm-version VERSION                  VictoriaMetrics version override
 #
 # Legacy Options (deprecated, use --agent/--storage instead):
@@ -103,7 +103,7 @@ nftban_metrics_enable() {
     # New agent/storage model (VictoriaMetrics integration)
     local agent=""              # prometheus | vmagent | none
     local storage=""            # prometheus-local | vm-local | remote
-    local retention="90d"       # Retention period for local storage
+    local retention="60d"       # Retention period for local storage
     local vm_version=""         # VictoriaMetrics version override
 
     # Legacy/existing flags

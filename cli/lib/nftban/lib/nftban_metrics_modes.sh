@@ -293,7 +293,7 @@ _metrics_enable_pro() {
 # Mode A: Prometheus all-in-one (scrape + store locally)
 # =============================================================================
 _metrics_enable_mode_a() {
-    local retention="${1:-90d}"
+    local retention="${1:-60d}"
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -389,7 +389,7 @@ _metrics_enable_mode_b() {
 # Mode C1: Prometheus scrapes -> remote_write to local VictoriaMetrics
 # =============================================================================
 _metrics_enable_mode_c1() {
-    local retention="${1:-90d}"
+    local retention="${1:-60d}"
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -480,7 +480,7 @@ _metrics_enable_mode_c1() {
 # Mode C2: vmagent scrapes -> writes to local VictoriaMetrics
 # =============================================================================
 _metrics_enable_mode_c2() {
-    local retention="${1:-90d}"
+    local retention="${1:-60d}"
 
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
