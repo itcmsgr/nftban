@@ -578,6 +578,7 @@ nftban_detect_distro() {
     fi
 }
 
+# shellcheck disable=SC2120  # Function accepts optional args with defaults
 nftban_get_pkg_manager() {
     # Get package manager for current distro
     # Returns: dnf, apt, pacman, unknown
@@ -730,6 +731,7 @@ nftban_get_panel_conflicts() {
 # FIREWALL REMOVAL FUNCTIONS (Distro-aware)
 # =============================================================================
 
+# shellcheck disable=SC2120  # Function accepts optional --uninstall flag
 nftban_remove_fail2ban() {
     # Remove/disable fail2ban (distro-aware)
     # Usage: nftban_remove_fail2ban [--uninstall]
@@ -774,6 +776,7 @@ nftban_remove_fail2ban() {
     return 0
 }
 
+# shellcheck disable=SC2120  # Function accepts optional --uninstall flag
 nftban_remove_ufw() {
     # Remove/disable ufw (distro-aware)
     # Usage: nftban_remove_ufw [--uninstall]
@@ -813,6 +816,7 @@ nftban_remove_ufw() {
     return 0
 }
 
+# shellcheck disable=SC2120  # Function accepts optional --uninstall flag
 nftban_remove_firewalld() {
     # Remove/disable firewalld (distro-aware)
     # Usage: nftban_remove_firewalld [--uninstall]
@@ -854,6 +858,7 @@ nftban_remove_firewalld() {
     return 0
 }
 
+# shellcheck disable=SC2120  # Function accepts optional --uninstall flag
 nftban_remove_csf() {
     # Remove/disable CSF (ConfigServer Firewall)
     # Usage: nftban_remove_csf [--uninstall]
