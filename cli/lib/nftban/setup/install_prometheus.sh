@@ -172,7 +172,7 @@ ExecStart=${PROM_BIN} \\
   --web.console.templates=/etc/prometheus/consoles \\
   --web.console.libraries=/etc/prometheus/console_libraries \\
   --web.listen-address=127.0.0.1:9090 \\
-  --storage.tsdb.retention.time=30d
+  --storage.tsdb.retention.time=90d
 
 SyslogIdentifier=prometheus
 Restart=always

@@ -142,6 +142,9 @@ nftban_cmd_health() {
         install|verify)
             nftban_health_cmd_install "$@"
             ;;
+        conflicts)
+            nftban_health_cmd_conflicts "$@"
+            ;;
         help|--help|-h)
             nftban_health_cmd_help
             ;;
