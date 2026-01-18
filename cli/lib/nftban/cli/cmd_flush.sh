@@ -5,24 +5,31 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Emergency flush/reset commands for nftables sets
 #
-# meta:name=cmd_flush
-# meta:type=cli
-# meta:header=Flush CLI
-# meta:version=1.0.0
+# meta:name="cmd_flush"
+# meta:type="cli"
+# meta:header="Flush CLI"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=CLI handler for flush/reset commands
-# meta:input=Command line arguments (blacklist, whitelist, feeds, geoban, all)
-# meta:output=Flush operation results
+# meta:description="CLI handler for flush/reset commands"
+# meta:input="Command line arguments (blacklist, whitelist, feeds, geoban, all)"
+# meta:output="Flush operation results"
+# meta:depends="bash,nft_ipc.sh"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,nft_ipc.sh
+# meta:inventory.files="nft_ipc.sh,cmd_common.sh"
+# meta:inventory.binaries="nft"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_CONFIG_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# meta:created_date=2026-01-04
-# meta:updated_date=2026-01-04
+# meta:created_date="2026-01-04"
+# meta:updated_date="2026-01-18"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Load common CLI helpers (provides cmd_init, cmd_error, cmd_is_json_mode, etc.)
 # shellcheck source=/dev/null
@@ -683,7 +690,7 @@ _flush_all() {
 # MAIN COMMAND HANDLER
 # =============================================================================
 
-_nftban_flush_main() {
+nftban_cmd_flush() {
     local target="${1:-}"
     shift || true
 
@@ -750,5 +757,8 @@ _nftban_flush_main() {
     esac
 }
 
-# Entry point
-_nftban_flush_main "$@"
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+export -f nftban_cmd_flush
