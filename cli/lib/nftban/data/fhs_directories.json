@@ -503,7 +503,7 @@
         "capabilities": "cap_net_admin+ep"
       },
       {
-        "path": "/usr/sbin/nftban",
+        "path": "/usr/bin/nftban",
         "mode": "0750",
         "owner": "root",
         "group": "nftban",

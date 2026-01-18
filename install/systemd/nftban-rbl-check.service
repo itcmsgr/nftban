@@ -11,7 +11,7 @@
 # meta:output="Systemd unit"
 # meta:depends=""
 # meta:inventory.files=""
-# meta:inventory.binaries="/usr/sbin/nftban"
+# meta:inventory.binaries="/usr/bin/nftban"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units="nftban-rbl-check.timer"
@@ -31,7 +31,7 @@ User=nftban
 Group=nftban
 
 # Run RBL check with quiet mode and alert
-ExecStart=/usr/sbin/nftban rbl check --quiet --alert
+ExecStart=/usr/bin/nftban rbl check --quiet --alert
 
 # Logging
 StandardOutput=journal

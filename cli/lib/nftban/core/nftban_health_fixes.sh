@@ -163,10 +163,11 @@ nftban_health_fix_permissions() {
             fi
         fi
 
-        if [[ -f "/usr/sbin/nftban" ]]; then
-            chmod 755 /usr/sbin/nftban 2>/dev/null && \
-            chown root:root /usr/sbin/nftban 2>/dev/null && \
-            echo "  ✓ Fixed /usr/sbin/nftban binary" && \
+        local nftban_bin="${NFTBAN_BIN:-/usr/bin/nftban}"
+        if [[ -f "$nftban_bin" ]]; then
+            chmod 755 "$nftban_bin" 2>/dev/null && \
+            chown root:root "$nftban_bin" 2>/dev/null && \
+            echo "  ✓ Fixed $nftban_bin binary" && \
             : $((fixed_count++))
         fi
 
