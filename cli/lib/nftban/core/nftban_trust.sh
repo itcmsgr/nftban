@@ -112,8 +112,8 @@ TRUST_PROVIDERS[FASTLY_PARSER]="fastly_json"
 TRUST_PROVIDERS[FASTLY_MIN]=10
 TRUST_PROVIDERS[FASTLY_MAX]=200
 
-# Provider list (uppercase keys)
-readonly TRUST_PROVIDER_LIST="CLOUDFLARE AWS GOOGLE AZURE DIGITALOCEAN FASTLY"
+# Provider list (uppercase keys) - use array to avoid IFS issues
+readonly -a TRUST_PROVIDER_LIST=(CLOUDFLARE AWS GOOGLE AZURE DIGITALOCEAN FASTLY)
 
 # =============================================================================
 # LOGGING
@@ -435,7 +435,7 @@ _trust_clear_whitelist() {
 # =============================================================================
 
 nftban_trust_list_providers() {
-    for provider in $TRUST_PROVIDER_LIST; do
+    for provider in "${TRUST_PROVIDER_LIST[@]}"; do
         local name="${TRUST_PROVIDERS[${provider}_NAME]:-$provider}"
         local desc="${TRUST_PROVIDERS[${provider}_DESC]:-}"
         printf "    %-15s %s\n" "$provider" "$desc"
@@ -453,7 +453,7 @@ nftban_trust_list() {
     printf "  %-15s %-25s %-10s\n" "PROVIDER" "NAME" "STATUS"
     printf "  %-15s %-25s %-10s\n" "--------" "----" "------"
 
-    for provider in $TRUST_PROVIDER_LIST; do
+    for provider in "${TRUST_PROVIDER_LIST[@]}"; do
         local name="${TRUST_PROVIDERS[${provider}_NAME]:-$provider}"
         local status="disabled"
         _trust_is_enabled "$provider" && status="ENABLED"
@@ -471,7 +471,7 @@ nftban_trust_enable() {
     local provider="${1^^}"
 
     # Validate provider
-    if [[ ! " $TRUST_PROVIDER_LIST " =~ [[:space:]]${provider}[[:space:]] ]]; then
+    if [[ ! " ${TRUST_PROVIDER_LIST[*]} " =~ [[:space:]]${provider}[[:space:]] ]]; then
         echo "ERROR: Unknown provider: $provider" >&2
         echo ""
         echo "Available providers:"
@@ -550,7 +550,7 @@ nftban_trust_disable() {
     local provider="${1^^}"
 
     # Validate provider
-    if [[ ! " $TRUST_PROVIDER_LIST " =~ [[:space:]]${provider}[[:space:]] ]]; then
+    if [[ ! " ${TRUST_PROVIDER_LIST[*]} " =~ [[:space:]]${provider}[[:space:]] ]]; then
         echo "ERROR: Unknown provider: $provider" >&2
         return 1
     fi
@@ -628,7 +628,7 @@ nftban_trust_update_all() {
     local updated=0
     local failed=0
 
-    for provider in $TRUST_PROVIDER_LIST; do
+    for provider in "${TRUST_PROVIDER_LIST[@]}"; do
         if _trust_is_enabled "$provider"; then
             local name="${TRUST_PROVIDERS[${provider}_NAME]:-$provider}"
             echo "[*] Updating $name..."
@@ -659,7 +659,7 @@ nftban_trust_update_all() {
 nftban_trust_load() {
     echo "[*] Reloading trust whitelists from disk..."
 
-    for provider in $TRUST_PROVIDER_LIST; do
+    for provider in "${TRUST_PROVIDER_LIST[@]}"; do
         if _trust_is_enabled "$provider"; then
             local whitelist_file
             whitelist_file=$(_trust_get_whitelist_file "$provider")
@@ -730,7 +730,7 @@ nftban_trust_status_all() {
     local enabled=0
     local total_ranges=0
 
-    for provider in $TRUST_PROVIDER_LIST; do
+    for provider in "${TRUST_PROVIDER_LIST[@]}"; do
         if _trust_is_enabled "$provider"; then
             ((enabled++))
             local ipv4_cache ipv6_cache
@@ -742,7 +742,7 @@ nftban_trust_status_all() {
     done
 
     echo "Summary:"
-    echo "   Enabled providers: $enabled / $(echo $TRUST_PROVIDER_LIST | wc -w)"
+    echo "   Enabled providers: $enabled / ${#TRUST_PROVIDER_LIST[@]}"
     echo "   Total IP ranges: $total_ranges"
     echo ""
 
@@ -750,7 +750,7 @@ nftban_trust_status_all() {
     printf "  %-15s %-10s %10s %10s\n" "PROVIDER" "STATUS" "IPv4" "IPv6"
     printf "  %-15s %-10s %10s %10s\n" "--------" "------" "----" "----"
 
-    for provider in $TRUST_PROVIDER_LIST; do
+    for provider in "${TRUST_PROVIDER_LIST[@]}"; do
         local status="disabled"
         local ipv4_count="-" ipv6_count="-"
 
