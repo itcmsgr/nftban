@@ -1310,8 +1310,76 @@ install_configs() {
     mkdir -p /var/lib/nftban/reports/auditors
 
     # Create manual whitelist/blacklist files if missing (used by nftban ban/whitelist commands)
-    [[ -f /etc/nftban/whitelist.d/99-manual.conf ]] || touch /etc/nftban/whitelist.d/99-manual.conf
-    [[ -f /etc/nftban/blacklist.d/99-manual.conf ]] || touch /etc/nftban/blacklist.d/99-manual.conf
+    if [[ ! -f /etc/nftban/whitelist.d/99-manual.conf ]]; then
+        cat > /etc/nftban/whitelist.d/99-manual.conf << 'MANUAL_WL'
+# =============================================================================
+# NFTBan Manual Whitelist - User-Added IPs
+# =============================================================================
+# File: /etc/nftban/whitelist.d/99-manual.conf
+#
+# PURPOSE:
+#   This file stores IPs manually whitelisted by the administrator using:
+#     nftban whitelist add <ip> [comment]
+#
+# FORMAT:
+#   <ip_address>   # Optional comment
+#
+# EXAMPLES:
+#   192.168.1.100        # Office gateway
+#   10.0.0.0/8           # Internal network
+#   2001:db8::1          # IPv6 host
+#
+# NOTES:
+#   - This file is managed by nftban CLI commands
+#   - Manual edits are preserved during updates
+#   - IPs here are NEVER blocked by nftban
+#   - Use 'nftban whitelist list' to view all whitelisted IPs
+#   - Use 'nftban whitelist remove <ip>' to remove entries
+#
+# PRIORITY:
+#   99-manual.conf is loaded LAST, giving manual entries highest priority
+#   over auto-generated whitelist files (00-system.conf, etc.)
+#
+# =============================================================================
+
+MANUAL_WL
+    fi
+
+    if [[ ! -f /etc/nftban/blacklist.d/99-manual.conf ]]; then
+        cat > /etc/nftban/blacklist.d/99-manual.conf << 'MANUAL_BL'
+# =============================================================================
+# NFTBan Manual Blacklist - User-Banned IPs
+# =============================================================================
+# File: /etc/nftban/blacklist.d/99-manual.conf
+#
+# PURPOSE:
+#   This file stores IPs manually banned by the administrator using:
+#     nftban ban <ip> [duration] [reason]
+#
+# FORMAT:
+#   <ip_address>   # Optional comment with reason/date
+#
+# EXAMPLES:
+#   203.0.113.50         # Brute force attacker - 2024-01-15
+#   198.51.100.0/24      # Spam network
+#   2001:db8:bad::0/48   # Malicious IPv6 range
+#
+# NOTES:
+#   - This file is managed by nftban CLI commands
+#   - Manual edits are preserved during updates
+#   - IPs here are ALWAYS blocked by nftban
+#   - Use 'nftban status' to view all banned IPs
+#   - Use 'nftban unban <ip>' to remove entries
+#   - Temporary bans are stored in /var/lib/nftban/banned/
+#
+# PRIORITY:
+#   99-manual.conf is loaded LAST, giving manual entries highest priority
+#   Whitelist always takes precedence over blacklist (safety first)
+#
+# =============================================================================
+
+MANUAL_BL
+    fi
     mkdir -p /var/lib/nftban/stats/{history,profiles}
     mkdir -p /var/lib/nftban/queue/{pending,work,dlq}
     mkdir -p /var/lib/nftban/mailspool
