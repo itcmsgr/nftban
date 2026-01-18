@@ -20,6 +20,8 @@
 # meta:inventory.privileges="root"
 # =============================================================================
 
+set -Eeuo pipefail
+
 # Prevent double-sourcing
 [[ -n "${_NFTBAN_METRICS_MODES_LOADED:-}" ]] && return 0
 _NFTBAN_METRICS_MODES_LOADED=1
