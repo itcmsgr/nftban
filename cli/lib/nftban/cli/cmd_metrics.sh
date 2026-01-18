@@ -5,23 +5,30 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Enable/disable metrics collection with choice of backend
 #
-# meta:name=cmd_metrics
-# meta:type=cli
-# meta:header=Metrics Management
-# meta:version=1.0.0
+# meta:name="cmd_metrics"
+# meta:type="cli"
+# meta:header="Metrics Management"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Manage Prometheus or VictoriaMetrics collection independently from Web GUI
-# meta:input=Subcommands (enable, disable, status) with optional --backend flag
-# meta:output=Metrics stack status and configuration
+# meta:description="Manage Prometheus or VictoriaMetrics collection independently from Web GUI"
+# meta:input="Subcommands (enable, disable, status) with optional --backend flag"
+# meta:output="Metrics stack status and configuration"
 #
 # **Inventory & Requirements**
-# meta:depends=systemd,prometheus|victoriametrics,node-exporter,nftban-metrics-exporter
+# meta:depends="systemd,prometheus|victoriametrics,node-exporter,nftban-metrics-exporter"
+# meta:inventory.files=""
+# meta:inventory.binaries="prometheus,node_exporter,victoria-metrics-prod"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="prometheus.service,node_exporter.service,victoriametrics.service"
+# meta:inventory.network="127.0.0.1:9090,127.0.0.1:9100,127.0.0.1:8428"
+# meta:inventory.privileges="root"
 #
-# meta:created_date=2025-11-28
-# meta:updated_date=2026-01-09
+# meta:created_date="2025-11-28"
+# meta:updated_date="2026-01-18"
 # =============================================================================
 
 set -Eeuo pipefail
