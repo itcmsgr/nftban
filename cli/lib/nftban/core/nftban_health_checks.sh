@@ -335,57 +335,77 @@ nftban_health_check_nftables_security() {
 }
 
 nftban_health_check_conflicting_firewalls() {
-    # Check for conflicting firewall services (firewalld, iptables, ufw)
-    # These cannot coexist with nftban and cause unpredictable behavior
+    # Check for conflicting firewall services using comprehensive detection
+    # Detects: firewalld, iptables, ufw, fail2ban, CSF, iptables-nft, cPHulk
     # Returns: 0=OK, 1=Warning, 2=Critical Error
+    #
+    # NOTE: cPHulk (cPanel) is treated as INFO only - it's designed to coexist
 
     local status=$HEALTH_OK
-    local firewall_conflicts=()
 
-    # Check firewalld
-    if command -v firewall-cmd &>/dev/null; then
-        if systemctl is-active --quiet firewalld 2>/dev/null; then
-            firewall_conflicts+=("ERROR: firewalld is ACTIVE - conflicts with nftban")
-            firewall_conflicts+=("  └─ FIX: systemctl stop firewalld && systemctl disable firewalld")
-            status=$HEALTH_CRITICAL
-        elif systemctl is-enabled --quiet firewalld 2>/dev/null; then
-            firewall_conflicts+=("WARNING: firewalld is ENABLED (not running)")
-            firewall_conflicts+=("  └─ FIX: systemctl disable firewalld")
-            [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+    # Source the comprehensive conflict detection library
+    local conflict_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_firewall_conflicts.sh"
+    if [[ -f "$conflict_lib" ]]; then
+        # shellcheck source=/dev/null
+        source "$conflict_lib" 2>/dev/null || true
+    fi
+
+    # Check if detection functions are available
+    if ! declare -f nftban_detect_all_conflicts &>/dev/null; then
+        # Fallback to basic checks if library not available
+        local firewall_conflicts=()
+
+        # Basic firewalld check
+        if command -v firewall-cmd &>/dev/null; then
+            if systemctl is-active --quiet firewalld 2>/dev/null; then
+                firewall_conflicts+=("ERROR: firewalld is ACTIVE")
+                status=$HEALTH_CRITICAL
+            fi
         fi
-    fi
 
-    # Check iptables service
-    if systemctl is-active --quiet iptables 2>/dev/null || \
-       systemctl is-active --quiet iptables.service 2>/dev/null || \
-       systemctl is-active --quiet ip6tables.service 2>/dev/null; then
-        firewall_conflicts+=("ERROR: iptables service is ACTIVE - conflicts with nftban")
-        firewall_conflicts+=("  └─ FIX: systemctl stop iptables && systemctl disable iptables")
-        status=$HEALTH_CRITICAL
-    elif systemctl is-enabled --quiet iptables 2>/dev/null || \
-         systemctl is-enabled --quiet iptables.service 2>/dev/null; then
-        firewall_conflicts+=("WARNING: iptables service is ENABLED (not running)")
-        firewall_conflicts+=("  └─ FIX: systemctl disable iptables")
-        [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
-    fi
-
-    # Check ufw
-    if command -v ufw &>/dev/null; then
-        if ufw status 2>/dev/null | grep -q "Status: active"; then
-            firewall_conflicts+=("ERROR: ufw is ACTIVE - conflicts with nftban")
-            firewall_conflicts+=("  └─ FIX: ufw disable")
+        # Basic iptables check
+        if systemctl is-active --quiet iptables 2>/dev/null; then
+            firewall_conflicts+=("ERROR: iptables service is ACTIVE")
             status=$HEALTH_CRITICAL
         fi
+
+        # Basic ufw check
+        if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "Status: active"; then
+            firewall_conflicts+=("ERROR: ufw is ACTIVE")
+            status=$HEALTH_CRITICAL
+        fi
+
+        if [[ ${#firewall_conflicts[@]} -gt 0 ]]; then
+            NFTBAN_HEALTH_ISSUES["conflicting_firewalls"]="${firewall_conflicts[*]}"
+            NFTBAN_HEALTH_ERRORS+=("Conflicting firewall(s): ${firewall_conflicts[*]}")
+        fi
+
+        NFTBAN_HEALTH_RESULTS["conflicting_firewalls"]=$status
+        return $status
     fi
+
+    # Use comprehensive detection
+    nftban_detect_all_conflicts
+
+    # Map severity to health status
+    case $NFTBAN_FIREWALL_SEVERITY in
+        0) status=$HEALTH_OK ;;      # CONFLICT_NONE
+        1) status=$HEALTH_OK ;;      # CONFLICT_INFO (e.g., cPHulk - OK to coexist)
+        2) status=$HEALTH_WARNING ;; # CONFLICT_WARNING
+        3) status=$HEALTH_CRITICAL ;; # CONFLICT_CRITICAL
+        *) status=$HEALTH_OK ;;
+    esac
 
     # Store results
-    if [[ ${#firewall_conflicts[@]} -gt 0 ]]; then
-        NFTBAN_HEALTH_ISSUES["conflicting_firewalls"]="${firewall_conflicts[*]}"
+    if [[ ${#NFTBAN_FIREWALL_CONFLICTS[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["conflicting_firewalls"]="${NFTBAN_FIREWALL_CONFLICTS[*]}"
+
         if [[ $status -eq $HEALTH_CRITICAL ]]; then
-            NFTBAN_HEALTH_ERRORS+=("Conflicting firewall(s) detected: ${firewall_conflicts[*]}")
-        else
-            NFTBAN_HEALTH_WARNINGS+=("Conflicting firewall(s) enabled: ${firewall_conflicts[*]}")
+            NFTBAN_HEALTH_ERRORS+=("Conflicting firewall(s) detected - see: nftban health conflicts")
+        elif [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("Firewall conflicts detected - see: nftban health conflicts")
         fi
+        # INFO level (cPHulk) doesn't add to warnings/errors
     fi
 
     NFTBAN_HEALTH_RESULTS["conflicting_firewalls"]=$status

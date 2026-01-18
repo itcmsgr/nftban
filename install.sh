@@ -510,6 +510,23 @@ check_conflicting_firewalls() {
         fi
     fi
 
+    # 5. Check fail2ban with iptables-nft backend (creates conflicting nftables tables)
+    # NOTE: cPHulk on cPanel is an EXCEPTION - it's designed to coexist with nftban
+    if command -v fail2ban-client &>/dev/null; then
+        if systemctl is-active --quiet fail2ban 2>/dev/null; then
+            # Check if iptables is using nf_tables backend
+            local ipt_version
+            ipt_version=$(iptables --version 2>/dev/null || echo "")
+            if [[ "$ipt_version" == *"nf_tables"* ]]; then
+                # Check if 'ip filter' table exists (created by iptables-nft)
+                if nft list table ip filter &>/dev/null 2>&1; then
+                    firewall_issues+=("fail2ban with iptables-nft is ACTIVE (creates 'ip filter' table)")
+                    conflicts_found=1
+                fi
+            fi
+        fi
+    fi
+
     # If no conflicts, all good
     if [[ $conflicts_found -eq 0 ]]; then
         ok "No conflicting firewalls detected"
@@ -560,6 +577,15 @@ check_conflicting_firewalls() {
             echo "  ufw disable"
             echo "  systemctl stop ufw 2>/dev/null || true"
             echo "  systemctl disable ufw 2>/dev/null || true"
+            echo ""
+        fi
+        if [[ "$issue" == *"fail2ban"* ]]; then
+            echo "Disable fail2ban (or migrate jails to nftban):"
+            echo "  systemctl stop fail2ban"
+            echo "  systemctl disable fail2ban"
+            echo ""
+            echo "To migrate fail2ban jails to nftban, see:"
+            echo "  https://github.com/itcmsgr/nftban/wiki/Migrating-from-fail2ban"
             echo ""
         fi
     done
