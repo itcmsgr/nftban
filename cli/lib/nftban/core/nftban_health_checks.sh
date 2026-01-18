@@ -1665,11 +1665,25 @@ nftban_health_check_metrics() {
     local status=$HEALTH_OK
     local metrics_issues=()
 
-    # Check central config - if metrics disabled, skip detailed checks
+    # Check if metrics exporter script exists (determine if metrics are installable)
+    local exporter_installed=false
+    if [[ -f "${NFTBAN_LIB_DIR}/exporters/nftban_prometheus_exporter.sh" ]]; then
+        exporter_installed=true
+    fi
+
+    # Check central config - if metrics disabled, report appropriately
     if [[ "${NFTBAN_METRICS_ENABLED:-false}" != "true" ]]; then
-        NFTBAN_HEALTH_ISSUES["metrics"]="Disabled in config (set NFTBAN_METRICS_ENABLED=true to enable)"
-        NFTBAN_HEALTH_RESULTS["metrics"]=$HEALTH_NOT_INSTALLED
-        return $HEALTH_NOT_INSTALLED
+        if [[ "$exporter_installed" == "true" ]]; then
+            # Installed but disabled by user choice
+            NFTBAN_HEALTH_ISSUES["metrics"]="Disabled (set NFTBAN_METRICS_ENABLED=true to enable)"
+            NFTBAN_HEALTH_RESULTS["metrics"]=$HEALTH_DISABLED
+            return $HEALTH_DISABLED
+        else
+            # Not installed (optional feature)
+            NFTBAN_HEALTH_ISSUES["metrics"]="Not installed (optional feature)"
+            NFTBAN_HEALTH_RESULTS["metrics"]=$HEALTH_NOT_INSTALLED
+            return $HEALTH_NOT_INSTALLED
+        fi
     fi
 
     # Check if metrics exporter script exists
