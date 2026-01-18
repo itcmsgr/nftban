@@ -708,19 +708,19 @@ fi
 # STEP 10: Sync whitelist.d files to nftables sets
 # The nftables template has only default IPs, this loads the actual detected system IPs
 echo "[NFTBan] Syncing whitelist files to nftables..."
-if [ -x /usr/lib/nftban/bin/nftban-core ]; then
-    # Wait for nftband daemon to be ready (socket activation)
-    SYNC_SUCCESS=0
-    for i in 1 2 3; do
-        sleep 1
-        if /usr/lib/nftban/bin/nftban-core sync 2>/dev/null; then
-            SYNC_SUCCESS=1
-            break
-        fi
-    done
-    if [ "\$SYNC_SUCCESS" -eq 0 ]; then
-        echo "[NFTBan WARN] Whitelist sync failed (run manually: nftban-core sync)"
+# Wait for nftband daemon to be ready (socket activation)
+SYNC_SUCCESS=0
+for i in 1 2 3; do
+    sleep 1
+    # Use nftban CLI sync command (connects to nftband daemon)
+    if nftban sync >/dev/null 2>&1; then
+        SYNC_SUCCESS=1
+        echo "[NFTBan]   Whitelist sync completed successfully"
+        break
     fi
+done
+if [ "\$SYNC_SUCCESS" -eq 0 ]; then
+    echo "[NFTBan WARN] Whitelist sync failed (run manually: nftban sync)"
 fi
 
 echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
