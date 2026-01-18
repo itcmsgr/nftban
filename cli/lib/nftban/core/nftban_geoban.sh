@@ -877,7 +877,7 @@ nftban_geoban_list() {
                 local ipv6_count
                 ipv6_count=$(grep -c ":" "${file}" 2>/dev/null || echo "0")
                 echo "   ${cc} - ${ipv4_count} IPv4 ranges, ${ipv6_count} IPv6 ranges"
-                ((banned_count++))
+                ((++banned_count))
             fi
         done
         echo ""
@@ -901,7 +901,7 @@ nftban_geoban_list() {
                 local ipv6_count
                 ipv6_count=$(grep -c ":" "${file}" 2>/dev/null || echo "0")
                 echo "   ${cc} - ${ipv4_count} IPv4 ranges, ${ipv6_count} IPv6 ranges"
-                ((whitelist_count++))
+                ((++whitelist_count))
             fi
         done
         echo ""
@@ -973,7 +973,7 @@ nftban_geoban_update() {
                 --tracking-dir="${GEOBAN_TRACKING_DIR}" \
                 --cache-dir="${GEOBAN_CACHE_DIR}"; then
 
-                ((updated++))
+                ((++updated))
             else
                 nftban_error "Failed to update ${cc}"
                 ((++failed))
