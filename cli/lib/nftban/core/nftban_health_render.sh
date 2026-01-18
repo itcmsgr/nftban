@@ -142,6 +142,7 @@ nftban_health_render_terminal() {
                 2) status_text="ERROR" ;;
                 3) status_text="CRITICAL" ;;
                 4) status_text="NOT INSTALLED" ;;
+                5) status_text="DISABLED" ;;
                 *) status_text="UNKNOWN" ;;
             esac
 

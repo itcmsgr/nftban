@@ -63,6 +63,8 @@ readonly HEALTH_ERROR=2
 readonly HEALTH_CRITICAL=3
 # shellcheck disable=SC2034  # Constants exported for external use
 readonly HEALTH_NOT_INSTALLED=4
+# shellcheck disable=SC2034  # Constants exported for external use
+readonly HEALTH_DISABLED=5
 
 # Load main configuration (service names, paths)
 # shellcheck source=/etc/nftban/nftban.conf
