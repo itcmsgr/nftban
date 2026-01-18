@@ -869,6 +869,12 @@ COMMANDS:
                             directories, and config files
                             --verbose: Show optional components
 
+    conflicts [--fix]       Detect/remove conflicting firewalls
+                            Panel+distro aware detection
+                            --fix: Remove detected conflicts
+                            --yes: Auto-confirm (no prompts)
+                            Detects: fail2ban, ufw, firewalld, CSF
+
     help                    Show this help message
 
 EXAMPLES:
@@ -929,6 +935,90 @@ nftban — Simplifying Linux Firewall Management
 EOF
 }
 
+nftban_health_cmd_conflicts() {
+    # Detect and optionally remove conflicting firewalls
+    # Usage: nftban health conflicts [--fix] [--yes]
+    # Args: --fix = remove conflicts, --yes = auto-confirm
+
+    local fix_mode=false
+    local auto_yes=false
+
+    for arg in "$@"; do
+        case "$arg" in
+            --fix|--remove) fix_mode=true ;;
+            --yes|-y) auto_yes=true ;;
+            --help|-h)
+                echo "Usage: nftban health conflicts [--fix] [--yes]"
+                echo ""
+                echo "Detect and optionally remove conflicting firewalls."
+                echo ""
+                echo "Options:"
+                echo "  --fix, --remove    Remove detected conflicts"
+                echo "  --yes, -y          Auto-confirm removal (no prompts)"
+                echo ""
+                echo "Detects: fail2ban, ufw, firewalld, CSF"
+                echo "Panel-aware: Uses correct conflicts per panel+distro"
+                return 0
+                ;;
+        esac
+    done
+
+    # Load firewall conflicts module
+    if ! declare -f nftban_detect_all_conflicts >/dev/null 2>&1; then
+        if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh" ]]; then
+            source "${NFTBAN_LIB_DIR}/core/nftban_firewall_conflicts.sh"
+        else
+            echo "ERROR: Firewall conflicts module not found" >&2
+            return 1
+        fi
+    fi
+
+    # Detect panel and distro
+    local panel distro
+    panel=$(nftban_detect_panel)
+    distro=$(nftban_detect_distro)
+
+    echo "=============================================="
+    echo "NFTBan Firewall Conflict Detection"
+    echo "=============================================="
+    echo ""
+    echo "Panel:  $panel"
+    echo "Distro: $distro"
+    echo ""
+
+    # Get expected conflicts for this panel+distro
+    local expected_conflicts
+    expected_conflicts=$(nftban_get_panel_conflicts "$panel" "$distro")
+    echo "Expected conflicts for $panel on $distro:"
+    echo "  $expected_conflicts"
+    echo ""
+
+    # Run detection
+    nftban_detect_all_conflicts
+
+    # Report
+    nftban_report_conflicts
+
+    # Fix if requested
+    if [[ "$fix_mode" == true ]]; then
+        echo ""
+        if [[ "$auto_yes" == true ]]; then
+            nftban_remove_conflicts --yes --panel "$panel"
+        else
+            nftban_remove_conflicts --panel "$panel"
+        fi
+    else
+        if [[ $NFTBAN_FIREWALL_SEVERITY -gt 0 ]]; then
+            echo ""
+            echo "To remove conflicts, run:"
+            echo "  nftban health conflicts --fix"
+            echo ""
+        fi
+    fi
+
+    return $NFTBAN_FIREWALL_SEVERITY
+}
+
 nftban_health_cmd_gui() {
     # Validate GOTH GUI components against ui-registry.json
     # Args: [--json]
@@ -987,5 +1077,6 @@ export -f nftban_health_cmd_permissions
 export -f nftban_health_cmd_geoip
 export -f nftban_health_cmd_pro
 export -f nftban_health_cmd_registries
+export -f nftban_health_cmd_conflicts
 export -f nftban_health_cmd_gui
 export -f nftban_health_cmd_help

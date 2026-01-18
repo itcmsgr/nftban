@@ -153,7 +153,7 @@ ${env_line}
 
 ExecStart=/usr/local/bin/victoria-metrics-prod \\
   -storageDataPath=/var/lib/victoriametrics \\
-  -retentionPeriod=3 \\
+  -retentionPeriod=2 \\
   -httpListenAddr=127.0.0.1:8428 \\
   -promscrape.config=/etc/victoriametrics/scrape.yml${license_line:+ \\
 ${license_line}}
