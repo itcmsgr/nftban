@@ -2447,10 +2447,10 @@ echo ""
 install_configs || exit 1
 echo ""
 
-install_safety_whitelist || warn "Auto-whitelist failed (non-critical)"
+install_nftables || exit 1
 echo ""
 
-install_nftables || exit 1
+install_safety_whitelist || warn "Auto-whitelist failed (non-critical)"
 echo ""
 
 install_tmpfiles || warn "tmpfiles.d installation failed (non-critical)"
