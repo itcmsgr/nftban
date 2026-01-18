@@ -23,7 +23,7 @@
 #        --purge: Remove ALL data including configs, logs, and databases
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Colors for output
 GREEN='\033[0;32m'
@@ -131,6 +131,36 @@ safe_rm_rf() {
 # =============================================================================
 # UNINSTALL FUNCTIONS
 # =============================================================================
+
+uninstall_package_manager() {
+    log "Removing package from system package manager..."
+
+    # Check if installed via RPM (RHEL/AlmaLinux/Rocky/Fedora/CentOS)
+    if command -v rpm &>/dev/null; then
+        if rpm -q nftban-core &>/dev/null; then
+            log "  Found RPM package, removing from database..."
+            # Use --nodeps to remove just the database entry, files will be cleaned separately
+            # This prevents "file already removed" warnings
+            rpm -e --nodeps --noscripts nftban-core 2>/dev/null || true
+            ok "Removed nftban-core from RPM database"
+        else
+            ok "No RPM package found in database"
+        fi
+    fi
+
+    # Check if installed via DEB (Debian/Ubuntu)
+    if command -v dpkg &>/dev/null; then
+        if dpkg -l nftban-core 2>/dev/null | grep -qE '^ii|^iU|^iF|^iH'; then
+            log "  Found DEB package, removing from database..."
+            # Force remove from database even if files are missing
+            dpkg --remove --force-remove-reinstreq nftban-core 2>/dev/null || true
+            dpkg --purge nftban-core 2>/dev/null || true
+            ok "Removed nftban-core from dpkg database"
+        else
+            ok "No DEB package found in database"
+        fi
+    fi
+}
 
 uninstall_services() {
     log "Stopping and disabling NFTBan services..."
@@ -390,6 +420,10 @@ load_distro_config
 echo ""
 
 # Execute uninstall steps
+# CRITICAL: Remove from package manager FIRST to prevent "already installed" issues on reinstall
+uninstall_package_manager
+echo ""
+
 uninstall_services
 echo ""
 
