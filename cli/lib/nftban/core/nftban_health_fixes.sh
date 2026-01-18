@@ -847,6 +847,56 @@ nftban_health_fix_geoip() {
 }
 
 # =============================================================================
+# WHITELIST FIX (Server IP auto-protection)
+# =============================================================================
+
+nftban_health_fix_whitelist() {
+    # Auto-heal server IP whitelist issues
+    # Ensures server IPs are whitelisted to prevent self-lockout
+    # Uses nftban_whitelist_system_sync from nftban_system_ip.sh
+    # Returns: 0=fixed, 1=partial, 2=failed
+
+    echo "Checking server IP whitelist..."
+
+    # Check if nftables is running
+    if ! command -v nft &>/dev/null; then
+        echo "  ⚠️  nft command not found"
+        return 1
+    fi
+
+    # Check if nftban table exists
+    if ! nft list table ip nftban &>/dev/null; then
+        echo "  ⚠️  nftban nftables table not found"
+        echo "    Run: systemctl restart nftables"
+        return 1
+    fi
+
+    # Source system IP module if not already loaded
+    if ! declare -f nftban_whitelist_system_sync &>/dev/null; then
+        local system_ip_module="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_system_ip.sh"
+        if [[ -f "$system_ip_module" ]]; then
+            # shellcheck source=/dev/null
+            source "$system_ip_module" 2>/dev/null || {
+                echo "  ✖ Failed to load system IP module"
+                return 2
+            }
+        else
+            echo "  ✖ System IP module not found: $system_ip_module"
+            return 2
+        fi
+    fi
+
+    # Run whitelist sync (adds all server IPs to nftables whitelist)
+    if nftban_whitelist_system_sync; then
+        echo "  ✓ Server IP whitelist synced successfully"
+        return 0
+    else
+        echo "  ⚠️  Whitelist sync returned warnings"
+        return 1
+    fi
+}
+
+# =============================================================================
 # REPORTING
 # =============================================================================
 
