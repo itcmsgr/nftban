@@ -39,6 +39,20 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
+// extractConfigValue extracts a config value, handling trailing comments
+// Input: "true"              # comment  -> Output: true
+// Input: "false"             -> Output: false
+// Input: "https://example.com" # URL -> Output: https://example.com
+func extractConfigValue(rawValue string) string {
+	// Strip trailing comment (anything after # outside quotes)
+	// Config format is always: "value" [# comment]
+	if idx := strings.Index(rawValue, "#"); idx != -1 {
+		rawValue = rawValue[:idx]
+	}
+	// Trim quotes and whitespace
+	return strings.Trim(rawValue, `"' `)
+}
+
 // replaceConfigValue replaces a config variable value using regex to handle spacing variations
 // Pattern matches: VAR="value", VAR = "value", VAR= "value", etc.
 func replaceConfigValue(content, varName, newValue string) string {
@@ -118,8 +132,8 @@ func getFeedsEnabledStatus(configPath string) map[string]bool {
 				feedName := strings.TrimPrefix(varName, "FEED_")
 				feedName = strings.TrimSuffix(feedName, "_ENABLED")
 
-				// Extract enabled value
-				value := strings.Trim(parts[1], `"' `)
+				// Extract enabled value (handles trailing comments)
+				value := extractConfigValue(parts[1])
 				enabled := (value == "true")
 
 				enabledMap[feedName] = enabled
@@ -733,7 +747,7 @@ func parseFeedsConfig(configPath string) ([]FeedConfig, error) {
 				}
 
 				varName := parts[0]
-				value := strings.Trim(parts[1], `"' `)
+				value := extractConfigValue(parts[1])
 
 				// Extract feed name and property
 				// FEED_SPAMHAUS_DROP_URL -> name=SPAMHAUS_DROP, property=URL
