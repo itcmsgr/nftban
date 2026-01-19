@@ -118,9 +118,46 @@ _detect_install_type() {
     return 0
 }
 
+_detect_system_pkg_manager() {
+    # Detect what package manager the SYSTEM uses (not what's installed)
+    # This is critical for validation - prevents .deb on RPM systems
+    # Returns: rpm, deb, unknown
+
+    # Check for RPM-based systems
+    if [[ -f /etc/redhat-release ]] || [[ -f /etc/centos-release ]] || \
+       [[ -f /etc/fedora-release ]] || [[ -f /etc/rocky-release ]] || \
+       [[ -f /etc/almalinux-release ]]; then
+        echo "rpm"
+        return 0
+    fi
+
+    # Check for DEB-based systems
+    if [[ -f /etc/debian_version ]]; then
+        echo "deb"
+        return 0
+    fi
+
+    # Fallback: check available package managers
+    if command -v dnf &>/dev/null || command -v yum &>/dev/null; then
+        echo "rpm"
+        return 0
+    fi
+
+    if command -v apt-get &>/dev/null || command -v apt &>/dev/null; then
+        echo "deb"
+        return 0
+    fi
+
+    echo "unknown"
+    return 0
+}
+
 _detect_distro() {
     # Detect Linux distribution for package selection
-    # Returns: el9, el10, debian12, debian13, ubuntu22.04, ubuntu24.04, unknown
+    # Returns structured info: family:distro:version
+    # Examples: rpm:el:9, deb:debian:12, deb:ubuntu:22.04
+
+    local family distro version
 
     if [[ -f /etc/os-release ]]; then
         # shellcheck source=/dev/null
@@ -128,40 +165,242 @@ _detect_distro() {
 
         case "${ID:-}" in
             rhel|centos|rocky|almalinux|ol)
-                local major="${VERSION_ID%%.*}"
-                echo "el${major}"
+                family="rpm"
+                distro="el"
+                version="${VERSION_ID%%.*}"
                 ;;
             fedora)
-                echo "el10"  # Fedora uses el10 compatible packages
+                family="rpm"
+                distro="fedora"
+                version="${VERSION_ID}"
                 ;;
             debian)
-                local major="${VERSION_ID%%.*}"
-                echo "debian${major}"
+                family="deb"
+                distro="debian"
+                version="${VERSION_ID%%.*}"
                 ;;
             ubuntu)
-                echo "ubuntu${VERSION_ID}"
+                family="deb"
+                distro="ubuntu"
+                version="${VERSION_ID}"
                 ;;
             *)
-                # Try ID_LIKE
+                # Try ID_LIKE for derivatives
                 case "${ID_LIKE:-}" in
                     *rhel*|*centos*|*fedora*)
-                        echo "el9"
+                        family="rpm"
+                        distro="el"
+                        version="9"  # Safe default
                         ;;
                     *debian*)
-                        echo "debian12"
+                        family="deb"
+                        distro="debian"
+                        version="12"  # Safe default
                         ;;
                     *ubuntu*)
-                        echo "ubuntu22.04"
+                        family="deb"
+                        distro="ubuntu"
+                        version="22.04"  # Safe LTS default
                         ;;
                     *)
-                        echo "unknown"
+                        family="unknown"
+                        distro="unknown"
+                        version="0"
                         ;;
                 esac
                 ;;
         esac
     else
-        echo "unknown"
+        family="unknown"
+        distro="unknown"
+        version="0"
     fi
+
+    echo "${family}:${distro}:${version}"
+}
+
+_get_distro_package_name() {
+    # Get the package filename for this distro
+    # Returns: package name like "nftban-el9-x86_64.rpm" or "nftban-debian12-amd64.deb"
+
+    local distro_info
+    distro_info=$(_detect_distro)
+
+    local family distro version
+    IFS=':' read -r family distro version <<< "$distro_info"
+
+    case "$family" in
+        rpm)
+            # RPM naming: nftban-el9-x86_64.rpm, nftban-el10-x86_64.rpm
+            case "$distro" in
+                el)
+                    echo "nftban-el${version}-x86_64.rpm"
+                    ;;
+                fedora)
+                    # Fedora 39+ uses el10 compatible packages
+                    if [[ "$version" -ge 39 ]]; then
+                        echo "nftban-el10-x86_64.rpm"
+                    else
+                        echo "nftban-el9-x86_64.rpm"
+                    fi
+                    ;;
+                *)
+                    echo "nftban-el9-x86_64.rpm"  # Safe fallback
+                    ;;
+            esac
+            ;;
+        deb)
+            # DEB naming: nftban-debian12-amd64.deb, nftban-ubuntu22.04-amd64.deb
+            case "$distro" in
+                debian)
+                    echo "nftban-debian${version}-amd64.deb"
+                    ;;
+                ubuntu)
+                    echo "nftban-ubuntu${version}-amd64.deb"
+                    ;;
+                *)
+                    echo "nftban-debian12-amd64.deb"  # Safe fallback
+                    ;;
+            esac
+            ;;
+        *)
+            echo "unknown"
+            ;;
+    esac
+}
+
+_validate_package_for_system() {
+    # Validate that a package file is compatible with this system
+    # Args: $1 = package file path
+    # Returns: 0 if compatible, 1 if not (with error message)
+
+    local pkg_file="$1"
+    local sys_pkg_manager
+    sys_pkg_manager=$(_detect_system_pkg_manager)
+
+    # Check file extension matches system
+    if [[ "$pkg_file" == *.rpm ]]; then
+        if [[ "$sys_pkg_manager" != "rpm" ]]; then
+            _update_log ERROR "Cannot install RPM package on non-RPM system"
+            _update_log INFO "This system uses: $sys_pkg_manager"
+            return 1
+        fi
+    elif [[ "$pkg_file" == *.deb ]]; then
+        if [[ "$sys_pkg_manager" != "deb" ]]; then
+            _update_log ERROR "Cannot install DEB package on non-DEB system"
+            _update_log INFO "This system uses: $sys_pkg_manager"
+            return 1
+        fi
+    fi
+
+    # Validate RPM package details
+    if [[ "$pkg_file" == *.rpm ]] && [[ -f "$pkg_file" ]]; then
+        local distro_info
+        distro_info=$(_detect_distro)
+        local family distro version
+        IFS=':' read -r family distro version <<< "$distro_info"
+
+        # Extract target OS from package name (e.g., nftban-el10-x86_64.rpm -> el10)
+        local pkg_target
+        pkg_target=$(basename "$pkg_file" | grep -oP 'el\d+' || echo "")
+
+        if [[ -n "$pkg_target" ]]; then
+            local pkg_version="${pkg_target#el}"
+            local sys_version="$version"
+
+            # el10 package on el9 system - may have glibc incompatibility
+            if [[ "$pkg_version" -gt "$sys_version" ]]; then
+                _update_log ERROR "Package incompatibility detected"
+                _update_log ERROR "Package built for: EL${pkg_version}"
+                _update_log ERROR "System version: EL${sys_version}"
+                _update_log INFO "Packages built for newer OS may have library incompatibilities"
+                _update_log INFO "Use: nftban update github  (auto-selects correct package)"
+                return 1
+            fi
+        fi
+    fi
+
+    # Validate DEB package details
+    if [[ "$pkg_file" == *.deb ]] && [[ -f "$pkg_file" ]]; then
+        local distro_info
+        distro_info=$(_detect_distro)
+        local family distro version
+        IFS=':' read -r family distro version <<< "$distro_info"
+
+        # Extract target from package name
+        local pkg_name
+        pkg_name=$(basename "$pkg_file")
+
+        # Check Debian version mismatch
+        if [[ "$pkg_name" == *debian* ]]; then
+            local pkg_deb_ver
+            pkg_deb_ver=$(echo "$pkg_name" | grep -oP 'debian\K\d+' || echo "")
+
+            if [[ -n "$pkg_deb_ver" ]] && [[ "$distro" == "debian" ]]; then
+                if [[ "$pkg_deb_ver" -gt "$version" ]]; then
+                    _update_log ERROR "Package incompatibility detected"
+                    _update_log ERROR "Package built for: Debian ${pkg_deb_ver}"
+                    _update_log ERROR "System version: Debian ${version}"
+                    return 1
+                fi
+            fi
+
+            # Debian package on Ubuntu - may work but warn
+            if [[ "$distro" == "ubuntu" ]]; then
+                _update_log WARN "Installing Debian package on Ubuntu"
+                _update_log INFO "Consider using Ubuntu-specific package"
+            fi
+        fi
+
+        # Check Ubuntu version mismatch
+        if [[ "$pkg_name" == *ubuntu* ]]; then
+            local pkg_ubuntu_ver
+            pkg_ubuntu_ver=$(echo "$pkg_name" | grep -oP 'ubuntu\K[0-9.]+' || echo "")
+
+            if [[ -n "$pkg_ubuntu_ver" ]] && [[ "$distro" == "ubuntu" ]]; then
+                # Compare major versions (22.04 -> 22, 24.04 -> 24)
+                local pkg_major="${pkg_ubuntu_ver%%.*}"
+                local sys_major="${version%%.*}"
+
+                if [[ "$pkg_major" -gt "$sys_major" ]]; then
+                    _update_log ERROR "Package incompatibility detected"
+                    _update_log ERROR "Package built for: Ubuntu ${pkg_ubuntu_ver}"
+                    _update_log ERROR "System version: Ubuntu ${version}"
+                    return 1
+                fi
+            fi
+
+            # Ubuntu package on Debian - usually won't work
+            if [[ "$distro" == "debian" ]]; then
+                _update_log ERROR "Cannot install Ubuntu package on Debian"
+                _update_log INFO "Use Debian-specific package instead"
+                return 1
+            fi
+        fi
+    fi
+
+    return 0
+}
+
+_show_system_info() {
+    # Display system information for debugging
+    local distro_info sys_pkg
+    distro_info=$(_detect_distro)
+    sys_pkg=$(_detect_system_pkg_manager)
+
+    local family distro version
+    IFS=':' read -r family distro version <<< "$distro_info"
+
+    echo ""
+    echo "  System Info:"
+    echo "    Package Manager: $sys_pkg"
+    echo "    Distribution:    $distro $version"
+    echo "    Family:          $family"
+
+    local expected_pkg
+    expected_pkg=$(_get_distro_package_name)
+    echo "    Expected Pkg:    $expected_pkg"
+    echo ""
 }
 
 _get_current_version() {
@@ -218,28 +457,16 @@ _get_package_url() {
     # Returns: URL
 
     local version="$1"
-    local distro
-    distro=$(_detect_distro)
-    local install_type
-    install_type=$(_detect_install_type)
 
-    local pkg_name=""
-    case "$install_type" in
-        rpm)
-            pkg_name="nftban-${distro}-x86_64.rpm"
-            ;;
-        deb)
-            pkg_name="nftban-${distro}-amd64.deb"
-            ;;
-        *)
-            # Default to RPM for unknown on RHEL-like, DEB otherwise
-            if [[ -f /etc/redhat-release ]]; then
-                pkg_name="nftban-el9-x86_64.rpm"
-            else
-                pkg_name="nftban-debian12-amd64.deb"
-            fi
-            ;;
-    esac
+    # Use the validated package name function
+    local pkg_name
+    pkg_name=$(_get_distro_package_name)
+
+    if [[ "$pkg_name" == "unknown" ]]; then
+        _update_log ERROR "Cannot determine package for this system"
+        _show_system_info
+        return 1
+    fi
 
     echo "${GITHUB_RELEASES}/v${version}/${pkg_name}"
 }
@@ -278,6 +505,16 @@ _update_via_rpm() {
 
     local version="${1:-}"
 
+    # VALIDATION: Ensure this is an RPM-based system
+    local sys_pkg
+    sys_pkg=$(_detect_system_pkg_manager)
+    if [[ "$sys_pkg" != "rpm" ]]; then
+        _update_log ERROR "Cannot install RPM package on this system"
+        _update_log INFO "System package manager: $sys_pkg"
+        _update_log INFO "Use 'nftban update' for auto-detection"
+        return 1
+    fi
+
     if [[ -z "$version" ]]; then
         version=$(_get_latest_release)
         if [[ "$version" == "unknown" ]]; then
@@ -288,7 +525,13 @@ _update_via_rpm() {
 
     local url
     url=$(_get_package_url "$version")
-    local tmp_file="/tmp/nftban-${version}.rpm"
+    if [[ $? -ne 0 ]] || [[ -z "$url" ]]; then
+        return 1
+    fi
+
+    local pkg_name
+    pkg_name=$(_get_distro_package_name)
+    local tmp_file="/tmp/${pkg_name}"
 
     # Download
     if ! _download_package "$url" "$tmp_file"; then
@@ -297,7 +540,13 @@ _update_via_rpm() {
 
     # Verify it's a valid RPM
     if ! rpm -qp "$tmp_file" &>/dev/null; then
-        _update_log ERROR "Invalid RPM package"
+        _update_log ERROR "Invalid RPM package (corrupted download?)"
+        rm -f "$tmp_file"
+        return 1
+    fi
+
+    # VALIDATION: Check package compatibility with system
+    if ! _validate_package_for_system "$tmp_file"; then
         rm -f "$tmp_file"
         return 1
     fi
@@ -321,6 +570,16 @@ _update_via_deb() {
 
     local version="${1:-}"
 
+    # VALIDATION: Ensure this is a DEB-based system
+    local sys_pkg
+    sys_pkg=$(_detect_system_pkg_manager)
+    if [[ "$sys_pkg" != "deb" ]]; then
+        _update_log ERROR "Cannot install DEB package on this system"
+        _update_log INFO "System package manager: $sys_pkg"
+        _update_log INFO "Use 'nftban update' for auto-detection"
+        return 1
+    fi
+
     if [[ -z "$version" ]]; then
         version=$(_get_latest_release)
         if [[ "$version" == "unknown" ]]; then
@@ -331,7 +590,13 @@ _update_via_deb() {
 
     local url
     url=$(_get_package_url "$version")
-    local tmp_file="/tmp/nftban-${version}.deb"
+    if [[ $? -ne 0 ]] || [[ -z "$url" ]]; then
+        return 1
+    fi
+
+    local pkg_name
+    pkg_name=$(_get_distro_package_name)
+    local tmp_file="/tmp/${pkg_name}"
 
     # Download
     if ! _download_package "$url" "$tmp_file"; then
@@ -340,7 +605,13 @@ _update_via_deb() {
 
     # Verify it's a valid DEB
     if ! dpkg-deb --info "$tmp_file" &>/dev/null; then
-        _update_log ERROR "Invalid DEB package"
+        _update_log ERROR "Invalid DEB package (corrupted download?)"
+        rm -f "$tmp_file"
+        return 1
+    fi
+
+    # VALIDATION: Check package compatibility with system
+    if ! _validate_package_for_system "$tmp_file"; then
         rm -f "$tmp_file"
         return 1
     fi
@@ -537,30 +808,78 @@ _cmd_update_status() {
     _update_banner
     echo ""
 
-    local install_type distro current_version
+    local install_type current_version
     install_type=$(_detect_install_type)
-    distro=$(_detect_distro)
     current_version=$(_get_current_version)
 
-    echo "  Install type:  $install_type"
-    echo "  Distribution:  $distro"
-    echo "  Current:       v$current_version"
+    # Get detailed distro info
+    local distro_info sys_pkg
+    distro_info=$(_detect_distro)
+    sys_pkg=$(_detect_system_pkg_manager)
+
+    local family distro version
+    IFS=':' read -r family distro version <<< "$distro_info"
+
+    echo "  ┌─────────────────────────────────────────────────────────┐"
+    echo "  │ SYSTEM INFORMATION                                      │"
+    echo "  ├─────────────────────────────────────────────────────────┤"
+    printf "  │ Package Manager:  %-38s │\n" "$sys_pkg"
+    printf "  │ Distribution:     %-38s │\n" "${distro} ${version}"
+    printf "  │ Package Family:   %-38s │\n" "$family"
+
+    local expected_pkg
+    expected_pkg=$(_get_distro_package_name)
+    printf "  │ Expected Package: %-38s │\n" "$expected_pkg"
+    echo "  └─────────────────────────────────────────────────────────┘"
     echo ""
+
+    echo "  ┌─────────────────────────────────────────────────────────┐"
+    echo "  │ NFTBAN INSTALLATION                                     │"
+    echo "  ├─────────────────────────────────────────────────────────┤"
+    printf "  │ Install Type:     %-38s │\n" "$install_type"
+    printf "  │ Current Version:  %-38s │\n" "v$current_version"
 
     case "$install_type" in
         rpm)
-            echo "  Package:       $(rpm -q nftban 2>/dev/null || echo 'unknown')"
+            local rpm_pkg
+            rpm_pkg=$(rpm -q nftban 2>/dev/null || echo 'not installed')
+            printf "  │ RPM Package:      %-38s │\n" "$rpm_pkg"
             ;;
         deb)
-            echo "  Package:       $(dpkg-query -W -f='${Package} ${Version}' nftban 2>/dev/null || echo 'unknown')"
+            local deb_pkg
+            deb_pkg=$(dpkg-query -W -f='${Package} ${Version}' nftban 2>/dev/null || echo 'not installed')
+            printf "  │ DEB Package:      %-38s │\n" "$deb_pkg"
             ;;
         git)
-            echo "  Repository:    $NFTBAN_GIT_REPO"
-            echo "  Branch:        $NFTBAN_GIT_BRANCH"
-            echo "  Commit:        $(git -C "$NFTBAN_GIT_REPO" rev-parse --short HEAD 2>/dev/null || echo 'unknown')"
+            printf "  │ Repository:       %-38s │\n" "$NFTBAN_GIT_REPO"
+            printf "  │ Branch:           %-38s │\n" "$NFTBAN_GIT_BRANCH"
+            local git_commit
+            git_commit=$(git -C "$NFTBAN_GIT_REPO" rev-parse --short HEAD 2>/dev/null || echo 'unknown')
+            printf "  │ Commit:           %-38s │\n" "$git_commit"
+            ;;
+        *)
+            printf "  │ Note:             %-38s │\n" "Unknown install method"
             ;;
     esac
 
+    echo "  └─────────────────────────────────────────────────────────┘"
+    echo ""
+
+    # Show compatibility notes
+    echo "  Package Compatibility:"
+    case "$family" in
+        rpm)
+            echo "    • el9 packages work on: RHEL 9, Rocky 9, Alma 9, CentOS Stream 9"
+            echo "    • el10 packages work on: RHEL 10, Fedora 39+, CentOS Stream 10"
+            echo "    • Installing el10 on el9 will FAIL (glibc incompatibility)"
+            ;;
+        deb)
+            echo "    • Debian packages: debian11, debian12, debian13"
+            echo "    • Ubuntu packages: ubuntu20.04, ubuntu22.04, ubuntu24.04"
+            echo "    • Debian packages MAY work on Ubuntu (with warnings)"
+            echo "    • Ubuntu packages will NOT work on Debian"
+            ;;
+    esac
     echo ""
 }
 
