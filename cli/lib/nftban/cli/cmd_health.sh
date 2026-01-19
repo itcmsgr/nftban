@@ -956,7 +956,7 @@ nftban_health_cmd_conflicts() {
                 echo "  --fix, --remove    Remove detected conflicts"
                 echo "  --yes, -y          Auto-confirm removal (no prompts)"
                 echo ""
-                echo "Detects: fail2ban, ufw, firewalld, CSF"
+                echo "Detects: fail2ban, ufw, firewalld, CSF, iptables"
                 echo "Panel-aware: Uses correct conflicts per panel+distro"
                 return 0
                 ;;
@@ -978,26 +978,105 @@ nftban_health_cmd_conflicts() {
     panel=$(nftban_detect_panel)
     distro=$(nftban_detect_distro)
 
-    echo "=============================================="
-    echo "NFTBan Firewall Conflict Detection"
-    echo "=============================================="
     echo ""
-    echo "Panel:  $panel"
-    echo "Distro: $distro"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  NFTBan Firewall Conflict Detection"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
-
-    # Get expected conflicts for this panel+distro
-    local expected_conflicts
-    expected_conflicts=$(nftban_get_panel_conflicts "$panel" "$distro")
-    echo "Expected conflicts for $panel on $distro:"
-    echo "  $expected_conflicts"
+    echo "  System:  $panel on $distro"
     echo ""
 
-    # Run detection
+    # Run detection FIRST
     nftban_detect_all_conflicts
 
-    # Report
-    nftban_report_conflicts
+    # Show DETECTED CONFLICTS (what's ACTUALLY active)
+    echo "┌────────────────────────────────────────────────────────────┐"
+    echo "│ ACTIVE CONFLICTS (detected on this system)                 │"
+    echo "├────────────────────────────────────────────────────────────┤"
+
+    local has_conflicts=false
+
+    # Check each potential conflict and show status
+    # fail2ban
+    if systemctl is-active --quiet fail2ban 2>/dev/null; then
+        echo "│  ✗ fail2ban      ACTIVE (running)                         │"
+        has_conflicts=true
+    elif systemctl is-enabled --quiet fail2ban 2>/dev/null; then
+        echo "│  ⚠ fail2ban      ENABLED (not running)                    │"
+        has_conflicts=true
+    else
+        echo "│  ✓ fail2ban      not installed/disabled                   │"
+    fi
+
+    # firewalld
+    if systemctl is-active --quiet firewalld 2>/dev/null; then
+        echo "│  ✗ firewalld     ACTIVE (running)                         │"
+        has_conflicts=true
+    elif systemctl is-enabled --quiet firewalld 2>/dev/null; then
+        echo "│  ⚠ firewalld     ENABLED (not running)                    │"
+        has_conflicts=true
+    else
+        echo "│  ✓ firewalld     not installed/disabled                   │"
+    fi
+
+    # ufw
+    if command -v ufw &>/dev/null && ufw status 2>/dev/null | grep -q "^Status: active"; then
+        echo "│  ✗ ufw           ACTIVE (enabled)                         │"
+        has_conflicts=true
+    elif command -v ufw &>/dev/null; then
+        echo "│  ✓ ufw           installed but inactive                   │"
+    else
+        echo "│  ✓ ufw           not installed                            │"
+    fi
+
+    # CSF
+    if [[ -f /etc/csf/csf.conf ]] && grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; then
+        echo "│  ✗ CSF           ACTIVE (production mode)                 │"
+        has_conflicts=true
+    elif [[ -f /etc/csf/csf.conf ]]; then
+        echo "│  ⚠ CSF           installed (testing mode)                 │"
+        has_conflicts=true
+    else
+        echo "│  ✓ CSF           not installed                            │"
+    fi
+
+    # iptables service
+    if systemctl is-active --quiet iptables 2>/dev/null || systemctl is-active --quiet ip6tables 2>/dev/null; then
+        echo "│  ✗ iptables      ACTIVE (service running)                 │"
+        has_conflicts=true
+    elif systemctl is-enabled --quiet iptables 2>/dev/null; then
+        echo "│  ⚠ iptables      ENABLED (not running)                    │"
+        has_conflicts=true
+    else
+        echo "│  ✓ iptables      service not active                       │"
+    fi
+
+    echo "└────────────────────────────────────────────────────────────┘"
+    echo ""
+
+    # Show verdict
+    if [[ "$has_conflicts" == true ]]; then
+        echo "  ┌──────────────────────────────────────────────────────────┐"
+        echo "  │  ⚠️  CONFLICTS DETECTED                                   │"
+        echo "  │                                                          │"
+        echo "  │  These firewalls may interfere with NFTBan.              │"
+        echo "  │  Run: nftban health conflicts --fix                      │"
+        echo "  └──────────────────────────────────────────────────────────┘"
+    else
+        echo "  ┌──────────────────────────────────────────────────────────┐"
+        echo "  │  ✅ NO CONFLICTS DETECTED                                 │"
+        echo "  │                                                          │"
+        echo "  │  System is clean. NFTBan can operate without conflicts.  │"
+        echo "  └──────────────────────────────────────────────────────────┘"
+    fi
+    echo ""
+
+    # Show registry info as reference (smaller, informational)
+    local expected_conflicts
+    expected_conflicts=$(nftban_get_panel_conflicts "$panel" "$distro")
+    echo "  Registry (known conflicts for $panel on $distro):"
+    echo "    $expected_conflicts"
+    echo ""
 
     # Fix if requested
     if [[ "$fix_mode" == true ]]; then
@@ -1007,16 +1086,13 @@ nftban_health_cmd_conflicts() {
         else
             nftban_remove_conflicts --panel "$panel"
         fi
-    else
-        if [[ $NFTBAN_FIREWALL_SEVERITY -gt 0 ]]; then
-            echo ""
-            echo "To remove conflicts, run:"
-            echo "  nftban health conflicts --fix"
-            echo ""
-        fi
     fi
 
-    return $NFTBAN_FIREWALL_SEVERITY
+    # Return based on actual conflicts found
+    if [[ "$has_conflicts" == true ]]; then
+        return 1
+    fi
+    return 0
 }
 
 nftban_health_cmd_gui() {
