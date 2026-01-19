@@ -709,7 +709,8 @@ _update_via_local() {
 _create_backup() {
     local current_version
     current_version=$(_get_current_version)
-    local backup_name="nftban-${current_version}-$(date '+%Y%m%d-%H%M%S')"
+    local backup_name
+    backup_name="nftban-${current_version}-$(date '+%Y%m%d-%H%M%S')"
     local backup_path="${UPDATE_BACKUP_DIR}/${backup_name}.tar.gz"
 
     mkdir -p "$UPDATE_BACKUP_DIR"
