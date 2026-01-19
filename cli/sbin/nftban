@@ -335,6 +335,7 @@ nftban_complete() {
                 echo "fix"
                 echo "services"
                 echo "modules"
+                echo "conflicts"
                 ;;
             whitelist)
                 echo "sync"
@@ -480,12 +481,14 @@ nftban_complete() {
                 echo "help"
                 ;;
             update)
-                echo "--check"
-                echo "--force"
-                echo "--dry-run"
-                echo "--rollback"
-                echo "--list"
-                echo "--help"
+                echo "check"
+                echo "status"
+                echo "github"
+                echo "git"
+                echo "local"
+                echo "rollback"
+                echo "list"
+                echo "help"
                 ;;
             support|support-bundle)
                 echo "--quick"
