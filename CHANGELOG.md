@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.3] - 2026-01-20
+
+### Changed
+
+#### Architecture: NFTBan Chain Priority Changed to -100
+- **Priority before panel firewalls**: Changed NFTBan input/forward chain priority from 0 to -100
+  - Ensures NFTBan DROP decisions happen BEFORE any panel firewalls (CSF, Plesk, DirectAdmin)
+  - Panel firewalls use priority 0, NFTBan now runs at priority -100 (earlier)
+  - Output chain remains at priority 0 (outbound traffic less critical)
+  - Updated: `nft_schema.sh`, `nftables.conf`, `structure_default.json`
+
+#### Validation: Priority-Based Safety Instead of Forbidden Tables
+- **Smarter panel coexistence**: Replaced "forbidden tables" validation with priority-based check
+  - Old: ERROR if `ip filter` / `ip6 filter` tables exist (broke panel servers)
+  - New: WARNING if other chains exist, CRITICAL only if they could bypass NFTBan
+  - Validation now checks: NFTBan priority < other chain priority on same hook
+  - Panels detected: CSF, Plesk, DirectAdmin can coexist safely
+
+### Fixed
+
+#### Spec: Updated to Match Deployed Architecture
+- **Deprecated inet tables removed**: Spec now matches actual ip/ip6 nftban deployment
+  - Changed from deprecated `inet nftban_main` / `inet nftban_runtime` to `ip nftban` / `ip6 nftban`
+  - Set names updated: `whitelist_v4` -> `whitelist_ipv4`, etc.
+  - Version bumped to 2.1 with architecture documentation
+
+#### Registry: Fixed Command Discrepancies
+- **CLI commands match registry**: Updated `commands.registry.yml`
+  - `firewall status` -> `firewall stats` (actual CLI)
+  - `permissions audit` -> `permissions check` (actual CLI)
+
+### Infrastructure
+
+#### Lab Servers: Watchdog Timer Fixed
+- **lab4 watchdog**: Reset failed systemd timer unit
+  - `nftban-watchdog.timer` was in failed state, now active
+
 ## [1.2.2] - 2026-01-17
 
 ### Fixed
