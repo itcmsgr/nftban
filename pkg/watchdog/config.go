@@ -2,11 +2,30 @@
 // NFTBan v1.0 - Watchdog Configuration
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="config"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Watchdog configuration with dynamic memory limits based on system resources"
+// meta:input="System memory via /proc/meminfo"
+// meta:output="Configuration struct"
+// meta:depends="time,safety"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars="NFTBAN_MEM_BUDGET_BYTES"
+// meta:inventory.config_files="/etc/nftban/conf.d/watchdog.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package watchdog
 
-import "time"
+import (
+	"time"
+
+	"github.com/itcmsgr/nftban/pkg/safety"
+)
 
 // Config holds watchdog configuration
 type Config struct {
@@ -104,7 +123,11 @@ type Config struct {
 }
 
 // DefaultConfig returns configuration with sensible defaults
+// Memory budget is dynamically calculated based on available system memory
 func DefaultConfig() *Config {
+	// Dynamic memory budget: use safety package to get system-aware budget
+	memBudget := safety.GetMemoryBudget()
+
 	return &Config{
 		Enabled:      true,
 		BaseInterval: 5 * time.Second,
@@ -117,8 +140,8 @@ func DefaultConfig() *Config {
 		WarnExitDuration:     30 * time.Second,
 		CritExitDuration:     60 * time.Second,
 
-		// Budgets/Thresholds
-		MemBudgetBytes:          1024 * 1024 * 1024, // 1GB default
+		// Budgets/Thresholds (dynamic based on available memory)
+		MemBudgetBytes:          memBudget, // Dynamic: 30% of available, capped at 1GB
 		RSSCritPercentOfBudget:  95,
 		HeapCritPercentOfLimit:  90,
 		CPUCritPercent:          80,

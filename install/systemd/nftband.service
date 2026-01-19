@@ -85,6 +85,15 @@ LockPersonality=true
 # MemoryDenyWriteExecute=true  # Uncomment if Go runtime is compatible
 
 # =============================================================================
+# RESOURCE LIMITS
+# =============================================================================
+# Protect against memory leaks/bloat - daemon should use <100MB normally
+# MemoryHigh: soft limit - when exceeded, memory reclaim is aggressive
+# MemoryMax: hard limit - OOM killer triggers if exceeded
+MemoryHigh=384M
+MemoryMax=512M
+
+# =============================================================================
 # FILESYSTEM ACCESS
 # =============================================================================
 # Principle of least privilege: daemon writes ONLY to specific paths

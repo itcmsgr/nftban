@@ -24,6 +24,7 @@ package safety
 import (
 	"os"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 )
 
@@ -127,10 +128,47 @@ func InitMemory(lim Limits) {
 
 	// Set memory limit (Go 1.19+ soft limit)
 	if targetLimit > 0 {
-		// Note: debug.SetMemoryLimit() is available in Go 1.19+
-		// This is a soft limit - Go will try to stay under but may exceed briefly
-		// For older Go versions, this would need conditional compilation
-		// For now, we document the limit but don't enforce it hard
-		// runtime/debug.SetMemoryLimit(targetLimit)
+		// debug.SetMemoryLimit is a soft limit - Go GC will work harder to stay under
+		// but may briefly exceed during allocation spikes
+		debug.SetMemoryLimit(targetLimit)
 	}
+}
+
+// GetMemoryBudget calculates a safe memory budget based on available system memory
+// Returns a value that leaves headroom for the OS and other processes
+func GetMemoryBudget() int64 {
+	mem := AvailableMem()
+
+	// Default to 256MB if we can't determine system memory
+	if mem.Avail <= 0 {
+		return 256 << 20
+	}
+
+	// Use 30% of available memory, capped at 1GB
+	budget := (mem.Avail * 30) / 100
+	const maxBudget = 1 << 30 // 1GB max
+	if budget > maxBudget {
+		budget = maxBudget
+	}
+
+	// Minimum 64MB
+	const minBudget = 64 << 20
+	if budget < minBudget {
+		budget = minBudget
+	}
+
+	return budget
+}
+
+// CanAllocate checks if allocating the given bytes is safe
+// Returns false if allocation would exceed available memory budget
+func CanAllocate(estimatedBytes int64) bool {
+	mem := AvailableMem()
+	if mem.Avail <= 0 {
+		return true // Can't determine, allow operation
+	}
+
+	// Reserve 20% of available memory as safety margin
+	safeAvail := (mem.Avail * 80) / 100
+	return estimatedBytes < safeAvail
 }

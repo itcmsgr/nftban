@@ -69,6 +69,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/ports"
 	"github.com/itcmsgr/nftban/pkg/portscan"
 	"github.com/itcmsgr/nftban/pkg/runtime"
+	"github.com/itcmsgr/nftban/pkg/safety"
 	"github.com/itcmsgr/nftban/pkg/stats"
 	"github.com/itcmsgr/nftban/pkg/sync"
 	"github.com/itcmsgr/nftban/pkg/watchdog"
@@ -141,6 +142,14 @@ func main() {
 			profileEnabled = true
 		}
 	}
+
+	// Initialize safety limits (dynamic based on available memory)
+	// This sets GOMEMLIMIT to prevent unbounded memory growth
+	safetyLimits := safety.FromEnv()
+	safety.InitMemory(safetyLimits)
+	log.Printf("Safety: GOMEMLIMIT set to %s (available: %s)",
+		safety.FormatBytes(safetyLimits.MaxMemoryBytes),
+		safety.FormatBytes(safety.AvailableMem().Avail))
 
 	// Create daemon
 	d := &Daemon{
@@ -1489,6 +1498,11 @@ func (d *Daemon) handleLoadCIDRsRequest(params map[string]any) SocketResponse {
 		setType = "blacklist"
 	}
 
+	// Memory safety pre-check: estimate memory needs before loading
+	// Each CIDR in Go uses ~100 bytes for the string + parsing overhead
+	// CIDR merging can temporarily 2-3x memory usage during sort/merge
+	const bytesPerCIDREstimate = 300 // conservative estimate including merge overhead
+
 	// Get CIDRs from params
 	cidrsRaw, ok := params["cidrs"].([]any)
 	if !ok || len(cidrsRaw) == 0 {
@@ -1517,6 +1531,18 @@ func (d *Daemon) handleLoadCIDRsRequest(params map[string]any) SocketResponse {
 			}
 			for cidr := range ipv6CIDRSet {
 				ipv6CIDRs = append(ipv6CIDRs, cidr)
+			}
+
+			// Memory safety check before CIDR merging (which can 3x memory temporarily)
+			totalCIDRs := len(ipv4CIDRs) + len(ipv6CIDRs)
+			estimatedBytes := int64(totalCIDRs) * bytesPerCIDREstimate
+			if !safety.CanAllocate(estimatedBytes) {
+				mem := safety.AvailableMem()
+				return SocketResponse{
+					Success: false,
+					Error: fmt.Sprintf("insufficient memory for %d CIDRs: need ~%s, available %s",
+						totalCIDRs, safety.FormatBytes(estimatedBytes), safety.FormatBytes(mem.Avail)),
+				}
 			}
 		} else {
 			// Load trust feeds
@@ -1558,6 +1584,18 @@ func (d *Daemon) handleLoadCIDRsRequest(params map[string]any) SocketResponse {
 					}
 				}
 			}
+
+			// Memory safety check for trust feeds
+			totalCIDRs := len(ipv4CIDRs) + len(ipv6CIDRs)
+			estimatedBytes := int64(totalCIDRs) * bytesPerCIDREstimate
+			if !safety.CanAllocate(estimatedBytes) {
+				mem := safety.AvailableMem()
+				return SocketResponse{
+					Success: false,
+					Error: fmt.Sprintf("insufficient memory for %d trust CIDRs: need ~%s, available %s",
+						totalCIDRs, safety.FormatBytes(estimatedBytes), safety.FormatBytes(mem.Avail)),
+				}
+			}
 		}
 
 		// Load into nftables
@@ -1575,6 +1613,18 @@ func (d *Daemon) handleLoadCIDRsRequest(params map[string]any) SocketResponse {
 			ipv6CIDRs = append(ipv6CIDRs, cidr)
 		} else {
 			ipv4CIDRs = append(ipv4CIDRs, cidr)
+		}
+	}
+
+	// Memory safety check for direct CIDRs
+	totalCIDRs := len(ipv4CIDRs) + len(ipv6CIDRs)
+	estimatedBytes := int64(totalCIDRs) * bytesPerCIDREstimate
+	if !safety.CanAllocate(estimatedBytes) {
+		mem := safety.AvailableMem()
+		return SocketResponse{
+			Success: false,
+			Error: fmt.Sprintf("insufficient memory for %d CIDRs: need ~%s, available %s",
+				totalCIDRs, safety.FormatBytes(estimatedBytes), safety.FormatBytes(mem.Avail)),
 		}
 	}
 
