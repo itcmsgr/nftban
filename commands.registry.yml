@@ -643,21 +643,25 @@ cloudflare:
 
 firewall:
   category: infrastructure
-  description: "Firewall initialization and control"
+  description: "Firewall structure validation and statistics"
   risk: advanced
   audience: [cli]
   capability: enforcement
-  mutates: true
+  mutates: conditional
   supports_dry_run: false
-  requires_root: true
+  requires_root: false
   panel_expose: false
   output_modes: [json, text]
   has_json: true
   examples:
-    - "nftban firewall status"
-    - "nftban firewall init"
-    - "nftban firewall reload"
-    - "nftban firewall reset"
+    - "nftban firewall validate"
+    - "nftban firewall check 1.2.3.4"
+    - "nftban firewall check 22"
+    - "nftban firewall stats"
+  subcommands:
+    validate: {mutates: false, description: "Validate nftables structure against NFTBan spec"}
+    check: {mutates: false, description: "Check if IP or port is blocked/allowed"}
+    stats: {mutates: false, description: "Show firewall statistics (tables, chains, sets)"}
 
 nftables:
   category: infrastructure
@@ -817,9 +821,13 @@ permissions:
   output_modes: [json, text]
   has_json: true
   examples:
-    - "nftban permissions audit"
-    - "nftban permissions fix"
-    - "nftban permissions status --json"
+    - "nftban permissions check"
+    - "nftban permissions enforce"
+    - "nftban permissions enforce --dry-run"
+  subcommands:
+    check: {mutates: false, description: "Check current permissions and report issues"}
+    enforce: {mutates: true, description: "Enforce secure permissions on all NFTBan files"}
+    fix: {mutates: true, description: "Alias for enforce"}
 
 polkit:
   category: infrastructure
