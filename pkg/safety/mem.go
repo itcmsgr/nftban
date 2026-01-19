@@ -126,3 +126,185 @@ func FormatBytes(bytes int64) string {
 		return strconv.FormatInt(bytes, 10) + " B"
 	}
 }
+
+// =============================================================================
+// Resource Profile Detection (Server Specs + Control Panel)
+// =============================================================================
+
+// ServerProfile describes the server's resource characteristics
+type ServerProfile struct {
+	CPUCores        int    // Number of CPU cores
+	TotalRAM        int64  // Total RAM in bytes
+	AvailRAM        int64  // Available RAM in bytes
+	HasControlPanel bool   // Whether a control panel is detected
+	PanelType       string // "cpanel", "directadmin", "plesk", "cyberpanel", "none"
+}
+
+// DetectServerProfile analyzes the server and returns its resource profile
+func DetectServerProfile() ServerProfile {
+	profile := ServerProfile{
+		CPUCores:  detectCPUCores(),
+		PanelType: "none",
+	}
+
+	mem := AvailableMem()
+	profile.TotalRAM = mem.Total
+	profile.AvailRAM = mem.Avail
+
+	// Detect control panels by checking for their processes/services
+	profile.PanelType, profile.HasControlPanel = detectControlPanel()
+
+	return profile
+}
+
+// detectCPUCores returns the number of CPU cores
+func detectCPUCores() int {
+	// Read from /proc/cpuinfo
+	data, err := os.ReadFile("/proc/cpuinfo")
+	if err != nil {
+		return 1 // Default to 1
+	}
+
+	cores := 0
+	for _, line := range strings.Split(string(data), "\n") {
+		if strings.HasPrefix(line, "processor") {
+			cores++
+		}
+	}
+
+	if cores == 0 {
+		return 1
+	}
+	return cores
+}
+
+// detectControlPanel checks for common control panel installations
+func detectControlPanel() (panelType string, hasPanel bool) {
+	// Check for cPanel (WHM/cPanel)
+	if fileExists("/usr/local/cpanel/cpanel") || fileExists("/var/cpanel") {
+		return "cpanel", true
+	}
+
+	// Check for DirectAdmin
+	if fileExists("/usr/local/directadmin/directadmin") || fileExists("/usr/local/directadmin") {
+		return "directadmin", true
+	}
+
+	// Check for Plesk
+	if fileExists("/usr/local/psa/admin") || fileExists("/opt/psa") {
+		return "plesk", true
+	}
+
+	// Check for CyberPanel
+	if fileExists("/usr/local/CyberCP") || fileExists("/usr/local/lsws/cyberpanel") {
+		return "cyberpanel", true
+	}
+
+	// Check for CloudPanel
+	if fileExists("/home/clp") || fileExists("/usr/share/cloudpanel") {
+		return "cloudpanel", true
+	}
+
+	// Check for VestaCP / HestiaCP
+	if fileExists("/usr/local/vesta") {
+		return "vestacp", true
+	}
+	if fileExists("/usr/local/hestia") {
+		return "hestiacp", true
+	}
+
+	return "none", false
+}
+
+// fileExists checks if a path exists
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+// GetResourceLimits calculates appropriate resource limits based on server profile
+// Returns memory budget and max concurrent workers
+func GetResourceLimits() (memBudget int64, maxWorkers int) {
+	profile := DetectServerProfile()
+
+	// Base memory budget calculation
+	// Servers with control panels need more headroom for the panel itself
+	var budgetPercent int64
+
+	if profile.HasControlPanel {
+		// Control panel servers: use 20% of available (more conservative)
+		// Panel consumes significant RAM (cPanel ~500MB, DA ~200MB)
+		budgetPercent = 20
+	} else {
+		// Non-panel servers: use 35% of available (more aggressive)
+		budgetPercent = 35
+	}
+
+	memBudget = (profile.AvailRAM * budgetPercent) / 100
+
+	// Apply caps based on total RAM
+	// Small servers (<=4GB): max 384MB
+	// Medium servers (4-8GB): max 512MB
+	// Large servers (>8GB): max 1GB
+	const GB = 1024 * 1024 * 1024
+	var maxBudget int64
+
+	switch {
+	case profile.TotalRAM <= 4*GB:
+		maxBudget = 384 * 1024 * 1024 // 384MB for small servers
+	case profile.TotalRAM <= 8*GB:
+		maxBudget = 512 * 1024 * 1024 // 512MB for medium
+	default:
+		maxBudget = 1024 * 1024 * 1024 // 1GB for large
+	}
+
+	if memBudget > maxBudget {
+		memBudget = maxBudget
+	}
+
+	// Minimum 64MB
+	const minBudget = 64 * 1024 * 1024
+	if memBudget < minBudget {
+		memBudget = minBudget
+	}
+
+	// Worker count based on CPU cores
+	// Panel servers: 1 worker per core (conservative)
+	// Non-panel: 2 workers per core (can use more CPU)
+	if profile.HasControlPanel {
+		maxWorkers = profile.CPUCores
+		if maxWorkers < 1 {
+			maxWorkers = 1
+		}
+	} else {
+		maxWorkers = profile.CPUCores * 2
+		if maxWorkers < 2 {
+			maxWorkers = 2
+		}
+	}
+
+	// Cap workers at 8 for daemon stability
+	if maxWorkers > 8 {
+		maxWorkers = 8
+	}
+
+	return memBudget, maxWorkers
+}
+
+// GetProfileDescription returns a human-readable description of the server profile
+func GetProfileDescription() string {
+	profile := DetectServerProfile()
+	memBudget, workers := GetResourceLimits()
+
+	panel := "none"
+	if profile.HasControlPanel {
+		panel = profile.PanelType
+	}
+
+	return "cpu=" + strconv.Itoa(profile.CPUCores) +
+		" ram=" + FormatBytes(profile.TotalRAM) +
+		" avail=" + FormatBytes(profile.AvailRAM) +
+		" panel=" + panel +
+		" budget=" + FormatBytes(memBudget) +
+		" workers=" + strconv.Itoa(workers)
+}

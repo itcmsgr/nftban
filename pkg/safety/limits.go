@@ -134,29 +134,11 @@ func InitMemory(lim Limits) {
 	}
 }
 
-// GetMemoryBudget calculates a safe memory budget based on available system memory
-// Returns a value that leaves headroom for the OS and other processes
+// GetMemoryBudget calculates a safe memory budget based on server profile
+// Takes into account CPU cores, total RAM, and control panel presence
+// Returns a value that leaves headroom for the OS, panel, and other processes
 func GetMemoryBudget() int64 {
-	mem := AvailableMem()
-
-	// Default to 256MB if we can't determine system memory
-	if mem.Avail <= 0 {
-		return 256 << 20
-	}
-
-	// Use 30% of available memory, capped at 1GB
-	budget := (mem.Avail * 30) / 100
-	const maxBudget = 1 << 30 // 1GB max
-	if budget > maxBudget {
-		budget = maxBudget
-	}
-
-	// Minimum 64MB
-	const minBudget = 64 << 20
-	if budget < minBudget {
-		budget = minBudget
-	}
-
+	budget, _ := GetResourceLimits()
 	return budget
 }
 

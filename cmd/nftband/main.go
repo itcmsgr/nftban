@@ -143,13 +143,11 @@ func main() {
 		}
 	}
 
-	// Initialize safety limits (dynamic based on available memory)
+	// Initialize safety limits (dynamic based on server profile: CPU, RAM, panel)
 	// This sets GOMEMLIMIT to prevent unbounded memory growth
 	safetyLimits := safety.FromEnv()
 	safety.InitMemory(safetyLimits)
-	log.Printf("Safety: GOMEMLIMIT set to %s (available: %s)",
-		safety.FormatBytes(safetyLimits.MaxMemoryBytes),
-		safety.FormatBytes(safety.AvailableMem().Avail))
+	log.Printf("Safety: %s", safety.GetProfileDescription())
 
 	// Create daemon
 	d := &Daemon{
