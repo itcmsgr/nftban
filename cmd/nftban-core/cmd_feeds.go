@@ -378,6 +378,17 @@ func cmdFeedsLoad(feedsDir string, cfg *nftbanconf.Config) error {
 	// Step 3: Load feeds via IPC
 	fmt.Println("Step 3: Loading feeds into blacklist via daemon...")
 
+	// Increase timeout for large feed sets (CIDR merging + nftables loading takes time)
+	// ~5k CIDRs typically needs 60-90 seconds for merge + load
+	if totalEntries > 1000 {
+		loadTimeout := time.Duration(30+totalEntries/100) * time.Second
+		if loadTimeout > 5*time.Minute {
+			loadTimeout = 5 * time.Minute // Cap at 5 minutes
+		}
+		client.SetTimeout(loadTimeout)
+		fmt.Printf("  ⏱️  Timeout set to %v for %d entries\n", loadTimeout, totalEntries)
+	}
+
 	// Combine IPv4 IPs (as /32) and CIDRs into single list
 	var ipv4Combined []string
 	for ip := range ipv4Set {
