@@ -6,23 +6,30 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Core validation and checking functions for nftables structure
 #
-# meta:name=nftban_validator
-# meta:type=core
-# meta:header=NFTBan Validator Library
-# meta:version=1.0.0
+# meta:name="nftban_validator"
+# meta:type="core"
+# meta:header="NFTBan Validator Library"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Provides validation logic for nftables structure, IP/port checking, and firewall statistics
-# meta:input=Spec file (JSON), live nftables ruleset, IP/port values
-# meta:output=Validation results, IP/port status, firewall statistics (JSON or human-readable)
+# meta:description="Provides validation logic for nftables structure, IP/port checking, and firewall statistics"
+# meta:input="Spec file (JSON), live nftables ruleset, IP/port values"
+# meta:output="Validation results, IP/port status, firewall statistics (JSON or human-readable)"
 #
 # **Inventory & Requirements**
-# meta:depends=bash,nft,jq
+# meta:depends="bash,nft,jq"
+# meta:inventory.files=""
+# meta:inventory.binaries="nft,jq"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# meta:created_date=2025-11-13
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-13"
+# meta:updated_date="2026-01-20"
 
 
 # =============================================================================
@@ -133,20 +140,31 @@ validate_structure() {
         fi
     done <<< "$required_tables"
 
-    # Check forbidden tables
-    local forbidden_patterns
-    forbidden_patterns=$(echo "$spec" | jq -r '.expected_structure.validation_checks.forbidden_table_patterns[]')
+    # Check priority safety (NFTBan must run BEFORE other firewalls)
+    # NFTBan uses priority -100, panel firewalls (CSF, Plesk, DirectAdmin) use 0
+    local nftban_priority=-100
 
-    while IFS= read -r pattern; do
-        [[ -z "$pattern" ]] && continue
+    # Check for other firewall chains on input/forward hooks
+    for family in ip ip6; do
+        for hook in input forward; do
+            # Get all base chains on this hook (excluding nftban)
+            local other_chains
+            other_chains=$(echo "$ruleset" | jq -r ".nftables[] | select(.chain? and .chain.family == \"$family\" and .chain.hook == \"$hook\" and .chain.table != \"nftban\") | \"\(.chain.table) \(.chain.name) \(.chain.prio // 0)\"" 2>/dev/null || true)
 
-        local pattern_family="${pattern%% *}"
-        local pattern_name="${pattern#* }"
+            while IFS= read -r chain_info; do
+                [[ -z "$chain_info" ]] && continue
+                local other_table other_name other_prio
+                read -r other_table other_name other_prio <<< "$chain_info"
 
-        if echo "$ruleset" | jq -e ".nftables[] | select(.table? and .table.family == \"$pattern_family\" and .table.name == \"$pattern_name\")" >/dev/null 2>&1; then
-            errors+=("CRITICAL: Forbidden table exists: $pattern (bypasses NFTBan!)")
-        fi
-    done <<< "$forbidden_patterns"
+                # Check if other chain could bypass NFTBan
+                if [[ "$other_prio" -le "$nftban_priority" ]]; then
+                    errors+=("CRITICAL: $family $other_table $other_name (priority $other_prio) runs before/with NFTBan (priority $nftban_priority) on $hook hook!")
+                else
+                    warnings+=("WARNING: Other firewall chain detected: $family $other_table $other_name (priority $other_prio) - NFTBan runs first (safe)")
+                fi
+            done <<< "$other_chains"
+        done
+    done
 
     # Check required sets
     local required_sets
