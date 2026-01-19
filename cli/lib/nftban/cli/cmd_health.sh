@@ -986,8 +986,8 @@ nftban_health_cmd_conflicts() {
     echo "  System:  $panel on $distro"
     echo ""
 
-    # Run detection FIRST
-    nftban_detect_all_conflicts
+    # Run detection FIRST (returns severity as exit code, don't let set -e kill us)
+    nftban_detect_all_conflicts || true
 
     # Show DETECTED CONFLICTS (what's ACTUALLY active)
     echo "┌────────────────────────────────────────────────────────────┐"
