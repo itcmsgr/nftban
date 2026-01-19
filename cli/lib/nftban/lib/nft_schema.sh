@@ -5,23 +5,32 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Single source of truth for nftables table/set/chain structure
 #
-# meta:name=nft_schema
-# meta:type=library
-# meta:header=NFT Schema Specification
-# meta:version=1.0.0
+# meta:name="nft_schema"
+# meta:type="library"
+# meta:header="NFT Schema Specification"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Canonical nftables schema to prevent table structure drift
-# meta:input=None (defines constants)
-# meta:output=Table/set/chain specifications and validation functions
+# meta:description="Canonical nftables schema to prevent table structure drift"
+# meta:input="None (defines constants)"
+# meta:output="Table/set/chain specifications and validation functions"
 #
 # **Inventory & Requirements**
-# meta:depends=bash>=4.0,nftables>=0.9.3
+# meta:depends="bash>=4.0,nftables>=0.9.3"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 #
-# meta:created_date=2025-11-27
+# meta:created_date="2025-11-27"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Prevent double-loading
 [[ -n "${NFTBAN_NFT_SCHEMA_LOADED:-}" ]] && return 0
@@ -112,9 +121,10 @@ declare -g -A NFTBAN_IPV4_SETS=(
 
 # Chains in ip nftban (IPv4)
 # BASE CHAINS (mandatory - always present)
+# PRIORITY -100: Ensures NFTBan runs BEFORE any panel firewalls (CSF, Plesk, etc. use priority 0)
 declare -g -A NFTBAN_IPV4_CHAINS=(
-    ["input"]="filter|input|0|drop|Main IPv4 input chain"
-    ["forward"]="filter|forward|0|drop|IPv4 forward chain"
+    ["input"]="filter|input|-100|drop|Main IPv4 input chain (priority -100: before panel firewalls)"
+    ["forward"]="filter|forward|-100|drop|IPv4 forward chain (priority -100: before panel firewalls)"
     ["output"]="filter|output|0|accept|IPv4 output chain"
 )
 
@@ -160,9 +170,10 @@ declare -g -A NFTBAN_IPV6_SETS=(
 
 # Chains in ip6 nftban (IPv6)
 # BASE CHAINS (mandatory - always present)
+# PRIORITY -100: Ensures NFTBan runs BEFORE any panel firewalls (CSF, Plesk, etc. use priority 0)
 declare -g -A NFTBAN_IPV6_CHAINS=(
-    ["input"]="filter|input|0|drop|Main IPv6 input chain"
-    ["forward"]="filter|forward|0|drop|IPv6 forward chain"
+    ["input"]="filter|input|-100|drop|Main IPv6 input chain (priority -100: before panel firewalls)"
+    ["forward"]="filter|forward|-100|drop|IPv6 forward chain (priority -100: before panel firewalls)"
     ["output"]="filter|output|0|accept|IPv6 output chain"
 )
 
