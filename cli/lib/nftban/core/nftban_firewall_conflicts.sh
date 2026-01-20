@@ -431,23 +431,38 @@ nftban_detect_cphulk() {
 
 nftban_detect_csf() {
     # Detect ConfigServer Firewall (CSF)
-    # Returns: 0=not found, 1=installed, 2=active
+    # Returns: 0=not found, 1=installed but disabled, 2=active
 
     local status=0
 
     if [[ -f /etc/csf/csf.conf ]] || command -v csf &>/dev/null; then
         status=1
 
-        if [[ -f /etc/csf/csf.conf ]] && grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; then
+        # Check if CSF is actually ENABLED (not just installed)
+        # CSF can be in production mode (TESTING=0) but still disabled
+        local csf_enabled=false
+        if systemctl is-active lfd &>/dev/null 2>&1; then
+            csf_enabled=true
+        elif csf -s 2>&1 | grep -q "csf is enabled"; then
+            csf_enabled=true
+        fi
+
+        if [[ "$csf_enabled" == "true" ]]; then
+            # CSF is actually running
             status=2
-            NFTBAN_FIREWALL_CONFLICTS+=("CSF: ACTIVE - ConfigServer Firewall detected")
+            if grep -q "^TESTING = \"0\"" /etc/csf/csf.conf 2>/dev/null; then
+                NFTBAN_FIREWALL_CONFLICTS+=("CSF: ACTIVE (production mode)")
+            else
+                NFTBAN_FIREWALL_CONFLICTS+=("CSF: ACTIVE (testing mode)")
+            fi
             NFTBAN_FIREWALL_CONFLICTS+=("  └─ CSF uses iptables which conflicts with nftban")
             NFTBAN_FIREWALL_FIXES+=("Disable CSF:")
             NFTBAN_FIREWALL_FIXES+=("  csf -x")
             [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
         else
-            NFTBAN_FIREWALL_CONFLICTS+=("CSF: Installed (testing mode or disabled)")
-            [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_WARNING ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
+            # CSF installed but disabled - no conflict
+            NFTBAN_FIREWALL_CONFLICTS+=("CSF: Installed but DISABLED (no conflict)")
+            # Don't change severity - disabled CSF is not a conflict
         fi
     fi
 
