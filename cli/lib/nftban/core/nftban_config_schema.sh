@@ -355,27 +355,39 @@ nftban_config_load_merged() {
 
 # Load effective config from all sources
 # Returns: merged JSON with full config
+# OPTIMIZED: Collect all JSON then merge once (instead of per-file merge)
 nftban_config_load_effective() {
     local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
-    local effective="{}"
+    local all_json=()
 
     # 1. Load main config
     if [[ -f "$config_dir/nftban.conf" ]]; then
-        local main_config
-        main_config=$(nftban_config_load_merged "$config_dir/nftban.conf")
-        effective=$(nftban_config_merge_json "$effective" "$main_config")
+        all_json+=("$(nftban_config_parse_to_json "$config_dir/nftban.conf")")
+    fi
+    if [[ -f "$config_dir/nftban.conf.local" ]]; then
+        all_json+=("$(nftban_config_parse_to_json "$config_dir/nftban.conf.local")")
     fi
 
     # 2. Load conf.d configs (in sorted order)
     local conf_file
     for conf_file in "$config_dir"/conf.d/*.conf "$config_dir"/conf.d/*/*.conf; do
         [[ -f "$conf_file" ]] || continue
-        local module_config
-        module_config=$(nftban_config_load_merged "$conf_file")
-        effective=$(nftban_config_merge_json "$effective" "$module_config")
+        all_json+=("$(nftban_config_parse_to_json "$conf_file")")
+        local local_file="${conf_file%.conf}.conf.local"
+        if [[ -f "$local_file" ]]; then
+            all_json+=("$(nftban_config_parse_to_json "$local_file")")
+        fi
     done
 
-    echo "$effective"
+    # Single jq merge of all collected JSON (instead of N individual merges)
+    if [[ ${#all_json[@]} -eq 0 ]]; then
+        echo "{}"
+    elif [[ ${#all_json[@]} -eq 1 ]]; then
+        echo "${all_json[0]}"
+    else
+        # Merge all JSON objects: later values override earlier
+        printf '%s\n' "${all_json[@]}" | jq -s 'reduce .[] as $item ({}; . * $item)' 2>/dev/null || echo "{}"
+    fi
 }
 
 # =============================================================================
