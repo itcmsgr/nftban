@@ -276,56 +276,12 @@ nftban_cmd_config_show() {
         echo "════════════════════════════════════════════════════════════"
         echo ""
 
-        # Group by category from schema
-        local schema_file="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/data/config-schema.json"
-
-        if [[ -f "$schema_file" ]]; then
-            # Display by category
-            local categories
-            categories=$(jq -r '.categories | keys[]' "$schema_file" 2>/dev/null)
-
-            while IFS= read -r category; do
-                [[ -z "$category" ]] && continue
-
-                local cat_name
-                cat_name=$(jq -r --arg c "$category" '.categories[$c]' "$schema_file" 2>/dev/null)
-
-                # Find keys in this category
-                local keys_in_cat
-                keys_in_cat=$(jq -r --arg c "$category" '.properties | to_entries[] | select(.value.category == $c) | .key' "$schema_file" 2>/dev/null)
-
-                if [[ -n "$keys_in_cat" ]]; then
-                    echo "[$cat_name]"
-
-                    while IFS= read -r key; do
-                        [[ -z "$key" ]] && continue
-                        local val
-                        val=$(echo "$effective" | jq -r --arg k "$key" '.[$k] // "<not set>"')
-                        printf "  %-35s = %s\n" "$key" "$val"
-                    done <<< "$keys_in_cat"
-                    echo ""
-                fi
-            done <<< "$categories"
-
-            # Show keys not in schema
-            echo "[Other/Unrecognized]"
-            local all_keys
-            all_keys=$(echo "$effective" | jq -r 'keys[]')
-
-            while IFS= read -r key; do
-                [[ -z "$key" ]] && continue
-                local in_schema
-                in_schema=$(jq -r --arg k "$key" '.properties | has($k)' "$schema_file" 2>/dev/null)
-                if [[ "$in_schema" != "true" ]]; then
-                    local val
-                    val=$(echo "$effective" | jq -r --arg k "$key" '.[$k]')
-                    printf "  %-35s = %s\n" "$key" "$val"
-                fi
-            done <<< "$all_keys"
-        else
-            # No schema, just dump all
-            echo "$effective" | jq -r 'to_entries | sort_by(.key) | .[] | "  \(.key) = \(.value)"'
-        fi
+        # OPTIMIZED: Single jq call, sorted alphabetically
+        # Category grouping removed for performance (was causing 100+ jq calls)
+        echo "$effective" | jq -r '
+            to_entries | sort_by(.key) | .[] |
+            "  \(.key)\("                                   "[0:35-(.key|length)]) = \(.value)"
+        '
     fi
 }
 
