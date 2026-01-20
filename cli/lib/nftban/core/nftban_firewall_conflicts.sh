@@ -235,32 +235,52 @@ nftban_detect_conflicting_tables() {
     local tables
     tables=$(nft list tables 2>/dev/null || echo "")
 
-    # Check for known conflicting tables
+    # Get NFTBan's input chain priority (should be -100)
+    local nftban_priority=-100
+    local actual_nftban_prio
+    actual_nftban_prio=$(nft -j list chain ip nftban input 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio // -100' | head -1 || echo "-100")
 
-    # 1. ip filter (created by iptables-nft or direct iptables usage)
+    # Check for known conflicting tables with PRIORITY-BASED SAFETY
+
+    # 1. ip filter (created by iptables-nft, Plesk, CSF, etc.)
     if echo "$tables" | grep -q "^table ip filter"; then
-        status=2
-        NFTBAN_FIREWALL_CONFLICTS+=("NFTABLES CONFLICT: 'ip filter' table exists")
+        # Check the priority of the filter table's input chain
+        local filter_prio
+        filter_prio=$(nft -j list chain ip filter INPUT 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio // 0' | head -1 || echo "0")
 
-        # Check if managed by iptables-nft
-        if nft list table ip filter 2>/dev/null | head -5 | grep -q "managed by iptables"; then
-            NFTBAN_FIREWALL_CONFLICTS+=("  └─ Managed by iptables-nft (DO NOT manually delete)")
-            NFTBAN_FIREWALL_CONFLICTS+=("  └─ Fix: Stop program using iptables commands")
+        if [[ "$filter_prio" -le "$actual_nftban_prio" ]]; then
+            # CRITICAL: filter table runs before or same as NFTBan
+            status=2
+            NFTBAN_FIREWALL_CONFLICTS+=("CRITICAL: 'ip filter' table (priority $filter_prio) runs before NFTBan (priority $actual_nftban_prio)")
+            [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
+        else
+            # SAFE: NFTBan runs first (priority -100 < filter priority 0)
+            status=1
+            NFTBAN_FIREWALL_CONFLICTS+=("INFO: 'ip filter' table exists (priority $filter_prio) - NFTBan runs first (safe)")
+            [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
         fi
-        [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
     fi
 
     # 2. ip6 filter
     if echo "$tables" | grep -q "^table ip6 filter"; then
-        status=2
-        NFTBAN_FIREWALL_CONFLICTS+=("NFTABLES CONFLICT: 'ip6 filter' table exists")
-        [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
+        local filter6_prio
+        filter6_prio=$(nft -j list chain ip6 filter INPUT 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio // 0' | head -1 || echo "0")
+
+        if [[ "$filter6_prio" -le "$actual_nftban_prio" ]]; then
+            status=2
+            NFTBAN_FIREWALL_CONFLICTS+=("CRITICAL: 'ip6 filter' table (priority $filter6_prio) runs before NFTBan")
+            [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
+        else
+            status=1
+            NFTBAN_FIREWALL_CONFLICTS+=("INFO: 'ip6 filter' table exists (priority $filter6_prio) - NFTBan runs first (safe)")
+            [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
+        fi
     fi
 
-    # 3. firewalld tables
+    # 3. firewalld tables (always critical - it manages the entire firewall)
     if echo "$tables" | grep -q "^table inet firewalld"; then
         status=2
-        NFTBAN_FIREWALL_CONFLICTS+=("NFTABLES CONFLICT: firewalld table exists")
+        NFTBAN_FIREWALL_CONFLICTS+=("CRITICAL: firewalld table exists - conflicts with NFTBan")
         NFTBAN_FIREWALL_CONFLICTS+=("  └─ FIX: systemctl stop firewalld && systemctl disable firewalld")
         [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
     fi
