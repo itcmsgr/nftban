@@ -249,6 +249,13 @@ _nftban_portscan_load_modules() {
     if [[ -n "$classic_module" ]]; then
         # shellcheck source=/dev/null
         source "$classic_module"
+        # Initialize classic module config and state
+        if type -t nftban_portscan_classic_load_config &>/dev/null; then
+            nftban_portscan_classic_load_config
+        fi
+        if type -t nftban_portscan_classic_init_state &>/dev/null; then
+            nftban_portscan_classic_init_state
+        fi
     fi
 
     # Load suricata module
@@ -263,6 +270,13 @@ _nftban_portscan_load_modules() {
     if [[ -n "$suricata_module" ]]; then
         # shellcheck source=/dev/null
         source "$suricata_module"
+        # Initialize suricata module config and state
+        if type -t nftban_portscan_suricata_load_config &>/dev/null; then
+            nftban_portscan_suricata_load_config
+        fi
+        if type -t nftban_portscan_suricata_init_state &>/dev/null; then
+            nftban_portscan_suricata_init_state
+        fi
     fi
 
     return 0

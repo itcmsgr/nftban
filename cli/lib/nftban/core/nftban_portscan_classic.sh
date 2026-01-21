@@ -448,7 +448,14 @@ nftban_portscan_classic_cleanup_old_entries() {
         local new_timestamps=""
         local has_recent=false
 
-        for ts in $timestamps; do
+        # Use read -ra to properly split into array
+        local -a ts_array
+        read -ra ts_array <<< "$timestamps"
+
+        for ts in "${ts_array[@]}"; do
+            # Skip empty or non-numeric entries
+            [[ -z "$ts" || ! "$ts" =~ ^[0-9]+$ ]] && continue
+
             if [[ $ts -ge $cutoff_time ]]; then
                 new_timestamps="${new_timestamps} ${ts}"
                 has_recent=true
@@ -533,20 +540,25 @@ nftban_portscan_classic_detect_scan_type() {
     # Check for strobe scan (rapid scanning of common ports)
     if [[ $port_count -ge $strobe_ports ]]; then
         local timestamps="${_PORTSCAN_CLASSIC_IP_TIMESTAMPS[$ip]}"
-        # shellcheck disable=SC2206  # Space-separated timestamps intentional
-        local ts_array=($timestamps)
+        # Convert to array, filtering empty elements
+        local -a ts_array
+        read -ra ts_array <<< "$timestamps"
         local ts_count=${#ts_array[@]}
 
-        if [[ $ts_count -gt 0 ]]; then
+        if [[ $ts_count -gt 1 ]]; then
+            # Get first and last timestamps (ensure single values)
             local first_ts="${ts_array[0]}"
             local last_ts="${ts_array[$((ts_count-1))]}"
-            local duration
-            duration=$((last_ts - first_ts))
 
-            # If many connections in short time
-            if [[ $duration -lt 10 && $port_count -ge $strobe_ports ]]; then
-                echo "strobe"
-                return 0
+            # Validate timestamps are numeric before arithmetic
+            if [[ "$first_ts" =~ ^[0-9]+$ ]] && [[ "$last_ts" =~ ^[0-9]+$ ]]; then
+                local duration=$((last_ts - first_ts))
+
+                # If many connections in short time
+                if [[ $duration -lt 10 && $port_count -ge $strobe_ports ]]; then
+                    echo "strobe"
+                    return 0
+                fi
             fi
         fi
     fi

@@ -75,7 +75,7 @@ readonly SURICATA_BIN="/usr/bin/suricata"
 readonly SURICATA_CONF_DIR="/etc/suricata"
 readonly SURICATA_DATA_DIR="/var/lib/suricata"
 readonly SURICATA_LOG_DIR="/var/log/nftban/suricata"  # NFTBan HFS
-readonly NFTBAN_TEMPLATES="/home/gituser/github/nftban-v1.0-dev/install/templates"
+readonly NFTBAN_TEMPLATES="${NFTBAN_SHARE_DIR:-/usr/share/nftban}/templates"
 
 # Note: print_status, print_error, print_info, detect_distro are now
 # loaded from setup_utils.sh library
@@ -433,33 +433,43 @@ EOF
 configure_suricata() {
     print_info "Applying optimized Suricata configuration..."
 
-    # 1. Apply optimized suricata.yaml template
-    if [[ -f "$NFTBAN_TEMPLATES/suricata.yaml.optimized" ]]; then
+    # 1. Apply Suricata configuration - prefer profile system, fallback to template
+    local profiles_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/suricata/profiles"
+    local default_profile="standard"
+
+    if [[ -f "$profiles_dir/${default_profile}.yaml" ]]; then
+        # Use profile system (preferred)
+        cp "$profiles_dir/${default_profile}.yaml" "$SURICATA_CONF_DIR/suricata.yaml"
+        print_status "Applied $default_profile profile from NFTBan profiles"
+    elif [[ -f "$NFTBAN_TEMPLATES/suricata.yaml.optimized" ]]; then
+        # Fallback to legacy template
         cp "$NFTBAN_TEMPLATES/suricata.yaml.optimized" "$SURICATA_CONF_DIR/suricata.yaml"
-        print_status "Applied optimized suricata.yaml (10-30% CPU target)"
+        print_status "Applied optimized suricata.yaml (legacy template)"
     else
-        print_error "Optimized template not found: $NFTBAN_TEMPLATES/suricata.yaml.optimized"
+        print_error "No Suricata config found in profiles ($profiles_dir) or templates ($NFTBAN_TEMPLATES)"
         return 1
     fi
 
-    # 2. Copy rule enable/disable/filters configs
-    local etc_suricata_src="/home/gituser/github/nftban-v1.0-dev/etc/suricata"
+    # 2. Copy rule enable/disable/filters configs from nftban config directory
+    local etc_suricata_src="${NFTBAN_CONFIG_DIR:-/etc/nftban}/suricata/config"
 
     if [[ -d "$etc_suricata_src" ]]; then
-        cp "$etc_suricata_src/enable.conf" "$SURICATA_CONF_DIR/"
-        cp "$etc_suricata_src/disable.conf" "$SURICATA_CONF_DIR/"
-        cp "$etc_suricata_src/filters.conf" "$SURICATA_CONF_DIR/"
-        cp "$etc_suricata_src/README.md" "$SURICATA_CONF_DIR/"
+        for conf_file in enable.conf disable.conf filters.conf; do
+            if [[ -f "$etc_suricata_src/$conf_file" ]]; then
+                cp "$etc_suricata_src/$conf_file" "$SURICATA_CONF_DIR/"
+            fi
+        done
+        # Copy README if exists
+        [[ -f "$etc_suricata_src/README.md" ]] && cp "$etc_suricata_src/README.md" "$SURICATA_CONF_DIR/"
 
-        # Copy .local.example files (users will create .local themselves)
-        cp "$etc_suricata_src/enable.conf.local.example" "$SURICATA_CONF_DIR/"
-        cp "$etc_suricata_src/disable.conf.local.example" "$SURICATA_CONF_DIR/"
-        cp "$etc_suricata_src/filters.conf.local.example" "$SURICATA_CONF_DIR/"
+        # Copy .local.example files if they exist (users will create .local themselves)
+        for example_file in "$etc_suricata_src"/*.local.example; do
+            [[ -f "$example_file" ]] && cp "$example_file" "$SURICATA_CONF_DIR/"
+        done
 
         print_status "Copied rule management configs (enable/disable/filters)"
     else
-        print_error "Rule configs not found: $etc_suricata_src"
-        return 1
+        print_info "Rule configs not found at $etc_suricata_src (optional)"
     fi
 
     # 3. Apply sysctl tuning
