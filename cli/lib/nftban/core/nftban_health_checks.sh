@@ -136,7 +136,9 @@ _health_check_service() {
 # Usage: _health_check_metrics_file <filepath> <name> <issues_var> <status_var> [max_fresh] [max_warning]
 _health_check_metrics_file() {
     local filepath="$1" name="$2"
+    # shellcheck disable=SC2178  # namerefs are correctly used as arrays
     local -n issues_ref="$3"
+    # shellcheck disable=SC2178  # namerefs are correctly used as arrays
     local -n status_ref="$4"
     local max_fresh="${5:-120}" max_warning="${6:-300}"
 

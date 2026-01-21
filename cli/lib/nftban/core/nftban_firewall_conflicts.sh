@@ -236,6 +236,7 @@ nftban_detect_conflicting_tables() {
     tables=$(nft list tables 2>/dev/null || echo "")
 
     # Get NFTBan's input chain priority (should be -100)
+    # shellcheck disable=SC2034  # nftban_priority documents expected default
     local nftban_priority=-100
     local actual_nftban_prio
     actual_nftban_prio=$(nft -j list chain ip nftban input 2>/dev/null | jq -r '.nftables[] | select(.chain?) | .chain.prio // -100' | head -1 || echo "-100")
