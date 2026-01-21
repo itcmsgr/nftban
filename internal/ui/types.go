@@ -282,3 +282,81 @@ type FHSItem struct {
 	Status   string // "ok", "error", "warning"
 	Notes    string
 }
+
+// =============================================================================
+// BANS PAGE DATA
+// =============================================================================
+
+// BansData holds all ban list information
+type BansData struct {
+	// Summary stats
+	TotalBans     int
+	BansIPv4      int
+	BansIPv6      int
+	TempBans      int
+	PermBans      int
+	FeedBans      int
+	GeoBans       int
+
+	// Ban list
+	Bans []BanEntry
+
+	// Pagination
+	Page       int
+	PageSize   int
+	TotalPages int
+
+	// Filters
+	Filter     string // "all", "temp", "perm", "feed", "geo"
+	SearchQuery string
+}
+
+// BanEntry represents a single banned IP
+type BanEntry struct {
+	IP          string
+	Type        string // "permanent", "temporary", "feed", "geoban"
+	Reason      string
+	Module      string // login, portscan, ddos, manual, feed
+	Country     string
+	CountryCode string
+	BannedAt    string
+	ExpiresAt   string // Empty for permanent
+	Source      string // Config file or feed name
+}
+
+// =============================================================================
+// WHITELIST PAGE DATA
+// =============================================================================
+
+// WhitelistData holds all whitelist information
+type WhitelistData struct {
+	// Summary stats
+	TotalEntries int
+	IPv4Count    int
+	IPv6Count    int
+	NetworkCount int // CIDR ranges
+
+	// Whitelist entries
+	Entries []WhitelistEntry
+
+	// Sources breakdown
+	Sources []WhitelistSource
+}
+
+// WhitelistEntry represents a single whitelisted IP/network
+type WhitelistEntry struct {
+	IP          string
+	Type        string // "ip", "network", "range"
+	Comment     string
+	Source      string // Config file name
+	AddedAt     string
+	AddedBy     string // "manual", "system", "api"
+}
+
+// WhitelistSource represents a whitelist source file
+type WhitelistSource struct {
+	Name       string
+	Path       string
+	EntryCount int
+	Editable   bool // System files not editable
+}

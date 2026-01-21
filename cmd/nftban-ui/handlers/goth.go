@@ -107,6 +107,30 @@ func (h *GOTHHandlers) HandleFragInventory(w http.ResponseWriter, r *http.Reques
 	pages.InventoryContent(data).Render(r.Context(), w)
 }
 
+// HandleBans renders bans management page
+func (h *GOTHHandlers) HandleBans(w http.ResponseWriter, r *http.Request) {
+	data := h.getBansData(r)
+	pages.Bans(data).Render(r.Context(), w)
+}
+
+// HandleWhitelist renders whitelist management page
+func (h *GOTHHandlers) HandleWhitelist(w http.ResponseWriter, r *http.Request) {
+	data := h.getWhitelistData()
+	pages.Whitelist(data).Render(r.Context(), w)
+}
+
+// HandleFragBansTable renders bans table fragment for HTMX
+func (h *GOTHHandlers) HandleFragBansTable(w http.ResponseWriter, r *http.Request) {
+	data := h.getBansData(r)
+	pages.BansTableFragment(data).Render(r.Context(), w)
+}
+
+// HandleFragWhitelistTable renders whitelist table fragment for HTMX
+func (h *GOTHHandlers) HandleFragWhitelistTable(w http.ResponseWriter, r *http.Request) {
+	data := h.getWhitelistData()
+	pages.WhitelistTableFragment(data).Render(r.Context(), w)
+}
+
 // =============================================================================
 // FRAGMENT HANDLERS (HTMX)
 // =============================================================================
@@ -1204,6 +1228,265 @@ func (h *GOTHHandlers) getModulesData() pages.ModulesData {
 			}
 		} else {
 			data.Summary.Disabled++
+		}
+	}
+
+	return data
+}
+
+// =============================================================================
+// BANS DATA FETCHER
+// =============================================================================
+
+func (h *GOTHHandlers) getBansData(r *http.Request) ui.BansData {
+	data := ui.BansData{
+		Page:     1,
+		PageSize: 50,
+		Filter:   "all",
+	}
+
+	// Parse query params
+	if page := r.URL.Query().Get("page"); page != "" {
+		if p, err := strconv.Atoi(page); err == nil && p > 0 {
+			data.Page = p
+		}
+	}
+	if filter := r.URL.Query().Get("filter"); filter != "" {
+		data.Filter = filter
+	}
+	if search := r.URL.Query().Get("search"); search != "" {
+		data.SearchQuery = search
+	}
+
+	// Get stats from nftban stats --json
+	if output, err := execNFTBanCommand("stats", "--json"); err == nil {
+		var stats map[string]interface{}
+		if json.Unmarshal([]byte(extractJSON(output)), &stats) == nil {
+			if statsData, ok := stats["data"].(map[string]interface{}); ok {
+				// Summary
+				if summary, ok := statsData["summary"].(map[string]interface{}); ok {
+					if v, ok := summary["active_bans"].(float64); ok {
+						data.TotalBans = int(v)
+					}
+				}
+				// Breakdown
+				if breakdown, ok := statsData["breakdown"].(map[string]interface{}); ok {
+					if bl, ok := breakdown["blacklist"].(map[string]interface{}); ok {
+						if v, ok := bl["ipv4"].(float64); ok {
+							data.BansIPv4 = int(v)
+						}
+						if v, ok := bl["ipv6"].(float64); ok {
+							data.BansIPv6 = int(v)
+						}
+					}
+					if temp, ok := breakdown["temporary"].(map[string]interface{}); ok {
+						if v, ok := temp["total"].(float64); ok {
+							data.TempBans = int(v)
+						}
+					}
+					if feeds, ok := breakdown["feeds"].(map[string]interface{}); ok {
+						if v, ok := feeds["total"].(float64); ok {
+							data.FeedBans = int(v)
+						}
+					}
+					if geo, ok := breakdown["geoban"].(map[string]interface{}); ok {
+						if v, ok := geo["total"].(float64); ok {
+							data.GeoBans = int(v)
+						}
+					}
+				}
+			}
+		}
+	}
+
+	// Calculate permanent bans
+	data.PermBans = data.TotalBans - data.TempBans - data.FeedBans - data.GeoBans
+	if data.PermBans < 0 {
+		data.PermBans = data.TotalBans
+	}
+
+	// Get ban list from nftban list --json
+	args := []string{"list", "--json"}
+	if data.SearchQuery != "" {
+		args = append(args, "--search", data.SearchQuery)
+	}
+	if data.Filter != "all" {
+		args = append(args, "--type", data.Filter)
+	}
+
+	if output, err := execNFTBanCommand(args...); err == nil {
+		var listResult map[string]interface{}
+		if json.Unmarshal([]byte(extractJSON(output)), &listResult) == nil {
+			// Try to parse bans array
+			var bansArray []interface{}
+			if bans, ok := listResult["bans"].([]interface{}); ok {
+				bansArray = bans
+			} else if bans, ok := listResult["data"].([]interface{}); ok {
+				bansArray = bans
+			}
+
+			for _, b := range bansArray {
+				if banMap, ok := b.(map[string]interface{}); ok {
+					entry := ui.BanEntry{}
+					if ip, ok := banMap["ip"].(string); ok {
+						entry.IP = ip
+					}
+					if t, ok := banMap["type"].(string); ok {
+						entry.Type = t
+					} else {
+						entry.Type = "permanent"
+					}
+					if reason, ok := banMap["reason"].(string); ok {
+						entry.Reason = reason
+					}
+					if module, ok := banMap["module"].(string); ok {
+						entry.Module = module
+					} else if source, ok := banMap["source"].(string); ok {
+						entry.Module = source
+					}
+					if country, ok := banMap["country"].(string); ok {
+						entry.Country = country
+					}
+					if cc, ok := banMap["country_code"].(string); ok {
+						entry.CountryCode = cc
+					}
+					if ts, ok := banMap["banned_at"].(string); ok {
+						entry.BannedAt = ts
+					} else if ts, ok := banMap["timestamp"].(string); ok {
+						entry.BannedAt = ts
+					}
+					if exp, ok := banMap["expires_at"].(string); ok {
+						entry.ExpiresAt = exp
+					}
+					data.Bans = append(data.Bans, entry)
+				}
+			}
+		}
+	}
+
+	// Pagination
+	data.TotalPages = (len(data.Bans) + data.PageSize - 1) / data.PageSize
+	if data.TotalPages == 0 {
+		data.TotalPages = 1
+	}
+
+	// Apply pagination
+	start := (data.Page - 1) * data.PageSize
+	end := start + data.PageSize
+	if start < len(data.Bans) {
+		if end > len(data.Bans) {
+			end = len(data.Bans)
+		}
+		data.Bans = data.Bans[start:end]
+	} else {
+		data.Bans = []ui.BanEntry{}
+	}
+
+	return data
+}
+
+// =============================================================================
+// WHITELIST DATA FETCHER
+// =============================================================================
+
+func (h *GOTHHandlers) getWhitelistData() ui.WhitelistData {
+	data := ui.WhitelistData{}
+
+	// Get whitelist from nftban whitelist --json
+	if output, err := execNFTBanCommand("whitelist", "list", "--json"); err == nil {
+		var result map[string]interface{}
+		if json.Unmarshal([]byte(extractJSON(output)), &result) == nil {
+			// Parse entries
+			var entriesArray []interface{}
+			if entries, ok := result["entries"].([]interface{}); ok {
+				entriesArray = entries
+			} else if entries, ok := result["data"].([]interface{}); ok {
+				entriesArray = entries
+			} else if entries, ok := result["whitelist"].([]interface{}); ok {
+				entriesArray = entries
+			}
+
+			for _, e := range entriesArray {
+				if entryMap, ok := e.(map[string]interface{}); ok {
+					entry := ui.WhitelistEntry{}
+					if ip, ok := entryMap["ip"].(string); ok {
+						entry.IP = ip
+					} else if ip, ok := entryMap["address"].(string); ok {
+						entry.IP = ip
+					}
+					if t, ok := entryMap["type"].(string); ok {
+						entry.Type = t
+					} else {
+						// Detect type from IP format
+						if strings.Contains(entry.IP, "/") {
+							entry.Type = "network"
+						} else {
+							entry.Type = "ip"
+						}
+					}
+					if comment, ok := entryMap["comment"].(string); ok {
+						entry.Comment = comment
+					}
+					if source, ok := entryMap["source"].(string); ok {
+						entry.Source = source
+					} else if file, ok := entryMap["file"].(string); ok {
+						entry.Source = file
+					}
+					if added, ok := entryMap["added_at"].(string); ok {
+						entry.AddedAt = added
+					}
+
+					data.Entries = append(data.Entries, entry)
+
+					// Count by type
+					data.TotalEntries++
+					if strings.Contains(entry.IP, ":") {
+						data.IPv6Count++
+					} else {
+						data.IPv4Count++
+					}
+					if strings.Contains(entry.IP, "/") {
+						data.NetworkCount++
+					}
+				}
+			}
+
+			// Parse sources
+			if sources, ok := result["sources"].([]interface{}); ok {
+				for _, s := range sources {
+					if srcMap, ok := s.(map[string]interface{}); ok {
+						src := ui.WhitelistSource{}
+						if name, ok := srcMap["name"].(string); ok {
+							src.Name = name
+						}
+						if path, ok := srcMap["path"].(string); ok {
+							src.Path = path
+						}
+						if count, ok := srcMap["count"].(float64); ok {
+							src.EntryCount = int(count)
+						}
+						if editable, ok := srcMap["editable"].(bool); ok {
+							src.Editable = editable
+						}
+						data.Sources = append(data.Sources, src)
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback: get count from stats if no entries found
+	if data.TotalEntries == 0 {
+		if output, err := execNFTBanCommand("status", "--json"); err == nil {
+			var status map[string]interface{}
+			if json.Unmarshal([]byte(extractJSON(output)), &status) == nil {
+				if fw, ok := status["firewall"].(map[string]interface{}); ok {
+					if wl, ok := fw["whitelist_ips"].(float64); ok {
+						data.TotalEntries = int(wl)
+						data.IPv4Count = int(wl) // Assume all IPv4 if no breakdown
+					}
+				}
+			}
 		}
 	}
 
