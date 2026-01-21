@@ -39,6 +39,130 @@ set -Eeuo pipefail
 _NFTBAN_HEALTH_CHECKS_LOADED=1
 
 # =============================================================================
+# COMMON HELPER FUNCTIONS
+# =============================================================================
+# These helpers reduce code duplication across health check functions
+
+# Check if a systemd service is active
+# Usage: _health_service_active <service_name>
+# Returns: 0 if active, 1 otherwise
+_health_service_active() {
+    systemctl is-active --quiet "$1" 2>/dev/null
+}
+
+# Check if a systemd service is enabled
+# Usage: _health_service_enabled <service_name>
+# Returns: 0 if enabled, 1 otherwise
+_health_service_enabled() {
+    systemctl is-enabled --quiet "$1" 2>/dev/null
+}
+
+# Check if a systemd unit exists
+# Usage: _health_service_exists <service_name>
+# Returns: 0 if exists, 1 otherwise
+_health_service_exists() {
+    local service="$1"
+    systemctl list-unit-files 2>/dev/null | grep -q "^${service}" || \
+    [[ -f "/etc/systemd/system/${service}" ]] || \
+    [[ -f "/usr/lib/systemd/system/${service}" ]]
+}
+
+# Get file age in seconds
+# Usage: _health_file_age <filepath>
+# Returns: age in seconds (0 if file doesn't exist)
+_health_file_age() {
+    local filepath="$1"
+    [[ ! -f "$filepath" ]] && echo "0" && return 1
+    local mtime
+    mtime=$(stat -c %Y "$filepath" 2>/dev/null || stat -f %m "$filepath" 2>/dev/null || echo 0)
+    echo $(( $(date +%s) - mtime ))
+}
+
+# Check if a file exists and is recent
+# Usage: _health_file_fresh <filepath> <max_age_seconds>
+# Returns: 0 if fresh, 1 if stale, 2 if missing
+_health_file_fresh() {
+    local filepath="$1" max_age="${2:-120}"
+    [[ ! -f "$filepath" ]] && return 2
+    local age
+    age=$(_health_file_age "$filepath")
+    [[ $age -lt $max_age ]] && return 0 || return 1
+}
+
+# Check if an endpoint is healthy via HTTP
+# Usage: _health_http_check <url> [timeout]
+# Returns: 0 if healthy, 1 otherwise
+_health_http_check() {
+    local url="$1" timeout="${2:-${NFTBAN_TIMEOUT_FAST:-3}}"
+    command -v curl >/dev/null 2>&1 || return 1
+    curl -k -s --connect-timeout "$timeout" "$url" >/dev/null 2>&1
+}
+
+# Check and report service status
+# Usage: _health_check_service <service> <issues_var> <status_var> [is_optional]
+# Modifies the issues array and status variable by reference
+_health_check_service() {
+    local service="$1"
+    local -n issues_ref="$2"
+    local -n status_ref="$3"
+    local optional="${4:-0}"
+    local service_name="${service%.service}"
+
+    if ! _health_service_exists "$service"; then
+        if [[ "$optional" == "1" ]]; then
+            issues_ref+=("ℹ️ ${service_name}: Not installed (optional)")
+        else
+            issues_ref+=("${service_name} not installed")
+            [[ $status_ref -lt $HEALTH_ERROR ]] && status_ref=$HEALTH_ERROR
+        fi
+        return 1
+    fi
+
+    if _health_service_active "$service"; then
+        issues_ref+=("✓ ${service_name}: Running")
+        return 0
+    else
+        if [[ "$optional" == "1" ]]; then
+            issues_ref+=("ℹ️ ${service_name}: Not running (optional)")
+        else
+            issues_ref+=("${service_name} not running")
+            [[ $status_ref -lt $HEALTH_WARNING ]] && status_ref=$HEALTH_WARNING
+        fi
+        return 1
+    fi
+}
+
+# Check metrics file freshness with standard messaging
+# Usage: _health_check_metrics_file <filepath> <name> <issues_var> <status_var> [max_fresh] [max_warning]
+_health_check_metrics_file() {
+    local filepath="$1" name="$2"
+    local -n issues_ref="$3"
+    local -n status_ref="$4"
+    local max_fresh="${5:-120}" max_warning="${6:-300}"
+
+    if [[ ! -f "$filepath" ]]; then
+        issues_ref+=("${name} file not found")
+        return 1
+    fi
+
+    local age
+    age=$(_health_file_age "$filepath")
+
+    if [[ $age -lt $max_fresh ]]; then
+        issues_ref+=("✓ ${name}: Fresh (${age}s old)")
+        return 0
+    elif [[ $age -lt $max_warning ]]; then
+        issues_ref+=("⚠ ${name}: ${age}s old (may be stale)")
+        [[ $status_ref -eq $HEALTH_OK ]] && status_ref=$HEALTH_WARNING
+        return 1
+    else
+        issues_ref+=("${name} stale (${age}s old)")
+        [[ $status_ref -lt $HEALTH_ERROR ]] && status_ref=$HEALTH_ERROR
+        return 1
+    fi
+}
+
+# =============================================================================
 # BINARY CHECKS
 # =============================================================================
 

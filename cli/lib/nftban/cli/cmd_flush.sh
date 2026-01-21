@@ -5,6 +5,12 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Emergency flush/reset commands for nftables sets
 #
+# shellcheck disable=SC2086
+# NOTE: SC2086 disabled because NFTBAN_TABLE_IPV4/IPV6 variables contain
+# space-separated values like "ip nftban" that MUST be word-split when
+# passed to nft commands (e.g., nft list set $NFTBAN_TABLE_IPV4 blacklist_ipv4
+# expands to: nft list set ip nftban blacklist_ipv4). This is intentional.
+#
 # meta:name="cmd_flush"
 # meta:type="cli"
 # meta:header="Flush CLI"

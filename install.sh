@@ -1298,20 +1298,36 @@ install_pam() {
     return 0
 }
 
-install_configs() {
-    log "Installing Configuration Files..."
+# =============================================================================
+# INSTALL CONFIG HELPER FUNCTIONS
+# =============================================================================
 
-    # Create config directories
+# Create all required directories
+_install_configs_directories() {
+    # /etc/nftban structure
     mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d,conf.d,distros,suricata,rules.d,patterns.d}
-    mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,geoban,geoip}
+    mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,geoban,geoip,rbl}
     mkdir -p /etc/nftban/patterns.d/botscan
     mkdir -p /etc/nftban/suricata/{profiles,config,rules,cache}
+
+    # /var/lib/nftban structure
     mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,panels,metrics,stats}
     mkdir -p /var/lib/nftban/reports/auditors
+    mkdir -p /var/lib/nftban/stats/{history,profiles}
+    mkdir -p /var/lib/nftban/queue/{pending,work,dlq}
+    mkdir -p /var/lib/nftban/{mailspool,pro}
 
-    # Create manual whitelist/blacklist files if missing (used by nftban ban/whitelist commands)
-    if [[ ! -f /etc/nftban/whitelist.d/99-manual.conf ]]; then
-        cat > /etc/nftban/whitelist.d/99-manual.conf << 'MANUAL_WL'
+    # Runtime directories
+    mkdir -p /var/log/nftban
+    mkdir -p /var/cache/nftban
+    mkdir -p /run/nftban
+    mkdir -p /run/nftban-ui
+}
+
+# Create manual whitelist file if missing
+_install_configs_manual_whitelist() {
+    [[ -f /etc/nftban/whitelist.d/99-manual.conf ]] && return 0
+    cat > /etc/nftban/whitelist.d/99-manual.conf << 'MANUAL_WL'
 # =============================================================================
 # NFTBan Manual Whitelist - User-Added IPs
 # =============================================================================
@@ -1343,10 +1359,12 @@ install_configs() {
 # =============================================================================
 
 MANUAL_WL
-    fi
+}
 
-    if [[ ! -f /etc/nftban/blacklist.d/99-manual.conf ]]; then
-        cat > /etc/nftban/blacklist.d/99-manual.conf << 'MANUAL_BL'
+# Create manual blacklist file if missing
+_install_configs_manual_blacklist() {
+    [[ -f /etc/nftban/blacklist.d/99-manual.conf ]] && return 0
+    cat > /etc/nftban/blacklist.d/99-manual.conf << 'MANUAL_BL'
 # =============================================================================
 # NFTBan Manual Blacklist - User-Banned IPs
 # =============================================================================
@@ -1379,289 +1397,192 @@ MANUAL_WL
 # =============================================================================
 
 MANUAL_BL
-    fi
-    mkdir -p /var/lib/nftban/stats/{history,profiles}
-    mkdir -p /var/lib/nftban/queue/{pending,work,dlq}
-    mkdir -p /var/lib/nftban/mailspool
-    mkdir -p /var/lib/nftban/pro
-    mkdir -p /var/log/nftban
-    mkdir -p /var/cache/nftban
-    mkdir -p /run/nftban
-    mkdir -p /run/nftban-ui
+}
 
-    # Set ownership (nftban user/group must exist first)
-    # IMPORTANT: Use explicit per-directory chown, NOT recursive -R on /etc
-    # to avoid overwriting user-edited file permissions
-    chown root:nftban /etc/nftban
-    chmod 750 /etc/nftban
-    chown root:nftban /etc/nftban/conf.d
-    chmod 750 /etc/nftban/conf.d
-    chown root:root /etc/nftban/distros
-    chmod 755 /etc/nftban/distros
-    # Set ownership on config subdirs (not recursive into files)
+# Set ownership and permissions on all directories
+_install_configs_ownership() {
+    # /etc/nftban ownership
+    chown root:nftban /etc/nftban && chmod 750 /etc/nftban
+    chown root:nftban /etc/nftban/conf.d && chmod 750 /etc/nftban/conf.d
+    chown root:root /etc/nftban/distros && chmod 755 /etc/nftban/distros
+
+    # Config subdirs (not recursive into files)
     for subdir in whitelist.d blacklist.d ports.d rules.d suricata patterns.d; do
         [ -d "/etc/nftban/$subdir" ] && chown root:nftban "/etc/nftban/$subdir" && chmod 750 "/etc/nftban/$subdir"
     done
-    # Set ownership on conf.d subdirectories (botscan, ddos, portscan, login, panels, rbl)
-    for subdir in botscan ddos portscan login panels rbl; do
+    for subdir in botscan ddos portscan login panels rbl geoban geoip; do
         [ -d "/etc/nftban/conf.d/$subdir" ] && chown root:nftban "/etc/nftban/conf.d/$subdir" && chmod 750 "/etc/nftban/conf.d/$subdir"
     done
-    # Set ownership on patterns.d subdirectories
     [ -d "/etc/nftban/patterns.d/botscan" ] && chown root:nftban "/etc/nftban/patterns.d/botscan" && chmod 750 "/etc/nftban/patterns.d/botscan"
 
-    # /var/lib/nftban: Set directory ownership only, files created at runtime
-    chown nftban:nftban /var/lib/nftban
-    chmod 750 /var/lib/nftban
-    chown nftban:nftban /var/lib/nftban/reports
-    chmod 750 /var/lib/nftban/reports
-    chmod 770 /var/lib/nftban/reports/auditors
-    chown root:nftban-auditor /var/lib/nftban/reports/auditors
-    # Set ownership on state subdirs (not recursive into files)
+    # /var/lib/nftban ownership
+    chown nftban:nftban /var/lib/nftban && chmod 750 /var/lib/nftban
+    chown nftban:nftban /var/lib/nftban/reports && chmod 750 /var/lib/nftban/reports
+    chown root:nftban-auditor /var/lib/nftban/reports/auditors && chmod 770 /var/lib/nftban/reports/auditors
     for subdir in banned whitelist feeds geoip config state panels metrics stats queue mailspool pro; do
         [ -d "/var/lib/nftban/$subdir" ] && chown nftban:nftban "/var/lib/nftban/$subdir" && chmod 750 "/var/lib/nftban/$subdir"
     done
 
-    chown nftban:nftban /var/log/nftban
-    chmod 750 /var/log/nftban
-
-    chown nftban:nftban /var/cache/nftban
-    chmod 755 /var/cache/nftban
-
-    chown nftban:nftban /run/nftban
-    chmod 755 /run/nftban
-
-    # UI auth service runtime directory (root:nftban for PAM auth daemon)
-    chown root:nftban /run/nftban-ui
-    chmod 750 /run/nftban-ui
+    # Runtime directories
+    chown nftban:nftban /var/log/nftban && chmod 750 /var/log/nftban
+    chown nftban:nftban /var/cache/nftban && chmod 755 /var/cache/nftban
+    chown nftban:nftban /run/nftban && chmod 755 /run/nftban
+    chown root:nftban /run/nftban-ui && chmod 750 /run/nftban-ui
 
     ok "Directory ownership configured"
+}
 
-    # Install main configuration file (if not exists - don't overwrite user config)
-    if [[ -f "$SCRIPT_DIR/install/config/nftban.conf" ]] && [[ ! -f /etc/nftban/nftban.conf ]]; then
-        cp -f "$SCRIPT_DIR/install/config/nftban.conf" /etc/nftban/nftban.conf
-        chmod 644 /etc/nftban/nftban.conf
-        chown root:nftban /etc/nftban/nftban.conf
-        ok "Installed: /etc/nftban/nftban.conf"
-    elif [[ -f /etc/nftban/nftban.conf ]]; then
-        ok "Main config exists (not overwriting): /etc/nftban/nftban.conf"
+# Install a single config file (if not exists - don't overwrite)
+# Usage: _install_config_file <src> <dst> <mode> [owner]
+_install_config_file() {
+    local src="$1" dst="$2" mode="$3" owner="${4:-root:nftban}"
+    local name
+    name=$(basename "$dst")
+
+    if [[ -f "$src" ]] && [[ ! -f "$dst" ]]; then
+        cp -f "$src" "$dst"
+        chmod "$mode" "$dst"
+        chown "$owner" "$dst"
+        ok "Installed: $dst"
+    elif [[ -f "$dst" ]]; then
+        ok "Config exists (not overwriting): $dst"
     fi
+}
 
-    # Install distro configuration files
+# Install directory of config files
+# Usage: _install_config_dir <src_dir> <dst_dir> <glob> <mode> [owner]
+_install_config_dir() {
+    local src_dir="$1" dst_dir="$2" glob="$3" mode="$4" owner="${5:-root:nftban}"
+    local count=0
+
+    [[ ! -d "$src_dir" ]] && return 0
+
+    for src_file in "$src_dir"/$glob; do
+        [[ -f "$src_file" ]] || continue
+        local name
+        name=$(basename "$src_file")
+        if [[ ! -f "$dst_dir/$name" ]]; then
+            cp -f "$src_file" "$dst_dir/$name"
+            chmod "$mode" "$dst_dir/$name"
+            chown "$owner" "$dst_dir/$name"
+        fi
+        ((count++))
+    done
+
+    [[ $count -gt 0 ]] && ok "Installed $count files in $dst_dir"
+}
+
+# Install all module configurations
+_install_configs_modules() {
+    # Main config
+    _install_config_file "$SCRIPT_DIR/install/config/nftban.conf" "/etc/nftban/nftban.conf" "644"
+
+    # Distro configs (always overwrite - system files)
     if [[ -d "$SCRIPT_DIR/etc/nftban/distros" ]]; then
-        cp -f "$SCRIPT_DIR/etc/nftban/distros/"*.conf /etc/nftban/distros/
-        chmod 644 /etc/nftban/distros/*.conf
-        chown root:root /etc/nftban/distros/*.conf
+        cp -f "$SCRIPT_DIR/etc/nftban/distros/"*.conf /etc/nftban/distros/ 2>/dev/null || true
+        chmod 644 /etc/nftban/distros/*.conf 2>/dev/null || true
+        chown root:root /etc/nftban/distros/*.conf 2>/dev/null || true
         local count
         count=$(ls -1 /etc/nftban/distros/*.conf 2>/dev/null | wc -l)
         ok "Installed $count distro config files"
     fi
 
-    # Install Suricata profile templates
+    # Suricata profiles (always overwrite - system files)
     if [[ -d "$SCRIPT_DIR/etc/nftban/suricata/profiles" ]]; then
-        cp -f "$SCRIPT_DIR/etc/nftban/suricata/profiles/"*.yaml /etc/nftban/suricata/profiles/
-        chmod 644 /etc/nftban/suricata/profiles/*.yaml
-        chown root:nftban /etc/nftban/suricata/profiles/*.yaml
+        cp -f "$SCRIPT_DIR/etc/nftban/suricata/profiles/"*.yaml /etc/nftban/suricata/profiles/ 2>/dev/null || true
+        chmod 644 /etc/nftban/suricata/profiles/*.yaml 2>/dev/null || true
+        chown root:nftban /etc/nftban/suricata/profiles/*.yaml 2>/dev/null || true
         local count
         count=$(ls -1 /etc/nftban/suricata/profiles/*.yaml 2>/dev/null | wc -l)
         ok "Installed $count Suricata profile templates"
     fi
 
-    # Removed: fail2ban config installation (v1.0 migration to Suricata)
+    # Core configs (don't overwrite user configs)
+    _install_config_file "$SCRIPT_DIR/install/config/feeds.conf" "/etc/nftban/conf.d/feeds.conf" "644"
+    _install_config_file "$SCRIPT_DIR/install/config/conf.d/watchdog.conf" "/etc/nftban/conf.d/watchdog.conf" "644"
+    _install_config_file "$SCRIPT_DIR/install/config/update.conf" "/etc/nftban/update.conf" "640"
 
-    # Install feeds config if exists
-    if [[ -f "$SCRIPT_DIR/install/config/feeds.conf" ]]; then
-        cp -f "$SCRIPT_DIR/install/config/feeds.conf" /etc/nftban/conf.d/feeds.conf
-        chmod 644 /etc/nftban/conf.d/feeds.conf
-        chown root:nftban /etc/nftban/conf.d/feeds.conf
-        ok "Installed: /etc/nftban/conf.d/feeds.conf (15 feeds)"
-    fi
+    # Module configs from etc/nftban/conf.d/
+    _install_config_file "$SCRIPT_DIR/etc/nftban/conf.d/mail.conf" "/etc/nftban/conf.d/mail.conf" "644"
+    _install_config_file "$SCRIPT_DIR/etc/nftban/conf.d/stats.conf" "/etc/nftban/conf.d/stats.conf" "644"
+    _install_config_file "$SCRIPT_DIR/etc/nftban/conf.d/banner.conf" "/etc/nftban/conf.d/banner.conf" "644"
+    _install_config_file "$SCRIPT_DIR/etc/nftban/conf.d/trust.conf" "/etc/nftban/conf.d/trust.conf" "640"
+    _install_config_file "$SCRIPT_DIR/etc/nftban/conf.d/botscan/main.conf" "/etc/nftban/conf.d/botscan/main.conf" "640"
+    _install_config_file "$SCRIPT_DIR/etc/nftban/conf.d/geoban/main.conf" "/etc/nftban/conf.d/geoban/main.conf" "640"
+    _install_config_file "$SCRIPT_DIR/etc/nftban/conf.d/geoip/main.conf" "/etc/nftban/conf.d/geoip/main.conf" "640"
 
-    # Install watchdog config if exists
-    if [[ -f "$SCRIPT_DIR/install/config/conf.d/watchdog.conf" ]]; then
-        cp -f "$SCRIPT_DIR/install/config/conf.d/watchdog.conf" /etc/nftban/conf.d/watchdog.conf
-        chmod 644 /etc/nftban/conf.d/watchdog.conf
-        chown root:nftban /etc/nftban/conf.d/watchdog.conf
-        ok "Installed: /etc/nftban/conf.d/watchdog.conf"
-    fi
+    # Pattern files
+    _install_config_dir "$SCRIPT_DIR/etc/nftban/patterns.d/botscan" "/etc/nftban/patterns.d/botscan" "*.patterns" "640"
 
-    # Install update config (if not exists - don't overwrite user config)
-    if [[ -f "$SCRIPT_DIR/install/config/update.conf" ]] && [[ ! -f /etc/nftban/update.conf ]]; then
-        cp -f "$SCRIPT_DIR/install/config/update.conf" /etc/nftban/update.conf
-        chmod 640 /etc/nftban/update.conf
-        chown root:nftban /etc/nftban/update.conf
-        ok "Installed: /etc/nftban/update.conf"
-    elif [[ -f /etc/nftban/update.conf ]]; then
-        ok "Update config exists (not overwriting): /etc/nftban/update.conf"
-    fi
-
-    # Install mail configuration (if not exists - don't overwrite user config)
-    if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/mail.conf" ]] && [[ ! -f /etc/nftban/conf.d/mail.conf ]]; then
-        cp -f "$SCRIPT_DIR/etc/nftban/conf.d/mail.conf" /etc/nftban/conf.d/mail.conf
-        chmod 644 /etc/nftban/conf.d/mail.conf
-        chown root:nftban /etc/nftban/conf.d/mail.conf
-        ok "Installed: /etc/nftban/conf.d/mail.conf"
-    elif [[ -f /etc/nftban/conf.d/mail.conf ]]; then
-        ok "Mail config exists (not overwriting): /etc/nftban/conf.d/mail.conf"
-    fi
-
-    # Install stats configuration (if not exists - don't overwrite user config)
-    if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/stats.conf" ]] && [[ ! -f /etc/nftban/conf.d/stats.conf ]]; then
-        cp -f "$SCRIPT_DIR/etc/nftban/conf.d/stats.conf" /etc/nftban/conf.d/stats.conf
-        chmod 644 /etc/nftban/conf.d/stats.conf
-        chown root:nftban /etc/nftban/conf.d/stats.conf
-        ok "Installed: /etc/nftban/conf.d/stats.conf"
-    elif [[ -f /etc/nftban/conf.d/stats.conf ]]; then
-        ok "Stats config exists (not overwriting): /etc/nftban/conf.d/stats.conf"
-    fi
-
-    # Install banner configuration (if not exists - don't overwrite user config)
-    if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/banner.conf" ]] && [[ ! -f /etc/nftban/conf.d/banner.conf ]]; then
-        cp -f "$SCRIPT_DIR/etc/nftban/conf.d/banner.conf" /etc/nftban/conf.d/banner.conf
-        chmod 644 /etc/nftban/conf.d/banner.conf
-        chown root:nftban /etc/nftban/conf.d/banner.conf
-        ok "Installed: /etc/nftban/conf.d/banner.conf"
-    elif [[ -f /etc/nftban/conf.d/banner.conf ]]; then
-        ok "Banner config exists (not overwriting): /etc/nftban/conf.d/banner.conf"
-    fi
-
-    # Install trust configuration (if not exists - don't overwrite user config)
-    if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/trust.conf" ]] && [[ ! -f /etc/nftban/conf.d/trust.conf ]]; then
-        cp -f "$SCRIPT_DIR/etc/nftban/conf.d/trust.conf" /etc/nftban/conf.d/trust.conf
-        chmod 640 /etc/nftban/conf.d/trust.conf
-        chown root:nftban /etc/nftban/conf.d/trust.conf
-        ok "Installed: /etc/nftban/conf.d/trust.conf"
-    elif [[ -f /etc/nftban/conf.d/trust.conf ]]; then
-        ok "Trust config exists (not overwriting): /etc/nftban/conf.d/trust.conf"
-    fi
-
-    # Install botscan configuration (if not exists - don't overwrite user config)
-    if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/botscan/main.conf" ]] && [[ ! -f /etc/nftban/conf.d/botscan/main.conf ]]; then
-        cp -f "$SCRIPT_DIR/etc/nftban/conf.d/botscan/main.conf" /etc/nftban/conf.d/botscan/main.conf
-        chmod 640 /etc/nftban/conf.d/botscan/main.conf
-        chown root:nftban /etc/nftban/conf.d/botscan/main.conf
-        ok "Installed: /etc/nftban/conf.d/botscan/main.conf"
-    elif [[ -f /etc/nftban/conf.d/botscan/main.conf ]]; then
-        ok "Botscan config exists (not overwriting): /etc/nftban/conf.d/botscan/main.conf"
-    fi
-
-    # Install geoban configuration (if not exists - don't overwrite user config)
-    if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/geoban/main.conf" ]] && [[ ! -f /etc/nftban/conf.d/geoban/main.conf ]]; then
-        cp -f "$SCRIPT_DIR/etc/nftban/conf.d/geoban/main.conf" /etc/nftban/conf.d/geoban/main.conf
-        chmod 640 /etc/nftban/conf.d/geoban/main.conf
-        chown root:nftban /etc/nftban/conf.d/geoban/main.conf
-        ok "Installed: /etc/nftban/conf.d/geoban/main.conf"
-    elif [[ -f /etc/nftban/conf.d/geoban/main.conf ]]; then
-        ok "GeoBan config exists (not overwriting): /etc/nftban/conf.d/geoban/main.conf"
-    fi
-
-    # Install geoip configuration (if not exists - don't overwrite user config)
-    if [[ -f "$SCRIPT_DIR/etc/nftban/conf.d/geoip/main.conf" ]] && [[ ! -f /etc/nftban/conf.d/geoip/main.conf ]]; then
-        cp -f "$SCRIPT_DIR/etc/nftban/conf.d/geoip/main.conf" /etc/nftban/conf.d/geoip/main.conf
-        chmod 640 /etc/nftban/conf.d/geoip/main.conf
-        chown root:nftban /etc/nftban/conf.d/geoip/main.conf
-        ok "Installed: /etc/nftban/conf.d/geoip/main.conf"
-    elif [[ -f /etc/nftban/conf.d/geoip/main.conf ]]; then
-        ok "GeoIP config exists (not overwriting): /etc/nftban/conf.d/geoip/main.conf"
-    fi
-
-    # Install botscan pattern files (if not exists - don't overwrite user patterns)
-    if [[ -d "$SCRIPT_DIR/etc/nftban/patterns.d/botscan" ]]; then
-        for pattern_file in "$SCRIPT_DIR/etc/nftban/patterns.d/botscan"/*.patterns; do
-            if [[ -f "$pattern_file" ]]; then
-                pattern_name=$(basename "$pattern_file")
-                if [[ ! -f "/etc/nftban/patterns.d/botscan/$pattern_name" ]]; then
-                    cp -f "$pattern_file" "/etc/nftban/patterns.d/botscan/$pattern_name"
-                    chmod 640 "/etc/nftban/patterns.d/botscan/$pattern_name"
-                    chown root:nftban "/etc/nftban/patterns.d/botscan/$pattern_name"
-                fi
-            fi
-        done
-        local pattern_count
-        pattern_count=$(ls -1 /etc/nftban/patterns.d/botscan/*.patterns 2>/dev/null | wc -l)
-        ok "Installed $pattern_count botscan pattern files"
-    fi
-
-    # Install module config directories (login, ddos, portscan, rbl)
-    # These contain mode-specific configurations (classic.conf, suricata.conf, etc.)
+    # Module directories (login, ddos, portscan, rbl)
     for module in login ddos portscan rbl; do
-        local src_dir="$SCRIPT_DIR/etc/nftban/conf.d/$module"
-        local dst_dir="/etc/nftban/conf.d/$module"
-        if [[ -d "$src_dir" ]]; then
-            for conf_file in "$src_dir"/*.conf; do
-                if [[ -f "$conf_file" ]]; then
-                    local conf_name
-                    conf_name=$(basename "$conf_file")
-                    if [[ ! -f "$dst_dir/$conf_name" ]]; then
-                        cp -f "$conf_file" "$dst_dir/$conf_name"
-                        chmod 640 "$dst_dir/$conf_name"
-                        chown root:nftban "$dst_dir/$conf_name"
-                    fi
-                fi
-            done
-            local conf_count
-            conf_count=$(ls -1 "$dst_dir"/*.conf 2>/dev/null | wc -l)
-            ok "Installed $conf_count $module config files"
-        fi
+        _install_config_dir "$SCRIPT_DIR/etc/nftban/conf.d/$module" "/etc/nftban/conf.d/$module" "*.conf" "640"
+        _install_config_dir "$SCRIPT_DIR/etc/nftban/conf.d/$module" "/etc/nftban/conf.d/$module" "*.local" "640"
     done
+}
 
-    # Install rbl/*.local files (user override files)
-    local rbl_src_dir="$SCRIPT_DIR/etc/nftban/conf.d/rbl"
-    local rbl_dst_dir="/etc/nftban/conf.d/rbl"
-    if [[ -d "$rbl_src_dir" ]]; then
-        for local_file in "$rbl_src_dir"/*.local; do
-            if [[ -f "$local_file" ]]; then
-                local local_name
-                local_name=$(basename "$local_file")
-                if [[ ! -f "$rbl_dst_dir/$local_name" ]]; then
-                    cp -f "$local_file" "$rbl_dst_dir/$local_name"
-                    chmod 640 "$rbl_dst_dir/$local_name"
-                    chown root:nftban "$rbl_dst_dir/$local_name"
-                fi
-            fi
-        done
-    fi
-
-    # Install panel config directories (cpanel, cwp, directadmin, etc.)
+# Install panel configurations
+_install_configs_panels() {
     local panels_src="$SCRIPT_DIR/etc/nftban/conf.d/panels"
     local panels_dst="/etc/nftban/conf.d/panels"
-    if [[ -d "$panels_src" ]]; then
-        for panel_dir in "$panels_src"/*/; do
-            if [[ -d "$panel_dir" ]]; then
-                local panel_name
-                panel_name=$(basename "$panel_dir")
-                mkdir -p "$panels_dst/$panel_name"
-                chown root:nftban "$panels_dst/$panel_name"
-                chmod 750 "$panels_dst/$panel_name"
-                for panel_conf in "$panel_dir"*.conf; do
-                    if [[ -f "$panel_conf" ]]; then
-                        local conf_name
-                        conf_name=$(basename "$panel_conf")
-                        if [[ ! -f "$panels_dst/$panel_name/$conf_name" ]]; then
-                            cp -f "$panel_conf" "$panels_dst/$panel_name/$conf_name"
-                            chmod 640 "$panels_dst/$panel_name/$conf_name"
-                            chown root:nftban "$panels_dst/$panel_name/$conf_name"
-                        fi
-                    fi
-                done
+
+    [[ ! -d "$panels_src" ]] && return 0
+
+    for panel_dir in "$panels_src"/*/; do
+        [[ -d "$panel_dir" ]] || continue
+        local panel_name
+        panel_name=$(basename "$panel_dir")
+        mkdir -p "$panels_dst/$panel_name"
+        chown root:nftban "$panels_dst/$panel_name"
+        chmod 750 "$panels_dst/$panel_name"
+
+        for panel_conf in "$panel_dir"*.conf; do
+            [[ -f "$panel_conf" ]] || continue
+            local conf_name
+            conf_name=$(basename "$panel_conf")
+            if [[ ! -f "$panels_dst/$panel_name/$conf_name" ]]; then
+                cp -f "$panel_conf" "$panels_dst/$panel_name/$conf_name"
+                chmod 640 "$panels_dst/$panel_name/$conf_name"
+                chown root:nftban "$panels_dst/$panel_name/$conf_name"
             fi
         done
-        local panel_count
-        panel_count=$(find "$panels_dst" -name "*.conf" 2>/dev/null | wc -l)
-        ok "Installed $panel_count panel config files"
-    fi
+    done
 
-    # Install GUI groups config if exists
-    if [[ -f "$SCRIPT_DIR/install/config/allowed-gui-groups" ]]; then
-        cp -f "$SCRIPT_DIR/install/config/allowed-gui-groups" /etc/nftban/
-        chmod 644 /etc/nftban/allowed-gui-groups
-        chown root:nftban /etc/nftban/allowed-gui-groups
-        ok "Installed: /etc/nftban/allowed-gui-groups"
-    fi
+    local panel_count
+    panel_count=$(find "$panels_dst" -name "*.conf" 2>/dev/null | wc -l)
+    [[ $panel_count -gt 0 ]] && ok "Installed $panel_count panel config files"
+}
 
-    # Install PAM configuration for nftban-ui authentication
+# =============================================================================
+# MAIN INSTALL CONFIGS FUNCTION (refactored)
+# =============================================================================
+
+install_configs() {
+    log "Installing Configuration Files..."
+
+    # Step 1: Create directory structure
+    _install_configs_directories
+
+    # Step 2: Create manual whitelist/blacklist files
+    _install_configs_manual_whitelist
+    _install_configs_manual_blacklist
+
+    # Step 3: Set ownership and permissions
+    _install_configs_ownership
+
+    # Step 4: Install module configurations
+    _install_configs_modules
+
+    # Step 5: Install panel configurations
+    _install_configs_panels
+
+    # Step 6: Install GUI groups config
+    _install_config_file "$SCRIPT_DIR/install/config/allowed-gui-groups" "/etc/nftban/allowed-gui-groups" "644"
+
+    # Step 7: Install PAM configuration
     install_pam || warn "PAM configuration failed (non-critical)"
 
-    # Install templates (mail and reports)
+    # Step 8: Install templates
     install_templates
 
     ok "Configuration files installed"
