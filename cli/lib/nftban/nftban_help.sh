@@ -141,14 +141,34 @@ EOF
   printf "%sBANNER & HEALTH INDICATOR:%s\n" "$bold" "$reset"
   cat <<'EOF'
   The CLI banner displays a health indicator showing system status:
-    🟢 OK        System healthy, all checks passed
-    🟠 WARNING   Minor issues detected, review recommended
+    🟢 OK        All features installed (including optional)
+    🟠 WARNING   Optional features not installed (protection working)
     🔴 ERROR     Critical issues found, action required
     ⚪ UNKNOWN   Health check not run yet
 
   Health status is updated by nftban-health.timer (runs daily).
   To manually update: nftban health check --cache-status
   To disable banner:  export NFTBAN_BANNER_MODE=none
+EOF
+  echo
+
+  printf "%sOPTIONAL FEATURES:%s\n" "$bold" "$reset"
+  cat <<'EOF'
+  Some systemd timers are OPTIONAL and only needed for specific use cases.
+  Your firewall protection works fully without them.
+
+  TIMER                      PURPOSE                    WHEN NEEDED
+  ─────────────────────────────────────────────────────────────────────
+  nftban-queue.timer         Async ban queue processing High-volume DDoS
+  nftban-core-geoip.timer    GeoIP database updates     Country blocking
+  nftban-metrics.timer       Prometheus metrics export  Grafana monitoring
+
+  Enable optional timer:   systemctl enable --now nftban-queue.timer
+  Disable optional timer:  systemctl disable --now nftban-queue.timer
+  Check timer status:      nftban timers
+
+  NOTE: 🟠 WARNING in health check means optional features are missing,
+        NOT that your firewall has problems. Core protection is working.
 EOF
   echo
 
