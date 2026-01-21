@@ -797,24 +797,52 @@ nftban_stats_generate_dashboard() {
     local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
     local bans_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
 
-    # Get currently blocked IPs from nftables (using dynamic table name)
-    local current_blocked
-    current_blocked=$(nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null | grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}' | sort -u || true)
+    # PERFORMANCE FIX: Use awk for O(n+m) instead of O(n*m) loop
+    # Old method: For each of 4474 IPs, grep through bans.log = 19+ seconds
+    # New method: Single awk pass through both files = <1 second
+    local counts_result
+    counts_result=$(awk -F'|' '
+        # First pass: Build IP->source map from bans.log (most recent entry wins)
+        NR==FNR && NF>=3 {
+            ip=$2; src=$3
+            # Normalize source names
+            if (src ~ /login|loginmon/) sources[ip]="login"
+            else if (src ~ /portscan/) sources[ip]="portscan"
+            else if (src ~ /ddos/) sources[ip]="ddos"
+            else if (src ~ /manual|cli/) sources[ip]="manual"
+            else if (src ~ /feed/) sources[ip]="feeds"
+            next
+        }
+        # Second pass: Count IPs from nftables by their source
+        {
+            # Extract IPv4 addresses from nft output
+            while (match($0, /[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/)) {
+                ip = substr($0, RSTART, RLENGTH)
+                $0 = substr($0, RSTART + RLENGTH)
+                src = sources[ip]
+                if (src == "login") login++
+                else if (src == "portscan") portscan++
+                else if (src == "ddos") ddos++
+                else if (src == "manual") manual++
+                else if (src == "feeds") feeds++
+            }
+        }
+        END {
+            printf "%d %d %d %d %d\n", login+0, portscan+0, ddos+0, manual+0, feeds+0
+        }
+    ' "$bans_log" <(nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null) 2>/dev/null)
 
-    # Cross-reference with bans.log to count by module
-    if [[ -f "$bans_log" ]] && [[ -n "$current_blocked" ]]; then
-        while IFS= read -r ip; do
-            # Get most recent source for this IP from bans.log
-            local source
-            source=$(grep "|${ip}|" "$bans_log" 2>/dev/null | tail -1 | cut -d'|' -f3 || true)
-            case "$source" in
-                login|loginmon) login_count=$((login_count + 1)) ;;
-                portscan|portscan-classic) portscan_count=$((portscan_count + 1)) ;;
-                ddos) ddos_count=$((ddos_count + 1)) ;;
-                manual|cli) manual_count=$((manual_count + 1)) ;;
-                feeds|*feed*) feeds_total=$((feeds_total + 1)) ;;
-            esac
-        done <<< "$current_blocked"
+    # Parse the counts result (split by space)
+    if [[ -n "$counts_result" ]]; then
+        local counts_array
+        IFS=' ' read -ra counts_array <<< "$counts_result"
+        login_count="${counts_array[0]:-0}"
+        portscan_count="${counts_array[1]:-0}"
+        ddos_count="${counts_array[2]:-0}"
+        manual_count="${counts_array[3]:-0}"
+        # Don't override feeds_total here - it gets added to below
+        local bans_log_feeds="${counts_array[4]:-0}"
+        feeds_total=$((feeds_total + bans_log_feeds))
     fi
 
     # FEEDS: Also count from enabled feed files (for IPs not in bans.log)
