@@ -194,9 +194,16 @@ nftban_health_render_terminal() {
         if [[ $error_count -eq 0 ]]; then
             echo "NOTE"
             echo "───────────────────────────────────────────────────────────"
-            echo "  Warnings are about OPTIONAL features."
-            echo "  Your firewall is working! You can safely ignore these."
-            echo "  To enable optional features: nftban help"
+            echo "  Warnings are about OPTIONAL features, not problems."
+            echo ""
+            echo "  🟢 REQUIRED (working):  Core firewall, banning, health checks"
+            echo "  🟡 OPTIONAL (warned):   Queue processing, metrics, web GUI"
+            echo ""
+            echo "  Your firewall protection is FULLY FUNCTIONAL."
+            echo "  Optional features are for high-volume or enterprise setups."
+            echo ""
+            echo "  To silence warnings: Install optional features or ignore them."
+            echo "  More info: nftban help optional"
             echo ""
         fi
     fi
