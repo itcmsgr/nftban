@@ -37,15 +37,38 @@ set -Eeuo pipefail
 readonly NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 readonly NFTBAN_SHARE_DIR="${NFTBAN_SHARE_DIR:-/usr/share/nftban}"
 
+# =============================================================================
+# CONFIGURATION LOADING (standard pattern)
+# =============================================================================
+# Pattern: .conf = defaults (overwritten on update)
+#          .conf.local = user values (preserved on update)
+
 # Load main config
-if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-    # shellcheck source=/dev/null
-    source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+
+# Load zabbix defaults
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
+
+# Load zabbix user overrides (takes precedence)
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
+
+# Set bash defaults for any unset variables
+: "${NFTBAN_ZABBIX_ENABLED:=false}"
+: "${NFTBAN_ZABBIX_SERVER:=}"
+: "${NFTBAN_ZABBIX_PORT:=10051}"
+: "${NFTBAN_ZABBIX_HOSTNAME:=auto}"
+: "${NFTBAN_ZABBIX_INTERVAL:=60}"
+: "${NFTBAN_ZABBIX_TLS_ENABLED:=false}"
+: "${NFTBAN_ZABBIX_PSK_ENABLED:=false}"
+: "${NFTBAN_ZABBIX_FIREWALL_AUTO:=true}"
+
+# Load central config library for writing config
+if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_config.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/core/nftban_config.sh"
 fi
 
 # Load output module for banner and styling
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
-    # shellcheck source=/dev/null
     source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
 fi
 
@@ -54,57 +77,39 @@ fi
 # =============================================================================
 
 _zabbix_config_get() {
-    # Get a Zabbix config value (checks .local first, then default)
-    # Pattern: zabbix.conf = defaults (overwritten on update)
-    #          zabbix.conf.local = user values (preserved)
+    # Get config value (variable is already loaded from .conf/.conf.local)
+    # Args: $1 = key name, $2 = default value
     local key="$1"
     local default="${2:-}"
-    local value=""
-
-    local conf_default="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
-    local conf_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
-
-    # First check .local (user overrides)
-    if [[ -f "$conf_local" ]]; then
-        value=$(grep -E "^${key}=" "$conf_local" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
-    fi
-
-    # Fall back to default config
-    if [[ -z "$value" ]] && [[ -f "$conf_default" ]]; then
-        value=$(grep -E "^${key}=" "$conf_default" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
-    fi
-
+    local value="${!key:-}"
     echo "${value:-$default}"
 }
 
 _zabbix_config_set() {
-    # Set a Zabbix config value in zabbix.conf.local (user values, preserved on update)
+    # Write config using central library (writes to nftban.conf.local with section)
     local key="$1"
     local value="$2"
-    local conf_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
 
-    # Create .local file if it doesn't exist
-    if [[ ! -f "$conf_local" ]]; then
-        mkdir -p "$(dirname "$conf_local")"
-        cat > "$conf_local" << 'EOF'
-# =============================================================================
-# NFTBan - Zabbix Configuration (User Overrides)
-# =============================================================================
-# This file contains YOUR customizations and is NOT overwritten on updates.
-# Values here override defaults from zabbix.conf
-# =============================================================================
-
-EOF
-        chown root:nftban "$conf_local" 2>/dev/null || true
-        chmod 640 "$conf_local" 2>/dev/null || true
-    fi
-
-    # If key exists in .local, update it; otherwise append
-    if grep -qE "^${key}=" "$conf_local" 2>/dev/null; then
-        sed -i "s|^${key}=.*|${key}=\"${value}\"|" "$conf_local"
+    if declare -f nftban_config_set >/dev/null 2>&1; then
+        nftban_config_set "zabbix" "${key}=${value}"
     else
-        echo "${key}=\"${value}\"" >> "$conf_local"
+        # Fallback: write directly to zabbix.conf.local
+        local conf_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
+        mkdir -p "$(dirname "$conf_local")"
+        if [[ ! -f "$conf_local" ]]; then
+            echo "# NFTBan - Zabbix User Overrides" > "$conf_local"
+            chown root:nftban "$conf_local" 2>/dev/null || true
+            chmod 640 "$conf_local"
+        fi
+        if grep -qE "^${key}=" "$conf_local" 2>/dev/null; then
+            sed -i "s|^${key}=.*|${key}=\"${value}\"|" "$conf_local"
+        else
+            echo "${key}=\"${value}\"" >> "$conf_local"
+        fi
     fi
+
+    # Update in-memory variable
+    declare -g "$key"="$value"
 }
 
 _zabbix_print_header() {
