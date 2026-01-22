@@ -27,10 +27,11 @@
 
 set -Eeuo pipefail
 
-[[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
-readonly NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+# Bootstrap paths (nftban.conf will make them readonly)
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
 
-# Load main config
+# Load main config (sets readonly paths)
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
     # shellcheck source=/dev/null
     source "${NFTBAN_CONFIG_DIR}/nftban.conf"
