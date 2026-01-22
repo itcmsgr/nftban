@@ -12,7 +12,6 @@
 package pages
 
 import (
-	"strconv"
 	"github.com/itcmsgr/nftban/internal/ui"
 )
 
@@ -508,42 +507,7 @@ templ Tools(data ui.ToolsData) {
 	}
 }
 
-// IPCheckResultFragment renders IP check results
-templ IPCheckResultFragment(result ui.IPCheckResult) {
-	<div class={ "result-card", getResultClass(result.Status) }>
-		<div class="result-header">
-			<span class="result-status">{ getStatusEmoji(result.Status) }</span>
-			<code class="result-ip">{ result.IP }</code>
-			<span class={ "result-verdict", getVerdictClass(result.Status) }>{ result.Status }</span>
-		</div>
-		<div class="result-details">
-			if result.Country != "" {
-				<div class="result-detail">
-					<span class="result-detail-label">Country:</span>
-					<span>{ result.Country }</span>
-				</div>
-			}
-			if result.Module != "" {
-				<div class="result-detail">
-					<span class="result-detail-label">Module:</span>
-					<span>{ result.Module }</span>
-				</div>
-			}
-			if result.Reason != "" {
-				<div class="result-detail">
-					<span class="result-detail-label">Reason:</span>
-					<span>{ result.Reason }</span>
-				</div>
-			}
-			if result.BannedSince != "" {
-				<div class="result-detail">
-					<span class="result-detail-label">Since:</span>
-					<span>{ result.BannedSince }</span>
-				</div>
-			}
-		</div>
-	</div>
-}
+// Note: IPCheckResultFragment is defined in dashboard.templ
 
 // GeoLookupResultFragment renders GeoIP lookup results
 templ GeoLookupResultFragment(result ui.GeoLookupResult) {
@@ -712,6 +676,4 @@ func getSetTypeBadge(setType string) string {
 	}
 }
 
-func intToStr(n int) string {
-	return strconv.Itoa(n)
-}
+// Note: intToStr is defined in health.templ
