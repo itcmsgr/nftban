@@ -54,34 +54,56 @@ fi
 # =============================================================================
 
 _zabbix_config_get() {
-    # Get a Zabbix config value from nftban.conf
+    # Get a Zabbix config value (checks .local first, then default)
+    # Pattern: zabbix.conf = defaults (overwritten on update)
+    #          zabbix.conf.local = user values (preserved)
     local key="$1"
     local default="${2:-}"
     local value=""
 
-    if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-        value=$(grep -E "^${key}=" "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
+    local conf_default="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
+    local conf_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
+
+    # First check .local (user overrides)
+    if [[ -f "$conf_local" ]]; then
+        value=$(grep -E "^${key}=" "$conf_local" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
+    fi
+
+    # Fall back to default config
+    if [[ -z "$value" ]] && [[ -f "$conf_default" ]]; then
+        value=$(grep -E "^${key}=" "$conf_default" 2>/dev/null | tail -1 | cut -d'=' -f2- | tr -d '"' | tr -d "'" || true)
     fi
 
     echo "${value:-$default}"
 }
 
 _zabbix_config_set() {
-    # Set a Zabbix config value in nftban.conf
+    # Set a Zabbix config value in zabbix.conf.local (user values, preserved on update)
     local key="$1"
     local value="$2"
-    local conf_file="${NFTBAN_CONFIG_DIR}/nftban.conf"
+    local conf_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
 
-    if [[ ! -f "$conf_file" ]]; then
-        echo "ERROR: Config file not found: $conf_file" >&2
-        return 1
+    # Create .local file if it doesn't exist
+    if [[ ! -f "$conf_local" ]]; then
+        mkdir -p "$(dirname "$conf_local")"
+        cat > "$conf_local" << 'EOF'
+# =============================================================================
+# NFTBan - Zabbix Configuration (User Overrides)
+# =============================================================================
+# This file contains YOUR customizations and is NOT overwritten on updates.
+# Values here override defaults from zabbix.conf
+# =============================================================================
+
+EOF
+        chown root:nftban "$conf_local" 2>/dev/null || true
+        chmod 640 "$conf_local" 2>/dev/null || true
     fi
 
-    # If key exists, update it; otherwise append
-    if grep -qE "^${key}=" "$conf_file" 2>/dev/null; then
-        sed -i "s|^${key}=.*|${key}=\"${value}\"|" "$conf_file"
+    # If key exists in .local, update it; otherwise append
+    if grep -qE "^${key}=" "$conf_local" 2>/dev/null; then
+        sed -i "s|^${key}=.*|${key}=\"${value}\"|" "$conf_local"
     else
-        echo "${key}=\"${value}\"" >> "$conf_file"
+        echo "${key}=\"${value}\"" >> "$conf_local"
     fi
 }
 
