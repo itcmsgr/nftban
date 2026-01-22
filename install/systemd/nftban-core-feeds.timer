@@ -24,15 +24,21 @@ Description=NFTBan Core - Daily Feed Update Timer
 Documentation=https://github.com/itcmsgr/nftban-dev
 
 [Timer]
-# Run daily at 3:00 AM
-OnCalendar=daily
-OnCalendar=03:00
-# Also run 15 minutes after boot
+# Run daily at 03:20 AM (staggered from health@03:00, suricata@03:40)
+# COLLISION FIX: Previously all at 03:00, now spread across 40-minute window
+OnCalendar=*-*-* 03:20:00
+
+# Also run 15 minutes after boot (if missed scheduled time)
 OnBootSec=15min
+
 # Run if missed (e.g., system was off)
 Persistent=true
-# Add 0-30 minute random delay to avoid thundering herd
-RandomizedDelaySec=30min
+
+# JITTER: 15m variance for daily task (was 30m - reduced for tighter window)
+RandomizedDelaySec=15m
+
+# DETERMINISTIC: Same offset per host for predictable behavior
+FixedRandomDelay=true
 
 [Install]
 WantedBy=timers.target

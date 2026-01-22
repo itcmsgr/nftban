@@ -26,11 +26,14 @@ Requires=nftban-pro-license.service
 ConditionPathExists=/etc/nftban/pro.token
 
 [Timer]
-# Run every 6 hours
+# Run every 6 hours (00:00, 06:00, 12:00, 18:00)
 OnCalendar=*-*-* 00/6:00:00
 
-# Add randomization to avoid load spikes (0-15 minutes)
-RandomizedDelaySec=15m
+# JITTER: 30m variance for license check (increased from 15m)
+RandomizedDelaySec=30m
+
+# DETERMINISTIC: Same offset per host for predictable behavior
+FixedRandomDelay=true
 
 # Also run 5 minutes after boot
 OnBootSec=5min

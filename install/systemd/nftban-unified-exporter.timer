@@ -35,7 +35,14 @@
 [Unit]
 Description=NFTBan Unified Metrics Exporter Timer
 Documentation=https://nftban.com/docs/metrics
+Requires=nftban-unified-exporter.service
 After=nftban.service
+
+# MUTUAL EXCLUSION: Prevent running alongside legacy exporters
+# Unified exporter replaces these 3 timers - only ONE system should be active
+Conflicts=nftban-metrics-exporter.timer
+Conflicts=nftban-zabbix-exporter.timer
+Conflicts=nftban-connector-exporter.timer
 
 [Timer]
 # Initial delay after boot (allow services to stabilize)

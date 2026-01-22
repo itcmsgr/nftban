@@ -42,6 +42,9 @@ readonly NFTBAN_CACHE_DIR="${NFTBAN_CACHE_DIR:-/var/cache/nftban}"
 # Metrics cache file (collected once, used by all exporters)
 readonly METRICS_CACHE="${NFTBAN_RUN_DIR}/metrics.cache"
 readonly METRICS_LOCK="${NFTBAN_RUN_DIR}/exporter.lock"
+readonly BANDWIDTH_STATE="${NFTBAN_RUN_DIR}/bandwidth_state.dat"
+readonly BANDWIDTH_PEAKS="${NFTBAN_RUN_DIR}/bandwidth_peaks.dat"
+readonly PEAK_WINDOW=300  # 5 minutes for peak tracking
 
 # Load config
 [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
@@ -70,19 +73,35 @@ calculate_host_jitter() {
 }
 
 # =============================================================================
-# LOCKING: Prevent concurrent runs
+# LOCKING: Prevent concurrent runs with timeout
 # =============================================================================
 acquire_lock() {
     local lock_fd=200
+    local lock_timeout=10  # Wait up to 10 seconds for lock
 
     # Create lock file
     mkdir -p "$(dirname "$METRICS_LOCK")"
     eval "exec $lock_fd>$METRICS_LOCK"
 
-    # Try to acquire lock (non-blocking)
-    if ! flock -n $lock_fd; then
-        log_warn "Another exporter instance is running, skipping"
-        exit 0
+    # Try to acquire lock with timeout (blocking)
+    # This prevents silent metrics gaps when concurrent runs overlap
+    if ! timeout $lock_timeout flock $lock_fd 2>/dev/null; then
+        log_error "Lock acquisition timed out after ${lock_timeout}s (concurrent exporter still running?)"
+        log_error "Previous PID: $(cat "$METRICS_LOCK" 2>/dev/null || echo 'unknown')"
+
+        # Export stale metrics from cache if available (better than nothing)
+        if [[ -f "$METRICS_CACHE" ]]; then
+            local cache_age
+            cache_age=$(($(date +%s) - $(stat -c %Y "$METRICS_CACHE" 2>/dev/null || echo 0)))
+            if [[ $cache_age -lt 300 ]]; then  # Cache less than 5 minutes old
+                log_warn "Using cached metrics (age: ${cache_age}s) to prevent monitoring gap"
+                # Exports will use existing cache
+                return 0
+            fi
+        fi
+
+        log_error "No recent cache available - metrics collection skipped"
+        exit 1  # Exit with error code so systemd logs failure
     fi
 
     # Write PID to lock file
@@ -96,6 +115,64 @@ log_info()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $*"; }
 log_warn()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $*" >&2; }
 log_error() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $*" >&2; }
 log_debug() { [[ "${NFTBAN_DEBUG:-false}" == "true" ]] && echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEBUG] $*"; }
+
+# =============================================================================
+# BANDWIDTH METRICS FUNCTIONS
+# =============================================================================
+
+# Get interface statistics from /proc/net/dev
+get_interface_stats() {
+    local interface=$1
+    local stats
+    stats=$(grep -E "^\\s*${interface}:" /proc/net/dev 2>/dev/null || echo "")
+    [[ -z "$stats" ]] && return 1
+    stats=$(echo "$stats" | sed 's/^[^:]*://' | tr -s ' ')
+    local rx_bytes rx_packets tx_bytes tx_packets
+    rx_bytes=$(echo "$stats" | awk '{print $1}')
+    rx_packets=$(echo "$stats" | awk '{print $2}')
+    tx_bytes=$(echo "$stats" | awk '{print $9}')
+    tx_packets=$(echo "$stats" | awk '{print $10}')
+    echo "${rx_bytes} ${rx_packets} ${tx_bytes} ${tx_packets}"
+}
+
+# Calculate bandwidth in Mbps from byte deltas
+calculate_mbps() {
+    local bytes_delta=$1 time_delta=$2
+    [[ $time_delta -eq 0 ]] && { echo "0"; return; }
+    awk -v bd="$bytes_delta" -v td="$time_delta" 'BEGIN {printf "%.2f", (bd / td) * 8 / 1000000}'
+}
+
+# Get connection statistics using ss
+get_connection_stats() {
+    local state=$1
+    command -v ss &>/dev/null || { echo "0"; return; }
+    local count
+    case "$state" in
+        active)      count=$(ss -tan 2>/dev/null | grep -cE "ESTAB|SYN-SENT|SYN-RECV|FIN-WAIT|CLOSE-WAIT|TIME-WAIT" || true) ;;
+        established) count=$(ss -tan 2>/dev/null | grep -c "ESTAB" || true) ;;
+        time_wait)   count=$(ss -tan 2>/dev/null | grep -c "TIME-WAIT" || true) ;;
+        close_wait)  count=$(ss -tan 2>/dev/null | grep -c "CLOSE-WAIT" || true) ;;
+        *) count=0 ;;
+    esac
+    echo "${count:-0}"
+}
+
+# Update peak bandwidth values (5-minute window)
+update_bandwidth_peaks() {
+    local rx_mbps=$1 tx_mbps=$2 current_ts=$3
+    [[ ! -f "$BANDWIDTH_PEAKS" ]] && echo "0 0 $current_ts" > "$BANDWIDTH_PEAKS"
+    local peak_data peak_rx peak_tx peak_ts
+    peak_data=$(cat "$BANDWIDTH_PEAKS" 2>/dev/null || echo "0 0 0")
+    read -r peak_rx peak_tx peak_ts <<< "$peak_data"
+    if [[ $(( current_ts - peak_ts )) -gt $PEAK_WINDOW ]]; then
+        peak_rx=$rx_mbps; peak_tx=$tx_mbps; peak_ts=$current_ts
+    else
+        [[ $(echo "$rx_mbps > $peak_rx" | bc -l 2>/dev/null || echo 0) -eq 1 ]] && peak_rx=$rx_mbps
+        [[ $(echo "$tx_mbps > $peak_tx" | bc -l 2>/dev/null || echo 0) -eq 1 ]] && peak_tx=$tx_mbps
+    fi
+    echo "$peak_rx $peak_tx $peak_ts" > "$BANDWIDTH_PEAKS"
+    echo "$peak_rx $peak_tx"
+}
 
 # =============================================================================
 # METRIC COLLECTION (Single collection for all targets)
@@ -271,6 +348,85 @@ collect_all_metrics() {
     fi
     cpu_cores=$(nproc 2>/dev/null || echo "1")
     metrics+="nftban_server_cpu_cores $cpu_cores $timestamp\n"
+
+    # --- Bandwidth Metrics ---
+    local total_rx_mbps=0 total_tx_mbps=0
+    mkdir -p "$(dirname "$BANDWIDTH_STATE")"
+
+    # Get all physical interfaces (exclude lo, docker, veth, etc.)
+    for iface in $(ls /sys/class/net/ 2>/dev/null | grep -vE "^(lo|docker|veth|br-|virbr)" || true); do
+        local stats
+        stats=$(get_interface_stats "$iface") || continue
+        read -r rx_bytes rx_packets tx_bytes tx_packets <<< "$stats"
+
+        metrics+="nftban_network_rx_bytes{interface=\"${iface}\"} $rx_bytes $timestamp\n"
+        metrics+="nftban_network_tx_bytes{interface=\"${iface}\"} $tx_bytes $timestamp\n"
+        metrics+="nftban_network_rx_packets{interface=\"${iface}\"} $rx_packets $timestamp\n"
+        metrics+="nftban_network_tx_packets{interface=\"${iface}\"} $tx_packets $timestamp\n"
+
+        # Calculate Mbps from previous state
+        if [[ -f "$BANDWIDTH_STATE" ]]; then
+            local prev_data prev_ts prev_rx prev_tx
+            prev_data=$(grep "^${iface} " "$BANDWIDTH_STATE" 2>/dev/null || echo "")
+            if [[ -n "$prev_data" ]]; then
+                read -r _ prev_rx prev_tx prev_ts <<< "$prev_data"
+                local rx_delta=$((rx_bytes - prev_rx))
+                local tx_delta=$((tx_bytes - prev_tx))
+                local time_delta=$((timestamp - prev_ts))
+                [[ $rx_delta -lt 0 ]] && rx_delta=0  # Handle counter wrap
+                [[ $tx_delta -lt 0 ]] && tx_delta=0
+                local rx_mbps tx_mbps
+                rx_mbps=$(calculate_mbps $rx_delta $time_delta)
+                tx_mbps=$(calculate_mbps $tx_delta $time_delta)
+                metrics+="nftban_network_rx_mbps{interface=\"${iface}\"} $rx_mbps $timestamp\n"
+                metrics+="nftban_network_tx_mbps{interface=\"${iface}\"} $tx_mbps $timestamp\n"
+                total_rx_mbps=$(echo "$total_rx_mbps + $rx_mbps" | bc -l 2>/dev/null || echo "$total_rx_mbps")
+                total_tx_mbps=$(echo "$total_tx_mbps + $tx_mbps" | bc -l 2>/dev/null || echo "$total_tx_mbps")
+            fi
+        fi
+
+        # Update state file (append/replace for this interface)
+        grep -v "^${iface} " "$BANDWIDTH_STATE" 2>/dev/null > "${BANDWIDTH_STATE}.tmp" || true
+        echo "${iface} ${rx_bytes} ${tx_bytes} ${timestamp}" >> "${BANDWIDTH_STATE}.tmp"
+        mv "${BANDWIDTH_STATE}.tmp" "$BANDWIDTH_STATE"
+    done
+
+    # Total bandwidth and peaks
+    metrics+="nftban_network_total_rx_mbps $total_rx_mbps $timestamp\n"
+    metrics+="nftban_network_total_tx_mbps $total_tx_mbps $timestamp\n"
+
+    local peaks
+    peaks=$(update_bandwidth_peaks "$total_rx_mbps" "$total_tx_mbps" "$timestamp")
+    read -r peak_rx peak_tx <<< "$peaks"
+    metrics+="nftban_bandwidth_peak_rx_mbps $peak_rx $timestamp\n"
+    metrics+="nftban_bandwidth_peak_tx_mbps $peak_tx $timestamp\n"
+
+    # --- Connection Metrics ---
+    local conn_active conn_established conn_time_wait
+    conn_active=$(get_connection_stats active)
+    conn_established=$(get_connection_stats established)
+    conn_time_wait=$(get_connection_stats time_wait)
+    metrics+="nftban_connections_active $conn_active $timestamp\n"
+    metrics+="nftban_connections_established $conn_established $timestamp\n"
+    metrics+="nftban_connections_time_wait $conn_time_wait $timestamp\n"
+
+    # --- GeoIP Metrics ---
+    local geoip_db="${NFTBAN_CACHE_DIR}/geoip/GeoLite2-Country.mmdb"
+    if [[ -f "$geoip_db" ]]; then
+        local db_age_days
+        db_age_days=$(( (timestamp - $(stat -c %Y "$geoip_db" 2>/dev/null || echo "$timestamp")) / 86400 ))
+        metrics+="nftban_geoip_database_age_days $db_age_days $timestamp\n"
+        metrics+="nftban_geoip_database_present 1 $timestamp\n"
+    else
+        metrics+="nftban_geoip_database_present 0 $timestamp\n"
+    fi
+
+    # Count blocked countries
+    local countries_blocked=0
+    if [[ -d "${NFTBAN_CONFIG_DIR}/geoban" ]]; then
+        countries_blocked=$(ls -1 "${NFTBAN_CONFIG_DIR}/geoban/"*.conf 2>/dev/null | wc -l || echo "0")
+    fi
+    metrics+="nftban_geoip_countries_blocked $countries_blocked $timestamp\n"
 
     # Cache metrics
     mkdir -p "$(dirname "$METRICS_CACHE")"

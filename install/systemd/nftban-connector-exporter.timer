@@ -4,6 +4,16 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Periodic execution of NFTBan connector export (ES, Kafka, file)
 #
+# DEPRECATED: Use nftban-unified-exporter.timer instead
+# =============================================================
+# This timer is maintained for backward compatibility only.
+# The unified exporter provides single metric collection for
+# Prometheus + Zabbix + Connectors with 66% less overhead.
+#
+# Migration: systemctl disable nftban-connector-exporter.timer
+#            systemctl enable nftban-unified-exporter.timer
+# =============================================================
+#
 # meta:name="nftban-connector-exporter.timer"
 # meta:type="systemd"
 # meta:header="Connector Exporter Timer"

@@ -4,6 +4,18 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Periodic execution of NFTBan metrics collection
 #
+# DEPRECATED: Use nftban-unified-exporter.timer instead
+# =============================================================
+# This timer is maintained for backward compatibility only.
+# The unified exporter provides:
+#   - 66% less overhead (single collection vs triple)
+#   - Consistent timestamps across Prometheus/Zabbix/Connectors
+#   - Better debugging (single point of monitoring)
+#
+# Migration: systemctl disable nftban-metrics-exporter.timer
+#            systemctl enable nftban-unified-exporter.timer
+# =============================================================
+#
 # meta:name="nftban_metrics_exporter_timer"
 # meta:type="config"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"

@@ -25,11 +25,15 @@ Documentation=man:nftban(8)
 Requires=nftban-health.service
 
 [Timer]
-# Run daily at 03:00 AM (avoid conflicts with other cron jobs)
+# Run daily at 03:00 AM (first in staggered sequence: health@03:00, feeds@03:20, suricata@03:40)
+# This is a lightweight read-only check, so runs first
 OnCalendar=*-*-* 03:00:00
 
-# Add randomization to avoid load spikes (0-30 minutes)
-RandomizedDelaySec=30m
+# JITTER: 10m variance (reduced from 30m to fit in 20-minute window before feeds)
+RandomizedDelaySec=10m
+
+# DETERMINISTIC: Same offset per host for predictable behavior
+FixedRandomDelay=true
 
 # Persist timer across reboots
 Persistent=true

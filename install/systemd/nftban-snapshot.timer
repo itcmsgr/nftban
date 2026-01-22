@@ -27,12 +27,18 @@ Documentation=https://nftban.com/docs
 [Timer]
 # Run hourly to create configuration snapshots
 OnCalendar=hourly
+
 # Run 10 minutes after boot
 OnBootSec=10min
+
 # Run if missed
 Persistent=true
-# Random delay 0-5min to avoid thundering herd
-RandomizedDelaySec=5min
+
+# JITTER: ~8% variance (5m on 60m interval)
+RandomizedDelaySec=5m
+
+# DETERMINISTIC: Same offset per host for predictable behavior
+FixedRandomDelay=true
 
 [Install]
 WantedBy=timers.target

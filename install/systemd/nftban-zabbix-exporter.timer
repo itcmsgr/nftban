@@ -4,6 +4,16 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Periodic execution of NFTBan Zabbix trapper export
 #
+# DEPRECATED: Use nftban-unified-exporter.timer instead
+# =============================================================
+# This timer is maintained for backward compatibility only.
+# The unified exporter provides single metric collection for
+# Prometheus + Zabbix + Connectors with 66% less overhead.
+#
+# Migration: systemctl disable nftban-zabbix-exporter.timer
+#            systemctl enable nftban-unified-exporter.timer
+# =============================================================
+#
 # meta:name="nftban-zabbix-exporter.timer"
 # meta:type="systemd"
 # meta:header="Zabbix Exporter Timer"
