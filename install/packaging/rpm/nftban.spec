@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024-2025 NFTBan Development Team
 
 Name:           nftban
-Version:        1.0.0
+Version:        1.3.0
 Release:        1%{?dist}
 Summary:        NFTBAN - Next-generation Linux firewall using nftables
 
@@ -515,6 +515,7 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban/suricata/rules
 %dir %attr(750,root,nftban) /etc/nftban/suricata/cache
 %config(noreplace) /etc/nftban/suricata/profiles/*
+%dir %attr(750,root,nftban) /etc/nftban/connectors
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d/botscan
 %config(noreplace) /etc/nftban/patterns.d/botscan/*
@@ -536,8 +537,13 @@ fi
 %dir /usr/share/nftban/templates
 %dir /usr/share/nftban/templates/mail
 %dir /usr/share/nftban/templates/reports
+%dir /usr/share/nftban/templates/zabbix
+%dir /usr/share/nftban/dashboards
+%dir /usr/share/nftban/dashboards/grafana
 /usr/share/nftban/templates/mail/*
 /usr/share/nftban/templates/reports/*
+/usr/share/nftban/templates/zabbix/*
+/usr/share/nftban/dashboards/grafana/*
 %dir /usr/share/nftban/specs
 /usr/share/nftban/specs/*
 

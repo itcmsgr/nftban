@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Installation Script
+# NFTBan v1.3.0 - Installation Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Install NFTBan on the local system
@@ -8,7 +8,7 @@
 # meta:name="nftban_install"
 # meta:type="cli"
 # meta:header="NFTBan Installer"
-# meta:version="1.0.0"
+# meta:version="1.3.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -1305,7 +1305,7 @@ install_pam() {
 # Create all required directories
 _install_configs_directories() {
     # /etc/nftban structure
-    mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d,conf.d,distros,suricata,rules.d,patterns.d}
+    mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d,conf.d,distros,suricata,rules.d,patterns.d,connectors}
     mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,geoban,geoip,rbl}
     mkdir -p /etc/nftban/patterns.d/botscan
     mkdir -p /etc/nftban/suricata/{profiles,config,rules,cache}
@@ -1319,6 +1319,7 @@ _install_configs_directories() {
 
     # Runtime directories
     mkdir -p /var/log/nftban
+    mkdir -p /var/log/nftban/metrics
     mkdir -p /var/cache/nftban
     mkdir -p /run/nftban
     mkdir -p /run/nftban-ui
@@ -1593,7 +1594,8 @@ install_templates() {
     log "Installing Templates..."
 
     # Create template directories
-    mkdir -p /usr/share/nftban/templates/{mail,reports}
+    mkdir -p /usr/share/nftban/templates/{mail,reports,zabbix}
+    mkdir -p /usr/share/nftban/dashboards/grafana
 
     # Install templates (mail, reports, email, partials)
     if [[ -d "$SCRIPT_DIR/install/share/nftban/templates" ]]; then
@@ -1601,6 +1603,18 @@ install_templates() {
         local template_count
         template_count=$(find /usr/share/nftban/templates -type f -name "*.html" 2>/dev/null | wc -l)
         ok "Installed $template_count templates"
+    fi
+
+    # Install Zabbix templates
+    if [[ -d "$SCRIPT_DIR/share/templates/zabbix" ]]; then
+        cp -f "$SCRIPT_DIR/share/templates/zabbix/"* /usr/share/nftban/templates/zabbix/ 2>/dev/null || true
+        ok "Installed Zabbix templates"
+    fi
+
+    # Install Grafana dashboards
+    if [[ -d "$SCRIPT_DIR/share/dashboards/grafana" ]]; then
+        cp -f "$SCRIPT_DIR/share/dashboards/grafana/"* /usr/share/nftban/dashboards/grafana/ 2>/dev/null || true
+        ok "Installed Grafana dashboards"
     fi
 
     # Set permissions (explicit ownership, not recursive on parent)

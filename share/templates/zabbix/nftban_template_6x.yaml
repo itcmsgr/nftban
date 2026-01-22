@@ -1,0 +1,722 @@
+zabbix_export:
+  version: '6.0'
+  date: '2026-01-22T00:00:00Z'
+  groups:
+    - uuid: 7df96b18c230490a9a0a9e2307226338
+      name: 'Templates/Security'
+    - uuid: dc579cd7a1a34222933f24f52a68bcd8
+      name: 'NFTBan Servers'
+
+  templates:
+    - uuid: b8c7d6e5f4a3b2c1d0e9f8a7b6c5d4e3
+      template: 'NFTBan'
+      name: 'NFTBan Firewall'
+      description: |
+        NFTBan monitoring template for Zabbix 6.x
+
+        Monitors:
+        - Daemon status, version, uptime
+        - Ban statistics (total, 24h, rate)
+        - Memory usage, goroutines, GC stats
+        - Module status per enabled module
+        - Watchdog pressure scores
+        - Feed status and IP counts
+        - GeoIP statistics
+        - nftables rule counts
+
+        Requirements:
+        - NFTBan v1.2.3+
+        - Zabbix Agent or Trapper items
+
+        Documentation: https://nftban.com/docs/zabbix
+      groups:
+        - name: 'Templates/Security'
+
+      # =======================================================================
+      # MACROS
+      # =======================================================================
+      macros:
+        - macro: '{$NFTBAN.BAN.RATE.WARN}'
+          value: '100'
+          description: 'Ban rate per minute warning threshold'
+        - macro: '{$NFTBAN.BAN.RATE.HIGH}'
+          value: '500'
+          description: 'Ban rate per minute high threshold'
+        - macro: '{$NFTBAN.MEMORY.WARN}'
+          value: '524288000'
+          description: 'Memory warning threshold (500MB)'
+        - macro: '{$NFTBAN.MEMORY.HIGH}'
+          value: '1073741824'
+          description: 'Memory high threshold (1GB)'
+        - macro: '{$NFTBAN.GEOIP.AGE.WARN}'
+          value: '30'
+          description: 'GeoIP database age warning (days)'
+
+      # =======================================================================
+      # ITEMS - DAEMON INFO
+      # =======================================================================
+      items:
+        # --- Daemon Status ---
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+          name: 'NFTBan: Daemon status'
+          type: TRAP
+          key: nftban.status
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Daemon status: 1=running, 0=stopped'
+          tags:
+            - tag: component
+              value: daemon
+          triggers:
+            - uuid: t1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+              expression: 'last(/NFTBan/nftban.status)=0'
+              name: 'NFTBan daemon is down'
+              priority: DISASTER
+              description: 'NFTBan daemon is not running. Firewall protection may be compromised.'
+              tags:
+                - tag: scope
+                  value: availability
+
+        - uuid: a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7
+          name: 'NFTBan: Version'
+          type: TRAP
+          key: nftban.version
+          delay: '0'
+          value_type: CHAR
+          description: 'NFTBan daemon version'
+          tags:
+            - tag: component
+              value: daemon
+
+        - uuid: a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8
+          name: 'NFTBan: Uptime'
+          type: TRAP
+          key: nftban.uptime
+          delay: '0'
+          value_type: FLOAT
+          units: s
+          description: 'Daemon uptime in seconds'
+          tags:
+            - tag: component
+              value: daemon
+
+        - uuid: a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9
+          name: 'NFTBan: PID'
+          type: TRAP
+          key: nftban.pid
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Daemon process ID'
+          tags:
+            - tag: component
+              value: daemon
+
+        - uuid: a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0
+          name: 'NFTBan: Operating mode'
+          type: TRAP
+          key: nftban.mode
+          delay: '0'
+          value_type: CHAR
+          description: 'Operating mode: normal, degraded, survival'
+          tags:
+            - tag: component
+              value: daemon
+          triggers:
+            - uuid: t2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7
+              expression: 'last(/NFTBan/nftban.mode)<>"normal" and length(last(/NFTBan/nftban.mode))>0'
+              name: 'NFTBan in {ITEM.VALUE} mode'
+              priority: WARNING
+              description: 'NFTBan is running in degraded or survival mode due to resource pressure.'
+
+        # --- Ban Statistics ---
+        - uuid: b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6
+          name: 'NFTBan: Active bans'
+          type: TRAP
+          key: nftban.active.count
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Currently active ban count'
+          tags:
+            - tag: component
+              value: bans
+
+        - uuid: b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7
+          name: 'NFTBan: Bans (24h)'
+          type: TRAP
+          key: nftban.bans.24h
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Bans in last 24 hours'
+          tags:
+            - tag: component
+              value: bans
+          triggers:
+            - uuid: t3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8
+              expression: 'last(/NFTBan/nftban.bans.24h)>1000'
+              name: 'High ban rate (>{ITEM.VALUE}/24h)'
+              priority: WARNING
+              description: 'More than 1000 bans in the last 24 hours indicates increased attack activity.'
+            - uuid: t4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9
+              expression: 'last(/NFTBan/nftban.bans.24h)>5000'
+              name: 'Mass attack detected (>{ITEM.VALUE}/24h)'
+              priority: HIGH
+              description: 'More than 5000 bans in 24 hours suggests a coordinated attack.'
+
+        - uuid: b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8
+          name: 'NFTBan: Bans (1h)'
+          type: TRAP
+          key: nftban.bans.1h
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Bans in last hour'
+          tags:
+            - tag: component
+              value: bans
+
+        - uuid: b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9
+          name: 'NFTBan: Ban rate'
+          type: TRAP
+          key: nftban.bans.rate
+          delay: '0'
+          value_type: FLOAT
+          units: '/min'
+          description: 'Current ban rate per minute'
+          tags:
+            - tag: component
+              value: bans
+
+        - uuid: b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0
+          name: 'NFTBan: Total bans'
+          type: TRAP
+          key: nftban.bans.total
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Total bans since daemon start'
+          tags:
+            - tag: component
+              value: bans
+
+        - uuid: b6c7d8e9f0a1b2c3d4e5f6a7b8c9d0e1
+          name: 'NFTBan: Permanent bans'
+          type: TRAP
+          key: nftban.permanent.count
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Permanent ban count'
+          tags:
+            - tag: component
+              value: bans
+
+        # --- Memory Metrics ---
+        - uuid: c1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6
+          name: 'NFTBan: Memory RSS'
+          type: TRAP
+          key: nftban.memory.rss
+          delay: '0'
+          value_type: UNSIGNED
+          units: B
+          description: 'Process resident set size'
+          tags:
+            - tag: component
+              value: memory
+          triggers:
+            - uuid: t5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0
+              expression: 'last(/NFTBan/nftban.memory.rss)>{$NFTBAN.MEMORY.WARN}'
+              name: 'NFTBan memory usage high (>{ITEM.VALUE})'
+              priority: WARNING
+              description: 'NFTBan memory usage exceeds warning threshold.'
+            - uuid: t6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1
+              expression: 'last(/NFTBan/nftban.memory.rss)>{$NFTBAN.MEMORY.HIGH}'
+              name: 'NFTBan memory usage critical (>{ITEM.VALUE})'
+              priority: HIGH
+              description: 'NFTBan memory usage exceeds critical threshold.'
+
+        - uuid: c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7
+          name: 'NFTBan: Open file descriptors'
+          type: TRAP
+          key: nftban.fds.open
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Open file descriptors'
+          tags:
+            - tag: component
+              value: memory
+          triggers:
+            - uuid: t7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2
+              expression: 'last(/NFTBan/nftban.fds.open)>1000'
+              name: 'NFTBan open FDs > 1000'
+              priority: WARNING
+              description: 'High number of open file descriptors may indicate a leak.'
+
+        - uuid: c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8
+          name: 'NFTBan: Threads'
+          type: TRAP
+          key: nftban.threads
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'OS thread count'
+          tags:
+            - tag: component
+              value: memory
+
+        # --- Module Metrics ---
+        - uuid: d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6
+          name: 'NFTBan: Modules enabled'
+          type: TRAP
+          key: nftban.modules.enabled
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Number of enabled modules'
+          tags:
+            - tag: component
+              value: modules
+
+        - uuid: d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7
+          name: 'NFTBan: Modules active'
+          type: TRAP
+          key: nftban.modules.active
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Number of currently active modules'
+          tags:
+            - tag: component
+              value: modules
+
+        - uuid: d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8
+          name: 'NFTBan: Modules failed'
+          type: TRAP
+          key: nftban.modules.failed
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Number of failed modules'
+          tags:
+            - tag: component
+              value: modules
+          triggers:
+            - uuid: t8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3
+              expression: 'last(/NFTBan/nftban.modules.failed)>0'
+              name: 'NFTBan module(s) failed ({ITEM.VALUE})'
+              priority: HIGH
+              description: 'One or more NFTBan modules have failed.'
+
+        # --- nftables Metrics ---
+        - uuid: e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6
+          name: 'NFTBan: nftables sets'
+          type: TRAP
+          key: nftban.nft.sets_total
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Total nftables sets'
+          tags:
+            - tag: component
+              value: nftables
+
+        - uuid: e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7
+          name: 'NFTBan: nftables elements'
+          type: TRAP
+          key: nftban.nft.elements_total
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Total set elements across all sets'
+          tags:
+            - tag: component
+              value: nftables
+          triggers:
+            - uuid: t9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4
+              expression: 'last(/NFTBan/nftban.nft.elements_total)>100000'
+              name: 'NFTBan large ruleset (>{ITEM.VALUE} elements)'
+              priority: WARNING
+              description: 'Large number of set elements may impact performance.'
+
+        - uuid: e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8
+          name: 'NFTBan: nftables rules'
+          type: TRAP
+          key: nftban.nft.rules_total
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Total nftables rules'
+          tags:
+            - tag: component
+              value: nftables
+
+        # --- Feeds Metrics ---
+        - uuid: f1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6
+          name: 'NFTBan: Feeds enabled'
+          type: TRAP
+          key: nftban.feeds.enabled
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Number of enabled threat feeds'
+          tags:
+            - tag: component
+              value: feeds
+
+        - uuid: f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7
+          name: 'NFTBan: Feeds loaded'
+          type: TRAP
+          key: nftban.feeds.loaded
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Number of successfully loaded feeds'
+          tags:
+            - tag: component
+              value: feeds
+
+        - uuid: f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8
+          name: 'NFTBan: Feeds failed'
+          type: TRAP
+          key: nftban.feeds.failed
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Number of failed feed loads'
+          tags:
+            - tag: component
+              value: feeds
+          triggers:
+            - uuid: tad1e2f3a4b5c6d7e8f9a0b1c2d3e4f5
+              expression: 'last(/NFTBan/nftban.feeds.failed)>0'
+              name: 'NFTBan feed load failures ({ITEM.VALUE})'
+              priority: WARNING
+              description: 'One or more threat feeds failed to load.'
+
+        - uuid: f4a5b6c7d8e9f0a1b2c3d4e5f6a7b8c9
+          name: 'NFTBan: Feeds total IPs'
+          type: TRAP
+          key: nftban.feeds.ips_total
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Total IPs from all feeds'
+          tags:
+            - tag: component
+              value: feeds
+
+        # --- GeoIP Metrics ---
+        - uuid: g1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+          name: 'NFTBan: GeoIP database age'
+          type: TRAP
+          key: nftban.geoip.database_age
+          delay: '0'
+          value_type: UNSIGNED
+          units: days
+          description: 'Age of GeoIP database in days'
+          tags:
+            - tag: component
+              value: geoip
+          triggers:
+            - uuid: tbe2f3a4b5c6d7e8f9a0b1c2d3e4f5a6
+              expression: 'last(/NFTBan/nftban.geoip.database_age)>{$NFTBAN.GEOIP.AGE.WARN}'
+              name: 'NFTBan GeoIP database outdated ({ITEM.VALUE} days)'
+              priority: WARNING
+              description: 'GeoIP database should be updated for accurate geolocation.'
+
+        - uuid: g2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7
+          name: 'NFTBan: Countries blocked'
+          type: TRAP
+          key: nftban.geoip.countries_blocked
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Number of blocked countries'
+          tags:
+            - tag: component
+              value: geoip
+
+        # --- Watchdog Metrics ---
+        - uuid: h1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6
+          name: 'NFTBan: Watchdog status'
+          type: TRAP
+          key: nftban.watchdog.status
+          delay: '0'
+          value_type: SIGNED
+          description: 'Watchdog status: 1=ok, 0=disabled, -1=error'
+          tags:
+            - tag: component
+              value: watchdog
+
+        - uuid: h2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7
+          name: 'NFTBan: CPU pressure score'
+          type: TRAP
+          key: nftban.watchdog.cpu_score
+          delay: '0'
+          value_type: FLOAT
+          description: 'CPU pressure score (0-100)'
+          tags:
+            - tag: component
+              value: watchdog
+          triggers:
+            - uuid: tcf3a4b5c6d7e8f9a0b1c2d3e4f5a6b7
+              expression: 'last(/NFTBan/nftban.watchdog.cpu_score)>80'
+              name: 'NFTBan CPU pressure high ({ITEM.VALUE})'
+              priority: WARNING
+              description: 'High CPU pressure may cause NFTBan to enter degraded mode.'
+
+        - uuid: h3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8
+          name: 'NFTBan: Memory pressure score'
+          type: TRAP
+          key: nftban.watchdog.mem_score
+          delay: '0'
+          value_type: FLOAT
+          description: 'Memory pressure score (0-100)'
+          tags:
+            - tag: component
+              value: watchdog
+          triggers:
+            - uuid: tdg4b5c6d7e8f9a0b1c2d3e4f5a6b7c8
+              expression: 'last(/NFTBan/nftban.watchdog.mem_score)>80'
+              name: 'NFTBan memory pressure high ({ITEM.VALUE})'
+              priority: WARNING
+              description: 'High memory pressure may cause NFTBan to enter degraded mode.'
+
+        - uuid: h4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9
+          name: 'NFTBan: I/O pressure score'
+          type: TRAP
+          key: nftban.watchdog.io_score
+          delay: '0'
+          value_type: FLOAT
+          description: 'I/O pressure score (0-100)'
+          tags:
+            - tag: component
+              value: watchdog
+
+        # --- Server Info ---
+        - uuid: i1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6
+          name: 'NFTBan: Server hostname'
+          type: TRAP
+          key: nftban.server.hostname
+          delay: '0'
+          value_type: CHAR
+          description: 'Server hostname'
+          tags:
+            - tag: component
+              value: server
+
+        - uuid: i2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7
+          name: 'NFTBan: Server OS'
+          type: TRAP
+          key: nftban.server.os
+          delay: '0'
+          value_type: CHAR
+          description: 'Operating system'
+          tags:
+            - tag: component
+              value: server
+
+        - uuid: i3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8
+          name: 'NFTBan: Server kernel'
+          type: TRAP
+          key: nftban.server.kernel
+          delay: '0'
+          value_type: CHAR
+          description: 'Kernel version'
+          tags:
+            - tag: component
+              value: server
+
+        - uuid: i4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9
+          name: 'NFTBan: CPU cores'
+          type: TRAP
+          key: nftban.server.cpu_cores
+          delay: '0'
+          value_type: UNSIGNED
+          description: 'Number of CPU cores'
+          tags:
+            - tag: component
+              value: server
+
+        - uuid: i5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0
+          name: 'NFTBan: Load average (1m)'
+          type: TRAP
+          key: nftban.server.load_1m
+          delay: '0'
+          value_type: FLOAT
+          description: '1-minute load average'
+          tags:
+            - tag: component
+              value: server
+
+        - uuid: i6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1
+          name: 'NFTBan: Load average (5m)'
+          type: TRAP
+          key: nftban.server.load_5m
+          delay: '0'
+          value_type: FLOAT
+          description: '5-minute load average'
+          tags:
+            - tag: component
+              value: server
+
+        - uuid: i7d8e9f0a1b2c3d4e5f6a7b8c9d0e1f2
+          name: 'NFTBan: Load average (15m)'
+          type: TRAP
+          key: nftban.server.load_15m
+          delay: '0'
+          value_type: FLOAT
+          description: '15-minute load average'
+          tags:
+            - tag: component
+              value: server
+
+      # =======================================================================
+      # DISCOVERY RULES (LLD)
+      # =======================================================================
+      discovery_rules:
+        # --- Module Discovery ---
+        - uuid: lld1a2b3c4d5e6f7a8b9c0d1e2f3a4b5
+          name: 'NFTBan: Module discovery'
+          type: TRAP
+          key: nftban.discovery.modules
+          delay: '0'
+          description: 'Discover all NFTBan modules'
+          item_prototypes:
+            - uuid: lip1b2c3d4e5f6a7b8c9d0e1f2a3b4c5
+              name: 'NFTBan: Module {#MODULE} status'
+              type: TRAP
+              key: 'nftban.module.status[{#MODULE}]'
+              delay: '0'
+              value_type: SIGNED
+              description: 'Module {#MODULE} status: 1=ok, 0=error, -1=disabled'
+              tags:
+                - tag: component
+                  value: modules
+                - tag: module
+                  value: '{#MODULE}'
+            - uuid: lip2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+              name: 'NFTBan: Module {#MODULE} bans'
+              type: TRAP
+              key: 'nftban.module.bans[{#MODULE}]'
+              delay: '0'
+              value_type: UNSIGNED
+              description: 'Bans from module {#MODULE}'
+              tags:
+                - tag: component
+                  value: modules
+                - tag: module
+                  value: '{#MODULE}'
+          trigger_prototypes:
+            - uuid: ltp1d4e5f6a7b8c9d0e1f2a3b4c5d6e7
+              expression: 'last(/NFTBan/nftban.module.status[{#MODULE}])=0'
+              name: 'NFTBan module {#MODULE} failed'
+              priority: HIGH
+              description: 'Module {#MODULE} is in error state.'
+
+        # --- Feed Discovery ---
+        - uuid: lld2b3c4d5e6f7a8b9c0d1e2f3a4b5c6
+          name: 'NFTBan: Feed discovery'
+          type: TRAP
+          key: nftban.discovery.feeds
+          delay: '0'
+          description: 'Discover configured threat feeds'
+          item_prototypes:
+            - uuid: lip3d4e5f6a7b8c9d0e1f2a3b4c5d6e7
+              name: 'NFTBan: Feed {#FEED} status'
+              type: TRAP
+              key: 'nftban.feed.status[{#FEED}]'
+              delay: '0'
+              value_type: UNSIGNED
+              description: 'Feed {#FEED} status: 1=ok, 0=error'
+              tags:
+                - tag: component
+                  value: feeds
+                - tag: feed
+                  value: '{#FEED}'
+            - uuid: lip4e5f6a7b8c9d0e1f2a3b4c5d6e7f8
+              name: 'NFTBan: Feed {#FEED} IPs'
+              type: TRAP
+              key: 'nftban.feed.ips[{#FEED}]'
+              delay: '0'
+              value_type: UNSIGNED
+              description: 'IPs loaded from {#FEED}'
+              tags:
+                - tag: component
+                  value: feeds
+                - tag: feed
+                  value: '{#FEED}'
+          trigger_prototypes:
+            - uuid: ltp2e5f6a7b8c9d0e1f2a3b4c5d6e7f8
+              expression: 'last(/NFTBan/nftban.feed.status[{#FEED}])=0'
+              name: 'NFTBan feed {#FEED} failed'
+              priority: WARNING
+              description: 'Threat feed {#FEED} failed to load.'
+
+        # --- Country Discovery ---
+        - uuid: lld3c4d5e6f7a8b9c0d1e2f3a4b5c6d7
+          name: 'NFTBan: Country discovery'
+          type: TRAP
+          key: nftban.discovery.countries
+          delay: '0'
+          description: 'Discover countries with ban activity'
+          item_prototypes:
+            - uuid: lip5f6a7b8c9d0e1f2a3b4c5d6e7f8a9
+              name: 'NFTBan: Country {#COUNTRY} bans'
+              type: TRAP
+              key: 'nftban.country.bans[{#COUNTRY}]'
+              delay: '0'
+              value_type: UNSIGNED
+              description: 'Active bans from {#COUNTRY}'
+              tags:
+                - tag: component
+                  value: geoip
+                - tag: country
+                  value: '{#COUNTRY}'
+            - uuid: lip6a7b8c9d0e1f2a3b4c5d6e7f8a9b0
+              name: 'NFTBan: Country {#COUNTRY} bans (24h)'
+              type: TRAP
+              key: 'nftban.country.bans_24h[{#COUNTRY}]'
+              delay: '0'
+              value_type: UNSIGNED
+              description: '24h bans from {#COUNTRY}'
+              tags:
+                - tag: component
+                  value: geoip
+                - tag: country
+                  value: '{#COUNTRY}'
+
+      # =======================================================================
+      # DASHBOARDS
+      # =======================================================================
+      dashboards:
+        - uuid: dash1a2b3c4d5e6f7a8b9c0d1e2f3a4b5
+          name: 'NFTBan Overview'
+          pages:
+            - widgets:
+                - type: GRAPH_CLASSIC
+                  name: 'Ban Activity'
+                  width: '12'
+                  height: '5'
+                  fields:
+                    - type: ITEM
+                      name: itemid
+                      value:
+                        key: nftban.bans.24h
+                        host: NFTBan
+                - type: GRAPH_CLASSIC
+                  name: 'Memory Usage'
+                  x: '12'
+                  width: '12'
+                  height: '5'
+                  fields:
+                    - type: ITEM
+                      name: itemid
+                      value:
+                        key: nftban.memory.rss
+                        host: NFTBan
+                - type: PLAIN_TEXT
+                  name: 'Status'
+                  y: '5'
+                  width: '6'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid
+                      value:
+                        key: nftban.status
+                        host: NFTBan
+                    - type: ITEM
+                      name: itemid
+                      value:
+                        key: nftban.version
+                        host: NFTBan
+                    - type: ITEM
+                      name: itemid
+                      value:
+                        key: nftban.mode
+                        host: NFTBan
