@@ -2077,13 +2077,11 @@ nftban_health_check_zabbix() {
     fi
 
     # Check unified exporter (or legacy zabbix timer)
-    local timer_active=false
+    # Check unified exporter (or legacy zabbix timer)
     if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
         zabbix_issues+=("✓ Unified exporter timer: Active")
-        timer_active=true
     elif systemctl is-active --quiet nftban-zabbix-exporter.timer 2>/dev/null; then
         zabbix_issues+=("✓ Zabbix exporter timer: Active")
-        timer_active=true
     elif systemctl list-unit-files 2>/dev/null | grep -q "nftban-unified-exporter.timer"; then
         zabbix_issues+=("⚠ Unified exporter timer: Not active")
         zabbix_issues+=("FIX: sudo systemctl enable --now nftban-unified-exporter.timer")
