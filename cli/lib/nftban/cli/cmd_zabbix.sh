@@ -33,17 +33,15 @@
 
 set -Eeuo pipefail
 
-[[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
-readonly NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
-readonly NFTBAN_SHARE_DIR="${NFTBAN_SHARE_DIR:-/usr/share/nftban}"
-
 # =============================================================================
 # CONFIGURATION LOADING (standard pattern)
 # =============================================================================
-# Pattern: .conf = defaults (overwritten on update)
-#          .conf.local = user values (preserved on update)
+# Bootstrap paths (nftban.conf will make them readonly)
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_SHARE_DIR:=/usr/share/nftban}"
 
-# Load main config
+# Load main config (sets readonly paths)
 [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
 
 # Load zabbix defaults

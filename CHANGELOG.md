@@ -23,11 +23,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Pre-configured items, triggers, graphs, and discovery rules
 
 - **CLI command** `nftban zabbix`:
+  - `setup` - Interactive setup wizard with auto-firewall
   - `status` - Show exporter status and target health
   - `test` - Test connectivity to Zabbix server
-  - `send` - Manual metric push
-  - `discovery` - Trigger LLD data send
-  - `config` - Show/validate configuration
+  - `push` - Manual metric push
+  - `discover` - Trigger LLD data send
+  - `config` - Show/enable/disable configuration
+  - `template` - Export Zabbix templates (XML/YAML)
+  - `targets` - Manage multiple Zabbix targets
+
+- **Auto-firewall configuration**:
+  - `NFTBAN_ZABBIX_FIREWALL_AUTO=true` - Automatically opens outbound port 10051
+  - Firewall rule added on `nftban zabbix setup`, removed on disable
+  - Uses nft rules with "zabbix-export" comment for tracking
 
 #### Generic Connectors Framework
 - **Elasticsearch connector**: Bulk API support, index templates, ILM policies
@@ -45,11 +53,48 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Gzip compression support
   - Configurable retention (days/count)
 
+- **Syslog connector**: RFC 5424 compliant
+  - UDP/TCP transport options
+  - Configurable facility and severity
+
+- **Webhook connector**: HTTP POST to any endpoint
+  - Custom headers support
+  - Configurable timeout
+
 - **CLI command** `nftban connector`:
   - `list` - Show configured connectors
+  - `add/remove` - Manage connector configurations
+  - `enable/disable` - Toggle connectors
   - `status` - Connector health and statistics
   - `test` - Test connector connectivity
-  - `send` - Manual data push
+  - `push` - Manual data push
+
+#### Unified Exporter
+- **Single metric collection**: Collects once, exports to all targets
+  - 66% less timer overhead (replaces 3 separate timers)
+  - Consistent timestamps across Prometheus, Zabbix, and connectors
+  - Smart scheduling with jitter to prevent thundering herd
+
+- **Systemd units**:
+  - `nftban-unified-exporter.service` - Oneshot service
+  - `nftban-unified-exporter.timer` - 60s interval with 30s jitter
+  - Resource limits: 10% CPU, 64MB memory, 30s timeout
+
+#### Health Checks
+- **`nftban_health_check_zabbix()`**: Validates Zabbix exporter
+  - Checks enabled status, server configuration
+  - Tests TCP connectivity to Zabbix server
+  - Verifies timer status and TLS/PSK configuration
+
+- **`nftban_health_check_connectors()`**: Validates connector framework
+  - Checks enabled connectors (ES, Kafka, File, Syslog, Webhook)
+  - Tests Elasticsearch connectivity
+  - Verifies output directory permissions
+
+- **Status command integration**: `nftban status` now shows:
+  - Zabbix Exporter status with server address
+  - Connectors status with enabled count
+  - Unified exporter timer in TIMERS section
 
 #### Grafana Dashboard
 - **nftban-overview.json**: Pre-built Grafana dashboard
@@ -60,14 +105,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Configuration**: Added Zabbix and connector settings to `nftban.conf`
-  - `NFTBAN_ZABBIX_*` - Zabbix exporter configuration
-  - `NFTBAN_CONNECTOR_*` - Generic connector configuration
+- **Configuration pattern**: Standardized `.conf`/`.conf.local` across all modules
+  - `.conf` = defaults (overwritten on package update)
+  - `.conf.local` = user values (preserved on update)
+  - Zabbix now uses central `nftban_config_set()` library
+  - Config load order: `zabbix.conf` → `zabbix.conf.local` → bash defaults
+
+- **New config files**:
+  - `conf.d/zabbix.conf` - Zabbix exporter defaults (19 settings)
+  - `conf.d/connectors.conf` - Connector framework defaults (36 settings)
+  - Both installed with 640 permissions (root:nftban)
 
 - **Packaging**: Updated RPM spec and install.sh
-  - New directories: `/etc/nftban/connectors`, `/var/log/nftban/metrics`
-  - Template installation: Zabbix templates and Grafana dashboards
-  - Version bump to 1.3.0
+  - New directories: `/etc/nftban/connectors`, `/usr/share/nftban/templates/zabbix`
+  - Config files: `zabbix.conf`, `connectors.conf` with proper permissions
+  - Systemd units: unified-exporter service and timer
+  - Version aligned: VERSION file, RPM spec, DEB changelog, FHS spec, README badge
+
+- **Commands registry**: Added zabbix and connector commands
+  - Category: `intelligence_reporting`
+  - Subcommands properly documented
+
+### Fixed
+
+- **Shellcheck warnings**: Removed unused variables
+  - `timer_active` in health checks
+  - `mode` now exported as `nftban_mode_info` metric
 
 ### Infrastructure
 
@@ -76,9 +139,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `pkg/exporters/connectors/` - 4 files (connector interface, ndjson, elasticsearch, kafka)
 
 - **CLI modules**: 3 new files (~2,300 lines)
-  - `cmd_zabbix.sh` - Zabbix CLI commands
+  - `cmd_zabbix.sh` - Zabbix CLI commands with firewall helpers
   - `cmd_connector.sh` - Connector CLI commands
-  - `nftban_zabbix_exporter.sh` - Bash fallback exporter
+  - `nftban_unified_exporter.sh` - Unified bash exporter
+
+- **Systemd**: 6 new unit files
+  - `nftban-zabbix-exporter.service/.timer`
+  - `nftban-connector-exporter.service/.timer`
+  - `nftban-unified-exporter.service/.timer`
 
 ## [1.2.3] - 2026-01-22
 
