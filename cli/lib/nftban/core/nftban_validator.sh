@@ -53,7 +53,9 @@ fi
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" ]]; then
     source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh"
 fi
-NFTBAN_SHARE_DIR="${NFTBAN_SHARE_DIR:-/usr/share/nftban}"
+
+# Bootstrap NFTBAN_SHARE_DIR (may be readonly from nftban.conf)
+: "${NFTBAN_SHARE_DIR:=/usr/share/nftban}"
 
 # =============================================================================
 # SPEC FILE MANAGEMENT
