@@ -22,7 +22,7 @@
 # meta:inventory.binaries="curl,systemctl,useradd,groupadd,chmod,chown,mkdir,cp,ln,tput,id"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files="/etc/nftban/nftban.conf"
-# meta:inventory.systemd_units="nftban.service,nftban-watchdog.timer,nftban-metrics-exporter.timer,nftban-queue.timer"
+# meta:inventory.systemd_units="nftban.service,nftban-watchdog.timer,nftban-metrics-exporter.timer,nftban-queue.timer,nftban-zabbix-exporter.timer,nftban-connector-exporter.timer,nftban-unified-exporter.timer"
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 #
@@ -2130,6 +2130,13 @@ install_systemd() {
         cp -f "$SCRIPT_DIR/install/systemd/nftban-connector-exporter.service" "$systemd_dir/"
         cp -f "$SCRIPT_DIR/install/systemd/nftban-connector-exporter.timer" "$systemd_dir/"
         ok "Connector exporter units → $systemd_dir"
+    fi
+
+    # Unified exporter (v1.3.0+ - recommended replacement for legacy exporters)
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-unified-exporter.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-unified-exporter.service" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-unified-exporter.timer" "$systemd_dir/"
+        ok "Unified exporter units → $systemd_dir"
     fi
 
     # Service failure alert template
