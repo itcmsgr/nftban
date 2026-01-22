@@ -28,8 +28,8 @@
 [[ -n "${_NFTBAN_EMULATE_LOADED:-}" ]] && return 0
 _NFTBAN_EMULATE_LOADED=1
 
-# Source dependencies
-NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+# Bootstrap path (may be readonly from nftban.conf)
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 [[ -f "${NFTBAN_LIB_DIR}/lib/common.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/common.sh"
 
 # =============================================================================
