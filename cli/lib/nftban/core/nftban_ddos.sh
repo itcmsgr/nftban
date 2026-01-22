@@ -55,8 +55,10 @@ readonly DDOS_MODULE_DESCRIPTION="DDoS Protection (Dual-Mode)"
 # PATHS
 # =============================================================================
 
-readonly NFTBAN_DDOS_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
-readonly NFTBAN_DDOS_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
+NFTBAN_DDOS_LIB_DIR="$NFTBAN_LIB_DIR"
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+NFTBAN_DDOS_CONFIG_DIR="$NFTBAN_CONFIG_DIR"
 readonly NFTBAN_DDOS_LOG_FILE="${NFTBAN_LOG_DIR:-/var/log/nftban}/ddos.log"
 
 # =============================================================================

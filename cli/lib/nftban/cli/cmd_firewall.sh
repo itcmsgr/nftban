@@ -32,7 +32,7 @@
 # shellcheck source=/etc/nftban/nftban.conf
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
 
-NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh

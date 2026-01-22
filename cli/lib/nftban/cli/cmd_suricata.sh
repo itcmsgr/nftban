@@ -30,8 +30,8 @@ NFTBAN_CMD_SURICATA_LOADED="true"
 # CONFIGURATION
 # =============================================================================
 
-NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
-NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
 
 # Load output library
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then

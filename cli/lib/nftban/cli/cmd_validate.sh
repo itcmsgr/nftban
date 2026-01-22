@@ -33,7 +33,7 @@ umask 027
 readonly CMD_VALIDATE_LOADED=1
 
 # Source core validator
-NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
