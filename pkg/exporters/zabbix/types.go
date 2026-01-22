@@ -95,7 +95,7 @@ type TrapperInfo struct {
 func (r *TrapperResponse) ParseInfo() TrapperInfo {
 	var info TrapperInfo
 	// Simple parsing - production code should be more robust
-	_, _ = json.Unmarshal([]byte(`{}`), &info) // placeholder
+	_ = json.Unmarshal([]byte(`{}`), &info) // placeholder
 	return info
 }
 

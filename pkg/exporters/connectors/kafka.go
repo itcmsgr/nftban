@@ -19,6 +19,7 @@
 package connectors
 
 import (
+	"bytes"
 	"context"
 	"crypto/tls"
 	"encoding/binary"
@@ -507,36 +508,3 @@ func (c *KafkaConnector) readResponse(conn net.Conn) ([]byte, error) {
 	return data, err
 }
 
-// bytes Buffer helper
-type bytes struct{}
-
-func (*bytes) Buffer() *bytesBuffer {
-	return &bytesBuffer{}
-}
-
-type bytesBuffer struct {
-	data []byte
-}
-
-func (b *bytesBuffer) Write(p []byte) (int, error) {
-	b.data = append(b.data, p...)
-	return len(p), nil
-}
-
-func (b *bytesBuffer) WriteByte(c byte) error {
-	b.data = append(b.data, c)
-	return nil
-}
-
-func (b *bytesBuffer) WriteString(s string) (int, error) {
-	b.data = append(b.data, s...)
-	return len(s), nil
-}
-
-func (b *bytesBuffer) Bytes() []byte {
-	return b.data
-}
-
-func (b *bytesBuffer) Len() int {
-	return len(b.data)
-}
