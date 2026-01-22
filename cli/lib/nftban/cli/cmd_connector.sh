@@ -613,7 +613,8 @@ EOF
             local host="${CONNECTOR_SYSLOG_HOST:-localhost}"
             local port="${CONNECTOR_SYSLOG_PORT:-514}"
             local proto="${CONNECTOR_SYSLOG_PROTO:-udp}"
-            local msg="<14>1 $timestamp $(hostname) nftban - - - $event_json"
+            local msg
+            msg="<14>1 $timestamp $(hostname) nftban - - - $event_json"
 
             if [[ "$proto" == "udp" ]]; then
                 echo "$msg" | nc -u -w1 "$host" "$port"

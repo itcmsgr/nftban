@@ -364,27 +364,11 @@ func (c *Collector) Collect() *MetricsSnapshot {
 
 	// Collect watchdog status
 	wd := c.source.GetWatchdogStatus()
-	snapshot.Watchdog = WatchdogMetrics{
-		Status:       wd.Status,
-		Mode:         wd.Mode,
-		CPUScore:     wd.CPUScore,
-		MemScore:     wd.MemScore,
-		IOScore:      wd.IOScore,
-		NetScore:     wd.NetScore,
-		ActionsTaken: wd.ActionsTaken,
-		LastAction:   wd.LastAction,
-		ModeChanges:  wd.ModeChanges,
-	}
+	snapshot.Watchdog = WatchdogMetrics(wd)
 
 	// Collect nftables stats
 	nft := c.source.GetNFTablesStats()
-	snapshot.NFTables = NFTablesMetrics{
-		RulesTotal:    nft.RulesTotal,
-		SetsTotal:     nft.SetsTotal,
-		ElementsTotal: nft.ElementsTotal,
-		ApplyLatency:  nft.ApplyLatency,
-		ApplyErrors:   nft.ApplyErrors,
-	}
+	snapshot.NFTables = NFTablesMetrics(nft)
 
 	// Collect feed stats
 	feeds := c.source.GetFeedStats()
@@ -398,12 +382,7 @@ func (c *Collector) Collect() *MetricsSnapshot {
 
 	// Collect GeoIP stats
 	geoip := c.source.GetGeoIPStats()
-	snapshot.GeoIP = GeoIPMetrics{
-		DatabaseAge:      geoip.DatabaseAge,
-		LookupsTotal:     geoip.LookupsTotal,
-		LookupErrors:     geoip.LookupErrors,
-		CountriesBlocked: geoip.CountriesBlocked,
-	}
+	snapshot.GeoIP = GeoIPMetrics(geoip)
 
 	// Collect Suricata stats
 	suricata := c.source.GetSuricataStats()
