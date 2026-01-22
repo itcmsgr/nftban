@@ -29,13 +29,41 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/sbin/nftban-rollback --force
+
+# Logging
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nftban-rollback
 
-# Security hardening
+# Resource limits - rollback must complete quickly
+CPUQuota=100%
+MemoryMax=256M
+TasksMax=10
+TimeoutStartSec=2min
+TimeoutStopSec=30s
+
+# Restart on failure for safety-critical operation
+Restart=on-failure
+RestartSec=10s
+
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
 NoNewPrivileges=true
 ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictNamespaces=true
+
+# No network needed
+RestrictAddressFamilies=AF_UNIX
+
+# Filesystem access
 ReadWritePaths=/etc/nftban /var/lib/nftban /var/log/nftban
 
 [Install]

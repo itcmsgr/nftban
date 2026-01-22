@@ -41,20 +41,29 @@ Group=suricata
 ExecStart=/bin/bash -c 'suricata-update update-sources && suricata-update && systemctl restart suricata.service'
 
 # =============================================================================
-# SECURITY HARDENING (Limited, but better than nothing)
+# SECURITY HARDENING
 # =============================================================================
 
 # Core hardening
 NoNewPrivileges=true
+ProtectSystem=strict
 PrivateTmp=true
 ProtectHome=true
 ProtectKernelModules=true
+ProtectKernelTunables=true
+ProtectControlGroups=true
 RestrictSUIDSGID=true
+RestrictNamespaces=true
+LockPersonality=true
+
+# Filesystem - needs write access for suricata rules
+ReadWritePaths=/etc/suricata/rules /var/lib/suricata
 
 # Network required for downloads
 RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 # Resource limits
+CPUQuota=50%
 MemoryMax=512M
 TasksMax=50
 
@@ -63,8 +72,9 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nftban-suricata-update
 
-# Timeout (10 minutes max)
+# Timeouts (10 minutes for downloads)
 TimeoutStartSec=600
+TimeoutStopSec=30
 
 [Install]
 WantedBy=multi-user.target

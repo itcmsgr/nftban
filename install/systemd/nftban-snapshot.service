@@ -29,17 +29,38 @@ Wants=network-online.target
 [Service]
 Type=oneshot
 ExecStart=/usr/bin/nftban snapshot create
+
+# Logging
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nftban-snapshot
 
-# Security hardening
+# Resource limits
+CPUQuota=25%
+MemoryMax=256M
+TasksMax=10
+TimeoutStartSec=2min
+TimeoutStopSec=30s
+
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
 NoNewPrivileges=true
 ProtectSystem=strict
-ReadWritePaths=/etc/nftban /var/lib/nftban /var/log/nftban
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictNamespaces=true
 
-# Resource limits
-TimeoutStartSec=2min
+# No network needed
+RestrictAddressFamilies=AF_UNIX
+
+# Filesystem access
+ReadWritePaths=/etc/nftban /var/lib/nftban /var/log/nftban
 
 [Install]
 WantedBy=multi-user.target

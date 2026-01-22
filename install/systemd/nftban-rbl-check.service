@@ -38,20 +38,35 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nftban-rbl
 
-# Security hardening
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictNamespaces=true
+
+# Network access for RBL DNS queries
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Filesystem access
 ReadWritePaths=/var/log/nftban/rbl
 
 # Timeout (allow up to 10 minutes for all RBL checks)
 # 20+ RBLs × 4s timeout + overhead = ~5-10 minutes max
 TimeoutStartSec=600
+TimeoutStopSec=30
 
 # Resource limits
 CPUQuota=50%
 MemoryMax=256M
+TasksMax=50
 
 [Install]
 WantedBy=multi-user.target

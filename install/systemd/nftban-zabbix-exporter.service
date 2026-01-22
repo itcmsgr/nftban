@@ -56,6 +56,13 @@ Environment="NFTBAN_CONFIG_DIR=/etc/nftban"
 # Execute via CLI (checks if enabled before running)
 ExecStart=/usr/bin/nftban zabbix push --quiet
 
+# Resource limits
+CPUQuota=10%
+MemoryMax=128M
+TasksMax=5
+TimeoutStartSec=30s
+TimeoutStopSec=10s
+
 # =============================================================================
 # SECURITY HARDENING
 # =============================================================================
@@ -68,6 +75,10 @@ ProtectKernelModules=true
 ProtectControlGroups=true
 RestrictSUIDSGID=true
 LockPersonality=true
+RestrictNamespaces=true
+
+# Network access for Zabbix trapper
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 # Filesystem access
 ReadWritePaths=/var/lib/nftban /var/log/nftban /run/nftban
