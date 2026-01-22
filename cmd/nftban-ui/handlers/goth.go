@@ -131,7 +131,7 @@ func (h *GOTHHandlers) HandleFragWhitelistTable(w http.ResponseWriter, r *http.R
 	pages.WhitelistTableFragment(data).Render(r.Context(), w)
 }
 
-// HandleTools renders the diagnostic tools page (pfSense-style)
+// HandleTools renders the diagnostic tools page
 func (h *GOTHHandlers) HandleTools(w http.ResponseWriter, r *http.Request) {
 	data := h.getToolsData()
 	pages.Tools(data).Render(r.Context(), w)

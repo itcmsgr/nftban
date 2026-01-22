@@ -181,7 +181,7 @@ func main() {
 	router.HandleFunc("/ui/action/restart/{service}", gothHandlers.RequireSession(gothHandlers.HandleRestartService)).Methods("POST")
 	router.HandleFunc("/ui/action/health-fix", gothHandlers.RequireSession(gothHandlers.HandleHealthFix)).Methods("POST")
 
-	// Tools page API endpoints (pfSense-style diagnostics)
+	// Tools page API endpoints (diagnostic tools)
 	router.HandleFunc("/api/v1/tools/check", gothHandlers.RequireSession(gothHandlers.HandleToolsIPCheck)).Methods("POST")
 	router.HandleFunc("/api/v1/tools/geoip", gothHandlers.RequireSession(gothHandlers.HandleToolsGeoIP)).Methods("POST")
 	router.HandleFunc("/api/v1/tools/search", gothHandlers.RequireSession(gothHandlers.HandleToolsSearch)).Methods("POST")

@@ -5,7 +5,33 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.2.3] - 2026-01-20
+## [1.2.3] - 2026-01-22
+
+### Added
+
+#### GUI: New Tools/Diagnostics Page
+- **Tools page** (`/ui/tools`): New diagnostic tools for firewall management
+  - **IP Check/Emulate**: Test if IP would be blocked and see which rule matches
+  - **GeoIP Lookup**: Get country, city, ASN information for any IP address
+  - **Search All Sets**: Find IP across blacklist, whitelist, feeds, and geoban
+  - **Live Log Viewer**: Real-time ban/unban logs with level filtering (BAN, UNBAN, ERROR, WARN)
+  - **Quick Actions**: Flush temp bans, reload feeds, sync rules, export bans
+  - **CLI Reference**: Quick help for common nftban commands
+
+#### GUI: New Bans and Whitelist Management Pages
+- **Bans page** (`/ui/bans`): Full ban management with search, filter, pagination
+  - Filter by: All, Temporary, Permanent, From Feeds, GeoBan
+  - Add new bans with modal dialog (IP, duration, reason)
+  - Unban IPs directly from table
+- **Whitelist page** (`/ui/whitelist`): Whitelist management with sources sidebar
+  - Add/remove whitelisted IPs and networks
+  - Shows whitelist sources (files) with entry counts
+
+#### Performance: Stats Command 14x Faster
+- **nftban stats**: Reduced from 28 seconds to 2 seconds
+  - Fixed O(n*m) loop in BANS BY MODULE section
+  - Now uses O(n+m) awk-based single-pass algorithm
+  - Added fast counting functions using nft JSON API
 
 ### Changed
 
