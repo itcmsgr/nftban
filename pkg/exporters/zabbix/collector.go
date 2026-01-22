@@ -19,6 +19,7 @@
 package zabbix
 
 import (
+	"fmt"
 	"os"
 	"runtime"
 	"sync"
