@@ -356,7 +356,11 @@ collect_all_metrics() {
     mkdir -p "$(dirname "$BANDWIDTH_STATE")"
 
     # Get all physical interfaces (exclude lo, docker, veth, etc.)
-    for iface in $(ls /sys/class/net/ 2>/dev/null | grep -vE "^(lo|docker|veth|br-|virbr)" || true); do
+    for iface_path in /sys/class/net/*; do
+        [[ ! -d "$iface_path" ]] && continue
+        local iface="${iface_path##*/}"
+        # Skip virtual interfaces
+        [[ "$iface" =~ ^(lo|docker[0-9]*|veth.*|br-.*|virbr.*)$ ]] && continue
         local stats
         stats=$(get_interface_stats "$iface") || continue
         read -r rx_bytes rx_packets tx_bytes tx_packets <<< "$stats"
