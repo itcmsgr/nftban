@@ -402,6 +402,7 @@ send_metrics_zabbix_sender() {
     # Create temp file for batch send
     local tmp_file
     tmp_file=$(mktemp)
+    # shellcheck disable=SC2064
     trap "rm -f '$tmp_file'" EXIT
 
     # Format metrics for zabbix_sender: hostname key value
@@ -419,7 +420,6 @@ send_metrics_zabbix_sender() {
     # Send to Zabbix
     local result
     result=$(zabbix_sender -z "$ZABBIX_SERVER" -p "$ZABBIX_PORT" -i "$tmp_file" 2>&1)
-    local exit_code=$?
 
     if [[ "$VERBOSE" == "true" ]]; then
         echo "$result"

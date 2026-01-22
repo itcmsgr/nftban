@@ -374,11 +374,6 @@ func (s *Sender) SendRequest(ctx context.Context, req *TrapperRequest) (*Trapper
 
 // SendDiscovery sends discovery data for LLD
 func (s *Sender) SendDiscovery(ctx context.Context, key string, data string) (*TrapperResponse, error) {
-	hostname := s.target.Hostname
-	if hostname == "" {
-		hostname = s.config.Hostname
-	}
-
 	metric := Metric{
 		Name:      key,
 		Value:     data,
@@ -457,11 +452,6 @@ func (s *Sender) TestConnection(ctx context.Context) error {
 
 // SendTestMetric sends a test metric to verify the connection
 func (s *Sender) SendTestMetric(ctx context.Context) (*TrapperResponse, error) {
-	hostname := s.target.Hostname
-	if hostname == "" {
-		hostname = s.config.Hostname
-	}
-
 	metric := Metric{
 		Name:      "nftban.test",
 		Value:     1,

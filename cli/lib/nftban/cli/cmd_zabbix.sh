@@ -378,12 +378,10 @@ _cmd_zabbix_test() {
 # Command: nftban zabbix push
 # =============================================================================
 _cmd_zabbix_push() {
-    local all="false"
     local dry_run="false"
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --all)     all="true"; shift ;;
             --dry-run) dry_run="true"; shift ;;
             *)         shift ;;
         esac
@@ -435,9 +433,8 @@ _cmd_zabbix_push() {
             port=$(_zabbix_config_get "NFTBAN_ZABBIX_PORT" "10051")
 
             # Collect basic metrics
-            local version uptime bans_total
+            local version bans_total
             version=$(cat /etc/nftban/VERSION 2>/dev/null || echo "unknown")
-            uptime=$(systemctl show nftban.service -p ActiveEnterTimestamp --value 2>/dev/null || echo "0")
             bans_total=$(nft list set inet nftban blacklist_ipv4 2>/dev/null | grep -c "elements" || echo "0")
 
             echo "Sending basic metrics..."
