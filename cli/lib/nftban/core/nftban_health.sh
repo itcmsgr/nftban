@@ -501,6 +501,8 @@ nftban_health_check_all() {
     nftban_health_check_geoip 2>/dev/null || true
     nftban_health_check_geoban 2>/dev/null || true
     nftban_health_check_metrics 2>/dev/null || true
+    nftban_health_check_zabbix 2>/dev/null || true
+    nftban_health_check_connectors 2>/dev/null || true
 
     # Auto-heal if requested
     if [[ "$auto_heal" == "1" ]] && [[ $errors -gt 0 || $warnings -gt 0 ]]; then
@@ -550,6 +552,8 @@ export -f nftban_health_check_databases
 export -f nftban_health_check_config
 export -f nftban_health_check_registry
 export -f nftban_health_check_metrics
+export -f nftban_health_check_zabbix
+export -f nftban_health_check_connectors
 export -f nftban_health_check_pro
 export -f nftban_health_check_rbl
 export -f nftban_health_check_timers

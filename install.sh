@@ -1512,6 +1512,10 @@ _install_configs_modules() {
     _install_config_file "$SCRIPT_DIR/etc/nftban/conf.d/geoban/main.conf" "/etc/nftban/conf.d/geoban/main.conf" "640"
     _install_config_file "$SCRIPT_DIR/etc/nftban/conf.d/geoip/main.conf" "/etc/nftban/conf.d/geoip/main.conf" "640"
 
+    # Exporter configs (v1.3.0 - Zabbix, Connectors)
+    _install_config_file "$SCRIPT_DIR/install/config/conf.d/zabbix.conf" "/etc/nftban/conf.d/zabbix.conf" "640"
+    _install_config_file "$SCRIPT_DIR/install/config/conf.d/connectors.conf" "/etc/nftban/conf.d/connectors.conf" "640"
+
     # Pattern files
     _install_config_dir "$SCRIPT_DIR/etc/nftban/patterns.d/botscan" "/etc/nftban/patterns.d/botscan" "*.patterns" "640"
 
