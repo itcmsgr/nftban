@@ -577,6 +577,15 @@ fi
 /usr/local/psa/admin/htdocs/modules/nftban/*
 
 %changelog
+* Wed Jan 22 2026 NFTBan Team <contact@nftban.com> - 1.3.0-1
+- Native Zabbix integration with multi-target support and failover
+- Low-Level Discovery (LLD) for modules, interfaces, countries, feeds, timers
+- Generic connectors: Elasticsearch, Kafka, NDJSON file export
+- Zabbix templates for 5.x (XML) and 6.x+ (YAML)
+- 85+ metrics with comprehensive daemon, bans, events, feeds coverage
+- TLS/PSK encryption support for Zabbix trapper protocol
+- New CLI commands: nftban zabbix, nftban connector
+
 * Tue Dec 17 2024 NFTBan Team <contact@nftban.com> - 1.0.0-1
 - Initial release
 - Modular architecture with Go binaries
