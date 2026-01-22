@@ -1,0 +1,57 @@
+# =============================================================================
+# NFTBan v1.3.0 - Kafka Connector Configuration
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Copy to /etc/nftban/connectors/kafka.yaml and customize
+#
+# meta:name="kafka.yaml"
+# meta:type="config"
+# meta:description="Kafka connector configuration example"
+# =============================================================================
+
+name: production-kafka
+type: kafka
+enabled: false
+
+# Broker configuration
+brokers:
+  - kafka1.example.com:9092
+  - kafka2.example.com:9092
+  - kafka3.example.com:9092
+
+# Topic settings
+topic: nftban-metrics
+
+# TLS configuration
+tls:
+  enabled: true
+  # skip_verify: false
+  # ca_cert: /etc/nftban/certs/kafka-ca.crt
+
+# SASL authentication
+sasl:
+  enabled: false
+  # Mechanism: PLAIN, SCRAM-SHA-256, SCRAM-SHA-512
+  mechanism: SCRAM-SHA-256
+  username: nftban
+  password: "${NFTBAN_KAFKA_PASSWORD}"
+
+# Producer settings
+producer:
+  # Batch size in bytes
+  batch_size: 16384
+  # Acknowledgment: 0=none, 1=leader, -1=all replicas
+  acks: 1
+  # Compression: none, gzip, snappy, lz4, zstd
+  compression: snappy
+  # Maximum time to buffer messages
+  linger_ms: 5
+
+# Retry settings
+retry:
+  max_attempts: 3
+  interval: 1s
+
+# Partitioning (optional)
+# partition:
+#   key_field: host  # Use host as partition key

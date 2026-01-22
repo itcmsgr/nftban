@@ -10,7 +10,7 @@
 # Run: build/generate-fhs-outputs.sh
 # =============================================================================
 
-version: "1.0.0"
+version: "1.3.0"
 generated_header: "Generated from build/fhs-spec.yaml - DO NOT EDIT"
 
 # =============================================================================
@@ -127,6 +127,48 @@ directories:
       description: "Helper scripts (trace, autoheal)"
       created_by: package
 
+    - path: /usr/lib/nftban/cron
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Cron/timer job scripts"
+      created_by: package
+
+    - path: /usr/lib/nftban/modules
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Protection modules (portscan, ddos, login)"
+      created_by: package
+
+    - path: /usr/lib/nftban/sbin
+      mode: "0755"
+      owner: root
+      group: root
+      description: "System helper binaries"
+      created_by: package
+
+    - path: /usr/lib/nftban/health
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Health check modules"
+      created_by: package
+
+    - path: /usr/lib/nftban/data
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Static data files (registries, schemas)"
+      created_by: package
+
+    - path: /usr/lib/nftban/tools
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Utility tools and scripts"
+      created_by: package
+
   # ---------------------------------------------------------------------------
   # Configuration (root:nftban, 750) - Daemon needs read access via group
   # Note: /etc stays root-owned, nftban user has read-only via group
@@ -221,6 +263,13 @@ directories:
       owner: root
       group: nftban
       description: "Custom nftables rules"
+      created_by: package
+
+    - path: /etc/nftban/connectors
+      mode: "0750"
+      owner: root
+      group: nftban
+      description: "Connector configurations (Zabbix, Elasticsearch, Kafka)"
       created_by: package
 
     - path: /etc/nftban/distros
@@ -471,6 +520,27 @@ directories:
       owner: root
       group: root
       description: "Report templates"
+      created_by: package
+
+    - path: /usr/share/nftban/templates/zabbix
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Zabbix import templates (5.x XML, 6.x+ YAML)"
+      created_by: package
+
+    - path: /usr/share/nftban/dashboards
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Monitoring dashboards"
+      created_by: package
+
+    - path: /usr/share/nftban/dashboards/grafana
+      mode: "0755"
+      owner: root
+      group: root
+      description: "Grafana dashboard JSON files"
       created_by: package
 
     - path: /usr/share/nftban/specs

@@ -1,0 +1,66 @@
+# =============================================================================
+# NFTBan v1.3.0 - Unified Metrics Exporter Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-unified-exporter.timer"
+# meta:type="systemd"
+# meta:version="1.3.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-unified-exporter.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+#
+# SENIOR DESIGN: UNIFIED EXPORTER
+# ===============================
+# Replaces 3 separate timers (metrics, zabbix, connector) with ONE
+#
+# Benefits:
+# - 66% less timer overhead
+# - Single metric collection (was: 3x duplicate collection)
+# - Consistent timestamps across all targets
+# - Easier debugging and monitoring
+#
+# SMART SCHEDULING:
+# - Persistent=true: catches up missed runs after downtime
+# - RandomizedDelaySec=30s: 50% variance prevents thundering herd
+# - FixedRandomDelay=true: same offset per host (deterministic)
+# - AccuracySec=10s: allows systemd to batch with other timers
+#
+# =============================================================================
+
+[Unit]
+Description=NFTBan Unified Metrics Exporter Timer
+Documentation=https://nftban.com/docs/metrics
+After=nftban.service
+
+[Timer]
+# Initial delay after boot (allow services to stabilize)
+OnBootSec=45s
+
+# Run every 60 seconds
+OnUnitActiveSec=60s
+
+# CRITICAL: Catch up missed runs after system downtime
+# Without this, monitoring gaps occur during reboots/outages
+Persistent=true
+
+# Allow systemd to batch this timer with others (+/- 10s)
+# Reduces wakeups and improves power efficiency
+AccuracySec=10s
+
+# SMART JITTER: 50% variance (30s on 60s interval)
+# - Prevents thundering herd across fleet
+# - Large enough to meaningfully distribute load
+RandomizedDelaySec=30s
+
+# DETERMINISTIC: Same delay per host (based on machine-id)
+# - Host A always fires at :15, Host B at :42, etc.
+# - Predictable for debugging, distributed for load
+FixedRandomDelay=true
+
+[Install]
+WantedBy=timers.target

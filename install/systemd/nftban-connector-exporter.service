@@ -1,0 +1,83 @@
+# =============================================================================
+# NFTBan v1.3.0 - Connector Exporter Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Export NFTBan metrics to configured connectors
+#
+# meta:name="nftban-connector-exporter.service"
+# meta:type="systemd"
+# meta:header="Connector Exporter Service"
+# meta:version="1.3.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
+#
+# meta:description="Generic connector export for NFTBan (Elasticsearch, Kafka, file)"
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/lib/nftban/bin/nftban-core"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR, NFTBAN_CONFIG_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf, /etc/nftban/connectors/*.yaml"
+# meta:inventory.systemd_units="nftban-connector-exporter.timer"
+# meta:inventory.network="outbound:9200/tcp, outbound:9092/tcp"
+# meta:inventory.privileges="nftban"
+#
+# meta:created_date="2026-01-22"
+# meta:updated_date="2026-01-22"
+# =============================================================================
+#
+# This service is triggered by nftban-connector-exporter.timer
+# It exports metrics to all enabled connectors
+#
+# Configuration in /etc/nftban/nftban.conf:
+#   NFTBAN_CONNECTOR_ENABLED="true"
+#   NFTBAN_CONNECTOR_ES_ENABLED="true"
+#   NFTBAN_CONNECTOR_KAFKA_ENABLED="true"
+#   NFTBAN_CONNECTOR_FILE_ENABLED="true"
+#
+# Or use YAML configs in /etc/nftban/connectors/
+# =============================================================================
+
+[Unit]
+Description=NFTBan Connector Exporter
+Documentation=https://nftban.com/docs/connectors
+After=network.target nftban.service
+ConditionPathExists=/etc/nftban/nftban.conf
+
+[Service]
+Type=oneshot
+User=nftban
+Group=nftban
+
+# Capability to read nftables rules
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
+# Environment
+Environment="NFTBAN_LIB_DIR=/usr/lib/nftban"
+Environment="NFTBAN_CONFIG_DIR=/etc/nftban"
+
+# Execute via CLI (checks if enabled before running)
+ExecStart=/usr/bin/nftban connector push --quiet
+
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+
+# Filesystem access - needs write for file connector
+ReadWritePaths=/var/lib/nftban /var/log/nftban /run/nftban
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-connector
+
+[Install]
+WantedBy=multi-user.target

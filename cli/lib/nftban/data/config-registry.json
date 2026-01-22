@@ -255,6 +255,20 @@
       "key_count": 21,
       "depends_on": "conf.d/login/main.conf",
       "comment": "Score-based login failure detection with decay and thresholds"
+    },
+    "conf.d/zabbix.conf": {
+      "description": "Zabbix trapper export configuration",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 18,
+      "comment": "Native Zabbix integration with multi-target support and LLD"
+    },
+    "conf.d/connectors.conf": {
+      "description": "Generic connector export configuration (Elasticsearch, Kafka, file)",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 35,
+      "comment": "Export metrics to external systems for centralized monitoring"
     }
   },
   "key_prefixes": {
@@ -357,6 +371,41 @@
       "active_when": "always",
       "category": "detection",
       "description": "Login scorer decay settings"
+    },
+    "NFTBAN_ZABBIX_": {
+      "active_when": "always",
+      "category": "features",
+      "description": "Zabbix trapper export settings"
+    },
+    "NFTBAN_CONNECTOR_": {
+      "active_when": "always",
+      "category": "features",
+      "description": "Generic connector export settings"
+    },
+    "NFTBAN_CONNECTOR_ES_": {
+      "active_when": "always",
+      "category": "features",
+      "description": "Elasticsearch connector settings"
+    },
+    "NFTBAN_CONNECTOR_KAFKA_": {
+      "active_when": "always",
+      "category": "features",
+      "description": "Kafka connector settings"
+    },
+    "NFTBAN_CONNECTOR_FILE_": {
+      "active_when": "always",
+      "category": "features",
+      "description": "NDJSON file connector settings"
+    },
+    "NFTBAN_CONNECTOR_SYSLOG_": {
+      "active_when": "always",
+      "category": "features",
+      "description": "Syslog connector settings"
+    },
+    "NFTBAN_CONNECTOR_WEBHOOK_": {
+      "active_when": "always",
+      "category": "features",
+      "description": "Webhook connector settings"
     }
   },
   "deprecated_keys": {

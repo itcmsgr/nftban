@@ -1,0 +1,53 @@
+# =============================================================================
+# NFTBan v1.3.0 - File (NDJSON) Connector Configuration
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Copy to /etc/nftban/connectors/file.yaml and customize
+#
+# meta:name="file.yaml"
+# meta:type="config"
+# meta:description="NDJSON file connector configuration example"
+# =============================================================================
+
+name: local-file
+type: file
+enabled: false
+
+# Output settings
+output:
+  # Directory for output files
+  directory: /var/log/nftban/metrics
+  # File prefix
+  prefix: nftban
+  # Output format: ndjson (default)
+  format: ndjson
+
+# Rotation settings
+rotation:
+  # Rotate daily
+  daily: true
+  # Also rotate when file exceeds size (bytes)
+  max_size: 104857600  # 100MB
+  # Keep rotated files for N days
+  retention_days: 30
+
+# Compression
+compression:
+  enabled: true
+  # Algorithm: gzip (default)
+  algorithm: gzip
+
+# Buffering
+buffer:
+  # Flush after N records
+  size: 100
+  # Or after N seconds
+  interval: 10
+
+# Data filtering (optional)
+filters:
+  types:
+    - metrics
+    - event
+    - alert
+    - discovery

@@ -1104,6 +1104,87 @@ metrics:
         validate: {mutates: false, description: "Validate key permissions"}
         fix-permissions: {mutates: true, description: "Fix key permissions"}
 
+# =============================================================================
+# ZABBIX EXPORTER (v1.3.0+)
+# =============================================================================
+zabbix:
+  category: intelligence_reporting
+  description: "Zabbix trapper export with multi-target support and LLD"
+  risk: core
+  audience: [cli]
+  capability: service_control
+  mutates: conditional
+  supports_dry_run: true
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban zabbix status"
+    - "nftban zabbix test"
+    - "nftban zabbix push"
+    - "nftban zabbix push --dry-run"
+    - "nftban zabbix discovery"
+    - "nftban zabbix config"
+  subcommands:
+    status:
+      mutates: false
+      description: "Show Zabbix exporter status and target health"
+    test:
+      mutates: false
+      description: "Test connectivity to Zabbix server"
+    push:
+      mutates: false
+      description: "Force immediate metrics push"
+    discovery:
+      mutates: false
+      description: "Trigger LLD discovery data send"
+    config:
+      mutates: false
+      description: "Show current Zabbix configuration"
+
+# =============================================================================
+# CONNECTOR FRAMEWORK (v1.3.0+)
+# =============================================================================
+connector:
+  category: intelligence_reporting
+  description: "Generic connector export (Elasticsearch, Kafka, file, syslog, webhook)"
+  risk: core
+  audience: [cli]
+  capability: service_control
+  mutates: conditional
+  supports_dry_run: true
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban connector list"
+    - "nftban connector list --status"
+    - "nftban connector status"
+    - "nftban connector status elasticsearch"
+    - "nftban connector test elasticsearch"
+    - "nftban connector test --all"
+    - "nftban connector push"
+    - "nftban connector push --dry-run"
+    - "nftban connector event --type test --message 'Test event'"
+  subcommands:
+    list:
+      mutates: false
+      description: "List configured connectors"
+    status:
+      mutates: false
+      description: "Show connector status"
+    test:
+      mutates: false
+      description: "Test connector connectivity"
+    push:
+      mutates: false
+      description: "Push metrics to all enabled connectors"
+    event:
+      mutates: false
+      description: "Push a custom event to connectors"
+
 pro:
   category: intelligence_reporting
   description: "NFTBan Pro subscription management and remote metrics"

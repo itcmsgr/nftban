@@ -33,17 +33,17 @@ After=nftban.service
 OnBootSec=30s
 OnUnitActiveSec=60s
 
-# Persistent timer (catches up if system was down)
-Persistent=false
+# CRITICAL: Catch up missed runs after downtime (monitoring gaps otherwise)
+Persistent=true
 
-# Accuracy (allow +/- 5s variance for resource optimization)
-AccuracySec=5s
+# Allow systemd to batch with other timers (+/- 10s)
+AccuracySec=10s
 
-# Add jitter to prevent synchronized scrapes across hosts
-RandomizedDelaySec=10s
+# SMART JITTER: 50% variance prevents thundering herd
+RandomizedDelaySec=30s
 
-# Prevent timer drift
-FixedRandomDelay=false
+# DETERMINISTIC: Same offset per host (predictable but distributed)
+FixedRandomDelay=true
 
 [Install]
 WantedBy=timers.target
