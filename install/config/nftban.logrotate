@@ -39,6 +39,28 @@
     copytruncate
 }
 
+# =============================================================================
+# Module-specific logs (DDoS, Login, Portscan, Trust)
+# =============================================================================
+# These can grow rapidly during attacks - daily rotation with size trigger
+# Use copytruncate for bash scripts appending via >>
+/var/log/nftban/ddos-classic.log
+/var/log/nftban/ddos-suricata.log
+/var/log/nftban/login-suricata.log
+/var/log/nftban/portscan-suricata.log
+/var/log/nftban/portscan-classic.log
+/var/log/nftban/trust.log {
+    daily
+    rotate 30
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    size 100M
+    create 0640 nftban nftban
+}
+
 # Suricata eve-alerts.json (daemon path) - low volume, alert-only
 /var/log/nftban/suricata/eve-alerts.json {
     daily
@@ -47,7 +69,7 @@
     delaycompress
     missingok
     notifempty
-    create 0640 suricata nftban
+    create 0640 nftban nftban
     copytruncate
     size 50M
     postrotate
@@ -64,7 +86,7 @@
     delaycompress
     missingok
     notifempty
-    create 0640 suricata nftban
+    create 0640 nftban nftban
     copytruncate
     size 100M
     postrotate
@@ -80,7 +102,7 @@
     delaycompress
     missingok
     notifempty
-    create 0640 suricata nftban
+    create 0640 nftban nftban
     copytruncate
 }
 
@@ -92,7 +114,7 @@
     delaycompress
     missingok
     notifempty
-    create 0640 suricata nftban
+    create 0640 nftban nftban
     copytruncate
 }
 
@@ -104,7 +126,7 @@
     delaycompress
     missingok
     notifempty
-    create 0640 suricata nftban
+    create 0640 nftban nftban
     copytruncate
 }
 
