@@ -34,7 +34,7 @@ declare -g _NFTBAN_PORTSCAN_CLASSIC_LOADED=1
 
 # Load fragment and IPC libraries for single-writer architecture
 # See: ARCHITECTURE-NFT-POLICY.md
-NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" 2>/dev/null || true
 # shellcheck source=/dev/null

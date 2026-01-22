@@ -40,7 +40,8 @@ readonly NFTBAN_DDOS_CLASSIC_LOADED=1
 # =============================================================================
 # These libraries provide fragment rendering and IPC communication with nftband
 
-NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+# Bootstrap path (may be readonly from nftban.conf)
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
