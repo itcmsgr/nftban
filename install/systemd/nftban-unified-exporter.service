@@ -39,19 +39,38 @@ Type=oneshot
 User=nftban
 Group=nftban
 
+# Capability for nftables and network metrics
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
 # Execute unified exporter
 ExecStart=/usr/lib/nftban/exporters/nftban_unified_exporter.sh
 
 # Resource limits (prevent runaway)
-CPUQuota=10%
-MemoryMax=64M
-TimeoutStartSec=30s
+CPUQuota=15%
+MemoryMax=128M
+TasksMax=10
+TimeoutStartSec=60s
+TimeoutStopSec=30s
 
-# Security hardening
+# =============================================================================
+# SECURITY HARDENING
+# =============================================================================
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
 PrivateTmp=yes
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictNamespaces=true
+
+# Network access for Zabbix/ES/Kafka exports
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+
+# Filesystem access
 ReadWritePaths=/var/lib/node_exporter/textfile_collector
 ReadWritePaths=/run/nftban
 ReadWritePaths=/var/log/nftban
