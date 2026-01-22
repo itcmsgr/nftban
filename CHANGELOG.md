@@ -5,6 +5,81 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-01-22
+
+### Added
+
+#### Zabbix Exporter
+- **Full Zabbix integration**: Native trapper protocol support for metrics export
+  - Multi-target support with failover modes (all, primary, failover)
+  - TLS/PSK encryption for secure communication
+  - Low-Level Discovery (LLD) for dynamic entities (modules, interfaces, countries, feeds, timers)
+  - 85+ metrics covering daemon, runtime, bans, events, feeds, geoban, nftables
+  - Batch sending with configurable intervals and retry logic
+
+- **Zabbix templates**:
+  - `nftban_template_5x.xml` - Zabbix 5.x compatible XML template
+  - `nftban_template_6x.yaml` - Zabbix 6.x+ native YAML template
+  - Pre-configured items, triggers, graphs, and discovery rules
+
+- **CLI command** `nftban zabbix`:
+  - `status` - Show exporter status and target health
+  - `test` - Test connectivity to Zabbix server
+  - `send` - Manual metric push
+  - `discovery` - Trigger LLD data send
+  - `config` - Show/validate configuration
+
+#### Generic Connectors Framework
+- **Elasticsearch connector**: Bulk API support, index templates, ILM policies
+  - Configurable index patterns with date-based naming
+  - Basic auth and API key authentication
+  - TLS support with custom CA certificates
+
+- **Kafka connector**: Pure Go implementation (no cgo dependencies)
+  - SASL authentication (PLAIN, SCRAM-SHA-256, SCRAM-SHA-512)
+  - Configurable partitioning and batching
+  - TLS encryption support
+
+- **NDJSON file connector**: Local file export with rotation
+  - Daily and size-based rotation
+  - Gzip compression support
+  - Configurable retention (days/count)
+
+- **CLI command** `nftban connector`:
+  - `list` - Show configured connectors
+  - `status` - Connector health and statistics
+  - `test` - Test connector connectivity
+  - `send` - Manual data push
+
+#### Grafana Dashboard
+- **nftban-overview.json**: Pre-built Grafana dashboard
+  - System overview panels (uptime, version, health)
+  - Ban statistics and trends
+  - Module status visualization
+  - Event processing metrics
+
+### Changed
+
+- **Configuration**: Added Zabbix and connector settings to `nftban.conf`
+  - `NFTBAN_ZABBIX_*` - Zabbix exporter configuration
+  - `NFTBAN_CONNECTOR_*` - Generic connector configuration
+
+- **Packaging**: Updated RPM spec and install.sh
+  - New directories: `/etc/nftban/connectors`, `/var/log/nftban/metrics`
+  - Template installation: Zabbix templates and Grafana dashboards
+  - Version bump to 1.3.0
+
+### Infrastructure
+
+- **Go packages**: 13 new files (~6,400 lines)
+  - `pkg/exporters/zabbix/` - 9 files (types, config, protocol, sender, multi, collector, discovery, exporter, http)
+  - `pkg/exporters/connectors/` - 4 files (connector interface, ndjson, elasticsearch, kafka)
+
+- **CLI modules**: 3 new files (~2,300 lines)
+  - `cmd_zabbix.sh` - Zabbix CLI commands
+  - `cmd_connector.sh` - Connector CLI commands
+  - `nftban_zabbix_exporter.sh` - Bash fallback exporter
+
 ## [1.2.3] - 2026-01-22
 
 ### Added
