@@ -40,13 +40,11 @@ readonly _NFTBAN_SERVICE_CONTROL_LOADED=1
 # CONFIGURATION
 # =============================================================================
 
-# Config paths
-NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+# Bootstrap config path (nftban.conf will make it readonly)
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
 
-# Load main configuration (service names, paths)
-if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-    source "${NFTBAN_CONFIG_DIR}/nftban.conf"
-fi
+# Load main configuration (sets readonly paths, service names)
+[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
 NFTBAN_SERVICES_CONF="${NFTBAN_CONFIG_DIR}/conf.d/services.conf"
 NFTBAN_SERVICES_LOCAL="${NFTBAN_CONFIG_DIR}/conf.d/services.conf.local"
 
