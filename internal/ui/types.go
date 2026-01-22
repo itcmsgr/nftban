@@ -362,7 +362,7 @@ type WhitelistSource struct {
 }
 
 // =============================================================================
-// TOOLS PAGE DATA (pfSense-style Diagnostics)
+// TOOLS PAGE DATA - Diagnostic Tools
 // =============================================================================
 
 // ToolsData holds diagnostic tools data

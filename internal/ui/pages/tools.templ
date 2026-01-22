@@ -1,5 +1,5 @@
 // =============================================================================
-// NFTBan - Tools/Diagnostics Page (pfSense-inspired)
+// NFTBan - Tools/Diagnostics Page
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // meta:name="tools"
@@ -16,7 +16,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/ui"
 )
 
-// Tools renders the diagnostic tools page (pfSense-style)
+// Tools renders the diagnostic tools page
 templ Tools(data ui.ToolsData) {
 	@ui.LayoutWithNav("Tools", "tools") {
 		<!-- Page Header -->
@@ -31,7 +31,7 @@ templ Tools(data ui.ToolsData) {
 
 		<!-- Tools Grid -->
 		<div class="tools-grid">
-			<!-- IP Check Tool (Main - Like pfSense packet capture) -->
+			<!-- IP Check Tool (Main diagnostic tool) -->
 			<div class="card tool-card tool-primary">
 				<div class="card-header">
 					<span class="card-title">IP Check / Emulate</span>
