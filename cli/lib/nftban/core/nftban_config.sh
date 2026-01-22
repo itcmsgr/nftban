@@ -2,29 +2,32 @@
 # =============================================================================
 # NFTBan v1.0.0 - Configuration Management
 # =============================================================================
-
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Unified configuration file management with .conf.local override support
 #
-# meta:name=nftban_config
-# meta:type=core
-# meta:header=Configuration Management
-# meta:version=1.0.0
+# meta:name="nftban_config"
+# meta:type="core"
+# meta:header="Configuration Management"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
+# meta:description="Read and write configuration files with .conf.local override support"
+# meta:input="Configuration module name (portscan, ddos, etc.)"
+# meta:output="Merged configuration or write status"
+# meta:depends="nftban_file_ops.sh"
+# meta:created_date="2025-11-15"
+# meta:updated_date="2026-01-22"
 #
-# **Description & Purpose**
-# meta:description=Read and write configuration files with .conf.local override support
-# meta:input=Configuration module name (portscan, ddos, etc.)
-# meta:output=Merged configuration or write status
-#
-# **Inventory & Requirements**
-# meta:depends=nftban_file_ops.sh
-#
-# meta:created_date=2025-11-15
-# meta:updated_date=2025-11-24
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_CONFD_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 # =============================================================================
 
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
@@ -32,9 +35,10 @@ umask 027
 # CONFIGURATION
 # =============================================================================
 
-readonly NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
-readonly NFTBAN_CONFD_DIR="${NFTBAN_CONFD_DIR:-/etc/nftban/conf.d}"
-readonly NFTBAN_LOCAL_CONF="${NFTBAN_CONFIG_DIR}/nftban.conf.local"
+# Set defaults if not already set (avoid readonly conflicts)
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_CONFD_DIR:=/etc/nftban/conf.d}"
+: "${NFTBAN_LOCAL_CONF:=${NFTBAN_CONFIG_DIR}/nftban.conf.local}"
 
 # =============================================================================
 # HELPER FUNCTIONS
