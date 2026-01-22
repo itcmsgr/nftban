@@ -27,8 +27,8 @@
 set -euo pipefail
 
 # Simple config functions (no external dependencies)
-NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
-NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 
 # Load main configuration (service names, paths)
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then

@@ -28,7 +28,7 @@
 set -Eeuo pipefail
 
 # Source core emulation module
-NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/core/nftban_emulate.sh"
 
