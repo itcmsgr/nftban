@@ -37,14 +37,12 @@ umask 027
 # DEPENDENCIES
 # =============================================================================
 
-# Determine library path
-NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
-NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+# Bootstrap paths (nftban.conf will make them readonly)
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
 
-# Load main configuration (service names, paths)
-if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-    source "${NFTBAN_CONFIG_DIR}/nftban.conf"
-fi
+# Load main configuration (sets readonly paths, service names)
+[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
 
 # Load service control library
 if [[ -f "${NFTBAN_LIB_DIR}/lib/service_control.sh" ]]; then
