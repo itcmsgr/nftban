@@ -32,18 +32,24 @@ IFS=$'\n\t'
 umask 027
 
 # =============================================================================
-# SOURCE GUARD - prevent re-sourcing and readonly conflicts
+# SOURCE GUARD - prevent re-sourcing
 # =============================================================================
 [[ -n "${_NFTBAN_CONFIG_SH_LOADED:-}" ]] && return 0
 readonly _NFTBAN_CONFIG_SH_LOADED=1
 
 # =============================================================================
-# CONFIGURATION (readonly - locked)
+# CONFIGURATION
 # =============================================================================
+# NOTE: NFTBAN_CONFIG_DIR is defined as readonly in /etc/nftban/nftban.conf
+# Only set defaults here if not already defined (for standalone testing)
 
-readonly NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
-readonly NFTBAN_CONFD_DIR="${NFTBAN_CONFD_DIR:-/etc/nftban/conf.d}"
-readonly NFTBAN_LOCAL_CONF="${NFTBAN_CONFIG_DIR}/nftban.conf.local"
+if [[ -z "${NFTBAN_CONFIG_DIR:-}" ]]; then
+    readonly NFTBAN_CONFIG_DIR="/etc/nftban"
+fi
+if [[ -z "${NFTBAN_CONFD_DIR:-}" ]]; then
+    readonly NFTBAN_CONFD_DIR="/etc/nftban/conf.d"
+fi
+readonly NFTBAN_LOCAL_CONF="${NFTBAN_LOCAL_CONF:-${NFTBAN_CONFIG_DIR}/nftban.conf.local}"
 
 # =============================================================================
 # HELPER FUNCTIONS
