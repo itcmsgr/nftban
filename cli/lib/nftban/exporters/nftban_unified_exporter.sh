@@ -33,11 +33,16 @@
 set -Eeuo pipefail
 
 readonly SCRIPT_VERSION="1.0.0"
-readonly NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
-readonly NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
-readonly NFTBAN_RUN_DIR="${NFTBAN_RUN_DIR:-/run/nftban}"
-readonly NFTBAN_LOG_DIR="${NFTBAN_LOG_DIR:-/var/log/nftban}"
-readonly NFTBAN_CACHE_DIR="${NFTBAN_CACHE_DIR:-/var/cache/nftban}"
+
+# Bootstrap paths (nftban.conf will make them readonly)
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
+: "${NFTBAN_RUN_DIR:=/run/nftban}"
+: "${NFTBAN_LOG_DIR:=/var/log/nftban}"
+: "${NFTBAN_CACHE_DIR:=/var/cache/nftban}"
+
+# Load config (sets readonly paths)
+[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
 
 # Metrics cache file (collected once, used by all exporters)
 readonly METRICS_CACHE="${NFTBAN_RUN_DIR}/metrics.cache"
@@ -45,9 +50,6 @@ readonly METRICS_LOCK="${NFTBAN_RUN_DIR}/exporter.lock"
 readonly BANDWIDTH_STATE="${NFTBAN_RUN_DIR}/bandwidth_state.dat"
 readonly BANDWIDTH_PEAKS="${NFTBAN_RUN_DIR}/bandwidth_peaks.dat"
 readonly PEAK_WINDOW=300  # 5 minutes for peak tracking
-
-# Load config
-[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
 
 # =============================================================================
 # SMART JITTER: Hostname-based deterministic delay
