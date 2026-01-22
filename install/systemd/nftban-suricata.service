@@ -11,7 +11,7 @@
 # meta:output="Systemd unit"
 # meta:depends=""
 # meta:inventory.files=""
-# meta:inventory.binaries="/usr/local/bin/nftban-core"
+# meta:inventory.binaries="/usr/lib/nftban/bin/nftban-core"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units="suricata.service"
@@ -39,7 +39,7 @@ Group=nftban
 SupplementaryGroups=suricata
 
 # Daemon command
-ExecStart=/usr/local/bin/nftban-core suricata daemon
+ExecStart=/usr/lib/nftban/bin/nftban-core suricata daemon
 
 # Restart on failure
 Restart=on-failure

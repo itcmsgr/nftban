@@ -39,10 +39,13 @@ readonly NFTBAN_CLI_SUPPORT_LOADED=1
 readonly SUPPORT_OUTPUT_DIR="${NFTBAN_SUPPORT_DIR:-/tmp}"
 readonly SUPPORT_LOG_HOURS="${NFTBAN_SUPPORT_LOG_HOURS:-24}"
 
-# Directories to collect configs from
-readonly NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
-readonly NFTBAN_LOG_DIR="${NFTBAN_LOG_DIR:-/var/log/nftban}"
-readonly NFTBAN_GIT_REPO="${NFTBAN_GIT_REPO:-/opt/nftban}"
+# Bootstrap paths (nftban.conf will make them readonly)
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_LOG_DIR:=/var/log/nftban}"
+: "${NFTBAN_GIT_REPO:=/opt/nftban}"
+
+# Load main config (sets readonly paths)
+[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
 
 # Patterns for secret redaction
 readonly -a SECRET_PATTERNS=(

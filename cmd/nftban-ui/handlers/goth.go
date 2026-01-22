@@ -1830,15 +1830,17 @@ func (h *GOTHHandlers) getConfigsList() []ui.ConfigInfo {
 func (h *GOTHHandlers) getFHSList() []ui.FHSItem {
 	fhs := []ui.FHSItem{}
 
-	// Key FHS directories
+	// Load config to get actual paths (supports custom installations)
+	cfg := nftbanconf.MustLoad()
+
+	// Key FHS directories - use configured paths, not hardcoded
 	dirs := []string{
-		"/etc/nftban",
-		"/var/lib/nftban",
-		"/var/log/nftban",
-		"/var/cache/nftban",
-		"/run/nftban",
-		"/usr/lib/nftban",
-		"/usr/share/nftban",
+		cfg.ConfigDir, // /etc/nftban or custom
+		cfg.DataDir,   // /var/lib/nftban or custom
+		cfg.LogDir,    // /var/log/nftban or custom
+		cfg.CacheDir,  // /var/cache/nftban or custom
+		cfg.RunDir,    // /run/nftban or custom
+		cfg.LibDir,    // /usr/lib/nftban or custom
 	}
 
 	for _, dir := range dirs {
