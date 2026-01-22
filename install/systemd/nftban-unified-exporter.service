@@ -27,6 +27,11 @@ Documentation=https://nftban.com/docs/metrics
 After=network.target nftban.service
 Wants=nftban.service
 
+# MUTUAL EXCLUSION: Prevent running alongside legacy exporters
+Conflicts=nftban-metrics-exporter.service
+Conflicts=nftban-zabbix-exporter.service
+Conflicts=nftban-connector-exporter.service
+
 [Service]
 Type=oneshot
 

@@ -25,15 +25,20 @@ Documentation=https://github.com/itcmsgr/nftban-dev
 Requires=nftban-core.service
 
 [Timer]
-# Run weekly on Sundays at 2:00 AM
-OnCalendar=weekly
+# Run weekly on Sundays at 02:00 AM (separate from 03:xx updates)
 OnCalendar=Sun *-*-* 02:00:00
+
 # Also run 30 minutes after boot
 OnBootSec=30min
+
 # Run if missed (e.g., system was off)
 Persistent=true
-# Add 0-60 minute random delay to avoid thundering herd
-RandomizedDelaySec=60min
+
+# JITTER: 30m variance for weekly task (was 60m - reduced)
+RandomizedDelaySec=30m
+
+# DETERMINISTIC: Same offset per host for predictable behavior
+FixedRandomDelay=true
 
 [Install]
 WantedBy=timers.target

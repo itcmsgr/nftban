@@ -25,14 +25,19 @@ Documentation=man:nftban(8) https://nftban.com/docs
 Requires=nftban-suricata-update.service
 
 [Timer]
-# Run weekly on Sunday at 3 AM
-OnCalendar=Sun *-*-* 03:00:00
+# Run weekly on Sunday at 03:40 AM (staggered from health@03:00, feeds@03:20)
+# COLLISION FIX: Previously all at 03:00, now spread across 40-minute window
+# Suricata is heaviest (downloads rules), so placed last in sequence
+OnCalendar=Sun *-*-* 03:40:00
 
 # Run 5 minutes after boot if missed
 OnBootSec=5min
 
-# Randomize start time by up to 1 hour (avoid all servers updating at once)
-RandomizedDelaySec=1h
+# JITTER: 30m variance (was 1h - reduced since we're staggered now)
+RandomizedDelaySec=30m
+
+# DETERMINISTIC: Same offset per host for predictable behavior
+FixedRandomDelay=true
 
 # Persistent: if system was off during scheduled time, run when it comes back
 Persistent=true

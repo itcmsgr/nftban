@@ -1,18 +1,42 @@
+# =============================================================================
+# NFTBan v1.3.0 - Feed Update Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-core-feeds.timer"
+# meta:type="systemd"
+# meta:version="1.3.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Timer for daily threat feed updates"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-core-feeds.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
 [Unit]
 Description=NFTBan Core - Daily Feed Update Timer
 Documentation=https://github.com/itcmsgr/nftban-dev
 # Note: Does NOT require nftband.service - feeds update is standalone
 
 [Timer]
-# Run daily at 3:00 AM
-OnCalendar=daily
-OnCalendar=03:00
-# Also run 15 minutes after boot
+# Run daily at 03:20 AM (staggered from health@03:00, suricata@03:40)
+# COLLISION FIX: Previously all at 03:00, now spread across 40-minute window
+OnCalendar=*-*-* 03:20:00
+
+# Also run 15 minutes after boot (if missed scheduled time)
 OnBootSec=15min
+
 # Run if missed (e.g., system was off)
 Persistent=true
-# Add 0-30 minute random delay to avoid thundering herd
-RandomizedDelaySec=30min
+
+# JITTER: 15m variance for daily task
+RandomizedDelaySec=15m
+
+# DETERMINISTIC: Same offset per host for predictable behavior
+FixedRandomDelay=true
 
 [Install]
 WantedBy=timers.target

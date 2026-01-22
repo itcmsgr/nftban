@@ -29,8 +29,11 @@ ConditionPathExists=/etc/nftban/pro.token
 # Run daily at 04:00 AM (after license check at 00/6:00)
 OnCalendar=*-*-* 04:00:00
 
-# Add randomization to avoid load spikes (0-60 minutes)
-RandomizedDelaySec=60m
+# JITTER: 30m variance for daily task (reduced from 60m)
+RandomizedDelaySec=30m
+
+# DETERMINISTIC: Same offset per host for predictable behavior
+FixedRandomDelay=true
 
 # Persist timer across reboots
 Persistent=true

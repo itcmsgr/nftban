@@ -31,5 +31,9 @@ PartOf=nftban-rollback.service
 OnActiveSec=5min
 AccuracySec=10s
 
+# CRITICAL: Jitter prevents synchronized rollback waves across fleet
+# If 10 servers apply changes simultaneously, rollbacks should NOT fire together
+RandomizedDelaySec=30s
+
 [Install]
 WantedBy=timers.target

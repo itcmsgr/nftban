@@ -2641,10 +2641,27 @@ if [[ "${NFTBAN_METRICS_ENABLED:-false}" == "true" ]]; then
         ok "Metrics configuration updated"
     fi
 
-    # Enable metrics timer
+    # Enable metrics timer (legacy - will be deprecated)
+    # NOTE: Unified exporter is preferred for v1.3.0+
     if [[ -f /etc/systemd/system/nftban-metrics-exporter.timer ]]; then
         systemctl enable --now nftban-metrics-exporter.timer 2>/dev/null || true
         ok "Metrics exporter timer enabled"
+
+        # Deprecation notice for v1.3.0+
+        info ""
+        info "┌─────────────────────────────────────────────────────────────────┐"
+        info "│ RECOMMENDATION: Use Unified Exporter (v1.3.0+)                  │"
+        info "├─────────────────────────────────────────────────────────────────┤"
+        info "│ The unified exporter collects metrics ONCE and exports to ALL  │"
+        info "│ targets (Prometheus, Zabbix, Connectors) - 66% less overhead.  │"
+        info "│                                                                 │"
+        info "│ To migrate:                                                     │"
+        info "│   systemctl disable nftban-metrics-exporter.timer               │"
+        info "│   systemctl enable --now nftban-unified-exporter.timer          │"
+        info "│                                                                 │"
+        info "│ See: https://nftban.com/docs/unified-exporter                   │"
+        info "└─────────────────────────────────────────────────────────────────┘"
+        info ""
     fi
     echo ""
 fi
