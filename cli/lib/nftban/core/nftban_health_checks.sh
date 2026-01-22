@@ -2023,6 +2023,237 @@ nftban_health_check_metrics() {
 }
 
 # =============================================================================
+# ZABBIX EXPORTER CHECK (v1.3.0)
+# =============================================================================
+
+nftban_health_check_zabbix() {
+    # Check Zabbix trapper export health
+    # Returns: 0=OK, 1=WARNING, 2=ERROR, 3=CRITICAL, 4=NOT_INSTALLED, 5=DISABLED
+
+    local status=$HEALTH_OK
+    local zabbix_issues=()
+
+    # Load Zabbix config
+    local zabbix_conf="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
+    local zabbix_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
+    [[ -f "$zabbix_conf" ]] && source "$zabbix_conf" 2>/dev/null || true
+    [[ -f "$zabbix_local" ]] && source "$zabbix_local" 2>/dev/null || true
+
+    # Check if Zabbix export is enabled
+    if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" != "true" ]]; then
+        # Check if config files exist (determines installed vs not)
+        if [[ -f "$zabbix_conf" ]]; then
+            NFTBAN_HEALTH_ISSUES["zabbix"]="Disabled (set NFTBAN_ZABBIX_ENABLED=true in zabbix.conf.local)"
+            NFTBAN_HEALTH_RESULTS["zabbix"]=$HEALTH_DISABLED
+            return $HEALTH_DISABLED
+        else
+            NFTBAN_HEALTH_ISSUES["zabbix"]="Not installed (optional feature)"
+            NFTBAN_HEALTH_RESULTS["zabbix"]=$HEALTH_NOT_INSTALLED
+            return $HEALTH_NOT_INSTALLED
+        fi
+    fi
+
+    zabbix_issues+=("✓ Zabbix export: Enabled")
+
+    # Check if Zabbix server is configured
+    if [[ -z "${NFTBAN_ZABBIX_SERVER:-}" ]]; then
+        zabbix_issues+=("⚠ Zabbix server not configured")
+        zabbix_issues+=("FIX: Set NFTBAN_ZABBIX_SERVER in zabbix.conf.local")
+        status=$HEALTH_ERROR
+    else
+        zabbix_issues+=("✓ Zabbix server: ${NFTBAN_ZABBIX_SERVER}:${NFTBAN_ZABBIX_PORT:-10051}")
+
+        # Check connectivity to Zabbix server (quick TCP check)
+        if command -v nc >/dev/null 2>&1 || command -v ncat >/dev/null 2>&1; then
+            local nc_cmd="nc"
+            command -v ncat >/dev/null 2>&1 && nc_cmd="ncat"
+            if timeout 2 $nc_cmd -z "${NFTBAN_ZABBIX_SERVER}" "${NFTBAN_ZABBIX_PORT:-10051}" 2>/dev/null; then
+                zabbix_issues+=("✓ Zabbix server: Reachable")
+            else
+                zabbix_issues+=("⚠ Zabbix server: Not reachable (may be filtered)")
+                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            fi
+        fi
+    fi
+
+    # Check unified exporter (or legacy zabbix timer)
+    local timer_active=false
+    if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
+        zabbix_issues+=("✓ Unified exporter timer: Active")
+        timer_active=true
+    elif systemctl is-active --quiet nftban-zabbix-exporter.timer 2>/dev/null; then
+        zabbix_issues+=("✓ Zabbix exporter timer: Active")
+        timer_active=true
+    elif systemctl list-unit-files 2>/dev/null | grep -q "nftban-unified-exporter.timer"; then
+        zabbix_issues+=("⚠ Unified exporter timer: Not active")
+        zabbix_issues+=("FIX: sudo systemctl enable --now nftban-unified-exporter.timer")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    else
+        zabbix_issues+=("⚠ Exporter timer not installed")
+        zabbix_issues+=("FIX: Run install.sh to install systemd timers")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    fi
+
+    # Check zabbix_sender binary
+    if command -v zabbix_sender >/dev/null 2>&1; then
+        zabbix_issues+=("✓ zabbix_sender: Installed")
+    else
+        zabbix_issues+=("⚠ zabbix_sender not found (using curl fallback)")
+    fi
+
+    # Check TLS/PSK configuration if enabled
+    if [[ "${NFTBAN_ZABBIX_TLS_ENABLED:-false}" == "true" ]]; then
+        if [[ -z "${NFTBAN_ZABBIX_TLS_PSK_FILE:-}" ]]; then
+            zabbix_issues+=("⚠ TLS enabled but PSK file not configured")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        elif [[ ! -f "${NFTBAN_ZABBIX_TLS_PSK_FILE}" ]]; then
+            zabbix_issues+=("⚠ TLS PSK file not found: ${NFTBAN_ZABBIX_TLS_PSK_FILE}")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        else
+            zabbix_issues+=("✓ TLS/PSK: Configured")
+        fi
+    fi
+
+    # Store results
+    NFTBAN_HEALTH_RESULTS["zabbix"]=$status
+    if [[ ${#zabbix_issues[@]} -gt 0 ]]; then
+        local formatted_issues=""
+        for issue in "${zabbix_issues[@]}"; do
+            if [[ -z "$formatted_issues" ]]; then
+                formatted_issues="$issue"
+            else
+                formatted_issues="${formatted_issues}
+     ${issue}"
+            fi
+        done
+        NFTBAN_HEALTH_ISSUES["zabbix"]="$formatted_issues"
+    fi
+
+    return $status
+}
+
+# =============================================================================
+# CONNECTORS CHECK (v1.3.0)
+# =============================================================================
+
+nftban_health_check_connectors() {
+    # Check generic connectors health (Elasticsearch, Kafka, file, syslog, webhook)
+    # Returns: 0=OK, 1=WARNING, 2=ERROR, 3=CRITICAL, 4=NOT_INSTALLED, 5=DISABLED
+
+    local status=$HEALTH_OK
+    local connector_issues=()
+    local enabled_count=0
+
+    # Load connectors config
+    local connectors_conf="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf"
+    local connectors_local="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local"
+    [[ -f "$connectors_conf" ]] && source "$connectors_conf" 2>/dev/null || true
+    [[ -f "$connectors_local" ]] && source "$connectors_local" 2>/dev/null || true
+
+    # Check if connector framework is enabled
+    if [[ "${NFTBAN_CONNECTOR_ENABLED:-false}" != "true" ]]; then
+        if [[ -f "$connectors_conf" ]]; then
+            NFTBAN_HEALTH_ISSUES["connectors"]="Disabled (set NFTBAN_CONNECTOR_ENABLED=true)"
+            NFTBAN_HEALTH_RESULTS["connectors"]=$HEALTH_DISABLED
+            return $HEALTH_DISABLED
+        else
+            NFTBAN_HEALTH_ISSUES["connectors"]="Not installed (optional feature)"
+            NFTBAN_HEALTH_RESULTS["connectors"]=$HEALTH_NOT_INSTALLED
+            return $HEALTH_NOT_INSTALLED
+        fi
+    fi
+
+    connector_issues+=("✓ Connector framework: Enabled")
+
+    # Check Elasticsearch connector
+    if [[ "${NFTBAN_CONNECTOR_ES_ENABLED:-false}" == "true" ]]; then
+        enabled_count=$((enabled_count + 1))
+        connector_issues+=("✓ Elasticsearch: Enabled (${NFTBAN_CONNECTOR_ES_ADDRESSES:-localhost:9200})")
+
+        # Quick connectivity check
+        local es_addr="${NFTBAN_CONNECTOR_ES_ADDRESSES%%,*}"  # First address
+        if command -v curl >/dev/null 2>&1; then
+            if curl -s --connect-timeout 2 "${es_addr}/_cluster/health" >/dev/null 2>&1; then
+                connector_issues+=("  ✓ Elasticsearch: Reachable")
+            else
+                connector_issues+=("  ⚠ Elasticsearch: Not reachable")
+                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            fi
+        fi
+    fi
+
+    # Check Kafka connector
+    if [[ "${NFTBAN_CONNECTOR_KAFKA_ENABLED:-false}" == "true" ]]; then
+        enabled_count=$((enabled_count + 1))
+        connector_issues+=("✓ Kafka: Enabled (${NFTBAN_CONNECTOR_KAFKA_BROKERS:-localhost:9092})")
+    fi
+
+    # Check file connector
+    if [[ "${NFTBAN_CONNECTOR_FILE_ENABLED:-false}" == "true" ]]; then
+        enabled_count=$((enabled_count + 1))
+        local file_dir="${NFTBAN_CONNECTOR_FILE_DIR:-/var/log/nftban/metrics}"
+        connector_issues+=("✓ File (NDJSON): Enabled ($file_dir)")
+
+        # Check if directory exists and is writable
+        if [[ -d "$file_dir" ]] && [[ -w "$file_dir" ]]; then
+            connector_issues+=("  ✓ Output directory: Writable")
+        elif [[ ! -d "$file_dir" ]]; then
+            connector_issues+=("  ⚠ Output directory does not exist")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        else
+            connector_issues+=("  ⚠ Output directory not writable")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    fi
+
+    # Check syslog connector
+    if [[ "${NFTBAN_CONNECTOR_SYSLOG_ENABLED:-false}" == "true" ]]; then
+        enabled_count=$((enabled_count + 1))
+        connector_issues+=("✓ Syslog: Enabled (${NFTBAN_CONNECTOR_SYSLOG_SERVER:-localhost}:${NFTBAN_CONNECTOR_SYSLOG_PORT:-514})")
+    fi
+
+    # Check webhook connector
+    if [[ "${NFTBAN_CONNECTOR_WEBHOOK_ENABLED:-false}" == "true" ]]; then
+        enabled_count=$((enabled_count + 1))
+        connector_issues+=("✓ Webhook: Enabled (${NFTBAN_CONNECTOR_WEBHOOK_URL:-not set})")
+    fi
+
+    if [[ $enabled_count -eq 0 ]]; then
+        connector_issues+=("⚠ No connectors enabled")
+        connector_issues+=("Enable at least one: ES, Kafka, File, Syslog, or Webhook")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    else
+        connector_issues+=("Total enabled connectors: $enabled_count")
+    fi
+
+    # Check unified exporter timer
+    if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
+        connector_issues+=("✓ Unified exporter timer: Active")
+    elif systemctl list-unit-files 2>/dev/null | grep -q "nftban-unified-exporter.timer"; then
+        connector_issues+=("⚠ Unified exporter timer: Not active")
+        connector_issues+=("FIX: sudo systemctl enable --now nftban-unified-exporter.timer")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    fi
+
+    # Store results
+    NFTBAN_HEALTH_RESULTS["connectors"]=$status
+    if [[ ${#connector_issues[@]} -gt 0 ]]; then
+        local formatted_issues=""
+        for issue in "${connector_issues[@]}"; do
+            if [[ -z "$formatted_issues" ]]; then
+                formatted_issues="$issue"
+            else
+                formatted_issues="${formatted_issues}
+     ${issue}"
+            fi
+        done
+        NFTBAN_HEALTH_ISSUES["connectors"]="$formatted_issues"
+    fi
+
+    return $status
+}
+
+# =============================================================================
 # PRO SUBSCRIPTION CHECK (v1.0.0)
 # =============================================================================
 
@@ -2583,6 +2814,7 @@ nftban_health_check_timers() {
         "nftban-watchdog.timer"         # System resource monitoring (nftban watchdog enable)
         "nftban-core-feeds.timer"       # Threat feeds sync (nftban feeds enable)
         "nftban-metrics-exporter.timer" # Prometheus metrics (nftban metrics enable)
+        "nftban-unified-exporter.timer" # Unified export (Prometheus+Zabbix+Connectors)
         "nftban-suricata-update.timer"  # Suricata rules (needs suricata)
         "nftban-snapshot.timer"         # Firewall snapshots
         "nftban-rollback.timer"         # Auto-rollback checks
@@ -2596,6 +2828,7 @@ nftban_health_check_timers() {
         ["nftban-queue.timer"]="Ban queue processing"
         ["nftban-watchdog.timer"]="System resource monitoring"
         ["nftban-metrics-exporter.timer"]="Prometheus metrics collection"
+        ["nftban-unified-exporter.timer"]="Unified export (Prometheus+Zabbix+Connectors)"
         ["nftban-suricata-update.timer"]="Suricata rules update (optional)"
         ["nftban-snapshot.timer"]="Firewall snapshot creation (optional)"
         ["nftban-rollback.timer"]="Auto-rollback checks (optional)"

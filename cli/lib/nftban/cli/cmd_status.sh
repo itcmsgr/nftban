@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Global Status Command
+# NFTBan v1.3.0 - Global Status Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="cmd_status"
@@ -229,6 +229,7 @@ output_terminal() {
     check_service_clean "nftban-suricata" "${NFTBAN_SERVICE_SURICATA:-nftban-suricata.service}"
     check_service_clean "login-monitor" "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
     check_service_clean "metrics-exporter" "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-metrics-exporter.service}"
+    check_service_clean "unified-exporter" "nftban-unified-exporter.service"
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────
@@ -434,6 +435,50 @@ output_terminal() {
     fi
     printf "  %-20s %s\n" "Metrics Exporter...." "$metrics_exp_status"
 
+    # Zabbix Exporter (v1.3.0)
+    local zabbix_status="NOT CONFIGURED"
+    # Load Zabbix config
+    local zabbix_conf="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
+    local zabbix_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
+    [[ -f "$zabbix_conf" ]] && source "$zabbix_conf" 2>/dev/null || true
+    [[ -f "$zabbix_local" ]] && source "$zabbix_local" 2>/dev/null || true
+
+    if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" == "true" ]]; then
+        if systemctl is-active nftban-unified-exporter.timer >/dev/null 2>&1; then
+            zabbix_status="ACTIVE (${NFTBAN_ZABBIX_SERVER:-unconfigured})"
+        else
+            zabbix_status="ENABLED (timer inactive)"
+        fi
+    elif [[ -f "$zabbix_conf" ]]; then
+        zabbix_status="DISABLED"
+    fi
+    printf "  %-20s %s\n" "Zabbix Exporter....." "$zabbix_status"
+
+    # Generic Connectors (v1.3.0)
+    local connector_status="NOT CONFIGURED"
+    local connectors_conf="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf"
+    local connectors_local="${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local"
+    [[ -f "$connectors_conf" ]] && source "$connectors_conf" 2>/dev/null || true
+    [[ -f "$connectors_local" ]] && source "$connectors_local" 2>/dev/null || true
+
+    if [[ "${NFTBAN_CONNECTOR_ENABLED:-false}" == "true" ]]; then
+        local connector_count=0
+        [[ "${NFTBAN_CONNECTOR_ES_ENABLED:-false}" == "true" ]] && connector_count=$((connector_count + 1))
+        [[ "${NFTBAN_CONNECTOR_KAFKA_ENABLED:-false}" == "true" ]] && connector_count=$((connector_count + 1))
+        [[ "${NFTBAN_CONNECTOR_FILE_ENABLED:-false}" == "true" ]] && connector_count=$((connector_count + 1))
+        [[ "${NFTBAN_CONNECTOR_SYSLOG_ENABLED:-false}" == "true" ]] && connector_count=$((connector_count + 1))
+        [[ "${NFTBAN_CONNECTOR_WEBHOOK_ENABLED:-false}" == "true" ]] && connector_count=$((connector_count + 1))
+
+        if systemctl is-active nftban-unified-exporter.timer >/dev/null 2>&1; then
+            connector_status="ACTIVE ($connector_count connectors)"
+        else
+            connector_status="ENABLED ($connector_count connectors, timer inactive)"
+        fi
+    elif [[ -f "$connectors_conf" ]]; then
+        connector_status="DISABLED"
+    fi
+    printf "  %-20s %s\n" "Connectors.........." "$connector_status"
+
     # GUI
     local gui_status="NOT INSTALLED"
     if systemctl is-active nftban-ui >/dev/null 2>&1; then
@@ -528,6 +573,7 @@ output_terminal() {
         ["nftban-health.timer"]="Health check"
         ["nftban-maintenance.timer"]="Maintenance tasks"
         ["nftban-metrics-exporter.timer"]="Prometheus metrics"
+        ["nftban-unified-exporter.timer"]="Unified metrics export"
         ["nftban-core-feeds.timer"]="Threat feeds update"
         ["nftban-core-geoip.timer"]="GeoIP database update"
         ["nftban-queue.timer"]="Queue processing"
@@ -887,7 +933,7 @@ output_json() {
 
     # Timers
     echo "  \"timers\": {"
-    local timer_list=("nftban-health.timer" "nftban-feeds.timer" "nftban-geoip-update.timer" "nftban-maintenance.timer" "nftban-stats.timer" "nftban-metrics-exporter.timer")
+    local timer_list=("nftban-health.timer" "nftban-feeds.timer" "nftban-geoip-update.timer" "nftban-maintenance.timer" "nftban-stats.timer" "nftban-metrics-exporter.timer" "nftban-unified-exporter.timer")
     local timer_json=""
     for timer in "${timer_list[@]}"; do
         local timer_name="${timer%.timer}"
