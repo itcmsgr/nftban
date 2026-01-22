@@ -40,7 +40,7 @@ readonly NFTBAN_DDOS_SURICATA_LOADED=1
 # LOAD IPC/FRAGMENT LIBRARIES (for single-writer architecture)
 # =============================================================================
 
-NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
