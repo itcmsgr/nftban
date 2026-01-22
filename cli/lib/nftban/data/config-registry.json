@@ -260,15 +260,15 @@
       "description": "Zabbix trapper export configuration",
       "active_when": "always",
       "category": "features",
-      "key_count": 18,
-      "comment": "Native Zabbix integration with multi-target support and LLD"
+      "key_count": 19,
+      "comment": "Native Zabbix integration with multi-target support, LLD, and auto-firewall"
     },
     "conf.d/connectors.conf": {
       "description": "Generic connector export configuration (Elasticsearch, Kafka, file)",
       "active_when": "always",
       "category": "features",
-      "key_count": 35,
-      "comment": "Export metrics to external systems for centralized monitoring"
+      "key_count": 36,
+      "comment": "Export metrics to external systems with auto-firewall configuration"
     }
   },
   "key_prefixes": {

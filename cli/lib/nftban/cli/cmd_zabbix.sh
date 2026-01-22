@@ -110,6 +110,73 @@ _zabbix_print_info() {
     echo "ℹ️  $1"
 }
 
+# Firewall helper: Allow outbound traffic to Zabbix server
+_zabbix_firewall_allow() {
+    local server="$1"
+    local port="$2"
+
+    # Resolve hostname to IP if needed
+    local server_ip
+    if [[ "$server" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        server_ip="$server"
+    else
+        server_ip=$(getent hosts "$server" 2>/dev/null | awk '{print $1}' | head -1)
+        [[ -z "$server_ip" ]] && server_ip=$(host "$server" 2>/dev/null | awk '/has address/ {print $4}' | head -1)
+    fi
+
+    [[ -z "$server_ip" ]] && return 1
+
+    # Check if rule already exists
+    if nft list chain inet nftban output 2>/dev/null | grep -q "daddr $server_ip.*dport $port"; then
+        return 0  # Already exists
+    fi
+
+    # Add outbound rule to nftban output chain
+    # Use handle-based insertion for proper priority
+    if nft add rule inet nftban output ip daddr "$server_ip" tcp dport "$port" accept comment \"zabbix-export\" 2>/dev/null; then
+        return 0
+    fi
+
+    # Fallback: Try ip family if inet doesn't exist
+    if nft add rule ip nftban output ip daddr "$server_ip" tcp dport "$port" accept comment \"zabbix-export\" 2>/dev/null; then
+        return 0
+    fi
+
+    return 1
+}
+
+# Firewall helper: Remove Zabbix outbound rule
+_zabbix_firewall_remove() {
+    local server="$1"
+    local port="$2"
+
+    # Resolve hostname to IP
+    local server_ip
+    if [[ "$server" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        server_ip="$server"
+    else
+        server_ip=$(getent hosts "$server" 2>/dev/null | awk '{print $1}' | head -1)
+    fi
+
+    [[ -z "$server_ip" ]] && return 1
+
+    # Find and delete rule with zabbix-export comment
+    local handle
+    handle=$(nft -a list chain inet nftban output 2>/dev/null | grep "zabbix-export" | grep -oP 'handle \K\d+')
+
+    if [[ -n "$handle" ]]; then
+        nft delete rule inet nftban output handle "$handle" 2>/dev/null && return 0
+    fi
+
+    # Try ip family
+    handle=$(nft -a list chain ip nftban output 2>/dev/null | grep "zabbix-export" | grep -oP 'handle \K\d+')
+    if [[ -n "$handle" ]]; then
+        nft delete rule ip nftban output handle "$handle" 2>/dev/null && return 0
+    fi
+
+    return 1
+}
+
 # =============================================================================
 # Command: nftban zabbix setup
 # =============================================================================
@@ -177,6 +244,26 @@ _cmd_zabbix_setup() {
     _zabbix_config_set "NFTBAN_ZABBIX_HOSTNAME" "$hostname"
     _zabbix_config_set "NFTBAN_ZABBIX_TLS_ENABLED" "$tls"
     _zabbix_config_set "NFTBAN_ZABBIX_PSK_ENABLED" "$psk"
+
+    # Configure firewall for outbound Zabbix traffic
+    local firewall_auto
+    firewall_auto=$(_zabbix_config_get "NFTBAN_ZABBIX_FIREWALL_AUTO" "true")
+    if [[ "$firewall_auto" == "true" ]]; then
+        _zabbix_print_info "Configuring firewall for outbound traffic to $server:$port..."
+        if _zabbix_firewall_allow "$server" "$port"; then
+            _zabbix_print_success "Firewall rule added"
+        else
+            _zabbix_print_warning "Could not add firewall rule (manual setup may be required)"
+        fi
+    fi
+
+    # Enable unified exporter timer
+    _zabbix_print_info "Enabling unified exporter timer..."
+    if systemctl enable --now nftban-unified-exporter.timer 2>/dev/null; then
+        _zabbix_print_success "Timer enabled"
+    else
+        _zabbix_print_warning "Could not enable timer (run: systemctl enable --now nftban-unified-exporter.timer)"
+    fi
 
     # Test connection
     echo ""
@@ -764,6 +851,17 @@ _cmd_zabbix_config() {
             _zabbix_print_success "Zabbix integration enabled"
             ;;
         disable)
+            # Remove firewall rule if it was auto-configured
+            local server port firewall_auto
+            server=$(_zabbix_config_get "NFTBAN_ZABBIX_SERVER" "")
+            port=$(_zabbix_config_get "NFTBAN_ZABBIX_PORT" "10051")
+            firewall_auto=$(_zabbix_config_get "NFTBAN_ZABBIX_FIREWALL_AUTO" "true")
+
+            if [[ "$firewall_auto" == "true" ]] && [[ -n "$server" ]]; then
+                _zabbix_print_info "Removing firewall rule..."
+                _zabbix_firewall_remove "$server" "$port" && _zabbix_print_success "Firewall rule removed"
+            fi
+
             _zabbix_config_set "NFTBAN_ZABBIX_ENABLED" "false"
             _zabbix_print_success "Zabbix integration disabled"
             ;;
