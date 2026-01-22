@@ -106,6 +106,8 @@ EOF
   cat <<'EOF'
   gui              Web GUI (nftban-ui on port 8443)
   metrics          Prometheus exporter (port 9100)
+  zabbix           Zabbix exporter (trapper protocol, LLD)
+  connector        Generic connectors (ES, Kafka, syslog, file)
   stats            Statistics (top IPs, recent bans, trends)
   watchdog         System resource monitoring (load, memory, I/O)
   report           Security reports (HTML, email)
