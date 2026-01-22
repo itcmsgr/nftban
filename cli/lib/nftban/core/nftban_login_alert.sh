@@ -3,25 +3,23 @@
 # NFTBan v1.0 - Login Monitor with Auto-Ban
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Login monitoring and alerting
-#
-# meta:name=nftban_login_alert
-# meta:type=core
-# meta:header=Login Alert Module
-# meta:version=1.0.0
+# meta:name="nftban_login_alert"
+# meta:type="core"
+# meta:header="Login Alert Module"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Monitors system logins, detects brute-force, and auto-bans attackers (replaces fail2ban)
-# meta:input=System login events and user sessions
-# meta:output=Login alerts and notifications
-#
-# **Inventory & Requirements**
-# meta:depends=nftban_distro_config.sh,nftban_geoip_go.sh,last,journalctl
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:homepage="https://nftban.com"
+# meta:description="Monitors system logins, detects brute-force, and auto-bans attackers"
+# meta:depends="nftban_distro_config.sh,nftban_geoip_go.sh,last,journalctl"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
+# meta:inventory.config_files="/etc/nftban/conf.d/login_alert.conf"
+# meta:inventory.systemd_units="nftban-login-monitor.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-01-22"
 # =============================================================================
 
 # Enhanced strict mode
@@ -38,8 +36,8 @@ readonly NFTBAN_LOGIN_ALERT_LOADED=1
 
 # Load configuration
 # NFTBAN_LIB_DIR is set by the calling script (cmd_login.sh, etc.)
-# Don't set it here - just use it with fallback
-NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+# Use bootstrap pattern to avoid readonly conflicts with env.sh
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
 
 # Load main nftban.conf for NFTBAN_BIN and other core paths
 # This MUST be sourced before using NFTBAN_BIN variable
@@ -257,7 +255,7 @@ nftban_login_digest_count() {
 
 nftban_login_digest_send() {
     # Send daily login digest email
-    # Called by: nftban report run daily (if mode=digest or mode=both)
+    # Usage: called by nftban report run daily (if mode=digest or mode=both)
 
     local digest_file="${NFTBAN_LOGIN_DIGEST_FILE:-/var/lib/nftban/login_digest.json}"
     local count
