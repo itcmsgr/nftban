@@ -1,0 +1,66 @@
+# =============================================================================
+# NFTBan v1.3.0 - Elasticsearch Connector Configuration
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Copy to /etc/nftban/connectors/elasticsearch.yaml and customize
+#
+# meta:name="elasticsearch.yaml"
+# meta:type="config"
+# meta:description="Elasticsearch connector configuration example"
+# =============================================================================
+
+name: production-elasticsearch
+type: elasticsearch
+enabled: false
+
+# Connection settings
+connection:
+  # Single node or cluster addresses
+  addresses:
+    - https://elasticsearch.example.com:9200
+    # - https://es-node2.example.com:9200
+
+  # Authentication (choose one method)
+  # Method 1: Basic auth
+  username: nftban
+  password: "${NFTBAN_ES_PASSWORD}"  # Use environment variable
+
+  # Method 2: API key (preferred for production)
+  # api_key: "${NFTBAN_ES_API_KEY}"
+
+  # TLS settings
+  tls:
+    enabled: true
+    skip_verify: false
+    # ca_cert: /etc/nftban/certs/es-ca.crt
+
+# Index configuration
+index:
+  name: nftban-metrics
+  # Daily index pattern for time-series data
+  pattern: nftban-metrics-%Y.%m.%d
+  # Optional ingest pipeline
+  # pipeline: nftban-ingest
+
+# Performance tuning
+bulk:
+  # Documents per bulk request
+  size: 1000
+  # Flush interval in seconds
+  flush_interval: 5
+
+# Retry settings
+retry:
+  max_attempts: 3
+  interval: 1s
+
+# Data filtering (optional)
+filters:
+  # Only send these record types
+  types:
+    - metrics
+    - event
+    - alert
+  # Exclude records with these tags
+  # exclude_tags:
+  #   - internal

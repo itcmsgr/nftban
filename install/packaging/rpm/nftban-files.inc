@@ -22,6 +22,12 @@
 %dir %attr(0755,root,root) /usr/lib/nftban/setup
 %dir %attr(0755,root,root) /usr/lib/nftban/tests
 %dir %attr(0755,root,root) /usr/lib/nftban/helpers
+%dir %attr(0755,root,root) /usr/lib/nftban/cron
+%dir %attr(0755,root,root) /usr/lib/nftban/modules
+%dir %attr(0755,root,root) /usr/lib/nftban/sbin
+%dir %attr(0755,root,root) /usr/lib/nftban/health
+%dir %attr(0755,root,root) /usr/lib/nftban/data
+%dir %attr(0755,root,root) /usr/lib/nftban/tools
 
 # ---------------------------------------------------------------------------
 # CONFIGURATION DIRECTORIES (root:nftban)
@@ -39,6 +45,7 @@
 %dir %attr(0750,root,nftban) /etc/nftban/blacklist.d
 %dir %attr(0750,root,nftban) /etc/nftban/ports.d
 %dir %attr(0750,root,nftban) /etc/nftban/rules.d
+%dir %attr(0750,root,nftban) /etc/nftban/connectors
 %dir %attr(0755,root,root) /etc/nftban/distros
 
 # ---------------------------------------------------------------------------
@@ -48,4 +55,7 @@
 %dir %attr(0755,root,root) /usr/share/nftban/templates
 %dir %attr(0755,root,root) /usr/share/nftban/templates/mail
 %dir %attr(0755,root,root) /usr/share/nftban/templates/reports
+%dir %attr(0755,root,root) /usr/share/nftban/templates/zabbix
+%dir %attr(0755,root,root) /usr/share/nftban/dashboards
+%dir %attr(0755,root,root) /usr/share/nftban/dashboards/grafana
 %dir %attr(0755,root,root) /usr/share/nftban/specs

@@ -1,0 +1,60 @@
+# =============================================================================
+# NFTBan v1.3.0 - Unified Metrics Exporter Service
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-unified-exporter.service"
+# meta:type="systemd"
+# meta:version="1.3.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:inventory.files=""
+# meta:inventory.binaries="/usr/lib/nftban/exporters/nftban_unified_exporter.sh"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="nftban-unified-exporter.timer"
+# meta:inventory.network="outbound:10051/tcp,outbound:9200/tcp,outbound:9092/tcp"
+# meta:inventory.privileges="nftban"
+#
+# Collects metrics ONCE, exports to ALL configured targets:
+# - Prometheus (node_exporter textfile)
+# - Zabbix (trapper protocol)
+# - Connectors (Elasticsearch, Kafka, file, etc.)
+#
+# =============================================================================
+
+[Unit]
+Description=NFTBan Unified Metrics Exporter
+Documentation=https://nftban.com/docs/metrics
+After=network.target nftban.service
+Wants=nftban.service
+
+[Service]
+Type=oneshot
+
+# Run as nftban user (least privilege)
+User=nftban
+Group=nftban
+
+# Execute unified exporter
+ExecStart=/usr/lib/nftban/exporters/nftban_unified_exporter.sh
+
+# Resource limits (prevent runaway)
+CPUQuota=10%
+MemoryMax=64M
+TimeoutStartSec=30s
+
+# Security hardening
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+ReadWritePaths=/var/lib/node_exporter/textfile_collector
+ReadWritePaths=/run/nftban
+ReadWritePaths=/var/log/nftban
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=nftban-exporter
+
+[Install]
+WantedBy=multi-user.target

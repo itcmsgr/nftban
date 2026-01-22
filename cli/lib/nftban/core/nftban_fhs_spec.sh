@@ -55,6 +55,12 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/setup"]="0755|root|root|Setup and installation scripts"
     NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/tests"]="0755|root|root|Test scripts (smoke tests, validation)"
     NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/helpers"]="0755|root|root|Helper scripts (trace, autoheal)"
+    NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/cron"]="0755|root|root|Cron/timer job scripts"
+    NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/modules"]="0755|root|root|Protection modules (portscan, ddos, login)"
+    NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/sbin"]="0755|root|root|System helper binaries"
+    NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/health"]="0755|root|root|Health check modules"
+    NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/data"]="0755|root|root|Static data files (registries, schemas)"
+    NFTBAN_FHS_DIRECTORIES["/usr/lib/nftban/tools"]="0755|root|root|Utility tools and scripts"
 
     # Configuration Directories (root:nftban)
     NFTBAN_FHS_DIRECTORIES["/etc/nftban"]="0750|root|nftban|Configuration files (daemon readable via group)"
@@ -70,6 +76,7 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/blacklist.d"]="0750|root|nftban|Blacklist entries"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/ports.d"]="0750|root|nftban|Port whitelist entries"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/rules.d"]="0750|root|nftban|Custom nftables rules"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/connectors"]="0750|root|nftban|Connector configurations (Zabbix, Elasticsearch, Kafka)"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/distros"]="0755|root|root|Distro-specific configuration files"
 
     # Data Directories
@@ -111,6 +118,9 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/templates"]="0755|root|root|Templates"
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/templates/mail"]="0755|root|root|Mail templates"
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/templates/reports"]="0755|root|root|Report templates"
+    NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/templates/zabbix"]="0755|root|root|Zabbix import templates (5.x XML, 6.x+ YAML)"
+    NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/dashboards"]="0755|root|root|Monitoring dashboards"
+    NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/dashboards/grafana"]="0755|root|root|Grafana dashboard JSON files"
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/specs"]="0755|root|root|Specification files"
 }
 

@@ -27,11 +27,20 @@ Description=NFTBan Task Queue Processor Timer
 Documentation=man:nftban(8)
 
 [Timer]
-# Run every 2 minutes with jitter to prevent synchronized bursts
-OnBootSec=2min
-OnUnitActiveSec=2min
-AccuracySec=10s
-RandomizedDelaySec=30s
+# OPTIMIZED: 5 minutes instead of 2 (reduces 60% of timer overhead)
+# Queue processing is not latency-critical - 5min is acceptable
+OnBootSec=3min
+OnUnitActiveSec=5min
+
+# Allow systemd to batch
+AccuracySec=30s
+
+# SMART JITTER: 40% variance (2min on 5min interval)
+RandomizedDelaySec=2min
+FixedRandomDelay=true
+
+# Catch up if missed (ensures queue doesn't grow unbounded)
+Persistent=true
 
 [Install]
 WantedBy=timers.target

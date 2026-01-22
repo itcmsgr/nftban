@@ -74,6 +74,54 @@
         "group": "root",
         "description": "Helper scripts (trace, autoheal)",
         "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/cron",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Cron/timer job scripts",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/modules",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Protection modules (portscan, ddos, login)",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/sbin",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "System helper binaries",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/health",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Health check modules",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/data",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Static data files (registries, schemas)",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/lib/nftban/tools",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Utility tools and scripts",
+        "created_by": "package"
       }
     ],
     "config": [
@@ -134,22 +182,6 @@
         "created_by": "package"
       },
       {
-        "path": "/etc/nftban/conf.d/geoban",
-        "mode": "0750",
-        "owner": "root",
-        "group": "nftban",
-        "description": "GeoBan country blocking configuration",
-        "created_by": "package"
-      },
-      {
-        "path": "/etc/nftban/conf.d/geoip",
-        "mode": "0750",
-        "owner": "root",
-        "group": "nftban",
-        "description": "GeoIP database configuration",
-        "created_by": "package"
-      },
-      {
         "path": "/etc/nftban/patterns.d",
         "mode": "0750",
         "owner": "root",
@@ -195,6 +227,14 @@
         "owner": "root",
         "group": "nftban",
         "description": "Custom nftables rules",
+        "created_by": "package"
+      },
+      {
+        "path": "/etc/nftban/connectors",
+        "mode": "0750",
+        "owner": "root",
+        "group": "nftban",
+        "description": "Connector configurations (Zabbix, Elasticsearch, Kafka)",
         "created_by": "package"
       },
       {
@@ -470,6 +510,30 @@
         "created_by": "package"
       },
       {
+        "path": "/usr/share/nftban/templates/zabbix",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Zabbix import templates (5.x XML, 6.x+ YAML)",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/share/nftban/dashboards",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Monitoring dashboards",
+        "created_by": "package"
+      },
+      {
+        "path": "/usr/share/nftban/dashboards/grafana",
+        "mode": "0755",
+        "owner": "root",
+        "group": "root",
+        "description": "Grafana dashboard JSON files",
+        "created_by": "package"
+      },
+      {
         "path": "/usr/share/nftban/specs",
         "mode": "0755",
         "owner": "root",
@@ -482,34 +546,6 @@
   "binaries": {
     "cli": "/usr/bin/nftban",
     "go_binaries_dir": "/usr/lib/nftban/bin"
-  },
-  "files": {
-    "_comment": "File permissions (not directories) - used for health check verification",
-    "executables": [
-      {
-        "path": "/usr/lib/nftban/bin/nftban-core",
-        "mode": "0755",
-        "owner": "root",
-        "group": "root",
-        "description": "Go binary for core nftables operations",
-        "capabilities": "cap_net_admin+ep"
-      },
-      {
-        "path": "/usr/lib/nftban/bin/nftband",
-        "mode": "0755",
-        "owner": "root",
-        "group": "root",
-        "description": "Go daemon for single-writer nftables IPC",
-        "capabilities": "cap_net_admin+ep"
-      },
-      {
-        "path": "/usr/bin/nftban",
-        "mode": "0750",
-        "owner": "root",
-        "group": "nftban",
-        "description": "Main CLI entrypoint (restricted to nftban group)"
-      }
-    ]
   },
   "sysusers": {
     "user": "nftban",

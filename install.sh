@@ -2118,6 +2118,20 @@ install_systemd() {
         ok "Queue processor units → $systemd_dir"
     fi
 
+    # Zabbix exporter (v1.3.0+)
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-zabbix-exporter.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-zabbix-exporter.service" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-zabbix-exporter.timer" "$systemd_dir/"
+        ok "Zabbix exporter units → $systemd_dir"
+    fi
+
+    # Connector exporter (v1.3.0+)
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-connector-exporter.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-connector-exporter.service" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-connector-exporter.timer" "$systemd_dir/"
+        ok "Connector exporter units → $systemd_dir"
+    fi
+
     # Service failure alert template
     if [[ -f "$SCRIPT_DIR/install/systemd/nftban-alert@.service" ]]; then
         cp -f "$SCRIPT_DIR/install/systemd/nftban-alert@.service" "$systemd_dir/"
