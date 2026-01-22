@@ -78,6 +78,11 @@ templ sidebar(activePage string) {
 					</a>
 				</li>
 				<li class="nav-item">
+					<a href="/ui/tools" class={ "nav-link", templ.KV("active", activePage == "tools") }>
+						<span class="nav-icon">&#x1F527;</span> Tools
+					</a>
+				</li>
+				<li class="nav-item">
 					<a href="/ui/modules" class={ "nav-link", templ.KV("active", activePage == "modules") }>
 						<span class="nav-icon">&#x2699;</span> Modules
 					</a>

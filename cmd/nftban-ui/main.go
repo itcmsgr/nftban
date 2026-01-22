@@ -145,6 +145,7 @@ func main() {
 	router.HandleFunc("/ui/", gothHandlers.RequireSession(gothHandlers.HandleDashboard)).Methods("GET")
 	router.HandleFunc("/ui/bans", gothHandlers.RequireSession(gothHandlers.HandleBans)).Methods("GET")
 	router.HandleFunc("/ui/whitelist", gothHandlers.RequireSession(gothHandlers.HandleWhitelist)).Methods("GET")
+	router.HandleFunc("/ui/tools", gothHandlers.RequireSession(gothHandlers.HandleTools)).Methods("GET")
 	router.HandleFunc("/ui/health", gothHandlers.RequireSession(gothHandlers.HandleHealth)).Methods("GET")
 	router.HandleFunc("/ui/modules", gothHandlers.RequireSession(gothHandlers.HandleModules)).Methods("GET")
 	router.HandleFunc("/ui/inventory", gothHandlers.RequireSession(gothHandlers.HandleInventory)).Methods("GET")
@@ -160,6 +161,7 @@ func main() {
 	router.HandleFunc("/ui/frag/inventory", gothHandlers.RequireSession(gothHandlers.HandleFragInventory)).Methods("GET")
 	router.HandleFunc("/ui/frag/bans-table", gothHandlers.RequireSession(gothHandlers.HandleFragBansTable)).Methods("GET")
 	router.HandleFunc("/ui/frag/whitelist-table", gothHandlers.RequireSession(gothHandlers.HandleFragWhitelistTable)).Methods("GET")
+	router.HandleFunc("/ui/frag/logs", gothHandlers.RequireSession(gothHandlers.HandleFragLogs)).Methods("GET")
 
 	// Backwards compat fragments
 	router.HandleFunc("/ui/frag/summary", gothHandlers.RequireSession(gothHandlers.HandleFragSummary)).Methods("GET")
@@ -178,6 +180,11 @@ func main() {
 	router.HandleFunc("/ui/action/flush-temp", gothHandlers.RequireSession(gothHandlers.HandleFlushTemp)).Methods("POST")
 	router.HandleFunc("/ui/action/restart/{service}", gothHandlers.RequireSession(gothHandlers.HandleRestartService)).Methods("POST")
 	router.HandleFunc("/ui/action/health-fix", gothHandlers.RequireSession(gothHandlers.HandleHealthFix)).Methods("POST")
+
+	// Tools page API endpoints (pfSense-style diagnostics)
+	router.HandleFunc("/api/v1/tools/check", gothHandlers.RequireSession(gothHandlers.HandleToolsIPCheck)).Methods("POST")
+	router.HandleFunc("/api/v1/tools/geoip", gothHandlers.RequireSession(gothHandlers.HandleToolsGeoIP)).Methods("POST")
+	router.HandleFunc("/api/v1/tools/search", gothHandlers.RequireSession(gothHandlers.HandleToolsSearch)).Methods("POST")
 
 	log.Printf("[GOTH] GOTH GUI routes registered at /ui/*")
 
