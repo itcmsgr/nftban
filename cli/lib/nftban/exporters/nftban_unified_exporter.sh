@@ -128,10 +128,12 @@ collect_all_metrics() {
         pid=0
         uptime=0
     fi
+    local mode
     mode=$(cat "${NFTBAN_RUN_DIR}/mode" 2>/dev/null || echo "normal")
 
     metrics+="nftban_status $status $timestamp\n"
     metrics+="nftban_version_info{version=\"$version\"} 1 $timestamp\n"
+    metrics+="nftban_mode_info{mode=\"$mode\"} 1 $timestamp\n"
     metrics+="nftban_uptime_seconds $uptime $timestamp\n"
     metrics+="nftban_pid $pid $timestamp\n"
 
