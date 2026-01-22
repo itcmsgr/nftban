@@ -131,6 +131,54 @@ func (h *GOTHHandlers) HandleFragWhitelistTable(w http.ResponseWriter, r *http.R
 	pages.WhitelistTableFragment(data).Render(r.Context(), w)
 }
 
+// HandleTools renders the diagnostic tools page (pfSense-style)
+func (h *GOTHHandlers) HandleTools(w http.ResponseWriter, r *http.Request) {
+	data := h.getToolsData()
+	pages.Tools(data).Render(r.Context(), w)
+}
+
+// HandleFragLogs renders log entries fragment for HTMX
+func (h *GOTHHandlers) HandleFragLogs(w http.ResponseWriter, r *http.Request) {
+	logs := h.getRecentLogs(r.URL.Query().Get("level"))
+	pages.LogEntriesFragment(logs).Render(r.Context(), w)
+}
+
+// HandleToolsIPCheck handles IP check/emulate requests
+func (h *GOTHHandlers) HandleToolsIPCheck(w http.ResponseWriter, r *http.Request) {
+	ip := r.FormValue("ip")
+	if ip == "" {
+		http.Error(w, "IP required", http.StatusBadRequest)
+		return
+	}
+
+	result := h.checkIP(ip)
+	pages.IPCheckResultFragment(result).Render(r.Context(), w)
+}
+
+// HandleToolsGeoIP handles GeoIP lookup requests
+func (h *GOTHHandlers) HandleToolsGeoIP(w http.ResponseWriter, r *http.Request) {
+	ip := r.FormValue("ip")
+	if ip == "" {
+		http.Error(w, "IP required", http.StatusBadRequest)
+		return
+	}
+
+	result := h.geoLookup(ip)
+	pages.GeoLookupResultFragment(result).Render(r.Context(), w)
+}
+
+// HandleToolsSearch handles cross-set IP search requests
+func (h *GOTHHandlers) HandleToolsSearch(w http.ResponseWriter, r *http.Request) {
+	ip := r.FormValue("ip")
+	if ip == "" {
+		http.Error(w, "IP required", http.StatusBadRequest)
+		return
+	}
+
+	result := h.searchIP(ip)
+	pages.SearchResultFragment(result).Render(r.Context(), w)
+}
+
 // =============================================================================
 // FRAGMENT HANDLERS (HTMX)
 // =============================================================================
@@ -1829,4 +1877,260 @@ func formatBytes(bytes int64) string {
 		exp++
 	}
 	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
+}
+
+// =============================================================================
+// TOOLS DATA FETCHERS
+// =============================================================================
+
+func (h *GOTHHandlers) getToolsData() ui.ToolsData {
+	data := ui.ToolsData{}
+
+	// Get quick stats
+	sec := h.getSecurity()
+	data.TotalBans = sec.BansTotal
+	data.TotalWhitelist = sec.WhitelistTotal
+
+	// Count feeds
+	out, err := exec.Command("nftban", "feeds", "list", "--json").Output()
+	if err == nil {
+		var feeds []map[string]interface{}
+		if json.Unmarshal(out, &feeds) == nil {
+			for _, f := range feeds {
+				if enabled, ok := f["enabled"].(bool); ok && enabled {
+					data.TotalFeeds++
+				}
+			}
+		}
+	}
+
+	// Get recent logs
+	data.RecentLogs = h.getRecentLogs("")
+
+	return data
+}
+
+func (h *GOTHHandlers) getRecentLogs(levelFilter string) []ui.LogEntry {
+	logs := []ui.LogEntry{}
+
+	// Read from ban log
+	logFile := "/var/log/nftban/bans.log"
+	if content, err := os.ReadFile(logFile); err == nil {
+		lines := strings.Split(string(content), "\n")
+		// Get last 50 lines
+		start := len(lines) - 50
+		if start < 0 {
+			start = 0
+		}
+
+		for i := len(lines) - 1; i >= start; i-- {
+			line := strings.TrimSpace(lines[i])
+			if line == "" {
+				continue
+			}
+
+			entry := parseBanLogLine(line)
+			if entry.Timestamp != "" {
+				if levelFilter == "" || levelFilter == "all" || entry.Level == levelFilter {
+					logs = append(logs, entry)
+				}
+			}
+		}
+	}
+
+	// Limit to 30 entries
+	if len(logs) > 30 {
+		logs = logs[:30]
+	}
+
+	return logs
+}
+
+func parseBanLogLine(line string) ui.LogEntry {
+	entry := ui.LogEntry{}
+
+	// Format: timestamp|action|module|ip|reason
+	parts := strings.Split(line, "|")
+	if len(parts) >= 4 {
+		entry.Timestamp = parts[0]
+		action := strings.ToUpper(parts[1])
+		if action == "BAN" || action == "BANNED" {
+			entry.Level = "BAN"
+		} else if action == "UNBAN" || action == "UNBANNED" {
+			entry.Level = "UNBAN"
+		} else {
+			entry.Level = "INFO"
+		}
+		entry.Module = parts[2]
+		entry.IP = parts[3]
+		if len(parts) >= 5 {
+			entry.Message = parts[4]
+		}
+	}
+
+	return entry
+}
+
+func (h *GOTHHandlers) checkIP(ip string) ui.IPCheckResult {
+	result := ui.IPCheckResult{IP: ip}
+
+	// Run nftban check command
+	out, err := exec.Command("nftban", "check", ip, "--json").Output()
+	if err != nil {
+		// Try without --json
+		out, _ = exec.Command("nftban", "check", ip).Output()
+		output := string(out)
+
+		if strings.Contains(output, "BLOCKED") || strings.Contains(output, "banned") {
+			result.Status = "banned"
+		} else if strings.Contains(output, "WHITELISTED") || strings.Contains(output, "whitelisted") {
+			result.Status = "whitelisted"
+		} else {
+			result.Status = "clean"
+		}
+
+		// Try to extract reason
+		if idx := strings.Index(output, "Reason:"); idx >= 0 {
+			result.Reason = strings.TrimSpace(output[idx+7:])
+		}
+
+		return result
+	}
+
+	// Parse JSON response
+	var checkResult map[string]interface{}
+	if json.Unmarshal(out, &checkResult) == nil {
+		if status, ok := checkResult["status"].(string); ok {
+			result.Status = status
+		}
+		if reason, ok := checkResult["reason"].(string); ok {
+			result.Reason = reason
+		}
+		if module, ok := checkResult["module"].(string); ok {
+			result.Module = module
+		}
+		if country, ok := checkResult["country"].(string); ok {
+			result.Country = country
+		}
+		if since, ok := checkResult["banned_since"].(string); ok {
+			result.BannedSince = since
+		}
+	}
+
+	return result
+}
+
+func (h *GOTHHandlers) geoLookup(ip string) ui.GeoLookupResult {
+	result := ui.GeoLookupResult{IP: ip}
+
+	// Run nftban geoip command
+	out, err := exec.Command("nftban", "geoip", ip, "--json").Output()
+	if err != nil {
+		// Try nftban-geoip directly
+		out, err = exec.Command("nftban-geoip", "lookup", ip).Output()
+		if err != nil {
+			result.Country = "Unknown"
+			return result
+		}
+	}
+
+	// Parse JSON response
+	var geoResult map[string]interface{}
+	if json.Unmarshal(out, &geoResult) == nil {
+		if country, ok := geoResult["country"].(string); ok {
+			result.Country = country
+		}
+		if code, ok := geoResult["country_code"].(string); ok {
+			result.CountryCode = code
+		}
+		if city, ok := geoResult["city"].(string); ok {
+			result.City = city
+		}
+		if region, ok := geoResult["region"].(string); ok {
+			result.Region = region
+		}
+		if asn, ok := geoResult["asn"].(string); ok {
+			result.ASN = asn
+		}
+		if asnOrg, ok := geoResult["asn_org"].(string); ok {
+			result.ASNOrg = asnOrg
+		}
+		if blocked, ok := geoResult["is_blocked"].(bool); ok {
+			result.IsBlocked = blocked
+		}
+		if reason, ok := geoResult["block_reason"].(string); ok {
+			result.BlockReason = reason
+		}
+	}
+
+	return result
+}
+
+func (h *GOTHHandlers) searchIP(ip string) ui.SearchResult {
+	result := ui.SearchResult{IP: ip}
+
+	// Run nftban search command
+	out, err := exec.Command("nftban", "search", ip, "--json").Output()
+	if err != nil {
+		// Try without --json
+		out, _ = exec.Command("nftban", "search", ip).Output()
+		output := string(out)
+
+		if strings.Contains(output, "Found") || strings.Contains(output, "found") {
+			result.Found = true
+			result.TotalMatches = 1
+
+			// Parse output for matches
+			match := ui.SearchMatch{
+				SetName:   "blacklist",
+				SetType:   "blacklist",
+				EntryType: "exact",
+			}
+
+			if strings.Contains(output, "whitelist") {
+				match.SetName = "whitelist"
+				match.SetType = "whitelist"
+			} else if strings.Contains(output, "feed") {
+				match.SetType = "feed"
+			}
+
+			result.FoundIn = append(result.FoundIn, match)
+		}
+
+		return result
+	}
+
+	// Parse JSON response
+	var searchResult map[string]interface{}
+	if json.Unmarshal(out, &searchResult) == nil {
+		if found, ok := searchResult["found"].(bool); ok {
+			result.Found = found
+		}
+		if matches, ok := searchResult["matches"].([]interface{}); ok {
+			result.TotalMatches = len(matches)
+			for _, m := range matches {
+				if matchMap, ok := m.(map[string]interface{}); ok {
+					match := ui.SearchMatch{}
+					if name, ok := matchMap["set_name"].(string); ok {
+						match.SetName = name
+					}
+					if stype, ok := matchMap["set_type"].(string); ok {
+						match.SetType = stype
+					}
+					if etype, ok := matchMap["entry_type"].(string); ok {
+						match.EntryType = etype
+					}
+					if cidr, ok := matchMap["matched_cidr"].(string); ok {
+						match.MatchedCIDR = cidr
+					}
+					if reason, ok := matchMap["reason"].(string); ok {
+						match.Reason = reason
+					}
+					result.FoundIn = append(result.FoundIn, match)
+				}
+			}
+		}
+	}
+
+	return result
 }

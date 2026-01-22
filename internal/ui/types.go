@@ -360,3 +360,76 @@ type WhitelistSource struct {
 	EntryCount int
 	Editable   bool // System files not editable
 }
+
+// =============================================================================
+// TOOLS PAGE DATA (pfSense-style Diagnostics)
+// =============================================================================
+
+// ToolsData holds diagnostic tools data
+type ToolsData struct {
+	// Last lookup results (if any)
+	LastIPCheck   *IPCheckResult
+	LastGeoLookup *GeoLookupResult
+	LastSearch    *SearchResult
+
+	// Log viewer
+	RecentLogs []LogEntry
+
+	// Quick stats for tools context
+	TotalBans      int
+	TotalWhitelist int
+	TotalFeeds     int
+}
+
+// GeoLookupResult holds GeoIP lookup results
+type GeoLookupResult struct {
+	IP          string
+	Country     string
+	CountryCode string
+	City        string
+	Region      string
+	ASN         string
+	ASNOrg      string
+	IsBlocked   bool   // Country is geo-blocked
+	BlockReason string // Why blocked (if applicable)
+}
+
+// SearchResult holds cross-set search results
+type SearchResult struct {
+	IP           string
+	Found        bool
+	FoundIn      []SearchMatch
+	TotalMatches int
+}
+
+// SearchMatch represents where an IP was found
+type SearchMatch struct {
+	SetName     string // "blacklist_ipv4", "whitelist_ipv4", "feed_spamhaus", etc.
+	SetType     string // "blacklist", "whitelist", "feed", "geoban"
+	EntryType   string // "exact", "cidr_match", "range"
+	MatchedCIDR string // If CIDR match, show the network
+	AddedAt     string
+	Reason      string
+}
+
+// LogEntry represents a log line for the viewer
+type LogEntry struct {
+	Timestamp string
+	Level     string // "INFO", "WARN", "ERROR", "BAN", "UNBAN"
+	Module    string
+	Message   string
+	IP        string // Extracted IP if present
+}
+
+// =============================================================================
+// MODULES PAGE DATA
+// =============================================================================
+
+// ModulesData holds modules page information
+type ModulesData struct {
+	Modules       []ModuleStatus
+	TotalModules  int
+	EnabledCount  int
+	DisabledCount int
+	RunningCount  int
+}
