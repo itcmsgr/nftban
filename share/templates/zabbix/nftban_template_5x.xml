@@ -489,7 +489,7 @@ Documentation: https://nftban.com/docs/zabbix</description>
                     <type>TRAP</type>
                     <key>nftban.watchdog.status</key>
                     <delay>0</delay>
-                    <value_type>SIGNED</value_type>
+                    <value_type>FLOAT</value_type>
                     <description>Watchdog status: 1=ok, 0=disabled, -1=error</description>
                     <applications>
                         <application>
@@ -657,7 +657,7 @@ Documentation: https://nftban.com/docs/zabbix</description>
                             <type>TRAP</type>
                             <key>nftban.module.status[{#MODULE}]</key>
                             <delay>0</delay>
-                            <value_type>SIGNED</value_type>
+                            <value_type>FLOAT</value_type>
                             <description>Module {#MODULE} status: 1=ok, 0=error, -1=disabled</description>
                             <applications>
                                 <application>

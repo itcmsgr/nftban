@@ -474,7 +474,7 @@ zabbix_export:
           name: 'NFTBan: Watchdog status'
           type: TRAP
           key: nftban.watchdog.status
-          value_type: SIGNED
+          value_type: FLOAT
           description: 'Watchdog status: 1=ok, 0=disabled, -1=error'
           tags:
             - tag: component
@@ -878,7 +878,7 @@ zabbix_export:
               name: 'NFTBan: Module {#MODULE} status'
               type: TRAP
               key: 'nftban.module.status[{#MODULE}]'
-              value_type: SIGNED
+              value_type: FLOAT
               description: 'Module {#MODULE} status: 1=ok, 0=error, -1=disabled'
               tags:
                 - tag: component
