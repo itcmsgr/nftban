@@ -574,7 +574,7 @@ zabbix_export:
           key: nftban.server.hostname
           value_type: CHAR
           description: 'Server hostname (short)'
-          inventory_link: NAME
+          inventory_link: 3
           tags:
             - tag: component
               value: inventory
@@ -589,7 +589,7 @@ zabbix_export:
           key: nftban.server.fqdn
           value_type: CHAR
           description: 'Fully qualified domain name'
-          inventory_link: ALIAS
+          inventory_link: 4
           tags:
             - tag: component
               value: inventory
@@ -604,7 +604,7 @@ zabbix_export:
           key: nftban.server.os
           value_type: CHAR
           description: 'Operating system name and version'
-          inventory_link: OS
+          inventory_link: 5
           tags:
             - tag: component
               value: inventory
@@ -619,7 +619,7 @@ zabbix_export:
           key: nftban.server.os_release
           value_type: CHAR
           description: 'OS release/distribution (e.g., Ubuntu 24.04, Fedora 42)'
-          inventory_link: OS_SHORT
+          inventory_link: 7
           tags:
             - tag: component
               value: inventory
@@ -634,7 +634,7 @@ zabbix_export:
           key: nftban.server.kernel
           value_type: CHAR
           description: 'Kernel version'
-          inventory_link: SOFTWARE
+          inventory_link: 16
           tags:
             - tag: component
               value: inventory
@@ -649,7 +649,7 @@ zabbix_export:
           key: nftban.server.arch
           value_type: CHAR
           description: 'System architecture (x86_64, aarch64, etc.)'
-          inventory_link: TYPE
+          inventory_link: 1
           tags:
             - tag: component
               value: inventory
@@ -678,7 +678,7 @@ zabbix_export:
           key: nftban.server.cpu_model
           value_type: CHAR
           description: 'CPU model name'
-          inventory_link: HARDWARE
+          inventory_link: 14
           tags:
             - tag: component
               value: inventory
@@ -745,7 +745,7 @@ zabbix_export:
           key: nftban.server.primary_ip
           value_type: CHAR
           description: 'Primary IPv4 address'
-          inventory_link: HOST_ROUTER
+          inventory_link: 28
           tags:
             - tag: component
               value: inventory
@@ -802,7 +802,7 @@ zabbix_export:
           key: nftban.server.virtualization
           value_type: CHAR
           description: 'Virtualization type (kvm, vmware, docker, none)'
-          inventory_link: TYPE_FULL
+          inventory_link: 2
           tags:
             - tag: component
               value: inventory
@@ -817,7 +817,7 @@ zabbix_export:
           key: nftban.server.cloud_provider
           value_type: CHAR
           description: 'Cloud provider (aws, gcp, azure, digitalocean, none)'
-          inventory_link: VENDOR
+          inventory_link: 31
           tags:
             - tag: component
               value: inventory
@@ -832,7 +832,7 @@ zabbix_export:
           key: nftban.server.region
           value_type: CHAR
           description: 'Cloud region or datacenter location'
-          inventory_link: LOCATION
+          inventory_link: 24
           tags:
             - tag: component
               value: inventory
