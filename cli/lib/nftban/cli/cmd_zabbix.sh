@@ -14,7 +14,7 @@
 #
 # **Description & Purpose**
 # meta:description="Manage Zabbix trapper metrics integration"
-# meta:input="Subcommands (setup, status, test, push, template, discover, targets, config)"
+# meta:input="Subcommands (setup, status, test, push, reload, template, discover, targets, config)"
 # meta:output="Zabbix integration status and configuration"
 #
 # **Inventory & Requirements**
@@ -591,16 +591,21 @@ _cmd_zabbix_template() {
             template_file="$template_dir/nftban_template_5x.xml"
             format="xml"  # Force XML for 5.x
             ;;
-        6.0|6.2|6.4|7.0)
+        6.0|6.2|6.4)
             if [[ "$format" == "yaml" ]]; then
                 template_file="$template_dir/nftban_template_6x.yaml"
             else
                 template_file="$template_dir/nftban_template_6x.xml"
             fi
             ;;
+        7.0|7.2)
+            # Zabbix 7.x uses template_groups instead of groups
+            template_file="$template_dir/nftban_template_7x.yaml"
+            format="yaml"  # 7.x only supports YAML
+            ;;
         *)
             _zabbix_print_error "Unknown Zabbix version: $version"
-            echo "Supported versions: 5.0, 5.2, 5.4, 6.0, 6.2, 6.4, 7.0"
+            echo "Supported versions: 5.0, 5.2, 5.4, 6.0, 6.2, 6.4, 7.0, 7.2"
             return 1
             ;;
     esac
@@ -899,6 +904,42 @@ _cmd_zabbix_config() {
 }
 
 # =============================================================================
+# Command: nftban zabbix reload
+# =============================================================================
+_cmd_zabbix_reload() {
+    _zabbix_print_info "Reloading Zabbix configuration..."
+
+    # Re-source config files to pick up changes
+    [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
+    [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
+
+    local enabled server
+    enabled=$(_zabbix_config_get "NFTBAN_ZABBIX_ENABLED" "false")
+    server=$(_zabbix_config_get "NFTBAN_ZABBIX_SERVER" "")
+
+    if [[ "$enabled" != "true" ]]; then
+        _zabbix_print_warning "Zabbix integration is disabled"
+        echo "Enable with: nftban zabbix config enable"
+        return 0
+    fi
+
+    if [[ -z "$server" ]]; then
+        _zabbix_print_error "Zabbix server not configured"
+        echo "Configure with: nftban zabbix setup"
+        return 1
+    fi
+
+    # Force immediate metric push with new config
+    _zabbix_print_info "Pushing metrics with new configuration..."
+    if _cmd_zabbix_push; then
+        _zabbix_print_success "Configuration reloaded and metrics pushed"
+    else
+        _zabbix_print_error "Reload completed but push failed"
+        return 1
+    fi
+}
+
+# =============================================================================
 # Command: nftban zabbix help
 # =============================================================================
 _cmd_zabbix_help() {
@@ -913,6 +954,7 @@ COMMANDS:
     status              Show integration status
     test                Test Zabbix connectivity
     push                Force immediate metric push
+    reload              Re-read config and push metrics
     template            Export Zabbix template
     discover            Run LLD discovery
     targets             Manage multiple Zabbix targets
@@ -994,6 +1036,12 @@ EXAMPLES:
     # Force metric push
     nftban zabbix push
 
+    # After config change, reload immediately
+    nftban zabbix reload
+
+    # Or wait for next timer cycle (automatic)
+    # Config is re-read on each exporter run
+
 METRICS OVERVIEW:
     NFTBan exports 85+ metrics to Zabbix including:
     - Daemon status, version, uptime
@@ -1028,6 +1076,7 @@ nftban_cmd_zabbix() {
         status)   _cmd_zabbix_status "$@" ;;
         test)     _cmd_zabbix_test "$@" ;;
         push)     _cmd_zabbix_push "$@" ;;
+        reload)   _cmd_zabbix_reload "$@" ;;
         template) _cmd_zabbix_template "$@" ;;
         discover) _cmd_zabbix_discover "$@" ;;
         targets)  _cmd_zabbix_targets "$@" ;;
