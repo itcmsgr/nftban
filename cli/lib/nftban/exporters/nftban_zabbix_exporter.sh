@@ -337,18 +337,92 @@ collect_geoip_metrics() {
 }
 
 collect_server_metrics() {
-    # Server info metrics
+    # Server info metrics (full inventory for Zabbix 7.x)
     local metrics=""
 
-    metrics+="nftban.server.hostname $(hostname -f 2>/dev/null || hostname)\n"
-    metrics+="nftban.server.os $(grep -m1 "^ID=" /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "linux")\n"
+    # Basic identification
+    metrics+="nftban.server.hostname $(hostname -s 2>/dev/null || hostname)\n"
+    metrics+="nftban.server.fqdn $(hostname -f 2>/dev/null || hostname)\n"
+
+    # OS information
+    local os_id os_release os_pretty
+    os_id=$(grep -m1 "^ID=" /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "linux")
+    os_release=$(grep -m1 "^VERSION_ID=" /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "")
+    os_pretty=$(grep -m1 "^PRETTY_NAME=" /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "Linux")
+    metrics+="nftban.server.os ${os_id}\n"
+    metrics+="nftban.server.os_release ${os_pretty}\n"
     metrics+="nftban.server.kernel $(uname -r)\n"
     metrics+="nftban.server.arch $(uname -m)\n"
 
-    # CPU cores
-    local cpu_cores
+    # CPU information
+    local cpu_cores cpu_model
     cpu_cores=$(nproc 2>/dev/null || grep -c "^processor" /proc/cpuinfo 2>/dev/null || echo "1")
+    cpu_model=$(grep -m1 "model name" /proc/cpuinfo 2>/dev/null | cut -d: -f2 | xargs || echo "Unknown")
     metrics+="nftban.server.cpu_cores $cpu_cores\n"
+    metrics+="nftban.server.cpu_model ${cpu_model}\n"
+
+    # Memory information
+    local mem_total mem_avail
+    if [[ -f /proc/meminfo ]]; then
+        mem_total=$(awk '/MemTotal/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+        mem_avail=$(awk '/MemAvailable/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+        metrics+="nftban.server.memory_total $mem_total\n"
+        metrics+="nftban.server.memory_available $mem_avail\n"
+    fi
+
+    # Uptime and boot time
+    if [[ -f /proc/uptime ]]; then
+        local uptime_secs boot_time
+        uptime_secs=$(awk '{print int($1)}' /proc/uptime 2>/dev/null || echo "0")
+        boot_time=$(($(date +%s) - uptime_secs))
+        metrics+="nftban.server.uptime $uptime_secs\n"
+        metrics+="nftban.server.boot_time $boot_time\n"
+    fi
+
+    # Network - Primary IP
+    local primary_ip
+    primary_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
+    metrics+="nftban.server.primary_ip ${primary_ip}\n"
+
+    # Network interfaces (JSON array)
+    local interfaces
+    interfaces=$(ip -j link show 2>/dev/null | jq -c '[.[].ifname]' 2>/dev/null || echo '[]')
+    metrics+="nftban.server.interfaces ${interfaces}\n"
+
+    # Timezone
+    local timezone
+    timezone=$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo "UTC")
+    metrics+="nftban.server.timezone ${timezone}\n"
+
+    # Virtualization detection
+    local virt_type="none"
+    if [[ -f /sys/hypervisor/type ]]; then
+        virt_type=$(cat /sys/hypervisor/type 2>/dev/null || echo "none")
+    elif grep -q "^flags.*hypervisor" /proc/cpuinfo 2>/dev/null; then
+        if grep -qi "kvm" /sys/class/dmi/id/product_name 2>/dev/null; then
+            virt_type="kvm"
+        elif grep -qi "vmware" /sys/class/dmi/id/sys_vendor 2>/dev/null; then
+            virt_type="vmware"
+        elif [[ -f /.dockerenv ]]; then
+            virt_type="docker"
+        else
+            virt_type="vm"
+        fi
+    fi
+    metrics+="nftban.server.virtualization ${virt_type}\n"
+
+    # Cloud provider detection
+    local cloud_provider="none"
+    if curl -s -m 1 http://169.254.169.254/latest/meta-data/ &>/dev/null; then
+        cloud_provider="aws"
+    elif curl -s -m 1 -H "Metadata-Flavor: Google" http://169.254.169.254/computeMetadata/v1/ &>/dev/null; then
+        cloud_provider="gcp"
+    elif curl -s -m 1 -H "Metadata: true" "http://169.254.169.254/metadata/instance?api-version=2021-02-01" &>/dev/null; then
+        cloud_provider="azure"
+    elif [[ -f /etc/digitalocean ]] || curl -s -m 1 http://169.254.169.254/metadata/v1/ &>/dev/null; then
+        cloud_provider="digitalocean"
+    fi
+    metrics+="nftban.server.cloud_provider ${cloud_provider}\n"
 
     # Load averages
     if [[ -f /proc/loadavg ]]; then

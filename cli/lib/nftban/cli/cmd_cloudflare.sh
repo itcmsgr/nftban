@@ -28,7 +28,7 @@
 # meta:inventory.config_files="conf.d/trust.conf"
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="root (for enable/disable/update)"
+# meta:inventory.privileges="root"
 # =============================================================================
 
 # Source central config for canonical paths

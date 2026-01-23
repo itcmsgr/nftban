@@ -25,7 +25,7 @@
 # meta:inventory.config_files="conf.d/trust.conf,nftban.conf.local"
 # meta:inventory.systemd_units=""
 # meta:inventory.network="outbound:https (provider APIs)"
-# meta:inventory.privileges="root (for whitelist management)"
+# meta:inventory.privileges="root"
 # =============================================================================
 
 set -Eeuo pipefail

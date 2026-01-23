@@ -19,7 +19,7 @@
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="nftban user"
+# meta:inventory.privileges="nftban"
 #
 # Usage: Add "OnFailure=nftban-alert@%n.service" to critical services
 # This is a template unit - %i is replaced with the failed service name
