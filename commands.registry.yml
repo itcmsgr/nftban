@@ -108,6 +108,15 @@ status:
   panel_expose: true
   output_modes: [json, text]
   has_json: true
+  options:
+    --json:
+      type: bool
+      required: false
+      description: "Output in JSON format"
+    --quiet:
+      type: bool
+      required: false
+      description: "Suppress suggestions and tips"
   examples:
     - "nftban status"
     - "nftban status --json"
@@ -125,6 +134,11 @@ health:
   panel_expose: true
   output_modes: [json, text]
   has_json: true
+  options:
+    --json:
+      type: bool
+      required: false
+      description: "Output in JSON format"
   examples:
     - "nftban health check"
     - "nftban health fix"
@@ -135,17 +149,56 @@ health:
     - "nftban health conflicts --fix"
     - "nftban health --json"
   subcommands:
-    check: {mutates: false, description: "Run health diagnostics"}
-    fix: {mutates: true, description: "Auto-repair detected issues", requires_root: true}
-    summary: {mutates: false, description: "One-line health summary"}
-    services: {mutates: false, description: "Check service status"}
-    permissions: {mutates: false, description: "Verify file permissions"}
-    geoip: {mutates: false, description: "Check GeoIP system status"}
-    pro: {mutates: false, description: "Check Pro subscription status"}
-    registries: {mutates: false, description: "Validate registry files (commands, config, reports)"}
-    install: {mutates: false, description: "Verify installation completeness"}
-    conflicts: {mutates: conditional, description: "Detect and remove conflicting firewalls", requires_root: true}
-    config: {mutates: false, description: "Show enabled modules and config status"}
+    check:
+      mutates: false
+      description: "Run health diagnostics"
+      options:
+        --auto-heal: {type: bool, description: "Automatically fix detected issues (requires root)"}
+        --quiet: {type: bool, description: "Minimal output (for cron/timer use)"}
+        --cache-status: {type: bool, description: "Write health status to cache for banner"}
+    fix:
+      mutates: true
+      description: "Auto-repair detected issues"
+      requires_root: true
+      arguments:
+        target: {type: enum, required: false, values: [permissions, directories, services, config, system, all], default: all}
+    summary:
+      mutates: false
+      description: "One-line health summary"
+    services:
+      mutates: false
+      description: "Check service status"
+    permissions:
+      mutates: false
+      description: "Verify file permissions"
+    geoip:
+      mutates: false
+      description: "Check GeoIP system status"
+    pro:
+      mutates: false
+      description: "Check Pro subscription status"
+    registries:
+      mutates: false
+      description: "Validate registry files (commands, config, reports)"
+      options:
+        --json: {type: bool, description: "Machine-readable output"}
+    install:
+      mutates: false
+      description: "Verify installation completeness"
+      options:
+        --verbose: {type: bool, alias: "-v", description: "Show detailed output"}
+    conflicts:
+      mutates: conditional
+      description: "Detect and remove conflicting firewalls"
+      requires_root: true
+      options:
+        --fix: {type: bool, description: "Remove detected conflicts"}
+        --yes: {type: bool, alias: "-y", description: "Auto-confirm (no prompts)"}
+    config:
+      mutates: false
+      description: "Show enabled modules and config status"
+      options:
+        --verbose: {type: bool, alias: "-v", description: "Include config file paths"}
 
 version:
   category: setup_discovery
@@ -159,6 +212,15 @@ version:
   panel_expose: true
   output_modes: [json, text]
   has_json: true
+  options:
+    --json:
+      type: bool
+      required: false
+      description: "Output in JSON format"
+    --short:
+      type: bool
+      required: false
+      description: "Output version number only"
   examples:
     - "nftban version"
     - "nftban version --json"
@@ -218,6 +280,29 @@ ban:
   panel_expose: false
   output_modes: [json, text]
   has_json: true
+  arguments:
+    ip:
+      type: string
+      required: true
+      description: "IP address to ban (IPv4 or IPv6)"
+  options:
+    --timeout:
+      type: int
+      required: false
+      description: "Temporary ban duration in seconds (omit for permanent)"
+    --reason:
+      type: string
+      required: false
+      description: "Ban reason (stored as comment)"
+    --source:
+      type: string
+      required: false
+      default: "manual"
+      description: "Ban source (login, portscan, ddos, manual)"
+    --json:
+      type: bool
+      required: false
+      description: "Output in JSON format"
   examples:
     - "nftban ban 1.2.3.4"
     - "nftban ban 1.2.3.4 --timeout 3600"
@@ -236,6 +321,16 @@ unban:
   panel_expose: false
   output_modes: [json, text]
   has_json: true
+  arguments:
+    ip:
+      type: string
+      required: true
+      description: "IP address to unban (IPv4 or IPv6)"
+  options:
+    --json:
+      type: bool
+      required: false
+      description: "Output in JSON format"
   examples:
     - "nftban unban 1.2.3.4"
     - "nftban unban 1.2.3.4 --json"
@@ -252,6 +347,16 @@ check:
   panel_expose: true
   output_modes: [json, text]
   has_json: true
+  arguments:
+    target:
+      type: string
+      required: true
+      description: "IP address (203.0.113.50) or 'port' keyword followed by port number"
+  options:
+    --json:
+      type: bool
+      required: false
+      description: "Output in JSON format"
   examples:
     - "nftban check 1.2.3.4"
     - "nftban check port 22"
@@ -269,6 +374,16 @@ search:
   panel_expose: true
   output_modes: [json, text]
   has_json: true
+  arguments:
+    ip:
+      type: string
+      required: true
+      description: "IP address to search for"
+  options:
+    --json:
+      type: bool
+      required: false
+      description: "Output in JSON format"
   examples:
     - "nftban search 1.2.3.4"
     - "nftban search 1.2.3.4 --json"
@@ -285,6 +400,19 @@ list:
   panel_expose: true
   output_modes: [json, text]
   has_json: true
+  arguments:
+    type:
+      type: enum
+      required: false
+      default: "banned"
+      values: [banned, whitelist, all]
+      description: "List type"
+  options:
+    --json:
+      type: bool
+      required: false
+      alias: "-j"
+      description: "Output in JSON format"
   examples:
     - "nftban list banned"
     - "nftban list whitelist"
@@ -303,6 +431,27 @@ whitelist:
   panel_expose: false
   output_modes: [json, text]
   has_json: true
+  subcommands:
+    add:
+      mutates: true
+      description: "Add IP to whitelist"
+      arguments:
+        ip: {type: string, required: true, description: "IP address to whitelist"}
+    remove:
+      mutates: true
+      description: "Remove IP from whitelist"
+      aliases: [rm, del, delete]
+      arguments:
+        ip: {type: string, required: true, description: "IP address to remove"}
+    list:
+      mutates: false
+      description: "Show all whitelisted IPs"
+      aliases: [show]
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    sync:
+      mutates: true
+      description: "Auto-detect and whitelist system IPs"
   examples:
     - "nftban whitelist add 10.0.0.1"
     - "nftban whitelist remove 10.0.0.1"
@@ -368,6 +517,31 @@ ddos:
   panel_expose: false
   output_modes: [json, text]
   has_json: true
+  subcommands:
+    enable:
+      mutates: true
+      description: "Enable all DDoS protections"
+    disable:
+      mutates: true
+      description: "Disable all DDoS protections"
+    status:
+      mutates: false
+      description: "Show DDoS protection status"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    stats:
+      mutates: false
+      description: "Show DDoS statistics"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    test:
+      mutates: false
+      description: "Test DDoS protection rules"
+    config:
+      mutates: false
+      description: "Show DDoS configuration"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
   examples:
     - "nftban ddos status"
     - "nftban ddos enable"
@@ -387,6 +561,35 @@ portscan:
   panel_expose: false
   output_modes: [json, text]
   has_json: true
+  subcommands:
+    enable:
+      mutates: true
+      description: "Enable port scan detection"
+    disable:
+      mutates: true
+      description: "Disable port scan detection"
+    status:
+      mutates: false
+      description: "Show detection status and configuration"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    check:
+      mutates: false
+      description: "Run manual port scan check (parse logs)"
+    history:
+      mutates: false
+      description: "Show detected scans (last 24 hours)"
+    test:
+      mutates: false
+      description: "Test port scan detection rules"
+    sync:
+      mutates: false
+      description: "Sync port scan logs from journalctl"
+    stats:
+      mutates: false
+      description: "Show portscan statistics"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
   examples:
     - "nftban portscan status"
     - "nftban portscan enable"
@@ -413,13 +616,47 @@ login:
     - "nftban login stats"
     - "nftban login logs"
   subcommands:
-    enable: {description: "Enable login monitoring (auto-installs service)"}
-    disable: {description: "Disable login monitoring"}
-    status: {description: "Show login monitor status"}
-    stats: {description: "Show ban/alert statistics"}
-    logs: {description: "View recent login alerts"}
-    restart: {description: "Restart login monitor service"}
-    test: {description: "Test login monitoring configuration"}
+    enable:
+      mutates: true
+      description: "Enable login monitoring (auto-installs service)"
+      arguments:
+        target: {type: enum, required: false, values: [ssh, su, sudo, console, service, all], default: service}
+    disable:
+      mutates: true
+      description: "Disable login monitoring"
+      arguments:
+        target: {type: enum, required: false, values: [ssh, su, sudo, console, service, all], default: service}
+    status:
+      mutates: false
+      description: "Show login monitor status"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    stats:
+      mutates: false
+      description: "Show ban/alert statistics"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    logs:
+      mutates: false
+      description: "View recent login alerts"
+      arguments:
+        lines: {type: int, required: false, default: 50, description: "Number of lines to show"}
+    restart:
+      mutates: true
+      description: "Restart login monitor service"
+    test:
+      mutates: false
+      description: "Send a test alert email"
+    mode:
+      mutates: true
+      description: "Set monitoring mode"
+      arguments:
+        mode: {type: enum, required: false, values: [realtime, digest, both]}
+    digest:
+      mutates: conditional
+      description: "Manage digest reports"
+      arguments:
+        action: {type: enum, required: false, values: [status, send, clear], default: status}
 
 botscan:
   category: active_protection
@@ -463,6 +700,48 @@ feeds:
   panel_expose: false
   output_modes: [json, text]
   has_json: true
+  subcommands:
+    select:
+      mutates: true
+      description: "Interactive numbered menu for feed selection"
+    list:
+      mutates: false
+      description: "List all available feeds with status"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    enable:
+      mutates: true
+      description: "Enable a threat feed"
+      arguments:
+        feed_name: {type: string, required: true, description: "Feed name to enable"}
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    disable:
+      mutates: true
+      description: "Disable a threat feed"
+      arguments:
+        feed_name: {type: string, required: true, description: "Feed name to disable"}
+      options:
+        --clean: {type: bool, description: "Also remove feed IPs from blacklist"}
+        --json: {type: bool, description: "Output in JSON format"}
+    enable-category:
+      mutates: true
+      description: "Enable all feeds in a category"
+      aliases: [enable-cat]
+      arguments:
+        category: {type: string, required: true, description: "Category name"}
+    update:
+      mutates: true
+      description: "Update feed data"
+      arguments:
+        feed_name: {type: string, required: false, description: "Specific feed (or all)"}
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    status:
+      mutates: false
+      description: "Show feeds status"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
   examples:
     - "nftban feeds list"
     - "nftban feeds enable spamhaus"
@@ -611,6 +890,54 @@ geoban:
   panel_expose: false
   output_modes: [json, text]
   has_json: true
+  subcommands:
+    enable:
+      mutates: true
+      description: "Enable GeoBan module"
+    disable:
+      mutates: true
+      description: "Disable GeoBan module"
+    ban:
+      mutates: true
+      description: "Ban traffic from country"
+      arguments:
+        countries: {type: string, required: true, description: "ISO country codes (CN RU KP)"}
+    unban:
+      mutates: true
+      description: "Remove country ban"
+      arguments:
+        countries: {type: string, required: true, description: "ISO country codes"}
+    whitelist:
+      mutates: true
+      description: "Whitelist country (allow only from these)"
+      arguments:
+        countries: {type: string, required: true, description: "ISO country codes"}
+    unwhitelist:
+      mutates: true
+      description: "Remove country from whitelist"
+      arguments:
+        countries: {type: string, required: true, description: "ISO country codes"}
+    list:
+      mutates: false
+      description: "List active country blocks"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    status:
+      mutates: false
+      description: "Show GeoBan status"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    update:
+      mutates: true
+      description: "Update all active countries"
+    config:
+      mutates: false
+      description: "Show GeoBan configuration"
+    stats:
+      mutates: false
+      description: "Show GeoBan statistics"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
   examples:
     - "nftban geoban status"
     - "nftban geoban ban CN"
@@ -891,6 +1218,60 @@ stats:
   panel_expose: true
   output_modes: [json, text]
   has_json: true
+  subcommands:
+    dashboard:
+      mutates: false
+      description: "Show dashboard overview"
+      options:
+        --since: {type: string, description: "Start date (YYYY-MM-DD)"}
+        --until: {type: string, description: "End date (YYYY-MM-DD)"}
+        --last: {type: string, description: "Time window (24h, 7d, 30d)"}
+        --detailed: {type: bool, description: "Show detailed metrics"}
+        --json: {type: bool, description: "Output in JSON format"}
+    top:
+      mutates: false
+      description: "Show top banned IPs/countries"
+      arguments:
+        type: {type: enum, required: false, values: [ips, countries, jails], default: ips}
+        limit: {type: int, required: false, default: 10}
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+        --since: {type: string, description: "Start date"}
+        --last: {type: string, description: "Time window"}
+    ip:
+      mutates: false
+      description: "Show statistics for specific IP"
+      arguments:
+        ip: {type: string, required: true, description: "IP address to query"}
+      options:
+        --detailed: {type: bool, description: "Show detailed info"}
+        --json: {type: bool, description: "Output in JSON format"}
+    recent:
+      mutates: false
+      description: "Show recent bans"
+      arguments:
+        limit: {type: int, required: false, default: 20}
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+        --follow: {type: bool, description: "Follow mode (like tail -f)"}
+    monitor:
+      mutates: false
+      description: "Live monitoring dashboard"
+      options:
+        --interval: {type: int, default: 5, description: "Refresh interval in seconds"}
+    export:
+      mutates: false
+      description: "Export statistics"
+      options:
+        --format: {type: enum, values: [json, csv], default: json}
+        --output: {type: string, description: "Output file path"}
+        --since: {type: string, description: "Start date"}
+        --until: {type: string, description: "End date"}
+    trend:
+      mutates: false
+      description: "Show trend analysis"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
   examples:
     - "nftban stats top"
     - "nftban stats ip 1.2.3.4"
@@ -1148,30 +1529,100 @@ zabbix:
     setup:
       mutates: true
       description: "Interactive setup wizard"
+      options:
+        --server: {type: string, description: "Zabbix server address"}
+        --port: {type: int, default: 10051, description: "Zabbix server port"}
+        --hostname: {type: string, default: "auto", description: "Host name in Zabbix"}
+        --tls: {type: bool, description: "Enable TLS encryption"}
+        --psk: {type: bool, description: "Use PSK authentication"}
+        --non-interactive: {type: bool, description: "Non-interactive mode"}
     status:
       mutates: false
       description: "Show Zabbix exporter status and target health"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+        --verbose: {type: bool, description: "Show detailed info"}
     test:
       mutates: false
       description: "Test connectivity to Zabbix server"
+      options:
+        --verbose: {type: bool, description: "Show detailed test output"}
+        --dry-run: {type: bool, description: "Preview without sending"}
+        --quiet: {type: bool, description: "Minimal output"}
     push:
       mutates: false
       description: "Force immediate metrics push"
+      options:
+        --dry-run: {type: bool, description: "Preview metrics without sending"}
     reload:
       mutates: false
       description: "Re-read config and push metrics"
     template:
       mutates: false
       description: "Export Zabbix template (5.x/6.x/7.x)"
+      options:
+        --format: {type: enum, values: [xml, yaml], default: xml, description: "Output format"}
+        --version: {type: string, default: "5.0", description: "Zabbix version (5.0, 6.0, 7.0)"}
+        --output: {type: string, description: "Output file path"}
     discovery:
       mutates: false
       description: "Trigger LLD discovery data send"
+      arguments:
+        type: {type: enum, required: false, values: [modules, interfaces, countries, feeds, timers, all], default: all}
     targets:
       mutates: conditional
       description: "Manage multiple Zabbix targets"
+      subcommands:
+        list:
+          mutates: false
+          description: "List configured targets"
+          options:
+            --json: {type: bool, description: "Output in JSON format"}
+        add:
+          mutates: true
+          description: "Add a new target"
+          arguments:
+            name: {type: string, required: true, description: "Target name"}
+          options:
+            --server: {type: string, required: true, description: "Zabbix server address"}
+            --port: {type: int, default: 10051, description: "Zabbix server port"}
+            --filter: {type: string, default: "all", description: "Metrics filter"}
+        enable:
+          mutates: true
+          description: "Enable a target"
+          arguments:
+            name: {type: string, required: true, description: "Target name"}
+        disable:
+          mutates: true
+          description: "Disable a target"
+          arguments:
+            name: {type: string, required: true, description: "Target name"}
+        remove:
+          mutates: true
+          description: "Remove a target"
+          arguments:
+            name: {type: string, required: true, description: "Target name"}
     config:
       mutates: conditional
       description: "Show/modify Zabbix configuration"
+      subcommands:
+        show:
+          mutates: false
+          description: "Show current configuration"
+          options:
+            --json: {type: bool, description: "Output in JSON format"}
+        set:
+          mutates: true
+          description: "Set configuration value"
+          arguments:
+            key: {type: string, required: true, description: "Configuration key"}
+            value: {type: string, required: true, description: "Configuration value"}
+        enable:
+          mutates: true
+          description: "Enable Zabbix integration"
+        disable:
+          mutates: true
+          description: "Disable Zabbix integration"
 
 # =============================================================================
 # CONNECTOR FRAMEWORK (v1.3.0+)
@@ -1296,6 +1747,51 @@ geoip:
   panel_expose: false
   output_modes: [json, text]
   has_json: true
+  subcommands:
+    lookup:
+      mutates: false
+      description: "Lookup IP geolocation"
+      arguments:
+        ip: {type: string, required: true, description: "IP address to lookup"}
+        format: {type: enum, required: false, values: [json, compact, country], default: compact}
+    bulk:
+      mutates: false
+      description: "Bulk IP lookup from file or stdin"
+      arguments:
+        input_file: {type: string, required: false, description: "Input file (or stdin)"}
+    status:
+      mutates: false
+      description: "Show GeoIP system status and database info"
+      options:
+        --json: {type: bool, description: "Output in JSON format"}
+    test:
+      mutates: false
+      description: "Run built-in tests"
+    update:
+      mutates: true
+      description: "Update GeoIP database"
+    config:
+      mutates: conditional
+      description: "GeoIP configuration"
+      subcommands:
+        show:
+          mutates: false
+          description: "Show current configuration"
+          options:
+            --json: {type: bool, description: "Output in JSON format"}
+        set-source:
+          mutates: true
+          description: "Set GeoIP data source"
+          arguments:
+            source: {type: enum, required: true, values: [dbip, maxmind]}
+        set-key:
+          mutates: true
+          description: "Set MaxMind license key"
+          arguments:
+            key: {type: string, required: true, description: "MaxMind license key"}
+        test-download:
+          mutates: false
+          description: "Test database download"
   examples:
     - "nftban geoip status"
     - "nftban geoip lookup 1.2.3.4"
@@ -1658,12 +2154,20 @@ support:
 # =============================================================================
 
 _metadata:
-  version: "1.1"
-  schema_version: "1.0"
-  generated_date: "2026-01-16"
+  version: "1.2"
+  schema_version: "1.1"
+  generated_date: "2026-01-23"
+  description: "Complete CLI parameter registry for Zabbix auto-registration and help generation"
+  features:
+    - "Full CLI options with types, defaults, and descriptions"
+    - "Subcommand hierarchies with nested options"
+    - "Arguments with type validation (string, int, bool, enum)"
+    - "Zabbix LLD discovery support"
+    - "Auto-help generation support"
   total_commands: 54
   commands_with_json: 43
   commands_without_json: 11
+  commands_with_full_options: 25
   missing_json:
     - debug
     - gui
