@@ -145,6 +145,9 @@ nftban_cmd_health() {
         conflicts)
             nftban_health_cmd_conflicts "$@"
             ;;
+        config)
+            nftban_health_cmd_config "$@"
+            ;;
         help|--help|-h)
             nftban_health_cmd_help
             ;;
@@ -875,6 +878,11 @@ COMMANDS:
                             --yes: Auto-confirm (no prompts)
                             Detects: fail2ban, ufw, firewalld, CSF
 
+    config [--verbose]      Show module and config status
+                            Displays enabled modules, their services,
+                            and whether config reload is needed
+                            --verbose: Show config file paths
+
     help                    Show this help message
 
 EXAMPLES:
@@ -912,6 +920,10 @@ EXAMPLES:
     # Verify installation completeness
     nftban health install
     nftban health install --verbose  # Include optional components
+
+    # Check config and module status
+    nftban health config             # Show enabled modules + config status
+    nftban health config --verbose   # Include config file paths
 
 HEALTH STATUS CODES:
     ✅ OK       - All checks passed
@@ -1093,6 +1105,138 @@ nftban_health_cmd_conflicts() {
         return 1
     fi
     return 0
+}
+
+nftban_health_cmd_config() {
+    # Show enabled modules and their config status
+    # Usage: nftban health config [--verbose]
+    # Shows: Module enabled/disabled, config files, reload needed
+
+    local verbose=false
+    for arg in "$@"; do
+        [[ "$arg" == "--verbose" || "$arg" == "-v" ]] && verbose=true
+    done
+
+    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+    local track_dir="/run/nftban/config-loaded"
+
+    echo ""
+    echo "┌────────────────────────────────────────────────────────────┐"
+    echo "│           NFTBan Configuration Status                     │"
+    echo "└────────────────────────────────────────────────────────────┘"
+    echo ""
+
+    # Protection modules and their status
+    declare -A modules=(
+        ["portscan"]="Port Scan Detection"
+        ["ddos"]="DDoS Protection"
+        ["login"]="Login Monitor"
+        ["geoban"]="GeoIP Blocking"
+        ["feeds"]="Threat Feeds"
+        ["suricata"]="Suricata IDS"
+    )
+
+    declare -A module_services=(
+        ["portscan"]="nftband"
+        ["ddos"]="nftband"
+        ["login"]="nftban-login-monitor"
+        ["geoban"]="nftband"
+        ["feeds"]="timer"
+        ["suricata"]="nftban-suricata"
+    )
+
+    local needs_reload=false
+
+    printf "%-12s %-8s %-18s %-20s\n" "MODULE" "STATUS" "SERVICE" "CONFIG"
+    echo "────────────────────────────────────────────────────────────"
+
+    for module in portscan ddos login geoban feeds suricata; do
+        local enabled="OFF"
+        local service="${module_services[$module]}"
+        local config_status="-"
+        local conf_file=""
+
+        # Check if module is enabled
+        # Look for ENABLED=true in module config or check service status
+        if [[ -f "$config_dir/conf.d/$module/main.conf" ]]; then
+            conf_file="$config_dir/conf.d/$module/main.conf"
+            if grep -qE "^[A-Z_]*ENABLED.*=.*[\"']?true" "$conf_file" 2>/dev/null || \
+               grep -qE "^[A-Z_]*ENABLED.*=.*[\"']?YES" "$conf_file" 2>/dev/null; then
+                enabled="ON"
+            fi
+        elif [[ -f "$config_dir/conf.d/${module}.conf" ]]; then
+            conf_file="$config_dir/conf.d/${module}.conf"
+            enabled="ON"  # Presence means enabled for simple configs
+        fi
+
+        # Check local override
+        local local_conf="${conf_file}.local"
+        [[ -f "$config_dir/conf.d/$module/main.conf.local" ]] && local_conf="$config_dir/conf.d/$module/main.conf.local"
+
+        # Service status
+        local svc_status="stopped"
+        if [[ "$service" == "timer" ]]; then
+            svc_status="timer"
+        elif systemctl is-active "${service}.service" &>/dev/null; then
+            svc_status="running"
+        fi
+
+        # Config status (only if service running)
+        if [[ "$svc_status" == "running" && -f "$track_dir/.timestamp" ]]; then
+            # Check if local config changed since load
+            if [[ -f "$local_conf" ]]; then
+                local curr_hash loaded_hash
+                curr_hash=$(sha256sum "$local_conf" 2>/dev/null | cut -d' ' -f1)
+                local hash_file="$track_dir/$(basename "$local_conf").sha256"
+                loaded_hash=$(cat "$hash_file" 2>/dev/null || echo "none")
+                if [[ "$curr_hash" != "$loaded_hash" && "$loaded_hash" != "none" ]]; then
+                    config_status="CHANGED"
+                    needs_reload=true
+                else
+                    config_status="current"
+                fi
+            else
+                config_status="default"
+            fi
+        elif [[ "$svc_status" == "running" ]]; then
+            config_status="not tracked"
+        fi
+
+        # Format output
+        local status_icon="○"
+        [[ "$enabled" == "ON" ]] && status_icon="●"
+
+        printf "%-12s %-8s %-18s %-20s\n" "$module" "$status_icon $enabled" "$svc_status" "$config_status"
+
+        # Verbose: show config files
+        if [[ "$verbose" == true && -n "$conf_file" ]]; then
+            echo "             └─ $conf_file"
+            [[ -f "$local_conf" ]] && echo "             └─ $local_conf (override)"
+        fi
+    done
+
+    echo ""
+
+    # Show last reload time
+    if [[ -f "$track_dir/.timestamp" ]]; then
+        local ts
+        ts=$(cat "$track_dir/.timestamp" 2>/dev/null)
+        echo "Last config reload: $(date -d "@$ts" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "unknown")"
+    else
+        echo "Last config reload: Never (using startup config)"
+    fi
+
+    echo ""
+
+    # Show reload hint if needed
+    if [[ "$needs_reload" == true ]]; then
+        echo "┌────────────────────────────────────────────────────────────┐"
+        echo "│  ⚠️  Config changed on disk. Run: nftban config reload     │"
+        echo "└────────────────────────────────────────────────────────────┘"
+    else
+        echo "✓ All running services have current config"
+    fi
+    echo ""
 }
 
 nftban_health_cmd_gui() {
