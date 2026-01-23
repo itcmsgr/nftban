@@ -1,0 +1,9 @@
+# =============================================================================
+# NFTBan nftables.d placeholder
+# =============================================================================
+# This file ensures the nftables.d include directive always succeeds.
+# Dynamic module rules (like firewall logs) are placed in this directory.
+#
+# Generated files:
+#   fwlog.nft - Firewall logging chains (nftban firewall logs enable)
+# =============================================================================

@@ -44,14 +44,14 @@ set -Eeuo pipefail
 # Load main config (sets readonly paths)
 [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
 
-# Load global user overrides (written by nftban config set)
-[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
-
-# Load zabbix defaults
+# Load zabbix defaults FIRST (before user overrides)
 [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
 
-# Load zabbix user overrides (takes precedence)
+# Load zabbix user overrides
 [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
+
+# Load global user overrides LAST (highest priority - written by nftban config set)
+[[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf.local"
 
 # Set bash defaults for any unset variables
 : "${NFTBAN_ZABBIX_ENABLED:=false}"
@@ -62,6 +62,8 @@ set -Eeuo pipefail
 : "${NFTBAN_ZABBIX_TLS_ENABLED:=false}"
 : "${NFTBAN_ZABBIX_PSK_ENABLED:=false}"
 : "${NFTBAN_ZABBIX_FIREWALL_AUTO:=true}"
+: "${NFTBAN_ZABBIX_AGENT_ENABLED:=false}"
+: "${NFTBAN_ZABBIX_AGENT_PORT:=10050}"
 
 # Load central config library for writing config
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_config.sh" ]]; then
@@ -173,6 +175,40 @@ _zabbix_firewall_allow() {
     return 1
 }
 
+# Firewall helper: Allow inbound traffic from Zabbix server (for agent)
+_zabbix_firewall_allow_inbound() {
+    local server="$1"
+    local port="$2"
+
+    # Resolve hostname to IP if needed
+    local server_ip
+    if [[ "$server" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        server_ip="$server"
+    else
+        server_ip=$(getent hosts "$server" 2>/dev/null | awk '{print $1}' | head -1)
+        [[ -z "$server_ip" ]] && server_ip=$(host "$server" 2>/dev/null | awk '/has address/ {print $4}' | head -1)
+    fi
+
+    [[ -z "$server_ip" ]] && return 1
+
+    # Check if rule already exists
+    if nft list chain inet nftban input 2>/dev/null | grep -q "saddr $server_ip.*dport $port"; then
+        return 0  # Already exists
+    fi
+
+    # Add inbound rule to nftban input chain
+    if nft add rule inet nftban input ip saddr "$server_ip" tcp dport "$port" accept comment \"zabbix-agent\" 2>/dev/null; then
+        return 0
+    fi
+
+    # Fallback: Try ip family if inet doesn't exist
+    if nft add rule ip nftban input ip saddr "$server_ip" tcp dport "$port" accept comment \"zabbix-agent\" 2>/dev/null; then
+        return 0
+    fi
+
+    return 1
+}
+
 # Firewall helper: Remove Zabbix outbound rule
 _zabbix_firewall_remove() {
     local server="$1"
@@ -215,6 +251,10 @@ _cmd_zabbix_setup() {
     local tls="false"
     local psk="false"
     local interactive="true"
+    local ipv4="true"
+    local ipv6="false"
+    local agent_enabled="false"
+    local agent_port="10050"
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -225,15 +265,18 @@ _cmd_zabbix_setup() {
             --port=*)   port="${1#*=}"; shift ;;
             --hostname) hostname="$2"; shift 2 ;;
             --hostname=*) hostname="${1#*=}"; shift ;;
+            --agent-port) agent_port="$2"; agent_enabled="true"; shift 2 ;;
+            --agent-port=*) agent_port="${1#*=}"; agent_enabled="true"; shift ;;
+            --ipv4)     ipv4="true"; shift ;;
+            --ipv6)     ipv6="true"; shift ;;
+            --no-ipv4)  ipv4="false"; shift ;;
+            --no-ipv6)  ipv6="false"; shift ;;
             --tls)      tls="true"; shift ;;
             --psk)      psk="true"; shift ;;
             --non-interactive) interactive="false"; shift ;;
             *)          shift ;;
         esac
     done
-
-    local ipv4="true"
-    local ipv6="false"
 
     if [[ "$interactive" == "true" && -z "$server" ]]; then
         _zabbix_print_header "NFTBan Zabbix Setup Wizard"
@@ -242,10 +285,19 @@ _cmd_zabbix_setup() {
         echo ""
 
         read -rp "Zabbix Server address: " server
-        read -rp "Zabbix Server port [10051]: " port_input
+        read -rp "Zabbix Trapper port (outbound) [10051]: " port_input
         port="${port_input:-10051}"
         read -rp "Hostname to report [auto]: " hostname_input
         hostname="${hostname_input:-auto}"
+
+        echo ""
+        echo "Zabbix Agent (allows server to poll this host):"
+        read -rp "  Enable Zabbix Agent port? [Y/n]: " agent_answer
+        if [[ ! "$agent_answer" =~ ^[Nn] ]]; then
+            agent_enabled="true"
+            read -rp "  Agent port (inbound) [10050]: " agent_port_input
+            agent_port="${agent_port_input:-10050}"
+        fi
 
         echo ""
         echo "IP Protocol support:"
@@ -366,6 +418,81 @@ EOF
         else
             _zabbix_print_warning "Could not apply firewall rule (manual setup may be required)"
         fi
+
+        # Configure agent port (inbound) if enabled
+        if [[ "$agent_enabled" == "true" ]]; then
+            _zabbix_print_info "Configuring firewall for inbound agent traffic on port $agent_port..."
+
+            # Check if agent port already exists in ports.d
+            local agent_port_exists=false
+            local agent_existing_file=""
+            for f in "${NFTBAN_CONFIG_DIR}/ports.d"/*.conf; do
+                [[ -f "$f" ]] || continue
+                if grep -qE "^${agent_port}/tcp.*=.*input" "$f" 2>/dev/null; then
+                    agent_port_exists=true
+                    agent_existing_file="$f"
+                    break
+                fi
+            done
+
+            if [[ "$agent_port_exists" == "true" ]]; then
+                _zabbix_print_info "Port $agent_port/tcp input already configured in: $agent_existing_file"
+            else
+                # Add agent port to ports.d config
+                local port_conf="${NFTBAN_CONFIG_DIR}/ports.d/99-zabbix.conf"
+
+                # Append agent port section to existing config or create new one
+                if [[ -f "$port_conf" ]]; then
+                    # Append to existing file
+                    cat >> "$port_conf" << EOF
+
+# Zabbix agent port - INBOUND connection from monitoring server
+EOF
+                    [[ "$ipv4" == "true" ]] && echo "${agent_port}/tcp = input,ipv4  # Zabbix Agent: allow server polling" >> "$port_conf"
+                    [[ "$ipv6" == "true" ]] && echo "${agent_port}/tcp = input,ipv6  # Zabbix Agent: allow server polling" >> "$port_conf"
+                else
+                    # Create new config with agent port
+                    mkdir -p "$(dirname "$port_conf")"
+                    cat > "$port_conf" << EOF
+# =============================================================================
+# NFTBan - Zabbix Connection (Auto-generated)
+# =============================================================================
+# Created: $(date '+%Y-%m-%d %H:%M:%S')
+# Server:  $server
+# Purpose: Allow Zabbix agent (inbound) and trapper (outbound) communication
+# =============================================================================
+
+[ports]
+# Zabbix agent port - INBOUND connection from monitoring server
+EOF
+                    [[ "$ipv4" == "true" ]] && echo "${agent_port}/tcp = input,ipv4  # Zabbix Agent: allow server polling" >> "$port_conf"
+                    [[ "$ipv6" == "true" ]] && echo "${agent_port}/tcp = input,ipv6  # Zabbix Agent: allow server polling" >> "$port_conf"
+
+                    cat >> "$port_conf" << EOF
+
+[description]
+name = Zabbix Agent & Trapper
+priority = normal
+server = $server
+note = Inbound (agent) and outbound (trapper) connections for Zabbix monitoring
+EOF
+                    chmod 644 "$port_conf"
+                    chown root:nftban "$port_conf" 2>/dev/null || true
+                fi
+                _zabbix_print_success "Agent port $agent_port/tcp (input) configured"
+            fi
+
+            # Apply runtime inbound firewall rule (nft is live)
+            if _zabbix_firewall_allow_inbound "$server" "$agent_port"; then
+                _zabbix_print_success "Agent firewall rule applied (live)"
+            else
+                _zabbix_print_warning "Could not apply agent firewall rule (manual setup may be required)"
+            fi
+
+            # Save agent config
+            _zabbix_config_set "NFTBAN_ZABBIX_AGENT_ENABLED" "true"
+            _zabbix_config_set "NFTBAN_ZABBIX_AGENT_PORT" "$agent_port"
+        fi
     fi
 
     # Enable unified exporter timer
@@ -415,7 +542,7 @@ _cmd_zabbix_status() {
     done
 
     # Load config values
-    local enabled server port hostname interval tls psk
+    local enabled server port hostname interval tls psk agent_enabled agent_port
     enabled=$(_zabbix_config_get "NFTBAN_ZABBIX_ENABLED" "false")
     server=$(_zabbix_config_get "NFTBAN_ZABBIX_SERVER" "")
     port=$(_zabbix_config_get "NFTBAN_ZABBIX_PORT" "10051")
@@ -423,6 +550,8 @@ _cmd_zabbix_status() {
     interval=$(_zabbix_config_get "NFTBAN_ZABBIX_INTERVAL" "60")
     tls=$(_zabbix_config_get "NFTBAN_ZABBIX_TLS_ENABLED" "false")
     psk=$(_zabbix_config_get "NFTBAN_ZABBIX_PSK_ENABLED" "false")
+    agent_enabled=$(_zabbix_config_get "NFTBAN_ZABBIX_AGENT_ENABLED" "false")
+    agent_port=$(_zabbix_config_get "NFTBAN_ZABBIX_AGENT_PORT" "10050")
 
     # Get actual hostname if auto
     local actual_hostname="$hostname"
@@ -435,7 +564,9 @@ _cmd_zabbix_status() {
 {
   "enabled": $enabled,
   "server": "$server",
-  "port": $port,
+  "trapper_port": $port,
+  "agent_enabled": $agent_enabled,
+  "agent_port": $agent_port,
   "hostname": "$actual_hostname",
   "interval": $interval,
   "tls_enabled": $tls,
@@ -449,15 +580,25 @@ EOF
 
     echo "Configuration:"
     if [[ "$enabled" == "true" ]]; then
-        echo "  Enabled:    ✅ true"
+        echo "  Enabled:      ✅ true"
     else
-        echo "  Enabled:    ❌ false"
+        echo "  Enabled:      ❌ false"
     fi
-    echo "  Server:     ${server:-not configured}:$port"
-    echo "  Hostname:   $actual_hostname"
-    echo "  Interval:   ${interval}s"
-    echo "  TLS:        $tls"
-    echo "  PSK:        $psk"
+    echo "  Server:       ${server:-not configured}"
+    echo "  Hostname:     $actual_hostname"
+    echo ""
+    echo "Ports:"
+    echo "  Trapper:      $port/tcp (outbound - push metrics to server)"
+    if [[ "$agent_enabled" == "true" ]]; then
+        echo "  Agent:        $agent_port/tcp (inbound - server polls this host)"
+    else
+        echo "  Agent:        disabled"
+    fi
+    echo ""
+    echo "Options:"
+    echo "  Interval:     ${interval}s"
+    echo "  TLS:          $tls"
+    echo "  PSK:          $psk"
     echo ""
 
     # Check exporter timer status
@@ -1092,8 +1233,13 @@ COMMANDS:
 
 SETUP OPTIONS:
     --server HOST       Zabbix server address
-    --port PORT         Zabbix server port (default: 10051)
+    --port PORT         Zabbix trapper port for outbound (default: 10051)
+    --agent-port PORT   Zabbix agent port for inbound (default: 10050)
     --hostname NAME     Hostname to report (default: auto)
+    --ipv4              Enable IPv4 rules
+    --ipv6              Enable IPv6 rules
+    --no-ipv4           Disable IPv4 rules
+    --no-ipv6           Disable IPv6 rules
     --tls               Enable TLS encryption
     --psk               Enable PSK authentication
     --non-interactive   Non-interactive mode (require --server)
@@ -1138,11 +1284,17 @@ CONFIG OPTIONS:
     disable             Disable Zabbix integration
 
 EXAMPLES:
-    # Interactive setup
+    # Interactive setup (prompts for all options)
     nftban zabbix setup
 
-    # Non-interactive setup
+    # Non-interactive setup with trapper only (outbound 10051)
     nftban zabbix setup --server zabbix.example.com --hostname myserver
+
+    # Non-interactive setup with agent + trapper (inbound 10050 + outbound 10051)
+    nftban zabbix setup --server zabbix.example.com --agent-port 10050
+
+    # Setup with custom ports and IPv4+IPv6
+    nftban zabbix setup --server zabbix.example.com --port 10051 --agent-port 10050 --ipv4 --ipv6
 
     # Check status
     nftban zabbix status

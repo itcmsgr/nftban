@@ -20,16 +20,23 @@
 
 set -Eeuo pipefail
 
-readonly NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
-readonly NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
-readonly NFTBAN_RUN_DIR="${NFTBAN_RUN_DIR:-/run/nftban}"
-readonly NFTBAN_LOG_DIR="${NFTBAN_LOG_DIR:-/var/log/nftban}"
-readonly NFTBAN_CACHE_DIR="${NFTBAN_CACHE_DIR:-/var/cache/nftban}"
+# Bootstrap paths (nftban.conf will set these as readonly)
+: "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
+: "${NFTBAN_RUN_DIR:=/run/nftban}"
+: "${NFTBAN_LOG_DIR:=/var/log/nftban}"
+: "${NFTBAN_CACHE_DIR:=/var/cache/nftban}"
 
-# Load config
+# Load config (sets readonly paths and all settings)
 if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
     # shellcheck source=/dev/null
     source "${NFTBAN_CONFIG_DIR}/nftban.conf"
+fi
+
+# Load user overrides (highest priority)
+if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_CONFIG_DIR}/nftban.conf.local" 2>/dev/null || true
 fi
 
 # =============================================================================
@@ -56,7 +63,7 @@ JSON_OUTPUT=false
 # =============================================================================
 
 log_info() {
-    [[ "$VERBOSE" == "true" ]] && echo "[INFO] $*"
+    [[ "$VERBOSE" == "true" ]] && echo "[INFO] $*" || true
 }
 
 log_error() {
@@ -517,13 +524,15 @@ send_metrics_native() {
     # Build Zabbix sender protocol JSON
     local data='{"request":"sender data","data":['
     local first=true
+    local key value
 
-    echo -e "$metrics" | while IFS=' ' read -r key value; do
+    # Use process substitution to avoid subshell variable scope issue
+    while IFS=' ' read -r key value; do
         [[ -z "$key" ]] && continue
         [[ "$first" != "true" ]] && data+=","
         data+="{\"host\":\"$ZABBIX_HOSTNAME\",\"key\":\"$key\",\"value\":\"$value\"}"
         first=false
-    done
+    done < <(echo -e "$metrics")
 
     data+=']}'
 
@@ -534,20 +543,27 @@ send_metrics_native() {
     fi
 
     # Send using netcat or bash /dev/tcp
-    local header
     local data_len=${#data}
 
     # Zabbix protocol header: ZBXD\x01 + 8-byte little-endian length
-    header=$(printf 'ZBXD\x01')
-    header+=$(printf '%08x' "$data_len" | sed 's/\(..\)/\\x\1/g' | tac -rs ..)
+    # Format: "ZBXD\x01" + length (8 bytes, little-endian) + data
+    local len_hex
+    len_hex=$(printf '%016x' "$data_len")
 
-    # Send data
+    # Send data using bash /dev/tcp (more portable than nc)
     {
-        printf '%s' "$header"
+        printf 'ZBXD\x01'
+        # Little-endian 8-byte length
+        printf "\\x${len_hex:14:2}\\x${len_hex:12:2}\\x${len_hex:10:2}\\x${len_hex:8:2}"
+        printf "\\x${len_hex:6:2}\\x${len_hex:4:2}\\x${len_hex:2:2}\\x${len_hex:0:2}"
         printf '%s' "$data"
-    } | timeout 10 nc "$ZABBIX_SERVER" "$ZABBIX_PORT" 2>/dev/null
+    } > /dev/tcp/"$ZABBIX_SERVER"/"$ZABBIX_PORT" 2>/dev/null || {
+        log_error "Failed to connect to $ZABBIX_SERVER:$ZABBIX_PORT"
+        return 1
+    }
 
     log_info "Metrics sent via native protocol"
+    return 0
 }
 
 output_json() {
