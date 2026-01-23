@@ -360,17 +360,11 @@ EOF
             fi
         fi
 
-        # Apply runtime firewall rule
+        # Apply runtime firewall rule (nft is live - no reload needed)
         if _zabbix_firewall_allow "$server" "$port"; then
-            _zabbix_print_success "Firewall rule applied"
+            _zabbix_print_success "Firewall rule applied (live)"
         else
             _zabbix_print_warning "Could not apply firewall rule (manual setup may be required)"
-        fi
-
-        # Reload port rules to pick up new config
-        if command -v nftban &>/dev/null; then
-            _zabbix_print_info "Reloading port rules..."
-            nftban port reload &>/dev/null || true
         fi
     fi
 
