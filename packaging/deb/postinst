@@ -50,7 +50,17 @@ log_error() { echo -e "${RED}[NFTBan ERROR]${NC} $*"; }
 
 case "$1" in
     configure)
-        log_info "Configuring NFTBan v1.0.0..."
+        # Get version from VERSION file (single source of truth)
+        NFTBAN_VERSION="unknown"
+        for version_file in /usr/lib/nftban/VERSION /var/lib/dpkg/info/nftban-core.list; do
+            if [[ -f "/usr/lib/nftban/VERSION" ]]; then
+                NFTBAN_VERSION=$(cat /usr/lib/nftban/VERSION 2>/dev/null | tr -d '[:space:]')
+                break
+            fi
+        done
+        [[ -z "$NFTBAN_VERSION" ]] && NFTBAN_VERSION="1.3.0"
+
+        log_info "Configuring NFTBan v${NFTBAN_VERSION}..."
 
         # =====================================================================
         # STEP 0: Security Check - CVE-2025-NFTBAN-001
@@ -486,7 +496,7 @@ case "$1" in
         # =====================================================================
         log_info ""
         log_info "========================================"
-        log_info " NFTBan v1.0.0 Installation Complete!"
+        log_info " NFTBan v${NFTBAN_VERSION} Installation Complete!"
         log_info "========================================"
         log_info ""
         log_info "Quick Start:"

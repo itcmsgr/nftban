@@ -284,11 +284,11 @@ mkdir -p %{buildroot}/run/nftban
 
 %pre
 # =============================================================================
-# NFTBan v1.0.0 - PREREQUISITE CHECKS
+# NFTBan - PREREQUISITE CHECKS
 # =============================================================================
 echo ""
 echo "════════════════════════════════════════════════════════════════════════════════"
-echo "  NFTBan v1.0.0 - Installation Prerequisite Checks"
+echo "  NFTBan v%{version} - Installation Prerequisite Checks"
 echo "════════════════════════════════════════════════════════════════════════════════"
 echo ""
 
@@ -573,7 +573,7 @@ echo "[NFTBan] Obsolete file cleanup complete"
 # =============================================================================
 # This prevents lockout by ensuring whitelist is in place BEFORE firewall is active.
 
-echo "[NFTBan] Configuring NFTBan v1.0.0..."
+echo "[NFTBan] Configuring NFTBan v%{version}..."
 
 # STEP 1: Remove old systemd overrides (prevent conflicts with new package files)
 echo "[NFTBan] Removing old systemd overrides..."
@@ -946,7 +946,7 @@ EOF
     # Create preinst script for prerequisite checks
     cat > "${BUILD_DIR}/deb/DEBIAN/preinst" <<'PREINST_EOF'
 #!/bin/bash
-# NFTBan v1.0.0 - PREREQUISITE CHECKS (DEB)
+# NFTBan - PREREQUISITE CHECKS (DEB)
 set -e
 
 echo ""
@@ -1158,6 +1158,8 @@ echo ""
 exit 0
 PREINST_EOF
 
+    # Inject actual version into preinst
+    sed -i "s/v1\.0\.0/v${PKG_VERSION}/g" "${BUILD_DIR}/deb/DEBIAN/preinst"
     chmod 755 "${BUILD_DIR}/deb/DEBIAN/preinst"
 
     # Use the comprehensive postinst from packaging/deb/postinst
@@ -1322,6 +1324,8 @@ exit 0
 EOF
     fi
 
+    # Inject actual version into postinst (for fallback inline postinst)
+    sed -i "s/v1\.0\.[0-9]*/v${PKG_VERSION}/g" "${BUILD_DIR}/deb/DEBIAN/postinst"
     chmod 0755 "${BUILD_DIR}/deb/DEBIAN/postinst"
 
     # Create conffiles to mark user configuration files (preserved on upgrade)
