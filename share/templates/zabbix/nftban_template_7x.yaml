@@ -1009,6 +1009,7 @@ zabbix_export:
                       name: itemid.0
                       value:
                         key: nftban.status
+                        host: NFTBan
                     - type: INTEGER
                       name: show
                       value: '1'
@@ -1025,6 +1026,7 @@ zabbix_export:
                       name: itemid.0
                       value:
                         key: nftban.mode
+                        host: NFTBan
                 - type: item_value
                   name: 'Version'
                   x: '12'
@@ -1035,6 +1037,7 @@ zabbix_export:
                       name: itemid.0
                       value:
                         key: nftban.version
+                        host: NFTBan
                 - type: item_value
                   name: 'Active Bans'
                   x: '18'
@@ -1045,6 +1048,7 @@ zabbix_export:
                       name: itemid.0
                       value:
                         key: nftban.active.count
+                        host: NFTBan
                 # Row 2: Graphs (svggraph widgets with direct item references)
                 - type: svggraph
                   name: 'Ban Activity'
@@ -1058,6 +1062,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.0.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.bans.24h
                     - type: STRING
                       name: ds.0.color
@@ -1065,6 +1070,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.1.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.bans.1h
                     - type: STRING
                       name: ds.1.color
@@ -1072,6 +1078,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.2.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.active.count
                     - type: STRING
                       name: ds.2.color
@@ -1089,6 +1096,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.0.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.memory.rss
                     - type: STRING
                       name: ds.0.color
@@ -1096,6 +1104,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.1.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.goroutines
                     - type: STRING
                       name: ds.1.color
@@ -1119,6 +1128,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.0.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.watchdog.cpu_score
                     - type: STRING
                       name: ds.0.color
@@ -1126,6 +1136,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.1.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.watchdog.mem_score
                     - type: STRING
                       name: ds.1.color
@@ -1133,6 +1144,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.2.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.watchdog.io_score
                     - type: STRING
                       name: ds.2.color
@@ -1163,6 +1175,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.0.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.nft.rules_total
                     - type: STRING
                       name: ds.0.color
@@ -1170,6 +1183,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.1.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.nft.sets_total
                     - type: STRING
                       name: ds.1.color
@@ -1177,6 +1191,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.2.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.nft.elements_total
                     - type: STRING
                       name: ds.2.color
@@ -1196,6 +1211,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.0.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.server.load_1m
                     - type: STRING
                       name: ds.0.color
@@ -1203,6 +1219,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.1.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.server.load_5m
                     - type: STRING
                       name: ds.1.color
@@ -1210,6 +1227,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.2.itemid.0
                       value:
+                        host: NFTBan
                         key: nftban.server.load_15m
                     - type: STRING
                       name: ds.2.color
@@ -1224,6 +1242,7 @@ zabbix_export:
                       name: itemid.0
                       value:
                         key: nftban.feeds.enabled
+                        host: NFTBan
                 - type: item_value
                   name: 'Feeds Loaded'
                   x: '12'
@@ -1235,6 +1254,7 @@ zabbix_export:
                       name: itemid.0
                       value:
                         key: nftban.feeds.loaded
+                        host: NFTBan
                 - type: item_value
                   name: 'Feed IPs Total'
                   x: '24'
@@ -1246,6 +1266,7 @@ zabbix_export:
                       name: itemid.0
                       value:
                         key: nftban.feeds.ips_total
+                        host: NFTBan
                 - type: item_value
                   name: 'Countries Blocked'
                   x: '36'
@@ -1257,3 +1278,4 @@ zabbix_export:
                       name: itemid.0
                       value:
                         key: nftban.geoip.countries_blocked
+                        host: NFTBan
