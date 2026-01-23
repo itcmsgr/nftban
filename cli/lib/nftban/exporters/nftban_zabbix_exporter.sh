@@ -44,6 +44,7 @@ fi
 # =============================================================================
 
 # Zabbix server settings
+ZABBIX_ENABLED="${NFTBAN_ZABBIX_ENABLED:-false}"
 ZABBIX_SERVER="${NFTBAN_ZABBIX_SERVER:-}"
 ZABBIX_PORT="${NFTBAN_ZABBIX_PORT:-10051}"
 ZABBIX_HOSTNAME="${NFTBAN_ZABBIX_HOSTNAME:-auto}"
@@ -732,17 +733,9 @@ main() {
         esac
     done
 
-    # Check configuration
-    if [[ -z "$ZABBIX_SERVER" ]] && [[ "$JSON_OUTPUT" != "true" ]]; then
-        log_error "Zabbix server not configured"
-        echo "Set NFTBAN_ZABBIX_SERVER in /etc/nftban/nftban.conf"
-        echo "Or run: nftban zabbix setup"
-        exit 1
-    fi
-
+    # Collect metrics first (always)
     log_info "Collecting NFTBan metrics..."
 
-    # Collect all metrics (add newline after each to prevent concatenation issues)
     local all_metrics=""
     all_metrics+="$(collect_daemon_metrics)"$'\n'
     all_metrics+="$(collect_ban_metrics)"$'\n'
@@ -754,10 +747,27 @@ main() {
     all_metrics+="$(collect_server_metrics)"$'\n'
     all_metrics+="$(collect_watchdog_metrics)"$'\n'
 
-    # Output or send
+    # JSON output mode
     if [[ "$JSON_OUTPUT" == "true" ]]; then
         output_json "$all_metrics"
         exit 0
+    fi
+
+    # Check if backend is enabled
+    if [[ "$ZABBIX_ENABLED" != "true" ]]; then
+        log_info "Zabbix backend disabled, storing metrics to buffer only"
+        buffer_save "$all_metrics"
+        buffer_cleanup  # Clean old files
+        exit 0
+    fi
+
+    # Check server configuration (only if enabled)
+    if [[ -z "$ZABBIX_SERVER" ]]; then
+        log_error "Zabbix enabled but server not configured"
+        echo "Set NFTBAN_ZABBIX_SERVER in /etc/nftban/nftban.conf"
+        echo "Or run: nftban zabbix setup"
+        buffer_save "$all_metrics"  # Still save metrics
+        exit 1
     fi
 
     log_info "Sending metrics to $ZABBIX_SERVER:$ZABBIX_PORT..."
