@@ -80,7 +80,7 @@ zabbix_export:
               tags:
                 - tag: scope
                   value: availability
-            - uuid: 4a8f2c1d3e5b6a7c8d9e0f1a2b3c4d5e
+            - uuid: c3e342b6e6ef4e4bbce8b69d4ffcd9a6
               expression: 'nodata(/NFTBan/nftban.status,5m)=1'
               name: 'NFTBan metrics not received for 5 minutes'
               priority: HIGH
