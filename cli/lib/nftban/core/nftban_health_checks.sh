@@ -365,6 +365,24 @@ nftban_health_check_permissions() {
         fi
     done
 
+    # Check conf.d files readable by nftban group (FHS: root:nftban 640)
+    # Services like nftban-zabbix-exporter run as 'nftban' user and need read access
+    if [[ -d "${NFTBAN_CONFIG_DIR}/conf.d" ]]; then
+        local bad_perms_count=0
+        while IFS= read -r -d '' conf_file; do
+            local file_group
+            file_group=$(stat -c '%G' "$conf_file" 2>/dev/null || echo "unknown")
+            if [[ "$file_group" != "nftban" && "$file_group" != "root" ]]; then
+                ((bad_perms_count++))
+            fi
+        done < <(find "${NFTBAN_CONFIG_DIR}" -type f \( -name "*.conf" -o -name "*.local" \) -print0 2>/dev/null)
+
+        if [[ $bad_perms_count -gt 0 ]]; then
+            permission_issues+=("$bad_perms_count config files have wrong group (fix: nftban permissions enforce)")
+            status=$HEALTH_WARNING
+        fi
+    fi
+
     # Check data directory ownership
     if [[ -d "${NFTBAN_DATA_DIR}" ]]; then
         local owner
