@@ -145,6 +145,7 @@ health:
     registries: {mutates: false, description: "Validate registry files (commands, config, reports)"}
     install: {mutates: false, description: "Verify installation completeness"}
     conflicts: {mutates: conditional, description: "Detect and remove conflicting firewalls", requires_root: true}
+    config: {mutates: false, description: "Show enabled modules and config status"}
 
 version:
   category: setup_discovery
@@ -696,11 +697,26 @@ config:
   has_json: true
   examples:
     - "nftban config show"
-    - "nftban config edit"
-    - "nftban config validate"
+    - "nftban config get portscan"
+    - "nftban config set portscan KEY=VALUE"
+    - "nftban config test"
+    - "nftban config diff"
+    - "nftban config status"
     - "nftban config reload"
-    - "nftban config get log_level"
-    - "nftban config set log_level debug"
+    - "nftban config reload portscan"
+  subcommands:
+    show: {mutates: false, description: "Show effective merged configuration"}
+    get: {mutates: false, description: "Get module configuration (merged)"}
+    defaults: {mutates: false, description: "Show default configuration values"}
+    overrides: {mutates: false, description: "Show local override values"}
+    set: {mutates: true, description: "Set configuration value in .conf.local", requires_root: true}
+    reset: {mutates: true, description: "Reset key to default (remove override)", requires_root: true}
+    reset-all: {mutates: true, description: "Reset all configuration to defaults", requires_root: true}
+    test: {mutates: false, description: "Validate configuration against schema"}
+    audit: {mutates: false, description: "Audit config for drift and deprecated keys"}
+    diff: {mutates: false, description: "Show differences between defaults and overrides"}
+    status: {mutates: false, description: "Show config tracking status for services"}
+    reload: {mutates: true, description: "Apply config changes to running services (SIGHUP)", requires_root: true}
   allowlist:
     paths:
       - /etc/nftban/nftban.conf
@@ -1124,9 +1140,14 @@ zabbix:
     - "nftban zabbix test"
     - "nftban zabbix push"
     - "nftban zabbix push --dry-run"
+    - "nftban zabbix reload"
     - "nftban zabbix discovery"
+    - "nftban zabbix template --version 7.0"
     - "nftban zabbix config"
   subcommands:
+    setup:
+      mutates: true
+      description: "Interactive setup wizard"
     status:
       mutates: false
       description: "Show Zabbix exporter status and target health"
@@ -1136,12 +1157,21 @@ zabbix:
     push:
       mutates: false
       description: "Force immediate metrics push"
+    reload:
+      mutates: false
+      description: "Re-read config and push metrics"
+    template:
+      mutates: false
+      description: "Export Zabbix template (5.x/6.x/7.x)"
     discovery:
       mutates: false
       description: "Trigger LLD discovery data send"
+    targets:
+      mutates: conditional
+      description: "Manage multiple Zabbix targets"
     config:
-      mutates: false
-      description: "Show current Zabbix configuration"
+      mutates: conditional
+      description: "Show/modify Zabbix configuration"
 
 # =============================================================================
 # CONNECTOR FRAMEWORK (v1.3.0+)
