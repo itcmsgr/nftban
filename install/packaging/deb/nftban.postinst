@@ -107,6 +107,11 @@ case "$1" in
             # Set first-level subdirs only (not recursive into user files)
             find "${NFTBAN_CONFIG_DIR}" -maxdepth 1 -type d -exec chown root:nftban {} \;
             find "${NFTBAN_CONFIG_DIR}" -maxdepth 1 -type d -exec chmod 750 {} \;
+            # Fix conf.d files - must be readable by nftban group for services
+            find "${NFTBAN_CONFIG_DIR}/conf.d" -name "*.conf" -exec chown root:nftban {} \; 2>/dev/null || true
+            find "${NFTBAN_CONFIG_DIR}/conf.d" -name "*.conf" -exec chmod 640 {} \; 2>/dev/null || true
+            find "${NFTBAN_CONFIG_DIR}" -name "*.local" -exec chown root:nftban {} \; 2>/dev/null || true
+            find "${NFTBAN_CONFIG_DIR}" -name "*.local" -exec chmod 640 {} \; 2>/dev/null || true
         fi
 
         # Reload systemd

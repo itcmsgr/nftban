@@ -287,6 +287,11 @@ if [ -d /etc/nftban ]; then
     chmod 750 /etc/nftban
     find /etc/nftban -maxdepth 1 -type d -exec chown root:nftban {} \;
     find /etc/nftban -maxdepth 1 -type d -exec chmod 750 {} \;
+    # Fix conf.d files - must be readable by nftban group for services
+    find /etc/nftban/conf.d -name "*.conf" -exec chown root:nftban {} \; 2>/dev/null || true
+    find /etc/nftban/conf.d -name "*.conf" -exec chmod 640 {} \; 2>/dev/null || true
+    find /etc/nftban -name "*.local" -exec chown root:nftban {} \; 2>/dev/null || true
+    find /etc/nftban -name "*.local" -exec chmod 640 {} \; 2>/dev/null || true
 fi
 
 # Auto-detect SSH port
