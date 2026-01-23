@@ -971,13 +971,13 @@ cloudflare:
 
 firewall:
   category: infrastructure
-  description: "Firewall structure validation and statistics"
+  description: "Firewall structure validation, statistics, and log analysis"
   risk: advanced
   audience: [cli]
   capability: enforcement
   mutates: conditional
   supports_dry_run: false
-  requires_root: false
+  requires_root: conditional
   panel_expose: false
   output_modes: [json, text]
   has_json: true
@@ -986,10 +986,54 @@ firewall:
     - "nftban firewall check 1.2.3.4"
     - "nftban firewall check 22"
     - "nftban firewall stats"
+    - "nftban firewall logs show --live"
+    - "nftban firewall logs enable --level drops"
+    - "nftban firewall reload"
   subcommands:
     validate: {mutates: false, description: "Validate nftables structure against NFTBan spec"}
     check: {mutates: false, description: "Check if IP or port is blocked/allowed"}
     stats: {mutates: false, description: "Show firewall statistics (tables, chains, sets)"}
+    reload: {mutates: true, requires_root: true, description: "Reload nftables ruleset"}
+    logs:
+      mutates: conditional
+      requires_root: conditional
+      description: "On-demand firewall log viewer with filtering"
+      subcommands:
+        enable:
+          mutates: true
+          requires_root: true
+          description: "Enable firewall logging (modifies nftables rules)"
+          options:
+            --level: {type: enum, values: [drops, accepts, all, alert], default: drops, description: "Logging level"}
+            --reason: {type: string, description: "Comma-separated reasons (banlist,invalid_state,ratelimit,policy_drop)"}
+            --rate: {type: string, default: "10/second", description: "Rate limit for log entries"}
+            --burst: {type: string, default: "50 packets", description: "Burst limit for log entries"}
+        disable:
+          mutates: true
+          requires_root: true
+          description: "Disable firewall logging (zero overhead)"
+        status:
+          mutates: false
+          description: "Show logging configuration and statistics"
+        show:
+          mutates: false
+          description: "View and filter firewall logs"
+          options:
+            --lines: {type: int, alias: "-n", default: 50, description: "Number of entries to show"}
+            --since: {type: string, description: "Time filter (e.g., '10 min ago', '1 hour ago')"}
+            --live: {type: bool, alias: "-f", description: "Live tail mode with auto-refresh"}
+            --interval: {type: int, alias: "-i", default: 3, description: "Refresh interval in seconds (live mode)"}
+            --ip: {type: string, description: "Filter by IP (source or destination)"}
+            --src: {type: string, description: "Filter by source IP only"}
+            --dst: {type: string, description: "Filter by destination IP only"}
+            --port: {type: string, description: "Filter by port (source or destination)"}
+            --proto: {type: enum, values: [tcp, udp, icmp], description: "Filter by protocol"}
+            --action: {type: enum, values: [drop, accept], description: "Filter by action"}
+            --reason: {type: string, description: "Filter by reason (banlist, invalid_state, etc.)"}
+            --json: {type: bool, description: "JSON output format"}
+            --csv: {type: bool, description: "CSV output format"}
+            --table: {type: bool, description: "Plain table output"}
+            --raw: {type: bool, description: "Raw kernel log format"}
 
 nftables:
   category: infrastructure
@@ -2154,7 +2198,7 @@ support:
 # =============================================================================
 
 _metadata:
-  version: "1.2"
+  version: "1.3"
   schema_version: "1.1"
   generated_date: "2026-01-23"
   description: "Complete CLI parameter registry for Zabbix auto-registration and help generation"

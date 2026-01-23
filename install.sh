@@ -1135,6 +1135,14 @@ install_nftables() {
         ok "Created symlink: /etc/sysconfig/nftables.conf -> /etc/nftables.conf"
     fi
 
+    # Install nftables.d directory for dynamic module rules
+    mkdir -p /etc/nftban/nftables.d
+    if [[ -f "$SCRIPT_DIR/install/nftables/nftables.d/00-placeholder.nft" ]]; then
+        cp -f "$SCRIPT_DIR/install/nftables/nftables.d/00-placeholder.nft" /etc/nftban/nftables.d/
+        chmod 644 /etc/nftban/nftables.d/00-placeholder.nft
+        ok "Installed: /etc/nftban/nftables.d/00-placeholder.nft"
+    fi
+
     # Enable and start nftables service
     log "Enabling nftables service..."
     systemctl enable nftables 2>/dev/null || warn "Failed to enable nftables"
@@ -1305,7 +1313,7 @@ install_pam() {
 # Create all required directories
 _install_configs_directories() {
     # /etc/nftban structure
-    mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d,conf.d,distros,suricata,rules.d,patterns.d,connectors}
+    mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d,conf.d,distros,suricata,rules.d,patterns.d,connectors,nftables.d}
     mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,geoban,geoip,rbl}
     mkdir -p /etc/nftban/patterns.d/botscan
     mkdir -p /etc/nftban/suricata/{profiles,config,rules,cache}

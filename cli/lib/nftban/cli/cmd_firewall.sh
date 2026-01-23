@@ -1,27 +1,28 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Firewall Management Command
+# NFTBan v1.3.1 - Firewall Management Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Firewall structure validation, IP/port checking, and statistics
+# Purpose: Firewall structure validation, IP/port checking, logs, and statistics
 #
-# meta:name=cmd_firewall
-# meta:type=cli
-# meta:header=NFTBan Firewall Command
-# meta:version=1.0.0
+# meta:name="cmd_firewall"
+# meta:type="cli"
+# meta:header="NFTBan Firewall Command"
+# meta:version="1.3.1"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=Comprehensive firewall management: validate structure, check IPs/ports, view stats
-# meta:input=Subcommands (validate, check, stats) with options
-# meta:output=Validation results, IP/port status, firewall statistics
+# meta:description="Comprehensive firewall management: validate, check, stats, logs, reload"
+# meta:inventory.files=""
+# meta:inventory.binaries="nft,journalctl"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/fwlog.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root (for reload, logs enable/disable)"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,nftban_validator.sh,nft,jq
-#
-# meta:created_date=2025-11-13
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-13"
+# meta:updated_date="2026-01-23"
 
 
 # =============================================================================
@@ -33,6 +34,7 @@
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
 
 : "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
+: "${NFTBAN_CLI_DIR:=/usr/lib/nftban/cli}"
 
 # Load strict mode library
 # shellcheck source=/usr/lib/nftban/lib/strict.sh
@@ -106,6 +108,22 @@ nftban_cmd_firewall() {
         stats)
             shift
             firewall_stats "$@"
+            ;;
+        logs)
+            shift
+            # Load logs command on-demand
+            if [[ -f "${NFTBAN_CLI_DIR}/cmd_firewall_logs.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_CLI_DIR}/cmd_firewall_logs.sh"
+                nftban_cmd_firewall_logs "$@"
+            else
+                echo "Error: Firewall logs module not found" >&2
+                return 1
+            fi
+            ;;
+        reload)
+            shift
+            firewall_reload "$@"
             ;;
         *)
             echo "Error: Unknown firewall subcommand: $subcommand" >&2
@@ -266,6 +284,37 @@ firewall_stats() {
 }
 
 # =============================================================================
+# SUBCOMMAND: RELOAD
+# =============================================================================
+
+firewall_reload() {
+    # Reload nftables ruleset
+    local quiet=false
+
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            --quiet|-q)
+                quiet=true
+                shift
+                ;;
+            *)
+                echo "Error: Unknown option: $1" >&2
+                return 1
+                ;;
+        esac
+    done
+
+    if ! nft -f /etc/nftables.conf 2>&1; then
+        echo "Error: Failed to reload nftables" >&2
+        return 1
+    fi
+
+    if [[ "$quiet" == "false" ]]; then
+        echo "Firewall rules reloaded successfully"
+    fi
+}
+
+# =============================================================================
 # HELP FUNCTIONS
 # =============================================================================
 
@@ -279,6 +328,8 @@ Subcommands:
   validate      Validate nftables structure against NFTBan spec
   check         Check if IP or port is blocked/allowed
   stats         Show firewall statistics (tables, chains, sets, IPs)
+  logs          View and filter firewall logs (on-demand)
+  reload        Reload nftables ruleset
   help          Show this help message
 
 Examples:
@@ -286,6 +337,8 @@ Examples:
   nftban firewall check 1.2.3.4
   nftban firewall check 22
   nftban firewall stats
+  nftban firewall logs show --live
+  nftban firewall reload
 
 Global options:
   --json        Output results as JSON (for GUI integration)
