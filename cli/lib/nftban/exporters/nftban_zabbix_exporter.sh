@@ -345,9 +345,8 @@ collect_server_metrics() {
     metrics+="nftban.server.fqdn $(hostname -f 2>/dev/null || hostname)\n"
 
     # OS information
-    local os_id os_release os_pretty
+    local os_id os_pretty
     os_id=$(grep -m1 "^ID=" /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "linux")
-    os_release=$(grep -m1 "^VERSION_ID=" /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "")
     os_pretty=$(grep -m1 "^PRETTY_NAME=" /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "Linux")
     metrics+="nftban.server.os ${os_id}\n"
     metrics+="nftban.server.os_release ${os_pretty}\n"
