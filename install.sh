@@ -1441,7 +1441,8 @@ _install_configs_ownership() {
     ok "Directory ownership configured"
 }
 
-# Install a single config file (if not exists - don't overwrite)
+# Install a single config file (if not exists - don't overwrite content)
+# Always fixes permissions even if file exists (FHS compliance)
 # Usage: _install_config_file <src> <dst> <mode> [owner]
 _install_config_file() {
     local src="$1" dst="$2" mode="$3" owner="${4:-root:nftban}"
@@ -1454,11 +1455,15 @@ _install_config_file() {
         chown "$owner" "$dst"
         ok "Installed: $dst"
     elif [[ -f "$dst" ]]; then
-        ok "Config exists (not overwriting): $dst"
+        # File exists - don't overwrite content but ALWAYS fix permissions
+        chmod "$mode" "$dst"
+        chown "$owner" "$dst"
+        ok "Config exists (permissions fixed): $dst"
     fi
 }
 
 # Install directory of config files
+# Always fixes permissions even if files exist (FHS compliance)
 # Usage: _install_config_dir <src_dir> <dst_dir> <glob> <mode> [owner]
 _install_config_dir() {
     local src_dir="$1" dst_dir="$2" glob="$3" mode="$4" owner="${5:-root:nftban}"
@@ -1472,13 +1477,14 @@ _install_config_dir() {
         name=$(basename "$src_file")
         if [[ ! -f "$dst_dir/$name" ]]; then
             cp -f "$src_file" "$dst_dir/$name"
-            chmod "$mode" "$dst_dir/$name"
-            chown "$owner" "$dst_dir/$name"
         fi
+        # Always fix permissions (even if file already existed)
+        chmod "$mode" "$dst_dir/$name"
+        chown "$owner" "$dst_dir/$name"
         ((count++))
     done
 
-    [[ $count -gt 0 ]] && ok "Installed $count files in $dst_dir"
+    [[ $count -gt 0 ]] && ok "Installed/fixed $count files in $dst_dir"
 }
 
 # Install all module configurations
