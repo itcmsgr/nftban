@@ -477,17 +477,29 @@ zabbix_export:
             - tag: component
               value: watchdog
 
-        # --- Server Info ---
+        # --- Server Inventory ---
         - uuid: i1d2e3f4a5b6c7d8e9f0a1b2c3d4e5f6
           name: 'NFTBan: Server hostname'
           type: TRAP
           key: nftban.server.hostname
           delay: '0'
           value_type: CHAR
-          description: 'Server hostname'
+          description: 'Server hostname (short)'
+          inventory_link: NAME
           tags:
             - tag: component
-              value: server
+              value: inventory
+
+        - uuid: i1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6
+          name: 'NFTBan: Server FQDN'
+          type: TRAP
+          key: nftban.server.fqdn
+          delay: '0'
+          value_type: CHAR
+          description: 'Fully qualified domain name'
+          tags:
+            - tag: component
+              value: inventory
 
         - uuid: i2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7
           name: 'NFTBan: Server OS'
@@ -495,10 +507,23 @@ zabbix_export:
           key: nftban.server.os
           delay: '0'
           value_type: CHAR
-          description: 'Operating system'
+          description: 'Operating system ID'
+          inventory_link: OS
           tags:
             - tag: component
-              value: server
+              value: inventory
+
+        - uuid: i2e3f4a5b6c7d8e9f0a1b2c3d4e5f6a7
+          name: 'NFTBan: Server OS release'
+          type: TRAP
+          key: nftban.server.os_release
+          delay: '0'
+          value_type: CHAR
+          description: 'OS release/distribution (e.g., Ubuntu 24.04)'
+          inventory_link: OS_SHORT
+          tags:
+            - tag: component
+              value: inventory
 
         - uuid: i3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8
           name: 'NFTBan: Server kernel'
@@ -507,9 +532,22 @@ zabbix_export:
           delay: '0'
           value_type: CHAR
           description: 'Kernel version'
+          inventory_link: SOFTWARE
           tags:
             - tag: component
-              value: server
+              value: inventory
+
+        - uuid: i3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8
+          name: 'NFTBan: Server architecture'
+          type: TRAP
+          key: nftban.server.arch
+          delay: '0'
+          value_type: CHAR
+          description: 'System architecture (x86_64, aarch64)'
+          inventory_link: TYPE
+          tags:
+            - tag: component
+              value: inventory
 
         - uuid: i4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9
           name: 'NFTBan: CPU cores'
@@ -520,7 +558,102 @@ zabbix_export:
           description: 'Number of CPU cores'
           tags:
             - tag: component
+              value: inventory
+
+        - uuid: i4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9
+          name: 'NFTBan: Server CPU model'
+          type: TRAP
+          key: nftban.server.cpu_model
+          delay: '0'
+          value_type: CHAR
+          description: 'CPU model name'
+          inventory_link: HARDWARE
+          tags:
+            - tag: component
+              value: inventory
+
+        - uuid: i4f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0
+          name: 'NFTBan: Server memory total'
+          type: TRAP
+          key: nftban.server.memory_total
+          delay: '0'
+          value_type: UNSIGNED
+          units: B
+          description: 'Total physical memory'
+          tags:
+            - tag: component
+              value: inventory
+
+        - uuid: i4g7b8c9d0e1f2a3b4c5d6e7f8a9b0c1
+          name: 'NFTBan: Server memory available'
+          type: TRAP
+          key: nftban.server.memory_available
+          delay: '0'
+          value_type: UNSIGNED
+          units: B
+          description: 'Available physical memory'
+          tags:
+            - tag: component
               value: server
+
+        - uuid: i4h8c9d0e1f2a3b4c5d6e7f8a9b0c1d2
+          name: 'NFTBan: Server uptime'
+          type: TRAP
+          key: nftban.server.uptime
+          delay: '0'
+          value_type: UNSIGNED
+          units: s
+          description: 'Server uptime in seconds'
+          tags:
+            - tag: component
+              value: server
+
+        - uuid: i4j0e1f2a3b4c5d6e7f8a9b0c1d2e3f4
+          name: 'NFTBan: Server primary IP'
+          type: TRAP
+          key: nftban.server.primary_ip
+          delay: '0'
+          value_type: CHAR
+          description: 'Primary IPv4 address'
+          inventory_link: HOST_ROUTER
+          tags:
+            - tag: component
+              value: inventory
+
+        - uuid: i4m3b4c5d6e7f8a9b0c1d2e3f4a5b6c7
+          name: 'NFTBan: Server timezone'
+          type: TRAP
+          key: nftban.server.timezone
+          delay: '0'
+          value_type: CHAR
+          description: 'System timezone'
+          tags:
+            - tag: component
+              value: inventory
+
+        - uuid: i4n4c5d6e7f8a9b0c1d2e3f4a5b6c7d8
+          name: 'NFTBan: Server virtualization'
+          type: TRAP
+          key: nftban.server.virtualization
+          delay: '0'
+          value_type: CHAR
+          description: 'Virtualization type (kvm, vmware, docker, none)'
+          inventory_link: TYPE_FULL
+          tags:
+            - tag: component
+              value: inventory
+
+        - uuid: i4o5d6e7f8a9b0c1d2e3f4a5b6c7d8e9
+          name: 'NFTBan: Server cloud provider'
+          type: TRAP
+          key: nftban.server.cloud_provider
+          delay: '0'
+          value_type: CHAR
+          description: 'Cloud provider (aws, gcp, azure, digitalocean, none)'
+          inventory_link: VENDOR
+          tags:
+            - tag: component
+              value: inventory
 
         - uuid: i5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0
           name: 'NFTBan: Load average (1m)'
