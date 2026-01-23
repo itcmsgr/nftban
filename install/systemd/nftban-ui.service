@@ -31,6 +31,7 @@ User=nftban
 Group=nftban
 WorkingDirectory=/var/lib/nftban
 ExecStart=/usr/sbin/nftban-ui --config /etc/nftban/ui.conf
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=10
 

@@ -30,6 +30,7 @@ Type=simple
 User=nftban-www
 Group=nftban-web
 ExecStart=/usr/sbin/nftban-api --listen=:3940
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5s
 

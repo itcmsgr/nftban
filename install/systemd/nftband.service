@@ -59,6 +59,7 @@ User=root
 Group=root
 
 ExecStart=/usr/lib/nftban/bin/nftband
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=5s
 

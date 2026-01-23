@@ -38,6 +38,7 @@ Group=nftban
 SupplementaryGroups=adm systemd-journal
 
 ExecStart=/usr/bin/nftban login run
+ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=10
 
