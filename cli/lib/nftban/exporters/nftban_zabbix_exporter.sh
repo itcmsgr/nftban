@@ -709,6 +709,7 @@ main() {
             --verbose)  VERBOSE=true; shift ;;
             --json)     JSON_OUTPUT=true; shift ;;
             --once)     shift ;;  # Default behavior
+            --check)    CHECK_PREREQ=true; shift ;;  # Check prerequisites only
             --help|-h)
                 echo "NFTBan Zabbix Exporter"
                 echo ""
@@ -719,11 +720,18 @@ main() {
                 echo "  --verbose    Show detailed output"
                 echo "  --json       Output metrics as JSON instead of sending"
                 echo "  --once       Run once and exit (default)"
+                echo "  --check      Check prerequisites and exit"
                 echo ""
                 echo "Configuration is read from /etc/nftban/nftban.conf:"
                 echo "  NFTBAN_ZABBIX_SERVER   Zabbix server address"
                 echo "  NFTBAN_ZABBIX_PORT     Zabbix server port (default: 10051)"
                 echo "  NFTBAN_ZABBIX_HOSTNAME Hostname to report (default: auto)"
+                echo ""
+                echo "Prerequisites:"
+                echo "  - NFTBan must be installed"
+                echo "  - NFTBAN_ZABBIX_ENABLED=true in config"
+                echo "  - NFTBAN_ZABBIX_SERVER configured"
+                echo "  - Network connectivity to Zabbix server"
                 exit 0
                 ;;
             *)
@@ -733,7 +741,85 @@ main() {
         esac
     done
 
-    # Collect metrics first (always)
+    # ==========================================================================
+    # PREREQUISITE CHECKS
+    # ==========================================================================
+    local prereq_ok=true
+    local prereq_errors=""
+
+    # Check 1: NFTBan config exists
+    if [[ ! -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
+        prereq_ok=false
+        prereq_errors+="  [FAIL] NFTBan config not found: ${NFTBAN_CONFIG_DIR}/nftban.conf\n"
+    else
+        [[ "$VERBOSE" == "true" ]] && echo "[OK] NFTBan config found"
+    fi
+
+    # Check 2: Zabbix export enabled
+    if [[ "$ZABBIX_ENABLED" != "true" ]]; then
+        prereq_ok=false
+        prereq_errors+="  [FAIL] Zabbix export disabled (NFTBAN_ZABBIX_ENABLED != true)\n"
+    else
+        [[ "$VERBOSE" == "true" ]] && echo "[OK] Zabbix export enabled"
+    fi
+
+    # Check 3: Zabbix server configured
+    if [[ -z "$ZABBIX_SERVER" ]]; then
+        prereq_ok=false
+        prereq_errors+="  [FAIL] Zabbix server not configured (NFTBAN_ZABBIX_SERVER empty)\n"
+    else
+        [[ "$VERBOSE" == "true" ]] && echo "[OK] Zabbix server: $ZABBIX_SERVER:$ZABBIX_PORT"
+    fi
+
+    # Check 4: Network tool available (nc or zabbix_sender)
+    if ! command -v zabbix_sender &>/dev/null && ! command -v nc &>/dev/null; then
+        prereq_ok=false
+        prereq_errors+="  [FAIL] No network tool available (need zabbix_sender or nc)\n"
+    else
+        if command -v zabbix_sender &>/dev/null; then
+            [[ "$VERBOSE" == "true" ]] && echo "[OK] zabbix_sender available"
+        else
+            [[ "$VERBOSE" == "true" ]] && echo "[OK] nc (netcat) available"
+        fi
+    fi
+
+    # Check 5: NFTBan service exists (optional - just warn)
+    if ! systemctl list-unit-files nftban.service &>/dev/null 2>&1; then
+        [[ "$VERBOSE" == "true" ]] && echo "[WARN] NFTBan service not found (metrics may be limited)"
+    fi
+
+    # If --check mode, show results and exit
+    if [[ "${CHECK_PREREQ:-false}" == "true" ]]; then
+        echo "=== NFTBan Zabbix Exporter Prerequisites ==="
+        if [[ "$prereq_ok" == "true" ]]; then
+            echo "[OK] All prerequisites met"
+            echo ""
+            echo "Configuration:"
+            echo "  Zabbix Server:   $ZABBIX_SERVER:$ZABBIX_PORT"
+            echo "  Hostname:        $ZABBIX_HOSTNAME"
+            echo "  Buffer Dir:      $BUFFER_DIR"
+            exit 0
+        else
+            echo "[FAIL] Prerequisites not met:"
+            echo -e "$prereq_errors"
+            echo ""
+            echo "To fix:"
+            echo "  1. Run: nftban zabbix setup"
+            echo "  2. Set NFTBAN_ZABBIX_ENABLED=true in ${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
+            echo "  3. Set NFTBAN_ZABBIX_SERVER=<your-zabbix-server>"
+            exit 1
+        fi
+    fi
+
+    # If prerequisites failed and not JSON mode, exit with error
+    if [[ "$prereq_ok" != "true" ]] && [[ "$JSON_OUTPUT" != "true" ]]; then
+        log_error "Prerequisites not met. Run with --check for details."
+        exit 1
+    fi
+
+    # ==========================================================================
+    # COLLECT METRICS
+    # ==========================================================================
     log_info "Collecting NFTBan metrics..."
 
     local all_metrics=""
