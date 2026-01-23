@@ -753,11 +753,9 @@ main() {
         exit 0
     fi
 
-    # Check if backend is enabled
+    # Check if backend is enabled - if not, exit silently (no buffering)
     if [[ "$ZABBIX_ENABLED" != "true" ]]; then
-        log_info "Zabbix backend disabled, storing metrics to buffer only"
-        buffer_save "$all_metrics"
-        buffer_cleanup  # Clean old files
+        log_info "Zabbix backend disabled, exiting"
         exit 0
     fi
 
@@ -766,7 +764,6 @@ main() {
         log_error "Zabbix enabled but server not configured"
         echo "Set NFTBAN_ZABBIX_SERVER in /etc/nftban/nftban.conf"
         echo "Or run: nftban zabbix setup"
-        buffer_save "$all_metrics"  # Still save metrics
         exit 1
     fi
 
