@@ -1,6 +1,5 @@
 zabbix_export:
   version: '7.0'
-  date: '2026-01-23T00:00:00Z'
   template_groups:
     - uuid: 7df96b18c230490a9a0a9e2307226338
       name: 'Templates/Security'
