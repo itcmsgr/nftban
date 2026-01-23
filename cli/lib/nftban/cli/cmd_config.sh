@@ -75,6 +75,7 @@ COMMANDS:
   set <module> KEY=VALUE    Set configuration value in .conf.local
   reset <module> KEY        Reset single key to default (remove override)
   reset-all <module>        Reset all configuration to defaults
+  reload [module]           Apply config changes to running services (SIGHUP)
 
 VALIDATION COMMANDS:
   test [--verbose] [--json] Validate all configuration against schema
@@ -130,8 +131,18 @@ HOW IT WORKS:
   - Local overrides are stored in .conf.local files
   - Overrides take precedence over defaults
   - Use 'set' to add/update overrides, 'reset' to remove them
+  - Use 'reload' to apply changes to running services (sends SIGHUP)
+  - Timer-based services (feeds, metrics, zabbix) auto-reload on next run
   - The 'test' command validates against the schema
   - The 'audit' command detects drift, deprecated keys, and new options
+
+CONFIG RELOAD:
+  # After changing config, apply to running services:
+  sudo nftban config set portscan PORTSCAN_BAN_THRESHOLD=20
+  sudo nftban config reload portscan
+
+  # Or reload all services at once:
+  sudo nftban config reload
 
 EOF
 }
@@ -283,6 +294,231 @@ nftban_cmd_config_show() {
             "  \(.key)\("                                   "[0:35-(.key|length)]) = \(.value)"
         '
     fi
+}
+
+# =============================================================================
+# CONFIG RELOAD - Smart reload for all NFTBan services
+# =============================================================================
+# Module -> Service mapping (persistent daemons only)
+declare -A _CONFIG_MODULE_SERVICE=(
+    ["portscan"]="nftband"
+    ["ddos"]="nftband"
+    ["login"]="nftban-login-monitor"
+    ["geoban"]="nftband"
+    ["suricata"]="nftban-suricata"
+    ["api"]="nftban-api"
+    ["ui"]="nftban-ui"
+    ["daemon"]="nftband"
+)
+
+# Services that support SIGHUP reload
+declare -a _CONFIG_SIGHUP_SERVICES=(
+    "nftband"
+    "nftban-login-monitor"
+    "nftban-api"
+    "nftban-ui"
+    "nftban-suricata"
+)
+
+# Config tracking directory
+readonly _CONFIG_TRACK_DIR="/run/nftban/config-loaded"
+
+_config_service_running() {
+    systemctl is-active "${1}.service" &>/dev/null
+}
+
+_config_send_sighup() {
+    local service="$1"
+    local pid
+    pid=$(systemctl show "${service}.service" -p MainPID --value 2>/dev/null)
+    [[ -z "$pid" || "$pid" == "0" ]] && return 1
+    kill -HUP "$pid" 2>/dev/null
+}
+
+_config_get_checksum() {
+    # Get SHA256 checksum of config file
+    local file="$1"
+    [[ -f "$file" ]] && sha256sum "$file" 2>/dev/null | cut -d' ' -f1 || echo "missing"
+}
+
+_config_save_loaded() {
+    # Save checksums of currently loaded config (called after reload)
+    mkdir -p "$_CONFIG_TRACK_DIR"
+    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+
+    # Main config
+    _config_get_checksum "$config_dir/nftban.conf" > "$_CONFIG_TRACK_DIR/nftban.conf.sha256"
+    [[ -f "$config_dir/nftban.conf.local" ]] && \
+        _config_get_checksum "$config_dir/nftban.conf.local" > "$_CONFIG_TRACK_DIR/nftban.conf.local.sha256"
+
+    # Module configs
+    for conf in "$config_dir"/conf.d/*/*.conf "$config_dir"/conf.d/*.conf; do
+        [[ -f "$conf" ]] || continue
+        local name
+        name=$(basename "$conf")
+        _config_get_checksum "$conf" > "$_CONFIG_TRACK_DIR/${name}.sha256"
+        [[ -f "${conf}.local" ]] && \
+            _config_get_checksum "${conf}.local" > "$_CONFIG_TRACK_DIR/${name}.local.sha256"
+    done
+
+    date +%s > "$_CONFIG_TRACK_DIR/.timestamp"
+}
+
+_config_check_changes() {
+    # Check if config files changed since last load
+    # Returns: 0 if changed, 1 if same
+    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+    local changed=1
+
+    [[ ! -d "$_CONFIG_TRACK_DIR" ]] && return 0  # Never loaded = changed
+
+    # Check main config
+    local current loaded
+    current=$(_config_get_checksum "$config_dir/nftban.conf")
+    loaded=$(cat "$_CONFIG_TRACK_DIR/nftban.conf.sha256" 2>/dev/null || echo "none")
+    [[ "$current" != "$loaded" ]] && changed=0
+
+    # Check .conf.local
+    if [[ -f "$config_dir/nftban.conf.local" ]]; then
+        current=$(_config_get_checksum "$config_dir/nftban.conf.local")
+        loaded=$(cat "$_CONFIG_TRACK_DIR/nftban.conf.local.sha256" 2>/dev/null || echo "none")
+        [[ "$current" != "$loaded" ]] && changed=0
+    fi
+
+    return $changed
+}
+
+nftban_cmd_config_reload() {
+    # Smart reload: validates config, then sends SIGHUP to running daemons
+    # Timer-based services auto-reload on next run (no action needed)
+    local module="${1:-all}"
+    local reloaded=0
+    local failed=0
+
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  NFTBan Configuration Reload"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Step 1: Validate config
+    echo "[1/2] Validating configuration..."
+    local conf_local="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
+    if [[ -f "$conf_local" ]] && ! bash -n "$conf_local" 2>/dev/null; then
+        echo "  ERROR: Syntax error in $conf_local"
+        return 1
+    fi
+    echo "  Config syntax: OK"
+    echo ""
+
+    # Step 2: Reload services
+    echo "[2/2] Reloading services..."
+
+    if [[ "$module" == "all" || "$module" == "--all" ]]; then
+        # Reload all running SIGHUP-capable services
+        local svc
+        for svc in "${_CONFIG_SIGHUP_SERVICES[@]}"; do
+            if _config_service_running "$svc"; then
+                printf "  %-30s " "$svc"
+                if _config_send_sighup "$svc"; then
+                    echo "[RELOADED]"
+                    ((reloaded++))
+                else
+                    echo "[FAILED]"
+                    ((failed++))
+                fi
+            fi
+        done
+    else
+        # Reload specific module's service
+        local service="${_CONFIG_MODULE_SERVICE[$module]:-}"
+        if [[ -z "$service" ]]; then
+            echo "  Unknown module: $module"
+            echo "  Valid modules: ${!_CONFIG_MODULE_SERVICE[*]}"
+            return 1
+        fi
+
+        printf "  %-30s " "$service"
+        if ! _config_service_running "$service"; then
+            echo "[NOT RUNNING]"
+        elif _config_send_sighup "$service"; then
+            echo "[RELOADED]"
+            ((reloaded++))
+        else
+            echo "[FAILED]"
+            ((failed++))
+        fi
+    fi
+
+    # Save checksums of loaded config
+    if [[ $reloaded -gt 0 ]]; then
+        _config_save_loaded 2>/dev/null || true
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Result: $reloaded reloaded, $failed failed"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "Note: Timer-based services (feeds, metrics, zabbix) auto-reload"
+    echo "      on their next scheduled run."
+
+    [[ $failed -eq 0 ]]
+}
+
+nftban_cmd_config_status() {
+    # Show config status: what's loaded vs what's on disk (only for enabled modules)
+    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  NFTBan Configuration Status"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    # Show last reload time
+    if [[ -f "$_CONFIG_TRACK_DIR/.timestamp" ]]; then
+        local ts
+        ts=$(cat "$_CONFIG_TRACK_DIR/.timestamp" 2>/dev/null)
+        echo "Last reload: $(date -d "@$ts" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "$ts")"
+    else
+        echo "Last reload: Never (services using startup config)"
+    fi
+    echo ""
+
+    # Check which services are running (only check those)
+    printf "%-25s %-12s %-15s\n" "SERVICE" "STATUS" "CONFIG"
+    echo "─────────────────────────────────────────────────────"
+
+    local needs_reload=0
+    for svc in "${_CONFIG_SIGHUP_SERVICES[@]}"; do
+        local status="stopped"
+        local config_status="-"
+
+        if _config_service_running "$svc"; then
+            status="running"
+
+            # Check if config changed since load
+            if [[ -f "$_CONFIG_TRACK_DIR/.timestamp" ]]; then
+                if _config_check_changes; then
+                    config_status="CHANGED"
+                    needs_reload=1
+                else
+                    config_status="current"
+                fi
+            else
+                config_status="not tracked"
+            fi
+        fi
+
+        printf "%-25s %-12s %-15s\n" "$svc" "$status" "$config_status"
+    done
+
+    echo ""
+    if [[ $needs_reload -eq 1 ]]; then
+        echo "Config has changed. Run: nftban config reload"
+    else
+        echo "All running services have current config."
+    fi
+    echo ""
 }
 
 nftban_cmd_config_diff() {
@@ -450,6 +686,14 @@ nftban_cmd_config() {
 
         diff)
             nftban_cmd_config_diff "$@"
+            ;;
+
+        status)
+            nftban_cmd_config_status "$@"
+            ;;
+
+        reload|apply)
+            nftban_cmd_config_reload "$@"
             ;;
 
         help|--help|-h|"")
