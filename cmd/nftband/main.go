@@ -16,7 +16,7 @@
 // meta:inventory.config_files="/etc/nftban/nftban.conf"
 // meta:inventory.systemd_units="nftband.service, nftband.socket"
 // meta:inventory.network="8080/tcp (HTTP API), /run/nftban/nftband.sock (Unix)"
-// meta:inventory.privileges="root (nftables, systemd socket)"
+// meta:inventory.privileges="root"
 //
 // Architecture:
 // - Runs all modules as goroutines

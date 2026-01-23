@@ -21,7 +21,7 @@
 # meta:inventory.config_files="/etc/nftban/nftban.conf"
 # meta:inventory.systemd_units="nftban-queue.timer,nftban-queue.service"
 # meta:inventory.network=""
-# meta:inventory.privileges="nftban user"
+# meta:inventory.privileges="nftban"
 #
 # Architecture:
 #   pending/  - New tasks waiting to be processed
@@ -47,6 +47,8 @@
 #   6. If RETRIES >= MAX: move to DLQ, emit alert
 #
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Prevent double-loading
 [[ -n "${NFTBAN_TASK_QUEUE_LOADED:-}" ]] && return 0

@@ -21,7 +21,7 @@
 # meta:inventory.config_files="/etc/nftban/nftban.conf"
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="nftban user"
+# meta:inventory.privileges="nftban"
 # =============================================================================
 
 # Strict mode

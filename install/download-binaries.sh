@@ -17,7 +17,7 @@
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network="GitHub API"
-# meta:inventory.privileges="root for install"
+# meta:inventory.privileges="root"
 # =============================================================================
 # Usage: ./download-binaries.sh [VERSION]
 #        VERSION: Tag like v1.0.0 (default: latest)

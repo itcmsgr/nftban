@@ -17,7 +17,7 @@
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
 # meta:inventory.network=""
-# meta:inventory.privileges="root for install"
+# meta:inventory.privileges="root"
 # =============================================================================
 # Usage:
 #   ./update_man_page.sh version <version>     - Update version number
@@ -27,7 +27,7 @@
 #   ./update_man_page.sh add <command>         - Generate section for new command
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"

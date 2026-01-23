@@ -26,7 +26,7 @@
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units="nftban-queue.timer,nftban-queue.service"
 # meta:inventory.network=""
-# meta:inventory.privileges="nftban user"
+# meta:inventory.privileges="nftban"
 #
 # Exit codes:
 #   0 - Task processed successfully OR no tasks pending
@@ -34,7 +34,7 @@
 #   2 - Lock held by another instance (normal, skip)
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Set NFTBan library directory
 readonly NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
