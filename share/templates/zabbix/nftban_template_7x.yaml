@@ -83,6 +83,16 @@ zabbix_export:
               tags:
                 - tag: scope
                   value: availability
+            - uuid: 4a8f2c1d3e5b6a7c8d9e0f1a2b3c4d5e
+              expression: 'nodata(/NFTBan/nftban.status,5m)=1'
+              name: 'NFTBan metrics not received for 5 minutes'
+              priority: HIGH
+              description: 'No metrics received from NFTBan exporter. Check if the Zabbix exporter is running and network connectivity.'
+              tags:
+                - tag: scope
+                  value: availability
+                - tag: component
+                  value: metrics
 
         - uuid: 0bf34f4c4e8545b2a88fa61261011bb8
           name: 'NFTBan: Version'
@@ -582,7 +592,7 @@ zabbix_export:
           key: nftban.server.fqdn
           value_type: CHAR
           description: 'Fully qualified domain name'
-          inventory_link: HOST_NETMASK
+          inventory_link: ALIAS
           tags:
             - tag: component
               value: inventory
@@ -983,6 +993,96 @@ zabbix_export:
                   value: '{#COUNTRY}'
 
       # =======================================================================
+      # GRAPHS
+      # =======================================================================
+      graphs:
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+          name: 'NFTBan: Ban activity'
+          graph_items:
+            - color: 1A7C11
+              item:
+                host: NFTBan
+                key: nftban.bans.24h
+            - color: 2774A4
+              sortorder: '1'
+              item:
+                host: NFTBan
+                key: nftban.bans.1h
+            - color: F63100
+              sortorder: '2'
+              item:
+                host: NFTBan
+                key: nftban.active.count
+        - uuid: b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7
+          name: 'NFTBan: Memory and resources'
+          graph_items:
+            - color: 1A7C11
+              item:
+                host: NFTBan
+                key: nftban.memory.rss
+            - color: 2774A4
+              sortorder: '1'
+              yaxisside: RIGHT
+              item:
+                host: NFTBan
+                key: nftban.goroutines
+        - uuid: c3d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8
+          name: 'NFTBan: Pressure scores'
+          ymin_type: FIXED
+          ymax_type: FIXED
+          yaxismax: '100'
+          graph_items:
+            - color: F63100
+              item:
+                host: NFTBan
+                key: nftban.watchdog.cpu_score
+            - color: FC6A00
+              sortorder: '1'
+              item:
+                host: NFTBan
+                key: nftban.watchdog.mem_score
+            - color: A54F10
+              sortorder: '2'
+              item:
+                host: NFTBan
+                key: nftban.watchdog.io_score
+        - uuid: d4e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9
+          name: 'NFTBan: nftables statistics'
+          graph_items:
+            - color: 1A7C11
+              item:
+                host: NFTBan
+                key: nftban.nft.rules_total
+            - color: 2774A4
+              sortorder: '1'
+              item:
+                host: NFTBan
+                key: nftban.nft.sets_total
+            - color: F63100
+              sortorder: '2'
+              yaxisside: RIGHT
+              item:
+                host: NFTBan
+                key: nftban.nft.elements_total
+        - uuid: e5f6a7b8c9d0e1f2a3b4c5d6a7b8c9d0
+          name: 'NFTBan: Server load'
+          graph_items:
+            - color: 1A7C11
+              item:
+                host: NFTBan
+                key: nftban.server.load_1m
+            - color: 2774A4
+              sortorder: '1'
+              item:
+                host: NFTBan
+                key: nftban.server.load_5m
+            - color: F63100
+              sortorder: '2'
+              item:
+                host: NFTBan
+                key: nftban.server.load_15m
+
+      # =======================================================================
       # DASHBOARDS (Zabbix 7.0 format)
       # =======================================================================
       dashboards:
@@ -990,23 +1090,30 @@ zabbix_export:
           name: 'NFTBan Overview'
           auto_start: 'YES'
           pages:
-            - name: 'Main'
+            - name: 'Status'
               widgets:
+                # Row 1: Status indicators
                 - type: item
-                  name: 'Status'
+                  name: 'Daemon Status'
                   width: '6'
-                  height: '2'
+                  height: '3'
                   fields:
                     - type: ITEM
                       name: itemid
                       value:
                         key: nftban.status
                         host: NFTBan
+                    - type: INTEGER
+                      name: show
+                      value: '1'
+                    - type: INTEGER
+                      name: show
+                      value: '2'
                 - type: item
-                  name: 'Mode'
+                  name: 'Operating Mode'
                   x: '6'
                   width: '6'
-                  height: '2'
+                  height: '3'
                   fields:
                     - type: ITEM
                       name: itemid
@@ -1017,7 +1124,7 @@ zabbix_export:
                   name: 'Version'
                   x: '12'
                   width: '6'
-                  height: '2'
+                  height: '3'
                   fields:
                     - type: ITEM
                       name: itemid
@@ -1028,62 +1135,129 @@ zabbix_export:
                   name: 'Active Bans'
                   x: '18'
                   width: '6'
-                  height: '2'
+                  height: '3'
                   fields:
                     - type: ITEM
                       name: itemid
                       value:
                         key: nftban.active.count
                         host: NFTBan
+                # Row 2: Graphs
                 - type: graph
-                  name: 'Ban Activity (24h)'
-                  y: '2'
-                  width: '12'
+                  name: 'Ban Activity'
+                  y: '3'
+                  width: '36'
                   height: '5'
                   fields:
-                    - type: ITEM
-                      name: itemid
+                    - type: GRAPH
+                      name: graphid
                       value:
-                        key: nftban.bans.24h
                         host: NFTBan
+                        name: 'NFTBan: Ban activity'
                 - type: graph
-                  name: 'Memory Usage'
-                  x: '12'
-                  y: '2'
-                  width: '12'
+                  name: 'Memory & Resources'
+                  x: '36'
+                  y: '3'
+                  width: '36'
                   height: '5'
                   fields:
-                    - type: ITEM
-                      name: itemid
+                    - type: GRAPH
+                      name: graphid
                       value:
-                        key: nftban.memory.rss
                         host: NFTBan
+                        name: 'NFTBan: Memory and resources'
+                # Row 3: More graphs and problems
                 - type: graph
                   name: 'Pressure Scores'
-                  y: '7'
-                  width: '12'
-                  height: '4'
+                  y: '8'
+                  width: '36'
+                  height: '5'
                   fields:
-                    - type: ITEM
-                      name: itemid
+                    - type: GRAPH
+                      name: graphid
                       value:
-                        key: nftban.watchdog.cpu_score
                         host: NFTBan
-                    - type: ITEM
-                      name: itemid
-                      value:
-                        key: nftban.watchdog.mem_score
-                        host: NFTBan
+                        name: 'NFTBan: Pressure scores'
                 - type: problems
-                  name: 'Problems'
-                  x: '12'
-                  y: '7'
-                  width: '12'
-                  height: '4'
+                  name: 'NFTBan Problems'
+                  x: '36'
+                  y: '8'
+                  width: '36'
+                  height: '5'
                   fields:
-                    - type: STRING
-                      name: tags.0.tag
-                      value: component
                     - type: INTEGER
-                      name: severities
-                      value: '62'
+                      name: show_suppressed
+                      value: '0'
+                    - type: INTEGER
+                      name: show_opdata
+                      value: '0'
+            - name: 'Details'
+              widgets:
+                - type: graph
+                  name: 'nftables Statistics'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: GRAPH
+                      name: graphid
+                      value:
+                        host: NFTBan
+                        name: 'NFTBan: nftables statistics'
+                - type: graph
+                  name: 'Server Load'
+                  x: '36'
+                  width: '36'
+                  height: '5'
+                  fields:
+                    - type: GRAPH
+                      name: graphid
+                      value:
+                        host: NFTBan
+                        name: 'NFTBan: Server load'
+                - type: item
+                  name: 'Feeds Enabled'
+                  y: '5'
+                  width: '12'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid
+                      value:
+                        key: nftban.feeds.enabled
+                        host: NFTBan
+                - type: item
+                  name: 'Feeds Loaded'
+                  x: '12'
+                  y: '5'
+                  width: '12'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid
+                      value:
+                        key: nftban.feeds.loaded
+                        host: NFTBan
+                - type: item
+                  name: 'Feed IPs Total'
+                  x: '24'
+                  y: '5'
+                  width: '12'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid
+                      value:
+                        key: nftban.feeds.ips_total
+                        host: NFTBan
+                - type: item
+                  name: 'Countries Blocked'
+                  x: '36'
+                  y: '5'
+                  width: '12'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid
+                      value:
+                        key: nftban.geoip.countries_blocked
+                        host: NFTBan

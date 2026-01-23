@@ -249,25 +249,33 @@ collect_nftables_metrics() {
     # nftables metrics
     local metrics=""
 
-    if command -v nft &>/dev/null; then
+    if command -v nft &>/dev/null && nft list table inet nftban &>/dev/null; then
         # Count total sets
         local sets_count
-        sets_count=$(nft list sets inet nftban 2>/dev/null | grep -c "set " || echo "0")
+        sets_count=$(nft list sets inet nftban 2>/dev/null | grep -c "set " || true)
+        : "${sets_count:=0}"
         metrics+="nftban.nft.sets_total $sets_count\n"
 
         # Count total elements across all sets (fast method)
         local elements_total=0
         for set_name in blacklist_ipv4 blacklist_ipv6 whitelist_ipv4 whitelist_ipv6; do
             local count
-            count=$(nft -j list set inet nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+            count=$(nft -j list set inet nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || true)
+            : "${count:=0}"
             elements_total=$((elements_total + count))
         done
         metrics+="nftban.nft.elements_total $elements_total\n"
 
         # Count rules (approximate)
         local rules_count
-        rules_count=$(nft list table inet nftban 2>/dev/null | grep -cE "^\s+(accept|drop|reject|return|jump|goto)" || echo "0")
+        rules_count=$(nft list table inet nftban 2>/dev/null | grep -cE "^\s+(accept|drop|reject|return|jump|goto)" || true)
+        : "${rules_count:=0}"
         metrics+="nftban.nft.rules_total $rules_count\n"
+    else
+        # Table doesn't exist, report zeros
+        metrics+="nftban.nft.sets_total 0\n"
+        metrics+="nftban.nft.elements_total 0\n"
+        metrics+="nftban.nft.rules_total 0\n"
     fi
 
     echo -e "$metrics"
@@ -529,6 +537,12 @@ send_metrics_native() {
     # Use process substitution to avoid subshell variable scope issue
     while IFS=' ' read -r key value; do
         [[ -z "$key" ]] && continue
+        # Escape JSON special characters in value
+        value="${value//\\/\\\\}"    # backslash
+        value="${value//\"/\\\"}"    # double quote
+        value="${value//$'\n'/\\n}"  # newline
+        value="${value//$'\r'/\\r}"  # carriage return
+        value="${value//$'\t'/\\t}"  # tab
         [[ "$first" != "true" ]] && data+=","
         data+="{\"host\":\"$ZABBIX_HOSTNAME\",\"key\":\"$key\",\"value\":\"$value\"}"
         first=false
@@ -542,28 +556,43 @@ send_metrics_native() {
         return 0
     fi
 
-    # Send using netcat or bash /dev/tcp
+    # Send using netcat to capture response
     local data_len=${#data}
-
-    # Zabbix protocol header: ZBXD\x01 + 8-byte little-endian length
-    # Format: "ZBXD\x01" + length (8 bytes, little-endian) + data
     local len_hex
     len_hex=$(printf '%016x' "$data_len")
 
-    # Send data using bash /dev/tcp (more portable than nc)
+    # Send data and capture response
+    local response
+    response=$(
     {
         printf 'ZBXD\x01'
         # Little-endian 8-byte length
         printf "\\x${len_hex:14:2}\\x${len_hex:12:2}\\x${len_hex:10:2}\\x${len_hex:8:2}"
         printf "\\x${len_hex:6:2}\\x${len_hex:4:2}\\x${len_hex:2:2}\\x${len_hex:0:2}"
         printf '%s' "$data"
-    } > /dev/tcp/"$ZABBIX_SERVER"/"$ZABBIX_PORT" 2>/dev/null || {
+    } | timeout 10 nc "$ZABBIX_SERVER" "$ZABBIX_PORT" 2>/dev/null
+    ) || {
         log_error "Failed to connect to $ZABBIX_SERVER:$ZABBIX_PORT"
         return 1
     }
 
-    log_info "Metrics sent via native protocol"
-    return 0
+    # Parse response
+    local info
+    info=$(echo "$response" | strings | grep -oP '"info":"\K[^"]+' 2>/dev/null || echo "")
+
+    if [[ -n "$info" ]]; then
+        log_info "Zabbix: $info"
+    else
+        log_info "Metrics sent via native protocol"
+    fi
+
+    # Check for failures
+    if echo "$response" | grep -q '"response":"success"'; then
+        return 0
+    else
+        log_error "Zabbix rejected the data"
+        return 1
+    fi
 }
 
 output_json() {
@@ -634,17 +663,17 @@ main() {
 
     log_info "Collecting NFTBan metrics..."
 
-    # Collect all metrics
+    # Collect all metrics (add newline after each to prevent concatenation issues)
     local all_metrics=""
-    all_metrics+=$(collect_daemon_metrics)
-    all_metrics+=$(collect_ban_metrics)
-    all_metrics+=$(collect_memory_metrics)
-    all_metrics+=$(collect_module_metrics)
-    all_metrics+=$(collect_nftables_metrics)
-    all_metrics+=$(collect_feeds_metrics)
-    all_metrics+=$(collect_geoip_metrics)
-    all_metrics+=$(collect_server_metrics)
-    all_metrics+=$(collect_watchdog_metrics)
+    all_metrics+="$(collect_daemon_metrics)"$'\n'
+    all_metrics+="$(collect_ban_metrics)"$'\n'
+    all_metrics+="$(collect_memory_metrics)"$'\n'
+    all_metrics+="$(collect_module_metrics)"$'\n'
+    all_metrics+="$(collect_nftables_metrics)"$'\n'
+    all_metrics+="$(collect_feeds_metrics)"$'\n'
+    all_metrics+="$(collect_geoip_metrics)"$'\n'
+    all_metrics+="$(collect_server_metrics)"$'\n'
+    all_metrics+="$(collect_watchdog_metrics)"$'\n'
 
     # Output or send
     if [[ "$JSON_OUTPUT" == "true" ]]; then
