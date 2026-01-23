@@ -96,15 +96,22 @@ _detect_install_type() {
     # Returns: rpm, deb, git, unknown
 
     # Check RPM first (RHEL/CentOS/Rocky/Alma/Fedora)
-    if command -v rpm &>/dev/null && rpm -q nftban &>/dev/null; then
-        echo "rpm"
-        return 0
+    # Try both nftban and nftban-core package names
+    if command -v rpm &>/dev/null; then
+        if rpm -q nftban &>/dev/null || rpm -q nftban-core &>/dev/null; then
+            echo "rpm"
+            return 0
+        fi
     fi
 
     # Check DEB (Debian/Ubuntu)
-    if command -v dpkg &>/dev/null && dpkg -l nftban 2>/dev/null | grep -q "^ii"; then
-        echo "deb"
-        return 0
+    # Try both nftban and nftban-core package names
+    if command -v dpkg &>/dev/null; then
+        if dpkg -l nftban 2>/dev/null | grep -q "^ii" || \
+           dpkg -l nftban-core 2>/dev/null | grep -q "^ii"; then
+            echo "deb"
+            return 0
+        fi
     fi
 
     # Check Git install
@@ -410,10 +417,18 @@ _get_current_version() {
 
     case "$install_type" in
         rpm)
-            rpm -q --qf '%{VERSION}' nftban 2>/dev/null || echo "unknown"
+            # Try both package names
+            rpm -q --qf '%{VERSION}' nftban 2>/dev/null || \
+            rpm -q --qf '%{VERSION}' nftban-core 2>/dev/null || echo "unknown"
             ;;
         deb)
-            dpkg-query -W -f='${Version}' nftban 2>/dev/null | cut -d'-' -f1 || echo "unknown"
+            # Try both package names
+            local ver
+            ver=$(dpkg-query -W -f='${Version}' nftban 2>/dev/null | cut -d'-' -f1)
+            if [[ -z "$ver" ]] || [[ "$ver" == "unknown" ]]; then
+                ver=$(dpkg-query -W -f='${Version}' nftban-core 2>/dev/null | cut -d'-' -f1)
+            fi
+            echo "${ver:-unknown}"
             ;;
         git)
             if [[ -f "${NFTBAN_GIT_REPO}/VERSION" ]]; then
@@ -713,16 +728,26 @@ _create_backup() {
     backup_name="nftban-${current_version}-$(date '+%Y%m%d-%H%M%S')"
     local backup_path="${UPDATE_BACKUP_DIR}/${backup_name}.tar.gz"
 
-    mkdir -p "$UPDATE_BACKUP_DIR"
+    mkdir -p "$UPDATE_BACKUP_DIR" 2>/dev/null || {
+        _update_log WARN "Backup failed: Cannot create backup directory $UPDATE_BACKUP_DIR"
+        return 0
+    }
 
     _update_log INFO "Creating backup..."
 
-    if tar -czf "$backup_path" \
-        -C / \
-        usr/lib/nftban \
-        usr/sbin/nftban \
-        etc/nftban \
-        2>/dev/null; then
+    # Check what directories exist to backup
+    local backup_dirs=()
+    [[ -d /usr/lib/nftban ]] && backup_dirs+=("usr/lib/nftban")
+    [[ -f /usr/sbin/nftban ]] && backup_dirs+=("usr/sbin/nftban")
+    [[ -d /etc/nftban ]] && backup_dirs+=("etc/nftban")
+
+    if [[ ${#backup_dirs[@]} -eq 0 ]]; then
+        _update_log WARN "Backup failed: No NFTBan directories found to backup"
+        return 0
+    fi
+
+    local tar_output
+    if tar_output=$(tar -czf "$backup_path" -C / "${backup_dirs[@]}" 2>&1); then
         _update_log OK "Backup: $backup_name"
 
         # Cleanup old backups
@@ -736,7 +761,7 @@ _create_backup() {
 
         return 0
     else
-        _update_log WARN "Backup failed (continuing anyway)"
+        _update_log WARN "Backup failed: ${tar_output:-tar command failed}"
         return 0
     fi
 }
@@ -1017,10 +1042,18 @@ _cmd_update_main() {
     # Run health check
     echo ""
     _update_log INFO "Running health check..."
-    if nftban health check --auto-heal --quiet 2>/dev/null; then
+    local health_output health_status
+    health_output=$(nftban health check --auto-heal 2>&1) || true
+    health_status=$?
+
+    if [[ $health_status -eq 0 ]]; then
         _update_log OK "Health check passed"
     else
         _update_log WARN "Health check reported issues"
+        # Show warning details (filter to show only warnings/errors)
+        echo "$health_output" | grep -E "(WARN|WARNING|ERROR|FAIL|\[!\])" | head -5 | while read -r line; do
+            echo "    $line"
+        done
     fi
 
     # Show result
