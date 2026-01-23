@@ -750,10 +750,10 @@ EOF
 # =============================================================================
 
 nftban_cmd_firewall_logs() {
-    local cmd="${1:-}"
+    local subcmd="${1:-}"
     shift || true
 
-    case "$cmd" in
+    case "$subcmd" in
         enable)
             _fwlog_enable "$@"
             ;;
@@ -770,7 +770,7 @@ nftban_cmd_firewall_logs() {
             _fwlog_help
             ;;
         *)
-            echo "Unknown command: $cmd" >&2
+            echo "Unknown command: $subcmd" >&2
             echo "Run 'nftban firewall logs help' for usage" >&2
             return 1
             ;;
