@@ -1190,30 +1190,42 @@ connector:
   has_json: true
   examples:
     - "nftban connector list"
-    - "nftban connector list --status"
-    - "nftban connector status"
-    - "nftban connector status elasticsearch"
-    - "nftban connector test elasticsearch"
-    - "nftban connector test --all"
-    - "nftban connector push"
-    - "nftban connector push --dry-run"
-    - "nftban connector event --type test --message 'Test event'"
+    - "nftban connector add es-prod --type elasticsearch --url https://es:9200"
+    - "nftban connector remove es-prod"
+    - "nftban connector enable es-prod"
+    - "nftban connector disable es-prod"
+    - "nftban connector test es-prod"
+    - "nftban connector show es-prod"
+    - "nftban connector push es-prod"
   subcommands:
     list:
       mutates: false
-      description: "List configured connectors"
-    status:
-      mutates: false
-      description: "Show connector status"
+      description: "List all configured connectors"
+    add:
+      mutates: true
+      description: "Add a new connector"
+      requires_root: true
+    remove:
+      mutates: true
+      description: "Remove a connector"
+      requires_root: true
+    enable:
+      mutates: true
+      description: "Enable a connector"
+      requires_root: true
+    disable:
+      mutates: true
+      description: "Disable a connector"
+      requires_root: true
     test:
       mutates: false
       description: "Test connector connectivity"
+    show:
+      mutates: false
+      description: "Show connector configuration"
     push:
       mutates: false
-      description: "Push metrics to all enabled connectors"
-    event:
-      mutates: false
-      description: "Push a custom event to connectors"
+      description: "Push a test event to connector"
 
 pro:
   category: intelligence_reporting
