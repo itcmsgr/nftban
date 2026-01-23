@@ -257,6 +257,41 @@ _cmd_zabbix_setup() {
     local agent_enabled="false"
     local agent_port="10050"
 
+    # =========================================================================
+    # PREREQUISITE CHECKS
+    # =========================================================================
+    local prereq_warnings=""
+
+    # Check: NFTBan installed
+    if [[ ! -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
+        _zabbix_print_error "NFTBan not installed or configured"
+        echo "  Config not found: ${NFTBAN_CONFIG_DIR}/nftban.conf"
+        echo ""
+        echo "Please install NFTBan first:"
+        echo "  nftban install"
+        return 1
+    fi
+
+    # Check: NFTBan service exists
+    if ! systemctl list-unit-files nftban.service &>/dev/null 2>&1; then
+        prereq_warnings+="  [WARN] NFTBan service not found - metrics may be limited\n"
+    fi
+
+    # Check: Metrics exporter recommendation
+    local metrics_enabled="${NFTBAN_METRICS_ENABLED:-false}"
+    if [[ "$metrics_enabled" != "true" ]]; then
+        prereq_warnings+="  [INFO] Metrics exporter not enabled - Zabbix will collect basic metrics only\n"
+        prereq_warnings+="         For full metrics, enable: NFTBAN_METRICS_ENABLED=true\n"
+    fi
+
+    # Show warnings if any
+    if [[ -n "$prereq_warnings" ]]; then
+        echo ""
+        echo "Prerequisites:"
+        echo -e "$prereq_warnings"
+        echo ""
+    fi
+
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
