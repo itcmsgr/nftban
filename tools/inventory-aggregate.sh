@@ -46,7 +46,6 @@ set -Eeuo pipefail
 # =============================================================================
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-OUTPUT_DIR="${REPO_ROOT}/var/inventory"
 
 # Inventory categories
 declare -A BINARIES

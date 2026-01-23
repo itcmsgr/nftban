@@ -1185,9 +1185,9 @@ nftban_health_cmd_config() {
         if [[ "$svc_status" == "running" && -f "$track_dir/.timestamp" ]]; then
             # Check if local config changed since load
             if [[ -f "$local_conf" ]]; then
-                local curr_hash loaded_hash
+                local curr_hash loaded_hash hash_file
                 curr_hash=$(sha256sum "$local_conf" 2>/dev/null | cut -d' ' -f1)
-                local hash_file="$track_dir/$(basename "$local_conf").sha256"
+                hash_file="$track_dir/$(basename "$local_conf").sha256"
                 loaded_hash=$(cat "$hash_file" 2>/dev/null || echo "none")
                 if [[ "$curr_hash" != "$loaded_hash" && "$loaded_hash" != "none" ]]; then
                     config_status="CHANGED"
