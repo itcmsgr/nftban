@@ -232,6 +232,9 @@ _cmd_zabbix_setup() {
         esac
     done
 
+    local ipv4="true"
+    local ipv6="false"
+
     if [[ "$interactive" == "true" && -z "$server" ]]; then
         _zabbix_print_header "NFTBan Zabbix Setup Wizard"
 
@@ -244,6 +247,14 @@ _cmd_zabbix_setup() {
         read -rp "Hostname to report [auto]: " hostname_input
         hostname="${hostname_input:-auto}"
 
+        echo ""
+        echo "IP Protocol support:"
+        read -rp "  Enable IPv4? [Y/n]: " ipv4_answer
+        [[ "$ipv4_answer" =~ ^[Nn] ]] && ipv4="false" || ipv4="true"
+        read -rp "  Enable IPv6? [y/N]: " ipv6_answer
+        [[ "$ipv6_answer" =~ ^[Yy] ]] && ipv6="true"
+
+        echo ""
         read -rp "Enable TLS encryption? [y/N]: " tls_answer
         [[ "$tls_answer" =~ ^[Yy] ]] && tls="true"
 
@@ -278,10 +289,58 @@ _cmd_zabbix_setup() {
     firewall_auto=$(_zabbix_config_get "NFTBAN_ZABBIX_FIREWALL_AUTO" "true")
     if [[ "$firewall_auto" == "true" ]]; then
         _zabbix_print_info "Configuring firewall for outbound traffic to $server:$port..."
+
+        # Create persistent port config file
+        local port_conf="${NFTBAN_CONFIG_DIR}/ports.d/99-zabbix.conf"
+        _zabbix_print_info "Creating port configuration: $port_conf"
+
+        cat > "$port_conf" << EOF
+# =============================================================================
+# NFTBan - Zabbix Server Connection (Auto-generated)
+# =============================================================================
+# Created: $(date '+%Y-%m-%d %H:%M:%S')
+# Server:  $server
+# Purpose: Allow outbound metrics push to Zabbix trapper port
+# =============================================================================
+
+[ports]
+# Zabbix trapper port - OUTBOUND connection to monitoring server
+EOF
+        # Add IPv4 rule if enabled
+        if [[ "$ipv4" == "true" ]]; then
+            echo "${port}/tcp = output,ipv4  # Zabbix server: $server" >> "$port_conf"
+        fi
+        # Add IPv6 rule if enabled
+        if [[ "$ipv6" == "true" ]]; then
+            echo "${port}/tcp = output,ipv6  # Zabbix server: $server" >> "$port_conf"
+        fi
+
+        cat >> "$port_conf" << EOF
+
+[description]
+name = Zabbix Metrics Export
+priority = normal
+server = $server
+note = Outbound connection to Zabbix server for trapper metrics push
+EOF
+
+        chmod 644 "$port_conf"
+        chown root:nftban "$port_conf" 2>/dev/null || true
+        _zabbix_print_success "Port configuration saved: $port_conf"
+
+        # Apply runtime firewall rule
         if _zabbix_firewall_allow "$server" "$port"; then
-            _zabbix_print_success "Firewall rule added"
+            _zabbix_print_success "Firewall rule applied"
         else
-            _zabbix_print_warning "Could not add firewall rule (manual setup may be required)"
+            _zabbix_print_warning "Could not apply firewall rule (manual setup may be required)"
+        fi
+
+        # Reload port rules to pick up new config
+        if command -v nftban &>/dev/null; then
+            _zabbix_print_info "Reloading port rules..."
+            if nftban port reload &>/dev/null; then
+                _zabbix_print_success "Port rules reloaded"
+            fi
         fi
     fi
 
