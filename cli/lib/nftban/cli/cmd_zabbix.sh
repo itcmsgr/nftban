@@ -402,6 +402,49 @@ EOF
         echo "                 Install: apt install zabbix-sender  # or yum/dnf"
     fi
     echo ""
+
+    # Show quick start guide if not configured
+    if [[ "$enabled" != "true" ]] || [[ -z "$server" ]]; then
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  Quick Start Guide"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "Step 1: Configure Zabbix server connection"
+        echo "  nftban zabbix setup --server YOUR_ZABBIX_SERVER"
+        echo ""
+        echo "Step 2: Import template into Zabbix"
+        echo "  # Export template file:"
+        echo "  nftban zabbix template --version 7.0 --output /tmp/nftban.yaml"
+        echo ""
+        echo "  # In Zabbix UI: Data collection → Templates → Import"
+        echo "  # Select the exported file and click Import"
+        echo ""
+        echo "Step 3: Link template to host"
+        echo "  # In Zabbix UI: Data collection → Hosts → Your Host → Templates"
+        echo "  # Link the 'NFTBan' template"
+        echo ""
+        echo "Step 4: Verify metrics are flowing"
+        echo "  nftban zabbix test --verbose"
+        echo "  nftban zabbix push"
+        echo ""
+        echo "For more help:"
+        echo "  nftban zabbix help"
+        echo "  https://nftban.com/docs/zabbix"
+        echo ""
+    else
+        # Show operational info when configured
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo "  Commands"
+        echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+        echo ""
+        echo "  Test connection:     nftban zabbix test --verbose"
+        echo "  Force push metrics:  nftban zabbix push"
+        echo "  Reload config:       nftban zabbix reload"
+        echo "  Export template:     nftban zabbix template --version 7.0 --output /tmp/nftban.yaml"
+        echo "  View all targets:    nftban zabbix targets list"
+        echo "  Full help:           nftban zabbix help"
+        echo ""
+    fi
 }
 
 # =============================================================================
