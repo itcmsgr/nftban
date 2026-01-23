@@ -3,8 +3,6 @@ zabbix_export:
   template_groups:
     - uuid: 7df96b18c230490a9a0a9e2307226338
       name: 'Templates/Security'
-    - uuid: dc579cd7a1a34222933f24f52a68bcd8
-      name: 'NFTBan Servers'
 
   templates:
     - uuid: 185f23a7e83b4e78b1d79faee0299ea0
