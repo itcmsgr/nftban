@@ -58,6 +58,10 @@ DRY_RUN=false
 VERBOSE=false
 JSON_OUTPUT=false
 
+# Buffer settings (for offline metric storage)
+BUFFER_DIR="${NFTBAN_CACHE_DIR}/zabbix_buffer"
+BUFFER_MAX_AGE=86400  # 1 day in seconds
+
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
@@ -68,6 +72,71 @@ log_info() {
 
 log_error() {
     echo "[ERROR] $*" >&2
+}
+
+# =============================================================================
+# BUFFER FUNCTIONS (offline metric storage, max 1 day retention)
+# =============================================================================
+
+buffer_init() {
+    # Create buffer directory if needed
+    mkdir -p "$BUFFER_DIR" 2>/dev/null || true
+}
+
+buffer_save() {
+    # Save metrics to buffer file on send failure
+    local metrics="$1"
+    local timestamp
+    timestamp=$(date +%s)
+
+    buffer_init
+    echo "$metrics" > "${BUFFER_DIR}/${timestamp}.metrics"
+    log_info "Buffered metrics to ${BUFFER_DIR}/${timestamp}.metrics"
+}
+
+buffer_cleanup() {
+    # Remove buffer files older than BUFFER_MAX_AGE
+    [[ ! -d "$BUFFER_DIR" ]] && return 0
+
+    local now cutoff
+    now=$(date +%s)
+    cutoff=$((now - BUFFER_MAX_AGE))
+
+    local count=0
+    for file in "${BUFFER_DIR}"/*.metrics; do
+        [[ -f "$file" ]] || continue
+        local ts
+        ts=$(basename "$file" .metrics)
+        if [[ "$ts" =~ ^[0-9]+$ ]] && [[ "$ts" -lt "$cutoff" ]]; then
+            rm -f "$file"
+            ((count++)) || true
+        fi
+    done
+
+    [[ $count -gt 0 ]] && log_info "Cleaned up $count expired buffer files"
+}
+
+buffer_send() {
+    # Try to send buffered metrics (called after successful live send)
+    [[ ! -d "$BUFFER_DIR" ]] && return 0
+
+    local sent=0
+    for file in "${BUFFER_DIR}"/*.metrics; do
+        [[ -f "$file" ]] || continue
+        local buffered_metrics
+        buffered_metrics=$(cat "$file")
+
+        log_info "Sending buffered metrics from $(basename "$file")..."
+        if _send_metrics "$buffered_metrics"; then
+            rm -f "$file"
+            ((sent++)) || true
+        else
+            log_error "Failed to send buffered metrics, will retry later"
+            break  # Stop on first failure
+        fi
+    done
+
+    [[ $sent -gt 0 ]] && log_info "Sent $sent buffered metric sets"
 }
 
 # =============================================================================
@@ -595,6 +664,16 @@ send_metrics_native() {
     fi
 }
 
+_send_metrics() {
+    # Internal send function (used by buffer_send)
+    local metrics="$1"
+    if command -v zabbix_sender &>/dev/null; then
+        send_metrics_zabbix_sender "$metrics"
+    else
+        send_metrics_native "$metrics"
+    fi
+}
+
 output_json() {
     # Output metrics as JSON
     local metrics="$1"
@@ -683,11 +762,19 @@ main() {
 
     log_info "Sending metrics to $ZABBIX_SERVER:$ZABBIX_PORT..."
 
-    # Use zabbix_sender if available, otherwise native protocol
-    if command -v zabbix_sender &>/dev/null; then
-        send_metrics_zabbix_sender "$all_metrics"
+    # Clean up old buffer files (>1 day)
+    buffer_cleanup
+
+    # Try to send current metrics
+    if _send_metrics "$all_metrics"; then
+        log_info "Live metrics sent successfully"
+        # On success, try to send any buffered metrics
+        buffer_send
     else
-        send_metrics_native "$all_metrics"
+        # On failure, save to buffer for later
+        log_error "Failed to send metrics, buffering for later..."
+        buffer_save "$all_metrics"
+        exit 1
     fi
 }
 
