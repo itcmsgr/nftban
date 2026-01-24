@@ -348,6 +348,150 @@ echo '{"request":"sender data","data":[{"host":"hostname","key":"nftban.status",
 
 ---
 
+## Inventory Links
+
+Inventory links auto-populate host inventory fields from item values.
+
+### Format
+
+Use **string names**, not numeric IDs:
+
+```yaml
+# CORRECT - string names
+inventory_link: NAME
+inventory_link: ALIAS
+inventory_link: OS
+
+# WRONG - numeric IDs (may work but less compatible)
+inventory_link: 3
+inventory_link: 4
+inventory_link: 5
+```
+
+### Available Fields
+
+| inventory_link | Zabbix Field | Example Use |
+|----------------|--------------|-------------|
+| NAME | Name | Server hostname |
+| ALIAS | Alias | FQDN |
+| OS | OS | Operating system (debian, rhel) |
+| OS_SHORT | OS (Short) | OS release name |
+| TYPE | Type | Architecture (x86_64) |
+| TYPE_FULL | Type (Full details) | Virtualization type |
+| SOFTWARE | Software | Kernel version |
+| HARDWARE | Hardware | CPU model |
+| MACADDRESS_A | MAC address A | Primary MAC |
+| HOST_NETWORKS | Host networks | JSON network info |
+| HOST_NETMASK | Host subnet mask | Subnet (/24, /32) |
+| HOST_ROUTER | Host router | Gateway or primary IP |
+| VENDOR | Vendor | Cloud provider |
+| LOCATION | Location | Region/datacenter |
+
+### Host Inventory Mode (CRITICAL)
+
+**Inventory fields will NOT populate unless the host has inventory mode enabled!**
+
+| Mode | Behavior |
+|------|----------|
+| Disabled | inventory_link ignored, fields stay empty |
+| Manual | Fields editable, inventory_link populates |
+| **Automatic** | inventory_link auto-populates (recommended) |
+
+Set in: Configuration → Hosts → [hostname] → Inventory → **Automatic**
+
+---
+
+## Preprocessing (DISCARD_UNCHANGED_HEARTBEAT)
+
+### Purpose
+
+Reduces storage by only storing values when they change OR after heartbeat interval.
+
+```yaml
+preprocessing:
+  - type: DISCARD_UNCHANGED_HEARTBEAT
+    parameters:
+      - '1d'    # Send unchanged value at least once per day
+```
+
+### Recommended Intervals
+
+| Data Type | Heartbeat | Rationale |
+|-----------|-----------|-----------|
+| Dynamic (bans, memory) | No preprocessing | Changes frequently |
+| Semi-static (version, mode) | `'5m'` | Rarely changes |
+| Inventory (OS, hostname) | `'1d'` | Almost never changes |
+
+### Inventory Gotcha (CRITICAL)
+
+**Problem**: If you enable host inventory AFTER items already have values, the inventory fields stay empty because:
+1. Values haven't changed
+2. DISCARD_UNCHANGED_HEARTBEAT filters them out
+3. Filtered values don't write to inventory
+
+**Solutions**:
+
+1. **Wait for heartbeat** - Values will populate after heartbeat interval (e.g., 1 day)
+
+2. **Force refresh** - Send slightly different values to bypass filter:
+   ```bash
+   # Clear cache and resend
+   rm -f /var/cache/nftban/metrics/*.json
+   /usr/lib/nftban/exporters/nftban_metrics_collector.sh --force
+   /usr/lib/nftban/exporters/nftban_zabbix_exporter.sh
+   ```
+
+3. **Temporarily reduce heartbeat** - Change `'1d'` to `'5m'`, import, wait, revert
+
+---
+
+## Troubleshooting
+
+### "Inaccessible widget" Error
+
+**Cause**: Widget `host:` references template CODE instead of NAME.
+
+```yaml
+# Template definition
+template: 'NFTBan'           # CODE - used in expressions
+name: 'NFTBan Firewall'      # NAME - used in widget host:
+
+# WRONG
+host: NFTBan
+
+# CORRECT
+host: 'NFTBan Firewall'
+```
+
+### Inventory Tab Empty (Despite Automatic Mode)
+
+1. **Check Latest Data** - If items have values, template works
+2. **Check preprocessing** - DISCARD_UNCHANGED_HEARTBEAT may filter
+3. **Force refresh** - Clear cache, resend metrics
+4. **Wait for heartbeat** - Inventory items often have 1d heartbeat
+
+### Import Fails "UUIDv4 expected"
+
+Check ALL UUIDs for RFC 4122 compliance:
+```bash
+python3 << 'EOF'
+import re
+with open('nftban_template_7x.yaml') as f:
+    for uuid in re.findall(r'uuid: ([a-f0-9]{32})', f.read()):
+        if uuid[12] != '4' or uuid[16] not in '89ab':
+            print(f"INVALID: {uuid}")
+EOF
+```
+
+### Dashboard Shows No Data
+
+1. Check items receive data (Latest Data)
+2. Check widget `host:` = template NAME
+3. Check item keys match exactly
+4. Verify user has permissions to template
+
+---
+
 ## Common Mistakes
 
 | Mistake | Symptom | Fix |
@@ -361,6 +505,9 @@ echo '{"request":"sender data","data":[{"host":"hostname","key":"nftban.status",
 | `width: '6'` (string) | May cause issues | Use `width: 6` (integer) |
 | Wrong field suffix | Widget error | Use `.0` suffix (`itemid.0`) |
 | YAML indentation | Parse error | Use 2-space indent consistently |
+| `inventory_link: 3` (numeric) | May not populate | Use `inventory_link: NAME` (string) |
+| Host inventory = Disabled | Fields stay empty | Set to Automatic |
+| Inventory + HEARTBEAT | Fields don't populate | Force refresh or wait for heartbeat |
 
 ---
 
