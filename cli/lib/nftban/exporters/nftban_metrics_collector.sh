@@ -335,7 +335,11 @@ collect_network_metrics() {
 
     # Per-interface stats
     local iface_array=""
-    for iface in $(ls /sys/class/net/ 2>/dev/null | grep -v lo); do
+    for iface_path in /sys/class/net/*; do
+        [[ -d "$iface_path" ]] || continue
+        local iface
+        iface=$(basename "$iface_path")
+        [[ "$iface" == "lo" ]] && continue
         local rx_bytes tx_bytes rx_packets tx_packets
         rx_bytes=$(cat /sys/class/net/$iface/statistics/rx_bytes 2>/dev/null || echo "0")
         tx_bytes=$(cat /sys/class/net/$iface/statistics/tx_bytes 2>/dev/null || echo "0")
@@ -524,7 +528,8 @@ collect_server_inventory() {
     gateway=$(ip route show default 2>/dev/null | awk '{print $3; exit}' || echo "")
 
     # Subnet mask
-    local cidr=$(ip -4 addr show "$primary_iface" 2>/dev/null | awk '/inet/{print $2}' | cut -d'/' -f2 | head -1)
+    local cidr
+    cidr=$(ip -4 addr show "$primary_iface" 2>/dev/null | awk '/inet/{print $2}' | cut -d'/' -f2 | head -1)
     case "$cidr" in
         8)  subnet_mask="255.0.0.0" ;;
         16) subnet_mask="255.255.0.0" ;;
