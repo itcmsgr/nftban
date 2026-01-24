@@ -91,7 +91,7 @@ Dashboard widgets in templates must reference items correctly. **This is the #1 
 ### Key Rules
 
 1. **Use template NAME, not CODE**: `host: 'NFTBan Firewall'` (not `host: NFTBan`)
-2. **Use integers for geometry**: `width: 6` (not `width: '6'`)
+2. **Use strings for geometry**: `width: '6'` (not `width: 6`)
 3. **Use raw operators in expressions**: `<` `>` (not `&lt;` `&gt;`)
 
 ### Template Name vs Code
@@ -112,8 +112,8 @@ templates:
 widgets:
   - type: item_value
     name: 'Daemon Status'
-    width: 6                        # INTEGER, not string
-    height: 3                       # INTEGER, not string
+    width: '6'                      # STRING, not integer
+    height: '3'                     # STRING, not integer
     fields:
       - type: ITEM
         name: itemid.0              # MUST have .0 suffix
@@ -502,7 +502,7 @@ EOF
 | `host: NFTBan` (code) | "Inaccessible widget" | Use `host: 'NFTBan Firewall'` (NAME) |
 | Missing `host:` in widget | "Inaccessible widget" | Add `host: 'Template Name'` |
 | `&lt;` `&gt;` in expressions | Import fails / triggers broken | Use raw `<` `>` operators |
-| `width: '6'` (string) | May cause issues | Use `width: 6` (integer) |
+| `width: 6` (integer) | Import fails "string expected" | Use `width: '6'` (string) |
 | Wrong field suffix | Widget error | Use `.0` suffix (`itemid.0`) |
 | YAML indentation | Parse error | Use 2-space indent consistently |
 | `inventory_link: 3` (numeric) | May not populate | Use `inventory_link: NAME` (string) |
