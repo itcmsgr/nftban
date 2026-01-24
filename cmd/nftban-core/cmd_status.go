@@ -24,9 +24,11 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/runtime"
+	"github.com/itcmsgr/nftban/pkg/state"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -91,6 +93,31 @@ func cmdStatus(cfg *nftbanconf.Config) error {
 			sourceStats.IPv4Count,
 			sourceStats.IPv6Count,
 			sourceStats.LastUpdate.Format("2006-01-02 15:04:05"))
+	}
+	fmt.Println()
+
+	// Display metrics status from shared state (NO CLI - watchdog data)
+	fmt.Println("📊 Metrics (Shared State):")
+	fmt.Println(strings.Repeat("-", 70))
+	if state.IsInitialized() {
+		snap := state.Get()
+		age := state.GetAge()
+		staleStatus := "✅ fresh"
+		if age > 30*time.Second {
+			staleStatus = "⚠️ stale"
+		}
+		fmt.Printf("Banned IPv4:    %d\n", snap.BannedIPv4)
+		fmt.Printf("Banned IPv6:    %d\n", snap.BannedIPv6)
+		fmt.Printf("Whitelist IPv4: %d\n", snap.WhitelistIPv4)
+		fmt.Printf("Whitelist IPv6: %d\n", snap.WhitelistIPv6)
+		fmt.Printf("Rules Total:    %d\n", snap.RulesTotal)
+		fmt.Printf("Feeds Active:   %d\n", snap.FeedsActive)
+		fmt.Printf("Feeds IPs:      %d\n", snap.FeedsIPs)
+		fmt.Printf("Data Age:       %s (%s)\n", age.Round(time.Second), staleStatus)
+		fmt.Printf("Source:         watchdog (netlink - NO CLI)\n")
+	} else {
+		fmt.Printf("Status:         ⚠️ Not initialized (watchdog not started)\n")
+		fmt.Printf("Source:         watchdog (netlink - NO CLI)\n")
 	}
 	fmt.Println()
 

@@ -241,6 +241,7 @@ func main() {
 	protected.HandleFunc("/stats/bans", api.StatsBansHandler).Methods("GET")
 	protected.HandleFunc("/stats/countries", api.StatsCountriesHandler).Methods("GET")
 	protected.HandleFunc("/stats/trend", api.StatsTrendHandler).Methods("GET")
+	protected.HandleFunc("/basic-stats", api.BasicStatsHandler).Methods("GET") // Shared state - NO CLI
 	protected.HandleFunc("/system/hostname", api.SystemHostnameHandler).Methods("GET")
 	protected.HandleFunc("/feeds/stats", api.FeedsStatsHandler).Methods("GET")
 	protected.HandleFunc("/whitelist/count", api.WhitelistCountHandler).Methods("GET")
