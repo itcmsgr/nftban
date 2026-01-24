@@ -90,7 +90,7 @@ Dashboard widgets in templates must reference items correctly. **This is the #1 
 
 ### Key Rules
 
-1. **Use template NAME, not CODE**: `host: 'NFTBan Firewall'` (not `host: NFTBan`)
+1. **Use template CODE for widget host**: `host: 'NFTBan'` (the `template:` value)
 2. **Use strings for geometry**: `width: '6'` (not `width: 6`)
 3. **Use raw operators in expressions**: `<` `>` (not `&lt;` `&gt;`)
 
@@ -99,12 +99,12 @@ Dashboard widgets in templates must reference items correctly. **This is the #1 
 ```yaml
 templates:
   - uuid: 185f23a7e83b4e78b1d79faee0299ea0
-    template: 'NFTBan'              # This is the CODE (used in expressions)
-    name: 'NFTBan Firewall'         # This is the NAME (used in widget host:)
+    template: 'NFTBan'              # CODE - used in expressions AND widget host:
+    name: 'NFTBan Firewall'         # NAME - display name only
 ```
 
 - **Expressions**: Use CODE → `last(/NFTBan/nftban.status)`
-- **Widget host:**: Use NAME → `host: 'NFTBan Firewall'`
+- **Widget host:**: Use CODE → `host: 'NFTBan'`
 
 ### Required Structure
 
@@ -118,7 +118,7 @@ widgets:
       - type: ITEM
         name: itemid.0              # MUST have .0 suffix
         value:
-          host: 'NFTBan Firewall'   # MUST be template NAME (not code!)
+          host: 'NFTBan'            # MUST be template CODE (not name!)
           key: nftban.status        # Item key
 ```
 
@@ -135,8 +135,8 @@ widgets:
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| "Inaccessible widget" | `host: NFTBan` (wrong) | Use `host: 'NFTBan Firewall'` (template NAME) |
-| "Inaccessible widget" | Missing `host:` tag | Add `host: 'NFTBan Firewall'` |
+| "Cannot find host" | `host: 'NFTBan Firewall'` (NAME) | Use `host: 'NFTBan'` (template CODE) |
+| "Inaccessible widget" | Missing `host:` tag | Add `host: 'NFTBan'` |
 | "Object does not exist" | Wrong key name | Verify item key exists in template |
 | Empty dashboard page | No data received | Send test data via trapper |
 | Import fails | HTML escapes in expressions | Use `<` `>` not `&lt;` `&gt;` |
@@ -447,20 +447,20 @@ preprocessing:
 
 ## Troubleshooting
 
-### "Inaccessible widget" Error
+### "Cannot find host" Error
 
-**Cause**: Widget `host:` references template CODE instead of NAME.
+**Cause**: Widget `host:` references template NAME instead of CODE.
 
 ```yaml
 # Template definition
-template: 'NFTBan'           # CODE - used in expressions
-name: 'NFTBan Firewall'      # NAME - used in widget host:
+template: 'NFTBan'           # CODE - used in expressions AND widget host:
+name: 'NFTBan Firewall'      # NAME - display name only
 
 # WRONG
-host: NFTBan
+host: 'NFTBan Firewall'
 
 # CORRECT
-host: 'NFTBan Firewall'
+host: 'NFTBan'
 ```
 
 ### Inventory Tab Empty (Despite Automatic Mode)
@@ -486,7 +486,7 @@ EOF
 ### Dashboard Shows No Data
 
 1. Check items receive data (Latest Data)
-2. Check widget `host:` = template NAME
+2. Check widget `host:` = template CODE
 3. Check item keys match exactly
 4. Verify user has permissions to template
 
@@ -499,8 +499,8 @@ EOF
 | UUIDs with dashes | Import fails "UUIDv4 expected" | Remove all dashes (32 chars) |
 | Invalid UUID version | Import fails | Ensure pos12='4' |
 | Invalid UUID variant | Import fails | Ensure pos16='8/9/a/b' |
-| `host: NFTBan` (code) | "Inaccessible widget" | Use `host: 'NFTBan Firewall'` (NAME) |
-| Missing `host:` in widget | "Inaccessible widget" | Add `host: 'Template Name'` |
+| `host: 'NFTBan Firewall'` (NAME) | "Cannot find host" | Use `host: 'NFTBan'` (CODE) |
+| Missing `host:` in widget | "Cannot find host" | Add `host: 'TemplateCode'` |
 | `&lt;` `&gt;` in expressions | Import fails / triggers broken | Use raw `<` `>` operators |
 | `width: 6` (integer) | Import fails "string expected" | Use `width: '6'` (string) |
 | Wrong field suffix | Widget error | Use `.0` suffix (`itemid.0`) |
