@@ -58,10 +58,15 @@ fi
 DRY_RUN=false
 VERBOSE=false
 JSON_OUTPUT=false
+FORCE_INVENTORY=false
 
 # Buffer settings (for offline metric storage)
 BUFFER_DIR="${NFTBAN_CACHE_DIR}/zabbix_buffer"
 BUFFER_MAX_AGE=86400  # 1 day in seconds
+
+# Inventory collection settings (static data doesn't change often)
+INVENTORY_INTERVAL=3600  # Collect inventory every 1 hour (3600 seconds)
+INVENTORY_STAMP_FILE="${NFTBAN_CACHE_DIR}/zabbix_inventory_stamp"
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -73,6 +78,32 @@ log_info() {
 
 log_error() {
     echo "[ERROR] $*" >&2
+}
+
+# Check if inventory collection is needed (runs hourly, not every minute)
+should_collect_inventory() {
+    [[ "$FORCE_INVENTORY" == "true" ]] && return 0
+
+    if [[ ! -f "$INVENTORY_STAMP_FILE" ]]; then
+        return 0  # No stamp file, collect inventory
+    fi
+
+    local last_run now_epoch age
+    last_run=$(cat "$INVENTORY_STAMP_FILE" 2>/dev/null || echo "0")
+    now_epoch=$(date +%s)
+    age=$((now_epoch - last_run))
+
+    if [[ $age -ge $INVENTORY_INTERVAL ]]; then
+        return 0  # Interval passed, collect inventory
+    fi
+
+    return 1  # Skip inventory collection
+}
+
+# Update inventory collection timestamp
+update_inventory_stamp() {
+    mkdir -p "$(dirname "$INVENTORY_STAMP_FILE")" 2>/dev/null || true
+    date +%s > "$INVENTORY_STAMP_FILE"
 }
 
 # =============================================================================
@@ -845,17 +876,19 @@ main() {
             --json)     JSON_OUTPUT=true; shift ;;
             --once)     shift ;;  # Default behavior
             --check)    CHECK_PREREQ=true; shift ;;  # Check prerequisites only
+            --force-inventory) FORCE_INVENTORY=true; shift ;;  # Force inventory collection
             --help|-h)
                 echo "NFTBan Zabbix Exporter"
                 echo ""
                 echo "Usage: $0 [options]"
                 echo ""
                 echo "Options:"
-                echo "  --dry-run    Show what would be sent without sending"
-                echo "  --verbose    Show detailed output"
-                echo "  --json       Output metrics as JSON instead of sending"
-                echo "  --once       Run once and exit (default)"
-                echo "  --check      Check prerequisites and exit"
+                echo "  --dry-run         Show what would be sent without sending"
+                echo "  --verbose         Show detailed output"
+                echo "  --json            Output metrics as JSON instead of sending"
+                echo "  --once            Run once and exit (default)"
+                echo "  --check           Check prerequisites and exit"
+                echo "  --force-inventory Force inventory collection (bypasses hourly limit)"
                 echo ""
                 echo "Configuration is read from /etc/nftban/nftban.conf:"
                 echo "  NFTBAN_ZABBIX_SERVER   Zabbix server address"
@@ -953,21 +986,31 @@ main() {
     fi
 
     # ==========================================================================
-    # COLLECT METRICS
+    # COLLECT METRICS (Smart: dynamic every run, inventory hourly)
     # ==========================================================================
     log_info "Collecting NFTBan metrics..."
 
     local all_metrics=""
-    all_metrics+="$(collect_daemon_metrics)"$'\n'
-    all_metrics+="$(collect_ban_metrics)"$'\n'
-    all_metrics+="$(collect_memory_metrics)"$'\n'
-    all_metrics+="$(collect_health_metrics)"$'\n'
-    all_metrics+="$(collect_module_metrics)"$'\n'
-    all_metrics+="$(collect_nftables_metrics)"$'\n'
-    all_metrics+="$(collect_feeds_metrics)"$'\n'
-    all_metrics+="$(collect_geoip_metrics)"$'\n'
-    all_metrics+="$(collect_server_metrics)"$'\n'
-    all_metrics+="$(collect_watchdog_metrics)"$'\n'
+
+    # DYNAMIC METRICS - collect every run (these change frequently)
+    all_metrics+="$(collect_daemon_metrics)"$'\n'      # status, uptime, mode
+    all_metrics+="$(collect_ban_metrics)"$'\n'         # bans, rate, counts
+    all_metrics+="$(collect_memory_metrics)"$'\n'      # RSS, threads, FDs
+    all_metrics+="$(collect_health_metrics)"$'\n'      # health status
+    all_metrics+="$(collect_module_metrics)"$'\n'      # module status
+    all_metrics+="$(collect_nftables_metrics)"$'\n'    # rules, sets, packets
+    all_metrics+="$(collect_feeds_metrics)"$'\n'       # feed status
+    all_metrics+="$(collect_watchdog_metrics)"$'\n'    # pressure scores
+
+    # INVENTORY METRICS - collect hourly (static data, rarely changes)
+    if should_collect_inventory; then
+        log_info "Collecting inventory metrics (hourly)..."
+        all_metrics+="$(collect_server_metrics)"$'\n'  # OS, IPs, hardware
+        all_metrics+="$(collect_geoip_metrics)"$'\n'   # GeoIP database info
+        update_inventory_stamp
+    else
+        log_info "Skipping inventory (last collected < ${INVENTORY_INTERVAL}s ago)"
+    fi
 
     # JSON output mode
     if [[ "$JSON_OUTPUT" == "true" ]]; then
