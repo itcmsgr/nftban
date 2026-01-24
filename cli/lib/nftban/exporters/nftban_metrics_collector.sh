@@ -163,10 +163,11 @@ collect_ban_metrics() {
     # Time-based stats from log
     local bans_log="${NFTBAN_LOG_DIR}/bans.log"
     if [[ -f "$bans_log" ]]; then
-        local now=$(date +%s)
+        local now bans_5m
+        now=$(date +%s)
         bans_24h=$(awk -F'|' -v cutoff="$((now - 86400))" '$1 ~ /^[0-9]+$/ && $1 >= cutoff { count++ } END { print count+0 }' "$bans_log" 2>/dev/null || echo "0")
         bans_1h=$(awk -F'|' -v cutoff="$((now - 3600))" '$1 ~ /^[0-9]+$/ && $1 >= cutoff { count++ } END { print count+0 }' "$bans_log" 2>/dev/null || echo "0")
-        local bans_5m=$(awk -F'|' -v cutoff="$((now - 300))" '$1 ~ /^[0-9]+$/ && $1 >= cutoff { count++ } END { print count+0 }' "$bans_log" 2>/dev/null || echo "0")
+        bans_5m=$(awk -F'|' -v cutoff="$((now - 300))" '$1 ~ /^[0-9]+$/ && $1 >= cutoff { count++ } END { print count+0 }' "$bans_log" 2>/dev/null || echo "0")
         rate=$(echo "scale=2; $bans_5m / 5" | bc 2>/dev/null || echo "0")
         total=$(wc -l < "$bans_log" 2>/dev/null || echo "0")
     fi
@@ -218,9 +219,10 @@ collect_health_metrics() {
     local health_file="${NFTBAN_RUN_DIR}/health.status"
 
     if [[ -f "$health_file" ]]; then
+        local healthy
         passed=$(jq -r '.passed // 0' "$health_file" 2>/dev/null || echo "0")
         failed=$(jq -r '.failed // 0' "$health_file" 2>/dev/null || echo "0")
-        local healthy=$(jq -r '.healthy // false' "$health_file" 2>/dev/null || echo "false")
+        healthy=$(jq -r '.healthy // false' "$health_file" 2>/dev/null || echo "false")
         [[ "$healthy" == "true" ]] && status=1
     fi
 
