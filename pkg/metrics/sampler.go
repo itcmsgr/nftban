@@ -23,7 +23,6 @@ package metrics
 
 import (
 	"bufio"
-	"encoding/json"
 	"log"
 	"os"
 	"os/exec"
@@ -33,6 +32,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/state"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -494,87 +494,33 @@ func (s *Sampler) getNetworkStats() (rxMbps, txMbps float64) {
 }
 
 // takeSample collects a single metrics snapshot
+// TWO-TIER COLLECTION:
+//   BASIC tier (always): reads from shared state (NO CLI calls)
+//   FULL tier (when metricsEnabled): adds geoban, portscan, ddos via file/CLI
 func (s *Sampler) takeSample() {
 	start := time.Now()
 
-	// Get network statistics
+	// Get network statistics (reads /proc/net/dev - fast, no CLI)
 	rxMbps, txMbps := s.getNetworkStats()
 
-	// Execute nftban status --json
-	cmd := exec.Command("nftban", "status", "--json")
-	output, err := cmd.Output()
-	if err != nil {
-		log.Printf("[METRICS] Failed to get status: %v", err)
-		return
-	}
+	// ==========================================================================
+	// BASIC TIER: Read from shared state (populated by watchdog via netlink)
+	// NO CLI CALLS - zero overhead
+	// ==========================================================================
+	snap := state.Get()
 
-	// Strip any non-JSON output (comments, warnings, etc.) before parsing
-	// Look for the first '{' and last '}' to extract only the JSON portion
-	outputStr := strings.TrimSpace(string(output))
-	startIdx := strings.Index(outputStr, "{")
-	endIdx := strings.LastIndex(outputStr, "}")
-
-	if startIdx == -1 || endIdx == -1 || startIdx > endIdx {
-		log.Printf("[METRICS] No valid JSON found in status output: %s", outputStr)
-		return
-	}
-
-	jsonOutput := outputStr[startIdx : endIdx+1]
-
-	// Parse JSON
-	var statusData map[string]interface{}
-	if err := json.Unmarshal([]byte(jsonOutput), &statusData); err != nil {
-		log.Printf("[METRICS] Failed to parse status JSON: %v - Output: %s", err, jsonOutput)
-		return
-	}
-
-	// Extract metrics
+	// Build sample from shared state
 	sample := Sample{
-		Timestamp:    time.Now(),
+		Timestamp:     time.Now(),
 		NetworkRxMbps: rxMbps,
 		NetworkTxMbps: txMbps,
-		RawData:      statusData,
+		BlockedIPs:    int(snap.BannedIPv4 + snap.BannedIPv6),
+		RuleCount:     int(snap.RulesTotal),
+		FeedsActive:   snap.FeedsActive,
+		HealthOK:      state.IsInitialized() && !state.IsStale(30*time.Second),
 	}
 
-	if version, ok := statusData["version"].(string); ok {
-		sample.Version = version
-	}
-
-	if firewall, ok := statusData["firewall"].(map[string]interface{}); ok {
-		if bannedIPs, ok := firewall["banned_ips"].(float64); ok {
-			sample.BlockedIPs = int(bannedIPs)
-		}
-		if ruleCount, ok := firewall["rule_count"].(float64); ok {
-			sample.RuleCount = int(ruleCount)
-		}
-	}
-
-	if health, ok := statusData["health"].(map[string]interface{}); ok {
-		if status, ok := health["status"].(string); ok {
-			sample.HealthOK = (status == "ok")
-		}
-	}
-
-	// Collect additional comprehensive metrics
-	feedsTotal := s.collectFeedsMetrics()
-	// Removed: fail2ban metrics collection (v1.0 migration to Suricata)
-	geobanCountries, geobanRanges := s.collectGeobanMetrics()
-	blacklistIPs := s.collectBlacklistMetrics()
-	whitelistIPs := s.collectWhitelistMetrics()
-	portscanBlocks := s.collectPortscanMetrics()
-	ddosBlocks := s.collectDDoSMetrics()
-
-	// Parse service status
-	nftablesActive := 0.0
-	// Removed: fail2banActive variable (v1.0 migration to Suricata)
-	if services, ok := statusData["services"].(map[string]interface{}); ok {
-		if nft, ok := services["nftables"].(string); ok && nft == "active" {
-			nftablesActive = 1.0
-		}
-		// Removed: fail2ban service check (v1.0 migration to Suricata)
-	}
-
-	// Update Prometheus metrics
+	// Update BASIC Prometheus metrics
 	s.blockedIPsGauge.Set(float64(sample.BlockedIPs))
 	s.ruleCountGauge.Set(float64(sample.RuleCount))
 	if sample.HealthOK {
@@ -583,19 +529,41 @@ func (s *Sampler) takeSample() {
 		s.healthGauge.Set(0)
 	}
 	s.feedsActiveGauge.Set(float64(sample.FeedsActive))
-	s.feedsTotalIPsGauge.Set(float64(feedsTotal))
+	s.feedsTotalIPsGauge.Set(float64(snap.FeedsIPs))
 	s.uptimeGauge.Set(time.Since(s.startTime).Seconds())
 	s.networkRxGauge.Set(sample.NetworkRxMbps)
 	s.networkTxGauge.Set(sample.NetworkTxMbps)
-	// Removed: fail2ban gauge Set() calls (v1.0 migration to Suricata)
-	s.geobanCountriesGauge.Set(float64(geobanCountries))
-	s.geobanRangesGauge.Set(float64(geobanRanges))
-	s.blacklistIPsGauge.Set(float64(blacklistIPs))
-	s.whitelistIPsGauge.Set(float64(whitelistIPs))
-	s.portscanBlocksGauge.Set(float64(portscanBlocks))
-	s.ddosBlocksGauge.Set(float64(ddosBlocks))
-	s.nftablesActiveGauge.Set(nftablesActive)
-	// Removed: fail2banActiveGauge.Set() call (v1.0 migration to Suricata)
+
+	// Blacklist/whitelist from shared state (watchdog provides from netlink)
+	s.blacklistIPsGauge.Set(float64(snap.BannedIPv4 + snap.BannedIPv6))
+	s.whitelistIPsGauge.Set(float64(snap.WhitelistIPv4 + snap.WhitelistIPv6))
+
+	// nftables is always active if we have data
+	if state.IsInitialized() {
+		s.nftablesActiveGauge.Set(1)
+	} else {
+		s.nftablesActiveGauge.Set(0)
+	}
+
+	// ==========================================================================
+	// FULL TIER: Only when metricsEnabled (adds file reads and CLI calls)
+	// ==========================================================================
+	s.mu.RLock()
+	fullMetrics := s.metricsEnabled
+	s.mu.RUnlock()
+
+	if fullMetrics {
+		// Geoban: file reads only (no CLI)
+		geobanCountries, geobanRanges := s.collectGeobanMetrics()
+		s.geobanCountriesGauge.Set(float64(geobanCountries))
+		s.geobanRangesGauge.Set(float64(geobanRanges))
+
+		// Portscan and DDoS: CLI calls (only in FULL tier)
+		portscanBlocks := s.collectPortscanMetrics()
+		ddosBlocks := s.collectDDoSMetrics()
+		s.portscanBlocksGauge.Set(float64(portscanBlocks))
+		s.ddosBlocksGauge.Set(float64(ddosBlocks))
+	}
 
 	// Store sample in ring buffer
 	s.mu.Lock()
@@ -607,8 +575,12 @@ func (s *Sampler) takeSample() {
 	s.mu.Unlock()
 
 	duration := time.Since(start)
-	log.Printf("[METRICS] Sample collected in %v (blocked=%d, rules=%d, health=%v, net=%.2fMbps↓ %.2fMbps↑)",
-		duration, sample.BlockedIPs, sample.RuleCount, sample.HealthOK, sample.NetworkRxMbps, sample.NetworkTxMbps)
+	tier := "BASIC"
+	if fullMetrics {
+		tier = "FULL"
+	}
+	log.Printf("[METRICS] Sample collected (%s tier) in %v (blocked=%d, rules=%d, feeds=%d)",
+		tier, duration, sample.BlockedIPs, sample.RuleCount, sample.FeedsActive)
 }
 
 // updateSessionCount updates Prometheus session count gauge
@@ -616,29 +588,7 @@ func (s *Sampler) updateSessionCount() {
 	s.sessionCountGauge.Set(float64(s.activeSessions))
 }
 
-// collectFeedsMetrics extracts total IPs from feeds status output
-func (s *Sampler) collectFeedsMetrics() int {
-	cmd := exec.Command("nftban", "feeds", "status")
-	output, err := cmd.Output()
-	if err != nil {
-		return 0
-	}
-
-	// Parse output: "Status: 4/16 feeds enabled | 16023 total IPs"
-	outputStr := string(output)
-	if idx := strings.Index(outputStr, " total IPs"); idx > 0 {
-		// Find the number before " total IPs"
-		start := strings.LastIndex(outputStr[:idx], " ")
-		if start > 0 {
-			numStr := strings.TrimSpace(outputStr[start+1 : idx])
-			if totalIPs, err := strconv.Atoi(numStr); err == nil {
-				return totalIPs
-			}
-		}
-	}
-	return 0
-}
-
+// Removed: collectFeedsMetrics - now uses shared state from watchdog (NO CLI)
 // Removed: collectFail2banMetrics function (v1.0 migration to Suricata)
 
 // collectGeobanMetrics counts banned countries and IP ranges
@@ -674,63 +624,8 @@ func (s *Sampler) collectGeobanMetrics() (countries, ranges int) {
 	return countries, ranges
 }
 
-// collectBlacklistMetrics counts IPs in blacklist
-func (s *Sampler) collectBlacklistMetrics() int {
-	count := 0
-	configDir, _ := getMetricsPaths()
-	blacklistDir := configDir + "/blacklist.d"
-	entries, err := os.ReadDir(blacklistDir)
-	if err != nil {
-		return 0
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		filePath := blacklistDir + "/" + entry.Name()
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			continue
-		}
-		lines := strings.Split(string(data), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line != "" && !strings.HasPrefix(line, "#") {
-				count++
-			}
-		}
-	}
-	return count
-}
-
-// collectWhitelistMetrics counts IPs in whitelist
-func (s *Sampler) collectWhitelistMetrics() int {
-	count := 0
-	configDir, _ := getMetricsPaths()
-	whitelistDir := configDir + "/whitelist.d"
-	entries, err := os.ReadDir(whitelistDir)
-	if err != nil {
-		return 0
-	}
-	for _, entry := range entries {
-		if entry.IsDir() {
-			continue
-		}
-		filePath := whitelistDir + "/" + entry.Name()
-		data, err := os.ReadFile(filePath)
-		if err != nil {
-			continue
-		}
-		lines := strings.Split(string(data), "\n")
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			if line != "" && !strings.HasPrefix(line, "#") {
-				count++
-			}
-		}
-	}
-	return count
-}
+// Removed: collectBlacklistMetrics - now uses shared state from watchdog (NO CLI/file reads)
+// Removed: collectWhitelistMetrics - now uses shared state from watchdog (NO CLI/file reads)
 
 // collectPortscanMetrics gets portscan blocks from stats
 func (s *Sampler) collectPortscanMetrics() int {

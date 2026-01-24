@@ -2,6 +2,18 @@
 // NFTBan v1.0 - Watchdog Core
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="watchdog"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-01-01"
+// meta:description="Watchdog coordinator for metrics collection, pressure calculation, and actions"
+// meta:inventory.files="/proc/stat,/proc/meminfo,/proc/net/dev"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/nftban.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 //
 // The Watchdog ties together all components:
 //   - Collectors gather metrics
@@ -20,6 +32,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/logx"
+	"github.com/itcmsgr/nftban/pkg/state"
 )
 
 // Watchdog is the main watchdog coordinator
@@ -157,6 +170,17 @@ func (w *Watchdog) tick(ctx context.Context) {
 
 	// Record snapshot
 	w.recorder.RecordSnapshot(snapshot)
+
+	// Update shared state for BASIC tier consumers (stats CLI, UI, sampler)
+	// This is the single source of truth - NO CLI calls needed by consumers
+	state.Update(state.BasicSnapshot{
+		BannedIPv4:    int64(snapshot.NFTables.SetElements["blacklist_ipv4"]),
+		BannedIPv6:    int64(snapshot.NFTables.SetElements["blacklist_ipv6"]),
+		WhitelistIPv4: int64(snapshot.NFTables.SetElements["whitelist_ipv4"]),
+		WhitelistIPv6: int64(snapshot.NFTables.SetElements["whitelist_ipv6"]),
+		RulesTotal:    int64(snapshot.NFTables.RulesTotal),
+		// FeedsActive and FeedsIPs will be set by feeds loader callback
+	})
 
 	// Evaluate and execute actions
 	w.evaluateActions(snapshot, state)

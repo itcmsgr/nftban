@@ -42,6 +42,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/middleware"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/session"
+	"github.com/itcmsgr/nftban/pkg/state"
 )
 
 // =============================================================================
@@ -3491,6 +3492,52 @@ func RecentActivityHandler(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"data": map[string]interface{}{
 			"activities": activities,
+		},
+	})
+}
+
+// =============================================================================
+// BASIC STATS ENDPOINT - Shared State for CLI/UI
+// =============================================================================
+// This is the SINGLE SOURCE OF TRUTH for BASIC tier metrics.
+// Populated by watchdog (netlink - NO CLI) and feeds loader (in-memory).
+// Consumers: nftban stats, nftban status, UI dashboard, sampler
+// =============================================================================
+
+// BasicStatsHandler returns the shared state snapshot for BASIC tier consumers
+// GET /api/v1/basic-stats
+// This endpoint provides banned IPs, whitelist counts, feeds data WITHOUT CLI calls.
+// Data comes from watchdog's netlink collection and feeds loader's in-memory state.
+func BasicStatsHandler(w http.ResponseWriter, r *http.Request) {
+	snap := state.Get()
+
+	// Check if data is initialized
+	if !state.IsInitialized() {
+		respondJSON(w, http.StatusServiceUnavailable, map[string]interface{}{
+			"success": false,
+			"error":   "Watchdog not yet initialized - shared state empty",
+		})
+		return
+	}
+
+	// Check staleness (warn if data is older than 30s)
+	stale := state.IsStale(30 * time.Second)
+
+	respondJSON(w, http.StatusOK, map[string]interface{}{
+		"success": true,
+		"data": map[string]interface{}{
+			"banned_ipv4":    snap.BannedIPv4,
+			"banned_ipv6":    snap.BannedIPv6,
+			"banned_total":   snap.BannedIPv4 + snap.BannedIPv6,
+			"whitelist_ipv4": snap.WhitelistIPv4,
+			"whitelist_ipv6": snap.WhitelistIPv6,
+			"whitelist_total": snap.WhitelistIPv4 + snap.WhitelistIPv6,
+			"rules_total":    snap.RulesTotal,
+			"feeds_active":   snap.FeedsActive,
+			"feeds_ips":      snap.FeedsIPs,
+			"updated_at":     snap.UpdatedAt.Format(time.RFC3339),
+			"age_ms":         state.GetAge().Milliseconds(),
+			"stale":          stale,
 		},
 	})
 }
