@@ -28,7 +28,7 @@ import (
 
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/runtime"
-	"github.com/itcmsgr/nftban/pkg/state"
+	sharedstate "github.com/itcmsgr/nftban/pkg/state"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
@@ -99,9 +99,9 @@ func cmdStatus(cfg *nftbanconf.Config) error {
 	// Display metrics status from shared state (NO CLI - watchdog data)
 	fmt.Println("📊 Metrics (Shared State):")
 	fmt.Println(strings.Repeat("-", 70))
-	if state.IsInitialized() {
-		snap := state.Get()
-		age := state.GetAge()
+	if sharedstate.IsInitialized() {
+		snap := sharedstate.Get()
+		age := sharedstate.GetAge()
 		staleStatus := "✅ fresh"
 		if age > 30*time.Second {
 			staleStatus = "⚠️ stale"
