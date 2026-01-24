@@ -219,6 +219,36 @@ jobs:
           echo "=== All packages ==="
           ls -lh dist/packages/
 
+      - name: Clean up old release assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF#refs/tags/}"
+
+          # Define expected packages (must match matrix)
+          EXPECTED_PACKAGES=(
+            "nftban-el9-x86_64.rpm"
+            "nftban-el10-x86_64.rpm"
+            "nftban-ubuntu22.04-amd64.deb"
+            "nftban-ubuntu24.04-amd64.deb"
+            "nftban-debian12-amd64.deb"
+            "nftban-debian13-amd64.deb"
+            "SHA256SUMS"
+            "MANIFEST.txt"
+            "VERIFY.txt"
+          )
+
+          # Get current release assets
+          CURRENT_ASSETS=$(gh release view "$VERSION" --json assets --jq '.assets[].name' 2>/dev/null || echo "")
+
+          # Remove assets not in expected list
+          for asset in $CURRENT_ASSETS; do
+            if [[ ! " ${EXPECTED_PACKAGES[*]} " =~ " ${asset} " ]]; then
+              echo "Removing old asset: $asset"
+              gh release delete-asset "$VERSION" "$asset" --yes || true
+            fi
+          done
+
       - name: Generate SHA256SUMS
         run: |
           cd dist/packages
