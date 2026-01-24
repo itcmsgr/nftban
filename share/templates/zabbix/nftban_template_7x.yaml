@@ -583,7 +583,7 @@ zabbix_export:
           key: nftban.server.hostname
           value_type: CHAR
           description: 'Server hostname (short)'
-          inventory_link: NAME
+          inventory_link: 3
           tags:
             - tag: component
               value: inventory
@@ -598,7 +598,7 @@ zabbix_export:
           key: nftban.server.fqdn
           value_type: CHAR
           description: 'Fully qualified domain name'
-          inventory_link: ALIAS
+          inventory_link: 4
           tags:
             - tag: component
               value: inventory
@@ -613,7 +613,7 @@ zabbix_export:
           key: nftban.server.os
           value_type: CHAR
           description: 'Operating system name and version'
-          inventory_link: OS
+          inventory_link: 5
           tags:
             - tag: component
               value: inventory
@@ -628,7 +628,7 @@ zabbix_export:
           key: nftban.server.os_release
           value_type: CHAR
           description: 'OS release/distribution (e.g., Ubuntu 24.04, Fedora 42)'
-          inventory_link: OS_SHORT
+          inventory_link: 7
           tags:
             - tag: component
               value: inventory
@@ -643,7 +643,7 @@ zabbix_export:
           key: nftban.server.kernel
           value_type: CHAR
           description: 'Kernel version'
-          inventory_link: SOFTWARE
+          inventory_link: 16
           tags:
             - tag: component
               value: inventory
@@ -658,7 +658,7 @@ zabbix_export:
           key: nftban.server.arch
           value_type: CHAR
           description: 'System architecture (x86_64, aarch64, etc.)'
-          inventory_link: TYPE
+          inventory_link: 1
           tags:
             - tag: component
               value: inventory
@@ -687,7 +687,7 @@ zabbix_export:
           key: nftban.server.cpu_model
           value_type: CHAR
           description: 'CPU model name'
-          inventory_link: HARDWARE
+          inventory_link: 14
           tags:
             - tag: component
               value: inventory
@@ -754,7 +754,7 @@ zabbix_export:
           key: nftban.server.primary_ip
           value_type: CHAR
           description: 'Primary IPv4 address'
-          inventory_link: HOST_ROUTER
+          inventory_link: 40
           tags:
             - tag: component
               value: inventory
@@ -797,7 +797,7 @@ zabbix_export:
           key: nftban.server.mac_address
           value_type: CHAR
           description: 'Primary network interface MAC address'
-          inventory_link: MACADDRESS_A
+          inventory_link: 12
           tags:
             - tag: component
               value: inventory
@@ -812,7 +812,7 @@ zabbix_export:
           key: nftban.server.subnet_mask
           value_type: CHAR
           description: 'Primary interface subnet mask'
-          inventory_link: HOST_NETMASK
+          inventory_link: 39
           tags:
             - tag: component
               value: inventory
@@ -841,7 +841,7 @@ zabbix_export:
           key: nftban.server.networks
           value_type: CHAR
           description: 'All network interfaces with IPs (JSON)'
-          inventory_link: HOST_NETWORKS
+          inventory_link: 38
           tags:
             - tag: component
               value: inventory
@@ -884,7 +884,7 @@ zabbix_export:
           key: nftban.server.virtualization
           value_type: CHAR
           description: 'Virtualization type (kvm, vmware, docker, none)'
-          inventory_link: TYPE_FULL
+          inventory_link: 2
           tags:
             - tag: component
               value: inventory
@@ -899,7 +899,7 @@ zabbix_export:
           key: nftban.server.cloud_provider
           value_type: CHAR
           description: 'Cloud provider (aws, gcp, azure, digitalocean, none)'
-          inventory_link: VENDOR
+          inventory_link: 31
           tags:
             - tag: component
               value: inventory
@@ -914,7 +914,7 @@ zabbix_export:
           key: nftban.server.region
           value_type: CHAR
           description: 'Cloud region or datacenter location'
-          inventory_link: LOCATION
+          inventory_link: 24
           tags:
             - tag: component
               value: inventory
@@ -1305,106 +1305,106 @@ zabbix_export:
                 # Row 1: Key Status Indicators
                 - type: item_value
                   name: 'Daemon Status'
-                  width: '6'
-                  height: '3'
+                  width: 6
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.status
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Mode'
-                  x: '6'
-                  width: '6'
-                  height: '3'
+                  x: 6
+                  width: 6
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.mode
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Version'
-                  x: '12'
-                  width: '6'
-                  height: '3'
+                  x: 12
+                  width: 6
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.version
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Uptime'
-                  x: '18'
-                  width: '6'
-                  height: '3'
+                  x: 18
+                  width: 6
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.uptime
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 # Row 2: Ban Counts
                 - type: item_value
                   name: 'Active Bans'
-                  y: '3'
-                  width: '6'
-                  height: '3'
+                  y: 3
+                  width: 6
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.active.count
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Permanent Bans'
-                  x: '6'
-                  y: '3'
-                  width: '6'
-                  height: '3'
+                  x: 6
+                  y: 3
+                  width: 6
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.permanent.count
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Total Bans'
-                  x: '12'
-                  y: '3'
-                  width: '6'
-                  height: '3'
+                  x: 12
+                  y: 3
+                  width: 6
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.bans.total
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Ban Rate/min'
-                  x: '18'
-                  y: '3'
-                  width: '6'
-                  height: '3'
+                  x: 18
+                  y: 3
+                  width: 6
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.bans.rate
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 # Row 3: Main Graph - Ban Activity
                 - type: svggraph
                   name: 'Ban Activity (24h / 1h / Active)'
-                  y: '6'
-                  width: '48'
-                  height: '6'
+                  y: 6
+                  width: 48
+                  height: 6
                   fields:
                     - type: ITEM
                       name: ds.0.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.bans.24h
                     - type: STRING
                       name: ds.0.color
@@ -1412,7 +1412,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.1.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.bans.1h
                     - type: STRING
                       name: ds.1.color
@@ -1420,7 +1420,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.2.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.active.count
                     - type: STRING
                       name: ds.2.color
@@ -1428,9 +1428,9 @@ zabbix_export:
                 # Row 4: Problems
                 - type: problems
                   name: 'Active Problems'
-                  y: '12'
-                  width: '48'
-                  height: '4'
+                  y: 12
+                  width: 48
+                  height: 4
                   fields:
                     - type: INTEGER
                       name: show_suppressed
@@ -1442,80 +1442,80 @@ zabbix_export:
                 # Row 1: Ban Statistics
                 - type: item_value
                   name: 'Active Bans'
-                  width: '8'
-                  height: '3'
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.active.count
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Bans (1h)'
-                  x: '8'
-                  width: '8'
-                  height: '3'
+                  x: 8
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.bans.1h
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Bans (24h)'
-                  x: '16'
-                  width: '8'
-                  height: '3'
+                  x: 16
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.bans.24h
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Total Bans'
-                  x: '24'
-                  width: '8'
-                  height: '3'
+                  x: 24
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.bans.total
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Permanent'
-                  x: '32'
-                  width: '8'
-                  height: '3'
+                  x: 32
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.permanent.count
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Rate/min'
-                  x: '40'
-                  width: '8'
-                  height: '3'
+                  x: 40
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.bans.rate
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 # Row 2: Ban Activity Graph
                 - type: svggraph
                   name: 'Ban Activity Over Time'
-                  y: '3'
-                  width: '48'
-                  height: '6'
+                  y: 3
+                  width: 48
+                  height: 6
                   fields:
                     - type: ITEM
                       name: ds.0.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.bans.24h
                     - type: STRING
                       name: ds.0.color
@@ -1523,7 +1523,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.1.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.bans.1h
                     - type: STRING
                       name: ds.1.color
@@ -1531,7 +1531,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.2.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.active.count
                     - type: STRING
                       name: ds.2.color
@@ -1539,7 +1539,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.3.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.permanent.count
                     - type: STRING
                       name: ds.3.color
@@ -1547,27 +1547,27 @@ zabbix_export:
                 # Row 3: GeoIP & Countries
                 - type: item_value
                   name: 'Countries Blocked'
-                  y: '9'
-                  width: '12'
-                  height: '3'
+                  y: 9
+                  width: 12
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.geoip.countries_blocked
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'GeoIP DB Age (days)'
-                  x: '12'
-                  y: '9'
-                  width: '12'
-                  height: '3'
+                  x: 12
+                  y: 9
+                  width: 12
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.geoip.database_age
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
 
             # ===== PAGE 3: RESOURCES =====
             - name: 'Resources'
@@ -1575,58 +1575,58 @@ zabbix_export:
                 # Row 1: Resource Indicators
                 - type: item_value
                   name: 'Memory (RSS)'
-                  width: '8'
-                  height: '3'
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.memory.rss
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Threads'
-                  x: '8'
-                  width: '8'
-                  height: '3'
+                  x: 8
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.threads
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Open FDs'
-                  x: '16'
-                  width: '8'
-                  height: '3'
+                  x: 16
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.fds.open
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Watchdog'
-                  x: '24'
-                  width: '8'
-                  height: '3'
+                  x: 24
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.watchdog.status
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 # Row 2: Memory Graph
                 - type: svggraph
                   name: 'Memory Usage'
-                  y: '3'
-                  width: '24'
-                  height: '5'
+                  y: 3
+                  width: 24
+                  height: 5
                   fields:
                     - type: ITEM
                       name: ds.0.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.memory.rss
                     - type: STRING
                       name: ds.0.color
@@ -1634,10 +1634,10 @@ zabbix_export:
                 # Row 2: Pressure Scores Graph
                 - type: svggraph
                   name: 'Pressure Scores (CPU/Mem/IO)'
-                  x: '24'
-                  y: '3'
-                  width: '24'
-                  height: '5'
+                  x: 24
+                  y: 3
+                  width: 24
+                  height: 5
                   fields:
                     - type: INTEGER
                       name: yaxismax
@@ -1645,7 +1645,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.0.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.watchdog.cpu_score
                     - type: STRING
                       name: ds.0.color
@@ -1653,7 +1653,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.1.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.watchdog.mem_score
                     - type: STRING
                       name: ds.1.color
@@ -1661,7 +1661,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.2.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.watchdog.io_score
                     - type: STRING
                       name: ds.2.color
@@ -1669,14 +1669,14 @@ zabbix_export:
                 # Row 3: Server Load
                 - type: svggraph
                   name: 'Server Load (1m/5m/15m)'
-                  y: '8'
-                  width: '48'
-                  height: '5'
+                  y: 8
+                  width: 48
+                  height: 5
                   fields:
                     - type: ITEM
                       name: ds.0.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.server.load_1m
                     - type: STRING
                       name: ds.0.color
@@ -1684,7 +1684,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.1.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.server.load_5m
                     - type: STRING
                       name: ds.1.color
@@ -1692,7 +1692,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.2.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.server.load_15m
                     - type: STRING
                       name: ds.2.color
@@ -1704,76 +1704,76 @@ zabbix_export:
                 # Row 1: nftables Stats
                 - type: item_value
                   name: 'NFT Rules'
-                  width: '8'
-                  height: '3'
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.nft.rules_total
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'NFT Sets'
-                  x: '8'
-                  width: '8'
-                  height: '3'
+                  x: 8
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.nft.sets_total
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'NFT Elements'
-                  x: '16'
-                  width: '8'
-                  height: '3'
+                  x: 16
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.nft.elements_total
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 # Row 1: Feed Stats
                 - type: item_value
                   name: 'Feeds Enabled'
-                  x: '24'
-                  width: '8'
-                  height: '3'
+                  x: 24
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.feeds.enabled
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Feeds Loaded'
-                  x: '32'
-                  width: '8'
-                  height: '3'
+                  x: 32
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.feeds.loaded
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Feed IPs'
-                  x: '40'
-                  width: '8'
-                  height: '3'
+                  x: 40
+                  width: 8
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.feeds.ips_total
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 # Row 2: nftables Graph
                 - type: svggraph
                   name: 'nftables Statistics'
-                  y: '3'
-                  width: '24'
-                  height: '5'
+                  y: 3
+                  width: 24
+                  height: 5
                   fields:
                     - type: INTEGER
                       name: righty
@@ -1781,7 +1781,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.0.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.nft.rules_total
                     - type: STRING
                       name: ds.0.color
@@ -1789,7 +1789,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.1.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.nft.sets_total
                     - type: STRING
                       name: ds.1.color
@@ -1797,7 +1797,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.2.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.nft.elements_total
                     - type: STRING
                       name: ds.2.color
@@ -1808,15 +1808,15 @@ zabbix_export:
                 # Row 2: Feeds Graph
                 - type: svggraph
                   name: 'Threat Feeds'
-                  x: '24'
-                  y: '3'
-                  width: '24'
-                  height: '5'
+                  x: 24
+                  y: 3
+                  width: 24
+                  height: 5
                   fields:
                     - type: ITEM
                       name: ds.0.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.feeds.enabled
                     - type: STRING
                       name: ds.0.color
@@ -1824,7 +1824,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.1.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.feeds.loaded
                     - type: STRING
                       name: ds.1.color
@@ -1832,7 +1832,7 @@ zabbix_export:
                     - type: ITEM
                       name: ds.2.itemid.0
                       value:
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                         key: nftban.feeds.failed
                     - type: STRING
                       name: ds.2.color
@@ -1843,33 +1843,33 @@ zabbix_export:
               widgets:
                 - type: item_value
                   name: 'Modules Enabled'
-                  width: '12'
-                  height: '3'
+                  width: 12
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.modules.enabled
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Modules Active'
-                  x: '12'
-                  width: '12'
-                  height: '3'
+                  x: 12
+                  width: 12
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.modules.active
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
                 - type: item_value
                   name: 'Modules Failed'
-                  x: '24'
-                  width: '12'
-                  height: '3'
+                  x: 24
+                  width: 12
+                  height: 3
                   fields:
                     - type: ITEM
                       name: itemid.0
                       value:
                         key: nftban.modules.failed
-                        host: NFTBan
+                        host: 'NFTBan Firewall'
