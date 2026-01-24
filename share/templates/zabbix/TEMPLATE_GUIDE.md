@@ -84,9 +84,27 @@ with open('nftban_template_7x.yaml', 'w') as f:
 
 ---
 
-## Dashboard Widget Bindings
+## Dashboard Widget Bindings (CRITICAL)
 
-Dashboard widgets in templates must reference items correctly for dynamic host binding.
+Dashboard widgets in templates must reference items correctly. **This is the #1 cause of "Inaccessible widget" errors.**
+
+### Key Rules
+
+1. **Use template NAME, not CODE**: `host: 'NFTBan Firewall'` (not `host: NFTBan`)
+2. **Use integers for geometry**: `width: 6` (not `width: '6'`)
+3. **Use raw operators in expressions**: `<` `>` (not `&lt;` `&gt;`)
+
+### Template Name vs Code
+
+```yaml
+templates:
+  - uuid: 185f23a7e83b4e78b1d79faee0299ea0
+    template: 'NFTBan'              # This is the CODE (used in expressions)
+    name: 'NFTBan Firewall'         # This is the NAME (used in widget host:)
+```
+
+- **Expressions**: Use CODE → `last(/NFTBan/nftban.status)`
+- **Widget host:**: Use NAME → `host: 'NFTBan Firewall'`
 
 ### Required Structure
 
@@ -94,14 +112,14 @@ Dashboard widgets in templates must reference items correctly for dynamic host b
 widgets:
   - type: item_value
     name: 'Daemon Status'
-    width: '6'
-    height: '3'
+    width: 6                        # INTEGER, not string
+    height: 3                       # INTEGER, not string
     fields:
       - type: ITEM
-        name: itemid.0          # MUST have .0 suffix
+        name: itemid.0              # MUST have .0 suffix
         value:
-          host: NFTBan          # MUST match template name exactly
-          key: nftban.status    # Item key
+          host: 'NFTBan Firewall'   # MUST be template NAME (not code!)
+          key: nftban.status        # Item key
 ```
 
 ### Widget Field Naming
@@ -117,9 +135,23 @@ widgets:
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| "Inaccessible widget" | Missing `host:` tag | Add `host: NFTBan` |
-| "Object does not exist" | Wrong key name | Verify item key exists |
+| "Inaccessible widget" | `host: NFTBan` (wrong) | Use `host: 'NFTBan Firewall'` (template NAME) |
+| "Inaccessible widget" | Missing `host:` tag | Add `host: 'NFTBan Firewall'` |
+| "Object does not exist" | Wrong key name | Verify item key exists in template |
 | Empty dashboard page | No data received | Send test data via trapper |
+| Import fails | HTML escapes in expressions | Use `<` `>` not `&lt;` `&gt;` |
+
+### Trigger Expressions
+
+```yaml
+# CORRECT - raw operators
+expression: 'last(/NFTBan/nftban.bans.24h)>1000'
+expression: 'last(/NFTBan/nftban.mode)<>"normal"'
+
+# WRONG - HTML escapes
+expression: 'last(/NFTBan/nftban.bans.24h)&gt;1000'  # FAILS!
+expression: 'last(/NFTBan/nftban.mode)&lt;&gt;"normal"'  # FAILS!
+```
 
 ---
 
@@ -320,12 +352,14 @@ echo '{"request":"sender data","data":[{"host":"hostname","key":"nftban.status",
 
 | Mistake | Symptom | Fix |
 |---------|---------|-----|
-| UUIDs with dashes | Import fails | Remove all dashes |
+| UUIDs with dashes | Import fails "UUIDv4 expected" | Remove all dashes (32 chars) |
 | Invalid UUID version | Import fails | Ensure pos12='4' |
 | Invalid UUID variant | Import fails | Ensure pos16='8/9/a/b' |
-| Missing `host:` in widget | Empty dashboard | Add `host: TemplateName` |
-| Wrong field suffix | Widget error | Use `.0` suffix |
-| Spaces in template name | Reference errors | Use internal name without spaces |
+| `host: NFTBan` (code) | "Inaccessible widget" | Use `host: 'NFTBan Firewall'` (NAME) |
+| Missing `host:` in widget | "Inaccessible widget" | Add `host: 'Template Name'` |
+| `&lt;` `&gt;` in expressions | Import fails / triggers broken | Use raw `<` `>` operators |
+| `width: '6'` (string) | May cause issues | Use `width: 6` (integer) |
+| Wrong field suffix | Widget error | Use `.0` suffix (`itemid.0`) |
 | YAML indentation | Parse error | Use 2-space indent consistently |
 
 ---
