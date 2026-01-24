@@ -38,6 +38,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/auth"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/session"
+	"github.com/itcmsgr/nftban/pkg/state"
 )
 
 // GOTHHandlers holds dependencies for GOTH UI handlers
@@ -552,48 +553,63 @@ func (h *GOTHHandlers) getPanelMode() string {
 func (h *GOTHHandlers) getSecurity() ui.SecurityKPIs {
 	sec := ui.SecurityKPIs{}
 
+	// Try shared state first (NO CLI - from watchdog via netlink)
+	// This is the fastest path when nftband/watchdog is running
+	if state.IsInitialized() && !state.IsStale(30*time.Second) {
+		snap := state.Get()
+		sec.BansIPv4 = int(snap.BannedIPv4)
+		sec.BansIPv6 = int(snap.BannedIPv6)
+		sec.BansTotal = int(snap.BannedIPv4 + snap.BannedIPv6)
+		sec.WhitelistIPv4 = int(snap.WhitelistIPv4)
+		sec.WhitelistIPv6 = int(snap.WhitelistIPv6)
+		sec.WhitelistTotal = int(snap.WhitelistIPv4 + snap.WhitelistIPv6)
+	}
+
+	// Fallback to CLI if shared state not available or stale
 	// Use nftban stats --json for detailed breakdown
-	if output, err := execNFTBanCommand("stats", "--json"); err == nil {
-		var stats map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &stats) == nil {
-			// Stats JSON wraps data in "data" field
-			data, hasData := stats["data"].(map[string]interface{})
-			if !hasData {
-				data = stats // Fallback to root level
-			}
-
-			// Summary section
-			if summary, ok := data["summary"].(map[string]interface{}); ok {
-				if active, ok := summary["active_bans"].(float64); ok {
-					sec.BansTotal = int(active)
+	if sec.BansTotal == 0 {
+		if output, err := execNFTBanCommand("stats", "--json"); err == nil {
+			var stats map[string]interface{}
+			if json.Unmarshal([]byte(extractJSON(output)), &stats) == nil {
+				// Stats JSON wraps data in "data" field
+				data, hasData := stats["data"].(map[string]interface{})
+				if !hasData {
+					data = stats // Fallback to root level
 				}
-				if total, ok := summary["total_bans"].(float64); ok {
-					sec.TotalBansEver = int(total)
-				}
-			}
 
-			// Breakdown section with IPv4/IPv6 details
-			if breakdown, ok := data["breakdown"].(map[string]interface{}); ok {
-				// Blacklist (main bans)
-				if blacklist, ok := breakdown["blacklist"].(map[string]interface{}); ok {
-					if v4, ok := blacklist["ipv4"].(float64); ok {
-						sec.BansIPv4 = int(v4)
+				// Summary section
+				if summary, ok := data["summary"].(map[string]interface{}); ok {
+					if active, ok := summary["active_bans"].(float64); ok {
+						sec.BansTotal = int(active)
 					}
-					if v6, ok := blacklist["ipv6"].(float64); ok {
-						sec.BansIPv6 = int(v6)
+					if total, ok := summary["total_bans"].(float64); ok {
+						sec.TotalBansEver = int(total)
 					}
 				}
 
-				// Whitelist
-				if whitelist, ok := breakdown["whitelist"].(map[string]interface{}); ok {
-					if total, ok := whitelist["total"].(float64); ok {
-						sec.WhitelistTotal = int(total)
+				// Breakdown section with IPv4/IPv6 details
+				if breakdown, ok := data["breakdown"].(map[string]interface{}); ok {
+					// Blacklist (main bans)
+					if blacklist, ok := breakdown["blacklist"].(map[string]interface{}); ok {
+						if v4, ok := blacklist["ipv4"].(float64); ok {
+							sec.BansIPv4 = int(v4)
+						}
+						if v6, ok := blacklist["ipv6"].(float64); ok {
+							sec.BansIPv6 = int(v6)
+						}
 					}
-					if v4, ok := whitelist["ipv4"].(float64); ok {
-						sec.WhitelistIPv4 = int(v4)
-					}
-					if v6, ok := whitelist["ipv6"].(float64); ok {
-						sec.WhitelistIPv6 = int(v6)
+
+					// Whitelist
+					if whitelist, ok := breakdown["whitelist"].(map[string]interface{}); ok {
+						if total, ok := whitelist["total"].(float64); ok {
+							sec.WhitelistTotal = int(total)
+						}
+						if v4, ok := whitelist["ipv4"].(float64); ok {
+							sec.WhitelistIPv4 = int(v4)
+						}
+						if v6, ok := whitelist["ipv6"].(float64); ok {
+							sec.WhitelistIPv6 = int(v6)
+						}
 					}
 				}
 			}
