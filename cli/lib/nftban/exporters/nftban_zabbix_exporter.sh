@@ -631,7 +631,7 @@ send_metrics_native() {
     local len_hex
     len_hex=$(printf '%016x' "$data_len")
 
-    # Send data and capture response
+    # Send data and capture response (filter null bytes from binary protocol header)
     local response
     response=$(
     {
@@ -640,7 +640,7 @@ send_metrics_native() {
         printf "\\x${len_hex:14:2}\\x${len_hex:12:2}\\x${len_hex:10:2}\\x${len_hex:8:2}"
         printf "\\x${len_hex:6:2}\\x${len_hex:4:2}\\x${len_hex:2:2}\\x${len_hex:0:2}"
         printf '%s' "$data"
-    } | timeout 10 nc "$ZABBIX_SERVER" "$ZABBIX_PORT" 2>/dev/null
+    } | timeout 10 nc "$ZABBIX_SERVER" "$ZABBIX_PORT" 2>/dev/null | tr -d '\0'
     ) || {
         log_error "Failed to connect to $ZABBIX_SERVER:$ZABBIX_PORT"
         return 1
