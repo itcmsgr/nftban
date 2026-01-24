@@ -716,6 +716,151 @@ collect_metrics() {
     echo "" >> "$TEMP_FILE"
 
     # -------------------------------------------------------------------------
+    # Daemon & Watchdog Metrics (Schema v2)
+    # -------------------------------------------------------------------------
+
+    # Get daemon stats via IPC
+    local daemon_json=""
+    if command -v nftban &>/dev/null; then
+        daemon_json=$(nftban watchdog stats --json 2>/dev/null | grep -A100 "^{" | head -50) || daemon_json=""
+    fi
+
+    # Parse daemon stats if available
+    if [[ -n "$daemon_json" ]] && echo "$daemon_json" | jq -e . &>/dev/null 2>&1; then
+        # Daemon info
+        local daemon_uptime daemon_pid daemon_mode
+        daemon_uptime=$(echo "$daemon_json" | jq -r '.daemon.uptime_seconds // 0')
+        daemon_pid=$(echo "$daemon_json" | jq -r '.daemon.pid // 0')
+        daemon_mode=$(echo "$daemon_json" | jq -r '.daemon.mode // "unknown"')
+
+        echo "# HELP nftban_daemon_up Whether the NFTBan daemon is running (1=up, 0=down)" >> "$TEMP_FILE"
+        echo "# TYPE nftban_daemon_up gauge" >> "$TEMP_FILE"
+        echo "nftban_daemon_up 1" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_daemon_uptime_seconds Daemon uptime in seconds" >> "$TEMP_FILE"
+        echo "# TYPE nftban_daemon_uptime_seconds gauge" >> "$TEMP_FILE"
+        echo "nftban_daemon_uptime_seconds ${daemon_uptime}" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_daemon_info Daemon information" >> "$TEMP_FILE"
+        echo "# TYPE nftban_daemon_info gauge" >> "$TEMP_FILE"
+        echo "nftban_daemon_info{mode=\"${daemon_mode}\",pid=\"${daemon_pid}\"} 1" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        # Watchdog metrics
+        local wd_status wd_mode wd_cpu wd_mem wd_io
+        wd_status=$(echo "$daemon_json" | jq -r '.watchdog.status // 0')
+        wd_mode=$(echo "$daemon_json" | jq -r '.watchdog.mode // "unknown"')
+        wd_cpu=$(echo "$daemon_json" | jq -r '.watchdog.cpu_score // 0')
+        wd_mem=$(echo "$daemon_json" | jq -r '.watchdog.mem_score // 0')
+        wd_io=$(echo "$daemon_json" | jq -r '.watchdog.io_score // 0')
+
+        echo "# HELP nftban_watchdog_up Whether the watchdog is running (1=up, 0=down)" >> "$TEMP_FILE"
+        echo "# TYPE nftban_watchdog_up gauge" >> "$TEMP_FILE"
+        echo "nftban_watchdog_up ${wd_status}" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_watchdog_info Watchdog information" >> "$TEMP_FILE"
+        echo "# TYPE nftban_watchdog_info gauge" >> "$TEMP_FILE"
+        echo "nftban_watchdog_info{mode=\"${wd_mode}\"} 1" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_watchdog_pressure_score System pressure scores (0-100)" >> "$TEMP_FILE"
+        echo "# TYPE nftban_watchdog_pressure_score gauge" >> "$TEMP_FILE"
+        echo "nftban_watchdog_pressure_score{type=\"cpu\"} ${wd_cpu}" >> "$TEMP_FILE"
+        echo "nftban_watchdog_pressure_score{type=\"memory\"} ${wd_mem}" >> "$TEMP_FILE"
+        echo "nftban_watchdog_pressure_score{type=\"io\"} ${wd_io}" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        # Runtime metrics (Go runtime)
+        local goroutines heap_mb alloc_mb sys_mb gc_cycles gc_pause_ms
+        goroutines=$(echo "$daemon_json" | jq -r '.runtime.goroutines // 0')
+        heap_mb=$(echo "$daemon_json" | jq -r '.runtime.memory_heap_mb // 0')
+        alloc_mb=$(echo "$daemon_json" | jq -r '.runtime.memory_alloc_mb // 0')
+        sys_mb=$(echo "$daemon_json" | jq -r '.runtime.memory_sys_mb // 0')
+        gc_cycles=$(echo "$daemon_json" | jq -r '.runtime.gc_cycles // 0')
+        gc_pause_ms=$(echo "$daemon_json" | jq -r '.runtime.gc_pause_ms // 0')
+
+        echo "# HELP nftban_runtime_goroutines Number of active goroutines" >> "$TEMP_FILE"
+        echo "# TYPE nftban_runtime_goroutines gauge" >> "$TEMP_FILE"
+        echo "nftban_runtime_goroutines ${goroutines}" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_runtime_memory_bytes Memory usage in bytes" >> "$TEMP_FILE"
+        echo "# TYPE nftban_runtime_memory_bytes gauge" >> "$TEMP_FILE"
+        local heap_bytes alloc_bytes sys_bytes
+        heap_bytes=$(awk -v mb="$heap_mb" 'BEGIN {printf "%.0f", mb * 1048576}')
+        alloc_bytes=$(awk -v mb="$alloc_mb" 'BEGIN {printf "%.0f", mb * 1048576}')
+        sys_bytes=$(awk -v mb="$sys_mb" 'BEGIN {printf "%.0f", mb * 1048576}')
+        echo "nftban_runtime_memory_bytes{type=\"heap\"} ${heap_bytes}" >> "$TEMP_FILE"
+        echo "nftban_runtime_memory_bytes{type=\"alloc\"} ${alloc_bytes}" >> "$TEMP_FILE"
+        echo "nftban_runtime_memory_bytes{type=\"sys\"} ${sys_bytes}" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_runtime_gc_cycles_total Total garbage collection cycles" >> "$TEMP_FILE"
+        echo "# TYPE nftban_runtime_gc_cycles_total counter" >> "$TEMP_FILE"
+        echo "nftban_runtime_gc_cycles_total ${gc_cycles}" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_runtime_gc_pause_seconds Last GC pause duration in seconds" >> "$TEMP_FILE"
+        echo "# TYPE nftban_runtime_gc_pause_seconds gauge" >> "$TEMP_FILE"
+        local gc_pause_sec
+        gc_pause_sec=$(awk -v ms="$gc_pause_ms" 'BEGIN {printf "%.6f", ms / 1000}')
+        echo "nftban_runtime_gc_pause_seconds ${gc_pause_sec}" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        # IPC metrics
+        local ipc_requests ipc_latency_ms ipc_errors
+        ipc_requests=$(echo "$daemon_json" | jq -r '.ipc.requests_total // 0')
+        ipc_latency_ms=$(echo "$daemon_json" | jq -r '.ipc.avg_latency_ms // 0')
+        ipc_errors=$(echo "$daemon_json" | jq -r '.ipc.errors_total // 0')
+
+        echo "# HELP nftban_ipc_requests_total Total IPC requests to daemon" >> "$TEMP_FILE"
+        echo "# TYPE nftban_ipc_requests_total counter" >> "$TEMP_FILE"
+        echo "nftban_ipc_requests_total ${ipc_requests}" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_ipc_latency_seconds Average IPC request latency in seconds" >> "$TEMP_FILE"
+        echo "# TYPE nftban_ipc_latency_seconds gauge" >> "$TEMP_FILE"
+        local ipc_latency_sec
+        ipc_latency_sec=$(awk -v ms="$ipc_latency_ms" 'BEGIN {printf "%.6f", ms / 1000}')
+        echo "nftban_ipc_latency_seconds ${ipc_latency_sec}" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_ipc_errors_total Total IPC errors" >> "$TEMP_FILE"
+        echo "# TYPE nftban_ipc_errors_total counter" >> "$TEMP_FILE"
+        echo "nftban_ipc_errors_total ${ipc_errors}" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        # Throughput metrics
+        local tp_bans tp_unbans tp_events tp_bans_per_min
+        tp_bans=$(echo "$daemon_json" | jq -r '.throughput.bans_total // 0')
+        tp_unbans=$(echo "$daemon_json" | jq -r '.throughput.unbans_total // 0')
+        tp_events=$(echo "$daemon_json" | jq -r '.throughput.events_total // 0')
+        tp_bans_per_min=$(echo "$daemon_json" | jq -r '.throughput.bans_per_min // 0')
+
+        echo "# HELP nftban_throughput_total Throughput counters" >> "$TEMP_FILE"
+        echo "# TYPE nftban_throughput_total counter" >> "$TEMP_FILE"
+        echo "nftban_throughput_total{type=\"bans\"} ${tp_bans}" >> "$TEMP_FILE"
+        echo "nftban_throughput_total{type=\"unbans\"} ${tp_unbans}" >> "$TEMP_FILE"
+        echo "nftban_throughput_total{type=\"events\"} ${tp_events}" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_throughput_bans_per_minute Current ban rate per minute" >> "$TEMP_FILE"
+        echo "# TYPE nftban_throughput_bans_per_minute gauge" >> "$TEMP_FILE"
+        echo "nftban_throughput_bans_per_minute ${tp_bans_per_min}" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+    else
+        # Daemon not available
+        echo "# HELP nftban_daemon_up Whether the NFTBan daemon is running (1=up, 0=down)" >> "$TEMP_FILE"
+        echo "# TYPE nftban_daemon_up gauge" >> "$TEMP_FILE"
+        echo "nftban_daemon_up 0" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+    fi
+
+    # -------------------------------------------------------------------------
     # Block Metrics
     # -------------------------------------------------------------------------
 
