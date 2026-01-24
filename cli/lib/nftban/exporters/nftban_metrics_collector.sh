@@ -389,6 +389,12 @@ collect_watchdog_metrics() {
     local bans_total=0 unbans_total=0 events_total=0 bans_per_min=0
     local ipc_requests=0 ipc_latency_ms=0 ipc_errors=0
 
+    # Watchdog pressure metrics (schema v2)
+    local wd_status=0 wd_mode="unknown" wd_cpu_score=0 wd_mem_score=0 wd_io_score=0
+
+    # Daemon mode and server info
+    local daemon_mode="unknown" server_region="unknown"
+
     if [[ -n "$daemon_json" ]] && echo "$daemon_json" | jq -e . &>/dev/null; then
         goroutines=$(echo "$daemon_json" | jq -r '.runtime.goroutines // 0')
         heap_mb=$(echo "$daemon_json" | jq -r '.runtime.memory_heap_mb // 0')
@@ -403,6 +409,17 @@ collect_watchdog_metrics() {
         ipc_requests=$(echo "$daemon_json" | jq -r '.ipc.requests_total // 0')
         ipc_latency_ms=$(echo "$daemon_json" | jq -r '.ipc.avg_latency_ms // 0')
         ipc_errors=$(echo "$daemon_json" | jq -r '.ipc.errors_total // 0')
+
+        # Watchdog pressure metrics from schema v2
+        wd_status=$(echo "$daemon_json" | jq -r '.watchdog.status // 0')
+        wd_mode=$(echo "$daemon_json" | jq -r '.watchdog.mode // "unknown"')
+        wd_cpu_score=$(echo "$daemon_json" | jq -r '.watchdog.cpu_score // 0')
+        wd_mem_score=$(echo "$daemon_json" | jq -r '.watchdog.mem_score // 0')
+        wd_io_score=$(echo "$daemon_json" | jq -r '.watchdog.io_score // 0')
+
+        # Daemon mode and server region
+        daemon_mode=$(echo "$daemon_json" | jq -r '.daemon.mode // "unknown"')
+        server_region=$(echo "$daemon_json" | jq -r '.server.region // "unknown"')
     fi
 
     # Parse system check
@@ -444,6 +461,15 @@ collect_watchdog_metrics() {
     "avg_latency_ms": $ipc_latency_ms,
     "errors_total": $ipc_errors
   },
+  "watchdog": {
+    "status": $wd_status,
+    "mode": "$wd_mode",
+    "cpu_score": $wd_cpu_score,
+    "mem_score": $wd_mem_score,
+    "io_score": $wd_io_score
+  },
+  "daemon_mode": "$daemon_mode",
+  "server_region": "$server_region",
   "system": {
     "load_1m": $load_1m,
     "load_5m": $load_5m,
