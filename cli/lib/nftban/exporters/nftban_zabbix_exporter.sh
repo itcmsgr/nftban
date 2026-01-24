@@ -569,24 +569,37 @@ collect_server_metrics() {
     fi
     metrics+="nftban.server.cloud_provider ${cloud_provider}\n"
 
-    # Public IP (try multiple services, with short timeout)
+    # Public IP (prefer IPv4, try multiple services)
     local public_ip=""
-    public_ip=$(curl -s -m 2 https://ifconfig.me 2>/dev/null || \
-                curl -s -m 2 https://icanhazip.com 2>/dev/null || \
-                curl -s -m 2 https://api.ipify.org 2>/dev/null || \
+    public_ip=$(curl -4 -s -m 2 https://api.ipify.org 2>/dev/null || \
+                curl -4 -s -m 2 https://ifconfig.me 2>/dev/null || \
+                curl -4 -s -m 2 https://icanhazip.com 2>/dev/null || \
                 echo "")
-    [[ -n "$public_ip" ]] && metrics+="nftban.server.public_ip ${public_ip}\n"
+    # Validate it's an IPv4 address
+    if [[ "$public_ip" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+        metrics+="nftban.server.public_ip ${public_ip}\n"
+    fi
 
     # Region (from cloud metadata if available)
     local region=""
     if [[ "$cloud_provider" == "aws" ]]; then
-        region=$(curl -s -m 1 http://169.254.169.254/latest/meta-data/placement/region 2>/dev/null || echo "")
+        # AWS IMDSv1 - try with token first (IMDSv2), fallback to direct
+        local token
+        token=$(curl -s -m 1 -X PUT "http://169.254.169.254/latest/api/token" -H "X-aws-ec2-metadata-token-ttl-seconds: 21600" 2>/dev/null || echo "")
+        if [[ -n "$token" ]]; then
+            region=$(curl -s -m 1 -H "X-aws-ec2-metadata-token: $token" http://169.254.169.254/latest/meta-data/placement/region 2>/dev/null || echo "")
+        else
+            region=$(curl -s -m 1 http://169.254.169.254/latest/meta-data/placement/region 2>/dev/null || echo "")
+        fi
     elif [[ "$cloud_provider" == "gcp" ]]; then
         region=$(curl -s -m 1 -H "Metadata-Flavor: Google" http://169.254.169.254/computeMetadata/v1/instance/zone 2>/dev/null | sed 's|.*/||; s|-[a-z]$||' || echo "")
     elif [[ "$cloud_provider" == "azure" ]]; then
         region=$(curl -s -m 1 -H "Metadata: true" "http://169.254.169.254/metadata/instance/compute/location?api-version=2021-02-01&format=text" 2>/dev/null || echo "")
     fi
-    [[ -n "$region" ]] && metrics+="nftban.server.region ${region}\n"
+    # Only output if valid region (not error message)
+    if [[ -n "$region" && ! "$region" =~ (Not Found|error|404) ]]; then
+        metrics+="nftban.server.region ${region}\n"
+    fi
 
     # Load averages
     if [[ -f /proc/loadavg ]]; then
