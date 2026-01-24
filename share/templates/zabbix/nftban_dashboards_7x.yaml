@@ -5,6 +5,8 @@ zabbix_export:
     - uuid: 76c37c2a70dc451a9298e9bb80c930ec
       template: 'NFTBan'
       name: 'NFTBan Firewall Monitoring'
+      groups:
+        - name: 'Templates/Security'
 
       # =======================================================================
       # DASHBOARDS (Zabbix 7.0 format) - Professional NFTBan Monitoring
