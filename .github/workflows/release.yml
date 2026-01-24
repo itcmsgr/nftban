@@ -7,8 +7,8 @@
 #
 # What this does:
 #   1. Builds Go binaries (nftban-core, nftban-api-server) for x86_64
-#   2. Creates RPM packages for EL9, EL10, Fedora 42, Fedora 43
-#   3. Creates DEB packages for Ubuntu 22.04/24.04, Debian 12
+#   2. Creates RPM packages for EL9, EL10
+#   3. Creates DEB packages for Ubuntu 22.04/24.04, Debian 12/13
 #   4. Generates SHA256SUMS for all artifacts
 #   5. Creates distro-specific package names (nftban-el9-x86_64.rpm, etc.)
 #   6. Creates MANIFEST.txt (file inventory)
@@ -76,12 +76,6 @@ jobs:
           - distro: el10
             container: almalinux:10
             name_suffix: el10
-          - distro: fc42
-            container: fedora:42
-            name_suffix: fc42
-          - distro: fc43
-            container: fedora:43
-            name_suffix: fc43
 
     steps:
       - name: Checkout code
@@ -147,6 +141,9 @@ jobs:
           - distro: debian12
             container: debian:12
             name_suffix: debian12
+          - distro: debian13
+            container: debian:trixie
+            name_suffix: debian13
 
     steps:
       - name: Checkout code
@@ -248,16 +245,15 @@ jobs:
           NFTBan ${VERSION} - Release Artifacts
           ===================================
 
-          RPM Packages (EL Family + Fedora):
+          RPM Packages (EL Family):
             nftban-el9-x86_64.rpm      Rocky / Alma / RHEL / CentOS Stream 9
             nftban-el10-x86_64.rpm     Rocky / Alma / RHEL / CentOS Stream 10
-            nftban-fc42-x86_64.rpm     Fedora 42
-            nftban-fc43-x86_64.rpm     Fedora 43
 
           DEB Packages (Ubuntu + Debian):
-            nftban-ubuntu22.04-amd64.deb   Ubuntu 22.04 (Jammy)
-            nftban-ubuntu24.04-amd64.deb   Ubuntu 24.04 (Noble)
-            nftban-debian12-amd64.deb      Debian 12 (Bookworm)
+            nftban-ubuntu24.04-amd64.deb   Ubuntu 24.04 (Noble) - Tier 0
+            nftban-debian12-amd64.deb      Debian 12 (Bookworm) - Tier 0
+            nftban-debian13-amd64.deb      Debian 13 (Trixie) - Tier 1
+            nftban-ubuntu22.04-amd64.deb   Ubuntu 22.04 (Jammy) - Tier 2
 
           Package Sizes:
           MANIFEST_EOF
@@ -292,20 +288,17 @@ jobs:
              # Rocky / Alma / RHEL / CentOS Stream 10
              wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el10-x86_64.rpm
 
-             # Fedora 42
-             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc42-x86_64.rpm
-
-             # Fedora 43
-             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-fc43-x86_64.rpm
-
-             # Ubuntu 22.04
-             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb
-
-             # Ubuntu 24.04
+             # Ubuntu 24.04 (Noble) - Tier 0
              wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu24.04-amd64.deb
 
-             # Debian 12
+             # Debian 12 (Bookworm) - Tier 0
              wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian12-amd64.deb
+
+             # Debian 13 (Trixie) - Tier 1
+             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb
+
+             # Ubuntu 22.04 (Jammy) - Tier 2
+             wget https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb
 
           2. Verify package integrity:
 
@@ -314,7 +307,7 @@ jobs:
 
           3. Install package:
 
-             # Rocky / Alma / Fedora / RHEL
+             # Rocky / Alma / RHEL
              sudo dnf install -y nftban-<distro>-x86_64.rpm
 
              # Ubuntu / Debian
@@ -351,19 +344,18 @@ jobs:
           ## Available Packages
 
           ### RPM (x86_64)
-          | Distribution | Package |
-          |--------------|---------|
-          | Rocky / Alma / RHEL / CentOS Stream 9 | `nftban-el9-x86_64.rpm` |
-          | Rocky / Alma / RHEL / CentOS Stream 10 | `nftban-el10-x86_64.rpm` |
-          | Fedora 42 | `nftban-fc42-x86_64.rpm` |
-          | Fedora 43 | `nftban-fc43-x86_64.rpm` |
+          | Distribution | Package | Tier |
+          |--------------|---------|------|
+          | Rocky / Alma / RHEL 9 | `nftban-el9-x86_64.rpm` | Tier 0 |
+          | Rocky / Alma / RHEL 10 | `nftban-el10-x86_64.rpm` | Tier 1 |
 
           ### DEB (amd64)
-          | Distribution | Package |
-          |--------------|---------|
-          | Ubuntu 22.04 (Jammy) | `nftban-ubuntu22.04-amd64.deb` |
-          | Ubuntu 24.04 (Noble) | `nftban-ubuntu24.04-amd64.deb` |
-          | Debian 12 (Bookworm) | `nftban-debian12-amd64.deb` |
+          | Distribution | Package | Tier |
+          |--------------|---------|------|
+          | Ubuntu 24.04 (Noble) | `nftban-ubuntu24.04-amd64.deb` | Tier 0 |
+          | Debian 12 (Bookworm) | `nftban-debian12-amd64.deb` | Tier 0 |
+          | Debian 13 (Trixie) | `nftban-debian13-amd64.deb` | Tier 1 |
+          | Ubuntu 22.04 (Jammy) | `nftban-ubuntu22.04-amd64.deb` | Tier 2 |
           NOTES_EOF
 
           # Remove leading spaces from heredoc
