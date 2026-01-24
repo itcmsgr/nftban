@@ -270,7 +270,8 @@ collect_nftables_metrics() {
         sets=$(nft list sets inet nftban 2>/dev/null | grep -c "set " || echo "0")
 
         for set_name in blacklist_ipv4 blacklist_ipv6 whitelist_ipv4 whitelist_ipv6; do
-            local count=$(nft -j list set inet nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+            local count
+            count=$(nft -j list set inet nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
             elements=$((elements + count))
         done
 
@@ -301,12 +302,13 @@ collect_feeds_metrics() {
             [[ -f "$feed_file" ]] || continue
             ((enabled++))
 
-            local feed_name=$(basename "$feed_file" .conf)
-            local feed_data="${NFTBAN_CACHE_DIR}/feeds/${feed_name}.list"
+            local feed_name feed_data count
+            feed_name=$(basename "$feed_file" .conf)
+            feed_data="${NFTBAN_CACHE_DIR}/feeds/${feed_name}.list"
 
             if [[ -f "$feed_data" ]]; then
                 ((loaded++))
-                local count=$(wc -l < "$feed_data" 2>/dev/null || echo "0")
+                count=$(wc -l < "$feed_data" 2>/dev/null || echo "0")
                 ips_total=$((ips_total + count))
             else
                 ((failed++))
@@ -330,7 +332,6 @@ collect_network_metrics() {
     # Network bandwidth and connection metrics
     local interfaces_json="[]"
     local connections_active=0 connections_established=0 connections_time_wait=0 connections_close_wait=0
-    local tcp_bytes=0 udp_bytes=0 icmp_packets=0
 
     # Per-interface stats
     local iface_array=""
@@ -599,18 +600,19 @@ EOF
 
 collect_dynamic_metrics() {
     # Collect all dynamic metrics and merge into single JSON
-    local timestamp=$(date +%s)
+    local timestamp daemon bans memory health modules nftables feeds network watchdog geoip
+    timestamp=$(date +%s)
 
-    local daemon=$(collect_daemon_metrics)
-    local bans=$(collect_ban_metrics)
-    local memory=$(collect_memory_metrics)
-    local health=$(collect_health_metrics)
-    local modules=$(collect_module_metrics)
-    local nftables=$(collect_nftables_metrics)
-    local feeds=$(collect_feeds_metrics)
-    local network=$(collect_network_metrics)
-    local watchdog=$(collect_watchdog_metrics)
-    local geoip=$(collect_geoip_metrics)
+    daemon=$(collect_daemon_metrics)
+    bans=$(collect_ban_metrics)
+    memory=$(collect_memory_metrics)
+    health=$(collect_health_metrics)
+    modules=$(collect_module_metrics)
+    nftables=$(collect_nftables_metrics)
+    feeds=$(collect_feeds_metrics)
+    network=$(collect_network_metrics)
+    watchdog=$(collect_watchdog_metrics)
+    geoip=$(collect_geoip_metrics)
 
     # Merge all JSON objects
     echo "$daemon $bans $memory $health $modules $nftables $feeds $network $watchdog $geoip" | \
@@ -618,8 +620,9 @@ collect_dynamic_metrics() {
 }
 
 collect_inventory_metrics() {
-    local timestamp=$(date +%s)
-    local server=$(collect_server_inventory)
+    local timestamp server
+    timestamp=$(date +%s)
+    server=$(collect_server_inventory)
 
     echo "$server" | jq '. + {"timestamp": '"$timestamp"', "type": "inventory"}'
 }
