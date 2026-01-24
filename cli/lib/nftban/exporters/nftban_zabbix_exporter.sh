@@ -324,7 +324,8 @@ main() {
     zabbix_metrics=$(json_to_zabbix_metrics "$metrics_json")
 
     # Count metrics
-    local count=$(echo -e "$zabbix_metrics" | grep -c "^nftban\." || echo "0")
+    local count
+    count=$(echo -e "$zabbix_metrics" | grep -c "^nftban\." || echo "0")
     log_info "Prepared $count metrics"
 
     # Send to Zabbix
