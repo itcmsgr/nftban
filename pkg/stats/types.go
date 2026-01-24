@@ -2,6 +2,18 @@
 // NFTBan v1.0 - Stats Types
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="stats_types"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-01-01"
+// meta:description="JSON structs for watchdog runtime stats"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 //
 // JSON structs for watchdog runtime stats.
 // Schema version included for future compatibility.
@@ -13,7 +25,7 @@ import "time"
 
 // SchemaVersion is the current JSON schema version
 // Increment when making breaking changes to the JSON structure
-const SchemaVersion = 1
+const SchemaVersion = 2
 
 // Snapshot represents a point-in-time stats snapshot
 // Written to current.json by the daemon
@@ -24,6 +36,8 @@ type Snapshot struct {
 	Runtime       Runtime   `json:"runtime"`
 	Throughput    Throughput `json:"throughput"`
 	IPC           IPC       `json:"ipc"`
+	Watchdog      Watchdog  `json:"watchdog"`
+	Server        Server    `json:"server"`
 	Modules       map[string]ModuleStatus `json:"modules"`
 	Health        string    `json:"health"`
 	Alerts        []Alert   `json:"alerts"`
@@ -34,6 +48,25 @@ type Daemon struct {
 	Version       string `json:"version"`
 	UptimeSeconds int64  `json:"uptime_seconds"`
 	PID           int    `json:"pid"`
+	Mode          string `json:"mode"` // "normal", "degraded", "survival"
+}
+
+// Watchdog contains pressure monitoring metrics
+type Watchdog struct {
+	Status   int     `json:"status"`    // 1 = running, 0 = not running
+	Mode     string  `json:"mode"`      // "normal", "degraded", "survival"
+	CPUScore float64 `json:"cpu_score"` // 0-100 pressure score
+	MemScore float64 `json:"mem_score"` // 0-100 pressure score
+	IOScore  float64 `json:"io_score"`  // 0-100 pressure score
+}
+
+// Server contains server inventory information
+type Server struct {
+	Hostname string `json:"hostname"`
+	Region   string `json:"region"` // Cloud region or datacenter
+	OS       string `json:"os"`
+	Kernel   string `json:"kernel"`
+	Arch     string `json:"arch"`
 }
 
 // Runtime contains Go runtime metrics
