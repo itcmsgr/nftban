@@ -1,0 +1,590 @@
+zabbix_export:
+  version: '7.0'
+
+  templates:
+    - template: 'NFTBan'
+      name: 'NFTBan Firewall Monitoring'
+
+      # =======================================================================
+      # DASHBOARDS (Zabbix 7.0 format) - Professional NFTBan Monitoring
+      # Import AFTER nftban_template_only_7x.yaml
+      # =======================================================================
+      dashboards:
+        - uuid: 1a388cc06ae741aca8843b53367f50ac
+          name: 'NFTBan Overview'
+          auto_start: 'YES'
+          pages:
+            # ===== PAGE 1: STATUS OVERVIEW =====
+            - name: 'Status'
+              widgets:
+                # Row 1: Key Status Indicators
+                - type: item_value
+                  name: 'Daemon Status'
+                  width: '6'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.status
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Mode'
+                  x: '6'
+                  width: '6'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.mode
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Version'
+                  x: '12'
+                  width: '6'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.version
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Uptime'
+                  x: '18'
+                  width: '6'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.uptime
+                        host: 'NFTBan Firewall Monitoring'
+                # Row 2: Ban Counts
+                - type: item_value
+                  name: 'Active Bans'
+                  y: '3'
+                  width: '6'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.active.count
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Permanent Bans'
+                  x: '6'
+                  y: '3'
+                  width: '6'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.permanent.count
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Total Bans'
+                  x: '12'
+                  y: '3'
+                  width: '6'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.bans.total
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Ban Rate/min'
+                  x: '18'
+                  y: '3'
+                  width: '6'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.bans.rate
+                        host: 'NFTBan Firewall Monitoring'
+                # Row 3: Main Graph - Ban Activity
+                - type: svggraph
+                  name: 'Ban Activity (24h / 1h / Active)'
+                  y: '6'
+                  width: '48'
+                  height: '6'
+                  fields:
+                    - type: ITEM
+                      name: ds.0.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.bans.24h
+                    - type: STRING
+                      name: ds.0.color
+                      value: 1A7C11
+                    - type: ITEM
+                      name: ds.1.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.bans.1h
+                    - type: STRING
+                      name: ds.1.color
+                      value: 2774A4
+                    - type: ITEM
+                      name: ds.2.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.active.count
+                    - type: STRING
+                      name: ds.2.color
+                      value: F63100
+                # Row 4: Problems
+                - type: problems
+                  name: 'Active Problems'
+                  y: '12'
+                  width: '48'
+                  height: '4'
+                  fields:
+                    - type: INTEGER
+                      name: show_suppressed
+                      value: '0'
+
+            # ===== PAGE 2: BANS & SECURITY =====
+            - name: 'Bans'
+              widgets:
+                # Row 1: Ban Statistics
+                - type: item_value
+                  name: 'Active Bans'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.active.count
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Bans (1h)'
+                  x: '8'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.bans.1h
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Bans (24h)'
+                  x: '16'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.bans.24h
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Total Bans'
+                  x: '24'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.bans.total
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Permanent'
+                  x: '32'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.permanent.count
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Rate/min'
+                  x: '40'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.bans.rate
+                        host: 'NFTBan Firewall Monitoring'
+                # Row 2: Ban Activity Graph
+                - type: svggraph
+                  name: 'Ban Activity Over Time'
+                  y: '3'
+                  width: '48'
+                  height: '6'
+                  fields:
+                    - type: ITEM
+                      name: ds.0.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.bans.24h
+                    - type: STRING
+                      name: ds.0.color
+                      value: 1A7C11
+                    - type: ITEM
+                      name: ds.1.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.bans.1h
+                    - type: STRING
+                      name: ds.1.color
+                      value: 2774A4
+                    - type: ITEM
+                      name: ds.2.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.active.count
+                    - type: STRING
+                      name: ds.2.color
+                      value: F63100
+                    - type: ITEM
+                      name: ds.3.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.permanent.count
+                    - type: STRING
+                      name: ds.3.color
+                      value: A54F10
+                # Row 3: GeoIP & Countries
+                - type: item_value
+                  name: 'Countries Blocked'
+                  y: '9'
+                  width: '12'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.geoip.countries_blocked
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'GeoIP DB Age (days)'
+                  x: '12'
+                  y: '9'
+                  width: '12'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.geoip.database_age
+                        host: 'NFTBan Firewall Monitoring'
+
+            # ===== PAGE 3: RESOURCES =====
+            - name: 'Resources'
+              widgets:
+                # Row 1: Resource Indicators
+                - type: item_value
+                  name: 'Memory (RSS)'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.memory.rss
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Threads'
+                  x: '8'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.threads
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Open FDs'
+                  x: '16'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.fds.open
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Watchdog'
+                  x: '24'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.watchdog.status
+                        host: 'NFTBan Firewall Monitoring'
+                # Row 2: Memory Graph
+                - type: svggraph
+                  name: 'Memory Usage'
+                  y: '3'
+                  width: '24'
+                  height: '5'
+                  fields:
+                    - type: ITEM
+                      name: ds.0.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.memory.rss
+                    - type: STRING
+                      name: ds.0.color
+                      value: 1A7C11
+                # Row 2: Pressure Scores Graph
+                - type: svggraph
+                  name: 'Pressure Scores (CPU/Mem/IO)'
+                  x: '24'
+                  y: '3'
+                  width: '24'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: yaxismax
+                      value: '100'
+                    - type: ITEM
+                      name: ds.0.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.watchdog.cpu_score
+                    - type: STRING
+                      name: ds.0.color
+                      value: F63100
+                    - type: ITEM
+                      name: ds.1.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.watchdog.mem_score
+                    - type: STRING
+                      name: ds.1.color
+                      value: FC6A00
+                    - type: ITEM
+                      name: ds.2.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.watchdog.io_score
+                    - type: STRING
+                      name: ds.2.color
+                      value: A54F10
+                # Row 3: Server Load
+                - type: svggraph
+                  name: 'Server Load (1m/5m/15m)'
+                  y: '8'
+                  width: '48'
+                  height: '5'
+                  fields:
+                    - type: ITEM
+                      name: ds.0.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.server.load_1m
+                    - type: STRING
+                      name: ds.0.color
+                      value: 1A7C11
+                    - type: ITEM
+                      name: ds.1.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.server.load_5m
+                    - type: STRING
+                      name: ds.1.color
+                      value: 2774A4
+                    - type: ITEM
+                      name: ds.2.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.server.load_15m
+                    - type: STRING
+                      name: ds.2.color
+                      value: F63100
+
+            # ===== PAGE 4: NETWORK & FIREWALL =====
+            - name: 'Network'
+              widgets:
+                # Row 1: nftables Stats
+                - type: item_value
+                  name: 'NFT Rules'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.nft.rules_total
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'NFT Sets'
+                  x: '8'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.nft.sets_total
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'NFT Elements'
+                  x: '16'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.nft.elements_total
+                        host: 'NFTBan Firewall Monitoring'
+                # Row 1: Feed Stats
+                - type: item_value
+                  name: 'Feeds Enabled'
+                  x: '24'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.feeds.enabled
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Feeds Loaded'
+                  x: '32'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.feeds.loaded
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Feed IPs'
+                  x: '40'
+                  width: '8'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.feeds.ips_total
+                        host: 'NFTBan Firewall Monitoring'
+                # Row 2: nftables Graph
+                - type: svggraph
+                  name: 'nftables Statistics'
+                  y: '3'
+                  width: '24'
+                  height: '5'
+                  fields:
+                    - type: INTEGER
+                      name: righty
+                      value: '1'
+                    - type: ITEM
+                      name: ds.0.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.nft.rules_total
+                    - type: STRING
+                      name: ds.0.color
+                      value: 1A7C11
+                    - type: ITEM
+                      name: ds.1.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.nft.sets_total
+                    - type: STRING
+                      name: ds.1.color
+                      value: 2774A4
+                    - type: ITEM
+                      name: ds.2.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.nft.elements_total
+                    - type: STRING
+                      name: ds.2.color
+                      value: F63100
+                    - type: INTEGER
+                      name: ds.2.axisy
+                      value: '1'
+                # Row 2: Feeds Graph
+                - type: svggraph
+                  name: 'Threat Feeds'
+                  x: '24'
+                  y: '3'
+                  width: '24'
+                  height: '5'
+                  fields:
+                    - type: ITEM
+                      name: ds.0.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.feeds.enabled
+                    - type: STRING
+                      name: ds.0.color
+                      value: 1A7C11
+                    - type: ITEM
+                      name: ds.1.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.feeds.loaded
+                    - type: STRING
+                      name: ds.1.color
+                      value: 2774A4
+                    - type: ITEM
+                      name: ds.2.itemid.0
+                      value:
+                        host: 'NFTBan Firewall Monitoring'
+                        key: nftban.feeds.failed
+                    - type: STRING
+                      name: ds.2.color
+                      value: F63100
+
+            # ===== PAGE 5: MODULES =====
+            - name: 'Modules'
+              widgets:
+                - type: item_value
+                  name: 'Modules Enabled'
+                  width: '12'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.modules.enabled
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Modules Active'
+                  x: '12'
+                  width: '12'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.modules.active
+                        host: 'NFTBan Firewall Monitoring'
+                - type: item_value
+                  name: 'Modules Failed'
+                  x: '24'
+                  width: '12'
+                  height: '3'
+                  fields:
+                    - type: ITEM
+                      name: itemid.0
+                      value:
+                        key: nftban.modules.failed
+                        host: 'NFTBan Firewall Monitoring'
