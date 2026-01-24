@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Zabbix Integration CLI
+# NFTBan v1.4.0 - Zabbix Integration CLI
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI commands for Zabbix metrics integration
@@ -8,7 +8,7 @@
 # meta:name="cmd_zabbix"
 # meta:type="cli"
 # meta:header="Zabbix Integration"
-# meta:version="1.0.0"
+# meta:version="1.4.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -1360,16 +1360,24 @@ EXAMPLES:
     # Config is re-read on each exporter run
 
 METRICS OVERVIEW:
-    NFTBan exports 85+ metrics to Zabbix including:
-    - Daemon status, version, uptime
-    - Ban statistics (total, 24h, rate)
-    - Memory usage, goroutines, GC stats
-    - Module status per enabled module
-    - Watchdog pressure scores
-    - Feed status and IP counts
-    - GeoIP statistics
+    NFTBan exports 76 metrics to Zabbix including:
+    - Daemon: status, version, uptime, pid, mode
+    - Bans: active count, 24h/1h, rate, permanent, whitelist
+    - Memory: RSS, file descriptors, threads, goroutines
+    - Runtime: heap_mb, gc_cycles, gc_pause_ms (watchdog IPC)
+    - Throughput: bans_total, unbans_total, bans_per_min
+    - IPC: requests, latency_ms, errors
+    - Health: status, passed, failed checks
+    - Modules: enabled, active, failed
+    - nftables: sets, elements, rules, packets blocked
+    - Feeds: enabled, loaded, failed, total IPs
+    - Network: connections (active, established, time_wait, close_wait)
+    - System: load, memory%, iowait%, disk%
+    - Server inventory: hostname, OS, kernel, IPs, MAC, networks
+    - GeoIP: database age, countries blocked
 
-    See: /home/commonfolder/implementation/metrics-contract.yaml
+    Architecture: Central Collector → JSON → Zabbix Protocol
+    See: nftban zabbix template --version 7.0 --output /tmp/nftban.yaml
 
 EOF
 }
