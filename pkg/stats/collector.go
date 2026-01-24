@@ -2,6 +2,18 @@
 // NFTBan v1.0 - Stats Collector
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="stats_collector"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-01-01"
+// meta:description="Runtime stats collection for the nftband daemon"
+// meta:inventory.files="/var/lib/nftban/stats/"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 //
 // Runtime stats collection for the nftband daemon.
 // Collects Go runtime metrics, throughput counters, and module status.
@@ -48,6 +60,15 @@ type Collector struct {
 
 	// Active alerts
 	activeAlerts []Alert
+
+	// Watchdog state (set externally)
+	watchdog Watchdog
+
+	// Server info (set externally)
+	server Server
+
+	// Daemon mode
+	daemonMode string
 }
 
 // ModuleStats tracks per-module statistics
@@ -143,10 +164,18 @@ func (c *Collector) Collect() *Snapshot {
 	snapshot := NewSnapshot()
 
 	// Daemon info
+	c.mu.RLock()
+	mode := c.daemonMode
+	if mode == "" {
+		mode = "normal"
+	}
+	c.mu.RUnlock()
+
 	snapshot.Daemon = Daemon{
 		Version:       "1.0.0", // Will be set by daemon
 		UptimeSeconds: int64(time.Since(c.startTime).Seconds()),
 		PID:           os.Getpid(),
+		Mode:          mode,
 	}
 
 	// Runtime metrics
@@ -189,6 +218,12 @@ func (c *Collector) Collect() *Snapshot {
 		AvgLatencyMs:  avgLatencyMs,
 		ErrorsTotal:   c.ipcErrors.Load(),
 	}
+
+	// Watchdog state
+	c.mu.RLock()
+	snapshot.Watchdog = c.watchdog
+	snapshot.Server = c.server
+	c.mu.RUnlock()
 
 	// Module status
 	c.mu.RLock()
@@ -462,4 +497,37 @@ func (c *Collector) SetVersion(version string) {
 // GetConfig returns the collector configuration
 func (c *Collector) GetConfig() *Config {
 	return c.config
+}
+
+// SetWatchdogState sets the current watchdog pressure state
+func (c *Collector) SetWatchdogState(status int, mode string, cpuScore, memScore, ioScore float64) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.watchdog = Watchdog{
+		Status:   status,
+		Mode:     mode,
+		CPUScore: cpuScore,
+		MemScore: memScore,
+		IOScore:  ioScore,
+	}
+}
+
+// SetServerInfo sets server inventory information
+func (c *Collector) SetServerInfo(hostname, region, os, kernel, arch string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.server = Server{
+		Hostname: hostname,
+		Region:   region,
+		OS:       os,
+		Kernel:   kernel,
+		Arch:     arch,
+	}
+}
+
+// SetDaemonMode sets the current daemon operating mode
+func (c *Collector) SetDaemonMode(mode string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.daemonMode = mode
 }

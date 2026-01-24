@@ -156,14 +156,20 @@ json_to_zabbix_metrics() {
     metrics+="nftban.geoip.database_age $(echo "$json" | jq -r '.geoip.database_age // 0')\n"
     metrics+="nftban.geoip.countries_blocked $(echo "$json" | jq -r '.geoip.countries_blocked // 0')\n"
 
-    # Watchdog status
-    local watchdog_status=0
-    [[ $(echo "$json" | jq -r '.runtime.goroutines // 0') != "0" ]] && watchdog_status=1
-    metrics+="nftban.watchdog.status $watchdog_status\n"
+    # Watchdog metrics (from daemon stats)
+    metrics+="nftban.watchdog.status $(echo "$json" | jq -r '.watchdog.status // 0')\n"
+    metrics+="nftban.watchdog.mode $(echo "$json" | jq -r '.watchdog.mode // "unknown"')\n"
+    metrics+="nftban.watchdog.cpu_score $(echo "$json" | jq -r '.watchdog.cpu_score // 0')\n"
+    metrics+="nftban.watchdog.mem_score $(echo "$json" | jq -r '.watchdog.mem_score // 0')\n"
+    metrics+="nftban.watchdog.io_score $(echo "$json" | jq -r '.watchdog.io_score // 0')\n"
+
+    # Daemon mode
+    metrics+="nftban.mode $(echo "$json" | jq -r '.daemon.mode // "unknown"')\n"
 
     # Server inventory (if present)
     if echo "$json" | jq -e '.server' &>/dev/null; then
         metrics+="nftban.server.hostname $(echo "$json" | jq -r '.server.hostname // ""')\n"
+        metrics+="nftban.server.region $(echo "$json" | jq -r '.server.region // "unknown"')\n"
         metrics+="nftban.server.fqdn $(echo "$json" | jq -r '.server.fqdn // ""')\n"
         metrics+="nftban.server.os $(echo "$json" | jq -r '.server.os // ""')\n"
         metrics+="nftban.server.os_release $(echo "$json" | jq -r '.server.os_release // ""')\n"

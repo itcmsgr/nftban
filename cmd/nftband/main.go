@@ -188,6 +188,19 @@ func (d *Daemon) initWatchdog() error {
 	// Wire up metrics callback
 	wd.SetOnMetrics(func(snapshot *watchdog.Snapshot, state *watchdog.PressureState) {
 		d.wdMetrics.Update(snapshot, state)
+
+		// Update stats collector with watchdog state
+		if d.stats != nil {
+			status := 0
+			if d.watchdog != nil && d.watchdog.IsRunning() {
+				status = 1
+			}
+			cpuScore := state.Scores[watchdog.DimCPU]
+			memScore := state.Scores[watchdog.DimMEM]
+			ioScore := state.Scores[watchdog.DimIO]
+			d.stats.SetWatchdogState(status, string(state.Mode), cpuScore, memScore, ioScore)
+			d.stats.SetDaemonMode(string(state.Mode))
+		}
 	})
 
 	d.watchdog = wd
@@ -341,6 +354,21 @@ func (d *Daemon) Run() error {
 	if err := d.registry.StartAll(d.ctx); err != nil {
 		return fmt.Errorf("failed to start modules: %w", err)
 	}
+
+	// Initialize server info for stats
+	hostname, _ := os.Hostname()
+	var unameInfo syscall.Utsname
+	syscall.Uname(&unameInfo)
+	kernel := string(unameInfo.Release[:])
+	kernel = strings.TrimRight(kernel, "\x00")
+	arch := goruntime.GOARCH
+	osName := goruntime.GOOS
+	region := os.Getenv("NFTBAN_SERVER_REGION")
+	if region == "" {
+		region = "unknown"
+	}
+	d.stats.SetServerInfo(hostname, region, osName, kernel, arch)
+	d.stats.SetDaemonMode("normal")
 
 	// Start stats collector (respects enabled flag - no work if disabled)
 	log.Println("Starting stats collector...")
