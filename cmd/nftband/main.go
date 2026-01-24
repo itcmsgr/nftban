@@ -359,8 +359,15 @@ func (d *Daemon) Run() error {
 	hostname, _ := os.Hostname()
 	var unameInfo syscall.Utsname
 	syscall.Uname(&unameInfo)
-	kernel := string(unameInfo.Release[:])
-	kernel = strings.TrimRight(kernel, "\x00")
+	// Convert int8 array to string (Linux syscall returns []int8)
+	kernelBytes := make([]byte, 0, len(unameInfo.Release))
+	for _, b := range unameInfo.Release {
+		if b == 0 {
+			break
+		}
+		kernelBytes = append(kernelBytes, byte(b))
+	}
+	kernel := string(kernelBytes)
 	arch := goruntime.GOARCH
 	osName := goruntime.GOOS
 	region := os.Getenv("NFTBAN_SERVER_REGION")
