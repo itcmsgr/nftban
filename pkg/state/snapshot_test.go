@@ -134,3 +134,26 @@ func TestConcurrentAccess(t *testing.T) {
 		<-done
 	}
 }
+
+func TestUpdateFeeds(t *testing.T) {
+	// First do a full update to initialize
+	Update(BasicSnapshot{
+		BannedIPv4: 100,
+		BannedIPv6: 50,
+	})
+
+	// Now update just feeds
+	UpdateFeeds(12, 50000)
+
+	got := Get()
+	if got.FeedsActive != 12 {
+		t.Errorf("FeedsActive = %d, want 12", got.FeedsActive)
+	}
+	if got.FeedsIPs != 50000 {
+		t.Errorf("FeedsIPs = %d, want 50000", got.FeedsIPs)
+	}
+	// Verify other fields unchanged
+	if got.BannedIPv4 != 100 {
+		t.Errorf("BannedIPv4 changed unexpectedly: %d", got.BannedIPv4)
+	}
+}
