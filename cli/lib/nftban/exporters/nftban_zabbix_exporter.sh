@@ -148,18 +148,23 @@ collect_daemon_metrics() {
     # Daemon status and info metrics
     local metrics=""
 
-    # Version
+    # Version - prefer config variable, then check file locations
     local version="unknown"
-    if [[ -f "${NFTBAN_CONFIG_DIR}/../VERSION" ]]; then
-        version=$(cat "${NFTBAN_CONFIG_DIR}/../VERSION" 2>/dev/null | head -1 || echo "unknown")
-    elif [[ -f "/etc/nftban/VERSION" ]]; then
-        version=$(cat "/etc/nftban/VERSION" 2>/dev/null | head -1 || echo "unknown")
+    if [[ -n "${NFTBAN_VERSION:-}" && "${NFTBAN_VERSION}" != "unknown" ]]; then
+        version="${NFTBAN_VERSION}"
+    elif [[ -f "${NFTBAN_LIB_DIR}/VERSION" ]]; then
+        version=$(cat "${NFTBAN_LIB_DIR}/VERSION" 2>/dev/null | head -1 | tr -d '[:space:]' || echo "unknown")
+    elif [[ -f "/usr/lib/nftban/VERSION" ]]; then
+        version=$(cat "/usr/lib/nftban/VERSION" 2>/dev/null | head -1 | tr -d '[:space:]' || echo "unknown")
+    elif [[ -f "/opt/nftban/VERSION" ]]; then
+        version=$(cat "/opt/nftban/VERSION" 2>/dev/null | head -1 | tr -d '[:space:]' || echo "unknown")
     fi
     metrics+="nftban.version $version\n"
 
-    # Daemon status (1=running, 0=stopped)
+    # Daemon status (1=running, 0=stopped) - use central config variable
+    local daemon_service="${NFTBAN_SERVICE_DAEMON:-nftband.service}"
     local status=0
-    if systemctl is-active nftban.service &>/dev/null; then
+    if systemctl is-active "$daemon_service" &>/dev/null; then
         status=1
     fi
     metrics+="nftban.status $status\n"
@@ -167,7 +172,7 @@ collect_daemon_metrics() {
     # Uptime (seconds since daemon start)
     if [[ $status -eq 1 ]]; then
         local start_time
-        start_time=$(systemctl show nftban.service -p ActiveEnterTimestamp --value 2>/dev/null || echo "")
+        start_time=$(systemctl show "$daemon_service" -p ActiveEnterTimestamp --value 2>/dev/null || echo "")
         if [[ -n "$start_time" ]]; then
             local start_epoch now_epoch uptime
             start_epoch=$(date -d "$start_time" +%s 2>/dev/null || echo "0")
@@ -177,10 +182,10 @@ collect_daemon_metrics() {
         fi
     fi
 
-    # PID
+    # PID - daemon is nftband
     local pid=""
-    if [[ -f "${NFTBAN_RUN_DIR}/nftban.pid" ]]; then
-        pid=$(cat "${NFTBAN_RUN_DIR}/nftban.pid" 2>/dev/null || echo "")
+    if [[ -f "${NFTBAN_RUN_DIR}/nftband.pid" ]]; then
+        pid=$(cat "${NFTBAN_RUN_DIR}/nftband.pid" 2>/dev/null || echo "")
     fi
     [[ -n "$pid" ]] && metrics+="nftban.pid $pid\n"
 
@@ -256,19 +261,39 @@ collect_ban_metrics() {
     fi
     metrics+="nftban.permanent.count $permanent_count\n"
 
+    # Whitelist count (from file + nftables set)
+    local whitelist_count=0
+    if [[ -f "${NFTBAN_CONFIG_DIR}/whitelist.conf" ]]; then
+        whitelist_count=$(grep -cE "^[0-9]" "${NFTBAN_CONFIG_DIR}/whitelist.conf" 2>/dev/null || echo "0")
+    fi
+    # Also check nftables whitelist sets
+    if command -v nft &>/dev/null; then
+        local wl_ipv4 wl_ipv6
+        wl_ipv4=$(nft -j list set inet nftban whitelist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        wl_ipv6=$(nft -j list set inet nftban whitelist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        whitelist_count=$((whitelist_count + wl_ipv4 + wl_ipv6))
+    fi
+    metrics+="nftban.whitelist.count $whitelist_count\n"
+
     echo -e "$metrics"
 }
 
 collect_memory_metrics() {
     # Memory metrics (from /proc if daemon is running)
     local metrics=""
+    local daemon_service="${NFTBAN_SERVICE_DAEMON:-nftband.service}"
 
+    # Get PID - try multiple methods
     local pid=""
-    if [[ -f "${NFTBAN_RUN_DIR}/nftban.pid" ]]; then
-        pid=$(cat "${NFTBAN_RUN_DIR}/nftban.pid" 2>/dev/null || echo "")
+    if [[ -f "${NFTBAN_RUN_DIR}/nftband.pid" ]]; then
+        pid=$(cat "${NFTBAN_RUN_DIR}/nftband.pid" 2>/dev/null || echo "")
+    fi
+    # Fallback: get PID from systemctl
+    if [[ -z "$pid" ]] || [[ ! -d "/proc/$pid" ]]; then
+        pid=$(systemctl show "$daemon_service" -p MainPID --value 2>/dev/null || echo "")
     fi
 
-    if [[ -n "$pid" ]] && [[ -d "/proc/$pid" ]]; then
+    if [[ -n "$pid" ]] && [[ "$pid" != "0" ]] && [[ -d "/proc/$pid" ]]; then
         # RSS (Resident Set Size) in bytes
         local rss
         rss=$(awk '/VmRSS/ {print $2 * 1024}' "/proc/$pid/status" 2>/dev/null || echo "0")
@@ -283,6 +308,32 @@ collect_memory_metrics() {
         local threads
         threads=$(awk '/Threads/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo "0")
         metrics+="nftban.threads $threads\n"
+
+        # Goroutines (from daemon status endpoint if available)
+        local goroutines=0
+        if [[ -S "${NFTBAN_RUN_DIR}/nftband.sock" ]]; then
+            goroutines=$(echo '{"cmd":"status"}' | timeout 2 socat - "UNIX-CONNECT:${NFTBAN_RUN_DIR}/nftband.sock" 2>/dev/null | jq -r '.goroutines // 0' 2>/dev/null || echo "0")
+        fi
+        [[ "$goroutines" != "0" ]] && metrics+="nftban.goroutines $goroutines\n"
+    fi
+
+    echo -e "$metrics"
+}
+
+collect_health_metrics() {
+    # Health check metrics
+    local metrics=""
+    local health_file="${NFTBAN_RUN_DIR}/health.status"
+
+    if [[ -f "$health_file" ]]; then
+        local passed failed status
+        passed=$(jq -r '.passed // 0' "$health_file" 2>/dev/null || echo "0")
+        failed=$(jq -r '.failed // 0' "$health_file" 2>/dev/null || echo "0")
+        status=$(jq -r '.healthy // false' "$health_file" 2>/dev/null || echo "false")
+
+        metrics+="nftban.health.passed $passed\n"
+        metrics+="nftban.health.failed $failed\n"
+        [[ "$status" == "true" ]] && metrics+="nftban.health.status 1\n" || metrics+="nftban.health.status 0\n"
     fi
 
     echo -e "$metrics"
@@ -341,11 +392,21 @@ collect_nftables_metrics() {
         rules_count=$(nft list table inet nftban 2>/dev/null | grep -cE "^\s+(accept|drop|reject|return|jump|goto)" || true)
         : "${rules_count:=0}"
         metrics+="nftban.nft.rules_total $rules_count\n"
+
+        # Packets blocked (from counter rules if available)
+        local packets_ipv4=0 packets_ipv6=0
+        # Try to get packet counters from nft counters or chain statistics
+        packets_ipv4=$(nft -j list chain inet nftban input 2>/dev/null | jq -r '[.nftables[]?.rule?.expr[]? | select(.counter) | .counter.packets] | add // 0' 2>/dev/null || echo "0")
+        packets_ipv6=$(nft -j list chain inet nftban input6 2>/dev/null | jq -r '[.nftables[]?.rule?.expr[]? | select(.counter) | .counter.packets] | add // 0' 2>/dev/null || echo "0")
+        metrics+="nftban.nft.packets_blocked_ipv4 $packets_ipv4\n"
+        metrics+="nftban.nft.packets_blocked_ipv6 $packets_ipv6\n"
     else
         # Table doesn't exist, report zeros
         metrics+="nftban.nft.sets_total 0\n"
         metrics+="nftban.nft.elements_total 0\n"
         metrics+="nftban.nft.rules_total 0\n"
+        metrics+="nftban.nft.packets_blocked_ipv4 0\n"
+        metrics+="nftban.nft.packets_blocked_ipv6 0\n"
     fi
 
     echo -e "$metrics"
@@ -507,6 +568,25 @@ collect_server_metrics() {
         cloud_provider="digitalocean"
     fi
     metrics+="nftban.server.cloud_provider ${cloud_provider}\n"
+
+    # Public IP (try multiple services, with short timeout)
+    local public_ip=""
+    public_ip=$(curl -s -m 2 https://ifconfig.me 2>/dev/null || \
+                curl -s -m 2 https://icanhazip.com 2>/dev/null || \
+                curl -s -m 2 https://api.ipify.org 2>/dev/null || \
+                echo "")
+    [[ -n "$public_ip" ]] && metrics+="nftban.server.public_ip ${public_ip}\n"
+
+    # Region (from cloud metadata if available)
+    local region=""
+    if [[ "$cloud_provider" == "aws" ]]; then
+        region=$(curl -s -m 1 http://169.254.169.254/latest/meta-data/placement/region 2>/dev/null || echo "")
+    elif [[ "$cloud_provider" == "gcp" ]]; then
+        region=$(curl -s -m 1 -H "Metadata-Flavor: Google" http://169.254.169.254/computeMetadata/v1/instance/zone 2>/dev/null | sed 's|.*/||; s|-[a-z]$||' || echo "")
+    elif [[ "$cloud_provider" == "azure" ]]; then
+        region=$(curl -s -m 1 -H "Metadata: true" "http://169.254.169.254/metadata/instance/compute/location?api-version=2021-02-01&format=text" 2>/dev/null || echo "")
+    fi
+    [[ -n "$region" ]] && metrics+="nftban.server.region ${region}\n"
 
     # Load averages
     if [[ -f /proc/loadavg ]]; then
@@ -826,6 +906,7 @@ main() {
     all_metrics+="$(collect_daemon_metrics)"$'\n'
     all_metrics+="$(collect_ban_metrics)"$'\n'
     all_metrics+="$(collect_memory_metrics)"$'\n'
+    all_metrics+="$(collect_health_metrics)"$'\n'
     all_metrics+="$(collect_module_metrics)"$'\n'
     all_metrics+="$(collect_nftables_metrics)"$'\n'
     all_metrics+="$(collect_feeds_metrics)"$'\n'
