@@ -122,3 +122,14 @@ func IsInitialized() bool {
 	defer mu.RUnlock()
 	return !current.UpdatedAt.IsZero()
 }
+
+// UpdateFeeds updates just the feeds-related fields in the snapshot.
+// Called by feeds loader/sync after feed operations complete.
+// This allows feeds data to be updated independently of watchdog nftables collection.
+func UpdateFeeds(active int, totalIPs int64) {
+	mu.Lock()
+	defer mu.Unlock()
+	current.FeedsActive = active
+	current.FeedsIPs = totalIPs
+	// Don't update UpdatedAt - that's for full snapshots from watchdog
+}

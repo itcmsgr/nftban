@@ -5,23 +5,30 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for statistics and metrics
 #
-# meta:name=cmd_stats
-# meta:type=cli
-# meta:header=Statistics CLI Handler
-# meta:version=1.0.0
+# meta:name="cmd_stats"
+# meta:type="cli"
+# meta:header="Statistics CLI Handler"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=CLI interface for statistics and metrics collection and display
-# meta:input=Statistics query parameters and display options
-# meta:output=Statistics dashboard, metrics, and analytics
+# meta:description="CLI interface for statistics and metrics collection and display"
+# meta:input="Statistics query parameters and display options"
+# meta:output="Statistics dashboard, metrics, and analytics"
 #
 # **Inventory & Requirements**
-# meta:depends=nftban_stats.sh
+# meta:depends="nftban_stats.sh"
+# meta:inventory.files=""
+# meta:inventory.binaries="nft,curl,jq"
+# meta:inventory.env_vars="NFTBAN_API_URL"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network="localhost:8080"
+# meta:inventory.privileges="none"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:updated_date="2025-11-24"
 # =============================================================================
 
 # Enhanced strict mode
@@ -85,6 +92,71 @@ if ! declare -f nftban_path_get_safe_output >/dev/null 2>&1; then
         }
     fi
 fi
+
+# =============================================================================
+# SHARED STATE API HELPER - NO CLI OVERHEAD
+# =============================================================================
+# Tries to get basic stats from nftban-ui API first (shared state from watchdog).
+# Falls back to nft CLI calls only if API unavailable.
+# This eliminates CLI overhead when watchdog is running.
+# =============================================================================
+
+# nftban_stats_get_basic_from_api attempts to fetch basic stats from the API
+# Returns: JSON with banned_ipv4, banned_ipv6, whitelist_ipv4, whitelist_ipv6, etc.
+# Exit code: 0 on success, 1 if API unavailable (caller should fall back to CLI)
+nftban_stats_get_basic_from_api() {
+    local api_url="${NFTBAN_API_URL:-http://127.0.0.1:8080}"
+    local api_endpoint="/api/v1/basic-stats"
+    local timeout=2  # Fast timeout - if API slow, fall back to CLI
+
+    # Check if curl available
+    if ! command -v curl &>/dev/null; then
+        return 1
+    fi
+
+    # Try to fetch from API (requires valid session or localhost exemption)
+    local response
+    response=$(curl -s --max-time "$timeout" "${api_url}${api_endpoint}" 2>/dev/null) || return 1
+
+    # Check if response is valid JSON with success=true
+    if command -v jq &>/dev/null; then
+        local success
+        success=$(echo "$response" | jq -r '.success // false' 2>/dev/null)
+        if [[ "$success" == "true" ]]; then
+            # Extract data and output
+            echo "$response" | jq -r '.data'
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+# nftban_stats_get_counts_optimized gets ban/whitelist counts with API-first approach
+# Sets variables: black_v4, black_v6, whitelist_v4, whitelist_v6, feeds_active, feeds_ips
+# Returns: 0 if API used (fast), 1 if CLI fallback used (slow)
+nftban_stats_get_counts_optimized() {
+    local api_data
+
+    # Try API first (NO CLI overhead - data from watchdog netlink)
+    if api_data=$(nftban_stats_get_basic_from_api 2>/dev/null); then
+        # Parse API response
+        if command -v jq &>/dev/null; then
+            black_v4=$(echo "$api_data" | jq -r '.banned_ipv4 // 0')
+            black_v6=$(echo "$api_data" | jq -r '.banned_ipv6 // 0')
+            whitelist_v4=$(echo "$api_data" | jq -r '.whitelist_ipv4 // 0')
+            whitelist_v6=$(echo "$api_data" | jq -r '.whitelist_ipv6 // 0')
+            feeds_active=$(echo "$api_data" | jq -r '.feeds_active // 0')
+            feeds_ips=$(echo "$api_data" | jq -r '.feeds_ips // 0')
+            rules_total=$(echo "$api_data" | jq -r '.rules_total // 0')
+            return 0  # API success
+        fi
+    fi
+
+    # Fall back to CLI (slower - direct nft calls)
+    # This path is only used when nftban-ui is not running
+    return 1
+}
 
 # =============================================================================
 # MAIN CLI HANDLER
@@ -255,17 +327,28 @@ nftban_stats_cmd_dashboard() {
             total_bans=$(grep -c "^" "${NFTBAN_BAN_LOG}" 2>/dev/null || echo "0")
         fi
 
-        # Count active bans from nftables - USE CENTRALIZED nftban_stats_count_breakdown()
-        # This ensures consistency across all commands (status, stats, GUI API)
+        # Count active bans - TRY API FIRST (NO CLI overhead when watchdog running)
+        # Falls back to nft CLI only if API unavailable
         local temp_v4=0 temp_v6=0 black_v4=0 black_v6=0 feed_v4=0 feed_v6=0
         local whitelist_v4=0 whitelist_v6=0 geoban_v4=0 geoban_v6=0
+        local feeds_active=0 feeds_ips=0 rules_total=0
 
+        # Try optimized API-first approach (reads from shared state - NO CLI)
+        if nftban_stats_get_counts_optimized 2>/dev/null; then
+            # API success - variables already set by function
+            # Note: API provides aggregated counts, not per-source breakdown
+            temp_v4=0
+            temp_v6=0
+            feed_v4=0
+            feed_v6=0
+            geoban_v4=0
+            geoban_v6=0
         # Call centralized breakdown function (if available)
-        if declare -f nftban_stats_count_breakdown >/dev/null 2>&1; then
+        elif declare -f nftban_stats_count_breakdown >/dev/null 2>&1; then
             # Use centralized function
             eval "$(nftban_stats_count_breakdown)"
         else
-            # Fallback: inline counting for v0.7.3 architecture (ip/ip6 nftban tables)
+            # Fallback: inline counting via nft CLI (slowest path)
             # Note: New architecture uses single blacklist with timeout flag
             # Cannot distinguish temp vs permanent without parsing timeout attribute
 

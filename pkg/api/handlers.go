@@ -1439,6 +1439,34 @@ func SyncFeedsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Refresh feeds stats in shared state after sync
+	// This keeps BASIC tier consumers up-to-date without additional CLI calls
+	go func() {
+		output, err := execNFTBanCoreCommand("feeds", "list", "--json")
+		if err != nil {
+			return
+		}
+		var result struct {
+			Data struct {
+				Feeds []struct {
+					Enabled bool `json:"enabled"`
+					Count   int  `json:"count"`
+				} `json:"feeds"`
+			} `json:"data"`
+		}
+		if json.Unmarshal([]byte(output), &result) == nil {
+			active := 0
+			totalIPs := 0
+			for _, f := range result.Data.Feeds {
+				if f.Enabled {
+					active++
+					totalIPs += f.Count
+				}
+			}
+			state.UpdateFeeds(active, int64(totalIPs))
+		}
+	}()
+
 	log.Printf("[AUDIT] User %s updated feeds", claims.Username)
 	respondJSON(w, http.StatusOK, SuccessResponse{Success: true, Message: "Feeds updated successfully"})
 }
@@ -3167,6 +3195,10 @@ func FeedsStatsHandler(w http.ResponseWriter, r *http.Request) {
 			totalIPs += feed.Count
 		}
 	}
+
+	// Update shared state for BASIC tier consumers (sampler, stats CLI, status CLI)
+	// This keeps feeds data fresh without needing CLI calls in other components
+	state.UpdateFeeds(active, int64(totalIPs))
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
 		"success": true,
