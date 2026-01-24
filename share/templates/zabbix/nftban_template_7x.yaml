@@ -1,11 +1,11 @@
 zabbix_export:
   version: '7.0'
   template_groups:
-    - uuid: 7df96b18-c230-490a-9a0a-9e2307226338
+    - uuid: 7df96b18c230490a9a0a9e2307226338
       name: 'Templates/Security'
 
   templates:
-    - uuid: 185f23a7-e83b-4e78-b1d7-9faee0299ea0
+    - uuid: 185f23a7e83b4e78b1d79faee0299ea0
       template: 'NFTBan'
       name: 'NFTBan Firewall'
       description: |
@@ -69,7 +69,7 @@ zabbix_export:
       # =======================================================================
       items:
         # --- Daemon Status ---
-        - uuid: 88ae4faa-08af-4711-acdf-461a7fc6ed0b
+        - uuid: 88ae4faa08af4711acdf461a7fc6ed0b
           name: 'NFTBan: Daemon status'
           type: TRAP
           key: nftban.status
@@ -81,7 +81,7 @@ zabbix_export:
             - tag: scope
               value: availability
           triggers:
-            - uuid: 86ef6d3b-50a2-466a-af7e-456e6d148feb
+            - uuid: 86ef6d3b50a2466aaf7e456e6d148feb
               expression: 'last(/NFTBan/nftban.status)=0'
               name: 'NFTBan daemon is down'
               priority: DISASTER
@@ -89,7 +89,7 @@ zabbix_export:
               tags:
                 - tag: scope
                   value: availability
-            - uuid: c3e342b6-e6ef-4e4b-bce8-b69d4ffcd9a6
+            - uuid: c3e342b6e6ef4e4bbce8b69d4ffcd9a6
               expression: 'nodata(/NFTBan/nftban.status,5m)=1'
               name: 'NFTBan metrics not received for 5 minutes'
               priority: HIGH
@@ -100,7 +100,7 @@ zabbix_export:
                 - tag: component
                   value: metrics
 
-        - uuid: 0bf34f4c-4e85-45b2-a88f-a61261011bb8
+        - uuid: 0bf34f4c4e8545b2a88fa61261011bb8
           name: 'NFTBan: Version'
           type: TRAP
           key: nftban.version
@@ -114,7 +114,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: ff526420-c21c-4eef-998a-f2cc8df3712d
+        - uuid: ff526420c21c4eef998af2cc8df3712d
           name: 'NFTBan: Uptime'
           type: TRAP
           key: nftban.uptime
@@ -125,14 +125,14 @@ zabbix_export:
             - tag: component
               value: daemon
           triggers:
-            - uuid: 087cdb02-0845-431a-8a98-2bdfdf5729c1
+            - uuid: 087cdb020845431a8a982bdfdf5729c1
               expression: 'last(/NFTBan/nftban.uptime)<300'
               name: 'NFTBan daemon restarted recently'
               priority: INFO
               description: 'NFTBan daemon uptime is less than 5 minutes.'
               manual_close: 'YES'
 
-        - uuid: 0e419a43-36e1-47c1-8f39-bd724dd5bbb1
+        - uuid: 0e419a4336e147c18f39bd724dd5bbb1
           name: 'NFTBan: PID'
           type: TRAP
           key: nftban.pid
@@ -142,7 +142,7 @@ zabbix_export:
             - tag: component
               value: daemon
 
-        - uuid: eb4eb63b-62e7-4fc9-b319-6b28c897d517
+        - uuid: eb4eb63b62e74fc9b3196b28c897d517
           name: 'NFTBan: Operating mode'
           type: TRAP
           key: nftban.mode
@@ -152,14 +152,14 @@ zabbix_export:
             - tag: component
               value: daemon
           triggers:
-            - uuid: c9af8157-de87-479a-97dd-f65f54522f18
+            - uuid: c9af8157de87479a97ddf65f54522f18
               expression: 'last(/NFTBan/nftban.mode)<>"normal" and length(last(/NFTBan/nftban.mode))>0'
               name: 'NFTBan in {ITEM.VALUE} mode'
               priority: WARNING
               description: 'NFTBan is running in degraded or survival mode due to resource pressure.'
 
         # --- Ban Statistics ---
-        - uuid: 63a1135d-ca51-4f7f-8d71-0ce6182ddd15
+        - uuid: 63a1135dca514f7f8d710ce6182ddd15
           name: 'NFTBan: Active bans'
           type: TRAP
           key: nftban.active.count
@@ -169,7 +169,7 @@ zabbix_export:
             - tag: component
               value: bans
 
-        - uuid: 84862fdd-5b24-4274-9ed4-8065fdfb6272
+        - uuid: 84862fdd5b2442749ed48065fdfb6272
           name: 'NFTBan: Bans (24h)'
           type: TRAP
           key: nftban.bans.24h
@@ -179,18 +179,18 @@ zabbix_export:
             - tag: component
               value: bans
           triggers:
-            - uuid: 23b41a51-fb9c-4639-8550-fadcfa339783
+            - uuid: 23b41a51fb9c46398550fadcfa339783
               expression: 'last(/NFTBan/nftban.bans.24h)>1000'
               name: 'High ban rate (>{ITEM.VALUE}/24h)'
               priority: WARNING
               description: 'More than 1000 bans in the last 24 hours indicates increased attack activity.'
-            - uuid: bef4a8bf-ede5-40b7-896d-bed32b32ff07
+            - uuid: bef4a8bfede540b7896dbed32b32ff07
               expression: 'last(/NFTBan/nftban.bans.24h)>5000'
               name: 'Mass attack detected (>{ITEM.VALUE}/24h)'
               priority: HIGH
               description: 'More than 5000 bans in 24 hours suggests a coordinated attack.'
 
-        - uuid: a76ebed4-b879-4b8e-8f8c-2fc5bc87bb7e
+        - uuid: a76ebed4b8794b8e8f8c2fc5bc87bb7e
           name: 'NFTBan: Bans (1h)'
           type: TRAP
           key: nftban.bans.1h
@@ -200,7 +200,7 @@ zabbix_export:
             - tag: component
               value: bans
 
-        - uuid: 54358ef5-b308-4cf2-b5dc-3bda8c72fc70
+        - uuid: 54358ef5b3084cf2b5dc3bda8c72fc70
           name: 'NFTBan: Ban rate'
           type: TRAP
           key: nftban.bans.rate
@@ -211,18 +211,18 @@ zabbix_export:
             - tag: component
               value: bans
           triggers:
-            - uuid: 8540800f-bb9c-4b1f-86af-333988c4f45f
+            - uuid: 8540800fbb9c4b1f86af333988c4f45f
               expression: 'last(/NFTBan/nftban.bans.rate)>{$NFTBAN.BAN.RATE.WARN}'
               name: 'NFTBan ban rate warning ({ITEM.VALUE}/min)'
               priority: WARNING
               description: 'Ban rate exceeds warning threshold.'
-            - uuid: 4f7663d7-0883-4d62-8d28-3ba22aeb22aa
+            - uuid: 4f7663d708834d628d283ba22aeb22aa
               expression: 'last(/NFTBan/nftban.bans.rate)>{$NFTBAN.BAN.RATE.HIGH}'
               name: 'NFTBan ban rate critical ({ITEM.VALUE}/min)'
               priority: HIGH
               description: 'Ban rate exceeds critical threshold - possible attack in progress.'
 
-        - uuid: 90a10773-3d72-4bdb-a819-046fc4de3927
+        - uuid: 90a107733d724bdba819046fc4de3927
           name: 'NFTBan: Total bans'
           type: TRAP
           key: nftban.bans.total
@@ -232,7 +232,7 @@ zabbix_export:
             - tag: component
               value: bans
 
-        - uuid: abbc71fd-5da7-46c3-946b-5320b9287c50
+        - uuid: abbc71fd5da746c3946b5320b9287c50
           name: 'NFTBan: Permanent bans'
           type: TRAP
           key: nftban.permanent.count
@@ -242,7 +242,7 @@ zabbix_export:
             - tag: component
               value: bans
 
-        - uuid: ffb3a12a-5276-4ad3-8b2c-f42b06351ca4
+        - uuid: ffb3a12a52764ad38b2cf42b06351ca4
           name: 'NFTBan: Whitelist count'
           type: TRAP
           key: nftban.whitelist.count
@@ -253,7 +253,7 @@ zabbix_export:
               value: bans
 
         # --- Memory Metrics ---
-        - uuid: c3075d30-857a-466b-bdb2-036aeb26e49e
+        - uuid: c3075d30857a466bbdb2036aeb26e49e
           name: 'NFTBan: Memory RSS'
           type: TRAP
           key: nftban.memory.rss
@@ -264,18 +264,18 @@ zabbix_export:
             - tag: component
               value: memory
           triggers:
-            - uuid: b6a36935-fb03-4677-a73e-6440a20a1ccf
+            - uuid: b6a36935fb034677a73e6440a20a1ccf
               expression: 'last(/NFTBan/nftban.memory.rss)>{$NFTBAN.MEMORY.WARN}'
               name: 'NFTBan memory usage high (>{ITEM.VALUE})'
               priority: WARNING
               description: 'NFTBan memory usage exceeds warning threshold.'
-            - uuid: 6f519678-ada4-4978-85a0-67d5c4906ee8
+            - uuid: 6f519678ada4497885a067d5c4906ee8
               expression: 'last(/NFTBan/nftban.memory.rss)>{$NFTBAN.MEMORY.HIGH}'
               name: 'NFTBan memory usage critical (>{ITEM.VALUE})'
               priority: HIGH
               description: 'NFTBan memory usage exceeds critical threshold.'
 
-        - uuid: c044be96-8e96-4df2-9601-33d4e23fe7d3
+        - uuid: c044be968e964df2960133d4e23fe7d3
           name: 'NFTBan: Open file descriptors'
           type: TRAP
           key: nftban.fds.open
@@ -285,13 +285,13 @@ zabbix_export:
             - tag: component
               value: memory
           triggers:
-            - uuid: 720002f5-916a-4eb2-ab91-ed55248879ec
+            - uuid: 720002f5916a4eb2ab91ed55248879ec
               expression: 'last(/NFTBan/nftban.fds.open)>1000'
               name: 'NFTBan open FDs > 1000'
               priority: WARNING
               description: 'High number of open file descriptors may indicate a leak.'
 
-        - uuid: 67a18f1f-c216-4eef-8c0c-20798aef67ec
+        - uuid: 67a18f1fc2164eef8c0c20798aef67ec
           name: 'NFTBan: Goroutines'
           type: TRAP
           key: nftban.goroutines
@@ -301,13 +301,13 @@ zabbix_export:
             - tag: component
               value: memory
           triggers:
-            - uuid: a97301dc-000e-4ddc-baa6-ee315317c666
+            - uuid: a97301dc000e4ddcbaa6ee315317c666
               expression: 'last(/NFTBan/nftban.goroutines)>500'
               name: 'NFTBan goroutine count high ({ITEM.VALUE})'
               priority: WARNING
               description: 'High goroutine count may indicate a leak or high load.'
 
-        - uuid: fef21c5f-cd2a-4cfc-95aa-5bc246642a51
+        - uuid: fef21c5fcd2a4cfc95aa5bc246642a51
           name: 'NFTBan: Threads'
           type: TRAP
           key: nftban.threads
@@ -318,7 +318,7 @@ zabbix_export:
               value: memory
 
         # --- Module Metrics ---
-        - uuid: d5af5c82-468e-46ed-8818-4b446880f133
+        - uuid: d5af5c82468e46ed88184b446880f133
           name: 'NFTBan: Modules enabled'
           type: TRAP
           key: nftban.modules.enabled
@@ -328,7 +328,7 @@ zabbix_export:
             - tag: component
               value: modules
 
-        - uuid: 84850496-53ff-4859-9b2b-bf25f3a705b6
+        - uuid: 8485049653ff48599b2bbf25f3a705b6
           name: 'NFTBan: Modules active'
           type: TRAP
           key: nftban.modules.active
@@ -338,7 +338,7 @@ zabbix_export:
             - tag: component
               value: modules
 
-        - uuid: 3deb4f02-6b49-4817-bad8-7cc9c008c08a
+        - uuid: 3deb4f026b494817bad87cc9c008c08a
           name: 'NFTBan: Modules failed'
           type: TRAP
           key: nftban.modules.failed
@@ -348,14 +348,14 @@ zabbix_export:
             - tag: component
               value: modules
           triggers:
-            - uuid: 6e7dac0b-55b1-484f-b58f-77ad584009e0
+            - uuid: 6e7dac0b55b1484fb58f77ad584009e0
               expression: 'last(/NFTBan/nftban.modules.failed)>0'
               name: 'NFTBan module(s) failed ({ITEM.VALUE})'
               priority: HIGH
               description: 'One or more NFTBan modules have failed.'
 
         # --- nftables Metrics ---
-        - uuid: 380c82d0-3061-4845-ba67-01257484b0da
+        - uuid: 380c82d030614845ba6701257484b0da
           name: 'NFTBan: nftables sets'
           type: TRAP
           key: nftban.nft.sets_total
@@ -365,7 +365,7 @@ zabbix_export:
             - tag: component
               value: nftables
 
-        - uuid: 3d56a4b7-72e2-4ece-9135-8a8ec5057bee
+        - uuid: 3d56a4b772e24ece91358a8ec5057bee
           name: 'NFTBan: nftables elements'
           type: TRAP
           key: nftban.nft.elements_total
@@ -375,13 +375,13 @@ zabbix_export:
             - tag: component
               value: nftables
           triggers:
-            - uuid: 37fb1182-ba8b-45b5-aab3-421efa9c1077
+            - uuid: 37fb1182ba8b45b5aab3421efa9c1077
               expression: 'last(/NFTBan/nftban.nft.elements_total)>100000'
               name: 'NFTBan large ruleset (>{ITEM.VALUE} elements)'
               priority: WARNING
               description: 'Large number of set elements may impact performance.'
 
-        - uuid: d4d0378b-1115-441a-b0f8-20c02bb2bfd7
+        - uuid: d4d0378b1115441ab0f820c02bb2bfd7
           name: 'NFTBan: nftables rules'
           type: TRAP
           key: nftban.nft.rules_total
@@ -391,7 +391,7 @@ zabbix_export:
             - tag: component
               value: nftables
 
-        - uuid: 951ff869-a03c-4b84-8b69-ada11bfb7ee1
+        - uuid: 951ff869a03c4b848b69ada11bfb7ee1
           name: 'NFTBan: Packets blocked (IPv4)'
           type: TRAP
           key: nftban.nft.packets_blocked_ipv4
@@ -401,7 +401,7 @@ zabbix_export:
             - tag: component
               value: nftables
 
-        - uuid: 00274723-fe96-4337-97af-52b337e9fdcd
+        - uuid: 00274723fe96433797af52b337e9fdcd
           name: 'NFTBan: Packets blocked (IPv6)'
           type: TRAP
           key: nftban.nft.packets_blocked_ipv6
@@ -412,7 +412,7 @@ zabbix_export:
               value: nftables
 
         # --- Feeds Metrics ---
-        - uuid: c01c11fb-a850-4b05-8865-563a8e846635
+        - uuid: c01c11fba8504b058865563a8e846635
           name: 'NFTBan: Feeds enabled'
           type: TRAP
           key: nftban.feeds.enabled
@@ -422,7 +422,7 @@ zabbix_export:
             - tag: component
               value: feeds
 
-        - uuid: 7a8a15bd-c482-4f52-a535-e21350624ca7
+        - uuid: 7a8a15bdc4824f52a535e21350624ca7
           name: 'NFTBan: Feeds loaded'
           type: TRAP
           key: nftban.feeds.loaded
@@ -432,7 +432,7 @@ zabbix_export:
             - tag: component
               value: feeds
 
-        - uuid: 882eb860-7793-469a-8adf-0b0ccd3bc95d
+        - uuid: 882eb8607793469a8adf0b0ccd3bc95d
           name: 'NFTBan: Feeds failed'
           type: TRAP
           key: nftban.feeds.failed
@@ -442,13 +442,13 @@ zabbix_export:
             - tag: component
               value: feeds
           triggers:
-            - uuid: 81bbdbe0-69d5-45d0-a5e1-01fa2b74bd47
+            - uuid: 81bbdbe069d545d0a5e101fa2b74bd47
               expression: 'last(/NFTBan/nftban.feeds.failed)>0'
               name: 'NFTBan feed load failures ({ITEM.VALUE})'
               priority: WARNING
               description: 'One or more threat feeds failed to load.'
 
-        - uuid: 7eb5ec86-d494-488c-b807-bbc8721f1b53
+        - uuid: 7eb5ec86d494488cb807bbc8721f1b53
           name: 'NFTBan: Feeds total IPs'
           type: TRAP
           key: nftban.feeds.ips_total
@@ -459,7 +459,7 @@ zabbix_export:
               value: feeds
 
         # --- GeoIP Metrics ---
-        - uuid: 3282a4bc-5ae2-468a-9213-abc746a69012
+        - uuid: 3282a4bc5ae2468a9213abc746a69012
           name: 'NFTBan: GeoIP database age'
           type: TRAP
           key: nftban.geoip.database_age
@@ -470,13 +470,13 @@ zabbix_export:
             - tag: component
               value: geoip
           triggers:
-            - uuid: 21639009-b644-4d29-b10f-c231753eb145
+            - uuid: 21639009b6444d29b10fc231753eb145
               expression: 'last(/NFTBan/nftban.geoip.database_age)>{$NFTBAN.GEOIP.AGE.WARN}'
               name: 'NFTBan GeoIP database outdated ({ITEM.VALUE} days)'
               priority: WARNING
               description: 'GeoIP database should be updated for accurate geolocation.'
 
-        - uuid: 6ea3c21d-0a6a-43f1-9093-25ca4d34a0a8
+        - uuid: 6ea3c21d0a6a43f1909325ca4d34a0a8
           name: 'NFTBan: Countries blocked'
           type: TRAP
           key: nftban.geoip.countries_blocked
@@ -487,7 +487,7 @@ zabbix_export:
               value: geoip
 
         # --- Watchdog Metrics ---
-        - uuid: a475f9a3-878c-4940-9d8c-ebb970830849
+        - uuid: a475f9a3878c49409d8cebb970830849
           name: 'NFTBan: Watchdog status'
           type: TRAP
           key: nftban.watchdog.status
@@ -497,7 +497,7 @@ zabbix_export:
             - tag: component
               value: watchdog
 
-        - uuid: a1df69ce-5758-487b-a4a9-6d3e32feeb13
+        - uuid: a1df69ce5758487ba4a96d3e32feeb13
           name: 'NFTBan: CPU pressure score'
           type: TRAP
           key: nftban.watchdog.cpu_score
@@ -507,13 +507,13 @@ zabbix_export:
             - tag: component
               value: watchdog
           triggers:
-            - uuid: 65f61c11-8842-424a-8d7f-5a8ccdde7ab2
+            - uuid: 65f61c118842424a8d7f5a8ccdde7ab2
               expression: 'last(/NFTBan/nftban.watchdog.cpu_score)>80'
               name: 'NFTBan CPU pressure high ({ITEM.VALUE})'
               priority: WARNING
               description: 'High CPU pressure may cause NFTBan to enter degraded mode.'
 
-        - uuid: a1c5fc5d-0609-4af1-893c-2ceecc5b9cb1
+        - uuid: a1c5fc5d06094af1893c2ceecc5b9cb1
           name: 'NFTBan: Memory pressure score'
           type: TRAP
           key: nftban.watchdog.mem_score
@@ -523,13 +523,13 @@ zabbix_export:
             - tag: component
               value: watchdog
           triggers:
-            - uuid: 173d8a74-b1c0-44ad-82aa-7cd96c10f86a
+            - uuid: 173d8a74b1c044ad82aa7cd96c10f86a
               expression: 'last(/NFTBan/nftban.watchdog.mem_score)>80'
               name: 'NFTBan memory pressure high ({ITEM.VALUE})'
               priority: WARNING
               description: 'High memory pressure may cause NFTBan to enter degraded mode.'
 
-        - uuid: 035e6d8d-9062-4e67-8ac5-e38ee5a9883e
+        - uuid: 035e6d8d90624e678ac5e38ee5a9883e
           name: 'NFTBan: I/O pressure score'
           type: TRAP
           key: nftban.watchdog.io_score
@@ -540,7 +540,7 @@ zabbix_export:
               value: watchdog
 
         # --- Health Check ---
-        - uuid: e82f00c7-233e-4f9b-b242-98df88778141
+        - uuid: e82f00c7233e4f9bb24298df88778141
           name: 'NFTBan: Health status'
           type: TRAP
           key: nftban.health.status
@@ -550,13 +550,13 @@ zabbix_export:
             - tag: component
               value: health
           triggers:
-            - uuid: 2203aa54-544a-4912-9ed0-c2336bb07ce6
+            - uuid: 2203aa54544a49129ed0c2336bb07ce6
               expression: 'last(/NFTBan/nftban.health.status)=0'
               name: 'NFTBan health check failed'
               priority: HIGH
               description: 'NFTBan health check reporting unhealthy status.'
 
-        - uuid: 41c204e1-b2df-4f76-8614-6bc40c2b98cb
+        - uuid: 41c204e1b2df4f7686146bc40c2b98cb
           name: 'NFTBan: Health checks passed'
           type: TRAP
           key: nftban.health.passed
@@ -566,7 +566,7 @@ zabbix_export:
             - tag: component
               value: health
 
-        - uuid: 50182b86-8491-4c15-b09a-1e70fe373657
+        - uuid: 50182b8684914c15b09a1e70fe373657
           name: 'NFTBan: Health checks failed'
           type: TRAP
           key: nftban.health.failed
@@ -577,7 +577,7 @@ zabbix_export:
               value: health
 
         # --- Server Inventory ---
-        - uuid: 41f79813-3495-40fd-b29b-277c214f53b1
+        - uuid: 41f79813349540fdb29b277c214f53b1
           name: 'NFTBan: Server hostname'
           type: TRAP
           key: nftban.server.hostname
@@ -592,7 +592,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: 4b28cc79-8c6f-42d0-95bf-cc7e3362930b
+        - uuid: 4b28cc798c6f42d095bfcc7e3362930b
           name: 'NFTBan: Server FQDN'
           type: TRAP
           key: nftban.server.fqdn
@@ -607,7 +607,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: af4ff820-e626-4137-ae64-fccf1690b327
+        - uuid: af4ff820e6264137ae64fccf1690b327
           name: 'NFTBan: Server OS'
           type: TRAP
           key: nftban.server.os
@@ -622,7 +622,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: f363322c-5d60-47d5-8a41-7a7c8ff257a4
+        - uuid: f363322c5d6047d58a417a7c8ff257a4
           name: 'NFTBan: Server OS release'
           type: TRAP
           key: nftban.server.os_release
@@ -637,7 +637,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: 9f531d4c-30a6-4a6f-a9f8-3439129125a8
+        - uuid: 9f531d4c30a64a6fa9f83439129125a8
           name: 'NFTBan: Server kernel'
           type: TRAP
           key: nftban.server.kernel
@@ -652,7 +652,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: 05d579c5-7d7f-4973-8680-a3d5e7dd4d7c
+        - uuid: 05d579c57d7f49738680a3d5e7dd4d7c
           name: 'NFTBan: Server architecture'
           type: TRAP
           key: nftban.server.arch
@@ -667,7 +667,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: e26b282b-5765-4973-b14a-0032c5500538
+        - uuid: e26b282b57654973b14a0032c5500538
           name: 'NFTBan: Server CPU cores'
           type: TRAP
           key: nftban.server.cpu_cores
@@ -681,7 +681,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: ecff498b-9aeb-4e2b-9a24-d6c1762748c4
+        - uuid: ecff498b9aeb4e2b9a24d6c1762748c4
           name: 'NFTBan: Server CPU model'
           type: TRAP
           key: nftban.server.cpu_model
@@ -696,7 +696,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: 05c7b6f0-6b7c-417e-b400-0b7128488527
+        - uuid: 05c7b6f06b7c417eb4000b7128488527
           name: 'NFTBan: Server memory total'
           type: TRAP
           key: nftban.server.memory_total
@@ -711,7 +711,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: aa147205-412c-44fb-a8d3-5173683743bb
+        - uuid: aa147205412c44fba8d35173683743bb
           name: 'NFTBan: Server memory available'
           type: TRAP
           key: nftban.server.memory_available
@@ -722,7 +722,7 @@ zabbix_export:
             - tag: component
               value: server
 
-        - uuid: 56ededc0-dffa-448f-b254-53aaa1a4b7d4
+        - uuid: 56ededc0dffa448fb25453aaa1a4b7d4
           name: 'NFTBan: Server uptime'
           type: TRAP
           key: nftban.server.uptime
@@ -733,7 +733,7 @@ zabbix_export:
             - tag: component
               value: server
 
-        - uuid: 1cfab4b0-adad-46a3-8e4d-70e33702e7e3
+        - uuid: 1cfab4b0adad46a38e4d70e33702e7e3
           name: 'NFTBan: Server boot time'
           type: TRAP
           key: nftban.server.boot_time
@@ -748,7 +748,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: c3e1b8c4-d54b-4668-ba51-762846a37ce4
+        - uuid: c3e1b8c4d54b4668ba51762846a37ce4
           name: 'NFTBan: Server primary IP'
           type: TRAP
           key: nftban.server.primary_ip
@@ -763,7 +763,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: 16ef2219-35fa-4f05-9036-ee0492c939d8
+        - uuid: 16ef221935fa4f059036ee0492c939d8
           name: 'NFTBan: Server public IP'
           type: TRAP
           key: nftban.server.public_ip
@@ -777,7 +777,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: 9d4e7f2a-1b3c-5d6e-8f0a-2b4c6d8e0f1a
+        - uuid: 9d4e7f2a1b3c5d6e8f0a2b4c6d8e0f1a
           name: 'NFTBan: Server IPv6 address'
           type: TRAP
           key: nftban.server.ipv6
@@ -791,7 +791,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: 2b4c6d8e-0f1a-3b5c-7d9e-1f2a4b6c8d0e
+        - uuid: 2b4c6d8e0f1a3b5c7d9e1f2a4b6c8d0e
           name: 'NFTBan: Server MAC address'
           type: TRAP
           key: nftban.server.mac_address
@@ -806,7 +806,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: 4c6d8e0f-1a2b-3c5d-7e9f-0a2b4c6d8e1f
+        - uuid: 4c6d8e0f1a2b3c5d7e9f0a2b4c6d8e1f
           name: 'NFTBan: Server subnet mask'
           type: TRAP
           key: nftban.server.subnet_mask
@@ -821,7 +821,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: 6d8e0f1a-2b4c-6d8e-0f2a-4b6c8d0e2f4a
+        - uuid: 6d8e0f1a2b4c6d8e0f2a4b6c8d0e2f4a
           name: 'NFTBan: Server gateway'
           type: TRAP
           key: nftban.server.gateway
@@ -835,7 +835,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: 8e0f1a2b-4c6d-8e0f-2a4b-6c8d0e2f4a6b
+        - uuid: 8e0f1a2b4c6d8e0f2a4b6c8d0e2f4a6b
           name: 'NFTBan: Server networks'
           type: TRAP
           key: nftban.server.networks
@@ -850,7 +850,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: d46d95ab-2984-4e72-a238-d1846dcecb72
+        - uuid: d46d95ab29844e72a238d1846dcecb72
           name: 'NFTBan: Server interfaces'
           type: TRAP
           key: nftban.server.interfaces
@@ -864,7 +864,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: b8db4374-3f6b-48ee-8510-7d2dfa543323
+        - uuid: b8db43743f6b48ee85107d2dfa543323
           name: 'NFTBan: Server timezone'
           type: TRAP
           key: nftban.server.timezone
@@ -878,7 +878,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: a6cbf012-24b7-43ae-9bf7-5d26390a3c4c
+        - uuid: a6cbf01224b743ae9bf75d26390a3c4c
           name: 'NFTBan: Server virtualization'
           type: TRAP
           key: nftban.server.virtualization
@@ -893,7 +893,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: 510d1925-e92c-4642-b737-7dbc5ec23e74
+        - uuid: 510d1925e92c4642b7377dbc5ec23e74
           name: 'NFTBan: Server cloud provider'
           type: TRAP
           key: nftban.server.cloud_provider
@@ -908,7 +908,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: 8c8272ac-43ad-4f0a-b0fa-90b49ff3faf1
+        - uuid: 8c8272ac43ad4f0ab0fa90b49ff3faf1
           name: 'NFTBan: Server region'
           type: TRAP
           key: nftban.server.region
@@ -923,7 +923,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: b47eb2e4-2416-4ec8-a8cd-677df5314b36
+        - uuid: b47eb2e424164ec8a8cd677df5314b36
           name: 'NFTBan: Load average (1m)'
           type: TRAP
           key: nftban.server.load_1m
@@ -933,7 +933,7 @@ zabbix_export:
             - tag: component
               value: server
 
-        - uuid: de6f98ea-14b0-4d15-b383-3f9cec991c71
+        - uuid: de6f98ea14b04d15b3833f9cec991c71
           name: 'NFTBan: Load average (5m)'
           type: TRAP
           key: nftban.server.load_5m
@@ -943,7 +943,7 @@ zabbix_export:
             - tag: component
               value: server
 
-        - uuid: a5700fe7-250a-4a9f-ad1a-43929f64cfe0
+        - uuid: a5700fe7250a4a9fad1a43929f64cfe0
           name: 'NFTBan: Load average (15m)'
           type: TRAP
           key: nftban.server.load_15m
@@ -954,7 +954,7 @@ zabbix_export:
               value: server
 
         # --- Runtime Metrics (from watchdog IPC) - Update: 5m ---
-        - uuid: 1a2b3c4d-5e6f-7a8b-9c0d-1e2f3a4b5c6d
+        - uuid: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d
           name: 'NFTBan: Runtime heap (MB)'
           type: TRAP
           key: nftban.runtime.heap_mb
@@ -969,7 +969,7 @@ zabbix_export:
               parameters:
                 - '5m'
 
-        - uuid: 2b3c4d5e-6f7a-8b9c-0d1e-2f3a4b5c6d7e
+        - uuid: 2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e
           name: 'NFTBan: Runtime GC cycles'
           type: TRAP
           key: nftban.runtime.gc_cycles
@@ -983,7 +983,7 @@ zabbix_export:
               parameters:
                 - '5m'
 
-        - uuid: 3c4d5e6f-7a8b-9c0d-1e2f-3a4b5c6d7e8f
+        - uuid: 3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f
           name: 'NFTBan: Runtime GC pause (ms)'
           type: TRAP
           key: nftban.runtime.gc_pause_ms
@@ -999,7 +999,7 @@ zabbix_export:
                 - '5m'
 
         # --- Throughput Metrics - Update: 1m ---
-        - uuid: 4d5e6f7a-8b9c-0d1e-2f3a-4b5c6d7e8f9a
+        - uuid: 4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a
           name: 'NFTBan: Throughput bans total'
           type: TRAP
           key: nftban.throughput.bans_total
@@ -1009,7 +1009,7 @@ zabbix_export:
             - tag: component
               value: throughput
 
-        - uuid: 5e6f7a8b-9c0d-1e2f-3a4b-5c6d7e8f9a0b
+        - uuid: 5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b
           name: 'NFTBan: Throughput unbans total'
           type: TRAP
           key: nftban.throughput.unbans_total
@@ -1019,7 +1019,7 @@ zabbix_export:
             - tag: component
               value: throughput
 
-        - uuid: 6f7a8b9c-0d1e-2f3a-4b5c-6d7e8f9a0b1c
+        - uuid: 6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c
           name: 'NFTBan: Throughput bans per minute'
           type: TRAP
           key: nftban.throughput.bans_per_min
@@ -1031,7 +1031,7 @@ zabbix_export:
               value: throughput
 
         # --- IPC Metrics - Update: 5m ---
-        - uuid: 7a8b9c0d-1e2f-3a4b-5c6d-7e8f9a0b1c2d
+        - uuid: 7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d
           name: 'NFTBan: IPC requests total'
           type: TRAP
           key: nftban.ipc.requests
@@ -1045,7 +1045,7 @@ zabbix_export:
               parameters:
                 - '5m'
 
-        - uuid: 8b9c0d1e-2f3a-4b5c-6d7e-8f9a0b1c2d3e
+        - uuid: 8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e
           name: 'NFTBan: IPC latency (ms)'
           type: TRAP
           key: nftban.ipc.latency_ms
@@ -1060,7 +1060,7 @@ zabbix_export:
               parameters:
                 - '5m'
 
-        - uuid: 9c0d1e2f-3a4b-5c6d-7e8f-9a0b1c2d3e4f
+        - uuid: 9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f
           name: 'NFTBan: IPC errors total'
           type: TRAP
           key: nftban.ipc.errors
@@ -1075,7 +1075,7 @@ zabbix_export:
                 - '5m'
 
         # --- Connection Metrics - Update: 1m ---
-        - uuid: 0d1e2f3a-4b5c-6d7e-8f9a-0b1c2d3e4f5a
+        - uuid: 0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a
           name: 'NFTBan: Connections active'
           type: TRAP
           key: nftban.connections.active
@@ -1085,7 +1085,7 @@ zabbix_export:
             - tag: component
               value: network
 
-        - uuid: 1e2f3a4b-5c6d-7e8f-9a0b-1c2d3e4f5a6b
+        - uuid: 1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b
           name: 'NFTBan: Connections established'
           type: TRAP
           key: nftban.connections.established
@@ -1095,7 +1095,7 @@ zabbix_export:
             - tag: component
               value: network
 
-        - uuid: 2f3a4b5c-6d7e-8f9a-0b1c-2d3e4f5a6b7c
+        - uuid: 2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c
           name: 'NFTBan: Connections TIME_WAIT'
           type: TRAP
           key: nftban.connections.time_wait
@@ -1105,7 +1105,7 @@ zabbix_export:
             - tag: component
               value: network
 
-        - uuid: 3a4b5c6d-7e8f-9a0b-1c2d-3e4f5a6b7c8d
+        - uuid: 3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d
           name: 'NFTBan: Connections CLOSE_WAIT'
           type: TRAP
           key: nftban.connections.close_wait
@@ -1116,7 +1116,7 @@ zabbix_export:
               value: network
 
         # --- System Metrics - Update: 1m ---
-        - uuid: 4b5c6d7e-8f9a-0b1c-2d3e-4f5a6b7c8d9e
+        - uuid: 4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e
           name: 'NFTBan: Memory used percent'
           type: TRAP
           key: nftban.server.mem_used_percent
@@ -1127,7 +1127,7 @@ zabbix_export:
             - tag: component
               value: system
           triggers:
-            - uuid: 5c6d7e8f-9a0b-1c2d-3e4f-5a6b7c8d9e0f
+            - uuid: 5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f
               expression: 'last(/NFTBan/nftban.server.mem_used_percent)>90'
               name: 'Memory usage critical (>90%)'
               priority: HIGH
@@ -1135,7 +1135,7 @@ zabbix_export:
                 - tag: component
                   value: system
 
-        - uuid: 6d7e8f9a-0b1c-2d3e-4f5a-6b7c8d9e0f1a
+        - uuid: 6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a
           name: 'NFTBan: I/O wait percent'
           type: TRAP
           key: nftban.server.iowait_percent
@@ -1146,7 +1146,7 @@ zabbix_export:
             - tag: component
               value: system
           triggers:
-            - uuid: 7e8f9a0b-1c2d-3e4f-5a6b-7c8d9e0f1a2b
+            - uuid: 7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b
               expression: 'last(/NFTBan/nftban.server.iowait_percent)>50'
               name: 'High I/O wait (>50%)'
               priority: WARNING
@@ -1154,7 +1154,7 @@ zabbix_export:
                 - tag: component
                   value: system
 
-        - uuid: 8f9a0b1c-2d3e-4f5a-6b7c-8d9e0f1a2b3c
+        - uuid: 8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c
           name: 'NFTBan: Disk used percent'
           type: TRAP
           key: nftban.server.disk_used_percent
@@ -1165,7 +1165,7 @@ zabbix_export:
             - tag: component
               value: system
           triggers:
-            - uuid: 9a0b1c2d-3e4f-5a6b-7c8d-9e0f1a2b3c4d
+            - uuid: 9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d
               expression: 'last(/NFTBan/nftban.server.disk_used_percent)>85'
               name: 'Disk usage high (>85%)'
               priority: WARNING
@@ -1178,13 +1178,13 @@ zabbix_export:
       # =======================================================================
       discovery_rules:
         # --- Module Discovery ---
-        - uuid: d45f1b87-6aa6-4488-a47d-4c6800bfc8e5
+        - uuid: d45f1b876aa64488a47d4c6800bfc8e5
           name: 'NFTBan: Module discovery'
           type: TRAP
           key: nftban.discovery.modules
           description: 'Discover all NFTBan modules'
           item_prototypes:
-            - uuid: f7ab2251-25ef-4399-bf01-eeb9847b44b3
+            - uuid: f7ab225125ef4399bf01eeb9847b44b3
               name: 'NFTBan: Module {#MODULE} status'
               type: TRAP
               key: 'nftban.module.status[{#MODULE}]'
@@ -1195,7 +1195,7 @@ zabbix_export:
                   value: modules
                 - tag: module
                   value: '{#MODULE}'
-            - uuid: 5eca45c0-c989-4a81-b9b0-6bfe3f4d155a
+            - uuid: 5eca45c0c9894a81b9b06bfe3f4d155a
               name: 'NFTBan: Module {#MODULE} bans'
               type: TRAP
               key: 'nftban.module.bans[{#MODULE}]'
@@ -1207,20 +1207,20 @@ zabbix_export:
                 - tag: module
                   value: '{#MODULE}'
           trigger_prototypes:
-            - uuid: cb6fd8fa-0705-4f88-8611-07bfad90fee2
+            - uuid: cb6fd8fa07054f88861107bfad90fee2
               expression: 'last(/NFTBan/nftban.module.status[{#MODULE}])=0'
               name: 'NFTBan module {#MODULE} failed'
               priority: HIGH
               description: 'Module {#MODULE} is in error state.'
 
         # --- Feed Discovery ---
-        - uuid: 81ab3d2c-6722-43c3-9b9a-adea97407188
+        - uuid: 81ab3d2c672243c39b9aadea97407188
           name: 'NFTBan: Feed discovery'
           type: TRAP
           key: nftban.discovery.feeds
           description: 'Discover configured threat feeds'
           item_prototypes:
-            - uuid: 8dc89957-f294-43b4-a4c2-820e44158543
+            - uuid: 8dc89957f29443b4a4c2820e44158543
               name: 'NFTBan: Feed {#FEED} status'
               type: TRAP
               key: 'nftban.feed.status[{#FEED}]'
@@ -1231,7 +1231,7 @@ zabbix_export:
                   value: feeds
                 - tag: feed
                   value: '{#FEED}'
-            - uuid: 73b65a0d-4a64-4836-aee4-a88eb540661f
+            - uuid: 73b65a0d4a644836aee4a88eb540661f
               name: 'NFTBan: Feed {#FEED} IPs'
               type: TRAP
               key: 'nftban.feed.ips[{#FEED}]'
@@ -1242,7 +1242,7 @@ zabbix_export:
                   value: feeds
                 - tag: feed
                   value: '{#FEED}'
-            - uuid: 508b4bc2-8de5-49a3-8340-1d5c8d2d26b6
+            - uuid: 508b4bc28de549a383401d5c8d2d26b6
               name: 'NFTBan: Feed {#FEED} last update'
               type: TRAP
               key: 'nftban.feed.last_update[{#FEED}]'
@@ -1255,20 +1255,20 @@ zabbix_export:
                 - tag: feed
                   value: '{#FEED}'
           trigger_prototypes:
-            - uuid: df02d54e-44bf-4fa0-9ad7-ede78d3d2110
+            - uuid: df02d54e44bf4fa09ad7ede78d3d2110
               expression: 'last(/NFTBan/nftban.feed.status[{#FEED}])=0'
               name: 'NFTBan feed {#FEED} failed'
               priority: WARNING
               description: 'Threat feed {#FEED} failed to load.'
 
         # --- Country Discovery ---
-        - uuid: 6b088f95-c0ae-4819-a423-49d6cfede89e
+        - uuid: 6b088f95c0ae4819a42349d6cfede89e
           name: 'NFTBan: Country discovery'
           type: TRAP
           key: nftban.discovery.countries
           description: 'Discover countries with ban activity'
           item_prototypes:
-            - uuid: 20ced235-fd83-4cbc-b6b5-1d5f40df1fc9
+            - uuid: 20ced235fd834cbcb6b51d5f40df1fc9
               name: 'NFTBan: Country {#COUNTRY} bans'
               type: TRAP
               key: 'nftban.country.bans[{#COUNTRY}]'
@@ -1279,7 +1279,7 @@ zabbix_export:
                   value: geoip
                 - tag: country
                   value: '{#COUNTRY}'
-            - uuid: fb7bc52b-5443-431d-889b-c08411edf96b
+            - uuid: fb7bc52b5443431d889bc08411edf96b
               name: 'NFTBan: Country {#COUNTRY} bans (24h)'
               type: TRAP
               key: 'nftban.country.bans_24h[{#COUNTRY}]'
@@ -1295,7 +1295,7 @@ zabbix_export:
       # DASHBOARDS (Zabbix 7.0 format) - Professional NFTBan Monitoring
       # =======================================================================
       dashboards:
-        - uuid: 537ed80c-be0b-470a-8912-df26f13b8c44
+        - uuid: 537ed80cbe0b470a8912df26f13b8c44
           name: 'NFTBan Overview'
           auto_start: 'YES'
           pages:
