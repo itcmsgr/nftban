@@ -125,7 +125,9 @@ func (w *Watchdog) Run(ctx context.Context) error {
 
 	logx.Watchdog("starting with interval=%s", w.config.BaseInterval)
 
-	ticker := time.NewTicker(w.config.BaseInterval)
+	// Start with base interval, will be adjusted based on mode
+	currentInterval := w.config.BaseInterval
+	ticker := time.NewTicker(currentInterval)
 	defer ticker.Stop()
 
 	cleanupTicker := time.NewTicker(time.Hour)
@@ -140,6 +142,15 @@ func (w *Watchdog) Run(ctx context.Context) error {
 
 		case <-ticker.C:
 			w.tick(ctx)
+
+			// Adjust interval based on current mode (degraded mode uses multiplier)
+			newInterval := w.config.GetIntervalForMode(w.config.BaseInterval, w.state.GetMode())
+			if newInterval != currentInterval {
+				logx.Watchdog("adjusting interval: %s -> %s (mode=%s)",
+					currentInterval, newInterval, w.state.GetMode())
+				currentInterval = newInterval
+				ticker.Reset(currentInterval)
+			}
 
 		case <-cleanupTicker.C:
 			w.recorder.Cleanup()
