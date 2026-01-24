@@ -1645,6 +1645,7 @@ install_templates() {
     find /usr/share/nftban/templates -type f -name "*.yaml" -exec chmod 644 {} \;
     find /usr/share/nftban/templates -type f -name "*.yml" -exec chmod 644 {} \;
     find /usr/share/nftban/templates -type f -name "*.xml" -exec chmod 644 {} \;
+    find /usr/share/nftban/templates -type f -name "*.md" -exec chmod 644 {} \;
     find /usr/share/nftban/templates -type f -exec chown root:root {} \;
     find /usr/share/nftban/templates -type d -exec chown root:root {} \;
 
