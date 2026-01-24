@@ -524,12 +524,54 @@ collect_server_metrics() {
         metrics+="nftban.server.boot_time $boot_time\n"
     fi
 
-    # Network - Primary IP
-    local primary_ip
+    # Network - Primary IP (IPv4)
+    local primary_ip primary_iface
     primary_ip=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7; exit}' || hostname -I 2>/dev/null | awk '{print $1}' || echo "127.0.0.1")
+    primary_iface=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $5; exit}' || echo "eth0")
     metrics+="nftban.server.primary_ip ${primary_ip}\n"
 
-    # Network interfaces (JSON array)
+    # IPv6 address (primary global)
+    local ipv6_addr
+    ipv6_addr=$(ip -6 addr show scope global 2>/dev/null | awk '/inet6/{print $2; exit}' | cut -d'/' -f1 || echo "")
+    [[ -n "$ipv6_addr" ]] && metrics+="nftban.server.ipv6 ${ipv6_addr}\n"
+
+    # MAC address (primary interface)
+    local mac_addr
+    mac_addr=$(ip link show "$primary_iface" 2>/dev/null | awk '/ether/{print $2}' || cat /sys/class/net/"$primary_iface"/address 2>/dev/null || echo "")
+    [[ -n "$mac_addr" ]] && metrics+="nftban.server.mac_address ${mac_addr}\n"
+
+    # Subnet mask
+    local subnet_mask cidr
+    cidr=$(ip -4 addr show "$primary_iface" 2>/dev/null | awk '/inet/{print $2}' | cut -d'/' -f2 | head -1)
+    if [[ -n "$cidr" ]]; then
+        # Convert CIDR to dotted decimal
+        case "$cidr" in
+            8)  subnet_mask="255.0.0.0" ;;
+            16) subnet_mask="255.255.0.0" ;;
+            24) subnet_mask="255.255.255.0" ;;
+            25) subnet_mask="255.255.255.128" ;;
+            26) subnet_mask="255.255.255.192" ;;
+            27) subnet_mask="255.255.255.224" ;;
+            28) subnet_mask="255.255.255.240" ;;
+            29) subnet_mask="255.255.255.248" ;;
+            30) subnet_mask="255.255.255.252" ;;
+            32) subnet_mask="255.255.255.255" ;;
+            *)  subnet_mask="/${cidr}" ;;
+        esac
+        metrics+="nftban.server.subnet_mask ${subnet_mask}\n"
+    fi
+
+    # Default gateway
+    local gateway
+    gateway=$(ip route show default 2>/dev/null | awk '{print $3; exit}' || echo "")
+    [[ -n "$gateway" ]] && metrics+="nftban.server.gateway ${gateway}\n"
+
+    # All networks (JSON: interface, ip, mac)
+    local networks
+    networks=$(ip -j addr show 2>/dev/null | jq -c '[.[] | select(.ifname != "lo") | {iface: .ifname, mac: .address, ips: [.addr_info[]? | select(.family == "inet" or .family == "inet6") | {ip: .local, prefix: .prefixlen, family: .family}]}]' 2>/dev/null || echo '[]')
+    metrics+="nftban.server.networks ${networks}\n"
+
+    # Network interfaces (JSON array - simple list)
     local interfaces
     interfaces=$(ip -j link show 2>/dev/null | jq -c '[.[].ifname]' 2>/dev/null || echo '[]')
     metrics+="nftban.server.interfaces ${interfaces}\n"
