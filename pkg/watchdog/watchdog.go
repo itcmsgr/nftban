@@ -32,7 +32,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/logx"
-	"github.com/itcmsgr/nftban/pkg/state"
+	sharedstate "github.com/itcmsgr/nftban/pkg/state"
 )
 
 // Watchdog is the main watchdog coordinator
@@ -184,7 +184,7 @@ func (w *Watchdog) tick(ctx context.Context) {
 
 	// Update shared state for BASIC tier consumers (stats CLI, UI, sampler)
 	// This is the single source of truth - NO CLI calls needed by consumers
-	state.Update(state.BasicSnapshot{
+	sharedstate.Update(sharedstate.BasicSnapshot{
 		BannedIPv4:    int64(snapshot.NFTables.SetElements["blacklist_ipv4"]),
 		BannedIPv6:    int64(snapshot.NFTables.SetElements["blacklist_ipv6"]),
 		WhitelistIPv4: int64(snapshot.NFTables.SetElements["whitelist_ipv4"]),
