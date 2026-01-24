@@ -1,5 +1,21 @@
+// =============================================================================
+// NFTBan - Prometheus Metrics Collector
+// =============================================================================
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
+// meta:name="collector"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Prometheus metrics collector for node_exporter textfile"
+// meta:inventory.files="/var/lib/node_exporter/textfile_collector/nftban.prom"
+// meta:inventory.binaries="nft"
+// meta:inventory.env_vars="NFTBAN_METRICS_FILE,NFTBAN_API_URL"
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network="localhost:8080"
+// meta:inventory.privileges="none"
+// =============================================================================
 
 // Package metrics provides efficient metrics collection for NFTBan
 // This collector replaces slow bash-based metrics with fast Go implementation
@@ -9,6 +25,8 @@ import (
 	"bufio"
 	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"strconv"
@@ -84,17 +102,76 @@ func (c *Collector) Collect() error {
 	return nil
 }
 
-// writeBlockMetrics writes ban/block count metrics
-func (c *Collector) writeBlockMetrics(f *os.File) error {
-	// Get nftables sets in a single JSON call (efficient!)
-	nftSets, err := c.getNFTablesSets()
-	if err != nil {
-		return err
+// basicStatsFromAPI holds data from /api/v1/basic-stats endpoint
+type basicStatsFromAPI struct {
+	BannedIPv4    int64 `json:"banned_ipv4"`
+	BannedIPv6    int64 `json:"banned_ipv6"`
+	WhitelistIPv4 int64 `json:"whitelist_ipv4"`
+	WhitelistIPv6 int64 `json:"whitelist_ipv6"`
+	RulesTotal    int64 `json:"rules_total"`
+	FeedsActive   int   `json:"feeds_active"`
+	FeedsIPs      int64 `json:"feeds_ips"`
+}
+
+// tryGetBasicStatsFromAPI attempts to fetch block counts from the API (NO CLI overhead)
+// Returns nil if API is unavailable - caller should fall back to CLI
+func (c *Collector) tryGetBasicStatsFromAPI() *basicStatsFromAPI {
+	apiURL := os.Getenv("NFTBAN_API_URL")
+	if apiURL == "" {
+		apiURL = "http://127.0.0.1:8080"
 	}
 
-	// Count IPs in blacklist sets
-	ipv4Count := c.countSetElements(nftSets, "ip", "nftban", "blacklist_ipv4")
-	ipv6Count := c.countSetElements(nftSets, "ip6", "nftban", "blacklist_ipv6")
+	client := &http.Client{Timeout: 2 * time.Second}
+	resp, err := client.Get(apiURL + "/api/v1/basic-stats")
+	if err != nil {
+		return nil
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil
+	}
+
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil
+	}
+
+	var result struct {
+		Success bool              `json:"success"`
+		Data    basicStatsFromAPI `json:"data"`
+	}
+	if err := json.Unmarshal(body, &result); err != nil || !result.Success {
+		return nil
+	}
+
+	return &result.Data
+}
+
+// writeBlockMetrics writes ban/block count metrics
+// Tries API first (NO CLI overhead), falls back to nft CLI if unavailable
+func (c *Collector) writeBlockMetrics(f *os.File) error {
+	var ipv4Count, ipv6Count, wlIPv4, wlIPv6 int
+
+	// Try API first (from shared state - NO CLI)
+	if stats := c.tryGetBasicStatsFromAPI(); stats != nil {
+		ipv4Count = int(stats.BannedIPv4)
+		ipv6Count = int(stats.BannedIPv6)
+		wlIPv4 = int(stats.WhitelistIPv4)
+		wlIPv6 = int(stats.WhitelistIPv6)
+	} else {
+		// Fallback to nft CLI
+		nftSets, err := c.getNFTablesSets()
+		if err != nil {
+			return err
+		}
+
+		ipv4Count = c.countSetElements(nftSets, "ip", "nftban", "blacklist_ipv4")
+		ipv6Count = c.countSetElements(nftSets, "ip6", "nftban", "blacklist_ipv6")
+		wlIPv4 = c.countSetElements(nftSets, "ip", "nftban", "whitelist_ipv4")
+		wlIPv6 = c.countSetElements(nftSets, "ip6", "nftban", "whitelist_ipv6")
+	}
+
 	totalBlocks := ipv4Count + ipv6Count
 
 	fmt.Fprintf(f, "# HELP nftban_blocks_total Total number of blocked IPs (permanent + temporary)\n")
@@ -108,10 +185,6 @@ func (c *Collector) writeBlockMetrics(f *os.File) error {
 	fmt.Fprintf(f, "# HELP nftban_blocks_ipv6 Number of blocked IPv6 addresses\n")
 	fmt.Fprintf(f, "# TYPE nftban_blocks_ipv6 gauge\n")
 	fmt.Fprintf(f, "nftban_blocks_ipv6 %d\n\n", ipv6Count)
-
-	// Whitelist counts
-	wlIPv4 := c.countSetElements(nftSets, "ip", "nftban", "whitelist_ipv4")
-	wlIPv6 := c.countSetElements(nftSets, "ip6", "nftban", "whitelist_ipv6")
 
 	fmt.Fprintf(f, "# HELP nftban_whitelist_ipv4 Number of whitelisted IPv4 addresses\n")
 	fmt.Fprintf(f, "# TYPE nftban_whitelist_ipv4 gauge\n")

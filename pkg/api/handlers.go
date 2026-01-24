@@ -547,6 +547,7 @@ func SessionRevokeHandler(store *session.Store) http.HandlerFunc {
 }
 
 // DashboardHandler returns dashboard statistics
+// Uses shared state for BASIC metrics (NO CLI), falls back to CLI for full status
 func DashboardHandler(w http.ResponseWriter, r *http.Request) {
 	// Get authenticated user from context
 	claims, ok := r.Context().Value(middleware.UserContextKey).(*auth.Claims)
@@ -555,20 +556,41 @@ func DashboardHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Execute nftban status --json command for structured data
-	output, err := execNFTBanCommand("status", "--json")
-	if err != nil {
-		log.Printf("[ERROR] Failed to get dashboard data: %v", err)
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to retrieve dashboard data"})
-		return
-	}
-
-	// Parse JSON output from CLI
+	// Try shared state first for BASIC metrics (NO CLI overhead)
 	var statusData map[string]interface{}
-	if err := json.Unmarshal([]byte(output), &statusData); err != nil {
-		log.Printf("[ERROR] Failed to parse dashboard JSON: %v (output: %s)", err, output)
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to parse dashboard data"})
-		return
+	if state.IsInitialized() && !state.IsStale(30*time.Second) {
+		snap := state.Get()
+		// Build status from shared state - instant, no CLI
+		statusData = map[string]interface{}{
+			"firewall": map[string]interface{}{
+				"banned_ips":    snap.BannedIPv4 + snap.BannedIPv6,
+				"banned_ipv4":   snap.BannedIPv4,
+				"banned_ipv6":   snap.BannedIPv6,
+				"whitelist_ips": snap.WhitelistIPv4 + snap.WhitelistIPv6,
+				"rule_count":    snap.RulesTotal,
+			},
+			"feeds": map[string]interface{}{
+				"active":    snap.FeedsActive,
+				"total_ips": snap.FeedsIPs,
+			},
+			"source": "shared_state",
+		}
+	} else {
+		// Fallback to CLI for full status
+		output, err := execNFTBanCommand("status", "--json")
+		if err != nil {
+			log.Printf("[ERROR] Failed to get dashboard data: %v", err)
+			respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to retrieve dashboard data"})
+			return
+		}
+
+		// Parse JSON output from CLI
+		if err := json.Unmarshal([]byte(output), &statusData); err != nil {
+			log.Printf("[ERROR] Failed to parse dashboard JSON: %v (output: %s)", err, output)
+			respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to parse dashboard data"})
+			return
+		}
+		statusData["source"] = "cli"
 	}
 
 	// Build dashboard response with user info and status data
