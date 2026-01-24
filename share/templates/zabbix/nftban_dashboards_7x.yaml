@@ -8,10 +8,6 @@ zabbix_export:
       groups:
         - name: 'Templates/Security'
 
-      # =======================================================================
-      # DASHBOARDS (Zabbix 7.0 format) - Professional NFTBan Monitoring
-      # Import AFTER nftban_template_only_7x.yaml
-      # =======================================================================
       dashboards:
         - uuid: 1a388cc06ae741aca8843b53367f50ac
           name: 'NFTBan Overview'
@@ -143,7 +139,7 @@ zabbix_export:
                     - type: STRING
                       name: ds.2.color
                       value: F63100
-                # Row 4: Problems
+                # Row 4: Problems widget
                 - type: problems
                   name: 'Active Problems'
                   y: '12'
@@ -452,7 +448,7 @@ zabbix_export:
                       value:
                         key: nftban.nft.elements_total
                         host: 'NFTBan Firewall Monitoring'
-                # Row 1: Feed Stats
+                # Row 1: Feeds Stats
                 - type: item_value
                   name: 'Feeds Enabled'
                   x: '24'
