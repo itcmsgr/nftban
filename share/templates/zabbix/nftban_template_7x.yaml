@@ -759,7 +759,80 @@ zabbix_export:
           type: TRAP
           key: nftban.server.public_ip
           value_type: CHAR
-          description: 'Public/external IP address'
+          description: 'Public/external IPv4 address'
+          tags:
+            - tag: component
+              value: inventory
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - '1d'
+
+        - uuid: 9d4e7f2a1b3c5d6e8f0a2b4c6d8e0f1a
+          name: 'NFTBan: Server IPv6 address'
+          type: TRAP
+          key: nftban.server.ipv6
+          value_type: CHAR
+          description: 'Primary IPv6 address'
+          tags:
+            - tag: component
+              value: inventory
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - '1d'
+
+        - uuid: 2b4c6d8e0f1a3b5c7d9e1f2a4b6c8d0e
+          name: 'NFTBan: Server MAC address'
+          type: TRAP
+          key: nftban.server.mac_address
+          value_type: CHAR
+          description: 'Primary network interface MAC address'
+          inventory_link: MACADDRESS_A
+          tags:
+            - tag: component
+              value: inventory
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - '1d'
+
+        - uuid: 4c6d8e0f1a2b3c5d7e9f0a2b4c6d8e1f
+          name: 'NFTBan: Server subnet mask'
+          type: TRAP
+          key: nftban.server.subnet_mask
+          value_type: CHAR
+          description: 'Primary interface subnet mask'
+          inventory_link: HOST_NETMASK
+          tags:
+            - tag: component
+              value: inventory
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - '1d'
+
+        - uuid: 6d8e0f1a2b4c6d8e0f2a4b6c8d0e2f4a
+          name: 'NFTBan: Server gateway'
+          type: TRAP
+          key: nftban.server.gateway
+          value_type: CHAR
+          description: 'Default gateway IP'
+          tags:
+            - tag: component
+              value: inventory
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - '1d'
+
+        - uuid: 8e0f1a2b4c6d8e0f2a4b6c8d0e2f4a6b
+          name: 'NFTBan: Server networks'
+          type: TRAP
+          key: nftban.server.networks
+          value_type: CHAR
+          description: 'All network interfaces with IPs (JSON)'
+          inventory_link: HOST_NETWORKS
           tags:
             - tag: component
               value: inventory
