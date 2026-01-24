@@ -2,7 +2,8 @@ zabbix_export:
   version: '7.0'
 
   templates:
-    - template: 'NFTBan'
+    - uuid: 76c37c2a70dc451a9298e9bb80c930ec
+      template: 'NFTBan'
       name: 'NFTBan Firewall Monitoring'
 
       # =======================================================================
