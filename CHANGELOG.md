@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.0] - 2026-01-24
+
+### Added
+
+#### Central Metrics Collector Architecture (MAJOR REDESIGN)
+- **New architecture**: Collect once, export to many backends
+  - `nftban_metrics_collector.sh` - Central collector with smart caching
+  - Dynamic metrics collected every run (bans, status, memory, load)
+  - Inventory metrics collected hourly (OS, IPs, hardware - static data)
+  - Output: `/var/cache/nftban/metrics/{dynamic,inventory,combined}.json`
+
+- **New Zabbix exporter v2**: Reads from central collector
+  - Slim, efficient - no duplicate collection code
+  - 76+ metrics including new watchdog/runtime metrics
+  - Same Zabbix protocol, better architecture
+
+- **New watchdog integration** via IPC:
+  - Runtime: `goroutines`, `heap_mb`, `alloc_mb`, `sys_mb`, `gc_cycles`, `gc_pause_ms`
+  - Throughput: `bans_total`, `unbans_total`, `events_total`, `bans_per_min`
+  - IPC: `requests_total`, `avg_latency_ms`, `errors_total`
+  - System: `mem_used_percent`, `iowait_percent`, `disk_used_percent`
+
+- **Extended network metrics**:
+  - Per-interface: `rx_bytes`, `tx_bytes`, `rx_packets`, `tx_packets`
+  - Connections: `active`, `established`, `time_wait`, `close_wait`
+
+- **Extended inventory for Zabbix**:
+  - IPv6 address, MAC address, subnet mask, gateway
+  - Full networks JSON with all IPs
+  - Zabbix inventory auto-population
+
+### Changed
+- **Zabbix exporter**: v2 now default, legacy moved to `_legacy.sh`
+- **Metrics collection**: Smart separation - dynamic vs static/inventory
+- **Performance**: Inventory collected hourly, not every minute
+
+### Deprecated
+- `nftban_zabbix_exporter_legacy.sh` - Old standalone exporter (still works)
+
+### Benefits
+- **No duplicate code**: Central collector is the single source of truth
+- **Easy backend addition**: Just read JSON, format for your backend
+- **Consistent metrics**: Same data across Zabbix, Prometheus, InfluxDB
+- **Reduced overhead**: Static data collected hourly, not every minute
+
 ## [1.3.0] - 2026-01-22
 
 ### Added
