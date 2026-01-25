@@ -62,7 +62,7 @@ _nftban() {
 
     # Monitoring & Reporting
     local gui_cmds="status enable disable help"
-    local metrics_cmds="status enable disable --backend prometheus victoria help"
+    local metrics_cmds="status enable disable help"
     local stats_cmds="top ip recent monitor export --json help"
     local report_cmds="generate schedule email --json help"
     local fhs_cmds="check status --json help"
@@ -335,7 +335,7 @@ _nftban() {
                 metrics)
                     case "${sub_cmd}" in
                         enable)
-                            COMPREPLY=($(compgen -W "--backend prometheus victoria" -- "${cur}"))
+                            COMPREPLY=($(compgen -W "--pro --remote --url --token --labels --force" -- "${cur}"))
                             ;;
                     esac
                     ;;
@@ -441,8 +441,9 @@ _nftban() {
                     ;;
                 metrics)
                     case "${option}" in
-                        --backend)
-                            COMPREPLY=($(compgen -W "prometheus victoria" -- "${cur}"))
+                        --url)
+                            # URL completion - no suggestions
+                            COMPREPLY=()
                             ;;
                     esac
                     ;;

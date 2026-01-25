@@ -30,6 +30,18 @@ case "$1" in
         deb-systemd-helper unmask nftband.socket >/dev/null 2>&1 || true
         deb-systemd-helper unmask nftband.service >/dev/null 2>&1 || true
 
+        # Disable unified exporter units
+        deb-systemd-helper purge nftban-unified-exporter.timer >/dev/null 2>&1 || true
+        deb-systemd-helper purge nftban-unified-exporter.service >/dev/null 2>&1 || true
+        deb-systemd-helper unmask nftban-unified-exporter.timer >/dev/null 2>&1 || true
+        deb-systemd-helper unmask nftban-unified-exporter.service >/dev/null 2>&1 || true
+
+        # Disable core timer units
+        deb-systemd-helper purge nftban-maintenance.timer >/dev/null 2>&1 || true
+        deb-systemd-helper purge nftban-maintenance.service >/dev/null 2>&1 || true
+        deb-systemd-helper purge nftban-health.timer >/dev/null 2>&1 || true
+        deb-systemd-helper purge nftban-health.service >/dev/null 2>&1 || true
+
         # Disable Web UI systemd units
         deb-systemd-helper purge nftban-ui.service >/dev/null || true
         deb-systemd-helper purge nftban-ui-auth.socket >/dev/null || true

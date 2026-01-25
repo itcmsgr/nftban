@@ -7,6 +7,14 @@ case "$1" in
         deb-systemd-invoke stop nftband.socket >/dev/null 2>&1 || true
         deb-systemd-invoke stop nftband.service >/dev/null 2>&1 || true
 
+        # Stop unified exporter (metrics collection)
+        deb-systemd-invoke stop nftban-unified-exporter.timer >/dev/null 2>&1 || true
+        deb-systemd-invoke stop nftban-unified-exporter.service >/dev/null 2>&1 || true
+
+        # Stop core timers
+        deb-systemd-invoke stop nftban-maintenance.timer >/dev/null 2>&1 || true
+        deb-systemd-invoke stop nftban-health.timer >/dev/null 2>&1 || true
+
         # Stop Web UI services
         deb-systemd-invoke stop nftban-ui.service >/dev/null || true
         deb-systemd-invoke stop nftban-ui-auth.socket >/dev/null || true

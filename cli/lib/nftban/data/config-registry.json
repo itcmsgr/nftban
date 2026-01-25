@@ -418,7 +418,7 @@
     "NFTBAN_METRICS_": {
       "active_when": "always",
       "category": "metrics",
-      "description": "Metrics backend and export settings (Prometheus, VictoriaMetrics)"
+      "description": "Metrics backend and export settings (Prometheus)"
     },
     "NFTBAN_COLLECT_": {
       "active_when": "always",

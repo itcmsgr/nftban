@@ -657,7 +657,7 @@ fi
 
 # STEP 8: Enable services (AFTER whitelist is in place)
 echo "[NFTBan] Enabling systemd services..."
-%systemd_post nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service nftban-core-geoip.timer nftban-core-feeds.timer
+%systemd_post nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service nftban-core-geoip.timer nftban-core-feeds.timer nftban-unified-exporter.timer
 
 # Enable nftables
 systemctl enable nftables 2>/dev/null || true
@@ -727,10 +727,10 @@ echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
 echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all optional timers."
 
 %preun
-%systemd_preun nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service nftban-core-geoip.service nftban-core-geoip.timer nftban-core-feeds.service nftban-core-feeds.timer
+%systemd_preun nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service nftban-core-geoip.service nftban-core-geoip.timer nftban-core-feeds.service nftban-core-feeds.timer nftban-unified-exporter.service nftban-unified-exporter.timer
 
 %postun
-%systemd_postun_with_restart nftban-maintenance.service nftban-health.service nftban-login-monitor.service nftban-core-geoip.service nftban-core-feeds.service
+%systemd_postun_with_restart nftban-maintenance.service nftban-health.service nftban-login-monitor.service nftban-core-geoip.service nftban-core-feeds.service nftban-unified-exporter.service
 
 # Inform user about leftover files on complete removal
 if [ \$1 -eq 0 ]; then
