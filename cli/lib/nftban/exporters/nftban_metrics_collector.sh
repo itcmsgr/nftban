@@ -334,13 +334,15 @@ EOF
 collect_feed_health_metrics() {
     local total=0 active=0 stale=0 errors=0 last_sync=0
     local feeds_json=""
-    local now=$(date +%s)
+    local now
+    now=$(date +%s)
     local stale_threshold=$((24 * 3600))  # 24 hours default
 
     # Count feeds from config dir
     for conf in "${NFTBAN_CONFIG_DIR}/feeds"/*.conf; do
         [[ -f "$conf" ]] || continue
-        local feed_name=$(basename "$conf" .conf)
+        local feed_name
+        feed_name=$(basename "$conf" .conf)
         ((total++))
 
         local feed_active=0 feed_sync=0 feed_ips=0 feed_errors=0
@@ -405,6 +407,7 @@ collect_suricata_metrics() {
     local up=0 alerts_total=0 rules_total=0 rules_filtered=0 bans_total=0
     local eve_errors=0 last_alert=0 rule_profile="unknown"
     local sev1=0 sev2=0 sev3=0 sev4=0
+    # shellcheck disable=SC2034  # categories reserved for future category breakdown
     declare -A categories
 
     # Check if Suricata is running
@@ -577,6 +580,7 @@ EOF
 
 collect_nftables_perf_metrics() {
     local apply_latency=0 apply_errors=0 rules_total=0 sets_total=0 commands_total=0
+    # shellcheck disable=SC2034  # filter_rules, nat_rules reserved for extended rule counting
     local nftban_rules=0 filter_rules=0 nat_rules=0
     local bl_ipv4=0 bl_ipv6=0 wl_ipv4=0 wl_ipv6=0
 
@@ -719,6 +723,7 @@ EOF
 collect_analytics_metrics() {
     local unique_ips_24h=0 recidivism_rate=0 top_attackers=0
     local mode_transitions=0 alerts_active_info=0 alerts_active_warn=0 alerts_active_crit=0
+    # shellcheck disable=SC2034  # geoban_blocks reserved for geoban analytics
     local geoban_blocks=0 geoban_db_age=0
 
     local bans_log="${NFTBAN_LOG_DIR}/bans.log"
