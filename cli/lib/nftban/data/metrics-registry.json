@@ -41,15 +41,65 @@
     "producer_not_product": "NFTBan is a metrics producer, not a monitoring product",
     "consumer_agnostic": "Users choose how they ingest, store, and visualize",
     "stable_contract": "Metric names and semantics are stable (semantic versioning)",
-    "bounded_cardinality": "Labels have bounded value sets to prevent explosion"
+    "bounded_cardinality": "Labels have bounded value sets to prevent explosion",
+    "no_vendor_lock": "OpenMetrics format works with any compatible backend",
+    "local_retention_capped": "Local storage limited to 4 weeks maximum"
+  },
+  "external_interface": {
+    "format": "OpenMetrics (Prometheus text exposition format 0.0.4)",
+    "endpoints": {
+      "daemon_http": {
+        "path": "/metrics",
+        "port": 8080,
+        "source": "promhttp.Handler()",
+        "required": false
+      },
+      "textfile_collector": {
+        "path": "/var/lib/node_exporter/textfile_collector/nftban.prom",
+        "source": "shell exporter",
+        "required": false
+      }
+    },
+    "optional_outputs": {
+      "zabbix": "Push via zabbix_sender (trapper items)",
+      "ndjson": "Local file connector with retention"
+    },
+    "what_nftban_provides": [
+      "OpenMetrics endpoint (/metrics)",
+      "Textfile collector output (.prom files)",
+      "Stable metric naming contract",
+      "Bounded label cardinality",
+      "Reference Grafana dashboard JSON",
+      "PromQL query examples"
+    ],
+    "what_nftban_does_not_provide": [
+      "Bundled Prometheus/VictoriaMetrics",
+      "Bundled scraping agent",
+      "Long-term storage (>4 weeks)",
+      "Managed dashboards",
+      "Analytics or BI features"
+    ],
+    "user_responsibilities": [
+      "Install and configure scraping agent (Prometheus, vmagent, etc.)",
+      "Configure long-term storage if needed",
+      "Import and maintain dashboards",
+      "Set up alerting rules"
+    ]
+  },
+  "local_retention": {
+    "options_weeks": [1, 2, 3, 4],
+    "default_weeks": 2,
+    "hard_maximum_weeks": 4,
+    "note": "Long-term retention is user's responsibility via external TSDB"
   },
   "compatibility": {
     "prometheus": "full",
     "victoriametrics": "full",
     "grafana_mimir": "full",
     "zabbix": "full",
-    "influxdb": "planned",
-    "datadog": "planned",
+    "grafana": "full (via Prometheus datasource)",
+    "influxdb": "planned (via Telegraf)",
+    "datadog": "planned (via agent)",
     "opentelemetry": "planned"
   },
   "categories": {
