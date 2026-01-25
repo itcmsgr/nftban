@@ -1095,6 +1095,62 @@ collect_metrics() {
     fi
 
     # -------------------------------------------------------------------------
+    # Suricata IDS Metrics
+    # -------------------------------------------------------------------------
+
+    # Suricata IDS metrics
+    if [[ -f "$COMBINED_FILE" ]] && command -v jq &>/dev/null; then
+        echo "# HELP nftban_suricata_up Suricata daemon running status" >> "$TEMP_FILE"
+        echo "# TYPE nftban_suricata_up gauge" >> "$TEMP_FILE"
+        echo "nftban_suricata_up $(jq -r '.suricata.up // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_suricata_alerts_total Total Suricata alerts" >> "$TEMP_FILE"
+        echo "# TYPE nftban_suricata_alerts_total counter" >> "$TEMP_FILE"
+        echo "nftban_suricata_alerts_total $(jq -r '.suricata.alerts_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_suricata_alerts_by_severity Suricata alerts by severity level" >> "$TEMP_FILE"
+        echo "# TYPE nftban_suricata_alerts_by_severity counter" >> "$TEMP_FILE"
+        for sev in 1 2 3 4; do
+            val=$(jq -r ".suricata.alerts_by_severity.\"${sev}\" // 0" "$COMBINED_FILE")
+            echo "nftban_suricata_alerts_by_severity{severity=\"${sev}\"} ${val}" >> "$TEMP_FILE"
+        done
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_suricata_rules_total Total active Suricata rules" >> "$TEMP_FILE"
+        echo "# TYPE nftban_suricata_rules_total gauge" >> "$TEMP_FILE"
+        echo "nftban_suricata_rules_total $(jq -r '.suricata.rules_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_suricata_rules_filtered Filtered/disabled Suricata rules" >> "$TEMP_FILE"
+        echo "# TYPE nftban_suricata_rules_filtered gauge" >> "$TEMP_FILE"
+        echo "nftban_suricata_rules_filtered $(jq -r '.suricata.rules_filtered // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_suricata_bans_total Bans triggered by Suricata" >> "$TEMP_FILE"
+        echo "# TYPE nftban_suricata_bans_total counter" >> "$TEMP_FILE"
+        echo "nftban_suricata_bans_total $(jq -r '.suricata.bans_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_suricata_eve_parse_errors_total EVE JSON parsing errors" >> "$TEMP_FILE"
+        echo "# TYPE nftban_suricata_eve_parse_errors_total counter" >> "$TEMP_FILE"
+        echo "nftban_suricata_eve_parse_errors_total $(jq -r '.suricata.eve_parse_errors // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_suricata_last_alert_timestamp Unix timestamp of last alert" >> "$TEMP_FILE"
+        echo "# TYPE nftban_suricata_last_alert_timestamp gauge" >> "$TEMP_FILE"
+        echo "nftban_suricata_last_alert_timestamp $(jq -r '.suricata.last_alert_timestamp // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_suricata_info Suricata configuration info" >> "$TEMP_FILE"
+        echo "# TYPE nftban_suricata_info gauge" >> "$TEMP_FILE"
+        profile=$(jq -r '.suricata.rule_profile // "unknown"' "$COMBINED_FILE")
+        echo "nftban_suricata_info{rule_profile=\"${profile}\"} 1" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+    fi
+
+    # -------------------------------------------------------------------------
     # Performance Metrics
     # -------------------------------------------------------------------------
 

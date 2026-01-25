@@ -401,6 +401,120 @@ collect_feed_health_metrics() {
 EOF
 }
 
+collect_suricata_metrics() {
+    local up=0 alerts_total=0 rules_total=0 rules_filtered=0 bans_total=0
+    local eve_errors=0 last_alert=0 rule_profile="unknown"
+    local sev1=0 sev2=0 sev3=0 sev4=0
+    declare -A categories
+
+    # Check if Suricata is running
+    if systemctl is-active suricata.service &>/dev/null; then
+        up=1
+    fi
+
+    # EVE JSON parsing (last 10000 lines for performance)
+    local eve_log="/var/log/suricata/eve.json"
+    if [[ -f "$eve_log" ]]; then
+        # Count alerts and group by severity
+        local stats
+        stats=$(tail -10000 "$eve_log" 2>/dev/null | jq -r '
+            select(.event_type == "alert") | .alert.severity
+        ' 2>/dev/null | sort | uniq -c || echo "")
+
+        alerts_total=$(echo "$stats" | awk '{sum+=$1} END{print sum+0}')
+        sev1=$(echo "$stats" | awk '$2==1 {print $1+0}')
+        sev2=$(echo "$stats" | awk '$2==2 {print $1+0}')
+        sev3=$(echo "$stats" | awk '$2==3 {print $1+0}')
+        sev4=$(echo "$stats" | awk '$2==4 {print $1+0}')
+
+        # Ensure severity values are not empty
+        : "${sev1:=0}"
+        : "${sev2:=0}"
+        : "${sev3:=0}"
+        : "${sev4:=0}"
+
+        # Get alerts by category
+        local cat_stats
+        cat_stats=$(tail -10000 "$eve_log" 2>/dev/null | jq -r '
+            select(.event_type == "alert") | .alert.category // "unknown"
+        ' 2>/dev/null | sort | uniq -c | sort -rn | head -20 || echo "")
+
+        # Build category JSON
+        local category_json=""
+        while read -r count cat; do
+            [[ -z "$count" ]] && continue
+            # Sanitize category name (replace spaces with underscores, lowercase)
+            local safe_cat
+            safe_cat=$(echo "$cat" | tr ' ' '_' | tr '[:upper:]' '[:lower:]' | tr -cd 'a-z0-9_')
+            [[ -z "$safe_cat" ]] && safe_cat="unknown"
+            [[ -n "$category_json" ]] && category_json+=","
+            category_json+="\"$safe_cat\": $count"
+        done <<< "$cat_stats"
+        [[ -z "$category_json" ]] && category_json=""
+
+        # Last alert timestamp
+        local last_ts
+        last_ts=$(tail -1000 "$eve_log" 2>/dev/null | jq -r '
+            select(.event_type == "alert") | .timestamp
+        ' 2>/dev/null | tail -1)
+        if [[ -n "$last_ts" ]]; then
+            last_alert=$(date -d "$last_ts" +%s 2>/dev/null || echo "0")
+        fi
+    fi
+
+    # Bans from suricata
+    local bans_log="${NFTBAN_LOG_DIR}/bans.log"
+    if [[ -f "$bans_log" ]]; then
+        bans_total=$(grep -ci "suricata" "$bans_log" 2>/dev/null || echo "0")
+    fi
+
+    # Rule profile from config
+    local suricata_conf="${NFTBAN_CONFIG_DIR}/modules/suricata.conf"
+    if [[ -f "$suricata_conf" ]]; then
+        rule_profile=$(grep -E "^NFTBAN_SURICATA_PROFILE=" "$suricata_conf" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "standard")
+        [[ -z "$rule_profile" ]] && rule_profile="standard"
+
+        # Get rules_filtered from config if available
+        local filtered_count
+        filtered_count=$(grep -E "^NFTBAN_SURICATA_RULES_FILTERED=" "$suricata_conf" 2>/dev/null | cut -d= -f2 | tr -d '"' || echo "0")
+        [[ -n "$filtered_count" ]] && rules_filtered="$filtered_count"
+    fi
+
+    # Rules count (approximate from rules directory)
+    local rules_dir="/var/lib/suricata/rules"
+    if [[ -d "$rules_dir" ]]; then
+        rules_total=$(grep -rh "^alert\|^drop\|^reject" "$rules_dir"/*.rules 2>/dev/null | wc -l || echo "0")
+    fi
+
+    # EVE parse errors from nftban suricata log
+    local suricata_log="${NFTBAN_LOG_DIR}/suricata.log"
+    if [[ -f "$suricata_log" ]]; then
+        eve_errors=$(grep -ci "parse.*error\|invalid.*json\|malformed" "$suricata_log" 2>/dev/null || echo "0")
+    fi
+
+    cat <<EOF
+{
+  "suricata": {
+    "up": $up,
+    "alerts_total": $alerts_total,
+    "alerts_by_severity": {
+      "1": ${sev1:-0},
+      "2": ${sev2:-0},
+      "3": ${sev3:-0},
+      "4": ${sev4:-0}
+    },
+    "alerts_by_category": {${category_json}},
+    "rules_total": $rules_total,
+    "rules_filtered": $rules_filtered,
+    "bans_total": $bans_total,
+    "eve_parse_errors": $eve_errors,
+    "last_alert_timestamp": $last_alert,
+    "rule_profile": "$rule_profile"
+  }
+}
+EOF
+}
+
 collect_nftables_metrics() {
     local sets=0 elements=0 rules=0 packets_ipv4=0 packets_ipv6=0
 
@@ -810,7 +924,7 @@ EOF
 
 collect_dynamic_metrics() {
     # Collect all dynamic metrics and merge into single JSON
-    local timestamp daemon bans memory health modules module_status feed_health nftables feeds network watchdog geoip kernel
+    local timestamp daemon bans memory health modules module_status feed_health suricata nftables feeds network watchdog geoip kernel
     timestamp=$(date +%s)
 
     daemon=$(collect_daemon_metrics)
@@ -820,6 +934,7 @@ collect_dynamic_metrics() {
     modules=$(collect_module_metrics)
     module_status=$(collect_module_status_metrics)
     feed_health=$(collect_feed_health_metrics)
+    suricata=$(collect_suricata_metrics)
     nftables=$(collect_nftables_metrics)
     feeds=$(collect_feeds_metrics)
     network=$(collect_network_metrics)
@@ -828,7 +943,7 @@ collect_dynamic_metrics() {
     kernel=$(collect_kernel_metrics)
 
     # Merge all JSON objects
-    echo "$daemon $bans $memory $health $modules $module_status $feed_health $nftables $feeds $network $watchdog $geoip $kernel" | \
+    echo "$daemon $bans $memory $health $modules $module_status $feed_health $suricata $nftables $feeds $network $watchdog $geoip $kernel" | \
         jq -s 'add | . + {"timestamp": '"$timestamp"', "type": "dynamic"}'
 }
 
