@@ -76,9 +76,21 @@ readonly SCRIPT_VERSION="1.0.0"
 : "${NFTBAN_COLLECT_NETWORK:=enabled}"
 
 # Export target defaults
-: "${NFTBAN_EXPORT_PROMETHEUS:=false}"
+# Note: Prometheus export is an OPTIONAL compatibility adapter.
+# NFTBan does NOT require Prometheus - it has its own metrics system (stats.json + bans.log).
 : "${NFTBAN_EXPORT_JSON:=true}"
 : "${NFTBAN_EXPORT_CONNECTORS:=false}"
+
+# Smart auto-detection for Prometheus export:
+# Auto-enable only if node_exporter textfile dir exists AND not explicitly set
+if [[ -z "${NFTBAN_EXPORT_PROMETHEUS:-}" ]]; then
+    if [[ -d "/var/lib/node_exporter/textfile_collector" ]]; then
+        NFTBAN_EXPORT_PROMETHEUS="true"
+        log_info "Auto-enabled Prometheus export (node_exporter detected)"
+    else
+        NFTBAN_EXPORT_PROMETHEUS="false"
+    fi
+fi
 
 # Metrics cache file (collected once, used by all exporters)
 readonly METRICS_CACHE="${NFTBAN_RUN_DIR}/metrics.cache"
@@ -354,6 +366,11 @@ collect_all_metrics() {
     # LIVE METRICS (every run - 60s)
     # =========================================================================
     local pid=0 status=0 uptime=0
+    # Memory metrics (declared at function level for JSON cache access)
+    local rss=0 fds=0 threads=0
+    # Network metrics (declared at function level for JSON cache access)
+    local total_rx_mbps=0 total_tx_mbps=0 peak_rx=0 peak_tx=0
+    local conn_active=0 conn_established=0 conn_time_wait=0
     if group_active "live"; then
 
         # --- Daemon Metrics ---
@@ -537,8 +554,8 @@ collect_all_metrics() {
         fi
 
         # --- Memory Metrics ---
+        # Variables declared at function level for JSON cache access
         if [[ -n "$pid" ]] && [[ "$pid" != "0" ]] && [[ -d "/proc/$pid" ]]; then
-            local rss fds threads
             rss=$(awk '/VmRSS/ {print $2 * 1024}' "/proc/$pid/status" 2>/dev/null || echo "0")
             fds=$(ls -1 "/proc/$pid/fd" 2>/dev/null | wc -l || echo "0")
             threads=$(awk '/Threads/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo "0")
@@ -701,7 +718,7 @@ collect_all_metrics() {
     if group_active "live" && should_collect_component "network"; then
 
         # --- Bandwidth Metrics ---
-        local total_rx_mbps=0 total_tx_mbps=0
+        # Variables declared at function level for JSON cache access
         mkdir -p "$(dirname "$BANDWIDTH_STATE")"
 
         # Get all physical interfaces (exclude lo, docker, veth, etc.)
@@ -757,7 +774,7 @@ collect_all_metrics() {
     metrics+="nftban_bandwidth_peak_tx_mbps $peak_tx $timestamp\n"
 
         # --- Connection Metrics ---
-        local conn_active conn_established conn_time_wait
+        # Variables declared at function level for JSON cache access
         conn_active=$(get_connection_stats active)
         conn_established=$(get_connection_stats established)
         conn_time_wait=$(get_connection_stats time_wait)
@@ -883,12 +900,21 @@ collect_all_metrics() {
     "active": ${mod_active:-0},
     "failed": ${mod_failed:-0}
   },
+  "memory": {
+    "rss_bytes": ${rss:-0},
+    "open_fds": ${fds:-0},
+    "threads": ${threads:-0}
+  },
   "network": {
     "connections_active": ${conn_active:-0},
     "connections_established": ${conn_established:-0},
     "connections_time_wait": ${conn_time_wait:-0},
     "rx_mbps": ${total_rx_mbps:-0},
-    "tx_mbps": ${total_tx_mbps:-0}
+    "tx_mbps": ${total_tx_mbps:-0},
+    "total_rx_mbps": ${total_rx_mbps:-0},
+    "total_tx_mbps": ${total_tx_mbps:-0},
+    "peak_rx_mbps": ${peak_rx:-0},
+    "peak_tx_mbps": ${peak_tx:-0}
   }
 }
 EOF

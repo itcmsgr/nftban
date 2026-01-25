@@ -507,14 +507,54 @@ nftban_stats_ban_sources() {
 }
 
 nftban_stats_top_sources() {
-    # Get top ban sources (login, portscan, ddos, manual, feeds)
+    # Get top ban sources (login, portscan, ddos, manual, feeds, suricata)
     # Usage: nftban_stats_top_sources [limit] [since] [until]
     # Returns: JSON array [{"name":"source","count":N},...]
+    #
+    # SINGLE SOURCE OF TRUTH: Uses unified cache when available for common time windows
 
     local limit="${1:-${STATS_TOP_N}}"
     local since="${2:-1970-01-01}"
     local until="${3:-$(date +%Y-%m-%d)}"
+    local today
+    today=$(date +%Y-%m-%d)
 
+    # Try unified cache first (Single Source of Truth)
+    if nftban_stats_unified_available; then
+        local yesterday
+        yesterday=$(date -d '1 day ago' +%Y-%m-%d 2>/dev/null || date -v-1d +%Y-%m-%d 2>/dev/null || echo "")
+
+        # Determine which cache source to use based on time window
+        local cache_prefix=""
+        if [[ "$since" == "1970-01-01" ]] && [[ "$until" == "$today" ]]; then
+            cache_prefix=".bans_by_source"  # All-time stats
+        elif [[ "$since" == "$yesterday" ]] && [[ "$until" == "$today" ]]; then
+            cache_prefix=".bans_by_source_24h"  # 24h stats
+        fi
+
+        if [[ -n "$cache_prefix" ]]; then
+            # Read from unified cache and format as sorted array
+            local login portscan ddos manual feeds suricata
+            login=$(nftban_stats_get_unified "${cache_prefix}.login" "0")
+            portscan=$(nftban_stats_get_unified "${cache_prefix}.portscan" "0")
+            ddos=$(nftban_stats_get_unified "${cache_prefix}.ddos" "0")
+            manual=$(nftban_stats_get_unified "${cache_prefix}.manual" "0")
+            feeds=$(nftban_stats_get_unified "${cache_prefix}.feeds" "0")
+            suricata=$(nftban_stats_get_unified "${cache_prefix}.suricata" "0")
+
+            # Build array and sort by count descending, limit to requested number
+            printf '%d login\n%d portscan\n%d ddos\n%d manual\n%d feeds\n%d suricata\n' \
+                "$login" "$portscan" "$ddos" "$manual" "$feeds" "$suricata" | \
+            sort -rn | head -n "$limit" | \
+            awk 'BEGIN{printf "["}
+                 NR>1{printf ","}
+                 $1 > 0 {printf "{\"name\":\"%s\",\"count\":%d}", $2, $1}
+                 END{printf "]"}'
+            return 0
+        fi
+    fi
+
+    # Fallback: Parse log file for custom date ranges
     if [[ ! -f "$NFTBAN_BAN_LOG" ]]; then
         echo "[]"
         return 0
