@@ -168,6 +168,19 @@ json_to_zabbix_metrics() {
         metrics+="nftban.module.up[${module}] $(echo "$json" | jq -r ".module_status.${module} // 0")\n"
     done
 
+    # Suricata IDS metrics
+    metrics+="nftban.suricata.up $(echo "$json" | jq -r '.suricata.up // 0')\n"
+    metrics+="nftban.suricata.alerts.total $(echo "$json" | jq -r '.suricata.alerts_total // 0')\n"
+    metrics+="nftban.suricata.alerts.severity[1] $(echo "$json" | jq -r '.suricata.alerts_by_severity."1" // 0')\n"
+    metrics+="nftban.suricata.alerts.severity[2] $(echo "$json" | jq -r '.suricata.alerts_by_severity."2" // 0')\n"
+    metrics+="nftban.suricata.alerts.severity[3] $(echo "$json" | jq -r '.suricata.alerts_by_severity."3" // 0')\n"
+    metrics+="nftban.suricata.alerts.severity[4] $(echo "$json" | jq -r '.suricata.alerts_by_severity."4" // 0')\n"
+    metrics+="nftban.suricata.rules.total $(echo "$json" | jq -r '.suricata.rules_total // 0')\n"
+    metrics+="nftban.suricata.rules.filtered $(echo "$json" | jq -r '.suricata.rules_filtered // 0')\n"
+    metrics+="nftban.suricata.bans.total $(echo "$json" | jq -r '.suricata.bans_total // 0')\n"
+    metrics+="nftban.suricata.eve_errors $(echo "$json" | jq -r '.suricata.eve_parse_errors // 0')\n"
+    metrics+="nftban.suricata.last_alert $(echo "$json" | jq -r '.suricata.last_alert_timestamp // 0')\n"
+
     # Feed health metrics (Phase 1)
     metrics+="nftban.feeds.total $(echo "$json" | jq -r '.feed_health.total_feeds // 0')\n"
     metrics+="nftban.feeds.active $(echo "$json" | jq -r '.feed_health.active_feeds // 0')\n"

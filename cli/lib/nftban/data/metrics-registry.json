@@ -989,6 +989,134 @@
       "source_details": {"type": "shell", "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh", "function": "collect_feed_health_metrics"},
       "added_version": "1.4.0",
       "phase": 1
+    },
+    "nftban_suricata_up": {
+      "type": "gauge",
+      "help": "Suricata daemon running status (1=up, 0=down)",
+      "unit": "",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.4.0",
+      "phase": 2
+    },
+    "nftban_suricata_alerts_total": {
+      "type": "counter",
+      "help": "Total Suricata alerts received",
+      "unit": "",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.4.0",
+      "phase": 2
+    },
+    "nftban_suricata_alerts_by_severity": {
+      "type": "counter",
+      "help": "Suricata alerts by severity level (1-4)",
+      "unit": "",
+      "labels": ["severity"],
+      "label_values": {"severity": ["1", "2", "3", "4"]},
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.4.0",
+      "phase": 2
+    },
+    "nftban_suricata_rules_total": {
+      "type": "gauge",
+      "help": "Total active Suricata rules",
+      "unit": "",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.4.0",
+      "phase": 2
+    },
+    "nftban_suricata_rules_filtered": {
+      "type": "gauge",
+      "help": "Filtered/disabled Suricata rules",
+      "unit": "",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.4.0",
+      "phase": 2
+    },
+    "nftban_suricata_bans_total": {
+      "type": "counter",
+      "help": "Bans triggered by Suricata alerts",
+      "unit": "",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.4.0",
+      "phase": 2
+    },
+    "nftban_suricata_eve_parse_errors_total": {
+      "type": "counter",
+      "help": "EVE JSON parsing errors",
+      "unit": "",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.4.0",
+      "phase": 2
+    },
+    "nftban_suricata_last_alert_timestamp": {
+      "type": "gauge",
+      "help": "Unix timestamp of last Suricata alert",
+      "unit": "seconds",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.4.0",
+      "phase": 2
+    },
+    "nftban_suricata_info": {
+      "type": "gauge",
+      "help": "Suricata configuration info",
+      "unit": "",
+      "labels": ["rule_profile"],
+      "label_values": {"rule_profile": ["minimal", "basic", "standard", "full"]},
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.4.0",
+      "phase": 2
     }
   },
   "zabbix_mapping": {
