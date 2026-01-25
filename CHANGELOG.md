@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.0] - 2026-01-25
+
+### Architecture Cleanup Release
+
+This release simplifies the metrics architecture by removing unused components and establishing a clear backend model.
+
+### Removed
+- **VictoriaMetrics support** - Framework was 0% operational, added unnecessary complexity
+  - Removed 15+ VM-specific config variables
+  - Removed 804 lines from cmd_metrics.sh (VM options, modes, commands)
+  - Removed agent/storage model complexity
+- **Legacy systemd exporter units** - Replaced by unified exporter
+  - Deleted: nftban-metrics-exporter.service/.timer
+  - Deleted: nftban-zabbix-exporter.service/.timer
+  - Deleted: nftban-connector-exporter.service/.timer
+- **Legacy Zabbix exporter** - nftban_zabbix_exporter_legacy.sh (39KB dead code)
+- **Legacy Web UI** - /web/ directory replaced by GOTH GUI v1.1.0
+
+### Changed
+- **Unified Exporter** is now the ONLY metrics exporter
+  - Single collection pass, multiple export targets
+  - 66% reduction in collection overhead
+- **Prometheus export** is now OFF by default
+  - Auto-enables only when node_exporter textfile collector detected
+  - Our backend (stats.json + bans.log) is the default
+- **JSON cache** expanded with memory and network metrics
+- **Stats functions** optimized with cache-first pattern
+- **Health checks** updated to reference only unified exporter
+
+### Fixed
+- install.sh no longer installs conflicting timer systems
+- Fresh install now works correctly with unified exporter only
+- 34+ shell scripts updated to use unified exporter references
+
+### Documentation
+- Clarified: NFTBan does NOT require Prometheus
+- Clarified: Prometheus export is an optional compatibility adapter
+- Our backend: stats.json (cache) + bans.log (history)
+
 ## [1.5.0] - 2026-01-25
 
 ### Added
