@@ -181,6 +181,19 @@ json_to_zabbix_metrics() {
     metrics+="nftban.suricata.eve_errors $(echo "$json" | jq -r '.suricata.eve_parse_errors // 0')\n"
     metrics+="nftban.suricata.last_alert $(echo "$json" | jq -r '.suricata.last_alert_timestamp // 0')\n"
 
+    # Event Bus metrics
+    metrics+="nftban.eventbus.events.total $(echo "$json" | jq -r '.eventbus.events_total // 0')\n"
+    metrics+="nftban.eventbus.events.dropped $(echo "$json" | jq -r '.eventbus.events_dropped // 0')\n"
+    metrics+="nftban.eventbus.queue_size $(echo "$json" | jq -r '.eventbus.queue_size // 0')\n"
+    metrics+="nftban.eventbus.handlers $(echo "$json" | jq -r '.eventbus.handlers_total // 0')\n"
+
+    # NFTables Performance metrics
+    metrics+="nftban.nftables.apply_latency $(echo "$json" | jq -r '.nftables_perf.apply_latency_ms // 0')\n"
+    metrics+="nftban.nftables.apply_errors $(echo "$json" | jq -r '.nftables_perf.apply_errors_total // 0')\n"
+    metrics+="nftban.nftables.rules.total $(echo "$json" | jq -r '.nftables_perf.rules_total // 0')\n"
+    metrics+="nftban.nftables.sets.total $(echo "$json" | jq -r '.nftables_perf.sets_total // 0')\n"
+    metrics+="nftban.nftables.commands.total $(echo "$json" | jq -r '.nftables_perf.commands_total // 0')\n"
+
     # Feed health metrics (Phase 1)
     metrics+="nftban.feeds.total $(echo "$json" | jq -r '.feed_health.total_feeds // 0')\n"
     metrics+="nftban.feeds.active $(echo "$json" | jq -r '.feed_health.active_feeds // 0')\n"

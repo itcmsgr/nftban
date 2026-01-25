@@ -1117,6 +1117,85 @@
       "category": "suricata",
       "added_version": "1.4.0",
       "phase": 2
+    },
+    "nftban_eventbus_events_total": {
+      "type": "counter",
+      "help": "Total events processed by event bus",
+      "labels": [],
+      "category": "eventbus",
+      "phase": 3
+    },
+    "nftban_eventbus_events_by_type": {
+      "type": "counter",
+      "help": "Events by type",
+      "labels": ["type"],
+      "label_values": {"type": ["ban", "unban", "login_fail", "ddos_detected", "portscan_detected", "suricata_alert", "feed_sync"]},
+      "category": "eventbus",
+      "phase": 3
+    },
+    "nftban_eventbus_events_dropped_total": {
+      "type": "counter",
+      "help": "Dropped events due to queue overflow",
+      "labels": [],
+      "category": "eventbus",
+      "phase": 3
+    },
+    "nftban_eventbus_queue_size": {
+      "type": "gauge",
+      "help": "Current event queue depth",
+      "labels": [],
+      "category": "eventbus",
+      "phase": 3
+    },
+    "nftban_eventbus_handlers_total": {
+      "type": "gauge",
+      "help": "Registered event handlers",
+      "labels": [],
+      "category": "eventbus",
+      "phase": 3
+    },
+    "nftban_nftables_apply_latency_ms": {
+      "type": "gauge",
+      "help": "Rule application latency in milliseconds",
+      "labels": [],
+      "category": "nftables",
+      "phase": 3
+    },
+    "nftban_nftables_apply_errors_total": {
+      "type": "counter",
+      "help": "Rule application failures",
+      "labels": [],
+      "category": "nftables",
+      "phase": 3
+    },
+    "nftban_nftables_rules_total": {
+      "type": "gauge",
+      "help": "Total nftables rules",
+      "labels": [],
+      "category": "nftables",
+      "phase": 3
+    },
+    "nftban_nftables_sets_total": {
+      "type": "gauge",
+      "help": "Total nftables sets",
+      "labels": [],
+      "category": "nftables",
+      "phase": 3
+    },
+    "nftban_nftables_set_elements": {
+      "type": "gauge",
+      "help": "Elements per nftables set",
+      "labels": ["set"],
+      "label_values": {"set": ["blacklist_ipv4", "blacklist_ipv6", "whitelist_ipv4", "whitelist_ipv6"]},
+      "category": "nftables",
+      "phase": 3
+    },
+    "nftban_nftables_commands_total": {
+      "type": "counter",
+      "help": "Total nft commands executed",
+      "labels": [],
+      "category": "nftables",
+      "phase": 3
     }
   },
   "zabbix_mapping": {

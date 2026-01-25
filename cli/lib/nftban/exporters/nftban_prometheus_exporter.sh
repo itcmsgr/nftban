@@ -1151,6 +1151,79 @@ collect_metrics() {
     fi
 
     # -------------------------------------------------------------------------
+    # Event Bus metrics
+    # -------------------------------------------------------------------------
+
+    if [[ -f "$COMBINED_FILE" ]] && command -v jq &>/dev/null; then
+        echo "# HELP nftban_eventbus_events_total Total events processed by event bus" >> "$TEMP_FILE"
+        echo "# TYPE nftban_eventbus_events_total counter" >> "$TEMP_FILE"
+        echo "nftban_eventbus_events_total $(jq -r '.eventbus.events_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_eventbus_events_by_type Events by type" >> "$TEMP_FILE"
+        echo "# TYPE nftban_eventbus_events_by_type counter" >> "$TEMP_FILE"
+        for type in ban unban login_fail ddos_detected portscan_detected suricata_alert feed_sync; do
+            val=$(jq -r ".eventbus.events_by_type.${type} // 0" "$COMBINED_FILE")
+            echo "nftban_eventbus_events_by_type{type=\"${type}\"} ${val}" >> "$TEMP_FILE"
+        done
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_eventbus_events_dropped_total Dropped events" >> "$TEMP_FILE"
+        echo "# TYPE nftban_eventbus_events_dropped_total counter" >> "$TEMP_FILE"
+        echo "nftban_eventbus_events_dropped_total $(jq -r '.eventbus.events_dropped // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_eventbus_queue_size Current event queue depth" >> "$TEMP_FILE"
+        echo "# TYPE nftban_eventbus_queue_size gauge" >> "$TEMP_FILE"
+        echo "nftban_eventbus_queue_size $(jq -r '.eventbus.queue_size // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_eventbus_handlers_total Registered event handlers" >> "$TEMP_FILE"
+        echo "# TYPE nftban_eventbus_handlers_total gauge" >> "$TEMP_FILE"
+        echo "nftban_eventbus_handlers_total $(jq -r '.eventbus.handlers_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+    fi
+
+    # -------------------------------------------------------------------------
+    # NFTables Performance metrics
+    # -------------------------------------------------------------------------
+
+    if [[ -f "$COMBINED_FILE" ]] && command -v jq &>/dev/null; then
+        echo "# HELP nftban_nftables_apply_latency_ms Rule application latency" >> "$TEMP_FILE"
+        echo "# TYPE nftban_nftables_apply_latency_ms gauge" >> "$TEMP_FILE"
+        echo "nftban_nftables_apply_latency_ms $(jq -r '.nftables_perf.apply_latency_ms // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_nftables_apply_errors_total Rule application failures" >> "$TEMP_FILE"
+        echo "# TYPE nftban_nftables_apply_errors_total counter" >> "$TEMP_FILE"
+        echo "nftban_nftables_apply_errors_total $(jq -r '.nftables_perf.apply_errors_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_nftables_rules_total Total nftables rules" >> "$TEMP_FILE"
+        echo "# TYPE nftban_nftables_rules_total gauge" >> "$TEMP_FILE"
+        echo "nftban_nftables_rules_total $(jq -r '.nftables_perf.rules_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_nftables_sets_total Total nftables sets" >> "$TEMP_FILE"
+        echo "# TYPE nftban_nftables_sets_total gauge" >> "$TEMP_FILE"
+        echo "nftban_nftables_sets_total $(jq -r '.nftables_perf.sets_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_nftables_set_elements Elements per set" >> "$TEMP_FILE"
+        echo "# TYPE nftban_nftables_set_elements gauge" >> "$TEMP_FILE"
+        for set in blacklist_ipv4 blacklist_ipv6 whitelist_ipv4 whitelist_ipv6; do
+            val=$(jq -r ".nftables_perf.set_elements.${set} // 0" "$COMBINED_FILE")
+            echo "nftban_nftables_set_elements{set=\"${set}\"} ${val}" >> "$TEMP_FILE"
+        done
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_nftables_commands_total Total nft commands executed" >> "$TEMP_FILE"
+        echo "# TYPE nftban_nftables_commands_total counter" >> "$TEMP_FILE"
+        echo "nftban_nftables_commands_total $(jq -r '.nftables_perf.commands_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+    fi
+
+    # -------------------------------------------------------------------------
     # Performance Metrics
     # -------------------------------------------------------------------------
 
