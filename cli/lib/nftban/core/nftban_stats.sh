@@ -757,11 +757,9 @@ nftban_stats_generate_dashboard() {
     fi
 
     # Collect metrics (uses unified cache internally)
-    # shellcheck disable=SC2034  # active_bans used in dashboard display calculations
-    local total_bans unique_ips active_bans whitelist_count
+    local total_bans unique_ips whitelist_count
     total_bans=$(nftban_stats_count_bans "$since" "$until")
     unique_ips=$(nftban_stats_count_unique_ips "$since" "$until")
-    active_bans=$(nftban_stats_count_active_bans)
     whitelist_count=$(nftban_stats_count_whitelist)
 
     # Header
