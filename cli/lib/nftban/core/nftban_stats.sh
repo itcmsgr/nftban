@@ -28,7 +28,7 @@
 # meta:inventory.privileges="root:read-nftables,read-logs"
 #
 # meta:created_date="2025-11-05"
-# meta:updated_date="2026-01-11"
+# meta:updated_date="2026-01-25"
 # =============================================================================
 
 # Enhanced strict mode
@@ -143,6 +143,96 @@ nftban_stats_clear_cache() {
 }
 
 # =============================================================================
+# UNIFIED METRICS CACHE (Single Source of Truth)
+# =============================================================================
+# The unified exporter collects ALL metrics and writes to:
+#   /var/cache/nftban/metrics/stats.json
+#
+# This is the SINGLE SOURCE OF TRUTH. All stats functions should read
+# from this cache when available, falling back to direct collection
+# only if cache is stale (>5 minutes old).
+# =============================================================================
+
+# Unified cache location (written by nftban_unified_exporter.sh)
+readonly NFTBAN_UNIFIED_CACHE="${NFTBAN_JSON_CACHE_DIR:-/var/cache/nftban/metrics}/stats.json"
+readonly NFTBAN_UNIFIED_CACHE_TTL="${NFTBAN_UNIFIED_CACHE_TTL:-300}"  # 5 minutes
+
+# Cached JSON data (loaded once per session)
+_UNIFIED_CACHE_DATA=""
+_UNIFIED_CACHE_LOADED=0
+
+nftban_stats_load_unified_cache() {
+    # Load unified metrics cache (Single Source of Truth)
+    # Usage: nftban_stats_load_unified_cache
+    # Returns: 0=success (cache loaded), 1=cache miss/stale
+    # Sets: _UNIFIED_CACHE_DATA with JSON content
+
+    # Already loaded this session?
+    if [[ $_UNIFIED_CACHE_LOADED -eq 1 ]] && [[ -n "$_UNIFIED_CACHE_DATA" ]]; then
+        return 0
+    fi
+
+    # Check if cache file exists
+    if [[ ! -f "$NFTBAN_UNIFIED_CACHE" ]]; then
+        return 1
+    fi
+
+    # Check if cache is fresh
+    local cache_age
+    cache_age=$(( $(date +%s) - $(stat -c %Y "$NFTBAN_UNIFIED_CACHE" 2>/dev/null || echo 0) ))
+    if [[ $cache_age -gt $NFTBAN_UNIFIED_CACHE_TTL ]]; then
+        return 1  # Cache too old
+    fi
+
+    # Load cache data
+    _UNIFIED_CACHE_DATA=$(cat "$NFTBAN_UNIFIED_CACHE" 2>/dev/null)
+    if [[ -z "$_UNIFIED_CACHE_DATA" ]]; then
+        return 1
+    fi
+
+    # Validate JSON (quick check)
+    if ! echo "$_UNIFIED_CACHE_DATA" | jq -e '.schema_version' &>/dev/null; then
+        _UNIFIED_CACHE_DATA=""
+        return 1
+    fi
+
+    _UNIFIED_CACHE_LOADED=1
+    return 0
+}
+
+nftban_stats_get_unified() {
+    # Get value from unified cache using jq path
+    # Usage: nftban_stats_get_unified ".blacklist.ipv4.total"
+    # Returns: Value or empty string if not found
+
+    local jq_path="$1"
+    local default="${2:-}"
+
+    if ! nftban_stats_load_unified_cache; then
+        echo "$default"
+        return 1
+    fi
+
+    local value
+    value=$(echo "$_UNIFIED_CACHE_DATA" | jq -r "$jq_path // empty" 2>/dev/null)
+    if [[ -z "$value" ]] || [[ "$value" == "null" ]]; then
+        echo "$default"
+        return 1
+    fi
+
+    echo "$value"
+    return 0
+}
+
+nftban_stats_unified_available() {
+    # Check if unified cache is available and fresh
+    # Usage: if nftban_stats_unified_available; then ...
+    # Returns: 0=available, 1=not available
+
+    nftban_stats_load_unified_cache
+}
+
+# =============================================================================
 # CORE METRICS COLLECTION
 # =============================================================================
 
@@ -152,52 +242,106 @@ nftban_stats_count_bans() {
     # Args: since=YYYY-MM-DD (default: 1970-01-01)
     #       until=YYYY-MM-DD (default: today)
     # Returns: Number of bans
+    #
+    # SINGLE SOURCE OF TRUTH: Uses unified cache for common time windows
 
     local since="${1:-1970-01-01}"
     local until="${2:-$(date +%Y-%m-%d)}"
+    local today
+    today=$(date +%Y-%m-%d)
 
+    # Try unified cache for common time windows
+    if nftban_stats_unified_available; then
+        local yesterday week_ago month_ago
+        yesterday=$(date -d '1 day ago' +%Y-%m-%d 2>/dev/null || date -v-1d +%Y-%m-%d 2>/dev/null || echo "")
+        week_ago=$(date -d '7 days ago' +%Y-%m-%d 2>/dev/null || date -v-7d +%Y-%m-%d 2>/dev/null || echo "")
+        month_ago=$(date -d '30 days ago' +%Y-%m-%d 2>/dev/null || date -v-30d +%Y-%m-%d 2>/dev/null || echo "")
+
+        # All-time bans
+        if [[ "$since" == "1970-01-01" ]] && [[ "$until" == "$today" ]]; then
+            nftban_stats_get_unified ".activity.total_bans" "0"
+            return 0
+        fi
+        # 24h window
+        if [[ "$since" == "$yesterday" ]] && [[ "$until" == "$today" ]]; then
+            nftban_stats_get_unified ".activity.bans_24h" "0"
+            return 0
+        fi
+        # 7d window
+        if [[ "$since" == "$week_ago" ]] && [[ "$until" == "$today" ]]; then
+            nftban_stats_get_unified ".activity.bans_7d" "0"
+            return 0
+        fi
+        # 30d window
+        if [[ "$since" == "$month_ago" ]] && [[ "$until" == "$today" ]]; then
+            nftban_stats_get_unified ".activity.bans_30d" "0"
+            return 0
+        fi
+    fi
+
+    # Fallback: Parse log file for custom date ranges
     if [[ ! -f "$NFTBAN_BAN_LOG" ]]; then
         echo "0"
         return 0
     fi
 
-    # Try cache first
+    # Try local cache
     local cache_key="bans_${since}_${until}"
     if nftban_stats_get_cache "$cache_key"; then
         return 0
     fi
 
-    # Count bans
+    # Count bans from log
     local count
     count=$(awk -F'|' -v since="$since" -v until="$until" \
         '$1 >= since && $1 <= until && $6 == "BANNED" {count++} END {print count+0}' \
         "$NFTBAN_BAN_LOG")
 
-    # Cache result
     nftban_stats_set_cache "$cache_key" "$count"
-
     echo "$count"
 }
 
 nftban_stats_count_unique_ips() {
     # Count unique IPs banned in time window
     # Usage: nftban_stats_count_unique_ips [since] [until]
+    #
+    # SINGLE SOURCE OF TRUTH: Uses unified cache for common time windows
 
     local since="${1:-1970-01-01}"
     local until="${2:-$(date +%Y-%m-%d)}"
+    local today
+    today=$(date +%Y-%m-%d)
 
+    # Try unified cache for common time windows
+    if nftban_stats_unified_available; then
+        local yesterday
+        yesterday=$(date -d '1 day ago' +%Y-%m-%d 2>/dev/null || date -v-1d +%Y-%m-%d 2>/dev/null || echo "")
+
+        # All-time unique IPs
+        if [[ "$since" == "1970-01-01" ]] && [[ "$until" == "$today" ]]; then
+            nftban_stats_get_unified ".activity.unique_ips" "0"
+            return 0
+        fi
+        # 24h unique IPs
+        if [[ "$since" == "$yesterday" ]] && [[ "$until" == "$today" ]]; then
+            nftban_stats_get_unified ".activity.unique_ips_24h" "0"
+            return 0
+        fi
+    fi
+
+    # Fallback: Parse log file for custom date ranges
     if [[ ! -f "$NFTBAN_BAN_LOG" ]]; then
         echo "0"
         return 0
     fi
 
-    # Try cache
+    # Try local cache
     local cache_key="unique_ips_${since}_${until}"
     if nftban_stats_get_cache "$cache_key"; then
         return 0
     fi
 
-    # Count unique IPs
+    # Count unique IPs from log
     local count
     count=$(awk -F'|' -v since="$since" -v until="$until" \
         '$1 >= since && $1 <= until && $6 == "BANNED" {ips[$4]=1} END {print length(ips)}' \
@@ -212,9 +356,17 @@ nftban_stats_count_active_bans() {
     # Usage: nftban_stats_count_active_bans
     # Returns: Number of active bans
     #
-    # v0.7.3: ALL bans (manual, feeds, geoban, temporary) consolidated into blacklist_ipv4/ipv6
-    # Uses dual-table architecture: ip nftban (IPv4) + ip6 nftban (IPv6)
+    # SINGLE SOURCE OF TRUTH: Reads from unified cache when available
+    # Fallback: Direct nftables query if cache is stale
 
+    # Try unified cache first (Single Source of Truth)
+    local cached_total
+    if cached_total=$(nftban_stats_get_unified ".blacklist.total"); then
+        echo "$cached_total"
+        return 0
+    fi
+
+    # Fallback: Direct nftables query
     local total=0
 
     # Count blacklist_ipv4 (ALL IPv4 bans: permanent + temporary + feeds + geoban)
@@ -240,7 +392,17 @@ nftban_stats_count_whitelist() {
     # Count whitelist entries from nftables (v0.7.3 dual-table architecture)
     # Usage: nftban_stats_count_whitelist
     # Returns: Total whitelist entries
+    #
+    # SINGLE SOURCE OF TRUTH: Reads from unified cache when available
 
+    # Try unified cache first
+    local cached_total
+    if cached_total=$(nftban_stats_get_unified ".whitelist.total"); then
+        echo "$cached_total"
+        return 0
+    fi
+
+    # Fallback: Direct nftables query
     local total=0
 
     # Read from nftables whitelist_ipv4 set (v0.7.3 naming)
@@ -267,37 +429,77 @@ nftban_stats_count_whitelist() {
 # =============================================================================
 
 nftban_stats_ban_sources() {
-    # Get ban breakdown by source (login, portscan, ddos, manual, feeds)
+    # Get ban breakdown by source (login, portscan, ddos, manual, feeds, suricata)
     # Usage: nftban_stats_ban_sources [since] [until]
-    # Returns: JSON {"login":N,"portscan":N,"ddos":N,"manual":N,"feeds":N}
+    # Returns: JSON {"login":N,"portscan":N,"ddos":N,"manual":N,"feeds":N,"suricata":N}
+    #
+    # SINGLE SOURCE OF TRUTH: Uses unified cache when available
 
     local since="${1:-1970-01-01}"
     local until="${2:-$(date +%Y-%m-%d)}"
+    local today
+    today=$(date +%Y-%m-%d)
 
+    # Try unified cache first (Single Source of Truth)
+    # Use bans_by_source for all-time, bans_by_source_24h for 24h window
+    if nftban_stats_unified_available; then
+        local login portscan ddos manual feeds suricata
+
+        # Determine which cache to use based on time window
+        if [[ "$since" == "1970-01-01" ]] && [[ "$until" == "$today" ]]; then
+            # All-time stats -> use bans_by_source
+            login=$(nftban_stats_get_unified ".bans_by_source.login" "0")
+            portscan=$(nftban_stats_get_unified ".bans_by_source.portscan" "0")
+            ddos=$(nftban_stats_get_unified ".bans_by_source.ddos" "0")
+            manual=$(nftban_stats_get_unified ".bans_by_source.manual" "0")
+            feeds=$(nftban_stats_get_unified ".bans_by_source.feeds" "0")
+            suricata=$(nftban_stats_get_unified ".bans_by_source.suricata" "0")
+            echo "{\"login\":$login,\"portscan\":$portscan,\"ddos\":$ddos,\"manual\":$manual,\"feeds\":$feeds,\"suricata\":$suricata}"
+            return 0
+        fi
+
+        # Check if this is a 24h window (yesterday to today)
+        local yesterday
+        yesterday=$(date -d '1 day ago' +%Y-%m-%d 2>/dev/null || date -v-1d +%Y-%m-%d 2>/dev/null || echo "")
+        if [[ "$since" == "$yesterday" ]] && [[ "$until" == "$today" ]]; then
+            # 24h stats -> use bans_by_source_24h
+            login=$(nftban_stats_get_unified ".bans_by_source_24h.login" "0")
+            portscan=$(nftban_stats_get_unified ".bans_by_source_24h.portscan" "0")
+            ddos=$(nftban_stats_get_unified ".bans_by_source_24h.ddos" "0")
+            manual=$(nftban_stats_get_unified ".bans_by_source_24h.manual" "0")
+            feeds=$(nftban_stats_get_unified ".bans_by_source_24h.feeds" "0")
+            suricata=$(nftban_stats_get_unified ".bans_by_source_24h.suricata" "0")
+            echo "{\"login\":$login,\"portscan\":$portscan,\"ddos\":$ddos,\"manual\":$manual,\"feeds\":$feeds,\"suricata\":$suricata}"
+            return 0
+        fi
+    fi
+
+    # Fallback: Parse log file for custom date ranges
     if [[ ! -f "$NFTBAN_BAN_LOG" ]]; then
-        echo "{\"login\":0,\"portscan\":0,\"ddos\":0,\"manual\":0,\"feeds\":0}"
+        echo "{\"login\":0,\"portscan\":0,\"ddos\":0,\"manual\":0,\"feeds\":0,\"suricata\":0}"
         return 0
     fi
 
-    # Try cache
+    # Try local cache
     local cache_key="sources_${since}_${until}"
     if nftban_stats_get_cache "$cache_key"; then
         return 0
     fi
 
-    # Analyze sources
+    # Analyze sources from log
     local result
     result=$(awk -F'|' -v since="$since" -v until="$until" '
-    BEGIN {login=0; portscan=0; ddos=0; manual=0; feeds=0}
+    BEGIN {login=0; portscan=0; ddos=0; manual=0; feeds=0; suricata=0}
     $1 >= since && $1 <= until && $6 == "BANNED" {
         if ($3 ~ /login|ssh|auth|fail2ban/) login++
         else if ($3 ~ /portscan|scan/) portscan++
         else if ($3 ~ /ddos|flood|synflood/) ddos++
         else if ($3 == "manual" || $3 == "user") manual++
         else if ($3 ~ /feed/) feeds++
+        else if ($3 ~ /suricata|ids/) suricata++
     }
     END {
-        printf "{\"login\":%d,\"portscan\":%d,\"ddos\":%d,\"manual\":%d,\"feeds\":%d}", login, portscan, ddos, manual, feeds
+        printf "{\"login\":%d,\"portscan\":%d,\"ddos\":%d,\"manual\":%d,\"feeds\":%d,\"suricata\":%d}", login, portscan, ddos, manual, feeds, suricata
     }' "$NFTBAN_BAN_LOG")
 
     nftban_stats_set_cache "$cache_key" "$result"
@@ -542,15 +744,22 @@ nftban_stats_timeline() {
 nftban_stats_generate_dashboard() {
     # Generate comprehensive terminal dashboard - Clean v1.0 layout
     # Usage: nftban_stats_generate_dashboard [since] [until]
+    #
+    # SINGLE SOURCE OF TRUTH: Uses unified cache when available
 
     local since="${1:-$(date -d '24 hours ago' +%Y-%m-%d)}"
     local until="${2:-$(date +%Y-%m-%d)}"
 
-    # Collect metrics
+    # Load unified cache once for this dashboard run
+    local use_unified_cache=false
+    if nftban_stats_unified_available; then
+        use_unified_cache=true
+    fi
+
+    # Collect metrics (uses unified cache internally)
     local total_bans unique_ips active_bans whitelist_count
     total_bans=$(nftban_stats_count_bans "$since" "$until")
     unique_ips=$(nftban_stats_count_unique_ips "$since" "$until")
-    # shellcheck disable=SC2034  # Reserved for metrics
     active_bans=$(nftban_stats_count_active_bans)
     whitelist_count=$(nftban_stats_count_whitelist)
 
@@ -569,37 +778,48 @@ nftban_stats_generate_dashboard() {
     printf "  %-20s %s\n" "Hostname............" "$(hostname)"
     printf "  %-20s %s → %s\n" "Period.............." "$since" "$until"
     printf "  %-20s %s\n" "Generated..........." "$(date '+%Y-%m-%d %H:%M:%S')"
+    if [[ "$use_unified_cache" == "true" ]]; then
+        printf "  %-20s %s\n" "Data source........." "unified cache"
+    fi
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────
-    # UNIFIED BLACKLIST (count first, used by FIREWALL section)
+    # UNIFIED BLACKLIST (SINGLE SOURCE OF TRUTH from unified cache)
     # ─────────────────────────────────────────────────────────────────────
     local black_v4=0 black_v6=0
     local black_v4_temp=0 black_v4_perm=0
     local black_v6_temp=0 black_v6_perm=0
 
-    # Count blacklist sets - separate temporary (with timeout) and permanent
-    if nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null 2>&1; then
-        local v4_output
-        v4_output=$(nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null || true)
-        # Temporary bans have "timeout" in their line
-        black_v4_temp=$(echo "$v4_output" | grep -c "timeout" 2>/dev/null || echo "0")
-        # Total count
-        black_v4=$(echo "$v4_output" | { grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
-        black_v4=${black_v4:-0}
-        black_v4_temp=${black_v4_temp:-0}
-        black_v4_perm=$((black_v4 - black_v4_temp))
-        [[ $black_v4_perm -lt 0 ]] && black_v4_perm=0
-    fi
-    if nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 &>/dev/null 2>&1; then
-        local v6_output
-        v6_output=$(nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 2>/dev/null || true)
-        black_v6_temp=$(echo "$v6_output" | grep -c "timeout" 2>/dev/null || echo "0")
-        black_v6=$(echo "$v6_output" | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
-        black_v6=${black_v6:-0}
-        black_v6_temp=${black_v6_temp:-0}
-        black_v6_perm=$((black_v6 - black_v6_temp))
-        [[ $black_v6_perm -lt 0 ]] && black_v6_perm=0
+    if [[ "$use_unified_cache" == "true" ]]; then
+        # Read from unified cache (Single Source of Truth)
+        black_v4=$(nftban_stats_get_unified ".blacklist.ipv4.total" "0")
+        black_v4_perm=$(nftban_stats_get_unified ".blacklist.ipv4.permanent" "0")
+        black_v4_temp=$(nftban_stats_get_unified ".blacklist.ipv4.temporary" "0")
+        black_v6=$(nftban_stats_get_unified ".blacklist.ipv6.total" "0")
+        black_v6_perm=$(nftban_stats_get_unified ".blacklist.ipv6.permanent" "0")
+        black_v6_temp=$(nftban_stats_get_unified ".blacklist.ipv6.temporary" "0")
+    else
+        # Fallback: Direct nftables query
+        if nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null 2>&1; then
+            local v4_output
+            v4_output=$(nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null || true)
+            black_v4_temp=$(echo "$v4_output" | grep -c "timeout" 2>/dev/null || echo "0")
+            black_v4=$(echo "$v4_output" | { grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
+            black_v4=${black_v4:-0}
+            black_v4_temp=${black_v4_temp:-0}
+            black_v4_perm=$((black_v4 - black_v4_temp))
+            [[ $black_v4_perm -lt 0 ]] && black_v4_perm=0
+        fi
+        if nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 &>/dev/null 2>&1; then
+            local v6_output
+            v6_output=$(nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 2>/dev/null || true)
+            black_v6_temp=$(echo "$v6_output" | grep -c "timeout" 2>/dev/null || echo "0")
+            black_v6=$(echo "$v6_output" | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
+            black_v6=${black_v6:-0}
+            black_v6_temp=${black_v6_temp:-0}
+            black_v6_perm=$((black_v6 - black_v6_temp))
+            [[ $black_v6_perm -lt 0 ]] && black_v6_perm=0
+        fi
     fi
 
     black_v4=${black_v4//[^0-9]/}
@@ -627,49 +847,61 @@ nftban_stats_generate_dashboard() {
     printf "      %-16s %'d (perm: %'d, temp: %'d)\n" "IPv4............" "$black_v4" "$black_v4_perm" "$black_v4_temp"
     printf "      %-16s %'d (perm: %'d, temp: %'d)\n" "IPv6............" "$black_v6" "$black_v6_perm" "$black_v6_temp"
 
-    # Count feeds from files (separate IPv4/IPv6)
+    # Count feeds (SINGLE SOURCE OF TRUTH from unified cache)
     local feeds_ipv4_total=0 feeds_ipv6_total=0
-    local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
-    if [[ -d "$feeds_dir" ]]; then
-        if type -t nftban_feeds_discover_all >/dev/null 2>&1 && type -t nftban_feeds_get_property >/dev/null 2>&1; then
-            local all_feeds
-            all_feeds=$(nftban_feeds_discover_all 2>/dev/null || true)
-            for feed in $all_feeds; do
-                local enabled
-                enabled=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
-                if [[ "$enabled" == "true" ]]; then
-                    local feed_lower="${feed,,}"
-                    local feed_file="${feeds_dir}/${feed_lower}.txt"
-                    if [[ -f "$feed_file" ]]; then
-                        # Count IPv4 (lines starting with digit, no colon)
-                        local v4_count v6_count
-                        v4_count=$(grep -cE '^[0-9]+\.' "$feed_file" 2>/dev/null) || v4_count=0
-                        v6_count=$(grep -cE '^[0-9a-fA-F]*:' "$feed_file" 2>/dev/null) || v6_count=0
-                        feeds_ipv4_total=$((feeds_ipv4_total + v4_count))
-                        feeds_ipv6_total=$((feeds_ipv6_total + v6_count))
+    if [[ "$use_unified_cache" == "true" ]]; then
+        # Read from unified cache
+        feeds_ipv4_total=$(nftban_stats_get_unified ".feeds.ipv4_total" "0")
+        feeds_ipv6_total=$(nftban_stats_get_unified ".feeds.ipv6_total" "0")
+    else
+        # Fallback: Scan feed files
+        local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+        if [[ -d "$feeds_dir" ]]; then
+            if type -t nftban_feeds_discover_all >/dev/null 2>&1 && type -t nftban_feeds_get_property >/dev/null 2>&1; then
+                local all_feeds
+                all_feeds=$(nftban_feeds_discover_all 2>/dev/null || true)
+                for feed in $all_feeds; do
+                    local enabled
+                    enabled=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
+                    if [[ "$enabled" == "true" ]]; then
+                        local feed_lower="${feed,,}"
+                        local feed_file="${feeds_dir}/${feed_lower}.txt"
+                        if [[ -f "$feed_file" ]]; then
+                            local v4_count v6_count
+                            v4_count=$(grep -cE '^[0-9]+\.' "$feed_file" 2>/dev/null) || v4_count=0
+                            v6_count=$(grep -cE '^[0-9a-fA-F]*:' "$feed_file" 2>/dev/null) || v6_count=0
+                            feeds_ipv4_total=$((feeds_ipv4_total + v4_count))
+                            feeds_ipv6_total=$((feeds_ipv6_total + v6_count))
+                        fi
                     fi
-                fi
-            done
+                done
+            fi
         fi
     fi
     echo "  Threat Feeds:"
     printf "      %-16s %'d\n" "IPv4............" "$feeds_ipv4_total"
     printf "      %-16s %'d\n" "IPv6............" "$feeds_ipv6_total"
 
-    # Count geoban entries
+    # Count geoban entries (SINGLE SOURCE OF TRUTH from unified cache)
     local geoban_total=0
-    local geoban_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoban"
-    if [[ -d "$geoban_dir" ]]; then
-        local blocked_countries=0
-        shopt -s nullglob 2>/dev/null || true
-        for file in "$geoban_dir"/*.conf; do
-            [[ -f "$file" ]] && grep -q "^MODE=.*block" "$file" 2>/dev/null && ((blocked_countries++))
-        done
-        shopt -u nullglob 2>/dev/null || true
-        if [[ $blocked_countries -gt 0 ]]; then
+    if [[ "$use_unified_cache" == "true" ]]; then
+        # Read from unified cache
+        geoban_total=$(nftban_stats_get_unified ".geoban.countries_blocked" "0")
+    else
+        # Fallback: Scan geoban config files
+        local geoban_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoban"
+        if [[ -d "$geoban_dir" ]]; then
+            local blocked_countries=0
+            shopt -s nullglob 2>/dev/null || true
+            for file in "$geoban_dir"/*.conf; do
+                [[ -f "$file" ]] && grep -q "^MODE=.*block" "$file" 2>/dev/null && ((blocked_countries++))
+            done
+            shopt -u nullglob 2>/dev/null || true
             geoban_total=$blocked_countries
-            printf "  %-20s %d countries\n" "GeoBan.............." "$geoban_total"
         fi
+    fi
+    if [[ $geoban_total -gt 0 ]]; then
+        printf "  %-20s %d countries\n" "GeoBan.............." "$geoban_total"
     fi
 
     local total_ipv4=$((black_v4 + feeds_ipv4_total))
@@ -690,16 +922,17 @@ nftban_stats_generate_dashboard() {
     printf "  %-20s %s\n" "New bans (period)..." "$total_bans"
     printf "  %-20s %s\n" "Unique IPs banned..." "$unique_ips"
 
-    # Source breakdown
+    # Source breakdown (SINGLE SOURCE OF TRUTH via nftban_stats_ban_sources)
     local sources
     sources=$(nftban_stats_ban_sources "$since" "$until")
     if command -v jq &>/dev/null && [[ -n "$sources" ]]; then
-        local login_bans portscan_bans ddos_bans manual feeds
+        local login_bans portscan_bans ddos_bans manual feeds suricata_bans
         login_bans=$(echo "$sources" | jq -r '.login // 0')
         portscan_bans=$(echo "$sources" | jq -r '.portscan // 0')
         ddos_bans=$(echo "$sources" | jq -r '.ddos // 0')
         manual=$(echo "$sources" | jq -r '.manual // 0')
         feeds=$(echo "$sources" | jq -r '.feeds // 0')
+        suricata_bans=$(echo "$sources" | jq -r '.suricata // 0')
 
         echo "  Modules:"
         printf "      %-14s %s\n" "Login..........." "$login_bans"
@@ -707,8 +940,9 @@ nftban_stats_generate_dashboard() {
         printf "      %-14s %s\n" "DDoS............" "$ddos_bans"
         printf "      %-14s %s\n" "Manual.........." "$manual"
         printf "      %-14s %s\n" "Feeds..........." "$feeds"
+        [[ "$suricata_bans" != "0" ]] && printf "      %-14s %s\n" "Suricata........" "$suricata_bans"
 
-        if [[ "$login_bans" == "0" ]] && [[ "$portscan_bans" == "0" ]] && [[ "$ddos_bans" == "0" ]] && [[ "$manual" == "0" ]] && [[ "$feeds" == "0" ]]; then
+        if [[ "$login_bans" == "0" ]] && [[ "$portscan_bans" == "0" ]] && [[ "$ddos_bans" == "0" ]] && [[ "$manual" == "0" ]] && [[ "$feeds" == "0" ]] && [[ "$suricata_bans" == "0" ]]; then
             echo ""
             echo "  Summary: No new attacks detected this period."
             if [[ $total_black -gt 0 ]]; then
@@ -788,80 +1022,91 @@ nftban_stats_generate_dashboard() {
     fi
 
     # ─────────────────────────────────────────────────────────────────────
-    # BANS BY MODULE (count currently blocked IPs by source from bans.log)
+    # BANS BY MODULE (SINGLE SOURCE OF TRUTH from unified cache)
     # ─────────────────────────────────────────────────────────────────────
     echo "BANS BY MODULE"
     echo "───────────────────────────────────────────────────────────"
 
-    local feeds_total=0 login_count=0 portscan_count=0 ddos_count=0 manual_count=0
-    local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
-    local bans_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
+    local feeds_total=0 login_count=0 portscan_count=0 ddos_count=0 manual_count=0 suricata_count=0
 
-    # PERFORMANCE FIX: Use awk for O(n+m) instead of O(n*m) loop
-    # Old method: For each of 4474 IPs, grep through bans.log = 19+ seconds
-    # New method: Single awk pass through both files = <1 second
-    local counts_result
-    counts_result=$(awk -F'|' '
-        # First pass: Build IP->source map from bans.log (most recent entry wins)
-        NR==FNR && NF>=3 {
-            ip=$2; src=$3
-            # Normalize source names
-            if (src ~ /login|loginmon/) sources[ip]="login"
-            else if (src ~ /portscan/) sources[ip]="portscan"
-            else if (src ~ /ddos/) sources[ip]="ddos"
-            else if (src ~ /manual|cli/) sources[ip]="manual"
-            else if (src ~ /feed/) sources[ip]="feeds"
-            next
-        }
-        # Second pass: Count IPs from nftables by their source
-        {
-            # Extract IPv4 addresses from nft output
-            while (match($0, /[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/)) {
-                ip = substr($0, RSTART, RLENGTH)
-                $0 = substr($0, RSTART + RLENGTH)
-                src = sources[ip]
-                if (src == "login") login++
-                else if (src == "portscan") portscan++
-                else if (src == "ddos") ddos++
-                else if (src == "manual") manual++
-                else if (src == "feeds") feeds++
+    if [[ "$use_unified_cache" == "true" ]]; then
+        # Read from unified cache (Single Source of Truth)
+        login_count=$(nftban_stats_get_unified ".bans_by_source.login" "0")
+        portscan_count=$(nftban_stats_get_unified ".bans_by_source.portscan" "0")
+        ddos_count=$(nftban_stats_get_unified ".bans_by_source.ddos" "0")
+        manual_count=$(nftban_stats_get_unified ".bans_by_source.manual" "0")
+        suricata_count=$(nftban_stats_get_unified ".bans_by_source.suricata" "0")
+        # Feeds total from feeds.ips_total (actual IPs loaded from feeds)
+        feeds_total=$(nftban_stats_get_unified ".feeds.ips_total" "0")
+    else
+        # Fallback: Direct calculation
+        local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+        local bans_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
+
+        # PERFORMANCE FIX: Use awk for O(n+m) instead of O(n*m) loop
+        local counts_result
+        counts_result=$(awk -F'|' '
+            # First pass: Build IP->source map from bans.log (most recent entry wins)
+            NR==FNR && NF>=3 {
+                ip=$2; src=$3
+                # Normalize source names
+                if (src ~ /login|loginmon/) sources[ip]="login"
+                else if (src ~ /portscan/) sources[ip]="portscan"
+                else if (src ~ /ddos/) sources[ip]="ddos"
+                else if (src ~ /manual|cli/) sources[ip]="manual"
+                else if (src ~ /feed/) sources[ip]="feeds"
+                else if (src ~ /suricata|ids/) sources[ip]="suricata"
+                next
             }
-        }
-        END {
-            printf "%d %d %d %d %d\n", login+0, portscan+0, ddos+0, manual+0, feeds+0
-        }
-    ' "$bans_log" <(nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null) 2>/dev/null)
+            # Second pass: Count IPs from nftables by their source
+            {
+                while (match($0, /[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/)) {
+                    ip = substr($0, RSTART, RLENGTH)
+                    $0 = substr($0, RSTART + RLENGTH)
+                    src = sources[ip]
+                    if (src == "login") login++
+                    else if (src == "portscan") portscan++
+                    else if (src == "ddos") ddos++
+                    else if (src == "manual") manual++
+                    else if (src == "feeds") feeds++
+                    else if (src == "suricata") suricata++
+                }
+            }
+            END {
+                printf "%d %d %d %d %d %d\n", login+0, portscan+0, ddos+0, manual+0, feeds+0, suricata+0
+            }
+        ' "$bans_log" <(nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null) 2>/dev/null)
 
-    # Parse the counts result (split by space)
-    if [[ -n "$counts_result" ]]; then
-        local counts_array
-        IFS=' ' read -ra counts_array <<< "$counts_result"
-        login_count="${counts_array[0]:-0}"
-        portscan_count="${counts_array[1]:-0}"
-        ddos_count="${counts_array[2]:-0}"
-        manual_count="${counts_array[3]:-0}"
-        # Don't override feeds_total here - it gets added to below
-        local bans_log_feeds="${counts_array[4]:-0}"
-        feeds_total=$((feeds_total + bans_log_feeds))
-    fi
+        if [[ -n "$counts_result" ]]; then
+            local counts_array
+            IFS=' ' read -ra counts_array <<< "$counts_result"
+            login_count="${counts_array[0]:-0}"
+            portscan_count="${counts_array[1]:-0}"
+            ddos_count="${counts_array[2]:-0}"
+            manual_count="${counts_array[3]:-0}"
+            local bans_log_feeds="${counts_array[4]:-0}"
+            suricata_count="${counts_array[5]:-0}"
+            feeds_total=$((feeds_total + bans_log_feeds))
+        fi
 
-    # FEEDS: Also count from enabled feed files (for IPs not in bans.log)
-    if type -t nftban_feeds_discover_all >/dev/null 2>&1 && type -t nftban_feeds_get_property >/dev/null 2>&1; then
-        local all_feeds
-        all_feeds=$(nftban_feeds_discover_all 2>/dev/null || true)
-        for feed in $all_feeds; do
-            local enabled
-            enabled=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
-            if [[ "$enabled" == "true" ]]; then
-                local feed_lower="${feed,,}"
-                local feed_file="${feeds_dir}/${feed_lower}.txt"
-                if [[ -f "$feed_file" ]]; then
-                    local count
-                    count=$(grep -cE '^[0-9]' "$feed_file" 2>/dev/null) || count=0
-                    feeds_total=$((feeds_total + count))
+        # FEEDS: Also count from enabled feed files
+        if type -t nftban_feeds_discover_all >/dev/null 2>&1 && type -t nftban_feeds_get_property >/dev/null 2>&1; then
+            local all_feeds
+            all_feeds=$(nftban_feeds_discover_all 2>/dev/null || true)
+            for feed in $all_feeds; do
+                local enabled
+                enabled=$(nftban_feeds_get_property "$feed" "ENABLED" 2>/dev/null || echo "false")
+                if [[ "$enabled" == "true" ]]; then
+                    local feed_lower="${feed,,}"
+                    local feed_file="${feeds_dir}/${feed_lower}.txt"
+                    if [[ -f "$feed_file" ]]; then
+                        local count
+                        count=$(grep -cE '^[0-9]' "$feed_file" 2>/dev/null) || count=0
+                        feeds_total=$((feeds_total + count))
+                    fi
                 fi
-            fi
-        done
+            done
+        fi
     fi
 
     # Display counts
@@ -870,6 +1115,7 @@ nftban_stats_generate_dashboard() {
     printf "  %-18s %'d IPs\n" "PORTSCAN" "$portscan_count"
     printf "  %-18s %'d IPs\n" "DDOS" "$ddos_count"
     printf "  %-18s %'d IPs\n" "MANUAL" "$manual_count"
+    [[ "$suricata_count" -gt 0 ]] && printf "  %-18s %'d IPs\n" "SURICATA" "$suricata_count"
     echo ""
 
     # ─────────────────────────────────────────────────────────────────────

@@ -1,8 +1,19 @@
 // SPDX-License-Identifier: MPL-2.0
 // Copyright (c) 2025 Antonios Voulvoulis <contact@nftban.com>
-
+//
 // Package banlog provides centralized ban logging for NFTBan
 // All ban actions (from any source) should log here for stats tracking
+//
+// meta:name="banlog"
+// meta:type="package"
+// meta:description="Central ban logging with audit trail support"
+// meta:inventory.files="/var/log/nftban/bans.log"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/nftban.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="write:/var/log/nftban/"
 package banlog
 
 import (
@@ -18,8 +29,9 @@ import (
 // =============================================================================
 // NFTBan Central Ban Log
 // =============================================================================
-// Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS
-// Example: 2025-12-09|14:30:45|manual|192.168.1.100|US|BANNED
+// Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
+// Example: 2025-12-09|14:30:45|manual|192.168.1.100|US|BANNED|brute_force_ssh
+// Note: REASON field is optional (empty string if not provided)
 //
 // This log is read by nftban_stats.sh for ACTIVITY HISTORY dashboard:
 // - login (SSH/auth failures)
@@ -68,7 +80,8 @@ func getBanLogPath() string {
 //   - source: Ban source (manual, login, portscan, ddos, feeds, suricata)
 //   - country: Country code (e.g., "US", "CN", "UNK" if unknown)
 //
-// Format: DATE|TIME|SOURCE|IP|COUNTRY|BANNED
+// Format: DATE|TIME|SOURCE|IP|COUNTRY|BANNED|REASON (reason empty for this func)
+// Use LogBanWithReason for audit trail with reason
 func LogBan(ip, source, country string) error {
 	return writeEntry(ip, source, country, StatusBanned)
 }
@@ -86,6 +99,11 @@ func LogUnban(ip, source, country string) error {
 
 // writeEntry writes a log entry to ban.log
 func writeEntry(ip, source, country, status string) error {
+	return writeEntryWithReason(ip, source, country, status, "")
+}
+
+// writeEntryWithReason writes a log entry to ban.log with optional reason for audit
+func writeEntryWithReason(ip, source, country, status, reason string) error {
 	logMutex.Lock()
 	defer logMutex.Unlock()
 
@@ -104,7 +122,8 @@ func writeEntry(ip, source, country, status string) error {
 	}
 	defer f.Close()
 
-	// Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS
+	// Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
+	// Note: REASON field added for audit trail (empty if not provided)
 	now := time.Now()
 	date := now.Format("2006-01-02")
 	timeStr := now.Format("15:04:05")
@@ -117,7 +136,10 @@ func writeEntry(ip, source, country, status string) error {
 	// Normalize source
 	source = normalizeSource(source)
 
-	logLine := fmt.Sprintf("%s|%s|%s|%s|%s|%s\n", date, timeStr, source, ip, country, status)
+	// Sanitize reason (remove pipe characters to preserve format)
+	reason = sanitizeReason(reason)
+
+	logLine := fmt.Sprintf("%s|%s|%s|%s|%s|%s|%s\n", date, timeStr, source, ip, country, status, reason)
 
 	if _, err := f.WriteString(logLine); err != nil {
 		return fmt.Errorf("failed to write to ban log: %w", err)
@@ -149,9 +171,30 @@ func normalizeSource(source string) string {
 	}
 }
 
-// LogBanWithReason writes a ban entry with an optional reason (stored in extended format)
-// This is for detailed logging - the reason is NOT used by stats but is useful for audit
+// LogBanWithReason writes a ban entry with a reason for audit trail
+// Format: DATE|TIME|SOURCE|IP|COUNTRY|BANNED|REASON
 func LogBanWithReason(ip, source, country, reason string) error {
-	// For now, just call LogBan - reason can be added to extended log format later
-	return LogBan(ip, source, country)
+	return writeEntryWithReason(ip, source, country, StatusBanned, reason)
+}
+
+// LogUnbanWithReason writes an unban entry with a reason for audit trail
+// Format: DATE|TIME|SOURCE|IP|COUNTRY|UNBANNED|REASON
+func LogUnbanWithReason(ip, source, country, reason string) error {
+	return writeEntryWithReason(ip, source, country, StatusUnbanned, reason)
+}
+
+// sanitizeReason removes pipe characters from reason to preserve log format
+func sanitizeReason(reason string) string {
+	// Replace pipes with dashes to preserve field separation
+	result := ""
+	for _, c := range reason {
+		if c == '|' {
+			result += "-"
+		} else if c == '\n' || c == '\r' {
+			result += " "
+		} else {
+			result += string(c)
+		}
+	}
+	return result
 }
