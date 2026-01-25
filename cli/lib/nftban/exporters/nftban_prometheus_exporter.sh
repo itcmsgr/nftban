@@ -1224,6 +1224,79 @@ collect_metrics() {
     fi
 
     # -------------------------------------------------------------------------
+    # Ban Details metrics (Phase 4)
+    # -------------------------------------------------------------------------
+
+    if [[ -f "$COMBINED_FILE" ]] && command -v jq &>/dev/null; then
+        echo "# HELP nftban_bans_by_source_total Bans by source" >> "$TEMP_FILE"
+        echo "# TYPE nftban_bans_by_source_total counter" >> "$TEMP_FILE"
+        for src in manual feeds loginmon portscan ddos suricata geoban; do
+            val=$(jq -r ".ban_details.bans_by_source.${src} // 0" "$COMBINED_FILE")
+            echo "nftban_bans_by_source_total{source=\"${src}\"} ${val}" >> "$TEMP_FILE"
+        done
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_escalations_total Ban escalations" >> "$TEMP_FILE"
+        echo "# TYPE nftban_escalations_total counter" >> "$TEMP_FILE"
+        echo "nftban_escalations_total $(jq -r '.ban_details.escalations_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_persistent_offenders_total Permanent banned IPs" >> "$TEMP_FILE"
+        echo "# TYPE nftban_persistent_offenders_total gauge" >> "$TEMP_FILE"
+        echo "nftban_persistent_offenders_total $(jq -r '.ban_details.persistent_offenders_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_recidivist_ips_total IPs banned multiple times" >> "$TEMP_FILE"
+        echo "# TYPE nftban_recidivist_ips_total gauge" >> "$TEMP_FILE"
+        echo "nftban_recidivist_ips_total $(jq -r '.ban_details.recidivist_ips_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_ban_failures_total Failed ban attempts" >> "$TEMP_FILE"
+        echo "# TYPE nftban_ban_failures_total counter" >> "$TEMP_FILE"
+        echo "nftban_ban_failures_total $(jq -r '.ban_details.ban_failures_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+    fi
+
+    # -------------------------------------------------------------------------
+    # Analytics metrics (Phase 5)
+    # -------------------------------------------------------------------------
+
+    if [[ -f "$COMBINED_FILE" ]] && command -v jq &>/dev/null; then
+        echo "# HELP nftban_analytics_unique_ips_24h Unique IPs banned in last 24 hours" >> "$TEMP_FILE"
+        echo "# TYPE nftban_analytics_unique_ips_24h gauge" >> "$TEMP_FILE"
+        echo "nftban_analytics_unique_ips_24h $(jq -r '.analytics.unique_ips_24h // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_analytics_recidivism_rate Percentage of repeat offender IPs" >> "$TEMP_FILE"
+        echo "# TYPE nftban_analytics_recidivism_rate gauge" >> "$TEMP_FILE"
+        echo "nftban_analytics_recidivism_rate $(jq -r '.analytics.recidivism_rate // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_analytics_top_attackers_total IPs with more than 5 bans" >> "$TEMP_FILE"
+        echo "# TYPE nftban_analytics_top_attackers_total gauge" >> "$TEMP_FILE"
+        echo "nftban_analytics_top_attackers_total $(jq -r '.analytics.top_attackers_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_watchdog_mode_transitions_total Watchdog mode changes" >> "$TEMP_FILE"
+        echo "# TYPE nftban_watchdog_mode_transitions_total counter" >> "$TEMP_FILE"
+        echo "nftban_watchdog_mode_transitions_total $(jq -r '.analytics.watchdog_mode_transitions_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_alerts_active Active alerts by level" >> "$TEMP_FILE"
+        echo "# TYPE nftban_alerts_active gauge" >> "$TEMP_FILE"
+        for level in info warning critical; do
+            val=$(jq -r ".analytics.alerts_active.${level} // 0" "$COMBINED_FILE")
+            echo "nftban_alerts_active{level=\"${level}\"} ${val}" >> "$TEMP_FILE"
+        done
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_geoban_database_age_seconds Age of GeoIP database in seconds" >> "$TEMP_FILE"
+        echo "# TYPE nftban_geoban_database_age_seconds gauge" >> "$TEMP_FILE"
+        echo "nftban_geoban_database_age_seconds $(jq -r '.analytics.geoban_database_age_seconds // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+    fi
+
+    # -------------------------------------------------------------------------
     # Performance Metrics
     # -------------------------------------------------------------------------
 

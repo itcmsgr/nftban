@@ -194,6 +194,21 @@ json_to_zabbix_metrics() {
     metrics+="nftban.nftables.sets.total $(echo "$json" | jq -r '.nftables_perf.sets_total // 0')\n"
     metrics+="nftban.nftables.commands.total $(echo "$json" | jq -r '.nftables_perf.commands_total // 0')\n"
 
+    # Ban Details (Phase 4)
+    for src in manual feeds loginmon portscan ddos suricata geoban; do
+        metrics+="nftban.bans.source[${src}] $(echo "$json" | jq -r ".ban_details.bans_by_source.${src} // 0")\n"
+    done
+    metrics+="nftban.escalations.total $(echo "$json" | jq -r '.ban_details.escalations_total // 0')\n"
+    metrics+="nftban.persistent.total $(echo "$json" | jq -r '.ban_details.persistent_offenders_total // 0')\n"
+    metrics+="nftban.recidivist.total $(echo "$json" | jq -r '.ban_details.recidivist_ips_total // 0')\n"
+
+    # Analytics (Phase 5)
+    metrics+="nftban.analytics.unique_ips_24h $(echo "$json" | jq -r '.analytics.unique_ips_24h // 0')\n"
+    metrics+="nftban.analytics.recidivism_rate $(echo "$json" | jq -r '.analytics.recidivism_rate // 0')\n"
+    metrics+="nftban.analytics.top_attackers $(echo "$json" | jq -r '.analytics.top_attackers_total // 0')\n"
+    metrics+="nftban.watchdog.mode_transitions $(echo "$json" | jq -r '.analytics.watchdog_mode_transitions_total // 0')\n"
+    metrics+="nftban.geoban.db_age $(echo "$json" | jq -r '.analytics.geoban_database_age_seconds // 0')\n"
+
     # Feed health metrics (Phase 1)
     metrics+="nftban.feeds.total $(echo "$json" | jq -r '.feed_health.total_feeds // 0')\n"
     metrics+="nftban.feeds.active $(echo "$json" | jq -r '.feed_health.active_feeds // 0')\n"

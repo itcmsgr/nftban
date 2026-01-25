@@ -122,7 +122,9 @@
     "portscan": "Port scan detection module metrics",
     "ddos": "DDoS protection module metrics",
     "geoban": "Geo-blocking module metrics",
-    "modules": "Module enabled/disabled status"
+    "modules": "Module enabled/disabled status",
+    "analytics": "Attack pattern analytics and trends",
+    "alerts": "Alert management metrics"
   },
   "cardinality_rules": {
     "safe": {
@@ -1196,6 +1198,85 @@
       "labels": [],
       "category": "nftables",
       "phase": 3
+    },
+    "nftban_bans_by_source_total": {
+      "type": "counter",
+      "help": "Bans by source",
+      "labels": ["source"],
+      "label_values": {"source": ["manual", "feeds", "loginmon", "portscan", "ddos", "suricata", "geoban"]},
+      "category": "bans",
+      "phase": 4
+    },
+    "nftban_escalations_total": {
+      "type": "counter",
+      "help": "Ban escalations (short to long duration)",
+      "labels": [],
+      "category": "bans",
+      "phase": 4
+    },
+    "nftban_persistent_offenders_total": {
+      "type": "gauge",
+      "help": "Permanently banned IPs",
+      "labels": [],
+      "category": "bans",
+      "phase": 4
+    },
+    "nftban_recidivist_ips_total": {
+      "type": "gauge",
+      "help": "IPs banned multiple times",
+      "labels": [],
+      "category": "bans",
+      "phase": 4
+    },
+    "nftban_ban_failures_total": {
+      "type": "counter",
+      "help": "Failed ban attempts",
+      "labels": [],
+      "category": "bans",
+      "phase": 4
+    },
+    "nftban_analytics_unique_ips_24h": {
+      "type": "gauge",
+      "help": "Unique IPs banned in last 24 hours",
+      "labels": [],
+      "category": "analytics",
+      "phase": 5
+    },
+    "nftban_analytics_recidivism_rate": {
+      "type": "gauge",
+      "help": "Percentage of repeat offender IPs",
+      "labels": [],
+      "category": "analytics",
+      "phase": 5
+    },
+    "nftban_analytics_top_attackers_total": {
+      "type": "gauge",
+      "help": "IPs with more than 5 bans",
+      "labels": [],
+      "category": "analytics",
+      "phase": 5
+    },
+    "nftban_watchdog_mode_transitions_total": {
+      "type": "counter",
+      "help": "Watchdog mode transitions",
+      "labels": [],
+      "category": "watchdog",
+      "phase": 5
+    },
+    "nftban_alerts_active": {
+      "type": "gauge",
+      "help": "Active alerts by level",
+      "labels": ["level"],
+      "label_values": {"level": ["info", "warning", "critical"]},
+      "category": "alerts",
+      "phase": 5
+    },
+    "nftban_geoban_database_age_seconds": {
+      "type": "gauge",
+      "help": "Age of GeoIP database in seconds",
+      "labels": [],
+      "category": "geoban",
+      "phase": 5
     }
   },
   "zabbix_mapping": {
@@ -1227,22 +1308,22 @@
     "patch": "Documentation updates, bug fixes"
   },
   "_metadata": {
-    "total_metrics": 65,
+    "total_metrics": 71,
     "by_type": {
-      "gauge": 42,
-      "counter": 18,
+      "gauge": 47,
+      "counter": 19,
       "histogram": 5
     },
     "by_source": {
       "go_nftban": 35,
       "go_sampler": 16,
       "go_collector": 18,
-      "shell_prometheus": 45,
-      "shell_zabbix": 30
+      "shell_prometheus": 51,
+      "shell_zabbix": 35
     },
     "by_category": {
       "daemon": 4,
-      "watchdog": 3,
+      "watchdog": 4,
       "runtime": 4,
       "ipc": 3,
       "throughput": 2,
@@ -1259,11 +1340,13 @@
       "loginmon": 2,
       "portscan": 2,
       "ddos": 2,
-      "geoban": 2,
-      "modules": 1
+      "geoban": 3,
+      "modules": 1,
+      "analytics": 3,
+      "alerts": 1
     },
-    "total_labels": 15,
-    "bounded_cardinality_labels": 12,
+    "total_labels": 16,
+    "bounded_cardinality_labels": 13,
     "moderate_cardinality_labels": 2,
     "forbidden_labels": 4,
     "notes": [
