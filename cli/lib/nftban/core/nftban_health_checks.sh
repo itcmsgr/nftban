@@ -366,7 +366,7 @@ nftban_health_check_permissions() {
     done
 
     # Check conf.d files readable by nftban group (FHS: root:nftban 640)
-    # Services like nftban-zabbix-exporter run as 'nftban' user and need read access
+    # Services like nftban-unified-exporter run as 'nftban' user and need read access
     if [[ -d "${NFTBAN_CONFIG_DIR}/conf.d" ]]; then
         local bad_perms_count=0
         while IFS= read -r -d '' conf_file; do
@@ -2094,19 +2094,15 @@ nftban_health_check_zabbix() {
         fi
     fi
 
-    # Check unified exporter (or legacy zabbix timer)
-    # Check unified exporter (or legacy zabbix timer)
+    # Check unified exporter timer (required for Zabbix export)
     if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
         zabbix_issues+=("✓ Unified exporter timer: Active")
-    elif systemctl list-unit-files 2>/dev/null | grep -q "nftban-zabbix-exporter.timer"; then
-        # Legacy zabbix timer reference - should migrate to unified
-        zabbix_issues+=("⚠ Legacy zabbix exporter timer found - migrate to unified exporter")
     elif systemctl list-unit-files 2>/dev/null | grep -q "nftban-unified-exporter.timer"; then
         zabbix_issues+=("⚠ Unified exporter timer: Not active")
         zabbix_issues+=("FIX: sudo systemctl enable --now nftban-unified-exporter.timer")
         [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
     else
-        zabbix_issues+=("⚠ Exporter timer not installed")
+        zabbix_issues+=("⚠ Unified exporter timer not installed")
         zabbix_issues+=("FIX: Run install.sh to install systemd timers")
         [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
     fi
