@@ -263,7 +263,7 @@ print_next_steps() {
     echo "   - If not, verify:"
     echo "     • Prometheus is running: systemctl status prometheus"
     echo "     • Node Exporter is running: systemctl status node_exporter"
-    echo "     • Metrics exporter is running: systemctl status nftban-metrics-exporter"
+    echo "     • Unified exporter is running: systemctl status nftban-unified-exporter.timer"
     echo ""
     echo "Configuration files:"
     echo "  Provisioning: $GRAFANA_PROVISIONING_DIR/nftban.yaml"

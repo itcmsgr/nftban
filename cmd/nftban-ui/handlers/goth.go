@@ -916,9 +916,9 @@ func (h *GOTHHandlers) getModulesList() []ui.ModuleStatus {
 				// Metrics Exporter
 				if svc, ok := services["metrics_exporter"].(map[string]interface{}); ok {
 					mod := ui.ModuleStatus{
-						Name:        "metrics-exporter",
-						Description: "Prometheus metrics exporter",
-						ServiceName: "nftban-metrics-exporter",
+						Name:        "unified-exporter",
+						Description: "Unified metrics exporter",
+						ServiceName: "nftban-unified-exporter",
 						LastSync:    now,
 					}
 					if st, ok := svc["status"].(string); ok {

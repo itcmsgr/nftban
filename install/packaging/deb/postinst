@@ -58,7 +58,7 @@ case "$1" in
         # Print installation success message
         echo ""
         echo "═══════════════════════════════════════════════════════════"
-        echo "NFTBan v0.6 Metrics installed successfully!"
+        echo "NFTBan Metrics installed successfully!"
         echo "═══════════════════════════════════════════════════════════"
         echo ""
         echo "Next steps:"

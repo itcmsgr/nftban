@@ -105,7 +105,7 @@ func SystemOverviewStatusHandler(w http.ResponseWriter, r *http.Request) {
 	data["login_monitor_running"] = isServiceRunning("nftban-login-monitor")
 
 	// Count running services
-	services := []string{"nftables", "nftban-ui", "nftban-ui-auth", "nftban-login-monitor", "nftban-metrics-exporter"}
+	services := []string{"nftables", "nftban-ui", "nftban-ui-auth", "nftban-login-monitor", "nftban-unified-exporter"}
 	running := 0
 	for _, svc := range services {
 		if isServiceRunning(svc) {
@@ -254,7 +254,7 @@ func SystemServicesDetailHandler(w http.ResponseWriter, r *http.Request) {
 		{"name": "nftban-ui", "description": "Web GUI", "running": isServiceRunning("nftban-ui")},
 		{"name": "nftban-ui-auth", "description": "Auth service", "running": isServiceRunning("nftban-ui-auth")},
 		{"name": "nftban-login-monitor", "description": "Login alerts", "running": isServiceRunning("nftban-login-monitor")},
-		{"name": "nftban-metrics-exporter", "description": "Prometheus metrics", "running": isServiceRunning("nftban-metrics-exporter")},
+		{"name": "nftban-unified-exporter", "description": "Unified metrics exporter", "running": isServiceRunning("nftban-unified-exporter")},
 	}
 
 	respondJSON(w, http.StatusOK, map[string]interface{}{
