@@ -211,6 +211,77 @@ func SessionAuthMiddleware(store *session.Store) func(http.Handler) http.Handler
 	}
 }
 
+// CSRFMiddleware validates CSRF tokens on state-changing requests (POST, PUT, DELETE)
+// Protects GOTH GUI forms from cross-site request forgery attacks
+// CSRF token is read from X-CSRF-Token header or csrf_token form field
+func CSRFMiddleware(store *session.Store) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// Only validate state-changing methods
+			if r.Method == "GET" || r.Method == "HEAD" || r.Method == "OPTIONS" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Skip CSRF for REST API endpoints using Bearer token auth
+			// (Bearer tokens are naturally CSRF-safe as they come from headers)
+			authHeader := r.Header.Get("Authorization")
+			if strings.HasPrefix(authHeader, "Bearer ") {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Skip CSRF for login endpoint (no session yet)
+			if r.URL.Path == "/ui/action/login" || r.URL.Path == "/api/v1/login" {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			// Get session token from cookie or header
+			sessionToken := ""
+			if cookie, err := r.Cookie("session_id"); err == nil {
+				sessionToken = cookie.Value
+			}
+			if sessionToken == "" {
+				sessionToken = r.Header.Get("X-Session-Token")
+			}
+
+			if sessionToken == "" {
+				log.Printf("[CSRF] Missing session token from %s", netutil.GetClientIP(r))
+				http.Error(w, "CSRF validation failed: no session", http.StatusForbidden)
+				return
+			}
+
+			// Get session
+			sess, err := store.Get(sessionToken)
+			if err != nil {
+				log.Printf("[CSRF] Invalid session from %s: %v", netutil.GetClientIP(r), err)
+				http.Error(w, "CSRF validation failed: invalid session", http.StatusForbidden)
+				return
+			}
+
+			// Get CSRF token from header or form
+			csrfToken := r.Header.Get("X-CSRF-Token")
+			if csrfToken == "" {
+				// Parse form to get csrf_token field
+				if err := r.ParseForm(); err == nil {
+					csrfToken = r.FormValue("csrf_token")
+				}
+			}
+
+			// Validate CSRF token
+			if !sess.ValidateCSRF(csrfToken) {
+				log.Printf("[CSRF] Invalid CSRF token from %s (user: %s)", netutil.GetClientIP(r), sess.Username)
+				http.Error(w, "CSRF validation failed: invalid token", http.StatusForbidden)
+				return
+			}
+
+			// CSRF valid, proceed
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // SecurityHeadersMiddleware adds security headers to responses
 func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

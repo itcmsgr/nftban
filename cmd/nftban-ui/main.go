@@ -131,6 +131,7 @@ func main() {
 	router.Use(middleware.LoggingMiddleware)
 	router.Use(middleware.IPWhitelistMiddleware(cfg))
 	router.Use(middleware.SecurityHeadersMiddleware)
+	router.Use(middleware.CSRFMiddleware(sessionStore))
 
 	// ==========================================================================
 	// GOTH GUI Routes (Go + Templ + HTMX) - v1.1.0

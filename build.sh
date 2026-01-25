@@ -12,7 +12,7 @@
 # meta:output="Compiled Go binaries in bin/"
 # meta:depends="go"
 # meta:inventory.files=""
-# meta:inventory.binaries="nftban-core, nftban-ui, nftban-ui-auth, nftband, nftban-api"
+# meta:inventory.binaries="nftban-core, nftban-ui, nftban-ui-auth, nftband"
 # meta:inventory.env_vars="CGO_ENABLED, GOOS, GOARCH"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -252,26 +252,6 @@ build_daemon() {
     return 0
 }
 
-build_api() {
-    log "Building nftban-api (API server)..."
-
-    cd "$SCRIPT_DIR/cmd/nftban-api"
-
-    CGO_ENABLED=$CGO_ENABLED GOOS=$GOOS GOARCH=$GOARCH \
-        go build -o "$BIN_DIR/nftban-api" \
-        -ldflags="$LDFLAGS" \
-        . || {
-        error "Failed to build nftban-api"
-        return 1
-    }
-
-    chmod +x "$BIN_DIR/nftban-api"
-    ok "Built: $BIN_DIR/nftban-api"
-
-    cd "$SCRIPT_DIR"
-    return 0
-}
-
 show_usage() {
     cat << EOF
 NFTBan Build Script
@@ -285,7 +265,6 @@ Components:
   gui       Build nftban-ui only
   ui-auth   Build nftban-ui-auth only
   daemon    Build nftband only
-  api       Build nftban-api only
 
 Environment Variables:
   CGO_ENABLED   Enable/disable CGO (default: 1)
@@ -331,9 +310,6 @@ case "$COMPONENT" in
         build_daemon || exit 1
         echo ""
 
-        build_api || exit 1
-        echo ""
-
         log "Build Summary:"
         ls -lh "$BIN_DIR"/ 2>/dev/null || true
         echo ""
@@ -354,10 +330,6 @@ case "$COMPONENT" in
 
     daemon)
         build_daemon || exit 1
-        ;;
-
-    api)
-        build_api || exit 1
         ;;
 
     help|-h|--help)
