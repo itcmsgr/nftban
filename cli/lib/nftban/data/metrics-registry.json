@@ -1,0 +1,912 @@
+{
+  "registry_version": "1.0.0",
+  "schema_version": "2",
+  "generated_at": "2026-01-25",
+  "description": "NFTBan Metrics Registry - Single source of truth for all telemetry",
+  "purpose": {
+    "documentation": "Generate METRICS_CONTRACT.md automatically",
+    "validation": "Schema validation for exporters",
+    "conformance": "CI/CD golden file testing",
+    "exporters": "Prometheus/Zabbix exporter generation",
+    "dashboards": "Grafana dashboard template generation"
+  },
+  "sources": {
+    "go_nftban": {
+      "file": "pkg/metrics/nftban.go",
+      "description": "Application-level operation metrics (bans, feeds, sync, auth, modules)",
+      "registration": "promauto (default registry)"
+    },
+    "go_sampler": {
+      "file": "pkg/metrics/sampler.go",
+      "description": "Daemon sampler metrics (blocks, network, health, sessions)",
+      "registration": "custom registry (sampler.Registry())"
+    },
+    "go_collector": {
+      "file": "pkg/metrics/collector.go",
+      "description": "Textfile collector for node_exporter",
+      "output": "/var/lib/node_exporter/textfile_collector/nftban.prom"
+    },
+    "shell_prometheus": {
+      "file": "cli/lib/nftban/exporters/nftban_prometheus_exporter.sh",
+      "description": "Shell-based Prometheus exporter (daemon stats, watchdog, runtime)",
+      "output": "stdout (OpenMetrics format)"
+    },
+    "shell_zabbix": {
+      "file": "cli/lib/nftban/exporters/nftban_zabbix_exporter.sh",
+      "description": "Shell-based Zabbix exporter (trapper items)",
+      "output": "zabbix_sender"
+    }
+  },
+  "design_principles": {
+    "producer_not_product": "NFTBan is a metrics producer, not a monitoring product",
+    "consumer_agnostic": "Users choose how they ingest, store, and visualize",
+    "stable_contract": "Metric names and semantics are stable (semantic versioning)",
+    "bounded_cardinality": "Labels have bounded value sets to prevent explosion"
+  },
+  "compatibility": {
+    "prometheus": "full",
+    "victoriametrics": "full",
+    "grafana_mimir": "full",
+    "zabbix": "full",
+    "influxdb": "planned",
+    "datadog": "planned",
+    "opentelemetry": "planned"
+  },
+  "categories": {
+    "daemon": "Daemon status and lifecycle",
+    "watchdog": "System pressure monitoring",
+    "runtime": "Go runtime metrics (memory, GC, goroutines)",
+    "ipc": "Inter-process communication",
+    "throughput": "Event processing rates",
+    "blocks": "IP blocking statistics",
+    "firewall": "nftables packet/byte counters",
+    "network": "Network interface statistics",
+    "protocol": "TCP/UDP/ICMP statistics",
+    "connections": "TCP connection states",
+    "feeds": "Threat intelligence feeds",
+    "health": "Component health status",
+    "exporter": "Exporter metadata",
+    "operations": "Ban/unban operations (Go internal)",
+    "sync": "Firewall sync operations",
+    "loginmon": "Login monitor module metrics",
+    "portscan": "Port scan detection module metrics",
+    "ddos": "DDoS protection module metrics",
+    "geoban": "Geo-blocking module metrics",
+    "modules": "Module enabled/disabled status"
+  },
+  "cardinality_rules": {
+    "safe": {
+      "max_values": 10,
+      "labels": ["type", "family", "action", "reason", "protocol", "component", "set"]
+    },
+    "moderate": {
+      "max_values": 250,
+      "labels": ["interface", "country"],
+      "mitigation": "Use topk() in queries"
+    },
+    "forbidden": {
+      "labels": ["ip", "user", "session_id", "request_id"],
+      "reason": "Unbounded cardinality causes TSDB issues"
+    }
+  },
+  "metrics": {
+    "nftban_daemon_up": {
+      "type": "gauge",
+      "unit": "boolean",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "1 if daemon running, 0 if down",
+      "labels": {},
+      "reset_semantics": "None (gauge)",
+      "recommended_aggregation": "last",
+      "thresholds": {
+        "critical": "== 0"
+      }
+    },
+    "nftban_daemon_uptime_seconds": {
+      "type": "gauge",
+      "unit": "seconds",
+      "category": "daemon",
+      "description": "Daemon uptime since start",
+      "labels": {},
+      "reset_semantics": "Resets on daemon restart",
+      "recommended_aggregation": "last"
+    },
+    "nftban_daemon_info": {
+      "type": "gauge",
+      "unit": "info",
+      "category": "daemon",
+      "description": "Always 1, carries mode and pid labels",
+      "labels": {
+        "mode": {
+          "type": "enum",
+          "values": ["normal", "degraded", "survival"],
+          "description": "Daemon operating mode"
+        },
+        "pid": {
+          "type": "integer",
+          "description": "Process ID"
+        }
+      },
+      "recommended_aggregation": "last"
+    },
+    "nftban_watchdog_up": {
+      "type": "gauge",
+      "unit": "boolean",
+      "category": "watchdog",
+      "description": "1 if watchdog running, 0 if stopped",
+      "labels": {},
+      "thresholds": {
+        "warning": "== 0"
+      }
+    },
+    "nftban_watchdog_info": {
+      "type": "gauge",
+      "unit": "info",
+      "category": "watchdog",
+      "description": "Always 1, carries mode label",
+      "labels": {
+        "mode": {
+          "type": "enum",
+          "values": ["normal", "degraded", "survival"],
+          "description": "Watchdog pressure mode"
+        }
+      }
+    },
+    "nftban_watchdog_pressure_score": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "watchdog",
+      "description": "System pressure score (0-100)",
+      "labels": {
+        "type": {
+          "type": "enum",
+          "values": ["cpu", "memory", "io"],
+          "description": "Pressure dimension"
+        }
+      },
+      "cardinality": 3,
+      "thresholds": {
+        "warning": ">= 60",
+        "critical": ">= 80"
+      },
+      "interpretation": {
+        "0-40": "Normal (green)",
+        "40-60": "Elevated (yellow)",
+        "60-80": "High - degraded mode triggered (orange)",
+        "80-100": "Critical - survival mode triggered (red)"
+      }
+    },
+    "nftban_runtime_goroutines": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "runtime",
+      "description": "Number of active goroutines",
+      "labels": {},
+      "thresholds": {
+        "warning": "> 500",
+        "critical": "> 1000"
+      }
+    },
+    "nftban_runtime_memory_bytes": {
+      "type": "gauge",
+      "unit": "bytes",
+      "category": "runtime",
+      "description": "Memory usage by type",
+      "labels": {
+        "type": {
+          "type": "enum",
+          "values": ["heap", "alloc", "sys"],
+          "description": "Memory category"
+        }
+      },
+      "cardinality": 3,
+      "thresholds": {
+        "warning": "> 256MB (heap)",
+        "critical": "> 512MB (heap)"
+      }
+    },
+    "nftban_runtime_gc_cycles_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "runtime",
+      "description": "Total garbage collection cycles",
+      "labels": {},
+      "reset_semantics": "Resets on daemon restart",
+      "recommended_aggregation": "rate()"
+    },
+    "nftban_runtime_gc_pause_seconds": {
+      "type": "gauge",
+      "unit": "seconds",
+      "category": "runtime",
+      "description": "Last GC pause duration",
+      "labels": {},
+      "thresholds": {
+        "warning": "> 0.05",
+        "critical": "> 0.1"
+      }
+    },
+    "nftban_ipc_requests_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "ipc",
+      "description": "Total IPC requests to daemon",
+      "labels": {},
+      "reset_semantics": "Resets on daemon restart",
+      "recommended_aggregation": "rate()"
+    },
+    "nftban_ipc_latency_seconds": {
+      "type": "gauge",
+      "unit": "seconds",
+      "category": "ipc",
+      "description": "Average IPC request latency",
+      "labels": {},
+      "thresholds": {
+        "warning": "> 0.1",
+        "critical": "> 0.5"
+      }
+    },
+    "nftban_ipc_errors_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "ipc",
+      "description": "Total IPC errors",
+      "labels": {},
+      "reset_semantics": "Resets on daemon restart",
+      "recommended_aggregation": "rate()"
+    },
+    "nftban_throughput_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "throughput",
+      "description": "Event counts by type",
+      "labels": {
+        "type": {
+          "type": "enum",
+          "values": ["bans", "unbans", "events"],
+          "description": "Event category"
+        }
+      },
+      "cardinality": 3,
+      "reset_semantics": "Resets on daemon restart",
+      "recommended_aggregation": "rate()"
+    },
+    "nftban_throughput_bans_per_minute": {
+      "type": "gauge",
+      "unit": "count/min",
+      "category": "throughput",
+      "description": "Current ban rate per minute",
+      "labels": {},
+      "thresholds": {
+        "warning": "> 10",
+        "critical": "> 50"
+      }
+    },
+    "nftban_blocks_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "description": "Current total blocked IPs",
+      "labels": {}
+    },
+    "nftban_blocks_permanent": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "description": "Permanently blocked IPs",
+      "labels": {}
+    },
+    "nftban_blocks_temporary": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "description": "Temporarily blocked IPs",
+      "labels": {}
+    },
+    "nftban_blocks_geoban": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "description": "Geo-blocked IPs",
+      "labels": {}
+    },
+    "nftban_blocks_by_country": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "description": "Blocked IPs per country",
+      "labels": {
+        "country": {
+          "type": "string",
+          "description": "ISO 3166-1 alpha-2 country code",
+          "cardinality_warning": "Up to ~250 values - use topk() in queries"
+        }
+      },
+      "cardinality": "~250",
+      "recommended_aggregation": "topk(10, ...)"
+    },
+    "nftban_banned_ips": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "description": "IPs by family and type",
+      "labels": {
+        "family": {
+          "type": "enum",
+          "values": ["ipv4", "ipv6"],
+          "description": "IP address family"
+        },
+        "type": {
+          "type": "enum",
+          "values": ["permanent", "temporary", "total"],
+          "description": "Ban type"
+        }
+      },
+      "cardinality": 6
+    },
+    "nftban_bans_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "blocks",
+      "description": "Cumulative bans since reset",
+      "labels": {},
+      "reset_semantics": "Resets on daemon restart"
+    },
+    "nftban_bans_last_24h": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "description": "Bans in last 24 hours",
+      "labels": {}
+    },
+    "nftban_firewall_packets_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "firewall",
+      "description": "Packets processed by firewall rules",
+      "labels": {
+        "action": {
+          "type": "enum",
+          "values": ["drop", "accept"],
+          "description": "Firewall action"
+        },
+        "reason": {
+          "type": "enum",
+          "values": ["blacklist", "whitelist", "default_drop", "icmp_accept", "established"],
+          "description": "Rule category"
+        }
+      },
+      "cardinality": 10,
+      "reset_semantics": "Resets on nftables reload"
+    },
+    "nftban_firewall_bytes_total": {
+      "type": "counter",
+      "unit": "bytes",
+      "category": "firewall",
+      "description": "Bytes processed by firewall rules",
+      "labels": {
+        "action": {
+          "type": "enum",
+          "values": ["drop", "accept"]
+        },
+        "reason": {
+          "type": "enum",
+          "values": ["blacklist", "whitelist", "default_drop", "icmp_accept", "established"]
+        }
+      },
+      "cardinality": 10,
+      "reset_semantics": "Resets on nftables reload"
+    },
+    "nftban_nftables_rules_count": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "firewall",
+      "description": "Total firewall rules",
+      "labels": {}
+    },
+    "nftban_set_size": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "firewall",
+      "description": "Elements per nftables set",
+      "labels": {
+        "set": {
+          "type": "enum",
+          "values": ["blacklist_ipv4", "blacklist_ipv6", "whitelist_ipv4", "whitelist_ipv6"],
+          "description": "Set name"
+        }
+      },
+      "cardinality": 4
+    },
+    "nftban_network_rx_bytes": {
+      "type": "counter",
+      "unit": "bytes",
+      "category": "network",
+      "description": "Received bytes per interface",
+      "labels": {
+        "interface": {
+          "type": "string",
+          "description": "Network interface name",
+          "cardinality_warning": "Typically 2-10 interfaces"
+        }
+      },
+      "reset_semantics": "Wraps at 64-bit max",
+      "recommended_aggregation": "rate()"
+    },
+    "nftban_network_tx_bytes": {
+      "type": "counter",
+      "unit": "bytes",
+      "category": "network",
+      "description": "Transmitted bytes per interface",
+      "labels": {
+        "interface": {
+          "type": "string",
+          "description": "Network interface name"
+        }
+      },
+      "reset_semantics": "Wraps at 64-bit max",
+      "recommended_aggregation": "rate()"
+    },
+    "nftban_network_rx_packets": {
+      "type": "counter",
+      "unit": "count",
+      "category": "network",
+      "description": "Received packets per interface",
+      "labels": {
+        "interface": {"type": "string"}
+      },
+      "recommended_aggregation": "rate()"
+    },
+    "nftban_network_tx_packets": {
+      "type": "counter",
+      "unit": "count",
+      "category": "network",
+      "description": "Transmitted packets per interface",
+      "labels": {
+        "interface": {"type": "string"}
+      },
+      "recommended_aggregation": "rate()"
+    },
+    "nftban_network_rx_mbps": {
+      "type": "gauge",
+      "unit": "Mbps",
+      "category": "network",
+      "description": "Current receive bandwidth",
+      "labels": {
+        "interface": {"type": "string"}
+      }
+    },
+    "nftban_network_tx_mbps": {
+      "type": "gauge",
+      "unit": "Mbps",
+      "category": "network",
+      "description": "Current transmit bandwidth",
+      "labels": {
+        "interface": {"type": "string"}
+      }
+    },
+    "nftban_network_total_rx_mbps": {
+      "type": "gauge",
+      "unit": "Mbps",
+      "category": "network",
+      "description": "Total receive bandwidth across all interfaces",
+      "labels": {}
+    },
+    "nftban_network_total_tx_mbps": {
+      "type": "gauge",
+      "unit": "Mbps",
+      "category": "network",
+      "description": "Total transmit bandwidth across all interfaces",
+      "labels": {}
+    },
+    "nftban_bandwidth_peak_rx_mbps": {
+      "type": "gauge",
+      "unit": "Mbps",
+      "category": "network",
+      "description": "Peak RX in last 5 minutes",
+      "labels": {}
+    },
+    "nftban_bandwidth_peak_tx_mbps": {
+      "type": "gauge",
+      "unit": "Mbps",
+      "category": "network",
+      "description": "Peak TX in last 5 minutes",
+      "labels": {}
+    },
+    "nftban_protocol_bytes": {
+      "type": "counter",
+      "unit": "bytes",
+      "category": "protocol",
+      "description": "Bytes per protocol",
+      "labels": {
+        "protocol": {
+          "type": "enum",
+          "values": ["tcp", "udp", "icmp"]
+        }
+      },
+      "cardinality": 3,
+      "recommended_aggregation": "rate()"
+    },
+    "nftban_protocol_packets": {
+      "type": "counter",
+      "unit": "count",
+      "category": "protocol",
+      "description": "Packets per protocol",
+      "labels": {
+        "protocol": {
+          "type": "enum",
+          "values": ["tcp", "udp", "icmp"]
+        }
+      },
+      "cardinality": 3,
+      "recommended_aggregation": "rate()"
+    },
+    "nftban_connections_active": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "connections",
+      "description": "Active TCP connections",
+      "labels": {}
+    },
+    "nftban_connections_established": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "connections",
+      "description": "Established TCP connections",
+      "labels": {}
+    },
+    "nftban_connections_time_wait": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "connections",
+      "description": "TIME_WAIT connections",
+      "labels": {},
+      "thresholds": {
+        "warning": "> 1000",
+        "critical": "> 5000"
+      }
+    },
+    "nftban_connections_close_wait": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "connections",
+      "description": "CLOSE_WAIT connections",
+      "labels": {},
+      "thresholds": {
+        "warning": "> 100",
+        "critical": "> 500"
+      }
+    },
+    "nftban_feeds_enabled": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "feeds",
+      "description": "Number of enabled threat feeds",
+      "labels": {}
+    },
+    "nftban_feeds_ips": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "feeds",
+      "description": "Total IPs from feeds",
+      "labels": {
+        "family": {
+          "type": "enum",
+          "values": ["ipv4", "ipv6"]
+        }
+      },
+      "cardinality": 2
+    },
+    "nftban_health_status": {
+      "type": "gauge",
+      "unit": "enum",
+      "category": "health",
+      "description": "Component health status",
+      "labels": {
+        "component": {
+          "type": "enum",
+          "values": ["nftables", "polkit", "ssh"],
+          "description": "System component"
+        }
+      },
+      "cardinality": 3,
+      "value_mapping": {
+        "0": "OK",
+        "1": "WARN",
+        "2": "ERROR",
+        "3": "CRITICAL"
+      }
+    },
+    "nftban_exporter_duration_seconds": {
+      "type": "gauge",
+      "unit": "seconds",
+      "category": "exporter",
+      "description": "Time to collect all metrics",
+      "labels": {},
+      "thresholds": {
+        "warning": "> 1.0",
+        "critical": "> 5.0"
+      }
+    },
+    "nftban_last_update_timestamp": {
+      "type": "gauge",
+      "unit": "unix_timestamp",
+      "category": "exporter",
+      "source": "shell_prometheus",
+      "description": "Last collection time",
+      "labels": {}
+    },
+    "nftban_bans_total_counter": {
+      "type": "counter",
+      "unit": "count",
+      "category": "operations",
+      "source": "go_nftban",
+      "go_var": "bansTotal",
+      "description": "Total number of IP bans performed",
+      "labels": {
+        "source": {"type": "string", "values": ["manual", "feeds", "suricata", "portscan", "ddos", "loginmon"]},
+        "family": {"type": "enum", "values": ["ipv4", "ipv6"]}
+      }
+    },
+    "nftban_unbans_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "operations",
+      "source": "go_nftban",
+      "go_var": "unbansTotal",
+      "description": "Total number of IP unbans performed",
+      "labels": {
+        "source": {"type": "string"},
+        "family": {"type": "enum", "values": ["ipv4", "ipv6"]}
+      }
+    },
+    "nftban_feeds_load_duration_seconds": {
+      "type": "histogram",
+      "unit": "seconds",
+      "category": "feeds",
+      "source": "go_nftban",
+      "go_var": "feedsLoadDuration",
+      "description": "Time to load threat feeds",
+      "labels": {
+        "feed_name": {"type": "string", "description": "Name of the threat feed"}
+      },
+      "buckets": "0.1s to 102s (exponential)"
+    },
+    "nftban_feeds_ips_loaded": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "feeds",
+      "source": "go_nftban",
+      "go_var": "feedsIPsLoaded",
+      "description": "Number of IPs loaded from each feed",
+      "labels": {
+        "feed_name": {"type": "string"},
+        "family": {"type": "enum", "values": ["ipv4", "ipv6"]}
+      }
+    },
+    "nftban_sync_duration_seconds": {
+      "type": "histogram",
+      "unit": "seconds",
+      "category": "sync",
+      "source": "go_nftban",
+      "go_var": "syncDuration",
+      "description": "Time to sync firewall rules with nftables",
+      "labels": {
+        "operation": {"type": "enum", "values": ["full", "incremental", "feeds", "manual"]}
+      }
+    },
+    "nftban_active_bans": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "go_nftban",
+      "go_var": "activeBans",
+      "description": "Number of currently active bans (real-time count)",
+      "labels": {
+        "family": {"type": "enum", "values": ["ipv4", "ipv6"]},
+        "type": {"type": "enum", "values": ["temp", "permanent", "feed"]}
+      },
+      "cardinality": 6
+    },
+    "nftban_loginmon_detections_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "loginmon",
+      "source": "go_nftban",
+      "go_var": "loginmonDetectionsTotal",
+      "description": "Total login failure detections",
+      "labels": {
+        "reason": {"type": "string", "values": ["ssh_invalid_user", "ssh_root_attempt", "ssh_auth_failure"]},
+        "service": {"type": "string", "values": ["sshd", "vsftpd", "postfix"]}
+      }
+    },
+    "nftban_loginmon_tracked_ips": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "loginmon",
+      "source": "go_nftban",
+      "go_var": "loginmonTrackedIPs",
+      "description": "Number of IPs currently being tracked/scored"
+    },
+    "nftban_portscan_detections_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "portscan",
+      "source": "go_nftban",
+      "go_var": "portscanDetectionsTotal",
+      "description": "Total port scan detections",
+      "labels": {
+        "protocol": {"type": "enum", "values": ["tcp", "udp"]}
+      }
+    },
+    "nftban_portscan_tracked_ips": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "portscan",
+      "source": "go_nftban",
+      "go_var": "portscanTrackedIPs",
+      "description": "Number of IPs currently being tracked for port scanning"
+    },
+    "nftban_ddos_detections_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "ddos",
+      "source": "go_nftban",
+      "go_var": "ddosDetectionsTotal",
+      "description": "Total DDoS attack detections",
+      "labels": {
+        "attack_type": {"type": "string", "values": ["syn_flood", "icmp_flood", "udp_flood"]}
+      }
+    },
+    "nftban_ddos_active_mitigations": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "ddos",
+      "source": "go_nftban",
+      "go_var": "ddosActiveMitigations",
+      "description": "Number of currently active DDoS mitigations"
+    },
+    "nftban_module_enabled": {
+      "type": "gauge",
+      "unit": "boolean",
+      "category": "modules",
+      "source": "go_nftban",
+      "go_var": "moduleStatus",
+      "description": "Module enabled status (1=enabled, 0=disabled)",
+      "labels": {
+        "module": {"type": "enum", "values": ["portscan", "ddos", "login_monitor", "suricata", "geoban"]}
+      },
+      "cardinality": 5
+    },
+    "nftban_blocked_ips_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "go_sampler",
+      "go_var": "blockedIPsGauge",
+      "description": "Total number of blocked IPs in firewall"
+    },
+    "nftban_firewall_rules_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "firewall",
+      "source": "go_sampler",
+      "go_var": "ruleCountGauge",
+      "description": "Total number of firewall rules"
+    },
+    "nftban_uptime_seconds": {
+      "type": "gauge",
+      "unit": "seconds",
+      "category": "daemon",
+      "source": "go_sampler",
+      "go_var": "uptimeGauge",
+      "description": "Service uptime in seconds"
+    },
+    "nftban_feeds_active_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "feeds",
+      "source": "go_sampler",
+      "go_var": "feedsActiveGauge",
+      "description": "Number of active threat feeds"
+    },
+    "nftban_geoban_countries_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "geoban",
+      "source": "go_sampler",
+      "go_var": "geobanCountriesGauge",
+      "description": "Number of countries blocked by GeoBan"
+    },
+    "nftban_geoban_ranges_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "geoban",
+      "source": "go_sampler",
+      "go_var": "geobanRangesGauge",
+      "description": "Number of IP ranges blocked by GeoBan"
+    },
+    "nftban_nftables_active": {
+      "type": "gauge",
+      "unit": "boolean",
+      "category": "health",
+      "source": "go_sampler",
+      "go_var": "nftablesActiveGauge",
+      "description": "NFTables service status (1=active, 0=inactive)"
+    }
+  },
+  "zabbix_mapping": {
+    "description": "Mapping from Prometheus metrics to Zabbix items",
+    "prefix": "nftban.",
+    "item_type": "TRAP",
+    "mappings": {
+      "nftban_daemon_up": "nftban.status",
+      "nftban_daemon_uptime_seconds": "nftban.uptime",
+      "nftban_watchdog_up": "nftban.watchdog.status",
+      "nftban_watchdog_pressure_score{type=\"cpu\"}": "nftban.watchdog.cpu_score",
+      "nftban_watchdog_pressure_score{type=\"memory\"}": "nftban.watchdog.mem_score",
+      "nftban_watchdog_pressure_score{type=\"io\"}": "nftban.watchdog.io_score",
+      "nftban_blocks_total": "nftban.active.count",
+      "nftban_bans_last_24h": "nftban.bans.24h",
+      "nftban_runtime_goroutines": "nftban.goroutines"
+    }
+  },
+  "deprecation_policy": {
+    "description": "How we handle metric changes",
+    "transition_period": "2 major versions",
+    "dual_emit": "Old and new metric names emitted during transition",
+    "notice": "Deprecation warnings in documentation and logs"
+  },
+  "versioning": {
+    "description": "Semantic versioning for metrics schema",
+    "major": "Breaking changes (metric renamed/removed, label meaning changed)",
+    "minor": "New metrics added, new labels added to existing metrics",
+    "patch": "Documentation updates, bug fixes"
+  },
+  "_metadata": {
+    "total_metrics": 65,
+    "by_type": {
+      "gauge": 42,
+      "counter": 18,
+      "histogram": 5
+    },
+    "by_source": {
+      "go_nftban": 35,
+      "go_sampler": 16,
+      "go_collector": 18,
+      "shell_prometheus": 45,
+      "shell_zabbix": 30
+    },
+    "by_category": {
+      "daemon": 4,
+      "watchdog": 3,
+      "runtime": 4,
+      "ipc": 3,
+      "throughput": 2,
+      "blocks": 10,
+      "firewall": 5,
+      "network": 10,
+      "protocol": 2,
+      "connections": 4,
+      "feeds": 5,
+      "health": 2,
+      "exporter": 2,
+      "operations": 2,
+      "sync": 1,
+      "loginmon": 2,
+      "portscan": 2,
+      "ddos": 2,
+      "geoban": 2,
+      "modules": 1
+    },
+    "total_labels": 15,
+    "bounded_cardinality_labels": 12,
+    "moderate_cardinality_labels": 2,
+    "forbidden_labels": 4,
+    "notes": [
+      "Metrics may overlap across sources (e.g., blocks_total in both sampler and collector)",
+      "Shell exporters read from daemon IPC and add computed metrics",
+      "Go sources use different registries - check source field for details"
+    ]
+  }
+}
