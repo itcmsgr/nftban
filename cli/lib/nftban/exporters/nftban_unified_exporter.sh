@@ -371,6 +371,9 @@ collect_all_metrics() {
     # Network metrics (declared at function level for JSON cache access)
     local total_rx_mbps=0 total_tx_mbps=0 peak_rx=0 peak_tx=0
     local conn_active=0 conn_established=0 conn_time_wait=0
+    # Kernel metrics (declared at function level for JSON cache access)
+    local conntrack_entries=0 conntrack_max=0 conntrack_utilization=0
+    local softnet_drops_total=0 softnet_drops_rate=0
     if group_active "live"; then
 
         # --- Daemon Metrics ---
@@ -589,6 +592,44 @@ collect_all_metrics() {
         metrics+="nftban_modules_active $mod_active $timestamp\n"
         metrics+="nftban_modules_failed $mod_failed $timestamp\n"
 
+        # --- Individual Module Status Metrics ---
+        # Status values: 1=active, 0=disabled, -1=failed
+        # Checks: config exists, timer/service active, service failed
+        local module_login_status=0 module_portscan_status=0 module_ddos_status=0
+        local module_suricata_status=0 module_feeds_status=0 module_geoban_status=0
+        local module_watchdog_status=0
+
+        for module in login portscan ddos suricata feeds geoban watchdog; do
+            local status_val=0
+            local config_file="${NFTBAN_CONFIG_DIR}/modules/${module}.conf"
+
+            if [[ -f "$config_file" ]]; then
+                # Config exists, check if service/timer is active or failed
+                if systemctl is-active "nftban-${module}.timer" &>/dev/null 2>&1 || \
+                   systemctl is-active "nftban-${module}.service" &>/dev/null 2>&1; then
+                    status_val=1  # active
+                elif systemctl is-failed "nftban-${module}.service" &>/dev/null 2>&1; then
+                    status_val=-1  # failed
+                fi
+                # else remains 0 (disabled - config exists but not running)
+            fi
+            # If config doesnt exist, status remains 0 (disabled)
+
+            # Assign to individual variables for JSON cache
+            case "$module" in
+                login)    module_login_status=$status_val ;;
+                portscan) module_portscan_status=$status_val ;;
+                ddos)     module_ddos_status=$status_val ;;
+                suricata) module_suricata_status=$status_val ;;
+                feeds)    module_feeds_status=$status_val ;;
+                geoban)   module_geoban_status=$status_val ;;
+                watchdog) module_watchdog_status=$status_val ;;
+            esac
+
+            metrics+="nftban_module_${module}_status $status_val $timestamp\n"
+        done
+
+
         # --- nftables Metrics ---
         if command -v nft &>/dev/null; then
             local sets_count elements_total
@@ -659,6 +700,43 @@ collect_all_metrics() {
             metrics+="nftban_feeds_ipv6_total $feeds_ipv6_total $timestamp\n"
         fi
 
+        # --- Feed Health Metrics (Phase 1) ---
+        # Sync errors: count [ERROR] or [FAIL] entries from last 24 hours in feeds.log
+        local feeds_sync_errors=0
+        local feeds_log="${NFTBAN_LOG_DIR}/feeds.log"
+        if [[ -f "$feeds_log" ]]; then
+            local cutoff_time=$((timestamp - 86400))
+            feeds_sync_errors=$(awk -v cutoff="$cutoff_time" '
+                /\[(ERROR|FAIL)\]/ {
+                    # Extract timestamp from log line format: [YYYY-MM-DD HH:MM:SS]
+                    if (match($0, /\[([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2})\]/, ts)) {
+                        cmd = "date -d \"" ts[1] "\" +%s 2>/dev/null"
+                        cmd | getline log_epoch
+                        close(cmd)
+                        if (log_epoch >= cutoff) count++
+                    }
+                }
+                END { print count+0 }
+            ' "$feeds_log" 2>/dev/null || echo "0")
+        fi
+        metrics+="nftban_feeds_sync_errors_total $feeds_sync_errors $timestamp\n"
+
+        # Stale feeds: count feeds with last_sync > 24 hours from .state files
+        local feeds_stale_count=0
+        local feeds_state_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+        if [[ -d "$feeds_state_dir" ]]; then
+            local cutoff_time=$((timestamp - 86400))
+            for state_file in "$feeds_state_dir"/*.state; do
+                [[ -f "$state_file" ]] || continue
+                local last_sync
+                last_sync=$(jq -r '.last_sync // 0' "$state_file" 2>/dev/null || echo "0")
+                if [[ "$last_sync" =~ ^[0-9]+$ ]] && [[ $last_sync -gt 0 ]] && [[ $last_sync -lt $cutoff_time ]]; then
+                    ((feeds_stale_count++))
+                fi
+            done
+        fi
+        metrics+="nftban_feeds_stale_count $feeds_stale_count $timestamp\n"
+
         # --- GeoBan Metrics (count blocked countries) ---
         # Aligned with nftban_stats.sh dashboard - counts countries with MODE=block
         local geoban_countries_blocked=0
@@ -692,6 +770,33 @@ collect_all_metrics() {
             fi
         fi
 
+        # --- Kernel Softnet Metrics (component: kernel) ---
+        # Softnet drops indicate packet processing pressure on CPU
+        # Variables declared at function level for JSON cache access
+        if should_collect_component "kernel"; then
+            if [[ -f /proc/net/softnet_stat ]]; then
+                # Column 2 (0-indexed: col 1) is dropped packets, values are in hex
+                softnet_drops_total=$(awk '{sum += strtonum("0x" $2)} END {print sum}' /proc/net/softnet_stat 2>/dev/null || echo "0")
+            fi
+            metrics+="nftban_kernel_softnet_drops_total $softnet_drops_total $timestamp\n"
+
+            # Calculate rate from previous value
+            local softnet_state="${NFTBAN_RUN_DIR}/softnet_state.dat"
+            if [[ -f "$softnet_state" ]]; then
+                local prev_drops prev_ts
+                read -r prev_drops prev_ts < "$softnet_state" 2>/dev/null || { prev_drops=0; prev_ts=$timestamp; }
+                local drops_delta=$((softnet_drops_total - prev_drops))
+                local time_delta=$((timestamp - prev_ts))
+                [[ $drops_delta -lt 0 ]] && drops_delta=0  # Handle counter wrap
+                if [[ $time_delta -gt 0 ]]; then
+                    # Rate per minute = (drops_delta / time_delta) * 60
+                    softnet_drops_rate=$(awk -v d="$drops_delta" -v t="$time_delta" 'BEGIN {printf "%.2f", (d/t)*60}')
+                fi
+            fi
+            echo "$softnet_drops_total $timestamp" > "$softnet_state"
+            metrics+="nftban_kernel_softnet_drops_rate_per_minute $softnet_drops_rate $timestamp\n"
+        fi
+
     fi  # end EXTENDED group
 
     # =========================================================================
@@ -709,6 +814,23 @@ collect_all_metrics() {
         fi
         cpu_cores=$(nproc 2>/dev/null || echo "1")
         metrics+="nftban_server_cpu_cores $cpu_cores $timestamp\n"
+
+        # --- Kernel Conntrack Metrics (component: kernel) ---
+        # Variables declared at function level for JSON cache access
+        if should_collect_component "kernel"; then
+            if [[ -f /proc/sys/net/netfilter/nf_conntrack_count ]]; then
+                conntrack_entries=$(cat /proc/sys/net/netfilter/nf_conntrack_count 2>/dev/null || echo "0")
+            fi
+            if [[ -f /proc/sys/net/netfilter/nf_conntrack_max ]]; then
+                conntrack_max=$(cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || echo "0")
+            fi
+            if [[ $conntrack_max -gt 0 ]]; then
+                conntrack_utilization=$(awk -v e="$conntrack_entries" -v m="$conntrack_max" 'BEGIN {printf "%.2f", (e/m)*100}')
+            fi
+            metrics+="nftban_kernel_conntrack_entries $conntrack_entries $timestamp\n"
+            metrics+="nftban_kernel_conntrack_max $conntrack_max $timestamp\n"
+            metrics+="nftban_kernel_conntrack_utilization_percent $conntrack_utilization $timestamp\n"
+        fi
 
     fi  # end INVENTORY group
 
@@ -862,6 +984,10 @@ collect_all_metrics() {
     "ipv6_total": ${feeds_ipv6_total:-0},
     "ips_total": ${feeds_ips:-0}
   },
+  "feed_health": {
+    "sync_errors_total": ${feeds_sync_errors:-0},
+    "stale_count": ${feeds_stale_count:-0}
+  },
   "geoban": {
     "countries_blocked": ${geoban_countries_blocked:-0}
   },
@@ -900,6 +1026,15 @@ collect_all_metrics() {
     "active": ${mod_active:-0},
     "failed": ${mod_failed:-0}
   },
+  "module_status": {
+    "login": ${module_login_status:-0},
+    "portscan": ${module_portscan_status:-0},
+    "ddos": ${module_ddos_status:-0},
+    "suricata": ${module_suricata_status:-0},
+    "feeds": ${module_feeds_status:-0},
+    "geoban": ${module_geoban_status:-0},
+    "watchdog": ${module_watchdog_status:-0}
+  },
   "memory": {
     "rss_bytes": ${rss:-0},
     "open_fds": ${fds:-0},
@@ -915,6 +1050,13 @@ collect_all_metrics() {
     "total_tx_mbps": ${total_tx_mbps:-0},
     "peak_rx_mbps": ${peak_rx:-0},
     "peak_tx_mbps": ${peak_tx:-0}
+  },
+  "kernel": {
+    "conntrack_entries": ${conntrack_entries:-0},
+    "conntrack_max": ${conntrack_max:-0},
+    "conntrack_utilization_percent": ${conntrack_utilization:-0},
+    "softnet_drops_total": ${softnet_drops_total:-0},
+    "softnet_drops_rate_per_minute": ${softnet_drops_rate:-0}
   }
 }
 EOF
