@@ -372,7 +372,7 @@ case "$1" in
             log_info "  NFTBand daemon enabled (single nftables writer)"
 
             # Core timers (maintenance tasks) - with fallback
-            for timer in nftban-maintenance.timer nftban-health.timer nftban-queue.timer nftban-metrics-exporter.timer; do
+            for timer in nftban-maintenance.timer nftban-health.timer nftban-queue.timer nftban-unified-exporter.timer; do
                 if ! deb-systemd-helper enable "$timer" >/dev/null 2>&1; then
                     systemctl enable "$timer" >/dev/null 2>&1 || true
                 fi

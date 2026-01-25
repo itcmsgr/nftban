@@ -57,10 +57,10 @@ install -d %{buildroot}%{_docdir}/nftban/metrics
 # Install Track 1: Core Metrics Exporter
 install -m 0755 work/track1/nftban_prometheus_exporter.sh \
     %{buildroot}%{_prefix}/lib/nftban/exporters/nftban_prometheus_exporter.sh
-install -m 0644 work/track1/nftban-metrics-exporter.service \
-    %{buildroot}%{_unitdir}/nftban-metrics-exporter.service
-install -m 0644 work/track1/nftban-metrics-exporter.timer \
-    %{buildroot}%{_unitdir}/nftban-metrics-exporter.timer
+install -m 0644 work/track1/nftban-unified-exporter.service \
+    %{buildroot}%{_unitdir}/nftban-unified-exporter.service
+install -m 0644 work/track1/nftban-unified-exporter.timer \
+    %{buildroot}%{_unitdir}/nftban-unified-exporter.timer
 
 # Install Track 2: Node Exporter Setup
 install -m 0755 cli/lib/nftban/setup/install_node_exporter.sh \
@@ -112,8 +112,8 @@ install -m 0644 docs/metrics/SECURITY.md \
 
 # Track 1: Core Metrics Exporter
 %{_prefix}/lib/nftban/exporters/nftban_prometheus_exporter.sh
-%{_unitdir}/nftban-metrics-exporter.service
-%{_unitdir}/nftban-metrics-exporter.timer
+%{_unitdir}/nftban-unified-exporter.service
+%{_unitdir}/nftban-unified-exporter.timer
 
 # Track 2: Node Exporter Setup
 %{_prefix}/lib/nftban/setup/install_node_exporter.sh
@@ -156,7 +156,7 @@ if [ ! -d "/var/lib/node_exporter/textfile_collector" ]; then
 fi
 
 # Reload systemd daemon
-%systemd_post nftban-metrics-exporter.service nftban-metrics-exporter.timer
+%systemd_post nftban-unified-exporter.service nftban-unified-exporter.timer
 
 # Print installation message
 cat <<'EOF'
@@ -174,10 +174,10 @@ Next steps:
    sudo /usr/lib/nftban/setup/install_prometheus.sh
 
 3. Enable and start metrics collection:
-   sudo systemctl enable --now nftban-metrics-exporter.timer
+   sudo systemctl enable --now nftban-unified-exporter.timer
 
 4. Verify metrics are being collected:
-   sudo systemctl status nftban-metrics-exporter.timer
+   sudo systemctl status nftban-unified-exporter.timer
    cat /var/lib/node_exporter/textfile_collector/nftban.prom
 
 5. Import Grafana dashboards (optional):
@@ -192,10 +192,10 @@ Documentation:
 EOF
 
 %preun
-%systemd_preun nftban-metrics-exporter.timer nftban-metrics-exporter.service
+%systemd_preun nftban-unified-exporter.timer nftban-unified-exporter.service
 
 %postun
-%systemd_postun_with_restart nftban-metrics-exporter.timer nftban-metrics-exporter.service
+%systemd_postun_with_restart nftban-unified-exporter.timer nftban-unified-exporter.service
 
 # Remove metrics file on package removal (but not upgrade)
 if [ $1 -eq 0 ]; then

@@ -94,8 +94,8 @@ _metrics_enable_remote_user() {
     fi
 
     # Ensure metrics exporter timer is enabled
-    systemctl enable --now nftban-metrics-exporter.timer &>/dev/null || true
-    systemctl start nftban-metrics-exporter.service &>/dev/null || true
+    systemctl enable --now nftban-unified-exporter.timer &>/dev/null || true
+    systemctl start nftban-unified-exporter.service &>/dev/null || true
     echo "  NFTBan metrics exporter enabled"
 
     # Step 3: Configure vmagent for user's backend
@@ -227,8 +227,8 @@ _metrics_enable_pro() {
     fi
 
     # Ensure metrics exporter timer is enabled
-    systemctl enable --now nftban-metrics-exporter.timer &>/dev/null || true
-    systemctl start nftban-metrics-exporter.service &>/dev/null || true
+    systemctl enable --now nftban-unified-exporter.timer &>/dev/null || true
+    systemctl start nftban-unified-exporter.service &>/dev/null || true
 
     # Step 5: Configure vmagent for Pro
     echo ""
@@ -309,7 +309,7 @@ _metrics_enable_mode_a() {
 
     # Check if already enabled
     if systemctl is-active prometheus &>/dev/null && \
-       systemctl is-active nftban-metrics-exporter.timer &>/dev/null; then
+       systemctl is-active nftban-unified-exporter.timer &>/dev/null; then
         echo "Prometheus metrics already enabled"
         echo ""
         echo "Prometheus:  http://${NFTBAN_METRICS_PROMETHEUS_ADDR}/"
@@ -541,8 +541,8 @@ _metrics_enable_mode_c2() {
     fi
 
     # Ensure metrics exporter timer is enabled
-    systemctl enable --now nftban-metrics-exporter.timer &>/dev/null || true
-    systemctl start nftban-metrics-exporter.service &>/dev/null || true
+    systemctl enable --now nftban-unified-exporter.timer &>/dev/null || true
+    systemctl start nftban-unified-exporter.service &>/dev/null || true
     echo "  NFTBan metrics exporter enabled"
 
     # Step 4: Configure vmagent for local VM
@@ -649,8 +649,8 @@ _metrics_enable_exporters_only() {
     # Ensure metrics exporter timer is enabled
     echo ""
     echo "Step 2/2: Enabling NFTBan metrics exporter..."
-    systemctl enable --now nftban-metrics-exporter.timer &>/dev/null || true
-    systemctl start nftban-metrics-exporter.service &>/dev/null || true
+    systemctl enable --now nftban-unified-exporter.timer &>/dev/null || true
+    systemctl start nftban-unified-exporter.service &>/dev/null || true
     echo "  NFTBan metrics exporter enabled"
 
     _set_metrics_agent_storage "none" "remote"

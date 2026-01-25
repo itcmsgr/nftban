@@ -2,10 +2,21 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2024-2025 NFTBan Development Team
 #
+# meta:name="postinst"
+# meta:type="packaging"
+# meta:description="postinst script for nftban-metrics"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
+#
 # postinst script for nftban-metrics
 # See: dh_installdeb(1)
 
-set -e
+set -Eeuo pipefail
 
 # Summary of how this script can be called:
 #        * <postinst> `configure' <most-recently-configured-version>
@@ -59,10 +70,10 @@ case "$1" in
         echo "   sudo /usr/lib/nftban/setup/install_prometheus.sh"
         echo ""
         echo "3. Enable and start metrics collection:"
-        echo "   sudo systemctl enable --now nftban-metrics-exporter.timer"
+        echo "   sudo systemctl enable --now nftban-unified-exporter.timer"
         echo ""
         echo "4. Verify metrics are being collected:"
-        echo "   sudo systemctl status nftban-metrics-exporter.timer"
+        echo "   sudo systemctl status nftban-unified-exporter.timer"
         echo "   cat /var/lib/node_exporter/textfile_collector/nftban.prom"
         echo ""
         echo "5. Import Grafana dashboards (optional):"

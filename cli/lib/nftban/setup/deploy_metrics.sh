@@ -6,14 +6,21 @@
 # Purpose: Automated end-to-end metrics deployment
 # Location: /usr/lib/nftban/setup/deploy_metrics.sh
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:name=deploy_metrics
-# meta:type=deployment
-# meta:header=Metrics Deployment Automation
-# meta:version=1.0.0
+# meta:name="deploy_metrics"
+# meta:type="deployment"
+# meta:header="Metrics Deployment Automation"
+# meta:version="1.0.0"
 #
-# meta:created_date=2025-11-17
+# meta:created_date="2025-11-17"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 # =============================================================================
 
 set -Eeuo pipefail
@@ -122,10 +129,10 @@ step1_enable_exporter() {
     print_info "Found NFTBan prometheus exporter"
 
     # Enable and start timer
-    if systemctl list-unit-files | grep -q "nftban-metrics-exporter.timer"; then
-        systemctl enable nftban-metrics-exporter.timer
-        systemctl start nftban-metrics-exporter.timer
-        print_status "Metrics exporter timer enabled and started"
+    if systemctl list-unit-files | grep -q "nftban-unified-exporter.timer"; then
+        systemctl enable nftban-unified-exporter.timer
+        systemctl start nftban-unified-exporter.timer
+        print_status "Unified exporter timer enabled and started"
 
         # Run exporter once to create initial metrics
         print_info "Running exporter to generate initial metrics..."
@@ -325,7 +332,7 @@ print_completion() {
     echo "  Mode: $DEPLOYMENT_MODE"
     echo ""
     echo "Services Status:"
-    systemctl is-active --quiet nftban-metrics-exporter.timer && echo -e "  ${GREEN}✓${NC} NFTBan Metrics Exporter: Running" || echo -e "  ${RED}✗${NC} NFTBan Metrics Exporter: Not running"
+    systemctl is-active --quiet nftban-unified-exporter.timer && echo -e "  ${GREEN}✓${NC} NFTBan Unified Exporter: Running" || echo -e "  ${RED}✗${NC} NFTBan Unified Exporter: Not running"
     systemctl is-active --quiet node_exporter && echo -e "  ${GREEN}✓${NC} Node Exporter: Running" || echo -e "  ${YELLOW}⊘${NC} Node Exporter: Not running"
 
     if [[ "$DEPLOYMENT_MODE" != "minimal" ]]; then

@@ -402,7 +402,7 @@ _nftban() {
                     case "${sub_cmd}" in
                         enable|disable)
                             # List available timers
-                            COMPREPLY=($(compgen -W "nftban-health.timer nftban-metrics-exporter.timer nftban-core-geoip.timer nftban-core-feeds.timer nftban-queue.timer nftban-suricata-update.timer nftban-snapshot.timer nftban-rollback.timer" -- "${cur}"))
+                            COMPREPLY=($(compgen -W "nftban-health.timer nftban-unified-exporter.timer nftban-core-geoip.timer nftban-core-feeds.timer nftban-queue.timer nftban-suricata-update.timer nftban-snapshot.timer nftban-rollback.timer" -- "${cur}"))
                             ;;
                     esac
                     ;;

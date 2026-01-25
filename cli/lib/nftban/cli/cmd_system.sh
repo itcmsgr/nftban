@@ -224,10 +224,10 @@ _nftban_system_enable_legacy() {
     # Optional timers (based on config)
     # Metrics timer
     if [[ "${NFTBAN_METRICS_ENABLED:-false}" == "true" ]]; then
-        if systemctl list-unit-files "nftban-metrics-exporter.timer" &>/dev/null 2>&1; then
-            systemctl enable "nftban-metrics-exporter.timer" 2>/dev/null && \
-            systemctl start "nftban-metrics-exporter.timer" 2>/dev/null && \
-            echo "  ✅ Enabled: nftban-metrics-exporter.timer (${NFTBAN_METRICS_BACKEND:-prometheus})"
+        if systemctl list-unit-files "nftban-unified-exporter.timer" &>/dev/null 2>&1; then
+            systemctl enable "nftban-unified-exporter.timer" 2>/dev/null && \
+            systemctl start "nftban-unified-exporter.timer" 2>/dev/null && \
+            echo "  ✅ Enabled: nftban-unified-exporter.timer (${NFTBAN_METRICS_BACKEND:-prometheus})"
         fi
     else
         echo "  ℹ️  Metrics disabled (enable with: nftban config set NFTBAN_METRICS_ENABLED=true)"
@@ -484,7 +484,7 @@ _nftban_system_disable_legacy() {
     echo ""
 
     echo "[1/3] Stopping services..."
-    local services=("nftban-login-monitor" "nftban-metrics-exporter" "nftban" "suricata")
+    local services=("nftban-login-monitor" "nftban-unified-exporter" "nftban" "suricata")
     for svc in "${services[@]}"; do
         if systemctl list-unit-files "${svc}.service" &>/dev/null 2>&1; then
             systemctl stop "${svc}.service" 2>/dev/null && echo "  Stopped: ${svc}"

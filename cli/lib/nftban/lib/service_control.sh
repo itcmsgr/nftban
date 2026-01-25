@@ -337,7 +337,7 @@ nftban_disable_all() {
 
     # Stop and disable systemd services
     local login_svc="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
-    local metrics_svc="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-metrics-exporter.service}"
+    local metrics_svc="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
     local services=("${login_svc%.service}" "${metrics_svc%.service}" "nftban" "suricata")
 
     for svc in "${services[@]}"; do

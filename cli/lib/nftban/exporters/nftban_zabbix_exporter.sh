@@ -13,7 +13,7 @@
 # meta:inventory.binaries="jq"
 # meta:inventory.env_vars="NFTBAN_ZABBIX_SERVER,NFTBAN_ZABBIX_PORT"
 # meta:inventory.config_files="/etc/nftban/nftban.conf"
-# meta:inventory.systemd_units="nftban-zabbix-exporter.timer"
+# meta:inventory.systemd_units="nftban-unified-exporter.timer"
 # meta:inventory.network="10051/tcp"
 # meta:inventory.privileges="root"
 # =============================================================================

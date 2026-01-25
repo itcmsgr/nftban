@@ -6,23 +6,30 @@
 # Purpose: Install and configure Prometheus Node Exporter for NFTBan metrics
 # Location: /usr/lib/nftban/setup/install_node_exporter.sh
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 # nftban — Simplifying Linux Firewall Management
 #
-# meta:name=install_node_exporter
-# meta:type=setup
-# meta:header=Node Exporter Installation
-# meta:version=1.0.0
+# meta:name="install_node_exporter"
+# meta:type="setup"
+# meta:header="Node Exporter Installation"
+# meta:version="1.0.0"
 #
 # **Description & Purpose**
-# meta:description=Install and configure Node Exporter with textfile collector for NFTBan metrics
-# meta:input=User choices (package vs binary installation)
-# meta:output=Configured Node Exporter service
+# meta:description="Install and configure Node Exporter with textfile collector for NFTBan metrics"
+# meta:input="User choices (package vs binary installation)"
+# meta:output="Configured Node Exporter service"
 #
 # **Inventory & Requirements**
-# meta:depends=bash,wget|curl,tar
+# meta:depends="bash,wget|curl,tar"
 #
-# meta:created_date=2025-11-17
+# meta:created_date="2025-11-17"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 # =============================================================================
 
 # Enhanced strict mode
@@ -414,10 +421,10 @@ print_next_steps() {
 📊 Metrics endpoint: http://localhost:9100/metrics
 📁 Textfile collector: $TEXTFILE_COLLECTOR_DIR
 
-🔹 Next Steps:
+Next Steps:
 
-1. Deploy NFTBan metrics exporter:
-   sudo systemctl enable --now nftban-metrics-exporter.timer
+1. Deploy NFTBan unified exporter:
+   sudo systemctl enable --now nftban-unified-exporter.timer
 
 2. Verify metrics are being collected:
    curl -s http://localhost:9100/metrics | grep nftban_

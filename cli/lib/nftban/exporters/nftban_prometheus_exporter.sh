@@ -15,7 +15,7 @@
 # meta:inventory.binaries="nft,ss,bc"
 # meta:inventory.env_vars="NFTBAN_LIB_DIR,NFTBAN_DATA_DIR"
 # meta:inventory.config_files=""
-# meta:inventory.systemd_units="nftban-metrics-exporter.timer"
+# meta:inventory.systemd_units="nftban-unified-exporter.timer"
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 # =============================================================================

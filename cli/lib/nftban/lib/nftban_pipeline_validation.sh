@@ -5,17 +5,17 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Shared validation functions for metrics pipeline health
 #
-# meta:name=nftban_pipeline_validation
-# meta:type=lib
-# meta:header=Pipeline Validation Library
-# meta:version=1.0.0
+# meta:name="nftban_pipeline_validation"
+# meta:type="lib"
+# meta:header="Pipeline Validation Library"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Validates metrics pipeline health for watchdog capability detection
-# meta:input=N/A (library only)
-# meta:output=Pipeline status codes and validation results
+# meta:description="Validates metrics pipeline health for watchdog capability detection"
+# meta:input="N/A (library only)"
+# meta:output="Pipeline status codes and validation results"
 #
 # **Pipeline Health Model**
 #   Validation A: NFTBan metrics endpoint (local .prom file or HTTP)
@@ -31,8 +31,15 @@
 #   LOCAL: Always available, no metrics pipeline needed
 #   PERF: Requires healthy pipeline (status >= 1)
 #
-# meta:created_date=2026-01-04
-# meta:updated_date=2026-01-04
+# meta:created_date="2026-01-04"
+# meta:updated_date="2026-01-04"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 # =============================================================================
 
 set -Eeuo pipefail
@@ -398,8 +405,8 @@ nftban_check_perf_deps_available() {
     NFTBAN_PERF_DEPS_MISSING=()
 
     # Check for metrics exporter timer
-    if ! systemctl list-unit-files 2>/dev/null | grep -q "nftban-metrics-exporter.timer"; then
-        NFTBAN_PERF_DEPS_MISSING+=("nftban-metrics-exporter.timer")
+    if ! systemctl list-unit-files 2>/dev/null | grep -q "nftban-unified-exporter.timer"; then
+        NFTBAN_PERF_DEPS_MISSING+=("nftban-unified-exporter.timer")
     fi
 
     # Check for node_exporter
@@ -781,11 +788,11 @@ EOF
         echo ""
         echo "    The metrics .prom file is missing or stale."
         echo ""
-        echo "    1. Enable metrics exporter timer:"
-        echo "       sudo systemctl enable --now nftban-metrics-exporter.timer"
+        echo "    1. Enable unified exporter timer:"
+        echo "       sudo systemctl enable --now nftban-unified-exporter.timer"
         echo ""
         echo "    2. Trigger immediate collection:"
-        echo "       sudo systemctl start nftban-metrics-exporter.service"
+        echo "       sudo systemctl start nftban-unified-exporter.service"
         echo ""
         echo "    3. Verify file exists:"
         echo "       ls -la /var/lib/node_exporter/textfile_collector/nftban.prom"

@@ -24,7 +24,7 @@
 
 # shellcheck disable=SC2034  # Variables used by framework
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Simple config functions (no external dependencies)
 : "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
@@ -94,8 +94,8 @@ nftban_gui_cleanup_old_state() {
     systemctl stop nftban-ui &>/dev/null || true
     systemctl stop prometheus &>/dev/null || true
     systemctl stop node_exporter &>/dev/null || true
-    systemctl stop nftban-metrics-exporter.timer &>/dev/null || true
-    systemctl stop "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-metrics-exporter.service}" &>/dev/null || true
+    systemctl stop nftban-unified-exporter.timer &>/dev/null || true
+    systemctl stop "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}" &>/dev/null || true
 
     # Clean old metrics files
     if [[ -d "/var/lib/node_exporter/textfile_collector" ]]; then
@@ -426,7 +426,7 @@ nftban_gui_disable() {
     systemctl disable nftban-ui &>/dev/null || true
     systemctl disable prometheus &>/dev/null || true
     systemctl disable node_exporter &>/dev/null || true
-    systemctl disable nftban-metrics-exporter.timer &>/dev/null || true
+    systemctl disable nftban-unified-exporter.timer &>/dev/null || true
     echo "  ✓ All services disabled (won't auto-start)"
 
     # Step 3: Cleanup
@@ -485,9 +485,9 @@ nftban_gui_status() {
         fi
 
         # Check metrics
-        if systemctl is-active nftban-metrics-exporter.timer &>/dev/null; then
+        if systemctl is-active nftban-unified-exporter.timer &>/dev/null; then
             local last_run
-            last_run=$(systemctl show nftban-metrics-exporter.timer -p LastTriggerUSec --value)
+            last_run=$(systemctl show nftban-unified-exporter.timer -p LastTriggerUSec --value)
             if [[ -n "$last_run" ]] && [[ "$last_run" != "n/a" ]]; then
                 echo "Metrics:          Collecting (last: $(date -d "$last_run" '+%H:%M:%S'))"
             else
@@ -674,10 +674,10 @@ nftban_gui_restart() {
     fi
 
     # Restart metrics exporter
-    if systemctl list-unit-files | grep -q "nftban-metrics-exporter.timer"; then
+    if systemctl list-unit-files | grep -q "nftban-unified-exporter.timer"; then
         echo "  [3/4] Restarting Metrics Exporter..."
-        systemctl restart nftban-metrics-exporter.timer &>/dev/null
-        systemctl start "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-metrics-exporter.service}" &>/dev/null
+        systemctl restart nftban-unified-exporter.timer &>/dev/null
+        systemctl start "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}" &>/dev/null
         echo "        ✓ Metrics collection restarted"
         ((services_restarted++))
     else

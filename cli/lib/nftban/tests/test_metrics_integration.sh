@@ -6,14 +6,21 @@
 # Purpose: End-to-end integration testing of metrics system
 # Location: /usr/share/nftban/tests/test_metrics_integration.sh
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:name=test_metrics_integration
-# meta:type=testing
-# meta:header=Metrics Integration Tests
-# meta:version=0.6.0
+# meta:name="test_metrics_integration"
+# meta:type="testing"
+# meta:header="Metrics Integration Tests"
+# meta:version="0.6.0"
 #
-# meta:created_date=2025-11-17
+# meta:created_date="2025-11-17"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 # =============================================================================
 
 set -Eeuo pipefail
@@ -179,7 +186,7 @@ test_required_metrics() {
 
 test_systemd_timer_exists() {
     ((TESTS_RUN++))
-    if systemctl list-unit-files | grep -q "nftban-metrics-exporter.timer"; then
+    if systemctl list-unit-files | grep -q "nftban-unified-exporter.timer"; then
         test_pass "Systemd timer unit exists"
         return 0
     else
@@ -190,7 +197,7 @@ test_systemd_timer_exists() {
 
 test_systemd_service_exists() {
     ((TESTS_RUN++))
-    if systemctl list-unit-files | grep -q "nftban-metrics-exporter.service"; then
+    if systemctl list-unit-files | grep -q "nftban-unified-exporter.service"; then
         test_pass "Systemd service unit exists"
         return 0
     else
@@ -201,7 +208,7 @@ test_systemd_service_exists() {
 
 test_systemd_timer_enabled() {
     ((TESTS_RUN++))
-    if systemctl is-enabled --quiet nftban-metrics-exporter.timer 2>/dev/null; then
+    if systemctl is-enabled --quiet nftban-unified-exporter.timer 2>/dev/null; then
         test_pass "Systemd timer is enabled"
         return 0
     else
@@ -212,7 +219,7 @@ test_systemd_timer_enabled() {
 
 test_systemd_timer_active() {
     ((TESTS_RUN++))
-    if systemctl is-active --quiet nftban-metrics-exporter.timer 2>/dev/null; then
+    if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
         test_pass "Systemd timer is active"
         return 0
     else

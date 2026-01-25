@@ -2,10 +2,21 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2024-2025 NFTBan Development Team
 #
+# meta:name="prerm"
+# meta:type="packaging"
+# meta:description="prerm script for nftban-metrics"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
+#
 # prerm script for nftban-metrics
 # See: dh_installdeb(1)
 
-set -e
+set -Eeuo pipefail
 
 # Summary of how this script can be called:
 #        * <prerm> `remove'
@@ -22,14 +33,14 @@ case "$1" in
     remove|upgrade|deconfigure)
         # Stop and disable timer if running
         if [ -d /run/systemd/system ]; then
-            if systemctl is-active --quiet nftban-metrics-exporter.timer 2>/dev/null; then
-                echo "Stopping nftban-metrics-exporter.timer..."
-                systemctl stop nftban-metrics-exporter.timer || true
+            if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
+                echo "Stopping nftban-unified-exporter.timer..."
+                systemctl stop nftban-unified-exporter.timer || true
             fi
 
-            if systemctl is-enabled --quiet nftban-metrics-exporter.timer 2>/dev/null; then
-                echo "Disabling nftban-metrics-exporter.timer..."
-                systemctl disable nftban-metrics-exporter.timer || true
+            if systemctl is-enabled --quiet nftban-unified-exporter.timer 2>/dev/null; then
+                echo "Disabling nftban-unified-exporter.timer..."
+                systemctl disable nftban-unified-exporter.timer || true
             fi
         fi
     ;;

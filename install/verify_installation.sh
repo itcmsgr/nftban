@@ -117,8 +117,8 @@ check_file "/etc/nftban/whitelist.d/99-manual.conf"
 # ==============================================================================
 echo ""
 echo "Checking Systemd Services..."
-check_file "/usr/lib/systemd/system/nftban-metrics-exporter.service"
-check_file "/usr/lib/systemd/system/nftban-metrics-exporter.timer"
+check_file "/usr/lib/systemd/system/nftban-unified-exporter.service"
+check_file "/usr/lib/systemd/system/nftban-unified-exporter.timer"
 check_file "/usr/lib/systemd/system/nftban-ui.service" false          # Optional
 check_file "/usr/lib/systemd/system/nftban-ui-auth.socket" false      # Optional
 

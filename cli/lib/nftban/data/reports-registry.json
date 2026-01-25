@@ -229,7 +229,7 @@
       "description": "Prometheus metrics export",
       "output_path": "/var/lib/nftban/metrics/",
       "file_extension": ".prom",
-      "systemd_timer": "nftban-metrics-exporter.timer"
+      "systemd_timer": "nftban-unified-exporter.timer"
     }
   },
 
@@ -238,7 +238,7 @@
     "systemd_timers": [
       "nftban-health.timer",
       "nftban-maintenance.timer",
-      "nftban-metrics-exporter.timer"
+      "nftban-unified-exporter.timer"
     ],
     "frequencies": {
       "hourly": "Snapshot collection",

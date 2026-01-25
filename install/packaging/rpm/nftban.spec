@@ -426,7 +426,7 @@ if [ $1 -eq 0 ]; then
     # Stop all timers (complete list from install.sh)
     for timer in nftban-health.timer nftban-maintenance.timer \
                  nftban-watchdog.timer nftban-snapshot.timer \
-                 nftban-rollback.timer nftban-metrics-exporter.timer \
+                 nftban-rollback.timer nftban-unified-exporter.timer \
                  nftban-suricata-update.timer nftban-queue.timer \
                  nftban-core-geoip.timer nftban-core-feeds.timer; do
         systemctl stop "$timer" >/dev/null 2>&1 || true
