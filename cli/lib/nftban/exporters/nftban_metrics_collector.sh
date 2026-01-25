@@ -629,6 +629,62 @@ collect_nftables_perf_metrics() {
 EOF
 }
 
+collect_ban_details_metrics() {
+    local bans_by_source_manual=0 bans_by_source_feeds=0 bans_by_source_loginmon=0
+    local bans_by_source_portscan=0 bans_by_source_ddos=0 bans_by_source_suricata=0 bans_by_source_geoban=0
+    local escalations_total=0 persistent_total=0 recidivist_total=0
+    local ban_failures=0 unban_failures=0
+
+    local bans_log="${NFTBAN_LOG_DIR}/bans.log"
+    local permanent_file="${NFTBAN_CONFIG_DIR}/permanent.list"
+
+    if [[ -f "$bans_log" ]]; then
+        # Count bans by source (SOURCE is typically column 2 or 3)
+        bans_by_source_manual=$(grep -ci "|manual|" "$bans_log" 2>/dev/null || echo "0")
+        bans_by_source_feeds=$(grep -ci "|feed" "$bans_log" 2>/dev/null || echo "0")
+        bans_by_source_loginmon=$(grep -ciE "|login|ssh|auth" "$bans_log" 2>/dev/null || echo "0")
+        bans_by_source_portscan=$(grep -ci "|portscan\||scan|" "$bans_log" 2>/dev/null || echo "0")
+        bans_by_source_ddos=$(grep -ci "|ddos|" "$bans_log" 2>/dev/null || echo "0")
+        bans_by_source_suricata=$(grep -ci "|suricata|" "$bans_log" 2>/dev/null || echo "0")
+        bans_by_source_geoban=$(grep -ci "|geoban\||geo|" "$bans_log" 2>/dev/null || echo "0")
+
+        # Count recidivists (IPs that appear multiple times)
+        recidivist_total=$(awk -F'|' '{print $3}' "$bans_log" 2>/dev/null | sort | uniq -d | wc -l || echo "0")
+    fi
+
+    # Persistent/permanent bans
+    if [[ -f "$permanent_file" ]]; then
+        persistent_total=$(grep -cE "^[0-9]" "$permanent_file" 2>/dev/null || echo "0")
+    fi
+
+    # Escalations from escalation log if exists
+    local escalation_log="${NFTBAN_LOG_DIR}/escalations.log"
+    if [[ -f "$escalation_log" ]]; then
+        escalations_total=$(wc -l < "$escalation_log" 2>/dev/null || echo "0")
+    fi
+
+    cat <<EOF
+{
+  "ban_details": {
+    "bans_by_source": {
+      "manual": $bans_by_source_manual,
+      "feeds": $bans_by_source_feeds,
+      "loginmon": $bans_by_source_loginmon,
+      "portscan": $bans_by_source_portscan,
+      "ddos": $bans_by_source_ddos,
+      "suricata": $bans_by_source_suricata,
+      "geoban": $bans_by_source_geoban
+    },
+    "escalations_total": $escalations_total,
+    "persistent_offenders_total": $persistent_total,
+    "recidivist_ips_total": $recidivist_total,
+    "ban_failures_total": $ban_failures,
+    "unban_failures_total": $unban_failures
+  }
+}
+EOF
+}
+
 collect_nftables_metrics() {
     local sets=0 elements=0 rules=0 packets_ipv4=0 packets_ipv6=0
 
@@ -655,6 +711,65 @@ collect_nftables_metrics() {
     "rules": $rules,
     "packets_blocked_ipv4": $packets_ipv4,
     "packets_blocked_ipv6": $packets_ipv6
+  }
+}
+EOF
+}
+
+collect_analytics_metrics() {
+    local unique_ips_24h=0 recidivism_rate=0 top_attackers=0
+    local mode_transitions=0 alerts_active_info=0 alerts_active_warn=0 alerts_active_crit=0
+    local geoban_blocks=0 geoban_db_age=0
+
+    local bans_log="${NFTBAN_LOG_DIR}/bans.log"
+    local stats_file="${NFTBAN_RUN_DIR}/stats.json"
+    local geoip_db="/var/lib/nftban/geoip/GeoLite2-Country.mmdb"
+
+    # Unique IPs in last 24h
+    if [[ -f "$bans_log" ]]; then
+        local now cutoff
+        now=$(date +%s)
+        cutoff=$((now - 86400))
+        unique_ips_24h=$(awk -F'|' -v cutoff="$cutoff" '$1 ~ /^[0-9]+$/ && $1 >= cutoff {print $3}' "$bans_log" 2>/dev/null | sort -u | wc -l || echo "0")
+
+        # Recidivism rate (IPs banned >1 time / total unique IPs * 100)
+        local total_unique repeat_ips
+        total_unique=$(awk -F'|' '{print $3}' "$bans_log" 2>/dev/null | sort -u | wc -l || echo "1")
+        repeat_ips=$(awk -F'|' '{print $3}' "$bans_log" 2>/dev/null | sort | uniq -d | wc -l || echo "0")
+        [[ "$total_unique" -gt 0 ]] && recidivism_rate=$(echo "scale=2; $repeat_ips / $total_unique * 100" | bc 2>/dev/null || echo "0")
+
+        # Top attackers (IPs with >5 bans)
+        top_attackers=$(awk -F'|' '{print $3}' "$bans_log" 2>/dev/null | sort | uniq -c | awk '$1 > 5' | wc -l || echo "0")
+    fi
+
+    # Watchdog mode transitions from stats
+    if [[ -f "$stats_file" ]]; then
+        mode_transitions=$(jq -r '.watchdog.mode_transitions // 0' "$stats_file" 2>/dev/null || echo "0")
+        alerts_active_info=$(jq -r '.alerts.active.info // 0' "$stats_file" 2>/dev/null || echo "0")
+        alerts_active_warn=$(jq -r '.alerts.active.warning // 0' "$stats_file" 2>/dev/null || echo "0")
+        alerts_active_crit=$(jq -r '.alerts.active.critical // 0' "$stats_file" 2>/dev/null || echo "0")
+    fi
+
+    # GeoIP database age
+    if [[ -f "$geoip_db" ]]; then
+        local db_mtime
+        db_mtime=$(stat -c %Y "$geoip_db" 2>/dev/null || echo "0")
+        geoban_db_age=$(($(date +%s) - db_mtime))
+    fi
+
+    cat <<EOF
+{
+  "analytics": {
+    "unique_ips_24h": $unique_ips_24h,
+    "recidivism_rate": $recidivism_rate,
+    "top_attackers_total": $top_attackers,
+    "watchdog_mode_transitions_total": $mode_transitions,
+    "alerts_active": {
+      "info": $alerts_active_info,
+      "warning": $alerts_active_warn,
+      "critical": $alerts_active_crit
+    },
+    "geoban_database_age_seconds": $geoban_db_age
   }
 }
 EOF
@@ -1038,7 +1153,7 @@ EOF
 
 collect_dynamic_metrics() {
     # Collect all dynamic metrics and merge into single JSON
-    local timestamp daemon bans memory health modules module_status feed_health suricata eventbus nftables_perf nftables feeds network watchdog geoip kernel
+    local timestamp daemon bans memory health modules module_status feed_health suricata eventbus nftables_perf ban_details nftables analytics feeds network watchdog geoip kernel
     timestamp=$(date +%s)
 
     daemon=$(collect_daemon_metrics)
@@ -1051,7 +1166,9 @@ collect_dynamic_metrics() {
     suricata=$(collect_suricata_metrics)
     eventbus=$(collect_eventbus_metrics)
     nftables_perf=$(collect_nftables_perf_metrics)
+    ban_details=$(collect_ban_details_metrics)
     nftables=$(collect_nftables_metrics)
+    analytics=$(collect_analytics_metrics)
     feeds=$(collect_feeds_metrics)
     network=$(collect_network_metrics)
     watchdog=$(collect_watchdog_metrics)
@@ -1059,7 +1176,7 @@ collect_dynamic_metrics() {
     kernel=$(collect_kernel_metrics)
 
     # Merge all JSON objects
-    echo "$daemon $bans $memory $health $modules $module_status $feed_health $suricata $eventbus $nftables_perf $nftables $feeds $network $watchdog $geoip $kernel" | \
+    echo "$daemon $bans $memory $health $modules $module_status $feed_health $suricata $eventbus $nftables_perf $ban_details $nftables $analytics $feeds $network $watchdog $geoip $kernel" | \
         jq -s 'add | . + {"timestamp": '"$timestamp"', "type": "dynamic"}'
 }
 
