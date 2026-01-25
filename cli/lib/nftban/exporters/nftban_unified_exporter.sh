@@ -347,6 +347,7 @@ collect_all_metrics() {
     timestamp=$(date +%s)
 
     # Helper: check if a group is active
+    # shellcheck disable=SC2076  # Literal match intended (not regex)
     group_active() { [[ " $collection_groups " =~ " $1 " ]]; }
 
     # =========================================================================
