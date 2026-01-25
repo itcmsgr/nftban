@@ -263,6 +263,144 @@ collect_module_metrics() {
 EOF
 }
 
+collect_module_status_metrics() {
+    # Per-module running status (1=up, 0=down)
+    local suricata=0 loginmon=0 portscan=0 ddos=0 feeds=0 geoban=0 watchdog=0
+
+    # suricata: Check if suricata.service is active OR if nftban has suricata module enabled
+    if systemctl is-active "suricata.service" &>/dev/null || \
+       [[ -f "${NFTBAN_CONFIG_DIR}/modules/suricata.conf" ]] && \
+       systemctl is-active "nftban-suricata.timer" &>/dev/null; then
+        suricata=1
+    fi
+
+    # loginmon: Check /run/nftban/loginmon.pid OR nftban-login.timer active
+    if systemctl is-active "nftban-login.timer" &>/dev/null || \
+       [[ -f "${NFTBAN_RUN_DIR}/loginmon.pid" ]]; then
+        loginmon=1
+    fi
+
+    # portscan: Check /run/nftban/portscan.pid OR nftban-portscan.timer active
+    if systemctl is-active "nftban-portscan.timer" &>/dev/null || \
+       [[ -f "${NFTBAN_RUN_DIR}/portscan.pid" ]]; then
+        portscan=1
+    fi
+
+    # ddos: Check /run/nftban/ddos.pid OR nftban-ddos.timer active
+    if systemctl is-active "nftban-ddos.timer" &>/dev/null || \
+       [[ -f "${NFTBAN_RUN_DIR}/ddos.pid" ]]; then
+        ddos=1
+    fi
+
+    # feeds: Check nftban-feeds.timer active
+    if systemctl is-active "nftban-feeds.timer" &>/dev/null; then
+        feeds=1
+    fi
+
+    # geoban: Check /etc/nftban/modules/geoban.conf exists and enabled
+    if [[ -f "${NFTBAN_CONFIG_DIR}/modules/geoban.conf" ]]; then
+        # Check if enabled in config (NFTBAN_GEOBAN_ENABLED or similar)
+        local geoban_enabled
+        geoban_enabled=$(grep -E "^(NFTBAN_GEOBAN_ENABLED|ENABLED)=" "${NFTBAN_CONFIG_DIR}/modules/geoban.conf" 2>/dev/null | tail -1 | cut -d= -f2 | tr -d '"' || echo "")
+        if [[ "$geoban_enabled" == "true" ]] || [[ "$geoban_enabled" == "1" ]] || [[ "$geoban_enabled" == "yes" ]]; then
+            geoban=1
+        fi
+    fi
+
+    # watchdog: Check /run/nftban/watchdog.pid exists OR nftband is in watchdog mode
+    if [[ -f "${NFTBAN_RUN_DIR}/watchdog.pid" ]]; then
+        watchdog=1
+    elif [[ -f "${NFTBAN_RUN_DIR}/mode" ]]; then
+        local mode
+        mode=$(cat "${NFTBAN_RUN_DIR}/mode" 2>/dev/null || echo "")
+        [[ "$mode" == "watchdog" ]] && watchdog=1
+    fi
+
+    cat <<EOF
+{
+  "module_status": {
+    "suricata": $suricata,
+    "loginmon": $loginmon,
+    "portscan": $portscan,
+    "ddos": $ddos,
+    "feeds": $feeds,
+    "geoban": $geoban,
+    "watchdog": $watchdog
+  }
+}
+EOF
+}
+
+collect_feed_health_metrics() {
+    local total=0 active=0 stale=0 errors=0 last_sync=0
+    local feeds_json=""
+    local now=$(date +%s)
+    local stale_threshold=$((24 * 3600))  # 24 hours default
+
+    # Count feeds from config dir
+    for conf in "${NFTBAN_CONFIG_DIR}/feeds"/*.conf; do
+        [[ -f "$conf" ]] || continue
+        local feed_name=$(basename "$conf" .conf)
+        ((total++))
+
+        local feed_active=0 feed_sync=0 feed_ips=0 feed_errors=0
+
+        # Check state file for sync info
+        local state_file="/var/lib/nftban/feeds/${feed_name}.state"
+        if [[ -f "$state_file" ]]; then
+            feed_sync=$(jq -r '.last_sync // 0' "$state_file" 2>/dev/null || echo "0")
+            feed_ips=$(jq -r '.ips_loaded // 0' "$state_file" 2>/dev/null || echo "0")
+
+            # Update global last_sync if this is more recent
+            [[ "$feed_sync" -gt "$last_sync" ]] && last_sync="$feed_sync"
+
+            # Check if feed is stale (last sync > threshold)
+            local feed_age=$((now - feed_sync))
+            if [[ "$feed_sync" -gt 0 ]] && [[ "$feed_age" -lt "$stale_threshold" ]]; then
+                feed_active=1
+                ((active++))
+            elif [[ "$feed_sync" -gt 0 ]]; then
+                ((stale++))
+            fi
+        fi
+
+        # Count per-feed errors from log
+        if [[ -f "/var/log/nftban/feeds.log" ]]; then
+            local cutoff=$((now - 86400))
+            feed_errors=$(awk -v cutoff="$cutoff" -v feed="$feed_name" '
+                $1 ~ /^[0-9]+$/ && $1 >= cutoff && /(ERROR|FAIL)/ && $0 ~ feed { count++ }
+                END { print count+0 }
+            ' "/var/log/nftban/feeds.log" 2>/dev/null || echo "0")
+        fi
+
+        # Build per-feed JSON entry
+        [[ -n "$feeds_json" ]] && feeds_json+=","
+        feeds_json+="\"$feed_name\": {\"active\": $feed_active, \"last_sync\": $feed_sync, \"ips_loaded\": $feed_ips, \"errors\": $feed_errors}"
+    done
+
+    # Count total errors from log in last 24h
+    if [[ -f "/var/log/nftban/feeds.log" ]]; then
+        local cutoff=$((now - 86400))
+        errors=$(awk -v cutoff="$cutoff" '
+            $1 ~ /^[0-9]+$/ && $1 >= cutoff && /(ERROR|FAIL)/ { count++ }
+            END { print count+0 }
+        ' "/var/log/nftban/feeds.log" 2>/dev/null || echo "0")
+    fi
+
+    cat <<EOF
+{
+  "feed_health": {
+    "total_feeds": $total,
+    "active_feeds": $active,
+    "stale_feeds": $stale,
+    "sync_errors_24h": $errors,
+    "last_sync_timestamp": $last_sync,
+    "feeds": {${feeds_json}}
+  }
+}
+EOF
+}
+
 collect_nftables_metrics() {
     local sets=0 elements=0 rules=0 packets_ipv4=0 packets_ipv6=0
 
@@ -515,6 +653,47 @@ collect_geoip_metrics() {
 EOF
 }
 
+collect_kernel_metrics() {
+    # Kernel/conntrack metrics for network stack health monitoring
+    local conntrack_entries=0 conntrack_max=0 conntrack_utilization=0
+    local softnet_drops=0 softnet_backlog=0
+
+    # Conntrack entries (current count)
+    if [[ -f /proc/sys/net/netfilter/nf_conntrack_count ]]; then
+        conntrack_entries=$(cat /proc/sys/net/netfilter/nf_conntrack_count 2>/dev/null || echo "0")
+    fi
+
+    # Conntrack max (configured limit)
+    if [[ -f /proc/sys/net/netfilter/nf_conntrack_max ]]; then
+        conntrack_max=$(cat /proc/sys/net/netfilter/nf_conntrack_max 2>/dev/null || echo "0")
+    fi
+
+    # Calculate utilization percentage
+    if [[ "$conntrack_max" -gt 0 ]]; then
+        conntrack_utilization=$(awk "BEGIN {printf \"%.2f\", ($conntrack_entries / $conntrack_max) * 100}")
+    fi
+
+    # Softnet stats from /proc/net/softnet_stat
+    # Format: column 1=processed, column 2=dropped, column 3=time_squeeze (backlog)
+    # Values are hex, one line per CPU
+    if [[ -f /proc/net/softnet_stat ]]; then
+        softnet_drops=$(awk '{sum += strtonum("0x"$2)} END {print sum+0}' /proc/net/softnet_stat 2>/dev/null || echo "0")
+        softnet_backlog=$(awk '{sum += strtonum("0x"$3)} END {print sum+0}' /proc/net/softnet_stat 2>/dev/null || echo "0")
+    fi
+
+    cat <<EOF
+{
+  "kernel": {
+    "conntrack_entries": $conntrack_entries,
+    "conntrack_max": $conntrack_max,
+    "conntrack_utilization": $conntrack_utilization,
+    "softnet_drops": $softnet_drops,
+    "softnet_backlog": $softnet_backlog
+  }
+}
+EOF
+}
+
 # =============================================================================
 # INVENTORY COLLECTION (Static data - collected hourly)
 # =============================================================================
@@ -631,7 +810,7 @@ EOF
 
 collect_dynamic_metrics() {
     # Collect all dynamic metrics and merge into single JSON
-    local timestamp daemon bans memory health modules nftables feeds network watchdog geoip
+    local timestamp daemon bans memory health modules module_status feed_health nftables feeds network watchdog geoip kernel
     timestamp=$(date +%s)
 
     daemon=$(collect_daemon_metrics)
@@ -639,14 +818,17 @@ collect_dynamic_metrics() {
     memory=$(collect_memory_metrics)
     health=$(collect_health_metrics)
     modules=$(collect_module_metrics)
+    module_status=$(collect_module_status_metrics)
+    feed_health=$(collect_feed_health_metrics)
     nftables=$(collect_nftables_metrics)
     feeds=$(collect_feeds_metrics)
     network=$(collect_network_metrics)
     watchdog=$(collect_watchdog_metrics)
     geoip=$(collect_geoip_metrics)
+    kernel=$(collect_kernel_metrics)
 
     # Merge all JSON objects
-    echo "$daemon $bans $memory $health $modules $nftables $feeds $network $watchdog $geoip" | \
+    echo "$daemon $bans $memory $health $modules $module_status $feed_health $nftables $feeds $network $watchdog $geoip $kernel" | \
         jq -s 'add | . + {"timestamp": '"$timestamp"', "type": "dynamic"}'
 }
 

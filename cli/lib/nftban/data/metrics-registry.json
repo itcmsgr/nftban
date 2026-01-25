@@ -883,6 +883,112 @@
       "source": "go_sampler",
       "go_var": "nftablesActiveGauge",
       "description": "NFTables service status (1=active, 0=inactive)"
+    },
+    "nftban_conntrack_entries": {
+      "type": "gauge",
+      "unit": "",
+      "category": "connections",
+      "source": "shell_prometheus",
+      "description": "Current conntrack table entries",
+      "labels": {},
+      "source_details": {"type": "shell", "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh", "function": "collect_kernel_metrics"},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_conntrack_max": {
+      "type": "gauge",
+      "unit": "",
+      "category": "connections",
+      "source": "shell_prometheus",
+      "description": "Maximum conntrack table size",
+      "labels": {},
+      "source_details": {"type": "shell", "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh", "function": "collect_kernel_metrics"},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_conntrack_utilization": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "connections",
+      "source": "shell_prometheus",
+      "description": "Conntrack utilization percentage",
+      "labels": {},
+      "source_details": {"type": "shell", "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh", "function": "collect_kernel_metrics"},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_softnet_drops_total": {
+      "type": "counter",
+      "unit": "",
+      "category": "network",
+      "source": "shell_prometheus",
+      "description": "Kernel softnet packet drops",
+      "labels": {},
+      "source_details": {"type": "shell", "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh", "function": "collect_kernel_metrics"},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_softnet_backlog_total": {
+      "type": "counter",
+      "unit": "",
+      "category": "network",
+      "source": "shell_prometheus",
+      "description": "Kernel softnet backlog overflow",
+      "labels": {},
+      "source_details": {"type": "shell", "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh", "function": "collect_kernel_metrics"},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_module_up": {
+      "type": "gauge",
+      "unit": "",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Module running status (1=up, 0=down)",
+      "labels": {
+        "module": {
+          "type": "enum",
+          "values": ["suricata", "loginmon", "portscan", "ddos", "feeds", "geoban", "watchdog"],
+          "description": "Module name"
+        }
+      },
+      "cardinality": 7,
+      "source_details": {"type": "shell", "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh", "function": "collect_module_status_metrics"},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_feeds_total": {
+      "type": "gauge",
+      "unit": "",
+      "category": "feeds",
+      "source": "shell_prometheus",
+      "description": "Total configured feeds",
+      "labels": {},
+      "source_details": {"type": "shell", "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh", "function": "collect_feed_health_metrics"},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_feeds_stale": {
+      "type": "gauge",
+      "unit": "",
+      "category": "feeds",
+      "source": "shell_prometheus",
+      "description": "Number of stale feeds (past update interval)",
+      "labels": {},
+      "source_details": {"type": "shell", "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh", "function": "collect_feed_health_metrics"},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_feeds_sync_errors_total": {
+      "type": "counter",
+      "unit": "",
+      "category": "feeds",
+      "source": "shell_prometheus",
+      "description": "Feed sync errors in last 24 hours",
+      "labels": {},
+      "source_details": {"type": "shell", "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh", "function": "collect_feed_health_metrics"},
+      "added_version": "1.4.0",
+      "phase": 1
     }
   },
   "zabbix_mapping": {

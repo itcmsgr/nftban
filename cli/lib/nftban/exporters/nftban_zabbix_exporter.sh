@@ -156,6 +156,24 @@ json_to_zabbix_metrics() {
     metrics+="nftban.geoip.database_age $(echo "$json" | jq -r '.geoip.database_age // 0')\n"
     metrics+="nftban.geoip.countries_blocked $(echo "$json" | jq -r '.geoip.countries_blocked // 0')\n"
 
+    # Kernel metrics (Phase 1)
+    metrics+="nftban.conntrack.entries $(echo "$json" | jq -r '.kernel.conntrack_entries // 0')\n"
+    metrics+="nftban.conntrack.max $(echo "$json" | jq -r '.kernel.conntrack_max // 0')\n"
+    metrics+="nftban.conntrack.utilization $(echo "$json" | jq -r '.kernel.conntrack_utilization // 0')\n"
+    metrics+="nftban.softnet.drops $(echo "$json" | jq -r '.kernel.softnet_drops // 0')\n"
+    metrics+="nftban.softnet.backlog $(echo "$json" | jq -r '.kernel.softnet_backlog // 0')\n"
+
+    # Module status (Phase 1) - 1=up, 0=down
+    for module in suricata loginmon portscan ddos feeds geoban watchdog; do
+        metrics+="nftban.module.up[${module}] $(echo "$json" | jq -r ".module_status.${module} // 0")\n"
+    done
+
+    # Feed health metrics (Phase 1)
+    metrics+="nftban.feeds.total $(echo "$json" | jq -r '.feed_health.total_feeds // 0')\n"
+    metrics+="nftban.feeds.active $(echo "$json" | jq -r '.feed_health.active_feeds // 0')\n"
+    metrics+="nftban.feeds.stale $(echo "$json" | jq -r '.feed_health.stale_feeds // 0')\n"
+    metrics+="nftban.feeds.sync_errors $(echo "$json" | jq -r '.feed_health.sync_errors_24h // 0')\n"
+
     # Watchdog metrics (from daemon stats)
     metrics+="nftban.watchdog.status $(echo "$json" | jq -r '.watchdog.status // 0')\n"
     metrics+="nftban.watchdog.mode $(echo "$json" | jq -r '.watchdog.mode // "unknown"')\n"
