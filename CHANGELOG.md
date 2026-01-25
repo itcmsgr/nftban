@@ -97,12 +97,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Zabbix inventory auto-population
 
 ### Changed
-- **Zabbix exporter**: v2 now default, legacy moved to `_legacy.sh`
+- **Zabbix exporter**: Unified v2.0.0 exporter (legacy removed)
 - **Metrics collection**: Smart separation - dynamic vs static/inventory
 - **Performance**: Inventory collected hourly, not every minute
-
-### Deprecated
-- `nftban_zabbix_exporter_legacy.sh` - Old standalone exporter (still works)
 
 ### Benefits
 - **No duplicate code**: Central collector is the single source of truth
