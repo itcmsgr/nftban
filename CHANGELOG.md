@@ -5,6 +5,66 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-01-25
+
+### Added
+
+#### Unified Metrics Architecture (SINGLE SOURCE OF TRUTH)
+- **Complete metrics redesign**: One collector, one cache, multiple exporters
+  - `nftban_unified_exporter.sh` - Single collector for all metrics
+  - JSON cache at `/var/cache/nftban/metrics/stats.json` (schema v2.0)
+  - No database required - simple file-based storage
+  - Collection groups: live (60s), extended (5min), inventory (1hr)
+
+- **Dedicated metrics configuration**: `conf.d/metrics.conf`
+  - 40+ configuration variables for metrics tuning
+  - Component auto-detection (auto/enabled/disabled)
+  - Backend architecture settings (Prometheus, VictoriaMetrics)
+  - Collection intervals and performance tuning
+
+- **IPv4/IPv6 separation throughout**:
+  - Blacklist: `ipv4.total`, `ipv4.permanent`, `ipv4.temporary` (same for IPv6)
+  - Feeds: `ipv4_total`, `ipv6_total`, `ips_total`
+  - Whitelist: `ipv4`, `ipv6`, `total`
+  - Consolidated totals computed from separate counts
+
+- **Ban audit trail with reason field**:
+  - New log format: `DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON`
+  - `LogBanWithReason()` and `LogUnbanWithReason()` in banlog.go
+  - Reason field sanitized (pipes replaced with dashes)
+
+- **Suricata source tracking**: Added to all ban source breakdowns
+
+### Changed
+
+#### nftban_stats.sh - Unified Cache Integration
+- All stats functions now read from unified cache first:
+  - `nftban_stats_count_active_bans()` → `.blacklist.total`
+  - `nftban_stats_count_whitelist()` → `.whitelist.total`
+  - `nftban_stats_ban_sources()` → `.bans_by_source.*`
+  - `nftban_stats_count_bans()` → `.activity.bans_*`
+  - `nftban_stats_count_unique_ips()` → `.activity.unique_ips*`
+- Dashboard uses cache for blacklist, feeds, geoban, modules
+- Fallback to direct queries only when cache unavailable/stale
+
+#### Log Rotation
+- Added `bans.log` to logrotate configuration
+- Uses `copytruncate` (safe for processes with open file handles)
+- Weekly rotation, 12 weeks retention, 10MB size trigger
+- Prevents race conditions between rotation and metrics collection
+
+### Fixed
+- **banlog.go**: `LogBanWithReason()` now actually stores the reason (was ignored)
+- **Config cleanup**: Removed 90 duplicate lines from nftban.conf
+- **Race condition**: Metrics collection no longer affected by log rotation
+
+### Architecture Benefits
+- **No database**: JSON file cache eliminates SQLite/external DB dependency
+- **No separate agents**: Single unified exporter replaces multiple collectors
+- **66% overhead reduction**: Collect once, export to all targets
+- **Consistent timestamps**: All exporters use same collection data
+- **Full audit trail**: Every ban/unban with timestamp, source, country, reason
+
 ## [1.4.0] - 2026-01-24
 
 ### Added

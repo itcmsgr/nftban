@@ -11,7 +11,7 @@
 # meta:inventory.files=""
 # meta:inventory.binaries="/usr/lib/nftban/bin/nftban-core"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
-# meta:inventory.config_files="/etc/nftban/nftban.conf,/etc/nftban/conf.d/zabbix.conf,/etc/nftban/conf.d/connectors.conf"
+# meta:inventory.config_files="/etc/nftban/nftban.conf,/etc/nftban/conf.d/metrics.conf,/etc/nftban/conf.d/zabbix.conf,/etc/nftban/conf.d/connectors.conf"
 # meta:inventory.systemd_units="nftban-unified-exporter.timer"
 # meta:inventory.network="outbound:10051/tcp,outbound:9200/tcp,outbound:9092/tcp"
 # meta:inventory.privileges="nftban"
@@ -44,12 +44,103 @@ readonly SCRIPT_VERSION="1.0.0"
 # Load config (sets readonly paths)
 [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
 
+# Load metrics configuration (unified collector settings)
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf"
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" 2>/dev/null || true
+
+# Load Zabbix configuration (for export_zabbix)
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" 2>/dev/null || true
+
+# =============================================================================
+# CONFIGURATION DEFAULTS (from metrics.conf, with fallbacks)
+# =============================================================================
+: "${NFTBAN_COLLECT_INTERVAL:=60}"
+: "${NFTBAN_COLLECT_EXTENDED_MULT:=5}"
+: "${NFTBAN_COLLECT_INVENTORY_MULT:=60}"
+: "${NFTBAN_COLLECT_JITTER_ENABLED:=true}"
+: "${NFTBAN_COLLECT_JITTER_MAX:=30}"
+: "${NFTBAN_COLLECT_LOCK_TIMEOUT:=10}"
+: "${NFTBAN_COLLECT_USE_STALE_CACHE:=true}"
+: "${NFTBAN_COLLECT_STALE_MAX_AGE:=300}"
+: "${NFTBAN_COLLECT_DEBUG:=false}"
+
+# Component auto-detection defaults
+: "${NFTBAN_COLLECT_SURICATA:=auto}"
+: "${NFTBAN_COLLECT_FEEDS:=auto}"
+: "${NFTBAN_COLLECT_GEOIP:=auto}"
+: "${NFTBAN_COLLECT_WATCHDOG:=auto}"
+: "${NFTBAN_COLLECT_PORTSCAN:=auto}"
+: "${NFTBAN_COLLECT_EVENTBUS:=auto}"
+: "${NFTBAN_COLLECT_KERNEL:=auto}"
+: "${NFTBAN_COLLECT_NETWORK:=enabled}"
+
+# Export target defaults
+: "${NFTBAN_EXPORT_PROMETHEUS:=false}"
+: "${NFTBAN_EXPORT_JSON:=true}"
+: "${NFTBAN_EXPORT_CONNECTORS:=false}"
+
 # Metrics cache file (collected once, used by all exporters)
 readonly METRICS_CACHE="${NFTBAN_RUN_DIR}/metrics.cache"
 readonly METRICS_LOCK="${NFTBAN_RUN_DIR}/exporter.lock"
 readonly BANDWIDTH_STATE="${NFTBAN_RUN_DIR}/bandwidth_state.dat"
 readonly BANDWIDTH_PEAKS="${NFTBAN_RUN_DIR}/bandwidth_peaks.dat"
 readonly PEAK_WINDOW=300  # 5 minutes for peak tracking
+
+# Run count tracking for collection groups
+readonly RUN_COUNT_FILE="${NFTBAN_RUN_DIR}/collection.run_count"
+
+# =============================================================================
+# COLLECTION GROUPS
+# =============================================================================
+# Live metrics:      Every run (60s) - daemon, bans, memory, nftables, connections
+# Extended metrics:  Every EXTENDED_MULT runs (5min) - module_status, feed_health, watchdog
+# Inventory metrics: Every INVENTORY_MULT runs (1hr) - kernel, geoip, server_info
+# =============================================================================
+
+# Get current run count (creates file if missing)
+get_run_count() {
+    if [[ -f "$RUN_COUNT_FILE" ]]; then
+        local count
+        count=$(cat "$RUN_COUNT_FILE" 2>/dev/null || echo "0")
+        echo "${count:-0}"
+    else
+        mkdir -p "$(dirname "$RUN_COUNT_FILE")"
+        echo "0" > "$RUN_COUNT_FILE"
+        echo "0"
+    fi
+}
+
+# Increment run count and return new value
+increment_run_count() {
+    local count
+    count=$(get_run_count)
+    count=$((count + 1))
+    echo "$count" > "$RUN_COUNT_FILE"
+    echo "$count"
+}
+
+# Determine which collection groups to run based on run count
+# Returns space-separated list: "live extended inventory" or "live" or "live extended"
+determine_collection_groups() {
+    local run_count="$1"
+    local extended_mult="${NFTBAN_COLLECT_EXTENDED_MULT:-5}"
+    local inventory_mult="${NFTBAN_COLLECT_INVENTORY_MULT:-60}"
+
+    local groups="live"
+
+    # Extended: every EXTENDED_MULT runs (default: 5 = every 5 mins)
+    if [[ $((run_count % extended_mult)) -eq 0 ]]; then
+        groups+=" extended"
+    fi
+
+    # Inventory: every INVENTORY_MULT runs (default: 60 = every hour)
+    if [[ $((run_count % inventory_mult)) -eq 0 ]]; then
+        groups+=" inventory"
+    fi
+
+    echo "$groups"
+}
 
 # =============================================================================
 # SMART JITTER: Hostname-based deterministic delay
@@ -79,7 +170,7 @@ calculate_host_jitter() {
 # =============================================================================
 acquire_lock() {
     local lock_fd=200
-    local lock_timeout=10  # Wait up to 10 seconds for lock
+    local lock_timeout="${NFTBAN_COLLECT_LOCK_TIMEOUT:-10}"
 
     # Create lock file
     mkdir -p "$(dirname "$METRICS_LOCK")"
@@ -92,10 +183,11 @@ acquire_lock() {
         log_error "Previous PID: $(cat "$METRICS_LOCK" 2>/dev/null || echo 'unknown')"
 
         # Export stale metrics from cache if available (better than nothing)
-        if [[ -f "$METRICS_CACHE" ]]; then
-            local cache_age
+        if [[ "${NFTBAN_COLLECT_USE_STALE_CACHE:-true}" == "true" ]] && [[ -f "$METRICS_CACHE" ]]; then
+            local cache_age stale_max_age
+            stale_max_age="${NFTBAN_COLLECT_STALE_MAX_AGE:-300}"
             cache_age=$(($(date +%s) - $(stat -c %Y "$METRICS_CACHE" 2>/dev/null || echo 0)))
-            if [[ $cache_age -lt 300 ]]; then  # Cache less than 5 minutes old
+            if [[ $cache_age -lt $stale_max_age ]]; then
                 log_warn "Using cached metrics (age: ${cache_age}s) to prevent monitoring gap"
                 # Exports will use existing cache
                 return 0
@@ -117,6 +209,68 @@ log_info()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [INFO] $*"; }
 log_warn()  { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [WARN] $*" >&2; }
 log_error() { echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ERROR] $*" >&2; }
 log_debug() { [[ "${NFTBAN_DEBUG:-false}" == "true" ]] && echo "[$(date '+%Y-%m-%d %H:%M:%S')] [DEBUG] $*"; }
+
+# =============================================================================
+# COMPONENT AUTO-DETECTION
+# =============================================================================
+# Determines which components should have metrics collected based on:
+# 1. NFTBAN_COLLECT_* config setting (auto/enabled/disabled)
+# 2. Actual component availability (for "auto" mode)
+# =============================================================================
+should_collect_component() {
+    local component="$1"
+    local setting_var="NFTBAN_COLLECT_${component^^}"
+    local setting="${!setting_var:-auto}"
+
+    # Explicit enabled/disabled
+    [[ "$setting" == "enabled" ]] && return 0
+    [[ "$setting" == "disabled" ]] && return 1
+
+    # Auto-detection mode
+    case "$component" in
+        suricata)
+            # Suricata: binary exists AND module config exists
+            [[ -x "/usr/bin/suricata" ]] && \
+            [[ -f "${NFTBAN_CONFIG_DIR}/modules/suricata.conf" ]] && return 0
+            ;;
+        feeds)
+            # Feeds: at least one feed config exists
+            local feed_count
+            feed_count=$(find "${NFTBAN_CONFIG_DIR}/feeds" -name "*.conf" 2>/dev/null | wc -l)
+            [[ $feed_count -gt 0 ]] && return 0
+            ;;
+        geoip)
+            # GeoIP: module enabled AND database exists
+            [[ -f "${NFTBAN_CONFIG_DIR}/modules/geoban.conf" ]] && \
+            [[ -f "${NFTBAN_CACHE_DIR}/geoip/GeoLite2-Country.mmdb" ]] && return 0
+            ;;
+        watchdog)
+            # Watchdog: status file exists (watchdog is running)
+            [[ -f "${NFTBAN_RUN_DIR}/watchdog.status" ]] && return 0
+            ;;
+        portscan)
+            # Portscan: module config exists
+            [[ -f "${NFTBAN_CONFIG_DIR}/modules/portscan.conf" ]] && return 0
+            ;;
+        eventbus)
+            # EventBus: daemon running (check PID file)
+            [[ -f "${NFTBAN_RUN_DIR}/nftban.pid" ]] && return 0
+            ;;
+        kernel)
+            # Kernel metrics: always available on Linux
+            [[ -f "/proc/net/nf_conntrack" ]] || [[ -f "/proc/sys/net/netfilter/nf_conntrack_count" ]] && return 0
+            ;;
+        network)
+            # Network metrics: always available
+            return 0
+            ;;
+    esac
+
+    # Default: don't collect if auto-detection fails
+    [[ "${NFTBAN_COLLECT_LOG_DETECTION:-false}" == "true" ]] && \
+        log_debug "Component '$component' not detected (setting: $setting)"
+    return 1
+}
 
 # =============================================================================
 # BANDWIDTH METRICS FUNCTIONS
@@ -179,190 +333,384 @@ update_bandwidth_peaks() {
 # =============================================================================
 # METRIC COLLECTION (Single collection for all targets)
 # =============================================================================
+# Groups: live, extended, inventory
+# - live:      daemon, bans, memory, nftables, connections (every run)
+# - extended:  module_status, feed_health, watchdog, eventbus (every 5 runs)
+# - inventory: kernel, geoip, server_info, static config (every 60 runs)
+# =============================================================================
 collect_all_metrics() {
-    log_debug "Collecting metrics..."
+    local collection_groups="${1:-live extended inventory}"
+    log_debug "Collecting metrics (groups: $collection_groups)..."
 
     local metrics=""
     local timestamp
     timestamp=$(date +%s)
 
-    # --- Daemon Metrics ---
-    local version pid status uptime mode
-    version=$(cat "${NFTBAN_CONFIG_DIR}/../VERSION" 2>/dev/null | head -1 || echo "unknown")
+    # Helper: check if a group is active
+    group_active() { [[ " $collection_groups " =~ " $1 " ]]; }
 
-    if systemctl is-active nftban.service &>/dev/null; then
-        status=1
-        pid=$(cat "${NFTBAN_RUN_DIR}/nftban.pid" 2>/dev/null || echo "0")
-        local start_time
-        start_time=$(systemctl show nftban.service -p ActiveEnterTimestamp --value 2>/dev/null || echo "")
-        if [[ -n "$start_time" ]]; then
-            local start_epoch
-            start_epoch=$(date -d "$start_time" +%s 2>/dev/null || echo "$timestamp")
-            uptime=$((timestamp - start_epoch))
-        else
-            uptime=0
-        fi
-    else
-        status=0
-        pid=0
-        uptime=0
-    fi
-    local mode
-    mode=$(cat "${NFTBAN_RUN_DIR}/mode" 2>/dev/null || echo "normal")
+    # =========================================================================
+    # LIVE METRICS (every run - 60s)
+    # =========================================================================
+    local pid=0 status=0 uptime=0
+    if group_active "live"; then
 
-    metrics+="nftban_status $status $timestamp\n"
-    metrics+="nftban_version_info{version=\"$version\"} 1 $timestamp\n"
-    metrics+="nftban_mode_info{mode=\"$mode\"} 1 $timestamp\n"
-    metrics+="nftban_uptime_seconds $uptime $timestamp\n"
-    metrics+="nftban_pid $pid $timestamp\n"
+        # --- Daemon Metrics ---
+        local version
+        version=$(cat "${NFTBAN_CONFIG_DIR}/../VERSION" 2>/dev/null | head -1 || echo "unknown")
 
-    # --- Ban Metrics (fast nftables JSON API) ---
-    local active_v4=0 active_v6=0
-    if command -v nft &>/dev/null; then
-        active_v4=$(nft -j list set inet nftban blacklist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-        active_v6=$(nft -j list set inet nftban blacklist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-    fi
-    local active_total=$((active_v4 + active_v6))
-
-    metrics+="nftban_active_bans_total $active_total $timestamp\n"
-    metrics+="nftban_active_bans{family=\"ipv4\"} $active_v4 $timestamp\n"
-    metrics+="nftban_active_bans{family=\"ipv6\"} $active_v6 $timestamp\n"
-
-    # --- Time-based ban stats (from log) ---
-    local bans_log="${NFTBAN_LOG_DIR}/bans.log"
-    if [[ -f "$bans_log" ]]; then
-        # Single awk pass for all time windows (efficient)
-        local stats
-        stats=$(awk -F'|' -v now="$timestamp" '
-            $1 ~ /^[0-9]+$/ {
-                age = now - $1
-                if (age <= 3600)   h1++
-                if (age <= 86400)  h24++
-                if (age <= 300)    m5++
-                total++
-            }
-            END {
-                printf "%d %d %d %d\n", h1+0, h24+0, m5+0, total+0
-            }
-        ' "$bans_log" 2>/dev/null || echo "0 0 0 0")
-
-        read -r bans_1h bans_24h bans_5m bans_total <<< "$stats"
-        local rate
-        rate=$(echo "scale=2; $bans_5m / 5" | bc 2>/dev/null || echo "0")
-
-        metrics+="nftban_bans_1h $bans_1h $timestamp\n"
-        metrics+="nftban_bans_24h $bans_24h $timestamp\n"
-        metrics+="nftban_bans_total $bans_total $timestamp\n"
-        metrics+="nftban_ban_rate_per_minute $rate $timestamp\n"
-    fi
-
-    # --- Memory Metrics ---
-    if [[ -n "$pid" ]] && [[ "$pid" != "0" ]] && [[ -d "/proc/$pid" ]]; then
-        local rss fds threads
-        rss=$(awk '/VmRSS/ {print $2 * 1024}' "/proc/$pid/status" 2>/dev/null || echo "0")
-        fds=$(ls -1 "/proc/$pid/fd" 2>/dev/null | wc -l || echo "0")
-        threads=$(awk '/Threads/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo "0")
-
-        metrics+="nftban_memory_rss_bytes $rss $timestamp\n"
-        metrics+="nftban_open_fds $fds $timestamp\n"
-        metrics+="nftban_threads $threads $timestamp\n"
-    fi
-
-    # --- Module Metrics ---
-    local mod_enabled=0 mod_active=0 mod_failed=0
-    for module in login portscan ddos feeds geoban suricata rbl botscan; do
-        if [[ -f "${NFTBAN_CONFIG_DIR}/modules/${module}.conf" ]]; then
-            ((mod_enabled++))
-            if systemctl is-active "nftban-${module}.timer" &>/dev/null 2>&1; then
-                ((mod_active++))
-            elif systemctl is-failed "nftban-${module}.service" &>/dev/null 2>&1; then
-                ((mod_failed++))
+        if systemctl is-active nftban.service &>/dev/null; then
+            status=1
+            pid=$(cat "${NFTBAN_RUN_DIR}/nftban.pid" 2>/dev/null || echo "0")
+            local start_time
+            start_time=$(systemctl show nftban.service -p ActiveEnterTimestamp --value 2>/dev/null || echo "")
+            if [[ -n "$start_time" ]]; then
+                local start_epoch
+                start_epoch=$(date -d "$start_time" +%s 2>/dev/null || echo "$timestamp")
+                uptime=$((timestamp - start_epoch))
             fi
         fi
-    done
+        local mode
+        mode=$(cat "${NFTBAN_RUN_DIR}/mode" 2>/dev/null || echo "normal")
 
-    metrics+="nftban_modules_enabled $mod_enabled $timestamp\n"
-    metrics+="nftban_modules_active $mod_active $timestamp\n"
-    metrics+="nftban_modules_failed $mod_failed $timestamp\n"
+        metrics+="nftban_status $status $timestamp\n"
+        metrics+="nftban_version_info{version=\"$version\"} 1 $timestamp\n"
+        metrics+="nftban_mode_info{mode=\"$mode\"} 1 $timestamp\n"
+        metrics+="nftban_uptime_seconds $uptime $timestamp\n"
+        metrics+="nftban_pid $pid $timestamp\n"
 
-    # --- nftables Metrics ---
-    if command -v nft &>/dev/null; then
-        local sets_count elements_total
-        sets_count=$(nft list sets inet nftban 2>/dev/null | grep -c "set " || echo "0")
-        elements_total=0
-        for set_name in blacklist_ipv4 blacklist_ipv6 whitelist_ipv4 whitelist_ipv6; do
-            local count
-            count=$(nft -j list set inet nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-            elements_total=$((elements_total + count))
+        # --- Ban Metrics (fast nftables JSON API with perm/temp breakdown) ---
+        # These metrics align with nftban_stats.sh dashboard requirements
+        local active_v4=0 active_v6=0
+        local blacklist_v4_perm=0 blacklist_v4_temp=0
+        local blacklist_v6_perm=0 blacklist_v6_temp=0
+        if command -v nft &>/dev/null; then
+            # IPv4 blacklist with perm/temp breakdown
+            local v4_output
+            v4_output=$(nft list set inet nftban blacklist_ipv4 2>/dev/null || true)
+            if [[ -n "$v4_output" ]]; then
+                active_v4=$(echo "$v4_output" | grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' | wc -l 2>/dev/null || echo "0")
+                blacklist_v4_temp=$(echo "$v4_output" | grep -c "timeout" 2>/dev/null || echo "0")
+                blacklist_v4_perm=$((active_v4 - blacklist_v4_temp))
+                [[ $blacklist_v4_perm -lt 0 ]] && blacklist_v4_perm=0
+            fi
+
+            # IPv6 blacklist with perm/temp breakdown
+            local v6_output
+            v6_output=$(nft list set inet nftban blacklist_ipv6 2>/dev/null || true)
+            if [[ -n "$v6_output" ]]; then
+                active_v6=$(echo "$v6_output" | grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' | wc -l 2>/dev/null || echo "0")
+                blacklist_v6_temp=$(echo "$v6_output" | grep -c "timeout" 2>/dev/null || echo "0")
+                blacklist_v6_perm=$((active_v6 - blacklist_v6_temp))
+                [[ $blacklist_v6_perm -lt 0 ]] && blacklist_v6_perm=0
+            fi
+        fi
+        local active_total=$((active_v4 + active_v6))
+
+        metrics+="nftban_active_bans_total $active_total $timestamp\n"
+        metrics+="nftban_active_bans{family=\"ipv4\"} $active_v4 $timestamp\n"
+        metrics+="nftban_active_bans{family=\"ipv6\"} $active_v6 $timestamp\n"
+
+        # Perm/temp breakdown (aligned with nftban stats dashboard)
+        metrics+="nftban_blacklist_ipv4_perm $blacklist_v4_perm $timestamp\n"
+        metrics+="nftban_blacklist_ipv4_temp $blacklist_v4_temp $timestamp\n"
+        metrics+="nftban_blacklist_ipv6_perm $blacklist_v6_perm $timestamp\n"
+        metrics+="nftban_blacklist_ipv6_temp $blacklist_v6_temp $timestamp\n"
+
+        # --- Time-based ban stats (from log) ---
+        # Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
+        local bans_log="${NFTBAN_LOG_DIR}/bans.log"
+        if [[ -f "$bans_log" ]]; then
+            # Single awk pass for time windows, source breakdown, AND unique IPs
+            local stats
+            stats=$(awk -F'|' -v now="$timestamp" '
+                BEGIN {
+                    # Time window counters
+                    h1=0; h24=0; d7=0; d30=0; m5=0; total=0
+                    # Source counters (all time)
+                    src_login=0; src_portscan=0; src_ddos=0
+                    src_manual=0; src_feeds=0; src_suricata=0
+                    # Source counters (24h)
+                    src_login_24h=0; src_portscan_24h=0; src_ddos_24h=0
+                    src_manual_24h=0; src_feeds_24h=0; src_suricata_24h=0
+                }
+                {
+                    # Parse date to epoch (DATE|TIME format)
+                    if ($1 ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) {
+                        # New format: 2026-01-25|14:30:45|source|ip|country|status|reason
+                        cmd = "date -d \"" $1 " " $2 "\" +%s 2>/dev/null"
+                        cmd | getline epoch
+                        close(cmd)
+                        source = $3
+                        ip = $4
+                        status = $6
+                    } else if ($1 ~ /^[0-9]+$/) {
+                        # Old format: epoch timestamp
+                        epoch = $1
+                        source = $2
+                        ip = $3
+                        status = "BANNED"
+                    } else {
+                        next
+                    }
+
+                    # Only count BANNED entries
+                    if (status != "BANNED") next
+
+                    age = now - epoch
+                    if (age < 0) next  # Future timestamps
+
+                    # Time windows
+                    if (age <= 300)     m5++
+                    if (age <= 3600)    h1++
+                    if (age <= 86400)   { h24++; unique_24h[ip]=1 }
+                    if (age <= 604800)  d7++
+                    if (age <= 2592000) d30++
+                    total++
+                    unique_all[ip]=1
+
+                    # Source breakdown (all time)
+                    if (source == "login")    src_login++
+                    if (source == "portscan") src_portscan++
+                    if (source == "ddos")     src_ddos++
+                    if (source == "manual")   src_manual++
+                    if (source == "feeds")    src_feeds++
+                    if (source == "suricata") src_suricata++
+
+                    # Source breakdown (24h)
+                    if (age <= 86400) {
+                        if (source == "login")    src_login_24h++
+                        if (source == "portscan") src_portscan_24h++
+                        if (source == "ddos")     src_ddos_24h++
+                        if (source == "manual")   src_manual_24h++
+                        if (source == "feeds")    src_feeds_24h++
+                        if (source == "suricata") src_suricata_24h++
+                    }
+                }
+                END {
+                    # Output: time_stats | source_stats_total | source_stats_24h | unique_ips
+                    printf "%d %d %d %d %d %d ", m5, h1, h24, d7, d30, total
+                    printf "%d %d %d %d %d %d ", src_login, src_portscan, src_ddos, src_manual, src_feeds, src_suricata
+                    printf "%d %d %d %d %d %d ", src_login_24h, src_portscan_24h, src_ddos_24h, src_manual_24h, src_feeds_24h, src_suricata_24h
+                    printf "%d %d\n", length(unique_24h), length(unique_all)
+                }
+            ' "$bans_log" 2>/dev/null || echo "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0")
+
+            # Parse all stats
+            read -r bans_5m bans_1h bans_24h bans_7d bans_30d bans_total \
+                     src_login src_portscan src_ddos src_manual src_feeds src_suricata \
+                     src_login_24h src_portscan_24h src_ddos_24h src_manual_24h src_feeds_24h src_suricata_24h \
+                     unique_ips_24h unique_ips_total \
+                     <<< "$stats"
+
+            local rate
+            rate=$(echo "scale=2; $bans_5m / 5" | bc 2>/dev/null || echo "0")
+
+            # Time window metrics
+            metrics+="nftban_bans_1h $bans_1h $timestamp\n"
+            metrics+="nftban_bans_24h $bans_24h $timestamp\n"
+            metrics+="nftban_bans_7d $bans_7d $timestamp\n"
+            metrics+="nftban_bans_30d $bans_30d $timestamp\n"
+            metrics+="nftban_bans_total $bans_total $timestamp\n"
+            metrics+="nftban_ban_rate_per_minute $rate $timestamp\n"
+
+            # Bans by source (total)
+            metrics+="nftban_bans_by_source{source=\"login\"} $src_login $timestamp\n"
+            metrics+="nftban_bans_by_source{source=\"portscan\"} $src_portscan $timestamp\n"
+            metrics+="nftban_bans_by_source{source=\"ddos\"} $src_ddos $timestamp\n"
+            metrics+="nftban_bans_by_source{source=\"manual\"} $src_manual $timestamp\n"
+            metrics+="nftban_bans_by_source{source=\"feeds\"} $src_feeds $timestamp\n"
+            metrics+="nftban_bans_by_source{source=\"suricata\"} $src_suricata $timestamp\n"
+
+            # Bans by source (24h) - for trend analysis
+            metrics+="nftban_bans_by_source_24h{source=\"login\"} $src_login_24h $timestamp\n"
+            metrics+="nftban_bans_by_source_24h{source=\"portscan\"} $src_portscan_24h $timestamp\n"
+            metrics+="nftban_bans_by_source_24h{source=\"ddos\"} $src_ddos_24h $timestamp\n"
+            metrics+="nftban_bans_by_source_24h{source=\"manual\"} $src_manual_24h $timestamp\n"
+            metrics+="nftban_bans_by_source_24h{source=\"feeds\"} $src_feeds_24h $timestamp\n"
+            metrics+="nftban_bans_by_source_24h{source=\"suricata\"} $src_suricata_24h $timestamp\n"
+
+            # Unique IPs (aligned with nftban_stats.sh)
+            metrics+="nftban_unique_ips_24h ${unique_ips_24h:-0} $timestamp\n"
+            metrics+="nftban_unique_ips_total ${unique_ips_total:-0} $timestamp\n"
+        fi
+
+        # --- Memory Metrics ---
+        if [[ -n "$pid" ]] && [[ "$pid" != "0" ]] && [[ -d "/proc/$pid" ]]; then
+            local rss fds threads
+            rss=$(awk '/VmRSS/ {print $2 * 1024}' "/proc/$pid/status" 2>/dev/null || echo "0")
+            fds=$(ls -1 "/proc/$pid/fd" 2>/dev/null | wc -l || echo "0")
+            threads=$(awk '/Threads/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo "0")
+
+            metrics+="nftban_memory_rss_bytes $rss $timestamp\n"
+            metrics+="nftban_open_fds $fds $timestamp\n"
+            metrics+="nftban_threads $threads $timestamp\n"
+        fi
+
+    fi  # end LIVE group
+
+    # =========================================================================
+    # EXTENDED METRICS (every 5 runs - 5min)
+    # =========================================================================
+    if group_active "extended"; then
+
+        # --- Module Status Metrics ---
+        local mod_enabled=0 mod_active=0 mod_failed=0
+        for module in login portscan ddos feeds geoban suricata rbl botscan; do
+            if [[ -f "${NFTBAN_CONFIG_DIR}/modules/${module}.conf" ]]; then
+                ((mod_enabled++))
+                if systemctl is-active "nftban-${module}.timer" &>/dev/null 2>&1; then
+                    ((mod_active++))
+                elif systemctl is-failed "nftban-${module}.service" &>/dev/null 2>&1; then
+                    ((mod_failed++))
+                fi
+            fi
         done
 
-        metrics+="nftban_nft_sets_total $sets_count $timestamp\n"
-        metrics+="nftban_nft_elements_total $elements_total $timestamp\n"
-    fi
+        metrics+="nftban_modules_enabled $mod_enabled $timestamp\n"
+        metrics+="nftban_modules_active $mod_active $timestamp\n"
+        metrics+="nftban_modules_failed $mod_failed $timestamp\n"
 
-    # --- Feeds Metrics ---
-    local feeds_enabled=0 feeds_loaded=0 feeds_failed=0 feeds_ips=0
-    if [[ -d "${NFTBAN_CONFIG_DIR}/feeds" ]]; then
-        for feed_file in "${NFTBAN_CONFIG_DIR}/feeds"/*.conf; do
-            [[ -f "$feed_file" ]] || continue
-            ((feeds_enabled++))
-            local feed_name feed_data
-            feed_name=$(basename "$feed_file" .conf)
-            feed_data="${NFTBAN_CACHE_DIR}/feeds/${feed_name}.list"
-            if [[ -f "$feed_data" ]]; then
-                ((feeds_loaded++))
-                feeds_ips=$((feeds_ips + $(wc -l < "$feed_data" 2>/dev/null || echo "0")))
+        # --- nftables Metrics ---
+        if command -v nft &>/dev/null; then
+            local sets_count elements_total
+            sets_count=$(nft list sets inet nftban 2>/dev/null | grep -c "set " || echo "0")
+            elements_total=0
+
+            # Individual set counts (for audit/stats alignment)
+            local blacklist_v4=0 blacklist_v6=0 whitelist_v4=0 whitelist_v6=0
+            for set_name in blacklist_ipv4 blacklist_ipv6 whitelist_ipv4 whitelist_ipv6; do
+                local count
+                count=$(nft -j list set inet nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+                elements_total=$((elements_total + count))
+
+                case "$set_name" in
+                    blacklist_ipv4) blacklist_v4=$count ;;
+                    blacklist_ipv6) blacklist_v6=$count ;;
+                    whitelist_ipv4) whitelist_v4=$count ;;
+                    whitelist_ipv6) whitelist_v6=$count ;;
+                esac
+            done
+
+            metrics+="nftban_nft_sets_total $sets_count $timestamp\n"
+            metrics+="nftban_nft_elements_total $elements_total $timestamp\n"
+
+            # Blacklist/whitelist breakdown (aligned with nftban stats)
+            metrics+="nftban_blacklist{family=\"ipv4\"} $blacklist_v4 $timestamp\n"
+            metrics+="nftban_blacklist{family=\"ipv6\"} $blacklist_v6 $timestamp\n"
+            metrics+="nftban_blacklist_total $((blacklist_v4 + blacklist_v6)) $timestamp\n"
+            metrics+="nftban_whitelist{family=\"ipv4\"} $whitelist_v4 $timestamp\n"
+            metrics+="nftban_whitelist{family=\"ipv6\"} $whitelist_v6 $timestamp\n"
+            metrics+="nftban_whitelist_total $((whitelist_v4 + whitelist_v6)) $timestamp\n"
+        fi
+
+        # --- Feeds Metrics (component: feeds) with IPv4/IPv6 split ---
+        # Aligned with nftban_stats.sh dashboard requirements
+        local feeds_enabled=0 feeds_loaded=0 feeds_failed=0
+        local feeds_ips=0 feeds_ipv4_total=0 feeds_ipv6_total=0
+        if should_collect_component "feeds"; then
+            if [[ -d "${NFTBAN_CONFIG_DIR}/feeds" ]]; then
+                for feed_file in "${NFTBAN_CONFIG_DIR}/feeds"/*.conf; do
+                    [[ -f "$feed_file" ]] || continue
+                    ((feeds_enabled++))
+                    local feed_name feed_data
+                    feed_name=$(basename "$feed_file" .conf)
+                    feed_data="${NFTBAN_CACHE_DIR}/feeds/${feed_name}.list"
+                    if [[ -f "$feed_data" ]]; then
+                        ((feeds_loaded++))
+                        local total_count v4_count v6_count
+                        total_count=$(wc -l < "$feed_data" 2>/dev/null || echo "0")
+                        # Count IPv4 (lines starting with digit, no colon = pure IPv4)
+                        v4_count=$(grep -cE '^[0-9]+\.' "$feed_data" 2>/dev/null) || v4_count=0
+                        # Count IPv6 (lines containing colon)
+                        v6_count=$(grep -cE '^[0-9a-fA-F]*:' "$feed_data" 2>/dev/null) || v6_count=0
+                        feeds_ips=$((feeds_ips + total_count))
+                        feeds_ipv4_total=$((feeds_ipv4_total + v4_count))
+                        feeds_ipv6_total=$((feeds_ipv6_total + v6_count))
+                    else
+                        ((feeds_failed++))
+                    fi
+                done
+            fi
+
+            metrics+="nftban_feeds_enabled $feeds_enabled $timestamp\n"
+            metrics+="nftban_feeds_loaded $feeds_loaded $timestamp\n"
+            metrics+="nftban_feeds_failed $feeds_failed $timestamp\n"
+            metrics+="nftban_feeds_ips_total $feeds_ips $timestamp\n"
+            metrics+="nftban_feeds_ipv4_total $feeds_ipv4_total $timestamp\n"
+            metrics+="nftban_feeds_ipv6_total $feeds_ipv6_total $timestamp\n"
+        fi
+
+        # --- GeoBan Metrics (count blocked countries) ---
+        # Aligned with nftban_stats.sh dashboard - counts countries with MODE=block
+        local geoban_countries_blocked=0
+        local geoban_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoban"
+        if [[ -d "$geoban_dir" ]]; then
+            for geoban_file in "$geoban_dir"/*.conf; do
+                [[ -f "$geoban_file" ]] || continue
+                if grep -q "^MODE=.*block" "$geoban_file" 2>/dev/null; then
+                    ((geoban_countries_blocked++))
+                fi
+            done
+        fi
+        metrics+="nftban_geoban_countries_blocked $geoban_countries_blocked $timestamp\n"
+
+        # --- Watchdog Metrics (component: watchdog) ---
+        if should_collect_component "watchdog"; then
+            if [[ -f "${NFTBAN_RUN_DIR}/watchdog.status" ]]; then
+                if head -1 "${NFTBAN_RUN_DIR}/watchdog.status" | grep -q "^{"; then
+                    local cpu_score mem_score io_score
+                    cpu_score=$(jq -r '.cpu_score // 0' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "0")
+                    mem_score=$(jq -r '.mem_score // 0' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "0")
+                    io_score=$(jq -r '.io_score // 0' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "0")
+
+                    metrics+="nftban_watchdog_cpu_score $cpu_score $timestamp\n"
+                    metrics+="nftban_watchdog_mem_score $mem_score $timestamp\n"
+                    metrics+="nftban_watchdog_io_score $io_score $timestamp\n"
+                fi
+                metrics+="nftban_watchdog_status 1 $timestamp\n"
             else
-                ((feeds_failed++))
+                metrics+="nftban_watchdog_status 0 $timestamp\n"
             fi
-        done
-    fi
-
-    metrics+="nftban_feeds_enabled $feeds_enabled $timestamp\n"
-    metrics+="nftban_feeds_loaded $feeds_loaded $timestamp\n"
-    metrics+="nftban_feeds_failed $feeds_failed $timestamp\n"
-    metrics+="nftban_feeds_ips_total $feeds_ips $timestamp\n"
-
-    # --- Watchdog Metrics ---
-    if [[ -f "${NFTBAN_RUN_DIR}/watchdog.status" ]]; then
-        if head -1 "${NFTBAN_RUN_DIR}/watchdog.status" | grep -q "^{"; then
-            local cpu_score mem_score io_score
-            cpu_score=$(jq -r '.cpu_score // 0' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "0")
-            mem_score=$(jq -r '.mem_score // 0' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "0")
-            io_score=$(jq -r '.io_score // 0' "${NFTBAN_RUN_DIR}/watchdog.status" 2>/dev/null || echo "0")
-
-            metrics+="nftban_watchdog_cpu_score $cpu_score $timestamp\n"
-            metrics+="nftban_watchdog_mem_score $mem_score $timestamp\n"
-            metrics+="nftban_watchdog_io_score $io_score $timestamp\n"
         fi
-        metrics+="nftban_watchdog_status 1 $timestamp\n"
-    else
-        metrics+="nftban_watchdog_status 0 $timestamp\n"
-    fi
 
-    # --- Server Info ---
-    local load1 load5 load15 cpu_cores
-    if [[ -f /proc/loadavg ]]; then
-        read -r load1 load5 load15 _ < /proc/loadavg
-        metrics+="nftban_server_load1 $load1 $timestamp\n"
-        metrics+="nftban_server_load5 $load5 $timestamp\n"
-        metrics+="nftban_server_load15 $load15 $timestamp\n"
-    fi
-    cpu_cores=$(nproc 2>/dev/null || echo "1")
-    metrics+="nftban_server_cpu_cores $cpu_cores $timestamp\n"
+    fi  # end EXTENDED group
 
-    # --- Bandwidth Metrics ---
-    local total_rx_mbps=0 total_tx_mbps=0
-    mkdir -p "$(dirname "$BANDWIDTH_STATE")"
+    # =========================================================================
+    # INVENTORY METRICS (every 60 runs - 1 hour)
+    # =========================================================================
+    if group_active "inventory"; then
 
-    # Get all physical interfaces (exclude lo, docker, veth, etc.)
-    for iface_path in /sys/class/net/*; do
-        [[ ! -d "$iface_path" ]] && continue
-        local iface="${iface_path##*/}"
-        # Skip virtual interfaces
-        [[ "$iface" =~ ^(lo|docker[0-9]*|veth.*|br-.*|virbr.*)$ ]] && continue
-        local stats
-        stats=$(get_interface_stats "$iface") || continue
+        # --- Server Info ---
+        local load1 load5 load15 cpu_cores
+        if [[ -f /proc/loadavg ]]; then
+            read -r load1 load5 load15 _ < /proc/loadavg
+            metrics+="nftban_server_load1 $load1 $timestamp\n"
+            metrics+="nftban_server_load5 $load5 $timestamp\n"
+            metrics+="nftban_server_load15 $load15 $timestamp\n"
+        fi
+        cpu_cores=$(nproc 2>/dev/null || echo "1")
+        metrics+="nftban_server_cpu_cores $cpu_cores $timestamp\n"
+
+    fi  # end INVENTORY group
+
+    # =========================================================================
+    # NETWORK METRICS (LIVE group, component: network)
+    # =========================================================================
+    if group_active "live" && should_collect_component "network"; then
+
+        # --- Bandwidth Metrics ---
+        local total_rx_mbps=0 total_tx_mbps=0
+        mkdir -p "$(dirname "$BANDWIDTH_STATE")"
+
+        # Get all physical interfaces (exclude lo, docker, veth, etc.)
+        for iface_path in /sys/class/net/*; do
+            [[ ! -d "$iface_path" ]] && continue
+            local iface="${iface_path##*/}"
+            # Skip virtual interfaces
+            [[ "$iface" =~ ^(lo|docker[0-9]*|veth.*|br-.*|virbr.*)$ ]] && continue
+            local stats
+            stats=$(get_interface_stats "$iface") || continue
         read -r rx_bytes rx_packets tx_bytes tx_packets <<< "$stats"
 
         metrics+="nftban_network_rx_bytes{interface=\"${iface}\"} $rx_bytes $timestamp\n"
@@ -407,49 +755,158 @@ collect_all_metrics() {
     metrics+="nftban_bandwidth_peak_rx_mbps $peak_rx $timestamp\n"
     metrics+="nftban_bandwidth_peak_tx_mbps $peak_tx $timestamp\n"
 
-    # --- Connection Metrics ---
-    local conn_active conn_established conn_time_wait
-    conn_active=$(get_connection_stats active)
-    conn_established=$(get_connection_stats established)
-    conn_time_wait=$(get_connection_stats time_wait)
-    metrics+="nftban_connections_active $conn_active $timestamp\n"
-    metrics+="nftban_connections_established $conn_established $timestamp\n"
-    metrics+="nftban_connections_time_wait $conn_time_wait $timestamp\n"
+        # --- Connection Metrics ---
+        local conn_active conn_established conn_time_wait
+        conn_active=$(get_connection_stats active)
+        conn_established=$(get_connection_stats established)
+        conn_time_wait=$(get_connection_stats time_wait)
+        metrics+="nftban_connections_active $conn_active $timestamp\n"
+        metrics+="nftban_connections_established $conn_established $timestamp\n"
+        metrics+="nftban_connections_time_wait $conn_time_wait $timestamp\n"
 
-    # --- GeoIP Metrics ---
-    local geoip_db="${NFTBAN_CACHE_DIR}/geoip/GeoLite2-Country.mmdb"
-    if [[ -f "$geoip_db" ]]; then
-        local db_age_days
-        db_age_days=$(( (timestamp - $(stat -c %Y "$geoip_db" 2>/dev/null || echo "$timestamp")) / 86400 ))
-        metrics+="nftban_geoip_database_age_days $db_age_days $timestamp\n"
-        metrics+="nftban_geoip_database_present 1 $timestamp\n"
-    else
-        metrics+="nftban_geoip_database_present 0 $timestamp\n"
-    fi
+    fi  # end NETWORK group (live + network component)
 
-    # Count blocked countries
-    local countries_blocked=0
-    if [[ -d "${NFTBAN_CONFIG_DIR}/geoban" ]]; then
-        countries_blocked=$(ls -1 "${NFTBAN_CONFIG_DIR}/geoban/"*.conf 2>/dev/null | wc -l || echo "0")
-    fi
-    metrics+="nftban_geoip_countries_blocked $countries_blocked $timestamp\n"
+    # =========================================================================
+    # GEOIP METRICS (INVENTORY group, component: geoip)
+    # =========================================================================
+    if group_active "inventory" && should_collect_component "geoip"; then
+        local geoip_db="${NFTBAN_CACHE_DIR}/geoip/GeoLite2-Country.mmdb"
+        if [[ -f "$geoip_db" ]]; then
+            local db_age_days
+            db_age_days=$(( (timestamp - $(stat -c %Y "$geoip_db" 2>/dev/null || echo "$timestamp")) / 86400 ))
+            metrics+="nftban_geoip_database_age_days $db_age_days $timestamp\n"
+            metrics+="nftban_geoip_database_present 1 $timestamp\n"
+        else
+            metrics+="nftban_geoip_database_present 0 $timestamp\n"
+        fi
 
-    # Cache metrics
+        # Count blocked countries
+        local countries_blocked=0
+        if [[ -d "${NFTBAN_CONFIG_DIR}/geoban" ]]; then
+            countries_blocked=$(ls -1 "${NFTBAN_CONFIG_DIR}/geoban/"*.conf 2>/dev/null | wc -l || echo "0")
+        fi
+        metrics+="nftban_geoip_countries_blocked $countries_blocked $timestamp\n"
+    fi  # end GEOIP group
+
+    # =========================================================================
+    # CACHE METRICS (Single Source of Truth)
+    # =========================================================================
     mkdir -p "$(dirname "$METRICS_CACHE")"
+    mkdir -p "${NFTBAN_JSON_CACHE_DIR:-/var/cache/nftban/metrics}"
+
+    # 1. Raw metrics cache (for Prometheus/Zabbix export)
     echo -e "$metrics" > "$METRICS_CACHE"
 
-    log_debug "Collected $(echo -e "$metrics" | wc -l) metrics"
+    # 2. JSON cache (Single Source of Truth for nftban stats and API)
+    # This structure EXACTLY matches what nftban_stats.sh dashboard needs
+    local json_cache="${NFTBAN_JSON_CACHE_DIR:-/var/cache/nftban/metrics}/stats.json"
+    local hostname
+    hostname=$(hostname -f 2>/dev/null || hostname)
+
+    # Build JSON from collected metrics - SINGLE SOURCE OF TRUTH
+    # All fields align with nftban_stats.sh generate_dashboard() requirements
+    cat > "${json_cache}.tmp" <<EOF
+{
+  "schema_version": "2.0",
+  "generated_at": "$(date -Iseconds)",
+  "generated_epoch": $timestamp,
+  "hostname": "$hostname",
+  "collection_groups": "$collection_groups",
+  "run_count": $(cat "$RUN_COUNT_FILE" 2>/dev/null || echo 0),
+  "daemon": {
+    "status": $status,
+    "pid": $pid,
+    "uptime_seconds": $uptime
+  },
+  "blacklist": {
+    "ipv4": {
+      "total": ${active_v4:-0},
+      "permanent": ${blacklist_v4_perm:-0},
+      "temporary": ${blacklist_v4_temp:-0}
+    },
+    "ipv6": {
+      "total": ${active_v6:-0},
+      "permanent": ${blacklist_v6_perm:-0},
+      "temporary": ${blacklist_v6_temp:-0}
+    },
+    "total": ${active_total:-0}
+  },
+  "whitelist": {
+    "ipv4": ${whitelist_v4:-0},
+    "ipv6": ${whitelist_v6:-0},
+    "total": $((${whitelist_v4:-0} + ${whitelist_v6:-0}))
+  },
+  "feeds": {
+    "enabled": ${feeds_enabled:-0},
+    "loaded": ${feeds_loaded:-0},
+    "failed": ${feeds_failed:-0},
+    "ipv4_total": ${feeds_ipv4_total:-0},
+    "ipv6_total": ${feeds_ipv6_total:-0},
+    "ips_total": ${feeds_ips:-0}
+  },
+  "geoban": {
+    "countries_blocked": ${geoban_countries_blocked:-0}
+  },
+  "bans_by_source": {
+    "login": ${src_login:-0},
+    "portscan": ${src_portscan:-0},
+    "ddos": ${src_ddos:-0},
+    "manual": ${src_manual:-0},
+    "feeds": ${src_feeds:-0},
+    "suricata": ${src_suricata:-0}
+  },
+  "bans_by_source_24h": {
+    "login": ${src_login_24h:-0},
+    "portscan": ${src_portscan_24h:-0},
+    "ddos": ${src_ddos_24h:-0},
+    "manual": ${src_manual_24h:-0},
+    "feeds": ${src_feeds_24h:-0},
+    "suricata": ${src_suricata_24h:-0}
+  },
+  "activity": {
+    "total_bans": ${bans_total:-0},
+    "unique_ips": ${unique_ips_total:-0},
+    "unique_ips_24h": ${unique_ips_24h:-0},
+    "bans_1h": ${bans_1h:-0},
+    "bans_24h": ${bans_24h:-0},
+    "bans_7d": ${bans_7d:-0},
+    "bans_30d": ${bans_30d:-0},
+    "rate_per_minute": ${rate:-0}
+  },
+  "firewall": {
+    "sets_total": ${sets_count:-0},
+    "elements_total": ${elements_total:-0}
+  },
+  "modules": {
+    "enabled": ${mod_enabled:-0},
+    "active": ${mod_active:-0},
+    "failed": ${mod_failed:-0}
+  },
+  "network": {
+    "connections_active": ${conn_active:-0},
+    "connections_established": ${conn_established:-0},
+    "connections_time_wait": ${conn_time_wait:-0},
+    "rx_mbps": ${total_rx_mbps:-0},
+    "tx_mbps": ${total_tx_mbps:-0}
+  }
+}
+EOF
+
+    # Atomic write
+    mv "${json_cache}.tmp" "$json_cache"
+    chmod 644 "$json_cache"
+
+    log_debug "Collected $(echo -e "$metrics" | wc -l) metrics → $json_cache"
 }
 
 # =============================================================================
 # EXPORT: Prometheus (node_exporter textfile)
 # =============================================================================
 export_prometheus() {
-    local enabled="${NFTBAN_METRICS_ENABLED:-false}"
-    [[ "$enabled" != "true" ]] && return 0
+    # Note: Enabled check is now in main() for consistency
 
-    local textfile_dir="/var/lib/node_exporter/textfile_collector"
-    local output_file="${textfile_dir}/nftban.prom"
+    local textfile_dir="${NFTBAN_PROMETHEUS_TEXTFILE_DIR:-/var/lib/node_exporter/textfile_collector}"
+    local output_file="${textfile_dir}/${NFTBAN_PROMETHEUS_OUTPUT_FILE:-nftban.prom}"
 
     if [[ ! -d "$textfile_dir" ]]; then
         log_warn "Prometheus textfile directory not found: $textfile_dir"
@@ -596,6 +1053,12 @@ export_connectors() {
 # MAIN
 # =============================================================================
 main() {
+    # Early exit if metrics disabled
+    if [[ "${NFTBAN_METRICS_ENABLED:-false}" != "true" ]]; then
+        log_debug "Metrics collection disabled (NFTBAN_METRICS_ENABLED=false)"
+        exit 0
+    fi
+
     local start_time
     start_time=$(date +%s%N)
 
@@ -603,31 +1066,52 @@ main() {
     acquire_lock
 
     # Apply hostname-based jitter (only on first boot, not every run)
-    if [[ "${NFTBAN_APPLY_JITTER:-false}" == "true" ]]; then
+    if [[ "${NFTBAN_COLLECT_JITTER_ENABLED:-true}" == "true" ]] && [[ "${NFTBAN_APPLY_JITTER:-false}" == "true" ]]; then
         local jitter
-        jitter=$(calculate_host_jitter 30)
+        jitter=$(calculate_host_jitter "${NFTBAN_COLLECT_JITTER_MAX:-30}")
         log_debug "Applying hostname-based jitter: ${jitter}s"
         sleep "$jitter"
     fi
 
-    log_info "NFTBan Unified Exporter v${SCRIPT_VERSION} starting"
+    # Increment run count and determine collection groups
+    local run_count collection_groups
+    run_count=$(increment_run_count)
+    collection_groups=$(determine_collection_groups "$run_count")
 
-    # Step 1: Collect all metrics ONCE
-    collect_all_metrics
+    log_info "NFTBan Unified Exporter v${SCRIPT_VERSION} starting (run #${run_count}, groups: ${collection_groups})"
 
-    # Step 2: Export to all configured targets
+    # Step 1: Collect metrics based on collection groups (smart collection)
+    collect_all_metrics "$collection_groups"
+
+    # Step 2: Export to enabled targets only
     local export_count=0
 
-    export_prometheus && ((export_count++)) || true
-    export_zabbix && ((export_count++)) || true
-    export_connectors && ((export_count++)) || true
+    # Prometheus export (only if enabled)
+    if [[ "${NFTBAN_EXPORT_PROMETHEUS:-false}" == "true" ]]; then
+        export_prometheus && ((export_count++)) || true
+    fi
+
+    # Zabbix export (only if enabled)
+    if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" == "true" ]]; then
+        export_zabbix && ((export_count++)) || true
+    fi
+
+    # Connector exports (only if enabled)
+    if [[ "${NFTBAN_EXPORT_CONNECTORS:-false}" == "true" ]]; then
+        export_connectors && ((export_count++)) || true
+    fi
 
     # Calculate duration
     local end_time duration_ms
     end_time=$(date +%s%N)
     duration_ms=$(( (end_time - start_time) / 1000000 ))
 
-    log_info "Completed: $export_count export targets in ${duration_ms}ms"
+    # Log timing if enabled
+    if [[ "${NFTBAN_COLLECT_LOG_TIMING:-false}" == "true" ]]; then
+        log_info "Run #${run_count}: ${duration_ms}ms (groups: ${collection_groups}, exports: ${export_count})"
+    else
+        log_info "Completed: $export_count export targets in ${duration_ms}ms"
+    fi
 }
 
 # Run

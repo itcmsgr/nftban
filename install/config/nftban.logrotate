@@ -26,6 +26,27 @@
     endscript
 }
 
+# =============================================================================
+# Ban Activity Log - CRITICAL for metrics and audit trail
+# =============================================================================
+# bans.log is the SINGLE SOURCE OF TRUTH for ban activity history.
+# Used by: nftban_unified_exporter.sh, nftban_stats.sh
+# Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
+#
+# Use copytruncate: Processes hold open file handles during reads.
+# The mv approach (used in nftban_stats_cleanup_logs) can cause data loss.
+/var/log/nftban/bans.log {
+    weekly
+    rotate 12
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    size 10M
+    create 0640 nftban nftban
+}
+
 # Mail and queue logs - bash scripts appending via >>
 # Use copytruncate: safer for transient appenders, no reload needed
 /var/log/nftban/mail.log

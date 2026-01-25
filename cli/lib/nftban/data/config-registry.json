@@ -1,6 +1,6 @@
 {
   "registry_version": "1.0.0",
-  "schema_version": "1.0.30",
+  "schema_version": "1.0.31",
   "generated_at": "2026-01-11",
   "description": "NFTBan Configuration Registry - Mode-aware validation metadata",
   "activation_rules": {
@@ -44,7 +44,8 @@
     "banning": "Ban behavior settings",
     "detection": "Detection thresholds and tuning",
     "notifications": "Alert and notification settings",
-    "panels": "Hosting panel integration"
+    "panels": "Hosting panel integration",
+    "metrics": "Metrics collection, export, and retention settings"
   },
   "files": {
     "conf.d/banner.conf": {
@@ -269,6 +270,13 @@
       "category": "features",
       "key_count": 36,
       "comment": "Export metrics to external systems with auto-firewall configuration"
+    },
+    "conf.d/metrics.conf": {
+      "description": "Unified metrics collection and export configuration",
+      "active_when": "always",
+      "category": "metrics",
+      "key_count": 42,
+      "comment": "Central configuration for collectors, component detection, exports, retention, and reports"
     }
   },
   "key_prefixes": {
@@ -406,6 +414,51 @@
       "active_when": "always",
       "category": "features",
       "description": "Webhook connector settings"
+    },
+    "NFTBAN_METRICS_": {
+      "active_when": "always",
+      "category": "metrics",
+      "description": "Metrics backend and export settings (Prometheus, VictoriaMetrics)"
+    },
+    "NFTBAN_COLLECT_": {
+      "active_when": "always",
+      "category": "metrics",
+      "description": "Metrics collector settings (intervals, component detection)"
+    },
+    "NFTBAN_EXPORT_": {
+      "active_when": "always",
+      "category": "metrics",
+      "description": "Metrics export target settings (Prometheus, JSON, connectors)"
+    },
+    "NFTBAN_REPORTS_": {
+      "active_when": "always",
+      "category": "metrics",
+      "description": "Daily report generation settings"
+    },
+    "NFTBAN_LOCAL_RETENTION": {
+      "active_when": "always",
+      "category": "metrics",
+      "description": "Local data retention (1w-4w, hard max 4w)"
+    },
+    "NFTBAN_HISTORY_": {
+      "active_when": "always",
+      "category": "metrics",
+      "description": "History file retention settings"
+    },
+    "NFTBAN_PROFILE_": {
+      "active_when": "always",
+      "category": "metrics",
+      "description": "pprof profile retention settings"
+    },
+    "NFTBAN_PROMETHEUS_": {
+      "active_when": "always",
+      "category": "metrics",
+      "description": "Prometheus textfile output settings"
+    },
+    "NFTBAN_JSON_": {
+      "active_when": "always",
+      "category": "metrics",
+      "description": "JSON cache output settings"
     }
   },
   "deprecated_keys": {
