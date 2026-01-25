@@ -1867,7 +1867,7 @@ nftban_health_check_metrics() {
         if [[ $file_age -lt 120 ]]; then
             metrics_issues+=("✓ Metrics exporter: Working (file ${file_age}s old)")
             # Exporter is working - check timer status
-            if systemctl is-active --quiet nftban-metrics-exporter.timer 2>/dev/null; then
+            if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
                 metrics_issues+=("✓ Metrics timer: Active")
             else
                 metrics_issues+=("⚠ Metrics timer not active (but exporter is working)")
@@ -1883,13 +1883,13 @@ nftban_health_check_metrics() {
         fi
     else
         # No metrics file - check if timer exists
-        if systemctl list-unit-files 2>/dev/null | grep -q "nftban-metrics-exporter.timer"; then
-            if systemctl is-active --quiet nftban-metrics-exporter.timer 2>/dev/null; then
+        if systemctl list-unit-files 2>/dev/null | grep -q "nftban-unified-exporter.timer"; then
+            if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
                 metrics_issues+=("Metrics timer active but no metrics file yet (may be first run)")
                 status=$HEALTH_WARNING
             else
                 metrics_issues+=("Metrics timer exists but not running")
-                metrics_issues+=("FIX: sudo systemctl enable --now nftban-metrics-exporter.timer")
+                metrics_issues+=("FIX: sudo systemctl enable --now nftban-unified-exporter.timer")
                 status=$HEALTH_ERROR
             fi
         else
@@ -2098,8 +2098,9 @@ nftban_health_check_zabbix() {
     # Check unified exporter (or legacy zabbix timer)
     if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
         zabbix_issues+=("✓ Unified exporter timer: Active")
-    elif systemctl is-active --quiet nftban-zabbix-exporter.timer 2>/dev/null; then
-        zabbix_issues+=("✓ Zabbix exporter timer: Active")
+    elif systemctl list-unit-files 2>/dev/null | grep -q "nftban-zabbix-exporter.timer"; then
+        # Legacy zabbix timer reference - should migrate to unified
+        zabbix_issues+=("⚠ Legacy zabbix exporter timer found - migrate to unified exporter")
     elif systemctl list-unit-files 2>/dev/null | grep -q "nftban-unified-exporter.timer"; then
         zabbix_issues+=("⚠ Unified exporter timer: Not active")
         zabbix_issues+=("FIX: sudo systemctl enable --now nftban-unified-exporter.timer")
@@ -2829,7 +2830,6 @@ nftban_health_check_timers() {
     local -a optional_timers=(
         "nftban-watchdog.timer"         # System resource monitoring (nftban watchdog enable)
         "nftban-core-feeds.timer"       # Threat feeds sync (nftban feeds enable)
-        "nftban-metrics-exporter.timer" # Prometheus metrics (nftban metrics enable)
         "nftban-unified-exporter.timer" # Unified export (Prometheus+Zabbix+Connectors)
         "nftban-suricata-update.timer"  # Suricata rules (needs suricata)
         "nftban-snapshot.timer"         # Firewall snapshots
@@ -2843,7 +2843,6 @@ nftban_health_check_timers() {
         ["nftban-core-geoip.timer"]="GeoIP database updates"
         ["nftban-queue.timer"]="Ban queue processing"
         ["nftban-watchdog.timer"]="System resource monitoring"
-        ["nftban-metrics-exporter.timer"]="Prometheus metrics collection"
         ["nftban-unified-exporter.timer"]="Unified export (Prometheus+Zabbix+Connectors)"
         ["nftban-suricata-update.timer"]="Suricata rules update (optional)"
         ["nftban-snapshot.timer"]="Firewall snapshot creation (optional)"

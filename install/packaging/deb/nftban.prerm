@@ -2,10 +2,21 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2024-2025 NFTBan Development Team
 #
+# meta:name="nftban.prerm"
+# meta:type="packaging"
+# meta:description="prerm script for nftban (main package)"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
+#
 # prerm script for nftban (main package)
 # Stops all services before removal
 
-set -e
+set -Eeuo pipefail
 
 case "$1" in
     remove|upgrade|deconfigure)
@@ -27,7 +38,7 @@ case "$1" in
             "nftban-watchdog.timer"
             "nftban-snapshot.timer"
             "nftban-rollback.timer"
-            "nftban-metrics-exporter.timer"
+            "nftban-unified-exporter.timer"
             "nftban-suricata-update.timer"
             "nftban-queue.timer"
             "nftban-core-geoip.timer"

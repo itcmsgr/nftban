@@ -211,8 +211,8 @@ install -D -m 0644 install/systemd/nftban-core-geoip.service %{buildroot}/usr/li
 install -D -m 0644 install/systemd/nftban-core-geoip.timer %{buildroot}/usr/lib/systemd/system/nftban-core-geoip.timer
 install -D -m 0644 install/systemd/nftban-core-feeds.service %{buildroot}/usr/lib/systemd/system/nftban-core-feeds.service
 install -D -m 0644 install/systemd/nftban-core-feeds.timer %{buildroot}/usr/lib/systemd/system/nftban-core-feeds.timer
-install -D -m 0644 install/systemd/nftban-metrics-exporter.service %{buildroot}/usr/lib/systemd/system/nftban-metrics-exporter.service
-install -D -m 0644 install/systemd/nftban-metrics-exporter.timer %{buildroot}/usr/lib/systemd/system/nftban-metrics-exporter.timer
+install -D -m 0644 install/systemd/nftban-unified-exporter.service %{buildroot}/usr/lib/systemd/system/nftban-unified-exporter.service
+install -D -m 0644 install/systemd/nftban-unified-exporter.timer %{buildroot}/usr/lib/systemd/system/nftban-unified-exporter.timer
 install -D -m 0644 install/systemd/nftban-watchdog.service %{buildroot}/usr/lib/systemd/system/nftban-watchdog.service
 install -D -m 0644 install/systemd/nftban-watchdog.timer %{buildroot}/usr/lib/systemd/system/nftban-watchdog.timer
 install -D -m 0644 install/systemd/nftban-snapshot.service %{buildroot}/usr/lib/systemd/system/nftban-snapshot.service
@@ -1423,8 +1423,8 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-geoip.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-core-feeds.timer" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-metrics-exporter.service" "${deb_root}/usr/lib/systemd/system/"
-    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-metrics-exporter.timer" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-unified-exporter.service" "${deb_root}/usr/lib/systemd/system/"
+    install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-unified-exporter.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-watchdog.service" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-watchdog.timer" "${deb_root}/usr/lib/systemd/system/"
     install -m 0644 "${PROJECT_ROOT}/install/systemd/nftban-snapshot.service" "${deb_root}/usr/lib/systemd/system/"

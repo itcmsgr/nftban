@@ -154,7 +154,7 @@ func SystemTimersDetailHandler(w http.ResponseWriter, r *http.Request) {
 	timers := []map[string]interface{}{}
 	nftbanTimers := []string{
 		"nftban-health.timer",
-		"nftban-metrics-exporter.timer",
+		"nftban-unified-exporter.timer",
 		"nftban-queue.timer",
 		"nftban-core-feeds.timer",
 		"nftban-core-geoip.timer",
@@ -433,7 +433,7 @@ func countMatches(text, pattern string) int {
 func getTimerSchedule(timerName string) string {
 	schedules := map[string]string{
 		"nftban-health.timer":           "Daily at 03:00",
-		"nftban-metrics-exporter.timer": "Every 1 minute",
+		"nftban-unified-exporter.timer": "Every 1 minute",
 		"nftban-daily-report.timer":     "Daily",
 		"nftban-bandwidth-exporter.timer": "Every 1 minute",
 		"nftban-snapshot.timer":         "Hourly",

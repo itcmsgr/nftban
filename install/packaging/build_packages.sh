@@ -3,6 +3,17 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2024-2025 NFTBan Development Team
 #
+# meta:name="build_packages"
+# meta:type="packaging"
+# meta:description="Build script for nftban-metrics DEB and RPM packages"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
+#
 # Build script for nftban-metrics DEB and RPM packages
 #
 # Usage:
@@ -102,9 +113,9 @@ build_deb() {
     # Copy Track 1: Core Metrics Exporter
     cp "${PROJECT_ROOT}/work/track1/nftban_prometheus_exporter.sh" \
         "${deb_build_dir}/usr/lib/nftban/exporters/"
-    cp "${PROJECT_ROOT}/work/track1/nftban-metrics-exporter.service" \
+    cp "${PROJECT_ROOT}/install/systemd/nftban-unified-exporter.service" \
         "${deb_build_dir}/usr/lib/systemd/system/"
-    cp "${PROJECT_ROOT}/work/track1/nftban-metrics-exporter.timer" \
+    cp "${PROJECT_ROOT}/install/systemd/nftban-unified-exporter.timer" \
         "${deb_build_dir}/usr/lib/systemd/system/"
 
     # Copy Track 2: Node Exporter Setup

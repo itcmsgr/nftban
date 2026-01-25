@@ -22,7 +22,7 @@
 # meta:inventory.binaries="curl,systemctl,useradd,groupadd,chmod,chown,mkdir,cp,ln,tput,id"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files="/etc/nftban/nftban.conf"
-# meta:inventory.systemd_units="nftban.service,nftban-watchdog.timer,nftban-metrics-exporter.timer,nftban-queue.timer,nftban-zabbix-exporter.timer,nftban-connector-exporter.timer,nftban-unified-exporter.timer"
+# meta:inventory.systemd_units="nftban.service,nftban-watchdog.timer,nftban-queue.timer,nftban-unified-exporter.timer"
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 #
@@ -2092,13 +2092,6 @@ install_systemd() {
 
     log "Systemd directory: $systemd_dir"
 
-    # Metrics exporter
-    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-metrics-exporter.service" ]]; then
-        cp -f "$SCRIPT_DIR/install/systemd/nftban-metrics-exporter.service" "$systemd_dir/"
-        cp -f "$SCRIPT_DIR/install/systemd/nftban-metrics-exporter.timer" "$systemd_dir/"
-        ok "Metrics exporter units → $systemd_dir"
-    fi
-
     # NFTBand daemon (SINGLE nftables writer - CRITICAL for architecture)
     # Socket activation: nftband.socket creates socket, service receives FD
     if [[ -f "$SCRIPT_DIR/install/systemd/nftband.socket" ]]; then
@@ -2141,21 +2134,7 @@ install_systemd() {
         ok "Queue processor units → $systemd_dir"
     fi
 
-    # Zabbix exporter (v1.3.0+)
-    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-zabbix-exporter.service" ]]; then
-        cp -f "$SCRIPT_DIR/install/systemd/nftban-zabbix-exporter.service" "$systemd_dir/"
-        cp -f "$SCRIPT_DIR/install/systemd/nftban-zabbix-exporter.timer" "$systemd_dir/"
-        ok "Zabbix exporter units → $systemd_dir"
-    fi
-
-    # Connector exporter (v1.3.0+)
-    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-connector-exporter.service" ]]; then
-        cp -f "$SCRIPT_DIR/install/systemd/nftban-connector-exporter.service" "$systemd_dir/"
-        cp -f "$SCRIPT_DIR/install/systemd/nftban-connector-exporter.timer" "$systemd_dir/"
-        ok "Connector exporter units → $systemd_dir"
-    fi
-
-    # Unified exporter (v1.3.0+ - recommended replacement for legacy exporters)
+    # Unified exporter (v1.3.0+ - single exporter for all metrics backends)
     if [[ -f "$SCRIPT_DIR/install/systemd/nftban-unified-exporter.service" ]]; then
         cp -f "$SCRIPT_DIR/install/systemd/nftban-unified-exporter.service" "$systemd_dir/"
         cp -f "$SCRIPT_DIR/install/systemd/nftban-unified-exporter.timer" "$systemd_dir/"
@@ -2262,9 +2241,9 @@ install_systemd() {
         systemctl enable --now nftban-health.timer 2>/dev/null || warn "Health timer enable failed"
     fi
 
-    # Metrics timer (only if metrics enabled)
+    # Unified exporter timer (only if metrics enabled)
     if [[ "${NFTBAN_METRICS_ENABLED:-false}" == "true" ]]; then
-        systemctl enable --now nftban-metrics-exporter.timer 2>/dev/null || warn "Metrics timer enable failed"
+        systemctl enable --now nftban-unified-exporter.timer 2>/dev/null || warn "Unified exporter timer enable failed"
         ok "Metrics enabled (backend: ${NFTBAN_METRICS_BACKEND:-prometheus})"
     else
         log "Metrics disabled (enable with: nftban config set NFTBAN_METRICS_ENABLED=true)"
@@ -2660,27 +2639,10 @@ if [[ "${NFTBAN_METRICS_ENABLED:-false}" == "true" ]]; then
         ok "Metrics configuration updated"
     fi
 
-    # Enable metrics timer (legacy - will be deprecated)
-    # NOTE: Unified exporter is preferred for v1.3.0+
-    if [[ -f /etc/systemd/system/nftban-metrics-exporter.timer ]]; then
-        systemctl enable --now nftban-metrics-exporter.timer 2>/dev/null || true
-        ok "Metrics exporter timer enabled"
-
-        # Deprecation notice for v1.3.0+
-        info ""
-        info "┌─────────────────────────────────────────────────────────────────┐"
-        info "│ RECOMMENDATION: Use Unified Exporter (v1.3.0+)                  │"
-        info "├─────────────────────────────────────────────────────────────────┤"
-        info "│ The unified exporter collects metrics ONCE and exports to ALL  │"
-        info "│ targets (Prometheus, Zabbix, Connectors) - 66% less overhead.  │"
-        info "│                                                                 │"
-        info "│ To migrate:                                                     │"
-        info "│   systemctl disable nftban-metrics-exporter.timer               │"
-        info "│   systemctl enable --now nftban-unified-exporter.timer          │"
-        info "│                                                                 │"
-        info "│ See: https://nftban.com/docs/unified-exporter                   │"
-        info "└─────────────────────────────────────────────────────────────────┘"
-        info ""
+    # Enable unified exporter timer
+    if [[ -f /etc/systemd/system/nftban-unified-exporter.timer ]]; then
+        systemctl enable --now nftban-unified-exporter.timer 2>/dev/null || true
+        ok "Unified exporter timer enabled"
     fi
     echo ""
 fi

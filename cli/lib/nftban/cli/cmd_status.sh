@@ -228,7 +228,7 @@ output_terminal() {
     check_service_clean "nftban-api" "${NFTBAN_SERVICE_UI:-nftban-ui.service}"
     check_service_clean "nftban-suricata" "${NFTBAN_SERVICE_SURICATA:-nftban-suricata.service}"
     check_service_clean "login-monitor" "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
-    check_service_clean "metrics-exporter" "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-metrics-exporter.service}"
+    check_service_clean "metrics-exporter" "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
     check_service_clean "unified-exporter" "nftban-unified-exporter.service"
     echo ""
 
@@ -427,10 +427,10 @@ output_terminal() {
 
     # Metrics Exporter
     local metrics_exp_status="NOT INSTALLED"
-    if systemctl is-active nftban-metrics-exporter.timer >/dev/null 2>&1 || \
-       systemctl is-active nftban-metrics-exporter.service >/dev/null 2>&1; then
+    if systemctl is-active nftban-unified-exporter.timer >/dev/null 2>&1 || \
+       systemctl is-active nftban-unified-exporter.service >/dev/null 2>&1; then
         metrics_exp_status="ACTIVE"
-    elif systemctl list-unit-files 2>/dev/null | grep -q "nftban-metrics-exporter"; then
+    elif systemctl list-unit-files 2>/dev/null | grep -q "nftban-unified-exporter"; then
         metrics_exp_status="INACTIVE"
     fi
     printf "  %-20s %s\n" "Metrics Exporter...." "$metrics_exp_status"
@@ -572,7 +572,6 @@ output_terminal() {
     local -A timer_desc=(
         ["nftban-health.timer"]="Health check"
         ["nftban-maintenance.timer"]="Maintenance tasks"
-        ["nftban-metrics-exporter.timer"]="Prometheus metrics"
         ["nftban-unified-exporter.timer"]="Unified metrics export"
         ["nftban-core-feeds.timer"]="Threat feeds update"
         ["nftban-core-geoip.timer"]="GeoIP database update"
@@ -859,7 +858,7 @@ output_json() {
     echo "    \"nftban_api\": $(_json_service_info "${NFTBAN_SERVICE_UI:-nftban-ui.service}"),"
     echo "    \"nftban_suricata\": $(_json_service_info "${NFTBAN_SERVICE_SURICATA:-nftban-suricata.service}"),"
     echo "    \"login_monitor\": $(_json_service_info "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"),"
-    echo "    \"metrics_exporter\": $(_json_service_info "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-metrics-exporter.service}")"
+    echo "    \"metrics_exporter\": $(_json_service_info "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}")"
     echo "  },"
 
     # Health
@@ -933,7 +932,7 @@ output_json() {
 
     # Timers
     echo "  \"timers\": {"
-    local timer_list=("nftban-health.timer" "nftban-feeds.timer" "nftban-geoip-update.timer" "nftban-maintenance.timer" "nftban-stats.timer" "nftban-metrics-exporter.timer" "nftban-unified-exporter.timer")
+    local timer_list=("nftban-health.timer" "nftban-feeds.timer" "nftban-geoip-update.timer" "nftban-maintenance.timer" "nftban-stats.timer" "nftban-unified-exporter.timer")
     local timer_json=""
     for timer in "${timer_list[@]}"; do
         local timer_name="${timer%.timer}"

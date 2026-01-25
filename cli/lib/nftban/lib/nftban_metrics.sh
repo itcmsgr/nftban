@@ -23,7 +23,7 @@
 # meta:inventory.binaries="systemctl,curl"
 # meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LIB_DIR"
 # meta:inventory.config_files="/etc/nftban/nftban.conf"
-# meta:inventory.systemd_units="prometheus.service,victoriametrics.service,node_exporter.service,nftban-metrics-exporter.timer"
+# meta:inventory.systemd_units="prometheus.service,node_exporter.service,nftban-unified-exporter.timer"
 # meta:inventory.network="localhost:9090,localhost:9100,localhost:8428"
 # meta:inventory.privileges="root"
 #
@@ -113,8 +113,8 @@ nftban_metrics_start_stack() {
     fi
 
     # Start NFTBan metrics exporter timer
-    local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-metrics-exporter.timer}"
-    local metrics_svc="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-metrics-exporter.service}"
+    local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-unified-exporter.timer}"
+    local metrics_svc="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
     if systemctl list-unit-files 2>/dev/null | grep -q "$metrics_timer"; then
         systemctl enable "$metrics_timer" &>/dev/null || true
         systemctl restart "$metrics_timer" &>/dev/null || true
@@ -138,8 +138,8 @@ nftban_metrics_stop_stack() {
     local verbose="${1:-true}"  # Show output by default
 
     # Stop NFTBan metrics exporter
-    local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-metrics-exporter.timer}"
-    local metrics_svc="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-metrics-exporter.service}"
+    local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-unified-exporter.timer}"
+    local metrics_svc="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
     if systemctl list-unit-files 2>/dev/null | grep -q "$metrics_timer"; then
         systemctl stop "$metrics_timer" &>/dev/null || true
         systemctl stop "$metrics_svc" &>/dev/null || true
@@ -181,7 +181,7 @@ nftban_metrics_is_running() {
     local node_exporter_service
     node_exporter_service=$(nftban_distro_get_service node_exporter 2>/dev/null || echo "prometheus-node-exporter")
 
-    local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-metrics-exporter.timer}"
+    local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-unified-exporter.timer}"
     if systemctl is-active "$prometheus_service" &>/dev/null && \
        systemctl is-active "$node_exporter_service" &>/dev/null && \
        systemctl is-active "$metrics_timer" &>/dev/null; then
@@ -528,8 +528,8 @@ nftban_metrics_start_stack_victoriametrics() {
     fi
 
     # Start NFTBan metrics exporter timer
-    local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-metrics-exporter.timer}"
-    local metrics_svc="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-metrics-exporter.service}"
+    local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-unified-exporter.timer}"
+    local metrics_svc="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
     if systemctl list-unit-files 2>/dev/null | grep -q "$metrics_timer"; then
         systemctl enable "$metrics_timer" &>/dev/null || true
         systemctl restart "$metrics_timer" &>/dev/null || true
@@ -553,8 +553,8 @@ nftban_metrics_stop_stack_victoriametrics() {
     local verbose="${1:-true}"  # Show output by default
 
     # Stop NFTBan metrics exporter
-    local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-metrics-exporter.timer}"
-    local metrics_svc="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-metrics-exporter.service}"
+    local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-unified-exporter.timer}"
+    local metrics_svc="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
     if systemctl list-unit-files 2>/dev/null | grep -q "$metrics_timer"; then
         systemctl stop "$metrics_timer" &>/dev/null || true
         systemctl stop "$metrics_svc" &>/dev/null || true
@@ -591,7 +591,7 @@ nftban_metrics_is_running_victoriametrics() {
     local node_exporter_service
     node_exporter_service=$(nftban_distro_get_service node_exporter 2>/dev/null || echo "prometheus-node-exporter")
 
-    local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-metrics-exporter.timer}"
+    local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-unified-exporter.timer}"
     if systemctl is-active victoriametrics &>/dev/null && \
        systemctl is-active "$node_exporter_service" &>/dev/null && \
        systemctl is-active "$metrics_timer" &>/dev/null; then

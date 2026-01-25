@@ -32,7 +32,7 @@ groups:
         annotations:
           summary: "NFTBan metrics exporter is down"
           description: "Node Exporter cannot scrape NFTBan metrics for {{ $labels.instance }}. Last successful scrape was {{ $value | humanizeDuration }} ago."
-          action: "Check systemctl status nftban-metrics-exporter.service and journalctl -u nftban-metrics-exporter.service"
+          action: "Check systemctl status nftban-unified-exporter.service and journalctl -u nftban-unified-exporter.service"
 
       # Alert if metrics collection is slow
       - alert: NFTBanMetricsCollectionSlow
@@ -58,7 +58,7 @@ groups:
         annotations:
           summary: "NFTBan metrics are stale"
           description: "Last metrics update was {{ $value | humanizeDuration }} ago on {{ $labels.instance }}. Exporter may be failing."
-          action: "Check systemctl status nftban-metrics-exporter.timer and nftban-metrics-exporter.service"
+          action: "Check systemctl status nftban-unified-exporter.timer and nftban-unified-exporter.service"
 
   # NFTBan Firewall Health
   - name: nftban_firewall

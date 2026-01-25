@@ -7,23 +7,30 @@
 # Purpose: Validate Node Exporter installation and configuration
 # Location: /usr/lib/nftban/setup/validate_node_exporter.sh
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 # nftban — Simplifying Linux Firewall Management
 #
-# meta:name=validate_node_exporter
-# meta:type=setup
-# meta:header=Node Exporter Validation
-# meta:version=1.0.0
+# meta:name="validate_node_exporter"
+# meta:type="setup"
+# meta:header="Node Exporter Validation"
+# meta:version="1.0.0"
 #
 # **Description & Purpose**
-# meta:description=Validate Node Exporter installation and NFTBan metrics integration
-# meta:input=Running Node Exporter instance
-# meta:output=Validation report with pass/fail status
+# meta:description="Validate Node Exporter installation and NFTBan metrics integration"
+# meta:input="Running Node Exporter instance"
+# meta:output="Validation report with pass/fail status"
 #
 # **Inventory & Requirements**
-# meta:depends=bash,curl,systemctl,netstat|ss
+# meta:depends="bash,curl,systemctl,netstat|ss"
 #
-# meta:created_date=2025-11-17
+# meta:created_date="2025-11-17"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges=""
 # =============================================================================
 
 # Enhanced strict mode
@@ -307,7 +314,7 @@ test_nftban_metrics() {
         test_result "PASS" "NFTBan metrics file exists"
     else
         test_result "WARN" "NFTBan metrics file not found: $NFTBAN_METRICS_FILE"
-        echo "Run: systemctl start nftban-metrics-exporter.service"
+        echo "Run: systemctl start nftban-unified-exporter.service"
         return 1
     fi
 
@@ -318,7 +325,7 @@ test_nftban_metrics() {
         test_result "PASS" "Metrics file is recent (${file_age}s ago)"
     else
         test_result "WARN" "Metrics file is old (${file_age}s ago)"
-        echo "Check: systemctl status nftban-metrics-exporter.timer"
+        echo "Check: systemctl status nftban-unified-exporter.timer"
     fi
 
     # Check for nftban metrics in endpoint

@@ -1712,7 +1712,7 @@ func (h *GOTHHandlers) getTimersList() []ui.TimerInfo {
 	}{
 		{"nftban-health.timer", "Health checks & auto-heal"},
 		{"nftban-maintenance.timer", "Maintenance tasks"},
-		{"nftban-metrics-exporter.timer", "Metrics collection"},
+		{"nftban-unified-exporter.timer", "Unified metrics export"},
 		{"nftban-core-feeds.timer", "Threat feed sync"},
 		{"nftban-core-geoip.timer", "GeoIP database updates"},
 		{"nftban-queue.timer", "Ban queue processing"},

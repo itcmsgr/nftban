@@ -187,7 +187,7 @@ nftban_health_verify_installation() {
         "nftban-core-geoip.timer"       # GeoIP updates
         "nftban-queue.timer"            # Ban queue
         "nftban-watchdog.timer"         # System monitoring
-        "nftban-metrics-exporter.timer" # Prometheus metrics
+        "nftban-unified-exporter.timer" # Unified metrics export
     )
 
     local -A timer_desc=(
@@ -197,7 +197,7 @@ nftban_health_verify_installation() {
         ["nftban-core-geoip.timer"]="GeoIP database updates"
         ["nftban-queue.timer"]="Ban queue processing"
         ["nftban-watchdog.timer"]="System resource monitoring"
-        ["nftban-metrics-exporter.timer"]="Prometheus metrics"
+        ["nftban-unified-exporter.timer"]="Unified metrics export"
     )
 
     local timer_ok=0

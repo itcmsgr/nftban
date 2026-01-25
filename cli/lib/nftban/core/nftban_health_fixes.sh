@@ -24,7 +24,7 @@
 # meta:inventory.binaries="systemctl,chown,chmod,mkdir"
 # meta:inventory.env_vars="NFTBAN_DATA_DIR,NFTBAN_CONFIG_DIR,NFTBAN_METRICS_ENABLED,NFTBAN_METRICS_BACKEND"
 # meta:inventory.config_files="/etc/nftban/nftban.conf"
-# meta:inventory.systemd_units="nftban-health.timer,nftban-metrics-exporter.timer,prometheus.service,victoriametrics.service"
+# meta:inventory.systemd_units="nftban-health.timer,nftban-unified-exporter.timer,prometheus.service"
 # meta:inventory.network=""
 # meta:inventory.privileges="root"
 #
@@ -370,7 +370,7 @@ nftban_health_fix_services() {
     local timers=(
         "nftban-health.timer"
         "nftban-maintenance.timer"
-        "nftban-metrics-exporter.timer"
+        "nftban-unified-exporter.timer"
         "nftban-watchdog.timer"
         "nftban-queue.timer"
         "nftban-core-geoip.timer"
@@ -425,10 +425,10 @@ nftban_health_fix_metrics() {
     fi
 
     # Fix 1: Ensure metrics exporter timer is running
-    if systemctl is-enabled nftban-metrics-exporter.timer &>/dev/null; then
-        if ! systemctl is-active nftban-metrics-exporter.timer &>/dev/null; then
-            systemctl start nftban-metrics-exporter.timer 2>/dev/null || true
-            echo "  ✓ Started metrics exporter timer"
+    if systemctl is-enabled nftban-unified-exporter.timer &>/dev/null; then
+        if ! systemctl is-active nftban-unified-exporter.timer &>/dev/null; then
+            systemctl start nftban-unified-exporter.timer 2>/dev/null || true
+            echo "  ✓ Started unified exporter timer"
             fixed=$((fixed + 1))
         fi
     fi
