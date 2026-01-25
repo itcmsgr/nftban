@@ -2,6 +2,18 @@
 // NFTBan v1.0 - Stats Cleanup
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="stats_cleanup"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-01-01"
+// meta:description="Retention enforcement for history, profile, and report files"
+// meta:inventory.files="/var/lib/nftban/stats/"
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 //
 // Retention enforcement for history and profile files.
 // Enforces BOTH retention days AND max count as HARD LIMITS.
@@ -171,4 +183,55 @@ func GetProfileCount(profileDir string) int {
 // CanCreateProfile checks if we can create a new profile without exceeding limits
 func CanCreateProfile(profileDir string, maxCount int) bool {
 	return GetProfileCount(profileDir) < maxCount
+}
+
+// CleanupReports removes report files older than retention days.
+// Handles both daily/ subdirectory and root report files.
+func CleanupReports(reportsDir string, retentionDays int) error {
+	if retentionDays < 1 {
+		retentionDays = 1
+	}
+
+	dailyDir := filepath.Join(reportsDir, "daily")
+
+	// Clean daily reports
+	files, err := os.ReadDir(dailyDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil
+		}
+		return err
+	}
+
+	cutoffTime := time.Now().AddDate(0, 0, -retentionDays)
+	deleted := 0
+
+	for _, f := range files {
+		if f.IsDir() {
+			continue
+		}
+		if !strings.HasSuffix(f.Name(), ".json") {
+			continue
+		}
+
+		filePath := filepath.Join(dailyDir, f.Name())
+		info, err := f.Info()
+		if err != nil {
+			continue
+		}
+
+		if info.ModTime().Before(cutoffTime) {
+			if err := os.Remove(filePath); err != nil {
+				log.Printf("stats: failed to remove old report %s: %v", filePath, err)
+			} else {
+				deleted++
+			}
+		}
+	}
+
+	if deleted > 0 {
+		log.Printf("stats: cleaned up %d old report files", deleted)
+	}
+
+	return nil
 }

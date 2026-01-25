@@ -68,6 +68,11 @@ type Config struct {
 	StatsLog    string // Stats log file
 	AlertsLog   string // Alerts log file
 	ProfileLog  string // Profile log file
+
+	// Reports
+	ReportsEnabled     bool   // Enable report generation (default: true)
+	ReportsDir         string // Reports output directory
+	ReportsRetentionDays int  // Days to keep daily reports (default: 14, max: 28)
 }
 
 // DefaultConfig returns configuration with safe defaults
@@ -100,6 +105,10 @@ func DefaultConfig() *Config {
 		StatsLog:   "/var/log/nftban/watchdog/stats.log",
 		AlertsLog:  "/var/log/nftban/watchdog/alerts.log",
 		ProfileLog: "/var/log/nftban/watchdog/profiles.log",
+
+		ReportsEnabled:       true,
+		ReportsDir:           "/var/lib/nftban/reports",
+		ReportsRetentionDays: DefaultRetentionWeeks * 7,
 	}
 }
 
@@ -131,6 +140,14 @@ func (c *Config) Validate() {
 	}
 	if c.ProfileMaxCount < 1 {
 		c.ProfileMaxCount = 1
+	}
+
+	// Reports retention bounds (same as history - 4 weeks max)
+	if c.ReportsRetentionDays < minDays {
+		c.ReportsRetentionDays = minDays
+	}
+	if c.ReportsRetentionDays > maxDays {
+		c.ReportsRetentionDays = maxDays
 	}
 
 	// Ensure positive thresholds
