@@ -39,6 +39,7 @@ var (
 // Session represents an authenticated user session
 type Session struct {
 	Token     string    `json:"token"`
+	CSRFToken string    `json:"csrf_token"`
 	Username  string    `json:"username"`
 	Groups    []string  `json:"groups"`
 	ClientIP  string    `json:"client_ip,omitempty"`
@@ -66,6 +67,11 @@ func (s *Session) HasGroup(group string) bool {
 // Users must be in nftban-cli group for CLI/GUI access and admin privileges
 func (s *Session) IsAdmin() bool {
 	return s.HasGroup("nftban-cli")
+}
+
+// ValidateCSRF checks if the provided CSRF token matches the session's token
+func (s *Session) ValidateCSRF(token string) bool {
+	return len(token) == 64 && token == s.CSRFToken
 }
 
 // Store is a simple in-memory session store
@@ -102,8 +108,14 @@ func (s *Store) Create(username string, groups []string, clientIP string) (*Sess
 		return nil, err
 	}
 
+	csrfToken, err := GenerateToken()
+	if err != nil {
+		return nil, err
+	}
+
 	session := &Session{
 		Token:     token,
+		CSRFToken: csrfToken,
 		Username:  username,
 		Groups:    groups,
 		ClientIP:  clientIP,

@@ -225,7 +225,7 @@ output_terminal() {
 
     check_service_clean "nftables" "nftables.service"
     check_service_clean "suricata" "suricata.service"
-    check_service_clean "nftban-api" "${NFTBAN_SERVICE_UI:-nftban-ui.service}"
+    check_service_clean "nftban-ui" "${NFTBAN_SERVICE_UI:-nftban-ui.service}"
     check_service_clean "nftban-suricata" "${NFTBAN_SERVICE_SURICATA:-nftban-suricata.service}"
     check_service_clean "login-monitor" "${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
     check_service_clean "metrics-exporter" "${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
@@ -1081,7 +1081,7 @@ check_service_detailed() {
 
         # Get listening port for certain services
         case "$name" in
-            nftban-api)
+            nftban-ui)
                 port_info=$(ss -tlnp 2>/dev/null | grep "pid=$pid" | awk '{print $4}' | grep -oP ':\d+$' | tr '\n' ',' | sed 's/,$//' || echo "")
                 ;;
             metrics-exporter)
