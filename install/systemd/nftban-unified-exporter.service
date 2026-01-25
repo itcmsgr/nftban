@@ -72,6 +72,7 @@ RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
 
 # Filesystem access
 ReadWritePaths=/var/lib/node_exporter/textfile_collector
+ReadWritePaths=/var/cache/nftban
 ReadWritePaths=/run/nftban
 ReadWritePaths=/var/log/nftban
 
