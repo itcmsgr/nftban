@@ -425,7 +425,8 @@ func (c *Collector) archiveDaily(date string) {
 // runCleanup enforces retention limits
 func (c *Collector) runCleanup() {
 	// Cleanup history files
-	if err := CleanupHistory(c.config.HistoryDir, c.config.HistoryRetentionDays, 365); err != nil {
+	// Note: c.config.HistoryRetentionDays is already capped at 28 days (4 weeks) by Validate()
+	if err := CleanupHistory(c.config.HistoryDir, c.config.HistoryRetentionDays, MaxRetentionWeeks*7); err != nil {
 		log.Printf("stats: history cleanup error: %v", err)
 	}
 

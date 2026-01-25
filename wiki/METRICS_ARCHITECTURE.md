@@ -1,16 +1,44 @@
 # NFTBan Metrics Architecture
 
-**Version:** 1.0.0
+**Version:** 1.1.0
 **Status:** STABLE
-**Last Updated:** 2026-01-24
+**Last Updated:** 2026-01-25
 
 ---
 
 ## Design Philosophy
 
-NFTBan is a **metrics producer**, not a monitoring product.
+**NFTBan is a metrics producer, not a monitoring product.**
 
-We expose a stable OpenMetrics schema. Users choose how they ingest, store, and visualize.
+NFTBan exposes metrics in OpenMetrics format. Users choose their own backend for ingestion, storage, and visualization.
+
+### What This Means
+
+| NFTBan Provides | User Chooses |
+|-----------------|--------------|
+| OpenMetrics endpoint (`/metrics`) | Scraping agent (Prometheus, vmagent, Grafana Agent) |
+| Textfile collector output (`.prom`) | Storage backend (Prometheus TSDB, VictoriaMetrics, Mimir) |
+| Stable metric naming contract | Visualization (Grafana, custom dashboards) |
+| Bounded label cardinality | Alerting rules and thresholds |
+| Reference dashboard JSON | Long-term retention (external TSDB) |
+
+### What NFTBan Does NOT Provide
+
+- **No bundled TSDB** - We don't ship Prometheus or VictoriaMetrics
+- **No bundled agent** - User installs their preferred scraper
+- **No analytics** - NFTBan is a firewall, not a BI tool
+- **No managed dashboards** - We provide templates, user maintains them
+- **No unlimited retention** - Local storage capped at 4 weeks
+
+### Local Retention Policy
+
+| Setting | Value |
+|---------|-------|
+| Options | 1, 2, 3, or 4 weeks |
+| Default | 2 weeks |
+| Hard maximum | 4 weeks (not overridable) |
+
+Long-term storage beyond 4 weeks is the user's responsibility via their external TSDB.
 
 ---
 
@@ -69,26 +97,28 @@ We expose a stable OpenMetrics schema. Users choose how they ingest, store, and 
 
 ## What NFTBan Provides
 
-### Supported
+### Provided
 
-| Capability | Status |
-|------------|--------|
-| OpenMetrics/Prometheus format | Full |
-| Zabbix ingestion (trapper items) | Full |
-| Stable metric naming | Guaranteed |
-| Controlled label cardinality | Enforced |
-| Reference Grafana dashboard | Provided |
-| PromQL examples | Provided |
-| Alert rule examples | Provided |
+| Capability | Status | Notes |
+|------------|--------|-------|
+| OpenMetrics/Prometheus format | Full | Native `/metrics` endpoint |
+| Zabbix trapper items | Full | Optional push via `zabbix_sender` |
+| Stable metric naming | Guaranteed | Semantic versioning for changes |
+| Bounded label cardinality | Enforced | No unbounded labels |
+| Reference Grafana dashboard | Provided | JSON template for import |
+| PromQL examples | Provided | Copy-paste queries |
+| Alert rule examples | Provided | YAML templates |
 
-### Out of Scope (By Design)
+### Not Provided (By Design)
 
-| Capability | Status |
-|------------|--------|
-| Maintaining TSDB-specific configs | Not provided |
-| Opinionated visualization | Not provided |
-| Agent recommendations | User choice |
-| Storage recommendations | User choice |
+| Capability | Status | Why |
+|------------|--------|-----|
+| Bundled TSDB | Not provided | User chooses backend |
+| Bundled scraping agent | Not provided | User chooses agent |
+| Long-term storage (>4 weeks) | Not provided | External TSDB responsibility |
+| Managed dashboards | Not provided | User maintains their own |
+| TSDB-specific tuning | Not provided | Backend-dependent |
+| Analytics or BI | Not provided | NFTBan is a firewall |
 
 ---
 
@@ -192,8 +222,22 @@ scrape_configs:
 
 ## Summary
 
-NFTBan produces correct, stable metrics in OpenMetrics format.
+**NFTBan produces metrics. You consume them.**
 
-The ecosystem consumes them.
+| What | How |
+|------|-----|
+| Format | OpenMetrics (Prometheus compatible) |
+| Endpoint | `/metrics` on port 8080 (optional) |
+| Textfile | `/var/lib/node_exporter/textfile_collector/nftban.prom` (optional) |
+| Zabbix | Push via `zabbix_sender` (optional) |
+| Local retention | 1-4 weeks (default: 2, max: 4) |
+| Long-term | Your TSDB (Prometheus, VictoriaMetrics, Mimir, etc.) |
 
-**That is exactly where we want to be.**
+### Integration Pattern
+
+```
+NFTBan ──► OpenMetrics ──► Your Scraper ──► Your TSDB ──► Your Dashboard
+         (producer)      (your choice)    (your choice)   (your choice)
+```
+
+**NFTBan is not a monitoring product. It's a secure firewall that happens to expose good metrics.**

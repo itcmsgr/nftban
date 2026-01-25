@@ -2,6 +2,18 @@
 // NFTBan v1.0 - Stats Configuration
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="stats_config"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-01-01"
+// meta:description="Configuration for watchdog stats collection"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 //
 // Configuration for watchdog stats collection.
 // Safe defaults ensure backwards compatibility when config keys are missing.
@@ -10,6 +22,13 @@
 package stats
 
 import "time"
+
+// Retention constants - hard limits per design agreement
+const (
+	MinRetentionWeeks     = 1
+	DefaultRetentionWeeks = 2
+	MaxRetentionWeeks     = 4 // Hard maximum, not overridable
+)
 
 // Config holds stats collection configuration
 // All fields have safe defaults for backwards compatibility
@@ -26,8 +45,10 @@ type Config struct {
 	HistoryDir  string // history/ directory
 	ProfileDir  string // profiles/ directory
 
-	// Retention limits (HARD LIMITS)
-	HistoryRetentionDays  int // Days to keep history (default: 30)
+	// Retention limits
+	// Local retention is capped at 4 weeks maximum (28 days)
+	// Long-term storage is user's responsibility via external TSDB
+	HistoryRetentionDays  int // Days to keep history (default: 14, max: 28)
 	ProfileRetentionDays  int // Days to keep profiles (default: 7)
 	ProfileMaxCount       int // Max profiles to keep (default: 10)
 
@@ -61,7 +82,8 @@ func DefaultConfig() *Config {
 		HistoryDir:  "/var/lib/nftban/stats/history",
 		ProfileDir:  "/var/lib/nftban/stats/profiles",
 
-		HistoryRetentionDays: 30,
+		// Default: 2 weeks (14 days), Max: 4 weeks (28 days)
+		HistoryRetentionDays: DefaultRetentionWeeks * 7,
 		ProfileRetentionDays: 7,
 		ProfileMaxCount:      10,
 
@@ -91,10 +113,19 @@ func (c *Config) Validate() {
 		c.IOInterval = 60 * time.Second
 	}
 
-	// Ensure positive retention
-	if c.HistoryRetentionDays < 1 {
-		c.HistoryRetentionDays = 1
+	// Enforce retention bounds
+	// Minimum: 1 week (7 days)
+	minDays := MinRetentionWeeks * 7
+	if c.HistoryRetentionDays < minDays {
+		c.HistoryRetentionDays = minDays
 	}
+
+	// Maximum: 4 weeks (28 days) - HARD LIMIT, not overridable
+	maxDays := MaxRetentionWeeks * 7
+	if c.HistoryRetentionDays > maxDays {
+		c.HistoryRetentionDays = maxDays
+	}
+
 	if c.ProfileRetentionDays < 1 {
 		c.ProfileRetentionDays = 1
 	}
