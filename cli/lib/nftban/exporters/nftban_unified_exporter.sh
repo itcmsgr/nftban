@@ -86,7 +86,7 @@ readonly SCRIPT_VERSION="1.0.0"
 if [[ -z "${NFTBAN_EXPORT_PROMETHEUS:-}" ]]; then
     if [[ -d "/var/lib/node_exporter/textfile_collector" ]]; then
         NFTBAN_EXPORT_PROMETHEUS="true"
-        log_info "Auto-enabled Prometheus export (node_exporter detected)"
+        # Note: log_info not available yet, logged later in main()
     else
         NFTBAN_EXPORT_PROMETHEUS="false"
     fi
@@ -1106,6 +1106,13 @@ main() {
     collection_groups=$(determine_collection_groups "$run_count")
 
     log_info "NFTBan Unified Exporter v${SCRIPT_VERSION} starting (run #${run_count}, groups: ${collection_groups})"
+
+    # Log auto-detection status on first run
+    if [[ "$run_count" -eq 1 ]]; then
+        if [[ "${NFTBAN_EXPORT_PROMETHEUS}" == "true" ]] && [[ -d "/var/lib/node_exporter/textfile_collector" ]]; then
+            log_info "Prometheus export auto-enabled (node_exporter detected)"
+        fi
+    fi
 
     # Step 1: Collect metrics based on collection groups (smart collection)
     collect_all_metrics "$collection_groups"
