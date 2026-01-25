@@ -515,6 +515,120 @@ collect_suricata_metrics() {
 EOF
 }
 
+collect_eventbus_metrics() {
+    local events_total=0 events_dropped=0 queue_size=0 handlers=7
+    local ban=0 unban=0 login_fail=0 ddos=0 portscan=0 suricata=0 feed_sync=0
+
+    local stats_file="${NFTBAN_RUN_DIR}/stats.json"
+    local bans_log="${NFTBAN_LOG_DIR}/bans.log"
+
+    # Try daemon stats first
+    if [[ -f "$stats_file" ]]; then
+        events_total=$(jq -r '.eventbus.events_total // 0' "$stats_file" 2>/dev/null || echo "0")
+        events_dropped=$(jq -r '.eventbus.dropped // 0' "$stats_file" 2>/dev/null || echo "0")
+        queue_size=$(jq -r '.eventbus.queue_size // 0' "$stats_file" 2>/dev/null || echo "0")
+    fi
+
+    # Count events by type from bans.log
+    if [[ -f "$bans_log" ]]; then
+        # Format: TIMESTAMP|SOURCE|IP|COUNTRY|ACTION
+        ban=$(grep -c "|BAN$\||BAN|" "$bans_log" 2>/dev/null || echo "0")
+        unban=$(grep -c "|UNBAN$\||UNBAN|" "$bans_log" 2>/dev/null || echo "0")
+        login_fail=$(grep -ci "loginmon\|login\|ssh\|auth" "$bans_log" 2>/dev/null || echo "0")
+        ddos=$(grep -ci "ddos" "$bans_log" 2>/dev/null || echo "0")
+        portscan=$(grep -ci "portscan\|scan" "$bans_log" 2>/dev/null || echo "0")
+        suricata=$(grep -ci "suricata" "$bans_log" 2>/dev/null || echo "0")
+        feed_sync=$(grep -ci "feed" "$bans_log" 2>/dev/null || echo "0")
+
+        # Estimate total if not from stats
+        [[ "$events_total" -eq 0 ]] && events_total=$((ban + unban))
+    fi
+
+    # Count active handlers (modules)
+    handlers=0
+    for module in login portscan ddos feeds geoban suricata watchdog; do
+        if systemctl is-active "nftban-${module}.timer" &>/dev/null 2>&1 || \
+           systemctl is-active "nftban-${module}.service" &>/dev/null 2>&1 || \
+           [[ -f "${NFTBAN_RUN_DIR}/${module}.pid" ]]; then
+            ((handlers++))
+        fi
+    done
+
+    cat <<EOF
+{
+  "eventbus": {
+    "events_total": $events_total,
+    "events_by_type": {
+      "ban": $ban,
+      "unban": $unban,
+      "login_fail": $login_fail,
+      "ddos_detected": $ddos,
+      "portscan_detected": $portscan,
+      "suricata_alert": $suricata,
+      "feed_sync": $feed_sync
+    },
+    "events_dropped": $events_dropped,
+    "queue_size": $queue_size,
+    "handlers_total": $handlers
+  }
+}
+EOF
+}
+
+collect_nftables_perf_metrics() {
+    local apply_latency=0 apply_errors=0 rules_total=0 sets_total=0 commands_total=0
+    local nftban_rules=0 filter_rules=0 nat_rules=0
+    local bl_ipv4=0 bl_ipv6=0 wl_ipv4=0 wl_ipv6=0
+
+    local stats_file="${NFTBAN_RUN_DIR}/stats.json"
+
+    # Get latency/errors from daemon stats
+    if [[ -f "$stats_file" ]]; then
+        apply_latency=$(jq -r '.nftables.apply_latency_ms // 0' "$stats_file" 2>/dev/null || echo "0")
+        apply_errors=$(jq -r '.nftables.apply_errors // 0' "$stats_file" 2>/dev/null || echo "0")
+        commands_total=$(jq -r '.nftables.commands_total // 0' "$stats_file" 2>/dev/null || echo "0")
+    fi
+
+    # Count rules by table using nft
+    if command -v nft &>/dev/null; then
+        # Total rules (approximate - count lines with rule-like content)
+        rules_total=$(nft list ruleset 2>/dev/null | grep -cE "^\s+(accept|drop|reject|counter|jump|goto|return)" || echo "0")
+
+        # Rules in nftban table
+        nftban_rules=$(nft list table inet nftban 2>/dev/null | grep -cE "^\s+(accept|drop|reject|counter|jump|goto|return)" || echo "0")
+
+        # Sets count
+        sets_total=$(nft list sets 2>/dev/null | grep -c "^\\s*set " || echo "0")
+
+        # Set elements - use JSON output for accuracy
+        bl_ipv4=$(nft -j list set inet nftban blacklist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        bl_ipv6=$(nft -j list set inet nftban blacklist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        wl_ipv4=$(nft -j list set inet nftban whitelist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        wl_ipv6=$(nft -j list set inet nftban whitelist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+    fi
+
+    cat <<EOF
+{
+  "nftables_perf": {
+    "apply_latency_ms": $apply_latency,
+    "apply_errors_total": $apply_errors,
+    "rules_total": $rules_total,
+    "rules_by_table": {
+      "nftban": $nftban_rules
+    },
+    "sets_total": $sets_total,
+    "set_elements": {
+      "blacklist_ipv4": $bl_ipv4,
+      "blacklist_ipv6": $bl_ipv6,
+      "whitelist_ipv4": $wl_ipv4,
+      "whitelist_ipv6": $wl_ipv6
+    },
+    "commands_total": $commands_total
+  }
+}
+EOF
+}
+
 collect_nftables_metrics() {
     local sets=0 elements=0 rules=0 packets_ipv4=0 packets_ipv6=0
 
@@ -924,7 +1038,7 @@ EOF
 
 collect_dynamic_metrics() {
     # Collect all dynamic metrics and merge into single JSON
-    local timestamp daemon bans memory health modules module_status feed_health suricata nftables feeds network watchdog geoip kernel
+    local timestamp daemon bans memory health modules module_status feed_health suricata eventbus nftables_perf nftables feeds network watchdog geoip kernel
     timestamp=$(date +%s)
 
     daemon=$(collect_daemon_metrics)
@@ -935,6 +1049,8 @@ collect_dynamic_metrics() {
     module_status=$(collect_module_status_metrics)
     feed_health=$(collect_feed_health_metrics)
     suricata=$(collect_suricata_metrics)
+    eventbus=$(collect_eventbus_metrics)
+    nftables_perf=$(collect_nftables_perf_metrics)
     nftables=$(collect_nftables_metrics)
     feeds=$(collect_feeds_metrics)
     network=$(collect_network_metrics)
@@ -943,7 +1059,7 @@ collect_dynamic_metrics() {
     kernel=$(collect_kernel_metrics)
 
     # Merge all JSON objects
-    echo "$daemon $bans $memory $health $modules $module_status $feed_health $suricata $nftables $feeds $network $watchdog $geoip $kernel" | \
+    echo "$daemon $bans $memory $health $modules $module_status $feed_health $suricata $eventbus $nftables_perf $nftables $feeds $network $watchdog $geoip $kernel" | \
         jq -s 'add | . + {"timestamp": '"$timestamp"', "type": "dynamic"}'
 }
 
