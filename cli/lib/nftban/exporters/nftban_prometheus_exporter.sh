@@ -69,6 +69,7 @@ readonly NFTBAN_LOG_DIR="${NFTBAN_LOG_DIR}"
 readonly TEMP_DIR="${NFTBAN_RUN_DIR}"
 readonly STATE_FILE="${TEMP_DIR}/bandwidth_state.dat"
 readonly PEAK_FILE="${TEMP_DIR}/bandwidth_peaks.dat"
+readonly COMBINED_FILE="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/metrics/combined.json"
 
 # Bandwidth tracking configuration
 readonly PEAK_WINDOW=300  # Peak tracking window (5 minutes)
@@ -1030,6 +1031,68 @@ collect_metrics() {
     done <<< "$nft_counters"
 
     echo "" >> "$TEMP_FILE"
+
+    # -------------------------------------------------------------------------
+    # Phase 1 Metrics from Combined JSON (Kernel, Module Status, Feed Health)
+    # -------------------------------------------------------------------------
+
+    if [[ -f "$COMBINED_FILE" ]] && command -v jq &>/dev/null; then
+        # Kernel metrics
+        echo "# HELP nftban_conntrack_entries Current conntrack table entries" >> "$TEMP_FILE"
+        echo "# TYPE nftban_conntrack_entries gauge" >> "$TEMP_FILE"
+        echo "nftban_conntrack_entries $(jq -r '.kernel.conntrack_entries // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_conntrack_max Maximum conntrack table size" >> "$TEMP_FILE"
+        echo "# TYPE nftban_conntrack_max gauge" >> "$TEMP_FILE"
+        echo "nftban_conntrack_max $(jq -r '.kernel.conntrack_max // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_conntrack_utilization Conntrack utilization percentage" >> "$TEMP_FILE"
+        echo "# TYPE nftban_conntrack_utilization gauge" >> "$TEMP_FILE"
+        echo "nftban_conntrack_utilization $(jq -r '.kernel.conntrack_utilization // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_softnet_drops_total Kernel softnet packet drops" >> "$TEMP_FILE"
+        echo "# TYPE nftban_softnet_drops_total counter" >> "$TEMP_FILE"
+        echo "nftban_softnet_drops_total $(jq -r '.kernel.softnet_drops // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_softnet_backlog_total Kernel softnet backlog overflow" >> "$TEMP_FILE"
+        echo "# TYPE nftban_softnet_backlog_total counter" >> "$TEMP_FILE"
+        echo "nftban_softnet_backlog_total $(jq -r '.kernel.softnet_backlog // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        # Module status metrics (1=up, 0=down)
+        echo "# HELP nftban_module_up Module running status" >> "$TEMP_FILE"
+        echo "# TYPE nftban_module_up gauge" >> "$TEMP_FILE"
+        for module in suricata loginmon portscan ddos feeds geoban watchdog; do
+            val=$(jq -r ".module_status.${module} // 0" "$COMBINED_FILE")
+            echo "nftban_module_up{module=\"${module}\"} ${val}" >> "$TEMP_FILE"
+        done
+        echo "" >> "$TEMP_FILE"
+
+        # Feed health metrics
+        echo "# HELP nftban_feeds_total Total configured feeds" >> "$TEMP_FILE"
+        echo "# TYPE nftban_feeds_total gauge" >> "$TEMP_FILE"
+        echo "nftban_feeds_total $(jq -r '.feed_health.total_feeds // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_feeds_active_total Active feeds count" >> "$TEMP_FILE"
+        echo "# TYPE nftban_feeds_active_total gauge" >> "$TEMP_FILE"
+        echo "nftban_feeds_active_total $(jq -r '.feed_health.active_feeds // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_feeds_stale Stale feeds count" >> "$TEMP_FILE"
+        echo "# TYPE nftban_feeds_stale gauge" >> "$TEMP_FILE"
+        echo "nftban_feeds_stale $(jq -r '.feed_health.stale_feeds // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+
+        echo "# HELP nftban_feeds_sync_errors_total Feed sync errors in last 24h" >> "$TEMP_FILE"
+        echo "# TYPE nftban_feeds_sync_errors_total counter" >> "$TEMP_FILE"
+        echo "nftban_feeds_sync_errors_total $(jq -r '.feed_health.sync_errors_24h // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
+        echo "" >> "$TEMP_FILE"
+    fi
 
     # -------------------------------------------------------------------------
     # Performance Metrics
