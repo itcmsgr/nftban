@@ -67,8 +67,8 @@ RestrictSUIDSGID=true
 LockPersonality=true
 RestrictNamespaces=true
 
-# Network access for Zabbix/ES/Kafka exports
-RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+# Network access for Zabbix/ES/Kafka exports + AF_NETLINK for nft queries
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
 
 # Filesystem access
 ReadWritePaths=/var/lib/node_exporter/textfile_collector
