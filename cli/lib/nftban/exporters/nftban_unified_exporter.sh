@@ -293,18 +293,25 @@ should_collect_component() {
 # =============================================================================
 
 # Get interface statistics from /proc/net/dev
+# /proc/net/dev columns (after interface name):
+# RX: bytes packets errs drop fifo frame compressed multicast
+# TX: bytes packets errs drop fifo colls carrier compressed
 get_interface_stats() {
     local interface=$1
     local stats
     stats=$(grep -E "^\\s*${interface}:" /proc/net/dev 2>/dev/null || echo "")
     [[ -z "$stats" ]] && return 1
     stats=$(echo "$stats" | sed 's/^[^:]*://' | tr -s ' ')
-    local rx_bytes rx_packets tx_bytes tx_packets
+    local rx_bytes rx_packets rx_errs rx_drop tx_bytes tx_packets tx_errs tx_drop
     rx_bytes=$(echo "$stats" | awk '{print $1}')
     rx_packets=$(echo "$stats" | awk '{print $2}')
+    rx_errs=$(echo "$stats" | awk '{print $3}')
+    rx_drop=$(echo "$stats" | awk '{print $4}')
     tx_bytes=$(echo "$stats" | awk '{print $9}')
     tx_packets=$(echo "$stats" | awk '{print $10}')
-    echo "${rx_bytes} ${rx_packets} ${tx_bytes} ${tx_packets}"
+    tx_errs=$(echo "$stats" | awk '{print $11}')
+    tx_drop=$(echo "$stats" | awk '{print $12}')
+    echo "${rx_bytes} ${rx_packets} ${rx_errs} ${rx_drop} ${tx_bytes} ${tx_packets} ${tx_errs} ${tx_drop}"
 }
 
 # Calculate bandwidth in Mbps from byte deltas
@@ -375,6 +382,10 @@ collect_all_metrics() {
     # Network metrics (declared at function level for JSON cache access)
     local total_rx_mbps=0 total_tx_mbps=0 peak_rx=0 peak_tx=0
     local conn_active=0 conn_established=0 conn_time_wait=0
+    # Network totals for Zabbix compatibility
+    local total_rx_bytes=0 total_tx_bytes=0 total_rx_packets=0 total_tx_packets=0
+    local total_rx_errors=0 total_tx_errors=0 total_rx_dropped=0 total_tx_dropped=0
+    local total_errors=0 total_dropped=0 bandwidth_in_bps=0 bandwidth_out_bps=0
     # Kernel metrics (declared at function level for JSON cache access)
     local conntrack_entries=0 conntrack_max=0 conntrack_utilization=0
     local softnet_drops_total=0 softnet_drops_rate=0
@@ -570,6 +581,7 @@ collect_all_metrics() {
 
         # --- Memory Metrics ---
         # Variables declared at function level for JSON cache access
+        local goroutines=0
         if [[ -n "$pid" ]] && [[ "$pid" != "0" ]] && [[ -d "/proc/$pid" ]]; then
             rss=$(awk '/VmRSS/ {print $2 * 1024}' "/proc/$pid/status" 2>/dev/null || echo "0")
             fds=$(ls -1 "/proc/$pid/fd" 2>/dev/null | wc -l || echo "0")
@@ -578,6 +590,16 @@ collect_all_metrics() {
             metrics+="nftban_memory_rss_bytes $rss $timestamp\n"
             metrics+="nftban_open_fds $fds $timestamp\n"
             metrics+="nftban_threads $threads $timestamp\n"
+
+            # Goroutines (for Go-based daemon)
+            # Try to read from daemon stats file first, then estimate from threads
+            local daemon_stats="${NFTBAN_RUN_DIR}/nftband.stats"
+            if [[ -f "$daemon_stats" ]]; then
+                goroutines=$(jq -r '.goroutines // 0' "$daemon_stats" 2>/dev/null || echo "0")
+            fi
+            # Fallback: use thread count as approximation if goroutines not available
+            [[ "$goroutines" == "0" || -z "$goroutines" ]] && goroutines=$threads
+            metrics+="nftban_goroutines $goroutines $timestamp\n"
         fi
 
         # --- Event Bus Metrics (Phase 3) ---
@@ -937,12 +959,180 @@ collect_all_metrics() {
         local load1 load5 load15 cpu_cores
         if [[ -f /proc/loadavg ]]; then
             read -r load1 load5 load15 _ < /proc/loadavg
-            metrics+="nftban_server_load1 $load1 $timestamp\n"
-            metrics+="nftban_server_load5 $load5 $timestamp\n"
-            metrics+="nftban_server_load15 $load15 $timestamp\n"
+            metrics+="nftban.server.load1 $load1 $timestamp\n"
+            metrics+="nftban.server.load5 $load5 $timestamp\n"
+            metrics+="nftban.server.load15 $load15 $timestamp\n"
         fi
         cpu_cores=$(nproc 2>/dev/null || echo "1")
-        metrics+="nftban_server_cpu_cores $cpu_cores $timestamp\n"
+        metrics+="nftban.server.cpu.cores $cpu_cores $timestamp\n"
+
+        # --- Server Inventory Metrics (for Zabbix host inventory auto-population) ---
+        # Hostname and FQDN
+        local server_hostname server_fqdn
+        server_hostname=$(hostname -s 2>/dev/null || hostname 2>/dev/null || echo "unknown")
+        server_fqdn=$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo "unknown")
+        metrics+="nftban_server_hostname_info{hostname=\"$server_hostname\"} 1 $timestamp\n"
+        metrics+="nftban_server_fqdn_info{fqdn=\"$server_fqdn\"} 1 $timestamp\n"
+
+        # OS information from /etc/os-release
+        local server_os="" server_os_release="" server_kernel="" server_arch=""
+        if [[ -f /etc/os-release ]]; then
+            # PRETTY_NAME contains full name like "Fedora Linux 42 (Server Edition)"
+            server_os=$(grep -E "^PRETTY_NAME=" /etc/os-release 2>/dev/null | cut -d'"' -f2 || echo "")
+            # NAME contains just "Fedora Linux"
+            server_os_release=$(grep -E "^NAME=" /etc/os-release 2>/dev/null | cut -d'"' -f2 || echo "")
+        fi
+        [[ -z "$server_os" ]] && server_os=$(uname -o 2>/dev/null || echo "Linux")
+        [[ -z "$server_os_release" ]] && server_os_release=$(uname -o 2>/dev/null || echo "Linux")
+        server_kernel=$(uname -r 2>/dev/null || echo "unknown")
+        server_arch=$(uname -m 2>/dev/null || echo "unknown")
+        metrics+="nftban_server_os_info{os=\"$server_os\"} 1 $timestamp\n"
+        metrics+="nftban_server_os_release_info{release=\"$server_os_release\"} 1 $timestamp\n"
+        metrics+="nftban_server_kernel_info{kernel=\"$server_kernel\"} 1 $timestamp\n"
+        metrics+="nftban_server_arch_info{arch=\"$server_arch\"} 1 $timestamp\n"
+
+        # CPU model name
+        local server_cpu_model=""
+        if [[ -f /proc/cpuinfo ]]; then
+            server_cpu_model=$(grep -m1 "model name" /proc/cpuinfo 2>/dev/null | cut -d':' -f2 | sed 's/^[ \t]*//' || echo "")
+        fi
+        [[ -z "$server_cpu_model" ]] && server_cpu_model=$(uname -p 2>/dev/null || echo "unknown")
+        metrics+="nftban_server_cpu_model_info{model=\"$server_cpu_model\"} 1 $timestamp\n"
+
+        # Server type detection (physical, vm, container)
+        local server_type="physical"
+        if [[ -f /.dockerenv ]] || grep -q 'docker\|lxc\|containerd' /proc/1/cgroup 2>/dev/null; then
+            server_type="container"
+        elif [[ -d /proc/vz ]] || grep -qiE 'hypervisor|vmware|virtualbox|kvm|qemu|xen|microsoft' /proc/cpuinfo 2>/dev/null; then
+            server_type="vm"
+        elif command -v systemd-detect-virt &>/dev/null; then
+            local virt
+            virt=$(systemd-detect-virt 2>/dev/null || echo "none")
+            [[ "$virt" != "none" ]] && server_type="vm"
+        fi
+        metrics+="nftban_server_type_info{type=\"$server_type\"} 1 $timestamp\n"
+
+        # Hardware vendor and model (from DMI if available)
+        local server_vendor="" server_model="" server_serial=""
+        if [[ -f /sys/class/dmi/id/sys_vendor ]]; then
+            server_vendor=$(cat /sys/class/dmi/id/sys_vendor 2>/dev/null || echo "")
+        fi
+        if [[ -f /sys/class/dmi/id/product_name ]]; then
+            server_model=$(cat /sys/class/dmi/id/product_name 2>/dev/null || echo "")
+        fi
+        if [[ -f /sys/class/dmi/id/product_serial ]]; then
+            server_serial=$(cat /sys/class/dmi/id/product_serial 2>/dev/null || echo "")
+        fi
+        [[ -z "$server_vendor" ]] && server_vendor="Unknown"
+        [[ -z "$server_model" ]] && server_model="Unknown"
+        [[ -z "$server_serial" ]] && server_serial="N/A"
+        metrics+="nftban_server_vendor_info{vendor=\"$server_vendor\"} 1 $timestamp\n"
+        metrics+="nftban_server_model_info{model=\"$server_model\"} 1 $timestamp\n"
+        metrics+="nftban_server_serial_info{serial=\"$server_serial\"} 1 $timestamp\n"
+
+        # Network information (primary IP, MAC, subnet mask)
+        local server_primary_ip="" server_mac="" server_subnet_mask="" server_networks=""
+        # Get primary interface (default route)
+        local primary_iface
+        primary_iface=$(ip route 2>/dev/null | awk '/^default/ {print $5; exit}' || echo "")
+        if [[ -n "$primary_iface" ]]; then
+            # Primary IP
+            server_primary_ip=$(ip -4 addr show "$primary_iface" 2>/dev/null | awk '/inet / {print $2}' | cut -d'/' -f1 | head -1 || echo "")
+            # Subnet mask (CIDR to dotted decimal)
+            local cidr
+            cidr=$(ip -4 addr show "$primary_iface" 2>/dev/null | awk '/inet / {print $2}' | cut -d'/' -f2 | head -1 || echo "24")
+            case "$cidr" in
+                8)  server_subnet_mask="255.0.0.0" ;;
+                16) server_subnet_mask="255.255.0.0" ;;
+                24) server_subnet_mask="255.255.255.0" ;;
+                32) server_subnet_mask="255.255.255.255" ;;
+                *)  server_subnet_mask="255.255.255.0" ;;  # Default fallback
+            esac
+            # MAC address
+            server_mac=$(ip link show "$primary_iface" 2>/dev/null | awk '/link\/ether/ {print $2}' || echo "")
+        fi
+        [[ -z "$server_primary_ip" ]] && server_primary_ip="127.0.0.1"
+        [[ -z "$server_mac" ]] && server_mac="00:00:00:00:00:00"
+
+        # Collect all network interfaces with IPs
+        server_networks=$(ip -4 addr 2>/dev/null | awk '/inet / {gsub(/\/.*/, "", $2); printf "%s:%s ", $NF, $2}' | sed 's/ $//' || echo "")
+        [[ -z "$server_networks" ]] && server_networks="lo:127.0.0.1"
+
+        metrics+="nftban_server_primary_ip_info{ip=\"$server_primary_ip\"} 1 $timestamp\n"
+        metrics+="nftban_server_mac_info{mac=\"$server_mac\"} 1 $timestamp\n"
+        metrics+="nftban_server_subnet_mask_info{mask=\"$server_subnet_mask\"} 1 $timestamp\n"
+        metrics+="nftban_server_networks_info{networks=\"$server_networks\"} 1 $timestamp\n"
+
+        # Location (from config or empty)
+        local server_location="${NFTBAN_SERVER_LOCATION:-}"
+        [[ -z "$server_location" ]] && server_location="Not configured"
+        metrics+="nftban_server_location_info{location=\"$server_location\"} 1 $timestamp\n"
+
+        # NFTBan version
+        local nftban_version
+        nftban_version=$(cat "${NFTBAN_LIB_DIR}/VERSION" 2>/dev/null | head -1 || echo "unknown")
+        metrics+="nftban_server_nftban_version_info{version=\"$nftban_version\"} 1 $timestamp\n"
+
+        # --- Server Memory Metrics ---
+        local memory_total=0 memory_available=0 memory_used_pct=0
+        if [[ -f /proc/meminfo ]]; then
+            memory_total=$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+            memory_available=$(awk '/^MemAvailable:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+            if [[ $memory_total -gt 0 ]]; then
+                local memory_used=$((memory_total - memory_available))
+                memory_used_pct=$(awk -v used="$memory_used" -v total="$memory_total" 'BEGIN {printf "%.2f", (used/total)*100}')
+            fi
+        fi
+        # Memory metrics - use dots in name to prevent underscore conversion issues
+        # Zabbix expects: nftban.server.memory_total (mixed dots and underscores)
+        metrics+="nftban.server.memory_total $memory_total $timestamp\n"
+        metrics+="nftban.server.memory_available $memory_available $timestamp\n"
+        metrics+="nftban.server.memory_used_pct $memory_used_pct $timestamp\n"
+
+        # --- Server Uptime ---
+        local server_uptime=0
+        if [[ -f /proc/uptime ]]; then
+            server_uptime=$(awk '{printf "%.0f", $1}' /proc/uptime 2>/dev/null || echo "0")
+        fi
+        metrics+="nftban.server.uptime $server_uptime $timestamp\n"
+
+        # --- Server Disk Metrics (root filesystem) ---
+        local disk_total=0 disk_used=0 disk_used_pct=0
+        if command -v df &>/dev/null; then
+            local df_output
+            df_output=$(df -B1 / 2>/dev/null | tail -1 || echo "")
+            if [[ -n "$df_output" ]]; then
+                disk_total=$(echo "$df_output" | awk '{print $2}')
+                disk_used=$(echo "$df_output" | awk '{print $3}')
+                disk_used_pct=$(echo "$df_output" | awk '{gsub(/%/, "", $5); print $5}')
+            fi
+        fi
+        metrics+="nftban.server.disk_total $disk_total $timestamp\n"
+        metrics+="nftban.server.disk_used $disk_used $timestamp\n"
+        metrics+="nftban.server.disk_used_pct $disk_used_pct $timestamp\n"
+
+        # --- Zabbix-compatible String Metrics ---
+        # Zabbix trapper items expect the actual string value, not labels
+        # These are formatted as: metric_name |STRING|value timestamp
+        # The export_zabbix function handles the |STRING| marker specially
+        # Using dot notation to match Zabbix template keys exactly
+        metrics+="nftban.server.hostname |STRING|$server_hostname $timestamp\n"
+        metrics+="nftban.server.fqdn |STRING|$server_fqdn $timestamp\n"
+        metrics+="nftban.server.os |STRING|$server_os $timestamp\n"
+        metrics+="nftban.server.os_release |STRING|$server_os_release $timestamp\n"
+        metrics+="nftban.server.kernel |STRING|$server_kernel $timestamp\n"
+        metrics+="nftban.server.arch |STRING|$server_arch $timestamp\n"
+        metrics+="nftban.server.cpu_model |STRING|$server_cpu_model $timestamp\n"
+        metrics+="nftban.server.type |STRING|$server_type $timestamp\n"
+        metrics+="nftban.server.vendor |STRING|$server_vendor $timestamp\n"
+        metrics+="nftban.server.model |STRING|$server_model $timestamp\n"
+        metrics+="nftban.server.serial |STRING|$server_serial $timestamp\n"
+        metrics+="nftban.server.primary_ip |STRING|$server_primary_ip $timestamp\n"
+        metrics+="nftban.server.mac_address |STRING|$server_mac $timestamp\n"
+        metrics+="nftban.server.subnet_mask |STRING|$server_subnet_mask $timestamp\n"
+        metrics+="nftban.server.networks |STRING|$server_networks $timestamp\n"
+        metrics+="nftban.server.location |STRING|$server_location $timestamp\n"
+        metrics+="nftban.server.nftban_version |STRING|$nftban_version $timestamp\n"
 
         # --- Kernel Conntrack Metrics (component: kernel) ---
         # Variables declared at function level for JSON cache access
@@ -980,12 +1170,28 @@ collect_all_metrics() {
             [[ "$iface" =~ ^(lo|docker[0-9]*|veth.*|br-.*|virbr.*)$ ]] && continue
             local stats
             stats=$(get_interface_stats "$iface") || continue
-        read -r rx_bytes rx_packets tx_bytes tx_packets <<< "$stats"
+        local rx_bytes rx_packets rx_errs rx_drop tx_bytes tx_packets tx_errs tx_drop
+        read -r rx_bytes rx_packets rx_errs rx_drop tx_bytes tx_packets tx_errs tx_drop <<< "$stats"
 
+        # Per-interface metrics
         metrics+="nftban_network_rx_bytes{interface=\"${iface}\"} $rx_bytes $timestamp\n"
         metrics+="nftban_network_tx_bytes{interface=\"${iface}\"} $tx_bytes $timestamp\n"
         metrics+="nftban_network_rx_packets{interface=\"${iface}\"} $rx_packets $timestamp\n"
         metrics+="nftban_network_tx_packets{interface=\"${iface}\"} $tx_packets $timestamp\n"
+        metrics+="nftban_network_rx_errors{interface=\"${iface}\"} $rx_errs $timestamp\n"
+        metrics+="nftban_network_tx_errors{interface=\"${iface}\"} $tx_errs $timestamp\n"
+        metrics+="nftban_network_rx_dropped{interface=\"${iface}\"} $rx_drop $timestamp\n"
+        metrics+="nftban_network_tx_dropped{interface=\"${iface}\"} $tx_drop $timestamp\n"
+
+        # Accumulate totals for Zabbix compatibility
+        total_rx_bytes=$((total_rx_bytes + rx_bytes))
+        total_tx_bytes=$((total_tx_bytes + tx_bytes))
+        total_rx_packets=$((total_rx_packets + rx_packets))
+        total_tx_packets=$((total_tx_packets + tx_packets))
+        total_rx_errors=$((total_rx_errors + rx_errs))
+        total_tx_errors=$((total_tx_errors + tx_errs))
+        total_rx_dropped=$((total_rx_dropped + rx_drop))
+        total_tx_dropped=$((total_tx_dropped + tx_drop))
 
         # Calculate Mbps from previous state
         if [[ -f "$BANDWIDTH_STATE" ]]; then
@@ -1023,6 +1229,37 @@ collect_all_metrics() {
     read -r peak_rx peak_tx <<< "$peaks"
     metrics+="nftban_bandwidth_peak_rx_mbps $peak_rx $timestamp\n"
     metrics+="nftban_bandwidth_peak_tx_mbps $peak_tx $timestamp\n"
+
+    # -------------------------------------------------------------------------
+    # NETWORK TOTALS (Zabbix-compatible aggregated counters)
+    # These metrics align with Zabbix template keys:
+    #   nftban.network.bytes_in, nftban.network.bytes_out
+    #   nftban.network.packets_in, nftban.network.packets_out
+    #   nftban.network.errors, nftban.network.packets_dropped
+    #   nftban.bandwidth.in, nftban.bandwidth.out
+    # -------------------------------------------------------------------------
+    # Total bytes (counters)
+    metrics+="nftban_network_bytes_received_total $total_rx_bytes $timestamp\n"
+    metrics+="nftban_network_bytes_sent_total $total_tx_bytes $timestamp\n"
+
+    # Total packets (counters)
+    metrics+="nftban_network_packets_received_total $total_rx_packets $timestamp\n"
+    metrics+="nftban_network_packets_sent_total $total_tx_packets $timestamp\n"
+
+    # Total errors (combined RX+TX errors)
+    total_errors=$((total_rx_errors + total_tx_errors))
+    metrics+="nftban_network_errors_total $total_errors $timestamp\n"
+
+    # Total dropped packets (combined RX+TX dropped)
+    total_dropped=$((total_rx_dropped + total_tx_dropped))
+    metrics+="nftban_network_packets_dropped_total $total_dropped $timestamp\n"
+
+    # Bandwidth rate in bits per second (for Zabbix nftban.bandwidth.in/out)
+    # Convert Mbps to bps: Mbps * 1000000
+    bandwidth_in_bps=$(awk -v m="$total_rx_mbps" 'BEGIN {printf "%.0f", m * 1000000}')
+    bandwidth_out_bps=$(awk -v m="$total_tx_mbps" 'BEGIN {printf "%.0f", m * 1000000}')
+    metrics+="nftban_bandwidth_in_bps $bandwidth_in_bps $timestamp\n"
+    metrics+="nftban_bandwidth_out_bps $bandwidth_out_bps $timestamp\n"
 
         # --- Connection Metrics ---
         # Variables declared at function level for JSON cache access
@@ -1167,7 +1404,35 @@ collect_all_metrics() {
   "memory": {
     "rss_bytes": ${rss:-0},
     "open_fds": ${fds:-0},
-    "threads": ${threads:-0}
+    "threads": ${threads:-0},
+    "goroutines": ${goroutines:-0}
+  },
+  "server": {
+    "hostname": "${server_hostname:-unknown}",
+    "fqdn": "${server_fqdn:-unknown}",
+    "os": "${server_os:-Linux}",
+    "os_release": "${server_os_release:-Linux}",
+    "kernel": "${server_kernel:-unknown}",
+    "arch": "${server_arch:-unknown}",
+    "cpu_model": "${server_cpu_model:-unknown}",
+    "cpu_cores": ${cpu_cores:-1},
+    "type": "${server_type:-physical}",
+    "vendor": "${server_vendor:-Unknown}",
+    "model": "${server_model:-Unknown}",
+    "serial": "${server_serial:-N/A}",
+    "primary_ip": "${server_primary_ip:-127.0.0.1}",
+    "mac_address": "${server_mac:-00:00:00:00:00:00}",
+    "subnet_mask": "${server_subnet_mask:-255.255.255.0}",
+    "networks": "${server_networks:-lo:127.0.0.1}",
+    "location": "${server_location:-Not configured}",
+    "nftban_version": "${nftban_version:-unknown}",
+    "memory_total_bytes": ${memory_total:-0},
+    "memory_available_bytes": ${memory_available:-0},
+    "memory_used_pct": ${memory_used_pct:-0},
+    "uptime_seconds": ${server_uptime:-0},
+    "disk_total_bytes": ${disk_total:-0},
+    "disk_used_bytes": ${disk_used:-0},
+    "disk_used_pct": ${disk_used_pct:-0}
   },
   "network": {
     "connections_active": ${conn_active:-0},
@@ -1178,7 +1443,15 @@ collect_all_metrics() {
     "total_rx_mbps": ${total_rx_mbps:-0},
     "total_tx_mbps": ${total_tx_mbps:-0},
     "peak_rx_mbps": ${peak_rx:-0},
-    "peak_tx_mbps": ${peak_tx:-0}
+    "peak_tx_mbps": ${peak_tx:-0},
+    "bytes_received_total": ${total_rx_bytes:-0},
+    "bytes_sent_total": ${total_tx_bytes:-0},
+    "packets_received_total": ${total_rx_packets:-0},
+    "packets_sent_total": ${total_tx_packets:-0},
+    "errors_total": ${total_errors:-0},
+    "packets_dropped_total": ${total_dropped:-0},
+    "bandwidth_in_bps": ${bandwidth_in_bps:-0},
+    "bandwidth_out_bps": ${bandwidth_out_bps:-0}
   },
   "kernel": {
     "conntrack_entries": ${conntrack_entries:-0},
@@ -1227,8 +1500,12 @@ export_prometheus() {
     fi
 
     # Convert to Prometheus format (remove timestamp for textfile collector)
+    # Skip string metrics (|STRING|) as they are Zabbix-only
     awk '{
         # Format: metric_name value timestamp -> metric_name value
+        # Skip Zabbix string metrics (containing |STRING|)
+        if ($2 == "|STRING|") next
+
         if (NF >= 2) {
             # Handle metrics with labels
             if ($1 ~ /{.*}/) {
@@ -1272,12 +1549,34 @@ export_zabbix() {
     trap "rm -f '$tmp_file'" RETURN
 
     # Convert format: metric timestamp -> hostname key value
+    # Handles two formats:
+    # 1. Numeric: metric_name value timestamp -> hostname key value
+    # 2. String:  metric_name |STRING|value timestamp -> hostname key "value"
+    # Only convert underscores to dots if the key doesn't already contain dots
     awk -v host="$hostname" '{
         if (NF >= 2) {
             key = $1
-            gsub(/_/, ".", key)  # nftban_status -> nftban.status
+            # Only convert underscores to dots if key doesnt already have dots
+            # This preserves pre-formatted keys like nftban.server.memory_total
+            if (index(key, ".") == 0) {
+                gsub(/_/, ".", key)  # nftban_status -> nftban.status
+            }
             gsub(/{.*}/, "", key)  # Remove labels for Zabbix
-            printf "%s %s %s\n", host, key, $2
+
+            # Check for string marker |STRING|
+            if ($2 == "|STRING|") {
+                # String value: collect everything between |STRING| and timestamp
+                # Format: key |STRING|value timestamp
+                value = ""
+                for (i = 3; i < NF; i++) {
+                    if (value != "") value = value " "
+                    value = value $i
+                }
+                printf "%s %s %s\n", host, key, value
+            } else {
+                # Numeric value
+                printf "%s %s %s\n", host, key, $2
+            }
         }
     }' "$METRICS_CACHE" > "$tmp_file"
 
@@ -1305,6 +1604,7 @@ export_connectors() {
     hostname=$(hostname -f 2>/dev/null || hostname)
 
     # Build JSON payload once
+    # Skip string metrics (|STRING|) and metrics with labels for clean JSON
     local json_payload
     json_payload=$(awk -v ts="$timestamp" -v host="$hostname" '
         BEGIN {
@@ -1315,8 +1615,12 @@ export_connectors() {
             first=1
         }
         NF >= 2 {
+            # Skip Zabbix string metrics
+            if ($2 == "|STRING|") next
+            # Skip metrics with labels (they have different structure)
+            if ($1 ~ /{.*}/) next
+
             key = $1
-            gsub(/{.*}/, "", key)  # Remove labels
             if (!first) printf ","
             printf "\"%s\":%s", key, $2
             first=0

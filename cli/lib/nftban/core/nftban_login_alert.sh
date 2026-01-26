@@ -110,6 +110,9 @@ NFTBAN_TEMPLATE_DIR="${NFTBAN_TEMPLATE_DIR:-/usr/share/nftban/templates/alerts}"
 declare -A NFTBAN_FAILED_ATTEMPTS
 declare -A NFTBAN_FAILED_TIMESTAMPS
 
+# Central bans.log path for stats integration
+NFTBAN_BANS_LOG="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
+
 # =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
@@ -128,6 +131,36 @@ nftban_login_alert_log() {
 
     # Log to syslog
     logger -t nftban-login-alert "$message"
+}
+
+nftban_login_write_bans_log() {
+    # Write ban entry to central bans.log for stats integration
+    # Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
+    # (matches pkg/banlog/banlog.go canonical format)
+    local ip="$1"
+    local reason="$2"
+    local country="${3:-UNK}"
+
+    local log_dir
+    log_dir=$(dirname "$NFTBAN_BANS_LOG")
+
+    # Ensure log directory exists
+    mkdir -p "$log_dir"
+
+    # Get current date and time
+    local date_str time_str
+    date_str=$(date '+%Y-%m-%d')
+    time_str=$(date '+%H:%M:%S')
+
+    # Sanitize reason (replace pipe characters to preserve format)
+    reason="${reason//|/-}"
+    reason="${reason//$'\n'/ }"
+    reason="${reason//$'\r'/ }"
+
+    # Write canonical format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
+    echo "${date_str}|${time_str}|login|${ip}|${country}|BANNED|${reason}" >> "$NFTBAN_BANS_LOG"
+
+    nftban_login_alert_log "Wrote ban to bans.log: ${ip} (${reason})"
 }
 
 nftban_login_is_whitelisted() {
@@ -827,11 +860,31 @@ nftban_login_track_failed() {
                     "Failed attempts: ${NFTBAN_FAILED_ATTEMPTS[$key]} in ${elapsed} seconds"
 
                 # BAN THE IP (v1.0 replaces fail2ban)
-                nftban_login_alert_log "Banning IP $ip for ${service} brute-force (${NFTBAN_FAILED_ATTEMPTS[$key]} failures)"
+                local ban_reason="${service} brute-force (${NFTBAN_FAILED_ATTEMPTS[$key]} failed attempts)"
+                nftban_login_alert_log "Banning IP $ip for ${ban_reason}"
                 # Use centralized NFTBAN_BIN path (set in /etc/nftban/nftban.conf)
                 local nftban_cmd="${NFTBAN_BIN:-/usr/bin/nftban}"
                 "$nftban_cmd" ban "$ip" --source login --reason "${service}_brute_force (${NFTBAN_FAILED_ATTEMPTS[$key]} failed attempts)" 2>/dev/null || \
                     nftban_login_alert_log "Failed to ban $ip (nftban command not found at $nftban_cmd or error)"
+
+                # Write to bans.log for stats integration (keeps both logs for compatibility)
+                # Get country code for bans.log entry
+                local country_code="UNK"
+                if [[ "$NFTBAN_LOGIN_ALERT_GEOIP" == "true" ]]; then
+                    # Extract just the country code from geoip output (e.g., "US" from "US, United States")
+                    local geoip_data
+                    geoip_data=$(nftban_login_get_geoip "$ip" 2>/dev/null)
+                    if [[ -n "$geoip_data" && "$geoip_data" != "GeoIP"* && "$geoip_data" != "Unknown" ]]; then
+                        # Extract first field (country code) if comma-separated
+                        country_code="${geoip_data%%,*}"
+                        country_code="${country_code%% *}"  # Remove trailing spaces
+                        # Ensure it's a valid 2-letter code
+                        if [[ ! "$country_code" =~ ^[A-Z]{2}$ ]]; then
+                            country_code="UNK"
+                        fi
+                    fi
+                fi
+                nftban_login_write_bans_log "$ip" "$ban_reason" "$country_code"
 
                 # Reset counter
                 unset 'NFTBAN_FAILED_ATTEMPTS[$key]'
@@ -905,6 +958,7 @@ nftban_login_alert_test() {
 # =============================================================================
 
 export -f nftban_login_alert_log
+export -f nftban_login_write_bans_log
 export -f nftban_login_is_whitelisted
 export -f nftban_login_get_geoip
 export -f nftban_login_digest_add
