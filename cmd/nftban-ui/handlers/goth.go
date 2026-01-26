@@ -2051,11 +2051,16 @@ func (h *GOTHHandlers) getRecentLogs(levelFilter string) []ui.LogEntry {
 func parseBanLogLine(line string) ui.LogEntry {
 	entry := ui.LogEntry{}
 
-	// Format: timestamp|action|module|ip|reason
+	// Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
+	// Fields: $1  |$2  |$3    |$4|$5     |$6    |$7
 	parts := strings.Split(line, "|")
-	if len(parts) >= 4 {
-		entry.Timestamp = parts[0]
-		action := strings.ToUpper(parts[1])
+	if len(parts) >= 6 {
+		// Combine date and time for timestamp
+		entry.Timestamp = parts[0] + " " + parts[1]
+		entry.Module = parts[2]
+		entry.IP = parts[3]
+		// parts[4] is COUNTRY (not used in LogEntry)
+		action := strings.ToUpper(parts[5])
 		if action == "BAN" || action == "BANNED" {
 			entry.Level = "BAN"
 		} else if action == "UNBAN" || action == "UNBANNED" {
@@ -2063,10 +2068,8 @@ func parseBanLogLine(line string) ui.LogEntry {
 		} else {
 			entry.Level = "INFO"
 		}
-		entry.Module = parts[2]
-		entry.IP = parts[3]
-		if len(parts) >= 5 {
-			entry.Message = parts[4]
+		if len(parts) >= 7 {
+			entry.Message = parts[6]
 		}
 	}
 

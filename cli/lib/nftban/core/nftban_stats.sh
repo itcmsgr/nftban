@@ -1086,8 +1086,9 @@ nftban_stats_generate_dashboard() {
         local counts_result
         counts_result=$(awk -F'|' '
             # First pass: Build IP->source map from bans.log (most recent entry wins)
-            NR==FNR && NF>=3 {
-                ip=$2; src=$3
+            # Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON ($1|$2|$3|$4|$5|$6|$7)
+            NR==FNR && NF>=4 {
+                ip=$4; src=$3
                 # Normalize source names
                 if (src ~ /login|loginmon/) sources[ip]="login"
                 else if (src ~ /portscan/) sources[ip]="portscan"

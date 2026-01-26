@@ -5,19 +5,26 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Generate and send HTML email reports with real firewall stats
 #
-# meta:name=nftban_report_email
-# meta:type=core
-# meta:header=Email Report Generator
-# meta:version=1.0.0
+# meta:name="nftban_report_email"
+# meta:type="core"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:created_date="2025-12-03"
 #
-# meta:description=Generates HTML email reports with real firewall statistics
-# meta:depends=bash,nft,sendmail
+# meta:description="Generates HTML email reports with real firewall statistics"
+# meta:input="Recipient email, optional template path"
+# meta:output="HTML email via sendmail or mail command"
+# meta:depends="bash,nft,sendmail"
 #
-# meta:created_date=2025-12-03
-# meta:updated_date=2025-12-03
+# meta:inventory.files="/usr/share/nftban/templates/email/report_template.html"
+# meta:inventory.binaries="sendmail,mail"
+# meta:inventory.env_vars="NFTBAN_MAIL_RECIPIENT"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Load main configuration (service names, paths)
 if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
@@ -145,13 +152,17 @@ nftban_report_email_generate() {
     fi
 
     # Fallback: try bans.log if it exists
+    # Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON ($1|$2|$3|$4|$5|$6|$7)
     local ban_log="${NFTBAN_LOG_DIR}/bans.log"
     if [[ -f "$ban_log" ]]; then
         local bans_login bans_portscan bans_ddos
-        bans_login=$(awk -F'|' -v since="$yesterday" '$1 >= since && $3 ~ /login|ssh|auth/ {count++} END {print count+0}' "$ban_log")
-        bans_portscan=$(awk -F'|' -v since="$yesterday" '$1 >= since && $3 ~ /portscan|scan/ {count++} END {print count+0}' "$ban_log")
-        bans_ddos=$(awk -F'|' -v since="$yesterday" '$1 >= since && $3 ~ /ddos|flood/ {count++} END {print count+0}' "$ban_log")
-        manual_bans=$(awk -F'|' -v since="$yesterday" '$1 >= since && $3 == "manual" {count++} END {print count+0}' "$ban_log")
+        local tomorrow
+        tomorrow=$(date -d 'tomorrow' '+%Y-%m-%d')
+        # Only count BANNED entries (not UNBANNED), with proper date range
+        bans_login=$(awk -F'|' -v since="$yesterday" -v until="$tomorrow" '$1 >= since && $1 < until && $6 == "BANNED" && $3 ~ /login|ssh|auth/ {count++} END {print count+0}' "$ban_log")
+        bans_portscan=$(awk -F'|' -v since="$yesterday" -v until="$tomorrow" '$1 >= since && $1 < until && $6 == "BANNED" && $3 ~ /portscan|scan/ {count++} END {print count+0}' "$ban_log")
+        bans_ddos=$(awk -F'|' -v since="$yesterday" -v until="$tomorrow" '$1 >= since && $1 < until && $6 == "BANNED" && $3 ~ /ddos|flood/ {count++} END {print count+0}' "$ban_log")
+        manual_bans=$(awk -F'|' -v since="$yesterday" -v until="$tomorrow" '$1 >= since && $1 < until && $6 == "BANNED" && $3 == "manual" {count++} END {print count+0}' "$ban_log")
         # Strip non-digits and ensure defaults
         bans_login=${bans_login//[^0-9]/}; bans_login=${bans_login:-0}
         bans_portscan=${bans_portscan//[^0-9]/}; bans_portscan=${bans_portscan:-0}
