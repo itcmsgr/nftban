@@ -52,6 +52,10 @@ readonly SCRIPT_VERSION="1.0.0"
 [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf"
 [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local" 2>/dev/null || true
 
+# Load Connectors configuration (for export_connectors)
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf"
+[[ -f "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/connectors.conf.local" 2>/dev/null || true
+
 # =============================================================================
 # CONFIGURATION DEFAULTS (from metrics.conf, with fallbacks)
 # =============================================================================

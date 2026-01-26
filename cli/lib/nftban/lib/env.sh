@@ -43,12 +43,16 @@ NFTBAN_ENV_LOADED="true"
 # =============================================================================
 # These defaults match install/config/nftban.conf
 # Config files can override these after this file is sourced
+#
+# NOTE: Use parameter expansion with guards to avoid readonly variable conflicts
+# when nftban.conf has already been sourced (it declares these as readonly)
 
-export NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
-export NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
-export NFTBAN_LOG_DIR="${NFTBAN_LOG_DIR:-/var/log/nftban}"
-export NFTBAN_CACHE_DIR="${NFTBAN_CACHE_DIR:-/var/cache/nftban}"
-export NFTBAN_DATA_DIR="${NFTBAN_DATA_DIR:-/var/lib/nftban}"
+# Only set if not already defined (avoids readonly conflict)
+[[ -z "${NFTBAN_CONFIG_DIR:-}" ]] && export NFTBAN_CONFIG_DIR="/etc/nftban"
+[[ -z "${NFTBAN_LIB_DIR:-}" ]] && export NFTBAN_LIB_DIR="/usr/lib/nftban"
+[[ -z "${NFTBAN_LOG_DIR:-}" ]] && export NFTBAN_LOG_DIR="/var/log/nftban"
+[[ -z "${NFTBAN_CACHE_DIR:-}" ]] && export NFTBAN_CACHE_DIR="/var/cache/nftban"
+[[ -z "${NFTBAN_DATA_DIR:-}" ]] && export NFTBAN_DATA_DIR="/var/lib/nftban"
 
 # =============================================================================
 # LOAD CONFIG (if not already loaded by main CLI)

@@ -233,11 +233,21 @@ zabbix_export:
               value: bans
 
         - uuid: a3213a82a7204746bd627ec287352672
-          name: 'NFTBan: Permanent bans'
+          name: 'NFTBan: Permanent bans (IPv4)'
           type: TRAP
-          key: nftban.permanent.count
+          key: nftban.blacklist.ipv4.perm
           value_type: UNSIGNED
-          description: 'Permanent ban count'
+          description: 'Permanent IPv4 ban count'
+          tags:
+            - tag: component
+              value: bans
+
+        - uuid: a3213a82a7204746bd627ec287352673
+          name: 'NFTBan: Permanent bans (IPv6)'
+          type: TRAP
+          key: nftban.blacklist.ipv6.perm
+          value_type: UNSIGNED
+          description: 'Permanent IPv6 ban count'
           tags:
             - tag: component
               value: bans
@@ -245,9 +255,9 @@ zabbix_export:
         - uuid: cc61d2bc79444c619bd53bee5048bde7
           name: 'NFTBan: Whitelist count'
           type: TRAP
-          key: nftban.whitelist.count
+          key: nftban.whitelist.total
           value_type: UNSIGNED
-          description: 'Whitelist entry count'
+          description: 'Total whitelist entry count (IPv4 + IPv6)'
           tags:
             - tag: component
               value: bans
@@ -518,7 +528,7 @@ zabbix_export:
         - uuid: 82c385c3a6284477b9c15aa797190864
           name: 'NFTBan: nftables rules'
           type: TRAP
-          key: nftban.nft.rules.total
+          key: nftban.nftables.rules.total
           value_type: UNSIGNED
           description: 'Total nftables rules'
           tags:
@@ -526,21 +536,21 @@ zabbix_export:
               value: nftables
 
         - uuid: 7c23d72575c74bdbb2e93d8b97edd6df
-          name: 'NFTBan: Packets blocked (IPv4)'
+          name: 'NFTBan: nftables set elements (blacklist_ipv4)'
           type: TRAP
-          key: nftban.nft.packets.blocked.ipv4
+          key: 'nftban.nftables.set.elements[blacklist_ipv4]'
           value_type: UNSIGNED
-          description: 'Total packets blocked (IPv4)'
+          description: 'Elements in blacklist_ipv4 set'
           tags:
             - tag: component
               value: nftables
 
         - uuid: a5276e6e45d04d1dabb3c0cdb78634b2
-          name: 'NFTBan: Packets blocked (IPv6)'
+          name: 'NFTBan: nftables set elements (blacklist_ipv6)'
           type: TRAP
-          key: nftban.nft.packets.blocked.ipv6
+          key: 'nftban.nftables.set.elements[blacklist_ipv6]'
           value_type: UNSIGNED
-          description: 'Total packets blocked (IPv6)'
+          description: 'Elements in blacklist_ipv6 set'
           tags:
             - tag: component
               value: nftables
@@ -548,7 +558,7 @@ zabbix_export:
         - uuid: 7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b
           name: 'NFTBan: nftables apply latency'
           type: TRAP
-          key: nftban.nftables.apply.latency
+          key: nftban.nftables.apply.latency.ms
           value_type: FLOAT
           units: ms
           description: 'Time taken to apply nftables changes (milliseconds)'
@@ -557,7 +567,7 @@ zabbix_export:
               value: nftables
           triggers:
             - uuid: 8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c
-              expression: 'last(/NFTBan/nftban.nftables.apply.latency)>100'
+              expression: 'last(/NFTBan/nftban.nftables.apply.latency.ms)>100'
               name: 'NFTBan nftables apply latency high ({ITEM.VALUE}ms)'
               priority: WARNING
               description: 'nftables rule application is taking longer than 100ms. This may indicate performance issues.'
@@ -568,7 +578,7 @@ zabbix_export:
         - uuid: 9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d
           name: 'NFTBan: nftables apply errors'
           type: TRAP
-          key: nftban.nftables.apply.errors
+          key: nftban.nftables.apply.errors.total
           value_type: UNSIGNED
           description: 'Total nftables apply errors'
           tags:
@@ -576,7 +586,7 @@ zabbix_export:
               value: nftables
           triggers:
             - uuid: 0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e
-              expression: 'last(/NFTBan/nftban.nftables.apply.errors)>0'
+              expression: 'last(/NFTBan/nftban.nftables.apply.errors.total)>0'
               name: 'NFTBan nftables apply errors detected ({ITEM.VALUE})'
               priority: HIGH
               description: 'Errors occurred when applying nftables rules. Firewall protection may be incomplete.'
@@ -587,7 +597,7 @@ zabbix_export:
         - uuid: 1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f
           name: 'NFTBan: nftables commands'
           type: TRAP
-          key: nftban.nftables.commands
+          key: nftban.nftables.commands.total
           value_type: UNSIGNED
           description: 'Total nftables commands executed'
           tags:
@@ -608,7 +618,7 @@ zabbix_export:
         - uuid: 3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b
           name: 'NFTBan: Event bus events dropped'
           type: TRAP
-          key: nftban.eventbus.events.dropped
+          key: nftban.eventbus.events.dropped.total
           value_type: UNSIGNED
           description: 'Total events dropped by the event bus due to queue overflow or errors'
           tags:
@@ -616,7 +626,7 @@ zabbix_export:
               value: eventbus
           triggers:
             - uuid: 4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c
-              expression: 'last(/NFTBan/nftban.eventbus.events.dropped)>0'
+              expression: 'last(/NFTBan/nftban.eventbus.events.dropped.total)>0'
               name: 'NFTBan event bus dropping events ({ITEM.VALUE})'
               priority: WARNING
               description: 'Events are being dropped by the event bus. This may indicate system overload or handler issues.'
@@ -1701,7 +1711,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.permanent.count
+                        key: nftban.blacklist.ipv4.perm
                         host: 'NFTBan'
                 - type: item_value
                   name: 'Total Bans'
@@ -1825,7 +1835,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.permanent.count
+                        key: nftban.blacklist.ipv4.perm
                         host: 'NFTBan'
                 - type: item_value
                   name: 'Rate/min'
@@ -1873,7 +1883,7 @@ zabbix_export:
                       name: ds.3.itemid.0
                       value:
                         host: 'NFTBan'
-                        key: nftban.permanent.count
+                        key: nftban.blacklist.ipv4.perm
                     - type: STRING
                       name: ds.3.color
                       value: A54F10
@@ -2043,7 +2053,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.nft.rules.total
+                        key: nftban.nftables.rules.total
                         host: 'NFTBan'
                 - type: item_value
                   name: 'NFT Sets'
@@ -2115,7 +2125,7 @@ zabbix_export:
                       name: ds.0.itemid.0
                       value:
                         host: 'NFTBan'
-                        key: nftban.nft.rules.total
+                        key: nftban.nftables.rules.total
                     - type: STRING
                       name: ds.0.color
                       value: 1A7C11

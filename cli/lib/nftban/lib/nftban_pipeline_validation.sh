@@ -58,7 +58,13 @@ if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
 fi
 
-# Pipeline defaults
+# Load metrics configuration
+# shellcheck source=/dev/null
+[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf"
+# shellcheck source=/dev/null
+[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" 2>/dev/null || true
+
+# Pipeline defaults (fallbacks if not set in config)
 : "${NFTBAN_METRICS_PROM_FILE:=/var/lib/node_exporter/textfile_collector/nftban.prom}"
 : "${NFTBAN_METRICS_WATCHDOG_FILE:=/var/lib/nftban/metrics/watchdog.prom}"
 : "${NFTBAN_METRICS_NODE_EXPORTER_ADDR:=localhost:9100}"
