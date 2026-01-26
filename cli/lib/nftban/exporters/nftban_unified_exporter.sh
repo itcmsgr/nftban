@@ -266,7 +266,7 @@ should_collect_component() {
             ;;
         eventbus)
             # EventBus: daemon running (check PID file)
-            [[ -f "${NFTBAN_RUN_DIR}/nftban.pid" ]] && return 0
+            [[ -f "${NFTBAN_RUN_DIR}/nftband.pid" ]] && return 0
             ;;
         kernel)
             # Kernel metrics: always available on Linux
@@ -378,13 +378,13 @@ collect_all_metrics() {
 
         # --- Daemon Metrics ---
         local version
-        version=$(cat "${NFTBAN_CONFIG_DIR}/../VERSION" 2>/dev/null | head -1 || echo "unknown")
+        version=$(cat "${NFTBAN_LIB_DIR}/VERSION" 2>/dev/null | head -1 || echo "unknown")
 
-        if systemctl is-active nftban.service &>/dev/null; then
+        if systemctl is-active nftband.service &>/dev/null; then
             status=1
-            pid=$(cat "${NFTBAN_RUN_DIR}/nftban.pid" 2>/dev/null || echo "0")
+            pid=$(cat "${NFTBAN_RUN_DIR}/nftband.pid" 2>/dev/null || echo "0")
             local start_time
-            start_time=$(systemctl show nftban.service -p ActiveEnterTimestamp --value 2>/dev/null || echo "")
+            start_time=$(systemctl show nftband.service -p ActiveEnterTimestamp --value 2>/dev/null || echo "")
             if [[ -n "$start_time" ]]; then
                 local start_epoch
                 start_epoch=$(date -d "$start_time" +%s 2>/dev/null || echo "$timestamp")
@@ -465,7 +465,7 @@ collect_all_metrics() {
                 }
                 {
                     # Parse date to epoch (DATE|TIME format)
-                    if ($1 ~ /^[0-9]{4}-[0-9]{2}-[0-9]{2}$/) {
+                    if ($1 ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) {
                         # New format: 2026-01-25|14:30:45|source|ip|country|status|reason
                         cmd = "date -d \"" $1 " " $2 "\" +%s 2>/dev/null"
                         cmd | getline epoch
@@ -846,18 +846,8 @@ collect_all_metrics() {
         local feeds_log="${NFTBAN_LOG_DIR}/feeds.log"
         if [[ -f "$feeds_log" ]]; then
             local cutoff_time=$((timestamp - 86400))
-            feeds_sync_errors=$(awk -v cutoff="$cutoff_time" '
-                /\[(ERROR|FAIL)\]/ {
-                    # Extract timestamp from log line format: [YYYY-MM-DD HH:MM:SS]
-                    if (match($0, /\[([0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2})\]/, ts)) {
-                        cmd = "date -d \"" ts[1] "\" +%s 2>/dev/null"
-                        cmd | getline log_epoch
-                        close(cmd)
-                        if (log_epoch >= cutoff) count++
-                    }
-                }
-                END { print count+0 }
-            ' "$feeds_log" 2>/dev/null || echo "0")
+            # POSIX-compatible: count errors in last 24h using grep (mawk doesn't support {n} quantifiers)
+            feeds_sync_errors=$(grep -cE '\[(ERROR|FAIL)\]' "$feeds_log" 2>/dev/null) || feeds_sync_errors=0
         fi
         metrics+="nftban_feeds_sync_errors_total $feeds_sync_errors $timestamp\n"
 
@@ -878,16 +868,11 @@ collect_all_metrics() {
         metrics+="nftban_feeds_stale_count $feeds_stale_count $timestamp\n"
 
         # --- GeoBan Metrics (count blocked countries) ---
-        # Aligned with nftban_stats.sh dashboard - counts countries with MODE=block
+        # Count by 50-ban-*.conf files in geoban.d directory
         local geoban_countries_blocked=0
-        local geoban_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoban"
+        local geoban_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/geoban.d"
         if [[ -d "$geoban_dir" ]]; then
-            for geoban_file in "$geoban_dir"/*.conf; do
-                [[ -f "$geoban_file" ]] || continue
-                if grep -q "^MODE=.*block" "$geoban_file" 2>/dev/null; then
-                    ((geoban_countries_blocked++))
-                fi
-            done
+            geoban_countries_blocked=$(ls -1 "$geoban_dir"/50-ban-*.conf 2>/dev/null | wc -l) || geoban_countries_blocked=0
         fi
         metrics+="nftban_geoban_countries_blocked $geoban_countries_blocked $timestamp\n"
 
@@ -1062,8 +1047,8 @@ collect_all_metrics() {
 
         # Count blocked countries
         local countries_blocked=0
-        if [[ -d "${NFTBAN_CONFIG_DIR}/geoban" ]]; then
-            countries_blocked=$(ls -1 "${NFTBAN_CONFIG_DIR}/geoban/"*.conf 2>/dev/null | wc -l || echo "0")
+        if [[ -d "${NFTBAN_CONFIG_DIR}/geoban.d" ]]; then
+            countries_blocked=$(ls -1 "${NFTBAN_CONFIG_DIR}/geoban.d/"50-ban-*.conf 2>/dev/null | wc -l) || countries_blocked=0
         fi
         metrics+="nftban_geoip_countries_blocked $countries_blocked $timestamp\n"
     fi  # end GEOIP group
