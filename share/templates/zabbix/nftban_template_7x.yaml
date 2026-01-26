@@ -545,6 +545,114 @@ zabbix_export:
             - tag: component
               value: nftables
 
+        - uuid: 7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b
+          name: 'NFTBan: nftables apply latency'
+          type: TRAP
+          key: nftban.nftables.apply.latency
+          value_type: FLOAT
+          units: ms
+          description: 'Time taken to apply nftables changes (milliseconds)'
+          tags:
+            - tag: component
+              value: nftables
+          triggers:
+            - uuid: 8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c
+              expression: 'last(/NFTBan/nftban.nftables.apply.latency)>100'
+              name: 'NFTBan nftables apply latency high ({ITEM.VALUE}ms)'
+              priority: WARNING
+              description: 'nftables rule application is taking longer than 100ms. This may indicate performance issues.'
+              tags:
+                - tag: component
+                  value: nftables
+
+        - uuid: 9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d
+          name: 'NFTBan: nftables apply errors'
+          type: TRAP
+          key: nftban.nftables.apply.errors
+          value_type: UNSIGNED
+          description: 'Total nftables apply errors'
+          tags:
+            - tag: component
+              value: nftables
+          triggers:
+            - uuid: 0b1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e
+              expression: 'last(/NFTBan/nftban.nftables.apply.errors)>0'
+              name: 'NFTBan nftables apply errors detected ({ITEM.VALUE})'
+              priority: HIGH
+              description: 'Errors occurred when applying nftables rules. Firewall protection may be incomplete.'
+              tags:
+                - tag: component
+                  value: nftables
+
+        - uuid: 1c2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f
+          name: 'NFTBan: nftables commands'
+          type: TRAP
+          key: nftban.nftables.commands
+          value_type: UNSIGNED
+          description: 'Total nftables commands executed'
+          tags:
+            - tag: component
+              value: nftables
+
+        # --- Event Bus Metrics ---
+        - uuid: 2d3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a
+          name: 'NFTBan: Event bus events total'
+          type: TRAP
+          key: nftban.eventbus.events.total
+          value_type: UNSIGNED
+          description: 'Total events processed by the event bus'
+          tags:
+            - tag: component
+              value: eventbus
+
+        - uuid: 3e4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b
+          name: 'NFTBan: Event bus events dropped'
+          type: TRAP
+          key: nftban.eventbus.events.dropped
+          value_type: UNSIGNED
+          description: 'Total events dropped by the event bus due to queue overflow or errors'
+          tags:
+            - tag: component
+              value: eventbus
+          triggers:
+            - uuid: 4f5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c
+              expression: 'last(/NFTBan/nftban.eventbus.events.dropped)>0'
+              name: 'NFTBan event bus dropping events ({ITEM.VALUE})'
+              priority: WARNING
+              description: 'Events are being dropped by the event bus. This may indicate system overload or handler issues.'
+              tags:
+                - tag: component
+                  value: eventbus
+
+        - uuid: 5a6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d
+          name: 'NFTBan: Event bus queue size'
+          type: TRAP
+          key: nftban.eventbus.queue.size
+          value_type: UNSIGNED
+          description: 'Current number of events queued in the event bus'
+          tags:
+            - tag: component
+              value: eventbus
+          triggers:
+            - uuid: 6b7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e
+              expression: 'last(/NFTBan/nftban.eventbus.queue.size)>1000'
+              name: 'NFTBan event bus queue backlog ({ITEM.VALUE})'
+              priority: WARNING
+              description: 'Event bus queue has more than 1000 pending events. This may indicate handlers are not keeping up with event rate.'
+              tags:
+                - tag: component
+                  value: eventbus
+
+        - uuid: 7c8d9e0f1a2b3c4d5e6f7a8b9c0d1e2f
+          name: 'NFTBan: Event bus handlers'
+          type: TRAP
+          key: nftban.eventbus.handlers
+          value_type: UNSIGNED
+          description: 'Number of registered event bus handlers'
+          tags:
+            - tag: component
+              value: eventbus
+
         # --- Feeds Metrics ---
         - uuid: abc10cf19d5245f8927e261d84adbf35
           name: 'NFTBan: Feeds enabled'
