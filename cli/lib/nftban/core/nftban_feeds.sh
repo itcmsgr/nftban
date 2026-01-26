@@ -608,11 +608,264 @@ nftban_feeds_sync_to_nftables_go() {
     fi
 }
 
+# =============================================================================
+# CIDR MERGING FOR BASH FALLBACK
+# =============================================================================
+# nftables interval sets CANNOT have overlapping ranges. Multiple feeds often
+# contain overlapping CIDRs (e.g., 1.0.0.0/8 and 1.0.0.0/24). This function
+# merges them to prevent "conflicting intervals" errors.
+#
+# Priority order:
+# 1. aggregate6 (Python tool, best CIDR aggregation)
+# 2. netmask (C tool, good aggregation)
+# 3. Pure bash fallback (removes contained CIDRs)
+# =============================================================================
+
+# Merge overlapping CIDRs in a file
+# Usage: _feeds_merge_cidrs <input_file> <output_file> <ip_version>
+# ip_version: 4 or 6
+_feeds_merge_cidrs() {
+    local input_file="$1"
+    local output_file="$2"
+    local ip_version="${3:-4}"
+
+    if [[ ! -s "$input_file" ]]; then
+        : > "$output_file"
+        return 0
+    fi
+
+    local input_count
+    input_count=$(wc -l < "$input_file")
+
+    # Method 1: aggregate6 (best - handles all edge cases)
+    if command -v aggregate6 &>/dev/null; then
+        nftban_feeds_log DEBUG "Using aggregate6 for CIDR merging (IPv${ip_version})"
+        if [[ "$ip_version" == "4" ]]; then
+            aggregate6 -4 < "$input_file" > "$output_file" 2>/dev/null
+        else
+            aggregate6 -6 < "$input_file" > "$output_file" 2>/dev/null
+        fi
+        local output_count
+        output_count=$(wc -l < "$output_file")
+        local merged=$((input_count - output_count))
+        [[ $merged -gt 0 ]] && nftban_feeds_log INFO "CIDR merge (aggregate6): ${input_count} -> ${output_count} (merged ${merged} overlaps)"
+        return 0
+    fi
+
+    # Method 2: netmask (good alternative)
+    if command -v netmask &>/dev/null && [[ "$ip_version" == "4" ]]; then
+        nftban_feeds_log DEBUG "Using netmask for CIDR merging (IPv4)"
+        # netmask can aggregate but needs special handling
+        # Convert to ranges and back - this merges overlapping
+        netmask -c < "$input_file" 2>/dev/null | sort -u > "$output_file"
+        local output_count
+        output_count=$(wc -l < "$output_file")
+        local merged=$((input_count - output_count))
+        [[ $merged -gt 0 ]] && nftban_feeds_log INFO "CIDR merge (netmask): ${input_count} -> ${output_count} (merged ${merged} overlaps)"
+        return 0
+    fi
+
+    # Method 3: Pure bash fallback - remove obvious overlaps
+    # This removes smaller CIDRs that are contained within larger ones
+    # Not as comprehensive as aggregate6 but handles the most common cases
+    nftban_feeds_log DEBUG "Using bash fallback for CIDR deduplication (IPv${ip_version})"
+    _feeds_merge_cidrs_bash "$input_file" "$output_file" "$ip_version"
+}
+
+# Pure bash CIDR overlap removal
+# Removes CIDRs that are contained within larger CIDRs
+_feeds_merge_cidrs_bash() {
+    local input_file="$1"
+    local output_file="$2"
+    local ip_version="${3:-4}"
+
+    local temp_sorted="${input_file}.sorted"
+    local temp_filtered="${input_file}.filtered"
+
+    # Sort by prefix length (largest networks first, i.e., smallest prefix number)
+    # Format: prefix_len|cidr for sorting
+    if [[ "$ip_version" == "4" ]]; then
+        # IPv4: extract prefix length, default to /32 for bare IPs
+        while IFS= read -r cidr; do
+            [[ -z "$cidr" ]] && continue
+            if [[ "$cidr" == */* ]]; then
+                local prefix="${cidr##*/}"
+                printf '%02d|%s\n' "$prefix" "$cidr"
+            else
+                printf '32|%s/32\n' "$cidr"
+            fi
+        done < "$input_file" | sort -t'|' -k1,1n -k2,2 | cut -d'|' -f2 > "$temp_sorted"
+    else
+        # IPv6: extract prefix length, default to /128 for bare IPs
+        while IFS= read -r cidr; do
+            [[ -z "$cidr" ]] && continue
+            if [[ "$cidr" == */* ]]; then
+                local prefix="${cidr##*/}"
+                printf '%03d|%s\n' "$prefix" "$cidr"
+            else
+                printf '128|%s/128\n' "$cidr"
+            fi
+        done < "$input_file" | sort -t'|' -k1,1n -k2,2 | cut -d'|' -f2 > "$temp_sorted"
+    fi
+
+    # Now filter: keep only CIDRs not contained in a larger one
+    # We process from largest (smallest prefix) to smallest (largest prefix)
+    : > "$temp_filtered"
+    declare -a kept_cidrs=()
+
+    while IFS= read -r cidr; do
+        [[ -z "$cidr" ]] && continue
+        local dominated=false
+
+        # Check if this CIDR is contained within any already-kept CIDR
+        for kept in "${kept_cidrs[@]}"; do
+            if _cidr_contains "$kept" "$cidr" "$ip_version"; then
+                dominated=true
+                break
+            fi
+        done
+
+        if [[ "$dominated" == "false" ]]; then
+            echo "$cidr" >> "$temp_filtered"
+            kept_cidrs+=("$cidr")
+        fi
+    done < "$temp_sorted"
+
+    # Move result to output
+    mv "$temp_filtered" "$output_file"
+    rm -f "$temp_sorted"
+
+    local input_count output_count merged
+    input_count=$(wc -l < "$input_file")
+    output_count=$(wc -l < "$output_file")
+    merged=$((input_count - output_count))
+    [[ $merged -gt 0 ]] && nftban_feeds_log INFO "CIDR merge (bash): ${input_count} -> ${output_count} (removed ${merged} contained CIDRs)"
+}
+
+# Check if CIDR A contains CIDR B (IPv4)
+# Returns 0 if A contains B, 1 otherwise
+_cidr_contains() {
+    local cidr_a="$1"
+    local cidr_b="$2"
+    local ip_version="${3:-4}"
+
+    if [[ "$ip_version" == "4" ]]; then
+        _cidr_contains_ipv4 "$cidr_a" "$cidr_b"
+    else
+        _cidr_contains_ipv6 "$cidr_a" "$cidr_b"
+    fi
+}
+
+# IPv4 containment check
+_cidr_contains_ipv4() {
+    local cidr_a="$1"
+    local cidr_b="$2"
+
+    # Parse CIDR A
+    local net_a="${cidr_a%/*}"
+    local prefix_a="${cidr_a##*/}"
+    [[ "$prefix_a" == "$cidr_a" ]] && prefix_a=32
+
+    # Parse CIDR B
+    local net_b="${cidr_b%/*}"
+    local prefix_b="${cidr_b##*/}"
+    [[ "$prefix_b" == "$cidr_b" ]] && prefix_b=32
+
+    # A can only contain B if A's prefix is smaller or equal
+    [[ $prefix_a -gt $prefix_b ]] && return 1
+
+    # Convert IPs to integers
+    local -a octets_a octets_b
+    IFS='.' read -ra octets_a <<< "$net_a"
+    IFS='.' read -ra octets_b <<< "$net_b"
+
+    local int_a=$(( (octets_a[0] << 24) + (octets_a[1] << 16) + (octets_a[2] << 8) + octets_a[3] ))
+    local int_b=$(( (octets_b[0] << 24) + (octets_b[1] << 16) + (octets_b[2] << 8) + octets_b[3] ))
+
+    # Calculate network mask for A
+    local mask=$(( 0xFFFFFFFF << (32 - prefix_a) & 0xFFFFFFFF ))
+
+    # B is contained in A if (B & mask_A) == (A & mask_A)
+    [[ $(( int_b & mask )) -eq $(( int_a & mask )) ]]
+}
+
+# IPv6 containment check (simplified - compares prefix bits)
+_cidr_contains_ipv6() {
+    local cidr_a="$1"
+    local cidr_b="$2"
+
+    # Parse prefixes
+    local prefix_a="${cidr_a##*/}"
+    local prefix_b="${cidr_b##*/}"
+    [[ "$prefix_a" == "$cidr_a" ]] && prefix_a=128
+    [[ "$prefix_b" == "$cidr_b" ]] && prefix_b=128
+
+    # A can only contain B if A's prefix is smaller or equal
+    [[ $prefix_a -gt $prefix_b ]] && return 1
+
+    # For IPv6, we use a simpler string comparison of the network portion
+    # This works for most common cases but isn't perfect
+    local net_a="${cidr_a%/*}"
+    local net_b="${cidr_b%/*}"
+
+    # Expand IPv6 addresses to full form for comparison
+    local expanded_a expanded_b
+    expanded_a=$(_expand_ipv6 "$net_a")
+    expanded_b=$(_expand_ipv6 "$net_b")
+
+    # Compare the first prefix_a bits
+    local chars_to_compare=$(( (prefix_a + 3) / 4 ))  # Hex chars needed
+    local prefix_str_a="${expanded_a:0:$chars_to_compare}"
+    local prefix_str_b="${expanded_b:0:$chars_to_compare}"
+
+    [[ "$prefix_str_a" == "$prefix_str_b" ]]
+}
+
+# Expand IPv6 address to full 32-char hex form (no colons)
+_expand_ipv6() {
+    local addr="$1"
+    local result=""
+
+    # Handle :: expansion
+    if [[ "$addr" == *"::"* ]]; then
+        local left="${addr%%::*}"
+        local right="${addr#*::}"
+        local left_groups=0 right_groups=0
+
+        [[ -n "$left" ]] && left_groups=$(echo "$left" | tr -cd ':' | wc -c)
+        [[ -n "$left" ]] && ((left_groups++))
+        [[ -n "$right" ]] && right_groups=$(echo "$right" | tr -cd ':' | wc -c)
+        [[ -n "$right" ]] && ((right_groups++))
+
+        local missing=$((8 - left_groups - right_groups))
+        local zeros=""
+        for ((i=0; i<missing; i++)); do
+            zeros="${zeros}:0000"
+        done
+
+        if [[ -z "$left" ]]; then
+            addr="${zeros#:}:$right"
+        elif [[ -z "$right" ]]; then
+            addr="$left$zeros"
+        else
+            addr="$left$zeros:$right"
+        fi
+    fi
+
+    # Now expand each group to 4 hex chars
+    IFS=':' read -ra groups <<< "$addr"
+    for group in "${groups[@]}"; do
+        printf '%04x' "0x${group:-0}" 2>/dev/null || printf '0000'
+    done
+}
+
 # Bash feed sync (fallback, v0.6.0) - ATOMIC RELOAD
 nftban_feeds_sync_to_nftables_bash() {
     # Collect all IPs from enabled feeds
     local ipv4_list="${NFTBAN_FEEDS_CACHE_DIR}/feeds_ipv4.tmp"
     local ipv6_list="${NFTBAN_FEEDS_CACHE_DIR}/feeds_ipv6.tmp"
+    local ipv4_merged="${NFTBAN_FEEDS_CACHE_DIR}/feeds_ipv4_merged.tmp"
+    local ipv6_merged="${NFTBAN_FEEDS_CACHE_DIR}/feeds_ipv6_merged.tmp"
 
     : > "$ipv4_list"
     : > "$ipv6_list"
@@ -642,11 +895,24 @@ nftban_feeds_sync_to_nftables_bash() {
         fi
     done
 
-    # Count unique IPs
+    # Sort unique first, then merge overlapping CIDRs
+    # This is CRITICAL for nftables interval sets which reject overlapping ranges
     local ipv4_count=0
     local ipv6_count=0
-    [[ -s "$ipv4_list" ]] && ipv4_count=$(sort -u "$ipv4_list" | wc -l)
-    [[ -s "$ipv6_list" ]] && ipv6_count=$(sort -u "$ipv6_list" | wc -l)
+
+    if [[ -s "$ipv4_list" ]]; then
+        sort -u "$ipv4_list" -o "$ipv4_list"
+        _feeds_merge_cidrs "$ipv4_list" "$ipv4_merged" 4
+        mv "$ipv4_merged" "$ipv4_list"
+        ipv4_count=$(wc -l < "$ipv4_list")
+    fi
+
+    if [[ -s "$ipv6_list" ]]; then
+        sort -u "$ipv6_list" -o "$ipv6_list"
+        _feeds_merge_cidrs "$ipv6_list" "$ipv6_merged" 6
+        mv "$ipv6_merged" "$ipv6_list"
+        ipv6_count=$(wc -l < "$ipv6_list")
+    fi
 
     # Build nftables file for atomic reload (v0.7.3 architecture - dual tables)
     local nft_file="${NFTBAN_FEEDS_CACHE_DIR}/feeds.nft"
@@ -675,16 +941,20 @@ EOF
 
     # Atomic reload using IPC
     if nft_ipc_apply_ruleset "$nft_file" 2>&1 | tee -a "$NFTBAN_FEEDS_LOG"; then
-        nftban_feeds_log INFO "Sync complete: $ipv4_count IPv4, $ipv6_count IPv6"
+        nftban_feeds_log INFO "Sync complete: $ipv4_count IPv4, $ipv6_count IPv6 (CIDRs merged)"
     else
         nftban_feeds_log ERROR "Atomic reload failed"
-        # Cleanup
-        rm -f "$ipv4_list" "$ipv6_list" "$nft_file"
+        # Cleanup (including any leftover merge temp files)
+        rm -f "$ipv4_list" "$ipv6_list" "$ipv4_merged" "$ipv6_merged" "$nft_file"
+        rm -f "${ipv4_list}.sorted" "${ipv4_list}.filtered"
+        rm -f "${ipv6_list}.sorted" "${ipv6_list}.filtered"
         return 1
     fi
 
-    # Cleanup
-    rm -f "$ipv4_list" "$ipv6_list" "$nft_file"
+    # Cleanup (including any leftover merge temp files)
+    rm -f "$ipv4_list" "$ipv6_list" "$ipv4_merged" "$ipv6_merged" "$nft_file"
+    rm -f "${ipv4_list}.sorted" "${ipv4_list}.filtered"
+    rm -f "${ipv6_list}.sorted" "${ipv6_list}.filtered"
 
     return 0
 }
