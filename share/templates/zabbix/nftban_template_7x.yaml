@@ -354,6 +354,140 @@ zabbix_export:
               priority: HIGH
               description: 'One or more NFTBan modules have failed.'
 
+        # --- Individual Module Status ---
+        - uuid: 3c7a1b5d8e2f4a6b9c0d1e3f5a7b9c0d
+          name: 'NFTBan: Module - Login status'
+          type: TRAP
+          key: nftban.module.login.status
+          value_type: SIGNED
+          description: 'Login module status: 1=active, 0=disabled, -1=failed'
+          tags:
+            - tag: component
+              value: modules
+          triggers:
+            - uuid: 4d8b2c6e1f3a5b7c9d0e2f4a6b8c0d1e
+              expression: 'last(/NFTBan/nftban.module.login.status)=-1'
+              name: 'NFTBan Login module failed'
+              priority: HIGH
+              description: 'The Login module has failed and is not protecting against brute-force login attempts.'
+              tags:
+                - tag: component
+                  value: modules
+
+        - uuid: 5e9c3d7f2a4b6c8d0e1f3a5b7c9d1e2f
+          name: 'NFTBan: Module - Portscan status'
+          type: TRAP
+          key: nftban.module.portscan.status
+          value_type: SIGNED
+          description: 'Portscan module status: 1=active, 0=disabled, -1=failed'
+          tags:
+            - tag: component
+              value: modules
+          triggers:
+            - uuid: 6f0d4e8a3b5c7d9e1f2a4b6c8d0e2f3a
+              expression: 'last(/NFTBan/nftban.module.portscan.status)=-1'
+              name: 'NFTBan Portscan module failed'
+              priority: HIGH
+              description: 'The Portscan module has failed and is not detecting port scanning activity.'
+              tags:
+                - tag: component
+                  value: modules
+
+        - uuid: 7a1e5f9b4c6d8e0f2a3b5c7d9e1f3a4b
+          name: 'NFTBan: Module - DDoS status'
+          type: TRAP
+          key: nftban.module.ddos.status
+          value_type: SIGNED
+          description: 'DDoS module status: 1=active, 0=disabled, -1=failed'
+          tags:
+            - tag: component
+              value: modules
+          triggers:
+            - uuid: 8b2f6a0c5d7e9f1a3b4c6d8e0f2a4b5c
+              expression: 'last(/NFTBan/nftban.module.ddos.status)=-1'
+              name: 'NFTBan DDoS module failed'
+              priority: HIGH
+              description: 'The DDoS module has failed and is not protecting against distributed denial-of-service attacks.'
+              tags:
+                - tag: component
+                  value: modules
+
+        - uuid: 9c3a7b1d6e8f0a2b4c5d7e9f1a3b5c6d
+          name: 'NFTBan: Module - Suricata status'
+          type: TRAP
+          key: nftban.module.suricata.status
+          value_type: SIGNED
+          description: 'Suricata module status: 1=active, 0=disabled, -1=failed'
+          tags:
+            - tag: component
+              value: modules
+          triggers:
+            - uuid: 0d4b8c2e7f9a1b3c5d6e8f0a2b4c6d7e
+              expression: 'last(/NFTBan/nftban.module.suricata.status)=-1'
+              name: 'NFTBan Suricata module failed'
+              priority: HIGH
+              description: 'The Suricata module has failed and is not processing IDS/IPS alerts.'
+              tags:
+                - tag: component
+                  value: modules
+
+        - uuid: 1e5c9d3f8a0b2c4d6e7f9a1b3c5d7e8f
+          name: 'NFTBan: Module - Feeds status'
+          type: TRAP
+          key: nftban.module.feeds.status
+          value_type: SIGNED
+          description: 'Feeds module status: 1=active, 0=disabled, -1=failed'
+          tags:
+            - tag: component
+              value: modules
+          triggers:
+            - uuid: 2f6d0e4a9b1c3d5e7f8a0b2c4d6e8f9a
+              expression: 'last(/NFTBan/nftban.module.feeds.status)=-1'
+              name: 'NFTBan Feeds module failed'
+              priority: HIGH
+              description: 'The Feeds module has failed and is not loading threat intelligence feeds.'
+              tags:
+                - tag: component
+                  value: modules
+
+        - uuid: 3a7e1f5b0c2d4e6f8a9b1c3d5e7f9a0b
+          name: 'NFTBan: Module - Geoban status'
+          type: TRAP
+          key: nftban.module.geoban.status
+          value_type: SIGNED
+          description: 'Geoban module status: 1=active, 0=disabled, -1=failed'
+          tags:
+            - tag: component
+              value: modules
+          triggers:
+            - uuid: 4b8f2a6c1d3e5f7a9b0c2d4e6f8a1b2c
+              expression: 'last(/NFTBan/nftban.module.geoban.status)=-1'
+              name: 'NFTBan Geoban module failed'
+              priority: HIGH
+              description: 'The Geoban module has failed and is not blocking traffic by geographic location.'
+              tags:
+                - tag: component
+                  value: modules
+
+        - uuid: 5c9a3b7d2e4f6a8b0c1d3e5f7a9b1c2d
+          name: 'NFTBan: Module - Watchdog status'
+          type: TRAP
+          key: nftban.module.watchdog.status
+          value_type: SIGNED
+          description: 'Watchdog module status: 1=active, 0=disabled, -1=failed'
+          tags:
+            - tag: component
+              value: modules
+          triggers:
+            - uuid: 6d0b4c8e3f5a7b9c1d2e4f6a8b0c2d3e
+              expression: 'last(/NFTBan/nftban.module.watchdog.status)=-1'
+              name: 'NFTBan Watchdog module failed'
+              priority: HIGH
+              description: 'The Watchdog module has failed and is not monitoring system pressure.'
+              tags:
+                - tag: component
+                  value: modules
+
         # --- nftables Metrics ---
         - uuid: d57a5ac275bf4c81b8b57ad93aeb6cc3
           name: 'NFTBan: nftables sets'
@@ -457,6 +591,39 @@ zabbix_export:
           tags:
             - tag: component
               value: feeds
+
+        # --- Feed Health Metrics ---
+        - uuid: 7d4e8f2a1b5c6d9e0a3f4b7c8d1e2f5a
+          name: 'NFTBan: Feeds - Sync errors (24h)'
+          type: TRAP
+          key: nftban.feeds.sync.errors
+          value_type: UNSIGNED
+          description: 'Feed sync errors in the last 24 hours'
+          tags:
+            - tag: component
+              value: feeds
+          triggers:
+            - uuid: 9e8d7c6b5a4f3e2d1c0b9a8f7e6d5c4b
+              expression: 'last(/NFTBan/nftban.feeds.sync.errors)>0'
+              name: 'NFTBan feed sync errors detected ({ITEM.VALUE})'
+              priority: WARNING
+              description: 'One or more feed sync errors occurred in the last 24 hours.'
+
+        - uuid: 3c2b1a0f9e8d7c6b5a4f3e2d1c0b9a8f
+          name: 'NFTBan: Feeds - Stale count'
+          type: TRAP
+          key: nftban.feeds.stale.count
+          value_type: UNSIGNED
+          description: 'Number of stale feeds (more than 24 hours since last sync)'
+          tags:
+            - tag: component
+              value: feeds
+          triggers:
+            - uuid: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d
+              expression: 'last(/NFTBan/nftban.feeds.stale.count)>0'
+              name: 'NFTBan stale feeds detected ({ITEM.VALUE})'
+              priority: WARNING
+              description: 'One or more feeds have not synced in over 24 hours.'
 
         # --- GeoIP Metrics ---
         - uuid: 0062d3715c0d4476b24dcb708e71e194
