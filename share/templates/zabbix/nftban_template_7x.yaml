@@ -427,3 +427,243 @@ zabbix_export:
           key: nftban.server.cpu.cores
           value_type: UNSIGNED
           description: 'Number of CPU cores'
+        # =====================================================================
+        # HOST INVENTORY (auto-populate Zabbix inventory fields)
+        # =====================================================================
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c501
+          name: 'NFTBan: Server hostname'
+          type: TRAP
+          key: nftban.server.hostname
+          value_type: CHAR
+          description: 'Server hostname (short)'
+          inventory_link: NAME
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c502
+          name: 'NFTBan: Server FQDN'
+          type: TRAP
+          key: nftban.server.fqdn
+          value_type: CHAR
+          description: 'Fully qualified domain name'
+          inventory_link: ALIAS
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c503
+          name: 'NFTBan: Server OS'
+          type: TRAP
+          key: nftban.server.os
+          value_type: CHAR
+          description: 'Operating system name and version'
+          inventory_link: OS
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c504
+          name: 'NFTBan: Server OS release'
+          type: TRAP
+          key: nftban.server.os_release
+          value_type: CHAR
+          description: 'OS release/distribution'
+          inventory_link: OS_SHORT
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c505
+          name: 'NFTBan: Server kernel'
+          type: TRAP
+          key: nftban.server.kernel
+          value_type: CHAR
+          description: 'Kernel version'
+          inventory_link: SOFTWARE
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c506
+          name: 'NFTBan: Server architecture'
+          type: TRAP
+          key: nftban.server.arch
+          value_type: CHAR
+          description: 'CPU architecture (x86_64, aarch64)'
+          inventory_link: HW_ARCH
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c507
+          name: 'NFTBan: Server CPU model'
+          type: TRAP
+          key: nftban.server.cpu_model
+          value_type: CHAR
+          description: 'CPU model name'
+          inventory_link: HARDWARE
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c508
+          name: 'NFTBan: Server type'
+          type: TRAP
+          key: nftban.server.type
+          value_type: CHAR
+          description: 'Server type (physical, vm, container)'
+          inventory_link: TYPE
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c509
+          name: 'NFTBan: Server vendor'
+          type: TRAP
+          key: nftban.server.vendor
+          value_type: CHAR
+          description: 'Hardware vendor'
+          inventory_link: VENDOR
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c510
+          name: 'NFTBan: Server model'
+          type: TRAP
+          key: nftban.server.model
+          value_type: CHAR
+          description: 'Hardware model'
+          inventory_link: MODEL
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c511
+          name: 'NFTBan: Server serial'
+          type: TRAP
+          key: nftban.server.serial
+          value_type: CHAR
+          description: 'Serial number'
+          inventory_link: SERIALNO_A
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c512
+          name: 'NFTBan: Server primary IP'
+          type: TRAP
+          key: nftban.server.primary_ip
+          value_type: CHAR
+          description: 'Primary IPv4 address'
+          inventory_link: HOST_ROUTER
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c513
+          name: 'NFTBan: Server MAC address'
+          type: TRAP
+          key: nftban.server.mac_address
+          value_type: CHAR
+          description: 'Primary MAC address'
+          inventory_link: MACADDRESS_A
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c514
+          name: 'NFTBan: Server subnet mask'
+          type: TRAP
+          key: nftban.server.subnet_mask
+          value_type: CHAR
+          description: 'Primary subnet mask'
+          inventory_link: HOST_NETMASK
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c515
+          name: 'NFTBan: Server networks'
+          type: TRAP
+          key: nftban.server.networks
+          value_type: CHAR
+          description: 'Network interfaces with IPs'
+          inventory_link: HOST_NETWORKS
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c516
+          name: 'NFTBan: Server location'
+          type: TRAP
+          key: nftban.server.location
+          value_type: CHAR
+          description: 'Datacenter/location'
+          inventory_link: LOCATION
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c517
+          name: 'NFTBan: NFTBan software'
+          type: TRAP
+          key: nftban.server.nftban_version
+          value_type: CHAR
+          description: 'NFTBan version installed'
+          inventory_link: SOFTWARE_APP_A
+        # =====================================================================
+        # ADDITIONAL SERVER METRICS
+        # =====================================================================
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c520
+          name: 'NFTBan: Server memory total'
+          type: TRAP
+          key: nftban.server.memory_total
+          value_type: UNSIGNED
+          units: B
+          description: 'Total physical memory'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c521
+          name: 'NFTBan: Server memory available'
+          type: TRAP
+          key: nftban.server.memory_available
+          value_type: UNSIGNED
+          units: B
+          description: 'Available memory'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c522
+          name: 'NFTBan: Server memory used percent'
+          type: TRAP
+          key: nftban.server.memory_used_pct
+          value_type: FLOAT
+          units: '%'
+          description: 'Memory utilization percentage'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c523
+          name: 'NFTBan: Server uptime'
+          type: TRAP
+          key: nftban.server.uptime
+          value_type: UNSIGNED
+          units: s
+          description: 'Server uptime in seconds'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c524
+          name: 'NFTBan: Server disk total'
+          type: TRAP
+          key: nftban.server.disk_total
+          value_type: UNSIGNED
+          units: B
+          description: 'Total disk space'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c525
+          name: 'NFTBan: Server disk used percent'
+          type: TRAP
+          key: nftban.server.disk_used_pct
+          value_type: FLOAT
+          units: '%'
+          description: 'Disk utilization percentage'
+        # =====================================================================
+        # NETWORK/BANDWIDTH METRICS
+        # =====================================================================
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c530
+          name: 'NFTBan: Network bytes in'
+          type: TRAP
+          key: nftban.network.bytes_in
+          value_type: UNSIGNED
+          units: B
+          description: 'Total bytes received'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c531
+          name: 'NFTBan: Network bytes out'
+          type: TRAP
+          key: nftban.network.bytes_out
+          value_type: UNSIGNED
+          units: B
+          description: 'Total bytes transmitted'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c532
+          name: 'NFTBan: Network packets in'
+          type: TRAP
+          key: nftban.network.packets_in
+          value_type: UNSIGNED
+          description: 'Total packets received'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c533
+          name: 'NFTBan: Network packets out'
+          type: TRAP
+          key: nftban.network.packets_out
+          value_type: UNSIGNED
+          description: 'Total packets transmitted'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c534
+          name: 'NFTBan: Network packets dropped'
+          type: TRAP
+          key: nftban.network.packets_dropped
+          value_type: UNSIGNED
+          description: 'Dropped packets'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c535
+          name: 'NFTBan: Network errors'
+          type: TRAP
+          key: nftban.network.errors
+          value_type: UNSIGNED
+          description: 'Network errors'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c536
+          name: 'NFTBan: Bandwidth in (rate)'
+          type: TRAP
+          key: nftban.bandwidth.in
+          value_type: FLOAT
+          units: bps
+          description: 'Incoming bandwidth rate'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c537
+          name: 'NFTBan: Bandwidth out (rate)'
+          type: TRAP
+          key: nftban.bandwidth.out
+          value_type: FLOAT
+          units: bps
+          description: 'Outgoing bandwidth rate'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c538
+          name: 'NFTBan: TCP connections'
+          type: TRAP
+          key: nftban.network.tcp_connections
+          value_type: UNSIGNED
+          description: 'Active TCP connections'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c539
+          name: 'NFTBan: TCP established'
+          type: TRAP
+          key: nftban.network.tcp_established
+          value_type: UNSIGNED
+          description: 'Established TCP connections'
+        - uuid: a1b2c3d4e5f6a7b8c9d0e1f2a3b4c540
+          name: 'NFTBan: TCP time wait'
+          type: TRAP
+          key: nftban.network.tcp_time_wait
+          value_type: UNSIGNED
+          description: 'TCP connections in TIME_WAIT'
