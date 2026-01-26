@@ -1280,19 +1280,27 @@
     }
   },
   "zabbix_mapping": {
-    "description": "Mapping from Prometheus metrics to Zabbix items",
+    "description": "Mapping from Prometheus metrics to Zabbix items (auto-converted: _ to .)",
     "prefix": "nftban.",
     "item_type": "TRAP",
+    "conversion_rule": "Metric names convert _ to . automatically (nftban_daemon_up -> nftban.daemon.up)",
     "mappings": {
-      "nftban_daemon_up": "nftban.status",
+      "nftban_daemon_up": "nftban.daemon.up",
       "nftban_daemon_uptime_seconds": "nftban.uptime",
-      "nftban_watchdog_up": "nftban.watchdog.status",
-      "nftban_watchdog_pressure_score{type=\"cpu\"}": "nftban.watchdog.cpu_score",
-      "nftban_watchdog_pressure_score{type=\"memory\"}": "nftban.watchdog.mem_score",
-      "nftban_watchdog_pressure_score{type=\"io\"}": "nftban.watchdog.io_score",
-      "nftban_blocks_total": "nftban.active.count",
-      "nftban_bans_last_24h": "nftban.bans.24h",
-      "nftban_runtime_goroutines": "nftban.goroutines"
+      "nftban_watchdog_up": "nftban.watchdog.up",
+      "nftban_watchdog_cpu_score": "nftban.watchdog.cpu.score",
+      "nftban_watchdog_mem_score": "nftban.watchdog.mem.score",
+      "nftban_watchdog_io_score": "nftban.watchdog.io.score",
+      "nftban_blocks_total": "nftban.blocks.total",
+      "nftban_bans_last_24h": "nftban.bans.last.24h",
+      "nftban_bans_last_1h": "nftban.bans.last.1h",
+      "nftban_throughput_bans_per_minute": "nftban.throughput.bans.per.minute",
+      "nftban_runtime_goroutines": "nftban.goroutines",
+      "nftban_conntrack_entries": "nftban.conntrack.entries",
+      "nftban_conntrack_max": "nftban.conntrack.max",
+      "nftban_conntrack_utilization": "nftban.conntrack.utilization",
+      "nftban_softnet_drops_total": "nftban.softnet.drops.total",
+      "nftban_softnet_backlog_total": "nftban.softnet.backlog.total"
     }
   },
   "deprecation_policy": {
