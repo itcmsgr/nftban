@@ -411,7 +411,7 @@ collect_all_metrics() {
             v4_output=$(nft list set inet nftban blacklist_ipv4 2>/dev/null || true)
             if [[ -n "$v4_output" ]]; then
                 active_v4=$(echo "$v4_output" | grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' | wc -l 2>/dev/null || echo "0")
-                blacklist_v4_temp=$(echo "$v4_output" | grep -c "timeout" 2>/dev/null || echo "0")
+                blacklist_v4_temp=$({ echo "$v4_output" | grep -c "timeout" 2>/dev/null || echo "0"; } | tr -d '[:space:]')
                 blacklist_v4_perm=$((active_v4 - blacklist_v4_temp))
                 [[ $blacklist_v4_perm -lt 0 ]] && blacklist_v4_perm=0
             fi
@@ -421,7 +421,7 @@ collect_all_metrics() {
             v6_output=$(nft list set inet nftban blacklist_ipv6 2>/dev/null || true)
             if [[ -n "$v6_output" ]]; then
                 active_v6=$(echo "$v6_output" | grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' | wc -l 2>/dev/null || echo "0")
-                blacklist_v6_temp=$(echo "$v6_output" | grep -c "timeout" 2>/dev/null || echo "0")
+                blacklist_v6_temp=$({ echo "$v6_output" | grep -c "timeout" 2>/dev/null || echo "0"; } | tr -d '[:space:]')
                 blacklist_v6_perm=$((active_v6 - blacklist_v6_temp))
                 [[ $blacklist_v6_perm -lt 0 ]] && blacklist_v6_perm=0
             fi
@@ -596,10 +596,11 @@ collect_all_metrics() {
             # Fallback: derive event counts from ban log
             if [[ -f "$bans_log" ]]; then
                 # Count BANNED entries as ban events, UNBANNED as unban events
-                eventbus_events_ban=$(grep -c "|BANNED|" "$bans_log" 2>/dev/null | tr -d '[:space:]')
-                eventbus_events_unban=$(grep -c "|UNBANNED|" "$bans_log" 2>/dev/null | tr -d '[:space:]')
-                [[ -z "$eventbus_events_ban" ]] && eventbus_events_ban=0
-                [[ -z "$eventbus_events_unban" ]] && eventbus_events_unban=0
+                # Use { grep || true; } to handle grep returning 1 when no matches
+                eventbus_events_ban=$({ grep -c "|BANNED|" "$bans_log" 2>/dev/null || echo "0"; } | tr -d '[:space:]')
+                eventbus_events_unban=$({ grep -c "|UNBANNED|" "$bans_log" 2>/dev/null || echo "0"; } | tr -d '[:space:]')
+                [[ -z "$eventbus_events_ban" || ! "$eventbus_events_ban" =~ ^[0-9]+$ ]] && eventbus_events_ban=0
+                [[ -z "$eventbus_events_unban" || ! "$eventbus_events_unban" =~ ^[0-9]+$ ]] && eventbus_events_unban=0
                 # Estimate total events from ban activity
                 eventbus_events_total=$((eventbus_events_ban + eventbus_events_unban))
             fi
@@ -647,7 +648,7 @@ collect_all_metrics() {
             local nftban_log="${NFTBAN_LOG_DIR}/nftban.log"
             if [[ -f "$nftban_log" ]]; then
                 # Count lines containing nft command errors (case-insensitive)
-                nft_apply_errors=$(grep -ciE '(nft.*error|nft.*failed|nft:.*Error)' "$nftban_log" 2>/dev/null | tr -d '[:space:]')
+                nft_apply_errors=$({ grep -ciE '(nft.*error|nft.*failed|nft:.*Error)' "$nftban_log" 2>/dev/null || echo "0"; } | tr -d '[:space:]')
                 [[ -z "$nft_apply_errors" || ! "$nft_apply_errors" =~ ^[0-9]+$ ]] && nft_apply_errors=0
             fi
             metrics+="nftban_nftables_apply_errors_total $nft_apply_errors $timestamp\n"
@@ -696,7 +697,7 @@ collect_all_metrics() {
             else
                 # Fallback: count nft commands from log
                 if [[ -f "$nftban_log" ]]; then
-                    nft_commands_total=$(grep -ciE '(nft add|nft delete|nft flush|nft list)' "$nftban_log" 2>/dev/null | tr -d '[:space:]')
+                    nft_commands_total=$({ grep -ciE '(nft add|nft delete|nft flush|nft list)' "$nftban_log" 2>/dev/null || echo "0"; } | tr -d '[:space:]')
                     [[ -z "$nft_commands_total" || ! "$nft_commands_total" =~ ^[0-9]+$ ]] && nft_commands_total=0
                 fi
             fi
