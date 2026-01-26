@@ -925,11 +925,11 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 	}
 	_ = banlog.LogBan(ip, banSource, "UNK") // Country lookup done separately
 
-	// Publish ban event
-	d.bus.Publish(eventbus.NewEvent(eventbus.EventBan, source).
-		WithIP(ip).
-		WithMessage(fmt.Sprintf("Banned: %s", reason)).
-		WithSeverity(eventbus.SeverityInfo))
+	// NOTE: Do NOT publish EventBan here - the IPC handler already executed the ban
+	// and logged it. The EventBan subscriber is for module-initiated bans only.
+	// Publishing EventBan here would cause:
+	// 1. Duplicate ban execution (subscriber calls d.backend.Ban again)
+	// 2. Duplicate bans.log entries
 
 	return SocketResponse{
 		Success: true,

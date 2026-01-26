@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/analytics"
-	"github.com/itcmsgr/nftban/pkg/banlog"
 	"github.com/itcmsgr/nftban/pkg/blacklist"
 	"github.com/itcmsgr/nftban/pkg/geoip"
 	"github.com/itcmsgr/nftban/pkg/ipc"
@@ -236,16 +235,9 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 		fmt.Printf("  ⚠️  Analytics not available\n")
 	}
 
-	// Record to central ban.log (for stats dashboard)
-	banSource := source
-	if banSource == "" {
-		banSource = banlog.SourceManual
-	}
-	if err := banlog.LogBan(normalizedIP, banSource, country); err != nil {
-		fmt.Printf("  ⚠️  Failed to write to bans.log: %v\n", err)
-	} else {
-		fmt.Printf("  ✅ Ban logged to %s/bans.log\n", cfg.LogDir)
-	}
+	// NOTE: bans.log is written by the daemon (nftband) via IPC handler
+	// Do NOT log here to avoid duplicate entries
+	fmt.Printf("  ✅ Ban logged to %s/bans.log (via daemon)\n", cfg.LogDir)
 	fmt.Println()
 
 	// Success!
