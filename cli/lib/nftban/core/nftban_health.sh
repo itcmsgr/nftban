@@ -500,7 +500,8 @@ nftban_health_check_all() {
 
     # Run service checks
     nftban_health_check_services || ((warnings++))
-    nftban_health_check_timers || ((warnings++))
+    nftban_health_check_daemon "$auto_heal" || ((errors++))
+    nftban_health_check_timers "$auto_heal" || ((warnings++))
 
     # Run optional feature checks (don't count as errors)
     nftban_health_check_modules 2>/dev/null || true
@@ -551,6 +552,7 @@ export -f nftban_health_check_binaries
 export -f nftban_health_check_paths
 export -f nftban_health_check_permissions
 export -f nftban_health_check_services
+export -f nftban_health_check_daemon
 export -f nftban_health_check_modules
 export -f nftban_health_check_geoip
 export -f nftban_health_check_geoban

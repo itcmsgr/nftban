@@ -212,21 +212,91 @@ EOF
 fi
 
 # =============================================================================
-# 4. Enable and start systemd timer
+# 4. Enable and start critical systemd timers
 # =============================================================================
-log_info "Configuring systemd timer..."
+log_info "Configuring critical systemd timers..."
 
-if systemctl list-unit-files | grep -q "nftban.timer"; then
-    systemctl daemon-reload 2>/dev/null || true
-    systemctl enable nftban.timer 2>/dev/null || log_warn "Failed to enable nftban.timer"
-    systemctl start nftban.timer 2>/dev/null || log_warn "Failed to start nftban.timer"
-    log_info "Enabled and started nftban.timer"
+# Critical timers that must always be enabled
+# These are auto-enabled by the health check mechanism
+CRITICAL_TIMERS=(
+    "nftban-maintenance.timer"   # CRITICAL: SSH/IP lockout prevention
+    "nftban-health.timer"        # Health checks and auto-heal
+    "nftban-core-feeds.timer"    # Threat feed updates (auto-enabled)
+)
+
+systemctl daemon-reload 2>/dev/null || true
+
+for timer in "${CRITICAL_TIMERS[@]}"; do
+    if systemctl list-unit-files "$timer" --no-legend 2>/dev/null | grep -q "^$timer"; then
+        # Timer unit exists - check if enabled
+        if ! systemctl is-enabled --quiet "$timer" 2>/dev/null; then
+            log_warn "$timer not enabled - auto-enabling..."
+            if systemctl enable "$timer" 2>/dev/null; then
+                log_info "AUTO-FIXED: Enabled $timer"
+            else
+                log_error "Failed to enable $timer"
+            fi
+        fi
+
+        # Check if active (running)
+        if ! systemctl is-active --quiet "$timer" 2>/dev/null; then
+            log_warn "$timer not active - auto-starting..."
+            if systemctl start "$timer" 2>/dev/null; then
+                log_info "AUTO-FIXED: Started $timer"
+            else
+                log_error "Failed to start $timer"
+            fi
+        else
+            log_info "✅ $timer is active"
+        fi
+    else
+        log_warn "$timer not installed - may need to run install.sh"
+    fi
+done
+
+# =============================================================================
+# 5. Check and auto-start nftband daemon (CRITICAL for feeds and bans)
+# =============================================================================
+log_info "Checking nftband daemon status..."
+
+# Check nftband.socket first (socket activation)
+if systemctl list-unit-files nftband.socket &>/dev/null 2>&1; then
+    if ! systemctl is-active --quiet nftband.socket 2>/dev/null; then
+        log_warn "nftband.socket not active - attempting to start..."
+        if systemctl start nftband.socket 2>/dev/null; then
+            log_info "AUTO-FIXED: Started nftband.socket"
+        else
+            log_error "Failed to start nftband.socket - check: journalctl -u nftband.socket"
+        fi
+    else
+        log_info "✅ nftband.socket is active"
+    fi
+fi
+
+# Check nftband.service (main daemon)
+if systemctl list-unit-files nftband.service &>/dev/null 2>&1; then
+    if ! systemctl is-active --quiet nftband.service 2>/dev/null; then
+        log_warn "nftband daemon not running - feeds and bans will not work!"
+        log_warn "Attempting to start nftband.service..."
+        if systemctl start nftband.service 2>/dev/null; then
+            sleep 2
+            if systemctl is-active --quiet nftband.service 2>/dev/null; then
+                log_info "AUTO-FIXED: Started nftband daemon"
+            else
+                log_error "nftband daemon failed to start - check: journalctl -u nftband.service"
+            fi
+        else
+            log_error "Failed to start nftband daemon"
+        fi
+    else
+        log_info "✅ nftband daemon is running"
+    fi
 else
-    log_warn "nftban.timer not found - may need to complete installation first"
+    log_warn "nftband.service not installed - daemon functionality unavailable"
 fi
 
 # =============================================================================
-# 5. Create default configuration if missing
+# 6. Create default configuration if missing
 # =============================================================================
 log_info "Checking configuration files..."
 
@@ -235,7 +305,7 @@ if [ ! -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]; then
 fi
 
 # =============================================================================
-# 6. Test nftables access
+# 7. Test nftables access
 # =============================================================================
 log_info "Testing nftables access..."
 
