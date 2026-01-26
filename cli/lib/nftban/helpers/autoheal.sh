@@ -221,8 +221,12 @@ log_info "Configuring critical systemd timers..."
 CRITICAL_TIMERS=(
     "nftban-maintenance.timer"   # CRITICAL: SSH/IP lockout prevention
     "nftban-health.timer"        # Health checks and auto-heal
-    "nftban-core-feeds.timer"    # Threat feed updates (auto-enabled)
 )
+
+# Conditionally add feeds timer only if feeds are enabled (save resources)
+if [[ "${NFTBAN_FEEDS_ENABLED:-false}" == "true" ]]; then
+    CRITICAL_TIMERS+=("nftban-core-feeds.timer")
+fi
 
 systemctl daemon-reload 2>/dev/null || true
 

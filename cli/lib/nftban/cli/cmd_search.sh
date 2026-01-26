@@ -218,7 +218,7 @@ _search_nftables() {
     fi
 }
 
-# Search in feed files
+# Search in feed files (exact match)
 _search_feeds() {
     local ip="$1"
     local found_feeds=()
@@ -245,6 +245,181 @@ _search_feeds() {
     else
         return 1
     fi
+}
+
+# =============================================================================
+# CIDR CONTAINMENT FUNCTIONS
+# =============================================================================
+
+# Convert IPv4 address to integer for comparison
+# Args: $1 = IP address (e.g., "192.168.1.1")
+# Returns: Integer representation via echo
+_ipv4_to_int() {
+    local ip="$1"
+    local a b c d
+    IFS='.' read -r a b c d <<< "$ip"
+    echo $(( (a << 24) + (b << 16) + (c << 8) + d ))
+}
+
+# Check if an IPv4 address is contained within a CIDR
+# Args: $1 = IP to check, $2 = CIDR (e.g., "10.0.0.0/8")
+# Returns: 0 if IP is in CIDR, 1 otherwise
+_ipv4_in_cidr() {
+    local ip="$1"
+    local cidr="$2"
+
+    # Extract network and prefix length
+    local network="${cidr%/*}"
+    local prefix="${cidr#*/}"
+
+    # Validate prefix
+    if [[ ! "$prefix" =~ ^[0-9]+$ ]] || [[ "$prefix" -lt 0 ]] || [[ "$prefix" -gt 32 ]]; then
+        return 1
+    fi
+
+    # Convert to integers
+    local ip_int network_int mask
+    ip_int=$(_ipv4_to_int "$ip")
+    network_int=$(_ipv4_to_int "$network")
+
+    # Calculate mask (all 1s for prefix bits, then 0s)
+    if [[ "$prefix" -eq 0 ]]; then
+        mask=0
+    else
+        mask=$(( (0xFFFFFFFF << (32 - prefix)) & 0xFFFFFFFF ))
+    fi
+
+    # Check if IP is in network range
+    if [[ $(( ip_int & mask )) -eq $(( network_int & mask )) ]]; then
+        return 0
+    fi
+    return 1
+}
+
+# Check if an IPv6 address is contained within a CIDR
+# This is a simplified check - for full IPv6 support, use nftban-core
+# Args: $1 = IP to check, $2 = CIDR
+# Returns: 0 if IP is in CIDR, 1 otherwise
+_ipv6_in_cidr() {
+    local ip="$1"
+    local cidr="$2"
+    local result
+
+    # For IPv6, we rely on nftban-core or Python if available
+    # Bash integer arithmetic can't handle 128-bit addresses
+
+    # Try Python (commonly available)
+    if command -v python3 &>/dev/null; then
+        # Use python3 to check CIDR containment
+        # Output "1" for match, "0" for no match (avoids exit code issues with strict mode)
+        result=$(python3 -c "
+import ipaddress
+try:
+    ip = ipaddress.ip_address('$ip')
+    net = ipaddress.ip_network('$cidr', strict=False)
+    print('1' if ip in net else '0')
+except:
+    print('0')
+" 2>/dev/null) || result="0"
+
+        if [[ "$result" == "1" ]]; then
+            return 0
+        fi
+        return 1
+    fi
+
+    # Fallback: no IPv6 CIDR support without python/nftban-core
+    return 1
+}
+
+# Check if an IP is contained within a CIDR (auto-detects IPv4/IPv6)
+# Args: $1 = IP to check, $2 = CIDR
+# Returns: 0 if IP is in CIDR, 1 otherwise
+_ip_in_cidr() {
+    local ip="$1"
+    local cidr="$2"
+
+    # Detect IP version
+    if [[ "$ip" == *:* ]]; then
+        # IPv6
+        _ipv6_in_cidr "$ip" "$cidr"
+    else
+        # IPv4
+        _ipv4_in_cidr "$ip" "$cidr"
+    fi
+}
+
+# Search feeds for CIDR containment (IP within a CIDR range in feeds)
+# Args: $1 = IP address to search for
+# Output: Feed names and matching CIDRs (one per line: "feed_name:cidr")
+# Returns: 0 if found in any feed CIDR, 1 otherwise
+_search_feeds_cidr() {
+    local ip="$1"
+    local found_cidrs=()
+
+    if [[ ! -d "$NFTBAN_FEEDS_DIR" ]]; then
+        return 1
+    fi
+
+    # Determine if IPv4 or IPv6
+    local is_ipv6=false
+    [[ "$ip" == *:* ]] && is_ipv6=true
+
+    # First try nftban-core if available (faster, handles IPv6 properly)
+    local nftban_core_bin="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}"
+    if [[ ! -x "$nftban_core_bin" ]]; then
+        nftban_core_bin=$(command -v nftban-core 2>/dev/null || echo "")
+    fi
+
+    # nftban-core check already does CIDR containment but doesn't return specific CIDRs
+    # So we do our own scan for detailed reporting
+
+    for feed_file in "$NFTBAN_FEEDS_DIR"/*.txt; do
+        if [[ ! -f "$feed_file" ]]; then
+            continue
+        fi
+
+        local feed_name
+        feed_name=$(basename "$feed_file" .txt)
+
+        # Read feed file and check CIDRs
+        while IFS= read -r line || [[ -n "$line" ]]; do
+            # Skip comments and empty lines
+            [[ -z "$line" || "$line" == \#* || "$line" == \;* ]] && continue
+
+            # Extract first field (IP/CIDR)
+            local entry="${line%% *}"
+            entry="${entry%%#*}"
+            entry="${entry%%;*}"
+            entry=$(echo "$entry" | tr -d '[:space:]')
+
+            [[ -z "$entry" ]] && continue
+
+            # Only check CIDR entries (contain /)
+            if [[ "$entry" == */* ]]; then
+                # Match IP version
+                local cidr_is_ipv6=false
+                [[ "$entry" == *:* ]] && cidr_is_ipv6=true
+
+                # Skip if IP version doesn't match
+                if [[ "$is_ipv6" != "$cidr_is_ipv6" ]]; then
+                    continue
+                fi
+
+                # Check if IP is in this CIDR
+                if _ip_in_cidr "$ip" "$entry"; then
+                    found_cidrs+=("${feed_name}:${entry}")
+                fi
+            fi
+        done < "$feed_file"
+    done
+
+    if [[ ${#found_cidrs[@]} -gt 0 ]]; then
+        printf '%s\n' "${found_cidrs[@]}"
+        return 0
+    fi
+
+    return 1
 }
 
 # Note: fail2ban search removed in v1.0 (replaced by Suricata IDS and built-in login monitoring)
@@ -314,6 +489,7 @@ _display_results() {
     local feeds_result="$3"
     local geoip_result="${4:-}"
     local country_banned="${5:-false}"
+    local cidr_result="${6:-}"
 
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
@@ -406,13 +582,25 @@ _display_results() {
         echo ""
     fi
 
-    # Show feed matches
+    # Show feed matches (exact IP match)
     if [[ -n "$feeds_result" ]]; then
-        echo "Found in threat feeds:"
+        echo "Found in threat feeds (exact match):"
         echo "───────────────────────────────────────────────────────────────"
         while IFS= read -r feed; do
             echo "  ✓ $feed"
         done <<< "$feeds_result"
+        echo ""
+    fi
+
+    # Show CIDR containment matches
+    if [[ -n "$cidr_result" ]]; then
+        echo "Found in threat feed CIDR ranges (containment match):"
+        echo "───────────────────────────────────────────────────────────────"
+        while IFS= read -r match; do
+            local feed_name="${match%%:*}"
+            local cidr="${match#*:}"
+            echo "  ✓ $feed_name → $cidr (IP $ip is within this range)"
+        done <<< "$cidr_result"
         echo ""
     fi
 
@@ -472,7 +660,8 @@ DESCRIPTION:
     - GeoIP country lookup (shows country code and name)
     - GeoBan status (shows if country is banned)
     - nftables sets (whitelist, temp_ban, user_blacklist, system_blacklist, feeds)
-    - Threat intelligence feeds
+    - Threat intelligence feeds (exact IP match)
+    - CIDR containment (checks if IP falls within any CIDR range in feeds)
 
     Port Search:
     - nftables port sets (tcp_ports, udp_ports)
@@ -514,11 +703,13 @@ NOTES:
     - GeoIP lookup shows country code and name for single IPs
     - GeoBan check shows if the IP's country is banned
     - Searches all nftables sets (whitelist, blacklist)
-    - Searches downloaded threat feeds
+    - Searches downloaded threat feeds for exact IP matches
+    - Performs CIDR containment check (e.g., 0.0.0.0 found in 0.0.0.0/8)
     - Searches port whitelist sets and config files
     - Shows ban priority and type
     - Shows expiry time for temp bans
     - GeoIP requires nftban-core binary and GeoIP database
+    - CIDR containment: IPv4 is native bash; IPv6 requires python3
 
 HELP
 }
@@ -643,6 +834,12 @@ nftban_cmd_search() {
     local feeds_result=""
     feeds_result=$(_search_feeds "$ip" 2>/dev/null) || true
 
+    # CIDR containment search (only for single IPs, not CIDRs)
+    local cidr_result=""
+    if [[ "$ip" != */* ]]; then
+        cidr_result=$(_search_feeds_cidr "$ip" 2>/dev/null) || true
+    fi
+
     # Perform GeoIP lookup (handle case where database is not installed)
     local geoip_result=""
     local country_banned="false"
@@ -675,12 +872,22 @@ nftban_cmd_search() {
             done <<< "$(echo "$nft_result" | tail -n +2)"
         fi
 
-        # Parse feeds results
-        if [[ -n "$feeds_result" ]] && [[ "$feeds_result" == "FOUND"* ]]; then
+        # Parse feeds results (exact match)
+        if [[ -n "$feeds_result" ]]; then
+            found="true"
             while IFS= read -r feed; do
                 [[ -z "$feed" ]] && continue
                 locations+=("feed:$feed")
-            done <<< "$(echo "$feeds_result" | tail -n +2)"
+            done <<< "$feeds_result"
+        fi
+
+        # Parse CIDR containment results
+        if [[ -n "$cidr_result" ]]; then
+            found="true"
+            while IFS= read -r match; do
+                [[ -z "$match" ]] && continue
+                locations+=("cidr:$match")
+            done <<< "$cidr_result"
         fi
 
         # Build locations JSON array
@@ -725,7 +932,7 @@ nftban_cmd_search() {
     fi
 
     # Display results (human-readable)
-    _display_results "$ip" "$nft_result" "$feeds_result" "$geoip_result" "$country_banned"
+    _display_results "$ip" "$nft_result" "$feeds_result" "$geoip_result" "$country_banned" "$cidr_result"
 
     # Show suggested actions (unless --no-interactive flag used)
     if [[ "$interactive" == "true" ]]; then

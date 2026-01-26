@@ -5,22 +5,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Critical maintenance tasks that run even when NFTBan is disabled
 #
-# meta:name=maintenance
-# meta:type=cron
-# meta:header=Maintenance Runner
-# meta:version=1.0.0
+# meta:name="maintenance"
+# meta:type="cron"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:created_date="2025-11-05"
 #
-# **Description & Purpose**
-# meta:description=Runs critical safety checks (SSH monitoring, autoheal, IP changes)
-# meta:input=None (runs automatically every 15 minutes)
-# meta:output=Logs to journal and ${NFTBAN_LOG_DIR}/maintenance.log
+# meta:description="Runs critical safety checks (SSH monitoring, autoheal, IP changes)"
+# meta:input="None (runs automatically every 15 minutes)"
+# meta:output="Logs to journal and maintenance.log"
+# meta:depends="bash,systemctl,nft"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,nft_ipc.sh,nftban_health.sh,autoheal.sh
-#
-# meta:created_date=2025-11-05
+# meta:inventory.files=""
+# meta:inventory.binaries="systemctl,nft"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR,NFTBAN_LOG_DIR"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units="nftban-maintenance.timer"
+# meta:inventory.network=""
+# meta:inventory.privileges="nft read/write via IPC"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -122,6 +123,8 @@ main() {
     # Check if SSH port is whitelisted
     SSH_WHITELIST="${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf"
     SSH_PORT_STATE="${NFTBAN_DATA_DIR}/state/ssh_port_alert.state"
+    # Track the currently active SSH port (for cleanup when port changes back)
+    SSH_PORT_ACTIVE="${NFTBAN_DATA_DIR}/state/ssh_port_active.state"
 
     if [[ -f "$SSH_WHITELIST" ]]; then
         # Check if current SSH port is in whitelist
@@ -129,6 +132,10 @@ main() {
             log "INFO" "SSH port check: OK (port $SSH_PORT whitelisted)"
             # Clear alert state if port is now correct
             [[ -f "$SSH_PORT_STATE" ]] && rm -f "$SSH_PORT_STATE"
+
+            # Ensure active port state is current (for future cleanup)
+            mkdir -p "${NFTBAN_DATA_DIR}/state"
+            echo "$SSH_PORT" > "$SSH_PORT_ACTIVE"
         else
             # Check if we already alerted about this port change
             if [[ -f "$SSH_PORT_STATE" ]]; then
@@ -144,6 +151,18 @@ main() {
             log "WARN" "SSH port changed to $SSH_PORT but not whitelisted!"
             log "INFO" "Auto-updating SSH port whitelist (lockout prevention)..."
 
+            # Get the OLD SSH port that was auto-added (for cleanup)
+            OLD_SSH_PORT=""
+            if [[ -f "$SSH_PORT_ACTIVE" ]]; then
+                OLD_SSH_PORT=$(cat "$SSH_PORT_ACTIVE" 2>/dev/null || echo "")
+                # Validate it's a number and different from current
+                if [[ -n "$OLD_SSH_PORT" ]] && [[ "$OLD_SSH_PORT" =~ ^[0-9]+$ ]] && [[ "$OLD_SSH_PORT" != "$SSH_PORT" ]]; then
+                    log "INFO" "Detected old SSH port $OLD_SSH_PORT (will be removed from firewall)"
+                else
+                    OLD_SSH_PORT=""
+                fi
+            fi
+
             # Backup old whitelist
             cp "$SSH_WHITELIST" "${SSH_WHITELIST}.backup.$(date +%Y%m%d-%H%M%S)"
 
@@ -156,7 +175,7 @@ ${SSH_PORT}|T
 EOF
             chmod 644 "$SSH_WHITELIST"
 
-            log "INFO" "✅ SSH port $SSH_PORT added to whitelist"
+            log "INFO" "SSH port $SSH_PORT added to whitelist"
 
             # ATOMIC firewall update - only update whitelist, don't touch other rules
             log "INFO" "Atomically updating firewall whitelist for SSH port..."
@@ -164,15 +183,30 @@ EOF
                 # Firewall is active - do atomic whitelist update
                 # This only updates the tcp_ports set, not the entire firewall
                 if nft list set ${NFTBAN_TABLE_IPV4} tcp_ports >/dev/null 2>&1; then
-                    # Add port via IPC to daemon (single-writer architecture)
+                    # FIRST: Add the NEW port (safety - ensure SSH access before removing old)
                     if nft_ipc_add_element "${NFTBAN_TABLE_IPV4}" tcp_ports "$SSH_PORT"; then
-                        log "INFO" "✅ SSH port $SSH_PORT added to firewall (via daemon)"
-                        log "INFO" "⚠️  ALERT: SSH port changed and firewall updated (no lockout risk)"
+                        log "INFO" "SSH port $SSH_PORT added to firewall (via daemon)"
+                        # Also add to IPv6 table
+                        nft_ipc_add_element "${NFTBAN_TABLE_IPV6}" tcp_ports "$SSH_PORT" 2>/dev/null || true
+
+                        # THEN: Remove the OLD port if it was auto-added and is different
+                        if [[ -n "$OLD_SSH_PORT" ]]; then
+                            log "INFO" "Removing old SSH port $OLD_SSH_PORT from firewall..."
+                            if nft_ipc_delete_element "${NFTBAN_TABLE_IPV4}" tcp_ports "$OLD_SSH_PORT"; then
+                                log "INFO" "Old SSH port $OLD_SSH_PORT removed from IPv4 firewall"
+                            else
+                                log "WARN" "Failed to remove old port $OLD_SSH_PORT from IPv4 (may not exist)"
+                            fi
+                            # Also remove from IPv6
+                            nft_ipc_delete_element "${NFTBAN_TABLE_IPV6}" tcp_ports "$OLD_SSH_PORT" 2>/dev/null || true
+                        fi
+
+                        log "INFO" "ALERT: SSH port changed and firewall updated (no lockout risk)"
                     else
                         # IPC failed - daemon may be down, try systemctl restart
                         log "WARN" "Daemon IPC failed, restarting nftables service..."
                         if systemctl restart nftables 2>/dev/null; then
-                            log "INFO" "✅ Firewall reloaded - SSH port $SSH_PORT now allowed"
+                            log "INFO" "Firewall reloaded - SSH port $SSH_PORT now allowed"
                         else
                             log "WARN" "Reload failed - SSH port whitelisted but not yet applied"
                             log "WARN" "Please run: systemctl restart nftables"
@@ -189,11 +223,15 @@ EOF
             # Save alert state to prevent spam (only alert once per port change)
             mkdir -p "${NFTBAN_DATA_DIR}/state"
             echo "$SSH_PORT" > "$SSH_PORT_STATE"
+            # Update active port state for future cleanup
+            echo "$SSH_PORT" > "$SSH_PORT_ACTIVE"
 
             # Send alert if mail is configured (ONLY ONCE)
             if command -v mail &>/dev/null && [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/mail.conf" ]]; then
-                echo "NFTBan Security Alert: SSH port changed to $SSH_PORT, auto-whitelisted and firewall reloaded on $(hostname) at $(date)" | \
-                    mail -s "[NFTBan] SSH Port Auto-Updated on $(hostname)" root 2>/dev/null || true
+                local alert_msg="NFTBan Security Alert: SSH port changed to $SSH_PORT"
+                [[ -n "$OLD_SSH_PORT" ]] && alert_msg+=", old port $OLD_SSH_PORT removed"
+                alert_msg+=", auto-whitelisted and firewall reloaded on $(hostname) at $(date)"
+                echo "$alert_msg" | mail -s "[NFTBan] SSH Port Auto-Updated on $(hostname)" root 2>/dev/null || true
             fi
         fi
     else
@@ -207,7 +245,10 @@ EOF
 ${SSH_PORT}|T
 EOF
         chmod 644 "$SSH_WHITELIST"
-        log "INFO" "✅ Created SSH whitelist with port $SSH_PORT"
+        # Track this as the active SSH port
+        mkdir -p "${NFTBAN_DATA_DIR}/state"
+        echo "$SSH_PORT" > "$SSH_PORT_ACTIVE"
+        log "INFO" "Created SSH whitelist with port $SSH_PORT"
     fi
 
     # ==========================================================================

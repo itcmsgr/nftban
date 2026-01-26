@@ -1737,9 +1737,16 @@ nftban_health_check_systemd_hardening() {
 nftban_health_check_ssh_port() {
     # Check and auto-update SSH port whitelist
     # Returns: 0=OK, 1=Warning (auto-fixed), 2=Error (couldn't fix)
+    #
+    # IMPORTANT: This function also handles CLEANUP of old SSH ports.
+    # When SSH port changes from X to Y, the old port X is removed from
+    # the nftables tcp_ports set to prevent port accumulation.
 
     local status=$HEALTH_OK
     local ssh_issues=()
+
+    # State file to track the currently active SSH port (for cleanup)
+    local ssh_port_active="${NFTBAN_DATA_DIR}/state/ssh_port_active.state"
 
     # Detect current SSH port from sshd_config
     local current_ssh_port=22
@@ -1757,6 +1764,16 @@ nftban_health_check_ssh_port() {
         config_ssh_port=$(grep -oP '^\d+' "${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf" 2>/dev/null | head -1)
     fi
 
+    # Get old SSH port from state (for cleanup)
+    local old_ssh_port=""
+    if [[ -f "$ssh_port_active" ]]; then
+        old_ssh_port=$(cat "$ssh_port_active" 2>/dev/null || echo "")
+        # Validate it's a number and different from current
+        if [[ -z "$old_ssh_port" ]] || ! [[ "$old_ssh_port" =~ ^[0-9]+$ ]] || [[ "$old_ssh_port" == "$current_ssh_port" ]]; then
+            old_ssh_port=""
+        fi
+    fi
+
     # Compare and auto-update if needed
     if [[ "$current_ssh_port" != "$config_ssh_port" ]]; then
         ssh_issues+=("SSH port mismatch: sshd_config=$current_ssh_port, nftban=$config_ssh_port")
@@ -1772,6 +1789,12 @@ EOF
             chmod 644 "${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf" 2>/dev/null || true
 
             ssh_issues+=("AUTO-FIXED: Updated SSH port to $current_ssh_port in ${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf")
+
+            # Track if old port needs cleanup
+            if [[ -n "$old_ssh_port" ]]; then
+                ssh_issues+=("Old SSH port $old_ssh_port will be removed from firewall on reload")
+            fi
+
             ssh_issues+=("Action required: Run 'nftban firewall reload' to apply changes")
 
             status=$HEALTH_WARNING  # Warning because reload needed
@@ -1781,12 +1804,27 @@ EOF
         fi
     fi
 
+    # Update the active SSH port state file (tracks what port is currently in use)
+    if mkdir -p "${NFTBAN_DATA_DIR}/state" 2>/dev/null; then
+        echo "$current_ssh_port" > "$ssh_port_active" 2>/dev/null || true
+    fi
+
     # Verify SSH port is actually in nftables (v0.7.3: check IPv4 table)
     if nft list table ${NFTBAN_TABLE_IPV4} >/dev/null 2>&1; then
         if ! nft list set ${NFTBAN_TABLE_IPV4} tcp_ports 2>/dev/null | grep -qw "$current_ssh_port"; then
             ssh_issues+=("WARNING: SSH port $current_ssh_port NOT in nftables tcp_ports set")
             ssh_issues+=("LOCKOUT RISK! Run: nftban firewall reload")
             status=$HEALTH_ERROR
+        fi
+
+        # Check for stale old SSH port in firewall (cleanup detection)
+        if [[ -n "$old_ssh_port" ]]; then
+            if nft list set ${NFTBAN_TABLE_IPV4} tcp_ports 2>/dev/null | grep -qw "$old_ssh_port"; then
+                ssh_issues+=("CLEANUP: Old SSH port $old_ssh_port still in firewall tcp_ports set")
+                ssh_issues+=("Run 'nftban firewall reload' to remove old port")
+                # This is a warning, not an error (old port open is not a security issue)
+                [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+            fi
         fi
     fi
 
@@ -2901,10 +2939,17 @@ nftban_health_check_timers() {
     local -a timers=(
         "nftban-maintenance.timer"      # CRITICAL: SSH/IP protection, auto-heal
         "nftban-health.timer"           # Health checks
-        "nftban-core-feeds.timer"       # Threat feeds sync (auto-enabled)
-        "nftban-core-geoip.timer"       # GeoIP updates
         "nftban-queue.timer"            # Ban queue processing
     )
+
+    # Conditionally add feature-specific timers (only if feature is enabled)
+    # This saves resources when features are not in use
+    if [[ "${NFTBAN_FEEDS_ENABLED:-false}" == "true" ]]; then
+        timers+=("nftban-core-feeds.timer")   # Threat feeds sync
+    fi
+    if [[ "${NFTBAN_GEOIP_ENABLED:-false}" == "true" ]]; then
+        timers+=("nftban-core-geoip.timer")   # GeoIP updates
+    fi
 
     # Optional timers (only enabled when feature is configured)
     # These are not checked by default - only if the feature is enabled
@@ -2920,7 +2965,7 @@ nftban_health_check_timers() {
     local -A timer_desc=(
         ["nftban-maintenance.timer"]="CRITICAL: SSH/IP lockout prevention, auto-heal"
         ["nftban-health.timer"]="Health checks and auto-heal"
-        ["nftban-core-feeds.timer"]="Threat feeds sync (auto-enabled)"
+        ["nftban-core-feeds.timer"]="Threat feeds sync (if NFTBAN_FEEDS_ENABLED=true)"
         ["nftban-core-geoip.timer"]="GeoIP database updates"
         ["nftban-queue.timer"]="Ban queue processing"
         ["nftban-watchdog.timer"]="System resource monitoring"
