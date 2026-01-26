@@ -394,7 +394,7 @@ collect_all_metrics() {
         local mode
         mode=$(cat "${NFTBAN_RUN_DIR}/mode" 2>/dev/null || echo "normal")
 
-        metrics+="nftban_status $status $timestamp\n"
+        metrics+="nftban_daemon_up $status $timestamp\n"
         metrics+="nftban_version_info{version=\"$version\"} 1 $timestamp\n"
         metrics+="nftban_mode_info{mode=\"$mode\"} 1 $timestamp\n"
         metrics+="nftban_uptime_seconds $uptime $timestamp\n"
@@ -436,7 +436,7 @@ collect_all_metrics() {
         fi
         local active_total=$((active_v4 + active_v6))
 
-        metrics+="nftban_active_bans_total $active_total $timestamp\n"
+        metrics+="nftban_blocks_total $active_total $timestamp\n"
         metrics+="nftban_active_bans{family=\"ipv4\"} $active_v4 $timestamp\n"
         metrics+="nftban_active_bans{family=\"ipv6\"} $active_v6 $timestamp\n"
 
@@ -536,12 +536,12 @@ collect_all_metrics() {
             rate=$(echo "scale=2; $bans_5m / 5" | bc 2>/dev/null || echo "0")
 
             # Time window metrics
-            metrics+="nftban_bans_1h $bans_1h $timestamp\n"
-            metrics+="nftban_bans_24h $bans_24h $timestamp\n"
+            metrics+="nftban_bans_last_1h $bans_1h $timestamp\n"
+            metrics+="nftban_bans_last_24h $bans_24h $timestamp\n"
             metrics+="nftban_bans_7d $bans_7d $timestamp\n"
             metrics+="nftban_bans_30d $bans_30d $timestamp\n"
             metrics+="nftban_bans_total $bans_total $timestamp\n"
-            metrics+="nftban_ban_rate_per_minute $rate $timestamp\n"
+            metrics+="nftban_throughput_bans_per_minute $rate $timestamp\n"
 
             # Bans by source (total)
             metrics+="nftban_bans_by_source{source=\"login\"} $src_login $timestamp\n"
@@ -889,9 +889,9 @@ collect_all_metrics() {
                     metrics+="nftban_watchdog_mem_score $mem_score $timestamp\n"
                     metrics+="nftban_watchdog_io_score $io_score $timestamp\n"
                 fi
-                metrics+="nftban_watchdog_status 1 $timestamp\n"
+                metrics+="nftban_watchdog_up 1 $timestamp\n"
             else
-                metrics+="nftban_watchdog_status 0 $timestamp\n"
+                metrics+="nftban_watchdog_up 0 $timestamp\n"
             fi
         fi
 
@@ -903,7 +903,7 @@ collect_all_metrics() {
                 # Column 2 (0-indexed: col 1) is dropped packets, values are in hex
                 softnet_drops_total=$(awk '{sum += strtonum("0x" $2)} END {print sum}' /proc/net/softnet_stat 2>/dev/null || echo "0")
             fi
-            metrics+="nftban_kernel_softnet_drops_total $softnet_drops_total $timestamp\n"
+            metrics+="nftban_softnet_drops_total $softnet_drops_total $timestamp\n"
 
             # Calculate rate from previous value
             local softnet_state="${NFTBAN_RUN_DIR}/softnet_state.dat"
@@ -919,7 +919,7 @@ collect_all_metrics() {
                 fi
             fi
             echo "$softnet_drops_total $timestamp" > "$softnet_state"
-            metrics+="nftban_kernel_softnet_drops_rate_per_minute $softnet_drops_rate $timestamp\n"
+            metrics+="nftban_softnet_backlog_total $softnet_drops_rate $timestamp\n"
         fi
 
     fi  # end EXTENDED group
@@ -952,9 +952,9 @@ collect_all_metrics() {
             if [[ $conntrack_max -gt 0 ]]; then
                 conntrack_utilization=$(awk -v e="$conntrack_entries" -v m="$conntrack_max" 'BEGIN {printf "%.2f", (e/m)*100}')
             fi
-            metrics+="nftban_kernel_conntrack_entries $conntrack_entries $timestamp\n"
-            metrics+="nftban_kernel_conntrack_max $conntrack_max $timestamp\n"
-            metrics+="nftban_kernel_conntrack_utilization_percent $conntrack_utilization $timestamp\n"
+            metrics+="nftban_conntrack_entries $conntrack_entries $timestamp\n"
+            metrics+="nftban_conntrack_max $conntrack_max $timestamp\n"
+            metrics+="nftban_conntrack_utilization $conntrack_utilization $timestamp\n"
         fi
 
     fi  # end INVENTORY group
