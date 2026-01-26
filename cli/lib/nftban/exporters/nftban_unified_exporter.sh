@@ -413,7 +413,8 @@ collect_all_metrics() {
             v4_output=$(nft list set ip nftban blacklist_ipv4 2>/dev/null) || v4_output=""
             if [[ -n "$v4_output" ]]; then
                 active_v4=$(echo "$v4_output" | grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' | wc -l 2>/dev/null) || active_v4=0
-                blacklist_v4_temp=$(echo "$v4_output" | grep -c "timeout" 2>/dev/null) || blacklist_v4_temp=0
+                # Match element timeouts (e.g., "timeout 15m") not set flags
+                blacklist_v4_temp=$(echo "$v4_output" | grep -cP 'timeout \d+[smhd]' 2>/dev/null) || blacklist_v4_temp=0
                 blacklist_v4_perm=$((active_v4 - blacklist_v4_temp))
                 [[ $blacklist_v4_perm -lt 0 ]] && blacklist_v4_perm=0
             fi
@@ -425,7 +426,8 @@ collect_all_metrics() {
             v6_output=$(nft list set ip6 nftban blacklist_ipv6 2>/dev/null) || v6_output=""
             if [[ -n "$v6_output" ]]; then
                 active_v6=$(echo "$v6_output" | grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' | wc -l 2>/dev/null) || active_v6=0
-                blacklist_v6_temp=$(echo "$v6_output" | grep -c "timeout" 2>/dev/null) || blacklist_v6_temp=0
+                # Match element timeouts (e.g., "timeout 15m") not set flags
+                blacklist_v6_temp=$(echo "$v6_output" | grep -cP 'timeout \d+[smhd]' 2>/dev/null) || blacklist_v6_temp=0
                 blacklist_v6_perm=$((active_v6 - blacklist_v6_temp))
                 [[ $blacklist_v6_perm -lt 0 ]] && blacklist_v6_perm=0
             fi
