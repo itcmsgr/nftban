@@ -1,7 +1,7 @@
 {
   "registry_version": "1.0.0",
   "schema_version": "2",
-  "generated_at": "2026-01-25",
+  "generated_at": "2026-01-26",
   "description": "NFTBan Metrics Registry - Single source of truth for all telemetry",
   "purpose": {
     "documentation": "Generate METRICS_CONTRACT.md automatically",
@@ -972,14 +972,17 @@
     },
     "nftban_feeds_stale": {
       "type": "gauge",
-      "unit": "",
+      "unit": "count",
       "category": "feeds",
       "source": "shell_prometheus",
       "description": "Number of stale feeds (past update interval)",
       "labels": {},
       "source_details": {"type": "shell", "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh", "function": "collect_feed_health_metrics"},
       "added_version": "1.4.0",
-      "phase": 1
+      "phase": 1,
+      "deprecated": true,
+      "replaced_by": "nftban_feeds_stale_count",
+      "deprecation_note": "Unified exporter uses nftban_feeds_stale_count; this name kept for backward compatibility"
     },
     "nftban_feeds_sync_errors_total": {
       "type": "counter",
@@ -1277,6 +1280,545 @@
       "labels": [],
       "category": "geoban",
       "phase": 5
+    },
+    "nftban_version_info": {
+      "type": "gauge",
+      "unit": "info",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Always 1, carries version label for NFTBan version",
+      "labels": {
+        "version": {
+          "type": "string",
+          "description": "NFTBan version string (e.g., 1.4.0)"
+        }
+      },
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_mode_info": {
+      "type": "gauge",
+      "unit": "info",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Always 1, carries mode label for daemon operating mode",
+      "labels": {
+        "mode": {
+          "type": "enum",
+          "values": ["normal", "degraded", "survival"],
+          "description": "Daemon operating mode"
+        }
+      },
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_pid": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "NFTBan daemon process ID",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_blacklist_ipv4_perm": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Permanently blocked IPv4 addresses",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_blacklist_ipv4_temp": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Temporarily blocked IPv4 addresses (with timeout)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_blacklist_ipv6_perm": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Permanently blocked IPv6 addresses",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_blacklist_ipv6_temp": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Temporarily blocked IPv6 addresses (with timeout)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_bans_by_source": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Total bans by detection source (all time)",
+      "labels": {
+        "source": {
+          "type": "enum",
+          "values": ["login", "portscan", "ddos", "manual", "feeds", "suricata"],
+          "description": "Ban source/detection module"
+        }
+      },
+      "cardinality": 6,
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_bans_by_source_24h": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Bans by detection source in last 24 hours",
+      "labels": {
+        "source": {
+          "type": "enum",
+          "values": ["login", "portscan", "ddos", "manual", "feeds", "suricata"],
+          "description": "Ban source/detection module"
+        }
+      },
+      "cardinality": 6,
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_unique_ips_24h": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Unique IP addresses banned in last 24 hours",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_unique_ips_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Total unique IP addresses ever banned",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_bans_last_1h": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Number of bans in last 1 hour",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_bans_7d": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Number of bans in last 7 days",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_bans_30d": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Number of bans in last 30 days",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_modules_enabled": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Number of modules with config files present",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_modules_active": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Number of modules with active timers/services",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_modules_failed": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Number of modules in failed state",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_server_load1": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Server 1-minute load average",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_server_load5": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Server 5-minute load average",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_server_load15": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Server 15-minute load average",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_server_cpu_cores": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Number of CPU cores available",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_geoip_database_age_days": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "geoban",
+      "source": "shell_prometheus",
+      "description": "Age of GeoIP database in days",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_geoip_database_present": {
+      "type": "gauge",
+      "unit": "boolean",
+      "category": "geoban",
+      "source": "shell_prometheus",
+      "description": "1 if GeoIP database file exists, 0 otherwise",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_memory_rss_bytes": {
+      "type": "gauge",
+      "unit": "bytes",
+      "category": "runtime",
+      "source": "shell_prometheus",
+      "description": "Daemon resident set size memory usage",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_open_fds": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "runtime",
+      "source": "shell_prometheus",
+      "description": "Number of open file descriptors",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_threads": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "runtime",
+      "source": "shell_prometheus",
+      "description": "Number of threads in daemon process",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_feeds_loaded": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "feeds",
+      "source": "shell_prometheus",
+      "description": "Number of feeds successfully loaded with data",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_feeds_failed": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "feeds",
+      "source": "shell_prometheus",
+      "description": "Number of feeds that failed to load",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_feeds_ips_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "feeds",
+      "source": "shell_prometheus",
+      "description": "Total IPs loaded from all feeds (IPv4 + IPv6)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_feeds_ipv4_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "feeds",
+      "source": "shell_prometheus",
+      "description": "Total IPv4 addresses loaded from all feeds",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_feeds_ipv6_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "feeds",
+      "source": "shell_prometheus",
+      "description": "Total IPv6 addresses loaded from all feeds",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_feeds_stale_count": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "feeds",
+      "source": "shell_prometheus",
+      "description": "Number of feeds with last sync older than 24 hours",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_geoban_countries_blocked": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "geoban",
+      "source": "shell_prometheus",
+      "description": "Number of countries currently blocked by GeoBan",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_geoip_countries_blocked": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "geoban",
+      "source": "shell_prometheus",
+      "description": "Number of countries blocked (alias for geoban_countries_blocked)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_module_login_status": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Login module status (1=active, 0=disabled, -1=failed)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_module_portscan_status": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Portscan module status (1=active, 0=disabled, -1=failed)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_module_ddos_status": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "DDoS module status (1=active, 0=disabled, -1=failed)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_module_suricata_status": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Suricata module status (1=active, 0=disabled, -1=failed)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_module_feeds_status": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Feeds module status (1=active, 0=disabled, -1=failed)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_module_geoban_status": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "GeoBan module status (1=active, 0=disabled, -1=failed)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_module_watchdog_status": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Watchdog module status (1=active, 0=disabled, -1=failed)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_nft_sets_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "firewall",
+      "source": "shell_prometheus",
+      "description": "Total number of nftables sets in nftban table",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_nft_elements_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "firewall",
+      "source": "shell_prometheus",
+      "description": "Total elements across all nftables sets",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_blacklist": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Blacklist element count by IP family",
+      "labels": {
+        "family": {
+          "type": "enum",
+          "values": ["ipv4", "ipv6"],
+          "description": "IP address family"
+        }
+      },
+      "cardinality": 2,
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_blacklist_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Total blacklist elements (IPv4 + IPv6)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_whitelist": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Whitelist element count by IP family",
+      "labels": {
+        "family": {
+          "type": "enum",
+          "values": ["ipv4", "ipv6"],
+          "description": "IP address family"
+        }
+      },
+      "cardinality": 2,
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_whitelist_total": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Total whitelist elements (IPv4 + IPv6)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_watchdog_cpu_score": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "watchdog",
+      "source": "shell_prometheus",
+      "description": "Watchdog CPU pressure score (0-100)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_watchdog_mem_score": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "watchdog",
+      "source": "shell_prometheus",
+      "description": "Watchdog memory pressure score (0-100)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
+    },
+    "nftban_watchdog_io_score": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "watchdog",
+      "source": "shell_prometheus",
+      "description": "Watchdog I/O pressure score (0-100)",
+      "labels": {},
+      "added_version": "1.4.0",
+      "phase": 1
     }
   },
   "zabbix_mapping": {
@@ -1316,31 +1858,30 @@
     "patch": "Documentation updates, bug fixes"
   },
   "_metadata": {
-    "total_metrics": 71,
+    "total_metrics": 158,
     "by_type": {
-      "gauge": 47,
-      "counter": 19,
-      "histogram": 5
+      "gauge": 122,
+      "counter": 34,
+      "histogram": 2
     },
     "by_source": {
-      "go_nftban": 35,
-      "go_sampler": 16,
-      "go_collector": 18,
-      "shell_prometheus": 51,
-      "shell_zabbix": 35
+      "go_nftban": 13,
+      "go_sampler": 7,
+      "shell_prometheus": 70,
+      "unspecified": 68
     },
     "by_category": {
-      "daemon": 4,
-      "watchdog": 4,
-      "runtime": 4,
+      "daemon": 11,
+      "watchdog": 7,
+      "runtime": 7,
       "ipc": 3,
       "throughput": 2,
-      "blocks": 10,
-      "firewall": 5,
-      "network": 10,
+      "blocks": 25,
+      "firewall": 7,
+      "network": 12,
       "protocol": 2,
-      "connections": 4,
-      "feeds": 5,
+      "connections": 7,
+      "feeds": 14,
       "health": 2,
       "exporter": 2,
       "operations": 2,
@@ -1348,19 +1889,27 @@
       "loginmon": 2,
       "portscan": 2,
       "ddos": 2,
-      "geoban": 3,
-      "modules": 1,
+      "geoban": 7,
+      "modules": 12,
       "analytics": 3,
-      "alerts": 1
+      "alerts": 1,
+      "suricata": 9,
+      "eventbus": 5,
+      "nftables": 6,
+      "bans": 5
     },
-    "total_labels": 16,
-    "bounded_cardinality_labels": 13,
+    "total_labels": 18,
+    "bounded_cardinality_labels": 15,
     "moderate_cardinality_labels": 2,
     "forbidden_labels": 4,
     "notes": [
       "Metrics may overlap across sources (e.g., blocks_total in both sampler and collector)",
       "Shell exporters read from daemon IPC and add computed metrics",
-      "Go sources use different registries - check source field for details"
-    ]
+      "Go sources use different registries - check source field for details",
+      "nftban_feeds_stale is deprecated, use nftban_feeds_stale_count instead",
+      "68 metrics have unspecified source (legacy entries or planned metrics)"
+    ],
+    "last_updated": "2026-01-26",
+    "update_reason": "Added 55 metrics from unified exporter audit"
   }
 }

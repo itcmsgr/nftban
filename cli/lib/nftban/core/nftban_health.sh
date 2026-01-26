@@ -72,7 +72,13 @@ if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
 fi
 
-# Metrics endpoint defaults (use config or fallback)
+# Load metrics configuration
+# shellcheck source=/dev/null
+[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf"
+# shellcheck source=/dev/null
+[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" 2>/dev/null || true
+
+# Metrics endpoint defaults (fallbacks if not set in config)
 : "${NFTBAN_METRICS_PROMETHEUS_ADDR:=localhost:9090}"
 : "${NFTBAN_METRICS_NODE_EXPORTER_ADDR:=localhost:9100}"
 : "${NFTBAN_METRICS_VICTORIA_ADDR:=localhost:8428}"
