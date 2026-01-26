@@ -369,7 +369,7 @@ zabbix_export:
           name: 'NFTBan: Module - Login status'
           type: TRAP
           key: nftban.module.login.status
-          value_type: SIGNED
+          value_type: FLOAT
           description: 'Login module status: 1=active, 0=disabled, -1=failed'
           tags:
             - tag: component
@@ -388,7 +388,7 @@ zabbix_export:
           name: 'NFTBan: Module - Portscan status'
           type: TRAP
           key: nftban.module.portscan.status
-          value_type: SIGNED
+          value_type: FLOAT
           description: 'Portscan module status: 1=active, 0=disabled, -1=failed'
           tags:
             - tag: component
@@ -407,7 +407,7 @@ zabbix_export:
           name: 'NFTBan: Module - DDoS status'
           type: TRAP
           key: nftban.module.ddos.status
-          value_type: SIGNED
+          value_type: FLOAT
           description: 'DDoS module status: 1=active, 0=disabled, -1=failed'
           tags:
             - tag: component
@@ -426,7 +426,7 @@ zabbix_export:
           name: 'NFTBan: Module - Suricata status'
           type: TRAP
           key: nftban.module.suricata.status
-          value_type: SIGNED
+          value_type: FLOAT
           description: 'Suricata module status: 1=active, 0=disabled, -1=failed'
           tags:
             - tag: component
@@ -445,7 +445,7 @@ zabbix_export:
           name: 'NFTBan: Module - Feeds status'
           type: TRAP
           key: nftban.module.feeds.status
-          value_type: SIGNED
+          value_type: FLOAT
           description: 'Feeds module status: 1=active, 0=disabled, -1=failed'
           tags:
             - tag: component
@@ -464,7 +464,7 @@ zabbix_export:
           name: 'NFTBan: Module - Geoban status'
           type: TRAP
           key: nftban.module.geoban.status
-          value_type: SIGNED
+          value_type: FLOAT
           description: 'Geoban module status: 1=active, 0=disabled, -1=failed'
           tags:
             - tag: component
@@ -483,7 +483,7 @@ zabbix_export:
           name: 'NFTBan: Module - Watchdog status'
           type: TRAP
           key: nftban.module.watchdog.status
-          value_type: SIGNED
+          value_type: FLOAT
           description: 'Watchdog module status: 1=active, 0=disabled, -1=failed'
           tags:
             - tag: component
