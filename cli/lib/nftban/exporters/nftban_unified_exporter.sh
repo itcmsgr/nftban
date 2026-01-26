@@ -568,6 +568,127 @@ collect_all_metrics() {
             metrics+="nftban_threads $threads $timestamp\n"
         fi
 
+        # --- Event Bus Metrics (Phase 3) ---
+        local eventbus_events_total=0
+        local eventbus_events_ban=0 eventbus_events_unban=0 eventbus_events_login_fail=0
+        local eventbus_events_ddos_detected=0 eventbus_events_portscan_detected=0
+        local eventbus_events_suricata_alert=0 eventbus_events_feed_sync=0
+        local eventbus_events_dropped_total=0
+        local eventbus_queue_size=0
+        local eventbus_handlers_total=0
+
+        # Try to read from eventbus stats file first
+        local eventbus_stats="${NFTBAN_RUN_DIR}/eventbus.stats"
+        if [[ -f "$eventbus_stats" ]]; then
+            # Read stats from eventbus.stats if available
+            eventbus_events_total=$(jq -r '.events_total // 0' "$eventbus_stats" 2>/dev/null || echo "0")
+            eventbus_events_ban=$(jq -r '.events_by_type.ban // 0' "$eventbus_stats" 2>/dev/null || echo "0")
+            eventbus_events_unban=$(jq -r '.events_by_type.unban // 0' "$eventbus_stats" 2>/dev/null || echo "0")
+            eventbus_events_login_fail=$(jq -r '.events_by_type.login_fail // 0' "$eventbus_stats" 2>/dev/null || echo "0")
+            eventbus_events_ddos_detected=$(jq -r '.events_by_type.ddos_detected // 0' "$eventbus_stats" 2>/dev/null || echo "0")
+            eventbus_events_portscan_detected=$(jq -r '.events_by_type.portscan_detected // 0' "$eventbus_stats" 2>/dev/null || echo "0")
+            eventbus_events_suricata_alert=$(jq -r '.events_by_type.suricata_alert // 0' "$eventbus_stats" 2>/dev/null || echo "0")
+            eventbus_events_feed_sync=$(jq -r '.events_by_type.feed_sync // 0' "$eventbus_stats" 2>/dev/null || echo "0")
+            eventbus_events_dropped_total=$(jq -r '.events_dropped_total // 0' "$eventbus_stats" 2>/dev/null || echo "0")
+            eventbus_queue_size=$(jq -r '.queue_size // 0' "$eventbus_stats" 2>/dev/null || echo "0")
+            eventbus_handlers_total=$(jq -r '.handlers_total // 0' "$eventbus_stats" 2>/dev/null || echo "0")
+        else
+            # Fallback: derive event counts from ban log
+            if [[ -f "$bans_log" ]]; then
+                # Count BANNED entries as ban events, UNBANNED as unban events
+                eventbus_events_ban=$(grep -c "|BANNED|" "$bans_log" 2>/dev/null || echo "0")
+                eventbus_events_unban=$(grep -c "|UNBANNED|" "$bans_log" 2>/dev/null || echo "0")
+                # Estimate total events from ban activity
+                eventbus_events_total=$((eventbus_events_ban + eventbus_events_unban))
+            fi
+
+            # Fallback: check queue files for queue size
+            local queue_total=0
+            for queue_file in "${NFTBAN_RUN_DIR}"/*.queue; do
+                [[ -f "$queue_file" ]] || continue
+                local queue_count
+                queue_count=$(wc -l < "$queue_file" 2>/dev/null || echo "0")
+                queue_total=$((queue_total + queue_count))
+            done
+            eventbus_queue_size=$queue_total
+        fi
+
+        # Export Event Bus metrics
+        metrics+="nftban_eventbus_events_total $eventbus_events_total $timestamp\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"ban\"} $eventbus_events_ban $timestamp\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"unban\"} $eventbus_events_unban $timestamp\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"login_fail\"} $eventbus_events_login_fail $timestamp\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"ddos_detected\"} $eventbus_events_ddos_detected $timestamp\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"portscan_detected\"} $eventbus_events_portscan_detected $timestamp\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"suricata_alert\"} $eventbus_events_suricata_alert $timestamp\n"
+        metrics+="nftban_eventbus_events_by_type{type=\"feed_sync\"} $eventbus_events_feed_sync $timestamp\n"
+        metrics+="nftban_eventbus_events_dropped_total $eventbus_events_dropped_total $timestamp\n"
+        metrics+="nftban_eventbus_queue_size $eventbus_queue_size $timestamp\n"
+        metrics+="nftban_eventbus_handlers_total $eventbus_handlers_total $timestamp\n"
+
+        # --- nftables Performance Metrics (Phase 3) ---
+        # Rule application latency, error tracking, and detailed set/rule metrics
+        if command -v nft &>/dev/null; then
+            # nftban_nftables_apply_latency_ms - rule application latency in milliseconds
+            local nft_apply_latency=0
+            local latency_file="${NFTBAN_CACHE_DIR}/stats/sync_latency"
+            if [[ -f "$latency_file" ]]; then
+                nft_apply_latency=$(cat "$latency_file" 2>/dev/null || echo "0")
+                # Ensure it's a valid number
+                [[ ! "$nft_apply_latency" =~ ^[0-9]+(\.[0-9]+)?$ ]] && nft_apply_latency=0
+            fi
+            metrics+="nftban_nftables_apply_latency_ms $nft_apply_latency $timestamp\n"
+
+            # nftban_nftables_apply_errors_total - count nft errors from log
+            local nft_apply_errors=0
+            local nftban_log="${NFTBAN_LOG_DIR}/nftban.log"
+            if [[ -f "$nftban_log" ]]; then
+                # Count lines containing nft command errors (case-insensitive)
+                nft_apply_errors=$(grep -ciE '(nft.*error|nft.*failed|nft:.*Error)' "$nftban_log" 2>/dev/null || echo "0")
+            fi
+            metrics+="nftban_nftables_apply_errors_total $nft_apply_errors $timestamp\n"
+
+            # nftban_nftables_rules_total - count rules in nftban table
+            local nft_rules_total=0
+            local ruleset_output
+            ruleset_output=$(nft list ruleset inet nftban 2>/dev/null || true)
+            if [[ -n "$ruleset_output" ]]; then
+                # Count lines that look like rules (contain accept, drop, jump, counter, etc.)
+                nft_rules_total=$(echo "$ruleset_output" | grep -cE '^\s+(accept|drop|reject|jump|goto|counter|log|limit|ct )' 2>/dev/null || echo "0")
+            fi
+            metrics+="nftban_nftables_rules_total $nft_rules_total $timestamp\n"
+
+            # nftban_nftables_sets_total - count sets in nftban table
+            local nft_sets_total=0
+            local sets_output
+            sets_output=$(nft list sets inet nftban 2>/dev/null || true)
+            if [[ -n "$sets_output" ]]; then
+                nft_sets_total=$(echo "$sets_output" | grep -c "^\s*set " 2>/dev/null || echo "0")
+            fi
+            metrics+="nftban_nftables_sets_total $nft_sets_total $timestamp\n"
+
+            # nftban_nftables_set_elements - element count per set with set label
+            for set_name in blacklist_ipv4 blacklist_ipv6 whitelist_ipv4 whitelist_ipv6; do
+                local set_elem_count=0
+                set_elem_count=$(nft -j list set inet nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+                metrics+="nftban_nftables_set_elements{set=\"${set_name}\"} $set_elem_count $timestamp\n"
+            done
+
+            # nftban_nftables_commands_total - total nft commands executed
+            local nft_commands_total=0
+            local commands_file="${NFTBAN_CACHE_DIR}/stats/nft_commands_total"
+            if [[ -f "$commands_file" ]]; then
+                nft_commands_total=$(cat "$commands_file" 2>/dev/null || echo "0")
+                [[ ! "$nft_commands_total" =~ ^[0-9]+$ ]] && nft_commands_total=0
+            else
+                # Fallback: count nft commands from log
+                if [[ -f "$nftban_log" ]]; then
+                    nft_commands_total=$(grep -ciE '(nft add|nft delete|nft flush|nft list)' "$nftban_log" 2>/dev/null || echo "0")
+                fi
+            fi
+            metrics+="nftban_nftables_commands_total $nft_commands_total $timestamp\n"
+        fi
+
     fi  # end LIVE group
 
     # =========================================================================
@@ -1057,6 +1178,21 @@ collect_all_metrics() {
     "conntrack_utilization_percent": ${conntrack_utilization:-0},
     "softnet_drops_total": ${softnet_drops_total:-0},
     "softnet_drops_rate_per_minute": ${softnet_drops_rate:-0}
+  },
+  "eventbus": {
+    "events_total": ${eventbus_events_total:-0},
+    "events_by_type": {
+      "ban": ${eventbus_events_ban:-0},
+      "unban": ${eventbus_events_unban:-0},
+      "login_fail": ${eventbus_events_login_fail:-0},
+      "ddos_detected": ${eventbus_events_ddos_detected:-0},
+      "portscan_detected": ${eventbus_events_portscan_detected:-0},
+      "suricata_alert": ${eventbus_events_suricata_alert:-0},
+      "feed_sync": ${eventbus_events_feed_sync:-0}
+    },
+    "events_dropped_total": ${eventbus_events_dropped_total:-0},
+    "queue_size": ${eventbus_queue_size:-0},
+    "handlers_total": ${eventbus_handlers_total:-0}
   }
 }
 EOF
