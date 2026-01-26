@@ -653,9 +653,10 @@ collect_all_metrics() {
             metrics+="nftban_nftables_apply_errors_total $nft_apply_errors $timestamp\n"
 
             # nftban_nftables_rules_total - count rules in nftban table
+            # Try inet first, then fallback to ip + ip6 (older nftban versions)
             local nft_rules_total=0
             local ruleset_output
-            ruleset_output=$(nft list ruleset inet nftban 2>/dev/null || true)
+            ruleset_output=$(nft list ruleset inet nftban 2>/dev/null || nft list ruleset ip nftban 2>/dev/null || true)
             if [[ -n "$ruleset_output" ]]; then
                 # Count lines that look like rules (contain accept, drop, jump, counter, etc.)
                 nft_rules_total=$(echo "$ruleset_output" | grep -cE '^\s+(accept|drop|reject|jump|goto|counter|log|limit|ct )' 2>/dev/null | tr -d '[:space:]')
@@ -666,7 +667,7 @@ collect_all_metrics() {
             # nftban_nftables_sets_total - count sets in nftban table
             local nft_sets_total=0
             local sets_output
-            sets_output=$(nft list sets inet nftban 2>/dev/null || true)
+            sets_output=$(nft list sets inet nftban 2>/dev/null || nft list sets ip nftban 2>/dev/null || true)
             if [[ -n "$sets_output" ]]; then
                 nft_sets_total=$(echo "$sets_output" | grep -c "^\s*set " 2>/dev/null | tr -d '[:space:]')
                 [[ -z "$nft_sets_total" || ! "$nft_sets_total" =~ ^[0-9]+$ ]] && nft_sets_total=0
@@ -674,9 +675,17 @@ collect_all_metrics() {
             metrics+="nftban_nftables_sets_total $nft_sets_total $timestamp\n"
 
             # nftban_nftables_set_elements - element count per set with set label
-            for set_name in blacklist_ipv4 blacklist_ipv6 whitelist_ipv4 whitelist_ipv6; do
+            # IPv4 sets use 'ip' family, IPv6 sets use 'ip6' family
+            for set_name in blacklist_ipv4 whitelist_ipv4; do
                 local set_elem_count=0
-                set_elem_count=$(nft -j list set inet nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+                set_elem_count=$(nft -j list set ip nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+                [[ -z "$set_elem_count" || ! "$set_elem_count" =~ ^[0-9]+$ ]] && set_elem_count=0
+                metrics+="nftban_nftables_set_elements{set=\"${set_name}\"} $set_elem_count $timestamp\n"
+            done
+            for set_name in blacklist_ipv6 whitelist_ipv6; do
+                local set_elem_count=0
+                set_elem_count=$(nft -j list set ip6 nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+                [[ -z "$set_elem_count" || ! "$set_elem_count" =~ ^[0-9]+$ ]] && set_elem_count=0
                 metrics+="nftban_nftables_set_elements{set=\"${set_name}\"} $set_elem_count $timestamp\n"
             done
 
