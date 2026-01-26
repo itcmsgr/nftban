@@ -150,6 +150,11 @@ func main() {
 	router.HandleFunc("/ui/health", gothHandlers.RequireSession(gothHandlers.HandleHealth)).Methods("GET")
 	router.HandleFunc("/ui/modules", gothHandlers.RequireSession(gothHandlers.HandleModules)).Methods("GET")
 	router.HandleFunc("/ui/inventory", gothHandlers.RequireSession(gothHandlers.HandleInventory)).Methods("GET")
+	router.HandleFunc("/ui/metrics", gothHandlers.RequireSession(gothHandlers.HandleMetrics)).Methods("GET")
+	router.HandleFunc("/ui/geoip", gothHandlers.RequireSession(gothHandlers.HandleGeoIP)).Methods("GET")
+	router.HandleFunc("/ui/feeds", gothHandlers.RequireSession(gothHandlers.HandleFeeds)).Methods("GET")
+	router.HandleFunc("/ui/system", gothHandlers.RequireSession(gothHandlers.HandleSystem)).Methods("GET")
+	router.HandleFunc("/ui/network", gothHandlers.RequireSession(gothHandlers.HandleNetwork)).Methods("GET")
 	router.HandleFunc("/ui/action/logout", gothHandlers.RequireSession(gothHandlers.HandleActionLogout)).Methods("POST")
 
 	// GOTH fragments (HTMX partial updates) - Professional Dashboard
@@ -174,6 +179,15 @@ func main() {
 	router.HandleFunc("/ui/frag/health-all", gothHandlers.RequireSession(gothHandlers.HandleFragHealthAll)).Methods("GET")
 	router.HandleFunc("/ui/frag/modules-list", gothHandlers.RequireSession(gothHandlers.HandleFragModulesList)).Methods("GET")
 
+	// Metrics pages fragments (HTMX partial updates)
+	router.HandleFunc("/ui/frag/metrics-summary", gothHandlers.RequireSession(gothHandlers.HandleFragMetricsSummary)).Methods("GET")
+	router.HandleFunc("/ui/frag/geoip", gothHandlers.RequireSession(gothHandlers.HandleFragGeoIP)).Methods("GET")
+	router.HandleFunc("/ui/frag/geoip-countries", gothHandlers.RequireSession(gothHandlers.HandleFragGeoIPCountries)).Methods("GET")
+	router.HandleFunc("/ui/frag/geoip-recent", gothHandlers.RequireSession(gothHandlers.HandleFragGeoIPRecent)).Methods("GET")
+	router.HandleFunc("/ui/frag/system-info", gothHandlers.RequireSession(gothHandlers.HandleFragSystemInfo)).Methods("GET")
+	router.HandleFunc("/ui/frag/network-stats", gothHandlers.RequireSession(gothHandlers.HandleFragNetworkStats)).Methods("GET")
+	router.HandleFunc("/ui/frag/feeds", gothHandlers.RequireSession(gothHandlers.HandleFragFeeds)).Methods("GET")
+
 	// Dashboard API endpoints
 	router.HandleFunc("/ui/api/ip-check", gothHandlers.RequireSession(gothHandlers.HandleIPCheck)).Methods("GET")
 
@@ -181,6 +195,9 @@ func main() {
 	router.HandleFunc("/ui/action/flush-temp", gothHandlers.RequireSession(gothHandlers.HandleFlushTemp)).Methods("POST")
 	router.HandleFunc("/ui/action/restart/{service}", gothHandlers.RequireSession(gothHandlers.HandleRestartService)).Methods("POST")
 	router.HandleFunc("/ui/action/health-fix", gothHandlers.RequireSession(gothHandlers.HandleHealthFix)).Methods("POST")
+	router.HandleFunc("/ui/action/sync-feeds", gothHandlers.RequireSession(gothHandlers.HandleSyncFeeds)).Methods("POST")
+	router.HandleFunc("/ui/action/sync-feed/{name}", gothHandlers.RequireSession(gothHandlers.HandleSyncFeed)).Methods("POST")
+	router.HandleFunc("/ui/action/feed-toggle/{name}", gothHandlers.RequireSession(gothHandlers.HandleFeedToggle)).Methods("POST")
 
 	// Tools page API endpoints (diagnostic tools)
 	router.HandleFunc("/api/v1/tools/check", gothHandlers.RequireSession(gothHandlers.HandleToolsIPCheck)).Methods("POST")

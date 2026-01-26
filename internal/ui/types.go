@@ -433,3 +433,471 @@ type ModulesData struct {
 	DisabledCount int
 	RunningCount  int
 }
+
+// =============================================================================
+// METRICS PAGE DATA - Unified metrics overview
+// =============================================================================
+
+// MetricsData holds all metrics overview information
+type MetricsData struct {
+	// Collection info
+	Timestamp      string
+	CollectorState string // "running", "stopped", "stale"
+	CachePath      string
+	CacheAge       string
+
+	// Summary cards
+	Summary MetricsSummary
+
+	// Detailed sections
+	Firewall  FirewallMetrics
+	Security  SecurityMetrics
+	Network   NetworkMetrics
+	System    SystemMetrics
+	Modules   []ModuleMetrics
+	Feeds     []FeedMetrics
+	GeoIP     GeoIPMetrics
+	Portscan  PortscanMetrics
+	DDoS      DDoSMetrics
+	Suricata  SuricataMetrics
+}
+
+// MetricsSummary holds top-level summary metrics
+type MetricsSummary struct {
+	TotalBans       int
+	BansIPv4        int
+	BansIPv6        int
+	TotalWhitelist  int
+	ActiveFeeds     int
+	BlockedCountries int
+	EventsLastHour  int
+	HealthStatus    string // "ok", "warning", "error"
+}
+
+// FirewallMetrics holds nftables/firewall specific metrics
+type FirewallMetrics struct {
+	TableExists    bool
+	RulesTotal     int
+	SetsTotal      int
+	CountersTotal  int
+	ChainCount     int
+	NftablesActive bool
+}
+
+// SecurityMetrics holds security-related metrics
+type SecurityMetrics struct {
+	BansTotal       int
+	BansTemporary   int
+	BansPermanent   int
+	BansFeed        int
+	BansGeoIP       int
+	UnbansToday     int
+	WhitelistTotal  int
+	ThreatLevel     string // "low", "medium", "high", "critical"
+}
+
+// NetworkMetrics holds network traffic metrics
+type NetworkMetrics struct {
+	RxMbps           float64
+	TxMbps           float64
+	TotalRxGB        float64
+	TotalTxGB        float64
+	PacketsDropped   int64
+	ConnectionsTotal int
+	ConnectionsNew   int
+	TopInterface     string
+	Interfaces       []InterfaceMetrics
+}
+
+// InterfaceMetrics holds per-interface network stats
+type InterfaceMetrics struct {
+	Name     string
+	RxMbps   float64
+	TxMbps   float64
+	RxBytes  int64
+	TxBytes  int64
+	Status   string // "up", "down"
+}
+
+// SystemMetrics holds system resource metrics
+type SystemMetrics struct {
+	Hostname      string
+	Kernel        string
+	Uptime        string
+	UptimeSeconds int64
+	CPUPercent    float64
+	MemPercent    float64
+	DiskPercent   float64
+	LoadAvg1      float64
+	LoadAvg5      float64
+	LoadAvg15     float64
+	NFTBanVersion string
+	NFTBanPID     int
+	NFTBanCPU     float64
+	NFTBanMemMB   float64
+}
+
+// ModuleMetrics holds per-module metrics
+type ModuleMetrics struct {
+	Name        string
+	Status      string // "active", "inactive", "error"
+	Enabled     bool
+	BansCount   int
+	EventsCount int
+	LastSync    string
+	CPUPercent  float64
+	MemoryMB    float64
+}
+
+// FeedMetrics holds threat feed metrics
+type FeedMetrics struct {
+	Name        string
+	Status      string // "active", "syncing", "stale", "error"
+	IPCount     int
+	LastSync    string
+	NextSync    string
+	SyncErrors  int
+}
+
+// GeoIPMetrics holds GeoIP/GeoBan metrics
+type GeoIPMetrics struct {
+	Enabled          bool
+	DatabaseVersion  string
+	DatabaseAge      string
+	BlockedCountries int
+	BlockedRanges    int
+	CountryStats     []CountryMetrics
+}
+
+// CountryMetrics holds per-country ban statistics
+type CountryMetrics struct {
+	Code      string
+	Name      string
+	BanCount  int
+	RangeCount int
+	Percent   float64
+}
+
+// PortscanMetrics holds portscan detection metrics
+type PortscanMetrics struct {
+	Enabled      bool
+	TotalBlocks  int
+	BlocksToday  int
+	TopPorts     []PortMetrics
+}
+
+// PortMetrics holds per-port scan statistics
+type PortMetrics struct {
+	Port       int
+	Protocol   string
+	ScanCount  int
+}
+
+// DDoSMetrics holds DDoS protection metrics
+type DDoSMetrics struct {
+	Enabled       bool
+	TotalBlocks   int
+	BlocksToday   int
+	ActiveMitigations int
+}
+
+// SuricataMetrics holds Suricata IDS metrics
+type SuricataMetrics struct {
+	Enabled       bool
+	Status        string
+	AlertsTotal   int
+	AlertsToday   int
+	RulesLoaded   int
+	TopAlerts     []AlertMetrics
+}
+
+// AlertMetrics holds alert statistics
+type AlertMetrics struct {
+	SID       string
+	Signature string
+	Count     int
+	Severity  string
+}
+
+// =============================================================================
+// FEEDS PAGE DATA - Threat feeds management
+// =============================================================================
+
+// FeedsPageData holds feeds page information
+type FeedsPageData struct {
+	// Summary stats
+	TotalFeeds   int
+	ActiveFeeds  int
+	StaleFeeds   int
+	ErrorFeeds   int
+	TotalIPs     int
+	LastCheck    string
+
+	// Feed list
+	Feeds        []FeedEntry
+
+	// Top feeds by IP count (for chart)
+	TopFeeds     []FeedChartEntry
+
+	// Recent sync activity
+	RecentActivity []FeedSyncActivity
+}
+
+// FeedEntry represents a single threat feed
+type FeedEntry struct {
+	Name        string
+	Description string
+	URL         string
+	Status      string // "active", "syncing", "stale", "error", "disabled"
+	Enabled     bool
+	IPCount     int
+	LastSync    string
+	NextSync    string
+	SyncErrors  int
+	LastError   string
+}
+
+// FeedChartEntry represents a feed for chart display
+type FeedChartEntry struct {
+	Name    string
+	IPCount int
+	Percent float64
+}
+
+// FeedSyncActivity represents a recent sync event
+type FeedSyncActivity struct {
+	FeedName   string
+	Status     string // "success", "error", "syncing"
+	IPsAdded   int
+	IPsRemoved int
+	Timestamp  string
+	Error      string
+}
+
+// =============================================================================
+// GEOIP PAGE DATA - Detailed GeoIP/GeoBan view
+// =============================================================================
+
+// GeoIPPageData holds GeoIP page information
+type GeoIPPageData struct {
+	// Database info
+	DatabasePath     string
+	DatabaseVersion  string
+	DatabaseDate     string
+	DatabaseSize     string
+	LastUpdate       string
+	NextUpdate       string
+	UpdateEnabled    bool
+
+	// Blocking config
+	BlockingEnabled  bool
+	BlockingMode     string // "whitelist" or "blacklist"
+
+	// Statistics
+	TotalCountries   int
+	BlockedCountries int
+	AllowedCountries int
+	TotalRanges      int
+	TotalIPs         int64
+
+	// Country list
+	Countries        []GeoCountryEntry
+
+	// Recent blocks
+	RecentBlocks     []GeoBlockEntry
+}
+
+// GeoCountryEntry represents a country in the GeoIP list
+type GeoCountryEntry struct {
+	Code         string
+	Name         string
+	Blocked      bool
+	RangeCount   int
+	IPCount      int64
+	BansFromHere int
+	LastBan      string
+}
+
+// GeoBlockEntry represents a recent geo-block event
+type GeoBlockEntry struct {
+	IP          string
+	Country     string
+	CountryCode string
+	Timestamp   string
+	Reason      string
+}
+
+// =============================================================================
+// SYSTEM PAGE DATA - System overview
+// =============================================================================
+
+// SystemPageData holds system page information
+type SystemPageData struct {
+	// Identity
+	Hostname     string
+	OS           string
+	Kernel       string
+	Arch         string
+	Uptime       string
+	UptimeSeconds int64
+	BootTime     string
+
+	// NFTBan info
+	NFTBanVersion string
+	NFTBanBuild   string
+	NFTBanCommit  string
+	NFTBanUptime  string
+	NFTBanPID     int
+	NFTBanCPU     float64
+	NFTBanMemMB   float64
+
+	// Resources
+	CPU          CPUInfo
+	Memory       MemoryInfo
+	Disk         DiskInfo
+
+	// Services
+	Services     []SystemService
+
+	// Processes
+	TopProcesses []ProcessInfo
+}
+
+// CPUInfo holds CPU information
+type CPUInfo struct {
+	Model      string
+	Cores      int
+	Threads    int
+	Frequency  string
+	UsagePercent float64
+	LoadAvg1   float64
+	LoadAvg5   float64
+	LoadAvg15  float64
+}
+
+// MemoryInfo holds memory information
+type MemoryInfo struct {
+	TotalGB     float64
+	UsedGB      float64
+	FreeGB      float64
+	AvailableGB float64
+	Percent     float64
+	SwapTotalGB float64
+	SwapUsedGB  float64
+	SwapPercent float64
+}
+
+// DiskInfo holds disk information
+type DiskInfo struct {
+	Path        string
+	TotalGB     float64
+	UsedGB      float64
+	FreeGB      float64
+	Percent     float64
+	FSType      string
+	InodesUsed  int64
+	InodesTotal int64
+}
+
+// SystemService represents a system service status
+type SystemService struct {
+	Name        string
+	Description string
+	Status      string // "active", "inactive", "failed"
+	PID         int
+	MemoryMB    float64
+	Uptime      string
+	Restarts    int
+}
+
+// ProcessInfo holds process information
+type ProcessInfo struct {
+	PID        int
+	Name       string
+	User       string
+	CPUPercent float64
+	MemPercent float64
+	MemMB      float64
+	Status     string
+}
+
+// =============================================================================
+// NETWORK PAGE DATA - Network monitoring
+// =============================================================================
+
+// NetworkPageData holds network page information
+type NetworkPageData struct {
+	// Summary
+	TotalRxMbps    float64
+	TotalTxMbps    float64
+	TotalRxToday   string
+	TotalTxToday   string
+	ActiveConns    int
+	DroppedPackets int64
+
+	// Interfaces
+	Interfaces     []NetworkInterface
+
+	// Connections
+	TopConnections []ConnectionInfo
+
+	// Traffic history (for graphs)
+	TrafficHistory []TrafficSample
+
+	// Dropped traffic
+	DroppedByCountry []CountryTraffic
+	DroppedByPort    []PortTraffic
+}
+
+// NetworkInterface holds interface information
+type NetworkInterface struct {
+	Name        string
+	Status      string // "up", "down"
+	IPAddress   string
+	MACAddress  string
+	MTU         int
+	RxMbps      float64
+	TxMbps      float64
+	RxBytes     int64
+	TxBytes     int64
+	RxPackets   int64
+	TxPackets   int64
+	RxErrors    int64
+	TxErrors    int64
+	Dropped     int64
+}
+
+// ConnectionInfo holds connection information
+type ConnectionInfo struct {
+	Protocol   string // "tcp", "udp"
+	LocalAddr  string
+	RemoteAddr string
+	State      string
+	PID        int
+	Process    string
+}
+
+// TrafficSample holds a traffic history point
+type TrafficSample struct {
+	Timestamp string
+	RxMbps    float64
+	TxMbps    float64
+}
+
+// CountryTraffic holds traffic by country
+type CountryTraffic struct {
+	Code       string
+	Name       string
+	Packets    int64
+	Bytes      int64
+	Blocked    int64
+}
+
+// PortTraffic holds traffic by port
+type PortTraffic struct {
+	Port      int
+	Protocol  string
+	Packets   int64
+	Bytes     int64
+	Blocked   int64
+}

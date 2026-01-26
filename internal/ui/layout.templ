@@ -123,6 +123,31 @@ templ sidebar(activePage string) {
 						<span class="nav-icon">&#x1F4E6;</span> Inventory
 					</a>
 				</li>
+				<li class="nav-item">
+					<a href="/ui/metrics" class={ "nav-link", templ.KV("active", activePage == "metrics") }>
+						<span class="nav-icon">&#x1F4C8;</span> Metrics
+					</a>
+				</li>
+				<li class="nav-item">
+					<a href="/ui/geoip" class={ "nav-link", templ.KV("active", activePage == "geoip") }>
+						<span class="nav-icon">&#x1F30D;</span> GeoIP
+					</a>
+				</li>
+				<li class="nav-item">
+					<a href="/ui/feeds" class={ "nav-link", templ.KV("active", activePage == "feeds") }>
+						<span class="nav-icon">&#x1F4E1;</span> Feeds
+					</a>
+				</li>
+				<li class="nav-item">
+					<a href="/ui/system" class={ "nav-link", templ.KV("active", activePage == "system") }>
+						<span class="nav-icon">&#x1F5A5;</span> System
+					</a>
+				</li>
+				<li class="nav-item">
+					<a href="/ui/network" class={ "nav-link", templ.KV("active", activePage == "network") }>
+						<span class="nav-icon">&#x1F4F6;</span> Network
+					</a>
+				</li>
 			</ul>
 		</nav>
 		<div class="sidebar-footer">
@@ -180,6 +205,31 @@ templ sidebarWithCSRF(activePage string, csrfToken string) {
 				<li class="nav-item">
 					<a href="/ui/inventory" class={ "nav-link", templ.KV("active", activePage == "inventory") }>
 						<span class="nav-icon">&#x1F4E6;</span> Inventory
+					</a>
+				</li>
+				<li class="nav-item">
+					<a href="/ui/metrics" class={ "nav-link", templ.KV("active", activePage == "metrics") }>
+						<span class="nav-icon">&#x1F4C8;</span> Metrics
+					</a>
+				</li>
+				<li class="nav-item">
+					<a href="/ui/geoip" class={ "nav-link", templ.KV("active", activePage == "geoip") }>
+						<span class="nav-icon">&#x1F30D;</span> GeoIP
+					</a>
+				</li>
+				<li class="nav-item">
+					<a href="/ui/feeds" class={ "nav-link", templ.KV("active", activePage == "feeds") }>
+						<span class="nav-icon">&#x1F4E1;</span> Feeds
+					</a>
+				</li>
+				<li class="nav-item">
+					<a href="/ui/system" class={ "nav-link", templ.KV("active", activePage == "system") }>
+						<span class="nav-icon">&#x1F5A5;</span> System
+					</a>
+				</li>
+				<li class="nav-item">
+					<a href="/ui/network" class={ "nav-link", templ.KV("active", activePage == "network") }>
+						<span class="nav-icon">&#x1F4F6;</span> Network
 					</a>
 				</li>
 			</ul>

@@ -138,6 +138,18 @@ func (h *GOTHHandlers) HandleTools(w http.ResponseWriter, r *http.Request) {
 	pages.Tools(data).Render(r.Context(), w)
 }
 
+// HandleFeeds renders the threat feeds management page
+func (h *GOTHHandlers) HandleFeeds(w http.ResponseWriter, r *http.Request) {
+	data := h.getFeedsPageData()
+	pages.Feeds(data).Render(r.Context(), w)
+}
+
+// HandleFragFeeds renders feeds content fragment for HTMX
+func (h *GOTHHandlers) HandleFragFeeds(w http.ResponseWriter, r *http.Request) {
+	data := h.getFeedsPageData()
+	pages.FeedsContentFragment(data).Render(r.Context(), w)
+}
+
 // HandleFragLogs renders log entries fragment for HTMX
 func (h *GOTHHandlers) HandleFragLogs(w http.ResponseWriter, r *http.Request) {
 	logs := h.getRecentLogs(r.URL.Query().Get("level"))
@@ -418,6 +430,78 @@ func (h *GOTHHandlers) HandleHealthFix(w http.ResponseWriter, r *http.Request) {
 	// Refresh the health content
 	data := h.getHealthData()
 	pages.HealthContentFragment(data).Render(r.Context(), w)
+}
+
+// HandleSyncFeeds syncs all threat feeds
+func (h *GOTHHandlers) HandleSyncFeeds(w http.ResponseWriter, r *http.Request) {
+	log.Printf("[GOTH] Sync all feeds requested")
+
+	// Execute feeds sync command
+	if _, err := execNFTBanCommand("feeds", "sync"); err != nil {
+		log.Printf("[GOTH] Feed sync failed: %v", err)
+		w.Header().Set("HX-Trigger", `{"showToast": {"message": "Feed sync failed", "type": "error"}}`)
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[GOTH] All feeds synced successfully")
+	w.Header().Set("HX-Trigger", `{"showToast": {"message": "Feeds synced successfully", "type": "success"}}`)
+	w.WriteHeader(http.StatusOK)
+}
+
+// HandleSyncFeed syncs a single threat feed
+func (h *GOTHHandlers) HandleSyncFeed(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	feedName := vars["name"]
+
+	log.Printf("[GOTH] Sync feed requested: %s", feedName)
+
+	// Execute feed sync command
+	if _, err := execNFTBanCommand("feeds", "sync", feedName); err != nil {
+		log.Printf("[GOTH] Feed sync failed for %s: %v", feedName, err)
+		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"message": "Failed to sync %s", "type": "error"}}`, feedName))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[GOTH] Feed %s synced successfully", feedName)
+	w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"message": "%s synced", "type": "success"}}`, feedName))
+	w.WriteHeader(http.StatusOK)
+}
+
+// HandleFeedToggle enables or disables a threat feed
+func (h *GOTHHandlers) HandleFeedToggle(w http.ResponseWriter, r *http.Request) {
+	vars := mux.Vars(r)
+	feedName := vars["name"]
+
+	log.Printf("[GOTH] Feed toggle requested: %s", feedName)
+
+	// Check current status and toggle
+	// First try to get current status
+	enabled := true
+	if output, err := execNFTBanCommand("feeds", "status", feedName, "--json"); err == nil {
+		var status map[string]interface{}
+		if json.Unmarshal([]byte(extractJSON(output)), &status) == nil {
+			enabled = getBool(status, "enabled")
+		}
+	}
+
+	// Toggle
+	action := "enable"
+	if enabled {
+		action = "disable"
+	}
+
+	if _, err := execNFTBanCommand("feeds", action, feedName); err != nil {
+		log.Printf("[GOTH] Feed %s %s failed: %v", action, feedName, err)
+		w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"message": "Failed to %s %s", "type": "error"}}`, action, feedName))
+		w.WriteHeader(http.StatusInternalServerError)
+		return
+	}
+
+	log.Printf("[GOTH] Feed %s %sd successfully", feedName, action)
+	w.Header().Set("HX-Trigger", fmt.Sprintf(`{"showToast": {"message": "%s %sd", "type": "success"}}`, feedName, action))
+	w.WriteHeader(http.StatusOK)
 }
 
 // RequireSession middleware
@@ -2151,4 +2235,144 @@ func (h *GOTHHandlers) searchIP(ip string) ui.SearchResult {
 	}
 
 	return result
+}
+
+// =============================================================================
+// FEEDS DATA FETCHER
+// =============================================================================
+
+func (h *GOTHHandlers) getFeedsPageData() ui.FeedsPageData {
+	data := ui.FeedsPageData{
+		LastCheck: time.Now().Format("2006-01-02 15:04:05"),
+	}
+
+	// Get feeds list from CLI
+	if output, err := execNFTBanCommand("feeds", "list", "--json"); err == nil {
+		var feedList []map[string]interface{}
+		if json.Unmarshal([]byte(extractJSON(output)), &feedList) == nil {
+			var maxIPCount int
+			for _, f := range feedList {
+				feed := ui.FeedEntry{
+					Name:        getString(f, "name"),
+					Description: getString(f, "description"),
+					URL:         getString(f, "url"),
+					Enabled:     getBool(f, "enabled"),
+					IPCount:     getInt(f, "ip_count"),
+					LastSync:    getString(f, "last_sync"),
+					NextSync:    getString(f, "next_sync"),
+					SyncErrors:  getInt(f, "errors"),
+					LastError:   getString(f, "last_error"),
+				}
+
+				// Determine status
+				if status := getString(f, "status"); status != "" {
+					feed.Status = status
+				} else if !feed.Enabled {
+					feed.Status = "disabled"
+				} else if feed.SyncErrors > 0 {
+					feed.Status = "error"
+				} else if feed.LastSync == "" || feed.LastSync == "never" {
+					feed.Status = "stale"
+				} else {
+					feed.Status = "active"
+				}
+
+				data.Feeds = append(data.Feeds, feed)
+				data.TotalFeeds++
+				data.TotalIPs += feed.IPCount
+
+				if feed.IPCount > maxIPCount {
+					maxIPCount = feed.IPCount
+				}
+
+				// Count by status
+				switch feed.Status {
+				case "active", "syncing":
+					data.ActiveFeeds++
+				case "stale":
+					data.StaleFeeds++
+				case "error":
+					data.ErrorFeeds++
+				}
+			}
+
+			// Build top feeds chart data
+			for _, feed := range data.Feeds {
+				if feed.IPCount > 0 {
+					percent := float64(feed.IPCount) / float64(maxIPCount) * 100
+					if maxIPCount == 0 {
+						percent = 0
+					}
+					data.TopFeeds = append(data.TopFeeds, ui.FeedChartEntry{
+						Name:    feed.Name,
+						IPCount: feed.IPCount,
+						Percent: percent,
+					})
+				}
+			}
+		}
+	}
+
+	// Get recent sync activity from logs
+	data.RecentActivity = h.getRecentFeedActivity()
+
+	return data
+}
+
+// getRecentFeedActivity fetches recent feed sync events
+func (h *GOTHHandlers) getRecentFeedActivity() []ui.FeedSyncActivity {
+	activity := []ui.FeedSyncActivity{}
+
+	cfg := nftbanconf.MustLoad()
+	logFile := cfg.LogDir + "/feeds.log"
+
+	// Read last 30 lines of feeds.log
+	if content, err := os.ReadFile(logFile); err == nil {
+		lines := strings.Split(string(content), "\n")
+		start := len(lines) - 30
+		if start < 0 {
+			start = 0
+		}
+
+		for i := len(lines) - 1; i >= start && len(activity) < 15; i-- {
+			line := strings.TrimSpace(lines[i])
+			if line == "" {
+				continue
+			}
+
+			// Parse feed log line (format: timestamp|action|feed_name|details)
+			parts := strings.Split(line, "|")
+			if len(parts) >= 3 {
+				entry := ui.FeedSyncActivity{
+					Timestamp: parts[0],
+					FeedName:  parts[2],
+					Status:    "success",
+				}
+
+				action := strings.ToLower(parts[1])
+				if strings.Contains(action, "error") || strings.Contains(action, "fail") {
+					entry.Status = "error"
+					if len(parts) >= 4 {
+						entry.Error = parts[3]
+					}
+				} else if strings.Contains(action, "sync") || strings.Contains(action, "update") {
+					entry.Status = "success"
+					// Try to parse IPs added/removed
+					if len(parts) >= 4 {
+						details := parts[3]
+						if strings.Contains(details, "+") {
+							fmt.Sscanf(details, "+%d", &entry.IPsAdded)
+						}
+						if strings.Contains(details, "-") {
+							fmt.Sscanf(details, "%*s-%d", &entry.IPsRemoved)
+						}
+					}
+				}
+
+				activity = append(activity, entry)
+			}
+		}
+	}
+
+	return activity
 }
