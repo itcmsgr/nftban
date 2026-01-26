@@ -2254,8 +2254,8 @@ install_systemd() {
         systemctl enable --now nftban-core-geoip.timer 2>/dev/null || warn "GeoIP timer enable failed"
     fi
 
-    # Feeds timer (only if enabled)
-    if [[ "${NFTBAN_FEEDS_ENABLED:-false}" == "true" ]] && [[ -f "$systemd_dir/nftban-core-feeds.timer" ]]; then
+    # Feeds timer (always enabled - core timer for threat feed updates)
+    if [[ -f "$systemd_dir/nftban-core-feeds.timer" ]]; then
         systemctl enable --now nftban-core-feeds.timer 2>/dev/null || warn "Feeds timer enable failed"
     fi
 

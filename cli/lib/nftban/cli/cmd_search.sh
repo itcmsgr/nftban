@@ -6,23 +6,23 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Search for IP/Port across all ban lists, feeds, jails, and whitelists
 #
-# meta:name=cmd_search
-# meta:type=cli
-# meta:header=IP Search CLI
-# meta:version=1.0.0
+# meta:name="cmd_search"
+# meta:type="cli"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:created_date="2025-11-05"
 #
-# **Description & Purpose**
-# meta:description=Search for IP in all nftables sets and threat feeds with interactive options
-# meta:input=IP address or CIDR
-# meta:output=Search results and interactive menu
+# meta:description="Search for IP in all nftables sets and threat feeds with GeoIP country lookup and GeoBan status"
+# meta:input="IP address or CIDR"
+# meta:output="Search results with GeoIP country and GeoBan status"
+# meta:depends="bash,nft"
 #
-# **Inventory & Requirements**
-# meta:depends=bash
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:inventory.files=""
+# meta:inventory.binaries="nft,nftban-core"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/geoban.d/*.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nft read access"
 # =============================================================================
 
 
@@ -72,6 +72,96 @@ if [[ ! $(type -t nftban_render_banner) == "function" ]]; then
         source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
     fi
 fi
+
+# =============================================================================
+# GEOIP FUNCTIONS
+# =============================================================================
+
+# GeoIP lookup for an IP address
+# Returns: "CC|Country Name" or empty if lookup fails
+_geoip_lookup() {
+    local ip="$1"
+    local result=""
+
+    # Use nftban-core geoip lookup command (JSON format for parsing)
+    local nftban_core_bin="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}"
+
+    # Fallback: try to find nftban-core in PATH
+    if [[ ! -x "$nftban_core_bin" ]]; then
+        nftban_core_bin=$(command -v nftban-core 2>/dev/null || echo "")
+    fi
+
+    if [[ -z "$nftban_core_bin" || ! -x "$nftban_core_bin" ]]; then
+        # GeoIP binary not available
+        echo ""
+        return 1
+    fi
+
+    # Get JSON output and parse country code and name
+    local json_output
+    json_output=$("$nftban_core_bin" geoip lookup "$ip" --json 2>/dev/null) || {
+        echo ""
+        return 1
+    }
+
+    # Parse JSON to extract country_code and country_name
+    if command -v jq &>/dev/null; then
+        local cc cn
+        cc=$(echo "$json_output" | jq -r '.country_code // ""' 2>/dev/null)
+        cn=$(echo "$json_output" | jq -r '.country_name // ""' 2>/dev/null)
+        if [[ -n "$cc" && "$cc" != "Unknown" && "$cc" != "null" ]]; then
+            echo "${cc}|${cn}"
+            return 0
+        fi
+    else
+        # Fallback: basic parsing without jq
+        # JSON format: {"ip":"...","country_code":"DE","country_name":"Germany",...}
+        local cc cn
+        cc=$(echo "$json_output" | grep -oP '"country_code"\s*:\s*"\K[^"]+' | head -1)
+        cn=$(echo "$json_output" | grep -oP '"country_name"\s*:\s*"\K[^"]+' | head -1)
+        if [[ -n "$cc" && "$cc" != "Unknown" ]]; then
+            echo "${cc}|${cn}"
+            return 0
+        fi
+    fi
+
+    echo ""
+    return 1
+}
+
+# Check if a country is banned via geoban
+# Returns: 0 if banned, 1 if not banned
+_is_country_banned() {
+    local country_code="$1"
+    local geoban_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/geoban.d"
+
+    # Check for 50-ban-<CC>.conf file
+    local ban_file="${geoban_dir}/50-ban-${country_code}.conf"
+
+    if [[ -f "$ban_file" ]]; then
+        return 0  # Country is banned
+    fi
+
+    return 1  # Country is not banned
+}
+
+# Check if GeoIP database is available
+_geoip_available() {
+    local nftban_core_bin="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}"
+
+    # Fallback: try to find nftban-core in PATH
+    if [[ ! -x "$nftban_core_bin" ]]; then
+        nftban_core_bin=$(command -v nftban-core 2>/dev/null || echo "")
+    fi
+
+    if [[ -z "$nftban_core_bin" || ! -x "$nftban_core_bin" ]]; then
+        return 1
+    fi
+
+    # Quick test with a known IP (Google DNS)
+    "$nftban_core_bin" geoip lookup 8.8.8.8 --json &>/dev/null
+    return $?
+}
 
 # =============================================================================
 # SEARCH FUNCTIONS
@@ -222,12 +312,28 @@ _display_results() {
     local ip="$1"
     local nft_result="$2"
     local feeds_result="$3"
+    local geoip_result="${4:-}"
+    local country_banned="${5:-false}"
 
     echo ""
     echo "═══════════════════════════════════════════════════════════════"
     echo "  IP Search Results: $ip"
     echo "═══════════════════════════════════════════════════════════════"
     echo ""
+
+    # Display GeoIP information if available
+    if [[ -n "$geoip_result" ]]; then
+        local country_code="${geoip_result%%|*}"
+        local country_name="${geoip_result#*|}"
+
+        echo "GeoIP Information:"
+        echo "───────────────────────────────────────────────────────────────"
+        echo "  Country: $country_code ($country_name)"
+        if [[ "$country_banned" == "true" ]]; then
+            echo "  ⚠ GEOBAN: Country $country_code is BANNED"
+        fi
+        echo ""
+    fi
 
     # Parse nftables results
     if [[ "$nft_result" == "FOUND"* ]]; then
@@ -363,9 +469,10 @@ DESCRIPTION:
     Search for an IP address or port number across all NFTBan components:
 
     IP Search:
+    - GeoIP country lookup (shows country code and name)
+    - GeoBan status (shows if country is banned)
     - nftables sets (whitelist, temp_ban, user_blacklist, system_blacklist, feeds)
     - Threat intelligence feeds
-    - Fail2Ban jails
 
     Port Search:
     - nftables port sets (tcp_ports, udp_ports)
@@ -376,9 +483,10 @@ DESCRIPTION:
 
 OPTIONS:
     --no-interactive    Show results only, no interactive menu
+    --json              Output in JSON format (includes GeoIP data)
 
 EXAMPLES:
-    # Search for IP
+    # Search for IP (shows country + ban status)
     nftban search 192.0.2.100
 
     # Search IPv6
@@ -393,14 +501,24 @@ EXAMPLES:
     # Non-interactive (scripts)
     nftban search 192.0.2.100 --no-interactive
 
+    # JSON output (includes GeoIP data)
+    nftban search 192.0.2.100 --json
+
+OUTPUT:
+    IP: 185.220.101.1
+    Country: DE (Germany)
+    Status: FOUND IN FEEDS
+    Feeds: tor-exit-nodes, firehol_level1
+
 NOTES:
-    - Searches all 3 nftables tables (runtime, v4, v6)
-    - Searches all 5 sets per table
+    - GeoIP lookup shows country code and name for single IPs
+    - GeoBan check shows if the IP's country is banned
+    - Searches all nftables sets (whitelist, blacklist)
     - Searches downloaded threat feeds
-    - Searches active Fail2Ban jails
     - Searches port whitelist sets and config files
     - Shows ban priority and type
     - Shows expiry time for temp bans
+    - GeoIP requires nftban-core binary and GeoIP database
 
 HELP
 }
@@ -525,6 +643,24 @@ nftban_cmd_search() {
     local feeds_result=""
     feeds_result=$(_search_feeds "$ip" 2>/dev/null) || true
 
+    # Perform GeoIP lookup (handle case where database is not installed)
+    local geoip_result=""
+    local country_banned="false"
+    local country_code=""
+
+    # Only do GeoIP lookup for single IPs, not CIDRs
+    if [[ "$ip" != *"/"* ]]; then
+        geoip_result=$(_geoip_lookup "$ip" 2>/dev/null) || true
+
+        # If we got a country code, check if it's banned
+        if [[ -n "$geoip_result" ]]; then
+            country_code="${geoip_result%%|*}"
+            if [[ -n "$country_code" ]] && _is_country_banned "$country_code"; then
+                country_banned="true"
+            fi
+        fi
+    fi
+
     # JSON output mode
     if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
         local found="false"
@@ -557,24 +693,39 @@ nftban_cmd_search() {
         done
         locations_json+="]"
 
+        # Build GeoIP JSON fields
+        local geoip_cc=""
+        local geoip_cn=""
+        local geoip_banned="false"
+        if [[ -n "$geoip_result" ]]; then
+            geoip_cc="${geoip_result%%|*}"
+            geoip_cn="${geoip_result#*|}"
+            geoip_banned="$country_banned"
+        fi
+
         local data
         if command -v jq &>/dev/null; then
             data=$(jq -n \
                 --arg ip "$ip" \
                 --arg found "$found" \
                 --argjson locations "$locations_json" \
-                '{ip: $ip, found: ($found == "true"), locations: $locations, count: ($locations | length)}')
+                --arg country_code "$geoip_cc" \
+                --arg country_name "$geoip_cn" \
+                --arg country_banned "$geoip_banned" \
+                '{ip: $ip, found: ($found == "true"), locations: $locations, count: ($locations | length), geoip: {country_code: $country_code, country_name: $country_name, country_banned: ($country_banned == "true")}}')
         else
             local found_bool="false"
             [[ "$found" == "true" ]] && found_bool="true"
-            data="{\"ip\":\"$ip\",\"found\":$found_bool,\"locations\":$locations_json,\"count\":${#locations[@]}}"
+            local banned_bool="false"
+            [[ "$geoip_banned" == "true" ]] && banned_bool="true"
+            data="{\"ip\":\"$ip\",\"found\":$found_bool,\"locations\":$locations_json,\"count\":${#locations[@]},\"geoip\":{\"country_code\":\"$geoip_cc\",\"country_name\":\"$geoip_cn\",\"country_banned\":$banned_bool}}"
         fi
         json_output "true" "$data"
         return 0
     fi
 
     # Display results (human-readable)
-    _display_results "$ip" "$nft_result" "$feeds_result"
+    _display_results "$ip" "$nft_result" "$feeds_result" "$geoip_result" "$country_banned"
 
     # Show suggested actions (unless --no-interactive flag used)
     if [[ "$interactive" == "true" ]]; then

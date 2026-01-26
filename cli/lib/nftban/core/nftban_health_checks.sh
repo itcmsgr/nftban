@@ -596,6 +596,90 @@ nftban_health_check_services() {
     return $status
 }
 
+nftban_health_check_daemon() {
+    # Check nftband daemon status (CRITICAL for feeds and bans)
+    # Returns: 0=OK, 1=Warning (auto-fixed), 2=Error (couldn't fix)
+    # Args: $1 = auto_heal (0=check only, 1=auto-fix)
+
+    local auto_heal="${1:-0}"
+    local status=$HEALTH_OK
+    local daemon_issues=()
+
+    # Check nftband.socket (socket activation)
+    if _health_service_exists "nftband.socket"; then
+        if _health_service_active "nftband.socket"; then
+            daemon_issues+=("✓ nftband.socket: Active")
+        else
+            daemon_issues+=("nftband.socket not active")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+
+            # Auto-heal: Start socket
+            if [[ $auto_heal -eq 1 ]] || [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
+                if systemctl start nftband.socket 2>/dev/null; then
+                    daemon_issues+=("AUTO-FIXED: Started nftband.socket")
+                else
+                    daemon_issues+=("FAILED to start nftband.socket")
+                    status=$HEALTH_ERROR
+                fi
+            else
+                daemon_issues+=("FIX: sudo systemctl start nftband.socket")
+            fi
+        fi
+    else
+        daemon_issues+=("ℹ️ nftband.socket: Not installed (optional)")
+    fi
+
+    # Check nftband.service (main daemon - CRITICAL)
+    if _health_service_exists "nftband.service"; then
+        if _health_service_active "nftband.service"; then
+            daemon_issues+=("✓ nftband.service: Running")
+        else
+            daemon_issues+=("CRITICAL: nftband daemon not running - feeds and bans will not work!")
+            status=$HEALTH_ERROR
+
+            # Auto-heal: Start daemon
+            if [[ $auto_heal -eq 1 ]] || [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
+                if systemctl start nftband.service 2>/dev/null; then
+                    sleep 2
+                    if _health_service_active "nftband.service"; then
+                        daemon_issues+=("AUTO-FIXED: Started nftband daemon")
+                        status=$HEALTH_WARNING  # Downgrade from error since we fixed it
+                    else
+                        daemon_issues+=("FAILED: nftband daemon won't start - check: journalctl -u nftband.service")
+                    fi
+                else
+                    daemon_issues+=("FAILED to start nftband daemon")
+                fi
+            else
+                daemon_issues+=("FIX: sudo systemctl start nftband.service")
+            fi
+        fi
+
+        # Check if daemon is enabled
+        if ! _health_service_enabled "nftband.service"; then
+            daemon_issues+=("⚠ nftband.service not enabled (won't start on boot)")
+            [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
+            daemon_issues+=("FIX: sudo systemctl enable nftband.service")
+        fi
+    else
+        daemon_issues+=("ERROR: nftband.service not installed - daemon functionality unavailable")
+        status=$HEALTH_ERROR
+    fi
+
+    # Store results
+    if [[ ${#daemon_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["daemon"]="${daemon_issues[*]}"
+        if [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("Daemon issues: ${daemon_issues[*]}")
+        elif [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("Daemon issues: ${daemon_issues[*]}")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["daemon"]=$status
+    return $status
+}
+
 nftban_health_check_suricata() {
     # Comprehensive Suricata IDS health check
     # Returns: 0=OK, 1=Warning, 2=Error
@@ -2813,9 +2897,11 @@ nftban_health_check_timers() {
     local timer_issues=()
 
     # Core NFTBan timers (REQUIRED - always enabled)
+    # These timers are auto-enabled by health check auto-heal
     local -a timers=(
         "nftban-maintenance.timer"      # CRITICAL: SSH/IP protection, auto-heal
         "nftban-health.timer"           # Health checks
+        "nftban-core-feeds.timer"       # Threat feeds sync (auto-enabled)
         "nftban-core-geoip.timer"       # GeoIP updates
         "nftban-queue.timer"            # Ban queue processing
     )
@@ -2825,7 +2911,6 @@ nftban_health_check_timers() {
     # shellcheck disable=SC2034
     local -a optional_timers=(
         "nftban-watchdog.timer"         # System resource monitoring (nftban watchdog enable)
-        "nftban-core-feeds.timer"       # Threat feeds sync (nftban feeds enable)
         "nftban-unified-exporter.timer" # Unified export (Prometheus+Zabbix+Connectors)
         "nftban-suricata-update.timer"  # Suricata rules (needs suricata)
         "nftban-snapshot.timer"         # Firewall snapshots
@@ -2835,7 +2920,7 @@ nftban_health_check_timers() {
     local -A timer_desc=(
         ["nftban-maintenance.timer"]="CRITICAL: SSH/IP lockout prevention, auto-heal"
         ["nftban-health.timer"]="Health checks and auto-heal"
-        ["nftban-core-feeds.timer"]="Threat feeds sync"
+        ["nftban-core-feeds.timer"]="Threat feeds sync (auto-enabled)"
         ["nftban-core-geoip.timer"]="GeoIP database updates"
         ["nftban-queue.timer"]="Ban queue processing"
         ["nftban-watchdog.timer"]="System resource monitoring"
