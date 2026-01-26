@@ -596,8 +596,10 @@ collect_all_metrics() {
             # Fallback: derive event counts from ban log
             if [[ -f "$bans_log" ]]; then
                 # Count BANNED entries as ban events, UNBANNED as unban events
-                eventbus_events_ban=$(grep -c "|BANNED|" "$bans_log" 2>/dev/null || echo "0")
-                eventbus_events_unban=$(grep -c "|UNBANNED|" "$bans_log" 2>/dev/null || echo "0")
+                eventbus_events_ban=$(grep -c "|BANNED|" "$bans_log" 2>/dev/null | tr -d '[:space:]')
+                eventbus_events_unban=$(grep -c "|UNBANNED|" "$bans_log" 2>/dev/null | tr -d '[:space:]')
+                [[ -z "$eventbus_events_ban" ]] && eventbus_events_ban=0
+                [[ -z "$eventbus_events_unban" ]] && eventbus_events_unban=0
                 # Estimate total events from ban activity
                 eventbus_events_total=$((eventbus_events_ban + eventbus_events_unban))
             fi
@@ -607,7 +609,8 @@ collect_all_metrics() {
             for queue_file in "${NFTBAN_RUN_DIR}"/*.queue; do
                 [[ -f "$queue_file" ]] || continue
                 local queue_count
-                queue_count=$(wc -l < "$queue_file" 2>/dev/null || echo "0")
+                queue_count=$(wc -l < "$queue_file" 2>/dev/null | tr -d '[:space:]')
+                [[ -z "$queue_count" || ! "$queue_count" =~ ^[0-9]+$ ]] && queue_count=0
                 queue_total=$((queue_total + queue_count))
             done
             eventbus_queue_size=$queue_total
@@ -644,7 +647,8 @@ collect_all_metrics() {
             local nftban_log="${NFTBAN_LOG_DIR}/nftban.log"
             if [[ -f "$nftban_log" ]]; then
                 # Count lines containing nft command errors (case-insensitive)
-                nft_apply_errors=$(grep -ciE '(nft.*error|nft.*failed|nft:.*Error)' "$nftban_log" 2>/dev/null || echo "0")
+                nft_apply_errors=$(grep -ciE '(nft.*error|nft.*failed|nft:.*Error)' "$nftban_log" 2>/dev/null | tr -d '[:space:]')
+                [[ -z "$nft_apply_errors" || ! "$nft_apply_errors" =~ ^[0-9]+$ ]] && nft_apply_errors=0
             fi
             metrics+="nftban_nftables_apply_errors_total $nft_apply_errors $timestamp\n"
 
@@ -654,7 +658,8 @@ collect_all_metrics() {
             ruleset_output=$(nft list ruleset inet nftban 2>/dev/null || true)
             if [[ -n "$ruleset_output" ]]; then
                 # Count lines that look like rules (contain accept, drop, jump, counter, etc.)
-                nft_rules_total=$(echo "$ruleset_output" | grep -cE '^\s+(accept|drop|reject|jump|goto|counter|log|limit|ct )' 2>/dev/null || echo "0")
+                nft_rules_total=$(echo "$ruleset_output" | grep -cE '^\s+(accept|drop|reject|jump|goto|counter|log|limit|ct )' 2>/dev/null | tr -d '[:space:]')
+                [[ -z "$nft_rules_total" || ! "$nft_rules_total" =~ ^[0-9]+$ ]] && nft_rules_total=0
             fi
             metrics+="nftban_nftables_rules_total $nft_rules_total $timestamp\n"
 
@@ -663,7 +668,8 @@ collect_all_metrics() {
             local sets_output
             sets_output=$(nft list sets inet nftban 2>/dev/null || true)
             if [[ -n "$sets_output" ]]; then
-                nft_sets_total=$(echo "$sets_output" | grep -c "^\s*set " 2>/dev/null || echo "0")
+                nft_sets_total=$(echo "$sets_output" | grep -c "^\s*set " 2>/dev/null | tr -d '[:space:]')
+                [[ -z "$nft_sets_total" || ! "$nft_sets_total" =~ ^[0-9]+$ ]] && nft_sets_total=0
             fi
             metrics+="nftban_nftables_sets_total $nft_sets_total $timestamp\n"
 
@@ -683,7 +689,8 @@ collect_all_metrics() {
             else
                 # Fallback: count nft commands from log
                 if [[ -f "$nftban_log" ]]; then
-                    nft_commands_total=$(grep -ciE '(nft add|nft delete|nft flush|nft list)' "$nftban_log" 2>/dev/null || echo "0")
+                    nft_commands_total=$(grep -ciE '(nft add|nft delete|nft flush|nft list)' "$nftban_log" 2>/dev/null | tr -d '[:space:]')
+                    [[ -z "$nft_commands_total" || ! "$nft_commands_total" =~ ^[0-9]+$ ]] && nft_commands_total=0
                 fi
             fi
             metrics+="nftban_nftables_commands_total $nft_commands_total $timestamp\n"
