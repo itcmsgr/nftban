@@ -58,6 +58,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/banlog"
 	"github.com/itcmsgr/nftban/pkg/ddos"
 	"github.com/itcmsgr/nftban/pkg/eventbus"
+	"github.com/itcmsgr/nftban/pkg/geoip"
 	"github.com/itcmsgr/nftban/pkg/metrics"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/itcmsgr/nftban/pkg/feeds"
@@ -73,6 +74,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/stats"
 	"github.com/itcmsgr/nftban/pkg/sync"
 	"github.com/itcmsgr/nftban/pkg/watchdog"
+	"github.com/itcmsgr/nftban/pkg/whitelist"
 	"golang.org/x/sys/unix"
 )
 
@@ -126,6 +128,34 @@ type Daemon struct {
 	cancel    context.CancelFunc
 	socketLn  net.Listener
 	httpSrv   *http.Server
+	configDir string             // Config directory for whitelist loading
+}
+
+// isWhitelisted checks if an IP is in the whitelist.
+// Returns true if the IP should NOT be banned.
+func (d *Daemon) isWhitelisted(ip string) bool {
+	if d.configDir == "" {
+		return false
+	}
+	ipv4Set, ipv6Set, err := whitelist.LoadAllWhitelists(d.configDir)
+	if err != nil {
+		log.Printf("[WHITELIST] Warning: failed to load whitelists: %v", err)
+		return false
+	}
+	if strings.Contains(ip, ":") {
+		return ipv6Set[ip]
+	}
+	return ipv4Set[ip]
+}
+
+// lookupCountry performs GeoIP lookup and returns country code.
+// Returns "UNK" if lookup fails.
+func lookupCountry(ip string) string {
+	country, _ := geoip.LookupIP(ip)
+	if country == "" {
+		return "UNK"
+	}
+	return country
 }
 
 func main() {
@@ -150,11 +180,13 @@ func main() {
 	log.Printf("Safety: %s", safety.GetProfileDescription())
 
 	// Create daemon
+	_, configDir, _, _ := getDaemonPaths()
 	d := &Daemon{
-		bus:      eventbus.New(),
-		registry: module.NewRegistry(),
-		backend:  nftbackend.New(), // AUTHORITATIVE nft backend
-		stats:    stats.NewCollector(stats.DefaultConfig()),
+		bus:       eventbus.New(),
+		registry:  module.NewRegistry(),
+		backend:   nftbackend.New(), // AUTHORITATIVE nft backend
+		stats:     stats.NewCollector(stats.DefaultConfig()),
+		configDir: configDir,
 	}
 
 	// Initialize dynamic watchdog
@@ -279,6 +311,12 @@ func (d *Daemon) Run() error {
 			return
 		}
 
+		// SECURITY: Check whitelist before banning (defense-in-depth)
+		if d.isWhitelisted(e.IP) {
+			log.Printf("[BAN] BLOCKED: %s is whitelisted, refusing module ban from %s", e.IP, e.Source)
+			return
+		}
+
 		// Extract timeout from event data (default 1 hour)
 		timeout := 3600
 		if dur, ok := e.Data["duration"].(string); ok {
@@ -312,7 +350,7 @@ func (d *Daemon) Run() error {
 				family = "ipv6"
 			}
 			metrics.RecordBan(e.Source, family)
-			// Log to bans.log for stats tracking
+			// Log to bans.log with GeoIP country lookup
 			banSource := banlog.SourceManual
 			switch {
 			case strings.Contains(e.Source, "portscan"):
@@ -326,7 +364,8 @@ func (d *Daemon) Run() error {
 			case strings.Contains(e.Source, "suricata"):
 				banSource = banlog.SourceSuricata
 			}
-			_ = banlog.LogBan(e.IP, banSource, "UNK")
+			country := lookupCountry(e.IP)
+			_ = banlog.LogBan(e.IP, banSource, country)
 		}
 	})
 
@@ -871,6 +910,15 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 		return SocketResponse{Success: false, Error: "missing ip parameter"}
 	}
 
+	// SECURITY: Check whitelist before banning (defense-in-depth)
+	if d.isWhitelisted(ip) {
+		log.Printf("[BAN] BLOCKED: %s is whitelisted, refusing IPC ban", ip)
+		return SocketResponse{
+			Success: false,
+			Error:   fmt.Sprintf("IP %s is whitelisted, cannot ban", ip),
+		}
+	}
+
 	// Parse optional parameters
 	timeout := 0
 	if t, ok := params["timeout"].(float64); ok {
@@ -923,7 +971,8 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 	case strings.Contains(source, "suricata"):
 		banSource = banlog.SourceSuricata
 	}
-	_ = banlog.LogBan(ip, banSource, "UNK") // Country lookup done separately
+	country := lookupCountry(ip)
+	_ = banlog.LogBan(ip, banSource, country)
 
 	// NOTE: Do NOT publish EventBan here - the IPC handler already executed the ban
 	// and logged it. The EventBan subscriber is for module-initiated bans only.

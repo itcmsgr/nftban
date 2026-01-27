@@ -24,8 +24,8 @@
 [Unit]
 Description=NFTBan Unified Metrics Exporter
 Documentation=https://nftban.com/docs/metrics
-After=network.target nftban.service
-Wants=nftban.service
+After=network.target nftband.service
+Wants=nftband.service
 
 # MUTUAL EXCLUSION: Prevent running alongside legacy exporters
 Conflicts=nftban-metrics-exporter.service

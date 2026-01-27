@@ -111,7 +111,7 @@ declare -A NFTBAN_FAILED_ATTEMPTS
 declare -A NFTBAN_FAILED_TIMESTAMPS
 
 # Central bans.log path for stats integration
-NFTBAN_BANS_LOG="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
+NFTBAN_BAN_LOG="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -142,7 +142,7 @@ nftban_login_write_bans_log() {
     local country="${3:-UNK}"
 
     local log_dir
-    log_dir=$(dirname "$NFTBAN_BANS_LOG")
+    log_dir=$(dirname "$NFTBAN_BAN_LOG")
 
     # Ensure log directory exists
     mkdir -p "$log_dir"
@@ -158,7 +158,7 @@ nftban_login_write_bans_log() {
     reason="${reason//$'\r'/ }"
 
     # Write canonical format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
-    echo "${date_str}|${time_str}|login|${ip}|${country}|BANNED|${reason}" >> "$NFTBAN_BANS_LOG"
+    echo "${date_str}|${time_str}|login|${ip}|${country}|BANNED|${reason}" >> "$NFTBAN_BAN_LOG"
 
     nftban_login_alert_log "Wrote ban to bans.log: ${ip} (${reason})"
 }
