@@ -22,7 +22,7 @@
 # meta:inventory.privileges="root"
 #
 # meta:created_date="2026-01-16"
-# meta:updated_date="2026-01-19"
+# meta:updated_date="2026-01-27"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -48,6 +48,9 @@ NFTBAN_UPDATE_SOURCE="${NFTBAN_UPDATE_SOURCE:-auto}"
 NFTBAN_GIT_REPO="${NFTBAN_GIT_REPO:-/opt/nftban}"
 NFTBAN_GIT_BRANCH="${NFTBAN_GIT_BRANCH:-main}"
 NFTBAN_UPDATE_BACKUP_COUNT="${NFTBAN_UPDATE_BACKUP_COUNT:-3}"
+
+# Internal flags
+_NFTBAN_UPDATE_FORCE=0
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -78,6 +81,101 @@ _update_banner() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  NFTBan Update"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+}
+
+_fix_broken_dpkg() {
+    # Fix broken dpkg state left by interrupted installs
+    # Safe to call even when dpkg is healthy - it will be a no-op
+    # Returns: 0 on success or no dpkg, 1 on failure to repair
+
+    if ! command -v dpkg &>/dev/null; then
+        return 0
+    fi
+
+    # Check if dpkg has interrupted/broken packages
+    local dpkg_audit
+    dpkg_audit=$(dpkg --audit 2>&1) || true
+
+    local needs_configure=0
+
+    # dpkg --audit outputs nothing when everything is clean
+    if [[ -n "$dpkg_audit" ]]; then
+        needs_configure=1
+        _update_log WARN "Broken dpkg state detected"
+        _update_log INFO "dpkg audit: $(echo "$dpkg_audit" | head -3)"
+    fi
+
+    # Also check for packages in an inconsistent state
+    if dpkg -l nftban 2>/dev/null | grep -qE "^(iF|iU|iW|iH|.R|.H)"; then
+        needs_configure=1
+        _update_log WARN "NFTBan package in inconsistent dpkg state"
+    fi
+    if dpkg -l nftban-core 2>/dev/null | grep -qE "^(iF|iU|iW|iH|.R|.H)"; then
+        needs_configure=1
+        _update_log WARN "NFTBan-core package in inconsistent dpkg state"
+    fi
+
+    # Also check /var/lib/dpkg/updates for pending triggers
+    if [[ -d /var/lib/dpkg/updates ]] && ls /var/lib/dpkg/updates/ 2>/dev/null | grep -q .; then
+        needs_configure=1
+        _update_log WARN "Pending dpkg updates found"
+    fi
+
+    if [[ "$needs_configure" -eq 1 ]]; then
+        _update_log INFO "Running dpkg --configure -a to fix broken state..."
+        if dpkg --configure -a 2>&1 | while read -r line; do echo "    $line"; done; then
+            _update_log OK "dpkg state repaired"
+            return 0
+        else
+            _update_log ERROR "dpkg --configure -a failed"
+            _update_log INFO "Manual intervention may be needed: sudo dpkg --configure -a"
+            return 1
+        fi
+    fi
+
+    return 0
+}
+
+_remove_immutable_flags() {
+    # Remove immutable (chattr +i) flags from ALL nftban files
+    # This is needed before any install/update/rollback can modify files
+    # Safe to call even if no immutable flags are set
+
+    _update_log INFO "Removing immutable flags from nftban files..."
+
+    local dirs_to_check=(
+        "/usr/lib/nftban"
+        "/usr/sbin/nftban"
+        "/etc/nftban"
+    )
+
+    local found_immutable=0
+
+    for path in "${dirs_to_check[@]}"; do
+        if [[ -e "$path" ]]; then
+            if [[ -d "$path" ]]; then
+                # Remove immutable flag from all files in directory recursively
+                # Use find to locate files with immutable attribute
+                while IFS= read -r -d '' file; do
+                    if lsattr "$file" 2>/dev/null | grep -q -- '----i'; then
+                        chattr -i "$file" 2>/dev/null && found_immutable=1
+                    fi
+                done < <(find "$path" -type f -print0 2>/dev/null)
+
+                # Brute-force approach as fallback - just try chattr -i -R
+                chattr -i -R "$path" 2>/dev/null || true
+            else
+                # Single file
+                chattr -i "$path" 2>/dev/null || true
+            fi
+        fi
+    done
+
+    if [[ "$found_immutable" -eq 1 ]]; then
+        _update_log OK "Immutable flags removed"
+    else
+        _update_log INFO "No immutable flags found"
+    fi
 }
 
 _load_config() {
@@ -631,14 +729,36 @@ _update_via_deb() {
         return 1
     fi
 
+    # Force mode: fix broken dpkg state and remove all immutable flags first
+    if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
+        _update_log INFO "Force mode: repairing system state before install..."
+        _fix_broken_dpkg || {
+            _update_log WARN "Could not fully repair dpkg state, attempting install anyway"
+        }
+        _remove_immutable_flags
+    else
+        # Standard mode: only remove the known immutable file
+        chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
+    fi
+
     # Install
+    local dpkg_cmd="dpkg -i"
+    if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
+        _update_log INFO "Force mode: using dpkg --force-overwrite --force-confnew"
+        dpkg_cmd="dpkg -i --force-overwrite --force-confnew"
+    fi
     _update_log INFO "Installing DEB package..."
-    if dpkg -i "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done; then
+    if $dpkg_cmd "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done; then
         _update_log OK "DEB installed successfully"
         rm -f "$tmp_file"
         return 0
     else
         _update_log ERROR "DEB installation failed"
+        # In force mode, attempt dpkg configure to clean up
+        if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
+            _update_log INFO "Force mode: running dpkg --configure -a after failed install..."
+            dpkg --configure -a 2>&1 | while read -r line; do echo "    $line"; done || true
+        fi
         rm -f "$tmp_file"
         return 1
     fi
@@ -788,8 +908,27 @@ _do_rollback() {
 
     _update_log INFO "Rolling back to: $(basename "$latest_backup" .tar.gz)"
 
-    if tar -xzf "$latest_backup" -C / 2>/dev/null; then
+    # Fix broken dpkg state before rollback (interrupted installs leave dpkg broken)
+    _fix_broken_dpkg || {
+        _update_log WARN "Could not fully repair dpkg state, attempting rollback anyway"
+    }
+
+    # Remove immutable flags from ALL nftban files that would block rollback extraction
+    _remove_immutable_flags
+
+    if tar -xzf "$latest_backup" -C / 2>&1; then
         _update_log OK "Rollback successful"
+
+        # After file rollback, fix dpkg database if this was a deb install
+        if command -v dpkg &>/dev/null; then
+            local pkg_status
+            pkg_status=$(dpkg -l nftban 2>/dev/null | tail -1 | awk '{print $1}') || true
+            if [[ -n "$pkg_status" ]] && [[ "$pkg_status" != "ii" ]]; then
+                _update_log INFO "Repairing dpkg package database after rollback..."
+                dpkg --configure -a 2>&1 | while read -r line; do echo "    $line"; done || true
+            fi
+        fi
+
         return 0
     else
         _update_log ERROR "Rollback failed"
@@ -1035,7 +1174,9 @@ _cmd_update_main() {
     if [[ $result -ne 0 ]]; then
         echo ""
         _update_log ERROR "Update failed"
+        _update_log INFO "Run 'nftban update repair' to fix broken install state"
         _update_log INFO "Run 'nftban update rollback' to restore previous version"
+        _update_log INFO "Run 'nftban update force' to force reinstall"
         return $result
     fi
 
@@ -1069,6 +1210,151 @@ _cmd_update_main() {
     return 0
 }
 
+_cmd_update_repair() {
+    # Repair a broken nftban installation
+    # This is the nuclear option - fixes dpkg, removes immutable flags,
+    # and optionally restores from backup
+    #
+    # Designed to work even when nftban itself is partially broken,
+    # e.g., after a dpkg failure mid-install
+
+    _update_banner
+    echo ""
+
+    # Check root
+    if [[ $EUID -ne 0 ]]; then
+        _update_log ERROR "Repair requires root privileges"
+        _update_log INFO "Run: sudo nftban update repair"
+        return 1
+    fi
+
+    _update_log INFO "Starting nftban repair..."
+    echo ""
+
+    local repair_status=0
+
+    # Step 1: Remove immutable flags from all nftban files
+    echo "  [1/4] Removing immutable flags..."
+    _remove_immutable_flags
+
+    # Step 2: Fix broken dpkg state (first pass)
+    echo ""
+    echo "  [2/4] Checking dpkg state..."
+    if command -v dpkg &>/dev/null; then
+        if ! _fix_broken_dpkg; then
+            _update_log WARN "First dpkg repair pass had issues"
+            repair_status=1
+        fi
+    else
+        _update_log INFO "Not a dpkg-based system, skipping dpkg repair"
+    fi
+
+    # Step 3: Re-run dpkg configure to ensure clean state
+    echo ""
+    echo "  [3/4] Running dpkg configure (ensure clean state)..."
+    if command -v dpkg &>/dev/null; then
+        # Force remove any lock files that might be stale
+        if [[ -f /var/lib/dpkg/lock-frontend ]]; then
+            # Check if dpkg is actually running
+            if ! fuser /var/lib/dpkg/lock-frontend &>/dev/null 2>&1; then
+                rm -f /var/lib/dpkg/lock-frontend 2>/dev/null || true
+                rm -f /var/lib/dpkg/lock 2>/dev/null || true
+                _update_log INFO "Removed stale dpkg lock files"
+            fi
+        fi
+
+        # Run dpkg configure to finalize any pending configurations
+        if dpkg --configure -a 2>&1 | while read -r line; do echo "    $line"; done; then
+            _update_log OK "dpkg configure completed"
+        else
+            _update_log WARN "dpkg configure had issues"
+            repair_status=1
+        fi
+
+        # Verify nftban package state
+        local pkg_line
+        pkg_line=$(dpkg -l nftban 2>/dev/null | tail -1) || true
+        if [[ -n "$pkg_line" ]]; then
+            local pkg_status
+            pkg_status=$(echo "$pkg_line" | awk '{print $1}')
+            local pkg_version
+            pkg_version=$(echo "$pkg_line" | awk '{print $3}')
+            case "$pkg_status" in
+                ii)
+                    _update_log OK "nftban package status: installed ($pkg_version)"
+                    ;;
+                iF|iU|iW|iH)
+                    _update_log WARN "nftban package status: $pkg_status ($pkg_version) - still needs attention"
+                    repair_status=1
+                    ;;
+                rc)
+                    _update_log WARN "nftban package status: removed but config remains"
+                    ;;
+                *)
+                    _update_log WARN "nftban package status: $pkg_status"
+                    ;;
+            esac
+        fi
+    else
+        _update_log INFO "Not a dpkg-based system, skipping dpkg configure"
+    fi
+
+    # Step 4: Offer backup restore if repair couldn't fully fix things
+    echo ""
+    echo "  [4/4] Checking backup availability..."
+    if [[ -d "$UPDATE_BACKUP_DIR" ]]; then
+        local latest_backup=""
+        while IFS= read -r -d '' f; do
+            latest_backup="$f"
+            break
+        done < <(find "$UPDATE_BACKUP_DIR" -maxdepth 1 -name "nftban-*.tar.gz" -print0 2>/dev/null | sort -rzV)
+
+        if [[ -n "$latest_backup" ]]; then
+            local backup_name
+            backup_name=$(basename "$latest_backup" .tar.gz)
+            if [[ $repair_status -ne 0 ]]; then
+                _update_log INFO "Backup available: $backup_name"
+                _update_log INFO "Restoring from backup to complete repair..."
+                if tar -xzf "$latest_backup" -C / 2>&1; then
+                    _update_log OK "Backup restored: $backup_name"
+                    # Final dpkg configure after restore
+                    if command -v dpkg &>/dev/null; then
+                        dpkg --configure -a 2>&1 | while read -r line; do echo "    $line"; done || true
+                    fi
+                    repair_status=0
+                else
+                    _update_log ERROR "Backup restore failed"
+                fi
+            else
+                _update_log OK "Backup available: $backup_name (not needed, repair succeeded)"
+            fi
+        else
+            _update_log INFO "No backups found"
+            if [[ $repair_status -ne 0 ]]; then
+                _update_log WARN "No backup to restore from"
+                _update_log INFO "Try: sudo nftban update force"
+            fi
+        fi
+    else
+        _update_log INFO "No backup directory found"
+    fi
+
+    # Summary
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    if [[ $repair_status -eq 0 ]]; then
+        echo "  Repair completed successfully"
+    else
+        echo "  Repair completed with warnings"
+        echo "  If issues persist, try: sudo nftban update force"
+        echo "  Or reinstall: sudo dpkg -i --force-all <package.deb>"
+    fi
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    return $repair_status
+}
+
 _cmd_update_help() {
     cat << 'EOF'
 NFTBan Update - Multi-source update system
@@ -1083,7 +1369,9 @@ COMMANDS:
     github [VERSION]    Update from GitHub releases (RPM/DEB packages)
     git [BRANCH]        Update from git repository (requires git install)
     local PATH          Install from local directory path
-    rollback            Restore previous version from backup
+    force               Force reinstall/update (fixes dpkg, removes immutable flags)
+    rollback            Restore previous version from backup (fixes dpkg first)
+    repair              Fix broken install (dpkg state, immutable flags, restore backup)
     list                List available backups
     help                Show this help message
 
@@ -1117,7 +1405,13 @@ EXAMPLES:
     # Install from local path
     nftban update local /home/user/nftban-dev
 
-    # Rollback to previous version
+    # Force reinstall (fixes dpkg state, removes immutable flags, forces overwrite)
+    nftban update force
+
+    # Repair broken install (fixes dpkg, removes immutable flags, restores backup)
+    nftban update repair
+
+    # Rollback to previous version (fixes dpkg state first)
     nftban update rollback
 
     # List available backups
@@ -1162,6 +1456,13 @@ nftban_cmd_update() {
             ;;
         local)
             _cmd_update_main "local" "${1:-}"
+            ;;
+        force|--force|reinstall)
+            _NFTBAN_UPDATE_FORCE=1
+            _cmd_update_main "auto" ""
+            ;;
+        repair|--repair|fix)
+            _cmd_update_repair
             ;;
         rollback|--rollback|-r)
             _update_banner

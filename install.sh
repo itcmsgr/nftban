@@ -484,22 +484,45 @@ check_conflicting_firewalls() {
         fi
     fi
 
-    # 2. Check iptables (legacy service)
+    # 2. Check iptables - differentiate iptables-nft (conflict) vs iptables-legacy (OK)
     if command -v iptables &>/dev/null; then
+        local ipt_svc_version
+        ipt_svc_version=$(iptables --version 2>/dev/null || echo "")
+        local is_iptables_nft=0
+        if [[ "$ipt_svc_version" == *"nf_tables"* ]]; then
+            is_iptables_nft=1
+        fi
+
         if systemctl is-active --quiet iptables 2>/dev/null; then
-            firewall_issues+=("iptables service is ACTIVE")
-            conflicts_found=1
+            if [[ $is_iptables_nft -eq 1 ]]; then
+                firewall_issues+=("iptables-nft service is ACTIVE (creates nftables tables)")
+                conflicts_found=1
+            else
+                info "iptables-legacy service is ACTIVE (co-exists with nftables)"
+                info "  cPanel/WHM, CSF/LFD, and cPHulk may require this service."
+            fi
         elif systemctl is-enabled --quiet iptables 2>/dev/null; then
-            firewall_issues+=("iptables service is ENABLED (not running)")
-            conflicts_found=1
+            if [[ $is_iptables_nft -eq 1 ]]; then
+                firewall_issues+=("iptables-nft service is ENABLED (not running)")
+                conflicts_found=1
+            else
+                info "iptables-legacy service is ENABLED (co-exists with nftables)"
+            fi
         fi
     fi
 
-    # 3. Check iptables-services (RHEL/CentOS)
+    # 3. Check iptables-services (RHEL/CentOS) - only conflict if iptables-nft
     if systemctl is-active --quiet iptables.service 2>/dev/null || \
        systemctl is-active --quiet ip6tables.service 2>/dev/null; then
-        firewall_issues+=("iptables-services is ACTIVE")
-        conflicts_found=1
+        local ipt_svc2_version
+        ipt_svc2_version=$(iptables --version 2>/dev/null || echo "")
+        if [[ "$ipt_svc2_version" == *"nf_tables"* ]]; then
+            firewall_issues+=("iptables-nft services is ACTIVE (creates nftables tables)")
+            conflicts_found=1
+        else
+            info "iptables-legacy services ACTIVE (co-exists with nftables)"
+            info "  cPanel/WHM, CSF/LFD, and cPHulk may require iptables."
+        fi
     fi
 
     # 4. Check ufw (Ubuntu/Debian)
@@ -564,12 +587,13 @@ check_conflicting_firewalls() {
             echo "  systemctl disable firewalld"
             echo ""
         fi
-        if [[ "$issue" == *"iptables"* ]]; then
-            echo "Disable iptables:"
+        if [[ "$issue" == *"iptables-nft"* ]]; then
+            echo "Disable iptables-nft (conflicts with nftables):"
             echo "  systemctl stop iptables"
             echo "  systemctl disable iptables"
             echo "  systemctl stop ip6tables 2>/dev/null || true"
             echo "  systemctl disable ip6tables 2>/dev/null || true"
+            echo "  Or switch to iptables-legacy: update-alternatives --set iptables /usr/sbin/iptables-legacy"
             echo ""
         fi
         if [[ "$issue" == *"ufw"* ]]; then
@@ -629,17 +653,24 @@ check_conflicting_firewalls() {
             fi
         fi
 
-        # Fix iptables
+        # Fix iptables - only auto-disable if iptables-nft (conflicts with nftables)
+        # iptables-legacy co-exists with nftables and is required by cPanel/CSF/cPHulk
         if systemctl is-active --quiet iptables 2>/dev/null || systemctl is-enabled --quiet iptables 2>/dev/null; then
-            log "Stopping iptables..."
-            if systemctl stop iptables 2>/dev/null && systemctl disable iptables 2>/dev/null; then
-                systemctl stop ip6tables 2>/dev/null || true
-                systemctl disable ip6tables 2>/dev/null || true
-                ok "iptables stopped and disabled"
-                fixed=$((fixed + 1))
+            local autofix_ipt_version
+            autofix_ipt_version=$(iptables --version 2>/dev/null || echo "")
+            if [[ "$autofix_ipt_version" == *"nf_tables"* ]]; then
+                log "Stopping iptables-nft (conflicts with nftables)..."
+                if systemctl stop iptables 2>/dev/null && systemctl disable iptables 2>/dev/null; then
+                    systemctl stop ip6tables 2>/dev/null || true
+                    systemctl disable ip6tables 2>/dev/null || true
+                    ok "iptables-nft stopped and disabled"
+                    fixed=$((fixed + 1))
+                else
+                    warn "Failed to stop/disable iptables-nft"
+                    failed=$((failed + 1))
+                fi
             else
-                warn "Failed to stop/disable iptables"
-                failed=$((failed + 1))
+                info "Skipping iptables-legacy (co-exists with nftables, required by cPanel/CSF)"
             fi
         fi
 

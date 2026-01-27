@@ -1,6 +1,11 @@
 #!/bin/sh
 set -e
 
+# Remove immutable flag before upgrade/remove (security protection on nft_schema.sh)
+if [ -f /usr/lib/nftban/lib/nft_schema.sh ]; then
+    chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
+fi
+
 case "$1" in
     remove|deconfigure)
         # Stop NFTBand daemon (single nftables writer) - stop socket first
