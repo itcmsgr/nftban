@@ -33,6 +33,22 @@ Covers security fixes, daemon hardening, configuration consistency, packaging, a
 - **Systemd references** - Fixed exporter service referencing non-existent `nftban.service`
   (changed to `nftband.service`), synced geoip service `Requires=` directive
 
+### Bug Fixes (CRITICAL)
+
+- **Persistent offender escalation dead code** - `cmd_ban.go` line 127 gated escalation behind
+  `source == "fail2ban"` which was removed in v1.0. ALL temp ban sources (loginmon, portscan,
+  ddos, suricata, manual) now trigger persistent offender escalation check
+- **Daemon EventBan missing escalation** - Module-initiated bans (via EventBan event bus)
+  had zero escalation logic. Added `checkAndEscalate()` to daemon: after each temp ban,
+  counts recent bans per IP from bans.log against conf.d/persistent.conf thresholds,
+  auto-escalates to permanent ban with blacklist.d persistence when threshold exceeded
+- **Persistent config path wrong** - `pkg/persistent/config.go` looked for
+  `/etc/nftban/persistent.conf` instead of `/etc/nftban/conf.d/persistent.conf`
+  (inconsistent with all other conf.d/*.conf files). Fixed to use `conf.d/` path
+- **Missing persistent.conf template** - Created `install/config/conf.d/persistent.conf`
+  with documented defaults (threshold=10, period=24h) and per-filter override sections.
+  User customizations go in `persistent.conf.local` (survives upgrades)
+
 ### Bug Fixes
 
 - **Bans.log field parsing** - Fixed field positions across stats, UI handler, and email reports

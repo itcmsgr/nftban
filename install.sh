@@ -1561,6 +1561,10 @@ _install_configs_modules() {
     _install_config_file "$SCRIPT_DIR/install/config/conf.d/zabbix.conf" "/etc/nftban/conf.d/zabbix.conf" "640"
     _install_config_file "$SCRIPT_DIR/install/config/conf.d/connectors.conf" "/etc/nftban/conf.d/connectors.conf" "640"
 
+    # Metrics and persistent offender configs (v1.5.0+)
+    _install_config_file "$SCRIPT_DIR/install/config/conf.d/metrics.conf" "/etc/nftban/conf.d/metrics.conf" "640"
+    _install_config_file "$SCRIPT_DIR/install/config/conf.d/persistent.conf" "/etc/nftban/conf.d/persistent.conf" "640"
+
     # Pattern files
     _install_config_dir "$SCRIPT_DIR/etc/nftban/patterns.d/botscan" "/etc/nftban/patterns.d/botscan" "*.patterns" "640"
 

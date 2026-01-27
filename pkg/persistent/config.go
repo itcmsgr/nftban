@@ -79,8 +79,8 @@ func LoadConfig(configDir string) (*Config, error) {
 		Filters:         make(map[string]*FilterConfig),
 	}
 
-	// Read default config
-	defaultPath := configDir + "/persistent.conf" // Removed: fail2ban.conf (v1.0)
+	// Read default config from conf.d/ (consistent with metrics.conf, watchdog.conf, etc.)
+	defaultPath := configDir + "/conf.d/persistent.conf"
 	if err := cfg.parseConfigFile(defaultPath); err != nil {
 		// If default doesn't exist, use built-in defaults (not an error)
 		if !os.IsNotExist(err) {
@@ -88,8 +88,8 @@ func LoadConfig(configDir string) (*Config, error) {
 		}
 	}
 
-	// Read local overrides
-	localPath := configDir + "/persistent.conf.local" // Removed: fail2ban.conf.local (v1.0)
+	// Read local overrides (user customizations survive upgrades)
+	localPath := configDir + "/conf.d/persistent.conf.local"
 	if err := cfg.parseConfigFile(localPath); err != nil {
 		// Local file is optional
 		if !os.IsNotExist(err) {

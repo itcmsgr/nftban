@@ -277,6 +277,13 @@
       "category": "metrics",
       "key_count": 42,
       "comment": "Central configuration for collectors, component detection, exports, retention, and reports"
+    },
+    "conf.d/persistent.conf": {
+      "description": "Persistent offender escalation configuration",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 4,
+      "comment": "Auto-escalate repeat temp-ban offenders to permanent bans (threshold, period, per-filter overrides)"
     }
   },
   "key_prefixes": {

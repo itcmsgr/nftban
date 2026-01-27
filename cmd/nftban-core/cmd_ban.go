@@ -120,18 +120,17 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 		alreadyBanned = blacklistIPv6[normalizedIP]
 	}
 
-	// Step 4: Check for persistent offender (fail2ban only)
+	// Step 4: Check for persistent offender escalation (all temp ban sources)
 	shouldEscalate := false
-	jailName := ""
+	filterName := source
+	if filterName == "" {
+		filterName = "manual"
+	}
 
-	if timeoutSeconds > 0 && source == "fail2ban" {
-		// Extract jail name from reason (format: "fail2ban: jail-name")
-		if strings.HasPrefix(reason, "fail2ban: ") {
-			jailName = strings.TrimPrefix(reason, "fail2ban: ")
-		}
-
-		// Check if this IP should escalate to permanent
-		escalate, err := checkPersistentOffender(configDir, normalizedIP, jailName)
+	if timeoutSeconds > 0 {
+		// Check if this IP should escalate to permanent ban
+		// Uses per-filter thresholds from conf.d/persistent.conf
+		escalate, err := checkPersistentOffender(configDir, normalizedIP, filterName)
 		if err != nil {
 			fmt.Printf("  ⚠️  Warning: Failed to check persistent offender status: %v\n", err)
 		} else if escalate {
@@ -172,7 +171,7 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 
 			if shouldEscalate {
 				// Use persistent offenders file (overrides source-based file)
-				banReason = fmt.Sprintf("persistent offender (%s)", jailName)
+				banReason = fmt.Sprintf("persistent offender (%s)", filterName)
 				banSource = "persistent"
 			}
 
@@ -282,9 +281,10 @@ func lookupCountryAndCity(ip string) (string, string) {
 	return country, city
 }
 
-// checkPersistentOffender checks if an IP should be escalated to permanent ban
-// Returns true if threshold exceeded
-func checkPersistentOffender(configDir, ip, jailName string) (bool, error) {
+// checkPersistentOffender checks if an IP should be escalated to permanent ban.
+// Uses per-filter thresholds from conf.d/persistent.conf (falls back to global defaults).
+// Returns true if ban count within the configured period exceeds the threshold.
+func checkPersistentOffender(configDir, ip, filterName string) (bool, error) {
 	// Load configuration
 	cfg, err := persistent.LoadConfig(configDir)
 	if err != nil {
@@ -295,30 +295,30 @@ func checkPersistentOffender(configDir, ip, jailName string) (bool, error) {
 		return false, nil // Feature disabled
 	}
 
-	// Get filter-specific configuration (was jail in v0.7)
-	jailCfg := cfg.GetFilterConfig(jailName)
+	// Get filter-specific configuration (or global defaults)
+	filterCfg := cfg.GetFilterConfig(filterName)
 
 	// Log this temp ban for escalation tracking
-	if err := persistent.LogTempBan(cfg.BanLog, ip, jailName, fmt.Sprintf("temp ban from %s", jailName)); err != nil {
+	if err := persistent.LogTempBan(cfg.BanLog, ip, filterName, fmt.Sprintf("temp ban from %s", filterName)); err != nil {
 		return false, fmt.Errorf("failed to log ban: %w", err)
 	}
 
-	// Count recent bans for this IP
-	banCount, err := persistent.CountRecentBans(cfg.BanLog, ip, jailCfg.Period)
+	// Count recent bans for this IP within the configured period
+	banCount, err := persistent.CountRecentBans(cfg.BanLog, ip, filterCfg.Period)
 	if err != nil {
 		return false, fmt.Errorf("failed to count bans: %w", err)
 	}
 
 	// Check if threshold exceeded
-	if banCount >= jailCfg.Threshold {
+	if banCount >= filterCfg.Threshold {
 		// Log persistent offender
-		if err := persistent.LogPersistentOffender(cfg.OffendersLog, ip, jailName, banCount); err != nil {
+		if err := persistent.LogPersistentOffender(cfg.OffendersLog, ip, filterName, banCount); err != nil {
 			// Log error but don't fail the ban
 			fmt.Printf("  ⚠️  Warning: Failed to log persistent offender: %v\n", err)
 		}
 
 		// Add to persistent offenders file
-		reason := fmt.Sprintf(">=%d bans in %s", jailCfg.Threshold, jailCfg.Period)
+		reason := fmt.Sprintf(">=%d bans in %s from %s", filterCfg.Threshold, filterCfg.Period, filterName)
 		if err := persistent.AddToPersistentOffenders(cfg.OffendersConf, ip, reason); err != nil {
 			return false, fmt.Errorf("failed to add to persistent offenders: %w", err)
 		}
