@@ -824,7 +824,6 @@ _cidr_contains_ipv6() {
 # Expand IPv6 address to full 32-char hex form (no colons)
 _expand_ipv6() {
     local addr="$1"
-    local result=""
 
     # Handle :: expansion
     if [[ "$addr" == *"::"* ]]; then

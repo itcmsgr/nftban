@@ -3241,6 +3241,7 @@ nftban_health_check_nft_schema() {
     fi
 
     # Store results
+    # shellcheck disable=SC2034  # Used by render functions externally
     NFTBAN_HEALTH_ISSUES["nft_schema"]="${schema_issues[*]}"
     if [[ $status -ge $HEALTH_ERROR ]]; then
         NFTBAN_HEALTH_ERRORS+=("NFT Schema: $errors validation errors")
@@ -3248,6 +3249,7 @@ nftban_health_check_nft_schema() {
         NFTBAN_HEALTH_WARNINGS+=("NFT Schema: validation warnings")
     fi
 
+    # shellcheck disable=SC2034  # Used by render functions externally
     NFTBAN_HEALTH_RESULTS["nft_schema"]=$status
     return $status
 }
