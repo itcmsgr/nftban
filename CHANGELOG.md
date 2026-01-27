@@ -58,6 +58,14 @@ Covers security fixes, daemon hardening, configuration consistency, packaging, a
 - **Update repair command** - `nftban update repair` fixes broken dpkg + immutable flags
 - **Update force mode** - `nftban update force` with `--force-overwrite`
 - **iptables detection** - Differentiates iptables-legacy (cPHulk, safe) from iptables-nft (conflicts)
+- **Health: FHS compliance check** - `nftban_health_check_fhs()` now integrated into main health flow,
+  validates all 75 FHS directories for permissions, ownership, and existence
+- **Health: NFT schema validation** - `nftban_health_check_nft_schema()` validates nftables tables,
+  sets, chains, set types/flags, and security-critical rule order (blacklist before established)
+- **Health: Polkit validation** - `nftban_health_check_polkit()` now called in main health flow,
+  validates all 3 polkit rule files (operator/auditor/panel) plus service status
+- **Health: nftables auto-heal** - `nftban_health_fix_nftables()` auto-creates missing tables,
+  sets, and chains from canonical schema (nft_schema.sh), reports deprecated tables
 
 ### Audit Findings (Documented for Future)
 

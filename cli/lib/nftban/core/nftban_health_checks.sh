@@ -3073,6 +3073,186 @@ nftban_health_check_timers() {
 }
 
 # =============================================================================
+# FHS COMPLIANCE CHECK
+# =============================================================================
+
+nftban_health_check_fhs() {
+    # Check FHS directory compliance (permissions, ownership, existence)
+    # Uses canonical FHS spec from nftban_fhs_spec.sh
+    # Returns: 0=OK, 1=Warning (missing dirs), 2=Error (wrong perms/owner)
+
+    local status=$HEALTH_OK
+    local fhs_issues=()
+
+    # Load FHS report module if not loaded
+    if ! declare -f nftban_fhs_check_all >/dev/null 2>&1; then
+        if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_report_fhs.sh" ]]; then
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_report_fhs.sh" 2>/dev/null || {
+                fhs_issues+=("Cannot load FHS report module")
+                NFTBAN_HEALTH_RESULTS["fhs"]=$HEALTH_WARNING
+                NFTBAN_HEALTH_WARNINGS+=("FHS: Cannot load report module")
+                return 1
+            }
+        else
+            fhs_issues+=("FHS report module not found")
+            NFTBAN_HEALTH_RESULTS["fhs"]=$HEALTH_WARNING
+            NFTBAN_HEALTH_WARNINGS+=("FHS: Report module not installed")
+            return 1
+        fi
+    fi
+
+    # Run FHS checks
+    nftban_fhs_check_all
+
+    # Count results
+    local ok_count=0 error_count=0 missing_count=0
+    local path fhs_status
+    for path in "${!NFTBAN_FHS_STATUS[@]}"; do
+        fhs_status="${NFTBAN_FHS_STATUS[$path]}"
+        if [[ "$fhs_status" == "OK" ]]; then
+            ok_count=$((ok_count + 1))
+        elif [[ "$fhs_status" == "MISSING" ]]; then
+            missing_count=$((missing_count + 1))
+        else
+            error_count=$((error_count + 1))
+        fi
+    done
+
+    local total=${#NFTBAN_FHS_DIRECTORIES[@]}
+
+    if [[ $error_count -gt 0 ]]; then
+        fhs_issues+=("FHS: $ok_count/$total OK, $error_count permission/ownership errors, $missing_count missing")
+        status=$HEALTH_ERROR
+    elif [[ $missing_count -gt 0 ]]; then
+        fhs_issues+=("FHS: $ok_count/$total OK, $missing_count missing directories")
+        status=$HEALTH_WARNING
+    else
+        fhs_issues+=("FHS: $total/$total directories compliant")
+    fi
+
+    # Store results
+    if [[ ${#fhs_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["fhs"]="${fhs_issues[*]}"
+        if [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("${fhs_issues[*]}")
+        elif [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("${fhs_issues[*]}")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["fhs"]=$status
+    return $status
+}
+
+# =============================================================================
+# NFT SCHEMA VALIDATION CHECK
+# =============================================================================
+
+nftban_health_check_nft_schema() {
+    # Validate nftables structure against canonical schema
+    # Checks: tables, sets, chains, set types/flags, rule order
+    # Returns: 0=OK, 1=Warning, 2=Error
+
+    local status=$HEALTH_OK
+    local schema_issues=()
+    local output
+
+    # Ensure nft command is available
+    if ! command -v nft &>/dev/null; then
+        schema_issues+=("nft command not found - cannot validate schema")
+        NFTBAN_HEALTH_RESULTS["nft_schema"]=$HEALTH_WARNING
+        NFTBAN_HEALTH_WARNINGS+=("NFT Schema: nft command not available")
+        return 1
+    fi
+
+    # Ensure schema is loaded
+    if ! declare -f nftban_nft_validate_tables >/dev/null 2>&1; then
+        if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" ]]; then
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" 2>/dev/null || {
+                schema_issues+=("Cannot load nft_schema.sh")
+                NFTBAN_HEALTH_RESULTS["nft_schema"]=$HEALTH_WARNING
+                NFTBAN_HEALTH_WARNINGS+=("NFT Schema: Cannot load schema module")
+                return 1
+            }
+        else
+            schema_issues+=("nft_schema.sh not found")
+            NFTBAN_HEALTH_RESULTS["nft_schema"]=$HEALTH_WARNING
+            NFTBAN_HEALTH_WARNINGS+=("NFT Schema: Schema module not installed")
+            return 1
+        fi
+    fi
+
+    local errors=0
+
+    # 1. Validate tables exist
+    if output=$(nftban_nft_validate_tables 2>&1); then
+        schema_issues+=("Tables: OK")
+    else
+        schema_issues+=("Tables: FAILED - $output")
+        errors=$((errors + 1))
+    fi
+
+    # 2. Validate sets exist
+    if output=$(nftban_nft_validate_sets 2>&1); then
+        schema_issues+=("Sets: OK")
+    else
+        schema_issues+=("Sets: FAILED - $output")
+        errors=$((errors + 1))
+    fi
+
+    # 3. Validate chains
+    if output=$(nftban_nft_validate_chains 2>&1); then
+        schema_issues+=("Chains: OK")
+    else
+        schema_issues+=("Chains: FAILED - $output")
+        errors=$((errors + 1))
+    fi
+
+    # 4. Validate set types and flags
+    if output=$(nftban_nft_validate_set_flags 2>&1); then
+        schema_issues+=("Set flags: OK")
+    else
+        schema_issues+=("Set flags: WARNING - $output")
+    fi
+
+    # 5. SECURITY-CRITICAL: Validate rule order (blacklist before established)
+    if output=$(nftban_nft_validate_rule_order 2>&1); then
+        schema_issues+=("Rule order: OK (blacklist before established)")
+    else
+        schema_issues+=("CRITICAL: Rule order incorrect - $output")
+        errors=$((errors + 1))
+        status=$HEALTH_CRITICAL
+    fi
+
+    # 6. Check for deprecated tables
+    local existing_tables
+    existing_tables=$(nft list tables 2>/dev/null)
+    for deprecated_table in "${!NFTBAN_DEPRECATED_TABLES[@]}"; do
+        if echo "$existing_tables" | grep -q "^table ${deprecated_table}$"; then
+            schema_issues+=("Legacy table present: ${deprecated_table}")
+        fi
+    done
+
+    # Set status
+    if [[ $status -ne $HEALTH_CRITICAL ]]; then
+        if [[ $errors -gt 0 ]]; then
+            status=$HEALTH_ERROR
+        fi
+    fi
+
+    # Store results
+    NFTBAN_HEALTH_ISSUES["nft_schema"]="${schema_issues[*]}"
+    if [[ $status -ge $HEALTH_ERROR ]]; then
+        NFTBAN_HEALTH_ERRORS+=("NFT Schema: $errors validation errors")
+    elif [[ $status -eq $HEALTH_WARNING ]]; then
+        NFTBAN_HEALTH_WARNINGS+=("NFT Schema: validation warnings")
+    fi
+
+    NFTBAN_HEALTH_RESULTS["nft_schema"]=$status
+    return $status
+}
+
+# =============================================================================
 # COMPREHENSIVE HEALTH CHECK
 # =============================================================================
 
