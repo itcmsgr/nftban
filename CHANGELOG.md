@@ -5,6 +5,79 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.6.1] - 2026-01-27
+
+### Security Maintenance Release
+
+Comprehensive system-wide audit using 13 parallel AI agents. All findings validated against code.
+Covers security fixes, daemon hardening, configuration consistency, packaging, and operational improvements.
+
+### Security Fixes (CRITICAL)
+
+- **Daemon whitelist bypass** - `handleBanRequest()` and EventBan subscriber now check whitelist
+  before banning (defense-in-depth: whitelisted IPs can no longer be banned via daemon IPC or modules)
+- **JSON injection in IPC client** - All `printf`-based JSON construction in `nft_ipc.sh` replaced
+  with `jq -nc` for proper escaping (prevents parameter injection via ban reason/source fields)
+- **X-Forwarded-For IP spoofing** - `GetClientIP()` now only trusts proxy headers from
+  loopback/private networks (prevents whitelist bypass via forged headers)
+- **NFTBAN_METRICS_MODE corruption** - `nftban metrics disable` now sets `NFTBAN_METRICS_ENABLED="false"`
+  instead of corrupting `NFTBAN_METRICS_MODE` to `"false"` (mode should only be "unified" or "legacy")
+
+### Security Fixes (HIGH)
+
+- **GeoIP lookup in daemon** - Ban logging now performs `geoip.LookupIP()` instead of hardcoding
+  `"UNK"` as country code in both EventBan subscriber and IPC handler
+- **Update mechanism** - Added `--fail` flag to curl calls (detect HTTP 404/500 errors),
+  fixed health check exit status bug (`|| true` was overwriting `$?`),
+  added service restart after successful package update
+- **Systemd references** - Fixed exporter service referencing non-existent `nftban.service`
+  (changed to `nftband.service`), synced geoip service `Requires=` directive
+
+### Bug Fixes
+
+- **Bans.log field parsing** - Fixed field positions across stats, UI handler, and email reports
+  (`ip=$2` → `ip=$4` to match canonical `DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON` format)
+- **Login bans.log integration** - Added `nftban_login_write_bans_log()` function for central logging
+- **Stats temp count** - Fixed "IPv4: 2 (perm: 0, temp: 3)" inconsistency
+  (`grep -c "timeout"` → `grep -oP 'timeout \d+[smhd]' | wc -l`)
+- **Triple logging** - Removed duplicate `banlog.LogBan()` call in `cmd_ban.go` and
+  duplicate `EventBan` publish in `nftband/main.go`
+- **Config naming** - Fixed `NFTBAN_BANS_LOG` → `NFTBAN_BAN_LOG` in `nftban_login_alert.sh`
+- **DEB postinst** - Fixed version detection loop using hardcoded path instead of loop variable
+
+### Features
+
+- **Health auto-heal** - Added `nftband.service` and `nftband.socket` to health check mechanism
+  with auto-start capability
+- **Feed timer conditional** - Feed and GeoIP timers now only enabled when their feature
+  is enabled (`NFTBAN_FEEDS_ENABLED=true` / `NFTBAN_GEOIP_ENABLED=true`)
+- **Search GeoIP** - Search command now shows country, geoban status, and CIDR range matches
+- **Search CIDR containment** - `nftban search` finds IPs within CIDR ranges in feeds
+- **SSH port auto-cleanup** - Tracks old SSH port in state file, auto-removes from whitelist on change
+- **Feed CIDR merging** - Added `_feeds_merge_cidrs()` to resolve "conflicting intervals" nftables errors
+- **Update repair command** - `nftban update repair` fixes broken dpkg + immutable flags
+- **Update force mode** - `nftban update force` with `--force-overwrite`
+- **iptables detection** - Differentiates iptables-legacy (cPHulk, safe) from iptables-nft (conflicts)
+
+### Audit Findings (Documented for Future)
+
+**Packaging Drift** (3 paths: install.sh/DEB/RPM):
+- Group model inconsistency (1/2/3 groups depending on path)
+- Binary path divergence (`/usr/local/bin/` vs `/usr/lib/nftban/bin/`)
+- install.sh lacks auto-whitelist (lockout risk), uses 0775 permissions
+- Polkit rules file names differ between install.sh and packages
+
+**Configuration Registry**:
+- Schema covers only 15/307+ defined variables
+- Module-specific config loading patterns inconsistent
+- Safe config parser exists but not enabled by default
+
+**Operational**:
+- No IPC rate limiting on daemon socket
+- HTTP API (port 8080) binds to all interfaces
+- Emergency nft calls use variable interpolation
+- Self-ban protection only at install time
+
 ## [1.6.0] - 2026-01-25
 
 ### Architecture Cleanup Release
