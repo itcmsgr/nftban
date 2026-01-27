@@ -338,22 +338,32 @@ else
     echo "[i] Info: ip command not found (optional, will use fallback methods)"
 fi
 
-# Warn about legacy firewall tools (should be removed)
+# Check for other firewall tools
 echo ""
-echo "Checking for legacy firewall tools..."
+echo "Checking for other firewall tools..."
 LEGACY_FOUND=0
 
 if command -v iptables >/dev/null 2>&1 || command -v ip6tables >/dev/null 2>&1; then
-    echo "[!] WARNING: iptables/ip6tables installed (LEGACY - conflicts with nftables)"
-    echo "    NFTBan uses nftables. Legacy iptables should be removed."
-    echo "    Recommended: dnf remove iptables iptables-services"
-    LEGACY_FOUND=1
+    # Differentiate iptables-nft (conflicts) vs iptables-legacy (co-exists)
+    IPT_VERSION=\$(iptables --version 2>/dev/null || echo "")
+    if echo "\$IPT_VERSION" | grep -q "nf_tables"; then
+        echo "[!] WARNING: iptables-nft detected (iptables-over-nftables wrapper)"
+        echo "    iptables-nft translates iptables rules into nftables and may"
+        echo "    create conflicting tables (e.g. 'ip filter')."
+        echo "    Recommended: switch to iptables-legacy or remove iptables-nft"
+        LEGACY_FOUND=1
+    else
+        echo "[i] INFO: iptables detected (co-exists with nftables)"
+        echo "    iptables-legacy uses a separate kernel API from nftables."
+        echo "    Both can run simultaneously. NFTBan uses its own 'nftban' table."
+        echo "    cPanel/WHM and other hosting panels may require iptables."
+    fi
 fi
 
 if command -v ufw >/dev/null 2>&1; then
-    echo "[!] WARNING: ufw installed (LEGACY - conflicts with nftables)"
-    echo "    NFTBan manages nftables directly. ufw should be removed."
-    echo "    Recommended: apt remove ufw"
+    echo "[!] WARNING: ufw installed (manages nftables/iptables backend)"
+    echo "    NFTBan manages nftables directly. ufw may conflict."
+    echo "    Recommended: dnf remove ufw"
     LEGACY_FOUND=1
 fi
 
@@ -365,7 +375,7 @@ if command -v firewall-cmd >/dev/null 2>&1; then
 fi
 
 if [ \$LEGACY_FOUND -eq 0 ]; then
-    echo "[✓] No legacy firewall tools detected"
+    echo "[✓] No conflicting firewall tools detected"
 fi
 
 # -----------------------------------------------------------------------------
@@ -419,16 +429,23 @@ if command -v ufw >/dev/null 2>&1; then
     fi
 fi
 
-# Check iptables services
+# Check iptables services - differentiate iptables-nft (conflict) vs iptables-legacy (OK)
 for svc in iptables ip6tables; do
     if systemctl is-active \$svc >/dev/null 2>&1; then
-        echo "[!] WARNING: \$svc service is ACTIVE"
-        echo "    NFTBan uses nftables, not legacy iptables."
-        echo "    Recommended action:"
-        echo "      systemctl stop \$svc"
-        echo "      systemctl disable \$svc"
-        echo ""
-        CONFLICTS_FOUND=1
+        IPT_SVC_VERSION=\$(iptables --version 2>/dev/null || echo "")
+        if echo "\$IPT_SVC_VERSION" | grep -q "nf_tables"; then
+            echo "[!] WARNING: \$svc service is ACTIVE (iptables-nft backend)"
+            echo "    iptables-nft creates nftables tables that may conflict with NFTBan."
+            echo "    Recommended action:"
+            echo "      systemctl stop \$svc"
+            echo "      systemctl disable \$svc"
+            echo ""
+            CONFLICTS_FOUND=1
+        else
+            echo "[i] INFO: \$svc service is ACTIVE (iptables-legacy backend)"
+            echo "    iptables-legacy co-exists with nftables (separate kernel APIs)."
+            echo "    cPanel/WHM, CSF/LFD, and cPHulk may require this service."
+        fi
     fi
 done
 
@@ -949,6 +966,9 @@ EOF
 # NFTBan - PREREQUISITE CHECKS (DEB)
 set -e
 
+# Remove immutable flag from nft_schema.sh before upgrade (security protection)
+chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
+
 echo ""
 echo "════════════════════════════════════════════════════════════════════════════════"
 echo "  NFTBan v1.0.0 - Installation Prerequisite Checks"
@@ -1007,21 +1027,31 @@ else
     echo "[i] Info: ip command not found (optional, will use fallback methods)"
 fi
 
-# Warn about legacy firewall tools (should be removed)
+# Check for other firewall tools
 echo ""
-echo "Checking for legacy firewall tools..."
+echo "Checking for other firewall tools..."
 LEGACY_FOUND=0
 
 if command -v iptables >/dev/null 2>&1 || command -v ip6tables >/dev/null 2>&1; then
-    echo "[!] WARNING: iptables/ip6tables installed (LEGACY - conflicts with nftables)"
-    echo "    NFTBan uses nftables. Legacy iptables should be removed."
-    echo "    Recommended: apt remove iptables"
-    LEGACY_FOUND=1
+    # Differentiate iptables-nft (conflicts) vs iptables-legacy (co-exists)
+    IPT_VERSION=$(iptables --version 2>/dev/null || echo "")
+    if echo "$IPT_VERSION" | grep -q "nf_tables"; then
+        echo "[!] WARNING: iptables-nft detected (iptables-over-nftables wrapper)"
+        echo "    iptables-nft translates iptables rules into nftables and may"
+        echo "    create conflicting tables (e.g. 'ip filter')."
+        echo "    Recommended: switch to iptables-legacy or remove iptables-nft"
+        LEGACY_FOUND=1
+    else
+        echo "[i] INFO: iptables detected (co-exists with nftables)"
+        echo "    iptables-legacy uses a separate kernel API from nftables."
+        echo "    Both can run simultaneously. NFTBan uses its own 'nftban' table."
+        echo "    cPanel/WHM and other hosting panels may require iptables."
+    fi
 fi
 
 if command -v ufw >/dev/null 2>&1; then
-    echo "[!] WARNING: ufw installed (LEGACY - conflicts with nftables)"
-    echo "    NFTBan manages nftables directly. ufw should be removed."
+    echo "[!] WARNING: ufw installed (manages nftables/iptables backend)"
+    echo "    NFTBan manages nftables directly. ufw may conflict."
     echo "    Recommended: apt remove ufw"
     LEGACY_FOUND=1
 fi
@@ -1034,7 +1064,7 @@ if command -v firewall-cmd >/dev/null 2>&1; then
 fi
 
 if [ $LEGACY_FOUND -eq 0 ]; then
-    echo "[✓] No legacy firewall tools detected"
+    echo "[✓] No conflicting firewall tools detected"
 fi
 
 # -----------------------------------------------------------------------------
@@ -1088,15 +1118,22 @@ if systemctl is-active firewalld >/dev/null 2>&1; then
     CONFLICTS_FOUND=1
 fi
 
-# Check iptables-persistent service
+# Check iptables-persistent service - differentiate iptables-nft (conflict) vs legacy (OK)
 if systemctl is-active iptables-persistent >/dev/null 2>&1 || systemctl is-active netfilter-persistent >/dev/null 2>&1; then
-    echo "[!] WARNING: iptables-persistent/netfilter-persistent is ACTIVE"
-    echo "    NFTBan uses nftables, not legacy iptables."
-    echo "    Recommended action:"
-    echo "      systemctl stop netfilter-persistent"
-    echo "      systemctl disable netfilter-persistent"
-    echo ""
-    CONFLICTS_FOUND=1
+    IPT_SVC_VERSION=$(iptables --version 2>/dev/null || echo "")
+    if echo "$IPT_SVC_VERSION" | grep -q "nf_tables"; then
+        echo "[!] WARNING: iptables-persistent/netfilter-persistent is ACTIVE (iptables-nft backend)"
+        echo "    iptables-nft creates nftables tables that may conflict with NFTBan."
+        echo "    Recommended action:"
+        echo "      systemctl stop netfilter-persistent"
+        echo "      systemctl disable netfilter-persistent"
+        echo ""
+        CONFLICTS_FOUND=1
+    else
+        echo "[i] INFO: iptables-persistent/netfilter-persistent is ACTIVE (legacy backend)"
+        echo "    iptables-legacy co-exists with nftables (separate kernel APIs)."
+        echo "    cPanel/WHM, CSF/LFD, and cPHulk may require this service."
+    fi
 fi
 
 if [ $CONFLICTS_FOUND -eq 0 ]; then
@@ -1327,6 +1364,32 @@ EOF
     # Inject actual version into postinst (for fallback inline postinst)
     sed -i "s/v1\.0\.[0-9]*/v${PKG_VERSION}/g" "${BUILD_DIR}/deb/DEBIAN/postinst"
     chmod 0755 "${BUILD_DIR}/deb/DEBIAN/postinst"
+
+    # Create prerm script to handle immutable files and stop services before removal
+    cat > "${BUILD_DIR}/deb/DEBIAN/prerm" << 'PRERM'
+#!/bin/bash
+set -e
+
+# Remove immutable flag before upgrade/remove (security protection on nft_schema.sh)
+if [ -f /usr/lib/nftban/lib/nft_schema.sh ]; then
+    chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
+fi
+
+# Stop services on removal (not upgrade)
+if [ "$1" = "remove" ] || [ "$1" = "purge" ]; then
+    # Stop all nftban services
+    for unit in nftband.service nftban-core.service nftban-ui.service; do
+        systemctl stop "$unit" 2>/dev/null || true
+    done
+    # Stop timers
+    for timer in nftban-maintenance.timer nftban-health.timer nftban-core-feeds.timer nftban-queue.timer; do
+        systemctl stop "$timer" 2>/dev/null || true
+    done
+fi
+
+exit 0
+PRERM
+    chmod 755 "${BUILD_DIR}/deb/DEBIAN/prerm"
 
     # Create conffiles to mark user configuration files (preserved on upgrade)
     cat > "${BUILD_DIR}/deb/DEBIAN/conffiles" <<'CONFFILES_EOF'
