@@ -503,6 +503,11 @@ nftban_health_check_all() {
     nftban_health_check_daemon "$auto_heal" || ((errors++))
     nftban_health_check_timers "$auto_heal" || ((warnings++))
 
+    # Run structure validation checks
+    nftban_health_check_fhs || ((warnings++))
+    nftban_health_check_nft_schema || ((errors++))
+    nftban_health_check_polkit || ((warnings++))
+
     # Run optional feature checks (don't count as errors)
     nftban_health_check_modules 2>/dev/null || true
     nftban_health_check_geoip 2>/dev/null || true
@@ -518,6 +523,7 @@ nftban_health_check_all() {
         nftban_health_fix_permissions 2>/dev/null || true
         nftban_health_fix_directories 2>/dev/null || true
         nftban_health_fix_services 2>/dev/null || true
+        nftban_health_fix_nftables 2>/dev/null || true
         nftban_health_fix_geoip 2>/dev/null || true
         nftban_health_fix_whitelist 2>/dev/null || true
         nftban_health_fix_metrics 2>/dev/null || true
@@ -566,6 +572,9 @@ export -f nftban_health_check_pro
 export -f nftban_health_check_rbl
 export -f nftban_health_check_timers
 export -f nftban_health_check_gui
+export -f nftban_health_check_fhs
+export -f nftban_health_check_nft_schema
+export -f nftban_health_check_polkit
 export -f nftban_health_should_alert
 
 # Export fix functions (from nftban_health_fixes.sh)
@@ -575,6 +584,7 @@ export -f nftban_health_fix_services
 export -f nftban_health_fix_geoip
 export -f nftban_health_fix_whitelist
 export -f nftban_health_fix_metrics
+export -f nftban_health_fix_nftables
 export -f nftban_health_fix_registry
 
 # Export render functions (from nftban_health_render.sh)

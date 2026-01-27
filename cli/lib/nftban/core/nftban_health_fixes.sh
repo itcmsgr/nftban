@@ -932,6 +932,151 @@ nftban_health_fix_whitelist() {
 }
 
 # =============================================================================
+# NFTABLES STRUCTURE AUTO-HEAL
+# =============================================================================
+
+nftban_health_fix_nftables() {
+    # Auto-heal missing nftables tables, sets, and chains
+    # Uses canonical schema from nft_schema.sh as single source of truth
+    # Returns: 0=fixed, 1=partial, 2=failed
+
+    echo "Checking nftables structure..."
+
+    if ! command -v nft &>/dev/null; then
+        echo "  ✖ nft command not found"
+        return 2
+    fi
+
+    # Ensure schema is loaded
+    if ! declare -f nftban_nft_validate_tables >/dev/null 2>&1; then
+        if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" ]]; then
+            source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" 2>/dev/null || {
+                echo "  ✖ Cannot load nft_schema.sh"
+                return 2
+            }
+        else
+            echo "  ✖ nft_schema.sh not found"
+            return 2
+        fi
+    fi
+
+    local fixed=0
+    local existing_tables
+    existing_tables=$(nft list tables 2>/dev/null)
+
+    # Fix 1: Create missing tables
+    if ! echo "$existing_tables" | grep -q "^table ${NFTBAN_TABLE_IPV4}$"; then
+        echo "  → Creating missing table: ${NFTBAN_TABLE_IPV4}"
+        if nft add table ${NFTBAN_TABLE_IPV4} 2>/dev/null; then
+            echo "  ✓ Created ${NFTBAN_TABLE_IPV4}"
+            fixed=$((fixed + 1))
+        else
+            echo "  ✖ Failed to create ${NFTBAN_TABLE_IPV4}"
+            return 2
+        fi
+    fi
+
+    if ! echo "$existing_tables" | grep -q "^table ${NFTBAN_TABLE_IPV6}$"; then
+        echo "  → Creating missing table: ${NFTBAN_TABLE_IPV6}"
+        if nft add table ${NFTBAN_TABLE_IPV6} 2>/dev/null; then
+            echo "  ✓ Created ${NFTBAN_TABLE_IPV6}"
+            fixed=$((fixed + 1))
+        else
+            echo "  ⚠ Failed to create ${NFTBAN_TABLE_IPV6} (IPv6 optional)"
+        fi
+    fi
+
+    # Fix 2: Create missing sets (IPv4)
+    local set_name set_spec set_type set_flags
+    for set_name in "${!NFTBAN_IPV4_SETS[@]}"; do
+        if ! nft list set ${NFTBAN_TABLE_IPV4} "$set_name" &>/dev/null; then
+            set_spec="${NFTBAN_IPV4_SETS[$set_name]}"
+            IFS='|' read -r set_type set_flags _ <<< "$set_spec"
+
+            local flags_clause=""
+            [[ -n "$set_flags" ]] && flags_clause="flags $set_flags ;"
+
+            echo "  → Creating missing set: ${NFTBAN_TABLE_IPV4} $set_name"
+            if nft add set ${NFTBAN_TABLE_IPV4} "$set_name" "{ type $set_type ; $flags_clause }" 2>/dev/null; then
+                echo "  ✓ Created set $set_name"
+                fixed=$((fixed + 1))
+            else
+                echo "  ✖ Failed to create set $set_name"
+            fi
+        fi
+    done
+
+    # Fix 3: Create missing sets (IPv6)
+    for set_name in "${!NFTBAN_IPV6_SETS[@]}"; do
+        if ! nft list set ${NFTBAN_TABLE_IPV6} "$set_name" &>/dev/null; then
+            set_spec="${NFTBAN_IPV6_SETS[$set_name]}"
+            IFS='|' read -r set_type set_flags _ <<< "$set_spec"
+
+            local flags_clause=""
+            [[ -n "$set_flags" ]] && flags_clause="flags $set_flags ;"
+
+            echo "  → Creating missing set: ${NFTBAN_TABLE_IPV6} $set_name"
+            if nft add set ${NFTBAN_TABLE_IPV6} "$set_name" "{ type $set_type ; $flags_clause }" 2>/dev/null; then
+                echo "  ✓ Created set $set_name"
+                fixed=$((fixed + 1))
+            else
+                echo "  ⚠ Failed to create IPv6 set $set_name"
+            fi
+        fi
+    done
+
+    # Fix 4: Create missing chains (IPv4)
+    local chain_name chain_spec chain_type chain_hook chain_priority chain_policy
+    for chain_name in "${!NFTBAN_IPV4_CHAINS[@]}"; do
+        if ! nft list chain ${NFTBAN_TABLE_IPV4} "$chain_name" &>/dev/null; then
+            chain_spec="${NFTBAN_IPV4_CHAINS[$chain_name]}"
+            IFS='|' read -r chain_type chain_hook chain_priority chain_policy _ <<< "$chain_spec"
+
+            echo "  → Creating missing chain: ${NFTBAN_TABLE_IPV4} $chain_name"
+            if nft add chain ${NFTBAN_TABLE_IPV4} "$chain_name" "{ type $chain_type hook $chain_hook priority $chain_priority ; policy $chain_policy ; }" 2>/dev/null; then
+                echo "  ✓ Created chain $chain_name (type=$chain_type hook=$chain_hook priority=$chain_priority policy=$chain_policy)"
+                fixed=$((fixed + 1))
+            else
+                echo "  ✖ Failed to create chain $chain_name"
+            fi
+        fi
+    done
+
+    # Fix 5: Create missing chains (IPv6)
+    for chain_name in "${!NFTBAN_IPV6_CHAINS[@]}"; do
+        if ! nft list chain ${NFTBAN_TABLE_IPV6} "$chain_name" &>/dev/null; then
+            chain_spec="${NFTBAN_IPV6_CHAINS[$chain_name]}"
+            IFS='|' read -r chain_type chain_hook chain_priority chain_policy _ <<< "$chain_spec"
+
+            echo "  → Creating missing chain: ${NFTBAN_TABLE_IPV6} $chain_name"
+            if nft add chain ${NFTBAN_TABLE_IPV6} "$chain_name" "{ type $chain_type hook $chain_hook priority $chain_priority ; policy $chain_policy ; }" 2>/dev/null; then
+                echo "  ✓ Created chain $chain_name"
+                fixed=$((fixed + 1))
+            else
+                echo "  ⚠ Failed to create IPv6 chain $chain_name"
+            fi
+        fi
+    done
+
+    # Fix 6: Remove deprecated tables (if confirmed safe)
+    for deprecated_table in "${!NFTBAN_DEPRECATED_TABLES[@]}"; do
+        if echo "$existing_tables" | grep -q "^table ${deprecated_table}$"; then
+            echo "  ⚠ Legacy table found: ${deprecated_table}"
+            echo "    Reason: ${NFTBAN_DEPRECATED_TABLES[$deprecated_table]}"
+            echo "    Manual removal: nft delete table ${deprecated_table}"
+        fi
+    done
+
+    if [[ $fixed -eq 0 ]]; then
+        echo "  ✓ All nftables structure correct"
+    else
+        echo "  ✓ Fixed $fixed nftables structure issues"
+    fi
+
+    return 0
+}
+
+# =============================================================================
 # REPORTING
 # =============================================================================
 
