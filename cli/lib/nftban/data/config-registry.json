@@ -1,7 +1,7 @@
 {
   "registry_version": "1.0.0",
-  "schema_version": "1.0.31",
-  "generated_at": "2026-01-11",
+  "schema_version": "1.0.32",
+  "generated_at": "2026-01-27",
   "description": "NFTBan Configuration Registry - Mode-aware validation metadata",
   "activation_rules": {
     "always": "File is always active",
@@ -48,6 +48,34 @@
     "metrics": "Metrics collection, export, and retention settings"
   },
   "files": {
+    "nftban.conf": {
+      "description": "Main NFTBan configuration (paths, system settings, feature toggles)",
+      "active_when": "always",
+      "category": "system",
+      "key_count": 85,
+      "comment": "Core system config - defines all NFTBAN_* path variables and feature enables"
+    },
+    "update.conf": {
+      "description": "NFTBan auto-update configuration",
+      "active_when": "always",
+      "category": "system",
+      "key_count": 6,
+      "comment": "Controls auto-update behavior, channels, and scheduling"
+    },
+    "conf.d/feeds.conf": {
+      "description": "Threat feed configuration (blocklists, IP reputation feeds)",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 32,
+      "comment": "Threat intelligence feed sources, intervals, and processing rules"
+    },
+    "conf.d/watchdog.conf": {
+      "description": "Service watchdog configuration (health monitoring, auto-restart)",
+      "active_when": "always",
+      "category": "system",
+      "key_count": 18,
+      "comment": "Monitors core services and auto-restarts on failure"
+    },
     "conf.d/banner.conf": {
       "description": "CLI banner configuration",
       "active_when": "always",
@@ -71,6 +99,30 @@
       "active_when": "always",
       "category": "features",
       "key_count": 18
+    },
+    "conf.d/rbl/rbls.conf": {
+      "description": "RBL provider list (DNSBL servers, lookup domains)",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 12,
+      "depends_on": "conf.d/rbl/main.conf",
+      "comment": "Defines which DNSBL providers to query"
+    },
+    "conf.d/rbl/custom.conf": {
+      "description": "Custom RBL entries (user-defined blacklists)",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 4,
+      "depends_on": "conf.d/rbl/main.conf",
+      "comment": "User-defined custom RBL entries"
+    },
+    "conf.d/rbl/watchlist.conf": {
+      "description": "RBL watchlist (monitor-only IPs and domains)",
+      "active_when": "always",
+      "category": "features",
+      "key_count": 6,
+      "depends_on": "conf.d/rbl/main.conf",
+      "comment": "IPs monitored but not auto-blocked via RBL"
     },
     "conf.d/portscan/main.conf": {
       "description": "Portscan module main configuration (MODE selector)",

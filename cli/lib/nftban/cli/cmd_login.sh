@@ -753,7 +753,9 @@ nftban_login_cmd_restart() {
     echo "================================"
     echo ""
 
-    if [[ ! -f "/etc/systemd/system/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" ]]; then
+    if [[ ! -f "/etc/systemd/system/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" ]] && \
+       [[ ! -f "/lib/systemd/system/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" ]] && \
+       [[ ! -f "/usr/lib/systemd/system/${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}" ]]; then
         echo "ERROR: Service not installed. Run 'nftban login install' first." >&2
         return 1
     fi

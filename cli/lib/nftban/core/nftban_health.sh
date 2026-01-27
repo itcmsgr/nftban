@@ -72,9 +72,9 @@ if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]]; then
     source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
 fi
 
-# Load metrics configuration
+# Load metrics configuration (defaults then user overrides)
 # shellcheck source=/dev/null
-[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf"
+[[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf" 2>/dev/null || true
 # shellcheck source=/dev/null
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/metrics.conf.local" 2>/dev/null || true
 
@@ -506,7 +506,7 @@ nftban_health_check_all() {
     # Run structure validation checks
     nftban_health_check_fhs || ((warnings++))
     nftban_health_check_nft_schema || ((errors++))
-    nftban_health_check_polkit || ((warnings++))
+    nftban_health_check_polkit "$auto_heal" || ((warnings++))
 
     # Run optional feature checks (don't count as errors)
     nftban_health_check_modules 2>/dev/null || true
@@ -524,6 +524,7 @@ nftban_health_check_all() {
         nftban_health_fix_directories 2>/dev/null || true
         nftban_health_fix_services 2>/dev/null || true
         nftban_health_fix_nftables 2>/dev/null || true
+        nftban_health_fix_polkit 2>/dev/null || true
         nftban_health_fix_geoip 2>/dev/null || true
         nftban_health_fix_whitelist 2>/dev/null || true
         nftban_health_fix_metrics 2>/dev/null || true
@@ -585,6 +586,7 @@ export -f nftban_health_fix_geoip
 export -f nftban_health_fix_whitelist
 export -f nftban_health_fix_metrics
 export -f nftban_health_fix_nftables
+export -f nftban_health_fix_polkit
 export -f nftban_health_fix_registry
 
 # Export render functions (from nftban_health_render.sh)

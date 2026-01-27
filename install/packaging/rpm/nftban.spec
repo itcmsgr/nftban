@@ -481,6 +481,7 @@ fi
 # ==========================================================================
 %dir %attr(750,root,nftban) /etc/nftban
 %config(noreplace) /etc/nftban/nftban.conf
+%config(noreplace) /etc/nftban/update.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/ddos
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/portscan
