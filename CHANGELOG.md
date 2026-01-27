@@ -73,6 +73,19 @@ Covers security fixes, daemon hardening, configuration consistency, packaging, a
   duplicate `EventBan` publish in `nftband/main.go`
 - **Config naming** - Fixed `NFTBAN_BANS_LOG` → `NFTBAN_BAN_LOG` in `nftban_login_alert.sh`
 - **DEB postinst** - Fixed version detection loop using hardcoded path instead of loop variable
+- **DEB upgrade fails on immutable nft_schema.sh** - `nft_schema.sh` is protected with `chattr +i`
+  for security, but dpkg cannot create backup links of immutable files. Fixed: `_remove_immutable_flags()`
+  now called for ALL update paths (DEB, RPM, git, local), not just force mode. DEB preinst now
+  verifies the flag was actually removed and aborts with clear instructions if not. `install.sh`
+  also removes the flag before overwriting files during upgrade
+- **Zabbix types.go rune conversion** - `StringValue()` used `string(rune(v.(int)))` which produces
+  Unicode characters instead of numeric strings (e.g., 123 becomes `{`). Fixed to use `fmt.Sprintf`
+- **CI health check false positive** - `go vet` check captured `go: downloading` module messages
+  via `2>&1` and treated non-empty output as failure. Now filters download messages and checks exit code
+- **VERSION file out of sync** - VERSION said 1.4.0 while CHANGELOG was at 1.6.1 and latest release
+  was v1.5.0. Bumped to 1.6.1. Fixed hardcoded versions in packaging specs and build scripts
+- **version.go hardcoded Major/Minor/Patch** - Functions returned hardcoded 1/0/5 instead of
+  parsing from the Version variable. Now dynamically parses the ldflags-injected version string
 
 ### Features
 

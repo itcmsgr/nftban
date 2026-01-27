@@ -1,17 +1,49 @@
-// Package version provides centralized version information for NFTBan.
 // =============================================================================
-// NFTBan v1.0 - Centralized Version Management
+// NFTBan - Centralized Version Management
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
-//
-// IMPORTANT: This is the SINGLE SOURCE OF TRUTH for version strings.
-// All binaries and modules should import this package instead of hardcoding.
+// meta:name="version"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Single source of truth for version strings injected via ldflags"
+// meta:input="None"
+// meta:output="Version constants and functions"
+// meta:depends="None"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
+
 package version
+
+import (
+	"strconv"
+	"strings"
+)
 
 // Version is injected at build time from VERSION file via -ldflags
 // If not set during build, defaults to development version
 var Version = "dev"
+
+// parseVersion splits Version into [major, minor, patch] integers.
+func parseVersion() []int {
+	v := strings.TrimPrefix(Version, "v")
+	parts := strings.SplitN(v, ".", 3)
+	result := make([]int, 0, 3)
+	for _, p := range parts {
+		n, err := strconv.Atoi(p)
+		if err != nil {
+			break
+		}
+		result = append(result, n)
+	}
+	return result
+}
 
 // Core version constants - AUTO-GENERATED from Version
 const (
@@ -29,18 +61,29 @@ func FullVersion() string {
 
 // Major returns the major version number
 func Major() int {
-	// Parse from Version string
-	return 1 // Simplified for now
+	parts := parseVersion()
+	if len(parts) >= 1 {
+		return parts[0]
+	}
+	return 0
 }
 
 // Minor returns the minor version number
 func Minor() int {
+	parts := parseVersion()
+	if len(parts) >= 2 {
+		return parts[1]
+	}
 	return 0
 }
 
 // Patch returns the patch version number
 func Patch() int {
-	return 5
+	parts := parseVersion()
+	if len(parts) >= 3 {
+		return parts[2]
+	}
+	return 0
 }
 
 // Architecture version constants

@@ -172,7 +172,18 @@ _remove_immutable_flags() {
     done
 
     if [[ "$found_immutable" -eq 1 ]]; then
-        _update_log OK "Immutable flags removed"
+        # Verify the critical file (nft_schema.sh) is no longer immutable
+        local schema="/usr/lib/nftban/lib/nft_schema.sh"
+        if [[ -f "$schema" ]] && command -v lsattr &>/dev/null; then
+            if lsattr "$schema" 2>/dev/null | grep -q -- '----i'; then
+                _update_log WARN "Immutable flag on nft_schema.sh could not be removed"
+                _update_log INFO "Try: chattr -i $schema"
+            else
+                _update_log OK "Immutable flags removed"
+            fi
+        else
+            _update_log OK "Immutable flags removed"
+        fi
     else
         _update_log INFO "No immutable flags found"
     fi
@@ -664,6 +675,9 @@ _update_via_rpm() {
         return 1
     fi
 
+    # Remove immutable flags before rpm (nft_schema.sh is chattr +i for security)
+    _remove_immutable_flags
+
     # Install
     _update_log INFO "Installing RPM package..."
     if rpm -Uvh --force "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done; then
@@ -729,16 +743,16 @@ _update_via_deb() {
         return 1
     fi
 
-    # Force mode: fix broken dpkg state and remove all immutable flags first
+    # Remove immutable flags before dpkg (nft_schema.sh is chattr +i for security)
+    # This MUST succeed or dpkg will fail with "unable to make backup link"
+    _remove_immutable_flags
+
+    # Force mode: also fix broken dpkg state
     if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
         _update_log INFO "Force mode: repairing system state before install..."
         _fix_broken_dpkg || {
             _update_log WARN "Could not fully repair dpkg state, attempting install anyway"
         }
-        _remove_immutable_flags
-    else
-        # Standard mode: only remove the known immutable file
-        chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
     fi
 
     # Install
@@ -791,6 +805,9 @@ _update_via_git() {
         return 1
     fi
 
+    # Remove immutable flags before install (nft_schema.sh is chattr +i for security)
+    _remove_immutable_flags
+
     # Run install.sh
     local install_script="${NFTBAN_GIT_REPO}/install.sh"
     if [[ -f "$install_script" ]]; then
@@ -826,6 +843,10 @@ _update_via_local() {
     fi
 
     _update_log INFO "Source: $source_path"
+
+    # Remove immutable flags before install (nft_schema.sh is chattr +i for security)
+    _remove_immutable_flags
+
     _update_log INFO "Running installer..."
 
     if bash "$install_script" 2>&1 | while read -r line; do echo "    $line"; done; then

@@ -967,7 +967,20 @@ EOF
 set -e
 
 # Remove immutable flag from nft_schema.sh before upgrade (security protection)
-chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
+# The file is protected with chattr +i to prevent command injection attacks.
+# dpkg cannot create backup links of immutable files, so we MUST remove the flag.
+if [ -f /usr/lib/nftban/lib/nft_schema.sh ]; then
+    chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
+    # Verify the flag was actually removed (chattr may not be available)
+    if command -v lsattr >/dev/null 2>&1; then
+        if lsattr /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null | grep -q -- '----i'; then
+            echo "[!] WARNING: Could not remove immutable flag from nft_schema.sh"
+            echo "    Run: chattr -i /usr/lib/nftban/lib/nft_schema.sh"
+            echo "    Then retry the installation."
+            exit 1
+        fi
+    fi
+fi
 
 echo ""
 echo "════════════════════════════════════════════════════════════════════════════════"

@@ -309,10 +309,16 @@ check_go_vet() {
 
     cd "$PROJECT_ROOT"
 
+    local vet_exit=0
     local vet_output
-    vet_output=$(go vet ./... 2>&1) || true
+    vet_output=$(go vet ./... 2>&1) || vet_exit=$?
 
-    if [[ -z "$vet_output" ]]; then
+    # Filter out module download messages (go: downloading ...) which are
+    # informational stderr output, not actual vet errors
+    local vet_errors
+    vet_errors=$(echo "$vet_output" | grep -v '^go: downloading ' | grep -v '^$' || true)
+
+    if [[ -z "$vet_errors" ]] && [[ "$vet_exit" -eq 0 ]]; then
         log_success "go vet: all packages passed"
         PASSED_CHECKS=$((PASSED_CHECKS + 1))
         TOTAL_CHECKS=$((TOTAL_CHECKS + 1))

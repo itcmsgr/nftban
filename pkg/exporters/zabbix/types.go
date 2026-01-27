@@ -20,6 +20,7 @@ package zabbix
 
 import (
 	"encoding/json"
+	"fmt"
 	"time"
 )
 
@@ -132,10 +133,22 @@ func (m *Metric) StringValue() string {
 	switch v := m.Value.(type) {
 	case string:
 		return v
-	case int, int32, int64, uint, uint32, uint64:
-		return json.Number(string(rune(v.(int)))).String()
-	case float32, float64:
-		return json.Number(string(rune(int(v.(float64))))).String()
+	case int:
+		return fmt.Sprintf("%d", v)
+	case int32:
+		return fmt.Sprintf("%d", v)
+	case int64:
+		return fmt.Sprintf("%d", v)
+	case uint:
+		return fmt.Sprintf("%d", v)
+	case uint32:
+		return fmt.Sprintf("%d", v)
+	case uint64:
+		return fmt.Sprintf("%d", v)
+	case float32:
+		return fmt.Sprintf("%g", v)
+	case float64:
+		return fmt.Sprintf("%g", v)
 	case bool:
 		if v {
 			return "1"
