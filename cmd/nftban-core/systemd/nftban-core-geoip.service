@@ -22,7 +22,8 @@
 [Unit]
 Description=NFTBan Core - GeoIP Database Update
 Documentation=https://github.com/itcmsgr/nftban-dev
-After=network-online.target
+After=network-online.target nftban-core.service
+Requires=nftban-core.service
 Wants=network-online.target
 
 [Service]

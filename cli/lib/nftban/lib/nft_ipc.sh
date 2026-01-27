@@ -10,10 +10,20 @@
 #
 # ARCHITECTURE: See ARCHITECTURE-NFT-POLICY.md
 #
-# meta:name=nft_ipc
-# meta:type=lib
-# meta:version=1.0.0
+# meta:name="nft_ipc"
+# meta:type="lib"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:inventory.files="/usr/lib/nftban/lib/nft_ipc.sh"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_DAEMON_SOCKET, NFTBAN_IPC_TIMEOUT, NFTBAN_EMERGENCY_MODE"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network="/run/nftban/nftband.sock (Unix)"
+# meta:inventory.privileges="nftban"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Socket path for daemon communication
 NFTBAN_DAEMON_SOCKET="${NFTBAN_DAEMON_SOCKET:-/run/nftban/nftband.sock}"
@@ -62,7 +72,8 @@ nft_ipc_request() {
     fi
 
     local request
-    request=$(printf '{"method":"%s","params":%s}' "$method" "$params")
+    request=$(jq -nc --arg method "$method" --argjson params "$params" \
+        '{method: $method, params: $params}')
 
     local response
     response=$(echo "$request" | timeout "$NFTBAN_IPC_TIMEOUT" socat - "UNIX-CONNECT:$NFTBAN_DAEMON_SOCKET" 2>/dev/null)
@@ -104,8 +115,9 @@ nft_ipc_ban() {
     [[ -z "$ip" ]] && { echo "ERROR: IP required" >&2; return 1; }
 
     local params
-    params=$(printf '{"ip":"%s","timeout":%d,"reason":"%s","source":"%s"}' \
-        "$ip" "$timeout" "$reason" "$source")
+    params=$(jq -nc --arg ip "$ip" --argjson timeout "$timeout" \
+        --arg reason "$reason" --arg source "$source" \
+        '{ip: $ip, timeout: $timeout, reason: $reason, source: $source}')
 
     local response
     response=$(nft_ipc_request "ban" "$params")
@@ -126,7 +138,7 @@ nft_ipc_unban() {
     [[ -z "$ip" ]] && { echo "ERROR: IP required" >&2; return 1; }
 
     local response
-    response=$(nft_ipc_request "unban" "$(printf '{"ip":"%s"}' "$ip")")
+    response=$(nft_ipc_request "unban" "$(jq -nc --arg ip "$ip" '{ip: $ip}')")
 
     if nft_ipc_success "$response"; then
         return 0
@@ -150,8 +162,9 @@ nft_ipc_add_element() {
     }
 
     local params
-    params=$(printf '{"table":"%s","set":"%s","element":"%s","timeout":%d}' \
-        "$table" "$set" "$element" "$timeout")
+    params=$(jq -nc --arg table "$table" --arg set "$set" \
+        --arg element "$element" --argjson timeout "$timeout" \
+        '{table: $table, set: $set, element: $element, timeout: $timeout}')
 
     local response
     response=$(nft_ipc_request "add_element" "$params")
@@ -177,7 +190,8 @@ nft_ipc_delete_element() {
     }
 
     local params
-    params=$(printf '{"table":"%s","set":"%s","element":"%s"}' "$table" "$set" "$element")
+    params=$(jq -nc --arg table "$table" --arg set "$set" --arg element "$element" \
+        '{table: $table, set: $set, element: $element}')
 
     local response
     response=$(nft_ipc_request "delete_element" "$params")
@@ -202,7 +216,8 @@ nft_ipc_flush_set() {
     }
 
     local params
-    params=$(printf '{"table":"%s","set":"%s"}' "$table" "$set")
+    params=$(jq -nc --arg table "$table" --arg set "$set" \
+        '{table: $table, set: $set}')
 
     local response
     response=$(nft_ipc_request "flush_set" "$params")
@@ -228,7 +243,8 @@ nft_ipc_apply_ruleset() {
     [[ "$check_only" == "1" ]] && check_bool="true"
 
     local params
-    params=$(printf '{"file":"%s","check":%s}' "$file_path" "$check_bool")
+    params=$(jq -nc --arg file "$file_path" --argjson check "$check_bool" \
+        '{file: $file, check: $check}')
 
     local response
     response=$(nft_ipc_request "apply_ruleset" "$params")
@@ -250,7 +266,7 @@ nft_ipc_check() {
     [[ -z "$ip" ]] && { echo "ERROR: IP required" >&2; return 1; }
 
     local response
-    response=$(nft_ipc_request "check" "$(printf '{"ip":"%s"}' "$ip")")
+    response=$(nft_ipc_request "check" "$(jq -nc --arg ip "$ip" '{ip: $ip}')")
 
     if nft_ipc_success "$response"; then
         if [[ "$response" == *'"banned":true'* ]]; then

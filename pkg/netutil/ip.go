@@ -36,29 +36,43 @@ import (
 // Client IP Extraction
 // =============================================================================
 
-// GetClientIP extracts the real client IP address from an HTTP request
-// Checks headers in order: X-Forwarded-For, X-Real-IP, RemoteAddr
+// GetClientIP extracts the real client IP address from an HTTP request.
+// SECURITY: Only trusts X-Forwarded-For and X-Real-IP headers when the
+// direct connection comes from a trusted proxy (loopback or private network).
+// This prevents IP spoofing via forged headers from external clients.
 func GetClientIP(r *http.Request) string {
-	// Check X-Forwarded-For header (may contain multiple IPs)
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		ips := strings.Split(xff, ",")
-		if len(ips) > 0 {
-			return strings.TrimSpace(ips[0])
+	// Extract direct connection IP first
+	remoteIP, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		remoteIP = r.RemoteAddr
+	}
+
+	// Only trust proxy headers from trusted sources (loopback/private networks)
+	if isTrustedProxy(remoteIP) {
+		// Check X-Forwarded-For header (may contain multiple IPs)
+		if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+			ips := strings.Split(xff, ",")
+			if len(ips) > 0 {
+				return strings.TrimSpace(ips[0])
+			}
+		}
+
+		// Check X-Real-IP header
+		if xri := r.Header.Get("X-Real-IP"); xri != "" {
+			return xri
 		}
 	}
 
-	// Check X-Real-IP header
-	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return xri
-	}
+	return remoteIP
+}
 
-	// Fall back to RemoteAddr
-	ip, _, err := net.SplitHostPort(r.RemoteAddr)
-	if err != nil {
-		return r.RemoteAddr
+// isTrustedProxy checks if an IP is from a trusted proxy (loopback or RFC1918 private).
+func isTrustedProxy(ip string) bool {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return false
 	}
-
-	return ip
+	return parsed.IsLoopback() || parsed.IsPrivate()
 }
 
 // =============================================================================

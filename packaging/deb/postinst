@@ -53,8 +53,8 @@ case "$1" in
         # Get version from VERSION file (single source of truth)
         NFTBAN_VERSION="unknown"
         for version_file in /usr/lib/nftban/VERSION /var/lib/dpkg/info/nftban-core.list; do
-            if [[ -f "/usr/lib/nftban/VERSION" ]]; then
-                NFTBAN_VERSION=$(cat /usr/lib/nftban/VERSION 2>/dev/null | tr -d '[:space:]')
+            if [[ -f "$version_file" ]]; then
+                NFTBAN_VERSION=$(cat "$version_file" 2>/dev/null | tr -d '[:space:]')
                 break
             fi
         done

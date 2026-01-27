@@ -229,9 +229,12 @@ nftban_metrics_disable() {
     echo "Stopping metrics services..."
     nftban_metrics_stop_stack true
 
-    # Update config
-    if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-        sed -i 's/^NFTBAN_METRICS_MODE=.*/NFTBAN_METRICS_MODE="false"/' "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
+    # Update config - disable metrics via ENABLED flag, NOT mode
+    # NFTBAN_METRICS_MODE should only be "unified" or "legacy"
+    if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf" ]]; then
+        sed -i 's/^NFTBAN_METRICS_ENABLED=.*/NFTBAN_METRICS_ENABLED="false"/' "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf" 2>/dev/null || true
+    elif [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
+        sed -i 's/^NFTBAN_METRICS_ENABLED=.*/NFTBAN_METRICS_ENABLED="false"/' "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null || true
     fi
 
     echo ""

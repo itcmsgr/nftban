@@ -555,7 +555,7 @@ _get_latest_release() {
     # Returns: version string (e.g., "1.3.0")
 
     local response
-    response=$(curl -sL --connect-timeout 10 "$GITHUB_API" 2>/dev/null) || {
+    response=$(curl -sLf --connect-timeout 10 "$GITHUB_API" 2>/dev/null) || {
         echo "unknown"
         return 1
     }
@@ -595,7 +595,7 @@ _download_package() {
     _update_log INFO "Downloading from GitHub..."
     _update_log INFO "URL: $url"
 
-    if curl -sL --connect-timeout 30 --max-time 300 -o "$output" "$url" 2>/dev/null; then
+    if curl -sLf --connect-timeout 30 --max-time 300 -o "$output" "$url" 2>/dev/null; then
         if [[ -f "$output" ]] && [[ -s "$output" ]]; then
             local size
             size=$(du -h "$output" | cut -f1)
@@ -1180,12 +1180,30 @@ _cmd_update_main() {
         return $result
     fi
 
+    # Restart services to load new binaries
+    echo ""
+    _update_log INFO "Restarting NFTBan services..."
+    local _svc_restart_failed=0
+    for _svc in nftband.service nftban-core.service; do
+        if systemctl is-active --quiet "$_svc" 2>/dev/null; then
+            if systemctl restart "$_svc" 2>/dev/null; then
+                _update_log OK "Restarted $_svc"
+            else
+                _update_log WARN "Failed to restart $_svc"
+                _svc_restart_failed=1
+            fi
+        fi
+    done
+    if [[ $_svc_restart_failed -eq 0 ]]; then
+        _update_log OK "Services restarted"
+    fi
+
     # Run health check
     echo ""
     _update_log INFO "Running health check..."
     local health_output health_status
-    health_output=$(nftban health check --auto-heal 2>&1) || true
-    health_status=$?
+    health_output=$(nftban health check --auto-heal 2>&1) || health_status=$?
+    health_status="${health_status:-0}"
 
     if [[ $health_status -eq 0 ]]; then
         _update_log OK "Health check passed"
