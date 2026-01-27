@@ -1077,6 +1077,114 @@ nftban_health_fix_nftables() {
 }
 
 # =============================================================================
+# POLKIT RULES AUTO-HEAL
+# =============================================================================
+
+nftban_health_fix_polkit() {
+    # Auto-heal missing or broken polkit rules
+    # Copies canonical rules from packaging/ to /etc/polkit-1/rules.d/
+    # Returns: 0=fixed, 1=partial, 2=failed
+
+    echo "Checking polkit rules..."
+
+    if ! command -v pkaction >/dev/null 2>&1; then
+        echo "  ⚠ Polkit not installed - skipping (optional for root-only installs)"
+        return 0
+    fi
+
+    local polkit_rules_dir="${NFTBAN_POLKIT_RULES_DIR:-/etc/polkit-1/rules.d}"
+    local source_dir="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/packaging/polkit-1/rules.d"
+    local fixed=0
+    local failed=0
+
+    # Three canonical rule files (v1.0.19+ naming)
+    local -a rule_files=(
+        "10-nftban-systemd.rules"
+        "20-nftban-auditor.rules"
+        "30-nftban-panel.rules"
+    )
+
+    for rule_file in "${rule_files[@]}"; do
+        local target="${polkit_rules_dir}/${rule_file}"
+        local source="${source_dir}/${rule_file}"
+
+        if [[ ! -f "$target" ]]; then
+            echo "  → Missing: ${rule_file}"
+            if [[ -f "$source" ]]; then
+                if cp "$source" "$target" 2>/dev/null; then
+                    chmod 644 "$target" 2>/dev/null
+                    echo "  ✓ Installed ${rule_file}"
+                    fixed=$((fixed + 1))
+                else
+                    echo "  ✖ Failed to install ${rule_file} (permission denied)"
+                    failed=$((failed + 1))
+                fi
+            else
+                echo "  ✖ Source not found: ${source}"
+                failed=$((failed + 1))
+            fi
+        else
+            # Verify permissions
+            local perms
+            perms=$(stat -c '%a' "$target" 2>/dev/null || echo "000")
+            if [[ "$perms" != "644" ]]; then
+                echo "  → Wrong permissions on ${rule_file}: $perms (fixing to 644)"
+                if chmod 644 "$target" 2>/dev/null; then
+                    echo "  ✓ Fixed permissions on ${rule_file}"
+                    fixed=$((fixed + 1))
+                else
+                    echo "  ✖ Failed to fix permissions on ${rule_file}"
+                    failed=$((failed + 1))
+                fi
+            fi
+        fi
+    done
+
+    # Remove obsolete rule files (pre-v1.0.19)
+    local -a obsolete_files=(
+        "50-nftban-auth.rules"
+        "60-nftban-services.rules"
+        "10-nftban-core.rules"
+        "50-nftban-v030.rules"
+        "20-nftban-suricata.rules"
+    )
+
+    for obsolete in "${obsolete_files[@]}"; do
+        if [[ -f "${polkit_rules_dir}/${obsolete}" ]]; then
+            echo "  → Removing obsolete: ${obsolete}"
+            if rm -f "${polkit_rules_dir}/${obsolete}" 2>/dev/null; then
+                echo "  ✓ Removed ${obsolete}"
+                fixed=$((fixed + 1))
+            else
+                echo "  ⚠ Cannot remove ${obsolete} (permission denied)"
+            fi
+        fi
+    done
+
+    # Restart polkit if rules were changed
+    if [[ $fixed -gt 0 ]]; then
+        local polkit_service="polkit"
+        if declare -F nftban_distro_get_service >/dev/null 2>&1; then
+            polkit_service=$(nftban_distro_get_service polkit)
+            [[ -z "$polkit_service" ]] && polkit_service="polkit"
+        fi
+        systemctl restart "$polkit_service" 2>/dev/null || true
+        echo "  ✓ Restarted polkit service"
+    fi
+
+    if [[ $failed -gt 0 ]]; then
+        echo "  ⚠ $failed polkit issues could not be fixed (run as root)"
+        return 1
+    elif [[ $fixed -eq 0 ]]; then
+        echo "  ✓ All polkit rules correct"
+    else
+        echo "  ✓ Fixed $fixed polkit issues"
+    fi
+
+    return 0
+}
+
+# =============================================================================
 # REPORTING
 # =============================================================================
 

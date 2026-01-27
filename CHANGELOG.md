@@ -51,6 +51,19 @@ Covers security fixes, daemon hardening, configuration consistency, packaging, a
 
 ### Bug Fixes
 
+- **CLI login restart service path** - `nftban login restart` only checked `/etc/systemd/system/`
+  for service file, but packages install to `/lib/systemd/system/`. Now checks all 3 systemd
+  paths matching the pattern used by enable/disable/health-fix commands
+- **Health: FHS module missing severity** - `nftban_health_check_fhs()` returned WARNING when
+  the FHS report module was missing/unloadable, now correctly returns ERROR (validation skipped)
+- **Health: Polkit auto-heal parameter** - Polkit check used `NFTBAN_HEALTH_AUTO_HEAL` env var
+  (never set) instead of the `auto_heal` function parameter passed through the health chain
+- **Health: Metrics config error handling** - Consistent error suppression for both
+  `metrics.conf` and `metrics.conf.local` loading (prevents health check from failing on
+  syntax errors in optional config)
+- **CI: Go version mismatch** - All GitHub Actions workflows used Go 1.21/1.22 but `go.mod`
+  declares `go 1.23.0` and `templ v0.3.977` requires >= 1.23. Auto-toolchain switch to
+  go1.24.12 failed with "no such tool compile". Updated all workflows to Go 1.23
 - **Bans.log field parsing** - Fixed field positions across stats, UI handler, and email reports
   (`ip=$2` → `ip=$4` to match canonical `DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON` format)
 - **Login bans.log integration** - Added `nftban_login_write_bans_log()` function for central logging
@@ -82,6 +95,22 @@ Covers security fixes, daemon hardening, configuration consistency, packaging, a
   validates all 3 polkit rule files (operator/auditor/panel) plus service status
 - **Health: nftables auto-heal** - `nftban_health_fix_nftables()` auto-creates missing tables,
   sets, and chains from canonical schema (nft_schema.sh), reports deprecated tables
+- **Health: Polkit auto-fix** - `nftban_health_fix_polkit()` installs/repairs missing polkit
+  rule files (10-nftban-systemd, 20-nftban-auditor, 30-nftban-panel), fixes permissions,
+  removes obsolete pre-v1.0.19 rules, restarts polkit service. Available via
+  `nftban health fix polkit` and `nftban health fix all`
+- **Health: nftables fix target** - `nftban health fix nftables` now available as standalone
+  fix target (previously only ran via `fix all` or auto-heal)
+
+### Packaging
+
+- **DEB conffiles** - Created `nftban.conffiles` listing all 58 configuration files for proper
+  dpkg config file preservation across upgrades (was completely missing)
+- **DEB dirs** - Added missing directories to `nftban.dirs`: geoban, geoip, rbl, and all 8
+  panel subdirectories
+- **RPM spec** - Added missing `%config(noreplace) /etc/nftban/update.conf`
+- **Config registry** - Added 7 missing entries: `nftban.conf`, `update.conf`, `feeds.conf`,
+  `watchdog.conf`, `rbl/rbls.conf`, `rbl/custom.conf`, `rbl/watchlist.conf` (schema v1.0.32)
 
 ### Maintenance
 

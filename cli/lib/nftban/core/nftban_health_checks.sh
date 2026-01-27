@@ -1504,8 +1504,10 @@ nftban_health_check_registry() {
 
 nftban_health_check_polkit() {
     # Check Polkit authorization rules installation
+    # Args: $1 = auto_heal (1 to auto-fix, 0 to just report)
     # Returns: 0=OK, 1=Warning, 2=Error (CRITICAL security violation)
 
+    local auto_heal="${1:-0}"
     local status=$HEALTH_OK
     local polkit_issues=()
 
@@ -1586,7 +1588,7 @@ nftban_health_check_polkit() {
                 # Polkit not running - this is OPTIONAL for minimal installations
                 # Only matters if users in nftban group need to manage services without sudo
                 # Root users (which is typical for minimal installs) don't need polkit
-                if [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
+                if [[ "$auto_heal" == "1" ]]; then
                     if systemctl start "$polkit_service" 2>/dev/null; then
                         polkit_issues+=("Polkit service was stopped - AUTO-HEALED: started successfully")
                         [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
@@ -3089,15 +3091,15 @@ nftban_health_check_fhs() {
         if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_report_fhs.sh" ]]; then
             source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_report_fhs.sh" 2>/dev/null || {
                 fhs_issues+=("Cannot load FHS report module")
-                NFTBAN_HEALTH_RESULTS["fhs"]=$HEALTH_WARNING
-                NFTBAN_HEALTH_WARNINGS+=("FHS: Cannot load report module")
-                return 1
+                NFTBAN_HEALTH_RESULTS["fhs"]=$HEALTH_ERROR
+                NFTBAN_HEALTH_ERRORS+=("FHS: Cannot load report module")
+                return 2
             }
         else
             fhs_issues+=("FHS report module not found")
-            NFTBAN_HEALTH_RESULTS["fhs"]=$HEALTH_WARNING
-            NFTBAN_HEALTH_WARNINGS+=("FHS: Report module not installed")
-            return 1
+            NFTBAN_HEALTH_RESULTS["fhs"]=$HEALTH_ERROR
+            NFTBAN_HEALTH_ERRORS+=("FHS: Report module not installed")
+            return 2
         fi
     fi
 
