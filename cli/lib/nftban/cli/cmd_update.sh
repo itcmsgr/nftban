@@ -116,7 +116,7 @@ _fix_broken_dpkg() {
     fi
 
     # Also check /var/lib/dpkg/updates for pending triggers
-    if [[ -d /var/lib/dpkg/updates ]] && ls /var/lib/dpkg/updates/ 2>/dev/null | grep -q .; then
+    if [[ -d /var/lib/dpkg/updates ]] && compgen -G "/var/lib/dpkg/updates/*" >/dev/null 2>&1; then
         needs_configure=1
         _update_log WARN "Pending dpkg updates found"
     fi
