@@ -55,6 +55,7 @@ import (
 
 	"github.com/coreos/go-systemd/v22/activation"
 	"github.com/google/nftables"
+	"github.com/itcmsgr/nftban/pkg/analytics"
 	"github.com/itcmsgr/nftban/pkg/banlog"
 	"github.com/itcmsgr/nftban/pkg/ddos"
 	"github.com/itcmsgr/nftban/pkg/eventbus"
@@ -67,6 +68,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/nftbackend"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/persistence"
+	"github.com/itcmsgr/nftban/pkg/persistent"
 	"github.com/itcmsgr/nftban/pkg/ports"
 	"github.com/itcmsgr/nftban/pkg/portscan"
 	"github.com/itcmsgr/nftban/pkg/runtime"
@@ -146,6 +148,88 @@ func (d *Daemon) isWhitelisted(ip string) bool {
 		return ipv6Set[ip]
 	}
 	return ipv4Set[ip]
+}
+
+// checkAndEscalate checks if a temp-banned IP has exceeded the persistent
+// offender threshold and should be escalated to a permanent ban.
+// Called asynchronously after each temp ban from EventBan handler.
+// Reads thresholds from conf.d/persistent.conf (per-filter or global defaults).
+func (d *Daemon) checkAndEscalate(ip, source, country string) {
+	if d.configDir == "" {
+		return
+	}
+
+	filterName := source
+	if filterName == "" {
+		filterName = "unknown"
+	}
+
+	// Load persistent offender configuration
+	cfg, err := persistent.LoadConfig(d.configDir)
+	if err != nil {
+		log.Printf("[ESCALATE] Failed to load persistent config: %v", err)
+		return
+	}
+	if !cfg.Enabled {
+		return
+	}
+
+	filterCfg := cfg.GetFilterConfig(filterName)
+
+	// Log this temp ban for escalation tracking
+	if err := persistent.LogTempBan(cfg.BanLog, ip, filterName, fmt.Sprintf("temp ban from %s", filterName)); err != nil {
+		log.Printf("[ESCALATE] Failed to log temp ban for %s: %v", ip, err)
+		return
+	}
+
+	// Count recent bans within the configured period
+	banCount, err := persistent.CountRecentBans(cfg.BanLog, ip, filterCfg.Period)
+	if err != nil {
+		log.Printf("[ESCALATE] Failed to count bans for %s: %v", ip, err)
+		return
+	}
+
+	if banCount < filterCfg.Threshold {
+		return // Below threshold, no escalation needed
+	}
+
+	log.Printf("[ESCALATE] IP %s exceeded threshold (%d/%d bans in %s from %s) - escalating to permanent",
+		ip, banCount, filterCfg.Threshold, filterCfg.Period, filterName)
+
+	// Log persistent offender event
+	_ = persistent.LogPersistentOffender(cfg.OffendersLog, ip, filterName, banCount)
+
+	// Add to persistent offenders config file
+	reason := fmt.Sprintf(">=%d bans in %s from %s", filterCfg.Threshold, filterCfg.Period, filterName)
+	if err := persistent.AddToPersistentOffenders(cfg.OffendersConf, ip, reason); err != nil {
+		log.Printf("[ESCALATE] Failed to add %s to persistent offenders file: %v", ip, err)
+		return
+	}
+
+	// Re-ban as permanent (timeout=0)
+	_, err = d.backend.Ban(d.ctx, nftbackend.BanRequest{
+		IP:      ip,
+		Timeout: 0, // permanent
+		Reason:  reason,
+		Source:  "persistent",
+	})
+	if err != nil {
+		log.Printf("[ESCALATE] Failed to permanent-ban %s: %v", ip, err)
+		return
+	}
+
+	// Persist to blacklist.d/30-persistent-offenders.conf via persistence package
+	_, _, err = persistence.PersistBan(d.configDir, ip, reason, "persistent")
+	if err != nil {
+		log.Printf("[ESCALATE] Failed to persist permanent ban for %s: %v", ip, err)
+	}
+
+	// Record analytics
+	if st := analytics.StateOrNil(); st != nil {
+		st.RecordPersistentOffender(ip, country, filterName, time.Now())
+	}
+
+	log.Printf("[ESCALATE] IP %s permanently banned and persisted (source: %s, bans: %d)", ip, filterName, banCount)
 }
 
 // lookupCountry performs GeoIP lookup and returns country code.
@@ -366,6 +450,12 @@ func (d *Daemon) Run() error {
 			}
 			country := lookupCountry(e.IP)
 			_ = banlog.LogBan(e.IP, banSource, country)
+
+			// Check persistent offender escalation for temp bans
+			// If this IP has been temp-banned too many times, escalate to permanent
+			if timeout > 0 {
+				go d.checkAndEscalate(e.IP, e.Source, country)
+			}
 		}
 	})
 
