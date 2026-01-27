@@ -459,6 +459,66 @@
       "active_when": "always",
       "category": "metrics",
       "description": "JSON cache output settings"
+    },
+    "NFTBAN_PRO_ENABLED": {
+      "active_when": "always",
+      "category": "pro",
+      "description": "NFTBan Pro subscription enabled (managed by nftban pro enable/disable)"
+    },
+    "NFTBAN_PRO_TOKEN_FILE": {
+      "active_when": "always",
+      "category": "pro",
+      "description": "Pro license token file location"
+    },
+    "NFTBAN_PRO_SERVER_ID_FILE": {
+      "active_when": "always",
+      "category": "pro",
+      "description": "Server identity file for Pro license binding"
+    },
+    "NFTBAN_PRO_DATA_DIR": {
+      "active_when": "always",
+      "category": "pro",
+      "description": "Pro module data directory (queue, results, certs)"
+    },
+    "NFTBAN_PRO_INGEST_URL": {
+      "active_when": "always",
+      "category": "pro",
+      "description": "Pro API endpoint for context bundle submission"
+    },
+    "NFTBAN_PRO_ANALYSIS_URL": {
+      "active_when": "always",
+      "category": "pro",
+      "description": "Pro API endpoint for analysis results retrieval"
+    },
+    "NFTBAN_PRO_REMOTE_WRITE_URL": {
+      "active_when": "always",
+      "category": "pro",
+      "description": "Pro API endpoint for Prometheus remote_write metrics"
+    },
+    "NFTBAN_PRO_INVENTORY_URL": {
+      "active_when": "always",
+      "category": "pro",
+      "description": "Pro API endpoint for host inventory registration"
+    },
+    "NFTBAN_PRO_STATUS_URL": {
+      "active_when": "always",
+      "category": "pro",
+      "description": "Pro API endpoint for enrollment status check"
+    },
+    "NFTBAN_PRO_SUBMIT_INTERVAL": {
+      "active_when": "always",
+      "category": "pro",
+      "description": "Context bundle submission interval in seconds (default: 300)"
+    },
+    "NFTBAN_PRO_TIMEOUT": {
+      "active_when": "always",
+      "category": "pro",
+      "description": "Pro API request timeout in seconds"
+    },
+    "NFTBAN_PRO_HASH_IPS": {
+      "active_when": "always",
+      "category": "pro",
+      "description": "SHA-256 hash IP addresses before sending to Pro server"
     }
   },
   "deprecated_keys": {

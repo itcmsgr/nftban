@@ -67,6 +67,18 @@ Covers security fixes, daemon hardening, configuration consistency, packaging, a
 - **Health: nftables auto-heal** - `nftban_health_fix_nftables()` auto-creates missing tables,
   sets, and chains from canonical schema (nft_schema.sh), reports deprecated tables
 
+### Maintenance
+
+- **Metrics: Pro integration docs** - Added Pro mode documentation to `metrics.conf` remote
+  submission section, clarifying that Pro module reads local data files independently
+- **Metrics: Registry clarification** - Corrected `bans_total` duplicate report (they use different
+  subsystems: operations, analytics, loginmon, portscan - NOT duplicates), reclassified 68
+  "unspecified" metrics as "planned" (phase 3-5)
+- **Config: Pro API endpoints** - Added `NFTBAN_PRO_INGEST_URL` and `NFTBAN_PRO_ANALYSIS_URL`
+  endpoints, submission interval, and IP hashing privacy control to `nftban.conf`
+- **Config: Pro registry** - Added all 12 `NFTBAN_PRO_*` variables to `config-registry.json`
+  under new "pro" category
+
 ### Audit Findings (Documented for Future)
 
 **Packaging Drift** (3 paths: install.sh/DEB/RPM):
