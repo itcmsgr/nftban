@@ -1070,6 +1070,12 @@ install_libraries() {
         rm -rf "$LIB_DIR/lib/nftban"
     fi
 
+    # Remove immutable flag from nft_schema.sh before overwriting (upgrade path)
+    # The file is protected with chattr +i for security, but we must remove it to update
+    if [[ -f "$LIB_DIR/lib/nft_schema.sh" ]]; then
+        chattr -i "$LIB_DIR/lib/nft_schema.sh" 2>/dev/null || true
+    fi
+
     # Copy libraries from source to target
     # Source: cli/lib/nftban/{lib,cli,core,exporters,cron,helpers,setup}/
     # Target: /usr/lib/nftban/{lib,cli,core,exporters,cron,helpers,setup}/
