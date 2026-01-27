@@ -1868,7 +1868,7 @@
       "go_nftban": 13,
       "go_sampler": 7,
       "shell_prometheus": 70,
-      "unspecified": 68
+      "planned": 68
     },
     "by_category": {
       "daemon": 11,
@@ -1907,9 +1907,11 @@
       "Shell exporters read from daemon IPC and add computed metrics",
       "Go sources use different registries - check source field for details",
       "nftban_feeds_stale is deprecated, use nftban_feeds_stale_count instead",
-      "68 metrics have unspecified source (legacy entries or planned metrics)"
+      "68 metrics are planned (phase 3-5) - source will be assigned at implementation time",
+      "bans_total exists in multiple packages with DIFFERENT FQNs: nftban_bans_total (operations), nftban_analytics_bans_total (analytics), nftban_loginmon_bans_total, nftban_portscan_bans_total - NOT duplicates",
+      "Pro module reads local data files (bans.log, metrics cache, reports) - exporter pipeline unchanged"
     ],
-    "last_updated": "2026-01-26",
-    "update_reason": "Added 55 metrics from unified exporter audit"
+    "last_updated": "2026-01-27",
+    "update_reason": "Clarified planned metrics, bans_total FQN disambiguation, Pro integration notes"
   }
 }
