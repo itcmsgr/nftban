@@ -420,6 +420,10 @@ nftban_health_check_permissions() {
             permission_issues+=("$dir group is $actual_group (expected $expected_group) — fix: systemd-tmpfiles --create")
             status=$HEALTH_ERROR
         fi
+        if [[ "$actual_perms" != "$expected_perms" ]]; then
+            permission_issues+=("$dir perms is $actual_perms (expected $expected_perms) — fix: systemd-tmpfiles --create")
+            status=$HEALTH_ERROR
+        fi
     done
 
     # Check critical scripts are executable (cron, helpers)

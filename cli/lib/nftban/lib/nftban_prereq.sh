@@ -134,8 +134,9 @@ nftban_prereq_require_any_cmd() {
     install_cmd=$(_nftban_prereq_install_cmd)
 
     local suggestions=""
-    local -a bins=($binaries_str)
-    local -a keys=($pkg_keys_str)
+    local -a bins keys
+    read -r -a bins <<< "$binaries_str"
+    read -r -a keys <<< "$pkg_keys_str"
     local i
     for i in "${!keys[@]}"; do
         local pkg="${keys[$i]}"
