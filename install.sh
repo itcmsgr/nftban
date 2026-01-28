@@ -67,7 +67,7 @@ BIN_DIR="$SCRIPT_DIR/bin"
 # Installation paths
 CORE_BIN_DIR="/usr/lib/nftban/bin"
 CORE_INSTALL_PATH="$CORE_BIN_DIR/nftban-core"
-CLI_INSTALL_PATH="/usr/bin/nftban"
+CLI_INSTALL_PATH="/usr/sbin/nftban"
 GUI_INSTALL_PATH="/usr/sbin/nftban-ui"
 LIB_DIR="/usr/lib/nftban"
 COMPLETION_PATH="/usr/share/bash-completion/completions/nftban"
@@ -1070,6 +1070,11 @@ install_core() {
 
 install_cli() {
     log "Installing CLI..."
+
+    # Clean up old location (migrated from /usr/bin to /usr/sbin)
+    if [[ -f "/usr/bin/nftban" ]] && [[ ! -L "/usr/bin/nftban" ]]; then
+        rm -f "/usr/bin/nftban"
+    fi
 
     # Install CLI wrapper
     if [[ -f "$SCRIPT_DIR/cli/sbin/nftban" ]]; then
