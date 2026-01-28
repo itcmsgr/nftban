@@ -863,7 +863,7 @@ nftban_login_track_failed() {
                 local ban_reason="${service} brute-force (${NFTBAN_FAILED_ATTEMPTS[$key]} failed attempts)"
                 nftban_login_alert_log "Banning IP $ip for ${ban_reason}"
                 # Use centralized NFTBAN_BIN path (set in /etc/nftban/nftban.conf)
-                local nftban_cmd="${NFTBAN_BIN:-/usr/bin/nftban}"
+                local nftban_cmd="${NFTBAN_BIN:-/usr/sbin/nftban}"
                 "$nftban_cmd" ban "$ip" --source login --reason "${service}_brute_force (${NFTBAN_FAILED_ATTEMPTS[$key]} failed attempts)" 2>/dev/null || \
                     nftban_login_alert_log "Failed to ban $ip (nftban command not found at $nftban_cmd or error)"
 

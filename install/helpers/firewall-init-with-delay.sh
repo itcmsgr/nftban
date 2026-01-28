@@ -74,11 +74,11 @@ fi
 if [[ "$DELAY" -eq 0 ]]; then
     # No delay: run in background for fast boot
     echo "Initializing firewall (background, no delay)..." >&2
-    "${NFTBAN_BIN:-/usr/bin/nftban}" firewall init &
+    "${NFTBAN_BIN:-/usr/sbin/nftban}" firewall init &
 else
     # With delay: run synchronously
     echo "Initializing firewall (synchronous, delay=${DELAY}s)..." >&2
-    "${NFTBAN_BIN:-/usr/bin/nftban}" firewall init
+    "${NFTBAN_BIN:-/usr/sbin/nftban}" firewall init
 fi
 
 exit 0

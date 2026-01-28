@@ -347,7 +347,7 @@ EOF
 
     # Add binaries section
     echo '  "binaries": {' >> "$JSON_OUT"
-    echo '    "cli": "/usr/bin/nftban",' >> "$JSON_OUT"
+    echo '    "cli": "/usr/sbin/nftban",' >> "$JSON_OUT"
     echo '    "go_binaries_dir": "/usr/lib/nftban/bin"' >> "$JSON_OUT"
     echo '  },' >> "$JSON_OUT"
 

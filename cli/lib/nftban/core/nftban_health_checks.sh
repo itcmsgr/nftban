@@ -330,7 +330,7 @@ nftban_health_check_permissions() {
 
     # Check critical file permissions
     local critical_files=(
-        "${NFTBAN_BIN:-/usr/bin/nftban}"
+        "${NFTBAN_BIN:-/usr/sbin/nftban}"
         "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
     )
 

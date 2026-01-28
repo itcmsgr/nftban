@@ -11,7 +11,7 @@
 # meta:output="Systemd unit"
 # meta:depends=""
 # meta:inventory.files=""
-# meta:inventory.binaries="/usr/bin/nftban"
+# meta:inventory.binaries="/usr/sbin/nftban"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files="/etc/nftban/pro.token"
 # meta:inventory.systemd_units=""
@@ -34,7 +34,7 @@ User=nftban
 Group=nftban
 
 # Check license and submit inventory if changed
-ExecStart=/usr/bin/nftban pro license-check
+ExecStart=/usr/sbin/nftban pro license-check
 
 # Exit codes: 0=OK, 1=license invalid, 2=network error
 SuccessExitStatus=0 1 2

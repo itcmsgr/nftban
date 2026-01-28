@@ -130,7 +130,7 @@ nftban_login_load_config() {
     : "${LOGIN_EVE_FRESHNESS_THRESHOLD:=60}"
     : "${LOGIN_AUTO_DETECT_SERVICES:=true}"
     : "${LOGIN_ACTION_MODE:=both}"
-    : "${LOGIN_BAN_COMMAND:=${NFTBAN_BIN:-/usr/bin/nftban} ban}"
+    : "${LOGIN_BAN_COMMAND:=${NFTBAN_BIN:-/usr/sbin/nftban} ban}"
     : "${LOGIN_DEFAULT_BAN_DURATION:=3600}"
 
     return 0
@@ -650,7 +650,7 @@ nftban_login_ban() {
     nftban_login_log "INFO" "Banning $ip for $duration seconds (service: $service, reason: $reason)"
 
     # Use nftban ban command
-    local ban_cmd="${LOGIN_BAN_COMMAND:-${NFTBAN_BIN:-/usr/bin/nftban} ban}"
+    local ban_cmd="${LOGIN_BAN_COMMAND:-${NFTBAN_BIN:-/usr/sbin/nftban} ban}"
 
     if $ban_cmd "$ip" --timeout "$duration" --reason "${LOGIN_BAN_REASON_PREFIX:-login-monitor}:${reason}" --source "$service" 2>/dev/null; then
         nftban_login_log "INFO" "Successfully banned $ip"

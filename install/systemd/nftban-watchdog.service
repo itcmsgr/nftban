@@ -11,7 +11,7 @@
 # meta:output="Systemd unit"
 # meta:depends=""
 # meta:inventory.files=""
-# meta:inventory.binaries="/usr/bin/nftban"
+# meta:inventory.binaries="/usr/sbin/nftban"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -37,7 +37,7 @@ Group=nftban
 # - Saves reports to /var/lib/nftban/reports/watchdog/
 # - Exports Prometheus metrics to /var/lib/nftban/metrics/
 # - Sends alerts to syslog when thresholds exceeded
-ExecStart=/usr/bin/nftban watchdog report --save
+ExecStart=/usr/sbin/nftban watchdog report --save
 
 # Exit codes: 0=OK, 1=warnings, 2=critical - all are valid check results
 SuccessExitStatus=0 1 2

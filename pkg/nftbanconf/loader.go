@@ -531,7 +531,7 @@ func defaultConfig() *Config {
 		ConfigVersion: "2",
 
 		// Binary paths
-		Bin:     "/usr/bin/nftban",
+		Bin:     "/usr/sbin/nftban",
 		CoreBin: "/usr/lib/nftban/bin/nftban-core",
 		UIBin:   "/usr/sbin/nftban-ui",
 		AuthBin: "/usr/libexec/nftban-ui-auth",
