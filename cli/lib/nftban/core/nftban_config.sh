@@ -426,27 +426,23 @@ nftban_config_get() {
 }
 
 nftban_config_set_global() {
-    # Set a global config value in nftban.conf
+    # Set a global config value in nftban.conf.local (user overrides)
+    # Package defaults in nftban.conf are NEVER modified by user operations
     # Args: $1 = key name, $2 = value
-    # Use nftban_config_set() for per-module config in .conf.local
 
     local key="$1"
     local value="$2"
-    local conf_file="${NFTBAN_CONFIG_DIR}/nftban.conf"
+    local conf_file="${NFTBAN_CONFIG_DIR}/nftban.conf.local"
 
     # Create config directory if needed
     mkdir -p "${NFTBAN_CONFIG_DIR}"
 
-    # Create config file if it doesn't exist
+    # Create local override file if it doesn't exist
     if [[ ! -f "$conf_file" ]]; then
         cat > "$conf_file" << 'EOF'
-# NFTBan Global Configuration
-# This file contains system-wide NFTBan settings
-
-# GUI Mode: Enable Web GUI + Prometheus + Go binaries
-# Values: true, false
-# Default: false (CLI only, bash mode)
-NFTBAN_GUI_MODE="false"
+# NFTBan Local Configuration Overrides
+# User-changed values — survives package upgrades
+# Package defaults are in nftban.conf (never edit directly)
 EOF
     fi
 

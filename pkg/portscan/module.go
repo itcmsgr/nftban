@@ -15,6 +15,14 @@
 // - Event bus integration
 // - Daemon lifecycle management
 // - Metrics collection
+//
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/conf.d/portscan/main.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package portscan
@@ -124,6 +132,12 @@ func (m *Module) loadConfig() {
 	// 2. Load main.conf.local overrides
 	localMainPath := filepath.Join(configDir, "main.conf.local")
 	if data, err := os.ReadFile(localMainPath); err == nil {
+		m.parseMainConfig(string(data))
+	}
+
+	// 2b. Load central override (nftban.conf.local — highest priority)
+	centralLocal := filepath.Join(cfg.ConfigDir, "nftban.conf.local")
+	if data, err := os.ReadFile(centralLocal); err == nil {
 		m.parseMainConfig(string(data))
 	}
 

@@ -143,49 +143,68 @@ _remove_immutable_flags() {
 
     _update_log INFO "Removing immutable flags from nftban files..."
 
+    # Locate chattr binary (may not be in minimal PATH during package operations)
+    local chattr_bin
+    chattr_bin=$(command -v chattr 2>/dev/null || echo "")
+    if [[ -z "$chattr_bin" ]]; then
+        for p in /usr/bin/chattr /bin/chattr /sbin/chattr /usr/sbin/chattr; do
+            [[ -x "$p" ]] && chattr_bin="$p" && break
+        done
+    fi
+
+    if [[ -z "$chattr_bin" ]]; then
+        _update_log WARN "chattr not found - cannot remove immutable flags"
+        return 0
+    fi
+
+    # Critical file that is known to be immutable
+    local schema="/usr/lib/nftban/lib/nft_schema.sh"
+
+    # Remove immutable flag from the critical file first (most common failure point)
+    if [[ -f "$schema" ]]; then
+        "$chattr_bin" -i "$schema" 2>/dev/null || true
+    fi
+
     local dirs_to_check=(
         "/usr/lib/nftban"
         "/usr/sbin/nftban"
         "/etc/nftban"
     )
 
-    local found_immutable=0
-
     for path in "${dirs_to_check[@]}"; do
         if [[ -e "$path" ]]; then
             if [[ -d "$path" ]]; then
-                # Remove immutable flag from all files in directory recursively
-                # Use find to locate files with immutable attribute
-                while IFS= read -r -d '' file; do
-                    if lsattr "$file" 2>/dev/null | grep -q -- '----i'; then
-                        chattr -i "$file" 2>/dev/null && found_immutable=1
-                    fi
-                done < <(find "$path" -type f -print0 2>/dev/null)
-
-                # Brute-force approach as fallback - just try chattr -i -R
-                chattr -i -R "$path" 2>/dev/null || true
+                # Brute-force recursive removal (most reliable approach)
+                "$chattr_bin" -i -R "$path" 2>/dev/null || true
             else
-                # Single file
-                chattr -i "$path" 2>/dev/null || true
+                "$chattr_bin" -i "$path" 2>/dev/null || true
             fi
         fi
     done
 
-    if [[ "$found_immutable" -eq 1 ]]; then
-        # Verify the critical file (nft_schema.sh) is no longer immutable
-        local schema="/usr/lib/nftban/lib/nft_schema.sh"
-        if [[ -f "$schema" ]] && command -v lsattr &>/dev/null; then
-            if lsattr "$schema" 2>/dev/null | grep -q -- '----i'; then
-                _update_log WARN "Immutable flag on nft_schema.sh could not be removed"
-                _update_log INFO "Try: chattr -i $schema"
-            else
-                _update_log OK "Immutable flags removed"
+    # Verify the critical file is no longer immutable
+    if [[ -f "$schema" ]]; then
+        local lsattr_bin
+        lsattr_bin=$(command -v lsattr 2>/dev/null || echo "")
+        [[ -z "$lsattr_bin" ]] && for p in /usr/bin/lsattr /bin/lsattr; do
+            [[ -x "$p" ]] && lsattr_bin="$p" && break
+        done
+
+        if [[ -n "$lsattr_bin" ]]; then
+            if "$lsattr_bin" "$schema" 2>/dev/null | grep -q 'i'; then
+                _update_log WARN "Immutable flag on nft_schema.sh persists, retrying..."
+                # Final attempt with explicit path
+                "$chattr_bin" -i "$schema" 2>&1 || true
+                if "$lsattr_bin" "$schema" 2>/dev/null | grep -q 'i'; then
+                    _update_log ERROR "Cannot remove immutable flag from $schema"
+                    _update_log ERROR "Run manually: chattr -i $schema"
+                    return 1
+                fi
             fi
-        else
-            _update_log OK "Immutable flags removed"
         fi
+        _update_log OK "Immutable flags cleared"
     else
-        _update_log INFO "No immutable flags found"
+        _update_log INFO "No immutable files found"
     fi
 }
 
@@ -527,8 +546,14 @@ _get_current_version() {
     case "$install_type" in
         rpm)
             # Try both package names
-            rpm -q --qf '%{VERSION}' nftban 2>/dev/null || \
-            rpm -q --qf '%{VERSION}' nftban-core 2>/dev/null || echo "unknown"
+            # Note: rpm -q writes "package X is not installed" to stdout, not stderr,
+            # so we must capture and filter the output to avoid corrupted version strings
+            local ver
+            ver=$(rpm -q --qf '%{VERSION}' nftban-core 2>/dev/null | grep -v 'not installed' | head -1)
+            if [[ -z "$ver" ]]; then
+                ver=$(rpm -q --qf '%{VERSION}' nftban 2>/dev/null | grep -v 'not installed' | head -1)
+            fi
+            echo "${ver:-unknown}"
             ;;
         deb)
             # Try both package names

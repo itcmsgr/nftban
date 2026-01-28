@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Complete Package Builder
+# NFTBan v1.6.1 - Complete Package Builder
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="build_nftban"
@@ -39,7 +39,7 @@ readonly BLUE='\033[0;34m'
 readonly NC='\033[0m'
 
 # Package metadata - Read from VERSION file (single source of truth)
-PKG_VERSION=$(cat "${BASH_SOURCE[0]%/*}/../VERSION" 2>/dev/null || echo "1.0.5")
+PKG_VERSION=$(cat "${BASH_SOURCE[0]%/*}/../VERSION" 2>/dev/null || echo "1.6.1")
 readonly PKG_VERSION
 readonly PKG_RELEASE="1"
 
@@ -281,6 +281,20 @@ mkdir -p %{buildroot}/var/lib/nftban/{feeds,geoip,staging,reports}
 mkdir -p %{buildroot}/var/log/nftban
 mkdir -p %{buildroot}/var/cache/nftban
 mkdir -p %{buildroot}/run/nftban
+
+%pretrans -p <lua>
+-- Remove immutable flag before upgrade (runs FIRST, before old pkg scripts)
+-- The nft_schema.sh file is protected with chattr +i for security.
+-- Without this, RPM fails: "cpio: rename failed - No data available"
+local schema_file = "/usr/lib/nftban/lib/nft_schema.sh"
+local f = io.open(schema_file, "r")
+if f then
+    f:close()
+    os.execute("/usr/bin/chattr -i " .. schema_file .. " 2>/dev/null")
+    os.execute("/bin/chattr -i " .. schema_file .. " 2>/dev/null")
+    os.execute("chattr -i " .. schema_file .. " 2>/dev/null")
+    os.execute("/usr/bin/chattr -i -R /usr/lib/nftban 2>/dev/null")
+end
 
 %pre
 # =============================================================================
@@ -744,6 +758,10 @@ echo "[NFTBan] Installation complete. Your IP has been auto-whitelisted."
 echo "[NFTBan] Essential timers started. Run 'nftban timers enable' to start all optional timers."
 
 %preun
+# Remove immutable flag before uninstall/upgrade to allow RPM to replace/remove files
+if [ -f /usr/lib/nftban/lib/nft_schema.sh ]; then
+    chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
+fi
 %systemd_preun nftban-maintenance.service nftban-maintenance.timer nftban-health.service nftban-health.timer nftban-login-monitor.service nftban-core-geoip.service nftban-core-geoip.timer nftban-core-feeds.service nftban-core-feeds.timer nftban-unified-exporter.service nftban-unified-exporter.timer
 
 %postun
@@ -803,7 +821,6 @@ fi
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/portscan/*.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/rbl
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/rbl/*.conf
-%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/rbl/*.local
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/panels
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/directadmin
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/directadmin/*.conf
@@ -984,7 +1001,7 @@ fi
 
 echo ""
 echo "════════════════════════════════════════════════════════════════════════════════"
-echo "  NFTBan v1.0.0 - Installation Prerequisite Checks"
+echo "  NFTBan v__PKG_VERSION__ - Installation Prerequisite Checks"
 echo "════════════════════════════════════════════════════════════════════════════════"
 echo ""
 
@@ -1208,8 +1225,8 @@ echo ""
 exit 0
 PREINST_EOF
 
-    # Inject actual version into preinst
-    sed -i "s/v1\.0\.0/v${PKG_VERSION}/g" "${BUILD_DIR}/deb/DEBIAN/preinst"
+    # Inject actual version into preinst (replace placeholder and any remaining v1.0.0)
+    sed -i "s/__PKG_VERSION__/${PKG_VERSION}/g; s/v1\.0\.0/v${PKG_VERSION}/g" "${BUILD_DIR}/deb/DEBIAN/preinst"
     chmod 755 "${BUILD_DIR}/deb/DEBIAN/preinst"
 
     # Use the comprehensive postinst from packaging/deb/postinst
@@ -1409,7 +1426,6 @@ PRERM
 /etc/nftban/nftban.conf
 /etc/nftban/conf.d/feeds.conf
 /etc/nftban/conf.d/rbl/main.conf
-/etc/nftban/conf.d/rbl/main.conf.local
 /etc/nftban/conf.d/rbl/rbls.conf
 /etc/nftban/conf.d/rbl/custom.conf
 /etc/nftban/conf.d/ddos/main.conf

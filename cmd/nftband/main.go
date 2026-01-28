@@ -56,6 +56,7 @@ import (
 	"github.com/coreos/go-systemd/v22/activation"
 	"github.com/google/nftables"
 	"github.com/itcmsgr/nftban/pkg/analytics"
+	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/itcmsgr/nftban/pkg/banlog"
 	"github.com/itcmsgr/nftban/pkg/ddos"
 	"github.com/itcmsgr/nftban/pkg/eventbus"
@@ -81,8 +82,6 @@ import (
 )
 
 const (
-	Version = "1.0.0"
-
 	// HTTP API
 	HTTPAddr = ":8080"
 
@@ -247,7 +246,7 @@ func main() {
 	for _, arg := range os.Args[1:] {
 		switch arg {
 		case "--version", "-v":
-			fmt.Printf("nftband v%s (git %s, build %s)\n", Version, GitCommit, BuildDate)
+			fmt.Printf("nftband v%s (git %s, build %s)\n", version.Version, GitCommit, BuildDate)
 			return
 		case "--help", "-h":
 			printHelp()
@@ -357,7 +356,7 @@ func printHelp() {
 
 // Run starts the daemon and blocks until shutdown
 func (d *Daemon) Run() error {
-	log.Printf("nftband v%s starting...", Version)
+	log.Printf("nftband v%s starting...", version.Version)
 
 	// Create context for lifecycle management
 	d.ctx, d.cancel = context.WithCancel(context.Background())
@@ -975,7 +974,7 @@ func (d *Daemon) handleStatusRequest() SocketResponse {
 	return SocketResponse{
 		Success: true,
 		Data: map[string]any{
-			"version":       Version,
+			"version":       version.Version,
 			"uptime":        "TODO",
 			"modules":       len(d.registry.All()),
 			"events_total":  stats.Published,
@@ -1337,7 +1336,7 @@ func (d *Daemon) startHTTP() error {
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{
 			"status":  "ok",
-			"version": Version,
+			"version": version.Version,
 		})
 	})
 
@@ -1350,7 +1349,7 @@ func (d *Daemon) startHTTP() error {
 		json.NewEncoder(w).Encode(map[string]any{
 			"success": true,
 			"data": map[string]any{
-				"version":      Version,
+				"version":      version.Version,
 				"modules":      len(d.registry.All()),
 				"events_total": stats.Published,
 			},
@@ -1903,7 +1902,7 @@ func (d *Daemon) handleStatsRequest() SocketResponse {
 
 	snapshot := d.stats.Collect()
 	// Set version from const
-	snapshot.Daemon.Version = Version
+	snapshot.Daemon.Version = version.Version
 
 	return SocketResponse{
 		Success: true,

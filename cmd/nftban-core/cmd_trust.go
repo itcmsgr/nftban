@@ -229,26 +229,19 @@ func cmdTrustEnable(configPath, trustName string, enable bool) error {
 		return fmt.Errorf("unknown trust feed: %s\nUse 'nftban trust list' to see available feeds", trustName)
 	}
 
+	// Write to nftban.conf.local (central override — survives package upgrades)
+	configDir := filepath.Dir(filepath.Dir(configPath)) // conf.d/trust.conf → /etc/nftban
+	localConf := filepath.Join(configDir, "nftban.conf.local")
+
 	// Ensure config directory exists
-	configDir := filepath.Dir(configPath)
 	if err := os.MkdirAll(configDir, 0750); err != nil {
 		return fmt.Errorf("failed to create config directory: %w", err)
 	}
 
-	// Read existing config or create new
-	content := ""
-	if data, err := os.ReadFile(configPath); err == nil {
-		content = string(data)
-	} else {
-		// Create header for new config
-		content = `# =============================================================================
-# NFTBan v1.0.0 - Trust Feeds Configuration (Whitelists)
-# =============================================================================
-# Trust feeds are IP ranges from cloud providers, CDNs, etc. that should be
-# whitelisted and never blocked by nftban.
-# =============================================================================
-
-`
+	// Read existing content or start fresh
+	localContent := ""
+	if data, err := os.ReadFile(localConf); err == nil {
+		localContent = string(data)
 	}
 
 	varName := fmt.Sprintf("TRUST_%s_ENABLED", trustName)
@@ -256,18 +249,35 @@ func cmdTrustEnable(configPath, trustName string, enable bool) error {
 	if enable {
 		newValue = "true"
 	}
+	newLine := fmt.Sprintf(`%s="%s"`, varName, newValue)
 
-	// Check if variable exists
-	if strings.Contains(content, varName) {
-		// Replace existing value using regex-based replacement (handles spacing variations)
-		content = replaceConfigValueTrust(content, varName, newValue)
+	// Check if variable exists and replace
+	varFound := false
+	lines := strings.Split(localContent, "\n")
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, varName+"=") || strings.HasPrefix(trimmed, varName+" =") {
+			lines[i] = newLine
+			varFound = true
+			break
+		}
+	}
+
+	if varFound {
+		localContent = strings.Join(lines, "\n")
 	} else {
-		// Add new variable
-		content += fmt.Sprintf(`%s="%s"`+"\n", varName, newValue)
+		// Append — ensure section marker exists
+		if !strings.Contains(localContent, "# --- TRUST Configuration ---") {
+			if localContent != "" && !strings.HasSuffix(localContent, "\n") {
+				localContent += "\n"
+			}
+			localContent += "\n# --- TRUST Configuration ---\n"
+		}
+		localContent += newLine + "\n"
 	}
 
 	// Write config
-	if err := os.WriteFile(configPath, []byte(content), 0640); err != nil {
+	if err := os.WriteFile(localConf, []byte(localContent), 0640); err != nil {
 		return fmt.Errorf("failed to write config: %w", err)
 	}
 
@@ -486,32 +496,44 @@ func cmdTrustLoad(trustDir string) error {
 	return nil
 }
 
-// getTrustEnabledStatus reads trust config and returns enabled status map
+// getTrustEnabledStatus reads trust config and returns enabled status map.
+// Override chain: conf.d/trust.conf → conf.d/trust.conf.local → nftban.conf.local
+// Each layer is partial — only values present in the file override previous layers.
 func getTrustEnabledStatus(configPath string) map[string]bool {
 	enabledMap := make(map[string]bool)
 
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		return enabledMap // Return empty map if config doesn't exist
+	// Override chain: .conf → .conf.local → nftban.conf.local
+	configDir := filepath.Dir(filepath.Dir(configPath)) // conf.d/trust.conf → /etc/nftban
+	configFiles := []string{
+		configPath,
+		configPath + ".local",
+		filepath.Join(configDir, "nftban.conf.local"),
 	}
 
-	lines := strings.Split(string(content), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "TRUST_") && strings.Contains(line, "_ENABLED=") {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) != 2 {
-				continue
+	for _, file := range configFiles {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+
+		lines := strings.Split(string(content), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if strings.HasPrefix(line, "TRUST_") && strings.Contains(line, "_ENABLED=") {
+				parts := strings.SplitN(line, "=", 2)
+				if len(parts) != 2 {
+					continue
+				}
+
+				varName := parts[0]
+				value := strings.Trim(parts[1], `"' `)
+
+				// Extract name: TRUST_<NAME>_ENABLED
+				name := strings.TrimPrefix(varName, "TRUST_")
+				name = strings.TrimSuffix(name, "_ENABLED")
+
+				enabledMap[name] = (value == "true")
 			}
-
-			varName := parts[0]
-			value := strings.Trim(parts[1], `"' `)
-
-			// Extract name: TRUST_<NAME>_ENABLED
-			name := strings.TrimPrefix(varName, "TRUST_")
-			name = strings.TrimSuffix(name, "_ENABLED")
-
-			enabledMap[name] = (value == "true")
 		}
 	}
 

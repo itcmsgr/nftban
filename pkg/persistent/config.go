@@ -97,6 +97,15 @@ func LoadConfig(configDir string) (*Config, error) {
 		}
 	}
 
+	// Central override (nftban.conf.local — highest priority)
+	centralLocal := configDir + "/nftban.conf.local"
+	if err := cfg.parseConfigFile(centralLocal); err != nil {
+		// Central local file is optional
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to parse %s: %w", centralLocal, err)
+		}
+	}
+
 	return cfg, nil
 }
 

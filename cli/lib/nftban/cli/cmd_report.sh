@@ -30,23 +30,31 @@ fi
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for report generation and automated scheduling
 #
-# meta:name=cmd_report
-# meta:type=cli
-# meta:header=Report Generation CLI Handler
-# meta:version=1.0.0
+# meta:name="cmd_report"
+# meta:type="cli"
+# meta:header="Report Generation CLI Handler"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=CLI interface for report generation and automated scheduling
-# meta:input=Report type, format, and scheduling parameters
-# meta:output=Generated reports in text, JSON, or HTML format
+# meta:description="CLI interface for report generation and automated scheduling"
+# meta:input="Report type, format, and scheduling parameters"
+# meta:output="Generated reports in text, JSON, or HTML format"
 #
 # **Inventory & Requirements**
-# meta:depends=nftban_stats.sh,nftban_report_engine.sh
+# meta:depends="nftban_stats.sh,nftban_report_engine.sh"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+#
+# meta:created_date="2025-11-05"
+# meta:updated_date="2025-11-24"
 # =============================================================================
 
 
@@ -381,7 +389,7 @@ nftban_report_cmd_email() {
 <p>See attached files for detailed statistics.</p>
 
 <hr>
-<p><small>Automated by NFTBan v${NFTBAN_VERSION:-1.0.0}</small></p>
+<p><small>Automated by NFTBan v${NFTBAN_VERSION:-1.6.1}</small></p>
 EOF
 )
 

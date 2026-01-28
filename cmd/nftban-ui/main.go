@@ -35,6 +35,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/api"
 	"github.com/itcmsgr/nftban/pkg/auth"
 	"github.com/itcmsgr/nftban/pkg/metrics"
+	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/itcmsgr/nftban/pkg/middleware"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/safety"
@@ -43,7 +44,6 @@ import (
 )
 
 const (
-	Version = "1.1.0"
 	AppName = "NFTBan Web GUI"
 )
 
@@ -80,7 +80,7 @@ func main() {
 
 	// Show version
 	if *version {
-		fmt.Printf("nftban-ui v%s (git %s, build %s)\n", Version, GitCommit, BuildDate)
+		fmt.Printf("nftban-ui v%s (git %s, build %s)\n", version.Version, GitCommit, BuildDate)
 		os.Exit(0)
 	}
 
@@ -401,7 +401,7 @@ func main() {
 		samplerStatus["running"], samplerStatus["active_sessions"], samplerStatus["period_seconds"])
 
 	// Start server
-	log.Printf("%s v%s starting on https://0.0.0.0:%d", AppName, Version, cfg.Port)
+	log.Printf("%s v%s starting on https://0.0.0.0:%d", AppName, version.Version, cfg.Port)
 	log.Printf("TLS Certificate: %s", cfg.TLSCert)
 	log.Printf("TLS Key: %s", cfg.TLSKey)
 	log.Printf("Request Timeout: %v, Max Connections: %d", requestTimeout, limits.MaxConcurrentConns)

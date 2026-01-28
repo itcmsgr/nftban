@@ -52,12 +52,13 @@ func loadGeoIPConfig(cfg *nftbanconf.Config) geoipConfig {
 	}
 
 	// Read from config files (shell variable format)
-	// New standard paths first, then legacy paths for backwards compatibility
+	// Module configs first, then central override last (highest priority)
 	configFiles := []string{
 		cfg.ConfigDir + "/conf.d/geoip/main.conf",
 		cfg.ConfigDir + "/conf.d/geoip/main.conf.local",
 		cfg.ConfigDir + "/conf.d/nftban-go.conf",       // Legacy (deprecated)
 		cfg.ConfigDir + "/conf.d/nftban-go.conf.local", // Legacy (deprecated)
+		cfg.ConfigDir + "/nftban.conf.local",            // Central override (highest priority)
 	}
 
 	for _, configFile := range configFiles {

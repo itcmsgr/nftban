@@ -6,27 +6,36 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Module inventory scanning and reporting with validation
 #
-# meta:name=nftban_report_module
-# meta:type=core
-# meta:header=Module Report Core
-# meta:version=1.0.0
+# meta:name="nftban_report_module"
+# meta:type="core"
+# meta:header="Module Report Core"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Scans, inventories, and validates NFTBan modules by meta tags
-# meta:input=Module scan options, output format, validation flags
-# meta:output=Module inventory reports with validation results
+# meta:description="Scans, inventories, and validates NFTBan modules by meta tags"
+# meta:input="Module scan options, output format, validation flags"
+# meta:output="Module inventory reports with validation results"
 #
 # **Inventory & Requirements**
-# meta:depends=bash,grep,sed
+# meta:depends="bash,grep,sed"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
-# meta:contributors=Claude (Anthropic) - Testing and integration, ChatGPT (OpenAI) - Code review
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+#
+# meta:created_date="2025-11-05"
+# meta:updated_date="2025-11-24"
+# meta:contributors="Claude (Anthropic) - Testing and integration, ChatGPT (OpenAI) - Code review"
 # =============================================================================
 
 # Strict mode
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
@@ -828,10 +837,10 @@ nftban_module_generate_html_report() {
     html_content="${html_content//\{SERVER_IP\}/$server_ip}"
     html_content="${html_content//\{DATE\}/$current_date}"
     html_content="${html_content//\{TIME\}/$current_time}"
-    html_content="${html_content//\{NFTBAN_VERSION\}/${NFTBAN_VERSION:-1.0.0}}"
+    html_content="${html_content//\{NFTBAN_VERSION\}/${NFTBAN_VERSION:-1.6.1}}"
     html_content="${html_content//\{COMPANY_NAME\}/${NFTBAN_COMPANY_NAME:-}}"
     html_content="${html_content//\{LOGO_HTML\}/}"
-    html_content="${html_content//\{VERSION_HTML\}/<p>Version: <strong>${NFTBAN_VERSION:-1.0.0}</strong></p>}"
+    html_content="${html_content//\{VERSION_HTML\}/<p>Version: <strong>${NFTBAN_VERSION:-1.6.1}</strong></p>}"
 
     # Statistics
     html_content="${html_content//\{TOTAL_MODULES\}/$total_modules}"

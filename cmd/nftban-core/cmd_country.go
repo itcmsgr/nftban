@@ -427,7 +427,8 @@ func cmdCountryApply(configPath string) error {
 	fmt.Println("   Full geoblock integration requires nftables geoip module or")
 	fmt.Println("   pre-processed country IP lists (like ipdeny.com).")
 	fmt.Println()
-	fmt.Println("Configuration saved to: " + configPath)
+	configDir := filepath.Dir(filepath.Dir(configPath))
+	fmt.Println("Configuration file: " + filepath.Join(configDir, "nftban.conf.local"))
 	fmt.Println()
 
 	return nil
@@ -441,6 +442,9 @@ type CountryConfig struct {
 	Whitelisted []string // Countries to allow (whitelist mode)
 }
 
+// readCountryConfig reads country config from the override chain:
+// conf.d/country.conf → conf.d/country.conf.local → nftban.conf.local
+// Each layer is partial — only values present in the file override previous layers.
 func readCountryConfig(configPath string) CountryConfig {
 	config := CountryConfig{
 		Enabled:     false,
@@ -449,12 +453,28 @@ func readCountryConfig(configPath string) CountryConfig {
 		Whitelisted: []string{},
 	}
 
-	content, err := os.ReadFile(configPath)
-	if err != nil {
-		return config
+	// Override chain: .conf → .conf.local → nftban.conf.local
+	configDir := filepath.Dir(filepath.Dir(configPath)) // conf.d/country.conf → /etc/nftban
+	configFiles := []string{
+		configPath,
+		configPath + ".local",
+		filepath.Join(configDir, "nftban.conf.local"),
 	}
 
-	lines := strings.Split(string(content), "\n")
+	for _, file := range configFiles {
+		content, err := os.ReadFile(file)
+		if err != nil {
+			continue
+		}
+		parseCountryContent(&config, string(content))
+	}
+
+	return config
+}
+
+// parseCountryContent parses COUNTRY_* variables from config content
+func parseCountryContent(config *CountryConfig, content string) {
+	lines := strings.Split(content, "\n")
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
@@ -490,34 +510,65 @@ func readCountryConfig(configPath string) CountryConfig {
 			}
 		}
 	}
-
-	return config
 }
 
+// writeCountryConfig writes country settings to nftban.conf.local (central override).
+// Only user-changed values go here — package defaults stay in conf.d/country.conf.
 func writeCountryConfig(configPath string, config CountryConfig) error {
-	// Ensure directory exists
-	dir := filepath.Dir(configPath)
-	if err := os.MkdirAll(dir, 0750); err != nil {
+	// Write to nftban.conf.local (central override — survives package upgrades)
+	configDir := filepath.Dir(filepath.Dir(configPath)) // conf.d/country.conf → /etc/nftban
+	localConf := filepath.Join(configDir, "nftban.conf.local")
+
+	// Ensure config directory exists
+	if err := os.MkdirAll(configDir, 0750); err != nil {
 		return err
 	}
 
-	content := `# =============================================================================
-# NFTBan v1.0.0 - Country Blocking Configuration
-# =============================================================================
-# Control traffic by country using GeoIP data
-#
-# Mode:
-#   blacklist - Block listed countries, allow all others (default)
-#   whitelist - Allow ONLY listed countries, block all others
-# =============================================================================
+	// Read existing content (or start fresh)
+	localContent := ""
+	if data, err := os.ReadFile(localConf); err == nil {
+		localContent = string(data)
+	}
 
-`
-	content += fmt.Sprintf("COUNTRY_ENABLED=\"%v\"\n", config.Enabled)
-	content += fmt.Sprintf("COUNTRY_MODE=\"%s\"\n", config.Mode)
-	content += fmt.Sprintf("COUNTRY_BLOCKED=\"%s\"\n", strings.Join(config.Blocked, ","))
-	content += fmt.Sprintf("COUNTRY_WHITELISTED=\"%s\"\n", strings.Join(config.Whitelisted, ","))
+	// Variables to write
+	updates := [][2]string{
+		{"COUNTRY_ENABLED", fmt.Sprintf("%v", config.Enabled)},
+		{"COUNTRY_MODE", config.Mode},
+		{"COUNTRY_BLOCKED", strings.Join(config.Blocked, ",")},
+		{"COUNTRY_WHITELISTED", strings.Join(config.Whitelisted, ",")},
+	}
 
-	return os.WriteFile(configPath, []byte(content), 0640)
+	for _, pair := range updates {
+		varName, varValue := pair[0], pair[1]
+		newLine := fmt.Sprintf(`%s="%s"`, varName, varValue)
+
+		// Check if variable exists and replace
+		found := false
+		lines := strings.Split(localContent, "\n")
+		for i, line := range lines {
+			trimmed := strings.TrimSpace(line)
+			if strings.HasPrefix(trimmed, varName+"=") || strings.HasPrefix(trimmed, varName+" =") {
+				lines[i] = newLine
+				found = true
+				break
+			}
+		}
+
+		if found {
+			localContent = strings.Join(lines, "\n")
+		} else {
+			// Append — ensure section marker exists
+			if !strings.Contains(localContent, "# --- COUNTRY Configuration ---") {
+				if localContent != "" && !strings.HasSuffix(localContent, "\n") {
+					localContent += "\n"
+				}
+				localContent += "\n# --- COUNTRY Configuration ---\n"
+			}
+			localContent += newLine + "\n"
+		}
+	}
+
+	return os.WriteFile(localConf, []byte(localContent), 0640)
 }
 
 func contains(slice []string, item string) bool {

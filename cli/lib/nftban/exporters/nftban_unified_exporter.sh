@@ -422,10 +422,8 @@ collect_all_metrics() {
         local blacklist_v6_perm=0 blacklist_v6_temp=0
         if command -v nft &>/dev/null; then
             # IPv4 blacklist with perm/temp breakdown
-            # Try inet table first (newer), fall back to ip table (older versions)
             local v4_output
-            v4_output=$(nft list set inet nftban blacklist_ipv4 2>/dev/null) || \
-            v4_output=$(nft list set ip nftban blacklist_ipv4 2>/dev/null) || v4_output=""
+            v4_output=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null) || v4_output=""
             if [[ -n "$v4_output" ]]; then
                 active_v4=$(echo "$v4_output" | grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' | wc -l 2>/dev/null) || active_v4=0
                 # Match element timeouts (e.g., "timeout 15m") not set flags
@@ -436,10 +434,8 @@ collect_all_metrics() {
             fi
 
             # IPv6 blacklist with perm/temp breakdown
-            # Try inet table first (newer), fall back to ip6 table (older versions)
             local v6_output
-            v6_output=$(nft list set inet nftban blacklist_ipv6 2>/dev/null) || \
-            v6_output=$(nft list set ip6 nftban blacklist_ipv6 2>/dev/null) || v6_output=""
+            v6_output=$(nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null) || v6_output=""
             if [[ -n "$v6_output" ]]; then
                 active_v6=$(echo "$v6_output" | grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' | wc -l 2>/dev/null) || active_v6=0
                 # Match element timeouts (e.g., "timeout 15m") not set flags
@@ -684,10 +680,9 @@ collect_all_metrics() {
             metrics+="nftban_nftables_apply_errors_total $nft_apply_errors $timestamp\n"
 
             # nftban_nftables_rules_total - count rules in nftban table
-            # Try inet first, then fallback to ip (older nftban versions)
             local nft_rules_total=0
             local table_output
-            table_output=$(nft list table inet nftban 2>/dev/null || nft list table ip nftban 2>/dev/null || echo "")
+            table_output=$(nft list table ${NFTBAN_TABLE_IPV4} 2>/dev/null || echo "")
             if [[ -n "$table_output" ]]; then
                 # Count lines that look like rules (contain accept, drop, jump, counter, etc.)
                 nft_rules_total=$(echo "$table_output" | grep -cE '^\s+(accept|drop|reject|jump|goto|counter|log|limit|ct )' 2>/dev/null | tr -d '[:space:]') || true
@@ -799,14 +794,20 @@ collect_all_metrics() {
         # --- nftables Metrics ---
         if command -v nft &>/dev/null; then
             local sets_count elements_total
-            sets_count=$(nft list sets inet nftban 2>/dev/null | grep -c "set " || echo "0")
+            sets_count=$(( $(nft list sets ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "set " || echo "0") + $(nft list sets ${NFTBAN_TABLE_IPV6} 2>/dev/null | grep -c "set " || echo "0") ))
             elements_total=0
 
             # Individual set counts (for audit/stats alignment)
             local blacklist_v4=0 blacklist_v6=0 whitelist_v4=0 whitelist_v6=0
             for set_name in blacklist_ipv4 blacklist_ipv6 whitelist_ipv4 whitelist_ipv6; do
-                local count
-                count=$(nft -j list set inet nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+                local count nft_table
+                # Select correct table based on address family
+                if [[ "$set_name" == *_ipv6 ]]; then
+                    nft_table="${NFTBAN_TABLE_IPV6}"
+                else
+                    nft_table="${NFTBAN_TABLE_IPV4}"
+                fi
+                count=$(nft -j list set ${nft_table} "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
                 elements_total=$((elements_total + count))
 
                 case "$set_name" in

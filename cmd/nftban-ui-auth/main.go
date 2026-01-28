@@ -5,6 +5,14 @@
 // Purpose: Socket-activated PAM authentication daemon for NFTBan Web GUI
 // Usage: Systemd socket-activated, listens on /run/nftban-ui/auth.sock
 // Architecture: Root daemon + UNIX socket + direct PAM (no su, no setuid)
+//
+// meta:inventory.files=""
+// meta:inventory.binaries="nftban-ui-auth"
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units="nftban-ui-auth.socket,nftban-ui-auth.service"
+// meta:inventory.network="unix:/run/nftban-ui/auth.sock"
+// meta:inventory.privileges="root"
 // =============================================================================
 
 package main
@@ -25,10 +33,10 @@ import (
 	"github.com/itcmsgr/nftban/internal/authproto"
 	"github.com/itcmsgr/nftban/pkg/auth"
 	"github.com/itcmsgr/nftban/pkg/system"
+	"github.com/itcmsgr/nftban/pkg/version"
 )
 
 const (
-	Version    = "1.0.0"
 	SocketPath = "/run/nftban-ui/auth.sock"
 )
 
@@ -45,7 +53,7 @@ type AuthResponse = authproto.AuthResponse
 func main() {
 	// Check for version flag
 	if len(os.Args) > 1 && (os.Args[1] == "--version" || os.Args[1] == "-v") {
-		fmt.Printf("nftban-ui-auth v%s (git %s, build %s)\n", Version, GitCommit, BuildDate)
+		fmt.Printf("nftban-ui-auth v%s (git %s, build %s)\n", version.Version, GitCommit, BuildDate)
 		os.Exit(0)
 	}
 
@@ -55,7 +63,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	fmt.Fprintf(os.Stderr, "[AUTH] NFTBan UI Auth Daemon v%s starting\n", Version)
+	fmt.Fprintf(os.Stderr, "[AUTH] NFTBan UI Auth Daemon v%s starting\n", version.Version)
 
 	// Create socket directory if needed
 	if err := os.MkdirAll("/run/nftban-ui", 0750); err != nil {

@@ -6,6 +6,13 @@
 // Loads watchdog configuration from /etc/nftban/conf.d/watchdog.conf
 // Falls back to defaults for missing values.
 //
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/nftban/conf.d/watchdog.conf"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 // =============================================================================
 
 package watchdog
@@ -13,13 +20,15 @@ package watchdog
 import (
 	"bufio"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"time"
 )
 
-// LoadConfig loads watchdog configuration from file
-// Falls back to defaults for missing values
+// LoadConfig loads watchdog configuration from file.
+// Override chain: watchdog.conf → watchdog.conf.local → nftban.conf.local
+// Each layer is partial — only values present in the file override previous layers.
 func LoadConfig(configPath string) *Config {
 	cfg := DefaultConfig()
 
@@ -27,15 +36,24 @@ func LoadConfig(configPath string) *Config {
 		configPath = "/etc/nftban/conf.d/watchdog.conf"
 	}
 
-	// Try to load from file
-	values, err := loadConfigFile(configPath)
-	if err != nil {
-		// Return defaults if file not found
-		return cfg
+	// 1. Load package defaults from watchdog.conf
+	if values, err := loadConfigFile(configPath); err == nil {
+		applyConfigValues(cfg, values)
 	}
 
-	// Apply loaded values
-	applyConfigValues(cfg, values)
+	// 2. Load user overrides from watchdog.conf.local (survives upgrades)
+	localPath := configPath + ".local"
+	if values, err := loadConfigFile(localPath); err == nil {
+		applyConfigValues(cfg, values)
+	}
+
+	// 3. Load central override from nftban.conf.local (highest priority)
+	configDir := filepath.Dir(filepath.Dir(configPath)) // conf.d/watchdog.conf → /etc/nftban
+	centralLocal := filepath.Join(configDir, "nftban.conf.local")
+	if values, err := loadConfigFile(centralLocal); err == nil {
+		applyConfigValues(cfg, values)
+	}
+
 	cfg.Validate()
 
 	return cfg
