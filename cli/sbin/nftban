@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - CLI Interface
+# NFTBan v1.6.1 - CLI Interface
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Main CLI entry point for NFTBan
@@ -8,7 +8,7 @@
 # meta:name="nftban_cli"
 # meta:type="cli"
 # meta:header="NFTBan CLI"
-# meta:version="1.0.0"
+# meta:version="1.6.1"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -42,7 +42,7 @@ set -Eeuo pipefail
 #   5. Update Version in go-geoip/cmd/nftban-geoip/main.go (nftban repo)
 #   6. Build all binaries with -ldflags to inject version
 # The 'nftban version' command will show warnings if components don't match.
-export NFTBAN_VERSION="1.0.0"
+export NFTBAN_VERSION="1.6.1"
 
 # =============================================================================
 # LOAD CENTRAL ENVIRONMENT (single source of truth for paths)
@@ -746,23 +746,23 @@ main() {
 
                     # Temporary bans (with expiration) - list IPs
                     local temp_v4_ips temp_v6_ips
-                    temp_v4_ips=$(nft list set inet nftban temp_ban_v4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | sort -u)
-                    temp_v6_ips=$(nft list set inet nftban temp_ban_v6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | sort -u)
+                    temp_v4_ips=$(nft list set ${NFTBAN_TABLE_IPV4} temp_ban_v4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | sort -u)
+                    temp_v6_ips=$(nft list set ${NFTBAN_TABLE_IPV6} temp_ban_v6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | sort -u)
 
                     # Permanent blacklist - list IPs
                     local black_v4_ips black_v6_ips
-                    black_v4_ips=$(nft list set inet nftban blacklist_v4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | sort -u)
-                    black_v6_ips=$(nft list set inet nftban blacklist_v6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | sort -u)
+                    black_v4_ips=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_v4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | sort -u)
+                    black_v6_ips=$(nft list set ${NFTBAN_TABLE_IPV6} blacklist_v6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | sort -u)
 
                     # Feeds - count only (too many to list individually)
                     local feed_v4_count feed_v6_count
-                    feed_v4_count=$(nft list set inet nftban feed_v4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | wc -l)
-                    feed_v6_count=$(nft list set inet nftban feed_v6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | wc -l)
+                    feed_v4_count=$(nft list set ${NFTBAN_TABLE_IPV4} feed_v4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | wc -l)
+                    feed_v6_count=$(nft list set ${NFTBAN_TABLE_IPV6} feed_v6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | wc -l)
 
                     # Geoban - count only
                     local geoban_v4_count geoban_v6_count
-                    geoban_v4_count=$(nft list set inet nftban geoban_blocked_v4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | wc -l)
-                    geoban_v6_count=$(nft list set inet nftban geoban_blocked_v6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | wc -l)
+                    geoban_v4_count=$(nft list set ${NFTBAN_TABLE_IPV4} geoban_blocked_v4 2>/dev/null | grep -oE '\b([0-9]{1,3}\.){3}[0-9]{1,3}\b' | wc -l)
+                    geoban_v6_count=$(nft list set ${NFTBAN_TABLE_IPV6} geoban_blocked_v6 2>/dev/null | grep -oE '([0-9a-f]{0,4}:){2,7}[0-9a-f]{0,4}' | wc -l)
 
                     # Build JSON arrays
                     local temp_v4_json="[]"

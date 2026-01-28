@@ -132,7 +132,7 @@ output_terminal() {
 
     # Header with version
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  NFTBan v${NFTBAN_VERSION:-1.0.0} — System Status"
+    echo "  NFTBan v${NFTBAN_VERSION:-1.6.1} — System Status"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 

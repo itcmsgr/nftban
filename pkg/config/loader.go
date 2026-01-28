@@ -248,57 +248,68 @@ func parseDistroConfig(filename string) (*DistroConfig, error) {
 	return cfg, nil
 }
 
-// LoadServicesConfig reads service enable/disable configuration
+// LoadServicesConfig reads service enable/disable configuration.
+// Override chain: conf.d/services.conf → conf.d/services.conf.local → nftban.conf.local
+// Each layer is partial — only values present in the file override previous layers.
 func LoadServicesConfig() (map[string]bool, error) {
-	services := make(map[string]bool)
+	// Defaults (all enabled)
+	services := map[string]bool{
+		"nftban":        true,
+		"nftables":      true,
+		// Removed: "fail2ban" (v1.0 migration to Suricata)
+		"login_monitor": true,
+	}
 
 	// Get config dir from central config
 	// NO FALLBACK - path must come from /etc/nftban/nftban.conf
 	svcCfg := nftbanconf.MustLoad()
 	configDir := svcCfg.ConfigDir
 
-	data, err := os.ReadFile(configDir + "/conf.d/services.conf")
-	if err != nil {
-		// If file doesn't exist, return defaults (all enabled)
-		return map[string]bool{
-			"nftban":        true,
-			"nftables":      true,
-			// Removed: "fail2ban" (v1.0 migration to Suricata)
-			"login_monitor": true,
-		}, nil
+	// Override chain: .conf → .conf.local → nftban.conf.local
+	configFiles := []string{
+		configDir + "/conf.d/services.conf",
+		configDir + "/conf.d/services.conf.local",
+		configDir + "/nftban.conf.local",
 	}
 
-	lines := strings.Split(string(data), "\n")
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
+	for _, file := range configFiles {
+		data, err := os.ReadFile(file)
+		if err != nil {
 			continue
 		}
 
-		// Parse KEY="value" format
-		if strings.Contains(line, "=") {
-			parts := strings.SplitN(line, "=", 2)
-			if len(parts) != 2 {
+		lines := strings.Split(string(data), "\n")
+		for _, line := range lines {
+			line = strings.TrimSpace(line)
+			if line == "" || strings.HasPrefix(line, "#") {
 				continue
 			}
 
-			key := strings.TrimSpace(parts[0])
-			value := strings.TrimSpace(parts[1])
-			value = strings.Trim(value, `"'`)
+			// Parse KEY="value" format
+			if strings.Contains(line, "=") {
+				parts := strings.SplitN(line, "=", 2)
+				if len(parts) != 2 {
+					continue
+				}
 
-			// Convert to boolean
-			enabled := strings.ToLower(value) == "true"
+				key := strings.TrimSpace(parts[0])
+				value := strings.TrimSpace(parts[1])
+				value = strings.Trim(value, `"'`)
 
-			// Map to service names
-			switch key {
-			case "NFTBAN_ENABLED":
-				services["nftban"] = enabled
-			case "NFTABLES_ENABLED":
-				services["nftables"] = enabled
-			case "FAIL2BAN_ENABLED":
-				// Removed: fail2ban enabled setting (v1.0 migration to Suricata)
-			case "LOGIN_MONITOR_ENABLED":
-				services["login_monitor"] = enabled
+				// Convert to boolean
+				enabled := strings.ToLower(value) == "true"
+
+				// Map to service names
+				switch key {
+				case "NFTBAN_ENABLED":
+					services["nftban"] = enabled
+				case "NFTABLES_ENABLED":
+					services["nftables"] = enabled
+				case "FAIL2BAN_ENABLED":
+					// Removed: fail2ban enabled setting (v1.0 migration to Suricata)
+				case "LOGIN_MONITOR_ENABLED":
+					services["login_monitor"] = enabled
+				}
 			}
 		}
 	}

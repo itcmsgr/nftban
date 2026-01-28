@@ -27,6 +27,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
 
 // FilterConfig represents a single Suricata filter configuration
@@ -80,6 +82,15 @@ func LoadConfig(configDir string) (*Config, error) {
 		// Local file is optional
 		if !os.IsNotExist(err) {
 			return nil, fmt.Errorf("failed to parse %s: %w", localPath, err)
+		}
+	}
+
+	// Central override (nftban.conf.local — highest priority)
+	nftbanCfg := nftbanconf.MustLoad()
+	centralLocal := nftbanCfg.ConfigDir + "/nftban.conf.local"
+	if err := cfg.parseConfigFile(centralLocal); err != nil {
+		if !os.IsNotExist(err) {
+			return nil, fmt.Errorf("failed to parse %s: %w", centralLocal, err)
 		}
 	}
 

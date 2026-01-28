@@ -158,13 +158,13 @@ _zabbix_firewall_allow() {
     [[ -z "$server_ip" ]] && return 1
 
     # Check if rule already exists
-    if nft list chain inet nftban output 2>/dev/null | grep -q "daddr $server_ip.*dport $port"; then
+    if nft list chain ${NFTBAN_TABLE_IPV4} output 2>/dev/null | grep -q "daddr $server_ip.*dport $port"; then
         return 0  # Already exists
     fi
 
     # Add outbound rule to nftban output chain
     # Use handle-based insertion for proper priority
-    if nft add rule inet nftban output ip daddr "$server_ip" tcp dport "$port" accept comment \"zabbix-export\" 2>/dev/null; then
+    if nft add rule ${NFTBAN_TABLE_IPV4} output ip daddr "$server_ip" tcp dport "$port" accept comment \"zabbix-export\" 2>/dev/null; then
         return 0
     fi
 
@@ -193,12 +193,12 @@ _zabbix_firewall_allow_inbound() {
     [[ -z "$server_ip" ]] && return 1
 
     # Check if rule already exists
-    if nft list chain inet nftban input 2>/dev/null | grep -q "saddr $server_ip.*dport $port"; then
+    if nft list chain ${NFTBAN_TABLE_IPV4} input 2>/dev/null | grep -q "saddr $server_ip.*dport $port"; then
         return 0  # Already exists
     fi
 
     # Add inbound rule to nftban input chain
-    if nft add rule inet nftban input ip saddr "$server_ip" tcp dport "$port" accept comment \"zabbix-agent\" 2>/dev/null; then
+    if nft add rule ${NFTBAN_TABLE_IPV4} input ip saddr "$server_ip" tcp dport "$port" accept comment \"zabbix-agent\" 2>/dev/null; then
         return 0
     fi
 
@@ -227,10 +227,10 @@ _zabbix_firewall_remove() {
 
     # Find and delete rule with zabbix-export comment
     local handle
-    handle=$(nft -a list chain inet nftban output 2>/dev/null | grep "zabbix-export" | grep -oP 'handle \K\d+')
+    handle=$(nft -a list chain ${NFTBAN_TABLE_IPV4} output 2>/dev/null | grep "zabbix-export" | grep -oP 'handle \K\d+')
 
     if [[ -n "$handle" ]]; then
-        nft delete rule inet nftban output handle "$handle" 2>/dev/null && return 0
+        nft delete rule ${NFTBAN_TABLE_IPV4} output handle "$handle" 2>/dev/null && return 0
     fi
 
     # Try ip family
@@ -853,7 +853,7 @@ _cmd_zabbix_push() {
             # Collect basic metrics
             local version bans_total
             version=$(cat /etc/nftban/VERSION 2>/dev/null || echo "unknown")
-            bans_total=$(nft list set inet nftban blacklist_ipv4 2>/dev/null | grep -c "elements" || echo "0")
+            bans_total=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | grep -c "elements" || echo "0")
 
             echo "Sending basic metrics..."
             zabbix_sender -z "$server" -p "$port" -s "$hostname" \

@@ -282,6 +282,13 @@ func (m *Module) loadConfig() error {
 		m.parseShellConfig(string(data))
 	}
 
+	// Central override (nftban.conf.local — highest priority)
+	cfg := nftbanconf.MustLoad()
+	centralLocal := filepath.Join(cfg.ConfigDir, "nftban.conf.local")
+	if data, err := os.ReadFile(centralLocal); err == nil {
+		m.parseShellConfig(string(data))
+	}
+
 	// Rebuild scorer with loaded configuration
 	m.scorer = detector.NewScorer(m.buildScorerConfig())
 

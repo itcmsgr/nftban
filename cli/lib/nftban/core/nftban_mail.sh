@@ -24,6 +24,8 @@
 # meta:inventory.privileges="none"
 # =============================================================================
 
+set -Eeuo pipefail
+
 # Guard against multiple sourcing
 [[ -n "${NFTBAN_MAIL_LOADED:-}" ]] && return 0
 readonly NFTBAN_MAIL_LOADED=1
@@ -459,11 +461,11 @@ nftban_mail_template_replace() {
     # Build version HTML
     local version_html=""
     if [[ "${NFTBAN_VERSION_INCLUDE:-YES}" == "YES" ]]; then
-        version_html="Version: ${NFTBAN_VERSION:-0.6.0}"
+        version_html="Version: ${NFTBAN_VERSION:-1.6.1}"
     fi
 
     # Replace variables
-    content="${content//\{NFTBAN_VERSION\}/${NFTBAN_VERSION:-0.6.0}}"
+    content="${content//\{NFTBAN_VERSION\}/${NFTBAN_VERSION:-1.6.1}}"
     content="${content//\{HOSTNAME\}/$hostname_val}"
     content="${content//\{SERVER_IP\}/$server_ip}"
     content="${content//\{DATE\}/$date_val}"

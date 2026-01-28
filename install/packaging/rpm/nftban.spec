@@ -72,7 +72,12 @@ local schema_file = "/usr/lib/nftban/lib/nft_schema.sh"
 local f = io.open(schema_file, "r")
 if f then
     f:close()
+    -- Try multiple paths for chattr (PATH may be minimal during RPM transactions)
+    os.execute("/usr/bin/chattr -i " .. schema_file .. " 2>/dev/null")
+    os.execute("/bin/chattr -i " .. schema_file .. " 2>/dev/null")
     os.execute("chattr -i " .. schema_file .. " 2>/dev/null")
+    -- Also remove from entire lib dir in case other files are immutable
+    os.execute("/usr/bin/chattr -i -R /usr/lib/nftban 2>/dev/null")
 end
 
 %pre

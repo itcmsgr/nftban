@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Consolidated Build Script
+# NFTBan v1.6.1 - Consolidated Build Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="build"

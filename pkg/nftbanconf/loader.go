@@ -184,12 +184,20 @@ var (
 	DefaultConfigFile = "/etc/nftban/nftban.conf"
 )
 
-// Load reads configuration from /etc/nftban/nftban.conf
+// Load reads configuration from /etc/nftban/nftban.conf + nftban.conf.local
+// Central config architecture: nftban.conf (package defaults) is loaded first,
+// then nftban.conf.local (user overrides) is overlaid on top.
 // This is called once at startup - config is cached
 func Load() (*Config, error) {
 	loadOnce.Do(func() {
 		globalConfig, loadErr = loadFromFile(DefaultConfigFile)
 		if loadErr == nil {
+			// Overlay central user overrides from nftban.conf.local
+			// This is the SINGLE central override file — no symlinks, no scattered .local files
+			localFile := DefaultConfigFile + ".local"
+			if _, err := os.Stat(localFile); err == nil {
+				overlayFromFile(globalConfig, localFile)
+			}
 			globalPaths = derivePaths(globalConfig)
 			globalTimeouts = defaultTimeouts()
 			globalNFT = defaultNFTables()
@@ -398,6 +406,122 @@ func loadFromFile(path string) (*Config, error) {
 	}
 
 	return cfg, scanner.Err()
+}
+
+// overlayFromFile reads nftban.conf.local and overlays values onto existing config.
+// Central config architecture: nftban.conf.local is the SINGLE user override file.
+// All Go and Bash components read from this same file — no symlinks needed.
+func overlayFromFile(cfg *Config, path string) {
+	file, err := os.Open(path)
+	if err != nil {
+		return
+	}
+	defer file.Close()
+
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+		line := strings.TrimSpace(scanner.Text())
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+
+		key := strings.TrimSpace(parts[0])
+		value := strings.TrimSpace(parts[1])
+		value = strings.Trim(value, `"'`)
+
+		// Same switch as loadFromFile — only override if key is present
+		switch key {
+		case "NFTBAN_VERSION":
+			cfg.Version = value
+		case "NFTBAN_BIN":
+			cfg.Bin = value
+		case "NFTBAN_CORE_BIN":
+			cfg.CoreBin = value
+		case "NFTBAN_UI_BIN":
+			cfg.UIBin = value
+		case "NFTBAN_AUTH_BIN":
+			cfg.AuthBin = value
+		case "NFTBAN_LIB_DIR":
+			cfg.LibDir = value
+		case "NFTBAN_CONFIG_DIR":
+			cfg.ConfigDir = value
+		case "NFTBAN_DATA_DIR":
+			cfg.DataDir = value
+		case "NFTBAN_LOG_DIR":
+			cfg.LogDir = value
+		case "NFTBAN_CACHE_DIR":
+			cfg.CacheDir = value
+		case "NFTBAN_RUN_DIR":
+			cfg.RunDir = value
+		case "NFTBAN_METRICS_ENABLED":
+			cfg.MetricsEnabled = parseBool(value)
+		case "NFTBAN_METRICS_BACKEND":
+			cfg.MetricsBackend = value
+		case "NFTBAN_METRICS_SAMPLING_INTERVAL":
+			cfg.MetricsSamplingInterval = parseInt(value, cfg.MetricsSamplingInterval)
+		case "NFTBAN_METRICS_MAX_SAMPLES":
+			cfg.MetricsMaxSamples = parseInt(value, cfg.MetricsMaxSamples)
+		case "NFTBAN_PROMETHEUS_DIR":
+			cfg.PrometheusDir = value
+		case "NFTBAN_METRICS_PROMETHEUS_ADDR":
+			cfg.MetricsPrometheusAddr = value
+		case "NFTBAN_METRICS_NODE_EXPORTER_ADDR":
+			cfg.MetricsNodeExporterAddr = value
+		case "NFTBAN_METRICS_VICTORIA_ADDR":
+			cfg.MetricsVictoriaAddr = value
+		case "NFTBAN_GEOIP_ENABLED":
+			cfg.GeoIPEnabled = parseBool(value)
+		case "NFTBAN_GEOIP_LICENSE_KEY":
+			cfg.GeoIPLicenseKey = value
+		case "NFTBAN_FEEDS_ENABLED":
+			cfg.FeedsEnabled = parseBool(value)
+		case "NFTBAN_FEEDS_AUTO_UPDATE":
+			cfg.FeedsAutoUpdate = parseBool(value)
+		case "NFTBAN_SURICATA_ENABLED":
+			cfg.SuricataEnabled = parseBool(value)
+		case "NFTBAN_GUI_ENABLED":
+			cfg.GUIEnabled = parseBool(value)
+		case "NFTBAN_GUI_ADDR":
+			cfg.GUIAddr = value
+		case "NFTBAN_PORTSCAN_ENABLED":
+			cfg.PortscanEnabled = parseBool(value)
+		case "NFTBAN_DDOS_ENABLED":
+			cfg.DDoSEnabled = parseBool(value)
+		case "NFTBAN_LOGIN_MONITOR_ENABLED":
+			cfg.LoginMonitorEnabled = parseBool(value)
+		case "NFTBAN_SURICATA_EVE_LOG":
+			cfg.SuricataEveLog = value
+		case "NFTBAN_SURICATA_LOG_DIR":
+			cfg.SuricataLogDir = value
+		case "NFTBAN_SURICATA_BAN_THRESHOLD":
+			cfg.SuricataBanThreshold = parseInt(value, cfg.SuricataBanThreshold)
+		case "NFTBAN_SURICATA_SCORE_DECAY":
+			cfg.SuricataScoreDecay = parseInt(value, cfg.SuricataScoreDecay)
+		case "NFTBAN_SURICATA_CLOUDFLARE_WHITELIST":
+			cfg.SuricataCloudflareWhitelist = parseBool(value)
+		case "NFTBAN_GRAFANA_ENABLED":
+			cfg.GrafanaEnabled = parseBool(value)
+		case "NFTBAN_GRAFANA_URL":
+			cfg.GrafanaURL = value
+		case "NFTBAN_GRAFANA_API_KEY":
+			cfg.GrafanaAPIKey = value
+		case "NFTBAN_LOG_LEVEL":
+			cfg.LogLevel = value
+		case "NFTBAN_COLOR_OUTPUT":
+			cfg.ColorOutput = parseBool(value)
+		case "NFTBAN_DEBUG_TRACE":
+			cfg.DebugTrace = parseBool(value)
+		case "NFTBAN_DEBUG_TRACE_LOG":
+			cfg.DebugTraceLog = value
+		case "NFTBAN_DISTRO_CONF_DIR":
+			cfg.DistroConfDir = value
+		}
+	}
 }
 
 // defaultConfig returns config with sane defaults

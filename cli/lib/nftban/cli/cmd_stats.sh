@@ -324,7 +324,7 @@ nftban_stats_cmd_dashboard() {
 
         # Count total bans from log
         if [[ -f "${NFTBAN_BAN_LOG:-/var/log/nftban/ban.log}" ]]; then
-            total_bans=$(grep -c "^" "${NFTBAN_BAN_LOG}" 2>/dev/null || echo "0")
+            total_bans=$(grep -c "^" "${NFTBAN_BAN_LOG}" 2>/dev/null || true)
         fi
 
         # Count active bans - TRY API FIRST (NO CLI overhead when watchdog running)
@@ -354,24 +354,24 @@ nftban_stats_cmd_dashboard() {
 
             # Blacklist (contains permanent + temporary with timeout)
             if nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 &>/dev/null 2>&1; then
-                black_v4=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | { grep -oP '\d+\.\d+\.\d+\.\d+' || true; } | wc -l 2>/dev/null || echo "0")
+                black_v4=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | { grep -oP '\d+\.\d+\.\d+\.\d+' || true; } | wc -l) || black_v4=0
                 black_v4=${black_v4//[^0-9]/}
                 black_v4=${black_v4:-0}
             fi
             if nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 &>/dev/null 2>&1; then
-                black_v6=$(nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*|[0-9a-fA-F:]+:[0-9a-fA-F:]+' || true; } | wc -l 2>/dev/null || echo "0")
+                black_v6=$(nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*|[0-9a-fA-F:]+:[0-9a-fA-F:]+' || true; } | wc -l) || black_v6=0
                 black_v6=${black_v6//[^0-9]/}
                 black_v6=${black_v6:-0}
             fi
 
             # Whitelist
             if nft list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 &>/dev/null 2>&1; then
-                whitelist_v4=$(nft list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | { grep -oP '\d+\.\d+\.\d+\.\d+' || true; } | wc -l 2>/dev/null || echo "0")
+                whitelist_v4=$(nft list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | { grep -oP '\d+\.\d+\.\d+\.\d+' || true; } | wc -l) || whitelist_v4=0
                 whitelist_v4=${whitelist_v4//[^0-9]/}
                 whitelist_v4=${whitelist_v4:-0}
             fi
             if nft list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 &>/dev/null 2>&1; then
-                whitelist_v6=$(nft list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*|[0-9a-fA-F:]+:[0-9a-fA-F:]+' || true; } | wc -l 2>/dev/null || echo "0")
+                whitelist_v6=$(nft list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*|[0-9a-fA-F:]+:[0-9a-fA-F:]+' || true; } | wc -l) || whitelist_v6=0
                 whitelist_v6=${whitelist_v6//[^0-9]/}
                 whitelist_v6=${whitelist_v6:-0}
             fi
@@ -405,7 +405,7 @@ nftban_stats_cmd_dashboard() {
 
         if declare -f nftban_stats_top_countries >/dev/null 2>&1; then
             top_countries=$(nftban_stats_top_countries 10 "$since" "$until" 2>/dev/null || echo "[]")
-            total_countries=$(echo "$top_countries" | jq '. | length' 2>/dev/null || echo "0")
+            total_countries=$(echo "$top_countries" | jq '. | length' 2>/dev/null) || total_countries=0
         fi
 
         if declare -f nftban_stats_top_jails >/dev/null 2>&1; then
@@ -423,10 +423,10 @@ nftban_stats_cmd_dashboard() {
             # Count portscan bans in last 24 hours
             local yesterday_ts
             yesterday_ts=$(date -d '24 hours ago' +%s)
-            portscan_blocked_24h=$(jq -r --arg ts "$yesterday_ts" 'select(.source == "portscan" and .event == "ban") | select((.ts | fromdateiso8601) >= ($ts | tonumber))' "$actions_log" 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
+            portscan_blocked_24h=$(jq -r --arg ts "$yesterday_ts" 'select(.source == "portscan" and .event == "ban") | select((.ts | fromdateiso8601) >= ($ts | tonumber))' "$actions_log" 2>/dev/null | jq -s '. | length' 2>/dev/null) || portscan_blocked_24h=0
 
             # Count total portscan bans
-            portscan_blocked_total=$(jq -r 'select(.source == "portscan" and .event == "ban")' "$actions_log" 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
+            portscan_blocked_total=$(jq -r 'select(.source == "portscan" and .event == "ban")' "$actions_log" 2>/dev/null | jq -s '. | length' 2>/dev/null) || portscan_blocked_total=0
         fi
 
         # Get monitored ports count and enabled status from portscan config
@@ -485,17 +485,17 @@ nftban_stats_cmd_dashboard() {
         if [[ "$ddos_enabled" == "true" ]]; then
             # Try to get counters from ddos chain
             local ddos_counter_output
-            ddos_counter_output=$(nft list chain inet nftban ddos_protection 2>/dev/null || nft list chain ip nftban ddos_protection 2>/dev/null || true)
+            ddos_counter_output=$(nft list chain ${NFTBAN_TABLE_IPV4} ddos_protection 2>/dev/null || nft list chain ${NFTBAN_TABLE_IPV6} ddos_protection 2>/dev/null || true)
             if [[ -n "$ddos_counter_output" ]]; then
                 # Extract packets and bytes from counter output
-                ddos_packets_dropped=$(echo "$ddos_counter_output" | grep -oP 'packets \K[0-9]+' | head -1 || echo "0")
-                ddos_bytes_dropped=$(echo "$ddos_counter_output" | grep -oP 'bytes \K[0-9]+' | head -1 || echo "0")
+                ddos_packets_dropped=$(echo "$ddos_counter_output" | grep -oP 'packets \K[0-9]+' | head -1) || ddos_packets_dropped=0
+                ddos_bytes_dropped=$(echo "$ddos_counter_output" | grep -oP 'bytes \K[0-9]+' | head -1) || ddos_bytes_dropped=0
             fi
 
             # Get DDoS bans from actions log
             if [[ -f "$actions_log" ]]; then
-                ddos_blocked_24h=$(jq -r --arg ts "$yesterday_ts" 'select(.source == "ddos" and .event == "ban") | select((.ts | fromdateiso8601) >= ($ts | tonumber))' "$actions_log" 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
-                ddos_blocked_total=$(jq -r 'select(.source == "ddos" and .event == "ban")' "$actions_log" 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
+                ddos_blocked_24h=$(jq -r --arg ts "$yesterday_ts" 'select(.source == "ddos" and .event == "ban") | select((.ts | fromdateiso8601) >= ($ts | tonumber))' "$actions_log" 2>/dev/null | jq -s '. | length' 2>/dev/null) || ddos_blocked_24h=0
+                ddos_blocked_total=$(jq -r 'select(.source == "ddos" and .event == "ban")' "$actions_log" 2>/dev/null | jq -s '. | length' 2>/dev/null) || ddos_blocked_total=0
             fi
         fi
 
@@ -851,7 +851,7 @@ nftban_stats_cmd_ip() {
         local data
         if command -v jq &>/dev/null; then
             local total
-            total=$(echo "$history" | jq '. | length' 2>/dev/null || echo "0")
+            total=$(echo "$history" | jq '. | length' 2>/dev/null) || total=0
             data=$(jq -n \
                 --arg ip "$ip" \
                 --arg total "$total" \

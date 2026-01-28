@@ -5,19 +5,27 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Easy user interface for Suricata IDS management
 #
-# meta:name=cmd_suricata
-# meta:type=cli
-# meta:header=Suricata IDS Management
-# meta:version=1.0.0
+# meta:name="cmd_suricata"
+# meta:type="cli"
+# meta:header="Suricata IDS Management"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=User-friendly CLI for Suricata IDS installation and management
-# meta:input=Commands: install, enable, disable, status, rules
-# meta:output=Automated Suricata setup and control
+# meta:description="User-friendly CLI for Suricata IDS installation and management"
+# meta:input="Commands: install, enable, disable, status, rules"
+# meta:output="Automated Suricata setup and control"
 #
-# meta:created_date=2025-12-28
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+#
+# meta:created_date="2025-12-28"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -183,21 +191,23 @@ cmd_suricata_install() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    # Set config flags
-    if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-        if grep -q "^ENABLE_IDS_INTEGRATION=" "${NFTBAN_CONFIG_DIR}/nftban.conf"; then
-            sed -i 's/^ENABLE_IDS_INTEGRATION=.*/ENABLE_IDS_INTEGRATION=1/' "${NFTBAN_CONFIG_DIR}/nftban.conf"
-        else
-            echo "ENABLE_IDS_INTEGRATION=1" >> "${NFTBAN_CONFIG_DIR}/nftban.conf"
-        fi
+    # Set config flags in nftban.conf.local (user overrides — survives package upgrades)
+    # Package defaults in nftban.conf are never modified by user operations
+    local local_conf="${NFTBAN_CONFIG_DIR}/nftban.conf.local"
+    touch "$local_conf"
 
-        if grep -q "^NFTBAN_SURICATA_ENABLED=" "${NFTBAN_CONFIG_DIR}/nftban.conf"; then
-            sed -i 's/^NFTBAN_SURICATA_ENABLED=.*/NFTBAN_SURICATA_ENABLED=true/' "${NFTBAN_CONFIG_DIR}/nftban.conf"
-        else
-            echo "NFTBAN_SURICATA_ENABLED=true" >> "${NFTBAN_CONFIG_DIR}/nftban.conf"
-        fi
-        echo "  ✓ NFTBan config updated (IDS enabled)"
+    if grep -q "^ENABLE_IDS_INTEGRATION=" "$local_conf"; then
+        sed -i 's/^ENABLE_IDS_INTEGRATION=.*/ENABLE_IDS_INTEGRATION=1/' "$local_conf"
+    else
+        echo "ENABLE_IDS_INTEGRATION=1" >> "$local_conf"
     fi
+
+    if grep -q "^NFTBAN_SURICATA_ENABLED=" "$local_conf"; then
+        sed -i 's/^NFTBAN_SURICATA_ENABLED=.*/NFTBAN_SURICATA_ENABLED=true/' "$local_conf"
+    else
+        echo "NFTBAN_SURICATA_ENABLED=true" >> "$local_conf"
+    fi
+    echo "  ✓ NFTBan config updated (IDS enabled)"
 
     # Enable Suricata rules update timer (weekly updates)
     if [[ -f /usr/lib/systemd/system/nftban-suricata-update.timer ]]; then

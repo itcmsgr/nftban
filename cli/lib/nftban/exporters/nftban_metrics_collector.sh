@@ -149,14 +149,14 @@ collect_ban_metrics() {
     # Active bans from nftables
     if command -v nft &>/dev/null; then
         local ipv4 ipv6
-        ipv4=$(nft -j list set inet nftban blacklist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-        ipv6=$(nft -j list set inet nftban blacklist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        ipv4=$(nft -j list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        ipv6=$(nft -j list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
         active=$((ipv4 + ipv6))
 
         # Whitelist
         local wl4 wl6
-        wl4=$(nft -j list set inet nftban whitelist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-        wl6=$(nft -j list set inet nftban whitelist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        wl4=$(nft -j list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        wl6=$(nft -j list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
         whitelist=$((wl4 + wl6))
     fi
 
@@ -173,7 +173,7 @@ collect_ban_metrics() {
     fi
 
     # Permanent bans
-    [[ -f "${NFTBAN_CONFIG_DIR}/permanent.list" ]] && permanent=$(grep -cE "^[0-9]" "${NFTBAN_CONFIG_DIR}/permanent.list" 2>/dev/null || echo "0")
+    [[ -f "${NFTBAN_CONFIG_DIR}/permanent.list" ]] && { permanent=$(grep -cE "^[0-9]" "${NFTBAN_CONFIG_DIR}/permanent.list" 2>/dev/null) || permanent=0; }
 
     cat <<EOF
 {
@@ -198,7 +198,7 @@ collect_memory_metrics() {
 
     if [[ "$pid" != "0" ]] && [[ -d "/proc/$pid" ]]; then
         rss=$(awk '/VmRSS/ {print $2 * 1024}' "/proc/$pid/status" 2>/dev/null || echo "0")
-        fds=$(ls -1 "/proc/$pid/fd" 2>/dev/null | wc -l || echo "0")
+        fds=$(ls -1 "/proc/$pid/fd" 2>/dev/null | wc -l) || fds=0
         threads=$(awk '/Threads/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo "0")
     fi
 
@@ -468,7 +468,7 @@ collect_suricata_metrics() {
     # Bans from suricata
     local bans_log="${NFTBAN_LOG_DIR}/bans.log"
     if [[ -f "$bans_log" ]]; then
-        bans_total=$(grep -ci "suricata" "$bans_log" 2>/dev/null || echo "0")
+        bans_total=$(grep -ci "suricata" "$bans_log" 2>/dev/null) || bans_total=0
     fi
 
     # Rule profile from config
@@ -486,13 +486,13 @@ collect_suricata_metrics() {
     # Rules count (approximate from rules directory)
     local rules_dir="/var/lib/suricata/rules"
     if [[ -d "$rules_dir" ]]; then
-        rules_total=$(grep -rh "^alert\|^drop\|^reject" "$rules_dir"/*.rules 2>/dev/null | wc -l || echo "0")
+        rules_total=$(grep -rh "^alert\|^drop\|^reject" "$rules_dir"/*.rules 2>/dev/null | wc -l) || rules_total=0
     fi
 
     # EVE parse errors from nftban suricata log
     local suricata_log="${NFTBAN_LOG_DIR}/suricata.log"
     if [[ -f "$suricata_log" ]]; then
-        eve_errors=$(grep -ci "parse.*error\|invalid.*json\|malformed" "$suricata_log" 2>/dev/null || echo "0")
+        eve_errors=$(grep -ci "parse.*error\|invalid.*json\|malformed" "$suricata_log" 2>/dev/null) || eve_errors=0
     fi
 
     cat <<EOF
@@ -535,13 +535,13 @@ collect_eventbus_metrics() {
     # Count events by type from bans.log
     if [[ -f "$bans_log" ]]; then
         # Format: TIMESTAMP|SOURCE|IP|COUNTRY|ACTION
-        ban=$(grep -c "|BAN$\||BAN|" "$bans_log" 2>/dev/null || echo "0")
-        unban=$(grep -c "|UNBAN$\||UNBAN|" "$bans_log" 2>/dev/null || echo "0")
-        login_fail=$(grep -ci "loginmon\|login\|ssh\|auth" "$bans_log" 2>/dev/null || echo "0")
-        ddos=$(grep -ci "ddos" "$bans_log" 2>/dev/null || echo "0")
-        portscan=$(grep -ci "portscan\|scan" "$bans_log" 2>/dev/null || echo "0")
-        suricata=$(grep -ci "suricata" "$bans_log" 2>/dev/null || echo "0")
-        feed_sync=$(grep -ci "feed" "$bans_log" 2>/dev/null || echo "0")
+        ban=$(grep -c "|BAN$\||BAN|" "$bans_log" 2>/dev/null) || ban=0
+        unban=$(grep -c "|UNBAN$\||UNBAN|" "$bans_log" 2>/dev/null) || unban=0
+        login_fail=$(grep -ci "loginmon\|login\|ssh\|auth" "$bans_log" 2>/dev/null) || login_fail=0
+        ddos=$(grep -ci "ddos" "$bans_log" 2>/dev/null) || ddos=0
+        portscan=$(grep -ci "portscan\|scan" "$bans_log" 2>/dev/null) || portscan=0
+        suricata=$(grep -ci "suricata" "$bans_log" 2>/dev/null) || suricata=0
+        feed_sync=$(grep -ci "feed" "$bans_log" 2>/dev/null) || feed_sync=0
 
         # Estimate total if not from stats
         [[ "$events_total" -eq 0 ]] && events_total=$((ban + unban))
@@ -596,19 +596,19 @@ collect_nftables_perf_metrics() {
     # Count rules by table using nft
     if command -v nft &>/dev/null; then
         # Total rules (approximate - count lines with rule-like content)
-        rules_total=$(nft list ruleset 2>/dev/null | grep -cE "^\s+(accept|drop|reject|counter|jump|goto|return)" || echo "0")
+        rules_total=$(nft list ruleset 2>/dev/null | grep -cE "^\s+(accept|drop|reject|counter|jump|goto|return)") || rules_total=0
 
         # Rules in nftban table
-        nftban_rules=$(nft list table inet nftban 2>/dev/null | grep -cE "^\s+(accept|drop|reject|counter|jump|goto|return)" || echo "0")
+        nftban_rules=$(nft list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -cE "^\s+(accept|drop|reject|counter|jump|goto|return)") || nftban_rules=0
 
         # Sets count
-        sets_total=$(nft list sets 2>/dev/null | grep -c "^\\s*set " || echo "0")
+        sets_total=$(nft list sets 2>/dev/null | grep -c "^\\s*set ") || sets_total=0
 
         # Set elements - use JSON output for accuracy
-        bl_ipv4=$(nft -j list set inet nftban blacklist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-        bl_ipv6=$(nft -j list set inet nftban blacklist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-        wl_ipv4=$(nft -j list set inet nftban whitelist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-        wl_ipv6=$(nft -j list set inet nftban whitelist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        bl_ipv4=$(nft -j list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        bl_ipv6=$(nft -j list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        wl_ipv4=$(nft -j list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+        wl_ipv6=$(nft -j list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
     fi
 
     cat <<EOF
@@ -644,21 +644,21 @@ collect_ban_details_metrics() {
 
     if [[ -f "$bans_log" ]]; then
         # Count bans by source (SOURCE is typically column 2 or 3)
-        bans_by_source_manual=$(grep -ci "|manual|" "$bans_log" 2>/dev/null || echo "0")
-        bans_by_source_feeds=$(grep -ci "|feed" "$bans_log" 2>/dev/null || echo "0")
-        bans_by_source_loginmon=$(grep -ciE "|login|ssh|auth" "$bans_log" 2>/dev/null || echo "0")
-        bans_by_source_portscan=$(grep -ci "|portscan\||scan|" "$bans_log" 2>/dev/null || echo "0")
-        bans_by_source_ddos=$(grep -ci "|ddos|" "$bans_log" 2>/dev/null || echo "0")
-        bans_by_source_suricata=$(grep -ci "|suricata|" "$bans_log" 2>/dev/null || echo "0")
-        bans_by_source_geoban=$(grep -ci "|geoban\||geo|" "$bans_log" 2>/dev/null || echo "0")
+        bans_by_source_manual=$(grep -ci "|manual|" "$bans_log" 2>/dev/null) || bans_by_source_manual=0
+        bans_by_source_feeds=$(grep -ci "|feed" "$bans_log" 2>/dev/null) || bans_by_source_feeds=0
+        bans_by_source_loginmon=$(grep -ciE "|login|ssh|auth" "$bans_log" 2>/dev/null) || bans_by_source_loginmon=0
+        bans_by_source_portscan=$(grep -ci "|portscan\||scan|" "$bans_log" 2>/dev/null) || bans_by_source_portscan=0
+        bans_by_source_ddos=$(grep -ci "|ddos|" "$bans_log" 2>/dev/null) || bans_by_source_ddos=0
+        bans_by_source_suricata=$(grep -ci "|suricata|" "$bans_log" 2>/dev/null) || bans_by_source_suricata=0
+        bans_by_source_geoban=$(grep -ci "|geoban\||geo|" "$bans_log" 2>/dev/null) || bans_by_source_geoban=0
 
         # Count recidivists (IPs that appear multiple times)
-        recidivist_total=$(awk -F'|' '{print $3}' "$bans_log" 2>/dev/null | sort | uniq -d | wc -l || echo "0")
+        recidivist_total=$(awk -F'|' '{print $3}' "$bans_log" 2>/dev/null | sort | uniq -d | wc -l) || recidivist_total=0
     fi
 
     # Persistent/permanent bans
     if [[ -f "$permanent_file" ]]; then
-        persistent_total=$(grep -cE "^[0-9]" "$permanent_file" 2>/dev/null || echo "0")
+        persistent_total=$(grep -cE "^[0-9]" "$permanent_file" 2>/dev/null) || persistent_total=0
     fi
 
     # Escalations from escalation log if exists
@@ -692,19 +692,27 @@ EOF
 collect_nftables_metrics() {
     local sets=0 elements=0 rules=0 packets_ipv4=0 packets_ipv6=0
 
-    if command -v nft &>/dev/null && nft list table inet nftban &>/dev/null 2>&1; then
-        sets=$(nft list sets inet nftban 2>/dev/null | grep -c "set " || echo "0")
+    if command -v nft &>/dev/null && nft list table ${NFTBAN_TABLE_IPV4} &>/dev/null 2>&1; then
+        sets=$(nft list sets ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "set ") || sets=0
+        local sets6
+        sets6=$(nft list sets ${NFTBAN_TABLE_IPV6} 2>/dev/null | grep -c "set ") || sets6=0
+        sets=$((sets + sets6))
 
-        for set_name in blacklist_ipv4 blacklist_ipv6 whitelist_ipv4 whitelist_ipv6; do
+        for set_name in blacklist_ipv4 whitelist_ipv4; do
             local count
-            count=$(nft -j list set inet nftban "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+            count=$(nft -j list set ${NFTBAN_TABLE_IPV4} "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
+            elements=$((elements + count))
+        done
+        for set_name in blacklist_ipv6 whitelist_ipv6; do
+            local count
+            count=$(nft -j list set ${NFTBAN_TABLE_IPV6} "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
             elements=$((elements + count))
         done
 
-        rules=$(nft list table inet nftban 2>/dev/null | grep -cE "^\s+(accept|drop|reject|return|jump|goto)" || echo "0")
+        rules=$(nft list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -cE "^\s+(accept|drop|reject|return|jump|goto)") || rules=0
 
-        packets_ipv4=$(nft -j list chain inet nftban input 2>/dev/null | jq -r '[.nftables[]?.rule?.expr[]? | select(.counter) | .counter.packets] | add // 0' 2>/dev/null || echo "0")
-        packets_ipv6=$(nft -j list chain inet nftban input6 2>/dev/null | jq -r '[.nftables[]?.rule?.expr[]? | select(.counter) | .counter.packets] | add // 0' 2>/dev/null || echo "0")
+        packets_ipv4=$(nft -j list chain ${NFTBAN_TABLE_IPV4} input 2>/dev/null | jq -r '[.nftables[]?.rule?.expr[]? | select(.counter) | .counter.packets] | add // 0' 2>/dev/null || echo "0")
+        packets_ipv6=$(nft -j list chain ${NFTBAN_TABLE_IPV6} input6 2>/dev/null | jq -r '[.nftables[]?.rule?.expr[]? | select(.counter) | .counter.packets] | add // 0' 2>/dev/null || echo "0")
     fi
 
     cat <<EOF
@@ -735,16 +743,16 @@ collect_analytics_metrics() {
         local now cutoff
         now=$(date +%s)
         cutoff=$((now - 86400))
-        unique_ips_24h=$(awk -F'|' -v cutoff="$cutoff" '$1 ~ /^[0-9]+$/ && $1 >= cutoff {print $3}' "$bans_log" 2>/dev/null | sort -u | wc -l || echo "0")
+        unique_ips_24h=$(awk -F'|' -v cutoff="$cutoff" '$1 ~ /^[0-9]+$/ && $1 >= cutoff {print $3}' "$bans_log" 2>/dev/null | sort -u | wc -l) || unique_ips_24h=0
 
         # Recidivism rate (IPs banned >1 time / total unique IPs * 100)
         local total_unique repeat_ips
-        total_unique=$(awk -F'|' '{print $3}' "$bans_log" 2>/dev/null | sort -u | wc -l || echo "1")
-        repeat_ips=$(awk -F'|' '{print $3}' "$bans_log" 2>/dev/null | sort | uniq -d | wc -l || echo "0")
+        total_unique=$(awk -F'|' '{print $3}' "$bans_log" 2>/dev/null | sort -u | wc -l) || total_unique=1
+        repeat_ips=$(awk -F'|' '{print $3}' "$bans_log" 2>/dev/null | sort | uniq -d | wc -l) || repeat_ips=0
         [[ "$total_unique" -gt 0 ]] && recidivism_rate=$(echo "scale=2; $repeat_ips / $total_unique * 100" | bc 2>/dev/null || echo "0")
 
         # Top attackers (IPs with >5 bans)
-        top_attackers=$(awk -F'|' '{print $3}' "$bans_log" 2>/dev/null | sort | uniq -c | awk '$1 > 5' | wc -l || echo "0")
+        top_attackers=$(awk -F'|' '{print $3}' "$bans_log" 2>/dev/null | sort | uniq -c | awk '$1 > 5' | wc -l) || top_attackers=0
     fi
 
     # Watchdog mode transitions from stats
@@ -840,9 +848,9 @@ collect_network_metrics() {
     # Connection stats from ss/netstat
     if command -v ss &>/dev/null; then
         connections_active=$(ss -s 2>/dev/null | awk '/^TCP:/{print $2}' || echo "0")
-        connections_established=$(ss -t state established 2>/dev/null | wc -l || echo "0")
-        connections_time_wait=$(ss -t state time-wait 2>/dev/null | wc -l || echo "0")
-        connections_close_wait=$(ss -t state close-wait 2>/dev/null | wc -l || echo "0")
+        connections_established=$(ss -t state established 2>/dev/null | wc -l) || connections_established=0
+        connections_time_wait=$(ss -t state time-wait 2>/dev/null | wc -l) || connections_time_wait=0
+        connections_close_wait=$(ss -t state close-wait 2>/dev/null | wc -l) || connections_close_wait=0
     fi
 
     cat <<EOF

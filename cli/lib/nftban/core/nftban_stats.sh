@@ -842,7 +842,7 @@ nftban_stats_generate_dashboard() {
         if nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null 2>&1; then
             local v4_output
             v4_output=$(nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null || true)
-            black_v4_temp=$(echo "$v4_output" | grep -oP 'timeout \d+[smhd]' 2>/dev/null | wc -l)
+            black_v4_temp=$(echo "$v4_output" | { grep -oP 'timeout \d+[smhd]' 2>/dev/null || true; } | wc -l)
             black_v4=$(echo "$v4_output" | { grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
             black_v4=${black_v4:-0}
             black_v4_temp=${black_v4_temp:-0}
@@ -852,7 +852,7 @@ nftban_stats_generate_dashboard() {
         if nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 &>/dev/null 2>&1; then
             local v6_output
             v6_output=$(nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 2>/dev/null || true)
-            black_v6_temp=$(echo "$v6_output" | grep -oP 'timeout \d+[smhd]' 2>/dev/null | wc -l)
+            black_v6_temp=$(echo "$v6_output" | { grep -oP 'timeout \d+[smhd]' 2>/dev/null || true; } | wc -l)
             black_v6=$(echo "$v6_output" | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' || true; } | wc -l 2>/dev/null || echo "0")
             black_v6=${black_v6:-0}
             black_v6_temp=${black_v6_temp:-0}

@@ -5,22 +5,30 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Display version information
 #
-# meta:name=cmd_version
-# meta:type=cli
-# meta:header=Version Command
-# meta:version=1.0.0
+# meta:name="cmd_version"
+# meta:type="cli"
+# meta:header="Version Command"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Display NFTBan version information
-# meta:input=Optional flags: --short, --numeric, --check
-# meta:output=Version information
+# meta:description="Display NFTBan version information"
+# meta:input="Optional flags: --short, --numeric, --check"
+# meta:output="Version information"
 #
 # **Inventory & Requirements**
-# meta:depends=bash,version.sh
+# meta:depends="bash,version.sh"
 #
-# meta:created_date=2025-11-24
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+#
+# meta:created_date="2025-11-24"
 # =============================================================================
 
 [[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
@@ -57,7 +65,7 @@ nftban_check_for_updates() {
 
     local repo="${NFTBAN_REPO:-itcmsgr/nftban}"
     local current_version
-    current_version="${NFTBAN_VERSION:-1.0.0}"
+    current_version="${NFTBAN_VERSION:-1.6.1}"
     current_version="${current_version#v}"
 
     echo ""

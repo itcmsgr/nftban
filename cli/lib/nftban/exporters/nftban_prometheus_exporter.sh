@@ -533,9 +533,9 @@ get_nftables_set_sizes() {
         return
     fi
 
-    # List all sets in inet nftban table
+    # List all sets in nftban tables (IPv4 + IPv6)
     local sets
-    sets=$(nft -j list table inet nftban 2>/dev/null | \
+    sets=$(nft -j list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | \
         jq -r '.nftables[] | select(.set != null) | .set.name' 2>/dev/null || \
         nft list table ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -oP 'set \K\w+' || echo "")
 
@@ -545,12 +545,18 @@ get_nftables_set_sizes() {
     fi
 
     # Count elements in each set
-    local set_name
+    local set_name nft_table
     for set_name in $sets; do
+        # Select correct table based on address family
+        if [[ "$set_name" == *_ipv6 ]]; then
+            nft_table="${NFTBAN_TABLE_IPV6}"
+        else
+            nft_table="${NFTBAN_TABLE_IPV4}"
+        fi
         # Check if set exists first
-        if nft list set inet nftban "$set_name" &>/dev/null; then
+        if nft list set ${nft_table} "$set_name" &>/dev/null; then
             local count
-            count=$(nft list set inet nftban "$set_name" 2>/dev/null | \
+            count=$(nft list set ${nft_table} "$set_name" 2>/dev/null | \
                 grep -oE '([0-9]{1,3}\.){3}[0-9]{1,3}|([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}' | \
                 wc -l || echo "0")
             echo "${set_name} ${count:-0}"

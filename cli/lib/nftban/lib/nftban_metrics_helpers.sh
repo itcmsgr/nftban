@@ -216,48 +216,46 @@ _get_metrics_backend() {
 # Set backend in config
 _set_metrics_backend() {
     local backend="$1"
+    local local_conf="${NFTBAN_CONFIG_DIR}/nftban.conf.local"
 
-    if [[ ! -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-        mkdir -p "${NFTBAN_CONFIG_DIR}"
-        touch "${NFTBAN_CONFIG_DIR}/nftban.conf"
-    fi
+    mkdir -p "${NFTBAN_CONFIG_DIR}"
+    touch "$local_conf"
 
-    if grep -q "^NFTBAN_METRICS_BACKEND=" "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null; then
-        sed -i "s|^NFTBAN_METRICS_BACKEND=.*|NFTBAN_METRICS_BACKEND=\"${backend}\"|" "${NFTBAN_CONFIG_DIR}/nftban.conf"
+    if grep -q "^NFTBAN_METRICS_BACKEND=" "$local_conf" 2>/dev/null; then
+        sed -i "s|^NFTBAN_METRICS_BACKEND=.*|NFTBAN_METRICS_BACKEND=\"${backend}\"|" "$local_conf"
     else
-        echo "NFTBAN_METRICS_BACKEND=\"${backend}\"" >> "${NFTBAN_CONFIG_DIR}/nftban.conf"
+        echo "NFTBAN_METRICS_BACKEND=\"${backend}\"" >> "$local_conf"
     fi
 
     # Also set metrics mode to true
-    if grep -q "^NFTBAN_METRICS_MODE=" "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null; then
-        sed -i 's|^NFTBAN_METRICS_MODE=.*|NFTBAN_METRICS_MODE="true"|' "${NFTBAN_CONFIG_DIR}/nftban.conf"
+    if grep -q "^NFTBAN_METRICS_MODE=" "$local_conf" 2>/dev/null; then
+        sed -i 's|^NFTBAN_METRICS_MODE=.*|NFTBAN_METRICS_MODE="true"|' "$local_conf"
     else
-        echo 'NFTBAN_METRICS_MODE="true"' >> "${NFTBAN_CONFIG_DIR}/nftban.conf"
+        echo 'NFTBAN_METRICS_MODE="true"' >> "$local_conf"
     fi
 }
 
-# Set agent/storage in config
+# Set agent/storage in config (writes to nftban.conf.local — user overrides)
 _set_metrics_agent_storage() {
     local agent="$1"
     local storage="$2"
+    local local_conf="${NFTBAN_CONFIG_DIR}/nftban.conf.local"
 
-    if [[ ! -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]]; then
-        mkdir -p "${NFTBAN_CONFIG_DIR}"
-        touch "${NFTBAN_CONFIG_DIR}/nftban.conf"
-    fi
+    mkdir -p "${NFTBAN_CONFIG_DIR}"
+    touch "$local_conf"
 
     # Update or add NFTBAN_METRICS_AGENT
-    if grep -q "^NFTBAN_METRICS_AGENT=" "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null; then
-        sed -i "s|^NFTBAN_METRICS_AGENT=.*|NFTBAN_METRICS_AGENT=\"${agent}\"|" "${NFTBAN_CONFIG_DIR}/nftban.conf"
+    if grep -q "^NFTBAN_METRICS_AGENT=" "$local_conf" 2>/dev/null; then
+        sed -i "s|^NFTBAN_METRICS_AGENT=.*|NFTBAN_METRICS_AGENT=\"${agent}\"|" "$local_conf"
     else
-        echo "NFTBAN_METRICS_AGENT=\"${agent}\"" >> "${NFTBAN_CONFIG_DIR}/nftban.conf"
+        echo "NFTBAN_METRICS_AGENT=\"${agent}\"" >> "$local_conf"
     fi
 
     # Update or add NFTBAN_METRICS_STORAGE
-    if grep -q "^NFTBAN_METRICS_STORAGE=" "${NFTBAN_CONFIG_DIR}/nftban.conf" 2>/dev/null; then
-        sed -i "s|^NFTBAN_METRICS_STORAGE=.*|NFTBAN_METRICS_STORAGE=\"${storage}\"|" "${NFTBAN_CONFIG_DIR}/nftban.conf"
+    if grep -q "^NFTBAN_METRICS_STORAGE=" "$local_conf" 2>/dev/null; then
+        sed -i "s|^NFTBAN_METRICS_STORAGE=.*|NFTBAN_METRICS_STORAGE=\"${storage}\"|" "$local_conf"
     else
-        echo "NFTBAN_METRICS_STORAGE=\"${storage}\"" >> "${NFTBAN_CONFIG_DIR}/nftban.conf"
+        echo "NFTBAN_METRICS_STORAGE=\"${storage}\"" >> "$local_conf"
     fi
 }
 
