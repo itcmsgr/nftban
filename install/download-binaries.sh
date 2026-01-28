@@ -133,7 +133,7 @@ verify_sha256() {
 
     if [[ ! -f "$sums_file" ]]; then
         warn "SHA256SUMS file not found"
-        return 1
+        return 2  # Not found (soft failure)
     fi
 
     local basename
@@ -142,8 +142,8 @@ verify_sha256() {
     expected=$(grep "$basename" "$sums_file" | awk '{print $1}')
 
     if [[ -z "$expected" ]]; then
-        warn "No SHA256 entry for $basename"
-        return 1
+        warn "No SHA256 entry for $basename (skipping verification)"
+        return 2  # Not found (soft failure)
     fi
 
     local actual
@@ -153,10 +153,11 @@ verify_sha256() {
         ok "SHA256 verification PASSED: $basename"
         return 0
     else
-        error "SHA256 verification FAILED: $basename"
-        error "Expected: $expected"
-        error "Got:      $actual"
-        return 1
+        # Hard failure - hash mismatch is a security issue
+        echo -e "${RED}[ ERROR  ]${NC} SHA256 verification FAILED: $basename" >&2
+        echo -e "${RED}[ ERROR  ]${NC} Expected: $expected" >&2
+        echo -e "${RED}[ ERROR  ]${NC} Got:      $actual" >&2
+        return 1  # Verification failed (hard failure)
     fi
 }
 
@@ -214,36 +215,46 @@ verify_all() {
     local binaries=("nftban-core-linux-${arch}" "nftband-linux-${arch}" "nftban-ui-linux-${arch}" "nftban-ui-auth-linux-${arch}")
 
     local verified=0
+    local skipped=0
     local failed=0
 
     for binary in "${binaries[@]}"; do
         local path="$DOWNLOAD_DIR/$binary"
         [[ ! -f "$path" ]] && continue
 
+        local result=0
         case "$method" in
             slsa)
-                if verify_slsa "$path" "$version"; then
-                    verified=$((verified + 1))
-                else
-                    failed=$((failed + 1))
-                fi
+                verify_slsa "$path" "$version"
+                result=$?
                 ;;
             sha256)
-                if verify_sha256 "$path" "$DOWNLOAD_DIR/SHA256SUMS"; then
-                    verified=$((verified + 1))
-                else
-                    failed=$((failed + 1))
-                fi
+                verify_sha256 "$path" "$DOWNLOAD_DIR/SHA256SUMS"
+                result=$?
                 ;;
+        esac
+
+        case $result in
+            0) verified=$((verified + 1)) ;;   # Success
+            2) skipped=$((skipped + 1)) ;;     # Not found (soft failure)
+            *) failed=$((failed + 1)) ;;       # Verification failed (hard failure)
         esac
     done
 
+    # Hard failures (hash mismatch) are security issues - always fail
     if [[ $failed -gt 0 ]]; then
-        error "Verification failed for $failed binary(ies). DO NOT USE!"
+        error "Verification FAILED for $failed binary(ies). DO NOT USE!"
         return 1
     fi
 
-    ok "All binaries verified ($verified total)"
+    # Report results
+    if [[ $verified -gt 0 ]]; then
+        ok "Verified $verified binary(ies)"
+    fi
+    if [[ $skipped -gt 0 ]]; then
+        warn "Skipped verification for $skipped binary(ies) (no checksums available)"
+    fi
+
     return 0
 }
 
