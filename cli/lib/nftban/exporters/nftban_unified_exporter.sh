@@ -1508,8 +1508,8 @@ export_prometheus() {
     # Skip string metrics (|STRING|) as they are Zabbix-only
     awk '{
         # Format: metric_name value timestamp -> metric_name value
-        # Skip Zabbix string metrics (containing |STRING|)
-        if ($2 == "|STRING|") next
+        # Skip Zabbix string metrics (containing |STRING| prefix)
+        if (index($2, "|STRING|") == 1) next
 
         if (NF >= 2) {
             # Handle metrics with labels
@@ -1568,16 +1568,16 @@ export_zabbix() {
             }
             gsub(/{.*}/, "", key)  # Remove labels for Zabbix
 
-            # Check for string marker |STRING|
-            if ($2 == "|STRING|") {
-                # String value: collect everything between |STRING| and timestamp
-                # Format: key |STRING|value timestamp
-                value = ""
+            # Check for string marker |STRING| prefix (format: key |STRING|value timestamp)
+            # Note: |STRING| is concatenated with value, so $2 = "|STRING|actualvalue"
+            if (index($2, "|STRING|") == 1) {
+                # String value: strip |STRING| prefix and collect multi-word values
+                # $2 = "|STRING|firstword", $3..$NF-1 = "more words", $NF = timestamp
+                value = substr($2, 9)  # Strip "|STRING|" (8 chars)
                 for (i = 3; i < NF; i++) {
-                    if (value != "") value = value " "
-                    value = value $i
+                    value = value " " $i
                 }
-                printf "%s %s %s\n", host, key, value
+                printf "%s %s \"%s\"\n", host, key, value
             } else {
                 # Numeric value
                 printf "%s %s %s\n", host, key, $2
@@ -1620,8 +1620,8 @@ export_connectors() {
             first=1
         }
         NF >= 2 {
-            # Skip Zabbix string metrics
-            if ($2 == "|STRING|") next
+            # Skip Zabbix string metrics (|STRING| prefix)
+            if (index($2, "|STRING|") == 1) next
             # Skip metrics with labels (they have different structure)
             if ($1 ~ /{.*}/) next
 
