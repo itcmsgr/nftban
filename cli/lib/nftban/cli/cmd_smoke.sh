@@ -5,18 +5,26 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI wrapper for smoke test suite
 #
-# meta:name=cmd_smoke
-# meta:type=cli
-# meta:header=Smoke Test Command
-# meta:version=1.0.0
+# meta:name="cmd_smoke"
+# meta:type="cli"
+# meta:header="Smoke Test Command"
+# meta:version="1.1.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:description=Run CLI health checks and detect stuck/failed scripts
-# meta:depends=bash,nftban_trace.sh
+# meta:description="Run CLI health checks, ban lifecycle tests, and detect stuck scripts"
+# meta:depends="bash,nftban_trace.sh"
 #
-# meta:created_date=2025-12-04
-# meta:updated_date=2025-12-04
+# meta:inventory.files=""
+# meta:inventory.binaries="nftban"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2025-12-04"
+# meta:updated_date="2026-01-28"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -53,6 +61,10 @@ nftban_cmd_smoke() {
         all|detailed)
             # Comprehensive test of ALL 43 CLI commands
             nftban_smoke_run --all "$@"
+            ;;
+        lifecycle)
+            # Ban/unban + whitelist lifecycle tests only
+            nftban_smoke_run --lifecycle "$@"
             ;;
         check|orphans)
             nftban_smoke_check_orphans "$@"
@@ -178,23 +190,26 @@ Usage: nftban smoke <command> [OPTIONS]
 CLI health check and debugging tool.
 
 Commands:
-  run, test          Run standard smoke test (~20 commands)
+  run, test          Run standard smoke test (~32 commands + lifecycle)
   quick              Run quick test (3 core commands only)
-  all, detailed      Run ALL CLI tests (43 commands - comprehensive)
+  all, detailed      Run ALL CLI tests (55+ commands - comprehensive)
+  lifecycle          Run ban lifecycle tests only (IPv4/IPv6 ban+whitelist)
   check [MINUTES]    Check for orphaned traces (stuck scripts)
   stats              Show trace statistics
   trace recent [N]   Show last N trace entries
   trace rotate [D]   Rotate trace log, keep D days
 
 Test Modes:
-  quick    = 3 tests   (version, help, status)
-  run/test = ~20 tests (core + modules + stats + search)
-  all      = 43+ tests (every cmd_*.sh gets help tested)
+  quick     = 3 tests    (version, help, status)
+  run/test  = ~32 tests  (core + modules + stats + search + lifecycle)
+  all       = 55+ tests  (every cmd_*.sh + extended status + lifecycle)
+  lifecycle = 12 tests   (ban/unban + whitelist add/remove, IPv4 + IPv6)
 
 Examples:
-  nftban smoke run              # Standard smoke test (~20 commands)
+  nftban smoke run              # Standard smoke test (~32 commands)
   nftban smoke quick            # Quick test (3 commands)
-  nftban smoke all              # Test ALL 43 CLI commands
+  nftban smoke all              # Test ALL CLI commands + lifecycle
+  nftban smoke lifecycle        # Ban lifecycle tests only
   nftban smoke check            # Check for stuck scripts
   nftban smoke check 10         # Check traces older than 10 min
   nftban smoke stats            # Trace statistics
