@@ -51,6 +51,30 @@ nftban_health_fix_permissions() {
 
     echo "Fixing permissions and ownership..."
 
+    # ==========================================================================
+    # STEP 1: Use systemd-tmpfiles for runtime directories (FHS-correct method)
+    # ==========================================================================
+    # This is the canonical way to fix /run/nftban, /var/log/nftban, /var/cache/nftban
+    # per the tmpfiles.d specification. Manual chown is discouraged.
+    if [[ $running_as_root -eq 1 ]]; then
+        local tmpfiles_conf=""
+        for path in /usr/lib/tmpfiles.d/nftban.conf /etc/tmpfiles.d/nftban.conf; do
+            [[ -f "$path" ]] && tmpfiles_conf="$path" && break
+        done
+
+        if [[ -n "$tmpfiles_conf" ]] && command -v systemd-tmpfiles &>/dev/null; then
+            echo "  Using systemd-tmpfiles for FHS runtime directories..."
+            if systemd-tmpfiles --create "$tmpfiles_conf" 2>/dev/null; then
+                echo "  ✓ FHS runtime directories restored via tmpfiles.d"
+            else
+                echo "  ⚠ systemd-tmpfiles returned non-zero (some dirs may not exist yet)"
+            fi
+        fi
+    fi
+
+    # ==========================================================================
+    # STEP 2: Use permissions enforcement module or legacy fix for remaining items
+    # ==========================================================================
     # Try to use new permissions enforcement module (more comprehensive)
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_permissions.sh" ]]; then
         if source "${NFTBAN_LIB_DIR}/core/nftban_permissions.sh" 2>/dev/null; then

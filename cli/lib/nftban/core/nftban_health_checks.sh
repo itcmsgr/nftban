@@ -395,6 +395,33 @@ nftban_health_check_permissions() {
         fi
     fi
 
+    # Check FHS runtime directories — services run as nftban user and MUST own these
+    # Spec: tmpfiles.d/nftban.conf defines these as nftban:nftban
+    local fhs_dirs=(
+        "/run/nftban:nftban:nftban:0755"
+        "/var/log/nftban:nftban:nftban:0750"
+        "/var/cache/nftban:nftban:nftban:0755"
+    )
+
+    for entry in "${fhs_dirs[@]}"; do
+        IFS=':' read -r dir expected_owner expected_group expected_perms <<< "$entry"
+        [[ -d "$dir" ]] || continue
+
+        local actual_owner actual_group actual_perms
+        actual_owner=$(stat -c '%U' "$dir" 2>/dev/null || echo "unknown")
+        actual_group=$(stat -c '%G' "$dir" 2>/dev/null || echo "unknown")
+        actual_perms=$(stat -c '%a' "$dir" 2>/dev/null || echo "000")
+
+        if [[ "$actual_owner" != "$expected_owner" ]]; then
+            permission_issues+=("$dir owner is $actual_owner (expected $expected_owner) — fix: systemd-tmpfiles --create")
+            status=$HEALTH_ERROR
+        fi
+        if [[ "$actual_group" != "$expected_group" ]]; then
+            permission_issues+=("$dir group is $actual_group (expected $expected_group) — fix: systemd-tmpfiles --create")
+            status=$HEALTH_ERROR
+        fi
+    done
+
     # Check critical scripts are executable (cron, helpers)
     local executable_scripts=(
         "${NFTBAN_LIB_DIR}/cron/maintenance.sh"
