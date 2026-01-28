@@ -281,15 +281,23 @@ jobs:
           cd dist/packages
           rm -f SHA256SUMS
 
-          # Generate checksums for all packages
+          # Generate checksums for all packages and binaries
           shopt -s nullglob
           packages=(*.rpm *.deb)
-          if [ ${#packages[@]} -gt 0 ]; then
-            sha256sum "${packages[@]}" | sort > SHA256SUMS
+          binaries=(nftban-core-linux-amd64 nftband-linux-amd64 nftban-ui-linux-amd64 nftban-ui-auth-linux-amd64)
+
+          # Combine all files that exist
+          all_files=()
+          for f in "${packages[@]}" "${binaries[@]}"; do
+            [[ -f "$f" ]] && all_files+=("$f")
+          done
+
+          if [ ${#all_files[@]} -gt 0 ]; then
+            sha256sum "${all_files[@]}" | sort > SHA256SUMS
             echo "=== SHA256SUMS ==="
             cat SHA256SUMS
           else
-            echo "WARNING: No packages found"
+            echo "WARNING: No packages or binaries found"
             touch SHA256SUMS
           fi
 
