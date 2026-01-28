@@ -694,6 +694,38 @@ nftban_health_check_daemon() {
             [[ $status -eq $HEALTH_OK ]] && status=$HEALTH_WARNING
             daemon_issues+=("FIX: sudo systemctl enable nftband.service")
         fi
+
+        # Check for stale PID file (case study: lab1 missing metrics due to stale PID)
+        # If PID file exists but process doesn't match, metrics exporter fails to read runtime stats
+        local pid_file="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.pid"
+        if [[ -f "$pid_file" ]] && _health_service_active "nftband.service"; then
+            local stored_pid actual_pid
+            stored_pid=$(cat "$pid_file" 2>/dev/null | awk '{print $1}')
+            actual_pid=$(pgrep -f "/usr/lib/nftban/bin/nftband" | head -1)
+
+            if [[ -n "$stored_pid" ]] && [[ -n "$actual_pid" ]]; then
+                if [[ "$stored_pid" != "$actual_pid" ]]; then
+                    daemon_issues+=("⚠ Stale PID file: stored=$stored_pid, actual=$actual_pid (metrics affected)")
+                    [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+
+                    # Auto-heal: Update PID file
+                    if [[ $auto_heal -eq 1 ]] || [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
+                        if echo "$actual_pid" > "$pid_file" 2>/dev/null; then
+                            daemon_issues+=("AUTO-FIXED: Updated PID file to $actual_pid")
+                        else
+                            daemon_issues+=("FAILED to update PID file")
+                        fi
+                    else
+                        daemon_issues+=("FIX: echo $actual_pid > $pid_file")
+                    fi
+                elif [[ ! -d "/proc/$stored_pid" ]]; then
+                    daemon_issues+=("⚠ PID file points to non-existent process: $stored_pid")
+                    [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+                else
+                    daemon_issues+=("✓ PID file valid: $stored_pid")
+                fi
+            fi
+        fi
     else
         daemon_issues+=("ERROR: nftband.service not installed - daemon functionality unavailable")
         status=$HEALTH_ERROR

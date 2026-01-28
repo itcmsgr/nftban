@@ -428,6 +428,24 @@ nftban_health_fix_services() {
         fi
     done
 
+    # Fix stale PID file (case study: lab1 missing metrics due to PID mismatch)
+    # When nftband restarts but PID file isn't updated, metrics exporter can't read runtime stats
+    local pid_file="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.pid"
+    if systemctl is-active nftband.service &>/dev/null; then
+        local stored_pid actual_pid
+        stored_pid=$(cat "$pid_file" 2>/dev/null | awk '{print $1}')
+        actual_pid=$(pgrep -f "/usr/lib/nftban/bin/nftband" | head -1)
+
+        if [[ -n "$actual_pid" ]]; then
+            if [[ -z "$stored_pid" ]] || [[ "$stored_pid" != "$actual_pid" ]]; then
+                if echo "$actual_pid" > "$pid_file" 2>/dev/null; then
+                    echo "  ✓ Fixed stale PID file: $actual_pid"
+                    fixed_count=$((fixed_count + 1))
+                fi
+            fi
+        fi
+    fi
+
     if [[ $fixed_count -eq 0 ]]; then
         echo "  ✓ All enabled services/timers are running"
     else

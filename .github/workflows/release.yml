@@ -215,6 +215,9 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           path: all-packages/
+          # Continue even if some artifacts are missing (build failures)
+          # The consolidate step will report what's actually available
+          merge-multiple: true
 
       - name: Consolidate packages
         run: |

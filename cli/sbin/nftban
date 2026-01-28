@@ -736,6 +736,34 @@ main() {
             fi
             ;;
 
+        configtest)
+            # Backward-compat alias for 'nftban config test'
+            if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_config.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_LIB_DIR}/cli/cmd_config.sh"
+                shift
+                nftban_cmd_config "test" "$@"
+                return $?
+            else
+                echo "ERROR: cmd_config.sh not found" >&2
+                exit 1
+            fi
+            ;;
+
+        configaudit)
+            # Backward-compat alias for 'nftban config audit'
+            if [[ -f "${NFTBAN_LIB_DIR}/cli/cmd_config.sh" ]]; then
+                # shellcheck source=/dev/null
+                source "${NFTBAN_LIB_DIR}/cli/cmd_config.sh"
+                shift
+                nftban_cmd_config "audit" "$@"
+                return $?
+            else
+                echo "ERROR: cmd_config.sh not found" >&2
+                exit 1
+            fi
+            ;;
+
         list)
             # v0.6.5: ban/unban now handled by cmd_ban.sh and cmd_unban.sh (auto-loaded)
             # This case only handles legacy 'list' command for GUI compatibility
