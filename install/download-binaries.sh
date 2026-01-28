@@ -139,7 +139,8 @@ verify_sha256() {
     local basename
     basename=$(basename "$binary")
     local expected
-    expected=$(grep "$basename" "$sums_file" | awk '{print $1}')
+    # Use || true to handle grep returning 1 when no match (pipefail would cause exit)
+    expected=$(grep "$basename" "$sums_file" 2>/dev/null | awk '{print $1}' || true)
 
     if [[ -z "$expected" ]]; then
         warn "No SHA256 entry for $basename (skipping verification)"
@@ -225,12 +226,10 @@ verify_all() {
         local result=0
         case "$method" in
             slsa)
-                verify_slsa "$path" "$version"
-                result=$?
+                verify_slsa "$path" "$version" || result=$?
                 ;;
             sha256)
-                verify_sha256 "$path" "$DOWNLOAD_DIR/SHA256SUMS"
-                result=$?
+                verify_sha256 "$path" "$DOWNLOAD_DIR/SHA256SUMS" || result=$?
                 ;;
         esac
 
@@ -418,7 +417,8 @@ if [[ "${SKIP_INSTALL:-0}" != "1" ]]; then
 fi
 
 # Cleanup with safety guards (prevents catastrophic rm -rf accidents)
-if [[ "${KEEP_DOWNLOADS:-0}" != "1" ]]; then
+# Skip cleanup if SKIP_INSTALL is set (caller wants to keep binaries)
+if [[ "${KEEP_DOWNLOADS:-0}" != "1" ]] && [[ "${SKIP_INSTALL:-0}" != "1" ]]; then
     # Safety Guard 1: Path must not be empty
     if [[ -z "$DOWNLOAD_DIR" ]]; then
         error "CRITICAL: DOWNLOAD_DIR is empty, refusing to delete"
