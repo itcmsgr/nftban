@@ -132,6 +132,18 @@ if [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]]; then
 fi
 
 # =============================================================================
+# LOAD DISTRO CONFIG
+# =============================================================================
+# Load distribution-specific paths and settings (no hardcoded paths)
+
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+    # Initialize distro config (detects OS and loads appropriate config)
+    nftban_distro_init 2>/dev/null || true
+fi
+
+# =============================================================================
 # BASH COMPLETION ENDPOINT
 # =============================================================================
 
