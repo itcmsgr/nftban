@@ -34,6 +34,12 @@ if [[ -f "${NFTBAN_LIB_DIR}/lib/strict.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/strict.sh"
 fi
 
+# Load prerequisite checker
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh"
+fi
+
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then

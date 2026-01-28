@@ -1,5 +1,5 @@
 Name:           nftban-ui
-Version:        1.6.1
+Version:        1.7.0
 Release:        1%{?dist}
 Summary:        NFTBAN Web Interface - Management console for nftables-based firewall
 

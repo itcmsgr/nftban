@@ -75,11 +75,11 @@ func main() {
 	port := flag.Int("port", 3940, "HTTPS port to listen on")
 	certFile := flag.String("cert", defaultConfigDir+"/ssl/cert.pem", "TLS certificate file")
 	keyFile := flag.String("key", defaultConfigDir+"/ssl/key.pem", "TLS private key file")
-	version := flag.Bool("version", false, "Show version information")
+	showVersion := flag.Bool("version", false, "Show version information")
 	flag.Parse()
 
 	// Show version
-	if *version {
+	if *showVersion {
 		fmt.Printf("nftban-ui v%s (git %s, build %s)\n", version.Version, GitCommit, BuildDate)
 		os.Exit(0)
 	}

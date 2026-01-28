@@ -183,6 +183,8 @@ nftban_health_check_binaries() {
         "jq"
         "curl"
         "wget"
+        "socat"
+        "git"
     )
 
     # NFTBan's own Go binaries - CRITICAL for core functionality

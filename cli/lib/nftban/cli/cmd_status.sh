@@ -132,7 +132,7 @@ output_terminal() {
 
     # Header with version
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  NFTBan v${NFTBAN_VERSION:-1.6.1} — System Status"
+    echo "  NFTBan v${NFTBAN_VERSION:-1.7.0} — System Status"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
@@ -451,10 +451,6 @@ output_terminal() {
         fi
         # Check transport binary availability
         if ! command -v zabbix_sender &>/dev/null && ! command -v nc &>/dev/null && ! command -v ncat &>/dev/null; then
-            local ncat_pkg="ncat"
-            if declare -F nftban_distro_get_package >/dev/null 2>&1; then
-                ncat_pkg=$(nftban_distro_get_package "ncat" 2>/dev/null) || ncat_pkg="ncat"
-            fi
             zabbix_status+=" [NO TRANSPORT]"
         fi
     elif [[ -f "$zabbix_conf" ]]; then

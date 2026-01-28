@@ -57,7 +57,7 @@ case "$FORMAT" in
     json)
         # JSON output
         echo "{"
-        echo '  "version": "1.6.1",'
+        echo '  "version": "1.7.0",'
         echo '  "generated": "'"$(date -Iseconds)"'",'
         echo '  "total_commands": '$CMD_COUNT','
         echo '  "commands": ['
@@ -66,7 +66,7 @@ case "$FORMAT" in
         for cmd_file in "$CLI_DIR"/cmd_*.sh; do
             name=$(basename "$cmd_file" .sh | sed 's/cmd_//' | sed 's/_/-/g')
             desc=$(grep -oP 'meta:description=\K.*' "$cmd_file" 2>/dev/null | head -1 || echo "")
-            ver=$(grep -oP 'meta:version=\K[0-9.]+' "$cmd_file" 2>/dev/null | head -1 || echo "1.6.1")
+            ver=$(grep -oP 'meta:version=\K[0-9.]+' "$cmd_file" 2>/dev/null | head -1 || echo "1.7.0")
 
             [[ "$first" != "true" ]] && echo ","
             first=false
@@ -131,7 +131,7 @@ case "$FORMAT" in
         for cmd_file in "$CLI_DIR"/cmd_*.sh; do
             name=$(basename "$cmd_file" .sh | sed 's/cmd_//' | sed 's/_/-/g')
             desc=$(grep -oP 'meta:description=\K.*' "$cmd_file" 2>/dev/null | head -1 || echo "-")
-            ver=$(grep -oP 'meta:version=\K[0-9.]+' "$cmd_file" 2>/dev/null | head -1 || echo "1.6.1")
+            ver=$(grep -oP 'meta:version=\K[0-9.]+' "$cmd_file" 2>/dev/null | head -1 || echo "1.7.0")
 
             echo "| \`nftban $name\` | $ver | $desc |"
         done | sort

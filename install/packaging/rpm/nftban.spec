@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024-2025 NFTBan Development Team
 
 Name:           nftban
-Version:        1.6.1
+Version:        1.7.0
 Release:        1%{?dist}
 Summary:        NFTBAN - Next-generation Linux firewall using nftables
 
@@ -19,9 +19,8 @@ Requires:       systemd >= 250
 Requires:       bash >= 5.0
 Requires:       bash-completion
 Requires:       jq >= 1.6
-Requires:       python3-pip
 Requires:       curl
-Requires:       python3
+Requires:       wget
 
 # NOTE: yq is installed via pip in %post since not all distros have it packaged
 # See %post section for: pip3 install yq
@@ -35,12 +34,10 @@ Requires:       gawk
 Requires:       findutils
 Requires:       util-linux
 Requires:       iproute
-Requires:       ipset
 Requires:       socat
 Requires:       git
 Requires:       polkit
 Recommends:     logrotate
-Recommends:     nmap-ncat
 
 %description
 NFTBAN is an enterprise-grade firewall management engine built on Linux nftables.
@@ -589,6 +586,13 @@ fi
 /usr/local/psa/admin/htdocs/modules/nftban/*
 
 %changelog
+* Wed Jan 28 2026 NFTBan Team <contact@nftban.com> - 1.7.0-1
+- Dependency architecture redesign: minimal core install, feature-gated prerequisites
+- Shared prereq library (nftban_prereq.sh) with distro-aware package suggestions
+- Removed suricata, prometheus, node_exporter, ncat, ipset, python3-pip from required
+- Core contract: nftables, jq, socat, curl, wget, git only
+- Enable-time prereq checks for geoban, rbl, login commands
+
 * Wed Jan 22 2026 NFTBan Team <contact@nftban.com> - 1.3.0-1
 - Native Zabbix integration with multi-target support and failover
 - Low-Level Discovery (LLD) for modules, interfaces, countries, feeds, timers

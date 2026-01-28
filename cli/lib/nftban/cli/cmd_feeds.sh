@@ -17,6 +17,12 @@ else
     set -Eeuo pipefail
 fi
 
+# Load prerequisite checker
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh"
+fi
+
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
@@ -27,29 +33,34 @@ if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER"
 fi
-# NFTBan v1.0.0 - Feeds CLI Handler
+# NFTBan v1.7.0 - Feeds CLI Handler
 # =============================================================================
-
+#
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Beautiful numbered menu interface for threat feeds
 #
-# meta:name=cmd_feeds
-# meta:type=cli
-# meta:header=Feeds CLI
-# meta:version=1.0.0
+# meta:name="cmd_feeds"
+# meta:type="cli"
+# meta:header="Feeds CLI"
+# meta:version="1.7.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=Interactive selection menu for threat intelligence feeds
-# meta:input=User selection (numbers, ranges, categories, "all")
-# meta:output=Beautiful categorized feed listing and status
+# meta:description="Interactive selection menu for threat intelligence feeds"
+# meta:input="User selection (numbers, ranges, categories, all)"
+# meta:output="Beautiful categorized feed listing and status"
+# meta:depends="bash,nftban_feeds.sh,nftban_output.sh"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,nftban_feeds.sh,nftban_output.sh
+# meta:inventory.files=""
+# meta:inventory.binaries="curl,nft"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/feeds.conf"
+# meta:inventory.systemd_units="nftban-core-feeds.timer"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-01-28"
 # =============================================================================
 
 
