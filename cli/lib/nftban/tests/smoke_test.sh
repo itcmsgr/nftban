@@ -5,29 +5,42 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Quick health check of CLI - detects stuck/failed scripts
 #
-# meta:name=smoke_test
-# meta:type=test
-# meta:header=Smoke Test Suite
-# meta:version=1.0.0
+# meta:name="smoke_test"
+# meta:type="test"
+# meta:header="Smoke Test Suite"
+# meta:version="1.1.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **How It Works**
 # 1. Enables debug trace temporarily
 # 2. Runs key commands with timeout
-# 3. Checks trace log for START without END (stuck scripts)
-# 4. Reports any failures
+# 3. Runs ban/unban lifecycle tests (IPv4 + IPv6)
+# 4. Checks trace log for START without END (stuck scripts)
+# 5. Reports any failures
 #
 # **Usage**
 #   ./smoke_test.sh              # Run all tests
 #   ./smoke_test.sh --quick      # Quick test (core commands only)
+#   ./smoke_test.sh --lifecycle  # Ban lifecycle tests only
 #   ./smoke_test.sh --check      # Just check trace log for orphans
 #
-# meta:created_date=2025-12-04
-# meta:updated_date=2025-12-04
+# meta:description="CLI health check with ban lifecycle verification"
+# meta:depends="bash,nft,nftban"
+#
+# meta:inventory.files=""
+# meta:inventory.binaries="nftban,nft"
+# meta:inventory.env_vars="NFTBAN_TABLE_IPV4,NFTBAN_TABLE_IPV6"
+# meta:inventory.config_files="/etc/nftban/nftban.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2025-12-04"
+# meta:updated_date="2026-01-28"
 # =============================================================================
 
-set -u
+set -Eeuo pipefail
 
 # =============================================================================
 # CONFIGURATION
@@ -122,12 +135,12 @@ check_orphans() {
     while IFS= read -r line; do
         # Extract trace ID
         local trace_id
-        trace_id=$(echo "$line" | grep -oP '\[\K[a-z_]+-[0-9]+_[0-9]+_[0-9]+-[0-9]+(?=\])')
+        trace_id=$(echo "$line" | { grep -oP '\[\K[a-z_]+-[0-9]+_[0-9]+_[0-9]+-[0-9]+(?=\])' || true; })
         [[ -z "$trace_id" ]] && continue
 
         # Check if there's a matching END
         if ! grep -q "\[END\].*\[$trace_id\]" "$TRACE_LOG"; then
-            ((orphan_count++))
+            orphan_count=$((orphan_count + 1))
             log_fail "ORPHAN TRACE: $trace_id"
             log "  $line"
         fi
@@ -156,7 +169,7 @@ smoke_test_cmd() {
     local cmd="$*"
     local timeout_val="${CURRENT_TIMEOUT}"
 
-    ((TESTS_TOTAL++))
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
 
     log ""
     log "─────────────────────────────────────────────────────────────────"
@@ -171,6 +184,7 @@ smoke_test_cmd() {
     local start_time
     start_time=$(date +%s.%N)
 
+    local timeout_exit=0
     timeout "$timeout_val" bash -c "
         # Source trace library for this command
         if [[ -f /usr/lib/nftban/helpers/nftban_trace.sh ]]; then
@@ -180,8 +194,7 @@ smoke_test_cmd() {
         export NFTBAN_DEBUG_TRACE_LOG='$TRACE_LOG'
         $cmd
         echo \$? > '$exit_file'
-    " > "$output_file" 2>&1
-    local timeout_exit=$?
+    " > "$output_file" 2>&1 || timeout_exit=$?
 
     local end_time
     end_time=$(date +%s.%N)
@@ -191,7 +204,7 @@ smoke_test_cmd() {
     # Check timeout
     if [[ $timeout_exit -eq 124 ]]; then
         log_timeout "$name - exceeded ${timeout_val}s"
-        ((TESTS_TIMEOUT++))
+        TESTS_TIMEOUT=$((TESTS_TIMEOUT + 1))
         rm -f "$output_file" "$exit_file"
         return 1
     fi
@@ -209,31 +222,31 @@ smoke_test_cmd() {
 
     if [[ -z "$output" ]]; then
         log_fail "$name - NO OUTPUT (${duration}s)"
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     elif [[ "$exit_code" == "0" ]]; then
         log_pass "$name - OK (exit=0, ${output_len} chars, ${duration}s)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     elif [[ "$exit_code" == "1" ]] && [[ "$name" == "health summary" ]]; then
         # Health exit code 1 = warnings only (acceptable)
         log_pass "$name - OK with warnings (exit=1, ${output_len} chars, ${duration}s)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     elif [[ "$exit_code" == "1" ]] && [[ "$name" == "status" ]]; then
         # Status exit code 1 = warnings/degraded (acceptable)
         log_pass "$name - OK with warnings (exit=1, ${output_len} chars, ${duration}s)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     elif [[ "$exit_code" == "2" ]] && [[ "$name" == "health summary" ]]; then
         # Health exit code 2 = errors present (acceptable - report but don't fail test)
         log_warn "$name - Errors detected (exit=2, ${output_len} chars, ${duration}s)"
         log_warn "  This is expected if system has health issues. Check 'nftban health summary' manually."
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     elif [[ "$exit_code" == "4" ]] && [[ "$name" == "health summary" ]]; then
         # Health exit code 4 = permission fixes applied (acceptable)
         log_pass "$name - OK, fixes applied (exit=4, ${output_len} chars, ${duration}s)"
-        ((TESTS_PASSED++))
+        TESTS_PASSED=$((TESTS_PASSED + 1))
     else
         # All other non-zero exits are failures
         log_fail "$name - FAILED (exit=$exit_code, ${duration}s)"
-        ((TESTS_FAILED++))
+        TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 
     # Show output preview
@@ -312,6 +325,150 @@ run_help_tests() {
 }
 
 # =============================================================================
+# BAN LIFECYCLE TESTS
+# =============================================================================
+# Verifies ban/unban and whitelist add/remove with nft set assertions.
+# Uses RFC 5737 TEST-NET-2 (198.51.100.0/24) and RFC 3849 (2001:db8::/32).
+# All test IPs are cleaned up after each test, even on failure.
+
+# Check if an IP is present in an nft set
+# Usage: _nft_set_contains <nft_table> <set_name> <pattern>
+_nft_set_contains() {
+    local nft_table="$1"   # e.g., "ip nftban" — word-splits into family + table
+    local nft_set="$2"
+    local pattern="$3"
+    # Avoid grep -q: it exits on first match, causing SIGPIPE on nft with
+    # large sets (7000+ entries), which pipefail treats as a pipeline failure.
+    # Plain grep reads all input, preventing SIGPIPE.
+    # shellcheck disable=SC2086  # Intentional word splitting of nft_table
+    nft list set ${nft_table} "${nft_set}" 2>/dev/null | grep "${pattern}" >/dev/null 2>&1
+}
+
+# Run a single add → verify → remove → verify lifecycle
+# Usage: smoke_lifecycle <name> <add_cmd> <remove_cmd> <nft_table> <nft_set> <pattern>
+smoke_lifecycle() {
+    local name="$1"
+    local add_cmd="$2"
+    local remove_cmd="$3"
+    local nft_table="$4"
+    local nft_set="$5"
+    local pattern="$6"
+
+    log ""
+    log "─── Lifecycle: ${name} ───"
+
+    # Step 0: Cleanup — ensure test IP is not present
+    eval "${remove_cmd}" &>/dev/null || true
+    sleep 1
+
+    # Step 1: Baseline — IP must NOT be in set
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if _nft_set_contains "${nft_table}" "${nft_set}" "${pattern}"; then
+        log_fail "${name} baseline — ${pattern} still in ${nft_set} after cleanup"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        return 0  # failure counted, continue to next lifecycle
+    fi
+    log_pass "${name} baseline — ${pattern} absent from ${nft_set}"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+
+    # Step 2: Add (ban or whitelist add)
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if ! eval "${add_cmd}" &>/dev/null; then
+        log_fail "${name} add — command failed: ${add_cmd}"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        return 0
+    fi
+    sleep 1
+
+    if _nft_set_contains "${nft_table}" "${nft_set}" "${pattern}"; then
+        log_pass "${name} add — ${pattern} confirmed in ${nft_set}"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_fail "${name} add — ${pattern} NOT found in ${nft_set}"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        eval "${remove_cmd}" &>/dev/null || true
+        return 0
+    fi
+
+    # Step 3: Remove (unban or whitelist remove)
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+    if ! eval "${remove_cmd}" &>/dev/null; then
+        log_fail "${name} remove — command failed: ${remove_cmd}"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        eval "${remove_cmd}" &>/dev/null || true
+        return 0
+    fi
+    sleep 1
+
+    if _nft_set_contains "${nft_table}" "${nft_set}" "${pattern}"; then
+        log_fail "${name} remove — ${pattern} still in ${nft_set}"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        eval "${remove_cmd}" &>/dev/null || true
+        return 0
+    fi
+    log_pass "${name} remove — ${pattern} absent from ${nft_set}"
+    TESTS_PASSED=$((TESTS_PASSED + 1))
+}
+
+# Run all ban lifecycle tests
+run_lifecycle_tests() {
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "BAN LIFECYCLE TESTS"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Prerequisites
+    if ! systemctl is-active nftband &>/dev/null; then
+        log_warn "nftband not running — skipping lifecycle tests"
+        log_warn "Start with: systemctl start nftband"
+        return 0
+    fi
+    if ! command -v nft &>/dev/null; then
+        log_warn "nft not found — skipping lifecycle tests"
+        return 0
+    fi
+
+    # Source config for table names
+    [[ -f /etc/nftban/nftban.conf ]] && source /etc/nftban/nftban.conf
+    [[ -f /etc/nftban/nftban.conf.local ]] && source /etc/nftban/nftban.conf.local
+    local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+    local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
+
+    # Test IPs — RFC 5737 TEST-NET-2 (IPv4) / RFC 3849 (IPv6)
+    local test_ban_v4="198.51.100.99"
+    local test_ban_v6="2001:db8::dead:beef"
+    local test_wl_v4="198.51.100.98"
+    local test_wl_v6="2001:db8::cafe:babe"
+
+    log_info "Using documentation-range IPs (RFC 5737 / RFC 3849)"
+    log_info "Tables: v4=${table_v4}, v6=${table_v6}"
+
+    # IPv4 ban → unban
+    smoke_lifecycle "IPv4 ban/unban" \
+        "nftban ban ${test_ban_v4} --reason smoke_test" \
+        "nftban unban ${test_ban_v4}" \
+        "${table_v4}" "blacklist_ipv4" "${test_ban_v4}"
+
+    # IPv6 ban → unban
+    smoke_lifecycle "IPv6 ban/unban" \
+        "nftban ban ${test_ban_v6} --reason smoke_test" \
+        "nftban unban ${test_ban_v6}" \
+        "${table_v6}" "blacklist_ipv6" "${test_ban_v6}"
+
+    # IPv4 whitelist add → remove
+    smoke_lifecycle "IPv4 whitelist add/remove" \
+        "nftban whitelist add ${test_wl_v4}" \
+        "nftban whitelist remove ${test_wl_v4}" \
+        "${table_v4}" "whitelist_ipv4" "${test_wl_v4}"
+
+    # IPv6 whitelist add → remove
+    smoke_lifecycle "IPv6 whitelist add/remove" \
+        "nftban whitelist add ${test_wl_v6}" \
+        "nftban whitelist remove ${test_wl_v6}" \
+        "${table_v6}" "whitelist_ipv6" "${test_wl_v6}"
+}
+
+# =============================================================================
 # ALL CLI COMMANDS TEST (comprehensive)
 # =============================================================================
 # Automatically discovers and tests ALL cmd_*.sh files
@@ -342,7 +499,7 @@ run_all_cli_tests() {
     for cmd_file in "$cli_dir"/cmd_*.sh; do
         [[ -f "$cmd_file" ]] || continue
         cmd_files+=("$cmd_file")
-        ((cmd_count++))
+        cmd_count=$((cmd_count + 1))
     done
 
     log_info "Found $cmd_count CLI command files in $cli_dir"
@@ -427,22 +584,25 @@ Usage: $0 [OPTIONS]
 
 Options:
   --quick       Run quick test (core commands only: version, help, status)
-  --full        Run standard test suite (default) - key modules
+  --full        Run standard test suite (default) - key modules + lifecycle
   --all         Run ALL CLI commands test (43 commands) - comprehensive
   --detailed    Same as --all
+  --lifecycle   Run ban lifecycle tests only (ban/unban + whitelist)
   --check       Just check trace log for orphaned traces
   --stats       Show trace statistics
   --help        Show this help
 
 Test Modes:
-  quick    = 3 tests    (version, help, status)
-  full     = ~20 tests  (core + modules + stats + search + help)
-  all      = 43+ tests  (every cmd_*.sh gets tested)
+  quick     = 3 tests    (version, help, status)
+  full      = ~32 tests  (core + modules + stats + search + help + lifecycle)
+  all       = 55+ tests  (every cmd_*.sh + extended status + lifecycle)
+  lifecycle = 12 tests   (ban/unban + whitelist add/remove, IPv4 + IPv6)
 
 Examples:
-  $0                  # Run full smoke test (~20 commands)
+  $0                  # Run full smoke test (~32 commands)
   $0 --quick          # Quick core test (3 commands)
-  $0 --all            # Test ALL 43 CLI commands
+  $0 --all            # Test ALL 43+ CLI commands + lifecycle
+  $0 --lifecycle      # Ban lifecycle tests only
   $0 --check          # Check for stuck scripts
 
 EOF
@@ -468,6 +628,10 @@ main() {
                 ;;
             --all|-a|--detailed)
                 mode="all"
+                shift
+                ;;
+            --lifecycle|-l)
+                mode="lifecycle"
                 shift
                 ;;
             --check|-c)
@@ -533,17 +697,22 @@ main() {
             run_stats_tests
             run_search_tests
             run_help_tests
+            run_lifecycle_tests
             ;;
         all)
             # Comprehensive: test ALL CLI commands
             run_core_tests
             run_all_cli_tests        # Tests all 43 cmd_*.sh files
             run_extended_status_tests
+            run_lifecycle_tests
+            ;;
+        lifecycle)
+            run_lifecycle_tests
             ;;
     esac
 
-    # Check for orphans
-    check_orphans
+    # Check for orphans (count stored in TESTS_ORPHANS)
+    check_orphans || true
 
     # Disable tracing
     disable_trace
