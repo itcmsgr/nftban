@@ -2215,6 +2215,16 @@ nftban_health_check_zabbix() {
                 zabbix_issues+=("⚠ Zabbix server: Not reachable (may be filtered)")
                 [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
             fi
+        elif command -v bash >/dev/null 2>&1; then
+            # Fallback: use bash /dev/tcp for connectivity test
+            if timeout 2 bash -c "echo >/dev/tcp/${NFTBAN_ZABBIX_SERVER}/${NFTBAN_ZABBIX_PORT:-10051}" 2>/dev/null; then
+                zabbix_issues+=("✓ Zabbix server: Reachable (via bash)")
+            else
+                zabbix_issues+=("⚠ Zabbix server: Not reachable (may be filtered)")
+                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            fi
+        else
+            zabbix_issues+=("INFO: Cannot test connectivity (no nc/ncat)")
         fi
     fi
 
@@ -2231,11 +2241,25 @@ nftban_health_check_zabbix() {
         [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
     fi
 
-    # Check zabbix_sender binary
+    # Check transport binary (zabbix_sender preferred, ncat/nc fallback)
     if command -v zabbix_sender >/dev/null 2>&1; then
-        zabbix_issues+=("✓ zabbix_sender: Installed")
+        zabbix_issues+=("✓ Transport: zabbix_sender (preferred)")
+    elif command -v nc >/dev/null 2>&1 || command -v ncat >/dev/null 2>&1; then
+        zabbix_issues+=("✓ Transport: nc/ncat (fallback)")
+        zabbix_issues+=("INFO: Install zabbix_sender for best results")
     else
-        zabbix_issues+=("⚠ zabbix_sender not found (using curl fallback)")
+        # Use distro config for correct package name suggestion
+        local ncat_pkg="ncat"
+        local install_cmd="install"
+        if declare -F nftban_distro_get_package >/dev/null 2>&1; then
+            ncat_pkg=$(nftban_distro_get_package "ncat" 2>/dev/null) || ncat_pkg="ncat"
+        fi
+        if declare -F nftban_distro_get_pkgmgr_cmd >/dev/null 2>&1; then
+            install_cmd=$(nftban_distro_get_pkgmgr_cmd "install_cmd" 2>/dev/null) || install_cmd="install"
+        fi
+        zabbix_issues+=("⚠ No transport binary (zabbix_sender, nc, or ncat)")
+        zabbix_issues+=("FIX: Install zabbix_sender or: sudo ${install_cmd} ${ncat_pkg}")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
     fi
 
     # Check TLS/PSK configuration if enabled

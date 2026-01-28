@@ -1793,6 +1793,7 @@ install_dependencies() {
         git
         prometheus
         node_exporter
+        ncat
     )
 
     # Install required packages

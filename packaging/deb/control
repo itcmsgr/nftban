@@ -37,7 +37,8 @@ Depends: ${shlibs:Depends},
          policykit-1,
          adduser,
          socat
-Recommends: logrotate
+Recommends: logrotate,
+            ncat
 Description: NFTBAN - Enterprise firewall management engine for Linux
  NFTBAN is an enterprise-grade firewall management engine built on Linux nftables.
  It replaces legacy firewall scripts with a modern architecture featuring atomic

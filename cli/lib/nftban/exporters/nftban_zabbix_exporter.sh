@@ -264,7 +264,73 @@ json_to_zabbix_metrics() {
 send_to_zabbix() {
     local metrics="$1"
 
-    # Build Zabbix sender data format
+    if [[ "$DRY_RUN" == "true" ]]; then
+        echo "=== DRY RUN: Would send to $ZABBIX_SERVER:$ZABBIX_PORT ==="
+        echo "Hostname: $ZABBIX_HOSTNAME"
+        echo "$metrics"
+        return 0
+    fi
+
+    # Prefer zabbix_sender (official tool, handles protocol correctly)
+    if command -v zabbix_sender &>/dev/null; then
+        _send_via_zabbix_sender "$metrics"
+        return $?
+    fi
+
+    # Fallback: native Zabbix protocol via nc
+    if command -v nc &>/dev/null; then
+        _send_via_nc "$metrics"
+        return $?
+    fi
+
+    log_error "No transport available: install zabbix_sender or nc (nmap-ncat)"
+    return 1
+}
+
+# Send metrics using zabbix_sender (preferred)
+_send_via_zabbix_sender() {
+    local metrics="$1"
+    local sender_file
+    sender_file=$(mktemp /tmp/nftban_zabbix_XXXXXX.txt)
+
+    # Convert "key value" to tab-separated "hostname\tkey\tvalue" for zabbix_sender
+    while IFS=' ' read -r key value; do
+        [[ -z "$key" ]] && continue
+        printf '%s\t%s\t%s\n' "$ZABBIX_HOSTNAME" "$key" "$value" >> "$sender_file"
+    done <<< "$(echo -e "$metrics")"
+
+    local count
+    count=$(wc -l < "$sender_file")
+    log_info "Sending $count metrics via zabbix_sender..."
+
+    local response=""
+    local exit_code=0
+    response=$(zabbix_sender -z "$ZABBIX_SERVER" -p "$ZABBIX_PORT" -i "$sender_file" 2>&1) || exit_code=$?
+    rm -f "$sender_file"
+
+    # zabbix_sender exit codes: 0=all ok, 1=some failed, 2=send error
+    # Partial success (some processed) is acceptable — template may not cover all keys
+    local processed
+    processed=$(echo "$response" | { grep -oP 'processed:\s*\K[0-9]+' || echo "0"; })
+
+    if [[ $exit_code -eq 0 ]]; then
+        log_info "Zabbix: $response"
+        return 0
+    elif [[ "$processed" -gt 0 ]]; then
+        log_info "Zabbix: $response"
+        log_info "Partial success — import full template for remaining keys"
+        return 0
+    else
+        log_error "zabbix_sender failed (exit $exit_code): $response"
+        return 1
+    fi
+}
+
+# Send metrics using native Zabbix protocol via nc (fallback)
+_send_via_nc() {
+    local metrics="$1"
+
+    # Build Zabbix sender data JSON
     local data='{"request":"sender data","data":['
     local first=true
 
@@ -281,12 +347,6 @@ send_to_zabbix() {
 
     data+=']}'
 
-    if [[ "$DRY_RUN" == "true" ]]; then
-        echo "=== DRY RUN: Would send to $ZABBIX_SERVER:$ZABBIX_PORT ==="
-        echo "$data" | jq .
-        return 0
-    fi
-
     # Send using native Zabbix protocol
     local data_len=${#data}
 
@@ -294,20 +354,21 @@ send_to_zabbix() {
     local len_hex
     len_hex=$(printf '%016x' "$data_len")
 
+    log_info "Sending via nc (native protocol)..."
+
     # Send: ZBXD\x01 + length (8 bytes LE) + data
     local response=""
     response=$( (
         printf 'ZBXD\x01'
-        # Length as little-endian 8 bytes
         printf "\\x${len_hex:14:2}\\x${len_hex:12:2}\\x${len_hex:10:2}\\x${len_hex:8:2}"
         printf '\x00\x00\x00\x00'
         printf '%s' "$data"
-    ) 2>/dev/null | timeout 10 nc "$ZABBIX_SERVER" "$ZABBIX_PORT" 2>/dev/null | tr -d '\0' | strings ) || response=""
+    ) 2>/dev/null | timeout 10 nc "$ZABBIX_SERVER" "$ZABBIX_PORT" 2>/dev/null | tr -d '\0' | { strings || true; } ) || response=""
 
     if [[ -n "${response:-}" ]] && echo "$response" | grep -q '"response":"success"'; then
         local info
-        info=$(echo "$response" | grep -oP '"info":"\K[^"]+' || echo "sent")
-        log_info "Zabbix: $info"
+        info=$(echo "$response" | { grep -oP '"info":"\K[^"]+' || true; })
+        log_info "Zabbix: ${info:-sent}"
         return 0
     else
         log_error "Failed to send to Zabbix: ${response:-no response}"

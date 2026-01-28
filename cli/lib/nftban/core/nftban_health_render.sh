@@ -79,6 +79,8 @@ nftban_health_render_terminal() {
         [timers]="Timers"
         [fhs]="FHS Layout"
         [pro]="Pro Features"
+        [zabbix]="Zabbix"
+        [connectors]="Connectors"
     )
 
     # Count errors and warnings
@@ -131,7 +133,7 @@ nftban_health_render_terminal() {
     echo "OPTIONAL FEATURES"
     echo "───────────────────────────────────────────────────────────"
 
-    for check in metrics gui polkit bash_completion; do
+    for check in metrics zabbix connectors gui polkit bash_completion; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local status_text
