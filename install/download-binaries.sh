@@ -12,7 +12,7 @@
 # meta:output="Downloaded and verified binaries"
 # meta:depends="curl, jq, sha256sum"
 # meta:inventory.files=""
-# meta:inventory.binaries="nftban-core, nftban-ui, nftban-ui-auth, nftban-geoip"
+# meta:inventory.binaries="nftban-core, nftband, nftban-ui, nftban-ui-auth"
 # meta:inventory.env_vars="DOWNLOAD_DIR, INSTALL_DIR, SKIP_INSTALL"
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -32,7 +32,7 @@
 set -Eeuo pipefail
 
 # Configuration
-GITHUB_REPO="itcmsgr/nftban-v1.0-dev"
+GITHUB_REPO="itcmsgr/nftban"
 GITHUB_API="https://api.github.com/repos/${GITHUB_REPO}"
 GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases/download"
 VERSION="${1:-latest}"
@@ -211,10 +211,7 @@ verify_all() {
     local arch="$2"
     local method="$3"
 
-    local binaries=("nftban-core-linux-${arch}" "nftban-ui-linux-${arch}" "nftban-geoip-linux-${arch}")
-    if [[ "$arch" == "amd64" ]]; then
-        binaries+=("nftban-ui-auth-linux-amd64")
-    fi
+    local binaries=("nftban-core-linux-${arch}" "nftband-linux-${arch}" "nftban-ui-linux-${arch}" "nftban-ui-auth-linux-${arch}")
 
     local verified=0
     local failed=0
@@ -264,6 +261,13 @@ install_binaries() {
         ok "Installed: $INSTALL_DIR/nftban-core"
     fi
 
+    # Install nftband (daemon)
+    if [[ -f "$DOWNLOAD_DIR/nftband-linux-${arch}" ]]; then
+        cp -f "$DOWNLOAD_DIR/nftband-linux-${arch}" "$INSTALL_DIR/nftband"
+        chmod 755 "$INSTALL_DIR/nftband"
+        ok "Installed: $INSTALL_DIR/nftband"
+    fi
+
     # Install nftban-ui
     if [[ -f "$DOWNLOAD_DIR/nftban-ui-linux-${arch}" ]]; then
         cp -f "$DOWNLOAD_DIR/nftban-ui-linux-${arch}" /usr/sbin/nftban-ui
@@ -271,16 +275,9 @@ install_binaries() {
         ok "Installed: /usr/sbin/nftban-ui"
     fi
 
-    # Install nftban-geoip
-    if [[ -f "$DOWNLOAD_DIR/nftban-geoip-linux-${arch}" ]]; then
-        cp -f "$DOWNLOAD_DIR/nftban-geoip-linux-${arch}" "$INSTALL_DIR/nftban-geoip"
-        chmod 755 "$INSTALL_DIR/nftban-geoip"
-        ok "Installed: $INSTALL_DIR/nftban-geoip"
-    fi
-
-    # Install nftban-ui-auth (amd64 only)
-    if [[ -f "$DOWNLOAD_DIR/nftban-ui-auth-linux-amd64" ]]; then
-        cp -f "$DOWNLOAD_DIR/nftban-ui-auth-linux-amd64" /usr/libexec/nftban-ui-auth
+    # Install nftban-ui-auth
+    if [[ -f "$DOWNLOAD_DIR/nftban-ui-auth-linux-${arch}" ]]; then
+        cp -f "$DOWNLOAD_DIR/nftban-ui-auth-linux-${arch}" /usr/libexec/nftban-ui-auth
         chmod 755 /usr/libexec/nftban-ui-auth
         ok "Installed: /usr/libexec/nftban-ui-auth"
     fi

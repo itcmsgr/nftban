@@ -221,13 +221,23 @@ jobs:
 
       - name: Consolidate packages
         run: |
-          mkdir -p dist/packages
+          mkdir -p dist/packages dist/binaries
 
           # Copy all RPM packages
           find all-packages -name "*.rpm" -exec cp {} dist/packages/ \;
 
           # Copy all DEB packages
           find all-packages -name "*.deb" -exec cp {} dist/packages/ \;
+
+          # Copy raw Go binaries (for git-based installs)
+          if [ -d "all-packages" ]; then
+            for binary in nftban-core nftband nftban-ui nftban-ui-auth; do
+              if [ -f "all-packages/${binary}" ]; then
+                cp "all-packages/${binary}" "dist/packages/${binary}-linux-amd64"
+                chmod +x "dist/packages/${binary}-linux-amd64"
+              fi
+            done
+          fi
 
           echo "=== All packages ==="
           ls -lh dist/packages/
@@ -246,6 +256,10 @@ jobs:
             "nftban-ubuntu24.04-amd64.deb"
             "nftban-debian12-amd64.deb"
             "nftban-debian13-amd64.deb"
+            "nftban-core-linux-amd64"
+            "nftband-linux-amd64"
+            "nftban-ui-linux-amd64"
+            "nftban-ui-auth-linux-amd64"
             "SHA256SUMS"
             "MANIFEST.txt"
             "VERIFY.txt"
@@ -413,6 +427,10 @@ jobs:
           files: |
             dist/packages/*.rpm
             dist/packages/*.deb
+            dist/packages/nftban-core-linux-amd64
+            dist/packages/nftband-linux-amd64
+            dist/packages/nftban-ui-linux-amd64
+            dist/packages/nftban-ui-auth-linux-amd64
             dist/packages/SHA256SUMS
             dist/packages/MANIFEST.txt
             dist/packages/VERIFY.txt
