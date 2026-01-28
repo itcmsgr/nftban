@@ -1100,7 +1100,7 @@ install_libraries() {
 
     # Copy root-level library files (help, json_output, etc.)
     cp "$SCRIPT_DIR/cli/lib/nftban/nftban_help.sh" "$LIB_DIR/" 2>/dev/null || true
-    cp "$SCRIPT_DIR/cli/lib/nftban/json_output.sh" "$LIB_DIR/" 2>/dev/null || true
+    cp "$SCRIPT_DIR/cli/lib/nftban/helpers/json_output.sh" "$LIB_DIR/" 2>/dev/null || true
 
     # Copy VERSION file (single source of truth for version)
     if [[ -f "$SCRIPT_DIR/VERSION" ]]; then
@@ -1725,14 +1725,18 @@ install_templates() {
 
     # Install man page
     log "Installing man pages..."
+    mkdir -p /usr/share/man/man8
     if [[ -f "$SCRIPT_DIR/install/man/man8/nftban.8" ]]; then
-        mkdir -p /usr/share/man/man8
         install -m 0644 "$SCRIPT_DIR/install/man/man8/nftban.8" /usr/share/man/man8/
         ok "Installed man page → /usr/share/man/man8/nftban.8"
-        # Update man database if available
-        if command -v mandb &>/dev/null; then
-            mandb -q 2>/dev/null || true
-        fi
+    fi
+    if [[ -f "$SCRIPT_DIR/install/man/man8/nftban-suricata.8" ]]; then
+        install -m 0644 "$SCRIPT_DIR/install/man/man8/nftban-suricata.8" /usr/share/man/man8/
+        ok "Installed man page → /usr/share/man/man8/nftban-suricata.8"
+    fi
+    # Update man database if available
+    if command -v mandb &>/dev/null; then
+        mandb -q 2>/dev/null || true
     fi
 
     return 0
@@ -1980,12 +1984,8 @@ install_polkit() {
         fi
     done
 
-    # Install PAM auth policy if it exists (legacy UI auth)
-    if [[ -f "$SCRIPT_DIR/install/pam/com.nftban.auth.policy" ]]; then
-        cp -f "$SCRIPT_DIR/install/pam/com.nftban.auth.policy" "$POLKIT_ACTIONS_DIR/"
-        chmod 644 "$POLKIT_ACTIONS_DIR/com.nftban.auth.policy"
-        ok "Installed: com.nftban.auth.policy"
-    fi
+    # NOTE: Legacy com.nftban.auth.policy removed in v1.7.0
+    # Polkit authentication is handled via rules.d/ files above
 
     # Start/restart polkit service
     systemctl restart polkit 2>/dev/null || warn "Failed to restart polkit"
