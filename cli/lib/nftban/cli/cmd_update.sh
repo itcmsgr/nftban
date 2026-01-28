@@ -781,13 +781,14 @@ _update_via_deb() {
     fi
 
     # Install
-    local dpkg_cmd="dpkg -i"
+    # Note: IFS=$'\n\t' means we must use arrays for command expansion
+    local -a dpkg_cmd=(dpkg -i)
     if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
         _update_log INFO "Force mode: using dpkg --force-overwrite --force-confnew"
-        dpkg_cmd="dpkg -i --force-overwrite --force-confnew"
+        dpkg_cmd=(dpkg -i --force-overwrite --force-confnew)
     fi
     _update_log INFO "Installing DEB package..."
-    if $dpkg_cmd "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done; then
+    if "${dpkg_cmd[@]}" "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done; then
         _update_log OK "DEB installed successfully"
         rm -f "$tmp_file"
         return 0
