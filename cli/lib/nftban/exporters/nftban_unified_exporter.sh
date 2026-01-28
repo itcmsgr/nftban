@@ -478,9 +478,10 @@ collect_all_metrics() {
                     # Parse date to epoch (DATE|TIME format)
                     if ($1 ~ /^[0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]$/) {
                         # New format: 2026-01-25|14:30:45|source|ip|country|status|reason
-                        cmd = "date -d \"" $1 " " $2 "\" +%s 2>/dev/null"
-                        cmd | getline epoch
-                        close(cmd)
+                        # Pure awk: convert "YYYY-MM-DD" "HH:MM:SS" to epoch via mktime()
+                        split($1, d, "-")
+                        split($2, t, ":")
+                        epoch = mktime(d[1] " " d[2] " " d[3] " " t[1] " " t[2] " " t[3])
                         source = $3
                         ip = $4
                         status = $6
