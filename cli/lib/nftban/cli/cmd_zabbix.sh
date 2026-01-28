@@ -277,11 +277,10 @@ _cmd_zabbix_setup() {
         prereq_warnings+="  [WARN] NFTBan service not found - metrics may be limited\n"
     fi
 
-    # Check: Metrics exporter recommendation
+    # Check: Metrics exporter — auto-enable during setup
     local metrics_enabled="${NFTBAN_METRICS_ENABLED:-false}"
     if [[ "$metrics_enabled" != "true" ]]; then
-        prereq_warnings+="  [INFO] Metrics exporter not enabled - Zabbix will collect basic metrics only\n"
-        prereq_warnings+="         For full metrics, enable: NFTBAN_METRICS_ENABLED=true\n"
+        prereq_warnings+="  [INFO] Enabling metrics collection for Zabbix export\n"
     fi
 
     # Check: Transport binary (zabbix_sender preferred, ncat/nc fallback)
@@ -386,6 +385,20 @@ _cmd_zabbix_setup() {
     _zabbix_config_set "NFTBAN_ZABBIX_HOSTNAME" "$hostname"
     _zabbix_config_set "NFTBAN_ZABBIX_TLS_ENABLED" "$tls"
     _zabbix_config_set "NFTBAN_ZABBIX_PSK_ENABLED" "$psk"
+
+    # Auto-enable metrics collection so the unified exporter runs
+    local metrics_local="${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local"
+    if [[ "${NFTBAN_METRICS_ENABLED:-false}" != "true" ]]; then
+        mkdir -p "$(dirname "$metrics_local")"
+        if [[ -f "$metrics_local" ]] && grep -q "^NFTBAN_METRICS_ENABLED=" "$metrics_local" 2>/dev/null; then
+            sed -i 's/^NFTBAN_METRICS_ENABLED=.*/NFTBAN_METRICS_ENABLED="true"/' "$metrics_local"
+        else
+            echo 'NFTBAN_METRICS_ENABLED="true"' >> "$metrics_local"
+        fi
+        chmod 640 "$metrics_local" 2>/dev/null || true
+        chown root:nftban "$metrics_local" 2>/dev/null || true
+        _zabbix_print_info "Auto-enabled metrics collection"
+    fi
 
     # Configure firewall for outbound Zabbix traffic
     local firewall_auto
@@ -560,7 +573,7 @@ EOF
     if _cmd_zabbix_test --quiet; then
         _zabbix_print_success "Zabbix integration configured successfully"
         echo ""
-        echo "Configuration saved to: ${NFTBAN_CONFIG_DIR}/nftban.conf"
+        echo "Configuration saved to: ${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
         echo ""
         echo "Next steps:"
         echo "  1. Import template: nftban zabbix template --version 6.0 --output /tmp/nftban.yaml"

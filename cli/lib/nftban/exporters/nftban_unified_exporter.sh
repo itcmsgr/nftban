@@ -1671,9 +1671,13 @@ export_connectors() {
 # MAIN
 # =============================================================================
 main() {
-    # Early exit if metrics disabled
-    if [[ "${NFTBAN_METRICS_ENABLED:-false}" != "true" ]]; then
-        log_debug "Metrics collection disabled (NFTBAN_METRICS_ENABLED=false)"
+    # Early exit if NO export target is enabled
+    # Each target has its own enable flag — don't gate everything behind METRICS_ENABLED
+    if [[ "${NFTBAN_METRICS_ENABLED:-false}" != "true" ]] \
+        && [[ "${NFTBAN_ZABBIX_ENABLED:-false}" != "true" ]] \
+        && [[ "${NFTBAN_EXPORT_PROMETHEUS:-false}" != "true" ]] \
+        && [[ "${NFTBAN_EXPORT_CONNECTORS:-false}" != "true" ]]; then
+        log_debug "No export targets enabled — skipping collection"
         exit 0
     fi
 
