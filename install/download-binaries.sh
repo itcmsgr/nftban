@@ -372,12 +372,27 @@ else
     fi
 fi
 
+# Check if provenance files exist (required for SLSA verification)
+if [[ "$VERIFY_METHOD" == "slsa" ]]; then
+    # Check if any provenance file exists
+    local has_provenance=0
+    for binary in nftban-core nftband nftban-ui nftban-ui-auth; do
+        if [[ -f "$DOWNLOAD_DIR/${binary}-linux-${ARCH}.intoto.jsonl" ]]; then
+            has_provenance=1
+            break
+        fi
+    done
+
+    if [[ $has_provenance -eq 0 ]]; then
+        warn "No provenance files found in release, falling back to SHA256"
+        VERIFY_METHOD="sha256"
+    fi
+fi
+
 if [[ "$VERIFY_METHOD" == "slsa" ]]; then
     log "Using SLSA Level 3 verification (recommended)"
 else
-    warn "Falling back to SHA256 verification"
-    warn "For better security, install slsa-verifier:"
-    echo "  go install github.com/slsa-framework/slsa-verifier/v2/cli/slsa-verifier@latest"
+    log "Using SHA256 verification"
 fi
 echo ""
 
