@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.2.0 - Support Bundle Command
+# NFTBan v1.8.2 - Support Bundle Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Collect diagnostic information for troubleshooting
@@ -8,7 +8,7 @@
 # meta:name="cmd_support"
 # meta:type="cli"
 # meta:header="Support Bundle Command"
-# meta:version="1.2.0"
+# meta:version="1.8.2"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -22,7 +22,7 @@
 # meta:inventory.privileges="root"
 #
 # meta:created_date="2026-01-16"
-# meta:updated_date="2026-01-16"
+# meta:updated_date="2026-01-29"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -388,6 +388,392 @@ _collect_services() {
     systemctl list-timers 'nftban*' --no-pager > "$svc_dir/timers.txt" 2>&1 || true
 }
 
+_collect_install_info() {
+    local bundle_dir="$1"
+    local install_dir="$bundle_dir/install"
+    mkdir -p "$install_dir"
+
+    # Detect install type
+    {
+        echo "# NFTBan Installation Info"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        # Install type detection
+        echo "=== Install Type ==="
+        if [[ -f /etc/nftban/.install_type ]]; then
+            echo "Install type file: $(cat /etc/nftban/.install_type)"
+        elif rpm -q nftban-core &>/dev/null 2>&1; then
+            echo "Install type: rpm"
+            echo ""
+            echo "=== RPM Package Info ==="
+            rpm -qi nftban-core 2>&1 || true
+        elif dpkg -l nftban 2>/dev/null | grep -q '^ii'; then
+            echo "Install type: deb"
+            echo ""
+            echo "=== DEB Package Info ==="
+            dpkg -l nftban 2>&1 || true
+            dpkg -s nftban 2>&1 || true
+        elif [[ -d "${NFTBAN_GIT_REPO:-/opt/nftban}/.git" ]]; then
+            echo "Install type: git"
+            echo "Git repo: ${NFTBAN_GIT_REPO:-/opt/nftban}"
+        else
+            echo "Install type: unknown"
+        fi
+        echo ""
+
+        # PATH info
+        echo "=== PATH ==="
+        echo "PATH=$PATH"
+        echo ""
+        echo "which nftban: $(which nftban 2>&1 || echo 'not found')"
+        echo "which nftban-core: $(which nftban-core 2>&1 || echo 'not found')"
+        echo "which nft: $(which nft 2>&1 || echo 'not found')"
+        echo ""
+
+    } > "$install_dir/install-type.txt"
+    _support_log OK "Install type detection"
+}
+
+_collect_binaries() {
+    local bundle_dir="$1"
+    local bin_dir="$bundle_dir/binaries"
+    mkdir -p "$bin_dir"
+
+    {
+        echo "# NFTBan Binary Info"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        # Binary locations
+        echo "=== Binary Locations ==="
+        for bin_path in /usr/sbin/nftban /usr/lib/nftban/bin/nftban-core \
+                        /usr/lib/nftban/bin/nftband /usr/sbin/nftban-ui \
+                        /usr/libexec/nftban-ui-auth; do
+            if [[ -f "$bin_path" ]]; then
+                echo "$bin_path: $(ls -la "$bin_path" 2>&1)"
+            else
+                echo "$bin_path: NOT FOUND"
+            fi
+        done
+        echo ""
+
+        # Go binary versions
+        echo "=== Go Binary Versions ==="
+        for binary in nftban-core nftband nftban-ui nftban-ui-auth; do
+            local bin_path="/usr/lib/nftban/bin/$binary"
+            [[ "$binary" == "nftban-ui" ]] && bin_path="/usr/sbin/nftban-ui"
+            [[ "$binary" == "nftban-ui-auth" ]] && bin_path="/usr/libexec/nftban-ui-auth"
+
+            if [[ -x "$bin_path" ]]; then
+                echo "$binary: $("$bin_path" --version 2>&1 | head -1 || echo 'version failed')"
+            else
+                echo "$binary: not executable or not found"
+            fi
+        done
+        echo ""
+
+        # Capabilities
+        echo "=== Binary Capabilities ==="
+        if command -v getcap &>/dev/null; then
+            for bin_path in /usr/lib/nftban/bin/nftban-core /usr/lib/nftban/bin/nftband; do
+                if [[ -f "$bin_path" ]]; then
+                    echo "$bin_path: $(getcap "$bin_path" 2>&1 || echo 'no caps')"
+                fi
+            done
+        else
+            echo "getcap not available"
+        fi
+        echo ""
+
+        # File permissions on critical files
+        echo "=== Critical File Permissions ==="
+        for path in /usr/sbin/nftban /etc/nftban/nftban.conf \
+                    /usr/lib/nftban/lib/nft_schema.sh /var/lib/nftban; do
+            if [[ -e "$path" ]]; then
+                ls -la "$path" 2>&1
+            else
+                echo "$path: NOT FOUND"
+            fi
+        done
+
+    } > "$bin_dir/binaries.txt"
+    _support_log OK "Binary information"
+}
+
+_collect_distro_config() {
+    local bundle_dir="$1"
+    local distro_dir="$bundle_dir/distro"
+    mkdir -p "$distro_dir"
+
+    {
+        echo "# Distro Configuration"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        # OS detection
+        echo "=== OS Detection ==="
+        if [[ -f /etc/os-release ]]; then
+            source /etc/os-release
+            echo "ID: ${ID:-unknown}"
+            echo "VERSION_ID: ${VERSION_ID:-unknown}"
+            echo "PRETTY_NAME: ${PRETTY_NAME:-unknown}"
+        fi
+        echo ""
+
+        # Distro config file
+        echo "=== Distro Config Files ==="
+        ls -la /etc/nftban/distros/ 2>&1 || echo "/etc/nftban/distros/ not found"
+        echo ""
+
+        # Active distro config
+        local distro_id="${ID:-unknown}"
+        local distro_version="${VERSION_ID:-unknown}"
+        local expected_config="/etc/nftban/distros/${distro_id}-${distro_version}.conf"
+        echo "=== Expected Config: $expected_config ==="
+        if [[ -f "$expected_config" ]]; then
+            echo "EXISTS: yes"
+            echo "Content preview:"
+            head -30 "$expected_config"
+        else
+            echo "EXISTS: no"
+            echo "Available configs:"
+            ls /etc/nftban/distros/*.conf 2>/dev/null || echo "none"
+        fi
+
+    } > "$distro_dir/distro-config.txt"
+    _support_log OK "Distro configuration"
+}
+
+_collect_fhs_structure() {
+    local bundle_dir="$1"
+    local fhs_dir="$bundle_dir/fhs"
+    mkdir -p "$fhs_dir"
+
+    {
+        echo "# FHS Directory Structure"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        # Key directories
+        echo "=== Key Directories ==="
+        for dir in /etc/nftban /usr/lib/nftban /var/lib/nftban /var/log/nftban \
+                   /var/run/nftban /usr/share/nftban; do
+            if [[ -d "$dir" ]]; then
+                echo "$dir: $(ls -ld "$dir" 2>&1)"
+            else
+                echo "$dir: NOT FOUND"
+            fi
+        done
+        echo ""
+
+        # Detailed listing
+        echo "=== /etc/nftban structure ==="
+        find /etc/nftban -type f -o -type d 2>/dev/null | head -50 || echo "not accessible"
+        echo ""
+
+        echo "=== /var/lib/nftban structure ==="
+        find /var/lib/nftban -type f -o -type d 2>/dev/null | head -50 || echo "not accessible"
+        echo ""
+
+        # Disk space
+        echo "=== Disk Space ==="
+        df -h /etc/nftban /var/lib/nftban /var/log/nftban 2>/dev/null || df -h / 2>/dev/null
+        echo ""
+
+        # Immutable flags
+        echo "=== Immutable Flags (chattr) ==="
+        if command -v lsattr &>/dev/null; then
+            lsattr /usr/lib/nftban/lib/*.sh 2>/dev/null | grep -E '^....i' || echo "No immutable files found"
+        else
+            echo "lsattr not available"
+        fi
+
+    } > "$fhs_dir/fhs-structure.txt"
+    _support_log OK "FHS directory structure"
+}
+
+_collect_whitelist_blacklist() {
+    local bundle_dir="$1"
+    local lists_dir="$bundle_dir/lists"
+    mkdir -p "$lists_dir"
+
+    # Whitelist files
+    if [[ -d /etc/nftban/whitelist.d ]]; then
+        {
+            echo "# Whitelist Files"
+            echo "# Collected: $(date -Iseconds)"
+            echo ""
+            for wl in /etc/nftban/whitelist.d/*.conf; do
+                if [[ -f "$wl" ]]; then
+                    echo "=== $(basename "$wl") ==="
+                    cat "$wl"
+                    echo ""
+                fi
+            done
+        } > "$lists_dir/whitelists.txt"
+        _support_log OK "Whitelist files"
+    else
+        _support_log SKIP "Whitelist files (directory not found)"
+    fi
+
+    # Blacklist summary (don't dump full lists - could be huge)
+    {
+        echo "# Blacklist Summary"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+        if [[ -d /var/lib/nftban/blacklists ]]; then
+            echo "=== Blacklist Files ==="
+            ls -la /var/lib/nftban/blacklists/ 2>&1
+            echo ""
+            echo "=== Entry Counts ==="
+            for bl in /var/lib/nftban/blacklists/*.txt; do
+                if [[ -f "$bl" ]]; then
+                    echo "$(basename "$bl"): $(wc -l < "$bl") entries"
+                fi
+            done 2>/dev/null || echo "No blacklist files"
+        else
+            echo "Blacklist directory not found"
+        fi
+    } > "$lists_dir/blacklist-summary.txt"
+    _support_log OK "Blacklist summary"
+}
+
+_collect_geoip() {
+    local bundle_dir="$1"
+    local geoip_dir="$bundle_dir/geoip"
+    mkdir -p "$geoip_dir"
+
+    {
+        echo "# GeoIP Database Info"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        local db_path="/var/lib/nftban/geoip/dbip-country-lite.mmdb"
+        echo "=== Database File ==="
+        if [[ -f "$db_path" ]]; then
+            echo "Path: $db_path"
+            echo "Size: $(ls -lh "$db_path" | awk '{print $5}')"
+            echo "Modified: $(stat -c '%y' "$db_path" 2>/dev/null || stat -f '%Sm' "$db_path" 2>/dev/null)"
+
+            # Calculate age
+            local db_mtime file_age_days
+            db_mtime=$(stat -c '%Y' "$db_path" 2>/dev/null || stat -f '%m' "$db_path" 2>/dev/null)
+            file_age_days=$(( ($(date +%s) - db_mtime) / 86400 ))
+            echo "Age: ${file_age_days} days"
+
+            if [[ $file_age_days -gt 30 ]]; then
+                echo "WARNING: Database is older than 30 days!"
+            fi
+        else
+            echo "Database NOT FOUND at $db_path"
+        fi
+        echo ""
+
+        # GeoIP config
+        echo "=== GeoIP Configuration ==="
+        if [[ -f /etc/nftban/conf.d/geoip/main.conf ]]; then
+            grep -v '^#' /etc/nftban/conf.d/geoip/main.conf | grep -v '^$' || echo "empty config"
+        else
+            echo "Config not found"
+        fi
+
+    } > "$geoip_dir/geoip-info.txt"
+    _support_log OK "GeoIP database info"
+}
+
+_collect_daemon_status() {
+    local bundle_dir="$1"
+    local daemon_dir="$bundle_dir/daemon"
+    mkdir -p "$daemon_dir"
+
+    {
+        echo "# NFTBan Daemon Status"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        # Socket status
+        echo "=== nftband.socket ==="
+        systemctl status nftband.socket --no-pager 2>&1 || echo "socket not found"
+        echo ""
+
+        # Daemon status
+        echo "=== nftband.service ==="
+        systemctl status nftband.service --no-pager 2>&1 || echo "service not found"
+        echo ""
+
+        # Socket file
+        echo "=== Socket File ==="
+        ls -la /var/run/nftban/nftband.sock 2>&1 || echo "socket file not found"
+        echo ""
+
+        # Test daemon connectivity
+        echo "=== Daemon Connectivity Test ==="
+        if [[ -S /var/run/nftban/nftband.sock ]]; then
+            if command -v socat &>/dev/null; then
+                echo '{"action":"ping"}' | timeout 5 socat - UNIX-CONNECT:/var/run/nftban/nftband.sock 2>&1 || echo "ping failed"
+            else
+                echo "socat not available for connectivity test"
+            fi
+        else
+            echo "Socket not available"
+        fi
+
+    } > "$daemon_dir/daemon-status.txt"
+    _support_log OK "Daemon status"
+}
+
+_collect_recent_activity() {
+    local bundle_dir="$1"
+    local activity_dir="$bundle_dir/activity"
+    mkdir -p "$activity_dir"
+
+    # Recent bans from journal
+    {
+        echo "# Recent Ban Activity"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        echo "=== Last 20 Ban Events ==="
+        if command -v journalctl &>/dev/null; then
+            journalctl -u nftband -u nftban --no-pager --since "24 hours ago" 2>/dev/null | \
+                grep -iE '(ban|block|reject|drop)' | tail -20 || echo "No ban events found"
+        fi
+        echo ""
+
+        echo "=== Last 10 Errors ==="
+        if command -v journalctl &>/dev/null; then
+            journalctl -u nftband -u nftban -p err --no-pager --since "24 hours ago" -n 10 2>&1 || echo "No errors"
+        fi
+
+    } > "$activity_dir/recent-bans.txt"
+    _support_log OK "Recent ban activity"
+
+    # Feed status
+    {
+        echo "# Feed Status"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        echo "=== Feed Configuration ==="
+        if [[ -f /etc/nftban/conf.d/feeds.conf ]]; then
+            grep -E '^FEED_.*_ENABLED=' /etc/nftban/conf.d/feeds.conf 2>/dev/null || echo "No feeds configured"
+        else
+            echo "feeds.conf not found"
+        fi
+        echo ""
+
+        echo "=== Feed Files ==="
+        if [[ -d /var/lib/nftban/feeds ]]; then
+            ls -la /var/lib/nftban/feeds/ 2>&1
+        else
+            echo "Feed directory not found"
+        fi
+
+    } > "$activity_dir/feed-status.txt"
+    _support_log OK "Feed status"
+}
+
 # =============================================================================
 # MAIN COMMAND HANDLERS
 # =============================================================================
@@ -411,14 +797,22 @@ _cmd_support_bundle() {
     echo "  Collecting diagnostic information..."
     echo ""
 
-    # Always collect these
+    # Always collect these - Core diagnostics
     _collect_version "$bundle_dir"
     _collect_system "$bundle_dir"
+    _collect_install_info "$bundle_dir"
+    _collect_binaries "$bundle_dir"
+    _collect_distro_config "$bundle_dir"
+    _collect_fhs_structure "$bundle_dir"
     _collect_nftables "$bundle_dir"
     _collect_configs "$bundle_dir"
+    _collect_whitelist_blacklist "$bundle_dir"
+    _collect_geoip "$bundle_dir"
     _collect_logs "$bundle_dir"
     _collect_health "$bundle_dir"
     _collect_status "$bundle_dir"
+    _collect_daemon_status "$bundle_dir"
+    _collect_recent_activity "$bundle_dir"
     _collect_update_info "$bundle_dir"
     _collect_services "$bundle_dir"
 
@@ -541,14 +935,22 @@ OUTPUT:
 
   Bundle contents:
     - version.txt         NFTBan and git version
-    - system/             OS, kernel, memory info
-    - nftables/           Ruleset, tables, sets
+    - system/             OS, kernel, memory, SELinux/AppArmor
+    - install/            Install type (git/rpm/deb), PATH, which
+    - binaries/           Binary locations, versions, capabilities
+    - distro/             Distro detection, config file status
+    - fhs/                Directory structure, permissions, disk space
+    - nftables/           Ruleset, tables, sets, counters
     - config/             Config files (secrets redacted)
+    - lists/              Whitelist files, blacklist summary
+    - geoip/              Database status, age, config
     - logs/               Recent logs (last 24h)
     - health.txt          Health check output
     - status.txt          NFTBan status
+    - daemon/             nftband socket/service, connectivity
+    - activity/           Recent bans, feed status
     - update/             Update check and backup list
-    - services/           Systemd service status
+    - services/           Systemd service/timer status
     - network/            Network info (if --network)
     - MANIFEST.txt        Bundle inventory
 
