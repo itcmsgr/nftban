@@ -38,15 +38,6 @@ import (
 	"github.com/itcmsgr/nftban/pkg/version"
 )
 
-// replaceConfigValue replaces a config variable value using regex to handle spacing variations
-// Pattern matches: VAR="value", VAR = "value", VAR= "value", etc.
-func replaceConfigValueTrust(content, varName, newValue string) string {
-	// Regex pattern: varName + optional spaces + = + optional spaces + quoted value
-	pattern := regexp.MustCompile(fmt.Sprintf(`(?m)^(\s*)%s\s*=\s*"[^"]*"(.*)$`, regexp.QuoteMeta(varName)))
-	replacement := fmt.Sprintf(`${1}%s="%s"${2}`, varName, newValue)
-	return pattern.ReplaceAllString(content, replacement)
-}
-
 // getTrustPaths returns trust directory and config paths from passed config
 func getTrustPaths(cfg *nftbanconf.Config) (trustDir, trustConfig string) {
 	return cfg.DataDir + "/trust", cfg.ConfigDir + "/conf.d/trust.conf"
