@@ -187,7 +187,7 @@ nftban_health_fix_permissions() {
             fi
         fi
 
-        local nftban_bin="${NFTBAN_BIN:-/usr/bin/nftban}"
+        local nftban_bin="${NFTBAN_BIN:-/usr/sbin/nftban}"
         if [[ -f "$nftban_bin" ]]; then
             chmod 755 "$nftban_bin" 2>/dev/null && \
             chown root:root "$nftban_bin" 2>/dev/null && \

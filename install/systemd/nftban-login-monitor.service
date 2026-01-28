@@ -11,7 +11,7 @@
 # meta:output="Systemd unit"
 # meta:depends=""
 # meta:inventory.files=""
-# meta:inventory.binaries="/usr/bin/nftban"
+# meta:inventory.binaries="/usr/sbin/nftban"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units="sshd.service"
@@ -37,7 +37,7 @@ User=nftban
 Group=nftban
 SupplementaryGroups=adm systemd-journal
 
-ExecStart=/usr/bin/nftban login run
+ExecStart=/usr/sbin/nftban login run
 ExecReload=/bin/kill -HUP $MAINPID
 Restart=on-failure
 RestartSec=10

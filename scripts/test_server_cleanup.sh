@@ -61,7 +61,7 @@ nft delete table ip6 nftban 2>/dev/null || true
 
 # Remove binaries
 log "Removing binaries..."
-rm -f /usr/bin/nftban
+rm -f /usr/sbin/nftban
 rm -f /usr/sbin/nftban-ui
 rm -f /usr/sbin/nftban-core
 rm -f /usr/libexec/nftban-ui-auth

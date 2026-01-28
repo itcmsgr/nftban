@@ -544,7 +544,7 @@
     ]
   },
   "binaries": {
-    "cli": "/usr/bin/nftban",
+    "cli": "/usr/sbin/nftban",
     "go_binaries_dir": "/usr/lib/nftban/bin"
   },
   "sysusers": {

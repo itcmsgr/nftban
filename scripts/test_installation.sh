@@ -98,7 +98,7 @@ echo ""
 # -----------------------------------------------------------------------------
 info "=== Checking Binaries ==="
 
-check_file "/usr/bin/nftban" "Main CLI"
+check_file "/usr/sbin/nftban" "Main CLI"
 
 if [[ "$MODE" == "all" || "$MODE" == "gui" ]]; then
     check_file "/usr/lib/nftban/bin/nftban-core" "nftban-core binary"

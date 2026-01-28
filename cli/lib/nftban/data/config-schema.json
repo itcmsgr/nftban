@@ -2063,7 +2063,7 @@
     "LOGIN_BAN_COMMAND": {
       "type": "string",
       "$ref": "#/definitions/string",
-      "default": "${NFTBAN_BIN:-/usr/bin/nftban} ban",
+      "default": "${NFTBAN_BIN:-/usr/sbin/nftban} ban",
       "description": "L B C",
       "introduced_in": "1.0.0",
       "category": "modules",

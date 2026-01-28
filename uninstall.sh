@@ -241,7 +241,7 @@ uninstall_binaries() {
 
     local removed=0
     local binaries=(
-        "/usr/bin/nftban"
+        "/usr/sbin/nftban"
         "/usr/sbin/nftban-ui"
         "/usr/libexec/nftban-ui-auth"
         "/usr/lib/nftban"

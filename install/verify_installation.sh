@@ -72,7 +72,7 @@ echo ""
 # Core CLI Files (Required)
 # ==============================================================================
 echo "Checking Core CLI Files..."
-check_file "/usr/bin/nftban"
+check_file "/usr/sbin/nftban"
 check_file "/usr/lib/nftban/core/nftban_output.sh"
 check_file "/usr/lib/nftban/core/nftban_file_ops.sh"
 check_file "/usr/lib/nftban/core/nftban_system_ip.sh"

@@ -148,7 +148,7 @@ ls -la bin/
 # Binaries
 install -D -m 0755 bin/nftban-core %{buildroot}/usr/lib/nftban/bin/nftban-core
 install -D -m 0755 bin/nftband %{buildroot}/usr/lib/nftban/bin/nftband
-install -D -m 0755 cli/sbin/nftban %{buildroot}/usr/bin/nftban
+install -D -m 0755 cli/sbin/nftban %{buildroot}/usr/sbin/nftban
 install -D -m 0755 bin/nftban-ui %{buildroot}/usr/sbin/nftban-ui
 install -D -m 0755 bin/nftban-ui-auth %{buildroot}/usr/libexec/nftban-ui-auth
 
@@ -775,7 +775,7 @@ if [ \$1 -eq 0 ]; then
 fi
 
 %files
-/usr/bin/nftban
+/usr/sbin/nftban
 /usr/sbin/nftban-ui
 /usr/libexec/nftban-ui-auth
 /usr/lib/nftban/bin

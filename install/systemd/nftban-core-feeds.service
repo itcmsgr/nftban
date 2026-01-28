@@ -11,7 +11,7 @@
 # meta:output="Systemd unit"
 # meta:depends=""
 # meta:inventory.files=""
-# meta:inventory.binaries="/usr/bin/nftban"
+# meta:inventory.binaries="/usr/sbin/nftban"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
 # meta:inventory.systemd_units=""
@@ -27,7 +27,7 @@ After=network-online.target
 [Service]
 Type=oneshot
 # Log to both journal AND file for easy viewing
-ExecStart=/bin/bash -c '/usr/bin/nftban feeds update 2>&1 | tee -a /var/log/nftban/feeds.log'
+ExecStart=/bin/bash -c '/usr/sbin/nftban feeds update 2>&1 | tee -a /var/log/nftban/feeds.log'
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nftban-feeds

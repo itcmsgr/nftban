@@ -668,7 +668,7 @@ nftban_report_schedule_add() {
     local cron_entry=""
     case "$frequency" in
         daily)
-            cron_entry="${minute} ${hour} * * * root /usr/bin/nftban report run daily"
+            cron_entry="${minute} ${hour} * * * root /usr/sbin/nftban report run daily"
             ;;
         weekly)
             local dow=1  # Monday
@@ -681,11 +681,11 @@ nftban_report_schedule_add() {
                 saturday) dow=6 ;;
                 sunday) dow=0 ;;
             esac
-            cron_entry="${minute} ${hour} * * ${dow} root /usr/bin/nftban report run weekly"
+            cron_entry="${minute} ${hour} * * ${dow} root /usr/sbin/nftban report run weekly"
             ;;
         monthly)
             local dom="${day:-1}"
-            cron_entry="${minute} ${hour} ${dom} * * root /usr/bin/nftban report run monthly"
+            cron_entry="${minute} ${hour} ${dom} * * root /usr/sbin/nftban report run monthly"
             ;;
     esac
 
@@ -704,10 +704,10 @@ nftban_report_schedule_add() {
 
         # Add other standard entries
         echo "# Hourly snapshot"
-        echo "0 * * * * root ${NFTBAN_BIN:-/usr/bin/nftban} stats snapshot >> ${NFTBAN_LOG_DIR:-/var/log/nftban}/cron.log 2>&1"
+        echo "0 * * * * root ${NFTBAN_BIN:-/usr/sbin/nftban} stats snapshot >> ${NFTBAN_LOG_DIR:-/var/log/nftban}/cron.log 2>&1"
         echo ""
         echo "# Daily cleanup"
-        echo "0 3 * * * root ${NFTBAN_BIN:-/usr/bin/nftban} stats cleanup >> ${NFTBAN_LOG_DIR:-/var/log/nftban}/cron.log 2>&1"
+        echo "0 3 * * * root ${NFTBAN_BIN:-/usr/sbin/nftban} stats cleanup >> ${NFTBAN_LOG_DIR:-/var/log/nftban}/cron.log 2>&1"
     } > "$NFTBAN_CRON_FILE"
 
     chmod 644 "$NFTBAN_CRON_FILE"

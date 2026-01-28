@@ -51,7 +51,7 @@ main() {
     fi
 
     # Ensure required variables are set (use defaults if not in config)
-    : "${NFTBAN_BIN:=/usr/bin/nftban}"
+    : "${NFTBAN_BIN:=/usr/sbin/nftban}"
     : "${NFTBAN_AUTH_BIN:=/usr/libexec/nftban-ui-auth}"
 
     # Ensure output directory exists

@@ -1072,8 +1072,8 @@ install_cli() {
     log "Installing CLI..."
 
     # Clean up old location (migrated from /usr/bin to /usr/sbin)
-    if [[ -f "/usr/bin/nftban" ]] && [[ ! -L "/usr/bin/nftban" ]]; then
-        rm -f "/usr/bin/nftban"
+    if [[ -f "/usr/sbin/nftban" ]] && [[ ! -L "/usr/sbin/nftban" ]]; then
+        rm -f "/usr/sbin/nftban"
     fi
 
     # Install CLI wrapper
@@ -1996,7 +1996,7 @@ install_polkit() {
     fi
 
     # Ensure required variables are set
-    : "${NFTBAN_BIN:=/usr/bin/nftban}"
+    : "${NFTBAN_BIN:=/usr/sbin/nftban}"
     : "${NFTBAN_AUTH_BIN:=/usr/libexec/nftban-ui-auth}"
 
     # ==========================================================================

@@ -331,7 +331,7 @@ fi
 log_info "Running automated fixes..."
 
 # Use centralized NFTBAN_BIN path
-NFTBAN_CMD="${NFTBAN_BIN:-/usr/bin/nftban}"
+NFTBAN_CMD="${NFTBAN_BIN:-/usr/sbin/nftban}"
 
 # Fix permissions silently
 "$NFTBAN_CMD" permissions enforce >/dev/null 2>&1 || true
