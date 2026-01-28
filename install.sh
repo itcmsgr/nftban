@@ -798,17 +798,58 @@ check_xtables_compat() {
 }
 
 # Check Go binaries exist (REQUIRED)
+# If missing, auto-download from GitHub releases
 check_go_binaries() {
     log "Checking Go binaries..."
 
     local missing=0
 
     if [[ ! -f "$BIN_DIR/nftban-core" ]]; then
-        error "Missing: $BIN_DIR/nftban-core"
+        warn "Missing: $BIN_DIR/nftban-core"
         missing=1
     fi
 
     if [[ $missing -eq 1 ]]; then
+        log "Go binaries not found, attempting auto-download..."
+
+        # Try download-binaries.sh if available
+        local download_script="$SCRIPT_DIR/install/download-binaries.sh"
+        if [[ -f "$download_script" ]]; then
+            log "Running download-binaries.sh..."
+
+            # Create bin directory if missing
+            mkdir -p "$BIN_DIR"
+
+            # Download binaries (SKIP_INSTALL=1 to download only, we'll install ourselves)
+            # Set DOWNLOAD_DIR to our bin directory for direct placement
+            if SKIP_INSTALL=1 DOWNLOAD_DIR="$BIN_DIR" bash "$download_script" 2>&1; then
+                # Rename downloaded binaries to expected names (remove -linux-amd64 suffix)
+                local arch
+                arch=$(uname -m)
+                case "$arch" in
+                    x86_64)  arch="amd64" ;;
+                    aarch64) arch="arm64" ;;
+                esac
+
+                for binary in nftban-core nftband nftban-ui nftban-ui-auth; do
+                    local downloaded="$BIN_DIR/${binary}-linux-${arch}"
+                    local target="$BIN_DIR/${binary}"
+                    if [[ -f "$downloaded" ]] && [[ ! -f "$target" ]]; then
+                        mv "$downloaded" "$target"
+                        chmod 755 "$target"
+                    fi
+                done
+
+                # Verify download succeeded
+                if [[ -f "$BIN_DIR/nftban-core" ]]; then
+                    ok "Go binaries downloaded successfully"
+                    return 0
+                fi
+            fi
+
+            error "Auto-download failed"
+        fi
+
         echo ""
         error "Go binaries not found!"
         echo ""
