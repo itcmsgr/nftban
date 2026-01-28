@@ -795,7 +795,10 @@ collect_all_metrics() {
         # --- nftables Metrics ---
         if command -v nft &>/dev/null; then
             local sets_count elements_total
-            sets_count=$(( $(nft list sets ${NFTBAN_TABLE_IPV4} 2>/dev/null | grep -c "set " || echo "0") + $(nft list sets ${NFTBAN_TABLE_IPV6} 2>/dev/null | grep -c "set " || echo "0") ))
+            # Count sets per family (nft list sets FAMILY, not "nft list sets FAMILY TABLE")
+            local ipv4_family="${NFTBAN_TABLE_IPV4%% *}"  # "ip" from "ip nftban"
+            local ipv6_family="${NFTBAN_TABLE_IPV6%% *}"  # "ip6" from "ip6 nftban"
+            sets_count=$(( $(nft list sets "$ipv4_family" 2>/dev/null | grep -c "set " || echo 0) + $(nft list sets "$ipv6_family" 2>/dev/null | grep -c "set " || echo 0) ))
             elements_total=0
 
             # Individual set counts (for audit/stats alignment)
