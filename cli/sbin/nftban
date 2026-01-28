@@ -99,9 +99,15 @@ fi
 
 # Load module configs (conf.d/*.conf) in alphabetical order
 # After each .conf file, load corresponding .local override if exists
+# NOTE: Skip INI-style configs (contain [section] headers) - these are for Go components
 if [[ -d "${NFTBAN_CONFIG_DIR}/conf.d" ]]; then
     for conf_file in "${NFTBAN_CONFIG_DIR}"/conf.d/*.conf; do
         if [[ -f "$conf_file" ]]; then
+            # Skip INI-style configs (for Go daemon, not bash)
+            if grep -q '^\[' "$conf_file" 2>/dev/null; then
+                continue
+            fi
+
             # Load main config file
             # shellcheck source=/dev/null
             source "$conf_file"
@@ -109,8 +115,11 @@ if [[ -d "${NFTBAN_CONFIG_DIR}/conf.d" ]]; then
             # Load .local override for this specific config (if exists)
             local_override="${conf_file}.local"
             if [[ -f "$local_override" ]]; then
-                # shellcheck source=/dev/null
-                source "$local_override"
+                # Skip if INI-style
+                if ! grep -q '^\[' "$local_override" 2>/dev/null; then
+                    # shellcheck source=/dev/null
+                    source "$local_override"
+                fi
             fi
         fi
     done
