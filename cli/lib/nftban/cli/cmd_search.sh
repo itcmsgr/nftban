@@ -353,72 +353,42 @@ _ip_in_cidr() {
 # Args: $1 = IP address to search for
 # Output: Feed names and matching CIDRs (one per line: "feed_name:cidr")
 # Returns: 0 if found in any feed CIDR, 1 otherwise
+# Uses nftban-core for fast CIDR matching (Go binary) instead of slow bash loop
 _search_feeds_cidr() {
     local ip="$1"
-    local found_cidrs=()
 
     if [[ ! -d "$NFTBAN_FEEDS_DIR" ]]; then
         return 1
     fi
 
-    # Determine if IPv4 or IPv6
-    local is_ipv6=false
-    [[ "$ip" == *:* ]] && is_ipv6=true
-
-    # First try nftban-core if available (faster, handles IPv6 properly)
+    # Use nftban-core check for fast CIDR matching (Go binary with efficient IP library)
     local nftban_core_bin="${NFTBAN_CORE_BIN:-${NFTBAN_LIB_DIR}/bin/nftban-core}"
     if [[ ! -x "$nftban_core_bin" ]]; then
         nftban_core_bin=$(command -v nftban-core 2>/dev/null || echo "")
     fi
 
-    # nftban-core check already does CIDR containment but doesn't return specific CIDRs
-    # So we do our own scan for detailed reporting
+    if [[ -x "$nftban_core_bin" ]]; then
+        # nftban-core check returns feed info if IP is in a CIDR
+        local check_output
+        check_output=$("$nftban_core_bin" check "$ip" 2>/dev/null) || true
 
-    for feed_file in "$NFTBAN_FEEDS_DIR"/*.txt; do
-        if [[ ! -f "$feed_file" ]]; then
-            continue
-        fi
-
-        local feed_name
-        feed_name=$(basename "$feed_file" .txt)
-
-        # Read feed file and check CIDRs
-        while IFS= read -r line || [[ -n "$line" ]]; do
-            # Skip comments and empty lines
-            [[ -z "$line" || "$line" == \#* || "$line" == \;* ]] && continue
-
-            # Extract first field (IP/CIDR)
-            local entry="${line%% *}"
-            entry="${entry%%#*}"
-            entry="${entry%%;*}"
-            entry=$(echo "$entry" | tr -d '[:space:]')
-
-            [[ -z "$entry" ]] && continue
-
-            # Only check CIDR entries (contain /)
-            if [[ "$entry" == */* ]]; then
-                # Match IP version
-                local cidr_is_ipv6=false
-                [[ "$entry" == *:* ]] && cidr_is_ipv6=true
-
-                # Skip if IP version doesn't match
-                if [[ "$is_ipv6" != "$cidr_is_ipv6" ]]; then
-                    continue
-                fi
-
-                # Check if IP is in this CIDR
-                if _ip_in_cidr "$ip" "$entry"; then
-                    found_cidrs+=("${feed_name}:${entry}")
-                fi
+        # Parse output for feed matches
+        if echo "$check_output" | grep -q "Found in feeds\|🔴.*feeds"; then
+            # Extract feed name from output if available
+            local feed_match
+            feed_match=$(echo "$check_output" | grep -oP '(?<=feed: )\S+|(?<=Feed: )\S+' | head -1)
+            if [[ -n "$feed_match" ]]; then
+                echo "${feed_match}:CIDR"
+            else
+                echo "feeds:CIDR"
             fi
-        done < "$feed_file"
-    done
-
-    if [[ ${#found_cidrs[@]} -gt 0 ]]; then
-        printf '%s\n' "${found_cidrs[@]}"
-        return 0
+            return 0
+        fi
+        return 1
     fi
 
+    # Fallback: No nftban-core available, skip slow CIDR scan
+    # (this avoids 30+ second delays on large feed files)
     return 1
 }
 
