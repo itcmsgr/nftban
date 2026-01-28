@@ -449,6 +449,14 @@ output_terminal() {
         else
             zabbix_status="ENABLED (timer inactive)"
         fi
+        # Check transport binary availability
+        if ! command -v zabbix_sender &>/dev/null && ! command -v nc &>/dev/null && ! command -v ncat &>/dev/null; then
+            local ncat_pkg="ncat"
+            if declare -F nftban_distro_get_package >/dev/null 2>&1; then
+                ncat_pkg=$(nftban_distro_get_package "ncat" 2>/dev/null) || ncat_pkg="ncat"
+            fi
+            zabbix_status+=" [NO TRANSPORT]"
+        fi
     elif [[ -f "$zabbix_conf" ]]; then
         zabbix_status="DISABLED"
     fi

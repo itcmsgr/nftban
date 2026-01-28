@@ -40,6 +40,7 @@ Requires:       socat
 Requires:       git
 Requires:       polkit
 Recommends:     logrotate
+Recommends:     nmap-ncat
 
 %description
 NFTBAN is an enterprise-grade firewall management engine built on Linux nftables.
