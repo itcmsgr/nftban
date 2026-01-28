@@ -820,7 +820,7 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/portscan
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/portscan/*.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/rbl
-%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/rbl/*.conf
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/rbl/*
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/panels
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/panels/directadmin
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/panels/directadmin/*.conf
@@ -1577,8 +1577,16 @@ build_deb() {
     # Create control file
     create_deb_control
 
+    # Fix ownership before building (FHS: /usr/lib/nftban = root:root)
+    # Without this, files keep the builder's UID which breaks systemd services
+    log_info "Setting package file ownership to root:root..."
+    fakeroot find "${deb_root}/usr" -type f -exec chown root:root {} \;
+    fakeroot find "${deb_root}/usr" -type d -exec chown root:root {} \;
+    fakeroot find "${deb_root}/etc" -type f -exec chown root:root {} \;
+    fakeroot find "${deb_root}/etc" -type d -exec chown root:root {} \;
+
     # Build DEB
-    dpkg-deb --build "${deb_root}" "${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
+    fakeroot dpkg-deb --build "${deb_root}" "${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
 
     log_success "DEB built: ${BUILD_DIR}/nftban-core_${PKG_VERSION}_amd64.deb"
 }
