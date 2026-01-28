@@ -1561,6 +1561,11 @@ export_zabbix() {
     awk -v host="$hostname" '{
         if (NF >= 2) {
             key = $1
+
+            # Skip Prometheus-only info metrics (e.g., nftban_server_hostname_info{...})
+            # These have labels and are meant for Prometheus, not Zabbix
+            if (key ~ /_info\{/) next
+
             # Only convert underscores to dots if key doesnt already have dots
             # This preserves pre-formatted keys like nftban.server.memory_total
             if (index(key, ".") == 0) {
