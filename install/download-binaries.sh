@@ -191,8 +191,8 @@ download_all() {
 
     # Download main binaries
     download_binary "nftban-core" "$arch" "$version"
+    download_binary "nftband" "$arch" "$version"
     download_binary "nftban-ui" "$arch" "$version"
-    download_binary "nftban-geoip" "$arch" "$version"
 
     # nftban-ui-auth is amd64 only (CGO)
     if [[ "$arch" == "amd64" ]]; then
