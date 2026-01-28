@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.6.1 - Installation Script
+# NFTBan v1.7.0 - Installation Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Install NFTBan on the local system
@@ -8,7 +8,7 @@
 # meta:name="nftban_install"
 # meta:type="cli"
 # meta:header="NFTBan Installer"
-# meta:version="1.6.1"
+# meta:version="1.7.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -1777,23 +1777,16 @@ install_dependencies() {
         warn "Package cache update failed (non-critical)"
     fi
 
-    # Required packages for NFTBan
+    # Required packages for NFTBan (CORE only)
+    # Feature-specific packages (suricata, ncat, prometheus, etc.) are checked
+    # at feature-enable time via nftban_prereq.sh — NOT installed here.
     local required_packages=(
         nftables
-        curl
-        suricata
-        suricata_update
         jq
         socat
-    )
-
-    # Optional packages (install if available)
-    local optional_packages=(
+        curl
         wget
         git
-        prometheus
-        node_exporter
-        ncat
     )
 
     # Install required packages
@@ -1825,18 +1818,6 @@ install_dependencies() {
             warn "  ✗ $pkg_name (failed)"
             failed=$((failed + 1))
         fi
-    done
-
-    # Install optional packages (fail silently)
-    for pkg_key in "${optional_packages[@]}"; do
-        local pkg_name="${DISTRO_PACKAGES[$pkg_key]}"
-        [[ -z "$pkg_name" ]] && continue
-
-        if command -v "$pkg_key" &>/dev/null; then
-            continue
-        fi
-
-        eval "$install_cmd $pkg_name" >/dev/null 2>&1 && installed=$((installed + 1)) || true
     done
 
     echo ""

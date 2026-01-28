@@ -20,6 +20,12 @@ else
     set -Eeuo pipefail
 fi
 
+# Load prerequisite checker
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh"
+fi
+
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
@@ -30,21 +36,34 @@ if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
     source "$JSON_HELPER"
 fi
-# NFTBan v1.0.0 - GeoBan CLI Handler
+# NFTBan v1.7.0 - GeoBan CLI Handler
 # =============================================================================
-
+#
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: CLI interface for country-based IP blocking (wrapper for geoip)
 #
-# meta:name=cmd_geoban
-# meta:type=cli
-# meta:header=GeoBan CLI Handler
-# meta:version=1.0.0
+# meta:name="cmd_geoban"
+# meta:type="cli"
+# meta:header="GeoBan CLI Handler"
+# meta:version="1.7.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:created_date=2025-11-06
-# meta:updated_date=2025-11-24
+# meta:description="CLI handler for country-based IP blocking (GeoBan)"
+# meta:input="Command line arguments (enable, disable, ban, unban, list, status)"
+# meta:output="GeoBan management output"
+# meta:depends="bash,nftban_geoban.sh,nftban_prereq.sh"
+#
+# meta:inventory.files=""
+# meta:inventory.binaries="nftban-core"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/geoban/main.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2025-11-06"
+# meta:updated_date="2026-01-28"
 # =============================================================================
 
 
@@ -134,6 +153,15 @@ nftban_cmd_geoban() {
 nftban_geoban_enable() {
     # Enable GeoBan module by writing to .local config file
     # This follows the standard pattern: base.conf + base.conf.local for overrides
+
+    # Check prerequisites (nftban-core binary required for GeoBan)
+    if declare -F nftban_prereq_check_geoban >/dev/null 2>&1; then
+        nftban_prereq_check_geoban
+        if ! nftban_prereq_satisfied; then
+            nftban_prereq_report
+            return 1
+        fi
+    fi
 
     local config_local="${NFTBAN_CONFIG_DIR}/conf.d/geoban/main.conf.local"
 

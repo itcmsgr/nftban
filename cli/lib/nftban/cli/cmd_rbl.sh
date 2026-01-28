@@ -40,6 +40,12 @@ else
     set -Eeuo pipefail
 fi
 
+# Load prerequisite checker
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh"
+fi
+
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
@@ -655,6 +661,15 @@ nftban_cmd_rbl_enable() {
     if [[ $EUID -ne 0 ]]; then
         echo "Error: Must run as root to enable timer" >&2
         return 1
+    fi
+
+    # Check prerequisites (DNS lookup tool required for RBL)
+    if declare -F nftban_prereq_check_rbl >/dev/null 2>&1; then
+        nftban_prereq_check_rbl
+        if ! nftban_prereq_satisfied; then
+            nftban_prereq_report
+            return 1
+        fi
     fi
 
     # Check if timer exists

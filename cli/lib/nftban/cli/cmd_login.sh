@@ -19,6 +19,12 @@ else
     set -Eeuo pipefail
 fi
 
+# Load prerequisite checker
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_prereq.sh"
+fi
+
 # Load version library
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
@@ -305,6 +311,17 @@ nftban_login_cmd_enable() {
     if [[ $EUID -ne 0 ]]; then
         echo "ERROR: Requires root privileges" >&2
         return 1
+    fi
+
+    # Check mail prerequisites (non-blocking — alerts still log without MTA)
+    if declare -F nftban_prereq_check_mail >/dev/null 2>&1; then
+        nftban_prereq_check_mail
+        if ! nftban_prereq_satisfied; then
+            echo "  [INFO] Email alerts require a mail transport agent"
+            nftban_prereq_report || true
+            echo "  Continuing — login monitoring will log events even without email."
+            echo ""
+        fi
     fi
 
     # Ensure local config exists

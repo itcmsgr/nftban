@@ -766,7 +766,7 @@ nftban_config_save_state() {
         --argjson schema_version "$schema_version" \
         --argjson known_keys "$known_keys" \
         --arg timestamp "$(date -Iseconds)" \
-        --arg nftban_version "${NFTBAN_VERSION:-1.6.1}" \
+        --arg nftban_version "${NFTBAN_VERSION:-1.7.0}" \
         '{
             schema_version: $schema_version,
             known_keys: $known_keys,

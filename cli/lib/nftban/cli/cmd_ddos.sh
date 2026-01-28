@@ -1,32 +1,45 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - DDoS CLI Handler
+# NFTBan v1.7.0 - DDoS CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Command-line interface for DDoS protection management
 #
-# meta:name=cmd_ddos
-# meta:type=cli
-# meta:header=DDoS CLI
-# meta:version=1.0.0
+# meta:name="cmd_ddos"
+# meta:type="cli"
+# meta:header="DDoS CLI"
+# meta:version="1.7.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=CLI handler for DDoS protection commands
-# meta:input=Command line arguments (enable, disable, status, etc.)
-# meta:output=DDoS protection management output
+# meta:description="CLI handler for DDoS protection commands"
+# meta:input="Command line arguments (enable, disable, status, etc.)"
+# meta:output="DDoS protection management output"
+# meta:depends="bash,nftban_ddos.sh"
 #
-# **Inventory & Requirements**
-# meta:depends=bash,nftban_ddos.sh
+# meta:inventory.files=""
+# meta:inventory.binaries="nft"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/ddos/main.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-01-28"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Load common CLI helpers (provides cmd_init, cmd_error, cmd_is_json_mode, etc.)
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh"
+
+# Load prerequisite checker
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_prereq.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_prereq.sh"
+fi
 
 # Initialize CLI environment (loads config, sets paths, enables strict mode)
 cmd_init

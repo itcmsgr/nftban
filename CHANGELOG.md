@@ -5,6 +5,51 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.7.0] - 2026-01-28
+
+### Dependency Architecture Redesign
+
+Minimal core install with feature-gated prerequisites. Install no longer silently pulls optional
+packages (suricata, prometheus, node_exporter, ncat). Feature dependencies are checked and reported
+at enable time via distro-aware hints.
+
+### Architecture
+
+- **Shared prereq library** (`nftban_prereq.sh`) - Capability-based prerequisite checker with
+  distro-aware package suggestions via `nftban_distro_get_package()`. Checks binaries not packages.
+  Functions: `nftban_prereq_require_cmd()`, `nftban_prereq_require_any_cmd()`,
+  `nftban_prereq_require_file()`, plus feature-specific convenience checks for suricata, zabbix,
+  rbl, mail, and geoban
+- **CORE dependency contract** - Only 6 packages required at install: `nftables`, `jq`, `socat`,
+  `curl`, `wget`, `git`. Everything else is feature-gated
+- **Feature-gated enable checks** - `nftban geoban enable` checks for `nftban-core` binary,
+  `nftban rbl enable` checks for DNS tool (`host`/`dig`/`nslookup`),
+  `nftban login enable` warns if no mail transport agent
+
+### Changed
+
+- **install.sh** - `required_packages` trimmed to core only (nftables, jq, socat, curl, wget, git).
+  Removed `suricata`, `suricata_update` from required. Removed entire `optional_packages` array
+  (was silently installing prometheus, node_exporter, ncat)
+- **RPM spec** - Removed `python3-pip`, `python3`, `ipset` from Requires. Removed `nmap-ncat`
+  from Recommends. Added `wget` to Requires
+- **DEB control** - Removed `python3-pip`, `python3`, `ipset` from Depends. Removed `ncat`
+  from Recommends. Added `wget` to Depends
+- **Health check binaries** - Added `socat` and `git` to required binary check array to match
+  core contract
+- **6 feature commands** - All source `nftban_prereq.sh` for consistent pattern:
+  `cmd_ddos.sh`, `cmd_portscan.sh`, `cmd_login.sh`, `cmd_geoban.sh`, `cmd_feeds.sh`, `cmd_rbl.sh`
+
+### Fixed
+
+- **Go vet: nftban-ui version shadowing** - Local variable `version` in `cmd/nftban-ui/main.go`
+  shadowed the `pkg/version` import, causing `version.Version` to resolve to `(*bool).Version`.
+  Renamed to `showVersion`
+- **shellcheck SC2034: cmd_status.sh** - Removed unused `ncat_pkg` variable in Zabbix transport
+  check (status display only needs `[NO TRANSPORT]` flag)
+
+---
+
 ## [1.6.1] - 2026-01-27
 
 ### Security Maintenance Release

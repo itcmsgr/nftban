@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-# NFTBan v1.6.1 - DEB Package Post-Install Script
+# NFTBan v1.7.0 - DEB Package Post-Install Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 #
@@ -58,7 +58,7 @@ case "$1" in
                 break
             fi
         done
-        [[ -z "$NFTBAN_VERSION" ]] && NFTBAN_VERSION="1.6.1"
+        [[ -z "$NFTBAN_VERSION" ]] && NFTBAN_VERSION="1.7.0"
 
         log_info "Configuring NFTBan v${NFTBAN_VERSION}..."
 
