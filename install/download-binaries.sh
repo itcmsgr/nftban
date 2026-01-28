@@ -48,10 +48,10 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
-log()   { echo -e "${BLUE}[DOWNLOAD]${NC} $*"; }
-ok()    { echo -e "${GREEN}[  OK    ]${NC} $*"; }
-warn()  { echo -e "${YELLOW}[ WARN   ]${NC} $*"; }
-error() { echo -e "${RED}[ ERROR  ]${NC} $*"; exit 1; }
+log()   { echo -e "${BLUE}[DOWNLOAD]${NC} $*" >&2; }
+ok()    { echo -e "${GREEN}[  OK    ]${NC} $*" >&2; }
+warn()  { echo -e "${YELLOW}[ WARN   ]${NC} $*" >&2; }
+error() { echo -e "${RED}[ ERROR  ]${NC} $*" >&2; exit 1; }
 
 # =============================================================================
 # FUNCTIONS
