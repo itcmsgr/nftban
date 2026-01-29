@@ -169,19 +169,32 @@ nftban_detect_iptables_nft() {
         rule_count="${rule_count//[^0-9]/}"
         [[ -z "$rule_count" ]] && rule_count=0
 
+        # Check if all policies are ACCEPT (passthrough mode - harmless)
+        local drop_policies
+        drop_policies=$(iptables -S 2>/dev/null | grep -c "^-P.*DROP\|^-P.*REJECT" 2>/dev/null || true)
+        drop_policies="${drop_policies//[^0-9]/}"
+        [[ -z "$drop_policies" ]] && drop_policies=0
+
         if [[ $rule_count -gt 0 ]]; then
             status=2
             NFTBAN_FIREWALL_CONFLICTS+=("IPTABLES-NFT: $rule_count rules creating shadow nftables")
 
             # Check if 'ip filter' table exists in nftables (created by iptables-nft)
+            # Note: Don't mark as CRITICAL here - the priority-based check in
+            # nftban_detect_nftables_conflicts will properly assess if it's safe
             if nft list table ip filter &>/dev/null 2>&1; then
-                NFTBAN_FIREWALL_CONFLICTS+=("  └─ CRITICAL: 'ip filter' table conflicts with nftban")
-                [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
+                NFTBAN_FIREWALL_CONFLICTS+=("  └─ WARNING: 'ip filter' table exists (priority check follows)")
+                [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_WARNING ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
             else
                 [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_WARNING ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
             fi
 
             NFTBAN_FIREWALL_FIXES+=("Flush iptables-nft: iptables -F && iptables -X && ip6tables -F && ip6tables -X")
+        elif [[ $drop_policies -eq 0 ]]; then
+            # Only default ACCEPT policies, no rules - this is harmless passthrough
+            # Don't even report as conflict, just note it exists
+            status=1
+            # No severity increase - iptables-nft with ACCEPT policies is harmless
         fi
     fi
 
