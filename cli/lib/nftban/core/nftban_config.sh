@@ -118,10 +118,9 @@ nftban_config_parse_ini() {
             key="${key^^}"
             key="${key//-/_}"
 
-            # Export variable
+            # Export variable (declare -gx creates global exported variable)
             local varname="${prefix}_${section}_${key}"
-            printf -v "$varname" '%s' "$value"
-            export "$varname"
+            declare -gx "$varname=$value"
         fi
     done < "$file"
 }
