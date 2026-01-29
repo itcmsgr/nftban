@@ -286,7 +286,7 @@ zabbix_export:
               value: memory
           triggers:
             - uuid: 36990932d0ef4c52aaa9463f09acef50
-              expression: 'last(/NFTBan/nftban.fds.open)>1000'
+              expression: 'last(/NFTBan/nftban.open.fds)>1000'
               name: 'NFTBan open FDs > 1000'
               priority: WARNING
               description: 'High number of open file descriptors may indicate a leak.'
@@ -376,7 +376,7 @@ zabbix_export:
               value: nftables
           triggers:
             - uuid: dd123ecf3f5a4f94891bd4e680fd82c8
-              expression: 'last(/NFTBan/nftban.nft.elements_total)>100000'
+              expression: 'last(/NFTBan/nftban.nftables.set.elements.total)>100000'
               name: 'NFTBan large ruleset (>{ITEM.VALUE} elements)'
               priority: WARNING
               description: 'Large number of set elements may impact performance.'
