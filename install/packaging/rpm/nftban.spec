@@ -284,6 +284,12 @@ if [ -f /usr/lib/tmpfiles.d/nftban.conf ]; then
     }
 fi
 
+# Fix files inside /run/nftban (tmpfiles only sets directory ownership)
+if [ -d /run/nftban ]; then
+    chown nftban:nftban /run/nftban 2>/dev/null || true
+    find /run/nftban -maxdepth 1 -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
+fi
+
 # Set config directory permissions (root-owned, group readable)
 if [ -d /etc/nftban ]; then
     chown root:nftban /etc/nftban

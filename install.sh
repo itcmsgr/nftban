@@ -1519,6 +1519,8 @@ _install_configs_ownership() {
     chown nftban:nftban /var/log/nftban && chmod 750 /var/log/nftban
     chown nftban:nftban /var/cache/nftban && chmod 755 /var/cache/nftban
     chown nftban:nftban /run/nftban && chmod 755 /run/nftban
+    # Fix files inside /run/nftban (may be owned by root from previous runs)
+    find /run/nftban -maxdepth 1 -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
     chown root:nftban /run/nftban-ui && chmod 750 /run/nftban-ui
 
     ok "Directory ownership configured"

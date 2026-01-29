@@ -70,6 +70,13 @@ nftban_health_fix_permissions() {
                 echo "  ⚠ systemd-tmpfiles returned non-zero (some dirs may not exist yet)"
             fi
         fi
+
+        # Fix files inside /run/nftban (tmpfiles only sets directory ownership)
+        # Files created by root during install/update need ownership fixed
+        if [[ -d /run/nftban ]]; then
+            chown nftban:nftban /run/nftban 2>/dev/null || true
+            find /run/nftban -maxdepth 1 -type f ! -name "nftband.sock" -exec chown nftban:nftban {} \; 2>/dev/null || true
+        fi
     fi
 
     # ==========================================================================
