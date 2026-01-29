@@ -227,7 +227,7 @@ _nftban_system_enable_legacy() {
         if systemctl list-unit-files "nftban-unified-exporter.timer" &>/dev/null 2>&1; then
             systemctl enable "nftban-unified-exporter.timer" 2>/dev/null && \
             systemctl start "nftban-unified-exporter.timer" 2>/dev/null && \
-            echo "  ✅ Enabled: nftban-unified-exporter.timer (${NFTBAN_METRICS_BACKEND:-prometheus})"
+            echo "  ✅ Enabled: nftban-unified-exporter.timer"
         fi
     else
         echo "  ℹ️  Metrics disabled (enable with: nftban config set NFTBAN_METRICS_ENABLED=true)"
