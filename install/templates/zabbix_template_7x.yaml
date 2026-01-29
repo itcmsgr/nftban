@@ -265,12 +265,12 @@ zabbix_export:
               value: memory
           triggers:
             - uuid: cbf397832c4047c98202da9494390545
-              expression: 'last(/NFTBan/nftban.memory.rss)>{$NFTBAN.MEMORY.WARN}'
+              expression: 'last(/NFTBan/nftban.memory.rss.bytes)>{$NFTBAN.MEMORY.WARN}'
               name: 'NFTBan memory usage high (>{ITEM.VALUE})'
               priority: WARNING
               description: 'NFTBan memory usage exceeds warning threshold.'
             - uuid: 4844595759324951aa4e1d54e9f3f66e
-              expression: 'last(/NFTBan/nftban.memory.rss)>{$NFTBAN.MEMORY.HIGH}'
+              expression: 'last(/NFTBan/nftban.memory.rss.bytes)>{$NFTBAN.MEMORY.HIGH}'
               name: 'NFTBan memory usage critical (>{ITEM.VALUE})'
               priority: HIGH
               description: 'NFTBan memory usage exceeds critical threshold.'
