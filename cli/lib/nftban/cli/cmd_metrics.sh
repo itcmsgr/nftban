@@ -154,7 +154,6 @@ nftban_metrics_enable() {
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo "  Enabling NFTBan Metrics Collection"
-    echo "  Backend: prometheus"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
@@ -254,7 +253,16 @@ nftban_metrics_status() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
-    echo "Backend: Prometheus"
+    # Show export configuration
+    local local_export="Prometheus (node_exporter)"
+    local remote_export="None"
+
+    if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" == "true" ]]; then
+        remote_export="Zabbix (${NFTBAN_ZABBIX_SERVER:-not configured})"
+    fi
+
+    echo "Local:  $local_export"
+    echo "Remote: $remote_export"
     echo ""
 
     # ============================================================================
