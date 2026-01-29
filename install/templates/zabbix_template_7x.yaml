@@ -117,7 +117,7 @@ zabbix_export:
         - uuid: 4847ad4a222b4e70a5ca7c7a5b971782
           name: 'NFTBan: Uptime'
           type: TRAP
-          key: nftban.uptime.seconds.seconds
+          key: nftban.uptime.seconds
           value_type: FLOAT
           units: s
           description: 'Daemon uptime in seconds'
@@ -1495,7 +1495,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.uptime.seconds.seconds
+                        key: nftban.uptime.seconds
                         host: 'NFTBan'
                 # Row 2: Ban Counts
                 - type: item_value
