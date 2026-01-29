@@ -309,19 +309,21 @@ _cmd_zabbix_setup() {
         echo ""
     fi
 
-    # Check: Transport binary (zabbix_sender preferred, ncat/nc fallback)
-    if ! command -v zabbix_sender &>/dev/null && ! command -v nc &>/dev/null && ! command -v ncat &>/dev/null; then
-        # Use distro config for correct package name
-        local ncat_pkg="ncat"
-        local install_cmd="install"
-        if declare -F nftban_distro_get_package >/dev/null 2>&1; then
-            ncat_pkg=$(nftban_distro_get_package "ncat" 2>/dev/null) || ncat_pkg="ncat"
-        fi
-        if declare -F nftban_distro_get_pkgmgr_cmd >/dev/null 2>&1; then
-            install_cmd=$(nftban_distro_get_pkgmgr_cmd "install_cmd" 2>/dev/null) || install_cmd="install"
-        fi
-        prereq_warnings+="  [WARN] No Zabbix transport binary found\n"
-        prereq_warnings+="         Install zabbix_sender (recommended) or: sudo ${install_cmd} ${ncat_pkg}\n"
+    # Check: Zabbix transport - use what's available, install ncat only if nothing exists
+    if command -v zabbix_sender &>/dev/null; then
+        : # Best option, already installed
+    elif command -v ncat &>/dev/null || command -v nc &>/dev/null; then
+        : # Good enough, native protocol works
+    else
+        # Nothing available - install ncat (in default repos)
+        echo "  [ACTION] Installing ncat for Zabbix transport..."
+        local distro_id
+        distro_id=$(grep "^ID=" /etc/os-release 2>/dev/null | cut -d= -f2 | tr -d '"')
+        case "$distro_id" in
+            debian|ubuntu) apt-get install -y ncat &>/dev/null && echo "  [OK] ncat installed" || prereq_warnings+="  [WARN] apt install ncat failed\n" ;;
+            centos|rhel|rocky|almalinux|fedora) dnf install -y nmap-ncat &>/dev/null && echo "  [OK] ncat installed" || prereq_warnings+="  [WARN] dnf install nmap-ncat failed\n" ;;
+            *) prereq_warnings+="  [WARN] Install ncat for Zabbix: apt/dnf install ncat\n" ;;
+        esac
     fi
 
     # Show warnings if any
