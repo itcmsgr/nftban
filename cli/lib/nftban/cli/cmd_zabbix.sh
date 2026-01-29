@@ -293,7 +293,19 @@ _cmd_zabbix_setup() {
         chown root:nftban "$metrics_local" 2>/dev/null || true
         # Reload the variable so rest of setup sees it
         NFTBAN_METRICS_ENABLED="true"
-        echo "  [OK] Metrics collection enabled"
+        echo "  [OK] Metrics config enabled"
+
+        # Start the unified exporter service
+        if systemctl list-unit-files nftban-unified-exporter.service &>/dev/null 2>&1; then
+            echo "  [ACTION] Starting NFTBan unified exporter service..."
+            systemctl enable nftban-unified-exporter.service &>/dev/null || true
+            systemctl start nftban-unified-exporter.service &>/dev/null || true
+            if systemctl is-active --quiet nftban-unified-exporter.service 2>/dev/null; then
+                echo "  [OK] NFTBan exporter service started"
+            else
+                echo "  [WARN] Exporter service failed to start - check: systemctl status nftban-unified-exporter"
+            fi
+        fi
         echo ""
     fi
 
