@@ -277,10 +277,24 @@ _cmd_zabbix_setup() {
         prereq_warnings+="  [WARN] NFTBan service not found - metrics may be limited\n"
     fi
 
-    # Check: Metrics exporter — auto-enable during setup
+    # Check: Metrics exporter — auto-enable during setup (BEFORE wizard starts)
     local metrics_enabled="${NFTBAN_METRICS_ENABLED:-false}"
+    local metrics_local="${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local"
     if [[ "$metrics_enabled" != "true" ]]; then
-        prereq_warnings+="  [INFO] Enabling metrics collection for Zabbix export\n"
+        echo ""
+        echo "  [ACTION] Metrics collection is disabled - enabling it now..."
+        mkdir -p "$(dirname "$metrics_local")" 2>/dev/null || true
+        if [[ -f "$metrics_local" ]] && grep -q "^NFTBAN_METRICS_ENABLED=" "$metrics_local" 2>/dev/null; then
+            sed -i 's/^NFTBAN_METRICS_ENABLED=.*/NFTBAN_METRICS_ENABLED="true"/' "$metrics_local"
+        else
+            echo 'NFTBAN_METRICS_ENABLED="true"' >> "$metrics_local"
+        fi
+        chmod 640 "$metrics_local" 2>/dev/null || true
+        chown root:nftban "$metrics_local" 2>/dev/null || true
+        # Reload the variable so rest of setup sees it
+        NFTBAN_METRICS_ENABLED="true"
+        echo "  [OK] Metrics collection enabled"
+        echo ""
     fi
 
     # Check: Transport binary (zabbix_sender preferred, ncat/nc fallback)
@@ -386,19 +400,7 @@ _cmd_zabbix_setup() {
     _zabbix_config_set "NFTBAN_ZABBIX_TLS_ENABLED" "$tls"
     _zabbix_config_set "NFTBAN_ZABBIX_PSK_ENABLED" "$psk"
 
-    # Auto-enable metrics collection so the unified exporter runs
-    local metrics_local="${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local"
-    if [[ "${NFTBAN_METRICS_ENABLED:-false}" != "true" ]]; then
-        mkdir -p "$(dirname "$metrics_local")"
-        if [[ -f "$metrics_local" ]] && grep -q "^NFTBAN_METRICS_ENABLED=" "$metrics_local" 2>/dev/null; then
-            sed -i 's/^NFTBAN_METRICS_ENABLED=.*/NFTBAN_METRICS_ENABLED="true"/' "$metrics_local"
-        else
-            echo 'NFTBAN_METRICS_ENABLED="true"' >> "$metrics_local"
-        fi
-        chmod 640 "$metrics_local" 2>/dev/null || true
-        chown root:nftban "$metrics_local" 2>/dev/null || true
-        _zabbix_print_info "Auto-enabled metrics collection"
-    fi
+    # Note: Metrics collection is enabled at the start of setup (prerequisites phase)
 
     # Configure firewall for outbound Zabbix traffic
     local firewall_auto
