@@ -254,11 +254,11 @@ nftban_metrics_status() {
     echo ""
 
     # Show export configuration
-    local local_export="Prometheus (node_exporter)"
+    local local_export="OpenMetrics format (node_exporter textfile)"
     local remote_export="None"
 
     if [[ "${NFTBAN_ZABBIX_ENABLED:-false}" == "true" ]]; then
-        remote_export="Zabbix (${NFTBAN_ZABBIX_SERVER:-not configured})"
+        remote_export="Zabbix trapper (${NFTBAN_ZABBIX_SERVER:-not configured})"
     fi
 
     echo "Local:  $local_export"
