@@ -1609,15 +1609,10 @@ export_zabbix() {
 
     [[ "$hostname" == "auto" ]] && hostname=$(hostname -f 2>/dev/null || hostname)
 
-    # Check transport: prefer zabbix_sender, fallback to nc
-    local use_nc=false
-    if ! command -v zabbix_sender &>/dev/null; then
-        if command -v nc &>/dev/null || command -v ncat &>/dev/null; then
-            use_nc=true
-        else
-            log_warn "Zabbix: no transport (install zabbix-sender or ncat)"
-            return 1
-        fi
+    # Check transport: require nc or ncat for Zabbix trapper protocol
+    if ! command -v nc &>/dev/null && ! command -v ncat &>/dev/null; then
+        log_warn "Zabbix: no transport (install nc or ncat)"
+        return 1
     fi
 
     # Create zabbix_sender input file
@@ -1663,59 +1658,48 @@ export_zabbix() {
         }
     }' "$METRICS_CACHE" > "$tmp_file"
 
-    # Send to Zabbix
+    # Send to Zabbix via native trapper protocol (nc)
+    local data='{"request":"sender data","data":['
+    local first=true
+    while IFS=' ' read -r host key value; do
+        [[ -z "$key" ]] && continue
+        # Strip outer quotes first (from string values), then escape for JSON
+        value="${value#\"}"   # Remove leading quote
+        value="${value%\"}"   # Remove trailing quote
+        value=$(printf '%s' "$value" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        [[ "$first" != "true" ]] && data+=","
+        data+="{\"host\":\"$host\",\"key\":\"$key\",\"value\":\"$value\"}"
+        first=false
+    done < "$tmp_file"
+    data+=']}'
+
+    local data_len=${#data}
+    local nc_cmd
+    nc_cmd=$(command -v ncat || command -v nc)
+
+    # Write ZBXD protocol packet to temp file (more reliable than piping)
+    local zabbix_pkt
+    zabbix_pkt=$(mktemp)
+
+    # ZBXD protocol: header (5 bytes) + length (8 bytes LE) + data
+    printf 'ZBXD\x01' > "$zabbix_pkt"
+    # Length as 8-byte little-endian (only first 4 bytes used for practical sizes)
+    printf "\\x$(printf '%02x' $((data_len & 0xFF)))" >> "$zabbix_pkt"
+    printf "\\x$(printf '%02x' $(((data_len >> 8) & 0xFF)))" >> "$zabbix_pkt"
+    printf "\\x$(printf '%02x' $(((data_len >> 16) & 0xFF)))" >> "$zabbix_pkt"
+    printf "\\x$(printf '%02x' $(((data_len >> 24) & 0xFF)))" >> "$zabbix_pkt"
+    printf '\x00\x00\x00\x00' >> "$zabbix_pkt"
+    printf '%s' "$data" >> "$zabbix_pkt"
+
+    # Send via nc from file (avoids pipeline buffer issues)
     local result
-    if [[ "$use_nc" == "true" ]]; then
-        # Native Zabbix protocol via nc
-        local data='{"request":"sender data","data":['
-        local first=true
-        while IFS=' ' read -r host key value; do
-            [[ -z "$key" ]] && continue
-            # Strip outer quotes first (from string values), then escape for JSON
-            value="${value#\"}"   # Remove leading quote
-            value="${value%\"}"   # Remove trailing quote
-            value=$(printf '%s' "$value" | sed 's/\\/\\\\/g; s/"/\\"/g')
-            [[ "$first" != "true" ]] && data+=","
-            data+="{\"host\":\"$host\",\"key\":\"$key\",\"value\":\"$value\"}"
-            first=false
-        done < "$tmp_file"
-        data+=']}'
+    result=$(timeout 10 "$nc_cmd" "$server" "$port" < "$zabbix_pkt" 2>/dev/null | tr -d '\0') || result=""
+    rm -f "$zabbix_pkt"
 
-        local data_len=${#data}
-        local nc_cmd
-        nc_cmd=$(command -v ncat || command -v nc)
-
-        # Write ZBXD protocol packet to temp file (more reliable than piping)
-        local zabbix_pkt
-        zabbix_pkt=$(mktemp)
-
-        # ZBXD protocol: header (5 bytes) + length (8 bytes LE) + data
-        printf 'ZBXD\x01' > "$zabbix_pkt"
-        # Length as 8-byte little-endian (only first 4 bytes used for practical sizes)
-        printf "\\x$(printf '%02x' $((data_len & 0xFF)))" >> "$zabbix_pkt"
-        printf "\\x$(printf '%02x' $(((data_len >> 8) & 0xFF)))" >> "$zabbix_pkt"
-        printf "\\x$(printf '%02x' $(((data_len >> 16) & 0xFF)))" >> "$zabbix_pkt"
-        printf "\\x$(printf '%02x' $(((data_len >> 24) & 0xFF)))" >> "$zabbix_pkt"
-        printf '\x00\x00\x00\x00' >> "$zabbix_pkt"
-        printf '%s' "$data" >> "$zabbix_pkt"
-
-        # Send via nc from file (avoids pipeline buffer issues)
-        result=$(timeout 10 "$nc_cmd" "$server" "$port" < "$zabbix_pkt" 2>/dev/null | tr -d '\0') || result=""
-        rm -f "$zabbix_pkt"
-
-        if echo "$result" | grep -q '"response":"success"'; then
-            log_info "Zabbix: all metrics sent to $server:$port"
-        else
-            log_warn "Zabbix: send failed - ${result:-no response}"
-        fi
+    if echo "$result" | grep -q '"response":"success"'; then
+        log_info "Zabbix: all metrics sent to $server:$port"
     else
-        # Use zabbix_sender
-        result=$(zabbix_sender -z "$server" -p "$port" -i "$tmp_file" 2>&1) || true
-        if echo "$result" | grep -q "failed: 0"; then
-            log_info "Zabbix: all metrics sent to $server:$port"
-        else
-            log_warn "Zabbix: some metrics failed - $result"
-        fi
+        log_warn "Zabbix: send failed - ${result:-no response}"
     fi
 }
 
