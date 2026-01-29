@@ -1255,6 +1255,75 @@ zabbix_export:
             - tag: component
               value: daemon
 
+        - uuid: b8c9d0e1f2a348798765432109876550
+          name: 'NFTBan: Daemon memory growth rate'
+          type: TRAP
+          key: nftban.daemon.memory_growth_rate
+          value_type: UNSIGNED
+          units: 'MB/h'
+          description: 'Memory growth rate in MB per hour (for leak detection)'
+          tags:
+            - tag: component
+              value: daemon
+          triggers:
+            - uuid: c9d0e1f2a3b448798765432109876551
+              expression: 'last(/NFTBan/nftban.daemon.memory_growth_rate)>50'
+              name: 'NFTBan daemon memory leak detected (>50MB/h growth)'
+              priority: HIGH
+              description: 'Memory growth rate exceeds 50MB/hour indicating a memory leak. Daemon restart recommended.'
+              tags:
+                - tag: component
+                  value: daemon
+
+        - uuid: d0e1f2a3b4c548798765432109876552
+          name: 'NFTBan: Daemon memory pressure'
+          type: TRAP
+          key: nftban.daemon.memory_pressure
+          value_type: FLOAT
+          units: '%'
+          description: 'Cgroup memory pressure (0-100)'
+          tags:
+            - tag: component
+              value: daemon
+          triggers:
+            - uuid: e1f2a3b4c5d648798765432109876553
+              expression: 'last(/NFTBan/nftban.daemon.memory_pressure)>80'
+              name: 'NFTBan daemon under high memory pressure (>80%)'
+              priority: HIGH
+              tags:
+                - tag: component
+                  value: daemon
+
+        - uuid: f2a3b4c5d6e748798765432109876554
+          name: 'NFTBan: Daemon memory health'
+          type: TRAP
+          key: nftban.daemon.memory_health
+          value_type: UNSIGNED
+          description: 'Memory health status: 0=ok, 1=warning, 2=critical'
+          tags:
+            - tag: component
+              value: daemon
+          triggers:
+            - uuid: a3b4c5d6e7f848798765432109876555
+              expression: 'last(/NFTBan/nftban.daemon.memory_health)=2'
+              name: 'NFTBan daemon memory health critical'
+              priority: DISASTER
+              description: 'Daemon memory in critical state. Auto-restart may occur.'
+              tags:
+                - tag: component
+                  value: daemon
+
+        - uuid: b4c5d6e7f8a948798765432109876556
+          name: 'NFTBan: Daemon uptime'
+          type: TRAP
+          key: nftban.daemon.uptime_seconds
+          value_type: UNSIGNED
+          units: s
+          description: 'Daemon process uptime in seconds'
+          tags:
+            - tag: component
+              value: daemon
+
       # =======================================================================
       # DISCOVERY RULES (LLD)
       # =======================================================================

@@ -271,6 +271,56 @@ run_core_tests() {
     smoke_test_cmd "version" "nftban version"
     smoke_test_cmd "help" "nftban help"
     smoke_test_cmd "status" "nftban status --quiet 2>/dev/null || nftban status"
+
+    # Daemon memory health check
+    run_daemon_memory_test
+}
+
+# Daemon memory health test
+run_daemon_memory_test() {
+    log ""
+    log "─── Daemon Memory Health ───"
+
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+
+    local pid rss_kb uptime_sec
+    pid=$(cat /run/nftban/nftband.pid 2>/dev/null || echo "")
+
+    if [[ -z "$pid" ]] || [[ ! -d "/proc/$pid" ]]; then
+        log_warn "daemon memory — nftband not running, skipping"
+        TESTS_SKIPPED=$((TESTS_SKIPPED + 1))
+        return 0
+    fi
+
+    rss_kb=$(awk '/VmRSS/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo "0")
+    uptime_sec=$(ps -p "$pid" -o etimes= 2>/dev/null | tr -d ' ' || echo "0")
+
+    local rss_mb=$((rss_kb / 1024))
+    local uptime_hours=$((uptime_sec / 3600))
+    [[ $uptime_hours -lt 1 ]] && uptime_hours=1
+
+    # Calculate growth rate
+    local baseline_mb=15
+    local growth_mb=$((rss_mb - baseline_mb))
+    [[ $growth_mb -lt 0 ]] && growth_mb=0
+    local mb_per_hour=$((growth_mb / uptime_hours))
+
+    log "  PID: $pid | RSS: ${rss_mb}MB | Uptime: ${uptime_hours}h | Growth: ${mb_per_hour}MB/h"
+
+    # Thresholds: warning at 100MB, critical at 300MB
+    if [[ $rss_mb -gt 300 ]]; then
+        log_fail "daemon memory — RSS ${rss_mb}MB exceeds 300MB critical threshold"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    elif [[ $mb_per_hour -gt 50 ]] && [[ $uptime_hours -ge 1 ]]; then
+        log_fail "daemon memory — growth ${mb_per_hour}MB/h exceeds 50MB/h critical threshold"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+    elif [[ $rss_mb -gt 100 ]]; then
+        log_warn "daemon memory — RSS ${rss_mb}MB exceeds 100MB warning threshold"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    else
+        log_pass "daemon memory — RSS ${rss_mb}MB within healthy range"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+    fi
 }
 
 # Security module status commands
