@@ -1542,9 +1542,15 @@ export_zabbix() {
 
     [[ "$hostname" == "auto" ]] && hostname=$(hostname -f 2>/dev/null || hostname)
 
+    # Check transport: prefer zabbix_sender, fallback to nc
+    local use_nc=false
     if ! command -v zabbix_sender &>/dev/null; then
-        log_warn "Zabbix: zabbix_sender not installed"
-        return 1
+        if command -v nc &>/dev/null || command -v ncat &>/dev/null; then
+            use_nc=true
+        else
+            log_warn "Zabbix: no transport (install zabbix-sender or ncat)"
+            return 1
+        fi
     fi
 
     # Create zabbix_sender input file
@@ -1592,12 +1598,45 @@ export_zabbix() {
 
     # Send to Zabbix
     local result
-    result=$(zabbix_sender -z "$server" -p "$port" -i "$tmp_file" 2>&1) || true
+    if [[ "$use_nc" == "true" ]]; then
+        # Native Zabbix protocol via nc
+        local data='{"request":"sender data","data":['
+        local first=true
+        while IFS=' ' read -r host key value; do
+            [[ -z "$key" ]] && continue
+            value=$(echo "$value" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^"//; s/"$//')
+            [[ "$first" != "true" ]] && data+=","
+            data+="{\"host\":\"$host\",\"key\":\"$key\",\"value\":\"$value\"}"
+            first=false
+        done < "$tmp_file"
+        data+=']}'
 
-    if echo "$result" | grep -q "failed: 0"; then
-        log_info "Zabbix: all metrics sent to $server:$port"
+        local data_len=${#data}
+        local len_hex
+        len_hex=$(printf '%016x' "$data_len")
+        local nc_cmd
+        nc_cmd=$(command -v ncat || command -v nc)
+
+        result=$( (
+            printf 'ZBXD\x01'
+            printf "\\x${len_hex:14:2}\\x${len_hex:12:2}\\x${len_hex:10:2}\\x${len_hex:8:2}"
+            printf '\x00\x00\x00\x00'
+            printf '%s' "$data"
+        ) 2>/dev/null | timeout 10 "$nc_cmd" "$server" "$port" 2>/dev/null | tr -d '\0' ) || result=""
+
+        if echo "$result" | grep -q '"response":"success"'; then
+            log_info "Zabbix: all metrics sent to $server:$port"
+        else
+            log_warn "Zabbix: send failed - ${result:-no response}"
+        fi
     else
-        log_warn "Zabbix: some metrics failed - $result"
+        # Use zabbix_sender
+        result=$(zabbix_sender -z "$server" -p "$port" -i "$tmp_file" 2>&1) || true
+        if echo "$result" | grep -q "failed: 0"; then
+            log_info "Zabbix: all metrics sent to $server:$port"
+        else
+            log_warn "Zabbix: some metrics failed - $result"
+        fi
     fi
 }
 
