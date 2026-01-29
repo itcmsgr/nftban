@@ -115,12 +115,18 @@ nftban_metrics_start_stack() {
     # Start NFTBan metrics exporter timer
     local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-unified-exporter.timer}"
     local metrics_svc="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
-    if systemctl list-unit-files 2>/dev/null | grep -q "$metrics_timer"; then
-        systemctl enable "$metrics_timer" &>/dev/null || true
-        systemctl restart "$metrics_timer" &>/dev/null || true
+    # Use systemctl list-unit-files with specific unit name (avoids pipefail issues with grep)
+    if systemctl list-unit-files "$metrics_timer" &>/dev/null; then
+        # Enable and start timer (use start, not restart for timers)
+        systemctl enable "$metrics_timer" 2>/dev/null || true
+        systemctl start "$metrics_timer" 2>/dev/null || true
         # Trigger one immediate collection
-        systemctl start "$metrics_svc" &>/dev/null || true
-        [[ "$verbose" == "true" ]] && echo "  ✓ Metrics collection timer enabled (60s interval)"
+        systemctl start "$metrics_svc" 2>/dev/null || true
+        if systemctl is-active --quiet "$metrics_timer" 2>/dev/null; then
+            [[ "$verbose" == "true" ]] && echo "  ✓ Metrics collection timer enabled (60s interval)"
+        else
+            [[ "$verbose" == "true" ]] && echo "  ⚠️  Timer failed to start - check: systemctl status $metrics_timer"
+        fi
     else
         [[ "$verbose" == "true" ]] && echo "  ⚠️  $metrics_timer not installed"
     fi
@@ -530,12 +536,18 @@ nftban_metrics_start_stack_victoriametrics() {
     # Start NFTBan metrics exporter timer
     local metrics_timer="${NFTBAN_TIMER_METRICS_EXPORTER:-nftban-unified-exporter.timer}"
     local metrics_svc="${NFTBAN_SERVICE_METRICS_EXPORTER:-nftban-unified-exporter.service}"
-    if systemctl list-unit-files 2>/dev/null | grep -q "$metrics_timer"; then
-        systemctl enable "$metrics_timer" &>/dev/null || true
-        systemctl restart "$metrics_timer" &>/dev/null || true
+    # Use systemctl list-unit-files with specific unit name (avoids pipefail issues with grep)
+    if systemctl list-unit-files "$metrics_timer" &>/dev/null; then
+        # Enable and start timer (use start, not restart for timers)
+        systemctl enable "$metrics_timer" 2>/dev/null || true
+        systemctl start "$metrics_timer" 2>/dev/null || true
         # Trigger one immediate collection
-        systemctl start "$metrics_svc" &>/dev/null || true
-        [[ "$verbose" == "true" ]] && echo "  ✓ Metrics collection timer enabled (60s interval)"
+        systemctl start "$metrics_svc" 2>/dev/null || true
+        if systemctl is-active --quiet "$metrics_timer" 2>/dev/null; then
+            [[ "$verbose" == "true" ]] && echo "  ✓ Metrics collection timer enabled (60s interval)"
+        else
+            [[ "$verbose" == "true" ]] && echo "  ⚠️  Timer failed to start - check: systemctl status $metrics_timer"
+        fi
     else
         [[ "$verbose" == "true" ]] && echo "  ⚠️  $metrics_timer not installed"
     fi
