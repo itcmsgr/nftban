@@ -250,9 +250,16 @@ should_collect_component() {
             [[ -f "${NFTBAN_CONFIG_DIR}/modules/suricata.conf" ]] && return 0
             ;;
         feeds)
-            # Feeds: at least one feed config exists
-            local feed_count
-            feed_count=$(find "${NFTBAN_CONFIG_DIR}/feeds" -name "*.conf" 2>/dev/null | wc -l)
+            # Feeds: check for feed data files (primary) or config files
+            local feed_count=0
+            # Check data dir first (actual feed lists)
+            if [[ -d "${NFTBAN_DATA_DIR}/feeds" ]]; then
+                feed_count=$(find "${NFTBAN_DATA_DIR}/feeds" -name "*.txt" -o -name "*.list" 2>/dev/null | wc -l)
+            fi
+            # Fallback to cache dir
+            if [[ $feed_count -eq 0 ]] && [[ -d "${NFTBAN_CACHE_DIR}/feeds" ]]; then
+                feed_count=$(find "${NFTBAN_CACHE_DIR}/feeds" -name "*.txt" -o -name "*.list" 2>/dev/null | wc -l)
+            fi
             [[ $feed_count -gt 0 ]] && return 0
             ;;
         geoip)
@@ -389,6 +396,14 @@ collect_all_metrics() {
     # Kernel metrics (declared at function level for JSON cache access)
     local conntrack_entries=0 conntrack_max=0 conntrack_utilization=0
     local softnet_drops_total=0 softnet_drops_rate=0
+    # Whitelist metrics (declared at function level for JSON cache access - LIVE group)
+    local whitelist_v4=0 whitelist_v6=0
+    # Feeds metrics (declared at function level for JSON cache access - LIVE group)
+    local feeds_enabled=0 feeds_loaded=0 feeds_failed=0
+    local feeds_ips=0 feeds_ipv4_total=0 feeds_ipv6_total=0
+    # Blacklist active counts (declared at function level for JSON cache and EXTENDED group)
+    local active_v4=0 active_v6=0 active_total=0
+    local blacklist_v4_perm=0 blacklist_v4_temp=0 blacklist_v6_perm=0 blacklist_v6_temp=0
     if group_active "live"; then
 
         # --- Daemon Metrics ---
@@ -436,9 +451,7 @@ collect_all_metrics() {
 
         # --- Ban Metrics (fast nftables JSON API with perm/temp breakdown) ---
         # These metrics align with nftban_stats.sh dashboard requirements
-        local active_v4=0 active_v6=0
-        local blacklist_v4_perm=0 blacklist_v4_temp=0
-        local blacklist_v6_perm=0 blacklist_v6_temp=0
+        # Variables declared at function level: active_v4/v6, blacklist_v4/v6_perm/temp
         if command -v nft &>/dev/null; then
             # IPv4 blacklist with perm/temp breakdown
             local v4_output
@@ -464,7 +477,7 @@ collect_all_metrics() {
                 [[ $blacklist_v6_perm -lt 0 ]] && blacklist_v6_perm=0
             fi
         fi
-        local active_total=$((active_v4 + active_v6))
+        active_total=$((active_v4 + active_v6))
 
         metrics+="nftban_active_count $active_total $timestamp\n"
         metrics+="nftban_active_bans{family=\"ipv4\"} $active_v4 $timestamp\n"
@@ -476,11 +489,53 @@ collect_all_metrics() {
         metrics+="nftban_blacklist_ipv6_perm $blacklist_v6_perm $timestamp\n"
         metrics+="nftban_blacklist_ipv6_temp $blacklist_v6_temp $timestamp\n"
 
+        # --- Whitelist Metrics (moved to LIVE for real-time consistency with nftban stats) ---
+        # Use fast JSON API for O(1) counting (same as blacklist)
+        whitelist_v4=0
+        whitelist_v6=0
+        if command -v nft &>/dev/null; then
+            whitelist_v4=$(nft -j list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || whitelist_v4=0
+            [[ -z "$whitelist_v4" || ! "$whitelist_v4" =~ ^[0-9]+$ ]] && whitelist_v4=0
+            whitelist_v6=$(nft -j list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null) || whitelist_v6=0
+            [[ -z "$whitelist_v6" || ! "$whitelist_v6" =~ ^[0-9]+$ ]] && whitelist_v6=0
+        fi
+        metrics+="nftban_whitelist{family=\"ipv4\"} $whitelist_v4 $timestamp\n"
+        metrics+="nftban_whitelist{family=\"ipv6\"} $whitelist_v6 $timestamp\n"
+        metrics+="nftban_whitelist_total $((whitelist_v4 + whitelist_v6)) $timestamp\n"
+
+        # --- Feeds Metrics (moved to LIVE for real-time consistency with nftban stats) ---
+        # Check for feed data files in /var/lib/nftban/feeds/ (primary) or /var/cache/nftban/feeds/
+        if should_collect_component "feeds"; then
+            local feeds_data_dir="${NFTBAN_DATA_DIR}/feeds"
+            [[ ! -d "$feeds_data_dir" ]] && feeds_data_dir="${NFTBAN_CACHE_DIR}/feeds"
+
+            if [[ -d "$feeds_data_dir" ]]; then
+                for feed_file in "$feeds_data_dir"/*.txt "$feeds_data_dir"/*.list; do
+                    [[ -f "$feed_file" ]] || continue
+                    ((feeds_enabled++)) || true  # Prevent set -e failure when var starts at 0
+                    ((feeds_loaded++)) || true
+                    local total_count v4_count v6_count
+                    total_count=$(wc -l < "$feed_file" 2>/dev/null || echo "0")
+                    v4_count=$(grep -cE '^[0-9]+\.' "$feed_file" 2>/dev/null) || v4_count=0
+                    v6_count=$(grep -cE '^[0-9a-fA-F]*:' "$feed_file" 2>/dev/null) || v6_count=0
+                    feeds_ips=$((feeds_ips + total_count))
+                    feeds_ipv4_total=$((feeds_ipv4_total + v4_count))
+                    feeds_ipv6_total=$((feeds_ipv6_total + v6_count))
+                done
+            fi
+        fi
+        metrics+="nftban_feeds_enabled $feeds_enabled $timestamp\n"
+        metrics+="nftban_feeds_loaded $feeds_loaded $timestamp\n"
+        metrics+="nftban_feeds_failed $feeds_failed $timestamp\n"
+        metrics+="nftban_feeds_ips_total $feeds_ips $timestamp\n"
+        metrics+="nftban_feeds_ipv4_total $feeds_ipv4_total $timestamp\n"
+        metrics+="nftban_feeds_ipv6_total $feeds_ipv6_total $timestamp\n"
+
         # --- Time-based ban stats (from log) ---
         # Format: DATE|TIME|SOURCE|IP|COUNTRY|STATUS|REASON
         local bans_log="${NFTBAN_LOG_DIR}/bans.log"
         if [[ -f "$bans_log" ]]; then
-            # Single awk pass for time windows, source breakdown, AND unique IPs
+            # Single awk pass for time windows, source breakdown, reason breakdown, AND unique IPs
             local stats
             stats=$(awk -F'|' -v now="$timestamp" '
                 BEGIN {
@@ -492,6 +547,9 @@ collect_all_metrics() {
                     # Source counters (24h)
                     src_login_24h=0; src_portscan_24h=0; src_ddos_24h=0
                     src_manual_24h=0; src_feeds_24h=0; src_suricata_24h=0
+                    # Reason counters (24h) - common SSH reasons
+                    rsn_ssh_invalid_user=0; rsn_ssh_preauth_disconnect=0
+                    rsn_ssh_auth_failure=0; rsn_module_ban=0; rsn_other=0
                 }
                 {
                     # Parse date to epoch (DATE|TIME format)
@@ -504,12 +562,14 @@ collect_all_metrics() {
                         source = $3
                         ip = $4
                         status = $6
+                        reason = $7
                     } else if ($1 ~ /^[0-9]+$/) {
                         # Old format: epoch timestamp
                         epoch = $1
                         source = $2
                         ip = $3
                         status = "BANNED"
+                        reason = ""
                     } else {
                         next
                     }
@@ -545,22 +605,31 @@ collect_all_metrics() {
                         if (source == "manual")   src_manual_24h++
                         if (source == "feeds")    src_feeds_24h++
                         if (source == "suricata") src_suricata_24h++
+
+                        # Reason breakdown (24h only - for attack pattern analysis)
+                        if (reason == "ssh_invalid_user")      rsn_ssh_invalid_user++
+                        else if (reason == "ssh_preauth_disconnect") rsn_ssh_preauth_disconnect++
+                        else if (reason == "ssh_auth_failure") rsn_ssh_auth_failure++
+                        else if (reason == "module_ban")       rsn_module_ban++
+                        else if (reason != "")                 rsn_other++
                     }
                 }
                 END {
-                    # Output: time_stats | source_stats_total | source_stats_24h | unique_ips
+                    # Output: time_stats | source_stats_total | source_stats_24h | unique_ips | reason_stats_24h
                     printf "%d %d %d %d %d %d ", m5, h1, h24, d7, d30, total
                     printf "%d %d %d %d %d %d ", src_login, src_portscan, src_ddos, src_manual, src_feeds, src_suricata
                     printf "%d %d %d %d %d %d ", src_login_24h, src_portscan_24h, src_ddos_24h, src_manual_24h, src_feeds_24h, src_suricata_24h
-                    printf "%d %d\n", length(unique_24h), length(unique_all)
+                    printf "%d %d ", length(unique_24h), length(unique_all)
+                    printf "%d %d %d %d %d\n", rsn_ssh_invalid_user, rsn_ssh_preauth_disconnect, rsn_ssh_auth_failure, rsn_module_ban, rsn_other
                 }
-            ' "$bans_log" 2>/dev/null || echo "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0")
+            ' "$bans_log" 2>/dev/null || echo "0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0")
 
-            # Parse all stats
+            # Parse all stats (including reason breakdown)
             read -r bans_5m bans_1h bans_24h bans_7d bans_30d bans_total \
                      src_login src_portscan src_ddos src_manual src_feeds src_suricata \
                      src_login_24h src_portscan_24h src_ddos_24h src_manual_24h src_feeds_24h src_suricata_24h \
                      unique_ips_24h unique_ips_total \
+                     rsn_ssh_invalid_user rsn_ssh_preauth_disconnect rsn_ssh_auth_failure rsn_module_ban rsn_other \
                      <<< "$stats"
 
             local rate
@@ -589,6 +658,14 @@ collect_all_metrics() {
             metrics+="nftban_bans_by_source_24h{source=\"manual\"} $src_manual_24h $timestamp\n"
             metrics+="nftban_bans_by_source_24h{source=\"feeds\"} $src_feeds_24h $timestamp\n"
             metrics+="nftban_bans_by_source_24h{source=\"suricata\"} $src_suricata_24h $timestamp\n"
+
+            # Bans by reason (24h) - for attack pattern analysis
+            # Common SSH ban reasons from nftband daemon
+            metrics+="nftban_bans_by_reason_24h{reason=\"ssh_invalid_user\"} ${rsn_ssh_invalid_user:-0} $timestamp\n"
+            metrics+="nftban_bans_by_reason_24h{reason=\"ssh_preauth_disconnect\"} ${rsn_ssh_preauth_disconnect:-0} $timestamp\n"
+            metrics+="nftban_bans_by_reason_24h{reason=\"ssh_auth_failure\"} ${rsn_ssh_auth_failure:-0} $timestamp\n"
+            metrics+="nftban_bans_by_reason_24h{reason=\"module_ban\"} ${rsn_module_ban:-0} $timestamp\n"
+            metrics+="nftban_bans_by_reason_24h{reason=\"other\"} ${rsn_other:-0} $timestamp\n"
 
             # Unique IPs (aligned with nftban_stats.sh)
             metrics+="nftban_unique_ips_24h ${unique_ips_24h:-0} $timestamp\n"
@@ -857,86 +934,22 @@ collect_all_metrics() {
         done
 
 
-        # --- nftables Metrics ---
+        # --- nftables Extended Metrics (EXTENDED only - sets total, elements total) ---
+        # Note: Core whitelist/blacklist counts moved to LIVE group for real-time consistency
         if command -v nft &>/dev/null; then
             local sets_count elements_total
             # Count sets per family (nft list sets FAMILY, not "nft list sets FAMILY TABLE")
             local ipv4_family="${NFTBAN_TABLE_IPV4%% *}"  # "ip" from "ip nftban"
             local ipv6_family="${NFTBAN_TABLE_IPV6%% *}"  # "ip6" from "ip6 nftban"
             sets_count=$(( $(nft list sets "$ipv4_family" 2>/dev/null | grep -c "set " || echo 0) + $(nft list sets "$ipv6_family" 2>/dev/null | grep -c "set " || echo 0) ))
-            elements_total=0
-
-            # Individual set counts (for audit/stats alignment)
-            local blacklist_v4=0 blacklist_v6=0 whitelist_v4=0 whitelist_v6=0
-            for set_name in blacklist_ipv4 blacklist_ipv6 whitelist_ipv4 whitelist_ipv6; do
-                local count nft_table
-                # Select correct table based on address family
-                if [[ "$set_name" == *_ipv6 ]]; then
-                    nft_table="${NFTBAN_TABLE_IPV6}"
-                else
-                    nft_table="${NFTBAN_TABLE_IPV4}"
-                fi
-                count=$(nft -j list set ${nft_table} "$set_name" 2>/dev/null | jq -r '.nftables[]?.set?.elem // [] | length' 2>/dev/null || echo "0")
-                elements_total=$((elements_total + count))
-
-                case "$set_name" in
-                    blacklist_ipv4) blacklist_v4=$count ;;
-                    blacklist_ipv6) blacklist_v6=$count ;;
-                    whitelist_ipv4) whitelist_v4=$count ;;
-                    whitelist_ipv6) whitelist_v6=$count ;;
-                esac
-            done
-
+            # Total elements across all standard sets (use function-level whitelist_v4/v6 from LIVE)
+            elements_total=$((${active_v4:-0} + ${active_v6:-0} + ${whitelist_v4:-0} + ${whitelist_v6:-0}))
             metrics+="nftban_nft_sets_total $sets_count $timestamp\n"
             metrics+="nftban_nft_elements_total $elements_total $timestamp\n"
-
-            # Blacklist/whitelist breakdown (aligned with nftban stats)
-            metrics+="nftban_blacklist{family=\"ipv4\"} $blacklist_v4 $timestamp\n"
-            metrics+="nftban_blacklist{family=\"ipv6\"} $blacklist_v6 $timestamp\n"
-            metrics+="nftban_blacklist_total $((blacklist_v4 + blacklist_v6)) $timestamp\n"
-            metrics+="nftban_whitelist{family=\"ipv4\"} $whitelist_v4 $timestamp\n"
-            metrics+="nftban_whitelist{family=\"ipv6\"} $whitelist_v6 $timestamp\n"
-            metrics+="nftban_whitelist_total $((whitelist_v4 + whitelist_v6)) $timestamp\n"
-        fi
-
-        # --- Feeds Metrics (component: feeds) with IPv4/IPv6 split ---
-        # Aligned with nftban_stats.sh dashboard requirements
-        local feeds_enabled=0 feeds_loaded=0 feeds_failed=0
-        local feeds_ips=0 feeds_ipv4_total=0 feeds_ipv6_total=0
-        if should_collect_component "feeds"; then
-            if [[ -d "${NFTBAN_CONFIG_DIR}/feeds" ]]; then
-                for feed_file in "${NFTBAN_CONFIG_DIR}/feeds"/*.conf; do
-                    [[ -f "$feed_file" ]] || continue
-                    ((feeds_enabled++))
-                    local feed_name feed_data
-                    feed_name=$(basename "$feed_file" .conf)
-                    feed_data="${NFTBAN_CACHE_DIR}/feeds/${feed_name}.list"
-                    if [[ -f "$feed_data" ]]; then
-                        ((feeds_loaded++))
-                        local total_count v4_count v6_count
-                        total_count=$(wc -l < "$feed_data" 2>/dev/null || echo "0")
-                        # Count IPv4 (lines starting with digit, no colon = pure IPv4)
-                        v4_count=$(grep -cE '^[0-9]+\.' "$feed_data" 2>/dev/null) || v4_count=0
-                        # Count IPv6 (lines containing colon)
-                        v6_count=$(grep -cE '^[0-9a-fA-F]*:' "$feed_data" 2>/dev/null) || v6_count=0
-                        feeds_ips=$((feeds_ips + total_count))
-                        feeds_ipv4_total=$((feeds_ipv4_total + v4_count))
-                        feeds_ipv6_total=$((feeds_ipv6_total + v6_count))
-                    else
-                        ((feeds_failed++))
-                    fi
-                done
-            fi
-
-            metrics+="nftban_feeds_enabled $feeds_enabled $timestamp\n"
-            metrics+="nftban_feeds_loaded $feeds_loaded $timestamp\n"
-            metrics+="nftban_feeds_failed $feeds_failed $timestamp\n"
-            metrics+="nftban_feeds_ips_total $feeds_ips $timestamp\n"
-            metrics+="nftban_feeds_ipv4_total $feeds_ipv4_total $timestamp\n"
-            metrics+="nftban_feeds_ipv6_total $feeds_ipv6_total $timestamp\n"
         fi
 
         # --- Feed Health Metrics (Phase 1) ---
+        # Note: Basic feeds metrics (enabled, loaded, ips_total) moved to LIVE group for real-time consistency
         # Sync errors: count [ERROR] or [FAIL] entries from last 24 hours in feeds.log
         local feeds_sync_errors=0
         local feeds_log="${NFTBAN_LOG_DIR}/feeds.log"
@@ -1444,6 +1457,13 @@ collect_all_metrics() {
     "manual": ${src_manual_24h:-0},
     "feeds": ${src_feeds_24h:-0},
     "suricata": ${src_suricata_24h:-0}
+  },
+  "bans_by_reason_24h": {
+    "ssh_invalid_user": ${rsn_ssh_invalid_user:-0},
+    "ssh_preauth_disconnect": ${rsn_ssh_preauth_disconnect:-0},
+    "ssh_auth_failure": ${rsn_ssh_auth_failure:-0},
+    "module_ban": ${rsn_module_ban:-0},
+    "other": ${rsn_other:-0}
   },
   "activity": {
     "total_bans": ${bans_total:-0},
