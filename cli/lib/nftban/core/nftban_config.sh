@@ -55,6 +55,96 @@ readonly NFTBAN_LOCAL_CONF="${NFTBAN_LOCAL_CONF:-${NFTBAN_CONFIG_DIR}/nftban.con
 # HELPER FUNCTIONS
 # =============================================================================
 
+# =============================================================================
+# INI PARSER - Parse INI-style config files with [section] headers
+# =============================================================================
+# Exports variables as: NFTBAN_<SECTION>_<KEY>=value
+# Example: [global] mode=strict → NFTBAN_GLOBAL_MODE=strict
+
+nftban_config_is_ini() {
+    # Check if file is INI format (has [section] headers)
+    # Args: $1 = file path
+    # Returns: 0 if INI, 1 if not
+    local file="$1"
+    [[ -f "$file" ]] && grep -q '^\[' "$file" 2>/dev/null
+}
+
+nftban_config_parse_ini() {
+    # Parse INI-style config file and export as NFTBAN_<SECTION>_<KEY> variables
+    # Args: $1 = file path, $2 = optional prefix (default: NFTBAN)
+    # Output: Exports variables to current shell
+
+    local file="$1"
+    local prefix="${2:-NFTBAN}"
+    local section="GLOBAL"
+
+    [[ ! -f "$file" ]] && return 1
+
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Trim whitespace
+        line="${line#"${line%%[![:space:]]*}"}"
+        line="${line%"${line##*[![:space:]]}"}"
+
+        # Skip empty lines and comments
+        [[ -z "$line" || "$line" =~ ^[#\;] ]] && continue
+
+        # Section header: [section_name]
+        if [[ "$line" =~ ^\[([^\]]+)\]$ ]]; then
+            section="${BASH_REMATCH[1]}"
+            # Normalize: uppercase, replace - with _
+            section="${section^^}"
+            section="${section//-/_}"
+            continue
+        fi
+
+        # Key-value pair: key = value
+        if [[ "$line" =~ ^([^=]+)=(.*)$ ]]; then
+            local key="${BASH_REMATCH[1]}"
+            local value="${BASH_REMATCH[2]}"
+
+            # Trim whitespace from key and value
+            key="${key#"${key%%[![:space:]]*}"}"
+            key="${key%"${key##*[![:space:]]}"}"
+            value="${value#"${value%%[![:space:]]*}"}"
+            value="${value%"${value##*[![:space:]]}"}"
+
+            # Remove surrounding quotes from value
+            value="${value#\"}"
+            value="${value%\"}"
+            value="${value#\'}"
+            value="${value%\'}"
+
+            # Normalize key: uppercase, replace - with _
+            key="${key^^}"
+            key="${key//-/_}"
+
+            # Export variable
+            local varname="${prefix}_${section}_${key}"
+            printf -v "$varname" '%s' "$value"
+            export "$varname"
+        fi
+    done < "$file"
+}
+
+nftban_config_load() {
+    # Auto-detect config format and load appropriately
+    # Args: $1 = file path
+    # Returns: 0 on success, 1 on failure
+
+    local file="$1"
+
+    [[ ! -f "$file" ]] && return 1
+
+    if nftban_config_is_ini "$file"; then
+        # INI format - use parser
+        nftban_config_parse_ini "$file"
+    else
+        # Bash format - source it
+        # shellcheck disable=SC1090
+        source "$file"
+    fi
+}
+
 nftban_config_parse_file() {
     # Parse a config file and extract KEY=VALUE pairs
     # Args: $1 = file path
