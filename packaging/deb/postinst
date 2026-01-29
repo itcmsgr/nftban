@@ -273,9 +273,11 @@ case "$1" in
         chown nftban:nftban /var/cache/nftban
         chmod 755 /var/cache/nftban
 
-        # /run/nftban - nftban:nftban 755
+        # /run/nftban - nftban:nftban 755 (directory and files inside)
         chown nftban:nftban /run/nftban
         chmod 755 /run/nftban
+        # Fix files inside (may be owned by root from previous runs)
+        find /run/nftban -maxdepth 1 -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
 
         # /run/nftban-ui - root:nftban 750 (auth daemon runs as root, nftban group access)
         chown root:nftban /run/nftban-ui
