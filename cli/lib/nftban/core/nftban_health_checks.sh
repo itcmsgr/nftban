@@ -397,10 +397,11 @@ nftban_health_check_permissions() {
 
     # Check FHS runtime directories — services run as nftban user and MUST own these
     # Spec: tmpfiles.d/nftban.conf defines these as nftban:nftban
+    # Note: stat -c '%a' returns without leading 0, so use 755 not 0755
     local fhs_dirs=(
-        "/run/nftban:nftban:nftban:0755"
-        "/var/log/nftban:nftban:nftban:0750"
-        "/var/cache/nftban:nftban:nftban:0755"
+        "/run/nftban:nftban:nftban:755"
+        "/var/log/nftban:nftban:nftban:750"
+        "/var/cache/nftban:nftban:nftban:755"
     )
 
     for entry in "${fhs_dirs[@]}"; do
@@ -1394,12 +1395,21 @@ nftban_health_check_config() {
     # Check for basic config files
     local config_dir="${NFTBAN_CONFIG_DIR}/conf.d"
     if [[ -d "$config_dir" ]]; then
-        # Try to source config files (in subshell)
+        # Try to load config files (in subshell) - auto-detects INI vs bash format
         # Check top-level conf files
         for conf_file in "$config_dir"/*.conf; do
             if [[ -f "$conf_file" ]]; then
-                # shellcheck disable=SC1090  # Dynamic source for config validation
-                if ! (source "$conf_file") 2>/dev/null; then
+                # Use auto-detect loader if available, fallback to format-specific handling
+                if declare -f nftban_config_load &>/dev/null; then
+                    if ! (nftban_config_load "$conf_file") 2>/dev/null; then
+                        config_issues+=("Config has syntax errors: $(basename "$conf_file")")
+                        status=$HEALTH_ERROR
+                    fi
+                elif grep -q '^\[' "$conf_file" 2>/dev/null; then
+                    # INI format - skip bash sourcing (validated separately)
+                    continue
+                elif ! (source "$conf_file") 2>/dev/null; then
+                    # shellcheck disable=SC1090  # Dynamic source for config validation
                     config_issues+=("Config has syntax errors: $(basename "$conf_file")")
                     status=$HEALTH_ERROR
                 fi
@@ -1421,8 +1431,18 @@ nftban_health_check_config() {
                         done
                         [[ "$skip" == "true" ]] && continue
 
-                        # shellcheck disable=SC1090  # Dynamic source for config validation
-                        if ! (source "$conf_file") 2>/dev/null; then
+                        # Use auto-detect loader if available
+                        if declare -f nftban_config_load &>/dev/null; then
+                            if ! (nftban_config_load "$conf_file") 2>/dev/null; then
+                                local relative_path; relative_path="$(basename "$subdir")/$(basename "$conf_file")"
+                                config_issues+=("Config has syntax errors: $relative_path")
+                                status=$HEALTH_ERROR
+                            fi
+                        elif grep -q '^\[' "$conf_file" 2>/dev/null; then
+                            # INI format - skip bash sourcing
+                            continue
+                        elif ! (source "$conf_file") 2>/dev/null; then
+                            # shellcheck disable=SC1090  # Dynamic source for config validation
                             local relative_path; relative_path="$(basename "$subdir")/$(basename "$conf_file")"
                             config_issues+=("Config has syntax errors: $relative_path")
                             status=$HEALTH_ERROR
