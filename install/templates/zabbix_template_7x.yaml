@@ -72,7 +72,7 @@ zabbix_export:
         - uuid: ecd5f00d352d4a888f67a1a92e6bff02
           name: 'NFTBan: Daemon status'
           type: TRAP
-          key: nftban.status
+          key: nftban.daemon.up
           value_type: UNSIGNED
           description: 'Daemon status: 1=running, 0=stopped'
           tags:
@@ -82,7 +82,7 @@ zabbix_export:
               value: availability
           triggers:
             - uuid: eb2ef6488a784bce8733ddeb163045b0
-              expression: 'last(/NFTBan/nftban.status)=0'
+              expression: 'last(/NFTBan/nftban.daemon.up)=0'
               name: 'NFTBan daemon is down'
               priority: DISASTER
               description: 'NFTBan daemon is not running. Firewall protection may be compromised.'
@@ -90,7 +90,7 @@ zabbix_export:
                 - tag: scope
                   value: availability
             - uuid: 751aef14149a4a41a90162b49446a382
-              expression: 'nodata(/NFTBan/nftban.status,5m)=1'
+              expression: 'nodata(/NFTBan/nftban.daemon.up,5m)=1'
               name: 'NFTBan metrics not received for 5 minutes'
               priority: HIGH
               description: 'No metrics received from NFTBan exporter. Check if the Zabbix exporter is running and network connectivity.'
@@ -117,7 +117,7 @@ zabbix_export:
         - uuid: 4847ad4a222b4e70a5ca7c7a5b971782
           name: 'NFTBan: Uptime'
           type: TRAP
-          key: nftban.uptime
+          key: nftban.uptime.seconds.seconds
           value_type: FLOAT
           units: s
           description: 'Daemon uptime in seconds'
@@ -126,7 +126,7 @@ zabbix_export:
               value: daemon
           triggers:
             - uuid: 6c6b3585ac094b1dbfee25627a7a4178
-              expression: 'last(/NFTBan/nftban.uptime)<300'
+              expression: 'last(/NFTBan/nftban.uptime.seconds)<300'
               name: 'NFTBan daemon restarted recently'
               priority: INFO
               description: 'NFTBan daemon uptime is less than 5 minutes.'
@@ -172,7 +172,7 @@ zabbix_export:
         - uuid: 774f2c7f089a49eeaf9260227064bad0
           name: 'NFTBan: Bans (24h)'
           type: TRAP
-          key: nftban.bans.24h
+          key: nftban.bans.last.24h
           value_type: UNSIGNED
           description: 'Bans in last 24 hours'
           tags:
@@ -193,7 +193,7 @@ zabbix_export:
         - uuid: 073cbb5222414c45a9514ff41eab0a7d
           name: 'NFTBan: Bans (1h)'
           type: TRAP
-          key: nftban.bans.1h
+          key: nftban.bans.last.1h
           value_type: UNSIGNED
           description: 'Bans in last hour'
           tags:
@@ -203,7 +203,7 @@ zabbix_export:
         - uuid: c9604ea2ba874ec5939986b4758d21a2
           name: 'NFTBan: Ban rate'
           type: TRAP
-          key: nftban.bans.rate
+          key: nftban.throughput.bans.per.minute
           value_type: FLOAT
           units: '/min'
           description: 'Current ban rate per minute'
@@ -235,7 +235,7 @@ zabbix_export:
         - uuid: a3213a82a7204746bd627ec287352672
           name: 'NFTBan: Permanent bans'
           type: TRAP
-          key: nftban.permanent.count
+          key: nftban.blacklist.ipv4.perm
           value_type: UNSIGNED
           description: 'Permanent ban count'
           tags:
@@ -245,7 +245,7 @@ zabbix_export:
         - uuid: cc61d2bc79444c619bd53bee5048bde7
           name: 'NFTBan: Whitelist count'
           type: TRAP
-          key: nftban.whitelist.count
+          key: nftban.whitelist.ipv4.count
           value_type: UNSIGNED
           description: 'Whitelist entry count'
           tags:
@@ -256,7 +256,7 @@ zabbix_export:
         - uuid: d3132fbbb12e491998cdc1ea0c398fe1
           name: 'NFTBan: Memory RSS'
           type: TRAP
-          key: nftban.memory.rss
+          key: nftban.memory.rss.bytes
           value_type: UNSIGNED
           units: B
           description: 'Process resident set size'
@@ -278,7 +278,7 @@ zabbix_export:
         - uuid: d86e7c8c851c43a8819f43790d524bbd
           name: 'NFTBan: Open file descriptors'
           type: TRAP
-          key: nftban.fds.open
+          key: nftban.open.fds
           value_type: UNSIGNED
           description: 'Open file descriptors'
           tags:
@@ -358,7 +358,7 @@ zabbix_export:
         - uuid: d57a5ac275bf4c81b8b57ad93aeb6cc3
           name: 'NFTBan: nftables sets'
           type: TRAP
-          key: nftban.nft.sets_total
+          key: nftban.nftables.sets.total
           value_type: UNSIGNED
           description: 'Total nftables sets'
           tags:
@@ -368,7 +368,7 @@ zabbix_export:
         - uuid: 2293bf7a361e4a94aecb302d0e19f7e6
           name: 'NFTBan: nftables elements'
           type: TRAP
-          key: nftban.nft.elements_total
+          key: nftban.nftables.set.elements.total
           value_type: UNSIGNED
           description: 'Total set elements across all sets'
           tags:
@@ -384,7 +384,7 @@ zabbix_export:
         - uuid: 82c385c3a6284477b9c15aa797190864
           name: 'NFTBan: nftables rules'
           type: TRAP
-          key: nftban.nft.rules_total
+          key: nftban.nftables.rules.total
           value_type: UNSIGNED
           description: 'Total nftables rules'
           tags:
@@ -1462,7 +1462,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.status
+                        key: nftban.daemon.up
                         host: 'NFTBan'
                 - type: item_value
                   name: 'Mode'
@@ -1495,7 +1495,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.uptime
+                        key: nftban.uptime.seconds.seconds
                         host: 'NFTBan'
                 # Row 2: Ban Counts
                 - type: item_value
@@ -1519,7 +1519,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.permanent.count
+                        key: nftban.blacklist.ipv4.perm
                         host: 'NFTBan'
                 - type: item_value
                   name: 'Total Bans'
@@ -1543,7 +1543,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.bans.rate
+                        key: nftban.throughput.bans.per.minute
                         host: 'NFTBan'
                 # Row 3: Main Graph - Ban Activity
                 - type: svggraph
@@ -1556,7 +1556,7 @@ zabbix_export:
                       name: ds.0.itemid.0
                       value:
                         host: 'NFTBan'
-                        key: nftban.bans.24h
+                        key: nftban.bans.last.24h
                     - type: STRING
                       name: ds.0.color
                       value: 1A7C11
@@ -1564,7 +1564,7 @@ zabbix_export:
                       name: ds.1.itemid.0
                       value:
                         host: 'NFTBan'
-                        key: nftban.bans.1h
+                        key: nftban.bans.last.1h
                     - type: STRING
                       name: ds.1.color
                       value: 2774A4
@@ -1610,7 +1610,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.bans.1h
+                        key: nftban.bans.last.1h
                         host: 'NFTBan'
                 - type: item_value
                   name: 'Bans (24h)'
@@ -1621,7 +1621,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.bans.24h
+                        key: nftban.bans.last.24h
                         host: 'NFTBan'
                 - type: item_value
                   name: 'Total Bans'
@@ -1643,7 +1643,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.permanent.count
+                        key: nftban.blacklist.ipv4.perm
                         host: 'NFTBan'
                 - type: item_value
                   name: 'Rate/min'
@@ -1654,7 +1654,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.bans.rate
+                        key: nftban.throughput.bans.per.minute
                         host: 'NFTBan'
                 # Row 2: Ban Activity Graph
                 - type: svggraph
@@ -1667,7 +1667,7 @@ zabbix_export:
                       name: ds.0.itemid.0
                       value:
                         host: 'NFTBan'
-                        key: nftban.bans.24h
+                        key: nftban.bans.last.24h
                     - type: STRING
                       name: ds.0.color
                       value: 1A7C11
@@ -1675,7 +1675,7 @@ zabbix_export:
                       name: ds.1.itemid.0
                       value:
                         host: 'NFTBan'
-                        key: nftban.bans.1h
+                        key: nftban.bans.last.1h
                     - type: STRING
                       name: ds.1.color
                       value: 2774A4
@@ -1691,7 +1691,7 @@ zabbix_export:
                       name: ds.3.itemid.0
                       value:
                         host: 'NFTBan'
-                        key: nftban.permanent.count
+                        key: nftban.blacklist.ipv4.perm
                     - type: STRING
                       name: ds.3.color
                       value: A54F10
@@ -1732,7 +1732,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.memory.rss
+                        key: nftban.memory.rss.bytes
                         host: 'NFTBan'
                 - type: item_value
                   name: 'Threads'
@@ -1754,7 +1754,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.fds.open
+                        key: nftban.open.fds
                         host: 'NFTBan'
                 - type: item_value
                   name: 'Watchdog'
@@ -1778,7 +1778,7 @@ zabbix_export:
                       name: ds.0.itemid.0
                       value:
                         host: 'NFTBan'
-                        key: nftban.memory.rss
+                        key: nftban.memory.rss.bytes
                     - type: STRING
                       name: ds.0.color
                       value: 1A7C11
@@ -1861,7 +1861,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.nft.rules_total
+                        key: nftban.nftables.rules.total
                         host: 'NFTBan'
                 - type: item_value
                   name: 'NFT Sets'
@@ -1872,7 +1872,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.nft.sets_total
+                        key: nftban.nftables.sets.total
                         host: 'NFTBan'
                 - type: item_value
                   name: 'NFT Elements'
@@ -1883,7 +1883,7 @@ zabbix_export:
                     - type: ITEM
                       name: itemid.0
                       value:
-                        key: nftban.nft.elements_total
+                        key: nftban.nftables.set.elements.total
                         host: 'NFTBan'
                 # Row 1: Feed Stats
                 - type: item_value
@@ -1933,7 +1933,7 @@ zabbix_export:
                       name: ds.0.itemid.0
                       value:
                         host: 'NFTBan'
-                        key: nftban.nft.rules_total
+                        key: nftban.nftables.rules.total
                     - type: STRING
                       name: ds.0.color
                       value: 1A7C11
@@ -1941,7 +1941,7 @@ zabbix_export:
                       name: ds.1.itemid.0
                       value:
                         host: 'NFTBan'
-                        key: nftban.nft.sets_total
+                        key: nftban.nftables.sets.total
                     - type: STRING
                       name: ds.1.color
                       value: 2774A4
@@ -1949,7 +1949,7 @@ zabbix_export:
                       name: ds.2.itemid.0
                       value:
                         host: 'NFTBan'
-                        key: nftban.nft.elements_total
+                        key: nftban.nftables.set.elements.total
                     - type: STRING
                       name: ds.2.color
                       value: F63100
