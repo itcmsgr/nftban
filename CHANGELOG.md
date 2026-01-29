@@ -5,6 +5,56 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.2] - 2026-01-29
+
+### Update System Stability Release
+
+Comprehensive fixes for `nftban update` across all install types (RPM, DEB, Git).
+Tested on 5 labs: Debian 12, Ubuntu 24.04, AlmaLinux 9, Rocky 9.
+
+### Fixed
+
+- **DEB install IFS bug** - `dpkg -i` command failed because `IFS=$'\n\t'` (no space) prevented
+  word splitting. Fixed by using bash array: `local -a dpkg_cmd=(dpkg -i)` with `"${dpkg_cmd[@]}"`
+  expansion (`cmd_update.sh`)
+- **SHA256 verification pipefail** - `grep` returning exit code 1 on "no match" triggered `set -o pipefail`
+  exit. Fixed with `|| true` pattern (`download-binaries.sh`)
+- **Verify function early exit** - `set -e` caused script exit on non-zero verify return. Fixed with
+  `|| result=$?` pattern to capture return codes (`download-binaries.sh`)
+- **INI config parse error** - Bash tried to source `[section]` headers from INI-style configs in
+  `conf.d/`. Fixed by skipping files containing `^\[` pattern (`cli/sbin/nftban`)
+- **Path inconsistency** - 31 files had hardcoded `/usr/bin/nftban` instead of `/usr/sbin/nftban`.
+  Migrated all to consistent `/usr/sbin` path
+- **Cleanup on SKIP_INSTALL** - Download script deleted binaries even when `SKIP_INSTALL=1`.
+  Fixed to skip cleanup when flag set (`download-binaries.sh`)
+
+### Added
+
+- **Distro config at CLI startup** - Main CLI now loads distro config via `nftban_distro_init()`
+  for path resolution (`cli/sbin/nftban`)
+- **nftban_cli path in distro configs** - All 12 distro configs now include `nftban_cli = /usr/sbin/nftban`
+- **Enhanced support bundle** - `nftban support` now collects 8 additional diagnostic categories:
+  - `install/` - Install type detection (rpm/deb/git)
+  - `binaries/` - Binary locations, versions, CAP_NET_ADMIN capabilities
+  - `distro/` - OS detection, distro config matching
+  - `fhs/` - FHS directory structure verification
+  - `lists/` - Whitelist/blacklist file contents
+  - `geoip/` - GeoIP database info and age
+  - `daemon/` - nftband socket and service status
+  - `activity/` - Recent bans, feed status
+
+### Tested
+
+| Lab | OS | Install Type | Result |
+|-----|-----|--------------|--------|
+| lab | Debian 12 | DEB | ✓ |
+| lab1 | AlmaLinux 9.7 | RPM | ✓ |
+| lab2 | Ubuntu 24.04 | Git | ✓ |
+| lab3 | AlmaLinux 9 | RPM | ✓ |
+| lab4 | Rocky 9 | Git | ✓ |
+
+---
+
 ## [1.8.0] - 2026-01-28
 
 ### Netlink Architecture Consolidation
