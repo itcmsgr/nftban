@@ -448,7 +448,7 @@ func (d *Daemon) Run() error {
 				banSource = banlog.SourceSuricata
 			}
 			country := lookupCountry(e.IP)
-			_ = banlog.LogBan(e.IP, banSource, country)
+			_ = banlog.LogBanWithReason(e.IP, banSource, country, reason)
 
 			// Check persistent offender escalation for temp bans
 			// If this IP has been temp-banned too many times, escalate to permanent
@@ -1061,7 +1061,7 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 		banSource = banlog.SourceSuricata
 	}
 	country := lookupCountry(ip)
-	_ = banlog.LogBan(ip, banSource, country)
+	_ = banlog.LogBanWithReason(ip, banSource, country, reason)
 
 	// NOTE: Do NOT publish EventBan here - the IPC handler already executed the ban
 	// and logged it. The EventBan subscriber is for module-initiated bans only.
