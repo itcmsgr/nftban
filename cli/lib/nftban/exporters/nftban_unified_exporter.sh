@@ -1671,7 +1671,10 @@ export_zabbix() {
         local first=true
         while IFS=' ' read -r host key value; do
             [[ -z "$key" ]] && continue
-            value=$(echo "$value" | sed 's/\\/\\\\/g; s/"/\\"/g; s/^"//; s/"$//')
+            # Strip outer quotes first (from string values), then escape for JSON
+            value="${value#\"}"   # Remove leading quote
+            value="${value%\"}"   # Remove trailing quote
+            value=$(printf '%s' "$value" | sed 's/\\/\\\\/g; s/"/\\"/g')
             [[ "$first" != "true" ]] && data+=","
             data+="{\"host\":\"$host\",\"key\":\"$key\",\"value\":\"$value\"}"
             first=false
@@ -1679,17 +1682,26 @@ export_zabbix() {
         data+=']}'
 
         local data_len=${#data}
-        local len_hex
-        len_hex=$(printf '%016x' "$data_len")
         local nc_cmd
         nc_cmd=$(command -v ncat || command -v nc)
 
-        result=$( (
-            printf 'ZBXD\x01'
-            printf "\\x${len_hex:14:2}\\x${len_hex:12:2}\\x${len_hex:10:2}\\x${len_hex:8:2}"
-            printf '\x00\x00\x00\x00'
-            printf '%s' "$data"
-        ) 2>/dev/null | timeout 10 "$nc_cmd" "$server" "$port" 2>/dev/null | tr -d '\0' ) || result=""
+        # Write ZBXD protocol packet to temp file (more reliable than piping)
+        local zabbix_pkt
+        zabbix_pkt=$(mktemp)
+
+        # ZBXD protocol: header (5 bytes) + length (8 bytes LE) + data
+        printf 'ZBXD\x01' > "$zabbix_pkt"
+        # Length as 8-byte little-endian (only first 4 bytes used for practical sizes)
+        printf "\\x$(printf '%02x' $((data_len & 0xFF)))" >> "$zabbix_pkt"
+        printf "\\x$(printf '%02x' $(((data_len >> 8) & 0xFF)))" >> "$zabbix_pkt"
+        printf "\\x$(printf '%02x' $(((data_len >> 16) & 0xFF)))" >> "$zabbix_pkt"
+        printf "\\x$(printf '%02x' $(((data_len >> 24) & 0xFF)))" >> "$zabbix_pkt"
+        printf '\x00\x00\x00\x00' >> "$zabbix_pkt"
+        printf '%s' "$data" >> "$zabbix_pkt"
+
+        # Send via nc from file (avoids pipeline buffer issues)
+        result=$(timeout 10 "$nc_cmd" "$server" "$port" < "$zabbix_pkt" 2>/dev/null | tr -d '\0') || result=""
+        rm -f "$zabbix_pkt"
 
         if echo "$result" | grep -q '"response":"success"'; then
             log_info "Zabbix: all metrics sent to $server:$port"
