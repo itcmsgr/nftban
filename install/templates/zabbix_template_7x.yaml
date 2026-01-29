@@ -180,12 +180,12 @@ zabbix_export:
               value: bans
           triggers:
             - uuid: 6c249a5b93e146fe88b803db2138c0f4
-              expression: 'last(/NFTBan/nftban.bans.24h)>1000'
+              expression: 'last(/NFTBan/nftban.bans.last.24h)>1000'
               name: 'High ban rate (>{ITEM.VALUE}/24h)'
               priority: WARNING
               description: 'More than 1000 bans in the last 24 hours indicates increased attack activity.'
             - uuid: 382c46ca44904d90bdc49ecff9c16981
-              expression: 'last(/NFTBan/nftban.bans.24h)>5000'
+              expression: 'last(/NFTBan/nftban.bans.last.24h)>5000'
               name: 'Mass attack detected (>{ITEM.VALUE}/24h)'
               priority: HIGH
               description: 'More than 5000 bans in 24 hours suggests a coordinated attack.'
@@ -212,12 +212,12 @@ zabbix_export:
               value: bans
           triggers:
             - uuid: 8f1ae00ad4894c5c814dde8d5bb70d6a
-              expression: 'last(/NFTBan/nftban.bans.rate)>{$NFTBAN.BAN.RATE.WARN}'
+              expression: 'last(/NFTBan/nftban.throughput.bans.per.minute)>{$NFTBAN.BAN.RATE.WARN}'
               name: 'NFTBan ban rate warning ({ITEM.VALUE}/min)'
               priority: WARNING
               description: 'Ban rate exceeds warning threshold.'
             - uuid: 16192e3a5dba4df98ba72a1f81ead3e7
-              expression: 'last(/NFTBan/nftban.bans.rate)>{$NFTBAN.BAN.RATE.HIGH}'
+              expression: 'last(/NFTBan/nftban.throughput.bans.per.minute)>{$NFTBAN.BAN.RATE.HIGH}'
               name: 'NFTBan ban rate critical ({ITEM.VALUE}/min)'
               priority: HIGH
               description: 'Ban rate exceeds critical threshold - possible attack in progress.'
