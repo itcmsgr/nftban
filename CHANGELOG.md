@@ -10,7 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Update System Stability Release
 
 Comprehensive fixes for `nftban update` across all install types (RPM, DEB, Git).
-Tested on 5 labs: Debian 12, Ubuntu 24.04, AlmaLinux 9, Rocky 9.
+Tested on Debian 12, Ubuntu 24.04, AlmaLinux 9, Rocky 9.
 
 ### Fixed
 
@@ -45,13 +45,12 @@ Tested on 5 labs: Debian 12, Ubuntu 24.04, AlmaLinux 9, Rocky 9.
 
 ### Tested
 
-| Lab | OS | Install Type | Result |
-|-----|-----|--------------|--------|
-| lab | Debian 12 | DEB | ✓ |
-| lab1 | AlmaLinux 9.7 | RPM | ✓ |
-| lab2 | Ubuntu 24.04 | Git | ✓ |
-| lab3 | AlmaLinux 9 | RPM | ✓ |
-| lab4 | Rocky 9 | Git | ✓ |
+| OS | Install Type | Result |
+|-----|--------------|--------|
+| Debian 12 | DEB | ✓ |
+| Ubuntu 24.04 | Git | ✓ |
+| AlmaLinux 9 | RPM | ✓ |
+| Rocky 9 | Git | ✓ |
 
 ---
 
