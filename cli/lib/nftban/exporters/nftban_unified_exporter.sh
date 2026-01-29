@@ -415,6 +415,25 @@ collect_all_metrics() {
         metrics+="nftban_uptime_seconds $uptime $timestamp\n"
         metrics+="nftban_pid $pid $timestamp\n"
 
+        # --- Panel Detection ---
+        local panel="none"
+        if [[ -d /usr/local/cpanel ]] && [[ -f /usr/local/cpanel/cpanel ]]; then
+            panel="cpanel"
+        elif [[ -d /usr/local/psa ]] && command -v plesk &>/dev/null; then
+            panel="plesk"
+        elif [[ -d /usr/local/directadmin ]] && [[ -f /usr/local/directadmin/directadmin ]]; then
+            panel="directadmin"
+        elif [[ -d /usr/local/cwpsrv ]]; then
+            panel="cwp"
+        elif [[ -d /usr/local/CyberPanel ]]; then
+            panel="cyberpanel"
+        elif command -v hestia &>/dev/null || [[ -d /usr/local/hestia ]]; then
+            panel="hestia"
+        fi
+        metrics+="nftban_panel_info{panel=\"$panel\"} 1 $timestamp\n"
+        # Zabbix string metric for host inventory
+        metrics+="nftban.server.panel |STRING|$panel $timestamp\n"
+
         # --- Ban Metrics (fast nftables JSON API with perm/temp breakdown) ---
         # These metrics align with nftban_stats.sh dashboard requirements
         local active_v4=0 active_v6=0
@@ -447,7 +466,7 @@ collect_all_metrics() {
         fi
         local active_total=$((active_v4 + active_v6))
 
-        metrics+="nftban_blocks_total $active_total $timestamp\n"
+        metrics+="nftban_active_count $active_total $timestamp\n"
         metrics+="nftban_active_bans{family=\"ipv4\"} $active_v4 $timestamp\n"
         metrics+="nftban_active_bans{family=\"ipv6\"} $active_v6 $timestamp\n"
 
@@ -587,6 +606,19 @@ collect_all_metrics() {
             metrics+="nftban_memory_rss_bytes $rss $timestamp\n"
             metrics+="nftban_open_fds $fds $timestamp\n"
             metrics+="nftban_threads $threads $timestamp\n"
+
+            # Daemon CPU and Memory percentage (from ps)
+            local daemon_cpu_pct=0 daemon_mem_pct=0 daemon_vsz=0
+            local ps_output
+            ps_output=$(ps -p "$pid" -o %cpu,%mem,vsz --no-headers 2>/dev/null || echo "0 0 0")
+            if [[ -n "$ps_output" ]]; then
+                daemon_cpu_pct=$(echo "$ps_output" | awk '{print $1}')
+                daemon_mem_pct=$(echo "$ps_output" | awk '{print $2}')
+                daemon_vsz=$(echo "$ps_output" | awk '{print $3 * 1024}')  # VSZ in bytes
+            fi
+            metrics+="nftban.daemon.cpu_percent $daemon_cpu_pct $timestamp\n"
+            metrics+="nftban.daemon.mem_percent $daemon_mem_pct $timestamp\n"
+            metrics+="nftban.daemon.vsz_bytes $daemon_vsz $timestamp\n"
 
             # Goroutines (for Go-based daemon)
             # Try to read from daemon stats file first, then estimate from threads
@@ -953,23 +985,60 @@ collect_all_metrics() {
             metrics+="nftban_softnet_backlog_total $softnet_drops_rate $timestamp\n"
         fi
 
+        # --- Server Load Metrics ---
+        local load1 load5 load15 cpu_cores
+        if [[ -f /proc/loadavg ]]; then
+            read -r load1 load5 load15 _ < /proc/loadavg
+            metrics+="nftban.server.load_1m $load1 $timestamp\n"
+            metrics+="nftban.server.load_5m $load5 $timestamp\n"
+            metrics+="nftban.server.load_15m $load15 $timestamp\n"
+        fi
+        cpu_cores=$(nproc 2>/dev/null || echo "1")
+        metrics+="nftban.server.cpu_cores $cpu_cores $timestamp\n"
+
+        # --- Server Memory Metrics ---
+        local memory_total=0 memory_available=0 memory_used_pct=0
+        if [[ -f /proc/meminfo ]]; then
+            memory_total=$(awk '/^MemTotal:/ {printf "%.0f", $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+            memory_available=$(awk '/^MemAvailable:/ {printf "%.0f", $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
+            if [[ $memory_total -gt 0 ]]; then
+                local memory_used=$((memory_total - memory_available))
+                memory_used_pct=$(awk -v used="$memory_used" -v total="$memory_total" 'BEGIN {printf "%.2f", (used/total)*100}')
+            fi
+        fi
+        metrics+="nftban.server.memory_total $memory_total $timestamp\n"
+        metrics+="nftban.server.memory_available $memory_available $timestamp\n"
+        metrics+="nftban.server.mem_used_percent $memory_used_pct $timestamp\n"
+
+        # --- Server Uptime ---
+        local server_uptime=0
+        if [[ -f /proc/uptime ]]; then
+            server_uptime=$(awk '{printf "%.0f", $1}' /proc/uptime 2>/dev/null || echo "0")
+        fi
+        metrics+="nftban.server.uptime $server_uptime $timestamp\n"
+
+        # --- Server Disk Metrics (root filesystem) ---
+        local disk_total=0 disk_used=0 disk_used_pct=0
+        if command -v df &>/dev/null; then
+            local df_output
+            df_output=$(df -B1 / 2>/dev/null | tail -1 || echo "")
+            if [[ -n "$df_output" ]]; then
+                disk_total=$(echo "$df_output" | awk '{print $2}')
+                disk_used=$(echo "$df_output" | awk '{print $3}')
+                disk_used_pct=$(echo "$df_output" | awk '{gsub(/%/, "", $5); print $5}')
+            fi
+        fi
+        metrics+="nftban.server.disk_total $disk_total $timestamp\n"
+        metrics+="nftban.server.disk_used $disk_used $timestamp\n"
+        metrics+="nftban.server.disk_used_percent $disk_used_pct $timestamp\n"
+
     fi  # end EXTENDED group
 
     # =========================================================================
     # INVENTORY METRICS (every 60 runs - 1 hour)
+    # String metrics for Zabbix host inventory auto-population
     # =========================================================================
     if group_active "inventory"; then
-
-        # --- Server Info ---
-        local load1 load5 load15 cpu_cores
-        if [[ -f /proc/loadavg ]]; then
-            read -r load1 load5 load15 _ < /proc/loadavg
-            metrics+="nftban.server.load1 $load1 $timestamp\n"
-            metrics+="nftban.server.load5 $load5 $timestamp\n"
-            metrics+="nftban.server.load15 $load15 $timestamp\n"
-        fi
-        cpu_cores=$(nproc 2>/dev/null || echo "1")
-        metrics+="nftban.server.cpu.cores $cpu_cores $timestamp\n"
 
         # --- Server Inventory Metrics (for Zabbix host inventory auto-population) ---
         # Hostname and FQDN
@@ -1078,43 +1147,8 @@ collect_all_metrics() {
         nftban_version=$(cat "${NFTBAN_LIB_DIR}/VERSION" 2>/dev/null | head -1 || echo "unknown")
         metrics+="nftban_server_nftban_version_info{version=\"$nftban_version\"} 1 $timestamp\n"
 
-        # --- Server Memory Metrics ---
-        local memory_total=0 memory_available=0 memory_used_pct=0
-        if [[ -f /proc/meminfo ]]; then
-            memory_total=$(awk '/^MemTotal:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
-            memory_available=$(awk '/^MemAvailable:/ {print $2 * 1024}' /proc/meminfo 2>/dev/null || echo "0")
-            if [[ $memory_total -gt 0 ]]; then
-                local memory_used=$((memory_total - memory_available))
-                memory_used_pct=$(awk -v used="$memory_used" -v total="$memory_total" 'BEGIN {printf "%.2f", (used/total)*100}')
-            fi
-        fi
-        # Memory metrics - use dots in name to prevent underscore conversion issues
-        # Zabbix expects: nftban.server.memory_total (mixed dots and underscores)
-        metrics+="nftban.server.memory_total $memory_total $timestamp\n"
-        metrics+="nftban.server.memory_available $memory_available $timestamp\n"
-        metrics+="nftban.server.memory_used_pct $memory_used_pct $timestamp\n"
-
-        # --- Server Uptime ---
-        local server_uptime=0
-        if [[ -f /proc/uptime ]]; then
-            server_uptime=$(awk '{printf "%.0f", $1}' /proc/uptime 2>/dev/null || echo "0")
-        fi
-        metrics+="nftban.server.uptime $server_uptime $timestamp\n"
-
-        # --- Server Disk Metrics (root filesystem) ---
-        local disk_total=0 disk_used=0 disk_used_pct=0
-        if command -v df &>/dev/null; then
-            local df_output
-            df_output=$(df -B1 / 2>/dev/null | tail -1 || echo "")
-            if [[ -n "$df_output" ]]; then
-                disk_total=$(echo "$df_output" | awk '{print $2}')
-                disk_used=$(echo "$df_output" | awk '{print $3}')
-                disk_used_pct=$(echo "$df_output" | awk '{gsub(/%/, "", $5); print $5}')
-            fi
-        fi
-        metrics+="nftban.server.disk_total $disk_total $timestamp\n"
-        metrics+="nftban.server.disk_used $disk_used $timestamp\n"
-        metrics+="nftban.server.disk_used_pct $disk_used_pct $timestamp\n"
+        # NOTE: Memory, uptime, disk metrics moved to EXTENDED group (every 5 min)
+        # See: "Server Load Metrics", "Server Memory Metrics", "Server Disk Metrics" in EXTENDED
 
         # --- Zabbix-compatible String Metrics ---
         # Zabbix trapper items expect the actual string value, not labels
