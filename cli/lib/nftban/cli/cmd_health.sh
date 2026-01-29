@@ -386,6 +386,9 @@ nftban_health_cmd_fix() {
         nftables)
             nftban_health_fix_nftables
             ;;
+        daemon|memory)
+            nftban_health_fix_daemon_memory
+            ;;
         all)
             nftban_health_fix_directories
             nftban_health_fix_permissions
@@ -393,10 +396,11 @@ nftban_health_cmd_fix() {
             nftban_health_fix_services
             nftban_health_fix_nftables
             nftban_health_fix_polkit
+            nftban_health_fix_daemon_memory
             ;;
         *)
             echo "ERROR: Invalid fix target: $what" >&2
-            echo "Valid targets: permissions, directories, services, config, polkit, nftables, all" >&2
+            echo "Valid targets: permissions, directories, services, config, polkit, nftables, daemon, all" >&2
             return 1
             ;;
     esac

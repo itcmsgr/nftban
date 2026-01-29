@@ -1234,6 +1234,137 @@ nftban_health_fix_polkit() {
 }
 
 # =============================================================================
+# DAEMON MEMORY HEALTH
+# =============================================================================
+
+nftban_health_fix_daemon_memory() {
+    # Detect and fix memory leaks in nftband daemon
+    # Thresholds based on empirical data from production:
+    # - Normal: 15-30MB RSS after hours of operation
+    # - Warning: >100MB RSS
+    # - Critical: >300MB RSS or >50MB/hour growth rate
+    #
+    # This function:
+    # 1. Checks current memory usage
+    # 2. Calculates growth rate (MB/hour)
+    # 3. Checks cgroup memory pressure
+    # 4. Restarts daemon if critical threshold exceeded
+
+    echo "Checking daemon memory health..."
+
+    local pid rss_kb uptime_sec mb_per_hour memory_pressure
+    local warning_rss_kb=102400      # 100MB in KB
+    local critical_rss_kb=307200     # 300MB in KB
+    local critical_growth_rate=50    # MB per hour
+
+    # Get daemon PID
+    pid=$(cat "${NFTBAN_RUN_DIR:-/run/nftban}/nftband.pid" 2>/dev/null || echo "")
+    if [[ -z "$pid" ]] || [[ ! -d "/proc/$pid" ]]; then
+        echo "  ⚠ nftband not running, skipping memory check"
+        return 0
+    fi
+
+    # Get current RSS (in KB)
+    rss_kb=$(awk '/VmRSS/ {print $2}' "/proc/$pid/status" 2>/dev/null || echo "0")
+    if [[ "$rss_kb" == "0" ]]; then
+        echo "  ⚠ Cannot read daemon memory stats"
+        return 0
+    fi
+
+    # Get uptime in seconds
+    uptime_sec=$(ps -p "$pid" -o etimes= 2>/dev/null | tr -d ' ' || echo "0")
+    [[ "$uptime_sec" == "0" ]] && uptime_sec=1
+
+    # Calculate MB per hour growth rate
+    # Formula: (current_MB / uptime_hours)
+    # This assumes daemon starts at ~15MB baseline
+    local baseline_mb=15
+    local current_mb=$((rss_kb / 1024))
+    local uptime_hours=$((uptime_sec / 3600))
+    [[ $uptime_hours -lt 1 ]] && uptime_hours=1
+
+    local growth_mb=$((current_mb - baseline_mb))
+    [[ $growth_mb -lt 0 ]] && growth_mb=0
+    mb_per_hour=$((growth_mb / uptime_hours))
+
+    # Check cgroup memory pressure (cgroup v2)
+    memory_pressure=0
+    local pressure_file="/sys/fs/cgroup/system.slice/nftband.service/memory.pressure"
+    if [[ -f "$pressure_file" ]]; then
+        # Extract avg10 value (0-100 scale)
+        memory_pressure=$(awk '/^some/ {gsub(/avg10=/, ""); print int($2)}' "$pressure_file" 2>/dev/null || echo "0")
+    fi
+
+    # Report current state
+    local uptime_human
+    if [[ $uptime_sec -ge 3600 ]]; then
+        uptime_human="$((uptime_sec / 3600))h $((uptime_sec % 3600 / 60))m"
+    else
+        uptime_human="$((uptime_sec / 60))m"
+    fi
+
+    echo "  PID: $pid | RSS: ${current_mb}MB | Uptime: $uptime_human | Growth: ${mb_per_hour}MB/h | Pressure: ${memory_pressure}%"
+
+    # Check thresholds
+    local needs_restart=0
+    local status="OK"
+
+    if [[ $rss_kb -gt $critical_rss_kb ]]; then
+        echo "  ✖ CRITICAL: RSS ${current_mb}MB exceeds 300MB limit"
+        needs_restart=1
+        status="CRITICAL"
+    elif [[ $mb_per_hour -gt $critical_growth_rate ]] && [[ $uptime_hours -ge 1 ]]; then
+        echo "  ✖ CRITICAL: Memory growth ${mb_per_hour}MB/h exceeds 50MB/h limit"
+        needs_restart=1
+        status="CRITICAL"
+    elif [[ $memory_pressure -gt 80 ]]; then
+        echo "  ✖ CRITICAL: Memory pressure ${memory_pressure}% exceeds 80%"
+        needs_restart=1
+        status="CRITICAL"
+    elif [[ $rss_kb -gt $warning_rss_kb ]]; then
+        echo "  ⚠ WARNING: RSS ${current_mb}MB exceeds 100MB threshold"
+        status="WARNING"
+    elif [[ $memory_pressure -gt 50 ]]; then
+        echo "  ⚠ WARNING: Memory pressure ${memory_pressure}% exceeds 50%"
+        status="WARNING"
+    else
+        echo "  ✓ Daemon memory usage healthy"
+    fi
+
+    # Auto-restart if critical
+    if [[ $needs_restart -eq 1 ]]; then
+        echo "  → Restarting nftband to fix memory leak..."
+
+        # Log the event
+        logger -t nftban-health "Memory leak detected: RSS=${current_mb}MB, Growth=${mb_per_hour}MB/h, Pressure=${memory_pressure}%. Restarting nftband."
+
+        if systemctl restart nftband 2>/dev/null; then
+            sleep 2
+            local new_pid new_rss
+            new_pid=$(cat "${NFTBAN_RUN_DIR:-/run/nftban}/nftband.pid" 2>/dev/null || echo "")
+            if [[ -n "$new_pid" ]] && [[ -d "/proc/$new_pid" ]]; then
+                new_rss=$(awk '/VmRSS/ {print int($2/1024)}' "/proc/$new_pid/status" 2>/dev/null || echo "?")
+                echo "  ✓ Daemon restarted. New PID: $new_pid, RSS: ${new_rss}MB"
+            else
+                echo "  ✖ Daemon restart failed - not running"
+                return 1
+            fi
+        else
+            echo "  ✖ Failed to restart nftband"
+            return 1
+        fi
+    fi
+
+    # Save metrics for trending
+    local metrics_file="${NFTBAN_RUN_DIR:-/run/nftban}/daemon_memory.dat"
+    echo "$(date +%s) $rss_kb $uptime_sec $mb_per_hour $memory_pressure" >> "$metrics_file" 2>/dev/null || true
+    # Keep only last 100 entries
+    tail -100 "$metrics_file" > "$metrics_file.tmp" 2>/dev/null && mv "$metrics_file.tmp" "$metrics_file" 2>/dev/null || true
+
+    return 0
+}
+
+# =============================================================================
 # REPORTING
 # =============================================================================
 

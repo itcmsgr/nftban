@@ -629,6 +629,39 @@ collect_all_metrics() {
             # Fallback: use thread count as approximation if goroutines not available
             [[ "$goroutines" == "0" || -z "$goroutines" ]] && goroutines=$threads
             metrics+="nftban_goroutines $goroutines $timestamp\n"
+
+            # --- Memory Leak Detection Metrics ---
+            # Calculate memory growth rate (MB/hour) for leak detection
+            local uptime_sec growth_rate_mb_h baseline_mb=15 memory_pressure=0
+            uptime_sec=$(ps -p "$pid" -o etimes= 2>/dev/null | tr -d ' ' || echo "0")
+            if [[ $uptime_sec -gt 3600 ]]; then
+                local current_mb=$((rss / 1024 / 1024))
+                local uptime_hours=$((uptime_sec / 3600))
+                local growth_mb=$((current_mb - baseline_mb))
+                [[ $growth_mb -lt 0 ]] && growth_mb=0
+                growth_rate_mb_h=$((growth_mb / uptime_hours))
+            else
+                growth_rate_mb_h=0
+            fi
+            metrics+="nftban.daemon.memory_growth_rate $growth_rate_mb_h $timestamp\n"
+            metrics+="nftban.daemon.uptime_seconds $uptime_sec $timestamp\n"
+
+            # Cgroup memory pressure (cgroup v2)
+            local pressure_file="/sys/fs/cgroup/system.slice/nftband.service/memory.pressure"
+            if [[ -f "$pressure_file" ]]; then
+                memory_pressure=$(awk '/^some/ {gsub(/avg10=/, ""); printf "%.0f", $2}' "$pressure_file" 2>/dev/null || echo "0")
+            fi
+            metrics+="nftban.daemon.memory_pressure $memory_pressure $timestamp\n"
+
+            # Memory health status (0=ok, 1=warning, 2=critical)
+            local memory_health=0
+            local rss_mb=$((rss / 1024 / 1024))
+            if [[ $rss_mb -gt 300 ]] || [[ $growth_rate_mb_h -gt 50 ]] || [[ $memory_pressure -gt 80 ]]; then
+                memory_health=2  # critical
+            elif [[ $rss_mb -gt 100 ]] || [[ $memory_pressure -gt 50 ]]; then
+                memory_health=1  # warning
+            fi
+            metrics+="nftban.daemon.memory_health $memory_health $timestamp\n"
         fi
 
         # --- Event Bus Metrics (Phase 3) ---
