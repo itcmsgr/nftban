@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/timeutil"
 )
 
 // Config holds persistent offender configuration
@@ -176,7 +177,7 @@ func (c *Config) parseGlobalSetting(key, value string) {
 			c.GlobalThreshold = val
 		}
 	case "default_period":
-		if dur, err := parseDuration(value); err == nil {
+		if dur, err := timeutil.ParseDuration(value); err == nil {
 			c.GlobalPeriod = dur
 		}
 	case "default_action":
@@ -200,7 +201,7 @@ func (c *Config) parseFilterSetting(filter *FilterConfig, key, value string) {
 			filter.Threshold = val
 		}
 	case "period":
-		if dur, err := parseDuration(value); err == nil {
+		if dur, err := timeutil.ParseDuration(value); err == nil {
 			filter.Period = dur
 		}
 	case "action":
@@ -208,23 +209,6 @@ func (c *Config) parseFilterSetting(filter *FilterConfig, key, value string) {
 	case "comment":
 		filter.Comment = strings.Trim(value, "\"")
 	}
-}
-
-// parseDuration parses duration strings like "24h", "48h", "7d"
-func parseDuration(s string) (time.Duration, error) {
-	s = strings.ToLower(s)
-
-	// Handle days
-	if strings.HasSuffix(s, "d") {
-		days, err := strconv.Atoi(strings.TrimSuffix(s, "d"))
-		if err != nil {
-			return 0, err
-		}
-		return time.Duration(days) * 24 * time.Hour, nil
-	}
-
-	// Use standard time.ParseDuration for h, m, s
-	return time.ParseDuration(s)
 }
 
 // GetFilterConfig returns configuration for a specific filter (v1.0: renamed from GetJailConfig)

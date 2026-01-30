@@ -28,6 +28,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/timeutil"
 )
 
 // EventLogger logs Suricata events and actions to file
@@ -113,7 +114,7 @@ func (l *EventLogger) LogBanAction(ip string, filter string, score int, threshol
 		filter,
 		score,
 		threshold,
-		formatDuration(banTime),
+		timeutil.FormatDurationShort(banTime),
 		reason,
 	)
 
@@ -142,16 +143,4 @@ func (l *EventLogger) LogError(context string, err error) error {
 	}
 
 	return l.file.Sync()
-}
-
-// formatDuration formats duration for logging
-func formatDuration(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	} else if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	} else if d < 24*time.Hour {
-		return fmt.Sprintf("%dh", int(d.Hours()))
-	}
-	return fmt.Sprintf("%dd", int(d.Hours()/24))
 }
