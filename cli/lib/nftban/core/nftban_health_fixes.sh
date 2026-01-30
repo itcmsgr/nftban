@@ -71,12 +71,36 @@ nftban_health_fix_permissions() {
             fi
         fi
 
-        # Fix files inside /run/nftban (tmpfiles only sets directory ownership)
-        # Files created by root during install/update need ownership fixed
+        # ======================================================================
+        # EXPLICIT OWNERSHIP FIX (defense in depth)
+        # ======================================================================
+        # tmpfiles 'd' directive only creates directories, it won't fix ownership
+        # on existing directories. Even with 'z' directive, we enforce explicitly
+        # to handle edge cases where tmpfiles fails or isn't available.
+        # Critical for services running as User=nftban (unified-exporter, etc.)
+        echo "  Enforcing ownership on FHS runtime directories..."
+
+        # /run/nftban - exporter creates lock files here
         if [[ -d /run/nftban ]]; then
             chown nftban:nftban /run/nftban 2>/dev/null || true
+            chmod 755 /run/nftban 2>/dev/null || true
+            # Fix files inside (except socket which is root:nftban)
             find /run/nftban -maxdepth 1 -type f ! -name "nftband.sock" -exec chown nftban:nftban {} \; 2>/dev/null || true
         fi
+
+        # /var/log/nftban - logs written by nftban user
+        if [[ -d /var/log/nftban ]]; then
+            chown nftban:nftban /var/log/nftban 2>/dev/null || true
+            chmod 750 /var/log/nftban 2>/dev/null || true
+        fi
+
+        # /var/cache/nftban - cache written by nftban user
+        if [[ -d /var/cache/nftban ]]; then
+            chown nftban:nftban /var/cache/nftban 2>/dev/null || true
+            chmod 755 /var/cache/nftban 2>/dev/null || true
+        fi
+
+        echo "  ✓ FHS runtime directory ownership enforced"
     fi
 
     # ==========================================================================
