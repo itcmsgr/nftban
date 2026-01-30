@@ -34,10 +34,11 @@ package nftbanconf
 import (
 	"bufio"
 	"os"
-	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // Config holds all NFTBan configuration from /etc/nftban/nftban.conf
@@ -333,13 +334,13 @@ func loadFromFile(path string) (*Config, error) {
 
 		// Features
 		case "NFTBAN_METRICS_ENABLED":
-			cfg.MetricsEnabled = parseBool(value)
+			cfg.MetricsEnabled = util.ParseBool(value, false)
 		case "NFTBAN_METRICS_BACKEND":
 			cfg.MetricsBackend = value
 		case "NFTBAN_METRICS_SAMPLING_INTERVAL":
-			cfg.MetricsSamplingInterval = parseInt(value, 10)
+			cfg.MetricsSamplingInterval = util.ParseInt(value, 10)
 		case "NFTBAN_METRICS_MAX_SAMPLES":
-			cfg.MetricsMaxSamples = parseInt(value, 360)
+			cfg.MetricsMaxSamples = util.ParseInt(value, 360)
 		case "NFTBAN_PROMETHEUS_DIR":
 			cfg.PrometheusDir = value
 		case "NFTBAN_METRICS_PROMETHEUS_ADDR":
@@ -349,25 +350,25 @@ func loadFromFile(path string) (*Config, error) {
 		case "NFTBAN_METRICS_VICTORIA_ADDR":
 			cfg.MetricsVictoriaAddr = value
 		case "NFTBAN_GEOIP_ENABLED":
-			cfg.GeoIPEnabled = parseBool(value)
+			cfg.GeoIPEnabled = util.ParseBool(value, false)
 		case "NFTBAN_GEOIP_LICENSE_KEY":
 			cfg.GeoIPLicenseKey = value
 		case "NFTBAN_FEEDS_ENABLED":
-			cfg.FeedsEnabled = parseBool(value)
+			cfg.FeedsEnabled = util.ParseBool(value, false)
 		case "NFTBAN_FEEDS_AUTO_UPDATE":
-			cfg.FeedsAutoUpdate = parseBool(value)
+			cfg.FeedsAutoUpdate = util.ParseBool(value, false)
 		case "NFTBAN_SURICATA_ENABLED":
-			cfg.SuricataEnabled = parseBool(value)
+			cfg.SuricataEnabled = util.ParseBool(value, false)
 		case "NFTBAN_GUI_ENABLED":
-			cfg.GUIEnabled = parseBool(value)
+			cfg.GUIEnabled = util.ParseBool(value, false)
 		case "NFTBAN_GUI_ADDR":
 			cfg.GUIAddr = value
 		case "NFTBAN_PORTSCAN_ENABLED":
-			cfg.PortscanEnabled = parseBool(value)
+			cfg.PortscanEnabled = util.ParseBool(value, false)
 		case "NFTBAN_DDOS_ENABLED":
-			cfg.DDoSEnabled = parseBool(value)
+			cfg.DDoSEnabled = util.ParseBool(value, false)
 		case "NFTBAN_LOGIN_MONITOR_ENABLED":
-			cfg.LoginMonitorEnabled = parseBool(value)
+			cfg.LoginMonitorEnabled = util.ParseBool(value, false)
 
 		// Suricata
 		case "NFTBAN_SURICATA_EVE_LOG":
@@ -375,15 +376,15 @@ func loadFromFile(path string) (*Config, error) {
 		case "NFTBAN_SURICATA_LOG_DIR":
 			cfg.SuricataLogDir = value
 		case "NFTBAN_SURICATA_BAN_THRESHOLD":
-			cfg.SuricataBanThreshold = parseInt(value, 100)
+			cfg.SuricataBanThreshold = util.ParseInt(value, 100)
 		case "NFTBAN_SURICATA_SCORE_DECAY":
-			cfg.SuricataScoreDecay = parseInt(value, 3600)
+			cfg.SuricataScoreDecay = util.ParseInt(value, 3600)
 		case "NFTBAN_SURICATA_CLOUDFLARE_WHITELIST":
-			cfg.SuricataCloudflareWhitelist = parseBool(value)
+			cfg.SuricataCloudflareWhitelist = util.ParseBool(value, false)
 
 		// Grafana
 		case "NFTBAN_GRAFANA_ENABLED":
-			cfg.GrafanaEnabled = parseBool(value)
+			cfg.GrafanaEnabled = util.ParseBool(value, false)
 		case "NFTBAN_GRAFANA_URL":
 			cfg.GrafanaURL = value
 		case "NFTBAN_GRAFANA_API_KEY":
@@ -393,9 +394,9 @@ func loadFromFile(path string) (*Config, error) {
 		case "NFTBAN_LOG_LEVEL":
 			cfg.LogLevel = value
 		case "NFTBAN_COLOR_OUTPUT":
-			cfg.ColorOutput = parseBool(value)
+			cfg.ColorOutput = util.ParseBool(value, false)
 		case "NFTBAN_DEBUG_TRACE":
-			cfg.DebugTrace = parseBool(value)
+			cfg.DebugTrace = util.ParseBool(value, false)
 		case "NFTBAN_DEBUG_TRACE_LOG":
 			cfg.DebugTraceLog = value
 
@@ -459,13 +460,13 @@ func overlayFromFile(cfg *Config, path string) {
 		case "NFTBAN_RUN_DIR":
 			cfg.RunDir = value
 		case "NFTBAN_METRICS_ENABLED":
-			cfg.MetricsEnabled = parseBool(value)
+			cfg.MetricsEnabled = util.ParseBool(value, false)
 		case "NFTBAN_METRICS_BACKEND":
 			cfg.MetricsBackend = value
 		case "NFTBAN_METRICS_SAMPLING_INTERVAL":
-			cfg.MetricsSamplingInterval = parseInt(value, cfg.MetricsSamplingInterval)
+			cfg.MetricsSamplingInterval = util.ParseInt(value, cfg.MetricsSamplingInterval)
 		case "NFTBAN_METRICS_MAX_SAMPLES":
-			cfg.MetricsMaxSamples = parseInt(value, cfg.MetricsMaxSamples)
+			cfg.MetricsMaxSamples = util.ParseInt(value, cfg.MetricsMaxSamples)
 		case "NFTBAN_PROMETHEUS_DIR":
 			cfg.PrometheusDir = value
 		case "NFTBAN_METRICS_PROMETHEUS_ADDR":
@@ -475,37 +476,37 @@ func overlayFromFile(cfg *Config, path string) {
 		case "NFTBAN_METRICS_VICTORIA_ADDR":
 			cfg.MetricsVictoriaAddr = value
 		case "NFTBAN_GEOIP_ENABLED":
-			cfg.GeoIPEnabled = parseBool(value)
+			cfg.GeoIPEnabled = util.ParseBool(value, false)
 		case "NFTBAN_GEOIP_LICENSE_KEY":
 			cfg.GeoIPLicenseKey = value
 		case "NFTBAN_FEEDS_ENABLED":
-			cfg.FeedsEnabled = parseBool(value)
+			cfg.FeedsEnabled = util.ParseBool(value, false)
 		case "NFTBAN_FEEDS_AUTO_UPDATE":
-			cfg.FeedsAutoUpdate = parseBool(value)
+			cfg.FeedsAutoUpdate = util.ParseBool(value, false)
 		case "NFTBAN_SURICATA_ENABLED":
-			cfg.SuricataEnabled = parseBool(value)
+			cfg.SuricataEnabled = util.ParseBool(value, false)
 		case "NFTBAN_GUI_ENABLED":
-			cfg.GUIEnabled = parseBool(value)
+			cfg.GUIEnabled = util.ParseBool(value, false)
 		case "NFTBAN_GUI_ADDR":
 			cfg.GUIAddr = value
 		case "NFTBAN_PORTSCAN_ENABLED":
-			cfg.PortscanEnabled = parseBool(value)
+			cfg.PortscanEnabled = util.ParseBool(value, false)
 		case "NFTBAN_DDOS_ENABLED":
-			cfg.DDoSEnabled = parseBool(value)
+			cfg.DDoSEnabled = util.ParseBool(value, false)
 		case "NFTBAN_LOGIN_MONITOR_ENABLED":
-			cfg.LoginMonitorEnabled = parseBool(value)
+			cfg.LoginMonitorEnabled = util.ParseBool(value, false)
 		case "NFTBAN_SURICATA_EVE_LOG":
 			cfg.SuricataEveLog = value
 		case "NFTBAN_SURICATA_LOG_DIR":
 			cfg.SuricataLogDir = value
 		case "NFTBAN_SURICATA_BAN_THRESHOLD":
-			cfg.SuricataBanThreshold = parseInt(value, cfg.SuricataBanThreshold)
+			cfg.SuricataBanThreshold = util.ParseInt(value, cfg.SuricataBanThreshold)
 		case "NFTBAN_SURICATA_SCORE_DECAY":
-			cfg.SuricataScoreDecay = parseInt(value, cfg.SuricataScoreDecay)
+			cfg.SuricataScoreDecay = util.ParseInt(value, cfg.SuricataScoreDecay)
 		case "NFTBAN_SURICATA_CLOUDFLARE_WHITELIST":
-			cfg.SuricataCloudflareWhitelist = parseBool(value)
+			cfg.SuricataCloudflareWhitelist = util.ParseBool(value, false)
 		case "NFTBAN_GRAFANA_ENABLED":
-			cfg.GrafanaEnabled = parseBool(value)
+			cfg.GrafanaEnabled = util.ParseBool(value, false)
 		case "NFTBAN_GRAFANA_URL":
 			cfg.GrafanaURL = value
 		case "NFTBAN_GRAFANA_API_KEY":
@@ -513,9 +514,9 @@ func overlayFromFile(cfg *Config, path string) {
 		case "NFTBAN_LOG_LEVEL":
 			cfg.LogLevel = value
 		case "NFTBAN_COLOR_OUTPUT":
-			cfg.ColorOutput = parseBool(value)
+			cfg.ColorOutput = util.ParseBool(value, false)
 		case "NFTBAN_DEBUG_TRACE":
-			cfg.DebugTrace = parseBool(value)
+			cfg.DebugTrace = util.ParseBool(value, false)
 		case "NFTBAN_DEBUG_TRACE_LOG":
 			cfg.DebugTraceLog = value
 		case "NFTBAN_DISTRO_CONF_DIR":
@@ -659,18 +660,6 @@ func defaultNFTables() *NFTables {
 	}
 }
 
-// Helper functions
-func parseBool(s string) bool {
-	s = strings.ToLower(s)
-	return s == "true" || s == "yes" || s == "1"
-}
-
-func parseInt(s string, defaultVal int) int {
-	if v, err := strconv.Atoi(s); err == nil {
-		return v
-	}
-	return defaultVal
-}
 
 // Reload forces config reload (for testing or config changes)
 func Reload() error {
