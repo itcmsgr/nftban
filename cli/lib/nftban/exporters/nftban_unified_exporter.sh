@@ -97,14 +97,18 @@ if [[ -z "${NFTBAN_EXPORT_PROMETHEUS:-}" ]]; then
 fi
 
 # Metrics cache file (collected once, used by all exporters)
-readonly METRICS_CACHE="${NFTBAN_RUN_DIR}/metrics.cache"
-readonly METRICS_LOCK="${NFTBAN_RUN_DIR}/exporter.lock"
-readonly BANDWIDTH_STATE="${NFTBAN_RUN_DIR}/bandwidth_state.dat"
-readonly BANDWIDTH_PEAKS="${NFTBAN_RUN_DIR}/bandwidth_peaks.dat"
+# NOTE: Use /var/cache/nftban for state files written by nftban user
+#       NOT /run/nftban which may have broken permissions (root:root)
+#       This avoids chicken-and-egg where exporter can't fix perms it can't write to
+: "${NFTBAN_CACHE_DIR:=/var/cache/nftban}"
+readonly METRICS_CACHE="${NFTBAN_CACHE_DIR}/metrics.cache"
+readonly METRICS_LOCK="${NFTBAN_CACHE_DIR}/exporter.lock"
+readonly BANDWIDTH_STATE="${NFTBAN_CACHE_DIR}/bandwidth_state.dat"
+readonly BANDWIDTH_PEAKS="${NFTBAN_CACHE_DIR}/bandwidth_peaks.dat"
 readonly PEAK_WINDOW=300  # 5 minutes for peak tracking
 
 # Run count tracking for collection groups
-readonly RUN_COUNT_FILE="${NFTBAN_RUN_DIR}/collection.run_count"
+readonly RUN_COUNT_FILE="${NFTBAN_CACHE_DIR}/collection.run_count"
 
 # =============================================================================
 # COLLECTION GROUPS
