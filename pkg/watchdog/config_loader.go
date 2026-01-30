@@ -24,6 +24,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // LoadConfig loads watchdog configuration from file.
@@ -100,7 +102,7 @@ func loadConfigFile(path string) (map[string]string, error) {
 func applyConfigValues(cfg *Config, values map[string]string) {
 	// Enable/disable
 	if v, ok := values["NFTBAN_DYNAMIC_WATCHDOG_ENABLED"]; ok {
-		cfg.Enabled = parseBool(v, true)
+		cfg.Enabled = util.ParseBool(v, true)
 	}
 
 	// Base interval
@@ -112,16 +114,16 @@ func applyConfigValues(cfg *Config, values map[string]string) {
 
 	// Hysteresis
 	if v, ok := values["NFTBAN_PRESSURE_WARN_ENTER"]; ok {
-		cfg.HysteresisWarnEnter = parseFloat(v, 60)
+		cfg.HysteresisWarnEnter = util.ParseFloat(v, 60)
 	}
 	if v, ok := values["NFTBAN_PRESSURE_WARN_EXIT"]; ok {
-		cfg.HysteresisWarnExit = parseFloat(v, 50)
+		cfg.HysteresisWarnExit = util.ParseFloat(v, 50)
 	}
 	if v, ok := values["NFTBAN_PRESSURE_CRIT_ENTER"]; ok {
-		cfg.HysteresisCritEnter = parseFloat(v, 80)
+		cfg.HysteresisCritEnter = util.ParseFloat(v, 80)
 	}
 	if v, ok := values["NFTBAN_PRESSURE_CRIT_EXIT"]; ok {
-		cfg.HysteresisCritExit = parseFloat(v, 70)
+		cfg.HysteresisCritExit = util.ParseFloat(v, 70)
 	}
 	if v, ok := values["NFTBAN_PRESSURE_WARN_EXIT_DURATION"]; ok {
 		if secs, err := strconv.Atoi(v); err == nil {
@@ -141,28 +143,28 @@ func applyConfigValues(cfg *Config, values map[string]string) {
 		}
 	}
 	if v, ok := values["NFTBAN_RSS_CRIT_PERCENT"]; ok {
-		cfg.RSSCritPercentOfBudget = parseFloat(v, 95)
+		cfg.RSSCritPercentOfBudget = util.ParseFloat(v, 95)
 	}
 	if v, ok := values["NFTBAN_HEAP_CRIT_PERCENT"]; ok {
-		cfg.HeapCritPercentOfLimit = parseFloat(v, 90)
+		cfg.HeapCritPercentOfLimit = util.ParseFloat(v, 90)
 	}
 	if v, ok := values["NFTBAN_CPU_CRIT_PERCENT"]; ok {
-		cfg.CPUCritPercent = parseFloat(v, 80)
+		cfg.CPUCritPercent = util.ParseFloat(v, 80)
 	}
 	if v, ok := values["NFTBAN_LOAD_NORMALIZED_CRIT"]; ok {
-		cfg.LoadNormalizedCrit = parseFloat(v, 4.0)
+		cfg.LoadNormalizedCrit = util.ParseFloat(v, 4.0)
 	}
 	if v, ok := values["NFTBAN_IOWAIT_CRIT_PERCENT"]; ok {
-		cfg.IOWaitCritPercent = parseFloat(v, 40)
+		cfg.IOWaitCritPercent = util.ParseFloat(v, 40)
 	}
 	if v, ok := values["NFTBAN_DISK_CRIT_PERCENT"]; ok {
-		cfg.DiskUseCritPercent = parseFloat(v, 95)
+		cfg.DiskUseCritPercent = util.ParseFloat(v, 95)
 	}
 	if v, ok := values["NFTBAN_CONNTRACK_UTIL_CRIT"]; ok {
-		cfg.ConntrackUtilCrit = parseFloat(v, 0.9)
+		cfg.ConntrackUtilCrit = util.ParseFloat(v, 0.9)
 	}
 	if v, ok := values["NFTBAN_SOFTNET_DROPS_RATE_CRIT"]; ok {
-		cfg.SoftnetDropsRateCrit = parseFloat(v, 100)
+		cfg.SoftnetDropsRateCrit = util.ParseFloat(v, 100)
 	}
 	if v, ok := values["NFTBAN_GOROUTINES_CRIT"]; ok {
 		if count, err := strconv.Atoi(v); err == nil {
@@ -172,7 +174,7 @@ func applyConfigValues(cfg *Config, values map[string]string) {
 
 	// Profiling
 	if v, ok := values["NFTBAN_PROFILE_AUTO_ENABLED"]; ok {
-		cfg.ProfileAutoEnabled = parseBool(v, true)
+		cfg.ProfileAutoEnabled = util.ParseBool(v, true)
 	}
 	if v, ok := values["NFTBAN_WATCHDOG_PROFILE_DIR"]; ok {
 		cfg.ProfileDir = v
@@ -205,7 +207,7 @@ func applyConfigValues(cfg *Config, values map[string]string) {
 
 	// Memory valve
 	if v, ok := values["NFTBAN_FREE_OS_MEMORY_ENABLED"]; ok {
-		cfg.FreeOSMemoryEnabled = parseBool(v, true)
+		cfg.FreeOSMemoryEnabled = util.ParseBool(v, true)
 	}
 	if v, ok := values["NFTBAN_FREE_OS_MEMORY_COOLDOWN"]; ok {
 		if secs, err := strconv.Atoi(v); err == nil {
@@ -213,12 +215,12 @@ func applyConfigValues(cfg *Config, values map[string]string) {
 		}
 	}
 	if v, ok := values["NFTBAN_FREE_OS_MEMORY_ONLY_IF_CPU_BELOW"]; ok {
-		cfg.FreeOSMemoryOnlyIfCPUBelow = parseFloat(v, 40)
+		cfg.FreeOSMemoryOnlyIfCPUBelow = util.ParseFloat(v, 40)
 	}
 
 	// Degradation
 	if v, ok := values["NFTBAN_DEGRADE_DISABLE_NFT_RULESET_SCAN"]; ok {
-		cfg.DegradeDisableNFTRulesetScan = parseBool(v, true)
+		cfg.DegradeDisableNFTRulesetScan = util.ParseBool(v, true)
 	}
 	if v, ok := values["NFTBAN_DEGRADE_REDUCE_WORKERS_TO"]; ok {
 		if count, err := strconv.Atoi(v); err == nil {
@@ -231,12 +233,12 @@ func applyConfigValues(cfg *Config, values map[string]string) {
 		}
 	}
 	if v, ok := values["NFTBAN_DEGRADED_INTERVAL_MULTIPLIER"]; ok {
-		cfg.DegradedIntervalMultiplier = parseFloat(v, 2.0)
+		cfg.DegradedIntervalMultiplier = util.ParseFloat(v, 2.0)
 	}
 
 	// Flight recorder
 	if v, ok := values["NFTBAN_RECORDER_ENABLED"]; ok {
-		cfg.RecorderEnabled = parseBool(v, true)
+		cfg.RecorderEnabled = util.ParseBool(v, true)
 	}
 	if v, ok := values["NFTBAN_RECORDER_DIR"]; ok {
 		cfg.RecorderDir = v
@@ -258,23 +260,3 @@ func applyConfigValues(cfg *Config, values map[string]string) {
 	}
 }
 
-// parseBool parses a bool value with default
-func parseBool(s string, def bool) bool {
-	s = strings.ToLower(strings.TrimSpace(s))
-	switch s {
-	case "true", "yes", "1", "on":
-		return true
-	case "false", "no", "0", "off":
-		return false
-	default:
-		return def
-	}
-}
-
-// parseFloat parses a float value with default
-func parseFloat(s string, def float64) float64 {
-	if f, err := strconv.ParseFloat(s, 64); err == nil {
-		return f
-	}
-	return def
-}

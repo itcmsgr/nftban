@@ -36,6 +36,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/state"
 	"github.com/itcmsgr/nftban/pkg/timeutil"
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // =============================================================================
@@ -780,13 +781,13 @@ func (h *GOTHHandlers) getTopProcesses() []ui.ProcessInfo {
 			}
 			proc := ui.ProcessInfo{
 				User:       fields[0],
-				CPUPercent: parseFloat(fields[2]),
-				MemPercent: parseFloat(fields[3]),
+				CPUPercent: util.ParseFloat(fields[2], 0),
+				MemPercent: util.ParseFloat(fields[3], 0),
 				Status:     fields[7],
 				Name:       fields[10],
 			}
 			proc.PID, _ = strconv.Atoi(fields[1])
-			proc.MemMB = parseFloat(fields[5]) / 1024 // RSS in KB to MB
+			proc.MemMB = util.ParseFloat(fields[5], 0) / 1024 // RSS in KB to MB
 			processes = append(processes, proc)
 		}
 	}
@@ -1054,11 +1055,6 @@ func getBool(m map[string]interface{}, key string) bool {
 		return v
 	}
 	return false
-}
-
-func parseFloat(s string) float64 {
-	v, _ := strconv.ParseFloat(s, 64)
-	return v
 }
 
 func formatBytes64Str(bytes int64) string {
