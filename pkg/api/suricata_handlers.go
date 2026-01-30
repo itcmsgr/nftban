@@ -26,6 +26,8 @@ import (
 	"log"
 	"net/http"
 	"strings"
+
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // SuricataStatus represents Suricata service status
@@ -114,7 +116,7 @@ func SuricataStatusHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse JSON output
-	jsonOutput := extractJSON(output)
+	jsonOutput := util.ExtractJSON(output)
 	var result struct {
 		Success bool           `json:"success"`
 		Data    SuricataStatus `json:"data"`
@@ -388,7 +390,7 @@ func SuricataRulesStatsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse JSON output
-	jsonOutput := extractJSON(output)
+	jsonOutput := util.ExtractJSON(output)
 	var result struct {
 		Success bool              `json:"success"`
 		Data    SuricataRuleStats `json:"data"`
@@ -507,7 +509,7 @@ func SuricataAlertsHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Parse JSON output
-	jsonOutput := extractJSON(output)
+	jsonOutput := util.ExtractJSON(output)
 	var result struct {
 		Success bool `json:"success"`
 		Data    struct {
@@ -553,23 +555,6 @@ func SuricataConfigValidateHandler(w http.ResponseWriter, r *http.Request) {
 		"success": true,
 		"message": "Configuration is valid",
 	})
-}
-
-// =============================================================================
-// HELPER FUNCTIONS
-// =============================================================================
-
-// extractJSON extracts JSON from command output that may contain other text
-func extractJSON(output string) string {
-	output = strings.TrimSpace(output)
-	startIdx := strings.Index(output, "{")
-	endIdx := strings.LastIndex(output, "}")
-
-	if startIdx == -1 || endIdx == -1 || startIdx > endIdx {
-		return "{}"
-	}
-
-	return output[startIdx : endIdx+1]
 }
 
 // Note: isServiceRunning is defined in system_handlers.go

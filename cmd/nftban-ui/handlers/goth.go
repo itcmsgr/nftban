@@ -39,6 +39,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/session"
 	"github.com/itcmsgr/nftban/pkg/state"
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // GOTHHandlers holds dependencies for GOTH UI handlers
@@ -327,7 +328,7 @@ func (h *GOTHHandlers) HandleIPCheck(w http.ResponseWriter, r *http.Request) {
 	// Use nftban check --json for comprehensive status
 	if output, err := execNFTBanCommand("check", ip, "--json"); err == nil {
 		var checkResult map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &checkResult) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &checkResult) == nil {
 			// Parse status
 			if status, ok := checkResult["status"].(string); ok {
 				statusLower := strings.ToLower(status)
@@ -481,7 +482,7 @@ func (h *GOTHHandlers) HandleFeedToggle(w http.ResponseWriter, r *http.Request) 
 	enabled := true
 	if output, err := execNFTBanCommand("feeds", "status", feedName, "--json"); err == nil {
 		var status map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &status) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &status) == nil {
 			enabled = getBool(status, "enabled")
 		}
 	}
@@ -549,7 +550,7 @@ func (h *GOTHHandlers) getIdentity() ui.SystemIdentity {
 	// Try nftban status --json first for consolidated data
 	if output, err := execNFTBanCommand("status", "--json"); err == nil {
 		var status map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &status) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &status) == nil {
 			if hostname, ok := status["hostname"].(string); ok {
 				id.Hostname = hostname
 			}
@@ -654,7 +655,7 @@ func (h *GOTHHandlers) getSecurity() ui.SecurityKPIs {
 	if sec.BansTotal == 0 {
 		if output, err := execNFTBanCommand("stats", "--json"); err == nil {
 			var stats map[string]interface{}
-			if json.Unmarshal([]byte(extractJSON(output)), &stats) == nil {
+			if json.Unmarshal([]byte(util.ExtractJSON(output)), &stats) == nil {
 				// Stats JSON wraps data in "data" field
 				data, hasData := stats["data"].(map[string]interface{})
 				if !hasData {
@@ -704,7 +705,7 @@ func (h *GOTHHandlers) getSecurity() ui.SecurityKPIs {
 	if sec.BansTotal == 0 {
 		if output, err := execNFTBanCommand("status", "--json"); err == nil {
 			var status map[string]interface{}
-			if json.Unmarshal([]byte(extractJSON(output)), &status) == nil {
+			if json.Unmarshal([]byte(util.ExtractJSON(output)), &status) == nil {
 				if fw, ok := status["firewall"].(map[string]interface{}); ok {
 					if bans, ok := fw["banned_ips"].(float64); ok {
 						sec.BansTotal = int(bans)
@@ -801,7 +802,7 @@ func (h *GOTHHandlers) getResources() ui.ResourceStats {
 	// Use nftban watchdog check --json for system resources
 	if output, err := execNFTBanCommand("watchdog", "check", "--json"); err == nil {
 		var wd map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &wd) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &wd) == nil {
 			// Load average
 			if load, ok := wd["load"].(map[string]interface{}); ok {
 				if v, ok := load["1m"].(string); ok {
@@ -921,7 +922,7 @@ func (h *GOTHHandlers) getResources() ui.ResourceStats {
 	// NFTBan daemon stats from watchdog stats --json
 	if output, err := execNFTBanCommand("watchdog", "stats", "--json"); err == nil {
 		var stats map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &stats) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &stats) == nil {
 			if cpu, ok := stats["cpu_percent"].(float64); ok {
 				res.NFTBanCPU = cpu
 			}
@@ -957,7 +958,7 @@ func (h *GOTHHandlers) getModulesList() []ui.ModuleStatus {
 	// Get comprehensive status from nftban status --json
 	if output, err := execNFTBanCommand("status", "--json"); err == nil {
 		var status map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &status) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &status) == nil {
 			// Parse services section
 			if services, ok := status["services"].(map[string]interface{}); ok {
 				// nftables
@@ -1179,7 +1180,7 @@ func (h *GOTHHandlers) getRecentBans() []ui.RecentBan {
 	// Try to get recent bans from CLI
 	if output, err := execNFTBanCommand("list", "--recent=10", "--json"); err == nil {
 		var banData []map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &banData) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &banData) == nil {
 			for _, b := range banData {
 				ban := ui.RecentBan{}
 				if ip, ok := b["ip"].(string); ok {
@@ -1257,7 +1258,7 @@ func (h *GOTHHandlers) getHealthData() ui.HealthData {
 	// Use nftban health check --json for comprehensive health data
 	if output, err := execNFTBanCommand("health", "check", "--json"); err == nil {
 		var healthJSON map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &healthJSON) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &healthJSON) == nil {
 			// Timestamp
 			if ts, ok := healthJSON["timestamp"].(string); ok {
 				data.Timestamp = ts
@@ -1409,7 +1410,7 @@ func (h *GOTHHandlers) getBansData(r *http.Request) ui.BansData {
 	// Get stats from nftban stats --json
 	if output, err := execNFTBanCommand("stats", "--json"); err == nil {
 		var stats map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &stats) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &stats) == nil {
 			if statsData, ok := stats["data"].(map[string]interface{}); ok {
 				// Summary
 				if summary, ok := statsData["summary"].(map[string]interface{}); ok {
@@ -1464,7 +1465,7 @@ func (h *GOTHHandlers) getBansData(r *http.Request) ui.BansData {
 
 	if output, err := execNFTBanCommand(args...); err == nil {
 		var listResult map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &listResult) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &listResult) == nil {
 			// Try to parse bans array
 			var bansArray []interface{}
 			if bans, ok := listResult["bans"].([]interface{}); ok {
@@ -1543,7 +1544,7 @@ func (h *GOTHHandlers) getWhitelistData() ui.WhitelistData {
 	// Get whitelist from nftban whitelist --json
 	if output, err := execNFTBanCommand("whitelist", "list", "--json"); err == nil {
 		var result map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &result) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &result) == nil {
 			// Parse entries
 			var entriesArray []interface{}
 			if entries, ok := result["entries"].([]interface{}); ok {
@@ -1627,7 +1628,7 @@ func (h *GOTHHandlers) getWhitelistData() ui.WhitelistData {
 	if data.TotalEntries == 0 {
 		if output, err := execNFTBanCommand("status", "--json"); err == nil {
 			var status map[string]interface{}
-			if json.Unmarshal([]byte(extractJSON(output)), &status) == nil {
+			if json.Unmarshal([]byte(util.ExtractJSON(output)), &status) == nil {
 				if fw, ok := status["firewall"].(map[string]interface{}); ok {
 					if wl, ok := fw["whitelist_ips"].(float64); ok {
 						data.TotalEntries = int(wl)
@@ -1662,16 +1663,6 @@ func execNFTBanCommand(args ...string) (string, error) {
 	return outputStr, nil
 }
 
-// extractJSON extracts JSON from CLI output (handles warnings/banners before JSON)
-func extractJSON(output string) string {
-	output = strings.TrimSpace(output)
-	startIdx := strings.Index(output, "{")
-	endIdx := strings.LastIndex(output, "}")
-	if startIdx == -1 || endIdx == -1 || startIdx > endIdx {
-		return "{}"
-	}
-	return output[startIdx : endIdx+1]
-}
 
 
 func isValidIP(ip string) bool {
@@ -2252,7 +2243,7 @@ func (h *GOTHHandlers) getFeedsPageData() ui.FeedsPageData {
 	// Get feeds list from CLI
 	if output, err := execNFTBanCommand("feeds", "list", "--json"); err == nil {
 		var feedList []map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &feedList) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &feedList) == nil {
 			var maxIPCount int
 			for _, f := range feedList {
 				feed := ui.FeedEntry{

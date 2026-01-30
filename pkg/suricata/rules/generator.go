@@ -32,6 +32,7 @@ import (
 	nftbanConfig "github.com/itcmsgr/nftban/pkg/config"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	suricataConfig "github.com/itcmsgr/nftban/pkg/suricata/config"
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // RulesDir contains paths to Suricata rules
@@ -251,15 +252,10 @@ func GetRuleStats() (map[string]interface{}, error) {
 		"total_categories":   len(allRules),
 		"enabled_categories": len(effectiveConfig.EnabledCategories),
 		"enabled_rule_files": len(enabledRules),
-		"custom_rules_exist": fileExists(paths.CustomRules),
+		"custom_rules_exist": util.FileExists(paths.CustomRules),
 		"enabled_list_path":  paths.EnabledList,
 	}
 
 	return stats, nil
 }
 
-// fileExists checks if a file exists
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}

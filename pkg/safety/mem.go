@@ -25,6 +25,8 @@ import (
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // MemAvail holds available memory info (cgroup-aware)
@@ -181,46 +183,41 @@ func detectCPUCores() int {
 // detectControlPanel checks for common control panel installations
 func detectControlPanel() (panelType string, hasPanel bool) {
 	// Check for cPanel (WHM/cPanel)
-	if fileExists("/usr/local/cpanel/cpanel") || fileExists("/var/cpanel") {
+	if util.FileExists("/usr/local/cpanel/cpanel") || util.FileExists("/var/cpanel") {
 		return "cpanel", true
 	}
 
 	// Check for DirectAdmin
-	if fileExists("/usr/local/directadmin/directadmin") || fileExists("/usr/local/directadmin") {
+	if util.FileExists("/usr/local/directadmin/directadmin") || util.FileExists("/usr/local/directadmin") {
 		return "directadmin", true
 	}
 
 	// Check for Plesk
-	if fileExists("/usr/local/psa/admin") || fileExists("/opt/psa") {
+	if util.FileExists("/usr/local/psa/admin") || util.FileExists("/opt/psa") {
 		return "plesk", true
 	}
 
 	// Check for CyberPanel
-	if fileExists("/usr/local/CyberCP") || fileExists("/usr/local/lsws/cyberpanel") {
+	if util.FileExists("/usr/local/CyberCP") || util.FileExists("/usr/local/lsws/cyberpanel") {
 		return "cyberpanel", true
 	}
 
 	// Check for CloudPanel
-	if fileExists("/home/clp") || fileExists("/usr/share/cloudpanel") {
+	if util.FileExists("/home/clp") || util.FileExists("/usr/share/cloudpanel") {
 		return "cloudpanel", true
 	}
 
 	// Check for VestaCP / HestiaCP
-	if fileExists("/usr/local/vesta") {
+	if util.FileExists("/usr/local/vesta") {
 		return "vestacp", true
 	}
-	if fileExists("/usr/local/hestia") {
+	if util.FileExists("/usr/local/hestia") {
 		return "hestiacp", true
 	}
 
 	return "none", false
 }
 
-// fileExists checks if a path exists
-func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
-}
 
 // GetResourceLimits calculates appropriate resource limits based on server profile
 // Returns memory budget and max concurrent workers
