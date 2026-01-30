@@ -146,9 +146,8 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ needs.get-tag.outputs.tag }}
-          files: |
-            dist/nftban-*
-            dist/*.intoto.jsonl
+          # Use single pattern to avoid duplicates (nftban-* matches .intoto.jsonl too)
+          files: dist/*
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
