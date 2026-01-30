@@ -18,10 +18,9 @@ flags:
   - -trimpath
 
 # Linker flags (inject version info)
+# Note: Only {{ .Env.VERSION }} is supported (passed via evaluated-envs)
 ldflags:
   - -s -w
-  - -X main.GitCommit={{ .Commit }}
-  - -X main.BuildDate={{ .CommitDate }}
   - -X main.Version={{ .Env.VERSION }}
 
 # Build targets (single target per config - SLSA builder requirement)

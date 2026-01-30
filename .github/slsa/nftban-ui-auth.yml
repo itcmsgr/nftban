@@ -19,6 +19,7 @@ flags:
   - -trimpath
 
 # Linker flags (inject version info)
+# Note: Only {{ .Env.VERSION }} is supported (passed via evaluated-envs)
 ldflags:
   - -s -w
   - -X main.Version={{ .Env.VERSION }}
