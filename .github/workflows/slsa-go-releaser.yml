@@ -3,7 +3,7 @@
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Build Go binaries with SLSA Level 3 compliance and provenance
-# Triggers: Published releases OR manual dispatch
+# Triggers: After Release Packages workflow completes OR manual dispatch
 #
 # This workflow uses OpenSSF's SLSA Go builder instead of manual go build.
 # Benefits:
@@ -19,13 +19,18 @@
 # NOTE: nftban-ui-auth is excluded - requires PAM headers (libpam-dev) which
 # are not available in SLSA's hermetic build environment. It's built via
 # the regular release.yml workflow instead.
+#
+# COORDINATION: This workflow runs AFTER Release Packages completes to avoid
+# race conditions when uploading assets to the same GitHub release.
 # =============================================================================
 
 name: SLSA Go Releaser
 
 on:
-  release:
-    types: [published]
+  # Run after Release Packages workflow completes (avoids race condition)
+  workflow_run:
+    workflows: ["Release Packages"]
+    types: [completed]
   workflow_dispatch:
     inputs:
       version:
@@ -40,10 +45,33 @@ permissions:
 
 jobs:
   # ============================================================================
+  # Job 0: Get release tag from triggering workflow
+  # ============================================================================
+  get-tag:
+    name: Get Release Tag
+    runs-on: ubuntu-latest
+    # Only run if Release Packages succeeded (for workflow_run trigger)
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    outputs:
+      tag: ${{ steps.get-tag.outputs.tag }}
+    steps:
+      - name: Get tag from event
+        id: get-tag
+        run: |
+          if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+            echo "tag=${{ github.event.inputs.version }}" >> $GITHUB_OUTPUT
+          else
+            # workflow_run: get tag from the triggering workflow's head branch
+            echo "tag=${{ github.event.workflow_run.head_branch }}" >> $GITHUB_OUTPUT
+          fi
+          echo "Resolved tag: $(cat $GITHUB_OUTPUT)"
+
+  # ============================================================================
   # Job 1: Build nftban-core with SLSA provenance
   # ============================================================================
   build-nftban-core:
     name: Build nftban-core (SLSA3)
+    needs: get-tag
     permissions:
       id-token: write
       contents: write
@@ -53,13 +81,14 @@ jobs:
       go-version: "1.23"
       # Config file specifies build parameters
       config-file: .github/slsa/nftban-core.yml
-      evaluated-envs: "VERSION:${{ github.ref_name }}"
+      evaluated-envs: "VERSION:${{ needs.get-tag.outputs.tag }}"
 
   # ============================================================================
   # Job 2: Build nftban-ui with SLSA provenance
   # ============================================================================
   build-nftban-ui:
     name: Build nftban-ui (SLSA3)
+    needs: get-tag
     permissions:
       id-token: write
       contents: write
@@ -68,7 +97,7 @@ jobs:
     with:
       go-version: "1.23"
       config-file: .github/slsa/nftban-ui.yml
-      evaluated-envs: "VERSION:${{ github.ref_name }}"
+      evaluated-envs: "VERSION:${{ needs.get-tag.outputs.tag }}"
 
   # ============================================================================
   # Job 3: Assemble all artifacts and upload to release
@@ -76,9 +105,10 @@ jobs:
   # NOTE: nftban-ui-auth excluded - requires PAM headers not available in SLSA
   assemble-release:
     name: Assemble Release Artifacts
-    needs: [build-nftban-core, build-nftban-ui]
+    needs: [get-tag, build-nftban-core, build-nftban-ui]
     runs-on: ubuntu-latest
-    if: github.event_name == 'release'
+    # Run for workflow_run (after Release Packages) but not for manual dispatch
+    if: ${{ github.event_name == 'workflow_run' }}
 
     steps:
       - name: Download nftban-core artifacts
@@ -108,22 +138,17 @@ jobs:
       - name: List artifacts
         run: ls -la dist/
 
-      - name: Generate SHA256SUMS
-        working-directory: dist
-        run: |
-          rm -f SHA256SUMS
-          for f in nftban-*; do
-            [ -f "$f" ] && sha256sum "$f" >> SHA256SUMS
-          done
-          cat SHA256SUMS
+      # NOTE: SHA256SUMS not generated here - Release Packages workflow provides
+      # complete checksums for all packages. SLSA provenance (.intoto.jsonl)
+      # provides cryptographic verification for these binaries.
 
       - name: Upload to GitHub Release
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: ${{ needs.get-tag.outputs.tag }}
           files: |
             dist/nftban-*
             dist/*.intoto.jsonl
-            dist/SHA256SUMS
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
