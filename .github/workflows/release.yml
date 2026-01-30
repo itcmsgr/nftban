@@ -229,9 +229,10 @@ jobs:
           # Copy all DEB packages
           find all-packages -name "*.deb" -exec cp {} dist/packages/ \;
 
-          # Copy raw Go binaries (for git-based installs)
+          # Copy raw Go binaries that SLSA can't build (require CGO/PAM)
+          # NOTE: nftban-core and nftban-ui are built by SLSA workflow with provenance
           if [ -d "all-packages" ]; then
-            for binary in nftban-core nftband nftban-ui nftban-ui-auth; do
+            for binary in nftband nftban-ui-auth; do
               if [ -f "all-packages/${binary}" ]; then
                 cp "all-packages/${binary}" "dist/packages/${binary}-linux-amd64"
                 chmod +x "dist/packages/${binary}-linux-amd64"
@@ -249,6 +250,7 @@ jobs:
           VERSION="${GITHUB_REF#refs/tags/}"
 
           # Define expected packages (must match matrix)
+          # NOTE: nftban-core and nftban-ui are uploaded by SLSA workflow with provenance
           EXPECTED_PACKAGES=(
             "nftban-el9-x86_64.rpm"
             "nftban-el10-x86_64.rpm"
@@ -256,10 +258,12 @@ jobs:
             "nftban-ubuntu24.04-amd64.deb"
             "nftban-debian12-amd64.deb"
             "nftban-debian13-amd64.deb"
-            "nftban-core-linux-amd64"
             "nftband-linux-amd64"
-            "nftban-ui-linux-amd64"
             "nftban-ui-auth-linux-amd64"
+            "nftban-core-linux-amd64"
+            "nftban-ui-linux-amd64"
+            "nftban-core-linux-amd64.intoto.jsonl"
+            "nftban-ui-linux-amd64.intoto.jsonl"
             "SHA256SUMS"
             "MANIFEST.txt"
             "VERIFY.txt"
@@ -430,14 +434,13 @@ jobs:
           cat dist/packages/RELEASE_NOTES.md
 
       - name: Upload to GitHub Release
+        # NOTE: nftban-core and nftban-ui are uploaded by SLSA workflow with provenance
         uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/packages/*.rpm
             dist/packages/*.deb
-            dist/packages/nftban-core-linux-amd64
             dist/packages/nftband-linux-amd64
-            dist/packages/nftban-ui-linux-amd64
             dist/packages/nftban-ui-auth-linux-amd64
             dist/packages/SHA256SUMS
             dist/packages/MANIFEST.txt
