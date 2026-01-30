@@ -844,8 +844,8 @@ func (h *GOTHHandlers) getNetworkPageData() ui.NetworkPageData {
 		totalRx += iface.RxBytes
 		totalTx += iface.TxBytes
 	}
-	data.TotalRxToday = formatBytes64Str(totalRx)
-	data.TotalTxToday = formatBytes64Str(totalTx)
+	data.TotalRxToday = util.FormatBytes(totalRx)
+	data.TotalTxToday = util.FormatBytes(totalTx)
 
 	return data
 }
@@ -1057,15 +1057,3 @@ func getBool(m map[string]interface{}, key string) bool {
 	return false
 }
 
-func formatBytes64Str(bytes int64) string {
-	const unit = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := int64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
-}
