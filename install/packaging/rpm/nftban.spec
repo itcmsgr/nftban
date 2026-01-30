@@ -538,6 +538,7 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban/blacklist.d
 %dir %attr(750,root,nftban) /etc/nftban/ports.d
 %dir %attr(750,root,nftban) /etc/nftban/rules.d
+%dir %attr(750,root,nftban) /etc/nftban/nftables.d
 %dir %attr(755,root,root) /etc/nftban/distros
 %config(noreplace) /etc/nftban/distros/*
 
