@@ -238,7 +238,7 @@ func (h *GOTHHandlers) getFeedMetrics() []ui.FeedMetrics {
 	// Try to get feeds from CLI
 	if output, err := execNFTBanCommand("feeds", "list", "--json"); err == nil {
 		var feedList []map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &feedList) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &feedList) == nil {
 			for _, f := range feedList {
 				feed := ui.FeedMetrics{
 					Name:    getString(f, "name"),
@@ -270,7 +270,7 @@ func (h *GOTHHandlers) getGeoIPMetrics() ui.GeoIPMetrics {
 	// Check if GeoIP is enabled
 	if output, err := execNFTBanCommand("geoip", "status", "--json"); err == nil {
 		var status map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &status) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &status) == nil {
 			metrics.Enabled = getBool(status, "enabled")
 			metrics.DatabaseVersion = getString(status, "database_version")
 			metrics.DatabaseAge = getString(status, "database_age")
@@ -288,7 +288,7 @@ func (h *GOTHHandlers) getPortscanMetrics() ui.PortscanMetrics {
 
 	if output, err := execNFTBanCommand("portscan", "stats", "--json"); err == nil {
 		var stats map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &stats) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &stats) == nil {
 			metrics.Enabled = getBool(stats, "enabled")
 			metrics.TotalBlocks = getInt(stats, "total_blocks")
 			metrics.BlocksToday = getInt(stats, "blocks_today")
@@ -309,7 +309,7 @@ func (h *GOTHHandlers) getDDoSMetrics() ui.DDoSMetrics {
 
 	if output, err := execNFTBanCommand("ddos", "stats", "--json"); err == nil {
 		var stats map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &stats) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &stats) == nil {
 			metrics.Enabled = getBool(stats, "enabled")
 			metrics.TotalBlocks = getInt(stats, "total_blocks")
 			metrics.BlocksToday = getInt(stats, "blocks_today")
@@ -331,7 +331,7 @@ func (h *GOTHHandlers) getSuricataMetrics() ui.SuricataMetrics {
 
 	if output, err := execNFTBanCommand("suricata", "status", "--json"); err == nil {
 		var status map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &status) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &status) == nil {
 			metrics.Enabled = getBool(status, "enabled")
 			metrics.Status = getString(status, "status")
 			metrics.AlertsTotal = getInt(status, "alerts_total")
@@ -393,14 +393,14 @@ func (h *GOTHHandlers) getGeoIPPageData() ui.GeoIPPageData {
 
 	// Get database info
 	if info, err := os.Stat(data.DatabasePath); err == nil {
-		data.DatabaseSize = formatBytes(info.Size())
+		data.DatabaseSize = util.FormatBytes(info.Size())
 		data.LastUpdate = info.ModTime().Format("2006-01-02")
 	}
 
 	// Get GeoIP status from CLI
 	if output, err := execNFTBanCommand("geoip", "status", "--json"); err == nil {
 		var status map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &status) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &status) == nil {
 			data.BlockingEnabled = getBool(status, "enabled")
 			data.DatabaseVersion = getString(status, "database_version")
 			data.DatabaseDate = getString(status, "database_date")
@@ -415,7 +415,7 @@ func (h *GOTHHandlers) getGeoIPPageData() ui.GeoIPPageData {
 	// Get country list
 	if output, err := execNFTBanCommand("geoip", "list", "--json"); err == nil {
 		var countries []map[string]interface{}
-		if json.Unmarshal([]byte(extractJSON(output)), &countries) == nil {
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &countries) == nil {
 			for _, c := range countries {
 				entry := ui.GeoCountryEntry{
 					Code:         getString(c, "code"),
