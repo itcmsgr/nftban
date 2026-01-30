@@ -32,6 +32,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/persistent"
+	"github.com/itcmsgr/nftban/pkg/timeutil"
 	"github.com/itcmsgr/nftban/pkg/version"
 	"github.com/itcmsgr/nftban/pkg/whitelist"
 )
@@ -39,28 +40,6 @@ import (
 // getBanConfigDir returns the config directory from passed config
 func getBanConfigDir(cfg *nftbanconf.Config) string {
 	return cfg.ConfigDir
-}
-
-// formatDuration converts seconds to human-readable format
-func formatDuration(seconds int) string {
-	if seconds < 60 {
-		return fmt.Sprintf("%ds", seconds)
-	} else if seconds < 3600 {
-		return fmt.Sprintf("%dm", seconds/60)
-	} else if seconds < 86400 {
-		hours := seconds / 3600
-		mins := (seconds % 3600) / 60
-		if mins > 0 {
-			return fmt.Sprintf("%dh%dm", hours, mins)
-		}
-		return fmt.Sprintf("%dh", hours)
-	}
-	days := seconds / 86400
-	hours := (seconds % 86400) / 3600
-	if hours > 0 {
-		return fmt.Sprintf("%dd%dh", days, hours)
-	}
-	return fmt.Sprintf("%dd", days)
 }
 
 func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg *nftbanconf.Config) error {
@@ -150,7 +129,7 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 
 	if timeoutSeconds > 0 {
 		// Temporary ban - add directly to NFT with timeout (no config file)
-		fmt.Printf("  ⏱️  Temporary ban: %d seconds (%s)\n", timeoutSeconds, formatDuration(timeoutSeconds))
+		fmt.Printf("  ⏱️  Temporary ban: %d seconds (%s)\n", timeoutSeconds, timeutil.FormatDurationSeconds(timeoutSeconds))
 		if reason != "" {
 			fmt.Printf("  ✅ Reason: %s\n", reason)
 		}
@@ -214,7 +193,7 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 	duration := time.Since(startTime)
 
 	if timeoutSeconds > 0 {
-		fmt.Printf("  ✅ Added to nftables with %s timeout in %v\n", formatDuration(timeoutSeconds), duration)
+		fmt.Printf("  ✅ Added to nftables with %s timeout in %v\n", timeutil.FormatDurationSeconds(timeoutSeconds), duration)
 	} else {
 		fmt.Printf("  ✅ Added to nftables (permanent) in %v\n", duration)
 	}

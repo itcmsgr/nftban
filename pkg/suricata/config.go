@@ -29,6 +29,7 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
+	"github.com/itcmsgr/nftban/pkg/timeutil"
 )
 
 // FilterConfig represents a single Suricata filter configuration
@@ -153,13 +154,13 @@ func (c *Config) parseGlobalSetting(key, value string) {
 			c.DefaultThreshold = val
 		}
 	case "default_ban_time":
-		if dur, err := parseDuration(value); err == nil {
+		if dur, err := timeutil.ParseDuration(value); err == nil {
 			c.DefaultBanTime = dur
 		}
 	case "default_action":
 		c.DefaultAction = value
 	case "score_decay":
-		if dur, err := parseDuration(value); err == nil {
+		if dur, err := timeutil.ParseDuration(value); err == nil {
 			c.ScoreDecay = dur
 		}
 	}
@@ -202,7 +203,7 @@ func (c *Config) parseFilterLine(name, value string, lineNum int) error {
 	}
 
 	// Parse ban_time
-	banTime, err := parseDuration(parts[3])
+	banTime, err := timeutil.ParseDuration(parts[3])
 	if err != nil {
 		return fmt.Errorf("filter '%s' invalid ban_time: %v", name, err)
 	}
@@ -231,7 +232,7 @@ func (c *Config) parseFilterLine(name, value string, lineNum int) error {
 		} else {
 			return fmt.Errorf("filter '%s' invalid escalate count: %v", name, err)
 		}
-		if dur, err := parseDuration(escalateParts[2]); err == nil {
+		if dur, err := timeutil.ParseDuration(escalateParts[2]); err == nil {
 			period = dur
 		} else {
 			return fmt.Errorf("filter '%s' invalid escalate period: %v", name, err)
@@ -263,23 +264,6 @@ func (c *Config) parseFilterLine(name, value string, lineNum int) error {
 
 	c.Filters[name] = filter
 	return nil
-}
-
-// parseDuration parses duration strings like "30s", "5m", "1h", "24h", "7d"
-func parseDuration(s string) (time.Duration, error) {
-	s = strings.ToLower(strings.TrimSpace(s))
-
-	// Handle days
-	if strings.HasSuffix(s, "d") {
-		days, err := strconv.Atoi(strings.TrimSuffix(s, "d"))
-		if err != nil {
-			return 0, err
-		}
-		return time.Duration(days) * 24 * time.Hour, nil
-	}
-
-	// Use standard time.ParseDuration for h, m, s
-	return time.ParseDuration(s)
 }
 
 // GetEnabledFilters returns only enabled filters

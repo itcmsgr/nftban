@@ -35,6 +35,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/ui/pages"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/state"
+	"github.com/itcmsgr/nftban/pkg/timeutil"
 )
 
 // =============================================================================
@@ -68,7 +69,7 @@ func (h *GOTHHandlers) getMetricsData() ui.MetricsData {
 	// Check cache file
 	if info, err := os.Stat(cachePath); err == nil {
 		age := time.Since(info.ModTime())
-		data.CacheAge = formatDuration(age)
+		data.CacheAge = timeutil.FormatDurationLong(age)
 
 		// Determine collector state based on cache age
 		if age < 2*time.Minute {
@@ -1013,17 +1014,6 @@ func (h *GOTHHandlers) getDroppedByPort() []ui.PortTraffic {
 // =============================================================================
 // HELPER FUNCTIONS
 // =============================================================================
-
-func formatDuration(d time.Duration) string {
-	if d < time.Minute {
-		return fmt.Sprintf("%ds", int(d.Seconds()))
-	} else if d < time.Hour {
-		return fmt.Sprintf("%dm", int(d.Minutes()))
-	} else if d < 24*time.Hour {
-		return fmt.Sprintf("%dh %dm", int(d.Hours()), int(d.Minutes())%60)
-	}
-	return fmt.Sprintf("%dd %dh", int(d.Hours())/24, int(d.Hours())%24)
-}
 
 func getString(m map[string]interface{}, key string) string {
 	if v, ok := m[key].(string); ok {
