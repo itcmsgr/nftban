@@ -17,10 +17,10 @@ flags:
   - -trimpath
 
 # Linker flags (inject version info)
+# Note: Only {{ .Env.VERSION }} is supported (passed via evaluated-envs)
+# {{ .Commit }} and {{ .CommitDate }} are not valid SLSA builder templates
 ldflags:
   - -s -w
-  - -X main.GitCommit={{ .Commit }}
-  - -X main.BuildDate={{ .CommitDate }}
   - -X github.com/itcmsgr/nftban/pkg/version.FullVersion={{ .Env.VERSION }}
 
 # Build targets (single target per config - SLSA builder requirement)
