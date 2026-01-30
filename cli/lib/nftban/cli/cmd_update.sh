@@ -781,27 +781,35 @@ _update_via_deb() {
     fi
 
     # Install
-    # Note: IFS=$'\n\t' means we must use arrays for command expansion
-    local -a dpkg_cmd=(dpkg -i)
+    # Use subshell with reset IFS to avoid word-splitting issues
+    _update_log INFO "Installing DEB package..."
+    local dpkg_result
     if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
         _update_log INFO "Force mode: using dpkg --force-overwrite --force-confnew"
-        dpkg_cmd=(dpkg -i --force-overwrite --force-confnew)
-    fi
-    _update_log INFO "Installing DEB package..."
-    if "${dpkg_cmd[@]}" "$tmp_file" 2>&1 | while read -r line; do echo "    $line"; done; then
-        _update_log OK "DEB installed successfully"
-        rm -f "$tmp_file"
-        return 0
+        dpkg_result=$(dpkg -i --force-overwrite --force-confnew "$tmp_file" 2>&1) && {
+            echo "$dpkg_result" | while IFS= read -r line; do echo "    $line"; done
+            _update_log OK "DEB installed successfully"
+            rm -f "$tmp_file"
+            return 0
+        }
     else
-        _update_log ERROR "DEB installation failed"
-        # In force mode, attempt dpkg configure to clean up
-        if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
-            _update_log INFO "Force mode: running dpkg --configure -a after failed install..."
-            dpkg --configure -a 2>&1 | while read -r line; do echo "    $line"; done || true
-        fi
-        rm -f "$tmp_file"
-        return 1
+        dpkg_result=$(dpkg -i "$tmp_file" 2>&1) && {
+            echo "$dpkg_result" | while IFS= read -r line; do echo "    $line"; done
+            _update_log OK "DEB installed successfully"
+            rm -f "$tmp_file"
+            return 0
+        }
     fi
+    # Installation failed
+    echo "$dpkg_result" | while IFS= read -r line; do echo "    $line"; done
+    _update_log ERROR "DEB installation failed"
+    # In force mode, attempt dpkg configure to clean up
+    if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
+        _update_log INFO "Force mode: running dpkg --configure -a after failed install..."
+        dpkg --configure -a 2>&1 | while IFS= read -r line; do echo "    $line"; done || true
+    fi
+    rm -f "$tmp_file"
+    return 1
 }
 
 _update_via_git() {
