@@ -15,7 +15,10 @@
 # Builds:
 #   - nftban-core (main CLI for firewall operations)
 #   - nftban-ui (web GUI server)
-#   - nftban-ui-auth (PAM authentication daemon)
+#
+# NOTE: nftban-ui-auth is excluded - requires PAM headers (libpam-dev) which
+# are not available in SLSA's hermetic build environment. It's built via
+# the regular release.yml workflow instead.
 # =============================================================================
 
 name: SLSA Go Releaser
@@ -68,26 +71,12 @@ jobs:
       evaluated-envs: "VERSION:${{ github.ref_name }}"
 
   # ============================================================================
-  # Job 3: Build nftban-ui-auth with SLSA provenance
+  # Job 3: Assemble all artifacts and upload to release
   # ============================================================================
-  build-nftban-ui-auth:
-    name: Build nftban-ui-auth (SLSA3)
-    permissions:
-      id-token: write
-      contents: write
-      actions: read
-    uses: slsa-framework/slsa-github-generator/.github/workflows/builder_go_slsa3.yml@v2.0.0
-    with:
-      go-version: "1.23"
-      config-file: .github/slsa/nftban-ui-auth.yml
-      evaluated-envs: "VERSION:${{ github.ref_name }}"
-
-  # ============================================================================
-  # Job 4: Assemble all artifacts and upload to release
-  # ============================================================================
+  # NOTE: nftban-ui-auth excluded - requires PAM headers not available in SLSA
   assemble-release:
     name: Assemble Release Artifacts
-    needs: [build-nftban-core, build-nftban-ui, build-nftban-ui-auth]
+    needs: [build-nftban-core, build-nftban-ui]
     runs-on: ubuntu-latest
     if: github.event_name == 'release'
 
@@ -114,18 +103,6 @@ jobs:
         uses: actions/download-artifact@v4
         with:
           name: ${{ needs.build-nftban-ui.outputs.go-provenance-name }}
-          path: dist/
-
-      - name: Download nftban-ui-auth artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.build-nftban-ui-auth.outputs.go-binary-name }}
-          path: dist/
-
-      - name: Download nftban-ui-auth provenance
-        uses: actions/download-artifact@v4
-        with:
-          name: ${{ needs.build-nftban-ui-auth.outputs.go-provenance-name }}
           path: dist/
 
       - name: List artifacts
