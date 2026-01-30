@@ -2,6 +2,21 @@
 # NFTBan Daemon Socket - systemd socket activation
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
+# meta:name="nftband.socket"
+# meta:type="systemd"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-10-26"
+# meta:description="Socket activation unit for nftband daemon"
+# meta:input="None"
+# meta:output="Unix socket /run/nftban/nftband.sock"
+# meta:depends=""
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftband.service"
+# meta:inventory.network="unix:/run/nftban/nftband.sock"
+# meta:inventory.privileges="root"
 #
 # Socket is created by systemd with correct permissions.
 # Daemon receives pre-configured socket via file descriptor.
@@ -18,6 +33,9 @@ Description=NFTBan Daemon Socket
 Documentation=man:nftban(8)
 PartOf=nftband.service
 
+# Ensure tmpfiles creates /run/nftban with correct ownership before socket starts
+After=systemd-tmpfiles-setup.service
+
 [Socket]
 # Socket path in runtime directory
 ListenStream=/run/nftban/nftband.sock
@@ -28,9 +46,9 @@ SocketUser=root
 SocketGroup=nftban
 SocketMode=0660
 
-# Runtime directory created automatically
-RuntimeDirectory=nftban
-RuntimeDirectoryMode=0750
+# NOTE: RuntimeDirectory removed - handled by tmpfiles.d/nftban.conf
+# This prevents ownership conflict (socket creates as root:root,
+# but tmpfiles specifies nftban:nftban which exporter needs)
 
 # Accept connections (passed to service)
 Accept=no
