@@ -23,19 +23,13 @@ package api
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
-	"net/http"
-	"os/exec"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/auth"
 	"github.com/itcmsgr/nftban/pkg/metrics"
-	"github.com/itcmsgr/nftban/pkg/middleware"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/state"
 )
 
 // =============================================================================
@@ -163,219 +157,21 @@ type SuccessResponse struct {
 
 // Removed: PortsHandler, PortBanHandler, PortUnbanHandler, PortStatusHandler - moved to handlers_ports.go
 
-// UIListBannedIPsHandler returns all banned IPs from nftables sets
-func UIListBannedIPsHandler(w http.ResponseWriter, r *http.Request) {
-	// Use nftban list command with JSON output (architectural compliance)
-	output, err := execNFTBanCommand("list", "banned", "--json")
-	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to get banned IPs"})
-		return
-	}
-
-	// Parse JSON output from nftban list command
-	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to parse banned IPs"})
-		return
-	}
-
-	// Return the result as-is (already in correct format)
-	respondJSON(w, http.StatusOK, result)
-}
-
-// UIWhitelistGetHandler returns IPs whitelisted for GUI access
-func UIWhitelistGetHandler(w http.ResponseWriter, r *http.Request) {
-	output, err := execNFTBanCommand("ui", "list-ips")
-	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to get UI whitelist"})
-		return
-	}
-
-	whitelist := map[string]interface{}{
-		"ips": parseUIWhitelistOutput(output),
-	}
-
-	respondJSON(w, http.StatusOK, whitelist)
-}
-
-// UIWhitelistAddHandler adds IP to GUI whitelist
-func UIWhitelistAddHandler(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		IP string `json:"ip"`
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
-		return
-	}
-
-	if req.IP == "" {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "IP address is required"})
-		return
-	}
-
-	_, err := execNFTBanCommand("ui", "add-ip", req.IP)
-	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to add to UI whitelist: %v", err)})
-		return
-	}
-
-	// Audit log
-	claims, _ := r.Context().Value(middleware.UserContextKey).(*auth.Claims)
-	log.Printf("[AUDIT] User %s added IP to UI whitelist: %s", claims.Username, req.IP)
-
-	respondJSON(w, http.StatusOK, SuccessResponse{
-		Success: true,
-		Message: fmt.Sprintf("IP %s added to UI whitelist", req.IP),
-	})
-}
+// Removed: UIListBannedIPsHandler, UIWhitelistGetHandler, UIWhitelistAddHandler - moved to handlers_ui.go
 
 // Removed: LogsHandler, LogsViewerHandler - moved to handlers_logs.go
 
-// RulesHandler returns nftables statistics
-func RulesHandler(w http.ResponseWriter, r *http.Request) {
-	// TODO: Parse nftables sets properly - for now return empty array
-	// The stats command output is plain text, not structured data
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"sets": []map[string]interface{}{},
-	})
-}
+// Removed: RulesHandler - moved to handlers_actions.go
 
-// GeoHandler returns geographic statistics (top countries)
-func GeoHandler(w http.ResponseWriter, r *http.Request) {
-	// Get top countries from stats
-	output, err := execNFTBanCommand("stats", "top", "countries", "50")
-	if err != nil {
-		log.Printf("[ERROR] Failed to get geo stats: %v", err)
-		// Return empty array instead of error
-		respondJSON(w, http.StatusOK, []map[string]interface{}{})
-		return
-	}
+// Removed: GeoHandler - moved to handlers_geo.go
 
-	// Parse geo output (format: CC CountryName Count)
-	geoStats := parseGeoOutput(output)
-	respondJSON(w, http.StatusOK, geoStats)
-}
+// Removed: ReloadHandler - moved to handlers_actions.go
 
-// ReloadHandler reloads nftban firewall configuration
-func ReloadHandler(w http.ResponseWriter, r *http.Request) {
-	claims, _ := r.Context().Value(middleware.UserContextKey).(*auth.Claims)
+// Removed: SyncFeedsHandler - moved to handlers_actions.go
 
-	_, err := execNFTBanCommand("firewall", "reload")
-	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to reload: %v", err)})
-		return
-	}
+// Removed: FlushHandler - moved to handlers_actions.go
 
-	log.Printf("[AUDIT] User %s reloaded nftban firewall", claims.Username)
-	respondJSON(w, http.StatusOK, SuccessResponse{Success: true, Message: "Firewall reloaded successfully"})
-}
-
-// SyncFeedsHandler updates threat feeds
-func SyncFeedsHandler(w http.ResponseWriter, r *http.Request) {
-	claims, _ := r.Context().Value(middleware.UserContextKey).(*auth.Claims)
-
-	_, err := execNFTBanCommand("feeds", "update")
-	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to update feeds: %v", err)})
-		return
-	}
-
-	// Refresh feeds stats in shared state after sync
-	// This keeps BASIC tier consumers up-to-date without additional CLI calls
-	go func() {
-		output, err := execNFTBanCoreCommand("feeds", "list", "--json")
-		if err != nil {
-			return
-		}
-		var result struct {
-			Data struct {
-				Feeds []struct {
-					Enabled bool `json:"enabled"`
-					Count   int  `json:"count"`
-				} `json:"feeds"`
-			} `json:"data"`
-		}
-		if json.Unmarshal([]byte(output), &result) == nil {
-			active := 0
-			totalIPs := 0
-			for _, f := range result.Data.Feeds {
-				if f.Enabled {
-					active++
-					totalIPs += f.Count
-				}
-			}
-			state.UpdateFeeds(active, int64(totalIPs))
-		}
-	}()
-
-	log.Printf("[AUDIT] User %s updated feeds", claims.Username)
-	respondJSON(w, http.StatusOK, SuccessResponse{Success: true, Message: "Feeds updated successfully"})
-}
-
-// FlushHandler clears nftban runtime table (temporary bans from Fail2ban)
-func FlushHandler(w http.ResponseWriter, r *http.Request) {
-	claims, _ := r.Context().Value(middleware.UserContextKey).(*auth.Claims)
-
-	// Use nftban firewall flush command (architectural compliance)
-	_, err := execNFTBanCommand("firewall", "flush")
-	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: fmt.Sprintf("Failed to flush runtime bans: %v", err)})
-		return
-	}
-
-	log.Printf("[AUDIT] User %s flushed runtime bans (temp_ban_v4 + temp_ban_v6)", claims.Username)
-	respondJSON(w, http.StatusOK, SuccessResponse{Success: true, Message: "Runtime bans flushed successfully"})
-}
-
-// SearchHandler searches for an IP across all NFTBan components
-func SearchHandler(w http.ResponseWriter, r *http.Request) {
-	ip := r.URL.Query().Get("ip")
-	if ip == "" {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "IP parameter is required"})
-		return
-	}
-
-	// Use nftban check command (returns text output)
-	output, err := execNFTBanCommand("check", ip)
-
-	// Parse the text output to build JSON response
-	searchData := map[string]interface{}{
-		"ip":          ip,
-		"found":       false,
-		"whitelisted": false,
-		"blacklisted": false,
-		"in_feeds":    false,
-		"locations":   []string{},
-	}
-
-	if err == nil && output != "" {
-		outputLower := strings.ToLower(output)
-
-		// Check if whitelisted (matches "MATCHED: whitelist_ipv4" or "whitelist" in output)
-		if strings.Contains(outputLower, "whitelist") || strings.Contains(outputLower, "✅ allowed") {
-			searchData["whitelisted"] = true
-			searchData["found"] = true
-			searchData["locations"] = append(searchData["locations"].([]string), "whitelist")
-		}
-
-		// Check if blacklisted (matches "MATCHED: blacklist_ipv4" or "blacklist" in output)
-		if strings.Contains(outputLower, "blacklist") || strings.Contains(outputLower, "❌ blocked") {
-			searchData["blacklisted"] = true
-			searchData["found"] = true
-			searchData["locations"] = append(searchData["locations"].([]string), "blacklist")
-		}
-
-		// Check if in feeds
-		if strings.Contains(outputLower, "found in feeds") || strings.Contains(outputLower, "⚠️  potentially blocked") {
-			searchData["in_feeds"] = true
-			searchData["found"] = true
-			searchData["locations"] = append(searchData["locations"].([]string), "threat_feeds")
-		}
-	}
-
-	respondJSON(w, http.StatusOK, searchData)
-}
+// Removed: SearchHandler - moved to handlers_actions.go
 
 // Removed: MetricsEnableHandler, MetricsStatusHandler, MetricsSnapshotHandler - moved to handlers_metrics.go
 
@@ -401,41 +197,9 @@ func parseWhitelistOutput(output string) []string {
 	return ips
 }
 
-//nolint:U1000 // Prepared for future API enhancement
+// Removed: parseUIWhitelistOutput - moved to handlers_ui.go
 
-func parseUIWhitelistOutput(output string) []string {
-	return parseWhitelistOutput(output)
-}
-
-func parseGeoOutput(output string) []map[string]interface{} {
-	var geoStats []map[string]interface{}
-	lines := strings.Split(output, "\n")
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		// Parse format: "US United States 1234"
-		parts := strings.Fields(line)
-		if len(parts) >= 3 {
-			cc := parts[0]
-			count := 0
-			// Last field should be the count
-			if c, err := fmt.Sscanf(parts[len(parts)-1], "%d", &count); err == nil && c == 1 {
-				name := strings.Join(parts[1:len(parts)-1], " ")
-				geoStats = append(geoStats, map[string]interface{}{
-					"cc":      cc,
-					"name":    name,
-					"blocked": count,
-				})
-			}
-		}
-	}
-
-	return geoStats
-}
+// Removed: parseGeoOutput - moved to handlers_geo.go
 
 // Background stats collection
 func updateStatsCache() {
@@ -501,47 +265,7 @@ func StartStatsUpdater() {
 
 // Removed: Fail2BanJailsHandler (v1.0 migration to Suricata)
 
-// PortscanControlHandler handles portscan enable/disable/status
-func PortscanControlHandler(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Action string `json:"action"` // enable, disable, status
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
-		return
-	}
-
-	// Validate action
-	allowedActions := map[string]bool{
-		"enable":  true,
-		"disable": true,
-		"status":  true,
-	}
-
-	if !allowedActions[req.Action] {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid action"})
-		return
-	}
-
-	// Execute nftban portscan command via bash CLI
-	// The bash CLI handles portscan enable/disable/status
-	var output string
-	var err error
-	output, err = execNFTBanCommand("portscan", req.Action)
-	if err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{
-			Error: fmt.Sprintf("Failed to %s portscan: %v", req.Action, err),
-		})
-		return
-	}
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"success": true,
-		"message": fmt.Sprintf("Portscan %s successful", req.Action),
-		"output":  output,
-	})
-}
+// Removed: PortscanControlHandler - moved to handlers_actions.go
 
 // Removed: ConfigGetHandler, ConfigSetHandler, ConfigResetHandler - moved to handlers_config.go
 
@@ -577,108 +301,7 @@ func cleanInactiveUsers() {
 // Removed: Fail2BanLogsHandler function (v1.0 migration to Suricata)
 // Removed: PortScanLogsHandler - moved to handlers_logs.go
 
-// GeoBanStatsHandler provides detailed GeoIP/GeoBan statistics
-func GeoBanStatsHandler(w http.ResponseWriter, r *http.Request) {
-	// Execute nftban geoban stats --json
-	output, err := execNFTBanCommand("geoban", "stats", "--json")
-	if err != nil {
-		// Fallback: Get data from nftables and geoip lookups
-		fallbackStats := getGeoBanStatsFallback()
-		respondJSON(w, http.StatusOK, fallbackStats)
-		return
-	}
-
-	// Parse JSON output
-	var result map[string]interface{}
-	if err := json.Unmarshal([]byte(output), &result); err != nil {
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to parse geoban stats"})
-		return
-	}
-
-	respondJSON(w, http.StatusOK, result)
-}
-
-// getGeoBanStatsFallback provides fallback GeoIP statistics
-func getGeoBanStatsFallback() map[string]interface{} {
-	// Use nftban geoban list command instead of direct nft (architectural compliance)
-	output, err := execNFTBanCommand("geoban", "list")
-	if err != nil {
-		return map[string]interface{}{
-			"error":         "Failed to fetch geoban data",
-			"total_blocked": 0,
-			"by_country":    map[string]int{},
-		}
-	}
-
-	// Parse CLI output to extract country stats
-	// Format: CC CountryName (blocked)
-	countryMap := make(map[string]int)
-	lines := strings.Split(output, "\n")
-	totalBlocked := 0
-
-	for _, line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.Contains(line, "blocked") || strings.Contains(line, "BLOCKED") {
-			totalBlocked++
-			// Extract country code (first 2 chars if line starts with uppercase letters)
-			if len(line) >= 2 {
-				cc := line[0:2]
-				if cc[0] >= 'A' && cc[0] <= 'Z' && cc[1] >= 'A' && cc[1] <= 'Z' {
-					countryMap[cc]++
-				}
-			}
-		}
-	}
-
-	return map[string]interface{}{
-		"total_blocked": totalBlocked,
-		"by_country":    countryMap,
-		"last_updated":  time.Now().Unix(),
-	}
-}
-
-// GrafanaStatusHandler checks if Grafana is available
-func GrafanaStatusHandler(w http.ResponseWriter, r *http.Request) {
-	// Get service name from central config
-	services := nftbanconf.GetServices()
-	grafanaService := "grafana-server"
-	if services != nil {
-		grafanaService = services.Grafana
-	}
-
-	// Check if Grafana is running
-	cmd := exec.Command("systemctl", "is-active", grafanaService)
-	output, err := cmd.Output()
-
-	isRunning := err == nil && strings.TrimSpace(string(output)) == "active"
-
-	// Check if Grafana is accessible using URL from central config
-	grafanaBaseURL := getGrafanaURL()
-	grafanaHealthURL := grafanaBaseURL + "/api/health"
-	accessible := false
-
-	if isRunning {
-		client := &http.Client{Timeout: 2 * time.Second}
-		resp, err := client.Get(grafanaHealthURL)
-		if err == nil {
-			accessible = resp.StatusCode == 200
-			resp.Body.Close()
-		}
-	}
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"available":  isRunning && accessible,
-		"running":    isRunning,
-		"accessible": accessible,
-		"url":        grafanaBaseURL,
-		"dashboards": map[string]string{
-			"overview":    "/d/nftban-overview",
-			"health":      "/d/nftban-health",
-			"geographic":  "/d/nftban-geographic",
-			"performance": "/d/nftban-performance",
-		},
-	})
-}
+// Removed: GeoBanStatsHandler, getGeoBanStatsFallback, GrafanaStatusHandler - moved to handlers_geo.go
 
 // Removed: SystemLogsHandler - moved to handlers_logs.go
 
