@@ -12,9 +12,9 @@ env:
   - CGO_ENABLED=0
 
 # Build flags
+# Note: -mod=readonly removed - not supported by SLSA builder
 flags:
   - -trimpath
-  - -mod=readonly
 
 # Linker flags (inject version info)
 ldflags:
