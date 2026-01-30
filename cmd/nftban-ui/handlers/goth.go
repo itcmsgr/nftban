@@ -1862,7 +1862,7 @@ func (h *GOTHHandlers) getBinariesList() []ui.BinaryInfo {
 
 		// Check if binary exists and get info
 		if info, err := os.Stat(b.path); err == nil {
-			bin.Size = formatBytes(info.Size())
+			bin.Size = util.FormatBytes(info.Size())
 
 			// Try to get version
 			if output, err := exec.Command(b.path, "--version").Output(); err == nil {
@@ -1906,7 +1906,7 @@ func (h *GOTHHandlers) getConfigsList() []ui.ConfigInfo {
 		}
 
 		if info, err := os.Stat(c.path); err == nil {
-			cfg.Size = formatBytes(info.Size())
+			cfg.Size = util.FormatBytes(info.Size())
 			cfg.Modified = info.ModTime().Format("2006-01-02 15:04")
 		} else {
 			cfg.Modified = "not found"
@@ -1957,19 +1957,6 @@ func (h *GOTHHandlers) getFHSList() []ui.FHSItem {
 	}
 
 	return fhs
-}
-
-func formatBytes(bytes int64) string {
-	const unit = 1024
-	if bytes < unit {
-		return fmt.Sprintf("%d B", bytes)
-	}
-	div, exp := int64(unit), 0
-	for n := bytes / unit; n >= unit; n /= unit {
-		div *= unit
-		exp++
-	}
-	return fmt.Sprintf("%.1f %cB", float64(bytes)/float64(div), "KMGTPE"[exp])
 }
 
 // =============================================================================
