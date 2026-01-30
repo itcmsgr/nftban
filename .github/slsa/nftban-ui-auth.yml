@@ -8,13 +8,13 @@
 version: 1
 
 # Environment variables available during build
+# Note: VERSION is passed via evaluated-envs in workflow, not defined here
 # CGO_ENABLED=1 required for PAM library (github.com/msteinert/pam/v2)
 env:
-  - VERSION={{ .Env.VERSION }}
   - CGO_ENABLED=1
 
 # Build flags
-# Note: -mod=readonly removed - not supported by SLSA builder
+# Note: -mod=readonly not supported by SLSA builder
 flags:
   - -trimpath
 
