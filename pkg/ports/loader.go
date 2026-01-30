@@ -28,6 +28,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // PortRule represents a single port rule
@@ -258,7 +260,7 @@ func AddPortToFile(filePath string, port int, protocol string) error {
 	}
 
 	// Check if port already exists
-	if fileExists(filePath) {
+	if util.FileExists(filePath) {
 		existing, err := LoadPortsFromFile(filePath)
 		if err != nil {
 			return fmt.Errorf("failed to check existing ports: %w", err)
@@ -290,7 +292,7 @@ func AddPortToFile(filePath string, port int, protocol string) error {
 
 // RemovePortFromFile removes a port rule from a configuration file
 func RemovePortFromFile(filePath string, port int) error {
-	if !fileExists(filePath) {
+	if !util.FileExists(filePath) {
 		return fmt.Errorf("file does not exist: %s", filePath)
 	}
 
@@ -322,8 +324,3 @@ func RemovePortFromFile(filePath string, port int) error {
 	return nil
 }
 
-// fileExists checks if a file exists
-func fileExists(filePath string) bool {
-	_, err := os.Stat(filePath)
-	return err == nil
-}
