@@ -47,6 +47,11 @@
 /etc/nftban/conf.d/geoip/main.conf
 /etc/nftban/conf.d/geoban/main.conf
 
+# Suricata IDS profiles
+/etc/nftban/suricata/profiles/minimal.yaml
+/etc/nftban/suricata/profiles/standard.yaml
+/etc/nftban/suricata/profiles/maximum.yaml
+
 # RBL module
 /etc/nftban/conf.d/rbl/main.conf
 /etc/nftban/conf.d/rbl/rbls.conf
