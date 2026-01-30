@@ -177,17 +177,13 @@ nftban_detect_iptables_nft() {
 
         if [[ $rule_count -gt 0 ]]; then
             status=2
-            NFTBAN_FIREWALL_CONFLICTS+=("IPTABLES-NFT: $rule_count rules creating shadow nftables")
+            # Only log INFO - actual conflict severity determined by priority check
+            # in nftban_detect_conflicting_tables which assesses if NFTBan runs first
+            NFTBAN_FIREWALL_CONFLICTS+=("IPTABLES-NFT: $rule_count rules (priority check determines safety)")
 
-            # Check if 'ip filter' table exists in nftables (created by iptables-nft)
-            # Note: Don't mark as CRITICAL here - the priority-based check in
-            # nftban_detect_nftables_conflicts will properly assess if it's safe
-            if nft list table ip filter &>/dev/null 2>&1; then
-                NFTBAN_FIREWALL_CONFLICTS+=("  └─ WARNING: 'ip filter' table exists (priority check follows)")
-                [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_WARNING ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
-            else
-                [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_WARNING ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
-            fi
+            # Don't set severity here - let nftban_detect_conflicting_tables handle it
+            # That function checks if NFTBan's priority (-100) runs before filter (0)
+            [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
 
             NFTBAN_FIREWALL_FIXES+=("Flush iptables-nft: iptables -F && iptables -X && ip6tables -F && ip6tables -X")
         elif [[ $drop_policies -eq 0 ]]; then
@@ -299,24 +295,42 @@ nftban_detect_conflicting_tables() {
         [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_CRITICAL ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_CRITICAL
     fi
 
-    # 4. Check for INPUT chain priority conflicts
-    # nftban uses priority -150 for input, but other systems might use 0 or lower
-    local input_chains
-    input_chains=$(nft list chains 2>/dev/null | grep -E "hook input.*priority" || echo "")
+    # 4. Check for INPUT chain priority conflicts (non-nftban chains only)
+    # nftban uses priority -100 for input in both ip/ip6 nftban tables
+    # We need to detect if OTHER tables have INPUT chains that might conflict
+    local non_nftban_input_chains
+    non_nftban_input_chains=""
 
-    if [[ -n "$input_chains" ]]; then
-        # Count input chains
-        local chain_count
-        chain_count=$(echo "$input_chains" | wc -l)
-        if [[ $chain_count -gt 1 ]]; then
-            # Multiple INPUT chains - potential conflict
-            local other_priorities
-            other_priorities=$(echo "$input_chains" | grep -v "nftban" | grep -oE "priority [^;]+" || echo "")
-            if [[ -n "$other_priorities" ]]; then
-                NFTBAN_FIREWALL_CONFLICTS+=("PRIORITY CONFLICT: Multiple INPUT chains detected")
-                NFTBAN_FIREWALL_CONFLICTS+=("  └─ Other priorities: $other_priorities")
-                [[ $status -eq 0 ]] && status=1
+    # Get tables and check each one for input chains
+    local table_line
+    while IFS= read -r table_line; do
+        [[ -z "$table_line" ]] && continue
+        # Skip nftban tables (ip nftban, ip6 nftban)
+        if [[ "$table_line" == *"nftban"* ]]; then
+            continue
+        fi
+        # Check if this non-nftban table has an input chain
+        local table_input
+        table_input=$(nft list table $table_line 2>/dev/null | grep -E "hook input.*priority" || true)
+        if [[ -n "$table_input" ]]; then
+            non_nftban_input_chains+="$table_line: $table_input"$'\n'
+        fi
+    done < <(nft list tables 2>/dev/null | sed 's/^table //')
+
+    if [[ -n "$non_nftban_input_chains" ]]; then
+        local other_priorities
+        other_priorities=$(echo "$non_nftban_input_chains" | grep -oE "priority [^;]+" | sort -u || echo "")
+        if [[ -n "$other_priorities" ]]; then
+            NFTBAN_FIREWALL_CONFLICTS+=("INPUT CHAINS: Non-nftban tables have input hooks")
+            NFTBAN_FIREWALL_CONFLICTS+=("  └─ Tables: $(echo "$non_nftban_input_chains" | cut -d: -f1 | tr '\n' ' ')")
+            [[ $status -eq 0 ]] && status=1
+            # Only WARNING if priority could conflict (>= -100)
+            local high_prio
+            high_prio=$(echo "$other_priorities" | grep -oE '[-0-9]+' | awk '$1 >= -100' | head -1 || true)
+            if [[ -n "$high_prio" ]]; then
                 [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_WARNING ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_WARNING
+            else
+                [[ $NFTBAN_FIREWALL_SEVERITY -lt $CONFLICT_INFO ]] && NFTBAN_FIREWALL_SEVERITY=$CONFLICT_INFO
             fi
         fi
     fi
