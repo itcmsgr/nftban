@@ -267,9 +267,11 @@ should_collect_component() {
             [[ $feed_count -gt 0 ]] && return 0
             ;;
         geoip)
-            # GeoIP: module enabled AND database exists
-            [[ -f "${NFTBAN_CONFIG_DIR}/modules/geoban.conf" ]] && \
-            [[ -f "${NFTBAN_CACHE_DIR}/geoip/GeoLite2-Country.mmdb" ]] && return 0
+            # GeoIP: module enabled AND database exists (DBIP or GeoLite2)
+            if [[ -f "${NFTBAN_CONFIG_DIR}/modules/geoban.conf" ]]; then
+                [[ -f "${NFTBAN_CACHE_DIR}/geoip/dbip-country-lite.mmdb" ]] && return 0
+                [[ -f "${NFTBAN_CACHE_DIR}/geoip/GeoLite2-Country.mmdb" ]] && return 0
+            fi
             ;;
         watchdog)
             # Watchdog: status file exists (watchdog is running)
@@ -1365,8 +1367,15 @@ collect_all_metrics() {
     # GEOIP METRICS (INVENTORY group, component: geoip)
     # =========================================================================
     if group_active "inventory" && should_collect_component "geoip"; then
-        local geoip_db="${NFTBAN_CACHE_DIR}/geoip/GeoLite2-Country.mmdb"
-        if [[ -f "$geoip_db" ]]; then
+        # Find GeoIP database (DBIP or GeoLite2)
+        local geoip_db=""
+        for path in "${NFTBAN_CACHE_DIR}/geoip/dbip-country-lite.mmdb" \
+                    "${NFTBAN_CACHE_DIR}/geoip/GeoLite2-Country.mmdb" \
+                    "/var/lib/nftban/geoip/dbip-country-lite.mmdb" \
+                    "/var/lib/nftban/geoip/GeoLite2-Country.mmdb"; do
+            [[ -f "$path" ]] && { geoip_db="$path"; break; }
+        done
+        if [[ -n "$geoip_db" ]]; then
             local db_age_days
             db_age_days=$(( (timestamp - $(stat -c %Y "$geoip_db" 2>/dev/null || echo "$timestamp")) / 86400 ))
             metrics+="nftban_geoip_database_age_days $db_age_days $timestamp\n"

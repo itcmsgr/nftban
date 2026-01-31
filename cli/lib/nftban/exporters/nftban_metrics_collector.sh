@@ -736,7 +736,15 @@ collect_analytics_metrics() {
 
     local bans_log="${NFTBAN_LOG_DIR}/bans.log"
     local stats_file="${NFTBAN_RUN_DIR}/stats.json"
-    local geoip_db="/var/lib/nftban/geoip/GeoLite2-Country.mmdb"
+
+    # Find GeoIP database (DBIP or GeoLite2)
+    local geoip_db=""
+    for path in "/var/lib/nftban/geoip/dbip-country-lite.mmdb" \
+                "/var/lib/nftban/geoip/GeoLite2-Country.mmdb" \
+                "/usr/share/GeoIP/dbip-country-lite.mmdb" \
+                "/usr/share/GeoIP/GeoLite2-Country.mmdb"; do
+        [[ -f "$path" ]] && { geoip_db="$path"; break; }
+    done
 
     # Unique IPs in last 24h
     if [[ -f "$bans_log" ]]; then
@@ -980,9 +988,13 @@ EOF
 collect_geoip_metrics() {
     local database_age=0 countries_blocked=0
 
+    # Find GeoIP database (DBIP or GeoLite2)
     local db_path=""
-    for path in "/var/lib/nftban/geoip/GeoLite2-Country.mmdb" \
+    for path in "/var/lib/nftban/geoip/dbip-country-lite.mmdb" \
+                "/var/lib/nftban/geoip/GeoLite2-Country.mmdb" \
+                "/usr/share/GeoIP/dbip-country-lite.mmdb" \
                 "/usr/share/GeoIP/GeoLite2-Country.mmdb" \
+                "${NFTBAN_LIB_DIR}/data/dbip-country-lite.mmdb" \
                 "${NFTBAN_LIB_DIR}/data/GeoLite2-Country.mmdb"; do
         [[ -f "$path" ]] && { db_path="$path"; break; }
     done

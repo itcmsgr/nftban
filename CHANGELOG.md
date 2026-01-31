@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.14] - 2026-01-31
+
+### GeoIP Database Detection Fix
+
+Fixed metrics collectors reporting incorrect GeoIP database age when using DBIP databases.
+
+### Fixed
+
+- **GeoIP database lookup** - Metrics collector and unified exporter only searched for
+  `GeoLite2-Country.mmdb`, causing "GeoIP database outdated" false alarms when using
+  DBIP databases (`dbip-country-lite.mmdb`). Both database types now searched in order:
+  - `dbip-country-lite.mmdb` (preferred - free, no registration)
+  - `GeoLite2-Country.mmdb` (legacy - requires MaxMind registration)
+- **Unified exporter GeoIP check** - Component detection and metrics collection now
+  search for both DBIP and GeoLite2 databases in multiple paths
+
+### Files Changed
+
+- `cli/lib/nftban/exporters/nftban_metrics_collector.sh` - Added DBIP to search paths
+- `cli/lib/nftban/exporters/nftban_unified_exporter.sh` - Added DBIP to component check and metrics
+
+---
+
 ## [1.8.13] - 2026-01-31
 
 ### Packaging & Path Alignment Release
