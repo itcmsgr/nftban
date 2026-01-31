@@ -1071,7 +1071,13 @@ install_core() {
 install_cli() {
     log "Installing CLI..."
 
-    # Clean up old location (migrated from /usr/bin to /usr/sbin)
+    # Clean up OLD location from pre-1.8.13 DEB packages (/usr/bin was wrong)
+    if [[ -f "/usr/bin/nftban" ]] && [[ ! -L "/usr/bin/nftban" ]]; then
+        rm -f "/usr/bin/nftban"
+        ok "Removed old CLI from /usr/bin/nftban (migrated to /usr/sbin)"
+    fi
+
+    # Remove existing file to replace with new version
     if [[ -f "/usr/sbin/nftban" ]] && [[ ! -L "/usr/sbin/nftban" ]]; then
         rm -f "/usr/sbin/nftban"
     fi
