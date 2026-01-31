@@ -5,6 +5,49 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.13] - 2026-01-31
+
+### Packaging & Path Alignment Release
+
+Comprehensive audit and fixes for path inconsistencies between install.sh, DEB, and RPM packaging.
+All CLI and helper script paths now aligned across all installation methods.
+
+### Fixed
+
+- **DEB CLI path** - DEB packaging installed CLI to `/usr/bin/nftban` instead of `/usr/sbin/nftban`.
+  Now consistent with RPM, install.sh, and systemd services (`packaging/build_nftban.sh`)
+- **Missing helper scripts in packages** - DEB and RPM builds were missing helper scripts in
+  `/usr/lib/nftban/sbin/` (queue-processor, rollback, service-alert, etc.). Services like
+  `nftban-queue.service` and `nftban-rollback.service` failed on package installs
+- **Rollback service path** - `nftban-rollback.service` referenced `/usr/sbin/nftban-rollback`
+  but script is at `/usr/lib/nftban/sbin/nftban-rollback`
+- **Config readonly conflict** - Scripts setting `readonly NFTBAN_LIB_DIR` before sourcing config
+  caused "readonly variable" errors. Config now uses `:=` conditional assignment pattern
+- **Queue processor readonly** - `nftban-queue-processor` unconditionally set readonly variables,
+  conflicting with config. Changed to conditional `[[ -z "${VAR:-}" ]] && readonly VAR=` pattern
+- **panelctl default path** - `nftban-panelctl` had wrong default `/usr/bin/nftban`, fixed to
+  `/usr/sbin/nftban`
+
+### Added
+
+- **Boot delay mechanism** - `nftban-firewall-init.service` now deployed via install.sh with
+  `NFTBAN_STARTUP_DELAY` config option. Set to 300 for 5-minute troubleshooting window at boot
+- **Emergency disable documentation** - Config now documents emergency options:
+  - `NFTBAN_STARTUP_DELAY=300` for boot delay
+  - `nftban disable all` for complete disable
+  - `nftban=disabled` kernel parameter for single-boot disable
+
+### Path Alignment Summary
+
+| Component | Path | install.sh | DEB | RPM |
+|-----------|------|------------|-----|-----|
+| CLI | `/usr/sbin/nftban` | ✓ | ✓ | ✓ |
+| nftban-core | `/usr/lib/nftban/bin/` | ✓ | ✓ | ✓ |
+| nftband | `/usr/lib/nftban/bin/` | ✓ | ✓ | ✓ |
+| Helper scripts | `/usr/lib/nftban/sbin/` | ✓ | ✓ | ✓ |
+
+---
+
 ## [1.8.2] - 2026-01-29
 
 ### Update System Stability Release
