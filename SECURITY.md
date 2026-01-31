@@ -220,7 +220,7 @@ This trade-off will be re-evaluated on:
 Accept this trade-off. The defense-in-depth approach provides strong security despite the missing directive. The combination of systemd sandboxing, Go's memory safety, and strict input validation makes exploitation extremely difficult.
 
 **References:**
-- Service files: `install/systemd/*.service`, `cmd/nftban-core/systemd/*.service`
+- Service files: `install/systemd/*.service` (central location)
 - Each affected service file contains detailed inline documentation
 - See systemd.exec(5) man page for directive details
 

@@ -14,7 +14,7 @@
 # meta:inventory.binaries="/usr/lib/nftban/bin/nftban-core"
 # meta:inventory.env_vars=""
 # meta:inventory.config_files=""
-# meta:inventory.systemd_units="nftban-core.service"
+# meta:inventory.systemd_units=""
 # meta:inventory.network="outbound"
 # meta:inventory.privileges="root"
 # =============================================================================
@@ -22,8 +22,8 @@
 [Unit]
 Description=NFTBan Core - GeoIP Database Update
 Documentation=https://github.com/itcmsgr/nftban-dev
-After=network-online.target nftban-core.service
-Requires=nftban-core.service
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=oneshot

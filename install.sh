@@ -2184,17 +2184,17 @@ install_systemd() {
         ok "Health fix service → $systemd_dir"
     fi
 
-    # GeoIP updater
-    if [[ -f "$SCRIPT_DIR/cmd/nftban-core/systemd/nftban-core-geoip.service" ]]; then
-        cp -f "$SCRIPT_DIR/cmd/nftban-core/systemd/nftban-core-geoip.service" "$systemd_dir/"
-        cp -f "$SCRIPT_DIR/cmd/nftban-core/systemd/nftban-core-geoip.timer" "$systemd_dir/"
+    # GeoIP updater (CENTRAL location - install/systemd/)
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-core-geoip.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-core-geoip.service" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-core-geoip.timer" "$systemd_dir/"
         ok "GeoIP timer units → $systemd_dir"
     fi
 
-    # Feeds updater
-    if [[ -f "$SCRIPT_DIR/cmd/nftban-core/systemd/nftban-core-feeds.service" ]]; then
-        cp -f "$SCRIPT_DIR/cmd/nftban-core/systemd/nftban-core-feeds.service" "$systemd_dir/"
-        cp -f "$SCRIPT_DIR/cmd/nftban-core/systemd/nftban-core-feeds.timer" "$systemd_dir/"
+    # Feeds updater (CENTRAL location - install/systemd/)
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-core-feeds.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-core-feeds.service" "$systemd_dir/"
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-core-feeds.timer" "$systemd_dir/"
         ok "Feeds timer units → $systemd_dir"
     fi
 

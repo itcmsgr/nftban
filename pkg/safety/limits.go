@@ -107,29 +107,29 @@ func InitCPU(lim Limits) {
 	}
 }
 
-// InitMemory sets memory limit based on config
+// InitMemory sets memory limit based on server profile and optional overrides
 // Uses runtime/debug SetMemoryLimit (Go 1.19+)
+//
+// The memory budget is calculated by GetResourceLimits() which considers:
+//   - Server RAM size (applies tier caps: ≤4GB→384MB, 4-8GB→512MB, >8GB→1GB)
+//   - Control panel presence (20% for panel servers, 35% for non-panel)
+//   - Minimum 64MB floor
+//
+// Environment variable NFTBAN_MAX_MEMORY_BYTES can override this for special cases.
 func InitMemory(lim Limits) {
-	// Get available memory
-	mem := AvailableMem()
+	// Get memory budget from GetResourceLimits() - single source of truth
+	// This considers: panel detection, RAM tiers, and leaves headroom for OS/panel
+	targetLimit, _ := GetResourceLimits()
 
-	// Calculate target memory limit
-	var targetLimit int64
-
-	// Use percentage of available if set
-	if lim.MaxMemoryPercent > 0 && mem.Avail > 0 {
-		targetLimit = (mem.Avail * int64(lim.MaxMemoryPercent)) / 100
-	}
-
-	// Apply absolute cap if set and smaller
-	if lim.MaxMemoryBytes > 0 && (targetLimit == 0 || lim.MaxMemoryBytes < targetLimit) {
+	// Allow env var override for special cases (e.g., constrained containers)
+	// Only apply if explicitly set and smaller than dynamic calculation
+	if lim.MaxMemoryBytes > 0 && lim.MaxMemoryBytes < targetLimit {
 		targetLimit = lim.MaxMemoryBytes
 	}
 
 	// Set memory limit (Go 1.19+ soft limit)
+	// This makes GC work harder as heap approaches limit, keeping RSS bounded
 	if targetLimit > 0 {
-		// debug.SetMemoryLimit is a soft limit - Go GC will work harder to stay under
-		// but may briefly exceed during allocation spikes
 		debug.SetMemoryLimit(targetLimit)
 	}
 }
