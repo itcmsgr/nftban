@@ -28,7 +28,7 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/usr/sbin/nftban-rollback --force
+ExecStart=/usr/lib/nftban/sbin/nftban-rollback --force
 
 # Logging
 StandardOutput=journal
