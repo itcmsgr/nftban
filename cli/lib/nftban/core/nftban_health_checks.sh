@@ -1597,10 +1597,13 @@ nftban_health_check_polkit() {
     local polkit_issues=()
 
     # Check if Polkit is available on the system
+    # POLKIT IS REQUIRED - it's part of NFTBan's security architecture
+    # All production systems MUST have polkit installed for privilege separation
     if ! command -v pkaction >/dev/null 2>&1; then
-        polkit_issues+=("Polkit not installed - nftban group requires sudo for service management")
-        polkit_issues+=("nftban-auditor group will also require sudo for inventory helpers")
-        status=$HEALTH_WARNING
+        polkit_issues+=("CRITICAL: Polkit not installed - security architecture compromised!")
+        polkit_issues+=("NFTBan requires polkit for privilege separation (nftban group)")
+        polkit_issues+=("FIX: Install polkit package (apt install policykit-1 / dnf install polkit)")
+        status=$HEALTH_ERROR
     else
         # Check if NFTBAN systemd authorization rules are installed (v1.0.19+ naming)
         # Old names: 60-nftban-services.rules, 50-nftban-v030.rules (removed in v1.0.19)
