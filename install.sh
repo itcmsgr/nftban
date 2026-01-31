@@ -2171,6 +2171,13 @@ install_systemd() {
         ok "NFTBand daemon units → $systemd_dir"
     fi
 
+    # Firewall init with optional boot delay (NFTBAN_STARTUP_DELAY)
+    # Loads snapshot for fast boot, supports delay for troubleshooting
+    if [[ -f "$SCRIPT_DIR/install/systemd/nftban-firewall-init.service" ]]; then
+        cp -f "$SCRIPT_DIR/install/systemd/nftban-firewall-init.service" "$systemd_dir/"
+        ok "Firewall init service → $systemd_dir"
+    fi
+
     # Health check timer
     if [[ -f "$SCRIPT_DIR/install/systemd/nftban-health.service" ]]; then
         cp -f "$SCRIPT_DIR/install/systemd/nftban-health.service" "$systemd_dir/"

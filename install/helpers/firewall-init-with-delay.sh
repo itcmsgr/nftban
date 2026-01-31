@@ -68,17 +68,34 @@ if [[ "$DELAY" -eq 0 ]]; then
     fi
 fi
 
+# Find nftban CLI binary (verify config or auto-detect)
+# Config may have NFTBAN_BIN but path might be wrong for this distro
+if [[ -n "${NFTBAN_BIN:-}" ]] && [[ -x "$NFTBAN_BIN" ]]; then
+    : # Config-provided path exists and is executable
+elif [[ -x /usr/sbin/nftban ]]; then
+    NFTBAN_BIN="/usr/sbin/nftban"
+elif [[ -x /usr/bin/nftban ]]; then
+    NFTBAN_BIN="/usr/bin/nftban"
+else
+    echo "ERROR: nftban CLI not found in /usr/sbin or /usr/bin" >&2
+    exit 1
+fi
+
 # Initialize firewall via CLI
+# Command: "nftban init" (forwards to nftban-core for safety-first initialization)
+# Note: Pipe 'y' for non-interactive systemd context (auto-confirm whitelist)
 # If delay=0: run in background for fast boot
 # If delay>0: run synchronously so delay happens before firewall loads
 if [[ "$DELAY" -eq 0 ]]; then
     # No delay: run in background for fast boot
     echo "Initializing firewall (background, no delay)..." >&2
-    "${NFTBAN_BIN:-/usr/sbin/nftban}" firewall init &
+    echo "y" | "$NFTBAN_BIN" init &
 else
-    # With delay: run synchronously
-    echo "Initializing firewall (synchronous, delay=${DELAY}s)..." >&2
-    "${NFTBAN_BIN:-/usr/sbin/nftban}" firewall init
+    # With delay: sleep first, then initialize
+    echo "Waiting ${DELAY}s before firewall initialization (troubleshooting window)..." >&2
+    sleep "$DELAY"
+    echo "Initializing firewall now..." >&2
+    echo "y" | "$NFTBAN_BIN" init
 fi
 
 exit 0
