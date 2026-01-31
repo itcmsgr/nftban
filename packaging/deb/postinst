@@ -76,6 +76,15 @@ case "$1" in
         fi
 
         # =====================================================================
+        # STEP 0.1: Cleanup old paths from pre-1.8.13 DEB packages
+        # =====================================================================
+        # Old DEB packages incorrectly installed CLI to /usr/bin instead of /usr/sbin
+        if [[ -f "/usr/bin/nftban" ]] && [[ ! -L "/usr/bin/nftban" ]]; then
+            rm -f "/usr/bin/nftban"
+            log_info "Removed old CLI from /usr/bin/nftban (migrated to /usr/sbin)"
+        fi
+
+        # =====================================================================
         # STEP 0.5: Install yq for documentation generation
         # =====================================================================
         log_info "Installing yq (YAML processor) for documentation generation..."
