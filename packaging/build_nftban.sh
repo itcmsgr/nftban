@@ -152,6 +152,15 @@ install -D -m 0755 cli/sbin/nftban %{buildroot}/usr/sbin/nftban
 install -D -m 0755 bin/nftban-ui %{buildroot}/usr/sbin/nftban-ui
 install -D -m 0755 bin/nftban-ui-auth %{buildroot}/usr/libexec/nftban-ui-auth
 
+# Helper scripts (queue processor, rollback, alerts, etc.)
+mkdir -p %{buildroot}/usr/lib/nftban/sbin
+install -m 0755 cli/sbin/nftban-apply %{buildroot}/usr/lib/nftban/sbin/
+install -m 0755 cli/sbin/nftban-confirm %{buildroot}/usr/lib/nftban/sbin/
+install -m 0755 cli/sbin/nftban-panelctl %{buildroot}/usr/lib/nftban/sbin/
+install -m 0755 cli/sbin/nftban-queue-processor %{buildroot}/usr/lib/nftban/sbin/
+install -m 0755 cli/sbin/nftban-rollback %{buildroot}/usr/lib/nftban/sbin/
+install -m 0755 cli/sbin/nftban-service-alert %{buildroot}/usr/lib/nftban/sbin/
+
 # Version file
 install -D -m 0644 VERSION %{buildroot}/usr/lib/nftban/VERSION
 
@@ -779,6 +788,7 @@ fi
 /usr/sbin/nftban-ui
 /usr/libexec/nftban-ui-auth
 /usr/lib/nftban/bin
+/usr/lib/nftban/sbin
 /usr/lib/nftban/VERSION
 /usr/lib/nftban/cli
 /usr/lib/nftban/core
@@ -1454,6 +1464,15 @@ build_deb() {
     install -m 0755 "${PROJECT_ROOT}/cli/sbin/nftban" "${deb_root}/usr/sbin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui" "${deb_root}/usr/sbin/"
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui-auth" "${deb_root}/usr/libexec/"
+
+    # Copy helper scripts to /usr/lib/nftban/sbin/
+    mkdir -p "${deb_root}/usr/lib/nftban/sbin"
+    for script in nftban-apply nftban-confirm nftban-panelctl nftban-queue-processor \
+                  nftban-rollback nftban-service-alert; do
+        if [[ -f "${PROJECT_ROOT}/cli/sbin/${script}" ]]; then
+            install -m 0755 "${PROJECT_ROOT}/cli/sbin/${script}" "${deb_root}/usr/lib/nftban/sbin/"
+        fi
+    done
 
     # Copy VERSION file
     install -m 0644 "${PROJECT_ROOT}/VERSION" "${deb_root}/usr/lib/nftban/VERSION"
