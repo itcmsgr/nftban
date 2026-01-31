@@ -36,8 +36,8 @@
 
 set -Eeuo pipefail
 
-# Set NFTBan library directory
-readonly NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+# Set NFTBan library directory (only if not already set - avoids readonly conflict)
+[[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
 
 # Source task queue helper
 # shellcheck source=/dev/null
