@@ -49,7 +49,7 @@ set -Eeuo pipefail
 # =============================================================================
 
 readonly VERSION="1.0.24"
-readonly NFTBAN_BIN="${NFTBAN_BIN:-/usr/bin/nftban}"
+readonly NFTBAN_BIN="${NFTBAN_BIN:-/usr/sbin/nftban}"
 readonly REGISTRY_FILE="${NFTBAN_REGISTRY:-/usr/lib/nftban/commands.registry.yml}"
 readonly LOG_TAG="nftban-panelctl"
 readonly PANEL_GROUP="nftban-panel"
