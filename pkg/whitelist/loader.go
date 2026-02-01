@@ -46,11 +46,13 @@ func LoadAllWhitelists(configDir string) (map[string]bool, map[string]bool, erro
 	ipv4Set := util.NewSet[string]()
 	ipv6Set := util.NewSet[string]()
 
-	// 1. Load main whitelist.conf
+	// 1. Load main whitelist.conf (optional - whitelist.d/ is preferred)
 	mainFile := filepath.Join(configDir, "whitelist.conf")
 	if err := loadWhitelistFile(mainFile, ipv4Set, ipv6Set); err != nil {
-		// Non-fatal: file might not exist yet
-		fmt.Fprintf(os.Stderr, "Warning: Could not load %s: %v\n", mainFile, err)
+		// Non-fatal: file is optional, only log if it exists but has errors
+		if !os.IsNotExist(err) {
+			fmt.Fprintf(os.Stderr, "Warning: Could not load %s: %v\n", mainFile, err)
+		}
 	}
 
 	// 2. Load all files from whitelist.d/

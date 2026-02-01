@@ -5,6 +5,45 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.15] - 2026-02-01
+
+### Critical Memory Leak Fix & Design Gap Corrections
+
+Comprehensive audit identified and fixed critical memory leak in login monitor
+and several design gaps causing service failures on fresh installations.
+
+### Fixed
+
+- **CRITICAL: Memory leak in loginmon** - `runJournalWatcher()` did not close stdout pipe
+  on context cancellation, causing FD leak and kernel buffer accumulation. Labs showed
+  439MB RAM usage (20x normal) after extended runtime. Added `defer stdout.Close()` to
+  properly release resources (`pkg/loginmon/module.go:569`)
+- **Whitelist.conf false warning** - Go code logged WARNING for optional `whitelist.conf`
+  file that doesn't exist by design. Changed to only warn if file exists but has errors,
+  silent for `os.IsNotExist` (`pkg/whitelist/loader.go:51`)
+- **Rollback timer auto-enable** - `nftban-rollback.timer` had `WantedBy=timers.target`
+  causing it to start on boot before `backup.rules` exists. Disabled auto-enable; timer
+  is now only started by `nftban-apply` (`install/systemd/nftban-rollback.timer:39`)
+
+### Added
+
+- **Snapshot command** - Created `cmd_snapshot.sh` to implement `nftban snapshot` command.
+  Previously only existed as `nftban stats snapshot` but systemd service called
+  `nftban snapshot create`. New command wraps snapshot functionality with create/list
+  subcommands (`cli/lib/nftban/cli/cmd_snapshot.sh`)
+
+### Root Cause Analysis
+
+| Issue | Labs Affected | Root Cause |
+|-------|---------------|------------|
+| Memory leak (439MB) | lab4 | Unclosed journalctl stdout pipe |
+| OOM kill | lab2 | Same leak + low memory + Plesk |
+| Rollback loop | lab3, lab4 | Timer auto-enabled, no backup.rules |
+| Snapshot failure | ALL | Missing cmd_snapshot.sh |
+| Whitelist warning | lab1 | WARNING on optional missing file |
+
+---
+
 ## [1.8.14] - 2026-01-31
 
 ### GeoIP Database Detection Fix

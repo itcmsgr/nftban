@@ -571,6 +571,8 @@ func (m *Module) runJournalWatcher(ctx context.Context) {
 		m.status.RecordError(err)
 		return
 	}
+	// CRITICAL: Close stdout pipe on exit to prevent FD/memory leak
+	defer stdout.Close()
 
 	if err := m.journalCmd.Start(); err != nil {
 		m.status.RecordError(err)
