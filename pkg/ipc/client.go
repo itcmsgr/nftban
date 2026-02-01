@@ -230,7 +230,11 @@ func (c *Client) IsConnected() bool {
 }
 
 // Sync performs a full differential sync of whitelists/blacklists/ports
-func (c *Client) Sync() (*Response, error) {
+// If quick is true, skips feeds and geoban loading (for fast postinst sync)
+func (c *Client) Sync(quick bool) (*Response, error) {
+	if quick {
+		return c.Call("sync", map[string]any{"quick": true})
+	}
 	return c.Call("sync", nil)
 }
 

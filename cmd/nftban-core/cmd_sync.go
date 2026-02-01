@@ -23,6 +23,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"time"
 
@@ -37,7 +38,20 @@ func cmdSync(cfg *nftbanconf.Config) error {
 		return err
 	}
 
-	fmt.Println(version.BannerWithEmoji("🔄", "Differential Sync"))
+	// Check for --quick flag (skips feeds/geoban for fast postinst sync)
+	quickMode := false
+	for _, arg := range os.Args[2:] {
+		if arg == "--quick" || arg == "-q" {
+			quickMode = true
+			break
+		}
+	}
+
+	if quickMode {
+		fmt.Println(version.BannerWithEmoji("🔄", "Quick Sync (whitelist/blacklist only)"))
+	} else {
+		fmt.Println(version.BannerWithEmoji("🔄", "Differential Sync"))
+	}
 	fmt.Println(strings.Repeat("=", 70))
 	fmt.Println()
 
@@ -52,18 +66,23 @@ func cmdSync(cfg *nftbanconf.Config) error {
 	fmt.Println("  ✅ Connected to nftband daemon")
 	fmt.Println()
 
-	// Set extended timeout for sync operation
-	// Sync loads whitelists + blacklists (including geoban CIDRs) + feeds + ports
-	// Geoban alone can have 20,000+ CIDRs, feeds can have 5,000+ CIDRs
-	// CIDR merging + nftables loading can take 3-5 minutes on slower systems
-	syncTimeout := 5 * time.Minute
+	// Set timeout based on mode
+	var syncTimeout time.Duration
+	if quickMode {
+		// Quick mode: only whitelist/blacklist, should complete in <30 seconds
+		syncTimeout = 30 * time.Second
+		fmt.Printf("  ⏱️  Quick mode: timeout %v (no feeds/geoban)\n", syncTimeout)
+	} else {
+		// Full mode: includes feeds + geoban loading (can take 3-5 minutes)
+		syncTimeout = 5 * time.Minute
+		fmt.Printf("  ⏱️  Timeout set to %v for full sync\n", syncTimeout)
+	}
 	client.SetTimeout(syncTimeout)
-	fmt.Printf("  ⏱️  Timeout set to %v for full sync\n", syncTimeout)
 	fmt.Println()
 
 	// Perform sync via IPC
 	fmt.Println("Performing differential sync via daemon...")
-	resp, err := client.Sync()
+	resp, err := client.Sync(quickMode)
 	if err != nil {
 		return fmt.Errorf("sync failed: %w", err)
 	}
