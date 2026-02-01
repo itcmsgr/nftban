@@ -772,6 +772,13 @@ _update_via_deb() {
     # This MUST succeed or dpkg will fail with "unable to make backup link"
     _remove_immutable_flags
 
+    # Cleanup old/retired paths from pre-1.8.13 versions
+    # Old DEB packages incorrectly installed CLI to /usr/bin instead of /usr/sbin
+    if [[ -f "/usr/bin/nftban" ]] && [[ ! -L "/usr/bin/nftban" ]]; then
+        rm -f "/usr/bin/nftban"
+        _update_log INFO "Removed old CLI from /usr/bin/nftban (migrated to /usr/sbin)"
+    fi
+
     # Force mode: also fix broken dpkg state
     if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
         _update_log INFO "Force mode: repairing system state before install..."

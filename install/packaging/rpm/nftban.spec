@@ -463,6 +463,28 @@ if [ $1 -eq 0 ]; then
     echo "Run 'rm -rf /etc/nftban /var/lib/nftban /var/log/nftban' to purge all data"
 fi
 
+if [ $1 -ge 1 ]; then
+    # Upgrade - restart running services (DEB parity)
+    echo "Restarting NFTBan services after upgrade..."
+    systemctl try-restart nftband.service >/dev/null 2>&1 || true
+    systemctl try-restart nftban-login-monitor.service >/dev/null 2>&1 || true
+fi
+
+%posttrans
+# Post-transaction: Run after all RPM operations complete (safety check)
+# This ensures health check runs even if %post was interrupted
+
+# Re-apply immutable flag (may have been removed during upgrade)
+if [ -f %{_libdir}/nftban/lib/nft_schema.sh ]; then
+    chmod 444 %{_libdir}/nftban/lib/nft_schema.sh 2>/dev/null || true
+    chattr +i %{_libdir}/nftban/lib/nft_schema.sh 2>/dev/null || true
+fi
+
+# Run health check with auto-heal to ensure system is in good state
+if command -v nftban >/dev/null 2>&1; then
+    nftban health check --auto-heal --quiet >/dev/null 2>&1 || true
+fi
+
 %files
 # ==========================================================================
 # BINARIES & CLI

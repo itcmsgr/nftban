@@ -1,10 +1,13 @@
 #!/bin/sh
 set -e
 
-# Remove immutable flag before upgrade/remove (security protection on nft_schema.sh)
-if [ -f /usr/lib/nftban/lib/nft_schema.sh ]; then
-    chattr -i /usr/lib/nftban/lib/nft_schema.sh 2>/dev/null || true
-fi
+# Remove immutable flags before upgrade/remove (security protection)
+# These files are marked immutable to prevent tampering
+for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
+    if [ -f "$immutable_file" ]; then
+        chattr -i "$immutable_file" 2>/dev/null || true
+    fi
+done
 
 case "$1" in
     remove|deconfigure)
