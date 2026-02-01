@@ -5,6 +5,137 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.8.16] - 2026-02-01
+
+### Smart Memory Protection & Ban Management
+
+Major release introducing intelligent memory protection that automatically adapts to server
+resources, prevents OOM conditions, and provides tools to manage permanent ban lifecycle.
+
+### Added
+
+- **Dynamic CIDR limits by server tier** - CIDR limits now scale based on available RAM:
+  - Small servers (≤4GB): 75,000 CIDRs
+  - Medium servers (4-8GB): 100,000 CIDRs
+  - Large servers (>8GB): 150,000 CIDRs
+  (`pkg/safety/limits.go:GetMaxCIDRsHard()`)
+
+- **Memory pressure detection** - Four-level system monitors memory usage in real-time:
+  - Normal (<70%): All features enabled
+  - Warning (70-85%): Logged, no action
+  - High (85-95%): Geoban loading skipped
+  - Critical (>95%): Both feeds and geoban skipped
+  (`pkg/safety/limits.go:GetMemoryPressureLevel()`)
+
+- **Automatic protection under pressure** - Sync operations now check memory pressure and
+  automatically skip heavy CIDR loading (feeds/geoban) when server is under memory stress.
+  Prevents OOM kills while maintaining core firewall functionality
+  (`cmd/nftband/main.go:handleSyncRequest()`)
+
+- **Permanent ban tracking** - Track permanent bans with metadata including timestamp,
+  reason, source, and protected flag. Stored in `/var/lib/nftban/permanent_bans.json`
+  (`pkg/safety/limits.go:PermanentBan{}`, `TrackPermanentBan()`)
+
+- **Protected ban flag** - Mark important bans as protected to prevent automatic eviction.
+  Protected bans are never removed by cleanup operations regardless of age
+  (`pkg/safety/limits.go:SetBanProtected()`)
+
+- **Age-based eviction** - Unprotected permanent bans older than 30 days become eligible
+  for eviction. Helps prevent memory exhaustion from accumulated bans over time
+  (`pkg/safety/limits.go:GetEvictableBans()`)
+
+- **New CLI command: `nftban protect <ip>`** - Mark a permanent ban as protected (never
+  auto-evict). Use for critical IPs that must remain banned indefinitely
+  (`cli/lib/nftban/cli/cmd_protect.sh`)
+
+- **New CLI command: `nftban unprotect <ip>`** - Remove protection from a ban, allowing
+  it to be evicted after 30 days of age
+  (`cli/lib/nftban/cli/cmd_unprotect.sh`)
+
+- **New CLI command: `nftban cleanup`** - Manage permanent ban eviction:
+  - `--stats`: Show permanent ban statistics (total/protected/evictable)
+  - `--dry-run`: Preview what would be evicted (default, safe mode)
+  - `--execute`: Actually evict old bans (requires confirmation)
+  - `--count N`: Limit eviction to N IPs
+  (`cli/lib/nftban/cli/cmd_cleanup.sh`)
+
+- **Memory protection health check** - New health check section shows:
+  - Current memory pressure level
+  - Protection activation state
+  - Permanent ban statistics
+  - CIDR limits and current usage
+  (`cli/lib/nftban/core/nftban_health_checks.sh:nftban_health_check_memory_protection()`)
+
+- **Protection info in status** - `nftban status` now shows memory pressure level (if not
+  normal), protection activation state, and permanent ban count
+  (`cli/lib/nftban/cli/cmd_status.sh`)
+
+- **New Prometheus metrics** - Comprehensive metrics for monitoring protection state:
+  - `nftban_protection_active` - Whether protection is currently active
+  - `nftban_protection_feeds_skipped` - Feeds skipped due to memory pressure
+  - `nftban_protection_geoban_skipped` - Geoban skipped due to memory pressure
+  - `nftban_memory_pressure_level` - Current pressure level (0-3)
+  - `nftban_memory_budget_bytes` - Calculated memory budget for CIDRs
+  - `nftban_memory_used_percent` - Current memory utilization percentage
+  - `nftban_permanent_bans_total` - Total tracked permanent bans
+  - `nftban_permanent_bans_protected` - Bans marked as protected
+  - `nftban_permanent_bans_evictable` - Bans eligible for eviction (>30d, unprotected)
+  - `nftban_cidr_limit_hard` - Current CIDR limit for this server tier
+  - `nftban_cidr_current_total` - Current total CIDRs across all sets
+  (`pkg/metrics/nftban.go`)
+
+- **Smoke tests for protection commands** - New test suite validates protect/unprotect/cleanup
+  commands work correctly with proper --stats and --dry-run behavior
+  (`cli/lib/nftban/tests/smoke_test.sh:run_protection_tests()`)
+
+- **Bash completion for new commands** - Tab completion for protect, unprotect, and cleanup
+  with all their options (`install/bash-completion/nftban`)
+
+- **Help section for ban management** - New "MEMORY & BAN MANAGEMENT" section in help output
+  (`cli/lib/nftban/nftban_help.sh`)
+
+### Changed
+
+- **Sync --quick flag** - Added `--quick` flag to skip feeds and geoban loading during sync.
+  Used by postinst to avoid loading heavy data during package installation
+  (`cmd/nftband/main.go`)
+
+- **Pre-allocated CIDR slices** - CIDR loading now pre-allocates slices based on expected
+  counts, reducing memory allocations and GC pressure during large loads
+  (`cmd/nftband/main.go`)
+
+### Fixed
+
+- **Immutable flag detection** - Fixed `lsattr` output parsing to correctly detect immutable
+  flag position. Now uses position 5 instead of pattern matching, with proper error logging
+  (`cli/lib/nftban/cli/cmd_update.sh:_remove_immutable_flags()`)
+
+- **Sync field names** - Fixed geoban struct field names (IPv4 not IPv4CIDRs) causing empty
+  geoban sets after sync (`cmd/nftband/main.go`)
+
+### IPC Methods Added
+
+New daemon IPC methods for permanent ban management:
+- `protect_ban` - Mark IP as protected
+- `unprotect_ban` - Remove protection from IP
+- `get_evictable_bans` - List IPs eligible for eviction
+- `evict_old_bans` - Remove old unprotected bans from nftables
+- `permanent_ban_stats` - Get total/protected/evictable counts
+
+### Memory Protection Design
+
+The memory protection system follows a conservative approach:
+1. Server profile detected at startup (RAM size determines tier)
+2. Memory pressure checked before heavy operations
+3. Geoban skipped first (largest CIDR count, often 20K+ entries)
+4. Feeds skipped only under critical pressure
+5. All decisions logged with clear pressure level indication
+6. Metrics exposed for external monitoring
+
+This prevents OOM kills while maintaining core firewall protection.
+
+---
+
 ## [1.8.15] - 2026-02-01
 
 ### Critical Memory Leak Fix & Design Gap Corrections

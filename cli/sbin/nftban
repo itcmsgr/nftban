@@ -231,6 +231,10 @@ nftban_complete() {
         # CONFIG VALIDATION
         echo "configtest"
         echo "configaudit"
+        # MEMORY & BAN MANAGEMENT
+        echo "protect"
+        echo "unprotect"
+        echo "cleanup"
         # EMERGENCY/RECOVERY
         echo "flush"
         # SYSTEM ADMINISTRATION
@@ -575,6 +579,22 @@ nftban_complete() {
                 ;;
             configaudit)
                 echo "--json"
+                ;;
+            protect)
+                echo "--json"
+                echo "help"
+                ;;
+            unprotect)
+                echo "--json"
+                echo "help"
+                ;;
+            cleanup)
+                echo "--stats"
+                echo "--dry-run"
+                echo "--execute"
+                echo "--count"
+                echo "--json"
+                echo "help"
                 ;;
             *)
                 # No subcommands

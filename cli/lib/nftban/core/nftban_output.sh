@@ -352,6 +352,19 @@ nftban_banner_unified() {
         fi
     fi
 
+    # Memory protection indicator (shows when feeds/geoban skipped)
+    local protection_icon=""
+    local protection_file="/var/lib/nftban/state/protection.json"
+    if [[ -f "$protection_file" ]]; then
+        local feeds_skipped geoban_skipped
+        feeds_skipped=$(jq -r '.feeds_skipped // false' "$protection_file" 2>/dev/null || echo "false")
+        geoban_skipped=$(jq -r '.geoban_skipped // false' "$protection_file" 2>/dev/null || echo "false")
+        if [[ "$feeds_skipped" == "true" || "$geoban_skipped" == "true" ]]; then
+            protection_icon=" 💾"  # Memory protection active
+            health_icon="🟠"  # Override to warning
+        fi
+    fi
+
     # Get system info
     local hostname kernel uptime_str
     hostname=$(hostname -f 2>/dev/null || hostname -s 2>/dev/null || uname -n)
@@ -402,8 +415,8 @@ nftban_banner_unified() {
     # Top border (use simple ASCII for SSH compatibility)
     echo -e "${dim}+$(nftban_repeat_char $width '-')+${reset}"
 
-    # Line 1: Icon + Health + Conflicts + Version + System Status
-    local line1="${icons}  (${health_icon}${conflict_icon})  ${bold}NFTBan v${version}${reset}${dim} - System Status${reset}"
+    # Line 1: Icon + Health + Protection + Conflicts + Version + System Status
+    local line1="${icons}  (${health_icon}${protection_icon}${conflict_icon})  ${bold}NFTBan v${version}${reset}${dim} - System Status${reset}"
     printf "${dim}|${reset} %-$((width - 2))b ${dim}|${reset}\n" "$line1"
 
     # Line 2: Host, Kernel, Uptime

@@ -304,6 +304,88 @@ var (
 		Name:      "errors_total",
 		Help:      "Total errors by module and type",
 	}, []string{"module", "error_type"}) // module: loginmon, portscan, ddos, ipc, etc.
+
+	// =============================================================================
+	// Memory Protection Metrics
+	// =============================================================================
+
+	protectionActive = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "protection_active",
+		Help:      "1 if memory protection triggered, 0 otherwise",
+	})
+
+	protectionFeedsSkipped = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "protection_feeds_skipped",
+		Help:      "1 if feeds were skipped due to memory, 0 otherwise",
+	})
+
+	protectionGeobanSkipped = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "protection_geoban_skipped",
+		Help:      "1 if geoban was skipped due to memory, 0 otherwise",
+	})
+
+	// =============================================================================
+	// Memory Pressure Metrics
+	// =============================================================================
+
+	memoryPressureLevel = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "memory_pressure_level",
+		Help:      "Memory pressure level: 0=normal, 1=warning, 2=high, 3=critical",
+	})
+
+	memoryBudgetBytes = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "memory_budget_bytes",
+		Help:      "Configured memory budget for daemon in bytes",
+	})
+
+	memoryUsedPercent = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "memory_used_percent",
+		Help:      "Current memory usage as percentage of budget",
+	})
+
+	// =============================================================================
+	// Permanent Ban Tracking Metrics
+	// =============================================================================
+
+	permanentBansTotal = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "permanent_bans_total",
+		Help:      "Total permanent bans tracked",
+	})
+
+	permanentBansProtected = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "permanent_bans_protected",
+		Help:      "Bans marked as never evict",
+	})
+
+	permanentBansEvictable = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "permanent_bans_evictable",
+		Help:      "Bans eligible for cleanup (>30 days, unprotected)",
+	})
+
+	// =============================================================================
+	// CIDR Limit Metrics
+	// =============================================================================
+
+	cidrLimitHard = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "cidr_limit_hard",
+		Help:      "Maximum CIDRs allowed for this server tier",
+	})
+
+	cidrCurrentTotal = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "cidr_current_total",
+		Help:      "Current total CIDRs loaded",
+	})
 )
 
 // =============================================================================
@@ -509,6 +591,90 @@ func RecordDetectionByCountry(country, module string) {
 // RecordError records an error for a module
 func RecordError(module, errorType string) {
 	errorsTotal.WithLabelValues(module, errorType).Inc()
+}
+
+// =============================================================================
+// Memory Protection Recording Functions
+// =============================================================================
+
+// SetProtectionActive sets whether memory protection is currently triggered
+func SetProtectionActive(active bool) {
+	value := float64(0)
+	if active {
+		value = 1
+	}
+	protectionActive.Set(value)
+}
+
+// SetProtectionFeedsSkipped sets whether feeds were skipped due to memory pressure
+func SetProtectionFeedsSkipped(skipped bool) {
+	value := float64(0)
+	if skipped {
+		value = 1
+	}
+	protectionFeedsSkipped.Set(value)
+}
+
+// SetProtectionGeobanSkipped sets whether geoban was skipped due to memory pressure
+func SetProtectionGeobanSkipped(skipped bool) {
+	value := float64(0)
+	if skipped {
+		value = 1
+	}
+	protectionGeobanSkipped.Set(value)
+}
+
+// =============================================================================
+// Memory Pressure Recording Functions
+// =============================================================================
+
+// SetMemoryPressureLevel sets the current memory pressure level
+// Levels: 0=normal, 1=warning, 2=high, 3=critical
+func SetMemoryPressureLevel(level int) {
+	memoryPressureLevel.Set(float64(level))
+}
+
+// SetMemoryBudgetBytes sets the configured memory budget in bytes
+func SetMemoryBudgetBytes(bytes int64) {
+	memoryBudgetBytes.Set(float64(bytes))
+}
+
+// SetMemoryUsedPercent sets the current memory usage as a percentage of budget
+func SetMemoryUsedPercent(percent float64) {
+	memoryUsedPercent.Set(percent)
+}
+
+// =============================================================================
+// Permanent Ban Tracking Recording Functions
+// =============================================================================
+
+// SetPermanentBansTotal sets the total number of permanent bans tracked
+func SetPermanentBansTotal(count int) {
+	permanentBansTotal.Set(float64(count))
+}
+
+// SetPermanentBansProtected sets the number of bans marked as "never evict"
+func SetPermanentBansProtected(count int) {
+	permanentBansProtected.Set(float64(count))
+}
+
+// SetPermanentBansEvictable sets the number of bans eligible for cleanup
+func SetPermanentBansEvictable(count int) {
+	permanentBansEvictable.Set(float64(count))
+}
+
+// =============================================================================
+// CIDR Limit Recording Functions
+// =============================================================================
+
+// SetCIDRLimitHard sets the maximum CIDRs allowed for this server tier
+func SetCIDRLimitHard(limit int) {
+	cidrLimitHard.Set(float64(limit))
+}
+
+// SetCIDRCurrentTotal sets the current total CIDRs loaded
+func SetCIDRCurrentTotal(count int) {
+	cidrCurrentTotal.Set(float64(count))
 }
 
 // =============================================================================

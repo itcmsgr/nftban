@@ -510,6 +510,64 @@ output_terminal() {
 
     printf "  %-20s %s\n" "Overall Status......" "$health_status"
 
+    # ==========================================================================
+    # Memory Protection Status (only show if notable)
+    # ==========================================================================
+    local protection_file="/var/lib/nftban/state/protection.json"
+    local permanent_bans_file="/var/lib/nftban/state/permanent_bans.json"
+
+    # Check memory pressure level from cgroup (v2)
+    local pressure_file="/sys/fs/cgroup/system.slice/nftband.service/memory.pressure"
+    local memory_pressure=0
+    local pressure_level="normal"
+    if [[ -f "$pressure_file" ]]; then
+        memory_pressure=$(awk '/^some/ {gsub(/avg10=/, ""); printf "%.0f", $2}' "$pressure_file" 2>/dev/null || echo "0")
+        if [[ $memory_pressure -gt 80 ]]; then
+            pressure_level="critical"
+        elif [[ $memory_pressure -gt 50 ]]; then
+            pressure_level="high"
+        elif [[ $memory_pressure -gt 25 ]]; then
+            pressure_level="warning"
+        fi
+    fi
+
+    # Show memory pressure if not normal
+    if [[ "$pressure_level" != "normal" ]]; then
+        local pressure_icon="⚠️"
+        [[ "$pressure_level" == "critical" ]] && pressure_icon="🔴"
+        [[ "$pressure_level" == "high" ]] && pressure_icon="🟠"
+        printf "  %-20s %s %s (%d%%)\n" "Memory Pressure....." "$pressure_icon" "$pressure_level" "$memory_pressure"
+    fi
+
+    # Check if memory protection is active (feeds/geoban skipped)
+    if [[ -f "$protection_file" ]]; then
+        local feeds_skipped geoban_skipped
+        feeds_skipped=$(jq -r '.feeds_skipped // false' "$protection_file" 2>/dev/null || echo "false")
+        geoban_skipped=$(jq -r '.geoban_skipped // false' "$protection_file" 2>/dev/null || echo "false")
+
+        if [[ "$feeds_skipped" == "true" || "$geoban_skipped" == "true" ]]; then
+            local skipped_items=""
+            [[ "$feeds_skipped" == "true" ]] && skipped_items="feeds"
+            [[ "$geoban_skipped" == "true" ]] && skipped_items="${skipped_items:+$skipped_items+}geoban"
+            printf "  %-20s 💾 Active (%s skipped)\n" "Memory Protection..." "$skipped_items"
+        fi
+    fi
+
+    # Count permanent bans if any exist
+    if [[ -f "$permanent_bans_file" ]]; then
+        local perm_count
+        perm_count=$(jq -r '.bans | length // 0' "$permanent_bans_file" 2>/dev/null || echo "0")
+        if [[ "$perm_count" =~ ^[0-9]+$ ]] && [[ "$perm_count" -gt 0 ]]; then
+            local protected_count
+            protected_count=$(jq -r '[.bans[]] | map(select(.protected == true)) | length // 0' "$permanent_bans_file" 2>/dev/null || echo "0")
+            if [[ "$protected_count" =~ ^[0-9]+$ ]] && [[ "$protected_count" -gt 0 ]]; then
+                printf "  %-20s %d (%d protected)\n" "Permanent Bans......" "$perm_count" "$protected_count"
+            else
+                printf "  %-20s %d\n" "Permanent Bans......" "$perm_count"
+            fi
+        fi
+    fi
+
     # Quick security hardening check (systemd NoNewPrivileges)
     local security_issues=0
     local systemd_unit_paths=("/etc/systemd/system" "/usr/lib/systemd/system" "/lib/systemd/system")
@@ -879,9 +937,62 @@ output_json() {
         2) health_status="errors" ;;
     esac
 
+    # Memory protection state for JSON
+    local json_pressure_level="normal"
+    local json_pressure_pct=0
+    local json_feeds_skipped=false
+    local json_geoban_skipped=false
+    local json_perm_bans=0
+    local json_perm_protected=0
+
+    # Check memory pressure from cgroup
+    local json_pressure_file="/sys/fs/cgroup/system.slice/nftband.service/memory.pressure"
+    if [[ -f "$json_pressure_file" ]]; then
+        json_pressure_pct=$(awk '/^some/ {gsub(/avg10=/, ""); printf "%.0f", $2}' "$json_pressure_file" 2>/dev/null || echo "0")
+        if [[ $json_pressure_pct -gt 80 ]]; then
+            json_pressure_level="critical"
+        elif [[ $json_pressure_pct -gt 50 ]]; then
+            json_pressure_level="high"
+        elif [[ $json_pressure_pct -gt 25 ]]; then
+            json_pressure_level="warning"
+        fi
+    fi
+
+    # Check protection state
+    local json_protection_file="/var/lib/nftban/state/protection.json"
+    if [[ -f "$json_protection_file" ]]; then
+        local fs gs
+        fs=$(jq -r '.feeds_skipped // false' "$json_protection_file" 2>/dev/null || echo "false")
+        gs=$(jq -r '.geoban_skipped // false' "$json_protection_file" 2>/dev/null || echo "false")
+        [[ "$fs" == "true" ]] && json_feeds_skipped=true
+        [[ "$gs" == "true" ]] && json_geoban_skipped=true
+    fi
+
+    # Check permanent bans
+    local json_perm_file="/var/lib/nftban/state/permanent_bans.json"
+    if [[ -f "$json_perm_file" ]]; then
+        json_perm_bans=$(jq -r '.bans | length // 0' "$json_perm_file" 2>/dev/null || echo "0")
+        json_perm_protected=$(jq -r '[.bans[]] | map(select(.protected == true)) | length // 0' "$json_perm_file" 2>/dev/null || echo "0")
+        [[ ! "$json_perm_bans" =~ ^[0-9]+$ ]] && json_perm_bans=0
+        [[ ! "$json_perm_protected" =~ ^[0-9]+$ ]] && json_perm_protected=0
+    fi
+
     echo "  \"health\": {"
     echo "    \"status\": \"$health_status\","
-    echo "    \"exit_code\": $health_exit"
+    echo "    \"exit_code\": $health_exit,"
+    echo "    \"memory_pressure\": {"
+    echo "      \"level\": \"$json_pressure_level\","
+    echo "      \"percent\": $json_pressure_pct"
+    echo "    },"
+    echo "    \"memory_protection\": {"
+    echo "      \"active\": $( [[ "$json_feeds_skipped" == "true" || "$json_geoban_skipped" == "true" ]] && echo "true" || echo "false" ),"
+    echo "      \"feeds_skipped\": $json_feeds_skipped,"
+    echo "      \"geoban_skipped\": $json_geoban_skipped"
+    echo "    },"
+    echo "    \"permanent_bans\": {"
+    echo "      \"total\": $json_perm_bans,"
+    echo "      \"protected\": $json_perm_protected"
+    echo "    }"
     echo "  },"
 
     # System info for GUI
