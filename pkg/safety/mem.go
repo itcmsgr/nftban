@@ -239,20 +239,20 @@ func GetResourceLimits() (memBudget int64, maxWorkers int) {
 
 	memBudget = (profile.AvailRAM * budgetPercent) / 100
 
-	// Apply caps based on total RAM
-	// Small servers (<=4GB): max 384MB
-	// Medium servers (4-8GB): max 512MB
-	// Large servers (>8GB): max 1GB
+	// Apply caps based on total RAM (increased 15% from original for CIDR loading headroom)
+	// Small servers (<=4GB): max 440MB (was 384MB)
+	// Medium servers (4-8GB): max 590MB (was 512MB)
+	// Large servers (>8GB): max 1.15GB (was 1GB)
 	const GB = 1024 * 1024 * 1024
 	var maxBudget int64
 
 	switch {
 	case profile.TotalRAM <= 4*GB:
-		maxBudget = 384 * 1024 * 1024 // 384MB for small servers
+		maxBudget = 440 * 1024 * 1024 // 440MB for small servers (+15%)
 	case profile.TotalRAM <= 8*GB:
-		maxBudget = 512 * 1024 * 1024 // 512MB for medium
+		maxBudget = 590 * 1024 * 1024 // 590MB for medium (+15%)
 	default:
-		maxBudget = 1024 * 1024 * 1024 // 1GB for large
+		maxBudget = 1178 * 1024 * 1024 // 1.15GB for large (+15%)
 	}
 
 	if memBudget > maxBudget {

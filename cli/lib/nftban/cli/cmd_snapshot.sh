@@ -106,7 +106,7 @@ nftban_snapshot_create() {
         # Service status
         local services_running=0
         for svc in nftband nftban-login-monitor nftban-watchdog; do
-            systemctl is-active "$svc" &>/dev/null && ((services_running++))
+            systemctl is-active "$svc" &>/dev/null && ((++services_running)) || true
         done
         echo "  \"services_running\": $services_running"
 

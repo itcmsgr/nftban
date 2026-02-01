@@ -157,12 +157,34 @@ _remove_immutable_flags() {
         return 0
     fi
 
+    # Locate lsattr binary
+    local lsattr_bin
+    lsattr_bin=$(command -v lsattr 2>/dev/null || echo "")
+    [[ -z "$lsattr_bin" ]] && for p in /usr/bin/lsattr /bin/lsattr; do
+        [[ -x "$p" ]] && lsattr_bin="$p" && break
+    done
+
     # Critical file that is known to be immutable
     local schema="/usr/lib/nftban/lib/nft_schema.sh"
 
+    # Helper to check if file has immutable flag
+    _has_immutable() {
+        local file="$1"
+        [[ -z "$lsattr_bin" ]] && return 1
+        [[ ! -f "$file" ]] && return 1
+        # lsattr output: "----i--------e-- /path/to/file"
+        # The 'i' at position 5 indicates immutable
+        local attrs
+        attrs=$("$lsattr_bin" "$file" 2>/dev/null | awk '{print $1}') || return 1
+        [[ "${attrs:4:1}" == "i" ]]
+    }
+
     # Remove immutable flag from the critical file first (most common failure point)
-    if [[ -f "$schema" ]]; then
-        "$chattr_bin" -i "$schema" 2>/dev/null || true
+    if [[ -f "$schema" ]] && _has_immutable "$schema"; then
+        local err
+        if ! err=$("$chattr_bin" -i "$schema" 2>&1); then
+            _update_log WARN "chattr -i failed on $schema: $err"
+        fi
     fi
 
     local dirs_to_check=(
@@ -174,8 +196,16 @@ _remove_immutable_flags() {
     for path in "${dirs_to_check[@]}"; do
         if [[ -e "$path" ]]; then
             if [[ -d "$path" ]]; then
-                # Brute-force recursive removal (most reliable approach)
-                "$chattr_bin" -i -R "$path" 2>/dev/null || true
+                # Use find to locate immutable files and remove flag individually
+                # This is more reliable than -R which can fail silently
+                if [[ -n "$lsattr_bin" ]]; then
+                    while IFS= read -r -d '' file; do
+                        "$chattr_bin" -i "$file" 2>/dev/null || true
+                    done < <(find "$path" -type f -print0 2>/dev/null)
+                else
+                    # Fallback: brute-force recursive removal
+                    "$chattr_bin" -i -R "$path" 2>/dev/null || true
+                fi
             else
                 "$chattr_bin" -i "$path" 2>/dev/null || true
             fi
@@ -184,23 +214,22 @@ _remove_immutable_flags() {
 
     # Verify the critical file is no longer immutable
     if [[ -f "$schema" ]]; then
-        local lsattr_bin
-        lsattr_bin=$(command -v lsattr 2>/dev/null || echo "")
-        [[ -z "$lsattr_bin" ]] && for p in /usr/bin/lsattr /bin/lsattr; do
-            [[ -x "$p" ]] && lsattr_bin="$p" && break
-        done
+        if _has_immutable "$schema"; then
+            _update_log WARN "Immutable flag on nft_schema.sh persists, retrying with verbose..."
+            # Final attempt - show actual error
+            local err
+            err=$("$chattr_bin" -i "$schema" 2>&1) || true
+            [[ -n "$err" ]] && _update_log WARN "chattr output: $err"
 
-        if [[ -n "$lsattr_bin" ]]; then
-            # Check only attribute flags (first column), not filename which contains 'i' in path
-            if "$lsattr_bin" "$schema" 2>/dev/null | awk '{print $1}' | grep -q 'i'; then
-                _update_log WARN "Immutable flag on nft_schema.sh persists, retrying..."
-                # Final attempt with explicit path
-                "$chattr_bin" -i "$schema" 2>&1 || true
-                if "$lsattr_bin" "$schema" 2>/dev/null | awk '{print $1}' | grep -q 'i'; then
-                    _update_log ERROR "Cannot remove immutable flag from $schema"
-                    _update_log ERROR "Run manually: chattr -i $schema"
-                    return 1
-                fi
+            if _has_immutable "$schema"; then
+                _update_log ERROR "Cannot remove immutable flag from $schema"
+                _update_log ERROR "Possible causes:"
+                _update_log ERROR "  - Filesystem doesn't support extended attributes"
+                _update_log ERROR "  - File is on a read-only mount"
+                _update_log ERROR "  - SELinux/AppArmor policy blocking"
+                _update_log ERROR "Run manually: chattr -i $schema"
+                # Don't fail - let dpkg try anyway, it might work
+                return 0
             fi
         fi
         _update_log OK "Immutable flags cleared"

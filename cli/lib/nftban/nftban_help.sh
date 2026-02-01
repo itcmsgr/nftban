@@ -133,6 +133,14 @@ EOF
 EOF
   echo
 
+  printf "%sMEMORY & BAN MANAGEMENT:%s\n" "$bold" "$reset"
+  cat <<'EOF'
+  protect          Mark permanent ban as protected (never auto-evict)
+  unprotect        Remove protection from a ban (allow auto-eviction)
+  cleanup          Evict old unprotected bans (--stats, --dry-run, --execute)
+EOF
+  echo
+
   printf "%sEMERGENCY & RECOVERY:%s\n" "$bold" "$reset"
   cat <<'EOF'
   flush            Flush IPs from nftables (blacklist, feeds, geoban, all)

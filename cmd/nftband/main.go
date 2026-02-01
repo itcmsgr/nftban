@@ -523,6 +523,34 @@ func (d *Daemon) Run() error {
 
 	log.Printf("nftband ready - HTTP %s, Socket %s", HTTPAddr, getSocketPath())
 
+	// Schedule auto-sync after startup
+	// This ensures feeds and geoban are loaded even after quick postinst sync
+	go func() {
+		// Wait for system to stabilize after package install
+		time.Sleep(60 * time.Second)
+
+		// Check if context is still valid (daemon not shutting down)
+		select {
+		case <-d.ctx.Done():
+			return
+		default:
+		}
+
+		log.Println("[AUTO-SYNC] Running scheduled full sync (feeds + geoban)...")
+		resp := d.handleSyncRequest(map[string]any{"quick": false})
+		if resp.Success {
+			if data, ok := resp.Data.(map[string]any); ok {
+				feedsV4 := data["feeds_ipv4_loaded"]
+				feedsV6 := data["feeds_ipv6_loaded"]
+				geoV4 := data["geoban_ipv4_loaded"]
+				geoV6 := data["geoban_ipv6_loaded"]
+				log.Printf("[AUTO-SYNC] Complete - feeds: %v/%v, geoban: %v/%v", feedsV4, feedsV6, geoV4, geoV6)
+			}
+		} else {
+			log.Printf("[AUTO-SYNC] Warning: %s", resp.Error)
+		}
+	}()
+
 	// Wait for shutdown signal
 	d.waitForShutdown()
 
@@ -825,6 +853,16 @@ func (d *Daemon) handleSocketRequest(req SocketRequest) SocketResponse {
 		return d.handleWatchdogPressureRequest()
 	case "watchdog_events":
 		return d.handleWatchdogEventsRequest(req.Params)
+	case "protect_ban":
+		return d.handleProtectBanRequest(req.Params)
+	case "unprotect_ban":
+		return d.handleUnprotectBanRequest(req.Params)
+	case "get_evictable_bans":
+		return d.handleGetEvictableBansRequest(req.Params)
+	case "evict_old_bans":
+		return d.handleEvictOldBansRequest(req.Params)
+	case "permanent_ban_stats":
+		return d.handlePermanentBanStatsRequest()
 	default:
 		return SocketResponse{
 			Success: false,
@@ -969,6 +1007,166 @@ func (d *Daemon) handleWatchdogEventsRequest(params map[string]any) SocketRespon
 	}
 }
 
+// =============================================================================
+// PERMANENT BAN MANAGEMENT IPC HANDLERS
+// =============================================================================
+
+// handleProtectBanRequest marks a permanent ban as protected (cannot be evicted)
+func (d *Daemon) handleProtectBanRequest(params map[string]any) SocketResponse {
+	ip, ok := params["ip"].(string)
+	if !ok || ip == "" {
+		return SocketResponse{Success: false, Error: "missing ip parameter"}
+	}
+
+	if err := safety.SetBanProtected(ip, true); err != nil {
+		return SocketResponse{
+			Success: false,
+			Error:   err.Error(),
+		}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"ip":        ip,
+			"protected": true,
+		},
+	}
+}
+
+// handleUnprotectBanRequest marks a permanent ban as unprotected (can be evicted)
+func (d *Daemon) handleUnprotectBanRequest(params map[string]any) SocketResponse {
+	ip, ok := params["ip"].(string)
+	if !ok || ip == "" {
+		return SocketResponse{Success: false, Error: "missing ip parameter"}
+	}
+
+	if err := safety.SetBanProtected(ip, false); err != nil {
+		return SocketResponse{
+			Success: false,
+			Error:   err.Error(),
+		}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"ip":        ip,
+			"protected": false,
+		},
+	}
+}
+
+// handleGetEvictableBansRequest returns IPs that can be evicted (old, unprotected)
+func (d *Daemon) handleGetEvictableBansRequest(params map[string]any) SocketResponse {
+	count := 100 // default
+	if c, ok := params["count"].(float64); ok && c > 0 {
+		count = int(c)
+	}
+
+	ips, err := safety.GetEvictableBans(count)
+	if err != nil {
+		return SocketResponse{
+			Success: false,
+			Error:   err.Error(),
+		}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"count": len(ips),
+			"ips":   ips,
+		},
+	}
+}
+
+// handleEvictOldBansRequest evicts old unprotected bans
+func (d *Daemon) handleEvictOldBansRequest(params map[string]any) SocketResponse {
+	count := 100 // default
+	if c, ok := params["count"].(float64); ok && c > 0 {
+		count = int(c)
+	}
+
+	// Get evictable bans
+	ips, err := safety.GetEvictableBans(count)
+	if err != nil {
+		return SocketResponse{
+			Success: false,
+			Error:   "failed to get evictable bans: " + err.Error(),
+		}
+	}
+
+	if len(ips) == 0 {
+		return SocketResponse{
+			Success: true,
+			Data: map[string]any{
+				"evicted": 0,
+				"message": "no evictable bans found",
+			},
+		}
+	}
+
+	// Unban each evictable IP
+	evicted := 0
+	var errors []string
+	for _, ip := range ips {
+		// Unban via backend
+		_, err := d.backend.Unban(d.ctx, nftbackend.UnbanRequest{IP: ip})
+		if err != nil {
+			errors = append(errors, fmt.Sprintf("%s: %v", ip, err))
+			continue
+		}
+
+		// Remove from permanent ban tracking
+		if err := safety.RemovePermanentBan(ip); err != nil {
+			log.Printf("[EVICT] Warning: failed to remove %s from tracking: %v", ip, err)
+		}
+
+		// Record metrics
+		family := "ipv4"
+		if strings.Contains(ip, ":") {
+			family = "ipv6"
+		}
+		metrics.RecordUnban("eviction", family)
+		d.stats.RecordUnban()
+		evicted++
+	}
+
+	data := map[string]any{
+		"evicted":   evicted,
+		"requested": len(ips),
+	}
+	if len(errors) > 0 {
+		data["errors"] = errors
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data:    data,
+	}
+}
+
+// handlePermanentBanStatsRequest returns statistics about permanent bans
+func (d *Daemon) handlePermanentBanStatsRequest() SocketResponse {
+	total, protected, evictable, err := safety.GetPermanentBanStats()
+	if err != nil {
+		return SocketResponse{
+			Success: false,
+			Error:   err.Error(),
+		}
+	}
+
+	return SocketResponse{
+		Success: true,
+		Data: map[string]any{
+			"total":     total,
+			"protected": protected,
+			"evictable": evictable,
+		},
+	}
+}
+
 // handleStatusRequest returns daemon status
 func (d *Daemon) handleStatusRequest() SocketResponse {
 	stats := d.bus.Stats()
@@ -1023,6 +1221,16 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 		source = s
 	}
 
+	// Parse permanent ban parameters
+	permanent := false
+	if p, ok := params["permanent"].(bool); ok {
+		permanent = p
+	}
+	protected := false
+	if p, ok := params["protected"].(bool); ok {
+		protected = p
+	}
+
 	// Perform the ban via AUTHORITATIVE backend
 	result, err := d.backend.Ban(d.ctx, nftbackend.BanRequest{
 		IP:      ip,
@@ -1064,6 +1272,13 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 	country := lookupCountry(ip)
 	_ = banlog.LogBanWithReason(ip, banSource, country, reason)
 
+	// Track permanent ban if requested (timeout=0 and permanent flag set)
+	if permanent && timeout == 0 {
+		if err := safety.TrackPermanentBan(ip, reason, source, protected); err != nil {
+			log.Printf("[BAN] Warning: failed to track permanent ban for %s: %v", ip, err)
+		}
+	}
+
 	// NOTE: Do NOT publish EventBan here - the IPC handler already executed the ban
 	// and logged it. The EventBan subscriber is for module-initiated bans only.
 	// Publishing EventBan here would cause:
@@ -1073,10 +1288,12 @@ func (d *Daemon) handleBanRequest(params map[string]any) SocketResponse {
 	return SocketResponse{
 		Success: true,
 		Data: map[string]any{
-			"ip":      ip,
-			"set":     result.Set,
-			"status":  "banned",
-			"message": result.Message,
+			"ip":        ip,
+			"set":       result.Set,
+			"status":    "banned",
+			"message":   result.Message,
+			"permanent": permanent && timeout == 0,
+			"protected": protected,
 		},
 	}
 }
@@ -1570,7 +1787,15 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	// Skip in quick mode (postinst sync) to avoid 3-5 minute delay
 	// ==========================================================================
 	var feedsIPv4Loaded, feedsIPv6Loaded int
+	var feedsSkipped, geobanSkipped bool
+	var feedsCIDRCount, geobanCIDRCount int
+	var feedsMemNeeded, geobanMemNeeded int64
 	if !quickMode {
+		// Check memory pressure before loading feeds
+		if safety.ShouldSkipFeeds() {
+			log.Printf("[SYNC] Memory pressure %s: skipping feeds", safety.GetMemoryPressureLevel())
+			feedsSkipped = true
+		} else {
 		_, _, dataDir, _ := getDaemonPaths()
 		feedsDir := dataDir + "/feeds"
 
@@ -1596,27 +1821,54 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 				ipv6CIDRs = append(ipv6CIDRs, cidr)
 			}
 
-			// Load IPv4 feeds into blacklist (use interval set for CIDR merging)
+			// Memory safety check before loading feeds into nftables
+			// CIDR merging can use 3x memory temporarily
+			const bytesPerCIDR = 300 // conservative estimate
+			totalFeedCIDRs := len(ipv4CIDRs) + len(ipv6CIDRs)
+			estimatedFeedBytes := int64(totalFeedCIDRs) * bytesPerCIDR
+			if !safety.CanAllocate(estimatedFeedBytes) {
+				log.Printf("[SYNC] Warning: Skipping feeds - insufficient memory for %d CIDRs (need ~%s)",
+					totalFeedCIDRs, safety.FormatBytes(estimatedFeedBytes))
+				// Track protection trigger for visibility
+				feedsSkipped = true
+				feedsCIDRCount = totalFeedCIDRs
+				feedsMemNeeded = estimatedFeedBytes
+				// Skip feeds but continue with sync - don't fail entirely
+			} else {
+			// Load IPv4 feeds into DEDICATED feeds_ipv4 set (not blacklist)
+			// This prevents geoban from flushing feeds when it loads
 			if len(ipv4CIDRs) > 0 {
-				feedSetV4, err := nft.GetOrCreateIntervalSet(tableIPv4, "blacklist_ipv4", true)
-				if err == nil {
-					if stats, err := nft.AddCIDRElementsWithStats(feedSetV4, ipv4CIDRs); err == nil && stats != nil {
+				feedSetV4, err := nft.GetOrCreateIntervalSet(tableIPv4, "feeds_ipv4", true)
+				if err != nil {
+					log.Printf("[SYNC] Warning: Failed to create feeds_ipv4 set: %v", err)
+				} else {
+					if stats, err := nft.AddCIDRElementsWithStats(feedSetV4, ipv4CIDRs); err != nil {
+						log.Printf("[SYNC] Warning: Failed to load feeds IPv4: %v", err)
+					} else if stats != nil {
 						feedsIPv4Loaded = stats.OutputRanges
+						log.Printf("[SYNC] Feeds IPv4: loaded %d ranges (from %d input CIDRs)", stats.OutputRanges, stats.InputCIDRs)
 					}
 				}
 			}
 
-			// Load IPv6 feeds into blacklist
+			// Load IPv6 feeds into DEDICATED feeds_ipv6 set
 			if len(ipv6CIDRs) > 0 {
-				feedSetV6, err := nft.GetOrCreateIntervalSet(tableIPv6, "blacklist_ipv6", false)
-				if err == nil {
-					if stats, err := nft.AddCIDRElementsWithStats(feedSetV6, ipv6CIDRs); err == nil && stats != nil {
+				feedSetV6, err := nft.GetOrCreateIntervalSet(tableIPv6, "feeds_ipv6", false)
+				if err != nil {
+					log.Printf("[SYNC] Warning: Failed to create feeds_ipv6 set: %v", err)
+				} else {
+					if stats, err := nft.AddCIDRElementsWithStats(feedSetV6, ipv6CIDRs); err != nil {
+						log.Printf("[SYNC] Warning: Failed to load feeds IPv6: %v", err)
+					} else if stats != nil {
 						feedsIPv6Loaded = stats.OutputRanges
+						log.Printf("[SYNC] Feeds IPv6: loaded %d ranges (from %d input CIDRs)", stats.OutputRanges, stats.InputCIDRs)
 					}
 				}
 			}
+			} // end else CanAllocate
 		}
 		}
+		} // end else ShouldSkipFeeds
 	} // end if !quickMode (feeds)
 
 	// ==========================================================================
@@ -1625,6 +1877,11 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	// ==========================================================================
 	var geobanIPv4Loaded, geobanIPv6Loaded int
 	if !quickMode {
+		// Check memory pressure before loading geoban
+		if safety.ShouldSkipGeoban() {
+			log.Printf("[SYNC] Memory pressure %s: skipping geoban", safety.GetMemoryPressureLevel())
+			geobanSkipped = true
+		} else {
 		geobanDir := configDir + "/geoban.d"
 
 		// Check if geoban directory exists and has ban files (50-ban-*.conf)
@@ -1641,48 +1898,106 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 			// Load all geoban countries
 			geobanData, geoErr := geoban.Build(geobanDir, nil) // nil = load all
 			if geoErr == nil && geobanData != nil {
-				// Load IPv4 geoban CIDRs (field is IPv4, not IPv4CIDRs)
+				// Memory safety check before loading geoban into nftables
+				// Geoban can have 20K+ CIDRs per country (CN, RU, etc.)
+				const bytesPerCIDR = 300 // conservative estimate
+				totalGeoCIDRs := len(geobanData.IPv4) + len(geobanData.IPv6)
+				estimatedGeoBytes := int64(totalGeoCIDRs) * bytesPerCIDR
+				if !safety.CanAllocate(estimatedGeoBytes) {
+					log.Printf("[SYNC] Warning: Skipping geoban - insufficient memory for %d CIDRs (need ~%s)",
+						totalGeoCIDRs, safety.FormatBytes(estimatedGeoBytes))
+					// Track protection trigger for visibility
+					geobanSkipped = true
+					geobanCIDRCount = totalGeoCIDRs
+					geobanMemNeeded = estimatedGeoBytes
+					// Skip geoban but continue with sync - don't fail entirely
+				} else {
+				// Load IPv4 geoban CIDRs into DEDICATED geoban_ipv4 set (not blacklist)
+				// This prevents conflicts with feeds and dynamic bans
 				if len(geobanData.IPv4) > 0 {
-					geoSetV4, err := nft.GetOrCreateIntervalSet(tableIPv4, "blacklist_ipv4", true)
-					if err == nil {
-						if stats, err := nft.AddCIDRElementsWithStats(geoSetV4, geobanData.IPv4); err == nil && stats != nil {
+					geoSetV4, err := nft.GetOrCreateIntervalSet(tableIPv4, "geoban_ipv4", true)
+					if err != nil {
+						log.Printf("[SYNC] Warning: Failed to create geoban_ipv4 set: %v", err)
+					} else {
+						if stats, err := nft.AddCIDRElementsWithStats(geoSetV4, geobanData.IPv4); err != nil {
+							log.Printf("[SYNC] Warning: Failed to load geoban IPv4: %v", err)
+						} else if stats != nil {
 							geobanIPv4Loaded = stats.OutputRanges
+							log.Printf("[SYNC] Geoban IPv4: loaded %d ranges (from %d input CIDRs)", stats.OutputRanges, stats.InputCIDRs)
 						}
 					}
 				}
 
-				// Load IPv6 geoban CIDRs (field is IPv6, not IPv6CIDRs)
+				// Load IPv6 geoban CIDRs into DEDICATED geoban_ipv6 set
 				if len(geobanData.IPv6) > 0 {
-					geoSetV6, err := nft.GetOrCreateIntervalSet(tableIPv6, "blacklist_ipv6", false)
-					if err == nil {
-						if stats, err := nft.AddCIDRElementsWithStats(geoSetV6, geobanData.IPv6); err == nil && stats != nil {
+					geoSetV6, err := nft.GetOrCreateIntervalSet(tableIPv6, "geoban_ipv6", false)
+					if err != nil {
+						log.Printf("[SYNC] Warning: Failed to create geoban_ipv6 set: %v", err)
+					} else {
+						if stats, err := nft.AddCIDRElementsWithStats(geoSetV6, geobanData.IPv6); err != nil {
+							log.Printf("[SYNC] Warning: Failed to load geoban IPv6: %v", err)
+						} else if stats != nil {
 							geobanIPv6Loaded = stats.OutputRanges
+							log.Printf("[SYNC] Geoban IPv6: loaded %d ranges (from %d input CIDRs)", stats.OutputRanges, stats.InputCIDRs)
 						}
 					}
 				}
+				} // end else CanAllocate
 			}
 		}
 		}
+		} // end else ShouldSkipGeoban
 	} // end if !quickMode (geoban)
+
+	// ==========================================================================
+	// PROTECTION STATE TRACKING
+	// Record if feeds/geoban were skipped for visibility in health/CLI
+	// ==========================================================================
+	if feedsSkipped || geobanSkipped {
+		if err := safety.RecordProtectionTriggered(feedsSkipped, geobanSkipped,
+			feedsCIDRCount, geobanCIDRCount, feedsMemNeeded, geobanMemNeeded); err != nil {
+			log.Printf("[SYNC] Warning: Failed to record protection state: %v", err)
+		}
+	} else if !quickMode {
+		// Clear protection state if sync completed fully
+		_ = safety.ClearProtectionState()
+	}
+
+	// Build response with protection status
+	respData := map[string]any{
+		"whitelist_ipv4_added":   result.WhitelistIPv4.IPsAdded,
+		"whitelist_ipv4_removed": result.WhitelistIPv4.IPsRemoved,
+		"whitelist_ipv6_added":   result.WhitelistIPv6.IPsAdded,
+		"whitelist_ipv6_removed": result.WhitelistIPv6.IPsRemoved,
+		"blacklist_ipv4_added":   result.BlacklistIPv4.IPsAdded,
+		"blacklist_ipv4_removed": result.BlacklistIPv4.IPsRemoved,
+		"blacklist_ipv6_added":   result.BlacklistIPv6.IPsAdded,
+		"blacklist_ipv6_removed": result.BlacklistIPv6.IPsRemoved,
+		"feeds_ipv4_loaded":      feedsIPv4Loaded,
+		"feeds_ipv6_loaded":      feedsIPv6Loaded,
+		"geoban_ipv4_loaded":     geobanIPv4Loaded,
+		"geoban_ipv6_loaded":     geobanIPv6Loaded,
+		"tcp_ports":              len(allPorts.TCPPorts),
+		"udp_ports":              len(allPorts.UDPPorts),
+		"pressure_level":         safety.GetMemoryPressureLevel().String(),
+	}
+
+	// Add protection status to response for CLI visibility
+	if feedsSkipped || geobanSkipped {
+		respData["protection_active"] = true
+		respData["feeds_skipped"] = feedsSkipped
+		respData["geoban_skipped"] = geobanSkipped
+		if feedsSkipped {
+			respData["feeds_skipped_count"] = feedsCIDRCount
+		}
+		if geobanSkipped {
+			respData["geoban_skipped_count"] = geobanCIDRCount
+		}
+	}
 
 	return SocketResponse{
 		Success: result.Success,
-		Data: map[string]any{
-			"whitelist_ipv4_added":   result.WhitelistIPv4.IPsAdded,
-			"whitelist_ipv4_removed": result.WhitelistIPv4.IPsRemoved,
-			"whitelist_ipv6_added":   result.WhitelistIPv6.IPsAdded,
-			"whitelist_ipv6_removed": result.WhitelistIPv6.IPsRemoved,
-			"blacklist_ipv4_added":   result.BlacklistIPv4.IPsAdded,
-			"blacklist_ipv4_removed": result.BlacklistIPv4.IPsRemoved,
-			"blacklist_ipv6_added":   result.BlacklistIPv6.IPsAdded,
-			"blacklist_ipv6_removed": result.BlacklistIPv6.IPsRemoved,
-			"feeds_ipv4_loaded":      feedsIPv4Loaded,
-			"feeds_ipv6_loaded":      feedsIPv6Loaded,
-			"geoban_ipv4_loaded":     geobanIPv4Loaded,
-			"geoban_ipv6_loaded":     geobanIPv6Loaded,
-			"tcp_ports":              len(allPorts.TCPPorts),
-			"udp_ports":              len(allPorts.UDPPorts),
-		},
+		Data:    respData,
 	}
 }
 

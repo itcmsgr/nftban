@@ -1102,6 +1102,217 @@ nftban_health_check_resources() {
 }
 
 # =============================================================================
+# MEMORY PROTECTION STATUS CHECK
+# =============================================================================
+
+nftban_health_check_protection() {
+    # Check if memory protection has been triggered (feeds/geoban skipped)
+    # Returns: 0=OK (no protection), 1=Warning (protection active)
+
+    local status=$HEALTH_OK
+    local protection_issues=()
+    local protection_file="/var/lib/nftban/state/protection.json"
+
+    if [[ -f "$protection_file" ]]; then
+        # Protection is active - feeds or geoban were skipped
+        local feeds_skipped geoban_skipped reason timestamp
+        feeds_skipped=$(jq -r '.feeds_skipped // false' "$protection_file" 2>/dev/null)
+        geoban_skipped=$(jq -r '.geoban_skipped // false' "$protection_file" 2>/dev/null)
+        reason=$(jq -r '.reason // "Unknown"' "$protection_file" 2>/dev/null)
+        timestamp=$(jq -r '.timestamp // "Unknown"' "$protection_file" 2>/dev/null)
+
+        if [[ "$feeds_skipped" == "true" || "$geoban_skipped" == "true" ]]; then
+            status=$HEALTH_WARNING
+
+            if [[ "$feeds_skipped" == "true" && "$geoban_skipped" == "true" ]]; then
+                protection_issues+=("⚠️ Memory protection ACTIVE: Feeds+Geoban skipped")
+            elif [[ "$feeds_skipped" == "true" ]]; then
+                protection_issues+=("⚠️ Memory protection ACTIVE: Feeds skipped")
+            else
+                protection_issues+=("⚠️ Memory protection ACTIVE: Geoban skipped")
+            fi
+
+            protection_issues+=("   └─ Reason: $reason")
+            protection_issues+=("   └─ Since: $timestamp")
+            protection_issues+=("   └─ Action: Add more RAM or reduce enabled feeds/geoban countries")
+        fi
+    else
+        protection_issues+=("✓ Memory protection: Not triggered")
+    fi
+
+    NFTBAN_HEALTH_ISSUES["protection"]=$(IFS=$'\n'; echo "${protection_issues[*]}")
+    NFTBAN_HEALTH_RESULTS["protection"]=$status
+    return "$status"
+}
+
+# =============================================================================
+# MEMORY PROTECTION SYSTEM CHECK
+# =============================================================================
+
+nftban_health_check_memory_protection() {
+    # Comprehensive check of the memory protection system
+    # Reads: protection.json, permanent_bans.json, daemon IPC for memory pressure
+    # Returns: 0=OK, 1=Warning, 2=Error
+
+    local status=$HEALTH_OK
+    local mp_issues=()
+
+    local protection_file="/var/lib/nftban/state/protection.json"
+    local permanent_bans_file="/var/lib/nftban/state/permanent_bans.json"
+    local socket_path="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock"
+
+    # =========================================================================
+    # 1. Memory Pressure Level (from daemon via IPC)
+    # =========================================================================
+    local pressure_level="unknown"
+
+    if [[ -S "$socket_path" ]] && command -v socat >/dev/null 2>&1; then
+        local response
+        response=$(echo '{"method":"stats","params":{}}' | timeout 5 socat - "UNIX-CONNECT:$socket_path" 2>/dev/null) || response=""
+
+        if [[ -n "$response" ]] && command -v jq >/dev/null 2>&1; then
+            local success
+            success=$(echo "$response" | jq -r '.success // false' 2>/dev/null)
+            if [[ "$success" == "true" ]]; then
+                pressure_level=$(echo "$response" | jq -r '.data.pressure_level // "unknown"' 2>/dev/null)
+            fi
+        fi
+    fi
+
+    case "$pressure_level" in
+        normal)
+            mp_issues+=("Memory Pressure: NORMAL")
+            ;;
+        warning)
+            mp_issues+=("Memory Pressure: WARNING (70-85% of budget)")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            ;;
+        high)
+            mp_issues+=("Memory Pressure: HIGH (85-95% of budget, geoban may be skipped)")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            ;;
+        critical)
+            mp_issues+=("Memory Pressure: CRITICAL (>95% of budget, feeds+geoban skipped)")
+            [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR
+            ;;
+        *)
+            mp_issues+=("Memory Pressure: Unable to determine (daemon not responding?)")
+            ;;
+    esac
+
+    # =========================================================================
+    # 2. Protection State (from protection.json)
+    # =========================================================================
+    if [[ -f "$protection_file" ]]; then
+        local feeds_skipped geoban_skipped reason timestamp
+
+        if command -v jq >/dev/null 2>&1; then
+            feeds_skipped=$(jq -r '.feeds_skipped // false' "$protection_file" 2>/dev/null)
+            geoban_skipped=$(jq -r '.geoban_skipped // false' "$protection_file" 2>/dev/null)
+            reason=$(jq -r '.reason // "Unknown"' "$protection_file" 2>/dev/null)
+            timestamp=$(jq -r '.timestamp // "Unknown"' "$protection_file" 2>/dev/null)
+        else
+            feeds_skipped="unknown"
+            geoban_skipped="unknown"
+            reason="unknown"
+            timestamp="unknown"
+        fi
+
+        if [[ "$feeds_skipped" == "true" && "$geoban_skipped" == "true" ]]; then
+            mp_issues+=("Protection State: ACTIVE (feeds+geoban skipped)")
+            mp_issues+=("   Reason: $reason")
+            mp_issues+=("   Since: $timestamp")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        elif [[ "$feeds_skipped" == "true" ]]; then
+            mp_issues+=("Protection State: ACTIVE (feeds skipped)")
+            mp_issues+=("   Reason: $reason")
+            mp_issues+=("   Since: $timestamp")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        elif [[ "$geoban_skipped" == "true" ]]; then
+            mp_issues+=("Protection State: ACTIVE (geoban skipped)")
+            mp_issues+=("   Reason: $reason")
+            mp_issues+=("   Since: $timestamp")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        else
+            mp_issues+=("Protection State: Not triggered")
+        fi
+    else
+        mp_issues+=("Protection State: Not triggered (no protection.json)")
+    fi
+
+    # =========================================================================
+    # 3. Permanent Ban Stats (from permanent_bans.json or daemon IPC)
+    # =========================================================================
+    local total_bans=0 protected_bans=0 evictable_bans=0
+
+    # Try IPC first (more accurate, includes runtime state)
+    if [[ -S "$socket_path" ]] && command -v socat >/dev/null 2>&1; then
+        local ban_response
+        ban_response=$(echo '{"method":"permanent_ban_stats","params":{}}' | timeout 5 socat - "UNIX-CONNECT:$socket_path" 2>/dev/null) || ban_response=""
+
+        if [[ -n "$ban_response" ]] && command -v jq >/dev/null 2>&1; then
+            local ban_success
+            ban_success=$(echo "$ban_response" | jq -r '.success // false' 2>/dev/null)
+            if [[ "$ban_success" == "true" ]]; then
+                total_bans=$(echo "$ban_response" | jq -r '.data.total // 0' 2>/dev/null)
+                protected_bans=$(echo "$ban_response" | jq -r '.data.protected // 0' 2>/dev/null)
+                evictable_bans=$(echo "$ban_response" | jq -r '.data.evictable // 0' 2>/dev/null)
+            fi
+        fi
+    fi
+
+    # Fall back to reading the file directly if IPC failed
+    if [[ $total_bans -eq 0 ]] && [[ -f "$permanent_bans_file" ]]; then
+        if command -v jq >/dev/null 2>&1; then
+            total_bans=$(jq -r '.bans | length // 0' "$permanent_bans_file" 2>/dev/null)
+            protected_bans=$(jq -r '[.bans[] | select(.protected == true)] | length // 0' "$permanent_bans_file" 2>/dev/null)
+            # Evictable = not protected and older than 30 days
+            local now_ts thirty_days_ago
+            now_ts=$(date +%s)
+            thirty_days_ago=$((now_ts - 30*24*60*60))
+            evictable_bans=$(jq -r --argjson cutoff "$thirty_days_ago" \
+                '[.bans[] | select(.protected != true) | select((.added_at | fromdateiso8601 // 0) < $cutoff)] | length // 0' \
+                "$permanent_bans_file" 2>/dev/null) || evictable_bans=0
+        fi
+    fi
+
+    mp_issues+=("Permanent Bans: Total=$total_bans, Protected=$protected_bans, Evictable=$evictable_bans")
+
+    # =========================================================================
+    # 4. CIDR Limit for Server Tier
+    # =========================================================================
+    local total_ram_kb cidr_limit tier_name
+    total_ram_kb=$(awk '/^MemTotal:/ {print $2}' /proc/meminfo 2>/dev/null || echo "0")
+    local total_ram_gb=$(( total_ram_kb / 1024 / 1024 ))
+
+    if [[ $total_ram_gb -le 4 ]]; then
+        cidr_limit=75000
+        tier_name="small (<=4GB RAM)"
+    elif [[ $total_ram_gb -le 8 ]]; then
+        cidr_limit=100000
+        tier_name="medium (4-8GB RAM)"
+    else
+        cidr_limit=150000
+        tier_name="large (>8GB RAM)"
+    fi
+
+    mp_issues+=("CIDR Limit: $cidr_limit (tier: $tier_name)")
+
+    # =========================================================================
+    # Store results
+    # =========================================================================
+    if [[ $status -eq $HEALTH_ERROR ]]; then
+        NFTBAN_HEALTH_ERRORS+=("Memory Protection: Critical pressure or protection issues")
+    elif [[ $status -eq $HEALTH_WARNING ]]; then
+        NFTBAN_HEALTH_WARNINGS+=("Memory Protection: Elevated pressure or protection active")
+    fi
+
+    NFTBAN_HEALTH_ISSUES["memory_protection"]=$(IFS=$'\n'; echo "${mp_issues[*]}")
+    NFTBAN_HEALTH_RESULTS["memory_protection"]=$status
+    return "$status"
+}
+
+# =============================================================================
 # v0.31 INVENTORY HELPERS CHECKS
 # =============================================================================
 

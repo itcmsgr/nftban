@@ -502,6 +502,7 @@ nftban_health_check_all() {
     nftban_health_check_services || ((warnings++))
     nftban_health_check_daemon "$auto_heal" || ((errors++))
     nftban_health_check_timers "$auto_heal" || ((warnings++))
+    nftban_health_check_protection || ((warnings++))
 
     # Run structure validation checks
     nftban_health_check_fhs || ((warnings++))
@@ -560,6 +561,7 @@ export -f nftban_health_check_paths
 export -f nftban_health_check_permissions
 export -f nftban_health_check_services
 export -f nftban_health_check_daemon
+export -f nftban_health_check_protection
 export -f nftban_health_check_modules
 export -f nftban_health_check_geoip
 export -f nftban_health_check_geoban

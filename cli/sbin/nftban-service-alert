@@ -31,7 +31,7 @@
 # Usage: nftban-service-alert <failed-service-name>
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 readonly FAILED_SERVICE="${1:-unknown}"
 readonly TIMESTAMP=$(date '+%Y-%m-%d %H:%M:%S')

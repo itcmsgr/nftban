@@ -372,6 +372,36 @@ run_help_tests() {
     smoke_test_cmd "ban --help" "nftban ban --help"
     smoke_test_cmd "unban --help" "nftban unban --help"
     smoke_test_cmd "firewall --help" "nftban firewall --help"
+    smoke_test_cmd "protect --help" "nftban protect --help"
+    smoke_test_cmd "unprotect --help" "nftban unprotect --help"
+    smoke_test_cmd "cleanup --help" "nftban cleanup --help"
+}
+
+# =============================================================================
+# PROTECT/UNPROTECT/CLEANUP TESTS
+# =============================================================================
+# Tests for IP protection and cleanup commands
+
+run_protection_tests() {
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "PROTECT/UNPROTECT/CLEANUP COMMANDS"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Test protect help
+    smoke_test_cmd "protect help" "nftban protect --help"
+
+    # Test unprotect help
+    smoke_test_cmd "unprotect help" "nftban unprotect --help"
+
+    # Test cleanup --stats returns valid JSON with required fields
+    smoke_test_cmd "cleanup --stats JSON" "nftban cleanup --stats | jq -e '.total != null and .protected != null and .evictable != null'"
+
+    # Test cleanup --dry-run returns valid JSON with ips array
+    smoke_test_cmd "cleanup --dry-run JSON" "nftban cleanup --dry-run | jq -e '.ips | type == \"array\"'"
+
+    # Test cleanup help
+    smoke_test_cmd "cleanup help" "nftban cleanup --help"
 }
 
 # =============================================================================
@@ -754,8 +784,8 @@ Options:
 
 Test Modes:
   quick     = 3 tests    (version, help, status)
-  full      = ~36 tests  (core + modules + stats + search + help + lifecycle + nft validation)
-  all       = 60+ tests  (every cmd_*.sh + extended status + lifecycle + nft validation)
+  full      = ~41 tests  (core + modules + stats + search + help + protection + lifecycle + nft validation)
+  all       = 65+ tests  (every cmd_*.sh + extended status + protection + lifecycle + nft validation)
   lifecycle = 12 tests   (ban/unban + whitelist add/remove, IPv4 + IPv6)
 
 NFT Validation (included in full/all):
@@ -861,6 +891,7 @@ main() {
             run_stats_tests
             run_search_tests
             run_help_tests
+            run_protection_tests
             run_lifecycle_tests
             run_feeds_nft_validation
             run_geoban_nft_validation
@@ -870,6 +901,7 @@ main() {
             run_core_tests
             run_all_cli_tests        # Tests all 43 cmd_*.sh files
             run_extended_status_tests
+            run_protection_tests
             run_lifecycle_tests
             run_feeds_nft_validation
             run_geoban_nft_validation
