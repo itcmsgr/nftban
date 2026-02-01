@@ -55,6 +55,18 @@ and several design gaps causing service failures on fresh installations.
   Provides recommendations to disable either cPHulk or NFTBan login monitor
   (`cli/lib/nftban/lib/nftban_panel_cpanel.sh`)
 
+### Feeds/Geoban - Timeout Fix
+
+- **IPC timeout increased** - Default IPC client timeout increased from 30s to 90s to handle
+  larger operations including feeds loading and geoban CIDR loading. Feeds loading formula
+  changed from `30+entries/100` to `90+entries/30` seconds, giving 243s for 4600 CIDRs
+  instead of 76s. Cap increased from 5 to 10 minutes. Fixes "i/o timeout" errors during
+  feeds and geoban loading on all labs (`pkg/ipc/client.go`, `cmd/nftban-core/cmd_feeds.go`)
+- **Sync timeout extended** - `nftban sync` command now sets 5-minute timeout for full sync
+  operations that include geoban CIDRs (20,000+ entries for CN,RU,UA). Previously used
+  default 90s timeout which was insufficient for large CIDR sets requiring merge operations
+  (`cmd/nftban-core/cmd_sync.go`)
+
 ### Root Cause Analysis
 
 | Issue | Labs Affected | Root Cause |

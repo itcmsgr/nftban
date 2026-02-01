@@ -1,7 +1,22 @@
 // =============================================================================
-// NFTBan v1.0 - IPC Client Package
+// NFTBan - IPC Client Package
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="ipc_client"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-09-01"
+// meta:description="IPC client for communicating with nftband daemon"
+// meta:input="Unix socket requests"
+// meta:output="JSON responses"
+// meta:depends="net,encoding/json,time"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network="unix:/run/nftban/nftband.sock"
+// meta:inventory.privileges=""
 //
 // This package provides IPC client for communicating with nftband daemon.
 // All Go code that needs to perform nftables WRITE operations must use this
@@ -24,7 +39,8 @@ const (
 	DefaultSocketPath = "/run/nftban/nftband.sock"
 
 	// DefaultTimeout is the default request timeout
-	DefaultTimeout = 30 * time.Second
+	// Increased from 30s to 90s to handle larger operations (feeds loading, CIDR merging, geoban)
+	DefaultTimeout = 90 * time.Second
 )
 
 // Client provides IPC communication with nftband daemon

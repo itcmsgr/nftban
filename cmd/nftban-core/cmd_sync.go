@@ -24,6 +24,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/itcmsgr/nftban/pkg/ipc"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
@@ -49,6 +50,15 @@ func cmdSync(cfg *nftbanconf.Config) error {
 		return fmt.Errorf("daemon not running: %w\nStart with: sudo systemctl start nftband", err)
 	}
 	fmt.Println("  ✅ Connected to nftband daemon")
+	fmt.Println()
+
+	// Set extended timeout for sync operation
+	// Sync loads whitelists + blacklists (including geoban CIDRs) + feeds + ports
+	// Geoban alone can have 20,000+ CIDRs, feeds can have 5,000+ CIDRs
+	// CIDR merging + nftables loading can take 3-5 minutes on slower systems
+	syncTimeout := 5 * time.Minute
+	client.SetTimeout(syncTimeout)
+	fmt.Printf("  ⏱️  Timeout set to %v for full sync\n", syncTimeout)
 	fmt.Println()
 
 	// Perform sync via IPC
