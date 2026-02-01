@@ -381,11 +381,12 @@ func cmdFeedsLoad(feedsDir string, cfg *nftbanconf.Config) error {
 	fmt.Println("Step 3: Loading feeds into blacklist via daemon...")
 
 	// Increase timeout for large feed sets (CIDR merging + nftables loading takes time)
-	// ~5k CIDRs typically needs 60-90 seconds for merge + load
-	if totalEntries > 1000 {
-		loadTimeout := time.Duration(30+totalEntries/100) * time.Second
-		if loadTimeout > 5*time.Minute {
-			loadTimeout = 5 * time.Minute // Cap at 5 minutes
+	// ~5k CIDRs typically needs 2-4 minutes for merge + load on slower systems
+	// Formula: base 90s + 1 second per 30 entries, cap at 10 minutes
+	if totalEntries > 500 {
+		loadTimeout := time.Duration(90+totalEntries/30) * time.Second
+		if loadTimeout > 10*time.Minute {
+			loadTimeout = 10 * time.Minute // Cap at 10 minutes
 		}
 		client.SetTimeout(loadTimeout)
 		fmt.Printf("  ⏱️  Timeout set to %v for %d entries\n", loadTimeout, totalEntries)
