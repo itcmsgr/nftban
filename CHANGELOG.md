@@ -74,6 +74,13 @@ and several design gaps causing service failures on fresh installations.
   IPv4 and IPv6 sets with element count verification. Included in `--full` and `--all` modes.
   (`cli/lib/nftban/tests/smoke_test.sh`)
 
+### Critical Fix - Sync Now Loads Feeds and Geoban
+
+- **Sync includes feeds and geoban** - `nftban sync` now loads threat feeds and geoban CIDRs
+  into nftables blacklist sets if enabled. Previously only synced whitelist.d/blacklist.d
+  config files. Output shows feeds/geoban counts loaded.
+  (`cmd/nftband/main.go`, `cmd/nftban-core/cmd_sync.go`)
+
 ### Root Cause Analysis
 
 | Issue | Labs Affected | Root Cause |

@@ -64,6 +64,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/metrics"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/itcmsgr/nftban/pkg/feeds"
+	"github.com/itcmsgr/nftban/pkg/geoban"
 	"github.com/itcmsgr/nftban/pkg/loginmon"
 	"github.com/itcmsgr/nftban/pkg/module"
 	"github.com/itcmsgr/nftban/pkg/nftbackend"
@@ -1555,6 +1556,98 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	// Update counters
 	state.IncrementSyncCounter(result.Success)
 
+	// ==========================================================================
+	// FEEDS LOADING - Load threat feeds into blacklist sets if enabled
+	// ==========================================================================
+	var feedsIPv4Loaded, feedsIPv6Loaded int
+	_, _, dataDir, _ := getDaemonPaths()
+	feedsDir := dataDir + "/feeds"
+
+	// Check if feeds directory exists and has .txt files
+	if entries, err := os.ReadDir(feedsDir); err == nil && len(entries) > 0 {
+		// Load all feeds
+		ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, _, feedErr := feeds.LoadAllFeeds(feedsDir)
+		if feedErr == nil {
+			// Combine IPs and CIDRs into slices
+			var ipv4CIDRs, ipv6CIDRs []string
+			for ip := range ipv4Set {
+				ipv4CIDRs = append(ipv4CIDRs, ip+"/32")
+			}
+			for cidr := range ipv4CIDRSet {
+				ipv4CIDRs = append(ipv4CIDRs, cidr)
+			}
+			for ip := range ipv6Set {
+				ipv6CIDRs = append(ipv6CIDRs, ip+"/128")
+			}
+			for cidr := range ipv6CIDRSet {
+				ipv6CIDRs = append(ipv6CIDRs, cidr)
+			}
+
+			// Load IPv4 feeds into blacklist (use interval set for CIDR merging)
+			if len(ipv4CIDRs) > 0 {
+				feedSetV4, err := nft.GetOrCreateIntervalSet(tableIPv4, "blacklist_ipv4", true)
+				if err == nil {
+					if stats, err := nft.AddCIDRElementsWithStats(feedSetV4, ipv4CIDRs); err == nil && stats != nil {
+						feedsIPv4Loaded = stats.OutputRanges
+					}
+				}
+			}
+
+			// Load IPv6 feeds into blacklist
+			if len(ipv6CIDRs) > 0 {
+				feedSetV6, err := nft.GetOrCreateIntervalSet(tableIPv6, "blacklist_ipv6", false)
+				if err == nil {
+					if stats, err := nft.AddCIDRElementsWithStats(feedSetV6, ipv6CIDRs); err == nil && stats != nil {
+						feedsIPv6Loaded = stats.OutputRanges
+					}
+				}
+			}
+		}
+	}
+
+	// ==========================================================================
+	// GEOBAN LOADING - Load geoban CIDRs if any ban files exist
+	// ==========================================================================
+	var geobanIPv4Loaded, geobanIPv6Loaded int
+	geobanDir := configDir + "/geoban.d"
+
+	// Check if geoban directory exists and has ban files (50-ban-*.conf)
+	if entries, err := os.ReadDir(geobanDir); err == nil {
+		hasBanFiles := false
+		for _, e := range entries {
+			if strings.HasPrefix(e.Name(), "50-ban-") && strings.HasSuffix(e.Name(), ".conf") {
+				hasBanFiles = true
+				break
+			}
+		}
+
+		if hasBanFiles {
+			// Load all geoban countries
+			geobanData, geoErr := geoban.Build(geobanDir, nil) // nil = load all
+			if geoErr == nil && geobanData != nil {
+				// Load IPv4 geoban CIDRs
+				if len(geobanData.IPv4CIDRs) > 0 {
+					geoSetV4, err := nft.GetOrCreateIntervalSet(tableIPv4, "blacklist_ipv4", true)
+					if err == nil {
+						if stats, err := nft.AddCIDRElementsWithStats(geoSetV4, geobanData.IPv4CIDRs); err == nil && stats != nil {
+							geobanIPv4Loaded = stats.OutputRanges
+						}
+					}
+				}
+
+				// Load IPv6 geoban CIDRs
+				if len(geobanData.IPv6CIDRs) > 0 {
+					geoSetV6, err := nft.GetOrCreateIntervalSet(tableIPv6, "blacklist_ipv6", false)
+					if err == nil {
+						if stats, err := nft.AddCIDRElementsWithStats(geoSetV6, geobanData.IPv6CIDRs); err == nil && stats != nil {
+							geobanIPv6Loaded = stats.OutputRanges
+						}
+					}
+				}
+			}
+		}
+	}
+
 	return SocketResponse{
 		Success: result.Success,
 		Data: map[string]any{
@@ -1566,6 +1659,10 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 			"blacklist_ipv4_removed": result.BlacklistIPv4.IPsRemoved,
 			"blacklist_ipv6_added":   result.BlacklistIPv6.IPsAdded,
 			"blacklist_ipv6_removed": result.BlacklistIPv6.IPsRemoved,
+			"feeds_ipv4_loaded":      feedsIPv4Loaded,
+			"feeds_ipv6_loaded":      feedsIPv6Loaded,
+			"geoban_ipv4_loaded":     geobanIPv4Loaded,
+			"geoban_ipv6_loaded":     geobanIPv6Loaded,
 			"tcp_ports":              len(allPorts.TCPPorts),
 			"udp_ports":              len(allPorts.UDPPorts),
 		},

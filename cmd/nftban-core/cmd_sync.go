@@ -112,6 +112,22 @@ func cmdSync(cfg *nftbanconf.Config) error {
 		fmt.Printf("  Blacklist IPv6: -%.0f removed\n", v)
 	}
 
+	// Feeds loaded (if any)
+	if v, ok := data["feeds_ipv4_loaded"].(float64); ok && v > 0 {
+		fmt.Printf("  Feeds IPv4: %.0f ranges loaded\n", v)
+	}
+	if v, ok := data["feeds_ipv6_loaded"].(float64); ok && v > 0 {
+		fmt.Printf("  Feeds IPv6: %.0f ranges loaded\n", v)
+	}
+
+	// Geoban loaded (if any)
+	if v, ok := data["geoban_ipv4_loaded"].(float64); ok && v > 0 {
+		fmt.Printf("  Geoban IPv4: %.0f ranges loaded\n", v)
+	}
+	if v, ok := data["geoban_ipv6_loaded"].(float64); ok && v > 0 {
+		fmt.Printf("  Geoban IPv6: %.0f ranges loaded\n", v)
+	}
+
 	if tcp, ok := data["tcp_ports"].(float64); ok && tcp > 0 {
 		fmt.Printf("  TCP Ports: %.0f loaded\n", tcp)
 	}
