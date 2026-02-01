@@ -943,11 +943,11 @@ download_geoip_database() {
 
 # Ask user about metrics
 ask_metrics_question() {
-    # In quiet mode, enable metrics by default (textfile collector stores to files)
+    # In quiet mode, enable metrics by default (writes to files, no external backend required)
     if [[ "${NFTBAN_QUIET:-0}" == "1" ]]; then
         NFTBAN_METRICS_ENABLED="${NFTBAN_METRICS_ENABLED:-true}"
-        NFTBAN_METRICS_BACKEND="${NFTBAN_METRICS_BACKEND:-prometheus}"
-        info "Quiet mode: Metrics enabled (textfile collector)"
+        NFTBAN_METRICS_BACKEND="${NFTBAN_METRICS_BACKEND:-}"
+        info "Quiet mode: Metrics enabled (file storage)"
         return 0
     fi
 
