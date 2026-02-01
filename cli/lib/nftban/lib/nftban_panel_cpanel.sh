@@ -1,24 +1,36 @@
 #!/usr/bin/env bash
-
 # =============================================================================
-# NFTBan v1.0.0 - cPanel/WHM Panel Library
+# NFTBan v1.8.15 - cPanel/WHM Panel Library
 # =============================================================================
-#
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: cPanel/WHM control panel firewall integration
 #
-# meta:name=nftban_panel_cpanel
-# meta:type=library
-# meta:header=cPanel Panel Library
-# meta:version=1.0.0
+# meta:name="nftban_panel_cpanel"
+# meta:type="library"
+# meta:header="cPanel Panel Library"
+# meta:version="1.8.15"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=cPanel/WHM panel integration with enable/disable/status/report/repair/test
-# meta:input=Panel actions and configuration
-# meta:output=Panel status, firewall rules, diagnostic reports
+# meta:description="cPanel/WHM panel integration with enable/disable/status/report/repair/test"
+# meta:input="Panel actions and configuration"
+# meta:output="Panel status, firewall rules, diagnostic reports"
+#
+# **Inventory & Requirements**
+# meta:inventory.files="cli/lib/nftban/lib/nftban_panel_cpanel.sh"
+# meta:inventory.binaries="whmapi1"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
+# meta:inventory.config_files="/etc/nftban/conf.d/panels/cpanel/main.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2025-10-26"
+# meta:updated_date="2026-02-01"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Prevent double-sourcing
 [[ -n "${_NFTBAN_PANEL_CPANEL_LOADED:-}" ]] && return 0
@@ -117,10 +129,51 @@ EOF
 }
 
 # =============================================================================
+# CPHULK CONFLICT CHECK
+# =============================================================================
+
+_nftban_cpanel_check_cphulk() {
+    # Check if cPHulk brute-force protection is enabled
+    # cPHulk and NFTBan login monitoring can conflict (duplicate ban decisions)
+
+    if ! command -v whmapi1 &>/dev/null; then
+        return 0  # Not a WHM system or whmapi1 not available
+    fi
+
+    local cphulk_enabled
+    cphulk_enabled=$(whmapi1 cphulk_status 2>/dev/null | grep -i "is_enabled" | grep -oP '\d+' || echo "0")
+
+    if [[ "$cphulk_enabled" == "1" ]]; then
+        echo ""
+        echo "╔═══════════════════════════════════════════════════════════════════╗"
+        echo "║ ⚠️  WARNING: cPHulk Brute Force Protection is ENABLED            ║"
+        echo "╚═══════════════════════════════════════════════════════════════════╝"
+        echo ""
+        echo "cPHulk and NFTBan login monitoring may conflict, causing:"
+        echo "  • Duplicate ban decisions for the same IP"
+        echo "  • Inconsistent ban durations"
+        echo "  • Potential false positives"
+        echo ""
+        echo "Recommendations:"
+        echo "  1. Disable cPHulk:  whmapi1 configureservice service=cphulkd enabled=0"
+        echo "     (Let NFTBan handle all brute-force protection)"
+        echo ""
+        echo "  2. Or disable NFTBan login monitoring:  nftban login disable"
+        echo "     (Let cPHulk handle brute-force protection)"
+        echo ""
+        echo "Continuing with panel enable... (login monitoring may still work)"
+        echo ""
+    fi
+}
+
+# =============================================================================
 # ENABLE
 # =============================================================================
 
 nftban_panel_cpanel_enable() {
+    # Check for cPHulk conflict before proceeding
+    _nftban_cpanel_check_cphulk
+
     # Nice header for Web Hosting Panel
     cat <<'EOF'
 ╔═══════════════════════════════════════════════════════════════════╗

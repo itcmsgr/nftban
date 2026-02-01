@@ -76,7 +76,18 @@ case "$1" in
         fi
 
         # =====================================================================
-        # STEP 0.1: Cleanup old paths from pre-1.8.13 DEB packages
+        # STEP 0.1: Remove immutable flags before upgrade (security files)
+        # =====================================================================
+        # Critical security files are marked immutable to prevent tampering
+        # Remove flags before upgrade to allow package manager to update them
+        for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
+            if [[ -f "$immutable_file" ]]; then
+                chattr -i "$immutable_file" 2>/dev/null || true
+            fi
+        done
+
+        # =====================================================================
+        # STEP 0.2: Cleanup old paths from pre-1.8.13 DEB packages
         # =====================================================================
         # Old DEB packages incorrectly installed CLI to /usr/bin instead of /usr/sbin
         if [[ -f "/usr/bin/nftban" ]] && [[ ! -L "/usr/bin/nftban" ]]; then
@@ -501,6 +512,18 @@ case "$1" in
                 log_warn "  Login monitoring enable failed (run manually: nftban login enable)"
             fi
         fi
+
+        # =====================================================================
+        # STEP 13: Set immutable flags on security-critical files
+        # =====================================================================
+        log_info "Setting immutable flags on security files..."
+        for immutable_file in /etc/nftban/nftban.conf /usr/lib/nftban/lib/nft_schema.sh; do
+            if [[ -f "$immutable_file" ]]; then
+                chmod 444 "$immutable_file" 2>/dev/null || true
+                chattr +i "$immutable_file" 2>/dev/null || true
+            fi
+        done
+        log_info "  Security files protected (immutable)"
 
         # =====================================================================
         # Installation Complete

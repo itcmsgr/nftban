@@ -32,6 +32,29 @@ and several design gaps causing service failures on fresh installations.
   `nftban snapshot create`. New command wraps snapshot functionality with create/list
   subcommands (`cli/lib/nftban/cli/cmd_snapshot.sh`)
 
+### Packaging - DEB Fixes (Debian/Ubuntu)
+
+- **Immutable flag protection** - DEB postinst now sets immutable flag on security-critical
+  files (`nftban.conf`, `nft_schema.sh`) after install, matching RPM behavior. prerm removes
+  flags before upgrade (`packaging/deb/postinst`, `packaging/deb/prerm`)
+- **python3-pip dependency** - Added `python3-pip` to Recommends for yq installation during
+  documentation generation (`packaging/deb/control`)
+
+### Packaging - RPM Fixes (EL9/Rocky/AlmaLinux)
+
+- **%posttrans scriptlet** - Added post-transaction scriptlet that runs after all RPM operations
+  complete, re-applies immutable flag and runs health check for safety
+  (`install/packaging/rpm/nftban.spec`)
+- **Service restart on upgrade** - RPM now restarts running services after upgrade using
+  `try-restart`, matching DEB behavior (`install/packaging/rpm/nftban.spec %postun`)
+
+### Panel - cPanel Integration
+
+- **cPHulk conflict detection** - `nftban panel cpanel enable` now checks if cPHulk brute-force
+  protection is enabled and warns about potential conflicts with NFTBan login monitoring.
+  Provides recommendations to disable either cPHulk or NFTBan login monitor
+  (`cli/lib/nftban/lib/nftban_panel_cpanel.sh`)
+
 ### Root Cause Analysis
 
 | Issue | Labs Affected | Root Cause |
@@ -41,6 +64,9 @@ and several design gaps causing service failures on fresh installations.
 | Rollback loop | lab3, lab4 | Timer auto-enabled, no backup.rules |
 | Snapshot failure | ALL | Missing cmd_snapshot.sh |
 | Whitelist warning | lab1 | WARNING on optional missing file |
+| DEB immutable missing | lab, lab2 | postinst lacked chattr +i (RPM had it) |
+| RPM no restart on upgrade | lab1, lab3, lab4 | %postun lacked try-restart |
+| cPHulk conflict | lab4 (cPanel) | No detection of competing brute-force protection |
 
 ---
 
