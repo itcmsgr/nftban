@@ -67,6 +67,13 @@ and several design gaps causing service failures on fresh installations.
   default 90s timeout which was insufficient for large CIDR sets requiring merge operations
   (`cmd/nftban-core/cmd_sync.go`)
 
+### Testing - Smoke Test Enhancement
+
+- **Feeds/Geoban nft validation** - `nftban smoke` now validates that feeds and geoban CIDRs
+  are actually loaded in nftables blacklist sets, not just that config files exist. Tests
+  IPv4 and IPv6 sets with element count verification. Included in `--full` and `--all` modes.
+  (`cli/lib/nftban/tests/smoke_test.sh`)
+
 ### Root Cause Analysis
 
 | Issue | Labs Affected | Root Cause |
