@@ -2,6 +2,18 @@
 // NFTBan v1.0 - IPC Integration Tests
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="ipc_integration_test"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Integration tests for IPC client ↔ daemon communication"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 //
 // Tests for IPC client ↔ daemon communication
 // Verifies: socket creation, permissions, request/response format, error handling
@@ -468,7 +480,7 @@ func TestClient_Sync(t *testing.T) {
 
 	client := ipc.NewClientWithSocket(server.socketPath)
 
-	resp, err := client.Sync()
+	resp, err := client.Sync(false) // false = full sync, not quick mode
 	if err != nil {
 		t.Fatalf("Sync() failed: %v", err)
 	}

@@ -485,13 +485,14 @@ case "$1" in
         # STEP 11: Sync whitelist.d files to nftables sets
         # =====================================================================
         # The nftables template has only default IPs, this loads the actual detected system IPs
+        # Use --quick to only sync whitelists/blacklists (skip feeds/geoban for fast install)
         log_info "Syncing whitelist files to nftables..."
         # Wait for nftband daemon to be ready (socket activation)
         SYNC_SUCCESS=0
         for i in 1 2 3; do
             sleep 1
-            # Use nftban CLI sync command (connects to nftband daemon)
-            if nftban sync >/dev/null 2>&1; then
+            # Use nftban CLI sync --quick (skips feeds/geoban for fast postinst)
+            if nftban sync --quick >/dev/null 2>&1; then
                 SYNC_SUCCESS=1
                 log_info "  Whitelist sync completed successfully"
                 break

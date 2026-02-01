@@ -1435,7 +1435,16 @@ func (d *Daemon) waitForShutdown() {
 // =============================================================================
 
 // handleSyncRequest performs a full differential sync of whitelists/blacklists
+// If params["quick"]=true, skips feeds and geoban loading (for fast postinst sync)
 func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
+	// Check for quick mode (skips feeds/geoban for fast postinst sync)
+	quickMode := false
+	if params != nil {
+		if q, ok := params["quick"].(bool); ok && q {
+			quickMode = true
+		}
+	}
+
 	_, configDir, _, _ := getDaemonPaths()
 
 	// Initialize RuntimeState
@@ -1558,13 +1567,15 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 
 	// ==========================================================================
 	// FEEDS LOADING - Load threat feeds into blacklist sets if enabled
+	// Skip in quick mode (postinst sync) to avoid 3-5 minute delay
 	// ==========================================================================
 	var feedsIPv4Loaded, feedsIPv6Loaded int
-	_, _, dataDir, _ := getDaemonPaths()
-	feedsDir := dataDir + "/feeds"
+	if !quickMode {
+		_, _, dataDir, _ := getDaemonPaths()
+		feedsDir := dataDir + "/feeds"
 
-	// Check if feeds directory exists and has .txt files
-	if entries, err := os.ReadDir(feedsDir); err == nil && len(entries) > 0 {
+		// Check if feeds directory exists and has .txt files
+		if entries, err := os.ReadDir(feedsDir); err == nil && len(entries) > 0 {
 		// Load all feeds
 		ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, _, feedErr := feeds.LoadAllFeeds(feedsDir)
 		if feedErr == nil {
@@ -1605,16 +1616,19 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 				}
 			}
 		}
-	}
+		}
+	} // end if !quickMode (feeds)
 
 	// ==========================================================================
 	// GEOBAN LOADING - Load geoban CIDRs if any ban files exist
+	// Skip in quick mode (postinst sync) to avoid 3-5 minute delay
 	// ==========================================================================
 	var geobanIPv4Loaded, geobanIPv6Loaded int
-	geobanDir := configDir + "/geoban.d"
+	if !quickMode {
+		geobanDir := configDir + "/geoban.d"
 
-	// Check if geoban directory exists and has ban files (50-ban-*.conf)
-	if entries, err := os.ReadDir(geobanDir); err == nil {
+		// Check if geoban directory exists and has ban files (50-ban-*.conf)
+		if entries, err := os.ReadDir(geobanDir); err == nil {
 		hasBanFiles := false
 		for _, e := range entries {
 			if strings.HasPrefix(e.Name(), "50-ban-") && strings.HasSuffix(e.Name(), ".conf") {
@@ -1648,7 +1662,8 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 				}
 			}
 		}
-	}
+		}
+	} // end if !quickMode (geoban)
 
 	return SocketResponse{
 		Success: result.Success,
