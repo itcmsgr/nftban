@@ -879,11 +879,11 @@ _update_via_git() {
     # Remove immutable flags before install (nft_schema.sh is chattr +i for security)
     _remove_immutable_flags
 
-    # Run install.sh
+    # Run install.sh with --yes for non-interactive update
     local install_script="${NFTBAN_GIT_REPO}/install.sh"
     if [[ -f "$install_script" ]]; then
         _update_log INFO "Running installer..."
-        if bash "$install_script" 2>&1 | while read -r line; do echo "    $line"; done; then
+        if bash "$install_script" --yes 2>&1 | while read -r line; do echo "    $line"; done; then
             _update_log OK "Installation successful"
             return 0
         else
@@ -920,7 +920,8 @@ _update_via_local() {
 
     _update_log INFO "Running installer..."
 
-    if bash "$install_script" 2>&1 | while read -r line; do echo "    $line"; done; then
+    # Use --yes for non-interactive update mode
+    if bash "$install_script" --yes 2>&1 | while read -r line; do echo "    $line"; done; then
         _update_log OK "Installation successful"
         return 0
     else
