@@ -1568,8 +1568,10 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 		// Load all feeds
 		ipv4Set, ipv6Set, ipv4CIDRSet, ipv6CIDRSet, _, feedErr := feeds.LoadAllFeeds(feedsDir)
 		if feedErr == nil {
-			// Combine IPs and CIDRs into slices
-			var ipv4CIDRs, ipv6CIDRs []string
+			// Pre-allocate slices with exact capacity to avoid reallocation overhead
+			// With 15,000+ CIDRs, this prevents ~14 slice doublings
+			ipv4CIDRs := make([]string, 0, len(ipv4Set)+len(ipv4CIDRSet))
+			ipv6CIDRs := make([]string, 0, len(ipv6Set)+len(ipv6CIDRSet))
 			for ip := range ipv4Set {
 				ipv4CIDRs = append(ipv4CIDRs, ip+"/32")
 			}
@@ -1787,7 +1789,9 @@ func (d *Daemon) handleLoadCIDRsRequest(params map[string]any) SocketResponse {
 				return SocketResponse{Success: false, Error: "failed to load feeds: " + err.Error()}
 			}
 
-			// Combine IPs and CIDRs
+			// Pre-allocate slices with exact capacity to avoid reallocation overhead
+			ipv4CIDRs = make([]string, 0, len(ipv4Set)+len(ipv4CIDRSet))
+			ipv6CIDRs = make([]string, 0, len(ipv6Set)+len(ipv6CIDRSet))
 			for ip := range ipv4Set {
 				ipv4CIDRs = append(ipv4CIDRs, ip+"/32")
 			}
@@ -1870,8 +1874,9 @@ func (d *Daemon) handleLoadCIDRsRequest(params map[string]any) SocketResponse {
 		return d.loadCIDRsIntoSets(setType, ipv4CIDRs, ipv6CIDRs)
 	}
 
-	// Parse CIDRs from params
-	var ipv4CIDRs, ipv6CIDRs []string
+	// Parse CIDRs from params - pre-allocate to avoid repeated reallocations
+	ipv4CIDRs := make([]string, 0, len(cidrsRaw))
+	ipv6CIDRs := make([]string, 0, len(cidrsRaw)/10) // IPv6 typically much less common
 	for _, cidrRaw := range cidrsRaw {
 		cidr, ok := cidrRaw.(string)
 		if !ok {
