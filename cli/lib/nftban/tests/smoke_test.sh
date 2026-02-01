@@ -37,7 +37,7 @@
 # meta:inventory.privileges="root"
 #
 # meta:created_date="2025-12-04"
-# meta:updated_date="2026-01-28"
+# meta:updated_date="2026-02-01"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -519,6 +519,116 @@ run_lifecycle_tests() {
 }
 
 # =============================================================================
+# FEEDS & GEOBAN NFT VALIDATION
+# =============================================================================
+# Validates that feeds/geoban CIDRs are actually loaded in nftables sets.
+# Non-destructive: checks current state without modifying sets.
+
+# Get element count from an nft set
+# Usage: _nft_set_count <nft_table> <set_name>
+# Returns: element count (0 if set empty or doesn't exist)
+_nft_set_count() {
+    local nft_table="$1"
+    local nft_set="$2"
+    local count
+    # Count elements - each element line has format "element_value," or "element_value timeout..."
+    # shellcheck disable=SC2086
+    count=$(nft list set ${nft_table} "${nft_set}" 2>/dev/null | grep -cE '^\s+[0-9a-fA-F.:/-]+' || echo "0")
+    echo "$count"
+}
+
+# Validate CIDRs loaded in nft set
+# Usage: smoke_validate_nft_set <name> <nft_table> <set_name> <min_expected>
+smoke_validate_nft_set() {
+    local name="$1"
+    local nft_table="$2"
+    local nft_set="$3"
+    local min_expected="${4:-1}"
+
+    TESTS_TOTAL=$((TESTS_TOTAL + 1))
+
+    local count
+    count=$(_nft_set_count "${nft_table}" "${nft_set}")
+
+    if [[ "$count" -ge "$min_expected" ]]; then
+        log_pass "${name} — ${count} elements in ${nft_set} (min: ${min_expected})"
+        TESTS_PASSED=$((TESTS_PASSED + 1))
+        return 0
+    else
+        log_fail "${name} — ${count} elements in ${nft_set} (expected >= ${min_expected})"
+        TESTS_FAILED=$((TESTS_FAILED + 1))
+        return 1
+    fi
+}
+
+# Run feeds nft validation tests
+run_feeds_nft_validation() {
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "FEEDS NFT VALIDATION"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Check if feeds are enabled
+    local feeds_dir="${NFTBAN_FEEDS_DIR:-/etc/nftban/feeds}"
+    local feed_count
+    feed_count=$(find "$feeds_dir" -name "*.txt" -type f 2>/dev/null | wc -l)
+
+    if [[ "$feed_count" -eq 0 ]]; then
+        log_warn "No feed files found in ${feeds_dir} — skipping feeds validation"
+        return 0
+    fi
+
+    log_info "Found ${feed_count} feed file(s) in ${feeds_dir}"
+
+    # Source config for table names
+    [[ -f /etc/nftban/nftban.conf ]] && source /etc/nftban/nftban.conf
+    [[ -f /etc/nftban/nftban.conf.local ]] && source /etc/nftban/nftban.conf.local
+    local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+    local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
+
+    # Validate feeds CIDRs in nft sets (expect at least 1 if feeds exist)
+    smoke_validate_nft_set "Feeds IPv4 in nft" "${table_v4}" "blacklist_ipv4" 1
+    smoke_validate_nft_set "Feeds IPv6 in nft" "${table_v6}" "blacklist_ipv6" 1
+}
+
+# Run geoban nft validation tests
+run_geoban_nft_validation() {
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "GEOBAN NFT VALIDATION"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    # Check if geoban is enabled (config file exists with countries)
+    local geoban_conf="${NFTBAN_GEOBAN_CONF:-/etc/nftban/geoban/geoban.conf}"
+
+    if [[ ! -f "$geoban_conf" ]]; then
+        log_warn "Geoban config not found: ${geoban_conf} — skipping geoban validation"
+        return 0
+    fi
+
+    # Check if any countries are configured
+    local countries
+    countries=$(grep -E '^GEOBAN_COUNTRIES=' "$geoban_conf" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" || echo "")
+
+    if [[ -z "$countries" ]]; then
+        log_warn "No countries configured in geoban — skipping geoban validation"
+        return 0
+    fi
+
+    log_info "Geoban countries configured: ${countries}"
+
+    # Source config for table names
+    [[ -f /etc/nftban/nftban.conf ]] && source /etc/nftban/nftban.conf
+    [[ -f /etc/nftban/nftban.conf.local ]] && source /etc/nftban/nftban.conf.local
+    local table_v4="${NFTBAN_TABLE_IPV4:-ip nftban}"
+    local table_v6="${NFTBAN_TABLE_IPV6:-ip6 nftban}"
+
+    # Geoban loads thousands of CIDRs - expect at least 100 for any country
+    smoke_validate_nft_set "Geoban IPv4 in nft" "${table_v4}" "blacklist_ipv4" 100
+    smoke_validate_nft_set "Geoban IPv6 in nft" "${table_v6}" "blacklist_ipv6" 10
+}
+
+# =============================================================================
 # ALL CLI COMMANDS TEST (comprehensive)
 # =============================================================================
 # Automatically discovers and tests ALL cmd_*.sh files
@@ -644,9 +754,13 @@ Options:
 
 Test Modes:
   quick     = 3 tests    (version, help, status)
-  full      = ~32 tests  (core + modules + stats + search + help + lifecycle)
-  all       = 55+ tests  (every cmd_*.sh + extended status + lifecycle)
+  full      = ~36 tests  (core + modules + stats + search + help + lifecycle + nft validation)
+  all       = 60+ tests  (every cmd_*.sh + extended status + lifecycle + nft validation)
   lifecycle = 12 tests   (ban/unban + whitelist add/remove, IPv4 + IPv6)
+
+NFT Validation (included in full/all):
+  - Feeds IPv4/IPv6: verifies CIDRs loaded in blacklist sets
+  - Geoban IPv4/IPv6: verifies country CIDRs loaded in blacklist sets
 
 Examples:
   $0                  # Run full smoke test (~32 commands)
@@ -748,6 +862,8 @@ main() {
             run_search_tests
             run_help_tests
             run_lifecycle_tests
+            run_feeds_nft_validation
+            run_geoban_nft_validation
             ;;
         all)
             # Comprehensive: test ALL CLI commands
@@ -755,6 +871,8 @@ main() {
             run_all_cli_tests        # Tests all 43 cmd_*.sh files
             run_extended_status_tests
             run_lifecycle_tests
+            run_feeds_nft_validation
+            run_geoban_nft_validation
             ;;
         lifecycle)
             run_lifecycle_tests
