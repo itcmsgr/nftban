@@ -557,7 +557,7 @@ func defaultConfig() *Config {
 		GeoIPEnabled:            false,
 		FeedsEnabled:        false,
 		FeedsAutoUpdate:     true,
-		SuricataEnabled:     true,
+		SuricataEnabled:     false,
 		GUIEnabled:          false,
 		GUIAddr:             "127.0.0.1:3940",
 		PortscanEnabled:     false,
