@@ -36,4 +36,6 @@ AccuracySec=10s
 RandomizedDelaySec=30s
 
 [Install]
-WantedBy=timers.target
+# NOTE: Do NOT auto-enable. Timer is started by nftban-apply and stopped by nftban-confirm.
+# Auto-enabling causes failures on fresh install (no backup.rules exists yet).
+# WantedBy=timers.target
