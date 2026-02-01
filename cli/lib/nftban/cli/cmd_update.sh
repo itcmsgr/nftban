@@ -191,11 +191,12 @@ _remove_immutable_flags() {
         done
 
         if [[ -n "$lsattr_bin" ]]; then
-            if "$lsattr_bin" "$schema" 2>/dev/null | grep -q 'i'; then
+            # Check only attribute flags (first column), not filename which contains 'i' in path
+            if "$lsattr_bin" "$schema" 2>/dev/null | awk '{print $1}' | grep -q 'i'; then
                 _update_log WARN "Immutable flag on nft_schema.sh persists, retrying..."
                 # Final attempt with explicit path
                 "$chattr_bin" -i "$schema" 2>&1 || true
-                if "$lsattr_bin" "$schema" 2>/dev/null | grep -q 'i'; then
+                if "$lsattr_bin" "$schema" 2>/dev/null | awk '{print $1}' | grep -q 'i'; then
                     _update_log ERROR "Cannot remove immutable flag from $schema"
                     _update_log ERROR "Run manually: chattr -i $schema"
                     return 1
