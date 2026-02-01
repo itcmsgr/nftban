@@ -1625,21 +1625,21 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 			// Load all geoban countries
 			geobanData, geoErr := geoban.Build(geobanDir, nil) // nil = load all
 			if geoErr == nil && geobanData != nil {
-				// Load IPv4 geoban CIDRs
-				if len(geobanData.IPv4CIDRs) > 0 {
+				// Load IPv4 geoban CIDRs (field is IPv4, not IPv4CIDRs)
+				if len(geobanData.IPv4) > 0 {
 					geoSetV4, err := nft.GetOrCreateIntervalSet(tableIPv4, "blacklist_ipv4", true)
 					if err == nil {
-						if stats, err := nft.AddCIDRElementsWithStats(geoSetV4, geobanData.IPv4CIDRs); err == nil && stats != nil {
+						if stats, err := nft.AddCIDRElementsWithStats(geoSetV4, geobanData.IPv4); err == nil && stats != nil {
 							geobanIPv4Loaded = stats.OutputRanges
 						}
 					}
 				}
 
-				// Load IPv6 geoban CIDRs
-				if len(geobanData.IPv6CIDRs) > 0 {
+				// Load IPv6 geoban CIDRs (field is IPv6, not IPv6CIDRs)
+				if len(geobanData.IPv6) > 0 {
 					geoSetV6, err := nft.GetOrCreateIntervalSet(tableIPv6, "blacklist_ipv6", false)
 					if err == nil {
-						if stats, err := nft.AddCIDRElementsWithStats(geoSetV6, geobanData.IPv6CIDRs); err == nil && stats != nil {
+						if stats, err := nft.AddCIDRElementsWithStats(geoSetV6, geobanData.IPv6); err == nil && stats != nil {
 							geobanIPv6Loaded = stats.OutputRanges
 						}
 					}
