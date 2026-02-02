@@ -137,11 +137,14 @@ func TestScorer_EscalationThreshold(t *testing.T) {
 }
 
 func TestScorer_PermanentBanThreshold(t *testing.T) {
-	s := NewScorerDefault()
+	config := DefaultScorerConfig()
+	config.RecentBanWindow = 0 // Disable deduplication for rapid test bans
+	s := NewScorer(config)
 
 	ip := netip.MustParseAddr("10.0.0.3")
 
 	// Get to permanent threshold (100)
+	// Note: intermediate bans may trigger but we disable deduplication to allow continued scoring
 	s.RecordVerdict(Verdict{IP: ip, Reason: ReasonSSHTooManyFailures, ScoreDelta: 30, Service: "ssh"})
 	s.RecordVerdict(Verdict{IP: ip, Reason: ReasonSSHTooManyFailures, ScoreDelta: 30, Service: "ssh"})
 	s.RecordVerdict(Verdict{IP: ip, Reason: ReasonSSHTooManyFailures, ScoreDelta: 30, Service: "ssh"})
