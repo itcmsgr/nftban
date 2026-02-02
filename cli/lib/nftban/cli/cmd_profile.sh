@@ -2,29 +2,27 @@
 # =============================================================================
 # NFTBan v1.0.0 - Profile CLI Handler (Wizard Redirect)
 # =============================================================================
-#
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Redirect legacy 'nftban profile' command to interactive wizard
-#
-# meta:name=cmd_profile
-# meta:type=cli
-# meta:header=Profile CLI (Wizard Redirect)
-# meta:version=1.0.0
+# meta:name="cmd_profile"
+# meta:type="cli"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:created_date="2025-11-05"
+# meta:description="CLI handler that redirects profile commands to wizard"
+# meta:input="Command line arguments (select, apply, show, list, help)"
+# meta:output="Redirects to wizard or shows current config"
+# meta:depends="bash"
+# meta:platform="linux"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_CONFIG_LOCAL"
+# meta:inventory.config_files="/etc/nftban/nftban.conf.local"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 #
-# **Description & Purpose**
-# meta:description=CLI handler that redirects profile commands to wizard
-# meta:input=Command line arguments (select, apply, show, list, help)
-# meta:output=Redirects to wizard or shows current config
-#
-# **Note**
 # Static profiles have been replaced by an interactive wizard in v1.0.
 # The wizard detects your environment and asks 3 simple questions to
 # configure NFTBan optimally for your server.
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-12-05
 # =============================================================================
 
 # Load strict mode library
@@ -140,12 +138,12 @@ _nftban_profile_show() {
         fi
 
         # Threat Feeds
-        if grep -q "^FEEDS_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null; then
-            setting_value=$(grep "^FEEDS_ENABLED=" "$NFTBAN_CONFIG_LOCAL" | cut -d'"' -f2)
+        if grep -q "^NFTBAN_FEEDS_ENABLED=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null; then
+            setting_value=$(grep "^NFTBAN_FEEDS_ENABLED=" "$NFTBAN_CONFIG_LOCAL" | cut -d'"' -f2)
             echo "  Threat Feeds: $setting_value"
             if [[ "$setting_value" == "yes" ]]; then
                 local enabled_feeds
-                enabled_feeds=$(grep "^FEEDS_ENABLED_LIST=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "")
+                enabled_feeds=$(grep "^NFTBAN_FEEDS_ENABLED_LIST=" "$NFTBAN_CONFIG_LOCAL" 2>/dev/null | cut -d'"' -f2 || echo "")
                 [[ -n "$enabled_feeds" ]] && echo "  Enabled Feeds: $enabled_feeds"
             fi
         fi

@@ -312,6 +312,11 @@ case "$1" in
             find /usr/lib/nftban -name "*.sh" -exec chmod 755 {} \;
         fi
 
+        # Set executable permissions on sbin scripts (installed without .sh extension)
+        if [ -d /usr/lib/nftban/sbin ]; then
+            chmod 755 /usr/lib/nftban/sbin/*
+        fi
+
         # Set capabilities for nftban-core (allows non-root nftables operations)
         if [ -x /usr/lib/nftban/bin/nftban-core ]; then
             setcap 'cap_net_admin+ep' /usr/lib/nftban/bin/nftban-core 2>/dev/null || \

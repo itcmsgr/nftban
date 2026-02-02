@@ -491,6 +491,13 @@ fi
 # ==========================================================================
 %{_bindir}/nftban
 %dir %{_libdir}/nftban
+%dir %{_libdir}/nftban/sbin
+%attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-apply
+%attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-confirm
+%attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-panelctl
+%attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-queue-processor
+%attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-rollback
+%attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-service-alert
 %{_libdir}/nftban/*
 
 # ==========================================================================

@@ -88,11 +88,16 @@ LockPersonality=true
 # =============================================================================
 # RESOURCE LIMITS
 # =============================================================================
-# Protect against memory leaks/bloat - daemon should use <100MB normally
-# MemoryHigh: soft limit - when exceeded, memory reclaim is aggressive
-# MemoryMax: hard limit - OOM killer triggers if exceeded
-MemoryHigh=384M
-MemoryMax=512M
+# Memory limits are now DYNAMIC based on server RAM tier (pkg/safety/limits.go):
+#   - Small (≤4GB RAM): 75K CIDRs, ~300MB budget
+#   - Medium (4-8GB RAM): 100K CIDRs, ~400MB budget
+#   - Large (>8GB RAM): 150K CIDRs, ~600MB budget
+#
+# The daemon self-regulates via Go's SetMemoryLimit() and pressure detection.
+# Systemd limits are set generously as a safety net only.
+# Override via: NFTBAN_MAX_MEMORY_BYTES environment variable
+MemoryHigh=1G
+MemoryMax=1536M
 
 # =============================================================================
 # FILESYSTEM ACCESS

@@ -2794,18 +2794,10 @@ for timer in nftban-health.timer nftban-maintenance.timer; do
 done
 ok "Core timers: ENABLED (health, maintenance)"
 
-# Enable watchdog only if metrics enabled (exports Prometheus metrics)
-if [[ "${NFTBAN_METRICS_ENABLED:-false}" == "true" ]]; then
-    if [[ -f "/etc/systemd/system/nftban-watchdog.timer" ]]; then
-        systemctl enable --now nftban-watchdog.timer 2>/dev/null || true
-        # Update config
-        if [[ -f /etc/nftban/conf.d/watchdog.conf ]]; then
-            sed -i 's/^NFTBAN_WATCHDOG_ENABLED=.*/NFTBAN_WATCHDOG_ENABLED="true"/' /etc/nftban/conf.d/watchdog.conf 2>/dev/null || true
-        fi
-        ok "Watchdog: ENABLED (with metrics)"
-    fi
-else
-    info "Watchdog: disabled (enable with: nftban watchdog enable)"
+# Enable watchdog always - system resource monitoring is critical
+if [[ -f "/etc/systemd/system/nftban-watchdog.timer" ]]; then
+    systemctl enable --now nftban-watchdog.timer 2>/dev/null || true
+    ok "Watchdog: ENABLED (system monitoring)"
 fi
 
 echo ""
