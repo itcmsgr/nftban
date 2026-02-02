@@ -11,6 +11,10 @@ on:
       - main
       - master
 
+concurrency:
+  group: shellcheck-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   shellcheck:
     name: ShellCheck - Find bash errors

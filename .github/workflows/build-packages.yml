@@ -12,6 +12,10 @@ on:
       - master
   workflow_dispatch:
 
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   # ==========================================================================
   # BUILD GO BINARIES
