@@ -457,7 +457,7 @@ func (m *NFTManager) fullSetRefreshExcludingIP(set *nftables.Set, family, exclud
 	}
 
 	// Step 3: Filter out the IP to exclude
-	var filteredElements []string
+	filteredElements := make([]string, 0, len(elements)) // Pre-allocate
 	excludeIPVal, err := ipv4ToUint32(net.ParseIP(excludeIP))
 	if err != nil {
 		return fmt.Errorf("invalid exclude IP: %s", excludeIP)
@@ -519,7 +519,7 @@ func (m *NFTManager) fullSetRefreshExcludingIP(set *nftables.Set, family, exclud
 
 	// Step 5: Re-add filtered elements in batches
 	// First, filter out any empty strings that may have crept in
-	var cleanElements []string
+	cleanElements := make([]string, 0, len(filteredElements)) // Pre-allocate
 	for _, elem := range filteredElements {
 		elem = strings.TrimSpace(elem)
 		if elem != "" {
@@ -585,7 +585,7 @@ func (m *NFTManager) parseSetElements(output string) []string {
 
 // addSetElementsBatch adds a single batch of IPs or CIDRs
 func (m *NFTManager) addSetElementsBatch(set *nftables.Set, ips []string) error {
-	var elements []nftables.SetElement
+	elements := make([]nftables.SetElement, 0, len(ips)*2) // Pre-allocate (*2 for CIDR ranges)
 	for _, ipStr := range ips {
 		var key []byte
 
@@ -775,7 +775,7 @@ func (m *NFTManager) DeleteSetElements(set *nftables.Set, ips []string) error {
 		return m.deleteSetElementsCLI(set, ips)
 	}
 
-	var elements []nftables.SetElement
+	elements := make([]nftables.SetElement, 0, len(ips)) // Pre-allocate
 	for _, ipStr := range ips {
 		ip := net.ParseIP(ipStr)
 		if ip == nil {
@@ -958,7 +958,7 @@ func (m *NFTManager) AddPortElements(set *nftables.Set, ports []int) error {
 		return nil
 	}
 
-	var elements []nftables.SetElement
+	elements := make([]nftables.SetElement, 0, len(ports)) // Pre-allocate
 	for _, port := range ports {
 		// Validate port range
 		if port < 1 || port > 65535 {
@@ -989,7 +989,7 @@ func (m *NFTManager) DeletePortElements(set *nftables.Set, ports []int) error {
 		return nil
 	}
 
-	var elements []nftables.SetElement
+	elements := make([]nftables.SetElement, 0, len(ports)) // Pre-allocate
 	for _, port := range ports {
 		// Port numbers are uint16 in big-endian format
 		portBytes := []byte{byte(port >> 8), byte(port & 0xff)}
@@ -1037,7 +1037,7 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 	// Step 1: Validate and deduplicate CIDRs
 	inputCount := len(cidrs)
 	seen := make(map[string]bool, len(cidrs))
-	var validCIDRs []string
+	validCIDRs := make([]string, 0, len(cidrs)) // Pre-allocate to avoid reallocations
 
 	// Parse and deduplicate CIDRs using standard net package
 	for _, cidr := range cidrs {
