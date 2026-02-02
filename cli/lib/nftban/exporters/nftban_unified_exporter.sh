@@ -111,6 +111,25 @@ readonly PEAK_WINDOW=300  # 5 minutes for peak tracking
 readonly RUN_COUNT_FILE="${NFTBAN_CACHE_DIR}/collection.run_count"
 
 # =============================================================================
+# CLEANUP TRAP - Prevent orphaned temp files on interruption
+# =============================================================================
+# This ensures .tmp files are cleaned up if script is killed mid-write
+cleanup_temp_files() {
+    local textfile_dir="${NFTBAN_PROMETHEUS_TEXTFILE_DIR:-/var/lib/node_exporter/textfile_collector}"
+    local prom_file="${textfile_dir}/${NFTBAN_PROMETHEUS_OUTPUT_FILE:-nftban.prom}"
+    local json_cache="${NFTBAN_CACHE_DIR}/metrics/combined.json"
+
+    rm -f "${prom_file}.tmp" 2>/dev/null || true
+    rm -f "${json_cache}.tmp" 2>/dev/null || true
+    rm -f "${BANDWIDTH_STATE}.tmp" 2>/dev/null || true
+    rm -f "${METRICS_CACHE}.tmp" 2>/dev/null || true
+
+    # Also clean up any orphaned .prom.* files older than 1 hour
+    find "$textfile_dir" -maxdepth 1 -name "nftban.prom.*" -mmin +60 -delete 2>/dev/null || true
+}
+trap cleanup_temp_files EXIT INT TERM HUP
+
+# =============================================================================
 # COLLECTION GROUPS
 # =============================================================================
 # Live metrics:      Every run (60s) - daemon, bans, memory, nftables, connections
