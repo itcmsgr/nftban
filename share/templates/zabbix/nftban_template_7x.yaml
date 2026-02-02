@@ -634,7 +634,7 @@ zabbix_export:
           value_type: UNSIGNED
           units: B
           description: 'Total disk space'
-        - uuid: 8f2b3c4d5e6a7b8c9d0e1f2a3b4c5d6e
+        - uuid: 76b35d001e5644238a0776722f1dfab5
           name: 'NFTBan: Server disk used'
           type: TRAP
           key: nftban.server.disk_used
@@ -651,19 +651,19 @@ zabbix_export:
         # =====================================================================
         # CONNTRACK (Connection Tracking)
         # =====================================================================
-        - uuid: 1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d
+        - uuid: 1b442aee6cee4e8685d9efc1873e0bd5
           name: 'NFTBan: Conntrack entries'
           type: TRAP
           key: nftban.conntrack.entries
           value_type: UNSIGNED
           description: 'Current number of tracked connections'
-        - uuid: 2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e
+        - uuid: 862312942e174511bf43df19c7d840d8
           name: 'NFTBan: Conntrack max'
           type: TRAP
           key: nftban.conntrack.max
           value_type: UNSIGNED
           description: 'Maximum connection tracking table size'
-        - uuid: 3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f
+        - uuid: 09e73c4b041a4a81ab59d9b3e03f4cad
           name: 'NFTBan: Conntrack utilization'
           type: TRAP
           key: nftban.conntrack.utilization
