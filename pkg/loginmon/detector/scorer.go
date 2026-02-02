@@ -63,6 +63,9 @@ type ScorerConfig struct {
 
 	// Cleanup
 	IPRetentionDuration   time.Duration // How long to keep IP data (default: 24h)
+
+	// Deduplication
+	RecentBanWindow       time.Duration // Suppress duplicate bans within this window (default: 5s)
 }
 
 // DefaultScorerConfig returns production defaults
@@ -76,6 +79,7 @@ func DefaultScorerConfig() ScorerConfig {
 		ScoreDecayInterval:    5 * time.Minute,
 		ScoreDecayAmount:      5,
 		IPRetentionDuration:   24 * time.Hour,
+		RecentBanWindow:       5 * time.Second,
 	}
 }
 
@@ -194,19 +198,18 @@ func (s *Scorer) RecordVerdict(v Verdict) *BanAction {
 	return s.checkThresholds(v.IP, state, v)
 }
 
-// recentBanWindow is the duration to suppress duplicate bans for the same IP
-const recentBanWindow = 5 * time.Second
-
 // checkThresholds determines if a ban should be triggered
 func (s *Scorer) checkThresholds(ip netip.Addr, state *IPState, v Verdict) *BanAction {
 	score := state.Score
 
-	// Skip if recently banned to prevent duplicate ban storms
-	if bannedAt, exists := s.recentBans[ip]; exists {
-		if time.Since(bannedAt) < recentBanWindow {
-			return nil
+	// Skip if recently banned to prevent duplicate ban storms (configurable, 0 = disabled)
+	if s.config.RecentBanWindow > 0 {
+		if bannedAt, exists := s.recentBans[ip]; exists {
+			if time.Since(bannedAt) < s.config.RecentBanWindow {
+				return nil
+			}
+			delete(s.recentBans, ip)
 		}
-		delete(s.recentBans, ip)
 	}
 
 	// Permanent ban threshold
