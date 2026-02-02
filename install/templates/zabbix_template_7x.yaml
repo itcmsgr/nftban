@@ -425,13 +425,13 @@ zabbix_export:
             - tag: scope
               value: availability
           triggers:
-            - uuid: d9b8c7e0f2e45a6c9d0e1f2a3b4c5d6e
+            - uuid: 556e0d6a708b40dba868940bd286bef8
               expression: 'last(/NFTBan/nftban.suricata.up)=0 and last(/NFTBan/nftban.module.up[suricata])=1'
               name: 'Suricata IDS is down but module enabled'
               priority: HIGH
               description: 'Suricata service is not running but the module is enabled.'
 
-        - uuid: e0c9d8f1a3b54c6d7e8f9a0b1c2d3e4f
+        - uuid: d2cee661987d4b80a395d11dce38efa9
           name: 'NFTBan: Suricata alerts total'
           type: TRAP
           key: nftban.suricata.alerts.total
@@ -441,7 +441,7 @@ zabbix_export:
             - tag: component
               value: suricata
 
-        - uuid: f1d0e9a2b4c65d7e8f9a0b1c2d3e4f5a
+        - uuid: 7ef865fc6e454a45af6e893e543d85d9
           name: 'NFTBan: Suricata alerts severity 1 (High)'
           type: TRAP
           key: 'nftban.suricata.alerts.severity[1]'
@@ -453,7 +453,7 @@ zabbix_export:
             - tag: severity
               value: high
 
-        - uuid: a2e1f0b3c5d76e8f9a0b1c2d3e4f5a6b
+        - uuid: 8ea8339152bd43bf86ad8033a3c961a6
           name: 'NFTBan: Suricata alerts severity 2 (Medium)'
           type: TRAP
           key: 'nftban.suricata.alerts.severity[2]'
@@ -465,7 +465,7 @@ zabbix_export:
             - tag: severity
               value: medium
 
-        - uuid: b3f2a1c4d6e87f9a0b1c2d3e4f5a6b7c
+        - uuid: d31121edd1b2438387169dc46d1a14c0
           name: 'NFTBan: Suricata alerts severity 3 (Low)'
           type: TRAP
           key: 'nftban.suricata.alerts.severity[3]'
@@ -477,7 +477,7 @@ zabbix_export:
             - tag: severity
               value: low
 
-        - uuid: c4a3b2d5e7f98a0b1c2d3e4f5a6b7c8d
+        - uuid: c71efc3cc9234b2b89e6114b3a16b9c3
           name: 'NFTBan: Suricata alerts severity 4 (Info)'
           type: TRAP
           key: 'nftban.suricata.alerts.severity[4]'
@@ -489,7 +489,7 @@ zabbix_export:
             - tag: severity
               value: info
 
-        - uuid: d5b4c3e6f8a09b1c2d3e4f5a6b7c8d9e
+        - uuid: e65a60949ee74a67aee3b078d914a52f
           name: 'NFTBan: Suricata rules total'
           type: TRAP
           key: nftban.suricata.rules.total
@@ -499,13 +499,13 @@ zabbix_export:
             - tag: component
               value: suricata
           triggers:
-            - uuid: e6c5d4f7a9b10c2d3e4f5a6b7c8d9e0f
+            - uuid: 4f951710246644fb87e067bac2e821b6
               expression: 'last(/NFTBan/nftban.suricata.rules.total)=0 and last(/NFTBan/nftban.suricata.up)=1'
               name: 'Suricata has no rules loaded'
               priority: WARNING
               description: 'Suricata is running but has no detection rules. Run: suricata-update'
 
-        - uuid: f7d6e5a8b0c21d3e4f5a6b7c8d9e0f1a
+        - uuid: 919fefbd58614555a445f1a457202f44
           name: 'NFTBan: Suricata rules filtered'
           type: TRAP
           key: nftban.suricata.rules.filtered
@@ -515,7 +515,7 @@ zabbix_export:
             - tag: component
               value: suricata
 
-        - uuid: a8e7f6b9c1d32e4f5a6b7c8d9e0f1a2b
+        - uuid: 84c71437743f4490af12b2756d5ca162
           name: 'NFTBan: Suricata bans total'
           type: TRAP
           key: nftban.suricata.bans.total
@@ -525,7 +525,7 @@ zabbix_export:
             - tag: component
               value: suricata
 
-        - uuid: b9f8a7c0d2e43f5a6b7c8d9e0f1a2b3c
+        - uuid: 30202b94c0fe4d6cbaad37f86791cc14
           name: 'NFTBan: Suricata EVE parse errors'
           type: TRAP
           key: nftban.suricata.eve_errors
@@ -535,13 +535,13 @@ zabbix_export:
             - tag: component
               value: suricata
           triggers:
-            - uuid: c0a9b8d1e3f54a6b7c8d9e0f1a2b3c4d
+            - uuid: de33174ed46a4b2991308b5466862f22
               expression: 'change(/NFTBan/nftban.suricata.eve_errors)>10'
               name: 'Suricata EVE parse errors increasing'
               priority: WARNING
               description: 'EVE log parse errors are increasing. Check Suricata log format.'
 
-        - uuid: d1b0c9e2f4a65b7c8d9e0f1a2b3c4d5e
+        - uuid: c6c5b16bf5054ece9c37f5e1f331810f
           name: 'NFTBan: Suricata last alert timestamp'
           type: TRAP
           key: nftban.suricata.last_alert
@@ -552,7 +552,7 @@ zabbix_export:
             - tag: component
               value: suricata
 
-        - uuid: e2c1d0f3a5b76c8d9e0f1a2b3c4d5e6f
+        - uuid: 047769ead9634fceabe855c1f9d7d917
           name: 'NFTBan: Suricata categories enabled'
           type: TRAP
           key: nftban.suricata.categories.enabled
@@ -564,7 +564,7 @@ zabbix_export:
             - tag: feature
               value: v1.9.1
 
-        - uuid: f3d2e1a4b6c87d9e0f1a2b3c4d5e6f7a
+        - uuid: 8bb8224d02a944f891e0374957f92cb4
           name: 'NFTBan: Suricata local rules'
           type: TRAP
           key: nftban.suricata.local_rules
@@ -816,7 +816,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: db0a1d97f32a681b05e87a87760ed348
+        - uuid: 3433d162d7ef48cb82d4840e67cab901
           name: 'NFTBan: OS full details'
           type: TRAP
           key: nftban.server.os_full
@@ -831,7 +831,7 @@ zabbix_export:
               parameters:
                 - '1d'
 
-        - uuid: ca9f0c86e21f570a94d76f76659dc237
+        - uuid: dfe60aa5e978431fb74bf6a5d6fc5b84
           name: 'NFTBan: Software version'
           type: TRAP
           key: nftban.version
