@@ -290,6 +290,12 @@ if [ -d /run/nftban ]; then
     find /run/nftban -maxdepth 1 -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
 fi
 
+# Fix feed files ownership (may be owned by root from manual runs)
+if [ -d /var/lib/nftban/feeds ]; then
+    find /var/lib/nftban/feeds -maxdepth 1 -type f -name "*.txt" -exec chown nftban:nftban {} \; 2>/dev/null || true
+    find /var/lib/nftban/feeds -maxdepth 1 -type f -name "*.txt" -exec chmod 640 {} \; 2>/dev/null || true
+fi
+
 # Set config directory permissions (root-owned, group readable)
 if [ -d /etc/nftban ]; then
     chown root:nftban /etc/nftban
