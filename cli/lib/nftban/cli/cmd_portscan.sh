@@ -21,7 +21,7 @@
 # meta:inventory.privileges="root"
 #
 # meta:created_date="2025-11-05"
-# meta:updated_date="2026-01-11"
+# meta:updated_date="2026-02-02"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -86,6 +86,7 @@ COMMANDS:
     check               Run manual port scan check (parse logs)
     history             Show detected scans (last 24 hours)
     test                Test port scan detection rules
+    mode                Show or set detection mode (auto|classic|suricata|hybrid)
     help                Show this help message
 
 DESCRIPTION:
@@ -197,136 +198,131 @@ REQUIREMENTS:
     • nftables >= 0.9.0
     • Kernel logging enabled
 
-SEE ALSO:
-    nftban ddos help         - DDoS protection help
-    nftban profile help      - Profile selection help
-    nftban ban help          - Ban management help
-
 HELP
 }
 
 # =============================================================================
 
-# JSON STATS FUNCTION (for API/GUI)
+# PORT SCAN STATISTICS (JSON)
 # =============================================================================
 
 _nftban_portscan_stats_json() {
     local json_mode="${1:-false}"
+    local stats_file="${NFTBAN_DATA_DIR:-/var/lib/nftban}/portscan/stats.json"
+    local log_file="${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan.log"
 
-    # Get portscan enabled status, mode from config
-    local portscan_enabled="false"
-    local portscan_mode="classic"
-    local suricata_available="false"
-    local config_file="/etc/nftban/conf.d/portscan.conf"
-    local config_main="/etc/nftban/conf.d/portscan/main.conf"
-    local monitored_ports=0
-
-    # Check if Suricata is available
-    if systemctl is-active suricata.service >/dev/null 2>&1; then
-        suricata_available="true"
-    fi
-
-    # Read from main.conf (new structure)
-    if [[ -f "$config_main" ]]; then
-        local enabled_val
-        enabled_val=$(grep "^PORTSCAN_ENABLED=" "$config_main" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '"' | tr -d "'" | tr -d ' ') || true
-        [[ "$enabled_val" == "true" ]] && portscan_enabled="true"
-
-        # Get mode (auto, classic, suricata, hybrid)
-        local mode_val
-        mode_val=$(grep "^PORTSCAN_MODE=" "$config_main" 2>/dev/null | cut -d= -f2 | tr -d '"' | tr -d "'" | xargs)
-        [[ -n "$mode_val" ]] && portscan_mode="$mode_val"
-
-        # If mode is "auto", determine effective mode
-        if [[ "$portscan_mode" == "auto" ]]; then
-            if [[ "$suricata_available" == "true" ]]; then
-                portscan_mode="suricata"
-            else
-                portscan_mode="classic"
-            fi
-        fi
-    elif [[ -f "$config_file" ]]; then
-        # Fallback to old config file
-        local enabled_val
-        enabled_val=$(grep "^PORTSCAN_ENABLED=" "$config_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '"' | tr -d "'" | tr -d ' ') || true
-        [[ "$enabled_val" == "true" ]] && portscan_enabled="true"
-
-        # Get monitored ports count from old config
-        local ports_val
-        ports_val=$(grep "^PORTSCAN_MONITOR_PORTS=" "$config_file" 2>/dev/null | head -1 | cut -d= -f2 | tr -d '"' | tr -d "'") || true
-        if [[ "$ports_val" == "closed" ]] || [[ "$ports_val" == "all" ]]; then
-            monitored_ports=1
-        elif [[ -n "$ports_val" ]]; then
-            monitored_ports=$(echo "$ports_val" | grep -oE '[0-9]+' | wc -l) || monitored_ports=0
-        fi
-    fi
-
-    # Count portscan blocks from nftban-actions.log
+    # Initialize counters
+    local detected_24h=0
     local blocked_24h=0
+    local detected_total=0
     local blocked_total=0
+    local last_detection=""
+    local last_block=""
 
-    if [[ -f "/var/log/nftban/nftban-actions.log" ]]; then
-        # Count portscan bans in last 24 hours
-        local yesterday_ts
-        # shellcheck disable=SC2034  # Reserved for time range filtering
-        yesterday_ts=$(date -d '24 hours ago' +%s 2>/dev/null) || yesterday_ts=0
-        blocked_24h=$(grep -c '"source":"portscan"' /var/log/nftban/nftban-actions.log 2>/dev/null) || blocked_24h=0
-
-        # Count total portscan bans (same as 24h for now, proper implementation needs timestamp filtering)
-        blocked_total=$blocked_24h
+    # Read stats from JSON file if exists
+    if [[ -f "$stats_file" ]] && command -v jq &>/dev/null; then
+        detected_total=$(jq -r '.detected_total // 0' "$stats_file" 2>/dev/null || echo "0")
+        blocked_total=$(jq -r '.blocked_total // 0' "$stats_file" 2>/dev/null || echo "0")
+        last_detection=$(jq -r '.last_detection // ""' "$stats_file" 2>/dev/null || echo "")
+        last_block=$(jq -r '.last_block // ""' "$stats_file" 2>/dev/null || echo "")
     fi
 
-    # Ensure numeric values - strip any non-numeric characters
-    monitored_ports=$(echo "$monitored_ports" | tr -dc '0-9')
-    [[ -z "$monitored_ports" ]] && monitored_ports=0
-    blocked_24h=$(echo "$blocked_24h" | tr -dc '0-9')
-    [[ -z "$blocked_24h" ]] && blocked_24h=0
-    blocked_total=$(echo "$blocked_total" | tr -dc '0-9')
-    [[ -z "$blocked_total" ]] && blocked_total=0
+    # Count last 24 hours from log
+    if [[ -f "$log_file" ]]; then
+        local cutoff_epoch
+        cutoff_epoch=$(date -d "24 hours ago" +%s 2>/dev/null || date -v-24H +%s 2>/dev/null || echo "0")
+        
+        # Parse log for detections and blocks in last 24h
+        while IFS= read -r line; do
+            # Extract timestamp (assumes ISO format at start)
+            local ts
+            ts=$(echo "$line" | grep -oP '^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}' | head -1)
+            if [[ -n "$ts" ]]; then
+                local line_epoch
+                line_epoch=$(date -d "$ts" +%s 2>/dev/null || echo "0")
+                if [[ "$line_epoch" -ge "$cutoff_epoch" ]]; then
+                    if echo "$line" | grep -q "detected"; then
+                        ((detected_24h++)) || true
+                    fi
+                    if echo "$line" | grep -q "blocked\|banned"; then
+                        ((blocked_24h++)) || true
+                    fi
+                fi
+            fi
+        done < "$log_file"
+    fi
 
-    if [[ "$json_mode" == "true" ]] && declare -f json_output >/dev/null 2>&1; then
+    # JSON output
+    if [[ "$json_mode" == "true" ]] && declare -f json_output &>/dev/null; then
         local data
         if command -v jq &>/dev/null; then
             data=$(jq -n \
-                --arg ports "$monitored_ports" \
-                --arg blocked_24h "$blocked_24h" \
-                --arg blocked_total "$blocked_total" \
-                --arg enabled "$portscan_enabled" \
-                --arg mode "$portscan_mode" \
-                --arg suricata "$suricata_available" \
+                --argjson detected_24h "$detected_24h" \
+                --argjson blocked_24h "$blocked_24h" \
+                --argjson detected_total "$detected_total" \
+                --argjson blocked_total "$blocked_total" \
+                --arg last_detection "$last_detection" \
+                --arg last_block "$last_block" \
                 '{
-                    portscan: {
-                        monitored_ports: ($ports | tonumber),
-                        blocked_24h: ($blocked_24h | tonumber),
-                        blocked_total: ($blocked_total | tonumber),
-                        enabled: ($enabled == "true"),
-                        mode: $mode,
-                        suricata_available: ($suricata == "true")
+                    stats: {
+                        detected_24h: $detected_24h,
+                        blocked_24h: $blocked_24h,
+                        detected_total: $detected_total,
+                        blocked_total: $blocked_total,
+                        last_detection: (if $last_detection == "" then null else $last_detection end),
+                        last_block: (if $last_block == "" then null else $last_block end)
                     }
                 }')
         else
-            local enabled_json="false"
-            local suricata_json="false"
-            [[ "$portscan_enabled" == "true" ]] && enabled_json="true"
-            [[ "$suricata_available" == "true" ]] && suricata_json="true"
-            data="{\"portscan\":{\"monitored_ports\":$monitored_ports,\"blocked_24h\":$blocked_24h,\"blocked_total\":$blocked_total,\"enabled\":$enabled_json,\"mode\":\"$portscan_mode\",\"suricata_available\":$suricata_json}}"
+            local ld_json="null"
+            local lb_json="null"
+            [[ -n "$last_detection" ]] && ld_json="\"$last_detection\""
+            [[ -n "$last_block" ]] && lb_json="\"$last_block\""
+            data="{\"stats\":{\"detected_24h\":$detected_24h,\"blocked_24h\":$blocked_24h,\"detected_total\":$detected_total,\"blocked_total\":$blocked_total,\"last_detection\":$ld_json,\"last_block\":$lb_json}}"
         fi
-
         json_output "true" "$data"
         return 0
     fi
 
     # Human-readable output
-    echo "Port Scan Detection Statistics"
-    echo "=============================="
+    echo "Port Scan Statistics"
+    echo "===================="
     echo ""
-    echo "  Enabled:          $portscan_enabled"
-    echo "  Mode:             $portscan_mode"
-    echo "  Suricata:         $suricata_available"
-    echo "  Monitored Ports:  $monitored_ports"
-    echo "  Blocked (24h):    $blocked_24h"
+    echo "  Last 24 Hours:"
+    echo "  Detected:         $detected_24h"
+    echo "  Blocked:          $blocked_24h"
+    echo ""
+    echo "  All Time:"
+    echo "  Detected (Total): $detected_total"
     echo "  Blocked (Total):  $blocked_total"
     echo ""
+}
+
+# =============================================================================
+# MODE COMMAND: Thin wrapper using shared helper
+# =============================================================================
+
+# Mode subcommand handler - delegates to shared helper
+_nftban_portscan_mode() {
+    local subcommand="${1:-show}"
+    local json_mode="${2:-false}"
+    local mode_arg="${3:-}"
+
+    # Load shared mode helper
+    local mode_helper="${NFTBAN_LIB_DIR}/helpers/nftban_mode.sh"
+    if [[ -f "$mode_helper" ]]; then
+        # shellcheck source=/dev/null
+        source "$mode_helper"
+    else
+        echo "ERROR: Mode helper not found: $mode_helper" >&2
+        return 1
+    fi
+
+    # Delegate to shared handler
+    _nftban_mode_handler "portscan" "PORTSCAN_MODE" \
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" \
+        "Port Scan Detection" \
+        "$subcommand" "$json_mode" "$mode_arg"
 }
 
 # =============================================================================
@@ -502,6 +498,14 @@ nftban_cmd_portscan() {
             echo "   Entries: $line_count"
             ;;
 
+        mode)
+            # Handle mode subcommand (show/set)
+            local mode_subcmd="${1:-show}"
+            shift || true
+            local mode_arg="${1:-}"
+            _nftban_portscan_mode "$mode_subcmd" "$json_mode" "$mode_arg"
+            ;;
+
         help|--help|-h)
             _nftban_portscan_help
             ;;
@@ -509,7 +513,7 @@ nftban_cmd_portscan() {
         *)
             echo "ERROR: Unknown command: $action"
             echo ""
-            echo "Available commands: enable, disable, status, check, history, test, sync, help"
+            echo "Available commands: enable, disable, status, check, history, test, mode, sync, help"
             echo "Run 'nftban portscan help' for detailed usage information"
             exit 1
             ;;
@@ -527,6 +531,7 @@ nftban_cmd_portscan() {
 # =============================================================================
 
 export -f nftban_cmd_portscan
+export -f _nftban_portscan_mode
 
 # Execute if called directly (shouldn't happen, but handle gracefully)
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

@@ -232,6 +232,7 @@ case "$1" in
 
         # Configuration directories
         mkdir -p /etc/nftban/{conf.d,distros,whitelist.d,blacklist.d,ports.d,rules.d}
+        mkdir -p /etc/nftban/suricata/{profiles,config,rules,cache,state/last-good}
 
         # Variable data directories
         mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,metrics,snapshots,exports}
@@ -262,6 +263,13 @@ case "$1" in
         chmod 755 /etc/nftban/distros
         chown root:nftban /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d /etc/nftban/rules.d
         chmod 750 /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d /etc/nftban/rules.d
+
+        # Suricata directories
+        if [ -d /etc/nftban/suricata ]; then
+            chown -R root:nftban /etc/nftban/suricata
+            find /etc/nftban/suricata -type d -exec chmod 750 {} \;
+            find /etc/nftban/suricata -type f -exec chmod 644 {} \;
+        fi
 
         # Config files in conf.d - must be readable by nftban group
         if [ -d /etc/nftban/conf.d ]; then

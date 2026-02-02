@@ -5,6 +5,73 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.1] - 2026-02-02
+
+### Suricata Smart Management (Phase 2 - Rules UX)
+
+This release introduces a complete CLI-based rule management system for Suricata,
+eliminating the need for manual config file editing.
+
+### Added
+
+- **Suricata rules management** - New CLI commands for ruleset control:
+  - `nftban suricata rules status` - Show ruleset version, counts, sources, last update
+  - `nftban suricata rules rollback <backup>` - Restore from automatic backup
+  - `nftban suricata rules list-backups` - List available rule backups
+  - `nftban suricata rules apply` - Apply pending changes (suricata-update + reload)
+
+- **Suricata category management** - Enable/disable rule categories via CLI:
+  - `nftban suricata category list` - Show all categories with status
+  - `nftban suricata category enable <cat>` - Enable a category (e.g., emerging-malware)
+  - `nftban suricata category disable <cat>` - Disable a category (e.g., emerging-policy)
+
+- **Suricata SID management** - Control individual rules:
+  - `nftban suricata sid enable <SID>` - Force-enable a specific rule
+  - `nftban suricata sid disable <SID>` - Disable a noisy/false-positive rule
+  - `nftban suricata sid list [type]` - List SID overrides (enabled/disabled/all)
+
+- **Suricata local rules** - User-defined rules (SID 1000000-1999999):
+  - `nftban suricata local list` - List local user rules
+  - `nftban suricata local add '<rule>'` - Add a new local rule
+  - `nftban suricata local remove <SID>` - Remove a local rule
+  - `nftban suricata local edit` - Open local.rules in editor
+
+- **Shared helper library** - New `suricata_rules.sh` helper module with 16 functions
+  for backup, rollback, category, SID, and local rule management.
+
+- **Shared mode handler** - New `nftban_mode.sh` helper module (~450 lines) eliminating
+  duplicate mode management code across portscan/ddos modules.
+
+- **Unified modes command** - New `nftban modes` command showing all module modes
+  in a single table view.
+
+### Fixed
+
+- **DDoS mode argument passing** - Aligned `_nftban_ddos_mode()` to match portscan
+  pattern with explicit argument passing and error handling for missing helper.
+
+- **Duplicate _check_root()** - cmd_suricata.sh now uses shared helper when available,
+  eliminating code duplication with suricata_rules.sh.
+
+- **Duplicate code in cmd_suricata.sh** - Removed ~400 lines of duplicate router/help
+  functions that were accidentally duplicated.
+
+### Changed
+
+- **Package manager inclusions** - Added all new Suricata config files to:
+  - RPM spec: state directories, rule configs, yaml overlay
+  - DEB postinst: suricata directories and permissions
+  - install.sh: suricata rule files and state directory
+
+### Config Files Added
+
+- `/etc/nftban/suricata/rules/disable.conf` - SID disable list (suricata-update)
+- `/etc/nftban/suricata/rules/enable.conf` - SID enable list (suricata-update)
+- `/etc/nftban/suricata/rules/categories.enabled` - Category toggles
+- `/etc/nftban/suricata/rules/local.rules` - User-defined rules
+- `/etc/nftban/suricata/suricata.yaml.overlay` - YAML config overlay
+- `/etc/nftban/suricata/state/` - Backup state directory
+
 ## [1.9.0] - 2026-02-02
 
 ### Major Refactoring Release

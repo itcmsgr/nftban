@@ -1,0 +1,100 @@
+# nftban Suricata Category Configuration
+# ======================================
+# This file controls which rule categories are enabled or disabled.
+# Categories are logical groupings of rules by threat type or protocol.
+#
+# Format:
+#   category-name = enabled|disabled
+#
+# Categories are determined by the ruleset source (e.g., ET Open).
+# Common ET Open categories include:
+#   - emerging-attack_response
+#   - emerging-botcc
+#   - emerging-compromised
+#   - emerging-current_events
+#   - emerging-dns
+#   - emerging-dos
+#   - emerging-exploit
+#   - emerging-ftp
+#   - emerging-icmp
+#   - emerging-imap
+#   - emerging-malware
+#   - emerging-misc
+#   - emerging-mobile_malware
+#   - emerging-netbios
+#   - emerging-p2p
+#   - emerging-policy
+#   - emerging-pop3
+#   - emerging-rpc
+#   - emerging-scan
+#   - emerging-smtp
+#   - emerging-snmp
+#   - emerging-sql
+#   - emerging-telnet
+#   - emerging-tftp
+#   - emerging-tor
+#   - emerging-trojan
+#   - emerging-user_agents
+#   - emerging-voip
+#   - emerging-web_client
+#   - emerging-web_server
+#   - emerging-worm
+#
+# Note: This file works with suricata-update --enable-conf and --disable-conf
+
+# ===========================================================================
+# CATEGORY TOGGLES
+# ===========================================================================
+
+# Core threat detection (recommended: enabled)
+emerging-malware = enabled
+emerging-trojan = enabled
+emerging-exploit = enabled
+emerging-botcc = enabled
+emerging-compromised = enabled
+emerging-worm = enabled
+
+# Attack patterns
+emerging-attack_response = enabled
+emerging-dos = enabled
+emerging-scan = enabled
+
+# Current threats (updated frequently)
+emerging-current_events = enabled
+
+# Network services (enable based on your environment)
+emerging-dns = enabled
+emerging-ftp = disabled
+emerging-imap = disabled
+emerging-pop3 = disabled
+emerging-smtp = disabled
+emerging-telnet = disabled
+emerging-tftp = disabled
+emerging-rpc = disabled
+emerging-snmp = disabled
+
+# Web traffic
+emerging-web_client = enabled
+emerging-web_server = enabled
+
+# Other protocols
+emerging-icmp = enabled
+emerging-netbios = disabled
+emerging-sql = enabled
+emerging-voip = disabled
+
+# Policy and informational (high noise, disable unless needed)
+emerging-policy = disabled
+emerging-user_agents = disabled
+emerging-misc = disabled
+emerging-info = disabled
+
+# P2P and anonymization
+emerging-p2p = disabled
+emerging-tor = disabled
+
+# Mobile threats
+emerging-mobile_malware = enabled
+
+# Deleted/deprecated rules (always disabled)
+emerging-deleted = disabled

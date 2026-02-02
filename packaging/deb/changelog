@@ -1,3 +1,18 @@
+nftban (1.9.1-1) stable; urgency=medium
+
+  * Suricata Smart Management - Phase 2 Rules UX
+  * New: nftban suricata rules status/rollback/list-backups/apply
+  * New: nftban suricata category list/enable/disable
+  * New: nftban suricata sid enable/disable/list
+  * New: nftban suricata local list/add/remove/edit
+  * New: Shared suricata_rules.sh helper (16 functions)
+  * New: Shared nftban_mode.sh helper for portscan/ddos
+  * Fixed: DDoS mode argument passing aligned with portscan
+  * Fixed: Duplicate code in cmd_suricata.sh removed
+  * Added: All suricata config files to package
+
+ -- Antonios Voulvoulis <contact@nftban.com>  Sun, 02 Feb 2026 12:00:00 +0000
+
 nftban-ui (1.0.0-1) stable; urgency=medium
 
   * NFTBan v1.0.0 - Unified Security Platform Release

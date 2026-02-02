@@ -1,0 +1,97 @@
+# nftban Suricata Configuration Overlay
+# =====================================
+# This file contains configuration overrides applied on top of the base
+# Suricata configuration. It is included via the 'include' directive.
+#
+# Usage in /etc/suricata/suricata.yaml:
+#   include: /etc/nftban/suricata/suricata.yaml.overlay
+#
+# This overlay configures Suricata integration with nftban:
+#   - EVE JSON logging for nftban consumption
+#   - Rule paths for nftban-managed rules
+#   - Performance tuning recommendations
+#
+# Only settings that differ from defaults are specified here.
+# See Suricata documentation for all available options:
+# https://suricata.readthedocs.io/en/latest/configuration/
+
+%YAML 1.1
+---
+
+# ===========================================================================
+# LOGGING CONFIGURATION
+# ===========================================================================
+
+outputs:
+  # EVE JSON log - primary output for nftban integration
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: /var/log/suricata/eve.json
+      
+      # Rotate logs to prevent disk exhaustion
+      rotate-interval: day
+      
+      # Types of events to log
+      types:
+        - alert:
+            # Include rule metadata for nftban processing
+            metadata: yes
+            # Include packet payload (base64)
+            payload: yes
+            payload-printable: yes
+            # Include flow information
+            flow: yes
+            # Tag format for easier parsing
+            tagged-packets: yes
+            
+        - stats:
+            enabled: yes
+            interval: 60
+            
+        - flow:
+            enabled: no  # Enable if flow analysis needed
+            
+# ===========================================================================
+# RULE FILES
+# ===========================================================================
+
+# Default rule path - where suricata-update places merged rules
+default-rule-path: /var/lib/suricata/rules
+
+# Additional rule files managed by nftban
+rule-files:
+  - suricata.rules           # Main rules from suricata-update
+  - /etc/nftban/suricata/rules/local.rules  # nftban local rules
+
+# ===========================================================================
+# PERFORMANCE TUNING
+# ===========================================================================
+
+# Memory settings (adjust based on available RAM)
+# Uncomment and modify as needed for your environment
+
+# stream:
+#   memcap: 256mb
+#   reassembly:
+#     memcap: 512mb
+
+# flow:
+#   memcap: 256mb
+
+# ===========================================================================
+# NFTBAN INTEGRATION
+# ===========================================================================
+
+# Unix socket for command/control (used by nftban for live rule reload)
+unix-command:
+  enabled: yes
+  filename: /var/run/suricata/suricata-command.socket
+
+# ===========================================================================
+# CLASSIFICATION & REFERENCE
+# ===========================================================================
+
+# Standard classification and reference config
+classification-file: /etc/suricata/classification.config
+reference-config-file: /etc/suricata/reference.config

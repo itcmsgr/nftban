@@ -197,6 +197,7 @@ nftban_complete() {
         echo "portscan"
         echo "login"
         echo "botscan"
+        echo "modes"
         echo "feeds"
         echo "trust"
         echo "country"
@@ -466,6 +467,10 @@ nftban_complete() {
                 echo "history"
                 echo "test"
                 echo "help"
+                ;;
+            modes)
+                echo "help"
+                echo "--json"
                 ;;
             watchdog)
                 echo "status"
