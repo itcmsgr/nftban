@@ -24,6 +24,7 @@ package sync
 import (
 	"encoding/binary"
 	"fmt"
+	"log"
 	"net"
 	"os"
 	"regexp"
@@ -1056,10 +1057,17 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 		}
 	}
 
-	// Step 2: Merge overlapping and adjacent CIDRs using interval merging algorithm
-	canonicalCIDRs, stats, err := MergeCIDRs(validCIDRs)
+	// Step 2: Merge overlapping and adjacent CIDRs using safe interval merging
+	// MergeCIDRsSafe automatically filters problematic CIDRs (bogon ranges, oversized)
+	canonicalCIDRs, stats, filterStats, err := MergeCIDRsSafe(validCIDRs)
 	if err != nil {
 		return nil, fmt.Errorf("failed to merge CIDRs: %w", err)
+	}
+
+	// Log if any CIDRs were filtered (important for troubleshooting feed issues)
+	if filterStats != nil && filterStats.Filtered > 0 {
+		log.Printf("[SYNC] CIDR filter: removed %d problematic entries (bogon=%d, oversized=%d) from %d total",
+			filterStats.Filtered, filterStats.Bogon, filterStats.TooLarge, filterStats.Total)
 	}
 
 	// Update stats to reflect total reduction (including invalid/duplicate removal)
