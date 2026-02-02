@@ -88,7 +88,7 @@ _zabbix_config_get() {
 
 _zabbix_config_set() {
     # Write config to zabbix.conf.local (module-specific for proper permissions)
-    # The nftban-zabbix-exporter service runs as 'nftban' user and needs read access
+    # The unified exporter runs as 'nftban' user and needs read access
     local key="$1"
     local value="$2"
     local conf_local="${NFTBAN_CONFIG_DIR}/conf.d/zabbix.conf.local"
@@ -734,16 +734,19 @@ _cmd_zabbix_push() {
         hostname=$(hostname -f 2>/dev/null || hostname)
     fi
 
-    # Use bash exporter
-    local exporter="${NFTBAN_LIB_DIR}/exporters/nftban_zabbix_exporter.sh"
+    # Use unified exporter (handles both Prometheus and Zabbix)
+    local exporter="${NFTBAN_LIB_DIR}/exporters/nftban_unified_exporter.sh"
 
     if [[ -x "$exporter" ]]; then
         if [[ "$dry_run" == "true" ]]; then
             echo ""
-            echo "Dry run - would execute: $exporter"
-            "$exporter" --dry-run 2>/dev/null || "$exporter"
+            echo "Dry run - unified exporter would send to Zabbix"
+            echo "Server: $server"
+            echo "Hostname: $hostname"
+            # Show what would be sent
+            NFTBAN_ZABBIX_ENABLED=true "$exporter" --stdout 2>/dev/null | head -50
         else
-            "$exporter"
+            NFTBAN_ZABBIX_ENABLED=true "$exporter"
             local exit_code=$?
             if [[ $exit_code -eq 0 ]]; then
                 _zabbix_print_success "Metrics pushed successfully"
@@ -753,7 +756,7 @@ _cmd_zabbix_push() {
             fi
         fi
     else
-        _zabbix_print_warning "Exporter not found: $exporter"
+        _zabbix_print_warning "Unified exporter not found: $exporter"
         echo "Creating basic metric push..."
 
         # Fallback: push basic metrics directly

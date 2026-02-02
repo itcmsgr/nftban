@@ -41,9 +41,8 @@ After=nftban.service
 # on a oneshot service causes the timer to stop when the service completes.
 
 # MUTUAL EXCLUSION: Prevent running alongside legacy exporters
-# Unified exporter replaces these 3 timers - only ONE system should be active
+# Unified exporter replaces these timers - only ONE system should be active
 Conflicts=nftban-metrics-exporter.timer
-Conflicts=nftban-zabbix-exporter.timer
 Conflicts=nftban-connector-exporter.timer
 
 [Timer]
