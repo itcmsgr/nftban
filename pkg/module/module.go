@@ -2,6 +2,19 @@
 // NFTBan v1.0 - Module Interface
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="module"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2024-12-01"
+// meta:description="Defines the interface all nftban modules must implement"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
+//
 // Package: module
 // Purpose: Defines the interface all nftban modules must implement
 //
@@ -90,19 +103,43 @@ func NewStatus(name string) Status {
 	}
 }
 
+// GetStatus safely returns a Status, handling nil receiver.
+// If the status pointer is nil, returns a default "unknown" status.
+func (s *Status) GetStatus() Status {
+	if s == nil {
+		return Status{
+			Name:    "unknown",
+			Enabled: false,
+			Running: false,
+			Healthy: false,
+			Extra:   make(ExtraInfo),
+		}
+	}
+	return *s
+}
+
 // MarkRunning updates status to indicate module is running
 func (s *Status) MarkRunning() {
+	if s == nil {
+		return
+	}
 	s.Running = true
 	s.StartTime = time.Now()
 }
 
 // MarkStopped updates status to indicate module is stopped
 func (s *Status) MarkStopped() {
+	if s == nil {
+		return
+	}
 	s.Running = false
 }
 
 // RecordError records an error
 func (s *Status) RecordError(err error) {
+	if s == nil {
+		return
+	}
 	s.ErrorCount++
 	if err != nil {
 		s.LastError = err.Error()
@@ -112,18 +149,27 @@ func (s *Status) RecordError(err error) {
 
 // RecordEvent increments the event counter
 func (s *Status) RecordEvent() {
+	if s == nil {
+		return
+	}
 	s.EventCount++
 	s.LastRun = time.Now()
 }
 
 // ClearError clears the last error
 func (s *Status) ClearError() {
+	if s == nil {
+		return
+	}
 	s.LastError = ""
 	s.Healthy = true
 }
 
 // UpdateUptime calculates and updates the uptime string
 func (s *Status) UpdateUptime() {
+	if s == nil {
+		return
+	}
 	if s.StartTime.IsZero() || !s.Running {
 		s.Uptime = "-"
 		return

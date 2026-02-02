@@ -185,23 +185,23 @@ func LoadSpecificFeed(feedsDir string, feedName string) ([]string, []string, []s
 		return nil, nil, nil, nil, fmt.Errorf("failed to load feed: %w", err)
 	}
 
-	// Convert maps to slices
-	var ipv4List []string
+	// Convert maps to slices with pre-allocation to avoid reallocations
+	ipv4List := make([]string, 0, len(ipv4Set))
 	for ip := range ipv4Set {
 		ipv4List = append(ipv4List, ip)
 	}
 
-	var ipv6List []string
+	ipv6List := make([]string, 0, len(ipv6Set))
 	for ip := range ipv6Set {
 		ipv6List = append(ipv6List, ip)
 	}
 
-	var ipv4CIDRList []string
+	ipv4CIDRList := make([]string, 0, len(ipv4CIDRSet))
 	for cidr := range ipv4CIDRSet {
 		ipv4CIDRList = append(ipv4CIDRList, cidr)
 	}
 
-	var ipv6CIDRList []string
+	ipv6CIDRList := make([]string, 0, len(ipv6CIDRSet))
 	for cidr := range ipv6CIDRSet {
 		ipv6CIDRList = append(ipv6CIDRList, cidr)
 	}
@@ -211,12 +211,10 @@ func LoadSpecificFeed(feedsDir string, feedName string) ([]string, []string, []s
 
 // ListAvailableFeeds returns a list of all available feed names
 func ListAvailableFeeds(feedsDir string) ([]string, error) {
-	var feeds []string
-
 	entries, err := os.ReadDir(feedsDir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return feeds, nil
+			return nil, nil
 		}
 		return nil, fmt.Errorf("failed to read feeds directory: %w", err)
 	}
@@ -225,6 +223,9 @@ func ListAvailableFeeds(feedsDir string) ([]string, error) {
 	excludeFiles := map[string]bool{
 		"library": true, // Internal library/helper file
 	}
+
+	// Pre-allocate slice with estimated capacity
+	feeds := make([]string, 0, len(entries))
 
 	for _, entry := range entries {
 		if entry.IsDir() {

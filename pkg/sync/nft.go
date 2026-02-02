@@ -33,6 +33,7 @@ import (
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/expr"
+	"github.com/itcmsgr/nftban/pkg/safety"
 )
 
 // =============================================================================
@@ -214,7 +215,7 @@ func (m *NFTManager) GetSetElements(set *nftables.Set) ([]string, error) {
 		return nil, fmt.Errorf("failed to get set elements: %w", err)
 	}
 
-	var ips []string
+	ips := make([]string, 0, len(elements)) // Pre-allocate to avoid reallocations
 	for _, elem := range elements {
 		// Parse IP from element key
 		ip := net.IP(elem.Key)
@@ -543,7 +544,12 @@ func (m *NFTManager) fullSetRefreshExcludingIP(set *nftables.Set, family, exclud
 
 // parseSetElements extracts IP addresses and ranges from nft list output
 func (m *NFTManager) parseSetElements(output string) []string {
-	var elements []string
+	// Estimate capacity based on comma count (each element separated by comma)
+	estimatedCap := strings.Count(output, ",") + 1
+	if estimatedCap < 16 {
+		estimatedCap = 16 // Minimum capacity
+	}
+	elements := make([]string, 0, estimatedCap)
 
 	// Find the elements section
 	elemStart := strings.Index(output, "elements = {")
@@ -1068,6 +1074,11 @@ func (m *NFTManager) AddCIDRElementsWithStats(set *nftables.Set, cidrs []string)
 	if filterStats != nil && filterStats.Filtered > 0 {
 		log.Printf("[SYNC] CIDR filter: removed %d problematic entries (bogon=%d, oversized=%d) from %d total",
 			filterStats.Filtered, filterStats.Bogon, filterStats.TooLarge, filterStats.Total)
+		// Record filter stats for metrics export
+		if err := safety.RecordFilterState(filterStats.Total, filterStats.Filtered,
+			filterStats.Bogon, filterStats.TooLarge, filterStats.Kept); err != nil {
+			log.Printf("[SYNC] Warning: Failed to record filter state: %v", err)
+		}
 	}
 
 	// Update stats to reflect total reduction (including invalid/duplicate removal)

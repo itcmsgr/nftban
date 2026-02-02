@@ -382,6 +382,68 @@ func GetProtectionSummary() string {
 }
 
 // =============================================================================
+// CIDR Filter State Tracking
+// =============================================================================
+// Records CIDR filter statistics for metrics export and visibility
+
+const (
+	// FilterStateFile is the CIDR filter state JSON file
+	FilterStateFile = "/var/lib/nftban/state/filter.json"
+)
+
+// FilterState tracks CIDR filtering statistics from the last sync
+type FilterState struct {
+	Timestamp    string `json:"timestamp"`
+	Total        int    `json:"total"`         // Total input CIDRs
+	Filtered     int    `json:"filtered"`      // CIDRs removed by filtering
+	BogonCount   int    `json:"bogon_count"`   // Bogon/reserved ranges removed
+	OversizeCount int   `json:"oversize_count"` // Oversized CIDRs removed (< /9)
+	Kept         int    `json:"kept"`          // CIDRs that passed filtering
+}
+
+// RecordFilterState writes CIDR filter statistics after sync
+func RecordFilterState(total, filtered, bogon, oversize, kept int) error {
+	// Create state directory if needed
+	if err := os.MkdirAll(ProtectionStateDir, 0755); err != nil {
+		return err
+	}
+
+	state := FilterState{
+		Timestamp:     time.Now().Format(time.RFC3339),
+		Total:         total,
+		Filtered:      filtered,
+		BogonCount:    bogon,
+		OversizeCount: oversize,
+		Kept:          kept,
+	}
+
+	data, err := json.MarshalIndent(state, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(FilterStateFile, data, 0644)
+}
+
+// GetFilterState reads current CIDR filter state
+func GetFilterState() (*FilterState, error) {
+	data, err := os.ReadFile(FilterStateFile)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil // No filter state yet
+		}
+		return nil, err
+	}
+
+	var state FilterState
+	if err := json.Unmarshal(data, &state); err != nil {
+		return nil, err
+	}
+
+	return &state, nil
+}
+
+// =============================================================================
 // Memory Pressure Levels
 // =============================================================================
 

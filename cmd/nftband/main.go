@@ -50,6 +50,7 @@ import (
 	"runtime/pprof"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -98,6 +99,11 @@ var (
 
 // Runtime flags
 var profileEnabled = false
+
+// banMutex protects concurrent ban operations during escalation
+// to prevent race conditions when multiple goroutines attempt
+// to escalate and ban the same IP simultaneously
+var banMutex sync.Mutex
 
 // getDaemonPaths returns paths from central config
 // NO FALLBACK - paths must come from /etc/nftban/nftban.conf
@@ -182,7 +188,13 @@ func (d *Daemon) isWhitelisted(ip string) bool {
 // offender threshold and should be escalated to a permanent ban.
 // Called asynchronously after each temp ban from EventBan handler.
 // Reads thresholds from conf.d/persistent.conf (per-filter or global defaults).
+// Uses banMutex to prevent race conditions during concurrent escalation.
 func (d *Daemon) checkAndEscalate(ip, source, country string) {
+	// Acquire mutex to prevent race conditions when multiple goroutines
+	// attempt to escalate the same IP simultaneously
+	banMutex.Lock()
+	defer banMutex.Unlock()
+
 	if d.configDir == "" {
 		return
 	}

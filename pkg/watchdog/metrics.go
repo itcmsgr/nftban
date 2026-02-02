@@ -2,6 +2,18 @@
 // NFTBan v1.0 - Watchdog Prometheus Metrics
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="metrics"
+// meta:type="go"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-01-15"
+// meta:description="Prometheus metrics for the watchdog system"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files=""
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="none"
 //
 // Prometheus metrics for the watchdog system.
 // All metrics use the "nftban_" namespace.
@@ -11,6 +23,7 @@
 package watchdog
 
 import (
+	"github.com/itcmsgr/nftban/pkg/safety"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -199,6 +212,40 @@ var (
 		Name:      "cost_bytes_per_block_rss",
 		Help:      "RSS bytes per blocked IP (rolling window)",
 	})
+
+	// ==========================================================================
+	// CIDR Filter Metrics
+	// ==========================================================================
+
+	cidrFilterTotal = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "cidr_filter_total",
+		Help:      "Total CIDRs processed in last sync",
+	})
+
+	cidrFilterFiltered = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "cidr_filter_filtered",
+		Help:      "CIDRs removed by filtering in last sync",
+	})
+
+	cidrFilterBogon = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "cidr_filter_bogon",
+		Help:      "Bogon/reserved CIDRs removed in last sync",
+	})
+
+	cidrFilterOversize = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "cidr_filter_oversize",
+		Help:      "Oversized CIDRs (< /9) removed in last sync",
+	})
+
+	cidrFilterKept = promauto.NewGauge(prometheus.GaugeOpts{
+		Namespace: "nftban",
+		Name:      "cidr_filter_kept",
+		Help:      "CIDRs that passed filtering in last sync",
+	})
 )
 
 // MetricsExporter updates Prometheus metrics from watchdog data
@@ -293,6 +340,9 @@ func (m *MetricsExporter) Update(snapshot *Snapshot, state *PressureState) {
 
 	// Cost per block calculation
 	m.updateCostMetrics(snapshot)
+
+	// CIDR filter metrics (read from state file)
+	m.updateFilterMetrics()
 }
 
 // RecordAction records an action in metrics
@@ -328,4 +378,18 @@ func (m *MetricsExporter) updateCostMetrics(snapshot *Snapshot) {
 		m.lastRSS = snapshot.Process.RSS
 		m.lastBlocks = totalBlocks
 	}
+}
+
+// updateFilterMetrics updates CIDR filter metrics from state file
+func (m *MetricsExporter) updateFilterMetrics() {
+	state, err := safety.GetFilterState()
+	if err != nil || state == nil {
+		return // No filter state available yet
+	}
+
+	cidrFilterTotal.Set(float64(state.Total))
+	cidrFilterFiltered.Set(float64(state.Filtered))
+	cidrFilterBogon.Set(float64(state.BogonCount))
+	cidrFilterOversize.Set(float64(state.OversizeCount))
+	cidrFilterKept.Set(float64(state.Kept))
 }
