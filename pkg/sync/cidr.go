@@ -23,11 +23,34 @@ package sync
 
 import (
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
+	"runtime"
 	"sort"
 )
+
+// ErrMemoryBudgetExceeded is returned when CIDR merging exceeds memory budget
+var ErrMemoryBudgetExceeded = errors.New("CIDR merge aborted: memory budget exceeded")
+
+// DefaultMemoryBudget is the default memory limit for CIDR merging (256MB)
+const DefaultMemoryBudget = 256 * 1024 * 1024
+
+// memoryBudget is the current memory budget for CIDR operations
+var memoryBudget uint64 = DefaultMemoryBudget
+
+// SetMemoryBudget sets the memory budget for CIDR merging operations
+func SetMemoryBudget(bytes uint64) {
+	memoryBudget = bytes
+}
+
+// checkMemoryBudget returns true if current heap allocation exceeds budget
+func checkMemoryBudget() bool {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return m.HeapAlloc > memoryBudget
+}
 
 // ipv4Interval represents an IPv4 range as [start, end] inclusive
 type ipv4Interval struct {
@@ -161,8 +184,16 @@ func mergeCIDRsIPv4WithStats(cidrs []string) ([]string, *MergeStats, error) {
 	// Convert merged intervals back to CIDRs
 	result := make([]string, 0)
 	for _, interval := range merged {
-		cidrs := rangeToCIDRsIPv4(interval.Start, interval.End)
-		result = append(result, cidrs...)
+		intervalCIDRs, err := rangeToCIDRsIPv4(interval.Start, interval.End)
+		if err != nil {
+			return nil, nil, fmt.Errorf("IPv4 CIDR conversion failed: %w", err)
+		}
+		result = append(result, intervalCIDRs...)
+
+		// Also check memory budget after each interval
+		if checkMemoryBudget() {
+			return nil, nil, ErrMemoryBudgetExceeded
+		}
 	}
 
 	// Calculate statistics
@@ -246,8 +277,16 @@ func mergeCIDRsIPv6WithStats(cidrs []string) ([]string, *MergeStats, error) {
 	// Convert merged intervals back to CIDRs
 	result := make([]string, 0)
 	for _, interval := range merged {
-		cidrs := rangeToCIDRsIPv6(interval.Start, interval.End)
-		result = append(result, cidrs...)
+		intervalCIDRs, err := rangeToCIDRsIPv6(interval.Start, interval.End)
+		if err != nil {
+			return nil, nil, fmt.Errorf("IPv6 CIDR conversion failed: %w", err)
+		}
+		result = append(result, intervalCIDRs...)
+
+		// Also check memory budget after each interval
+		if checkMemoryBudget() {
+			return nil, nil, ErrMemoryBudgetExceeded
+		}
 	}
 
 	// Calculate statistics
@@ -295,29 +334,51 @@ func bigIntToIPv6(n *big.Int) net.IP {
 }
 
 // rangeToCIDRsIPv4 converts an IPv4 range [start, end] to minimal CIDR set
-func rangeToCIDRsIPv4(start, end uint32) []string {
+// Returns error if memory budget is exceeded
+func rangeToCIDRsIPv4(start, end uint32) ([]string, error) {
 	cidrs := make([]string, 0)
+	iterations := 0
 
 	for start <= end {
+		// Check memory budget every 1000 iterations
+		iterations++
+		if iterations%1000 == 0 {
+			if checkMemoryBudget() {
+				return nil, ErrMemoryBudgetExceeded
+			}
+		}
+
 		// Find the largest prefix that fits within [start, end]
-		maxPrefixLen := uint32(32)
+		// maxPrefixLen is the number of host bits (0 = /32, 32 = /0)
+		maxPrefixLen := uint32(0)
 
 		// Find trailing zeros in start (determines max CIDR size)
-		for i := uint32(0); i < 32; i++ {
-			if (start & (1 << i)) != 0 {
-				maxPrefixLen = i
-				break
+		// For start=0, all bits are zero so we can use any alignment
+		if start == 0 {
+			maxPrefixLen = 32 // Can use /0 alignment (but will be limited by range size)
+		} else {
+			for i := uint32(0); i < 32; i++ {
+				if (start & (1 << i)) != 0 {
+					maxPrefixLen = i
+					break
+				}
 			}
 		}
 
 		// Calculate max block size that fits in range
-		rangeSize := end - start + 1
-		blockSize := uint32(1) << maxPrefixLen
+		// Use uint64 to avoid overflow when maxPrefixLen is large
+		rangeSize := uint64(end) - uint64(start) + 1
+		var blockSize uint64
+		if maxPrefixLen >= 32 {
+			blockSize = uint64(1) << 32 // 4 billion (entire IPv4 space)
+		} else {
+			blockSize = uint64(1) << maxPrefixLen
+		}
 
 		// Don't exceed remaining range
-		for blockSize > rangeSize {
+		for blockSize > rangeSize && maxPrefixLen > 0 {
 			maxPrefixLen--
-			blockSize = 1 << maxPrefixLen
+			blockSize = uint64(1) << maxPrefixLen
 		}
 
 		// Create CIDR
@@ -326,15 +387,19 @@ func rangeToCIDRsIPv4(start, end uint32) []string {
 		cidr := fmt.Sprintf("%s/%d", ip.String(), prefixLen)
 		cidrs = append(cidrs, cidr)
 
-		// Move to next block
-		start += blockSize
+		// Move to next block (check for overflow at end of IPv4 space)
+		if blockSize > uint64(^uint32(0))-uint64(start) {
+			break // Would overflow, we're done
+		}
+		start += uint32(blockSize)
 	}
 
-	return cidrs
+	return cidrs, nil
 }
 
 // rangeToCIDRsIPv6 converts an IPv6 range [start, end] to minimal CIDR set
-func rangeToCIDRsIPv6(start, end *big.Int) []string {
+// Returns error if memory budget is exceeded
+func rangeToCIDRsIPv6(start, end *big.Int) ([]string, error) {
 	cidrs := make([]string, 0, 128) // Pre-allocate for typical range
 
 	current := new(big.Int).Set(start)
@@ -346,7 +411,16 @@ func rangeToCIDRsIPv6(start, end *big.Int) []string {
 	rangeSize := new(big.Int)
 	blockSize := new(big.Int)
 
+	iterations := 0
 	for current.Cmp(end) <= 0 {
+		// Check memory budget every 1000 iterations
+		iterations++
+		if iterations%1000 == 0 {
+			if checkMemoryBudget() {
+				return nil, ErrMemoryBudgetExceeded
+			}
+		}
+
 		// Find the largest prefix that fits within [current, end]
 		maxPrefixLen := 128
 
@@ -382,5 +456,5 @@ func rangeToCIDRsIPv6(start, end *big.Int) []string {
 		current.Add(current, blockSize)
 	}
 
-	return cidrs
+	return cidrs, nil
 }
