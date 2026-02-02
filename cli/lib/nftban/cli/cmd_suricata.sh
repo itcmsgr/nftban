@@ -74,16 +74,30 @@ _suricata_is_enabled() {
     systemctl is-enabled --quiet "$SURICATA_SERVICE" 2>/dev/null
 }
 
-# Use shared _suricata_check_root from suricata_rules.sh helper
-# Fallback for when helper not loaded
+# Use shared _suricata_check_access from suricata_rules.sh helper
+# Checks nftban group membership (polkit handles systemd operations)
 _check_root() {
-    if declare -f _suricata_check_root &>/dev/null; then
-        _suricata_check_root "$1"
-    elif [[ $EUID -ne 0 ]]; then
-        echo "ERROR: This command requires root privileges"
-        echo "Usage: sudo nftban suricata $1"
-        return 1
+    local operation="${1:-this operation}"
+
+    # Use shared helper if available
+    if declare -f _suricata_check_access &>/dev/null; then
+        _suricata_check_access "$operation"
+        return $?
     fi
+
+    # Fallback: check nftban group membership
+    if id -nG 2>/dev/null | grep -qw "nftban"; then
+        return 0
+    fi
+
+    # Root always has access
+    if [[ $EUID -eq 0 ]]; then
+        return 0
+    fi
+
+    echo "ERROR: nftban group membership required for $operation" >&2
+    echo "Add user to nftban group: sudo usermod -a -G nftban \$USER" >&2
+    return 1
 }
 
 # =============================================================================
