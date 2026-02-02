@@ -52,6 +52,97 @@ func checkMemoryBudget() bool {
 	return m.HeapAlloc > memoryBudget
 }
 
+// MinAllowedPrefixLen is the minimum prefix length (maximum range size) allowed
+// /8 = 16M IPs, /9 = 8M IPs - we allow /9 and smaller (more specific)
+const MinAllowedPrefixLen = 9
+
+// BogonPrefixes are reserved/special-use IPv4 ranges that should be filtered
+// These ranges are not routable on the public internet and shouldn't be in threat feeds
+var BogonPrefixes = []string{
+	"0.0.0.0/8",     // "This" network (RFC 1122)
+	"10.0.0.0/8",    // Private-Use (RFC 1918)
+	"100.64.0.0/10", // Shared Address Space (RFC 6598)
+	"127.0.0.0/8",   // Loopback (RFC 1122)
+	"169.254.0.0/16", // Link Local (RFC 3927)
+	"172.16.0.0/12", // Private-Use (RFC 1918)
+	"192.0.0.0/24",  // IETF Protocol Assignments (RFC 6890)
+	"192.0.2.0/24",  // Documentation (TEST-NET-1, RFC 5737)
+	"192.168.0.0/16", // Private-Use (RFC 1918)
+	"198.18.0.0/15", // Benchmarking (RFC 2544)
+	"198.51.100.0/24", // Documentation (TEST-NET-2, RFC 5737)
+	"203.0.113.0/24", // Documentation (TEST-NET-3, RFC 5737)
+	"224.0.0.0/4",   // Multicast (RFC 5771) - was /3 in firehol!
+	"240.0.0.0/4",   // Reserved (RFC 1112)
+	"255.255.255.255/32", // Limited Broadcast
+}
+
+// bogonNets caches parsed bogon networks for fast lookup
+var bogonNets []*net.IPNet
+
+func init() {
+	bogonNets = make([]*net.IPNet, 0, len(BogonPrefixes))
+	for _, cidr := range BogonPrefixes {
+		_, ipNet, err := net.ParseCIDR(cidr)
+		if err == nil {
+			bogonNets = append(bogonNets, ipNet)
+		}
+	}
+}
+
+// FilterStats contains statistics about CIDR filtering
+type FilterStats struct {
+	Total      int // Total input CIDRs
+	Filtered   int // CIDRs removed by filtering
+	TooLarge   int // CIDRs removed for being too large
+	Bogon      int // CIDRs removed for being bogon/reserved
+	Kept       int // CIDRs that passed filtering
+}
+
+// FilterProblematicCIDRs removes CIDRs that could cause processing issues:
+// 1. CIDRs with prefix length < MinAllowedPrefixLen (too large)
+// 2. CIDRs that overlap with bogon/reserved ranges
+// This is a proactive defense - filter bad data at input, not during processing
+func FilterProblematicCIDRs(cidrs []string) ([]string, *FilterStats) {
+	stats := &FilterStats{Total: len(cidrs)}
+	result := make([]string, 0, len(cidrs))
+
+	for _, cidr := range cidrs {
+		ip, ipNet, err := net.ParseCIDR(cidr)
+		if err != nil {
+			stats.Filtered++
+			continue
+		}
+
+		// Check prefix length (only for IPv4)
+		ones, _ := ipNet.Mask.Size()
+		if ip.To4() != nil && ones < MinAllowedPrefixLen {
+			stats.TooLarge++
+			stats.Filtered++
+			continue
+		}
+
+		// Check if it's a bogon/reserved range
+		isBogon := false
+		for _, bogon := range bogonNets {
+			// Check if the CIDR's network address falls within a bogon range
+			if bogon.Contains(ipNet.IP) {
+				isBogon = true
+				break
+			}
+		}
+		if isBogon {
+			stats.Bogon++
+			stats.Filtered++
+			continue
+		}
+
+		result = append(result, cidr)
+		stats.Kept++
+	}
+
+	return result, stats
+}
+
 // ipv4Interval represents an IPv4 range as [start, end] inclusive
 type ipv4Interval struct {
 	Start uint32
@@ -72,8 +163,21 @@ type MergeStats struct {
 	ReductionPct   float64 // Percentage reduction in entries
 }
 
+// MergeCIDRsSafe merges CIDRs with automatic filtering of problematic ranges.
+// This is the recommended function for processing untrusted feed data.
+// It filters out bogon/reserved ranges and overly large CIDRs before merging.
+func MergeCIDRsSafe(cidrs []string) ([]string, *MergeStats, *FilterStats, error) {
+	// Filter problematic CIDRs first
+	filtered, filterStats := FilterProblematicCIDRs(cidrs)
+
+	// Now merge the safe CIDRs
+	result, mergeStats, err := MergeCIDRs(filtered)
+	return result, mergeStats, filterStats, err
+}
+
 // MergeCIDRs merges overlapping and adjacent CIDRs (auto-detects IPv4/IPv6)
 // Returns minimal CIDR set and statistics
+// WARNING: For untrusted data (feeds, geoban), use MergeCIDRsSafe instead
 func MergeCIDRs(cidrs []string) ([]string, *MergeStats, error) {
 	if len(cidrs) == 0 {
 		return nil, &MergeStats{}, nil
