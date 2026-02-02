@@ -64,8 +64,9 @@ type ScorerConfig struct {
 	// Cleanup
 	IPRetentionDuration   time.Duration // How long to keep IP data (default: 24h)
 
-	// Deduplication
-	RecentBanWindow       time.Duration // Suppress duplicate bans within this window (default: 5s)
+	// Deduplication (exponential backoff)
+	RecentBanWindow       time.Duration // Initial suppress window (default: 10s)
+	RecentBanMaxWindow    time.Duration // Maximum suppress window (default: 5m)
 }
 
 // DefaultScorerConfig returns production defaults
@@ -79,7 +80,8 @@ func DefaultScorerConfig() ScorerConfig {
 		ScoreDecayInterval:    5 * time.Minute,
 		ScoreDecayAmount:      5,
 		IPRetentionDuration:   24 * time.Hour,
-		RecentBanWindow:       5 * time.Second,
+		RecentBanWindow:       10 * time.Second,
+		RecentBanMaxWindow:    5 * time.Minute,
 	}
 }
 
@@ -95,14 +97,20 @@ type IPState struct {
 	LastReason   uint16    // Last reason code
 }
 
+// recentBanEntry tracks deduplication state with exponential backoff
+type recentBanEntry struct {
+	BannedAt time.Time     // When the ban was recorded
+	Window   time.Duration // Current suppress window (doubles each time)
+}
+
 // Scorer tracks IP scores and triggers bans
 type Scorer struct {
 	config ScorerConfig
 	ips    map[netip.Addr]*IPState
 	mu     sync.RWMutex
 
-	// Track recently banned IPs to prevent duplicate ban storms
-	recentBans map[netip.Addr]time.Time
+	// Track recently banned IPs to prevent duplicate ban storms (exponential backoff)
+	recentBans map[netip.Addr]*recentBanEntry
 
 	// Statistics (atomic for lock-free reads)
 	stats Stats
@@ -142,7 +150,7 @@ func NewScorer(config ScorerConfig) *Scorer {
 	return &Scorer{
 		config:     config,
 		ips:        make(map[netip.Addr]*IPState),
-		recentBans: make(map[netip.Addr]time.Time),
+		recentBans: make(map[netip.Addr]*recentBanEntry),
 	}
 }
 
@@ -202,12 +210,18 @@ func (s *Scorer) RecordVerdict(v Verdict) *BanAction {
 func (s *Scorer) checkThresholds(ip netip.Addr, state *IPState, v Verdict) *BanAction {
 	score := state.Score
 
-	// Skip if recently banned to prevent duplicate ban storms (configurable, 0 = disabled)
+	// Skip if recently banned to prevent duplicate ban storms (exponential backoff)
 	if s.config.RecentBanWindow > 0 {
-		if bannedAt, exists := s.recentBans[ip]; exists {
-			if time.Since(bannedAt) < s.config.RecentBanWindow {
+		if entry, exists := s.recentBans[ip]; exists {
+			if time.Since(entry.BannedAt) < entry.Window {
+				// Still within suppress window - double it for next time (up to max)
+				entry.Window *= 2
+				if entry.Window > s.config.RecentBanMaxWindow {
+					entry.Window = s.config.RecentBanMaxWindow
+				}
 				return nil
 			}
+			// Window expired, remove entry
 			delete(s.recentBans, ip)
 		}
 	}
@@ -217,7 +231,7 @@ func (s *Scorer) checkThresholds(ip netip.Addr, state *IPState, v Verdict) *BanA
 		now := time.Now()
 		state.BanCount++
 		state.LastBan = now
-		s.recentBans[ip] = now
+		s.recentBans[ip] = &recentBanEntry{BannedAt: now, Window: s.config.RecentBanWindow}
 		s.stats.TotalBans.Add(1)
 		s.stats.TotalPermanent.Add(1)
 		s.recordBanStats(ip, v)
@@ -236,7 +250,7 @@ func (s *Scorer) checkThresholds(ip netip.Addr, state *IPState, v Verdict) *BanA
 		now := time.Now()
 		state.BanCount++
 		state.LastBan = now
-		s.recentBans[ip] = now
+		s.recentBans[ip] = &recentBanEntry{BannedAt: now, Window: s.config.RecentBanWindow}
 		s.stats.TotalBans.Add(1)
 		s.stats.TotalEscalations.Add(1)
 		s.recordBanStats(ip, v)
@@ -263,7 +277,7 @@ func (s *Scorer) checkThresholds(ip netip.Addr, state *IPState, v Verdict) *BanA
 		now := time.Now()
 		state.BanCount++
 		state.LastBan = now
-		s.recentBans[ip] = now
+		s.recentBans[ip] = &recentBanEntry{BannedAt: now, Window: s.config.RecentBanWindow}
 		s.stats.TotalBans.Add(1)
 		s.recordBanStats(ip, v)
 		return &BanAction{
@@ -393,7 +407,7 @@ func (s *Scorer) Reset() {
 	defer s.mu.Unlock()
 
 	s.ips = make(map[netip.Addr]*IPState)
-	s.recentBans = make(map[netip.Addr]time.Time)
+	s.recentBans = make(map[netip.Addr]*recentBanEntry)
 	s.stats = Stats{}
 }
 
