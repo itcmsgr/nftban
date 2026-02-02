@@ -47,6 +47,12 @@ if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
 fi
 
+# Load Suricata rules helper
+if [[ -f "${NFTBAN_LIB_DIR}/helpers/suricata_rules.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/helpers/suricata_rules.sh"
+fi
+
 # Suricata paths
 readonly SURICATA_SETUP_SCRIPT="${NFTBAN_LIB_DIR}/setup/install_suricata.sh"
 readonly SURICATA_RULES_SCRIPT="${NFTBAN_LIB_DIR}/setup/setup_suricata_rules.sh"
@@ -68,8 +74,12 @@ _suricata_is_enabled() {
     systemctl is-enabled --quiet "$SURICATA_SERVICE" 2>/dev/null
 }
 
+# Use shared _suricata_check_root from suricata_rules.sh helper
+# Fallback for when helper not loaded
 _check_root() {
-    if [[ $EUID -ne 0 ]]; then
+    if declare -f _suricata_check_root &>/dev/null; then
+        _suricata_check_root "$1"
+    elif [[ $EUID -ne 0 ]]; then
         echo "ERROR: This command requires root privileges"
         echo "Usage: sudo nftban suricata $1"
         return 1
@@ -430,8 +440,14 @@ cmd_suricata_status() {
 
 cmd_suricata_rules() {
     local action="${1:-help}"
+    shift || true
 
     case "$action" in
+        status)
+            # Use helper function
+            _suricata_rules_status "false"
+            ;;
+
         update)
             _check_root "rules update" || return 1
 
@@ -448,6 +464,10 @@ cmd_suricata_rules() {
                 echo "  pip3 install --upgrade suricata-update"
                 return 1
             fi
+
+            # Create backup before update
+            echo "  → Creating backup..."
+            _suricata_backup_rules >/dev/null
 
             echo "  → Downloading latest rules from ET/Open..."
             suricata-update || {
@@ -473,6 +493,27 @@ cmd_suricata_rules() {
             echo ""
             echo "✅ Rules updated successfully"
             echo ""
+            ;;
+
+        rollback)
+            local backup_name="${1:-}"
+            if [[ -z "$backup_name" ]]; then
+                echo "ERROR: Backup name required"
+                echo ""
+                echo "Usage: nftban suricata rules rollback <BACKUP_NAME>"
+                echo ""
+                echo "List backups with: nftban suricata rules list-backups"
+                return 1
+            fi
+            _suricata_rules_rollback "$backup_name" "false"
+            ;;
+
+        list-backups|backups)
+            _suricata_rules_list_backups "false"
+            ;;
+
+        apply)
+            _suricata_rules_apply "false"
             ;;
 
         list)
@@ -539,38 +580,54 @@ cmd_suricata_rules() {
         help|*)
             cat << 'EOF'
 
-Suricata Rules Management
+📜 Suricata Rules Management
 
 USAGE:
     nftban suricata rules <command>
 
 COMMANDS:
-    update      Update rules from ET/Open (requires root)
-    generate    Generate enabled.list from service scan (requires root)
-    stats       Show rules statistics
-    init        Initialize configuration files
-    list        List installed rule files
-    help        Show this help message
+    status        Show ruleset status (counts, last update, sources)
+    update        Update rules from ET/Open (requires root)
+    rollback      Restore from a backup (requires root)
+    list-backups  List available rule backups
+    apply         Apply pending changes (run suricata-update + reload)
+    generate      Generate enabled.list from service scan (requires root)
+    stats         Show rules statistics (calls Go backend)
+    init          Initialize configuration files
+    list          List installed rule files
+    help          Show this help message
 
 WORKFLOW:
-    1. Scan services:    nftban suricata scan
-    2. Generate list:    nftban suricata rules generate
-    3. Restart Suricata: systemctl restart suricata
+    1. Check status:     nftban suricata rules status
+    2. Make changes:     nftban suricata sid disable <SID>
+                         nftban suricata category enable emerging-malware
+    3. Apply changes:    nftban suricata rules apply
+    4. Verify:           nftban suricata rules status
+
+BACKUP & ROLLBACK:
+    # List available backups
+    nftban suricata rules list-backups
+
+    # Rollback to a specific backup
+    nftban suricata rules rollback 20260202-120000
+
+    Backups are created automatically before any rule changes.
 
 EXAMPLES:
-    # Generate rules list from scan
-    nftban suricata rules generate
+    # Show current ruleset status
+    nftban suricata rules status
 
-    # Show statistics
-    nftban suricata rules stats
-
-    # Update ET/Open ruleset
+    # Update to latest ET/Open rules
     nftban suricata rules update
+
+    # Apply local changes (SID/category modifications)
+    nftban suricata rules apply
 
 NOTES:
     - Rules are updated automatically via systemd timer (weekly)
-    - Service-based filtering reduces CPU/RAM by 50-70%
-    - Only relevant rules are loaded based on detected services
+    - All changes write to NFTBan config files (never vendor files)
+    - Backups are kept in /etc/nftban/suricata/state/last-good/
+    - Last 10 backups are retained
 
 EOF
             ;;
@@ -923,6 +980,33 @@ cmd_suricata_sid() {
     shift || true
 
     case "$action" in
+        enable)
+            local sid="${1:-}"
+            if [[ -z "$sid" ]]; then
+                echo "ERROR: SID required"
+                echo ""
+                echo "Usage: nftban suricata sid enable <SID>"
+                return 1
+            fi
+            _suricata_sid_enable "$sid" "false"
+            ;;
+
+        disable)
+            local sid="${1:-}"
+            if [[ -z "$sid" ]]; then
+                echo "ERROR: SID required"
+                echo ""
+                echo "Usage: nftban suricata sid disable <SID>"
+                return 1
+            fi
+            _suricata_sid_disable "$sid" "false"
+            ;;
+
+        list)
+            local type="${1:-all}"
+            _suricata_sid_list "$type" "false"
+            ;;
+
         stats)
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1003,53 +1087,289 @@ cmd_suricata_sid() {
         help|*)
             cat << 'EOF'
 
-📊 Suricata SID Statistics
+🔢 Suricata SID Management
 
 USAGE:
     nftban suricata sid <command>
 
 COMMANDS:
-    stats       Show overall SID statistics summary
-    info        Show detailed information for a specific SID
-    top         Show top 20 most triggered SIDs
-    recent      Show SIDs triggered in last 24 hours
-    help        Show this help message
+    enable <SID>    Force-enable a specific SID (add to enable.conf)
+    disable <SID>   Disable a specific SID (add to disable.conf)
+    list [type]     List SID overrides (enabled, disabled, or all)
+    stats           Show overall SID statistics summary
+    info <SID>      Show detailed information for a specific SID
+    top             Show top 20 most triggered SIDs
+    recent          Show SIDs triggered in last 24 hours
+    help            Show this help message
 
-DESCRIPTION:
-    Track and analyze Suricata signature (SID) triggers in real-time.
-    Statistics are collected from eve.json and cached for fast queries.
+ENABLING/DISABLING RULES:
+    # Disable a noisy or false-positive rule
+    nftban suricata sid disable 2100498
+
+    # Force-enable a rule from a disabled category
+    nftban suricata sid enable 2024792
+
+    # List all overrides
+    nftban suricata sid list
+
+    # Apply changes
+    nftban suricata rules apply
+
+WORKFLOW:
+    1. Identify problematic SID:   nftban suricata sid top
+    2. Get details:                nftban suricata sid info 2100498
+    3. Disable it:                 nftban suricata sid disable 2100498
+    4. Apply changes:              nftban suricata rules apply
+
+CONFIG FILES:
+    Enable:  /etc/nftban/suricata/rules/enable.conf
+    Disable: /etc/nftban/suricata/rules/disable.conf
+
+    These files are processed by suricata-update:
+    - enable.conf overrides disable.conf
+    - Individual SIDs override category settings
 
 EXAMPLES:
-    # Overall statistics
-    nftban suricata sid stats
+    # Disable a false-positive rule
+    nftban suricata sid disable 2100498
 
-    # Top triggered SIDs
-    nftban suricata sid top
+    # Enable a rule from disabled category
+    nftban suricata sid enable 2024792
 
-    # Recent triggers
-    nftban suricata sid recent
-
-    # Detailed info for specific SID
-    nftban suricata sid info 2100498
-
-WHAT IT SHOWS:
-    - Total unique SIDs triggered
-    - Total trigger count across all SIDs
-    - Unique source IPs that triggered alerts
-    - Trigger timestamps (first/last)
-    - Source IP addresses for each SID
-    - Rule categories and signatures
-
-DATA SOURCE:
-    - Real-time: Tails /var/log/nftban/suricata/eve-alerts.json
-    - Cache: /etc/nftban/suricata/cache/sid-stats.json
-    - Metrics: Prometheus (if nftban-core metrics server running)
+    # View all disabled SIDs
+    nftban suricata sid list disabled
 
 NOTES:
-    - Statistics persist across restarts via JSON snapshots
-    - Historical data loaded on startup
-    - Auto-saves every 5 minutes
-    - No database required (in-memory + snapshots)
+    - Changes require 'nftban suricata rules apply' to take effect
+    - Backups are created automatically before changes
+    - SID overrides persist across ruleset updates
+
+EOF
+            ;;
+    esac
+}
+
+# =============================================================================
+# COMMAND: category (Rule Category Management)
+# =============================================================================
+
+cmd_suricata_category() {
+    local action="${1:-help}"
+    shift || true
+
+    case "$action" in
+        list)
+            _suricata_category_list "false"
+            ;;
+
+        enable)
+            local category="${1:-}"
+            if [[ -z "$category" ]]; then
+                echo "ERROR: Category name required"
+                echo ""
+                echo "Usage: nftban suricata category enable <CATEGORY>"
+                echo ""
+                echo "List categories with: nftban suricata category list"
+                return 1
+            fi
+            _suricata_category_set "$category" "enabled" "false"
+            ;;
+
+        disable)
+            local category="${1:-}"
+            if [[ -z "$category" ]]; then
+                echo "ERROR: Category name required"
+                echo ""
+                echo "Usage: nftban suricata category disable <CATEGORY>"
+                echo ""
+                echo "List categories with: nftban suricata category list"
+                return 1
+            fi
+            _suricata_category_set "$category" "disabled" "false"
+            ;;
+
+        help|*)
+            cat << 'EOF'
+
+📂 Suricata Rule Category Management
+
+USAGE:
+    nftban suricata category <command>
+
+COMMANDS:
+    list              List all categories with their status
+    enable <CAT>      Enable a rule category
+    disable <CAT>     Disable a rule category
+    help              Show this help message
+
+CATEGORY NAMES:
+    Common ET Open categories:
+    - emerging-malware      Core malware detection
+    - emerging-trojan       Trojan/RAT detection
+    - emerging-exploit      Exploit attempts
+    - emerging-scan         Port scanning/reconnaissance
+    - emerging-dos          DoS/DDoS attacks
+    - emerging-web_server   Web server attacks
+    - emerging-web_client   Client-side attacks
+    - emerging-dns          DNS-based threats
+    - emerging-policy       Policy violations (noisy)
+    - emerging-tor          Tor exit node detection
+
+WORKFLOW:
+    # List current category status
+    nftban suricata category list
+
+    # Disable noisy policy rules
+    nftban suricata category disable emerging-policy
+
+    # Enable SQL injection detection
+    nftban suricata category enable emerging-sql
+
+    # Apply changes
+    nftban suricata rules apply
+
+EXAMPLES:
+    # Disable all policy rules (reduces noise)
+    nftban suricata category disable emerging-policy
+
+    # Enable VOIP rules (if you run SIP/VOIP)
+    nftban suricata category enable emerging-voip
+
+    # Disable FTP rules (if you don't use FTP)
+    nftban suricata category disable emerging-ftp
+
+CONFIG FILE:
+    /etc/nftban/suricata/rules/categories.enabled
+
+    Format: category-name = enabled|disabled
+
+NOTES:
+    - Changes require 'nftban suricata rules apply' to take effect
+    - Individual SID overrides take precedence over categories
+    - Disabling unused categories improves performance
+
+EOF
+            ;;
+    esac
+}
+
+# =============================================================================
+# COMMAND: local (Local User Rules Management)
+# =============================================================================
+
+cmd_suricata_local() {
+    local action="${1:-help}"
+    shift || true
+
+    case "$action" in
+        list)
+            _suricata_local_list "false"
+            ;;
+
+        add)
+            local rule="$*"
+            if [[ -z "$rule" ]]; then
+                echo "ERROR: Rule required"
+                echo ""
+                echo "Usage: nftban suricata local add '<RULE>'"
+                echo ""
+                echo "Example:"
+                echo "  nftban suricata local add 'alert tcp any any -> any 22 (msg:\"SSH probe\"; sid:1000001; rev:1;)'"
+                echo ""
+                echo "SID Range: 1000000-1999999 for user rules"
+                return 1
+            fi
+            _suricata_local_add "$rule" "false"
+            ;;
+
+        remove)
+            local sid="${1:-}"
+            if [[ -z "$sid" ]]; then
+                echo "ERROR: SID required"
+                echo ""
+                echo "Usage: nftban suricata local remove <SID>"
+                return 1
+            fi
+            _suricata_local_remove "$sid" "false"
+            ;;
+
+        edit)
+            local file="${NFTBAN_SURICATA_DIR:-/etc/nftban/suricata}/rules/local.rules"
+            if [[ ! -f "$file" ]]; then
+                echo "ERROR: Local rules file not found"
+                echo "Create rules first with: nftban suricata local add '<rule>'"
+                return 1
+            fi
+            echo ""
+            echo "Opening local rules file in editor..."
+            echo "File: $file"
+            echo ""
+            echo "SID Ranges:"
+            echo "  1000000-1999999: User local rules (edit this section)"
+            echo "  9000000-9999999: NFTBan auto-generated (DO NOT EDIT)"
+            echo ""
+            "${EDITOR:-vi}" "$file"
+            echo ""
+            echo "Don't forget to apply changes:"
+            echo "  nftban suricata rules apply"
+            echo ""
+            ;;
+
+        help|*)
+            cat << 'EOF'
+
+📝 Local User Rules Management
+
+USAGE:
+    nftban suricata local <command>
+
+COMMANDS:
+    list          List local user rules
+    add <RULE>    Add a new local rule
+    remove <SID>  Remove a local rule by SID
+    edit          Open local.rules in editor
+    help          Show this help message
+
+SID RANGE:
+    User local rules MUST use SID range: 1000000-1999999
+    (NFTBan auto-generated rules use: 9000000-9999999)
+
+RULE SYNTAX:
+    action protocol src_ip src_port -> dst_ip dst_port (options)
+
+    Actions: alert, drop, reject, pass
+    Protocol: tcp, udp, icmp, ip
+
+EXAMPLES:
+    # Add a rule to detect SSH brute force
+    nftban suricata local add 'alert tcp any any -> any 22 (msg:"SSH brute force attempt"; threshold:type both, track by_src, count 5, seconds 60; sid:1000001; rev:1;)'
+
+    # Add a rule to log outbound DNS queries
+    nftban suricata local add 'alert udp any any -> any 53 (msg:"DNS query"; sid:1000002; rev:1;)'
+
+    # List current rules
+    nftban suricata local list
+
+    # Remove a rule
+    nftban suricata local remove 1000001
+
+    # Edit rules manually
+    nftban suricata local edit
+
+WORKFLOW:
+    1. Add rule:    nftban suricata local add '<rule>'
+    2. Verify:      nftban suricata local list
+    3. Apply:       nftban suricata rules apply
+    4. Monitor:     nftban suricata sid info 1000001
+
+CONFIG FILE:
+    /etc/nftban/suricata/rules/local.rules
+
+NOTES:
+    - Rules are validated on add (basic syntax check)
+    - Changes require 'nftban suricata rules apply' to take effect
+    - User rules section is preserved during updates
+    - For NFTBan-managed rules, use 'nftban suricata custom'
 
 EOF
             ;;
@@ -1460,6 +1780,405 @@ EOF
 }
 
 # =============================================================================
+# COMMAND: eve (EVE JSON Log Management)
+# =============================================================================
+
+# Helper: Load EVE path from config
+_eve_get_path() {
+    # Try central config variable first
+    if [[ -n "${NFTBAN_SURICATA_EVE_LOG:-}" ]]; then
+        echo "$NFTBAN_SURICATA_EVE_LOG"
+        return
+    fi
+
+    # Try loading from config files
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+    local local_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
+
+    if [[ -f "$local_conf" ]]; then
+        local val
+        val=$(grep -E "^NFTBAN_SURICATA_EVE_LOG=" "$local_conf" 2>/dev/null | cut -d'"' -f2 || true)
+        [[ -n "$val" ]] && { echo "$val"; return; }
+    fi
+
+    if [[ -f "$config_file" ]]; then
+        local val
+        val=$(grep -E "^NFTBAN_SURICATA_EVE_LOG=" "$config_file" 2>/dev/null | cut -d'"' -f2 || true)
+        [[ -n "$val" ]] && { echo "$val"; return; }
+    fi
+
+    # Default path
+    echo "/var/log/nftban/suricata/eve-alerts.json"
+}
+
+# Helper: Format bytes to human readable
+_eve_format_bytes() {
+    local bytes="$1"
+    if command -v numfmt &>/dev/null; then
+        numfmt --to=iec --suffix=B "$bytes" 2>/dev/null || echo "${bytes}B"
+    else
+        if [[ $bytes -ge 1073741824 ]]; then
+            echo "$(( bytes / 1073741824 ))GB"
+        elif [[ $bytes -ge 1048576 ]]; then
+            echo "$(( bytes / 1048576 ))MB"
+        elif [[ $bytes -ge 1024 ]]; then
+            echo "$(( bytes / 1024 ))KB"
+        else
+            echo "${bytes}B"
+        fi
+    fi
+}
+
+# Helper: Format time difference to human readable
+_eve_format_age() {
+    local seconds="$1"
+    if [[ $seconds -lt 60 ]]; then
+        echo "${seconds}s ago"
+    elif [[ $seconds -lt 3600 ]]; then
+        echo "$(( seconds / 60 ))m $(( seconds % 60 ))s ago"
+    elif [[ $seconds -lt 86400 ]]; then
+        echo "$(( seconds / 3600 ))h $(( (seconds % 3600) / 60 ))m ago"
+    else
+        echo "$(( seconds / 86400 ))d $(( (seconds % 86400) / 3600 ))h ago"
+    fi
+}
+
+cmd_suricata_eve_check() {
+    # Color definitions (use globals if available, fallback to local)
+    local C_RESET="${NFTBAN_COLOR_RESET:-\033[0m}"
+    local C_BOLD="${NFTBAN_COLOR_BOLD:-\033[1m}"
+    local C_RED="${NFTBAN_COLOR_RED:-\033[31m}"
+    local C_GREEN="${NFTBAN_COLOR_GREEN:-\033[32m}"
+    local C_YELLOW="${NFTBAN_COLOR_YELLOW:-\033[33m}"
+    local C_CYAN="${NFTBAN_COLOR_CYAN:-\033[36m}"
+    local C_DIM="${NFTBAN_COLOR_DIM:-\033[2m}"
+
+    # Disable colors if not a terminal
+    if [[ ! -t 1 ]] || [[ "${NO_COLOR:-}" == "1" ]]; then
+        C_RESET="" C_BOLD="" C_RED="" C_GREEN="" C_YELLOW="" C_CYAN="" C_DIM=""
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  📋 Suricata EVE JSON Health Check"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    local eve_path
+    eve_path=$(_eve_get_path)
+
+    # -------------------------------------------------------------------------
+    # Section 1: File Information
+    # -------------------------------------------------------------------------
+    echo -e "${C_BOLD}EVE File Information${C_RESET}"
+    echo "─────────────────────────────────────────────────────────"
+    echo -e "  Path:          ${C_CYAN}${eve_path}${C_RESET}"
+
+    # Check file exists
+    if [[ ! -e "$eve_path" ]]; then
+        echo -e "  Status:        ${C_RED}✗ FILE NOT FOUND${C_RESET}"
+        echo ""
+        echo -e "${C_YELLOW}Troubleshooting:${C_RESET}"
+        echo "  1. Ensure Suricata is installed: nftban suricata status"
+        echo "  2. Check if Suricata is running: systemctl status suricata"
+        echo "  3. Verify EVE output in Suricata config"
+        echo "  4. Check log directory exists: ls -la /var/log/nftban/suricata/"
+        echo ""
+        return 1
+    fi
+
+    # Check readable
+    if [[ ! -r "$eve_path" ]]; then
+        echo -e "  Status:        ${C_RED}✗ NOT READABLE${C_RESET} (permission denied)"
+        echo ""
+        echo -e "${C_YELLOW}Fix:${C_RESET}"
+        echo "  sudo chmod 640 $eve_path"
+        echo "  sudo chown suricata:nftban $eve_path"
+        echo ""
+        return 1
+    fi
+
+    echo -e "  Status:        ${C_GREEN}✓ EXISTS & READABLE${C_RESET}"
+
+    # File stats
+    local file_size file_mtime now age_seconds
+    file_size=$(stat -c %s "$eve_path" 2>/dev/null || echo "0")
+    file_mtime=$(stat -c %Y "$eve_path" 2>/dev/null || echo "0")
+    now=$(date +%s)
+    age_seconds=$(( now - file_mtime ))
+
+    local mtime_human
+    mtime_human=$(date -d "@$file_mtime" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || date -r "$file_mtime" "+%Y-%m-%d %H:%M:%S" 2>/dev/null || echo "unknown")
+
+    echo -e "  Size:          ${C_BOLD}$(_eve_format_bytes "$file_size")${C_RESET}"
+    echo -e "  Last Modified: ${mtime_human} ($(_eve_format_age "$age_seconds"))"
+
+    # Staleness warning
+    if [[ $age_seconds -gt 600 ]]; then
+        echo -e "  ${C_YELLOW}⚠ File not updated in 10+ minutes - Suricata may be stalled${C_RESET}"
+    elif [[ $age_seconds -gt 300 ]]; then
+        echo -e "  ${C_YELLOW}⊘ File not updated in 5+ minutes${C_RESET}"
+    else
+        echo -e "  Activity:      ${C_GREEN}✓ Recently updated${C_RESET}"
+    fi
+
+    echo ""
+
+    # -------------------------------------------------------------------------
+    # Section 2: JSON Validity Check
+    # -------------------------------------------------------------------------
+    echo -e "${C_BOLD}JSON Validity${C_RESET}"
+    echo "─────────────────────────────────────────────────────────"
+
+    if [[ $file_size -eq 0 ]]; then
+        echo -e "  Status:        ${C_YELLOW}⊘ FILE IS EMPTY${C_RESET}"
+        echo "  (No events logged yet - this is normal for fresh installs)"
+        echo ""
+    else
+        # Sample last 100 lines and check JSON validity
+        local sample_lines=100
+        local valid_count=0
+        local invalid_count=0
+        local total_sampled=0
+
+        if command -v jq &>/dev/null; then
+            while IFS= read -r line; do
+                [[ -z "$line" ]] && continue
+                ((total_sampled++)) || true
+                if echo "$line" | jq -e . &>/dev/null; then
+                    ((valid_count++)) || true
+                else
+                    ((invalid_count++)) || true
+                fi
+            done < <(tail -n "$sample_lines" "$eve_path" 2>/dev/null)
+
+            if [[ $total_sampled -eq 0 ]]; then
+                echo -e "  Status:        ${C_YELLOW}⊘ NO DATA TO SAMPLE${C_RESET}"
+            elif [[ $invalid_count -eq 0 ]]; then
+                echo -e "  Status:        ${C_GREEN}✓ VALID${C_RESET} (${valid_count}/${total_sampled} lines OK)"
+            elif [[ $invalid_count -lt 5 ]]; then
+                echo -e "  Status:        ${C_YELLOW}⊘ MOSTLY VALID${C_RESET} (${valid_count} valid, ${invalid_count} invalid)"
+                echo -e "  ${C_DIM}(Minor corruption may occur during log rotation)${C_RESET}"
+            else
+                echo -e "  Status:        ${C_RED}✗ INVALID JSON${C_RESET} (${invalid_count}/${total_sampled} lines corrupted)"
+                echo -e "  ${C_YELLOW}Consider rotating or recreating the log file${C_RESET}"
+            fi
+        else
+            # Fallback: basic JSON structure check without jq
+            local first_char last_char
+            first_char=$(tail -n 1 "$eve_path" 2>/dev/null | head -c 1)
+            if [[ "$first_char" == "{" ]]; then
+                echo -e "  Status:        ${C_GREEN}✓ APPEARS VALID${C_RESET} (jq not installed for full check)"
+            else
+                echo -e "  Status:        ${C_YELLOW}⊘ UNKNOWN${C_RESET} (install jq for validation)"
+            fi
+        fi
+        echo ""
+    fi
+
+    # -------------------------------------------------------------------------
+    # Section 3: Alert Counts by Time Window
+    # -------------------------------------------------------------------------
+    echo -e "${C_BOLD}Alert Statistics${C_RESET}"
+    echo "─────────────────────────────────────────────────────────"
+
+    if [[ $file_size -eq 0 ]]; then
+        echo "  No alerts to analyze (file is empty)"
+        echo ""
+    elif ! command -v jq &>/dev/null; then
+        echo -e "  ${C_YELLOW}⊘ jq not installed - cannot analyze alerts${C_RESET}"
+        echo "  Install: sudo dnf install jq  OR  sudo apt install jq"
+        echo ""
+    else
+        local now_epoch
+        now_epoch=$(date +%s)
+        local one_min_ago=$((now_epoch - 60))
+        local five_min_ago=$((now_epoch - 300))
+        local one_hour_ago=$((now_epoch - 3600))
+
+        # Read recent portion of file (last 10000 lines for performance)
+        local alerts_1m=0
+        local alerts_5m=0
+        local alerts_1h=0
+        local total_alerts=0
+
+        # Use a single pass through the file for efficiency
+        while IFS= read -r line; do
+            [[ -z "$line" ]] && continue
+
+            # Parse timestamp and check if it's an alert
+            local ts event_type
+            if ! ts=$(echo "$line" | jq -r '.timestamp // empty' 2>/dev/null); then
+                continue
+            fi
+            event_type=$(echo "$line" | jq -r '.event_type // empty' 2>/dev/null)
+
+            [[ "$event_type" != "alert" ]] && continue
+            ((total_alerts++)) || true
+
+            # Convert timestamp to epoch
+            local event_epoch
+            # Handle ISO 8601 format: 2024-01-15T10:30:00.123456+0000
+            event_epoch=$(date -d "${ts}" +%s 2>/dev/null || echo "0")
+            [[ "$event_epoch" == "0" ]] && continue
+
+            if [[ $event_epoch -ge $one_min_ago ]]; then
+                ((alerts_1m++)) || true
+            fi
+            if [[ $event_epoch -ge $five_min_ago ]]; then
+                ((alerts_5m++)) || true
+            fi
+            if [[ $event_epoch -ge $one_hour_ago ]]; then
+                ((alerts_1h++)) || true
+            fi
+        done < <(tail -n 10000 "$eve_path" 2>/dev/null)
+
+        # Display with color coding
+        local rate_1m rate_5m rate_1h
+        rate_1m=$(echo "scale=1; $alerts_1m / 1" | bc 2>/dev/null || echo "$alerts_1m")
+        rate_5m=$(echo "scale=1; $alerts_5m / 5" | bc 2>/dev/null || echo "$(( alerts_5m / 5 ))")
+        rate_1h=$(echo "scale=1; $alerts_1h / 60" | bc 2>/dev/null || echo "$(( alerts_1h / 60 ))")
+
+        # Color based on alert rate
+        local c_1m="$C_GREEN" c_5m="$C_GREEN" c_1h="$C_GREEN"
+        [[ $alerts_1m -gt 10 ]] && c_1m="$C_YELLOW"
+        [[ $alerts_1m -gt 50 ]] && c_1m="$C_RED"
+        [[ $alerts_5m -gt 50 ]] && c_5m="$C_YELLOW"
+        [[ $alerts_5m -gt 200 ]] && c_5m="$C_RED"
+        [[ $alerts_1h -gt 500 ]] && c_1h="$C_YELLOW"
+        [[ $alerts_1h -gt 2000 ]] && c_1h="$C_RED"
+
+        printf "  %-16s ${c_1m}%6d${C_RESET}  (%s/min)\n" "Last 1 minute:" "$alerts_1m" "$rate_1m"
+        printf "  %-16s ${c_5m}%6d${C_RESET}  (%s/min avg)\n" "Last 5 minutes:" "$alerts_5m" "$rate_5m"
+        printf "  %-16s ${c_1h}%6d${C_RESET}  (%s/min avg)\n" "Last 1 hour:" "$alerts_1h" "$rate_1h"
+
+        if [[ $total_alerts -eq 0 ]]; then
+            echo ""
+            echo -e "  ${C_DIM}No alerts found in sampled data${C_RESET}"
+        fi
+        echo ""
+
+        # -------------------------------------------------------------------------
+        # Section 4: Top Signatures (Last 10 Minutes)
+        # -------------------------------------------------------------------------
+        echo -e "${C_BOLD}Top Signatures (Last 10 Minutes)${C_RESET}"
+        echo "─────────────────────────────────────────────────────────"
+
+        local ten_min_ago=$((now_epoch - 600))
+        local sig_data
+
+        # Extract signatures from last 10 minutes
+        sig_data=$(tail -n 10000 "$eve_path" 2>/dev/null | \
+            jq -r --argjson cutoff "$ten_min_ago" '
+                select(.event_type == "alert") |
+                select((.timestamp | sub("\\.[0-9]+.*"; "") | strptime("%Y-%m-%dT%H:%M:%S") | mktime) >= $cutoff) |
+                "\(.alert.signature_id // "unknown")|\(.alert.signature // "Unknown Signature")"
+            ' 2>/dev/null || echo "")
+
+        if [[ -z "$sig_data" ]]; then
+            echo "  No signatures triggered in last 10 minutes"
+        else
+            # Count and sort signatures
+            echo "$sig_data" | sort | uniq -c | sort -rn | head -5 | while read -r count sig_info; do
+                local sid sig_name
+                sid=$(echo "$sig_info" | cut -d'|' -f1)
+                sig_name=$(echo "$sig_info" | cut -d'|' -f2-)
+                # Truncate long signature names
+                [[ ${#sig_name} -gt 45 ]] && sig_name="${sig_name:0:42}..."
+                printf "  ${C_CYAN}%5d${C_RESET}  [SID:%-8s] %s\n" "$count" "$sid" "$sig_name"
+            done
+        fi
+        echo ""
+    fi
+
+    # -------------------------------------------------------------------------
+    # Section 5: Quick Actions
+    # -------------------------------------------------------------------------
+    echo -e "${C_BOLD}Quick Actions${C_RESET}"
+    echo "─────────────────────────────────────────────────────────"
+    echo "  View live alerts:   tail -f $eve_path | jq 'select(.event_type==\"alert\")'"
+    echo "  Top SIDs all time:  nftban suricata sid top"
+    echo "  SID details:        nftban suricata sid info <SID>"
+    echo "  Full status:        nftban suricata status"
+    echo ""
+}
+
+cmd_suricata_eve() {
+    local action="${1:-check}"
+    shift || true
+
+    case "$action" in
+        check)
+            cmd_suricata_eve_check
+            ;;
+        help|--help|-h)
+            cat << 'EOF'
+
+📋 Suricata EVE JSON Log Check
+
+USAGE:
+    nftban suricata eve [check]
+
+COMMANDS:
+    check       Check EVE JSON health and statistics (default)
+    help        Show this help message
+
+DESCRIPTION:
+    Comprehensive health check for Suricata's EVE JSON log file.
+    Validates file accessibility, JSON integrity, and provides
+    alert statistics with time-based breakdowns.
+
+WHAT IT CHECKS:
+    - EVE file path from configuration
+    - File existence and read permissions
+    - Last write time and file size
+    - JSON validity (samples last 100 lines)
+    - Alert counts: last 1m, 5m, 1h
+    - Top 5 signatures from last 10 minutes
+
+EXAMPLES:
+    # Run health check
+    nftban suricata eve check
+
+    # Or simply (check is default)
+    nftban suricata eve
+
+OUTPUT SECTIONS:
+    1. EVE File Information
+       - Path, status, size, last modified
+
+    2. JSON Validity
+       - Validates JSON structure of recent entries
+       - Detects corruption from log rotation
+
+    3. Alert Statistics
+       - Time-windowed alert counts
+       - Rate calculations (alerts/min)
+
+    4. Top Signatures
+       - Most triggered rules in last 10 minutes
+       - Includes SID and signature name
+
+COLOR CODING:
+    Green   - Healthy / low activity
+    Yellow  - Warning / moderate activity
+    Red     - Issue / high activity
+
+REQUIREMENTS:
+    - jq (recommended for full functionality)
+    - Read access to EVE log file
+
+EOF
+            ;;
+        *)
+            echo "ERROR: Unknown eve subcommand: $action"
+            echo "Run 'nftban suricata eve help' for usage"
+            return 1
+            ;;
+    esac
+}
+
+# =============================================================================
 # HELP
 # =============================================================================
 
@@ -1476,34 +2195,56 @@ COMMANDS:
     enable      Enable and start Suricata service
     disable     Stop and disable Suricata service
     status      Show Suricata status and recent alerts
+    eve         EVE JSON log health check (see: nftban suricata eve help)
     profile     Manage performance profiles (see: nftban suricata profile help)
     scan        Scan services and auto-configure (see: nftban suricata scan help)
     services    Manage service configuration (see: nftban suricata services help)
     rules       Manage Suricata rules (see: nftban suricata rules help)
-    sid         SID statistics and analysis (see: nftban suricata sid help)
-    custom      Manage custom rules (see: nftban suricata custom help)
+    category    Manage rule categories (see: nftban suricata category help)
+    sid         SID enable/disable and stats (see: nftban suricata sid help)
+    local       Manage local user rules (see: nftban suricata local help)
+    custom      Manage nftban auto-rules (see: nftban suricata custom help)
     recommend   Get intelligent rule recommendations (see: nftban suricata recommend help)
     help        Show this help message
 
-INSTALLATION PROCESS:
-    1. Checks for package availability (EPEL/APT)
-    2. Installs from packages OR compiles from source
-    3. Downloads ET/Open ruleset (free)
-    4. Configures for NFTBan integration
-    5. Sets up systemd service
-
-EXAMPLES:
-    # Full automated setup (one command):
+QUICK START:
+    # Install and enable Suricata
     nftban suricata install
     nftban suricata enable
 
-    # Check status:
+    # Check health
     nftban suricata status
+    nftban suricata eve check
 
-    # Update rules:
+RULE MANAGEMENT:
+    # View ruleset status
+    nftban suricata rules status
+
+    # Enable/disable rule categories
+    nftban suricata category list
+    nftban suricata category disable emerging-policy
+
+    # Enable/disable specific SIDs
+    nftban suricata sid disable 2100498
+    nftban suricata sid enable 2024792
+
+    # Add local rules
+    nftban suricata local add '<rule>'
+
+    # Apply all changes
+    nftban suricata rules apply
+
+EXAMPLES:
+    # Update rules
     nftban suricata rules update
 
-    # View live alerts:
+    # View top triggered SIDs
+    nftban suricata sid top
+
+    # Rollback rule changes
+    nftban suricata rules rollback 20260202-120000
+
+    # View live alerts
     tail -f /var/log/nftban/suricata/eve-alerts.json | jq 'select(.event_type=="alert")'
 
 REQUIREMENTS:
@@ -1511,11 +2252,6 @@ REQUIREMENTS:
     - EPEL repository (RHEL/Rocky) or standard repos (Debian/Ubuntu)
     - 2+ cores, 2+ GB RAM recommended
     - Python 3 + pip (for suricata-update)
-
-PERFORMANCE:
-    - CPU: 10-30% of 1 core (medium traffic)
-    - RAM: 300-800 MB typical
-    - Optimized for VPS/cloud environments
 
 DOCUMENTATION:
     - Suricata: https://suricata.io/
@@ -1545,6 +2281,9 @@ nftban_cmd_suricata() {
         status)
             cmd_suricata_status "$@"
             ;;
+        eve)
+            cmd_suricata_eve "$@"
+            ;;
         rules)
             cmd_suricata_rules "$@"
             ;;
@@ -1559,6 +2298,12 @@ nftban_cmd_suricata() {
             ;;
         sid)
             cmd_suricata_sid "$@"
+            ;;
+        category)
+            cmd_suricata_category "$@"
+            ;;
+        local)
+            cmd_suricata_local "$@"
             ;;
         custom)
             cmd_suricata_custom "$@"
@@ -1589,11 +2334,15 @@ export -f cmd_suricata_install
 export -f cmd_suricata_enable
 export -f cmd_suricata_disable
 export -f cmd_suricata_status
+export -f cmd_suricata_eve
+export -f cmd_suricata_eve_check
 export -f cmd_suricata_rules
 export -f cmd_suricata_profile
 export -f cmd_suricata_scan
 export -f cmd_suricata_services
 export -f cmd_suricata_sid
+export -f cmd_suricata_category
+export -f cmd_suricata_local
 export -f cmd_suricata_custom
 export -f cmd_suricata_recommend
 export -f cmd_suricata_help
@@ -1603,6 +2352,9 @@ export -f _suricata_is_installed
 export -f _suricata_is_running
 export -f _suricata_is_enabled
 export -f _check_root
+export -f _eve_get_path
+export -f _eve_format_bytes
+export -f _eve_format_age
 
 # Execute if called directly
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then

@@ -1405,7 +1405,7 @@ _install_configs_directories() {
     mkdir -p /etc/nftban/{whitelist.d,blacklist.d,ports.d,conf.d,distros,suricata,rules.d,patterns.d,connectors,nftables.d}
     mkdir -p /etc/nftban/conf.d/{ddos,portscan,login,panels,botscan,geoban,geoip,rbl}
     mkdir -p /etc/nftban/patterns.d/botscan
-    mkdir -p /etc/nftban/suricata/{profiles,config,rules,cache}
+    mkdir -p /etc/nftban/suricata/{profiles,config,rules,cache,state/last-good}
 
     # /var/lib/nftban structure
     mkdir -p /var/lib/nftban/{banned,whitelist,feeds,geoip,reports,config,state,panels,metrics,stats}
@@ -1602,6 +1602,24 @@ _install_configs_modules() {
         count=$(ls -1 /etc/nftban/suricata/profiles/*.yaml 2>/dev/null | wc -l)
         ok "Installed $count Suricata profile templates"
     fi
+
+    # Suricata rule config files (don't overwrite user configs)
+    if [[ -d "$SCRIPT_DIR/etc/nftban/suricata/rules" ]]; then
+        _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/rules/disable.conf" "/etc/nftban/suricata/rules/disable.conf" "644"
+        _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/rules/enable.conf" "/etc/nftban/suricata/rules/enable.conf" "644"
+        _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/rules/categories.enabled" "/etc/nftban/suricata/rules/categories.enabled" "644"
+        _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/rules/local.rules" "/etc/nftban/suricata/rules/local.rules" "644"
+    fi
+
+    # Suricata state directory (explicit ownership per directory, no -R)
+    mkdir -p /etc/nftban/suricata/state/last-good
+    chown root:nftban /etc/nftban/suricata/state
+    chown root:nftban /etc/nftban/suricata/state/last-good
+    chmod 750 /etc/nftban/suricata/state
+    chmod 750 /etc/nftban/suricata/state/last-good
+
+    # Suricata YAML overlay (don't overwrite user config)
+    _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/suricata.yaml.overlay" "/etc/nftban/suricata/suricata.yaml.overlay" "644"
 
     # Core configs (don't overwrite user configs)
     _install_config_file "$SCRIPT_DIR/install/config/feeds.conf" "/etc/nftban/conf.d/feeds.conf" "644"

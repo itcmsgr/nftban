@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024-2025 NFTBan Development Team
 
 Name:           nftban
-Version:        1.7.0
+Version:        1.9.1
 Release:        1%{?dist}
 Summary:        NFTBAN - Next-generation Linux firewall using nftables
 
@@ -558,7 +558,14 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban/suricata/config
 %dir %attr(750,root,nftban) /etc/nftban/suricata/rules
 %dir %attr(750,root,nftban) /etc/nftban/suricata/cache
+%dir %attr(750,root,nftban) /etc/nftban/suricata/state
+%dir %attr(750,root,nftban) /etc/nftban/suricata/state/last-good
 %config(noreplace) /etc/nftban/suricata/profiles/*
+%config(noreplace) /etc/nftban/suricata/rules/disable.conf
+%config(noreplace) /etc/nftban/suricata/rules/enable.conf
+%config(noreplace) /etc/nftban/suricata/rules/categories.enabled
+%config(noreplace) /etc/nftban/suricata/rules/local.rules
+%config(noreplace) /etc/nftban/suricata/suricata.yaml.overlay
 %dir %attr(750,root,nftban) /etc/nftban/connectors
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d/botscan
@@ -627,6 +634,18 @@ fi
 /usr/local/psa/admin/htdocs/modules/nftban/*
 
 %changelog
+* Sun Feb 02 2026 NFTBan Team <contact@nftban.com> - 1.9.1-1
+- Suricata Smart Management Phase 2: Rules UX
+- New CLI: nftban suricata rules status/rollback/list-backups/apply
+- New CLI: nftban suricata category list/enable/disable
+- New CLI: nftban suricata sid enable/disable/list
+- New CLI: nftban suricata local list/add/remove/edit
+- New shared helper: suricata_rules.sh (16 functions)
+- New shared helper: nftban_mode.sh for portscan/ddos mode management
+- Fixed: DDoS mode argument passing aligned with portscan
+- Fixed: Duplicate code removed from cmd_suricata.sh
+- Added: Suricata config files to package (rules, state, overlay)
+
 * Wed Jan 28 2026 NFTBan Team <contact@nftban.com> - 1.7.0-1
 - Dependency architecture redesign: minimal core install, feature-gated prerequisites
 - Shared prereq library (nftban_prereq.sh) with distro-aware package suggestions

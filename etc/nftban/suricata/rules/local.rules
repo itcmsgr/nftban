@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: MPL-2.0
+# SPDX-FileCopyrightText: Copyright (c) 2025 NFTBan <contact@nftban.com>
+# meta:name="local.rules"
+# meta:type="config"
+# meta:description="User-defined local Suricata rules"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/suricata/rules/local.rules"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# nftban Local Suricata Rules
+# ===========================
+# This file contains:
+#   1. User-defined custom rules
+#   2. nftban-generated rules (auto-managed section at bottom)
+#
+# Rule format: Suricata rule syntax
+# See: https://suricata.readthedocs.io/en/latest/rules/
+#
+# Example custom rule:
+#   alert tcp any any -> any 22 (msg:"SSH connection attempt"; sid:1000001; rev:1;)
+#
+# SID ranges:
+#   1000000-1999999: Local rules (user-defined)
+#   9000000-9999999: nftban auto-generated rules
+#
+# WARNING: Do not edit the auto-generated section below the marker.
+#          Those rules are managed by nftban and may be overwritten.
+
+# ===========================================================================
+# USER CUSTOM RULES - Add your rules below this line
+# ===========================================================================
+
+
+
+# ===========================================================================
+# NFTBAN AUTO-GENERATED RULES - DO NOT EDIT BELOW THIS LINE
+# ===========================================================================
+# [nftban-auto-start]
+# [nftban-auto-end]

@@ -26,7 +26,7 @@
 # meta:inventory.privileges="root"
 #
 # meta:created_date="2025-11-05"
-# meta:updated_date="2026-01-28"
+# meta:updated_date="2026-02-02"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -67,6 +67,7 @@ COMMANDS:
     status              Show status of all DDoS protections
     stats               Show DDoS statistics (use --json for GUI)
     test                Test DDoS protection rules
+    mode                Show or set protection mode (auto|classic|suricata|hybrid)
     help                Show this help message
 
 NOTE:
@@ -144,6 +145,12 @@ EXAMPLES:
 
     # Test DDoS protection rules
     nftban ddos test
+
+    # Show current mode
+    nftban ddos mode show
+
+    # Set mode to classic
+    sudo nftban ddos mode set classic
 
 LOG FILES:
     DDoS protection logs: /var/log/nftban/ddos.log
@@ -305,6 +312,32 @@ _nftban_ddos_stats_json() {
 }
 
 # =============================================================================
+# MODE COMMAND: Wrapper using shared helper
+# =============================================================================
+
+_nftban_ddos_mode() {
+    local subcommand="${1:-show}"
+    local json_mode="${2:-false}"
+    local mode_arg="${3:-}"
+
+    # Load shared mode helper
+    local mode_helper="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/nftban_mode.sh"
+    if [[ -f "$mode_helper" ]]; then
+        # shellcheck source=/dev/null
+        source "$mode_helper"
+    else
+        echo "ERROR: Mode helper not found: $mode_helper" >&2
+        return 1
+    fi
+
+    # Delegate to shared handler with DDoS-specific parameters
+    _nftban_mode_handler "ddos" "DDOS_MODE" \
+        "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf" \
+        "DDoS Protection" \
+        "$subcommand" "$json_mode" "$mode_arg"
+}
+
+# =============================================================================
 # MAIN COMMAND HANDLER
 # =============================================================================
 
@@ -364,12 +397,20 @@ nftban_cmd_ddos() {
             fi
             ;;
 
+        mode)
+            # Handle mode subcommand (show/set) via shared helper
+            local mode_subcmd="${1:-show}"
+            shift || true
+            local mode_arg="${1:-}"
+            _nftban_ddos_mode "$mode_subcmd" "$json_mode" "$mode_arg"
+            ;;
+
         help|--help|-h)
             _nftban_ddos_help
             ;;
 
         *)
-            cmd_error "Unknown command: $action. Use: enable, disable, status, stats, test, help" "$json_mode"
+            cmd_error "Unknown command: $action. Use: enable, disable, status, stats, test, mode, help" "$json_mode"
             return 1
             ;;
     esac
@@ -384,3 +425,4 @@ nftban_cmd_ddos() {
 export -f nftban_cmd_ddos
 export -f _nftban_ddos_help
 export -f _nftban_ddos_stats_json
+export -f _nftban_ddos_mode
