@@ -133,8 +133,8 @@
     "NFTBAN_SURICATA_ENABLED": {
       "type": "string",
       "$ref": "#/definitions/boolean_string",
-      "default": "true",
-      "description": "Enable Suricata IDS integration",
+      "default": "false",
+      "description": "Enable Suricata IDS integration (opt-in)",
       "introduced_in": "1.0.0",
       "category": "features"
     },
@@ -277,28 +277,154 @@
       "maximum": 1000000
     },
 
-    "WATCHDOG_ENABLED": {
+    "NFTBAN_WATCHDOG_ENABLED": {
       "type": "string",
       "$ref": "#/definitions/boolean_string",
-      "default": "false",
-      "description": "Enable system watchdog",
+      "default": "true",
+      "description": "Enable system watchdog (critical for production)",
       "introduced_in": "1.0.0",
-      "category": "modules"
+      "category": "modules",
+      "config_file": "conf.d/watchdog.conf"
     },
 
-    "WATCHDOG_INTERVAL": {
+    "NFTBAN_WATCHDOG_INTERVAL": {
       "type": "string",
       "$ref": "#/definitions/duration_seconds",
-      "default": "60",
+      "default": "90",
       "description": "Watchdog check interval in seconds",
       "introduced_in": "1.0.0",
       "category": "modules",
+      "config_file": "conf.d/watchdog.conf",
       "minimum": 5,
-      "maximum": 3600,
-      "required_when": {
-        "key": "WATCHDOG_ENABLED",
-        "value": "true"
-      }
+      "maximum": 3600
+    },
+
+    "NFTBAN_TIMEOUT_FAST": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "5",
+      "description": "Quick operations timeout (curl connect, simple checks)",
+      "introduced_in": "1.8.16",
+      "category": "timeouts"
+    },
+
+    "NFTBAN_TIMEOUT_MEDIUM": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "30",
+      "description": "Standard operations timeout (nft commands, API calls)",
+      "introduced_in": "1.8.16",
+      "category": "timeouts"
+    },
+
+    "NFTBAN_TIMEOUT_SLOW": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "120",
+      "description": "Long operations timeout (large feed downloads)",
+      "introduced_in": "1.8.16",
+      "category": "timeouts"
+    },
+
+    "NFTBAN_TIMEOUT_HTTP_DEFAULT": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "60",
+      "description": "Default HTTP client timeout",
+      "introduced_in": "1.8.16",
+      "category": "timeouts"
+    },
+
+    "NFTBAN_TIMEOUT_HTTP_LONG": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "300",
+      "description": "Extended HTTP timeout (GeoIP downloads)",
+      "introduced_in": "1.8.16",
+      "category": "timeouts"
+    },
+
+    "NFTBAN_TIMEOUT_IPC_SOCKET": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "300",
+      "description": "IPC socket deadline for sync operations (5 min)",
+      "introduced_in": "1.8.16",
+      "category": "timeouts"
+    },
+
+    "NFTBAN_TIMEOUT_SYNC": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "600",
+      "description": "Full sync timeout including feeds/geoban (10 min)",
+      "introduced_in": "1.8.16",
+      "category": "timeouts"
+    },
+
+    "NFTBAN_MAX_MEMORY_BYTES": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "",
+      "description": "Daemon memory limit override (bytes). Empty = auto-detect based on RAM tier",
+      "introduced_in": "1.8.16",
+      "category": "daemon"
+    },
+
+    "NFTBAN_MAX_MEMORY_PERCENT": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "20",
+      "description": "Max percentage of system RAM for daemon",
+      "introduced_in": "1.8.16",
+      "category": "daemon",
+      "minimum": 5,
+      "maximum": 50
+    },
+
+    "NFTBAN_GOMAXPROCS": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "",
+      "description": "Number of CPU cores for Go runtime. Empty = auto",
+      "introduced_in": "1.8.16",
+      "category": "daemon"
+    },
+
+    "NFTBAN_MAX_CONCURRENT_CONNS": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "100",
+      "description": "Maximum concurrent IPC connections",
+      "introduced_in": "1.8.16",
+      "category": "daemon"
+    },
+
+    "NFTBAN_RATE_LIMIT_PER_MIN": {
+      "type": "string",
+      "$ref": "#/definitions/positive_integer",
+      "default": "60",
+      "description": "API rate limit per minute",
+      "introduced_in": "1.8.16",
+      "category": "daemon"
+    },
+
+    "NFTBAN_STARTUP_DELAY": {
+      "type": "string",
+      "$ref": "#/definitions/duration_seconds",
+      "default": "0",
+      "description": "Startup delay before loading firewall rules (0 = instant protection)",
+      "introduced_in": "1.0.0",
+      "category": "system"
+    },
+
+    "NFTBAN_LOGIN_MONITOR_ENABLED": {
+      "type": "string",
+      "$ref": "#/definitions/boolean_string",
+      "default": "true",
+      "description": "Enable login brute force detection (built-in, no fail2ban dependency)",
+      "introduced_in": "1.0.0",
+      "category": "modules"
     }
   },
 
@@ -315,6 +441,18 @@
     "PORTSCAN_THRESHOLD": {
       "renamed_to": "PORTSCAN_BAN_THRESHOLD",
       "renamed_in": "1.0.0"
+    },
+    "WATCHDOG_ENABLED": {
+      "renamed_to": "NFTBAN_WATCHDOG_ENABLED",
+      "renamed_in": "1.8.16"
+    },
+    "WATCHDOG_INTERVAL": {
+      "renamed_to": "NFTBAN_WATCHDOG_INTERVAL",
+      "renamed_in": "1.8.16"
+    },
+    "FEEDS_ENABLED": {
+      "renamed_to": "NFTBAN_FEEDS_ENABLED",
+      "renamed_in": "1.8.16"
     }
   },
 
@@ -323,6 +461,8 @@
     "paths": "Filesystem paths",
     "features": "Feature toggles",
     "banning": "Ban behavior settings",
-    "modules": "Module-specific settings"
+    "modules": "Module-specific settings",
+    "timeouts": "Network and operation timeouts",
+    "daemon": "Daemon resource limits and tuning"
   }
 }

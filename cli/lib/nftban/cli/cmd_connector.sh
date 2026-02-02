@@ -429,7 +429,7 @@ _cmd_connector_test() {
     case "$CONNECTOR_TYPE" in
         elasticsearch)
             [[ "$verbose" == "true" ]] && echo "[1/3] Checking URL: $CONNECTOR_ES_URL"
-            if ! curl -sf "${CONNECTOR_ES_URL}/_cluster/health" -o /dev/null --connect-timeout 5; then
+            if ! curl -sf "${CONNECTOR_ES_URL}/_cluster/health" -o /dev/null --connect-timeout "${NFTBAN_TIMEOUT_FAST:-5}"; then
                 _connector_print_error "Cannot connect to Elasticsearch"
                 return 1
             fi
@@ -452,7 +452,7 @@ _cmd_connector_test() {
             port=$(echo "$broker" | cut -d':' -f2)
             port="${port:-9092}"
 
-            if ! timeout 5 bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null; then
+            if ! timeout "${NFTBAN_TIMEOUT_FAST:-5}" bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null; then
                 _connector_print_error "Cannot connect to Kafka broker $host:$port"
                 return 1
             fi
@@ -470,7 +470,7 @@ _cmd_connector_test() {
             [[ "$verbose" == "true" ]] && echo "[1/2] Checking $proto://$host:$port"
 
             if [[ "$proto" == "tcp" ]]; then
-                if ! timeout 5 bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null; then
+                if ! timeout "${NFTBAN_TIMEOUT_FAST:-5}" bash -c "echo >/dev/tcp/$host/$port" 2>/dev/null; then
                     _connector_print_error "Cannot connect to syslog server"
                     return 1
                 fi
@@ -486,9 +486,9 @@ _cmd_connector_test() {
             local url="${CONNECTOR_WEBHOOK_URL:-}"
             [[ "$verbose" == "true" ]] && echo "[1/2] Checking URL: $url"
 
-            if ! curl -sf "$url" -o /dev/null --connect-timeout 5 -X HEAD 2>/dev/null; then
+            if ! curl -sf "$url" -o /dev/null --connect-timeout "${NFTBAN_TIMEOUT_FAST:-5}" -X HEAD 2>/dev/null; then
                 # Try GET if HEAD fails
-                if ! curl -sf "$url" -o /dev/null --connect-timeout 5 2>/dev/null; then
+                if ! curl -sf "$url" -o /dev/null --connect-timeout "${NFTBAN_TIMEOUT_FAST:-5}" 2>/dev/null; then
                     _connector_print_warning "Cannot reach webhook URL (may require POST)"
                 fi
             fi

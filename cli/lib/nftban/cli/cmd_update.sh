@@ -621,7 +621,7 @@ _get_latest_release() {
     # Returns: version string (e.g., "1.3.0")
 
     local response
-    response=$(curl -sLf --connect-timeout 10 "$GITHUB_API" 2>/dev/null) || {
+    response=$(curl -sLf --connect-timeout "${NFTBAN_TIMEOUT_MEDIUM:-30}" "$GITHUB_API" 2>/dev/null) || {
         echo "unknown"
         return 1
     }
@@ -661,7 +661,7 @@ _download_package() {
     _update_log INFO "Downloading from GitHub..."
     _update_log INFO "URL: $url"
 
-    if curl -sLf --connect-timeout 30 --max-time 300 -o "$output" "$url" 2>/dev/null; then
+    if curl -sLf --connect-timeout "${NFTBAN_TIMEOUT_MEDIUM:-30}" --max-time "${NFTBAN_TIMEOUT_HTTP_LONG:-300}" -o "$output" "$url" 2>/dev/null; then
         if [[ -f "$output" ]] && [[ -s "$output" ]]; then
             local size
             size=$(du -h "$output" | cut -f1)
