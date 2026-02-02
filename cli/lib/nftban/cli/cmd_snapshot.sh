@@ -161,6 +161,13 @@ Examples:
 EOF
 }
 
+# =============================================================================
+# EXPORTS
+# =============================================================================
+
+export -f nftban_cmd_snapshot
+export -f nftban_snapshot_help
+
 # Execute if sourced with arguments
 if [[ "${BASH_SOURCE[0]}" == "${0}" ]] || [[ -n "${1:-}" ]]; then
     nftban_cmd_snapshot "$@"

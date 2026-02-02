@@ -428,8 +428,10 @@ nftban_feeds_update_single() {
                   grep -oE '^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}(/[0-9]{1,2})?' | \
                   sort -u)
 
-    # Save parsed IPs
+    # Save parsed IPs (set nftban ownership for group access)
     echo "$parse_result" > "$parsed_file"
+    chown nftban:nftban "$parsed_file" 2>/dev/null || true
+    chmod 640 "$parsed_file" 2>/dev/null || true
     local ip_count
     ip_count=$(echo "$parse_result" | grep -c .)
 

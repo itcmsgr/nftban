@@ -1521,6 +1521,10 @@ _install_configs_ownership() {
         [ -d "/var/lib/nftban/$subdir" ] && chown nftban:nftban "/var/lib/nftban/$subdir" && chmod 750 "/var/lib/nftban/$subdir"
     done
 
+    # Fix feed files ownership (may be owned by root from manual runs)
+    find /var/lib/nftban/feeds -maxdepth 1 -type f -name "*.txt" -exec chown nftban:nftban {} \; 2>/dev/null || true
+    find /var/lib/nftban/feeds -maxdepth 1 -type f -name "*.txt" -exec chmod 640 {} \; 2>/dev/null || true
+
     # Runtime directories
     chown nftban:nftban /var/log/nftban && chmod 750 /var/log/nftban
     chown nftban:nftban /var/cache/nftban && chmod 755 /var/cache/nftban

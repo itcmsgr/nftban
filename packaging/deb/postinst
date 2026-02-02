@@ -326,6 +326,10 @@ case "$1" in
         find /var/lib/nftban -maxdepth 1 -type d -exec chown nftban:nftban {} \;
         find /var/lib/nftban -maxdepth 1 -type d -exec chmod 750 {} \;
 
+        # Fix feed files ownership (may be owned by root from manual runs)
+        find /var/lib/nftban/feeds -maxdepth 1 -type f -name "*.txt" -exec chown nftban:nftban {} \; 2>/dev/null || true
+        find /var/lib/nftban/feeds -maxdepth 1 -type f -name "*.txt" -exec chmod 640 {} \; 2>/dev/null || true
+
         # Auditor reports - nftban-auditor group
         chown root:nftban-auditor /var/lib/nftban/reports/auditors 2>/dev/null || true
         chmod 770 /var/lib/nftban/reports/auditors 2>/dev/null || true
