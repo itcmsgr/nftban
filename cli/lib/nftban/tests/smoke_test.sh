@@ -395,10 +395,10 @@ run_protection_tests() {
     smoke_test_cmd "unprotect help" "nftban unprotect --help"
 
     # Test cleanup --stats returns valid JSON with required fields
-    smoke_test_cmd "cleanup --stats JSON" "nftban cleanup --stats | jq -e '.total != null and .protected != null and .evictable != null'"
+    smoke_test_cmd "cleanup --stats JSON" "nftban cleanup --stats --json | jq -e '.data.total != null and .data.protected != null and .data.evictable != null'"
 
     # Test cleanup --dry-run returns valid JSON with ips array
-    smoke_test_cmd "cleanup --dry-run JSON" "nftban cleanup --dry-run | jq -e '.ips | type == \"array\"'"
+    smoke_test_cmd "cleanup --dry-run JSON" "nftban cleanup --dry-run --json | jq -e '.data.ips | type == \"array\"'"
 
     # Test cleanup help
     smoke_test_cmd "cleanup help" "nftban cleanup --help"

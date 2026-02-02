@@ -5,6 +5,69 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.0] - 2026-02-02
+
+### Major Refactoring Release
+
+Comprehensive code audit and bug fix release addressing critical race conditions,
+performance optimizations, and code quality improvements across the codebase.
+
+### Fixed - Critical (P0)
+
+- **Race condition in ban escalation** - Added mutex synchronization to prevent
+  concurrent goroutines from racing when escalating temporary bans to permanent.
+  (`cmd/nftband/main.go:banMutex`)
+
+- **Non-atomic file writer operations** - Fixed unchecked `bufio.Writer.Flush()`
+  errors that could cause silent data loss when writing feed and trust files.
+  (`cmd/nftban-core/cmd_feeds.go`, `cmd/nftban-core/cmd_trust.go`)
+
+- **IP range parsing** - Added support for IP ranges like "1.2.3.4-1.2.3.10" in
+  threat feeds. New `ParseFeedLineMulti()` function expands ranges to individual IPs.
+  (`pkg/feeds/parser.go:expandIPRange()`)
+
+- **Nil pointer dereferences** - Added nil receiver checks to all Status methods
+  preventing panics when modules are disabled.
+  (`pkg/module/module.go:GetStatus()`)
+
+### Fixed - Performance (P1)
+
+- **Pre-allocation optimizations** - Added capacity hints to slice allocations
+  reducing memory pressure and GC overhead during CIDR processing:
+  - `GetSetElements()` - pre-allocates based on element count
+  - `parseSetElements()` - estimates capacity from comma count
+  - CIDR merge functions - pre-allocates 2x merged interval count
+  - `rangeToCIDRsIPv4()` - pre-allocates 32 slots (IPv4 max)
+  (`pkg/sync/nft.go`, `pkg/sync/cidr.go`)
+
+- **Smoke test JSON output** - Fixed cleanup --stats and --dry-run tests to use
+  --json flag and check correct data structure.
+  (`cli/lib/nftban/tests/smoke_test.sh`)
+
+### Changed - Code Quality (P2/P3)
+
+- **Removed duplicate ValidateIP wrappers** - Consolidated to use
+  `netutil.ValidateAndNormalizeIP()` directly.
+  (`pkg/blacklist/loader.go`, `pkg/whitelist/loader.go`)
+
+- **Centralized Bash logging** - Created shared logging module to eliminate
+  duplicate `log_info/warn/error` functions across scripts.
+  (`cli/lib/nftban/helpers/nftban_logging.sh`)
+
+### Added - Observability
+
+- **CIDR filter metrics** - Export filter statistics to both Prometheus and Zabbix:
+  - `nftban_cidr_filter_total` - Total CIDRs processed
+  - `nftban_cidr_filter_filtered` - CIDRs removed by filtering
+  - `nftban_cidr_filter_bogon` - Bogon/reserved CIDRs removed
+  - `nftban_cidr_filter_oversize` - Oversized CIDRs removed (< /9)
+  - `nftban_cidr_filter_kept` - CIDRs that passed filtering
+  (`pkg/watchdog/metrics.go`, `pkg/exporters/zabbix/collector.go`)
+
+- **Filter state persistence** - Filter statistics saved to
+  `/var/lib/nftban/state/filter.json` for metrics export.
+  (`pkg/safety/limits.go:RecordFilterState()`)
+
 ## [1.8.16] - 2026-02-01
 
 ### Smart Memory Protection & Ban Management

@@ -877,7 +877,10 @@ func downloadAndParseFeed(url, outputFile string) (int, error) {
 	for _, ip := range validIPs {
 		fmt.Fprintln(writer, ip)
 	}
-	writer.Flush()
+	if err := writer.Flush(); err != nil {
+		os.Remove(tmpFile)
+		return 0, fmt.Errorf("flush failed: %w", err)
+	}
 
 	// Atomic rename
 	if err := os.Rename(tmpFile, outputFile); err != nil {

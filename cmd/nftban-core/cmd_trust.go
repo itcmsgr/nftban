@@ -572,7 +572,9 @@ func downloadTrustFeed(tf TrustConfig, outputFile string) (int, error) {
 	for _, ip := range allIPs {
 		fmt.Fprintln(writer, ip)
 	}
-	writer.Flush()
+	if err := writer.Flush(); err != nil {
+		return 0, fmt.Errorf("flush failed: %w", err)
+	}
 
 	return len(allIPs), nil
 }

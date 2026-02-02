@@ -181,6 +181,16 @@ type MetricsSnapshot struct {
 	API       APIMetrics      `json:"api"`
 	Server    ServerMetrics   `json:"server"`
 	Discovery DiscoveryData   `json:"discovery"`
+	Filter    FilterMetrics   `json:"filter"`
+}
+
+// FilterMetrics contains CIDR filter statistics
+type FilterMetrics struct {
+	Total     int `json:"total"`      // Total CIDRs processed in last sync
+	Filtered  int `json:"filtered"`   // CIDRs removed by filtering
+	Bogon     int `json:"bogon"`      // Bogon/reserved CIDRs removed
+	Oversize  int `json:"oversize"`   // Oversized CIDRs removed (< /9)
+	Kept      int `json:"kept"`       // CIDRs that passed filtering
 }
 
 // DaemonMetrics contains daemon identification and status

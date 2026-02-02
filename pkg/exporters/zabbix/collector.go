@@ -19,6 +19,7 @@
 package zabbix
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"runtime"
@@ -408,6 +409,9 @@ func (c *Collector) Collect() *MetricsSnapshot {
 	disc := c.source.GetDiscoveryData()
 	snapshot.Discovery = c.convertDiscoveryData(disc)
 
+	// Collect CIDR filter metrics from state file
+	snapshot.Filter = c.collectFilterMetrics()
+
 	// Update load averages
 	c.updateLoadAverages(&snapshot.Server)
 
@@ -416,6 +420,34 @@ func (c *Collector) Collect() *MetricsSnapshot {
 	c.lastCollect = time.Now()
 
 	return snapshot
+}
+
+// collectFilterMetrics reads CIDR filter state from file
+func (c *Collector) collectFilterMetrics() FilterMetrics {
+	data, err := os.ReadFile("/var/lib/nftban/state/filter.json")
+	if err != nil {
+		return FilterMetrics{} // No filter state yet
+	}
+
+	var state struct {
+		Total         int `json:"total"`
+		Filtered      int `json:"filtered"`
+		BogonCount    int `json:"bogon_count"`
+		OversizeCount int `json:"oversize_count"`
+		Kept          int `json:"kept"`
+	}
+
+	if err := json.Unmarshal(data, &state); err != nil {
+		return FilterMetrics{}
+	}
+
+	return FilterMetrics{
+		Total:    state.Total,
+		Filtered: state.Filtered,
+		Bogon:    state.BogonCount,
+		Oversize: state.OversizeCount,
+		Kept:     state.Kept,
+	}
 }
 
 // convertDiscoveryData converts internal discovery format to Zabbix LLD format
@@ -639,6 +671,15 @@ func (s *MetricsSnapshot) ToMetrics() []Metric {
 		Metric{Name: "nftban.server.load_1m", Value: s.Server.Load1m, Type: MetricTypeGauge, Timestamp: ts},
 		Metric{Name: "nftban.server.load_5m", Value: s.Server.Load5m, Type: MetricTypeGauge, Timestamp: ts},
 		Metric{Name: "nftban.server.load_15m", Value: s.Server.Load15m, Type: MetricTypeGauge, Timestamp: ts},
+	)
+
+	// CIDR filter metrics
+	metrics = append(metrics,
+		Metric{Name: "nftban.filter.total", Value: s.Filter.Total, Type: MetricTypeGauge, Timestamp: ts},
+		Metric{Name: "nftban.filter.filtered", Value: s.Filter.Filtered, Type: MetricTypeGauge, Timestamp: ts},
+		Metric{Name: "nftban.filter.bogon", Value: s.Filter.Bogon, Type: MetricTypeGauge, Timestamp: ts},
+		Metric{Name: "nftban.filter.oversize", Value: s.Filter.Oversize, Type: MetricTypeGauge, Timestamp: ts},
+		Metric{Name: "nftban.filter.kept", Value: s.Filter.Kept, Type: MetricTypeGauge, Timestamp: ts},
 	)
 
 	return metrics

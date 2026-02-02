@@ -117,13 +117,6 @@ func loadBlacklistFile(filePath string, ipv4Set, ipv6Set util.Set[string]) error
 	})
 }
 
-// ValidateIP validates and normalizes an IP address
-// Returns the normalized IP string and whether it's IPv4
-// Delegates to netutil.ValidateAndNormalizeIP for consistency
-func ValidateIP(ipStr string) (string, bool, error) {
-	return netutil.ValidateAndNormalizeIP(ipStr)
-}
-
 // AddIP adds an IP to the appropriate blacklist file
 // Creates blacklist.d/99-manual.conf for manual additions
 // Deprecated: Use AddIPWithSource for source-specific files
@@ -140,7 +133,7 @@ func AddIP(configDir string, ipStr string, reason string) error {
 //   - others     -> 99-manual.conf
 func AddIPWithSource(configDir string, ipStr string, reason string, source string) error {
 	// Validate IP
-	normalizedIP, isIPv4, err := ValidateIP(ipStr)
+	normalizedIP, isIPv4, err := netutil.ValidateAndNormalizeIP(ipStr)
 	if err != nil {
 		return err
 	}
@@ -214,7 +207,7 @@ func AddIPWithSource(configDir string, ipStr string, reason string, source strin
 // RemoveIP removes an IP from all blacklist files
 func RemoveIP(configDir string, ipStr string) error {
 	// Validate and normalize IP
-	normalizedIP, _, err := ValidateIP(ipStr)
+	normalizedIP, _, err := netutil.ValidateAndNormalizeIP(ipStr)
 	if err != nil {
 		return err
 	}
@@ -285,13 +278,13 @@ func GetBlacklistByCategory(configDir string, category string) ([]string, []stri
 		return nil, nil, err
 	}
 
-	// Convert maps to slices
-	var ipv4List []string
+	// Convert maps to slices with pre-allocation to avoid reallocations
+	ipv4List := make([]string, 0, ipv4Set.Len())
 	for ip := range ipv4Set {
 		ipv4List = append(ipv4List, ip)
 	}
 
-	var ipv6List []string
+	ipv6List := make([]string, 0, ipv6Set.Len())
 	for ip := range ipv6Set {
 		ipv6List = append(ipv6List, ip)
 	}

@@ -286,7 +286,8 @@ func mergeCIDRsIPv4WithStats(cidrs []string) ([]string, *MergeStats, error) {
 	merged = append(merged, current)
 
 	// Convert merged intervals back to CIDRs
-	result := make([]string, 0)
+	// Pre-allocate with estimate: merged intervals typically expand to ~1.5x CIDRs
+	result := make([]string, 0, len(merged)*2)
 	for _, interval := range merged {
 		intervalCIDRs, err := rangeToCIDRsIPv4(interval.Start, interval.End)
 		if err != nil {
@@ -379,7 +380,8 @@ func mergeCIDRsIPv6WithStats(cidrs []string) ([]string, *MergeStats, error) {
 	merged = append(merged, current)
 
 	// Convert merged intervals back to CIDRs
-	result := make([]string, 0)
+	// Pre-allocate with estimate: merged intervals typically expand to ~1.5x CIDRs
+	result := make([]string, 0, len(merged)*2)
 	for _, interval := range merged {
 		intervalCIDRs, err := rangeToCIDRsIPv6(interval.Start, interval.End)
 		if err != nil {
@@ -440,7 +442,8 @@ func bigIntToIPv6(n *big.Int) net.IP {
 // rangeToCIDRsIPv4 converts an IPv4 range [start, end] to minimal CIDR set
 // Returns error if memory budget is exceeded
 func rangeToCIDRsIPv4(start, end uint32) ([]string, error) {
-	cidrs := make([]string, 0)
+	// Pre-allocate for typical range (32 is max CIDRs for any IPv4 range)
+	cidrs := make([]string, 0, 32)
 	iterations := 0
 
 	for start <= end {
