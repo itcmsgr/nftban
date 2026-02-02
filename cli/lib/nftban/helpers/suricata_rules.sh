@@ -62,14 +62,29 @@ readonly NFTBAN_LASTGOOD_DIR="${NFTBAN_STATE_DIR}/last-good"
 # UTILITY FUNCTIONS
 # =============================================================================
 
-# Check root privileges
-_suricata_check_root() {
+# Check nftban group membership (polkit handles systemd operations)
+_suricata_check_access() {
     local operation="${1:-this operation}"
-    if [[ $EUID -ne 0 ]]; then
-        echo -e "${RED}ERROR:${NC} Root privileges required for $operation" >&2
-        return 1
+
+    # Check if user is in nftban group (polkit grants systemd access)
+    if id -nG 2>/dev/null | grep -qw "nftban"; then
+        return 0
     fi
-    return 0
+
+    # Root always has access
+    if [[ $EUID -eq 0 ]]; then
+        return 0
+    fi
+
+    echo -e "${RED}ERROR:${NC} nftban group membership required for $operation" >&2
+    echo "Add user to nftban group: sudo usermod -a -G nftban \$USER" >&2
+    echo "Then log out and back in for group membership to take effect." >&2
+    return 1
+}
+
+# Legacy alias for compatibility (deprecated - use _suricata_check_access)
+_suricata_check_root() {
+    _suricata_check_access "$@"
 }
 
 # Ensure NFTBan suricata directories exist

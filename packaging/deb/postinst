@@ -264,11 +264,48 @@ case "$1" in
         chown root:nftban /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d /etc/nftban/rules.d
         chmod 750 /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d /etc/nftban/rules.d
 
-        # Suricata directories
+        # Suricata directories (group-writable for nftban polkit access)
         if [ -d /etc/nftban/suricata ]; then
-            chown -R root:nftban /etc/nftban/suricata
-            find /etc/nftban/suricata -type d -exec chmod 750 {} \;
-            find /etc/nftban/suricata -type f -exec chmod 644 {} \;
+            # Main suricata directory
+            chown root:nftban /etc/nftban/suricata
+            chmod 750 /etc/nftban/suricata
+
+            # Subdirectories (explicit, no -R)
+            for subdir in profiles config cache; do
+                [ -d "/etc/nftban/suricata/$subdir" ] && {
+                    chown root:nftban "/etc/nftban/suricata/$subdir"
+                    chmod 750 "/etc/nftban/suricata/$subdir"
+                }
+            done
+
+            # Rules directory - group-writable for CLI management
+            [ -d /etc/nftban/suricata/rules ] && {
+                chown root:nftban /etc/nftban/suricata/rules
+                chmod 775 /etc/nftban/suricata/rules
+                # Rule config files - group-writable
+                for conf in disable.conf enable.conf categories.enabled local.rules; do
+                    [ -f "/etc/nftban/suricata/rules/$conf" ] && {
+                        chown root:nftban "/etc/nftban/suricata/rules/$conf"
+                        chmod 664 "/etc/nftban/suricata/rules/$conf"
+                    }
+                done
+            }
+
+            # State directory - group-writable for backup/rollback
+            [ -d /etc/nftban/suricata/state ] && {
+                chown root:nftban /etc/nftban/suricata/state
+                chmod 770 /etc/nftban/suricata/state
+            }
+            [ -d /etc/nftban/suricata/state/last-good ] && {
+                chown root:nftban /etc/nftban/suricata/state/last-good
+                chmod 770 /etc/nftban/suricata/state/last-good
+            }
+
+            # YAML overlay - group-writable
+            [ -f /etc/nftban/suricata/suricata.yaml.overlay ] && {
+                chown root:nftban /etc/nftban/suricata/suricata.yaml.overlay
+                chmod 664 /etc/nftban/suricata/suricata.yaml.overlay
+            }
         fi
 
         # Config files in conf.d - must be readable by nftban group

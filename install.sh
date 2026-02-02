@@ -1603,23 +1603,33 @@ _install_configs_modules() {
         ok "Installed $count Suricata profile templates"
     fi
 
-    # Suricata rule config files (don't overwrite user configs)
+    # Suricata rule config files (group-writable for nftban group via polkit)
     if [[ -d "$SCRIPT_DIR/etc/nftban/suricata/rules" ]]; then
-        _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/rules/disable.conf" "/etc/nftban/suricata/rules/disable.conf" "644"
-        _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/rules/enable.conf" "/etc/nftban/suricata/rules/enable.conf" "644"
-        _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/rules/categories.enabled" "/etc/nftban/suricata/rules/categories.enabled" "644"
-        _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/rules/local.rules" "/etc/nftban/suricata/rules/local.rules" "644"
+        _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/rules/disable.conf" "/etc/nftban/suricata/rules/disable.conf" "664"
+        _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/rules/enable.conf" "/etc/nftban/suricata/rules/enable.conf" "664"
+        _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/rules/categories.enabled" "/etc/nftban/suricata/rules/categories.enabled" "664"
+        _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/rules/local.rules" "/etc/nftban/suricata/rules/local.rules" "664"
+        # Set group ownership for nftban group access
+        chown root:nftban /etc/nftban/suricata/rules/disable.conf
+        chown root:nftban /etc/nftban/suricata/rules/enable.conf
+        chown root:nftban /etc/nftban/suricata/rules/categories.enabled
+        chown root:nftban /etc/nftban/suricata/rules/local.rules
     fi
 
-    # Suricata state directory (explicit ownership per directory, no -R)
+    # Suricata rules directory (group-writable for nftban)
+    chown root:nftban /etc/nftban/suricata/rules
+    chmod 775 /etc/nftban/suricata/rules
+
+    # Suricata state directory (group-writable for backup/rollback)
     mkdir -p /etc/nftban/suricata/state/last-good
     chown root:nftban /etc/nftban/suricata/state
     chown root:nftban /etc/nftban/suricata/state/last-good
-    chmod 750 /etc/nftban/suricata/state
-    chmod 750 /etc/nftban/suricata/state/last-good
+    chmod 770 /etc/nftban/suricata/state
+    chmod 770 /etc/nftban/suricata/state/last-good
 
-    # Suricata YAML overlay (don't overwrite user config)
-    _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/suricata.yaml.overlay" "/etc/nftban/suricata/suricata.yaml.overlay" "644"
+    # Suricata YAML overlay (group-writable for nftban)
+    _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/suricata.yaml.overlay" "/etc/nftban/suricata/suricata.yaml.overlay" "664"
+    chown root:nftban /etc/nftban/suricata/suricata.yaml.overlay
 
     # Core configs (don't overwrite user configs)
     _install_config_file "$SCRIPT_DIR/install/config/feeds.conf" "/etc/nftban/conf.d/feeds.conf" "644"

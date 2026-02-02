@@ -556,16 +556,16 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban/suricata
 %dir %attr(750,root,nftban) /etc/nftban/suricata/profiles
 %dir %attr(750,root,nftban) /etc/nftban/suricata/config
-%dir %attr(750,root,nftban) /etc/nftban/suricata/rules
+%dir %attr(775,root,nftban) /etc/nftban/suricata/rules
 %dir %attr(750,root,nftban) /etc/nftban/suricata/cache
-%dir %attr(750,root,nftban) /etc/nftban/suricata/state
-%dir %attr(750,root,nftban) /etc/nftban/suricata/state/last-good
+%dir %attr(770,root,nftban) /etc/nftban/suricata/state
+%dir %attr(770,root,nftban) /etc/nftban/suricata/state/last-good
 %config(noreplace) /etc/nftban/suricata/profiles/*
-%config(noreplace) /etc/nftban/suricata/rules/disable.conf
-%config(noreplace) /etc/nftban/suricata/rules/enable.conf
-%config(noreplace) /etc/nftban/suricata/rules/categories.enabled
-%config(noreplace) /etc/nftban/suricata/rules/local.rules
-%config(noreplace) /etc/nftban/suricata/suricata.yaml.overlay
+%config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/rules/disable.conf
+%config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/rules/enable.conf
+%config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/rules/categories.enabled
+%config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/rules/local.rules
+%config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/suricata.yaml.overlay
 %dir %attr(750,root,nftban) /etc/nftban/connectors
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d/botscan
