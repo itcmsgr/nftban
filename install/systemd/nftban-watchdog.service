@@ -47,6 +47,9 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nftban-watchdog
 
+# Resource limits
+MemoryMax=256M
+
 # Security hardening - read-only except for output directories
 PrivateTmp=yes
 NoNewPrivileges=yes

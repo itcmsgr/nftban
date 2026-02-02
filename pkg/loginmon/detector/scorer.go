@@ -97,6 +97,9 @@ type Scorer struct {
 	ips    map[netip.Addr]*IPState
 	mu     sync.RWMutex
 
+	// Track recently banned IPs to prevent duplicate ban storms
+	recentBans map[netip.Addr]time.Time
+
 	// Statistics (atomic for lock-free reads)
 	stats Stats
 }
@@ -133,8 +136,9 @@ type Stats struct {
 // NewScorer creates a new scoring engine
 func NewScorer(config ScorerConfig) *Scorer {
 	return &Scorer{
-		config: config,
-		ips:    make(map[netip.Addr]*IPState),
+		config:     config,
+		ips:        make(map[netip.Addr]*IPState),
+		recentBans: make(map[netip.Addr]time.Time),
 	}
 }
 
@@ -190,14 +194,27 @@ func (s *Scorer) RecordVerdict(v Verdict) *BanAction {
 	return s.checkThresholds(v.IP, state, v)
 }
 
+// recentBanWindow is the duration to suppress duplicate bans for the same IP
+const recentBanWindow = 5 * time.Second
+
 // checkThresholds determines if a ban should be triggered
 func (s *Scorer) checkThresholds(ip netip.Addr, state *IPState, v Verdict) *BanAction {
 	score := state.Score
 
+	// Skip if recently banned to prevent duplicate ban storms
+	if bannedAt, exists := s.recentBans[ip]; exists {
+		if time.Since(bannedAt) < recentBanWindow {
+			return nil
+		}
+		delete(s.recentBans, ip)
+	}
+
 	// Permanent ban threshold
 	if score >= s.config.ThresholdPermanent {
+		now := time.Now()
 		state.BanCount++
-		state.LastBan = time.Now()
+		state.LastBan = now
+		s.recentBans[ip] = now
 		s.stats.TotalBans.Add(1)
 		s.stats.TotalPermanent.Add(1)
 		s.recordBanStats(ip, v)
@@ -213,8 +230,10 @@ func (s *Scorer) checkThresholds(ip netip.Addr, state *IPState, v Verdict) *BanA
 
 	// Escalation threshold
 	if score >= s.config.ThresholdEscalate {
+		now := time.Now()
 		state.BanCount++
-		state.LastBan = time.Now()
+		state.LastBan = now
+		s.recentBans[ip] = now
 		s.stats.TotalBans.Add(1)
 		s.stats.TotalEscalations.Add(1)
 		s.recordBanStats(ip, v)
@@ -238,8 +257,10 @@ func (s *Scorer) checkThresholds(ip netip.Addr, state *IPState, v Verdict) *BanA
 
 	// Temp ban threshold
 	if score >= s.config.ThresholdTempBan {
+		now := time.Now()
 		state.BanCount++
-		state.LastBan = time.Now()
+		state.LastBan = now
+		s.recentBans[ip] = now
 		s.stats.TotalBans.Add(1)
 		s.recordBanStats(ip, v)
 		return &BanAction{
@@ -369,6 +390,7 @@ func (s *Scorer) Reset() {
 	defer s.mu.Unlock()
 
 	s.ips = make(map[netip.Addr]*IPState)
+	s.recentBans = make(map[netip.Addr]time.Time)
 	s.stats = Stats{}
 }
 

@@ -36,6 +36,14 @@ StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=nftban-queue
 
+# Run as unprivileged nftban user
+User=nftban
+Group=nftban
+
+# Resource limits
+MemoryMax=256M
+TasksMax=50
+
 # Security hardening
 NoNewPrivileges=true
 PrivateTmp=true

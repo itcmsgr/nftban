@@ -1168,7 +1168,7 @@ nftban_health_check_memory_protection() {
 
     if [[ -S "$socket_path" ]] && command -v socat >/dev/null 2>&1; then
         local response
-        response=$(echo '{"method":"stats","params":{}}' | timeout 5 socat - "UNIX-CONNECT:$socket_path" 2>/dev/null) || response=""
+        response=$(echo '{"method":"stats","params":{}}' | timeout "${NFTBAN_TIMEOUT_FAST:-5}" socat - "UNIX-CONNECT:$socket_path" 2>/dev/null) || response=""
 
         if [[ -n "$response" ]] && command -v jq >/dev/null 2>&1; then
             local success
@@ -1248,7 +1248,7 @@ nftban_health_check_memory_protection() {
     # Try IPC first (more accurate, includes runtime state)
     if [[ -S "$socket_path" ]] && command -v socat >/dev/null 2>&1; then
         local ban_response
-        ban_response=$(echo '{"method":"permanent_ban_stats","params":{}}' | timeout 5 socat - "UNIX-CONNECT:$socket_path" 2>/dev/null) || ban_response=""
+        ban_response=$(echo '{"method":"permanent_ban_stats","params":{}}' | timeout "${NFTBAN_TIMEOUT_FAST:-5}" socat - "UNIX-CONNECT:$socket_path" 2>/dev/null) || ban_response=""
 
         if [[ -n "$ban_response" ]] && command -v jq >/dev/null 2>&1; then
             local ban_success
@@ -2508,7 +2508,7 @@ nftban_health_check_zabbix() {
         if command -v nc >/dev/null 2>&1 || command -v ncat >/dev/null 2>&1; then
             local nc_cmd="nc"
             command -v ncat >/dev/null 2>&1 && nc_cmd="ncat"
-            if timeout 2 $nc_cmd -z "${NFTBAN_ZABBIX_SERVER}" "${NFTBAN_ZABBIX_PORT:-10051}" 2>/dev/null; then
+            if timeout "${NFTBAN_TIMEOUT_FAST:-5}" $nc_cmd -z "${NFTBAN_ZABBIX_SERVER}" "${NFTBAN_ZABBIX_PORT:-10051}" 2>/dev/null; then
                 zabbix_issues+=("✓ Zabbix server: Reachable")
             else
                 zabbix_issues+=("⚠ Zabbix server: Not reachable (may be filtered)")
@@ -2516,7 +2516,7 @@ nftban_health_check_zabbix() {
             fi
         elif command -v bash >/dev/null 2>&1; then
             # Fallback: use bash /dev/tcp for connectivity test
-            if timeout 2 bash -c "echo >/dev/tcp/${NFTBAN_ZABBIX_SERVER}/${NFTBAN_ZABBIX_PORT:-10051}" 2>/dev/null; then
+            if timeout "${NFTBAN_TIMEOUT_FAST:-5}" bash -c "echo >/dev/tcp/${NFTBAN_ZABBIX_SERVER}/${NFTBAN_ZABBIX_PORT:-10051}" 2>/dev/null; then
                 zabbix_issues+=("✓ Zabbix server: Reachable (via bash)")
             else
                 zabbix_issues+=("⚠ Zabbix server: Not reachable (may be filtered)")
@@ -2633,7 +2633,7 @@ nftban_health_check_connectors() {
         # Quick connectivity check
         local es_addr="${NFTBAN_CONNECTOR_ES_ADDRESSES%%,*}"  # First address
         if command -v curl >/dev/null 2>&1; then
-            if curl -s --connect-timeout 2 "${es_addr}/_cluster/health" >/dev/null 2>&1; then
+            if curl -s --connect-timeout "${NFTBAN_TIMEOUT_FAST:-5}" "${es_addr}/_cluster/health" >/dev/null 2>&1; then
                 connector_issues+=("  ✓ Elasticsearch: Reachable")
             else
                 connector_issues+=("  ⚠ Elasticsearch: Not reachable")

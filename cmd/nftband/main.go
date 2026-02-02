@@ -118,6 +118,34 @@ func getPidFile() string {
 	return runDir + "/nftband.pid"
 }
 
+// getIPCSocketTimeout returns IPC socket timeout from NFTBAN_TIMEOUT_IPC_SOCKET
+// Default: 300 seconds (5 minutes)
+func getIPCSocketTimeout() time.Duration {
+	val := os.Getenv("NFTBAN_TIMEOUT_IPC_SOCKET")
+	if val == "" {
+		return 300 * time.Second
+	}
+	secs, err := strconv.Atoi(val)
+	if err != nil || secs <= 0 {
+		return 300 * time.Second
+	}
+	return time.Duration(secs) * time.Second
+}
+
+// getAutoSyncDelay returns auto-sync startup delay from NFTBAN_AUTO_SYNC_DELAY
+// Default: 60 seconds
+func getAutoSyncDelay() time.Duration {
+	val := os.Getenv("NFTBAN_AUTO_SYNC_DELAY")
+	if val == "" {
+		return 60 * time.Second
+	}
+	secs, err := strconv.Atoi(val)
+	if err != nil || secs < 0 {
+		return 60 * time.Second
+	}
+	return time.Duration(secs) * time.Second
+}
+
 // Daemon holds the main daemon state
 type Daemon struct {
 	bus       *eventbus.Bus
@@ -527,7 +555,8 @@ func (d *Daemon) Run() error {
 	// This ensures feeds and geoban are loaded even after quick postinst sync
 	go func() {
 		// Wait for system to stabilize after package install
-		time.Sleep(60 * time.Second)
+		// Configurable via NFTBAN_AUTO_SYNC_DELAY (default 60s)
+		time.Sleep(getAutoSyncDelay())
 
 		// Check if context is still valid (daemon not shutting down)
 		select {
@@ -766,8 +795,8 @@ type SocketResponse struct {
 func (d *Daemon) handleSocketConnection(conn net.Conn) {
 	defer conn.Close()
 
-	// Set timeout
-	conn.SetDeadline(time.Now().Add(30 * time.Second))
+	// Set timeout from config (default 300s)
+	conn.SetDeadline(time.Now().Add(getIPCSocketTimeout()))
 
 	// SECURITY: Validate peer credentials via SO_PEERCRED
 	// Defense-in-depth: socket permissions (0660 root:nftban) + credential check
