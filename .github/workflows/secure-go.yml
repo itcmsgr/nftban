@@ -5,6 +5,10 @@ on:
     branches: [ main, master, develop ]
   pull_request:
 
+concurrency:
+  group: secure-go-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   security-events: write   # needed to upload SARIF
