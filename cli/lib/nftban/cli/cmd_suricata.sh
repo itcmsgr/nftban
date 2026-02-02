@@ -278,6 +278,36 @@ cmd_suricata_enable() {
         return 1
     fi
 
+    # Check if rules exist, download if missing (like GeoIP auto-download)
+    local rules_dir="/var/lib/suricata/rules"
+    local rule_count=0
+    if [[ -d "$rules_dir" ]]; then
+        rule_count=$(find "$rules_dir" -name "*.rules" -type f 2>/dev/null | wc -l)
+    fi
+
+    if [[ "$rule_count" -eq 0 ]]; then
+        echo "  → No rules found, downloading initial ruleset..."
+        echo "    (This may take a moment)"
+
+        # Update sources and download rules
+        if command -v suricata-update &>/dev/null; then
+            suricata-update update-sources --quiet 2>/dev/null || true
+            if suricata-update --quiet 2>/dev/null; then
+                local new_count=$(find "$rules_dir" -name "*.rules" -type f 2>/dev/null | wc -l)
+                echo "  ✓ Downloaded $new_count rule files"
+            else
+                echo "  ⚠ Warning: Failed to download rules"
+                echo "    Suricata will start but may have limited detection"
+                echo "    Run manually: suricata-update"
+            fi
+        else
+            echo "  ⚠ Warning: suricata-update not found"
+            echo "    Install it to enable automatic rule updates"
+        fi
+    else
+        echo "  ✓ Found $rule_count rule files"
+    fi
+
     # Enable service
     echo "  → Enabling Suricata service..."
     systemctl enable "$SURICATA_SERVICE" || {

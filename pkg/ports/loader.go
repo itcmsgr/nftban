@@ -128,13 +128,24 @@ func loadPortFile(filePath string, config *PortConfig) error {
 			continue
 		}
 
+		// Skip INI section headers like [ports], [description]
+		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
+			continue
+		}
+
 		// Handle inline comments
 		if idx := strings.Index(line, "#"); idx >= 0 {
 			line = strings.TrimSpace(line[:idx])
 		}
 
+		// Handle INI-style format: "22/tcp = input" -> extract "22/tcp"
+		// Also handles simple format: "22/T"
+		if idx := strings.Index(line, "="); idx >= 0 {
+			line = strings.TrimSpace(line[:idx])
+		}
+
 		// Parse format: PORT/PROTOCOL
-		// Examples: 22/T, 53/B, 80/T
+		// Examples: 22/T, 53/B, 80/T, 22/tcp, 53/udp
 		parts := strings.Split(line, "/")
 		if len(parts) != 2 {
 			fmt.Fprintf(os.Stderr, "Warning: Invalid port format at %s:%d: %s (expected PORT/PROTOCOL)\n",
@@ -143,7 +154,22 @@ func loadPortFile(filePath string, config *PortConfig) error {
 		}
 
 		portStr := strings.TrimSpace(parts[0])
-		protocol := strings.ToUpper(strings.TrimSpace(parts[1]))
+		protocolRaw := strings.ToLower(strings.TrimSpace(parts[1]))
+
+		// Normalize protocol names: tcp->T, udp->U, both->B
+		var protocol string
+		switch protocolRaw {
+		case "t", "tcp":
+			protocol = "T"
+		case "u", "udp":
+			protocol = "U"
+		case "b", "both":
+			protocol = "B"
+		default:
+			fmt.Fprintf(os.Stderr, "Warning: Invalid protocol at %s:%d: %s (expected T/tcp, U/udp, or B/both)\n",
+				filePath, lineNum, protocolRaw)
+			continue
+		}
 
 		// Check for port range (e.g., 35000-35999/T)
 		if strings.Contains(portStr, "-") {
@@ -168,12 +194,7 @@ func loadPortFile(filePath string, config *PortConfig) error {
 			continue
 		}
 
-		// Validate protocol
-		if protocol != "T" && protocol != "U" && protocol != "B" {
-			fmt.Fprintf(os.Stderr, "Warning: Invalid protocol at %s:%d: %s (expected T, U, or B)\n",
-				filePath, lineNum, protocol)
-			continue
-		}
+		// Protocol already validated and normalized in switch above
 
 		// Create rule
 		rule := PortRule{

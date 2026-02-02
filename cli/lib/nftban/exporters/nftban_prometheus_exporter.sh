@@ -75,6 +75,16 @@ readonly COMBINED_FILE="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/metrics/combined.
 readonly PEAK_WINDOW=300  # Peak tracking window (5 minutes)
 readonly SKIP_INTERFACES="lo docker0 veth br-"  # Interfaces to skip
 
+# Cleanup trap - prevent orphaned temp files on interruption
+cleanup_prometheus_temp() {
+    rm -f "$TEMP_FILE" 2>/dev/null || true
+    # Clean up orphaned .prom.* files older than 1 hour
+    local textfile_dir
+    textfile_dir=$(dirname "$OUTPUT_FILE")
+    find "$textfile_dir" -maxdepth 1 -name "nftban.prom.*" -mmin +60 -delete 2>/dev/null || true
+}
+trap cleanup_prometheus_temp EXIT INT TERM HUP
+
 # Metric collection start time
 START_TIME=$(date +%s.%N)
 readonly START_TIME
