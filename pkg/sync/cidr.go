@@ -56,9 +56,9 @@ func MergeCIDRs(cidrs []string) ([]string, *MergeStats, error) {
 		return nil, &MergeStats{}, nil
 	}
 
-	// Separate IPv4 and IPv6 CIDRs
-	ipv4Cidrs := make([]string, 0)
-	ipv6Cidrs := make([]string, 0)
+	// Separate IPv4 and IPv6 CIDRs - pre-allocate to avoid reallocation
+	ipv4Cidrs := make([]string, 0, len(cidrs))
+	ipv6Cidrs := make([]string, 0, len(cidrs))
 
 	for _, cidr := range cidrs {
 		ip, _, err := net.ParseCIDR(cidr)
@@ -335,17 +335,23 @@ func rangeToCIDRsIPv4(start, end uint32) []string {
 
 // rangeToCIDRsIPv6 converts an IPv6 range [start, end] to minimal CIDR set
 func rangeToCIDRsIPv6(start, end *big.Int) []string {
-	cidrs := make([]string, 0)
+	cidrs := make([]string, 0, 128) // Pre-allocate for typical range
 
 	current := new(big.Int).Set(start)
 	one := big.NewInt(1)
+
+	// Pre-allocate reusable big.Int objects to avoid allocations in loop
+	// This prevents ~4-5 allocations per iteration
+	temp := new(big.Int)
+	rangeSize := new(big.Int)
+	blockSize := new(big.Int)
 
 	for current.Cmp(end) <= 0 {
 		// Find the largest prefix that fits within [current, end]
 		maxPrefixLen := 128
 
 		// Find trailing zeros in current (determines max CIDR size)
-		temp := new(big.Int).Set(current)
+		temp.Set(current) // Reuse temp instead of allocating new
 		for i := 0; i < 128; i++ {
 			if temp.Bit(i) != 0 {
 				maxPrefixLen = i
@@ -353,16 +359,17 @@ func rangeToCIDRsIPv6(start, end *big.Int) []string {
 			}
 		}
 
-		// Calculate max block size that fits in range
-		rangeSize := new(big.Int).Sub(end, current)
+		// Calculate max block size that fits in range - reuse rangeSize
+		rangeSize.Sub(end, current)
 		rangeSize.Add(rangeSize, one) // +1 because range is inclusive
 
-		blockSize := new(big.Int).Lsh(one, uint(maxPrefixLen))
+		// Reuse blockSize instead of allocating new
+		blockSize.Lsh(one, uint(maxPrefixLen))
 
-		// Don't exceed remaining range
+		// Don't exceed remaining range - reuse blockSize in loop
 		for blockSize.Cmp(rangeSize) > 0 && maxPrefixLen > 0 {
 			maxPrefixLen--
-			blockSize = new(big.Int).Lsh(one, uint(maxPrefixLen))
+			blockSize.Lsh(one, uint(maxPrefixLen))
 		}
 
 		// Create CIDR

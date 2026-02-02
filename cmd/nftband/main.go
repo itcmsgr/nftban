@@ -1894,7 +1894,17 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 					}
 				}
 			}
+			// Memory cleanup: clear CIDR slices after loading to nftables
+			// These slices can hold 100-200MB that's no longer needed
+			ipv4CIDRs = nil
+			ipv6CIDRs = nil
 			} // end else CanAllocate
+			// Memory cleanup: clear feed maps to allow garbage collection
+			// These maps can hold 400-800MB and are no longer needed after conversion
+			ipv4Set = nil
+			ipv6Set = nil
+			ipv4CIDRSet = nil
+			ipv6CIDRSet = nil
 		}
 		}
 		} // end else ShouldSkipFeeds
@@ -1971,12 +1981,23 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 						}
 					}
 				}
+				// Memory cleanup: clear geoban data to allow garbage collection
+				// Geoban can hold 200-400MB that's no longer needed after loading
+				geobanData.IPv4 = nil
+				geobanData.IPv6 = nil
+				geobanData = nil
 				} // end else CanAllocate
 			}
 		}
 		}
 		} // end else ShouldSkipGeoban
 	} // end if !quickMode (geoban)
+
+	// Force garbage collection after large sync to release memory immediately
+	// Without this, ~800MB-1.3GB can remain allocated until next GC cycle
+	if !quickMode {
+		goruntime.GC()
+	}
 
 	// ==========================================================================
 	// PROTECTION STATE TRACKING

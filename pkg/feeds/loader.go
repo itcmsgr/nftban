@@ -41,10 +41,12 @@ type FeedInfo struct {
 // LoadAllFeeds loads all feed files from the feeds directory
 // Returns IPv4 IPs, IPv6 IPs, IPv4 CIDRs, IPv6 CIDRs, and feed info
 func LoadAllFeeds(feedsDir string) (map[string]bool, map[string]bool, map[string]bool, map[string]bool, []FeedInfo, error) {
-	ipv4Set := make(map[string]bool)       // Single IPv4 addresses
-	ipv6Set := make(map[string]bool)       // Single IPv6 addresses
-	ipv4CIDRSet := make(map[string]bool)   // IPv4 CIDR ranges
-	ipv6CIDRSet := make(map[string]bool)   // IPv6 CIDR ranges
+	// Pre-allocate maps with estimated capacity to reduce rehashing
+	// Typical feeds have 10K-50K entries; this prevents ~5-7 rehash operations
+	ipv4Set := make(map[string]bool, 10000)       // Single IPv4 addresses
+	ipv6Set := make(map[string]bool, 1000)        // Single IPv6 addresses
+	ipv4CIDRSet := make(map[string]bool, 50000)   // IPv4 CIDR ranges
+	ipv6CIDRSet := make(map[string]bool, 1000)    // IPv6 CIDR ranges
 	var feedsInfo []FeedInfo
 
 	// Check if feeds directory exists
