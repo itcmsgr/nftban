@@ -86,18 +86,21 @@ LockPersonality=true
 # MemoryDenyWriteExecute=true  # Uncomment if Go runtime is compatible
 
 # =============================================================================
-# RESOURCE LIMITS
+# RESOURCE LIMITS (Safety Net Only)
 # =============================================================================
-# Memory limits are now DYNAMIC based on server RAM tier (pkg/safety/limits.go):
-#   - Small (≤4GB RAM): 75K CIDRs, ~300MB budget
-#   - Medium (4-8GB RAM): 100K CIDRs, ~400MB budget
-#   - Large (>8GB RAM): 150K CIDRs, ~600MB budget
+# IMPORTANT: Actual memory limits are in /etc/nftban/nftban.conf
+# The daemon reads NFTBAN_MAX_MEMORY_* and auto-detects based on RAM tier.
 #
-# The daemon self-regulates via Go's SetMemoryLimit() and pressure detection.
-# Systemd limits are set generously as a safety net only.
-# Override via: NFTBAN_MAX_MEMORY_BYTES environment variable
+# These systemd limits are SAFETY NETS ONLY - set very high to avoid
+# interfering with the daemon's smart memory management.
+#
+# To adjust memory limits, edit /etc/nftban/nftban.conf:
+#   NFTBAN_MAX_MEMORY_BYTES="536870912"  # 512MB
+#   NFTBAN_MAX_MEMORY_PERCENT="20"       # 20% of RAM
+#
+# DO NOT reduce these systemd limits - they cause OOM kills.
 MemoryHigh=1G
-MemoryMax=1536M
+MemoryMax=2G
 
 # =============================================================================
 # FILESYSTEM ACCESS
