@@ -27,9 +27,9 @@ import (
 	"time"
 
 	"github.com/itcmsgr/nftban/pkg/analytics"
-	"github.com/itcmsgr/nftban/pkg/blacklist"
 	"github.com/itcmsgr/nftban/pkg/geoip"
 	"github.com/itcmsgr/nftban/pkg/ipc"
+	"github.com/itcmsgr/nftban/pkg/netutil"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/persistent"
 	"github.com/itcmsgr/nftban/pkg/timeutil"
@@ -54,7 +54,7 @@ func cmdBan(ipStr string, reason string, source string, timeoutSeconds int, cfg 
 
 	// Validate IP
 	fmt.Println("Step 1: Validating IP address...")
-	normalizedIP, isIPv4, err := blacklist.ValidateIP(ipStr)
+	normalizedIP, isIPv4, err := netutil.ValidateAndNormalizeIP(ipStr)
 	if err != nil {
 		return fmt.Errorf("invalid IP: %w", err)
 	}

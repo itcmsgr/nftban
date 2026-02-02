@@ -29,6 +29,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/blacklist"
 	"github.com/itcmsgr/nftban/pkg/geoip"
 	"github.com/itcmsgr/nftban/pkg/ipc"
+	"github.com/itcmsgr/nftban/pkg/netutil"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/version"
 )
@@ -50,7 +51,7 @@ func cmdUnban(ipStr string, cfg *nftbanconf.Config) error {
 
 	// Validate IP
 	fmt.Println("Step 1: Validating IP address...")
-	normalizedIP, isIPv4, err := blacklist.ValidateIP(ipStr)
+	normalizedIP, isIPv4, err := netutil.ValidateAndNormalizeIP(ipStr)
 	if err != nil {
 		return fmt.Errorf("invalid IP: %w", err)
 	}
