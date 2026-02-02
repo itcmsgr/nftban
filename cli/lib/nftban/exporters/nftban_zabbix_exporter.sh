@@ -78,25 +78,25 @@ json_to_zabbix_metrics() {
     local json="$1"
     local metrics=""
 
-    # Daemon metrics
-    metrics+="nftban.status $(echo "$json" | jq -r '.daemon.status // 0')\n"
+    # Daemon metrics (keys must match template exactly)
+    metrics+="nftban.daemon.up $(echo "$json" | jq -r '.daemon.status // 0')\n"
     metrics+="nftban.version $(echo "$json" | jq -r '.daemon.version // "unknown"')\n"
-    metrics+="nftban.uptime $(echo "$json" | jq -r '.daemon.uptime // 0')\n"
+    metrics+="nftban.uptime.seconds $(echo "$json" | jq -r '.daemon.uptime // 0')\n"
     metrics+="nftban.pid $(echo "$json" | jq -r '.daemon.pid // 0')\n"
     metrics+="nftban.mode $(echo "$json" | jq -r '.daemon.mode // "unknown"')\n"
 
-    # Ban metrics
+    # Ban metrics (keys must match template exactly)
     metrics+="nftban.active.count $(echo "$json" | jq -r '.bans.active // 0')\n"
-    metrics+="nftban.bans.24h $(echo "$json" | jq -r '.bans.bans_24h // 0')\n"
-    metrics+="nftban.bans.1h $(echo "$json" | jq -r '.bans.bans_1h // 0')\n"
-    metrics+="nftban.bans.rate $(echo "$json" | jq -r '.bans.rate // 0')\n"
+    metrics+="nftban.bans.last.24h $(echo "$json" | jq -r '.bans.bans_24h // 0')\n"
+    metrics+="nftban.bans.last.1h $(echo "$json" | jq -r '.bans.bans_1h // 0')\n"
+    metrics+="nftban.throughput.bans.per.minute $(echo "$json" | jq -r '.bans.rate // 0')\n"
     metrics+="nftban.bans.total $(echo "$json" | jq -r '.bans.total // 0')\n"
-    metrics+="nftban.permanent.count $(echo "$json" | jq -r '.bans.permanent // 0')\n"
-    metrics+="nftban.whitelist.count $(echo "$json" | jq -r '.bans.whitelist // 0')\n"
+    metrics+="nftban.blacklist.ipv4.perm $(echo "$json" | jq -r '.bans.permanent // 0')\n"
+    metrics+="nftban.whitelist.ipv4.count $(echo "$json" | jq -r '.bans.whitelist // 0')\n"
 
-    # Memory metrics
-    metrics+="nftban.memory.rss $(echo "$json" | jq -r '.memory.rss // 0')\n"
-    metrics+="nftban.fds.open $(echo "$json" | jq -r '.memory.fds // 0')\n"
+    # Memory metrics (keys must match template exactly)
+    metrics+="nftban.memory.rss.bytes $(echo "$json" | jq -r '.memory.rss // 0')\n"
+    metrics+="nftban.open.fds $(echo "$json" | jq -r '.memory.fds // 0')\n"
     metrics+="nftban.threads $(echo "$json" | jq -r '.memory.threads // 0')\n"
     metrics+="nftban.goroutines $(echo "$json" | jq -r '.runtime.goroutines // 0')\n"
 
@@ -125,10 +125,10 @@ json_to_zabbix_metrics() {
     metrics+="nftban.modules.active $(echo "$json" | jq -r '.modules.active // 0')\n"
     metrics+="nftban.modules.failed $(echo "$json" | jq -r '.modules.failed // 0')\n"
 
-    # nftables metrics
-    metrics+="nftban.nft.sets_total $(echo "$json" | jq -r '.nftables.sets // 0')\n"
-    metrics+="nftban.nft.elements_total $(echo "$json" | jq -r '.nftables.elements // 0')\n"
-    metrics+="nftban.nft.rules_total $(echo "$json" | jq -r '.nftables.rules // 0')\n"
+    # nftables metrics (keys must match template exactly)
+    metrics+="nftban.nftables.sets.total $(echo "$json" | jq -r '.nftables.sets // 0')\n"
+    metrics+="nftban.nftables.set.elements.total $(echo "$json" | jq -r '.nftables.elements // 0')\n"
+    metrics+="nftban.nftables.rules.total $(echo "$json" | jq -r '.nftables.rules // 0')\n"
     metrics+="nftban.nft.packets_blocked_ipv4 $(echo "$json" | jq -r '.nftables.packets_blocked_ipv4 // 0')\n"
     metrics+="nftban.nft.packets_blocked_ipv6 $(echo "$json" | jq -r '.nftables.packets_blocked_ipv6 // 0')\n"
 
@@ -151,6 +151,18 @@ json_to_zabbix_metrics() {
     metrics+="nftban.server.mem_used_percent $(echo "$json" | jq -r '.system.mem_used_percent // 0')\n"
     metrics+="nftban.server.iowait_percent $(echo "$json" | jq -r '.system.iowait_percent // 0')\n"
     metrics+="nftban.server.disk_used_percent $(echo "$json" | jq -r '.system.disk_used_percent // 0')\n"
+    metrics+="nftban.server.disk_total $(echo "$json" | jq -r '.system.disk_total // 0')\n"
+    metrics+="nftban.server.disk_used $(echo "$json" | jq -r '.system.disk_used // 0')\n"
+    metrics+="nftban.server.panel $(echo "$json" | jq -r '.server.panel // "none"')\n"
+
+    # Daemon process metrics (from daemon_stats)
+    metrics+="nftban.daemon.cpu_percent $(echo "$json" | jq -r '.daemon_stats.cpu_percent // 0')\n"
+    metrics+="nftban.daemon.mem_percent $(echo "$json" | jq -r '.daemon_stats.mem_percent // 0')\n"
+    metrics+="nftban.daemon.vsz_bytes $(echo "$json" | jq -r '.daemon_stats.vsz_bytes // 0')\n"
+    metrics+="nftban.daemon.uptime_seconds $(echo "$json" | jq -r '.daemon.uptime // 0')\n"
+    metrics+="nftban.daemon.memory_growth_rate $(echo "$json" | jq -r '.daemon_stats.memory_growth_rate // 0')\n"
+    metrics+="nftban.daemon.memory_pressure $(echo "$json" | jq -r '.daemon_stats.memory_pressure // 0')\n"
+    metrics+="nftban.daemon.memory_health $(echo "$json" | jq -r '.daemon_stats.memory_health // 0')\n"
 
     # GeoIP metrics
     metrics+="nftban.geoip.database_age $(echo "$json" | jq -r '.geoip.database_age // 0')\n"
@@ -170,6 +182,13 @@ json_to_zabbix_metrics() {
 
     # Suricata IDS metrics
     metrics+="nftban.suricata.up $(echo "$json" | jq -r '.suricata.up // 0')\n"
+
+    # Suricata version (get directly from suricata command if available)
+    local suricata_version="not installed"
+    if command -v suricata &>/dev/null; then
+        suricata_version=$(suricata --build-info 2>/dev/null | grep -oP 'Suricata version \K[0-9.]+' || suricata -V 2>/dev/null | grep -oP '[0-9]+\.[0-9]+\.[0-9]+' || echo "unknown")
+    fi
+    metrics+="nftban.suricata.version $suricata_version\n"
     metrics+="nftban.suricata.alerts.total $(echo "$json" | jq -r '.suricata.alerts_total // 0')\n"
     metrics+="nftban.suricata.alerts.severity[1] $(echo "$json" | jq -r '.suricata.alerts_by_severity."1" // 0')\n"
     metrics+="nftban.suricata.alerts.severity[2] $(echo "$json" | jq -r '.suricata.alerts_by_severity."2" // 0')\n"
@@ -180,6 +199,18 @@ json_to_zabbix_metrics() {
     metrics+="nftban.suricata.bans.total $(echo "$json" | jq -r '.suricata.bans_total // 0')\n"
     metrics+="nftban.suricata.eve_errors $(echo "$json" | jq -r '.suricata.eve_parse_errors // 0')\n"
     metrics+="nftban.suricata.last_alert $(echo "$json" | jq -r '.suricata.last_alert_timestamp // 0')\n"
+
+    # Suricata v1.9.1 metrics (categories and local rules)
+    # Compute directly from config files if JSON doesn't have them
+    local categories_enabled=0 local_rules_count=0
+    if [[ -f "/etc/nftban/suricata/rules/categories.enabled" ]]; then
+        categories_enabled=$(grep -cv "^#\|^$" /etc/nftban/suricata/rules/categories.enabled 2>/dev/null || echo "0")
+    fi
+    if [[ -f "/etc/nftban/suricata/rules/local.rules" ]]; then
+        local_rules_count=$(grep -c "^alert\|^drop\|^reject" /etc/nftban/suricata/rules/local.rules 2>/dev/null || echo "0")
+    fi
+    metrics+="nftban.suricata.categories.enabled $categories_enabled\n"
+    metrics+="nftban.suricata.local_rules $local_rules_count\n"
 
     # Event Bus metrics
     metrics+="nftban.eventbus.events.total $(echo "$json" | jq -r '.eventbus.events_total // 0')\n"
@@ -234,6 +265,13 @@ json_to_zabbix_metrics() {
         metrics+="nftban.server.os $(echo "$json" | jq -r '.server.os // ""')\n"
         metrics+="nftban.server.os_release $(echo "$json" | jq -r '.server.os_release // ""')\n"
         metrics+="nftban.server.kernel $(echo "$json" | jq -r '.server.kernel // ""')\n"
+
+        # Combined OS full string for Zabbix inventory "OS (Full details)"
+        local os_name os_release kernel_ver
+        os_name=$(echo "$json" | jq -r '.server.os // "Linux"')
+        os_release=$(echo "$json" | jq -r '.server.os_release // ""')
+        kernel_ver=$(echo "$json" | jq -r '.server.kernel // ""')
+        metrics+="nftban.server.os_full ${os_release} (${kernel_ver})\n"
         metrics+="nftban.server.arch $(echo "$json" | jq -r '.server.arch // ""')\n"
         metrics+="nftban.server.cpu_cores $(echo "$json" | jq -r '.server.cpu_cores // 0')\n"
         metrics+="nftban.server.cpu_model $(echo "$json" | jq -r '.server.cpu_model // ""')\n"

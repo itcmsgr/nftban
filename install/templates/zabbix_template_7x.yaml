@@ -22,22 +22,23 @@ zabbix_export:
         - Feed status and IP counts
         - GeoIP statistics
         - nftables rule/packet counts
+        - Suricata IDS metrics (alerts, rules, bans, categories)
         - Full server inventory (OS, IPs, hardware)
 
         Smart Update Intervals:
         - Critical (30s): daemon status
         - Dynamic (1m): bans, memory, load
-        - Semi-static (5m): runtime, IPC
+        - Semi-static (5m): runtime, IPC, Suricata
         - Inventory (1h): OS, IPs, hardware
 
         Requirements:
-        - NFTBan v1.4.0+
+        - NFTBan v1.9.1+
         - Zabbix 7.x with Trapper support
 
         Documentation: https://nftban.com/docs/zabbix
       vendor:
         name: NFTBan
-        version: '1.4.0'
+        version: '1.9.1'
       groups:
         - name: 'Templates/Security'
 
@@ -411,6 +412,170 @@ zabbix_export:
             - tag: component
               value: nftables
 
+        # --- Suricata IDS Metrics (v1.9.1) ---
+        - uuid: c8a7b2e9f1d34a5b8c6d9e0f1a2b3c4d
+          name: 'NFTBan: Suricata status'
+          type: TRAP
+          key: nftban.suricata.up
+          value_type: UNSIGNED
+          description: 'Suricata IDS status: 1=running, 0=stopped'
+          tags:
+            - tag: component
+              value: suricata
+            - tag: scope
+              value: availability
+          triggers:
+            - uuid: d9b8c7e0f2e45a6c9d0e1f2a3b4c5d6e
+              expression: 'last(/NFTBan/nftban.suricata.up)=0 and last(/NFTBan/nftban.module.up[suricata])=1'
+              name: 'Suricata IDS is down but module enabled'
+              priority: HIGH
+              description: 'Suricata service is not running but the module is enabled.'
+
+        - uuid: e0c9d8f1a3b54c6d7e8f9a0b1c2d3e4f
+          name: 'NFTBan: Suricata alerts total'
+          type: TRAP
+          key: nftban.suricata.alerts.total
+          value_type: UNSIGNED
+          description: 'Total Suricata alerts processed'
+          tags:
+            - tag: component
+              value: suricata
+
+        - uuid: f1d0e9a2b4c65d7e8f9a0b1c2d3e4f5a
+          name: 'NFTBan: Suricata alerts severity 1 (High)'
+          type: TRAP
+          key: 'nftban.suricata.alerts.severity[1]'
+          value_type: UNSIGNED
+          description: 'Suricata alerts with severity 1 (highest priority)'
+          tags:
+            - tag: component
+              value: suricata
+            - tag: severity
+              value: high
+
+        - uuid: a2e1f0b3c5d76e8f9a0b1c2d3e4f5a6b
+          name: 'NFTBan: Suricata alerts severity 2 (Medium)'
+          type: TRAP
+          key: 'nftban.suricata.alerts.severity[2]'
+          value_type: UNSIGNED
+          description: 'Suricata alerts with severity 2'
+          tags:
+            - tag: component
+              value: suricata
+            - tag: severity
+              value: medium
+
+        - uuid: b3f2a1c4d6e87f9a0b1c2d3e4f5a6b7c
+          name: 'NFTBan: Suricata alerts severity 3 (Low)'
+          type: TRAP
+          key: 'nftban.suricata.alerts.severity[3]'
+          value_type: UNSIGNED
+          description: 'Suricata alerts with severity 3'
+          tags:
+            - tag: component
+              value: suricata
+            - tag: severity
+              value: low
+
+        - uuid: c4a3b2d5e7f98a0b1c2d3e4f5a6b7c8d
+          name: 'NFTBan: Suricata alerts severity 4 (Info)'
+          type: TRAP
+          key: 'nftban.suricata.alerts.severity[4]'
+          value_type: UNSIGNED
+          description: 'Suricata alerts with severity 4 (informational)'
+          tags:
+            - tag: component
+              value: suricata
+            - tag: severity
+              value: info
+
+        - uuid: d5b4c3e6f8a09b1c2d3e4f5a6b7c8d9e
+          name: 'NFTBan: Suricata rules total'
+          type: TRAP
+          key: nftban.suricata.rules.total
+          value_type: UNSIGNED
+          description: 'Total Suricata detection rules loaded'
+          tags:
+            - tag: component
+              value: suricata
+          triggers:
+            - uuid: e6c5d4f7a9b10c2d3e4f5a6b7c8d9e0f
+              expression: 'last(/NFTBan/nftban.suricata.rules.total)=0 and last(/NFTBan/nftban.suricata.up)=1'
+              name: 'Suricata has no rules loaded'
+              priority: WARNING
+              description: 'Suricata is running but has no detection rules. Run: suricata-update'
+
+        - uuid: f7d6e5a8b0c21d3e4f5a6b7c8d9e0f1a
+          name: 'NFTBan: Suricata rules filtered'
+          type: TRAP
+          key: nftban.suricata.rules.filtered
+          value_type: UNSIGNED
+          description: 'Suricata rules filtered/disabled'
+          tags:
+            - tag: component
+              value: suricata
+
+        - uuid: a8e7f6b9c1d32e4f5a6b7c8d9e0f1a2b
+          name: 'NFTBan: Suricata bans total'
+          type: TRAP
+          key: nftban.suricata.bans.total
+          value_type: UNSIGNED
+          description: 'Total bans triggered by Suricata alerts'
+          tags:
+            - tag: component
+              value: suricata
+
+        - uuid: b9f8a7c0d2e43f5a6b7c8d9e0f1a2b3c
+          name: 'NFTBan: Suricata EVE parse errors'
+          type: TRAP
+          key: nftban.suricata.eve_errors
+          value_type: UNSIGNED
+          description: 'EVE JSON log parse errors'
+          tags:
+            - tag: component
+              value: suricata
+          triggers:
+            - uuid: c0a9b8d1e3f54a6b7c8d9e0f1a2b3c4d
+              expression: 'change(/NFTBan/nftban.suricata.eve_errors)>10'
+              name: 'Suricata EVE parse errors increasing'
+              priority: WARNING
+              description: 'EVE log parse errors are increasing. Check Suricata log format.'
+
+        - uuid: d1b0c9e2f4a65b7c8d9e0f1a2b3c4d5e
+          name: 'NFTBan: Suricata last alert timestamp'
+          type: TRAP
+          key: nftban.suricata.last_alert
+          value_type: UNSIGNED
+          units: unixtime
+          description: 'Unix timestamp of last Suricata alert'
+          tags:
+            - tag: component
+              value: suricata
+
+        - uuid: e2c1d0f3a5b76c8d9e0f1a2b3c4d5e6f
+          name: 'NFTBan: Suricata categories enabled'
+          type: TRAP
+          key: nftban.suricata.categories.enabled
+          value_type: UNSIGNED
+          description: 'Number of enabled Suricata rule categories (v1.9.1)'
+          tags:
+            - tag: component
+              value: suricata
+            - tag: feature
+              value: v1.9.1
+
+        - uuid: f3d2e1a4b6c87d9e0f1a2b3c4d5e6f7a
+          name: 'NFTBan: Suricata local rules'
+          type: TRAP
+          key: nftban.suricata.local_rules
+          value_type: UNSIGNED
+          description: 'Number of custom local Suricata rules (v1.9.1)'
+          tags:
+            - tag: component
+              value: suricata
+            - tag: feature
+              value: v1.9.1
+
         # --- Feeds Metrics ---
         - uuid: abc10cf19d5245f8927e261d84adbf35
           name: 'NFTBan: Feeds enabled'
@@ -643,6 +808,35 @@ zabbix_export:
           key: nftban.server.kernel
           value_type: CHAR
           description: 'Kernel version'
+          tags:
+            - tag: component
+              value: inventory
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - '1d'
+
+        - uuid: db0a1d97f32a681b05e87a87760ed348
+          name: 'NFTBan: OS full details'
+          type: TRAP
+          key: nftban.server.os_full
+          value_type: CHAR
+          description: 'Full OS details: release + kernel (e.g., Debian 12 (6.1.0-17-amd64))'
+          inventory_link: OS_FULL
+          tags:
+            - tag: component
+              value: inventory
+          preprocessing:
+            - type: DISCARD_UNCHANGED_HEARTBEAT
+              parameters:
+                - '1d'
+
+        - uuid: ca9f0c86e21f570a94d76f76659dc237
+          name: 'NFTBan: Software version'
+          type: TRAP
+          key: nftban.version
+          value_type: CHAR
+          description: 'NFTBan version (maps to Software inventory)'
           inventory_link: SOFTWARE
           tags:
             - tag: component
