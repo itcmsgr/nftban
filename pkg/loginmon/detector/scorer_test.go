@@ -355,6 +355,7 @@ func TestScorer_BanEscalationLadder(t *testing.T) {
 	config.ThresholdTempBan = 10   // Lower threshold for testing
 	config.ThresholdEscalate = 20
 	config.ThresholdPermanent = 50
+	config.RecentBanWindow = 0     // Disable deduplication for rapid test bans
 
 	s := NewScorer(config)
 
