@@ -77,7 +77,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/runtime"
 	"github.com/itcmsgr/nftban/pkg/safety"
 	"github.com/itcmsgr/nftban/pkg/stats"
-	"github.com/itcmsgr/nftban/pkg/sync"
+	nftsync "github.com/itcmsgr/nftban/pkg/sync"
 	"github.com/itcmsgr/nftban/pkg/watchdog"
 	"github.com/itcmsgr/nftban/pkg/whitelist"
 	"golang.org/x/sys/unix"
@@ -1723,7 +1723,7 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	}
 
 	// Initialize nftables manager
-	nft, err := sync.NewNFTManager()
+	nft, err := nftsync.NewNFTManager()
 	if err != nil {
 		return SocketResponse{Success: false, Error: "failed to create nftables manager: " + err.Error()}
 	}
@@ -1808,7 +1808,7 @@ func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
 	blacklistIPv4, blacklistIPv6 := state.GetBlacklistSnapshot()
 
 	// Perform full sync
-	result, err := sync.FullSync(
+	result, err := nftsync.FullSync(
 		nft,
 		whitelistIPv4Set, whitelistIPv6Set,
 		blacklistIPv4Set, blacklistIPv6Set,
@@ -2086,7 +2086,7 @@ func (d *Daemon) handleLoadPortsRequest(params map[string]any) SocketResponse {
 	}
 
 	// Initialize nftables manager
-	nft, err := sync.NewNFTManager()
+	nft, err := nftsync.NewNFTManager()
 	if err != nil {
 		return SocketResponse{Success: false, Error: "failed to create nftables manager: " + err.Error()}
 	}
@@ -2299,7 +2299,7 @@ func (d *Daemon) handleLoadCIDRsRequest(params map[string]any) SocketResponse {
 // loadCIDRsIntoSets loads CIDRs into the appropriate nftables sets
 func (d *Daemon) loadCIDRsIntoSets(setType string, ipv4CIDRs, ipv6CIDRs []string) SocketResponse {
 	// Initialize nftables manager
-	nft, err := sync.NewNFTManager()
+	nft, err := nftsync.NewNFTManager()
 	if err != nil {
 		return SocketResponse{Success: false, Error: "failed to create nftables manager: " + err.Error()}
 	}
@@ -2315,7 +2315,7 @@ func (d *Daemon) loadCIDRsIntoSets(setType string, ipv4CIDRs, ipv6CIDRs []string
 		setNameV6 = "blacklist_ipv6"
 	}
 
-	var ipv4Stats, ipv6Stats *sync.MergeStats
+	var ipv4Stats, ipv6Stats *nftsync.MergeStats
 
 	// Load IPv4 CIDRs
 	if len(ipv4CIDRs) > 0 {
