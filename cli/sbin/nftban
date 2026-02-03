@@ -183,6 +183,7 @@ nftban_complete() {
         echo "system"
         # FIREWALL & SECURITY
         echo "firewall"
+        echo "firewall-logs"
         echo "ban"
         echo "unban"
         echo "search"
@@ -199,6 +200,8 @@ nftban_complete() {
         echo "botscan"
         echo "modes"
         echo "feeds"
+        echo "rbl"
+        echo "suricata"
         echo "trust"
         echo "country"
         echo "cloudflare"
@@ -218,6 +221,8 @@ nftban_complete() {
         echo "geoip"
         echo "geoban"
         echo "mail"
+        echo "connector"
+        echo "zabbix"
         # UI
         echo "menu"
         echo "gui"
@@ -236,12 +241,14 @@ nftban_complete() {
         echo "protect"
         echo "unprotect"
         echo "cleanup"
+        echo "snapshot"
         # EMERGENCY/RECOVERY
         echo "flush"
         # SYSTEM ADMINISTRATION
         echo "update"
         echo "support"
         echo "support-bundle"
+        echo "pro"
         return 0
     fi
 
