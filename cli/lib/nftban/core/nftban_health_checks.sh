@@ -1539,6 +1539,85 @@ nftban_health_check_geoban() {
     return "$status"
 }
 
+nftban_health_check_rbl() {
+    # Check RBL (Real-time Blackhole List) monitoring
+    # Returns: 0=OK, 1=Warning, 2=Error
+
+    local status=$HEALTH_OK
+    local rbl_issues=()
+
+    # Check if RBL is enabled
+    local rbl_enabled="NO"
+    local rbl_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
+    if [[ -f "$rbl_config" ]]; then
+        source "$rbl_config" 2>/dev/null || true
+        rbl_enabled="${NFTBAN_RBL_ENABLED:-NO}"
+    fi
+
+    if [[ "$rbl_enabled" != "YES" ]]; then
+        # RBL disabled - just note it, not an error
+        NFTBAN_HEALTH_RESULTS["rbl"]=$HEALTH_OK
+        return $HEALTH_OK
+    fi
+
+    # Check if timer is active
+    if ! systemctl is-active nftban-rbl-check.timer >/dev/null 2>&1; then
+        if systemctl is-enabled nftban-rbl-check.timer >/dev/null 2>&1; then
+            rbl_issues+=("RBL timer is enabled but not running")
+            status=$HEALTH_WARNING
+        else
+            rbl_issues+=("RBL is enabled but timer is not active")
+            rbl_issues+=("FIX: Run 'nftban rbl enable' to start scheduled checks")
+            status=$HEALTH_WARNING
+        fi
+    fi
+
+    # Check last check time (warn if >48 hours)
+    local last_check_file="${NFTBAN_LOG_DIR:-/var/log/nftban}/rbl/last_check"
+    if [[ -f "$last_check_file" ]]; then
+        local last_ts
+        last_ts=$(cat "$last_check_file" 2>/dev/null)
+        if [[ -n "$last_ts" ]] && [[ "$last_ts" =~ ^[0-9]+$ ]]; then
+            local now_ts
+            now_ts=$(date +%s)
+            local age=$((now_ts - last_ts))
+            if [[ $age -gt 172800 ]]; then  # 48 hours
+                local hours=$((age / 3600))
+                rbl_issues+=("Last RBL check was ${hours} hours ago (stale)")
+                status=$HEALTH_WARNING
+            fi
+        fi
+    else
+        # No last check file - first run hasn't happened yet
+        rbl_issues+=("RBL check has not run yet")
+        rbl_issues+=("FIX: Run 'nftban rbl server check' for immediate check")
+        status=$HEALTH_WARNING
+    fi
+
+    # Check cache directory
+    local cache_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/rbl"
+    if [[ ! -d "$cache_dir" ]]; then
+        rbl_issues+=("RBL cache directory missing: $cache_dir")
+        status=$HEALTH_WARNING
+    elif [[ ! -w "$cache_dir" ]]; then
+        rbl_issues+=("RBL cache directory not writable: $cache_dir")
+        status=$HEALTH_WARNING
+    fi
+
+    # Store results
+    if [[ ${#rbl_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["rbl"]="${rbl_issues[*]}"
+        if [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("RBL: ${rbl_issues[*]}")
+        elif [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("RBL: ${rbl_issues[*]}")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["rbl"]=$status
+    return "$status"
+}
+
 # =============================================================================
 # DATABASE CHECKS
 # =============================================================================
