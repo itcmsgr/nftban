@@ -148,6 +148,9 @@ nftban_cmd_health() {
         config)
             nftban_health_cmd_config "$@"
             ;;
+        rbl)
+            nftban_health_cmd_rbl "$@"
+            ;;
         help|--help|-h)
             nftban_health_cmd_help
             ;;
@@ -1251,6 +1254,147 @@ nftban_health_cmd_config() {
     echo ""
 }
 
+nftban_health_cmd_rbl() {
+    # Check RBL (Real-time Blocklist) system health
+    # Args: none
+    # Checks: enabled status, timer, last check, cache directory
+
+    local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+    local rbl_config="$config_dir/conf.d/rbl/main.conf"
+    local rbl_cache_dir="/var/log/nftban/rbl"
+    local last_check_file="$rbl_cache_dir/last_check"
+
+    # Status tracking
+    local overall_status="OK"
+    local status_color="\033[32m"  # Green
+
+    # Check results
+    local rbl_enabled="NO"
+    local timer_active="NO"
+    local last_check_status="N/A"
+    local last_check_time=""
+    local cache_dir_status="missing"
+
+    echo ""
+    echo "RBL Health Check"
+    echo "─────────────────────────────────────────"
+
+    # 1. Check RBL enabled status from main.conf
+    if [[ -f "$rbl_config" ]]; then
+        if grep -qE "^RBL_ENABLED.*=.*[\"']?(true|yes|1|YES|TRUE)" "$rbl_config" 2>/dev/null; then
+            rbl_enabled="YES"
+        fi
+    fi
+
+    # 2. Check timer status
+    if systemctl is-active --quiet nftban-rbl-check.timer 2>/dev/null; then
+        timer_active="YES"
+    elif systemctl is-enabled --quiet nftban-rbl-check.timer 2>/dev/null; then
+        timer_active="ENABLED (not running)"
+        if [[ "$overall_status" == "OK" ]]; then
+            overall_status="WARNING"
+            status_color="\033[33m"  # Yellow
+        fi
+    else
+        timer_active="NO"
+        if [[ "$rbl_enabled" == "YES" ]]; then
+            # RBL enabled but timer not active = warning
+            if [[ "$overall_status" == "OK" ]]; then
+                overall_status="WARNING"
+                status_color="\033[33m"  # Yellow
+            fi
+        fi
+    fi
+
+    # 3. Check last check timestamp
+    if [[ -f "$last_check_file" ]]; then
+        local last_ts current_ts age_seconds age_hours
+        last_ts=$(cat "$last_check_file" 2>/dev/null | head -1)
+
+        # Handle both epoch timestamp and ISO date formats
+        if [[ "$last_ts" =~ ^[0-9]+$ ]]; then
+            # Epoch timestamp
+            current_ts=$(date +%s)
+            age_seconds=$((current_ts - last_ts))
+        else
+            # Try to parse as date string
+            last_ts=$(date -d "$last_ts" +%s 2>/dev/null || echo "0")
+            current_ts=$(date +%s)
+            age_seconds=$((current_ts - last_ts))
+        fi
+
+        age_hours=$((age_seconds / 3600))
+
+        if [[ $age_hours -lt 1 ]]; then
+            local age_minutes=$((age_seconds / 60))
+            last_check_time="${age_minutes} minutes ago"
+        elif [[ $age_hours -lt 24 ]]; then
+            last_check_time="${age_hours} hours ago"
+        else
+            local age_days=$((age_hours / 24))
+            last_check_time="${age_days} days ago"
+        fi
+
+        # Check if within 48 hours (172800 seconds)
+        if [[ $age_seconds -le 172800 ]]; then
+            last_check_status="$last_check_time (OK)"
+        else
+            last_check_status="$last_check_time (STALE)"
+            if [[ "$rbl_enabled" == "YES" ]]; then
+                overall_status="WARNING"
+                status_color="\033[33m"  # Yellow
+            fi
+        fi
+    else
+        last_check_status="Never"
+        if [[ "$rbl_enabled" == "YES" ]]; then
+            overall_status="WARNING"
+            status_color="\033[33m"  # Yellow
+        fi
+    fi
+
+    # 4. Check cache directory
+    if [[ -d "$rbl_cache_dir" ]]; then
+        if [[ -w "$rbl_cache_dir" ]]; then
+            cache_dir_status="$rbl_cache_dir (writable)"
+        else
+            cache_dir_status="$rbl_cache_dir (not writable)"
+            overall_status="ERROR"
+            status_color="\033[31m"  # Red
+        fi
+    else
+        cache_dir_status="$rbl_cache_dir (missing)"
+        if [[ "$rbl_enabled" == "YES" ]]; then
+            overall_status="ERROR"
+            status_color="\033[31m"  # Red
+        fi
+    fi
+
+    # If RBL is disabled, overall status should still be OK unless there's an error
+    if [[ "$rbl_enabled" == "NO" && "$overall_status" == "WARNING" ]]; then
+        # Reset to OK if RBL is disabled - warnings only matter when enabled
+        overall_status="OK"
+        status_color="\033[32m"  # Green
+    fi
+
+    # Display results
+    printf "  RBL Enabled:     %s\n" "$rbl_enabled"
+    printf "  Timer Active:    %s\n" "$timer_active"
+    printf "  Last Check:      %s\n" "$last_check_status"
+    printf "  Cache Dir:       %s\n" "$cache_dir_status"
+    echo ""
+    printf "  Status: %b%s%b\n" "$status_color" "$overall_status" "\033[0m"
+    echo ""
+
+    # Return appropriate exit code
+    case "$overall_status" in
+        OK) return 0 ;;
+        WARNING) return 1 ;;
+        ERROR) return 2 ;;
+        *) return 1 ;;
+    esac
+}
+
 nftban_health_cmd_gui() {
     # Validate GOTH GUI components against ui-registry.json
     # Args: [--json]
@@ -1309,6 +1453,7 @@ export -f nftban_health_cmd_permissions
 export -f nftban_health_cmd_geoip
 export -f nftban_health_cmd_pro
 export -f nftban_health_cmd_registries
+export -f nftban_health_cmd_rbl
 export -f nftban_health_cmd_conflicts
 export -f nftban_health_cmd_gui
 export -f nftban_health_cmd_help
