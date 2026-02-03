@@ -410,8 +410,6 @@ output_terminal() {
     # RBL Monitoring
     local rbl_status="DISABLED"
     local rbl_last_check=""
-    local rbl_critical_count=0
-    local rbl_server_status="UNKNOWN"
 
     if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf" ]]; then
         source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
