@@ -63,7 +63,10 @@ nftban_print_help() {
   config           Manage configuration settings
   configtest       Validate config against schema (alias: config test)
   configaudit      Audit config for drift and changes (alias: config audit)
+  modes            Show all module modes in table view
   sync             Atomic reload of nftables rules
+  system           System service management (enable/disable/restart)
+  update           Update nftban to latest version
   version          Show version and component info
   help             Show this help
 EOF
@@ -84,14 +87,17 @@ EOF
   panel            Web hosting panel integration (DA, cPanel, CWP, etc.)
   permissions      Audit & enforce file permissions
   polkit           Polkit authorization (validate, groups, rules)
+  firewall-logs    Firewall logging utilities
+  rbl              RBL (Real-time Blackhole List) monitoring
 EOF
   echo
 
   printf "%sPROTECTION MODULES:%s\n" "$bold" "$reset"
   cat <<'EOF'
+  botscan          Bot and crawler detection/protection
   ddos             DDoS protection (SYN flood, rate limiting)
   portscan         Port-scan detection (Suricata or kernel logs)
-  suricata         Suricata IDS/IPS (install, enable, rules update)
+  suricata         Suricata IDS/IPS integration and management
   login            SSH login monitor (alerts, auto-ban)
   feeds            Threat feeds (list, enable, disable, update)
   trust            Trust feeds - whitelist CDN/cloud (Cloudflare, AWS)
@@ -106,8 +112,10 @@ EOF
   cat <<'EOF'
   gui              Web GUI (nftban-ui on port 8443)
   metrics          Prometheus exporter (port 9100)
-  zabbix           Zabbix exporter (trapper protocol, LLD)
-  connector        Generic connectors (ES, Kafka, syslog, file)
+  zabbix           Zabbix monitoring exporter
+  connector        Data connectors (Elasticsearch, Kafka, syslog)
+  pro              NFTBan Pro subscription management
+  snapshot         Data snapshot functionality
   stats            Statistics (top IPs, recent bans, trends)
   watchdog         System resource monitoring (load, memory, I/O)
   report           Security reports (HTML, email)
@@ -128,6 +136,7 @@ EOF
   test             Run test suite (validation tests)
   emulate          Simulate packet decision (test rules)
   setup            Initial system setup
+  support          Generate support bundle for troubleshooting
   wizard           Interactive setup wizard
   menu             Interactive TUI menu
 EOF
