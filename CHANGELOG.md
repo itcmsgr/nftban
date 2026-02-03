@@ -34,6 +34,9 @@ and enables server IP blacklist checking by default.
 - **`.local` override info** - `nftban rbl status` now shows override file path
   with [Active]/[Not created] status
 
+- **RBL in main health output** - `nftban health` now shows RBL status in
+  SYSTEM CHECKS section (alongside GeoIP and GeoBan)
+
 ### Changed
 
 - **CLI completion** - Added 7 missing commands to bash completion
