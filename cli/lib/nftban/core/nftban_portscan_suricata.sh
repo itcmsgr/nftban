@@ -48,7 +48,7 @@ nftban_portscan_suricata_load_config() {
         # shellcheck source=/dev/null
         source "$config_file"
     else
-        nftban_log "WARN" "portscan_suricata" "Config not found: $config_file"
+        _nftban_portscan_suricata_log "WARN" "Config not found: $config_file"
     fi
 
     # Load local overrides
@@ -74,6 +74,23 @@ nftban_portscan_suricata_load_config() {
     : "${PORTSCAN_SURICATA_STATE_FILE:=/var/lib/nftban/portscan-suricata-state.db}"
 
     return 0
+}
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+# Log file for portscan suricata mode
+readonly PORTSCAN_SURICATA_LOG_FILE="${PORTSCAN_SURICATA_LOG_FILE:-/var/log/nftban/portscan-suricata.log}"
+
+_nftban_portscan_suricata_log() {
+    local level="$1"
+    local message="$2"
+    local log_file="${PORTSCAN_SURICATA_LOG_FILE:-/var/log/nftban/portscan-suricata.log}"
+
+    mkdir -p "$(dirname "$log_file")" 2>/dev/null
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SURICATA] [$level] $message" >> "$log_file"
 }
 
 # =============================================================================
@@ -380,7 +397,7 @@ nftban_portscan_suricata_record_alert() {
 
     # Log if verbose
     if [[ "${PORTSCAN_SURICATA_LOG_ALL_ALERTS:-false}" == "true" ]]; then
-        nftban_log "DEBUG" "portscan_suricata" "Alert: IP=${src_ip} severity=${severity} sig=${signature} score=${score}"
+        _nftban_portscan_suricata_log "DEBUG" "Alert: IP=${src_ip} severity=${severity} sig=${signature} score=${score}"
     fi
 
     # Check thresholds and take action
@@ -561,7 +578,7 @@ nftban_portscan_suricata_check_thresholds() {
     compare_result=$(echo "$score >= $threshold_observe" | bc -l 2>/dev/null || echo 0)
     if [[ "$compare_result" == "1" ]]; then
         if [[ "${PORTSCAN_SURICATA_LOG_SCORES:-true}" == "true" ]]; then
-            nftban_log "INFO" "portscan_suricata" "Observing ${ip} score=${score}"
+            _nftban_portscan_suricata_log "INFO" "Observing ${ip} score=${score}"
         fi
     fi
 
@@ -614,7 +631,7 @@ nftban_portscan_suricata_block_ip() {
     # Record block
     _PORTSCAN_SURICATA_IP_BLOCKED["$ip"]=$(date +%s)
 
-    nftban_log "WARN" "portscan_suricata" "Blocked ${ip} for ${duration}s (${level}, score=${score}, types=${scan_types})"
+    _nftban_portscan_suricata_log "WARN" "Blocked ${ip} for ${duration}s (${level}, score=${score}, types=${scan_types})"
 
     # Send notification
     nftban_portscan_suricata_send_alert "$ip" "$level" "$score"
@@ -744,11 +761,11 @@ nftban_portscan_suricata_cleanup() {
 
 # Enable suricata portscan detection
 nftban_portscan_suricata_enable() {
-    nftban_log "INFO" "portscan_suricata" "Enabling Suricata portscan detection"
+    _nftban_portscan_suricata_log "INFO" "Enabling Suricata portscan detection"
 
     # Check if Suricata is available
     if ! nftban_portscan_suricata_is_available; then
-        nftban_log "ERROR" "portscan_suricata" "Suricata is not available"
+        _nftban_portscan_suricata_log "ERROR" "Suricata is not available"
         return 1
     fi
 
@@ -758,18 +775,18 @@ nftban_portscan_suricata_enable() {
     # Initialize state
     nftban_portscan_suricata_init_state
 
-    nftban_log "INFO" "portscan_suricata" "Suricata portscan detection enabled"
+    _nftban_portscan_suricata_log "INFO" "Suricata portscan detection enabled"
     return 0
 }
 
 # Disable suricata portscan detection
 nftban_portscan_suricata_disable() {
-    nftban_log "INFO" "portscan_suricata" "Disabling Suricata portscan detection"
+    _nftban_portscan_suricata_log "INFO" "Disabling Suricata portscan detection"
 
     # Save state
     nftban_portscan_suricata_save_state
 
-    nftban_log "INFO" "portscan_suricata" "Suricata portscan detection disabled"
+    _nftban_portscan_suricata_log "INFO" "Suricata portscan detection disabled"
     return 0
 }
 

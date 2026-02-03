@@ -440,6 +440,12 @@ nftban_ddos_status() {
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
     echo "  Config File:  /etc/nftban/conf.d/ddos/main.conf"
+    local local_file="/etc/nftban/conf.d/ddos/main.conf.local"
+    if [[ -f "$local_file" ]]; then
+        echo "  Override File:  $local_file  [Active]"
+    else
+        echo "  Override File:  $local_file  [Not created]"
+    fi
     echo "  Log File:     ${NFTBAN_DDOS_LOG_FILE}"
     echo ""
     echo "  Key Settings:"
@@ -447,6 +453,8 @@ nftban_ddos_status() {
     echo "    DDOS_MODE=auto|classic|suricata|hybrid"
     echo "    DDOS_SYN_RATE=25            - SYN packets per second limit"
     echo "    DDOS_CONN_LIMIT=100         - Max connections per IP"
+    echo ""
+    echo "  Note: Put custom settings in main.conf.local (survives upgrades)"
     echo ""
 
     # ==========================================================================

@@ -5,6 +5,38 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.2] - 2026-02-03
+
+### Concurrency Protection & Portscan Logging
+
+This release adds critical concurrency protection mechanisms and fixes portscan module logging.
+
+### Added
+
+- **Update command locking** - Prevents concurrent `nftban update` commands from corrupting package state:
+  - Lock file: `/run/nftban/update.lock` with flock
+  - Logs lock acquisition/release to update.log
+  - `nftban update force` cleans stale locks
+  - `nftban update repair` cleans stale locks as part of recovery
+
+- **Daemon sync mutex** - Prevents concurrent sync operations from racing:
+  - Added `syncMutex` to `handleSyncRequest()` in daemon
+  - Ensures atomic sync operations when multiple IPC requests arrive
+
+- **Portscan module logging** - Created dedicated log files (matching DDoS pattern):
+  - `_nftban_portscan_log()` → `/var/log/nftban/portscan.log`
+  - `_nftban_portscan_classic_log()` → `/var/log/nftban/portscan-classic.log`
+  - `_nftban_portscan_suricata_log()` → `/var/log/nftban/portscan-suricata.log`
+
+- **Status display improvements** - Added `.local` override file info:
+  - `nftban ddos status` shows `/etc/nftban/conf.d/ddos/main.conf.local` with active/not created status
+  - `nftban portscan status` shows `/etc/nftban/conf.d/portscan/main.conf.local` with active/not created status
+  - Added note explaining that `.local` files survive package upgrades
+
+### Fixed
+
+- **ShellCheck warnings** - Fixed SC2155, SC2034, SC2076 in cmd_suricata.sh, nftban_mode.sh, suricata_rules.sh
+
 ## [1.9.1] - 2026-02-02
 
 ### Suricata Smart Management (Phase 2 - Rules UX)

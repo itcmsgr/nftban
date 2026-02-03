@@ -49,6 +49,9 @@ NFTBAN_GIT_REPO="${NFTBAN_GIT_REPO:-/opt/nftban}"
 NFTBAN_GIT_BRANCH="${NFTBAN_GIT_BRANCH:-main}"
 NFTBAN_UPDATE_BACKUP_COUNT="${NFTBAN_UPDATE_BACKUP_COUNT:-3}"
 
+# Lock file for preventing concurrent updates
+readonly UPDATE_LOCK_FILE="/run/nftban/update.lock"
+
 # Internal flags
 _NFTBAN_UPDATE_FORCE=0
 
@@ -1193,6 +1196,17 @@ _cmd_update_main() {
         return 1
     fi
 
+    # Acquire exclusive lock to prevent concurrent updates
+    _update_log INFO "Acquiring update lock..."
+    mkdir -p /run/nftban 2>/dev/null || true
+    exec 9>"$UPDATE_LOCK_FILE"
+    if ! flock -n 9; then
+        _update_log ERROR "Another update is in progress"
+        _update_log INFO "If no update is running, use 'nftban update force' to clear stale lock"
+        return 1
+    fi
+    _update_log INFO "Lock acquired"
+
     _load_config
 
     local install_type current_version
@@ -1374,6 +1388,14 @@ _cmd_update_repair() {
             fi
         fi
 
+        # Clean stale nftban update lock if exists and no process holds it
+        if [[ -f "$UPDATE_LOCK_FILE" ]]; then
+            if ! fuser "$UPDATE_LOCK_FILE" &>/dev/null 2>&1; then
+                rm -f "$UPDATE_LOCK_FILE" 2>/dev/null || true
+                _update_log INFO "Removed stale nftban update lock"
+            fi
+        fi
+
         # Run dpkg configure to finalize any pending configurations
         if dpkg --configure -a 2>&1 | while read -r line; do echo "    $line"; done; then
             _update_log OK "dpkg configure completed"
@@ -1408,6 +1430,13 @@ _cmd_update_repair() {
         fi
     else
         _update_log INFO "Not a dpkg-based system, skipping dpkg configure"
+        # Still clean stale nftban update lock on non-dpkg systems
+        if [[ -f "$UPDATE_LOCK_FILE" ]]; then
+            if ! fuser "$UPDATE_LOCK_FILE" &>/dev/null 2>&1; then
+                rm -f "$UPDATE_LOCK_FILE" 2>/dev/null || true
+                _update_log INFO "Removed stale nftban update lock"
+            fi
+        fi
     fi
 
     # Step 4: Offer backup restore if repair couldn't fully fix things
@@ -1570,6 +1599,13 @@ nftban_cmd_update() {
             ;;
         force|--force|reinstall)
             _NFTBAN_UPDATE_FORCE=1
+            # Clean stale lock file if exists and no process holds it
+            if [[ -f "$UPDATE_LOCK_FILE" ]]; then
+                if ! fuser "$UPDATE_LOCK_FILE" &>/dev/null 2>&1; then
+                    rm -f "$UPDATE_LOCK_FILE" 2>/dev/null || true
+                    _update_log INFO "Force mode: cleaned stale lock"
+                fi
+            fi
             _cmd_update_main "auto" ""
             ;;
         repair|--repair|fix)

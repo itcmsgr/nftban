@@ -54,7 +54,7 @@ nftban_portscan_classic_load_config() {
         # shellcheck source=/dev/null
         source "$config_file"
     else
-        nftban_log "WARN" "portscan_classic" "Config not found: $config_file"
+        _nftban_portscan_classic_log "WARN" "Config not found: $config_file"
     fi
 
     # Load local overrides
@@ -78,6 +78,24 @@ nftban_portscan_classic_load_config() {
     : "${PORTSCAN_CLASSIC_STATE_FILE:=/var/lib/nftban/portscan-state.db}"
 
     return 0
+}
+
+# =============================================================================
+# LOGGING
+# =============================================================================
+
+# Log file for portscan classic mode
+readonly PORTSCAN_CLASSIC_LOG_FILE="${PORTSCAN_CLASSIC_LOG_FILE:-/var/log/nftban/portscan-classic.log}"
+
+_nftban_portscan_classic_log() {
+    local level="$1"
+    local message="$2"
+    local log_file="${PORTSCAN_CLASSIC_LOG_FILE:-/var/log/nftban/portscan-classic.log}"
+
+    # Create log directory if needed
+    mkdir -p "$(dirname "$log_file")" 2>/dev/null
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [CLASSIC] [$level] $message" >> "$log_file"
 }
 
 # =============================================================================
@@ -161,7 +179,7 @@ nftban_portscan_classic_load_state() {
 # Create nftables chain for portscan detection
 # Uses fragment renderer + IPC instead of direct nft calls
 nftban_portscan_classic_create_chain() {
-    nftban_log "INFO" "portscan_classic" "Creating portscan detection chain via IPC"
+    _nftban_portscan_classic_log "INFO" "Creating portscan detection chain via IPC"
 
     # Chain creation is handled by the fragment in add_rules
     # This function is kept for compatibility but is now a no-op
@@ -172,30 +190,30 @@ nftban_portscan_classic_create_chain() {
 # Add logging rules for portscan detection
 # Uses fragment renderer + IPC instead of direct nft calls
 nftban_portscan_classic_add_rules() {
-    nftban_log "INFO" "portscan_classic" "Adding portscan logging rules via IPC"
+    _nftban_portscan_classic_log "INFO" "Adding portscan logging rules via IPC"
 
     # Check if IPC is available
     if ! type -t nft_fragment_render_portscan_classic &>/dev/null; then
-        nftban_log "ERROR" "portscan_classic" "Fragment library not loaded"
+        _nftban_portscan_classic_log "ERROR" "Fragment library not loaded"
         return 1
     fi
 
     # Render the fragment with current configuration
     local fragment_path
     fragment_path=$(nft_fragment_render_portscan_classic) || {
-        nftban_log "ERROR" "portscan_classic" "Failed to render fragment"
+        _nftban_portscan_classic_log "ERROR" "Failed to render fragment"
         return 1
     }
 
-    nftban_log "DEBUG" "portscan_classic" "Fragment rendered: $fragment_path"
+    _nftban_portscan_classic_log "DEBUG" "Fragment rendered: $fragment_path"
 
     # Apply via IPC
     if ! nft_fragment_apply "$fragment_path"; then
-        nftban_log "ERROR" "portscan_classic" "Failed to apply fragment via IPC"
+        _nftban_portscan_classic_log "ERROR" "Failed to apply fragment via IPC"
         return 1
     fi
 
-    nftban_log "INFO" "portscan_classic" "Portscan rules applied via IPC"
+    _nftban_portscan_classic_log "INFO" "Portscan rules applied via IPC"
     return 0
 }
 
@@ -205,49 +223,49 @@ nftban_portscan_classic_add_jump() {
     local table_ipv4="${PORTSCAN_NFT_TABLE_IPV4:-ip nftban}"
     local chain="${PORTSCAN_NFT_CHAIN:-portscan_detection}"
 
-    nftban_log "INFO" "portscan_classic" "Adding jump to portscan chain via IPC"
+    _nftban_portscan_classic_log "INFO" "Adding jump to portscan chain via IPC"
 
     # Check if jump already exists (to avoid duplicates)
     if nft_fragment_has_jump "$table_ipv4" "$chain" 2>/dev/null; then
-        nftban_log "DEBUG" "portscan_classic" "Jump rule already exists, skipping"
+        _nftban_portscan_classic_log "DEBUG" "Jump rule already exists, skipping"
         return 0
     fi
 
     # Render and apply jump fragment
     local fragment_path
     fragment_path=$(nft_fragment_render_portscan_classic_jump) || {
-        nftban_log "ERROR" "portscan_classic" "Failed to render jump fragment"
+        _nftban_portscan_classic_log "ERROR" "Failed to render jump fragment"
         return 1
     }
 
     if ! nft_fragment_apply "$fragment_path"; then
-        nftban_log "ERROR" "portscan_classic" "Failed to apply jump fragment via IPC"
+        _nftban_portscan_classic_log "ERROR" "Failed to apply jump fragment via IPC"
         return 1
     fi
 
-    nftban_log "INFO" "portscan_classic" "Jump rules applied via IPC"
+    _nftban_portscan_classic_log "INFO" "Jump rules applied via IPC"
     return 0
 }
 
 # Remove portscan rules
 # Uses fragment renderer + IPC instead of direct nft calls
 nftban_portscan_classic_remove_rules() {
-    nftban_log "INFO" "portscan_classic" "Removing portscan rules via IPC"
+    _nftban_portscan_classic_log "INFO" "Removing portscan rules via IPC"
 
     # Render cleanup fragment
     local fragment_path
     fragment_path=$(nft_fragment_render_portscan_classic_cleanup) || {
-        nftban_log "ERROR" "portscan_classic" "Failed to render cleanup fragment"
+        _nftban_portscan_classic_log "ERROR" "Failed to render cleanup fragment"
         return 1
     }
 
     # Apply via IPC
     if ! nft_fragment_apply "$fragment_path"; then
-        nftban_log "ERROR" "portscan_classic" "Failed to apply cleanup fragment via IPC"
+        _nftban_portscan_classic_log "ERROR" "Failed to apply cleanup fragment via IPC"
         return 1
     fi
 
-    nftban_log "INFO" "portscan_classic" "Portscan rules removed via IPC"
+    _nftban_portscan_classic_log "INFO" "Portscan rules removed via IPC"
     return 0
 }
 
@@ -344,7 +362,7 @@ nftban_portscan_classic_parse_line() {
 nftban_portscan_classic_process_logs() {
     local log_source
     log_source=$(nftban_portscan_classic_find_log) || {
-        nftban_log "ERROR" "portscan_classic" "No log source found (checked /var/log/kern.log, /var/log/messages, /var/log/syslog, journalctl)"
+        _nftban_portscan_classic_log "ERROR" "No log source found (checked /var/log/kern.log, /var/log/messages, /var/log/syslog, journalctl)"
         return 1
     }
 
@@ -362,11 +380,11 @@ nftban_portscan_classic_process_logs() {
         # --since filters to recent entries, --no-pager for non-interactive
         # Use || true in case --grep returns no matches (exit code 1)
         log_cmd="{ journalctl -k --since '${time_window} seconds ago' --no-pager --grep='${log_prefix}' 2>/dev/null || true; } | tail -1000"
-        nftban_log "DEBUG" "portscan_classic" "Reading from journalctl (kernel logs)"
+        _nftban_portscan_classic_log "DEBUG" "Reading from journalctl (kernel logs)"
     else
         # grep returns 1 when no matches found - use || true to handle this
         log_cmd="{ grep '${log_prefix}' '$log_source' 2>/dev/null || true; } | tail -1000"
-        nftban_log "DEBUG" "portscan_classic" "Reading from file: $log_source"
+        _nftban_portscan_classic_log "DEBUG" "Reading from file: $log_source"
     fi
 
     while IFS= read -r line; do
@@ -584,14 +602,14 @@ nftban_portscan_classic_handle_detection() {
 
     local action="${PORTSCAN_CLASSIC_ACTION}"
 
-    nftban_log "WARN" "portscan_classic" "Detected ${scan_type} scan from ${ip}"
+    _nftban_portscan_classic_log "WARN" "Detected ${scan_type} scan from ${ip}"
 
     case "$action" in
         block)
             nftban_portscan_classic_block_ip "$ip" "$scan_type"
             ;;
         log)
-            nftban_log "INFO" "portscan_classic" "Logged ${scan_type} scan from ${ip} (no block)"
+            _nftban_portscan_classic_log "INFO" "Logged ${scan_type} scan from ${ip} (no block)"
             ;;
         alert)
             nftban_portscan_classic_send_alert "$ip" "$scan_type"
@@ -645,14 +663,14 @@ nftban_portscan_classic_block_ip() {
     elif type -t nft_ipc_ban &>/dev/null; then
         nft_ipc_ban "$ip" "$duration" "portscan:${scan_type}" "portscan-classic"
     else
-        nftban_log "ERROR" "portscan_classic" "No ban method available (IPC library not loaded)"
+        _nftban_portscan_classic_log "ERROR" "No ban method available (IPC library not loaded)"
         return 1
     fi
 
     # Record block
     _PORTSCAN_CLASSIC_IP_BLOCKED["$ip"]=$(date +%s)
 
-    nftban_log "INFO" "portscan_classic" "Blocked ${ip} for ${duration}s (${scan_type} scan)"
+    _nftban_portscan_classic_log "INFO" "Blocked ${ip} for ${duration}s (${scan_type} scan)"
 
     return 0
 }
@@ -731,7 +749,7 @@ nftban_portscan_classic_is_whitelisted() {
 
 # Enable classic portscan detection
 nftban_portscan_classic_enable() {
-    nftban_log "INFO" "portscan_classic" "Enabling classic portscan detection"
+    _nftban_portscan_classic_log "INFO" "Enabling classic portscan detection"
 
     # Load configuration
     nftban_portscan_classic_load_config
@@ -744,13 +762,13 @@ nftban_portscan_classic_enable() {
     nftban_portscan_classic_add_rules
     nftban_portscan_classic_add_jump
 
-    nftban_log "INFO" "portscan_classic" "Classic portscan detection enabled"
+    _nftban_portscan_classic_log "INFO" "Classic portscan detection enabled"
     return 0
 }
 
 # Disable classic portscan detection
 nftban_portscan_classic_disable() {
-    nftban_log "INFO" "portscan_classic" "Disabling classic portscan detection"
+    _nftban_portscan_classic_log "INFO" "Disabling classic portscan detection"
 
     # Save state before disabling
     nftban_portscan_classic_save_state
@@ -758,7 +776,7 @@ nftban_portscan_classic_disable() {
     # Remove rules
     nftban_portscan_classic_remove_rules
 
-    nftban_log "INFO" "portscan_classic" "Classic portscan detection disabled"
+    _nftban_portscan_classic_log "INFO" "Classic portscan detection disabled"
     return 0
 }
 
