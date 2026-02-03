@@ -293,7 +293,8 @@ cmd_suricata_enable() {
         if command -v suricata-update &>/dev/null; then
             suricata-update update-sources --quiet 2>/dev/null || true
             if suricata-update --quiet 2>/dev/null; then
-                local new_count=$(find "$rules_dir" -name "*.rules" -type f 2>/dev/null | wc -l)
+                local new_count
+                new_count=$(find "$rules_dir" -name "*.rules" -type f 2>/dev/null | wc -l)
                 echo "  ✓ Downloaded $new_count rule files"
             else
                 echo "  ⚠ Warning: Failed to download rules"
@@ -2009,7 +2010,7 @@ cmd_suricata_eve_check() {
             fi
         else
             # Fallback: basic JSON structure check without jq
-            local first_char last_char
+            local first_char
             first_char=$(tail -n 1 "$eve_path" 2>/dev/null | head -c 1)
             if [[ "$first_char" == "{" ]]; then
                 echo -e "  Status:        ${C_GREEN}✓ APPEARS VALID${C_RESET} (jq not installed for full check)"

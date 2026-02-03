@@ -147,7 +147,6 @@ _suricata_backup_rules() {
 _suricata_rules_status() {
     local json_mode="${1:-false}"
 
-    local version="unknown"
     local total_rules=0
     local active_rules=0
     local disabled_rules=0
@@ -634,7 +633,7 @@ _suricata_local_list() {
             in_user_section=true
             continue
         fi
-        if [[ "$line" =~ "\[nftban-auto-start\]" ]]; then
+        if [[ "$line" =~ \[nftban-auto-start\] ]]; then
             in_user_section=false
             in_auto_section=true
             continue
