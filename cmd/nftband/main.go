@@ -105,6 +105,10 @@ var profileEnabled = false
 // to escalate and ban the same IP simultaneously
 var banMutex sync.Mutex
 
+// syncMutex protects concurrent sync operations to prevent
+// race conditions when multiple sync requests are issued simultaneously
+var syncMutex sync.Mutex
+
 // getDaemonPaths returns paths from central config
 // NO FALLBACK - paths must come from /etc/nftban/nftban.conf
 func getDaemonPaths() (runDir, configDir, dataDir, logDir string) {
@@ -1695,6 +1699,10 @@ func (d *Daemon) waitForShutdown() {
 // handleSyncRequest performs a full differential sync of whitelists/blacklists
 // If params["quick"]=true, skips feeds and geoban loading (for fast postinst sync)
 func (d *Daemon) handleSyncRequest(params map[string]any) SocketResponse {
+	// Prevent concurrent sync operations from racing
+	syncMutex.Lock()
+	defer syncMutex.Unlock()
+
 	// Check for quick mode (skips feeds/geoban for fast postinst sync)
 	quickMode := false
 	if params != nil {

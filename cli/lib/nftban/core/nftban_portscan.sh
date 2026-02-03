@@ -62,6 +62,19 @@ readonly NFTBAN_PORTSCAN_CACHE_DIR="${PORTSCAN_CACHE_DIR:-${NFTBAN_CACHE_DIR}/po
 readonly NFTBAN_PORTSCAN_LOG_FILE="${PORTSCAN_LOG_FILE:-${NFTBAN_LOG_DIR}/portscan.log}"
 
 # =============================================================================
+# LOGGING
+# =============================================================================
+
+_nftban_portscan_log() {
+    local level="$1"
+    local message="$2"
+
+    mkdir -p "$(dirname "$NFTBAN_PORTSCAN_LOG_FILE")" 2>/dev/null
+
+    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [PORTSCAN] [$level] $message" >> "$NFTBAN_PORTSCAN_LOG_FILE"
+}
+
+# =============================================================================
 # NFTABLES CONFIGURATION
 # =============================================================================
 
@@ -315,14 +328,14 @@ nftban_portscan_init_dirs() {
 nftban_portscan_init() {
     [[ $_PORTSCAN_INITIALIZED -eq 1 ]] && return 0
 
-    nftban_log "INFO" "portscan" "Initializing portscan detection module"
+    _nftban_portscan_log "INFO" "Initializing portscan detection module"
 
     # Load configuration
     nftban_portscan_load_config
 
     # Check if enabled
     if [[ "${PORTSCAN_ENABLED:-true}" != "true" ]]; then
-        nftban_log "INFO" "portscan" "Portscan detection is disabled"
+        _nftban_portscan_log "INFO" "Portscan detection is disabled"
         return 0
     fi
 
@@ -335,7 +348,7 @@ nftban_portscan_init() {
     # Detect mode
     _PORTSCAN_ACTIVE_MODE=$(_nftban_portscan_detect_mode)
 
-    nftban_log "INFO" "portscan" "Portscan mode: ${_PORTSCAN_ACTIVE_MODE}"
+    _nftban_portscan_log "INFO" "Portscan mode: ${_PORTSCAN_ACTIVE_MODE}"
 
     _PORTSCAN_INITIALIZED=1
     return 0
@@ -350,20 +363,20 @@ nftban_portscan_enable() {
     nftban_portscan_init
 
     if [[ "${PORTSCAN_ENABLED:-true}" != "true" ]]; then
-        nftban_log "WARN" "portscan" "Portscan is disabled in configuration"
+        _nftban_portscan_log "WARN" "Portscan is disabled in configuration"
         return 1
     fi
 
     local mode="${_PORTSCAN_ACTIVE_MODE}"
 
-    nftban_log "INFO" "portscan" "Enabling portscan detection (mode: ${mode})"
+    _nftban_portscan_log "INFO" "Enabling portscan detection (mode: ${mode})"
 
     case "$mode" in
         classic)
             if type -t nftban_portscan_classic_enable &>/dev/null; then
                 nftban_portscan_classic_enable
             else
-                nftban_log "ERROR" "portscan" "Classic mode module not loaded"
+                _nftban_portscan_log "ERROR" "Classic mode module not loaded"
                 return 1
             fi
             ;;
@@ -371,7 +384,7 @@ nftban_portscan_enable() {
             if type -t nftban_portscan_suricata_enable &>/dev/null; then
                 nftban_portscan_suricata_enable
             else
-                nftban_log "ERROR" "portscan" "Suricata mode module not loaded"
+                _nftban_portscan_log "ERROR" "Suricata mode module not loaded"
                 return 1
             fi
             ;;
@@ -385,12 +398,12 @@ nftban_portscan_enable() {
             fi
             ;;
         *)
-            nftban_log "ERROR" "portscan" "Unknown mode: ${mode}"
+            _nftban_portscan_log "ERROR" "Unknown mode: ${mode}"
             return 1
             ;;
     esac
 
-    nftban_log "INFO" "portscan" "Portscan detection enabled successfully"
+    _nftban_portscan_log "INFO" "Portscan detection enabled successfully"
     return 0
 }
 
@@ -398,7 +411,7 @@ nftban_portscan_enable() {
 nftban_portscan_disable() {
     local mode="${_PORTSCAN_ACTIVE_MODE}"
 
-    nftban_log "INFO" "portscan" "Disabling portscan detection"
+    _nftban_portscan_log "INFO" "Disabling portscan detection"
 
     case "$mode" in
         classic)
@@ -422,7 +435,7 @@ nftban_portscan_disable() {
     esac
 
     _PORTSCAN_INITIALIZED=0
-    nftban_log "INFO" "portscan" "Portscan detection disabled"
+    _nftban_portscan_log "INFO" "Portscan detection disabled"
     return 0
 }
 
@@ -590,6 +603,12 @@ nftban_portscan_status() {
     echo "───────────────────────────────────────────────────────────"
     echo ""
     echo "  Config File:  /etc/nftban/conf.d/portscan/main.conf"
+    local local_file="/etc/nftban/conf.d/portscan/main.conf.local"
+    if [[ -f "$local_file" ]]; then
+        echo "  Override File:  $local_file  [Active]"
+    else
+        echo "  Override File:  $local_file  [Not created]"
+    fi
     echo "  Log File:     ${NFTBAN_PORTSCAN_LOG_FILE}"
     echo ""
     echo "  Key Settings:"
@@ -599,6 +618,8 @@ nftban_portscan_status() {
     echo "    PORTSCAN_THRESHOLD=10          - Ports to trigger detection"
     echo "    PORTSCAN_TIME_WINDOW=300       - Detection window (seconds)"
     echo "    PORTSCAN_BAN_TIME=3600         - Ban duration (seconds)"
+    echo ""
+    echo "  Note: Put custom settings in main.conf.local (survives upgrades)"
     echo ""
 
     # ==========================================================================
