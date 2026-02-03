@@ -5,6 +5,40 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.3] - 2026-02-03
+
+### RBL Monitoring Enhancement
+
+This release enhances RBL (Real-time Blackhole List) monitoring with better integration
+and enables server IP blacklist checking by default.
+
+### Added
+
+- **RBL enabled by default** - Server IP blacklist monitoring now enabled out-of-the-box
+  (monitoring only, no firewall changes - safe to enable)
+
+- **12-hour RBL check schedule** - Changed from daily to twice-daily checks (02:00 + 14:00)
+  for faster detection of blacklisting events
+
+- **RBL in `nftban status`** - RBL monitoring status now displayed in protection modules
+  section showing enabled state and last check time
+
+- **`nftban health rbl`** - New health check subcommand for RBL monitoring:
+  - Checks RBL enabled status
+  - Verifies timer is active
+  - Validates last check within 48 hours
+  - Confirms cache directory is writable
+
+- **RBL timer in status** - Added `nftban-rbl-check.timer` to timer description array
+
+- **`.local` override info** - `nftban rbl status` now shows override file path
+  with [Active]/[Not created] status
+
+### Changed
+
+- **CLI completion** - Added 7 missing commands to bash completion
+- **Help documentation** - Added 12 missing commands to `nftban help` output
+
 ## [1.9.2] - 2026-02-03
 
 ### Concurrency Protection & Portscan Logging

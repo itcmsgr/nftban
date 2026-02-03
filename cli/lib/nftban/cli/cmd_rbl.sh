@@ -614,6 +614,22 @@ nftban_cmd_rbl_status() {
     done
 
     nftban_rbl_status "$format"
+
+    # Show .local override file info (text format only)
+    if [[ "$format" == "text" ]]; then
+        local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
+        echo ""
+        echo "  Config File:    $config_file"
+        local local_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf.local"
+        echo -n "  Override File:  $local_file  "
+        if [[ -f "$local_file" ]]; then
+            echo "[Active]"
+        else
+            echo "[Not created]"
+        fi
+        echo ""
+        echo "  Note: Put custom settings in main.conf.local (survives upgrades)"
+    fi
 }
 
 nftban_cmd_rbl_list() {

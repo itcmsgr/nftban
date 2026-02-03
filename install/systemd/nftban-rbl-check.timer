@@ -6,7 +6,7 @@
 # meta:type="systemd"
 # meta:version="1.3.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:description="Timer for daily RBL checking schedule"
+# meta:description="Timer for twice-daily RBL checking schedule (every 12 hours)"
 # meta:inventory.files=""
 # meta:inventory.binaries=""
 # meta:inventory.env_vars=""
@@ -17,16 +17,17 @@
 # =============================================================================
 
 [Unit]
-Description=NFTBan RBL Check Daily Timer
+Description=NFTBan RBL Check 12-Hour Timer
 Documentation=https://nftban.com/docs/rbl
 After=network-online.target
 Wants=network-online.target
 
 [Timer]
-# Run daily at 02:00
+# Run twice daily at 02:00 and 14:00 (every 12 hours)
 OnCalendar=*-*-* 02:00:00
+OnCalendar=*-*-* 14:00:00
 
-# JITTER: 15m variance for daily task
+# JITTER: 15m variance for 12-hour task
 RandomizedDelaySec=15m
 
 # DETERMINISTIC: Same offset per host for predictable behavior

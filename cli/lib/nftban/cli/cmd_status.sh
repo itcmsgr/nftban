@@ -407,6 +407,44 @@ output_terminal() {
     fi
     printf "  %-20s %s\n" "GeoBan.............." "$geoban_status"
 
+    # RBL Monitoring
+    local rbl_status="DISABLED"
+    local rbl_last_check=""
+    local rbl_critical_count=0
+    local rbl_server_status="UNKNOWN"
+
+    if [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf" ]]; then
+        source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
+        if [[ "${NFTBAN_RBL_ENABLED:-NO}" == "YES" ]]; then
+            rbl_status="ENABLED"
+        fi
+    fi
+
+    # Check last check time
+    local rbl_last_file="${NFTBAN_LOG_DIR:-/var/log/nftban}/rbl/last_check"
+    if [[ -f "$rbl_last_file" ]]; then
+        local last_ts
+        last_ts=$(cat "$rbl_last_file" 2>/dev/null)
+        if [[ -n "$last_ts" ]]; then
+            local now_ts
+            now_ts=$(date +%s)
+            local diff=$((now_ts - last_ts))
+            if [[ $diff -lt 3600 ]]; then
+                rbl_last_check="$((diff / 60)) min ago"
+            elif [[ $diff -lt 86400 ]]; then
+                rbl_last_check="$((diff / 3600)) hours ago"
+            else
+                rbl_last_check="$((diff / 86400)) days ago"
+            fi
+        fi
+    fi
+
+    printf "  %-21s %s" "RBL Monitoring........" "$rbl_status"
+    if [[ -n "$rbl_last_check" ]]; then
+        printf " (last: %s)" "$rbl_last_check"
+    fi
+    echo ""
+
     # Metrics Database
     local metrics_db_status="NOT INSTALLED"
     local prom_running=false vm_running=false
@@ -641,6 +679,7 @@ output_terminal() {
         ["nftban-suricata-update.timer"]="Suricata rules update"
         ["nftban-snapshot.timer"]="Snapshot creation"
         ["nftban-rollback.timer"]="Rollback check"
+        ["nftban-rbl-check.timer"]="RBL Check"
     )
 
     local timer_count=0
