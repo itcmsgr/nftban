@@ -44,6 +44,7 @@ _NFTBAN_MODE_LOADED=1
 : "${NC:=\033[0m}"
 
 # Valid modes (shared across all modules)
+# shellcheck disable=SC2034  # Used by other modules
 readonly NFTBAN_VALID_MODES="auto classic suricata hybrid"
 
 # =============================================================================
