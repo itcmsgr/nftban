@@ -51,9 +51,21 @@ fi
 # COMMAND HANDLER
 # =============================================================================
 
+cmd_configaudit_help() {
+    echo "Usage: nftban configaudit [options]"
+    echo ""
+    echo "Alias for 'nftban config audit' - checks for drift, deprecated keys, new options"
+    echo ""
+    echo "Options passed to config audit subcommand."
+    echo "Run 'nftban config audit --help' for details."
+}
+
 nftban_cmd_configaudit() {
     # ConfigAudit command - alias for config audit
     # Delegates all arguments to nftban_cmd_config_audit
+    case "${1:-}" in
+        -h|--help|help) cmd_configaudit_help; return 0 ;;
+    esac
     nftban_cmd_config_audit "$@"
 }
 

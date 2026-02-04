@@ -75,6 +75,17 @@ fi
 # MAIL COMMAND HANDLER
 # =============================================================================
 
+cmd_mail_help() {
+    echo "Usage: nftban mail <subcommand>"
+    echo ""
+    echo "Subcommands:"
+    echo "  status      Check mail system status"
+    echo "  port-status Check mail ports in firewall"
+    echo "  test        Send test email"
+    echo "  spool       Mail spool management"
+    echo "  help        Show this help"
+}
+
 nftban_cmd_mail() {
     # Handle mail subcommands
     # Args: $@ = mail subcommand and arguments

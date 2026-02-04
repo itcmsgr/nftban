@@ -30,20 +30,27 @@ fi
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Handle FHS compliance CLI commands
 #
-# meta:name=cmd_fhs
-# meta:type=cli
-# meta:header=FHS CLI Command
-# meta:version=1.0.0
+# meta:name="cmd_fhs"
+# meta:type="cli"
+# meta:header="FHS CLI Command"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=CLI interface for FHS compliance reporting
-# meta:input=Output format, mail options
-# meta:output=FHS compliance reports (terminal, HTML, mail)
+# meta:description="CLI interface for FHS compliance reporting"
+# meta:input="Output format, mail options"
+# meta:output="FHS compliance reports (terminal, HTML, mail)"
 #
 # **Inventory & Requirements**
-# meta:depends=bash,nftban_report_fhs.sh
+# meta:depends="bash,nftban_report_fhs.sh"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 #
 # meta:created_date=2025-11-05
 # meta:updated_date=2025-11-24
@@ -82,6 +89,17 @@ fi
 # FHS COMMAND HANDLER
 # =============================================================================
 
+cmd_fhs_help() {
+    echo "Usage: nftban fhs [subcommand]"
+    echo ""
+    echo "Subcommands:"
+    echo "  status        Show FHS compliance (default)"
+    echo "  summary       One-line summary"
+    echo "  json          JSON output"
+    echo "  html-report   Generate HTML report"
+    echo "  mail-report   Mail report"
+    echo "  help          Show this help"
+}
 
 nftban_cmd_fhs() {
     # Handle FHS subcommands

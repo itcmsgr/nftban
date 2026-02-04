@@ -1,0 +1,361 @@
+#!/usr/bin/env bash
+# shellcheck disable=SC1090  # Dynamic config paths, cannot follow
+# =============================================================================
+# NFTBan v1.0 - Health Check Modules Functions
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Module-related health check functions (geoip, geoban, databases, rbl)
+#
+# meta:name="nftban_health_checks_modules"
+# meta:type="lib"
+# meta:header="Health Check Modules Functions"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
+#
+# meta:description="Module health check functions for system verification"
+# meta:depends="nftban_health.sh,nftban_health_checks_core.sh"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
+# meta:created_date="2026-02-04"
+# =============================================================================
+
+set -Eeuo pipefail
+
+# Prevent double-loading
+[[ -n "${_NFTBAN_HEALTH_CHECKS_MODULES_LOADED:-}" ]] && return 0
+_NFTBAN_HEALTH_CHECKS_MODULES_LOADED=1
+
+# =============================================================================
+# MODULE CHECKS
+# =============================================================================
+
+nftban_health_check_modules() {
+    # Check loaded modules and their functions
+    # Returns: 0=OK, 1=Warning, 2=Error
+
+    local status=$HEALTH_OK
+    local module_issues=()
+
+    # Core modules that should be loadable
+    local core_modules=(
+        "nftban_output.sh"
+        "nftban_report_port.sh"
+        "nftban_report_module.sh"
+        "nftban_report_fhs.sh"
+        "nftban_geoip_go.sh"
+        "nftban_health.sh"
+        "nftban_login_alert.sh"
+        "nftban_mail.sh"
+    )
+
+    for module in "${core_modules[@]}"; do
+        local module_path="${NFTBAN_LIB_DIR}/core/$module"
+        if [[ ! -f "$module_path" ]]; then
+            module_issues+=("Module not found: $module")
+            status=$HEALTH_ERROR
+        elif [[ ! -r "$module_path" ]]; then
+            module_issues+=("Module not readable: $module")
+            status=$HEALTH_ERROR
+        else
+            # Try to source it (in subshell to avoid side effects)
+            if ! (source "$module_path") 2>/dev/null; then
+                module_issues+=("Module has syntax errors: $module")
+                status=$HEALTH_ERROR
+            fi
+        fi
+    done
+
+    # Store results
+    if [[ ${#module_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["modules"]="${module_issues[*]}"
+        NFTBAN_HEALTH_ERRORS+=("Module issues: ${module_issues[*]}")
+    fi
+
+    NFTBAN_HEALTH_RESULTS["modules"]=$status
+    return $status
+}
+
+# =============================================================================
+# GEOIP CHECKS
+# =============================================================================
+
+nftban_health_check_geoip() {
+    # Check GeoIP system (v0.7.3 unified architecture)
+    # - All GeoIP functionality in nftban-core (update, status, lookup)
+    # Returns: 0=OK, 1=Warning, 2=Error
+
+    local status=$HEALTH_OK
+    local geoip_issues=()
+
+    local nftban_core="${NFTBAN_LIB_DIR}/bin/nftban-core"
+
+    # Check for ANY supported GeoIP database (DB-IP free or MaxMind)
+    local db_path=""
+    local geoip_dir="${NFTBAN_DATA_DIR}/geoip"
+    for db_file in "dbip-country-lite.mmdb" "GeoLite2-City.mmdb" "GeoLite2-Country.mmdb"; do
+        if [[ -f "${geoip_dir}/${db_file}" ]]; then
+            db_path="${geoip_dir}/${db_file}"
+            break
+        fi
+    done
+
+    # Check nftban-core (REQUIRED CORE MODULE - handles country/feeds/geoip)
+    if [[ ! -x "$nftban_core" ]]; then
+        # Try fallback paths
+        nftban_core=$(command -v nftban-core 2>/dev/null || echo "")
+        if [[ -z "$nftban_core" ]]; then
+            geoip_issues+=("nftban-core binary NOT FOUND - REQUIRED core module")
+            geoip_issues+=("FIX: nftban-core must be installed and compiled (handles country/feeds/geoip)")
+            status=$HEALTH_ERROR
+            # Store and return immediately - no point checking database if core is missing
+            NFTBAN_HEALTH_ISSUES["geoip"]="${geoip_issues[*]}"
+            NFTBAN_HEALTH_ERRORS+=("nftban-core: ${geoip_issues[*]}")
+            NFTBAN_HEALTH_RESULTS["geoip"]=$status
+            return "$status"
+        fi
+    fi
+
+    # Check database (nftban-core is installed, now check if GeoIP DB is downloaded)
+    if [[ -z "$db_path" ]]; then
+        geoip_issues+=("GeoIP database not downloaded")
+        geoip_issues+=("FIX: Run 'nftban geoip update' to download database")
+        status=$HEALTH_ERROR
+    elif [[ ! -r "$db_path" ]]; then
+        geoip_issues+=("Database not readable: $db_path")
+        status=$HEALTH_WARNING
+    else
+        # Database exists - verify with nftban-core
+        if [[ -n "$nftban_core" && -x "$nftban_core" ]]; then
+            if ! "$nftban_core" geoip status >/dev/null 2>&1; then
+                geoip_issues+=("Database verification failed")
+                status=$HEALTH_WARNING
+            else
+                # Performance test
+                local start_time end_time elapsed
+                start_time=$(date +%s%N)
+                if "$nftban_core" geoip lookup 8.8.8.8 >/dev/null 2>&1; then
+                    end_time=$(date +%s%N)
+                    elapsed=$(( (end_time - start_time) / 1000 ))
+
+                    if (( elapsed > 10000 )); then
+                        geoip_issues+=("Lookup performance degraded: ${elapsed}μs (expected <1000μs)")
+                    fi
+                else
+                    geoip_issues+=("Lookup test failed")
+                fi
+            fi
+        fi
+    fi
+
+    # Store results
+    if [[ ${#geoip_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["geoip"]="${geoip_issues[*]}"
+        if [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("nftban-core: ${geoip_issues[*]}")
+        elif [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("nftban-core: ${geoip_issues[*]}")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["geoip"]=$status
+    return "$status"
+}
+
+# =============================================================================
+# GEOBAN (COUNTRY BLOCKING) CHECK
+# =============================================================================
+
+nftban_health_check_geoban() {
+    # Check GeoBan country blocking module
+    # This is SEPARATE from GeoIP (database) - GeoBan is the country blocking feature
+    # Returns: 0=OK (configured or not needed), 1=Warning, 2=Error
+
+    local status=$HEALTH_OK
+    local geoban_issues=()
+
+    # Check for country blocking configurations
+    local geoban_dir="${NFTBAN_DATA_DIR}/geoban"
+    local blocked_count=0
+
+    if [[ -d "$geoban_dir" ]]; then
+        # Count blocked countries
+        shopt -s nullglob 2>/dev/null || true
+        for file in "$geoban_dir"/*.conf; do
+            if [[ -f "$file" ]] && grep -q "^MODE=.*block" "$file" 2>/dev/null; then
+                ((blocked_count++))
+            fi
+        done
+        shopt -u nullglob 2>/dev/null || true
+    fi
+
+    # GeoBan is optional - not having it configured is fine
+    if [[ $blocked_count -gt 0 ]]; then
+        # If GeoBan is configured, verify GeoIP database is available
+        local nftban_core="${NFTBAN_LIB_DIR}/bin/nftban-core"
+        [[ ! -x "$nftban_core" ]] && nftban_core=$(command -v nftban-core 2>/dev/null || echo "")
+
+        if [[ -n "$nftban_core" ]] && [[ -x "$nftban_core" ]]; then
+            if ! "$nftban_core" geoip status >/dev/null 2>&1; then
+                geoban_issues+=("GeoBan has $blocked_count countries configured but GeoIP database is missing")
+                geoban_issues+=("FIX: Run 'nftban geoip update' to download the database")
+                status=$HEALTH_WARNING
+            fi
+        else
+            geoban_issues+=("GeoBan has $blocked_count countries configured but nftban-core is missing")
+            status=$HEALTH_WARNING
+        fi
+    fi
+
+    # Store results
+    if [[ ${#geoban_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["geoban"]="${geoban_issues[*]}"
+        if [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("geoban: ${geoban_issues[*]}")
+        elif [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("geoban: ${geoban_issues[*]}")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["geoban"]=$status
+    return "$status"
+}
+
+# =============================================================================
+# DATABASE CHECKS
+# =============================================================================
+
+nftban_health_check_databases() {
+    # Check database files
+    # Returns: 0=OK, 1=Warning, 2=Error
+
+    local status=$HEALTH_OK
+    local db_issues=()
+
+    # Auto-detect GeoIP database from config
+    local geoip_db=""
+    local geoip_dir="${NFTBAN_DATA_DIR}/geoip"
+    if [[ -n "${NFTBAN_GEOIP_DATABASE:-}" ]] && [[ -f "${NFTBAN_GEOIP_DATABASE}" ]]; then
+        geoip_db="${NFTBAN_GEOIP_DATABASE}"
+    else
+        for db_file in ${NFTBAN_GEOIP_DATABASES:-dbip-country-lite.mmdb GeoLite2-City.mmdb GeoLite2-Country.mmdb}; do
+            [[ -f "${geoip_dir}/${db_file}" ]] && geoip_db="${geoip_dir}/${db_file}" && break
+        done
+    fi
+
+    if [[ -n "$geoip_db" ]] && [[ -f "$geoip_db" ]]; then
+        # Check age (warn if >90 days old)
+        local file_age
+        file_age=$(( $(date +%s) - $(stat -c %Y "$geoip_db" 2>/dev/null || echo 0) ))
+        local days_old
+        days_old=$(( file_age / 86400 ))
+        local db_name
+        db_name=$(basename "$geoip_db")
+
+        if (( days_old > 90 )); then
+            db_issues+=("${db_name} is ${days_old} days old (consider updating)")
+            status=$HEALTH_WARNING
+        fi
+    fi
+
+    # Store results
+    if [[ ${#db_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["databases"]="${db_issues[*]}"
+        NFTBAN_HEALTH_WARNINGS+=("Database issues: ${db_issues[*]}")
+    fi
+
+    NFTBAN_HEALTH_RESULTS["databases"]=$status
+    return "$status"
+}
+
+# =============================================================================
+# RBL CHECK
+# =============================================================================
+
+nftban_health_check_rbl() {
+    # Check RBL monitoring status (v1.0.24)
+    # Returns: 0=OK, 1=WARNING, 2=ERROR
+    # Checks: enabled status, last check time, blacklist status
+
+    local status=$HEALTH_OK
+    local rbl_issues=()
+
+    # Load RBL configuration
+    local rbl_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
+    local rbl_cache_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/rbl"
+
+    # Check if RBL is enabled
+    local rbl_enabled="NO"
+    if [[ -f "$rbl_config" ]]; then
+        rbl_enabled=$(grep -E "^NFTBAN_RBL_ENABLED=" "$rbl_config" 2>/dev/null | cut -d'"' -f2 || echo "NO")
+    fi
+
+    if [[ "$rbl_enabled" != "YES" ]]; then
+        rbl_issues+=("RBL monitoring disabled (optional)")
+        # Not an error - just informational
+        NFTBAN_HEALTH_RESULTS["rbl"]=$HEALTH_OK
+        NFTBAN_HEALTH_ISSUES["rbl"]="RBL monitoring disabled (enable in $rbl_config)"
+        return $HEALTH_OK
+    fi
+
+    # Check last check time
+    local last_check_file="${rbl_cache_dir}/last_check"
+    if [[ -f "$last_check_file" ]]; then
+        local last_check
+        last_check=$(cat "$last_check_file" 2>/dev/null)
+        local last_check_epoch
+        last_check_epoch=$(date -d "$last_check" +%s 2>/dev/null || echo 0)
+        local now_epoch
+        now_epoch=$(date +%s)
+        local hours_ago=$(( (now_epoch - last_check_epoch) / 3600 ))
+
+        if [[ $hours_ago -gt 48 ]]; then
+            rbl_issues+=("Last RBL check was ${hours_ago}h ago (stale)")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    else
+        rbl_issues+=("RBL check never run")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    fi
+
+    # Check for blacklisted IPs in state file
+    local state_file="${rbl_cache_dir}/state.json"
+    if [[ -f "$state_file" ]]; then
+        if grep -q '"listed"' "$state_file" 2>/dev/null; then
+            rbl_issues+=("Server IP(s) currently BLACKLISTED on RBLs!")
+            status=$HEALTH_ERROR
+            NFTBAN_HEALTH_ERRORS+=("RBL: Server IP blacklisted - run 'nftban rbl check' for details")
+        fi
+    fi
+
+    # Check RBL timer status
+    if systemctl is-enabled nftban-rbl-check.timer &>/dev/null; then
+        if ! systemctl is-active nftban-rbl-check.timer &>/dev/null; then
+            rbl_issues+=("RBL timer enabled but not active")
+            [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+        fi
+    else
+        rbl_issues+=("RBL timer not enabled (run: nftban rbl enable)")
+        [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+    fi
+
+    # Store results
+    NFTBAN_HEALTH_RESULTS["rbl"]=$status
+    if [[ ${#rbl_issues[@]} -eq 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["rbl"]="RBL monitoring active, no blacklistings"
+    else
+        NFTBAN_HEALTH_ISSUES["rbl"]="${rbl_issues[*]}"
+    fi
+
+    return $status
+}
+
+# Export functions
+export -f nftban_health_check_modules nftban_health_check_geoip
+export -f nftban_health_check_geoban nftban_health_check_databases
+export -f nftban_health_check_rbl

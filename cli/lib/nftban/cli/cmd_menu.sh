@@ -5,20 +5,27 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Interactive TUI menu system for NFTBan
 #
-# meta:name=cmd_menu
-# meta:type=cli
-# meta:header=NFTBan Interactive Menu
-# meta:version=1.0.0
+# meta:name="cmd_menu"
+# meta:type="cli"
+# meta:header="NFTBan Interactive Menu"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Interactive TUI menu using whiptail/dialog for easier navigation
-# meta:input=User menu selections
-# meta:output=Executes selected commands and displays results
+# meta:description="Interactive TUI menu using whiptail/dialog for easier navigation"
+# meta:input="User menu selections"
+# meta:output="Executes selected commands and displays results"
 #
 # **Inventory & Requirements**
-# meta:depends=bash,whiptail|dialog
+# meta:depends="bash,whiptail|dialog"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 #
 # meta:created_date=2025-11-05
 # meta:updated_date=2025-11-24
@@ -593,6 +600,14 @@ screen_tools() {
 # =============================================================================
 # COMMAND HANDLER
 # =============================================================================
+
+cmd_menu_help() {
+    echo "Usage: nftban menu"
+    echo ""
+    echo "Launch interactive TUI menu for NFTBan management."
+    echo ""
+    echo "Requires: whiptail or dialog (fallback to text menu)"
+}
 
 nftban_cmd_menu() {
     # Main command entry point
