@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.7.0 - Installation Script
+# NFTBan v1.9.3 - Installation Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Install NFTBan on the local system
