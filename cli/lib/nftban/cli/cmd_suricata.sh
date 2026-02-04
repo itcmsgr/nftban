@@ -279,7 +279,7 @@ cmd_suricata_enable() {
     fi
 
     # Check if rules exist, download if missing (like GeoIP auto-download)
-    local rules_dir="/var/lib/suricata/rules"
+    local rules_dir="${SURICATA_RULES_DIR}"
     local rule_count=0
     if [[ -d "$rules_dir" ]]; then
         rule_count=$(find "$rules_dir" -name "*.rules" -type f 2>/dev/null | wc -l)
@@ -446,11 +446,11 @@ cmd_suricata_status() {
     # Rules status
     echo ""
     echo "  Rules:"
-    if [[ -d /var/lib/suricata/rules ]]; then
+    if [[ -d "${SURICATA_RULES_DIR}" ]]; then
         local rule_count
-        rule_count=$(find /var/lib/suricata/rules -name "*.rules" -exec cat {} \; 2>/dev/null | grep -c "^alert" || echo "0")
+        rule_count=$(find "${SURICATA_RULES_DIR}" -name "*.rules" -exec cat {} \; 2>/dev/null | grep -c "^alert" || echo "0")
         echo "    Total alert rules: $rule_count"
-        echo "    Rules directory:   /var/lib/suricata/rules/"
+        echo "    Rules directory:   ${SURICATA_RULES_DIR}/"
     else
         echo "    ⚠  No rules directory found"
     fi
@@ -564,8 +564,8 @@ cmd_suricata_rules() {
         list)
             echo ""
             echo "Suricata Rule Files:"
-            if [[ -d /var/lib/suricata/rules ]]; then
-                ls -lh /var/lib/suricata/rules/*.rules 2>/dev/null || echo "No rule files found"
+            if [[ -d "${SURICATA_RULES_DIR}" ]]; then
+                ls -lh "${SURICATA_RULES_DIR}"/*.rules 2>/dev/null || echo "No rule files found"
             else
                 echo "Rules directory not found"
             fi

@@ -630,16 +630,15 @@ EOF
         webhook)
             local url="${CONNECTOR_WEBHOOK_URL}"
             local secret="${CONNECTOR_WEBHOOK_SECRET:-}"
-            local headers="-H 'Content-Type: application/json'"
+            local -a curl_args=(-sf -X POST -H "Content-Type: application/json")
 
             if [[ -n "$secret" ]]; then
                 local sig
                 sig=$(echo -n "$event_json" | openssl dgst -sha256 -hmac "$secret" | cut -d' ' -f2)
-                headers="$headers -H 'X-NFTBan-Signature: sha256=$sig'"
+                curl_args+=(-H "X-NFTBan-Signature: sha256=$sig")
             fi
 
-            # shellcheck disable=SC2086
-            if eval curl -sf -X POST "'$url'" $headers -d "'$event_json'" -o /dev/null; then
+            if curl "${curl_args[@]}" -d "$event_json" -o /dev/null "$url"; then
                 _connector_print_success "Event pushed to webhook"
             else
                 _connector_print_error "Failed to push event"

@@ -188,7 +188,7 @@ nftban_geoban_apply_to_nftables() {
     # Check if IPv4 table exists (required)
     if ! nft list table $table_v4 &>/dev/null; then
         nftban_error "Table $table_v4 does not exist"
-        nftban_info "Run: nft -f /etc/nftables.conf"
+        nftban_info "Run: nft -f ${NFTBAN_NFTABLES_CONF:-/etc/nftables.conf}"
         return 1
     fi
 
@@ -205,7 +205,7 @@ nftban_geoban_apply_to_nftables() {
 
     if ! nft list set $table_v4 "$set_v4" &>/dev/null; then
         nftban_error "Set $set_v4 does not exist in $table_v4"
-        nftban_info "Base nftables config missing. Run: nft -f /etc/nftables.conf"
+        nftban_info "Base nftables config missing. Run: nft -f ${NFTBAN_NFTABLES_CONF:-/etc/nftables.conf}"
         return 1
     fi
 
