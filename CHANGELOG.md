@@ -5,12 +5,12 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.9.3] - 2026-02-03
+## [1.9.3] - 2026-02-04
 
-### RBL Monitoring Enhancement
+### RBL Monitoring & Performance Enhancements
 
-This release enhances RBL (Real-time Blackhole List) monitoring with better integration
-and enables server IP blacklist checking by default.
+This release enhances RBL monitoring, improves ban performance with async enrichment,
+and adds atomic writes for Suricata rule management.
 
 ### Added
 
@@ -37,10 +37,29 @@ and enables server IP blacklist checking by default.
 - **RBL in main health output** - `nftban health` now shows RBL status in
   SYSTEM CHECKS section (alongside GeoIP and GeoBan)
 
+### Improved
+
+- **Async GeoIP enrichment** - Ban-first, enrich-after pattern for faster ban execution:
+  - GeoIP lookup now runs in goroutine AFTER IP is blocked
+  - Ban latency no longer includes GeoIP lookup time
+  - Thread-safe implementation with proper variable capture
+
+- **Atomic rule file writes** - Suricata SID/category config changes now atomic:
+  - Uses temp file + rename pattern to prevent partial writes
+  - `enable.conf` and `disable.conf` are sorted numerically after each change
+  - Sources `nftban_file_ops.sh` for `nftban_atomic_write()` function
+
 ### Changed
 
 - **CLI completion** - Added 7 missing commands to bash completion
 - **Help documentation** - Added 12 missing commands to `nftban help` output
+
+### Fixed
+
+- **RPM packaging** - Added `whitelist.txt` files to `%files` section:
+  - `/etc/nftban/conf.d/ddos/whitelist.txt`
+  - `/etc/nftban/conf.d/login/whitelist.txt`
+  - `/etc/nftban/conf.d/portscan/whitelist.txt`
 
 ## [1.9.2] - 2026-02-03
 
