@@ -42,7 +42,7 @@ set -Eeuo pipefail
 #   5. Update Version in go-geoip/cmd/nftban-geoip/main.go (nftban repo)
 #   6. Build all binaries with -ldflags to inject version
 # The 'nftban version' command will show warnings if components don't match.
-export NFTBAN_VERSION="1.7.0"
+export NFTBAN_VERSION="1.9.4"
 
 # =============================================================================
 # LOAD CENTRAL ENVIRONMENT (single source of truth for paths)

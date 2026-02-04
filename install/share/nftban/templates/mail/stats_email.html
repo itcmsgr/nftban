@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NFTBan Daily Report</title>
+    <title>NFTBan Daily Security Report</title>
     <style>
         body {
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
@@ -13,7 +13,7 @@
             line-height: 1.6;
         }
         .container {
-            max-width: 600px;
+            max-width: 650px;
             margin: 0 auto;
             background: #ffffff;
             border-radius: 8px;
@@ -21,196 +21,406 @@
             box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         }
         .header {
-            background: linear-gradient(135deg, #6aa9ff 0%, #4a89df 100%);
+            background: linear-gradient(135deg, #1e40af 0%, #3b82f6 100%);
             color: white;
             padding: 30px 20px;
             text-align: center;
         }
         .header h1 {
             margin: 0 0 10px 0;
-            font-size: 28px;
+            font-size: 26px;
         }
         .header .subtitle {
             margin: 0;
             opacity: 0.9;
             font-size: 14px;
         }
-        .content {
-            padding: 30px 20px;
-        }
-        .summary {
-            background: #f9fafb;
-            border-left: 4px solid #6aa9ff;
-            padding: 20px;
-            margin-bottom: 30px;
-            border-radius: 4px;
-        }
-        .summary h2 {
-            margin: 0 0 15px 0;
-            font-size: 18px;
-            color: #333;
-        }
-        .stat-row {
-            display: flex;
-            justify-content: space-between;
-            padding: 8px 0;
-            border-bottom: 1px solid #e5e7eb;
-        }
-        .stat-row:last-child {
-            border-bottom: none;
-        }
-        .stat-label {
-            color: #6b7280;
-            font-size: 14px;
-        }
-        .stat-value {
-            color: #111827;
+        .health-badge {
+            display: inline-block;
+            padding: 6px 16px;
+            border-radius: 20px;
+            font-size: 13px;
             font-weight: 600;
-            font-size: 16px;
+            margin-top: 12px;
         }
-        .alert {
-            background: #fef3c7;
-            border-left: 4px solid #f59e0b;
+        .health-ok { background: #22c55e; color: white; }
+        .health-degraded { background: #f59e0b; color: white; }
+        .health-critical { background: #ef4444; color: white; }
+        .content {
+            padding: 25px 20px;
+        }
+        .summary-bar {
+            background: #f1f5f9;
+            border-left: 4px solid #3b82f6;
             padding: 15px;
-            margin-bottom: 20px;
+            margin-bottom: 25px;
             border-radius: 4px;
         }
-        .alert.danger {
-            background: #fee2e2;
-            border-color: #ef4444;
+        .summary-bar p {
+            margin: 4px 0;
+            font-size: 14px;
+            color: #475569;
         }
-        .alert.success {
-            background: #d1fae5;
-            border-color: #10b981;
+        .summary-bar strong {
+            color: #1e293b;
         }
+        /* KPI Cards */
+        .kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+            margin-bottom: 25px;
+        }
+        .kpi-card {
+            background: #f8fafc;
+            padding: 15px 10px;
+            border-radius: 8px;
+            text-align: center;
+            border: 1px solid #e2e8f0;
+        }
+        .kpi-value {
+            font-size: 28px;
+            font-weight: 700;
+            color: #1e293b;
+        }
+        .kpi-value.blue { color: #3b82f6; }
+        .kpi-value.green { color: #22c55e; }
+        .kpi-value.orange { color: #f59e0b; }
+        .kpi-value.purple { color: #8b5cf6; }
+        .kpi-label {
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 4px;
+        }
+        /* Ban Breakdown */
+        .breakdown-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 8px;
+            margin-bottom: 25px;
+        }
+        .breakdown-item {
+            background: #f8fafc;
+            padding: 12px 8px;
+            border-radius: 6px;
+            text-align: center;
+            border-left: 3px solid #94a3b8;
+        }
+        .breakdown-item.ipv4 { border-left-color: #3b82f6; }
+        .breakdown-item.ipv6 { border-left-color: #8b5cf6; }
+        .breakdown-item.temp { border-left-color: #f59e0b; }
+        .breakdown-item.perm { border-left-color: #ef4444; }
+        .breakdown-value {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .breakdown-label {
+            font-size: 10px;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+        /* Section Headers */
         .section {
-            margin-bottom: 30px;
+            margin-bottom: 25px;
         }
         .section h3 {
-            font-size: 16px;
-            color: #333;
-            margin: 0 0 15px 0;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #e5e7eb;
+            font-size: 14px;
+            color: #1e293b;
+            margin: 0 0 12px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e2e8f0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
+        /* Module Status Table */
+        .status-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 13px;
+        }
+        .status-table th {
+            background: #f1f5f9;
+            padding: 10px 8px;
+            text-align: left;
+            font-weight: 600;
+            color: #475569;
+            font-size: 11px;
+            text-transform: uppercase;
+        }
+        .status-table td {
+            padding: 10px 8px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #334155;
+        }
+        .status-active {
+            color: #22c55e;
+            font-weight: 600;
+        }
+        .status-inactive {
+            color: #94a3b8;
+        }
+        .status-icon {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .status-icon.active { background: #22c55e; }
+        .status-icon.inactive { background: #cbd5e1; }
+        .status-icon.warning { background: #f59e0b; }
+        /* Top Lists */
         .top-list {
             list-style: none;
             padding: 0;
             margin: 0;
         }
         .top-list li {
-            padding: 10px;
-            background: #f9fafb;
-            margin-bottom: 8px;
-            border-radius: 4px;
+            padding: 10px 12px;
+            background: #f8fafc;
+            margin-bottom: 6px;
+            border-radius: 6px;
             display: flex;
             justify-content: space-between;
             align-items: center;
+            font-size: 13px;
         }
         .top-list li:nth-child(1) { border-left: 3px solid #ef4444; }
         .top-list li:nth-child(2) { border-left: 3px solid #f59e0b; }
-        .top-list li:nth-child(3) { border-left: 3px solid #10b981; }
+        .top-list li:nth-child(3) { border-left: 3px solid #22c55e; }
+        .top-list li:nth-child(4) { border-left: 3px solid #3b82f6; }
+        .top-list li:nth-child(5) { border-left: 3px solid #8b5cf6; }
         .ip-code {
-            font-family: 'Courier New', monospace;
-            background: #e5e7eb;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            background: #e2e8f0;
             padding: 2px 6px;
             border-radius: 3px;
-            font-size: 13px;
+            font-size: 12px;
         }
         .badge {
-            background: #6aa9ff;
+            background: #3b82f6;
             color: white;
-            padding: 4px 10px;
-            border-radius: 12px;
-            font-size: 12px;
+            padding: 3px 8px;
+            border-radius: 10px;
+            font-size: 11px;
             font-weight: 600;
         }
+        .country-flag {
+            margin-right: 6px;
+        }
+        /* Feeds Table */
+        .feeds-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+        }
+        .feeds-table th {
+            background: #f1f5f9;
+            padding: 8px 6px;
+            text-align: left;
+            font-weight: 600;
+            color: #475569;
+            font-size: 10px;
+            text-transform: uppercase;
+        }
+        .feeds-table td {
+            padding: 8px 6px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #334155;
+        }
+        .feed-status-current { color: #22c55e; }
+        .feed-status-stale { color: #f59e0b; }
+        .feed-status-error { color: #ef4444; }
+        /* Activity Summary */
+        .activity-row {
+            display: flex;
+            justify-content: space-around;
+            background: #f8fafc;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+        }
+        .activity-item {
+            text-align: center;
+        }
+        .activity-value {
+            font-size: 24px;
+            font-weight: 700;
+        }
+        .activity-value.up { color: #ef4444; }
+        .activity-value.down { color: #22c55e; }
+        .activity-label {
+            font-size: 11px;
+            color: #64748b;
+        }
+        /* Recommendations */
+        .recommendations {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 6px;
+            padding: 15px;
+        }
+        .recommendations h4 {
+            margin: 0 0 10px 0;
+            color: #1e40af;
+            font-size: 13px;
+        }
+        .recommendations ul {
+            margin: 0;
+            padding-left: 20px;
+            font-size: 13px;
+            color: #1e40af;
+        }
+        .recommendations li {
+            margin: 6px 0;
+        }
+        /* Footer */
         .footer {
-            background: #f9fafb;
+            background: #f8fafc;
             padding: 20px;
             text-align: center;
-            color: #6b7280;
+            color: #64748b;
             font-size: 12px;
+            border-top: 1px solid #e2e8f0;
         }
         .footer a {
-            color: #6aa9ff;
+            color: #3b82f6;
             text-decoration: none;
         }
-        .button {
-            display: inline-block;
-            background: #6aa9ff;
-            color: white;
-            padding: 12px 24px;
-            text-decoration: none;
-            border-radius: 6px;
-            font-weight: 600;
-            margin: 20px 0;
+        .footer p {
+            margin: 6px 0;
         }
-        .button:hover {
-            background: #5a99ef;
-        }
+        /* Responsive */
         @media only screen and (max-width: 600px) {
-            .container {
-                border-radius: 0;
+            .kpi-grid, .breakdown-grid {
+                grid-template-columns: repeat(2, 1fr);
             }
-            .content {
-                padding: 20px 15px;
-            }
+            .kpi-value { font-size: 24px; }
+            .activity-row { flex-direction: column; gap: 15px; }
         }
     </style>
 </head>
 <body>
     <div class="container">
+        <!-- Header -->
         <div class="header">
             <h1>NFTBan Security Report</h1>
-            <p class="subtitle">Daily Statistics Summary</p>
+            <p class="subtitle">{REPORT_PERIOD} Summary</p>
+            <div class="health-badge health-{HEALTH_STATUS_CLASS}">{HEALTH_STATUS}</div>
         </div>
 
         <div class="content">
-            <!-- Server Info -->
-            <div class="summary">
-                <h2>Summary</h2>
-                <div class="stat-row">
-                    <span class="stat-label">Server</span>
-                    <span class="stat-value">{HOSTNAME}</span>
+            <!-- Server Info Summary -->
+            <div class="summary-bar">
+                <p><strong>Server:</strong> {HOSTNAME}</p>
+                <p><strong>Generated:</strong> {DATE} at {TIME}</p>
+                <p><strong>Version:</strong> NFTBan v{NFTBAN_VERSION}</p>
+            </div>
+
+            <!-- Key Metrics (4 KPI Cards) -->
+            <div class="kpi-grid">
+                <div class="kpi-card">
+                    <div class="kpi-value blue">{ACTIVE_BANS}</div>
+                    <div class="kpi-label">Active Bans</div>
                 </div>
-                <div class="stat-row">
-                    <span class="stat-label">Report Period</span>
-                    <span class="stat-value">{REPORT_PERIOD}</span>
+                <div class="kpi-card">
+                    <div class="kpi-value orange">{BANS_24H}</div>
+                    <div class="kpi-label">Bans (24h)</div>
                 </div>
-                <div class="stat-row">
-                    <span class="stat-label">Generated</span>
-                    <span class="stat-value">{DATE} {TIME}</span>
+                <div class="kpi-card">
+                    <div class="kpi-value purple">{WHITELIST_COUNT}</div>
+                    <div class="kpi-label">Whitelist</div>
+                </div>
+                <div class="kpi-card">
+                    <div class="kpi-value green">{FEEDS_TOTAL_IPS}</div>
+                    <div class="kpi-label">Feed IPs</div>
                 </div>
             </div>
 
-            <!-- Alerts Section -->
-            <div id="alerts-section">{ALERTS_HTML}</div>
-
-            <!-- Key Metrics -->
+            <!-- Ban Breakdown -->
             <div class="section">
-                <h3>Key Metrics</h3>
-                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px;">
-                    <div style="background: #f9fafb; padding: 15px; border-radius: 6px; text-align: center;">
-                        <div style="font-size: 32px; font-weight: 700; color: #6aa9ff;">{TOTAL_BANS}</div>
-                        <div style="font-size: 12px; color: #6b7280;">Total Bans</div>
+                <h3>Ban Breakdown</h3>
+                <div class="breakdown-grid">
+                    <div class="breakdown-item ipv4">
+                        <div class="breakdown-value">{BANS_IPV4}</div>
+                        <div class="breakdown-label">IPv4</div>
                     </div>
-                    <div style="background: #f9fafb; padding: 15px; border-radius: 6px; text-align: center;">
-                        <div style="font-size: 32px; font-weight: 700; color: #10b981;">{UNIQUE_IPS}</div>
-                        <div style="font-size: 12px; color: #6b7280;">Unique IPs</div>
+                    <div class="breakdown-item ipv6">
+                        <div class="breakdown-value">{BANS_IPV6}</div>
+                        <div class="breakdown-label">IPv6</div>
                     </div>
-                    <div style="background: #f9fafb; padding: 15px; border-radius: 6px; text-align: center;">
-                        <div style="font-size: 32px; font-weight: 700; color: #f59e0b;">{ACTIVE_BANS}</div>
-                        <div style="font-size: 12px; color: #6b7280;">Active Bans</div>
+                    <div class="breakdown-item temp">
+                        <div class="breakdown-value">{BANS_TEMP}</div>
+                        <div class="breakdown-label">Temporary</div>
                     </div>
-                    <div style="background: #f9fafb; padding: 15px; border-radius: 6px; text-align: center;">
-                        <div style="font-size: 32px; font-weight: 700; color: #8b5cf6;">{WHITELIST_COUNT}</div>
-                        <div style="font-size: 12px; color: #6b7280;">Whitelist</div>
+                    <div class="breakdown-item perm">
+                        <div class="breakdown-value">{BANS_PERM}</div>
+                        <div class="breakdown-label">Permanent</div>
                     </div>
                 </div>
             </div>
 
-            <!-- Top Banned IPs -->
+            <!-- 24h Activity -->
+            <div class="activity-row">
+                <div class="activity-item">
+                    <div class="activity-value up">+{BANS_24H}</div>
+                    <div class="activity-label">New Bans</div>
+                </div>
+                <div class="activity-item">
+                    <div class="activity-value down">-{UNBANS_24H}</div>
+                    <div class="activity-label">Unbans</div>
+                </div>
+                <div class="activity-item">
+                    <div class="activity-value">{UNIQUE_IPS_24H}</div>
+                    <div class="activity-label">Unique IPs</div>
+                </div>
+            </div>
+
+            <!-- Protection Status -->
+            <div class="section">
+                <h3>Protection Status</h3>
+                <table class="status-table">
+                    <thead>
+                        <tr>
+                            <th>Module</th>
+                            <th>Status</th>
+                            <th>Activity (24h)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>DDoS Protection</td>
+                            <td><span class="status-icon {MODULE_DDOS_CLASS}"></span><span class="{MODULE_DDOS_STATUS_CLASS}">{MODULE_DDOS_STATUS}</span></td>
+                            <td>{MODULE_DDOS_ACTIVITY}</td>
+                        </tr>
+                        <tr>
+                            <td>Portscan Detection</td>
+                            <td><span class="status-icon {MODULE_PORTSCAN_CLASS}"></span><span class="{MODULE_PORTSCAN_STATUS_CLASS}">{MODULE_PORTSCAN_STATUS}</span></td>
+                            <td>{MODULE_PORTSCAN_ACTIVITY}</td>
+                        </tr>
+                        <tr>
+                            <td>Login Monitor</td>
+                            <td><span class="status-icon {MODULE_LOGIN_CLASS}"></span><span class="{MODULE_LOGIN_STATUS_CLASS}">{MODULE_LOGIN_STATUS}</span></td>
+                            <td>{MODULE_LOGIN_ACTIVITY}</td>
+                        </tr>
+                        <tr>
+                            <td>Threat Feeds</td>
+                            <td><span class="status-icon {MODULE_FEEDS_CLASS}"></span><span class="{MODULE_FEEDS_STATUS_CLASS}">{MODULE_FEEDS_STATUS}</span></td>
+                            <td>{FEEDS_COUNT} feeds loaded</td>
+                        </tr>
+                        <tr>
+                            <td>GeoBan</td>
+                            <td><span class="status-icon {MODULE_GEOBAN_CLASS}"></span><span class="{MODULE_GEOBAN_STATUS_CLASS}">{MODULE_GEOBAN_STATUS}</span></td>
+                            <td>{MODULE_GEOBAN_ACTIVITY}</td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <!-- Top 5 Banned IPs -->
             <div class="section">
                 <h3>Top 5 Banned IPs</h3>
                 <ul class="top-list">
@@ -218,7 +428,7 @@
                 </ul>
             </div>
 
-            <!-- Top Countries -->
+            <!-- Top 5 Countries -->
             <div class="section">
                 <h3>Top 5 Countries</h3>
                 <ul class="top-list">
@@ -226,7 +436,7 @@
                 </ul>
             </div>
 
-            <!-- Top Sources -->
+            <!-- Top 5 Ban Sources -->
             <div class="section">
                 <h3>Top 5 Ban Sources</h3>
                 <ul class="top-list">
@@ -234,17 +444,42 @@
                 </ul>
             </div>
 
+            <!-- Feeds Health -->
+            <div class="section">
+                <h3>Threat Feeds Status</h3>
+                <table class="feeds-table">
+                    <thead>
+                        <tr>
+                            <th>Feed</th>
+                            <th>IPs</th>
+                            <th>Last Update</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {FEEDS_TABLE_HTML}
+                    </tbody>
+                </table>
+            </div>
+
             <!-- Recommendations -->
             <div class="section">
-                {RECOMMENDATIONS_HTML}
+                <div class="recommendations">
+                    <h4>Recommendations</h4>
+                    <ul>
+                        {RECOMMENDATIONS_HTML}
+                    </ul>
+                </div>
             </div>
         </div>
 
+        <!-- Footer -->
         <div class="footer">
-            <p><strong>Automated by NFTBan v{NFTBAN_VERSION}</strong></p>
+            <p><strong>Generated by NFTBan v{NFTBAN_VERSION}</strong></p>
+            <p>{HOSTNAME} | {SERVER_IP}</p>
             <p><a href="https://nftban.com">nftban.com</a></p>
-            <p style="margin-top: 10px; font-size: 11px;">
-                This is an automated security report. Please do not reply to this email.
+            <p style="margin-top: 10px; font-size: 11px; color: #94a3b8;">
+                This is an automated security report. Do not reply to this email.
             </p>
         </div>
     </div>

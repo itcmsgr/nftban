@@ -416,27 +416,15 @@ EOF
     # Send email using global mail system
     local subject="[NFTBan] Daily Login Digest: $count alerts - $hostname"
 
-    if declare -f nftban_mail_send &>/dev/null; then
-        if nftban_mail_send "$html" 2>/dev/null; then
-            nftban_login_alert_log "Login digest sent successfully ($count alerts)"
-            # Clear digest after successful send
-            nftban_login_digest_clear
-            return 0
-        else
-            nftban_login_alert_log "Failed to send login digest"
-            return 1
-        fi
+    # Send via NFTBan unified mail mechanism
+    if nftban_mail_send "$html" 2>/dev/null; then
+        nftban_login_alert_log "Login digest sent successfully ($count alerts)"
+        # Clear digest after successful send
+        nftban_login_digest_clear
+        return 0
     else
-        # Fallback to mail command
-        local recipient="${NFTBAN_MAIL_RECIPIENT:-root@localhost}"
-        if echo "$html" | mail -s "$subject" -a "Content-Type: text/html" "$recipient" 2>/dev/null; then
-            nftban_login_alert_log "Login digest sent successfully ($count alerts)"
-            nftban_login_digest_clear
-            return 0
-        else
-            nftban_login_alert_log "Failed to send login digest (mail command failed)"
-            return 1
-        fi
+        nftban_login_alert_log "Failed to send login digest"
+        return 1
     fi
 }
 
@@ -542,14 +530,8 @@ https://nftban.com
 EOF
 )
 
-    # Use global mail system if available, fallback to mail command
-    if declare -f nftban_mail_send &>/dev/null; then
-        nftban_mail_send "$body"
-    else
-        # Fallback: use mail command with global recipient
-        local recipient="${NFTBAN_MAIL_RECIPIENT:-root@localhost}"
-        echo "$body" | mail -s "$subject" "$recipient"
-    fi
+    # Send via NFTBan unified mail mechanism
+    nftban_mail_send "$body"
 }
 
 nftban_login_send_html_alert() {
@@ -730,18 +712,10 @@ nftban_login_send_html_alert() {
 EOF
 )
 
-    # Use global mail system if available, fallback to mail command
+    # Send via NFTBan unified mail mechanism
     # Email is OPTIONAL - if it fails, just log it but don't crash the monitor
-    if declare -f nftban_mail_send &>/dev/null; then
-        if ! nftban_mail_send "$html" 2>/dev/null; then
-            nftban_login_alert_log "Email alert failed (no recipient configured)"
-        fi
-    else
-        # Fallback: use mail command with global recipient
-        local recipient="${NFTBAN_MAIL_RECIPIENT:-root@localhost}"
-        if ! echo "$html" | mail -s "$subject" -a "Content-Type: text/html" "$recipient" 2>/dev/null; then
-            nftban_login_alert_log "Email alert failed (mail command not available)"
-        fi
+    if ! nftban_mail_send "$html" 2>/dev/null; then
+        nftban_login_alert_log "Email alert failed"
     fi
 }
 

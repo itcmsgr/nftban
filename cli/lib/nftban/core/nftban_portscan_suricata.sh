@@ -22,6 +22,8 @@
 # shellcheck disable=SC1083  # Braces in nftables syntax are literal, not bash
 # =============================================================================
 
+set -Eeuo pipefail
+
 # Prevent double sourcing
 [[ -n "${_NFTBAN_PORTSCAN_SURICATA_LOADED:-}" ]] && return 0
 declare -g _NFTBAN_PORTSCAN_SURICATA_LOADED=1
@@ -654,9 +656,9 @@ nftban_portscan_suricata_send_alert() {
     local scan_types="${_PORTSCAN_SURICATA_IP_SCAN_TYPES[$ip]:-unknown}"
     local message="Portscan detected by Suricata: ${ip} (${level} block, score=${score}, alerts=${alert_count}, types=${scan_types})"
 
-    # Email notification
+    # Email notification via NFTBan unified mail mechanism
     if [[ "${PORTSCAN_NOTIFY_EMAIL:-false}" == "true" && -n "${PORTSCAN_NOTIFY_EMAIL_TO:-}" ]]; then
-        echo "$message" | mail -s "[NFTBan] Portscan Alert: ${ip}" "${PORTSCAN_NOTIFY_EMAIL_TO}" 2>/dev/null || true
+        nftban_mail_send "$message" "${PORTSCAN_NOTIFY_EMAIL_TO}" 2>/dev/null || true
     fi
 
     # Webhook notification

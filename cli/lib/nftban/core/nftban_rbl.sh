@@ -964,8 +964,8 @@ Full Report: nftban rbl check --verbose
 EOF
 )
 
-    # Send via mail command (basic implementation)
-    echo "$body" | mail -s "$subject" "$email" 2>/dev/null || \
+    # Send via NFTBan unified mail mechanism
+    nftban_mail_send "$body" "$email" 2>/dev/null || \
         echo "Warning: Failed to send RBL alert email" >&2
 }
 
@@ -1031,8 +1031,8 @@ Run manually: nftban rbl check --fresh --verbose
 EOF
 )
 
-    # Send via mail command
-    echo "$body" | mail -s "$subject" "$email" 2>/dev/null || \
+    # Send via NFTBan unified mail mechanism
+    nftban_mail_send "$body" "$email" 2>/dev/null || \
         echo "Warning: Failed to send degraded alert email" >&2
 }
 

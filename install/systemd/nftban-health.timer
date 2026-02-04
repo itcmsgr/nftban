@@ -29,6 +29,9 @@ Requires=nftban-health.service
 # This is a lightweight read-only check, so runs first
 OnCalendar=*-*-* 03:00:00
 
+# Also run 15min after boot to catch issues on system startup
+OnBootSec=15min
+
 # JITTER: 10m variance (reduced from 30m to fit in 20-minute window before feeds)
 RandomizedDelaySec=10m
 

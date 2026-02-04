@@ -396,21 +396,12 @@ nftban_report_email_generate() {
     local subject
     subject="[NFTBan] Security Report - ${hostname} - $(date +%Y-%m-%d)"
 
-    if command -v sendmail &>/dev/null; then
-        {
-            echo "From: NFTBan <${sender}>"
-            echo "To: ${recipient}"
-            echo "Subject: ${subject}"
-            echo "MIME-Version: 1.0"
-            echo "Content-Type: text/html; charset=UTF-8"
-            echo ""
-            echo "$html"
-        } | sendmail -t
-
+    # Send via NFTBan unified mail mechanism
+    if nftban_mail_send "$html" "$recipient" 2>/dev/null; then
         echo "[SUCCESS] Report sent to ${recipient}"
         return 0
     else
-        echo "ERROR: sendmail not available" >&2
+        echo "ERROR: Failed to send report email" >&2
         return 1
     fi
 }
