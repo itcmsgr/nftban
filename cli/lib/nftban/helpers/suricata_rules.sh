@@ -34,6 +34,11 @@ set -Eeuo pipefail
 [[ -n "${_NFTBAN_SURICATA_RULES_LOADED:-}" ]] && return 0
 _NFTBAN_SURICATA_RULES_LOADED=1
 
+# Source core file operations module for atomic writes
+_NFTBAN_LIB_DIR="${_NFTBAN_LIB_DIR:-/usr/share/nftban/lib/nftban}"
+# shellcheck source=../core/nftban_file_ops.sh
+[[ -f "${_NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" ]] && source "${_NFTBAN_LIB_DIR}/core/nftban_file_ops.sh"
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -406,14 +411,13 @@ _suricata_category_set() {
     # Create backup
     _suricata_backup_rules >/dev/null
 
-    # Check if category exists
+    # Check if category exists and update atomically
     if ! grep -qE "^${category}[[:space:]]*=" "$NFTBAN_CATEGORIES_CONF"; then
-        # Add new category
-        echo "" >> "$NFTBAN_CATEGORIES_CONF"
-        echo "$category = $status" >> "$NFTBAN_CATEGORIES_CONF"
+        # Add new category (atomic write)
+        { cat "$NFTBAN_CATEGORIES_CONF"; echo ""; echo "$category = $status"; } | nftban_atomic_write "$NFTBAN_CATEGORIES_CONF"
     else
-        # Update existing
-        sed -i "s|^${category}[[:space:]]*=.*|${category} = ${status}|" "$NFTBAN_CATEGORIES_CONF"
+        # Update existing (atomic write)
+        sed "s|^${category}[[:space:]]*=.*|${category} = ${status}|" "$NFTBAN_CATEGORIES_CONF" | nftban_atomic_write "$NFTBAN_CATEGORIES_CONF"
     fi
 
     if [[ "$json_mode" == "true" ]]; then
@@ -464,14 +468,14 @@ _suricata_sid_enable() {
 # Managed by: nftban suricata sid enable/disable
 EOF
 
-    # Remove from disable.conf if present
+    # Remove from disable.conf if present (atomic write with sorting)
     if [[ -f "$NFTBAN_DISABLE_CONF" ]]; then
-        sed -i "/^${sid}$/d" "$NFTBAN_DISABLE_CONF"
+        grep -v "^${sid}$" "$NFTBAN_DISABLE_CONF" 2>/dev/null | sort -n | nftban_atomic_write "$NFTBAN_DISABLE_CONF"
     fi
 
-    # Add to enable.conf if not already there
+    # Add to enable.conf if not already there (atomic write with sorting)
     if ! grep -qE "^${sid}$" "$NFTBAN_ENABLE_CONF" 2>/dev/null; then
-        echo "$sid" >> "$NFTBAN_ENABLE_CONF"
+        { cat "$NFTBAN_ENABLE_CONF" 2>/dev/null; echo "$sid"; } | sort -u -n | nftban_atomic_write "$NFTBAN_ENABLE_CONF"
     fi
 
     if [[ "$json_mode" == "true" ]]; then
@@ -512,14 +516,14 @@ _suricata_sid_disable() {
 # Managed by: nftban suricata sid enable/disable
 EOF
 
-    # Remove from enable.conf if present
+    # Remove from enable.conf if present (atomic write with sorting)
     if [[ -f "$NFTBAN_ENABLE_CONF" ]]; then
-        sed -i "/^${sid}$/d" "$NFTBAN_ENABLE_CONF"
+        grep -v "^${sid}$" "$NFTBAN_ENABLE_CONF" 2>/dev/null | sort -n | nftban_atomic_write "$NFTBAN_ENABLE_CONF"
     fi
 
-    # Add to disable.conf if not already there
+    # Add to disable.conf if not already there (atomic write with sorting)
     if ! grep -qE "^${sid}$" "$NFTBAN_DISABLE_CONF" 2>/dev/null; then
-        echo "$sid" >> "$NFTBAN_DISABLE_CONF"
+        { cat "$NFTBAN_DISABLE_CONF" 2>/dev/null; echo "$sid"; } | sort -u -n | nftban_atomic_write "$NFTBAN_DISABLE_CONF"
     fi
 
     if [[ "$json_mode" == "true" ]]; then

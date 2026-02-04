@@ -89,22 +89,27 @@ func (h *NetlinkBanHandler) BanIP(ip string, duration time.Duration, reason stri
 
 	// Add IP with timeout using existing netlink infrastructure
 	// This is the same AddIPWithTimeout used by cmdBan
+	// Ban happens FIRST - this is the critical path
 	if err := h.nftManager.AddIPWithTimeout(set, ip, duration); err != nil {
 		return fmt.Errorf("failed to add IP to nftables: %w", err)
 	}
 
-	// Record analytics (if initialized)
-	// Analytics extracts service dynamically from reason parameter
-	country, city := lookupGeoIP(ip)
-	if st := analytics.StateOrNil(); st != nil {
-		st.RecordBan(ip, country, city, "suricata", reason, time.Now())
-	}
+	// GeoIP enrichment happens AFTER ban is complete (async)
+	// This keeps the hot path fast - IP is already blocked
+	go func(ip, reason string) {
+		// Record analytics (if initialized)
+		// Analytics extracts service dynamically from reason parameter
+		country, city := lookupGeoIP(ip)
+		if st := analytics.StateOrNil(); st != nil {
+			st.RecordBan(ip, country, city, "suricata", reason, time.Now())
+		}
 
-	// Log to central bans.log for stats dashboard
-	if country == "" {
-		country = "UNK"
-	}
-	_ = banlog.LogBan(ip, banlog.SourceSuricata, country)
+		// Log to central bans.log for stats dashboard
+		if country == "" {
+			country = "UNK"
+		}
+		_ = banlog.LogBan(ip, banlog.SourceSuricata, country)
+	}(ip, reason)
 
 	return nil
 }
