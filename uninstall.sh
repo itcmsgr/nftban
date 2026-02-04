@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.0.0 - Uninstall Script
+# NFTBan v1.9.3 - Uninstall Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # meta:name="uninstall"
