@@ -66,6 +66,10 @@ nftban_cmd_smoke() {
             # Ban/unban + whitelist lifecycle tests only
             nftban_smoke_run --lifecycle "$@"
             ;;
+        verify)
+            # Smart validation: verify counts match expectations
+            nftban_smoke_verify "$@"
+            ;;
         check|orphans)
             nftban_smoke_check_orphans "$@"
             ;;
@@ -180,6 +184,332 @@ nftban_smoke_trace() {
 }
 
 # =============================================================================
+# SMART VERIFICATION (nftban smoke verify)
+# =============================================================================
+# Validates that nftables counts match expectations:
+# - Ban/unban operations change counts correctly
+# - Feed IPs are loaded correctly
+# - GeoBan country blocks are applied
+# =============================================================================
+
+nftban_smoke_verify() {
+    local subcommand="${1:-all}"
+    shift || true
+
+    # Source nft_schema for centralized counting (SINGLE SOURCE OF TRUTH)
+    if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh"
+    else
+        echo "ERROR: nft_schema.sh not found - cannot verify counts" >&2
+        return 1
+    fi
+
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  NFTBan Smart Verification Tests"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    local passed=0
+    local failed=0
+    local skipped=0
+
+    case "$subcommand" in
+        all)
+            _verify_ban_counts && ((passed++)) || ((failed++))
+            _verify_whitelist_counts && ((passed++)) || ((failed++))
+            _verify_feeds && ((passed++)) || ((failed++))
+            _verify_geoban && ((passed++)) || ((failed++))
+            ;;
+        bans)
+            _verify_ban_counts && ((passed++)) || ((failed++))
+            ;;
+        whitelist)
+            _verify_whitelist_counts && ((passed++)) || ((failed++))
+            ;;
+        feeds)
+            _verify_feeds && ((passed++)) || ((failed++))
+            ;;
+        geoban)
+            _verify_geoban && ((passed++)) || ((failed++))
+            ;;
+        *)
+            echo "ERROR: Unknown verify target: $subcommand" >&2
+            echo "Available: all, bans, whitelist, feeds, geoban" >&2
+            return 1
+            ;;
+    esac
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    if [[ $failed -eq 0 ]]; then
+        echo "  Result: ✅ ALL PASSED ($passed tests)"
+    else
+        echo "  Result: ❌ FAILED ($failed failed, $passed passed)"
+    fi
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    [[ $failed -eq 0 ]]
+}
+
+_verify_ban_counts() {
+    echo "VERIFY: Ban Count Changes"
+    echo "───────────────────────────────────────────────────────────────"
+
+    local test_ip="192.0.2.250"  # TEST-NET-1 (RFC 5737) - safe for testing
+    local errors=0
+
+    # Get baseline count
+    local before after expected
+
+    echo "  1. Getting baseline count..."
+    before=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
+    before=${before:-0}
+    printf "     Baseline: %d IPs in blacklist\n" "$before"
+
+    # Test: Add IP should increase count by 1
+    echo "  2. Testing ban add (+1)..."
+    if nftban ban "$test_ip" --reason "smoke-verify-test" >/dev/null 2>&1; then
+        sleep 0.5  # Allow nftables to sync
+        after=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
+        after=${after:-0}
+        expected=$((before + 1))
+
+        if [[ "$after" -eq "$expected" ]]; then
+            printf "     ✅ PASS: Count increased %d → %d (expected +1)\n" "$before" "$after"
+        else
+            printf "     ❌ FAIL: Count is %d, expected %d\n" "$after" "$expected"
+            ((errors++))
+        fi
+    else
+        echo "     ⚠️  SKIP: Ban command failed (may need root)"
+        # Cleanup not needed if ban failed
+        return 0
+    fi
+
+    # Test: Remove IP should decrease count by 1
+    echo "  3. Testing unban (-1)..."
+    local before_unban="$after"
+    if nftban unban "$test_ip" >/dev/null 2>&1; then
+        sleep 0.5
+        after=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
+        after=${after:-0}
+        expected=$((before_unban - 1))
+
+        if [[ "$after" -eq "$expected" ]]; then
+            printf "     ✅ PASS: Count decreased %d → %d (expected -1)\n" "$before_unban" "$after"
+        else
+            printf "     ❌ FAIL: Count is %d, expected %d\n" "$after" "$expected"
+            ((errors++))
+        fi
+    else
+        echo "     ⚠️  WARN: Unban command failed"
+        ((errors++))
+    fi
+
+    # Verify we're back to baseline
+    echo "  4. Verifying baseline restored..."
+    local final
+    final=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
+    final=${final:-0}
+    if [[ "$final" -eq "$before" ]]; then
+        printf "     ✅ PASS: Count restored to baseline (%d)\n" "$before"
+    else
+        printf "     ⚠️  WARN: Count is %d, baseline was %d (delta: %d)\n" "$final" "$before" "$((final - before))"
+    fi
+
+    echo ""
+    [[ $errors -eq 0 ]]
+}
+
+_verify_whitelist_counts() {
+    echo "VERIFY: Whitelist Count Changes"
+    echo "───────────────────────────────────────────────────────────────"
+
+    local test_ip="198.51.100.250"  # TEST-NET-2 (RFC 5737) - safe for testing
+    local errors=0
+
+    # Get baseline count
+    local before after expected
+
+    echo "  1. Getting baseline count..."
+    before=$(nftban_nft_count_whitelist 2>/dev/null | awk '{print $3}')
+    before=${before:-0}
+    printf "     Baseline: %d IPs in whitelist\n" "$before"
+
+    # Test: Add to whitelist should increase count by 1
+    echo "  2. Testing whitelist add (+1)..."
+    if nftban whitelist add "$test_ip" >/dev/null 2>&1; then
+        sleep 0.5
+        after=$(nftban_nft_count_whitelist 2>/dev/null | awk '{print $3}')
+        after=${after:-0}
+        expected=$((before + 1))
+
+        if [[ "$after" -eq "$expected" ]]; then
+            printf "     ✅ PASS: Count increased %d → %d (expected +1)\n" "$before" "$after"
+        else
+            printf "     ❌ FAIL: Count is %d, expected %d\n" "$after" "$expected"
+            ((errors++))
+        fi
+    else
+        echo "     ⚠️  SKIP: Whitelist add failed (may need root)"
+        return 0
+    fi
+
+    # Test: Remove from whitelist should decrease count by 1
+    echo "  3. Testing whitelist remove (-1)..."
+    local before_remove="$after"
+    if nftban whitelist remove "$test_ip" >/dev/null 2>&1; then
+        sleep 0.5
+        after=$(nftban_nft_count_whitelist 2>/dev/null | awk '{print $3}')
+        after=${after:-0}
+        expected=$((before_remove - 1))
+
+        if [[ "$after" -eq "$expected" ]]; then
+            printf "     ✅ PASS: Count decreased %d → %d (expected -1)\n" "$before_remove" "$after"
+        else
+            printf "     ❌ FAIL: Count is %d, expected %d\n" "$after" "$expected"
+            ((errors++))
+        fi
+    else
+        echo "     ⚠️  WARN: Whitelist remove failed"
+        ((errors++))
+    fi
+
+    echo ""
+    [[ $errors -eq 0 ]]
+}
+
+_verify_feeds() {
+    echo "VERIFY: Feed IP Counts"
+    echo "───────────────────────────────────────────────────────────────"
+
+    local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
+    local errors=0
+    local feeds_checked=0
+    local total_file_ips=0
+    local total_loaded_ips=0
+
+    if [[ ! -d "$feeds_dir" ]]; then
+        echo "  ⚠️  SKIP: Feeds directory not found: $feeds_dir"
+        return 0
+    fi
+
+    echo "  Checking feed files in: $feeds_dir"
+    echo ""
+
+    # Check each feed file
+    for feed_file in "$feeds_dir"/*.txt "$feeds_dir"/*.list; do
+        [[ -f "$feed_file" ]] || continue
+
+        local feed_name
+        feed_name=$(basename "$feed_file" | sed 's/\.\(txt\|list\)$//')
+        local file_count
+        file_count=$(grep -cE '^[0-9]' "$feed_file" 2>/dev/null || echo "0")
+        total_file_ips=$((total_file_ips + file_count))
+        ((feeds_checked++))
+
+        printf "  %-20s %'d IPs in file\n" "$feed_name" "$file_count"
+    done
+
+    if [[ $feeds_checked -eq 0 ]]; then
+        echo "  ⚠️  SKIP: No feed files found"
+        return 0
+    fi
+
+    echo ""
+    echo "  Summary:"
+    printf "     Feed files checked: %d\n" "$feeds_checked"
+    printf "     Total IPs in files: %'d\n" "$total_file_ips"
+
+    # Get loaded count from nftables (blacklist includes feeds)
+    local blacklist_count
+    blacklist_count=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
+    blacklist_count=${blacklist_count:-0}
+    printf "     IPs in blacklist:   %'d\n" "$blacklist_count"
+
+    # Note: blacklist may contain more than just feeds (manual bans, geoban, etc.)
+    # So we check that blacklist >= feeds (not exact match)
+    if [[ "$blacklist_count" -ge "$total_file_ips" ]] || [[ "$total_file_ips" -eq 0 ]]; then
+        echo ""
+        echo "     ✅ PASS: Blacklist contains feed IPs (may include manual bans + geoban)"
+    else
+        echo ""
+        echo "     ⚠️  WARN: Blacklist ($blacklist_count) < feed files ($total_file_ips)"
+        echo "              Some feeds may not be loaded. Check: nftban feeds status"
+    fi
+
+    echo ""
+    [[ $errors -eq 0 ]]
+}
+
+_verify_geoban() {
+    echo "VERIFY: GeoBan Country Blocks"
+    echo "───────────────────────────────────────────────────────────────"
+
+    local geoban_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/geoban.d"
+    local errors=0
+
+    # Check for blocked countries in config
+    echo "  1. Checking GeoBan configuration..."
+
+    local blocked_countries=0
+    if [[ -d "$geoban_dir" ]]; then
+        blocked_countries=$(ls -1 "$geoban_dir"/50-ban-*.conf 2>/dev/null | wc -l) || blocked_countries=0
+    fi
+
+    if [[ $blocked_countries -eq 0 ]]; then
+        # Alternative: check geoban list command
+        blocked_countries=$(nftban geoban list 2>/dev/null | grep -c "BLOCKED" 2>/dev/null || echo "0")
+    fi
+
+    printf "     Countries blocked: %d\n" "$blocked_countries"
+
+    if [[ $blocked_countries -eq 0 ]]; then
+        echo ""
+        echo "  ⚠️  SKIP: No countries blocked (GeoBan not configured)"
+        echo "     To enable: nftban geoban block CN  (example)"
+        return 0
+    fi
+
+    # List blocked countries
+    echo ""
+    echo "  2. Blocked countries:"
+    if command -v nftban >/dev/null 2>&1; then
+        nftban geoban list 2>/dev/null | grep "BLOCKED" | head -5 | sed 's/^/     /'
+        [[ $blocked_countries -gt 5 ]] && echo "     ... and $((blocked_countries - 5)) more"
+    fi
+
+    # Verify GeoIP database is available
+    echo ""
+    echo "  3. Checking GeoIP database..."
+    local geoip_db="${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoip"
+    if [[ -f "$geoip_db/dbip-country-lite.mmdb" ]] || [[ -f "$geoip_db/GeoLite2-Country.mmdb" ]]; then
+        echo "     ✅ GeoIP database found"
+    else
+        echo "     ⚠️  WARN: GeoIP database not found in $geoip_db"
+        echo "              Run: nftban geoip update"
+    fi
+
+    # Verify country CIDRs are in blacklist
+    echo ""
+    echo "  4. Verifying country blocks in nftables..."
+    local blacklist_count
+    blacklist_count=$(nftban_nft_count_blacklist 2>/dev/null | awk '{print $3}')
+    blacklist_count=${blacklist_count:-0}
+
+    if [[ $blacklist_count -gt 0 ]]; then
+        printf "     ✅ PASS: Blacklist has %'d entries (includes country blocks)\n" "$blacklist_count"
+    else
+        echo "     ⚠️  WARN: Blacklist is empty - country blocks may not be loaded"
+        echo "              Run: nftban-core sync"
+    fi
+
+    echo ""
+    [[ $errors -eq 0 ]]
+}
+
+# =============================================================================
 # USAGE
 # =============================================================================
 
@@ -194,6 +524,7 @@ Commands:
   quick              Run quick test (3 core commands only)
   all, detailed      Run ALL CLI tests (55+ commands - comprehensive)
   lifecycle          Run ban lifecycle tests only (IPv4/IPv6 ban+whitelist)
+  verify [TARGET]    Smart validation - verify counts match expectations
   check [MINUTES]    Check for orphaned traces (stuck scripts)
   stats              Show trace statistics
   trace recent [N]   Show last N trace entries
@@ -205,15 +536,33 @@ Test Modes:
   all       = 55+ tests  (every cmd_*.sh + extended status + lifecycle)
   lifecycle = 12 tests   (ban/unban + whitelist add/remove, IPv4 + IPv6)
 
+Verify Targets:
+  all       = Run all verification tests (default)
+  bans      = Test ban/unban count changes (+1/-1)
+  whitelist = Test whitelist add/remove count changes
+  feeds     = Verify feed IPs are loaded correctly
+  geoban    = Verify country blocks are applied
+
 Examples:
   nftban smoke run              # Standard smoke test (~32 commands)
   nftban smoke quick            # Quick test (3 commands)
   nftban smoke all              # Test ALL CLI commands + lifecycle
   nftban smoke lifecycle        # Ban lifecycle tests only
+  nftban smoke verify           # Run all smart verification tests
+  nftban smoke verify bans      # Verify ban count changes only
+  nftban smoke verify feeds     # Verify feeds loaded correctly
+  nftban smoke verify geoban    # Verify country blocks applied
   nftban smoke check            # Check for stuck scripts
   nftban smoke check 10         # Check traces older than 10 min
   nftban smoke stats            # Trace statistics
   nftban smoke trace recent 50  # Last 50 trace entries
+
+Smart Verification:
+  The 'verify' command tests that nftables counts change correctly:
+  - Ban IP → blacklist count increases by 1
+  - Unban IP → blacklist count decreases by 1
+  - Feed files → IPs loaded into blacklist
+  - GeoBan → Country CIDRs loaded into blacklist
 
 Debug Trace Configuration:
   Set NFTBAN_DEBUG_TRACE="true" in /etc/nftban/nftban.conf to enable

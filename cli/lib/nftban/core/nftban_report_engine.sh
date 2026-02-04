@@ -746,10 +746,7 @@ nftban_report_send_email() {
         return 1
     fi
 
-    # Prepare subject
-    local subject="${NFTBAN_REPORT_METADATA[title]} - ${NFTBAN_REPORT_METADATA[hostname]} - ${NFTBAN_REPORT_METADATA[date_display]}"
-
-    # Send email based on format
+    # Send email based on format (subject is embedded in content for nftban_mail_send)
     if [[ "$format" == "html" ]]; then
         # HTML email with MIME headers
         # HTML email via NFTBan unified mail mechanism

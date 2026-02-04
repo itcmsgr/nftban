@@ -44,6 +44,12 @@ readonly SCRIPT_VERSION="1.0.0"
 # Load config (sets readonly paths)
 [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
 
+# Load NFT schema (SINGLE SOURCE OF TRUTH for table/set names and counting functions)
+# shellcheck source=/usr/lib/nftban/lib/nft_schema.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh"
+fi
+
 # Load metrics configuration (unified collector settings)
 [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf"
 [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/conf.d/metrics.conf.local" 2>/dev/null || true
@@ -474,33 +480,32 @@ collect_all_metrics() {
         # Zabbix string metric for host inventory
         metrics+="nftban.server.panel |STRING|$panel $timestamp\n"
 
-        # --- Ban Metrics (fast nftables JSON API with perm/temp breakdown) ---
+        # --- Ban Metrics (SINGLE SOURCE OF TRUTH: nft_schema.sh centralized counting) ---
         # These metrics align with nftban_stats.sh dashboard requirements
         # Variables declared at function level: active_v4/v6, blacklist_v4/v6_perm/temp
-        if command -v nft &>/dev/null; then
-            # IPv4 blacklist with perm/temp breakdown
-            local v4_output
-            v4_output=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null) || v4_output=""
-            if [[ -n "$v4_output" ]]; then
-                active_v4=$(echo "$v4_output" | grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' | wc -l 2>/dev/null) || active_v4=0
-                # Match element timeouts (e.g., "timeout 15m") not set flags
-                # Use grep -o | wc -l to count occurrences, not lines (nft wraps multiple elements per line)
-                blacklist_v4_temp=$(echo "$v4_output" | grep -oP 'timeout \d+[smhd]' 2>/dev/null | wc -l) || blacklist_v4_temp=0
-                blacklist_v4_perm=$((active_v4 - blacklist_v4_temp))
-                [[ $blacklist_v4_perm -lt 0 ]] && blacklist_v4_perm=0
-            fi
+        if declare -f nftban_nft_count_all_sets >/dev/null 2>&1; then
+            # Use centralized counting from nft_schema.sh (fast JSON API)
+            local counts_json
+            counts_json=$(nftban_nft_count_all_sets 2>/dev/null || echo '{}')
 
-            # IPv6 blacklist with perm/temp breakdown
-            local v6_output
-            v6_output=$(nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null) || v6_output=""
-            if [[ -n "$v6_output" ]]; then
-                active_v6=$(echo "$v6_output" | grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' | wc -l 2>/dev/null) || active_v6=0
-                # Match element timeouts (e.g., "timeout 15m") not set flags
-                # Use grep -o | wc -l to count occurrences, not lines (nft wraps multiple elements per line)
-                blacklist_v6_temp=$(echo "$v6_output" | grep -oP 'timeout \d+[smhd]' 2>/dev/null | wc -l) || blacklist_v6_temp=0
-                blacklist_v6_perm=$((active_v6 - blacklist_v6_temp))
-                [[ $blacklist_v6_perm -lt 0 ]] && blacklist_v6_perm=0
+            if [[ -n "$counts_json" ]] && command -v jq &>/dev/null; then
+                active_v4=$(echo "$counts_json" | jq -r '.blacklist.ipv4 // 0')
+                active_v6=$(echo "$counts_json" | jq -r '.blacklist.ipv6 // 0')
+                blacklist_v4_temp=$(echo "$counts_json" | jq -r '.temporary.ipv4 // 0')
+                blacklist_v6_temp=$(echo "$counts_json" | jq -r '.temporary.ipv6 // 0')
+                blacklist_v4_perm=$(echo "$counts_json" | jq -r '.permanent.ipv4 // 0')
+                blacklist_v6_perm=$(echo "$counts_json" | jq -r '.permanent.ipv6 // 0')
             fi
+        elif command -v nft &>/dev/null; then
+            # Fallback: Use direct nft_schema.sh counting functions
+            active_v4=$(nftban_nft_count_set ip nftban blacklist_ipv4 2>/dev/null || echo 0)
+            active_v6=$(nftban_nft_count_set ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
+            blacklist_v4_temp=$(nftban_nft_count_set_with_timeout ip nftban blacklist_ipv4 2>/dev/null || echo 0)
+            blacklist_v6_temp=$(nftban_nft_count_set_with_timeout ip6 nftban blacklist_ipv6 2>/dev/null || echo 0)
+            blacklist_v4_perm=$((active_v4 - blacklist_v4_temp))
+            blacklist_v6_perm=$((active_v6 - blacklist_v6_temp))
+            [[ $blacklist_v4_perm -lt 0 ]] && blacklist_v4_perm=0
+            [[ $blacklist_v6_perm -lt 0 ]] && blacklist_v6_perm=0
         fi
         active_total=$((active_v4 + active_v6))
 

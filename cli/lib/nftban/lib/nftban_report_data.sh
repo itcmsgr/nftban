@@ -8,7 +8,7 @@
 # meta:name="nftban_report_data"
 # meta:type="library"
 # meta:header="Report Data Collection Module"
-# meta:version="1.9.4"
+# meta:version="1.9.5"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -38,7 +38,9 @@ readonly NFTBAN_REPORT_DATA_LOADED=1
 # CONFIGURATION
 # =============================================================================
 readonly REPORT_CACHE_DIR="${NFTBAN_CACHE_DIR:-/var/cache/nftban}"
+# shellcheck disable=SC2034  # Reserved for future caching implementation
 readonly REPORT_CACHE_FILE="${REPORT_CACHE_DIR}/report_data.json"
+# shellcheck disable=SC2034  # Reserved for future caching implementation
 readonly REPORT_CACHE_TTL=5  # seconds
 
 # =============================================================================
@@ -103,6 +105,9 @@ nftban_report_collect_all() {
 
     # RBL info
     _collect_rbl_info _data
+
+    # Security posture (low noise)
+    _collect_posture_info _data
 }
 
 # =============================================================================
@@ -586,6 +591,122 @@ nftban_report_rbl_table() {
 }
 
 # =============================================================================
+# SECURITY POSTURE DATA (low noise, smart limited scope)
+# =============================================================================
+
+# Collect security posture data - NOT audit-level, just essential hardening status
+_collect_posture_info() {
+    local -n _pdata="$1"
+    local issues=0
+    local warnings=0
+    local posture_details=""
+
+    # 1. SSH hardening basics (most impactful)
+    local ssh_config="/etc/ssh/sshd_config"
+    if [[ -f "$ssh_config" ]]; then
+        # PasswordAuthentication (should be "no" for key-only)
+        local pass_auth
+        pass_auth=$(grep -E "^PasswordAuthentication" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
+        if [[ "$pass_auth" == "yes" ]]; then
+            ((warnings++))
+            posture_details+="SSH: PasswordAuth=yes; "
+        fi
+
+        # PermitRootLogin (should be "no" or "prohibit-password")
+        local root_login
+        root_login=$(grep -E "^PermitRootLogin" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
+        if [[ "$root_login" == "yes" ]]; then
+            ((warnings++))
+            posture_details+="SSH: RootLogin=yes; "
+        fi
+    fi
+
+    # 2. Sudoers NOPASSWD check (only flag if risky patterns)
+    local sudoers_dir="/etc/sudoers.d"
+    if [[ -d "$sudoers_dir" ]]; then
+        # Count files with ALL NOPASSWD (excluding nftban-specific)
+        local risky_nopasswd=0
+        for sfile in "$sudoers_dir"/*; do
+            [[ -f "$sfile" ]] || continue
+            [[ "$(basename "$sfile")" == "nftban" ]] && continue  # Skip NFTBan's own
+            if grep -qE "NOPASSWD:\s*ALL" "$sfile" 2>/dev/null; then
+                ((risky_nopasswd++))
+            fi
+        done
+        if [[ $risky_nopasswd -gt 0 ]]; then
+            ((warnings++))
+            posture_details+="Sudo: ${risky_nopasswd} ALL NOPASSWD file(s); "
+        fi
+    fi
+
+    # 3. NFTBan systemd hardening (NoNewPrivileges, PrivateTmp)
+    local systemd_hardened=0
+    local systemd_total=0
+    for unit_dir in /etc/systemd/system /usr/lib/systemd/system /lib/systemd/system; do
+        [[ -d "$unit_dir" ]] || continue
+        for svc in "$unit_dir"/nftban*.service; do
+            [[ -f "$svc" ]] || continue
+            ((systemd_total++))
+            if grep -q "^NoNewPrivileges=true" "$svc" 2>/dev/null; then
+                ((systemd_hardened++))
+            fi
+        done
+        [[ $systemd_total -gt 0 ]] && break  # Found services, stop searching
+    done
+    if [[ $systemd_total -gt 0 && $systemd_hardened -lt $systemd_total ]]; then
+        ((warnings++))
+        posture_details+="Systemd: ${systemd_hardened}/${systemd_total} hardened; "
+    fi
+
+    # 4. Config file integrity (basic check - config modified since install?)
+    local conf_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+    local integrity_file="${conf_dir}/.config_checksums"
+    if [[ -f "$integrity_file" ]]; then
+        # Check if any core configs have changed (drift detection)
+        local drift_count=0
+        while IFS=' ' read -r stored_hash fpath; do
+            [[ -z "$fpath" ]] && continue
+            [[ -f "$fpath" ]] || continue
+            local current_hash
+            current_hash=$(sha256sum "$fpath" 2>/dev/null | cut -d' ' -f1 || echo "")
+            if [[ -n "$current_hash" && "$current_hash" != "$stored_hash" ]]; then
+                ((drift_count++))
+            fi
+        done < "$integrity_file"
+        if [[ $drift_count -gt 0 ]]; then
+            ((warnings++))
+            posture_details+="Config: ${drift_count} file(s) modified; "
+        fi
+    fi
+
+    # Determine overall posture status
+    local posture_status="OK"
+    local posture_class="ok"
+    if [[ $warnings -gt 0 ]]; then
+        posture_status="${warnings} advisory"
+        posture_class="degraded"
+    fi
+    if [[ $issues -gt 0 ]]; then
+        posture_status="${issues} issue(s)"
+        posture_class="critical"
+    fi
+
+    # Set output variables
+    _pdata[POSTURE_STATUS]="$posture_status"
+    _pdata[POSTURE_STATUS_CLASS]="$posture_class"
+    _pdata[POSTURE_WARNINGS]="$warnings"
+    _pdata[POSTURE_ISSUES]="$issues"
+    _pdata[POSTURE_DETAILS]="${posture_details%%; }"  # Remove trailing separator
+}
+
+# Get posture one-liner for status command
+nftban_posture_oneline() {
+    declare -A posture_data
+    _collect_posture_info posture_data
+    echo "${posture_data[POSTURE_STATUS]}"
+}
+
+# =============================================================================
 # EXPORT FUNCTIONS
 # =============================================================================
 export -f nftban_report_collect_all
@@ -595,6 +716,7 @@ export -f nftban_report_top_sources
 export -f nftban_report_recommendations
 export -f nftban_report_substitute
 export -f nftban_report_rbl_table
+export -f nftban_posture_oneline
 
 # =============================================================================
 # END OF MODULE

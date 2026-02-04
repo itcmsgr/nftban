@@ -343,41 +343,63 @@ nftban_stats_cmd_dashboard() {
             feed_v6=0
             geoban_v4=0
             geoban_v6=0
-        # Call centralized breakdown function (if available)
-        elif declare -f nftban_stats_count_breakdown >/dev/null 2>&1; then
-            # Use centralized function
-            eval "$(nftban_stats_count_breakdown)"
-        else
-            # Fallback: inline counting via nft CLI (slowest path)
-            # Note: New architecture uses single blacklist with timeout flag
-            # Cannot distinguish temp vs permanent without parsing timeout attribute
+        # Use centralized nft_schema.sh functions (SINGLE SOURCE OF TRUTH)
+        elif declare -f nftban_nft_count_all_sets >/dev/null 2>&1; then
+            # Use centralized JSON-based counting (fast O(1) via nft JSON API)
+            local counts_json
+            counts_json=$(nftban_nft_count_all_sets 2>/dev/null || echo '{}')
 
-            # Blacklist (contains permanent + temporary with timeout)
-            if nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 &>/dev/null 2>&1; then
-                black_v4=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | { grep -oP '\d+\.\d+\.\d+\.\d+' || true; } | wc -l) || black_v4=0
-                black_v4=${black_v4//[^0-9]/}
-                black_v4=${black_v4:-0}
-            fi
-            if nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 &>/dev/null 2>&1; then
-                black_v6=$(nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*|[0-9a-fA-F:]+:[0-9a-fA-F:]+' || true; } | wc -l) || black_v6=0
-                black_v6=${black_v6//[^0-9]/}
-                black_v6=${black_v6:-0}
-            fi
+            if command -v jq &>/dev/null && [[ -n "$counts_json" ]]; then
+                black_v4=$(echo "$counts_json" | jq -r '.blacklist.ipv4 // 0')
+                black_v6=$(echo "$counts_json" | jq -r '.blacklist.ipv6 // 0')
+                temp_v4=$(echo "$counts_json" | jq -r '.temporary.ipv4 // 0')
+                temp_v6=$(echo "$counts_json" | jq -r '.temporary.ipv6 // 0')
 
-            # Whitelist
-            if nft list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 &>/dev/null 2>&1; then
-                whitelist_v4=$(nft list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | { grep -oP '\d+\.\d+\.\d+\.\d+' || true; } | wc -l) || whitelist_v4=0
-                whitelist_v4=${whitelist_v4//[^0-9]/}
-                whitelist_v4=${whitelist_v4:-0}
-            fi
-            if nft list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 &>/dev/null 2>&1; then
-                whitelist_v6=$(nft list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*|[0-9a-fA-F:]+:[0-9a-fA-F:]+' || true; } | wc -l) || whitelist_v6=0
-                whitelist_v6=${whitelist_v6//[^0-9]/}
-                whitelist_v6=${whitelist_v6:-0}
+                # Whitelist from centralized function
+                local wl_counts
+                wl_counts=$(nftban_nft_count_whitelist 2>/dev/null || echo "0 0 0")
+                whitelist_v4=$(echo "$wl_counts" | cut -d' ' -f1)
+                whitelist_v6=$(echo "$wl_counts" | cut -d' ' -f2)
+            else
+                # jq not available - use line-based centralized functions
+                local bl_counts wl_counts
+                bl_counts=$(nftban_nft_count_blacklist 2>/dev/null || echo "0 0 0")
+                wl_counts=$(nftban_nft_count_whitelist 2>/dev/null || echo "0 0 0")
+                black_v4=$(echo "$bl_counts" | cut -d' ' -f1)
+                black_v6=$(echo "$bl_counts" | cut -d' ' -f2)
+                whitelist_v4=$(echo "$wl_counts" | cut -d' ' -f1)
+                whitelist_v6=$(echo "$wl_counts" | cut -d' ' -f2)
+                temp_v4=0
+                temp_v6=0
             fi
 
-            # Note: In v0.7.3, feeds/geoban are consolidated into blacklist by nftban-core
+            # Note: In v1.0, feeds/geoban are consolidated into blacklist by nftban-core
             # Set to 0 as they're no longer separate sets
+            feed_v4=0
+            feed_v6=0
+            geoban_v4=0
+            geoban_v6=0
+        else
+            # Fallback: centralized nftban_stats.sh functions (uses nft_schema.sh internally)
+            black_v4=0
+            black_v6=0
+            whitelist_v4=0
+            whitelist_v6=0
+
+            if declare -f nftban_stats_count_active_bans >/dev/null 2>&1; then
+                local total_bans
+                total_bans=$(nftban_stats_count_active_bans 2>/dev/null || echo "0")
+                # Cannot break down without JSON - use total for v4
+                black_v4="$total_bans"
+            fi
+
+            if declare -f nftban_stats_count_whitelist >/dev/null 2>&1; then
+                local total_wl
+                total_wl=$(nftban_stats_count_whitelist 2>/dev/null || echo "0")
+                whitelist_v4="$total_wl"
+            fi
+
+            # Note: In v1.0, feeds/geoban are consolidated into blacklist by nftban-core
             temp_v4=0
             temp_v6=0
             feed_v4=0

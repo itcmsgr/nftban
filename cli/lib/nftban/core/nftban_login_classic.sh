@@ -6,26 +6,30 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: journalctl/log file based login monitoring
 #
-# meta:name=nftban_login_classic
-# meta:type=core
-# meta:header=Login Monitor Classic Mode
-# meta:version=1.0.0
+# meta:name="nftban_login_classic"
+# meta:type="core"
+# meta:header="Login Monitor Classic Mode"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=Classic mode login monitoring using journalctl and log files
-# meta:input=System journals and log files
-# meta:output=Failed login detection and ban actions
+# meta:description="Classic mode login monitoring using journalctl and log files"
+# meta:input="System journals and log files"
+# meta:output="Failed login detection and ban actions"
+# meta:depends="bash,journalctl,nftban_login.sh"
+# meta:created_date="2025-12-01"
+# meta:updated_date="2026-02-04"
 #
-# **Inventory & Requirements**
-# meta:depends=bash>=4.0,journalctl,nftban_login.sh
-# meta:optional=jq
-#
-# meta:created_date=2025-12-01
-# meta:updated_date=2025-12-01
+# meta:inventory.files=""
+# meta:inventory.binaries="journalctl"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/login/main.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
@@ -414,10 +418,12 @@ _nftban_login_classic_is_whitelisted() {
         [[ "$ip" =~ ^192\.168\. ]] && return 0
     fi
 
-    # Whitelist file
-    local whitelist_file="${LOGIN_WHITELIST_FILE:-/etc/nftban/whitelist.d/login-whitelist.conf}"
-    if [[ -f "$whitelist_file" ]]; then
-        grep -q "^$ip$" "$whitelist_file" && return 0
+    # Central whitelist check (SINGLE SOURCE OF TRUTH)
+    # Uses nft_schema.sh nftban_is_whitelisted() which checks:
+    # 1. nftables whitelist sets (whitelist_ipv4/whitelist_ipv6)
+    # 2. /etc/nftban/whitelist.d/*.conf files
+    if declare -f nftban_is_whitelisted &>/dev/null; then
+        nftban_is_whitelisted "$ip" && return 0
     fi
 
     return 1

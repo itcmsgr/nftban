@@ -392,11 +392,7 @@ nftban_report_email_generate() {
     # SEND EMAIL
     # ==========================================================================
 
-    local sender="${NFTBAN_SENDER:-nftban@${hostname}}"
-    local subject
-    subject="[NFTBan] Security Report - ${hostname} - $(date +%Y-%m-%d)"
-
-    # Send via NFTBan unified mail mechanism
+    # Send via NFTBan unified mail mechanism (subject embedded in HTML)
     if nftban_mail_send "$html" "$recipient" 2>/dev/null; then
         echo "[SUCCESS] Report sent to ${recipient}"
         return 0

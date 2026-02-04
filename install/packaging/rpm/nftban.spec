@@ -545,11 +545,10 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/geoip
 %config(noreplace) /etc/nftban/conf.d/*.conf
 %config(noreplace) /etc/nftban/conf.d/ddos/*.conf
-%config(noreplace) /etc/nftban/conf.d/ddos/whitelist.txt
 %config(noreplace) /etc/nftban/conf.d/portscan/*.conf
-%config(noreplace) /etc/nftban/conf.d/portscan/whitelist.txt
 %config(noreplace) /etc/nftban/conf.d/login/*.conf
-%config(noreplace) /etc/nftban/conf.d/login/whitelist.txt
+# Central whitelist (SINGLE SOURCE OF TRUTH - all modules use whitelist.d/)
+%config(noreplace) /etc/nftban/whitelist.d/*.conf
 %config(noreplace) /etc/nftban/conf.d/botscan/*
 %config(noreplace) /etc/nftban/conf.d/geoban/main.conf
 %config(noreplace) /etc/nftban/conf.d/geoip/main.conf
@@ -643,6 +642,11 @@ fi
 /usr/local/psa/admin/htdocs/modules/nftban/*
 
 %changelog
+* Tue Feb 04 2026 NFTBan Team <contact@nftban.com> - 1.9.4-1
+- Consolidated: Single central whitelist in whitelist.d/ (SINGLE SOURCE OF TRUTH)
+- Removed: Per-module whitelist.txt files (ddos, portscan, login)
+- Added: nftban_is_whitelisted() and nftban_is_blacklisted() functions
+
 * Tue Feb 04 2026 NFTBan Team <contact@nftban.com> - 1.9.3-1
 - Fixed: RPM packaging for whitelist.txt files in conf.d subdirectories
 - Fixed: Version alignment across all package scripts

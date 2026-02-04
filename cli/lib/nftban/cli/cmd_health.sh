@@ -151,6 +151,9 @@ nftban_cmd_health() {
         rbl)
             nftban_health_cmd_rbl "$@"
             ;;
+        posture|security)
+            nftban_health_cmd_posture "$@"
+            ;;
         help|--help|-h)
             nftban_health_cmd_help
             ;;
@@ -898,6 +901,11 @@ COMMANDS:
                             and whether config reload is needed
                             --verbose: Show config file paths
 
+    posture, security       Check security posture (low noise)
+                            Smart limited scope, NOT an audit replacement
+                            Checks: SSH config, sudoers, systemd hardening,
+                            config integrity. For audits use lynis/oscap.
+
     help                    Show this help message
 
 EXAMPLES:
@@ -939,6 +947,9 @@ EXAMPLES:
     # Check config and module status
     nftban health config             # Show enabled modules + config status
     nftban health config --verbose   # Include config file paths
+
+    # Security posture (low noise check)
+    nftban health posture            # SSH, sudo, systemd hardening basics
 
 HEALTH STATUS CODES:
     ✅ OK       - All checks passed
@@ -1395,6 +1406,222 @@ nftban_health_cmd_rbl() {
     esac
 }
 
+nftban_health_cmd_posture() {
+    # Check security posture (low noise, limited scope - NOT audit replacement)
+    # Args: none
+    # Checks: SSH config, sudoers basics, systemd hardening, config integrity
+
+    echo ""
+    echo "Security Posture Check"
+    echo "─────────────────────────────────────────"
+    echo "  (Low noise, limited scope - not an audit replacement)"
+    echo ""
+
+    local warnings=0
+    local issues=0
+    local total_checks=0
+
+    # Load posture collection if available
+    if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_report_data.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/lib/nftban_report_data.sh" 2>/dev/null || true
+    fi
+
+    # ───────────────────────────────────────────────────────────────────────
+    # 1. SSH CONFIGURATION BASICS
+    # ───────────────────────────────────────────────────────────────────────
+    echo "SSH Configuration"
+    echo "  ─────────────────────────────────────"
+
+    local ssh_config="/etc/ssh/sshd_config"
+    if [[ -f "$ssh_config" ]]; then
+        ((total_checks++))
+        # PasswordAuthentication
+        local pass_auth
+        pass_auth=$(grep -E "^PasswordAuthentication" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
+        if [[ "$pass_auth" == "no" ]]; then
+            printf "  %-28s ✅ Disabled (key-only)\n" "PasswordAuthentication"
+        else
+            printf "  %-28s ⚠️  Enabled (consider disabling)\n" "PasswordAuthentication"
+            ((warnings++))
+        fi
+
+        ((total_checks++))
+        # PermitRootLogin
+        local root_login
+        root_login=$(grep -E "^PermitRootLogin" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
+        if [[ "$root_login" == "no" || "$root_login" == "prohibit-password" ]]; then
+            printf "  %-28s ✅ %s\n" "PermitRootLogin" "$root_login"
+        else
+            printf "  %-28s ⚠️  %s (consider 'no' or 'prohibit-password')\n" "PermitRootLogin" "$root_login"
+            ((warnings++))
+        fi
+
+        ((total_checks++))
+        # X11Forwarding
+        local x11_fwd
+        x11_fwd=$(grep -E "^X11Forwarding" "$ssh_config" 2>/dev/null | awk '{print $2}' || echo "yes")
+        if [[ "$x11_fwd" == "no" ]]; then
+            printf "  %-28s ✅ Disabled\n" "X11Forwarding"
+        else
+            printf "  %-28s ℹ️  Enabled (minor risk)\n" "X11Forwarding"
+        fi
+    else
+        printf "  %-28s ⚠️  Config not found\n" "sshd_config"
+        ((warnings++))
+    fi
+    echo ""
+
+    # ───────────────────────────────────────────────────────────────────────
+    # 2. SUDOERS BASICS
+    # ───────────────────────────────────────────────────────────────────────
+    echo "Sudoers Configuration"
+    echo "  ─────────────────────────────────────"
+
+    local sudoers_dir="/etc/sudoers.d"
+    if [[ -d "$sudoers_dir" ]]; then
+        ((total_checks++))
+        local risky_count=0
+        local nftban_sudoers_ok=false
+
+        for sfile in "$sudoers_dir"/*; do
+            [[ -f "$sfile" ]] || continue
+            local sname
+            sname=$(basename "$sfile")
+
+            # NFTBan's own sudoers file is expected
+            if [[ "$sname" == "nftban" ]]; then
+                nftban_sudoers_ok=true
+                continue
+            fi
+
+            # Skip backup files
+            [[ "$sname" == *~ ]] && continue
+            [[ "$sname" == *.bak ]] && continue
+
+            # Flag ALL NOPASSWD (risky)
+            if grep -qE "NOPASSWD:\s*ALL" "$sfile" 2>/dev/null; then
+                printf "  %-28s ⚠️  %s has ALL NOPASSWD\n" "Sudoers" "$sname"
+                ((risky_count++))
+            fi
+        done
+
+        if [[ $risky_count -eq 0 ]]; then
+            printf "  %-28s ✅ No risky NOPASSWD patterns\n" "Sudoers"
+        else
+            ((warnings += risky_count))
+        fi
+
+        if [[ "$nftban_sudoers_ok" == true ]]; then
+            printf "  %-28s ✅ Present (scoped)\n" "NFTBan sudoers"
+        fi
+    else
+        printf "  %-28s ℹ️  /etc/sudoers.d not found\n" "Sudoers"
+    fi
+    echo ""
+
+    # ───────────────────────────────────────────────────────────────────────
+    # 3. SYSTEMD SERVICE HARDENING
+    # ───────────────────────────────────────────────────────────────────────
+    echo "Systemd Service Hardening"
+    echo "  ─────────────────────────────────────"
+
+    local hardening_checks=("NoNewPrivileges" "PrivateTmp" "ProtectSystem")
+    local systemd_found=false
+
+    for unit_dir in /etc/systemd/system /usr/lib/systemd/system /lib/systemd/system; do
+        [[ -d "$unit_dir" ]] || continue
+        for svc in "$unit_dir"/nftban*.service; do
+            [[ -f "$svc" ]] || continue
+            systemd_found=true
+            local svc_name
+            svc_name=$(basename "$svc" .service)
+            local hardened=0
+            local total=${#hardening_checks[@]}
+
+            for check in "${hardening_checks[@]}"; do
+                if grep -qE "^${check}=(true|yes|strict|full)" "$svc" 2>/dev/null; then
+                    ((hardened++))
+                fi
+            done
+
+            ((total_checks++))
+            if [[ $hardened -eq $total ]]; then
+                printf "  %-28s ✅ %d/%d hardening options\n" "$svc_name" "$hardened" "$total"
+            elif [[ $hardened -gt 0 ]]; then
+                printf "  %-28s ℹ️  %d/%d hardening options\n" "$svc_name" "$hardened" "$total"
+            else
+                printf "  %-28s ⚠️  No hardening options\n" "$svc_name"
+                ((warnings++))
+            fi
+        done
+        [[ "$systemd_found" == true ]] && break
+    done
+
+    [[ "$systemd_found" != true ]] && printf "  %-28s ℹ️  No NFTBan services found\n" "Services"
+    echo ""
+
+    # ───────────────────────────────────────────────────────────────────────
+    # 4. CONFIG INTEGRITY
+    # ───────────────────────────────────────────────────────────────────────
+    echo "Config Integrity"
+    echo "  ─────────────────────────────────────"
+
+    local conf_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
+    local integrity_file="${conf_dir}/.config_checksums"
+
+    ((total_checks++))
+    if [[ -f "$integrity_file" ]]; then
+        local drift_count=0
+        local checked_count=0
+
+        while IFS=' ' read -r stored_hash fpath; do
+            [[ -z "$fpath" ]] && continue
+            [[ "$fpath" == "#"* ]] && continue
+            [[ -f "$fpath" ]] || continue
+            ((checked_count++))
+            local current_hash
+            current_hash=$(sha256sum "$fpath" 2>/dev/null | cut -d' ' -f1 || echo "")
+            if [[ -n "$current_hash" && "$current_hash" != "$stored_hash" ]]; then
+                ((drift_count++))
+            fi
+        done < "$integrity_file"
+
+        if [[ $drift_count -eq 0 ]]; then
+            printf "  %-28s ✅ %d files verified\n" "Config integrity" "$checked_count"
+        else
+            printf "  %-28s ⚠️  %d file(s) modified since install\n" "Config integrity" "$drift_count"
+            ((warnings++))
+        fi
+    else
+        printf "  %-28s ℹ️  Checksums not available\n" "Config integrity"
+    fi
+    echo ""
+
+    # ───────────────────────────────────────────────────────────────────────
+    # SUMMARY
+    # ───────────────────────────────────────────────────────────────────────
+    echo "─────────────────────────────────────────"
+    if [[ $warnings -eq 0 && $issues -eq 0 ]]; then
+        echo "  Status: ✅ OK ($total_checks checks passed)"
+        echo ""
+        echo "  Note: This is a basic posture check, not a security audit."
+        echo "  For comprehensive auditing, use dedicated tools like:"
+        echo "    - lynis audit system"
+        echo "    - oscap xccdf eval"
+        return 0
+    elif [[ $issues -eq 0 ]]; then
+        echo "  Status: ⚠️  $warnings advisory finding(s)"
+        echo ""
+        echo "  These are recommendations, not critical issues."
+        echo "  Review and address as appropriate for your environment."
+        return 1
+    else
+        echo "  Status: ❌ $issues issue(s), $warnings warning(s)"
+        return 2
+    fi
+}
+
 nftban_health_cmd_gui() {
     # Validate GOTH GUI components against ui-registry.json
     # Args: [--json]
@@ -1454,6 +1681,7 @@ export -f nftban_health_cmd_geoip
 export -f nftban_health_cmd_pro
 export -f nftban_health_cmd_registries
 export -f nftban_health_cmd_rbl
+export -f nftban_health_cmd_posture
 export -f nftban_health_cmd_conflicts
 export -f nftban_health_cmd_gui
 export -f nftban_health_cmd_help
