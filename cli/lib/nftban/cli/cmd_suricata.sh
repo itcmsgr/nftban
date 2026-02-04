@@ -63,10 +63,10 @@ if [[ -f "${NFTBAN_LIB_DIR}/helpers/suricata_rules.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/helpers/suricata_rules.sh"
 fi
 
-# Suricata paths
-readonly SURICATA_SETUP_SCRIPT="${NFTBAN_LIB_DIR}/setup/install_suricata.sh"
-readonly SURICATA_RULES_SCRIPT="${NFTBAN_LIB_DIR}/setup/setup_suricata_rules.sh"
-readonly SURICATA_SERVICE="suricata.service"
+# Suricata paths (exported for submodules)
+export SURICATA_SETUP_SCRIPT="${NFTBAN_LIB_DIR}/setup/install_suricata.sh"
+export SURICATA_RULES_SCRIPT="${NFTBAN_LIB_DIR}/setup/setup_suricata_rules.sh"
+export SURICATA_SERVICE="suricata.service"
 
 # =============================================================================
 # HELPER FUNCTIONS

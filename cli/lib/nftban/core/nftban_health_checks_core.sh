@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC1090  # Dynamic config paths, cannot follow
+# shellcheck disable=SC1090,SC2034  # SC1090: Dynamic paths; SC2034: Global arrays used by render module
 # =============================================================================
 # NFTBan v1.0 - Health Check Core Functions
 # =============================================================================
@@ -179,10 +179,9 @@ nftban_health_check_binaries() {
     local status=$HEALTH_OK
     local required_binaries=("nft" "systemctl" "journalctl" "awk" "sed" "grep" "jq" "curl" "wget" "socat" "git")
     local nftban_binaries=("${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core" "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftband")
-    local optional_binaries=("git")
     local mail_binaries=("mail" "sendmail")
 
-    local missing_required=() missing_optional=() missing_mail=() broken_nftban=()
+    local missing_required=() missing_mail=() broken_nftban=()
 
     for binary in "${required_binaries[@]}"; do
         if ! command -v "$binary" >/dev/null 2>&1; then
