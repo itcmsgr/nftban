@@ -264,6 +264,22 @@ sync:
     - "nftban sync"
     - "nftban sync --dry-run"
 
+modes:
+  category: setup_discovery
+  description: "Show detection modes overview across all protection modules"
+  risk: core
+  audience: [cli]
+  capability: status_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban modes"
+    - "nftban modes --json"
+
 # =============================================================================
 # GROUP 1: IMMEDIATE ACTION
 # =============================================================================
@@ -500,6 +516,65 @@ flush:
     feeds: {description: "Flush all threat feed IPs"}
     geoban: {description: "Flush all geoban entries"}
     all: {description: "Flush all nftables sets (emergency reset)"}
+
+cleanup:
+  category: immediate_action
+  description: "Manage and evict old permanent bans to free memory"
+  risk: advanced
+  audience: [cli]
+  capability: enforcement
+  mutates: conditional
+  supports_dry_run: true
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  options:
+    --stats: {type: bool, required: false, description: "Show permanent ban statistics"}
+    --dry-run: {type: bool, required: false, description: "Preview which IPs would be evicted"}
+    --execute: {type: bool, required: false, description: "Actually evict old bans"}
+    --count: {type: int, required: false, description: "Process up to N IPs"}
+    --json: {type: bool, required: false, description: "Output in JSON format"}
+  examples:
+    - "nftban cleanup --stats"
+    - "nftban cleanup --dry-run"
+    - "nftban cleanup --execute --count 100"
+
+protect:
+  category: immediate_action
+  description: "Mark a permanent ban as protected from auto-eviction"
+  risk: core
+  audience: [cli]
+  capability: enforcement
+  mutates: true
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  arguments:
+    ip: {type: string, required: true, description: "IP address to protect"}
+  examples:
+    - "nftban protect 1.2.3.4"
+    - "nftban protect 1.2.3.4 --json"
+
+unprotect:
+  category: immediate_action
+  description: "Remove protection from a permanent ban to allow auto-eviction"
+  risk: core
+  audience: [cli]
+  capability: enforcement
+  mutates: true
+  supports_dry_run: false
+  requires_root: true
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  arguments:
+    ip: {type: string, required: true, description: "IP address to unprotect"}
+  examples:
+    - "nftban unprotect 1.2.3.4"
+    - "nftban unprotect 1.2.3.4 --json"
 
 # =============================================================================
 # GROUP 2: ACTIVE PROTECTION
@@ -1034,6 +1109,25 @@ firewall:
             --csv: {type: bool, description: "CSV output format"}
             --table: {type: bool, description: "Plain table output"}
             --raw: {type: bool, description: "Raw kernel log format"}
+
+firewall-logs:
+  category: infrastructure
+  description: "On-demand firewall log viewer (alias for firewall logs)"
+  risk: advanced
+  audience: [cli]
+  capability: logs_read
+  mutates: conditional
+  supports_dry_run: false
+  requires_root: conditional
+  panel_expose: false
+  output_modes: [json, text]
+  has_json: true
+  examples:
+    - "nftban firewall-logs enable"
+    - "nftban firewall-logs disable"
+    - "nftban firewall-logs status"
+    - "nftban firewall-logs show --live"
+    - "nftban firewall-logs show --json"
 
 nftables:
   category: infrastructure
@@ -1981,6 +2075,25 @@ smoke:
     - "nftban smoke run"
     - "nftban smoke all"
     - "nftban smoke --verbose"
+
+snapshot:
+  category: developer_sysadmin
+  description: "Create configuration and statistics snapshots"
+  risk: core
+  audience: [cli]
+  capability: status_read
+  mutates: false
+  supports_dry_run: false
+  requires_root: false
+  panel_expose: false
+  output_modes: [text]
+  has_json: false
+  subcommands:
+    create: {description: "Create a new snapshot"}
+    list: {description: "List available snapshots"}
+  examples:
+    - "nftban snapshot create"
+    - "nftban snapshot list"
 
 test:
   category: developer_sysadmin
