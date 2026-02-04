@@ -42,12 +42,13 @@ readonly NFTBAN_CLI_UPDATE_LOADED=1
 # CONFIGURATION
 # =============================================================================
 
-readonly UPDATE_CONFIG_FILE="${NFTBAN_CONFIG_DIR:-/etc/nftban}/update.conf"
-readonly UPDATE_LOG_FILE="${NFTBAN_LOG_DIR:-/var/log/nftban}/update.log"
-readonly UPDATE_BACKUP_DIR="${NFTBAN_DATA_DIR:-/var/lib/nftban}/update-backups"
-readonly GITHUB_REPO="itcmsgr/nftban"
-readonly GITHUB_API="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
-readonly GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases/download"
+# Exported for submodules (cmd_update_helpers.sh, cmd_update_methods.sh)
+export UPDATE_CONFIG_FILE="${NFTBAN_CONFIG_DIR:-/etc/nftban}/update.conf"
+export UPDATE_LOG_FILE="${NFTBAN_LOG_DIR:-/var/log/nftban}/update.log"
+export UPDATE_BACKUP_DIR="${NFTBAN_DATA_DIR:-/var/lib/nftban}/update-backups"
+export GITHUB_REPO="itcmsgr/nftban"
+export GITHUB_API="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+export GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases/download"
 
 # Defaults (can be overridden by update.conf)
 NFTBAN_UPDATE_SOURCE="${NFTBAN_UPDATE_SOURCE:-auto}"

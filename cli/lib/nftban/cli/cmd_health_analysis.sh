@@ -216,6 +216,7 @@ nftban_health_cmd_config() {
     echo ""
 
     # Protection modules and their status
+    # shellcheck disable=SC2034  # modules used for reference/future expansion
     declare -A modules=(
         ["portscan"]="Port Scan Detection"
         ["ddos"]="DDoS Protection"

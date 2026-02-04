@@ -113,14 +113,15 @@ fi
 #       NOT /run/nftban which may have broken permissions (root:root)
 #       This avoids chicken-and-egg where exporter can't fix perms it can't write to
 : "${NFTBAN_CACHE_DIR:=/var/cache/nftban}"
-readonly METRICS_CACHE="${NFTBAN_CACHE_DIR}/metrics.cache"
-readonly METRICS_LOCK="${NFTBAN_CACHE_DIR}/exporter.lock"
-readonly BANDWIDTH_STATE="${NFTBAN_CACHE_DIR}/bandwidth_state.dat"
-readonly BANDWIDTH_PEAKS="${NFTBAN_CACHE_DIR}/bandwidth_peaks.dat"
-readonly PEAK_WINDOW=300  # 5 minutes for peak tracking
+# Exported for submodules (helpers, collect, export)
+export METRICS_CACHE="${NFTBAN_CACHE_DIR}/metrics.cache"
+export METRICS_LOCK="${NFTBAN_CACHE_DIR}/exporter.lock"
+export BANDWIDTH_STATE="${NFTBAN_CACHE_DIR}/bandwidth_state.dat"
+export BANDWIDTH_PEAKS="${NFTBAN_CACHE_DIR}/bandwidth_peaks.dat"
+export PEAK_WINDOW=300  # 5 minutes for peak tracking
 
 # Run count tracking for collection groups
-readonly RUN_COUNT_FILE="${NFTBAN_CACHE_DIR}/collection.run_count"
+export RUN_COUNT_FILE="${NFTBAN_CACHE_DIR}/collection.run_count"
 
 # =============================================================================
 # MODULE LOADER
