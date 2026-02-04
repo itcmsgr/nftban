@@ -45,7 +45,6 @@ coverage.txt
 
 # Node modules (for web UI)
 node_modules/
-cmd/nftban-ui/web/node_modules/
 
 # Temporary files
 *.tmp

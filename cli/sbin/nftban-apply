@@ -3,14 +3,26 @@
 # Copyright (c) 2024–2026 NFTBAN Project / Antonios Voulvoulis
 # SPDX-License-Identifier: MPL-2.0
 #
+# meta:name="nftban-apply"
+# meta:type="sbin"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Apply nftables rules with automatic rollback protection"
+# meta:inventory.files="/run/nftban.rollback.deadline"
+# meta:inventory.binaries="nft"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR, NFTBAN_DATA_DIR, NFTBAN_USER, NFTBAN_GROUP, NFTBAN_REBOOT_GRACE_PERIOD, NFTBAN_SSH_TEST_BEFORE_APPLY, NFTBAN_SSH_TEST_PORT"
+# meta:inventory.config_files="/etc/default/nftban, ${NFTBAN_CONFIG_DIR}/compiled.nft"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
 # This script applies nftables rules with automatic rollback protection.
 # Rules must be confirmed within the grace period or they will auto-rollback.
 
 set -Eeuo pipefail
 
 # Paths
-CANDIDATE="/etc/nftban/compiled.nft"
-BACKUP="/var/lib/nftban/backup.rules"
+CANDIDATE="${NFTBAN_CONFIG_DIR:-/etc/nftban}/compiled.nft"
+BACKUP="${NFTBAN_DATA_DIR:-/var/lib/nftban}/backup.rules"
 ROLLBACK_FLAG="/run/nftban.rollback.deadline"
 CONFIG="/etc/default/nftban"
 
@@ -75,7 +87,7 @@ tmpfile=$(mktemp -p "$backup_dir" backup.rules.XXXXXX) || {
 }
 
 # Ensure temp file has correct ownership
-chown nftban:nftban "$tmpfile" 2>/dev/null || true
+chown "${NFTBAN_USER:-nftban}:${NFTBAN_GROUP:-nftban}" "$tmpfile" 2>/dev/null || true
 
 # Backup current ruleset
 if ! nft list ruleset > "$tmpfile" 2>/dev/null; then

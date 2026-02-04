@@ -68,7 +68,6 @@ install -d %{buildroot}%{_unitdir}
 install -d %{buildroot}%{_sysconfdir}/nftban
 install -d %{buildroot}%{_sysconfdir}/pam.d
 install -d %{buildroot}%{_localstatedir}/log/nftban
-install -d %{buildroot}%{_datadir}/nftban-ui/web
 install -d %{buildroot}%{_prefix}/lib/nftban/bin
 
 # Install binaries
@@ -102,9 +101,6 @@ install -m 0755 cli/lib/nftban/lib/nftban_distro_config.sh %{buildroot}%{_prefix
 install -d %{buildroot}%{_sysconfdir}/nftban/distros
 install -d %{buildroot}%{_sysconfdir}/nftban/conf.d
 install -m 0644 etc/nftban/distros/*.conf %{buildroot}%{_sysconfdir}/nftban/distros/
-
-# Install web files
-cp -r cmd/nftban-ui/web/* %{buildroot}%{_datadir}/nftban-ui/web/
 
 %pre
 # Create nftban system user and groups if they don't exist
@@ -190,7 +186,7 @@ fi
 
 %files
 %license LICENSE
-%doc README.md README_GUI.md
+%doc README.md
 
 # Binaries
 %{_sbindir}/nftban-ui
@@ -218,9 +214,6 @@ fi
 %dir %{_sysconfdir}/nftban/distros
 %dir %{_sysconfdir}/nftban/conf.d
 %config(noreplace) %{_sysconfdir}/nftban/distros/*.conf
-
-# Web files
-%{_datadir}/nftban-ui/
 
 # Log directory
 %dir %attr(0750,nftban,nftban) %{_localstatedir}/log/nftban

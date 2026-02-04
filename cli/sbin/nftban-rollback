@@ -3,12 +3,24 @@
 # Copyright (c) 2024–2026 NFTBAN Project / Antonios Voulvoulis
 # SPDX-License-Identifier: MPL-2.0
 #
+# meta:name="nftban-rollback"
+# meta:type="sbin"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Rollback to last-known-good nftables ruleset"
+# meta:inventory.files="/run/nftban.rollback.deadline"
+# meta:inventory.binaries="nft"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR, NFTBAN_DATA_DIR"
+# meta:inventory.config_files="${NFTBAN_DATA_DIR}/backup.rules, ${NFTBAN_CONFIG_DIR}/baseline.nft"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
 # Rolls back to the last-known-good ruleset.
 # Can be called automatically by timer or manually for emergency recovery.
 
 set -Eeuo pipefail
 
-BACKUP="/var/lib/nftban/backup.rules"
+BACKUP="${NFTBAN_DATA_DIR:-/var/lib/nftban}/backup.rules"
 ROLLBACK_FLAG="/run/nftban.rollback.deadline"
 FORCE_MODE=false
 
@@ -47,7 +59,7 @@ if [[ -f "$ROLLBACK_FLAG" ]]; then
             echo ""
             echo "Emergency options:"
             echo "  1. Flush all rules: nft flush ruleset"
-            echo "  2. Load baseline: nft -f /etc/nftban/baseline.nft"
+            echo "  2. Load baseline: nft -f ${NFTBAN_CONFIG_DIR:-/etc/nftban}/baseline.nft"
             echo "  3. Console/IPMI access to fix manually"
             exit 1
         fi
@@ -84,7 +96,7 @@ if [[ -f "$ROLLBACK_FLAG" ]]; then
         echo ""
         echo "Next steps:"
         echo "  1. Verify connectivity: ssh user@server"
-        echo "  2. Review candidate rules: cat /etc/nftban/compiled.nft"
+        echo "  2. Review candidate rules: cat ${NFTBAN_CONFIG_DIR:-/etc/nftban}/compiled.nft"
         echo "  3. Fix issues and re-apply: nftban-apply"
 
         exit 0
