@@ -1,63 +1,343 @@
-<!-- NFTBan Service Failure Alert Template -->
-<!-- Used for: OnFailure systemd service alerts -->
-<!-- Variables: {SERVICE_NAME}, {SERVICE_STATUS}, {JOURNAL_EXCERPT}, {DIAG_FILE}, {MEMORY_INFO}, {DISK_INFO}, {LOAD_INFO} -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFTBan Service Failure - {SERVICE_NAME}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .header {
+            background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+            color: white;
+            padding: 25px 20px;
+            text-align: center;
+        }
+        .header h1 {
+            margin: 0 0 8px 0;
+            font-size: 22px;
+        }
+        .header .service-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 6px 14px;
+            border-radius: 15px;
+            font-size: 14px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+        }
+        .content {
+            padding: 25px 20px;
+        }
+        /* Alert Banner */
+        .alert-banner {
+            background: #fee2e2;
+            border-left: 4px solid #ef4444;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #991b1b;
+        }
+        /* Info Table */
+        .info-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        .info-table th {
+            background: #f1f5f9;
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #475569;
+            width: 30%;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        .info-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #334155;
+        }
+        .info-table code {
+            font-family: 'SF Mono', 'Consolas', monospace;
+            background: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 12px;
+        }
+        /* Section Headers */
+        .section {
+            margin: 25px 0;
+        }
+        .section h3 {
+            font-size: 14px;
+            color: #1e293b;
+            margin: 0 0 10px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e2e8f0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        /* Log/Code Blocks */
+        .log-block {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+            max-height: 250px;
+            overflow-y: auto;
+        }
+        .log-block.status {
+            background: #0f172a;
+            max-height: none;
+        }
+        /* System Resources Grid */
+        .resources-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 12px;
+            margin-top: 10px;
+        }
+        .resource-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+            padding: 12px;
+        }
+        .resource-card h4 {
+            margin: 0 0 8px 0;
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+        .resource-card pre {
+            margin: 0;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 11px;
+            color: #334155;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
+        /* Actions Section */
+        .actions {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .actions h3 {
+            margin: 0 0 12px 0;
+            font-size: 14px;
+            color: #92400e;
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        .actions ul {
+            margin: 0;
+            padding-left: 20px;
+            font-size: 13px;
+            color: #78350f;
+        }
+        .actions li {
+            margin: 8px 0;
+        }
+        .actions code {
+            background: #fef9c3;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 12px;
+            color: #713f12;
+        }
+        /* Current State Context */
+        .context {
+            background: #f8fafc;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .context h3 {
+            margin: 0 0 12px 0;
+            font-size: 13px;
+            color: #475569;
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        .context-row {
+            display: flex;
+            justify-content: space-around;
+            text-align: center;
+        }
+        .context-item {
+            padding: 8px;
+        }
+        .context-value {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .context-label {
+            font-size: 10px;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+        /* Footer */
+        .footer {
+            background: #f8fafc;
+            padding: 15px 20px;
+            text-align: center;
+            color: #64748b;
+            font-size: 11px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .footer p {
+            margin: 4px 0;
+        }
+        .throttle-info {
+            background: #f1f5f9;
+            padding: 8px 12px;
+            border-radius: 4px;
+            margin-top: 8px;
+            font-size: 10px;
+            color: #64748b;
+        }
+        /* Responsive */
+        @media only screen and (max-width: 600px) {
+            .resources-grid {
+                grid-template-columns: 1fr;
+            }
+            .context-row {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <h1>Service Failure Alert</h1>
+            <span class="service-badge">{SERVICE_NAME}</span>
+        </div>
 
-<div class="alert alert-danger">
-    <strong>Service Failure Alert</strong>
-</div>
+        <div class="content">
+            <!-- Alert Banner -->
+            <div class="alert-banner">
+                <strong>Critical:</strong> A critical NFTBan service has failed and requires immediate attention.
+            </div>
 
-<h2 style="color: #dc2626;">A critical NFTBan service has failed</h2>
+            <!-- Service Info -->
+            <table class="info-table">
+                <tr>
+                    <th>Service</th>
+                    <td><code>{SERVICE_NAME}</code></td>
+                </tr>
+                <tr>
+                    <th>Server</th>
+                    <td>{HOSTNAME}</td>
+                </tr>
+                <tr>
+                    <th>Failure Time</th>
+                    <td>{DATE} at {TIME}</td>
+                </tr>
+                <tr>
+                    <th>Diagnostic Report</th>
+                    <td><code>{DIAG_FILE}</code></td>
+                </tr>
+            </table>
 
-<table style="border-collapse: collapse; margin: 20px 0; width: 100%;">
-    <tr>
-        <td style="padding: 10px; border: 1px solid #ddd; background: #f9f9f9; width: 30%;"><strong>Service</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">{SERVICE_NAME}</td>
-    </tr>
-    <tr>
-        <td style="padding: 10px; border: 1px solid #ddd; background: #f9f9f9;"><strong>Server</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">{HOSTNAME}</td>
-    </tr>
-    <tr>
-        <td style="padding: 10px; border: 1px solid #ddd; background: #f9f9f9;"><strong>Time</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;">{DATE} {TIME}</td>
-    </tr>
-    <tr>
-        <td style="padding: 10px; border: 1px solid #ddd; background: #f9f9f9;"><strong>Diagnostic Report</strong></td>
-        <td style="padding: 10px; border: 1px solid #ddd;"><code>{DIAG_FILE}</code></td>
-    </tr>
-</table>
+            <!-- Service Status -->
+            <div class="section">
+                <h3>Service Status</h3>
+                <pre class="log-block status">{SERVICE_STATUS}</pre>
+            </div>
 
-<h3>Service Status</h3>
-<pre style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 13px;">{SERVICE_STATUS}</pre>
+            <!-- Journal Entries -->
+            <div class="section">
+                <h3>Recent Journal Entries</h3>
+                <pre class="log-block">{JOURNAL_EXCERPT}</pre>
+            </div>
 
-<h3>Recent Journal Entries</h3>
-<pre style="background: #1e1e1e; color: #d4d4d4; padding: 15px; border-radius: 5px; overflow-x: auto; font-size: 12px; max-height: 300px; overflow-y: auto;">{JOURNAL_EXCERPT}</pre>
+            <!-- System Resources -->
+            <div class="section">
+                <h3>System Resources at Failure</h3>
+                <div class="resources-grid">
+                    <div class="resource-card">
+                        <h4>Memory</h4>
+                        <pre>{MEMORY_INFO}</pre>
+                    </div>
+                    <div class="resource-card">
+                        <h4>Disk (/var)</h4>
+                        <pre>{DISK_INFO}</pre>
+                    </div>
+                    <div class="resource-card">
+                        <h4>Load Average</h4>
+                        <pre>{LOAD_INFO}</pre>
+                    </div>
+                </div>
+            </div>
 
-<h3>System Resources</h3>
-<table style="border-collapse: collapse; margin: 10px 0; width: 100%;">
-    <tr>
-        <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9; width: 20%;"><strong>Memory</strong></td>
-        <td style="padding: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 12px;">{MEMORY_INFO}</td>
-    </tr>
-    <tr>
-        <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>Disk (/var)</strong></td>
-        <td style="padding: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 12px;">{DISK_INFO}</td>
-    </tr>
-    <tr>
-        <td style="padding: 8px; border: 1px solid #ddd; background: #f9f9f9;"><strong>Load</strong></td>
-        <td style="padding: 8px; border: 1px solid #ddd; font-family: monospace; font-size: 12px;">{LOAD_INFO}</td>
-    </tr>
-</table>
+            <!-- Current NFTBan State -->
+            <div class="context">
+                <h3>NFTBan State at Failure</h3>
+                <div class="context-row">
+                    <div class="context-item">
+                        <div class="context-value">{ACTIVE_BANS}</div>
+                        <div class="context-label">Active Bans</div>
+                    </div>
+                    <div class="context-item">
+                        <div class="context-value">{WHITELIST_COUNT}</div>
+                        <div class="context-label">Whitelist</div>
+                    </div>
+                    <div class="context-item">
+                        <div class="context-value">{HEALTH_STATUS}</div>
+                        <div class="context-label">Health</div>
+                    </div>
+                </div>
+            </div>
 
-<h3>Immediate Actions</h3>
-<ul>
-    <li>Check service status: <code>systemctl status {SERVICE_NAME}</code></li>
-    <li>View full logs: <code>journalctl -u {SERVICE_NAME} -n 100</code></li>
-    <li>Restart service: <code>systemctl restart {SERVICE_NAME}</code></li>
-    <li>View diagnostic report: <code>cat {DIAG_FILE}</code></li>
-</ul>
+            <!-- Immediate Actions -->
+            <div class="actions">
+                <h3>Immediate Actions</h3>
+                <ul>
+                    <li>Check service status: <code>systemctl status {SERVICE_NAME}</code></li>
+                    <li>View full logs: <code>journalctl -u {SERVICE_NAME} -n 100</code></li>
+                    <li>Restart service: <code>systemctl restart {SERVICE_NAME}</code></li>
+                    <li>View diagnostic report: <code>cat {DIAG_FILE}</code></li>
+                    <li>Check NFTBan health: <code>nftban health</code></li>
+                </ul>
+            </div>
+        </div>
 
-<p style="color: #666; font-size: 12px; margin-top: 20px; padding: 10px; background: #f5f5f5; border-radius: 3px;">
-    This alert was triggered by NFTBan's OnFailure handler.<br>
-    Alert throttling: {ALERT_THROTTLE_SECONDS}s (configure via <code>NFTBAN_ALERT_THROTTLE_SECONDS</code>)
-</p>
+        <!-- Footer -->
+        <div class="footer">
+            <p><strong>NFTBan v{NFTBAN_VERSION}</strong> | {HOSTNAME}</p>
+            <p>Alert triggered by systemd OnFailure handler</p>
+            <div class="throttle-info">
+                Alert throttling: {ALERT_THROTTLE_SECONDS}s | Configure via <code>NFTBAN_ALERT_THROTTLE_SECONDS</code>
+            </div>
+        </div>
+    </div>
+</body>
+</html>

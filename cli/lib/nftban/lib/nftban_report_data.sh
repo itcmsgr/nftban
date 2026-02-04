@@ -1,0 +1,601 @@
+#!/usr/bin/env bash
+# =============================================================================
+# NFTBan v1.9.4 - Report Data Collection Module (SINGLE SOURCE OF TRUTH)
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# Purpose: Unified data collection for all reports, emails, and templates
+#
+# meta:name="nftban_report_data"
+# meta:type="library"
+# meta:header="Report Data Collection Module"
+# meta:version="1.9.4"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
+#
+# meta:description="Centralized data collection using nft_schema.sh SSOT"
+# meta:input="nft_schema.sh counting functions, system state"
+# meta:output="Template variables for reports and emails"
+# meta:depends="nft_schema.sh"
+# meta:created_date="2026-02-04"
+# meta:updated_date="2026-02-04"
+#
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# =============================================================================
+
+set -Eeuo pipefail
+
+# Module guard
+[[ -n "${NFTBAN_REPORT_DATA_LOADED:-}" ]] && return 0
+readonly NFTBAN_REPORT_DATA_LOADED=1
+
+# =============================================================================
+# CONFIGURATION
+# =============================================================================
+readonly REPORT_CACHE_DIR="${NFTBAN_CACHE_DIR:-/var/cache/nftban}"
+readonly REPORT_CACHE_FILE="${REPORT_CACHE_DIR}/report_data.json"
+readonly REPORT_CACHE_TTL=5  # seconds
+
+# =============================================================================
+# CORE DATA COLLECTION (uses nft_schema.sh SSOT)
+# =============================================================================
+
+# Collect all report data in one call (cached)
+# Returns: associative array via nameref
+nftban_report_collect_all() {
+    local -n _data="$1"
+
+    # Get counts from nft_schema.sh (SINGLE SOURCE OF TRUTH)
+    local counts_json
+    if declare -f nftban_nft_count_all_sets &>/dev/null; then
+        counts_json=$(nftban_nft_count_all_sets 2>/dev/null || echo '{}')
+    else
+        counts_json='{}'
+    fi
+
+    # Parse ban counts
+    if command -v jq &>/dev/null && [[ -n "$counts_json" ]]; then
+        _data[BANS_IPV4]=$(echo "$counts_json" | jq -r '.blacklist.ipv4 // 0')
+        _data[BANS_IPV6]=$(echo "$counts_json" | jq -r '.blacklist.ipv6 // 0')
+        _data[ACTIVE_BANS]=$(echo "$counts_json" | jq -r '.blacklist.total // 0')
+        _data[BANS_TEMP]=$(echo "$counts_json" | jq -r '.temporary.total // 0')
+        _data[BANS_PERM]=$(echo "$counts_json" | jq -r '.permanent.total // 0')
+        _data[WHITELIST_COUNT]=$(echo "$counts_json" | jq -r '.whitelist.total // 0')
+    else
+        # Fallback without jq
+        _data[BANS_IPV4]=0
+        _data[BANS_IPV6]=0
+        _data[ACTIVE_BANS]=0
+        _data[BANS_TEMP]=0
+        _data[BANS_PERM]=0
+        _data[WHITELIST_COUNT]=0
+    fi
+
+    # Basic system info
+    _data[HOSTNAME]=$(hostname -f 2>/dev/null || hostname)
+    _data[SERVER_IP]=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "unknown")
+    _data[DATE]=$(date '+%Y-%m-%d')
+    _data[TIME]=$(date '+%H:%M:%S')
+    _data[NFTBAN_VERSION]="${NFTBAN_VERSION:-1.9.4}"
+    _data[REPORT_PERIOD]="Daily"
+
+    # 24h activity (from logs)
+    _data[BANS_24H]=$(_count_bans_24h)
+    _data[UNBANS_24H]=$(_count_unbans_24h)
+    _data[UNIQUE_IPS_24H]=$(_count_unique_ips_24h)
+
+    # Health status
+    local health_status
+    health_status=$(_get_health_status)
+    _data[HEALTH_STATUS]="$health_status"
+    _data[HEALTH_STATUS_CLASS]=$(_health_to_class "$health_status")
+
+    # Module statuses
+    _collect_module_status _data
+
+    # Feeds info
+    _collect_feeds_info _data
+
+    # RBL info
+    _collect_rbl_info _data
+}
+
+# =============================================================================
+# 24H ACTIVITY COUNTERS
+# =============================================================================
+
+_count_bans_24h() {
+    local ban_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
+    local since
+    since=$(date -d '24 hours ago' '+%Y-%m-%d' 2>/dev/null || date '+%Y-%m-%d')
+
+    if [[ -f "$ban_log" ]]; then
+        grep -c "^${since}" "$ban_log" 2>/dev/null || echo 0
+    else
+        echo 0
+    fi
+}
+
+_count_unbans_24h() {
+    local unban_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/unbans.log"
+    local since
+    since=$(date -d '24 hours ago' '+%Y-%m-%d' 2>/dev/null || date '+%Y-%m-%d')
+
+    if [[ -f "$unban_log" ]]; then
+        grep -c "^${since}" "$unban_log" 2>/dev/null || echo 0
+    else
+        echo 0
+    fi
+}
+
+_count_unique_ips_24h() {
+    local ban_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
+    local since
+    since=$(date -d '24 hours ago' '+%Y-%m-%d' 2>/dev/null || date '+%Y-%m-%d')
+
+    if [[ -f "$ban_log" ]]; then
+        grep "^${since}" "$ban_log" 2>/dev/null | cut -d'|' -f4 | sort -u | wc -l || echo 0
+    else
+        echo 0
+    fi
+}
+
+# =============================================================================
+# HEALTH STATUS
+# =============================================================================
+
+_get_health_status() {
+    # Check cached health status first
+    local health_cache="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/health/status.json"
+
+    if [[ -f "$health_cache" ]]; then
+        local status
+        status=$(jq -r '.overall // "unknown"' "$health_cache" 2>/dev/null || echo "unknown")
+        case "$status" in
+            ok|healthy) echo "OK" ;;
+            degraded|warning) echo "Degraded" ;;
+            critical|error) echo "Critical" ;;
+            *) echo "Unknown" ;;
+        esac
+    else
+        # Fallback: check if critical services are running
+        if systemctl is-active nftables &>/dev/null; then
+            echo "OK"
+        else
+            echo "Critical"
+        fi
+    fi
+}
+
+_health_to_class() {
+    local status="$1"
+    case "$status" in
+        OK|ok|healthy) echo "ok" ;;
+        Degraded|degraded|warning) echo "degraded" ;;
+        Critical|critical|error) echo "critical" ;;
+        *) echo "degraded" ;;
+    esac
+}
+
+# =============================================================================
+# MODULE STATUS COLLECTION
+# =============================================================================
+
+_collect_module_status() {
+    local -n _mdata="$1"
+
+    # DDoS Module
+    local ddos_enabled="false"
+    [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf" ]] && \
+        ddos_enabled=$(grep -E "^DDOS_ENABLED=" "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/ddos/main.conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+
+    if [[ "$ddos_enabled" == "true" ]]; then
+        _mdata[MODULE_DDOS_STATUS]="Active"
+        _mdata[MODULE_DDOS_STATUS_CLASS]="status-active"
+        _mdata[MODULE_DDOS_CLASS]="active"
+        _mdata[MODULE_DDOS_ACTIVITY]=$(_get_module_activity "ddos")
+    else
+        _mdata[MODULE_DDOS_STATUS]="Disabled"
+        _mdata[MODULE_DDOS_STATUS_CLASS]="status-inactive"
+        _mdata[MODULE_DDOS_CLASS]="inactive"
+        _mdata[MODULE_DDOS_ACTIVITY]="-"
+    fi
+
+    # Portscan Module
+    local portscan_enabled="false"
+    [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" ]] && \
+        portscan_enabled=$(grep -E "^PORTSCAN_ENABLED=" "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/portscan/main.conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+
+    if [[ "$portscan_enabled" == "true" ]]; then
+        _mdata[MODULE_PORTSCAN_STATUS]="Active"
+        _mdata[MODULE_PORTSCAN_STATUS_CLASS]="status-active"
+        _mdata[MODULE_PORTSCAN_CLASS]="active"
+        _mdata[MODULE_PORTSCAN_ACTIVITY]=$(_get_module_activity "portscan")
+    else
+        _mdata[MODULE_PORTSCAN_STATUS]="Disabled"
+        _mdata[MODULE_PORTSCAN_STATUS_CLASS]="status-inactive"
+        _mdata[MODULE_PORTSCAN_CLASS]="inactive"
+        _mdata[MODULE_PORTSCAN_ACTIVITY]="-"
+    fi
+
+    # Login Monitor
+    if systemctl is-active nftban-login-monitor.service &>/dev/null; then
+        _mdata[MODULE_LOGIN_STATUS]="Active"
+        _mdata[MODULE_LOGIN_STATUS_CLASS]="status-active"
+        _mdata[MODULE_LOGIN_CLASS]="active"
+        _mdata[MODULE_LOGIN_ACTIVITY]=$(_get_module_activity "login")
+    else
+        _mdata[MODULE_LOGIN_STATUS]="Disabled"
+        _mdata[MODULE_LOGIN_STATUS_CLASS]="status-inactive"
+        _mdata[MODULE_LOGIN_CLASS]="inactive"
+        _mdata[MODULE_LOGIN_ACTIVITY]="-"
+    fi
+
+    # Threat Feeds
+    local feeds_count
+    feeds_count=$(_count_enabled_feeds)
+    if [[ "$feeds_count" -gt 0 ]]; then
+        _mdata[MODULE_FEEDS_STATUS]="Active"
+        _mdata[MODULE_FEEDS_STATUS_CLASS]="status-active"
+        _mdata[MODULE_FEEDS_CLASS]="active"
+    else
+        _mdata[MODULE_FEEDS_STATUS]="Disabled"
+        _mdata[MODULE_FEEDS_STATUS_CLASS]="status-inactive"
+        _mdata[MODULE_FEEDS_CLASS]="inactive"
+    fi
+    _mdata[FEEDS_COUNT]="$feeds_count"
+
+    # GeoBan
+    local geoban_enabled="false"
+    [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/geoban/main.conf" ]] && \
+        geoban_enabled=$(grep -E "^GEOBAN_ENABLED=" "${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/geoban/main.conf" 2>/dev/null | cut -d'"' -f2 || echo "false")
+
+    if [[ "$geoban_enabled" == "true" ]]; then
+        _mdata[MODULE_GEOBAN_STATUS]="Active"
+        _mdata[MODULE_GEOBAN_STATUS_CLASS]="status-active"
+        _mdata[MODULE_GEOBAN_CLASS]="active"
+        _mdata[MODULE_GEOBAN_ACTIVITY]=$(_get_geoban_countries)
+    else
+        _mdata[MODULE_GEOBAN_STATUS]="Disabled"
+        _mdata[MODULE_GEOBAN_STATUS_CLASS]="status-inactive"
+        _mdata[MODULE_GEOBAN_CLASS]="inactive"
+        _mdata[MODULE_GEOBAN_ACTIVITY]="-"
+    fi
+}
+
+_get_module_activity() {
+    local module="$1"
+    local action_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/nftban-actions.log"
+    local since
+    since=$(date -d '24 hours ago' '+%Y-%m-%d' 2>/dev/null || date '+%Y-%m-%d')
+
+    if [[ -f "$action_log" ]]; then
+        local count
+        count=$(grep "$module" "$action_log" 2>/dev/null | grep -c "^${since}" || echo 0)
+        echo "${count} events"
+    else
+        echo "0 events"
+    fi
+}
+
+_get_geoban_countries() {
+    local geoban_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/geoban/main.conf"
+    if [[ -f "$geoban_conf" ]]; then
+        local countries
+        countries=$(grep -E "^GEOBAN_COUNTRIES=" "$geoban_conf" 2>/dev/null | cut -d'"' -f2 || echo "")
+        local count
+        count=$(echo "$countries" | tr ',' '\n' | grep -c . || echo 0)
+        echo "${count} countries"
+    else
+        echo "-"
+    fi
+}
+
+# =============================================================================
+# FEEDS DATA COLLECTION
+# =============================================================================
+
+_count_enabled_feeds() {
+    local feeds_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/feeds.conf"
+    if [[ -f "$feeds_conf" ]]; then
+        grep -cE "^FEED_.*_ENABLED=\"true\"" "$feeds_conf" 2>/dev/null || echo 0
+    else
+        echo 0
+    fi
+}
+
+_collect_feeds_info() {
+    local -n _fdata="$1"
+    local feeds_cache="${NFTBAN_CACHE_DIR:-/var/cache/nftban}/feeds"
+    local total_ips=0
+    local feeds_html=""
+
+    if [[ -d "$feeds_cache" ]]; then
+        for feed_file in "$feeds_cache"/*.txt; do
+            [[ -f "$feed_file" ]] || continue
+            local feed_name
+            feed_name=$(basename "$feed_file" .txt)
+            local ip_count
+            ip_count=$(wc -l < "$feed_file" 2>/dev/null || echo 0)
+            total_ips=$((total_ips + ip_count))
+
+            # Get last update time
+            local last_update
+            last_update=$(stat -c %Y "$feed_file" 2>/dev/null || echo 0)
+            local now
+            now=$(date +%s)
+            local age_hours=$(( (now - last_update) / 3600 ))
+
+            local status_class="feed-status-current"
+            local status_text="Current"
+            if [[ $age_hours -gt 24 ]]; then
+                status_class="feed-status-stale"
+                status_text="Stale"
+            fi
+
+            local age_display
+            if [[ $age_hours -lt 1 ]]; then
+                age_display="< 1h ago"
+            else
+                age_display="${age_hours}h ago"
+            fi
+
+            feeds_html+="<tr>"
+            feeds_html+="<td>${feed_name}</td>"
+            feeds_html+="<td>${ip_count}</td>"
+            feeds_html+="<td>${age_display}</td>"
+            feeds_html+="<td class=\"${status_class}\">${status_text}</td>"
+            feeds_html+="</tr>"
+        done
+    fi
+
+    [[ -z "$feeds_html" ]] && feeds_html="<tr><td colspan=\"4\" style=\"text-align:center;color:#64748b;\">No feeds configured</td></tr>"
+
+    _fdata[FEEDS_TOTAL_IPS]="$total_ips"
+    _fdata[FEEDS_TABLE_HTML]="$feeds_html"
+}
+
+# =============================================================================
+# TOP LISTS (IPs, Countries, Sources)
+# =============================================================================
+
+nftban_report_top_ips() {
+    local limit="${1:-5}"
+    local ban_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
+    local html=""
+
+    if [[ -f "$ban_log" ]]; then
+        while IFS='|' read -r count ip; do
+            [[ -z "$ip" ]] && continue
+            local country
+            country=$(_lookup_country "$ip")
+            html+="<li><span class=\"ip-code\">${ip}</span> <span class=\"country-flag\">${country}</span> <span class=\"badge\">${count}</span></li>"
+        done < <(cut -d'|' -f4 "$ban_log" 2>/dev/null | sort | uniq -c | sort -rn | head -"$limit" | awk '{print $1"|"$2}')
+    fi
+
+    [[ -z "$html" ]] && html="<li style=\"color:#64748b;\">No data available</li>"
+    echo "$html"
+}
+
+nftban_report_top_countries() {
+    local limit="${1:-5}"
+    local ban_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
+    local html=""
+
+    if [[ -f "$ban_log" ]]; then
+        while IFS='|' read -r count country; do
+            [[ -z "$country" || "$country" == "-" ]] && continue
+            html+="<li><span>${country}</span> <span class=\"badge\">${count}</span></li>"
+        done < <(cut -d'|' -f5 "$ban_log" 2>/dev/null | sort | uniq -c | sort -rn | head -"$limit" | awk '{print $1"|"$2}')
+    fi
+
+    [[ -z "$html" ]] && html="<li style=\"color:#64748b;\">No data available</li>"
+    echo "$html"
+}
+
+nftban_report_top_sources() {
+    local limit="${1:-5}"
+    local ban_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log"
+    local html=""
+
+    if [[ -f "$ban_log" ]]; then
+        while IFS='|' read -r count source; do
+            [[ -z "$source" ]] && continue
+            html+="<li><span>${source}</span> <span class=\"badge\">${count}</span></li>"
+        done < <(cut -d'|' -f3 "$ban_log" 2>/dev/null | sort | uniq -c | sort -rn | head -"$limit" | awk '{print $1"|"$2}')
+    fi
+
+    [[ -z "$html" ]] && html="<li style=\"color:#64748b;\">No data available</li>"
+    echo "$html"
+}
+
+_lookup_country() {
+    local ip="$1"
+    # Try GeoIP lookup if available
+    if command -v geoiplookup &>/dev/null; then
+        geoiplookup "$ip" 2>/dev/null | grep -oP 'GeoIP Country Edition: \K[A-Z]{2}' || echo "??"
+    elif command -v mmdbinspect &>/dev/null && [[ -f "/var/lib/nftban/geoip/GeoLite2-Country.mmdb" ]]; then
+        mmdbinspect -db "/var/lib/nftban/geoip/GeoLite2-Country.mmdb" "$ip" 2>/dev/null | jq -r '.[0].Records[0].Record.country.iso_code // "??"' || echo "??"
+    else
+        echo "??"
+    fi
+}
+
+# =============================================================================
+# RECOMMENDATIONS GENERATOR
+# =============================================================================
+
+nftban_report_recommendations() {
+    local -n _rdata="$1"
+    local recommendations=""
+
+    # Check if feeds are enabled
+    if [[ "${_rdata[FEEDS_COUNT]:-0}" -eq 0 ]]; then
+        recommendations+="<li>Enable threat feeds for automatic IP blocking: <code>nftban feeds enable</code></li>"
+    fi
+
+    # Check if GeoBan is enabled for high-volume countries
+    if [[ "${_rdata[MODULE_GEOBAN_STATUS]:-Disabled}" == "Disabled" ]]; then
+        recommendations+="<li>Consider enabling GeoBan for countries with frequent attacks</li>"
+    fi
+
+    # Check health status
+    if [[ "${_rdata[HEALTH_STATUS]:-OK}" != "OK" ]]; then
+        recommendations+="<li>System health is degraded - run <code>nftban health</code> for details</li>"
+    fi
+
+    # High ban rate warning
+    if [[ "${_rdata[BANS_24H]:-0}" -gt 100 ]]; then
+        recommendations+="<li>High ban rate detected (${_rdata[BANS_24H]} in 24h) - review security measures</li>"
+    fi
+
+    [[ -z "$recommendations" ]] && recommendations="<li>All systems operating normally. No recommendations at this time.</li>"
+
+    echo "$recommendations"
+}
+
+# =============================================================================
+# TEMPLATE VARIABLE SUBSTITUTION
+# =============================================================================
+
+# Replace all template variables in content
+# Usage: nftban_report_substitute "template_content"
+nftban_report_substitute() {
+    local content="$1"
+
+    # Collect all data
+    declare -A data
+    nftban_report_collect_all data
+
+    # Generate dynamic content
+    data[TOP_IPS_HTML]=$(nftban_report_top_ips 5)
+    data[TOP_COUNTRIES_HTML]=$(nftban_report_top_countries 5)
+    data[TOP_SOURCES_HTML]=$(nftban_report_top_sources 5)
+    data[RECOMMENDATIONS_HTML]=$(nftban_report_recommendations data)
+
+    # Substitute all variables
+    for key in "${!data[@]}"; do
+        content="${content//\{$key\}/${data[$key]}}"
+    done
+
+    echo "$content"
+}
+
+# =============================================================================
+# RBL DATA COLLECTION
+# =============================================================================
+
+_collect_rbl_info() {
+    local -n _rdata="$1"
+    local rbl_enabled="NO"
+    local rbl_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/main.conf"
+
+    # Check if RBL is enabled
+    if [[ -f "$rbl_conf" ]]; then
+        rbl_enabled=$(grep -E "^NFTBAN_RBL_ENABLED=" "$rbl_conf" 2>/dev/null | cut -d'"' -f2 || echo "NO")
+    fi
+
+    if [[ "$rbl_enabled" == "YES" ]]; then
+        _rdata[MODULE_RBL_STATUS]="Active"
+        _rdata[MODULE_RBL_STATUS_CLASS]="status-active"
+        _rdata[MODULE_RBL_CLASS]="active"
+
+        # Get RBL state data
+        local state_file="${NFTBAN_LOG_DIR:-/var/log/nftban}/rbl/state.dat"
+        local listed_count=0
+        local clean_count=0
+        local watched_count=0
+
+        if [[ -f "$state_file" ]]; then
+            listed_count=$(grep -c "=listed|" "$state_file" 2>/dev/null || echo 0)
+            clean_count=$(grep -c "=clean|" "$state_file" 2>/dev/null || echo 0)
+        fi
+
+        # Count watchlist entries
+        local watchlist_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/rbl/watchlist.conf"
+        if [[ -f "$watchlist_file" ]]; then
+            watched_count=$(grep -v "^#" "$watchlist_file" 2>/dev/null | grep -c '|' || echo 0)
+        fi
+
+        _rdata[RBL_LISTED_COUNT]="$listed_count"
+        _rdata[RBL_CLEAN_COUNT]="$clean_count"
+        _rdata[RBL_WATCHED_COUNT]="$watched_count"
+
+        # Get last check time
+        local last_check_file="${NFTBAN_LOG_DIR:-/var/log/nftban}/rbl/last_check"
+        if [[ -f "$last_check_file" ]]; then
+            _rdata[RBL_LAST_CHECK]=$(cat "$last_check_file" 2>/dev/null || echo "Unknown")
+        else
+            _rdata[RBL_LAST_CHECK]="Never"
+        fi
+
+        # Activity summary
+        if [[ $listed_count -gt 0 ]]; then
+            _rdata[MODULE_RBL_ACTIVITY]="${listed_count} IPs blacklisted!"
+        else
+            _rdata[MODULE_RBL_ACTIVITY]="${clean_count} IPs clean"
+        fi
+    else
+        _rdata[MODULE_RBL_STATUS]="Disabled"
+        _rdata[MODULE_RBL_STATUS_CLASS]="status-inactive"
+        _rdata[MODULE_RBL_CLASS]="inactive"
+        _rdata[MODULE_RBL_ACTIVITY]="-"
+        _rdata[RBL_LISTED_COUNT]="0"
+        _rdata[RBL_CLEAN_COUNT]="0"
+        _rdata[RBL_WATCHED_COUNT]="0"
+        _rdata[RBL_LAST_CHECK]="N/A"
+    fi
+}
+
+# Get RBL table HTML for reports
+nftban_report_rbl_table() {
+    local state_file="${NFTBAN_LOG_DIR:-/var/log/nftban}/rbl/state.dat"
+    local html=""
+
+    if [[ -f "$state_file" ]]; then
+        while IFS='=' read -r ip data; do
+            [[ -z "$ip" ]] && continue
+            [[ "$ip" =~ ^# ]] && continue
+
+            local status timestamp
+            status=$(echo "$data" | cut -d'|' -f1)
+            timestamp=$(echo "$data" | cut -d'|' -f2)
+
+            local status_class="feed-status-current"
+            local status_text="Clean"
+            if [[ "$status" == "listed" ]]; then
+                status_class="feed-status-error"
+                status_text="LISTED"
+            fi
+
+            html+="<tr>"
+            html+="<td><code>${ip}</code></td>"
+            html+="<td class=\"${status_class}\">${status_text}</td>"
+            html+="<td>${timestamp:-Unknown}</td>"
+            html+="</tr>"
+        done < "$state_file"
+    fi
+
+    [[ -z "$html" ]] && html="<tr><td colspan=\"3\" style=\"text-align:center;color:#64748b;\">No RBL checks recorded</td></tr>"
+    echo "$html"
+}
+
+# =============================================================================
+# EXPORT FUNCTIONS
+# =============================================================================
+export -f nftban_report_collect_all
+export -f nftban_report_top_ips
+export -f nftban_report_top_countries
+export -f nftban_report_top_sources
+export -f nftban_report_recommendations
+export -f nftban_report_substitute
+export -f nftban_report_rbl_table
+
+# =============================================================================
+# END OF MODULE
+# =============================================================================

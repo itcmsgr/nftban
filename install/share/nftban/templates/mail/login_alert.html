@@ -1,0 +1,471 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFTBan Login Alert - {LOGIN_EVENT_TYPE}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 650px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        /* Header - status based */
+        .header {
+            padding: 25px 20px;
+            text-align: center;
+            color: white;
+        }
+        .header.success {
+            background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%);
+        }
+        .header.failed {
+            background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+        }
+        .header.suspicious {
+            background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+        }
+        .header h1 {
+            margin: 0 0 8px 0;
+            font-size: 22px;
+        }
+        .header .status-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 4px 14px;
+            border-radius: 12px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-weight: 600;
+        }
+        .header .event-badge {
+            display: inline-block;
+            background: rgba(0,0,0,0.2);
+            padding: 6px 14px;
+            border-radius: 15px;
+            font-size: 14px;
+            margin-top: 10px;
+        }
+        .content {
+            padding: 25px 20px;
+        }
+        /* Alert Banner */
+        .alert-banner {
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .alert-banner.success {
+            background: #dcfce7;
+            border-left: 4px solid #22c55e;
+            color: #166534;
+        }
+        .alert-banner.failed {
+            background: #fee2e2;
+            border-left: 4px solid #ef4444;
+            color: #991b1b;
+        }
+        .alert-banner.suspicious {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            color: #92400e;
+        }
+        /* Info Grid */
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .info-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .info-card h4 {
+            margin: 0 0 8px 0;
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .info-card .value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .info-card .value.danger { color: #dc2626; }
+        .info-card .value.warning { color: #d97706; }
+        .info-card .value.success { color: #16a34a; }
+        .info-card .value code {
+            font-family: 'SF Mono', 'Consolas', monospace;
+            background: #e2e8f0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        /* Details Table */
+        .details-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        .details-table th {
+            background: #f1f5f9;
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #475569;
+            width: 30%;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        .details-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #334155;
+        }
+        .details-table tr:last-child td {
+            border-bottom: none;
+        }
+        /* Section Headers */
+        .section {
+            margin: 25px 0;
+        }
+        .section h3 {
+            font-size: 14px;
+            color: #1e293b;
+            margin: 0 0 12px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e2e8f0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        /* Details Block */
+        .details-block {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 13px;
+            margin: 15px 0;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        /* User/Service Icon Cards */
+        .identity-section {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .identity-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 20px;
+            text-align: center;
+        }
+        .identity-card.root {
+            border-left: 4px solid #dc2626;
+        }
+        .identity-card.user {
+            border-left: 4px solid #3b82f6;
+        }
+        .identity-card .icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+        .identity-card .label {
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+        .identity-card .name {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1e293b;
+            margin-top: 4px;
+        }
+        .identity-card .name.root {
+            color: #dc2626;
+        }
+        /* GeoIP Section */
+        .geoip-section {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .geoip-section h4 {
+            margin: 0 0 10px 0;
+            color: #1e40af;
+            font-size: 13px;
+        }
+        .geoip-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+        .geoip-item {
+            text-align: center;
+        }
+        .geoip-value {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1e40af;
+        }
+        .geoip-label {
+            font-size: 10px;
+            color: #3b82f6;
+            text-transform: uppercase;
+        }
+        /* Actions Section */
+        .actions {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .actions.critical {
+            background: #fee2e2;
+            border-color: #fca5a5;
+        }
+        .actions h3 {
+            margin: 0 0 12px 0;
+            font-size: 14px;
+            color: #92400e;
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        .actions.critical h3 {
+            color: #991b1b;
+        }
+        .actions ul {
+            margin: 0;
+            padding-left: 20px;
+            font-size: 13px;
+        }
+        .actions li {
+            margin: 8px 0;
+        }
+        .actions code {
+            background: rgba(0,0,0,0.1);
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 12px;
+        }
+        /* Context Section */
+        .context {
+            background: #f8fafc;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .context h3 {
+            margin: 0 0 12px 0;
+            font-size: 13px;
+            color: #475569;
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        .context-row {
+            display: flex;
+            justify-content: space-around;
+            text-align: center;
+        }
+        .context-item {
+            padding: 8px;
+        }
+        .context-value {
+            font-size: 20px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .context-label {
+            font-size: 10px;
+            color: #64748b;
+            text-transform: uppercase;
+        }
+        /* Footer */
+        .footer {
+            background: #f8fafc;
+            padding: 15px 20px;
+            text-align: center;
+            color: #64748b;
+            font-size: 11px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .footer p {
+            margin: 4px 0;
+        }
+        /* Responsive */
+        @media only screen and (max-width: 500px) {
+            .info-grid, .identity-section {
+                grid-template-columns: 1fr;
+            }
+            .geoip-grid {
+                grid-template-columns: 1fr;
+                gap: 8px;
+            }
+            .context-row {
+                flex-direction: column;
+                gap: 10px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header {LOGIN_STATUS_CLASS}">
+            <h1>Login Alert</h1>
+            <span class="event-badge">{LOGIN_EVENT_TYPE}</span>
+            <br>
+            <span class="status-badge">{LOGIN_STATUS}</span>
+        </div>
+
+        <div class="content">
+            <!-- Alert Banner -->
+            <div class="alert-banner {LOGIN_STATUS_CLASS}">
+                {LOGIN_ALERT_MESSAGE}
+            </div>
+
+            <!-- Key Info Grid -->
+            <div class="info-grid">
+                <div class="info-card">
+                    <h4>Username</h4>
+                    <div class="value {LOGIN_USER_CLASS}">{LOGIN_USER}</div>
+                </div>
+                <div class="info-card">
+                    <h4>Service</h4>
+                    <div class="value">{LOGIN_SERVICE}</div>
+                </div>
+                <div class="info-card">
+                    <h4>IP Address</h4>
+                    <div class="value"><code>{LOGIN_IP}</code></div>
+                </div>
+                <div class="info-card">
+                    <h4>Time</h4>
+                    <div class="value">{DATE} {TIME}</div>
+                </div>
+            </div>
+
+            <!-- Event Details -->
+            <div class="section">
+                <h3>Event Details</h3>
+                <table class="details-table">
+                    <tr>
+                        <th>Event Type</th>
+                        <td>{LOGIN_EVENT_TYPE}</td>
+                    </tr>
+                    <tr>
+                        <th>Username</th>
+                        <td><strong>{LOGIN_USER}</strong></td>
+                    </tr>
+                    <tr>
+                        <th>Service</th>
+                        <td>{LOGIN_SERVICE}</td>
+                    </tr>
+                    <tr>
+                        <th>Status</th>
+                        <td><span style="color: {LOGIN_STATUS_COLOR}; font-weight: 600;">{LOGIN_STATUS}</span></td>
+                    </tr>
+                    <tr>
+                        <th>Server</th>
+                        <td>{HOSTNAME}</td>
+                    </tr>
+                    <tr>
+                        <th>Timestamp</th>
+                        <td>{DATE} at {TIME}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Connection Info -->
+            <div class="section">
+                <h3>Connection Information</h3>
+                <table class="details-table">
+                    <tr>
+                        <th>IP Address</th>
+                        <td><code>{LOGIN_IP}</code></td>
+                    </tr>
+                    <tr>
+                        <th>Location</th>
+                        <td>{LOGIN_GEOIP}</td>
+                    </tr>
+                    <tr>
+                        <th>Country</th>
+                        <td>{LOGIN_COUNTRY}</td>
+                    </tr>
+                    <tr>
+                        <th>ASN</th>
+                        <td>{LOGIN_ASN}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Additional Details (if any) -->
+            <div class="section">
+                <h3>Additional Details</h3>
+                <div class="details-block">{LOGIN_DETAILS}</div>
+            </div>
+
+            <!-- Failed Login Stats (for failed attempts) -->
+            {LOGIN_FAILED_STATS_HTML}
+
+            <!-- Recommended Actions -->
+            <div class="actions {LOGIN_ACTIONS_CLASS}">
+                <h3>Recommended Actions</h3>
+                <ul>
+                    {LOGIN_ACTIONS_HTML}
+                </ul>
+            </div>
+
+            <!-- Current NFTBan State -->
+            <div class="context">
+                <h3>NFTBan Security Status</h3>
+                <div class="context-row">
+                    <div class="context-item">
+                        <div class="context-value">{ACTIVE_BANS}</div>
+                        <div class="context-label">Active Bans</div>
+                    </div>
+                    <div class="context-item">
+                        <div class="context-value">{FAILED_LOGINS_24H}</div>
+                        <div class="context-label">Failed (24h)</div>
+                    </div>
+                    <div class="context-item">
+                        <div class="context-value">{HEALTH_STATUS}</div>
+                        <div class="context-label">Health</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p><strong>NFTBan v{NFTBAN_VERSION}</strong> | Login Monitor</p>
+            <p>{HOSTNAME} | {SERVER_IP}</p>
+            <p style="margin-top: 8px;">Run <code>nftban login status</code> for monitoring details</p>
+        </div>
+    </div>
+</body>
+</html>

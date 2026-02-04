@@ -1,0 +1,375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFTBan RBL Alert - {RBL_IP} Blacklisted</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 650px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        /* Header - severity based */
+        .header {
+            padding: 25px 20px;
+            text-align: center;
+            color: white;
+        }
+        .header.critical {
+            background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+        }
+        .header.high {
+            background: linear-gradient(135deg, #ea580c 0%, #f97316 100%);
+        }
+        .header.medium {
+            background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+        }
+        .header h1 {
+            margin: 0 0 8px 0;
+            font-size: 22px;
+        }
+        .header .severity-badge {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 4px 14px;
+            border-radius: 12px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            margin-top: 8px;
+        }
+        .header .ip-badge {
+            display: inline-block;
+            background: rgba(0,0,0,0.2);
+            padding: 6px 14px;
+            border-radius: 15px;
+            font-size: 16px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            margin-top: 10px;
+        }
+        .content {
+            padding: 25px 20px;
+        }
+        /* Alert Banner */
+        .alert-banner {
+            background: #fee2e2;
+            border-left: 4px solid #ef4444;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-size: 14px;
+            color: #991b1b;
+        }
+        .alert-banner.mail {
+            background: #fef2f2;
+            border-left-color: #dc2626;
+        }
+        /* Info Grid */
+        .info-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .info-card {
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 15px;
+        }
+        .info-card h4 {
+            margin: 0 0 8px 0;
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .info-card .value {
+            font-size: 16px;
+            font-weight: 600;
+            color: #1e293b;
+        }
+        .info-card .value.danger { color: #dc2626; }
+        .info-card .value code {
+            font-family: 'SF Mono', 'Consolas', monospace;
+            background: #e2e8f0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 14px;
+        }
+        /* RBL Details Table */
+        .details-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        .details-table th {
+            background: #f1f5f9;
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #475569;
+            width: 35%;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        .details-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #334155;
+        }
+        .details-table tr:last-child td {
+            border-bottom: none;
+        }
+        /* Section Headers */
+        .section {
+            margin: 25px 0;
+        }
+        .section h3 {
+            font-size: 14px;
+            color: #1e293b;
+            margin: 0 0 12px 0;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #e2e8f0;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        /* Impact Section */
+        .impact {
+            background: #fef3c7;
+            border: 1px solid #fcd34d;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .impact.mail-critical {
+            background: #fee2e2;
+            border-color: #fca5a5;
+        }
+        .impact h4 {
+            margin: 0 0 10px 0;
+            color: #92400e;
+            font-size: 13px;
+        }
+        .impact.mail-critical h4 {
+            color: #991b1b;
+        }
+        .impact ul {
+            margin: 0;
+            padding-left: 20px;
+            font-size: 13px;
+        }
+        .impact li {
+            margin: 6px 0;
+        }
+        /* Actions Section */
+        .actions {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        .actions h3 {
+            margin: 0 0 12px 0;
+            font-size: 14px;
+            color: #1e40af;
+            border-bottom: none;
+            padding-bottom: 0;
+        }
+        .actions ol {
+            margin: 0;
+            padding-left: 25px;
+            font-size: 13px;
+            color: #1e40af;
+        }
+        .actions li {
+            margin: 8px 0;
+        }
+        .actions code {
+            background: #dbeafe;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 12px;
+        }
+        /* Reason Block */
+        .reason-block {
+            background: #1e293b;
+            color: #e2e8f0;
+            padding: 15px;
+            border-radius: 6px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 13px;
+            margin: 15px 0;
+            overflow-x: auto;
+        }
+        /* Delisting Link */
+        .delisting-link {
+            background: #f0fdf4;
+            border: 1px solid #86efac;
+            border-radius: 6px;
+            padding: 12px 15px;
+            margin-top: 15px;
+            font-size: 13px;
+        }
+        .delisting-link a {
+            color: #16a34a;
+            font-weight: 600;
+            text-decoration: none;
+        }
+        .delisting-link a:hover {
+            text-decoration: underline;
+        }
+        /* Footer */
+        .footer {
+            background: #f8fafc;
+            padding: 15px 20px;
+            text-align: center;
+            color: #64748b;
+            font-size: 11px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .footer p {
+            margin: 4px 0;
+        }
+        /* Responsive */
+        @media only screen and (max-width: 500px) {
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header {RBL_SEVERITY_CLASS}">
+            <h1>IP Blacklisted on RBL</h1>
+            <span class="ip-badge">{RBL_IP}</span>
+            <br>
+            <span class="severity-badge">{RBL_SEVERITY} Severity - {RBL_TAG}</span>
+        </div>
+
+        <div class="content">
+            <!-- Alert Banner -->
+            <div class="alert-banner {RBL_TAG_CLASS}">
+                <strong>Action Required:</strong> Your server IP <code>{RBL_IP}</code> has been detected on a blacklist.
+                {RBL_MAIL_WARNING}
+            </div>
+
+            <!-- Key Info Grid -->
+            <div class="info-grid">
+                <div class="info-card">
+                    <h4>IP Address</h4>
+                    <div class="value"><code>{RBL_IP}</code></div>
+                </div>
+                <div class="info-card">
+                    <h4>Tag / Service</h4>
+                    <div class="value">{RBL_TAG}</div>
+                </div>
+                <div class="info-card">
+                    <h4>Blacklist</h4>
+                    <div class="value danger">{RBL_NAME}</div>
+                </div>
+                <div class="info-card">
+                    <h4>Detected</h4>
+                    <div class="value">{DATE} {TIME}</div>
+                </div>
+            </div>
+
+            <!-- Listing Details -->
+            <div class="section">
+                <h3>Listing Details</h3>
+                <table class="details-table">
+                    <tr>
+                        <th>Server</th>
+                        <td>{HOSTNAME}</td>
+                    </tr>
+                    <tr>
+                        <th>RBL Provider</th>
+                        <td>{RBL_NAME}</td>
+                    </tr>
+                    <tr>
+                        <th>RBL Domain</th>
+                        <td><code>{RBL_DOMAIN}</code></td>
+                    </tr>
+                    <tr>
+                        <th>Detection Time</th>
+                        <td>{DATE} at {TIME}</td>
+                    </tr>
+                </table>
+            </div>
+
+            <!-- Reason (if available) -->
+            <div class="section">
+                <h3>Listing Reason</h3>
+                <div class="reason-block">{RBL_REASON}</div>
+            </div>
+
+            <!-- Impact Section -->
+            <div class="impact {RBL_IMPACT_CLASS}">
+                <h4>Potential Impact</h4>
+                <ul>
+                    {RBL_IMPACT_HTML}
+                </ul>
+            </div>
+
+            <!-- Recommended Actions -->
+            <div class="actions">
+                <h3>Recommended Actions</h3>
+                <ol>
+                    {RBL_ACTIONS_HTML}
+                </ol>
+            </div>
+
+            <!-- Delisting Link -->
+            <div class="delisting-link">
+                <strong>Request Delisting:</strong> <a href="{RBL_DELIST_URL}" target="_blank">{RBL_DELIST_URL}</a>
+            </div>
+
+            <!-- Current RBL Status Context -->
+            <div class="section">
+                <h3>Current RBL Monitoring Status</h3>
+                <table class="details-table">
+                    <tr>
+                        <th>Total IPs Monitored</th>
+                        <td>{RBL_TOTAL_MONITORED}</td>
+                    </tr>
+                    <tr>
+                        <th>Currently Listed</th>
+                        <td style="color: #dc2626; font-weight: 600;">{RBL_LISTED_COUNT}</td>
+                    </tr>
+                    <tr>
+                        <th>Currently Clean</th>
+                        <td style="color: #22c55e;">{RBL_CLEAN_COUNT}</td>
+                    </tr>
+                    <tr>
+                        <th>Last Full Check</th>
+                        <td>{RBL_LAST_CHECK}</td>
+                    </tr>
+                </table>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <div class="footer">
+            <p><strong>NFTBan v{NFTBAN_VERSION}</strong> | RBL Monitoring</p>
+            <p>{HOSTNAME} | {SERVER_IP}</p>
+            <p style="margin-top: 8px;">Run <code>nftban rbl check --verbose</code> for full report</p>
+        </div>
+    </div>
+</body>
+</html>

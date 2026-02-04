@@ -226,12 +226,12 @@ EOF
             # Update active port state for future cleanup
             echo "$SSH_PORT" > "$SSH_PORT_ACTIVE"
 
-            # Send alert if mail is configured (ONLY ONCE)
-            if command -v mail &>/dev/null && [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/mail.conf" ]]; then
+            # Send alert via NFTBan unified mail mechanism (ONLY ONCE)
+            if [[ -f "${NFTBAN_CONFIG_DIR}/conf.d/mail.conf" ]]; then
                 local alert_msg="NFTBan Security Alert: SSH port changed to $SSH_PORT"
                 [[ -n "$OLD_SSH_PORT" ]] && alert_msg+=", old port $OLD_SSH_PORT removed"
                 alert_msg+=", auto-whitelisted and firewall reloaded on $(hostname) at $(date)"
-                echo "$alert_msg" | mail -s "[NFTBan] SSH Port Auto-Updated on $(hostname)" root 2>/dev/null || true
+                nftban_mail_send "$alert_msg" 2>/dev/null || true
             fi
         fi
     else

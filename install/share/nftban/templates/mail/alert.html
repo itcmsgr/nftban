@@ -1,20 +1,256 @@
-<!-- NFTBan Alert Template -->
-<!-- Used for: Login alerts, Ban events, Threshold breaches, Suricata alerts -->
-<!-- Variables: {ALERT_TYPE}, {ALERT_SEVERITY}, {ALERT_TITLE}, {ALERT_MESSAGE}, {ALERT_DETAILS}, {ALERT_ACTIONS} -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NFTBan Alert - {ALERT_TYPE}</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Arial, sans-serif;
+            background-color: #f5f5f5;
+            margin: 0;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            background: #ffffff;
+            border-radius: 8px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        /* Alert Type Headers */
+        .header {
+            padding: 25px 20px;
+            text-align: center;
+            color: white;
+        }
+        .header.critical {
+            background: linear-gradient(135deg, #dc2626 0%, #ef4444 100%);
+        }
+        .header.warning {
+            background: linear-gradient(135deg, #d97706 0%, #f59e0b 100%);
+        }
+        .header.info {
+            background: linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%);
+        }
+        .header.success {
+            background: linear-gradient(135deg, #16a34a 0%, #22c55e 100%);
+        }
+        .header h1 {
+            margin: 0 0 8px 0;
+            font-size: 22px;
+        }
+        .header .alert-type {
+            display: inline-block;
+            background: rgba(255,255,255,0.2);
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 12px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .content {
+            padding: 25px 20px;
+        }
+        /* Alert Message */
+        .alert-message {
+            background: #fef3c7;
+            border-left: 4px solid #f59e0b;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 4px;
+            font-size: 14px;
+        }
+        .alert-message.critical {
+            background: #fee2e2;
+            border-left-color: #ef4444;
+        }
+        .alert-message.info {
+            background: #e0f2fe;
+            border-left-color: #0ea5e9;
+        }
+        .alert-message.success {
+            background: #dcfce7;
+            border-left-color: #22c55e;
+        }
+        /* Details Table */
+        .details-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 20px 0;
+            font-size: 14px;
+        }
+        .details-table th {
+            background: #f1f5f9;
+            padding: 10px 12px;
+            text-align: left;
+            font-weight: 600;
+            color: #475569;
+            width: 35%;
+            font-size: 12px;
+            text-transform: uppercase;
+        }
+        .details-table td {
+            padding: 10px 12px;
+            border-bottom: 1px solid #e2e8f0;
+            color: #334155;
+        }
+        .details-table tr:last-child td {
+            border-bottom: none;
+        }
+        /* Code/IP styling */
+        .code {
+            font-family: 'SF Mono', 'Consolas', monospace;
+            background: #f1f5f9;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-size: 13px;
+        }
+        /* Actions Section */
+        .actions {
+            background: #f8fafc;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .actions h3 {
+            margin: 0 0 12px 0;
+            font-size: 14px;
+            color: #1e293b;
+        }
+        .actions ul {
+            margin: 0;
+            padding-left: 20px;
+            font-size: 13px;
+            color: #475569;
+        }
+        .actions li {
+            margin: 8px 0;
+        }
+        .actions code {
+            background: #e2e8f0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'SF Mono', 'Consolas', monospace;
+            font-size: 12px;
+        }
+        /* Context Section - Current System State */
+        .context {
+            background: #eff6ff;
+            border: 1px solid #bfdbfe;
+            border-radius: 6px;
+            padding: 15px;
+            margin-top: 20px;
+        }
+        .context h3 {
+            margin: 0 0 10px 0;
+            font-size: 13px;
+            color: #1e40af;
+        }
+        .context-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 10px;
+        }
+        .context-item {
+            text-align: center;
+        }
+        .context-value {
+            font-size: 18px;
+            font-weight: 600;
+            color: #1e40af;
+        }
+        .context-label {
+            font-size: 10px;
+            color: #3b82f6;
+            text-transform: uppercase;
+        }
+        /* Footer */
+        .footer {
+            background: #f8fafc;
+            padding: 15px 20px;
+            text-align: center;
+            color: #64748b;
+            font-size: 11px;
+            border-top: 1px solid #e2e8f0;
+        }
+        .footer p {
+            margin: 4px 0;
+        }
+        /* Responsive */
+        @media only screen and (max-width: 480px) {
+            .context-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <!-- Header with Alert Type -->
+        <div class="header {ALERT_SEVERITY_CLASS}">
+            <span class="alert-type">{ALERT_TYPE}</span>
+            <h1>{ALERT_TITLE}</h1>
+        </div>
 
-<div class="alert alert-{ALERT_SEVERITY_CLASS}">
-    <strong>{ALERT_TYPE}</strong>
-</div>
+        <div class="content">
+            <!-- Alert Message -->
+            <div class="alert-message {ALERT_SEVERITY_CLASS}">
+                {ALERT_MESSAGE}
+            </div>
 
-<h2>{ALERT_TITLE}</h2>
+            <!-- Alert Details -->
+            <table class="details-table">
+                <tr>
+                    <th>Server</th>
+                    <td>{HOSTNAME}</td>
+                </tr>
+                <tr>
+                    <th>Time</th>
+                    <td>{DATE} at {TIME}</td>
+                </tr>
+                {ALERT_DETAILS_ROWS}
+            </table>
 
-<p>{ALERT_MESSAGE}</p>
+            <!-- Additional Details (if any) -->
+            {ALERT_EXTRA_HTML}
 
-{ALERT_DETAILS}
+            <!-- Current System State Context -->
+            <div class="context">
+                <h3>Current System State</h3>
+                <div class="context-grid">
+                    <div class="context-item">
+                        <div class="context-value">{ACTIVE_BANS}</div>
+                        <div class="context-label">Active Bans</div>
+                    </div>
+                    <div class="context-item">
+                        <div class="context-value">{BANS_24H}</div>
+                        <div class="context-label">Bans (24h)</div>
+                    </div>
+                    <div class="context-item">
+                        <div class="context-value">{HEALTH_STATUS}</div>
+                        <div class="context-label">Health</div>
+                    </div>
+                </div>
+            </div>
 
-<h3>Recommended Actions</h3>
-{ALERT_ACTIONS}
+            <!-- Recommended Actions -->
+            <div class="actions">
+                <h3>Recommended Actions</h3>
+                <ul>
+                    {ALERT_ACTIONS_HTML}
+                </ul>
+            </div>
+        </div>
 
-<p style="color: #666; font-size: 12px; margin-top: 20px;">
-    Alert generated at {DATE} {TIME} on {HOSTNAME}
-</p>
+        <!-- Footer -->
+        <div class="footer">
+            <p><strong>NFTBan v{NFTBAN_VERSION}</strong> | {HOSTNAME}</p>
+            <p>Alert generated at {DATE} {TIME}</p>
+            <p style="margin-top: 8px;">This is an automated security alert. Do not reply.</p>
+        </div>
+    </div>
+</body>
+</html>

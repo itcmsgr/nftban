@@ -5,6 +5,52 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.4] - 2026-02-04
+
+### Unified Mail & Reporting System
+
+This release consolidates all email sending through the unified NFTBan mail mechanism
+and modernizes all email templates for consistent, professional reporting.
+
+### Added
+
+- **New email templates** - Professional HTML templates for all alert types:
+  - `login_alert.html` - Login/SSH/su/sudo security alerts
+  - `rbl_alert.html` - RBL blacklist detection alerts with severity levels
+  - Modernized `stats_email.html` with KPI cards, module status, and recommendations
+  - Modernized `alert.html` with severity-based styling
+  - Modernized `service_failure.html` with system context
+
+- **Health timer boot execution** - `nftban-health.timer` now runs 15 minutes after
+  boot to catch startup issues (previously only ran at scheduled 03:00 AM time)
+
+### Fixed
+
+- **Unified mail mechanism** - All modules now use `nftban_mail_send()`:
+  - `nftban_rbl.sh` - RBL alerts (was direct `mail` command)
+  - `nftban_portscan_classic.sh` - Portscan alerts (was direct `mail` command)
+  - `nftban_portscan_suricata.sh` - Suricata alerts (was direct `mail` command)
+  - `nftban_report_engine.sh` - Report emails (was direct `mail` command)
+  - `nftban_report_email.sh` - Email reports (was direct `sendmail -t`)
+  - `nftban_login_alert.sh` - Login alerts (removed fallback bypass)
+  - `maintenance.sh` - SSH port change alerts (was direct `mail` command)
+
+- **Template file permissions** - All mail templates now have correct 644 permissions
+
+### Improved
+
+- **Consistent template styling** - All email templates now share:
+  - Common color palette and typography
+  - Responsive design for mobile clients
+  - Severity-based header colors (critical/warning/info/success)
+  - Current system state context sections
+  - Professional footer with version and server info
+
+- **RBL alert clarity** - Template clearly shows which RBL list detected the blacklisting
+  with `{RBL_NAME}` and `{RBL_DOMAIN}` variables
+
+---
+
 ## [1.9.3] - 2026-02-04
 
 ### RBL Monitoring & Performance Enhancements

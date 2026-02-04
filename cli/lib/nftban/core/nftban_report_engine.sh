@@ -5,25 +5,30 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Unified reporting engine
 #
-# meta:name=nftban_report_engine
-# meta:type=core
-# meta:header=Unified Reporting Engine
-# meta:version=1.0.0
+# meta:name="nftban_report_engine"
+# meta:type="core"
+# meta:header="Unified Reporting Engine"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=Centralized report generation system with multiple formats and destinations
-# meta:input=Report type, format selection, and destination parameters
-# meta:output=Reports in text, JSON, or HTML format to terminal, file, or email
+# meta:description="Centralized report generation system with multiple formats and destinations"
+# meta:input="Report type, format selection, and destination parameters"
+# meta:output="Reports in text, JSON, or HTML format to terminal, file, or email"
+# meta:depends="nftban_health.sh,nftban_stats.sh,nftban_fhs_spec.sh"
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-02-04"
 #
-# **Inventory & Requirements**
-# meta:depends=nftban_health.sh,nftban_stats.sh,nftban_fhs_spec.sh
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
+set -Eeuo pipefail
 
 # =============================================================================
 # GLOBAL VARIABLES
@@ -747,15 +752,11 @@ nftban_report_send_email() {
     # Send email based on format
     if [[ "$format" == "html" ]]; then
         # HTML email with MIME headers
-        {
-            echo "Content-Type: text/html; charset=UTF-8"
-            echo "Subject: $subject"
-            echo ""
-            echo "$content"
-        } | mail -s "$subject" "$email"
+        # HTML email via NFTBan unified mail mechanism
+        nftban_mail_send "$content" "$email"
     else
-        # Plain text email
-        echo "$content" | mail -s "$subject" "$email"
+        # Plain text email via NFTBan unified mail mechanism
+        nftban_mail_send "$content" "$email"
     fi
 
     if [[ $? -eq 0 ]]; then

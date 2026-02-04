@@ -686,9 +686,9 @@ nftban_portscan_classic_send_alert() {
 
     local message="Portscan detected: ${scan_type} scan from ${ip} (${port_count} ports)"
 
-    # Email notification
+    # Email notification via NFTBan unified mail mechanism
     if [[ "${PORTSCAN_NOTIFY_EMAIL:-false}" == "true" && -n "${PORTSCAN_NOTIFY_EMAIL_TO:-}" ]]; then
-        echo "$message" | mail -s "[NFTBan] Portscan Alert: ${ip}" "${PORTSCAN_NOTIFY_EMAIL_TO}" 2>/dev/null || true
+        nftban_mail_send "$message" "${PORTSCAN_NOTIFY_EMAIL_TO}" 2>/dev/null || true
     fi
 
     # Webhook notification
@@ -725,19 +725,12 @@ nftban_portscan_classic_is_whitelisted() {
         esac
     fi
 
-    # Check whitelist file
-    local whitelist_file="${PORTSCAN_WHITELIST_FILE:-}"
-    if [[ -f "$whitelist_file" ]]; then
-        if grep -q "^${ip}$" "$whitelist_file" 2>/dev/null; then
-            return 0
-        fi
-    fi
-
-    # Use nftban whitelist check if available
-    if type -t nftban_is_whitelisted &>/dev/null; then
-        if nftban_is_whitelisted "$ip"; then
-            return 0
-        fi
+    # Central whitelist check (SINGLE SOURCE OF TRUTH)
+    # Uses nft_schema.sh nftban_is_whitelisted() which checks:
+    # 1. nftables whitelist sets (whitelist_ipv4/whitelist_ipv6)
+    # 2. /etc/nftban/whitelist.d/*.conf files
+    if declare -f nftban_is_whitelisted &>/dev/null; then
+        nftban_is_whitelisted "$ip" && return 0
     fi
 
     return 1
