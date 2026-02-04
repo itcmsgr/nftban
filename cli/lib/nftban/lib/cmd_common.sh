@@ -5,26 +5,22 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Shared helper functions for CLI command handlers (cmd_*.sh)
 #
-# meta:name=cmd_common
-# meta:type=library
-# meta:header=CLI Command Helpers
-# meta:version=1.0.0
+# meta:name="cmd_common"
+# meta:type="library"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Reduces boilerplate in CLI handlers by providing common functions
-# meta:input=None (sourced by cmd_*.sh files)
-# meta:output=Common CLI helper functions
-#
-# **Inventory & Requirements**
-# meta:depends=bash>=4.0
+# meta:description="Reduces boilerplate in CLI handlers by providing common functions"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR, NFTBAN_LIB_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+# meta:created_date="2026-01-02"
 #
 # **Usage**
 # Source at the beginning of cmd_*.sh files:
 #   source "${NFTBAN_LIB_DIR}/lib/cmd_common.sh"
-#
-# meta:created_date=2026-01-02
 # =============================================================================
 
 # =============================================================================
@@ -374,6 +370,30 @@ cmd_get_geoip_database() {
 }
 
 # =============================================================================
+# CONFIG LOADING HELPERS
+# =============================================================================
+
+cmd_load_module_config() {
+    # Load module configuration with .local override support
+    # Usage: cmd_load_module_config "ddos"
+    # Loads: /etc/nftban/conf.d/ddos/main.conf
+    #        /etc/nftban/conf.d/ddos/main.conf.local (if exists)
+    local module="$1"
+    local config_base="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/${module}"
+
+    if [[ -f "${config_base}/main.conf" ]]; then
+        # shellcheck source=/dev/null
+        source "${config_base}/main.conf"
+    fi
+
+    # Load local overrides if they exist
+    if [[ -f "${config_base}/main.conf.local" ]]; then
+        # shellcheck source=/dev/null
+        source "${config_base}/main.conf.local"
+    fi
+}
+
+# =============================================================================
 # EXPORT FUNCTIONS
 # =============================================================================
 
@@ -395,6 +415,7 @@ export -f cmd_success
 export -f cmd_get_core_binary
 export -f cmd_get_geoip_binary
 export -f cmd_get_geoip_database
+export -f cmd_load_module_config
 
 # =============================================================================
 # MARK AS LOADED
