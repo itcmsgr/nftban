@@ -875,6 +875,18 @@ nftban_pro_cmd_license_check() {
 # MAIN COMMAND HANDLER
 # =============================================================================
 
+cmd_pro_help() {
+    echo "Usage: nftban pro <command> [options]"
+    echo ""
+    echo "Commands:"
+    echo "  enroll     Enroll with NFTBan Pro"
+    echo "  status     Show subscription status"
+    echo "  disable    Disable Pro features"
+    echo "  token      Token management"
+    echo "  inventory  Inventory management"
+    echo "  help       Show full help"
+}
+
 nftban_cmd_pro() {
     local subcommand="${1:-status}"
     shift || true

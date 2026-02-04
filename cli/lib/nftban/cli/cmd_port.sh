@@ -45,23 +45,30 @@ source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Handle port-related CLI commands
 #
-# meta:name=cmd_port
-# meta:type=cli
-# meta:header=Port CLI Command
-# meta:version=1.0.0
+# meta:name="cmd_port"
+# meta:type="cli"
+# meta:header="Port CLI Command"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=CLI interface for port status reporting
-# meta:input=Port filters, output format, mail options
-# meta:output=Port status reports (terminal, HTML, mail)
+# meta:description="CLI interface for port status reporting"
+# meta:input="Port filters, output format, mail options"
+# meta:output="Port status reports (terminal, HTML, mail)"
 #
 # **Inventory & Requirements**
-# meta:depends=bash,nftban_report_port.sh
+# meta:depends="bash,nftban_report_port.sh"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:updated_date="2025-11-24"
 # =============================================================================
 
 
@@ -97,6 +104,18 @@ fi
 # PORT COMMAND HANDLER
 # =============================================================================
 
+cmd_port_help() {
+    echo "Usage: nftban port <subcommand> [options]"
+    echo ""
+    echo "Subcommands:"
+    echo "  status          Show port status"
+    echo "  detailed        Show detailed status"
+    echo "  add <port>      Add port to whitelist"
+    echo "  remove <port>   Remove port from whitelist"
+    echo "  block <port>    Block port"
+    echo "  unblock <port>  Unblock port"
+    echo "  help            Show full help"
+}
 
 nftban_cmd_port() {
     # Handle port subcommands

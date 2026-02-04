@@ -51,9 +51,21 @@ fi
 # COMMAND HANDLER
 # =============================================================================
 
+cmd_country_help() {
+    echo "Usage: nftban country [options]"
+    echo ""
+    echo "Alias for 'nftban geoban' - country-based IP blocking"
+    echo ""
+    echo "Options passed to geoban subcommand."
+    echo "Run 'nftban geoban --help' for details."
+}
+
 nftban_cmd_country() {
     # Country command - alias for geoban
     # Delegates all arguments to nftban_cmd_geoban
+    case "${1:-}" in
+        -h|--help|help) cmd_country_help; return 0 ;;
+    esac
     nftban_cmd_geoban "$@"
 }
 

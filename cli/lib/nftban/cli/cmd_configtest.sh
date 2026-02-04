@@ -51,9 +51,21 @@ fi
 # COMMAND HANDLER
 # =============================================================================
 
+cmd_configtest_help() {
+    echo "Usage: nftban configtest [options]"
+    echo ""
+    echo "Alias for 'nftban config test' - validates configuration against schema"
+    echo ""
+    echo "Options passed to config test subcommand."
+    echo "Run 'nftban config test --help' for details."
+}
+
 nftban_cmd_configtest() {
     # ConfigTest command - alias for config test
     # Delegates all arguments to nftban_cmd_config_test
+    case "${1:-}" in
+        -h|--help|help) cmd_configtest_help; return 0 ;;
+    esac
     nftban_cmd_config_test "$@"
 }
 

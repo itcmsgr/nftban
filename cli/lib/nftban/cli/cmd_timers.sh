@@ -350,6 +350,16 @@ cmd_timers_disable() {
 # COMMAND: MAIN ROUTER
 # =============================================================================
 
+cmd_timers_help() {
+    echo "Usage: nftban timers <subcommand> [options]"
+    echo ""
+    echo "Subcommands:"
+    echo "  status           Show timer status (default)"
+    echo "  enable [TIMER]   Enable timer(s)"
+    echo "  disable [TIMER]  Disable timer(s)"
+    echo "  help             Show full help"
+}
+
 nftban_cmd_timers() {
     local subcommand="${1:-status}"
     shift || true

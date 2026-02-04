@@ -30,24 +30,31 @@ fi
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Handle module inventory CLI commands with validation
 #
-# meta:name=cmd_module
-# meta:type=cli
-# meta:header=Module CLI Command
-# meta:version=1.0.0
+# meta:name="cmd_module"
+# meta:type="cli"
+# meta:header="Module CLI Command"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=CLI interface for module inventory and validation reporting
-# meta:input=Output format, mail options, validation flags
-# meta:output=Module inventory reports with validation (terminal, HTML, mail)
+# meta:description="CLI interface for module inventory and validation reporting"
+# meta:input="Output format, mail options, validation flags"
+# meta:output="Module inventory reports with validation (terminal, HTML, mail)"
 #
 # **Inventory & Requirements**
-# meta:depends=bash,nftban_report_module.sh
+# meta:depends="bash,nftban_report_module.sh"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 #
 # meta:created_date=2025-11-05
 # meta:updated_date=2025-11-24
-# meta:contributors=Claude (Anthropic) - Testing and integration, ChatGPT (OpenAI) - Code review
+# meta:contributors="Claude (Anthropic) - Testing and integration, ChatGPT (OpenAI) - Code review"
 # =============================================================================
 
 
@@ -83,6 +90,19 @@ fi
 # MODULE COMMAND HANDLER
 # =============================================================================
 
+cmd_module_help() {
+    echo "Usage: nftban module [subcommand]"
+    echo ""
+    echo "Subcommands:"
+    echo "  status    Show module inventory (default)"
+    echo "  summary   One-line summary"
+    echo "  json      JSON output"
+    echo "  validate  Metadata validation"
+    echo "  license   License compliance"
+    echo "  author    Author attribution"
+    echo "  depends   Dependency analysis"
+    echo "  help      Show full help"
+}
 
 nftban_cmd_module() {
     # Handle module subcommands
