@@ -442,6 +442,21 @@ nftban_health_check_permissions() {
         fi
     done
 
+    # Check CLI handler files are executable (cmd_*.sh)
+    if [[ -d "${NFTBAN_LIB_DIR}/cli" ]]; then
+        local non_exec_cli=0
+        while IFS= read -r -d '' cli_file; do
+            if [[ ! -x "$cli_file" ]]; then
+                ((non_exec_cli++))
+            fi
+        done < <(find "${NFTBAN_LIB_DIR}/cli" -name "cmd_*.sh" -type f -print0 2>/dev/null)
+
+        if [[ $non_exec_cli -gt 0 ]]; then
+            permission_issues+=("$non_exec_cli CLI handlers not executable (fix: chmod 755 ${NFTBAN_LIB_DIR}/cli/cmd_*.sh)")
+            status=$HEALTH_WARNING
+        fi
+    fi
+
     # Store results
     if [[ ${#permission_issues[@]} -gt 0 ]]; then
         NFTBAN_HEALTH_ISSUES["permissions"]="${permission_issues[*]}"
