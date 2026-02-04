@@ -2,7 +2,7 @@
 
 **Enterprise-Grade | Atomic Updates | Polkit-Secured | AI-Ready**
 
-[![Version](https://img.shields.io/badge/version-1.3.0-blue)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-1.9.3-blue)](https://github.com/itcmsgr/nftban)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Code: 80%+ Shell](https://img.shields.io/badge/Code-80%25%2B%20Shell-4EAA25.svg)]()
 [![Performance: Go Binaries](https://img.shields.io/badge/Performance-Go%20Binaries-00ADD8.svg)](https://go.dev/)
@@ -105,7 +105,7 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 
 ## Highlights
 
-- **49 CLI Commands** — Complete firewall management from command line
+- **62 CLI Commands** — Complete firewall management from command line
 - **Unified Go Backend** — High-performance feeds, GeoIP, and sync operations
 - **Suricata Integration** — Intelligent rule management with 50-70% rule reduction
 - **RBL Monitoring** — Real-time blackhole list checking and IP reputation tracking
@@ -191,7 +191,7 @@ nftban ddos status     # DDoS protection
 ### Testing
 ```bash
 nftban smoke run       # Standard smoke test
-nftban smoke all       # Comprehensive test (44 commands)
+nftban smoke all       # Comprehensive test (62 commands)
 ```
 
 See [CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference) for complete documentation.
@@ -220,7 +220,7 @@ ip6 nftban {                 # IPv6 rules
 
 | Component | Type | Description |
 |-----------|------|-------------|
-| `nftban` | Bash CLI | Main command-line interface (44 commands) |
+| `nftban` | Bash CLI | Main command-line interface (62 commands) |
 | `nftban-core` | Go Binary | Unified backend (feeds, geoip, sync) |
 | `nftban-ui` | Go Binary | Web interface server |
 
@@ -290,7 +290,7 @@ Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
 
 ### Getting Started
 - **[Wiki Home](https://github.com/itcmsgr/nftban/wiki)** - Complete documentation
-- **[CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference)** - All 44 commands
+- **[CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference)** - All 62 commands
 - **[Installation Prerequisites](https://github.com/itcmsgr/nftban/wiki/Installation-Prerequisites)** - System requirements
 
 ### Advanced Integration
