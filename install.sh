@@ -59,19 +59,19 @@ info()  { echo -e "${CYAN}[  INFO ]${NC} $*"; }
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Configuration
-BIN_DIR="$SCRIPT_DIR/bin"
+# Configuration (exported for submodules)
+export BIN_DIR="$SCRIPT_DIR/bin"
 
-# Installation paths
-CORE_BIN_DIR="/usr/lib/nftban/bin"
-CORE_INSTALL_PATH="$CORE_BIN_DIR/nftban-core"
-CLI_INSTALL_PATH="/usr/sbin/nftban"
-GUI_INSTALL_PATH="/usr/sbin/nftban-ui"
-LIB_DIR="/usr/lib/nftban"
-COMPLETION_PATH="/usr/share/bash-completion/completions/nftban"
-POLKIT_ACTIONS_DIR="/usr/share/polkit-1/actions"
-POLKIT_RULES_DIR_SHARE="/usr/share/polkit-1/rules.d"
-POLKIT_RULES_DIR_ETC="/etc/polkit-1/rules.d"
+# Installation paths (exported for submodules)
+export CORE_BIN_DIR="/usr/lib/nftban/bin"
+export CORE_INSTALL_PATH="$CORE_BIN_DIR/nftban-core"
+export CLI_INSTALL_PATH="/usr/sbin/nftban"
+export GUI_INSTALL_PATH="/usr/sbin/nftban-ui"
+export LIB_DIR="/usr/lib/nftban"
+export COMPLETION_PATH="/usr/share/bash-completion/completions/nftban"
+export POLKIT_ACTIONS_DIR="/usr/share/polkit-1/actions"
+export POLKIT_RULES_DIR_SHARE="/usr/share/polkit-1/rules.d"
+export POLKIT_RULES_DIR_ETC="/etc/polkit-1/rules.d"
 
 # =============================================================================
 # MODULE LOADER
