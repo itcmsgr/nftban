@@ -104,7 +104,7 @@ nftban_health_render_terminal() {
     echo "SYSTEM CHECKS"
     echo "───────────────────────────────────────────────────────────"
 
-    for check in binaries paths permissions services timers modules config geoip geoban rbl databases; do
+    for check in binaries paths permissions services timers modules config geoip geoban rbl databases nftables_security; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local status_text

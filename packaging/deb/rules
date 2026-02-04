@@ -46,10 +46,6 @@ override_dh_auto_install:
 	# Create conf.d directory for custom overrides
 	mkdir -p debian/nftban-ui/etc/nftban/conf.d
 
-	# Install web files
-	mkdir -p debian/nftban-ui/usr/share/nftban-ui/web
-	cp -r cmd/nftban-ui/web/* debian/nftban-ui/usr/share/nftban-ui/web/
-
 	# Create log directory
 	mkdir -p debian/nftban-ui/var/log/nftban
 
