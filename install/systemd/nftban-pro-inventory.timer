@@ -29,6 +29,9 @@ ConditionPathExists=/etc/nftban/pro.token
 # Run daily at 04:00 AM (after license check at 00/6:00)
 OnCalendar=*-*-* 04:00:00
 
+# Catch up after reboot
+OnBootSec=30min
+
 # JITTER: 30m variance for daily task (reduced from 60m)
 RandomizedDelaySec=30m
 

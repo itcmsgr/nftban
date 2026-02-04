@@ -53,7 +53,7 @@ MemoryMax=256M
 # Security hardening - read-only except for output directories
 PrivateTmp=yes
 NoNewPrivileges=yes
-ProtectSystem=full
+ProtectSystem=strict
 ProtectHome=yes
 ReadOnlyPaths=/etc /usr /proc
 ReadWritePaths=/var/log/nftban /var/lib/nftban /run/nftban

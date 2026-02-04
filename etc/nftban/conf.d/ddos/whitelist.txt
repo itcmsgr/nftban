@@ -1,0 +1,10 @@
+# NFTBan DDoS Whitelist
+# SPDX-License-Identifier: MPL-2.0
+#
+# Add one IP or CIDR per line to whitelist from DDoS detection
+# Examples:
+#   192.168.1.100
+#   10.0.0.0/8
+#   2001:db8::/32
+#
+# Lines starting with # are comments
