@@ -236,9 +236,10 @@ _update_via_deb() {
     fi
 
     # Install
-    # Use subshell with reset IFS to avoid word-splitting issues
+    # Use DEBIAN_FRONTEND=noninteractive to prevent dpkg from asking questions
     _update_log INFO "Installing DEB package..."
     local dpkg_result
+    export DEBIAN_FRONTEND=noninteractive
     if [[ "$_NFTBAN_UPDATE_FORCE" -eq 1 ]]; then
         _update_log INFO "Force mode: using dpkg --force-overwrite --force-confnew"
         dpkg_result=$(dpkg -i --force-overwrite --force-confnew "$tmp_file" 2>&1) && {
@@ -248,7 +249,8 @@ _update_via_deb() {
             return 0
         }
     else
-        dpkg_result=$(dpkg -i "$tmp_file" 2>&1) && {
+        # Use --force-confnew to auto-accept new config files without prompting
+        dpkg_result=$(dpkg -i --force-confnew "$tmp_file" 2>&1) && {
             echo "$dpkg_result" | while IFS= read -r line; do echo "    $line"; done
             _update_log OK "DEB installed successfully"
             rm -f "$tmp_file"

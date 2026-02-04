@@ -59,8 +59,8 @@ NFTBAN_UPDATE_BACKUP_COUNT="${NFTBAN_UPDATE_BACKUP_COUNT:-3}"
 # Lock file for preventing concurrent updates
 readonly UPDATE_LOCK_FILE="/run/nftban/update.lock"
 
-# Internal flags
-_NFTBAN_UPDATE_FORCE=0
+# Internal flags (exported for submodules)
+export _NFTBAN_UPDATE_FORCE=0
 
 # =============================================================================
 # MODULE LOADER
