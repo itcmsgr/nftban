@@ -49,6 +49,9 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
 ReadWritePaths=/var/lib/nftban /var/log/nftban /var/cache/nftban /run/nftban
 
 # Timeout after 15 minutes

@@ -104,7 +104,7 @@ nftban_health_render_terminal() {
     echo "SYSTEM CHECKS"
     echo "───────────────────────────────────────────────────────────"
 
-    for check in binaries paths permissions services timers modules config geoip geoban rbl databases nftables_security; do
+    for check in binaries paths permissions services timers modules config geoip geoban rbl databases nftables_security conflicting_firewalls resources; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local status_text
@@ -133,7 +133,7 @@ nftban_health_render_terminal() {
     echo "OPTIONAL FEATURES"
     echo "───────────────────────────────────────────────────────────"
 
-    for check in metrics zabbix connectors gui polkit bash_completion; do
+    for check in ssh_port systemd_hardening metrics zabbix connectors gui polkit bash_completion; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local status_text
