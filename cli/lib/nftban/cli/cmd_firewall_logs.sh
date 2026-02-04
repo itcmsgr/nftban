@@ -189,7 +189,7 @@ _fwlog_reload_nftables() {
     if command -v nftban &>/dev/null; then
         nftban firewall reload 2>/dev/null || true
     elif command -v nft &>/dev/null; then
-        nft -f /etc/nftables.conf 2>/dev/null || true
+        nft -f "${NFTBAN_NFTABLES_CONF:-/etc/nftables.conf}" 2>/dev/null || true
     fi
 }
 

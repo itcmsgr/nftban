@@ -6,14 +6,23 @@
 # Purpose: Initial Suricata rules download and configuration
 # Location: /usr/lib/nftban/setup/setup_suricata_rules.sh
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# meta:name=setup_suricata_rules
-# meta:type=setup
-# meta:header=Suricata Rules Setup
-# meta:version=1.0.0
+# meta:name="setup_suricata_rules"
+# meta:type="setup"
+# meta:header="Suricata Rules Setup"
+# meta:version="1.0.0"
 #
-# meta:created_date=2025-11-29
+# meta:description="Download and configure Suricata rules using suricata-update"
+# meta:inventory.files=""
+# meta:inventory.binaries="suricata-update,systemctl"
+# meta:inventory.env_vars="SURICATA_RULES_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="suricata.service"
+# meta:inventory.network="ET/Open rules repository"
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2025-11-29"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -41,6 +50,9 @@ print_info() {
 print_warning() {
     echo -e "${YELLOW}[!]${NC} $1" >&2
 }
+
+# Suricata paths (configurable)
+: "${SURICATA_RULES_DIR:=/var/lib/suricata/rules}"
 
 main() {
     print_info "NFTBan Suricata Rules Setup"
@@ -100,7 +112,7 @@ main() {
 
         # Show rule count
         local rule_count
-        rule_count=$(find /var/lib/suricata/rules -name "*.rules" -exec cat {} \; 2>/dev/null | grep -c "^alert" || echo "0")
+        rule_count=$(find "${SURICATA_RULES_DIR}" -name "*.rules" -exec cat {} \; 2>/dev/null | grep -c "^alert" || echo "0")
         print_info "Total alert rules: $rule_count"
     else
         print_error "Rule download failed"
@@ -141,7 +153,7 @@ main() {
     print_status "Suricata rules setup complete!"
     echo ""
     print_info "Rule Details:"
-    echo "  Rules directory: /var/lib/suricata/rules/"
+    echo "  Rules directory: ${SURICATA_RULES_DIR}/"
     echo "  Enabled sources: et/open"
     echo "  Update schedule: Weekly (Sunday 3 AM)"
     echo ""

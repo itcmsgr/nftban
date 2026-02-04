@@ -78,6 +78,7 @@ type Config struct {
 	SuricataEnabled     bool   // NFTBAN_SURICATA_ENABLED
 	GUIEnabled          bool   // NFTBAN_GUI_ENABLED
 	GUIAddr             string // NFTBAN_GUI_ADDR
+	APIAddr             string // NFTBAN_API_ADDR (daemon HTTP API address)
 	PortscanEnabled     bool   // NFTBAN_PORTSCAN_ENABLED
 	DDoSEnabled         bool   // NFTBAN_DDOS_ENABLED
 	LoginMonitorEnabled bool   // NFTBAN_LOGIN_MONITOR_ENABLED
@@ -363,6 +364,8 @@ func loadFromFile(path string) (*Config, error) {
 			cfg.GUIEnabled = util.ParseBool(value, false)
 		case "NFTBAN_GUI_ADDR":
 			cfg.GUIAddr = value
+		case "NFTBAN_API_ADDR":
+			cfg.APIAddr = value
 		case "NFTBAN_PORTSCAN_ENABLED":
 			cfg.PortscanEnabled = util.ParseBool(value, false)
 		case "NFTBAN_DDOS_ENABLED":
@@ -489,6 +492,8 @@ func overlayFromFile(cfg *Config, path string) {
 			cfg.GUIEnabled = util.ParseBool(value, false)
 		case "NFTBAN_GUI_ADDR":
 			cfg.GUIAddr = value
+		case "NFTBAN_API_ADDR":
+			cfg.APIAddr = value
 		case "NFTBAN_PORTSCAN_ENABLED":
 			cfg.PortscanEnabled = util.ParseBool(value, false)
 		case "NFTBAN_DDOS_ENABLED":
@@ -560,6 +565,7 @@ func defaultConfig() *Config {
 		SuricataEnabled:     false,
 		GUIEnabled:          false,
 		GUIAddr:             "127.0.0.1:3940",
+		APIAddr:             ":8080",
 		PortscanEnabled:     false,
 		DDoSEnabled:         false,
 		LoginMonitorEnabled: false,

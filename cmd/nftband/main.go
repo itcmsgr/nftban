@@ -84,12 +84,21 @@ import (
 )
 
 const (
-	// HTTP API
-	HTTPAddr = ":8080"
+	// HTTP API default (can be overridden via NFTBAN_API_ADDR config)
+	DefaultHTTPAddr = ":8080"
 
 	// Profiling (pprof) - localhost only for security
 	PprofAddr = "127.0.0.1:6060"
 )
+
+// getAPIAddr returns the HTTP API address from config or default
+func getAPIAddr() string {
+	cfg := nftbanconf.MustLoad()
+	if cfg.APIAddr != "" {
+		return cfg.APIAddr
+	}
+	return DefaultHTTPAddr
+}
 
 // Build-time variables (injected by -ldflags)
 var (
@@ -378,7 +387,7 @@ func printHelp() {
 	fmt.Println()
 	fmt.Println("The daemon:")
 	fmt.Println("  - Runs all nftban modules as goroutines")
-	fmt.Println("  - Provides HTTP API on", HTTPAddr)
+	fmt.Println("  - Provides HTTP API on", getAPIAddr())
 	fmt.Println("  - Provides Unix socket at", getSocketPath())
 	fmt.Println("  - Handles graceful shutdown on SIGTERM/SIGINT")
 	fmt.Println()
@@ -565,7 +574,7 @@ func (d *Daemon) Run() error {
 		WithMessage("NFTBan daemon started").
 		WithSeverity(eventbus.SeverityInfo))
 
-	log.Printf("nftband ready - HTTP %s, Socket %s", HTTPAddr, getSocketPath())
+	log.Printf("nftband ready - HTTP %s, Socket %s", getAPIAddr(), getSocketPath())
 
 	// Schedule auto-sync after startup
 	// This ensures feeds and geoban are loaded even after quick postinst sync
@@ -1632,7 +1641,7 @@ func (d *Daemon) startHTTP() error {
 	// mux.Handle("/api/v1/", api.NewRouter())
 
 	d.httpSrv = &http.Server{
-		Addr:    HTTPAddr,
+		Addr:    getAPIAddr(),
 		Handler: mux,
 	}
 

@@ -304,7 +304,7 @@ firewall_reload() {
         esac
     done
 
-    if ! nft -f /etc/nftables.conf 2>&1; then
+    if ! nft -f "${NFTBAN_NFTABLES_CONF:-/etc/nftables.conf}" 2>&1; then
         echo "Error: Failed to reload nftables" >&2
         return 1
     fi

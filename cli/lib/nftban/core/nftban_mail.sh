@@ -31,6 +31,18 @@ set -Eeuo pipefail
 readonly NFTBAN_MAIL_LOADED=1
 
 # =============================================================================
+# CONFIGURABLE MAIL BINARY PATHS
+# =============================================================================
+# These can be overridden via environment variables for non-standard locations
+: "${NFTBAN_SENDMAIL_BIN:=/usr/sbin/sendmail}"
+: "${NFTBAN_POSTFIX_BIN:=/usr/sbin/postfix}"
+: "${NFTBAN_EXIM_BIN:=/usr/sbin/exim}"
+: "${NFTBAN_EXIM4_BIN:=/usr/sbin/exim4}"
+: "${NFTBAN_MSMTP_BIN:=/usr/bin/msmtp}"
+: "${NFTBAN_MAILX_BIN:=/usr/bin/mailx}"
+: "${NFTBAN_MAILX_ALT_BIN:=/bin/mailx}"
+
+# =============================================================================
 # MAIL SYSTEM DETECTION
 # =============================================================================
 
@@ -65,7 +77,7 @@ nftban_mail_detect_mta() {
     fi
 
     # Auto-detect: Check Postfix (highest priority - local MTA)
-    if [[ -x /usr/sbin/postfix ]]; then
+    if [[ -x "$NFTBAN_POSTFIX_BIN" ]]; then
         if systemctl is-active postfix &>/dev/null 2>&1 || pgrep -x master &>/dev/null; then
             echo "postfix"
             return 0
@@ -73,20 +85,20 @@ nftban_mail_detect_mta() {
     fi
 
     # Check Sendmail
-    if [[ -x /usr/sbin/sendmail ]]; then
+    if [[ -x "$NFTBAN_SENDMAIL_BIN" ]]; then
         if pgrep -x sendmail &>/dev/null || [[ -f /var/run/sendmail.pid ]]; then
             echo "sendmail"
             return 0
         fi
         # Sendmail binary exists even if not running - check if it's actually sendmail or postfix wrapper
-        if /usr/sbin/sendmail -bv root &>/dev/null; then
+        if "$NFTBAN_SENDMAIL_BIN" -bv root &>/dev/null; then
             echo "sendmail"
             return 0
         fi
     fi
 
     # Check Exim
-    if [[ -x /usr/sbin/exim ]] || [[ -x /usr/sbin/exim4 ]]; then
+    if [[ -x "$NFTBAN_EXIM_BIN" ]] || [[ -x "$NFTBAN_EXIM4_BIN" ]]; then
         if pgrep -x exim &>/dev/null || systemctl is-active exim4 &>/dev/null 2>&1; then
             echo "exim"
             return 0
@@ -94,7 +106,7 @@ nftban_mail_detect_mta() {
     fi
 
     # Check msmtp (lightweight SMTP relay client)
-    if [[ -x /usr/bin/msmtp ]] && [[ -f /etc/msmtprc || -f ~/.msmtprc ]]; then
+    if [[ -x "$NFTBAN_MSMTP_BIN" ]] && [[ -f /etc/msmtprc || -f ~/.msmtprc ]]; then
         echo "msmtp"
         return 0
     fi
@@ -106,7 +118,7 @@ nftban_mail_detect_mta() {
     fi
 
     # Check mailx (basic fallback)
-    if [[ -x /usr/bin/mailx ]] || [[ -x /bin/mailx ]]; then
+    if [[ -x "$NFTBAN_MAILX_BIN" ]] || [[ -x "$NFTBAN_MAILX_ALT_BIN" ]]; then
         echo "mailx"
         return 0
     fi
@@ -121,23 +133,23 @@ _nftban_mail_method_available() {
     local method="$1"
     case "$method" in
         postfix)
-            [[ -x /usr/sbin/postfix ]] && \
+            [[ -x "$NFTBAN_POSTFIX_BIN" ]] && \
                 (systemctl is-active postfix &>/dev/null 2>&1 || pgrep -x master &>/dev/null)
             ;;
         sendmail)
-            [[ -x /usr/sbin/sendmail ]]
+            [[ -x "$NFTBAN_SENDMAIL_BIN" ]]
             ;;
         exim)
-            [[ -x /usr/sbin/exim ]] || [[ -x /usr/sbin/exim4 ]]
+            [[ -x "$NFTBAN_EXIM_BIN" ]] || [[ -x "$NFTBAN_EXIM4_BIN" ]]
             ;;
         msmtp)
-            [[ -x /usr/bin/msmtp ]] && [[ -f /etc/msmtprc || -f ~/.msmtprc ]]
+            [[ -x "$NFTBAN_MSMTP_BIN" ]] && [[ -f /etc/msmtprc || -f ~/.msmtprc ]]
             ;;
         curl)
             command -v curl &>/dev/null && [[ -n "${NFTBAN_SMTP_HOST:-}" ]]
             ;;
         mailx)
-            [[ -x /usr/bin/mailx ]] || [[ -x /bin/mailx ]]
+            [[ -x "$NFTBAN_MAILX_BIN" ]] || [[ -x "$NFTBAN_MAILX_ALT_BIN" ]]
             ;;
         *)
             return 1
@@ -567,7 +579,7 @@ nftban_mail_send() {
                 echo "[DEBUG] Subject: $subject"
             fi
 
-            /usr/sbin/sendmail -t <<EOF
+            "$NFTBAN_SENDMAIL_BIN" -t <<EOF
 From: ${from_name} <${sender}>
 To: ${recipient}
 Subject: ${subject}
@@ -584,7 +596,7 @@ EOF
                 echo "[DEBUG] Sending via exim to: $recipient"
             fi
 
-            /usr/sbin/exim -t <<EOF
+            "$NFTBAN_EXIM_BIN" -t <<EOF
 From: ${from_name} <${sender}>
 To: ${recipient}
 Subject: ${subject}
@@ -600,7 +612,7 @@ EOF
                 echo "[DEBUG] Sending via msmtp to: $recipient"
             fi
 
-            /usr/bin/msmtp -t <<EOF
+            "$NFTBAN_MSMTP_BIN" -t <<EOF
 From: ${from_name} <${sender}>
 To: ${recipient}
 Subject: ${subject}
