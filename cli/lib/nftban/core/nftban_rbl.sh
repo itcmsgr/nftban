@@ -936,6 +936,8 @@ nftban_rbl_send_alert() {
 
     local body
     body=$(cat <<EOF
+Subject: $subject
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 NFTBan RBL Alert - IP Blacklisted
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

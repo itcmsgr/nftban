@@ -212,7 +212,6 @@ nftban_smoke_verify() {
 
     local passed=0
     local failed=0
-    local skipped=0
 
     case "$subcommand" in
         all)
@@ -388,7 +387,6 @@ _verify_feeds() {
     local errors=0
     local feeds_checked=0
     local total_file_ips=0
-    local total_loaded_ips=0
 
     if [[ ! -d "$feeds_dir" ]]; then
         echo "  ⚠️  SKIP: Feeds directory not found: $feeds_dir"
