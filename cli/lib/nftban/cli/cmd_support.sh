@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.8.2 - Support Bundle Command
+# NFTBan v1.9.4 - Support Bundle Command
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Collect diagnostic information for troubleshooting
@@ -8,7 +8,7 @@
 # meta:name="cmd_support"
 # meta:type="cli"
 # meta:header="Support Bundle Command"
-# meta:version="1.8.2"
+# meta:version="1.9.4"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -22,7 +22,7 @@
 # meta:inventory.privileges="root"
 #
 # meta:created_date="2026-01-16"
-# meta:updated_date="2026-01-29"
+# meta:updated_date="2026-02-04"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -774,12 +774,225 @@ _collect_recent_activity() {
     _support_log OK "Feed status"
 }
 
+_collect_mail_status() {
+    local bundle_dir="$1"
+    local mail_dir="$bundle_dir/mail"
+    mkdir -p "$mail_dir"
+
+    {
+        echo "# Mail System Status"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        echo "=== Mail Configuration ==="
+        if [[ -f /etc/nftban/conf.d/mail.conf ]]; then
+            # Redact passwords but show config structure
+            grep -v -E '(PASS|SECRET|TOKEN)' /etc/nftban/conf.d/mail.conf 2>/dev/null || echo "Could not read"
+        else
+            echo "mail.conf not found"
+        fi
+        echo ""
+
+        echo "=== Mail System Detection ==="
+        for mta in postfix sendmail exim4 msmtp mailx; do
+            if command -v "$mta" &>/dev/null; then
+                echo "$mta: $(which "$mta")"
+            fi
+        done
+        echo ""
+
+        echo "=== Mail Queue ==="
+        if command -v mailq &>/dev/null; then
+            mailq 2>&1 | head -20 || echo "mailq failed"
+        else
+            echo "mailq not available"
+        fi
+        echo ""
+
+        echo "=== SMTP Ports ==="
+        ss -tlnp 2>/dev/null | grep -E ':25|:465|:587' || echo "No SMTP ports listening locally"
+
+    } > "$mail_dir/mail-status.txt"
+    _support_log OK "Mail system status"
+}
+
+_collect_module_status() {
+    local bundle_dir="$1"
+    local mod_dir="$bundle_dir/modules"
+    mkdir -p "$mod_dir"
+
+    # Collect individual module status
+    if command -v nftban &>/dev/null; then
+        # DDoS module
+        {
+            echo "# DDoS Module Status"
+            echo "# Collected: $(date -Iseconds)"
+            echo ""
+            nftban ddos status 2>&1 || echo "Command failed"
+        } > "$mod_dir/ddos.txt"
+
+        # Portscan module
+        {
+            echo "# Portscan Module Status"
+            echo "# Collected: $(date -Iseconds)"
+            echo ""
+            nftban portscan status 2>&1 || echo "Command failed"
+        } > "$mod_dir/portscan.txt"
+
+        # GeoBan module
+        {
+            echo "# GeoBan Module Status"
+            echo "# Collected: $(date -Iseconds)"
+            echo ""
+            nftban geoban status 2>&1 || echo "Command failed"
+        } > "$mod_dir/geoban.txt"
+
+        # Feeds module
+        {
+            echo "# Feeds Module Status"
+            echo "# Collected: $(date -Iseconds)"
+            echo ""
+            nftban feeds status 2>&1 || echo "Command failed"
+        } > "$mod_dir/feeds.txt"
+
+        # RBL module
+        {
+            echo "# RBL Module Status"
+            echo "# Collected: $(date -Iseconds)"
+            echo ""
+            nftban rbl status 2>&1 || echo "Command failed"
+            echo ""
+            echo "=== RBL Check Results (cached) ==="
+            if [[ -d /var/cache/nftban/rbl ]]; then
+                ls -la /var/cache/nftban/rbl/ 2>&1 || true
+                for f in /var/cache/nftban/rbl/*.json; do
+                    [[ -f "$f" ]] && echo "$(basename "$f"): $(cat "$f" 2>/dev/null | head -5)"
+                done
+            fi
+        } > "$mod_dir/rbl.txt"
+
+        # Login monitor
+        {
+            echo "# Login Monitor Status"
+            echo "# Collected: $(date -Iseconds)"
+            echo ""
+            nftban login status 2>&1 || echo "Command failed"
+        } > "$mod_dir/login.txt"
+
+        _support_log OK "Module status (6 modules)"
+    else
+        _support_log SKIP "Module status (nftban not in PATH)"
+    fi
+}
+
+_collect_stats_summary() {
+    local bundle_dir="$1"
+
+    if ! command -v nftban &>/dev/null; then
+        _support_log SKIP "Stats summary (nftban not in PATH)"
+        return 0
+    fi
+
+    {
+        echo "# Statistics Summary"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+        nftban stats 2>&1 || echo "Stats command failed"
+        echo ""
+        echo "=== Top IPs ==="
+        nftban stats top --limit 10 2>&1 || echo "Top IPs failed"
+    } > "$bundle_dir/stats-summary.txt"
+    _support_log OK "Statistics summary"
+}
+
+_collect_disk_usage() {
+    local bundle_dir="$1"
+
+    {
+        echo "# NFTBan Disk Usage"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        echo "=== Directory Sizes ==="
+        for dir in /etc/nftban /var/lib/nftban /var/log/nftban /var/cache/nftban /usr/lib/nftban; do
+            if [[ -d "$dir" ]]; then
+                echo "$dir: $(du -sh "$dir" 2>/dev/null | cut -f1)"
+            fi
+        done
+        echo ""
+
+        echo "=== Large Files (>10MB) ==="
+        find /var/lib/nftban /var/log/nftban /var/cache/nftban -type f -size +10M 2>/dev/null | \
+            while read -r f; do
+                echo "$f: $(du -h "$f" 2>/dev/null | cut -f1)"
+            done || echo "None found"
+        echo ""
+
+        echo "=== Disk Space Available ==="
+        df -h / /var 2>/dev/null | head -5
+
+    } > "$bundle_dir/disk-usage.txt"
+    _support_log OK "Disk usage"
+}
+
+_collect_cron_jobs() {
+    local bundle_dir="$1"
+
+    {
+        echo "# NFTBan Cron Jobs"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        echo "=== /etc/cron.d/nftban* ==="
+        for f in /etc/cron.d/nftban*; do
+            if [[ -f "$f" ]]; then
+                echo "--- $(basename "$f") ---"
+                cat "$f"
+                echo ""
+            fi
+        done 2>/dev/null || echo "No nftban cron files"
+
+        echo "=== Root Crontab (nftban entries) ==="
+        crontab -l 2>/dev/null | grep -i nftban || echo "No nftban entries in root crontab"
+        echo ""
+
+        echo "=== Systemd Timers ==="
+        systemctl list-timers 'nftban*' --no-pager 2>&1 || echo "No timers or systemctl not available"
+
+    } > "$bundle_dir/cron-jobs.txt"
+    _support_log OK "Cron jobs and timers"
+}
+
+_collect_recent_errors() {
+    local bundle_dir="$1"
+
+    {
+        echo "# Recent Errors and Warnings"
+        echo "# Collected: $(date -Iseconds)"
+        echo ""
+
+        echo "=== Journal Errors (last 24h) ==="
+        if command -v journalctl &>/dev/null; then
+            journalctl -u 'nftban*' --since "24 hours ago" --no-pager -p err 2>&1 | tail -100 || echo "No errors"
+        fi
+        echo ""
+
+        echo "=== Log File Errors ==="
+        if [[ -d /var/log/nftban ]]; then
+            grep -h -i -E '(error|fail|critical|warn)' /var/log/nftban/*.log 2>/dev/null | tail -50 || echo "No errors in log files"
+        fi
+
+    } > "$bundle_dir/recent-errors.txt"
+    _support_log OK "Recent errors"
+}
+
 # =============================================================================
 # MAIN COMMAND HANDLERS
 # =============================================================================
 
 _cmd_support_bundle() {
     local include_network="${1:-false}"
+    local email_recipient="${2:-}"
 
     _support_banner
     echo ""
@@ -815,6 +1028,14 @@ _cmd_support_bundle() {
     _collect_recent_activity "$bundle_dir"
     _collect_update_info "$bundle_dir"
     _collect_services "$bundle_dir"
+
+    # NEW: Extended diagnostics (v1.9.4)
+    _collect_mail_status "$bundle_dir"
+    _collect_module_status "$bundle_dir"
+    _collect_stats_summary "$bundle_dir"
+    _collect_disk_usage "$bundle_dir"
+    _collect_cron_jobs "$bundle_dir"
+    _collect_recent_errors "$bundle_dir"
 
     # Network info (optional, can be sensitive)
     if [[ "$include_network" == "true" ]]; then
@@ -857,6 +1078,87 @@ _cmd_support_bundle() {
         echo "  File: $output_file"
         echo "  Size: $size"
         echo ""
+
+        # Email support bundle if requested
+        if [[ -n "$email_recipient" ]]; then
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "  Sending bundle via email..."
+            echo ""
+
+            # Load mail module if available
+            local mail_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_mail.sh"
+            if [[ -f "$mail_lib" ]]; then
+                # shellcheck source=/dev/null
+                source "$mail_lib" 2>/dev/null || true
+            fi
+
+            # Prepare email body
+            local hostname_val
+            hostname_val="$(hostname -f 2>/dev/null || hostname)"
+            local email_body
+            email_body=$(cat <<EOF
+NFTBan Support Bundle
+
+Server: $hostname_val
+Bundle: $bundle_name
+Size: $size
+Generated: $(date -Iseconds)
+
+This diagnostic bundle was generated by 'nftban support --email'.
+
+Contents include:
+- System and version information
+- Configuration files (secrets redacted)
+- Health check results
+- Module status (DDoS, portscan, geoban, feeds, RBL, login)
+- Recent logs and errors
+- nftables ruleset
+- Service/timer status
+
+IMPORTANT: Review the attached bundle before forwarding.
+It may contain sensitive infrastructure information.
+
+---
+NFTBan v${NFTBAN_VERSION:-1.9.4}
+https://nftban.com
+EOF
+)
+            # Try to send via nftban_mail_send with attachment
+            if declare -f nftban_mail_send &>/dev/null; then
+                # nftban_mail_send supports attachments
+                if nftban_mail_send "$email_body" "$email_recipient" "$output_file" 2>/dev/null; then
+                    _support_log OK "Bundle sent to: $email_recipient"
+                else
+                    _support_log WARN "Email failed - bundle saved locally"
+                    echo ""
+                    echo "  Transfer manually using:"
+                    echo "    scp $output_file user@remote:/path/"
+                    echo "    # or"
+                    echo "    cat $output_file | base64 > bundle.b64"
+                fi
+            else
+                # Fallback: try mutt or mail with attachment
+                if command -v mutt &>/dev/null; then
+                    echo "$email_body" | mutt -s "[NFTBan] Support Bundle - $hostname_val" \
+                        -a "$output_file" -- "$email_recipient" 2>/dev/null && \
+                        _support_log OK "Bundle sent via mutt to: $email_recipient" || \
+                        _support_log WARN "mutt failed - bundle saved locally"
+                elif command -v mail &>/dev/null; then
+                    # Some mail implementations support -A for attachments
+                    echo "$email_body" | mail -s "[NFTBan] Support Bundle - $hostname_val" \
+                        -A "$output_file" "$email_recipient" 2>/dev/null && \
+                        _support_log OK "Bundle sent via mail to: $email_recipient" || \
+                        _support_log WARN "mail attachment failed - bundle saved locally"
+                else
+                    _support_log WARN "No mail client available - bundle saved locally"
+                    echo ""
+                    echo "  Transfer manually using:"
+                    echo "    scp $output_file user@remote:/path/"
+                fi
+            fi
+            echo ""
+        fi
+
         echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
         echo ""
         echo "  Next steps:"
@@ -924,11 +1226,13 @@ USAGE:
   nftban support-bundle [OPTIONS]
 
 OPTIONS:
-  (none)       Create support bundle tarball
-  --quick      Quick diagnostics to terminal (no file)
-  --network    Include network info (ip addr, routes, ports)
-  --output DIR Output directory (default: /tmp)
-  --help       Show this help
+  (none)         Create support bundle tarball
+  --quick        Quick diagnostics to terminal (no file)
+  --network      Include network info (ip addr, routes, ports)
+  --output DIR   Output directory (default: /tmp)
+  --email ADDR   Send bundle via email to specified address
+  --email        Send bundle to default NFTBAN_MAIL_RECIPIENT
+  --help         Show this help
 
 OUTPUT:
   Creates: /tmp/nftban-support-YYYYMMDD-HHMMSS.tar.gz
@@ -952,6 +1256,12 @@ OUTPUT:
     - update/             Update check and backup list
     - services/           Systemd service/timer status
     - network/            Network info (if --network)
+    - modules/            Module status (ddos, portscan, geoban, feeds, rbl, login)
+    - mail/               Mail system status and configuration
+    - stats-summary.txt   Current statistics and top IPs
+    - disk-usage.txt      NFTBan directory sizes
+    - cron-jobs.txt       Scheduled tasks and timers
+    - recent-errors.txt   Recent errors from logs
     - MANIFEST.txt        Bundle inventory
 
 SECURITY:
@@ -960,15 +1270,20 @@ SECURITY:
   - Network info excluded by default (may reveal infrastructure)
 
 EXAMPLES:
-  nftban support                 # Create full support bundle
-  nftban support --quick         # Quick terminal diagnostics
-  nftban support --network       # Include network information
-  nftban support --output /home  # Save to different directory
+  nftban support                       # Create full support bundle
+  nftban support --quick               # Quick terminal diagnostics
+  nftban support --network             # Include network information
+  nftban support --output /home        # Save to different directory
+  nftban support --email admin@x.com   # Create bundle and email it
+  nftban support --email               # Email to default recipient
 
 WHEN REPORTING ISSUES:
   1. Run: sudo nftban support
   2. Review the bundle for sensitive data
-  3. Attach to GitHub issue with:
+  3. Transfer/email the bundle:
+     - Use --email to send directly
+     - Or: scp /tmp/nftban-support-*.tar.gz user@remote:/path/
+  4. Include with your report:
      - What you expected to happen
      - What actually happened
      - Exact commands run
@@ -983,6 +1298,7 @@ EOF
 
 nftban_cmd_support() {
     local include_network="false"
+    local email_recipient=""
 
     # Parse arguments
     while [[ $# -gt 0 ]]; do
@@ -1004,6 +1320,21 @@ nftban_cmd_support() {
                     return 1
                 fi
                 ;;
+            --email|-e)
+                # Check if next arg is an email address or use default
+                if [[ -n "${2:-}" && ! "${2:-}" =~ ^- ]]; then
+                    email_recipient="$2"
+                    shift 2
+                else
+                    # Use default from config
+                    email_recipient="${NFTBAN_MAIL_RECIPIENT:-}"
+                    if [[ -z "$email_recipient" ]]; then
+                        echo "ERROR: --email requires an address or NFTBAN_MAIL_RECIPIENT must be set" >&2
+                        return 1
+                    fi
+                    shift
+                fi
+                ;;
             --help|-h|help)
                 _cmd_support_help
                 return 0
@@ -1019,7 +1350,7 @@ nftban_cmd_support() {
         esac
     done
 
-    _cmd_support_bundle "$include_network"
+    _cmd_support_bundle "$include_network" "$email_recipient"
 }
 
 # Alias for support-bundle
