@@ -123,6 +123,7 @@ install_polkit() {
     # Load central config for path values
     local NFTBAN_CONF="/etc/nftban/nftban.conf"
     if [[ -f "$NFTBAN_CONF" ]]; then
+        # shellcheck source=/dev/null
         source "$NFTBAN_CONF"
     elif [[ -f "$SCRIPT_DIR/install/config/nftban.conf" ]]; then
         source "$SCRIPT_DIR/install/config/nftban.conf"
