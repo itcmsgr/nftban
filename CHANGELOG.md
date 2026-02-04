@@ -5,6 +5,39 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.5] - 2026-02-04
+
+### Security Posture Integration
+
+This release adds smart, low-noise security posture checks integrated into
+existing commands - not an audit replacement, just essential hardening status.
+
+### Added
+
+- **Security posture checks** - Limited scope hardening status (not audit replacement):
+  - `nftban health posture` - Check SSH config, sudoers, systemd hardening, config integrity
+  - One-line posture summary in `nftban status` under Health section
+  - Posture row in daily email report template
+
+- **Posture data collection** - New `nftban_posture_oneline()` function in
+  `nftban_report_data.sh` for SSOT posture status
+
+### Fixed
+
+- **Shellcheck warnings** - Removed unused variables:
+  - `nftban_report_email.sh` - Removed unused `sender` and `subject` variables
+  - `nftban_report_engine.sh` - Removed unused `subject` variable
+  - `nftban_rbl.sh` - Integrated subject into body content
+  - `nftban_report_data.sh` - Added shellcheck disable for reserved cache variables
+
+### Notes
+
+- Security posture is intentionally limited scope - for full audits use lynis or oscap
+- Checks are advisory, not blocking - no false positives from strict rules
+- Integrates into existing UX (status, health, reports) - no new top-level commands
+
+---
+
 ## [1.9.4] - 2026-02-04
 
 ### Unified Mail & Reporting System
@@ -102,10 +135,11 @@ and adds atomic writes for Suricata rule management.
 
 ### Fixed
 
-- **RPM packaging** - Added `whitelist.txt` files to `%files` section:
-  - `/etc/nftban/conf.d/ddos/whitelist.txt`
-  - `/etc/nftban/conf.d/login/whitelist.txt`
-  - `/etc/nftban/conf.d/portscan/whitelist.txt`
+- **Whitelist centralization** - Removed per-module `whitelist.txt` files (use central `whitelist.d/` instead):
+  - Removed `/etc/nftban/conf.d/ddos/whitelist.txt`
+  - Removed `/etc/nftban/conf.d/login/whitelist.txt`
+  - Removed `/etc/nftban/conf.d/portscan/whitelist.txt`
+  - Use `nftban whitelist add <ip>` for central whitelist management
 
 ## [1.9.2] - 2026-02-03
 

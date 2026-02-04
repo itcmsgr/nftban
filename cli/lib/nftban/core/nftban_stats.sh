@@ -366,26 +366,11 @@ nftban_stats_count_active_bans() {
         return 0
     fi
 
-    # Fallback: Direct nftables query
-    local total=0
-
-    # Count blacklist_ipv4 (ALL IPv4 bans: permanent + temporary + feeds + geoban)
-    if nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 &>/dev/null 2>&1; then
-        local black_v4
-        black_v4=$(nft list set "${NFTBAN_TABLE_IPV4}" blacklist_ipv4 2>/dev/null | { grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' || true; } | wc -l 2>/dev/null)
-        black_v4=${black_v4:-0}
-        total=$((total + black_v4))
-    fi
-
-    # Count blacklist_ipv6 (ALL IPv6 bans: permanent + temporary + feeds + geoban)
-    if nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 &>/dev/null 2>&1; then
-        local black_v6
-        black_v6=$(nft list set "${NFTBAN_TABLE_IPV6}" blacklist_ipv6 2>/dev/null | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' || true; } | wc -l 2>/dev/null)
-        black_v6=${black_v6:-0}
-        total=$((total + black_v6))
-    fi
-
-    echo "$total"
+    # Fallback: Use nft_schema.sh centralized counting (SINGLE SOURCE OF TRUTH)
+    # nftban_nft_count_blacklist returns: "ipv4_count ipv6_count total_count"
+    local counts
+    counts=$(nftban_nft_count_blacklist 2>/dev/null || echo "0 0 0")
+    echo "${counts##* }"  # Return total (last field)
 }
 
 nftban_stats_count_whitelist() {
@@ -402,26 +387,66 @@ nftban_stats_count_whitelist() {
         return 0
     fi
 
-    # Fallback: Direct nftables query
-    local total=0
+    # Fallback: Use nft_schema.sh centralized counting (SINGLE SOURCE OF TRUTH)
+    # nftban_nft_count_whitelist returns: "ipv4_count ipv6_count total_count"
+    local counts
+    counts=$(nftban_nft_count_whitelist 2>/dev/null || echo "0 0 0")
+    echo "${counts##* }"  # Return total (last field)
+}
 
-    # Read from nftables whitelist_ipv4 set (v0.7.3 naming)
-    if nft list set "${NFTBAN_TABLE_IPV4}" whitelist_ipv4 &>/dev/null 2>&1; then
-        local wl_v4
-        wl_v4=$(nft list set "${NFTBAN_TABLE_IPV4}" whitelist_ipv4 2>/dev/null | { grep -oP '\d+\.\d+\.\d+\.\d+(/\d+)?' || true; } | wc -l 2>/dev/null)
-        wl_v4=${wl_v4:-0}
-        total=$((total + wl_v4))
-    fi
+# =============================================================================
+# DETAILED BREAKDOWN FUNCTIONS (SINGLE SOURCE OF TRUTH)
+# These wrap nft_schema.sh functions for consistent metrics everywhere
+# =============================================================================
 
-    # Read from nftables whitelist_ipv6 set (v0.7.3 naming)
-    if nft list set "${NFTBAN_TABLE_IPV6}" whitelist_ipv6 &>/dev/null 2>&1; then
-        local wl_v6
-        wl_v6=$(nft list set "${NFTBAN_TABLE_IPV6}" whitelist_ipv6 2>/dev/null | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*(/\d+)?|[0-9a-fA-F:]+:[0-9a-fA-F:]+(/\d+)?' || true; } | wc -l 2>/dev/null)
-        wl_v6=${wl_v6:-0}
-        total=$((total + wl_v6))
-    fi
+nftban_stats_get_blacklist_breakdown() {
+    # Get detailed blacklist breakdown: IPv4, IPv6, temporary, permanent
+    # Usage: nftban_stats_get_blacklist_breakdown
+    # Returns: JSON {"ipv4":N,"ipv6":N,"temporary":N,"permanent":N,"total":N}
+    #
+    # SINGLE SOURCE OF TRUTH: Uses nft_schema.sh nftban_nft_count_all_sets()
 
-    echo "$total"
+    local json
+    json=$(nftban_nft_count_all_sets 2>/dev/null || echo '{"blacklist":{"ipv4":0,"ipv6":0,"total":0},"temporary":{"total":0},"permanent":{"total":0}}')
+
+    local ipv4 ipv6 temp perm total
+    ipv4=$(echo "$json" | jq -r '.blacklist.ipv4 // 0')
+    ipv6=$(echo "$json" | jq -r '.blacklist.ipv6 // 0')
+    temp=$(echo "$json" | jq -r '.temporary.total // 0')
+    perm=$(echo "$json" | jq -r '.permanent.total // 0')
+    total=$(echo "$json" | jq -r '.blacklist.total // 0')
+
+    echo "{\"ipv4\":$ipv4,\"ipv6\":$ipv6,\"temporary\":$temp,\"permanent\":$perm,\"total\":$total}"
+}
+
+nftban_stats_get_whitelist_breakdown() {
+    # Get detailed whitelist breakdown: IPv4, IPv6
+    # Usage: nftban_stats_get_whitelist_breakdown
+    # Returns: JSON {"ipv4":N,"ipv6":N,"total":N}
+    #
+    # SINGLE SOURCE OF TRUTH: Uses nft_schema.sh nftban_nft_count_whitelist()
+
+    local counts ipv4 ipv6 total
+    counts=$(nftban_nft_count_whitelist 2>/dev/null || echo "0 0 0")
+
+    # Parse "ipv4 ipv6 total" format
+    ipv4=$(echo "$counts" | cut -d' ' -f1)
+    ipv6=$(echo "$counts" | cut -d' ' -f2)
+    total=$(echo "$counts" | cut -d' ' -f3)
+
+    echo "{\"ipv4\":${ipv4:-0},\"ipv6\":${ipv6:-0},\"total\":${total:-0}}"
+}
+
+nftban_stats_count_rules() {
+    # Count total nftables rules in nftban table
+    # Usage: nftban_stats_count_rules
+    # Returns: Integer count of rules
+    #
+    # SINGLE SOURCE OF TRUTH: Direct nft query (no caching needed - fast operation)
+
+    local count
+    count=$(nft list table inet nftban 2>/dev/null | grep -c "^\s*\(accept\|drop\|reject\|counter\|log\)" || echo "0")
+    echo "$count"
 }
 
 # =============================================================================

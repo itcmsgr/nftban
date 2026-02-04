@@ -995,9 +995,10 @@ nftban_rbl_send_degraded_alert() {
         return 0
     fi
 
-    local subject="[NFTBAN WARNING] RBL Monitoring Degraded (${timeout_pct}% timeouts)"
     local body
     body=$(cat <<EOF
+Subject: [NFTBAN WARNING] RBL Monitoring Degraded (${timeout_pct}% timeouts)
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 NFTBan RBL Alert - Monitoring Degraded
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

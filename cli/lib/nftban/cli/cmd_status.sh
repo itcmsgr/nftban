@@ -175,16 +175,10 @@ output_terminal() {
     fi
     printf "  %-20s %s\n" "Banned IPs.........." "$ban_count"
 
-    # Count whitelisted IPs (from nftables)
+    # Count whitelisted IPs (SINGLE SOURCE OF TRUTH: nftban_stats.sh)
     local whitelist_count=0
-    if command -v nft >/dev/null 2>&1; then
-        local wl_v4=0 wl_v6=0
-        wl_v4=$(nft list set ${NFTBAN_TABLE_IPV4} whitelist_ipv4 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' 2>/dev/null | wc -l) || wl_v4=0
-        wl_v6=$(nft list set ${NFTBAN_TABLE_IPV6} whitelist_ipv6 2>/dev/null | grep -oP '[0-9a-fA-F:]+' 2>/dev/null | grep -c ':') || wl_v6=0
-        # Ensure valid numbers
-        [[ "$wl_v4" =~ ^[0-9]+$ ]] || wl_v4=0
-        [[ "$wl_v6" =~ ^[0-9]+$ ]] || wl_v6=0
-        whitelist_count=$((wl_v4 + wl_v6))
+    if declare -f nftban_stats_count_whitelist >/dev/null 2>&1; then
+        whitelist_count=$(nftban_stats_count_whitelist)
     fi
     printf "  %-20s %s\n" "Whitelisted IPs....." "$whitelist_count"
 
@@ -618,11 +612,37 @@ output_terminal() {
         fi
     done
 
-    local security_status="✅ OK"
+    local security_status="OK"
     if [[ $security_issues -gt 0 ]]; then
-        security_status="⚠️  ${security_issues} systemd hardening issue(s)"
+        security_status="${security_issues} systemd issue(s)"
     fi
-    printf "  %-20s %s\n" "Security Hardening.." "$security_status"
+
+    # Get posture status (SSH, sudo, config integrity)
+    local posture_status="OK"
+    if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_report_data.sh" ]]; then
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR}/lib/nftban_report_data.sh" 2>/dev/null || true
+        if declare -f nftban_posture_oneline &>/dev/null; then
+            posture_status=$(nftban_posture_oneline 2>/dev/null || echo "OK")
+        fi
+    fi
+
+    # Combine into single posture line
+    local combined_posture="OK"
+    if [[ "$security_status" != "OK" || "$posture_status" != "OK" ]]; then
+        combined_posture=""
+        [[ "$security_status" != "OK" ]] && combined_posture="$security_status"
+        if [[ "$posture_status" != "OK" ]]; then
+            [[ -n "$combined_posture" ]] && combined_posture+=", "
+            combined_posture+="$posture_status"
+        fi
+    fi
+
+    if [[ "$combined_posture" == "OK" ]]; then
+        printf "  %-20s ✅ %s\n" "Security Posture...." "$combined_posture"
+    else
+        printf "  %-20s ⚠️  %s\n" "Security Posture...." "$combined_posture"
+    fi
 
     # Show hints if not OK
     if [[ "$health_status" != "OK" ]] || [[ $security_issues -gt 0 ]] && [[ $quiet_mode -eq 0 ]]; then
@@ -857,17 +877,17 @@ output_json() {
     fi
     echo "    \"rule_count\": $rule_count,"
 
-    # v0.7.3: Use unified blacklist_ipv4/ipv6 sets (all bans consolidated)
+    # v1.0: Use unified blacklist_ipv4/ipv6 sets (all bans consolidated)
+    # SINGLE SOURCE OF TRUTH: nftban_stats.sh → nft_schema.sh counting functions
     local ban_count=0
-    if command -v nftban_stats_count_active_bans >/dev/null 2>&1; then
-        # Use stats module function (correct for v0.7.3)
+    if declare -f nftban_stats_count_active_bans >/dev/null 2>&1; then
+        # Use stats module function (calls nft_schema.sh internally)
         ban_count=$(nftban_stats_count_active_bans 2>/dev/null || echo 0)
-    elif nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 >/dev/null 2>&1; then
-        # Fallback: Count blacklist_ipv4 + blacklist_ipv6 manually
-        local black_v4 black_v6
-        black_v4=$(nft list set ${NFTBAN_TABLE_IPV4} blacklist_ipv4 2>/dev/null | { grep -oP '\d+\.\d+\.\d+\.\d+' || true; } | wc -l || echo 0)
-        black_v6=$(nft list set ${NFTBAN_TABLE_IPV6} blacklist_ipv6 2>/dev/null | { grep -oP '[0-9a-fA-F:]+::[0-9a-fA-F:]*|[0-9a-fA-F:]+:[0-9a-fA-F:]+' || true; } | wc -l || echo 0)
-        ban_count=$((black_v4 + black_v6))
+    elif declare -f nftban_nft_count_blacklist >/dev/null 2>&1; then
+        # Fallback: Use nft_schema.sh centralized counting (fast JSON API)
+        local bl_counts
+        bl_counts=$(nftban_nft_count_blacklist 2>/dev/null || echo "0 0 0")
+        ban_count=$(echo "$bl_counts" | awk '{print $3}')  # Total is field 3
     fi
     echo "    \"banned_ips\": $ban_count,"
 

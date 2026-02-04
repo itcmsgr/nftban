@@ -595,12 +595,68 @@ nftban_nft_count_all_sets() {
 EOF
 }
 
+# =============================================================================
+# IP WHITELIST CHECK (SINGLE SOURCE OF TRUTH)
+# =============================================================================
+# Check if IP is in central whitelist (nftables set)
+# All modules should use this function instead of per-module whitelist files
+nftban_is_whitelisted() {
+    local ip="$1"
+    [[ -z "$ip" ]] && return 1
+
+    # Determine IP family
+    local family="ip"
+    local set_name="whitelist_ipv4"
+    if [[ "$ip" == *:* ]]; then
+        family="ip6"
+        set_name="whitelist_ipv6"
+    fi
+
+    # Check nftables whitelist set (SINGLE SOURCE OF TRUTH)
+    if nft get element "$family" nftban "$set_name" "{ $ip }" &>/dev/null; then
+        return 0
+    fi
+
+    # Also check whitelist.d files for IPs not yet loaded into nftables
+    local whitelist_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}/whitelist.d"
+    if [[ -d "$whitelist_dir" ]]; then
+        if grep -qhE "^${ip}(/[0-9]+)?(\s|$)" "$whitelist_dir"/*.conf 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+# Check if IP is in central blacklist (nftables set)
+nftban_is_blacklisted() {
+    local ip="$1"
+    [[ -z "$ip" ]] && return 1
+
+    # Determine IP family
+    local family="ip"
+    local set_name="blacklist_ipv4"
+    if [[ "$ip" == *:* ]]; then
+        family="ip6"
+        set_name="blacklist_ipv6"
+    fi
+
+    # Check nftables blacklist set (SINGLE SOURCE OF TRUTH)
+    if nft get element "$family" nftban "$set_name" "{ $ip }" &>/dev/null; then
+        return 0
+    fi
+
+    return 1
+}
+
 # Export functions
 export -f nftban_nft_count_set
 export -f nftban_nft_count_set_with_timeout
 export -f nftban_nft_count_blacklist
 export -f nftban_nft_count_whitelist
 export -f nftban_nft_count_all_sets
+export -f nftban_is_whitelisted
+export -f nftban_is_blacklisted
 
 nftban_nft_validate_chains() {
     # Validate chains exist with correct type/hook/priority/policy

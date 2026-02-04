@@ -40,6 +40,10 @@
 /etc/nftban/conf.d/login/services.conf
 /etc/nftban/conf.d/login/scorer.conf
 
+# Central whitelist (SINGLE SOURCE OF TRUTH)
+# All modules use /etc/nftban/whitelist.d/*.conf instead of per-module files
+/etc/nftban/whitelist.d/99-manual.conf
+
 # Bot scanner module
 /etc/nftban/conf.d/botscan/main.conf
 
