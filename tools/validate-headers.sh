@@ -91,7 +91,8 @@ check_meta_quoted() {
 check_inventory_keys_present() {
   local f="$1"
   local marker
-  if is_go "$f"; then marker='//'; else marker='#'; fi
+  # Go and .rules files use // comments; everything else uses #
+  if is_go "$f" || [[ "$f" == *.rules ]]; then marker='//'; else marker='#'; fi
 
   local keys=(
     'meta:inventory.files='

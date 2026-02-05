@@ -27,22 +27,21 @@ After=network.target nftables.service
 [Service]
 Type=oneshot
 
-# SECURITY FIX: Run as unprivileged nftban user (not root)
-# Health checks are READ-ONLY operations
-# Writes: /var/lib/nftban/health/ (status cache)
-# For FIXES, use: systemctl start nftban-health-fix.service (root, manual)
-# See: SYSTEMD-SERVICE-CLASSIFICATION.md
+# Runs as nftban; auto-heal actions are constrained by systemd + polkit + CAP_NET_ADMIN.
+# Polkit allowlist (10-nftban-systemd.rules) controls which units can be restarted.
+# Root-only operations (chown, system config) are skipped gracefully.
+# For full root-level fixes: systemctl start nftban-health-fix.service (manual)
 User=nftban
 Group=nftban
 
-# Read-only health checks (no auto-heal - use nftban-health-fix.service for that)
+# --auto-heal: Fix what nftban user can (services via polkit, nftables via CAP_NET_ADMIN)
 # --cache-status: Write health result for banner display
 # flock: Prevent timer+manual overlap (non-blocking, exit if already running)
 # NOTE: Lock file in /var/cache/nftban (owned by nftban:nftban) NOT /run/nftban
 #       to avoid chicken-and-egg: health check can't run if /run/nftban perms broken
-ExecStart=/usr/bin/flock -n /var/cache/nftban/health.lock /usr/sbin/nftban health check --cache-status
+ExecStart=/usr/bin/flock -n /var/cache/nftban/health.lock /usr/sbin/nftban health check --auto-heal --cache-status
 
-# CAP_NET_ADMIN required for read-only nft list operations
+# CAP_NET_ADMIN required for nft list/add operations (health checks + auto-heal)
 AmbientCapabilities=CAP_NET_ADMIN
 CapabilityBoundingSet=CAP_NET_ADMIN
 

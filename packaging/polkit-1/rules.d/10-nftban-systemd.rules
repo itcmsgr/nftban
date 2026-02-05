@@ -1,7 +1,19 @@
 // =============================================================================
-// NFTBan v1.0.19 - Consolidated Systemd Authorization Rules
+// NFTBan v1.0.20 - Consolidated Systemd Authorization Rules
 // =============================================================================
 // SPDX-License-Identifier: MPL-2.0
+// meta:name="10-nftban-systemd.rules"
+// meta:type="polkit"
+// meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+// meta:created_date="2025-10-26"
+// meta:description="Polkit rules granting nftban group systemd unit management"
+// meta:inventory.files=""
+// meta:inventory.binaries=""
+// meta:inventory.env_vars=""
+// meta:inventory.config_files="/etc/polkit-1/rules.d/10-nftban-systemd.rules"
+// meta:inventory.systemd_units=""
+// meta:inventory.network=""
+// meta:inventory.privileges="polkit"
 // Purpose: Grant nftban group (operators) full systemd service management
 // Location: /etc/polkit-1/rules.d/10-nftban-systemd.rules
 //
@@ -36,6 +48,8 @@
 //   ✓ Defense in depth
 //
 // Version History:
+//   v1.0.20: Added health/maintenance/watchdog/queue/exporter/snapshot/rollback
+//            units to allowlist (required for health auto-heal via polkit)
 //   v1.0.19: Consolidated from 10-nftban-core.rules + 20-nftban-suricata.rules
 //            Removed unsafe wildcard pattern from 60-nftban-services.rules
 //            Removed obsolete auth-helper from 50-nftban-auth.rules
@@ -77,6 +91,26 @@ polkit.addRule(function (action, subject) {
             "nftban-core-geoip.service",
             "nftban-core-geoip.timer",
             "nftban.timer",
+
+            // NFTBan Main Daemon
+            "nftband.service",
+
+            // NFTBan Health & Maintenance (managed by auto-heal)
+            "nftban-health.service",
+            "nftban-health.timer",
+            "nftban-health-fix.service",
+            "nftban-maintenance.service",
+            "nftban-maintenance.timer",
+            "nftban-watchdog.service",
+            "nftban-watchdog.timer",
+            "nftban-queue.service",
+            "nftban-queue.timer",
+            "nftban-unified-exporter.service",
+            "nftban-unified-exporter.timer",
+            "nftban-snapshot.service",
+            "nftban-snapshot.timer",
+            "nftban-rollback.service",
+            "nftban-rollback.timer",
 
             // NFTBan Suricata Integration (wrapper units)
             "nftban-suricata.service",
