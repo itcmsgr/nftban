@@ -16,6 +16,7 @@ templ Layout(title string) {
 		<meta name="viewport" content="width=device-width, initial-scale=1"/>
 		<title>NFTBan - { title }</title>
 		<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+		<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 		@themeStyles()
 	</head>
 	<body>
@@ -34,6 +35,7 @@ templ LayoutWithNav(title string, activePage string) {
 		<meta name="viewport" content="width=device-width, initial-scale=1"/>
 		<title>NFTBan - { title }</title>
 		<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+		<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 		@themeStyles()
 	</head>
 	<body>
@@ -59,6 +61,7 @@ templ LayoutWithNavAndCSRF(title string, activePage string, csrfToken string) {
 		<meta name="csrf-token" content={ csrfToken }/>
 		<title>NFTBan - { title }</title>
 		<script src="https://unpkg.com/htmx.org@1.9.12"></script>
+		<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 		@themeStyles()
 	</head>
 	<body>
@@ -979,19 +982,252 @@ templ themeStyles() {
 		}
 
 		/* =================================================================
-		   HTMX LOADING
+		   HTMX LOADING STATES
 		   ================================================================= */
 		.htmx-indicator {
-			opacity: 0;
-			transition: opacity 200ms;
+			display: none;
 		}
 
-		.htmx-request .htmx-indicator {
-			opacity: 1;
-		}
-
+		.htmx-request .htmx-indicator,
 		.htmx-request.htmx-indicator {
+			display: inline-flex;
+		}
+
+		/* Loading spinner */
+		.loading-spinner {
+			width: 16px;
+			height: 16px;
+			border: 2px solid var(--border-color);
+			border-top-color: var(--accent-info);
+			border-radius: 50%;
+			animation: spin 0.8s linear infinite;
+		}
+
+		.loading-spinner.lg {
+			width: 24px;
+			height: 24px;
+			border-width: 3px;
+		}
+
+		@keyframes spin {
+			to { transform: rotate(360deg); }
+		}
+
+		/* Loading overlay for sections */
+		.loading-overlay {
+			position: relative;
+		}
+
+		.loading-overlay.htmx-request::after {
+			content: '';
+			position: absolute;
+			top: 0;
+			left: 0;
+			right: 0;
+			bottom: 0;
+			background: rgba(0, 0, 0, 0.3);
+			border-radius: inherit;
+			z-index: 10;
+		}
+
+		/* Skeleton loading placeholder */
+		.skeleton {
+			background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-surface) 50%, var(--bg-elevated) 75%);
+			background-size: 200% 100%;
+			animation: skeleton-pulse 1.5s ease-in-out infinite;
+			border-radius: 4px;
+		}
+
+		@keyframes skeleton-pulse {
+			0% { background-position: 200% 0; }
+			100% { background-position: -200% 0; }
+		}
+
+		/* =================================================================
+		   EMPTY STATES
+		   ================================================================= */
+		.empty-state {
+			text-align: center;
+			padding: 3rem 2rem;
+			color: var(--text-muted);
+		}
+
+		.empty-state-icon {
+			font-size: 3rem;
+			margin-bottom: 1rem;
+			opacity: 0.5;
+		}
+
+		.empty-state-title {
+			font-size: 1.1rem;
+			font-weight: 500;
+			margin-bottom: 0.5rem;
+			color: var(--text-primary);
+		}
+
+		.empty-state-description {
+			font-size: 0.9rem;
+			max-width: 300px;
+			margin: 0 auto;
+		}
+
+		/* =================================================================
+		   ERROR STATES
+		   ================================================================= */
+		.error-state {
+			text-align: center;
+			padding: 2rem;
+			background: rgba(239, 68, 68, 0.05);
+			border: 1px dashed var(--accent-danger);
+			border-radius: 8px;
+			color: var(--accent-danger);
+		}
+
+		.error-state-icon {
+			font-size: 2rem;
+			margin-bottom: 0.75rem;
+		}
+
+		.error-state-message {
+			font-size: 0.9rem;
+			margin-bottom: 1rem;
+		}
+
+		.error-state .btn {
+			margin-top: 0.5rem;
+		}
+
+		/* =================================================================
+		   TOOLTIPS (data-tooltip attribute)
+		   ================================================================= */
+		[data-tooltip] {
+			position: relative;
+			cursor: help;
+		}
+
+		[data-tooltip]::before,
+		[data-tooltip]::after {
+			position: absolute;
+			opacity: 0;
+			visibility: hidden;
+			transition: opacity 0.2s, visibility 0.2s;
+			z-index: 100;
+			pointer-events: none;
+		}
+
+		[data-tooltip]::before {
+			content: attr(data-tooltip);
+			bottom: calc(100% + 8px);
+			left: 50%;
+			transform: translateX(-50%);
+			padding: 0.5rem 0.75rem;
+			background: var(--bg-elevated);
+			border: 1px solid var(--border-color);
+			border-radius: 6px;
+			font-size: 0.75rem;
+			font-weight: 400;
+			white-space: nowrap;
+			color: var(--text-primary);
+			box-shadow: var(--shadow);
+		}
+
+		[data-tooltip]::after {
+			content: '';
+			bottom: calc(100% + 2px);
+			left: 50%;
+			transform: translateX(-50%);
+			border: 6px solid transparent;
+			border-top-color: var(--border-color);
+		}
+
+		[data-tooltip]:hover::before,
+		[data-tooltip]:hover::after {
 			opacity: 1;
+			visibility: visible;
+		}
+
+		/* Tooltip positioning variants */
+		[data-tooltip-pos="bottom"]::before {
+			bottom: auto;
+			top: calc(100% + 8px);
+		}
+
+		[data-tooltip-pos="bottom"]::after {
+			bottom: auto;
+			top: calc(100% + 2px);
+			border-top-color: transparent;
+			border-bottom-color: var(--border-color);
+		}
+
+		/* =================================================================
+		   LIVE REFRESH INDICATOR
+		   ================================================================= */
+		.refresh-indicator {
+			display: inline-flex;
+			align-items: center;
+			gap: 0.5rem;
+			font-size: 0.75rem;
+			color: var(--text-muted);
+			padding: 0.25rem 0.5rem;
+			background: var(--bg-elevated);
+			border-radius: 4px;
+		}
+
+		.refresh-indicator .dot {
+			width: 6px;
+			height: 6px;
+			background: var(--accent-safe);
+			border-radius: 50%;
+			animation: pulse 2s infinite;
+		}
+
+		/* =================================================================
+		   CHART CONTAINERS
+		   ================================================================= */
+		.charts-grid {
+			display: grid;
+			grid-template-columns: repeat(2, 1fr);
+			gap: 1rem;
+			margin-bottom: 1.5rem;
+		}
+
+		.chart-card {
+			background: var(--bg-surface);
+			border: 1px solid var(--border-color);
+			border-radius: 8px;
+			padding: 1rem;
+		}
+
+		.chart-card.full-width {
+			grid-column: span 2;
+		}
+
+		.chart-title {
+			font-size: 0.75rem;
+			font-weight: 600;
+			color: var(--text-muted);
+			text-transform: uppercase;
+			letter-spacing: 0.5px;
+			margin-bottom: 0.75rem;
+		}
+
+		.chart-container {
+			position: relative;
+			height: 200px;
+		}
+
+		.chart-container.tall {
+			height: 280px;
+		}
+
+		@media (max-width: 1024px) {
+			.charts-grid {
+				grid-template-columns: 1fr;
+			}
+
+			.chart-card.full-width {
+				grid-column: span 1;
+			}
 		}
 	</style>
 }
@@ -1040,6 +1276,49 @@ templ themeScript() {
 				el.textContent = days + 'd ' + hours + 'h ' + mins + 'm';
 			}, 1000);
 		}
+
+		// HTMX Error Handling - Show user-friendly error messages
+		document.addEventListener('htmx:responseError', function(event) {
+			const target = event.detail.target;
+			const status = event.detail.xhr.status;
+			let message = 'Failed to load data. ';
+
+			if (status === 0) {
+				message += 'Network connection lost.';
+			} else if (status === 401) {
+				message += 'Session expired. Please login again.';
+				setTimeout(() => window.location.href = '/ui/login', 2000);
+			} else if (status === 403) {
+				message += 'Access denied.';
+			} else if (status === 500) {
+				message += 'Server error occurred.';
+			} else if (status === 503) {
+				message += 'Service temporarily unavailable.';
+			} else {
+				message += 'Error code: ' + status;
+			}
+
+			// Show error state in the target element
+			if (target) {
+				target.innerHTML = '<div class="error-state">' +
+					'<div class="error-state-icon">&#x26A0;</div>' +
+					'<div class="error-state-message">' + message + '</div>' +
+					'<button class="btn btn-primary btn-sm" onclick="htmx.trigger(this.closest(\'[hx-get], [hx-post]\'), \'htmx:load\')">Retry</button>' +
+					'</div>';
+			}
+		});
+
+		// HTMX Timeout handling
+		document.addEventListener('htmx:timeout', function(event) {
+			const target = event.detail.target;
+			if (target) {
+				target.innerHTML = '<div class="error-state">' +
+					'<div class="error-state-icon">&#x23F1;</div>' +
+					'<div class="error-state-message">Request timed out. The server may be busy.</div>' +
+					'<button class="btn btn-primary btn-sm" onclick="location.reload()">Refresh Page</button>' +
+					'</div>';
+			}
+		});
 	</script>
 }
 

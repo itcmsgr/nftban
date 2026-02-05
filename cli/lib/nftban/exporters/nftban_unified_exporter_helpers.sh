@@ -37,11 +37,20 @@ cleanup_temp_files() {
     local textfile_dir="${NFTBAN_PROMETHEUS_TEXTFILE_DIR:-/var/lib/node_exporter/textfile_collector}"
     local prom_file="${textfile_dir}/${NFTBAN_PROMETHEUS_OUTPUT_FILE:-nftban.prom}"
     local json_cache="${NFTBAN_CACHE_DIR}/metrics/combined.json"
+    local gui_cache_dir="${NFTBAN_JSON_CACHE_DIR:-/var/cache/nftban/metrics}"
 
     rm -f "${prom_file}.tmp" 2>/dev/null || true
     rm -f "${json_cache}.tmp" 2>/dev/null || true
     rm -f "${BANDWIDTH_STATE}.tmp" 2>/dev/null || true
     rm -f "${METRICS_CACHE}.tmp" 2>/dev/null || true
+
+    # Clean up GUI cache temp files
+    rm -f "${gui_cache_dir}/traffic_history.json.tmp" 2>/dev/null || true
+    rm -f "${gui_cache_dir}/traffic_history.json.tmp.raw" 2>/dev/null || true
+    rm -f "${gui_cache_dir}/dropped_by_country.json.tmp" 2>/dev/null || true
+    rm -f "${gui_cache_dir}/dropped_by_country.json.tmp.raw" 2>/dev/null || true
+    rm -f "${gui_cache_dir}/dropped_by_port.json.tmp" 2>/dev/null || true
+    rm -f "${gui_cache_dir}/dropped_by_port.json.tmp.raw" 2>/dev/null || true
 
     # Also clean up any orphaned .prom.* files older than 1 hour
     find "$textfile_dir" -maxdepth 1 -name "nftban.prom.*" -mmin +60 -delete 2>/dev/null || true

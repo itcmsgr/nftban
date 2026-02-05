@@ -17,51 +17,111 @@ import (
 templ Dashboard(data ui.DashboardData) {
 	@ui.LayoutWithNav("Dashboard", "dashboard") {
 		<!-- IP Quick-Check Search -->
-		<div class="search-box">
-			<input
-				type="text"
-				class="search-input"
-				placeholder="Quick IP Check: paste IP to check status..."
-				hx-get="/ui/api/ip-check"
-				hx-trigger="keyup changed delay:300ms"
-				hx-target="#ip-result"
-				name="ip"
-			/>
-			<div id="ip-result"></div>
+		<div class="search-box" style="flex-wrap: wrap;">
+			<div style="display: flex; flex: 1; align-items: center; gap: 0.5rem;">
+				<input
+					type="text"
+					class="search-input"
+					placeholder="Quick IP Check: paste IP to check status..."
+					hx-get="/ui/api/ip-check"
+					hx-trigger="keyup changed delay:300ms"
+					hx-target="#ip-result"
+					hx-indicator="#ip-check-loading"
+					name="ip"
+				/>
+				<span id="ip-check-loading" class="htmx-indicator" style="padding: 0.5rem;">
+					<span class="loading-spinner"></span>
+				</span>
+			</div>
+			<div id="ip-result" style="width: 100%;"></div>
+		</div>
+
+		<!-- Live Update Indicator -->
+		<div class="refresh-indicator" style="margin-bottom: 1rem;">
+			<span class="dot"></span>
+			<span>Live updates active</span>
 		</div>
 
 		<!-- 3-Column Hero Grid -->
 		<div class="dashboard-hero">
 			<!-- Box 1: System Identity -->
-			<div class="identity-box" id="identity-box" hx-get="/ui/frag/identity" hx-trigger="every 5s" hx-swap="innerHTML">
+			<div class="identity-box loading-overlay" id="identity-box" hx-get="/ui/frag/identity" hx-trigger="every 5s" hx-swap="innerHTML">
 				@IdentityFragment(data.Identity)
 			</div>
 
 			<!-- Box 2: Security KPIs -->
-			<div class="security-box" id="security-box" hx-get="/ui/frag/security" hx-trigger="every 2s" hx-swap="innerHTML">
+			<div class="security-box loading-overlay" id="security-box" hx-get="/ui/frag/security" hx-trigger="every 2s" hx-swap="innerHTML">
 				@SecurityFragment(data.Security)
 			</div>
 
 			<!-- Box 3: Network Stats -->
-			<div class="network-box" id="network-box" hx-get="/ui/frag/network" hx-trigger="every 2s" hx-swap="innerHTML">
+			<div class="network-box loading-overlay" id="network-box" hx-get="/ui/frag/network" hx-trigger="every 2s" hx-swap="innerHTML">
 				@NetworkFragment(data.Security)
 			</div>
 		</div>
 
 		<!-- Resource Consumption Grid -->
-		<div class="resource-grid" id="resource-grid" hx-get="/ui/frag/resources" hx-trigger="every 5s" hx-swap="innerHTML">
+		<div class="resource-grid loading-overlay" id="resource-grid" hx-get="/ui/frag/resources" hx-trigger="every 5s" hx-swap="innerHTML">
 			@ResourcesFragment(data.Resources)
+		</div>
+
+		<!-- Charts Grid -->
+		<div class="charts-grid">
+			<!-- Traffic Trend Chart (24h) -->
+			<div class="chart-card full-width">
+				<div class="chart-title">Traffic Trend (24h)</div>
+				<div class="chart-container tall">
+					<canvas id="trafficChart"></canvas>
+				</div>
+			</div>
+
+			<!-- Ban Distribution Chart -->
+			<div class="chart-card">
+				<div class="chart-title">Ban Distribution</div>
+				<div class="chart-container">
+					<canvas id="banDistributionChart"></canvas>
+				</div>
+			</div>
+
+			<!-- Top Blocked Countries Chart -->
+			<div class="chart-card">
+				<div class="chart-title">Top Blocked Countries</div>
+				<div class="chart-container">
+					<canvas id="countryChart"></canvas>
+				</div>
+			</div>
+
+			<!-- Port Scan Activity Chart -->
+			<div class="chart-card">
+				<div class="chart-title">Port Scan Activity</div>
+				<div class="chart-container">
+					<canvas id="portscanChart"></canvas>
+				</div>
+			</div>
+
+			<!-- Bans Over Time Chart -->
+			<div class="chart-card">
+				<div class="chart-title">Bans Over Time (24h)</div>
+				<div class="chart-container">
+					<canvas id="bansTimelineChart"></canvas>
+				</div>
+			</div>
 		</div>
 
 		<!-- Module Status Grid -->
 		<div class="card" style="margin-bottom: 1.5rem;">
 			<div class="card-header">
 				<span class="card-title">Module Status</span>
-				<button class="btn btn-danger btn-sm" hx-post="/ui/action/flush-temp" hx-confirm="Clear ALL temporary bans?">
-					Flush Temp Bans
-				</button>
+				<div style="display: flex; align-items: center; gap: 0.5rem;">
+					<span id="module-loading" class="htmx-indicator">
+						<span class="loading-spinner"></span>
+					</span>
+					<button class="btn btn-danger btn-sm" hx-post="/ui/action/flush-temp" hx-confirm="Clear ALL temporary bans?">
+						Flush Temp Bans
+					</button>
+				</div>
 			</div>
-			<div id="module-grid" hx-get="/ui/frag/modules" hx-trigger="every 10s" hx-swap="innerHTML">
+			<div id="module-grid" hx-get="/ui/frag/modules" hx-trigger="every 10s" hx-swap="innerHTML" hx-indicator="#module-loading">
 				@ModulesFragment(data.Modules)
 			</div>
 		</div>
@@ -70,17 +130,300 @@ templ Dashboard(data ui.DashboardData) {
 		<div class="card">
 			<div class="card-header">
 				<span class="card-title">Recent Bans</span>
+				<span id="recent-loading" class="htmx-indicator">
+					<span class="loading-spinner"></span>
+				</span>
 			</div>
-			<div id="recent-bans" hx-get="/ui/frag/recent" hx-trigger="every 3s" hx-swap="innerHTML">
+			<div id="recent-bans" hx-get="/ui/frag/recent" hx-trigger="every 3s" hx-swap="innerHTML" hx-indicator="#recent-loading">
 				@RecentFragment(data.RecentBans)
 			</div>
 		</div>
 
-		<!-- Uptime counter script -->
+		<!-- Uptime counter and Chart initialization scripts -->
 		<script>
 			document.addEventListener('DOMContentLoaded', function() {
 				startUptimeCounter('uptime-counter', { fmt.Sprintf("%d", data.Identity.UptimeSeconds) });
+
+				// Initialize charts if Chart.js is loaded
+				if (typeof Chart !== 'undefined') {
+					initDashboardCharts();
+				}
 			});
+
+			// Chart color scheme based on theme
+			function getChartColors() {
+				const isDark = document.documentElement.getAttribute('data-theme') === 'dark';
+				return {
+					primary: isDark ? '#3b82f6' : '#2563eb',
+					safe: isDark ? '#10b981' : '#059669',
+					danger: isDark ? '#ef4444' : '#dc2626',
+					warning: isDark ? '#f59e0b' : '#d97706',
+					text: isDark ? '#e5e7eb' : '#111827',
+					muted: isDark ? '#9ca3af' : '#6b7280',
+					grid: isDark ? '#333333' : '#e5e7eb',
+					surface: isDark ? '#1e1e1e' : '#ffffff'
+				};
+			}
+
+			// Chart instances for cleanup/update
+			let chartInstances = {};
+
+			function initDashboardCharts() {
+				const colors = getChartColors();
+
+				// Common chart options
+				const commonOptions = {
+					responsive: true,
+					maintainAspectRatio: false,
+					plugins: {
+						legend: {
+							labels: { color: colors.text, font: { size: 11 } }
+						}
+					},
+					scales: {
+						x: {
+							ticks: { color: colors.muted },
+							grid: { color: colors.grid, drawBorder: false }
+						},
+						y: {
+							ticks: { color: colors.muted },
+							grid: { color: colors.grid, drawBorder: false }
+						}
+					}
+				};
+
+				// 1. Traffic Trend Line Chart (24h)
+				const trafficCtx = document.getElementById('trafficChart');
+				if (trafficCtx) {
+					chartInstances.traffic = new Chart(trafficCtx, {
+						type: 'line',
+						data: {
+							labels: generateHourLabels(24),
+							datasets: [
+								{
+									label: 'Inbound (Mbps)',
+									data: generatePlaceholderData(24, 0, 50),
+									borderColor: colors.primary,
+									backgroundColor: colors.primary + '20',
+									fill: true,
+									tension: 0.4
+								},
+								{
+									label: 'Outbound (Mbps)',
+									data: generatePlaceholderData(24, 0, 30),
+									borderColor: colors.safe,
+									backgroundColor: colors.safe + '20',
+									fill: true,
+									tension: 0.4
+								}
+							]
+						},
+						options: {
+							...commonOptions,
+							interaction: { intersect: false, mode: 'index' }
+						}
+					});
+				}
+
+				// 2. Ban Distribution Doughnut Chart
+				const banDistCtx = document.getElementById('banDistributionChart');
+				if (banDistCtx) {
+					chartInstances.banDist = new Chart(banDistCtx, {
+						type: 'doughnut',
+						data: {
+							labels: ['Temporary', 'Permanent', 'Feed-based', 'GeoIP'],
+							datasets: [{
+								data: [{ strconv.Itoa(data.Security.BansTotal / 4) }, { strconv.Itoa(data.Security.BansTotal / 4) }, { strconv.Itoa(data.Security.BansTotal / 4) }, { strconv.Itoa(data.Security.BansTotal / 4) }],
+								backgroundColor: [colors.warning, colors.danger, colors.primary, colors.safe],
+								borderColor: colors.surface,
+								borderWidth: 2
+							}]
+						},
+						options: {
+							responsive: true,
+							maintainAspectRatio: false,
+							plugins: {
+								legend: {
+									position: 'right',
+									labels: { color: colors.text, font: { size: 11 }, padding: 10 }
+								}
+							}
+						}
+					});
+				}
+
+				// 3. Top Blocked Countries Bar Chart
+				const countryCtx = document.getElementById('countryChart');
+				if (countryCtx) {
+					chartInstances.country = new Chart(countryCtx, {
+						type: 'bar',
+						data: {
+							labels: ['CN', 'RU', 'IN', 'BR', 'ID', 'US', 'VN', 'KR'],
+							datasets: [{
+								label: 'Blocked IPs',
+								data: generatePlaceholderData(8, 10, 500),
+								backgroundColor: colors.danger + 'cc',
+								borderColor: colors.danger,
+								borderWidth: 1
+							}]
+						},
+						options: {
+							...commonOptions,
+							indexAxis: 'y',
+							plugins: {
+								legend: { display: false }
+							}
+						}
+					});
+				}
+
+				// 4. Port Scan Activity Bar Chart
+				const portscanCtx = document.getElementById('portscanChart');
+				if (portscanCtx) {
+					chartInstances.portscan = new Chart(portscanCtx, {
+						type: 'bar',
+						data: {
+							labels: ['22', '23', '80', '443', '3389', '445', '8080', '3306'],
+							datasets: [{
+								label: 'Scan Attempts',
+								data: generatePlaceholderData(8, 5, 200),
+								backgroundColor: colors.warning + 'cc',
+								borderColor: colors.warning,
+								borderWidth: 1
+							}]
+						},
+						options: {
+							...commonOptions,
+							plugins: {
+								legend: { display: false }
+							}
+						}
+					});
+				}
+
+				// 5. Bans Over Time Line Chart
+				const bansTimeCtx = document.getElementById('bansTimelineChart');
+				if (bansTimeCtx) {
+					chartInstances.bansTime = new Chart(bansTimeCtx, {
+						type: 'line',
+						data: {
+							labels: generateHourLabels(24),
+							datasets: [{
+								label: 'New Bans',
+								data: generatePlaceholderData(24, 0, 20),
+								borderColor: colors.danger,
+								backgroundColor: colors.danger + '20',
+								fill: true,
+								tension: 0.4
+							}]
+						},
+						options: {
+							...commonOptions,
+							plugins: {
+								legend: { display: false }
+							}
+						}
+					});
+				}
+
+				// Fetch real chart data from API
+				fetchChartData();
+			}
+
+			// Generate hour labels for 24h charts
+			function generateHourLabels(hours) {
+				const labels = [];
+				const now = new Date();
+				for (let i = hours - 1; i >= 0; i--) {
+					const d = new Date(now - i * 3600000);
+					labels.push(d.getHours().toString().padStart(2, '0') + ':00');
+				}
+				return labels;
+			}
+
+			// Generate placeholder data for initial render
+			function generatePlaceholderData(count, min, max) {
+				return Array.from({ length: count }, () => Math.floor(Math.random() * (max - min) + min));
+			}
+
+			// Fetch real chart data from API endpoints
+			function fetchChartData() {
+				// Traffic data
+				fetch('/ui/api/chart/traffic')
+					.then(r => r.json())
+					.then(data => {
+						if (chartInstances.traffic && data.labels) {
+							chartInstances.traffic.data.labels = data.labels;
+							chartInstances.traffic.data.datasets[0].data = data.inbound || [];
+							chartInstances.traffic.data.datasets[1].data = data.outbound || [];
+							chartInstances.traffic.update('none');
+						}
+					})
+					.catch(() => {});
+
+				// Ban distribution data
+				fetch('/ui/api/chart/bans')
+					.then(r => r.json())
+					.then(data => {
+						if (chartInstances.banDist && data.values) {
+							chartInstances.banDist.data.labels = data.labels || chartInstances.banDist.data.labels;
+							chartInstances.banDist.data.datasets[0].data = data.values;
+							chartInstances.banDist.update('none');
+						}
+					})
+					.catch(() => {});
+
+				// Country data
+				fetch('/ui/api/chart/countries')
+					.then(r => r.json())
+					.then(data => {
+						if (chartInstances.country && data.labels) {
+							chartInstances.country.data.labels = data.labels;
+							chartInstances.country.data.datasets[0].data = data.values;
+							chartInstances.country.update('none');
+						}
+					})
+					.catch(() => {});
+
+				// Portscan data
+				fetch('/ui/api/chart/portscan')
+					.then(r => r.json())
+					.then(data => {
+						if (chartInstances.portscan && data.labels) {
+							chartInstances.portscan.data.labels = data.labels;
+							chartInstances.portscan.data.datasets[0].data = data.values;
+							chartInstances.portscan.update('none');
+						}
+					})
+					.catch(() => {});
+
+				// Bans timeline data
+				fetch('/ui/api/chart/bans-timeline')
+					.then(r => r.json())
+					.then(data => {
+						if (chartInstances.bansTime && data.labels) {
+							chartInstances.bansTime.data.labels = data.labels;
+							chartInstances.bansTime.data.datasets[0].data = data.values;
+							chartInstances.bansTime.update('none');
+						}
+					})
+					.catch(() => {});
+			}
+
+			// Refresh charts periodically
+			setInterval(fetchChartData, 30000);
+
+			// Update chart colors on theme change
+			const originalToggleTheme = window.toggleTheme;
+			window.toggleTheme = function() {
+				originalToggleTheme();
+				setTimeout(() => {
+					// Destroy and reinitialize charts with new colors
+					Object.values(chartInstances).forEach(chart => chart && chart.destroy());
+					chartInstances = {};
+					initDashboardCharts();
+				}, 100);
+			};
 		</script>
 	}
 }
@@ -131,21 +474,21 @@ templ IdentityFragment(id ui.SystemIdentity) {
 templ SecurityFragment(sec ui.SecurityKPIs) {
 	<div class="box-title">Security Pulse</div>
 	<div class="kpi-grid">
-		<div class="kpi-item">
+		<div class="kpi-item" data-tooltip="Currently blocked IPs across all modules">
 			<div class={ "kpi-value", templ.KV("danger", sec.BansTotal > 0) }>{ strconv.Itoa(sec.BansTotal) }</div>
 			<div class="kpi-label">Active Bans</div>
 			<div class="kpi-split">v4: { strconv.Itoa(sec.BansIPv4) } | v6: { strconv.Itoa(sec.BansIPv6) }</div>
 		</div>
-		<div class="kpi-item">
+		<div class="kpi-item" data-tooltip="IPs that bypass all ban rules">
 			<div class="kpi-value safe">{ strconv.Itoa(sec.WhitelistTotal) }</div>
 			<div class="kpi-label">Whitelist</div>
 			<div class="kpi-split">v4: { strconv.Itoa(sec.WhitelistIPv4) } | v6: { strconv.Itoa(sec.WhitelistIPv6) }</div>
 		</div>
-		<div class="kpi-item">
+		<div class="kpi-item" data-tooltip="Security events in the last 60 minutes">
 			<div class="kpi-value info">{ strconv.Itoa(sec.EventsLastHour) }</div>
 			<div class="kpi-label">Events/Hour</div>
 		</div>
-		<div class="kpi-item">
+		<div class="kpi-item" data-tooltip="Total IPs banned since NFTBan was installed">
 			<div class="kpi-value">{ strconv.Itoa(sec.TotalBansEver) }</div>
 			<div class="kpi-label">Total Ever</div>
 		</div>
@@ -159,15 +502,15 @@ templ SecurityFragment(sec ui.SecurityKPIs) {
 templ NetworkFragment(sec ui.SecurityKPIs) {
 	<div class="box-title">Traffic Meter</div>
 	<div class="kpi-grid">
-		<div class="kpi-item">
+		<div class="kpi-item" data-tooltip="Current inbound network throughput">
 			<div class="kpi-value info">{ fmt.Sprintf("%.1f", sec.NetworkInMbps) }</div>
 			<div class="kpi-label">IN Mbps</div>
 		</div>
-		<div class="kpi-item">
+		<div class="kpi-item" data-tooltip="Current outbound network throughput">
 			<div class="kpi-value info">{ fmt.Sprintf("%.1f", sec.NetworkOutMbps) }</div>
 			<div class="kpi-label">OUT Mbps</div>
 		</div>
-		<div class="kpi-item" style="grid-column: span 2;">
+		<div class="kpi-item" style="grid-column: span 2;" data-tooltip="Packets dropped by firewall rules per second. High values indicate active blocking.">
 			<div class={ "kpi-value", templ.KV("danger", sec.PacketDropRate > 100) }>{ strconv.Itoa(sec.PacketDropRate) }</div>
 			<div class="kpi-label">Packets Dropped/sec</div>
 		</div>
@@ -180,7 +523,7 @@ templ NetworkFragment(sec ui.SecurityKPIs) {
 
 templ ResourcesFragment(res ui.ResourceStats) {
 	<!-- CPU -->
-	<div class="resource-item">
+	<div class="resource-item" data-tooltip="System CPU utilization. Load averages show 1/5/15 minute averages.">
 		<div class="resource-label">CPU</div>
 		<div class={ "resource-value", getResourceColor(res.CPUPercent) }>{ fmt.Sprintf("%.1f%%", res.CPUPercent) }</div>
 		<div class="resource-detail">Load: { fmt.Sprintf("%.2f", res.CPULoadAvg1) } / { fmt.Sprintf("%.2f", res.CPULoadAvg5) } / { fmt.Sprintf("%.2f", res.CPULoadAvg15) }</div>
@@ -190,7 +533,7 @@ templ ResourcesFragment(res ui.ResourceStats) {
 	</div>
 
 	<!-- RAM -->
-	<div class="resource-item">
+	<div class="resource-item" data-tooltip="Physical memory usage excluding buffers/cache">
 		<div class="resource-label">RAM</div>
 		<div class={ "resource-value", getResourceColor(res.RAMPercent) }>{ fmt.Sprintf("%.1f%%", res.RAMPercent) }</div>
 		<div class="resource-detail">{ fmt.Sprintf("%.1f", res.RAMUsedGB) } / { fmt.Sprintf("%.1f", res.RAMTotalGB) } GB</div>
@@ -200,7 +543,7 @@ templ ResourcesFragment(res ui.ResourceStats) {
 	</div>
 
 	<!-- Disk -->
-	<div class="resource-item">
+	<div class="resource-item" data-tooltip="Disk space on the root partition">
 		<div class="resource-label">Disk ({ res.DiskPath })</div>
 		<div class={ "resource-value", getResourceColor(res.DiskPercent) }>{ fmt.Sprintf("%.0f%%", res.DiskPercent) }</div>
 		<div class="resource-detail">{ fmt.Sprintf("%.1f", res.DiskUsedGB) } / { fmt.Sprintf("%.1f", res.DiskTotalGB) } GB</div>
@@ -210,7 +553,7 @@ templ ResourcesFragment(res ui.ResourceStats) {
 	</div>
 
 	<!-- NFTBan Process -->
-	<div class="resource-item">
+	<div class="resource-item" data-tooltip="NFTBan daemon process resource consumption">
 		<div class="resource-label">NFTBan Daemon</div>
 		<div class="resource-value" style="font-size: 1.25rem;">{ fmt.Sprintf("%.1f%%", res.NFTBanCPU) } CPU</div>
 		<div class="resource-detail">{ fmt.Sprintf("%.1f", res.NFTBanMemMB) } MB | { res.NFTBanUptime }</div>
@@ -274,8 +617,12 @@ templ ModulesFragment(modules []ui.ModuleStatus) {
 			}
 			if len(modules) == 0 {
 				<tr>
-					<td colspan="6" style="text-align: center; color: var(--text-muted); padding: 2rem;">
-						No modules configured
+					<td colspan="6">
+						<div class="empty-state">
+							<div class="empty-state-icon">&#x2699;</div>
+							<div class="empty-state-title">No Modules Configured</div>
+							<div class="empty-state-description">Enable modules like portscan, GeoIP, or threat feeds to see their status here.</div>
+						</div>
 					</td>
 				</tr>
 			}
@@ -289,8 +636,10 @@ templ ModulesFragment(modules []ui.ModuleStatus) {
 
 templ RecentFragment(bans []ui.RecentBan) {
 	if len(bans) == 0 {
-		<div style="text-align: center; color: var(--text-muted); padding: 2rem;">
-			No recent bans - System is clean
+		<div class="empty-state">
+			<div class="empty-state-icon">&#x2705;</div>
+			<div class="empty-state-title">No Recent Bans</div>
+			<div class="empty-state-description">The system is clean. No malicious IPs have been blocked recently.</div>
 		</div>
 	} else {
 		<table class="module-table">
