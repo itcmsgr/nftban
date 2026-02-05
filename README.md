@@ -127,6 +127,7 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 | **DDoS Protection** | Rate limiting, SYN flood protection, connection limits |
 | **Suricata IDS** | Optional deep packet inspection integration |
 | **Prometheus Metrics** | Full observability for monitoring stacks |
+| **Connectors** | Export to Elasticsearch, Kafka, syslog, webhook |
 | **Cloudflare Integration** | Auto-whitelist Cloudflare proxy IPs |
 
 ---
@@ -291,16 +292,16 @@ Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
 ### Getting Started
 - **[Wiki Home](https://github.com/itcmsgr/nftban/wiki)** - Complete documentation
 - **[CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference)** - All 62 commands
-- **[Installation Prerequisites](https://github.com/itcmsgr/nftban/wiki/Installation-Prerequisites)** - System requirements
+- **[Installation Guide](https://github.com/itcmsgr/nftban/wiki/Installation-Guide)** - Prerequisites, install, post-config
 
 ### Advanced Integration
-- **[Suricata IDS Integration](https://github.com/itcmsgr/nftban/wiki/Suricata-Integration)** - Complete guide for Suricata IDS/IPS setup (2-command install, auto-detected profiles, DDoS/portscan integration)
+- **[Suricata IDS Integration](https://github.com/itcmsgr/nftban/wiki/Suricata-IDS-Integration)** - Complete guide for Suricata IDS/IPS setup (2-command install, auto-detected profiles, DDoS/portscan integration)
 
 ### Security
 - **[Security Policy](SECURITY.md)** - Vulnerability reporting
 - **[Security Architecture](https://github.com/itcmsgr/nftban/wiki/Security-Architecture)** - FHS Auto-Heal, Polkit integration
 - **[Security Operations Guide](https://github.com/itcmsgr/nftban/wiki/Security-Operations-Guide)** - Hardening, monitoring, emergency procedures
-- **[Groups and Permissions](https://github.com/itcmsgr/nftban/wiki/Groups-and-Permissions)** - Access control model
+- **[Security Architecture](https://github.com/itcmsgr/nftban/wiki/Security-Architecture#access-control-model)** - Access control, groups and permissions
 
 ### Community
 - **Website**: https://nftban.com
