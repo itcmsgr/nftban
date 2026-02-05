@@ -671,10 +671,10 @@ output_terminal() {
         printf "  %-20s ⚠️  %s\n" "Security Posture...." "$combined_posture"
     fi
 
-    # Show hints if not OK
-    if [[ "$health_status" != "OK" ]] || [[ $security_issues -gt 0 ]] && [[ $quiet_mode -eq 0 ]]; then
-        echo "      → Run: nftban health check"
-        echo "      → Auto-fix: nftban health check --auto-heal"
+    # Show hints if not OK (only in non-quiet mode)
+    if [[ $quiet_mode -eq 0 ]] && { [[ "$health_status" != "OK" ]] || [[ $security_issues -gt 0 ]]; }; then
+        echo "      → Details: nftban health check"
+        echo "      → Fix:     nftban health fix all  (requires root)"
     fi
     echo ""
 
