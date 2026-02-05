@@ -1469,13 +1469,20 @@ build_deb() {
     install -m 0755 "${PROJECT_ROOT}/bin/nftban-ui-auth" "${deb_root}/usr/libexec/"
 
     # Copy helper scripts to /usr/lib/nftban/sbin/
+    # CRITICAL: These scripts are executed by systemd services and MUST have 755 permissions
+    # Bug fix v1.9.4: Ensure sbin scripts are always installed with correct permissions
     mkdir -p "${deb_root}/usr/lib/nftban/sbin"
+    local sbin_count=0
     for script in nftban-apply nftban-confirm nftban-panelctl nftban-queue-processor \
                   nftban-rollback nftban-service-alert; do
         if [[ -f "${PROJECT_ROOT}/cli/sbin/${script}" ]]; then
             install -m 0755 "${PROJECT_ROOT}/cli/sbin/${script}" "${deb_root}/usr/lib/nftban/sbin/"
+            ((sbin_count++))
+        else
+            log_warn "Missing sbin script: ${script}"
         fi
     done
+    log_info "Installed ${sbin_count} sbin helper scripts"
 
     # Copy VERSION file
     install -m 0644 "${PROJECT_ROOT}/VERSION" "${deb_root}/usr/lib/nftban/VERSION"
