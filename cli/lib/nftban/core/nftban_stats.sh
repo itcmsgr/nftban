@@ -1074,21 +1074,30 @@ nftban_stats_generate_dashboard() {
             echo "  (no feeds configured)"
         fi
         echo ""
+    fi
 
-        # Packet blocking stats
-        local ipv4_packets ipv6_packets
-        ipv4_packets=$(nft list table "${NFTBAN_TABLE_IPV4}" 2>/dev/null | grep 'blacklist_ipv4.*counter' | grep -oP 'packets \K[0-9]+' || true)
-        ipv4_packets=${ipv4_packets:-0}
-        ipv6_packets=$(nft list table "${NFTBAN_TABLE_IPV6}" 2>/dev/null | grep 'blacklist_ipv6.*counter' | grep -oP 'packets \K[0-9]+' || true)
-        ipv6_packets=${ipv6_packets:-0}
-        local total_blocks
-        total_blocks=$((ipv4_packets + ipv6_packets))
+    # ─────────────────────────────────────────────────────────────────────
+    # FIREWALL COUNTERS (nftables packet/byte counters since last reboot)
+    # ─────────────────────────────────────────────────────────────────────
+    local ipv4_pkt_count ipv6_pkt_count
+    ipv4_pkt_count=$(nft list table "${NFTBAN_TABLE_IPV4}" 2>/dev/null | grep 'blacklist_ipv4.*counter' | grep -oP 'packets \K[0-9]+' || true)
+    ipv4_pkt_count=${ipv4_pkt_count:-0}
+    ipv6_pkt_count=$(nft list table "${NFTBAN_TABLE_IPV6}" 2>/dev/null | grep 'blacklist_ipv6.*counter' | grep -oP 'packets \K[0-9]+' || true)
+    ipv6_pkt_count=${ipv6_pkt_count:-0}
+    local total_pkt_blocked=$((ipv4_pkt_count + ipv6_pkt_count))
 
-        # Format large numbers with commas
-        local formatted_blocks
-        formatted_blocks=$(printf "%'d" "$total_blocks" 2>/dev/null || echo "$total_blocks")
+    if [[ $total_pkt_blocked -gt 0 ]]; then
+        local formatted_ipv4 formatted_ipv6 formatted_total
+        formatted_ipv4=$(printf "%'d" "$ipv4_pkt_count" 2>/dev/null || echo "$ipv4_pkt_count")
+        formatted_ipv6=$(printf "%'d" "$ipv6_pkt_count" 2>/dev/null || echo "$ipv6_pkt_count")
+        formatted_total=$(printf "%'d" "$total_pkt_blocked" 2>/dev/null || echo "$total_pkt_blocked")
 
-        printf "  %-20s %s\n" "Total packets blocked" "$formatted_blocks"
+        echo "FIREWALL COUNTERS (since last reboot)"
+        echo "───────────────────────────────────────────────────────────"
+        printf "  %-20s %s packets\n" "IPv4 dropped........" "$formatted_ipv4"
+        printf "  %-20s %s packets\n" "IPv6 dropped........" "$formatted_ipv6"
+        printf "  %-20s %s packets\n" "Total dropped......." "$formatted_total"
+        echo "  (all sources: bans, feeds, geoban — resets on reboot)"
         echo ""
     fi
 
