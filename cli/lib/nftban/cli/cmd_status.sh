@@ -232,13 +232,29 @@ output_terminal() {
     echo "PROTECTION MODULES"
     echo "───────────────────────────────────────────────────────────────"
 
-    # Suricata IDS
+    # Suricata IDS (check service + EVE freshness for consistent reporting)
     local suricata_status="NOT INSTALLED"
+    local suricata_eve_ok=false
     if systemctl is-active suricata.service >/dev/null 2>&1; then
-        if systemctl is-active nftban-suricata.service >/dev/null 2>&1; then
-            suricata_status="ACTIVE (IDS + Banning)"
+        # Service is running — verify EVE log is fresh (same check as portscan/ddos)
+        local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
+        local eve_fresh=false
+        if [[ -f "$eve_file" ]]; then
+            local eve_mtime eve_age
+            eve_mtime=$(stat -c %Y "$eve_file" 2>/dev/null) || eve_mtime=0
+            eve_age=$(( $(date +%s) - eve_mtime ))
+            [[ $eve_age -le 120 ]] && eve_fresh=true
+        fi
+
+        if [[ "$eve_fresh" == "true" ]]; then
+            suricata_eve_ok=true
+            if systemctl is-active nftban-suricata.service >/dev/null 2>&1; then
+                suricata_status="ACTIVE (IDS + Banning)"
+            else
+                suricata_status="ACTIVE (IDS only)"
+            fi
         else
-            suricata_status="ACTIVE (IDS only)"
+            suricata_status="DEGRADED (running, EVE log stale)"
         fi
     elif command -v suricata &>/dev/null; then
         suricata_status="INSTALLED (stopped)"
@@ -266,6 +282,8 @@ output_terminal() {
         ddos_status="ENABLED"
     elif [[ "$ddos_enabled" == "true" ]] && [[ "$ddos_rules_exist" == "false" ]]; then
         ddos_status="NOT INSTALLED"
+    elif [[ "$ddos_enabled" != "true" ]] && [[ "$ddos_rules_exist" == "true" ]]; then
+        ddos_status="PARTIAL (rules exist, not enabled)"
     fi
     printf "  %-20s %s\n" "DDoS................" "$ddos_status"
 
@@ -281,12 +299,14 @@ output_terminal() {
     portscan_enabled="${PORTSCAN_ENABLED:-false}"
 
     if [[ "$portscan_enabled" == "true" ]]; then
-        if systemctl is-active suricata.service >/dev/null 2>&1; then
+        if [[ "$suricata_eve_ok" == "true" ]]; then
             portscan_status="ENABLED (Suricata mode)"
+        elif systemctl is-active suricata.service >/dev/null 2>&1; then
+            portscan_status="ENABLED (Classic — Suricata EVE stale)"
         else
-            portscan_status="ENABLED (Standalone)"
+            portscan_status="ENABLED (Classic mode)"
         fi
-    elif systemctl is-active suricata.service >/dev/null 2>&1; then
+    elif [[ "$suricata_eve_ok" == "true" ]]; then
         portscan_status="AVAILABLE (not enabled)"
     fi
     printf "  %-20s %s\n" "Port Scan..........." "$portscan_status"
@@ -304,10 +324,12 @@ output_terminal() {
             echo ""
             echo "  Detection Modes:"
             if [[ "$portscan_enabled" == "true" ]]; then
-                if systemctl is-active suricata.service >/dev/null 2>&1; then
+                if [[ "$suricata_eve_ok" == "true" ]]; then
                     echo "    Port Scan: Using Suricata IDS (deep packet inspection)"
+                elif systemctl is-active suricata.service >/dev/null 2>&1; then
+                    echo "    Port Scan: Classic mode (Suricata running but EVE stale)"
                 else
-                    echo "    Port Scan: Standalone mode (kernel log monitoring)"
+                    echo "    Port Scan: Classic mode (nftables log monitoring)"
                 fi
             fi
             if [[ "$ddos_enabled" == "true" ]]; then
