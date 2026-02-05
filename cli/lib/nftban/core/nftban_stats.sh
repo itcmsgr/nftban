@@ -918,6 +918,13 @@ nftban_stats_generate_dashboard() {
         feeds_ipv4_total=$(nftban_stats_get_unified ".feeds.ipv4_total" "0")
         feeds_ipv6_total=$(nftban_stats_get_unified ".feeds.ipv6_total" "0")
     else
+        # Ensure feeds library is loaded for discovery functions
+        if ! type -t nftban_feeds_discover_all >/dev/null 2>&1; then
+            if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_feeds.sh" ]]; then
+                source "${NFTBAN_LIB_DIR}/core/nftban_feeds.sh" 2>/dev/null || true
+            fi
+        fi
+
         # Fallback: Scan feed files
         local feeds_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/feeds"
         if [[ -d "$feeds_dir" ]]; then
