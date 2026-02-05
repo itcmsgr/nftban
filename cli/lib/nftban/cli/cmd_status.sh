@@ -674,7 +674,7 @@ output_terminal() {
     # Show hints if not OK (only in non-quiet mode)
     if [[ $quiet_mode -eq 0 ]] && { [[ "$health_status" != "OK" ]] || [[ $security_issues -gt 0 ]]; }; then
         echo "      → Details: nftban health check"
-        echo "      → Fix:     nftban health fix all  (requires root)"
+        echo "      → Fix:     sudo nftban health fix all  (for root-only fixes)"
     fi
     echo ""
 
