@@ -208,6 +208,12 @@ case "$1" in
             log_info "  Created group: nftban-auditor"
         fi
 
+        # Create suricata group if not exists (needed for nftban-suricata-update.service)
+        if ! getent group suricata > /dev/null 2>&1; then
+            addgroup --system suricata
+            log_info "  Created group: suricata"
+        fi
+
         # Add root to nftban group for CLI access
         if ! id -nG root 2>/dev/null | grep -qw nftban; then
             usermod -a -G nftban root 2>/dev/null || true

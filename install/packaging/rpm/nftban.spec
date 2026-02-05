@@ -86,6 +86,7 @@ if [ -f /usr/lib/sysusers.d/nftban.conf ]; then
         # Fallback for systems without systemd-sysusers
         getent group nftban >/dev/null || groupadd -r nftban
         getent group nftban-auditor >/dev/null || groupadd -r nftban-auditor
+        getent group suricata >/dev/null || groupadd -r suricata
         getent passwd nftban >/dev/null || \
             useradd -r -g nftban -G nftban-auditor -d /var/lib/nftban \
             -s /sbin/nologin -c "NFTBan Service Account" nftban
@@ -94,6 +95,7 @@ else
     # Fallback if sysusers.d file not yet installed
     getent group nftban >/dev/null || groupadd -r nftban
     getent group nftban-auditor >/dev/null || groupadd -r nftban-auditor
+    getent group suricata >/dev/null || groupadd -r suricata
     getent passwd nftban >/dev/null || \
         useradd -r -g nftban -G nftban-auditor -d /var/lib/nftban \
         -s /sbin/nologin -c "NFTBan Service Account" nftban

@@ -38,6 +38,11 @@ User=nftban
 Group=nftban
 SupplementaryGroups=suricata
 
+# Grant CAP_NET_ADMIN for nftables operations (required for ban actions)
+# Bug fix v1.9.4: Service failed without this capability
+AmbientCapabilities=CAP_NET_ADMIN
+CapabilityBoundingSet=CAP_NET_ADMIN
+
 # Daemon command
 ExecStart=/usr/lib/nftban/bin/nftban-core suricata daemon
 

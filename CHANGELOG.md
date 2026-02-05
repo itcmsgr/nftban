@@ -5,6 +5,35 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.4] - 2026-02-05
+
+### Packaging Fixes (Lab Server Diagnostics)
+
+This maintenance release fixes critical packaging bugs discovered during lab server diagnostics
+across Debian 12, Ubuntu 24.04, and AlmaLinux 9 environments.
+
+### Fixed
+
+- **sbin scripts permissions** - Scripts in `/usr/lib/nftban/sbin/` now correctly installed with
+  755 permissions. Previously `nftban-queue-processor` and `nftban-service-alert` were installed
+  with 644, causing `nftban-queue.service` to fail with "Permission denied"
+
+- **nftban-suricata.service CAP_NET_ADMIN** - Added `AmbientCapabilities=CAP_NET_ADMIN` to service
+  file. Service was crash-looping on some systems with "must run as root or with CAP_NET_ADMIN"
+
+- **suricata group creation** - DEB/RPM packages now create `suricata` group if missing. Previously
+  `nftban-suricata-update.service` failed with "Failed to determine group credentials"
+
+- **nftban-suricata-update.service group** - Changed `Group=suricata` to `Group=root` since service
+  runs as root and suricata group may not exist on all systems
+
+### Changed
+
+- Build script now logs sbin script installation count for verification
+- Added missing group creation to both DEB postinst and RPM %pre scripts
+
+---
+
 ## [1.9.5] - 2026-02-04
 
 ### Security Posture Integration

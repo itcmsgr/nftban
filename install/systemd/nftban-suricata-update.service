@@ -33,9 +33,9 @@ Type=oneshot
 #   1. Write to /etc/suricata/rules/ (suricata-update)
 #   2. Restart suricata.service (systemctl restart)
 # Not in audit scope (not stats/parser/exporter)
-# Alternative: Run as suricata user + sudo, but adds complexity
+# Bug fix v1.9.4: Removed Group=suricata (may not exist on all systems)
 User=root
-Group=suricata
+Group=root
 
 # Update rules and restart suricata
 ExecStart=/bin/bash -c 'suricata-update update-sources && suricata-update && systemctl restart suricata.service'
