@@ -21,11 +21,14 @@ templ Health(data ui.HealthData) {
 	@ui.LayoutWithNav("Health", "health") {
 		<div class="page-header">
 			<h1 class="page-title">System Health</h1>
-			<div style="display: flex; gap: 0.5rem;">
-				<button class="btn btn-primary" hx-get="/ui/frag/health-all" hx-target="#health-content" hx-swap="innerHTML">
+			<div style="display: flex; gap: 0.5rem; align-items: center;">
+				<span id="health-loading" class="htmx-indicator">
+					<span class="loading-spinner"></span>
+				</span>
+				<button class="btn btn-primary" hx-get="/ui/frag/health-all" hx-target="#health-content" hx-swap="innerHTML" hx-indicator="#health-loading">
 					Refresh
 				</button>
-				<button class="btn btn-danger" hx-post="/ui/action/health-fix" hx-confirm="Run auto-heal to fix issues?">
+				<button class="btn btn-danger" hx-post="/ui/action/health-fix" hx-confirm="Run auto-heal to fix issues?" data-tooltip="Attempt automatic fixes for detected issues">
 					Auto-Heal
 				</button>
 			</div>
@@ -139,8 +142,12 @@ templ HealthContentFragment(data ui.HealthData) {
 				}
 				if len(data.Checks) == 0 {
 					<tr>
-						<td colspan="3" style="text-align: center; color: var(--text-muted);">
-							No health checks available. Run: nftban health check
+						<td colspan="3">
+							<div class="empty-state">
+								<div class="empty-state-icon">&#x1F50D;</div>
+								<div class="empty-state-title">No Health Checks Available</div>
+								<div class="empty-state-description">Run <code style="background: var(--bg-elevated); padding: 0.25rem 0.5rem; border-radius: 4px;">nftban health check</code> to generate health diagnostics.</div>
+							</div>
 						</td>
 					</tr>
 				}

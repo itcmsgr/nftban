@@ -23,10 +23,13 @@ templ Metrics(data ui.MetricsData) {
 		<div class="page-header">
 			<h1 class="page-title">Metrics Overview</h1>
 			<div style="display: flex; gap: 0.5rem; align-items: center;">
-				<span class="collector-status" style={ getCollectorStatusStyle(data.CollectorState) }>
+				<span class="collector-status" style={ getCollectorStatusStyle(data.CollectorState) } data-tooltip="Metrics collector service status">
 					{ data.CollectorState }
 				</span>
-				<button class="btn btn-primary" hx-get="/ui/frag/metrics-summary" hx-target="#metrics-content" hx-swap="innerHTML">
+				<span id="metrics-loading" class="htmx-indicator">
+					<span class="loading-spinner"></span>
+				</span>
+				<button class="btn btn-primary" hx-get="/ui/frag/metrics-summary" hx-target="#metrics-content" hx-swap="innerHTML" hx-indicator="#metrics-loading">
 					Refresh
 				</button>
 			</div>
@@ -55,7 +58,7 @@ templ Metrics(data ui.MetricsData) {
 templ MetricsContentFragment(data ui.MetricsData) {
 	<!-- Summary Cards Row -->
 	<div class="metrics-summary-row">
-		<div class="metric-card">
+		<div class="metric-card" data-tooltip="Total IPs currently blocked by NFTBan">
 			<div class="metric-icon danger">&#x1F6AB;</div>
 			<div class="metric-info">
 				<div class="metric-value danger">{ intToStr(data.Summary.TotalBans) }</div>
@@ -63,28 +66,28 @@ templ MetricsContentFragment(data ui.MetricsData) {
 				<div class="metric-detail">v4: { intToStr(data.Summary.BansIPv4) } | v6: { intToStr(data.Summary.BansIPv6) }</div>
 			</div>
 		</div>
-		<div class="metric-card">
+		<div class="metric-card" data-tooltip="IPs exempted from all blocking rules">
 			<div class="metric-icon safe">&#x2705;</div>
 			<div class="metric-info">
 				<div class="metric-value safe">{ intToStr(data.Summary.TotalWhitelist) }</div>
 				<div class="metric-label">Whitelist</div>
 			</div>
 		</div>
-		<div class="metric-card">
+		<div class="metric-card" data-tooltip="Threat intelligence feeds currently syncing">
 			<div class="metric-icon info">&#x1F4E1;</div>
 			<div class="metric-info">
 				<div class="metric-value info">{ intToStr(data.Summary.ActiveFeeds) }</div>
 				<div class="metric-label">Active Feeds</div>
 			</div>
 		</div>
-		<div class="metric-card">
+		<div class="metric-card" data-tooltip="Countries blocked via GeoIP rules">
 			<div class="metric-icon warning">&#x1F30D;</div>
 			<div class="metric-info">
 				<div class="metric-value warning">{ intToStr(data.Summary.BlockedCountries) }</div>
 				<div class="metric-label">Blocked Countries</div>
 			</div>
 		</div>
-		<div class="metric-card">
+		<div class="metric-card" data-tooltip="Security events processed in the last hour">
 			<div class="metric-icon">&#x1F4CA;</div>
 			<div class="metric-info">
 				<div class="metric-value">{ intToStr(data.Summary.EventsLastHour) }</div>
@@ -285,7 +288,13 @@ templ MetricsContentFragment(data ui.MetricsData) {
 				}
 				if len(data.Modules) == 0 {
 					<tr>
-						<td colspan="7" style="text-align: center; color: var(--text-muted);">No module metrics available</td>
+						<td colspan="7">
+							<div class="empty-state">
+								<div class="empty-state-icon">&#x1F4CA;</div>
+								<div class="empty-state-title">No Module Metrics</div>
+								<div class="empty-state-description">Module metrics will appear here once modules are enabled and running.</div>
+							</div>
+						</td>
 					</tr>
 				}
 			</tbody>

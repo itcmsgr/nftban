@@ -191,6 +191,13 @@ func main() {
 	// Dashboard API endpoints
 	router.HandleFunc("/ui/api/ip-check", gothHandlers.RequireSession(gothHandlers.HandleIPCheck)).Methods("GET")
 
+	// Chart data API endpoints (for dashboard visualizations)
+	router.HandleFunc("/ui/api/chart/traffic", gothHandlers.RequireSession(gothHandlers.HandleChartTraffic)).Methods("GET")
+	router.HandleFunc("/ui/api/chart/bans", gothHandlers.RequireSession(gothHandlers.HandleChartBans)).Methods("GET")
+	router.HandleFunc("/ui/api/chart/countries", gothHandlers.RequireSession(gothHandlers.HandleChartCountries)).Methods("GET")
+	router.HandleFunc("/ui/api/chart/portscan", gothHandlers.RequireSession(gothHandlers.HandleChartPortscan)).Methods("GET")
+	router.HandleFunc("/ui/api/chart/bans-timeline", gothHandlers.RequireSession(gothHandlers.HandleChartBansTimeline)).Methods("GET")
+
 	// Dashboard action endpoints
 	router.HandleFunc("/ui/action/flush-temp", gothHandlers.RequireSession(gothHandlers.HandleFlushTemp)).Methods("POST")
 	router.HandleFunc("/ui/action/restart/{service}", gothHandlers.RequireSession(gothHandlers.HandleRestartService)).Methods("POST")

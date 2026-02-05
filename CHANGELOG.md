@@ -5,6 +5,53 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.9.7] - 2026-02-06
+
+### GUI Dashboard & Metrics Overhaul
+
+Major UI/UX improvements with real data integration, Chart.js visualizations, and professional UX patterns.
+
+### Added
+
+- **Chart.js dashboard integration** - 5 interactive charts:
+  - Traffic Trend (24h line chart)
+  - Ban Distribution (doughnut chart)
+  - Top Blocked Countries (horizontal bar)
+  - Port Scan Activity (vertical bar)
+  - Bans Over Time (timeline)
+
+- **Chart API endpoints** - New REST endpoints for chart data:
+  - `GET /ui/api/chart/traffic` - Traffic history
+  - `GET /ui/api/chart/bans` - Ban distribution
+  - `GET /ui/api/chart/countries` - Top blocked countries
+  - `GET /ui/api/chart/portscan` - Port scan activity
+  - `GET /ui/api/chart/bans-timeline` - Bans over time
+
+- **Metrics cache generator** - Unified exporter now generates GUI cache files:
+  - `traffic_history.json` - Rolling 24-sample bandwidth history
+  - `dropped_by_country.json` - Aggregated geoban blocks by country
+  - `dropped_by_port.json` - Aggregated portscan blocks by port
+
+- **UX improvements** - Professional UI patterns:
+  - Loading spinners during HTMX updates
+  - Empty state displays with icons and helpful messages
+  - Error state handling with retry buttons
+  - Tooltips for complex metrics (hover for explanation)
+
+### Fixed
+
+- **getTrafficHistory()** - Was returning empty array (TODO stub), now reads from cache or generates history
+- **getDroppedByCountry()** - Was returning empty array, now parses geoban logs and aggregates by country
+- **getDroppedByPort()** - Was returning empty array, now parses portscan logs and aggregates by port
+
+### Changed
+
+- Dashboard now displays real-time charts instead of placeholder data
+- Metrics page shows loading indicators during data refresh
+- Health page has improved empty/error state handling
+
+---
+
 ## [1.9.6] - 2026-02-05
 
 ### Packaging Fixes (Lab Server Diagnostics)
