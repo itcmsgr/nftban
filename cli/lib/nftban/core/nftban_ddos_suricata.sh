@@ -6,10 +6,12 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Suricata IDS-integrated DDoS protection with scoring engine
 #
-# meta:name=nftban_ddos_suricata
-# meta:type=core
-# meta:header=DDoS Protection (Suricata)
-# meta:version=1.0.0
+# meta:name="nftban_ddos_suricata"
+# meta:type="core"
+# meta:header="DDoS Protection (Suricata)"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
 #
 # **Description**
 # Intelligent DDoS protection using Suricata IDS alerts:
@@ -24,10 +26,20 @@
 # - Protocol-aware detection needed
 # - AI-ready scoring pipeline
 #
-# meta:depends=bash>=4.0,nftables>=0.9.0,suricata,jq
-# meta:created_date=2025-12-01
-# meta:updated_date=2025-12-01
+# meta:description="Suricata IDS-integrated DDoS protection with scoring engine"
+# meta:depends="bash>=4.0,nftables>=0.9.0,suricata,jq"
+# meta:inventory.files=""
+# meta:inventory.binaries="suricata,jq,nft"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/ddos/suricata.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# meta:created_date="2025-12-01"
+# meta:updated_date="2026-02-05"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # =============================================================================
 # MODULE GUARD
@@ -141,9 +153,9 @@ nftban_ddos_suricata_service_running() {
         service "$service" status &>/dev/null && return 0
     fi
 
-    # Check for running process
-    pgrep -x suricata &>/dev/null && return 0
-    pgrep -f "suricata.*-c" &>/dev/null && return 0
+    # Check for running process (use configurable service name)
+    pgrep -x "${service}" &>/dev/null && return 0
+    pgrep -f "${service}.*-c" &>/dev/null && return 0
 
     return 1
 }

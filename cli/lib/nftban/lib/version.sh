@@ -65,7 +65,7 @@ _nftban_read_version() {
     if [[ -f "$version_file" ]]; then
         cat "$version_file" | tr -d '[:space:]'
     else
-        echo "1.7.0"  # Fallback if VERSION file not found
+        echo "unknown"  # Fallback if VERSION file not found
     fi
 }
 
