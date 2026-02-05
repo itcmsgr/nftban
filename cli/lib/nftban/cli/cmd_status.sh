@@ -132,7 +132,7 @@ output_terminal() {
 
     # Header with version
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  NFTBan v${NFTBAN_VERSION:-1.7.0} — System Status"
+    echo "  NFTBan v${NFTBAN_VERSION:-unknown} — System Status"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
     echo ""
 
@@ -232,32 +232,37 @@ output_terminal() {
     echo "PROTECTION MODULES"
     echo "───────────────────────────────────────────────────────────────"
 
-    # Suricata IDS (check service + EVE freshness for consistent reporting)
+    # Suricata IDS (check binary + service + EVE freshness for consistent reporting)
+    # Matches the same 3-tier check used by portscan and ddos modules
     local suricata_status="NOT INSTALLED"
     local suricata_eve_ok=false
-    if systemctl is-active suricata.service >/dev/null 2>&1; then
-        # Service is running — verify EVE log is fresh (same check as portscan/ddos)
-        local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
-        local eve_fresh=false
-        if [[ -f "$eve_file" ]]; then
-            local eve_mtime eve_age
-            eve_mtime=$(stat -c %Y "$eve_file" 2>/dev/null) || eve_mtime=0
-            eve_age=$(( $(date +%s) - eve_mtime ))
-            [[ $eve_age -le 120 ]] && eve_fresh=true
-        fi
+    local eve_threshold="${PORTSCAN_EVE_FRESHNESS_THRESHOLD:-60}"
+    if command -v suricata &>/dev/null; then
+        # Binary exists — check service
+        if systemctl is-active suricata.service >/dev/null 2>&1; then
+            # Service is running — verify EVE log is fresh (same check as portscan/ddos)
+            local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
+            local eve_fresh=false
+            if [[ -f "$eve_file" ]]; then
+                local eve_mtime eve_age
+                eve_mtime=$(stat -c %Y "$eve_file" 2>/dev/null) || eve_mtime=0
+                eve_age=$(( $(date +%s) - eve_mtime ))
+                [[ $eve_age -le $eve_threshold ]] && eve_fresh=true
+            fi
 
-        if [[ "$eve_fresh" == "true" ]]; then
-            suricata_eve_ok=true
-            if systemctl is-active nftban-suricata.service >/dev/null 2>&1; then
-                suricata_status="ACTIVE (IDS + Banning)"
+            if [[ "$eve_fresh" == "true" ]]; then
+                suricata_eve_ok=true
+                if systemctl is-active nftban-suricata.service >/dev/null 2>&1; then
+                    suricata_status="ACTIVE (IDS + Banning)"
+                else
+                    suricata_status="ACTIVE (IDS only)"
+                fi
             else
-                suricata_status="ACTIVE (IDS only)"
+                suricata_status="DEGRADED (running, EVE log stale)"
             fi
         else
-            suricata_status="DEGRADED (running, EVE log stale)"
+            suricata_status="INSTALLED (stopped)"
         fi
-    elif command -v suricata &>/dev/null; then
-        suricata_status="INSTALLED (stopped)"
     fi
     printf "  %-20s %s\n" "Suricata IDS........" "$suricata_status"
 

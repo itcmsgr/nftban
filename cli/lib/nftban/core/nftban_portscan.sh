@@ -521,7 +521,7 @@ nftban_portscan_status() {
     if [[ "$suricata_available" == "true" ]]; then
         echo "  Available:   ✅ YES - Suricata is installed and running"
         echo "  Service:     $(systemctl is-active suricata 2>/dev/null || echo 'unknown')"
-        local eve_file="${SURICATA_EVE_LOG:-/var/log/nftban/suricata/eve-alerts.json}"
+        local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
         if [[ -f "$eve_file" ]]; then
             local eve_age
             eve_age=$(( $(date +%s) - $(stat -c %Y "$eve_file" 2>/dev/null || echo 0) ))
@@ -534,13 +534,26 @@ nftban_portscan_status() {
             echo "  EVE Log:     ❌ Not found at $eve_file"
         fi
     else
-        echo "  Available:   ❌ NO - Suricata not available"
+        echo "  Available:   ❌ NO - Suricata not available for detection"
         if ! command -v suricata &>/dev/null; then
             echo "  Reason:      Binary not installed"
-            echo "  Install:     nftban setup suricata"
+            echo "  Fix:         nftban setup suricata"
         elif ! systemctl is-active suricata &>/dev/null; then
             echo "  Reason:      Service not running"
-            echo "  Start:       systemctl start suricata"
+            echo "  Fix:         systemctl start suricata"
+        else
+            # Binary exists and service running — EVE log must be the issue
+            local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
+            if [[ ! -f "$eve_file" ]]; then
+                echo "  Reason:      EVE log not found at $eve_file"
+                echo "  Fix:         Check Suricata output config (suricata.yaml)"
+            else
+                local eve_age
+                eve_age=$(( $(date +%s) - $(stat -c %Y "$eve_file" 2>/dev/null || echo 0) ))
+                echo "  Reason:      EVE log stale (last update ${eve_age}s ago, threshold: ${PORTSCAN_EVE_FRESHNESS_THRESHOLD:-60}s)"
+                echo "  Fix:         Check Suricata is processing traffic: suricata --build-info"
+                echo "               Verify EVE output: grep eve-log /etc/suricata/suricata.yaml"
+            fi
         fi
     fi
     echo ""

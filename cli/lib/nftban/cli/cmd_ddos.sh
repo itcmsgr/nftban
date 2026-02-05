@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.7.0 - DDoS CLI Handler
+# NFTBan v1.9.3 - DDoS CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Command-line interface for DDoS protection management
@@ -8,7 +8,7 @@
 # meta:name="cmd_ddos"
 # meta:type="cli"
 # meta:header="DDoS CLI"
-# meta:version="1.7.0"
+# meta:version="1.9.3"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #

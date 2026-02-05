@@ -5,10 +5,12 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Dual-mode DDoS protection with auto-detection
 #
-# meta:name=nftban_ddos
-# meta:type=core
-# meta:header=DDoS Protection
-# meta:version=1.0.0
+# meta:name="nftban_ddos"
+# meta:type="core"
+# meta:header="DDoS Protection"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
 #
 # **Description**
 # Main controller for DDoS protection with dual-mode support:
@@ -23,11 +25,20 @@
 #   2. If "auto": detect Suricata availability
 #   3. Load appropriate sub-module
 #
-# meta:depends=bash>=4.0,nftables>=0.9.0
-# meta:created_date=2025-12-01
-# meta:updated_date=2025-12-01
+# meta:description="Dual-mode DDoS protection with auto-detection"
+# meta:depends="bash>=4.0,nftables>=0.9.0"
+# meta:inventory.files=""
+# meta:inventory.binaries="nft,systemctl"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/ddos/main.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+# meta:created_date="2025-12-01"
+# meta:updated_date="2026-02-05"
 # =============================================================================
 
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
@@ -392,6 +403,27 @@ nftban_ddos_status() {
             echo "  Suricata:  ✅ AVAILABLE (ready for use)"
         else
             echo "  Suricata:  ❌ NOT AVAILABLE"
+            # Explain WHY it's not available (same pattern as portscan)
+            if ! type -t nftban_ddos_suricata_binary_exists &>/dev/null || ! nftban_ddos_suricata_binary_exists; then
+                echo "  Reason:    Binary not installed"
+                echo "  Fix:       apt install suricata / dnf install suricata"
+            elif ! type -t nftban_ddos_suricata_service_running &>/dev/null || ! nftban_ddos_suricata_service_running; then
+                echo "  Reason:    Service not running"
+                echo "  Fix:       systemctl start suricata"
+            else
+                # Binary + service OK → EVE log must be the issue
+                local diag_eve="${DDOS_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
+                if [[ ! -f "$diag_eve" ]]; then
+                    echo "  Reason:    EVE log not found at $diag_eve"
+                    echo "  Fix:       Check Suricata output config (suricata.yaml)"
+                else
+                    local diag_age
+                    diag_age=$(( $(date +%s) - $(stat -c %Y "$diag_eve" 2>/dev/null || echo 0) ))
+                    echo "  Reason:    EVE log stale (last update ${diag_age}s ago, threshold: ${DDOS_EVE_FRESHNESS_THRESHOLD:-60}s)"
+                    echo "  Fix:       Check Suricata is processing traffic: suricata --build-info"
+                    echo "             Verify EVE output: grep eve-log /etc/suricata/suricata.yaml"
+                fi
+            fi
         fi
     fi
 

@@ -183,10 +183,15 @@ nftban_get_kernel() {
 nftban_get_version() {
     if [[ -n "${NFTBAN_VERSION:-}" ]]; then
         echo "$NFTBAN_VERSION"
+    elif [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" ]]; then
+        # Load version.sh (single source of truth)
+        # shellcheck source=/dev/null
+        source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" 2>/dev/null
+        echo "${NFTBAN_VERSION:-unknown}"
     elif command -v nftban >/dev/null 2>&1; then
-        nftban --version 2>/dev/null | sed -n 's/.*\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p' || echo "1.7.0"
+        nftban --version 2>/dev/null | sed -n 's/.*\([0-9]\+\.[0-9]\+\.[0-9]\+\).*/\1/p' || echo "unknown"
     else
-        echo "1.7.0"
+        echo "unknown"
     fi
 }
 
