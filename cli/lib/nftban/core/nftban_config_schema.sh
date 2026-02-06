@@ -571,6 +571,7 @@ nftban_normalize_boolean() {
 # Main configtest function
 # Returns: 0=OK, 1=warnings, 2=errors
 nftban_configtest() {
+    # shellcheck disable=SC2034  # verbose reserved for future use
     local verbose="${1:-0}"
     local json_output="${2:-0}"
     local schema_file="${3:-$NFTBAN_SCHEMA_FILE}"
