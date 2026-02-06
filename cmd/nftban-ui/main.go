@@ -189,6 +189,9 @@ func main() {
 	router.HandleFunc("/ui/frag/network-stats", gothHandlers.RequireSession(gothHandlers.HandleFragNetworkStats)).Methods("GET")
 	router.HandleFunc("/ui/frag/feeds", gothHandlers.RequireSession(gothHandlers.HandleFragFeeds)).Methods("GET")
 
+	// SSE (Server-Sent Events) endpoint for real-time dashboard updates
+	router.HandleFunc("/ui/sse/dashboard", gothHandlers.RequireSession(gothHandlers.HandleSSEDashboard)).Methods("GET")
+
 	// Dashboard API endpoints
 	router.HandleFunc("/ui/api/ip-check", gothHandlers.RequireSession(gothHandlers.HandleIPCheck)).Methods("GET")
 
@@ -206,6 +209,10 @@ func main() {
 	router.HandleFunc("/ui/action/sync-feeds", gothHandlers.RequireSession(gothHandlers.HandleSyncFeeds)).Methods("POST")
 	router.HandleFunc("/ui/action/sync-feed/{name}", gothHandlers.RequireSession(gothHandlers.HandleSyncFeed)).Methods("POST")
 	router.HandleFunc("/ui/action/feed-toggle/{name}", gothHandlers.RequireSession(gothHandlers.HandleFeedToggle)).Methods("POST")
+
+	// Bulk operations endpoints (multi-select ban/unban)
+	router.HandleFunc("/ui/action/bulk-unban", gothHandlers.RequireSession(gothHandlers.HandleBulkUnban)).Methods("POST")
+	router.HandleFunc("/ui/action/bulk-delete", gothHandlers.RequireSession(gothHandlers.HandleBulkDelete)).Methods("POST")
 
 	// Tools page API endpoints (diagnostic tools)
 	router.HandleFunc("/api/v1/tools/check", gothHandlers.RequireSession(gothHandlers.HandleToolsIPCheck)).Methods("POST")
