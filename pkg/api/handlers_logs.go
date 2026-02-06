@@ -38,7 +38,7 @@ import (
 
 // SECURITY FIX: Regex to validate search filter input - prevents command injection
 // Only allows alphanumeric characters, spaces, and common safe punctuation
-var validSearchFilterRegex = regexp.MustCompile(`^[a-zA-Z0-9\s._:-]+$`)
+var validSearchFilterRegex = regexp.MustCompile(`^[a-zA-Z0-9 ._:-]+$`)
 
 // LogsHandler returns system logs
 func LogsHandler(w http.ResponseWriter, r *http.Request) {
