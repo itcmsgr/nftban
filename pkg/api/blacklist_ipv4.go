@@ -22,7 +22,6 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 
 	"github.com/itcmsgr/nftban/pkg/sync"
