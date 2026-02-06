@@ -1064,3 +1064,47 @@ type PathSettingsData struct {
 	CacheDir  string
 	RunDir    string
 }
+
+// =============================================================================
+// EVENTS PAGE DATA - Security events and activity log
+// =============================================================================
+
+// EventsData holds events page information
+type EventsData struct {
+	// Summary stats
+	TotalEvents    int
+	EventsLastHour int
+	EventsToday    int
+	BanEvents      int
+	UnbanEvents    int
+	WarningEvents  int
+	ErrorEvents    int
+
+	// Event list
+	Events []EventEntry
+
+	// Pagination
+	Page       int
+	PageSize   int
+	TotalPages int
+
+	// Filters
+	Filter      string // "all", "bans", "unbans", "warnings", "errors"
+	SearchQuery string
+	DateFrom    string
+	DateTo      string
+}
+
+// EventEntry represents a single security event
+type EventEntry struct {
+	ID          string
+	Timestamp   string
+	Level       string // "INFO", "WARN", "ERROR", "BAN", "UNBAN"
+	Module      string // login, portscan, ddos, geoban, feed, etc.
+	Action      string // "ban", "unban", "detect", "block", "warning", "error"
+	IP          string
+	Country     string
+	CountryCode string
+	Message     string
+	Details     string
+}
