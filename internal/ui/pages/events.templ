@@ -132,7 +132,7 @@ templ EventsTableFragment(data ui.EventsData) {
 						<td class="message-cell" title={ event.Message }>
 							{ truncateEvent(event.Message, 60) }
 							if event.Details != "" {
-								<button class="details-toggle" onclick={ fmt.Sprintf("toggleDetails('%s')", event.ID) } title="Show details">...</button>
+								<button class="details-toggle" data-eventid={ event.ID } onclick="toggleDetails(this.dataset.eventid)" title="Show details">...</button>
 								<div id={ fmt.Sprintf("details-%s", event.ID) } class="event-details" style="display: none;">
 									{ event.Details }
 								</div>
