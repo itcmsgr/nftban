@@ -155,6 +155,7 @@ func main() {
 	router.HandleFunc("/ui/feeds", gothHandlers.RequireSession(gothHandlers.HandleFeeds)).Methods("GET")
 	router.HandleFunc("/ui/system", gothHandlers.RequireSession(gothHandlers.HandleSystem)).Methods("GET")
 	router.HandleFunc("/ui/network", gothHandlers.RequireSession(gothHandlers.HandleNetwork)).Methods("GET")
+	router.HandleFunc("/ui/settings", gothHandlers.RequireSession(gothHandlers.HandleSettings)).Methods("GET")
 	router.HandleFunc("/ui/action/logout", gothHandlers.RequireSession(gothHandlers.HandleActionLogout)).Methods("POST")
 
 	// GOTH fragments (HTMX partial updates) - Professional Dashboard
@@ -210,6 +211,10 @@ func main() {
 	router.HandleFunc("/api/v1/tools/check", gothHandlers.RequireSession(gothHandlers.HandleToolsIPCheck)).Methods("POST")
 	router.HandleFunc("/api/v1/tools/geoip", gothHandlers.RequireSession(gothHandlers.HandleToolsGeoIP)).Methods("POST")
 	router.HandleFunc("/api/v1/tools/search", gothHandlers.RequireSession(gothHandlers.HandleToolsSearch)).Methods("POST")
+
+	// Settings page endpoints
+	router.HandleFunc("/ui/api/settings/save", gothHandlers.RequireSession(gothHandlers.HandleSettingsSave)).Methods("POST")
+	router.HandleFunc("/ui/frag/settings-content", gothHandlers.RequireSession(gothHandlers.HandleFragSettingsSection)).Methods("GET")
 
 	log.Printf("[GOTH] GOTH GUI routes registered at /ui/*")
 

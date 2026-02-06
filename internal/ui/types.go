@@ -901,3 +901,166 @@ type PortTraffic struct {
 	Bytes     int64
 	Blocked   int64
 }
+
+// =============================================================================
+// SETTINGS PAGE DATA - Configuration settings
+// =============================================================================
+
+// SettingsData holds settings page information
+type SettingsData struct {
+	System        SystemSettings
+	Security      SecuritySettings
+	Notifications NotificationSettings
+	Modules       ModuleSettings
+}
+
+// SystemSettings holds system configuration
+type SystemSettings struct {
+	Timezone         string
+	LogLevel         string
+	LogRetentionDays int
+}
+
+// SecuritySettings holds security configuration
+type SecuritySettings struct {
+	DefaultBanDurationHours int
+	PermBanThreshold        int
+	WhitelistEnabled        bool
+	AutoWhitelistPrivate    bool
+}
+
+// NotificationSettings holds notification configuration
+type NotificationSettings struct {
+	EmailEnabled   bool
+	EmailAddress   string
+	WebhookEnabled bool
+	WebhookURL     string
+	NotifyOnBan    bool
+	NotifyOnHealth bool
+}
+
+// ModuleSettings holds module toggle configuration
+type ModuleSettings struct {
+	PortscanEnabled bool
+	DDoSEnabled     bool
+	LoginEnabled    bool
+	FeedsEnabled    bool
+	GeobanEnabled   bool
+}
+
+// =============================================================================
+// EXTENDED SETTINGS DATA - For comprehensive settings management
+// =============================================================================
+
+// ExtendedSettingsData holds comprehensive settings page information
+type ExtendedSettingsData struct {
+	// General settings
+	General GeneralSettingsData
+
+	// Feature toggles
+	Features FeatureSettingsData
+
+	// Metrics settings
+	Metrics MetricsSettingsData
+
+	// GeoIP settings
+	GeoIP GeoIPSettingsData
+
+	// Suricata settings
+	Suricata SuricataSettingsData
+
+	// Logging settings
+	Logging LoggingSettingsData
+
+	// GUI/API settings
+	Network NetworkSettingsData
+
+	// Paths (read-only display)
+	Paths PathSettingsData
+
+	// Config metadata
+	ConfigPath    string
+	ConfigVersion string
+	LastModified  string
+	CanWrite      bool
+
+	// Status messages
+	SaveSuccess bool
+	SaveError   string
+}
+
+// GeneralSettingsData holds general NFTBan settings
+type GeneralSettingsData struct {
+	Version       string
+	ConfigVersion string
+}
+
+// FeatureSettingsData holds feature toggle settings
+type FeatureSettingsData struct {
+	MetricsEnabled      bool
+	GeoIPEnabled        bool
+	FeedsEnabled        bool
+	FeedsAutoUpdate     bool
+	SuricataEnabled     bool
+	GUIEnabled          bool
+	PortscanEnabled     bool
+	DDoSEnabled         bool
+	LoginMonitorEnabled bool
+	GrafanaEnabled      bool
+}
+
+// MetricsSettingsData holds metrics-related settings
+type MetricsSettingsData struct {
+	Enabled          bool
+	Backend          string // "prometheus", "victoriametrics", etc.
+	SamplingInterval int    // seconds
+	MaxSamples       int
+	PrometheusDir    string
+	PrometheusAddr   string
+	NodeExporterAddr string
+	VictoriaAddr     string
+}
+
+// GeoIPSettingsData holds GeoIP/GeoBan settings
+type GeoIPSettingsData struct {
+	Enabled    bool
+	LicenseKey string // Masked for display
+	HasKey     bool   // Whether a license key is configured
+}
+
+// SuricataSettingsData holds Suricata IDS settings
+type SuricataSettingsData struct {
+	Enabled             bool
+	EveLog              string
+	LogDir              string
+	BanThreshold        int
+	ScoreDecay          int
+	CloudflareWhitelist bool
+}
+
+// LoggingSettingsData holds logging configuration
+type LoggingSettingsData struct {
+	LogLevel      string
+	ColorOutput   bool
+	DebugTrace    bool
+	DebugTraceLog string
+}
+
+// NetworkSettingsData holds GUI/API network settings
+type NetworkSettingsData struct {
+	GUIAddr string
+	APIAddr string
+}
+
+// PathSettingsData holds path configuration (read-only)
+type PathSettingsData struct {
+	Bin       string
+	CoreBin   string
+	UIBin     string
+	LibDir    string
+	ConfigDir string
+	DataDir   string
+	LogDir    string
+	CacheDir  string
+	RunDir    string
+}
