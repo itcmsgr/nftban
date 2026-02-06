@@ -107,6 +107,7 @@ type TLSTargetConfig struct {
 	CAFile     string `yaml:"ca_file,omitempty" json:"ca_file,omitempty"`
 	SkipVerify bool   `yaml:"skip_verify" json:"skip_verify"`
 	ServerName string `yaml:"server_name,omitempty" json:"server_name,omitempty"`
+	DevMode    bool   `yaml:"dev_mode" json:"dev_mode"` // Development mode - allows SkipVerify
 }
 
 // =============================================================================
