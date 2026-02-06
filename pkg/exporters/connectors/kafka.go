@@ -32,7 +32,7 @@ import (
 	"sync"
 	"time"
 
-	"nftban/pkg/logx"
+	"github.com/itcmsgr/nftban/pkg/logx"
 )
 
 // =============================================================================
