@@ -37,6 +37,7 @@ import (
 	"github.com/itcmsgr/nftban/internal/ui"
 	"github.com/itcmsgr/nftban/internal/ui/pages"
 	"github.com/itcmsgr/nftban/pkg/auth"
+	"github.com/itcmsgr/nftban/pkg/netutil"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/session"
 	"github.com/itcmsgr/nftban/pkg/state"
@@ -336,7 +337,7 @@ func (h *GOTHHandlers) HandleIPCheck(w http.ResponseWriter, r *http.Request) {
 
 	// Validate IP format
 	ip = strings.TrimSpace(ip)
-	if !isValidIP(ip) {
+	if !netutil.IsValidIP(ip) {
 		fmt.Fprintf(w, `<span style="color: var(--text-muted);">Invalid IP format</span>`)
 		return
 	}
@@ -590,7 +591,7 @@ func (h *GOTHHandlers) HandleBulkUnban(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Validate IP format
-		if !isValidIP(ip) {
+		if !netutil.IsValidIP(ip) {
 			failedCount++
 			failedIPs = append(failedIPs, ip)
 			log.Printf("[GOTH] Bulk unban: invalid IP format: %s", ip)
@@ -670,7 +671,7 @@ func (h *GOTHHandlers) HandleBulkDelete(w http.ResponseWriter, r *http.Request) 
 		}
 
 		// Validate IP format
-		if !isValidIP(ip) {
+		if !netutil.IsValidIP(ip) {
 			failedCount++
 			failedIPs = append(failedIPs, ip)
 			log.Printf("[GOTH] Bulk delete: invalid IP format: %s", ip)
@@ -853,105 +854,140 @@ func (h *GOTHHandlers) getPanelMode() string {
 	return "active"
 }
 
-func (h *GOTHHandlers) getSecurity() ui.SecurityKPIs {
+// getSecurityFromSharedState retrieves ban/whitelist counts from the in-memory shared state.
+// This is the fastest path when nftband/watchdog is running and updating state via netlink.
+func getSecurityFromSharedState() (sec ui.SecurityKPIs, ok bool) {
+	if !state.IsInitialized() || state.IsStale(30*time.Second) {
+		return sec, false
+	}
+	snap := state.Get()
+	sec.BansIPv4 = int(snap.BannedIPv4)
+	sec.BansIPv6 = int(snap.BannedIPv6)
+	sec.BansTotal = int(snap.BannedIPv4 + snap.BannedIPv6)
+	sec.WhitelistIPv4 = int(snap.WhitelistIPv4)
+	sec.WhitelistIPv6 = int(snap.WhitelistIPv6)
+	sec.WhitelistTotal = int(snap.WhitelistIPv4 + snap.WhitelistIPv6)
+	return sec, sec.BansTotal > 0 || sec.WhitelistTotal > 0
+}
+
+// getSecurityFromStatsCLI retrieves detailed ban/whitelist stats via 'nftban stats --json'.
+// Returns populated stats if successful, empty struct otherwise.
+func getSecurityFromStatsCLI() ui.SecurityKPIs {
 	sec := ui.SecurityKPIs{}
-
-	// Try shared state first (NO CLI - from watchdog via netlink)
-	// This is the fastest path when nftband/watchdog is running
-	if state.IsInitialized() && !state.IsStale(30*time.Second) {
-		snap := state.Get()
-		sec.BansIPv4 = int(snap.BannedIPv4)
-		sec.BansIPv6 = int(snap.BannedIPv6)
-		sec.BansTotal = int(snap.BannedIPv4 + snap.BannedIPv6)
-		sec.WhitelistIPv4 = int(snap.WhitelistIPv4)
-		sec.WhitelistIPv6 = int(snap.WhitelistIPv6)
-		sec.WhitelistTotal = int(snap.WhitelistIPv4 + snap.WhitelistIPv6)
+	output, err := execNFTBanCommand("stats", "--json")
+	if err != nil {
+		return sec
+	}
+	var stats map[string]interface{}
+	if json.Unmarshal([]byte(util.ExtractJSON(output)), &stats) != nil {
+		return sec
 	}
 
-	// Fallback to CLI if shared state not available or stale
-	// Use nftban stats --json for detailed breakdown
-	if sec.BansTotal == 0 {
-		if output, err := execNFTBanCommand("stats", "--json"); err == nil {
-			var stats map[string]interface{}
-			if json.Unmarshal([]byte(util.ExtractJSON(output)), &stats) == nil {
-				// Stats JSON wraps data in "data" field
-				data, hasData := stats["data"].(map[string]interface{})
-				if !hasData {
-					data = stats // Fallback to root level
-				}
+	// Stats JSON wraps data in "data" field
+	data, hasData := stats["data"].(map[string]interface{})
+	if !hasData {
+		data = stats // Fallback to root level
+	}
 
-				// Summary section
-				if summary, ok := data["summary"].(map[string]interface{}); ok {
-					if active, ok := summary["active_bans"].(float64); ok {
-						sec.BansTotal = int(active)
-					}
-					if total, ok := summary["total_bans"].(float64); ok {
-						sec.TotalBansEver = int(total)
-					}
-				}
-
-				// Breakdown section with IPv4/IPv6 details
-				if breakdown, ok := data["breakdown"].(map[string]interface{}); ok {
-					// Blacklist (main bans)
-					if blacklist, ok := breakdown["blacklist"].(map[string]interface{}); ok {
-						if v4, ok := blacklist["ipv4"].(float64); ok {
-							sec.BansIPv4 = int(v4)
-						}
-						if v6, ok := blacklist["ipv6"].(float64); ok {
-							sec.BansIPv6 = int(v6)
-						}
-					}
-
-					// Whitelist
-					if whitelist, ok := breakdown["whitelist"].(map[string]interface{}); ok {
-						if total, ok := whitelist["total"].(float64); ok {
-							sec.WhitelistTotal = int(total)
-						}
-						if v4, ok := whitelist["ipv4"].(float64); ok {
-							sec.WhitelistIPv4 = int(v4)
-						}
-						if v6, ok := whitelist["ipv6"].(float64); ok {
-							sec.WhitelistIPv6 = int(v6)
-						}
-					}
-				}
-			}
+	// Summary section
+	if summary, ok := data["summary"].(map[string]interface{}); ok {
+		if active, ok := summary["active_bans"].(float64); ok {
+			sec.BansTotal = int(active)
+		}
+		if total, ok := summary["total_bans"].(float64); ok {
+			sec.TotalBansEver = int(total)
 		}
 	}
 
-	// Fallback to status --json if stats didn't work
-	if sec.BansTotal == 0 {
-		if output, err := execNFTBanCommand("status", "--json"); err == nil {
-			var status map[string]interface{}
-			if json.Unmarshal([]byte(util.ExtractJSON(output)), &status) == nil {
-				if fw, ok := status["firewall"].(map[string]interface{}); ok {
-					if bans, ok := fw["banned_ips"].(float64); ok {
-						sec.BansTotal = int(bans)
-					}
-					if wl, ok := fw["whitelist_ips"].(float64); ok {
-						sec.WhitelistTotal = int(wl)
-					}
-				}
+	// Breakdown section with IPv4/IPv6 details
+	if breakdown, ok := data["breakdown"].(map[string]interface{}); ok {
+		// Blacklist (main bans)
+		if blacklist, ok := breakdown["blacklist"].(map[string]interface{}); ok {
+			if v4, ok := blacklist["ipv4"].(float64); ok {
+				sec.BansIPv4 = int(v4)
+			}
+			if v6, ok := blacklist["ipv6"].(float64); ok {
+				sec.BansIPv6 = int(v6)
+			}
+		}
+		// Whitelist
+		if whitelist, ok := breakdown["whitelist"].(map[string]interface{}); ok {
+			if total, ok := whitelist["total"].(float64); ok {
+				sec.WhitelistTotal = int(total)
+			}
+			if v4, ok := whitelist["ipv4"].(float64); ok {
+				sec.WhitelistIPv4 = int(v4)
+			}
+			if v6, ok := whitelist["ipv6"].(float64); ok {
+				sec.WhitelistIPv6 = int(v6)
 			}
 		}
 	}
+	return sec
+}
 
-	// Fallback: if no IPv4/IPv6 split, use total
+// getSecurityFromStatusCLI retrieves basic ban/whitelist counts via 'nftban status --json'.
+// Used as a fallback when stats command doesn't provide data.
+func getSecurityFromStatusCLI() ui.SecurityKPIs {
+	sec := ui.SecurityKPIs{}
+	output, err := execNFTBanCommand("status", "--json")
+	if err != nil {
+		return sec
+	}
+	var status map[string]interface{}
+	if json.Unmarshal([]byte(util.ExtractJSON(output)), &status) != nil {
+		return sec
+	}
+	if fw, ok := status["firewall"].(map[string]interface{}); ok {
+		if bans, ok := fw["banned_ips"].(float64); ok {
+			sec.BansTotal = int(bans)
+		}
+		if wl, ok := fw["whitelist_ips"].(float64); ok {
+			sec.WhitelistTotal = int(wl)
+		}
+	}
+	return sec
+}
+
+// enrichWithNetworkStats adds network bandwidth and packet drop stats to security data.
+func enrichWithNetworkStats(sec *ui.SecurityKPIs) {
+	sec.NetworkInMbps, sec.NetworkOutMbps = getNetworkBandwidth()
+
+	// Packet drop rate from nftables counters (rough estimate)
+	if output, err := exec.Command("nft", "list", "counters").CombinedOutput(); err == nil {
+		sec.PacketDropRate = strings.Count(string(output), "drop")
+	}
+}
+
+// normalizeSecurityIPSplit ensures IPv4/IPv6 fields have values when only totals are available.
+func normalizeSecurityIPSplit(sec *ui.SecurityKPIs) {
 	if sec.BansIPv4 == 0 && sec.BansIPv6 == 0 && sec.BansTotal > 0 {
 		sec.BansIPv4 = sec.BansTotal
 	}
 	if sec.WhitelistIPv4 == 0 && sec.WhitelistTotal > 0 {
 		sec.WhitelistIPv4 = sec.WhitelistTotal
 	}
+}
 
-	// Network stats from /sys/class/net
-	sec.NetworkInMbps, sec.NetworkOutMbps = getNetworkBandwidth()
+// getSecurity orchestrates collection of security KPIs from multiple data sources.
+// Priority: shared state (fastest) -> stats CLI -> status CLI, with network enrichment.
+func (h *GOTHHandlers) getSecurity() ui.SecurityKPIs {
+	// Try shared state first (fastest path)
+	sec, ok := getSecurityFromSharedState()
 
-	// Packet drop rate from nftables counters
-	if output, err := exec.Command("nft", "list", "counters").CombinedOutput(); err == nil {
-		// Count drop entries (rough estimate)
-		sec.PacketDropRate = strings.Count(string(output), "drop")
+	// Fallback to CLI if shared state not available or stale
+	if !ok || sec.BansTotal == 0 {
+		sec = getSecurityFromStatsCLI()
 	}
+
+	// Fallback to status --json if stats didn't work
+	if sec.BansTotal == 0 {
+		sec = getSecurityFromStatusCLI()
+	}
+
+	// Normalize IPv4/IPv6 split and add network stats
+	normalizeSecurityIPSplit(&sec)
+	enrichWithNetworkStats(&sec)
 
 	return sec
 }
@@ -1016,158 +1052,215 @@ func getNetworkBandwidth() (inMbps, outMbps float64) {
 	return inMbps, outMbps
 }
 
+// fetchWatchdogResources retrieves system resources via 'nftban watchdog check --json'.
+// Returns partially filled ResourceStats based on available watchdog data.
+func fetchWatchdogResources() ui.ResourceStats {
+	res := ui.ResourceStats{DiskPath: "/var/log"}
+
+	output, err := execNFTBanCommand("watchdog", "check", "--json")
+	if err != nil {
+		return res
+	}
+	var wd map[string]interface{}
+	if json.Unmarshal([]byte(util.ExtractJSON(output)), &wd) != nil {
+		return res
+	}
+
+	// Load average
+	if load, ok := wd["load"].(map[string]interface{}); ok {
+		if v, ok := load["1m"].(string); ok {
+			res.CPULoadAvg1, _ = strconv.ParseFloat(v, 64)
+		}
+		if v, ok := load["5m"].(string); ok {
+			res.CPULoadAvg5, _ = strconv.ParseFloat(v, 64)
+		}
+		if v, ok := load["15m"].(string); ok {
+			res.CPULoadAvg15, _ = strconv.ParseFloat(v, 64)
+		}
+	}
+
+	// Memory
+	if mem, ok := wd["memory"].(map[string]interface{}); ok {
+		if v, ok := mem["used_percent"].(string); ok {
+			res.RAMPercent, _ = strconv.ParseFloat(v, 64)
+		}
+		if v, ok := mem["total_mb"].(string); ok {
+			if mb, err := strconv.ParseFloat(v, 64); err == nil {
+				res.RAMTotalGB = mb / 1024
+			}
+		}
+		if v, ok := mem["available_mb"].(string); ok {
+			if mb, err := strconv.ParseFloat(v, 64); err == nil {
+				res.RAMUsedGB = res.RAMTotalGB - (mb / 1024)
+			}
+		}
+	}
+
+	// IO wait as CPU indicator
+	if iowait, ok := wd["iowait"].(map[string]interface{}); ok {
+		if v, ok := iowait["percent"].(string); ok {
+			res.CPUPercent, _ = strconv.ParseFloat(v, 64)
+		}
+	}
+
+	// Disk
+	if disk, ok := wd["disk"].(map[string]interface{}); ok {
+		if v, ok := disk["used_percent"].(string); ok {
+			res.DiskPercent, _ = strconv.ParseFloat(v, 64)
+		}
+		if path, ok := disk["path"].(string); ok {
+			res.DiskPath = path
+		}
+	}
+
+	return res
+}
+
+// readLoadAverage reads load averages from /proc/loadavg.
+// Returns 1m, 5m, 15m load averages.
+func readLoadAverage() (load1, load5, load15 float64) {
+	content, err := os.ReadFile("/proc/loadavg")
+	if err != nil {
+		return 0, 0, 0
+	}
+	parts := strings.Fields(string(content))
+	if len(parts) >= 3 {
+		load1, _ = strconv.ParseFloat(parts[0], 64)
+		load5, _ = strconv.ParseFloat(parts[1], 64)
+		load15, _ = strconv.ParseFloat(parts[2], 64)
+	}
+	return load1, load5, load15
+}
+
+// readMemoryInfo reads memory statistics from /proc/meminfo.
+// Returns usedGB, totalGB, and percent used.
+func readMemoryInfo() (usedGB, totalGB, percent float64) {
+	content, err := os.ReadFile("/proc/meminfo")
+	if err != nil {
+		return 0, 0, 0
+	}
+	var memTotalKB, memAvailKB float64
+	lines := strings.Split(string(content), "\n")
+	for _, line := range lines {
+		if strings.HasPrefix(line, "MemTotal:") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				memTotalKB, _ = strconv.ParseFloat(parts[1], 64)
+			}
+		}
+		if strings.HasPrefix(line, "MemAvailable:") {
+			parts := strings.Fields(line)
+			if len(parts) >= 2 {
+				memAvailKB, _ = strconv.ParseFloat(parts[1], 64)
+			}
+		}
+	}
+	totalGB = memTotalKB / 1024 / 1024
+	usedGB = totalGB - (memAvailKB / 1024 / 1024)
+	if totalGB > 0 {
+		percent = (usedGB / totalGB) * 100
+	}
+	return usedGB, totalGB, percent
+}
+
+// readCPUPercent calculates CPU usage from /proc/stat.
+func readCPUPercent() float64 {
+	output, err := exec.Command("sh", "-c", "grep 'cpu ' /proc/stat | awk '{printf \"%.1f\", ($2+$4)*100/($2+$4+$5)}'").Output()
+	if err != nil {
+		return 0
+	}
+	val, _ := strconv.ParseFloat(strings.TrimSpace(string(output)), 64)
+	return val
+}
+
+// readDiskUsage reads disk usage for a given path using df.
+func readDiskUsage(path string) (usedGB, totalGB, percent float64) {
+	output, err := exec.Command("df", "-BG", path).Output()
+	if err != nil {
+		return 0, 0, 0
+	}
+	lines := strings.Split(string(output), "\n")
+	if len(lines) >= 2 {
+		fields := strings.Fields(lines[1])
+		if len(fields) >= 5 {
+			totalGB, _ = strconv.ParseFloat(strings.TrimSuffix(fields[1], "G"), 64)
+			usedGB, _ = strconv.ParseFloat(strings.TrimSuffix(fields[2], "G"), 64)
+			percent, _ = strconv.ParseFloat(strings.TrimSuffix(fields[4], "%"), 64)
+		}
+	}
+	return usedGB, totalGB, percent
+}
+
+// fetchNFTBanDaemonStats retrieves NFTBan daemon resource usage via watchdog stats.
+func fetchNFTBanDaemonStats() (cpuPercent, memMB float64, uptime string) {
+	output, err := execNFTBanCommand("watchdog", "stats", "--json")
+	if err != nil {
+		return 0, 0, ""
+	}
+	var stats map[string]interface{}
+	if json.Unmarshal([]byte(util.ExtractJSON(output)), &stats) != nil {
+		return 0, 0, ""
+	}
+	if cpu, ok := stats["cpu_percent"].(float64); ok {
+		cpuPercent = cpu
+	}
+	if mem, ok := stats["memory_mb"].(float64); ok {
+		memMB = mem
+	}
+	if ut, ok := stats["uptime"].(string); ok {
+		uptime = ut
+	}
+	return cpuPercent, memMB, uptime
+}
+
+// fetchNFTBanProcessStats retrieves NFTBan process stats via ps (fallback).
+func fetchNFTBanProcessStats() (cpuPercent, memMB float64) {
+	output, err := exec.Command("sh", "-c", "ps aux | grep 'nftban' | grep -v grep | head -1 | awk '{print $3, $6}'").Output()
+	if err != nil {
+		return 0, 0
+	}
+	parts := strings.Fields(string(output))
+	if len(parts) >= 2 {
+		cpuPercent, _ = strconv.ParseFloat(parts[0], 64)
+		if mem, err := strconv.ParseFloat(parts[1], 64); err == nil {
+			memMB = mem / 1024
+		}
+	}
+	return cpuPercent, memMB
+}
+
+// getResources orchestrates collection of system resource stats from multiple sources.
+// Priority: watchdog CLI -> /proc fallbacks, with NFTBan-specific daemon stats.
 func (h *GOTHHandlers) getResources() ui.ResourceStats {
-	res := ui.ResourceStats{
-		DiskPath: "/var/log",
-	}
+	// Try watchdog first (provides most data in one call)
+	res := fetchWatchdogResources()
 
-	// Use nftban watchdog check --json for system resources
-	if output, err := execNFTBanCommand("watchdog", "check", "--json"); err == nil {
-		var wd map[string]interface{}
-		if json.Unmarshal([]byte(util.ExtractJSON(output)), &wd) == nil {
-			// Load average
-			if load, ok := wd["load"].(map[string]interface{}); ok {
-				if v, ok := load["1m"].(string); ok {
-					res.CPULoadAvg1, _ = strconv.ParseFloat(v, 64)
-				}
-				if v, ok := load["5m"].(string); ok {
-					res.CPULoadAvg5, _ = strconv.ParseFloat(v, 64)
-				}
-				if v, ok := load["15m"].(string); ok {
-					res.CPULoadAvg15, _ = strconv.ParseFloat(v, 64)
-				}
-			}
-
-			// Memory
-			if mem, ok := wd["memory"].(map[string]interface{}); ok {
-				if v, ok := mem["used_percent"].(string); ok {
-					res.RAMPercent, _ = strconv.ParseFloat(v, 64)
-				}
-				if v, ok := mem["total_mb"].(string); ok {
-					if mb, err := strconv.ParseFloat(v, 64); err == nil {
-						res.RAMTotalGB = mb / 1024
-					}
-				}
-				if v, ok := mem["available_mb"].(string); ok {
-					if mb, err := strconv.ParseFloat(v, 64); err == nil {
-						res.RAMUsedGB = res.RAMTotalGB - (mb / 1024)
-					}
-				}
-			}
-
-			// IO wait as CPU indicator
-			if iowait, ok := wd["iowait"].(map[string]interface{}); ok {
-				if v, ok := iowait["percent"].(string); ok {
-					res.CPUPercent, _ = strconv.ParseFloat(v, 64)
-				}
-			}
-
-			// Disk
-			if disk, ok := wd["disk"].(map[string]interface{}); ok {
-				if v, ok := disk["used_percent"].(string); ok {
-					res.DiskPercent, _ = strconv.ParseFloat(v, 64)
-				}
-				if path, ok := disk["path"].(string); ok {
-					res.DiskPath = path
-				}
-			}
-		}
-	}
-
-	// Fallback for CPU from /proc/stat (real CPU usage)
+	// Fallback for CPU from /proc/stat if watchdog didn't provide it
 	if res.CPUPercent == 0 {
-		if output, err := exec.Command("sh", "-c", "grep 'cpu ' /proc/stat | awk '{printf \"%.1f\", ($2+$4)*100/($2+$4+$5)}'").Output(); err == nil {
-			if val, err := strconv.ParseFloat(strings.TrimSpace(string(output)), 64); err == nil {
-				res.CPUPercent = val
-			}
-		}
+		res.CPUPercent = readCPUPercent()
 	}
 
-	// Fallback for load average
+	// Fallback for load average from /proc/loadavg
 	if res.CPULoadAvg1 == 0 {
-		if content, err := os.ReadFile("/proc/loadavg"); err == nil {
-			parts := strings.Fields(string(content))
-			if len(parts) >= 3 {
-				res.CPULoadAvg1, _ = strconv.ParseFloat(parts[0], 64)
-				res.CPULoadAvg5, _ = strconv.ParseFloat(parts[1], 64)
-				res.CPULoadAvg15, _ = strconv.ParseFloat(parts[2], 64)
-			}
-		}
+		res.CPULoadAvg1, res.CPULoadAvg5, res.CPULoadAvg15 = readLoadAverage()
 	}
 
-	// Fallback for RAM
+	// Fallback for RAM from /proc/meminfo
 	if res.RAMTotalGB == 0 {
-		if content, err := os.ReadFile("/proc/meminfo"); err == nil {
-			var memTotal, memAvail float64
-			lines := strings.Split(string(content), "\n")
-			for _, line := range lines {
-				if strings.HasPrefix(line, "MemTotal:") {
-					parts := strings.Fields(line)
-					if len(parts) >= 2 {
-						if val, err := strconv.ParseFloat(parts[1], 64); err == nil {
-							memTotal = val / 1024 / 1024
-						}
-					}
-				}
-				if strings.HasPrefix(line, "MemAvailable:") {
-					parts := strings.Fields(line)
-					if len(parts) >= 2 {
-						if val, err := strconv.ParseFloat(parts[1], 64); err == nil {
-							memAvail = val / 1024 / 1024
-						}
-					}
-				}
-			}
-			res.RAMTotalGB = memTotal
-			res.RAMUsedGB = memTotal - memAvail
-			if memTotal > 0 {
-				res.RAMPercent = (res.RAMUsedGB / memTotal) * 100
-			}
-		}
+		res.RAMUsedGB, res.RAMTotalGB, res.RAMPercent = readMemoryInfo()
 	}
 
-	// Fallback for Disk
+	// Fallback for Disk from df
 	if res.DiskPercent == 0 {
-		if output, err := exec.Command("df", "-BG", "/var/log").Output(); err == nil {
-			lines := strings.Split(string(output), "\n")
-			if len(lines) >= 2 {
-				fields := strings.Fields(lines[1])
-				if len(fields) >= 5 {
-					res.DiskTotalGB, _ = strconv.ParseFloat(strings.TrimSuffix(fields[1], "G"), 64)
-					res.DiskUsedGB, _ = strconv.ParseFloat(strings.TrimSuffix(fields[2], "G"), 64)
-					res.DiskPercent, _ = strconv.ParseFloat(strings.TrimSuffix(fields[4], "%"), 64)
-				}
-			}
-		}
+		res.DiskUsedGB, res.DiskTotalGB, res.DiskPercent = readDiskUsage("/var/log")
 	}
 
-	// NFTBan daemon stats from watchdog stats --json
-	if output, err := execNFTBanCommand("watchdog", "stats", "--json"); err == nil {
-		var stats map[string]interface{}
-		if json.Unmarshal([]byte(util.ExtractJSON(output)), &stats) == nil {
-			if cpu, ok := stats["cpu_percent"].(float64); ok {
-				res.NFTBanCPU = cpu
-			}
-			if mem, ok := stats["memory_mb"].(float64); ok {
-				res.NFTBanMemMB = mem
-			}
-			if uptime, ok := stats["uptime"].(string); ok {
-				res.NFTBanUptime = uptime
-			}
-		}
-	}
+	// NFTBan daemon stats
+	res.NFTBanCPU, res.NFTBanMemMB, res.NFTBanUptime = fetchNFTBanDaemonStats()
 
 	// Fallback for NFTBan process stats
 	if res.NFTBanCPU == 0 {
-		if output, err := exec.Command("sh", "-c", "ps aux | grep 'nftban' | grep -v grep | head -1 | awk '{print $3, $6}'").Output(); err == nil {
-			parts := strings.Fields(string(output))
-			if len(parts) >= 2 {
-				res.NFTBanCPU, _ = strconv.ParseFloat(parts[0], 64)
-				if mem, err := strconv.ParseFloat(parts[1], 64); err == nil {
-					res.NFTBanMemMB = mem / 1024
-				}
-			}
-		}
+		res.NFTBanCPU, res.NFTBanMemMB = fetchNFTBanProcessStats()
 	}
 
 	return res
@@ -2144,33 +2237,6 @@ func execNFTBanCommand(args ...string) (string, error) {
 	return outputStr, nil
 }
 
-
-
-func isValidIP(ip string) bool {
-	// Simple IPv4/IPv6 validation
-	ip = strings.TrimSpace(ip)
-	if ip == "" {
-		return false
-	}
-	// IPv4: check for dots and numbers
-	if strings.Contains(ip, ".") {
-		parts := strings.Split(ip, ".")
-		if len(parts) != 4 {
-			return false
-		}
-		for _, p := range parts {
-			if n, err := strconv.Atoi(p); err != nil || n < 0 || n > 255 {
-				return false
-			}
-		}
-		return true
-	}
-	// IPv6: check for colons
-	if strings.Contains(ip, ":") {
-		return true // Basic check - let the CLI validate fully
-	}
-	return false
-}
 
 // =============================================================================
 // INVENTORY DATA

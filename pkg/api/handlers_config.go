@@ -32,6 +32,7 @@ import (
 	"strings"
 
 	"github.com/gorilla/mux"
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // getNFTBanGID returns the GID of the nftban group, with fallback
@@ -148,8 +149,7 @@ func ConfigFileHandler(w http.ResponseWriter, r *http.Request) {
 		var req struct {
 			Content string `json:"content"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request body"})
+		if !DecodeJSONBody(w, r, &req) {
 			return
 		}
 
@@ -202,19 +202,13 @@ func ConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Strip any non-JSON output (comments, warnings, etc.) before parsing
-	// Look for the first '{' and last '}' to extract only the JSON portion
-	output = strings.TrimSpace(output)
-	startIdx := strings.Index(output, "{")
-	endIdx := strings.LastIndex(output, "}")
-
-	if startIdx == -1 || endIdx == -1 || startIdx > endIdx {
+	// Extract JSON from CLI output (may contain non-JSON prefix/suffix)
+	jsonOutput := util.ExtractJSONRobust(output)
+	if jsonOutput == "" {
 		log.Printf("[ERROR] No valid JSON found in config output for %s: %s", module, output)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Invalid configuration response format"})
 		return
 	}
-
-	jsonOutput := output[startIdx : endIdx+1]
 
 	// Parse JSON response
 	var configData map[string]interface{}
@@ -239,8 +233,7 @@ func ConfigSetHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Parse request body - expect {"key": "value", "key2": "value2", ...}
 	var updates map[string]string
-	if err := json.NewDecoder(r.Body).Decode(&updates); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request body"})
+	if !DecodeJSONBody(w, r, &updates) {
 		return
 	}
 

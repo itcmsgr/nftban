@@ -154,11 +154,7 @@ func SuricataControlHandler(w http.ResponseWriter, r *http.Request) {
 		Action string `json:"action"` // enable, disable, restart, reload
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]interface{}{
-			"success": false,
-			"error":   "Invalid request body",
-		})
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -242,11 +238,7 @@ func SuricataProfileApplyHandler(w http.ResponseWriter, r *http.Request) {
 		Profile string `json:"profile"` // minimal, standard, maximum
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, map[string]interface{}{
-			"success": false,
-			"error":   "Invalid request body",
-		})
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 

@@ -67,8 +67,7 @@ func PortBanHandler(w http.ResponseWriter, r *http.Request) {
 		Protocol string `json:"protocol"` // tcp, udp, both
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -112,8 +111,7 @@ func PortUnbanHandler(w http.ResponseWriter, r *http.Request) {
 		Protocol string `json:"protocol"` // tcp, udp, both
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 

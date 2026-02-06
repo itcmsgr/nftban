@@ -39,8 +39,7 @@ func (api *API) HandleWhitelistIPv4Batch(w http.ResponseWriter, r *http.Request)
 	}
 
 	var req BatchRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -87,8 +86,7 @@ func (api *API) HandleWhitelistIPv4Add(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req SingleIPRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -127,8 +125,7 @@ func (api *API) HandleWhitelistIPv4Remove(w http.ResponseWriter, r *http.Request
 	}
 
 	var req SingleIPRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -167,8 +164,7 @@ func (api *API) HandleWhitelistIPv4Preview(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req PreviewRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondError(w, http.StatusBadRequest, "invalid JSON body: "+err.Error())
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 

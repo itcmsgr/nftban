@@ -168,8 +168,7 @@ func PortscanControlHandler(w http.ResponseWriter, r *http.Request) {
 		Action string `json:"action"` // enable, disable, status
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 

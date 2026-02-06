@@ -162,8 +162,7 @@ func MeHandler(w http.ResponseWriter, r *http.Request) {
 func SessionLoginHandler(authService *auth.PAMAuth, store *session.Store) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		var req LoginRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+		if !DecodeJSONBody(w, r, &req) {
 			return
 		}
 
@@ -319,8 +318,7 @@ func SessionRevokeHandler(store *session.Store) http.HandlerFunc {
 		var req struct {
 			Username string `json:"username"`
 		}
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+		if !DecodeJSONBody(w, r, &req) {
 			return
 		}
 

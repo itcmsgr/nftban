@@ -44,8 +44,7 @@ func MetricsEnableHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var req EnableRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 

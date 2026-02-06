@@ -33,6 +33,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/middleware"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 	"github.com/itcmsgr/nftban/pkg/state"
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // StatsTrafficHandler returns real traffic statistics from Node Exporter
@@ -130,16 +131,7 @@ func StatsBansHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Strip comment lines (# NFTBAN_CMD_EXIT: ...) that bash wrapper adds
-	// These lines break JSON parsing, so we remove all lines starting with #
-	lines := strings.Split(statsOutput, "\n")
-	var jsonLines []string
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "#") && trimmed != "" {
-			jsonLines = append(jsonLines, line)
-		}
-	}
-	cleanJSON := strings.Join(jsonLines, "\n")
+	cleanJSON := strings.TrimSpace(util.StripCommentLines(statsOutput))
 
 	// Parse JSON response
 	var statsData map[string]interface{}
@@ -275,15 +267,7 @@ func StatsTrendHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Strip comment lines (# NFTBAN_CMD_EXIT: ...) that bash wrapper adds
-	lines := strings.Split(output, "\n")
-	var jsonLines []string
-	for _, line := range lines {
-		trimmed := strings.TrimSpace(line)
-		if !strings.HasPrefix(trimmed, "#") && trimmed != "" {
-			jsonLines = append(jsonLines, line)
-		}
-	}
-	cleanJSON := strings.Join(jsonLines, "\n")
+	cleanJSON := strings.TrimSpace(util.StripCommentLines(output))
 
 	// Parse JSON response
 	var trendData map[string]interface{}
