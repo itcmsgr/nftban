@@ -22,13 +22,17 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
+
+	"nftban/pkg/logx"
 )
 
 // =============================================================================
@@ -53,8 +57,9 @@ type ESConfig struct {
 
 	// TLS
 	TLS           bool   `json:"tls"`
-	TLSSkipVerify bool   `json:"tls_skip_verify"`
+	TLSSkipVerify bool   `json:"tls_skip_verify"` // Only honored in development mode
 	CACert        string `json:"ca_cert,omitempty"`
+	DevMode       bool   `json:"dev_mode"` // Development mode - allows InsecureSkipVerify
 
 	// Index settings
 	Index         string `json:"index"`          // Index name or pattern
@@ -108,9 +113,11 @@ func (c *ElasticsearchConnector) Connect(ctx context.Context) error {
 	}
 
 	if c.config.TLS || c.config.TLSSkipVerify {
-		transport.TLSClientConfig = &tls.Config{
-			InsecureSkipVerify: c.config.TLSSkipVerify,
+		tlsConfig, err := c.buildTLSConfig()
+		if err != nil {
+			return fmt.Errorf("failed to build TLS config: %w", err)
 		}
+		transport.TLSClientConfig = tlsConfig
 	}
 
 	c.client = &http.Client{

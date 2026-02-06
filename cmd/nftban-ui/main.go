@@ -133,14 +133,19 @@ func main() {
 	router.Use(middleware.SecurityHeadersMiddleware)
 	router.Use(middleware.CSRFMiddleware(sessionStore))
 
+	// Create rate limiter for login endpoints (brute force protection)
+	// 5 attempts per minute per IP address
+	loginRateLimiter := middleware.NewRateLimiter(5, time.Minute)
+	log.Printf("[SECURITY] Login rate limiter initialized (5 attempts/minute per IP)")
+
 	// ==========================================================================
 	// GOTH GUI Routes (Go + Templ + HTMX) - v1.1.0
 	// ==========================================================================
 	gothHandlers := handlers.NewGOTHHandlers(authService, sessionStore)
 
-	// Public GOTH routes
+	// Public GOTH routes (login page rate limited for brute force protection)
 	router.HandleFunc("/ui/login", gothHandlers.HandleLogin).Methods("GET")
-	router.HandleFunc("/ui/action/login", gothHandlers.HandleActionLogin).Methods("POST")
+	router.HandleFunc("/ui/action/login", loginRateLimiter.WrapHandler(gothHandlers.HandleActionLogin)).Methods("POST")
 
 	// Protected GOTH routes (require session)
 	router.HandleFunc("/ui/", gothHandlers.RequireSession(gothHandlers.HandleDashboard)).Methods("GET")
@@ -232,8 +237,8 @@ func main() {
 	// ==========================================================================
 	apiRouter := router.PathPrefix("/api/v1").Subrouter()
 
-	// Public routes (no auth required)
-	apiRouter.HandleFunc("/login", api.SessionLoginHandler(authService, sessionStore)).Methods("POST")
+	// Public routes (no auth required) - rate limited for brute force protection
+	apiRouter.HandleFunc("/login", loginRateLimiter.WrapHandler(api.SessionLoginHandler(authService, sessionStore))).Methods("POST")
 
 	// Protected routes (auth required)
 	protected := apiRouter.PathPrefix("").Subrouter()

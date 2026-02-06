@@ -39,9 +39,10 @@ func getProfileSyncConfigDir(cfg *nftbanconf.Config) string {
 }
 
 func runProfileSync(cfg *nftbanconf.Config) error {
-	// Start pprof HTTP server
+	// Start pprof HTTP server (localhost only for security)
 	go func() {
-		log.Println("🔍 Profiling server starting on :6060")
+		log.Println("WARNING: pprof profiling enabled - for debugging only")
+		log.Println("Profiling server starting on localhost:6060")
 		log.Println("")
 		log.Println("Access profiling data:")
 		log.Println("  CPU Profile:    go tool pprof http://localhost:6060/debug/pprof/profile?seconds=30")
