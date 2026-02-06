@@ -9,7 +9,7 @@
 // meta:description="Chart API endpoints for dashboard visualizations"
 // meta:input="HTTP requests"
 // meta:output="JSON chart data"
-// meta:depends="github.com/itcmsgr/nftban/pkg/nftbanconf"
+// meta:depends=""
 // meta:inventory.files=""
 // meta:inventory.binaries="nftban-ui"
 // meta:inventory.env_vars=""
@@ -26,9 +26,6 @@ import (
 	"fmt"
 	"net/http"
 	"time"
-
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
-	"github.com/itcmsgr/nftban/pkg/state"
 )
 
 // ChartDataResponse represents the standard chart data format
@@ -79,23 +76,13 @@ func (h *GOTHHandlers) HandleChartBans(w http.ResponseWriter, r *http.Request) {
 		Values: []int64{0, 0, 0, 0},
 	}
 
-	// Get from state if available
-	if state.IsInitialized() && !state.IsStale(30*time.Second) {
-		snap := state.Get()
-		resp.Values[0] = int64(snap.BansTemporary)
-		resp.Values[1] = int64(snap.BansPermanent)
-		resp.Values[2] = int64(snap.BansFeed)
-		resp.Values[3] = int64(snap.BansGeoIP)
-	} else {
-		// Try metrics cache
-		cfg := nftbanconf.MustLoad()
-		metricsData := h.getMetricsData()
-		_ = cfg // Used indirectly via getMetricsData
-		resp.Values[0] = int64(metricsData.Security.BansTemporary)
-		resp.Values[1] = int64(metricsData.Security.BansPermanent)
-		resp.Values[2] = int64(metricsData.Security.BansFeed)
-		resp.Values[3] = int64(metricsData.Security.BansGeoIP)
-	}
+	// Get ban breakdown from metrics cache
+	// (state.BasicSnapshot only has totals, not breakdown by type)
+	metricsData := h.getMetricsData()
+	resp.Values[0] = int64(metricsData.Security.BansTemporary)
+	resp.Values[1] = int64(metricsData.Security.BansPermanent)
+	resp.Values[2] = int64(metricsData.Security.BansFeed)
+	resp.Values[3] = int64(metricsData.Security.BansGeoIP)
 
 	json.NewEncoder(w).Encode(resp)
 }
