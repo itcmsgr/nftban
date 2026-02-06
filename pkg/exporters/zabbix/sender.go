@@ -174,7 +174,17 @@ func (s *Sender) buildTLSConfig() (*tls.Config, error) {
 	}
 
 	config := &tls.Config{
-		InsecureSkipVerify: tlsCfg.SkipVerify,
+		MinVersion: tls.VersionTLS12,
+	}
+
+	// Only allow InsecureSkipVerify in development mode AND when explicitly configured
+	if tlsCfg.SkipVerify {
+		if tlsCfg.DevMode {
+			config.InsecureSkipVerify = true
+			logx.SecurityWarn("Zabbix TLS certificate verification disabled for target %s - NOT recommended for production", s.target.Name)
+		} else {
+			logx.Warn("Zabbix TLS SkipVerify requested for target %s but DevMode is not enabled - ignoring (use CAFile for custom CA)", s.target.Name)
+		}
 	}
 
 	// Load CA certificate

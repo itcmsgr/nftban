@@ -316,6 +316,7 @@ func (t *TargetConfig) ToTarget() *Target {
 			KeyFile:    t.TLS.KeyFile,
 			CAFile:     t.TLS.CAFile,
 			SkipVerify: t.TLS.SkipVerify,
+			DevMode:    t.TLS.DevMode,
 		}
 	}
 
