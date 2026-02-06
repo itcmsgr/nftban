@@ -26,11 +26,8 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"os/exec"
 	"strings"
 	"time"
-
-	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
 
 // GeoHandler returns geographic statistics (top countries)
@@ -109,48 +106,6 @@ func getGeoBanStatsFallback() map[string]interface{} {
 	}
 }
 
-// GrafanaStatusHandler checks if Grafana is available
-func GrafanaStatusHandler(w http.ResponseWriter, r *http.Request) {
-	// Get service name from central config
-	services := nftbanconf.GetServices()
-	grafanaService := "grafana-server"
-	if services != nil {
-		grafanaService = services.Grafana
-	}
-
-	// Check if Grafana is running
-	cmd := exec.Command("systemctl", "is-active", grafanaService)
-	output, err := cmd.Output()
-
-	isRunning := err == nil && strings.TrimSpace(string(output)) == "active"
-
-	// Check if Grafana is accessible using URL from central config
-	grafanaBaseURL := getGrafanaURL()
-	grafanaHealthURL := grafanaBaseURL + "/api/health"
-	accessible := false
-
-	if isRunning {
-		client := &http.Client{Timeout: 2 * time.Second}
-		resp, err := client.Get(grafanaHealthURL)
-		if err == nil {
-			accessible = resp.StatusCode == 200
-			resp.Body.Close()
-		}
-	}
-
-	respondJSON(w, http.StatusOK, map[string]interface{}{
-		"available":  isRunning && accessible,
-		"running":    isRunning,
-		"accessible": accessible,
-		"url":        grafanaBaseURL,
-		"dashboards": map[string]string{
-			"overview":    "/d/nftban-overview",
-			"health":      "/d/nftban-health",
-			"geographic":  "/d/nftban-geographic",
-			"performance": "/d/nftban-performance",
-		},
-	})
-}
 
 // parseGeoOutput parses geographic statistics output from nftban CLI
 func parseGeoOutput(output string) []map[string]interface{} {

@@ -27,9 +27,9 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gorilla/mux"
 	"github.com/itcmsgr/nftban/internal/ui"
@@ -41,6 +41,91 @@ import (
 type SettingsSaveRequest struct {
 	Section string            `json:"section"`
 	Values  map[string]string `json:"values"`
+}
+
+// validLogLevels defines valid log levels (package-level to avoid recreation per call)
+var validLogLevels = map[string]bool{
+	"DEBUG": true,
+	"INFO":  true,
+	"WARN":  true,
+	"ERROR": true,
+}
+
+// =============================================================================
+// SECURITY FIX: Input validation for settings form to prevent command injection
+// =============================================================================
+
+// validConfigKeys is an allowlist of valid configuration keys that can be set via the UI
+// SECURITY FIX: Only these keys are allowed to prevent arbitrary config manipulation
+var validConfigKeys = map[string]bool{
+	// Feature toggles
+	"NFTBAN_METRICS_ENABLED":         true,
+	"NFTBAN_GEOIP_ENABLED":           true,
+	"NFTBAN_FEEDS_ENABLED":           true,
+	"NFTBAN_FEEDS_AUTO_UPDATE":       true,
+	"NFTBAN_SURICATA_ENABLED":        true,
+	"NFTBAN_GUI_ENABLED":             true,
+	"NFTBAN_PORTSCAN_ENABLED":        true,
+	"NFTBAN_DDOS_ENABLED":            true,
+	"NFTBAN_LOGIN_MONITOR_ENABLED":   true,
+	"NFTBAN_GRAFANA_ENABLED":         true,
+	// Metrics settings
+	"NFTBAN_METRICS_BACKEND":            true,
+	"NFTBAN_METRICS_SAMPLING_INTERVAL":  true,
+	"NFTBAN_METRICS_MAX_SAMPLES":        true,
+	"NFTBAN_PROMETHEUS_DIR":             true,
+	"NFTBAN_METRICS_PROMETHEUS_ADDR":    true,
+	"NFTBAN_METRICS_NODE_EXPORTER_ADDR": true,
+	"NFTBAN_METRICS_VICTORIA_ADDR":      true,
+	// GeoIP settings
+	"NFTBAN_GEOIP_LICENSE_KEY": true,
+	// Suricata settings
+	"NFTBAN_SURICATA_EVE_LOG":              true,
+	"NFTBAN_SURICATA_LOG_DIR":              true,
+	"NFTBAN_SURICATA_BAN_THRESHOLD":        true,
+	"NFTBAN_SURICATA_SCORE_DECAY":          true,
+	"NFTBAN_SURICATA_CLOUDFLARE_WHITELIST": true,
+	// Logging settings
+	"NFTBAN_LOG_LEVEL":       true,
+	"NFTBAN_COLOR_OUTPUT":    true,
+	"NFTBAN_DEBUG_TRACE":     true,
+	"NFTBAN_DEBUG_TRACE_LOG": true,
+	// Network settings
+	"NFTBAN_GUI_ADDR": true,
+	"NFTBAN_API_ADDR": true,
+}
+
+// validConfigValueRegex validates config values - allows alphanumeric, paths, addresses
+// SECURITY FIX: Prevents shell metacharacter injection
+var validConfigValueRegex = regexp.MustCompile(`^[a-zA-Z0-9/._:@-]*$`)
+
+// shellMetacharacters contains characters that could be used for command injection
+// SECURITY FIX: These characters are explicitly rejected in config values
+var shellMetacharacters = []string{";", "|", "&", "$", "`", "(", ")", "{", "}", "[", "]", "<", ">", "\\", "\"", "'"}
+
+// validateConfigKey checks if a config key is in the allowlist
+// SECURITY FIX: Prevents setting arbitrary/dangerous config keys
+func validateConfigKey(key string) error {
+	if !validConfigKeys[key] {
+		return fmt.Errorf("invalid config key: %s is not in the allowlist", key)
+	}
+	return nil
+}
+
+// validateConfigValue checks if a config value is safe
+// SECURITY FIX: Prevents command injection via config values
+func validateConfigValue(value string) error {
+	// Check for shell metacharacters
+	for _, char := range shellMetacharacters {
+		if strings.Contains(value, char) {
+			return fmt.Errorf("invalid config value: contains forbidden character '%s'", char)
+		}
+	}
+	// Additional regex validation for allowed characters
+	if !validConfigValueRegex.MatchString(value) {
+		return fmt.Errorf("invalid config value: contains disallowed characters")
+	}
+	return nil
 }
 
 // =============================================================================
@@ -148,6 +233,20 @@ func (h *GOTHHandlers) HandleSettingsSave(w http.ResponseWriter, r *http.Request
 			continue
 		}
 		key, value := parts[0], parts[1]
+
+		// SECURITY FIX: Validate config key against allowlist
+		if err := validateConfigKey(key); err != nil {
+			log.Printf("[GOTH] Settings save: security validation failed for key %s: %v", key, err)
+			h.sendSettingsError(w, fmt.Sprintf("Security error: %v", err))
+			return
+		}
+
+		// SECURITY FIX: Validate config value to prevent command injection
+		if err := validateConfigValue(value); err != nil {
+			log.Printf("[GOTH] Settings save: security validation failed for value of %s: %v", key, err)
+			h.sendSettingsError(w, fmt.Sprintf("Security error: %v", err))
+			return
+		}
 
 		output, err := execNFTBanCommand("config", "set", key, value)
 		if err != nil {
@@ -478,9 +577,8 @@ func (h *GOTHHandlers) buildLoggingArgs(r *http.Request) ([]string, bool) {
 	args := []string{}
 
 	if val := r.FormValue("log_level"); val != "" {
-		// Validate log level
-		validLevels := map[string]bool{"DEBUG": true, "INFO": true, "WARN": true, "ERROR": true}
-		if validLevels[strings.ToUpper(val)] {
+		// Validate log level using package-level map
+		if validLogLevels[strings.ToUpper(val)] {
 			args = append(args, "NFTBAN_LOG_LEVEL="+strings.ToUpper(val))
 		}
 	}
@@ -564,169 +662,3 @@ func extractJSON(output string) string {
 	return output[start:]
 }
 
-// =============================================================================
-// SETTINGS VALIDATION
-// =============================================================================
-
-// validateSettings validates settings before saving
-func validateSettings(section string, values map[string]string) error {
-	switch section {
-	case "metrics":
-		// Validate sampling interval (1-3600 seconds)
-		if val, ok := values["NFTBAN_METRICS_SAMPLING_INTERVAL"]; ok {
-			interval, err := strconv.Atoi(val)
-			if err != nil || interval < 1 || interval > 3600 {
-				return fmt.Errorf("sampling interval must be between 1 and 3600 seconds")
-			}
-		}
-		// Validate max samples (1-10000)
-		if val, ok := values["NFTBAN_METRICS_MAX_SAMPLES"]; ok {
-			samples, err := strconv.Atoi(val)
-			if err != nil || samples < 1 || samples > 10000 {
-				return fmt.Errorf("max samples must be between 1 and 10000")
-			}
-		}
-
-	case "suricata":
-		// Validate ban threshold (1-10000)
-		if val, ok := values["NFTBAN_SURICATA_BAN_THRESHOLD"]; ok {
-			threshold, err := strconv.Atoi(val)
-			if err != nil || threshold < 1 || threshold > 10000 {
-				return fmt.Errorf("ban threshold must be between 1 and 10000")
-			}
-		}
-		// Validate score decay (60-86400 seconds)
-		if val, ok := values["NFTBAN_SURICATA_SCORE_DECAY"]; ok {
-			decay, err := strconv.Atoi(val)
-			if err != nil || decay < 60 || decay > 86400 {
-				return fmt.Errorf("score decay must be between 60 and 86400 seconds")
-			}
-		}
-
-	case "logging":
-		// Validate log level
-		if val, ok := values["NFTBAN_LOG_LEVEL"]; ok {
-			validLevels := map[string]bool{"DEBUG": true, "INFO": true, "WARN": true, "ERROR": true}
-			if !validLevels[strings.ToUpper(val)] {
-				return fmt.Errorf("log level must be one of: DEBUG, INFO, WARN, ERROR")
-			}
-		}
-
-	case "network":
-		// Validate address formats (basic check for host:port)
-		validateAddr := func(name, val string) error {
-			if val == "" {
-				return nil
-			}
-			// Allow :port or host:port format
-			if !strings.Contains(val, ":") {
-				return fmt.Errorf("%s must be in host:port or :port format", name)
-			}
-			return nil
-		}
-		if val, ok := values["NFTBAN_GUI_ADDR"]; ok {
-			if err := validateAddr("GUI address", val); err != nil {
-				return err
-			}
-		}
-		if val, ok := values["NFTBAN_API_ADDR"]; ok {
-			if err := validateAddr("API address", val); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-// =============================================================================
-// RELOAD SETTINGS
-// =============================================================================
-
-// HandleSettingsReload reloads configuration without restart
-func (h *GOTHHandlers) HandleSettingsReload(w http.ResponseWriter, r *http.Request) {
-	log.Printf("[GOTH] Settings reload requested")
-
-	// Try to reload config via CLI
-	output, err := execNFTBanCommand("config", "reload")
-	if err != nil {
-		log.Printf("[GOTH] Settings reload failed: %v - %s", err, output)
-		// Try alternative: reload via nftbanconf package
-		if reloadErr := nftbanconf.Reload(); reloadErr != nil {
-			h.sendSettingsError(w, "Failed to reload configuration")
-			return
-		}
-	}
-
-	log.Printf("[GOTH] Settings reloaded successfully")
-	w.Header().Set("HX-Trigger", `{"showToast": {"message": "Configuration reloaded", "type": "success"}}`)
-	w.WriteHeader(http.StatusOK)
-
-	// Return updated settings data
-	extData := h.getExtendedSettingsData()
-	data := h.convertToBasicSettings(extData)
-	pages.SettingsContentFragment(data).Render(r.Context(), w)
-}
-
-// HandleSettingsExport exports current settings as JSON
-func (h *GOTHHandlers) HandleSettingsExport(w http.ResponseWriter, r *http.Request) {
-	data := h.getExtendedSettingsData()
-
-	// Convert to JSON
-	export := map[string]interface{}{
-		"exported_at":    time.Now().Format(time.RFC3339),
-		"config_version": data.ConfigVersion,
-		"general":        data.General,
-		"features":       data.Features,
-		"metrics":        data.Metrics,
-		"geoip": map[string]interface{}{
-			"enabled": data.GeoIP.Enabled,
-			"has_key": data.GeoIP.HasKey,
-			// Don't export license key
-		},
-		"suricata": data.Suricata,
-		"logging":  data.Logging,
-		"network":  data.Network,
-		"paths":    data.Paths,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=nftban-settings-%s.json",
-		time.Now().Format("2006-01-02")))
-
-	json.NewEncoder(w).Encode(export)
-}
-
-// HandleSettingsTest tests if a setting value is valid
-func (h *GOTHHandlers) HandleSettingsTest(w http.ResponseWriter, r *http.Request) {
-	section := r.URL.Query().Get("section")
-	key := r.URL.Query().Get("key")
-	value := r.URL.Query().Get("value")
-
-	// Set Content-Type BEFORE any WriteHeader calls
-	w.Header().Set("Content-Type", "application/json")
-
-	if key == "" || value == "" {
-		w.WriteHeader(http.StatusBadRequest)
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"valid":   false,
-			"message": "key and value are required",
-		})
-		return
-	}
-
-	values := map[string]string{key: value}
-	err := validateSettings(section, values)
-
-	if err != nil {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"valid":   false,
-			"message": err.Error(),
-		})
-	} else {
-		json.NewEncoder(w).Encode(map[string]interface{}{
-			"valid":   true,
-			"message": "Value is valid",
-		})
-	}
-}

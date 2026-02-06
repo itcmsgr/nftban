@@ -30,6 +30,7 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -48,8 +49,9 @@ type GOTHHandlers struct {
 	SessionStore *session.Store
 }
 
-// Network stats tracking for bandwidth calculation
+// Network stats tracking for bandwidth calculation (protected by mutex for thread safety)
 var (
+	netStatsMu     sync.Mutex
 	lastNetRxBytes uint64
 	lastNetTxBytes uint64
 	lastNetTime    time.Time
@@ -402,14 +404,25 @@ func (h *GOTHHandlers) HandleFlushTemp(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 }
 
+// SECURITY FIX: Explicit allowlist of services that can be restarted
+// This prevents command injection via service name manipulation
+var allowedRestartServices = map[string]bool{
+	"nftban-core":      true,
+	"nftban-ui":        true,
+	"nftban-collector": true,
+	"nftban-watchdog":  true,
+	"nftband":          true,
+}
+
 // HandleRestartService restarts a systemd service
 func (h *GOTHHandlers) HandleRestartService(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	serviceName := vars["service"]
 
-	// Validate service name - only allow nftban services
-	if !strings.HasPrefix(serviceName, "nftban-") {
-		log.Printf("[GOTH] Invalid service name: %s", serviceName)
+	// SECURITY FIX: Use explicit allowlist instead of prefix check
+	// Prefix check alone could allow "nftban-../../malicious" type attacks
+	if !allowedRestartServices[serviceName] {
+		log.Printf("[GOTH] Service not in allowlist: %s", serviceName)
 		w.Header().Set("HX-Trigger", `{"showToast": {"message": "Invalid service", "type": "error"}}`)
 		w.WriteHeader(http.StatusBadRequest)
 		return
@@ -978,6 +991,10 @@ func getNetworkBandwidth() (inMbps, outMbps float64) {
 	}
 
 	now := time.Now()
+
+	// Protect shared state with mutex for thread safety
+	netStatsMu.Lock()
+	defer netStatsMu.Unlock()
 
 	// Calculate rate if we have previous measurement
 	if !lastNetTime.IsZero() {

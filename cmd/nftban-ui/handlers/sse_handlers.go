@@ -22,13 +22,20 @@
 package handlers
 
 import (
-	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"sync/atomic"
 	"time"
 )
+
+// SECURITY FIX: Connection limiting to prevent SSE resource exhaustion attacks
+// Maximum number of concurrent SSE connections allowed
+const maxSSEConnections = 100
+
+// sseConnectionCount tracks the current number of active SSE connections
+var sseConnectionCount int64
 
 // SSEDashboardEvent represents the JSON payload sent via SSE
 type SSEDashboardEvent struct {
@@ -105,6 +112,21 @@ type SSENetworkStats struct {
 // Events are sent every 5 seconds with security stats, recent bans, and system status.
 // Requires authenticated session.
 func (h *GOTHHandlers) HandleSSEDashboard(w http.ResponseWriter, r *http.Request) {
+	// SECURITY FIX: Check connection limit before accepting new SSE connection
+	// This prevents resource exhaustion attacks via SSE connection flooding
+	currentCount := atomic.LoadInt64(&sseConnectionCount)
+	if currentCount >= maxSSEConnections {
+		log.Printf("[SSE] Connection limit reached (%d/%d), rejecting new connection from %s",
+			currentCount, maxSSEConnections, r.RemoteAddr)
+		http.Error(w, "Too many SSE connections", http.StatusTooManyRequests)
+		return
+	}
+
+	// Increment connection counter
+	atomic.AddInt64(&sseConnectionCount, 1)
+	// Ensure we decrement when this handler exits
+	defer atomic.AddInt64(&sseConnectionCount, -1)
+
 	// Validate session (already done by RequireSession wrapper, but double-check)
 	cookie, err := r.Cookie("session_id")
 	if err != nil {
@@ -132,9 +154,10 @@ func (h *GOTHHandlers) HandleSSEDashboard(w http.ResponseWriter, r *http.Request
 	// Create context that cancels when client disconnects
 	ctx := r.Context()
 
-	// Log connection
+	// Log connection with current count
 	clientIP := r.RemoteAddr
-	log.Printf("[SSE] Dashboard connection established from %s", clientIP)
+	log.Printf("[SSE] Dashboard connection established from %s (active: %d/%d)",
+		clientIP, atomic.LoadInt64(&sseConnectionCount), maxSSEConnections)
 
 	// Send initial event immediately
 	if err := h.sendSSEDashboardEvent(w, flusher); err != nil {
@@ -269,18 +292,3 @@ func (h *GOTHHandlers) buildSSEDashboardEvent() SSEDashboardEvent {
 	return event
 }
 
-// HandleSSEDashboardWithContext is a helper that wraps HandleSSEDashboard with a timeout context
-// This can be used if you need to enforce a maximum connection duration
-func (h *GOTHHandlers) HandleSSEDashboardWithContext(maxDuration time.Duration) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// Create context with timeout
-		ctx, cancel := context.WithTimeout(r.Context(), maxDuration)
-		defer cancel()
-
-		// Replace request context
-		r = r.WithContext(ctx)
-
-		// Call main handler
-		h.HandleSSEDashboard(w, r)
-	}
-}

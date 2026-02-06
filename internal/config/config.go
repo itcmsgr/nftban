@@ -23,6 +23,9 @@ package config
 
 import (
 	"bufio"
+	"crypto/rand"
+	"encoding/base64"
+	"errors"
 	"fmt"
 	"os"
 	"strconv"
@@ -30,6 +33,12 @@ import (
 
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
+
+// SECURITY FIX: Minimum required length for JWT secret
+const minJWTSecretLength = 32
+
+// ErrJWTSecretNotConfigured is returned when JWT_SECRET is not set or too short
+var ErrJWTSecretNotConfigured = errors.New("JWT_SECRET environment variable must be set with at least 32 bytes")
 
 // Config holds the application configuration
 type Config struct {
@@ -163,12 +172,51 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// generateJWTSecret creates a random JWT secret if none is provided
+// generateJWTSecret returns empty string - JWT secret MUST be configured externally
+// SECURITY FIX: Removed hardcoded placeholder to enforce proper secret management
 func generateJWTSecret() string {
-	// In production, this should be read from a secure source
-	// For now, generate a random string
-	// This will be replaced with proper secret management
-	return "CHANGE_ME_IN_PRODUCTION_CONFIG"
+	// SECURITY: Return empty string to force configuration via JWT_SECRET env var
+	// or JWT_SECRET_FILE in config. Do NOT use hardcoded defaults.
+	return ""
+}
+
+// GenerateRandomSecret creates a cryptographically secure random secret
+// This can be used by administrators to generate a secure JWT_SECRET value
+func GenerateRandomSecret(length int) (string, error) {
+	if length < minJWTSecretLength {
+		length = minJWTSecretLength
+	}
+	bytes := make([]byte, length)
+	if _, err := rand.Read(bytes); err != nil {
+		return "", fmt.Errorf("failed to generate random secret: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(bytes), nil
+}
+
+// ValidateJWTSecret checks if the JWT secret meets security requirements
+// SECURITY FIX: Validates that JWT secret is configured and meets minimum length
+func ValidateJWTSecret(secret string) error {
+	if secret == "" {
+		return ErrJWTSecretNotConfigured
+	}
+	if len(secret) < minJWTSecretLength {
+		return fmt.Errorf("JWT_SECRET must be at least %d bytes, got %d", minJWTSecretLength, len(secret))
+	}
+	// SECURITY: Reject known placeholder values
+	knownPlaceholders := []string{
+		"CHANGE_ME_IN_PRODUCTION_CONFIG",
+		"changeme",
+		"secret",
+		"password",
+		"jwt_secret",
+	}
+	secretLower := strings.ToLower(secret)
+	for _, placeholder := range knownPlaceholders {
+		if secretLower == strings.ToLower(placeholder) {
+			return fmt.Errorf("JWT_SECRET contains insecure placeholder value")
+		}
+	}
+	return nil
 }
 
 // Save writes configuration to file

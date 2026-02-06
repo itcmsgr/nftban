@@ -106,43 +106,6 @@ func DDoSStatsHandler(w http.ResponseWriter, r *http.Request) {
 	respondJSON(w, http.StatusOK, result)
 }
 
-// DDoSControlHandler handles DDoS enable/disable
-// POST /api/v1/ddos/enable or /api/v1/ddos/disable
-func DDoSControlHandler(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Action string `json:"action"` // "enable" or "disable"
-	}
-
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
-		return
-	}
-
-	var output string
-	var err error
-
-	switch req.Action {
-	case "enable":
-		output, err = execNFTBanCommand("ddos", "enable")
-	case "disable":
-		output, err = execNFTBanCommand("ddos", "disable")
-	default:
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid action. Use 'enable' or 'disable'"})
-		return
-	}
-
-	if err != nil {
-		log.Printf("[ERROR] DDoS %s failed: %v - %s", req.Action, err, output)
-		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to " + req.Action + " DDoS protection"})
-		return
-	}
-
-	respondJSON(w, http.StatusOK, SuccessResponse{
-		Success: true,
-		Message: "DDoS protection " + req.Action + "d successfully",
-	})
-}
-
 // DDoSEnableHandler enables DDoS protection
 // POST /api/v1/ddos/enable
 func DDoSEnableHandler(w http.ResponseWriter, r *http.Request) {
