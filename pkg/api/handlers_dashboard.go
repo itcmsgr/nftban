@@ -33,6 +33,7 @@ import (
 	"github.com/itcmsgr/nftban/pkg/auth"
 	"github.com/itcmsgr/nftban/pkg/middleware"
 	"github.com/itcmsgr/nftban/pkg/state"
+	"github.com/itcmsgr/nftban/pkg/util"
 )
 
 // DashboardHandler returns dashboard statistics
@@ -99,19 +100,13 @@ func StatusHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Strip any non-JSON output (comments, warnings, etc.) before parsing
-	// Look for the first '{' and last '}' to extract only the JSON portion
-	output = strings.TrimSpace(output)
-	startIdx := strings.Index(output, "{")
-	endIdx := strings.LastIndex(output, "}")
-
-	if startIdx == -1 || endIdx == -1 || startIdx > endIdx {
+	// Extract JSON from CLI output (may contain non-JSON prefix/suffix)
+	jsonOutput := util.ExtractJSONRobust(output)
+	if jsonOutput == "" {
 		log.Printf("[ERROR] No valid JSON found in status output: %s", output)
 		respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Invalid status response format"})
 		return
 	}
-
-	jsonOutput := output[startIdx : endIdx+1]
 
 	// Parse JSON response from CLI
 	var statusData map[string]interface{}

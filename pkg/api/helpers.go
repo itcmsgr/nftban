@@ -24,9 +24,20 @@ package api
 import (
 	"encoding/json"
 	"fmt"
-	"net"
 	"net/http"
+
+	"github.com/itcmsgr/nftban/pkg/netutil"
 )
+
+// DecodeJSONBody decodes JSON request body into target struct
+// Returns false and sends error response if decoding fails
+func DecodeJSONBody(w http.ResponseWriter, r *http.Request, target interface{}) bool {
+	if err := json.NewDecoder(r.Body).Decode(target); err != nil {
+		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request body: " + err.Error()})
+		return false
+	}
+	return true
+}
 
 // respondJSON sends a JSON response
 func respondJSON(w http.ResponseWriter, status int, data interface{}) {
@@ -48,10 +59,9 @@ func respondError(w http.ResponseWriter, status int, message string) {
 	})
 }
 
-// validateIP validates a single IP address
+// validateIP validates a single IP address using the shared netutil.IsValidIP function
 func validateIP(ipStr string) error {
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
+	if !netutil.IsValidIP(ipStr) {
 		return fmt.Errorf("invalid IP address: %s", ipStr)
 	}
 	return nil

@@ -214,8 +214,7 @@ func EmulateBatchHandler(w http.ResponseWriter, r *http.Request) {
 		IPs []string `json:"ips"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request body"})
+	if !DecodeJSONBody(w, r, &request) {
 		return
 	}
 

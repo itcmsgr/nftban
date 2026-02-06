@@ -53,8 +53,7 @@ func FirewallValidateHandler(w http.ResponseWriter, r *http.Request) {
 // FirewallCheckHandler checks if IP or port is blocked/allowed
 func FirewallCheckHandler(w http.ResponseWriter, r *http.Request) {
 	var req FirewallCheckRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 

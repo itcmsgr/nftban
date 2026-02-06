@@ -545,8 +545,7 @@ func LoginMonitorControlHandler(w http.ResponseWriter, r *http.Request) {
 		Target string `json:"target"` // ssh, su, sudo, console, service, all
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 

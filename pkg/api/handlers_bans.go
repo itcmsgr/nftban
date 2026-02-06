@@ -40,8 +40,7 @@ func BanHandler(w http.ResponseWriter, r *http.Request) {
 		Timeout string `json:"timeout"` // optional: "24h", "permanent", etc.
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -77,8 +76,7 @@ func UnbanHandler(w http.ResponseWriter, r *http.Request) {
 		IP string `json:"ip"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -128,8 +126,7 @@ func WhitelistAddHandler(w http.ResponseWriter, r *http.Request) {
 		Comment string `json:"comment"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 
@@ -164,8 +161,7 @@ func WhitelistRemoveHandler(w http.ResponseWriter, r *http.Request) {
 		IP string `json:"ip"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
+	if !DecodeJSONBody(w, r, &req) {
 		return
 	}
 
