@@ -133,6 +133,18 @@ func (h *GOTHHandlers) HandleFragWhitelistTable(w http.ResponseWriter, r *http.R
 	pages.WhitelistTableFragment(data).Render(r.Context(), w)
 }
 
+// HandleEvents renders the security events page
+func (h *GOTHHandlers) HandleEvents(w http.ResponseWriter, r *http.Request) {
+	data := h.getEventsData(r)
+	pages.Events(data).Render(r.Context(), w)
+}
+
+// HandleFragEventsTable renders events table fragment for HTMX
+func (h *GOTHHandlers) HandleFragEventsTable(w http.ResponseWriter, r *http.Request) {
+	data := h.getEventsData(r)
+	pages.EventsTableFragment(data).Render(r.Context(), w)
+}
+
 // HandleTools renders the diagnostic tools page
 func (h *GOTHHandlers) HandleTools(w http.ResponseWriter, r *http.Request) {
 	data := h.getToolsData()
@@ -1829,6 +1841,265 @@ func (h *GOTHHandlers) getWhitelistData() ui.WhitelistData {
 	}
 
 	return data
+}
+
+// =============================================================================
+// EVENTS DATA FETCHER
+// =============================================================================
+
+func (h *GOTHHandlers) getEventsData(r *http.Request) ui.EventsData {
+	data := ui.EventsData{
+		Page:     1,
+		PageSize: 100,
+		Filter:   "all",
+	}
+
+	// Parse query params
+	if page := r.URL.Query().Get("page"); page != "" {
+		if p, err := strconv.Atoi(page); err == nil && p > 0 {
+			data.Page = p
+		}
+	}
+	if filter := r.URL.Query().Get("filter"); filter != "" {
+		data.Filter = filter
+	}
+	if search := r.URL.Query().Get("search"); search != "" {
+		data.SearchQuery = search
+	}
+	if dateFrom := r.URL.Query().Get("date_from"); dateFrom != "" {
+		data.DateFrom = dateFrom
+	}
+	if dateTo := r.URL.Query().Get("date_to"); dateTo != "" {
+		data.DateTo = dateTo
+	}
+
+	// Get events from nftban logs or journal
+	args := []string{"logs", "--json", "--limit", "500"}
+	if data.Filter != "all" {
+		switch data.Filter {
+		case "bans":
+			args = append(args, "--level", "BAN")
+		case "unbans":
+			args = append(args, "--level", "UNBAN")
+		case "warnings":
+			args = append(args, "--level", "WARN")
+		case "errors":
+			args = append(args, "--level", "ERROR")
+		}
+	}
+
+	if output, err := execNFTBanCommand(args...); err == nil {
+		var result map[string]interface{}
+		if json.Unmarshal([]byte(util.ExtractJSON(output)), &result) == nil {
+			var eventsArray []interface{}
+			if events, ok := result["events"].([]interface{}); ok {
+				eventsArray = events
+			} else if events, ok := result["logs"].([]interface{}); ok {
+				eventsArray = events
+			} else if events, ok := result["data"].([]interface{}); ok {
+				eventsArray = events
+			}
+
+			for i, e := range eventsArray {
+				if eventMap, ok := e.(map[string]interface{}); ok {
+					entry := ui.EventEntry{
+						ID: fmt.Sprintf("evt-%d", i),
+					}
+					if ts, ok := eventMap["timestamp"].(string); ok {
+						entry.Timestamp = ts
+					} else if ts, ok := eventMap["time"].(string); ok {
+						entry.Timestamp = ts
+					}
+					if level, ok := eventMap["level"].(string); ok {
+						entry.Level = level
+					}
+					if module, ok := eventMap["module"].(string); ok {
+						entry.Module = module
+					} else if source, ok := eventMap["source"].(string); ok {
+						entry.Module = source
+					}
+					if action, ok := eventMap["action"].(string); ok {
+						entry.Action = action
+					}
+					if ip, ok := eventMap["ip"].(string); ok {
+						entry.IP = ip
+					}
+					if country, ok := eventMap["country"].(string); ok {
+						entry.Country = country
+					}
+					if cc, ok := eventMap["country_code"].(string); ok {
+						entry.CountryCode = cc
+					}
+					if msg, ok := eventMap["message"].(string); ok {
+						entry.Message = msg
+					}
+					if details, ok := eventMap["details"].(string); ok {
+						entry.Details = details
+					}
+
+					// Filter by search query
+					if data.SearchQuery != "" {
+						searchLower := strings.ToLower(data.SearchQuery)
+						if !strings.Contains(strings.ToLower(entry.IP), searchLower) &&
+							!strings.Contains(strings.ToLower(entry.Message), searchLower) {
+							continue
+						}
+					}
+
+					data.Events = append(data.Events, entry)
+
+					// Count by level
+					switch entry.Level {
+					case "BAN":
+						data.BanEvents++
+					case "UNBAN":
+						data.UnbanEvents++
+					case "WARN":
+						data.WarningEvents++
+					case "ERROR":
+						data.ErrorEvents++
+					}
+				}
+			}
+		}
+	}
+
+	// Fallback: parse journalctl if no events from CLI
+	if len(data.Events) == 0 {
+		events := h.getJournalEvents(data.Filter, 500)
+		data.Events = events
+		for _, e := range events {
+			switch e.Level {
+			case "BAN":
+				data.BanEvents++
+			case "UNBAN":
+				data.UnbanEvents++
+			case "WARN":
+				data.WarningEvents++
+			case "ERROR":
+				data.ErrorEvents++
+			}
+		}
+	}
+
+	// Calculate totals
+	data.TotalEvents = len(data.Events)
+	data.EventsToday = data.TotalEvents // Simplified for now
+	data.EventsLastHour = min(data.TotalEvents, 50) // Estimate
+
+	// Pagination
+	data.TotalPages = (len(data.Events) + data.PageSize - 1) / data.PageSize
+	if data.TotalPages == 0 {
+		data.TotalPages = 1
+	}
+
+	// Apply pagination
+	start := (data.Page - 1) * data.PageSize
+	end := start + data.PageSize
+	if start < len(data.Events) {
+		if end > len(data.Events) {
+			end = len(data.Events)
+		}
+		data.Events = data.Events[start:end]
+	} else {
+		data.Events = []ui.EventEntry{}
+	}
+
+	return data
+}
+
+// getJournalEvents fetches events from journalctl as fallback
+func (h *GOTHHandlers) getJournalEvents(filter string, limit int) []ui.EventEntry {
+	var events []ui.EventEntry
+
+	// Try to get nftban logs from journalctl
+	cmd := exec.Command("journalctl", "-u", "nftband.service", "-n", strconv.Itoa(limit), "--no-pager", "-o", "json")
+	output, err := cmd.Output()
+	if err != nil {
+		return events
+	}
+
+	// Parse JSONL output
+	lines := strings.Split(string(output), "\n")
+	for i, line := range lines {
+		if line == "" {
+			continue
+		}
+		var entry map[string]interface{}
+		if err := json.Unmarshal([]byte(line), &entry); err != nil {
+			continue
+		}
+
+		event := ui.EventEntry{
+			ID: fmt.Sprintf("jrnl-%d", i),
+		}
+
+		// Parse systemd journal fields
+		if ts, ok := entry["__REALTIME_TIMESTAMP"].(string); ok {
+			// Convert microseconds to timestamp
+			if usec, err := strconv.ParseInt(ts, 10, 64); err == nil {
+				t := time.Unix(usec/1000000, (usec%1000000)*1000)
+				event.Timestamp = t.Format("2006-01-02 15:04:05")
+			}
+		}
+		if msg, ok := entry["MESSAGE"].(string); ok {
+			event.Message = msg
+			// Parse level from message
+			if strings.Contains(msg, "[BAN]") || strings.Contains(msg, "Banned") {
+				event.Level = "BAN"
+				event.Action = "ban"
+			} else if strings.Contains(msg, "[UNBAN]") || strings.Contains(msg, "Unbanned") {
+				event.Level = "UNBAN"
+				event.Action = "unban"
+			} else if strings.Contains(msg, "[ERROR]") || strings.Contains(msg, "error") {
+				event.Level = "ERROR"
+				event.Action = "error"
+			} else if strings.Contains(msg, "[WARN]") || strings.Contains(msg, "warning") {
+				event.Level = "WARN"
+				event.Action = "warning"
+			} else {
+				event.Level = "INFO"
+				event.Action = "info"
+			}
+
+			// Extract IP from message if present
+			if idx := strings.Index(msg, " IP "); idx != -1 {
+				parts := strings.Fields(msg[idx+4:])
+				if len(parts) > 0 {
+					event.IP = strings.TrimSuffix(parts[0], ",")
+				}
+			}
+		}
+		if unit, ok := entry["SYSLOG_IDENTIFIER"].(string); ok {
+			event.Module = unit
+		}
+
+		// Apply filter
+		if filter != "all" {
+			switch filter {
+			case "bans":
+				if event.Level != "BAN" {
+					continue
+				}
+			case "unbans":
+				if event.Level != "UNBAN" {
+					continue
+				}
+			case "warnings":
+				if event.Level != "WARN" {
+					continue
+				}
+			case "errors":
+				if event.Level != "ERROR" {
+					continue
+				}
+			}
+		}
+
+		events = append(events, event)
+	}
+
+	return events
 }
 
 // =============================================================================

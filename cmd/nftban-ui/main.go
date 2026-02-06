@@ -146,6 +146,7 @@ func main() {
 	router.HandleFunc("/ui/", gothHandlers.RequireSession(gothHandlers.HandleDashboard)).Methods("GET")
 	router.HandleFunc("/ui/bans", gothHandlers.RequireSession(gothHandlers.HandleBans)).Methods("GET")
 	router.HandleFunc("/ui/whitelist", gothHandlers.RequireSession(gothHandlers.HandleWhitelist)).Methods("GET")
+	router.HandleFunc("/ui/events", gothHandlers.RequireSession(gothHandlers.HandleEvents)).Methods("GET")
 	router.HandleFunc("/ui/tools", gothHandlers.RequireSession(gothHandlers.HandleTools)).Methods("GET")
 	router.HandleFunc("/ui/health", gothHandlers.RequireSession(gothHandlers.HandleHealth)).Methods("GET")
 	router.HandleFunc("/ui/modules", gothHandlers.RequireSession(gothHandlers.HandleModules)).Methods("GET")
@@ -168,6 +169,7 @@ func main() {
 	router.HandleFunc("/ui/frag/inventory", gothHandlers.RequireSession(gothHandlers.HandleFragInventory)).Methods("GET")
 	router.HandleFunc("/ui/frag/bans-table", gothHandlers.RequireSession(gothHandlers.HandleFragBansTable)).Methods("GET")
 	router.HandleFunc("/ui/frag/whitelist-table", gothHandlers.RequireSession(gothHandlers.HandleFragWhitelistTable)).Methods("GET")
+	router.HandleFunc("/ui/frag/events-table", gothHandlers.RequireSession(gothHandlers.HandleFragEventsTable)).Methods("GET")
 	router.HandleFunc("/ui/frag/logs", gothHandlers.RequireSession(gothHandlers.HandleFragLogs)).Methods("GET")
 
 	// Backwards compat fragments
