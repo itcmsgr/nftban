@@ -134,6 +134,38 @@ func (c *ElasticsearchConnector) Connect(ctx context.Context) error {
 	return nil
 }
 
+// buildTLSConfig creates TLS configuration with proper security settings
+func (c *ElasticsearchConnector) buildTLSConfig() (*tls.Config, error) {
+	config := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+
+	// Only allow InsecureSkipVerify in development mode AND when explicitly configured
+	if c.config.TLSSkipVerify {
+		if c.config.DevMode {
+			config.InsecureSkipVerify = true
+			logx.SecurityWarn("Elasticsearch TLS certificate verification disabled - NOT recommended for production")
+		} else {
+			logx.Warn("Elasticsearch TLSSkipVerify requested but DevMode is not enabled - ignoring (use CACert for custom CA)")
+		}
+	}
+
+	// Load custom CA certificate if provided
+	if c.config.CACert != "" {
+		caCert, err := os.ReadFile(c.config.CACert)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA cert file: %w", err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse CA certificate")
+		}
+		config.RootCAs = caCertPool
+	}
+
+	return config, nil
+}
+
 // Disconnect closes the connection
 func (c *ElasticsearchConnector) Disconnect() error {
 	c.mu.Lock()

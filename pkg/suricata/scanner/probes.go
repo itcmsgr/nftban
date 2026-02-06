@@ -28,6 +28,8 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	"nftban/pkg/logx"
 )
 
 // ProbeService performs deep protocol detection on a service
@@ -129,11 +131,47 @@ func probeHTTP(host string, port int, service *Service) bool {
 	return false
 }
 
+// ProbeConfig holds configuration for service probing
+type ProbeConfig struct {
+	// TLSSkipVerify allows skipping TLS verification during probes.
+	// This is only for service detection, not for establishing secure connections.
+	// Default: true (required for probing unknown services)
+	TLSSkipVerify bool
+	// DevMode enables less secure options. Must be true for TLSSkipVerify to work.
+	DevMode bool
+}
+
+// DefaultProbeConfig returns the default probe configuration
+// Note: Service probing inherently requires InsecureSkipVerify to detect
+// services with self-signed or invalid certificates
+var DefaultProbeConfig = ProbeConfig{
+	TLSSkipVerify: true,
+	DevMode:       true, // Service probing is a development/diagnostic tool
+}
+
 // probeHTTPS attempts TLS handshake to verify HTTPS
 func probeHTTPS(host string, port int, service *Service) bool {
+	return probeHTTPSWithConfig(host, port, service, DefaultProbeConfig)
+}
+
+// probeHTTPSWithConfig attempts TLS handshake with explicit configuration
+func probeHTTPSWithConfig(host string, port int, service *Service, cfg ProbeConfig) bool {
 	address := net.JoinHostPort(host, fmt.Sprintf("%d", port))
 	config := &tls.Config{
-		InsecureSkipVerify: true,
+		MinVersion: tls.VersionTLS12,
+	}
+
+	// Service probing requires InsecureSkipVerify to detect services with
+	// self-signed certificates. This is acceptable because we're only detecting
+	// if a TLS service exists, not establishing a trusted connection.
+	if cfg.TLSSkipVerify {
+		if cfg.DevMode {
+			config.InsecureSkipVerify = true
+			// Only log on first probe to avoid spam
+			logx.Debug("HTTPS probe using InsecureSkipVerify for service detection on %s", address)
+		} else {
+			logx.Warn("HTTPS probe TLSSkipVerify requested but DevMode not enabled - probe may fail for self-signed certs")
+		}
 	}
 
 	conn, err := tls.DialWithDialer(

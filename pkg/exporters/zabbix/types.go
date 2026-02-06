@@ -401,7 +401,8 @@ type TLSConfig struct {
 	CertFile   string `json:"cert_file,omitempty"`
 	KeyFile    string `json:"key_file,omitempty"`
 	CAFile     string `json:"ca_file,omitempty"`
-	SkipVerify bool   `json:"skip_verify"`
+	SkipVerify bool   `json:"skip_verify"` // Only honored when DevMode is true
+	DevMode    bool   `json:"dev_mode"`    // Development mode - allows SkipVerify
 }
 
 // =============================================================================
