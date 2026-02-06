@@ -338,55 +338,101 @@ collect_feed_health_metrics() {
     now=$(date +%s)
     local stale_threshold=$((24 * 3600))  # 24 hours default
 
-    # Count feeds from config dir
+    # Collect all feed names and state files first
+    local -a feed_names=()
+    local -a state_files=()
     for conf in "${NFTBAN_CONFIG_DIR}/feeds"/*.conf; do
         [[ -f "$conf" ]] || continue
         local feed_name
         feed_name=$(basename "$conf" .conf)
+        feed_names+=("$feed_name")
+        state_files+=("/var/lib/nftban/feeds/${feed_name}.state")
         ((total++))
-
-        local feed_active=0 feed_sync=0 feed_ips=0 feed_errors=0
-
-        # Check state file for sync info
-        local state_file="/var/lib/nftban/feeds/${feed_name}.state"
-        if [[ -f "$state_file" ]]; then
-            feed_sync=$(jq -r '.last_sync // 0' "$state_file" 2>/dev/null || echo "0")
-            feed_ips=$(jq -r '.ips_loaded // 0' "$state_file" 2>/dev/null || echo "0")
-
-            # Update global last_sync if this is more recent
-            [[ "$feed_sync" -gt "$last_sync" ]] && last_sync="$feed_sync"
-
-            # Check if feed is stale (last sync > threshold)
-            local feed_age=$((now - feed_sync))
-            if [[ "$feed_sync" -gt 0 ]] && [[ "$feed_age" -lt "$stale_threshold" ]]; then
-                feed_active=1
-                ((active++))
-            elif [[ "$feed_sync" -gt 0 ]]; then
-                ((stale++))
-            fi
-        fi
-
-        # Count per-feed errors from log
-        if [[ -f "/var/log/nftban/feeds.log" ]]; then
-            local cutoff=$((now - 86400))
-            feed_errors=$(awk -v cutoff="$cutoff" -v feed="$feed_name" '
-                $1 ~ /^[0-9]+$/ && $1 >= cutoff && /(ERROR|FAIL)/ && $0 ~ feed { count++ }
-                END { print count+0 }
-            ' "/var/log/nftban/feeds.log" 2>/dev/null || echo "0")
-        fi
-
-        # Build per-feed JSON entry
-        [[ -n "$feeds_json" ]] && feeds_json+=","
-        feeds_json+="\"$feed_name\": {\"active\": $feed_active, \"last_sync\": $feed_sync, \"ips_loaded\": $feed_ips, \"errors\": $feed_errors}"
     done
 
-    # Count total errors from log in last 24h
-    if [[ -f "/var/log/nftban/feeds.log" ]]; then
-        local cutoff=$((now - 86400))
+    # Batch read all state files - extract both values in single jq call per file
+    # Store results in associative arrays to avoid jq-per-iteration
+    declare -A feed_sync_map feed_ips_map
+    for i in "${!feed_names[@]}"; do
+        local fname="${feed_names[$i]}"
+        local sfile="${state_files[$i]}"
+        if [[ -f "$sfile" ]]; then
+            # Single jq call extracts both values at once using @tsv
+            local state_values
+            state_values=$(jq -r '[(.last_sync // 0), (.ips_loaded // 0)] | @tsv' "$sfile" 2>/dev/null || echo "0	0")
+            IFS=$'\t' read -r feed_sync_map["$fname"] feed_ips_map["$fname"] <<< "$state_values"
+        else
+            feed_sync_map["$fname"]=0
+            feed_ips_map["$fname"]=0
+        fi
+    done
+
+    # Calculate active/stale counts and find max sync time
+    for fname in "${feed_names[@]}"; do
+        local feed_sync="${feed_sync_map[$fname]:-0}"
+        [[ "$feed_sync" -gt "$last_sync" ]] && last_sync="$feed_sync"
+
+        local feed_age=$((now - feed_sync))
+        if [[ "$feed_sync" -gt 0 ]] && [[ "$feed_age" -lt "$stale_threshold" ]]; then
+            ((active++))
+        elif [[ "$feed_sync" -gt 0 ]]; then
+            ((stale++))
+        fi
+    done
+
+    # Count per-feed errors efficiently using single awk pass
+    local feeds_log="/var/log/nftban/feeds.log"
+    local cutoff=$((now - 86400))
+    declare -A feed_errors_map
+
+    if [[ -f "$feeds_log" ]] && [[ ${#feed_names[@]} -gt 0 ]]; then
+        # Build pattern for all feed names
+        local feed_pattern
+        feed_pattern=$(printf '%s|' "${feed_names[@]}")
+        feed_pattern="${feed_pattern%|}"  # Remove trailing |
+
+        # Single awk pass counts errors for all feeds
+        local error_counts
+        error_counts=$(awk -F'|' -v cutoff="$cutoff" -v feeds="$feed_pattern" '
+            BEGIN { split(feeds, f_arr, "|"); for (i in f_arr) feed_names[f_arr[i]] = 0 }
+            $1 ~ /^[0-9]+$/ && $1 >= cutoff && /(ERROR|FAIL)/ {
+                for (fn in feed_names) {
+                    if (index($0, fn) > 0) feed_names[fn]++
+                }
+            }
+            END {
+                for (fn in feed_names) printf "%s:%d\n", fn, feed_names[fn]
+            }
+        ' "$feeds_log" 2>/dev/null || echo "")
+
+        # Parse error counts into associative array
+        while IFS=: read -r fname ferr; do
+            [[ -n "$fname" ]] && feed_errors_map["$fname"]="$ferr"
+        done <<< "$error_counts"
+    fi
+
+    # Build final per-feed JSON
+    for fname in "${feed_names[@]}"; do
+        local feed_sync="${feed_sync_map[$fname]:-0}"
+        local feed_ips="${feed_ips_map[$fname]:-0}"
+        local feed_errors="${feed_errors_map[$fname]:-0}"
+        local feed_active=0
+
+        local feed_age=$((now - feed_sync))
+        if [[ "$feed_sync" -gt 0 ]] && [[ "$feed_age" -lt "$stale_threshold" ]]; then
+            feed_active=1
+        fi
+
+        [[ -n "$feeds_json" ]] && feeds_json+=","
+        feeds_json+="\"$fname\": {\"active\": $feed_active, \"last_sync\": $feed_sync, \"ips_loaded\": $feed_ips, \"errors\": $feed_errors}"
+    done
+
+    # Count total errors from log in last 24h (single awk pass)
+    if [[ -f "$feeds_log" ]]; then
         errors=$(awk -v cutoff="$cutoff" '
             $1 ~ /^[0-9]+$/ && $1 >= cutoff && /(ERROR|FAIL)/ { count++ }
             END { print count+0 }
-        ' "/var/log/nftban/feeds.log" 2>/dev/null || echo "0")
+        ' "$feeds_log" 2>/dev/null || echo "0")
     fi
 
     cat <<EOF
@@ -886,57 +932,75 @@ collect_watchdog_metrics() {
         system_json=$(nftban watchdog check --json 2>/dev/null | grep -A100 "^{" | head -30)
     fi
 
-    # Parse daemon stats
+    # Default values
     local goroutines=0 heap_mb=0 alloc_mb=0 sys_mb=0 gc_cycles=0 gc_pause_ms=0
     local bans_total=0 unbans_total=0 events_total=0 bans_per_min=0
     local ipc_requests=0 ipc_latency_ms=0 ipc_errors=0
-
-    # Watchdog pressure metrics (schema v2)
     local wd_status=0 wd_mode="unknown" wd_cpu_score=0 wd_mem_score=0 wd_io_score=0
-
-    # Daemon mode and server info
     local daemon_mode="unknown" server_region="unknown"
-
-    if [[ -n "$daemon_json" ]] && echo "$daemon_json" | jq -e . &>/dev/null; then
-        goroutines=$(echo "$daemon_json" | jq -r '.runtime.goroutines // 0')
-        heap_mb=$(echo "$daemon_json" | jq -r '.runtime.memory_heap_mb // 0')
-        alloc_mb=$(echo "$daemon_json" | jq -r '.runtime.memory_alloc_mb // 0')
-        sys_mb=$(echo "$daemon_json" | jq -r '.runtime.memory_sys_mb // 0')
-        gc_cycles=$(echo "$daemon_json" | jq -r '.runtime.gc_cycles // 0')
-        gc_pause_ms=$(echo "$daemon_json" | jq -r '.runtime.gc_pause_ms // 0')
-        bans_total=$(echo "$daemon_json" | jq -r '.throughput.bans_total // 0')
-        unbans_total=$(echo "$daemon_json" | jq -r '.throughput.unbans_total // 0')
-        events_total=$(echo "$daemon_json" | jq -r '.throughput.events_total // 0')
-        bans_per_min=$(echo "$daemon_json" | jq -r '.throughput.bans_per_min // 0')
-        ipc_requests=$(echo "$daemon_json" | jq -r '.ipc.requests_total // 0')
-        ipc_latency_ms=$(echo "$daemon_json" | jq -r '.ipc.avg_latency_ms // 0')
-        ipc_errors=$(echo "$daemon_json" | jq -r '.ipc.errors_total // 0')
-
-        # Watchdog pressure metrics from schema v2
-        wd_status=$(echo "$daemon_json" | jq -r '.watchdog.status // 0')
-        wd_mode=$(echo "$daemon_json" | jq -r '.watchdog.mode // "unknown"')
-        wd_cpu_score=$(echo "$daemon_json" | jq -r '.watchdog.cpu_score // 0')
-        wd_mem_score=$(echo "$daemon_json" | jq -r '.watchdog.mem_score // 0')
-        wd_io_score=$(echo "$daemon_json" | jq -r '.watchdog.io_score // 0')
-
-        # Daemon mode and server region
-        daemon_mode=$(echo "$daemon_json" | jq -r '.daemon.mode // "unknown"')
-        server_region=$(echo "$daemon_json" | jq -r '.server.region // "unknown"')
-    fi
-
-    # Parse system check
     local load_1m=0 load_5m=0 load_15m=0
     local mem_used_pct=0 mem_available_mb=0
     local iowait_pct=0 disk_used_pct=0
 
+    # Parse daemon stats with single jq call (extracts all 19 values at once)
+    # Previously: 19 separate jq calls = 19 process spawns
+    # Now: 1 jq call with @tsv output
+    if [[ -n "$daemon_json" ]] && echo "$daemon_json" | jq -e . &>/dev/null; then
+        local daemon_values
+        daemon_values=$(echo "$daemon_json" | jq -r '
+            [
+                (.runtime.goroutines // 0),
+                (.runtime.memory_heap_mb // 0),
+                (.runtime.memory_alloc_mb // 0),
+                (.runtime.memory_sys_mb // 0),
+                (.runtime.gc_cycles // 0),
+                (.runtime.gc_pause_ms // 0),
+                (.throughput.bans_total // 0),
+                (.throughput.unbans_total // 0),
+                (.throughput.events_total // 0),
+                (.throughput.bans_per_min // 0),
+                (.ipc.requests_total // 0),
+                (.ipc.avg_latency_ms // 0),
+                (.ipc.errors_total // 0),
+                (.watchdog.status // 0),
+                (.watchdog.mode // "unknown"),
+                (.watchdog.cpu_score // 0),
+                (.watchdog.mem_score // 0),
+                (.watchdog.io_score // 0),
+                (.daemon.mode // "unknown"),
+                (.server.region // "unknown")
+            ] | @tsv
+        ' 2>/dev/null)
+
+        if [[ -n "$daemon_values" ]]; then
+            IFS=$'\t' read -r goroutines heap_mb alloc_mb sys_mb gc_cycles gc_pause_ms \
+                bans_total unbans_total events_total bans_per_min \
+                ipc_requests ipc_latency_ms ipc_errors \
+                wd_status wd_mode wd_cpu_score wd_mem_score wd_io_score \
+                daemon_mode server_region <<< "$daemon_values"
+        fi
+    fi
+
+    # Parse system check with single jq call (extracts all 7 values at once)
+    # Previously: 7 separate jq calls = 7 process spawns
+    # Now: 1 jq call with @tsv output
     if [[ -n "$system_json" ]] && echo "$system_json" | jq -e . &>/dev/null; then
-        load_1m=$(echo "$system_json" | jq -r '.load["1m"] // "0"')
-        load_5m=$(echo "$system_json" | jq -r '.load["5m"] // "0"')
-        load_15m=$(echo "$system_json" | jq -r '.load["15m"] // "0"')
-        mem_used_pct=$(echo "$system_json" | jq -r '.memory.used_percent // "0"')
-        mem_available_mb=$(echo "$system_json" | jq -r '.memory.available_mb // "0"')
-        iowait_pct=$(echo "$system_json" | jq -r '.iowait.percent // "0"')
-        disk_used_pct=$(echo "$system_json" | jq -r '.disk.used_percent // "0"')
+        local system_values
+        system_values=$(echo "$system_json" | jq -r '
+            [
+                (.load["1m"] // 0),
+                (.load["5m"] // 0),
+                (.load["15m"] // 0),
+                (.memory.used_percent // 0),
+                (.memory.available_mb // 0),
+                (.iowait.percent // 0),
+                (.disk.used_percent // 0)
+            ] | @tsv
+        ' 2>/dev/null)
+
+        if [[ -n "$system_values" ]]; then
+            IFS=$'\t' read -r load_1m load_5m load_15m mem_used_pct mem_available_mb iowait_pct disk_used_pct <<< "$system_values"
+        fi
     else
         # Fallback to /proc if watchdog not available
         [[ -f /proc/loadavg ]] && read -r load_1m load_5m load_15m _ < /proc/loadavg
