@@ -22,13 +22,10 @@
 package api
 
 import (
-	"encoding/json"
-	"log"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/itcmsgr/nftban/pkg/metrics"
 	"github.com/itcmsgr/nftban/pkg/nftbanconf"
 )
 
@@ -121,12 +118,7 @@ func getSuricataLogPath(filename string) string {
 	return cfg.SuricataLogDir + "/" + filename
 }
 
-// getGrafanaURL returns the Grafana URL from central config
-// NO FALLBACK - value must come from /etc/nftban/nftban.conf
-func getGrafanaURL() string {
-	cfg := nftbanconf.MustLoad()
-	return cfg.GrafanaURL
-}
+// Removed: getGrafanaURL - unused (U1000)
 
 // getPrometheusFile returns the Prometheus metrics file path from central config
 // NO FALLBACK - path must come from /etc/nftban/nftban.conf
@@ -201,27 +193,7 @@ func parseWhitelistOutput(output string) []string {
 
 // Removed: parseGeoOutput - moved to handlers_geo.go
 
-// Background stats collection
-func updateStatsCache() {
-	newStats := make(map[string]interface{})
-
-	// Get status (fast)
-	statusOutput, err := execNFTBanCommand("status", "--json")
-	if err == nil {
-		var statusData map[string]interface{}
-		if err := json.Unmarshal([]byte(statusOutput), &statusData); err == nil {
-			newStats["status"] = statusData
-		}
-	} else {
-		log.Printf("[STATS] Failed to update cache: %v", err)
-	}
-
-	// Store in cache
-	statsCacheMux.Lock()
-	statsCache = newStats
-	statsCacheMux.Unlock()
-}
-
+// Removed: updateStatsCache - unused (U1000), but statsCache/statsCacheMux kept for handlers_metrics.go
 
 // Removed: StatsTrafficHandler, StatsBansHandler, StatsCountriesHandler, StatsTrendHandler
 // Moved to handlers_stats.go
@@ -241,22 +213,7 @@ func markUserActive(username string) {
 	activeUsersMux.Unlock()
 }
 
-// Clean inactive users (not seen for 10 minutes)
-func cleanInactiveUsers() {
-	activeUsersMux.Lock()
-	defer activeUsersMux.Unlock()
-
-	sampler := metrics.GetSampler()
-	threshold := time.Now().Add(-10 * time.Minute)
-	for user, lastSeen := range activeUsers {
-		if lastSeen.Before(threshold) {
-			delete(activeUsers, user)
-			sampler.RemoveSession()
-			log.Printf("[SESSION] Removed inactive user: %s (last seen: %s)",
-				user, lastSeen.Format(time.RFC3339))
-		}
-	}
-}
+// Removed: cleanInactiveUsers - unused (U1000), activeUsers tracking kept for markUserActive
 
 // =============================================================================
 // NEW API ENDPOINTS FOR IMPRESSIVE DASHBOARD v0.6

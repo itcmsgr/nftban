@@ -41,7 +41,7 @@ import (
 	"log"
 	"net"
 	"net/http"
-	_ "net/http/pprof" // Enable pprof endpoints
+	_ "net/http/pprof" // pprof handlers - only active when startPprof() is called
 	"os"
 	"os/signal"
 	"os/user"
@@ -310,6 +310,11 @@ func main() {
 		}
 	}
 
+	// Also check environment variable for pprof (useful for systemd/container deployments)
+	if os.Getenv("NFTBAN_ENABLE_PPROF") == "true" {
+		profileEnabled = true
+	}
+
 	// Initialize safety limits (dynamic based on server profile: CPU, RAM, panel)
 	// This sets GOMEMLIMIT to prevent unbounded memory growth
 	safetyLimits := safety.FromEnv()
@@ -391,7 +396,8 @@ func printHelp() {
 	fmt.Println("  - Provides Unix socket at", getSocketPath())
 	fmt.Println("  - Handles graceful shutdown on SIGTERM/SIGINT")
 	fmt.Println()
-	fmt.Println("Profiling (--profile):")
+	fmt.Println("Profiling (--profile or NFTBAN_ENABLE_PPROF=true):")
+	fmt.Println("  WARNING: Only enable for debugging - exposes runtime information")
 	fmt.Println("  When enabled, pprof endpoints are available at", PprofAddr)
 	fmt.Println("  Endpoints:")
 	fmt.Println("    /debug/pprof/          - Index page")
@@ -1656,10 +1662,12 @@ func (d *Daemon) startHTTP() error {
 
 // startPprof starts a pprof HTTP server for profiling
 // The server listens on localhost only (127.0.0.1:6060) for security
+// SECURITY: pprof exposes sensitive runtime information - only enable for debugging
 func (d *Daemon) startPprof() {
 	// pprof handlers are already registered by the blank import
 	// We just need to start a server on the pprof port
 	go func() {
+		log.Println("WARNING: pprof profiling enabled - disable in production (unset NFTBAN_ENABLE_PPROF or remove --profile)")
 		log.Printf("pprof server listening on http://%s/debug/pprof/", PprofAddr)
 		if err := http.ListenAndServe(PprofAddr, nil); err != nil {
 			log.Printf("pprof server error: %v", err)

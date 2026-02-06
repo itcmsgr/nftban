@@ -22,13 +22,17 @@ import (
 	"bytes"
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
 	"hash/crc32"
 	"net"
+	"os"
 	"sync"
 	"time"
+
+	"nftban/pkg/logx"
 )
 
 // =============================================================================
@@ -59,7 +63,9 @@ type KafkaConfig struct {
 
 	// Security
 	TLS           bool   `json:"tls"`
-	TLSSkipVerify bool   `json:"tls_skip_verify"`
+	TLSSkipVerify bool   `json:"tls_skip_verify"` // Only honored in development mode
+	TLSCACertFile string `json:"tls_ca_cert_file,omitempty"`
+	DevMode       bool   `json:"dev_mode"` // Development mode - allows InsecureSkipVerify
 	SASLUsername  string `json:"sasl_username,omitempty"`
 	SASLPassword  string `json:"sasl_password,omitempty"`
 	SASLMechanism string `json:"sasl_mechanism,omitempty"` // PLAIN, SCRAM-SHA-256, SCRAM-SHA-512
@@ -148,8 +154,9 @@ func (c *KafkaConnector) dialBroker(ctx context.Context, addr string) (net.Conn,
 	var err error
 
 	if c.config.TLS {
-		tlsConfig := &tls.Config{
-			InsecureSkipVerify: c.config.TLSSkipVerify,
+		tlsConfig, tlsErr := c.buildTLSConfig()
+		if tlsErr != nil {
+			return nil, fmt.Errorf("failed to build TLS config: %w", tlsErr)
 		}
 		conn, err = tls.DialWithDialer(dialer, "tcp", addr, tlsConfig)
 	} else {
@@ -167,6 +174,38 @@ func (c *KafkaConnector) dialBroker(ctx context.Context, addr string) (net.Conn,
 	}
 
 	return conn, nil
+}
+
+// buildTLSConfig creates TLS configuration with proper security settings
+func (c *KafkaConnector) buildTLSConfig() (*tls.Config, error) {
+	config := &tls.Config{
+		MinVersion: tls.VersionTLS12,
+	}
+
+	// Only allow InsecureSkipVerify in development mode AND when explicitly configured
+	if c.config.TLSSkipVerify {
+		if c.config.DevMode {
+			config.InsecureSkipVerify = true
+			logx.SecurityWarn("Kafka TLS certificate verification disabled - NOT recommended for production")
+		} else {
+			logx.Warn("Kafka TLSSkipVerify requested but DevMode is not enabled - ignoring (use TLSCACertFile for custom CA)")
+		}
+	}
+
+	// Load custom CA certificate if provided
+	if c.config.TLSCACertFile != "" {
+		caCert, err := os.ReadFile(c.config.TLSCACertFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA cert file: %w", err)
+		}
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, fmt.Errorf("failed to parse CA certificate")
+		}
+		config.RootCAs = caCertPool
+	}
+
+	return config, nil
 }
 
 // Disconnect closes all connections

@@ -27,10 +27,22 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"os/user"
+	"strconv"
 	"strings"
 
 	"github.com/gorilla/mux"
 )
+
+// getNFTBanGID returns the GID of the nftban group, with fallback
+func getNFTBanGID() int {
+	if group, err := user.LookupGroup("nftban"); err == nil {
+		if gid, err := strconv.Atoi(group.Gid); err == nil {
+			return gid
+		}
+	}
+	return 988 // fallback to common default
+}
 
 // configAllowedModules defines valid module names for configuration operations.
 // Shared across ConfigGetHandler, ConfigSetHandler, and ConfigResetHandler.
@@ -157,7 +169,7 @@ func ConfigFileHandler(w http.ResponseWriter, r *http.Request) {
 		}
 
 		// Set proper ownership (nftban:nftban or root:nftban)
-		if err := os.Chown(fullPath, 0, 988); err != nil { // 988 = nftban group GID
+		if err := os.Chown(fullPath, 0, getNFTBanGID()); err != nil {
 			log.Printf("[WARN] Failed to set ownership: %v", err)
 		}
 
