@@ -32,6 +32,17 @@ import (
 	"github.com/gorilla/mux"
 )
 
+// configAllowedModules defines valid module names for configuration operations.
+// Shared across ConfigGetHandler, ConfigSetHandler, and ConfigResetHandler.
+var configAllowedModules = map[string]bool{
+	"main":     true,
+	"firewall": true,
+	"feeds":    true,
+	"portscan": true,
+	"ddos":     true,
+	"geoip":    true,
+}
+
 // ConfigFileHandler serves configuration files from /etc/nftban/
 func ConfigFileHandler(w http.ResponseWriter, r *http.Request) {
 	// Extract config path from URL: /api/v1/config/{path}
@@ -166,17 +177,7 @@ func ConfigGetHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	module := vars["module"]
 
-	// Validate module name (all NFTBan configuration files)
-	allowedModules := map[string]bool{
-		"main":     true,
-		"firewall": true,
-		"feeds":    true,
-		"portscan": true,
-		"ddos":     true,
-		"geoip":    true,
-	}
-
-	if !allowedModules[module] {
+	if !configAllowedModules[module] {
 		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid module name"})
 		return
 	}
@@ -219,17 +220,7 @@ func ConfigSetHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	module := vars["module"]
 
-	// Validate module name (all NFTBan configuration files)
-	allowedModules := map[string]bool{
-		"main":     true,
-		"firewall": true,
-		"feeds":    true,
-		"portscan": true,
-		"ddos":     true,
-		"geoip":    true,
-	}
-
-	if !allowedModules[module] {
+	if !configAllowedModules[module] {
 		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid module name"})
 		return
 	}
@@ -270,17 +261,7 @@ func ConfigResetHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
 	module := vars["module"]
 
-	// Validate module name (all NFTBan configuration files)
-	allowedModules := map[string]bool{
-		"main":     true,
-		"firewall": true,
-		"feeds":    true,
-		"portscan": true,
-		"ddos":     true,
-		"geoip":    true,
-	}
-
-	if !allowedModules[module] {
+	if !configAllowedModules[module] {
 		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid module name"})
 		return
 	}

@@ -27,6 +27,7 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1092,19 +1093,14 @@ func (h *GOTHHandlers) getDroppedByCountry() []ui.CountryTraffic {
 		}
 	}
 
-	// Convert map to slice and sort by blocked count
+	// Convert map to slice and sort by blocked count (descending)
+	traffic = make([]ui.CountryTraffic, 0, len(countryStats))
 	for _, ct := range countryStats {
 		traffic = append(traffic, *ct)
 	}
-
-	// Sort by blocked descending (simple bubble sort for small dataset)
-	for i := 0; i < len(traffic); i++ {
-		for j := i + 1; j < len(traffic); j++ {
-			if traffic[j].Blocked > traffic[i].Blocked {
-				traffic[i], traffic[j] = traffic[j], traffic[i]
-			}
-		}
-	}
+	sort.Slice(traffic, func(i, j int) bool {
+		return traffic[i].Blocked > traffic[j].Blocked
+	})
 
 	// Limit to top 10
 	if len(traffic) > 10 {
@@ -1212,19 +1208,14 @@ func (h *GOTHHandlers) getDroppedByPort() []ui.PortTraffic {
 		}
 	}
 
-	// Convert map to slice
+	// Convert map to slice and sort by blocked count (descending)
+	traffic = make([]ui.PortTraffic, 0, len(portStats))
 	for _, pt := range portStats {
 		traffic = append(traffic, *pt)
 	}
-
-	// Sort by blocked descending
-	for i := 0; i < len(traffic); i++ {
-		for j := i + 1; j < len(traffic); j++ {
-			if traffic[j].Blocked > traffic[i].Blocked {
-				traffic[i], traffic[j] = traffic[j], traffic[i]
-			}
-		}
-	}
+	sort.Slice(traffic, func(i, j int) bool {
+		return traffic[i].Blocked > traffic[j].Blocked
+	})
 
 	// Limit to top 15
 	if len(traffic) > 15 {

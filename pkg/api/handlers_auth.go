@@ -48,52 +48,6 @@ type LoginResponse struct {
 	Message string `json:"message"`
 }
 
-// LoginHandler handles user authentication (JWT-based, legacy)
-func LoginHandler(authService *auth.PAMAuth) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		var req LoginRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid request"})
-			return
-		}
-
-		// Authenticate user
-		user, err := authService.Authenticate(req.Username, req.Password)
-		if err != nil {
-			clientIP := middleware.GetClientIP(r)
-			authService.AuditLog(req.Username, "login", "failed", clientIP)
-			respondJSON(w, http.StatusUnauthorized, LoginResponse{
-				Success: false,
-				Message: "Authentication failed",
-			})
-			return
-		}
-
-		// Generate JWT token
-		token, err := authService.GenerateToken(user)
-		if err != nil {
-			log.Printf("[ERROR] Failed to generate token: %v", err)
-			respondJSON(w, http.StatusInternalServerError, ErrorResponse{Error: "Failed to generate token"})
-			return
-		}
-
-		// Success
-		clientIP := middleware.GetClientIP(r)
-		authService.AuditLog(req.Username, "login", "success", clientIP)
-
-		// Start metrics sampling for this session
-		sampler := metrics.GetSampler()
-		sampler.AddSession()
-		log.Printf("[SESSION] Added session for user %s (sampler started)", req.Username)
-
-		respondJSON(w, http.StatusOK, LoginResponse{
-			Success: true,
-			Token:   token,
-			Message: "Login successful",
-		})
-	}
-}
-
 // MeHandler returns current user information
 func MeHandler(w http.ResponseWriter, r *http.Request) {
 	// Get authenticated user from context

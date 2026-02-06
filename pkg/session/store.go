@@ -24,6 +24,7 @@ package session
 
 import (
 	"crypto/rand"
+	"crypto/subtle"
 	"encoding/hex"
 	"errors"
 	"sync"
@@ -70,8 +71,13 @@ func (s *Session) IsAdmin() bool {
 }
 
 // ValidateCSRF checks if the provided CSRF token matches the session's token
+// SECURITY FIX: Use constant-time comparison to prevent timing attacks
 func (s *Session) ValidateCSRF(token string) bool {
-	return len(token) == 64 && token == s.CSRFToken
+	if len(token) != 64 {
+		return false
+	}
+	// Use subtle.ConstantTimeCompare to prevent timing-based token guessing attacks
+	return subtle.ConstantTimeCompare([]byte(token), []byte(s.CSRFToken)) == 1
 }
 
 // Store is a simple in-memory session store

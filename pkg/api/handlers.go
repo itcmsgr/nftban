@@ -222,40 +222,6 @@ func updateStatsCache() {
 	statsCacheMux.Unlock()
 }
 
-// Start background stats updater
-func StartStatsUpdater() {
-	log.Println("[STATS] Starting background stats updater (10s interval)")
-
-	// Initial update
-	updateStatsCache()
-
-	// Background stats updater (every 10 seconds)
-	go func() {
-		ticker := time.NewTicker(10 * time.Second)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			// Only update if there are active users
-			activeUsersMux.RLock()
-			userCount := len(activeUsers)
-			activeUsersMux.RUnlock()
-
-			if userCount > 0 {
-				updateStatsCache()
-			}
-		}
-	}()
-
-	// Cleanup inactive users (every 1 minute)
-	go func() {
-		ticker := time.NewTicker(1 * time.Minute)
-		defer ticker.Stop()
-
-		for range ticker.C {
-			cleanInactiveUsers()
-		}
-	}()
-}
 
 // Removed: StatsTrafficHandler, StatsBansHandler, StatsCountriesHandler, StatsTrendHandler
 // Moved to handlers_stats.go

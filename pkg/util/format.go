@@ -42,8 +42,3 @@ func FormatBytes(bytes int64) string {
 func FormatBytesUint(bytes uint64) string {
 	return FormatBytes(int64(bytes))
 }
-
-// FormatPercent formats a percentage value with one decimal place.
-func FormatPercent(value float64) string {
-	return fmt.Sprintf("%.1f%%", value)
-}

@@ -24,13 +24,21 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
+	"net/url"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 )
+
+// SECURITY FIX: Regex to validate search filter input - prevents command injection
+// Only allows alphanumeric characters, spaces, and common safe punctuation
+var validSearchFilterRegex = regexp.MustCompile(`^[a-zA-Z0-9\s._:-]+$`)
 
 // LogsHandler returns system logs
 func LogsHandler(w http.ResponseWriter, r *http.Request) {
@@ -84,7 +92,15 @@ func LogsHandler(w http.ResponseWriter, r *http.Request) {
 		var err error
 
 		if searchFilter != "" {
-			output, err = execCommand("sh", "-c", fmt.Sprintf("tail -n %d %s | grep -i '%s'", lines, logFile, searchFilter))
+			// SECURITY FIX: Validate search filter to prevent command injection
+			if !validSearchFilterRegex.MatchString(searchFilter) {
+				respondJSON(w, http.StatusBadRequest, ErrorResponse{
+					Error: "Invalid search filter: only alphanumeric characters, spaces, and ._:- are allowed",
+				})
+				return
+			}
+			// SECURITY FIX: Use safe pipe instead of shell execution to prevent injection
+			output, err = execTailGrepSafe(logFile, lines, searchFilter)
 		} else {
 			output, err = execCommand("tail", "-n", strconv.Itoa(lines), logFile)
 		}
@@ -191,8 +207,15 @@ func LogsViewerHandler(w http.ResponseWriter, r *http.Request) {
 	var err error
 
 	if searchFilter != "" {
-		// Use grep for filtering
-		output, err = execCommand("sh", "-c", fmt.Sprintf("tail -n %d %s | grep -i '%s'", lines, logFile, searchFilter))
+		// SECURITY FIX: Validate search filter to prevent command injection
+		if !validSearchFilterRegex.MatchString(searchFilter) {
+			respondJSON(w, http.StatusBadRequest, ErrorResponse{
+				Error: "Invalid search filter: only alphanumeric characters, spaces, and ._:- are allowed",
+			})
+			return
+		}
+		// SECURITY FIX: Use safe pipe instead of shell execution to prevent injection
+		output, err = execTailGrepSafe(logFile, lines, searchFilter)
 	} else {
 		// Just tail
 		output, err = execCommand("tail", "-n", strconv.Itoa(lines), logFile)
@@ -246,24 +269,55 @@ func LogFileHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// SECURITY FIX: URL-decode path first to prevent encoding bypass attacks
+	decodedPath, err := url.QueryUnescape(logPath)
+	if err != nil {
+		respondJSON(w, http.StatusBadRequest, ErrorResponse{Error: "Invalid path encoding"})
+		return
+	}
+
+	// SECURITY FIX: Clean and normalize the path to resolve any traversal attempts
+	cleanPath := filepath.Clean(decodedPath)
+
 	// Security: Validate log path (must be under configured log dir)
-	baseDir := getLogDir() + "/"
-	if !strings.HasPrefix(logPath, baseDir) {
+	baseDir := filepath.Clean(getLogDir())
+	if !strings.HasPrefix(cleanPath, baseDir+string(filepath.Separator)) {
 		respondJSON(w, http.StatusForbidden, ErrorResponse{Error: fmt.Sprintf("Log file must be under %s", baseDir)})
 		return
 	}
 
-	// Security: Prevent directory traversal
-	if strings.Contains(logPath, "..") {
-		respondJSON(w, http.StatusForbidden, ErrorResponse{Error: "Invalid log path"})
-		return
+	// SECURITY FIX: Check for symlink attacks - resolve symlinks and verify final path
+	realPath, err := filepath.EvalSymlinks(cleanPath)
+	if err != nil {
+		// File might not exist yet or is inaccessible
+		if !os.IsNotExist(err) {
+			log.Printf("[ERROR] Failed to evaluate symlinks for %s: %v", cleanPath, err)
+			respondJSON(w, http.StatusForbidden, ErrorResponse{Error: "Invalid log path"})
+			return
+		}
+		// File doesn't exist, use the cleaned path
+		realPath = cleanPath
+	} else {
+		// Verify the resolved path is still under base directory
+		realBaseDir, _ := filepath.EvalSymlinks(baseDir)
+		if realBaseDir == "" {
+			realBaseDir = baseDir
+		}
+		if !strings.HasPrefix(realPath, realBaseDir+string(filepath.Separator)) {
+			log.Printf("[SECURITY] Symlink escape attempt detected: %s -> %s", cleanPath, realPath)
+			respondJSON(w, http.StatusForbidden, ErrorResponse{Error: "Invalid log path"})
+			return
+		}
 	}
 
 	// Security: Only allow .log files (not .conf, .sh, etc.)
-	if !strings.HasSuffix(logPath, ".log") {
+	if !strings.HasSuffix(realPath, ".log") {
 		respondJSON(w, http.StatusForbidden, ErrorResponse{Error: "Only .log files are allowed"})
 		return
 	}
+
+	// Use the validated real path for file operations
+	logPath = realPath
 
 	// Check if file exists
 	fileInfo, err := os.Stat(logPath)
@@ -469,4 +523,61 @@ func SystemLogsHandler(w http.ResponseWriter, r *http.Request) {
 			"priority": priority,
 		},
 	})
+}
+
+// execTailGrepSafe executes tail and grep commands safely using Go pipes
+// SECURITY FIX: This replaces shell execution to prevent command injection
+// The search filter is passed as a direct argument to grep, not through shell interpolation
+func execTailGrepSafe(logFile string, lines int, searchFilter string) (string, error) {
+	// Create tail command
+	tailCmd := exec.Command("tail", "-n", strconv.Itoa(lines), logFile)
+
+	// Create grep command with -i for case-insensitive search
+	// Search filter is passed as argument, not shell-interpolated
+	grepCmd := exec.Command("grep", "-i", searchFilter)
+
+	// Connect tail stdout to grep stdin using a pipe
+	tailOut, err := tailCmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create tail pipe: %w", err)
+	}
+
+	grepCmd.Stdin = tailOut
+
+	// Capture grep output
+	grepOut, err := grepCmd.StdoutPipe()
+	if err != nil {
+		return "", fmt.Errorf("failed to create grep pipe: %w", err)
+	}
+
+	// Start both commands
+	if err := tailCmd.Start(); err != nil {
+		return "", fmt.Errorf("failed to start tail: %w", err)
+	}
+
+	if err := grepCmd.Start(); err != nil {
+		tailCmd.Process.Kill()
+		return "", fmt.Errorf("failed to start grep: %w", err)
+	}
+
+	// Read grep output
+	output, err := io.ReadAll(grepOut)
+	if err != nil {
+		return "", fmt.Errorf("failed to read grep output: %w", err)
+	}
+
+	// Wait for commands to complete
+	tailCmd.Wait()
+	grepErr := grepCmd.Wait()
+
+	// grep returns exit code 1 when no matches found - this is not an error
+	if grepErr != nil {
+		if exitErr, ok := grepErr.(*exec.ExitError); ok && exitErr.ExitCode() == 1 {
+			// No matches found
+			return "", nil
+		}
+		return "", grepErr
+	}
+
+	return string(output), nil
 }
