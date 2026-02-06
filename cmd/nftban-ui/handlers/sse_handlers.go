@@ -137,7 +137,10 @@ func (h *GOTHHandlers) HandleSSEDashboard(w http.ResponseWriter, r *http.Request
 	log.Printf("[SSE] Dashboard connection established from %s", clientIP)
 
 	// Send initial event immediately
-	h.sendSSEDashboardEvent(w, flusher)
+	if err := h.sendSSEDashboardEvent(w, flusher); err != nil {
+		log.Printf("[SSE] Error sending initial event to %s: %v", clientIP, err)
+		return
+	}
 
 	// Create ticker for 5-second updates
 	ticker := time.NewTicker(5 * time.Second)

@@ -300,7 +300,7 @@ func (h *GOTHHandlers) HandleActionLogin(w http.ResponseWriter, r *http.Request)
 		HttpOnly: true,
 		Secure:   true,
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   3600,
+		MaxAge:   1800, // 30 minutes - matches session store timeout
 	})
 
 	log.Printf("[GOTH] User %s logged in successfully", username)
@@ -311,11 +311,15 @@ func (h *GOTHHandlers) HandleActionLogout(w http.ResponseWriter, r *http.Request
 	if cookie, err := r.Cookie("session_id"); err == nil {
 		h.SessionStore.Delete(cookie.Value)
 	}
+	// Clear cookie with all security flags for consistency
 	http.SetCookie(w, &http.Cookie{
-		Name:   "session_id",
-		Value:  "",
-		Path:   "/",
-		MaxAge: -1,
+		Name:     "session_id",
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
 	})
 	http.Redirect(w, r, "/ui/login", http.StatusSeeOther)
 }
