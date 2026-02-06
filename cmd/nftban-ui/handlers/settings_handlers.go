@@ -22,7 +22,6 @@
 package handlers
 
 import (
-	"bufio"
 	"encoding/json"
 	"fmt"
 	"log"
@@ -563,51 +562,6 @@ func extractJSON(output string) string {
 	}
 
 	return output[start:]
-}
-
-// =============================================================================
-// CONFIG FILE PARSER (Direct file reading for when CLI is unavailable)
-// =============================================================================
-
-// parseConfigFile reads settings directly from /etc/nftban/nftban.conf
-// This is a fallback when the CLI is not available
-func parseConfigFile(path string) (map[string]string, error) {
-	settings := make(map[string]string)
-
-	file, err := os.Open(path)
-	if err != nil {
-		return nil, err
-	}
-	defer file.Close()
-
-	scanner := bufio.NewScanner(file)
-	for scanner.Scan() {
-		line := strings.TrimSpace(scanner.Text())
-
-		// Skip empty lines and comments
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-
-		// Skip bash-specific lines
-		if strings.HasPrefix(line, "[[") || strings.HasPrefix(line, "_NFTBAN") {
-			continue
-		}
-
-		// Parse KEY="value" or KEY=value
-		parts := strings.SplitN(line, "=", 2)
-		if len(parts) != 2 {
-			continue
-		}
-
-		key := strings.TrimSpace(parts[0])
-		value := strings.TrimSpace(parts[1])
-		value = strings.Trim(value, `"'`)
-
-		settings[key] = value
-	}
-
-	return settings, scanner.Err()
 }
 
 // =============================================================================
