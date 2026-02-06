@@ -116,6 +116,10 @@ validate_structure() {
     # Validate nftables structure against spec
     # Args: $1 = output_json (true/false)
     # Returns: 0 if OK, 1 if errors found
+    #
+    # PERFORMANCE: All validation checks use batch jq operations to avoid
+    # spawning jq processes inside loops (which can cause 10,000+ process
+    # spawns and 30+ second timeouts on large rulesets).
 
     local output_json="${1:-false}"
     local spec ruleset
@@ -127,86 +131,104 @@ validate_structure() {
     # Get live ruleset
     ruleset=$(get_live_ruleset) || return 1
 
-    # Check required tables
-    local required_tables
-    required_tables=$(echo "$spec" | jq -r '.expected_structure.validation_checks.required_tables[]')
+    # ==========================================================================
+    # BATCH CHECK: Required tables
+    # Single jq call checks all required tables at once, outputs missing ones
+    # ==========================================================================
+    local missing_tables
+    missing_tables=$(jq -r '
+        # First arg ($spec) provides required tables, second ($ruleset) provides live state
+        .spec.expected_structure.validation_checks.required_tables // [] |
+        . as $required |
+        # Build set of existing tables as "family name" strings
+        (.ruleset.nftables // [] | map(select(.table?) | "\(.table.family) \(.table.name)")) as $existing |
+        # Output only tables that are required but not existing
+        $required[] | select(. as $r | $existing | index($r) | not)
+    ' <<< "{\"spec\": $spec, \"ruleset\": $ruleset}")
 
     while IFS= read -r table; do
         [[ -z "$table" ]] && continue
+        errors+=("CRITICAL: Missing required table: $table")
+    done <<< "$missing_tables"
 
-        local table_family="${table%% *}"
-        local table_name="${table#* }"
-
-        if ! echo "$ruleset" | jq -e ".nftables[] | select(.table? and .table.family == \"$table_family\" and .table.name == \"$table_name\")" >/dev/null 2>&1; then
-            errors+=("CRITICAL: Missing required table: $table")
-        fi
-    done <<< "$required_tables"
-
-    # Check priority safety (NFTBan must run BEFORE other firewalls)
-    # NFTBan uses priority -100, panel firewalls (CSF, Plesk, DirectAdmin) use 0
+    # ==========================================================================
+    # BATCH CHECK: Priority safety (other firewall chains)
+    # Single jq call finds all chains that might bypass NFTBan, outputs as TSV
+    # ==========================================================================
     local nftban_priority=-100
+    local chain_issues
+    chain_issues=$(jq -r --argjson nftban_prio "$nftban_priority" '
+        # Find all base chains on input/forward hooks (excluding nftban table)
+        (.nftables // []) |
+        map(select(.chain? and .chain.table != "nftban" and
+                   (.chain.hook == "input" or .chain.hook == "forward"))) |
+        # Output as tab-separated: family, table, name, hook, prio, severity
+        map([
+            .chain.family,
+            .chain.table,
+            .chain.name,
+            .chain.hook,
+            (.chain.prio // 0 | tostring),
+            (if (.chain.prio // 0) <= $nftban_prio then "critical" else "warning" end)
+        ] | join("\t")) |
+        .[]
+    ' <<< "$ruleset")
 
-    # Check for other firewall chains on input/forward hooks
-    for family in ip ip6; do
-        for hook in input forward; do
-            # Get all base chains on this hook (excluding nftban)
-            local other_chains
-            other_chains=$(echo "$ruleset" | jq -r ".nftables[] | select(.chain? and .chain.family == \"$family\" and .chain.hook == \"$hook\" and .chain.table != \"nftban\") | \"\(.chain.table) \(.chain.name) \(.chain.prio // 0)\"" 2>/dev/null || true)
+    # Process chain issues (no jq in loop - uses tab-separated values)
+    while IFS=$'\t' read -r family table name hook prio severity; do
+        [[ -z "$family" ]] && continue
+        if [[ "$severity" == "critical" ]]; then
+            errors+=("CRITICAL: $family $table $name (priority $prio) runs before/with NFTBan (priority $nftban_priority) on $hook hook!")
+        else
+            warnings+=("WARNING: Other firewall chain detected: $family $table $name (priority $prio) - NFTBan runs first (safe)")
+        fi
+    done <<< "$chain_issues"
 
-            while IFS= read -r chain_info; do
-                [[ -z "$chain_info" ]] && continue
-                local other_table other_name other_prio
-                read -r other_table other_name other_prio <<< "$chain_info"
-
-                # Check if other chain could bypass NFTBan
-                if [[ "$other_prio" -le "$nftban_priority" ]]; then
-                    errors+=("CRITICAL: $family $other_table $other_name (priority $other_prio) runs before/with NFTBan (priority $nftban_priority) on $hook hook!")
-                else
-                    warnings+=("WARNING: Other firewall chain detected: $family $other_table $other_name (priority $other_prio) - NFTBan runs first (safe)")
-                fi
-            done <<< "$other_chains"
-        done
-    done
-
-    # Check required sets
-    local required_sets
-    required_sets=$(echo "$spec" | jq -r '.expected_structure.validation_checks.required_sets[]')
+    # ==========================================================================
+    # BATCH CHECK: Required sets
+    # Single jq call checks all required sets at once, outputs missing ones
+    # ==========================================================================
+    local missing_sets
+    missing_sets=$(jq -r '
+        .spec.expected_structure.validation_checks.required_sets // [] |
+        . as $required |
+        # Build set of existing sets as "family table name" strings
+        (.ruleset.nftables // [] | map(select(.set?) | "\(.set.family) \(.set.table) \(.set.name)")) as $existing |
+        # Output only sets that are required but not existing
+        $required[] | select(. as $r | $existing | index($r) | not)
+    ' <<< "{\"spec\": $spec, \"ruleset\": $ruleset}")
 
     while IFS= read -r set_path; do
         [[ -z "$set_path" ]] && continue
+        warnings+=("WARNING: Missing required set: $set_path")
+    done <<< "$missing_sets"
 
-        local set_family="${set_path%% *}"
-        local set_table="${set_path#* }"
-        set_table="${set_table%% *}"
-        local set_name="${set_path##* }"
+    # ==========================================================================
+    # BATCH CHECK: Chain policies
+    # Single jq call checks all policy requirements, outputs mismatches as TSV
+    # ==========================================================================
+    local policy_issues
+    policy_issues=$(jq -r '
+        # Build lookup of actual chain policies: key="family table chain", value=policy
+        (.ruleset.nftables // [] |
+            map(select(.chain? and .chain.policy?) |
+                {key: "\(.chain.family) \(.chain.table) \(.chain.name)", value: .chain.policy}) |
+            from_entries
+        ) as $actual_policies |
+        # Check each expected policy, output mismatches as tab-separated
+        (.spec.expected_structure.validation_checks.policy_checks // {}) |
+        to_entries |
+        map(
+            select($actual_policies[.key] != null and $actual_policies[.key] != .value) |
+            [.key, .value, $actual_policies[.key]] | join("\t")
+        ) |
+        .[]
+    ' <<< "{\"spec\": $spec, \"ruleset\": $ruleset}")
 
-        if ! echo "$ruleset" | jq -e ".nftables[] | select(.set? and .set.family == \"$set_family\" and .set.table == \"$set_table\" and .set.name == \"$set_name\")" >/dev/null 2>&1; then
-            warnings+=("WARNING: Missing required set: $set_path")
-        fi
-    done <<< "$required_sets"
-
-    # Check chain policies
-    local policy_checks
-    policy_checks=$(echo "$spec" | jq -r '.expected_structure.validation_checks.policy_checks | to_entries[] | "\(.key)=\(.value)"')
-
-    while IFS= read -r policy_check; do
-        [[ -z "$policy_check" ]] && continue
-
-        local chain_path="${policy_check%%=*}"
-        local expected_policy="${policy_check##*=}"
-
-        local chain_family="${chain_path%% *}"
-        local chain_table="${chain_path#* }"
-        chain_table="${chain_table%% *}"
-        local chain_name="${chain_path##* }"
-
-        local actual_policy
-        actual_policy=$(echo "$ruleset" | jq -r ".nftables[] | select(.chain? and .chain.family == \"$chain_family\" and .chain.table == \"$chain_table\" and .chain.name == \"$chain_name\") | .chain.policy // empty")
-
-        if [[ -n "$actual_policy" && "$actual_policy" != "$expected_policy" ]]; then
-            errors+=("CRITICAL: Wrong policy on $chain_path: expected '$expected_policy', got '$actual_policy'")
-        fi
-    done <<< "$policy_checks"
+    while IFS=$'\t' read -r chain_path expected_policy actual_policy; do
+        [[ -z "$chain_path" ]] && continue
+        errors+=("CRITICAL: Wrong policy on $chain_path: expected '$expected_policy', got '$actual_policy'")
+    done <<< "$policy_issues"
 
     # Determine overall status
     local status="OK"

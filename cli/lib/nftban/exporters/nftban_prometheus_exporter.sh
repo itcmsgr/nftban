@@ -1053,61 +1053,98 @@ collect_metrics() {
     # -------------------------------------------------------------------------
 
     if [[ -f "$COMBINED_FILE" ]] && command -v jq &>/dev/null; then
-        # Kernel metrics
-        echo "# HELP nftban_conntrack_entries Current conntrack table entries" >> "$TEMP_FILE"
-        echo "# TYPE nftban_conntrack_entries gauge" >> "$TEMP_FILE"
-        echo "nftban_conntrack_entries $(jq -r '.kernel.conntrack_entries // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+        # PERFORMANCE: Extract all Phase 1 metrics in single jq call (was 16 separate calls)
+        local phase1_values
+        phase1_values=$(jq -r '
+            [
+                .kernel.conntrack_entries // 0,
+                .kernel.conntrack_max // 0,
+                .kernel.conntrack_utilization // 0,
+                .kernel.softnet_drops // 0,
+                .kernel.softnet_backlog // 0,
+                .module_status.suricata // 0,
+                .module_status.loginmon // 0,
+                .module_status.portscan // 0,
+                .module_status.ddos // 0,
+                .module_status.feeds // 0,
+                .module_status.geoban // 0,
+                .module_status.watchdog // 0,
+                .feed_health.total_feeds // 0,
+                .feed_health.active_feeds // 0,
+                .feed_health.stale_feeds // 0,
+                .feed_health.sync_errors_24h // 0
+            ] | @tsv
+        ' "$COMBINED_FILE" 2>/dev/null) || phase1_values=""
 
-        echo "# HELP nftban_conntrack_max Maximum conntrack table size" >> "$TEMP_FILE"
-        echo "# TYPE nftban_conntrack_max gauge" >> "$TEMP_FILE"
-        echo "nftban_conntrack_max $(jq -r '.kernel.conntrack_max // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+        if [[ -n "$phase1_values" ]]; then
+            # Parse the tab-separated values
+            local ct_entries ct_max ct_util sn_drops sn_backlog
+            local mod_suricata mod_loginmon mod_portscan mod_ddos mod_feeds mod_geoban mod_watchdog
+            local fh_total fh_active fh_stale fh_errors
+            # shellcheck disable=SC2034
+            IFS=$'\t' read -r ct_entries ct_max ct_util sn_drops sn_backlog \
+                mod_suricata mod_loginmon mod_portscan mod_ddos mod_feeds mod_geoban mod_watchdog \
+                fh_total fh_active fh_stale fh_errors <<< "$phase1_values"
 
-        echo "# HELP nftban_conntrack_utilization Conntrack utilization percentage" >> "$TEMP_FILE"
-        echo "# TYPE nftban_conntrack_utilization gauge" >> "$TEMP_FILE"
-        echo "nftban_conntrack_utilization $(jq -r '.kernel.conntrack_utilization // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            # Kernel metrics
+            echo "# HELP nftban_conntrack_entries Current conntrack table entries" >> "$TEMP_FILE"
+            echo "# TYPE nftban_conntrack_entries gauge" >> "$TEMP_FILE"
+            echo "nftban_conntrack_entries ${ct_entries:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_softnet_drops_total Kernel softnet packet drops" >> "$TEMP_FILE"
-        echo "# TYPE nftban_softnet_drops_total counter" >> "$TEMP_FILE"
-        echo "nftban_softnet_drops_total $(jq -r '.kernel.softnet_drops // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_conntrack_max Maximum conntrack table size" >> "$TEMP_FILE"
+            echo "# TYPE nftban_conntrack_max gauge" >> "$TEMP_FILE"
+            echo "nftban_conntrack_max ${ct_max:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_softnet_backlog_total Kernel softnet backlog overflow" >> "$TEMP_FILE"
-        echo "# TYPE nftban_softnet_backlog_total counter" >> "$TEMP_FILE"
-        echo "nftban_softnet_backlog_total $(jq -r '.kernel.softnet_backlog // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_conntrack_utilization Conntrack utilization percentage" >> "$TEMP_FILE"
+            echo "# TYPE nftban_conntrack_utilization gauge" >> "$TEMP_FILE"
+            echo "nftban_conntrack_utilization ${ct_util:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        # Module status metrics (1=up, 0=down)
-        echo "# HELP nftban_module_up Module running status" >> "$TEMP_FILE"
-        echo "# TYPE nftban_module_up gauge" >> "$TEMP_FILE"
-        for module in suricata loginmon portscan ddos feeds geoban watchdog; do
-            val=$(jq -r ".module_status.${module} // 0" "$COMBINED_FILE")
-            echo "nftban_module_up{module=\"${module}\"} ${val}" >> "$TEMP_FILE"
-        done
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_softnet_drops_total Kernel softnet packet drops" >> "$TEMP_FILE"
+            echo "# TYPE nftban_softnet_drops_total counter" >> "$TEMP_FILE"
+            echo "nftban_softnet_drops_total ${sn_drops:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        # Feed health metrics
-        echo "# HELP nftban_feeds_total Total configured feeds" >> "$TEMP_FILE"
-        echo "# TYPE nftban_feeds_total gauge" >> "$TEMP_FILE"
-        echo "nftban_feeds_total $(jq -r '.feed_health.total_feeds // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_softnet_backlog_total Kernel softnet backlog overflow" >> "$TEMP_FILE"
+            echo "# TYPE nftban_softnet_backlog_total counter" >> "$TEMP_FILE"
+            echo "nftban_softnet_backlog_total ${sn_backlog:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_feeds_active_total Active feeds count" >> "$TEMP_FILE"
-        echo "# TYPE nftban_feeds_active_total gauge" >> "$TEMP_FILE"
-        echo "nftban_feeds_active_total $(jq -r '.feed_health.active_feeds // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            # Module status metrics - values already extracted (no loop needed)
+            echo "# HELP nftban_module_up Module running status" >> "$TEMP_FILE"
+            echo "# TYPE nftban_module_up gauge" >> "$TEMP_FILE"
+            echo "nftban_module_up{module=\"suricata\"} ${mod_suricata:-0}" >> "$TEMP_FILE"
+            echo "nftban_module_up{module=\"loginmon\"} ${mod_loginmon:-0}" >> "$TEMP_FILE"
+            echo "nftban_module_up{module=\"portscan\"} ${mod_portscan:-0}" >> "$TEMP_FILE"
+            echo "nftban_module_up{module=\"ddos\"} ${mod_ddos:-0}" >> "$TEMP_FILE"
+            echo "nftban_module_up{module=\"feeds\"} ${mod_feeds:-0}" >> "$TEMP_FILE"
+            echo "nftban_module_up{module=\"geoban\"} ${mod_geoban:-0}" >> "$TEMP_FILE"
+            echo "nftban_module_up{module=\"watchdog\"} ${mod_watchdog:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_feeds_stale Stale feeds count" >> "$TEMP_FILE"
-        echo "# TYPE nftban_feeds_stale gauge" >> "$TEMP_FILE"
-        echo "nftban_feeds_stale $(jq -r '.feed_health.stale_feeds // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            # Feed health metrics - values already extracted
+            echo "# HELP nftban_feeds_total Total configured feeds" >> "$TEMP_FILE"
+            echo "# TYPE nftban_feeds_total gauge" >> "$TEMP_FILE"
+            echo "nftban_feeds_total ${fh_total:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_feeds_sync_errors_total Feed sync errors in last 24h" >> "$TEMP_FILE"
-        echo "# TYPE nftban_feeds_sync_errors_total counter" >> "$TEMP_FILE"
-        echo "nftban_feeds_sync_errors_total $(jq -r '.feed_health.sync_errors_24h // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_feeds_active_total Active feeds count" >> "$TEMP_FILE"
+            echo "# TYPE nftban_feeds_active_total gauge" >> "$TEMP_FILE"
+            echo "nftban_feeds_active_total ${fh_active:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+
+            echo "# HELP nftban_feeds_stale Stale feeds count" >> "$TEMP_FILE"
+            echo "# TYPE nftban_feeds_stale gauge" >> "$TEMP_FILE"
+            echo "nftban_feeds_stale ${fh_stale:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+
+            echo "# HELP nftban_feeds_sync_errors_total Feed sync errors in last 24h" >> "$TEMP_FILE"
+            echo "# TYPE nftban_feeds_sync_errors_total counter" >> "$TEMP_FILE"
+            echo "nftban_feeds_sync_errors_total ${fh_errors:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+        fi
     fi
 
     # -------------------------------------------------------------------------
@@ -1115,201 +1152,329 @@ collect_metrics() {
     # -------------------------------------------------------------------------
 
     # Suricata IDS metrics
+    # PERFORMANCE: Extract all Suricata metrics in single jq call (was 11 separate calls)
     if [[ -f "$COMBINED_FILE" ]] && command -v jq &>/dev/null; then
-        echo "# HELP nftban_suricata_up Suricata daemon running status" >> "$TEMP_FILE"
-        echo "# TYPE nftban_suricata_up gauge" >> "$TEMP_FILE"
-        echo "nftban_suricata_up $(jq -r '.suricata.up // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+        local suricata_values
+        suricata_values=$(jq -r '
+            [
+                .suricata.up // 0,
+                .suricata.alerts_total // 0,
+                .suricata.alerts_by_severity."1" // 0,
+                .suricata.alerts_by_severity."2" // 0,
+                .suricata.alerts_by_severity."3" // 0,
+                .suricata.alerts_by_severity."4" // 0,
+                .suricata.rules_total // 0,
+                .suricata.rules_filtered // 0,
+                .suricata.bans_total // 0,
+                .suricata.eve_parse_errors // 0,
+                .suricata.last_alert_timestamp // 0,
+                .suricata.rule_profile // "unknown"
+            ] | @tsv
+        ' "$COMBINED_FILE" 2>/dev/null) || suricata_values=""
 
-        echo "# HELP nftban_suricata_alerts_total Total Suricata alerts" >> "$TEMP_FILE"
-        echo "# TYPE nftban_suricata_alerts_total counter" >> "$TEMP_FILE"
-        echo "nftban_suricata_alerts_total $(jq -r '.suricata.alerts_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+        if [[ -n "$suricata_values" ]]; then
+            local sur_up sur_alerts sur_sev1 sur_sev2 sur_sev3 sur_sev4
+            local sur_rules sur_filtered sur_bans sur_eve_errors sur_last_ts sur_profile
+            # shellcheck disable=SC2034
+            IFS=$'\t' read -r sur_up sur_alerts sur_sev1 sur_sev2 sur_sev3 sur_sev4 \
+                sur_rules sur_filtered sur_bans sur_eve_errors sur_last_ts sur_profile <<< "$suricata_values"
 
-        echo "# HELP nftban_suricata_alerts_by_severity Suricata alerts by severity level" >> "$TEMP_FILE"
-        echo "# TYPE nftban_suricata_alerts_by_severity counter" >> "$TEMP_FILE"
-        for sev in 1 2 3 4; do
-            val=$(jq -r ".suricata.alerts_by_severity.\"${sev}\" // 0" "$COMBINED_FILE")
-            echo "nftban_suricata_alerts_by_severity{severity=\"${sev}\"} ${val}" >> "$TEMP_FILE"
-        done
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_suricata_up Suricata daemon running status" >> "$TEMP_FILE"
+            echo "# TYPE nftban_suricata_up gauge" >> "$TEMP_FILE"
+            echo "nftban_suricata_up ${sur_up:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_suricata_rules_total Total active Suricata rules" >> "$TEMP_FILE"
-        echo "# TYPE nftban_suricata_rules_total gauge" >> "$TEMP_FILE"
-        echo "nftban_suricata_rules_total $(jq -r '.suricata.rules_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_suricata_alerts_total Total Suricata alerts" >> "$TEMP_FILE"
+            echo "# TYPE nftban_suricata_alerts_total counter" >> "$TEMP_FILE"
+            echo "nftban_suricata_alerts_total ${sur_alerts:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_suricata_rules_filtered Filtered/disabled Suricata rules" >> "$TEMP_FILE"
-        echo "# TYPE nftban_suricata_rules_filtered gauge" >> "$TEMP_FILE"
-        echo "nftban_suricata_rules_filtered $(jq -r '.suricata.rules_filtered // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_suricata_alerts_by_severity Suricata alerts by severity level" >> "$TEMP_FILE"
+            echo "# TYPE nftban_suricata_alerts_by_severity counter" >> "$TEMP_FILE"
+            echo "nftban_suricata_alerts_by_severity{severity=\"1\"} ${sur_sev1:-0}" >> "$TEMP_FILE"
+            echo "nftban_suricata_alerts_by_severity{severity=\"2\"} ${sur_sev2:-0}" >> "$TEMP_FILE"
+            echo "nftban_suricata_alerts_by_severity{severity=\"3\"} ${sur_sev3:-0}" >> "$TEMP_FILE"
+            echo "nftban_suricata_alerts_by_severity{severity=\"4\"} ${sur_sev4:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_suricata_bans_total Bans triggered by Suricata" >> "$TEMP_FILE"
-        echo "# TYPE nftban_suricata_bans_total counter" >> "$TEMP_FILE"
-        echo "nftban_suricata_bans_total $(jq -r '.suricata.bans_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_suricata_rules_total Total active Suricata rules" >> "$TEMP_FILE"
+            echo "# TYPE nftban_suricata_rules_total gauge" >> "$TEMP_FILE"
+            echo "nftban_suricata_rules_total ${sur_rules:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_suricata_eve_parse_errors_total EVE JSON parsing errors" >> "$TEMP_FILE"
-        echo "# TYPE nftban_suricata_eve_parse_errors_total counter" >> "$TEMP_FILE"
-        echo "nftban_suricata_eve_parse_errors_total $(jq -r '.suricata.eve_parse_errors // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_suricata_rules_filtered Filtered/disabled Suricata rules" >> "$TEMP_FILE"
+            echo "# TYPE nftban_suricata_rules_filtered gauge" >> "$TEMP_FILE"
+            echo "nftban_suricata_rules_filtered ${sur_filtered:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_suricata_last_alert_timestamp Unix timestamp of last alert" >> "$TEMP_FILE"
-        echo "# TYPE nftban_suricata_last_alert_timestamp gauge" >> "$TEMP_FILE"
-        echo "nftban_suricata_last_alert_timestamp $(jq -r '.suricata.last_alert_timestamp // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_suricata_bans_total Bans triggered by Suricata" >> "$TEMP_FILE"
+            echo "# TYPE nftban_suricata_bans_total counter" >> "$TEMP_FILE"
+            echo "nftban_suricata_bans_total ${sur_bans:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_suricata_info Suricata configuration info" >> "$TEMP_FILE"
-        echo "# TYPE nftban_suricata_info gauge" >> "$TEMP_FILE"
-        profile=$(jq -r '.suricata.rule_profile // "unknown"' "$COMBINED_FILE")
-        echo "nftban_suricata_info{rule_profile=\"${profile}\"} 1" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_suricata_eve_parse_errors_total EVE JSON parsing errors" >> "$TEMP_FILE"
+            echo "# TYPE nftban_suricata_eve_parse_errors_total counter" >> "$TEMP_FILE"
+            echo "nftban_suricata_eve_parse_errors_total ${sur_eve_errors:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+
+            echo "# HELP nftban_suricata_last_alert_timestamp Unix timestamp of last alert" >> "$TEMP_FILE"
+            echo "# TYPE nftban_suricata_last_alert_timestamp gauge" >> "$TEMP_FILE"
+            echo "nftban_suricata_last_alert_timestamp ${sur_last_ts:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+
+            echo "# HELP nftban_suricata_info Suricata configuration info" >> "$TEMP_FILE"
+            echo "# TYPE nftban_suricata_info gauge" >> "$TEMP_FILE"
+            echo "nftban_suricata_info{rule_profile=\"${sur_profile:-unknown}\"} 1" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+        fi
     fi
 
     # -------------------------------------------------------------------------
     # Event Bus metrics
     # -------------------------------------------------------------------------
 
+    # PERFORMANCE: Extract all Event Bus metrics in single jq call (was 11 separate calls)
     if [[ -f "$COMBINED_FILE" ]] && command -v jq &>/dev/null; then
-        echo "# HELP nftban_eventbus_events_total Total events processed by event bus" >> "$TEMP_FILE"
-        echo "# TYPE nftban_eventbus_events_total counter" >> "$TEMP_FILE"
-        echo "nftban_eventbus_events_total $(jq -r '.eventbus.events_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+        local eventbus_values
+        eventbus_values=$(jq -r '
+            [
+                .eventbus.events_total // 0,
+                .eventbus.events_by_type.ban // 0,
+                .eventbus.events_by_type.unban // 0,
+                .eventbus.events_by_type.login_fail // 0,
+                .eventbus.events_by_type.ddos_detected // 0,
+                .eventbus.events_by_type.portscan_detected // 0,
+                .eventbus.events_by_type.suricata_alert // 0,
+                .eventbus.events_by_type.feed_sync // 0,
+                .eventbus.events_dropped // 0,
+                .eventbus.queue_size // 0,
+                .eventbus.handlers_total // 0
+            ] | @tsv
+        ' "$COMBINED_FILE" 2>/dev/null) || eventbus_values=""
 
-        echo "# HELP nftban_eventbus_events_by_type Events by type" >> "$TEMP_FILE"
-        echo "# TYPE nftban_eventbus_events_by_type counter" >> "$TEMP_FILE"
-        for type in ban unban login_fail ddos_detected portscan_detected suricata_alert feed_sync; do
-            val=$(jq -r ".eventbus.events_by_type.${type} // 0" "$COMBINED_FILE")
-            echo "nftban_eventbus_events_by_type{type=\"${type}\"} ${val}" >> "$TEMP_FILE"
-        done
-        echo "" >> "$TEMP_FILE"
+        if [[ -n "$eventbus_values" ]]; then
+            local eb_total eb_ban eb_unban eb_login eb_ddos eb_portscan eb_suricata eb_feed
+            local eb_dropped eb_queue eb_handlers
+            # shellcheck disable=SC2034
+            IFS=$'\t' read -r eb_total eb_ban eb_unban eb_login eb_ddos eb_portscan eb_suricata eb_feed \
+                eb_dropped eb_queue eb_handlers <<< "$eventbus_values"
 
-        echo "# HELP nftban_eventbus_events_dropped_total Dropped events" >> "$TEMP_FILE"
-        echo "# TYPE nftban_eventbus_events_dropped_total counter" >> "$TEMP_FILE"
-        echo "nftban_eventbus_events_dropped_total $(jq -r '.eventbus.events_dropped // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_eventbus_events_total Total events processed by event bus" >> "$TEMP_FILE"
+            echo "# TYPE nftban_eventbus_events_total counter" >> "$TEMP_FILE"
+            echo "nftban_eventbus_events_total ${eb_total:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_eventbus_queue_size Current event queue depth" >> "$TEMP_FILE"
-        echo "# TYPE nftban_eventbus_queue_size gauge" >> "$TEMP_FILE"
-        echo "nftban_eventbus_queue_size $(jq -r '.eventbus.queue_size // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_eventbus_events_by_type Events by type" >> "$TEMP_FILE"
+            echo "# TYPE nftban_eventbus_events_by_type counter" >> "$TEMP_FILE"
+            echo "nftban_eventbus_events_by_type{type=\"ban\"} ${eb_ban:-0}" >> "$TEMP_FILE"
+            echo "nftban_eventbus_events_by_type{type=\"unban\"} ${eb_unban:-0}" >> "$TEMP_FILE"
+            echo "nftban_eventbus_events_by_type{type=\"login_fail\"} ${eb_login:-0}" >> "$TEMP_FILE"
+            echo "nftban_eventbus_events_by_type{type=\"ddos_detected\"} ${eb_ddos:-0}" >> "$TEMP_FILE"
+            echo "nftban_eventbus_events_by_type{type=\"portscan_detected\"} ${eb_portscan:-0}" >> "$TEMP_FILE"
+            echo "nftban_eventbus_events_by_type{type=\"suricata_alert\"} ${eb_suricata:-0}" >> "$TEMP_FILE"
+            echo "nftban_eventbus_events_by_type{type=\"feed_sync\"} ${eb_feed:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_eventbus_handlers_total Registered event handlers" >> "$TEMP_FILE"
-        echo "# TYPE nftban_eventbus_handlers_total gauge" >> "$TEMP_FILE"
-        echo "nftban_eventbus_handlers_total $(jq -r '.eventbus.handlers_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_eventbus_events_dropped_total Dropped events" >> "$TEMP_FILE"
+            echo "# TYPE nftban_eventbus_events_dropped_total counter" >> "$TEMP_FILE"
+            echo "nftban_eventbus_events_dropped_total ${eb_dropped:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+
+            echo "# HELP nftban_eventbus_queue_size Current event queue depth" >> "$TEMP_FILE"
+            echo "# TYPE nftban_eventbus_queue_size gauge" >> "$TEMP_FILE"
+            echo "nftban_eventbus_queue_size ${eb_queue:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+
+            echo "# HELP nftban_eventbus_handlers_total Registered event handlers" >> "$TEMP_FILE"
+            echo "# TYPE nftban_eventbus_handlers_total gauge" >> "$TEMP_FILE"
+            echo "nftban_eventbus_handlers_total ${eb_handlers:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+        fi
     fi
 
     # -------------------------------------------------------------------------
     # NFTables Performance metrics
     # -------------------------------------------------------------------------
 
+    # PERFORMANCE: Extract all NFTables Performance metrics in single jq call (was 9 separate calls)
     if [[ -f "$COMBINED_FILE" ]] && command -v jq &>/dev/null; then
-        echo "# HELP nftban_nftables_apply_latency_ms Rule application latency" >> "$TEMP_FILE"
-        echo "# TYPE nftban_nftables_apply_latency_ms gauge" >> "$TEMP_FILE"
-        echo "nftban_nftables_apply_latency_ms $(jq -r '.nftables_perf.apply_latency_ms // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+        local nftperf_values
+        nftperf_values=$(jq -r '
+            [
+                .nftables_perf.apply_latency_ms // 0,
+                .nftables_perf.apply_errors_total // 0,
+                .nftables_perf.rules_total // 0,
+                .nftables_perf.sets_total // 0,
+                .nftables_perf.set_elements.blacklist_ipv4 // 0,
+                .nftables_perf.set_elements.blacklist_ipv6 // 0,
+                .nftables_perf.set_elements.whitelist_ipv4 // 0,
+                .nftables_perf.set_elements.whitelist_ipv6 // 0,
+                .nftables_perf.commands_total // 0
+            ] | @tsv
+        ' "$COMBINED_FILE" 2>/dev/null) || nftperf_values=""
 
-        echo "# HELP nftban_nftables_apply_errors_total Rule application failures" >> "$TEMP_FILE"
-        echo "# TYPE nftban_nftables_apply_errors_total counter" >> "$TEMP_FILE"
-        echo "nftban_nftables_apply_errors_total $(jq -r '.nftables_perf.apply_errors_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+        if [[ -n "$nftperf_values" ]]; then
+            local nft_latency nft_errors nft_rules nft_sets
+            local nft_bl4 nft_bl6 nft_wl4 nft_wl6 nft_cmds
+            # shellcheck disable=SC2034
+            IFS=$'\t' read -r nft_latency nft_errors nft_rules nft_sets \
+                nft_bl4 nft_bl6 nft_wl4 nft_wl6 nft_cmds <<< "$nftperf_values"
 
-        echo "# HELP nftban_nftables_rules_total Total nftables rules" >> "$TEMP_FILE"
-        echo "# TYPE nftban_nftables_rules_total gauge" >> "$TEMP_FILE"
-        echo "nftban_nftables_rules_total $(jq -r '.nftables_perf.rules_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_nftables_apply_latency_ms Rule application latency" >> "$TEMP_FILE"
+            echo "# TYPE nftban_nftables_apply_latency_ms gauge" >> "$TEMP_FILE"
+            echo "nftban_nftables_apply_latency_ms ${nft_latency:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_nftables_sets_total Total nftables sets" >> "$TEMP_FILE"
-        echo "# TYPE nftban_nftables_sets_total gauge" >> "$TEMP_FILE"
-        echo "nftban_nftables_sets_total $(jq -r '.nftables_perf.sets_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_nftables_apply_errors_total Rule application failures" >> "$TEMP_FILE"
+            echo "# TYPE nftban_nftables_apply_errors_total counter" >> "$TEMP_FILE"
+            echo "nftban_nftables_apply_errors_total ${nft_errors:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_nftables_set_elements Elements per set" >> "$TEMP_FILE"
-        echo "# TYPE nftban_nftables_set_elements gauge" >> "$TEMP_FILE"
-        for set in blacklist_ipv4 blacklist_ipv6 whitelist_ipv4 whitelist_ipv6; do
-            val=$(jq -r ".nftables_perf.set_elements.${set} // 0" "$COMBINED_FILE")
-            echo "nftban_nftables_set_elements{set=\"${set}\"} ${val}" >> "$TEMP_FILE"
-        done
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_nftables_rules_total Total nftables rules" >> "$TEMP_FILE"
+            echo "# TYPE nftban_nftables_rules_total gauge" >> "$TEMP_FILE"
+            echo "nftban_nftables_rules_total ${nft_rules:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_nftables_commands_total Total nft commands executed" >> "$TEMP_FILE"
-        echo "# TYPE nftban_nftables_commands_total counter" >> "$TEMP_FILE"
-        echo "nftban_nftables_commands_total $(jq -r '.nftables_perf.commands_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_nftables_sets_total Total nftables sets" >> "$TEMP_FILE"
+            echo "# TYPE nftban_nftables_sets_total gauge" >> "$TEMP_FILE"
+            echo "nftban_nftables_sets_total ${nft_sets:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+
+            echo "# HELP nftban_nftables_set_elements Elements per set" >> "$TEMP_FILE"
+            echo "# TYPE nftban_nftables_set_elements gauge" >> "$TEMP_FILE"
+            echo "nftban_nftables_set_elements{set=\"blacklist_ipv4\"} ${nft_bl4:-0}" >> "$TEMP_FILE"
+            echo "nftban_nftables_set_elements{set=\"blacklist_ipv6\"} ${nft_bl6:-0}" >> "$TEMP_FILE"
+            echo "nftban_nftables_set_elements{set=\"whitelist_ipv4\"} ${nft_wl4:-0}" >> "$TEMP_FILE"
+            echo "nftban_nftables_set_elements{set=\"whitelist_ipv6\"} ${nft_wl6:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+
+            echo "# HELP nftban_nftables_commands_total Total nft commands executed" >> "$TEMP_FILE"
+            echo "# TYPE nftban_nftables_commands_total counter" >> "$TEMP_FILE"
+            echo "nftban_nftables_commands_total ${nft_cmds:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+        fi
     fi
 
     # -------------------------------------------------------------------------
     # Ban Details metrics (Phase 4)
     # -------------------------------------------------------------------------
 
+    # PERFORMANCE: Extract all Ban Details metrics in single jq call (was 11 separate calls)
     if [[ -f "$COMBINED_FILE" ]] && command -v jq &>/dev/null; then
-        echo "# HELP nftban_bans_by_source_total Bans by source" >> "$TEMP_FILE"
-        echo "# TYPE nftban_bans_by_source_total counter" >> "$TEMP_FILE"
-        for src in manual feeds loginmon portscan ddos suricata geoban; do
-            val=$(jq -r ".ban_details.bans_by_source.${src} // 0" "$COMBINED_FILE")
-            echo "nftban_bans_by_source_total{source=\"${src}\"} ${val}" >> "$TEMP_FILE"
-        done
-        echo "" >> "$TEMP_FILE"
+        local bandetails_values
+        bandetails_values=$(jq -r '
+            [
+                .ban_details.bans_by_source.manual // 0,
+                .ban_details.bans_by_source.feeds // 0,
+                .ban_details.bans_by_source.loginmon // 0,
+                .ban_details.bans_by_source.portscan // 0,
+                .ban_details.bans_by_source.ddos // 0,
+                .ban_details.bans_by_source.suricata // 0,
+                .ban_details.bans_by_source.geoban // 0,
+                .ban_details.escalations_total // 0,
+                .ban_details.persistent_offenders_total // 0,
+                .ban_details.recidivist_ips_total // 0,
+                .ban_details.ban_failures_total // 0
+            ] | @tsv
+        ' "$COMBINED_FILE" 2>/dev/null) || bandetails_values=""
 
-        echo "# HELP nftban_escalations_total Ban escalations" >> "$TEMP_FILE"
-        echo "# TYPE nftban_escalations_total counter" >> "$TEMP_FILE"
-        echo "nftban_escalations_total $(jq -r '.ban_details.escalations_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+        if [[ -n "$bandetails_values" ]]; then
+            local bd_manual bd_feeds bd_loginmon bd_portscan bd_ddos bd_suricata bd_geoban
+            local bd_escalations bd_persistent bd_recidivist bd_failures
+            # shellcheck disable=SC2034
+            IFS=$'\t' read -r bd_manual bd_feeds bd_loginmon bd_portscan bd_ddos bd_suricata bd_geoban \
+                bd_escalations bd_persistent bd_recidivist bd_failures <<< "$bandetails_values"
 
-        echo "# HELP nftban_persistent_offenders_total Permanent banned IPs" >> "$TEMP_FILE"
-        echo "# TYPE nftban_persistent_offenders_total gauge" >> "$TEMP_FILE"
-        echo "nftban_persistent_offenders_total $(jq -r '.ban_details.persistent_offenders_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_bans_by_source_total Bans by source" >> "$TEMP_FILE"
+            echo "# TYPE nftban_bans_by_source_total counter" >> "$TEMP_FILE"
+            echo "nftban_bans_by_source_total{source=\"manual\"} ${bd_manual:-0}" >> "$TEMP_FILE"
+            echo "nftban_bans_by_source_total{source=\"feeds\"} ${bd_feeds:-0}" >> "$TEMP_FILE"
+            echo "nftban_bans_by_source_total{source=\"loginmon\"} ${bd_loginmon:-0}" >> "$TEMP_FILE"
+            echo "nftban_bans_by_source_total{source=\"portscan\"} ${bd_portscan:-0}" >> "$TEMP_FILE"
+            echo "nftban_bans_by_source_total{source=\"ddos\"} ${bd_ddos:-0}" >> "$TEMP_FILE"
+            echo "nftban_bans_by_source_total{source=\"suricata\"} ${bd_suricata:-0}" >> "$TEMP_FILE"
+            echo "nftban_bans_by_source_total{source=\"geoban\"} ${bd_geoban:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_recidivist_ips_total IPs banned multiple times" >> "$TEMP_FILE"
-        echo "# TYPE nftban_recidivist_ips_total gauge" >> "$TEMP_FILE"
-        echo "nftban_recidivist_ips_total $(jq -r '.ban_details.recidivist_ips_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_escalations_total Ban escalations" >> "$TEMP_FILE"
+            echo "# TYPE nftban_escalations_total counter" >> "$TEMP_FILE"
+            echo "nftban_escalations_total ${bd_escalations:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_ban_failures_total Failed ban attempts" >> "$TEMP_FILE"
-        echo "# TYPE nftban_ban_failures_total counter" >> "$TEMP_FILE"
-        echo "nftban_ban_failures_total $(jq -r '.ban_details.ban_failures_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_persistent_offenders_total Permanent banned IPs" >> "$TEMP_FILE"
+            echo "# TYPE nftban_persistent_offenders_total gauge" >> "$TEMP_FILE"
+            echo "nftban_persistent_offenders_total ${bd_persistent:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+
+            echo "# HELP nftban_recidivist_ips_total IPs banned multiple times" >> "$TEMP_FILE"
+            echo "# TYPE nftban_recidivist_ips_total gauge" >> "$TEMP_FILE"
+            echo "nftban_recidivist_ips_total ${bd_recidivist:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+
+            echo "# HELP nftban_ban_failures_total Failed ban attempts" >> "$TEMP_FILE"
+            echo "# TYPE nftban_ban_failures_total counter" >> "$TEMP_FILE"
+            echo "nftban_ban_failures_total ${bd_failures:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+        fi
     fi
 
     # -------------------------------------------------------------------------
     # Analytics metrics (Phase 5)
     # -------------------------------------------------------------------------
 
+    # PERFORMANCE: Extract all Analytics metrics in single jq call (was 8 separate calls)
     if [[ -f "$COMBINED_FILE" ]] && command -v jq &>/dev/null; then
-        echo "# HELP nftban_analytics_unique_ips_24h Unique IPs banned in last 24 hours" >> "$TEMP_FILE"
-        echo "# TYPE nftban_analytics_unique_ips_24h gauge" >> "$TEMP_FILE"
-        echo "nftban_analytics_unique_ips_24h $(jq -r '.analytics.unique_ips_24h // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+        local analytics_values
+        analytics_values=$(jq -r '
+            [
+                .analytics.unique_ips_24h // 0,
+                .analytics.recidivism_rate // 0,
+                .analytics.top_attackers_total // 0,
+                .analytics.watchdog_mode_transitions_total // 0,
+                .analytics.alerts_active.info // 0,
+                .analytics.alerts_active.warning // 0,
+                .analytics.alerts_active.critical // 0,
+                .analytics.geoban_database_age_seconds // 0
+            ] | @tsv
+        ' "$COMBINED_FILE" 2>/dev/null) || analytics_values=""
 
-        echo "# HELP nftban_analytics_recidivism_rate Percentage of repeat offender IPs" >> "$TEMP_FILE"
-        echo "# TYPE nftban_analytics_recidivism_rate gauge" >> "$TEMP_FILE"
-        echo "nftban_analytics_recidivism_rate $(jq -r '.analytics.recidivism_rate // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+        if [[ -n "$analytics_values" ]]; then
+            local an_unique an_recid an_top an_wdtrans an_info an_warn an_crit an_geoage
+            # shellcheck disable=SC2034
+            IFS=$'\t' read -r an_unique an_recid an_top an_wdtrans an_info an_warn an_crit an_geoage <<< "$analytics_values"
 
-        echo "# HELP nftban_analytics_top_attackers_total IPs with more than 5 bans" >> "$TEMP_FILE"
-        echo "# TYPE nftban_analytics_top_attackers_total gauge" >> "$TEMP_FILE"
-        echo "nftban_analytics_top_attackers_total $(jq -r '.analytics.top_attackers_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_analytics_unique_ips_24h Unique IPs banned in last 24 hours" >> "$TEMP_FILE"
+            echo "# TYPE nftban_analytics_unique_ips_24h gauge" >> "$TEMP_FILE"
+            echo "nftban_analytics_unique_ips_24h ${an_unique:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_watchdog_mode_transitions_total Watchdog mode changes" >> "$TEMP_FILE"
-        echo "# TYPE nftban_watchdog_mode_transitions_total counter" >> "$TEMP_FILE"
-        echo "nftban_watchdog_mode_transitions_total $(jq -r '.analytics.watchdog_mode_transitions_total // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_analytics_recidivism_rate Percentage of repeat offender IPs" >> "$TEMP_FILE"
+            echo "# TYPE nftban_analytics_recidivism_rate gauge" >> "$TEMP_FILE"
+            echo "nftban_analytics_recidivism_rate ${an_recid:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_alerts_active Active alerts by level" >> "$TEMP_FILE"
-        echo "# TYPE nftban_alerts_active gauge" >> "$TEMP_FILE"
-        for level in info warning critical; do
-            val=$(jq -r ".analytics.alerts_active.${level} // 0" "$COMBINED_FILE")
-            echo "nftban_alerts_active{level=\"${level}\"} ${val}" >> "$TEMP_FILE"
-        done
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_analytics_top_attackers_total IPs with more than 5 bans" >> "$TEMP_FILE"
+            echo "# TYPE nftban_analytics_top_attackers_total gauge" >> "$TEMP_FILE"
+            echo "nftban_analytics_top_attackers_total ${an_top:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
 
-        echo "# HELP nftban_geoban_database_age_seconds Age of GeoIP database in seconds" >> "$TEMP_FILE"
-        echo "# TYPE nftban_geoban_database_age_seconds gauge" >> "$TEMP_FILE"
-        echo "nftban_geoban_database_age_seconds $(jq -r '.analytics.geoban_database_age_seconds // 0' "$COMBINED_FILE")" >> "$TEMP_FILE"
-        echo "" >> "$TEMP_FILE"
+            echo "# HELP nftban_watchdog_mode_transitions_total Watchdog mode changes" >> "$TEMP_FILE"
+            echo "# TYPE nftban_watchdog_mode_transitions_total counter" >> "$TEMP_FILE"
+            echo "nftban_watchdog_mode_transitions_total ${an_wdtrans:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+
+            echo "# HELP nftban_alerts_active Active alerts by level" >> "$TEMP_FILE"
+            echo "# TYPE nftban_alerts_active gauge" >> "$TEMP_FILE"
+            echo "nftban_alerts_active{level=\"info\"} ${an_info:-0}" >> "$TEMP_FILE"
+            echo "nftban_alerts_active{level=\"warning\"} ${an_warn:-0}" >> "$TEMP_FILE"
+            echo "nftban_alerts_active{level=\"critical\"} ${an_crit:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+
+            echo "# HELP nftban_geoban_database_age_seconds Age of GeoIP database in seconds" >> "$TEMP_FILE"
+            echo "# TYPE nftban_geoban_database_age_seconds gauge" >> "$TEMP_FILE"
+            echo "nftban_geoban_database_age_seconds ${an_geoage:-0}" >> "$TEMP_FILE"
+            echo "" >> "$TEMP_FILE"
+        fi
     fi
 
     # -------------------------------------------------------------------------

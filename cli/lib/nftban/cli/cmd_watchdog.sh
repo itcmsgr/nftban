@@ -3,17 +3,22 @@
 # NFTBan v1.0.0 - System Watchdog CLI Handler
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: CLI interface for system watchdog monitoring
-#
-# meta:name=cmd_watchdog
-# meta:type=cli
-# meta:header=System Watchdog CLI Handler
-# meta:version=1.0.0
+# meta:name="cmd_watchdog"
+# meta:type="cli"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# meta:created_date=2025-12-17
-# meta:updated_date=2025-12-17
+# meta:created_date="2025-12-17"
+# meta:description="CLI interface for system watchdog monitoring"
+# meta:input="Command line options (status)"
+# meta:output="Watchdog status and health information"
+# meta:depends="bash,systemctl"
+# meta:platform="linux"
+# meta:inventory.files=""
+# meta:inventory.binaries="systemctl"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units="nftban-watchdog.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
@@ -580,44 +585,68 @@ nftban_watchdog_cmd_stats() {
     if [[ "$json_mode" == "true" ]]; then
         echo "$response" | jq '.data'
     else
-        # Human-readable format
-        local data
-        data=$(echo "$response" | jq '.data')
+        # Human-readable format - extract all values in single jq call (18 jq -> 1)
+        local stats_output
+        stats_output=$(echo "$response" | jq -r '.data | [
+            .daemon.version // "N/A",
+            (.daemon.uptime_seconds // 0 | tostring),
+            .daemon.pid // "N/A",
+            .health // "N/A",
+            (.runtime.memory_heap_mb // 0 | tostring),
+            (.runtime.memory_sys_mb // 0 | tostring),
+            (.runtime.goroutines // 0 | tostring),
+            (.runtime.gc_cycles // 0 | tostring),
+            (.runtime.gc_pause_ms // 0 | tostring),
+            (.throughput.bans_total // 0 | tostring),
+            (.throughput.unbans_total // 0 | tostring),
+            (.throughput.events_total // 0 | tostring),
+            (.throughput.bans_per_min // 0 | tostring),
+            (.ipc.requests_total // 0 | tostring),
+            (.ipc.avg_latency_ms // 0 | tostring),
+            (.ipc.errors_total // 0 | tostring),
+            (.alerts | length // 0 | tostring)
+        ] | @tsv')
+
+        # Parse tab-separated values
+        local version uptime pid health heap_mem sys_mem goroutines gc_cycles gc_pause
+        local bans_total unbans_total events_total bans_per_min
+        local ipc_requests ipc_latency ipc_errors alert_count
+        IFS=$'\t' read -r version uptime pid health heap_mem sys_mem goroutines gc_cycles gc_pause \
+            bans_total unbans_total events_total bans_per_min \
+            ipc_requests ipc_latency ipc_errors alert_count <<< "$stats_output"
 
         echo "NFTBan Daemon Stats"
         echo "==================="
         echo ""
         echo "Daemon:"
-        echo "  Version:     $(echo "$data" | jq -r '.daemon.version // "N/A"')"
-        echo "  Uptime:      $(echo "$data" | jq -r '.daemon.uptime_seconds // 0') seconds"
-        echo "  PID:         $(echo "$data" | jq -r '.daemon.pid // "N/A"')"
-        echo "  Health:      $(echo "$data" | jq -r '.health // "N/A"')"
+        echo "  Version:     $version"
+        echo "  Uptime:      $uptime seconds"
+        echo "  PID:         $pid"
+        echo "  Health:      $health"
         echo ""
         echo "Runtime:"
-        printf "  Heap Memory: %.2f MB\n" "$(echo "$data" | jq -r '.runtime.memory_heap_mb // 0')"
-        printf "  Sys Memory:  %.2f MB\n" "$(echo "$data" | jq -r '.runtime.memory_sys_mb // 0')"
-        echo "  Goroutines:  $(echo "$data" | jq -r '.runtime.goroutines // 0')"
-        echo "  GC Cycles:   $(echo "$data" | jq -r '.runtime.gc_cycles // 0')"
-        printf "  GC Pause:    %.2f ms\n" "$(echo "$data" | jq -r '.runtime.gc_pause_ms // 0')"
+        printf "  Heap Memory: %.2f MB\n" "$heap_mem"
+        printf "  Sys Memory:  %.2f MB\n" "$sys_mem"
+        echo "  Goroutines:  $goroutines"
+        echo "  GC Cycles:   $gc_cycles"
+        printf "  GC Pause:    %.2f ms\n" "$gc_pause"
         echo ""
         echo "Throughput:"
-        echo "  Bans Total:   $(echo "$data" | jq -r '.throughput.bans_total // 0')"
-        echo "  Unbans Total: $(echo "$data" | jq -r '.throughput.unbans_total // 0')"
-        echo "  Events Total: $(echo "$data" | jq -r '.throughput.events_total // 0')"
-        printf "  Bans/min:    %.2f\n" "$(echo "$data" | jq -r '.throughput.bans_per_min // 0')"
+        echo "  Bans Total:   $bans_total"
+        echo "  Unbans Total: $unbans_total"
+        echo "  Events Total: $events_total"
+        printf "  Bans/min:    %.2f\n" "$bans_per_min"
         echo ""
         echo "IPC:"
-        echo "  Requests:    $(echo "$data" | jq -r '.ipc.requests_total // 0')"
-        printf "  Avg Latency: %.2f ms\n" "$(echo "$data" | jq -r '.ipc.avg_latency_ms // 0')"
-        echo "  Errors:      $(echo "$data" | jq -r '.ipc.errors_total // 0')"
+        echo "  Requests:    $ipc_requests"
+        printf "  Avg Latency: %.2f ms\n" "$ipc_latency"
+        echo "  Errors:      $ipc_errors"
 
-        # Show alerts if any
-        local alert_count
-        alert_count=$(echo "$data" | jq '.alerts | length // 0')
-        if [[ "$alert_count" -gt 0 ]]; then
+        # Show alerts if any (requires second jq call only when alerts exist)
+        if [[ "${alert_count:-0}" -gt 0 ]]; then
             echo ""
             echo "Alerts ($alert_count):"
-            echo "$data" | jq -r '.alerts[] | "  [\(.level)] \(.type): \(.message)"'
+            echo "$response" | jq -r '.data.alerts[] | "  [\(.level)] \(.type): \(.message)"'
         fi
     fi
 }

@@ -278,8 +278,8 @@ nftban_complete() {
                 ;;
             fhs)
                 echo "check"
-                echo "list"
                 echo "summary"
+                echo "json"
                 echo "html-report"
                 echo "mail-report"
                 echo "help"
@@ -552,13 +552,11 @@ nftban_complete() {
                 echo "help"
                 ;;
             firewall)
-                echo "init"
-                echo "reload"
-                echo "status"
-                echo "check"
-                echo "reset"
                 echo "validate"
+                echo "check"
                 echo "stats"
+                echo "logs"
+                echo "reload"
                 echo "help"
                 ;;
             list)
