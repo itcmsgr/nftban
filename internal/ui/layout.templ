@@ -151,6 +151,11 @@ templ sidebar(activePage string) {
 						<span class="nav-icon">&#x1F4F6;</span> Network
 					</a>
 				</li>
+				<li class="nav-item">
+					<a href="/ui/settings" class={ "nav-link", templ.KV("active", activePage == "settings") }>
+						<span class="nav-icon">&#x2699;</span> Settings
+					</a>
+				</li>
 			</ul>
 		</nav>
 		<div class="sidebar-footer">
@@ -233,6 +238,11 @@ templ sidebarWithCSRF(activePage string, csrfToken string) {
 				<li class="nav-item">
 					<a href="/ui/network" class={ "nav-link", templ.KV("active", activePage == "network") }>
 						<span class="nav-icon">&#x1F4F6;</span> Network
+					</a>
+				</li>
+				<li class="nav-item">
+					<a href="/ui/settings" class={ "nav-link", templ.KV("active", activePage == "settings") }>
+						<span class="nav-icon">&#x2699;</span> Settings
 					</a>
 				</li>
 			</ul>
