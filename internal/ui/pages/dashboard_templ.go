@@ -60,7 +60,7 @@ func Dashboard(data ui.DashboardData) templ.Component {
 				}()
 			}
 			ctx = templ.InitializeContext(ctx)
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!-- IP Quick-Check Search --> <div class=\"search-box\"><input type=\"text\" class=\"search-input\" placeholder=\"Quick IP Check: paste IP to check status...\" hx-get=\"/ui/api/ip-check\" hx-trigger=\"keyup changed delay:300ms\" hx-target=\"#ip-result\" name=\"ip\"><div id=\"ip-result\"></div></div><!-- 3-Column Hero Grid --> <div class=\"dashboard-hero\"><!-- Box 1: System Identity --><div class=\"identity-box\" id=\"identity-box\" hx-get=\"/ui/frag/identity\" hx-trigger=\"every 5s\" hx-swap=\"innerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 1, "<!-- IP Quick-Check Search --> <div class=\"search-box\" style=\"flex-wrap: wrap;\"><div style=\"display: flex; flex: 1; align-items: center; gap: 0.5rem;\"><input type=\"text\" class=\"search-input\" placeholder=\"Quick IP Check: paste IP to check status...\" hx-get=\"/ui/api/ip-check\" hx-trigger=\"keyup changed delay:300ms\" hx-target=\"#ip-result\" hx-indicator=\"#ip-check-loading\" name=\"ip\"> <span id=\"ip-check-loading\" class=\"htmx-indicator\" style=\"padding: 0.5rem;\"><span class=\"loading-spinner\"></span></span></div><div id=\"ip-result\" style=\"width: 100%;\"></div></div><!-- Live Update Indicator --> <div class=\"refresh-indicator\" style=\"margin-bottom: 1rem;\"><span class=\"dot\"></span> <span>Live updates active</span></div><!-- 3-Column Hero Grid --> <div class=\"dashboard-hero\"><!-- Box 1: System Identity --><div class=\"identity-box loading-overlay\" id=\"identity-box\" hx-get=\"/ui/frag/identity\" hx-trigger=\"every 5s\" hx-swap=\"innerHTML\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -68,7 +68,7 @@ func Dashboard(data ui.DashboardData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div><!-- Box 2: Security KPIs --><div class=\"security-box\" id=\"security-box\" hx-get=\"/ui/frag/security\" hx-trigger=\"every 2s\" hx-swap=\"innerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 2, "</div><!-- Box 2: Security KPIs --><div class=\"security-box loading-overlay\" id=\"security-box\" hx-get=\"/ui/frag/security\" hx-trigger=\"every 2s\" hx-swap=\"innerHTML\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -76,7 +76,7 @@ func Dashboard(data ui.DashboardData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div><!-- Box 3: Network Stats --><div class=\"network-box\" id=\"network-box\" hx-get=\"/ui/frag/network\" hx-trigger=\"every 2s\" hx-swap=\"innerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 3, "</div><!-- Box 3: Network Stats --><div class=\"network-box loading-overlay\" id=\"network-box\" hx-get=\"/ui/frag/network\" hx-trigger=\"every 2s\" hx-swap=\"innerHTML\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -84,7 +84,7 @@ func Dashboard(data ui.DashboardData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div></div><!-- Resource Consumption Grid --> <div class=\"resource-grid\" id=\"resource-grid\" hx-get=\"/ui/frag/resources\" hx-trigger=\"every 5s\" hx-swap=\"innerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 4, "</div></div><!-- Resource Consumption Grid --> <div class=\"resource-grid loading-overlay\" id=\"resource-grid\" hx-get=\"/ui/frag/resources\" hx-trigger=\"every 5s\" hx-swap=\"innerHTML\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -92,7 +92,7 @@ func Dashboard(data ui.DashboardData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div><!-- Module Status Grid --> <div class=\"card\" style=\"margin-bottom: 1.5rem;\"><div class=\"card-header\"><span class=\"card-title\">Module Status</span> <button class=\"btn btn-danger btn-sm\" hx-post=\"/ui/action/flush-temp\" hx-confirm=\"Clear ALL temporary bans?\">Flush Temp Bans</button></div><div id=\"module-grid\" hx-get=\"/ui/frag/modules\" hx-trigger=\"every 10s\" hx-swap=\"innerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 5, "</div><!-- Charts Grid --> <div class=\"charts-grid\"><!-- Traffic Trend Chart (24h) --><div class=\"chart-card full-width\"><div class=\"chart-title\">Traffic Trend (24h)</div><div class=\"chart-container tall\"><canvas id=\"trafficChart\"></canvas></div></div><!-- Ban Distribution Chart --><div class=\"chart-card\"><div class=\"chart-title\">Ban Distribution</div><div class=\"chart-container\"><canvas id=\"banDistributionChart\"></canvas></div></div><!-- Top Blocked Countries Chart --><div class=\"chart-card\"><div class=\"chart-title\">Top Blocked Countries</div><div class=\"chart-container\"><canvas id=\"countryChart\"></canvas></div></div><!-- Port Scan Activity Chart --><div class=\"chart-card\"><div class=\"chart-title\">Port Scan Activity</div><div class=\"chart-container\"><canvas id=\"portscanChart\"></canvas></div></div><!-- Bans Over Time Chart --><div class=\"chart-card\"><div class=\"chart-title\">Bans Over Time (24h)</div><div class=\"chart-container\"><canvas id=\"bansTimelineChart\"></canvas></div></div></div><!-- Module Status Grid --> <div class=\"card\" style=\"margin-bottom: 1.5rem;\"><div class=\"card-header\"><span class=\"card-title\">Module Status</span><div style=\"display: flex; align-items: center; gap: 0.5rem;\"><span id=\"module-loading\" class=\"htmx-indicator\"><span class=\"loading-spinner\"></span></span> <button class=\"btn btn-danger btn-sm\" hx-post=\"/ui/action/flush-temp\" hx-confirm=\"Clear ALL temporary bans?\">Flush Temp Bans</button></div></div><div id=\"module-grid\" hx-get=\"/ui/frag/modules\" hx-trigger=\"every 10s\" hx-swap=\"innerHTML\" hx-indicator=\"#module-loading\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -100,7 +100,7 @@ func Dashboard(data ui.DashboardData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div></div><!-- Recent Activity --> <div class=\"card\"><div class=\"card-header\"><span class=\"card-title\">Recent Bans</span></div><div id=\"recent-bans\" hx-get=\"/ui/frag/recent\" hx-trigger=\"every 3s\" hx-swap=\"innerHTML\">")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 6, "</div></div><!-- Recent Activity --> <div class=\"card\"><div class=\"card-header\"><span class=\"card-title\">Recent Bans</span> <span id=\"recent-loading\" class=\"htmx-indicator\"><span class=\"loading-spinner\"></span></span></div><div id=\"recent-bans\" hx-get=\"/ui/frag/recent\" hx-trigger=\"every 3s\" hx-swap=\"innerHTML\" hx-indicator=\"#recent-loading\">")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -108,7 +108,7 @@ func Dashboard(data ui.DashboardData) templ.Component {
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div></div><!-- Uptime counter script --> <script>\n\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\tstartUptimeCounter('uptime-counter', { fmt.Sprintf(\"%d\", data.Identity.UptimeSeconds) });\n\t\t\t});\n\t\t</script>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 7, "</div></div><!-- Uptime counter and Chart initialization scripts --> <script>\n\t\t\tdocument.addEventListener('DOMContentLoaded', function() {\n\t\t\t\tstartUptimeCounter('uptime-counter', { fmt.Sprintf(\"%d\", data.Identity.UptimeSeconds) });\n\n\t\t\t\t// Initialize charts if Chart.js is loaded\n\t\t\t\tif (typeof Chart !== 'undefined') {\n\t\t\t\t\tinitDashboardCharts();\n\t\t\t\t}\n\t\t\t});\n\n\t\t\t// Chart color scheme based on theme\n\t\t\tfunction getChartColors() {\n\t\t\t\tconst isDark = document.documentElement.getAttribute('data-theme') === 'dark';\n\t\t\t\treturn {\n\t\t\t\t\tprimary: isDark ? '#3b82f6' : '#2563eb',\n\t\t\t\t\tsafe: isDark ? '#10b981' : '#059669',\n\t\t\t\t\tdanger: isDark ? '#ef4444' : '#dc2626',\n\t\t\t\t\twarning: isDark ? '#f59e0b' : '#d97706',\n\t\t\t\t\ttext: isDark ? '#e5e7eb' : '#111827',\n\t\t\t\t\tmuted: isDark ? '#9ca3af' : '#6b7280',\n\t\t\t\t\tgrid: isDark ? '#333333' : '#e5e7eb',\n\t\t\t\t\tsurface: isDark ? '#1e1e1e' : '#ffffff'\n\t\t\t\t};\n\t\t\t}\n\n\t\t\t// Chart instances for cleanup/update\n\t\t\tlet chartInstances = {};\n\n\t\t\tfunction initDashboardCharts() {\n\t\t\t\tconst colors = getChartColors();\n\n\t\t\t\t// Common chart options\n\t\t\t\tconst commonOptions = {\n\t\t\t\t\tresponsive: true,\n\t\t\t\t\tmaintainAspectRatio: false,\n\t\t\t\t\tplugins: {\n\t\t\t\t\t\tlegend: {\n\t\t\t\t\t\t\tlabels: { color: colors.text, font: { size: 11 } }\n\t\t\t\t\t\t}\n\t\t\t\t\t},\n\t\t\t\t\tscales: {\n\t\t\t\t\t\tx: {\n\t\t\t\t\t\t\tticks: { color: colors.muted },\n\t\t\t\t\t\t\tgrid: { color: colors.grid, drawBorder: false }\n\t\t\t\t\t\t},\n\t\t\t\t\t\ty: {\n\t\t\t\t\t\t\tticks: { color: colors.muted },\n\t\t\t\t\t\t\tgrid: { color: colors.grid, drawBorder: false }\n\t\t\t\t\t\t}\n\t\t\t\t\t}\n\t\t\t\t};\n\n\t\t\t\t// 1. Traffic Trend Line Chart (24h)\n\t\t\t\tconst trafficCtx = document.getElementById('trafficChart');\n\t\t\t\tif (trafficCtx) {\n\t\t\t\t\tchartInstances.traffic = new Chart(trafficCtx, {\n\t\t\t\t\t\ttype: 'line',\n\t\t\t\t\t\tdata: {\n\t\t\t\t\t\t\tlabels: generateHourLabels(24),\n\t\t\t\t\t\t\tdatasets: [\n\t\t\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\t\tlabel: 'Inbound (Mbps)',\n\t\t\t\t\t\t\t\t\tdata: generatePlaceholderData(24, 0, 50),\n\t\t\t\t\t\t\t\t\tborderColor: colors.primary,\n\t\t\t\t\t\t\t\t\tbackgroundColor: colors.primary + '20',\n\t\t\t\t\t\t\t\t\tfill: true,\n\t\t\t\t\t\t\t\t\ttension: 0.4\n\t\t\t\t\t\t\t\t},\n\t\t\t\t\t\t\t\t{\n\t\t\t\t\t\t\t\t\tlabel: 'Outbound (Mbps)',\n\t\t\t\t\t\t\t\t\tdata: generatePlaceholderData(24, 0, 30),\n\t\t\t\t\t\t\t\t\tborderColor: colors.safe,\n\t\t\t\t\t\t\t\t\tbackgroundColor: colors.safe + '20',\n\t\t\t\t\t\t\t\t\tfill: true,\n\t\t\t\t\t\t\t\t\ttension: 0.4\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t]\n\t\t\t\t\t\t},\n\t\t\t\t\t\toptions: {\n\t\t\t\t\t\t\t...commonOptions,\n\t\t\t\t\t\t\tinteraction: { intersect: false, mode: 'index' }\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// 2. Ban Distribution Doughnut Chart\n\t\t\t\tconst banDistCtx = document.getElementById('banDistributionChart');\n\t\t\t\tif (banDistCtx) {\n\t\t\t\t\tchartInstances.banDist = new Chart(banDistCtx, {\n\t\t\t\t\t\ttype: 'doughnut',\n\t\t\t\t\t\tdata: {\n\t\t\t\t\t\t\tlabels: ['Temporary', 'Permanent', 'Feed-based', 'GeoIP'],\n\t\t\t\t\t\t\tdatasets: [{\n\t\t\t\t\t\t\t\tdata: [{ strconv.Itoa(data.Security.BansTotal / 4) }, { strconv.Itoa(data.Security.BansTotal / 4) }, { strconv.Itoa(data.Security.BansTotal / 4) }, { strconv.Itoa(data.Security.BansTotal / 4) }],\n\t\t\t\t\t\t\t\tbackgroundColor: [colors.warning, colors.danger, colors.primary, colors.safe],\n\t\t\t\t\t\t\t\tborderColor: colors.surface,\n\t\t\t\t\t\t\t\tborderWidth: 2\n\t\t\t\t\t\t\t}]\n\t\t\t\t\t\t},\n\t\t\t\t\t\toptions: {\n\t\t\t\t\t\t\tresponsive: true,\n\t\t\t\t\t\t\tmaintainAspectRatio: false,\n\t\t\t\t\t\t\tplugins: {\n\t\t\t\t\t\t\t\tlegend: {\n\t\t\t\t\t\t\t\t\tposition: 'right',\n\t\t\t\t\t\t\t\t\tlabels: { color: colors.text, font: { size: 11 }, padding: 10 }\n\t\t\t\t\t\t\t\t}\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// 3. Top Blocked Countries Bar Chart\n\t\t\t\tconst countryCtx = document.getElementById('countryChart');\n\t\t\t\tif (countryCtx) {\n\t\t\t\t\tchartInstances.country = new Chart(countryCtx, {\n\t\t\t\t\t\ttype: 'bar',\n\t\t\t\t\t\tdata: {\n\t\t\t\t\t\t\tlabels: ['CN', 'RU', 'IN', 'BR', 'ID', 'US', 'VN', 'KR'],\n\t\t\t\t\t\t\tdatasets: [{\n\t\t\t\t\t\t\t\tlabel: 'Blocked IPs',\n\t\t\t\t\t\t\t\tdata: generatePlaceholderData(8, 10, 500),\n\t\t\t\t\t\t\t\tbackgroundColor: colors.danger + 'cc',\n\t\t\t\t\t\t\t\tborderColor: colors.danger,\n\t\t\t\t\t\t\t\tborderWidth: 1\n\t\t\t\t\t\t\t}]\n\t\t\t\t\t\t},\n\t\t\t\t\t\toptions: {\n\t\t\t\t\t\t\t...commonOptions,\n\t\t\t\t\t\t\tindexAxis: 'y',\n\t\t\t\t\t\t\tplugins: {\n\t\t\t\t\t\t\t\tlegend: { display: false }\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// 4. Port Scan Activity Bar Chart\n\t\t\t\tconst portscanCtx = document.getElementById('portscanChart');\n\t\t\t\tif (portscanCtx) {\n\t\t\t\t\tchartInstances.portscan = new Chart(portscanCtx, {\n\t\t\t\t\t\ttype: 'bar',\n\t\t\t\t\t\tdata: {\n\t\t\t\t\t\t\tlabels: ['22', '23', '80', '443', '3389', '445', '8080', '3306'],\n\t\t\t\t\t\t\tdatasets: [{\n\t\t\t\t\t\t\t\tlabel: 'Scan Attempts',\n\t\t\t\t\t\t\t\tdata: generatePlaceholderData(8, 5, 200),\n\t\t\t\t\t\t\t\tbackgroundColor: colors.warning + 'cc',\n\t\t\t\t\t\t\t\tborderColor: colors.warning,\n\t\t\t\t\t\t\t\tborderWidth: 1\n\t\t\t\t\t\t\t}]\n\t\t\t\t\t\t},\n\t\t\t\t\t\toptions: {\n\t\t\t\t\t\t\t...commonOptions,\n\t\t\t\t\t\t\tplugins: {\n\t\t\t\t\t\t\t\tlegend: { display: false }\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// 5. Bans Over Time Line Chart\n\t\t\t\tconst bansTimeCtx = document.getElementById('bansTimelineChart');\n\t\t\t\tif (bansTimeCtx) {\n\t\t\t\t\tchartInstances.bansTime = new Chart(bansTimeCtx, {\n\t\t\t\t\t\ttype: 'line',\n\t\t\t\t\t\tdata: {\n\t\t\t\t\t\t\tlabels: generateHourLabels(24),\n\t\t\t\t\t\t\tdatasets: [{\n\t\t\t\t\t\t\t\tlabel: 'New Bans',\n\t\t\t\t\t\t\t\tdata: generatePlaceholderData(24, 0, 20),\n\t\t\t\t\t\t\t\tborderColor: colors.danger,\n\t\t\t\t\t\t\t\tbackgroundColor: colors.danger + '20',\n\t\t\t\t\t\t\t\tfill: true,\n\t\t\t\t\t\t\t\ttension: 0.4\n\t\t\t\t\t\t\t}]\n\t\t\t\t\t\t},\n\t\t\t\t\t\toptions: {\n\t\t\t\t\t\t\t...commonOptions,\n\t\t\t\t\t\t\tplugins: {\n\t\t\t\t\t\t\t\tlegend: { display: false }\n\t\t\t\t\t\t\t}\n\t\t\t\t\t\t}\n\t\t\t\t\t});\n\t\t\t\t}\n\n\t\t\t\t// Fetch real chart data from API\n\t\t\t\tfetchChartData();\n\t\t\t}\n\n\t\t\t// Generate hour labels for 24h charts\n\t\t\tfunction generateHourLabels(hours) {\n\t\t\t\tconst labels = [];\n\t\t\t\tconst now = new Date();\n\t\t\t\tfor (let i = hours - 1; i >= 0; i--) {\n\t\t\t\t\tconst d = new Date(now - i * 3600000);\n\t\t\t\t\tlabels.push(d.getHours().toString().padStart(2, '0') + ':00');\n\t\t\t\t}\n\t\t\t\treturn labels;\n\t\t\t}\n\n\t\t\t// Generate placeholder data for initial render\n\t\t\tfunction generatePlaceholderData(count, min, max) {\n\t\t\t\treturn Array.from({ length: count }, () => Math.floor(Math.random() * (max - min) + min));\n\t\t\t}\n\n\t\t\t// Fetch real chart data from API endpoints\n\t\t\tfunction fetchChartData() {\n\t\t\t\t// Traffic data\n\t\t\t\tfetch('/ui/api/chart/traffic')\n\t\t\t\t\t.then(r => r.json())\n\t\t\t\t\t.then(data => {\n\t\t\t\t\t\tif (chartInstances.traffic && data.labels) {\n\t\t\t\t\t\t\tchartInstances.traffic.data.labels = data.labels;\n\t\t\t\t\t\t\tchartInstances.traffic.data.datasets[0].data = data.inbound || [];\n\t\t\t\t\t\t\tchartInstances.traffic.data.datasets[1].data = data.outbound || [];\n\t\t\t\t\t\t\tchartInstances.traffic.update('none');\n\t\t\t\t\t\t}\n\t\t\t\t\t})\n\t\t\t\t\t.catch(() => {});\n\n\t\t\t\t// Ban distribution data\n\t\t\t\tfetch('/ui/api/chart/bans')\n\t\t\t\t\t.then(r => r.json())\n\t\t\t\t\t.then(data => {\n\t\t\t\t\t\tif (chartInstances.banDist && data.values) {\n\t\t\t\t\t\t\tchartInstances.banDist.data.labels = data.labels || chartInstances.banDist.data.labels;\n\t\t\t\t\t\t\tchartInstances.banDist.data.datasets[0].data = data.values;\n\t\t\t\t\t\t\tchartInstances.banDist.update('none');\n\t\t\t\t\t\t}\n\t\t\t\t\t})\n\t\t\t\t\t.catch(() => {});\n\n\t\t\t\t// Country data\n\t\t\t\tfetch('/ui/api/chart/countries')\n\t\t\t\t\t.then(r => r.json())\n\t\t\t\t\t.then(data => {\n\t\t\t\t\t\tif (chartInstances.country && data.labels) {\n\t\t\t\t\t\t\tchartInstances.country.data.labels = data.labels;\n\t\t\t\t\t\t\tchartInstances.country.data.datasets[0].data = data.values;\n\t\t\t\t\t\t\tchartInstances.country.update('none');\n\t\t\t\t\t\t}\n\t\t\t\t\t})\n\t\t\t\t\t.catch(() => {});\n\n\t\t\t\t// Portscan data\n\t\t\t\tfetch('/ui/api/chart/portscan')\n\t\t\t\t\t.then(r => r.json())\n\t\t\t\t\t.then(data => {\n\t\t\t\t\t\tif (chartInstances.portscan && data.labels) {\n\t\t\t\t\t\t\tchartInstances.portscan.data.labels = data.labels;\n\t\t\t\t\t\t\tchartInstances.portscan.data.datasets[0].data = data.values;\n\t\t\t\t\t\t\tchartInstances.portscan.update('none');\n\t\t\t\t\t\t}\n\t\t\t\t\t})\n\t\t\t\t\t.catch(() => {});\n\n\t\t\t\t// Bans timeline data\n\t\t\t\tfetch('/ui/api/chart/bans-timeline')\n\t\t\t\t\t.then(r => r.json())\n\t\t\t\t\t.then(data => {\n\t\t\t\t\t\tif (chartInstances.bansTime && data.labels) {\n\t\t\t\t\t\t\tchartInstances.bansTime.data.labels = data.labels;\n\t\t\t\t\t\t\tchartInstances.bansTime.data.datasets[0].data = data.values;\n\t\t\t\t\t\t\tchartInstances.bansTime.update('none');\n\t\t\t\t\t\t}\n\t\t\t\t\t})\n\t\t\t\t\t.catch(() => {});\n\t\t\t}\n\n\t\t\t// Refresh charts periodically\n\t\t\tsetInterval(fetchChartData, 30000);\n\n\t\t\t// Update chart colors on theme change\n\t\t\tconst originalToggleTheme = window.toggleTheme;\n\t\t\twindow.toggleTheme = function() {\n\t\t\t\toriginalToggleTheme();\n\t\t\t\tsetTimeout(() => {\n\t\t\t\t\t// Destroy and reinitialize charts with new colors\n\t\t\t\t\tObject.values(chartInstances).forEach(chart => chart && chart.destroy());\n\t\t\t\t\tchartInstances = {};\n\t\t\t\t\tinitDashboardCharts();\n\t\t\t\t}, 100);\n\t\t\t};\n\t\t</script>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -153,7 +153,7 @@ func IdentityFragment(id ui.SystemIdentity) templ.Component {
 		var templ_7745c5c3_Var4 string
 		templ_7745c5c3_Var4, templ_7745c5c3_Err = templ.JoinStringErrs(id.Hostname)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 96, Col: 44}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 439, Col: 44}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var4))
 		if templ_7745c5c3_Err != nil {
@@ -166,7 +166,7 @@ func IdentityFragment(id ui.SystemIdentity) templ.Component {
 		var templ_7745c5c3_Var5 string
 		templ_7745c5c3_Var5, templ_7745c5c3_Err = templ.JoinStringErrs(id.Kernel)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 100, Col: 42}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 443, Col: 42}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var5))
 		if templ_7745c5c3_Err != nil {
@@ -179,7 +179,7 @@ func IdentityFragment(id ui.SystemIdentity) templ.Component {
 		var templ_7745c5c3_Var6 string
 		templ_7745c5c3_Var6, templ_7745c5c3_Err = templ.JoinStringErrs(id.Uptime)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 104, Col: 62}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 447, Col: 62}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var6))
 		if templ_7745c5c3_Err != nil {
@@ -192,7 +192,7 @@ func IdentityFragment(id ui.SystemIdentity) templ.Component {
 		var templ_7745c5c3_Var7 string
 		templ_7745c5c3_Var7, templ_7745c5c3_Err = templ.JoinStringErrs(id.NFTBanVersion)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 108, Col: 49}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 451, Col: 49}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var7))
 		if templ_7745c5c3_Err != nil {
@@ -294,7 +294,7 @@ func SecurityFragment(sec ui.SecurityKPIs) templ.Component {
 			templ_7745c5c3_Var12 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div class=\"box-title\">Security Pulse</div><div class=\"kpi-grid\"><div class=\"kpi-item\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 21, "<div class=\"box-title\">Security Pulse</div><div class=\"kpi-grid\"><div class=\"kpi-item\" data-tooltip=\"Currently blocked IPs across all modules\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -323,7 +323,7 @@ func SecurityFragment(sec ui.SecurityKPIs) templ.Component {
 		var templ_7745c5c3_Var15 string
 		templ_7745c5c3_Var15, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(sec.BansTotal))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 135, Col: 98}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 478, Col: 98}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var15))
 		if templ_7745c5c3_Err != nil {
@@ -336,7 +336,7 @@ func SecurityFragment(sec ui.SecurityKPIs) templ.Component {
 		var templ_7745c5c3_Var16 string
 		templ_7745c5c3_Var16, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(sec.BansIPv4))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 137, Col: 58}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 480, Col: 58}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var16))
 		if templ_7745c5c3_Err != nil {
@@ -349,20 +349,20 @@ func SecurityFragment(sec ui.SecurityKPIs) templ.Component {
 		var templ_7745c5c3_Var17 string
 		templ_7745c5c3_Var17, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(sec.BansIPv6))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 137, Col: 95}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 480, Col: 95}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var17))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</div></div><div class=\"kpi-item\"><div class=\"kpi-value safe\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 26, "</div></div><div class=\"kpi-item\" data-tooltip=\"IPs that bypass all ban rules\"><div class=\"kpi-value safe\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var18 string
 		templ_7745c5c3_Var18, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(sec.WhitelistTotal))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 140, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 483, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var18))
 		if templ_7745c5c3_Err != nil {
@@ -375,7 +375,7 @@ func SecurityFragment(sec ui.SecurityKPIs) templ.Component {
 		var templ_7745c5c3_Var19 string
 		templ_7745c5c3_Var19, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(sec.WhitelistIPv4))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 142, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 485, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var19))
 		if templ_7745c5c3_Err != nil {
@@ -388,33 +388,33 @@ func SecurityFragment(sec ui.SecurityKPIs) templ.Component {
 		var templ_7745c5c3_Var20 string
 		templ_7745c5c3_Var20, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(sec.WhitelistIPv6))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 142, Col: 105}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 485, Col: 105}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var20))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</div></div><div class=\"kpi-item\"><div class=\"kpi-value info\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 29, "</div></div><div class=\"kpi-item\" data-tooltip=\"Security events in the last 60 minutes\"><div class=\"kpi-value info\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var21 string
 		templ_7745c5c3_Var21, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(sec.EventsLastHour))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 145, Col: 65}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 488, Col: 65}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var21))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</div><div class=\"kpi-label\">Events/Hour</div></div><div class=\"kpi-item\"><div class=\"kpi-value\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 30, "</div><div class=\"kpi-label\">Events/Hour</div></div><div class=\"kpi-item\" data-tooltip=\"Total IPs banned since NFTBan was installed\"><div class=\"kpi-value\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var22 string
 		templ_7745c5c3_Var22, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(sec.TotalBansEver))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 149, Col: 59}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 492, Col: 59}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var22))
 		if templ_7745c5c3_Err != nil {
@@ -452,33 +452,33 @@ func NetworkFragment(sec ui.SecurityKPIs) templ.Component {
 			templ_7745c5c3_Var23 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<div class=\"box-title\">Traffic Meter</div><div class=\"kpi-grid\"><div class=\"kpi-item\"><div class=\"kpi-value info\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 32, "<div class=\"box-title\">Traffic Meter</div><div class=\"kpi-grid\"><div class=\"kpi-item\" data-tooltip=\"Current inbound network throughput\"><div class=\"kpi-value info\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var24 string
 		templ_7745c5c3_Var24, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f", sec.NetworkInMbps))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 163, Col: 71}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 506, Col: 71}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var24))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</div><div class=\"kpi-label\">IN Mbps</div></div><div class=\"kpi-item\"><div class=\"kpi-value info\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 33, "</div><div class=\"kpi-label\">IN Mbps</div></div><div class=\"kpi-item\" data-tooltip=\"Current outbound network throughput\"><div class=\"kpi-value info\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var25 string
 		templ_7745c5c3_Var25, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f", sec.NetworkOutMbps))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 167, Col: 72}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 510, Col: 72}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var25))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</div><div class=\"kpi-label\">OUT Mbps</div></div><div class=\"kpi-item\" style=\"grid-column: span 2;\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 34, "</div><div class=\"kpi-label\">OUT Mbps</div></div><div class=\"kpi-item\" style=\"grid-column: span 2;\" data-tooltip=\"Packets dropped by firewall rules per second. High values indicate active blocking.\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -507,7 +507,7 @@ func NetworkFragment(sec ui.SecurityKPIs) templ.Component {
 		var templ_7745c5c3_Var28 string
 		templ_7745c5c3_Var28, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(sec.PacketDropRate))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 171, Col: 110}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 514, Col: 110}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var28))
 		if templ_7745c5c3_Err != nil {
@@ -545,7 +545,7 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 			templ_7745c5c3_Var29 = templ.NopComponent
 		}
 		ctx = templ.ClearChildren(ctx)
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<!-- CPU --><div class=\"resource-item\"><div class=\"resource-label\">CPU</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 38, "<!-- CPU --><div class=\"resource-item\" data-tooltip=\"System CPU utilization. Load averages show 1/5/15 minute averages.\"><div class=\"resource-label\">CPU</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -574,7 +574,7 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var32 string
 		templ_7745c5c3_Var32, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", res.CPUPercent))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 185, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 528, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var32))
 		if templ_7745c5c3_Err != nil {
@@ -587,7 +587,7 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var33 string
 		templ_7745c5c3_Var33, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2f", res.CPULoadAvg1))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 186, Col: 75}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 529, Col: 75}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var33))
 		if templ_7745c5c3_Err != nil {
@@ -600,7 +600,7 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var34 string
 		templ_7745c5c3_Var34, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2f", res.CPULoadAvg5))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 186, Col: 118}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 529, Col: 118}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var34))
 		if templ_7745c5c3_Err != nil {
@@ -613,7 +613,7 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var35 string
 		templ_7745c5c3_Var35, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.2f", res.CPULoadAvg15))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 186, Col: 162}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 529, Col: 162}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var35))
 		if templ_7745c5c3_Err != nil {
@@ -648,13 +648,13 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var38 string
 		templ_7745c5c3_Var38, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("width: %.0f%%", res.CPUPercent))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 188, Col: 120}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 531, Col: 120}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var38))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\"></div></div></div><!-- RAM --><div class=\"resource-item\"><div class=\"resource-label\">RAM</div>")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 47, "\"></div></div></div><!-- RAM --><div class=\"resource-item\" data-tooltip=\"Physical memory usage excluding buffers/cache\"><div class=\"resource-label\">RAM</div>")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
@@ -683,7 +683,7 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var41 string
 		templ_7745c5c3_Var41, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", res.RAMPercent))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 195, Col: 107}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 538, Col: 107}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var41))
 		if templ_7745c5c3_Err != nil {
@@ -696,7 +696,7 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var42 string
 		templ_7745c5c3_Var42, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f", res.RAMUsedGB))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 196, Col: 67}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 539, Col: 67}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var42))
 		if templ_7745c5c3_Err != nil {
@@ -709,7 +709,7 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var43 string
 		templ_7745c5c3_Var43, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f", res.RAMTotalGB))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 196, Col: 109}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 539, Col: 109}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var43))
 		if templ_7745c5c3_Err != nil {
@@ -744,20 +744,20 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var46 string
 		templ_7745c5c3_Var46, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("width: %.0f%%", res.RAMPercent))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 198, Col: 120}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 541, Col: 120}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var46))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "\"></div></div></div><!-- Disk --><div class=\"resource-item\"><div class=\"resource-label\">Disk (")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 55, "\"></div></div></div><!-- Disk --><div class=\"resource-item\" data-tooltip=\"Disk space on the root partition\"><div class=\"resource-label\">Disk (")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var47 string
 		templ_7745c5c3_Var47, templ_7745c5c3_Err = templ.JoinStringErrs(res.DiskPath)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 204, Col: 50}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 547, Col: 50}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var47))
 		if templ_7745c5c3_Err != nil {
@@ -792,7 +792,7 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var50 string
 		templ_7745c5c3_Var50, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.0f%%", res.DiskPercent))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 205, Col: 109}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 548, Col: 109}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var50))
 		if templ_7745c5c3_Err != nil {
@@ -805,7 +805,7 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var51 string
 		templ_7745c5c3_Var51, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f", res.DiskUsedGB))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 206, Col: 68}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 549, Col: 68}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var51))
 		if templ_7745c5c3_Err != nil {
@@ -818,7 +818,7 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var52 string
 		templ_7745c5c3_Var52, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f", res.DiskTotalGB))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 206, Col: 111}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 549, Col: 111}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var52))
 		if templ_7745c5c3_Err != nil {
@@ -853,20 +853,20 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var55 string
 		templ_7745c5c3_Var55, templ_7745c5c3_Err = templruntime.SanitizeStyleAttributeValues(fmt.Sprintf("width: %.0f%%", res.DiskPercent))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 208, Col: 122}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 551, Col: 122}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var55))
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
-		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\"></div></div></div><!-- NFTBan Process --><div class=\"resource-item\"><div class=\"resource-label\">NFTBan Daemon</div><div class=\"resource-value\" style=\"font-size: 1.25rem;\">")
+		templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 64, "\"></div></div></div><!-- NFTBan Process --><div class=\"resource-item\" data-tooltip=\"NFTBan daemon process resource consumption\"><div class=\"resource-label\">NFTBan Daemon</div><div class=\"resource-value\" style=\"font-size: 1.25rem;\">")
 		if templ_7745c5c3_Err != nil {
 			return templ_7745c5c3_Err
 		}
 		var templ_7745c5c3_Var56 string
 		templ_7745c5c3_Var56, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", res.NFTBanCPU))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 215, Col: 96}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 558, Col: 96}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var56))
 		if templ_7745c5c3_Err != nil {
@@ -879,7 +879,7 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var57 string
 		templ_7745c5c3_Var57, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f", res.NFTBanMemMB))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 216, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 559, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var57))
 		if templ_7745c5c3_Err != nil {
@@ -892,7 +892,7 @@ func ResourcesFragment(res ui.ResourceStats) templ.Component {
 		var templ_7745c5c3_Var58 string
 		templ_7745c5c3_Var58, templ_7745c5c3_Err = templ.JoinStringErrs(res.NFTBanUptime)
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 216, Col: 95}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 559, Col: 95}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var58))
 		if templ_7745c5c3_Err != nil {
@@ -942,7 +942,7 @@ func ModulesFragment(modules []ui.ModuleStatus) templ.Component {
 			var templ_7745c5c3_Var60 string
 			templ_7745c5c3_Var60, templ_7745c5c3_Err = templ.JoinStringErrs(mod.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 240, Col: 24}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 583, Col: 24}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var60))
 			if templ_7745c5c3_Err != nil {
@@ -955,7 +955,7 @@ func ModulesFragment(modules []ui.ModuleStatus) templ.Component {
 			var templ_7745c5c3_Var61 string
 			templ_7745c5c3_Var61, templ_7745c5c3_Err = templ.JoinStringErrs(mod.Description)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 241, Col: 82}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 584, Col: 82}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var61))
 			if templ_7745c5c3_Err != nil {
@@ -1015,7 +1015,7 @@ func ModulesFragment(modules []ui.ModuleStatus) templ.Component {
 			var templ_7745c5c3_Var64 string
 			templ_7745c5c3_Var64, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(mod.BansProduced))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 257, Col: 41}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 600, Col: 41}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var64))
 			if templ_7745c5c3_Err != nil {
@@ -1028,7 +1028,7 @@ func ModulesFragment(modules []ui.ModuleStatus) templ.Component {
 			var templ_7745c5c3_Var65 string
 			templ_7745c5c3_Var65, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.1f%%", mod.CPUPercent))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 259, Col: 45}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 602, Col: 45}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var65))
 			if templ_7745c5c3_Err != nil {
@@ -1041,7 +1041,7 @@ func ModulesFragment(modules []ui.ModuleStatus) templ.Component {
 			var templ_7745c5c3_Var66 string
 			templ_7745c5c3_Var66, templ_7745c5c3_Err = templ.JoinStringErrs(fmt.Sprintf("%.0f", mod.MemoryMB))
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 259, Col: 85}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 602, Col: 85}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var66))
 			if templ_7745c5c3_Err != nil {
@@ -1054,7 +1054,7 @@ func ModulesFragment(modules []ui.ModuleStatus) templ.Component {
 			var templ_7745c5c3_Var67 string
 			templ_7745c5c3_Var67, templ_7745c5c3_Err = templ.JoinStringErrs(mod.LastSync)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 261, Col: 76}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 604, Col: 76}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var67))
 			if templ_7745c5c3_Err != nil {
@@ -1072,7 +1072,7 @@ func ModulesFragment(modules []ui.ModuleStatus) templ.Component {
 				var templ_7745c5c3_Var68 string
 				templ_7745c5c3_Var68, templ_7745c5c3_Err = templ.JoinStringErrs("/ui/action/restart/" + mod.ServiceName)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 266, Col: 57}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 609, Col: 57}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var68))
 				if templ_7745c5c3_Err != nil {
@@ -1085,7 +1085,7 @@ func ModulesFragment(modules []ui.ModuleStatus) templ.Component {
 				var templ_7745c5c3_Var69 string
 				templ_7745c5c3_Var69, templ_7745c5c3_Err = templ.JoinStringErrs("Restart " + mod.Name + "?")
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 267, Col: 48}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 610, Col: 48}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var69))
 				if templ_7745c5c3_Err != nil {
@@ -1102,7 +1102,7 @@ func ModulesFragment(modules []ui.ModuleStatus) templ.Component {
 			}
 		}
 		if len(modules) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "<tr><td colspan=\"6\" style=\"text-align: center; color: var(--text-muted); padding: 2rem;\">No modules configured</td></tr>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 87, "<tr><td colspan=\"6\"><div class=\"empty-state\"><div class=\"empty-state-icon\">&#x2699;</div><div class=\"empty-state-title\">No Modules Configured</div><div class=\"empty-state-description\">Enable modules like portscan, GeoIP, or threat feeds to see their status here.</div></div></td></tr>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1140,7 +1140,7 @@ func RecentFragment(bans []ui.RecentBan) templ.Component {
 		}
 		ctx = templ.ClearChildren(ctx)
 		if len(bans) == 0 {
-			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "<div style=\"text-align: center; color: var(--text-muted); padding: 2rem;\">No recent bans - System is clean</div>")
+			templ_7745c5c3_Err = templruntime.WriteString(templ_7745c5c3_Buffer, 89, "<div class=\"empty-state\"><div class=\"empty-state-icon\">&#x2705;</div><div class=\"empty-state-title\">No Recent Bans</div><div class=\"empty-state-description\">The system is clean. No malicious IPs have been blocked recently.</div></div>")
 			if templ_7745c5c3_Err != nil {
 				return templ_7745c5c3_Err
 			}
@@ -1157,7 +1157,7 @@ func RecentFragment(bans []ui.RecentBan) templ.Component {
 				var templ_7745c5c3_Var71 string
 				templ_7745c5c3_Var71, templ_7745c5c3_Err = templ.JoinStringErrs(ban.IP)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 309, Col: 79}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 658, Col: 79}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var71))
 				if templ_7745c5c3_Err != nil {
@@ -1170,7 +1170,7 @@ func RecentFragment(bans []ui.RecentBan) templ.Component {
 				var templ_7745c5c3_Var72 string
 				templ_7745c5c3_Var72, templ_7745c5c3_Err = templ.JoinStringErrs(ban.Country)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 310, Col: 23}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 659, Col: 23}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var72))
 				if templ_7745c5c3_Err != nil {
@@ -1183,7 +1183,7 @@ func RecentFragment(bans []ui.RecentBan) templ.Component {
 				var templ_7745c5c3_Var73 string
 				templ_7745c5c3_Var73, templ_7745c5c3_Err = templ.JoinStringErrs(ban.Module)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 311, Col: 22}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 660, Col: 22}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var73))
 				if templ_7745c5c3_Err != nil {
@@ -1196,7 +1196,7 @@ func RecentFragment(bans []ui.RecentBan) templ.Component {
 				var templ_7745c5c3_Var74 string
 				templ_7745c5c3_Var74, templ_7745c5c3_Err = templ.JoinStringErrs(ban.Reason)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 312, Col: 75}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 661, Col: 75}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var74))
 				if templ_7745c5c3_Err != nil {
@@ -1209,7 +1209,7 @@ func RecentFragment(bans []ui.RecentBan) templ.Component {
 				var templ_7745c5c3_Var75 string
 				templ_7745c5c3_Var75, templ_7745c5c3_Err = templ.JoinStringErrs(ban.Timestamp)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 313, Col: 78}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 662, Col: 78}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var75))
 				if templ_7745c5c3_Err != nil {
@@ -1308,7 +1308,7 @@ func HealthFragment(health []ui.HealthItem) templ.Component {
 			var templ_7745c5c3_Var78 string
 			templ_7745c5c3_Var78, templ_7745c5c3_Err = templ.JoinStringErrs(item.Name)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 347, Col: 43}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 696, Col: 43}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var78))
 			if templ_7745c5c3_Err != nil {
@@ -1480,7 +1480,7 @@ func WhitelistStatsFragment(summary ui.SecurityKPIs) templ.Component {
 		var templ_7745c5c3_Var85 string
 		templ_7745c5c3_Var85, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(summary.WhitelistTotal))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 377, Col: 69}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 726, Col: 69}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var85))
 		if templ_7745c5c3_Err != nil {
@@ -1493,7 +1493,7 @@ func WhitelistStatsFragment(summary ui.SecurityKPIs) templ.Component {
 		var templ_7745c5c3_Var86 string
 		templ_7745c5c3_Var86, templ_7745c5c3_Err = templ.JoinStringErrs(strconv.Itoa(summary.WhitelistIPv4))
 		if templ_7745c5c3_Err != nil {
-			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 381, Col: 63}
+			return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 730, Col: 63}
 		}
 		_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var86))
 		if templ_7745c5c3_Err != nil {
@@ -1568,7 +1568,7 @@ func IPCheckResultFragment(result ui.IPCheckResult) templ.Component {
 			var templ_7745c5c3_Var89 string
 			templ_7745c5c3_Var89, templ_7745c5c3_Err = templ.JoinStringErrs(result.IP)
 			if templ_7745c5c3_Err != nil {
-				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 399, Col: 71}
+				return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 748, Col: 71}
 			}
 			_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var89))
 			if templ_7745c5c3_Err != nil {
@@ -1611,7 +1611,7 @@ func IPCheckResultFragment(result ui.IPCheckResult) templ.Component {
 					var templ_7745c5c3_Var90 string
 					templ_7745c5c3_Var90, templ_7745c5c3_Err = templ.JoinStringErrs(result.Module)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 411, Col: 35}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 760, Col: 35}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var90))
 					if templ_7745c5c3_Err != nil {
@@ -1629,7 +1629,7 @@ func IPCheckResultFragment(result ui.IPCheckResult) templ.Component {
 				var templ_7745c5c3_Var91 string
 				templ_7745c5c3_Var91, templ_7745c5c3_Err = templ.JoinStringErrs(result.Reason)
 				if templ_7745c5c3_Err != nil {
-					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 414, Col: 26}
+					return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 763, Col: 26}
 				}
 				_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var91))
 				if templ_7745c5c3_Err != nil {
@@ -1647,7 +1647,7 @@ func IPCheckResultFragment(result ui.IPCheckResult) templ.Component {
 					var templ_7745c5c3_Var92 string
 					templ_7745c5c3_Var92, templ_7745c5c3_Err = templ.JoinStringErrs(result.BannedSince)
 					if templ_7745c5c3_Err != nil {
-						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 417, Col: 39}
+						return templ.Error{Err: templ_7745c5c3_Err, FileName: `internal/ui/pages/dashboard.templ`, Line: 766, Col: 39}
 					}
 					_, templ_7745c5c3_Err = templ_7745c5c3_Buffer.WriteString(templ.EscapeString(templ_7745c5c3_Var92))
 					if templ_7745c5c3_Err != nil {
