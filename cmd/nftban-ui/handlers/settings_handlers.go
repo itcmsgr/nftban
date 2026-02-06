@@ -703,6 +703,9 @@ func (h *GOTHHandlers) HandleSettingsTest(w http.ResponseWriter, r *http.Request
 	key := r.URL.Query().Get("key")
 	value := r.URL.Query().Get("value")
 
+	// Set Content-Type BEFORE any WriteHeader calls
+	w.Header().Set("Content-Type", "application/json")
+
 	if key == "" || value == "" {
 		w.WriteHeader(http.StatusBadRequest)
 		json.NewEncoder(w).Encode(map[string]interface{}{
@@ -715,7 +718,6 @@ func (h *GOTHHandlers) HandleSettingsTest(w http.ResponseWriter, r *http.Request
 	values := map[string]string{key: value}
 	err := validateSettings(section, values)
 
-	w.Header().Set("Content-Type", "application/json")
 	if err != nil {
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"valid":   false,

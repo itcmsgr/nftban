@@ -353,11 +353,13 @@ func main() {
 	protected.HandleFunc("/config/{module}", api.ConfigSetHandler).Methods("POST")
 	protected.HandleFunc("/config/{module}/reset", api.ConfigResetHandler).Methods("POST")
 
-	// Log file viewer API route
-	protected.PathPrefix("/logs/").HandlerFunc(api.LogFileHandler).Methods("GET")
+	// Log file API route (uses ?path= query parameter for file path)
+	// Registered after /logs and /logs/viewer to avoid conflicts
+	protected.HandleFunc("/logs/file", api.LogFileHandler).Methods("GET")
 
-	// Config file editor API route
-	protected.PathPrefix("/config/").HandlerFunc(api.ConfigFileHandler).Methods("GET", "POST")
+	// Config file editor API route (parses file path from URL)
+	// Registered after /config/{module} to avoid conflicts with module config handlers
+	protected.HandleFunc("/config/file/{path:.*}", api.ConfigFileHandler).Methods("GET", "POST")
 
 	// System API routes
 	protected.HandleFunc("/system/services", api.SystemServicesHandler).Methods("GET")
