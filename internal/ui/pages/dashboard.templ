@@ -36,10 +36,10 @@ templ Dashboard(data ui.DashboardData) {
 			<div id="ip-result" style="width: 100%;"></div>
 		</div>
 
-		<!-- Live Update Indicator -->
-		<div class="refresh-indicator" style="margin-bottom: 1rem;">
-			<span class="dot"></span>
-			<span>Live updates active</span>
+		<!-- SSE Connection Status Indicator -->
+		<div class="refresh-indicator" id="sse-status" style="margin-bottom: 1rem;">
+			<span class="dot" id="sse-dot"></span>
+			<span id="sse-status-text">Connecting...</span>
 		</div>
 
 		<!-- 3-Column Hero Grid -->
@@ -424,6 +424,310 @@ templ Dashboard(data ui.DashboardData) {
 					initDashboardCharts();
 				}, 100);
 			};
+
+			// =================================================================
+			// SSE (Server-Sent Events) for Real-Time Dashboard Updates
+			// =================================================================
+
+			let sseEventSource = null;
+			let sseReconnectAttempts = 0;
+			const SSE_MAX_RECONNECT_ATTEMPTS = 10;
+			const SSE_RECONNECT_BASE_DELAY = 1000; // 1 second base delay
+
+			function initSSEConnection() {
+				// Close existing connection if any
+				if (sseEventSource) {
+					sseEventSource.close();
+				}
+
+				// Update status to connecting
+				updateSSEStatus('connecting');
+
+				// Create new EventSource connection
+				sseEventSource = new EventSource('/ui/sse/dashboard');
+
+				// Connection opened
+				sseEventSource.onopen = function() {
+					console.log('[SSE] Connected to dashboard stream');
+					sseReconnectAttempts = 0;
+					updateSSEStatus('connected');
+				};
+
+				// Listen for dashboard events
+				sseEventSource.addEventListener('dashboard', function(event) {
+					try {
+						const data = JSON.parse(event.data);
+						handleSSEDashboardUpdate(data);
+					} catch (e) {
+						console.error('[SSE] Failed to parse event data:', e);
+					}
+				});
+
+				// Handle errors
+				sseEventSource.onerror = function(event) {
+					console.error('[SSE] Connection error:', event);
+					updateSSEStatus('disconnected');
+
+					// Close the connection
+					sseEventSource.close();
+
+					// Attempt to reconnect with exponential backoff
+					if (sseReconnectAttempts < SSE_MAX_RECONNECT_ATTEMPTS) {
+						sseReconnectAttempts++;
+						const delay = SSE_RECONNECT_BASE_DELAY * Math.pow(2, sseReconnectAttempts - 1);
+						console.log(`[SSE] Reconnecting in ${delay}ms (attempt ${sseReconnectAttempts}/${SSE_MAX_RECONNECT_ATTEMPTS})`);
+						updateSSEStatus('reconnecting', sseReconnectAttempts);
+						setTimeout(initSSEConnection, delay);
+					} else {
+						console.error('[SSE] Max reconnection attempts reached');
+						updateSSEStatus('failed');
+					}
+				};
+			}
+
+			function updateSSEStatus(status, attempt) {
+				const dot = document.getElementById('sse-dot');
+				const text = document.getElementById('sse-status-text');
+				const container = document.getElementById('sse-status');
+
+				if (!dot || !text) return;
+
+				// Remove all status classes
+				dot.className = 'dot';
+
+				switch (status) {
+					case 'connecting':
+						dot.classList.add('warning');
+						text.textContent = 'Connecting...';
+						break;
+					case 'connected':
+						dot.classList.add('active');
+						text.textContent = 'Live updates active';
+						break;
+					case 'reconnecting':
+						dot.classList.add('warning');
+						text.textContent = `Reconnecting (${attempt}/${SSE_MAX_RECONNECT_ATTEMPTS})...`;
+						break;
+					case 'disconnected':
+						dot.classList.add('error');
+						text.textContent = 'Disconnected';
+						break;
+					case 'failed':
+						dot.classList.add('error');
+						text.textContent = 'Connection failed - refresh page';
+						break;
+				}
+			}
+
+			function handleSSEDashboardUpdate(data) {
+				// Update security stats
+				if (data.security) {
+					updateSecurityStats(data.security);
+				}
+
+				// Update system stats
+				if (data.system) {
+					updateSystemStats(data.system);
+				}
+
+				// Update network stats
+				if (data.network) {
+					updateNetworkStats(data.network);
+				}
+
+				// Update recent bans if provided
+				if (data.recent_bans && data.recent_bans.length > 0) {
+					updateRecentBans(data.recent_bans);
+				}
+
+				// Update modules summary if provided
+				if (data.modules_summary) {
+					updateModulesSummary(data.modules_summary);
+				}
+			}
+
+			function updateSecurityStats(security) {
+				// Update ban totals
+				updateElementText('.kpi-item:nth-child(1) .kpi-value', security.bans_total, '#security-box');
+				updateElementText('.kpi-item:nth-child(1) .kpi-split',
+					`v4: ${security.bans_ipv4} | v6: ${security.bans_ipv6}`, '#security-box');
+
+				// Update whitelist totals
+				updateElementText('.kpi-item:nth-child(2) .kpi-value', security.whitelist_total, '#security-box');
+				updateElementText('.kpi-item:nth-child(2) .kpi-split',
+					`v4: ${security.whitelist_ipv4} | v6: ${security.whitelist_ipv6}`, '#security-box');
+
+				// Update events per hour
+				updateElementText('.kpi-item:nth-child(3) .kpi-value', security.events_last_hour, '#security-box');
+
+				// Update total bans ever
+				updateElementText('.kpi-item:nth-child(4) .kpi-value', security.total_bans_ever, '#security-box');
+
+				// Update danger class for active bans
+				const bansValueEl = document.querySelector('#security-box .kpi-item:nth-child(1) .kpi-value');
+				if (bansValueEl) {
+					if (security.bans_total > 0) {
+						bansValueEl.classList.add('danger');
+					} else {
+						bansValueEl.classList.remove('danger');
+					}
+				}
+			}
+
+			function updateSystemStats(system) {
+				// Update CPU
+				updateResourceBar('CPU', system.cpu_percent,
+					`Load: ${system.load_avg_1.toFixed(2)} / ${system.load_avg_5.toFixed(2)} / ${system.load_avg_15.toFixed(2)}`);
+
+				// Update RAM
+				updateResourceBar('RAM', system.ram_percent);
+
+				// Update Disk
+				updateResourceBar('Disk', system.disk_percent);
+
+				// Update NFTBan daemon stats
+				const nftbanItem = document.querySelector('#resource-grid .resource-item:nth-child(4)');
+				if (nftbanItem) {
+					const valueEl = nftbanItem.querySelector('.resource-value');
+					const detailEl = nftbanItem.querySelector('.resource-detail');
+					if (valueEl) valueEl.textContent = `${system.nftban_cpu.toFixed(1)}% CPU`;
+					if (detailEl) detailEl.textContent = `${system.nftban_mem_mb.toFixed(1)} MB`;
+				}
+
+				// Update panel mode (status badge in identity box)
+				const statusBadge = document.querySelector('#identity-box .status-badge');
+				if (statusBadge) {
+					statusBadge.className = 'status-badge ' + system.panel_mode;
+					if (system.panel_mode === 'active') {
+						statusBadge.textContent = 'ACTIVE';
+					} else if (system.panel_mode === 'warning') {
+						statusBadge.textContent = 'WARNING';
+					} else {
+						statusBadge.textContent = 'ERROR';
+					}
+				}
+
+				// Update heartbeat indicator
+				const heartbeat = document.querySelector('#identity-box .heartbeat');
+				if (heartbeat) {
+					heartbeat.className = 'heartbeat ' + system.panel_mode;
+				}
+			}
+
+			function updateNetworkStats(network) {
+				// Update network KPIs in network box
+				updateElementText('.kpi-item:nth-child(1) .kpi-value', network.in_mbps.toFixed(1), '#network-box');
+				updateElementText('.kpi-item:nth-child(2) .kpi-value', network.out_mbps.toFixed(1), '#network-box');
+
+				// Update packet drop rate
+				const dropEl = document.querySelector('#network-box .kpi-item:nth-child(3) .kpi-value');
+				if (dropEl) {
+					dropEl.textContent = network.packet_drop_rate;
+					if (network.packet_drop_rate > 100) {
+						dropEl.classList.add('danger');
+					} else {
+						dropEl.classList.remove('danger');
+					}
+				}
+			}
+
+			function updateRecentBans(bans) {
+				const recentBansContainer = document.getElementById('recent-bans');
+				if (!recentBansContainer) return;
+
+				// Only update the table body if it exists
+				const tbody = recentBansContainer.querySelector('tbody');
+				if (!tbody) return;
+
+				// Check if the content has actually changed (compare first IP)
+				const firstRow = tbody.querySelector('tr:first-child td:first-child');
+				if (firstRow && bans.length > 0 && firstRow.textContent === bans[0].ip) {
+					return; // No change, skip update
+				}
+
+				// Build new rows
+				let rowsHtml = '';
+				for (const ban of bans) {
+					rowsHtml += `
+						<tr>
+							<td style="font-family: monospace; color: var(--accent-danger);">${escapeHtml(ban.ip)}</td>
+							<td>${escapeHtml(ban.country)}</td>
+							<td>${escapeHtml(ban.module)}</td>
+							<td style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(ban.reason)}</td>
+							<td style="font-size: 0.8rem; color: var(--text-muted);">${escapeHtml(ban.timestamp)}</td>
+						</tr>
+					`;
+				}
+
+				tbody.innerHTML = rowsHtml;
+			}
+
+			function updateModulesSummary(summary) {
+				// This updates module-related indicators if they exist
+				// The full module table is still refreshed via HTMX
+			}
+
+			function updateResourceBar(label, percent, detail) {
+				const items = document.querySelectorAll('#resource-grid .resource-item');
+				for (const item of items) {
+					const labelEl = item.querySelector('.resource-label');
+					if (labelEl && labelEl.textContent.startsWith(label)) {
+						// Update value
+						const valueEl = item.querySelector('.resource-value');
+						if (valueEl) {
+							valueEl.textContent = `${percent.toFixed(1)}%`;
+							valueEl.className = 'resource-value ' + getResourceColorClass(percent);
+						}
+
+						// Update progress bar
+						const progressFill = item.querySelector('.progress-fill');
+						if (progressFill) {
+							progressFill.style.width = `${percent}%`;
+							progressFill.className = 'progress-fill ' + getResourceColorClass(percent);
+						}
+
+						// Update detail if provided
+						if (detail) {
+							const detailEl = item.querySelector('.resource-detail');
+							if (detailEl) detailEl.textContent = detail;
+						}
+
+						break;
+					}
+				}
+			}
+
+			function updateElementText(selector, value, context) {
+				const container = context ? document.querySelector(context) : document;
+				if (!container) return;
+				const el = container.querySelector(selector);
+				if (el) el.textContent = value;
+			}
+
+			function getResourceColorClass(percent) {
+				if (percent >= 90) return 'danger';
+				if (percent >= 70) return 'warning';
+				return 'safe';
+			}
+
+			function escapeHtml(text) {
+				if (!text) return '';
+				const div = document.createElement('div');
+				div.textContent = text;
+				return div.innerHTML;
+			}
+
+			// Initialize SSE connection when page loads
+			document.addEventListener('DOMContentLoaded', function() {
+				initSSEConnection();
+			});
+
+			// Clean up SSE connection when page unloads
+			window.addEventListener('beforeunload', function() {
+				if (sseEventSource) {
+					sseEventSource.close();
+				}
+			});
 		</script>
 	}
 }
