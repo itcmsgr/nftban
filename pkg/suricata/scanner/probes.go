@@ -29,7 +29,7 @@ import (
 	"strings"
 	"time"
 
-	"nftban/pkg/logx"
+	"github.com/itcmsgr/nftban/pkg/logx"
 )
 
 // ProbeService performs deep protocol detection on a service

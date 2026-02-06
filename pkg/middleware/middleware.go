@@ -282,6 +282,17 @@ func CSRFMiddleware(store *session.Store) func(http.Handler) http.Handler {
 	}
 }
 
+// MaxBodySizeMiddleware limits request body size to prevent memory exhaustion attacks
+// Default limit is 1MB (1048576 bytes)
+func MaxBodySizeMiddleware(maxBytes int64) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
+			next.ServeHTTP(w, r)
+		})
+	}
+}
+
 // SecurityHeadersMiddleware adds security headers to responses
 func SecurityHeadersMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

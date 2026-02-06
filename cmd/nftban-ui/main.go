@@ -22,11 +22,14 @@
 package main
 
 import (
+	"context"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/gorilla/mux"
@@ -131,6 +134,7 @@ func main() {
 	router.Use(middleware.LoggingMiddleware)
 	router.Use(middleware.IPWhitelistMiddleware(cfg))
 	router.Use(middleware.SecurityHeadersMiddleware)
+	router.Use(middleware.MaxBodySizeMiddleware(1 << 20)) // 1MB request body limit
 	router.Use(middleware.CSRFMiddleware(sessionStore))
 
 	// Create rate limiter for login endpoints (brute force protection)
@@ -434,7 +438,29 @@ func main() {
 	log.Printf("TLS Key: %s", cfg.TLSKey)
 	log.Printf("Request Timeout: %v, Max Connections: %d", requestTimeout, limits.MaxConcurrentConns)
 
-	if err := server.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
+	// Handle graceful shutdown on SIGINT/SIGTERM
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+
+	// Start server in goroutine so we can handle shutdown
+	go func() {
+		if err := server.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("Server failed to start: %v", err)
+		}
+	}()
+
+	// Wait for shutdown signal
+	sig := <-quit
+	log.Printf("Received signal %v, initiating graceful shutdown...", sig)
+
+	// Create shutdown context with 30-second timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	// Attempt graceful shutdown
+	if err := server.Shutdown(ctx); err != nil {
+		log.Fatalf("Server forced to shutdown: %v", err)
 	}
+
+	log.Printf("Server exited gracefully")
 }

@@ -259,10 +259,12 @@ func (h *GOTHHandlers) buildSSEDashboardEvent() SSEDashboardEvent {
 	}
 
 	// Convert recent bans (limit to 5 for SSE payload size)
+	// Pre-allocate slice to avoid repeated allocations during append
 	maxBans := 5
 	if len(recentBans) < maxBans {
 		maxBans = len(recentBans)
 	}
+	event.RecentBans = make([]SSERecentBan, 0, maxBans)
 	for i := 0; i < maxBans; i++ {
 		event.RecentBans = append(event.RecentBans, SSERecentBan{
 			IP:        recentBans[i].IP,
