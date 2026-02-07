@@ -240,7 +240,7 @@ export_connectors() {
                 ;;
 
             file)
-                local path="${CONNECTOR_FILE_PATH:-/var/log/nftban/metrics.json}"
+                local path="${CONNECTOR_FILE_PATH:-${NFTBAN_LOG_DIR:-/var/log/nftban}/metrics.json}"
                 mkdir -p "$(dirname "$path")"
                 echo "$json_payload" >> "$path"
                 log_info "Connector: written to $path (${CONNECTOR_NAME})"

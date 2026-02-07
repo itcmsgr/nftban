@@ -74,7 +74,7 @@ readonly SURICATA_GROUP="suricata"
 readonly SURICATA_BIN="/usr/bin/suricata"
 readonly SURICATA_CONF_DIR="/etc/suricata"
 readonly SURICATA_DATA_DIR="/var/lib/suricata"
-readonly SURICATA_LOG_DIR="/var/log/nftban/suricata"  # NFTBan HFS
+readonly SURICATA_LOG_DIR="${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata"  # NFTBan HFS
 readonly SURICATA_RUN_DIR="/run/suricata"
 readonly NFTBAN_TEMPLATES="${NFTBAN_SHARE_DIR:-/usr/share/nftban}/templates"
 

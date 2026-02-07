@@ -576,7 +576,7 @@ nftban_portscan_status() {
     # ==========================================================================
     echo "RECENT ACTIVITY (last 24h)"
     echo "───────────────────────────────────────────────────────────"
-    local ban_log="${NFTBAN_BAN_LOG:-/var/log/nftban/bans.log}"
+    local ban_log="${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/bans.log}"
     if [[ -f "$ban_log" ]]; then
         local yesterday today scan_bans
         yesterday=$(date -d '24 hours ago' '+%Y-%m-%d' 2>/dev/null || date '+%Y-%m-%d')
@@ -818,7 +818,7 @@ nftban_portscan_check() {
 
 # Sync logs from journalctl to portscan log file
 nftban_portscan_sync_logs() {
-    local portscan_log="${NFTBAN_PORTSCAN_LOG:-/var/log/nftban/portscan.log}"
+    local portscan_log="${NFTBAN_PORTSCAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan.log}"
     local log_prefix="${PORTSCAN_CLASSIC_LOG_PREFIX:-NFTBAN_PORTSCAN:}"
     local time_range="${1:-24h}"
 

@@ -323,7 +323,7 @@ nftban_stats_cmd_dashboard() {
         local total_countries=0
 
         # Count total bans from log
-        if [[ -f "${NFTBAN_BAN_LOG:-/var/log/nftban/ban.log}" ]]; then
+        if [[ -f "${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/ban.log}" ]]; then
             total_bans=$(grep -c "^" "${NFTBAN_BAN_LOG}" 2>/dev/null || true)
         fi
 
@@ -975,7 +975,7 @@ nftban_stats_cmd_recent() {
         echo "Following ban log (Ctrl+C to exit)..."
         echo ""
         # shellcheck disable=SC2034  # Structured log parsing - only some fields used
-        tail -f "${NFTBAN_BAN_LOG:-/var/log/nftban/ban.log}" | while IFS='|' read -r timestamp id jail ip reason action timeout; do
+        tail -f "${NFTBAN_BAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/ban.log}" | while IFS='|' read -r timestamp id jail ip reason action timeout; do
             printf "[%s] %s | %-16s | %-12s | %s\n" \
                 "$(date +%H:%M:%S)" "$timestamp" "$ip" "$action" "$jail"
         done

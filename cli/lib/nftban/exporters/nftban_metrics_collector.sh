@@ -381,7 +381,7 @@ collect_feed_health_metrics() {
     done
 
     # Count per-feed errors efficiently using single awk pass
-    local feeds_log="/var/log/nftban/feeds.log"
+    local feeds_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log"
     local cutoff=$((now - 86400))
     declare -A feed_errors_map
 

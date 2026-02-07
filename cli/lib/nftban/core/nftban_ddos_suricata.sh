@@ -77,7 +77,7 @@ _nftban_ddos_suricata_load_config() {
     fi
 
     # Set defaults if not configured
-    : "${DDOS_SURICATA_EVE_FILE:=/var/log/nftban/suricata/eve-alerts.json}"
+    : "${DDOS_SURICATA_EVE_FILE:=${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata/eve-alerts.json}"
     : "${DDOS_SURICATA_EVE_SOCKET:=}"
     : "${DDOS_SURICATA_SIG_PATTERNS:=DDoS|flood|amplification|reflection|slowloris}"
     : "${DDOS_SURICATA_CATEGORIES:=attempted-dos,successful-dos,denial-of-service}"
@@ -116,7 +116,7 @@ _nftban_ddos_suricata_load_config() {
     : "${DDOS_SURICATA_POLL_INTERVAL_MS:=500}"
 
     # Logging
-    : "${DDOS_SURICATA_LOG_FILE:=/var/log/nftban/ddos-suricata.log}"
+    : "${DDOS_SURICATA_LOG_FILE:=${NFTBAN_LOG_DIR:-/var/log/nftban}/ddos-suricata.log}"
     : "${DDOS_SURICATA_LOG_LEVEL:=INFO}"
     : "${DDOS_SURICATA_LOG_SCORES:=true}"
 }
@@ -128,7 +128,7 @@ _nftban_ddos_suricata_load_config() {
 _nftban_ddos_suricata_log() {
     local level="$1"
     local message="$2"
-    local log_file="${DDOS_SURICATA_LOG_FILE:-/var/log/nftban/ddos-suricata.log}"
+    local log_file="${DDOS_SURICATA_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/ddos-suricata.log}"
 
     mkdir -p "$(dirname "$log_file")" 2>/dev/null
 
