@@ -91,12 +91,12 @@ nftban_portscan_classic_load_config() {
 # =============================================================================
 
 # Log file for portscan classic mode
-readonly PORTSCAN_CLASSIC_LOG_FILE="${PORTSCAN_CLASSIC_LOG_FILE:-/var/log/nftban/portscan-classic.log}"
+readonly PORTSCAN_CLASSIC_LOG_FILE="${PORTSCAN_CLASSIC_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-classic.log}"
 
 _nftban_portscan_classic_log() {
     local level="$1"
     local message="$2"
-    local log_file="${PORTSCAN_CLASSIC_LOG_FILE:-/var/log/nftban/portscan-classic.log}"
+    local log_file="${PORTSCAN_CLASSIC_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-classic.log}"
 
     # Create log directory if needed
     mkdir -p "$(dirname "$log_file")" 2>/dev/null
@@ -138,7 +138,7 @@ _nftban_portscan_emit_event() {
     fi
 
     # Also write to file for systems without journald queryable by tag
-    local event_log="/var/log/nftban/portscan-events.log"
+    local event_log="${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-events.log"
     mkdir -p "$(dirname "$event_log")" 2>/dev/null
     echo "ts=${ts} src=${src} dst=${dst} proto=${proto} dpt=${dpt} flags=${flags}" >> "$event_log"
 }
@@ -1000,9 +1000,9 @@ nftban_portscan_aggregate() {
     fi
 
     # Fallback to file if journald empty
-    if [[ -z "$events" ]] && [[ -f "/var/log/nftban/portscan-events.log" ]]; then
+    if [[ -z "$events" ]] && [[ -f "${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-events.log" ]]; then
         # Read last 10000 lines from log file (time filtering done downstream)
-        events=$(tail -10000 /var/log/nftban/portscan-events.log 2>/dev/null || true)
+        events=$(tail -10000 "${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-events.log" 2>/dev/null || true)
     fi
 
     if [[ -z "$events" ]]; then

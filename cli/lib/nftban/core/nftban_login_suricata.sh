@@ -98,7 +98,7 @@ nftban_login_suricata_init() {
     fi
 
     # Set defaults
-    : "${LOGIN_SURICATA_EVE_FILE:=/var/log/nftban/suricata/eve-alerts.json}"
+    : "${LOGIN_SURICATA_EVE_FILE:=${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata/eve-alerts.json}"
     : "${LOGIN_SURICATA_SIG_PATTERNS:=[Aa]uth|[Ll]ogin|[Pp]assword|[Cc]redential|[Bb]rute|SSH|FTP|SMTP|POP3|IMAP}"
     : "${LOGIN_SURICATA_ALERT_WINDOW:=300}"
     # Severity scoring (1=High, 2=Medium, 3=Low, 4=Info - matches Go)

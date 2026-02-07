@@ -52,7 +52,7 @@ readonly SCRIPT_VERSION="1.0.0"
 DEFAULT_TIMEOUT=30            # seconds per command (default)
 QUICK_TIMEOUT=15              # seconds for quick tests
 CURRENT_TIMEOUT=$DEFAULT_TIMEOUT  # actual timeout to use
-readonly TRACE_LOG="/var/log/nftban/debug_trace.log"
+readonly TRACE_LOG="${NFTBAN_LOG_DIR:-/var/log/nftban}/debug_trace.log"
 SMOKE_LOG="/tmp/nftban_smoke_$(date +%Y%m%d_%H%M%S).log"
 readonly SMOKE_LOG
 # shellcheck disable=SC2034  # Reserved for future trace tracking

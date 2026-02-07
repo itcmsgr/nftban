@@ -66,7 +66,7 @@ nftban_portscan_suricata_load_config() {
     fi
 
     # Set defaults
-    : "${PORTSCAN_SURICATA_EVE_FILE:=/var/log/nftban/suricata/eve-alerts.json}"
+    : "${PORTSCAN_SURICATA_EVE_FILE:=${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata/eve-alerts.json}"
     : "${PORTSCAN_SURICATA_SIG_PATTERNS:=[Pp]ort[Ss]can|[Pp]ort [Ss]weep|SCAN|Nmap|masscan}"
     : "${PORTSCAN_SURICATA_THRESHOLD_OBSERVE:=0.25}"
     : "${PORTSCAN_SURICATA_THRESHOLD_BLOCK_SHORT:=0.45}"
@@ -89,12 +89,12 @@ nftban_portscan_suricata_load_config() {
 # =============================================================================
 
 # Log file for portscan suricata mode
-readonly PORTSCAN_SURICATA_LOG_FILE="${PORTSCAN_SURICATA_LOG_FILE:-/var/log/nftban/portscan-suricata.log}"
+readonly PORTSCAN_SURICATA_LOG_FILE="${PORTSCAN_SURICATA_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-suricata.log}"
 
 _nftban_portscan_suricata_log() {
     local level="$1"
     local message="$2"
-    local log_file="${PORTSCAN_SURICATA_LOG_FILE:-/var/log/nftban/portscan-suricata.log}"
+    local log_file="${PORTSCAN_SURICATA_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan-suricata.log}"
 
     mkdir -p "$(dirname "$log_file")" 2>/dev/null
 

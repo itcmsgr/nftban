@@ -41,7 +41,7 @@ NFTBAN_CMD_MODES_LOADED="true"
 : "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
 
 # EVE file path (shared across modules)
-: "${SURICATA_EVE_FILE:=/var/log/nftban/suricata/eve-alerts.json}"
+: "${SURICATA_EVE_FILE:=${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata/eve-alerts.json}"
 
 # =============================================================================
 # HELPER FUNCTIONS
@@ -71,7 +71,7 @@ _modes_eve_freshness() {
     
     # Fallback to default
     if [[ ! -f "$eve_file" ]]; then
-        eve_file="/var/log/nftban/suricata/eve-alerts.json"
+        eve_file="${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata/eve-alerts.json"
     fi
     
     if [[ ! -f "$eve_file" ]]; then

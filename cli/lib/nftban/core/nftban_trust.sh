@@ -48,7 +48,7 @@ readonly TRUST_MODULE_VERSION="1.1.0"
 readonly TRUST_CACHE_DIR="${TRUST_CACHE_DIR:-/var/cache/nftban/trust}"
 readonly TRUST_DATA_DIR="${TRUST_DATA_DIR:-/var/lib/nftban/trust}"
 readonly TRUST_WHITELIST_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}/whitelist.d"
-readonly TRUST_LOG="${TRUST_LOG_FILE:-/var/log/nftban/trust.log}"
+readonly TRUST_LOG="${TRUST_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/trust.log}"
 readonly TRUST_CONFIG_LOCAL="${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf.local"
 
 # =============================================================================
