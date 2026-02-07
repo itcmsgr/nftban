@@ -39,6 +39,12 @@ declare -g _NFTBAN_PORTSCAN_CLASSIC_LOADED=1
 source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_alert_throttle.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION LOADING
@@ -117,7 +123,12 @@ _nftban_portscan_emit_event() {
     if [[ -n "$log_ts" ]]; then
         ts="$log_ts"
     else
-        ts=$(date -Iseconds)
+        # Use timestamp library if available, fallback to date
+        if declare -f nftban_timestamp_local &>/dev/null; then
+            ts=$(nftban_timestamp_local)
+        else
+            ts=$(date -Iseconds)
+        fi
     fi
 
     # Emit to journald with dedicated tag for easy querying
@@ -195,7 +206,14 @@ nftban_portscan_classic_save_state() {
     [[ -d "$state_dir" ]] || mkdir -p "$state_dir"
 
     {
-        echo "# NFTBan Portscan Classic State - $(date -Iseconds)"
+        # Use timestamp library if available, fallback to date
+        local state_ts
+        if declare -f nftban_timestamp_local &>/dev/null; then
+            state_ts=$(nftban_timestamp_local)
+        else
+            state_ts=$(date -Iseconds)
+        fi
+        echo "# NFTBan Portscan Classic State - ${state_ts}"
         echo "# Format: TYPE|IP|DATA"
 
         for ip in "${!_PORTSCAN_CLASSIC_IP_BLOCKED[@]}"; do
@@ -431,12 +449,23 @@ _nftban_portscan_extract_timestamp() {
     if [[ "$line" =~ ^([A-Z][a-z]{2}\ +[0-9]+\ [0-9:]+) ]]; then
         # Syslog format - convert to ISO (use current year)
         local syslog_ts="${BASH_REMATCH[1]}"
-        ts=$(date -d "$syslog_ts" -Iseconds 2>/dev/null) || ts=$(date -Iseconds)
+        ts=$(date -d "$syslog_ts" -Iseconds 2>/dev/null) || {
+            if declare -f nftban_timestamp_local &>/dev/null; then
+                ts=$(nftban_timestamp_local)
+            else
+                ts=$(date -Iseconds)
+            fi
+        }
     elif [[ "$line" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+) ]]; then
         # Already ISO format
         ts="${BASH_REMATCH[1]}"
     else
-        ts=$(date -Iseconds)
+        # Use timestamp library if available, fallback to date
+        if declare -f nftban_timestamp_local &>/dev/null; then
+            ts=$(nftban_timestamp_local)
+        else
+            ts=$(date -Iseconds)
+        fi
     fi
     echo "$ts"
 }
@@ -453,7 +482,12 @@ nftban_portscan_classic_process_logs() {
     local log_prefix_legacy="${PORTSCAN_CLASSIC_LOG_PREFIX_LEGACY:-nftban: portscan:}"
     local time_window="${PORTSCAN_CLASSIC_TIME_WINDOW}"
     local current_time
-    current_time=$(date +%s)
+    # Use timestamp library if available, fallback to date
+    if declare -f nftban_timestamp_unix &>/dev/null; then
+        current_time=$(nftban_timestamp_unix)
+    else
+        current_time=$(date +%s)
+    fi
     local cutoff_time
     cutoff_time=$((current_time - time_window))
 
@@ -546,7 +580,12 @@ nftban_portscan_classic_record_connection() {
 nftban_portscan_classic_cleanup_old_entries() {
     local time_window="${PORTSCAN_CLASSIC_TIME_WINDOW}"
     local current_time
-    current_time=$(date +%s)
+    # Use timestamp library if available, fallback to date
+    if declare -f nftban_timestamp_unix &>/dev/null; then
+        current_time=$(nftban_timestamp_unix)
+    else
+        current_time=$(date +%s)
+    fi
     local cutoff_time
     cutoff_time=$((current_time - time_window))
 
@@ -756,8 +795,12 @@ nftban_portscan_classic_block_ip() {
         return 1
     fi
 
-    # Record block
-    _PORTSCAN_CLASSIC_IP_BLOCKED["$ip"]=$(date +%s)
+    # Record block - use timestamp library if available
+    if declare -f nftban_timestamp_unix &>/dev/null; then
+        _PORTSCAN_CLASSIC_IP_BLOCKED["$ip"]=$(nftban_timestamp_unix)
+    else
+        _PORTSCAN_CLASSIC_IP_BLOCKED["$ip"]=$(date +%s)
+    fi
 
     _nftban_portscan_classic_log "INFO" "Blocked ${ip} for ${duration}s (${scan_type} scan)"
 
@@ -768,6 +811,18 @@ nftban_portscan_classic_block_ip() {
 nftban_portscan_classic_send_alert() {
     local ip="$1"
     local scan_type="$2"
+
+    # Check alert throttling (avoid alert storms for same IP/scan_type)
+    # Throttle per IP to prevent flooding on repeated scans from same source
+    local throttle_key="portscan_${scan_type}_${ip//[^a-zA-Z0-9]/_}"
+    local throttle_seconds="${PORTSCAN_ALERT_THROTTLE_SECONDS:-3600}"
+
+    if declare -f nftban_should_alert &>/dev/null; then
+        if ! nftban_should_alert "$throttle_key" "$throttle_seconds"; then
+            _nftban_portscan_classic_log "DEBUG" "Alert throttled for ${ip} (${scan_type})"
+            return 0
+        fi
+    fi
 
     local ports="${_PORTSCAN_CLASSIC_IP_PORTS[$ip]:-unknown}"
     local port_count
@@ -980,7 +1035,15 @@ nftban_portscan_aggregate() {
 
         # Track first/last seen for span calculation
         local ts_epoch
-        ts_epoch=$(date -d "$ts" +%s 2>/dev/null || date +%s)
+        if declare -f nftban_timestamp_to_unix &>/dev/null && [[ -n "$ts" ]]; then
+            ts_epoch=$(nftban_timestamp_to_unix "$ts")
+            # Fallback if conversion failed
+            if [[ "$ts_epoch" == "0" ]]; then
+                ts_epoch=$(date -d "$ts" +%s 2>/dev/null || nftban_timestamp_unix 2>/dev/null || date +%s)
+            fi
+        else
+            ts_epoch=$(date -d "$ts" +%s 2>/dev/null || date +%s)
+        fi
         [[ -z "${ip_first[$src]:-}" ]] && ip_first[$src]=$ts_epoch
         ip_last[$src]=$ts_epoch
 
