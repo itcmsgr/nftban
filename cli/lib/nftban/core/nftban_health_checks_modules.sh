@@ -32,6 +32,20 @@ set -Eeuo pipefail
 _NFTBAN_HEALTH_CHECKS_MODULES_LOADED=1
 
 # =============================================================================
+# LOAD SHARED LIBRARIES
+# =============================================================================
+
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+fi
+
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh"
+fi
+
+# =============================================================================
 # MODULE CHECKS
 # =============================================================================
 
@@ -250,11 +264,14 @@ nftban_health_check_databases() {
 
     if [[ -n "$geoip_db" ]] && [[ -f "$geoip_db" ]]; then
         # Check age (warn if >90 days old)
-        local file_age
-        file_age=$(( $(date +%s) - $(stat -c %Y "$geoip_db" 2>/dev/null || echo 0) ))
-        local days_old
+        local file_age days_old db_name
+        # Use library function with graceful fallback
+        if type -t nftban_file_age &>/dev/null; then
+            file_age=$(nftban_file_age "$geoip_db")
+        else
+            file_age=$(( $(date +%s) - $(stat -c %Y "$geoip_db" 2>/dev/null || echo 0) ))
+        fi
         days_old=$(( file_age / 86400 ))
-        local db_name
         db_name=$(basename "$geoip_db")
 
         if (( days_old > 90 )); then
@@ -306,13 +323,21 @@ nftban_health_check_rbl() {
     # Check last check time
     local last_check_file="${rbl_cache_dir}/last_check"
     if [[ -f "$last_check_file" ]]; then
-        local last_check
+        local last_check last_check_epoch now_epoch hours_ago
         last_check=$(cat "$last_check_file" 2>/dev/null)
-        local last_check_epoch
-        last_check_epoch=$(date -d "$last_check" +%s 2>/dev/null || echo 0)
-        local now_epoch
-        now_epoch=$(date +%s)
-        local hours_ago=$(( (now_epoch - last_check_epoch) / 3600 ))
+        # Use library functions with graceful fallback
+        if type -t nftban_timestamp_to_unix &>/dev/null; then
+            last_check_epoch=$(nftban_timestamp_to_unix "$last_check")
+            [[ "$last_check_epoch" == "0" ]] && last_check_epoch=$(date -d "$last_check" +%s 2>/dev/null || echo 0)
+        else
+            last_check_epoch=$(date -d "$last_check" +%s 2>/dev/null || echo 0)
+        fi
+        if type -t nftban_timestamp_unix &>/dev/null; then
+            now_epoch=$(nftban_timestamp_unix)
+        else
+            now_epoch=$(date +%s)
+        fi
+        hours_ago=$(( (now_epoch - last_check_epoch) / 3600 ))
 
         if [[ $hours_ago -gt 48 ]]; then
             rbl_issues+=("Last RBL check was ${hours_ago}h ago (stale)")

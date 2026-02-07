@@ -31,6 +31,16 @@
 set -Eeuo pipefail
 
 # =============================================================================
+# LOAD SHARED LIBRARIES
+# =============================================================================
+
+# Source timestamp library (with graceful fallback)
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+fi
+
+# =============================================================================
 # GLOBAL VARIABLES
 # =============================================================================
 
@@ -69,8 +79,20 @@ nftban_report_init() {
 
     # Initialize metadata with defaults
     NFTBAN_REPORT_METADATA["hostname"]="${NFTBAN_REPORT_METADATA[hostname]:-$(hostname -f 2>/dev/null || hostname)}"
-    NFTBAN_REPORT_METADATA["timestamp"]="${NFTBAN_REPORT_METADATA[timestamp]:-$(date -u +"%Y-%m-%dT%H:%M:%S%z")}"
-    NFTBAN_REPORT_METADATA["date_display"]="${NFTBAN_REPORT_METADATA[date_display]:-$(date "+%Y-%m-%d %H:%M:%S")}"
+    # Use library functions with fallback to raw date commands
+    if declare -f nftban_timestamp >/dev/null 2>&1; then
+        NFTBAN_REPORT_METADATA["timestamp"]="${NFTBAN_REPORT_METADATA[timestamp]:-$(nftban_timestamp)}"
+    else
+        NFTBAN_REPORT_METADATA["timestamp"]="${NFTBAN_REPORT_METADATA[timestamp]:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+    fi
+    if declare -f nftban_timestamp_log >/dev/null 2>&1; then
+        # Strip brackets from log format for display
+        local ts_log
+        ts_log=$(nftban_timestamp_log)
+        NFTBAN_REPORT_METADATA["date_display"]="${NFTBAN_REPORT_METADATA[date_display]:-${ts_log:1:-1}}"
+    else
+        NFTBAN_REPORT_METADATA["date_display"]="${NFTBAN_REPORT_METADATA[date_display]:-$(date "+%Y-%m-%d %H:%M:%S")}"
+    fi
     NFTBAN_REPORT_METADATA["title"]="${NFTBAN_REPORT_METADATA[title]:-NFTBan Report}"
     NFTBAN_REPORT_METADATA["sections"]="${NFTBAN_REPORT_METADATA[sections]:-health}"
     NFTBAN_REPORT_METADATA["format"]="${NFTBAN_REPORT_METADATA[format]:-text}"
@@ -420,7 +442,16 @@ nftban_report_render_text() {
     output+="  ${NFTBAN_REPORT_METADATA[title]:-NFTBan Report}\n"
     output+="═══════════════════════════════════════════════════════════════\n\n"
     output+="Hostname: ${NFTBAN_REPORT_METADATA[hostname]:-$(hostname)}\n"
-    output+="Generated: ${NFTBAN_REPORT_METADATA[date_display]:-$(date)}\n\n"
+    # Use library function with fallback for date display
+    local _date_display
+    if declare -f nftban_timestamp_log >/dev/null 2>&1; then
+        local _ts_log
+        _ts_log=$(nftban_timestamp_log)
+        _date_display="${NFTBAN_REPORT_METADATA[date_display]:-${_ts_log:1:-1}}"
+    else
+        _date_display="${NFTBAN_REPORT_METADATA[date_display]:-$(date "+%Y-%m-%d %H:%M:%S")}"
+    fi
+    output+="Generated: ${_date_display}\n\n"
 
     # Sections
     IFS=',' read -ra section_array <<< "$sections"
@@ -503,7 +534,14 @@ nftban_report_render_json() {
     echo "{"
     echo "  \"report\": {"
     echo "    \"hostname\": \"${NFTBAN_REPORT_METADATA[hostname]:-$(hostname)}\","
-    echo "    \"timestamp\": \"${NFTBAN_REPORT_METADATA[timestamp]:-$(date -u +%Y-%m-%dT%H:%M:%S%z)}\","
+    # Use library function with fallback for timestamp
+    local _json_timestamp
+    if declare -f nftban_timestamp >/dev/null 2>&1; then
+        _json_timestamp="${NFTBAN_REPORT_METADATA[timestamp]:-$(nftban_timestamp)}"
+    else
+        _json_timestamp="${NFTBAN_REPORT_METADATA[timestamp]:-$(date -u +"%Y-%m-%dT%H:%M:%SZ")}"
+    fi
+    echo "    \"timestamp\": \"${_json_timestamp}\","
     echo "    \"title\": \"${NFTBAN_REPORT_METADATA[title]:-NFTBan Report}\","
     echo "    \"format\": \"${NFTBAN_REPORT_METADATA[format]:-json}\","
     echo "    \"mode\": \"${NFTBAN_REPORT_METADATA[mode]:-detailed}\","

@@ -41,6 +41,18 @@ umask 027
 readonly NFTBAN_LOGIN_SURICATA_LOADED=1
 
 # =============================================================================
+# LOAD SHARED LIBRARIES
+# =============================================================================
+
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh" 2>/dev/null || true
+
+# =============================================================================
 # MODULE METADATA
 # =============================================================================
 
@@ -210,7 +222,12 @@ _nftban_login_suricata_process_alert() {
     local sig_id="$3"
     local severity="${4:-2}"
     local now
-    now=$(date +%s)
+    # Use library function if available, fallback to date
+    if type -t nftban_timestamp_unix &>/dev/null; then
+        now=$(nftban_timestamp_unix)
+    else
+        now=$(date +%s)
+    fi
 
     local window="${LOGIN_SURICATA_ALERT_WINDOW:-300}"
 
@@ -251,7 +268,12 @@ _nftban_login_suricata_process_ssh_scanner() {
     local ip="$1"
     local client_software="$2"
     local now
-    now=$(date +%s)
+    # Use library function if available, fallback to date
+    if type -t nftban_timestamp_unix &>/dev/null; then
+        now=$(nftban_timestamp_unix)
+    else
+        now=$(date +%s)
+    fi
 
     nftban_login_log "INFO" "SSH scanner detected from $ip: $client_software"
 
@@ -277,7 +299,12 @@ _nftban_login_suricata_process_anomaly() {
     local ip="$1"
     local anomaly_type="$2"
     local now
-    now=$(date +%s)
+    # Use library function if available, fallback to date
+    if type -t nftban_timestamp_unix &>/dev/null; then
+        now=$(nftban_timestamp_unix)
+    else
+        now=$(date +%s)
+    fi
 
     # Initialize tracking
     if [[ -z "${_LOGIN_SURICATA_SCORES[$ip]:-}" ]]; then
@@ -444,8 +471,16 @@ _nftban_login_suricata_save_state() {
     local state_file="${LOGIN_SURICATA_STATE_FILE:-/var/lib/nftban/login-suricata-state.db}"
     mkdir -p "$(dirname "$state_file")"
 
+    # Use library timestamp if available
+    local state_timestamp
+    if type -t nftban_timestamp &>/dev/null; then
+        state_timestamp=$(nftban_timestamp)
+    else
+        state_timestamp=$(date)
+    fi
+
     {
-        echo "# Login Suricata State - $(date)"
+        echo "# Login Suricata State - ${state_timestamp}"
         for key in "${!_LOGIN_SURICATA_ALERT_COUNT[@]}"; do
             echo "_LOGIN_SURICATA_ALERT_COUNT[$key]=${_LOGIN_SURICATA_ALERT_COUNT[$key]}"
         done

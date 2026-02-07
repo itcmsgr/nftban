@@ -31,6 +31,23 @@ set -Eeuo pipefail
 readonly NFTBAN_CONFIG_SCHEMA_LOADED=1
 
 # =============================================================================
+# SHARED LIBRARY DEPENDENCIES
+# =============================================================================
+
+# Source shared libraries with graceful fallback
+_NFTBAN_LIB_PATH="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib"
+
+# shellcheck source=/dev/null
+if [[ -f "${_NFTBAN_LIB_PATH}/nftban_timestamp.sh" ]]; then
+    source "${_NFTBAN_LIB_PATH}/nftban_timestamp.sh"
+fi
+
+# shellcheck source=/dev/null
+if [[ -f "${_NFTBAN_LIB_PATH}/nftban_file_utils.sh" ]]; then
+    source "${_NFTBAN_LIB_PATH}/nftban_file_utils.sh"
+fi
+
+# =============================================================================
 # CONSTANTS
 # =============================================================================
 
@@ -72,11 +89,19 @@ nftban_detect_suricata() {
     local eve_file="/var/log/nftban/suricata/eve-alerts.json"
     local threshold=300  # 5 minutes
     if [[ -f "$eve_file" ]]; then
-        local now age
-        now=$(date +%s)
-        age=$(stat -c %Y "$eve_file" 2>/dev/null || echo 0)
-        if (( now - age < threshold )); then
-            eve_ok=true
+        # Use shared library if available, otherwise fallback to inline logic
+        if declare -f nftban_file_is_fresh &>/dev/null; then
+            if nftban_file_is_fresh "$eve_file" "$threshold"; then
+                eve_ok=true
+            fi
+        else
+            # Fallback: inline age calculation
+            local now file_mtime
+            now=$(date +%s)
+            file_mtime=$(stat -c %Y "$eve_file" 2>/dev/null || stat -f %m "$eve_file" 2>/dev/null || echo 0)
+            if (( now - file_mtime < threshold )); then
+                eve_ok=true
+            fi
         fi
     fi
 
@@ -787,11 +812,19 @@ nftban_config_save_state() {
     local known_keys
     known_keys=$(nftban_schema_get_keys "$schema_file" | jq -R -s 'split("\n") | map(select(. != ""))')
 
+    # Use shared library if available, otherwise fallback
+    local timestamp
+    if declare -f nftban_timestamp_local &>/dev/null; then
+        timestamp=$(nftban_timestamp_local)
+    else
+        timestamp=$(date -Iseconds)
+    fi
+
     jq -n \
         --argjson schema_version "$schema_version" \
         --argjson known_keys "$known_keys" \
-        --arg timestamp "$(date -Iseconds)" \
-        --arg nftban_version "${NFTBAN_VERSION:-1.7.0}" \
+        --arg timestamp "$timestamp" \
+        --arg nftban_version "${NFTBAN_VERSION:-unknown}" \
         '{
             schema_version: $schema_version,
             known_keys: $known_keys,

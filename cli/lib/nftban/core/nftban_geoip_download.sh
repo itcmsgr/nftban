@@ -188,8 +188,26 @@ _check_database() {
 
     echo "[INFO] GeoIP database found"
     echo "[INFO] Location: ${db_file}"
-    echo "[INFO] Size: $(du -h ${db_file} | cut -f1)"
-    echo "[INFO] Modified: $(stat -c %y ${db_file} | cut -d. -f1)"
+    echo "[INFO] Size: $(du -h "${db_file}" | cut -f1)"
+
+    # Get modification time - use shared library with graceful fallback
+    local db_mtime db_modified
+    if declare -f nftban_file_mtime &>/dev/null; then
+        db_mtime=$(nftban_file_mtime "${db_file}")
+    else
+        # Fallback: cross-platform stat
+        db_mtime=$(stat -c %Y "${db_file}" 2>/dev/null || stat -f %m "${db_file}" 2>/dev/null || echo 0)
+    fi
+    # Format modification time
+    if declare -f nftban_timestamp_from_unix &>/dev/null; then
+        db_modified=$(nftban_timestamp_from_unix "${db_mtime}")
+    else
+        # Fallback: GNU date with BSD fallback
+        db_modified=$(date -d "@${db_mtime}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || \
+                      date -r "${db_mtime}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || \
+                      echo "unknown")
+    fi
+    echo "[INFO] Modified: ${db_modified}"
 
     # Check if database is old (> 30 days)
     local age_seconds age
@@ -197,11 +215,10 @@ _check_database() {
     if declare -f nftban_file_age &>/dev/null; then
         age_seconds=$(nftban_file_age "${db_file}")
     else
-        # Fallback: inline calculation
-        local mtime now
-        mtime=$(stat -c %Y "${db_file}" 2>/dev/null || stat -f %m "${db_file}" 2>/dev/null || echo 0)
+        # Fallback: inline calculation using mtime already obtained
+        local now
         now=$(date +%s)
-        age_seconds=$(( now - mtime ))
+        age_seconds=$(( now - db_mtime ))
     fi
     age=$(( age_seconds / 86400 ))
 

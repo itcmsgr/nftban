@@ -31,6 +31,16 @@ set -Eeuo pipefail
 readonly NFTBAN_MAIL_LOADED=1
 
 # =============================================================================
+# SOURCE SHARED LIBRARIES
+# =============================================================================
+
+# Source timestamp library for unified date/time formatting
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+fi
+
+# =============================================================================
 # CONFIGURABLE MAIL BINARY PATHS
 # =============================================================================
 # These can be overridden via environment variables for non-standard locations
@@ -456,10 +466,18 @@ nftban_mail_template_replace() {
     server_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || echo "unknown")"
 
     local date_val
-    date_val="$(date +%Y-%m-%d)"
+    if type nftban_timestamp_date &>/dev/null; then
+        date_val="$(nftban_timestamp_date)"
+    else
+        date_val="$(date +%Y-%m-%d)"
+    fi
 
     local time_val
-    time_val="$(date +%H:%M:%S)"
+    if type nftban_timestamp_time &>/dev/null; then
+        time_val="$(nftban_timestamp_time)"
+    else
+        time_val="$(date +%H:%M:%S)"
+    fi
 
     local company_name="${NFTBAN_COMPANY_NAME:-}"
     local logo_location="${NFTBAN_LOGO_LOCATION:-}"
@@ -696,7 +714,7 @@ Subject: ${subject}
 Content-Type: text/html; charset=UTF-8
 MIME-Version: 1.0
 Date: $(date -R)
-Message-ID: <$(date +%s).nftban@$(hostname -f)>
+Message-ID: <$(type nftban_timestamp_unix &>/dev/null && nftban_timestamp_unix || date +%s).nftban@$(hostname -f)>
 
 ${content_html}
 CURLEOF
@@ -724,8 +742,13 @@ CURLEOF
 
         # Save sent email if debugging
         if [[ -n "${NFTBAN_MAIL_SAVE_SENT:-}" ]] && [[ -d "${NFTBAN_MAIL_SAVE_SENT}" ]]; then
-            local save_file
-            save_file="${NFTBAN_MAIL_SAVE_SENT}/sent_$(date +%Y%m%d_%H%M%S).html"
+            local save_file save_timestamp
+            if type nftban_timestamp_file &>/dev/null; then
+                save_timestamp="$(nftban_timestamp_file)"
+            else
+                save_timestamp="$(date +%Y%m%d_%H%M%S)"
+            fi
+            save_file="${NFTBAN_MAIL_SAVE_SENT}/sent_${save_timestamp}.html"
             echo "$content_html" > "$save_file"
             echo "  (Saved to: $save_file)"
         fi
@@ -946,7 +969,11 @@ _mail_log() {
     local level="$1"
     shift
     local timestamp
-    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    if type nftban_timestamp_date &>/dev/null && type nftban_timestamp_time &>/dev/null; then
+        timestamp="$(nftban_timestamp_date) $(nftban_timestamp_time)"
+    else
+        timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    fi
     local log_file="${NFTBAN_LOG_DIR}/mail.log"
 
     mkdir -p "$(dirname "$log_file")" 2>/dev/null || true
@@ -999,7 +1026,11 @@ nftban_mail_send_with_retry() {
         if nftban_mail_send "$content_arg" "$recipient" 2>/dev/null; then
             send_result=0
             _mail_counter_inc "success" "$mta"
-            echo "$(date +%s)" > "${MAIL_COUNTERS_DIR}/mail_last_success_ts"
+            if type nftban_timestamp_unix &>/dev/null; then
+                nftban_timestamp_unix > "${MAIL_COUNTERS_DIR}/mail_last_success_ts"
+            else
+                echo "$(date +%s)" > "${MAIL_COUNTERS_DIR}/mail_last_success_ts"
+            fi
             _mail_log "INFO" "MAIL_SEND_RESULT task_id=inline status=success transport=$mta attempt=$attempt"
             _mail_write_metrics
             return 0
@@ -1043,8 +1074,13 @@ _mail_spool_enqueue() {
     mkdir -p "$spool_dir" 2>/dev/null || true
 
     # Generate unique ID
-    local mail_id
-    mail_id="mail-$(date +%Y%m%dT%H%M%SZ)-$(head -c 4 /dev/urandom | xxd -p 2>/dev/null || echo $$)"
+    local mail_id mail_timestamp
+    if type nftban_timestamp &>/dev/null; then
+        mail_timestamp="$(nftban_timestamp)"
+    else
+        mail_timestamp="$(date +%Y%m%dT%H%M%SZ)"
+    fi
+    mail_id="mail-${mail_timestamp}-$(head -c 4 /dev/urandom | xxd -p 2>/dev/null || echo $$)"
 
     # Save mail content to spool
     local payload_dir="${spool_dir}/${mail_id}"
@@ -1058,11 +1094,17 @@ _mail_spool_enqueue() {
     fi
 
     # Save metadata
+    local created_epoch
+    if type nftban_timestamp_unix &>/dev/null; then
+        created_epoch="$(nftban_timestamp_unix)"
+    else
+        created_epoch="$(date +%s)"
+    fi
     cat > "${payload_dir}/meta.sh" <<EOF
 MAIL_TO="$recipient"
 MAIL_SUBJECT="$subject"
 MAIL_BODY_FILE="${payload_dir}/body.html"
-MAIL_CREATED_EPOCH="$(date +%s)"
+MAIL_CREATED_EPOCH="${created_epoch}"
 EOF
 
     # Check if queue functions available

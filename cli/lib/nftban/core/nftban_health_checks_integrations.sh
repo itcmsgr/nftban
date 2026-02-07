@@ -32,6 +32,79 @@ set -Eeuo pipefail
 _NFTBAN_HEALTH_CHECKS_INTEGRATIONS_LOADED=1
 
 # =============================================================================
+# SHARED LIBRARY LOADING
+# =============================================================================
+
+# shellcheck source=/dev/null
+_NFTBAN_LIB_PATH="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib"
+
+# Load timestamp utilities (for nftban_timestamp_unix)
+if [[ -f "${_NFTBAN_LIB_PATH}/nftban_timestamp.sh" ]]; then
+    source "${_NFTBAN_LIB_PATH}/nftban_timestamp.sh"
+fi
+
+# Load file utilities (for nftban_file_age, nftban_file_mtime)
+if [[ -f "${_NFTBAN_LIB_PATH}/nftban_file_utils.sh" ]]; then
+    source "${_NFTBAN_LIB_PATH}/nftban_file_utils.sh"
+fi
+
+# Load service control (for nftban_service_is_active, nftban_service_exists, etc.)
+if [[ -f "${_NFTBAN_LIB_PATH}/nftban_service_control.sh" ]]; then
+    source "${_NFTBAN_LIB_PATH}/nftban_service_control.sh"
+fi
+
+# =============================================================================
+# FALLBACK FUNCTIONS (if libraries not available)
+# =============================================================================
+
+# Fallback for nftban_file_age
+if ! declare -F nftban_file_age >/dev/null 2>&1; then
+    nftban_file_age() {
+        local filepath="$1"
+        [[ ! -e "$filepath" ]] && { echo "0"; return 1; }
+        local mtime current_time
+        mtime=$(stat -c %Y "$filepath" 2>/dev/null || stat -f %m "$filepath" 2>/dev/null || echo 0)
+        current_time=$(date +%s)
+        echo $(( current_time - mtime ))
+    }
+fi
+
+# Fallback for nftban_service_is_active
+if ! declare -F nftban_service_is_active >/dev/null 2>&1; then
+    nftban_service_is_active() {
+        systemctl is-active --quiet "$1" 2>/dev/null
+    }
+fi
+
+# Fallback for nftban_service_is_enabled
+if ! declare -F nftban_service_is_enabled >/dev/null 2>&1; then
+    nftban_service_is_enabled() {
+        systemctl is-enabled --quiet "$1" 2>/dev/null
+    }
+fi
+
+# Fallback for nftban_service_exists
+if ! declare -F nftban_service_exists >/dev/null 2>&1; then
+    nftban_service_exists() {
+        local service="$1"
+        [[ "$service" != *.service ]] && [[ "$service" != *.timer ]] && service="${service}.service"
+        systemctl list-unit-files "$service" 2>/dev/null | grep -q "^${service}" && return 0
+        [[ -f "/etc/systemd/system/${service}" ]] && return 0
+        [[ -f "/usr/lib/systemd/system/${service}" ]] && return 0
+        return 1
+    }
+fi
+
+# Fallback for nftban_timer_is_active
+if ! declare -F nftban_timer_is_active >/dev/null 2>&1; then
+    nftban_timer_is_active() {
+        local timer="$1"
+        [[ "$timer" != *.timer ]] && timer="${timer}.timer"
+        systemctl is-active --quiet "$timer" 2>/dev/null
+    }
+fi
+
+# =============================================================================
 # METRICS INTEGRATION CHECK (v0.6.0)
 # =============================================================================
 
@@ -96,12 +169,12 @@ nftban_health_check_metrics() {
     local metrics_file="/var/lib/node_exporter/textfile_collector/nftban.prom"
     if [[ -f "$metrics_file" ]]; then
         local file_age
-        file_age=$(( $(date +%s) - $(stat -c %Y "$metrics_file" 2>/dev/null || stat -f %m "$metrics_file" 2>/dev/null || echo 0) ))
+        file_age=$(nftban_file_age "$metrics_file")
 
         if [[ $file_age -lt 120 ]]; then
             metrics_issues+=("✓ Metrics exporter: Working (file ${file_age}s old)")
             # Exporter is working - check timer status
-            if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
+            if nftban_timer_is_active "nftban-unified-exporter.timer"; then
                 metrics_issues+=("✓ Metrics timer: Active")
             else
                 metrics_issues+=("⚠ Metrics timer not active (but exporter is working)")
@@ -117,8 +190,8 @@ nftban_health_check_metrics() {
         fi
     else
         # No metrics file - check if timer exists
-        if systemctl list-unit-files 2>/dev/null | grep -q "nftban-unified-exporter.timer"; then
-            if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
+        if nftban_service_exists "nftban-unified-exporter.timer"; then
+            if nftban_timer_is_active "nftban-unified-exporter.timer"; then
                 metrics_issues+=("Metrics timer active but no metrics file yet (may be first run)")
                 status=$HEALTH_WARNING
             else
@@ -136,9 +209,9 @@ nftban_health_check_metrics() {
     # Check Node Exporter (OPTIONAL - only needed for Prometheus scraping)
     local node_exporter_running=false
     if command -v node_exporter >/dev/null 2>&1 || command -v prometheus-node-exporter >/dev/null 2>&1; then
-        if systemctl is-active --quiet node_exporter 2>/dev/null || \
-           systemctl is-active --quiet prometheus-node-exporter 2>/dev/null || \
-           systemctl is-active --quiet node-exporter 2>/dev/null; then
+        if nftban_service_is_active "node_exporter" || \
+           nftban_service_is_active "prometheus-node-exporter" || \
+           nftban_service_is_active "node-exporter"; then
             metrics_issues+=("✓ Node Exporter: Running")
             # shellcheck disable=SC2034  # Reserved for metrics validation
             node_exporter_running=true
@@ -152,8 +225,8 @@ nftban_health_check_metrics() {
     # Check Prometheus or VictoriaMetrics (optional alternatives)
     local configured_backend="${NFTBAN_METRICS_BACKEND:-prometheus}"
 
-    if command -v prometheus >/dev/null 2>&1 || systemctl list-unit-files 2>/dev/null | grep -q "^prometheus.service"; then
-        if systemctl is-active --quiet prometheus 2>/dev/null; then
+    if command -v prometheus >/dev/null 2>&1 || nftban_service_exists "prometheus.service"; then
+        if nftban_service_is_active "prometheus"; then
             metrics_issues+=("✓ Prometheus: Running")
 
             if command -v curl >/dev/null 2>&1; then
@@ -172,8 +245,8 @@ nftban_health_check_metrics() {
         fi
     fi
 
-    if command -v victoria-metrics >/dev/null 2>&1 || systemctl list-unit-files 2>/dev/null | grep -q "^victoria-metrics.service"; then
-        if systemctl is-active --quiet victoria-metrics 2>/dev/null; then
+    if command -v victoria-metrics >/dev/null 2>&1 || nftban_service_exists "victoria-metrics.service"; then
+        if nftban_service_is_active "victoria-metrics"; then
             metrics_issues+=("✓ VictoriaMetrics: Running")
 
             if command -v curl >/dev/null 2>&1; then
@@ -193,8 +266,8 @@ nftban_health_check_metrics() {
     fi
 
     # Check Grafana (optional)
-    if command -v grafana-server >/dev/null 2>&1 || systemctl list-unit-files | grep -q "grafana-server"; then
-        if systemctl is-active --quiet grafana-server 2>/dev/null; then
+    if command -v grafana-server >/dev/null 2>&1 || nftban_service_exists "grafana-server"; then
+        if nftban_service_is_active "grafana-server"; then
             metrics_issues+=("✓ Grafana: Running")
         else
             metrics_issues+=("Grafana installed but not running")
@@ -204,9 +277,9 @@ nftban_health_check_metrics() {
 
     # Check Bandwidth Exporter (v0.6 GUI redesign)
     if [[ -f "${NFTBAN_LIB_DIR}/exporters/nftban_bandwidth_exporter.sh" ]]; then
-        if systemctl list-unit-files | grep -q "nftban-bandwidth-exporter.timer"; then
-            if systemctl is-enabled --quiet nftban-bandwidth-exporter.timer 2>/dev/null; then
-                if systemctl is-active --quiet nftban-bandwidth-exporter.timer; then
+        if nftban_service_exists "nftban-bandwidth-exporter.timer"; then
+            if nftban_service_is_enabled "nftban-bandwidth-exporter.timer"; then
+                if nftban_timer_is_active "nftban-bandwidth-exporter.timer"; then
                     metrics_issues+=("✓ Bandwidth exporter timer: Active")
                 else
                     metrics_issues+=("Bandwidth exporter timer not running")
@@ -224,7 +297,7 @@ nftban_health_check_metrics() {
         local bandwidth_metrics_file="/var/lib/node_exporter/textfile_collector/nftban_bandwidth.prom"
         if [[ -f "$bandwidth_metrics_file" ]]; then
             local file_age
-            file_age=$(( $(date +%s) - $(stat -c %Y "$bandwidth_metrics_file" 2>/dev/null || stat -f %m "$bandwidth_metrics_file" 2>/dev/null || echo 0) ))
+            file_age=$(nftban_file_age "$bandwidth_metrics_file")
 
             if [[ $file_age -lt 30 ]]; then
                 metrics_issues+=("✓ Bandwidth metrics: Fresh (${file_age}s old)")
@@ -321,9 +394,9 @@ nftban_health_check_zabbix() {
     fi
 
     # Check unified exporter timer (required for Zabbix export)
-    if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
+    if nftban_timer_is_active "nftban-unified-exporter.timer"; then
         zabbix_issues+=("✓ Unified exporter timer: Active")
-    elif systemctl list-unit-files 2>/dev/null | grep -q "nftban-unified-exporter.timer"; then
+    elif nftban_service_exists "nftban-unified-exporter.timer"; then
         zabbix_issues+=("⚠ Unified exporter timer: Not active")
         zabbix_issues+=("FIX: sudo systemctl enable --now nftban-unified-exporter.timer")
         [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
@@ -477,9 +550,9 @@ nftban_health_check_connectors() {
     fi
 
     # Check unified exporter timer
-    if systemctl is-active --quiet nftban-unified-exporter.timer 2>/dev/null; then
+    if nftban_timer_is_active "nftban-unified-exporter.timer"; then
         connector_issues+=("✓ Unified exporter timer: Active")
-    elif systemctl list-unit-files 2>/dev/null | grep -q "nftban-unified-exporter.timer"; then
+    elif nftban_service_exists "nftban-unified-exporter.timer"; then
         connector_issues+=("⚠ Unified exporter timer: Not active")
         connector_issues+=("FIX: sudo systemctl enable --now nftban-unified-exporter.timer")
         [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
@@ -594,7 +667,7 @@ nftban_health_check_pro() {
     fi
 
     # Check vmagent is running (Pro mode requires remote_write agent)
-    if systemctl is-active --quiet vmagent 2>/dev/null; then
+    if nftban_service_is_active "vmagent"; then
         pro_issues+=("✓ vmagent: Running")
 
         local vmagent_config="/etc/victoriametrics/vmagent.yml"
@@ -607,7 +680,7 @@ nftban_health_check_pro() {
                 [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
             fi
         fi
-    elif systemctl list-unit-files 2>/dev/null | grep -q "^vmagent.service"; then
+    elif nftban_service_exists "vmagent.service"; then
         pro_issues+=("vmagent installed but not running")
         pro_issues+=("FIX: sudo systemctl enable --now vmagent")
         [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR
@@ -620,9 +693,9 @@ nftban_health_check_pro() {
     # Check Pro timers are enabled
     local pro_timers=("nftban-pro-license.timer" "nftban-pro-inventory.timer")
     for timer in "${pro_timers[@]}"; do
-        if systemctl is-active --quiet "$timer" 2>/dev/null; then
+        if nftban_timer_is_active "$timer"; then
             pro_issues+=("✓ ${timer}: Active")
-        elif systemctl list-unit-files 2>/dev/null | grep -q "^${timer}"; then
+        elif nftban_service_exists "$timer"; then
             pro_issues+=("${timer} exists but not active")
             pro_issues+=("FIX: sudo systemctl enable --now $timer")
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
@@ -724,9 +797,7 @@ nftban_health_check_gui() {
 
     # Check if GUI service exists
     local service_exists=false
-    if systemctl list-unit-files | grep -q "${NFTBAN_SERVICE_UI:-nftban-ui.service}" 2>/dev/null; then
-        service_exists=true
-    elif [[ -f "/etc/systemd/system/${NFTBAN_SERVICE_UI:-nftban-ui.service}" ]] || [[ -f "/usr/lib/systemd/system/${NFTBAN_SERVICE_UI:-nftban-ui.service}" ]]; then
+    if nftban_service_exists "${NFTBAN_SERVICE_UI:-nftban-ui.service}"; then
         service_exists=true
     fi
 
@@ -737,7 +808,7 @@ nftban_health_check_gui() {
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
         fi
     else
-        if systemctl is-enabled --quiet ${NFTBAN_SERVICE_UI:-nftban-ui.service} 2>/dev/null; then
+        if nftban_service_is_enabled "${NFTBAN_SERVICE_UI:-nftban-ui.service}"; then
             gui_issues+=("✓ GUI service: Enabled")
         else
             gui_issues+=("Web UI service not enabled (OPTIONAL)")
@@ -750,7 +821,7 @@ nftban_health_check_gui() {
             fi
         fi
 
-        if systemctl is-active --quiet ${NFTBAN_SERVICE_UI:-nftban-ui.service} 2>/dev/null; then
+        if nftban_service_is_active "${NFTBAN_SERVICE_UI:-nftban-ui.service}"; then
             gui_issues+=("✓ GUI service: Running")
 
             local gui_addr="${NFTBAN_GUI_ADDR:-127.0.0.1:3940}"
@@ -771,21 +842,21 @@ nftban_health_check_gui() {
                 echo "  🔧 Auto-heal: Starting GUI service..."
                 systemctl start ${NFTBAN_SERVICE_UI:-nftban-ui.service} 2>&1 && \
                 sleep 2 && \
-                systemctl is-active --quiet ${NFTBAN_SERVICE_UI:-nftban-ui.service} 2>/dev/null && \
+                nftban_service_is_active "${NFTBAN_SERVICE_UI:-nftban-ui.service}" && \
                 gui_issues+=("✓ GUI service started") || gui_issues+=("Failed to start GUI service")
             fi
         fi
 
-        if systemctl is-failed --quiet ${NFTBAN_SERVICE_UI:-nftban-ui.service} 2>/dev/null; then
+        if systemctl is-failed --quiet "${NFTBAN_SERVICE_UI:-nftban-ui.service}" 2>/dev/null; then
             gui_issues+=("GUI service in failed state")
             [[ $status -lt $HEALTH_CRITICAL ]] && status=$HEALTH_CRITICAL
 
             if [[ $auto_heal -eq 1 ]]; then
                 echo "  🔧 Auto-heal: Resetting failed GUI service..."
-                systemctl reset-failed ${NFTBAN_SERVICE_UI:-nftban-ui.service} 2>&1
-                systemctl restart ${NFTBAN_SERVICE_UI:-nftban-ui.service} 2>&1 && \
+                systemctl reset-failed "${NFTBAN_SERVICE_UI:-nftban-ui.service}" 2>&1
+                systemctl restart "${NFTBAN_SERVICE_UI:-nftban-ui.service}" 2>&1 && \
                 sleep 2 && \
-                systemctl is-active --quiet ${NFTBAN_SERVICE_UI:-nftban-ui.service} 2>/dev/null && \
+                nftban_service_is_active "${NFTBAN_SERVICE_UI:-nftban-ui.service}" && \
                 gui_issues+=("✓ GUI service restarted") || gui_issues+=("Failed to restart GUI service")
             fi
         fi
@@ -797,8 +868,8 @@ nftban_health_check_gui() {
 
     if [[ -d "$auth_socket_dir" ]]; then
         local dir_owner dir_group
-        dir_owner=$(stat -c '%U' "$auth_socket_dir" 2>/dev/null)
-        dir_group=$(stat -c '%G' "$auth_socket_dir" 2>/dev/null)
+        dir_owner=$(stat -c '%U' "$auth_socket_dir" 2>/dev/null || stat -f '%Su' "$auth_socket_dir" 2>/dev/null || echo "???")
+        dir_group=$(stat -c '%G' "$auth_socket_dir" 2>/dev/null || stat -f '%Sg' "$auth_socket_dir" 2>/dev/null || echo "???")
 
         if [[ "$dir_group" != "nftban" ]]; then
             gui_issues+=("GUI-AUTH: Auth socket directory has wrong group: ${dir_owner}:${dir_group} (should be root:nftban)")
@@ -816,8 +887,8 @@ nftban_health_check_gui() {
 
         if [[ -S "$auth_socket" ]]; then
             local sock_owner sock_group
-            sock_owner=$(stat -c '%U' "$auth_socket" 2>/dev/null)
-            sock_group=$(stat -c '%G' "$auth_socket" 2>/dev/null)
+            sock_owner=$(stat -c '%U' "$auth_socket" 2>/dev/null || stat -f '%Su' "$auth_socket" 2>/dev/null || echo "???")
+            sock_group=$(stat -c '%G' "$auth_socket" 2>/dev/null || stat -f '%Sg' "$auth_socket" 2>/dev/null || echo "???")
 
             if [[ "$sock_group" != "nftban" ]]; then
                 gui_issues+=("GUI-AUTH: Auth socket has wrong group: ${sock_owner}:${sock_group} (should be root:nftban)")
@@ -826,12 +897,12 @@ nftban_health_check_gui() {
                 gui_issues+=("✓ GUI-AUTH: Socket permissions OK (${sock_owner}:${sock_group})")
             fi
         else
-            if systemctl is-active --quiet nftban-ui-auth.service 2>/dev/null; then
+            if nftban_service_is_active "nftban-ui-auth.service"; then
                 gui_issues+=("GUI-AUTH: Auth service running but socket missing")
                 [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR
             fi
         fi
-    elif systemctl is-active --quiet ${NFTBAN_SERVICE_UI:-nftban-ui.service} 2>/dev/null; then
+    elif nftban_service_is_active "${NFTBAN_SERVICE_UI:-nftban-ui.service}"; then
         gui_issues+=("GUI-AUTH: Auth socket directory missing (/run/nftban-ui)")
         gui_issues+=("ℹ️  Restart auth service: systemctl restart nftban-ui-auth")
         [[ $status -lt $HEALTH_ERROR ]] && status=$HEALTH_ERROR

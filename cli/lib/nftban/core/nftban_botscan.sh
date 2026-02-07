@@ -33,6 +33,15 @@ umask 027
 readonly NFTBAN_BOTSCAN_LOADED=1
 
 # =============================================================================
+# SHARED LIBRARIES
+# =============================================================================
+
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" 2>/dev/null || true
+
+# =============================================================================
 # CONFIGURATION
 # =============================================================================
 
@@ -377,7 +386,7 @@ nftban_botscan_process_entry() {
     local status="$4"
     local ua="$5"
     local now
-    now=$(date +%s)
+    now=$(nftban_timestamp_unix 2>/dev/null || date +%s)
 
     # Check whitelists
     nftban_botscan_is_whitelisted "$ip" "$ua" && return 0
@@ -408,7 +417,7 @@ nftban_botscan_process_entry() {
 # Analyze tracked IPs and ban if threshold exceeded
 nftban_botscan_analyze() {
     local now
-    now=$(date +%s)
+    now=$(nftban_timestamp_unix 2>/dev/null || date +%s)
     local banned=0
 
     for ip in "${!_BOTSCAN_IP_HITS[@]}"; do

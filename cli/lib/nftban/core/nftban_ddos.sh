@@ -73,6 +73,28 @@ NFTBAN_DDOS_CONFIG_DIR="$NFTBAN_CONFIG_DIR"
 readonly NFTBAN_DDOS_LOG_FILE="${NFTBAN_LOG_DIR:-/var/log/nftban}/ddos.log"
 
 # =============================================================================
+# LOAD SHARED LIBRARIES
+# =============================================================================
+
+# Source timestamp utilities (with graceful fallback)
+if [[ -f "${NFTBAN_DDOS_LIB_DIR}/lib/nftban_timestamp.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_DDOS_LIB_DIR}/lib/nftban_timestamp.sh"
+elif [[ -f "$(dirname "${BASH_SOURCE[0]}")/../lib/nftban_timestamp.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "$(dirname "${BASH_SOURCE[0]}")/../lib/nftban_timestamp.sh"
+fi
+
+# Source file utilities (with graceful fallback)
+if [[ -f "${NFTBAN_DDOS_LIB_DIR}/lib/nftban_file_utils.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_DDOS_LIB_DIR}/lib/nftban_file_utils.sh"
+elif [[ -f "$(dirname "${BASH_SOURCE[0]}")/../lib/nftban_file_utils.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "$(dirname "${BASH_SOURCE[0]}")/../lib/nftban_file_utils.sh"
+fi
+
+# =============================================================================
 # LOAD SUB-MODULES
 # =============================================================================
 
@@ -418,7 +440,12 @@ nftban_ddos_status() {
                     echo "  Fix:       Check Suricata output config (suricata.yaml)"
                 else
                     local diag_age
-                    diag_age=$(( $(date +%s) - $(stat -c %Y "$diag_eve" 2>/dev/null || echo 0) ))
+                    # Use shared library if available, fallback to inline calculation
+                    if type -t nftban_file_age &>/dev/null; then
+                        diag_age=$(nftban_file_age "$diag_eve")
+                    else
+                        diag_age=$(( $(date +%s) - $(stat -c %Y "$diag_eve" 2>/dev/null || echo 0) ))
+                    fi
                     echo "  Reason:    EVE log stale (last update ${diag_age}s ago, threshold: ${DDOS_EVE_FRESHNESS_THRESHOLD:-60}s)"
                     echo "  Fix:       Check Suricata is processing traffic: suricata --build-info"
                     echo "             Verify EVE output: grep eve-log /etc/suricata/suricata.yaml"

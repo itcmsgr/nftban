@@ -32,6 +32,67 @@ set -Eeuo pipefail
 _NFTBAN_HEALTH_CHECKS_SECURITY_LOADED=1
 
 # =============================================================================
+# LOAD SHARED LIBRARIES (with graceful fallbacks)
+# =============================================================================
+
+_NFTBAN_LIBS_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib"
+
+# Load timestamp library (provides nftban_timestamp_unix, nftban_timestamp)
+if [[ -f "${_NFTBAN_LIBS_DIR}/nftban_timestamp.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${_NFTBAN_LIBS_DIR}/nftban_timestamp.sh" 2>/dev/null || true
+fi
+
+# Load file utilities library (provides nftban_file_mtime, nftban_file_age)
+if [[ -f "${_NFTBAN_LIBS_DIR}/nftban_file_utils.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${_NFTBAN_LIBS_DIR}/nftban_file_utils.sh" 2>/dev/null || true
+fi
+
+# Load service control library (provides nftban_service_is_active, nftban_service_start)
+if [[ -f "${_NFTBAN_LIBS_DIR}/nftban_service_control.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${_NFTBAN_LIBS_DIR}/nftban_service_control.sh" 2>/dev/null || true
+fi
+
+# =============================================================================
+# FALLBACK FUNCTIONS (if libraries are not available)
+# =============================================================================
+
+# Fallback for nftban_timestamp_unix if library not loaded
+if ! declare -f nftban_timestamp_unix &>/dev/null; then
+    nftban_timestamp_unix() { date '+%s'; }
+fi
+
+# Fallback for nftban_timestamp if library not loaded
+if ! declare -f nftban_timestamp &>/dev/null; then
+    nftban_timestamp() { date '+%Y-%m-%d %H:%M:%S'; }
+fi
+
+# Fallback for nftban_service_is_active if library not loaded
+if ! declare -f nftban_service_is_active &>/dev/null; then
+    nftban_service_is_active() { systemctl is-active --quiet "$1" 2>/dev/null; }
+fi
+
+# Fallback for nftban_service_start if library not loaded
+if ! declare -f nftban_service_start &>/dev/null; then
+    nftban_service_start() { systemctl start "$1" 2>/dev/null; }
+fi
+
+# File permissions helper (not in file_utils library, so define locally)
+# Usage: nftban_file_perms "/path/to/file"
+# Returns: octal permissions (e.g., "644") or "000" if file not found
+nftban_file_perms() {
+    local filepath="$1"
+    if [[ ! -e "$filepath" ]]; then
+        echo "000"
+        return 1
+    fi
+    # Try GNU stat first, then BSD stat
+    stat -c '%a' "$filepath" 2>/dev/null || stat -f '%Lp' "$filepath" 2>/dev/null || echo "000"
+}
+
+# =============================================================================
 # NFTABLES SECURITY CHECKS
 # =============================================================================
 
@@ -110,14 +171,14 @@ nftban_health_check_conflicting_firewalls() {
 
         # Basic firewalld check
         if command -v firewall-cmd &>/dev/null; then
-            if systemctl is-active --quiet firewalld 2>/dev/null; then
+            if nftban_service_is_active firewalld; then
                 firewall_conflicts+=("ERROR: firewalld is ACTIVE")
                 status=$HEALTH_CRITICAL
             fi
         fi
 
         # Basic iptables check
-        if systemctl is-active --quiet iptables 2>/dev/null; then
+        if nftban_service_is_active iptables; then
             firewall_conflicts+=("ERROR: iptables service is ACTIVE")
             status=$HEALTH_CRITICAL
         fi
@@ -328,7 +389,7 @@ nftban_health_check_memory_protection() {
             protected_bans=$(jq -r '[.bans[] | select(.protected == true)] | length // 0' "$permanent_bans_file" 2>/dev/null)
             # Evictable = not protected and older than 30 days
             local now_ts thirty_days_ago
-            now_ts=$(date +%s)
+            now_ts=$(nftban_timestamp_unix)
             thirty_days_ago=$((now_ts - 30*24*60*60))
             evictable_bans=$(jq -r --argjson cutoff "$thirty_days_ago" \
                 '[.bans[] | select(.protected != true) | select((.added_at | fromdateiso8601 // 0) < $cutoff)] | length // 0' \
@@ -405,9 +466,9 @@ nftban_health_check_polkit() {
             polkit_issues+=("FIX: Re-run install.sh or reinstall nftban package")
             status=$HEALTH_ERROR
         else
-            # Verify file permissions
+            # Verify file permissions using shared helper
             local perms
-            perms=$(stat -c '%a' "$polkit_systemd_rules" 2>/dev/null || echo "000")
+            perms=$(nftban_file_perms "$polkit_systemd_rules")
             if [[ "$perms" != "644" ]]; then
                 polkit_issues+=("Polkit systemd rules have wrong permissions: $perms (should be 644)")
                 status=$HEALTH_WARNING
@@ -422,9 +483,9 @@ nftban_health_check_polkit() {
             polkit_issues+=("FIX: Re-run install.sh or reinstall nftban package")
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
         else
-            # Verify file permissions
+            # Verify file permissions using shared helper
             local perms
-            perms=$(stat -c '%a' "$polkit_auditor_rules" 2>/dev/null || echo "000")
+            perms=$(nftban_file_perms "$polkit_auditor_rules")
             if [[ "$perms" != "644" ]]; then
                 polkit_issues+=("Polkit auditor rules have wrong permissions: $perms (should be 644)")
                 [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
@@ -439,16 +500,16 @@ nftban_health_check_polkit() {
             polkit_issues+=("FIX: Re-run install.sh or reinstall nftban package")
             [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
         else
-            # Verify file permissions
+            # Verify file permissions using shared helper
             local perms
-            perms=$(stat -c '%a' "$polkit_panel_rules" 2>/dev/null || echo "000")
+            perms=$(nftban_file_perms "$polkit_panel_rules")
             if [[ "$perms" != "644" ]]; then
                 polkit_issues+=("Polkit panel rules have wrong permissions: $perms (should be 644)")
                 [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
             fi
         fi
 
-        # Check if polkit service is running
+        # Check if polkit service is running (using shared library)
         if command -v systemctl >/dev/null 2>&1; then
             local polkit_service="polkit"
             # Use distro config if available
@@ -457,9 +518,9 @@ nftban_health_check_polkit() {
                 [[ -z "$polkit_service" ]] && polkit_service="polkit"
             fi
 
-            if ! systemctl is-active --quiet "$polkit_service" 2>/dev/null; then
+            if ! nftban_service_is_active "$polkit_service"; then
                 if [[ "$auto_heal" == "1" ]]; then
-                    if systemctl start "$polkit_service" 2>/dev/null; then
+                    if nftban_service_start "$polkit_service"; then
                         polkit_issues+=("Polkit service was stopped - AUTO-HEALED: started successfully")
                         [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
                     else
@@ -652,7 +713,7 @@ nftban_health_check_ssh_port() {
         # Auto-fix: Update the SSH port config (format: PORT/PROTOCOL)
         if mkdir -p "${NFTBAN_CONFIG_DIR}/ports.d" 2>/dev/null; then
             cat > "${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf" << EOF
-# SSH port auto-updated by health check ($(date '+%Y-%m-%d %H:%M:%S'))
+# SSH port auto-updated by health check ($(nftban_timestamp))
 # Port format: PORT/PROTOCOL where PROTOCOL = T/tcp, U/udp, or B/both
 $current_ssh_port/T
 EOF
