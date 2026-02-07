@@ -5,25 +5,27 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Central audit trail for all NFTBan actions
 #
-# meta:name=nftban_audit
-# meta:type=helper
-# meta:header=Audit Trail Module
-# meta:version=1.0.0
+# meta:name="nftban_audit"
+# meta:type="helper"
+# meta:header="Audit Trail Module"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Logs all security-relevant actions (bans, unbans, config changes) to audit trail
-# meta:input=Action type, target, reason, user
-# meta:output=JSON-formatted audit entries to nftban-actions.log
-#
-# **Inventory & Requirements**
-# meta:depends=bash>=4.0
-#
-# meta:created_date=2025-11-24
-# meta:updated_date=2025-11-24
+# meta:homepage="https://nftban.com"
+# meta:description="Logs all security-relevant actions (bans, unbans, config changes) to audit trail"
+# meta:input="Action type, target, reason, user"
+# meta:output="JSON-formatted audit entries to nftban-actions.log"
+# meta:depends="bash>=4.0"
+# meta:created_date="2025-11-24"
+# meta:updated_date="2026-02-07"
+# meta:inventory.files="/var/log/nftban/nftban-actions.log"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars="NFTBAN_AUDIT_ENABLED,NFTBAN_AUDIT_FORMAT"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 # =============================================================================
-
+set -Eeuo pipefail
 
 # =============================================================================
 # MODULE GUARD
@@ -36,6 +38,10 @@ readonly NFTBAN_AUDIT_LOADED=1
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
+
+# Source timestamp library for unified timestamp formatting
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION
@@ -68,7 +74,7 @@ nftban_audit_log() {
 
     # Build timestamp
     local timestamp
-    timestamp=$(date -u '+%Y-%m-%dT%H:%M:%SZ')  # ISO 8601 UTC
+    timestamp=$(nftban_timestamp)  # ISO 8601 UTC
 
     # Get hostname
     local hostname
@@ -313,7 +319,7 @@ nftban_audit_rotate() {
     if ((size_mb >= max_size_mb)); then
         # Rotate with timestamp
         local backup
-        backup="${NFTBAN_AUDIT_LOG}.$(date '+%Y%m%d-%H%M%S')"
+        backup="${NFTBAN_AUDIT_LOG}.$(nftban_timestamp_file)"
         mv "$NFTBAN_AUDIT_LOG" "$backup"
         touch "$NFTBAN_AUDIT_LOG"
         chown nftban:nftban "$NFTBAN_AUDIT_LOG" 2>/dev/null || true

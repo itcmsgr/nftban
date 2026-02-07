@@ -33,6 +33,15 @@ set -Eeuo pipefail
 _NFTBAN_HEALTH_CHECKS_SERVICES_LOADED=1
 
 # =============================================================================
+# SHARED LIBRARY DEPENDENCIES
+# =============================================================================
+
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_service_control.sh" 2>/dev/null || true
+
+# =============================================================================
 # SERVICE CHECKS
 # =============================================================================
 
@@ -214,13 +223,17 @@ nftban_health_check_suricata() {
     # 3. Check eve-alerts.json log file exists and has recent activity
     local eve_log="${NFTBAN_SURICATA_EVE_LOG:-/var/log/nftban/suricata/eve-alerts.json}"
     if [[ -f "$eve_log" ]]; then
-        # Check if file has been modified in last 10 minutes
-        local last_modified
-        last_modified=$(stat -c %Y "$eve_log" 2>/dev/null || echo 0)
-        local current_time
-        current_time=$(date +%s)
+        # Check if file has been modified in last 10 minutes (600s)
+        # Use shared library function if available, fallback to inline calculation
         local age
-        age=$((current_time - last_modified))
+        if declare -f nftban_file_age >/dev/null 2>&1; then
+            age=$(nftban_file_age "$eve_log")
+        else
+            local last_modified current_time
+            last_modified=$(stat -c %Y "$eve_log" 2>/dev/null || echo 0)
+            current_time=$(date +%s)
+            age=$((current_time - last_modified))
+        fi
 
         if [[ $age -gt 600 ]]; then
             suricata_issues+=("eve-alerts.json not updated in 10+ minutes (may be stalled)")
@@ -445,7 +458,12 @@ nftban_health_check_maintenance_lock() {
 
     if [[ -f "$lockfile" ]]; then
         local lock_age lock_pid
-        lock_age=$(( $(date +%s) - $(stat -c %Y "$lockfile" 2>/dev/null || echo 0) ))
+        # Use shared library function if available, fallback to inline calculation
+        if declare -f nftban_file_age >/dev/null 2>&1; then
+            lock_age=$(nftban_file_age "$lockfile")
+        else
+            lock_age=$(( $(date +%s) - $(stat -c %Y "$lockfile" 2>/dev/null || echo 0) ))
+        fi
         lock_pid=$(cat "$lockfile" 2>/dev/null | head -1)
 
         # Check if lock is stale (>30min AND PID not running)

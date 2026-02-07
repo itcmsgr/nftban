@@ -49,6 +49,10 @@ readonly NFTBAN_STATS_LOADED=1
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/env.sh"
 
+# Source file utilities for age/freshness checking
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" 2>/dev/null || true
+
 # Use central config paths (set by nftban.conf)
 readonly NFTBAN_STATS_DB="${STATS_DB_DIR:-${NFTBAN_DATA_DIR}/metrics}/metrics.db"
 readonly NFTBAN_STATS_CACHE_DIR="${STATS_CACHE_DIR:-${NFTBAN_CACHE_DIR}/stats}"
@@ -105,10 +109,8 @@ nftban_stats_get_cache() {
     [[ "$STATS_CACHE_ENABLED" != "true" ]] && return 1
     [[ ! -f "$cache_file" ]] && return 1
 
-    # Check if cache is fresh
-    local cache_age
-    cache_age=$(( $(date +%s) - $(stat -c %Y "$cache_file" 2>/dev/null || echo 0) ))
-    if [[ $cache_age -lt ${STATS_CACHE_TTL} ]]; then
+    # Check if cache is fresh using file_utils library
+    if nftban_file_is_fresh "$cache_file" "${STATS_CACHE_TTL}"; then
         cat "$cache_file"
         return 0
     fi
@@ -177,10 +179,8 @@ nftban_stats_load_unified_cache() {
         return 1
     fi
 
-    # Check if cache is fresh
-    local cache_age
-    cache_age=$(( $(date +%s) - $(stat -c %Y "$NFTBAN_UNIFIED_CACHE" 2>/dev/null || echo 0) ))
-    if [[ $cache_age -gt $NFTBAN_UNIFIED_CACHE_TTL ]]; then
+    # Check if cache is fresh using file_utils library
+    if nftban_file_is_stale "$NFTBAN_UNIFIED_CACHE" "$NFTBAN_UNIFIED_CACHE_TTL"; then
         return 1  # Cache too old
     fi
 
