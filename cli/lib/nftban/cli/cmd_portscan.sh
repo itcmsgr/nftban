@@ -414,7 +414,7 @@ nftban_cmd_portscan() {
 
             echo ""
             echo "✅ Port scan check complete"
-            echo "   Check log: /var/log/nftban/portscan.log"
+            echo "   Check log: ${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan.log"
             ;;
 
         history)
@@ -423,7 +423,7 @@ nftban_cmd_portscan() {
             echo "📜 Recent Port Scan Detections (last 24 hours)"
             echo ""
 
-            local log_file="/var/log/nftban/portscan.log"
+            local log_file="${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan.log"
             if [[ ! -f "$log_file" ]]; then
                 echo "  (no detections yet)"
             else
@@ -468,10 +468,10 @@ nftban_cmd_portscan() {
 
             echo ""
             echo "Checking log file..."
-            if [[ -f "/var/log/nftban/portscan.log" ]]; then
+            if [[ -f "${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan.log" ]]; then
                 local log_size
-                log_size=$(stat -f%z "/var/log/nftban/portscan.log" 2>/dev/null || stat -c%s "/var/log/nftban/portscan.log")
-                echo "  ✅ Log file exists: /var/log/nftban/portscan.log"
+                log_size=$(stat -f%z "${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan.log" 2>/dev/null || stat -c%s "${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan.log")
+                echo "  ✅ Log file exists: ${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan.log"
                 echo "     Size: $log_size bytes"
             else
                 echo "  ⚠️  Log file not found (will be created on first detection)"
@@ -489,7 +489,7 @@ nftban_cmd_portscan() {
 
             nftban_portscan_sync_logs
 
-            local portscan_log="${NFTBAN_PORTSCAN_LOG:-/var/log/nftban/portscan.log}"
+            local portscan_log="${NFTBAN_PORTSCAN_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/portscan.log}"
             local line_count
             line_count=$(wc -l < "$portscan_log" 2>/dev/null || echo "0")
 
