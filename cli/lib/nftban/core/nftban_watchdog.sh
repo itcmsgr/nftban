@@ -117,6 +117,7 @@ if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_alert_throttle.sh" ]]; t
 fi
 
 # Throttle state file (kept for backward compatibility, no longer used directly)
+# shellcheck disable=SC2034  # Exported for external scripts
 readonly WATCHDOG_THROTTLE_FILE="${NFTBAN_RUN_DIR:-/run/nftban}/watchdog_throttle"
 
 # Status codes
