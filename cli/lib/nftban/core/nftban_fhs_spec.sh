@@ -85,6 +85,8 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/config"]="0750|root|nftban|Suricata config snippets"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/profiles"]="0750|root|nftban|Suricata detection profiles"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/rules"]="0750|root|nftban|Suricata custom rules"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/state"]="0750|root|nftban|Suricata rule state management"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/state/last-good"]="0750|root|nftban|Last known good rules backup"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/ssl"]="0750|root|nftban|UI TLS certificates"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/certs"]="0750|root|nftban|Zabbix integration TLS certificates"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/tls"]="0750|root|nftban|API TLS certificates (self-signed)"
@@ -116,6 +118,10 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/profiles"]="0750|nftban|nftban|Watchdog protection profiles"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/recorder"]="0750|nftban|nftban|Watchdog flight recorder audit trail"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/config"]="0755|root|root|Runtime configuration state"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/login"]="0750|nftban|nftban|Login monitor state files"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/portscan"]="0750|nftban|nftban|Portscan tracker database"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/geoban/tracking"]="0750|nftban|nftban|GeoIP ban country tracking"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/archive"]="0750|nftban|nftban|Archived reports"
 
     # Log Directories
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban"]="0750|nftban|nftban|Log files"
@@ -133,6 +139,8 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/geoban"]="0755|nftban|nftban|GeoIP country list cache"
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/metrics"]="0755|nftban|nftban|JSON metrics cache for dashboard"
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/feeds"]="0755|nftban|nftban|Feed download cache"
+    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/login"]="0755|nftban|nftban|Login module cache"
+    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/portscan"]="0755|nftban|nftban|Portscan module cache"
     NFTBAN_FHS_DIRECTORIES["/run/nftban"]="0755|nftban|nftban|Runtime data (PID files, sockets)"
     NFTBAN_FHS_DIRECTORIES["/run/nftban-ui"]="0755|nftban|nftban|Web UI daemon runtime data"
 

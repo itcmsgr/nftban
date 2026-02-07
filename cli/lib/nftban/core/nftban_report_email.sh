@@ -210,7 +210,7 @@ nftban_report_email_generate() {
                 local login_svc="${NFTBAN_SERVICE_LOGIN_MONITOR:-nftban-login-monitor.service}"
                 if systemctl is-active "$login_svc" &>/dev/null 2>&1 || \
                    systemctl is-active nftban-login &>/dev/null 2>&1 || \
-                   [[ -f /var/run/nftban/login.pid ]] || \
+                   [[ -f "${NFTBAN_RUN_DIR:-/run/nftban}/login.pid" ]] || \
                    [[ "$(grep -s 'NFTBAN_LOGIN_ALERT_ENABLED=true' /etc/nftban/conf.d/login_alert.conf* 2>/dev/null)" ]]; then
                     status="Active"; color="#22c55e"; icon="&#10004;"
                 fi

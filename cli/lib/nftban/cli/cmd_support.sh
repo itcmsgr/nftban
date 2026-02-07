@@ -558,7 +558,7 @@ _collect_fhs_structure() {
         # Key directories
         echo "=== Key Directories ==="
         for dir in /etc/nftban /usr/lib/nftban /var/lib/nftban /var/log/nftban \
-                   /var/run/nftban /usr/share/nftban; do
+                   "${NFTBAN_RUN_DIR:-/run/nftban}" /usr/share/nftban; do
             if [[ -d "$dir" ]]; then
                 echo "$dir: $(ls -ld "$dir" 2>&1)"
             else
@@ -704,14 +704,14 @@ _collect_daemon_status() {
 
         # Socket file
         echo "=== Socket File ==="
-        ls -la /var/run/nftban/nftband.sock 2>&1 || echo "socket file not found"
+        ls -la "${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" 2>&1 || echo "socket file not found"
         echo ""
 
         # Test daemon connectivity
         echo "=== Daemon Connectivity Test ==="
-        if [[ -S /var/run/nftban/nftband.sock ]]; then
+        if [[ -S "${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" ]]; then
             if command -v socat &>/dev/null; then
-                echo '{"action":"ping"}' | timeout 5 socat - UNIX-CONNECT:/var/run/nftban/nftband.sock 2>&1 || echo "ping failed"
+                echo '{"action":"ping"}' | timeout 5 socat - "UNIX-CONNECT:${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock" 2>&1 || echo "ping failed"
             else
                 echo "socat not available for connectivity test"
             fi
