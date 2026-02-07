@@ -81,11 +81,18 @@ end
 %pre
 # Pre-install: Create user and group via systemd-sysusers
 # Uses /usr/lib/sysusers.d/nftban.conf (generated from build/fhs-spec.yaml)
+#
+# NFTBan 3-Group Security Model:
+#   nftban:         Admin/Operator (full access)
+#   nftban-auditor: Read-only (reports, logs)
+#   nftban-panel:   Panel Operator (ban/unban, NO config)
+#
 if [ -f /usr/lib/sysusers.d/nftban.conf ]; then
     systemd-sysusers /usr/lib/sysusers.d/nftban.conf 2>/dev/null || {
         # Fallback for systems without systemd-sysusers
         getent group nftban >/dev/null || groupadd -r nftban
         getent group nftban-auditor >/dev/null || groupadd -r nftban-auditor
+        getent group nftban-panel >/dev/null || groupadd -r nftban-panel
         getent group suricata >/dev/null || groupadd -r suricata
         getent passwd nftban >/dev/null || \
             useradd -r -g nftban -G nftban-auditor -d /var/lib/nftban \
@@ -95,6 +102,7 @@ else
     # Fallback if sysusers.d file not yet installed
     getent group nftban >/dev/null || groupadd -r nftban
     getent group nftban-auditor >/dev/null || groupadd -r nftban-auditor
+    getent group nftban-panel >/dev/null || groupadd -r nftban-panel
     getent group suricata >/dev/null || groupadd -r suricata
     getent passwd nftban >/dev/null || \
         useradd -r -g nftban -G nftban-auditor -d /var/lib/nftban \

@@ -55,12 +55,19 @@ case "$1" in
             echo "Creating system users and groups..."
             systemd-sysusers /usr/lib/sysusers.d/nftban.conf 2>/dev/null || {
                 # Fallback for systems without systemd-sysusers
+                # NFTBan 3-Group Security Model:
+                #   nftban:         Admin/Operator (full access)
+                #   nftban-auditor: Read-only (reports, logs)
+                #   nftban-panel:   Panel Operator (ban/unban, NO config)
                 echo "systemd-sysusers not available, using fallback..."
                 if ! getent group nftban >/dev/null; then
                     groupadd -r nftban
                 fi
                 if ! getent group nftban-auditor >/dev/null; then
                     groupadd -r nftban-auditor
+                fi
+                if ! getent group nftban-panel >/dev/null; then
+                    groupadd -r nftban-panel
                 fi
                 if ! getent passwd nftban >/dev/null; then
                     useradd -r -g nftban -G nftban-auditor -d "${NFTBAN_DATA_DIR}" \
