@@ -493,6 +493,7 @@ nftban_health_check_all() {
     nftban_health_check_paths || ((errors++))
     nftban_health_check_permissions || ((warnings++))
     nftban_health_check_config || ((warnings++))
+    nftban_health_check_queue_processor "$auto_heal" || ((errors++))
 
     # Run security checks
     nftban_health_check_nftables_security || ((warnings++))
@@ -503,6 +504,8 @@ nftban_health_check_all() {
     nftban_health_check_daemon "$auto_heal" || ((errors++))
     nftban_health_check_timers "$auto_heal" || ((warnings++))
     nftban_health_check_protection || ((warnings++))
+    nftban_health_check_maintenance_lock "$auto_heal" || ((warnings++))
+    nftban_health_check_login_monitor_ipc || ((errors++))
 
     # Run structure validation checks
     nftban_health_check_fhs || ((warnings++))
@@ -517,6 +520,7 @@ nftban_health_check_all() {
     nftban_health_check_metrics 2>/dev/null || true
     nftban_health_check_zabbix 2>/dev/null || true
     nftban_health_check_connectors 2>/dev/null || true
+    nftban_health_check_portscan_prefix 2>/dev/null || ((warnings++))
 
     # Auto-heal if requested
     if [[ "$auto_heal" == "1" ]] && [[ $errors -gt 0 || $warnings -gt 0 ]]; then

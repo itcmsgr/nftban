@@ -354,6 +354,58 @@ nftban_health_check_fhs() {
     return $status
 }
 
+# =============================================================================
+# QUEUE PROCESSOR CHECK (Bug #21: Permission issues cause service failure)
+# =============================================================================
+
+nftban_health_check_queue_processor() {
+    # Check if queue processor script is executable
+    # Bug found: Deployed with mode 644 instead of 755, causing nftban-queue.service to fail
+    # Returns: 0=OK, 1=Warning (auto-fixed), 2=Error
+    # Args: $1 = auto_heal (0=check only, 1=auto-fix)
+
+    local auto_heal="${1:-0}"
+    local status=$HEALTH_OK
+    local qp_issues=()
+    local qp="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/sbin/nftban-queue-processor"
+
+    if [[ -f "$qp" ]]; then
+        if [[ ! -x "$qp" ]]; then
+            local current_mode
+            current_mode=$(stat -c %a "$qp" 2>/dev/null || echo "unknown")
+            qp_issues+=("Queue processor not executable: $qp (mode $current_mode, expected 755)")
+            status=$HEALTH_ERROR
+
+            # Auto-heal: Fix permissions
+            if [[ $auto_heal -eq 1 ]] || [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
+                if chmod 755 "$qp" 2>/dev/null; then
+                    qp_issues+=("AUTO-FIXED: Set $qp to mode 755")
+                    status=$HEALTH_WARNING  # Downgrade from error since we fixed it
+
+                    # Also restart the service if it was failing
+                    if systemctl is-enabled --quiet nftban-queue.service 2>/dev/null; then
+                        systemctl restart nftban-queue.service 2>/dev/null && \
+                            qp_issues+=("AUTO-FIXED: Restarted nftban-queue.service")
+                    fi
+                else
+                    qp_issues+=("FAILED to fix permissions (need root)")
+                    qp_issues+=("FIX: sudo chmod 755 $qp")
+                    NFTBAN_HEALTH_ERRORS+=("Queue processor not executable (mode $current_mode)")
+                fi
+            else
+                qp_issues+=("FIX: sudo chmod 755 $qp")
+                NFTBAN_HEALTH_ERRORS+=("Queue processor not executable (mode $current_mode)")
+            fi
+        else
+            qp_issues+=("✓ Queue processor executable")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["queue_processor"]=$status
+    [[ ${#qp_issues[@]} -gt 0 ]] && NFTBAN_HEALTH_ISSUES["queue_processor"]="${qp_issues[*]}"
+    return $status
+}
+
 # Export helper functions
 export -f _health_service_active _health_service_enabled _health_service_exists
 export -f _health_file_age _health_file_fresh _health_http_check
@@ -361,4 +413,4 @@ export -f _health_check_service _health_check_metrics_file
 export -f nftban_health_should_alert
 export -f nftban_health_check_binaries nftban_health_check_paths
 export -f nftban_health_check_permissions nftban_health_check_resources
-export -f nftban_health_check_fhs
+export -f nftban_health_check_fhs nftban_health_check_queue_processor

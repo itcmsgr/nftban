@@ -427,6 +427,107 @@ nftban_health_check_timers() {
     return $status
 }
 
+# =============================================================================
+# MAINTENANCE LOCK CHECK (Bug #23: Stale locks block maintenance)
+# =============================================================================
+
+nftban_health_check_maintenance_lock() {
+    # Check for stale maintenance lock files
+    # Bug found: Dual locking (flock + script) causes permanent lock state
+    # Returns: 0=OK, 1=Warning (stale lock found or auto-fixed)
+    # Args: $1 = auto_heal (0=check only, 1=auto-fix)
+
+    local auto_heal="${1:-0}"
+    local status=$HEALTH_OK
+    local lock_issues=()
+    local lockfile="${NFTBAN_RUN_DIR:-/run/nftban}/maintenance.lock"
+
+    if [[ -f "$lockfile" ]]; then
+        local lock_age lock_pid
+        lock_age=$(( $(date +%s) - $(stat -c %Y "$lockfile" 2>/dev/null || echo 0) ))
+        lock_pid=$(cat "$lockfile" 2>/dev/null | head -1)
+
+        # Check if lock is stale (>30min AND PID not running)
+        if [[ $lock_age -gt 1800 ]]; then
+            local is_stale=0
+
+            if [[ -n "$lock_pid" ]] && [[ "$lock_pid" =~ ^[0-9]+$ ]]; then
+                if ! kill -0 "$lock_pid" 2>/dev/null; then
+                    lock_issues+=("Stale maintenance lock: ${lock_age}s old, PID $lock_pid not running")
+                    is_stale=1
+                fi
+            else
+                # Invalid PID in lock file
+                lock_issues+=("Invalid maintenance lock file (no valid PID)")
+                is_stale=1
+            fi
+
+            if [[ $is_stale -eq 1 ]]; then
+                # Auto-heal: Remove stale lock
+                if [[ $auto_heal -eq 1 ]] || [[ "${NFTBAN_HEALTH_AUTO_HEAL:-false}" == "true" ]]; then
+                    if rm -f "$lockfile" 2>/dev/null; then
+                        lock_issues+=("AUTO-FIXED: Removed stale lock file")
+                        status=$HEALTH_WARNING  # Fixed, but note it happened
+                    else
+                        lock_issues+=("FAILED to remove stale lock (need root)")
+                        lock_issues+=("FIX: sudo rm -f $lockfile")
+                        status=$HEALTH_WARNING
+                        NFTBAN_HEALTH_WARNINGS+=("Stale maintenance lock blocking scheduled maintenance")
+                    fi
+                else
+                    lock_issues+=("FIX: sudo rm -f $lockfile")
+                    status=$HEALTH_WARNING
+                    NFTBAN_HEALTH_WARNINGS+=("Stale maintenance lock blocking scheduled maintenance")
+                fi
+            fi
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["maintenance_lock"]=$status
+    [[ ${#lock_issues[@]} -gt 0 ]] && NFTBAN_HEALTH_ISSUES["maintenance_lock"]="${lock_issues[*]}"
+    return $status
+}
+
+# =============================================================================
+# LOGIN MONITOR IPC CHECK (Bug #22: Login monitor can't communicate with daemon)
+# =============================================================================
+
+nftban_health_check_login_monitor_ipc() {
+    # Check if login monitor can communicate with nftband daemon
+    # Bug found: Error message "nftban command not found" is misleading - actual issue is IPC
+    # Returns: 0=OK, 2=Error (IPC broken)
+
+    local status=$HEALTH_OK
+    local ipc_issues=()
+    local socket="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock"
+
+    # Only check if login monitor service is active
+    if systemctl is-active --quiet nftban-login-monitor.service 2>/dev/null; then
+        # Check if daemon socket exists
+        if [[ ! -S "$socket" ]]; then
+            ipc_issues+=("Login monitor running but IPC socket missing: $socket")
+            ipc_issues+=("FIX: sudo systemctl start nftband.service")
+            status=$HEALTH_ERROR
+            NFTBAN_HEALTH_ERRORS+=("Login monitor cannot ban IPs - daemon socket missing")
+        else
+            # Check socket permissions (should be 0660 root:nftban)
+            local sock_perms sock_group
+            sock_perms=$(stat -c %a "$socket" 2>/dev/null || echo "000")
+            sock_group=$(stat -c %G "$socket" 2>/dev/null || echo "unknown")
+
+            if [[ "$sock_group" != "nftban" ]]; then
+                ipc_issues+=("IPC socket wrong group: $sock_group (expected nftban)")
+                status=$HEALTH_WARNING
+            fi
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["login_monitor_ipc"]=$status
+    [[ ${#ipc_issues[@]} -gt 0 ]] && NFTBAN_HEALTH_ISSUES["login_monitor_ipc"]="${ipc_issues[*]}"
+    return $status
+}
+
 # Export functions
 export -f nftban_health_check_services nftban_health_check_daemon
 export -f nftban_health_check_suricata nftban_health_check_timers
+export -f nftban_health_check_maintenance_lock nftban_health_check_login_monitor_ipc
