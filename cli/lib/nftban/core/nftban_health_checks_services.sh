@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC1090  # Dynamic config paths, cannot follow
+# shellcheck disable=SC2034  # NFTBAN_HEALTH_* arrays used by parent module that sources this
 # =============================================================================
 # NFTBan v1.0 - Health Check Services Functions
 # =============================================================================
@@ -518,6 +519,11 @@ nftban_health_check_login_monitor_ipc() {
             if [[ "$sock_group" != "nftban" ]]; then
                 ipc_issues+=("IPC socket wrong group: $sock_group (expected nftban)")
                 status=$HEALTH_WARNING
+            fi
+
+            # Warn if socket permissions too open (should be 660)
+            if [[ "$sock_perms" != "660" && "$sock_perms" != "770" ]]; then
+                ipc_issues+=("IPC socket permissions: $sock_perms (expected 660 or 770)")
             fi
         fi
     fi

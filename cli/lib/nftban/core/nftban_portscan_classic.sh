@@ -99,6 +99,67 @@ _nftban_portscan_classic_log() {
 }
 
 # =============================================================================
+# MICRO-EVENT EMISSION (for stealth aggregation)
+# =============================================================================
+# Emits structured scan events for later aggregation by timer job.
+# Uses journald (preferred) for rotation-safe, queryable storage.
+
+_nftban_portscan_emit_event() {
+    local src="$1"
+    local dst="$2"
+    local dpt="$3"
+    local proto="$4"
+    local flags="${5:-SYN}"
+    local log_ts="${6:-}"
+
+    # Use original log timestamp if provided, else current time
+    local ts
+    if [[ -n "$log_ts" ]]; then
+        ts="$log_ts"
+    else
+        ts=$(date -Iseconds)
+    fi
+
+    # Emit to journald with dedicated tag for easy querying
+    # Query with: journalctl -t nftban-portscan-event --since "24 hours ago"
+    if command -v logger &>/dev/null; then
+        logger -t nftban-portscan-event "ts=${ts} src=${src} dst=${dst} proto=${proto} dpt=${dpt} flags=${flags}"
+    fi
+
+    # Also write to file for systems without journald queryable by tag
+    local event_log="/var/log/nftban/portscan-events.log"
+    mkdir -p "$(dirname "$event_log")" 2>/dev/null
+    echo "ts=${ts} src=${src} dst=${dst} proto=${proto} dpt=${dpt} flags=${flags}" >> "$event_log"
+}
+
+# =============================================================================
+# STARTUP SELF-CHECK
+# =============================================================================
+# Verifies nftables has the expected LOG prefix to prevent silent "no detections"
+
+_nftban_portscan_verify_prefix() {
+    local expected_prefix="${PORTSCAN_CLASSIC_LOG_PREFIX:-NFTBAN_PORTSCAN:}"
+    local legacy_prefix="${PORTSCAN_CLASSIC_LOG_PREFIX_LEGACY:-nftban: portscan:}"
+
+    # Check live ruleset for either prefix
+    local ruleset
+    ruleset=$(nft list ruleset 2>/dev/null) || return 0  # Skip check if nft fails
+
+    if [[ "$ruleset" == *"$expected_prefix"* ]]; then
+        _nftban_portscan_classic_log "INFO" "Prefix verified: $expected_prefix found in live ruleset"
+        return 0
+    elif [[ "$ruleset" == *"$legacy_prefix"* ]]; then
+        _nftban_portscan_classic_log "WARN" "Legacy prefix in use: '$legacy_prefix' - parser will accept it, but consider reloading nftables"
+        return 0
+    else
+        _nftban_portscan_classic_log "ERROR" "CRITICAL: No portscan LOG prefix found in live ruleset!"
+        _nftban_portscan_classic_log "ERROR" "Expected '$expected_prefix' or '$legacy_prefix'"
+        _nftban_portscan_classic_log "ERROR" "Portscan detection will NOT work until nftables rules are loaded"
+        return 1
+    fi
+}
+
+# =============================================================================
 # STATE TRACKING
 # =============================================================================
 
@@ -324,10 +385,12 @@ nftban_portscan_classic_find_log() {
 # Returns: SRC_IP|DST_IP|DST_PORT|PROTO
 nftban_portscan_classic_parse_line() {
     local line="$1"
-    local log_prefix="${PORTSCAN_CLASSIC_LOG_PREFIX}"
+    local log_prefix="${PORTSCAN_CLASSIC_LOG_PREFIX:-NFTBAN_PORTSCAN:}"
+    local log_prefix_legacy="${PORTSCAN_CLASSIC_LOG_PREFIX_LEGACY:-nftban: portscan:}"
 
-    # Check if this is our log entry
-    [[ "$line" =~ ${log_prefix} ]] || return 1
+    # Check if this is our log entry (literal substring match, not regex)
+    # Accepts both new prefix (NFTBAN_PORTSCAN:) and legacy (nftban: portscan:)
+    [[ "$line" == *"$log_prefix"* || "$line" == *"$log_prefix_legacy"* ]] || return 1
 
     local src_ip="" dst_ip="" dst_port="" proto=""
 
@@ -358,6 +421,26 @@ nftban_portscan_classic_parse_line() {
     return 0
 }
 
+# Extract timestamp from syslog line (e.g., "Feb 07 00:54:21")
+# Returns ISO format for micro-events
+_nftban_portscan_extract_timestamp() {
+    local line="$1"
+    local ts=""
+
+    # Match syslog format: "Feb 07 00:54:21" or ISO format from journalctl
+    if [[ "$line" =~ ^([A-Z][a-z]{2}\ +[0-9]+\ [0-9:]+) ]]; then
+        # Syslog format - convert to ISO (use current year)
+        local syslog_ts="${BASH_REMATCH[1]}"
+        ts=$(date -d "$syslog_ts" -Iseconds 2>/dev/null) || ts=$(date -Iseconds)
+    elif [[ "$line" =~ ^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]+) ]]; then
+        # Already ISO format
+        ts="${BASH_REMATCH[1]}"
+    else
+        ts=$(date -Iseconds)
+    fi
+    echo "$ts"
+}
+
 # Process log entries and detect portscans
 nftban_portscan_classic_process_logs() {
     local log_source
@@ -366,7 +449,8 @@ nftban_portscan_classic_process_logs() {
         return 1
     }
 
-    local log_prefix="${PORTSCAN_CLASSIC_LOG_PREFIX}"
+    local log_prefix="${PORTSCAN_CLASSIC_LOG_PREFIX:-NFTBAN_PORTSCAN:}"
+    local log_prefix_legacy="${PORTSCAN_CLASSIC_LOG_PREFIX_LEGACY:-nftban: portscan:}"
     local time_window="${PORTSCAN_CLASSIC_TIME_WINDOW}"
     local current_time
     current_time=$(date +%s)
@@ -374,16 +458,16 @@ nftban_portscan_classic_process_logs() {
     cutoff_time=$((current_time - time_window))
 
     # Read recent log entries - handle both file and journalctl
+    # Accept both new and legacy prefixes for backwards compatibility
     local log_cmd
     if [[ "$log_source" == "journalctl" ]]; then
         # Use journalctl for kernel logs on systemd systems
-        # --since filters to recent entries, --no-pager for non-interactive
-        # Use || true in case --grep returns no matches (exit code 1)
-        log_cmd="{ journalctl -k --since '${time_window} seconds ago' --no-pager --grep='${log_prefix}' 2>/dev/null || true; } | tail -1000"
+        # Match both prefixes using extended regex
+        log_cmd="{ journalctl -k --since '${time_window} seconds ago' --no-pager 2>/dev/null | grep -E '${log_prefix}|${log_prefix_legacy}' || true; } | tail -1000"
         _nftban_portscan_classic_log "DEBUG" "Reading from journalctl (kernel logs)"
     else
         # grep returns 1 when no matches found - use || true to handle this
-        log_cmd="{ grep '${log_prefix}' '$log_source' 2>/dev/null || true; } | tail -1000"
+        log_cmd="{ grep -E '${log_prefix}|${log_prefix_legacy}' '$log_source' 2>/dev/null || true; } | tail -1000"
         _nftban_portscan_classic_log "DEBUG" "Reading from file: $log_source"
     fi
 
@@ -393,12 +477,17 @@ nftban_portscan_classic_process_logs() {
 
         IFS='|' read -r src_ip dst_ip dst_port proto <<< "$parsed"
 
-        # Skip whitelisted IPs
+        # Skip whitelisted IPs - HARD GATE (no state accumulation)
         if nftban_portscan_classic_is_whitelisted "$src_ip"; then
             continue
         fi
 
-        # Record this connection
+        # Emit micro-event for stealth aggregation (uses original log timestamp)
+        local log_ts
+        log_ts=$(_nftban_portscan_extract_timestamp "$line")
+        _nftban_portscan_emit_event "$src_ip" "$dst_ip" "$dst_port" "$proto" "SYN" "$log_ts"
+
+        # Record this connection for realtime detection
         nftban_portscan_classic_record_connection "$src_ip" "$dst_ip" "$dst_port" "$current_time"
 
     done < <(eval "$log_cmd")
@@ -755,6 +844,11 @@ nftban_portscan_classic_enable() {
     nftban_portscan_classic_add_rules
     nftban_portscan_classic_add_jump
 
+    # Verify prefix is in live ruleset (prevents silent "no detections")
+    _nftban_portscan_verify_prefix || {
+        _nftban_portscan_classic_log "WARN" "Prefix verification failed - detection may not work"
+    }
+
     _nftban_portscan_classic_log "INFO" "Classic portscan detection enabled"
     return 0
 }
@@ -818,6 +912,156 @@ nftban_portscan_classic_run() {
 
     return 0
 }
+
+# =============================================================================
+# STEALTH AGGREGATION (Runs every 15 min via maintenance timer)
+# =============================================================================
+# Catches low-and-slow scans that evade realtime detection.
+# Uses scoring from nftban_portscan_suricata.sh patterns.
+
+# Sensitive ports (higher weight in scoring)
+readonly PORTSCAN_SENSITIVE_PORTS="${PORTSCAN_SENSITIVE_PORTS:-22,23,25,53,80,110,111,135,139,143,389,443,445,465,512,513,514,587,631,873,902,1080,1433,1521,2049,2375,3306,3389,5000,5432,5601,5900,6379,8080,8443,9000,9200,9300,11211,27017}"
+
+# Aggregation function - called by maintenance.sh every 15 min
+nftban_portscan_aggregate() {
+    local since="${1:---since 24h}"
+    local do_ban=false
+    [[ "$*" == *"--ban"* ]] && do_ban=true
+
+    _nftban_portscan_classic_log "INFO" "Starting stealth aggregation (since=$since, ban=$do_ban)"
+
+    # Load config
+    nftban_portscan_classic_load_config 2>/dev/null || true
+
+    # Thresholds for stealth detection (higher than realtime = 99% certainty)
+    local min_events="${PORTSCAN_AGG_MIN_EVENTS:-8}"
+    local min_unique_ports="${PORTSCAN_AGG_MIN_UNIQUE_PORTS:-20}"
+    local score_threshold="${PORTSCAN_AGG_SCORE_THRESHOLD:-25}"
+
+    # Read events from journald (preferred) or file
+    local events=""
+    if command -v journalctl &>/dev/null; then
+        events=$(journalctl -t nftban-portscan-event --since "24 hours ago" --no-pager 2>/dev/null | grep "src=" || true)
+    fi
+
+    # Fallback to file if journald empty
+    if [[ -z "$events" ]] && [[ -f "/var/log/nftban/portscan-events.log" ]]; then
+        local cutoff
+        cutoff=$(date -d "24 hours ago" +%s 2>/dev/null || echo 0)
+        events=$(cat /var/log/nftban/portscan-events.log 2>/dev/null | tail -10000 || true)
+    fi
+
+    if [[ -z "$events" ]]; then
+        _nftban_portscan_classic_log "INFO" "No events to aggregate"
+        return 0
+    fi
+
+    # Aggregate by source IP
+    declare -A ip_events ip_ports ip_first ip_last
+
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+
+        local src="" dpt="" ts=""
+        # Parse key=value format
+        if [[ "$line" =~ src=([0-9a-fA-F.:]+) ]]; then src="${BASH_REMATCH[1]}"; fi
+        if [[ "$line" =~ dpt=([0-9]+) ]]; then dpt="${BASH_REMATCH[1]}"; fi
+        if [[ "$line" =~ ts=([0-9T:+-]+) ]]; then ts="${BASH_REMATCH[1]}"; fi
+
+        [[ -z "$src" ]] && continue
+
+        # Skip whitelisted IPs (HARD GATE - no state accumulation)
+        if nftban_portscan_classic_is_whitelisted "$src"; then
+            continue
+        fi
+
+        # Aggregate
+        ip_events[$src]=$(( ${ip_events[$src]:-0} + 1 ))
+        ip_ports[$src]="${ip_ports[$src]:-} $dpt"
+
+        # Track first/last seen for span calculation
+        local ts_epoch
+        ts_epoch=$(date -d "$ts" +%s 2>/dev/null || date +%s)
+        [[ -z "${ip_first[$src]:-}" ]] && ip_first[$src]=$ts_epoch
+        ip_last[$src]=$ts_epoch
+
+    done <<< "$events"
+
+    local banned=0 detected=0
+
+    # Analyze each IP
+    for src in "${!ip_events[@]}"; do
+        local event_count=${ip_events[$src]}
+        local ports="${ip_ports[$src]}"
+        local unique_ports
+        unique_ports=$(echo "$ports" | tr ' ' '\n' | grep -v '^$' | sort -u | wc -l)
+
+        # Calculate score (reusing patterns from suricata scoring)
+        local score=0
+
+        # +1 per event
+        score=$((score + event_count))
+
+        # +0.3 per unique port (capped)
+        local port_score=$((unique_ports * 3 / 10))
+        score=$((score + port_score))
+
+        # +2 per sensitive port hit
+        local sensitive_hits=0
+        for port in $(echo "$ports" | tr ' ' '\n' | sort -u); do
+            if [[ ",$PORTSCAN_SENSITIVE_PORTS," == *",$port,"* ]]; then
+                ((sensitive_hits++))
+            fi
+        done
+        score=$((score + sensitive_hits * 2))
+
+        # +3 if periodicity detected (events spread over 6+ hours)
+        local span_hours=0
+        if [[ -n "${ip_first[$src]:-}" ]] && [[ -n "${ip_last[$src]:-}" ]]; then
+            span_hours=$(( (ip_last[$src] - ip_first[$src]) / 3600 ))
+            if [[ $span_hours -ge 6 ]]; then
+                score=$((score + 3))
+            fi
+        fi
+
+        # +2 if persistent (span >= 6 hours)
+        if [[ $span_hours -ge 6 ]]; then
+            score=$((score + 2))
+        fi
+
+        # Check ban threshold (99% certainty)
+        # Require: score >= 25 AND events >= 8 AND unique_ports >= 20
+        if [[ $score -ge $score_threshold ]] && \
+           [[ $event_count -ge $min_events ]] && \
+           [[ $unique_ports -ge $min_unique_ports ]]; then
+
+            ((detected++))
+
+            local reason="stealth_scan: events=$event_count unique=$unique_ports sensitive=$sensitive_hits span=${span_hours}h score=$score"
+            _nftban_portscan_classic_log "WARN" "Stealth scan detected: $src - $reason"
+
+            if [[ "$do_ban" == "true" ]]; then
+                # Ban with detailed reason
+                local duration="${PORTSCAN_AGG_BAN_DURATION:-3600}"
+
+                if type -t nftban_ban &>/dev/null; then
+                    nftban_ban "$src" \
+                        --timeout "$duration" \
+                        --reason "portscan:stealth:$reason" \
+                        --source "portscan-aggregate" 2>/dev/null && ((banned++))
+                elif type -t nft_ipc_ban &>/dev/null; then
+                    nft_ipc_ban "$src" "$duration" "portscan:stealth" "portscan-aggregate" 2>/dev/null && ((banned++))
+                fi
+            fi
+        fi
+    done
+
+    _nftban_portscan_classic_log "INFO" "Aggregation complete: detected=$detected banned=$banned"
+    return 0
+}
+
+# Export aggregation function
+export -f nftban_portscan_aggregate
 
 # =============================================================================
 # END OF CLASSIC MODE IMPLEMENTATION
