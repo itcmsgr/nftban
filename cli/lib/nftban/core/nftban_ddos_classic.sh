@@ -6,27 +6,27 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Standalone DDoS protection using native nftables (no Suricata)
 #
-# meta:name=nftban_ddos_classic
-# meta:type=core
-# meta:header=DDoS Protection (Classic)
-# meta:version=1.0.0
-#
-# **Description**
-# Pure nftables-based DDoS protection using:
-# - Rate limiting meters (SYN flood, ICMP flood, UDP flood)
-# - Connection tracking limits (per-service)
-# - Auto-tuning based on system resources (optional)
-#
-# **When to use Classic Mode:**
-# - Suricata is NOT installed
-# - Minimal resource footprint required
-# - Simple rate-limiting is sufficient
-# - Edge/embedded systems
-#
-# meta:depends=bash>=4.0,nftables>=0.9.0
-# meta:created_date=2025-12-01
-# meta:updated_date=2025-12-01
+# meta:name="nftban_ddos_classic"
+# meta:type="core"
+# meta:header="DDoS Protection (Classic)"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Pure nftables-based DDoS protection with rate limiting"
+# meta:input="IPC commands, nftables metrics"
+# meta:output="nftables rules, log entries"
+# meta:depends="bash>=4.0,nftables>=0.9.0"
+# meta:inventory.files="/var/log/nftban/ddos-classic.log"
+# meta:inventory.binaries="nft"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/ddos/classic.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
+# meta:created_date="2025-12-01"
+# meta:updated_date="2026-02-07"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # =============================================================================
 # MODULE GUARD
@@ -270,6 +270,10 @@ nftban_ddos_classic_enable() {
 }
 
 nftban_ddos_classic_disable() {
+    # Prevent duplicate disable calls (causes double logging)
+    [[ -n "${_NFTBAN_DDOS_CLASSIC_DISABLED:-}" ]] && return 0
+    _NFTBAN_DDOS_CLASSIC_DISABLED=1
+
     _nftban_ddos_classic_load_config
 
     echo ""

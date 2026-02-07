@@ -127,8 +127,8 @@ main() {
     SSH_PORT_ACTIVE="${NFTBAN_DATA_DIR}/state/ssh_port_active.state"
 
     if [[ -f "$SSH_WHITELIST" ]]; then
-        # Check if current SSH port is in whitelist
-        if grep -qE "^${SSH_PORT}\|T" "$SSH_WHITELIST" 2>/dev/null; then
+        # Check if current SSH port is in whitelist (format: PORT/PROTOCOL)
+        if grep -qE "^${SSH_PORT}/(T|tcp)" "$SSH_WHITELIST" 2>/dev/null; then
             log "INFO" "SSH port check: OK (port $SSH_PORT whitelisted)"
             # Clear alert state if port is now correct
             [[ -f "$SSH_PORT_STATE" ]] && rm -f "$SSH_PORT_STATE"
@@ -166,12 +166,12 @@ main() {
             # Backup old whitelist
             cp "$SSH_WHITELIST" "${SSH_WHITELIST}.backup.$(date +%Y%m%d-%H%M%S)"
 
-            # Update whitelist with new SSH port
+            # Update whitelist with new SSH port (format: PORT/PROTOCOL)
             cat > "$SSH_WHITELIST" <<EOF
 # SSH port auto-updated by maintenance: $(date '+%Y-%m-%d %H:%M:%S')
 # DO NOT DELETE - LOCKOUT RISK!
-# Port format: PORT|PROTO where PROTO = T(tcp), U(udp), B(both)
-${SSH_PORT}|T
+# Port format: PORT/PROTOCOL where PROTOCOL = T/tcp, U/udp, or B/both
+${SSH_PORT}/T
 EOF
             chmod 644 "$SSH_WHITELIST"
 
@@ -241,8 +241,8 @@ EOF
         cat > "$SSH_WHITELIST" <<EOF
 # SSH port auto-added during maintenance: $(date '+%Y-%m-%d %H:%M:%S')
 # DO NOT DELETE - LOCKOUT RISK!
-# Port format: PORT|PROTO where PROTO = T(tcp), U(udp), B(both)
-${SSH_PORT}|T
+# Port format: PORT/PROTOCOL where PROTOCOL = T/tcp, U/udp, or B/both
+${SSH_PORT}/T
 EOF
         chmod 644 "$SSH_WHITELIST"
         # Track this as the active SSH port

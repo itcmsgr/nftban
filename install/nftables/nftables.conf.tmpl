@@ -155,7 +155,7 @@ table inet nftban {
         # Rate-limit SYN floods and log potential port scans
         tcp flags syn ct state new \
             limit rate 100/second burst 200 packets \
-            log prefix "nftban: portscan: " \
+            log prefix "NFTBAN_PORTSCAN: " \
             counter
         return
     }
