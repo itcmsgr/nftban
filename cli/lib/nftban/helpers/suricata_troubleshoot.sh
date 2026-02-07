@@ -3,10 +3,21 @@
 # NFTBan v1.0 - Suricata Troubleshooting & Verification Script
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# Purpose: Diagnose Suricata issues and verify proper operation
-# Location: /usr/lib/nftban/helpers/suricata_troubleshoot.sh
+# meta:name="suricata_troubleshoot.sh"
+# meta:type="helper"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:created_date="2025-10-26"
+# meta:description="Diagnose Suricata issues and verify proper operation"
+# meta:input="CLI arguments"
+# meta:output="Diagnostic report"
+# meta:depends="nftban.conf"
+# meta:inventory.files="/var/log/nftban/suricata/"
+# meta:inventory.binaries="suricata,suricatasc"
+# meta:inventory.env_vars="SURICATA_BIN,SURICATA_YAML,EVE_LOG"
+# meta:inventory.config_files="/etc/suricata/suricata.yaml"
+# meta:inventory.systemd_units="suricata.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="read"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -27,7 +38,9 @@ readonly NC='\033[0m'
 readonly SURICATA_BIN="${SURICATA_BIN:-/usr/bin/suricata}"
 readonly SURICATA_YAML="${SURICATA_YAML:-/etc/suricata/suricata.yaml}"
 readonly EVE_LOG="${NFTBAN_SURICATA_EVE_LOG:-/var/log/nftban/suricata/eve-alerts.json}"
-readonly SURICATA_LOG="${SURICATA_LOG:-/var/log/nftban/suricata/suricata.log}"
+readonly SURICATA_LOG="${SURICATA_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata/suricata.log}"
+readonly SURICATA_RUN_DIR="${SURICATA_RUN_DIR:-/run/suricata}"
+readonly SURICATA_SOCKET="${SURICATA_RUN_DIR}/suricata-command.socket"
 
 # Counters
 CHECKS_PASSED=0
@@ -347,7 +360,7 @@ check_resources() {
 
             # Check packet stats
             print_check "Checking packet capture statistics..."
-            if command -v suricatasc &>/dev/null && [[ -S /var/run/suricata/suricata-command.socket ]]; then
+            if command -v suricatasc &>/dev/null && [[ -S "$SURICATA_SOCKET" ]]; then
                 local stats
                 stats=$(echo "dump-counters" | suricatasc 2>/dev/null | jq -r '.message.capture.kernel_packets' 2>/dev/null || echo "")
 

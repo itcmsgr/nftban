@@ -26,8 +26,8 @@ Documentation=https://github.com/itcmsgr/nftban-dev
 # No explicit Requires needed - the service is self-contained
 
 [Timer]
-# Run weekly on Sundays at 02:00 AM (separate from 03:xx updates)
-OnCalendar=Sun *-*-* 02:00:00
+# Run weekly on Sundays at 02:30 AM (staggered from rbl-check at 02:00)
+OnCalendar=Sun *-*-* 02:30:00
 
 # Also run 30 minutes after boot
 OnBootSec=30min
