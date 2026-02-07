@@ -394,7 +394,7 @@ _eve_get_path() {
     fi
 
     # Default path
-    echo "/var/log/nftban/suricata/eve-alerts.json"
+    echo "${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata/eve-alerts.json"
 }
 
 # Helper: Format bytes to human readable
