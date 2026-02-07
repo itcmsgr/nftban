@@ -280,6 +280,10 @@ nftban_health_cmd_fix() {
             nftban_health_fix_nftables
             nftban_health_fix_polkit
             nftban_health_fix_daemon_memory
+            # Run inline auto-heal checks (from log analysis bugs)
+            echo "Fixing detected issues (queue, locks, ipc)..."
+            nftban_health_check_queue_processor 1 2>/dev/null || true
+            nftban_health_check_maintenance_lock 1 2>/dev/null || true
             ;;
         *)
             echo "ERROR: Invalid fix target: $what" >&2
