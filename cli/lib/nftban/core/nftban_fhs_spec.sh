@@ -21,7 +21,7 @@
 # meta:inventory.privileges="user"
 #
 # meta:created_date="2026-01-10"
-# meta:updated_date="2026-01-10"
+# meta:updated_date="2026-02-08"
 #
 # WARNING: This file is GENERATED from build/fhs-spec.yaml - DO NOT EDIT
 # Run: build/generate-fhs-outputs.sh
@@ -78,6 +78,13 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/rules.d"]="0750|root|nftban|Custom nftables rules"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/connectors"]="0750|root|nftban|Connector configurations (Zabbix, Elasticsearch, Kafka)"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/distros"]="0755|root|root|Distro-specific configuration files"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/geoban.d"]="0750|root|nftban|GeoIP country ban lists"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/nftables.d"]="0750|root|nftban|Custom nftables include files"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata"]="0750|root|nftban|Suricata integration configuration"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/cache"]="0750|root|nftban|Suricata detection cache"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/config"]="0750|root|nftban|Suricata config snippets"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/profiles"]="0750|root|nftban|Suricata detection profiles"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/rules"]="0750|root|nftban|Suricata custom rules"
 
     # Data Directories
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban"]="0750|root|nftban|Application state data (root-owned security boundary)"
