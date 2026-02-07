@@ -45,6 +45,14 @@ source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_schema.sh" 2>/dev/null || {
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nft_ipc.sh" 2>/dev/null || true
 
+# Load timestamp library (for consistent timestamp handling)
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" 2>/dev/null || true
+
+# Load file utilities library (for file age/freshness checks)
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" 2>/dev/null || true
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -86,8 +94,14 @@ _feeds_unlock() {
 _feeds_is_locked() {
     if [[ -f "$NFTBAN_FEEDS_LOCKFILE" ]]; then
         # Check if lock is stale (older than 1 hour = hung process)
+        # Use library function with graceful fallback
         local lock_age
-        lock_age=$(( $(date +%s) - $(stat -c %Y "$NFTBAN_FEEDS_LOCKFILE" 2>/dev/null || echo 0) ))
+        if declare -f nftban_file_age &>/dev/null; then
+            lock_age=$(nftban_file_age "$NFTBAN_FEEDS_LOCKFILE")
+        else
+            # Fallback: inline calculation if library not loaded
+            lock_age=$(( $(date +%s) - $(stat -c %Y "$NFTBAN_FEEDS_LOCKFILE" 2>/dev/null || echo 0) ))
+        fi
         if [[ $lock_age -gt 3600 ]]; then
             # Stale lock, remove it
             rm -f "$NFTBAN_FEEDS_LOCKFILE"
@@ -112,13 +126,19 @@ nftban_feeds_log() {
     local level="$1"; shift
     local msg="$*"
     local timestamp
-    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    # Use library function with graceful fallback
+    if declare -f nftban_timestamp_log &>/dev/null; then
+        # nftban_timestamp_log returns "[YYYY-MM-DD HH:MM:SS]" format
+        timestamp=$(nftban_timestamp_log)
+    else
+        timestamp="[$(date '+%Y-%m-%d %H:%M:%S')]"
+    fi
 
     # Ensure log directory exists
     mkdir -p "$(dirname "$NFTBAN_FEEDS_LOG")"
 
-    # Log to dedicated feeds.log
-    echo "[$timestamp] [$level] $msg" | tee -a "$NFTBAN_FEEDS_LOG"
+    # Log to dedicated feeds.log (timestamp already has brackets from library)
+    echo "${timestamp} [$level] $msg" | tee -a "$NFTBAN_FEEDS_LOG"
 
     # Also log via main nftban logging if available
     if declare -f nftban_log_${level,,} >/dev/null 2>&1; then

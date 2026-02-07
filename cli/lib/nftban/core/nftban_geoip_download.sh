@@ -5,25 +5,27 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Download and update MaxMind GeoLite2 database
 #
-# meta:name=nftban_geoip_download
-# meta:type=core
-# meta:header=GeoIP Database Management
-# meta:version=1.0.0
+# meta:name="nftban_geoip_download"
+# meta:type="core"
+# meta:header="GeoIP Database Management"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Manages MaxMind GeoIP database download and updates
-# meta:input=MaxMind license key from config
-# meta:output=Downloaded GeoLite2-City.mmdb database
-#
-# **Inventory & Requirements**
-# meta:depends=bash,curl,tar,nftban_output.sh
-#
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:homepage="https://nftban.com"
+# meta:description="Manages MaxMind GeoIP database download and updates"
+# meta:input="MaxMind license key from config"
+# meta:output="Downloaded GeoLite2-City.mmdb database"
+# meta:depends="bash,curl,tar,nftban_output.sh"
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-02-07"
+# meta:inventory.files="/var/lib/nftban/geoip/GeoLite2-City.mmdb"
+# meta:inventory.binaries="curl,tar"
+# meta:inventory.env_vars="NFTBAN_GEOIP_LICENSE_KEY"
+# meta:inventory.config_files="/etc/nftban/conf.d/geoip.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network="download.maxmind.com:443"
+# meta:inventory.privileges="nftban"
 # =============================================================================
-
+set -Eeuo pipefail
 
 # =============================================================================
 # CONFIGURATION
@@ -45,6 +47,18 @@ fi
 # shellcheck source=/usr/lib/nftban/lib/version.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" ]]; then
     source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh"
+fi
+
+# Load timestamp library (with graceful fallback)
+# shellcheck source=/usr/lib/nftban/lib/nftban_timestamp.sh
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+fi
+
+# Load file utils library (with graceful fallback)
+# shellcheck source=/usr/lib/nftban/lib/nftban_file_utils.sh
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh"
 fi
 readonly NFTBAN_CONFIG_DIR="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
 
@@ -178,12 +192,18 @@ _check_database() {
     echo "[INFO] Modified: $(stat -c %y ${db_file} | cut -d. -f1)"
 
     # Check if database is old (> 30 days)
-    local mtime
-    mtime=$(stat -c %Y "${db_file}")
-    local now
-    now=$(date +%s)
-    local age
-    age=$(( (now - mtime) / 86400 ))
+    local age_seconds age
+    # Use shared library with graceful fallback
+    if declare -f nftban_file_age &>/dev/null; then
+        age_seconds=$(nftban_file_age "${db_file}")
+    else
+        # Fallback: inline calculation
+        local mtime now
+        mtime=$(stat -c %Y "${db_file}" 2>/dev/null || stat -f %m "${db_file}" 2>/dev/null || echo 0)
+        now=$(date +%s)
+        age_seconds=$(( now - mtime ))
+    fi
+    age=$(( age_seconds / 86400 ))
 
     if [[ ${age} -gt 30 ]]; then
         echo "[WARNING] Database is ${age} days old (recommended: update monthly)"

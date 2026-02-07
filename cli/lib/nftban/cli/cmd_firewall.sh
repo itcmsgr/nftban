@@ -57,6 +57,19 @@ fi
 if [[ -f "${NFTBAN_LIB_DIR}/lib/nft_schema.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/nft_schema.sh"
 fi
+
+# Load timestamp library (unified timestamp generation)
+# shellcheck source=/usr/lib/nftban/lib/nftban_timestamp.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh"
+fi
+
+# Load service control library (systemd service/timer primitives)
+# shellcheck source=/usr/lib/nftban/lib/nftban_service_control.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh"
+fi
+
 # Load JSON helper for --json support
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then

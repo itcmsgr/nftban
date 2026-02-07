@@ -49,7 +49,7 @@ set -Eeuo pipefail
 readonly NFTBAN_DDOS_SURICATA_LOADED=1
 
 # =============================================================================
-# LOAD IPC/FRAGMENT LIBRARIES (for single-writer architecture)
+# LOAD IPC/FRAGMENT AND SHARED LIBRARIES
 # =============================================================================
 
 : "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
@@ -57,6 +57,12 @@ readonly NFTBAN_DDOS_SURICATA_LOADED=1
 source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION LOADING

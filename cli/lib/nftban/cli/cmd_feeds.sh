@@ -28,6 +28,18 @@ fi
 if [[ -f "${NFTBAN_LIB_DIR}/lib/version.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/lib/version.sh"
 fi
+
+# Load timestamp library for date formatting
+# shellcheck source=/usr/lib/nftban/lib/nftban_timestamp.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh"
+fi
+
+# Load file utilities library for file age/freshness checks
+# shellcheck source=/usr/lib/nftban/lib/nftban_file_utils.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh"
+fi
 JSON_HELPER="${NFTBAN_LIB_DIR}/helpers/json_output.sh"
 if [[ -f "$JSON_HELPER" ]]; then
     # shellcheck source=/dev/null
@@ -362,7 +374,15 @@ nftban_feeds_status_json() {
 
                 if [[ -f "$feed_file" ]]; then
                     count=$(wc -l < "$feed_file" 2>/dev/null || echo "0")
-                    mtime=$(date -r "$feed_file" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "unknown")
+                    # Use library function with fallback
+                    if declare -f nftban_file_mtime >/dev/null 2>&1; then
+                        local mtime_unix
+                        mtime_unix=$(nftban_file_mtime "$feed_file")
+                        mtime=$(date -d "@${mtime_unix}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || \
+                                date -r "${mtime_unix}" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "unknown")
+                    else
+                        mtime=$(date -r "$feed_file" '+%Y-%m-%d %H:%M:%S' 2>/dev/null || echo "unknown")
+                    fi
                     total_ips=$((total_ips + count))
                 fi
 
