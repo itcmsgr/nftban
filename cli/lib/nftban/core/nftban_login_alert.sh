@@ -837,39 +837,25 @@ nftban_login_track_failed() {
                 local ban_reason="${service} brute-force (${NFTBAN_FAILED_ATTEMPTS[$key]} failed attempts)"
                 nftban_login_alert_log "Banning IP $ip for ${ban_reason}"
 
-                # Cross-distro nftban binary detection:
-                # 1. Use NFTBAN_BIN from config (if set)
-                # 2. Use command -v to find in PATH
-                # 3. Fallback to known paths: /usr/sbin, /usr/bin, /usr/local/bin
-                local nftban_cmd=""
-                if [[ -n "${NFTBAN_BIN:-}" ]] && [[ -x "${NFTBAN_BIN}" ]]; then
-                    nftban_cmd="${NFTBAN_BIN}"
-                elif command -v nftban &>/dev/null; then
-                    nftban_cmd=$(command -v nftban)
-                elif [[ -x "/usr/sbin/nftban" ]]; then
-                    nftban_cmd="/usr/sbin/nftban"
-                elif [[ -x "/usr/bin/nftban" ]]; then
-                    nftban_cmd="/usr/bin/nftban"
-                elif [[ -x "/usr/local/bin/nftban" ]]; then
-                    nftban_cmd="/usr/local/bin/nftban"
-                fi
+                # Use NFTBAN_BIN from central config (set during install by install_configs.sh)
+                # Config is single source of truth - no runtime detection
+                local nftban_cmd="${NFTBAN_BIN:-/usr/sbin/nftban}"
 
-                if [[ -z "$nftban_cmd" ]]; then
-                    nftban_login_alert_log "ERROR: nftban binary not found in PATH or standard locations"
+                # Pre-flight checks with clear error messages
+                if [[ ! -x "$nftban_cmd" ]]; then
+                    nftban_login_alert_log "ERROR: NFTBAN_BIN=$nftban_cmd not executable. Check config /etc/nftban/nftban.conf"
                 else
                     # Check if daemon socket exists (IPC required for banning)
                     local ipc_socket="${NFTBAN_RUN_DIR:-/run/nftban}/nftband.sock"
                     if [[ ! -S "$ipc_socket" ]]; then
-                        nftban_login_alert_log "ERROR: Cannot ban $ip - daemon socket missing ($ipc_socket). Is nftband running?"
+                        nftban_login_alert_log "ERROR: Cannot ban $ip - daemon not running (socket missing: $ipc_socket)"
                     else
-                        # Execute ban with captured error
+                        # Execute ban with captured error for debugging
                         local ban_output ban_exit
                         ban_output=$("$nftban_cmd" ban "$ip" --source login --reason "${service}_brute_force (${NFTBAN_FAILED_ATTEMPTS[$key]} failed attempts)" 2>&1)
                         ban_exit=$?
                         if [[ $ban_exit -ne 0 ]]; then
-                            nftban_login_alert_log "ERROR: Failed to ban $ip (exit=$ban_exit): $ban_output"
-                        else
-                            nftban_login_alert_log "Successfully banned $ip via $nftban_cmd"
+                            nftban_login_alert_log "ERROR: Ban failed (exit=$ban_exit): $ban_output"
                         fi
                     fi
                 fi
