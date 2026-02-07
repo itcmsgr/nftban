@@ -493,6 +493,7 @@ nftban_health_check_all() {
     nftban_health_check_paths || ((errors++))
     nftban_health_check_permissions || ((warnings++))
     nftban_health_check_config || ((warnings++))
+    nftban_health_check_nftban_bin || ((errors++))
     nftban_health_check_queue_processor "$auto_heal" || ((errors++))
 
     # Run security checks

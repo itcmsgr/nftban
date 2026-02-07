@@ -358,6 +358,38 @@ nftban_health_check_fhs() {
 # QUEUE PROCESSOR CHECK (Bug #21: Permission issues cause service failure)
 # =============================================================================
 
+# =============================================================================
+# NFTBAN_BIN CONFIG CHECK (Prevent path misconfig across distros)
+# =============================================================================
+
+nftban_health_check_nftban_bin() {
+    # Verify NFTBAN_BIN config matches actual binary location
+    # Prevents: "nftban command not found" errors from path mismatch
+    # Returns: 0=OK, 2=Error
+
+    local status=$HEALTH_OK
+    local bin_issues=()
+    local config_bin="${NFTBAN_BIN:-/usr/sbin/nftban}"
+
+    if [[ ! -f "$config_bin" ]]; then
+        bin_issues+=("NFTBAN_BIN=$config_bin does not exist")
+        bin_issues+=("Check /etc/nftban/nftban.conf or reinstall")
+        status=$HEALTH_ERROR
+        NFTBAN_HEALTH_ERRORS+=("NFTBAN_BIN path invalid: $config_bin")
+    elif [[ ! -x "$config_bin" ]]; then
+        bin_issues+=("NFTBAN_BIN=$config_bin exists but not executable")
+        bin_issues+=("FIX: chmod 755 $config_bin")
+        status=$HEALTH_ERROR
+        NFTBAN_HEALTH_ERRORS+=("NFTBAN_BIN not executable")
+    else
+        bin_issues+=("✓ NFTBAN_BIN=$config_bin OK")
+    fi
+
+    NFTBAN_HEALTH_RESULTS["nftban_bin"]=$status
+    [[ ${#bin_issues[@]} -gt 0 ]] && NFTBAN_HEALTH_ISSUES["nftban_bin"]="${bin_issues[*]}"
+    return $status
+}
+
 nftban_health_check_queue_processor() {
     # Check if queue processor script is executable
     # Bug found: Deployed with mode 644 instead of 755, causing nftban-queue.service to fail
@@ -414,3 +446,4 @@ export -f nftban_health_should_alert
 export -f nftban_health_check_binaries nftban_health_check_paths
 export -f nftban_health_check_permissions nftban_health_check_resources
 export -f nftban_health_check_fhs nftban_health_check_queue_processor
+export -f nftban_health_check_nftban_bin
