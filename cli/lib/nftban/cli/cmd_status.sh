@@ -284,10 +284,16 @@ output_terminal() {
 
             if [[ "$eve_fresh" == "true" ]]; then
                 suricata_eve_ok=true
-                if systemctl is-active nftban-suricata.service >/dev/null 2>&1; then
-                    suricata_status="ACTIVE (IDS + Banning)"
+                # Check rules_loaded from EVE JSON stats
+                local rules_loaded=0
+                rules_loaded=$(grep -o '"rules_loaded":[0-9]*' "$eve_file" 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
+
+                if [[ "${rules_loaded:-0}" -eq 0 ]]; then
+                    suricata_status="BROKEN (0 rules loaded!)"
+                elif systemctl is-active nftban-suricata.service >/dev/null 2>&1; then
+                    suricata_status="ACTIVE (IDS + Banning, ${rules_loaded} rules)"
                 else
-                    suricata_status="ACTIVE (IDS only)"
+                    suricata_status="ACTIVE (IDS only, ${rules_loaded} rules)"
                 fi
             else
                 suricata_status="DEGRADED (running, EVE log stale)"
