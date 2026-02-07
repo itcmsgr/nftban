@@ -86,6 +86,11 @@ nftban_health_fix_permissions() {
             chmod 755 /run/nftban 2>/dev/null || true
             # Fix files inside (except socket which is root:nftban)
             find /run/nftban -maxdepth 1 -type f ! -name "nftband.sock" -exec chown nftban:nftban {} \; 2>/dev/null || true
+            # Fix socket ownership explicitly (root:nftban for daemon IPC)
+            if [[ -S /run/nftban/nftband.sock ]]; then
+                chown root:nftban /run/nftban/nftband.sock 2>/dev/null || true
+                chmod 660 /run/nftban/nftband.sock 2>/dev/null || true
+            fi
         fi
 
         # /var/log/nftban - logs written by nftban user
@@ -507,14 +512,15 @@ nftban_health_fix_metrics() {
     fi
 
     # Fix 2: Ensure textfile collector directory exists
-    local textfile_dir="/var/lib/node_exporter/textfile_collector"
+    # Use config variable with sensible default (node_exporter standard path)
+    local textfile_dir="${NFTBAN_METRICS_TEXTFILE_DIR:-/var/lib/node_exporter/textfile_collector}"
     if [[ ! -d "$textfile_dir" ]]; then
         # Create with correct ownership (no -R needed for fresh directory)
         install -d -o nftban -g nftban -m 0755 "$textfile_dir" 2>/dev/null || \
             mkdir -p "$textfile_dir" 2>/dev/null
         chown nftban:nftban "$textfile_dir" 2>/dev/null || true
         chmod 755 "$textfile_dir" 2>/dev/null || true
-        echo "  ✓ Created textfile collector directory"
+        echo "  ✓ Created textfile collector directory: $textfile_dir"
         fixed=$((fixed + 1))
     fi
 
@@ -902,10 +908,17 @@ nftban_health_fix_geoip() {
     if [[ "$db_found" == "false" ]]; then
         echo "  ⚠️  GeoIP database not found - downloading..."
 
-        # Ensure directory exists
-        mkdir -p "$geoip_dir" 2>/dev/null
-        chown nftban:nftban "$geoip_dir" 2>/dev/null || true
-        chmod 750 "$geoip_dir" 2>/dev/null || true
+        # Ensure directory exists using FHS spec (single source of truth)
+        if [[ ! -d "$geoip_dir" ]]; then
+            local geoip_spec
+            geoip_spec=$(nftban_fhs_get_spec "$geoip_dir" 2>/dev/null || echo "0750|nftban|nftban|GeoIP database")
+            IFS='|' read -r fhs_perms fhs_owner fhs_group _ <<< "$geoip_spec"
+            install -d -o "${fhs_owner:-nftban}" -g "${fhs_group:-nftban}" -m "${fhs_perms:-0750}" "$geoip_dir" 2>/dev/null || {
+                mkdir -p "$geoip_dir" 2>/dev/null
+                chown "${fhs_owner:-nftban}:${fhs_group:-nftban}" "$geoip_dir" 2>/dev/null || true
+                chmod "${fhs_perms:-750}" "$geoip_dir" 2>/dev/null || true
+            }
+        fi
 
         # Method 1: Try nftban-core (handles DB-IP and MaxMind based on config)
         if [[ -x "$nftban_core" ]]; then
