@@ -253,7 +253,29 @@ nftban_health_check_suricata() {
         status=$HEALTH_ERROR
     fi
 
-    # 4. Check Suricata memory usage (if running)
+    # 4. CRITICAL: Check if rules are actually loaded (rules_loaded > 0)
+    if systemctl is-active --quiet suricata.service 2>/dev/null; then
+        local rules_loaded=0
+        # Try to get rules_loaded from EVE JSON stats
+        if [[ -f "${eve_log}" ]]; then
+            rules_loaded=$(grep -o '"rules_loaded":[0-9]*' "${eve_log}" 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
+        fi
+        # Fallback: check suricata.rules file exists and has content
+        if [[ "${rules_loaded:-0}" -eq 0 ]]; then
+            local rules_file="/var/lib/suricata/rules/suricata.rules"
+            if [[ -f "$rules_file" ]] && [[ -s "$rules_file" ]]; then
+                rules_loaded=$(grep -c "^alert" "$rules_file" 2>/dev/null || echo "0")
+            fi
+        fi
+
+        if [[ "${rules_loaded:-0}" -eq 0 ]]; then
+            suricata_issues+=("CRITICAL: Suricata running with 0 rules loaded - NO PROTECTION!")
+            suricata_issues+=("FIX: suricata-update && systemctl restart suricata")
+            status=$HEALTH_ERROR
+        fi
+    fi
+
+    # 5. Check Suricata memory usage (if running)
     if systemctl is-active --quiet suricata.service 2>/dev/null; then
         local suricata_pid
         suricata_pid=$(systemctl show -p MainPID --value suricata.service 2>/dev/null)

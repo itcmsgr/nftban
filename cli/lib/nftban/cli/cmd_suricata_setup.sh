@@ -371,17 +371,33 @@ cmd_suricata_status() {
         echo "  Auto-update: ⊘ Timer not installed"
     fi
 
-    # Rules status
+    # Rules status - check both file count AND actual loaded rules
     echo ""
     echo "  Rules:"
-    if [[ -d "${SURICATA_RULES_DIR}" ]]; then
-        local rule_count
-        rule_count=$(find "${SURICATA_RULES_DIR}" -name "*.rules" -exec cat {} \; 2>/dev/null | grep -c "^alert" || echo "0")
-        echo "    Total alert rules: $rule_count"
-        echo "    Rules directory:   ${SURICATA_RULES_DIR}/"
-    else
-        echo "    ⚠  No rules directory found"
+    local rules_loaded=0
+    local rule_file_count=0
+
+    # Check rules_loaded from EVE JSON stats (most accurate)
+    if [[ -f /var/log/suricata/eve.json ]]; then
+        rules_loaded=$(grep -o '"rules_loaded":[0-9]*' /var/log/suricata/eve.json 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
+    elif [[ -f /var/log/nftban/suricata/eve-alerts.json ]]; then
+        rules_loaded=$(grep -o '"rules_loaded":[0-9]*' /var/log/nftban/suricata/eve-alerts.json 2>/dev/null | tail -1 | cut -d: -f2 || echo "0")
     fi
+
+    # Count rule files
+    if [[ -d "${SURICATA_RULES_DIR}" ]]; then
+        rule_file_count=$(find "${SURICATA_RULES_DIR}" -name "*.rules" -type f 2>/dev/null | wc -l)
+    fi
+
+    # Display status with color coding
+    if [[ "${rules_loaded:-0}" -eq 0 ]]; then
+        echo "    ❌ Rules Loaded:   ${RED:-}0 (NO PROTECTION!)${NC:-}"
+        echo "    ⚠  FIX:           suricata-update && systemctl restart suricata"
+    else
+        echo "    ✓  Rules Loaded:   ${GREEN:-}${rules_loaded}${NC:-}"
+    fi
+    echo "    Rule Files:        $rule_file_count"
+    echo "    Rules Directory:   ${SURICATA_RULES_DIR:-/var/lib/suricata/rules}/"
 
     # Recent alerts
     echo ""

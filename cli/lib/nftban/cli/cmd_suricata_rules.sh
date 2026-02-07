@@ -121,6 +121,92 @@ cmd_suricata_rules() {
             echo ""
             ;;
 
+        verify)
+            # Verify rules are present and loadable - used by ExecStartPre
+            # Exit 0 = ready, Exit 1 = not ready (with fix command)
+            local quiet="${1:-}"
+            local rules_file="${SURICATA_RULES_DIR:-/var/lib/suricata/rules}/suricata.rules"
+            local exit_code=0
+
+            # Check 1: Rules file exists and non-empty
+            if [[ ! -f "$rules_file" ]] || [[ ! -s "$rules_file" ]]; then
+                [[ "$quiet" != "--quiet" ]] && {
+                    echo "FAIL: Rules file missing or empty: $rules_file"
+                    echo "FIX:  suricata-update && systemctl restart suricata"
+                }
+                exit_code=1
+            fi
+
+            # Check 2: YAML references the rules (optional but helpful)
+            if [[ -f /etc/suricata/suricata.yaml ]]; then
+                local yaml_rules_path
+                yaml_rules_path=$(grep -E "^default-rule-path:" /etc/suricata/suricata.yaml 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "")
+                if [[ -n "$yaml_rules_path" ]] && [[ ! -d "$yaml_rules_path" ]]; then
+                    [[ "$quiet" != "--quiet" ]] && {
+                        echo "WARN: YAML default-rule-path doesn't exist: $yaml_rules_path"
+                    }
+                fi
+            fi
+
+            # Check 3: Config syntax (optional, slower)
+            if [[ "$1" == "--full" ]] && command -v suricata &>/dev/null; then
+                if ! suricata -T -c /etc/suricata/suricata.yaml &>/dev/null; then
+                    [[ "$quiet" != "--quiet" ]] && {
+                        echo "FAIL: Suricata config test failed"
+                        echo "FIX:  suricata -T -c /etc/suricata/suricata.yaml"
+                    }
+                    exit_code=1
+                fi
+            fi
+
+            if [[ $exit_code -eq 0 ]]; then
+                [[ "$quiet" != "--quiet" ]] && echo "OK: Rules verified"
+            fi
+            return $exit_code
+            ;;
+
+        ensure)
+            # Auto-heal: Download rules if missing, then verify
+            # Invoked from nftban health fix, auto-heal mode
+            local rules_file="${SURICATA_RULES_DIR:-/var/lib/suricata/rules}/suricata.rules"
+
+            # Check if rules exist
+            if [[ -f "$rules_file" ]] && [[ -s "$rules_file" ]]; then
+                echo "OK: Rules already present"
+                return 0
+            fi
+
+            echo "Rules missing - downloading..."
+
+            # Need root for suricata-update
+            if [[ $EUID -ne 0 ]]; then
+                echo "FAIL: Root required to download rules"
+                echo "FIX:  sudo nftban suricata rules ensure"
+                return 1
+            fi
+
+            # Download rules
+            if ! command -v suricata-update &>/dev/null; then
+                echo "FAIL: suricata-update not installed"
+                echo "FIX:  pip3 install suricata-update"
+                return 1
+            fi
+
+            suricata-update update-sources 2>/dev/null || true
+            if suricata-update; then
+                echo "OK: Rules downloaded"
+                # Restart Suricata to load rules
+                if systemctl is-active --quiet suricata.service; then
+                    systemctl restart suricata.service
+                    echo "OK: Suricata restarted"
+                fi
+                return 0
+            else
+                echo "FAIL: suricata-update failed"
+                return 1
+            fi
+            ;;
+
         generate)
             _check_root "rules generate" || return 1
 
@@ -181,6 +267,8 @@ USAGE:
 
 COMMANDS:
     status        Show ruleset status (counts, last update, sources)
+    verify        Verify rules are present and loadable (used by systemd)
+    ensure        Auto-heal: download rules if missing (used by health fix)
     update        Update rules from ET/Open (requires root)
     rollback      Restore from a backup (requires root)
     list-backups  List available rule backups
