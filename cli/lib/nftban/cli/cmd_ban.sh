@@ -5,24 +5,27 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Ban IP addresses using nftban-core
 #
-# meta:name=cmd_ban
-# meta:type=cli
-# meta:header=Ban Command
-# meta:version=1.0.0
+# meta:name="cmd_ban"
+# meta:type="cli"
+# meta:header="Ban Command"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Ban IP addresses permanently using nftban-core
-# meta:input=IP address, optional reason
-# meta:output=Ban confirmation or error message
-#
-# **Inventory & Requirements**
-# meta:depends=bash,nftban-core
-#
-# meta:created_date=2025-11-24
-# meta:updated_date=2025-11-26
+# meta:homepage="https://nftban.com"
+# meta:description="Ban IP addresses permanently using nftban-core"
+# meta:input="IP address, optional reason"
+# meta:output="Ban confirmation or error message"
+# meta:depends="bash,nftban-core"
+# meta:created_date="2025-11-24"
+# meta:updated_date="2026-02-07"
+# meta:inventory.files=""
+# meta:inventory.binaries="nftban-core"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 # =============================================================================
+set -Eeuo pipefail
 
 # Prevent double-loading
 [[ -n "${CMD_BAN_LOADED:-}" ]] && return 0
@@ -30,6 +33,12 @@
 # Load common CLI helpers (provides cmd_init, cmd_error, cmd_require_binary, etc.)
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/cmd_common.sh"
+
+# Load timestamp utilities (nftban_timestamp_unix, nftban_timestamp, etc.)
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+fi
 
 # Initialize CLI environment (loads config, sets paths, enables strict mode)
 cmd_init

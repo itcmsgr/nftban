@@ -49,6 +49,12 @@ source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" 2>/dev/null || true
 
+# Load shared utility libraries
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" 2>/dev/null || true
+
 # Note: nftban_task_queue.sh is sourced by queue processor, not here (avoid circular dependency)
 
 # Simple output functions (with file logging support)
@@ -491,7 +497,7 @@ nftban_geoban_fetch_bash() {
         echo "# NFTBan GeoBan - Country: $cc"
         echo "# Action: $action"
         echo "# Source: IPDENY (bash fallback mode)"
-        echo "# Downloaded: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+        echo "# Downloaded: $(nftban_timestamp 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)"
         echo "# IP Ranges: $ip_count"
         echo "#"
         cat "$cache_file"
@@ -505,7 +511,7 @@ nftban_geoban_fetch_bash() {
   "source": "bash",
   "ipv4_count": $ip_count,
   "ipv6_count": 0,
-  "downloaded": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "downloaded": "$(nftban_timestamp 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)",
   "url": "https://www.ipdeny.com/ipblocks/data/countries/${cc_lower}.zone"
 }
 EOF

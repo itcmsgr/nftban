@@ -36,6 +36,31 @@ umask 027
 [[ -n "${NFTBAN_RBL_CORE_LOADED:-}" ]] && return 0
 readonly NFTBAN_RBL_CORE_LOADED=1
 
+# =============================================================================
+# LOAD SHARED LIBRARIES
+# =============================================================================
+
+# Determine library path
+_NFTBAN_RBL_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+
+# Load timestamp library (for nftban_timestamp, nftban_timestamp_unix)
+if [[ -f "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_timestamp.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_timestamp.sh"
+fi
+
+# Load file utilities library (for nftban_file_age, nftban_file_mtime, nftban_file_is_stale)
+if [[ -f "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_file_utils.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_file_utils.sh"
+fi
+
+# Load alert throttle library (for nftban_should_alert)
+if [[ -f "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_alert_throttle.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${_NFTBAN_RBL_LIB_DIR}/lib/nftban_alert_throttle.sh"
+fi
+
 # Load configuration
 [[ -z "${NFTBAN_CONFIG_DIR:-}" ]] && readonly NFTBAN_CONFIG_DIR="/etc/nftban"
 [[ -z "${NFTBAN_LOG_DIR:-}" ]] && readonly NFTBAN_LOG_DIR="/var/log/nftban"

@@ -66,6 +66,22 @@ elif [[ -f "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/core/nftba
     source "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/core/nftban_stats.sh"
 fi
 
+# Load timestamp library (for unified timestamp formatting)
+# shellcheck source=/usr/lib/nftban/lib/nftban_timestamp.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh"
+elif [[ -f "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_timestamp.sh" ]]; then
+    source "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_timestamp.sh"
+fi
+
+# Load service control library (for systemd service checks)
+# shellcheck source=/usr/lib/nftban/lib/nftban_service_control.sh
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh"
+elif [[ -f "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_service_control.sh" ]]; then
+    source "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban_service_control.sh"
+fi
+
 # =============================================================================
 # STATUS AGGREGATION
 # =============================================================================
@@ -154,7 +170,10 @@ output_terminal() {
     echo "───────────────────────────────────────────────────────────────"
 
     local nft_status="INACTIVE"
-    if systemctl is-active nftables.service >/dev/null 2>&1; then
+    # Use service control library with graceful fallback
+    if declare -f nftban_service_is_active &>/dev/null; then
+        nftban_service_is_active nftables.service && nft_status="ACTIVE"
+    elif systemctl is-active nftables.service >/dev/null 2>&1; then
         nft_status="ACTIVE"
     fi
     printf "  %-20s %s\n" "nftables............" "$nft_status"
@@ -238,15 +257,28 @@ output_terminal() {
     local suricata_eve_ok=false
     local eve_threshold="${PORTSCAN_EVE_FRESHNESS_THRESHOLD:-60}"
     if command -v suricata &>/dev/null; then
-        # Binary exists — check service
-        if systemctl is-active suricata.service >/dev/null 2>&1; then
+        # Binary exists — check service (use library with fallback)
+        local _suricata_active=false
+        if declare -f nftban_service_is_active &>/dev/null; then
+            nftban_service_is_active suricata.service && _suricata_active=true
+        elif systemctl is-active suricata.service >/dev/null 2>&1; then
+            _suricata_active=true
+        fi
+
+        if [[ "$_suricata_active" == "true" ]]; then
             # Service is running — verify EVE log is fresh (same check as portscan/ddos)
             local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
             local eve_fresh=false
             if [[ -f "$eve_file" ]]; then
-                local eve_mtime eve_age
+                local eve_mtime eve_age now_ts
                 eve_mtime=$(stat -c %Y "$eve_file" 2>/dev/null) || eve_mtime=0
-                eve_age=$(( $(date +%s) - eve_mtime ))
+                # Use timestamp library with fallback
+                if declare -f nftban_timestamp_unix &>/dev/null; then
+                    now_ts=$(nftban_timestamp_unix)
+                else
+                    now_ts=$(date +%s)
+                fi
+                eve_age=$(( now_ts - eve_mtime ))
                 [[ $eve_age -le $eve_threshold ]] && eve_fresh=true
             fi
 
