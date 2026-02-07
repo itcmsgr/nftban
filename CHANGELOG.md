@@ -5,6 +5,43 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.10.0] - 2026-02-08
+
+### Code Consolidation & Security Hardening
+
+Major refactoring release focused on code quality, security fixes, and FHS compliance.
+
+### Added
+
+- **4 new shared libraries** - Consolidated 1000+ lines of duplicate code:
+  - `nftban_timestamp.sh` - 12 timestamp functions (ISO 8601, Unix, relative)
+  - `nftban_file_utils.sh` - 6 file age/freshness functions (cross-platform)
+  - `nftban_service_control.sh` - 9 systemctl wrapper functions
+  - `nftban_alert_throttle.sh` - 3 alert rate-limiting functions
+
+- **FHS specification expanded** - 102 directories now defined:
+  - Added 27 missing directories for complete coverage
+  - Suricata integration directories (/etc/nftban/suricata/*)
+  - Module state directories (login, portscan, geoban tracking)
+  - Cache directories for all modules
+
+### Fixed
+
+- **Security: Directory permissions** - Fixed 0775 → 0750 in install.sh
+- **Socket ownership enforcement** - nftband.sock now explicitly root:nftban 660
+- **Legacy /var/run paths** - Replaced with ${NFTBAN_RUN_DIR:-/run/nftban}
+- **Hardcoded textfile collector** - Now uses NFTBAN_METRICS_TEXTFILE_DIR config
+- **GeoIP mkdir bypass** - Now uses FHS spec for directory creation
+- **Version sync** - All package specs updated to 1.10.0
+
+### Changed
+
+- **29 modules refactored** to use shared libraries with graceful fallbacks
+- **Health fix mechanism** now uses FHS spec as single source of truth
+- **Portscan stealth detection** - New pattern matching for stealth scans
+
+---
+
 ## [1.9.7] - 2026-02-06
 
 ### GUI Dashboard & Metrics Overhaul

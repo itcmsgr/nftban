@@ -2,7 +2,7 @@
 
 **Enterprise-Grade | Atomic Updates | Polkit-Secured | AI-Ready**
 
-[![Version](https://img.shields.io/badge/version-1.9.3-blue)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-1.10.0-blue)](https://github.com/itcmsgr/nftban)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Code: 80%+ Shell](https://img.shields.io/badge/Code-80%25%2B%20Shell-4EAA25.svg)]()
 [![Performance: Go Binaries](https://img.shields.io/badge/Performance-Go%20Binaries-00ADD8.svg)](https://go.dev/)
