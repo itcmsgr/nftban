@@ -4,7 +4,7 @@
 
 [![Version](https://img.shields.io/badge/version-1.10.0-blue)](https://github.com/itcmsgr/nftban)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
-[![Code: 80%+ Shell](https://img.shields.io/badge/Code-80%25%2B%20Shell-4EAA25.svg)]()
+[![Code: 58% Shell 42% Go](https://img.shields.io/badge/Code-58%25%20Shell%20%7C%2042%25%20Go-4EAA25.svg)]()
 [![Performance: Go Binaries](https://img.shields.io/badge/Performance-Go%20Binaries-00ADD8.svg)](https://go.dev/)
 [![Security: Polkit](https://img.shields.io/badge/Security-Polkit-orange.svg)]()
 [![FHS: Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
