@@ -230,14 +230,14 @@ _nftban_ddos_stats_json() {
     local packets_dropped=0
     local bytes_dropped=0
 
-    if [[ -f "/var/log/nftban/nftban-actions.log" ]]; then
+    if [[ -f "${NFTBAN_LOG_DIR:-/var/log/nftban}/nftban-actions.log" ]]; then
         # Count ddos bans in last 24 hours
         local yesterday_ts
         yesterday_ts=$(date -d '24 hours ago' +%s 2>/dev/null || echo "0")
-        blocked_24h=$(jq -r --arg ts "$yesterday_ts" 'select(.source == "ddos" and .event == "ban") | select((.ts | fromdateiso8601) >= ($ts | tonumber))' /var/log/nftban/nftban-actions.log 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
+        blocked_24h=$(jq -r --arg ts "$yesterday_ts" 'select(.source == "ddos" and .event == "ban") | select((.ts | fromdateiso8601) >= ($ts | tonumber))' "${NFTBAN_LOG_DIR:-/var/log/nftban}/nftban-actions.log" 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
 
         # Count total ddos bans
-        blocked_total=$(jq -r 'select(.source == "ddos" and .event == "ban")' /var/log/nftban/nftban-actions.log 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
+        blocked_total=$(jq -r 'select(.source == "ddos" and .event == "ban")' "${NFTBAN_LOG_DIR:-/var/log/nftban}/nftban-actions.log" 2>/dev/null | jq -s '. | length' 2>/dev/null || echo "0")
     fi
 
     # Try to get nftables counter stats (packets/bytes dropped)
