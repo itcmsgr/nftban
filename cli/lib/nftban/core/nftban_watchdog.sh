@@ -5,20 +5,25 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Monitor system resources for auditing and alerting
 #
-# meta:name=nftban_watchdog
-# meta:type=core
-# meta:header=System Watchdog Module
-# meta:version=1.0.0
+# meta:name="nftban_watchdog"
+# meta:type="core"
+# meta:header="System Watchdog Module"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
-#
-# **Description & Purpose**
-# meta:description=Monitors OS-level resources (load, memory, I/O, disk) for troubleshooting
-# meta:input=System /proc filesystem and df command
-# meta:output=Reports, alerts, and Prometheus metrics
-#
-# **Inventory & Requirements**
-# meta:depends=bash,df
+# meta:homepage="https://nftban.com"
+# meta:description="Monitors OS-level resources (load, memory, I/O, disk) for troubleshooting"
+# meta:input="System /proc filesystem and df command"
+# meta:output="Reports, alerts, and Prometheus metrics"
+# meta:depends="bash,df"
+# meta:created_date="2025-12-17"
+# meta:updated_date="2026-02-07"
+# meta:inventory.files="/var/log/nftban/watchdog.log,/var/lib/nftban/reports/watchdog"
+# meta:inventory.binaries="df"
+# meta:inventory.env_vars="NFTBAN_WATCHDOG_ENABLED,NFTBAN_WATCHDOG_INTERVAL"
+# meta:inventory.config_files="/etc/nftban/conf.d/watchdog.conf"
+# meta:inventory.systemd_units="nftban-watchdog.timer,nftban-watchdog.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="nftban"
 #
 # **What This Module Monitors (NO OVERLAP with other modules)**
 # - Load Average (from /proc/loadavg)
@@ -33,10 +38,8 @@
 # - Connection per IP: nftban_ddos_classic.sh
 # - Ban rate alerts: nftban_stats.sh
 # - Service health: nftban_health.sh
-#
-# meta:created_date=2025-12-17
-# meta:updated_date=2025-12-17
 # =============================================================================
+set -Eeuo pipefail
 
 # Enhanced strict mode
 IFS=$'\n\t'
@@ -107,7 +110,13 @@ if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_pipeline_validation.sh" 
     source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_pipeline_validation.sh"
 fi
 
-# Throttle state file
+# Load unified alert throttling library
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_alert_throttle.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_alert_throttle.sh"
+fi
+
+# Throttle state file (kept for backward compatibility, no longer used directly)
 readonly WATCHDOG_THROTTLE_FILE="${NFTBAN_RUN_DIR:-/run/nftban}/watchdog_throttle"
 
 # Status codes
@@ -155,28 +164,22 @@ watchdog_alert() {
     watchdog_log "$severity" "$msg"
 }
 
+# watchdog_should_alert - Backward compatible wrapper for alert throttling
+#
+# Arguments:
+#   $1 - alert_type: Type of watchdog alert (e.g., "load", "memory", "disk")
+#
+# Returns:
+#   0 - Should send alert
+#   1 - Alert is throttled
+#
 watchdog_should_alert() {
-    # Check if we should send alert (throttle check)
     local alert_type="$1"
-    local throttle_file="${WATCHDOG_THROTTLE_FILE}_${alert_type}"
+    local throttle_seconds="${NFTBAN_WATCHDOG_ALERT_THROTTLE:-3600}"
+    local state_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state"
 
-    if [[ -f "$throttle_file" ]]; then
-        local last_alert
-        last_alert=$(cat "$throttle_file" 2>/dev/null || echo 0)
-        local now
-        now=$(date +%s)
-        local diff
-        diff=$((now - last_alert))
-
-        if [[ $diff -lt $NFTBAN_WATCHDOG_ALERT_THROTTLE ]]; then
-            return 1  # Throttled
-        fi
-    fi
-
-    # Update throttle timestamp
-    mkdir -p "$(dirname "$throttle_file")" 2>/dev/null
-    date +%s > "$throttle_file"
-    return 0
+    # Use unified throttle function with 'watchdog_' prefix for namespace
+    nftban_should_alert "watchdog_${alert_type}" "$throttle_seconds" "$state_dir"
 }
 
 # =============================================================================

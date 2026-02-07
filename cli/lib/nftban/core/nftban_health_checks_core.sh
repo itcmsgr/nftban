@@ -31,6 +31,11 @@ set -Eeuo pipefail
 [[ -n "${_NFTBAN_HEALTH_CHECKS_CORE_LOADED:-}" ]] && return 0
 _NFTBAN_HEALTH_CHECKS_CORE_LOADED=1
 
+# Source the unified alert throttling library
+NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_alert_throttle.sh" 2>/dev/null || true
+
 # =============================================================================
 # COMMON HELPER FUNCTIONS
 # =============================================================================
@@ -134,41 +139,26 @@ _health_check_metrics_file() {
 }
 
 # =============================================================================
-# ALERT THROTTLING HELPER
+# ALERT THROTTLING HELPER (uses unified library)
 # =============================================================================
 
+# nftban_health_should_alert - Wrapper for backward compatibility
+# Delegates to the unified nftban_should_alert() function
+#
+# Arguments:
+#   $1 - alert_key: Unique identifier for the alert type
+#
+# Returns:
+#   0 - Should send alert
+#   1 - Alert is throttled
+#
 nftban_health_should_alert() {
     local alert_key="$1"
     local throttle_seconds="${NFTBAN_ALERT_THROTTLE_SECONDS:-3600}"
-    local state_file="${NFTBAN_ALERT_STATE_FILE:-${NFTBAN_DATA_DIR}/state/health_alerts.state}"
-    local state_dir
-    state_dir=$(dirname "$state_file")
+    local state_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/state"
 
-    [[ ! -d "$state_dir" ]] && mkdir -p "$state_dir" 2>/dev/null
-    [[ ! -f "$state_file" ]] && touch "$state_file" 2>/dev/null
-
-    local current_time
-    current_time=$(date +%s)
-
-    local last_alert_time
-    last_alert_time=$(grep "^${alert_key}:" "$state_file" 2>/dev/null | cut -d: -f2)
-
-    if [[ -n "$last_alert_time" ]]; then
-        local time_since_last_alert
-        time_since_last_alert=$((current_time - last_alert_time))
-        [[ $time_since_last_alert -lt $throttle_seconds ]] && return 1
-    fi
-
-    grep -v "^${alert_key}:" "$state_file" > "${state_file}.tmp" 2>/dev/null || true
-    echo "${alert_key}:${current_time}" >> "${state_file}.tmp"
-    mv "${state_file}.tmp" "$state_file" 2>/dev/null || true
-
-    local cutoff_time
-    cutoff_time=$((current_time - 86400))
-    awk -F: -v cutoff="$cutoff_time" '$2 >= cutoff' "$state_file" > "${state_file}.tmp" 2>/dev/null || true
-    mv "${state_file}.tmp" "$state_file" 2>/dev/null || true
-
-    return 0
+    # Prefix with 'health_' to namespace health check alerts
+    nftban_should_alert "health_${alert_key}" "$throttle_seconds" "$state_dir"
 }
 
 # =============================================================================
