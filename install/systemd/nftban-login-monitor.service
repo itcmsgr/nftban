@@ -59,6 +59,7 @@ LockPersonality=true
 
 # Minimal filesystem access
 ReadWritePaths=/var/log/nftban /var/lib/nftban /var/cache/nftban /run/nftban
+ReadOnlyPaths=/etc/nftban /usr/lib/nftban /usr/share/nftban
 
 # Network for IPC socket
 RestrictAddressFamilies=AF_UNIX
