@@ -500,9 +500,32 @@ EOF
     fi
 
     # ==========================================================================
-    # 7. Complete
+    # 7. Portscan Stealth Aggregation (Every 15 min)
     # ==========================================================================
-    log "INFO" "[7/7] NFTBan Maintenance Complete"
+    log "INFO" "[7/8] Running portscan stealth aggregation..."
+
+    # Load portscan module for aggregation
+    if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_portscan_classic.sh" ]]; then
+        source "${NFTBAN_LIB_DIR}/core/nftban_portscan_classic.sh" 2>/dev/null || true
+
+        # Run aggregation if function exists
+        if declare -f nftban_portscan_aggregate >/dev/null 2>&1; then
+            if nftban_portscan_aggregate --since 24h --ban 2>/dev/null; then
+                log "INFO" "Portscan aggregation: OK"
+            else
+                log "WARN" "Portscan aggregation: Issues found"
+            fi
+        else
+            log "INFO" "Portscan aggregation: Skipped (function not available)"
+        fi
+    else
+        log "INFO" "Portscan aggregation: Skipped (module not loaded)"
+    fi
+
+    # ==========================================================================
+    # 8. Complete
+    # ==========================================================================
+    log "INFO" "[8/8] NFTBan Maintenance Complete"
 
     return 0
 }
