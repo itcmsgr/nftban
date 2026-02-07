@@ -166,7 +166,7 @@ nftban_login_cmd_status() {
     echo ""
 
     # Check log file
-    local log_file="${NFTBAN_LOGIN_ALERT_LOG:-/var/log/nftban/login_alerts.log}"
+    local log_file="${NFTBAN_LOGIN_ALERT_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/login_alerts.log}"
     if [[ -f "$log_file" ]]; then
         local lines
         lines=$(wc -l < "$log_file")
