@@ -29,6 +29,8 @@ NFTBAN_CMD_TIMERS_LOADED="true"
 # Load required modules
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/core/nftban_output.sh"
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh"
 
 # =============================================================================
 # CONFIGURATION
@@ -70,23 +72,10 @@ timer_exists() {
     systemctl list-unit-files "$timer" --no-legend 2>/dev/null | grep -q "^$timer"
 }
 
-# Check if timer is enabled
-timer_enabled() {
-    local timer="$1"
-    systemctl is-enabled --quiet "$timer" 2>/dev/null
-}
-
-# Check if timer is active
-timer_active() {
-    local timer="$1"
-    systemctl is-active --quiet "$timer" 2>/dev/null
-}
-
-# Get timer next run time
-timer_next_run() {
-    local timer="$1"
-    systemctl list-timers "$timer" --no-legend 2>/dev/null | awk '{print $1, $2}' || echo "N/A"
-}
+# Note: Timer status functions are provided by nftban_service_control.sh:
+#   - nftban_timer_is_active(timer) - check if timer is active
+#   - nftban_timer_next_run(timer) - get next scheduled run
+#   - nftban_service_is_enabled(timer) - check if timer is enabled
 
 # Get timer last trigger time
 timer_last_trigger() {
@@ -125,12 +114,12 @@ cmd_timers_status() {
         local status_icon="⚪"
         local status_text="Inactive"
 
-        if timer_enabled "$timer"; then
+        if nftban_service_is_enabled "$timer"; then
             enabled=$((enabled + 1))
             status_icon="✅"
             status_text="Enabled"
 
-            if timer_active "$timer"; then
+            if nftban_timer_is_active "$timer"; then
                 active=$((active + 1))
                 status_text="Enabled & Active"
             fi
@@ -143,9 +132,9 @@ cmd_timers_status() {
         echo "     Description: ${TIMER_DESC[$timer]}"
         echo "     Status:      $status_text"
 
-        if timer_active "$timer"; then
+        if nftban_timer_is_active "$timer"; then
             local next_run
-            next_run=$(timer_next_run "$timer")
+            next_run=$(nftban_timer_next_run "$timer")
             local last_trigger
             last_trigger=$(timer_last_trigger "$timer")
             echo "     Next run:    $next_run"
@@ -197,7 +186,7 @@ cmd_timers_enable() {
             return 1
         fi
 
-        if timer_enabled "$timer_name"; then
+        if nftban_service_is_enabled "$timer_name"; then
             echo "✅ $timer_name is already enabled"
             return 0
         fi
@@ -225,7 +214,7 @@ cmd_timers_enable() {
             continue
         fi
 
-        if timer_enabled "$timer"; then
+        if nftban_service_is_enabled "$timer"; then
             echo "✅ $timer - Already enabled"
             success=$((success + 1))
             continue
@@ -272,7 +261,7 @@ cmd_timers_disable() {
             return 1
         fi
 
-        if ! timer_enabled "$timer_name"; then
+        if ! nftban_service_is_enabled "$timer_name"; then
             echo "✅ $timer_name is already disabled"
             return 0
         fi
@@ -321,7 +310,7 @@ cmd_timers_disable() {
             continue
         fi
 
-        if ! timer_enabled "$timer"; then
+        if ! nftban_service_is_enabled "$timer"; then
             echo "⚪ $timer - Already disabled"
             continue
         fi

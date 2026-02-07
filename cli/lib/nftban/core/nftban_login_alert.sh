@@ -61,6 +61,18 @@ if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh" ]]; then
     source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/version.sh"
 fi
 
+# Load timestamp library for unified timestamp generation
+# shellcheck source=/usr/lib/nftban/lib/nftban_timestamp.sh
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+fi
+
+# Load alert throttle library for unified alert throttling
+# shellcheck source=/usr/lib/nftban/lib/nftban_alert_throttle.sh
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_alert_throttle.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_alert_throttle.sh"
+fi
+
 # Load distro configuration for cross-distro service name compatibility
 # shellcheck source=/usr/lib/nftban/lib/nftban_distro_config.sh
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_distro_config.sh" ]]; then
@@ -121,7 +133,13 @@ nftban_login_alert_log() {
     # Log to file and optionally syslog
     local message="$1"
     local timestamp
-    timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+
+    # Use timestamp library with graceful fallback
+    if declare -f nftban_timestamp_date &>/dev/null && declare -f nftban_timestamp_time &>/dev/null; then
+        timestamp="$(nftban_timestamp_date) $(nftban_timestamp_time)"
+    else
+        timestamp=$(date '+%Y-%m-%d %H:%M:%S')
+    fi
 
     # Ensure log directory exists
     mkdir -p "$(dirname "$NFTBAN_LOGIN_ALERT_LOG")"
@@ -147,10 +165,18 @@ nftban_login_write_bans_log() {
     # Ensure log directory exists
     mkdir -p "$log_dir"
 
-    # Get current date and time
+    # Get current date and time using timestamp library with graceful fallback
     local date_str time_str
-    date_str=$(date '+%Y-%m-%d')
-    time_str=$(date '+%H:%M:%S')
+    if declare -f nftban_timestamp_date &>/dev/null; then
+        date_str=$(nftban_timestamp_date)
+    else
+        date_str=$(date '+%Y-%m-%d')
+    fi
+    if declare -f nftban_timestamp_time &>/dev/null; then
+        time_str=$(nftban_timestamp_time)
+    else
+        time_str=$(date '+%H:%M:%S')
+    fi
 
     # Sanitize reason (replace pipe characters to preserve format)
     reason="${reason//|/-}"
@@ -302,7 +328,13 @@ nftban_login_digest_send() {
     local hostname
     hostname=$(hostname -f 2>/dev/null || hostname)
     local timestamp
-    timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
+    # Use timestamp library with graceful fallback
+    if declare -f nftban_timestamp_local &>/dev/null; then
+        # nftban_timestamp_local returns ISO format, add timezone name for display
+        timestamp="$(nftban_timestamp_date) $(nftban_timestamp_time) $(date '+%Z')"
+    else
+        timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
+    fi
     local date_range
     date_range=$(date -d 'yesterday' '+%Y-%m-%d')
 
@@ -443,10 +475,25 @@ nftban_login_send_alert() {
     local status="$5"
     local details="${6:-}"
 
+    # Alert throttling: prevent storm of alerts from same IP
+    # Use throttle library with graceful fallback (default: 60 seconds per IP)
+    local throttle_key="login_alert_${ip}"
+    if declare -f nftban_should_alert &>/dev/null; then
+        if ! nftban_should_alert "$throttle_key" 60; then
+            nftban_login_alert_log "Alert throttled for IP $ip (sent recently)"
+            return 0
+        fi
+    fi
+
     local hostname
     hostname=$(hostname -f 2>/dev/null || hostname)
     local timestamp
-    timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
+    # Use timestamp library with graceful fallback
+    if declare -f nftban_timestamp_date &>/dev/null && declare -f nftban_timestamp_time &>/dev/null; then
+        timestamp="$(nftban_timestamp_date) $(nftban_timestamp_time) $(date '+%Z')"
+    else
+        timestamp=$(date '+%Y-%m-%d %H:%M:%S %Z')
+    fi
     local geoip
     geoip=$(nftban_login_get_geoip "$ip")
 
@@ -809,7 +856,12 @@ nftban_login_track_failed() {
 
     local key="${user}@${ip}"
     local now
-    now=$(date +%s)
+    # Use timestamp library with graceful fallback
+    if declare -f nftban_timestamp_unix &>/dev/null; then
+        now=$(nftban_timestamp_unix)
+    else
+        now=$(date +%s)
+    fi
 
     # Initialize if first attempt
     if [[ -z "${NFTBAN_FAILED_ATTEMPTS[$key]:-}" ]]; then
