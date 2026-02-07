@@ -85,6 +85,9 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/config"]="0750|root|nftban|Suricata config snippets"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/profiles"]="0750|root|nftban|Suricata detection profiles"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/rules"]="0750|root|nftban|Suricata custom rules"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/ssl"]="0750|root|nftban|UI TLS certificates"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/certs"]="0750|root|nftban|Zabbix integration TLS certificates"
+    NFTBAN_FHS_DIRECTORIES["/etc/nftban/tls"]="0750|root|nftban|API TLS certificates (self-signed)"
 
     # Data Directories
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban"]="0750|root|nftban|Application state data (root-owned security boundary)"
@@ -108,17 +111,30 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/queue/dlq"]="0750|nftban|nftban|Dead letter queue"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/mailspool"]="0750|nftban|nftban|Failed mail retry queue"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/pro"]="0750|root|nftban|Pro subscription data"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/state"]="0750|nftban|nftban|Protection and filter state JSON files"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/zabbix"]="0750|nftban|nftban|Zabbix event buffer for failed exports"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/profiles"]="0750|nftban|nftban|Watchdog protection profiles"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/recorder"]="0750|nftban|nftban|Watchdog flight recorder audit trail"
+    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/config"]="0755|root|root|Runtime configuration state"
 
     # Log Directories
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban"]="0750|nftban|nftban|Log files"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/watchdog"]="0750|nftban|nftban|Watchdog logs"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/reports"]="0750|nftban|nftban|Report logs"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/rbl"]="0750|nftban|nftban|RBL check cache"
+    NFTBAN_FHS_DIRECTORIES["/var/log/nftban/suricata"]="0750|nftban|nftban|Suricata EVE JSON alerts"
+    NFTBAN_FHS_DIRECTORIES["/var/log/nftban/metrics"]="0750|nftban|nftban|Metrics export NDJSON logs"
 
     # Runtime Directories
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban"]="0755|nftban|nftban|Cache files"
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/health"]="0750|nftban|nftban|Health check status cache"
+    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/trust"]="0755|nftban|nftban|Trust list and Cloudflare IP cache"
+    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/rbl"]="0755|nftban|nftban|RBL lookup result cache"
+    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/geoban"]="0755|nftban|nftban|GeoIP country list cache"
+    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/metrics"]="0755|nftban|nftban|JSON metrics cache for dashboard"
+    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/feeds"]="0755|nftban|nftban|Feed download cache"
     NFTBAN_FHS_DIRECTORIES["/run/nftban"]="0755|nftban|nftban|Runtime data (PID files, sockets)"
+    NFTBAN_FHS_DIRECTORIES["/run/nftban-ui"]="0755|nftban|nftban|Web UI daemon runtime data"
 
     # Shared Directories
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban"]="0755|root|root|Shared application data"
