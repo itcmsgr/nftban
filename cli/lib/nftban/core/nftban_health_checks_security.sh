@@ -649,12 +649,12 @@ nftban_health_check_ssh_port() {
     if [[ "$current_ssh_port" != "$config_ssh_port" ]]; then
         ssh_issues+=("SSH port mismatch: sshd_config=$current_ssh_port, nftban=$config_ssh_port")
 
-        # Auto-fix: Update the SSH port config
+        # Auto-fix: Update the SSH port config (format: PORT/PROTOCOL)
         if mkdir -p "${NFTBAN_CONFIG_DIR}/ports.d" 2>/dev/null; then
             cat > "${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf" << EOF
 # SSH port auto-updated by health check ($(date '+%Y-%m-%d %H:%M:%S'))
-# Port format: PORT|PROTO where PROTO = T(tcp), U(udp), B(both)
-$current_ssh_port|T
+# Port format: PORT/PROTOCOL where PROTOCOL = T/tcp, U/udp, or B/both
+$current_ssh_port/T
 EOF
             chown nftban:nftban "${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf" 2>/dev/null || true
             chmod 644 "${NFTBAN_CONFIG_DIR}/ports.d/00-ssh.conf" 2>/dev/null || true

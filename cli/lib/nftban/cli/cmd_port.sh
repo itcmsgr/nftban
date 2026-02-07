@@ -287,16 +287,16 @@ nftban_cmd_port() {
             local config_file="${NFTBAN_CONFIG_DIR}/ports.d/90-custom.conf"
 
             # Check if port already exists
-            if [[ -f "$config_file" ]] && grep -qE "^${port}\|" "$config_file" 2>/dev/null; then
+            if [[ -f "$config_file" ]] && grep -qE "^${port}/" "$config_file" 2>/dev/null; then
                 echo "⚠ Port $port already in whitelist: $config_file" >&2
                 echo "Current entry:" >&2
-                grep -E "^${port}\|" "$config_file" 2>/dev/null
+                grep -E "^${port}/" "$config_file" 2>/dev/null
                 return 0
             fi
 
-            # Add port to config
+            # Add port to config (format: PORT/PROTOCOL where PROTOCOL is T, U, or B)
             echo "# Added by: nftban port add $port $proto_name ($(date '+%Y-%m-%d %H:%M:%S'))" >> "$config_file"
-            echo "${port}|${proto}" >> "$config_file"
+            echo "${port}/${proto}" >> "$config_file"
             chmod 640 "$config_file"
             chown root:nftban "$config_file" 2>/dev/null || true
 
@@ -443,17 +443,17 @@ nftban_cmd_port() {
 
                 # Show what we're removing and capture protocol
                 local port_line
-                port_line=$(grep -E "^${port}\|" "$file" 2>/dev/null)
+                port_line=$(grep -E "^${port}/" "$file" 2>/dev/null)
                 echo "  - $port_line"
 
-                # Extract protocol from line (format: PORT|PROTO)
-                removed_proto=$(echo "$port_line" | cut -d'|' -f2)
+                # Extract protocol from line (format: PORT/PROTO)
+                removed_proto=$(echo "$port_line" | cut -d'/' -f2)
 
                 # Create backup
                 cp "$file" "${file}.backup.$(date +%Y%m%d-%H%M%S)"
 
                 # Remove port and its comment line (if immediately before)
-                sed -i "/^# Added by: nftban port add ${port} /d; /^${port}|/d" "$file"
+                sed -i "/^# Added by: nftban port add ${port} /d; /^${port}\//d" "$file"
 
                 removed_count=$((removed_count + 1))
             done
