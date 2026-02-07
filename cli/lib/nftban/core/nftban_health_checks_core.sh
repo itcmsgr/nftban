@@ -31,44 +31,39 @@ set -Eeuo pipefail
 [[ -n "${_NFTBAN_HEALTH_CHECKS_CORE_LOADED:-}" ]] && return 0
 _NFTBAN_HEALTH_CHECKS_CORE_LOADED=1
 
-# Source the unified alert throttling library
+# Source shared libraries
 NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nftban_alert_throttle.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh" 2>/dev/null || true
 
 # =============================================================================
 # COMMON HELPER FUNCTIONS
 # =============================================================================
 
+# Wrapper functions that delegate to shared libraries
 _health_service_active() {
-    systemctl is-active --quiet "$1" 2>/dev/null
+    nftban_service_is_active "$1" 2>/dev/null
 }
 
 _health_service_enabled() {
-    systemctl is-enabled --quiet "$1" 2>/dev/null
+    nftban_service_is_enabled "$1" 2>/dev/null
 }
 
 _health_service_exists() {
-    local service="$1"
-    systemctl list-unit-files 2>/dev/null | grep -q "^${service}" || \
-    [[ -f "/etc/systemd/system/${service}" ]] || \
-    [[ -f "/usr/lib/systemd/system/${service}" ]]
+    nftban_service_exists "$1" 2>/dev/null
 }
 
+# Wrapper functions that delegate to shared file utils library
 _health_file_age() {
-    local filepath="$1"
-    [[ ! -f "$filepath" ]] && echo "0" && return 1
-    local mtime
-    mtime=$(stat -c %Y "$filepath" 2>/dev/null || stat -f %m "$filepath" 2>/dev/null || echo 0)
-    echo $(( $(date +%s) - mtime ))
+    nftban_file_age "$1"
 }
 
 _health_file_fresh() {
-    local filepath="$1" max_age="${2:-120}"
-    [[ ! -f "$filepath" ]] && return 2
-    local age
-    age=$(_health_file_age "$filepath")
-    [[ $age -lt $max_age ]] && return 0 || return 1
+    nftban_file_is_fresh "$1" "${2:-120}"
 }
 
 _health_http_check() {
