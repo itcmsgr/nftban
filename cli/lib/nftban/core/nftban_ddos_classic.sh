@@ -87,7 +87,7 @@ _nftban_ddos_classic_load_config() {
     : "${DDOS_CLASSIC_BAN_DURATION_SHORT:=300}"
     : "${DDOS_CLASSIC_BAN_DURATION_MEDIUM:=1800}"
     : "${DDOS_CLASSIC_BAN_DURATION_LONG:=3600}"
-    : "${DDOS_CLASSIC_LOG_FILE:=/var/log/nftban/ddos-classic.log}"
+    : "${DDOS_CLASSIC_LOG_FILE:=${NFTBAN_LOG_DIR:-/var/log/nftban}/ddos-classic.log}"
     : "${DDOS_CLASSIC_LOG_LEVEL:=INFO}"
     : "${DDOS_CLASSIC_SYN_METER:=ddos_syn_flood}"
     : "${DDOS_CLASSIC_ICMP_METER:=ddos_icmp_flood}"
