@@ -153,7 +153,7 @@ health:
       mutates: false
       description: "Run health diagnostics"
       options:
-        --auto-heal: {type: bool, description: "Automatically fix detected issues (requires root)"}
+        --auto-heal: {type: bool, description: "Automatically fix detected issues (runs as nftban user via polkit)"}
         --quiet: {type: bool, description: "Minimal output (for cron/timer use)"}
         --cache-status: {type: bool, description: "Write health status to cache for banner"}
     fix:
@@ -1959,6 +1959,8 @@ suricata:
     - "nftban suricata profile-apply standard"
     - "nftban suricata scan"
     - "nftban suricata rules-generate"
+    - "nftban suricata rules-verify"
+    - "nftban suricata rules-ensure"
     - "nftban suricata sid-top"
     - "nftban suricata recommend"
   subcommands:
@@ -1982,6 +1984,8 @@ suricata:
     rules-generate: {mutates: true, description: "Generate enabled rules list"}
     rules-stats: {mutates: false, description: "Show rule statistics"}
     rules-init: {mutates: true, description: "Initialize rule management system"}
+    rules-verify: {mutates: false, description: "Verify rules are present and loadable"}
+    rules-ensure: {mutates: true, description: "Auto-download rules if missing"}
     # SID Statistics
     sid-stats: {mutates: false, description: "Show signature trigger statistics"}
     sid-info: {mutates: false, description: "Show details for specific SID"}
