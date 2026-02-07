@@ -65,7 +65,7 @@ nftban_check_for_updates() {
 
     local repo="${NFTBAN_REPO:-itcmsgr/nftban}"
     local current_version
-    current_version="${NFTBAN_VERSION:-1.7.0}"
+    current_version="${NFTBAN_VERSION:-unknown}"
     current_version="${current_version#v}"
 
     echo ""

@@ -75,6 +75,7 @@ readonly SURICATA_BIN="/usr/bin/suricata"
 readonly SURICATA_CONF_DIR="/etc/suricata"
 readonly SURICATA_DATA_DIR="/var/lib/suricata"
 readonly SURICATA_LOG_DIR="/var/log/nftban/suricata"  # NFTBan HFS
+readonly SURICATA_RUN_DIR="/run/suricata"
 readonly NFTBAN_TEMPLATES="${NFTBAN_SHARE_DIR:-/usr/share/nftban}/templates"
 
 # Note: print_status, print_error, print_info, detect_distro are now
@@ -243,7 +244,7 @@ create_directories() {
     # Suricata-specific directories
     install -d -o "$SURICATA_USER" -g "$SURICATA_GROUP" -m 0750 "$SURICATA_DATA_DIR"
     install -d -o "$SURICATA_USER" -g "$SURICATA_GROUP" -m 0750 "$SURICATA_LOG_DIR"
-    install -d -o "$SURICATA_USER" -g "$SURICATA_GROUP" -m 0755 /var/run/suricata
+    install -d -o "$SURICATA_USER" -g "$SURICATA_GROUP" -m 0755 "$SURICATA_RUN_DIR"
     # Config directory
     chmod 755 "$SURICATA_CONF_DIR"
 
@@ -287,7 +288,7 @@ MemoryAccounting=yes
 # Security hardening
 PrivateTmp=yes
 ProtectSystem=strict
-ReadWritePaths=/var/log/nftban/suricata /var/lib/suricata /var/run/suricata
+ReadWritePaths=/var/log/nftban/suricata /var/lib/suricata /run/suricata
 NoNewPrivileges=yes
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_NET_RAW CAP_IPC_LOCK
 

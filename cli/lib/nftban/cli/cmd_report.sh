@@ -389,7 +389,7 @@ nftban_report_cmd_email() {
 <p>See attached files for detailed statistics.</p>
 
 <hr>
-<p><small>Automated by NFTBan v${NFTBAN_VERSION:-1.7.0}</small></p>
+<p><small>Automated by NFTBan v${NFTBAN_VERSION:-unknown}</small></p>
 EOF
 )
 

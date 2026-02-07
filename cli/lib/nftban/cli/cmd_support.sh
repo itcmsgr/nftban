@@ -1119,7 +1119,7 @@ IMPORTANT: Review the attached bundle before forwarding.
 It may contain sensitive infrastructure information.
 
 ---
-NFTBan v${NFTBAN_VERSION:-1.9.4}
+NFTBan v${NFTBAN_VERSION:-unknown}
 https://nftban.com
 EOF
 )

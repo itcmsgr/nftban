@@ -491,11 +491,11 @@ nftban_mail_template_replace() {
     # Build version HTML
     local version_html=""
     if [[ "${NFTBAN_VERSION_INCLUDE:-YES}" == "YES" ]]; then
-        version_html="Version: ${NFTBAN_VERSION:-1.7.0}"
+        version_html="Version: ${NFTBAN_VERSION:-unknown}"
     fi
 
     # Replace variables
-    content="${content//\{NFTBAN_VERSION\}/${NFTBAN_VERSION:-1.7.0}}"
+    content="${content//\{NFTBAN_VERSION\}/${NFTBAN_VERSION:-unknown}}"
     content="${content//\{HOSTNAME\}/$hostname_val}"
     content="${content//\{SERVER_IP\}/$server_ip}"
     content="${content//\{DATE\}/$date_val}"

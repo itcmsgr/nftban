@@ -83,7 +83,7 @@ nftban_report_collect_all() {
     _data[SERVER_IP]=$(hostname -I 2>/dev/null | awk '{print $1}' || echo "unknown")
     _data[DATE]=$(date '+%Y-%m-%d')
     _data[TIME]=$(date '+%H:%M:%S')
-    _data[NFTBAN_VERSION]="${NFTBAN_VERSION:-1.9.4}"
+    _data[NFTBAN_VERSION]="${NFTBAN_VERSION:-unknown}"
     _data[REPORT_PERIOD]="Daily"
 
     # 24h activity (from logs)
