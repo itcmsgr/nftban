@@ -40,6 +40,18 @@ else
     echo "FATAL: nft_ipc.sh not found - cannot perform firewall operations" >&2
     exit 1
 fi
+
+# Source timestamp library (graceful fallback)
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
+    # shellcheck source=/usr/lib/nftban/lib/nftban_timestamp.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+fi
+
+# Source file utilities library (graceful fallback)
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" ]]; then
+    # shellcheck source=/usr/lib/nftban/lib/nftban_file_utils.sh
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh"
+fi
 IFS=$'\n\t'
 umask 027
 
@@ -77,7 +89,14 @@ acquire_lock() {
 
     # Check for stale lock (>30 minutes old)
     if [[ -f "$LOCKFILE" ]]; then
-        local lock_age=$(( $(date +%s) - $(stat -c %Y "$LOCKFILE" 2>/dev/null || echo 0) ))
+        local lock_age
+        # Use library function with fallback for stale lock detection
+        if declare -f nftban_file_age >/dev/null 2>&1; then
+            lock_age=$(nftban_file_age "$LOCKFILE")
+        else
+            # Fallback: inline calculation if library not available
+            lock_age=$(( $(date +%s) - $(stat -c %Y "$LOCKFILE" 2>/dev/null || echo 0) ))
+        fi
         if [[ $lock_age -gt 1800 ]]; then
             log "WARN" "Removing stale lock (${lock_age}s old)"
             rm -f "$LOCKFILE"
@@ -163,8 +182,14 @@ main() {
                 fi
             fi
 
-            # Backup old whitelist
-            cp "$SSH_WHITELIST" "${SSH_WHITELIST}.backup.$(date +%Y%m%d-%H%M%S)"
+            # Backup old whitelist (use library timestamp with fallback)
+            local backup_timestamp
+            if declare -f nftban_timestamp_file >/dev/null 2>&1; then
+                backup_timestamp=$(nftban_timestamp_file)
+            else
+                backup_timestamp=$(date +%Y%m%d_%H%M%S)
+            fi
+            cp "$SSH_WHITELIST" "${SSH_WHITELIST}.backup.${backup_timestamp}"
 
             # Update whitelist with new SSH port (format: PORT/PROTOCOL)
             cat > "$SSH_WHITELIST" <<EOF
@@ -412,7 +437,13 @@ EOF
             fi
 
             # Track this IP with current timestamp (for monitoring)
-            echo "$ip $(date +%s)" >> "$ACTIVE_SSH_WHITELIST.new"
+            local current_ts
+            if declare -f nftban_timestamp_unix >/dev/null 2>&1; then
+                current_ts=$(nftban_timestamp_unix)
+            else
+                current_ts=$(date +%s)
+            fi
+            echo "$ip $current_ts" >> "$ACTIVE_SSH_WHITELIST.new"
         done
 
         mv "$ACTIVE_SSH_WHITELIST.new" "$ACTIVE_SSH_WHITELIST"

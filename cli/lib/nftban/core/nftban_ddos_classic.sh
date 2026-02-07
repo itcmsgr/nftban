@@ -46,6 +46,12 @@ readonly NFTBAN_DDOS_CLASSIC_LOADED=1
 source "${NFTBAN_LIB_DIR}/lib/nft_fragment.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_alert_throttle.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION LOADING
@@ -129,7 +135,15 @@ _nftban_ddos_classic_log() {
     # Create log directory if needed
     mkdir -p "$(dirname "$log_file")" 2>/dev/null
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [CLASSIC] [$level] $message" >> "$log_file"
+    # Use timestamp library with graceful fallback
+    local timestamp
+    if type -t nftban_timestamp_log &>/dev/null; then
+        timestamp=$(nftban_timestamp_log)
+    else
+        timestamp="[$(date '+%Y-%m-%d %H:%M:%S')]"
+    fi
+
+    echo "${timestamp} [CLASSIC] [$level] $message" >> "$log_file"
 }
 
 # =============================================================================
