@@ -130,7 +130,7 @@ _nftban_ddos_classic_load_config() {
 _nftban_ddos_classic_log() {
     local level="$1"
     local message="$2"
-    local log_file="${DDOS_CLASSIC_LOG_FILE:-/var/log/nftban/ddos-classic.log}"
+    local log_file="${DDOS_CLASSIC_LOG_FILE:-${NFTBAN_LOG_DIR:-/var/log/nftban}/ddos-classic.log}"
 
     # Create log directory if needed
     mkdir -p "$(dirname "$log_file")" 2>/dev/null
