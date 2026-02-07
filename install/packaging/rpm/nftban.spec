@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024-2025 NFTBan Development Team
 
 Name:           nftban
-Version:        1.9.3
+Version:        1.10.0
 Release:        1%{?dist}
 Summary:        NFTBAN - Next-generation Linux firewall using nftables
 

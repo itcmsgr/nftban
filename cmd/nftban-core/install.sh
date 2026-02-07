@@ -68,12 +68,12 @@ echo
 
 # Step 3: Create directories with correct ownership (no -R needed for fresh dirs)
 echo -e "${YELLOW}[3/6]${NC} Creating required directories..."
-install -d -o root -g nftban -m 0775 /etc/nftban
-install -d -o root -g nftban -m 0775 /etc/nftban/whitelist.d
-install -d -o root -g nftban -m 0775 /etc/nftban/blacklist.d
-install -d -o root -g nftban -m 0775 /etc/nftban/ports.d
-install -d -o root -g nftban -m 0775 /var/lib/nftban
-install -d -o root -g nftban -m 0775 /var/lib/nftban/feeds
+install -d -o root -g nftban -m 0750 /etc/nftban
+install -d -o root -g nftban -m 0750 /etc/nftban/whitelist.d
+install -d -o root -g nftban -m 0750 /etc/nftban/blacklist.d
+install -d -o root -g nftban -m 0750 /etc/nftban/ports.d
+install -d -o root -g nftban -m 0750 /var/lib/nftban
+install -d -o root -g nftban -m 0750 /var/lib/nftban/feeds
 echo -e "${GREEN}✓${NC} Directories created with proper permissions"
 echo
 

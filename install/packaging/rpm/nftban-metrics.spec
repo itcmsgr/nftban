@@ -2,7 +2,7 @@
 # SPDX-FileCopyrightText: Copyright (c) 2024-2025 NFTBan Development Team
 
 Name:           nftban-metrics
-Version:        1.7.0
+Version:        1.10.0
 Release:        1%{?dist}
 Summary:        NFTBAN Metrics - Prometheus/Grafana observability for nftables firewall
 
