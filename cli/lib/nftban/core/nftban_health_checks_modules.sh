@@ -355,7 +355,50 @@ nftban_health_check_rbl() {
     return $status
 }
 
+# =============================================================================
+# PORTSCAN PREFIX CHECK (Bug #24: Log prefix mismatch causes no detection logging)
+# =============================================================================
+
+nftban_health_check_portscan_prefix() {
+    # Check if nftables portscan log prefix matches what the parser expects
+    # Bug found: nftables uses "nftban: portscan: " but parser expects "NFTBAN_PORTSCAN:"
+    # Returns: 0=OK, 1=Warning (mismatch found)
+
+    local status=$HEALTH_OK
+    local prefix_issues=()
+
+    # Get the expected prefix from config
+    local expected_prefix="${PORTSCAN_CLASSIC_LOG_PREFIX:-NFTBAN_PORTSCAN:}"
+
+    # Get actual prefix from nftables ruleset
+    local actual_prefix
+    actual_prefix=$(nft list ruleset 2>/dev/null | grep -oP 'log prefix "\K[^"]*portscan[^"]*' | head -1 || echo "")
+
+    if [[ -n "$actual_prefix" ]]; then
+        # Check if they match (actual should contain expected or vice versa)
+        if [[ "$actual_prefix" != *"$expected_prefix"* ]] && [[ "$expected_prefix" != *"$actual_prefix"* ]]; then
+            # Normalize for comparison (strip spaces, lowercase)
+            local norm_actual norm_expected
+            norm_actual=$(echo "$actual_prefix" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+            norm_expected=$(echo "$expected_prefix" | tr -d ' ' | tr '[:upper:]' '[:lower:]')
+
+            if [[ "$norm_actual" != "$norm_expected" ]]; then
+                prefix_issues+=("Portscan log prefix MISMATCH:")
+                prefix_issues+=("  nftables uses: '$actual_prefix'")
+                prefix_issues+=("  parser expects: '$expected_prefix'")
+                prefix_issues+=("FIX: Update /etc/nftban/conf.d/portscan/classic.conf PORTSCAN_CLASSIC_LOG_PREFIX")
+                status=$HEALTH_WARNING
+                NFTBAN_HEALTH_WARNINGS+=("Portscan prefix mismatch - detections not being logged")
+            fi
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["portscan_prefix"]=$status
+    [[ ${#prefix_issues[@]} -gt 0 ]] && NFTBAN_HEALTH_ISSUES["portscan_prefix"]="${prefix_issues[*]}"
+    return $status
+}
+
 # Export functions
 export -f nftban_health_check_modules nftban_health_check_geoip
 export -f nftban_health_check_geoban nftban_health_check_databases
-export -f nftban_health_check_rbl
+export -f nftban_health_check_rbl nftban_health_check_portscan_prefix
