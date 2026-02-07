@@ -29,12 +29,18 @@ set -Eeuo pipefail
 declare -g _NFTBAN_PORTSCAN_SURICATA_LOADED=1
 
 # =============================================================================
-# LOAD IPC LIBRARY (for single-writer architecture)
+# LOAD IPC AND SHARED LIBRARIES
 # =============================================================================
 
 : "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/nft_ipc.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_timestamp.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_file_utils.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/nftban_service_control.sh" 2>/dev/null || true
 
 # =============================================================================
 # CONFIGURATION LOADING
@@ -92,7 +98,15 @@ _nftban_portscan_suricata_log() {
 
     mkdir -p "$(dirname "$log_file")" 2>/dev/null
 
-    echo "[$(date '+%Y-%m-%d %H:%M:%S')] [SURICATA] [$level] $message" >> "$log_file"
+    # Use library timestamp if available, fallback to date
+    local timestamp
+    if type -t nftban_timestamp_log &>/dev/null; then
+        timestamp=$(nftban_timestamp_log)
+    else
+        timestamp="[$(date '+%Y-%m-%d %H:%M:%S')]"
+    fi
+
+    echo "${timestamp} [SURICATA] [$level] $message" >> "$log_file"
 }
 
 # =============================================================================
@@ -109,10 +123,17 @@ nftban_portscan_suricata_binary_exists() {
 nftban_portscan_suricata_service_running() {
     local service_name="${PORTSCAN_SURICATA_SERVICE_NAME:-suricata}"
 
-    # Try systemctl first
-    if command -v systemctl &>/dev/null; then
-        if systemctl is-active --quiet "$service_name" 2>/dev/null; then
+    # Use library function if available
+    if type -t nftban_service_is_active &>/dev/null; then
+        if nftban_service_is_active "$service_name"; then
             return 0
+        fi
+    else
+        # Fallback: Try systemctl first
+        if command -v systemctl &>/dev/null; then
+            if systemctl is-active --quiet "$service_name" 2>/dev/null; then
+                return 0
+            fi
         fi
     fi
 
@@ -131,8 +152,15 @@ nftban_portscan_suricata_eve_active() {
 
     [[ -f "$eve_file" ]] || return 1
 
+    # Use library function if available
+    if type -t nftban_file_is_fresh &>/dev/null; then
+        nftban_file_is_fresh "$eve_file" "$freshness_threshold"
+        return $?
+    fi
+
+    # Fallback: manual check
     local file_mtime
-    file_mtime=$(stat -c %Y "$eve_file" 2>/dev/null) || return 1
+    file_mtime=$(stat -c %Y "$eve_file" 2>/dev/null || stat -f %m "$eve_file" 2>/dev/null) || return 1
 
     local current_time
     current_time=$(date +%s)
@@ -212,8 +240,16 @@ nftban_portscan_suricata_save_state() {
 
     [[ -d "$state_dir" ]] || mkdir -p "$state_dir"
 
+    # Use library timestamp if available
+    local state_timestamp
+    if type -t nftban_timestamp &>/dev/null; then
+        state_timestamp=$(nftban_timestamp)
+    else
+        state_timestamp=$(date -Iseconds)
+    fi
+
     {
-        echo "# NFTBan Portscan Suricata State - $(date -Iseconds)"
+        echo "# NFTBan Portscan Suricata State - ${state_timestamp}"
         echo "# Format: TYPE|IP|DATA"
         echo "EVE_OFFSET|0|${_PORTSCAN_SURICATA_EVE_OFFSET}"
 
@@ -359,7 +395,12 @@ nftban_portscan_suricata_record_alert() {
     local category="$4"
 
     local current_time
-    current_time=$(date +%s)
+    # Use library function if available, fallback to date
+    if type -t nftban_timestamp_unix &>/dev/null; then
+        current_time=$(nftban_timestamp_unix)
+    else
+        current_time=$(date +%s)
+    fi
 
     # Skip whitelisted IPs
     if nftban_portscan_suricata_is_whitelisted "$src_ip"; then
@@ -455,7 +496,12 @@ nftban_portscan_suricata_calculate_score() {
     # Apply score decay
     local last_seen="${_PORTSCAN_SURICATA_IP_LAST_SEEN[$ip]:-0}"
     local current_time
-    current_time=$(date +%s)
+    # Use library function if available, fallback to date
+    if type -t nftban_timestamp_unix &>/dev/null; then
+        current_time=$(nftban_timestamp_unix)
+    else
+        current_time=$(date +%s)
+    fi
     local score_decay="${PORTSCAN_SURICATA_SCORE_DECAY}"
 
     if [[ $last_seen -gt 0 && -n "$current_score" ]]; then
@@ -630,8 +676,12 @@ nftban_portscan_suricata_block_ip() {
         fi
     fi
 
-    # Record block
-    _PORTSCAN_SURICATA_IP_BLOCKED["$ip"]=$(date +%s)
+    # Record block - Use library function if available, fallback to date
+    if type -t nftban_timestamp_unix &>/dev/null; then
+        _PORTSCAN_SURICATA_IP_BLOCKED["$ip"]=$(nftban_timestamp_unix)
+    else
+        _PORTSCAN_SURICATA_IP_BLOCKED["$ip"]=$(date +%s)
+    fi
 
     _nftban_portscan_suricata_log "WARN" "Blocked ${ip} for ${duration}s (${level}, score=${score}, types=${scan_types})"
 
@@ -712,7 +762,12 @@ nftban_portscan_suricata_is_whitelisted() {
 # Cleanup stale tracking entries
 nftban_portscan_suricata_cleanup() {
     local current_time
-    current_time=$(date +%s)
+    # Use library function if available, fallback to date
+    if type -t nftban_timestamp_unix &>/dev/null; then
+        current_time=$(nftban_timestamp_unix)
+    else
+        current_time=$(date +%s)
+    fi
     local alert_window="${PORTSCAN_SURICATA_ALERT_WINDOW}"
     local max_tracked="${PORTSCAN_SURICATA_MAX_TRACKED_IPS}"
 

@@ -5,26 +5,34 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Wrapper for nftban-geoip GO binary
 #
-# meta:name=nftban_geoip_go
-# meta:type=core
-# meta:header=GO GeoIP Wrapper
-# meta:version=1.0.0
+# meta:name="nftban_geoip_go"
+# meta:type="core"
+# meta:header="GO GeoIP Wrapper"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Fast microsecond GeoIP lookups using GO binary with MaxMind GeoLite2
-# meta:input=IP addresses for geolocation lookup
-# meta:output=Country codes and geographic information
+# meta:description="Fast microsecond GeoIP lookups using GO binary with MaxMind GeoLite2"
+# meta:input="IP addresses for geolocation lookup"
+# meta:output="Country codes and geographic information"
 #
 # **Inventory & Requirements**
-# meta:depends=nftban-geoip,GeoLite2-Country.mmdb
+# meta:depends="nftban-geoip,GeoLite2-Country.mmdb"
+# meta:inventory.files="/usr/lib/nftban/bin/nftban-geoip"
+# meta:inventory.binaries="nftban-geoip"
+# meta:inventory.env_vars="NFTBAN_GEOIP_BIN,NFTBAN_GEOIP_TIMEOUT"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:updated_date="2025-11-24"
 # =============================================================================
 
 # Enhanced strict mode
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
