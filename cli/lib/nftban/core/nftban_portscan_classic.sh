@@ -946,9 +946,8 @@ nftban_portscan_aggregate() {
 
     # Fallback to file if journald empty
     if [[ -z "$events" ]] && [[ -f "/var/log/nftban/portscan-events.log" ]]; then
-        local cutoff
-        cutoff=$(date -d "24 hours ago" +%s 2>/dev/null || echo 0)
-        events=$(cat /var/log/nftban/portscan-events.log 2>/dev/null | tail -10000 || true)
+        # Read last 10000 lines from log file (time filtering done downstream)
+        events=$(tail -10000 /var/log/nftban/portscan-events.log 2>/dev/null || true)
     fi
 
     if [[ -z "$events" ]]; then
