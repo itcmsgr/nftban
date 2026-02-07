@@ -340,7 +340,7 @@ nftban_health_cmd_rbl() {
 
     local config_dir="${NFTBAN_CONFIG_DIR:-/etc/nftban}"
     local rbl_config="$config_dir/conf.d/rbl/main.conf"
-    local rbl_cache_dir="/var/log/nftban/rbl"
+    local rbl_cache_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/rbl"
     local last_check_file="$rbl_cache_dir/last_check"
 
     # Status tracking
