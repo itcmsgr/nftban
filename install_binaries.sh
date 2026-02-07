@@ -305,12 +305,14 @@ create_users_groups() {
         ok "User already exists: nftban"
     fi
 
-    # Create nftban-cli group
+    # DEPRECATED: nftban-cli group is no longer used
+    # Admin access now uses 'nftban' group directly
+    # Keeping for backwards compatibility only
     if ! getent group nftban-cli >/dev/null 2>&1; then
-        groupadd --system nftban-cli
-        ok "Created group: nftban-cli"
+        # Skip creation - use 'nftban' group instead
+        warn "nftban-cli group deprecated - use 'nftban' group for admin access"
     else
-        ok "Group already exists: nftban-cli"
+        warn "nftban-cli group exists (deprecated) - use 'nftban' group instead"
     fi
 
     # Create nftban-auditor group

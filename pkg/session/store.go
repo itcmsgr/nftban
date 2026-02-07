@@ -63,11 +63,11 @@ func (s *Session) HasGroup(group string) bool {
 	return false
 }
 
-// IsAdmin checks for admin privileges (nftban-cli)
+// IsAdmin checks for admin privileges (nftban group)
 // Note: System groups (wheel, sudo, root) are NOT granted admin access
-// Users must be in nftban-cli group for CLI/GUI access and admin privileges
+// Users must be in nftban group for CLI/GUI access and admin privileges
 func (s *Session) IsAdmin() bool {
-	return s.HasGroup("nftban-cli")
+	return s.HasGroup("nftban")
 }
 
 // ValidateCSRF checks if the provided CSRF token matches the session's token

@@ -1,11 +1,27 @@
 #!/usr/bin/env bash
-# NFTBan v1.0.0
-# Web GUI Management Commands
-# Author: Antonios Voulvoulis (itcmsgr)
-# License: MPL-2.0
+# =============================================================================
+# NFTBan v1.0.0 - Web GUI Management Commands
+# =============================================================================
 # SPDX-License-Identifier: MPL-2.0
-# meta:version=1.0.0
-# meta:homepage=https://github.com/itcmsgr/nftban
+#
+# meta:name="cmd_ui"
+# meta:type="cli"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://github.com/itcmsgr/nftban"
+# meta:description="Web GUI management commands (enable, disable, status)"
+#
+# meta:inventory.files="/etc/nftban/ui.conf,/etc/nftban/ssl/"
+# meta:inventory.binaries="openssl,systemctl"
+# meta:inventory.env_vars="NFTBAN_UI_PORT"
+# meta:inventory.config_files="/etc/nftban/ui.conf"
+# meta:inventory.systemd_units="nftban-ui.service,nftban-ui-auth.service"
+# meta:inventory.network="3940/tcp"
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2025-10-26"
+# meta:updated_date="2026-02-07"
+# =============================================================================
 
 set -Eeuo pipefail
 
@@ -80,8 +96,9 @@ SESSION_TIMEOUT=60
 BLOCK_ROOT_LOGIN=true
 
 # Authentication
-# Web GUI requires nftban-cli group (same as CLI access)
-REQUIRED_GROUP=nftban-cli
+# Web GUI requires nftban group for admin access
+# nftban-auditor group gets read-only access
+REQUIRED_GROUP=nftban
 
 # Access Control
 IP_WHITELIST_FILE=$NFTBAN_UI_WHITELIST
