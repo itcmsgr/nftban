@@ -678,6 +678,98 @@ collect_all_metrics() {
             fi
         fi
 
+        # --- Module Resource Metrics (ACTIVE modules only) ---
+        # Timer modules: Read from systemd journal for last run stats
+        # Embedded modules: Estimate from daemon CPU/memory using ban ratios
+
+        # Timer modules: feeds, rbl
+        # Read last run duration and exit status from systemd journal
+        for timer_module in feeds rbl; do
+            local timer_unit="nftban-${timer_module}"
+            [[ "$timer_module" == "feeds" ]] && timer_unit="nftban-core-feeds"
+
+            # Check if timer is active (only emit metrics for active modules)
+            if systemctl is-active "${timer_unit}.timer" &>/dev/null 2>&1; then
+                local run_duration=0 run_memory=0 run_status=0
+
+                # Get last invocation stats from systemd (ExecMainExitTimestamp - ExecMainStartTimestamp)
+                local start_ts end_ts
+                start_ts=$(systemctl show "${timer_unit}.service" -p ExecMainStartTimestampMonotonic --value 2>/dev/null || echo "0")
+                end_ts=$(systemctl show "${timer_unit}.service" -p ExecMainExitTimestampMonotonic --value 2>/dev/null || echo "0")
+                if [[ "$start_ts" != "0" ]] && [[ "$end_ts" != "0" ]] && [[ "$end_ts" -gt "$start_ts" ]]; then
+                    # Monotonic timestamps are in microseconds
+                    run_duration=$(( (end_ts - start_ts) / 1000000 ))
+                fi
+
+                # Get exit status (0 = success)
+                local exit_code
+                exit_code=$(systemctl show "${timer_unit}.service" -p ExecMainStatus --value 2>/dev/null || echo "1")
+                [[ "$exit_code" == "0" ]] && run_status=1
+
+                # Memory: Get peak memory from systemd (MemoryPeak, requires systemd 250+)
+                local mem_peak
+                mem_peak=$(systemctl show "${timer_unit}.service" -p MemoryPeak --value 2>/dev/null || echo "")
+                if [[ -n "$mem_peak" ]] && [[ "$mem_peak" != "[not set]" ]] && [[ "$mem_peak" =~ ^[0-9]+$ ]]; then
+                    run_memory=$mem_peak
+                fi
+
+                metrics+="nftban_module_${timer_module}_last_run_duration_seconds $run_duration $timestamp\n"
+                metrics+="nftban_module_${timer_module}_last_run_memory_bytes $run_memory $timestamp\n"
+                metrics+="nftban_module_${timer_module}_last_run_status $run_status $timestamp\n"
+            fi
+        done
+
+        # Embedded modules: portscan, ddos, geoban
+        # These run within the daemon, estimate resource usage from daemon stats + ban ratios
+        # Get daemon CPU/memory (recalculate for EXTENDED - pid is from LIVE group)
+        local daemon_cpu=0 daemon_mem=0
+        if [[ -n "$pid" ]] && [[ "$pid" != "0" ]] && [[ -d "/proc/$pid" ]]; then
+            local ps_stats
+            ps_stats=$(ps -p "$pid" -o %cpu,%mem --no-headers 2>/dev/null || echo "0 0")
+            daemon_cpu=$(echo "$ps_stats" | awk '{print $1}')
+            daemon_mem=$(echo "$ps_stats" | awk '{print $2}')
+        fi
+
+        # Calculate ban ratios from src_* variables (collected in LIVE group)
+        # Total bans across embedded module sources (portscan, ddos, geoban uses feeds)
+        local embedded_total=$((${src_portscan:-0} + ${src_ddos:-0}))
+        local all_src_total=$((${src_login:-0} + ${src_portscan:-0} + ${src_ddos:-0} + ${src_feeds:-0} + ${src_suricata:-0}))
+
+        # Estimate resource allocation per embedded module based on ban contribution
+        # Note: geoban is static (feed-based), minimal CPU; portscan/ddos are dynamic
+        for embed_module in portscan ddos geoban; do
+            local mod_cpu=0 mod_mem=0
+
+            # Check if module config exists (active)
+            if [[ -f "${NFTBAN_CONFIG_DIR}/modules/${embed_module}.conf" ]] || \
+               [[ "$embed_module" == "geoban" && -d "${NFTBAN_CONFIG_DIR}/geoban.d" ]]; then
+
+                if [[ "$embed_module" == "geoban" ]]; then
+                    # GeoBan is static (feed-based rules), estimate ~5% of daemon overhead
+                    if [[ -d "${NFTBAN_CONFIG_DIR}/geoban.d" ]] && \
+                       ls "${NFTBAN_CONFIG_DIR}/geoban.d"/50-ban-*.conf &>/dev/null 2>&1; then
+                        mod_cpu=$(awk -v d="$daemon_cpu" 'BEGIN {printf "%.2f", d * 0.05}')
+                        mod_mem=$(awk -v d="$daemon_mem" 'BEGIN {printf "%.2f", d * 0.05}')
+                    fi
+                elif [[ $all_src_total -gt 0 ]]; then
+                    # Estimate based on ban ratio
+                    local mod_bans=0
+                    [[ "$embed_module" == "portscan" ]] && mod_bans=${src_portscan:-0}
+                    [[ "$embed_module" == "ddos" ]] && mod_bans=${src_ddos:-0}
+
+                    # Allocate proportional CPU/mem based on ban contribution
+                    # Cap embedded modules at 80% of daemon resources (login-monitor takes rest)
+                    mod_cpu=$(awk -v d="$daemon_cpu" -v b="$mod_bans" -v t="$all_src_total" \
+                        'BEGIN {printf "%.2f", (t > 0) ? (d * 0.8 * b / t) : 0}')
+                    mod_mem=$(awk -v d="$daemon_mem" -v b="$mod_bans" -v t="$all_src_total" \
+                        'BEGIN {printf "%.2f", (t > 0) ? (d * 0.8 * b / t) : 0}')
+                fi
+
+                metrics+="nftban_module_${embed_module}_cpu_percent_estimated $mod_cpu $timestamp\n"
+                metrics+="nftban_module_${embed_module}_memory_percent_estimated $mod_mem $timestamp\n"
+            fi
+        done
+
         # --- Kernel Softnet Metrics (component: kernel) ---
         # Softnet drops indicate packet processing pressure on CPU
         # Variables declared at function level for JSON cache access

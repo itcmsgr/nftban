@@ -13,6 +13,18 @@ Major performance and accuracy release focused on eliminating duplicate processi
 
 ### Added
 
+- **Per-module resource metrics** - Track CPU/RAM impact per module:
+  - Timer modules (feeds, rbl): Last run duration, peak memory, exit status
+  - Embedded modules (portscan, ddos, geoban): Estimated CPU/RAM based on ban ratios
+  - Available in both watchdog reports and Prometheus/Zabbix exports
+  - New metrics: `nftban_module_*_cpu_percent_estimated`, `nftban_module_*_last_run_duration_seconds`
+
+- **Watchdog timer in health display** - Now shows in Optional Features section
+
+- **Login monitor crash fix** - Ban command failure no longer crashes the service
+
+- **Health auto-fix for sbin binaries** - Queue processor permissions (755) now auto-fixed
+
 - **Deterministic alert routing** - New `routing.conf` with priority-based module assignment:
   - SID overrides → Category mapping → Service/port context → Keywords → Priority arbitration
   - Priority order: ddos (100) > portscan (50) > login (25) > other (1)
