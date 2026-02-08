@@ -47,6 +47,10 @@ set -Eeuo pipefail
 [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf"
 [[ -f "${NFTBAN_CONFIG_DIR}/nftban.conf.local" ]] && source "${NFTBAN_CONFIG_DIR}/nftban.conf.local" 2>/dev/null || true
 
+# Source distro config for distribution-specific paths
+# shellcheck source=/dev/null
+[[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
@@ -530,7 +534,7 @@ collect_suricata_metrics() {
     fi
 
     # Rules count (approximate from rules directory)
-    local rules_dir="/var/lib/suricata/rules"
+    local rules_dir="${DISTRO_PATHS[suricata_rules_dir]}"
     if [[ -d "$rules_dir" ]]; then
         rules_total=$(grep -rh "^alert\|^drop\|^reject" "$rules_dir"/*.rules 2>/dev/null | wc -l) || rules_total=0
     fi

@@ -125,7 +125,7 @@ cmd_suricata_rules() {
             # Verify rules are present and loadable - used by ExecStartPre
             # Exit 0 = ready, Exit 1 = not ready (with fix command)
             local quiet="${1:-}"
-            local rules_file="${SURICATA_RULES_DIR:-/var/lib/suricata/rules}/suricata.rules"
+            local rules_file="${SURICATA_RULES_DIR}/suricata.rules"
             local exit_code=0
 
             # Check 1: Rules file exists and non-empty
@@ -168,7 +168,7 @@ cmd_suricata_rules() {
         ensure)
             # Auto-heal: Download rules if missing, then verify
             # Invoked from nftban health fix, auto-heal mode
-            local rules_file="${SURICATA_RULES_DIR:-/var/lib/suricata/rules}/suricata.rules"
+            local rules_file="${SURICATA_RULES_DIR}/suricata.rules"
 
             # Check if rules exist
             if [[ -f "$rules_file" ]] && [[ -s "$rules_file" ]]; then

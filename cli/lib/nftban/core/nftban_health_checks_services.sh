@@ -40,6 +40,8 @@ _NFTBAN_HEALTH_CHECKS_SERVICES_LOADED=1
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_file_utils.sh" 2>/dev/null || true
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_service_control.sh" 2>/dev/null || true
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_distro_config.sh" 2>/dev/null || true
 
 # =============================================================================
 # SERVICE CHECKS
@@ -262,7 +264,7 @@ nftban_health_check_suricata() {
         fi
         # Fallback: check suricata.rules file exists and has content
         if [[ "${rules_loaded:-0}" -eq 0 ]]; then
-            local rules_file="/var/lib/suricata/rules/suricata.rules"
+            local rules_file="${DISTRO_PATHS[suricata_rules_dir]}/suricata.rules"
             if [[ -f "$rules_file" ]] && [[ -s "$rules_file" ]]; then
                 rules_loaded=$(grep -c "^alert" "$rules_file" 2>/dev/null || echo "0")
             fi

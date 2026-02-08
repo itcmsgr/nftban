@@ -51,6 +51,12 @@ NFTBAN_CMD_SURICATA_LOADED="true"
 : "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
 : "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
 
+# Load distro config FIRST (provides DISTRO_PATHS for all paths)
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+fi
+
 # Load output library
 if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_output.sh" ]]; then
     # shellcheck source=/dev/null
