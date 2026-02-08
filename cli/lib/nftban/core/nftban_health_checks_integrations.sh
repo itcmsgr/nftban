@@ -926,7 +926,44 @@ nftban_health_check_gui() {
     return $status
 }
 
+# =============================================================================
+# WATCHDOG TIMER CHECK (v1.10.0)
+# =============================================================================
+
+nftban_health_check_watchdog() {
+    # Check watchdog timer health for system resource monitoring
+    # Returns: 0=OK, 1=WARNING, 2=ERROR, 3=CRITICAL, 4=NOT_INSTALLED, 5=DISABLED
+
+    local status=$HEALTH_OK
+    local watchdog_timer="nftban-watchdog.timer"
+
+    # Check if timer unit exists
+    if ! systemctl list-unit-files "$watchdog_timer" --no-legend 2>/dev/null | grep -q "^$watchdog_timer"; then
+        NFTBAN_HEALTH_ISSUES["watchdog"]="Timer not installed"
+        NFTBAN_HEALTH_RESULTS["watchdog"]=$HEALTH_NOT_INSTALLED
+        return $HEALTH_NOT_INSTALLED
+    fi
+
+    # Check if timer is enabled
+    if ! systemctl is-enabled "$watchdog_timer" &>/dev/null; then
+        NFTBAN_HEALTH_ISSUES["watchdog"]="Timer disabled (run: systemctl enable $watchdog_timer)"
+        NFTBAN_HEALTH_RESULTS["watchdog"]=$HEALTH_DISABLED
+        return $HEALTH_DISABLED
+    fi
+
+    # Check if timer is active
+    if ! systemctl is-active "$watchdog_timer" &>/dev/null; then
+        NFTBAN_HEALTH_ISSUES["watchdog"]="Timer not running (run: systemctl start $watchdog_timer)"
+        NFTBAN_HEALTH_RESULTS["watchdog"]=$HEALTH_WARNING
+        return $HEALTH_WARNING
+    fi
+
+    # Timer is running
+    NFTBAN_HEALTH_RESULTS["watchdog"]=$HEALTH_OK
+    return $HEALTH_OK
+}
+
 # Export functions
 export -f nftban_health_check_metrics nftban_health_check_zabbix
 export -f nftban_health_check_connectors nftban_health_check_pro
-export -f nftban_health_check_gui
+export -f nftban_health_check_gui nftban_health_check_watchdog
