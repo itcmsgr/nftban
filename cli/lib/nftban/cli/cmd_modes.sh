@@ -80,7 +80,8 @@ _modes_eve_freshness() {
     fi
     
     local mtime now age
-    mtime=$(stat -c %Y "$eve_file" 2>/dev/null) || return 1
+    # Use -L to follow symlinks (eve-alerts.json -> eve.json)
+    mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null) || return 1
     now=$(date +%s)
     age=$((now - mtime))
     echo "$age"

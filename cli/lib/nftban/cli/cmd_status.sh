@@ -271,7 +271,8 @@ output_terminal() {
             local eve_fresh=false
             if [[ -f "$eve_file" ]]; then
                 local eve_mtime eve_age now_ts
-                eve_mtime=$(stat -c %Y "$eve_file" 2>/dev/null) || eve_mtime=0
+                # Use -L to follow symlinks (eve-alerts.json -> eve.json)
+                eve_mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null) || eve_mtime=0
                 # Use timestamp library with fallback
                 if declare -f nftban_timestamp_unix &>/dev/null; then
                     now_ts=$(nftban_timestamp_unix)

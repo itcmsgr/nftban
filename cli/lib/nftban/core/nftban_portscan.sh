@@ -175,7 +175,8 @@ _nftban_portscan_suricata_eve_active() {
     [[ -f "$eve_file" ]] || return 1
 
     local file_mtime
-    file_mtime=$(stat -c %Y "$eve_file" 2>/dev/null) || return 1
+    # Use -L to follow symlinks (eve-alerts.json -> eve.json)
+    file_mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null) || return 1
 
     local current_time
     current_time=$(date +%s)
@@ -524,7 +525,8 @@ nftban_portscan_status() {
         local eve_file="${PORTSCAN_SURICATA_EVE_FILE:-/var/log/nftban/suricata/eve-alerts.json}"
         if [[ -f "$eve_file" ]]; then
             local eve_age
-            eve_age=$(( $(date +%s) - $(stat -c %Y "$eve_file" 2>/dev/null || echo 0) ))
+            # Use -L to follow symlinks (eve-alerts.json -> eve.json)
+            eve_age=$(( $(date +%s) - $(stat -L -c %Y "$eve_file" 2>/dev/null || echo 0) ))
             if [[ $eve_age -lt 300 ]]; then
                 echo "  EVE Log:     ✅ Active (updated ${eve_age}s ago)"
             else
@@ -549,7 +551,8 @@ nftban_portscan_status() {
                 echo "  Fix:         Check Suricata output config (suricata.yaml)"
             else
                 local eve_age
-                eve_age=$(( $(date +%s) - $(stat -c %Y "$eve_file" 2>/dev/null || echo 0) ))
+                # Use -L to follow symlinks (eve-alerts.json -> eve.json)
+                eve_age=$(( $(date +%s) - $(stat -L -c %Y "$eve_file" 2>/dev/null || echo 0) ))
                 echo "  Reason:      EVE log stale (last update ${eve_age}s ago, threshold: ${PORTSCAN_EVE_FRESHNESS_THRESHOLD:-60}s)"
                 echo "  Fix:         Check Suricata is processing traffic: suricata --build-info"
                 echo "               Verify EVE output: grep eve-log /etc/suricata/suricata.yaml"
