@@ -1353,6 +1353,7 @@ nftban_watchdog_collect_module_resources() {
             src_geoban=$((geoban_countries > 0 ? 1 : 0))  # Active indicator
         fi
 
+        # shellcheck disable=SC2034  # Used for debugging/future features
         src_total=$((src_portscan + src_ddos))
     fi
 
@@ -1413,7 +1414,7 @@ nftban_watchdog_collect_module_resources() {
                 mem_pct_of_daemon=$((mem_share * 100 / daemon_mem_bytes))
             fi
 
-            WATCHDOG_RESULTS["module_${module_name}_cpu_pct"]="$cpu_share"
+            WATCHDOG_RESULTS["module_${module_name}_cpu_pct"]="$cpu_pct_of_daemon"
             WATCHDOG_RESULTS["module_${module_name}_mem_pct"]="$mem_pct_of_daemon"
             WATCHDOG_RESULTS["module_${module_name}_mem_bytes"]="$mem_share"
         done
