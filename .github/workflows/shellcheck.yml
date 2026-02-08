@@ -25,19 +25,17 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Install ShellCheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
       - name: Run ShellCheck on all shell scripts
-        uses: ludeeus/action-shellcheck@2.0.0
-        with:
-          version: v0.10.0
-          scandir: '.'
-          severity: error
-          ignore_paths: |
-            node_modules
-            .git
-            build
-          ignore_names: |
-            .husky
-          format: gcc
+        run: |
+          find . -type f -name "*.sh" \
+            -not -path "./node_modules/*" \
+            -not -path "./.git/*" \
+            -not -path "./build/*" \
+            -not -path "./.husky/*" \
+            -exec shellcheck -S error -f gcc {} + || exit 1
 
       - name: ShellCheck report
         if: always()
