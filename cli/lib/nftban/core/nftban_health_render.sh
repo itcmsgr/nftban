@@ -81,6 +81,7 @@ nftban_health_render_terminal() {
         [pro]="Pro Features"
         [zabbix]="Zabbix"
         [connectors]="Connectors"
+        [watchdog]="Watchdog"
     )
 
     # Count errors and warnings
@@ -133,7 +134,7 @@ nftban_health_render_terminal() {
     echo "OPTIONAL FEATURES"
     echo "───────────────────────────────────────────────────────────"
 
-    for check in ssh_port systemd_hardening metrics zabbix connectors gui polkit bash_completion; do
+    for check in ssh_port systemd_hardening metrics zabbix connectors watchdog gui polkit bash_completion; do
         if [[ -n "${NFTBAN_HEALTH_RESULTS[$check]:-}" ]]; then
             local status=${NFTBAN_HEALTH_RESULTS[$check]}
             local status_text
