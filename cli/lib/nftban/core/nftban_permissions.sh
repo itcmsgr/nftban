@@ -214,8 +214,16 @@ perms_enforce_lib_files() {
             fi
         fi
 
-        # Other files are 644 (EXCLUDING bin/ directory which was handled above)
-        perms_run find "$PERMS_LIB" -type f ! -name "*.sh" ! -path "*/bin/*" -exec chmod 0644 {} \;
+        # CRITICAL: Internal sbin binaries need to be executable (755)
+        # These are helper scripts called by systemd units (queue-processor, apply, rollback, etc.)
+        if [[ -d "$PERMS_LIB/sbin" ]]; then
+            perms_run find "$PERMS_LIB/sbin" -type f -exec chmod 0755 {} \;
+            perms_run find "$PERMS_LIB/sbin" -type f -exec chown root:root {} \;
+            perms_say "  ✓ Binaries in $PERMS_LIB/sbin set to 755 (executable)"
+        fi
+
+        # Other files are 644 (EXCLUDING bin/ and sbin/ directories which were handled above)
+        perms_run find "$PERMS_LIB" -type f ! -name "*.sh" ! -path "*/bin/*" ! -path "*/sbin/*" -exec chmod 0644 {} \;
     fi
 }
 
