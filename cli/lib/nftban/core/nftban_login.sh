@@ -6,33 +6,29 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Master controller for login monitoring with dual-mode support
 #
-# meta:name=nftban_login
-# meta:type=core
-# meta:header=Login Monitor
-# meta:version=1.0.0
+# meta:name="nftban_login"
+# meta:type="core"
+# meta:header="Login Monitor"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=Monitors login attempts and auto-bans attackers (replaces fail2ban)
-# meta:input=Configuration from /etc/nftban/conf.d/login/
-# meta:output=Login alerts and ban actions
+# meta:description="Monitors login attempts and auto-bans attackers (replaces fail2ban)"
+# meta:input="Configuration from /etc/nftban/conf.d/login/"
+# meta:output="Login alerts and ban actions"
 #
-# **Dual-Mode Architecture**
-# - Classic Mode: journalctl/log file parsing (no IDS required)
-# - Suricata Mode: Uses Suricata EVE JSON auth failure alerts
-# - Auto Mode: Automatically selects mode based on Suricata availability
-# - Hybrid Mode: Classic for immediate response + Suricata for correlation
+# meta:inventory.files=""
+# meta:inventory.binaries="journalctl"
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/login/main.conf"
+# meta:inventory.systemd_units="nftban-login-monitor.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
 #
-# **Inventory & Requirements**
-# meta:depends=bash>=4.0,nftban_output.sh,nftban_distro_config.sh
-# meta:optional=suricata,jq
-#
-# meta:created_date=2025-12-01
-# meta:updated_date=2025-12-01
-# meta:replaces=fail2ban
+# meta:created_date="2025-12-01"
 # =============================================================================
 
+set -Eeuo pipefail
 IFS=$'\n\t'
 umask 027
 
@@ -212,7 +208,8 @@ _nftban_login_eve_file_fresh() {
     fi
 
     local file_mtime
-    file_mtime=$(stat -c %Y "$eve_file" 2>/dev/null) || return 1
+    # Use -L to follow symlinks (eve-alerts.json -> eve.json)
+    file_mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null) || return 1
     local now
     now=$(date +%s)
     local age

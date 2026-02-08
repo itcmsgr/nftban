@@ -232,7 +232,8 @@ nftban_health_check_suricata() {
             age=$(nftban_file_age "$eve_log")
         else
             local last_modified current_time
-            last_modified=$(stat -c %Y "$eve_log" 2>/dev/null || echo 0)
+            # Use -L to follow symlinks (eve-alerts.json -> eve.json)
+            last_modified=$(stat -L -c %Y "$eve_log" 2>/dev/null || echo 0)
             current_time=$(date +%s)
             age=$((current_time - last_modified))
         fi

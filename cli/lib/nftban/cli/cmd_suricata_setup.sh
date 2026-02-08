@@ -251,6 +251,36 @@ cmd_suricata_enable() {
         fi
     fi
 
+    # Configure EVE output to nftban path (critical for integration)
+    local eve_log="${DISTRO_PATHS[suricata_eve_log]:-/var/log/nftban/suricata/eve-alerts.json}"
+    local eve_dir
+    eve_dir=$(dirname "$eve_log")
+
+    # Create EVE directory with correct permissions
+    if [[ ! -d "$eve_dir" ]]; then
+        echo "  → Creating EVE log directory..."
+        mkdir -p "$eve_dir"
+        chmod 750 "$eve_dir"
+        # Use nftban group for access
+        chown root:nftban "$eve_dir" 2>/dev/null || chown root:root "$eve_dir"
+        echo "  ✓ Created $eve_dir"
+    fi
+
+    # Check if EVE output is configured to nftban path
+    if [[ -f "$suricata_yaml" ]]; then
+        local current_eve
+        current_eve=$(grep -A10 'eve-log:' "$suricata_yaml" 2>/dev/null | grep 'filename:' | head -1 | awk '{print $2}' | tr -d '"' || echo "")
+
+        if [[ "$current_eve" == "eve.json" ]] || [[ "$current_eve" != "$eve_log" && -n "$current_eve" ]]; then
+            echo "  → Configuring EVE output path..."
+            echo "    Was: ${current_eve:-eve.json}"
+            echo "    Now: $eve_log"
+            # Update filename in eve-log section (handles indented YAML)
+            sed -i "/eve-log:/,/^[^ ]/ s|filename:.*|filename: $eve_log|" "$suricata_yaml"
+            echo "  ✓ EVE output configured for nftban integration"
+        fi
+    fi
+
     # Enable service
     echo "  → Enabling Suricata service..."
     systemctl enable "$SURICATA_SERVICE" || {

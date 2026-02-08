@@ -492,8 +492,9 @@ cmd_suricata_eve_check() {
 
     # File stats
     local file_size file_mtime now age_seconds
-    file_size=$(stat -c %s "$eve_path" 2>/dev/null || echo "0")
-    file_mtime=$(stat -c %Y "$eve_path" 2>/dev/null || echo "0")
+    # Use -L to follow symlinks (eve-alerts.json -> eve.json)
+    file_size=$(stat -L -c %s "$eve_path" 2>/dev/null || echo "0")
+    file_mtime=$(stat -L -c %Y "$eve_path" 2>/dev/null || echo "0")
     now=$(date +%s)
     age_seconds=$(( now - file_mtime ))
 

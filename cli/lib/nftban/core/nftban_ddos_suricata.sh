@@ -178,9 +178,10 @@ nftban_ddos_suricata_eve_active() {
     [[ -r "$eve_file" ]] || return 1
 
     # Check freshness (modified within threshold seconds)
+    # Use -L to follow symlinks (backwards compatibility)
     local now file_mtime age
     now=$(date +%s)
-    file_mtime=$(stat -c %Y "$eve_file" 2>/dev/null || stat -f %m "$eve_file" 2>/dev/null)
+    file_mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null || stat -L -f %m "$eve_file" 2>/dev/null)
 
     if [[ -n "$file_mtime" ]]; then
         age=$((now - file_mtime))
@@ -604,8 +605,9 @@ nftban_ddos_suricata_status() {
     if [[ -f "$eve_file" ]]; then
         local size age
         size=$(du -h "$eve_file" 2>/dev/null | cut -f1)
+        # Use -L to follow symlinks (backwards compatibility)
         local mtime
-        mtime=$(stat -c %Y "$eve_file" 2>/dev/null || stat -f %m "$eve_file" 2>/dev/null)
+        mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null || stat -L -f %m "$eve_file" 2>/dev/null)
         age=$(($(date +%s) - mtime))
         if [[ $age -le 60 ]]; then
             echo "  EVE Log: ACTIVE (${size}, ${age}s ago)"

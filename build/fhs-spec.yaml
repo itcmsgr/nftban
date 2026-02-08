@@ -600,3 +600,89 @@ distro_paths:
     - systemd_unit_dir
     - bash_completion_dir
     - logrotate_dir
+
+# =============================================================================
+# FILE PERMISSIONS (Single Source of Truth)
+# =============================================================================
+# Defines file permission rules. Used by health fix and permissions enforcement.
+# Format: path|pattern|mode|owner|group|recursive|exclude|capabilities
+# =============================================================================
+file_permissions:
+  # /etc/nftban - config files readable by daemon
+  - path: /etc/nftban
+    pattern: "*.conf"
+    mode: "0640"
+    owner: root
+    group: nftban
+    recursive: true
+
+  - path: /etc/nftban
+    pattern: "*.local"
+    mode: "0640"
+    owner: root
+    group: nftban
+    recursive: true
+
+  # /usr/lib/nftban - shell scripts executable
+  - path: /usr/lib/nftban
+    pattern: "*.sh"
+    mode: "0755"
+    owner: root
+    group: root
+    recursive: true
+
+  # /usr/lib/nftban/bin - Go binaries with CAP_NET_ADMIN
+  - path: /usr/lib/nftban/bin
+    pattern: "*"
+    mode: "0755"
+    owner: root
+    group: root
+    capabilities: "cap_net_admin+ep:nftban-core,nftband"
+
+  # /usr/lib/nftban/sbin - helper binaries executable
+  - path: /usr/lib/nftban/sbin
+    pattern: "*"
+    mode: "0755"
+    owner: root
+    group: root
+
+  # /usr/sbin/nftban* - CLI binaries group-restricted
+  - path: /usr/sbin
+    pattern: "nftban*"
+    mode: "0750"
+    owner: root
+    group: nftban
+
+  # /var/lib/nftban - state files
+  - path: /var/lib/nftban
+    pattern: "*"
+    mode: "0640"
+    owner: nftban
+    group: nftban
+    recursive: true
+    exclude: "/var/lib/nftban/reports/auditors"
+
+  # /var/lib/nftban/reports/auditors - auditor access
+  - path: /var/lib/nftban/reports/auditors
+    pattern: "*"
+    mode: "0660"
+    owner: root
+    group: nftban-auditor
+    recursive: true
+
+  # /var/log/nftban - log files
+  - path: /var/log/nftban
+    pattern: "*"
+    mode: "0640"
+    owner: nftban
+    group: nftban
+    recursive: true
+    exclude: "/var/log/nftban/suricata"
+
+  # /var/log/nftban/suricata - suricata writes
+  - path: /var/log/nftban/suricata
+    pattern: "*"
+    mode: "0640"
+    owner: suricata
+    group: nftban
+    recursive: true

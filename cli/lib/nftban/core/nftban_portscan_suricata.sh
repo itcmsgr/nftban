@@ -158,9 +158,9 @@ nftban_portscan_suricata_eve_active() {
         return $?
     fi
 
-    # Fallback: manual check
+    # Fallback: manual check (use -L to follow symlinks)
     local file_mtime
-    file_mtime=$(stat -c %Y "$eve_file" 2>/dev/null || stat -f %m "$eve_file" 2>/dev/null) || return 1
+    file_mtime=$(stat -L -c %Y "$eve_file" 2>/dev/null || stat -L -f %m "$eve_file" 2>/dev/null) || return 1
 
     local current_time
     current_time=$(date +%s)
