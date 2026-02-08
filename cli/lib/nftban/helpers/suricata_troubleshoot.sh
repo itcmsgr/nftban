@@ -27,6 +27,11 @@ IFS=$'\n\t'
 # shellcheck source=/etc/nftban/nftban.conf
 [[ -f "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf" ]] && source "${NFTBAN_CONFIG_DIR:-/etc/nftban}/nftban.conf"
 
+# Source distro config for distribution-specific paths
+_NFTBAN_LIB_DIR="${_NFTBAN_LIB_DIR:-/usr/lib/nftban}"
+# shellcheck source=/dev/null
+[[ -f "${_NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]] && source "${_NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+
 # Colors
 readonly RED='\033[0;31m'
 readonly GREEN='\033[0;32m'
@@ -34,11 +39,13 @@ readonly YELLOW='\033[1;33m'
 readonly BLUE='\033[0;34m'
 readonly NC='\033[0m'
 
-# Paths - use central config first, then NFTBan defaults (NOT Suricata defaults)
-readonly SURICATA_BIN="${SURICATA_BIN:-/usr/bin/suricata}"
-readonly SURICATA_YAML="${SURICATA_YAML:-/etc/suricata/suricata.yaml}"
-readonly EVE_LOG="${NFTBAN_SURICATA_EVE_LOG:-/var/log/nftban/suricata/eve-alerts.json}"
-readonly SURICATA_LOG="${SURICATA_LOG:-${NFTBAN_LOG_DIR:-/var/log/nftban}/suricata/suricata.log}"
+# Paths - use distro config (NO HARDCODED FALLBACKS)
+readonly SURICATA_BIN="${DISTRO_PATHS[suricata]}"
+readonly SURICATA_YAML="${DISTRO_PATHS[suricata_yaml]}"
+readonly EVE_LOG="${DISTRO_PATHS[suricata_eve_log]}"
+readonly SURICATA_LOG_DIR="${DISTRO_PATHS[suricata_log_dir]}"
+readonly SURICATA_LOG="${SURICATA_LOG_DIR}/suricata.log"
+readonly SURICATA_RULES_DIR="${DISTRO_PATHS[suricata_rules_dir]}"
 readonly SURICATA_RUN_DIR="${SURICATA_RUN_DIR:-/run/suricata}"
 readonly SURICATA_SOCKET="${SURICATA_RUN_DIR}/suricata-command.socket"
 
@@ -198,7 +205,7 @@ check_rules() {
     print_header "4. Suricata Rules Check"
 
     print_check "Checking if rules are installed..."
-    local rules_dir="/var/lib/suricata/rules"
+    local rules_dir="${SURICATA_RULES_DIR}"
     if [[ -d "$rules_dir" ]]; then
         local rule_count
         rule_count=$(find "$rules_dir" -name "*.rules" -type f 2>/dev/null | wc -l)

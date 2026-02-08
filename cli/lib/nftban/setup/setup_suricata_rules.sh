@@ -51,8 +51,13 @@ print_warning() {
     echo -e "${YELLOW}[!]${NC} $1" >&2
 }
 
-# Suricata paths (configurable)
-: "${SURICATA_RULES_DIR:=/var/lib/suricata/rules}"
+# Source distro config for distribution-specific paths
+: "${NFTBAN_LIB_DIR:=/usr/lib/nftban}"
+# shellcheck source=/dev/null
+[[ -f "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]] && source "${NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+
+# Suricata paths (from distro config - NO HARDCODED FALLBACKS)
+: "${SURICATA_RULES_DIR:=${DISTRO_PATHS[suricata_rules_dir]}}"
 
 main() {
     print_info "NFTBan Suricata Rules Setup"

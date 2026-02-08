@@ -237,6 +237,20 @@ cmd_suricata_enable() {
         echo "  ✓ Found $rule_count rule files"
     fi
 
+    # Verify suricata.yaml uses correct rule path (fix Debian/Ubuntu default)
+    local suricata_yaml="${DISTRO_PATHS[suricata_yaml]}"
+    if [[ -f "$suricata_yaml" ]]; then
+        local yaml_rules_path
+        yaml_rules_path=$(grep -E "^default-rule-path:" "$suricata_yaml" 2>/dev/null | awk '{print $2}' | tr -d '"' || echo "")
+        if [[ -n "$yaml_rules_path" ]] && [[ "$yaml_rules_path" != "$rules_dir" ]]; then
+            echo "  → Fixing rule path in suricata.yaml..."
+            echo "    Was: $yaml_rules_path"
+            echo "    Now: $rules_dir"
+            sed -i "s|^default-rule-path:.*|default-rule-path: $rules_dir|" "$suricata_yaml"
+            echo "  ✓ Rule path updated"
+        fi
+    fi
+
     # Enable service
     echo "  → Enabling Suricata service..."
     systemctl enable "$SURICATA_SERVICE" || {
@@ -397,7 +411,7 @@ cmd_suricata_status() {
         echo "    ✓  Rules Loaded:   ${GREEN:-}${rules_loaded}${NC:-}"
     fi
     echo "    Rule Files:        $rule_file_count"
-    echo "    Rules Directory:   ${SURICATA_RULES_DIR:-/var/lib/suricata/rules}/"
+    echo "    Rules Directory:   ${SURICATA_RULES_DIR}/"
 
     # Recent alerts
     echo ""

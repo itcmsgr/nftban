@@ -39,13 +39,19 @@ _NFTBAN_LIB_DIR="${_NFTBAN_LIB_DIR:-/usr/share/nftban/lib/nftban}"
 # shellcheck source=../core/nftban_file_ops.sh
 [[ -f "${_NFTBAN_LIB_DIR}/core/nftban_file_ops.sh" ]] && source "${_NFTBAN_LIB_DIR}/core/nftban_file_ops.sh"
 
+# Source distro config for distribution-specific paths
+# shellcheck source=../lib/nftban_distro_config.sh
+[[ -f "${_NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh" ]] && source "${_NFTBAN_LIB_DIR}/lib/nftban_distro_config.sh"
+
 # =============================================================================
 # CONFIGURATION
 # =============================================================================
 
 : "${NFTBAN_CONFIG_DIR:=/etc/nftban}"
 : "${NFTBAN_SURICATA_DIR:=${NFTBAN_CONFIG_DIR}/suricata}"
-: "${SURICATA_RULES_DIR:=/var/lib/suricata/rules}"
+# Use distro config for rules directory (handles Debian vs RHEL path differences)
+# NO HARDCODED FALLBACK - distro config is the single source of truth
+: "${SURICATA_RULES_DIR:=${DISTRO_PATHS[suricata_rules_dir]}}"
 
 # NFTBan-managed rule files (never edit vendor files)
 readonly NFTBAN_DISABLE_CONF="${NFTBAN_SURICATA_DIR}/rules/disable.conf"
