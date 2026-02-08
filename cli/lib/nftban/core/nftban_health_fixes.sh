@@ -29,7 +29,7 @@
 # meta:inventory.privileges="root"
 #
 # meta:created_date="2026-01-09"
-# meta:updated_date="2026-01-09"
+# meta:updated_date="2026-02-08"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -254,6 +254,16 @@ nftban_health_fix_permissions() {
                 chown root:root "$binary" 2>/dev/null
                 chmod 755 "$binary" 2>/dev/null
             done
+
+            # Fix sbin binaries (queue processor, etc.) - CRITICAL: must be executable
+            # Issue found on all 5 lab servers: queue processor installed with 644 instead of 755
+            if [[ -d "${NFTBAN_LIB_DIR}/sbin" ]]; then
+                find "${NFTBAN_LIB_DIR}/sbin" -type f 2>/dev/null | while read -r binary; do
+                    chown root:root "$binary" 2>/dev/null
+                    chmod 755 "$binary" 2>/dev/null
+                done
+                echo "  ✓ Fixed ${NFTBAN_LIB_DIR}/sbin binary permissions (755)"
+            fi
 
             echo "  ✓ Fixed ${NFTBAN_LIB_DIR} directory and file ownership (root:root)"
             : $((fixed_count++))
