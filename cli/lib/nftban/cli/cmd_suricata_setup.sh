@@ -279,6 +279,27 @@ cmd_suricata_enable() {
             sed -i "/eve-log:/,/^[^ ]/ s|filename:.*|filename: $eve_log|" "$suricata_yaml"
             echo "  ✓ EVE output configured for nftban integration"
         fi
+
+        # Detect and configure af-packet interface (critical for packet capture)
+        local current_iface
+        current_iface=$(grep -A3 'af-packet:' "$suricata_yaml" 2>/dev/null | grep 'interface:' | head -1 | awk '{print $2}' | tr -d '"' || echo "")
+
+        if [[ "$current_iface" == "default" ]] || [[ -z "$current_iface" ]]; then
+            # Detect default route interface
+            local detected_iface
+            detected_iface=$(ip route 2>/dev/null | grep '^default' | awk '{print $5}' | head -1)
+
+            if [[ -n "$detected_iface" ]]; then
+                echo "  → Configuring af-packet interface..."
+                echo "    Detected: $detected_iface"
+                # Update interface in af-packet section
+                sed -i "/af-packet:/,/^[^ -]/ s|interface:.*|interface: $detected_iface|" "$suricata_yaml"
+                echo "  ✓ af-packet interface set to $detected_iface (cluster_flow mode)"
+            else
+                echo "  ⚠ Could not detect network interface"
+                echo "    Set interface manually in: $suricata_yaml"
+            fi
+        fi
     fi
 
     # Enable service
