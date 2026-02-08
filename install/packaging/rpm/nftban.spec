@@ -497,7 +497,7 @@ fi
 %{_bindir}/nftban
 %dir %{_libdir}/nftban
 %dir %{_libdir}/nftban/setup
-%attr(755,root,root) %{_libdir}/nftban/setup/fhs-permissions.sh
+%attr(755,root,root) %{_libdir}/nftban/setup/*.sh
 %dir %{_libdir}/nftban/sbin
 %attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-apply
 %attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-confirm
