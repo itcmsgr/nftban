@@ -1212,6 +1212,230 @@ nftban_watchdog_trend_display() {
 }
 
 # =============================================================================
+# MODULE RESOURCE COLLECTION
+# =============================================================================
+
+nftban_watchdog_collect_module_resources() {
+    # Collect resource usage for active NFTBan modules
+    # - Timer modules (feeds, rbl): Get stats via systemctl show
+    # - Embedded modules (portscan, ddos, geoban): Estimate from daemon stats
+    #
+    # Stores results in WATCHDOG_RESULTS array:
+    #   module_<name>_duration    - Last run duration in seconds
+    #   module_<name>_memory      - Peak memory in bytes
+    #   module_<name>_status      - Exit status (0=ok, 1=fail)
+    #   module_<name>_cpu_pct     - Estimated CPU percentage (embedded only)
+    #   module_<name>_mem_pct     - Estimated memory percentage (embedded only)
+    #   module_<name>_last_run    - Last run timestamp (epoch)
+    #
+    # Usage: nftban_watchdog_collect_module_resources
+
+    local stats_cache="${NFTBAN_JSON_CACHE_DIR:-/var/cache/nftban/metrics}/stats.json"
+
+    # =========================================================================
+    # TIMER MODULES (feeds, rbl)
+    # These run as oneshot services triggered by timers
+    # =========================================================================
+
+    local -a timer_modules=("feeds:nftban-core-feeds" "rbl:nftban-rbl-check")
+    local module_name service_name
+
+    for module_spec in "${timer_modules[@]}"; do
+        module_name="${module_spec%%:*}"
+        service_name="${module_spec#*:}.service"
+
+        # Check if service is enabled or has run recently
+        if ! systemctl is-enabled "$service_name" &>/dev/null && \
+           ! systemctl show "$service_name" -p ActiveEnterTimestamp --value 2>/dev/null | grep -qv '^$'; then
+            continue
+        fi
+
+        # Get service properties in one call for efficiency
+        local props
+        props=$(systemctl show "$service_name" \
+            -p ExecMainStartTimestampMonotonic \
+            -p ExecMainExitTimestampMonotonic \
+            -p ExecMainStatus \
+            -p MemoryPeak \
+            -p ActiveEnterTimestamp \
+            2>/dev/null) || continue
+
+        # Parse properties
+        local start_mono=0 exit_mono=0 exit_status=0 memory_peak=0 last_run_ts=""
+
+        while IFS='=' read -r key value; do
+            case "$key" in
+                ExecMainStartTimestampMonotonic)
+                    start_mono="${value:-0}"
+                    ;;
+                ExecMainExitTimestampMonotonic)
+                    exit_mono="${value:-0}"
+                    ;;
+                ExecMainStatus)
+                    exit_status="${value:-0}"
+                    ;;
+                MemoryPeak)
+                    # MemoryPeak is in bytes, may be empty or "[not set]"
+                    if [[ "$value" =~ ^[0-9]+$ ]]; then
+                        memory_peak="$value"
+                    fi
+                    ;;
+                ActiveEnterTimestamp)
+                    # Convert to epoch if present
+                    if [[ -n "$value" && "$value" != "n/a" ]]; then
+                        last_run_ts=$(date -d "$value" +%s 2>/dev/null || echo "0")
+                    fi
+                    ;;
+            esac
+        done <<< "$props"
+
+        # Calculate duration from monotonic timestamps (microseconds to seconds)
+        local duration=0
+        if [[ $start_mono -gt 0 && $exit_mono -gt 0 && $exit_mono -ge $start_mono ]]; then
+            duration=$(( (exit_mono - start_mono) / 1000000 ))
+        fi
+
+        # Store results
+        WATCHDOG_RESULTS["module_${module_name}_duration"]="$duration"
+        WATCHDOG_RESULTS["module_${module_name}_memory"]="$memory_peak"
+        WATCHDOG_RESULTS["module_${module_name}_status"]="$exit_status"
+        WATCHDOG_RESULTS["module_${module_name}_last_run"]="${last_run_ts:-0}"
+    done
+
+    # =========================================================================
+    # EMBEDDED MODULES (portscan, ddos, geoban)
+    # These are handled by the nftband daemon - estimate resource usage
+    # based on ban ratios from the unified cache
+    # =========================================================================
+
+    # Check if nftband is running
+    local daemon_pid daemon_cpu=0 daemon_mem_bytes=0
+    daemon_pid=$(cat "${NFTBAN_RUN_DIR:-/run/nftban}/nftband.pid" 2>/dev/null || echo "")
+
+    if [[ -n "$daemon_pid" && -d "/proc/$daemon_pid" ]]; then
+        # Get daemon CPU% from /proc/stat (cumulative ticks)
+        # For a point-in-time %, we use ps as a simpler approach
+        local ps_output
+        ps_output=$(ps -p "$daemon_pid" -o %cpu=,%mem= 2>/dev/null) || ps_output=""
+        if [[ -n "$ps_output" ]]; then
+            # Must use default IFS for space-separated values
+            local cpu_pct mem_pct
+            IFS=' ' read -r cpu_pct mem_pct <<< "$ps_output"
+            daemon_cpu="${cpu_pct%.*}"  # Truncate decimal
+            daemon_cpu="${daemon_cpu:-0}"
+        fi
+
+        # Get daemon memory from /proc/pid/status
+        local vmrss=0
+        while IFS=': ' read -r key value _; do
+            [[ "$key" == "VmRSS" ]] && { vmrss=$value; break; }
+        done < "/proc/$daemon_pid/status" 2>/dev/null
+        daemon_mem_bytes=$((vmrss * 1024))  # kB to bytes
+    fi
+
+    # Read ban counts by source from unified cache
+    local src_portscan=0 src_ddos=0 src_geoban=0 src_total=0
+
+    if [[ -f "$stats_cache" ]] && command -v jq &>/dev/null; then
+        # Extract ban counts from cache
+        local bans_json
+        bans_json=$(jq -r '.bans_by_source // {}' "$stats_cache" 2>/dev/null) || bans_json="{}"
+
+        src_portscan=$(echo "$bans_json" | jq -r '.portscan // 0')
+        src_ddos=$(echo "$bans_json" | jq -r '.ddos // 0')
+        # geoban is not a direct source, estimate from feeds or manual for now
+        # For geoban, we check if the module is active
+        if systemctl is-active nftban-geoban.service &>/dev/null 2>&1 || \
+           [[ -f "${NFTBAN_DATA_DIR:-/var/lib/nftban}/geoban/enabled" ]]; then
+            # Geoban doesn't generate bans the same way, check its status
+            local geoban_countries
+            geoban_countries=$(jq -r '.geoban.countries_blocked // 0' "$stats_cache" 2>/dev/null || echo "0")
+            src_geoban=$((geoban_countries > 0 ? 1 : 0))  # Active indicator
+        fi
+
+        src_total=$((src_portscan + src_ddos))
+    fi
+
+    # Calculate resource attribution based on ban ratio
+    # If no bans, distribute equally among active modules
+    local -a embedded_modules=()
+    local active_count=0
+
+    # Check which embedded modules are active
+    if systemctl is-active nftban-portscan.service &>/dev/null 2>&1 || \
+       [[ "$(jq -r '.module_status.portscan // 0' "$stats_cache" 2>/dev/null)" == "1" ]]; then
+        embedded_modules+=("portscan:$src_portscan")
+        ((active_count++)) || true
+    fi
+
+    if systemctl is-active nftban-ddos.service &>/dev/null 2>&1 || \
+       [[ "$(jq -r '.module_status.ddos // 0' "$stats_cache" 2>/dev/null)" == "1" ]]; then
+        embedded_modules+=("ddos:$src_ddos")
+        ((active_count++)) || true
+    fi
+
+    if [[ $src_geoban -gt 0 ]] || \
+       [[ "$(jq -r '.module_status.geoban // 0' "$stats_cache" 2>/dev/null)" == "1" ]]; then
+        embedded_modules+=("geoban:1")  # Geoban gets a base weight of 1
+        ((active_count++)) || true
+    fi
+
+    # Distribute daemon resources among active embedded modules
+    if [[ $active_count -gt 0 && ($daemon_cpu -gt 0 || $daemon_mem_bytes -gt 0) ]]; then
+        local total_weight=0
+        local mod_spec mod_weight
+
+        # Calculate total weight
+        for mod_spec in "${embedded_modules[@]}"; do
+            mod_weight="${mod_spec#*:}"
+            total_weight=$((total_weight + mod_weight + 1))  # +1 base weight
+        done
+
+        # Ensure minimum total weight
+        [[ $total_weight -eq 0 ]] && total_weight=$active_count
+
+        # Attribute resources proportionally
+        for mod_spec in "${embedded_modules[@]}"; do
+            module_name="${mod_spec%%:*}"
+            mod_weight="${mod_spec#*:}"
+            mod_weight=$((mod_weight + 1))  # +1 base weight
+
+            local cpu_share mem_share
+            cpu_share=$((daemon_cpu * mod_weight / total_weight))
+            mem_share=$((daemon_mem_bytes * mod_weight / total_weight))
+
+            # Store as percentage of daemon resources
+            local cpu_pct_of_daemon=0 mem_pct_of_daemon=0
+            if [[ $daemon_cpu -gt 0 ]]; then
+                cpu_pct_of_daemon=$((cpu_share * 100 / (daemon_cpu > 0 ? daemon_cpu : 1)))
+            fi
+            if [[ $daemon_mem_bytes -gt 0 ]]; then
+                mem_pct_of_daemon=$((mem_share * 100 / daemon_mem_bytes))
+            fi
+
+            WATCHDOG_RESULTS["module_${module_name}_cpu_pct"]="$cpu_share"
+            WATCHDOG_RESULTS["module_${module_name}_mem_pct"]="$mem_pct_of_daemon"
+            WATCHDOG_RESULTS["module_${module_name}_mem_bytes"]="$mem_share"
+        done
+    else
+        # No daemon running or no resources - set zeros for active modules
+        for mod_spec in "${embedded_modules[@]}"; do
+            module_name="${mod_spec%%:*}"
+            WATCHDOG_RESULTS["module_${module_name}_cpu_pct"]=0
+            WATCHDOG_RESULTS["module_${module_name}_mem_pct"]=0
+            WATCHDOG_RESULTS["module_${module_name}_mem_bytes"]=0
+        done
+    fi
+
+    # Store daemon totals for reference
+    WATCHDOG_RESULTS["daemon_cpu_pct"]="$daemon_cpu"
+    WATCHDOG_RESULTS["daemon_mem_bytes"]="$daemon_mem_bytes"
+    WATCHDOG_RESULTS["daemon_pid"]="${daemon_pid:-0}"
+
+    return 0
+}
+
+# =============================================================================
 # EXPORTS
 # =============================================================================
 
@@ -1232,3 +1456,4 @@ export -f nftban_watchdog_trend_collect
 export -f nftban_watchdog_trend_display
 export -f nftban_watchdog_trend_averages
 export -f nftban_watchdog_trend_thresholds
+export -f nftban_watchdog_collect_module_resources
