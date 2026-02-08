@@ -5,6 +5,69 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.11.0] - 2026-02-08
+
+### Suricata Alert Routing & Module Deduplication
+
+Major performance and accuracy release focused on eliminating duplicate processing and score inflation across Suricata-integrated modules.
+
+### Added
+
+- **Deterministic alert routing** - New `routing.conf` with priority-based module assignment:
+  - SID overrides → Category mapping → Service/port context → Keywords → Priority arbitration
+  - Priority order: ddos (100) > portscan (50) > login (25) > other (1)
+  - Single owner per alert - eliminates double/triple scoring
+
+- **Category normalization** - EVE categories normalized before matching:
+  - "Attempted Administrator Privilege Gain" → "attempted-administrator-privilege-gain"
+  - Uses contains/prefix matching (not exact equals)
+  - Works across all ruleset vendors (ET Open, ET Pro, custom)
+
+- **Event deduplication** - Global dedup cache with LRU eviction:
+  - EventID = hash(timestamp + src_ip + dest_ip + ports + SID + proto)
+  - TTL-based expiry (default 1 hour)
+  - 100K event capacity with automatic cleanup
+
+- **Rate gate for DDoS** - Volume threshold before classification:
+  - Single slow-loris probe no longer classified as DDoS
+  - Requires 10+ events from same IP in 10 seconds
+  - Prevents false positives from reconnaissance probes
+
+- **Tiebreak rules** - Explicit conflict resolution:
+  - SSH port 22 + brute indicators = login wins (not portscan)
+  - Brute + scan keywords = login wins
+  - DDoS category but no rate gate = downgraded to "other"
+
+- **Score caps per module** - Prevents score inflation:
+  - Max 500 points per module per IP per 5-minute window
+  - DDoS: 1000 points per 60 seconds
+
+### Changed
+
+- **Login patterns refined** - Removed Nmap|Scan overlap:
+  - Now: `brute|auth|password|login|credential|failed|invalid user|dictionary`
+  - SSH tool detection: `paramiko|libssh|hydra|medusa|ncrack` (not nmap)
+
+- **Portscan patterns refined** - Category-first matching:
+  - Primary: categories (attempted-recon, network-scan)
+  - Secondary: keywords (portscan|nmap|masscan|zmap|shodan|censys)
+
+- **DDoS rate gate required** - No longer classifies single events as DDoS
+
+### Fixed
+
+- **Module overlap eliminated** - SSH brute-force no longer triggers both Login and Portscan
+- **Score inflation fixed** - Same alert no longer scored by multiple modules
+- **Duplicate bans prevented** - Same IP not banned twice for one event
+
+### Performance
+
+- Estimated 40-60% reduction in redundant processing
+- LRU-bounded memory for dedup and rate gate tracking
+- Thread-safe with minimal lock contention
+
+---
+
 ## [1.10.0] - 2026-02-08
 
 ### Code Consolidation & Security Hardening
