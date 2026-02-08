@@ -732,6 +732,7 @@ collect_all_metrics() {
 
         # Calculate ban ratios from src_* variables (collected in LIVE group)
         # Total bans across embedded module sources (portscan, ddos, geoban uses feeds)
+        # shellcheck disable=SC2034  # Reserved for future use
         local embedded_total=$((${src_portscan:-0} + ${src_ddos:-0}))
         local all_src_total=$((${src_login:-0} + ${src_portscan:-0} + ${src_ddos:-0} + ${src_feeds:-0} + ${src_suricata:-0}))
 

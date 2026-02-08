@@ -1716,6 +1716,126 @@
       "added_version": "1.4.0",
       "phase": 1
     },
+    "nftban_module_feeds_last_run_duration_seconds": {
+      "type": "gauge",
+      "unit": "seconds",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Last execution duration for feeds timer module",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_module_feeds_last_run_memory_bytes": {
+      "type": "gauge",
+      "unit": "bytes",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Peak memory used by last feeds timer execution",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_module_feeds_last_run_status": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Last run exit status for feeds module (1=success, 0=failed)",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_module_rbl_last_run_duration_seconds": {
+      "type": "gauge",
+      "unit": "seconds",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Last execution duration for RBL timer module",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_module_rbl_last_run_memory_bytes": {
+      "type": "gauge",
+      "unit": "bytes",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Peak memory used by last RBL timer execution",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_module_rbl_last_run_status": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Last run exit status for RBL module (1=success, 0=failed)",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_module_portscan_cpu_percent_estimated": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Estimated CPU % allocated to portscan module (based on ban ratio)",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_module_portscan_memory_percent_estimated": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Estimated memory % allocated to portscan module (based on ban ratio)",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_module_ddos_cpu_percent_estimated": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Estimated CPU % allocated to DDoS module (based on ban ratio)",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_module_ddos_memory_percent_estimated": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Estimated memory % allocated to DDoS module (based on ban ratio)",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_module_geoban_cpu_percent_estimated": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Estimated CPU % allocated to GeoBan module (static ~5% of daemon)",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_module_geoban_memory_percent_estimated": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "modules",
+      "source": "shell_prometheus",
+      "description": "Estimated memory % allocated to GeoBan module (static ~5% of daemon)",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
     "nftban_nft_sets_total": {
       "type": "gauge",
       "unit": "count",
