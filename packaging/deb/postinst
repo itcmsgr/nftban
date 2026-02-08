@@ -256,127 +256,32 @@ case "$1" in
         mkdir -p /usr/share/nftban/templates/{mail,reports}
 
         # =====================================================================
-        # STEP 4: Set Permissions (FHS Compliant)
+        # STEP 4: Set Permissions (FHS Compliant - Generated from fhs-spec.yaml)
         # =====================================================================
-        log_info "Setting permissions..."
+        log_info "Setting permissions via FHS spec..."
 
-        # /etc/nftban - root:nftban 750 (daemon readable via group)
-        chown root:nftban /etc/nftban
-        chmod 750 /etc/nftban
-        chown root:nftban /etc/nftban/conf.d
-        chmod 750 /etc/nftban/conf.d
-        chown root:root /etc/nftban/distros
-        chmod 755 /etc/nftban/distros
-        chown root:nftban /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d /etc/nftban/rules.d
-        chmod 750 /etc/nftban/whitelist.d /etc/nftban/blacklist.d /etc/nftban/ports.d /etc/nftban/rules.d
+        # Source generated FHS permissions script (single source of truth)
+        if [ -f /usr/lib/nftban/setup/fhs-permissions.sh ]; then
+            # shellcheck source=/dev/null
+            source /usr/lib/nftban/setup/fhs-permissions.sh
+            nftban_install_set_file_permissions
+            log_info "  File permissions set via FHS spec"
+        else
+            log_warn "FHS permissions script not found, using fallback"
+        fi
 
-        # Suricata directories (group-writable for nftban polkit access)
-        if [ -d /etc/nftban/suricata ]; then
-            # Main suricata directory
-            chown root:nftban /etc/nftban/suricata
-            chmod 750 /etc/nftban/suricata
+        # Directories handled by tmpfiles.d (systemd-tmpfiles --create)
+        # File permissions handled by fhs-permissions.sh above
 
-            # Subdirectories (explicit, no -R)
-            for subdir in profiles config cache; do
-                [ -d "/etc/nftban/suricata/$subdir" ] && {
-                    chown root:nftban "/etc/nftban/suricata/$subdir"
-                    chmod 750 "/etc/nftban/suricata/$subdir"
-                }
+        # Special cases not in FHS spec (group-writable for CLI management):
+        if [ -d /etc/nftban/suricata/rules ]; then
+            chmod 775 /etc/nftban/suricata/rules
+            for conf in disable.conf enable.conf categories.enabled local.rules; do
+                [ -f "/etc/nftban/suricata/rules/$conf" ] && chmod 664 "/etc/nftban/suricata/rules/$conf"
             done
-
-            # Rules directory - group-writable for CLI management
-            [ -d /etc/nftban/suricata/rules ] && {
-                chown root:nftban /etc/nftban/suricata/rules
-                chmod 775 /etc/nftban/suricata/rules
-                # Rule config files - group-writable
-                for conf in disable.conf enable.conf categories.enabled local.rules; do
-                    [ -f "/etc/nftban/suricata/rules/$conf" ] && {
-                        chown root:nftban "/etc/nftban/suricata/rules/$conf"
-                        chmod 664 "/etc/nftban/suricata/rules/$conf"
-                    }
-                done
-            }
-
-            # State directory - group-writable for backup/rollback
-            [ -d /etc/nftban/suricata/state ] && {
-                chown root:nftban /etc/nftban/suricata/state
-                chmod 770 /etc/nftban/suricata/state
-            }
-            [ -d /etc/nftban/suricata/state/last-good ] && {
-                chown root:nftban /etc/nftban/suricata/state/last-good
-                chmod 770 /etc/nftban/suricata/state/last-good
-            }
-
-            # YAML overlay - group-writable
-            [ -f /etc/nftban/suricata/suricata.yaml.overlay ] && {
-                chown root:nftban /etc/nftban/suricata/suricata.yaml.overlay
-                chmod 664 /etc/nftban/suricata/suricata.yaml.overlay
-            }
         fi
-
-        # Config files in conf.d - must be readable by nftban group
-        if [ -d /etc/nftban/conf.d ]; then
-            find /etc/nftban/conf.d -name "*.conf" -exec chown root:nftban {} \;
-            find /etc/nftban/conf.d -name "*.conf" -exec chmod 640 {} \;
-        fi
-
-        # Distro config files - public readable
-        if [ -d /etc/nftban/distros ]; then
-            find /etc/nftban/distros -name "*.conf" -exec chmod 644 {} \;
-            find /etc/nftban/distros -name "*.conf" -exec chown root:root {} \;
-        fi
-
-        # /var/lib/nftban - nftban:nftban 750 (set ownership on directories only)
-        chown nftban:nftban /var/lib/nftban
-        chmod 750 /var/lib/nftban
-        find /var/lib/nftban -maxdepth 1 -type d -exec chown nftban:nftban {} \;
-        find /var/lib/nftban -maxdepth 1 -type d -exec chmod 750 {} \;
-
-        # Fix feed files ownership (may be owned by root from manual runs)
-        find /var/lib/nftban/feeds -maxdepth 1 -type f -name "*.txt" -exec chown nftban:nftban {} \; 2>/dev/null || true
-        find /var/lib/nftban/feeds -maxdepth 1 -type f -name "*.txt" -exec chmod 640 {} \; 2>/dev/null || true
-
-        # Auditor reports - nftban-auditor group
-        chown root:nftban-auditor /var/lib/nftban/reports/auditors 2>/dev/null || true
-        chmod 770 /var/lib/nftban/reports/auditors 2>/dev/null || true
-
-        # /var/log/nftban - nftban:nftban 750 (directory only)
-        chown nftban:nftban /var/log/nftban
-        chmod 750 /var/log/nftban
-
-        # /var/cache/nftban - nftban:nftban 755 (directory only)
-        chown nftban:nftban /var/cache/nftban
-        chmod 755 /var/cache/nftban
-
-        # /run/nftban - nftban:nftban 755 (directory and files inside)
-        chown nftban:nftban /run/nftban
-        chmod 755 /run/nftban
-        # Fix files inside (may be owned by root from previous runs)
-        find /run/nftban -maxdepth 1 -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
-
-        # /run/nftban-ui - root:nftban 750 (auth daemon runs as root, nftban group access)
-        chown root:nftban /run/nftban-ui
-        chmod 750 /run/nftban-ui
-
-        # /usr/share/nftban - root:root 755 (package-managed, set top-level only)
-        chown root:root /usr/share/nftban 2>/dev/null || true
-        chmod 755 /usr/share/nftban 2>/dev/null || true
-
-        # Set executable permissions on all shell scripts
-        if [ -d /usr/lib/nftban ]; then
-            find /usr/lib/nftban -name "*.sh" -exec chmod 755 {} \;
-        fi
-
-        # Set executable permissions on sbin scripts (installed without .sh extension)
-        if [ -d /usr/lib/nftban/sbin ]; then
-            chmod 755 /usr/lib/nftban/sbin/*
-        fi
-
-        # Set capabilities for nftban-core (allows non-root nftables operations)
-        if [ -x /usr/lib/nftban/bin/nftban-core ]; then
-            setcap 'cap_net_admin+ep' /usr/lib/nftban/bin/nftban-core 2>/dev/null || \
-                log_warn "Could not set CAP_NET_ADMIN on nftban-core"
-        fi
+        [ -d /etc/nftban/suricata/state ] && chmod 770 /etc/nftban/suricata/state
+        [ -f /etc/nftban/suricata/suricata.yaml.overlay ] && chmod 664 /etc/nftban/suricata/suricata.yaml.overlay
 
         # Set capabilities for nft binary (required for CLI fallback operations)
         if [ -x /usr/sbin/nft ]; then
