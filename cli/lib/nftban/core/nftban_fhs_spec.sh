@@ -21,7 +21,7 @@
 # meta:inventory.privileges="user"
 #
 # meta:created_date="2026-01-10"
-# meta:updated_date="2026-02-08"
+# meta:updated_date="2026-01-10"
 #
 # WARNING: This file is GENERATED from build/fhs-spec.yaml - DO NOT EDIT
 # Run: build/generate-fhs-outputs.sh
@@ -78,18 +78,6 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/rules.d"]="0750|root|nftban|Custom nftables rules"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/connectors"]="0750|root|nftban|Connector configurations (Zabbix, Elasticsearch, Kafka)"
     NFTBAN_FHS_DIRECTORIES["/etc/nftban/distros"]="0755|root|root|Distro-specific configuration files"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/geoban.d"]="0750|root|nftban|GeoIP country ban lists"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/nftables.d"]="0750|root|nftban|Custom nftables include files"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata"]="0750|root|nftban|Suricata integration configuration"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/cache"]="0750|root|nftban|Suricata detection cache"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/config"]="0750|root|nftban|Suricata config snippets"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/profiles"]="0750|root|nftban|Suricata detection profiles"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/rules"]="0750|root|nftban|Suricata custom rules"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/state"]="0750|root|nftban|Suricata rule state management"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/suricata/state/last-good"]="0750|root|nftban|Last known good rules backup"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/ssl"]="0750|root|nftban|UI TLS certificates"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/certs"]="0750|root|nftban|Zabbix integration TLS certificates"
-    NFTBAN_FHS_DIRECTORIES["/etc/nftban/tls"]="0750|root|nftban|API TLS certificates (self-signed)"
 
     # Data Directories
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban"]="0750|root|nftban|Application state data (root-owned security boundary)"
@@ -113,36 +101,17 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/queue/dlq"]="0750|nftban|nftban|Dead letter queue"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/mailspool"]="0750|nftban|nftban|Failed mail retry queue"
     NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/pro"]="0750|root|nftban|Pro subscription data"
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/state"]="0750|nftban|nftban|Protection and filter state JSON files"
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/zabbix"]="0750|nftban|nftban|Zabbix event buffer for failed exports"
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/profiles"]="0750|nftban|nftban|Watchdog protection profiles"
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/recorder"]="0750|nftban|nftban|Watchdog flight recorder audit trail"
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/config"]="0755|root|root|Runtime configuration state"
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/login"]="0750|nftban|nftban|Login monitor state files"
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/portscan"]="0750|nftban|nftban|Portscan tracker database"
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/geoban/tracking"]="0750|nftban|nftban|GeoIP ban country tracking"
-    NFTBAN_FHS_DIRECTORIES["/var/lib/nftban/reports/archive"]="0750|nftban|nftban|Archived reports"
 
     # Log Directories
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban"]="0750|nftban|nftban|Log files"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/watchdog"]="0750|nftban|nftban|Watchdog logs"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/reports"]="0750|nftban|nftban|Report logs"
     NFTBAN_FHS_DIRECTORIES["/var/log/nftban/rbl"]="0750|nftban|nftban|RBL check cache"
-    NFTBAN_FHS_DIRECTORIES["/var/log/nftban/suricata"]="0750|nftban|nftban|Suricata EVE JSON alerts"
-    NFTBAN_FHS_DIRECTORIES["/var/log/nftban/metrics"]="0750|nftban|nftban|Metrics export NDJSON logs"
 
     # Runtime Directories
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban"]="0755|nftban|nftban|Cache files"
     NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/health"]="0750|nftban|nftban|Health check status cache"
-    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/trust"]="0755|nftban|nftban|Trust list and Cloudflare IP cache"
-    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/rbl"]="0755|nftban|nftban|RBL lookup result cache"
-    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/geoban"]="0755|nftban|nftban|GeoIP country list cache"
-    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/metrics"]="0755|nftban|nftban|JSON metrics cache for dashboard"
-    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/feeds"]="0755|nftban|nftban|Feed download cache"
-    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/login"]="0755|nftban|nftban|Login module cache"
-    NFTBAN_FHS_DIRECTORIES["/var/cache/nftban/portscan"]="0755|nftban|nftban|Portscan module cache"
     NFTBAN_FHS_DIRECTORIES["/run/nftban"]="0755|nftban|nftban|Runtime data (PID files, sockets)"
-    NFTBAN_FHS_DIRECTORIES["/run/nftban-ui"]="0755|nftban|nftban|Web UI daemon runtime data"
 
     # Shared Directories
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban"]="0755|root|root|Shared application data"
@@ -153,73 +122,6 @@ nftban_fhs_load_spec() {
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/dashboards"]="0755|root|root|Monitoring dashboards"
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/dashboards/grafana"]="0755|root|root|Grafana dashboard JSON files"
     NFTBAN_FHS_DIRECTORIES["/usr/share/nftban/specs"]="0755|root|root|Specification files"
-}
-
-# =============================================================================
-# FILE PERMISSION RULES (Single Source of Truth)
-# =============================================================================
-# Format: path|pattern|mode|owner|group|recursive|exclude|capabilities
-
-declare -g -a NFTBAN_FHS_FILE_RULES=()
-
-nftban_fhs_load_file_rules() {
-    # Load file permission rules from FHS spec
-    NFTBAN_FHS_FILE_RULES=(
-        # /etc/nftban - config files
-        "/etc/nftban|*.conf|0640|root|nftban|true||"
-        "/etc/nftban|*.local|0640|root|nftban|true||"
-        # /usr/lib/nftban - shell scripts
-        "/usr/lib/nftban|*.sh|0755|root|root|true||"
-        # /usr/lib/nftban/bin - Go binaries
-        "/usr/lib/nftban/bin|*|0755|root|root|false||cap_net_admin+ep:nftban-core,nftband"
-        # /usr/lib/nftban/sbin - helper binaries
-        "/usr/lib/nftban/sbin|*|0755|root|root|false||"
-        # /usr/sbin/nftban* - CLI binaries
-        "/usr/sbin|nftban*|0750|root|nftban|false||"
-        # /var/lib/nftban - state files
-        "/var/lib/nftban|*|0640|nftban|nftban|true|/var/lib/nftban/reports/auditors|"
-        # /var/lib/nftban/reports/auditors
-        "/var/lib/nftban/reports/auditors|*|0660|root|nftban-auditor|true||"
-        # /var/log/nftban - log files
-        "/var/log/nftban|*|0640|nftban|nftban|true|/var/log/nftban/suricata|"
-        # /var/log/nftban/suricata
-        "/var/log/nftban/suricata|*|0640|suricata|nftban|true||"
-    )
-}
-
-nftban_fhs_enforce_file_rules() {
-    # Enforce all file permission rules
-    # Returns: 0 on success, count of errors on failure
-
-    [[ ${#NFTBAN_FHS_FILE_RULES[@]} -eq 0 ]] && nftban_fhs_load_file_rules
-
-    local errors=0
-
-    for rule in "${NFTBAN_FHS_FILE_RULES[@]}"; do
-        IFS='|' read -r path pattern mode owner group recursive exclude caps <<< "$rule"
-
-        [[ ! -d "$path" ]] && continue
-
-        local find_opts=("-type" "f")
-        [[ "$recursive" != "true" ]] && find_opts+=("-maxdepth" "1")
-        [[ -n "$exclude" ]] && find_opts+=("-not" "-path" "${exclude}/*")
-
-        # Apply ownership and mode
-        find "$path" "${find_opts[@]}" -name "$pattern" -exec chown "$owner:$group" {} \; 2>/dev/null || ((errors++))
-        find "$path" "${find_opts[@]}" -name "$pattern" -exec chmod "$mode" {} \; 2>/dev/null || ((errors++))
-
-        # Apply capabilities if specified
-        if [[ -n "$caps" ]]; then
-            local cap_str="${caps%%:*}"
-            local binaries="${caps#*:}"
-            IFS=',' read -ra bins <<< "$binaries"
-            for bin in "${bins[@]}"; do
-                [[ -f "$path/$bin" ]] && setcap "$cap_str" "$path/$bin" 2>/dev/null || true
-            done
-        fi
-    done
-
-    return $errors
 }
 
 # =============================================================================
@@ -278,5 +180,3 @@ export -f nftban_fhs_load_spec
 export -f nftban_fhs_get_spec
 export -f nftban_fhs_get_all_paths
 export -f nftban_fhs_parse_spec
-export -f nftban_fhs_load_file_rules
-export -f nftban_fhs_enforce_file_rules

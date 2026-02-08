@@ -58,6 +58,7 @@ DEB_DIRS_OUT="${PROJECT_ROOT}/install/packaging/deb/nftban.dirs"
 RPM_FILES_OUT="${PROJECT_ROOT}/install/packaging/rpm/nftban-files.inc"
 JSON_OUT="${PROJECT_ROOT}/cli/lib/nftban/data/fhs_directories.json"
 SHELL_OUT="${PROJECT_ROOT}/cli/lib/nftban/core/nftban_fhs_spec.sh"
+PERMS_OUT="${PROJECT_ROOT}/cli/lib/nftban/setup/fhs-permissions.sh"
 
 # Generated header
 HEADER="Generated from build/fhs-spec.yaml - DO NOT EDIT"
@@ -235,7 +236,7 @@ generate_deb_dirs() {
 # Generated from build/fhs-spec.yaml - DO NOT EDIT
 #
 # This file lists directories to create during package installation.
-# Used by dh_installdirs.
+# Consumer: dh_installdirs
 #
 # Note: Directories marked created_by=package are listed here.
 #       Directories marked created_by=tmpfiles are NOT listed here
@@ -597,6 +598,87 @@ check_mode() {
     print_status "All generated files are up to date"
 }
 
+generate_file_permissions() {
+    print_info "Generating fhs-permissions.sh..."
+
+    mkdir -p "$(dirname "$PERMS_OUT")"
+
+    # Write header (split SPDX to avoid validator detecting it as generator's own)
+    {
+        echo "#!/usr/bin/env bash"
+        echo "# ============================================================================="
+        echo "# NFTBan v1.0.0 - FHS File Permissions (GENERATED)"
+        echo "# ============================================================================="
+        echo "# SPDX-License-Identifier: MPL-2.0"
+    } > "$PERMS_OUT"
+    cat >> "$PERMS_OUT" << 'PERMS_HEADER'
+#
+# meta:name="fhs-permissions"
+# meta:type="setup"
+# meta:header="FHS File Permissions"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:homepage="https://nftban.com"
+#
+# meta:description="Sets file permissions during package installation (GENERATED)"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# meta:created_date="2026-02-08"
+# meta:updated_date="2026-02-08"
+#
+# WARNING: This file is GENERATED from build/fhs-spec.yaml - DO NOT EDIT
+# Run: build/generate-fhs-outputs.sh
+# =============================================================================
+
+set -Eeuo pipefail
+
+nftban_install_set_file_permissions() {
+    # File permissions from FHS spec (single source of truth)
+
+PERMS_HEADER
+
+    # Generate permission commands from file_permissions section
+    yq -r '.file_permissions[] |
+        "    # \(.path) - \(.pattern // "*")\n" +
+        (if .recursive == true then
+            "    find \"\(.path)\" -type f -name \"\(.pattern // "*")\"" +
+            (if .exclude then " -not -path \"\(.exclude)/*\"" else "" end) +
+            " -exec chown \(.owner):\(.group) {} \\; 2>/dev/null || true\n" +
+            "    find \"\(.path)\" -type f -name \"\(.pattern // "*")\"" +
+            (if .exclude then " -not -path \"\(.exclude)/*\"" else "" end) +
+            " -exec chmod \(.mode) {} \\; 2>/dev/null || true"
+        else
+            "    chown \(.owner):\(.group) \"\(.path)\"/\(.pattern // "*") 2>/dev/null || true\n" +
+            "    chmod \(.mode) \"\(.path)\"/\(.pattern // "*") 2>/dev/null || true"
+        end) +
+        (if .capabilities then
+            "\n    # Set capabilities: \(.capabilities)\n" +
+            "    if command -v setcap &>/dev/null; then\n" +
+            ((.capabilities | split(":")[1] | split(",")[]) as $bin |
+                "        setcap \"\(.capabilities | split(":")[0])\" \"\(.path)/\($bin)\" 2>/dev/null || true\n") +
+            "    fi"
+        else "" end)
+    ' "$FHS_SPEC" >> "$PERMS_OUT"
+
+    cat >> "$PERMS_OUT" << 'PERMS_FOOTER'
+
+    return 0
+}
+
+# Export for sourcing
+export -f nftban_install_set_file_permissions
+PERMS_FOOTER
+
+    chmod 755 "$PERMS_OUT"
+    print_status "Generated $PERMS_OUT"
+}
+
 # =============================================================================
 # MAIN
 # =============================================================================
@@ -622,6 +704,7 @@ main() {
     generate_rpm_files
     generate_json
     generate_shell_helper
+    generate_file_permissions
 
     echo ""
     echo "=========================================="
@@ -635,6 +718,7 @@ main() {
     echo "  - $RPM_FILES_OUT"
     echo "  - $JSON_OUT"
     echo "  - $SHELL_OUT"
+    echo "  - $PERMS_OUT"
     echo ""
     echo "Next steps:"
     echo "  1. Review generated files"

@@ -294,29 +294,18 @@ if [ -f /usr/lib/tmpfiles.d/nftban.conf ]; then
     }
 fi
 
-# Fix files inside /run/nftban (tmpfiles only sets directory ownership)
-if [ -d /run/nftban ]; then
-    chown nftban:nftban /run/nftban 2>/dev/null || true
-    find /run/nftban -maxdepth 1 -type f -exec chown nftban:nftban {} \; 2>/dev/null || true
-fi
-
-# Fix feed files ownership (may be owned by root from manual runs)
-if [ -d /var/lib/nftban/feeds ]; then
-    find /var/lib/nftban/feeds -maxdepth 1 -type f -name "*.txt" -exec chown nftban:nftban {} \; 2>/dev/null || true
-    find /var/lib/nftban/feeds -maxdepth 1 -type f -name "*.txt" -exec chmod 640 {} \; 2>/dev/null || true
-fi
-
-# Set config directory permissions (root-owned, group readable)
-if [ -d /etc/nftban ]; then
-    chown root:nftban /etc/nftban
-    chmod 750 /etc/nftban
-    find /etc/nftban -maxdepth 1 -type d -exec chown root:nftban {} \;
-    find /etc/nftban -maxdepth 1 -type d -exec chmod 750 {} \;
-    # Fix conf.d files - must be readable by nftban group for services
-    find /etc/nftban/conf.d -name "*.conf" -exec chown root:nftban {} \; 2>/dev/null || true
-    find /etc/nftban/conf.d -name "*.conf" -exec chmod 640 {} \; 2>/dev/null || true
-    find /etc/nftban -name "*.local" -exec chown root:nftban {} \; 2>/dev/null || true
-    find /etc/nftban -name "*.local" -exec chmod 640 {} \; 2>/dev/null || true
+# ==========================================================================
+# STEP 2b: Set file permissions via FHS spec (single source of truth)
+# ==========================================================================
+# Uses generated script from build/fhs-spec.yaml
+if [ -f %{_libdir}/nftban/setup/fhs-permissions.sh ]; then
+    echo "Setting file permissions via FHS spec..."
+    # shellcheck source=/dev/null
+    source %{_libdir}/nftban/setup/fhs-permissions.sh
+    nftban_install_set_file_permissions
+    echo "  File permissions set via FHS spec"
+else
+    echo "Warning: FHS permissions script not found"
 fi
 
 # Auto-detect SSH port
@@ -507,6 +496,8 @@ fi
 # ==========================================================================
 %{_bindir}/nftban
 %dir %{_libdir}/nftban
+%dir %{_libdir}/nftban/setup
+%attr(755,root,root) %{_libdir}/nftban/setup/fhs-permissions.sh
 %dir %{_libdir}/nftban/sbin
 %attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-apply
 %attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-confirm
