@@ -385,7 +385,7 @@ perms_enforce_from_fhs_spec() {
 # =============================================================================
 
 nftban_permissions_enforce_all() {
-    # Enforce all permission rules
+    # Enforce all permission rules using FHS spec (SINGLE SOURCE OF TRUTH)
     # Args: none
     # Returns: 0 on success, 1 on error
 
@@ -394,27 +394,26 @@ nftban_permissions_enforce_all() {
 
     local errors=0
 
-    # NEW: Use FHS spec as single source of truth for directory permissions
+    # Step 1: Directory permissions from FHS spec
     if ! perms_enforce_from_fhs_spec; then
         errors=$((errors + 1))
     fi
 
-    # Additional file-level permissions (not in FHS spec which only covers directories)
-    # These are kept for files within directories
-    if ! perms_enforce_etc_files; then
-        errors=$((errors + 1))
-    fi
-    if ! perms_enforce_lib_files; then
-        errors=$((errors + 1))
-    fi
-    if ! perms_enforce_sbin; then
-        errors=$((errors + 1))
-    fi
-    if ! perms_enforce_var_files; then
-        errors=$((errors + 1))
-    fi
-    if ! perms_enforce_log_files; then
-        errors=$((errors + 1))
+    # Step 2: File permissions from FHS spec (UNIFIED - replaces 5 legacy functions)
+    perms_say "Enforcing file permissions from FHS specification..."
+    if declare -f nftban_fhs_enforce_file_rules >/dev/null 2>&1; then
+        if ! nftban_fhs_enforce_file_rules; then
+            errors=$((errors + 1))
+        fi
+        perms_say "  ✓ File permissions enforced via FHS spec"
+    else
+        # Fallback to legacy functions if FHS file rules not available
+        perms_say "  Using legacy file permission functions"
+        perms_enforce_etc_files || errors=$((errors + 1))
+        perms_enforce_lib_files || errors=$((errors + 1))
+        perms_enforce_sbin || errors=$((errors + 1))
+        perms_enforce_var_files || errors=$((errors + 1))
+        perms_enforce_log_files || errors=$((errors + 1))
     fi
 
     perms_say ""

@@ -156,6 +156,73 @@ nftban_fhs_load_spec() {
 }
 
 # =============================================================================
+# FILE PERMISSION RULES (Single Source of Truth)
+# =============================================================================
+# Format: path|pattern|mode|owner|group|recursive|exclude|capabilities
+
+declare -g -a NFTBAN_FHS_FILE_RULES=()
+
+nftban_fhs_load_file_rules() {
+    # Load file permission rules from FHS spec
+    NFTBAN_FHS_FILE_RULES=(
+        # /etc/nftban - config files
+        "/etc/nftban|*.conf|0640|root|nftban|true||"
+        "/etc/nftban|*.local|0640|root|nftban|true||"
+        # /usr/lib/nftban - shell scripts
+        "/usr/lib/nftban|*.sh|0755|root|root|true||"
+        # /usr/lib/nftban/bin - Go binaries
+        "/usr/lib/nftban/bin|*|0755|root|root|false||cap_net_admin+ep:nftban-core,nftband"
+        # /usr/lib/nftban/sbin - helper binaries
+        "/usr/lib/nftban/sbin|*|0755|root|root|false||"
+        # /usr/sbin/nftban* - CLI binaries
+        "/usr/sbin|nftban*|0750|root|nftban|false||"
+        # /var/lib/nftban - state files
+        "/var/lib/nftban|*|0640|nftban|nftban|true|/var/lib/nftban/reports/auditors|"
+        # /var/lib/nftban/reports/auditors
+        "/var/lib/nftban/reports/auditors|*|0660|root|nftban-auditor|true||"
+        # /var/log/nftban - log files
+        "/var/log/nftban|*|0640|nftban|nftban|true|/var/log/nftban/suricata|"
+        # /var/log/nftban/suricata
+        "/var/log/nftban/suricata|*|0640|suricata|nftban|true||"
+    )
+}
+
+nftban_fhs_enforce_file_rules() {
+    # Enforce all file permission rules
+    # Returns: 0 on success, count of errors on failure
+
+    [[ ${#NFTBAN_FHS_FILE_RULES[@]} -eq 0 ]] && nftban_fhs_load_file_rules
+
+    local errors=0
+
+    for rule in "${NFTBAN_FHS_FILE_RULES[@]}"; do
+        IFS='|' read -r path pattern mode owner group recursive exclude caps <<< "$rule"
+
+        [[ ! -d "$path" ]] && continue
+
+        local find_opts=("-type" "f")
+        [[ "$recursive" != "true" ]] && find_opts+=("-maxdepth" "1")
+        [[ -n "$exclude" ]] && find_opts+=("-not" "-path" "${exclude}/*")
+
+        # Apply ownership and mode
+        find "$path" "${find_opts[@]}" -name "$pattern" -exec chown "$owner:$group" {} \; 2>/dev/null || ((errors++))
+        find "$path" "${find_opts[@]}" -name "$pattern" -exec chmod "$mode" {} \; 2>/dev/null || ((errors++))
+
+        # Apply capabilities if specified
+        if [[ -n "$caps" ]]; then
+            local cap_str="${caps%%:*}"
+            local binaries="${caps#*:}"
+            IFS=',' read -ra bins <<< "$binaries"
+            for bin in "${bins[@]}"; do
+                [[ -f "$path/$bin" ]] && setcap "$cap_str" "$path/$bin" 2>/dev/null || true
+            done
+        fi
+    done
+
+    return $errors
+}
+
+# =============================================================================
 # HELPER FUNCTIONS
 # =============================================================================
 
@@ -211,3 +278,5 @@ export -f nftban_fhs_load_spec
 export -f nftban_fhs_get_spec
 export -f nftban_fhs_get_all_paths
 export -f nftban_fhs_parse_spec
+export -f nftban_fhs_load_file_rules
+export -f nftban_fhs_enforce_file_rules
