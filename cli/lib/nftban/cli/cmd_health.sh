@@ -190,7 +190,7 @@ nftban_cmd_health() {
         posture|security)
             nftban_health_cmd_posture "$@"
             ;;
-        help|--help|-h)
+        help|-h|--help)
             nftban_health_cmd_help
             ;;
         *)

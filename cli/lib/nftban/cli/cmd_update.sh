@@ -659,7 +659,7 @@ nftban_cmd_update() {
             _update_banner
             _list_backups
             ;;
-        help|--help|-h)
+        help|-h|--help)
             _cmd_update_help
             ;;
         "")

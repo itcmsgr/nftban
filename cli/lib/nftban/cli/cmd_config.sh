@@ -694,7 +694,7 @@ nftban_cmd_config() {
             nftban_cmd_config_reload "$@"
             ;;
 
-        help|--help|-h|"")
+        help|-h|--help|"")
             show_usage
             return 0
             ;;

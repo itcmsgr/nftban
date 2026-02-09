@@ -5,6 +5,14 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Grouped help output for NFTBan CLI
 #
+# IMPORTANT: Global options are defined in commands.registry.yml (single source
+# of truth). This file uses hardcoded values for runtime performance (no yq
+# dependency). When updating global options, update BOTH:
+#   1. commands.registry.yml - canonical definition
+#   2. This file - runtime display
+#
+# Use scripts/generate-help.sh to auto-generate from registry for docs.
+#
 # meta:name="nftban_help"
 # meta:type="module"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
@@ -104,7 +112,6 @@ EOF
   country          Country blocking (enable/disable by ISO code)
   geoip            IP geolocation lookup (MaxMind GeoIP2)
   geoban           Geographic IP blocking (ban/unban by country)
-  cloudflare       Cloudflare IP whitelist (deprecated: use trust)
 EOF
   echo
 
