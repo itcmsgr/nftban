@@ -151,6 +151,23 @@
     copytruncate
 }
 
+# =============================================================================
+# Watchdog subdirectory logs (alerts, stats, profiles)
+# =============================================================================
+# These are in a subdirectory of /var/log/nftban/ and need separate rotation
+/var/log/nftban/watchdog/alerts.log
+/var/log/nftban/watchdog/stats.log
+/var/log/nftban/watchdog/profiles.log {
+    weekly
+    rotate 4
+    compress
+    delaycompress
+    missingok
+    notifempty
+    copytruncate
+    create 0640 nftban nftban
+}
+
 # Generated reports - monthly rotation, keep 3 months
 /var/lib/nftban/reports/*.html /var/lib/nftban/reports/*.txt /var/lib/nftban/reports/*.json {
     monthly

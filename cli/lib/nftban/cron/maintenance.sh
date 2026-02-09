@@ -83,35 +83,24 @@ log() {
 # =============================================================================
 # LOCKING (Prevent concurrent runs)
 # =============================================================================
+# NOTE: Locking is handled by systemd via flock (see nftban-maintenance.service)
+# The flock command wraps this script: flock -n /run/nftban/maintenance.lock
+# This means systemd creates the lock file BEFORE the script runs.
+# DO NOT add internal lock checks here - they conflict with flock and cause
+# "Maintenance already running (lock exists)" false positives.
+# =============================================================================
 
 acquire_lock() {
-    mkdir -p "$(dirname "$LOCKFILE")"
-
-    # Check for stale lock (>30 minutes old)
-    if [[ -f "$LOCKFILE" ]]; then
-        local lock_age
-        # Use library function with fallback for stale lock detection
-        if declare -f nftban_file_age >/dev/null 2>&1; then
-            lock_age=$(nftban_file_age "$LOCKFILE")
-        else
-            # Fallback: inline calculation if library not available
-            lock_age=$(( $(date +%s) - $(stat -c %Y "$LOCKFILE" 2>/dev/null || echo 0) ))
-        fi
-        if [[ $lock_age -gt 1800 ]]; then
-            log "WARN" "Removing stale lock (${lock_age}s old)"
-            rm -f "$LOCKFILE"
-        else
-            log "INFO" "Maintenance already running (lock exists)"
-            exit 0
-        fi
-    fi
-
-    # Create lock
-    echo $$ > "$LOCKFILE"
+    # Locking handled by systemd flock - just ensure directory exists
+    mkdir -p "$(dirname "$LOCKFILE")" 2>/dev/null || true
+    # Write PID for debugging (flock already holds the lock)
+    echo $$ > "$LOCKFILE" 2>/dev/null || true
 }
 
 release_lock() {
-    rm -f "$LOCKFILE"
+    # Lock file released automatically by flock when script exits
+    # Just clean up our PID marker
+    rm -f "$LOCKFILE" 2>/dev/null || true
 }
 
 trap release_lock EXIT
@@ -493,6 +482,12 @@ EOF
             source "${NFTBAN_LIB_DIR}/core/nftban_watchdog.sh" 2>/dev/null || true
             if declare -f nftban_watchdog_trend_collect >/dev/null 2>&1; then
                 nftban_watchdog_trend_collect 2>/dev/null && log "INFO" "Watchdog trend collected" || true
+            fi
+            # Comprehensive cleanup of all watchdog/stats directories
+            if declare -f nftban_watchdog_cleanup_all >/dev/null 2>&1; then
+                local cleanup_count
+                cleanup_count=$(nftban_watchdog_cleanup_all 2>/dev/null) || cleanup_count=0
+                [[ $cleanup_count -gt 0 ]] && log "INFO" "Cleanup: removed $cleanup_count old files total"
             fi
         fi
     else
