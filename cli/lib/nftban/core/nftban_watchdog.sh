@@ -668,25 +668,20 @@ nftban_watchdog_run_all() {
     local overall_status=$WATCHDOG_OK
     local status
 
-    # Run all checks
-    nftban_watchdog_check_load
-    status=$?
+    # Run all checks (use && || pattern to capture return codes without triggering set -e)
+    nftban_watchdog_check_load && status=0 || status=$?
     [[ $status -gt $overall_status ]] && overall_status=$status
 
-    nftban_watchdog_check_memory
-    status=$?
+    nftban_watchdog_check_memory && status=0 || status=$?
     [[ $status -gt $overall_status ]] && overall_status=$status
 
-    nftban_watchdog_check_iowait
-    status=$?
+    nftban_watchdog_check_iowait && status=0 || status=$?
     [[ $status -gt $overall_status ]] && overall_status=$status
 
-    nftban_watchdog_check_disk
-    status=$?
+    nftban_watchdog_check_disk && status=0 || status=$?
     [[ $status -gt $overall_status ]] && overall_status=$status
 
-    nftban_watchdog_check_fd
-    status=$?
+    nftban_watchdog_check_fd && status=0 || status=$?
     [[ $status -gt $overall_status ]] && overall_status=$status
 
     nftban_watchdog_get_top_cpu
@@ -1061,9 +1056,9 @@ nftban_watchdog_run() {
 
     watchdog_log "INFO" "Watchdog check starting"
 
-    # Run all checks
-    nftban_watchdog_run_all
-    local status=$?
+    # Run all checks (use && || pattern to capture return code without triggering set -e)
+    local status
+    nftban_watchdog_run_all && status=0 || status=$?
 
     # Save report (only if issues or explicitly requested)
     local report_file=""
@@ -1124,8 +1119,8 @@ nftban_watchdog_trend_collect() {
 
     mkdir -p "$NFTBAN_WATCHDOG_TREND_DIR" 2>/dev/null || true
 
-    # Run checks to populate WATCHDOG_RESULTS
-    nftban_watchdog_run_all >/dev/null 2>&1
+    # Run checks to populate WATCHDOG_RESULTS (|| true prevents set -e exit)
+    nftban_watchdog_run_all >/dev/null 2>&1 || true
 
     local hour_start
     hour_start=$(date -d "$(date +%Y-%m-%d\ %H):00:00" +%Y-%m-%dT%H:%M:%SZ)

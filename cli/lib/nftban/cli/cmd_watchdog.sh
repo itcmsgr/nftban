@@ -194,8 +194,8 @@ nftban_watchdog_cmd_status() {
     # Check if enabled
     local enabled="${NFTBAN_WATCHDOG_ENABLED:-false}"
 
-    # Run quick checks
-    nftban_watchdog_run_all >/dev/null 2>&1
+    # Run quick checks (|| true prevents set -e from exiting on WARNING/CRITICAL status)
+    nftban_watchdog_run_all >/dev/null 2>&1 || true
 
     local load="${WATCHDOG_RESULTS[load_5m]:-N/A}"
     local mem="${WATCHDOG_RESULTS[mem_used_percent]:-N/A}"
@@ -258,8 +258,8 @@ nftban_watchdog_cmd_check() {
     local json_mode=false
     [[ "${1:-}" == "--json" ]] && json_mode=true
 
-    # Run all checks
-    nftban_watchdog_run_all
+    # Run all checks (|| true prevents set -e from exiting on WARNING/CRITICAL status)
+    nftban_watchdog_run_all || true
 
     if [[ "$json_mode" == "true" ]]; then
         # JSON output
@@ -320,8 +320,8 @@ nftban_watchdog_cmd_report() {
         [[ "$arg" == "--save" ]] && save_report=true
     done
 
-    # Run all checks
-    nftban_watchdog_run_all
+    # Run all checks (|| true prevents set -e from exiting on WARNING/CRITICAL status)
+    nftban_watchdog_run_all || true
 
     # Print report
     nftban_watchdog_report
