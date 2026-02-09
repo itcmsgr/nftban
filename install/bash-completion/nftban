@@ -20,7 +20,7 @@ _nftban() {
     # MONITORING: gui metrics stats report fhs module services timers mail
     # DEBUG: debug smoke emulate setup menu
 
-    local commands="status health validate config configtest configaudit sync version help firewall ban unban protect unprotect cleanup list check search whitelist whitelist-system profile panel permissions polkit ddos portscan botscan login feeds trust country cloudflare geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke emulate setup menu nftables port system test wizard watchdog flush update support suricata pro"
+    local commands="status health validate config configtest configaudit sync version help firewall ban unban protect unprotect cleanup list check search whitelist whitelist-system profile panel permissions polkit ddos portscan botscan login feeds trust country geoban geoip gui metrics stats report queue fhs module services timers mail rbl debug smoke emulate setup menu nftables port system test wizard watchdog flush update support suricata pro connector modes snapshot zabbix"
 
     # ==========================================================================
     # SUBCOMMANDS FOR EACH MAIN COMMAND
@@ -28,13 +28,13 @@ _nftban() {
 
     # Core commands
     local status_cmds="--json help"
-    local health_cmds="check fix --auto-heal --json help"
+    local health_cmds="check summary json report fix services modules binaries permissions geoip pro registries gui install conflicts config rbl posture --auto-heal --json help"
     local validate_cmds="all firewall config permissions --json help"
     local config_cmds="show edit validate reload get set help"
-    local sync_cmds="status --dry-run help"
+    local sync_cmds="full validate status --dry-run help"
 
     # Firewall & Security commands
-    local firewall_cmds="status init reload reset help"
+    local firewall_cmds="status validate check stats logs reload reset help"
     local ban_cmds="--timeout --reason --source --json help"
     local unban_cmds="--json help"
     local list_cmds="banned whitelist all --json help"
@@ -56,7 +56,6 @@ _nftban() {
     local trust_providers="CLOUDFLARE AWS GOOGLE AZURE FASTLY DIGITALOCEAN LINODE VULTR OVH HETZNER ALL"
     local country_cmds="list enable disable mode status apply --json help"
     local country_codes="CN RU KP IR SY BY CU VE MM AF IQ LY SD YE US GB DE FR NL"
-    local cloudflare_cmds="status update --json help"
     local geoban_cmds="status ban unban whitelist unwhitelist list --json help"
     local geoip_cmds="status lookup update config --json help"
 
@@ -86,7 +85,7 @@ _nftban() {
     local system_cmds="status enable disable install uninstall --json help"
 
     # Watchdog (System Resource Monitoring)
-    local watchdog_cmds="status check report history enable disable --json help"
+    local watchdog_cmds="status check report history trends enable disable --json help"
 
     # Emergency/Recovery
     local flush_cmds="blacklist whitelist feeds geoban ddos all --yes --dry-run help"
@@ -100,13 +99,19 @@ _nftban() {
     local queue_cmds="status list process dlq metrics help"
     local rbl_cmds="check server status list enable disable cache alert critical watchlist help"
     local support_cmds="--network help"
-    local suricata_cmds="install enable disable status profile scan services rules sid custom recommend help"
-    local update_cmds="check apply rollback status github git local auto help"
+    local suricata_cmds="install enable disable status eve rules profile scan services sid category local custom recommend iface help"
+    local update_cmds="check status github git local force repair rollback list help"
 
     # Memory/Ban Management (NEW)
     local protect_cmds="--json help"
     local unprotect_cmds="--json help"
     local cleanup_cmds="--stats --dry-run --execute --count --json help"
+
+    # New commands (connector, modes, snapshot, zabbix)
+    local connector_cmds="list add enable disable test show push --json help"
+    local modes_cmds="--json help"
+    local snapshot_cmds="create list --json help"
+    local zabbix_cmds="setup status test push reload template discover targets config --json help"
 
     # Global options available for most commands
     local global_opts="--json --help --version -h"
@@ -194,9 +199,6 @@ _nftban() {
                     ;;
                 country)
                     COMPREPLY=($(compgen -W "${country_cmds}" -- "${cur}"))
-                    ;;
-                cloudflare)
-                    COMPREPLY=($(compgen -W "${cloudflare_cmds}" -- "${cur}"))
                     ;;
                 geoban)
                     COMPREPLY=($(compgen -W "${geoban_cmds}" -- "${cur}"))
@@ -320,6 +322,20 @@ _nftban() {
                     ;;
                 cleanup)
                     COMPREPLY=($(compgen -W "${cleanup_cmds}" -- "${cur}"))
+                    ;;
+
+                # New commands (connector, modes, snapshot, zabbix)
+                connector)
+                    COMPREPLY=($(compgen -W "${connector_cmds}" -- "${cur}"))
+                    ;;
+                modes)
+                    COMPREPLY=($(compgen -W "${modes_cmds}" -- "${cur}"))
+                    ;;
+                snapshot)
+                    COMPREPLY=($(compgen -W "${snapshot_cmds}" -- "${cur}"))
+                    ;;
+                zabbix)
+                    COMPREPLY=($(compgen -W "${zabbix_cmds}" -- "${cur}"))
                     ;;
 
                 # Fallback
