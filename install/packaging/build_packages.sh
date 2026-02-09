@@ -35,7 +35,7 @@ readonly NC='\033[0m' # No Color
 
 # Package metadata
 readonly PKG_NAME="nftban-metrics"
-readonly PKG_VERSION="$(cat "${PROJECT_ROOT}/VERSION" 2>/dev/null | tr -d '[:space:]' || echo '1.7.0')"
+readonly PKG_VERSION="$(cat "${PROJECT_ROOT}/VERSION" 2>/dev/null | tr -d '[:space:]' || echo 'unknown')"
 readonly PKG_RELEASE="1"
 
 # Paths

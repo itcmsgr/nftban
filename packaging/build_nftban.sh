@@ -39,7 +39,7 @@ readonly BLUE='\033[0;34m'
 readonly NC='\033[0m'
 
 # Package metadata - Read from VERSION file (single source of truth)
-PKG_VERSION=$(cat "${BASH_SOURCE[0]%/*}/../VERSION" 2>/dev/null || echo "1.7.0")
+PKG_VERSION=$(cat "${BASH_SOURCE[0]%/*}/../VERSION" 2>/dev/null || echo "unknown")
 readonly PKG_VERSION
 readonly PKG_RELEASE="1"
 
