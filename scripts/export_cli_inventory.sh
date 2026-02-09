@@ -56,7 +56,6 @@ case "$FORMAT" in
 
     json)
         # JSON output
-        local nftban_ver
         nftban_ver=$(cat "${BASH_SOURCE[0]%/*}/../VERSION" 2>/dev/null | tr -d '[:space:]' || echo "unknown")
         echo "{"
         echo '  "version": "'"${nftban_ver}"'",'
