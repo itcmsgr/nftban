@@ -449,8 +449,6 @@ _suricata_iface_can_auto_enable() {
 
     # Gate 3: Single effective interface - additional checks
     local the_iface="${effective_candidates[0]}"
-    local iface_type
-    iface_type=$(_suricata_iface_get_type "$the_iface")
     local iface_state
     iface_state=$(_suricata_iface_get_state "$the_iface")
 
@@ -763,8 +761,6 @@ cmd_suricata_iface_list() {
         echo "  Effective Capture Interface(s): $detection_result"
         echo "  Decision: AUTO-ENABLE ALLOWED (single unambiguous interface)"
     else
-        local reason
-        reason=$(echo "$detection_result" | head -1)
         local details
         details=$(echo "$detection_result" | tail -n +2)
 
@@ -811,7 +807,6 @@ cmd_suricata_iface_set() {
     # Validate each interface
     IFS=',' read -ra iface_array <<< "$interfaces"
     local final_interfaces=()
-    local had_warnings=0
 
     for iface in "${iface_array[@]}"; do
         iface=$(echo "$iface" | xargs)  # trim
@@ -845,7 +840,6 @@ cmd_suricata_iface_set() {
             else
                 final_interfaces+=("$iface")
             fi
-            had_warnings=1
         else
             echo "    ✓ Valid"
             final_interfaces+=("$iface")
