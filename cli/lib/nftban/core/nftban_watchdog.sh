@@ -805,7 +805,7 @@ nftban_watchdog_report() {
     fi
 
     # Login monitor
-    local login_status login_mem_kb=0 login_mem_mb=0
+    local login_mem_kb=0 login_mem_mb=0
     if systemctl is-active nftban-login-monitor &>/dev/null; then
         login_mem_kb=$(systemctl show nftban-login-monitor --property=MemoryCurrent 2>/dev/null | cut -d= -f2)
         login_mem_mb=$((login_mem_kb / 1024 / 1024))
