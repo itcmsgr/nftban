@@ -2227,6 +2227,304 @@
       "added_version": "1.11.0",
       "phase": 1,
       "alias_for": "nftban_blocks_total"
+    },
+    "nftban_ban_errors_total": {
+      "type": "counter",
+      "category": "operations",
+      "source": "go_nftban",
+      "description": "Total number of ban operation errors",
+      "labels": {
+        "source": {
+          "type": "string",
+          "values": ["manual", "feeds", "suricata", "portscan", "ddos", "loginmon"],
+          "description": "Module that initiated the ban"
+        },
+        "error_type": {
+          "type": "string",
+          "values": ["nft_cli", "validation", "timeout", "duplicate", "unknown"],
+          "description": "Type of error encountered"
+        }
+      },
+      "added_version": "1.12.0"
+    },
+    "nftban_unban_errors_total": {
+      "type": "counter",
+      "category": "operations",
+      "source": "go_nftban",
+      "description": "Total number of unban operation errors",
+      "labels": {
+        "source": {
+          "type": "string",
+          "values": ["manual", "feeds", "suricata", "portscan", "ddos", "loginmon", "expiry"],
+          "description": "Module that initiated the unban"
+        },
+        "error_type": {
+          "type": "string",
+          "values": ["nft_cli", "validation", "timeout", "not_found", "unknown"],
+          "description": "Type of error encountered"
+        }
+      },
+      "added_version": "1.12.0"
+    },
+    "nftban_auth_attempts_total": {
+      "type": "counter",
+      "category": "auth",
+      "source": "go_nftban",
+      "description": "Total authentication attempts to API/daemon",
+      "labels": {
+        "status": {
+          "type": "enum",
+          "values": ["success", "failure"],
+          "description": "Authentication result"
+        }
+      },
+      "added_version": "1.12.0"
+    },
+    "nftban_auth_failures_total": {
+      "type": "counter",
+      "category": "auth",
+      "source": "go_nftban",
+      "description": "Total authentication failures by reason",
+      "labels": {
+        "reason": {
+          "type": "string",
+          "values": ["invalid_token", "expired_token", "missing_token", "rate_limited", "unknown"],
+          "description": "Reason for authentication failure"
+        }
+      },
+      "added_version": "1.12.0"
+    },
+    "nftban_api_request_duration_seconds": {
+      "type": "histogram",
+      "unit": "seconds",
+      "category": "api",
+      "source": "go_nftban",
+      "description": "API request latency distribution",
+      "labels": {
+        "endpoint": {
+          "type": "string",
+          "description": "API endpoint path"
+        },
+        "method": {
+          "type": "enum",
+          "values": ["GET", "POST", "PUT", "DELETE"],
+          "description": "HTTP method"
+        }
+      },
+      "buckets": "0.001s to 10s (exponential)",
+      "added_version": "1.12.0"
+    },
+    "nftban_api_requests_total": {
+      "type": "counter",
+      "category": "api",
+      "source": "go_nftban",
+      "description": "Total API requests by endpoint, method, and status",
+      "labels": {
+        "endpoint": {
+          "type": "string",
+          "description": "API endpoint path"
+        },
+        "method": {
+          "type": "enum",
+          "values": ["GET", "POST", "PUT", "DELETE"],
+          "description": "HTTP method"
+        },
+        "status_code": {
+          "type": "string",
+          "values": ["200", "201", "400", "401", "403", "404", "500"],
+          "description": "HTTP response status code"
+        }
+      },
+      "added_version": "1.12.0"
+    },
+    "nftban_nft_cli_duration_seconds": {
+      "type": "histogram",
+      "unit": "seconds",
+      "category": "nftables",
+      "source": "go_nftban",
+      "description": "Duration of nft CLI command executions",
+      "labels": {
+        "operation": {
+          "type": "enum",
+          "values": ["add", "delete", "list", "flush", "reload"],
+          "description": "Type of nft operation"
+        }
+      },
+      "buckets": "0.001s to 10s (exponential)",
+      "added_version": "1.12.0"
+    },
+    "nftban_nft_cli_errors_total": {
+      "type": "counter",
+      "category": "nftables",
+      "source": "go_nftban",
+      "description": "Total nft CLI command errors",
+      "labels": {
+        "operation": {
+          "type": "enum",
+          "values": ["add", "delete", "list", "flush", "reload"],
+          "description": "Type of nft operation"
+        },
+        "error_type": {
+          "type": "string",
+          "values": ["timeout", "syntax", "permission", "not_found", "unknown"],
+          "description": "Type of CLI error"
+        }
+      },
+      "added_version": "1.12.0"
+    },
+    "nftban_ddos_mitigations_total": {
+      "type": "counter",
+      "category": "ddos",
+      "source": "go_nftban",
+      "description": "Total DDoS mitigation actions taken",
+      "labels": {
+        "action": {
+          "type": "enum",
+          "values": ["rate_limit", "block", "challenge", "null_route"],
+          "description": "Type of mitigation action"
+        }
+      },
+      "added_version": "1.12.0"
+    },
+    "nftban_bans_by_country_total": {
+      "type": "counter",
+      "category": "blocks",
+      "source": "go_nftban",
+      "description": "Total bans by country (cumulative counter)",
+      "labels": {
+        "country": {
+          "type": "string",
+          "description": "ISO 3166-1 alpha-2 country code",
+          "cardinality_warning": "Up to ~250 values - use topk() in queries"
+        }
+      },
+      "cardinality": "~250",
+      "recommended_aggregation": "topk(10, ...)",
+      "added_version": "1.12.0"
+    },
+    "nftban_detections_by_country_total": {
+      "type": "counter",
+      "category": "analytics",
+      "source": "go_nftban",
+      "description": "Total detections by country and module",
+      "labels": {
+        "country": {
+          "type": "string",
+          "description": "ISO 3166-1 alpha-2 country code",
+          "cardinality_warning": "Up to ~250 values - use topk() in queries"
+        },
+        "module": {
+          "type": "enum",
+          "values": ["portscan", "ddos", "loginmon", "suricata"],
+          "description": "Detection module"
+        }
+      },
+      "cardinality": "~1000",
+      "recommended_aggregation": "topk(10, ...)",
+      "added_version": "1.12.0"
+    },
+    "nftban_protection_active": {
+      "type": "gauge",
+      "unit": "boolean",
+      "category": "watchdog",
+      "source": "go_nftban",
+      "description": "1 if protection is fully active, 0 if degraded or disabled",
+      "labels": {},
+      "added_version": "1.12.0"
+    },
+    "nftban_protection_feeds_skipped": {
+      "type": "gauge",
+      "unit": "boolean",
+      "category": "watchdog",
+      "source": "go_nftban",
+      "description": "1 if feeds are being skipped due to resource pressure",
+      "labels": {},
+      "added_version": "1.12.0"
+    },
+    "nftban_protection_geoban_skipped": {
+      "type": "gauge",
+      "unit": "boolean",
+      "category": "watchdog",
+      "source": "go_nftban",
+      "description": "1 if geoban is being skipped due to resource pressure",
+      "labels": {},
+      "added_version": "1.12.0"
+    },
+    "nftban_memory_pressure_level": {
+      "type": "gauge",
+      "category": "runtime",
+      "source": "go_nftban",
+      "description": "Memory pressure level (0=normal, 1=moderate, 2=high, 3=critical)",
+      "labels": {},
+      "value_mapping": {
+        "0": "normal",
+        "1": "moderate",
+        "2": "high",
+        "3": "critical"
+      },
+      "added_version": "1.12.0"
+    },
+    "nftban_memory_budget_bytes": {
+      "type": "gauge",
+      "unit": "bytes",
+      "category": "runtime",
+      "source": "go_nftban",
+      "description": "Current memory budget allocated to daemon",
+      "labels": {},
+      "added_version": "1.12.0"
+    },
+    "nftban_memory_used_percent": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "runtime",
+      "source": "go_nftban",
+      "description": "Percentage of memory budget currently used",
+      "labels": {},
+      "thresholds": {
+        "warning": ">= 70",
+        "critical": ">= 90"
+      },
+      "added_version": "1.12.0"
+    },
+    "nftban_permanent_bans_total": {
+      "type": "gauge",
+      "category": "blocks",
+      "source": "go_nftban",
+      "description": "Total number of permanent bans currently active",
+      "labels": {},
+      "added_version": "1.12.0"
+    },
+    "nftban_permanent_bans_protected": {
+      "type": "gauge",
+      "category": "blocks",
+      "source": "go_nftban",
+      "description": "Number of permanent bans protected from eviction",
+      "labels": {},
+      "added_version": "1.12.0"
+    },
+    "nftban_permanent_bans_evictable": {
+      "type": "gauge",
+      "category": "blocks",
+      "source": "go_nftban",
+      "description": "Number of permanent bans eligible for eviction under pressure",
+      "labels": {},
+      "added_version": "1.12.0"
+    },
+    "nftban_cidr_limit_hard": {
+      "type": "gauge",
+      "category": "firewall",
+      "source": "go_nftban",
+      "description": "Hard limit for CIDR entries in firewall sets",
+      "labels": {},
+      "added_version": "1.12.0"
+    },
+    "nftban_cidr_current_total": {
+      "type": "gauge",
+      "category": "firewall",
+      "source": "go_nftban",
+      "description": "Current total CIDR entries across all firewall sets",
+      "labels": {},
+      "added_version": "1.12.0"
     }
   },
   "zabbix_mapping": {
@@ -2346,49 +2644,51 @@
     "patch": "Documentation updates, bug fixes"
   },
   "_metadata": {
-    "total_metrics": 195,
+    "total_metrics": 217,
     "by_type": {
-      "gauge": 153,
-      "counter": 40,
-      "histogram": 2
+      "gauge": 165,
+      "counter": 48,
+      "histogram": 4
     },
     "by_source": {
-      "go_nftban": 14,
+      "go_nftban": 36,
       "go_sampler": 7,
       "shell_prometheus": 106,
       "planned": 68
     },
     "by_category": {
       "daemon": 25,
-      "watchdog": 8,
-      "runtime": 7,
+      "watchdog": 11,
+      "runtime": 10,
       "ipc": 3,
       "throughput": 2,
-      "blocks": 27,
-      "firewall": 7,
+      "blocks": 31,
+      "firewall": 9,
       "network": 20,
       "protocol": 2,
       "connections": 7,
       "feeds": 14,
       "health": 2,
       "exporter": 2,
-      "operations": 2,
+      "operations": 4,
       "sync": 1,
       "loginmon": 2,
       "portscan": 2,
-      "ddos": 2,
+      "ddos": 3,
       "geoban": 7,
       "modules": 24,
-      "analytics": 3,
+      "analytics": 4,
       "alerts": 1,
       "suricata": 9,
       "eventbus": 5,
-      "nftables": 6,
-      "bans": 5
+      "nftables": 8,
+      "bans": 5,
+      "auth": 2,
+      "api": 2
     },
-    "total_labels": 19,
-    "bounded_cardinality_labels": 16,
-    "moderate_cardinality_labels": 2,
+    "total_labels": 25,
+    "bounded_cardinality_labels": 20,
+    "moderate_cardinality_labels": 4,
     "forbidden_labels": 4,
     "notes": [
       "Metrics may overlap across sources (e.g., blocks_total in both sampler and collector)",
@@ -2398,9 +2698,9 @@
       "68 metrics are planned (phase 3-5) - source will be assigned at implementation time",
       "bans_total exists in multiple packages with DIFFERENT FQNs: nftban_bans_total (operations), nftban_analytics_bans_total (analytics), nftban_loginmon_bans_total, nftban_portscan_bans_total - NOT duplicates",
       "Pro module reads local data files (bans.log, metrics cache, reports) - exporter pipeline unchanged",
-      "Added 24 undocumented shell_prometheus metrics: server inventory, daemon process, attack patterns, network compatibility, bandwidth, panel detection, and aliases"
+      "Added 22 Go metrics from nftban.go in v1.12.0: ban/unban errors, auth metrics, API metrics, nft CLI metrics, DDoS mitigations, country-based counters, protection status, memory pressure, permanent ban management, and CIDR limits"
     ],
     "last_updated": "2026-02-09",
-    "update_reason": "Added 24 undocumented shell exporter metrics for server inventory, daemon process, attack patterns, network compatibility (Zabbix), bandwidth, control panel detection, and compatibility aliases"
+    "update_reason": "Added 22 undocumented Go metrics from nftban.go: operations errors, auth, API, nftables CLI, DDoS mitigations, country-based analytics, watchdog protection status, runtime memory management, and firewall CIDR tracking"
   }
 }
