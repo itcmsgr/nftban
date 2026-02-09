@@ -540,11 +540,14 @@ nftban_watchdog_get_top_cpu() {
     # Process stats - only some fields used
     # shellcheck disable=SC2034
     local count="${NFTBAN_WATCHDOG_PROC_TOP_COUNT:-10}"
+    # Ensure count is a valid positive integer (fixes head -"" error)
+    [[ ! "$count" =~ ^[1-9][0-9]*$ ]] && count=10
     local -a procs=()
 
     # Read all process stats quickly
     # shellcheck disable=SC2034  # Structured read - only some fields used
-    local pid cmdline comm state utime stime
+    # Declare loop variables outside loop to avoid 'local' exit code issues with set -e
+    local pid cmdline comm state utime stime stat_line cpu_time vmrss
     for proc_dir in /proc/[0-9]*/; do
         pid="${proc_dir#/proc/}"
         pid="${pid%/}"
@@ -554,16 +557,14 @@ nftban_watchdog_get_top_cpu() {
         comm=$(cat "/proc/$pid/comm" 2>/dev/null) || continue
 
         # Read stat for CPU time
-        local stat_line
         stat_line=$(cat "/proc/$pid/stat" 2>/dev/null) || continue
 
         # Parse stat: pid (comm) state ... utime(14) stime(15)
         # Use awk for reliable parsing
-        local cpu_time
         cpu_time=$(echo "$stat_line" | awk '{print $14 + $15}')
 
         # Read status for memory
-        local vmrss=0
+        vmrss=0
         while IFS=': ' read -r key value _; do
             [[ "$key" == "VmRSS" ]] && { vmrss=$value; break; }
         done < "/proc/$pid/status" 2>/dev/null
@@ -599,20 +600,23 @@ nftban_watchdog_get_top_mem() {
     fi
 
     local count="${NFTBAN_WATCHDOG_PROC_TOP_COUNT:-10}"
+    # Ensure count is a valid positive integer (fixes head -"" error)
+    [[ ! "$count" =~ ^[1-9][0-9]*$ ]] && count=10
     local -a procs=()
 
     # Read all process memory quickly
+    # Declare loop variables outside loop to avoid 'local' exit code issues with set -e
+    local pid comm vmrss
     for proc_dir in /proc/[0-9]*/; do
-        local pid="${proc_dir#/proc/}"
+        pid="${proc_dir#/proc/}"
         pid="${pid%/}"
         [[ ! -d "/proc/$pid" ]] && continue
 
         # Read comm (process name)
-        local comm
         comm=$(cat "/proc/$pid/comm" 2>/dev/null) || continue
 
         # Read status for memory
-        local vmrss=0
+        vmrss=0
         while IFS=': ' read -r key value _; do
             [[ "$key" == "VmRSS" ]] && { vmrss=$value; break; }
         done < "/proc/$pid/status" 2>/dev/null
