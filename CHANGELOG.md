@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.2] - 2026-02-09
+
+### Bug Fixes (Maintenance & Cleanup)
+
+- **fix(maintenance)**: Remove double-locking bug causing "Maintenance already running"
+  - Root cause: systemd `flock` creates lock file, then script's internal check sees it and exits
+  - Fix: Remove script-side lock checking, let systemd flock handle it
+  - Impact: All 5 lab servers had blocked maintenance for 19+ days
+
+- **fix(logrotate)**: Add missing `/var/log/nftban/watchdog/` directory rotation
+  - Added: alerts.log, stats.log, profiles.log rotation (weekly, 4 rotations)
+
+- **feat(cleanup)**: Add comprehensive cleanup function `nftban_watchdog_cleanup_all()`
+  - Cleans: reports (7d), stats/history (30d), profiles (7d), recorder (7d)
+  - Called hourly during maintenance trend collection
+  - Fixes 13,000-16,000 accumulated files on lab servers
+
+### Cross-Distro Validation
+- Tested on all 5 lab servers after fix deployment
+- Maintenance now completes successfully on all servers
+
+---
+
 ## [1.12.1] - 2026-02-09
 
 ### Bug Fixes (Cross-Distro Validation)

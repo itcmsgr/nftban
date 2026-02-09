@@ -990,6 +990,54 @@ nftban_watchdog_cleanup_old() {
     echo "$removed"
 }
 
+nftban_watchdog_cleanup_all() {
+    # Comprehensive cleanup of all watchdog-related data directories
+    # Called by maintenance.sh for periodic housekeeping
+    local total_removed=0
+    local removed
+
+    # 1. Watchdog reports (already handled by cleanup_old)
+    removed=$(nftban_watchdog_cleanup_old 2>/dev/null) || removed=0
+    total_removed=$((total_removed + removed))
+
+    # 2. Stats history directory - keep 30 days
+    local stats_history_dir="${NFTBAN_DATA_DIR:-/var/lib/nftban}/stats/history"
+    if [[ -d "$stats_history_dir" ]]; then
+        removed=0
+        while IFS= read -r -d '' file; do
+            rm -f "$file" && ((removed++))
+        done < <(find "$stats_history_dir" -name "*.json" -type f -mtime +30 -print0 2>/dev/null)
+        [[ $removed -gt 0 ]] && watchdog_log "INFO" "Cleanup: removed $removed old stats history files (>30 days)"
+        total_removed=$((total_removed + removed))
+    fi
+
+    # 3. Profiles directory - keep 7 days (pprof captures)
+    local profiles_dir="${NFTBAN_WATCHDOG_PROFILE_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/stats/profiles}"
+    local profile_retention="${NFTBAN_WATCHDOG_PROFILE_RETENTION_DAYS:-7}"
+    if [[ -d "$profiles_dir" ]]; then
+        removed=0
+        while IFS= read -r -d '' file; do
+            rm -f "$file" && ((removed++))
+        done < <(find "$profiles_dir" -type f -mtime +"$profile_retention" -print0 2>/dev/null)
+        [[ $removed -gt 0 ]] && watchdog_log "INFO" "Cleanup: removed $removed old profile captures (>${profile_retention} days)"
+        total_removed=$((total_removed + removed))
+    fi
+
+    # 4. Flight recorder directory - keep 7 days
+    local recorder_dir="${NFTBAN_RECORDER_DIR:-${NFTBAN_DATA_DIR:-/var/lib/nftban}/recorder}"
+    local recorder_retention="${NFTBAN_RECORDER_RETENTION_DAYS:-7}"
+    if [[ -d "$recorder_dir" ]]; then
+        removed=0
+        while IFS= read -r -d '' file; do
+            rm -f "$file" && ((removed++))
+        done < <(find "$recorder_dir" -type f -mtime +"$recorder_retention" -print0 2>/dev/null)
+        [[ $removed -gt 0 ]] && watchdog_log "INFO" "Cleanup: removed $removed old recorder files (>${recorder_retention} days)"
+        total_removed=$((total_removed + removed))
+    fi
+
+    echo "$total_removed"
+}
+
 # =============================================================================
 # MAIN ENTRY POINT (for timer/service)
 # =============================================================================
@@ -1509,6 +1557,7 @@ export -f nftban_watchdog_check_fd
 export -f nftban_watchdog_get_top_cpu
 export -f nftban_watchdog_get_top_mem
 export -f nftban_watchdog_cleanup_old
+export -f nftban_watchdog_cleanup_all
 export -f nftban_watchdog_trend_collect
 export -f nftban_watchdog_trend_display
 export -f nftban_watchdog_trend_averages
