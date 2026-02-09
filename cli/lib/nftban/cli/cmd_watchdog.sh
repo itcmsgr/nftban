@@ -908,6 +908,126 @@ nftban_watchdog_cmd_trend() {
 }
 
 # =============================================================================
+# TRENDS COMMAND (JSONL per-cycle data)
+# =============================================================================
+
+nftban_watchdog_cmd_trends() {
+    # View JSONL trend log (per-cycle data)
+    #
+    # Options:
+    #   --last=N     Show last N entries (default: 50)
+    #   --json       Output raw JSON lines
+    #   --stats      Show statistics summary
+    #   --follow     Follow log in real-time (like tail -f)
+
+    local last_count=50
+    local raw_json=false
+    local show_stats=false
+    local follow_mode=false
+
+    for arg in "$@"; do
+        case "$arg" in
+            --last=*) last_count="${arg#--last=}" ;;
+            --json) raw_json=true ;;
+            --stats) show_stats=true ;;
+            --follow|-f) follow_mode=true ;;
+        esac
+    done
+
+    local trends_file="${NFTBAN_WATCHDOG_TRENDS_JSONL:-/var/log/nftban/watchdog/trends.jsonl}"
+
+    if [[ ! -f "$trends_file" ]]; then
+        echo "No JSONL trend data found: $trends_file"
+        echo ""
+        echo "Trend data is recorded after each watchdog cycle."
+        echo "Enable watchdog: nftban watchdog enable"
+        return 0
+    fi
+
+    if [[ "$follow_mode" == "true" ]]; then
+        echo "Following $trends_file (Ctrl+C to stop)..."
+        tail -f "$trends_file"
+        return
+    fi
+
+    if [[ "$show_stats" == "true" ]]; then
+        # Show statistics from the JSONL data
+        if ! command -v jq &>/dev/null; then
+            echo "ERROR: jq is required for --stats" >&2
+            return 1
+        fi
+
+        local line_count
+        line_count=$(wc -l < "$trends_file")
+
+        echo "JSONL Trend Statistics"
+        echo "═══════════════════════════════════════════════════════════════"
+        echo "File: $trends_file"
+        echo "Total entries: $line_count"
+        echo ""
+
+        # Calculate stats using jq
+        # Read last N lines and aggregate
+        tail -n "$last_count" "$trends_file" | jq -s '
+            if length == 0 then
+                {"error": "No data"}
+            else
+                {
+                    "entries": length,
+                    "first_ts": (.[0].ts // "N/A"),
+                    "last_ts": (.[-1].ts // "N/A"),
+                    "mode_counts": (group_by(.mode) | map({key: .[0].mode, value: length}) | from_entries),
+                    "cpu": {
+                        "avg": ([.[].cpu] | add / length | floor),
+                        "min": ([.[].cpu] | min),
+                        "max": ([.[].cpu] | max)
+                    },
+                    "mem": {
+                        "avg": ([.[].mem] | add / length | floor),
+                        "min": ([.[].mem] | min),
+                        "max": ([.[].mem] | max)
+                    },
+                    "io": {
+                        "avg": ([.[].io] | add / length | . * 10 | floor / 10),
+                        "min": ([.[].io] | min),
+                        "max": ([.[].io] | max)
+                    },
+                    "total_actions": ([.[].actions] | add)
+                }
+            end
+        '
+        return
+    fi
+
+    if [[ "$raw_json" == "true" ]]; then
+        # Output raw JSON lines
+        tail -n "$last_count" "$trends_file"
+    else
+        # Formatted output
+        echo "Recent Watchdog Trends (last $last_count entries)"
+        echo "═══════════════════════════════════════════════════════════════"
+        printf "%-25s  %-8s  %5s  %5s  %5s  %7s\n" "TIMESTAMP" "MODE" "CPU%" "MEM%" "IO%" "ACTIONS"
+        echo "───────────────────────────────────────────────────────────────"
+
+        if command -v jq &>/dev/null; then
+            tail -n "$last_count" "$trends_file" | jq -r '
+                "\(.ts | split("T") | .[0] + " " + (.[1] | split("+")[0] | split(".")[0]))  \(.mode | if . == "normal" then "OK" elif . == "degraded" then "WARN" else "CRIT" end | . + ("        "[0:(8-length)]))  \(.cpu | tostring | . + ("     "[0:(5-length)]))  \(.mem | tostring | . + ("     "[0:(5-length)]))  \(.io | tostring | . + ("     "[0:(5-length)]))  \(.actions)"
+            ' 2>/dev/null || {
+                echo "(jq parse error - showing raw data)"
+                tail -n "$last_count" "$trends_file"
+            }
+        else
+            # Fallback without jq
+            tail -n "$last_count" "$trends_file"
+        fi
+
+        echo "───────────────────────────────────────────────────────────────"
+        echo ""
+        echo "Use --stats for aggregated statistics, --json for raw data"
+    fi
+}
+
+# =============================================================================
 # MAIN CLI HANDLER
 # =============================================================================
 
@@ -961,6 +1081,9 @@ nftban_cmd_watchdog() {
             ;;
         trend)
             nftban_watchdog_cmd_trend "$@"
+            ;;
+        trends)
+            nftban_watchdog_cmd_trends "$@"
             ;;
         stats)
             nftban_watchdog_cmd_stats "$@"
