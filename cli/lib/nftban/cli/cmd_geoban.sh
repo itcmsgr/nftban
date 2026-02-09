@@ -141,7 +141,7 @@ nftban_cmd_geoban() {
             # Pass directly to geoip handler
             nftban_cmd_geoip "$@"
             ;;
-        help|--help|-h)
+        help|-h|--help)
             nftban_geoban_help
             ;;
         *)

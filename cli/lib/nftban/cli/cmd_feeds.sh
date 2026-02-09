@@ -634,7 +634,7 @@ nftban_cmd_feeds() {
         status)
             nftban_feeds_status_json "$json_mode"
             ;;
-        help|--help|-h)
+        help|-h|--help)
             _nftban_feeds_help
             ;;
         *)

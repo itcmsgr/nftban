@@ -5,22 +5,25 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: List banned IPs, whitelisted IPs, and other nftables sets
 #
-# meta:name=cmd_list
-# meta:type=cli
-# meta:header=List Command
-# meta:version=1.0.0
+# meta:name="cmd_list"
+# meta:type="cli"
+# meta:header="List Command"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
+# meta:description="List banned IPs, whitelist, and other nftables sets"
+# meta:input="Optional: set type (banned, whitelist, all)"
+# meta:output="List of IPs with metadata"
+# meta:depends="bash,nft"
+# meta:created_date="2025-11-24"
 #
-# **Description & Purpose**
-# meta:description=List banned IPs, whitelist, and other nftables sets
-# meta:input=Optional: set type (banned, whitelist, all)
-# meta:output=List of IPs with metadata
-#
-# **Inventory & Requirements**
-# meta:depends=bash,nft
-#
-# meta:created_date=2025-11-24
+# meta:inventory.files=""
+# meta:inventory.binaries="nft"
+# meta:inventory.env_vars="NFTBAN_LIB_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
 
 [[ -z "${NFTBAN_LIB_DIR:-}" ]] && readonly NFTBAN_LIB_DIR="/usr/lib/nftban"
@@ -113,7 +116,7 @@ nftban_cmd_list() {
                 json_output=true
                 shift
                 ;;
-            --help|-h)
+            help|-h|--help)
                 nftban_cmd_list_usage
                 return 0
                 ;;

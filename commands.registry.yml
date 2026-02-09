@@ -11,8 +11,8 @@
 #   - RBAC enforcement
 #   - Man page generation
 #
-# Schema Version: 1.0
-# Last Updated: 2025-12-31
+# Schema Version: 1.1
+# Last Updated: 2026-02-09
 # =============================================================================
 
 # =============================================================================
@@ -41,6 +41,58 @@
 #
 # has_json: true | false - current --json implementation status
 # =============================================================================
+
+# =============================================================================
+# GLOBAL OPTIONS (inherited by all commands)
+# =============================================================================
+# These options are available to ALL commands and don't need to be repeated
+# in each command's options section. CLI parsers should handle these first.
+
+global_options:
+  --help:
+    aliases: ["-h", "help"]
+    type: bool
+    description: "Show command help and usage information"
+    pattern: "help|-h|--help"
+  --version:
+    aliases: ["-V"]
+    type: bool
+    description: "Show version information"
+    note: "Use -V to avoid conflict with -v for verbose"
+  --json:
+    aliases: ["-j"]
+    type: bool
+    description: "Output in JSON format (machine-readable)"
+    pattern: "--json|-j"
+  --quiet:
+    aliases: ["-q"]
+    type: bool
+    description: "Suppress informational messages and tips"
+    pattern: "--quiet|-q"
+  --verbose:
+    type: bool
+    description: "Enable verbose/debug output"
+  --dry-run:
+    type: bool
+    description: "Preview changes without executing (where supported)"
+  --force:
+    aliases: ["-f"]
+    type: bool
+    description: "Skip confirmation prompts"
+    pattern: "--force|-f"
+
+# Standard parameter patterns (for reference in command definitions)
+standard_params:
+  time_range:
+    --since: {type: string, format: "YYYY-MM-DD", description: "Start date"}
+    --until: {type: string, format: "YYYY-MM-DD", description: "End date"}
+    --last: {type: string, values: ["1h", "24h", "7d", "30d"], description: "Relative time period"}
+  output:
+    --format: {type: enum, values: ["json", "csv", "text", "html"], description: "Output format"}
+    --output: {aliases: ["-o"], type: string, description: "Output file path"}
+  filtering:
+    --type: {aliases: ["-t"], type: string, description: "Filter by type"}
+    --source: {type: string, description: "Filter by source module"}
 
 # =============================================================================
 # GROUP 0: SETUP & DISCOVERY
@@ -108,15 +160,7 @@ status:
   panel_expose: true
   output_modes: [json, text]
   has_json: true
-  options:
-    --json:
-      type: bool
-      required: false
-      description: "Output in JSON format"
-    --quiet:
-      type: bool
-      required: false
-      description: "Suppress suggestions and tips"
+  # options: inherits global_options (--json, --quiet)
   examples:
     - "nftban status"
     - "nftban status --json"
@@ -134,11 +178,7 @@ health:
   panel_expose: true
   output_modes: [json, text]
   has_json: true
-  options:
-    --json:
-      type: bool
-      required: false
-      description: "Output in JSON format"
+  # options: inherits global_options (--json)
   examples:
     - "nftban health check"
     - "nftban health fix"
@@ -213,10 +253,7 @@ version:
   output_modes: [json, text]
   has_json: true
   options:
-    --json:
-      type: bool
-      required: false
-      description: "Output in JSON format"
+    # Global: --json (inherited)
     --short:
       type: bool
       required: false
@@ -302,6 +339,7 @@ ban:
       required: true
       description: "IP address to ban (IPv4 or IPv6)"
   options:
+    # Global: --json (inherited)
     --timeout:
       type: int
       required: false
@@ -315,10 +353,6 @@ ban:
       required: false
       default: "manual"
       description: "Ban source (login, portscan, ddos, manual)"
-    --json:
-      type: bool
-      required: false
-      description: "Output in JSON format"
   examples:
     - "nftban ban 1.2.3.4"
     - "nftban ban 1.2.3.4 --timeout 3600"
@@ -423,12 +457,7 @@ list:
       default: "banned"
       values: [banned, whitelist, all]
       description: "List type"
-  options:
-    --json:
-      type: bool
-      required: false
-      alias: "-j"
-      description: "Output in JSON format"
+  # options: inherits global_options (--json)
   examples:
     - "nftban list banned"
     - "nftban list whitelist"
@@ -1020,25 +1049,7 @@ geoban:
     - "nftban geoban whitelist US"
     - "nftban geoban list --json"
 
-cloudflare:
-  category: active_protection
-  description: "Cloudflare IP ranges management (alias for: trust ... CLOUDFLARE)"
-  risk: core
-  audience: [cli, auditor]
-  capability: policy_change
-  mutates: conditional
-  supports_dry_run: false
-  requires_root: false
-  panel_expose: false
-  output_modes: [text]
-  has_json: false
-  alias_for: "trust CLOUDFLARE"
-  examples:
-    - "nftban cloudflare status"
-    - "nftban cloudflare enable"
-    - "nftban cloudflare update"
-  see_also:
-    - trust
+# NOTE: cloudflare command removed in v1.10.0 - use "nftban trust ... CLOUDFLARE" instead
 
 # =============================================================================
 # GROUP 3: INFRASTRUCTURE

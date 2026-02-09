@@ -129,7 +129,7 @@ nftban_cmd_report() {
     echo ""
 
     case "$subcommand" in
-        help|--help|-h)
+        help|-h|--help)
             nftban_report_cmd_help
             return 0
             ;;

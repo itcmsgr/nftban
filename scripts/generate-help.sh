@@ -5,11 +5,25 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Generate task-grouped CLI help from commands.registry.yml
 #
+# meta:name="generate-help"
+# meta:type="script"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:created_date="2025-12-01"
+# meta:description="Generate task-grouped CLI help from commands.registry.yml"
+#
+# meta:inventory.files="commands.registry.yml"
+# meta:inventory.binaries="yq"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="none"
+#
 # Usage: ./scripts/generate-help.sh [--profile operator|auditor]
 # Output: Formatted help text for nftban help command
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Source central config for canonical paths (NO HARDCODED FALLBACKS)
 # shellcheck source=/etc/nftban/nftban.conf
@@ -136,6 +150,27 @@ should_show_for_profile() {
 # HELP OUTPUT GENERATION
 # =============================================================================
 
+generate_global_options() {
+    # Auto-generate global options from registry
+    echo "Global Options:"
+
+    # Parse global_options from registry and format for display
+    yq -r '
+        .global_options | to_entries |
+        map(
+            "  " + .key +
+            (if .value.aliases then ", " + (.value.aliases | join(", ")) else "" end) +
+            "    " + .value.description
+        ) | .[]
+    ' "$REGISTRY" 2>/dev/null | while read -r line; do
+        # Reformat for alignment (option on left, description on right)
+        local opt desc
+        opt=$(echo "$line" | sed 's/    .*//')
+        desc=$(echo "$line" | sed 's/.*    //')
+        printf "  %-18s %s\n" "$opt" "$desc"
+    done
+}
+
 generate_help_header() {
     cat <<'EOF'
 NFTBan - Adaptive Firewall Management
@@ -143,12 +178,12 @@ NFTBan - Adaptive Firewall Management
 
 Usage: nftban <command> [subcommand] [options]
 
-Global Options:
-  --json        Output in JSON format (where supported)
-  --dry-run     Preview changes without applying (for mutating commands)
-  --quiet       Suppress non-essential output
-  --verbose     Show detailed diagnostic output
-  --help, -h    Show command-specific help
+EOF
+
+    # Auto-generate global options from registry (single source of truth)
+    generate_global_options
+
+    cat <<'EOF'
 
 Quick Examples:
   nftban status                    # System overview

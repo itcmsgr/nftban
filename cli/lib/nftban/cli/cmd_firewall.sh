@@ -106,7 +106,7 @@ nftban_cmd_firewall() {
     fi
 
     case "$subcommand" in
-        help|--help|-h)
+        help|-h|--help)
             show_firewall_help
             return 0
             ;;

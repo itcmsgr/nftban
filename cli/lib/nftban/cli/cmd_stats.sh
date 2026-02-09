@@ -170,7 +170,7 @@ nftban_cmd_stats() {
 
     # If no args or help requested, show dashboard
     case "$subcommand" in
-        help|--help|-h)
+        help|-h|--help)
             nftban_stats_cmd_help
             return 0
             ;;
@@ -261,7 +261,7 @@ nftban_stats_cmd_dashboard() {
     # Parse options
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --json)
+            --json|-j)
                 json_mode=true
                 shift
                 ;;
@@ -669,7 +669,7 @@ nftban_stats_cmd_top() {
     shift 2 2>/dev/null || shift $# 2>/dev/null || true
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --json)
+            --json|-j)
                 json_mode=true
                 shift
                 ;;
@@ -845,7 +845,7 @@ nftban_stats_cmd_ip() {
     # Parse options
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --json)
+            --json|-j)
                 json_mode=true
                 shift
                 ;;
@@ -946,7 +946,7 @@ nftban_stats_cmd_recent() {
     # Parse options
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --json)
+            --json|-j)
                 json_mode=true
                 shift
                 ;;
@@ -1222,7 +1222,7 @@ nftban_stats_cmd_trend() {
 
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --json)
+            --json|-j)
                 json_mode=1
                 shift
                 ;;

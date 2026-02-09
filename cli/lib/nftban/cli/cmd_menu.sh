@@ -428,19 +428,19 @@ screen_fail2ban() {
 }
 
 screen_cloudflare() {
-    # Cloudflare integration screen
+    # Cloudflare integration screen (now via trust module)
     local choice
-    choice="$(ui_menu "Cloudflare" "$BACKTITLE" \
+    choice="$(ui_menu "Cloudflare (Trust Module)" "$BACKTITLE" \
         status "Status" \
         enable "Enable" \
         disable "Disable" \
         update "Update IP ranges" \
         back "Back")" || return
     case "$choice" in
-        status) run_cmd "Cloudflare Status" nftban cloudflare status ;;
-        enable) require_root && run_cmd "Cloudflare Enable" nftban cloudflare enable ;;
-        disable) require_root && run_cmd "Cloudflare Disable" nftban cloudflare disable ;;
-        update) require_root && run_cmd "Cloudflare Update" nftban cloudflare update ;;
+        status) run_cmd "Cloudflare Status" nftban trust status CLOUDFLARE ;;
+        enable) require_root && run_cmd "Cloudflare Enable" nftban trust enable CLOUDFLARE ;;
+        disable) require_root && run_cmd "Cloudflare Disable" nftban trust disable CLOUDFLARE ;;
+        update) require_root && run_cmd "Cloudflare Update" nftban trust update CLOUDFLARE ;;
         back) ;;
     esac
 }

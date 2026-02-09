@@ -1097,7 +1097,7 @@ nftban_cmd_watchdog() {
         profiles)
             nftban_watchdog_cmd_profiles "$@"
             ;;
-        help|--help|-h)
+        help|-h|--help)
             nftban_watchdog_help
             ;;
         *)

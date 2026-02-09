@@ -1955,6 +1955,161 @@
         "critical": ">= 80"
       }
     },
+    "nftban_watchdog_load_avg": {
+      "type": "gauge",
+      "unit": "load",
+      "category": "watchdog",
+      "source": "shell_prometheus",
+      "description": "System load average",
+      "labels": {
+        "period": {
+          "type": "enum",
+          "values": ["1m", "5m", "15m"],
+          "description": "Load average period"
+        }
+      },
+      "cardinality": 3,
+      "added_version": "1.10.0"
+    },
+    "nftban_watchdog_memory_used_percent": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "watchdog",
+      "source": "shell_prometheus",
+      "description": "Memory usage percentage",
+      "labels": {},
+      "thresholds": {
+        "warning": ">= 80",
+        "critical": ">= 95"
+      },
+      "added_version": "1.10.0"
+    },
+    "nftban_watchdog_memory_bytes": {
+      "type": "gauge",
+      "unit": "bytes",
+      "category": "watchdog",
+      "source": "shell_prometheus",
+      "description": "Memory usage by type",
+      "labels": {
+        "type": {
+          "type": "enum",
+          "values": ["total", "available", "swap_used"],
+          "description": "Memory type"
+        }
+      },
+      "cardinality": 3,
+      "added_version": "1.10.0"
+    },
+    "nftban_watchdog_iowait_percent": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "watchdog",
+      "source": "shell_prometheus",
+      "description": "I/O wait percentage (disk bottleneck indicator)",
+      "labels": {},
+      "thresholds": {
+        "warning": ">= 20",
+        "critical": ">= 40"
+      },
+      "added_version": "1.10.0"
+    },
+    "nftban_watchdog_disk_used_percent": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "watchdog",
+      "source": "shell_prometheus",
+      "description": "Disk usage percentage",
+      "labels": {
+        "path": {
+          "type": "string",
+          "description": "Monitored filesystem path"
+        }
+      },
+      "thresholds": {
+        "warning": ">= 80",
+        "critical": ">= 95"
+      },
+      "added_version": "1.10.0"
+    },
+    "nftban_watchdog_fd_allocated": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "watchdog",
+      "source": "shell_prometheus",
+      "description": "File descriptors currently allocated",
+      "labels": {},
+      "added_version": "1.10.0"
+    },
+    "nftban_watchdog_fd_max": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "watchdog",
+      "source": "shell_prometheus",
+      "description": "Maximum file descriptors allowed",
+      "labels": {},
+      "added_version": "1.10.0"
+    },
+    "nftban_watchdog_alert_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "watchdog",
+      "source": "shell_prometheus",
+      "description": "Total alerts triggered",
+      "labels": {
+        "severity": {
+          "type": "enum",
+          "values": ["warning", "critical"],
+          "description": "Alert severity level"
+        }
+      },
+      "cardinality": 2,
+      "added_version": "1.10.0"
+    },
+    "nftban_watchdog_last_check_timestamp": {
+      "type": "gauge",
+      "unit": "timestamp",
+      "category": "watchdog",
+      "source": "shell_prometheus",
+      "description": "Unix timestamp of last watchdog check",
+      "labels": {},
+      "added_version": "1.10.0"
+    },
+    "nftban_watchdog_capability": {
+      "type": "gauge",
+      "unit": "flags",
+      "category": "watchdog",
+      "source": "shell_prometheus",
+      "description": "Watchdog capability flags (bitmask)",
+      "labels": {},
+      "added_version": "1.10.0"
+    },
+    "nftban_watchdog_actions_taken": {
+      "type": "counter",
+      "unit": "count",
+      "category": "watchdog",
+      "source": "go_nftban",
+      "description": "Total actions taken by dynamic watchdog",
+      "labels": {},
+      "added_version": "1.12.0"
+    },
+    "nftban_watchdog_mode_changes": {
+      "type": "counter",
+      "unit": "count",
+      "category": "watchdog",
+      "source": "go_nftban",
+      "description": "Total mode transitions (normal/degraded/survival)",
+      "labels": {},
+      "added_version": "1.12.0"
+    },
+    "nftban_watchdog_last_action": {
+      "type": "gauge",
+      "unit": "info",
+      "category": "watchdog",
+      "source": "go_nftban",
+      "description": "Description of last watchdog action taken",
+      "labels": {},
+      "added_version": "1.12.0"
+    },
     "nftban_server_memory_total": {
       "type": "gauge",
       "unit": "bytes",
@@ -2592,6 +2747,16 @@
       "nftban_watchdog_actions_taken": "nftban.watchdog.actions_taken",
       "nftban_watchdog_last_action": "nftban.watchdog.last_action",
       "nftban_watchdog_mode_changes": "nftban.watchdog.mode_changes",
+      "nftban_watchdog_load_avg": "nftban.watchdog.load_avg",
+      "nftban_watchdog_memory_used_percent": "nftban.watchdog.memory_used_percent",
+      "nftban_watchdog_memory_bytes": "nftban.watchdog.memory_bytes",
+      "nftban_watchdog_iowait_percent": "nftban.watchdog.iowait_percent",
+      "nftban_watchdog_disk_used_percent": "nftban.watchdog.disk_used_percent",
+      "nftban_watchdog_fd_allocated": "nftban.watchdog.fd_allocated",
+      "nftban_watchdog_fd_max": "nftban.watchdog.fd_max",
+      "nftban_watchdog_alert_total": "nftban.watchdog.alert_total",
+      "nftban_watchdog_last_check_timestamp": "nftban.watchdog.last_check_timestamp",
+      "nftban_watchdog_capability": "nftban.watchdog.capability",
       "nftban_nft_rules_total": "nftban.nft.rules_total",
       "nftban_nft_sets_total": "nftban.nft.sets_total",
       "nftban_nft_elements_total": "nftban.nft.elements_total",
@@ -2644,21 +2809,21 @@
     "patch": "Documentation updates, bug fixes"
   },
   "_metadata": {
-    "total_metrics": 217,
+    "total_metrics": 230,
     "by_type": {
-      "gauge": 165,
-      "counter": 48,
+      "gauge": 176,
+      "counter": 50,
       "histogram": 4
     },
     "by_source": {
-      "go_nftban": 36,
+      "go_nftban": 39,
       "go_sampler": 7,
-      "shell_prometheus": 106,
+      "shell_prometheus": 116,
       "planned": 68
     },
     "by_category": {
       "daemon": 25,
-      "watchdog": 11,
+      "watchdog": 24,
       "runtime": 10,
       "ipc": 3,
       "throughput": 2,

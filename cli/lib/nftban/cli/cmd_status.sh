@@ -122,15 +122,15 @@ nftban_cmd_status() {
     # Parse arguments
     while [[ $# -gt 0 ]]; do
         case "$1" in
-            --json)
+            --json|-j)
                 json_mode=1
                 shift
                 ;;
-            --quiet)
+            --quiet|-q)
                 quiet_mode=1
                 shift
                 ;;
-            help|--help|-h)
+            help|-h|--help)
                 show_usage
                 return 0
                 ;;
