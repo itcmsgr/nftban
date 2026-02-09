@@ -788,50 +788,53 @@ nftban_watchdog_report() {
     fi
 
     # Module Resources (per-module CPU/Memory)
-    local has_module_data=false
-    for key in "${!WATCHDOG_RESULTS[@]}"; do
-        [[ "$key" == module_*_mem_bytes ]] && has_module_data=true && break
-    done
+    # Always show if any nftban services are running
+    echo "MODULE RESOURCES:"
+    printf "  %-20s %8s %10s %10s\n" "MODULE" "CPU%" "MEM(MB)" "STATUS"
 
-    if [[ "$has_module_data" == "true" ]]; then
-        echo "MODULE RESOURCES:"
-        printf "  %-20s %8s %8s %12s\n" "MODULE" "CPU%" "MEM%" "MEM(MB)"
-
-        # Systemd modules (login-monitor, feeds, maintenance, etc.)
-        local systemd_modules="login-monitor feeds maintenance geoip-update portscan ddos geoban"
-        for mod in $systemd_modules; do
-            local mem_bytes="${WATCHDOG_RESULTS[module_${mod}_memory]:-0}"
-            local duration="${WATCHDOG_RESULTS[module_${mod}_duration]:-0}"
-            if [[ $mem_bytes -gt 0 || $duration -gt 0 ]]; then
-                local mem_mb=$((mem_bytes / 1024 / 1024))
-                printf "  %-20s %8s %8s %12s\n" "$mod" "-" "-" "${mem_mb}MB"
-            fi
-        done
-
-        # Embedded modules (from daemon)
-        local embedded_modules="portscan ddos geoban"
-        for mod in $embedded_modules; do
-            local cpu_pct="${WATCHDOG_RESULTS[module_${mod}_cpu_pct]:-}"
-            local mem_pct="${WATCHDOG_RESULTS[module_${mod}_mem_pct]:-}"
-            local mem_bytes="${WATCHDOG_RESULTS[module_${mod}_mem_bytes]:-0}"
-            if [[ -n "$cpu_pct" || -n "$mem_pct" ]]; then
-                local mem_mb=$((mem_bytes / 1024 / 1024))
-                printf "  %-20s %7s%% %7s%% %12s\n" "${mod}(daemon)" "${cpu_pct:-0}" "${mem_pct:-0}" "${mem_mb}MB"
-            fi
-        done
-
-        # Suricata (special - external process)
-        local suricata_pid suricata_mem_kb=0 suricata_mem_mb=0 suricata_cpu=0
-        suricata_pid=$(pgrep -x suricata 2>/dev/null | head -1)
-        if [[ -n "$suricata_pid" ]]; then
-            suricata_mem_kb=$(ps -p "$suricata_pid" -o rss= 2>/dev/null | tr -d ' ')
-            suricata_mem_mb=$((suricata_mem_kb / 1024))
-            suricata_cpu=$(ps -p "$suricata_pid" -o %cpu= 2>/dev/null | tr -d ' ')
-            printf "  %-20s %7s%% %8s %12s\n" "suricata" "${suricata_cpu:-0}" "-" "${suricata_mem_mb}MB"
-        fi
-
-        echo ""
+    # nftband daemon (use pidof - more reliable)
+    local daemon_pid daemon_mem_kb=0 daemon_mem_mb=0 daemon_cpu=0
+    daemon_pid=$(pidof nftband 2>/dev/null | awk '{print $1}' || true)
+    if [[ -n "$daemon_pid" ]]; then
+        daemon_mem_kb=$(ps -p "$daemon_pid" -o rss= 2>/dev/null | tr -d ' ')
+        daemon_mem_mb=$((daemon_mem_kb / 1024))
+        daemon_cpu=$(ps -p "$daemon_pid" -o %cpu= 2>/dev/null | tr -d ' ')
+        printf "  %-20s %7s%% %10s %10s\n" "nftband" "${daemon_cpu:-0}" "${daemon_mem_mb}MB" "running"
+    else
+        printf "  %-20s %8s %10s %10s\n" "nftband" "-" "-" "stopped"
     fi
+
+    # Login monitor
+    local login_status login_mem_kb=0 login_mem_mb=0
+    if systemctl is-active nftban-login-monitor &>/dev/null; then
+        login_mem_kb=$(systemctl show nftban-login-monitor --property=MemoryCurrent 2>/dev/null | cut -d= -f2)
+        login_mem_mb=$((login_mem_kb / 1024 / 1024))
+        printf "  %-20s %8s %10s %10s\n" "login-monitor" "-" "${login_mem_mb}MB" "running"
+    else
+        printf "  %-20s %8s %10s %10s\n" "login-monitor" "-" "-" "stopped"
+    fi
+
+    # Suricata (use pidof - more reliable than pgrep for this binary)
+    local suricata_pid suricata_mem_kb=0 suricata_mem_mb=0 suricata_cpu=0
+    suricata_pid=$(pidof suricata 2>/dev/null | awk '{print $1}' || true)
+    if [[ -n "$suricata_pid" ]]; then
+        suricata_mem_kb=$(ps -p "$suricata_pid" -o rss= 2>/dev/null | tr -d ' ')
+        suricata_mem_mb=$((suricata_mem_kb / 1024))
+        suricata_cpu=$(ps -p "$suricata_pid" -o %cpu= 2>/dev/null | tr -d ' ')
+        printf "  %-20s %7s%% %10s %10s\n" "suricata" "${suricata_cpu:-0}" "${suricata_mem_mb}MB" "running"
+    else
+        printf "  %-20s %8s %10s %10s\n" "suricata" "-" "-" "stopped"
+    fi
+
+    # Queue processor
+    if systemctl is-active nftban-queue &>/dev/null; then
+        local queue_mem_kb queue_mem_mb
+        queue_mem_kb=$(systemctl show nftban-queue --property=MemoryCurrent 2>/dev/null | cut -d= -f2)
+        queue_mem_mb=$((queue_mem_kb / 1024 / 1024))
+        printf "  %-20s %8s %10s %10s\n" "queue" "-" "${queue_mem_mb}MB" "running"
+    fi
+
+    echo ""
 
     # Top Processes by Memory
     local top_mem_count="${WATCHDOG_RESULTS[top_mem_count]:-0}"
