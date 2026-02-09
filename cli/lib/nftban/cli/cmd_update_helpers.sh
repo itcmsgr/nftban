@@ -55,9 +55,12 @@ _update_log() {
 }
 
 _update_banner() {
+    local current_ver
+    current_ver=$(_get_current_version 2>/dev/null || echo "unknown")
+
     echo ""
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-    echo "  NFTBan Update"
+    echo "  NFTBan Update (current: v${current_ver})"
     echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 }
 
