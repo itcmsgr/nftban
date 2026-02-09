@@ -85,11 +85,43 @@ check_dependencies() {
     return 0
 }
 
+# Validate binaries are real ELF files
+validate_binary() {
+    local binary="$1"
+    if [[ ! -f "$binary" ]]; then
+        log_error "Binary not found: $binary"
+        return 1
+    fi
+
+    local file_type
+    file_type=$(file -b "$binary")
+    if [[ "$file_type" != *"ELF"* ]]; then
+        log_error "Invalid binary (not ELF): $binary"
+        log_error "Got: $file_type"
+        return 1
+    fi
+
+    local size
+    size=$(stat -c%s "$binary")
+    if [[ $size -lt 100000 ]]; then
+        log_error "Binary suspiciously small: $binary ($size bytes)"
+        return 1
+    fi
+
+    log_success "Validated: $binary ($size bytes, ELF)"
+    return 0
+}
+
 build_binaries() {
     # Check if pre-built binaries exist (from CI)
     if [[ -x "${PROJECT_ROOT}/bin/nftban-core" ]] && [[ -x "${PROJECT_ROOT}/bin/nftband" ]]; then
         log_info "Using pre-built binaries from bin/"
         ls -la "${PROJECT_ROOT}/bin/"
+
+        # Validate pre-built binaries
+        validate_binary "${PROJECT_ROOT}/bin/nftban-core" || return 1
+        validate_binary "${PROJECT_ROOT}/bin/nftband" || return 1
+
         return 0
     fi
 
@@ -100,6 +132,10 @@ build_binaries() {
         log_error "Build failed"
         return 1
     }
+
+    # Validate built binaries
+    validate_binary "${PROJECT_ROOT}/bin/nftban-core" || return 1
+    validate_binary "${PROJECT_ROOT}/bin/nftband" || return 1
 
     log_success "Binaries built successfully"
 }

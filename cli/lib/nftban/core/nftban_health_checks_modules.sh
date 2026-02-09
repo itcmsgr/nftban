@@ -423,7 +423,50 @@ nftban_health_check_portscan_prefix() {
     return $status
 }
 
+# =============================================================================
+# BINARY INTEGRITY CHECK
+# =============================================================================
+
+nftban_health_check_binary_integrity() {
+    # Validate Go binaries are real ELF files, not corrupted or dummy placeholders
+    # Returns: 0=OK, 3=Critical (corrupted binary detected)
+
+    local status=$HEALTH_OK
+    local integrity_issues=()
+    local binaries=(
+        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftban-core"
+        "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/bin/nftband"
+    )
+
+    for binary in "${binaries[@]}"; do
+        if [[ -f "$binary" ]]; then
+            local file_type
+            file_type=$(file -b "$binary" 2>/dev/null)
+
+            if [[ "$file_type" != *"ELF"* ]]; then
+                integrity_issues+=("$binary is NOT a valid ELF binary (got: $file_type)")
+                status=$HEALTH_CRITICAL
+            elif [[ $(stat -c%s "$binary" 2>/dev/null) -lt 100000 ]]; then
+                integrity_issues+=("$binary is suspiciously small (< 100KB)")
+                status=$HEALTH_CRITICAL
+            fi
+        fi
+    done
+
+    # Store results
+    if [[ ${#integrity_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["binary_integrity"]="${integrity_issues[*]}"
+        NFTBAN_HEALTH_ERRORS+=("Binary integrity: ${integrity_issues[*]}")
+    else
+        NFTBAN_HEALTH_ISSUES["binary_integrity"]="All Go binaries are valid ELF executables"
+    fi
+
+    NFTBAN_HEALTH_RESULTS["binary_integrity"]=$status
+    return $status
+}
+
 # Export functions
 export -f nftban_health_check_modules nftban_health_check_geoip
 export -f nftban_health_check_geoban nftban_health_check_databases
 export -f nftban_health_check_rbl nftban_health_check_portscan_prefix
+export -f nftban_health_check_binary_integrity

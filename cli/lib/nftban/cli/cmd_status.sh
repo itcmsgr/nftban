@@ -83,6 +83,32 @@ elif [[ -f "$(dirname "$(dirname "$(realpath "${BASH_SOURCE[0]}")")")/lib/nftban
 fi
 
 # =============================================================================
+# BINARY INTEGRITY VALIDATION
+# =============================================================================
+
+_status_check_binaries() {
+    # Check if Go binaries are valid ELF files
+    # Returns 0 if all binaries are valid, 1 if any are corrupted
+    local binaries=(
+        "/usr/lib/nftban/bin/nftban-core"
+        "/usr/lib/nftban/bin/nftband"
+    )
+    local has_corruption=0
+
+    for binary in "${binaries[@]}"; do
+        if [[ -f "$binary" ]]; then
+            local file_type
+            file_type=$(file -b "$binary" 2>/dev/null)
+            if [[ "$file_type" != *"ELF"* ]]; then
+                echo "WARNING: $(basename "$binary") is corrupted (not ELF binary)"
+                has_corruption=1
+            fi
+        fi
+    done
+    return $has_corruption
+}
+
+# =============================================================================
 # STATUS AGGREGATION
 # =============================================================================
 
@@ -606,6 +632,18 @@ output_terminal() {
 
     printf "  %-20s %s\n" "Overall Status......" "$health_status"
 
+    # Check binary integrity (show warning if corrupted)
+    local binary_warning
+    binary_warning=$(_status_check_binaries 2>&1)
+    if [[ -n "$binary_warning" ]]; then
+        # Display each warning line
+        while IFS= read -r warning_line; do
+            if [[ -n "$warning_line" ]]; then
+                printf "  %-20s %s\n" "Binary Integrity...." "$warning_line"
+            fi
+        done <<< "$binary_warning"
+    fi
+
     # ==========================================================================
     # Memory Protection Status (only show if notable)
     # ==========================================================================
@@ -1100,9 +1138,32 @@ output_json() {
         [[ ! "$json_perm_protected" =~ ^[0-9]+$ ]] && json_perm_protected=0
     fi
 
+    # Check binary integrity for JSON output
+    local json_binaries_valid=true
+    local json_corrupted_binaries=""
+    local json_binaries=(
+        "/usr/lib/nftban/bin/nftban-core"
+        "/usr/lib/nftban/bin/nftband"
+    )
+    for json_binary in "${json_binaries[@]}"; do
+        if [[ -f "$json_binary" ]]; then
+            local json_file_type
+            json_file_type=$(file -b "$json_binary" 2>/dev/null)
+            if [[ "$json_file_type" != *"ELF"* ]]; then
+                json_binaries_valid=false
+                [[ -n "$json_corrupted_binaries" ]] && json_corrupted_binaries+=","
+                json_corrupted_binaries+="\"$(basename "$json_binary")\""
+            fi
+        fi
+    done
+
     echo "  \"health\": {"
     echo "    \"status\": \"$health_status\","
     echo "    \"exit_code\": $health_exit,"
+    echo "    \"binary_integrity\": {"
+    echo "      \"valid\": $json_binaries_valid,"
+    echo "      \"corrupted\": [${json_corrupted_binaries}]"
+    echo "    },"
     echo "    \"memory_pressure\": {"
     echo "      \"level\": \"$json_pressure_level\","
     echo "      \"percent\": $json_pressure_pct"
