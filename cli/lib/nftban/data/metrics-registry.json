@@ -124,7 +124,9 @@
     "geoban": "Geo-blocking module metrics",
     "modules": "Module enabled/disabled status",
     "analytics": "Attack pattern analytics and trends",
-    "alerts": "Alert management metrics"
+    "alerts": "Alert management metrics",
+    "auth": "Authentication and authorization metrics",
+    "api": "API request metrics"
   },
   "cardinality_rules": {
     "safe": {
@@ -657,7 +659,7 @@
       "labels": {
         "component": {
           "type": "enum",
-          "values": ["nftables", "polkit", "ssh"],
+          "values": ["nftables", "polkit", "ssh", "fail2ban"],
           "description": "System component"
         }
       },
@@ -1939,6 +1941,292 @@
       "labels": {},
       "added_version": "1.4.0",
       "phase": 1
+    },
+    "nftban_watchdog_net_score": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "watchdog",
+      "source": "go_nftban",
+      "description": "Network pressure score (0-100)",
+      "labels": {},
+      "added_version": "1.12.0",
+      "thresholds": {
+        "warning": ">= 60",
+        "critical": ">= 80"
+      }
+    },
+    "nftban_server_memory_total": {
+      "type": "gauge",
+      "unit": "bytes",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Total server memory in bytes",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_server_memory_available": {
+      "type": "gauge",
+      "unit": "bytes",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Available server memory in bytes",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_server_mem_used_percent": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Server memory utilization percentage",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_server_disk_total": {
+      "type": "gauge",
+      "unit": "bytes",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Total disk space in bytes on root filesystem",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_server_disk_used": {
+      "type": "gauge",
+      "unit": "bytes",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Used disk space in bytes on root filesystem",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_server_disk_used_percent": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Disk utilization percentage on root filesystem",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_server_uptime": {
+      "type": "gauge",
+      "unit": "seconds",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Server uptime in seconds",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_daemon_cpu_percent": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "NFTBan daemon CPU utilization percentage",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_daemon_mem_percent": {
+      "type": "gauge",
+      "unit": "percent",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "NFTBan daemon memory utilization percentage",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_daemon_vsz_bytes": {
+      "type": "gauge",
+      "unit": "bytes",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "NFTBan daemon virtual memory size in bytes",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_daemon_memory_growth_rate": {
+      "type": "gauge",
+      "unit": "bytes/sec",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "NFTBan daemon memory growth rate in bytes per second",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_daemon_memory_pressure": {
+      "type": "gauge",
+      "unit": "enum",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "NFTBan daemon memory pressure level (0=none, 1=low, 2=medium, 3=high)",
+      "labels": {},
+      "value_mapping": {
+        "0": "none",
+        "1": "low",
+        "2": "medium",
+        "3": "high"
+      },
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_daemon_memory_health": {
+      "type": "gauge",
+      "unit": "boolean",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "NFTBan daemon memory health (1=healthy, 0=unhealthy)",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_bans_by_reason_24h": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Bans in last 24 hours by reason",
+      "labels": {
+        "reason": {
+          "type": "enum",
+          "values": ["ssh_invalid_user", "ssh_preauth_disconnect", "ssh_auth_failure", "module_ban", "other"],
+          "description": "Ban reason category"
+        }
+      },
+      "cardinality": 5,
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_network_bytes_received_total": {
+      "type": "counter",
+      "unit": "bytes",
+      "category": "network",
+      "source": "shell_prometheus",
+      "description": "Total bytes received across all interfaces (Zabbix compatibility)",
+      "labels": {},
+      "reset_semantics": "Wraps at 64-bit max",
+      "recommended_aggregation": "rate()",
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_network_bytes_sent_total": {
+      "type": "counter",
+      "unit": "bytes",
+      "category": "network",
+      "source": "shell_prometheus",
+      "description": "Total bytes sent across all interfaces (Zabbix compatibility)",
+      "labels": {},
+      "reset_semantics": "Wraps at 64-bit max",
+      "recommended_aggregation": "rate()",
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_network_packets_received_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "network",
+      "source": "shell_prometheus",
+      "description": "Total packets received across all interfaces (Zabbix compatibility)",
+      "labels": {},
+      "reset_semantics": "Wraps at 64-bit max",
+      "recommended_aggregation": "rate()",
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_network_packets_sent_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "network",
+      "source": "shell_prometheus",
+      "description": "Total packets sent across all interfaces (Zabbix compatibility)",
+      "labels": {},
+      "reset_semantics": "Wraps at 64-bit max",
+      "recommended_aggregation": "rate()",
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_network_errors_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "network",
+      "source": "shell_prometheus",
+      "description": "Total network errors across all interfaces (Zabbix compatibility)",
+      "labels": {},
+      "reset_semantics": "Wraps at 64-bit max",
+      "recommended_aggregation": "rate()",
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_network_packets_dropped_total": {
+      "type": "counter",
+      "unit": "count",
+      "category": "network",
+      "source": "shell_prometheus",
+      "description": "Total packets dropped across all interfaces (Zabbix compatibility)",
+      "labels": {},
+      "reset_semantics": "Wraps at 64-bit max",
+      "recommended_aggregation": "rate()",
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_bandwidth_in_bps": {
+      "type": "gauge",
+      "unit": "bits/sec",
+      "category": "network",
+      "source": "shell_prometheus",
+      "description": "Current inbound bandwidth in bits per second",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_bandwidth_out_bps": {
+      "type": "gauge",
+      "unit": "bits/sec",
+      "category": "network",
+      "source": "shell_prometheus",
+      "description": "Current outbound bandwidth in bits per second",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_panel_info": {
+      "type": "gauge",
+      "unit": "info",
+      "category": "daemon",
+      "source": "shell_prometheus",
+      "description": "Always 1, carries panel label for detected control panel",
+      "labels": {
+        "panel": {
+          "type": "enum",
+          "values": ["cpanel", "plesk", "directadmin", "none"],
+          "description": "Detected control panel type"
+        }
+      },
+      "cardinality": 4,
+      "added_version": "1.11.0",
+      "phase": 1
+    },
+    "nftban_active_count": {
+      "type": "gauge",
+      "unit": "count",
+      "category": "blocks",
+      "source": "shell_prometheus",
+      "description": "Currently active bans total (alias for compatibility)",
+      "labels": {},
+      "added_version": "1.11.0",
+      "phase": 1,
+      "alias_for": "nftban_blocks_total"
     }
   },
   "zabbix_mapping": {
@@ -1962,7 +2250,87 @@
       "nftban_conntrack_max": "nftban.conntrack.max",
       "nftban_conntrack_utilization": "nftban.conntrack.utilization",
       "nftban_softnet_drops_total": "nftban.softnet.drops.total",
-      "nftban_softnet_backlog_total": "nftban.softnet.backlog.total"
+      "nftban_softnet_backlog_total": "nftban.softnet.backlog.total",
+      "nftban_version": "nftban.version",
+      "nftban_build_date": "nftban.build_date",
+      "nftban_uptime": "nftban.uptime",
+      "nftban_pid": "nftban.pid",
+      "nftban_status": "nftban.status",
+      "nftban_config_reload_time": "nftban.config_reload_time",
+      "nftban_mode": "nftban.mode",
+      "nftban_memory_heap": "nftban.memory.heap",
+      "nftban_memory_alloc": "nftban.memory.alloc",
+      "nftban_memory_sys": "nftban.memory.sys",
+      "nftban_memory_rss": "nftban.memory.rss",
+      "nftban_gc_cycles": "nftban.gc.cycles",
+      "nftban_gc_pause_total": "nftban.gc.pause_total",
+      "nftban_gc_pause_last": "nftban.gc.pause_last",
+      "nftban_gc_cpu_fraction": "nftban.gc.cpu_fraction",
+      "nftban_fds_open": "nftban.fds.open",
+      "nftban_threads": "nftban.threads",
+      "nftban_bans_total": "nftban.bans.total",
+      "nftban_bans_24h": "nftban.bans.24h",
+      "nftban_bans_1h": "nftban.bans.1h",
+      "nftban_bans_rate": "nftban.bans.rate",
+      "nftban_unbans_total": "nftban.unbans.total",
+      "nftban_unbans_24h": "nftban.unbans.24h",
+      "nftban_active_count": "nftban.active.count",
+      "nftban_permanent_count": "nftban.permanent.count",
+      "nftban_persistent_count": "nftban.persistent.count",
+      "nftban_events_total": "nftban.events.total",
+      "nftban_events_rate": "nftban.events.rate",
+      "nftban_events_dropped": "nftban.events.dropped",
+      "nftban_events_queue_depth": "nftban.events.queue_depth",
+      "nftban_ipc_requests": "nftban.ipc.requests",
+      "nftban_ipc_errors": "nftban.ipc.errors",
+      "nftban_ipc_latency_avg": "nftban.ipc.latency_avg",
+      "nftban_ipc_active_connections": "nftban.ipc.active_connections",
+      "nftban_modules_enabled": "nftban.modules.enabled",
+      "nftban_modules_active": "nftban.modules.active",
+      "nftban_modules_failed": "nftban.modules.failed",
+      "nftban_watchdog_status": "nftban.watchdog.status",
+      "nftban_watchdog_mode": "nftban.watchdog.mode",
+      "nftban_watchdog_net_score": "nftban.watchdog.net_score",
+      "nftban_watchdog_actions_taken": "nftban.watchdog.actions_taken",
+      "nftban_watchdog_last_action": "nftban.watchdog.last_action",
+      "nftban_watchdog_mode_changes": "nftban.watchdog.mode_changes",
+      "nftban_nft_rules_total": "nftban.nft.rules_total",
+      "nftban_nft_sets_total": "nftban.nft.sets_total",
+      "nftban_nft_elements_total": "nftban.nft.elements_total",
+      "nftban_nft_apply_latency": "nftban.nft.apply_latency",
+      "nftban_nft_apply_errors": "nftban.nft.apply_errors",
+      "nftban_feeds_enabled": "nftban.feeds.enabled",
+      "nftban_feeds_loaded": "nftban.feeds.loaded",
+      "nftban_feeds_failed": "nftban.feeds.failed",
+      "nftban_feeds_ips_total": "nftban.feeds.ips_total",
+      "nftban_feeds_last_update": "nftban.feeds.last_update",
+      "nftban_geoip_database_age": "nftban.geoip.database_age",
+      "nftban_geoip_lookups_total": "nftban.geoip.lookups_total",
+      "nftban_geoip_lookup_errors": "nftban.geoip.lookup_errors",
+      "nftban_geoip_countries_blocked": "nftban.geoip.countries_blocked",
+      "nftban_suricata_enabled": "nftban.suricata.enabled",
+      "nftban_suricata_alerts_processed": "nftban.suricata.alerts_processed",
+      "nftban_suricata_alerts_rate": "nftban.suricata.alerts_rate",
+      "nftban_suricata_bans_generated": "nftban.suricata.bans_generated",
+      "nftban_suricata_connection_status": "nftban.suricata.connection_status",
+      "nftban_api_requests_total": "nftban.api.requests_total",
+      "nftban_api_requests_rate": "nftban.api.requests_rate",
+      "nftban_api_errors_total": "nftban.api.errors_total",
+      "nftban_api_latency_avg": "nftban.api.latency_avg",
+      "nftban_api_auth_failures": "nftban.api.auth_failures",
+      "nftban_server_hostname": "nftban.server.hostname",
+      "nftban_server_os": "nftban.server.os",
+      "nftban_server_kernel": "nftban.server.kernel",
+      "nftban_server_arch": "nftban.server.arch",
+      "nftban_server_cpu_cores": "nftban.server.cpu_cores",
+      "nftban_server_load_1m": "nftban.server.load_1m",
+      "nftban_server_load_5m": "nftban.server.load_5m",
+      "nftban_server_load_15m": "nftban.server.load_15m",
+      "nftban_filter_total": "nftban.filter.total",
+      "nftban_filter_filtered": "nftban.filter.filtered",
+      "nftban_filter_bogon": "nftban.filter.bogon",
+      "nftban_filter_oversize": "nftban.filter.oversize",
+      "nftban_filter_kept": "nftban.filter.kept"
     }
   },
   "deprecation_policy": {
@@ -1978,27 +2346,27 @@
     "patch": "Documentation updates, bug fixes"
   },
   "_metadata": {
-    "total_metrics": 158,
+    "total_metrics": 195,
     "by_type": {
-      "gauge": 122,
-      "counter": 34,
+      "gauge": 153,
+      "counter": 40,
       "histogram": 2
     },
     "by_source": {
-      "go_nftban": 13,
+      "go_nftban": 14,
       "go_sampler": 7,
-      "shell_prometheus": 70,
+      "shell_prometheus": 106,
       "planned": 68
     },
     "by_category": {
-      "daemon": 11,
-      "watchdog": 7,
+      "daemon": 25,
+      "watchdog": 8,
       "runtime": 7,
       "ipc": 3,
       "throughput": 2,
-      "blocks": 25,
+      "blocks": 27,
       "firewall": 7,
-      "network": 12,
+      "network": 20,
       "protocol": 2,
       "connections": 7,
       "feeds": 14,
@@ -2010,7 +2378,7 @@
       "portscan": 2,
       "ddos": 2,
       "geoban": 7,
-      "modules": 12,
+      "modules": 24,
       "analytics": 3,
       "alerts": 1,
       "suricata": 9,
@@ -2018,8 +2386,8 @@
       "nftables": 6,
       "bans": 5
     },
-    "total_labels": 18,
-    "bounded_cardinality_labels": 15,
+    "total_labels": 19,
+    "bounded_cardinality_labels": 16,
     "moderate_cardinality_labels": 2,
     "forbidden_labels": 4,
     "notes": [
@@ -2029,9 +2397,10 @@
       "nftban_feeds_stale is deprecated, use nftban_feeds_stale_count instead",
       "68 metrics are planned (phase 3-5) - source will be assigned at implementation time",
       "bans_total exists in multiple packages with DIFFERENT FQNs: nftban_bans_total (operations), nftban_analytics_bans_total (analytics), nftban_loginmon_bans_total, nftban_portscan_bans_total - NOT duplicates",
-      "Pro module reads local data files (bans.log, metrics cache, reports) - exporter pipeline unchanged"
+      "Pro module reads local data files (bans.log, metrics cache, reports) - exporter pipeline unchanged",
+      "Added 24 undocumented shell_prometheus metrics: server inventory, daemon process, attack patterns, network compatibility, bandwidth, panel detection, and aliases"
     ],
-    "last_updated": "2026-01-27",
-    "update_reason": "Clarified planned metrics, bans_total FQN disambiguation, Pro integration notes"
+    "last_updated": "2026-02-09",
+    "update_reason": "Added 24 undocumented shell exporter metrics for server inventory, daemon process, attack patterns, network compatibility (Zabbix), bandwidth, control panel detection, and compatibility aliases"
   }
 }

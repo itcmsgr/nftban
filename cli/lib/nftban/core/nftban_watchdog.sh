@@ -1044,7 +1044,15 @@ nftban_watchdog_cleanup_all() {
 
 nftban_watchdog_run() {
     # Main entry point called by systemd timer
-    # Runs all checks, saves report, exports metrics
+    # Runs all checks, saves report, exports metrics, logs trends
+    #
+    # Arguments:
+    #   $1 - (optional) output tier: "journal", "summary", "full", "auto", "silent"
+    #        Default: "silent" when called from timer, "auto" otherwise
+    #
+    # Returns: Overall status code (0=OK, 1=WARNING, 2=CRITICAL)
+
+    local output_tier="${1:-silent}"
 
     if [[ "$NFTBAN_WATCHDOG_ENABLED" != "true" ]]; then
         echo "Watchdog is disabled. Enable with: nftban watchdog enable"
@@ -1057,22 +1065,46 @@ nftban_watchdog_run() {
     nftban_watchdog_run_all
     local status=$?
 
-    # Save report
-    local report_file
-    report_file=$(nftban_watchdog_report_save)
-    watchdog_log "INFO" "Report saved: $report_file"
+    # Save report (only if issues or explicitly requested)
+    local report_file=""
+    if [[ $status -gt 0 || "$output_tier" == "full" ]]; then
+        report_file=$(nftban_watchdog_report_save)
+        watchdog_log "INFO" "Report saved: $report_file"
+    fi
 
-    # Export metrics
+    # Export Prometheus metrics
     nftban_watchdog_metrics_export
 
-    # Cleanup old reports
+    # Append to JSONL trend log (every cycle for trend analysis)
+    _watchdog_append_trend
+
+    # Cleanup old reports periodically
     nftban_watchdog_cleanup_old >/dev/null
 
-    # Log completion
+    # Log completion status
     local status_text="OK"
     [[ $status -eq $WATCHDOG_WARNING ]] && status_text="WARNING"
     [[ $status -eq $WATCHDOG_CRITICAL ]] && status_text="CRITICAL"
     watchdog_log "INFO" "Watchdog check completed: $status_text"
+
+    # Generate output based on requested tier
+    case "$output_tier" in
+        silent)
+            # No output (called from timer - logs to journal via logger in alerts)
+            ;;
+        journal)
+            _watchdog_output_journal
+            ;;
+        summary)
+            _watchdog_output_summary
+            ;;
+        full)
+            nftban_watchdog_report
+            ;;
+        auto)
+            nftban_watchdog_output auto
+            ;;
+    esac
 
     return $status
 }
@@ -1538,6 +1570,312 @@ nftban_watchdog_collect_module_resources() {
     WATCHDOG_RESULTS["daemon_pid"]="${daemon_pid:-0}"
 
     return 0
+}
+
+# =============================================================================
+# JSONL TREND LOGGING (Fast Append-Only Logging)
+# =============================================================================
+#
+# This provides a simple, fast append-only log format (JSONL = one JSON object
+# per line) for trend analysis. Unlike the hourly trend_hourly.json which is
+# designed for jq aggregation, this JSONL file:
+# - Writes after EVERY watchdog cycle (not just hourly)
+# - Uses simple append (no JSON parsing needed for writes)
+# - Auto-rotates at 10000 lines (keeps last 5000)
+# - Provides ~7 days of data at 90s intervals
+#
+# Format per line:
+#   {"ts":"ISO8601","mode":"normal|degraded|survival","cpu":N,"mem":N,"io":N,"net":N,"actions":N}
+#
+# =============================================================================
+
+# JSONL trend file location (in watchdog log directory for easy access)
+: "${NFTBAN_WATCHDOG_TRENDS_JSONL:=${NFTBAN_WATCHDOG_LOG_DIR:-${NFTBAN_LOG_DIR:-/var/log/nftban}/watchdog}/trends.jsonl}"
+
+# Maximum lines before rotation (approx 7 days at 90s intervals = ~6700 entries)
+: "${NFTBAN_WATCHDOG_TRENDS_MAX_LINES:=10000}"
+
+# Lines to keep after rotation
+: "${NFTBAN_WATCHDOG_TRENDS_KEEP_LINES:=5000}"
+
+_watchdog_append_trend() {
+    # Append JSONL trend data after each watchdog run
+    # Called at the end of nftban_watchdog_run()
+    #
+    # Uses data from WATCHDOG_RESULTS array populated by nftban_watchdog_run_all()
+    #
+    # Returns: 0 on success, 1 on failure (non-fatal)
+
+    local trend_file="$NFTBAN_WATCHDOG_TRENDS_JSONL"
+    local trend_dir
+    trend_dir=$(dirname "$trend_file")
+
+    # Ensure directory exists
+    if ! mkdir -p "$trend_dir" 2>/dev/null; then
+        watchdog_log "WARN" "Cannot create trend directory: $trend_dir"
+        return 1
+    fi
+
+    # Get timestamp in ISO8601 format
+    local timestamp
+    timestamp=$(date -Iseconds 2>/dev/null || date '+%Y-%m-%dT%H:%M:%S%z')
+
+    # Determine watchdog mode based on overall status
+    local mode="normal"
+    local overall_status="${WATCHDOG_RESULTS[overall_status]:-0}"
+    case "$overall_status" in
+        1) mode="degraded" ;;
+        2) mode="survival" ;;
+    esac
+
+    # Extract key metrics from WATCHDOG_RESULTS
+    # CPU score: use combined system+user CPU percentage (100 - idle)
+    local cpu_score="${WATCHDOG_RESULTS[cpu_idle_percent]:-100}"
+    cpu_score=$((100 - cpu_score))
+
+    # Memory score: use memory used percentage
+    local mem_score="${WATCHDOG_RESULTS[mem_used_percent]:-0}"
+
+    # I/O score: use iowait percentage
+    local io_score="${WATCHDOG_RESULTS[cpu_iowait_percent]:-0}"
+
+    # Network score: derived from load and active processes (approximation)
+    # Since we don't have direct network metrics, use load as proxy
+    local net_score=0
+    local load5="${WATCHDOG_RESULTS[load_5m]:-0}"
+    # Convert load to percentage-like score (load of 4 = 100% for 4-core system)
+    if command -v nproc &>/dev/null; then
+        local ncpu
+        ncpu=$(nproc 2>/dev/null || echo 4)
+        # Avoid division by zero and floating point
+        if [[ $ncpu -gt 0 ]]; then
+            # Multiply load by 100, then divide by ncpu for percentage
+            # Use awk for floating point math
+            net_score=$(awk -v load="$load5" -v cpu="$ncpu" 'BEGIN {
+                score = (load * 100) / cpu;
+                if (score > 100) score = 100;
+                printf "%.0f", score
+            }')
+        fi
+    fi
+
+    # Count actions taken (alerts triggered)
+    local actions_count="${#WATCHDOG_ALERTS[@]}"
+
+    # Create compact JSON line (no spaces for efficiency)
+    local json_line
+    printf -v json_line '{"ts":"%s","mode":"%s","cpu":%d,"mem":%d,"io":%d,"net":%d,"actions":%d}' \
+        "$timestamp" \
+        "$mode" \
+        "$cpu_score" \
+        "$mem_score" \
+        "$io_score" \
+        "$net_score" \
+        "$actions_count"
+
+    # Append to file (atomic via printf >> which flushes on newline)
+    if ! printf '%s\n' "$json_line" >> "$trend_file" 2>/dev/null; then
+        watchdog_log "WARN" "Cannot append to trend file: $trend_file"
+        return 1
+    fi
+
+    # Check if rotation is needed
+    local line_count
+    line_count=$(wc -l < "$trend_file" 2>/dev/null || echo 0)
+
+    if [[ $line_count -gt $NFTBAN_WATCHDOG_TRENDS_MAX_LINES ]]; then
+        # Rotate: keep only the last N lines
+        local temp_file="${trend_file}.tmp.$$"
+
+        if tail -n "$NFTBAN_WATCHDOG_TRENDS_KEEP_LINES" "$trend_file" > "$temp_file" 2>/dev/null; then
+            if mv "$temp_file" "$trend_file" 2>/dev/null; then
+                watchdog_log "INFO" "Rotated trend file: kept last $NFTBAN_WATCHDOG_TRENDS_KEEP_LINES lines"
+            else
+                rm -f "$temp_file" 2>/dev/null
+                watchdog_log "WARN" "Failed to rotate trend file (mv failed)"
+            fi
+        else
+            rm -f "$temp_file" 2>/dev/null
+            watchdog_log "WARN" "Failed to rotate trend file (tail failed)"
+        fi
+    fi
+
+    # Set permissions (non-fatal if fails)
+    chown nftban:nftban "$trend_file" 2>/dev/null || true
+    chmod 640 "$trend_file" 2>/dev/null || true
+
+    return 0
+}
+
+# =============================================================================
+# TIERED OUTPUT (Systemd Journal / Summary / Full Report)
+# =============================================================================
+#
+# Three output tiers for different contexts:
+# 1. JOURNAL (1-line):  For systemd journal, scripts, monitoring
+# 2. SUMMARY (10-line): For `nftban watchdog status` interactive use
+# 3. FULL:              For --verbose or when issues detected
+#
+# =============================================================================
+
+_watchdog_output_journal() {
+    # Generate 1-line output for systemd journal
+    # Format: "Watchdog: MODE cpu=X% mem=Y% io=Z% [actions: N]"
+    #
+    # Reads from WATCHDOG_RESULTS array (must be populated first)
+    # Output: prints to stdout
+
+    local mode="OK"
+    local overall_status="${WATCHDOG_RESULTS[overall_status]:-0}"
+    case "$overall_status" in
+        1) mode="WARN" ;;
+        2) mode="CRIT" ;;
+    esac
+
+    local cpu_pct="${WATCHDOG_RESULTS[cpu_idle_percent]:-100}"
+    cpu_pct=$((100 - cpu_pct))
+
+    local mem_pct="${WATCHDOG_RESULTS[mem_used_percent]:-0}"
+    local io_pct="${WATCHDOG_RESULTS[cpu_iowait_percent]:-0}"
+    local actions="${#WATCHDOG_ALERTS[@]}"
+
+    local output
+    printf -v output "Watchdog: %s cpu=%d%% mem=%d%% io=%d%%" \
+        "$mode" "$cpu_pct" "$mem_pct" "$io_pct"
+
+    # Add actions count if any
+    if [[ $actions -gt 0 ]]; then
+        output+=" [actions: $actions]"
+    fi
+
+    echo "$output"
+}
+
+_watchdog_output_summary() {
+    # Generate 10-line summary for interactive status
+    # More detail than journal, less than full report
+    #
+    # Reads from WATCHDOG_RESULTS array (must be populated first)
+    # Output: prints to stdout
+
+    local mode="OK"
+    local overall_status="${WATCHDOG_RESULTS[overall_status]:-0}"
+    case "$overall_status" in
+        1) mode="DEGRADED" ;;
+        2) mode="SURVIVAL" ;;
+    esac
+
+    local timestamp="${WATCHDOG_RESULTS[check_datetime]:-$(date '+%Y-%m-%d %H:%M:%S')}"
+
+    echo "NFTBan Watchdog Summary"
+    echo "─────────────────────────────────────────"
+    printf "%-15s %s\n" "Status:" "$mode"
+    printf "%-15s %s\n" "Checked:" "$timestamp"
+    echo ""
+
+    # Resource line
+    local cpu_pct="${WATCHDOG_RESULTS[cpu_idle_percent]:-100}"
+    cpu_pct=$((100 - cpu_pct))
+    local mem_pct="${WATCHDOG_RESULTS[mem_used_percent]:-0}"
+    local io_pct="${WATCHDOG_RESULTS[cpu_iowait_percent]:-0}"
+    local disk_pct="${WATCHDOG_RESULTS[disk_used_percent]:-0}"
+
+    printf "CPU: %3d%%  MEM: %3d%%  I/O: %3d%%  DISK: %3d%%\n" \
+        "$cpu_pct" "$mem_pct" "$io_pct" "$disk_pct"
+    echo ""
+
+    # Load average
+    local load1="${WATCHDOG_RESULTS[load_1m]:-0}"
+    local load5="${WATCHDOG_RESULTS[load_5m]:-0}"
+    local load15="${WATCHDOG_RESULTS[load_15m]:-0}"
+    printf "Load: %s / %s / %s (1/5/15 min)\n" "$load1" "$load5" "$load15"
+
+    # Alerts summary
+    local alert_count="${#WATCHDOG_ALERTS[@]}"
+    if [[ $alert_count -gt 0 ]]; then
+        echo ""
+        echo "Alerts ($alert_count):"
+        # Show first 2 alerts
+        local shown=0
+        for alert in "${WATCHDOG_ALERTS[@]}"; do
+            echo "  $alert"
+            ((shown++))
+            [[ $shown -ge 2 ]] && break
+        done
+        if [[ $alert_count -gt 2 ]]; then
+            echo "  ... and $((alert_count - 2)) more (use --verbose)"
+        fi
+    fi
+
+    echo "─────────────────────────────────────────"
+}
+
+_watchdog_should_show_full() {
+    # Determine if full report should be shown
+    # Returns: 0 if full report should be shown, 1 otherwise
+    #
+    # Conditions for full report:
+    # - Overall status is CRITICAL (survival mode)
+    # - More than 2 alerts triggered
+    # - --verbose flag (checked by caller)
+
+    local overall_status="${WATCHDOG_RESULTS[overall_status]:-0}"
+    local alert_count="${#WATCHDOG_ALERTS[@]}"
+
+    # Critical status always shows full report
+    [[ $overall_status -ge 2 ]] && return 0
+
+    # Many alerts suggest something significant
+    [[ $alert_count -ge 3 ]] && return 0
+
+    return 1
+}
+
+nftban_watchdog_output() {
+    # Smart output selector based on context
+    #
+    # Arguments:
+    #   $1 - output tier: "journal", "summary", "full", "auto"
+    #   $2 - (optional) --verbose flag
+    #
+    # "auto" tier selection:
+    #   - If stdout is a terminal: summary (or full if issues)
+    #   - If stdout is not a terminal: journal
+
+    local tier="${1:-auto}"
+    local verbose=false
+    [[ "${2:-}" == "--verbose" || "${2:-}" == "-v" ]] && verbose=true
+
+    case "$tier" in
+        journal)
+            _watchdog_output_journal
+            ;;
+        summary)
+            _watchdog_output_summary
+            ;;
+        full)
+            nftban_watchdog_report
+            ;;
+        auto)
+            if [[ "$verbose" == "true" ]]; then
+                nftban_watchdog_report
+            elif [[ -t 1 ]]; then
+                # Terminal - show summary or full if issues
+                if _watchdog_should_show_full; then
+                    nftban_watchdog_report
+                else
+                    _watchdog_output_summary
+                fi
+            else
+                # Not a terminal (systemd, script) - journal format
+                _watchdog_output_journal
+            fi
+            ;;
+        *)
+            echo "Unknown output tier: $tier" >&2
+            return 1
+            ;;
+    esac
 }
 
 # =============================================================================
