@@ -336,6 +336,9 @@ nftban_watchdog_cmd_report() {
     # Export metrics
     nftban_watchdog_metrics_export
 
+    # Append to JSONL trend log (every cycle for trend analysis)
+    _watchdog_append_trend
+
     return "${WATCHDOG_RESULTS[overall_status]:-0}"
 }
 
