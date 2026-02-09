@@ -45,6 +45,30 @@ jobs:
           ./build.sh
           ls -la bin/
 
+      - name: Validate binaries are real ELF files
+        run: |
+          echo "Validating Go binaries..."
+          for binary in bin/nftban-core bin/nftband; do
+            if [[ -f "$binary" ]]; then
+              file_type=$(file -b "$binary")
+              if [[ "$file_type" != *"ELF"* ]]; then
+                echo "ERROR: $binary is NOT an ELF binary!"
+                echo "Got: $file_type"
+                exit 1
+              fi
+              size=$(stat -c%s "$binary")
+              if [[ $size -lt 100000 ]]; then
+                echo "ERROR: $binary is too small ($size bytes) - likely corrupted"
+                exit 1
+              fi
+              echo "✓ $binary: valid ELF ($size bytes)"
+            else
+              echo "ERROR: $binary not found!"
+              exit 1
+            fi
+          done
+          echo "All binaries validated successfully"
+
       - name: Upload binaries
         uses: actions/upload-artifact@v4
         with:
@@ -112,6 +136,36 @@ jobs:
             fi
           done
           ls -la dist/packages/
+
+      - name: Validate RPM package contains valid binaries
+        run: |
+          echo "Validating RPM package binaries..."
+          for rpm in dist/packages/*.rpm; do
+            if [[ -f "$rpm" ]]; then
+              echo "Checking: $rpm"
+              mkdir -p /tmp/rpm-check
+              cd /tmp/rpm-check
+              rpm2cpio "$GITHUB_WORKSPACE/$rpm" | cpio -idmv 2>/dev/null
+
+              for binary in usr/lib/nftban/bin/nftban-core usr/lib/nftban/bin/nftband; do
+                if [[ -f "$binary" ]]; then
+                  file_type=$(file -b "$binary")
+                  if [[ "$file_type" != *"ELF"* ]]; then
+                    echo "ERROR: $binary in RPM is NOT an ELF binary!"
+                    echo "Got: $file_type"
+                    head -1 "$binary"
+                    exit 1
+                  fi
+                  size=$(stat -c%s "$binary")
+                  echo "  ✓ $binary: valid ELF ($size bytes)"
+                fi
+              done
+
+              cd "$GITHUB_WORKSPACE"
+              rm -rf /tmp/rpm-check
+            fi
+          done
+          echo "All RPM packages validated successfully"
 
       - name: Upload RPM packages (${{ matrix.distro }})
         uses: actions/upload-artifact@v4
@@ -186,6 +240,37 @@ jobs:
             fi
           done
           ls -la dist/packages/
+
+      - name: Validate DEB package contains valid binaries
+        run: |
+          echo "Validating DEB package binaries..."
+          for deb in dist/packages/*.deb; do
+            if [[ -f "$deb" ]]; then
+              echo "Checking: $deb"
+              mkdir -p /tmp/deb-check
+              cd /tmp/deb-check
+              ar x "$GITHUB_WORKSPACE/$deb"
+              tar -xf data.tar.* 2>/dev/null || tar -xf data.tar.xz 2>/dev/null || tar -xf data.tar.gz 2>/dev/null
+
+              for binary in usr/lib/nftban/bin/nftban-core usr/lib/nftban/bin/nftband; do
+                if [[ -f "$binary" ]]; then
+                  file_type=$(file -b "$binary")
+                  if [[ "$file_type" != *"ELF"* ]]; then
+                    echo "ERROR: $binary in DEB is NOT an ELF binary!"
+                    echo "Got: $file_type"
+                    head -1 "$binary"
+                    exit 1
+                  fi
+                  size=$(stat -c%s "$binary")
+                  echo "  ✓ $binary: valid ELF ($size bytes)"
+                fi
+              done
+
+              cd "$GITHUB_WORKSPACE"
+              rm -rf /tmp/deb-check
+            fi
+          done
+          echo "All DEB packages validated successfully"
 
       - name: Upload DEB packages (${{ matrix.distro }})
         uses: actions/upload-artifact@v4

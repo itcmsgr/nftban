@@ -549,6 +549,73 @@ run_lifecycle_tests() {
 }
 
 # =============================================================================
+# BINARY INTEGRITY SMOKE TEST
+# =============================================================================
+# Validates that Go binaries are real ELF files (not corrupted or dummy files).
+# Checks file type and minimum size to detect build/install issues.
+
+smoke_test_binary_integrity() {
+    log ""
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    log "BINARY INTEGRITY"
+    log "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    local test_name="Binary Integrity"
+    local binaries=(
+        "/usr/lib/nftban/bin/nftban-core:nftban-core"
+        "/usr/lib/nftban/bin/nftband:nftband"
+    )
+    local errors=0
+    local checked=0
+
+    for entry in "${binaries[@]}"; do
+        local binary="${entry%%:*}"
+        local name="${entry##*:}"
+
+        if [[ -f "$binary" ]]; then
+            ((checked++))
+            TESTS_TOTAL=$((TESTS_TOTAL + 1))
+
+            local file_type
+            file_type=$(file -b "$binary" 2>/dev/null)
+
+            if [[ "$file_type" != *"ELF"* ]]; then
+                log_fail "${test_name} — ${name} is NOT ELF binary (corrupted/dummy)"
+                log "  File type: ${file_type}"
+                TESTS_FAILED=$((TESTS_FAILED + 1))
+                ((errors++))
+                continue
+            fi
+
+            local size
+            size=$(stat -c%s "$binary" 2>/dev/null || echo 0)
+            if [[ $size -lt 100000 ]]; then
+                log_fail "${test_name} — ${name} is too small (${size} bytes) - likely corrupted"
+                TESTS_FAILED=$((TESTS_FAILED + 1))
+                ((errors++))
+                continue
+            fi
+
+            log_pass "${test_name} — ${name} is valid ELF (${size} bytes)"
+            TESTS_PASSED=$((TESTS_PASSED + 1))
+        else
+            log_warn "${test_name} — ${name} not found at ${binary} (skipped)"
+        fi
+    done
+
+    if [[ $checked -eq 0 ]]; then
+        log_warn "${test_name} — No Go binaries found to check"
+        return 0
+    fi
+
+    if [[ $errors -eq 0 ]]; then
+        log_pass "${test_name} — All Go binaries are valid ELF executables"
+    fi
+
+    return $errors
+}
+
+# =============================================================================
 # FEEDS & GEOBAN NFT VALIDATION
 # =============================================================================
 # Validates that feeds/geoban CIDRs are actually loaded in nftables sets.
@@ -784,11 +851,12 @@ Options:
 
 Test Modes:
   quick     = 3 tests    (version, help, status)
-  full      = ~41 tests  (core + modules + stats + search + help + protection + lifecycle + nft validation)
-  all       = 65+ tests  (every cmd_*.sh + extended status + protection + lifecycle + nft validation)
+  full      = ~43 tests  (core + binary integrity + modules + stats + search + help + protection + lifecycle + nft validation)
+  all       = 67+ tests  (every cmd_*.sh + binary integrity + extended status + protection + lifecycle + nft validation)
   lifecycle = 12 tests   (ban/unban + whitelist add/remove, IPv4 + IPv6)
 
-NFT Validation (included in full/all):
+Validation Tests (included in full/all):
+  - Binary Integrity: verifies Go binaries are valid ELF executables
   - Feeds IPv4/IPv6: verifies CIDRs loaded in blacklist sets
   - Geoban IPv4/IPv6: verifies country CIDRs loaded in blacklist sets
 
@@ -887,6 +955,7 @@ main() {
             ;;
         full)
             run_core_tests
+            smoke_test_binary_integrity
             run_module_tests
             run_stats_tests
             run_search_tests
@@ -899,6 +968,7 @@ main() {
         all)
             # Comprehensive: test ALL CLI commands
             run_core_tests
+            smoke_test_binary_integrity
             run_all_cli_tests        # Tests all 43 cmd_*.sh files
             run_extended_status_tests
             run_protection_tests

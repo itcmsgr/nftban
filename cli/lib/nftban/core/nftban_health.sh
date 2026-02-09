@@ -490,6 +490,7 @@ nftban_health_check_all() {
 
     # Run core checks
     nftban_health_check_binaries || ((errors++))
+    nftban_health_check_binary_integrity || ((errors++))
     nftban_health_check_paths || ((errors++))
     nftban_health_check_permissions || ((warnings++))
     nftban_health_check_config || ((warnings++))
@@ -564,6 +565,7 @@ export -f nftban_health_check_all
 export -f nftban_health_check_nftables_security
 export -f nftban_health_check_conflicting_firewalls
 export -f nftban_health_check_binaries
+export -f nftban_health_check_binary_integrity
 export -f nftban_health_check_paths
 export -f nftban_health_check_permissions
 export -f nftban_health_check_services
