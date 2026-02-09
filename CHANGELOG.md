@@ -5,6 +5,76 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.0] - 2026-02-09
+
+### Suricata Interface Configuration Redesign
+
+Major release implementing a fail-safe interface detection system for Suricata af-packet configuration. Core principle: **"If we are not sure, we protect"** - auto-enable only when single effective capture interface is unambiguous.
+
+### Added
+
+- **New command: `nftban suricata iface`** - Interface detection and configuration:
+  - `iface list` - Show all interfaces with detection details, scoring, and reasons
+  - `iface set X` - Manually set capture interface(s)
+  - `iface auto` - Reset to auto-detection mode
+  - `iface help` - Detailed help and examples
+
+- **Hard gate decision logic** - Deterministic checks, not percentages:
+  - Auto-enable: Exactly 1 effective capture interface, non-virtual, UP, with default route or public IP
+  - Require selection: Multiple effective interfaces, multiple default routes, virtual top candidate
+
+- **Master/slave resolution** - Automatically resolve bridge/bond relationships:
+  - eth0 slave of br0 → capture on br0 (not eth0)
+  - Warns and offers to switch when user selects slave interface
+  - Prevents duplicate traffic capture
+
+- **Interface type detection** - Identifies interface types:
+  - Physical (phy), Bridge, Bond, VLAN, Virtual
+  - Virtual patterns: docker*, cni*, flannel, virbr*, veth*, br-*, zt, tailscale*, wg*, tun*, tap*, podman*, cali*, lxc*
+
+- **Capture health check** - `nftban_health_check_suricata_capture()`:
+  - Checks configured interface exists and is UP
+  - Parses Suricata stats for `capture.kernel_packets` and `capture.kernel_drops`
+  - Alerts on zero packets captured or high drop rates
+  - Provides actionable fix commands
+
+- **New configuration file** - `/etc/nftban/conf.d/suricata/interfaces.conf`:
+  - `SURICATA_IFACE_MODE` - auto or manual
+  - `SURICATA_IFACES` - comma-separated interfaces for manual mode
+  - `SURICATA_ALLOW_MULTI` - allow auto-detection of multiple interfaces
+  - `SURICATA_INCLUDE_VIRTUAL` - include virtual interfaces in detection
+  - `SURICATA_CLUSTER_ID_BASE` - af-packet cluster ID base
+
+- **Multi-interface support** - Configure multiple capture interfaces:
+  - Each interface gets unique cluster-id (base + offset)
+  - Requires explicit opt-in: `SURICATA_ALLOW_MULTI=true`
+
+### Changed
+
+- **Interface detection in enable flow** - Replaced simple default-route detection with hard gate system:
+  - Actionable error messages when selection required
+  - Shows available candidates and commands to fix
+  - No silent failures or guessing
+
+- **Docker handling** - Docker presence alone does NOT force selection:
+  - Only blocks if top candidate IS virtual
+  - docker0 excluded by default (virtual pattern)
+  - Servers with docker + eth0 auto-enable on eth0
+
+### Technical Details
+
+- New module: `cli/lib/nftban/cli/cmd_suricata_iface.sh` (650+ lines)
+- Added 3 new DISTRO_PATHS entries: `suricata_stats_log`, `suricata_iface_config`, `suricata_socket`
+- Updated all 12 distro config files with new paths
+- Added to DEB conffiles and RPM %files sections
+
+### Documentation
+
+- Detailed help text in `nftban suricata iface help`
+- Examples for common scenarios (simple server, docker, multi-homed, bridge)
+
+---
+
 ## [1.11.0] - 2026-02-08
 
 ### Suricata Alert Routing & Module Deduplication

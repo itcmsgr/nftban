@@ -575,6 +575,9 @@ fi
 %config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/rules/categories.enabled
 %config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/rules/local.rules
 %config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/suricata.yaml.overlay
+# Suricata interface configuration (v1.12.0)
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/suricata
+%config(noreplace) %attr(640,root,nftban) /etc/nftban/conf.d/suricata/interfaces.conf
 %dir %attr(750,root,nftban) /etc/nftban/connectors
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d
 %dir %attr(750,root,nftban) /etc/nftban/patterns.d/botscan

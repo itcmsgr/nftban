@@ -56,6 +56,9 @@
 /etc/nftban/suricata/profiles/standard.yaml
 /etc/nftban/suricata/profiles/maximum.yaml
 
+# Suricata interface configuration (v1.12.0)
+/etc/nftban/conf.d/suricata/interfaces.conf
+
 # RBL module
 /etc/nftban/conf.d/rbl/main.conf
 /etc/nftban/conf.d/rbl/rbls.conf

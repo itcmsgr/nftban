@@ -36,6 +36,7 @@
 # cmd_suricata_rules.sh     - Rules, SID, Category commands
 # cmd_suricata_advanced.sh  - Local, Custom, Recommend commands
 # cmd_suricata_tools.sh     - Profile, Scan, Services, EVE commands
+# cmd_suricata_iface.sh     - Interface detection and configuration (v1.12.0)
 # =============================================================================
 
 set -Eeuo pipefail
@@ -128,6 +129,7 @@ _cmd_suricata_modules=(
     "cmd_suricata_rules.sh"
     "cmd_suricata_advanced.sh"
     "cmd_suricata_tools.sh"
+    "cmd_suricata_iface.sh"
 )
 
 for _module in "${_cmd_suricata_modules[@]}"; do
@@ -164,6 +166,7 @@ COMMANDS:
     enable      Enable and start Suricata service
     disable     Stop and disable Suricata service
     status      Show Suricata status and recent alerts
+    iface       Interface detection & configuration (see: nftban suricata iface help)
     eve         EVE JSON log health check (see: nftban suricata eve help)
     profile     Manage performance profiles (see: nftban suricata profile help)
     scan        Scan services and auto-configure (see: nftban suricata scan help)
@@ -280,6 +283,9 @@ nftban_cmd_suricata() {
         recommend)
             cmd_suricata_recommend "$@"
             ;;
+        iface|interface)
+            cmd_suricata_iface "$@"
+            ;;
         help|--help|-h)
             cmd_suricata_help
             ;;
@@ -314,6 +320,7 @@ export -f cmd_suricata_category
 export -f cmd_suricata_local
 export -f cmd_suricata_custom
 export -f cmd_suricata_recommend
+export -f cmd_suricata_iface
 export -f cmd_suricata_help
 
 # Export helper functions

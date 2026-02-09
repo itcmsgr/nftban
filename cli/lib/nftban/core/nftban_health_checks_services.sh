@@ -319,6 +319,119 @@ nftban_health_check_suricata() {
     return $status
 }
 
+nftban_health_check_suricata_capture() {
+    # Check Suricata packet capture health (v1.12.0)
+    # Uses Suricata stats (capture.kernel_packets) for verification
+    # Returns: 0=OK, 1=Warning, 2=Error
+
+    local status=$HEALTH_OK
+    local capture_issues=()
+
+    # Only check if Suricata is running
+    if ! systemctl is-active --quiet suricata.service 2>/dev/null; then
+        NFTBAN_HEALTH_RESULTS["suricata_capture"]=$HEALTH_OK
+        return $HEALTH_OK
+    fi
+
+    # Load interface configuration
+    local iface_config="${DISTRO_PATHS[suricata_iface_config]:-/etc/nftban/conf.d/suricata/interfaces.conf}"
+    local configured_ifaces=""
+    local iface_mode="auto"
+
+    if [[ -f "$iface_config" ]]; then
+        # shellcheck source=/dev/null
+        source "$iface_config" 2>/dev/null || true
+        iface_mode="${SURICATA_IFACE_MODE:-auto}"
+        configured_ifaces="${SURICATA_IFACES:-}"
+    fi
+
+    # Get stats log path
+    local stats_log="${DISTRO_PATHS[suricata_stats_log]:-/var/log/suricata/stats.log}"
+    local eve_log="${NFTBAN_SURICATA_EVE_LOG:-/var/log/nftban/suricata/eve-alerts.json}"
+
+    # 1. Check configured interface(s) exist and are UP
+    if [[ "$iface_mode" == "manual" ]] && [[ -n "$configured_ifaces" ]]; then
+        IFS=',' read -ra iface_array <<< "$configured_ifaces"
+        for iface in "${iface_array[@]}"; do
+            iface=$(echo "$iface" | xargs)
+            [[ -z "$iface" ]] && continue
+
+            if [[ ! -d "/sys/class/net/$iface" ]]; then
+                capture_issues+=("CRITICAL: Configured interface '$iface' does not exist")
+                capture_issues+=("FIX: nftban suricata iface list")
+                status=$HEALTH_ERROR
+            elif [[ "$(cat /sys/class/net/$iface/operstate 2>/dev/null)" != "up" ]]; then
+                capture_issues+=("ERROR: Configured interface '$iface' is DOWN")
+                capture_issues+=("FIX: ip link set $iface up")
+                status=$HEALTH_ERROR
+            fi
+        done
+    fi
+
+    # 2. Check Suricata stats for packet capture (if stats.log exists)
+    if [[ -f "$stats_log" ]]; then
+        local last_stats
+        last_stats=$(tail -50 "$stats_log" 2>/dev/null | grep "capture.kernel_packets" | tail -1)
+
+        if [[ -n "$last_stats" ]]; then
+            local kernel_packets
+            kernel_packets=$(echo "$last_stats" | grep -oP 'capture\.kernel_packets\s*\|\s*\K[0-9]+' || echo "0")
+
+            if [[ "${kernel_packets:-0}" -eq 0 ]]; then
+                # Check if file was recently modified (within 5 min)
+                local stats_age
+                stats_age=$(( $(date +%s) - $(stat -c %Y "$stats_log" 2>/dev/null || echo 0) ))
+
+                if [[ $stats_age -lt 300 ]]; then
+                    capture_issues+=("CRITICAL: Zero packets captured (kernel_packets=0)")
+                    capture_issues+=("FIX: nftban suricata iface list")
+                    status=$HEALTH_ERROR
+                fi
+            fi
+
+            # Check for high drops
+            local kernel_drops
+            kernel_drops=$(echo "$last_stats" | grep -oP 'capture\.kernel_drops\s*\|\s*\K[0-9]+' || echo "0")
+
+            if [[ "${kernel_drops:-0}" -gt 1000 ]]; then
+                capture_issues+=("WARNING: High packet drops (kernel_drops=${kernel_drops})")
+                capture_issues+=("FIX: Tune ring buffer size in suricata.yaml or use nftban suricata profile")
+                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            fi
+        fi
+    fi
+
+    # 3. Alternative: Check EVE stats if stats.log not available
+    if [[ ${#capture_issues[@]} -eq 0 ]] && [[ -f "$eve_log" ]]; then
+        # Look for stats events in EVE JSON (if stats output enabled)
+        local last_capture_stats
+        last_capture_stats=$(tail -500 "$eve_log" 2>/dev/null | grep -o '"capture":{"kernel_packets":[0-9]*' | tail -1)
+
+        if [[ -n "$last_capture_stats" ]]; then
+            local eve_kernel_packets
+            eve_kernel_packets=$(echo "$last_capture_stats" | grep -oP '"kernel_packets":\K[0-9]+' || echo "0")
+
+            if [[ "${eve_kernel_packets:-0}" -eq 0 ]]; then
+                capture_issues+=("WARNING: EVE stats show zero kernel_packets")
+                [[ $status -lt $HEALTH_WARNING ]] && status=$HEALTH_WARNING
+            fi
+        fi
+    fi
+
+    # Store results
+    if [[ ${#capture_issues[@]} -gt 0 ]]; then
+        NFTBAN_HEALTH_ISSUES["suricata_capture"]="${capture_issues[*]}"
+        if [[ $status -eq $HEALTH_WARNING ]]; then
+            NFTBAN_HEALTH_WARNINGS+=("Suricata Capture: ${capture_issues[*]}")
+        elif [[ $status -eq $HEALTH_ERROR ]]; then
+            NFTBAN_HEALTH_ERRORS+=("Suricata Capture: ${capture_issues[*]}")
+        fi
+    fi
+
+    NFTBAN_HEALTH_RESULTS["suricata_capture"]=$status
+    return $status
+}
+
 # =============================================================================
 # TIMER CHECKS
 # =============================================================================
@@ -578,5 +691,6 @@ nftban_health_check_login_monitor_ipc() {
 
 # Export functions
 export -f nftban_health_check_services nftban_health_check_daemon
-export -f nftban_health_check_suricata nftban_health_check_timers
+export -f nftban_health_check_suricata nftban_health_check_suricata_capture
+export -f nftban_health_check_timers
 export -f nftban_health_check_maintenance_lock nftban_health_check_login_monitor_ipc

@@ -280,24 +280,98 @@ cmd_suricata_enable() {
             echo "  ✓ EVE output configured for nftban integration"
         fi
 
-        # Detect and configure af-packet interface (critical for packet capture)
-        local current_iface
-        current_iface=$(grep -A3 'af-packet:' "$suricata_yaml" 2>/dev/null | grep 'interface:' | head -1 | awk '{print $2}' | tr -d '"' || echo "")
+        # =================================================================
+        # INTERFACE DETECTION (v1.12.0 - Hard Gate System)
+        # =================================================================
+        # Load interface configuration
+        if declare -f _suricata_iface_load_config >/dev/null 2>&1; then
+            _suricata_iface_load_config
+        fi
 
-        if [[ "$current_iface" == "default" ]] || [[ -z "$current_iface" ]]; then
-            # Detect default route interface
-            local detected_iface
-            detected_iface=$(ip route 2>/dev/null | grep '^default' | awk '{print $5}' | head -1)
+        local iface_mode="${SURICATA_IFACE_MODE:-auto}"
+        local configured_ifaces=""
 
-            if [[ -n "$detected_iface" ]]; then
-                echo "  → Configuring af-packet interface..."
-                echo "    Detected: $detected_iface"
-                # Update interface in af-packet section
-                sed -i "/af-packet:/,/^[^ -]/ s|interface:.*|interface: $detected_iface|" "$suricata_yaml"
-                echo "  ✓ af-packet interface set to $detected_iface (cluster_flow mode)"
+        if [[ "$iface_mode" == "manual" ]] && [[ -n "${SURICATA_IFACES:-}" ]]; then
+            # Manual mode - use configured interfaces
+            echo "  → Using manually configured interface(s)..."
+            configured_ifaces="$SURICATA_IFACES"
+
+            # Validate each interface
+            local valid=true
+            IFS=',' read -ra iface_check <<< "$configured_ifaces"
+            for iface in "${iface_check[@]}"; do
+                iface=$(echo "$iface" | xargs)
+                if [[ ! -d "/sys/class/net/$iface" ]]; then
+                    echo "  ✗ Interface '$iface' does not exist"
+                    valid=false
+                elif [[ "$(cat /sys/class/net/$iface/operstate 2>/dev/null)" != "up" ]]; then
+                    echo "  ⚠ Interface '$iface' is not UP"
+                fi
+            done
+
+            if [[ "$valid" != "true" ]]; then
+                echo ""
+                echo "  Run 'nftban suricata iface list' to see available interfaces"
+                return 1
+            fi
+
+            echo "    Configured: $configured_ifaces"
+
+        else
+            # Auto mode - run hard gate detection
+            echo "  → Auto-detecting capture interface..."
+
+            local detection_result
+            local detection_status
+
+            if declare -f _suricata_iface_can_auto_enable >/dev/null 2>&1; then
+                detection_result=$(_suricata_iface_can_auto_enable)
+                detection_status=$?
             else
-                echo "  ⚠ Could not detect network interface"
-                echo "    Set interface manually in: $suricata_yaml"
+                # Fallback to simple detection if module not loaded
+                detection_result=$(ip route 2>/dev/null | grep '^default' | awk '{print $5}' | head -1)
+                detection_status=0
+                if [[ -z "$detection_result" ]]; then
+                    detection_status=1
+                fi
+            fi
+
+            if [[ $detection_status -eq 0 ]]; then
+                configured_ifaces="$detection_result"
+                echo "    Detected: $configured_ifaces"
+            else
+                # Selection required - show actionable error
+                echo ""
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo "  INTERFACE SELECTION REQUIRED"
+                echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+                echo ""
+                local details
+                details=$(echo "$detection_result" | tail -n +2)
+                echo "  $details"
+                echo ""
+                echo "Commands:"
+                echo "  nftban suricata iface list    # See all candidates"
+                echo "  nftban suricata iface set X   # Select interface(s)"
+                echo ""
+                echo "Example:"
+                echo "  nftban suricata iface set eth0        # Single interface"
+                echo "  nftban suricata iface set eth0,eth1   # Both interfaces"
+                echo ""
+                return 1
+            fi
+        fi
+
+        # Configure af-packet in suricata.yaml
+        if [[ -n "$configured_ifaces" ]]; then
+            if declare -f _suricata_iface_configure_yaml >/dev/null 2>&1; then
+                _suricata_iface_configure_yaml "$configured_ifaces" "$suricata_yaml"
+            else
+                # Fallback: simple sed replacement for single interface
+                local first_iface
+                first_iface=$(echo "$configured_ifaces" | cut -d',' -f1 | xargs)
+                sed -i "/af-packet:/,/^[^ -]/ s|interface:.*|interface: $first_iface|" "$suricata_yaml"
+                echo "  ✓ af-packet interface set to $first_iface"
             fi
         fi
     fi
