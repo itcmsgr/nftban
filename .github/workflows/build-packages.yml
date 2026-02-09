@@ -217,7 +217,7 @@ jobs:
           docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
             # Install build dependencies
             apt-get update
-            apt-get install -y dpkg-dev build-essential
+            apt-get install -y dpkg-dev build-essential file
 
             # Build DEB
             chmod +x packaging/build_nftban.sh
