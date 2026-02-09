@@ -101,7 +101,7 @@ _nftban() {
     local rbl_cmds="check server status list enable disable cache alert critical watchlist help"
     local support_cmds="--network help"
     local suricata_cmds="install enable disable status profile scan services rules sid custom recommend help"
-    local update_cmds="check apply rollback status help"
+    local update_cmds="check apply rollback status github git local auto help"
 
     # Memory/Ban Management (NEW)
     local protect_cmds="--json help"
