@@ -205,8 +205,9 @@ build_rpm() {
     # Copy spec file
     cp "${SCRIPT_DIR}/rpm/nftban-metrics.spec" "${rpmbuild_root}/SPECS/"
 
-    # Build RPM
+    # Build RPM (version from VERSION file)
     rpmbuild --define "_topdir ${rpmbuild_root}" \
+        --define "pkg_version ${PKG_VERSION}" \
         -ba "${rpmbuild_root}/SPECS/nftban-metrics.spec"
 
     # Move RPMs to output directory

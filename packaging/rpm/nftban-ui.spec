@@ -1,5 +1,8 @@
+# Version is passed via rpmbuild --define "pkg_version X.Y.Z"
+%{!?pkg_version: %define pkg_version 0.0.0}
+
 Name:           nftban-ui
-Version:        1.12.0
+Version:        %{pkg_version}
 Release:        1%{?dist}
 Summary:        NFTBAN Web Interface - Management console for nftables-based firewall
 

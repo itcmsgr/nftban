@@ -1,8 +1,11 @@
 # SPDX-License-Identifier: MPL-2.0
 # SPDX-FileCopyrightText: Copyright (c) 2024-2025 NFTBan Development Team
 
+# Version is passed via rpmbuild --define "pkg_version X.Y.Z"
+%{!?pkg_version: %define pkg_version 0.0.0}
+
 Name:           nftban-metrics
-Version:        1.12.0
+Version:        %{pkg_version}
 Release:        1%{?dist}
 Summary:        NFTBAN Metrics - Prometheus/Grafana observability for nftables firewall
 
