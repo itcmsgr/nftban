@@ -832,6 +832,8 @@ fi
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/login/*.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/portscan
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/portscan/*.conf
+%dir %attr(750,root,nftban) /etc/nftban/conf.d/suricata
+%attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/suricata/interfaces.conf
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/rbl
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/conf.d/rbl/*
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/panels
@@ -1444,6 +1446,7 @@ PRERM
 /etc/nftban/conf.d/ddos/main.conf
 /etc/nftban/conf.d/portscan/main.conf
 /etc/nftban/conf.d/login/main.conf
+/etc/nftban/conf.d/suricata/interfaces.conf
 /etc/nftban/conf.d/botscan/main.conf
 /etc/nftban/conf.d/geoban/main.conf
 /etc/nftban/conf.d/geoip/main.conf
