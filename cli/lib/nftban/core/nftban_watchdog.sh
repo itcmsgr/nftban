@@ -692,6 +692,9 @@ nftban_watchdog_run_all() {
     nftban_watchdog_get_top_cpu
     nftban_watchdog_get_top_mem
 
+    # Collect module-level resource usage
+    nftban_watchdog_collect_module_resources
+
     # Store overall status
     WATCHDOG_RESULTS[overall_status]="$overall_status"
     WATCHDOG_RESULTS[check_timestamp]=$(date +%s)
@@ -781,6 +784,52 @@ nftban_watchdog_report() {
 
         echo "FILE DESCRIPTORS: ${status_indicator}"
         echo "  Allocated: ${WATCHDOG_RESULTS[fd_allocated]} / ${WATCHDOG_RESULTS[fd_max]} (${WATCHDOG_RESULTS[fd_used_percent]}%)"
+        echo ""
+    fi
+
+    # Module Resources (per-module CPU/Memory)
+    local has_module_data=false
+    for key in "${!WATCHDOG_RESULTS[@]}"; do
+        [[ "$key" == module_*_mem_bytes ]] && has_module_data=true && break
+    done
+
+    if [[ "$has_module_data" == "true" ]]; then
+        echo "MODULE RESOURCES:"
+        printf "  %-20s %8s %8s %12s\n" "MODULE" "CPU%" "MEM%" "MEM(MB)"
+
+        # Systemd modules (login-monitor, feeds, maintenance, etc.)
+        local systemd_modules="login-monitor feeds maintenance geoip-update portscan ddos geoban"
+        for mod in $systemd_modules; do
+            local mem_bytes="${WATCHDOG_RESULTS[module_${mod}_memory]:-0}"
+            local duration="${WATCHDOG_RESULTS[module_${mod}_duration]:-0}"
+            if [[ $mem_bytes -gt 0 || $duration -gt 0 ]]; then
+                local mem_mb=$((mem_bytes / 1024 / 1024))
+                printf "  %-20s %8s %8s %12s\n" "$mod" "-" "-" "${mem_mb}MB"
+            fi
+        done
+
+        # Embedded modules (from daemon)
+        local embedded_modules="portscan ddos geoban"
+        for mod in $embedded_modules; do
+            local cpu_pct="${WATCHDOG_RESULTS[module_${mod}_cpu_pct]:-}"
+            local mem_pct="${WATCHDOG_RESULTS[module_${mod}_mem_pct]:-}"
+            local mem_bytes="${WATCHDOG_RESULTS[module_${mod}_mem_bytes]:-0}"
+            if [[ -n "$cpu_pct" || -n "$mem_pct" ]]; then
+                local mem_mb=$((mem_bytes / 1024 / 1024))
+                printf "  %-20s %7s%% %7s%% %12s\n" "${mod}(daemon)" "${cpu_pct:-0}" "${mem_pct:-0}" "${mem_mb}MB"
+            fi
+        done
+
+        # Suricata (special - external process)
+        local suricata_pid suricata_mem_kb=0 suricata_mem_mb=0 suricata_cpu=0
+        suricata_pid=$(pgrep -x suricata 2>/dev/null | head -1)
+        if [[ -n "$suricata_pid" ]]; then
+            suricata_mem_kb=$(ps -p "$suricata_pid" -o rss= 2>/dev/null | tr -d ' ')
+            suricata_mem_mb=$((suricata_mem_kb / 1024))
+            suricata_cpu=$(ps -p "$suricata_pid" -o %cpu= 2>/dev/null | tr -d ' ')
+            printf "  %-20s %7s%% %8s %12s\n" "suricata" "${suricata_cpu:-0}" "-" "${suricata_mem_mb}MB"
+        fi
+
         echo ""
     fi
 

@@ -5,6 +5,34 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.1] - 2026-02-09
+
+### Bug Fixes (Cross-Distro Validation)
+
+- **fix(watchdog)**: Resolve `head -""` error on AlmaLinux when `$count` is empty
+  - Added validation: `[[ ! "$count" =~ ^[1-9][0-9]*$ ]] && count=10`
+  - Affected: lab3 (828 errors), lab4 (4 errors)
+
+- **fix(watchdog)**: Resolve `local` inside loop causing exit 1 with `set -e`
+  - Moved variable declarations (`stat_line`, `cpu_time`, `vmrss`) outside for loops
+  - Affected: All distros (Debian, Ubuntu, AlmaLinux)
+
+### New Features
+
+- **feat(watchdog)**: Add MODULE RESOURCES section to `nftban watchdog report`
+  - Shows per-module CPU%, MEM%, and memory usage
+  - Displays: login-monitor, feeds, maintenance, portscan, ddos, geoban, suricata
+  - Wired up `nftban_watchdog_collect_module_resources()` which existed but was never called
+
+### Technical Details
+
+- Cross-distro validation across 5 lab servers:
+  - lab (Debian 12), lab1/lab3/lab4 (AlmaLinux 9.7), lab2 (Ubuntu 24.04)
+- All log formats verified against code: bans.log, login_alert.log
+- Logrotate confirmed working on all servers
+
+---
+
 ## [1.12.0] - 2026-02-09
 
 ### Suricata Interface Configuration Redesign
