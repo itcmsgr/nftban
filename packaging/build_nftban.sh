@@ -957,8 +957,9 @@ build_rpm() {
 
     log_success "Tarball created: ${tarball} ($(stat -c%s "${BUILD_DIR}/SOURCES/${tarball}" 2>/dev/null || echo 'unknown') bytes)"
 
-    # Build RPM
+    # Build RPM (version from VERSION file)
     if rpmbuild --define "_topdir ${BUILD_DIR}" \
+        --define "pkg_version ${PKG_VERSION}" \
         -bb "${BUILD_DIR}/SPECS/nftban-core.spec" 2>&1; then
         log_success "RPM built: ${BUILD_DIR}/RPMS/x86_64/nftban-core-${PKG_VERSION}-${PKG_RELEASE}.*.rpm"
         ls -la "${BUILD_DIR}/RPMS/" 2>/dev/null || true

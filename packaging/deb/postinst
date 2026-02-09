@@ -58,7 +58,7 @@ case "$1" in
                 break
             fi
         done
-        [[ -z "$NFTBAN_VERSION" ]] && NFTBAN_VERSION="1.7.0"
+        [[ -z "$NFTBAN_VERSION" ]] && NFTBAN_VERSION="unknown"
 
         log_info "Configuring NFTBan v${NFTBAN_VERSION}..."
 
