@@ -1901,3 +1901,9 @@ export -f nftban_watchdog_trend_display
 export -f nftban_watchdog_trend_averages
 export -f nftban_watchdog_trend_thresholds
 export -f nftban_watchdog_collect_module_resources
+export -f nftban_watchdog_output
+# Internal functions (exported for subshell access)
+export -f _watchdog_append_trend
+export -f _watchdog_output_journal
+export -f _watchdog_output_summary
+export -f _watchdog_should_show_full

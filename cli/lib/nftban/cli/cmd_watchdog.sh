@@ -67,10 +67,11 @@ nftban_watchdog_help() {
 USAGE: nftban watchdog <command> [options]
 
 COMMANDS:
-  status           Quick one-line status
+  status           Tiered status (auto-detects best format)
   check            Run all checks and show alerts only
   report           Full detailed report
   trend            Show 7-day trend analysis with averages
+  trends           Show JSONL trend log (per-cycle data)
   history          Show saved reports for auditing
   enable           Enable watchdog timer (auto-monitoring)
   disable          Disable watchdog timer
@@ -82,8 +83,16 @@ DAEMON STATS COMMANDS:
   snapshot         Capture a pprof profile (heap, goroutine, cpu)
   profiles         List captured pprof profiles
 
-OPTIONS:
-  --json           Output in JSON format (for status, check, stats)
+STATUS OPTIONS:
+  --json           Output in JSON format
+  --verbose, -v    Full detailed report
+  --summary        10-line summary format
+  --journal        1-line format for systemd/scripts
+
+  Default: Terminal gets summary, non-terminal gets journal format.
+  If issues detected (CRITICAL or 3+ alerts), auto-shows full report.
+
+GENERAL OPTIONS:
   --last=N         Show last N reports (for history, default: 10)
   --format=FORMAT  Output format: text, json (for history)
   --days=N         Number of days for stats-history (1-30, default: 7)
@@ -91,11 +100,14 @@ OPTIONS:
   --duration=N     CPU profile duration in seconds (default: 30)
 
 EXAMPLES:
-  nftban watchdog status         # Quick status check
+  nftban watchdog status         # Auto-detect best format
+  nftban watchdog status --summary   # 10-line summary
+  nftban watchdog status --journal   # 1-line for scripts
+  nftban watchdog status --verbose   # Full report
   nftban watchdog check          # Run checks, show alerts
   nftban watchdog report         # Full report with all metrics
-  nftban watchdog history        # Last 10 reports
-  nftban watchdog history --last=24
+  nftban watchdog trends --last=100  # Recent JSONL trend data
+  nftban watchdog history        # Last 10 saved reports
   nftban watchdog enable         # Enable auto-monitoring
 
   # Daemon stats examples:
@@ -155,9 +167,29 @@ EOF
 # =============================================================================
 
 nftban_watchdog_cmd_status() {
-    # Quick one-line status
+    # Tiered status output
+    #
+    # Options:
+    #   --json      JSON format output
+    #   --verbose   Full detailed report
+    #   --summary   10-line summary (default for terminal)
+    #   --journal   1-line format for systemd/scripts
+    #
+    # Default behavior (no flags):
+    #   - Terminal: 10-line summary (or full if issues detected)
+    #   - Non-terminal: 1-line journal format
+
     local json_mode=false
-    [[ "${1:-}" == "--json" ]] && json_mode=true
+    local output_tier="auto"
+
+    for arg in "$@"; do
+        case "$arg" in
+            --json) json_mode=true ;;
+            --verbose|-v) output_tier="full" ;;
+            --summary) output_tier="summary" ;;
+            --journal) output_tier="journal" ;;
+        esac
+    done
 
     # Check if enabled
     local enabled="${NFTBAN_WATCHDOG_ENABLED:-false}"
@@ -188,22 +220,32 @@ nftban_watchdog_cmd_status() {
 }
 EOF
     else
-        # Color coding
-        local color_reset="\033[0m"
-        local color_green="\033[32m"
-        local color_yellow="\033[33m"
-        local color_red="\033[31m"
-
-        local status_color="$color_green"
-        [[ "$status_text" == "WARNING" ]] && status_color="$color_yellow"
-        [[ "$status_text" == "CRITICAL" ]] && status_color="$color_red"
-
-        local enabled_text="disabled"
-        [[ "$enabled" == "true" ]] && enabled_text="enabled"
-
-        printf "Watchdog: %b%s%b | Load: %s | Mem: %s%% | I/O Wait: %s%% | Disk: %s%% | Timer: %s\n" \
-            "$status_color" "$status_text" "$color_reset" \
-            "$load" "$mem" "$iowait" "$disk" "$enabled_text"
+        # Use tiered output based on flags or auto-detect
+        case "$output_tier" in
+            full)
+                nftban_watchdog_report
+                ;;
+            summary)
+                _watchdog_output_summary
+                ;;
+            journal)
+                _watchdog_output_journal
+                ;;
+            auto)
+                # Auto-detect: terminal gets summary, scripts get journal
+                if [[ -t 1 ]]; then
+                    # Terminal - show summary or full if issues
+                    if _watchdog_should_show_full; then
+                        nftban_watchdog_report
+                    else
+                        _watchdog_output_summary
+                    fi
+                else
+                    # Not a terminal (systemd, script) - journal format
+                    _watchdog_output_journal
+                fi
+                ;;
+        esac
     fi
 }
 
