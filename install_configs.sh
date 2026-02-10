@@ -164,12 +164,18 @@ _install_configs_ownership() {
 _install_config_file() {
     local src="$1" dst="$2" mode="$3" owner="${4:-root:nftban}"
 
-    if [[ -f "$src" ]] && [[ ! -f "$dst" ]]; then
+    # Validate source exists (catches build issues early)
+    if [[ ! -f "$src" ]]; then
+        warn "Source config not found: $src (skipping)"
+        return 0
+    fi
+
+    if [[ ! -f "$dst" ]]; then
         cp -f "$src" "$dst"
         chmod "$mode" "$dst"
         chown "$owner" "$dst"
         ok "Installed: $dst"
-    elif [[ -f "$dst" ]]; then
+    else
         chmod "$mode" "$dst"
         chown "$owner" "$dst"
         ok "Config exists (permissions fixed): $dst"
