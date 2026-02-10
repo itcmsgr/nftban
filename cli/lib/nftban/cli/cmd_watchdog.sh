@@ -69,6 +69,7 @@ USAGE: nftban watchdog <command> [options]
 COMMANDS:
   status           Tiered status (auto-detects best format)
   check            Run all checks and show alerts only
+  run              Execute watchdog cycle (used by systemd timer)
   report           Full detailed report
   trend            Show 7-day trend analysis with averages
   trends           Show JSONL trend log (per-cycle data)
@@ -247,6 +248,51 @@ EOF
                 ;;
         esac
     fi
+}
+
+# =============================================================================
+# RUN COMMAND (Called by systemd timer)
+# =============================================================================
+
+nftban_watchdog_cmd_run() {
+    # Main entry point for systemd timer execution
+    # Runs all checks with proper conditional save logic:
+    # - Reports saved ONLY if issues detected (status > 0)
+    # - JSONL trends appended EVERY cycle
+    # - Prometheus metrics exported EVERY cycle
+    #
+    # Options:
+    #   --verbose    Show full report output
+    #   --summary    Show summary output
+    #   --journal    Show journal-style output (default for timer)
+    #   --silent     No output (metrics/trends still recorded)
+
+    local output_tier="silent"
+
+    for arg in "$@"; do
+        case "$arg" in
+            --verbose|-v) output_tier="full" ;;
+            --summary) output_tier="summary" ;;
+            --journal) output_tier="journal" ;;
+            --silent) output_tier="silent" ;;
+        esac
+    done
+
+    # Ensure trends directory exists before running
+    local trends_dir="${NFTBAN_LOG_DIR:-/var/log/nftban}/watchdog"
+    if [[ ! -d "$trends_dir" ]]; then
+        mkdir -p "$trends_dir" 2>/dev/null || true
+        chown nftban:nftban "$trends_dir" 2>/dev/null || true
+        chmod 750 "$trends_dir" 2>/dev/null || true
+    fi
+
+    # Call the core run function which handles:
+    # - Running all checks
+    # - Saving report ONLY if status > 0
+    # - Exporting Prometheus metrics
+    # - Appending JSONL trends
+    # - Cleanup of old reports
+    nftban_watchdog_run "$output_tier"
 }
 
 # =============================================================================
@@ -1072,6 +1118,10 @@ nftban_cmd_watchdog() {
             ;;
         report)
             nftban_watchdog_cmd_report "$@"
+            ;;
+        run)
+            # Called by systemd timer - runs checks with proper save/trend logic
+            nftban_watchdog_cmd_run "$@"
             ;;
         history)
             nftban_watchdog_cmd_history "$@"

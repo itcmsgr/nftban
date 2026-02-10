@@ -159,20 +159,47 @@ nftban_panel_detect() {
 # Check if a port is open in nftables
 # Usage: _nftban_panel_check_port <port>
 # Returns: 0 if port is open, 1 if closed
+#
+# Checks tcp_ports and udp_ports sets in nftables.
+# Architecture: NFTBan uses separate ip/ip6 tables (not inet).
+# Port sets are: "ip nftban tcp_ports" and "ip nftban udp_ports"
 _nftban_panel_check_port() {
     local port="$1"
-    local table output
-    local old_ifs="$IFS"
-    IFS=$' \t\n'  # Reset IFS to default for iteration
-    for table in nftban nftban_runtime nftban_filter; do
-        # Use command substitution to avoid SIGPIPE with pipefail
-        output=$(nft list table inet "$table" 2>/dev/null) || true
-        if echo "$output" | grep -q "dport $port"; then
-            IFS="$old_ifs"
+    local output
+
+    # Check tcp_ports set in ip nftban table (primary architecture)
+    output=$(nft list set ip nftban tcp_ports 2>/dev/null) || true
+    if [[ -n "$output" ]]; then
+        # Match port as standalone number or in a list (e.g., "22, 80, 443" or "elements = { 22 }")
+        # Port can appear as: standalone, comma-separated, or with spaces
+        if echo "$output" | grep -qE "(^|[^0-9])${port}([^0-9]|$)"; then
             return 0
         fi
-    done
-    IFS="$old_ifs"
+    fi
+
+    # Check udp_ports set in ip nftban table
+    output=$(nft list set ip nftban udp_ports 2>/dev/null) || true
+    if [[ -n "$output" ]]; then
+        if echo "$output" | grep -qE "(^|[^0-9])${port}([^0-9]|$)"; then
+            return 0
+        fi
+    fi
+
+    # Fallback: Check legacy inet nftban table (for older installations)
+    output=$(nft list set inet nftban tcp_ports 2>/dev/null) || true
+    if [[ -n "$output" ]]; then
+        if echo "$output" | grep -qE "(^|[^0-9])${port}([^0-9]|$)"; then
+            return 0
+        fi
+    fi
+
+    output=$(nft list set inet nftban udp_ports 2>/dev/null) || true
+    if [[ -n "$output" ]]; then
+        if echo "$output" | grep -qE "(^|[^0-9])${port}([^0-9]|$)"; then
+            return 0
+        fi
+    fi
+
     return 1
 }
 

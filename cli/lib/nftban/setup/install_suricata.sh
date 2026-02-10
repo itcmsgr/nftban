@@ -243,8 +243,19 @@ create_directories() {
     install -d -o nftban -g nftban -m 0750 /var/log/nftban
     # Suricata-specific directories
     install -d -o "$SURICATA_USER" -g "$SURICATA_GROUP" -m 0750 "$SURICATA_DATA_DIR"
-    install -d -o "$SURICATA_USER" -g "$SURICATA_GROUP" -m 0750 "$SURICATA_LOG_DIR"
     install -d -o "$SURICATA_USER" -g "$SURICATA_GROUP" -m 0755 "$SURICATA_RUN_DIR"
+
+    # EVE log directory: suricata:nftban with 770 permissions
+    # Suricata writes logs, nftban reads them for IDS integration
+    install -d -o "$SURICATA_USER" -g nftban -m 0770 "$SURICATA_LOG_DIR"
+
+    # Add suricata user to nftban group (traverse /var/log/nftban/)
+    if ! id -nG "$SURICATA_USER" 2>/dev/null | grep -qw nftban; then
+        print_info "Adding suricata user to nftban group..."
+        usermod -aG nftban "$SURICATA_USER" 2>/dev/null || true
+        print_status "suricata user added to nftban group"
+    fi
+
     # Config directory
     chmod 755 "$SURICATA_CONF_DIR"
 

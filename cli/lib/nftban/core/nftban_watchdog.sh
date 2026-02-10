@@ -1605,10 +1605,23 @@ _watchdog_append_trend() {
     local trend_dir
     trend_dir=$(dirname "$trend_file")
 
-    # Ensure directory exists
-    if ! mkdir -p "$trend_dir" 2>/dev/null; then
-        watchdog_log "WARN" "Cannot create trend directory: $trend_dir"
-        return 1
+    # Ensure directory exists with proper permissions
+    if [[ ! -d "$trend_dir" ]]; then
+        # Try to create directory
+        if ! mkdir -p "$trend_dir" 2>/dev/null; then
+            # Try with sudo if we're root (shouldn't happen but safety)
+            if [[ $EUID -eq 0 ]]; then
+                mkdir -p "$trend_dir" && chown nftban:nftban "$trend_dir" && chmod 750 "$trend_dir"
+            fi
+        fi
+        # Verify creation
+        if [[ ! -d "$trend_dir" ]]; then
+            logger -t nftban-watchdog -p user.warning "Cannot create trend directory: $trend_dir"
+            return 1
+        fi
+        # Set ownership if we just created it
+        chown nftban:nftban "$trend_dir" 2>/dev/null || true
+        chmod 750 "$trend_dir" 2>/dev/null || true
     fi
 
     # Get timestamp in ISO8601 format
