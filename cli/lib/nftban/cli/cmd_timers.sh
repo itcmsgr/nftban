@@ -47,6 +47,7 @@ readonly NFTBAN_TIMERS=(
     "nftban-suricata-update.timer"
     "nftban-snapshot.timer"
     "nftban-rollback.timer"
+    "nftban-update.timer"
 )
 
 # Timer descriptions
@@ -60,6 +61,7 @@ declare -A TIMER_DESC=(
     ["nftban-suricata-update.timer"]="Suricata IDS rules update"
     ["nftban-snapshot.timer"]="Config/state snapshot creation"
     ["nftban-rollback.timer"]="Rollback availability check"
+    ["nftban-update.timer"]="Weekly auto-update (Sunday 4:00 AM)"
 )
 
 # =============================================================================
@@ -385,6 +387,7 @@ TIMERS:
   nftban-suricata-update.timer     Suricata IDS rules update
   nftban-snapshot.timer            Config/state snapshot creation
   nftban-rollback.timer            Rollback availability check
+  nftban-update.timer              Weekly auto-update (Sunday 4:00 AM)
 
 EXAMPLES:
   nftban timers                         # Show status

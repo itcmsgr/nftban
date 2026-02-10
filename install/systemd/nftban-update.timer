@@ -1,0 +1,58 @@
+# =============================================================================
+# NFTBan v1.0.0 - Weekly Auto-Update Timer
+# =============================================================================
+# SPDX-License-Identifier: MPL-2.0
+# meta:name="nftban-update.timer"
+# meta:type="systemd"
+# meta:version="1.0.0"
+# meta:owner="Antonios Voulvoulis <contact@nftban.com>"
+# meta:description="Timer for weekly automated updates"
+# meta:inventory.files=""
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files="/etc/nftban/conf.d/update.conf"
+# meta:inventory.systemd_units="nftban-update.service"
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
+#
+# Purpose: Schedule automatic NFTBan updates weekly
+#
+# This timer runs weekly to check for and apply updates.
+# Requires /etc/nftban/conf.d/update.conf to exist and have
+# NFTBAN_UPDATE_AUTO_ENABLED="true" for updates to run.
+#
+# Enable with: nftban update auto enable --email admin@example.com
+# Disable with: nftban update auto disable
+#
+# Schedule: Sunday 4:00 AM with 30-minute jitter for fleet distribution
+# =============================================================================
+
+[Unit]
+Description=NFTBan Weekly Auto-Update Timer
+Documentation=man:nftban(8)
+ConditionPathExists=/etc/nftban/conf.d/update.conf
+
+[Timer]
+# Run weekly on Sunday at 4:00 AM (low-traffic window)
+OnCalendar=Sun *-*-* 04:00:00
+
+# JITTER: 30-minute variance for fleet distribution
+# Prevents all servers from updating simultaneously
+RandomizedDelaySec=30m
+
+# DETERMINISTIC: Same offset per host for predictable behavior
+# Makes debugging easier - same host updates at same time each week
+FixedRandomDelay=true
+
+# Catch up on missed runs after system sleep/shutdown
+# If server was off during scheduled time, run on next boot
+Persistent=true
+
+# Timer precision - 1 minute is fine for weekly updates
+AccuracySec=1min
+
+# Unit to activate
+Unit=nftban-update.service
+
+[Install]
+WantedBy=timers.target
