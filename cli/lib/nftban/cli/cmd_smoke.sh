@@ -70,6 +70,10 @@ nftban_cmd_smoke() {
             # Smart validation: verify counts match expectations
             nftban_smoke_verify "$@"
             ;;
+        config|configs)
+            # Verify config file integrity (CI/build validation)
+            nftban_smoke_verify_configs "$@"
+            ;;
         check|orphans)
             nftban_smoke_check_orphans "$@"
             ;;
@@ -508,6 +512,258 @@ _verify_geoban() {
 }
 
 # =============================================================================
+# CONFIG INTEGRITY VERIFICATION (nftban smoke config)
+# =============================================================================
+# Validates that all config files exist and are properly tracked:
+# - Files in conffiles exist in the filesystem
+# - Files referenced in build scripts exist in git
+# - No orphaned config references
+# =============================================================================
+
+nftban_smoke_verify_configs() {
+    local project_root="${NFTBAN_PROJECT_ROOT:-}"
+    local check_mode="${1:-runtime}"  # runtime or build
+
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  NFTBan Configuration File Integrity Check"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+
+    local passed=0
+    local failed=0
+    local warnings=0
+
+    if [[ "$check_mode" == "build" ]] && [[ -n "$project_root" ]]; then
+        # Build-time check: verify source files exist in git
+        echo "MODE: Build-time verification (source files)"
+        echo ""
+        _verify_conffiles_sources "$project_root" && ((passed++)) || ((failed++))
+        _verify_install_configs_sources "$project_root" && ((passed++)) || ((failed++))
+        _verify_build_script_sources "$project_root" && ((passed++)) || ((failed++))
+    else
+        # Runtime check: verify installed files exist
+        echo "MODE: Runtime verification (installed files)"
+        echo ""
+        _verify_runtime_configs && ((passed++)) || ((failed++))
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    if [[ $failed -eq 0 ]]; then
+        echo "  Result: ✅ ALL PASSED ($passed checks)"
+    else
+        echo "  Result: ❌ FAILED ($failed failed, $passed passed)"
+    fi
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+    [[ $failed -eq 0 ]]
+}
+
+_verify_runtime_configs() {
+    echo "CHECK: Runtime Configuration Files"
+    echo "───────────────────────────────────────────────────────────────"
+
+    local errors=0
+    local checked=0
+
+    # Critical config files that MUST exist for nftban to work
+    local critical_configs=(
+        "/etc/nftban/nftban.conf"
+        "/etc/nftban/conf.d/mail.conf"
+        "/etc/nftban/conf.d/stats.conf"
+        "/etc/nftban/conf.d/ddos/main.conf"
+        "/etc/nftban/conf.d/portscan/main.conf"
+        "/etc/nftban/conf.d/login/main.conf"
+    )
+
+    # Suricata config files (required if Suricata is enabled)
+    local suricata_configs=(
+        "/etc/nftban/suricata/config/profile.conf"
+        "/etc/nftban/suricata/suricata.yaml.overlay"
+        "/etc/nftban/conf.d/suricata/interfaces.conf"
+    )
+
+    echo "  Checking critical config files..."
+    for config in "${critical_configs[@]}"; do
+        ((checked++))
+        if [[ -f "$config" ]]; then
+            printf "     ✅ %s\n" "$config"
+        else
+            printf "     ❌ MISSING: %s\n" "$config"
+            ((errors++))
+        fi
+    done
+
+    echo ""
+    echo "  Checking Suricata config files..."
+    local suricata_installed=false
+    if command -v suricata >/dev/null 2>&1; then
+        suricata_installed=true
+    fi
+
+    for config in "${suricata_configs[@]}"; do
+        ((checked++))
+        if [[ -f "$config" ]]; then
+            printf "     ✅ %s\n" "$config"
+        elif [[ "$suricata_installed" == "true" ]]; then
+            printf "     ❌ MISSING: %s (Suricata installed but config missing!)\n" "$config"
+            ((errors++))
+        else
+            printf "     ⚠️  SKIP: %s (Suricata not installed)\n" "$config"
+        fi
+    done
+
+    echo ""
+    printf "  Checked: %d files, Errors: %d\n" "$checked" "$errors"
+
+    [[ $errors -eq 0 ]]
+}
+
+_verify_conffiles_sources() {
+    local project_root="$1"
+    local conffiles="${project_root}/install/packaging/deb/nftban.conffiles"
+
+    echo "CHECK: DEB conffiles Source Verification"
+    echo "───────────────────────────────────────────────────────────────"
+
+    if [[ ! -f "$conffiles" ]]; then
+        echo "  ⚠️  SKIP: conffiles not found: $conffiles"
+        return 0
+    fi
+
+    local errors=0
+    local checked=0
+
+    while IFS= read -r line; do
+        # Skip comments and empty lines
+        [[ -z "$line" || "$line" =~ ^[[:space:]]*# ]] && continue
+
+        # Convert installed path to source path
+        local installed_path="$line"
+        local source_path=""
+
+        if [[ "$installed_path" == /etc/nftban/* ]]; then
+            # Try etc/nftban/ first, then install/config/
+            local relative="${installed_path#/etc/nftban/}"
+            if [[ -f "${project_root}/etc/nftban/${relative}" ]]; then
+                source_path="${project_root}/etc/nftban/${relative}"
+            elif [[ -f "${project_root}/install/config/${relative}" ]]; then
+                source_path="${project_root}/install/config/${relative}"
+            fi
+        elif [[ "$installed_path" == /etc/logrotate.d/* ]]; then
+            source_path="${project_root}/install/config/nftban.logrotate"
+        elif [[ "$installed_path" == /etc/polkit-1/* ]]; then
+            local relative="${installed_path#/etc/polkit-1/}"
+            source_path="${project_root}/packaging/polkit-1/${relative}"
+        fi
+
+        ((checked++))
+        if [[ -n "$source_path" && -f "$source_path" ]]; then
+            printf "     ✅ %s\n" "$installed_path"
+        else
+            printf "     ❌ MISSING SOURCE: %s\n" "$installed_path"
+            ((errors++))
+        fi
+    done < "$conffiles"
+
+    echo ""
+    printf "  Checked: %d entries, Errors: %d\n" "$checked" "$errors"
+
+    [[ $errors -eq 0 ]]
+}
+
+_verify_install_configs_sources() {
+    local project_root="$1"
+    local install_configs="${project_root}/install_configs.sh"
+
+    echo "CHECK: install_configs.sh Source Verification"
+    echo "───────────────────────────────────────────────────────────────"
+
+    if [[ ! -f "$install_configs" ]]; then
+        echo "  ⚠️  SKIP: install_configs.sh not found: $install_configs"
+        return 0
+    fi
+
+    local errors=0
+    local checked=0
+
+    # Extract _install_config_file calls and check sources exist
+    while IFS= read -r line; do
+        # Match: _install_config_file "$SCRIPT_DIR/path/to/file" ...
+        if [[ "$line" =~ _install_config_file[[:space:]]+\"?\$\{?SCRIPT_DIR\}?/?([^\"[:space:]]+) ]]; then
+            local relative_path="${BASH_REMATCH[1]}"
+            local source_path="${project_root}/${relative_path}"
+
+            ((checked++))
+            if [[ -f "$source_path" ]]; then
+                printf "     ✅ %s\n" "$relative_path"
+            else
+                printf "     ❌ MISSING: %s\n" "$relative_path"
+                ((errors++))
+            fi
+        fi
+    done < "$install_configs"
+
+    echo ""
+    printf "  Checked: %d files, Errors: %d\n" "$checked" "$errors"
+
+    [[ $errors -eq 0 ]]
+}
+
+_verify_build_script_sources() {
+    local project_root="$1"
+    local build_script="${project_root}/packaging/build_nftban.sh"
+
+    echo "CHECK: build_nftban.sh Source Verification"
+    echo "───────────────────────────────────────────────────────────────"
+
+    if [[ ! -f "$build_script" ]]; then
+        echo "  ⚠️  SKIP: build_nftban.sh not found: $build_script"
+        return 0
+    fi
+
+    local errors=0
+    local checked=0
+
+    # Check install commands for config files
+    while IFS= read -r line; do
+        # Match: install -m 0644 etc/nftban/... or install -D -m 0644 etc/nftban/...
+        if [[ "$line" =~ install[[:space:]]+-[Dm][[:space:]]+-?m?[[:space:]]*[0-9]+[[:space:]]+\"?\$\{PROJECT_ROOT\}/?([^\"[:space:]]+) ]]; then
+            local relative_path="${BASH_REMATCH[1]}"
+            local source_path="${project_root}/${relative_path}"
+
+            ((checked++))
+            if [[ -f "$source_path" ]]; then
+                printf "     ✅ %s\n" "$relative_path"
+            else
+                printf "     ❌ MISSING: %s\n" "$relative_path"
+                ((errors++))
+            fi
+        # Match: install -D -m 0644 path/to/file (without PROJECT_ROOT)
+        elif [[ "$line" =~ install[[:space:]]+-D[[:space:]]+-m[[:space:]]+[0-9]+[[:space:]]+([a-z]+[^[:space:]\"]+) ]]; then
+            local relative_path="${BASH_REMATCH[1]}"
+            # Only check etc/nftban and install/ paths
+            if [[ "$relative_path" == etc/nftban/* ]] || [[ "$relative_path" == install/* ]]; then
+                local source_path="${project_root}/${relative_path}"
+
+                ((checked++))
+                if [[ -f "$source_path" ]]; then
+                    printf "     ✅ %s\n" "$relative_path"
+                else
+                    printf "     ❌ MISSING: %s\n" "$relative_path"
+                    ((errors++))
+                fi
+            fi
+        fi
+    done < "$build_script"
+
+    echo ""
+    printf "  Checked: %d files, Errors: %d\n" "$checked" "$errors"
+
+    [[ $errors -eq 0 ]]
+}
+
+# =============================================================================
 # USAGE
 # =============================================================================
 
@@ -523,6 +779,7 @@ Commands:
   all, detailed      Run ALL CLI tests (55+ commands - comprehensive)
   lifecycle          Run ban lifecycle tests only (IPv4/IPv6 ban+whitelist)
   verify [TARGET]    Smart validation - verify counts match expectations
+  config [MODE]      Verify config file integrity (runtime or build)
   check [MINUTES]    Check for orphaned traces (stuck scripts)
   stats              Show trace statistics
   trace recent [N]   Show last N trace entries
@@ -550,6 +807,8 @@ Examples:
   nftban smoke verify bans      # Verify ban count changes only
   nftban smoke verify feeds     # Verify feeds loaded correctly
   nftban smoke verify geoban    # Verify country blocks applied
+  nftban smoke config           # Verify runtime config files exist
+  nftban smoke config build     # CI: verify source files exist (use with NFTBAN_PROJECT_ROOT)
   nftban smoke check            # Check for stuck scripts
   nftban smoke check 10         # Check traces older than 10 min
   nftban smoke stats            # Trace statistics
@@ -561,6 +820,17 @@ Smart Verification:
   - Unban IP → blacklist count decreases by 1
   - Feed files → IPs loaded into blacklist
   - GeoBan → Country CIDRs loaded into blacklist
+
+Config Integrity Check:
+  The 'config' command verifies configuration files:
+  - runtime: Check that installed config files exist (default)
+  - build:   CI mode - verify source files in git (needs NFTBAN_PROJECT_ROOT)
+
+  CI Usage:
+    NFTBAN_PROJECT_ROOT=/path/to/nftban nftban smoke config build
+
+  This catches issues like missing config files in packages BEFORE release.
+  Also see: nftban health, nftban status (runtime diagnostics)
 
 Debug Trace Configuration:
   Set NFTBAN_DEBUG_TRACE="true" in /etc/nftban/nftban.conf to enable
