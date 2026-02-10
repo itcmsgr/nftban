@@ -291,13 +291,17 @@ perms_enforce_log_files() {
 
         # Handle suricata directory specially: suricata:nftban so Suricata can write, nftban can read
         if [[ -d "$PERMS_LOG/suricata" ]]; then
-            perms_say "Securing suricata log files (suricata:nftban)"
-            perms_run find "$PERMS_LOG/suricata" -type f -exec chown suricata:nftban {} \;
-            perms_run find "$PERMS_LOG/suricata" -type f -exec chmod 0640 {} \;
-            # Add suricata to nftban group if not already
-            if id suricata >/dev/null 2>&1 && ! groups suricata 2>/dev/null | grep -q '\bnftban\b'; then
+            perms_say "Securing suricata log directory and files (suricata:nftban)"
+            # Add suricata to nftban group if not already (must come first)
+            if id suricata >/dev/null 2>&1 && ! id -nG suricata 2>/dev/null | grep -qw nftban; then
                 perms_run usermod -aG nftban suricata
             fi
+            # Directory: suricata:nftban 770 (suricata writes, nftban reads)
+            perms_run chown suricata:nftban "$PERMS_LOG/suricata"
+            perms_run chmod 0770 "$PERMS_LOG/suricata"
+            # Files: suricata:nftban 640
+            perms_run find "$PERMS_LOG/suricata" -type f -exec chown suricata:nftban {} \;
+            perms_run find "$PERMS_LOG/suricata" -type f -exec chmod 0640 {} \;
         fi
     fi
 }

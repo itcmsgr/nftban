@@ -464,6 +464,14 @@ directories:
       description: "RBL check cache"
       created_by: tmpfiles
 
+    - path: /var/log/nftban/suricata
+      mode: "0770"
+      owner: suricata
+      group: nftban
+      description: "Suricata EVE logs (suricata writes, nftban reads)"
+      created_by: feature_enable
+      note: "Created by 'nftban suricata enable' when Suricata is installed"
+
   # ---------------------------------------------------------------------------
   # Cache and Runtime (nftban:nftban) - Temporary files
   # ---------------------------------------------------------------------------

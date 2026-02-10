@@ -5,6 +5,42 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.4] - 2026-02-10
+
+### Bug Fixes (Cross-Distro Validation)
+
+- **fix(login)**: Boolean normalization for login monitor config
+  - Root cause: Only accepted `"true"`, not `"TRUE"`, `"yes"`, `"1"`, `"on"`
+  - Fix: Added normalize function accepting true/TRUE/yes/YES/1/on/ON
+
+- **fix(panel)**: Panel port detection now queries nft sets directly
+  - Root cause: Old code checked `dport` rules, but NFTBan uses `tcp_ports`/`udp_ports` sets
+  - Fix: Query `nft list set ip nftban tcp_ports` instead of grepping dport
+
+- **fix(suricata)**: Enable tpacket-v3 by default to reduce memory usage
+  - Root cause: TPACKET_V2 default uses 1.8GB; V3 uses ~400MB
+  - Fix: Add `tpacket-v3: yes` to generated af-packet config
+
+- **fix(suricata)**: EVE log permissions for RHEL-based distros
+  - Root cause: Suricata runs as `suricata` user, couldn't write to nftban directory
+  - Fix: Add suricata to nftban group, set directory to suricata:nftban 770
+  - Files updated: cmd_suricata_setup.sh, nftban_permissions.sh, nftban_health_fixes.sh, install_suricata.sh
+
+### Enhancements
+
+- **feat(watchdog)**: Add `nftban watchdog run` command for systemd timer
+  - Proper entry point with conditional report saving (only on issues)
+  - Ensures trends directory exists before running
+
+- **feat(watchdog)**: Improved trend directory creation with proper permissions
+  - Handles permission issues gracefully with fallback to logger
+
+### Cross-Distro Validation
+
+Tested on Debian 12, Ubuntu 24.04, and AlmaLinux 9.7
+
+---
+
 ## [1.12.2] - 2026-02-09
 
 ### Bug Fixes (Maintenance & Cleanup)

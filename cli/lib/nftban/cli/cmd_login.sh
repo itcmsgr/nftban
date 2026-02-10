@@ -512,7 +512,20 @@ nftban_login_cmd_test() {
 nftban_login_cmd_run() {
     # Run login monitoring (for service)
 
-    if [[ "$NFTBAN_LOGIN_ALERT_ENABLED" != "true" ]]; then
+    # Normalize boolean value (accepts true/TRUE/yes/YES/1/on/ON)
+    local alert_enabled
+    if declare -f nftban_normalize_boolean >/dev/null 2>&1; then
+        alert_enabled="$(nftban_normalize_boolean "$NFTBAN_LOGIN_ALERT_ENABLED")"
+    else
+        # Local fallback normalization
+        local val="${NFTBAN_LOGIN_ALERT_ENABLED,,}"  # lowercase
+        case "$val" in
+            true|yes|1|on) alert_enabled="true" ;;
+            *) alert_enabled="false" ;;
+        esac
+    fi
+
+    if [[ "$alert_enabled" != "true" ]]; then
         echo "ERROR: Login alerts are disabled in configuration" >&2
         exit 1
     fi

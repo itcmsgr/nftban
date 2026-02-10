@@ -34,10 +34,11 @@ Group=nftban
 # Run watchdog checks and export metrics
 # Uses the core watchdog module which:
 # - Reads system metrics from /proc
-# - Saves reports to /var/lib/nftban/reports/watchdog/
+# - Saves reports to /var/lib/nftban/reports/watchdog/ (ONLY if issues detected)
+# - Appends to JSONL trends log (every cycle for trend analysis)
 # - Exports Prometheus metrics to /var/lib/nftban/metrics/
 # - Sends alerts to syslog when thresholds exceeded
-ExecStart=/usr/sbin/nftban watchdog report --save
+ExecStart=/usr/sbin/nftban watchdog run
 
 # Exit codes: 0=OK, 1=warnings, 2=critical - all are valid check results
 SuccessExitStatus=0 1 2

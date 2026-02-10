@@ -257,12 +257,29 @@ cmd_suricata_enable() {
     eve_dir=$(dirname "$eve_log")
 
     # Create EVE directory with correct permissions
+    # Suricata needs write access; nftban needs read access for log parsing
     if [[ ! -d "$eve_dir" ]]; then
         echo "  → Creating EVE log directory..."
         mkdir -p "$eve_dir"
-        chmod 750 "$eve_dir"
-        # Use nftban group for access
+    fi
+
+    # Fix permissions for Suricata write access (RHEL-based distros)
+    # Suricata runs as 'suricata' user, needs write access to EVE directory
+    if getent passwd suricata >/dev/null 2>&1; then
+        # Add suricata user to nftban group (traverse /var/log/nftban/)
+        if ! id -nG suricata 2>/dev/null | grep -qw nftban; then
+            echo "  → Adding suricata user to nftban group..."
+            usermod -aG nftban suricata 2>/dev/null || true
+            echo "  ✓ suricata user added to nftban group"
+        fi
+        # Set ownership: suricata:nftban with mode 770 (suricata writes, nftban reads)
+        chown suricata:nftban "$eve_dir" 2>/dev/null || chown root:nftban "$eve_dir"
+        chmod 770 "$eve_dir"
+        echo "  ✓ EVE directory: $eve_dir (suricata:nftban, 770)"
+    else
+        # Fallback if suricata user doesn't exist yet
         chown root:nftban "$eve_dir" 2>/dev/null || chown root:root "$eve_dir"
+        chmod 750 "$eve_dir"
         echo "  ✓ Created $eve_dir"
     fi
 
@@ -371,7 +388,12 @@ cmd_suricata_enable() {
                 local first_iface
                 first_iface=$(echo "$configured_ifaces" | cut -d',' -f1 | xargs)
                 sed -i "/af-packet:/,/^[^ -]/ s|interface:.*|interface: $first_iface|" "$suricata_yaml"
-                echo "  ✓ af-packet interface set to $first_iface"
+                # Ensure tpacket-v3 is enabled (reduces memory from 1.8GB to ~400MB on RHEL)
+                if ! grep -q "tpacket-v3:" "$suricata_yaml"; then
+                    sed -i "/af-packet:/,/^[^ -]/ { /use-mmap:/ a\\    tpacket-v3: yes
+                    }" "$suricata_yaml"
+                fi
+                echo "  ✓ af-packet interface set to $first_iface (tpacket-v3 enabled)"
             fi
         fi
     fi

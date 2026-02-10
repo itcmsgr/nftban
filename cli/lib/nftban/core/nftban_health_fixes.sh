@@ -283,15 +283,16 @@ nftban_health_fix_permissions() {
             local suricata_fixed=0
 
             # Add suricata user to nftban group (if not already)
+            # This allows suricata to traverse /var/log/nftban/ (owned by nftban:nftban)
             if id suricata >/dev/null 2>&1; then
-                if ! groups suricata 2>/dev/null | grep -q '\bnftban\b'; then
+                if ! id -nG suricata 2>/dev/null | grep -qw nftban; then
                     usermod -aG nftban suricata 2>/dev/null && suricata_fixed=1
                 fi
             fi
 
-            # Fix directory: suricata:nftban with group read
-            chgrp -R nftban "${NFTBAN_LOG_DIR}/suricata" 2>/dev/null
-            chmod 750 "${NFTBAN_LOG_DIR}/suricata" 2>/dev/null
+            # Fix directory: suricata:nftban with 770 (suricata writes, nftban reads)
+            chown suricata:nftban "${NFTBAN_LOG_DIR}/suricata" 2>/dev/null
+            chmod 770 "${NFTBAN_LOG_DIR}/suricata" 2>/dev/null
 
             # Fix eve-alerts.json: suricata:nftban 640 so nftban can read
             if [[ -f "${NFTBAN_LOG_DIR}/suricata/eve-alerts.json" ]]; then
@@ -307,7 +308,7 @@ nftban_health_fix_permissions() {
             fi
 
             if [[ $suricata_fixed -eq 1 ]]; then
-                echo "  ✓ Fixed ${NFTBAN_LOG_DIR}/suricata permissions (suricata:nftban)"
+                echo "  ✓ Fixed ${NFTBAN_LOG_DIR}/suricata permissions (suricata:nftban, 770)"
                 : $((fixed_count++))
             fi
         fi
