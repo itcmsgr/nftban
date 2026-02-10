@@ -248,6 +248,10 @@ _install_configs_modules() {
     _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/suricata.yaml.overlay" "/etc/nftban/suricata/suricata.yaml.overlay" "664"
     chown root:nftban /etc/nftban/suricata/suricata.yaml.overlay
 
+    # Suricata profile configuration (controls which profile is active)
+    _install_config_file "$SCRIPT_DIR/etc/nftban/suricata/config/profile.conf" "/etc/nftban/suricata/config/profile.conf" "664"
+    chown root:nftban /etc/nftban/suricata/config/profile.conf
+
     # Core configs
     _install_config_file "$SCRIPT_DIR/install/config/feeds.conf" "/etc/nftban/conf.d/feeds.conf" "644"
     _install_config_file "$SCRIPT_DIR/install/config/conf.d/watchdog.conf" "/etc/nftban/conf.d/watchdog.conf" "644"
