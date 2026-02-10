@@ -10,6 +10,7 @@
 # Core configuration
 /etc/nftban/nftban.conf
 /etc/nftban/update.conf
+/etc/nftban/commands.registry.yml
 
 # Feature configurations (conf.d/)
 /etc/nftban/conf.d/banner.conf
