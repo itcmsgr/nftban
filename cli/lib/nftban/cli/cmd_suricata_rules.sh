@@ -47,7 +47,7 @@ cmd_suricata_rules() {
 
             echo ""
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-            echo "  🛡️  Updating Suricata Rules"
+            echo "  🛡️  Updating Suricata Rules (Profile-Aware)"
             echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
             echo ""
 
@@ -59,29 +59,122 @@ cmd_suricata_rules() {
                 return 1
             fi
 
-            # Create backup before update
+            # Source the effective config generator
+            local helper_file="${_NFTBAN_LIB_DIR:-/usr/share/nftban/lib/nftban}/helpers/suricata_effective_config.sh"
+            if [[ -f "$helper_file" ]]; then
+                # shellcheck source=/dev/null
+                source "$helper_file"
+            else
+                echo "⚠️  Effective config generator not found, using legacy mode"
+                echo "  (Missing: $helper_file)"
+                echo ""
+            fi
+
+            # 1. Generate effective config (profile, modules, role)
+            echo "  → Generating effective configuration..."
+            local profile_role=""
+            if declare -f suricata_generate_effective_config &>/dev/null; then
+                profile_role=$(suricata_generate_effective_config "true")
+                local profile="${profile_role%%:*}"
+                local role="${profile_role##*:}"
+                echo "  ✓ Profile: $profile, Role: $role"
+            else
+                echo "  ⚠️  Legacy mode: no profile/module awareness"
+            fi
+
+            # 2. Create backup before update
             echo "  → Creating backup..."
             _suricata_backup_rules >/dev/null
 
-            echo "  → Downloading latest rules from ET/Open..."
-            suricata-update || {
+            # 3. Update rule sources
+            echo "  → Updating rule sources..."
+            suricata-update update-sources 2>/dev/null || true
+
+            # 4. Build suricata-update command with proper flags
+            local update_cmd="suricata-update"
+
+            # Add disable.conf.d if it exists and has files
+            local disable_dir="${SURICATA_CONFIG_DIR:-/etc/suricata}/disable.conf.d"
+            if [[ -d "$disable_dir" ]]; then
+                for conf_file in "$disable_dir"/*.conf; do
+                    [[ -f "$conf_file" ]] && update_cmd+=" --disable-conf=$conf_file"
+                done
+            fi
+
+            # Also include standard disable.conf if it exists
+            local disable_conf="${SURICATA_CONFIG_DIR:-/etc/suricata}/disable.conf"
+            [[ -f "$disable_conf" ]] && update_cmd+=" --disable-conf=$disable_conf"
+
+            # Include enable.conf if it exists
+            local enable_conf="${SURICATA_CONFIG_DIR:-/etc/suricata}/enable.conf"
+            [[ -f "$enable_conf" ]] && update_cmd+=" --enable-conf=$enable_conf"
+
+            # Include local rules if they exist
+            local local_rules="${NFTBAN_SURICATA_DIR:-/etc/nftban/suricata}/rules/local.rules"
+            [[ -f "$local_rules" ]] && update_cmd+=" --local=$local_rules"
+
+            echo "  → Downloading and filtering rules..."
+            if ! eval "$update_cmd"; then
                 echo "  ✗ Rule update failed"
                 return 1
-            }
+            fi
 
-            echo ""
-            echo "  → Restarting Suricata to load new rules..."
-            systemctl restart "$SURICATA_SERVICE" || {
-                echo "  ✗ Failed to restart Suricata"
-                return 1
-            }
+            # 5. Check if restart is needed (dedupe)
+            local should_restart=true
+            if declare -f _suricata_should_restart &>/dev/null; then
+                if ! _suricata_should_restart; then
+                    should_restart=false
+                    echo "  ✓ Rules unchanged, skipping restart"
+                fi
+            fi
 
-            sleep 2
-            if _suricata_is_running; then
-                echo "  ✓ Suricata restarted successfully"
-            else
-                echo "  ✗ Suricata failed to restart"
-                return 1
+            # 6. Restart if needed
+            if [[ "$should_restart" == "true" ]]; then
+                echo ""
+                echo "  → Restarting Suricata to load new rules..."
+                systemctl restart "$SURICATA_SERVICE" || {
+                    echo "  ✗ Failed to restart Suricata"
+                    return 1
+                }
+
+                sleep 2
+                if _suricata_is_running; then
+                    echo "  ✓ Suricata restarted successfully"
+                else
+                    echo "  ✗ Suricata failed to restart"
+                    return 1
+                fi
+            fi
+
+            # 7. Record effective state for future dedupe
+            if declare -f _suricata_record_effective_state &>/dev/null; then
+                local profile="${profile_role%%:*}"
+                local role="${profile_role##*:}"
+                _suricata_record_effective_state "${profile:-unknown}" "${role:-unknown}"
+                echo "  ✓ State recorded for dedupe"
+            fi
+
+            # 8. Validate rule count against profile budget
+            local rules_file="${SURICATA_RULES_DIR:-/var/lib/suricata/rules}/suricata.rules"
+            if [[ -f "$rules_file" ]]; then
+                local rule_count
+                rule_count=$(grep -c "^alert\|^drop\|^reject" "$rules_file" 2>/dev/null || echo 0)
+                echo ""
+                echo "  📊 Rule count: $rule_count"
+
+                # Check against profile budget
+                local profile="${profile_role%%:*}"
+                local max_rules=60000
+                case "${profile:-standard}" in
+                    minimal)  max_rules=10000 ;;
+                    standard) max_rules=25000 ;;
+                    maximum)  max_rules=60000 ;;
+                esac
+
+                if [[ $rule_count -gt $max_rules ]]; then
+                    echo "  ⚠️  WARNING: Rule count $rule_count exceeds profile '$profile' budget of $max_rules"
+                    echo "     Consider reviewing disable.conf or switching profile"
+                fi
             fi
 
             echo ""
@@ -269,7 +362,7 @@ COMMANDS:
     status        Show ruleset status (counts, last update, sources)
     verify        Verify rules are present and loadable (used by systemd)
     ensure        Auto-heal: download rules if missing (used by health fix)
-    update        Update rules from ET/Open (requires root)
+    update        Update rules (profile-aware, module-aware, dedupe)
     rollback      Restore from a backup (requires root)
     list-backups  List available rule backups
     apply         Apply pending changes (run suricata-update + reload)
@@ -278,6 +371,28 @@ COMMANDS:
     init          Initialize configuration files
     list          List installed rule files
     help          Show this help message
+
+PROFILE-AWARE UPDATE:
+    The 'update' command now uses a unified pipeline:
+
+    1. AUTO-PROFILE:    Detects optimal profile (minimal/standard/maximum)
+                        based on CPU/RAM and distro (RHEL uses 5x more memory)
+
+    2. MODULE OVERLAP:  Disables Suricata rules that overlap with enabled
+                        nftban modules (login SSH, portscan, ddos)
+
+    3. ROLE DETECTION:  Detects server role (web/mail/hosting) and adjusts
+                        rule coverage accordingly
+
+    4. DEDUPE:          Only restarts Suricata if rules actually changed
+                        (saves unnecessary service disruption)
+
+    5. VALIDATION:      Checks rule count against profile budget
+
+    Config files generated:
+      /etc/suricata/disable.conf.d/nftban-profile.conf  (profile disables)
+      /etc/suricata/disable.conf.d/nftban-modules.conf  (module overlaps)
+      /etc/nftban/suricata/state/effective.json         (state for dedupe)
 
 WORKFLOW:
     1. Check status:     nftban suricata rules status
@@ -299,17 +414,25 @@ EXAMPLES:
     # Show current ruleset status
     nftban suricata rules status
 
-    # Update to latest ET/Open rules
+    # Update to latest rules (profile-aware, module-aware)
     nftban suricata rules update
 
     # Apply local changes (SID/category modifications)
     nftban suricata rules apply
 
+PROFILE BUDGETS:
+    Profile     Max Rules   Max RAM (RHEL)   Max RAM (Debian)
+    --------    ---------   --------------   ----------------
+    minimal     10,000      600 MB           150 MB
+    standard    25,000      1,500 MB         400 MB
+    maximum     60,000      2,500 MB         800 MB
+
 NOTES:
     - Rules are updated automatically via systemd timer (weekly)
-    - All changes write to NFTBan config files (never vendor files)
+    - Profile auto-detects based on system resources
+    - Module overlaps prevent double-detection with nftban modules
+    - Dedupe prevents unnecessary Suricata restarts
     - Backups are kept in /etc/nftban/suricata/state/last-good/
-    - Last 10 backups are retained
 
 EOF
             ;;
