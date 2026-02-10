@@ -388,7 +388,7 @@ cmd_suricata_enable() {
                 local first_iface
                 first_iface=$(echo "$configured_ifaces" | cut -d',' -f1 | xargs)
                 sed -i "/af-packet:/,/^[^ -]/ s|interface:.*|interface: $first_iface|" "$suricata_yaml"
-                # Ensure tpacket-v3 is enabled (reduces memory from 1.8GB to ~400MB on RHEL)
+                # Ensure tpacket-v3 is enabled (better batching under load; memory is determined by ring-size)
                 if ! grep -q "tpacket-v3:" "$suricata_yaml"; then
                     sed -i "/af-packet:/,/^[^ -]/ { /use-mmap:/ a\\    tpacket-v3: yes
                     }" "$suricata_yaml"

@@ -5,12 +5,20 @@
 # Focus: Deep inspection and comprehensive coverage
 # Use Case: High-traffic servers, dedicated security appliances
 #
-# BASELINE CORRECTIONS (v1.12.6):
-# - tpacket-v3: yes (75-81% memory savings on RHEL-family)
+# BASELINE CORRECTIONS (v1.12.6, updated v1.12.7):
+# - tpacket-v3: yes (better batching under load, all distros default to V2)
+# - ring-size: 100000 (PRIMARY memory factor: ~1.6GB with 8 threads)
 # - mpm-algo: hs (Hyperscan pattern matching, auto-fallback safe)
 # - stream.inline: yes (faster alert emission per Victor Julien)
 # - checksum-validation: no (kernel/NIC already validates)
 # - stream.bypass: yes with depth: 1mb (skip long-session deep inspection)
+#
+# MEMORY FORMULA (verified Feb 2026 via strace):
+# RAM ≈ ring-size × 2KB × capture_threads
+# - ring-size 100000 × 2KB × 8 threads = ~1.6GB (for 8-16GB RAM)
+# - Only use this profile for 10+ Gbps or DDoS-heavy environments
+# - For extreme bursts, can increase to 200000 (~3.2GB with 8 threads)
+# - V2 vs V3 difference is minimal; V3 better under load
 # =============================================================================
 
 %YAML 1.1
@@ -22,9 +30,9 @@ af-packet:
     cluster-id: 99
     cluster-type: cluster_flow
     defrag: yes
-    ring-size: 300000          # LARGE buffer
+    ring-size: 100000          # ~1.6GB with 8 threads, for high-traffic/DDoS scenarios
     use-mmap: yes
-    tpacket-v3: yes            # BASELINE: 75-81% memory savings on RHEL
+    tpacket-v3: yes            # Better batching under load (all distros default to V2)
 
 # Threading configuration
 threading:
@@ -283,10 +291,13 @@ geoip-database: /var/lib/GeoIP/GeoLite2-Country.mmdb
 # - Audit log: disabled by default (eve-audit.json)
 # - Stats log: disabled by default (eve-stats.json) - for capacity planning only
 #
-# BASELINE CORRECTIONS (v1.12.6):
-# - tpacket-v3: yes - Recommended by Suricata, 75-81% memory savings on RHEL
+# BASELINE CORRECTIONS (v1.12.6, updated v1.12.7):
+# - ring-size: 100000 - ~1.6GB with 8 threads, for high-traffic/DDoS scenarios
+# - tpacket-v3: yes - Better batching under load (all distros default to V2)
 # - mpm-algo: hs - Hyperscan pattern matching, auto-fallback safe
 # - stream.inline: yes - Faster alert emission per Victor Julien guidance
 # - checksum-validation: no - Kernel/NIC already validates, avoid redundant work
 # - stream.bypass: yes - Skip long-session deep inspection (NFTBan uses early signals)
+#
+# TUNING: For extreme bursts (10+ Gbps), can increase to 200000 (~3.2GB)
 # =============================================================================
