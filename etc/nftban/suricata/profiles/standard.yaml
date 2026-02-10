@@ -4,6 +4,14 @@
 # Target: 4 cores, 4-8 GB RAM
 # Focus: Balanced coverage and performance
 # Use Case: Most servers, recommended default
+#
+# BASELINE CORRECTIONS (v1.12.6):
+# - tpacket-v3: yes (75-81% memory savings on RHEL-family)
+# - mpm-algo: hs (Hyperscan pattern matching, auto-fallback safe)
+# - stream.inline: yes (faster alert emission per Victor Julien)
+# - checksum-validation: no (kernel/NIC already validates)
+# - stream.bypass: yes with depth: 1mb (skip long-session deep inspection)
+# - CPU affinity: yes (prevents scheduler jitter)
 # =============================================================================
 
 %YAML 1.1
@@ -17,11 +25,17 @@ af-packet:
     defrag: yes
     ring-size: 100000          # BALANCED
     use-mmap: yes
+    tpacket-v3: yes            # BASELINE: 75-81% memory savings on RHEL
 
 # Threading configuration
 threading:
-  set-cpu-affinity: no
+  set-cpu-affinity: yes        # BASELINE: prevents scheduler jitter
   detect-thread-ratio: 1.5     # Balanced
+  cpu-affinity:
+    management-cpu-set:
+      cpu: [ 0 ]
+    worker-cpu-set:
+      cpu: [ 1, 2, 3 ]
 
 # Flow timeout settings (ALIGNED: 60s established per NFTBan constraint)
 flow:
@@ -40,8 +54,14 @@ flow:
 # Stream engine
 stream:
   memcap: 64mb
-  checksum-validation: yes
-  inline: no
+  checksum-validation: no      # BASELINE: kernel/NIC already validates
+  inline: yes                  # BASELINE: faster alert emission (Victor Julien)
+  bypass: yes                  # BASELINE: skip long-session deep inspection
+  reassembly:
+    depth: 1mb                 # BASELINE: bypass after 1MB transferred
+    toserver-chunk-size: 2560
+    toclient-chunk-size: 2560
+    randomize-chunk-size: yes
 
 # HTTP configuration (LIMITED body inspection)
 app-layer:
@@ -138,6 +158,7 @@ outputs:
 # Detection engine
 detect:
   profile: medium              # MEDIUM CPU usage
+  mpm-algo: hs                 # BASELINE: Hyperscan (auto-fallback if unavailable)
   custom-values:
     toclient-groups: 3
     toserver-groups: 3
@@ -185,4 +206,12 @@ geoip-database: /var/lib/GeoIP/GeoLite2-Country.mmdb
 # - JA3 fingerprinting enabled for TLS
 # - Output: alert-only to eve-alerts.json (daemon path)
 # - Audit log: disabled by default (eve-audit.json)
+#
+# BASELINE CORRECTIONS (v1.12.6):
+# - tpacket-v3: yes - Recommended by Suricata, 75-81% memory savings on RHEL
+# - mpm-algo: hs - Hyperscan pattern matching, auto-fallback safe
+# - stream.inline: yes - Faster alert emission per Victor Julien guidance
+# - checksum-validation: no - Kernel/NIC already validates, avoid redundant work
+# - stream.bypass: yes - Skip long-session deep inspection (NFTBan uses early signals)
+# - CPU affinity: yes - Prevents scheduler jitter on multi-core systems
 # =============================================================================

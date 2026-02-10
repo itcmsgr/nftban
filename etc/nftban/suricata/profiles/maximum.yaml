@@ -4,6 +4,13 @@
 # Target: 8+ cores, 8-16 GB RAM
 # Focus: Deep inspection and comprehensive coverage
 # Use Case: High-traffic servers, dedicated security appliances
+#
+# BASELINE CORRECTIONS (v1.12.6):
+# - tpacket-v3: yes (75-81% memory savings on RHEL-family)
+# - mpm-algo: hs (Hyperscan pattern matching, auto-fallback safe)
+# - stream.inline: yes (faster alert emission per Victor Julien)
+# - checksum-validation: no (kernel/NIC already validates)
+# - stream.bypass: yes with depth: 1mb (skip long-session deep inspection)
 # =============================================================================
 
 %YAML 1.1
@@ -17,11 +24,18 @@ af-packet:
     defrag: yes
     ring-size: 300000          # LARGE buffer
     use-mmap: yes
+    tpacket-v3: yes            # BASELINE: 75-81% memory savings on RHEL
 
 # Threading configuration
 threading:
   set-cpu-affinity: yes        # Pin threads to CPUs
   detect-thread-ratio: 2.0     # Aggressive parallelism
+  cpu-affinity:
+    management-cpu-set:
+      cpu: [ 0 ]
+    worker-cpu-set:
+      cpu: [ 1, 2, 3, 4, 5, 6, 7 ]
+      mode: exclusive
 
 # Flow timeout settings (ALIGNED: 60s established per NFTBan constraint)
 flow:
@@ -40,8 +54,14 @@ flow:
 # Stream engine
 stream:
   memcap: 128mb                # Large stream memory
-  checksum-validation: yes
-  inline: no
+  checksum-validation: no      # BASELINE: kernel/NIC already validates
+  inline: yes                  # BASELINE: faster alert emission (Victor Julien)
+  bypass: yes                  # BASELINE: skip long-session deep inspection
+  reassembly:
+    depth: 1mb                 # BASELINE: bypass after 1MB transferred
+    toserver-chunk-size: 2560
+    toclient-chunk-size: 2560
+    randomize-chunk-size: yes
 
 # HTTP configuration (FULL body inspection)
 app-layer:
@@ -177,7 +197,7 @@ outputs:
         - ssh
         - smtp:
             extended: yes
-        # NOTE: flow/netflow/stats/files moved to separate optional log
+        # NOTE: flow/netflow/stats moved to separate optional log
         # to prevent I/O storms on audit path
 
   # 3) Optional performance/stats log (OFF by default)
@@ -198,6 +218,7 @@ outputs:
 # Detection engine (HIGH performance)
 detect:
   profile: high                # HIGH CPU usage for deep inspection
+  mpm-algo: hs                 # BASELINE: Hyperscan (auto-fallback if unavailable)
   custom-values:
     toclient-groups: 4
     toserver-groups: 4
@@ -261,4 +282,11 @@ geoip-database: /var/lib/GeoIP/GeoLite2-Country.mmdb
 # - Output: alert-only to eve-alerts.json (daemon path)
 # - Audit log: disabled by default (eve-audit.json)
 # - Stats log: disabled by default (eve-stats.json) - for capacity planning only
+#
+# BASELINE CORRECTIONS (v1.12.6):
+# - tpacket-v3: yes - Recommended by Suricata, 75-81% memory savings on RHEL
+# - mpm-algo: hs - Hyperscan pattern matching, auto-fallback safe
+# - stream.inline: yes - Faster alert emission per Victor Julien guidance
+# - checksum-validation: no - Kernel/NIC already validates, avoid redundant work
+# - stream.bypass: yes - Skip long-session deep inspection (NFTBan uses early signals)
 # =============================================================================
