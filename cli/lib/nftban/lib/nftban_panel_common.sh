@@ -235,27 +235,47 @@ _get_panel_info() {
     local field="$2"
 
     case "${panel}_${field}" in
-        cwp_name)        echo "CentOS Web Panel (CWP)" ;;
-        cwp_path)        echo "/usr/local/cwpsrv" ;;
-        cwp_ports)       echo "2030,2031" ;;
-        cwp_var)         echo "CWP" ;;
-        cyberpanel_name) echo "CyberPanel" ;;
-        cyberpanel_path) echo "/usr/local/CyberCP" ;;
-        cyberpanel_ports) echo "7080,8090" ;;
-        cyberpanel_var)  echo "CYBERPANEL" ;;
-        interworx_name)  echo "InterWorx" ;;
-        interworx_path)  echo "/usr/local/interworx" ;;
-        interworx_ports) echo "2080,2443" ;;
-        interworx_var)   echo "INTERWORX" ;;
-        vesta_name)      echo "VestaCP / HestiaCP" ;;
-        vesta_path)      echo "/usr/local/vesta" ;;
-        vesta_ports)     echo "8083" ;;
-        vesta_var)       echo "VESTA" ;;
-        plesk_name)      echo "Plesk" ;;
-        plesk_path)      echo "/usr/local/psa" ;;
-        plesk_ports)     echo "8443,8447,8880" ;;
-        plesk_var)       echo "PLESK" ;;
-        *)               echo "" ;;
+        # DirectAdmin (dedicated module)
+        directadmin_name)  echo "DirectAdmin" ;;
+        directadmin_path)  echo "/usr/local/directadmin" ;;
+        directadmin_ports) echo "2222" ;;
+        directadmin_var)   echo "DIRECTADMIN" ;;
+        # cPanel/WHM (dedicated module)
+        cpanel_name)       echo "cPanel/WHM" ;;
+        cpanel_path)       echo "/usr/local/cpanel" ;;
+        cpanel_ports)      echo "2082,2083,2086,2087" ;;
+        cpanel_var)        echo "CPANEL" ;;
+        # Plesk (dedicated module)
+        plesk_name)        echo "Plesk" ;;
+        plesk_path)        echo "/usr/local/psa" ;;
+        plesk_ports)       echo "8443,8447,8880" ;;
+        plesk_var)         echo "PLESK" ;;
+        # CWP (generic functions)
+        cwp_name)          echo "CentOS Web Panel (CWP)" ;;
+        cwp_path)          echo "/usr/local/cwpsrv" ;;
+        cwp_ports)         echo "2030,2031" ;;
+        cwp_var)           echo "CWP" ;;
+        # CyberPanel (generic functions)
+        cyberpanel_name)   echo "CyberPanel" ;;
+        cyberpanel_path)   echo "/usr/local/CyberCP" ;;
+        cyberpanel_ports)  echo "7080,8090" ;;
+        cyberpanel_var)    echo "CYBERPANEL" ;;
+        # InterWorx (generic functions)
+        interworx_name)    echo "InterWorx" ;;
+        interworx_path)    echo "/usr/local/interworx" ;;
+        interworx_ports)   echo "2080,2443" ;;
+        interworx_var)     echo "INTERWORX" ;;
+        # VestaCP/HestiaCP (generic functions)
+        vesta_name)        echo "VestaCP / HestiaCP" ;;
+        vesta_path)        echo "/usr/local/vesta" ;;
+        vesta_ports)       echo "8083" ;;
+        vesta_var)         echo "VESTA" ;;
+        # Generic server (reference config)
+        generic_name)      echo "Generic Server" ;;
+        generic_path)      echo "" ;;
+        generic_ports)     echo "" ;;
+        generic_var)       echo "GENERIC" ;;
+        *)                 echo "" ;;
     esac
 }
 
