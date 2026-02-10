@@ -87,6 +87,11 @@ if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" ]]; then
     source "${NFTBAN_LIB_DIR}/core/nftban_mail.sh" 2>/dev/null || true
 fi
 
+# Load panel common module for admin email detection
+if [[ -f "${NFTBAN_LIB_DIR}/lib/nftban_panel_common.sh" ]]; then
+    source "${NFTBAN_LIB_DIR}/lib/nftban_panel_common.sh" 2>/dev/null || true
+fi
+
 # Load path security module
 if ! declare -f nftban_path_get_safe_output >/dev/null 2>&1; then
     if [[ -f "${NFTBAN_LIB_DIR}/core/nftban_path_security.sh" ]]; then
@@ -460,10 +465,30 @@ nftban_report_cmd_email_setup() {
         echo ""
     fi
 
-    # Prompt for email address
+    # Prompt for email address (with auto-detection from panel)
     echo "Email Configuration"
     echo "───────────────────────────────────────────────────────────────"
-    read -p "Enter your email address: " user_email
+
+    # Try to auto-detect email from panel
+    local detected_email=""
+    local detected_panel=""
+    if declare -f nftban_panel_get_admin_email &>/dev/null; then
+        detected_email=$(nftban_panel_get_admin_email 2>/dev/null) || true
+        detected_panel=$(nftban_panel_detect 2>/dev/null) || true
+    fi
+
+    if [[ -n "$detected_email" ]]; then
+        echo "✓ Detected admin email from ${detected_panel}: ${detected_email}"
+        read -p "Use this email? (Y/n): " use_detected
+        if [[ "${use_detected,,}" != "n" ]]; then
+            user_email="$detected_email"
+        else
+            read -p "Enter your email address: " user_email
+        fi
+    else
+        read -p "Enter your email address: " user_email
+    fi
+
     if [[ -z "$user_email" ]]; then
         echo "❌ Email address is required"
         return 1
@@ -628,6 +653,11 @@ nftban_report_schedule_add() {
     local time="08:00"
     local day=""
     local email="${STATS_EMAIL_RECIPIENTS:-${NFTBAN_MAIL_RECIPIENT:-}}"
+
+    # Fallback to panel admin email if not configured
+    if [[ -z "$email" ]] && declare -f nftban_panel_get_admin_email &>/dev/null; then
+        email=$(nftban_panel_get_admin_email 2>/dev/null) || true
+    fi
 
     # Parse options
     while [[ $# -gt 0 ]]; do
@@ -992,7 +1022,17 @@ nftban_report_cmd_status() {
     if [[ -n "$mail_recipients" ]]; then
         printf "  %-20s %s\n" "Recipients.........." "$mail_recipients"
     else
-        printf "  %-20s %s\n" "Recipients.........." "(not configured)"
+        # Try to detect from panel
+        local panel_email=""
+        if declare -f nftban_panel_get_admin_email &>/dev/null; then
+            panel_email=$(nftban_panel_get_admin_email 2>/dev/null) || true
+        fi
+        if [[ -n "$panel_email" ]]; then
+            printf "  %-20s %s\n" "Recipients.........." "(not configured)"
+            printf "  %-20s %s\n" "Panel Admin Email..." "$panel_email (auto-detected)"
+        else
+            printf "  %-20s %s\n" "Recipients.........." "(not configured)"
+        fi
     fi
 
     printf "  %-20s %s\n" "From Address........" "$mail_from"

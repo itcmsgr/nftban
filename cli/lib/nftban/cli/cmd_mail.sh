@@ -71,6 +71,12 @@ if [[ ! $(type -t nftban_mail_check_status) == "function" ]]; then
     fi
 fi
 
+# Load panel common module for admin email detection
+if [[ -f "${LIB_DIR}/lib/nftban_panel_common.sh" ]]; then
+    # shellcheck source=/dev/null
+    source "${LIB_DIR}/lib/nftban_panel_common.sh" 2>/dev/null || true
+fi
+
 # =============================================================================
 # MAIL COMMAND HANDLER
 # =============================================================================
@@ -115,6 +121,13 @@ nftban_cmd_mail() {
         test)
             # Send test email
             local recipient="${1:-}"
+            # Auto-detect from panel if not provided
+            if [[ -z "$recipient" ]] && declare -f nftban_panel_get_admin_email &>/dev/null; then
+                recipient=$(nftban_panel_get_admin_email 2>/dev/null) || true
+                if [[ -n "$recipient" ]]; then
+                    echo "[INFO] Using panel admin email: $recipient"
+                fi
+            fi
             nftban_mail_send_test "$recipient"
             return $?
             ;;
