@@ -627,6 +627,292 @@ nftban_check_dns() {
 }
 
 # =============================================================================
+# CHECK: LOAD AVERAGE
+# =============================================================================
+# Returns: JSON with load averages and status
+# Status: ok, warning, critical based on configurable thresholds
+
+nftban_check_load_average() {
+    # Check system load average
+    # Args: $1 = warning threshold (default: 10)
+    #       $2 = critical threshold (default: 20)
+    # Returns: JSON with load 1m/5m/15m, cpu_count, per_cpu load, status
+
+    local warn_threshold="${1:-${NFTBAN_WATCHDOG_LOAD_WARNING:-10}}"
+    local crit_threshold="${2:-${NFTBAN_WATCHDOG_LOAD_CRITICAL:-20}}"
+
+    local load_1m="0" load_5m="0" load_15m="0"
+    local cpu_count=1
+    local status_text="ok"
+
+    # Get load from /proc/loadavg
+    if [[ -r /proc/loadavg ]]; then
+        read -r load_1m load_5m load_15m _ < /proc/loadavg
+    fi
+
+    # Get CPU count
+    cpu_count=$(nproc 2>/dev/null || grep -c ^processor /proc/cpuinfo 2>/dev/null || echo 1)
+
+    # Calculate per-CPU load (5m is most stable)
+    local per_cpu_load
+    per_cpu_load=$(awk "BEGIN {printf \"%.2f\", $load_5m / $cpu_count}")
+
+    # Determine status based on 5m load
+    local load_int=${load_5m%.*}
+    load_int=${load_int:-0}
+    if [[ $load_int -ge $crit_threshold ]]; then
+        status_text="critical"
+    elif [[ $load_int -ge $warn_threshold ]]; then
+        status_text="warning"
+    fi
+
+    local data
+    data=$(printf '{"load_1m":%s,"load_5m":%s,"load_15m":%s,"cpu_count":%d,"per_cpu_load":%s,"warn_threshold":%d,"crit_threshold":%d,"status":"%s"}' \
+        "$load_1m" "$load_5m" "$load_15m" "$cpu_count" "$per_cpu_load" "$warn_threshold" "$crit_threshold" "$status_text")
+
+    _checks_json_result "true" "$data" ""
+    return 0
+}
+
+# =============================================================================
+# CHECK: MEMORY USAGE
+# =============================================================================
+# Returns: JSON with memory stats and status
+
+nftban_check_memory_usage() {
+    # Check system memory usage
+    # Args: $1 = warning threshold % (default: 80)
+    #       $2 = critical threshold % (default: 95)
+    # Returns: JSON with total, used, available, percent, swap, status
+
+    local warn_threshold="${1:-${NFTBAN_WATCHDOG_MEM_WARNING:-80}}"
+    local crit_threshold="${2:-${NFTBAN_WATCHDOG_MEM_CRITICAL:-95}}"
+
+    local total_kb=0 available_kb=0 free_kb=0 buffers_kb=0 cached_kb=0
+    local swap_total_kb=0 swap_free_kb=0
+    local status_text="ok"
+
+    # Parse /proc/meminfo
+    if [[ -r /proc/meminfo ]]; then
+        while IFS=': ' read -r key value _; do
+            case "$key" in
+                MemTotal) total_kb="${value//[^0-9]/}" ;;
+                MemAvailable) available_kb="${value//[^0-9]/}" ;;
+                MemFree) free_kb="${value//[^0-9]/}" ;;
+                Buffers) buffers_kb="${value//[^0-9]/}" ;;
+                Cached) cached_kb="${value//[^0-9]/}" ;;
+                SwapTotal) swap_total_kb="${value//[^0-9]/}" ;;
+                SwapFree) swap_free_kb="${value//[^0-9]/}" ;;
+            esac
+        done < /proc/meminfo
+    fi
+
+    # Calculate available if not directly available (older kernels)
+    if [[ $available_kb -eq 0 && $total_kb -gt 0 ]]; then
+        available_kb=$((free_kb + buffers_kb + cached_kb))
+    fi
+
+    # Calculate percentages
+    local used_kb=$((total_kb - available_kb))
+    local used_percent=0
+    local swap_used_percent=0
+
+    if [[ $total_kb -gt 0 ]]; then
+        used_percent=$((used_kb * 100 / total_kb))
+    fi
+
+    if [[ $swap_total_kb -gt 0 ]]; then
+        local swap_used_kb=$((swap_total_kb - swap_free_kb))
+        swap_used_percent=$((swap_used_kb * 100 / swap_total_kb))
+    fi
+
+    # Convert to MB for readability
+    local total_mb=$((total_kb / 1024))
+    local used_mb=$((used_kb / 1024))
+    local available_mb=$((available_kb / 1024))
+    local swap_total_mb=$((swap_total_kb / 1024))
+    local swap_used_mb=$(((swap_total_kb - swap_free_kb) / 1024))
+
+    # Determine status
+    if [[ $used_percent -ge $crit_threshold ]]; then
+        status_text="critical"
+    elif [[ $used_percent -ge $warn_threshold ]]; then
+        status_text="warning"
+    fi
+
+    local data
+    data=$(printf '{"total_mb":%d,"used_mb":%d,"available_mb":%d,"used_percent":%d,"swap_total_mb":%d,"swap_used_mb":%d,"swap_used_percent":%d,"warn_threshold":%d,"crit_threshold":%d,"status":"%s"}' \
+        "$total_mb" "$used_mb" "$available_mb" "$used_percent" "$swap_total_mb" "$swap_used_mb" "$swap_used_percent" "$warn_threshold" "$crit_threshold" "$status_text")
+
+    _checks_json_result "true" "$data" ""
+    return 0
+}
+
+# =============================================================================
+# CHECK: DISK USAGE
+# =============================================================================
+# Returns: JSON with disk usage for specified path
+
+nftban_check_disk_usage() {
+    # Check disk usage for a path
+    # Args: $1 = path to check (default: /var/log)
+    #       $2 = warning threshold % (default: 80)
+    #       $3 = critical threshold % (default: 95)
+    # Returns: JSON with path, total, used, available, percent, status
+
+    local check_path="${1:-${NFTBAN_WATCHDOG_DISK_PATH:-/var/log}}"
+    local warn_threshold="${2:-${NFTBAN_WATCHDOG_DISK_WARNING:-80}}"
+    local crit_threshold="${3:-${NFTBAN_WATCHDOG_DISK_CRITICAL:-95}}"
+
+    local total_kb=0 used_kb=0 available_kb=0 used_percent=0
+    local filesystem="" mount_point=""
+    local status_text="ok"
+
+    # Get disk usage via df
+    if df -P "$check_path" &>/dev/null; then
+        local df_output
+        df_output=$(df -P "$check_path" 2>/dev/null | tail -1)
+        read -r filesystem total_kb used_kb available_kb used_percent mount_point <<< "$df_output"
+        used_percent="${used_percent%\%}"
+        used_percent="${used_percent:-0}"
+    fi
+
+    # Convert to GB for readability
+    local total_gb used_gb available_gb
+    total_gb=$(awk "BEGIN {printf \"%.1f\", $total_kb / 1048576}")
+    used_gb=$(awk "BEGIN {printf \"%.1f\", $used_kb / 1048576}")
+    available_gb=$(awk "BEGIN {printf \"%.1f\", $available_kb / 1048576}")
+
+    # Determine status
+    if [[ $used_percent -ge $crit_threshold ]]; then
+        status_text="critical"
+    elif [[ $used_percent -ge $warn_threshold ]]; then
+        status_text="warning"
+    fi
+
+    local data
+    data=$(printf '{"path":"%s","filesystem":"%s","mount_point":"%s","total_gb":%s,"used_gb":%s,"available_gb":%s,"used_percent":%d,"warn_threshold":%d,"crit_threshold":%d,"status":"%s"}' \
+        "$check_path" "$filesystem" "$mount_point" "$total_gb" "$used_gb" "$available_gb" "$used_percent" "$warn_threshold" "$crit_threshold" "$status_text")
+
+    _checks_json_result "true" "$data" ""
+    return 0
+}
+
+# =============================================================================
+# CHECK: I/O WAIT
+# =============================================================================
+# Returns: JSON with I/O wait percentage
+
+nftban_check_iowait() {
+    # Check CPU I/O wait percentage
+    # Args: $1 = warning threshold % (default: 20)
+    #       $2 = critical threshold % (default: 40)
+    # Returns: JSON with iowait percent and status
+
+    local warn_threshold="${1:-${NFTBAN_WATCHDOG_IOWAIT_WARNING:-20}}"
+    local crit_threshold="${2:-${NFTBAN_WATCHDOG_IOWAIT_CRITICAL:-40}}"
+
+    local iowait_percent=0
+    local status_text="ok"
+
+    # Get I/O wait from /proc/stat (requires two samples for delta)
+    if [[ -r /proc/stat ]]; then
+        # Read first sample
+        local cpu_line1
+        cpu_line1=$(grep '^cpu ' /proc/stat)
+        local user1 nice1 system1 idle1 iowait1
+        read -r _ user1 nice1 system1 idle1 iowait1 _ <<< "$cpu_line1"
+
+        # Short sleep for delta
+        sleep 0.1
+
+        # Read second sample
+        local cpu_line2
+        cpu_line2=$(grep '^cpu ' /proc/stat)
+        local user2 nice2 system2 idle2 iowait2
+        read -r _ user2 nice2 system2 idle2 iowait2 _ <<< "$cpu_line2"
+
+        # Calculate deltas
+        local total1=$((user1 + nice1 + system1 + idle1 + iowait1))
+        local total2=$((user2 + nice2 + system2 + idle2 + iowait2))
+        local total_delta=$((total2 - total1))
+        local iowait_delta=$((iowait2 - iowait1))
+
+        if [[ $total_delta -gt 0 ]]; then
+            iowait_percent=$((iowait_delta * 100 / total_delta))
+        fi
+    fi
+
+    # Determine status
+    if [[ $iowait_percent -ge $crit_threshold ]]; then
+        status_text="critical"
+    elif [[ $iowait_percent -ge $warn_threshold ]]; then
+        status_text="warning"
+    fi
+
+    local data
+    data=$(printf '{"iowait_percent":%d,"warn_threshold":%d,"crit_threshold":%d,"status":"%s"}' \
+        "$iowait_percent" "$warn_threshold" "$crit_threshold" "$status_text")
+
+    _checks_json_result "true" "$data" ""
+    return 0
+}
+
+# =============================================================================
+# CHECK: SYSTEM RESOURCES (Combined)
+# =============================================================================
+# Returns: JSON with all resource metrics in one call
+
+nftban_check_system_resources() {
+    # Combined check for all system resources
+    # Returns: JSON with load, memory, disk, iowait all in one response
+    # This is more efficient than calling each check separately
+
+    local overall_status="ok"
+
+    # Load average
+    local load_1m="0" load_5m="0" load_15m="0"
+    if [[ -r /proc/loadavg ]]; then
+        read -r load_1m load_5m load_15m _ < /proc/loadavg
+    fi
+    local cpu_count
+    cpu_count=$(nproc 2>/dev/null || echo 1)
+
+    # Memory
+    local mem_total_kb=0 mem_available_kb=0
+    if [[ -r /proc/meminfo ]]; then
+        mem_total_kb=$(grep '^MemTotal:' /proc/meminfo | awk '{print $2}')
+        mem_available_kb=$(grep '^MemAvailable:' /proc/meminfo | awk '{print $2}')
+    fi
+    local mem_used_percent=0
+    if [[ $mem_total_kb -gt 0 ]]; then
+        mem_used_percent=$(( (mem_total_kb - mem_available_kb) * 100 / mem_total_kb ))
+    fi
+
+    # Disk (/var/log)
+    local disk_used_percent=0
+    if df -P /var/log &>/dev/null; then
+        disk_used_percent=$(df -P /var/log 2>/dev/null | tail -1 | awk '{print $5}' | tr -d '%')
+    fi
+
+    # Determine overall status
+    local load_int=${load_5m%.*}
+    load_int=${load_int:-0}
+    if [[ $load_int -ge 20 ]] || [[ $mem_used_percent -ge 95 ]] || [[ $disk_used_percent -ge 95 ]]; then
+        overall_status="critical"
+    elif [[ $load_int -ge 10 ]] || [[ $mem_used_percent -ge 80 ]] || [[ $disk_used_percent -ge 80 ]]; then
+        overall_status="warning"
+    fi
+
+    local data
+    data=$(printf '{"load":{"1m":%s,"5m":%s,"15m":%s,"cpus":%d},"memory":{"used_percent":%d,"total_mb":%d},"disk":{"path":"/var/log","used_percent":%d},"status":"%s"}' \
+        "$load_1m" "$load_5m" "$load_15m" "$cpu_count" "$mem_used_percent" "$((mem_total_kb / 1024))" "$disk_used_percent" "$overall_status")
+
+    _checks_json_result "true" "$data" ""
+    return 0
+}
+
+# =============================================================================
 # EXPORT FUNCTIONS
 # =============================================================================
 
@@ -639,6 +925,11 @@ export -f nftban_check_config_exists
 export -f nftban_check_eve_freshness
 export -f nftban_check_firewall_conflict
 export -f nftban_check_dns
+export -f nftban_check_load_average
+export -f nftban_check_memory_usage
+export -f nftban_check_disk_usage
+export -f nftban_check_iowait
+export -f nftban_check_system_resources
 
 # =============================================================================
 # MARK AS LOADED

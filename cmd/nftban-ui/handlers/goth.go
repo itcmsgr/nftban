@@ -1633,6 +1633,73 @@ func (h *GOTHHandlers) getHealthData() ui.HealthData {
 					}
 				}
 			}
+
+			// Parse extended data (from shared check functions)
+			if extended, ok := healthJSON["extended"].(map[string]interface{}); ok {
+				// Resources
+				if resources, ok := extended["resources"].(map[string]interface{}); ok {
+					if load, ok := resources["load"].(map[string]interface{}); ok {
+						data.Extended.Resources.Load.Load1m = getFloat(load, "1m")
+						data.Extended.Resources.Load.Load5m = getFloat(load, "5m")
+						data.Extended.Resources.Load.Load15m = getFloat(load, "15m")
+						data.Extended.Resources.Load.CPUs = getInt(load, "cpus")
+					}
+					if memory, ok := resources["memory"].(map[string]interface{}); ok {
+						data.Extended.Resources.Memory.UsedPercent = getInt(memory, "used_percent")
+						data.Extended.Resources.Memory.TotalMB = getInt(memory, "total_mb")
+					}
+					if disk, ok := resources["disk"].(map[string]interface{}); ok {
+						data.Extended.Resources.Disk.Path = getString(disk, "path")
+						data.Extended.Resources.Disk.UsedPercent = getInt(disk, "used_percent")
+					}
+					data.Extended.Resources.Status = getString(resources, "status")
+				}
+
+				// Suricata
+				if suricata, ok := extended["suricata"].(map[string]interface{}); ok {
+					data.Extended.Suricata.Installed = getBool(suricata, "installed")
+					data.Extended.Suricata.ServiceActive = getBool(suricata, "service_active")
+					data.Extended.Suricata.EVEExists = getBool(suricata, "eve_exists")
+					data.Extended.Suricata.EVEFresh = getBool(suricata, "eve_fresh")
+					data.Extended.Suricata.RulesLoaded = getInt(suricata, "rules_loaded")
+					data.Extended.Suricata.BanningActive = getBool(suricata, "banning_active")
+					data.Extended.Suricata.Status = getString(suricata, "status")
+				}
+
+				// DNS
+				if dns, ok := extended["dns"].(map[string]interface{}); ok {
+					data.Extended.DNS.Hostname = getString(dns, "hostname")
+					data.Extended.DNS.Working = getBool(dns, "working")
+					data.Extended.DNS.Resolver = getString(dns, "resolver")
+					data.Extended.DNS.LatencyMS = getInt(dns, "latency_ms")
+					data.Extended.DNS.Status = getString(dns, "status")
+				}
+
+				// Firewall conflicts
+				if conflicts, ok := extended["firewall_conflicts"].(map[string]interface{}); ok {
+					parseFirewallConflict := func(fw map[string]interface{}) ui.HealthFirewall {
+						return ui.HealthFirewall{
+							Installed:     getBool(fw, "installed"),
+							Enabled:       getBool(fw, "enabled"),
+							Active:        getBool(fw, "active"),
+							ConflictLevel: getString(fw, "conflict_level"),
+							Status:        getString(fw, "status"),
+						}
+					}
+					if csf, ok := conflicts["csf"].(map[string]interface{}); ok {
+						data.Extended.FirewallConflicts.CSF = parseFirewallConflict(csf)
+					}
+					if firewalld, ok := conflicts["firewalld"].(map[string]interface{}); ok {
+						data.Extended.FirewallConflicts.Firewalld = parseFirewallConflict(firewalld)
+					}
+					if ufw, ok := conflicts["ufw"].(map[string]interface{}); ok {
+						data.Extended.FirewallConflicts.UFW = parseFirewallConflict(ufw)
+					}
+					if iptables, ok := conflicts["iptables"].(map[string]interface{}); ok {
+						data.Extended.FirewallConflicts.IPTables = parseFirewallConflict(iptables)
+					}
+				}
+			}
 		}
 	} else {
 		// Fallback if health check command fails

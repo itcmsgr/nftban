@@ -108,6 +108,15 @@ nftban_report_collect_all() {
 
     # Security posture (low noise)
     _collect_posture_info _data
+
+    # System resources (from shared checks)
+    _collect_system_resources _data
+
+    # Suricata status (from shared checks)
+    _collect_suricata_status _data
+
+    # DNS status (from shared checks)
+    _collect_dns_status _data
 }
 
 # =============================================================================
@@ -704,6 +713,134 @@ nftban_posture_oneline() {
     declare -A posture_data
     _collect_posture_info posture_data
     echo "${posture_data[POSTURE_STATUS]}"
+}
+
+# =============================================================================
+# SYSTEM RESOURCES DATA (from shared checks)
+# =============================================================================
+
+_collect_system_resources() {
+    local -n _rdata="$1"
+
+    # Load shared checks library if needed
+    local checks_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_checks.sh"
+    if ! declare -f nftban_check_system_resources &>/dev/null; then
+        if [[ -f "$checks_lib" ]]; then
+            # shellcheck source=/dev/null
+            source "$checks_lib" 2>/dev/null || true
+        fi
+    fi
+
+    # Get system resources
+    if declare -f nftban_check_system_resources &>/dev/null; then
+        local resources_json
+        resources_json=$(nftban_check_system_resources 2>/dev/null)
+        if command -v jq &>/dev/null && [[ -n "$resources_json" ]]; then
+            local data
+            data=$(echo "$resources_json" | jq -r '.data // {}')
+            _rdata[LOAD_1M]=$(echo "$data" | jq -r '.load["1m"] // 0')
+            _rdata[LOAD_5M]=$(echo "$data" | jq -r '.load["5m"] // 0')
+            _rdata[LOAD_15M]=$(echo "$data" | jq -r '.load["15m"] // 0')
+            _rdata[CPU_COUNT]=$(echo "$data" | jq -r '.load.cpus // 1')
+            _rdata[MEM_USED_PERCENT]=$(echo "$data" | jq -r '.memory.used_percent // 0')
+            _rdata[MEM_TOTAL_MB]=$(echo "$data" | jq -r '.memory.total_mb // 0')
+            _rdata[DISK_PATH]=$(echo "$data" | jq -r '.disk.path // "/var/log"')
+            _rdata[DISK_USED_PERCENT]=$(echo "$data" | jq -r '.disk.used_percent // 0')
+            _rdata[RESOURCES_STATUS]=$(echo "$data" | jq -r '.status // "unknown"')
+        fi
+    else
+        # Fallback: get basic info directly
+        if [[ -r /proc/loadavg ]]; then
+            read -r _rdata[LOAD_1M] _rdata[LOAD_5M] _rdata[LOAD_15M] _ < /proc/loadavg
+        fi
+        _rdata[CPU_COUNT]=$(nproc 2>/dev/null || echo 1)
+        _rdata[RESOURCES_STATUS]="unknown"
+    fi
+}
+
+# =============================================================================
+# SURICATA STATUS DATA (from shared checks)
+# =============================================================================
+
+_collect_suricata_status() {
+    local -n _sdata="$1"
+
+    # Load shared checks library if needed
+    local checks_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_checks.sh"
+    if ! declare -f nftban_check_suricata_status &>/dev/null; then
+        if [[ -f "$checks_lib" ]]; then
+            # shellcheck source=/dev/null
+            source "$checks_lib" 2>/dev/null || true
+        fi
+    fi
+
+    # Default values
+    _sdata[SURICATA_INSTALLED]="false"
+    _sdata[SURICATA_ACTIVE]="false"
+    _sdata[SURICATA_EVE_FRESH]="false"
+    _sdata[SURICATA_RULES]="0"
+    _sdata[SURICATA_STATUS]="not_installed"
+    _sdata[SURICATA_STATUS_CLASS]="inactive"
+
+    # Get Suricata status
+    if declare -f nftban_check_suricata_status &>/dev/null; then
+        local suricata_json
+        suricata_json=$(nftban_check_suricata_status 2>/dev/null)
+        if command -v jq &>/dev/null && [[ -n "$suricata_json" ]]; then
+            local data
+            data=$(echo "$suricata_json" | jq -r '.data // {}')
+            _sdata[SURICATA_INSTALLED]=$(echo "$data" | jq -r '.installed // false')
+            _sdata[SURICATA_ACTIVE]=$(echo "$data" | jq -r '.service_active // false')
+            _sdata[SURICATA_EVE_FRESH]=$(echo "$data" | jq -r '.eve_fresh // false')
+            _sdata[SURICATA_RULES]=$(echo "$data" | jq -r '.rules_loaded // 0')
+            _sdata[SURICATA_STATUS]=$(echo "$data" | jq -r '.status // "unknown"')
+
+            # Set status class
+            case "${_sdata[SURICATA_STATUS]}" in
+                active|ok) _sdata[SURICATA_STATUS_CLASS]="active" ;;
+                degraded|stale_eve) _sdata[SURICATA_STATUS_CLASS]="warning" ;;
+                not_installed|stopped|inactive) _sdata[SURICATA_STATUS_CLASS]="inactive" ;;
+                *) _sdata[SURICATA_STATUS_CLASS]="unknown" ;;
+            esac
+        fi
+    fi
+}
+
+# =============================================================================
+# DNS STATUS DATA (from shared checks)
+# =============================================================================
+
+_collect_dns_status() {
+    local -n _ddata="$1"
+
+    # Load shared checks library if needed
+    local checks_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_checks.sh"
+    if ! declare -f nftban_check_dns &>/dev/null; then
+        if [[ -f "$checks_lib" ]]; then
+            # shellcheck source=/dev/null
+            source "$checks_lib" 2>/dev/null || true
+        fi
+    fi
+
+    # Default values
+    _ddata[DNS_WORKING]="false"
+    _ddata[DNS_RESOLVER]="unknown"
+    _ddata[DNS_LATENCY]="0"
+    _ddata[DNS_STATUS]="unknown"
+
+    # Get DNS status
+    if declare -f nftban_check_dns &>/dev/null; then
+        local dns_json
+        dns_json=$(nftban_check_dns 2>/dev/null)
+        if command -v jq &>/dev/null && [[ -n "$dns_json" ]]; then
+            local data
+            data=$(echo "$dns_json" | jq -r '.data // {}')
+            _ddata[DNS_WORKING]=$(echo "$data" | jq -r '.working // false')
+            _ddata[DNS_RESOLVER]=$(echo "$data" | jq -r '.resolver // "unknown"')
+            _ddata[DNS_LATENCY]=$(echo "$data" | jq -r '.latency_ms // 0')
+            _ddata[DNS_STATUS]=$(echo "$data" | jq -r '.status // "unknown"')
+        fi
+    fi
 }
 
 # =============================================================================

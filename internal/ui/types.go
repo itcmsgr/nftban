@@ -187,6 +187,81 @@ type HealthData struct {
 	Checks        []HealthCheck
 	Errors        []string
 	Warnings      []string
+	// Extended data from shared check functions
+	Extended HealthExtended
+}
+
+// HealthExtended holds extended health data from shared check functions
+type HealthExtended struct {
+	Resources        HealthResources
+	Suricata         HealthSuricata
+	DNS              HealthDNS
+	FirewallConflicts HealthFirewallConflicts
+}
+
+// HealthResources holds system resource metrics
+type HealthResources struct {
+	Load   HealthLoad
+	Memory HealthMemory
+	Disk   HealthDisk
+	Status string // "ok", "warning", "critical"
+}
+
+// HealthLoad holds load average data
+type HealthLoad struct {
+	Load1m  float64 `json:"1m"`
+	Load5m  float64 `json:"5m"`
+	Load15m float64 `json:"15m"`
+	CPUs    int     `json:"cpus"`
+}
+
+// HealthMemory holds memory usage data
+type HealthMemory struct {
+	UsedPercent int `json:"used_percent"`
+	TotalMB     int `json:"total_mb"`
+}
+
+// HealthDisk holds disk usage data
+type HealthDisk struct {
+	Path        string `json:"path"`
+	UsedPercent int    `json:"used_percent"`
+}
+
+// HealthSuricata holds Suricata IDS status
+type HealthSuricata struct {
+	Installed     bool   `json:"installed"`
+	ServiceActive bool   `json:"service_active"`
+	EVEExists     bool   `json:"eve_exists"`
+	EVEFresh      bool   `json:"eve_fresh"`
+	RulesLoaded   int    `json:"rules_loaded"`
+	BanningActive bool   `json:"banning_active"`
+	Status        string `json:"status"`
+}
+
+// HealthDNS holds DNS resolver status
+type HealthDNS struct {
+	Hostname  string `json:"hostname"`
+	Working   bool   `json:"working"`
+	Resolver  string `json:"resolver"`
+	LatencyMS int    `json:"latency_ms"`
+	Status    string `json:"status"`
+}
+
+// HealthFirewallConflicts holds conflicting firewall status
+type HealthFirewallConflicts struct {
+	CSF       HealthFirewall `json:"csf"`
+	Firewalld HealthFirewall `json:"firewalld"`
+	UFW       HealthFirewall `json:"ufw"`
+	IPTables  HealthFirewall `json:"iptables"`
+}
+
+// HealthFirewall holds individual firewall conflict status
+type HealthFirewall struct {
+	Installed     bool   `json:"installed"`
+	Enabled       bool   `json:"enabled"`
+	Active        bool   `json:"active"`
+	ConflictLevel string `json:"conflict_level"` // none, warning, high, critical
+	Status        string `json:"status"`
 }
 
 // HealthCheck represents a single health check category
