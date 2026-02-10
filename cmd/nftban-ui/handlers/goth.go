@@ -554,6 +554,92 @@ type BulkOperationResponse struct {
 	Message      string   `json:"message"`
 }
 
+// bulkOperationType defines the type of bulk operation
+type bulkOperationType string
+
+const (
+	bulkOpUnban  bulkOperationType = "unban"
+	bulkOpDelete bulkOperationType = "delete"
+)
+
+// executeBulkOperation handles the common logic for bulk unban/delete operations
+// Returns the response to be sent to the client
+func executeBulkOperation(ips []string, opType bulkOperationType) BulkOperationResponse {
+	var successCount, failedCount int
+	var failedIPs []string
+
+	opName := string(opType)
+
+	for _, ip := range ips {
+		ip = strings.TrimSpace(ip)
+		if ip == "" {
+			continue
+		}
+
+		// Validate IP format
+		if !netutil.IsValidIP(ip) {
+			failedCount++
+			failedIPs = append(failedIPs, ip)
+			log.Printf("[GOTH] Bulk %s: invalid IP format: %s", opName, ip)
+			continue
+		}
+
+		// Execute the appropriate command
+		var output string
+		var err error
+		var hasSuccess bool
+
+		if opType == bulkOpDelete {
+			// Try permanent delete first, fall back to regular unban
+			output, err = execNFTBanCommand("unban", ip, "--permanent")
+			hasSuccess = strings.Contains(output, "removed") ||
+				strings.Contains(output, "deleted") ||
+				strings.Contains(output, "unbanned") ||
+				strings.Contains(output, "success")
+
+			// If permanent flag not supported, try regular unban
+			if err != nil && strings.Contains(output, "unknown flag") {
+				output, err = execNFTBanCommand("unban", ip)
+				hasSuccess = strings.Contains(output, "removed") ||
+					strings.Contains(output, "unbanned") ||
+					strings.Contains(output, "success")
+			}
+		} else {
+			// Regular unban
+			output, err = execNFTBanCommand("unban", ip)
+			hasSuccess = strings.Contains(output, "removed") ||
+				strings.Contains(output, "unbanned") ||
+				strings.Contains(output, "success")
+		}
+
+		if err != nil && !hasSuccess {
+			failedCount++
+			failedIPs = append(failedIPs, ip)
+			log.Printf("[GOTH] Bulk %s failed for %s: %v", opName, ip, err)
+		} else {
+			successCount++
+			log.Printf("[GOTH] Bulk %s success: %s", opName, ip)
+		}
+	}
+
+	// Build appropriate message
+	var message string
+	if opType == bulkOpDelete {
+		message = fmt.Sprintf("Deleted %d of %d bans", successCount, len(ips))
+	} else {
+		message = fmt.Sprintf("Unbanned %d of %d IPs", successCount, len(ips))
+	}
+
+	return BulkOperationResponse{
+		Success:      failedCount == 0,
+		Total:        len(ips),
+		SuccessCount: successCount,
+		FailedCount:  failedCount,
+		FailedIPs:    failedIPs,
+		Message:      message,
+	}
+}
+
 // HandleBulkUnban handles bulk unban requests
 // POST /ui/action/bulk-unban
 // Accepts JSON array of IPs and unbans each one
@@ -581,52 +667,12 @@ func (h *GOTHHandlers) HandleBulkUnban(w http.ResponseWriter, r *http.Request) {
 
 	log.Printf("[GOTH] Bulk unban requested for %d IPs", len(req.IPs))
 
-	var successCount, failedCount int
-	var failedIPs []string
+	response := executeBulkOperation(req.IPs, bulkOpUnban)
 
-	for _, ip := range req.IPs {
-		ip = strings.TrimSpace(ip)
-		if ip == "" {
-			continue
-		}
-
-		// Validate IP format
-		if !netutil.IsValidIP(ip) {
-			failedCount++
-			failedIPs = append(failedIPs, ip)
-			log.Printf("[GOTH] Bulk unban: invalid IP format: %s", ip)
-			continue
-		}
-
-		// Execute unban command
-		output, err := execNFTBanCommand("unban", ip)
-		hasSuccess := strings.Contains(output, "removed") ||
-			strings.Contains(output, "unbanned") ||
-			strings.Contains(output, "success")
-
-		if err != nil && !hasSuccess {
-			failedCount++
-			failedIPs = append(failedIPs, ip)
-			log.Printf("[GOTH] Bulk unban failed for %s: %v", ip, err)
-		} else {
-			successCount++
-			log.Printf("[GOTH] Bulk unban success: %s", ip)
-		}
-	}
-
-	response := BulkOperationResponse{
-		Success:      failedCount == 0,
-		Total:        len(req.IPs),
-		SuccessCount: successCount,
-		FailedCount:  failedCount,
-		FailedIPs:    failedIPs,
-		Message:      fmt.Sprintf("Unbanned %d of %d IPs", successCount, len(req.IPs)),
-	}
-
-	log.Printf("[GOTH] Bulk unban completed: %d success, %d failed", successCount, failedCount)
+	log.Printf("[GOTH] Bulk unban completed: %d success, %d failed", response.SuccessCount, response.FailedCount)
 
 	w.Header().Set("Content-Type", "application/json")
-	if failedCount > 0 && successCount == 0 {
+	if response.FailedCount > 0 && response.SuccessCount == 0 {
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {
 		w.WriteHeader(http.StatusOK)
@@ -661,62 +707,12 @@ func (h *GOTHHandlers) HandleBulkDelete(w http.ResponseWriter, r *http.Request) 
 
 	log.Printf("[GOTH] Bulk delete requested for %d IPs", len(req.IPs))
 
-	var successCount, failedCount int
-	var failedIPs []string
+	response := executeBulkOperation(req.IPs, bulkOpDelete)
 
-	for _, ip := range req.IPs {
-		ip = strings.TrimSpace(ip)
-		if ip == "" {
-			continue
-		}
-
-		// Validate IP format
-		if !netutil.IsValidIP(ip) {
-			failedCount++
-			failedIPs = append(failedIPs, ip)
-			log.Printf("[GOTH] Bulk delete: invalid IP format: %s", ip)
-			continue
-		}
-
-		// Execute unban with --permanent flag (if supported) or standard unban
-		// Try permanent delete first, fall back to regular unban
-		output, err := execNFTBanCommand("unban", ip, "--permanent")
-		hasSuccess := strings.Contains(output, "removed") ||
-			strings.Contains(output, "deleted") ||
-			strings.Contains(output, "unbanned") ||
-			strings.Contains(output, "success")
-
-		// If permanent flag not supported, try regular unban
-		if err != nil && strings.Contains(output, "unknown flag") {
-			output, err = execNFTBanCommand("unban", ip)
-			hasSuccess = strings.Contains(output, "removed") ||
-				strings.Contains(output, "unbanned") ||
-				strings.Contains(output, "success")
-		}
-
-		if err != nil && !hasSuccess {
-			failedCount++
-			failedIPs = append(failedIPs, ip)
-			log.Printf("[GOTH] Bulk delete failed for %s: %v", ip, err)
-		} else {
-			successCount++
-			log.Printf("[GOTH] Bulk delete success: %s", ip)
-		}
-	}
-
-	response := BulkOperationResponse{
-		Success:      failedCount == 0,
-		Total:        len(req.IPs),
-		SuccessCount: successCount,
-		FailedCount:  failedCount,
-		FailedIPs:    failedIPs,
-		Message:      fmt.Sprintf("Deleted %d of %d bans", successCount, len(req.IPs)),
-	}
-
-	log.Printf("[GOTH] Bulk delete completed: %d success, %d failed", successCount, failedCount)
+	log.Printf("[GOTH] Bulk delete completed: %d success, %d failed", response.SuccessCount, response.FailedCount)
 
 	w.Header().Set("Content-Type", "application/json")
-	if failedCount > 0 && successCount == 0 {
+	if response.FailedCount > 0 && response.SuccessCount == 0 {
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {
 		w.WriteHeader(http.StatusOK)
