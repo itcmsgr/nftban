@@ -33,7 +33,7 @@ OnBootSec=2min
 
 # Run every 90 seconds for responsive alerting
 # CSF uses 60s, we use 90s for slightly less overhead
-OnUnitActiveSec=90s
+OnUnitActiveSec=120s
 
 # Allow some variance to prevent load spikes
 AccuracySec=10s
