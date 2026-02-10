@@ -26,16 +26,24 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"sync"
 	"sync/atomic"
 	"time"
 )
 
 // SECURITY FIX: Connection limiting to prevent SSE resource exhaustion attacks
-// Maximum number of concurrent SSE connections allowed
+// Maximum number of concurrent SSE connections allowed globally
 const maxSSEConnections = 100
+
+// Maximum connections per session (prevents single user from exhausting all slots)
+const maxSSEConnectionsPerSession = 3
 
 // sseConnectionCount tracks the current number of active SSE connections
 var sseConnectionCount int64
+
+// sseSessionConnections tracks per-session connection counts
+// Key: session_id, Value: *int64 (connection count for that session)
+var sseSessionConnections sync.Map
 
 // SSEDashboardEvent represents the JSON payload sent via SSE
 type SSEDashboardEvent struct {
@@ -112,31 +120,47 @@ type SSENetworkStats struct {
 // Events are sent every 5 seconds with security stats, recent bans, and system status.
 // Requires authenticated session.
 func (h *GOTHHandlers) HandleSSEDashboard(w http.ResponseWriter, r *http.Request) {
-	// SECURITY FIX: Check connection limit before accepting new SSE connection
-	// This prevents resource exhaustion attacks via SSE connection flooding
-	currentCount := atomic.LoadInt64(&sseConnectionCount)
-	if currentCount >= maxSSEConnections {
-		log.Printf("[SSE] Connection limit reached (%d/%d), rejecting new connection from %s",
-			currentCount, maxSSEConnections, r.RemoteAddr)
-		http.Error(w, "Too many SSE connections", http.StatusTooManyRequests)
-		return
-	}
-
-	// Increment connection counter
-	atomic.AddInt64(&sseConnectionCount, 1)
-	// Ensure we decrement when this handler exits
-	defer atomic.AddInt64(&sseConnectionCount, -1)
-
-	// Validate session (already done by RequireSession wrapper, but double-check)
+	// Validate session first (already done by RequireSession wrapper, but double-check)
 	cookie, err := r.Cookie("session_id")
 	if err != nil {
 		http.Error(w, "Unauthorized", http.StatusUnauthorized)
 		return
 	}
-	if _, err := h.SessionStore.Get(cookie.Value); err != nil {
+	sessionID := cookie.Value
+	if _, err := h.SessionStore.Get(sessionID); err != nil {
 		http.Error(w, "Session expired", http.StatusUnauthorized)
 		return
 	}
+
+	// SECURITY FIX: Check global connection limit
+	// This prevents resource exhaustion attacks via SSE connection flooding
+	currentCount := atomic.LoadInt64(&sseConnectionCount)
+	if currentCount >= maxSSEConnections {
+		log.Printf("[SSE] Global connection limit reached (%d/%d), rejecting from %s",
+			currentCount, maxSSEConnections, r.RemoteAddr)
+		http.Error(w, "Too many SSE connections", http.StatusTooManyRequests)
+		return
+	}
+
+	// SECURITY FIX: Check per-session connection limit
+	// This prevents a single user from exhausting all connection slots
+	sessionCount := getSessionSSECount(sessionID)
+	if sessionCount >= maxSSEConnectionsPerSession {
+		log.Printf("[SSE] Per-session limit reached for session %s (%d/%d), rejecting",
+			sessionID[:8], sessionCount, maxSSEConnectionsPerSession)
+		http.Error(w, "Too many connections from this session", http.StatusTooManyRequests)
+		return
+	}
+
+	// Increment both counters
+	atomic.AddInt64(&sseConnectionCount, 1)
+	incrementSessionSSECount(sessionID)
+
+	// Ensure we decrement when this handler exits
+	defer func() {
+		atomic.AddInt64(&sseConnectionCount, -1)
+		decrementSessionSSECount(sessionID)
+	}()
 
 	// Set SSE headers
 	w.Header().Set("Content-Type", "text/event-stream")
@@ -182,6 +206,37 @@ func (h *GOTHHandlers) HandleSSEDashboard(w http.ResponseWriter, r *http.Request
 				log.Printf("[SSE] Error sending event to %s: %v", clientIP, err)
 				return
 			}
+		}
+	}
+}
+
+// =============================================================================
+// SSE Per-Session Connection Tracking Helpers
+// =============================================================================
+
+// getSessionSSECount returns the current SSE connection count for a session
+func getSessionSSECount(sessionID string) int64 {
+	if val, ok := sseSessionConnections.Load(sessionID); ok {
+		return atomic.LoadInt64(val.(*int64))
+	}
+	return 0
+}
+
+// incrementSessionSSECount increments the SSE connection count for a session
+func incrementSessionSSECount(sessionID string) {
+	// Load or create counter for this session
+	actual, _ := sseSessionConnections.LoadOrStore(sessionID, new(int64))
+	atomic.AddInt64(actual.(*int64), 1)
+}
+
+// decrementSessionSSECount decrements the SSE connection count for a session
+// and cleans up the entry if count reaches zero
+func decrementSessionSSECount(sessionID string) {
+	if val, ok := sseSessionConnections.Load(sessionID); ok {
+		newCount := atomic.AddInt64(val.(*int64), -1)
+		// Clean up if no more connections for this session
+		if newCount <= 0 {
+			sseSessionConnections.Delete(sessionID)
 		}
 	}
 }
