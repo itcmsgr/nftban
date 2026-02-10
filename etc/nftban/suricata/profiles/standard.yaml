@@ -5,13 +5,21 @@
 # Focus: Balanced coverage and performance
 # Use Case: Most servers, recommended default
 #
-# BASELINE CORRECTIONS (v1.12.6):
-# - tpacket-v3: yes (75-81% memory savings on RHEL-family)
+# BASELINE CORRECTIONS (v1.12.6, updated v1.12.7):
+# - tpacket-v3: yes (better batching under load, all distros default to V2)
+# - ring-size: 50000 (PRIMARY memory factor: ~400MB with 4 threads)
 # - mpm-algo: hs (Hyperscan pattern matching, auto-fallback safe)
 # - stream.inline: yes (faster alert emission per Victor Julien)
 # - checksum-validation: no (kernel/NIC already validates)
 # - stream.bypass: yes with depth: 1mb (skip long-session deep inspection)
 # - CPU affinity: yes (prevents scheduler jitter)
+#
+# MEMORY FORMULA (verified Feb 2026 via strace):
+# RAM ≈ ring-size × 2KB × capture_threads
+# - ring-size 50000 × 2KB × 4 threads = ~400MB (good for 4-8GB RAM)
+# - This is the recommended cross-distro default
+# - If packet drops occur under load, increase to 100000 (~800MB)
+# - V2 vs V3 difference is minimal; V3 better under load
 # =============================================================================
 
 %YAML 1.1
@@ -23,9 +31,9 @@ af-packet:
     cluster-id: 99
     cluster-type: cluster_flow
     defrag: yes
-    ring-size: 100000          # BALANCED
+    ring-size: 50000           # ~400MB with 4 threads, recommended default
     use-mmap: yes
-    tpacket-v3: yes            # BASELINE: 75-81% memory savings on RHEL
+    tpacket-v3: yes            # Better batching under load (all distros default to V2)
 
 # Threading configuration
 threading:
@@ -207,11 +215,14 @@ geoip-database: /var/lib/GeoIP/GeoLite2-Country.mmdb
 # - Output: alert-only to eve-alerts.json (daemon path)
 # - Audit log: disabled by default (eve-audit.json)
 #
-# BASELINE CORRECTIONS (v1.12.6):
-# - tpacket-v3: yes - Recommended by Suricata, 75-81% memory savings on RHEL
+# BASELINE CORRECTIONS (v1.12.6, updated v1.12.7):
+# - ring-size: 50000 - ~400MB with 4 threads, recommended cross-distro default
+# - tpacket-v3: yes - Better batching under load (all distros default to V2)
 # - mpm-algo: hs - Hyperscan pattern matching, auto-fallback safe
 # - stream.inline: yes - Faster alert emission per Victor Julien guidance
 # - checksum-validation: no - Kernel/NIC already validates, avoid redundant work
 # - stream.bypass: yes - Skip long-session deep inspection (NFTBan uses early signals)
 # - CPU affinity: yes - Prevents scheduler jitter on multi-core systems
+#
+# TUNING: If packet drops occur, increase ring-size to 100000 (~800MB)
 # =============================================================================
