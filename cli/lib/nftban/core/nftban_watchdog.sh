@@ -104,6 +104,32 @@ fi
 : "${NFTBAN_WATCHDOG_METRICS_FILE:=${NFTBAN_DATA_DIR:-/var/lib/nftban}/metrics/watchdog.prom}"
 : "${NFTBAN_WATCHDOG_REPORT_RETENTION:=7}"
 
+# =============================================================================
+# SURICATA DRIFT DETECTION CONFIGURATION
+# =============================================================================
+# Monitors Suricata resource usage against profile budgets
+# Auto-triggers fallback to minimal profile if budgets exceeded
+
+: "${NFTBAN_WATCHDOG_SURICATA_ENABLED:=true}"
+: "${NFTBAN_WATCHDOG_SURICATA_EVE_FRESHNESS:=60}"    # Seconds before EVE is stale
+
+# Profile rule budgets (max rules per profile)
+: "${NFTBAN_WATCHDOG_SURICATA_MINIMAL_MAX_RULES:=10000}"
+: "${NFTBAN_WATCHDOG_SURICATA_STANDARD_MAX_RULES:=25000}"
+: "${NFTBAN_WATCHDOG_SURICATA_MAXIMUM_MAX_RULES:=60000}"
+
+# Profile memory budgets (MB) - distro-aware
+# AlmaLinux/RHEL uses ~5x more memory per rule than Ubuntu/Debian
+: "${NFTBAN_WATCHDOG_SURICATA_MINIMAL_MAX_MEM_RHEL:=600}"
+: "${NFTBAN_WATCHDOG_SURICATA_MINIMAL_MAX_MEM_DEBIAN:=150}"
+: "${NFTBAN_WATCHDOG_SURICATA_STANDARD_MAX_MEM_RHEL:=1500}"
+: "${NFTBAN_WATCHDOG_SURICATA_STANDARD_MAX_MEM_DEBIAN:=400}"
+: "${NFTBAN_WATCHDOG_SURICATA_MAXIMUM_MAX_MEM_RHEL:=2500}"
+: "${NFTBAN_WATCHDOG_SURICATA_MAXIMUM_MAX_MEM_DEBIAN:=800}"
+
+# Auto-fallback to minimal on drift (true = enabled)
+: "${NFTBAN_WATCHDOG_SURICATA_AUTO_FALLBACK:=true}"
+
 # Load pipeline validation library for capability metric
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_pipeline_validation.sh" ]]; then
@@ -120,6 +146,12 @@ fi
 # shellcheck source=/dev/null
 if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh" ]]; then
     source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_timestamp.sh"
+fi
+
+# Load Suricata effective config helper (for distro detection, profile functions)
+# shellcheck source=/dev/null
+if [[ -f "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/suricata_effective_config.sh" ]]; then
+    source "${NFTBAN_LIB_DIR:-/usr/lib/nftban}/helpers/suricata_effective_config.sh"
 fi
 
 # Throttle state file (kept for backward compatibility, no longer used directly)
@@ -529,6 +561,222 @@ nftban_watchdog_check_fd() {
     return $WATCHDOG_OK
 }
 
+nftban_watchdog_check_suricata_drift() {
+    # Check Suricata resource usage against profile budgets
+    # Returns: status code, sets WATCHDOG_RESULTS[suricata_*]
+    #
+    # Checks:
+    # 1. Rule count vs profile budget
+    # 2. RSS memory vs profile budget (distro-aware)
+    # 3. EVE log freshness
+    # 4. Profile missing → auto-fallback
+    #
+    # If budgets exceeded and auto-fallback enabled:
+    #   - Logs warning and triggers profile downgrade via suricata_effective_config
+
+    if [[ "${NFTBAN_WATCHDOG_SURICATA_ENABLED:-true}" != "true" ]]; then
+        return $WATCHDOG_OK
+    fi
+
+    # Check if Suricata is installed
+    if ! command -v suricata &>/dev/null; then
+        WATCHDOG_RESULTS[suricata_status]="NOT_INSTALLED"
+        return $WATCHDOG_OK
+    fi
+
+    # Check if Suricata service is active
+    if ! systemctl is-active suricata.service &>/dev/null; then
+        WATCHDOG_RESULTS[suricata_status]="NOT_RUNNING"
+        return $WATCHDOG_OK
+    fi
+
+    # Get distro family for memory budget selection
+    local distro_family="debian"
+    if declare -f _suricata_get_distro_family &>/dev/null; then
+        distro_family=$(_suricata_get_distro_family)
+    else
+        # Fallback detection
+        if [[ -f /etc/os-release ]]; then
+            # shellcheck source=/dev/null
+            source /etc/os-release
+            case "${ID:-}" in
+                rhel|centos|almalinux|rocky|fedora|ol) distro_family="rhel" ;;
+            esac
+        fi
+    fi
+    WATCHDOG_RESULTS[suricata_distro]="$distro_family"
+
+    # Get current profile
+    local profile="standard"
+    local profile_conf="${NFTBAN_CONFIG_DIR:-/etc/nftban}/suricata/config/profile.conf"
+    if [[ -f "$profile_conf" ]]; then
+        # shellcheck source=/dev/null
+        source "$profile_conf"
+        profile="${NFTBAN_SURICATA_PROFILE:-standard}"
+    else
+        # Profile missing - auto-select if helper available
+        if declare -f _suricata_detect_optimal_profile &>/dev/null; then
+            profile=$(_suricata_detect_optimal_profile)
+            WATCHDOG_RESULTS[suricata_profile_autodetected]="true"
+            watchdog_log "INFO" "Suricata profile auto-detected: $profile"
+        fi
+    fi
+    WATCHDOG_RESULTS[suricata_profile]="$profile"
+
+    # Get profile budgets based on profile and distro
+    local max_rules max_mem_mb
+    case "$profile" in
+        minimal)
+            max_rules="${NFTBAN_WATCHDOG_SURICATA_MINIMAL_MAX_RULES:-10000}"
+            if [[ "$distro_family" == "rhel" ]]; then
+                max_mem_mb="${NFTBAN_WATCHDOG_SURICATA_MINIMAL_MAX_MEM_RHEL:-600}"
+            else
+                max_mem_mb="${NFTBAN_WATCHDOG_SURICATA_MINIMAL_MAX_MEM_DEBIAN:-150}"
+            fi
+            ;;
+        standard)
+            max_rules="${NFTBAN_WATCHDOG_SURICATA_STANDARD_MAX_RULES:-25000}"
+            if [[ "$distro_family" == "rhel" ]]; then
+                max_mem_mb="${NFTBAN_WATCHDOG_SURICATA_STANDARD_MAX_MEM_RHEL:-1500}"
+            else
+                max_mem_mb="${NFTBAN_WATCHDOG_SURICATA_STANDARD_MAX_MEM_DEBIAN:-400}"
+            fi
+            ;;
+        maximum|*)
+            max_rules="${NFTBAN_WATCHDOG_SURICATA_MAXIMUM_MAX_RULES:-60000}"
+            if [[ "$distro_family" == "rhel" ]]; then
+                max_mem_mb="${NFTBAN_WATCHDOG_SURICATA_MAXIMUM_MAX_MEM_RHEL:-2500}"
+            else
+                max_mem_mb="${NFTBAN_WATCHDOG_SURICATA_MAXIMUM_MAX_MEM_DEBIAN:-800}"
+            fi
+            ;;
+    esac
+    WATCHDOG_RESULTS[suricata_max_rules]="$max_rules"
+    WATCHDOG_RESULTS[suricata_max_mem_mb]="$max_mem_mb"
+
+    local status=$WATCHDOG_OK
+    local drift_detected=false
+
+    # ==========================================================================
+    # CHECK 1: Rule count
+    # ==========================================================================
+    local rule_count=0
+    local rules_file="/var/lib/suricata/rules/suricata.rules"
+    if [[ -f "$rules_file" ]]; then
+        # Count active rules (non-comment, non-empty lines)
+        rule_count=$(grep -cE '^(alert|drop|reject|pass|rejectsrc|rejectdst|rejectboth)' "$rules_file" 2>/dev/null || echo 0)
+    fi
+    WATCHDOG_RESULTS[suricata_rule_count]="$rule_count"
+
+    if [[ $rule_count -gt $max_rules ]]; then
+        drift_detected=true
+        WATCHDOG_RESULTS[suricata_rule_drift]="OVER_BUDGET"
+        local overage=$((rule_count - max_rules))
+        if watchdog_should_alert "suricata_rules"; then
+            watchdog_alert "WARNING" "Suricata rules ($rule_count) exceed $profile budget ($max_rules) by $overage"
+        fi
+        status=$WATCHDOG_WARNING
+    else
+        WATCHDOG_RESULTS[suricata_rule_drift]="OK"
+    fi
+
+    # ==========================================================================
+    # CHECK 2: Memory usage (RSS)
+    # ==========================================================================
+    local rss_kb=0 rss_mb=0
+    local suricata_pid
+    suricata_pid=$(pgrep -x suricata 2>/dev/null | head -1)
+    if [[ -n "$suricata_pid" && -f "/proc/$suricata_pid/status" ]]; then
+        rss_kb=$(awk '/VmRSS/ {print $2}' "/proc/$suricata_pid/status" 2>/dev/null || echo 0)
+        rss_mb=$((rss_kb / 1024))
+    fi
+    WATCHDOG_RESULTS[suricata_rss_mb]="$rss_mb"
+
+    if [[ $rss_mb -gt $max_mem_mb ]]; then
+        drift_detected=true
+        WATCHDOG_RESULTS[suricata_mem_drift]="OVER_BUDGET"
+        local overage_mb=$((rss_mb - max_mem_mb))
+        if watchdog_should_alert "suricata_mem"; then
+            watchdog_alert "WARNING" "Suricata RSS (${rss_mb}MB) exceeds $profile budget (${max_mem_mb}MB) by ${overage_mb}MB [$distro_family]"
+        fi
+        [[ $status -lt $WATCHDOG_WARNING ]] && status=$WATCHDOG_WARNING
+    else
+        WATCHDOG_RESULTS[suricata_mem_drift]="OK"
+    fi
+
+    # ==========================================================================
+    # CHECK 3: EVE log freshness
+    # ==========================================================================
+    local eve_file="/var/log/suricata/eve.json"
+    local eve_freshness="${NFTBAN_WATCHDOG_SURICATA_EVE_FRESHNESS:-60}"
+    WATCHDOG_RESULTS[suricata_eve_freshness_threshold]="$eve_freshness"
+
+    if [[ -f "$eve_file" ]]; then
+        local eve_mtime eve_age
+        eve_mtime=$(stat -c %Y "$eve_file" 2>/dev/null || echo 0)
+        eve_age=$(($(date +%s) - eve_mtime))
+        WATCHDOG_RESULTS[suricata_eve_age_sec]="$eve_age"
+
+        if [[ $eve_age -gt $eve_freshness ]]; then
+            WATCHDOG_RESULTS[suricata_eve_status]="STALE"
+            if watchdog_should_alert "suricata_eve"; then
+                watchdog_alert "WARNING" "Suricata EVE log stale: ${eve_age}s old (threshold: ${eve_freshness}s)"
+            fi
+            [[ $status -lt $WATCHDOG_WARNING ]] && status=$WATCHDOG_WARNING
+        else
+            WATCHDOG_RESULTS[suricata_eve_status]="FRESH"
+        fi
+    else
+        WATCHDOG_RESULTS[suricata_eve_status]="NOT_FOUND"
+        WATCHDOG_RESULTS[suricata_eve_age_sec]="N/A"
+    fi
+
+    # ==========================================================================
+    # AUTO-FALLBACK: If drift detected and auto-fallback enabled
+    # ==========================================================================
+    if [[ "$drift_detected" == "true" && "${NFTBAN_WATCHDOG_SURICATA_AUTO_FALLBACK:-true}" == "true" ]]; then
+        # Only fallback if not already on minimal
+        if [[ "$profile" != "minimal" ]]; then
+            WATCHDOG_RESULTS[suricata_fallback_triggered]="true"
+            watchdog_log "WARN" "Suricata drift detected - triggering fallback to minimal profile"
+
+            # Record that we're triggering fallback (actual update happens async)
+            local fallback_trigger_file="${NFTBAN_RUN_DIR:-/run/nftban}/suricata_fallback_requested"
+            echo "$(date -Iseconds) profile=$profile rule_count=$rule_count rss_mb=$rss_mb" > "$fallback_trigger_file"
+
+            # If suricata_generate_effective_config is available, call it with minimal
+            if declare -f suricata_generate_effective_config &>/dev/null; then
+                # Create profile.conf with minimal
+                local profile_conf_dir
+                profile_conf_dir="$(dirname "$profile_conf")"
+                mkdir -p "$profile_conf_dir"
+                cat > "$profile_conf" << EOF
+# NFTBan Suricata Profile Configuration
+# Watchdog fallback: $(date -Iseconds)
+# Previous profile: $profile (drift: rules=$rule_count/${max_rules}, mem=${rss_mb}/${max_mem_mb}MB)
+NFTBAN_SURICATA_PROFILE_MODE="pinned"
+NFTBAN_SURICATA_PROFILE="minimal"
+EOF
+                watchdog_alert "WARNING" "Suricata profile downgraded to 'minimal' due to budget drift. Run 'nftban suricata rules update' to apply."
+            fi
+        else
+            WATCHDOG_RESULTS[suricata_fallback_triggered]="already_minimal"
+            watchdog_log "WARN" "Suricata drift on minimal profile - manual intervention needed"
+        fi
+    else
+        WATCHDOG_RESULTS[suricata_fallback_triggered]="false"
+    fi
+
+    # Set overall status
+    if [[ "$drift_detected" == "true" ]]; then
+        WATCHDOG_RESULTS[suricata_status]="DRIFT"
+    else
+        WATCHDOG_RESULTS[suricata_status]="OK"
+    fi
+
+    return $status
+}
+
 nftban_watchdog_get_top_cpu() {
     # Get top CPU-consuming processes from /proc
     # Stores results in WATCHDOG_RESULTS[top_cpu_*]
@@ -682,6 +930,10 @@ nftban_watchdog_run_all() {
     [[ $status -gt $overall_status ]] && overall_status=$status
 
     nftban_watchdog_check_fd && status=0 || status=$?
+    [[ $status -gt $overall_status ]] && overall_status=$status
+
+    # Suricata drift detection (profile budget validation)
+    nftban_watchdog_check_suricata_drift && status=0 || status=$?
     [[ $status -gt $overall_status ]] && overall_status=$status
 
     nftban_watchdog_get_top_cpu
@@ -1900,6 +2152,7 @@ export -f nftban_watchdog_check_memory
 export -f nftban_watchdog_check_iowait
 export -f nftban_watchdog_check_disk
 export -f nftban_watchdog_check_fd
+export -f nftban_watchdog_check_suricata_drift
 export -f nftban_watchdog_get_top_cpu
 export -f nftban_watchdog_get_top_mem
 export -f nftban_watchdog_cleanup_old
