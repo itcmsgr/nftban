@@ -568,6 +568,7 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban/suricata
 %dir %attr(750,root,nftban) /etc/nftban/suricata/profiles
 %dir %attr(750,root,nftban) /etc/nftban/suricata/config
+%config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/config/profile.conf
 %dir %attr(775,root,nftban) /etc/nftban/suricata/rules
 %dir %attr(750,root,nftban) /etc/nftban/suricata/cache
 %dir %attr(770,root,nftban) /etc/nftban/suricata/state

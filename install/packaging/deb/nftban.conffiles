@@ -55,6 +55,7 @@
 /etc/nftban/suricata/profiles/minimal.yaml
 /etc/nftban/suricata/profiles/standard.yaml
 /etc/nftban/suricata/profiles/maximum.yaml
+/etc/nftban/suricata/config/profile.conf
 
 # Suricata interface configuration (v1.12.0)
 /etc/nftban/conf.d/suricata/interfaces.conf
