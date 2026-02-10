@@ -552,6 +552,8 @@ COMMANDS:
     rollback            Restore previous version from backup (fixes dpkg first)
     repair              Fix broken install (dpkg state, immutable flags, restore backup)
     list                List available backups
+    auto [ACTION]       Manage auto-update timer (enable|disable|status)
+                        Requires --email for enable (mandatory notification)
     help                Show this help message
 
 AUTO-DETECTION:
@@ -596,6 +598,35 @@ EXAMPLES:
     # List available backups
     nftban update list
 
+    # Enable weekly auto-updates (uses global NFTBAN_MAIL_RECIPIENT if set)
+    nftban update auto enable
+
+    # Enable with specific email
+    nftban update auto enable --email admin@example.com
+
+    # Enable using panel admin email (auto-detect)
+    nftban update auto enable --email panel
+
+    # Check auto-update status
+    nftban update auto status
+
+    # Disable auto-updates
+    nftban update auto disable
+
+AUTO-UPDATE:
+    The auto-update feature runs weekly (Sunday 4:00 AM) via systemd timer.
+    Email notification is MANDATORY - you cannot enable auto-updates without
+    configuring a notification email to ensure you're informed of results.
+
+    Email is resolved in order:
+      1. --email argument (explicit)
+      2. NFTBAN_UPDATE_NOTIFY_EMAIL in update.conf
+      3. NFTBAN_MAIL_RECIPIENT in mail.conf (global email)
+      4. Panel admin email (if --email panel)
+
+    Configuration: /etc/nftban/conf.d/update.conf
+    Logs: /var/log/nftban/update.log, journalctl -u nftban-update.service
+
 CONFIGURATION:
     File: /etc/nftban/update.conf
 
@@ -610,6 +641,627 @@ EXIT CODES:
     2  Configuration error
 
 EOF
+}
+
+# =============================================================================
+# AUTO-UPDATE MANAGEMENT
+# =============================================================================
+
+_cmd_update_auto() {
+    # Manage auto-update timer
+    # Usage: nftban update auto [enable|disable|status] [--email EMAIL]
+
+    local action="${1:-status}"
+    local email_arg=""
+
+    # Parse arguments
+    shift || true
+    while [[ $# -gt 0 ]]; do
+        case "$1" in
+            enable|disable|status)
+                action="$1"
+                shift
+                ;;
+            --email|-e)
+                email_arg="${2:-}"
+                shift 2 || { echo "Error: --email requires an argument" >&2; return 1; }
+                ;;
+            *)
+                shift
+                ;;
+        esac
+    done
+
+    case "$action" in
+        enable)
+            _update_auto_enable "$email_arg"
+            ;;
+        disable)
+            _update_auto_disable
+            ;;
+        status)
+            _update_auto_status
+            ;;
+        *)
+            echo "Usage: nftban update auto [enable|disable|status] [--email EMAIL]" >&2
+            echo "" >&2
+            echo "  enable                            Enable (uses global NFTBAN_MAIL_RECIPIENT)" >&2
+            echo "  enable --email user@example.com   Enable with specific email" >&2
+            echo "  enable --email panel              Enable using panel admin email" >&2
+            echo "  disable                           Disable auto-updates" >&2
+            echo "  status                            Show current status" >&2
+            echo "" >&2
+            echo "Email is resolved in order: --email arg > update.conf > mail.conf (global)" >&2
+            return 1
+            ;;
+    esac
+}
+
+_update_auto_enable() {
+    # Enable auto-update timer
+    # REQUIRES: Valid notification email configured
+    # Args: $1 = email (optional, overrides config)
+    #
+    # Email resolution order:
+    #   1. --email argument (explicit override)
+    #   2. NFTBAN_UPDATE_NOTIFY_EMAIL from update.conf
+    #   3. NFTBAN_MAIL_RECIPIENT from mail.conf (global email)
+    #   4. Panel admin email detection (if --email panel)
+
+    local email_override="$1"
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/update.conf"
+    local config_local="${config_file}.local"
+    local mail_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/mail.conf"
+    local mail_config_local="${mail_config}.local"
+
+    _update_banner
+    echo ""
+
+    # Check root
+    if [[ $EUID -ne 0 ]]; then
+        _update_log ERROR "Enabling auto-update requires root privileges"
+        _update_log INFO "Run: sudo nftban update auto enable --email EMAIL"
+        return 1
+    fi
+
+    # Load update config
+    [[ -f "$config_file" ]] && source "$config_file"
+    [[ -f "$config_local" ]] && source "$config_local"
+
+    # Load mail config for global recipient
+    [[ -f "$mail_config" ]] && source "$mail_config"
+    [[ -f "$mail_config_local" ]] && source "$mail_config_local"
+
+    # Email resolution: override -> update config -> global mail recipient
+    local notify_email="${email_override:-${NFTBAN_UPDATE_NOTIFY_EMAIL:-${NFTBAN_MAIL_RECIPIENT:-}}}"
+    local resolved_email=""
+    local email_source=""
+
+    if [[ -z "$notify_email" ]]; then
+        _update_log ERROR "Cannot enable auto-update: No notification email configured"
+        echo ""
+        echo "  Configure email using one of these methods:" >&2
+        echo "    nftban update auto enable --email user@example.com" >&2
+        echo "    nftban update auto enable --email panel   # Use panel admin email" >&2
+        echo "" >&2
+        echo "  Or set a global email in /etc/nftban/conf.d/mail.conf:" >&2
+        echo "    NFTBAN_MAIL_RECIPIENT=\"admin@example.com\"" >&2
+        return 1
+    elif [[ "$notify_email" == "panel" ]]; then
+        email_source="panel detection"
+        # Load panel common module for email detection
+        local panel_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_panel_common.sh"
+        if [[ -f "$panel_lib" ]]; then
+            # shellcheck source=/dev/null
+            source "$panel_lib"
+        fi
+
+        # Use panel admin email detection
+        if declare -f nftban_panel_get_admin_email &>/dev/null; then
+            resolved_email=$(nftban_panel_get_admin_email 2>/dev/null || echo "")
+        fi
+
+        if [[ -z "$resolved_email" ]]; then
+            _update_log ERROR "Cannot detect panel admin email"
+            _update_log INFO "No hosting panel detected or panel has no admin email configured"
+            echo "  Please specify email manually: nftban update auto enable --email user@example.com" >&2
+            return 1
+        fi
+        _update_log INFO "Using panel admin email: $resolved_email"
+    else
+        resolved_email="$notify_email"
+        # Determine email source for logging
+        if [[ -n "$email_override" ]]; then
+            email_source="--email argument"
+        elif [[ -n "${NFTBAN_UPDATE_NOTIFY_EMAIL:-}" ]]; then
+            email_source="update.conf"
+        elif [[ -n "${NFTBAN_MAIL_RECIPIENT:-}" ]]; then
+            email_source="mail.conf (global)"
+            _update_log INFO "Using global mail recipient: $resolved_email"
+        else
+            email_source="config"
+        fi
+    fi
+
+    # Validate email format
+    if ! [[ "$resolved_email" =~ ^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$ ]]; then
+        _update_log ERROR "Invalid email format: $resolved_email"
+        return 1
+    fi
+
+    # Update local config with resolved email and enable flag
+    mkdir -p "$(dirname "$config_local")" 2>/dev/null || true
+
+    cat > "$config_local" << EOF
+# NFTBan Auto-Update Local Configuration
+# Generated by: nftban update auto enable
+# Date: $(date '+%Y-%m-%d %H:%M:%S')
+
+# Auto-update enabled
+NFTBAN_UPDATE_AUTO_ENABLED="true"
+
+# Notification email (source: ${email_source})
+NFTBAN_UPDATE_NOTIFY_EMAIL="$resolved_email"
+EOF
+
+    _update_log OK "Configuration saved to: $config_local"
+
+    # Enable and start timer
+    _update_log INFO "Enabling systemd timer..."
+    if systemctl enable --now nftban-update.timer 2>/dev/null; then
+        _update_log OK "Timer enabled"
+    else
+        _update_log WARN "Could not enable timer (systemd may not be available)"
+        _update_log INFO "Timer will be enabled on next system reboot"
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Auto-update enabled"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  Schedule:          Weekly, Sunday 4:00 AM (with 30min jitter)"
+    echo "  Notification:      $resolved_email"
+    echo "  Config:            $config_local"
+
+    # Show next run time if timer is active
+    local next_run=""
+    if systemctl is-active nftban-update.timer &>/dev/null; then
+        next_run=$(systemctl show nftban-update.timer --property=NextElapseUSecRealtime --value 2>/dev/null || echo "")
+        [[ -n "$next_run" ]] && echo "  Next run:          $next_run"
+    fi
+
+    echo ""
+    echo "  Check status:      nftban update auto status"
+    echo "  View logs:         journalctl -u nftban-update.service"
+    echo ""
+}
+
+_update_auto_disable() {
+    # Disable auto-update timer
+
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/update.conf"
+    local config_local="${config_file}.local"
+
+    _update_banner
+    echo ""
+
+    # Check root
+    if [[ $EUID -ne 0 ]]; then
+        _update_log ERROR "Disabling auto-update requires root privileges"
+        _update_log INFO "Run: sudo nftban update auto disable"
+        return 1
+    fi
+
+    # Update local config
+    if [[ -f "$config_local" ]]; then
+        # Update the enabled flag in local config
+        sed -i 's/NFTBAN_UPDATE_AUTO_ENABLED="true"/NFTBAN_UPDATE_AUTO_ENABLED="false"/' "$config_local"
+        _update_log OK "Configuration updated: $config_local"
+    fi
+
+    # Disable timer
+    if systemctl disable --now nftban-update.timer 2>/dev/null; then
+        _update_log OK "Timer disabled"
+    else
+        _update_log INFO "Timer was not active"
+    fi
+
+    echo ""
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo "  Auto-update disabled"
+    echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+    echo ""
+    echo "  Re-enable with: nftban update auto enable --email EMAIL"
+    echo ""
+}
+
+_update_auto_status() {
+    # Show auto-update status
+
+    _update_banner
+    echo ""
+    echo "AUTO-UPDATE STATUS"
+    echo "════════════════════════════════════════════════════════════════"
+    echo ""
+
+    # Load config
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/update.conf"
+    local config_local="${config_file}.local"
+    local mail_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/mail.conf"
+    local mail_config_local="${mail_config}.local"
+    local enabled="false"
+    local channel="stable"
+    local notify_email=""
+    local notify_success="true"
+    local notify_failure="true"
+    local log_file="/var/log/nftban/update.log"
+    local email_source=""
+
+    # Load update config
+    if [[ -f "$config_file" ]]; then
+        source "$config_file"
+    fi
+    if [[ -f "$config_local" ]]; then
+        source "$config_local"
+    fi
+
+    # Load mail config for global recipient fallback
+    local global_mail_recipient=""
+    if [[ -f "$mail_config" ]]; then
+        source "$mail_config"
+        global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-}"
+    fi
+    if [[ -f "$mail_config_local" ]]; then
+        source "$mail_config_local"
+        global_mail_recipient="${NFTBAN_MAIL_RECIPIENT:-$global_mail_recipient}"
+    fi
+
+    enabled="${NFTBAN_UPDATE_AUTO_ENABLED:-false}"
+    channel="${NFTBAN_UPDATE_CHANNEL:-stable}"
+    notify_email="${NFTBAN_UPDATE_NOTIFY_EMAIL:-}"
+    notify_success="${NFTBAN_UPDATE_NOTIFY_SUCCESS:-true}"
+    notify_failure="${NFTBAN_UPDATE_NOTIFY_FAILURE:-true}"
+    log_file="${NFTBAN_UPDATE_LOG_FILE:-$log_file}"
+
+    # Determine effective email and source
+    if [[ -n "$notify_email" ]]; then
+        email_source="update.conf"
+    elif [[ -n "$global_mail_recipient" ]]; then
+        notify_email="$global_mail_recipient"
+        email_source="mail.conf (global)"
+    fi
+
+    # Timer status
+    local timer_active timer_enabled next_run last_run exit_code
+    timer_active=$(systemctl is-active nftban-update.timer 2>/dev/null || echo "inactive")
+    timer_enabled=$(systemctl is-enabled nftban-update.timer 2>/dev/null || echo "disabled")
+
+    # Configuration
+    echo "  Configuration"
+    echo "  ─────────────────────────────────────"
+    if [[ "$enabled" == "true" ]]; then
+        echo "  Config enabled:    YES"
+    else
+        echo "  Config enabled:    NO"
+    fi
+    echo "  Update channel:    $channel"
+    if [[ -n "$notify_email" ]]; then
+        echo "  Notify email:      $notify_email"
+        [[ -n "$email_source" ]] && echo "  Email source:      $email_source"
+    else
+        echo "  Notify email:      (not configured)"
+        echo "                     Set NFTBAN_MAIL_RECIPIENT in mail.conf or use --email"
+    fi
+    echo "  Notify success:    $notify_success"
+    echo "  Notify failure:    $notify_failure"
+    echo ""
+
+    # Timer status
+    echo "  Systemd Timer"
+    echo "  ─────────────────────────────────────"
+    if [[ "$timer_active" == "active" ]]; then
+        echo "  Timer status:      ACTIVE (running)"
+    else
+        echo "  Timer status:      INACTIVE"
+    fi
+    echo "  Timer enabled:     $timer_enabled"
+
+    if [[ "$timer_active" == "active" ]]; then
+        next_run=$(systemctl show nftban-update.timer --property=NextElapseUSecRealtime --value 2>/dev/null || echo "")
+        [[ -n "$next_run" ]] && echo "  Next run:          $next_run"
+    fi
+
+    # Last run info from service
+    if systemctl show nftban-update.service &>/dev/null 2>&1; then
+        last_run=$(systemctl show nftban-update.service --property=ExecMainExitTimestamp --value 2>/dev/null || echo "")
+        exit_code=$(systemctl show nftban-update.service --property=ExecMainStatus --value 2>/dev/null || echo "")
+
+        if [[ -n "$last_run" && "$last_run" != "n/a" ]]; then
+            echo "  Last run:          $last_run"
+            case "$exit_code" in
+                0) echo "  Last result:       SUCCESS (updated)" ;;
+                1) echo "  Last result:       OK (no update needed)" ;;
+                2) echo "  Last result:       FAILED" ;;
+                *) [[ -n "$exit_code" ]] && echo "  Last exit code:    $exit_code" ;;
+            esac
+        fi
+    fi
+    echo ""
+
+    # Config files
+    echo "  Files"
+    echo "  ─────────────────────────────────────"
+    echo "  Config:            $config_file"
+    [[ -f "$config_local" ]] && echo "  Local override:    $config_local"
+    echo "  Log file:          $log_file"
+    echo ""
+
+    # Show recent log entries
+    if [[ -f "$log_file" ]]; then
+        echo "  Recent Log Entries"
+        echo "  ─────────────────────────────────────"
+        tail -5 "$log_file" 2>/dev/null | sed 's/^/  /' || echo "  (no entries)"
+        echo ""
+    fi
+
+    # Show help if not enabled
+    if [[ "$enabled" != "true" ]] || [[ "$timer_enabled" == "disabled" ]]; then
+        echo "────────────────────────────────────────────────────────────────"
+        echo "  To enable auto-updates:"
+        echo "    nftban update auto enable --email admin@example.com"
+        echo "    nftban update auto enable --email panel  # Use panel email"
+        echo ""
+    fi
+}
+
+_cmd_update_auto_run() {
+    # Called by systemd timer - non-interactive update
+    # Returns: 0=updated, 1=no update needed, 2=failed
+
+    local config_file="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/update.conf"
+    local config_local="${config_file}.local"
+    local mail_config="${NFTBAN_CONFIG_DIR:-/etc/nftban}/conf.d/mail.conf"
+    local mail_config_local="${mail_config}.local"
+    local log_file="/var/log/nftban/update.log"
+
+    # Load update config
+    [[ -f "$config_file" ]] && source "$config_file"
+    [[ -f "$config_local" ]] && source "$config_local"
+
+    # Load mail config for global email fallback
+    [[ -f "$mail_config" ]] && source "$mail_config"
+    [[ -f "$mail_config_local" ]] && source "$mail_config_local"
+
+    log_file="${NFTBAN_UPDATE_LOG_FILE:-$log_file}"
+
+    # Check if enabled
+    if [[ "${NFTBAN_UPDATE_AUTO_ENABLED:-false}" != "true" ]]; then
+        _update_log INFO "Auto-update disabled in config, skipping"
+        return 1
+    fi
+
+    # Resolve notification email (same chain as _update_auto_enable)
+    # Priority: NFTBAN_UPDATE_NOTIFY_EMAIL -> NFTBAN_MAIL_RECIPIENT -> panel detection
+    local resolved_email="${NFTBAN_UPDATE_NOTIFY_EMAIL:-${NFTBAN_MAIL_RECIPIENT:-}}"
+
+    # Try panel detection as last resort
+    if [[ -z "$resolved_email" ]]; then
+        if declare -f nftban_panel_get_admin_email &>/dev/null; then
+            resolved_email=$(nftban_panel_get_admin_email 2>/dev/null || echo "")
+        fi
+    fi
+
+    # Check for notification email (mandatory)
+    if [[ -z "$resolved_email" ]]; then
+        _update_log ERROR "Auto-update requires notification email but none configured"
+        _update_log INFO "Run: nftban update auto enable --email admin@example.com"
+        return 2
+    fi
+
+    # Set the resolved email for use by _update_notify_email
+    NFTBAN_UPDATE_NOTIFY_EMAIL="$resolved_email"
+
+    # Check load average
+    if [[ -n "${NFTBAN_UPDATE_SKIP_HIGH_LOAD:-}" && "${NFTBAN_UPDATE_SKIP_HIGH_LOAD}" != "0" ]]; then
+        local load_avg
+        load_avg=$(awk '{print $1}' /proc/loadavg 2>/dev/null || echo "0")
+        # Use bc for floating point comparison, fallback to awk if bc not available
+        local is_high_load=0
+        if command -v bc &>/dev/null; then
+            is_high_load=$(echo "$load_avg > ${NFTBAN_UPDATE_SKIP_HIGH_LOAD}" | bc -l 2>/dev/null || echo "0")
+        else
+            is_high_load=$(awk -v load="$load_avg" -v thresh="${NFTBAN_UPDATE_SKIP_HIGH_LOAD}" 'BEGIN { print (load > thresh) ? 1 : 0 }')
+        fi
+        if [[ "$is_high_load" == "1" ]]; then
+            _update_log WARN "Skipping update: load average $load_avg > ${NFTBAN_UPDATE_SKIP_HIGH_LOAD}"
+            return 1
+        fi
+    fi
+
+    _update_log INFO "=== Auto-update started ==="
+
+    # Check for updates
+    local current_version latest_version
+    current_version=$(_get_current_version)
+    latest_version=$(_get_latest_release)
+
+    if [[ "$latest_version" == "unknown" ]]; then
+        _update_log ERROR "Failed to check GitHub releases"
+        _update_notify_email "failure" "$current_version" "unknown" "Failed to check GitHub for updates"
+        return 2
+    fi
+
+    _update_log INFO "Current version: $current_version"
+    _update_log INFO "Latest version:  $latest_version"
+
+    if [[ "$current_version" == "$latest_version" ]]; then
+        _update_log INFO "Already on latest version: $current_version"
+        return 1
+    fi
+
+    # Channel check (stable = only patch versions)
+    if [[ "${NFTBAN_UPDATE_CHANNEL:-stable}" == "stable" ]]; then
+        local cur_major cur_minor lat_major lat_minor
+        IFS='.' read -r cur_major cur_minor _ <<< "$current_version"
+        IFS='.' read -r lat_major lat_minor _ <<< "$latest_version"
+
+        if [[ "$cur_major" != "$lat_major" || "$cur_minor" != "$lat_minor" ]]; then
+            _update_log INFO "New major/minor version available ($latest_version) but channel=stable, skipping"
+            _update_log INFO "To update, run manually: nftban update"
+            return 1
+        fi
+    fi
+
+    _update_log INFO "Updating: $current_version -> $latest_version"
+
+    # Store current version for rollback notification
+    local pre_update_version="$current_version"
+
+    # Perform update
+    local update_result=0
+    if _cmd_update_main "auto" "" 2>&1 | while IFS= read -r line; do
+        _update_log INFO "$line"
+    done; then
+        update_result=0
+    else
+        update_result=$?
+    fi
+
+    if [[ $update_result -eq 0 ]]; then
+        local new_version
+        new_version=$(_get_current_version)
+        _update_log OK "Update successful: $pre_update_version -> $new_version"
+
+        # Send success notification if enabled
+        if [[ "${NFTBAN_UPDATE_NOTIFY_SUCCESS:-true}" == "true" ]]; then
+            _update_notify_email "success" "$pre_update_version" "$new_version"
+        fi
+
+        return 0
+    else
+        _update_log ERROR "Update failed"
+
+        # Auto-rollback if enabled
+        if [[ "${NFTBAN_UPDATE_AUTO_ROLLBACK:-true}" == "true" ]]; then
+            _update_log WARN "Attempting auto-rollback..."
+            if _do_rollback 2>&1 | while IFS= read -r line; do
+                _update_log INFO "  $line"
+            done; then
+                _update_log OK "Rollback successful"
+                _update_notify_email "failure" "$pre_update_version" "$latest_version" "Update failed, rolled back successfully"
+            else
+                _update_log ERROR "Rollback failed!"
+                _update_notify_email "failure" "$pre_update_version" "$latest_version" "Update failed and rollback also failed - manual intervention required"
+            fi
+        else
+            _update_notify_email "failure" "$pre_update_version" "$latest_version" "Update failed"
+        fi
+
+        return 2
+    fi
+}
+
+_update_notify_email() {
+    # Send email notification about update status
+    # Args: $1 = status (success|failure)
+    #       $2 = old_version
+    #       $3 = new_version
+    #       $4 = additional message (optional)
+
+    local status="$1"
+    local old_version="$2"
+    local new_version="$3"
+    local extra_msg="${4:-}"
+
+    local recipient="${NFTBAN_UPDATE_NOTIFY_EMAIL:-}"
+    [[ -z "$recipient" ]] && return 0
+
+    local hostname_val
+    hostname_val=$(hostname -f 2>/dev/null || hostname)
+
+    local subject body
+
+    if [[ "$status" == "success" ]]; then
+        subject="[NFTBan] Update successful on $hostname_val"
+        body="NFTBan auto-update completed successfully.
+
+Server:   $hostname_val
+Previous: v$old_version
+Current:  v$new_version
+Time:     $(date '+%Y-%m-%d %H:%M:%S %Z')
+
+The update was applied automatically and all health checks passed.
+
+View update log: /var/log/nftban/update.log
+View service log: journalctl -u nftban-update.service"
+    else
+        subject="[NFTBan] Update FAILED on $hostname_val"
+        body="NFTBan auto-update failed!
+
+Server:    $hostname_val
+Attempted: v$old_version -> v$new_version
+Time:      $(date '+%Y-%m-%d %H:%M:%S %Z')
+${extra_msg:+
+Details: $extra_msg}
+
+Please check the server and review the logs:
+  /var/log/nftban/update.log
+  journalctl -u nftban-update.service
+
+To manually update:
+  sudo nftban update
+
+To rollback:
+  sudo nftban update rollback"
+    fi
+
+    # Load mail module if available
+    local mail_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/core/nftban_mail.sh"
+    if [[ -f "$mail_lib" ]]; then
+        # shellcheck source=/dev/null
+        source "$mail_lib" 2>/dev/null || true
+    fi
+
+    # Try to send email using nftban mail module
+    if declare -f nftban_mail_send &>/dev/null; then
+        # Use plain text for update notifications
+        local old_html="${NFTBAN_MAIL_USE_HTML:-}"
+        NFTBAN_MAIL_USE_HTML="NO"
+
+        echo "$body" | nftban_mail_send "$body" "$recipient" 2>/dev/null && {
+            _update_log INFO "Notification sent to: $recipient"
+            NFTBAN_MAIL_USE_HTML="$old_html"
+            return 0
+        }
+        NFTBAN_MAIL_USE_HTML="$old_html"
+    fi
+
+    # Fallback: try sendmail directly
+    if command -v sendmail &>/dev/null; then
+        {
+            echo "From: nftban@$hostname_val"
+            echo "To: $recipient"
+            echo "Subject: $subject"
+            echo "Content-Type: text/plain; charset=UTF-8"
+            echo ""
+            echo "$body"
+        } | sendmail -t 2>/dev/null && {
+            _update_log INFO "Notification sent to: $recipient (via sendmail)"
+            return 0
+        }
+    fi
+
+    # Fallback: try mail command
+    if command -v mail &>/dev/null; then
+        echo "$body" | mail -s "$subject" "$recipient" 2>/dev/null && {
+            _update_log INFO "Notification sent to: $recipient (via mail)"
+            return 0
+        }
+    fi
+
+    _update_log WARN "Could not send email notification (no mail system available)"
+    return 1
 }
 
 # =============================================================================
@@ -658,6 +1310,14 @@ nftban_cmd_update() {
         list|--list|-l)
             _update_banner
             _list_backups
+            ;;
+        auto)
+            shift || true
+            _cmd_update_auto "$@"
+            ;;
+        auto-run)
+            # Called by systemd timer - non-interactive
+            _cmd_update_auto_run
             ;;
         help|-h|--help)
             _cmd_update_help
