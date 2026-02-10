@@ -720,6 +720,7 @@ nftban_posture_oneline() {
 # =============================================================================
 
 _collect_system_resources() {
+    # shellcheck disable=SC2178  # nameref is intentional
     local -n _rdata="$1"
 
     # Load shared checks library if needed
@@ -751,7 +752,8 @@ _collect_system_resources() {
     else
         # Fallback: get basic info directly
         if [[ -r /proc/loadavg ]]; then
-            read -r _rdata[LOAD_1M] _rdata[LOAD_5M] _rdata[LOAD_15M] _ < /proc/loadavg
+            # shellcheck disable=SC2313  # array indices are string keys
+            read -r "_rdata[LOAD_1M]" "_rdata[LOAD_5M]" "_rdata[LOAD_15M]" _ < /proc/loadavg
         fi
         _rdata[CPU_COUNT]=$(nproc 2>/dev/null || echo 1)
         _rdata[RESOURCES_STATUS]="unknown"

@@ -396,7 +396,6 @@ nftban_health_render_json() {
 
     # Firewall conflicts
     if declare -f nftban_check_firewall_conflict &>/dev/null; then
-        local conflicts_json='{"csf":{},"firewalld":{},"ufw":{},"iptables":{}}'
         # Check each firewall
         local csf_json fw_json ufw_json ipt_json
         csf_json=$(nftban_check_firewall_conflict csf 2>/dev/null | jq -c '.data // {}' 2>/dev/null || echo '{}')
