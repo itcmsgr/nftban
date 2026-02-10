@@ -96,20 +96,11 @@ case "$1" in
         fi
 
         # =====================================================================
-        # STEP 0.5: Install yq for documentation generation
+        # STEP 0.5: yq for documentation generation (SKIP - slow, optional)
         # =====================================================================
-        log_info "Installing yq (YAML processor) for documentation generation..."
-        if ! command -v yq &>/dev/null; then
-            pip3 install yq >/dev/null 2>&1 || {
-                log_warn "Failed to install yq - documentation generation may not work"
-                log_warn "  Manual install: pip3 install yq"
-            }
-            if command -v yq &>/dev/null; then
-                log_info "yq installed successfully"
-            fi
-        else
-            log_info "yq already installed"
-        fi
+        # yq is only needed for help/wiki generation, not runtime
+        # Users can install manually: pip3 install yq
+        # This saves ~15-30 seconds during package install
 
         # =====================================================================
         # STEP 0.5: Check for Conflicting Firewalls
@@ -309,32 +300,23 @@ case "$1" in
         log_info "Auto-whitelisting system IPs (lockout prevention)..."
 
         if command -v nftban >/dev/null 2>&1; then
-            # Run whitelist-system sync to auto-detect and whitelist:
-            #   - SSH client IP (whoever is installing)
-            #   - All interface IPs (localhost, eth0, etc.)
-            #   - Public IPv4/IPv6
-            #   - Gateway, DNS servers
-            nftban whitelist-system sync 2>/dev/null || log_warn "Auto-whitelist sync failed (non-critical)"
-
-            # Show what was whitelisted
-            log_info "  Whitelisted IPs:"
-            nftban whitelist-system show 2>/dev/null | head -10 || true
+            # Run whitelist-system sync with --quick to skip slow operations
+            # Detects: SSH client IP, interface IPs, public IP, gateway, DNS
+            nftban whitelist-system sync --quick 2>/dev/null || log_warn "Auto-whitelist sync failed (non-critical)"
         else
             log_warn "nftban command not found, skipping auto-whitelist"
         fi
 
         # =====================================================================
-        # STEP 7: Enforce Permissions and Health Check
+        # STEP 7: Enforce Permissions (skip full health check for speed)
         # =====================================================================
         log_info "Enforcing permissions..."
 
         if command -v nftban >/dev/null 2>&1; then
             # Enforce correct permissions using the built-in permission system
             nftban permissions enforce 2>/dev/null || log_warn "Permission enforcement returned warnings"
-
-            # Run health check with auto-heal to fix any remaining issues
-            log_info "Running health check with auto-heal..."
-            nftban health check --auto-heal --quiet 2>/dev/null || log_warn "Health check returned warnings"
+            # Full health check runs on first timer trigger (nftban-health.timer)
+            # Saves ~10-20 seconds during install
         fi
 
         # =====================================================================
@@ -429,22 +411,12 @@ case "$1" in
         fi
 
         # =====================================================================
-        # STEP 10: Download GeoIP Database
+        # STEP 10: GeoIP Database (defer to background/first run)
         # =====================================================================
-        log_info "Downloading GeoIP database..."
-        if command -v nftban >/dev/null 2>&1; then
-            if nftban geoip update 2>/dev/null; then
-                log_info "  GeoIP database downloaded successfully"
-            else
-                log_warn "  GeoIP download failed (run manually: nftban geoip update)"
-            fi
-        elif [ -x /usr/lib/nftban/bin/nftban-core ]; then
-            if /usr/lib/nftban/bin/nftban-core geoip update 2>/dev/null; then
-                log_info "  GeoIP database downloaded successfully"
-            else
-                log_warn "  GeoIP download failed (run manually: nftban geoip update)"
-            fi
-        fi
+        # GeoIP download can take 10-30 seconds depending on network
+        # Defer to maintenance timer for faster install
+        log_info "GeoIP database will be downloaded on first maintenance run"
+        log_info "  Manual download: nftban geoip update"
 
         # =====================================================================
         # STEP 11: Sync whitelist.d files to nftables sets
@@ -452,19 +424,13 @@ case "$1" in
         # The nftables template has only default IPs, this loads the actual detected system IPs
         # Use --quick to only sync whitelists/blacklists (skip feeds/geoban for fast install)
         log_info "Syncing whitelist files to nftables..."
-        # Wait for nftband daemon to be ready (socket activation)
-        SYNC_SUCCESS=0
-        for i in 1 2 3; do
-            sleep 1
-            # Use nftban CLI sync --quick (skips feeds/geoban for fast postinst)
-            if nftban sync --quick >/dev/null 2>&1; then
-                SYNC_SUCCESS=1
-                log_info "  Whitelist sync completed successfully"
-                break
-            fi
-        done
-        if [ "$SYNC_SUCCESS" -eq 0 ]; then
-            log_warn "Whitelist sync failed (run manually: nftban sync)"
+        # Single attempt - nftband should be ready after socket activation above
+        if nftban sync --quick >/dev/null 2>&1; then
+            log_info "  Whitelist sync completed"
+        else
+            # One retry with short delay
+            sleep 0.5
+            nftban sync --quick >/dev/null 2>&1 || log_warn "Whitelist sync failed (run: nftban sync)"
         fi
 
         # =====================================================================

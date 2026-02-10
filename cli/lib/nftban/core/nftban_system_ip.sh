@@ -252,16 +252,22 @@ nftban_remove_from_blacklists() {
 # =============================================================================
 
 nftban_whitelist_system_sync() {
+    # Args: $1 = quick_mode (true/false) - skip public IP detection for faster install
+    local quick_mode="${1:-false}"
+
     echo "═══════════════════════════════════════════════════════"
     echo "NFTBan System IP Auto-Detection"
+    [[ "$quick_mode" == "true" ]] && echo "(Quick mode - skipping public IP detection)"
     echo "═══════════════════════════════════════════════════════"
     echo ""
 
     local protected=0
     local removed_from_blacklist=0
+    local steps=5
+    [[ "$quick_mode" == "true" ]] && steps=3
 
     # 1. Localhost IPs
-    echo "[1/5] Protecting localhost..."
+    echo "[1/${steps}] Protecting localhost..."
     for ip in "127.0.0.1" "::1"; do
         if nftban_add_system_ip "$ip" "Localhost (critical)"; then
             protected=$((protected + 1)) || true
@@ -274,7 +280,7 @@ nftban_whitelist_system_sync() {
     echo ""
 
     # 2. Interface IPs
-    echo "[2/5] Protecting server interface IPs..."
+    echo "[2/${steps}] Protecting server interface IPs..."
     while IFS= read -r ip; do
         [[ -z "$ip" ]] && continue
         if nftban_add_system_ip "$ip" "Server interface (auto-detected)"; then
@@ -287,71 +293,64 @@ nftban_whitelist_system_sync() {
     done < <(nftban_get_interface_ips)
     echo ""
 
-    # 3. Public IPs
-    echo "[3/5] Detecting public IPs..."
+    # 3. Public IPs (skip in quick mode - HTTP calls are slow)
+    if [[ "$quick_mode" != "true" ]]; then
+        echo "[3/${steps}] Detecting public IPs..."
 
-    # Public IPv4
-    local public_ipv4
-    public_ipv4=$(nftban_get_public_ip "ipv4")
-    if [[ -n "$public_ipv4" ]]; then
-        if nftban_add_system_ip "$public_ipv4" "Server public IPv4 (auto-detected)"; then
-            protected=$((protected + 1)) || true
+        # Public IPv4
+        local public_ipv4
+        public_ipv4=$(nftban_get_public_ip "ipv4")
+        if [[ -n "$public_ipv4" ]]; then
+            if nftban_add_system_ip "$public_ipv4" "Server public IPv4 (auto-detected)"; then
+                protected=$((protected + 1)) || true
+            fi
+            # Ensure not in blacklist
+            if nftban_remove_from_blacklists "$public_ipv4"; then
+                removed_from_blacklist=$((removed_from_blacklist + 1)) || true
+            fi
+        else
+            echo "[SKIP] No public IPv4 detected"
         fi
-        # Ensure not in blacklist
-        if nftban_remove_from_blacklists "$public_ipv4"; then
-            removed_from_blacklist=$((removed_from_blacklist + 1)) || true
+
+        # Public IPv6
+        local public_ipv6
+        public_ipv6=$(nftban_get_public_ip "ipv6")
+        if [[ -n "$public_ipv6" ]]; then
+            if nftban_add_system_ip "$public_ipv6" "Server public IPv6 (auto-detected)"; then
+                protected=$((protected + 1)) || true
+            fi
+            # Ensure not in blacklist
+            if nftban_remove_from_blacklists "$public_ipv6"; then
+                removed_from_blacklist=$((removed_from_blacklist + 1)) || true
+            fi
+        else
+            echo "[SKIP] No public IPv6 detected"
         fi
-    else
-        echo "[SKIP] No public IPv4 detected"
+        echo ""
     fi
 
-    # Public IPv6
-    local public_ipv6
-    public_ipv6=$(nftban_get_public_ip "ipv6")
-    if [[ -n "$public_ipv6" ]]; then
-        if nftban_add_system_ip "$public_ipv6" "Server public IPv6 (auto-detected)"; then
-            protected=$((protected + 1)) || true
-        fi
-        # Ensure not in blacklist
-        if nftban_remove_from_blacklists "$public_ipv6"; then
-            removed_from_blacklist=$((removed_from_blacklist + 1)) || true
-        fi
-    else
-        echo "[SKIP] No public IPv6 detected"
-    fi
-    echo ""
-
-    # 4. Cleanup blacklists
-    echo "[4/5] Ensuring system IPs not in blacklists..."
+    # Step N-1: Cleanup blacklists summary
+    local step_cleanup=$((steps - 1))
+    echo "[${step_cleanup}/${steps}] Ensuring system IPs not in blacklists..."
     if [[ $removed_from_blacklist -gt 0 ]]; then
-        echo "  ✓ Removed $removed_from_blacklist IP(s) from blacklists"
+        echo "  Removed $removed_from_blacklist IP(s) from blacklists"
     else
-        echo "  ✓ No conflicts found"
+        echo "  No conflicts found"
     fi
     echo ""
 
-    # 5. Summary
-    echo "[5/5] Summary"
-    echo "  • Protected: $protected system IP(s)"
-    echo "  • Removed from blacklists: $removed_from_blacklist IP(s)"
-    echo ""
-
-    # Show whitelist contents
-    if [[ -f "$NFTBAN_WHITELIST_SYSTEM" ]]; then
-        echo "System whitelist: $NFTBAN_WHITELIST_SYSTEM"
-        echo "Contents:"
-        grep -vE "^[[:space:]]*#|^[[:space:]]*$" "$NFTBAN_WHITELIST_SYSTEM" | \
-            awk '{print "  • " $1 " " $2 " " $3 " " $4}' || echo "  (empty)"
-    fi
-
+    # Step N: Summary
+    echo "[${steps}/${steps}] Summary"
+    echo "  Protected: $protected system IP(s)"
+    echo "  Removed from blacklists: $removed_from_blacklist IP(s)"
+    [[ "$quick_mode" == "true" ]] && echo "  Note: Run 'nftban whitelist-system sync' later for public IP detection"
     echo ""
     echo "═══════════════════════════════════════════════════════"
 
-    # Reload nftables if atomic reload available
+    # Reload nftables if atomic reload available (skip verbose output in quick mode)
     if declare -f nftban_atomic_reload >/dev/null 2>&1; then
-        echo ""
-        echo "Syncing to nftables..."
-        nftban_atomic_reload
+        [[ "$quick_mode" != "true" ]] && echo "" && echo "Syncing to nftables..."
+        nftban_atomic_reload 2>/dev/null || true
     fi
 }
 
