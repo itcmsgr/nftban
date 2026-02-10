@@ -561,7 +561,7 @@ nftban_check_firewall_conflict() {
             fi
             ;;
         iptables)
-            if systemctl list-unit-files iptables.service &>/dev/null | grep -q iptables; then
+            if systemctl list-unit-files iptables.service 2>/dev/null | grep -q iptables; then
                 installed="true"
                 status_text="installed"
                 if systemctl is-enabled iptables &>/dev/null; then
