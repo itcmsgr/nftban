@@ -84,6 +84,10 @@ command_exists() {
 }
 
 # Run a check and track results
+# SECURITY: eval is acceptable here because:
+# 1. This is a CI-only script, not production code
+# 2. All check_command values are hardcoded in this file
+# 3. No external/user input reaches this function
 run_check() {
     local check_name="$1"
     local check_command="$2"
@@ -91,6 +95,7 @@ run_check() {
 
     TOTAL_CHECKS=$((TOTAL_CHECKS + 1))
 
+    # shellcheck disable=SC2086  # check_command is intentionally unquoted
     if eval "$check_command" >/dev/null 2>&1; then
         log_success "$check_name"
         PASSED_CHECKS=$((PASSED_CHECKS + 1))

@@ -906,15 +906,14 @@ _mail_counter_inc() {
 _mail_write_metrics() {
     mkdir -p "$(dirname "$MAIL_METRICS_FILE")" 2>/dev/null || true
 
-    local attempts_sendmail attempts_postfix attempts_curl attempts_msmtp attempts_mailx attempts_exim
-    local success_sendmail success_postfix success_curl success_msmtp success_mailx success_exim
-    local failures_sendmail failures_postfix failures_curl failures_msmtp failures_mailx failures_exim
+    # Use associative arrays instead of eval for safer variable assignment
+    declare -A attempts success failures
 
     # Read counters for each transport
     for transport in sendmail postfix curl msmtp mailx exim; do
-        eval "attempts_${transport}=\$(cat '${MAIL_COUNTERS_DIR}/mail_attempts_${transport}' 2>/dev/null || echo '0')"
-        eval "success_${transport}=\$(cat '${MAIL_COUNTERS_DIR}/mail_success_${transport}' 2>/dev/null || echo '0')"
-        eval "failures_${transport}=\$(cat '${MAIL_COUNTERS_DIR}/mail_failures_${transport}' 2>/dev/null || echo '0')"
+        attempts[$transport]=$(cat "${MAIL_COUNTERS_DIR}/mail_attempts_${transport}" 2>/dev/null || echo "0")
+        success[$transport]=$(cat "${MAIL_COUNTERS_DIR}/mail_success_${transport}" 2>/dev/null || echo "0")
+        failures[$transport]=$(cat "${MAIL_COUNTERS_DIR}/mail_failures_${transport}" 2>/dev/null || echo "0")
     done
 
     # Count spooled mails (failed mails awaiting retry)
@@ -927,30 +926,30 @@ _mail_write_metrics() {
     cat > "${MAIL_METRICS_FILE}.tmp" <<EOF
 # HELP nftban_mail_send_attempts_total Total mail send attempts
 # TYPE nftban_mail_send_attempts_total counter
-nftban_mail_send_attempts_total{transport="sendmail"} $attempts_sendmail
-nftban_mail_send_attempts_total{transport="postfix"} $attempts_postfix
-nftban_mail_send_attempts_total{transport="curl"} $attempts_curl
-nftban_mail_send_attempts_total{transport="msmtp"} $attempts_msmtp
-nftban_mail_send_attempts_total{transport="mailx"} $attempts_mailx
-nftban_mail_send_attempts_total{transport="exim"} $attempts_exim
+nftban_mail_send_attempts_total{transport="sendmail"} ${attempts[sendmail]}
+nftban_mail_send_attempts_total{transport="postfix"} ${attempts[postfix]}
+nftban_mail_send_attempts_total{transport="curl"} ${attempts[curl]}
+nftban_mail_send_attempts_total{transport="msmtp"} ${attempts[msmtp]}
+nftban_mail_send_attempts_total{transport="mailx"} ${attempts[mailx]}
+nftban_mail_send_attempts_total{transport="exim"} ${attempts[exim]}
 
 # HELP nftban_mail_send_success_total Total successful mail sends
 # TYPE nftban_mail_send_success_total counter
-nftban_mail_send_success_total{transport="sendmail"} $success_sendmail
-nftban_mail_send_success_total{transport="postfix"} $success_postfix
-nftban_mail_send_success_total{transport="curl"} $success_curl
-nftban_mail_send_success_total{transport="msmtp"} $success_msmtp
-nftban_mail_send_success_total{transport="mailx"} $success_mailx
-nftban_mail_send_success_total{transport="exim"} $success_exim
+nftban_mail_send_success_total{transport="sendmail"} ${success[sendmail]}
+nftban_mail_send_success_total{transport="postfix"} ${success[postfix]}
+nftban_mail_send_success_total{transport="curl"} ${success[curl]}
+nftban_mail_send_success_total{transport="msmtp"} ${success[msmtp]}
+nftban_mail_send_success_total{transport="mailx"} ${success[mailx]}
+nftban_mail_send_success_total{transport="exim"} ${success[exim]}
 
 # HELP nftban_mail_send_failures_total Total failed mail sends
 # TYPE nftban_mail_send_failures_total counter
-nftban_mail_send_failures_total{transport="sendmail"} $failures_sendmail
-nftban_mail_send_failures_total{transport="postfix"} $failures_postfix
-nftban_mail_send_failures_total{transport="curl"} $failures_curl
-nftban_mail_send_failures_total{transport="msmtp"} $failures_msmtp
-nftban_mail_send_failures_total{transport="mailx"} $failures_mailx
-nftban_mail_send_failures_total{transport="exim"} $failures_exim
+nftban_mail_send_failures_total{transport="sendmail"} ${failures[sendmail]}
+nftban_mail_send_failures_total{transport="postfix"} ${failures[postfix]}
+nftban_mail_send_failures_total{transport="curl"} ${failures[curl]}
+nftban_mail_send_failures_total{transport="msmtp"} ${failures[msmtp]}
+nftban_mail_send_failures_total{transport="mailx"} ${failures[mailx]}
+nftban_mail_send_failures_total{transport="exim"} ${failures[exim]}
 
 # HELP nftban_mail_spool_depth Number of mails in retry spool
 # TYPE nftban_mail_spool_depth gauge
