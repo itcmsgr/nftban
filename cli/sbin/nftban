@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# NFTBan v1.7.0 - CLI Interface
+# NFTBan - CLI Interface
 # =============================================================================
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Main CLI entry point for NFTBan
@@ -8,7 +8,7 @@
 # meta:name="nftban_cli"
 # meta:type="cli"
 # meta:header="NFTBan CLI"
-# meta:version="1.7.0"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
 # meta:homepage="https://nftban.com"
 #
@@ -32,18 +32,6 @@ set -Eeuo pipefail
 # CONFIGURATION
 # =============================================================================
 
-# IMPORTANT: Update this version with EVERY release!
-# This is the PLATFORM version that all Go binaries should match.
-# When releasing a new version:
-#   1. Update NFTBAN_VERSION here
-#   2. Update Version in cmd/nftban-ui/main.go
-#   3. Update Version in cmd/nftban-core/main.go
-#   4. Update Version in go-feeds/cmd/nftban-feeds/main.go (nftban repo)
-#   5. Update Version in go-geoip/cmd/nftban-geoip/main.go (nftban repo)
-#   6. Build all binaries with -ldflags to inject version
-# The 'nftban version' command will show warnings if components don't match.
-export NFTBAN_VERSION="1.9.5"
-
 # =============================================================================
 # LOAD CENTRAL ENVIRONMENT (single source of truth for paths)
 # =============================================================================
@@ -51,6 +39,13 @@ export NFTBAN_VERSION="1.9.5"
 export NFTBAN_LIB_DIR="${NFTBAN_LIB_DIR:-/usr/lib/nftban}"
 # shellcheck source=/dev/null
 source "${NFTBAN_LIB_DIR}/lib/env.sh"
+
+# =============================================================================
+# LOAD VERSION (single source of truth from VERSION file)
+# =============================================================================
+# shellcheck source=/dev/null
+source "${NFTBAN_LIB_DIR}/lib/version.sh"
+export NFTBAN_VERSION
 
 # =============================================================================
 # PERMISSION CHECK
