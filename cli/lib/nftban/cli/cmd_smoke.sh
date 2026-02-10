@@ -537,14 +537,30 @@ nftban_smoke_verify_configs() {
         # Build-time check: verify source files exist in git
         echo "MODE: Build-time verification (source files)"
         echo ""
-        _verify_conffiles_sources "$project_root" && ((passed++)) || ((failed++))
-        _verify_install_configs_sources "$project_root" && ((passed++)) || ((failed++))
-        _verify_build_script_sources "$project_root" && ((passed++)) || ((failed++))
+        if _verify_conffiles_sources "$project_root"; then
+            ((++passed))
+        else
+            ((++failed))
+        fi
+        if _verify_install_configs_sources "$project_root"; then
+            ((++passed))
+        else
+            ((++failed))
+        fi
+        if _verify_build_script_sources "$project_root"; then
+            ((++passed))
+        else
+            ((++failed))
+        fi
     else
         # Runtime check: verify installed files exist
         echo "MODE: Runtime verification (installed files)"
         echo ""
-        _verify_runtime_configs && ((passed++)) || ((failed++))
+        if _verify_runtime_configs; then
+            ((++passed))
+        else
+            ((++failed))
+        fi
     fi
 
     echo ""
@@ -643,12 +659,21 @@ _verify_conffiles_sources() {
         local source_path=""
 
         if [[ "$installed_path" == /etc/nftban/* ]]; then
-            # Try etc/nftban/ first, then install/config/
+            # Try multiple source locations in order of priority
             local relative="${installed_path#/etc/nftban/}"
+            local basename
+            basename=$(basename "$relative")
+
             if [[ -f "${project_root}/etc/nftban/${relative}" ]]; then
                 source_path="${project_root}/etc/nftban/${relative}"
             elif [[ -f "${project_root}/install/config/${relative}" ]]; then
                 source_path="${project_root}/install/config/${relative}"
+            elif [[ -f "${project_root}/install/config/${basename}" ]]; then
+                # Some files are in install/config/ without subdirectory
+                source_path="${project_root}/install/config/${basename}"
+            elif [[ -f "${project_root}/install/config/conf.d/${basename}" ]]; then
+                # Or in install/config/conf.d/
+                source_path="${project_root}/install/config/conf.d/${basename}"
             fi
         elif [[ "$installed_path" == /etc/logrotate.d/* ]]; then
             source_path="${project_root}/install/config/nftban.logrotate"
@@ -686,20 +711,30 @@ _verify_install_configs_sources() {
 
     local errors=0
     local checked=0
+    local line=""
+    local relative_path=""
+    local source_path=""
 
     # Extract _install_config_file calls and check sources exist
-    while IFS= read -r line; do
-        # Match: _install_config_file "$SCRIPT_DIR/path/to/file" ...
-        if [[ "$line" =~ _install_config_file[[:space:]]+\"?\$\{?SCRIPT_DIR\}?/?([^\"[:space:]]+) ]]; then
-            local relative_path="${BASH_REMATCH[1]}"
-            local source_path="${project_root}/${relative_path}"
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Skip function definition line and comments
+        [[ "$line" == _install_config_file\(\)* ]] && continue
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
 
-            ((checked++))
+        # Match: _install_config_file "$SCRIPT_DIR/path/to/file" ...
+        # Extract the path after $SCRIPT_DIR/
+        if [[ "$line" == *'_install_config_file "$SCRIPT_DIR/'* ]]; then
+            # Extract path between $SCRIPT_DIR/ and the next "
+            relative_path="${line#*\$SCRIPT_DIR/}"
+            relative_path="${relative_path%%\"*}"
+            source_path="${project_root}/${relative_path}"
+
+            ((checked++)) || true
             if [[ -f "$source_path" ]]; then
                 printf "     ✅ %s\n" "$relative_path"
             else
                 printf "     ❌ MISSING: %s\n" "$relative_path"
-                ((errors++))
+                ((errors++)) || true
             fi
         fi
     done < "$install_configs"
@@ -724,35 +759,39 @@ _verify_build_script_sources() {
 
     local errors=0
     local checked=0
+    local line=""
+    local relative_path=""
+    local source_path=""
 
-    # Check install commands for config files
-    while IFS= read -r line; do
-        # Match: install -m 0644 etc/nftban/... or install -D -m 0644 etc/nftban/...
-        if [[ "$line" =~ install[[:space:]]+-[Dm][[:space:]]+-?m?[[:space:]]*[0-9]+[[:space:]]+\"?\$\{PROJECT_ROOT\}/?([^\"[:space:]]+) ]]; then
-            local relative_path="${BASH_REMATCH[1]}"
-            local source_path="${project_root}/${relative_path}"
+    # Check install commands for config files (etc/nftban paths only)
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        # Skip comments
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
 
-            ((checked++))
+        # Match: install -D -m 0644 etc/nftban/... or install -m 0644 etc/nftban/...
+        if [[ "$line" == *'install -'*' etc/nftban/'* ]] || [[ "$line" == *'install -'*' install/'* ]]; then
+            # Extract the path (either etc/nftban/... or install/...)
+            if [[ "$line" == *' etc/nftban/'* ]]; then
+                relative_path="${line#* etc/nftban/}"
+                relative_path="etc/nftban/${relative_path%% *}"
+            elif [[ "$line" == *' install/'* ]]; then
+                relative_path="${line#* install/}"
+                relative_path="install/${relative_path%% *}"
+            else
+                continue
+            fi
+
+            # Clean up the path (remove trailing quotes, etc)
+            relative_path="${relative_path%%\"*}"
+            relative_path="${relative_path%%\'*}"
+            source_path="${project_root}/${relative_path}"
+
+            ((checked++)) || true
             if [[ -f "$source_path" ]]; then
                 printf "     ✅ %s\n" "$relative_path"
             else
                 printf "     ❌ MISSING: %s\n" "$relative_path"
-                ((errors++))
-            fi
-        # Match: install -D -m 0644 path/to/file (without PROJECT_ROOT)
-        elif [[ "$line" =~ install[[:space:]]+-D[[:space:]]+-m[[:space:]]+[0-9]+[[:space:]]+([a-z]+[^[:space:]\"]+) ]]; then
-            local relative_path="${BASH_REMATCH[1]}"
-            # Only check etc/nftban and install/ paths
-            if [[ "$relative_path" == etc/nftban/* ]] || [[ "$relative_path" == install/* ]]; then
-                local source_path="${project_root}/${relative_path}"
-
-                ((checked++))
-                if [[ -f "$source_path" ]]; then
-                    printf "     ✅ %s\n" "$relative_path"
-                else
-                    printf "     ❌ MISSING: %s\n" "$relative_path"
-                    ((errors++))
-                fi
+                ((errors++)) || true
             fi
         fi
     done < "$build_script"
