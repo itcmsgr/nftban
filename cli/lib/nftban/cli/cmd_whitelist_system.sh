@@ -2,27 +2,31 @@
 # =============================================================================
 # NFTBan v1.0.0 - System Whitelist CLI Handler
 # =============================================================================
-
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: System IP Whitelist Management
 #
-# meta:name=cmd_whitelist_system
-# meta:type=cli
-# meta:header=System Whitelist CLI Handler
-# meta:version=1.0.0
+# meta:name="cmd_whitelist_system"
+# meta:type="cli"
+# meta:header="System Whitelist CLI Handler"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
-# **Description & Purpose**
-# meta:description=CLI interface for system IP whitelist management and synchronization
-# meta:input=Whitelist commands and IP addresses
-# meta:output=Whitelist status and synchronization results
+# meta:description="CLI interface for system IP whitelist management and synchronization"
+# meta:input="Whitelist commands and IP addresses"
+# meta:output="Whitelist status and synchronization results"
+# meta:depends="nftban_system_ip.sh,nftban_file_ops.sh"
 #
-# **Inventory & Requirements**
-# meta:depends=nftban_system_ip.sh,nftban_file_ops.sh
+# meta:inventory.files="/etc/nftban/whitelist.d/system.list"
+# meta:inventory.binaries=""
+# meta:inventory.env_vars=""
+# meta:inventory.config_files=""
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 #
-# meta:created_date=2025-11-05
-# meta:updated_date=2025-11-24
+# meta:created_date="2025-11-05"
+# meta:updated_date="2026-02-10"
 # =============================================================================
 
 set -Eeuo pipefail
@@ -69,16 +73,22 @@ fi
 
 show_usage() {
     cat <<'EOF'
-Usage: nftban whitelist-system <command>
+Usage: nftban whitelist-system <command> [options]
 
 COMMANDS:
-  sync              Auto-detect and whitelist all system IPs
+  sync [--quick]    Auto-detect and whitelist all system IPs
   show              Show current system whitelist
   whitelistme       Whitelist your current IP (interactive)
+
+OPTIONS:
+  --quick           Skip public IP detection (faster, for package install)
 
 EXAMPLES:
   # Auto-detect and protect all system IPs
   sudo nftban whitelist-system sync
+
+  # Quick sync (skip public IP HTTP lookups)
+  sudo nftban whitelist-system sync --quick
 
   # Show protected system IPs
   nftban whitelist-system show
@@ -89,8 +99,8 @@ EXAMPLES:
 WHAT IS AUTO-DETECTED:
   • Localhost (127.0.0.1, ::1)
   • All server interface IPs (IPv4 + IPv6)
-  • Server public IPv4
-  • Server public IPv6
+  • Server public IPv4 (skipped with --quick)
+  • Server public IPv6 (skipped with --quick)
 
 SAFE TO RUN:
   This command only ADDS IPs to whitelist, never removes them.
@@ -133,7 +143,12 @@ nftban_cmd_whitelist_system() {
     case "$subcommand" in
         sync)
             # Auto-detect and whitelist all system IPs
-            nftban_whitelist_system_sync
+            # --quick: Skip public IP detection (faster, for postinst)
+            local quick_mode=false
+            for arg in "$@"; do
+                [[ "$arg" == "--quick" ]] && quick_mode=true
+            done
+            nftban_whitelist_system_sync "$quick_mode"
             ;;
 
         show|list)
