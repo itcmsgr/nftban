@@ -93,6 +93,12 @@ func main() {
 		log.Fatalf("Failed to load configuration: %v", err)
 	}
 
+	// SECURITY: Validate JWT secret configuration
+	// This prevents the server from starting with weak/missing secrets
+	if err := config.ValidateJWTSecret(cfg.JWTSecret); err != nil {
+		log.Fatalf("Security error: %v. Set JWT_SECRET environment variable or configure in %s", err, *configPath)
+	}
+
 	// Override with command line flags
 	if *port != 3940 {
 		cfg.Port = *port
