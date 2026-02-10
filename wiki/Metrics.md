@@ -35,7 +35,7 @@ NFTBan exposes metrics in OpenMetrics format for monitoring and alerting.
 
 | Requirement | Details |
 |-------------|---------|
-| nftban | Version 1.10.0+ |
+| nftban | Version 1.12.0+ |
 | Prometheus/VictoriaMetrics | For scraping and storage |
 | Grafana | For visualization (optional) |
 | node_exporter | For textfile collector method |
