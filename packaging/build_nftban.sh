@@ -238,6 +238,7 @@ mkdir -p %{buildroot}/etc/nftban/suricata/cache
 install -D -m 0644 etc/nftban/suricata/profiles/minimal.yaml %{buildroot}/etc/nftban/suricata/profiles/minimal.yaml
 install -D -m 0644 etc/nftban/suricata/profiles/standard.yaml %{buildroot}/etc/nftban/suricata/profiles/standard.yaml
 install -D -m 0644 etc/nftban/suricata/profiles/maximum.yaml %{buildroot}/etc/nftban/suricata/profiles/maximum.yaml
+install -D -m 0664 etc/nftban/suricata/config/profile.conf %{buildroot}/etc/nftban/suricata/config/profile.conf
 
 # Distro configuration files (CRITICAL for distro-aware paths)
 mkdir -p %{buildroot}/etc/nftban/distros
@@ -904,6 +905,7 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban/suricata/profiles
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/suricata/profiles/*.yaml
 %dir %attr(750,root,nftban) /etc/nftban/suricata/config
+%config(noreplace) %attr(664,root,nftban) /etc/nftban/suricata/config/profile.conf
 %dir %attr(750,root,nftban) /etc/nftban/suricata/rules
 %dir %attr(750,root,nftban) /etc/nftban/suricata/cache
 %dir %attr(750,root,nftban) /etc/nftban/whitelist.d
@@ -1566,6 +1568,7 @@ build_deb() {
     install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/minimal.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
     install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/standard.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
     install -m 0644 "${PROJECT_ROOT}/etc/nftban/suricata/profiles/maximum.yaml" "${deb_root}/etc/nftban/suricata/profiles/"
+    install -m 0664 "${PROJECT_ROOT}/etc/nftban/suricata/config/profile.conf" "${deb_root}/etc/nftban/suricata/config/"
 
     # Copy distro configuration files (CRITICAL for distro-aware paths)
     mkdir -p "${deb_root}/etc/nftban/distros"
