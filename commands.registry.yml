@@ -2267,6 +2267,10 @@ update:
     - "nftban update local /path/to/nftban"
     - "nftban update rollback"
     - "nftban update list"
+    - "nftban update auto enable --email admin@example.com"
+    - "nftban update auto enable --email panel"
+    - "nftban update auto status"
+    - "nftban update auto disable"
   subcommands:
     check: {mutates: false, description: "Check if updates are available (no changes)"}
     status: {mutates: false, description: "Show current installation information"}
@@ -2275,6 +2279,18 @@ update:
     local: {mutates: true, description: "Install from local directory path"}
     rollback: {mutates: true, description: "Restore previous version from backup"}
     list: {mutates: false, description: "List available backups"}
+    force: {mutates: true, description: "Force reinstall/update (fixes dpkg, removes immutable flags)"}
+    repair: {mutates: true, description: "Fix broken install (dpkg state, immutable flags, restore backup)"}
+    auto:
+      mutates: true
+      description: "Manage auto-update timer (enable|disable|status)"
+      subcommands:
+        enable: {mutates: true, description: "Enable weekly auto-updates (requires --email)"}
+        disable: {mutates: true, description: "Disable auto-updates"}
+        status: {mutates: false, description: "Show auto-update status"}
+      options:
+        --email: {type: string, description: "Notification email (required for enable)"}
+    auto-run: {mutates: true, description: "Run auto-update (called by systemd timer)"}
   config_file: "/etc/nftban/update.conf"
   config_vars:
     NFTBAN_UPDATE_SOURCE: {default: "auto", description: "Update source (auto, github, git)"}
