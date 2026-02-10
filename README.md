@@ -105,7 +105,7 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 
 ## Highlights
 
-- **62 CLI Commands** — Complete firewall management from command line
+- **54 CLI Commands** — Complete firewall management from command line
 - **Unified Go Backend** — High-performance feeds, GeoIP, and sync operations
 - **Suricata Integration** — Intelligent rule management with 50-70% rule reduction
 - **RBL Monitoring** — Real-time blackhole list checking and IP reputation tracking
@@ -192,7 +192,7 @@ nftban ddos status     # DDoS protection
 ### Testing
 ```bash
 nftban smoke run       # Standard smoke test
-nftban smoke all       # Comprehensive test (62 commands)
+nftban smoke all       # Comprehensive test (54 commands)
 ```
 
 See [CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference) for complete documentation.
@@ -221,7 +221,7 @@ ip6 nftban {                 # IPv6 rules
 
 | Component | Type | Description |
 |-----------|------|-------------|
-| `nftban` | Bash CLI | Main command-line interface (62 commands) |
+| `nftban` | Bash CLI | Main command-line interface (54 commands) |
 | `nftban-core` | Go Binary | Unified backend (feeds, geoip, sync) |
 | `nftban-ui` | Go Binary | Web interface server |
 
@@ -291,7 +291,7 @@ Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
 
 ### Getting Started
 - **[Wiki Home](https://github.com/itcmsgr/nftban/wiki)** - Complete documentation
-- **[CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference)** - All 62 commands
+- **[CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference)** - All 54 commands
 - **[Installation Guide](https://github.com/itcmsgr/nftban/wiki/Installation-Guide)** - Prerequisites, install, post-config
 
 ### Advanced Integration
