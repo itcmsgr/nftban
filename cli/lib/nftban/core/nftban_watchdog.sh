@@ -61,7 +61,7 @@ fi
 
 # Watchdog defaults (can be overridden in conf.d/watchdog.conf)
 : "${NFTBAN_WATCHDOG_ENABLED:=false}"
-: "${NFTBAN_WATCHDOG_INTERVAL:=90}"
+: "${NFTBAN_WATCHDOG_INTERVAL:=120}"
 : "${NFTBAN_WATCHDOG_ALERT_THROTTLE:=3600}"
 
 # Load thresholds
