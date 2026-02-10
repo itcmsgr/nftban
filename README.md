@@ -1,31 +1,24 @@
-# 🛡️ NFTBAN: Next-Gen Nftables Firewall
+# NFTBan
 
-**Enterprise-Grade | Atomic Updates | Polkit-Secured | AI-Ready**
+**Linux Intrusion Prevention System & nftables Firewall Manager**
 
-[![Version](https://img.shields.io/badge/version-1.11.0-blue)](https://github.com/itcmsgr/nftban)
+[![Version](https://img.shields.io/badge/version-1.12.6-blue)](https://github.com/itcmsgr/nftban)
 [![License: MPL 2.0](https://img.shields.io/badge/License-MPL%202.0-brightgreen.svg)](https://opensource.org/licenses/MPL-2.0)
 [![Code: 58% Shell 42% Go](https://img.shields.io/badge/Code-58%25%20Shell%20%7C%2042%25%20Go-4EAA25.svg)]()
-[![Performance: Go Binaries](https://img.shields.io/badge/Performance-Go%20Binaries-00ADD8.svg)](https://go.dev/)
-[![Security: Polkit](https://img.shields.io/badge/Security-Polkit-orange.svg)]()
 [![FHS: Compliant](https://img.shields.io/badge/FHS-Compliant-success)]()
 [![Status](https://img.shields.io/badge/status-BETA-yellow)]()
 
-**NFTBAN (NFTables BAN actions)** is a high-performance firewall management system designed for modern Linux environments. Moving beyond legacy iptables-based scripts, NFTBAN provides a resilient, self-healing network defense layer by combining the raw power of **nftables** with advanced privilege separation and real-time threat intelligence.
+NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall manager built on nftables, designed to integrate cleanly with modern Linux security stacks.
 
-### Why NFTBAN?
+It provides automated threat detection and response using native nftables for kernel-level enforcement, with Polkit-based privilege separation for secure operation without full root access.
 
-- **⚡ Atomic Performance** — Leverages native nftables for near-instant rule updates without flushing connections
-- **🔐 Security First** — Uses Polkit for granular privilege separation; management without needing full root access
-- **🤖 Intelligent Defense** — Integrated AI-assisted threat intelligence for proactive and self-healing network protection
-- **🌐 Hosting Ready** — Built-in support for DirectAdmin, cPanel, CWP, CyberPanel, and custom panels
-
-> **BETA TESTING** | We are actively finding and fixing bugs. **NOT production-ready yet.** Tested on 5 lab servers. Community feedback needed from diverse environments. [Report issues here](https://github.com/itcmsgr/nftban/issues).
+> **BETA** | Tested on 5 lab servers. Community feedback needed from diverse environments. [Report issues here](https://github.com/itcmsgr/nftban/issues).
 
 ---
 
 ## Quick Install
 
-### Tier 0 — Primary Platforms (Recommended)
+### Tier 0 — Primary Platforms
 
 #### Ubuntu 24.04 LTS (Noble)
 ```bash
@@ -88,8 +81,6 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 | 0 | Rocky / Alma / RHEL / CentOS Stream | 9 | [nftban-el9-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el9-x86_64.rpm) |
 | 1 | Rocky / Alma / RHEL / CentOS Stream | 10 | [nftban-el10-x86_64.rpm](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-el10-x86_64.rpm) |
 
-> **Note:** Fedora is the upstream development platform for RHEL. The `el9` package (based on Fedora 34) and `el10` package (based on Fedora 40) cover enterprise use cases. Fedora users can use the corresponding EL package.
-
 ### DEB Packages (Ubuntu + Debian)
 
 | Tier | Distribution | Version | Package |
@@ -99,36 +90,22 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 | 1 | Debian | 13 (Trixie) | [nftban-debian13-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-debian13-amd64.deb) |
 | 2 | Ubuntu | 22.04 (Jammy) | [nftban-ubuntu22.04-amd64.deb](https://github.com/itcmsgr/nftban/releases/latest/download/nftban-ubuntu22.04-amd64.deb) |
 
-> Packages are distro-specific and FHS compliant. Use the package matching your exact distribution version. See [Supported Platforms](https://github.com/itcmsgr/nftban/wiki/Supported-Platforms) for the full platform contract. Old versions archived in [Releases](https://github.com/itcmsgr/nftban/releases).
+> Packages are distro-specific and FHS compliant. Use the package matching your exact distribution version. See [Supported Platforms](https://github.com/itcmsgr/nftban/wiki/Supported-Platforms) for the full platform contract.
 
 ---
 
-## Highlights
-
-- **54 CLI Commands** — Complete firewall management from command line
-- **Unified Go Backend** — High-performance feeds, GeoIP, and sync operations
-- **Suricata Integration** — Intelligent rule management with 50-70% rule reduction
-- **RBL Monitoring** — Real-time blackhole list checking and IP reputation tracking
-- **Web Interface** — Modern dashboard for visual management
-- **Dual-Table Architecture** — Clean IPv4/IPv6 separation with `ip nftban` and `ip6 nftban`
-- **FHS Compliant** — Follows Filesystem Hierarchy Standard
-- **Security Hardened** — Systemd sandboxing, capability-based permissions
-
----
-
-## Core Features
+## Features
 
 | Feature | Description |
 |---------|-------------|
-| **Threat Intelligence Feeds** | Automatic blocking from Spamhaus, AbuseIPDB, Firehol, etc. |
-| **Geographic Blocking (GeoBan)** | Block/allow traffic by country code |
-| **Login Monitoring** | Detects SSH brute-force and suspicious patterns |
+| **Threat Intelligence Feeds** | Automatic blocking from Spamhaus, AbuseIPDB, Firehol |
+| **Geographic Blocking** | Block or allow traffic by country code |
+| **Login Monitoring** | Detects SSH brute-force and suspicious authentication patterns |
 | **Port Scan Detection** | Automatic detection and blocking of reconnaissance |
 | **DDoS Protection** | Rate limiting, SYN flood protection, connection limits |
-| **Suricata IDS** | Optional deep packet inspection integration |
-| **Prometheus Metrics** | Full observability for monitoring stacks |
+| **Suricata IDS Integration** | Optional deep packet inspection |
+| **Prometheus Metrics** | Observability for monitoring stacks |
 | **Connectors** | Export to Elasticsearch, Kafka, syslog, webhook |
-| **Cloudflare Integration** | Auto-whitelist Cloudflare proxy IPs |
 
 ---
 
@@ -139,20 +116,20 @@ sudo ./install.sh gui    # Full with Web GUI (~200MB RAM)
 nftban version
 nftban health summary
 
-# Enable protection
+# Enable protection modules
 nftban login enable      # SSH login monitoring
 nftban feeds enable      # Threat intelligence feeds
 nftban portscan enable   # Port scan detection
 
-# Optional: Advanced IDS integration
-nftban suricata install  # Install Suricata IDS (automated)
+# Optional: Suricata IDS integration
+nftban suricata install  # Install Suricata IDS
 nftban suricata enable   # Enable with weekly rule updates
 
-# Common tasks
+# Common operations
 nftban ban 1.2.3.4       # Block IP
 nftban unban 1.2.3.4     # Remove ban
 nftban search 1.2.3.4    # Search across all sets
-nftban firewall reload   # Atomic reload (no downtime)
+nftban firewall reload   # Atomic reload
 
 # Check status
 nftban status
@@ -164,12 +141,11 @@ nftban status
 
 ### System & Health
 ```bash
-nftban status          # Quick system overview
-nftban health          # System diagnostics with auto-heal
+nftban status          # System overview
+nftban health          # Diagnostics with auto-heal
 nftban validate        # Firewall structure validation
 nftban services        # Systemd services status
 nftban configtest      # Validate config against schema
-nftban configaudit     # Audit config for drift and changes
 ```
 
 ### IP Management
@@ -187,12 +163,6 @@ nftban feeds list      # Threat feed status
 nftban geoban list     # Geographic blocking
 nftban portscan status # Port scan detection
 nftban ddos status     # DDoS protection
-```
-
-### Testing
-```bash
-nftban smoke run       # Standard smoke test
-nftban smoke all       # Comprehensive test (54 commands)
 ```
 
 See [CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference) for complete documentation.
@@ -222,7 +192,7 @@ ip6 nftban {                 # IPv6 rules
 | Component | Type | Description |
 |-----------|------|-------------|
 | `nftban` | Bash CLI | Main command-line interface (54 commands) |
-| `nftban-core` | Go Binary | Unified backend (feeds, geoip, sync) |
+| `nftban-core` | Go Binary | Backend for feeds, geoip, sync |
 | `nftban-ui` | Go Binary | Web interface server |
 
 ---
@@ -234,7 +204,7 @@ ip6 nftban {                 # IPv6 rules
 - **Bash**: 4.4+
 - **systemd**: 252+ (sysusers.d, tmpfiles.d support)
 - **jq**: JSON processor (auto-installed)
-- **yq**: YAML processor (auto-installed via pip3)
+- **yq**: YAML processor (auto-installed)
 - **Go 1.21+**: For building from source (optional)
 
 ---
@@ -251,8 +221,6 @@ NFTBan uses a tiered support model. See the [full platform contract](https://git
 | DEB | Debian 12 | 6.1 | 1.0 |
 | RPM | Rocky Linux 9.x | 5.14 | 1.0 |
 
-**NFTBan is correct if it builds and passes receipt-based audit on these platforms.**
-
 ### Tier 1 — Future (Planned)
 
 - Rocky Linux 10.x / AlmaLinux 10.x / RHEL 10
@@ -265,17 +233,14 @@ NFTBan uses a tiered support model. See the [full platform contract](https://git
 
 ---
 
-## AI-Assisted Development
+## Development
 
-NFTBan is developed through **ethical AI collaboration** combining human expertise with AI capabilities:
+NFTBan development uses AI tools for code generation and review. All code is human-reviewed and version-controlled.
 
-| Partner | Role |
-|---------|------|
-| **ChatGPT (OpenAI)** | Architecture & Design Planning |
-| **Claude Code (Anthropic)** | Implementation & Testing |
-| **Claude AI (Anthropic)** | Review & Optimization |
-
-All AI-generated code is human-reviewed, version-controlled, and transparently attributed.
+| Tool | Use |
+|------|-----|
+| ChatGPT (OpenAI) | Architecture planning |
+| Claude (Anthropic) | Implementation, testing, review |
 
 ---
 
@@ -290,30 +255,28 @@ Copyright (c) 2024-2026 NFTBan Project / Antonios Voulvoulis
 ## Documentation
 
 ### Getting Started
-- **[Wiki Home](https://github.com/itcmsgr/nftban/wiki)** - Complete documentation
-- **[CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference)** - All 54 commands
-- **[Installation Guide](https://github.com/itcmsgr/nftban/wiki/Installation-Guide)** - Prerequisites, install, post-config
+- [Wiki Home](https://github.com/itcmsgr/nftban/wiki) — Complete documentation
+- [CLI Commands Reference](https://github.com/itcmsgr/nftban/wiki/CLI-Commands-Reference) — All 54 commands
+- [Installation Guide](https://github.com/itcmsgr/nftban/wiki/Installation-Guide) — Prerequisites, install, post-config
 
-### Advanced Integration
-- **[Suricata IDS Integration](https://github.com/itcmsgr/nftban/wiki/Suricata-IDS-Integration)** - Complete guide for Suricata IDS/IPS setup (2-command install, auto-detected profiles, DDoS/portscan integration)
+### Integration
+- [Suricata IDS Integration](https://github.com/itcmsgr/nftban/wiki/Suricata-IDS-Integration) — IDS/IPS setup guide
 
 ### Security
-- **[Security Policy](SECURITY.md)** - Vulnerability reporting
-- **[Security Architecture](https://github.com/itcmsgr/nftban/wiki/Security-Architecture)** - FHS Auto-Heal, Polkit integration
-- **[Security Operations Guide](https://github.com/itcmsgr/nftban/wiki/Security-Operations-Guide)** - Hardening, monitoring, emergency procedures
-- **[Security Architecture](https://github.com/itcmsgr/nftban/wiki/Security-Architecture#access-control-model)** - Access control, groups and permissions
+- [Security Policy](SECURITY.md) — Vulnerability reporting
+- [Security Architecture](https://github.com/itcmsgr/nftban/wiki/Security-Architecture) — Access control, Polkit integration
+- [Security Operations Guide](https://github.com/itcmsgr/nftban/wiki/Security-Operations-Guide) — Hardening, monitoring, procedures
 
 ### Community
-- **Website**: https://nftban.com
-- **[Report Bug](https://github.com/itcmsgr/nftban/issues)** - Issue tracker
-- **[Discussions](https://github.com/itcmsgr/nftban/discussions)** - Community forum
+- Website: https://nftban.com
+- [Report Bug](https://github.com/itcmsgr/nftban/issues)
+- [Discussions](https://github.com/itcmsgr/nftban/discussions)
 
 ---
 
 <p align="center">
-  <b>NFTBan - Linux Firewall Management via nftables</b><br>
+  <b>NFTBan — Linux IPS & nftables Firewall Manager</b><br>
   <a href="https://nftban.com">nftban.com</a> |
   <a href="https://github.com/itcmsgr/nftban/issues">Report Issue</a> |
   <a href="https://github.com/itcmsgr/nftban/discussions">Discussions</a>
 </p>
-
