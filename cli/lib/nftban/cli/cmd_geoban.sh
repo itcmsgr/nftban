@@ -369,6 +369,7 @@ Usage:
   nftban geoban list                       # List active country blocks
   nftban geoban status                     # Show GeoBan status
   nftban geoban update                     # Update all active countries
+  nftban geoban refresh                    # Refresh country IP data from RIRs
   nftban geoban config                     # Show GeoBan configuration
   nftban geoban help                       # Show this help
 

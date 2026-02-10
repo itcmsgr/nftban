@@ -5,6 +5,28 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.12.5] - 2026-02-10
+
+### Bug Fixes
+
+- **fix(geoban)**: Add missing `refresh` subcommand to help documentation
+  - Subcommand was implemented but not documented in help output
+
+- **fix(ci)**: Resolve ShellCheck warnings SC2178, SC2313, SC2034
+  - nftban_report_data.sh: Add SC2178 disable for nameref, quote array indices
+  - nftban_health_render.sh: Remove unused conflicts_json variable
+
+- **fix(docs)**: Correct CLI command count from 62 to 54
+  - Updated README.md to reflect actual registered command count
+  - Count based on commands.registry.yml (source of truth)
+
+### Enhancements
+
+- **feat(panel)**: Add DirectAdmin, cPanel, generic to _get_panel_info() helper
+  - All 8 panel types now have consistent metadata entries
+
+---
+
 ## [1.12.4] - 2026-02-10
 
 ### Bug Fixes (Cross-Distro Validation)
