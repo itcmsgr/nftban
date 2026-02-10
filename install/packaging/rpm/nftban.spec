@@ -500,6 +500,10 @@ fi
 %{_bindir}/nftban
 %dir %{_libdir}/nftban
 %dir %{_libdir}/nftban/setup
+%dir %{_libdir}/nftban/scripts
+%attr(755,root,root) %{_libdir}/nftban/scripts/generate-help.sh
+%attr(755,root,root) %{_libdir}/nftban/scripts/generate-wiki-operator.sh
+%attr(755,root,root) %{_libdir}/nftban/scripts/generate-wiki-auditor.sh
 %attr(755,root,root) %{_libdir}/nftban/setup/*.sh
 %dir %{_libdir}/nftban/sbin
 %attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-apply
@@ -530,6 +534,7 @@ fi
 %dir %attr(750,root,nftban) /etc/nftban
 %config(noreplace) /etc/nftban/nftban.conf
 %config(noreplace) /etc/nftban/update.conf
+%config(noreplace) %attr(644,root,nftban) /etc/nftban/commands.registry.yml
 %dir %attr(750,root,nftban) /etc/nftban/conf.d
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/ddos
 %dir %attr(750,root,nftban) /etc/nftban/conf.d/portscan

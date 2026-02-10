@@ -26,6 +26,7 @@
 /usr/lib/nftban/health
 /usr/lib/nftban/data
 /usr/lib/nftban/tools
+/usr/lib/nftban/scripts
 /etc/nftban
 /etc/nftban/conf.d
 /etc/nftban/conf.d/ddos
