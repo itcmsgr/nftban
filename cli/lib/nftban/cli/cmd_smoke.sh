@@ -531,7 +531,6 @@ nftban_smoke_verify_configs() {
 
     local passed=0
     local failed=0
-    local warnings=0
 
     if [[ "$check_mode" == "build" ]] && [[ -n "$project_root" ]]; then
         # Build-time check: verify source files exist in git
