@@ -37,8 +37,13 @@ Type=oneshot
 User=root
 Group=root
 
-# Update rules and restart suricata
-ExecStart=/bin/bash -c 'suricata-update update-sources && suricata-update && systemctl restart suricata.service'
+# Update rules using unified pipeline (profile-aware, module-aware, dedupe)
+# This replaces bare suricata-update with nftban wrapper that:
+#   1. Ensures profile selected (auto-detect if missing)
+#   2. Generates module overlap disables
+#   3. Applies profile-specific rule filtering
+#   4. Dedupes restart if rules unchanged
+ExecStart=/usr/sbin/nftban suricata rules update
 
 # =============================================================================
 # SECURITY HARDENING
