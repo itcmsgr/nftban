@@ -7,22 +7,150 @@
 # SPDX-License-Identifier: MPL-2.0
 # Purpose: Common helper functions for web hosting panel integrations
 #
-# meta:name=nftban_panel_common
-# meta:type=library
-# meta:header=Panel Common Library
-# meta:version=1.0.0
+# meta:name="nftban_panel_common"
+# meta:type="library"
+# meta:header="Panel Common Library"
+# meta:version="1.0.0"
 # meta:owner="Antonios Voulvoulis <contact@nftban.com>"
-# meta:homepage=https://nftban.com
+# meta:homepage="https://nftban.com"
 #
 # **Description & Purpose**
-# meta:description=Shared utility functions for panel firewall management
-# meta:input=Port numbers, panel names, panel metadata fields
-# meta:output=Port status, panel info, configuration status
+# meta:description="Shared utility functions for panel firewall management"
+# meta:input="Port numbers, panel names, panel metadata fields"
+# meta:output="Port status, panel info, configuration status"
+#
+# **Inventory & Requirements**
+# meta:inventory.files=""
+# meta:inventory.binaries="nft ss"
+# meta:inventory.env_vars="NFTBAN_CONFIG_DIR"
+# meta:inventory.config_files="/etc/nftban/conf.d/panels/*/main.conf"
+# meta:inventory.systemd_units=""
+# meta:inventory.network=""
+# meta:inventory.privileges="root"
 # =============================================================================
+
+set -Eeuo pipefail
 
 # Prevent double-sourcing
 [[ -n "${_NFTBAN_PANEL_COMMON_LOADED:-}" ]] && return 0
 readonly _NFTBAN_PANEL_COMMON_LOADED=1
+
+# =============================================================================
+# ADMIN EMAIL DETECTION
+# =============================================================================
+
+# Get admin email from detected panel
+# Usage: nftban_panel_get_admin_email
+# Returns: Admin email on stdout, or empty if not found
+# Exit: 0 if found, 1 if not found
+nftban_panel_get_admin_email() {
+    local email=""
+
+    # DirectAdmin
+    if [[ -f /usr/local/directadmin/data/users/admin/user.conf ]]; then
+        email=$(grep '^email=' /usr/local/directadmin/data/users/admin/user.conf 2>/dev/null | cut -d= -f2)
+        if [[ -n "$email" ]]; then
+            echo "$email"
+            return 0
+        fi
+    fi
+
+    # cPanel/WHM
+    if [[ -d /usr/local/cpanel ]]; then
+        # Try .contactemail first
+        if [[ -f /root/.contactemail ]]; then
+            email=$(cat /root/.contactemail 2>/dev/null | tr -d '[:space:]')
+        fi
+        # Try wwwacct.conf
+        if [[ -z "$email" && -f /etc/wwwacct.conf ]]; then
+            email=$(grep '^CONTACTEMAIL' /etc/wwwacct.conf 2>/dev/null | awk '{print $2}')
+        fi
+        # Try whmapi1
+        if [[ -z "$email" ]] && command -v whmapi1 &>/dev/null; then
+            email=$(whmapi1 get_tweaksetting key=contact_email 2>/dev/null | grep 'value:' | awk '{print $2}')
+        fi
+        if [[ -n "$email" ]]; then
+            echo "$email"
+            return 0
+        fi
+    fi
+
+    # Plesk
+    if [[ -d /usr/local/psa ]]; then
+        # Try plesk bin admin --info
+        if command -v plesk &>/dev/null; then
+            email=$(plesk bin admin --info 2>/dev/null | grep -i '^email:' | awk '{print $2}')
+        fi
+        # Try database query
+        if [[ -z "$email" ]] && command -v plesk &>/dev/null; then
+            email=$(plesk db -Ne "SELECT val FROM misc WHERE param='admin_email'" 2>/dev/null)
+        fi
+        if [[ -n "$email" ]]; then
+            echo "$email"
+            return 0
+        fi
+    fi
+
+    # CyberPanel
+    if [[ -d /usr/local/CyberCP ]]; then
+        if [[ -f /usr/local/CyberCP/serverStatus/serverStatusData.json ]]; then
+            email=$(grep -o '"adminEmail":"[^"]*"' /usr/local/CyberCP/serverStatus/serverStatusData.json 2>/dev/null | cut -d'"' -f4)
+            if [[ -n "$email" ]]; then
+                echo "$email"
+                return 0
+            fi
+        fi
+    fi
+
+    # VestaCP / HestiaCP
+    if [[ -d /usr/local/vesta ]] || [[ -d /usr/local/hestia ]]; then
+        local vesta_path="/usr/local/vesta"
+        [[ -d /usr/local/hestia ]] && vesta_path="/usr/local/hestia"
+        if [[ -f "$vesta_path/data/users/admin/user.conf" ]]; then
+            email=$(grep '^CONTACT=' "$vesta_path/data/users/admin/user.conf" 2>/dev/null | cut -d"'" -f2)
+            if [[ -n "$email" ]]; then
+                echo "$email"
+                return 0
+            fi
+        fi
+    fi
+
+    # Fallback: check /etc/aliases for root
+    if [[ -f /etc/aliases ]]; then
+        email=$(grep '^root:' /etc/aliases 2>/dev/null | awk -F: '{print $2}' | tr -d '[:space:]' | grep '@')
+        if [[ -n "$email" ]]; then
+            echo "$email"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+# Detect which panel is installed
+# Usage: nftban_panel_detect
+# Returns: Panel name on stdout (directadmin, cpanel, plesk, cyberpanel, vesta, hestia, cwp, interworx, none)
+nftban_panel_detect() {
+    if [[ -d /usr/local/directadmin ]]; then
+        echo "directadmin"
+    elif [[ -d /usr/local/cpanel ]]; then
+        echo "cpanel"
+    elif [[ -d /usr/local/psa ]]; then
+        echo "plesk"
+    elif [[ -d /usr/local/CyberCP ]]; then
+        echo "cyberpanel"
+    elif [[ -d /usr/local/hestia ]]; then
+        echo "hestia"
+    elif [[ -d /usr/local/vesta ]]; then
+        echo "vesta"
+    elif [[ -d /usr/local/cwpsrv ]]; then
+        echo "cwp"
+    elif [[ -d /usr/local/interworx ]]; then
+        echo "interworx"
+    else
+        echo "none"
+    fi
+}
 
 # =============================================================================
 # PORT CHECK HELPER
@@ -501,6 +629,8 @@ nftban_panel_vesta_test() {
 # EXPORT FUNCTIONS
 # =============================================================================
 
+export -f nftban_panel_get_admin_email
+export -f nftban_panel_detect
 export -f _nftban_panel_check_port
 export -f _nftban_panel_check_cloudflare
 export -f _get_panel_info
