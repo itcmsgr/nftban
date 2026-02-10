@@ -31,7 +31,7 @@ Enable deep packet inspection using Suricata IDS to detect:
 | Requirement | Details |
 |-------------|---------|
 | Suricata | Version 7.x recommended |
-| nftban | Version 1.10.0+ |
+| nftban | Version 1.12.0+ |
 | Privileges | Root for service control |
 | Rules | ET Open or commercial ruleset |
 
