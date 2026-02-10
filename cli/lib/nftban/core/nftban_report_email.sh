@@ -363,6 +363,109 @@ nftban_report_email_generate() {
     fi
 
     # ==========================================================================
+    # GET SYSTEM RESOURCES (from shared checks)
+    # ==========================================================================
+
+    local load_5m="0" cpu_count="1" mem_used_percent="0" disk_used_percent="0" disk_path="/var/log"
+    local mem_color="#22d3ee" disk_color="#22d3ee"
+
+    # Load shared checks library if needed
+    local checks_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_checks.sh"
+    if ! declare -f nftban_check_system_resources &>/dev/null && [[ -f "$checks_lib" ]]; then
+        # shellcheck source=/dev/null
+        source "$checks_lib" 2>/dev/null || true
+    fi
+
+    # Get system resources
+    if declare -f nftban_check_system_resources &>/dev/null; then
+        local resources_json
+        resources_json=$(nftban_check_system_resources 2>/dev/null)
+        if command -v jq &>/dev/null && [[ -n "$resources_json" ]]; then
+            local data
+            data=$(echo "$resources_json" | jq -r '.data // {}')
+            load_5m=$(echo "$data" | jq -r '.load["5m"] // "0"')
+            cpu_count=$(echo "$data" | jq -r '.load.cpus // 1')
+            mem_used_percent=$(echo "$data" | jq -r '.memory.used_percent // 0')
+            disk_used_percent=$(echo "$data" | jq -r '.disk.used_percent // 0')
+            disk_path=$(echo "$data" | jq -r '.disk.path // "/var/log"')
+        fi
+    else
+        # Fallback to direct reads
+        if [[ -r /proc/loadavg ]]; then
+            read -r _ load_5m _ < /proc/loadavg
+        fi
+        cpu_count=$(nproc 2>/dev/null || echo 1)
+        if [[ -r /proc/meminfo ]]; then
+            local total avail
+            total=$(grep '^MemTotal:' /proc/meminfo | awk '{print $2}')
+            avail=$(grep '^MemAvailable:' /proc/meminfo | awk '{print $2}')
+            [[ $total -gt 0 ]] && mem_used_percent=$(( (total - avail) * 100 / total ))
+        fi
+        if df -P /var/log &>/dev/null; then
+            disk_used_percent=$(df -P /var/log | tail -1 | awk '{print $5}' | tr -d '%')
+        fi
+    fi
+
+    # Set colors based on thresholds
+    [[ $mem_used_percent -ge 80 ]] && mem_color="#fbbf24"
+    [[ $mem_used_percent -ge 95 ]] && mem_color="#f87171"
+    [[ $disk_used_percent -ge 80 ]] && disk_color="#fbbf24"
+    [[ $disk_used_percent -ge 95 ]] && disk_color="#f87171"
+
+    # ==========================================================================
+    # GET SURICATA STATUS
+    # ==========================================================================
+
+    local suricata_section=""
+    if declare -f nftban_check_suricata_status &>/dev/null; then
+        local suricata_json
+        suricata_json=$(nftban_check_suricata_status 2>/dev/null)
+        if command -v jq &>/dev/null && [[ -n "$suricata_json" ]]; then
+            local sdata installed active status rules
+            sdata=$(echo "$suricata_json" | jq -r '.data // {}')
+            installed=$(echo "$sdata" | jq -r '.installed // false')
+            active=$(echo "$sdata" | jq -r '.service_active // false')
+            status=$(echo "$sdata" | jq -r '.status // "unknown"')
+            rules=$(echo "$sdata" | jq -r '.rules_loaded // 0')
+
+            if [[ "$installed" == "true" ]]; then
+                local suri_status_color="#22c55e" suri_status_text="Active"
+                if [[ "$active" != "true" ]]; then
+                    suri_status_color="#f87171"
+                    suri_status_text="Inactive"
+                elif [[ "$status" == "stale_eve" ]]; then
+                    suri_status_color="#fbbf24"
+                    suri_status_text="Stale EVE"
+                fi
+
+                suricata_section="<tr>
+            <td style=\"padding:0 24px 24px;\">
+                <h2 style=\"margin:0 0 16px;font-size:16px;color:#f1f5f9;\">Suricata IDS</h2>
+                <table width=\"100%\" cellpadding=\"0\" cellspacing=\"0\" style=\"background-color:#334155;border-radius:8px;\">
+                    <tr>
+                        <td style=\"padding:12px 16px;border-bottom:1px solid #475569;\">
+                            <span style=\"color:#94a3b8;\">Status</span>
+                        </td>
+                        <td style=\"padding:12px 16px;text-align:right;border-bottom:1px solid #475569;\">
+                            <span style=\"color:${suri_status_color};font-weight:bold;\">${suri_status_text}</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style=\"padding:12px 16px;\">
+                            <span style=\"color:#94a3b8;\">Rules Loaded</span>
+                        </td>
+                        <td style=\"padding:12px 16px;text-align:right;\">
+                            <span style=\"color:#22d3ee;font-weight:bold;\">${rules}</span>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>"
+            fi
+        fi
+    fi
+
+    # ==========================================================================
     # BUILD HTML FROM TEMPLATE
     # ==========================================================================
 
@@ -374,6 +477,7 @@ nftban_report_email_generate() {
     local feeds_status_escaped="${feeds_status//&/\\&}"
     local protection_status_escaped="${protection_status//&/\\&}"
     local top_ips_escaped="${top_ips//&/\\&}"
+    local suricata_section_escaped="${suricata_section//&/\\&}"
 
     html="${html//\{\{HOSTNAME\}\}/$hostname}"
     html="${html//\{\{DATE\}\}/$date_now}"
@@ -387,6 +491,18 @@ nftban_report_email_generate() {
     html="${html//\{\{PROTECTION_STATUS\}\}/$protection_status_escaped}"
     html="${html//\{\{TOP_IPS\}\}/$top_ips_escaped}"
     html="${html//\{\{REPORT_ID\}\}/$report_id}"
+
+    # System resources
+    html="${html//\{\{LOAD_5M\}\}/$load_5m}"
+    html="${html//\{\{CPU_COUNT\}\}/$cpu_count}"
+    html="${html//\{\{MEM_USED_PERCENT\}\}/$mem_used_percent}"
+    html="${html//\{\{MEM_COLOR\}\}/$mem_color}"
+    html="${html//\{\{DISK_USED_PERCENT\}\}/$disk_used_percent}"
+    html="${html//\{\{DISK_PATH\}\}/$disk_path}"
+    html="${html//\{\{DISK_COLOR\}\}/$disk_color}"
+
+    # Suricata section (conditional)
+    html="${html//\{\{SURICATA_SECTION\}\}/$suricata_section_escaped}"
 
     # ==========================================================================
     # SEND EMAIL

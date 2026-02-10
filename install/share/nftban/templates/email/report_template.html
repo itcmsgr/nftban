@@ -104,6 +104,43 @@
             </td>
         </tr>
 
+        <!-- System Resources -->
+        <tr>
+            <td style="padding:0 24px 24px;">
+                <h2 style="margin:0 0 16px;font-size:16px;color:#f1f5f9;">System Resources</h2>
+                <table width="100%" cellpadding="0" cellspacing="0" style="background-color:#334155;border-radius:8px;">
+                    <tr>
+                        <td style="padding:12px 16px;border-bottom:1px solid #475569;">
+                            <span style="color:#94a3b8;">Load Average (5m)</span>
+                        </td>
+                        <td style="padding:12px 16px;text-align:right;border-bottom:1px solid #475569;">
+                            <span style="color:#22d3ee;font-weight:bold;">{{LOAD_5M}}</span>
+                            <span style="color:#64748b;font-size:11px;"> / {{CPU_COUNT}} cores</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:12px 16px;border-bottom:1px solid #475569;">
+                            <span style="color:#94a3b8;">Memory Usage</span>
+                        </td>
+                        <td style="padding:12px 16px;text-align:right;border-bottom:1px solid #475569;">
+                            <span style="color:{{MEM_COLOR}};font-weight:bold;">{{MEM_USED_PERCENT}}%</span>
+                        </td>
+                    </tr>
+                    <tr>
+                        <td style="padding:12px 16px;">
+                            <span style="color:#94a3b8;">Disk Usage ({{DISK_PATH}})</span>
+                        </td>
+                        <td style="padding:12px 16px;text-align:right;">
+                            <span style="color:{{DISK_COLOR}};font-weight:bold;">{{DISK_USED_PERCENT}}%</span>
+                        </td>
+                    </tr>
+                </table>
+            </td>
+        </tr>
+
+        <!-- Suricata Status (if available) -->
+        {{SURICATA_SECTION}}
+
         <!-- Footer -->
         <tr>
             <td style="padding:24px;text-align:center;background-color:#0f172a;">

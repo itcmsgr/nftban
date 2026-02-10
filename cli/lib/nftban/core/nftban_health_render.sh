@@ -353,7 +353,62 @@ nftban_health_render_json() {
         echo ""
     fi
 
-    echo "  ]"
+    echo "  ],"
+
+    # ==========================================================================
+    # EXTENDED DATA (from shared check functions)
+    # ==========================================================================
+    # Load shared checks library if available
+    local checks_lib="${NFTBAN_LIB_DIR:-/usr/lib/nftban}/lib/nftban_checks.sh"
+    if [[ -f "$checks_lib" ]] && ! declare -f nftban_check_system_resources &>/dev/null; then
+        # shellcheck source=/dev/null
+        source "$checks_lib" 2>/dev/null || true
+    fi
+
+    echo "  \"extended\": {"
+
+    # System resources (load, memory, disk)
+    if declare -f nftban_check_system_resources &>/dev/null; then
+        local resources_json
+        resources_json=$(nftban_check_system_resources 2>/dev/null | jq -c '.data // {}' 2>/dev/null || echo '{}')
+        echo "    \"resources\": $resources_json,"
+    else
+        echo "    \"resources\": {},"
+    fi
+
+    # Suricata status
+    if declare -f nftban_check_suricata_status &>/dev/null; then
+        local suricata_json
+        suricata_json=$(nftban_check_suricata_status 2>/dev/null | jq -c '.data // {}' 2>/dev/null || echo '{}')
+        echo "    \"suricata\": $suricata_json,"
+    else
+        echo "    \"suricata\": {},"
+    fi
+
+    # DNS status
+    if declare -f nftban_check_dns &>/dev/null; then
+        local dns_json
+        dns_json=$(nftban_check_dns 2>/dev/null | jq -c '.data // {}' 2>/dev/null || echo '{}')
+        echo "    \"dns\": $dns_json,"
+    else
+        echo "    \"dns\": {},"
+    fi
+
+    # Firewall conflicts
+    if declare -f nftban_check_firewall_conflict &>/dev/null; then
+        local conflicts_json='{"csf":{},"firewalld":{},"ufw":{},"iptables":{}}'
+        # Check each firewall
+        local csf_json fw_json ufw_json ipt_json
+        csf_json=$(nftban_check_firewall_conflict csf 2>/dev/null | jq -c '.data // {}' 2>/dev/null || echo '{}')
+        fw_json=$(nftban_check_firewall_conflict firewalld 2>/dev/null | jq -c '.data // {}' 2>/dev/null || echo '{}')
+        ufw_json=$(nftban_check_firewall_conflict ufw 2>/dev/null | jq -c '.data // {}' 2>/dev/null || echo '{}')
+        ipt_json=$(nftban_check_firewall_conflict iptables 2>/dev/null | jq -c '.data // {}' 2>/dev/null || echo '{}')
+        echo "    \"firewall_conflicts\": {\"csf\":$csf_json,\"firewalld\":$fw_json,\"ufw\":$ufw_json,\"iptables\":$ipt_json}"
+    else
+        echo "    \"firewall_conflicts\": {}"
+    fi
+
+    echo "  }"
     echo "}"
 
     return $exit_code
