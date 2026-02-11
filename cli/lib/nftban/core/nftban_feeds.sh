@@ -385,66 +385,29 @@ nftban_feeds_disable() {
     echo "✓ Feed disabled: $feed_name"
     echo ""
 
-    # Remove feed IPs from nftables blacklist
-    if [[ -f "$feed_file" ]] && [[ -s "$feed_file" ]]; then
+    # Clear the feed file
+    if [[ -f "$feed_file" ]]; then
         local ip_count
-        ip_count=$(wc -l < "$feed_file")
-        echo "🔄 Removing $ip_count IPs from blacklist..."
-
-        # Collect IPs into arrays (separated by family)
-        local ipv4_list=() ipv6_list=()
-        while IFS= read -r ip; do
-            [[ -z "$ip" ]] && continue
-            if [[ "$ip" =~ : ]]; then
-                ipv6_list+=("$ip")
-            else
-                ipv4_list+=("$ip")
-            fi
-        done < "$feed_file"
-
-        local ipv4_count=${#ipv4_list[@]}
-        local ipv6_count=${#ipv6_list[@]}
-
-        # Delete IPv4 IPs (single command with comma-separated list)
-        if [[ $ipv4_count -gt 0 ]]; then
-            local nft_delete_v4="${NFTBAN_FEEDS_CACHE_DIR}/feed_delete_${feed_lowercase}_v4.nft"
-            echo -n "delete element ${NFTBAN_TABLE_IPV4:-ip nftban} blacklist_ipv4 { " > "$nft_delete_v4"
-            local first=true
-            for ip in "${ipv4_list[@]}"; do
-                [[ "$first" == "true" ]] && first=false || echo -n ", " >> "$nft_delete_v4"
-                echo -n "$ip" >> "$nft_delete_v4"
-            done
-            echo " }" >> "$nft_delete_v4"
-            nft_ipc_apply_ruleset "$nft_delete_v4" 2>/dev/null || nft -f "$nft_delete_v4" 2>/dev/null || true
-            rm -f "$nft_delete_v4"
-        fi
-
-        # Delete IPv6 IPs (single command with comma-separated list)
-        if [[ $ipv6_count -gt 0 ]]; then
-            local nft_delete_v6="${NFTBAN_FEEDS_CACHE_DIR}/feed_delete_${feed_lowercase}_v6.nft"
-            echo -n "delete element ${NFTBAN_TABLE_IPV6:-ip6 nftban} blacklist_ipv6 { " > "$nft_delete_v6"
-            local first=true
-            for ip in "${ipv6_list[@]}"; do
-                [[ "$first" == "true" ]] && first=false || echo -n ", " >> "$nft_delete_v6"
-                echo -n "$ip" >> "$nft_delete_v6"
-            done
-            echo " }" >> "$nft_delete_v6"
-            nft_ipc_apply_ruleset "$nft_delete_v6" 2>/dev/null || nft -f "$nft_delete_v6" 2>/dev/null || true
-            rm -f "$nft_delete_v6"
-        fi
-
-        nftban_feeds_log INFO "Removed feed IPs: $ipv4_count IPv4, $ipv6_count IPv6"
-        echo "   ✅ Removed: $ipv4_count IPv4, $ipv6_count IPv6"
-
-        # Clear the feed file
+        ip_count=$(wc -l < "$feed_file" 2>/dev/null || echo "0")
         : > "$feed_file"
-        echo "   ✅ Feed file cleared: $feed_file"
+        echo "   ✅ Feed file cleared ($ip_count IPs)"
+    fi
+
+    # Re-sync all feeds to nftables (only enabled feeds will be loaded)
+    # This is required because IPs are stored as optimized CIDR ranges
+    # Individual IP deletion won't work - must rebuild blacklist
+    echo ""
+    echo "🔄 Rebuilding blacklist (only enabled feeds)..."
+    if nftban_feeds_sync_to_nftables 2>/dev/null; then
+        nftban_feeds_log INFO "Feed $feed_name IPs removed via full sync"
+        echo "   ✅ Blacklist rebuilt - $feed_name IPs removed"
     else
-        echo "   ℹ️  No IPs to remove (feed file empty or missing)"
+        nftban_feeds_log WARN "Sync failed, IPs will be removed on next update"
+        echo "   ⚠️  Sync pending - run 'nftban feeds update' to apply"
     fi
 
     echo ""
-    echo "✅ Feed disabled and IPs removed from blacklist"
+    echo "✅ Feed disabled"
     echo ""
 }
 
