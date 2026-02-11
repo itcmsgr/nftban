@@ -195,16 +195,16 @@ HEADER
         echo "$ip  # $comment (added: $(date -u +'%Y-%m-%d %H:%M:%S UTC'))" >> "$NFTBAN_WHITELIST_SYSTEM"
     fi
 
-    # SINGLE POINT OF TRUTH: Add to nftables via nft_smart_add_element (IPC first, fallback)
-    local table set
-    if [[ "$ip" =~ : ]]; then
-        table="ip6 nftban"
-        set="whitelist_ipv6"
-    else
-        table="ip nftban"
-        set="whitelist_ipv4"
+    # Also add to nftables immediately (don't wait for sync)
+    if command -v nft &>/dev/null; then
+        if [[ "$ip" =~ : ]]; then
+            # IPv6
+            nft add element ip6 nftban whitelist_ipv6 "{ $ip }" 2>/dev/null || true
+        else
+            # IPv4
+            nft add element ip nftban whitelist_ipv4 "{ $ip }" 2>/dev/null || true
+        fi
     fi
-    nft_smart_add_element "$table" "$set" "$ip" 2>/dev/null || true
 
     echo "[ADD] Whitelisted: $ip ($comment)"
 }

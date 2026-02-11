@@ -405,7 +405,7 @@ nftban_feeds_disable() {
         local ipv4_count=${#ipv4_list[@]}
         local ipv6_count=${#ipv6_list[@]}
 
-        # Delete IPv4 IPs via IPC (single command with comma-separated list)
+        # Delete IPv4 IPs (single command with comma-separated list)
         if [[ $ipv4_count -gt 0 ]]; then
             local nft_delete_v4="${NFTBAN_FEEDS_CACHE_DIR}/feed_delete_${feed_lowercase}_v4.nft"
             echo -n "delete element ${NFTBAN_TABLE_IPV4:-ip nftban} blacklist_ipv4 { " > "$nft_delete_v4"
@@ -415,12 +415,11 @@ nftban_feeds_disable() {
                 echo -n "$ip" >> "$nft_delete_v4"
             done
             echo " }" >> "$nft_delete_v4"
-            # SINGLE POINT OF TRUTH: Use nft_smart_apply_ruleset (IPC first, fallback to nft -f)
-            nft_smart_apply_ruleset "$nft_delete_v4" 2>/dev/null || true
+            nft -f "$nft_delete_v4" 2>/dev/null || true
             rm -f "$nft_delete_v4"
         fi
 
-        # Delete IPv6 IPs via IPC (single command with comma-separated list)
+        # Delete IPv6 IPs (single command with comma-separated list)
         if [[ $ipv6_count -gt 0 ]]; then
             local nft_delete_v6="${NFTBAN_FEEDS_CACHE_DIR}/feed_delete_${feed_lowercase}_v6.nft"
             echo -n "delete element ${NFTBAN_TABLE_IPV6:-ip6 nftban} blacklist_ipv6 { " > "$nft_delete_v6"
@@ -430,8 +429,7 @@ nftban_feeds_disable() {
                 echo -n "$ip" >> "$nft_delete_v6"
             done
             echo " }" >> "$nft_delete_v6"
-            # SINGLE POINT OF TRUTH: Use nft_smart_apply_ruleset (IPC first, fallback to nft -f)
-            nft_smart_apply_ruleset "$nft_delete_v6" 2>/dev/null || true
+            nft -f "$nft_delete_v6" 2>/dev/null || true
             rm -f "$nft_delete_v6"
         fi
 
