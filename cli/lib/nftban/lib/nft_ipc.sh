@@ -363,83 +363,6 @@ nft_smart_unban() {
 }
 
 # =============================================================================
-# SINGLE POINT OF TRUTH - Generic element operations
-# =============================================================================
-# ALL nftables add/delete element operations MUST go through these functions.
-# This ensures consistent IPC-first with fallback behavior across all modules.
-
-# Smart add element - tries IPC first, falls back to direct nft
-# Usage: nft_smart_add_element <table> <set> <element> [timeout_seconds]
-# Example: nft_smart_add_element "ip nftban" "blacklist_ipv4" "1.2.3.4" 3600
-nft_smart_add_element() {
-    local table="$1"
-    local set="$2"
-    local element="$3"
-    local timeout="${4:-0}"
-
-    [[ -z "$table" || -z "$set" || -z "$element" ]] && {
-        echo "ERROR: table, set, and element required" >&2
-        return 1
-    }
-
-    # Try IPC first (netlink-based, ~50x faster)
-    if nft_ipc_is_daemon_running 2>/dev/null; then
-        if nft_ipc_add_element "$table" "$set" "$element" "$timeout" 2>/dev/null; then
-            return 0
-        fi
-    fi
-
-    # Fallback to direct nft command
-    local element_str="{ $element }"
-    [[ "$timeout" -gt 0 ]] && element_str="{ $element timeout ${timeout}s }"
-    nft add element $table $set "$element_str" 2>/dev/null
-}
-
-# Smart delete element - tries IPC first, falls back to direct nft
-# Usage: nft_smart_delete_element <table> <set> <element>
-# Example: nft_smart_delete_element "ip nftban" "blacklist_ipv4" "1.2.3.4"
-nft_smart_delete_element() {
-    local table="$1"
-    local set="$2"
-    local element="$3"
-
-    [[ -z "$table" || -z "$set" || -z "$element" ]] && {
-        echo "ERROR: table, set, and element required" >&2
-        return 1
-    }
-
-    # Try IPC first (netlink-based, ~50x faster)
-    if nft_ipc_is_daemon_running 2>/dev/null; then
-        if nft_ipc_delete_element "$table" "$set" "$element" 2>/dev/null; then
-            return 0
-        fi
-    fi
-
-    # Fallback to direct nft command
-    nft delete element $table $set "{ $element }" 2>/dev/null
-}
-
-# Smart apply ruleset - tries IPC first, falls back to direct nft -f
-# Usage: nft_smart_apply_ruleset <file_path>
-# Example: nft_smart_apply_ruleset "/tmp/rules.nft"
-nft_smart_apply_ruleset() {
-    local file_path="$1"
-
-    [[ -z "$file_path" ]] && { echo "ERROR: file path required" >&2; return 1; }
-    [[ ! -f "$file_path" ]] && { echo "ERROR: file not found: $file_path" >&2; return 1; }
-
-    # Try IPC first (goes through daemon's serialized writer)
-    if nft_ipc_is_daemon_running 2>/dev/null; then
-        if nft_ipc_apply_ruleset "$file_path" 2>/dev/null; then
-            return 0
-        fi
-    fi
-
-    # Fallback to direct nft -f
-    nft -f "$file_path" 2>/dev/null
-}
-
-# =============================================================================
 # EXPORTS
 # =============================================================================
 
@@ -461,9 +384,6 @@ export -f nft_ipc_check
 export -f nft_ipc_status
 export -f nft_smart_ban
 export -f nft_smart_unban
-export -f nft_smart_add_element
-export -f nft_smart_delete_element
-export -f nft_smart_apply_ruleset
 
 # =============================================================================
 # STANDALONE EXECUTION (for testing)

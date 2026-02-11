@@ -111,51 +111,50 @@ nftban_cmd_whitelist() {
     esac
 }
 
-# Add IP to whitelist - SINGLE POINT OF TRUTH via nft_smart_add_element
+# Add IP to whitelist
 nftban_whitelist_add_ip() {
     local ip="$1"
-    local table set
 
-    # Determine table/set based on IP family
+    # Validate IP format
     if [[ "$ip" =~ : ]]; then
-        table="ip6 nftban"
-        set="whitelist_ipv6"
+        # IPv6
+        if nft add element ip6 nftban whitelist_ipv6 "{ $ip }" 2>/dev/null; then
+            echo "Added $ip to IPv6 whitelist"
+        else
+            echo "ERROR: Failed to add $ip to whitelist" >&2
+            return 1
+        fi
     else
-        table="ip nftban"
-        set="whitelist_ipv4"
-    fi
-
-    # SINGLE POINT OF TRUTH: Use nft_smart_add_element (IPC first, fallback to nft)
-    if nft_smart_add_element "$table" "$set" "$ip" 2>/dev/null; then
-        echo "Added $ip to whitelist"
-        return 0
-    else
-        echo "ERROR: Failed to add $ip to whitelist" >&2
-        return 1
+        # IPv4
+        if nft add element ip nftban whitelist_ipv4 "{ $ip }" 2>/dev/null; then
+            echo "Added $ip to IPv4 whitelist"
+        else
+            echo "ERROR: Failed to add $ip to whitelist" >&2
+            return 1
+        fi
     fi
 }
 
-# Remove IP from whitelist - SINGLE POINT OF TRUTH via nft_smart_delete_element
+# Remove IP from whitelist
 nftban_whitelist_remove_ip() {
     local ip="$1"
-    local table set
 
-    # Determine table/set based on IP family
     if [[ "$ip" =~ : ]]; then
-        table="ip6 nftban"
-        set="whitelist_ipv6"
+        # IPv6
+        if nft delete element ip6 nftban whitelist_ipv6 "{ $ip }" 2>/dev/null; then
+            echo "Removed $ip from IPv6 whitelist"
+        else
+            echo "ERROR: Failed to remove $ip from whitelist (may not exist)" >&2
+            return 1
+        fi
     else
-        table="ip nftban"
-        set="whitelist_ipv4"
-    fi
-
-    # SINGLE POINT OF TRUTH: Use nft_smart_delete_element (IPC first, fallback to nft)
-    if nft_smart_delete_element "$table" "$set" "$ip" 2>/dev/null; then
-        echo "Removed $ip from whitelist"
-        return 0
-    else
-        echo "ERROR: Failed to remove $ip from whitelist (may not exist)" >&2
-        return 1
+        # IPv4
+        if nft delete element ip nftban whitelist_ipv4 "{ $ip }" 2>/dev/null; then
+            echo "Removed $ip from IPv4 whitelist"
+        else
+            echo "ERROR: Failed to remove $ip from whitelist (may not exist)" >&2
+            return 1
+        fi
     fi
 }
 
