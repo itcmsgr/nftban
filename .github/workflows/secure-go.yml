@@ -91,8 +91,31 @@ jobs:
       - name: Run gosec (SARIF)
         run: $(go env GOPATH)/bin/gosec -fmt sarif -out gosec.sarif ./... || true
 
+      - name: Fix gosec SARIF relationships
+        run: |
+          # gosec produces invalid SARIF with string relationships instead of objects
+          # Fix: remove invalid relationships arrays or convert to valid format
+          python3 << 'PY'
+          import json
+          try:
+              with open('gosec.sarif', 'r') as f:
+                  sarif = json.load(f)
+              # Fix relationships in rules - must be array of objects, not strings
+              for run in sarif.get('runs', []):
+                  driver = run.get('tool', {}).get('driver', {})
+                  for rule in driver.get('rules', []):
+                      if 'relationships' in rule:
+                          # Remove invalid relationships (gosec outputs strings instead of objects)
+                          del rule['relationships']
+              with open('gosec.sarif', 'w') as f:
+                  json.dump(sarif, f, indent=2)
+              print("Fixed gosec SARIF relationships")
+          except Exception as e:
+              print(f"Warning: Could not fix SARIF: {e}")
+          PY
+
       - name: Upload gosec SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: gosec.sarif
           category: gosec
@@ -170,7 +193,7 @@ jobs:
           PY
 
       - name: Upload govulncheck SARIF
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: govulncheck.sarif
           category: govulncheck
