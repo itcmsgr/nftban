@@ -1125,6 +1125,315 @@
       "added_version": "1.4.0",
       "phase": 2
     },
+    "nftban_suricata_memory_rss_mb": {
+      "type": "gauge",
+      "help": "Suricata process RSS memory in megabytes",
+      "unit": "megabytes",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_capture_kernel_packets": {
+      "type": "counter",
+      "help": "Total packets captured by kernel",
+      "unit": "packets",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_capture_kernel_drops": {
+      "type": "counter",
+      "help": "Packets dropped by kernel (indicates capacity issues)",
+      "unit": "packets",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_decoder_bytes": {
+      "type": "counter",
+      "help": "Total bytes decoded by Suricata",
+      "unit": "bytes",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_flow_memuse": {
+      "type": "gauge",
+      "help": "Flow table memory usage in bytes",
+      "unit": "bytes",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_tcp_memuse": {
+      "type": "gauge",
+      "help": "TCP reassembly memory usage in bytes",
+      "unit": "bytes",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_memcap_pressure": {
+      "type": "gauge",
+      "help": "Memory pressure indicator (non-zero indicates memory constraints)",
+      "unit": "",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_ring_size": {
+      "type": "gauge",
+      "help": "Configured AF_PACKET ring size (affects memory: ring_size x 2KB x threads)",
+      "unit": "frames",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_capture_threads": {
+      "type": "gauge",
+      "help": "Number of packet capture threads",
+      "unit": "threads",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_uptime_seconds": {
+      "type": "gauge",
+      "help": "Suricata process uptime in seconds",
+      "unit": "seconds",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_tpacket_version": {
+      "type": "gauge",
+      "help": "Configured tpacket version (2 or 3)",
+      "unit": "",
+      "labels": ["version"],
+      "label_values": {"version": ["v2", "v3"]},
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_decoder_pkts": {
+      "type": "counter",
+      "help": "Total packets decoded by Suricata",
+      "unit": "packets",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_decoder_invalid": {
+      "type": "counter",
+      "help": "Invalid/malformed packets (protocol errors)",
+      "unit": "packets",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_flow_total": {
+      "type": "counter",
+      "help": "Total flows processed",
+      "unit": "flows",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_tcp_sessions": {
+      "type": "counter",
+      "help": "Total TCP sessions tracked",
+      "unit": "sessions",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_tcp_reassembly_gap": {
+      "type": "counter",
+      "help": "TCP reassembly gaps (indicates network issues or packet loss)",
+      "unit": "gaps",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_tcp_ssn_memcap_drop": {
+      "type": "counter",
+      "help": "TCP sessions dropped due to memory cap (critical capacity indicator)",
+      "unit": "drops",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_tcp_segment_memcap_drop": {
+      "type": "counter",
+      "help": "TCP segments dropped due to memory cap (critical capacity indicator)",
+      "unit": "drops",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_flow_memcap_drops": {
+      "type": "counter",
+      "help": "Flows dropped due to memory cap (critical capacity indicator)",
+      "unit": "drops",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_flow_emerg_mode_entered": {
+      "type": "counter",
+      "help": "Flow emergency mode events (critical - Suricata under extreme pressure)",
+      "unit": "events",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_system_cpu_cores": {
+      "type": "gauge",
+      "help": "System CPU cores available",
+      "unit": "cores",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
+    "nftban_suricata_system_memory_available_mb": {
+      "type": "gauge",
+      "help": "System available memory in MB",
+      "unit": "megabytes",
+      "labels": [],
+      "source": "shell_prometheus",
+      "source_details": {
+        "file": "cli/lib/nftban/exporters/nftban_metrics_collector.sh",
+        "function": "collect_suricata_metrics"
+      },
+      "category": "suricata",
+      "added_version": "1.12.8",
+      "phase": 2
+    },
     "nftban_eventbus_events_total": {
       "type": "counter",
       "help": "Total events processed by event bus",
