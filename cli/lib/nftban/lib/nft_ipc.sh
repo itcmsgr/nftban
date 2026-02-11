@@ -57,9 +57,21 @@ nft_ipc_request() {
         return 1
     fi
 
+    # Validate params is valid JSON before using with --argjson
+    # If params is empty or invalid, default to empty object
+    if [[ -z "$params" ]] || ! echo "$params" | jq -e . >/dev/null 2>&1; then
+        params="{}"
+    fi
+
     local request
     request=$(jq -nc --arg method "$method" --argjson params "$params" \
-        '{method: $method, params: $params}')
+        '{method: $method, params: $params}' 2>/dev/null)
+
+    # Validate request was built successfully
+    if [[ -z "$request" ]]; then
+        echo '{"success":false,"error":"failed to build request JSON"}'
+        return 1
+    fi
 
     local response
     response=$(echo "$request" | timeout "$NFTBAN_IPC_TIMEOUT" socat - "UNIX-CONNECT:$NFTBAN_DAEMON_SOCKET" 2>/dev/null)
@@ -100,10 +112,24 @@ nft_ipc_ban() {
 
     [[ -z "$ip" ]] && { echo "ERROR: IP required" >&2; return 1; }
 
+    # Ensure timeout is a valid number for --argjson
+    if ! [[ "$timeout" =~ ^[0-9]+$ ]]; then
+        timeout=0
+    fi
+
     local params
     params=$(jq -nc --arg ip "$ip" --argjson timeout "$timeout" \
         --arg reason "$reason" --arg source "$source" \
-        '{ip: $ip, timeout: $timeout, reason: $reason, source: $source}')
+        '{ip: $ip, timeout: $timeout, reason: $reason, source: $source}' 2>/dev/null) || params=""
+
+    # Fallback if jq failed
+    if [[ -z "$params" ]]; then
+        local escaped_ip escaped_reason escaped_source
+        escaped_ip=$(printf '%s' "$ip" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        escaped_reason=$(printf '%s' "$reason" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        escaped_source=$(printf '%s' "$source" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        params="{\"ip\":\"${escaped_ip}\",\"timeout\":${timeout},\"reason\":\"${escaped_reason}\",\"source\":\"${escaped_source}\"}"
+    fi
 
     local response
     response=$(nft_ipc_request "ban" "$params")
@@ -147,10 +173,24 @@ nft_ipc_add_element() {
         return 1
     }
 
+    # Ensure timeout is a valid number for --argjson
+    if ! [[ "$timeout" =~ ^[0-9]+$ ]]; then
+        timeout=0
+    fi
+
     local params
     params=$(jq -nc --arg table "$table" --arg set "$set" \
         --arg element "$element" --argjson timeout "$timeout" \
-        '{table: $table, set: $set, element: $element, timeout: $timeout}')
+        '{table: $table, set: $set, element: $element, timeout: $timeout}' 2>/dev/null) || params=""
+
+    # Fallback if jq failed
+    if [[ -z "$params" ]]; then
+        local escaped_table escaped_set escaped_element
+        escaped_table=$(printf '%s' "$table" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        escaped_set=$(printf '%s' "$set" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        escaped_element=$(printf '%s' "$element" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        params="{\"table\":\"${escaped_table}\",\"set\":\"${escaped_set}\",\"element\":\"${escaped_element}\",\"timeout\":${timeout}}"
+    fi
 
     local response
     response=$(nft_ipc_request "add_element" "$params")
@@ -225,12 +265,21 @@ nft_ipc_apply_ruleset() {
     [[ -z "$file_path" ]] && { echo "ERROR: file path required" >&2; return 1; }
     [[ ! -f "$file_path" ]] && { echo "ERROR: file not found: $file_path" >&2; return 1; }
 
+    # Ensure check_bool is always a valid JSON boolean literal
     local check_bool="false"
     [[ "$check_only" == "1" ]] && check_bool="true"
 
     local params
     params=$(jq -nc --arg file "$file_path" --argjson check "$check_bool" \
-        '{file: $file, check: $check}')
+        '{file: $file, check: $check}' 2>/dev/null) || params=""
+
+    # Fallback if jq failed - construct JSON manually
+    if [[ -z "$params" ]]; then
+        # Escape file_path for JSON (handle backslashes and quotes)
+        local escaped_path
+        escaped_path=$(printf '%s' "$file_path" | sed 's/\\/\\\\/g; s/"/\\"/g')
+        params="{\"file\":\"${escaped_path}\",\"check\":${check_bool}}"
+    fi
 
     local response
     response=$(nft_ipc_request "apply_ruleset" "$params")

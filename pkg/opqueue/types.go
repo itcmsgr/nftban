@@ -12,7 +12,6 @@ package opqueue
 
 import (
 	"sync"
-	"sync/atomic"
 	"time"
 )
 
@@ -278,19 +277,3 @@ func GetAllSets() []string {
 	}
 }
 
-// localCounter tracks count for a single buffer
-type localCounter struct {
-	count atomic.Int64
-}
-
-func (c *localCounter) Add(delta int64) {
-	c.count.Add(delta)
-}
-
-func (c *localCounter) Load() int64 {
-	return c.count.Load()
-}
-
-func (c *localCounter) Store(val int64) {
-	c.count.Store(val)
-}
