@@ -415,7 +415,7 @@ nftban_feeds_disable() {
                 echo -n "$ip" >> "$nft_delete_v4"
             done
             echo " }" >> "$nft_delete_v4"
-            nft -f "$nft_delete_v4" 2>/dev/null || true
+            nft_ipc_apply_ruleset "$nft_delete_v4" 2>/dev/null || nft -f "$nft_delete_v4" 2>/dev/null || true
             rm -f "$nft_delete_v4"
         fi
 
@@ -429,7 +429,7 @@ nftban_feeds_disable() {
                 echo -n "$ip" >> "$nft_delete_v6"
             done
             echo " }" >> "$nft_delete_v6"
-            nft -f "$nft_delete_v6" 2>/dev/null || true
+            nft_ipc_apply_ruleset "$nft_delete_v6" 2>/dev/null || nft -f "$nft_delete_v6" 2>/dev/null || true
             rm -f "$nft_delete_v6"
         fi
 
