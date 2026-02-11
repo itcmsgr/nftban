@@ -556,6 +556,7 @@ fi
 %attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-queue-processor
 %attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-rollback
 %attr(755,root,nftban) %{_libdir}/nftban/sbin/nftban-service-alert
+%doc %{_libdir}/nftban/README.md
 %{_libdir}/nftban/*
 
 # ==========================================================================

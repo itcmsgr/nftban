@@ -856,6 +856,7 @@ fi
 /usr/lib/nftban/data
 /usr/lib/nftban/health
 /usr/lib/nftban/*.sh
+%doc /usr/lib/nftban/README.md
 # Main config files - root:nftban so services can read configs
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/nftban.conf
 %attr(640,root,nftban) %config(noreplace) /etc/nftban/nftables.conf
