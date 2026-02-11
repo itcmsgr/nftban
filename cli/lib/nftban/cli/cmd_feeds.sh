@@ -766,7 +766,7 @@ _nftban_feeds_help() {
         nftban_banner
     fi
 
-    cat <<'HELP'
+    cat <<HELP
 
 USAGE:
     nftban feeds <command> [options]
@@ -808,13 +808,13 @@ EXAMPLES:
     nftban feeds status
 
     # View logs
-    tail -f "${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log"
+    tail -f ${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log
 
 NOTES:
     • ALL feeds are DISABLED by default for safety
     • Use 'select' for easy numbered selection interface
     • Feeds are updated automatically if FEEDS_AUTO_UPDATE=true
-    • Each feed has dedicated log at /var/log/nftban/feeds.log
+    • Each feed has dedicated log at ${NFTBAN_LOG_DIR:-/var/log/nftban}/feeds.log
 
 HELP
 }
