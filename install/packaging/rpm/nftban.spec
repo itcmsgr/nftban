@@ -121,19 +121,37 @@ exit 0
 #   - RPM %files section (package directories)
 
 # ==========================================================================
-# STEP 0: Install yq for documentation generation
+# STEP 0: Install/Upgrade yq v4 (mikefarah/yq) - REQUIRED
 # ==========================================================================
-echo "Installing yq (YAML processor) for documentation generation..."
-if ! command -v yq &>/dev/null; then
-    pip3 install yq >/dev/null 2>&1 || {
-        echo "WARNING: Failed to install yq - documentation generation may not work"
-        echo "  Manual install: pip3 install yq"
-    }
-    if command -v yq &>/dev/null; then
-        echo "yq installed successfully"
+# WHY v4 IS REQUIRED:
+#   - yq v3 (Python pip) is ~10x slower (0.17s vs 0.017s per call)
+#   - nftban help makes 100+ yq calls, causing timeout with v3
+#   - NFTBan 1.12.7+ standardized on mikefarah/yq v4 syntax
+echo "Checking yq v4 (YAML processor)..."
+
+YQ_NEEDS_INSTALL=false
+if command -v yq &>/dev/null; then
+    YQ_VER=$(yq --version 2>/dev/null | head -1 || echo "")
+    if [[ "$YQ_VER" == *"mikefarah"* ]] || [[ "$YQ_VER" == *"version v4"* ]]; then
+        echo "yq v4 found: $YQ_VER"
+    else
+        echo "yq v3 (Python) detected - upgrading to v4 for performance..."
+        YQ_NEEDS_INSTALL=true
     fi
 else
-    echo "yq already installed"
+    echo "yq not found - installing v4..."
+    YQ_NEEDS_INSTALL=true
+fi
+
+if [[ "$YQ_NEEDS_INSTALL" == "true" ]]; then
+    YQ_URL="https://github.com/mikefarah/yq/releases/download/v4.44.1/yq_linux_amd64"
+    if curl -sL "$YQ_URL" -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq; then
+        [[ ! -e /usr/bin/yq ]] && ln -sf /usr/local/bin/yq /usr/bin/yq
+        echo "yq v4 installed: $(/usr/local/bin/yq --version 2>/dev/null)"
+    else
+        echo "WARNING: Failed to install yq v4 - help command may be slow"
+        echo "  Manual install: https://github.com/mikefarah/yq/releases"
+    fi
 fi
 
 # ==========================================================================
