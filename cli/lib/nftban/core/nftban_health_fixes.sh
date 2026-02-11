@@ -279,9 +279,20 @@ nftban_health_fix_permissions() {
 
         # Fix Suricata permissions for NFTBan integration
         # Suricata writes to LOG_DIR/suricata/, nftban needs to read eve-alerts.json
-        if [[ -d "${NFTBAN_LOG_DIR}/suricata" ]]; then
-            local suricata_fixed=0
+        # Bug fix v1.12.8: Create directory and EVE file if missing (prevents daemon startup failure)
+        local suricata_dir="${NFTBAN_LOG_DIR}/suricata"
+        local suricata_fixed=0
 
+        # Create Suricata log directory if missing (per FHS spec)
+        if [[ ! -d "$suricata_dir" ]]; then
+            mkdir -p "$suricata_dir" 2>/dev/null
+            chown suricata:nftban "$suricata_dir" 2>/dev/null
+            chmod 770 "$suricata_dir" 2>/dev/null
+            echo "  ✓ Created ${suricata_dir} (suricata:nftban, 770)"
+            suricata_fixed=1
+        fi
+
+        if [[ -d "$suricata_dir" ]]; then
             # Add suricata user to nftban group (if not already)
             # This allows suricata to traverse /var/log/nftban/ (owned by nftban:nftban)
             if id suricata >/dev/null 2>&1; then
@@ -291,24 +302,33 @@ nftban_health_fix_permissions() {
             fi
 
             # Fix directory: suricata:nftban with 770 (suricata writes, nftban reads)
-            chown suricata:nftban "${NFTBAN_LOG_DIR}/suricata" 2>/dev/null
-            chmod 770 "${NFTBAN_LOG_DIR}/suricata" 2>/dev/null
+            chown suricata:nftban "$suricata_dir" 2>/dev/null
+            chmod 770 "$suricata_dir" 2>/dev/null
 
-            # Fix eve-alerts.json: suricata:nftban 640 so nftban can read
-            if [[ -f "${NFTBAN_LOG_DIR}/suricata/eve-alerts.json" ]]; then
-                chown suricata:nftban "${NFTBAN_LOG_DIR}/suricata/eve-alerts.json" 2>/dev/null
-                chmod 640 "${NFTBAN_LOG_DIR}/suricata/eve-alerts.json" 2>/dev/null
+            # CRITICAL: Create eve-alerts.json if missing
+            # Suricata 7.x with threaded:yes only creates file on first event
+            # nftban-suricata daemon requires file to exist on startup
+            local eve_file="${suricata_dir}/eve-alerts.json"
+            if [[ ! -f "$eve_file" ]]; then
+                touch "$eve_file" 2>/dev/null
+                chown suricata:nftban "$eve_file" 2>/dev/null
+                chmod 640 "$eve_file" 2>/dev/null
+                echo "  ✓ Created ${eve_file} (suricata:nftban, 640)"
                 suricata_fixed=1
+            else
+                # Fix ownership if exists
+                chown suricata:nftban "$eve_file" 2>/dev/null
+                chmod 640 "$eve_file" 2>/dev/null
             fi
 
             # Fix suricata.log similarly
-            if [[ -f "${NFTBAN_LOG_DIR}/suricata/suricata.log" ]]; then
-                chown suricata:nftban "${NFTBAN_LOG_DIR}/suricata/suricata.log" 2>/dev/null
-                chmod 640 "${NFTBAN_LOG_DIR}/suricata/suricata.log" 2>/dev/null
+            if [[ -f "${suricata_dir}/suricata.log" ]]; then
+                chown suricata:nftban "${suricata_dir}/suricata.log" 2>/dev/null
+                chmod 640 "${suricata_dir}/suricata.log" 2>/dev/null
             fi
 
             if [[ $suricata_fixed -eq 1 ]]; then
-                echo "  ✓ Fixed ${NFTBAN_LOG_DIR}/suricata permissions (suricata:nftban, 770)"
+                echo "  ✓ Fixed ${suricata_dir} permissions (suricata:nftban, 770)"
                 : $((fixed_count++))
             fi
         fi

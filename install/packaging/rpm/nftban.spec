@@ -380,7 +380,33 @@ if [ ! -f "$GEOIP_FILE" ]; then
     fi
 fi
 
-# 2. Enable Login Monitoring
+# 2. Create Suricata EVE log directory and file
+# Bug fix v1.12.8: Suricata 7.x with threaded:yes only creates EVE file on first event
+# nftban-suricata daemon requires file to exist on startup
+SURICATA_LOG_DIR="/var/log/nftban/suricata"
+SURICATA_EVE_FILE="${SURICATA_LOG_DIR}/eve-alerts.json"
+if id suricata >/dev/null 2>&1; then
+    # Suricata is installed - create log directory and EVE file
+    if [ ! -d "$SURICATA_LOG_DIR" ]; then
+        mkdir -p "$SURICATA_LOG_DIR"
+        chown suricata:nftban "$SURICATA_LOG_DIR"
+        chmod 770 "$SURICATA_LOG_DIR"
+        echo "Created Suricata log directory: $SURICATA_LOG_DIR"
+    fi
+    if [ ! -f "$SURICATA_EVE_FILE" ]; then
+        touch "$SURICATA_EVE_FILE"
+        chown suricata:nftban "$SURICATA_EVE_FILE"
+        chmod 640 "$SURICATA_EVE_FILE"
+        echo "Created Suricata EVE log file: $SURICATA_EVE_FILE"
+    fi
+    # Add suricata to nftban group for log directory traversal
+    if ! id -nG suricata 2>/dev/null | grep -qw nftban; then
+        usermod -aG nftban suricata 2>/dev/null && \
+            echo "Added suricata user to nftban group"
+    fi
+fi
+
+# 3. Enable Login Monitoring
 if [ -f /etc/nftban/nftban.conf ]; then
     sed -i 's/^NFTBAN_LOGIN_ALERT_ENABLED=.*/NFTBAN_LOGIN_ALERT_ENABLED="true"/' /etc/nftban/nftban.conf 2>/dev/null || true
     sed -i 's/^NFTBAN_LOGIN_ALERT_SSH=.*/NFTBAN_LOGIN_ALERT_SSH="true"/' /etc/nftban/nftban.conf 2>/dev/null || true
@@ -388,12 +414,12 @@ fi
 systemctl enable nftban-login-monitor.service >/dev/null 2>&1 || true
 systemctl start nftban-login-monitor.service >/dev/null 2>&1 || true
 
-# 3. Enable GeoIP Blocking
+# 4. Enable GeoIP Blocking
 if [ -f /etc/nftban/nftban.conf ]; then
     sed -i 's/^NFTBAN_GEOIP_ENABLED=.*/NFTBAN_GEOIP_ENABLED="true"/' /etc/nftban/nftban.conf 2>/dev/null || true
 fi
 
-# 4. Enable core timers (health, maintenance)
+# 5. Enable core timers (health, maintenance)
 for timer in nftban-health.timer nftban-maintenance.timer; do
     systemctl enable "$timer" >/dev/null 2>&1 || true
     systemctl start "$timer" >/dev/null 2>&1 || true
