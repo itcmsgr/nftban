@@ -2,7 +2,7 @@
 
 ## About NFTBAN
 
-NFTBAN is an enterprise-grade firewall management engine built on Linux nftables. Security is foundational to our architecture, featuring Polkit-based privilege separation, systemd sandboxing, and strict input validation at all layers.
+NFTBan is an open-source Linux Intrusion Prevention System (IPS) and firewall manager built on nftables, designed to integrate cleanly with modern Linux security stacks. Security is foundational to the architecture, featuring Polkit-based privilege separation, systemd sandboxing, and strict input validation at all layers.
 
 ## Reporting Security Vulnerabilities
 
