@@ -813,7 +813,7 @@ nftban_ddos_classic_status() {
 # These functions allow external detection logic to add/remove IPs from the
 # ban set. The ban set must be created first via nft_fragment_enable_module ddos-ban.
 
-# Add IP to ban set (called by external detection logic)
+# Add IP to ban set - SINGLE POINT OF TRUTH via nft_smart_add_element
 # Usage: nftban_ddos_ban_ip <ip> [timeout]
 # Example: nftban_ddos_ban_ip 192.168.1.100 1h
 nftban_ddos_ban_ip() {
@@ -828,31 +828,42 @@ nftban_ddos_ban_ip() {
         return 1
     fi
 
-    # Determine IPv4 or IPv6
+    # Determine table/set based on IP family
+    local table set
     if [[ "$ip" =~ : ]]; then
-        # IPv6 address
-        if nft add element "${table_v6}" "${ban_set}6" "{ $ip timeout $timeout }" 2>/dev/null; then
-            _nftban_ddos_classic_log "INFO" "Banned IPv6: $ip (timeout: $timeout)"
-            [[ "${DDOS_BAN_LOG:-true}" == "true" ]] && echo "Banned: $ip (IPv6, timeout: $timeout)"
-            return 0
-        else
-            echo "ERROR: Failed to ban IPv6 $ip" >&2
-            return 1
-        fi
+        table="$table_v6"
+        set="${ban_set}6"
     else
-        # IPv4 address
-        if nft add element "${table_v4}" "${ban_set}" "{ $ip timeout $timeout }" 2>/dev/null; then
-            _nftban_ddos_classic_log "INFO" "Banned IPv4: $ip (timeout: $timeout)"
-            [[ "${DDOS_BAN_LOG:-true}" == "true" ]] && echo "Banned: $ip (IPv4, timeout: $timeout)"
-            return 0
-        else
-            echo "ERROR: Failed to ban IPv4 $ip" >&2
-            return 1
-        fi
+        table="$table_v4"
+        set="$ban_set"
+    fi
+
+    # Convert timeout to seconds (1h=3600, 30m=1800, etc)
+    local timeout_secs=0
+    if [[ "$timeout" =~ ^([0-9]+)s$ ]]; then
+        timeout_secs="${BASH_REMATCH[1]}"
+    elif [[ "$timeout" =~ ^([0-9]+)m$ ]]; then
+        timeout_secs=$((${BASH_REMATCH[1]} * 60))
+    elif [[ "$timeout" =~ ^([0-9]+)h$ ]]; then
+        timeout_secs=$((${BASH_REMATCH[1]} * 3600))
+    elif [[ "$timeout" =~ ^([0-9]+)d$ ]]; then
+        timeout_secs=$((${BASH_REMATCH[1]} * 86400))
+    elif [[ "$timeout" =~ ^[0-9]+$ ]]; then
+        timeout_secs="$timeout"
+    fi
+
+    # SINGLE POINT OF TRUTH: Use nft_smart_add_element (IPC first, fallback to nft)
+    if nft_smart_add_element "$table" "$set" "$ip" "$timeout_secs" 2>/dev/null; then
+        _nftban_ddos_classic_log "INFO" "Banned: $ip (timeout: $timeout)"
+        [[ "${DDOS_BAN_LOG:-true}" == "true" ]] && echo "Banned: $ip (timeout: $timeout)"
+        return 0
+    else
+        echo "ERROR: Failed to ban $ip" >&2
+        return 1
     fi
 }
 
-# Remove IP from ban set
+# Remove IP from ban set - SINGLE POINT OF TRUTH via nft_smart_delete_element
 # Usage: nftban_ddos_unban_ip <ip>
 nftban_ddos_unban_ip() {
     local ip="$1"
@@ -865,27 +876,26 @@ nftban_ddos_unban_ip() {
         return 1
     fi
 
-    # Determine IPv4 or IPv6
+    # Determine table/set based on IP family
+    local table set family
     if [[ "$ip" =~ : ]]; then
-        # IPv6 address
-        if nft delete element "${table_v6}" "${ban_set}6" "{ $ip }" 2>/dev/null; then
-            _nftban_ddos_classic_log "INFO" "Unbanned IPv6: $ip"
-            echo "Unbanned: $ip (IPv6)"
-            return 0
-        else
-            echo "ERROR: Failed to unban IPv6 $ip (not in set?)" >&2
-            return 1
-        fi
+        table="$table_v6"
+        set="${ban_set}6"
+        family="IPv6"
     else
-        # IPv4 address
-        if nft delete element "${table_v4}" "${ban_set}" "{ $ip }" 2>/dev/null; then
-            _nftban_ddos_classic_log "INFO" "Unbanned IPv4: $ip"
-            echo "Unbanned: $ip (IPv4)"
-            return 0
-        else
-            echo "ERROR: Failed to unban IPv4 $ip (not in set?)" >&2
-            return 1
-        fi
+        table="$table_v4"
+        set="$ban_set"
+        family="IPv4"
+    fi
+
+    # SINGLE POINT OF TRUTH: Use nft_smart_delete_element (IPC first, fallback to nft)
+    if nft_smart_delete_element "$table" "$set" "$ip" 2>/dev/null; then
+        _nftban_ddos_classic_log "INFO" "Unbanned $family: $ip"
+        echo "Unbanned: $ip ($family)"
+        return 0
+    else
+        echo "ERROR: Failed to unban $ip (not in set?)" >&2
+        return 1
     fi
 }
 

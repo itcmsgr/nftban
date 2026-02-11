@@ -199,15 +199,21 @@ _restore_system_whitelist() {
         return 0
     fi
 
-    # Add IPv4 system IPs back
+    # SINGLE POINT OF TRUTH: Add IPv4 system IPs back via smart apply
     if [[ -n "$ips_v4" ]]; then
-        nft add element $NFTBAN_TABLE_IPV4 whitelist_ipv4 "{ $ips_v4 }" 2>/dev/null || true
+        local tmp_v4="/tmp/nftban_restore_v4_$$.nft"
+        echo "add element $NFTBAN_TABLE_IPV4 whitelist_ipv4 { $ips_v4 }" > "$tmp_v4"
+        nft_smart_apply_ruleset "$tmp_v4" 2>/dev/null || true
+        rm -f "$tmp_v4"
         echo "  Restored $count_v4 IPv4 system IPs"
     fi
 
-    # Add IPv6 system IPs back
+    # SINGLE POINT OF TRUTH: Add IPv6 system IPs back via smart apply
     if [[ -n "$ips_v6" ]]; then
-        nft add element $NFTBAN_TABLE_IPV6 whitelist_ipv6 "{ $ips_v6 }" 2>/dev/null || true
+        local tmp_v6="/tmp/nftban_restore_v6_$$.nft"
+        echo "add element $NFTBAN_TABLE_IPV6 whitelist_ipv6 { $ips_v6 }" > "$tmp_v6"
+        nft_smart_apply_ruleset "$tmp_v6" 2>/dev/null || true
+        rm -f "$tmp_v6"
         echo "  Restored $count_v6 IPv6 system IPs"
     fi
 }
@@ -429,10 +435,11 @@ _flush_feeds() {
         local cidr_list="${cidrs_v4[*]}"
         cidr_list="${cidr_list// /, }"
 
+        # SINGLE POINT OF TRUTH: Use nft_smart_apply_ruleset
         local tmp_file="/tmp/nftban_flush_feeds_v4_$$.nft"
         echo "delete element $NFTBAN_TABLE_IPV4 blacklist_ipv4 { $cidr_list }" > "$tmp_file"
 
-        if nft -f "$tmp_file" 2>/dev/null; then
+        if nft_smart_apply_ruleset "$tmp_file" 2>/dev/null; then
             echo "  [OK] Removed $count_v4 IPv4 feed entries"
         else
             echo "  [WARN] Some IPv4 entries may not exist in set"
@@ -445,10 +452,11 @@ _flush_feeds() {
         local cidr_list="${cidrs_v6[*]}"
         cidr_list="${cidr_list// /, }"
 
+        # SINGLE POINT OF TRUTH: Use nft_smart_apply_ruleset
         local tmp_file="/tmp/nftban_flush_feeds_v6_$$.nft"
         echo "delete element $NFTBAN_TABLE_IPV6 blacklist_ipv6 { $cidr_list }" > "$tmp_file"
 
-        if nft -f "$tmp_file" 2>/dev/null; then
+        if nft_smart_apply_ruleset "$tmp_file" 2>/dev/null; then
             echo "  [OK] Removed $count_v6 IPv6 feed entries"
         else
             echo "  [WARN] Some IPv6 entries may not exist in set"
@@ -545,7 +553,8 @@ _flush_geoban() {
         done
         echo " }" >> "$tmp_file"
 
-        if nft -f "$tmp_file" 2>/dev/null; then
+        # SINGLE POINT OF TRUTH: Use nft_smart_apply_ruleset
+        if nft_smart_apply_ruleset "$tmp_file" 2>/dev/null; then
             echo "  [OK] Removed $count_v4 IPv4 geoban entries"
         else
             echo "  [WARN] Some IPv4 entries may not exist in set"
@@ -564,7 +573,8 @@ _flush_geoban() {
         done
         echo " }" >> "$tmp_file"
 
-        if nft -f "$tmp_file" 2>/dev/null; then
+        # SINGLE POINT OF TRUTH: Use nft_smart_apply_ruleset
+        if nft_smart_apply_ruleset "$tmp_file" 2>/dev/null; then
             echo "  [OK] Removed $count_v6 IPv6 geoban entries"
         else
             echo "  [WARN] Some IPv6 entries may not exist in set"
