@@ -82,6 +82,12 @@ readonly NFTBAN_API_VERSION="$NFTBAN_VERSION"
 readonly NFTBAN_MIN_BASH_VERSION="4.0"
 readonly NFTBAN_MIN_NFT_VERSION="0.9.3"
 
+# Export all version variables (required for subshells/child processes)
+export NFTBAN_VERSION NFTBAN_VERSION_MAJOR NFTBAN_VERSION_MINOR NFTBAN_VERSION_PATCH
+export NFTBAN_VERSION_NAME NFTBAN_VERSION_DATE NFTBAN_BUILD_DATE
+export NFTBAN_CLI_VERSION NFTBAN_CORE_VERSION NFTBAN_GUI_VERSION NFTBAN_API_VERSION
+export NFTBAN_MIN_BASH_VERSION NFTBAN_MIN_NFT_VERSION
+
 # =============================================================================
 # VERSION INFORMATION FUNCTIONS
 # =============================================================================
