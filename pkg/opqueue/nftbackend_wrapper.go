@@ -21,7 +21,6 @@ package opqueue
 import (
 	"context"
 	"fmt"
-	"net"
 	"strings"
 	"time"
 
@@ -216,41 +215,6 @@ func NewStandaloneBackend() (*StandaloneBackend, error) {
 func (s *StandaloneBackend) Close() {
 	// NFTManager doesn't have explicit Close, GC handles it
 	s.ownedNFT = nil
-}
-
-// =============================================================================
-// HELPER: IP PARSING
-// =============================================================================
-
-// isIPv6 checks if an IP string represents IPv6
-func isIPv6(ip string) bool {
-	// Quick check for colon (IPv6 indicator)
-	for _, c := range ip {
-		if c == ':' {
-			return true
-		}
-	}
-	return false
-}
-
-// parseIPForSet parses an IP/CIDR string for set insertion
-func parseIPForSet(ipStr string, isIPv6Set bool) (net.IP, *net.IPNet, error) {
-	// Check if it's a CIDR
-	if strings.Contains(ipStr, "/") {
-		_, ipNet, err := net.ParseCIDR(ipStr)
-		if err != nil {
-			return nil, nil, fmt.Errorf("invalid CIDR: %s", ipStr)
-		}
-		return nil, ipNet, nil
-	}
-
-	// Single IP
-	ip := net.ParseIP(ipStr)
-	if ip == nil {
-		return nil, nil, fmt.Errorf("invalid IP: %s", ipStr)
-	}
-
-	return ip, nil, nil
 }
 
 // =============================================================================
