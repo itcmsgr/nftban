@@ -215,9 +215,12 @@ jobs:
         run: |
           chmod +x bin/*
           docker run --rm -v "$(pwd):/workspace" -w /workspace ${{ matrix.container }} bash -c "
-            # Install build dependencies
-            apt-get update
-            apt-get install -y dpkg-dev build-essential file
+            # Install build dependencies (with retry for transient mirror issues)
+            for i in 1 2 3; do
+              apt-get update && apt-get install -y dpkg-dev build-essential file && break
+              echo \"Retry \$i: apt-get failed, retrying in 5s...\"
+              sleep 5
+            done
 
             # Build DEB
             chmod +x packaging/build_nftban.sh
