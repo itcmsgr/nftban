@@ -565,7 +565,7 @@ smoke_test_binary_integrity() {
         local name="${entry##*:}"
 
         if [[ -f "$binary" ]]; then
-            ((checked++))
+            ((++checked))  # Pre-increment to avoid exit code 1 when checked=0
             TESTS_TOTAL=$((TESTS_TOTAL + 1))
 
             local file_type
@@ -575,7 +575,7 @@ smoke_test_binary_integrity() {
                 log_fail "${test_name} — ${name} is NOT ELF binary (corrupted/dummy)"
                 log "  File type: ${file_type}"
                 TESTS_FAILED=$((TESTS_FAILED + 1))
-                ((errors++))
+                ((++errors))  # Pre-increment to avoid exit code 1 when errors=0
                 continue
             fi
 
@@ -584,7 +584,7 @@ smoke_test_binary_integrity() {
             if [[ $size -lt 100000 ]]; then
                 log_fail "${test_name} — ${name} is too small (${size} bytes) - likely corrupted"
                 TESTS_FAILED=$((TESTS_FAILED + 1))
-                ((errors++))
+                ((++errors))  # Pre-increment to avoid exit code 1 when errors=0
                 continue
             fi
 
@@ -604,7 +604,8 @@ smoke_test_binary_integrity() {
         log_pass "${test_name} — All Go binaries are valid ELF executables"
     fi
 
-    return $errors
+    # Don't return error count - would abort script with set -e
+    return 0
 }
 
 # =============================================================================
