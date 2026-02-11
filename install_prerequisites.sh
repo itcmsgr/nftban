@@ -70,42 +70,82 @@ check_nftables() {
     ok "nftables installed successfully"
 }
 
-# Check and install yq (REQUIRED for documentation generation)
+# Check and install yq v4 (mikefarah/yq) - REQUIRED
+#
+# WHY v4 IS REQUIRED:
+#   - yq v3 (Python-based pip install yq) is ~10x slower (0.17s vs 0.017s per call)
+#   - generate-help.sh makes 100+ yq calls, causing 20s+ delay with v3 vs 2s with v4
+#   - yq v3 and v4 have different syntax (if/then vs select(), // empty vs // "")
+#   - NFTBan 1.12.7+ standardized on mikefarah/yq v4 syntax
+#
 check_yq() {
-    log "Checking yq (YAML processor)..."
+    log "Checking yq v4 (YAML processor)..."
+
+    local yq_version=""
+    local need_install=false
 
     if command -v yq &>/dev/null; then
-        ok "yq found: $(yq --version 2>/dev/null | head -1 || echo 'version unknown')"
-        return 0
+        yq_version=$(yq --version 2>/dev/null | head -1 || echo "")
+
+        # Check if it's mikefarah/yq v4 (contains "mikefarah" or version starts with "v4")
+        if [[ "$yq_version" == *"mikefarah"* ]] || [[ "$yq_version" == *"version v4"* ]]; then
+            ok "yq v4 found: $yq_version"
+            return 0
+        else
+            # Python yq v3 detected - need to upgrade
+            warn "yq v3 (Python) detected: $yq_version"
+            warn "NFTBan requires mikefarah/yq v4 for performance (10x faster)"
+            need_install=true
+        fi
+    else
+        warn "yq not found - installing mikefarah/yq v4..."
+        need_install=true
     fi
 
-    warn "yq not found - installing..."
+    if [[ "$need_install" == "true" ]]; then
+        install_yq_v4
+    fi
+}
 
-    if command -v pip3 &>/dev/null; then
-        log "Installing yq via pip3..."
-        pip3 install yq || {
-            warn "Failed to install yq via pip3, trying pip..."
-            if command -v pip &>/dev/null; then
-                pip install yq || { error "Failed to install yq via pip"; exit 1; }
-            else
-                error "pip not found. Please install python3-pip first."
-                exit 1
-            fi
-        }
-    elif command -v dnf &>/dev/null; then
-        dnf install -y python3-pip && pip3 install yq || { error "Failed to install yq"; exit 1; }
-    elif command -v yum &>/dev/null; then
-        yum install -y python3-pip && pip3 install yq || { error "Failed to install yq"; exit 1; }
-    elif command -v apt-get &>/dev/null; then
-        apt-get update && apt-get install -y python3-pip && pip3 install yq || { error "Failed to install yq"; exit 1; }
+# Install mikefarah/yq v4 from GitHub releases
+install_yq_v4() {
+    local YQ_VERSION="v4.44.1"
+    local YQ_BINARY="yq_linux_amd64"
+    local YQ_URL="https://github.com/mikefarah/yq/releases/download/${YQ_VERSION}/${YQ_BINARY}"
+
+    log "Installing mikefarah/yq ${YQ_VERSION}..."
+
+    # Backup old yq if exists
+    if command -v yq &>/dev/null; then
+        local old_yq
+        old_yq=$(command -v yq)
+        if [[ -f "$old_yq" ]] && [[ ! -L "$old_yq" ]]; then
+            mv "$old_yq" "${old_yq}.v3.bak" 2>/dev/null || true
+            log "Backed up old yq to ${old_yq}.v3.bak"
+        fi
+    fi
+
+    # Download and install
+    if curl -sL "$YQ_URL" -o /usr/local/bin/yq; then
+        chmod +x /usr/local/bin/yq
+
+        # Create symlink in /usr/bin if not exists
+        if [[ ! -e /usr/bin/yq ]]; then
+            ln -sf /usr/local/bin/yq /usr/bin/yq
+        fi
+
+        # Verify installation
+        if /usr/local/bin/yq --version 2>/dev/null | grep -q "mikefarah"; then
+            ok "yq v4 installed successfully: $(/usr/local/bin/yq --version)"
+        else
+            error "yq v4 installation verification failed"
+            exit 1
+        fi
     else
-        error "Cannot install yq automatically. Please install manually:"
-        error "  pip3 install yq"
-        error "  OR download from: https://github.com/mikefarah/yq/releases"
+        error "Failed to download yq v4 from $YQ_URL"
+        error "Please install manually: https://github.com/mikefarah/yq/releases"
         exit 1
     fi
-
-    ok "yq installed successfully"
 }
 
 # Check and install PAM (REQUIRED for nftban-ui-auth)
